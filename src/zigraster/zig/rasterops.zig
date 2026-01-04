@@ -8,6 +8,9 @@ const Vec3f = vecstack.Vec3f;
 const Vec3T = vecstack.Vec3T;
 const Vec3SliceOps = vecstack.Vec3SliceOps;
 
+const vecsimd = @import("vecsimd.zig");
+const Vec3SIMD = vecsimd.Vec3SIMD;
+
 const Mat44Ops = @import("matstack.zig").Mat44Ops;
 
 const VecSlice = @import("vecslice.zig").VecSlice;
@@ -46,29 +49,34 @@ pub fn worldToRasterCoords(coord_world: Vec3T(f64), camera: *const Camera) Vec3T
     return coord_raster;
 }
 
-pub fn worldToRasterSIMD(coord_world: Vec3T(f64), camera: *const Camera) Vec3T(f64) {
-    // TODO: simplify this to a matrix mult
-    var coord_raster: Vec3T(f64) = Mat44Ops.mulVec3(f64, 
-    										        camera.world_to_cam_mat, 
-    										        coord_world);
+pub fn worldToRasterSIMD(comptime N: usize,
+                         comptime T: type, 
+                         coord_world: Vec3SIMD(N,T), 
+                         camera: *const Camera) Vec3SIMD(N,T) {
 
-    coord_raster.elems[0] = camera.image_dist 
-                            * coord_raster.elems[0] 
-                            / (-coord_raster.elems[2]);
-    coord_raster.elems[1] = camera.image_dist 
-                            * coord_raster.elems[1] 
-                            / (-coord_raster.elems[2]);
+    var coord_raster: Vec3SIMD(N,T) = vecsimd.mat44Mul(N,T,
+                                                       camera.world_to_cam_mat,
+                                                       coord_world);
 
-    coord_raster.elems[0] = 2.0 * coord_raster.elems[0] 
-                            / camera.image_dims[0];
-    coord_raster.elems[1] = 2.0 * coord_raster.elems[1] 
-                            / camera.image_dims[1];
+    const image_dist_simd: @Vector(N,T) = @splat(camera.image_dist);
+    const inv_neg_z: @Vector(N,T) = @as(@Vector(N,T),@splat(1.0)) / (-coord_raster.z);
 
-    coord_raster.elems[0] = (coord_raster.elems[0] + 1.0) 
-    	/ 2.0 * @as(f64, @floatFromInt(camera.pixels_num[0]));
-    coord_raster.elems[1] = (1.0 - coord_raster.elems[1]) 
-    	/ 2.0 * @as(f64, @floatFromInt(camera.pixels_num[1]));
-    coord_raster.elems[2] = -1.0 * coord_raster.elems[2];
+    coord_raster.x = image_dist_simd * coord_raster.x * inv_neg_z; 
+    coord_raster.y = image_dist_simd * coord_raster.y * inv_neg_z;
+
+    coord_raster.x *= @splat(2.0/camera.image_dims[0]);
+    coord_raster.y *= @splat(2.0/camera.image_dims[1]);
+
+    const px_x = @as(T,@floatFromInt(camera.pixels_num[0]));
+    const px_y = @as(T,@floatFromInt(camera.pixels_num[1]));
+
+    const px_x_half_vec: @Vector(N,T) = @splat(px_x/2.0);
+    const px_y_half_vec: @Vector(N,T) = @splat(px_y/2.0); 
+    const ones_vec: @Vector(N,T) = @splat(1.0);
+    
+    coord_raster.x = px_x_half_vec*(coord_raster.x + ones_vec);
+    coord_raster.y = px_y_half_vec*(ones_vec - coord_raster.y);
+    coord_raster.z = -coord_raster.z;
 
     return coord_raster;
 }

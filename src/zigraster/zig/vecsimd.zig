@@ -1,6 +1,12 @@
 const std = @import("std");
 const print = std.debug.print;
 
+const matstack = @import("matstack.zig"); 
+const Mat44Ops = matstack.Mat44Ops;
+const Mat44T = matstack.Mat44T;
+
+const NDArray = @import("ndarray.zig").NDArray;
+
 pub fn Vec3SIMD(comptime N: usize, comptime T: type) type {
     return struct {
         x: @Vector(N,T),
@@ -41,8 +47,8 @@ pub fn Vec3SIMD(comptime N: usize, comptime T: type) type {
             };
         }
 
-        pub fn scale(self: Self, scale: T) Self {
-            const scale_vec: @Vector(N, T) = @splat(scale);
+        pub fn scale(self: Self, scale_val: T) Self {
+            const scale_vec: @Vector(N, T) = @splat(scale_val);
             return .{
               .x = self.x * scale_vec,
               .y = self.y * scale_vec,
@@ -101,7 +107,7 @@ pub fn loadVec3FromElemArray(comptime N: usize,
 // dims=(elems_num,3,nodes_per_elem) where 3 is the coord[x,y,z]. N should be nodes_per_elem.
 pub fn saveVec3ToElemArray(comptime N: usize,
                            comptime T: type,
-                           elem_array: *const NDArray(T),
+                           elem_array: *NDArray(T),
                            elem_ind: usize,
                            vec: Vec3SIMD(N,T)) !void {
                        
@@ -118,21 +124,21 @@ pub fn saveVec3ToElemArray(comptime N: usize,
 }
 
 pub fn mat44Mul(comptime N: usize,
-                T: type,
-                mat: Mat44T(ElemType), 
-                vec: Vec3SIMD(ElemType)
+                comptime T: type,
+                mat: Mat44T(T), 
+                vec: Vec3SIMD(N,T)
                 ) Vec3SIMD(N,T) {
         
-    var vec_res: Vec3SIMD(N,D) = undefined;  
+    var vec_res: Vec3SIMD(N,T) = undefined;  
 
-    mat_row = Vec3SIMD.initSplat(mat.get(0,0),mat.get(0,1),mat.get(0,2));
-    vec_res.x = mat_row.dot(vec) + @splat(mat.get(row,3));
+    var mat_row = Vec3SIMD.initSplat(mat.get(0,0),mat.get(0,1),mat.get(0,2));
+    vec_res.x = mat_row.dot(vec) + @as(@Vector(N,T),@splat(mat.get(0,3)));
 
     mat_row = Vec3SIMD.initSplat(mat.get(1,0),mat.get(1,1),mat.get(1,2));
-    vec_res.y = mat_row.dot(vec) + @splat(mat.get(row,3));
+    vec_res.y = mat_row.dot(vec) + @as(@Vector(N,T),@splat(mat.get(1,3)));
 
     mat_row = Vec3SIMD.initSplat(mat.get(2,0),mat.get(2,1),mat.get(2,2));
-    vec_res.z = mat_row.dot(vec) + @splat(mat.get(row,3));
+    vec_res.z = mat_row.dot(vec) + @as(@Vector(N,T),@splat(mat.get(2,3)));
 
     return vec_res;
 }
@@ -175,9 +181,9 @@ pub fn VecSIMD(comptime D: usize, comptime N: usize, comptime T: type) type {
             return out;
         }
 
-        pub fn scale(self: Self, scale: T) Self {
+        pub fn scale(self: Self, scale_val: T) Self {
             var out: Self = undefined;
-            const scale_vec: @Vector(N,T) = @splate(scale);
+            const scale_vec: @Vector(N,T) = @splat(scale_val);
             inline for (0..D) |ii| {
                 out.elems[ii] = scale_vec * self.elems[ii];                
             }
@@ -215,21 +221,20 @@ pub fn loadVecFromElemArray(comptime D: usize,
         const start_slice = flat_start + (ii*stride);
         out.elems[ii] = elem_array.elems[start_slice..start_slice+N].*;
     }
-    return res;
+    return out;
 }
 
 pub fn saveVecToElemArray(comptime D: usize, 
                            comptime N: usize,
                            comptime T: type,
-                           elem_array: *const NDArray(T),
+                           elem_array: *NDArray(T),
                            elem_ind: usize,
                            vec: VecSIMD(D,N,T)) !void {
     const stride = elem_array.strides[1];
-    const flat_start = try elem_array.getFlatInd(&[_]usize{elem_ind,0,0})                      
+    const flat_start = try elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
 
     inline for (0..D) |ii| {
         const start_slice = flat_start + (ii*stride);
         elem_array.elems[start_slice..start_slice+N].* = vec.elems[ii];
     }
-    return res;
 }

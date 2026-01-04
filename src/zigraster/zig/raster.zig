@@ -178,7 +178,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         // print("Elem {}: coord_step={d}\n",.{ee,coord_step});
         // print("Elem {}: num_bound_x={}\n",.{ee,num_bound_x});
         // print("Elem {}: num_bound_y={}\n\n",.{ee,num_bound_y});
-
+        
         for (0..num_bound_y) |jj| {
             _ = jj;
 
@@ -240,10 +240,10 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                 const px_coord_z: f64 = 1.0 / weight_dot_nodes;
 
                 // If this pixel is behind another we move on
-	depth_subpx_inds[0] = bound_ind_y;
-	depth_subpx_inds[1] = bound_ind_x;
-	
-	const depth_arr_z: f64 = try depth_subpx.get(depth_subpx_inds[0..]); 
+            	depth_subpx_inds[0] = bound_ind_y;
+            	depth_subpx_inds[1] = bound_ind_x;
+            	
+            	const depth_arr_z: f64 = try depth_subpx.get(depth_subpx_inds[0..]); 
 	
                 if (px_coord_z >= depth_arr_z) {
                     bound_coord_x += coord_step;
@@ -302,12 +302,12 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 	    try image_subpx.set(image_subpx_inds[0..], px_field);
 	}
 
-	//----------------------------------------------------------
+	            //----------------------------------------------------------
                 // End for(x) - increment the x coords
                 bound_coord_x += coord_step;
                 bound_ind_x += 1;
             }
-//--------------------------------------------------------------
+            //--------------------------------------------------------------
             // End for(y) - increment the y coords
             bound_coord_y += coord_step;
             bound_ind_y += 1;
