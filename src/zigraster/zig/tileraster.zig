@@ -21,26 +21,27 @@ const Field = @import("meshio.zig").Field;
 const Camera = @import("camera.zig").Camera;
 
 const rops = @import("rasterops.zig");
+const vsd = @import("vecsimd.zig");
+const Vec3SIMD = vsd.Vec3SIMD;
 
-
-const BoundBox = struct {
-    x_min_i: usize,
-    x_max_i: usize,
-    y_min_i: usize,
-    y_max_i: usize,
-};
-
-pub fn boundBoxOverlap(E_min_x: i32, E_max_x: i32, E_min_y: i32, E_max_y: i32,
-                T_min_x: i32, T_max_x: i32, T_min_y: i32, T_max_y: i32) bool {
-    if (E_max_x < T_min_x or E_min_x > T_max_x) {
-        return false;
-    }
-    
-    if (E_max_y < T_min_y or E_min_y > T_max_y) {
-        return false;
-    }
-    return true;
-}
+// const BoundBox = struct {
+//     x_min_i: usize,
+//     x_max_i: usize,
+//     y_min_i: usize,
+//     y_max_i: usize,
+// };
+// 
+// pub fn boundBoxOverlap(E_min_x: i32, E_max_x: i32, E_min_y: i32, E_max_y: i32,
+//                 T_min_x: i32, T_max_x: i32, T_min_y: i32, T_max_y: i32) bool {
+//     if (E_max_x < T_min_x or E_min_x > T_max_x) {
+//         return false;
+//     }
+//     
+//     if (E_max_y < T_min_y or E_min_y > T_max_y) {
+//         return false;
+//     }
+//     return true;
+// }
 
 pub fn rasterOneFrame(allocator: std.mem.Allocator, 
                       frame_ind: usize, 
@@ -51,8 +52,14 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                       image_out_arr: *NDArray(f64),
                       ) !void {
     // TEMP
+    // NOTE: might need to change this to optimise SIMD
+    const N: usize = 3; 
+
     @memset(image_out_arr.elems,0.0);
     print("DEBUG\n",.{});
+
+    var time_start = try Instant.now();
+    var time_end = try Instant.now();
     
     //-----------------------------------------------------------------------------------------
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -127,12 +134,11 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     print("\n",.{});
 
     //-----------------------------------------------------------------------------------------
-    // World to Raster Coords 
-    
-    // dims=(elems_num,coord[x,y,z],nodes_per_elem)    
+    // World to Raster Coords - No SIMD
     elem_inds = .{0,0,0}; 
     var node_flat: usize = 0;
-    
+
+    time_start = try Instant.now();    
     for (0..elem_coord_arr.dims[0]) |ee| {
         elem_inds[0] = ee;
         
@@ -145,7 +151,44 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
             const coord_raster = rops.worldToRasterCoords(coord_world,camera);
             // dest, source
             @memcpy(elem_coord_arr.elems[node_flat..node_flat+3],coord_raster.elems[0..]);
-// 
+
+            // print("ee={d}, nn={d}\n",.{ee,nn});
+            // print("coord_world=[{d},{d},{d}]\n",
+            //       .{coord_world.x(),coord_world.y(),coord_world.z()});
+            // print("coord_raster=[{d:.3},{d:.3},{d:.3}]\n",
+            //       .{coord_raster.x(),coord_raster.y(),coord_raster.z()});
+            // print("node_flat={d}\n",.{node_flat});
+            // print("elem_coord_arr[{d}]={d}\n",
+            //       .{node_flat,elem_coord_arr.elems[node_flat]});
+            // print("elem_coord_arr[{d}]={d}\n",
+            //       .{node_flat+1,elem_coord_arr.elems[node_flat+1]});
+            // print("elem_coord_arr[{d}]={d}\n",
+            //       .{node_flat+2,elem_coord_arr.elems[node_flat+2]});
+            // print("\n",.{});   
+        }        
+    }
+    time_end = try Instant.now();
+    const time_no_simd: f64 = @floatFromInt(time_end.since(time_start));
+        
+    
+    //-----------------------------------------------------------------------------------------
+    // World to Raster Coords - SIMD
+                             
+    // dims=(elems_num,coord[x,y,z],nodes_per_elem)    
+    elem_inds = .{0,0,0}; 
+    node_flat = 0;
+
+    time_start = try Instant.now();    
+    for (0..elem_coord_arr.dims[0]) |ee| {
+
+        const coords_world: Vec3SIMD(N,f64) = try vsd.loadVec3FromElemArray(
+            N,f64,&elem_coord_arr,ee);
+
+        const coords_raster: Vec3SIMD(N,f64) = rops.worldToRasterSIMD(
+            N,f64,coords_world,camera); 
+
+        try vsd.saveVec3ToElemArray(N,f64,&elem_coord_arr,ee,coords_raster);
+        
 //             print("ee={d}, nn={d}\n",.{ee,nn});
 //             print("coord_world=[{d},{d},{d}]\n",
 //                   .{coord_world.x(),coord_world.y(),coord_world.z()});
@@ -158,9 +201,17 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 //                   .{node_flat+1,elem_coord_arr.elems[node_flat+1]});
 //             print("elem_coord_arr[{d}]={d}\n",
 //                   .{node_flat+2,elem_coord_arr.elems[node_flat+2]});
-//             print("\n",.{});   
-        }        
+//             print("\n",.{});           
     }
+    time_end = try Instant.now();
+    const time_simd: f64 = @floatFromInt(time_end.since(time_start));
+
+    const print_break = [_]u8{'='} ** 80;
+    print("{s}\n",.{print_break});
+    print("World to coords time:\n",.{});
+    print("No SIMD = {d:.3}\n",.{time_no_simd});
+    print("SIMD    = {d:.3}\n",.{time_simd});
+    print("{s}\n",.{print_break});
 
     //-----------------------------------------------------------------------------------------
     // Element Bounding Boxes

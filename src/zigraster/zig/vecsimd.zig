@@ -116,11 +116,11 @@ pub fn saveVec3ToElemArray(comptime N: usize,
     // if coords then stride=3, if fields then stride=fields_num
     const stride: usize = elem_array.strides[1];
 
-    elem_array.elems[start_slice..start_slice+N].* = vec.x;
+    elem_array.elems[start_slice..][0..N].* = vec.x;
     start_slice += stride;
-    elem_array.elems[start_slice..start_slice+N].* = vec.y;
+    elem_array.elems[start_slice..][0..N].* = vec.y;
     start_slice += stride;
-    elem_array.elems[start_slice..start_slice+N].* = vec.z;        
+    elem_array.elems[start_slice..][0..N].* = vec.z;        
 }
 
 pub fn mat44Mul(comptime N: usize,
@@ -131,13 +131,13 @@ pub fn mat44Mul(comptime N: usize,
         
     var vec_res: Vec3SIMD(N,T) = undefined;  
 
-    var mat_row = Vec3SIMD.initSplat(mat.get(0,0),mat.get(0,1),mat.get(0,2));
+    var mat_row = Vec3SIMD(N,T).initSplat(mat.get(0,0),mat.get(0,1),mat.get(0,2));
     vec_res.x = mat_row.dot(vec) + @as(@Vector(N,T),@splat(mat.get(0,3)));
 
-    mat_row = Vec3SIMD.initSplat(mat.get(1,0),mat.get(1,1),mat.get(1,2));
+    mat_row = Vec3SIMD(N,T).initSplat(mat.get(1,0),mat.get(1,1),mat.get(1,2));
     vec_res.y = mat_row.dot(vec) + @as(@Vector(N,T),@splat(mat.get(1,3)));
 
-    mat_row = Vec3SIMD.initSplat(mat.get(2,0),mat.get(2,1),mat.get(2,2));
+    mat_row = Vec3SIMD(N,T).initSplat(mat.get(2,0),mat.get(2,1),mat.get(2,2));
     vec_res.z = mat_row.dot(vec) + @as(@Vector(N,T),@splat(mat.get(2,3)));
 
     return vec_res;
