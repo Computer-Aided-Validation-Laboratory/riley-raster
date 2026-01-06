@@ -104,6 +104,22 @@ pub fn boundIndexMax(max_val: f64, pixels_num: usize) usize {
     return max_ind;
 }
 
+pub fn boundIndMin(comptime T: type, min_val: f64) T {
+    var min_ind: T = @as(T, @intFromFloat(@floor(min_val)));
+    if (min_ind < 0) {
+        min_ind = 0;
+    }
+    return min_ind;
+}
+
+pub fn boundIndMax(comptime T: type, max_val: f64, pixels_num: T) T {
+    var max_ind: T = @as(T, @intFromFloat(@ceil(max_val)));
+    if (max_ind > (pixels_num - 1)) {
+        max_ind = (pixels_num - 1);
+    }
+    return max_ind;
+}
+
 pub fn averageImage(image_subpx: *const MatSlice(f64), 
                     sub_samp: u8, 
                     image_avg: *MatSlice(f64)) void {

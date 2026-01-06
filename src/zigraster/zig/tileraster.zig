@@ -24,13 +24,14 @@ const rops = @import("rasterops.zig");
 const vsd = @import("vecsimd.zig");
 const Vec3SIMD = vsd.Vec3SIMD;
 
-// const BoundBox = struct {
-//     x_min_i: usize,
-//     x_max_i: usize,
-//     y_min_i: usize,
-//     y_max_i: usize,
-// };
-// 
+const ElemBox = struct {
+    elem_ind: usize,
+    x_min: u16,
+    x_max: u16,
+    y_min: u16,
+    y_max: u16,
+};
+ 
 // pub fn boundBoxOverlap(E_min_x: i32, E_max_x: i32, E_min_y: i32, E_max_y: i32,
 //                 T_min_x: i32, T_max_x: i32, T_min_y: i32, T_max_y: i32) bool {
 //     if (E_max_x < T_min_x or E_min_x > T_max_x) {
@@ -133,42 +134,6 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
           .{elem_coord_arr.strides[0],elem_coord_arr.strides[1],elem_coord_arr.strides[2]});
     print("\n",.{});
 
-    //-----------------------------------------------------------------------------------------
-    // World to Raster Coords - No SIMD
-    elem_inds = .{0,0,0}; 
-    var node_flat: usize = 0;
-
-    time_start = try Instant.now();    
-    for (0..elem_coord_arr.dims[0]) |ee| {
-        elem_inds[0] = ee;
-        
-        for (0..elem_coord_arr.dims[1]) |nn| {
-            elem_inds[1] = nn;
-            
-            node_flat = try elem_coord_arr.getFlatInd(elem_inds[0..]);
-
-            const coord_world = Vec3T(f64).initSlice(elem_coord_arr.elems[node_flat..]);
-            const coord_raster = rops.worldToRasterCoords(coord_world,camera);
-            // dest, source
-            @memcpy(elem_coord_arr.elems[node_flat..node_flat+3],coord_raster.elems[0..]);
-
-            // print("ee={d}, nn={d}\n",.{ee,nn});
-            // print("coord_world=[{d},{d},{d}]\n",
-            //       .{coord_world.x(),coord_world.y(),coord_world.z()});
-            // print("coord_raster=[{d:.3},{d:.3},{d:.3}]\n",
-            //       .{coord_raster.x(),coord_raster.y(),coord_raster.z()});
-            // print("node_flat={d}\n",.{node_flat});
-            // print("elem_coord_arr[{d}]={d}\n",
-            //       .{node_flat,elem_coord_arr.elems[node_flat]});
-            // print("elem_coord_arr[{d}]={d}\n",
-            //       .{node_flat+1,elem_coord_arr.elems[node_flat+1]});
-            // print("elem_coord_arr[{d}]={d}\n",
-            //       .{node_flat+2,elem_coord_arr.elems[node_flat+2]});
-            // print("\n",.{});   
-        }        
-    }
-    time_end = try Instant.now();
-    const time_no_simd: f64 = @floatFromInt(time_end.since(time_start));
         
     
     //-----------------------------------------------------------------------------------------
@@ -176,8 +141,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                              
     // dims=(elems_num,coord[x,y,z],nodes_per_elem)    
     elem_inds = .{0,0,0}; 
-    node_flat = 0;
-
+    
     time_start = try Instant.now();    
     for (0..elem_coord_arr.dims[0]) |ee| {
 
@@ -204,60 +168,94 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 //             print("\n",.{});           
     }
     time_end = try Instant.now();
-    const time_simd: f64 = @floatFromInt(time_end.since(time_start));
+    //const time_simd: f64 = @floatFromInt(time_end.since(time_start));
 
-    const print_break = [_]u8{'='} ** 80;
-    print("{s}\n",.{print_break});
-    print("World to coords time:\n",.{});
-    print("No SIMD = {d:.3}\n",.{time_no_simd});
-    print("SIMD    = {d:.3}\n",.{time_simd});
-    print("{s}\n",.{print_break});
-
+    
     //-----------------------------------------------------------------------------------------
     // Element Bounding Boxes
-//     elem_inds = .{0,0,0}; 
-//     var elem_flat: usize = 0; 
-//         
-//     for (0..elem_coord_arr.dims[0]) |ee| {
-//         elem_inds[0] = ee;
-//         elem_flat = try elem_coord_arr.getFlatInd(elem_inds[0..]);
-// 
-//         const elem_end = elem_flat+elem_coord_arr.strides[0];
-//         const elem_slice = elem_coord_arr.elems[elem_flat..elem_end];
-// 
-//         var x_min = elem_slice[0];
-//         var x_max = elem_slice[0];
-//         var y_min = elem_slice[1];
-//         var y_max = elem_slice[1];
-// 
-//         // nodes_per_elem = elem_coord_arr.dims[1]
-//         for (1..nodes_per_elem) |nn| {
-//             // x min and x max in raster coords
-//             if (elem_slice[nn*3] < x_min) {
-//                 x_min = elem_slice[nn*3];    
-//             } else if (elem_slice[nn*3] > x_max) {
-//                 x_max = elem_slice[nn*3];                 
-//             }
-// 
-//             // y min and y max in raster coords
-//             if (elem_slice[nn*3+1] < y_min) {
-//                 y_min = elem_slice[nn*3+1];    
-//             } else if (elem_slice[nn*3+1] > y_max) {
-//                 y_max = elem_slice[nn*3+1];                 
-//             } 
-//         }
-// 
-//         print("elem_slice=\n",.{});
-//         for (0..elem_slice.len) |ii| {
-//             print("{d:.3},",.{elem_slice[ii]});
-//         }
-//         print("\n",.{});
-//         print("x_min={d:.3},x_max={d:.3}\n",.{x_min,x_max});
-//         print("y_min={d:.3},y_max={d:.3}\n",.{y_min,y_max});
-//         print("\n\n",.{});    
-//     }
-// 
-//     //-----------------------------------------------------------------------------------------
+    elem_inds = .{0,0,0}; 
+        
+    for (0..elem_coord_arr.dims[0]) |ee| {
+        elem_inds[0] = ee;
+        const elem_flat = try elem_coord_arr.getFlatInd(elem_inds[0..]);
+
+        const elem_end = elem_flat+elem_coord_arr.strides[0];
+        const elem_slice = elem_coord_arr.elems[elem_flat..elem_end];
+
+        var x_min = elem_slice[0];
+        var x_max = elem_slice[0];
+        var y_min = elem_slice[1];
+        var y_max = elem_slice[1];
+
+        // nodes_per_elem = elem_coord_arr.dims[1]
+        for (1..nodes_per_elem) |nn| {
+            // x min and x max in raster coords
+            if (elem_slice[nn*3] < x_min) {
+                x_min = elem_slice[nn*3];    
+            } else if (elem_slice[nn*3] > x_max) {
+                x_max = elem_slice[nn*3];                 
+            }
+
+            // y min and y max in raster coords
+            if (elem_slice[nn*3+1] < y_min) {
+                y_min = elem_slice[nn*3+1];    
+            } else if (elem_slice[nn*3+1] > y_max) {
+                y_max = elem_slice[nn*3+1];                 
+            } 
+        }
+
+        print("elem_slice=\n",.{});
+        for (0..elem_slice.len) |ii| {
+            print("{d:.3},",.{elem_slice[ii]});
+        }
+        print("\n",.{});
+        print("x_min={d:.3},x_max={d:.3}\n",.{x_min,x_max});
+        print("y_min={d:.3},y_max={d:.3}\n",.{y_min,y_max});
+        print("\n\n",.{});    
+    }
+
+
+    elem_inds = .{0,0,0}; 
+   
+    const elem_boxes = try arena_alloc.alloc(ElemBox,elem_coord_arr.dims[0]);
+    var elems_in_image: usize = 0;
+        
+    for (0..elem_coord_arr.dims[0]) |ee| {
+        const coords_raster: Vec3SIMD(N,f64) = try vsd.loadVec3FromElemArray(
+            N,f64,&elem_coord_arr,ee);
+
+        const x_max: f64 = @reduce(.Max,coords_raster.x);
+        const x_min: f64 = @reduce(.Min,coords_raster.x);
+        if ((x_min > @as(f64, @floatFromInt(camera.pixels_num[0] - 1))) or (x_max < 0.0)) {
+            continue;
+        }
+
+        const y_max: f64 = @reduce(.Max,coords_raster.y);
+        const y_min: f64 = @reduce(.Min,coords_raster.y);
+        if ((y_min > @as(f64, @floatFromInt(camera.pixels_num[1] - 1))) or (y_max < 0.0)) {
+            continue;
+        }
+
+        const x_min_i: u16 = rops.boundIndMin(u16,x_min);
+        const x_max_i: u16 = rops.boundIndMax(u16,
+                                              x_max, 
+                                              @intCast(camera.pixels_num[0]));
+        const y_min_i: u16 = rops.boundIndMin(u16,y_min);
+        const y_max_i: u16 = rops.boundIndMax(u16,
+                                              y_max, 
+                                              @intCast(camera.pixels_num[1]));
+
+        elem_boxes[elems_in_image] = ElemBox{
+            .elem_ind=ee,
+            .x_max=x_max_i,
+            .x_min=x_min_i,
+            .y_max=y_max_i,
+            .y_min=y_min_i,
+        };
+        elems_in_image += 1;
+    }
+
+    //-----------------------------------------------------------------------------------------
 //     // Element Tile Overlap Sort: Pass 1, How many element in each tile?
 // 
 //     const tile_size: usize = 16;
