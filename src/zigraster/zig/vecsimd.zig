@@ -78,43 +78,31 @@ pub fn Vec3SIMD(comptime N: usize, comptime T: type) type {
     };
 }
 
-
-
-// NOTE: this is not a general function, it only works with NDArrays representing a mesh with
-// dims=(elems_num,3,nodes_per_elem) where 3 is the coord[x,y,z]. N should be nodes_per_elem.
 pub fn loadVec3FromElemArray(comptime N: usize, 
                              comptime T: type, 
                              elem_array: *const NDArray(T),
-                             elem_ind: usize) !Vec3SIMD(N,T) {
+                             batch_start: usize) Vec3SIMD(N,T) {
 
-    //const elem_inds = [_]usize{elem_ind,0,0};
-    var start_slice: usize = try elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
-    // if coords then stride=3, if fields then stride=fields_num
-    const stride: usize = elem_array.strides[1];  
+    var start_slice: usize = batch_start;
+    const stride: usize = elem_array.strides[0];  
 
     const x_slice = elem_array.elems[start_slice..start_slice+N];
-
     start_slice += stride;
     const y_slice = elem_array.elems[start_slice..start_slice+N];
-
     start_slice += stride;
     const z_slice = elem_array.elems[start_slice..start_slice+N];
 
     return Vec3SIMD(N,T).init(x_slice,y_slice,z_slice);
 }
 
-// NOTE: this is not a general function, it only works with NDArrays representing a mesh with
-// dims=(elems_num,3,nodes_per_elem) where 3 is the coord[x,y,z]. N should be nodes_per_elem.
 pub fn saveVec3ToElemArray(comptime N: usize,
                            comptime T: type,
                            elem_array: *NDArray(T),
-                           elem_ind: usize,
-                           vec: Vec3SIMD(N,T)) !void {
+                           batch_start: usize,
+                           vec: Vec3SIMD(N,T)) void {
                        
-    const elem_inds = [_]usize{elem_ind,0,0};
-    var start_slice: usize = try elem_array.getFlatInd(elem_inds[0..]);
-    // if coords then stride=3, if fields then stride=fields_num
-    const stride: usize = elem_array.strides[1];
+    var start_slice: usize = batch_start;
+    const stride: usize = elem_array.strides[0];
 
     elem_array.elems[start_slice..][0..N].* = vec.x;
     start_slice += stride;
@@ -208,33 +196,33 @@ pub fn VecSIMD(comptime D: usize, comptime N: usize, comptime T: type) type {
     };
 }
 
-pub fn loadVecFromElemArray(comptime D: usize,
-                            comptime N: usize, 
-                            comptime T: type, 
-                            elem_array: *const NDArray(T),
-                            elem_ind: usize) !Vec3SIMD(D,N,T) {
-    const stride = elem_array.strides[1];
-    const flat_start = try elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
-
-    var out: VecSIMD(D,N,T) = undefined;
-    inline for (0..D) |ii| {
-        const start_slice = flat_start + (ii*stride);
-        out.elems[ii] = elem_array.elems[start_slice..start_slice+N].*;
-    }
-    return out;
-}
-
-pub fn saveVecToElemArray(comptime D: usize, 
-                           comptime N: usize,
-                           comptime T: type,
-                           elem_array: *NDArray(T),
-                           elem_ind: usize,
-                           vec: VecSIMD(D,N,T)) !void {
-    const stride = elem_array.strides[1];
-    const flat_start = try elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
-
-    inline for (0..D) |ii| {
-        const start_slice = flat_start + (ii*stride);
-        elem_array.elems[start_slice..start_slice+N].* = vec.elems[ii];
-    }
-}
+// pub fn loadVecFromElemArray(comptime D: usize,
+//                             comptime N: usize, 
+//                             comptime T: type, 
+//                             elem_array: *const NDArray(T),
+//                             elem_ind: usize) !Vec3SIMD(D,N,T) {
+//     const stride = elem_array.strides[1];
+//     const flat_start = try elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
+// 
+//     var out: VecSIMD(D,N,T) = undefined;
+//     inline for (0..D) |ii| {
+//         const start_slice = flat_start + (ii*stride);
+//         out.elems[ii] = elem_array.elems[start_slice..start_slice+N].*;
+//     }
+//     return out;
+// }
+// 
+// pub fn saveVecToElemArray(comptime D: usize, 
+//                            comptime N: usize,
+//                            comptime T: type,
+//                            elem_array: *NDArray(T),
+//                            elem_ind: usize,
+//                            vec: VecSIMD(D,N,T)) !void {
+//     const stride = elem_array.strides[1];
+//     const flat_start = try elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
+// 
+//     inline for (0..D) |ii| {
+//         const start_slice = flat_start + (ii*stride);
+//         elem_array.elems[start_slice..start_slice+N].* = vec.elems[ii];
+//     }
+// }

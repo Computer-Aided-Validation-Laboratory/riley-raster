@@ -90,7 +90,7 @@ pub fn main() !void {
     //==========================================================================
     // Build Camera
     
-    const pixel_num = [_]u32{960,1280};//[_]u32{ 960, 1280 };
+    const pixel_num = [_]u32{250,400};//[_]u32{ 960, 1280 };
     const pixel_size = [_]f64{ 5.3e-3, 5.3e-3 };
     const focal_leng: f64 = 50.0;
     const alpha_z: f64 = std.math.degreesToRadians(0.0);

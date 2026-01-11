@@ -36,7 +36,7 @@ pub fn NDArray(comptime EType: type) type {
                 dim_prod *= dims[dd];
             }
 
-            if (elems.len != dim_prod) {
+            if (elems.len < dim_prod) {
                 return NDArrayError.ElemsWrongLenForDims;
             }
 
