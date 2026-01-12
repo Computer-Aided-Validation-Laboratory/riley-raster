@@ -89,35 +89,37 @@ pub fn edgeFun3(vert_0: Vec3f, vert_1: Vec3f, vert_2: Vec3f) f64 {
 }
 
 pub fn boundIndexMin(min_val: f64) usize {
-    var min_ind: usize = @as(usize, @intFromFloat(@floor(min_val)));
+    var min_ind: i32 = @as(i32, @intFromFloat(@floor(min_val)));
     if (min_ind < 0) {
         min_ind = 0;
     }
-    return min_ind;
+    return @as(usize,@intCast(min_ind));
 }
 
 pub fn boundIndexMax(max_val: f64, pixels_num: usize) usize {
-    var max_ind: usize = @as(usize, @intFromFloat(@ceil(max_val)));
-    if (max_ind > (pixels_num - 1)) {
-        max_ind = (pixels_num - 1);
+    var max_ind: i32 = @as(i32, @intFromFloat(@ceil(max_val)));
+    const px = @as(i32,@intCast(pixels_num - 1));
+    if (max_ind > px) {
+        max_ind = px;
     }
-    return max_ind;
+    return @as(usize,@intCast(max_ind));
 }
 
 pub fn boundIndMin(comptime T: type, min_val: f64) T {
-    var min_ind: T = @as(T, @intFromFloat(@floor(min_val)));
+    var min_ind: i32 = @as(i32, @intFromFloat(@floor(min_val)));
     if (min_ind < 0) {
         min_ind = 0;
     }
-    return min_ind;
+    return @as(T,@intCast(min_ind));
 }
 
 pub fn boundIndMax(comptime T: type, max_val: f64, pixels_num: T) T {
-    var max_ind: T = @as(T, @intFromFloat(@ceil(max_val)));
-    if (max_ind > (pixels_num - 1)) {
-        max_ind = (pixels_num - 1);
+    var max_ind: i32 = @as(i32, @intFromFloat(@ceil(max_val)));
+    const px = @as(i32,@intCast(pixels_num - 1));
+    if (max_ind > px) {
+        max_ind = px;
     }
-    return max_ind;
+    return @as(T,@intCast(max_ind));
 }
 
 pub fn averageImage(image_subpx: *const MatSlice(f64), 
