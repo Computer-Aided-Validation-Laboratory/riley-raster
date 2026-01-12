@@ -52,7 +52,7 @@ pub fn main() !void {
 
     //==========================================================================
     // SETUP: load simulation data from file
-    const path_data = "data/block/";
+    const path_data = "data/cylinder/";
 
     const path_coords = path_data ++ "coords.csv";
     const path_connect = path_data ++ "connectivity.csv";

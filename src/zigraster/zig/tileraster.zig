@@ -78,6 +78,7 @@ pub fn RasterMesh(comptime T: type) type {
 
     };
 }
+
 pub fn rasterOneFrame(allocator: std.mem.Allocator, 
                       frame_ind: usize, 
                       coords: *const Coords, 
@@ -86,9 +87,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                       camera: *const Camera, 
                       image_out_arr: *NDArray(f64),
                       ) !void {
-    // TEMP
-    // NOTE: might need to change this to optimise SIMD
-    const N: usize = 8; 
+    const N: usize = 3; // Set to nodes per elem 
 
     @memset(image_out_arr.elems,0.0);
     print("DEBUG\n",.{});
@@ -109,56 +108,51 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     const coords_num: usize = 3;
     const fields_num: usize = field.getFieldsN();
 
-    // dims=(elems_num,coord[x,y,z],nodes_per_elem)
-    var elem_coord_arr_dims = [_]usize{coords_num,nodes_per_elem,elems_num};
+    const dim_elem: usize = 0; 
+    const dim_field: usize = 1;
+    const dim_node: usize = 2;
 
+    // dims=(elems_num,coord[x,y,z],nodes_per_elem)
+    var elem_coord_arr_dims = [_]usize{elems_num,coords_num,nodes_per_elem};
     const elem_coord_arr_size: usize = elems_num*nodes_per_elem*coords_num;
-    const elem_coord_arr_size_pad: usize = calcSizePad(N,elem_coord_arr_size); 
-    const elem_coord_arr_mem = try arena_alloc.alloc(f64, elem_coord_arr_size_pad);
+    const elem_coord_arr_mem = try arena_alloc.alloc(f64, elem_coord_arr_size);
     @memset(elem_coord_arr_mem,0.0);
     var elem_coord_arr = try NDArray(f64).init(allocator, 
                                                 elem_coord_arr_mem, 
                                                 elem_coord_arr_dims[0..]);
 
-    // dims=(fields_num,elems_num,nodes_per_elem)
-    var elems_field_arr_dims = [_]usize{fields_num,nodes_per_elem,elems_num};
-
+    // dims=(elems_num,fields_num,nodes_per_elem)
+    var elems_field_arr_dims = [_]usize{elems_num,fields_num,nodes_per_elem};
     const elems_field_arr_size: usize = elems_num*nodes_per_elem*fields_num;
-    const elems_field_arr_size_pad: usize = calcSizePad(N,elems_field_arr_size);
-    const elems_field_arr_mem = try arena_alloc.alloc(f64, elems_field_arr_size_pad);
+    const elems_field_arr_mem = try arena_alloc.alloc(f64, elems_field_arr_size);
     @memset(elems_field_arr_mem,0.0);
     var elems_field_arr = try NDArray(f64).init(allocator, 
                                                 elems_field_arr_mem, 
                                                 elems_field_arr_dims[0..]);
-    // dims=(coord[x,y,z],nodes_per_elem,elems_num,)    
+    // dims=(elems_num,coord[x,y,z],nodes_per_elem,)    
     var elem_inds = [_]usize{0,0,0};
-    // dims=(times_num,nodes_num,field_num,)
+    // dims=(times_num,nodes_num,field_num)
     var field_inds = [_]usize{frame_ind,0,0}; 
-    
+
+    elem_inds = .{0,0,0};
+    field_inds =.{frame_ind,0,0};
     for (0..elems_num) |ee| {
-        elem_inds[2] = ee;
+        elem_inds[dim_elem] = ee;
         const coord_inds: []usize = connect.getElem(ee);
 
         for (0..connect.nodes_per_elem) |nn| {
-            elem_inds[1] = nn;
+            elem_inds[dim_node] = nn;
             field_inds[1] = coord_inds[nn];
-
-            // print("ee={d}, nn={d}\n",.{ee,nn});
-            // print("elems_coord_dims=[{d},{d},{d}]\n",.{elem_coord_arr_dims[0],
-            //                                            elem_coord_arr_dims[1],
-            //                                            elem_coord_arr_dims[2]});
-            // print("elem_inds=[{d},{d},{d}]\n",.{elem_inds[0],elem_inds[1],elem_inds[2]});
-            // print("\n",.{});
-                        
-            elem_inds[0] = 0;            
+                                
+            elem_inds[dim_field] = 0;            
             try elem_coord_arr.set(elem_inds[0..],coords.x[coord_inds[nn]]);
-            elem_inds[0] = 1;            
+            elem_inds[dim_field] = 1;            
             try elem_coord_arr.set(elem_inds[0..],coords.y[coord_inds[nn]]);
-            elem_inds[0] = 2;            
+            elem_inds[dim_field] = 2;            
             try elem_coord_arr.set(elem_inds[0..],coords.z[coord_inds[nn]]);
             
             for (0..fields_num) |ff| {
-                elem_inds[0] = ff;
+                elem_inds[dim_field] = ff;
                 field_inds[2] = ff;
                 const field_val = try field.array.get(field_inds[0..]);
                 try elems_field_arr.set(elem_inds[0..],field_val);
@@ -173,52 +167,106 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     print("    strides=[{d},{d},{d}]\n",
           .{elem_coord_arr.strides[0],elem_coord_arr.strides[1],elem_coord_arr.strides[2]});
     print("\n",.{});
-    
+
+    //-----------------------------------------------------------------------------------------
+    // World to Raster Coords - No SIMD
+    elem_inds = .{0,0,0}; 
+
+    time_start = try Instant.now();    
+    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
+        elem_inds[dim_elem] = ee;
+        
+        for (0..elem_coord_arr.dims[dim_node]) |nn| {
+            elem_inds[dim_node] = nn;
+
+            elem_inds[dim_field] = 0;
+            const x_val = try elem_coord_arr.get(elem_inds[0..]); 
+            elem_inds[dim_field] = 1;
+            const y_val = try elem_coord_arr.get(elem_inds[0..]);
+            elem_inds[dim_field] = 2;
+            const z_val = try elem_coord_arr.get(elem_inds[0..]);
+            
+            const coord_world = vecstack.initVec3(f64,x_val,y_val,z_val);
+            const coord_raster = rops.worldToRasterCoords(coord_world,camera);
+                
+            elem_inds[dim_field] = 0;
+            try elem_coord_arr.set(elem_inds[0..],coord_raster.x());
+            elem_inds[dim_field] = 1;
+            try elem_coord_arr.set(elem_inds[0..],coord_raster.y());
+            elem_inds[dim_field] = 2;
+            try elem_coord_arr.set(elem_inds[0..],coord_raster.z());
+        
+            // print("ee={d}, nn={d}\n",.{ee,nn});
+            // print("coord_world=[{d},{d},{d}]\n",
+            //       .{coord_world.x(),coord_world.y(),coord_world.z()});
+            // print("coord_raster=[{d:.3},{d:.3},{d:.3}]\n",
+            //       .{coord_raster.x(),coord_raster.y(),coord_raster.z()});
+            // print("\n",.{});   
+        }        
+    }
+    time_end = try Instant.now();
+    const time_no_simd: f64 = @floatFromInt(time_end.since(time_start));
+
+    //-----------------------------------------------------------------------------------------
+    // RESET TO WORLD COORDS
+    elem_inds = .{0,0,0};
+    field_inds =.{frame_ind,0,0};
+    for (0..elems_num) |ee| {
+        elem_inds[dim_elem] = ee;
+        const coord_inds: []usize = connect.getElem(ee);
+
+        for (0..connect.nodes_per_elem) |nn| {
+            elem_inds[dim_node] = nn;
+            field_inds[1] = coord_inds[nn];
+                                
+            elem_inds[dim_field] = 0;            
+            try elem_coord_arr.set(elem_inds[0..],coords.x[coord_inds[nn]]);
+            elem_inds[dim_field] = 1;            
+            try elem_coord_arr.set(elem_inds[0..],coords.y[coord_inds[nn]]);
+            elem_inds[dim_field] = 2;            
+            try elem_coord_arr.set(elem_inds[0..],coords.z[coord_inds[nn]]);
+            
+            for (0..fields_num) |ff| {
+                elem_inds[dim_field] = ff;
+                field_inds[2] = ff;
+                const field_val = try field.array.get(field_inds[0..]);
+                try elems_field_arr.set(elem_inds[0..],field_val);
+            }
+        } 
+    }
+
     //-----------------------------------------------------------------------------------------
     // World to Raster Coords - SIMD
-    
-    const num_batches = try std.math.divCeil(usize,elems_num*nodes_per_elem, N);
-    print("elems_num={d}, nodes_per_elem={d}, N={d}\n",.{elems_num,nodes_per_elem,N});
-    print("num_batches={d}",.{num_batches});
-    print("\n",.{});
-    
-    time_start = try Instant.now();
-
-
-    for (0..num_batches) |bb| {
-        const batch_start: usize = bb*N;
         
-        const coords_world: Vec3SIMD(N,f64) = vsd.loadVec3FromElemArray(
-            N,f64,&elem_coord_arr,batch_start);
+    time_start = try Instant.now();
+    for (0..elems_num) |ee| {
+        const coords_world: Vec3SIMD(N,f64) = try vsd.loadVec3FromElemArray(
+            N,f64,&elem_coord_arr,ee);
 
         const coords_raster: Vec3SIMD(N,f64) = rops.worldToRasterSIMD(
             N,f64,coords_world,camera); 
 
+        try vsd.saveVec3ToElemArray(N,f64,&elem_coord_arr,ee,coords_raster);
         // print("bb={}, N={}, batch_start={}\n",.{bb,N,batch_start});
         // print("coords_world.x = {}\n",.{coords_world.x});
         // print("coords_world.y = {}\n",.{coords_world.y});
         // print("coords_world.z = {}\n",.{coords_world.z});
-
-        print("\n",.{});
-
-        vsd.saveVec3ToElemArray(N,f64,&elem_coord_arr,batch_start,coords_raster);
+        // print("\n",.{});
     }
-    
-    
     time_end = try Instant.now();
     const time_simd: f64 = @floatFromInt(time_end.since(time_start));
-    print("\nTIME SIMD WORLD TO RASTER = {d}ns\n",.{time_simd});
 
     elem_inds = .{0,0,0};
-    
+
+    // SIMD: print transformed coords to console
     for (0..elems_num) |ee| {
-        elem_inds[2] = ee;
+        elem_inds[dim_elem] = ee;
         print("Element: {d}\n",.{ee});
         for (0..nodes_per_elem) |nn| {
-            elem_inds[1] = nn;
+            elem_inds[dim_node] = nn;
             print("Node={d}, [",.{nn});
             for (0..coords_num) |cc| {
-                elem_inds[0] = cc;
+                elem_inds[dim_field] = cc;
                 const val = try elem_coord_arr.get(elem_inds[0..]);
                 
                 print("{d},",.{val});
@@ -228,7 +276,14 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         }
         print("\n",.{});
     }
-        
+    print("\nTIME SIMD WORLD TO RASTER = {d}ns\n",.{time_simd});
+    
+    const print_break = [_]u8{'='} ** 80;
+    print("{s}\n",.{print_break});
+    print("World to coords time:\n",.{});
+    print("No SIMD = {d:.3}\n",.{time_no_simd});
+    print("SIMD    = {d:.3}\n",.{time_simd});
+    print("{s}\n",.{print_break});
     //-----------------------------------------------------------------------------------------
     // Element Bounding Boxes
 //     elem_inds = .{0,0,0}; 
