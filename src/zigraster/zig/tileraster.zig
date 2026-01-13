@@ -26,7 +26,17 @@ const vsd = @import("vecsimd.zig");
 const Vec3SIMD = vsd.Vec3SIMD;
 
 
-const ElemBox = struct {
+pub fn BBoxSIMD(comptime L: usize) type {
+    return struct {
+        elem_ind: @Vector(L,usize),
+        x_min: @Vector(L,u16),
+        x_max: @Vector(L,u16),
+        y_min: @Vector(L,u16),
+        y_max: @Vector(L,u16),    
+    };
+} 
+
+const BBox = struct {
     elem_ind: usize,
     x_min: u16,
     x_max: u16,
@@ -89,6 +99,8 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     _ = image_out_arr;
 
     const N: usize = 3; // Set to nodes per elem 
+    // SIMD lanes for batching bounding boxes of u16 - should be 32 for AVX-512
+    const L: usize = 16; 
 
     print("DEBUG\n",.{});
 
@@ -168,11 +180,21 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     //-----------------------------------------------------------------------------------------
     // Element Bounding Boxes
     elem_inds = .{0,0,0}; 
-   
-    const elem_boxes = try arena_alloc.alloc(ElemBox,elem_coord_arr.dims[0]);
+
+    const num_bbox_simd: usize = try std.math.divCeil(usize,elem_coord_arr.dims[0],L);
+    const elem_boxes_simd: []BBoxSIMD(L) = try arena_alloc.alloc(BBoxSIMD(L),num_bbox_simd);
+    
+    var elem_ind_buff = [_]usize{0} ** L;
+    var x_max_buff = [_]u16{0} ** L;
+    var x_min_buff = [_]u16{0} ** L;
+    var y_max_buff = [_]u16{0} ** L;
+    var y_min_buff = [_]u16{0} ** L;
+
+    var simd_lane_count: u8 = 0;
+    var simd_elem_box_count: usize = 0;
     var elems_in_image: usize = 0;
-        
-    for (0..elem_coord_arr.dims[0]) |ee| {
+                
+    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
         const coords_raster: Vec3SIMD(N,f64) = try vsd.loadVec3FromElemArray(
             N,f64,&elem_coord_arr,ee);
 
@@ -187,11 +209,6 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         if ((y_min > @as(f64, @floatFromInt(camera.pixels_num[1] - 1))) or (y_max < 0.0)) {
             continue;
         }
-
-        print("Element: {d}\n",.{ee});
-        print("x_min={d} , x_max={d}\n",.{x_min,x_max});
-        print("y_min={d} , y_max={d}\n",.{y_min,y_max});
-        print("\n",.{});
         
         const x_min_i: u16 = rops.boundIndMin(u16,x_min);
         const x_max_i: u16 = rops.boundIndMax(u16,
@@ -202,36 +219,97 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                                               y_max, 
                                               @intCast(camera.pixels_num[1]));
 
-        elem_boxes[elems_in_image] = ElemBox{
-            .elem_ind=ee,
-            .x_max=x_max_i,
-            .x_min=x_min_i,
-            .y_max=y_max_i,
-            .y_min=y_min_i,
-        };
+        elem_ind_buff[simd_lane_count] = ee;
+        x_min_buff[simd_lane_count] = x_min_i;
+        x_max_buff[simd_lane_count] = x_max_i;
+        y_min_buff[simd_lane_count] = y_min_i;
+        y_max_buff[simd_lane_count] = y_max_i;
+        simd_lane_count += 1;
+        
+        if (simd_lane_count == L) {
+            elem_boxes_simd[simd_elem_box_count] = BBoxSIMD(L){
+                .elem_ind = elem_ind_buff,
+                .x_min = x_min_buff,
+                .x_max = x_max_buff,
+                .y_min = y_min_buff,
+                .y_max = y_max_buff,
+            };
+            
+            print("ELEMENT BATCH: {d}:\n",.{simd_elem_box_count});
+            print("elem_inds={}\n",.{elem_boxes_simd[simd_elem_box_count].elem_ind});
+            print("x_min={}\n",.{elem_boxes_simd[simd_elem_box_count].x_min});
+            print("x_max={}\n",.{elem_boxes_simd[simd_elem_box_count].x_max});
+            print("y_min={}\n",.{elem_boxes_simd[simd_elem_box_count].y_min});
+            print("y_max={}\n",.{elem_boxes_simd[simd_elem_box_count].y_max});
+            print("\n",.{});           
+            
+            simd_lane_count = 0;
+            simd_elem_box_count += 1;
+        }
         elems_in_image += 1;
+ 
+        // print("Element: {d}\n",.{ee});
+        // print("x_min_f={d:.2} , x_max_f={d:.2}, x_min_i={d}, x_max_i={d}\n",
+        //       .{x_min,x_max,x_min_i,x_max_i});
+        // print("y_min_f={d:.2} , y_max_f={d:.2}, y_min_i={d}, y_max_i={d}\n",
+        //       .{y_min,y_max,y_min_i,y_max_i});
+        // print("\n",.{});
+
     }
 
-    // DEBUG: print bounding boxes
-    // for (0..elems_in_image) |ee| {
-    //     print("Element: {d}\n",.{elem_boxes[ee].elem_ind});
-    //     print("x_min={d}, x_max={d}\n",.{elem_boxes[ee].x_min,elem_boxes[ee].x_max});
-    //     print("y_min={d}, y_max={d}\n\n",.{elem_boxes[ee].y_min,elem_boxes[ee].y_max});
-    // }
+    // Fill the tail if we don't evenly divide L into our bounding boxes
+    if (simd_lane_count != 0) {
+        // Fill the tail with values that won't ruin AABB checks
+        while (simd_lane_count < L) : (simd_lane_count += 1) {
+            elem_ind_buff[simd_lane_count] = std.math.maxInt(usize); 
+            x_min_buff[simd_lane_count] = std.math.maxInt(u16);
+            x_max_buff[simd_lane_count] = 0;
+            y_min_buff[simd_lane_count] = std.math.maxInt(u16);
+            y_max_buff[simd_lane_count] = 0;
+        }
+
+        elem_boxes_simd[simd_elem_box_count] = BBoxSIMD(L){
+             .elem_ind = elem_ind_buff,
+             .x_min = x_min_buff,
+             .x_max = x_max_buff,
+             .y_min = y_min_buff,
+             .y_max = y_max_buff,
+         }; 
+
+         simd_elem_box_count += 1;
+    }
 
     //----------------------------------------------------------------------------------
     // Element Tile Overlap Sort: Pass 1, How many element in each tile? 
-    const sub_px_num_x: usize = camera.pixels_num[0]*camera.sub_sample; 
-    const sub_px_num_y: usize = camera.pixels_num[1]*camera.sub_sample;
+    //const sub_px_num_x: usize = camera.pixels_num[0]*camera.sub_sample; 
+    //const sub_px_num_y: usize = camera.pixels_num[1]*camera.sub_sample;
 
-    // flat_ind = (rr * num_cols) + cc, flat_ind = (yy * num_x) + xx
+    // flat_ind = (rr * num_cols) + cc, flat_ind = (yy * num_x) + xx, (y,x)
+    const screen_px_x = @as(u16,@intCast(camera.pixels_num[0]));
+    const screen_px_y = @as(u16,@intCast(camera.pixels_num[1]));
     const tile_size: usize = 16;
-    const tiles_num_x: usize = try std.math.divCeil(usize,sub_px_num_x,tile_size);
-    const tiles_num_y: usize = try std.math.divCeil(usize,sub_px_num_y,tile_size);
+    const tiles_num_x: usize = try std.math.divCeil(usize,camera.pixels_num[0],tile_size);
+    const tiles_num_y: usize = try std.math.divCeil(usize,camera.pixels_num[1],tile_size);
     const tiles_num: usize = tiles_num_x*tiles_num_y;    
 
      print("Tiles:\n    tile_size={d}, tiles_num_x={d}, tiles_num_y={d}, tiles_num={}\n\n",
           .{tile_size,tiles_num_x,tiles_num_y,tiles_num});
+
+    for (0..tiles_num_y) |ty| {
+        const start_px_y: u16 = @as(u16,@intCast(ty*tile_size));
+        const end_px_y: u16 = @as(u16,@min(start_px_y+tile_size,screen_px_y));
+        
+        for (0..tiles_num_x) |tx| {
+            const start_px_x: u16 = @as(u16,@intCast(tx*tile_size)); 
+            const end_px_x: u16 = @as(u16,@min(start_px_x+tile_size,screen_px_x));
+
+            print("TILE: ty={d}, tx={d}\n",.{tx,ty});
+            print("start_y={d}, end_y={d}\n",.{start_px_y,end_px_y});
+            print("start_x={d}, end_x={d}\n",.{start_px_x,end_px_x});
+            print("\n",.{});
+             
+        }
+    }
 
     // - Loop over element bounding boxes
     //  - If on screen work out which tile it overlaps and increment the count for that tile
