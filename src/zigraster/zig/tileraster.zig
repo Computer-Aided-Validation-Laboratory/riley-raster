@@ -100,7 +100,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
     const N: usize = 3; // Set to nodes per elem 
     // SIMD lanes for batching bounding boxes of u16 - should be 32 for AVX-512
-    const L: usize = 16; 
+    //const L: usize = 16; 
 
     print("DEBUG\n",.{});
 
@@ -181,17 +181,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     // Element Bounding Boxes
     elem_inds = .{0,0,0}; 
 
-    const num_bbox_simd: usize = try std.math.divCeil(usize,elem_coord_arr.dims[0],L);
-    const elem_boxes_simd: []BBoxSIMD(L) = try arena_alloc.alloc(BBoxSIMD(L),num_bbox_simd);
-    
-    var elem_ind_buff = [_]usize{0} ** L;
-    var x_max_buff = [_]u16{0} ** L;
-    var x_min_buff = [_]u16{0} ** L;
-    var y_max_buff = [_]u16{0} ** L;
-    var y_min_buff = [_]u16{0} ** L;
-
-    var simd_lane_count: u8 = 0;
-    var simd_elem_box_count: usize = 0;
+    const elem_bboxes: []BBox = try arena_alloc.alloc(BBox,elems_num);
     var elems_in_image: usize = 0;
                 
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
@@ -219,164 +209,88 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                                               y_max, 
                                               @intCast(camera.pixels_num[1]));
 
-        elem_ind_buff[simd_lane_count] = ee;
-        x_min_buff[simd_lane_count] = x_min_i;
-        x_max_buff[simd_lane_count] = x_max_i;
-        y_min_buff[simd_lane_count] = y_min_i;
-        y_max_buff[simd_lane_count] = y_max_i;
-        simd_lane_count += 1;
-        
-        if (simd_lane_count == L) {
-            elem_boxes_simd[simd_elem_box_count] = BBoxSIMD(L){
-                .elem_ind = elem_ind_buff,
-                .x_min = x_min_buff,
-                .x_max = x_max_buff,
-                .y_min = y_min_buff,
-                .y_max = y_max_buff,
-            };
-            
-            print("ELEMENT BATCH: {d}:\n",.{simd_elem_box_count});
-            print("elem_inds={}\n",.{elem_boxes_simd[simd_elem_box_count].elem_ind});
-            print("x_min={}\n",.{elem_boxes_simd[simd_elem_box_count].x_min});
-            print("x_max={}\n",.{elem_boxes_simd[simd_elem_box_count].x_max});
-            print("y_min={}\n",.{elem_boxes_simd[simd_elem_box_count].y_min});
-            print("y_max={}\n",.{elem_boxes_simd[simd_elem_box_count].y_max});
-            print("\n",.{});           
-            
-            simd_lane_count = 0;
-            simd_elem_box_count += 1;
-        }
+        elem_bboxes[elems_in_image] = BBox{
+            .elem_ind = ee,
+            .x_min = x_min_i,
+            .x_max = x_max_i,
+            .y_min = y_min_i,
+            .y_max = y_max_i,
+        };
+
         elems_in_image += 1;
- 
-        // print("Element: {d}\n",.{ee});
+
+        // DEBUG:
+        // print("ELEMENT: {d}\n",.{ee});
         // print("x_min_f={d:.2} , x_max_f={d:.2}, x_min_i={d}, x_max_i={d}\n",
         //       .{x_min,x_max,x_min_i,x_max_i});
         // print("y_min_f={d:.2} , y_max_f={d:.2}, y_min_i={d}, y_max_i={d}\n",
         //       .{y_min,y_max,y_min_i,y_max_i});
         // print("\n",.{});
-
-    }
-
-    // Fill the tail if we don't evenly divide L into our bounding boxes
-    if (simd_lane_count != 0) {
-        // Fill the tail with values that won't ruin AABB checks
-        while (simd_lane_count < L) : (simd_lane_count += 1) {
-            elem_ind_buff[simd_lane_count] = std.math.maxInt(usize); 
-            x_min_buff[simd_lane_count] = std.math.maxInt(u16);
-            x_max_buff[simd_lane_count] = 0;
-            y_min_buff[simd_lane_count] = std.math.maxInt(u16);
-            y_max_buff[simd_lane_count] = 0;
-        }
-
-        elem_boxes_simd[simd_elem_box_count] = BBoxSIMD(L){
-             .elem_ind = elem_ind_buff,
-             .x_min = x_min_buff,
-             .x_max = x_max_buff,
-             .y_min = y_min_buff,
-             .y_max = y_max_buff,
-         }; 
-
-         simd_elem_box_count += 1;
     }
 
     //----------------------------------------------------------------------------------
     // Element Tile Overlap Sort: Pass 1, How many element in each tile? 
 
+
     // flat_ind = (rr * num_cols) + cc, flat_ind = (yy * num_x) + xx, (y,x)
-    const screen_px_x = @as(u16,@intCast(camera.pixels_num[0]));
-    const screen_px_y = @as(u16,@intCast(camera.pixels_num[1]));
-
-    const tile_size: usize = 16;
-    const tiles_num_x: usize = try std.math.divCeil(usize,camera.pixels_num[0],tile_size);
-    const tiles_num_y: usize = try std.math.divCeil(usize,camera.pixels_num[1],tile_size);
-    const tiles_num: usize = tiles_num_x*tiles_num_y;    
-
-    const tile_elem_counts: []usize = try arena_alloc.alloc(usize,tiles_num);
-    @memset(tile_elem_counts,0);
-
-    for (0..tiles_num_y) |ty| {
-        const tile_row_offset: usize = ty * tiles_num_x;
-        
-        const tile_start_y: u16 = @as(u16,@intCast(ty*tile_size));
-        const tile_end_y: u16 = @as(u16,@min(tile_start_y+tile_size,screen_px_y));
-
-        const simd_tile_min_y: @Vector(L, u16) = @splat(tile_start_y);
-        const simd_tile_max_y: @Vector(L, u16) = @splat(tile_end_y);
-        
-        for (0..tiles_num_x) |tx| {
-            const tile_start_x: u16 = @as(u16,@intCast(tx*tile_size)); 
-            const tile_end_x: u16 = @as(u16,@min(tile_start_x+tile_size,screen_px_x));
-
-            const simd_tile_min_x: @Vector(L, u16) = @splat(tile_start_x);
-            const simd_tile_max_x: @Vector(L, u16) = @splat(tile_end_x);
-
-            const tile_ind: usize = tile_row_offset + tx;
-            
-            for (0..simd_elem_box_count) |bb| {
-                const elem_bboxes = elem_boxes_simd[bb];
-
-                const simd_overlap: @Vector(L,bool) = 
-                    (elem_bboxes.x_min < simd_tile_max_x) &
-                    (elem_bboxes.x_max > simd_tile_min_x) &
-                    (elem_bboxes.y_min < simd_tile_max_y) &
-                    (elem_bboxes.y_max > simd_tile_min_y);
-
-                const simd_overlap_i: @Vector(L,u1) = @intFromBool(simd_overlap);
-                const overlap_count: u16 = @reduce(.Add,simd_overlap_i);
-
-                tile_elem_counts[tile_ind] += overlap_count;
-            }
-        }
-    }
-
-    const check_sum_counts = sliceops.sum(usize,tile_elem_counts);
-    // DEBUG:
-    print("TILES:\n    tile_size={d}, tiles_num_x={d}, tiles_num_y={d}, tiles_num={}\n\n",
-          .{tile_size,tiles_num_x,tiles_num_y,tiles_num});
-
-    for (0..tiles_num_y) |ty| {
-        const tile_row_offset: usize = ty * tiles_num_x;
-        for (0..tiles_num_x) |tx| {
-            const tile_ind: usize = tile_row_offset + tx;
-            print("TILE: ty={d}, tx={d}, TILE COUNT={}\n",.{tx,ty,tile_elem_counts[tile_ind]});
-        }
-    }
-    print("SUM OVERLAPS = {}\n",.{check_sum_counts});
-    print("TOTAL ELEMS  = {}\n",.{elems_num});
-    print("\n",.{});
-
-    // - Loop over element bounding boxes
-    //  - If on screen work out which tile it overlaps and increment the count for that tile
-    // Need to allocate a slice of memory to store the `tile_counts`
-
-    // const tile_counts: []u16 = allocator.alloc(u16,tiles_num); 
-    // for (0..elems_in_image) |ee| {
-    //     for (0..tiles_num) |tt| {
-    //         
-    //     }
-    // }
-
-    // Needs to be allocate because we could have a high res camera with 1000s of tiles
-    // const tile_elem_counts: []usize = try alloc.alloc(usize,tiles_num); 
-
-    //-----------------------------------------------------------------------------------------
-    // **TILE SPLIT**
-
-    // TODO
-    // - **BACK FACE CULLING**
-    // - Project all elements onto screen space
-    // - Work out which elements are in which tile and allocate a buffer to store this
-    // - Need bounding boxes of all elements, bounding boxes of all tiles
-
+//     const screen_px_x = @as(u16,@intCast(camera.pixels_num[0]));
+//     const screen_px_y = @as(u16,@intCast(camera.pixels_num[1]));
 // 
+//     const tile_size: usize = 16;
+//     const tiles_num_x: usize = try std.math.divCeil(usize,camera.pixels_num[0],tile_size);
+//     const tiles_num_y: usize = try std.math.divCeil(usize,camera.pixels_num[1],tile_size);
+//     const tiles_num: usize = tiles_num_x*tiles_num_y;    
+// 
+//     const tile_elem_counts: []usize = try arena_alloc.alloc(usize,tiles_num);
+//     @memset(tile_elem_counts,0);
+// 
+//     // NOTE: want to loop over elements in the outer and tiles on the inner. That way once we
+//     // detect a bunch of hits we can stop? Or use the element bounding box to find the nearest
+//     // tiles and only loop over those?
+// 
+//     for (0..simd_elem_box_count) |bb| {
+// 
+//     for (0..tiles_num_y) |ty| {
+//         const tile_row_offset: usize = ty * tiles_num_x;
+//         
+//         const tile_start_y: u16 = @as(u16,@intCast(ty*tile_size));
+//         const tile_end_y: u16 = @as(u16,@min(tile_start_y+tile_size,screen_px_y));
+// 
+//         
+//         for (0..tiles_num_x) |tx| {
+//             const tile_start_x: u16 = @as(u16,@intCast(tx*tile_size)); 
+//             const tile_end_x: u16 = @as(u16,@min(tile_start_x+tile_size,screen_px_x));
+// 
+//             const tile_ind: usize = tile_row_offset + tx;
+//             
+//                 const elem_bboxes = elem_boxes_simd[bb];
+// 
+//                 const simd_overlap: @Vector(L,bool) = 
+//                     (elem_bboxes.x_min < simd_tile_max_x) &
+//                     (elem_bboxes.x_max > simd_tile_min_x) &
+//                     (elem_bboxes.y_min < simd_tile_max_y) &
+//                     (elem_bboxes.y_max > simd_tile_min_y);
+// 
+//                 const simd_overlap_i: @Vector(L,u1) = @intFromBool(simd_overlap);
+//                 const overlap_count: u16 = @reduce(.Add,simd_overlap_i);
+// 
+//                 tile_elem_counts[tile_ind] += overlap_count;
+//             }
+//         }
+//     }
+// 
+//     // DEBUG:
+//     print("TILES:\n    tile_size={d}, tiles_num_x={d}, tiles_num_y={d}, tiles_num={}\n\n",
+//           .{tile_size,tiles_num_x,tiles_num_y,tiles_num});
+// 
+//     for (0..tiles_num_y) |ty| {
+//         const tile_row_offset: usize = ty * tiles_num_x;
+//         for (0..tiles_num_x) |tx| {
+//             const tile_ind: usize = tile_row_offset + tx;
+//             print("TILE: ty={d}, tx={d}, TILE COUNT={}\n",.{tx,ty,tile_elem_counts[tile_ind]});
+//         }
+//     }
 //     print("\n",.{});
-//     print("Camera:\n    pixels_x={d}, pixels_y={d}\n",
-//           .{camera.pixels_num[0],camera.pixels_num[1]});
-//     print("    sub_sample={}, sub_pixels_x={d}, sub_pixels_y={d}\n\n",
-//           .{camera.sub_sample,sub_px_num_x,sub_px_num_y});
 
-    // **LOOP** over elements, calculate raster coords and crop
-    //const cam_px_x_f = @as(f64, @floatFromInt(camera.pixels_num[0] - 1));
-    //const cam_px_y_f = @as(f64, @floatFromInt(camera.pixels_num[1] - 1));
 }
                       
