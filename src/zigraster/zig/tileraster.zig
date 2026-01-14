@@ -281,35 +281,69 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
     //----------------------------------------------------------------------------------
     // Element Tile Overlap Sort: Pass 1, How many element in each tile? 
-    //const sub_px_num_x: usize = camera.pixels_num[0]*camera.sub_sample; 
-    //const sub_px_num_y: usize = camera.pixels_num[1]*camera.sub_sample;
 
     // flat_ind = (rr * num_cols) + cc, flat_ind = (yy * num_x) + xx, (y,x)
     const screen_px_x = @as(u16,@intCast(camera.pixels_num[0]));
     const screen_px_y = @as(u16,@intCast(camera.pixels_num[1]));
+
     const tile_size: usize = 16;
     const tiles_num_x: usize = try std.math.divCeil(usize,camera.pixels_num[0],tile_size);
     const tiles_num_y: usize = try std.math.divCeil(usize,camera.pixels_num[1],tile_size);
     const tiles_num: usize = tiles_num_x*tiles_num_y;    
 
-     print("Tiles:\n    tile_size={d}, tiles_num_x={d}, tiles_num_y={d}, tiles_num={}\n\n",
+    const tile_elem_counts: []usize = try arena_alloc.alloc(usize,tiles_num);
+    @memset(tile_elem_counts,0);
+
+    for (0..tiles_num_y) |ty| {
+        const tile_row_offset: usize = ty * tiles_num_x;
+        
+        const tile_start_y: u16 = @as(u16,@intCast(ty*tile_size));
+        const tile_end_y: u16 = @as(u16,@min(tile_start_y+tile_size,screen_px_y));
+
+        const simd_tile_min_y: @Vector(L, u16) = @splat(tile_start_y);
+        const simd_tile_max_y: @Vector(L, u16) = @splat(tile_end_y);
+        
+        for (0..tiles_num_x) |tx| {
+            const tile_start_x: u16 = @as(u16,@intCast(tx*tile_size)); 
+            const tile_end_x: u16 = @as(u16,@min(tile_start_x+tile_size,screen_px_x));
+
+            const simd_tile_min_x: @Vector(L, u16) = @splat(tile_start_x);
+            const simd_tile_max_x: @Vector(L, u16) = @splat(tile_end_x);
+
+            const tile_ind: usize = tile_row_offset + tx;
+            
+            for (0..simd_elem_box_count) |bb| {
+                const elem_bboxes = elem_boxes_simd[bb];
+
+                const simd_overlap: @Vector(L,bool) = 
+                    (elem_bboxes.x_min < simd_tile_max_x) &
+                    (elem_bboxes.x_max > simd_tile_min_x) &
+                    (elem_bboxes.y_min < simd_tile_max_y) &
+                    (elem_bboxes.y_max > simd_tile_min_y);
+
+                const simd_overlap_i: @Vector(L,u1) = @intFromBool(simd_overlap);
+                const overlap_count: u16 = @reduce(.Add,simd_overlap_i);
+
+                tile_elem_counts[tile_ind] += overlap_count;
+            }
+        }
+    }
+
+    const check_sum_counts = sliceops.sum(usize,tile_elem_counts);
+    // DEBUG:
+    print("TILES:\n    tile_size={d}, tiles_num_x={d}, tiles_num_y={d}, tiles_num={}\n\n",
           .{tile_size,tiles_num_x,tiles_num_y,tiles_num});
 
     for (0..tiles_num_y) |ty| {
-        const start_px_y: u16 = @as(u16,@intCast(ty*tile_size));
-        const end_px_y: u16 = @as(u16,@min(start_px_y+tile_size,screen_px_y));
-        
+        const tile_row_offset: usize = ty * tiles_num_x;
         for (0..tiles_num_x) |tx| {
-            const start_px_x: u16 = @as(u16,@intCast(tx*tile_size)); 
-            const end_px_x: u16 = @as(u16,@min(start_px_x+tile_size,screen_px_x));
-
-            print("TILE: ty={d}, tx={d}\n",.{tx,ty});
-            print("start_y={d}, end_y={d}\n",.{start_px_y,end_px_y});
-            print("start_x={d}, end_x={d}\n",.{start_px_x,end_px_x});
-            print("\n",.{});
-             
+            const tile_ind: usize = tile_row_offset + tx;
+            print("TILE: ty={d}, tx={d}, TILE COUNT={}\n",.{tx,ty,tile_elem_counts[tile_ind]});
         }
     }
+    print("SUM OVERLAPS = {}\n",.{check_sum_counts});
+    print("TOTAL ELEMS  = {}\n",.{elems_num});
+    print("\n",.{});
 
     // - Loop over element bounding boxes
     //  - If on screen work out which tile it overlaps and increment the count for that tile
