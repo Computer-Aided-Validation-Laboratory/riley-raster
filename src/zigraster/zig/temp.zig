@@ -1,84 +1,121 @@
-// --- Raster Loop Pass 3 ---
-    
-    // 1. Allocate a single tile-sized scratchpad for AA resolve
-    // tile_size = 16, sub_samples = 4 -> 64x64 grid
-    const aa_rate: usize = 4;
-    const sub_tile_size = tile_size * aa_rate;
-    const sub_tile_total = sub_tile_size * sub_tile_size;
-    
-    // Scratchpads for depth and color (Reuse these for every tile)
-    const sub_depth_buffer = try arena_alloc.alloc(f32, sub_tile_total);
-    const sub_color_buffer = try arena_alloc.alloc(f64, sub_tile_total);
+// --- Raster Loop Pass 3: Iterate over Active Tiles ---
 
-    for (active_tiles) |tile| {
-        // Clear local scratchpads for this tile
-        @memset(sub_depth_buffer, std.math.inf(f32));
-        @memset(sub_color_buffer, 0.0);
+// 1. Setup local scratchpads (one per thread if parallelizing)
+const aa_rate: usize = 4;
+const sub_tile_size = tile_size * aa_rate;
+const sub_tile_total = sub_tile_size * sub_tile_size;
+const sub_step = 1.0 / @as(f64, @floatFromInt(aa_rate));
 
-        const overlaps = overlap_bboxes[tile.overlap_start .. 
-                                        tile.overlap_start + tile.overlap_count];
+const sub_depth_buffer = try arena_alloc.alloc(f32, sub_tile_total);
+const sub_color_buffer = try arena_alloc.alloc(f64, sub_tile_total);
 
-        for (overlaps) |ovl| {
-            // Pull the actual 3D vertex data for this element
-            // Since we stored elem_ind in the overlap box, we can look it up
-            const coords_raster: Vec3SIMD(N, f64) = try vsd.loadVec3FromElemArray(N, f64,
-                                                         &elem_coord_arr, ovl.elem_ind);
+for (active_tiles) |tile| {
+    // Clear local scratchpads for this tile
+    @memset(sub_depth_buffer, std.math.inf(f32));
+    @memset(sub_color_buffer, 0.0);
 
-            // Calculate Edge Equations for the element (e.g., Triangle)
-            // Edge = (px - x0) * (y1 - y0) - (py - y0) * (x1 - x0)
-            const edges = rops.setupEdgeEquations(coords_raster);
+    const overlaps = overlap_bboxes[tile.overlap_start .. 
+                                    tile.overlap_start + tile.overlap_count];
 
-            // CORNER CHECK: Scale the overlap box coordinates to SUB-PIXEL space
-            const sub_ovl_x_min = (ovl.x_min - tile.x_px_min) * @as(u16, @intCast(aa_rate));
-            const sub_ovl_x_max = (ovl.x_max - tile.x_px_min) * @as(u16, @intCast(aa_rate));
-            const sub_ovl_y_min = (ovl.y_min - tile.y_px_min) * @as(u16, @intCast(aa_rate));
-            const sub_ovl_y_max = (ovl.y_max - tile.y_px_min) * @as(u16, @intCast(aa_rate));
+    for (overlaps) |ovl| {
+        // Load the 3 nodes for this specific element
+        const coords = try vsd.loadVec3FromElemArray(3, f64, &elem_coord_arr, ovl.elem_ind);
+        
+        const x0 = coords.x[0]; const y0 = coords.y[0]; const z0 = coords.z[0];
+        const x1 = coords.x[1]; const y1 = coords.y[1]; const z1 = coords.z[1];
+        const x2 = coords.x[2]; const y2 = coords.y[2]; const z2 = coords.z[2];
 
-            // Iterate through the sub-pixel grid of the overlap area
-            var sy = sub_ovl_y_min;
-            while (sy < sub_ovl_y_max) : (sy += 1) {
-                const row_off = sy * sub_tile_size;
-                var sx = sub_ovl_x_min;
-                while (sx < sub_ovl_x_max) : (sx += 1) {
-                    
-                    // The coordinate in GLOBAL sub-pixel space
-                    const px = @as(f64, @floatFromInt(tile.x_px_min)) 
-                               + (@as(f64, @floatFromInt(sx)) 
-                               / @as(f64, @floatFromInt(aa_rate)));
-                    const py = @as(f64, @floatFromInt(tile.y_px_min)) 
-                               + (@as(f64, @floatFromInt(sy)) 
-                               / @as(f64, @floatFromInt(aa_rate)));
+        // --- BARYCENTRIC SETUP ---
+        const area = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0);
+        if (@abs(area) < 1e-9) continue; // Skip degenerate
+        const inv_area = 1.0 / area;
 
-                    if (rops.isInside(edges, px, py)) {
-                        const depth = rops.interpolateDepth(edges, coords_raster, px, py);
-                        const idx = row_off + sx;
-                        if (depth < sub_depth_buffer[idx]) {
-                            sub_depth_buffer[idx] = depth;
-                            sub_color_buffer[idx] = 1.0; // Or fetch from Field data
-                        }
+        // Partial derivatives of weights with respect to screen pixels
+        const w1_step_x = (y2 - y0) * inv_area;
+        const w1_step_y = (x0 - x2) * inv_area;
+        const w2_step_x = (y0 - y1) * inv_area;
+        const w2_step_y = (x1 - x0) * inv_area;
+
+        // Depth gradients
+        const z_step_x = w1_step_x * (z1 - z0) + w2_step_x * (z2 - z0);
+        const z_step_y = w1_step_y * (z1 - z0) + w2_step_y * (z2 - z0);
+
+        // Evaluate starting values at the top-left sub-pixel center of the overlap box
+        const start_px = @as(f64, @floatFromInt(ovl.x_min)) + (0.5 * sub_step);
+        const start_py = @as(f64, @floatFromInt(ovl.y_min)) + (0.5 * sub_step);
+
+        const w1_start = ((start_px - x0) * (y2 - y0) 
+                         - (start_py - y0) * (x2 - x0)) * inv_area;
+        const w2_start = ((start_px - x0) * (y0 - y1) 
+                         - (start_py - y0) * (x0 - x1)) * inv_area;
+        const z_start  = z0 + w1_start * (z1 - z0) + w2_start * (z2 - z0);
+
+        // --- SUB-PIXEL SCANLINE LOOP ---
+        const sub_rows = (ovl.y_max - ovl.y_min) * aa_rate;
+        const sub_cols = (ovl.x_max - ovl.x_min) * aa_rate;
+        const is_full_tile = (ovl.x_max - ovl.x_min == tile_size) 
+                              and (ovl.y_max - ovl.y_min == tile_size);
+
+        var sy: usize = 0;
+        while (sy < sub_rows) : (sy += 1) {
+            const row_f = @as(f64, @floatFromInt(sy));
+            
+            // Incremental row starts
+            var cur_w1 = w1_start + (row_f * w1_step_y * sub_step);
+            var cur_w2 = w2_start + (row_f * w2_step_y * sub_step);
+            var cur_z  = z_start  + (row_f * z_step_y  * sub_step);
+
+            // Mapping: Where is this sub-pixel row in the 64x64 scratchpad?
+            const local_y = (ovl.y_min - tile.y_px_min) 
+                            * @as(u16, @intCast(aa_rate)) + @as(u16, @intCast(sy));
+            const row_idx = @as(usize, local_y) * sub_tile_size;
+
+            var sx: usize = 0;
+            while (sx < sub_cols) : (sx += 1) {
+                const cur_w0 = 1.0 - cur_w1 - cur_w2;
+
+                // Inside check: Are we in the triangle?
+                if (is_full_tile 
+                    or (cur_w0 >= -1e-9 and cur_w1 >= -1e-9 and cur_w2 >= -1e-9)) {
+                    const local_x = (ovl.x_min - tile.x_px_min) 
+                                    * @as(u16, @intCast(aa_rate)) + @as(u16, @intCast(sx));
+                    const idx = row_idx + local_x;
+
+                    // Depth test
+                    if (cur_z < sub_depth_buffer[idx]) {
+                        sub_depth_buffer[idx] = @floatCast(cur_z);
+                        // Optional: Interpolate field values here (e.g., color = w0*c0...)
+                        sub_color_buffer[idx] = 1.0; 
                     }
                 }
-            }
-        }
 
-        // --- AA RESOLVE & WRITE BACK ---
-        // Average the sub-pixels back into the final image_out_arr
-        for (0..tile_size) |py| {
-            for (0..tile_size) |px| {
-                var sum: f64 = 0;
-                for (0..aa_rate) |ay| {
-                    for (0..aa_rate) |ax| {
-                        sum += sub_color_buffer[(py * aa_rate + ay) 
-                               * sub_tile_size + (px * aa_rate + ax)];
-                    }
-                }
-                const avg_color = sum / @as(f64, @floatFromInt(aa_rate * aa_rate));
-                
-                // Index into your Tiled Framebuffer or final image
-                const out_x = tile.x_px_min + @as(u16, @intCast(px));
-                const out_y = tile.y_px_min + @as(u16, @intCast(py));
-                // Note: NDArray set using [y, x]
-                try image_out_arr.set(&[_]usize{out_y, out_x}, avg_color);
+                // Step to next sub-pixel in X
+                cur_w1 += (w1_step_x * sub_step);
+                cur_w2 += (w2_step_x * sub_step);
+                cur_z  += (z_step_x  * sub_step);
             }
         }
     }
+
+    // --- AA RESOLVE: Write local scratchpad to global Image Buffer ---
+    for (0..tile_size) |py| {
+        const out_y = tile.y_px_min + @as(u16, @intCast(py));
+        if (out_y >= screen_px_y) continue;
+
+        for (0..tile_size) |px| {
+            const out_x = tile.x_px_min + @as(u16, @intCast(px));
+            if (out_x >= screen_px_x) continue;
+
+            var color_sum: f64 = 0;
+            for (0..aa_rate) |ay| {
+                const row_off = (py * aa_rate + ay) * sub_tile_size;
+                for (0..aa_rate) |ax| {
+                    color_sum += sub_color_buffer[row_off + (px * aa_rate + ax)];
+                }
+            }
+
+            const final_color = color_sum / @as(f64, @floatFromInt(aa_rate * aa_rate));
+            try image_out_arr.set(&[_]usize{out_y, out_x}, final_color);
+        }
+    }
+}
