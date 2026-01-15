@@ -94,6 +94,9 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                       camera: *const Camera, 
                       image_out_arr: *NDArray(f64),
                       ) !void {
+
+    const raster_start = try Instant.now();
+    
     _ = frame_ind;
     _ = field;
     _ = image_out_arr;
@@ -101,9 +104,9 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     const N: usize = 3; // Set to nodes per elem 
     // SIMD lanes for batching bounding boxes of u16 - should be 32 for AVX-512
     //const L: usize = 16; 
+    //print("DEBUG\n",.{});
 
-    print("DEBUG\n",.{});
-
+    
     var time_start = try Instant.now();
     var time_end = try Instant.now();
     
@@ -132,14 +135,14 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     try fillElemCoords(coords,connect,dim_elem,dim_node,dim_field,&elem_coord_arr);
     var elem_inds = [_]usize{0,0,0};
     
- 
-    print("\n",.{});
-    print("elem_coord_arr:\n",.{});
-    print("    dims=[{d},{d},{d}]\n",
-          .{elem_coord_arr.dims[0],elem_coord_arr.dims[1],elem_coord_arr.dims[2]});
-    print("    strides=[{d},{d},{d}]\n",
-          .{elem_coord_arr.strides[0],elem_coord_arr.strides[1],elem_coord_arr.strides[2]});
-    print("\n",.{});
+    // DEBUG:
+    // print("\n",.{});
+    // print("elem_coord_arr:\n",.{});
+    // print("    dims=[{d},{d},{d}]\n",
+    //       .{elem_coord_arr.dims[0],elem_coord_arr.dims[1],elem_coord_arr.dims[2]});
+    // print("    strides=[{d},{d},{d}]\n",
+    //       .{elem_coord_arr.strides[0],elem_coord_arr.strides[1],elem_coord_arr.strides[2]});
+    // print("\n",.{});
 
     //-----------------------------------------------------------------------------------------
     // World to Raster Coords - SIMD
@@ -178,7 +181,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     // print("\nTIME SIMD WORLD TO RASTER = {d}ns\n",.{time_simd}); 
     
     //-----------------------------------------------------------------------------------------
-    // Element Bounding Boxes
+    // Extract Element Bounding Boxes
     elem_inds = .{0,0,0}; 
 
     const elem_bboxes: []BBox = try arena_alloc.alloc(BBox,elems_num);
@@ -230,6 +233,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
     //----------------------------------------------------------------------------------
     // Element Tile Overlap COUNT: Pass 1, How many element in each tile? 
+    // - Need this to alloc for our overlapping bounding boxes
     // - Do this over elements as mesh is sparse and elements only overlap a few tiles on 
     //  average, therefore elements should be the outer loop
     // - Run this single threaded for low mesh counts
@@ -276,29 +280,69 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 //     print("\n",.{});
 
     //-----------------------------------------------------------------------------------------
-    // Element Tile Overlap, Pass 2: Store overlap bounding boxes
+    // Element Tile Overlap, Pass 2: Store overlap bounding boxes for ACTIVE tiles only.
+    // Coarse, bounding box overlap based raster. Assumes a sparse mesh with each element 
+    // touching ~5 tiles.
+    
     const screen_px_x = @as(u16,@intCast(camera.pixels_num[0]));
     const screen_px_y = @as(u16,@intCast(camera.pixels_num[1]));
 
+    // Count the active tiles and work out the write offsets into the overlap boxes
     const tile_write_inds: []usize = try arena_alloc.alloc(usize,tiles_num); 
     var current_offset: usize = 0;
-    // Calculate the starting indices for each tile    
+    var num_active_tiles: usize = 0;
     for (tile_elem_counts,0..) |cc,ii| {
         tile_write_inds[ii] = current_offset;
         current_offset += cc;
+        if (cc > 0) {
+            num_active_tiles += 1;            
+        }
     }
 
     const overlap_total: usize = sliceops.sum(usize,tile_elem_counts);
     const overlap_bboxes: []BBox = try arena_alloc.alloc(BBox,overlap_total);
 
+    const ActiveTile = struct {
+        overlap_start: usize, // index into overlap_bboxes
+        overlap_count: usize, // count to take from overlap bboxes
+        flat_ind: usize,
+        x_px_min: u16,
+        y_px_min: u16,
+    };
+
+    // Main raster loop will only need to analyse active tiles
+    const active_tiles: []ActiveTile = try arena_alloc.alloc(ActiveTile,num_active_tiles);
+
+    var active_ind: usize = 0;
+    for (tile_elem_counts,0..) |cc,ii| {
+    
+        if (cc > 0) {
+            const tx = @as(u16, @intCast(ii % tiles_num_x));
+            const ty = @as(u16, @intCast(ii / tiles_num_x));
+        
+            active_tiles[active_ind] = ActiveTile{
+                .overlap_start = tile_write_inds[ii],
+                .overlap_count = cc,
+                .flat_ind = ii,
+                .x_px_min = tx*tile_size,
+                .y_px_min = ty*tile_size,
+            };
+            active_ind += 1;      
+        }
+    }
+
+    // TODO
+    // NOTE: only loops over elements in image so ee is not the element number for coord data
+    // in the NDArray!    
     for (0..elems_in_image) |ee| {
         const tile_ind_min_x: u16 = elem_bboxes[ee].x_min / tile_size;
         const tile_ind_min_y: u16 = elem_bboxes[ee].y_min / tile_size;
         
-        const tile_ind_max_x = @min(@as(u16, @intCast(tiles_num_x)), 
-            try std.math.divCeil(u16, elem_bboxes[ee].x_max, tile_size));
-        const tile_ind_max_y = @min(@as(u16, @intCast(tiles_num_y)), 
-            try std.math.divCeil(u16, elem_bboxes[ee].y_max, tile_size));
+        // No 'try' divCeil
+        const tile_ind_max_x = @min(@as(u16, @intCast(tiles_num_x)),
+            (elem_bboxes[ee].x_max + tile_size - 1) / tile_size);
+        const tile_ind_max_y = @min(@as(u16, @intCast(tiles_num_y)),
+            (elem_bboxes[ee].y_max + tile_size - 1) / tile_size);
 
         for (tile_ind_min_y..tile_ind_max_y) |ty| {
             const tile_row_offset: usize = ty * tiles_num_x;
@@ -329,16 +373,21 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         }
     }
 
-    // Reset tile write inds 
-    current_offset = 0;
-    for (tile_elem_counts,0..) |cc,ii| {
-        tile_write_inds[ii] = current_offset;
-        current_offset += cc;
+    //-----------------------------------------------------------------------------------------
+    // Raster Loop, pass 3: Loop over ACTIVE tiles and check corners
+
+    // TODO: thread this for large images and large meshes 
+    for (active_tiles) |tile| {
+        
     }
 
-    print("\n",.{});
-    print("Total overlaps = {d}\n",.{overlap_total});
-    print("\n",.{});
 
+    //-----------------------------------------------------------------------------------------
+    // Write tile buffer -> image out buffer
+    
+    //-----------------------------------------------------------------------------------------
+    const raster_end = try Instant.now();
+    const time_raster: f64 = @floatFromInt(raster_end.since(raster_start));
+    print("\nTOTAL TIME RASTER = {d}ns\n",.{time_raster});    
 }
                       

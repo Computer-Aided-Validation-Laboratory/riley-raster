@@ -108,14 +108,14 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                                              nodes_raster_buff[1], 
                                              nodes_raster_buff[2]);
 
-        print("Element: {d}\n",.{ee});
-        print("Node 0:",.{});
-        nodes_raster_buff[0].vecPrint();
-        print("Node 1:",.{});
-        nodes_raster_buff[1].vecPrint();
-        print("Node 2:", .{});
-        nodes_raster_buff[2].vecPrint();
-        print("{} ELEM AREA : {d:.4}\n\n",.{ee,elem_area});
+        // print("Element: {d}\n",.{ee});
+        // print("Node 0:",.{});
+        // nodes_raster_buff[0].vecPrint();
+        // print("Node 1:",.{});
+        // nodes_raster_buff[1].vecPrint();
+        // print("Node 2:", .{});
+        // nodes_raster_buff[2].vecPrint();
+        // print("{} ELEM AREA : {d:.4}\n\n",.{ee,elem_area});
 
         if (elem_area < -tol) {
             continue;
