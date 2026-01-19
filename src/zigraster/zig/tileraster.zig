@@ -376,9 +376,29 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     //-----------------------------------------------------------------------------------------
     // Raster Loop, pass 3: Loop over ACTIVE tiles and check corners
 
+    const subsample: usize = 4;
+    const subpx_tile_size = tile_size * subsample;
+    const subpx_tile_total = subpx_tile_size * subpx_tile_size;
+    
+    const subpx_depth_scratch = try arena_alloc.alloc(f32, sub_tile_total);
+    const subpx_image_scratch = try arena_alloc.alloc(f64, sub_tile_total);
+
     // TODO: thread this for large images and large meshes 
+    // NOTE: this loop only works for linear triangles! It uses barycentric interpolation
     for (active_tiles) |tile| {
-        
+        @memset(subpx_depth_scratch, std.math.inf(f32));
+        @memset(subpx_image_scratch, 0.0);
+
+        const overlaps: []BBox = overlap_bboxes[tile.overlap_start.. 
+                                                tile.overlap_start + tile.overlap_count];
+
+        for (overlaps) |overlap| {
+            // Check the size of the box, if it fills the tile
+            // Going to need to c
+
+        } 
+
+        // Average over the subpixels and write to image_out  
     }
 
 
