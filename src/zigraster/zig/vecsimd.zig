@@ -80,10 +80,10 @@ pub fn Vec3SIMD(comptime N: usize, comptime T: type) type {
 
 // NOTE: this is not a general function, it only works with NDArrays representing a mesh with
 // dims=(elems_num,3,nodes_per_elem) where 3 is the coord[x,y,z]. N should be nodes_per_ele
-pub fn loadVec3FromElemArray(comptime N: usize, 
-                             comptime T: type, 
-                             elem_array: *const NDArray(T),
-                             elem_ind: usize) !Vec3SIMD(N,T) {
+pub fn loadVec3SIMDFromElemArray(comptime N: usize, 
+                                 comptime T: type, 
+                                 elem_array: *const NDArray(T),
+                                 elem_ind: usize) !Vec3SIMD(N,T) {
 
     var start_slice: usize = try elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
     // if coords then stride=3, if fields then stride=fields_num
@@ -100,7 +100,7 @@ pub fn loadVec3FromElemArray(comptime N: usize,
 
 // NOTE: this is not a general function, it only works with NDArrays representing a mesh with
 // dims=(elems_num,3,nodes_per_elem) where 3 is the coord[x,y,z]. N should be nodes_per_elem.
-pub fn saveVec3ToElemArray(comptime N: usize,
+pub fn saveVec3SIMDToElemArray(comptime N: usize,
                            comptime T: type,
                            elem_array: *NDArray(T),
                            elem_ind: usize,
@@ -202,11 +202,11 @@ pub fn VecSIMD(comptime D: usize, comptime N: usize, comptime T: type) type {
     };
 }
 
-pub fn loadVecFromElemArray(comptime D: usize,
-                            comptime N: usize, 
-                            comptime T: type, 
-                            elem_array: *const NDArray(T),
-                            elem_ind: usize) !Vec3SIMD(D,N,T) {
+pub fn loadVecSIMDFromElemArray(comptime D: usize,
+                                comptime N: usize, 
+                                comptime T: type, 
+                                elem_array: *const NDArray(T),
+                                elem_ind: usize) !Vec3SIMD(D,N,T) {
     const stride = elem_array.strides[1];
     const flat_start = try elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
 
@@ -218,7 +218,7 @@ pub fn loadVecFromElemArray(comptime D: usize,
     return out;
 }
 
-pub fn saveVecToElemArray(comptime D: usize, 
+pub fn saveVecSIMDToElemArray(comptime D: usize, 
                            comptime N: usize,
                            comptime T: type,
                            elem_array: *NDArray(T),

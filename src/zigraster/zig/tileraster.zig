@@ -86,6 +86,38 @@ pub fn fillElemCoords(coords: *const Coords,
     }    
 }
 
+
+pub fn Vec3OfSlices(comptiome T: type) type {
+    return struct{
+        x: T[],
+        y: T[],
+        z: T[],
+    };   
+}
+
+pub fn loadVec3SlicesFromElemArray(comptime N: usize,
+                                   comptime T: type, 
+                                   elem_array: *const NDArray(T),
+                                   elem_ind: usize) !Vec3OfSlices(T) {
+
+    var start_slice: usize = try elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
+    // if coords then stride=3, if fields then stride=fields_num
+    const stride: usize = elem_array.strides[1];  
+
+    const x_slice = elem_array.elems[start_slice..start_slice+N];
+    start_slice += stride;
+    const y_slice = elem_array.elems[start_slice..start_slice+N];
+    start_slice += stride;
+    const z_slice = elem_array.elems[start_slice..start_slice+N];
+
+    return Vec3OfSlices{
+        .x = x_slice,
+        .y = y_slice,
+        .z = z_slice,
+    };
+}
+
+
 pub fn rasterOneFrame(allocator: std.mem.Allocator, 
                       frame_ind: usize, 
                       coords: *const Coords, 
@@ -128,10 +160,10 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     const dim_field: usize = 1;
     const dim_node: usize = 2;
     var elem_coord_arr = try initElemArray(f64,
-                                                arena_alloc,
-                                                elems_num,
-                                                coords_num,
-                                                nodes_per_elem);
+                                            arena_alloc,
+                                            elems_num,
+                                            coords_num,
+                                            nodes_per_elem);
     try fillElemCoords(coords,connect,dim_elem,dim_node,dim_field,&elem_coord_arr);
     var elem_inds = [_]usize{0,0,0};
     
@@ -149,7 +181,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         
     time_start = try Instant.now();
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const coords_world: Vec3SIMD(N,f64) = try vsd.loadVec3FromElemArray(
+        const coords_world: Vec3SIMD(N,f64) = try vsd.loadVec3SIMDFromElemArray(
             N,f64,&elem_coord_arr,ee);
 
         const coords_raster: Vec3SIMD(N,f64) = rops.worldToRasterSIMD(
@@ -188,7 +220,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     var elems_in_image: usize = 0;
                 
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const coords_raster: Vec3SIMD(N,f64) = try vsd.loadVec3FromElemArray(
+        const coords_raster: Vec3SIMD(N,f64) = try vsd.loadVec3SIMDFromElemArray(
             N,f64,&elem_coord_arr,ee);
 
         const x_max: f64 = @reduce(.Max,coords_raster.x);
@@ -376,9 +408,11 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     //-----------------------------------------------------------------------------------------
     // Raster Loop, pass 3: Loop over ACTIVE tiles and check corners
 
-    const subsample: usize = 4;
-    const subpx_tile_size = tile_size * subsample;
-    const subpx_tile_total = subpx_tile_size * subpx_tile_size;
+    const sub_sample: usize = @intCast(camera.sub_sample);
+    const subpx_tile_size: usize = tile_size * sub_sample;
+    const subpx_tile_total: usize = subpx_tile_size * subpx_tile_size;
+    const sub_step: f64 = 1.0 / @as(f64,@floatFromInt(sub_sample));
+    const area_tol: f64 = 1e-9;
     
     const subpx_depth_scratch = try arena_alloc.alloc(f32, sub_tile_total);
     const subpx_image_scratch = try arena_alloc.alloc(f64, sub_tile_total);
@@ -392,10 +426,27 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         const overlaps: []BBox = overlap_bboxes[tile.overlap_start.. 
                                                 tile.overlap_start + tile.overlap_count];
 
-        for (overlaps) |overlap| {
-            // Check the size of the box, if it fills the tile
-            // Going to need to c
+        
 
+        for (overlaps) |overlap| {
+            const coords = loadVec3SlicesFromElemArray(N,f64,&elem_coord_arr,overlap.elem_ind);
+
+            // vert_2 = [2]
+            // vert_1 = [1]
+            // vert_0 = [0]
+            // .get(0) = x
+            // .get(1) = y
+            // .get(2) = z
+            const area = ((vert_2.get(0) - vert_0.get(0)) 
+                          * (vert_1.get(1) - vert_0.get(1)) 
+                          - (vert_2.get(1) - vert_0.get(1)) 
+                          * (vert_1.get(0) - vert_0.get(0)));
+
+           
+            // Backface culling
+            if (area < area_tol) {
+                continue;
+            }
         } 
 
         // Average over the subpixels and write to image_out  
