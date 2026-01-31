@@ -87,11 +87,11 @@ pub fn fillElemCoords(coords: *const Coords,
 }
 
 
-pub fn Vec3OfSlices(comptiome T: type) type {
+pub fn Vec3OfSlices(comptime T: type) type {
     return struct{
-        x: T[],
-        y: T[],
-        z: T[],
+        x: []T,
+        y: []T,
+        z: []T,
     };   
 }
 
@@ -110,7 +110,7 @@ pub fn loadVec3SlicesFromElemArray(comptime N: usize,
     start_slice += stride;
     const z_slice = elem_array.elems[start_slice..start_slice+N];
 
-    return Vec3OfSlices{
+    return Vec3OfSlices(T){
         .x = x_slice,
         .y = y_slice,
         .z = z_slice,
@@ -187,7 +187,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         const coords_raster: Vec3SIMD(N,f64) = rops.worldToRasterSIMD(
             N,f64,coords_world,camera); 
 
-        try vsd.saveVec3ToElemArray(N,f64,&elem_coord_arr,ee,coords_raster);
+        try vsd.saveVec3SIMDToElemArray(N,f64,&elem_coord_arr,ee,coords_raster);
     }
     time_end = try Instant.now();
     const time_simd: f64 = @floatFromInt(time_end.since(time_start));
@@ -411,11 +411,11 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     const sub_sample: usize = @intCast(camera.sub_sample);
     const subpx_tile_size: usize = tile_size * sub_sample;
     const subpx_tile_total: usize = subpx_tile_size * subpx_tile_size;
-    const sub_step: f64 = 1.0 / @as(f64,@floatFromInt(sub_sample));
+    //const sub_step: f64 = 1.0 / @as(f64,@floatFromInt(sub_sample));
     const area_tol: f64 = 1e-9;
     
-    const subpx_depth_scratch = try arena_alloc.alloc(f32, sub_tile_total);
-    const subpx_image_scratch = try arena_alloc.alloc(f64, sub_tile_total);
+    const subpx_depth_scratch = try arena_alloc.alloc(f32, subpx_tile_total);
+    const subpx_image_scratch = try arena_alloc.alloc(f64, subpx_tile_total);
 
     // TODO: thread this for large images and large meshes 
     // NOTE: this loop only works for linear triangles! It uses barycentric interpolation
@@ -429,7 +429,9 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         
 
         for (overlaps) |overlap| {
-            const coords = loadVec3SlicesFromElemArray(N,f64,&elem_coord_arr,overlap.elem_ind);
+            const nodes: Vec3OfSlices(f64) = try loadVec3SlicesFromElemArray(
+                N,f64,&elem_coord_arr,overlap.elem_ind
+            );
 
             // vert_2 = [2]
             // vert_1 = [1]
@@ -437,14 +439,18 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
             // .get(0) = x
             // .get(1) = y
             // .get(2) = z
-            const area = ((vert_2.get(0) - vert_0.get(0)) 
-                          * (vert_1.get(1) - vert_0.get(1)) 
-                          - (vert_2.get(1) - vert_0.get(1)) 
-                          * (vert_1.get(0) - vert_0.get(0)));
+            // const area: f64 = ((vert_2.get(0) - vert_0.get(0)) 
+            //                  * (vert_1.get(1) - vert_0.get(1)) 
+            //                  - (vert_2.get(1) - vert_0.get(1)) 
+            //                  * (vert_1.get(0) - vert_0.get(0)));
+            const elem_area: f64 = ((nodes.x[2] - nodes.x[0]) 
+                                  * (nodes.y[1] - nodes.y[0]) 
+                                  - (nodes.y[2] - nodes.y[0]) 
+                                  * (nodes.x[1] - nodes.x[0]));
 
-           
+            print("{d} ELEM AREA : {d:.4}\n",.{overlap.elem_ind,elem_area});           
             // Backface culling
-            if (area < area_tol) {
+            if (elem_area < area_tol) {
                 continue;
             }
         } 
