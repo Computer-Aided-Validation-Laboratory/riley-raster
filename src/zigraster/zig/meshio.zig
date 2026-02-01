@@ -10,7 +10,6 @@ const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 
 
-// TODO: this should wrap a MatSlice and allocate a buffer
 pub const Coords = struct {
     x: []f64,
     y: []f64,

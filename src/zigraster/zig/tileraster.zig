@@ -117,7 +117,14 @@ pub fn loadVec3SlicesFromElemArray(comptime N: usize,
     };
 }
 
-
+//---------------------------------------------------------------------------------------------
+// NOTES:
+// - Should calculate world->raster coords before transforming to NDArray
+//      - NO! Coords is currently slices of x then slice of y = poor locality, extra work of
+//        repeatedly transforming elements is offset by SIMD and threading ability after 
+//        transform. 
+// - Calculating element area in the raster loop, probably should do backface culling before
+//      - YES, can probably do this before storing the overlapping bounding boxes
 pub fn rasterOneFrame(allocator: std.mem.Allocator, 
                       frame_ind: usize, 
                       coords: *const Coords, 
@@ -214,24 +221,45 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     
     //-----------------------------------------------------------------------------------------
     // Extract Element Bounding Boxes
+
+    // TODO: 
+    // - Add backface culling for higher order elements, performant and accurate:
+    //     - Check normals at far corners, if they are all strongly backfacing discard
+    //     - Then do normal check inside raster loop at hit location after Newton iterations
+    //     - Note need to do the Z divide
     elem_inds = .{0,0,0}; 
 
     const elem_bboxes: []BBox = try arena_alloc.alloc(BBox,elems_num);
     var elems_in_image: usize = 0;
                 
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const coords_raster: Vec3SIMD(N,f64) = try vsd.loadVec3SIMDFromElemArray(
-            N,f64,&elem_coord_arr,ee);
+        const coords_raster: Vec3OfSlices(f64) = try loadVec3SlicesFromElemArray(
+            N,f64,&elem_coord_arr,ee
+        );
 
-        const x_max: f64 = @reduce(.Max,coords_raster.x);
-        const x_min: f64 = @reduce(.Min,coords_raster.x);
+        // Width (X) on screen check and crop
+        const x_max: f64 = std.mem.max(f64,coords_raster.x);
+        const x_min: f64 = std.mem.min(f64,coords_raster.x);
         if ((x_min > @as(f64, @floatFromInt(camera.pixels_num[0] - 1))) or (x_max < 0.0)) {
             continue;
         }
 
-        const y_max: f64 = @reduce(.Max,coords_raster.y);
-        const y_min: f64 = @reduce(.Min,coords_raster.y);
+        // Height (Y) on on screen check and crop
+        const y_max: f64 = std.mem.max(f64,coords_raster.y);
+        const y_min: f64 = std.mem.min(f64,coords_raster.y);
         if ((y_min > @as(f64, @floatFromInt(camera.pixels_num[1] - 1))) or (y_max < 0.0)) {
+            continue;
+        }
+
+        // Backface culling, negative area = crop for linear triangles
+        const elem_area: f64 = ((nodes.x[2] - nodes.x[0]) 
+                              * (nodes.y[1] - nodes.y[0]) 
+                              - (nodes.y[2] - nodes.y[0]) 
+                              * (nodes.x[1] - nodes.x[0]));
+
+        print("{d} ELEM AREA : {d:.4}\n",.{overlap.elem_ind,elem_area});           
+        
+        if (elem_area < area_tol) {
             continue;
         }
         
