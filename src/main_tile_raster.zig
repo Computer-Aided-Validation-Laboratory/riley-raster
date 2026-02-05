@@ -129,7 +129,7 @@ pub fn main() !void {
     camera.world_to_cam_mat.matPrint();
     
     //======================================================================
-    // raster One Frame
+    // Raster One Frame
     print("{s}\nRastering Image\n{s}\n", .{print_break,print_break});
     const frame_ind: usize = 8;
     const num_fields = sim_data.field.getFieldsN();

@@ -266,42 +266,38 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                 //     print("\n", .{});
                 // }
 
-	//----------------------------------------------------------
-	// BROKEN: PSEUDO CODE FROM HERE
-	// - Update to deal with rendering F fields in a single pass
 
-	var field_val: f64 = 0.0;
+	            var field_val: f64 = 0.0;
                 for (0..connect.nodes_per_elem) |nn| {
                     // NOTE:
                     // field.array, shape=(time_n,coord_n,field_n)
                     // field_raster_mat, shape=(field_n,nodes_per_elem)
-		for (0..num_fields) |ff|{
-			field_inds[1] = coord_inds[nn]; // This is scattered
-			field_inds[2] = ff;
+            		for (0..num_fields) |ff|{
+            			field_inds[1] = coord_inds[nn]; // This is scattered
+            			field_inds[2] = ff;
 
-			field_val = try	field.array.get(field_inds[0..]);
-
-                     field_raster_mat.set(ff,nn,field_val);
-                 }
+            			field_val = try	field.array.get(field_inds[0..]);
+                        field_raster_mat.set(ff,nn,field_val);
+                     }
 
                 }
                 
                 // TODO: works up to here getting field values                        
-	image_subpx_inds[1] = bound_ind_y;
-	image_subpx_inds[2] = bound_ind_x;
+            	image_subpx_inds[1] = bound_ind_y;
+            	image_subpx_inds[2] = bound_ind_x;
 
-	for (0..num_fields) |ff| {
-		const field_slice = try field_raster_mat.getSlice(ff);
-                	px_field = sliceops.dot(f64, field_slice, weights_buff);
+            	for (0..num_fields) |ff| {
+            		const field_slice = try field_raster_mat.getSlice(ff);
+                            	px_field = sliceops.dot(f64, field_slice, weights_buff);
 
-                 px_field = px_field * px_coord_z;
+                             px_field = px_field * px_coord_z;
 
-                 // print("\nind_y={} , ind_x={}, px_field={}\n",
-                 //      .{bound_ind_y,bound_ind_x,px_field});
+                             // print("\nind_y={} , ind_x={}, px_field={}\n",
+                             //      .{bound_ind_y,bound_ind_x,px_field});
 
-		image_subpx_inds[0] = ff;
-	    try image_subpx.set(image_subpx_inds[0..], px_field);
-	}
+            		image_subpx_inds[0] = ff;
+            	    try image_subpx.set(image_subpx_inds[0..], px_field);
+            	}
 
 	            //----------------------------------------------------------
                 // End for(x) - increment the x coords

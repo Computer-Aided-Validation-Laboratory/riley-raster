@@ -117,6 +117,33 @@ pub fn loadVec3SlicesFromElemArray(comptime N: usize,
     };
 }
 
+const ActiveTile = struct {
+    overlap_start: usize, // index into overlap_bboxes
+    overlap_count: usize, // count to take from overlap bboxes
+    flat_ind: usize,
+    x_px_min: u16,
+    y_px_min: u16,
+};
+
+pub inline fn edgeFun3Slices(comptime ind0: usize, 
+                             comptime ind1: usize,
+                             comptime ind2: usize,
+                             x: []f64, 
+                             y: []f64) f64 {
+    return ((x[ind2] - x[ind0]) * (y[ind1] - y[ind0]) 
+          - (y[ind2] - y[ind0]) * (x[ind1] - x[ind0]));
+}
+
+pub inline fn edgeFun3(x0: f64, y0: f64,
+                       x1: f64, y1: f64,
+                       x2: f64, y2: f64) f64 {
+    return ((x2 - x0) * (y1 - y0) - (y2 - y0) * (x1 - x0));
+}
+
+pub inline fn flatInd2D(yy: usize, xx: usize, xx_len: usize) usize {
+    return yy*xx_len + xx;
+}
+
 //---------------------------------------------------------------------------------------------
 // NOTES:
 // - Should calculate world->raster coords before transforming to NDArray
@@ -125,6 +152,24 @@ pub fn loadVec3SlicesFromElemArray(comptime N: usize,
 //        transform. 
 // - Calculating element area in the raster loop, probably should do backface culling before
 //      - YES, can probably do this before storing the overlapping bounding boxes
+// 
+//
+// const images_mem = try render_alloc.alloc(f64, 
+//                                        num_fields
+//                                        * camera.pixels_num[1]
+//                                        * camera.pixels_num[0]);
+// @memset(images_mem,0.0);
+// 
+// var images_dims = [_]usize{num_fields,
+//                     	   camera.pixels_num[1],
+//                     	   camera.pixels_num[0]};
+// var images_arr = try NDArray(f64).init(render_alloc,
+//                                        images_mem,
+//                                        images_dims[0..]);
+//
+// NOTE: 
+// NOW: image_out_arr.dims=(num_fields,num_px_y,num_px_x)
+// EVENTUALLY: image_out_arr.dims=(num_frames,num_fields,num_px_y,num_px_x)
 pub fn rasterOneFrame(allocator: std.mem.Allocator, 
                       frame_ind: usize, 
                       coords: *const Coords, 
@@ -231,6 +276,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
     const elem_bboxes: []BBox = try arena_alloc.alloc(BBox,elems_num);
     var elems_in_image: usize = 0;
+    const area_tol: f64 = 1e-9;
                 
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
         const coords_raster: Vec3OfSlices(f64) = try loadVec3SlicesFromElemArray(
@@ -252,12 +298,8 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         }
 
         // Backface culling, negative area = crop for linear triangles
-        const elem_area: f64 = ((nodes.x[2] - nodes.x[0]) 
-                              * (nodes.y[1] - nodes.y[0]) 
-                              - (nodes.y[2] - nodes.y[0]) 
-                              * (nodes.x[1] - nodes.x[0]));
-
-        print("{d} ELEM AREA : {d:.4}\n",.{overlap.elem_ind,elem_area});           
+        const elem_area: f64 = edgeFun3Slices(0,1,2,coords_raster.x,coords_raster.y);
+        //print("{d} ELEM AREA : {d:.4}\n",.{ee,elem_area});           
         
         if (elem_area < area_tol) {
             continue;
@@ -362,13 +404,6 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     const overlap_total: usize = sliceops.sum(usize,tile_elem_counts);
     const overlap_bboxes: []BBox = try arena_alloc.alloc(BBox,overlap_total);
 
-    const ActiveTile = struct {
-        overlap_start: usize, // index into overlap_bboxes
-        overlap_count: usize, // count to take from overlap bboxes
-        flat_ind: usize,
-        x_px_min: u16,
-        y_px_min: u16,
-    };
 
     // Main raster loop will only need to analyse active tiles
     const active_tiles: []ActiveTile = try arena_alloc.alloc(ActiveTile,num_active_tiles);
@@ -401,7 +436,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         // No 'try' divCeil
         const tile_ind_max_x = @min(@as(u16, @intCast(tiles_num_x)),
             (elem_bboxes[ee].x_max + tile_size - 1) / tile_size);
-        const tile_ind_max_y = @min(@as(u16, @intCast(tiles_num_y)),
+          const tile_ind_max_y = @min(@as(u16, @intCast(tiles_num_y)),
             (elem_bboxes[ee].y_max + tile_size - 1) / tile_size);
 
         for (tile_ind_min_y..tile_ind_max_y) |ty| {
@@ -436,54 +471,169 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     //-----------------------------------------------------------------------------------------
     // Raster Loop, pass 3: Loop over ACTIVE tiles and check corners
 
-    const sub_sample: usize = @intCast(camera.sub_sample);
-    const subpx_tile_size: usize = tile_size * sub_sample;
+    const sub_samp: usize = @intCast(camera.sub_sample);
+    const subpx_tile_size: usize = tile_size * sub_samp;
     const subpx_tile_total: usize = subpx_tile_size * subpx_tile_size;
-    //const sub_step: f64 = 1.0 / @as(f64,@floatFromInt(sub_sample));
-    const area_tol: f64 = 1e-9;
     
-    const subpx_depth_scratch = try arena_alloc.alloc(f32, subpx_tile_total);
+    const sub_samp_f: f64 = @as(f64, @floatFromInt(camera.sub_sample));
+    const subpx_cent_step: f64 = 1.0 / sub_samp_f;
+    const subpx_cent_offset: f64 = 1.0 / (2.0 * sub_samp_f);
+    
+    const subpx_depth_scratch = try arena_alloc.alloc(f64, subpx_tile_total);
     const subpx_image_scratch = try arena_alloc.alloc(f64, subpx_tile_total);
 
     // TODO: thread this for large images and large meshes 
     // NOTE: this loop only works for linear triangles! It uses barycentric interpolation
-    for (active_tiles) |tile| {
-        @memset(subpx_depth_scratch, std.math.inf(f32));
+    for (active_tiles,0..) |tile,tile_ind| {
+        @memset(subpx_depth_scratch, std.math.inf(f64));
         @memset(subpx_image_scratch, 0.0);
 
         const overlaps: []BBox = overlap_bboxes[tile.overlap_start.. 
                                                 tile.overlap_start + tile.overlap_count];
 
-        
+        // Integer division = floor. Rounds to nearest tile index.
+        const tile_ind_min_x: usize = @as(usize,@intCast(overlaps[0].x_min / tile_size));
+        const tile_ind_min_y: usize = @as(usize,@intCast(overlaps[0].y_min / tile_size));
+        const tile_px_min_x: usize = tile_ind_min_x*tile_size; 
+        const tile_px_min_y: usize = tile_ind_min_y*tile_size;
 
-        for (overlaps) |overlap| {
+        var weights: [3]f64 = [_]f64{0.0} ** 3;
+        var inv_z: [3]f64 = [_]f64{0.0} ** 3;
+        
+        for (overlaps,0..) |overlap,overlap_ind| {
             const nodes: Vec3OfSlices(f64) = try loadVec3SlicesFromElemArray(
                 N,f64,&elem_coord_arr,overlap.elem_ind
             );
 
-            // vert_2 = [2]
-            // vert_1 = [1]
-            // vert_0 = [0]
-            // .get(0) = x
-            // .get(1) = y
-            // .get(2) = z
-            // const area: f64 = ((vert_2.get(0) - vert_0.get(0)) 
-            //                  * (vert_1.get(1) - vert_0.get(1)) 
-            //                  - (vert_2.get(1) - vert_0.get(1)) 
-            //                  * (vert_1.get(0) - vert_0.get(0)));
-            const elem_area: f64 = ((nodes.x[2] - nodes.x[0]) 
-                                  * (nodes.y[1] - nodes.y[0]) 
-                                  - (nodes.y[2] - nodes.y[0]) 
-                                  * (nodes.x[1] - nodes.x[0]));
+            for (0..3) |nn| {
+                inv_z[nn] = 1.0/nodes.z[nn];
+            }
 
-            print("{d} ELEM AREA : {d:.4}\n",.{overlap.elem_ind,elem_area});           
-            // Backface culling
-            if (elem_area < area_tol) {
-                continue;
+            const inv_elem_area: f64 = 1.0/edgeFun3Slices(0,1,2,nodes.x,nodes.y);
+
+            const xi_min_f: f64 = @as(f64, @floatFromInt(overlap.x_min));
+            //const xi_max_f: f64 = @as(f64, @floatFromInt(overlap.x_max));
+            const yi_min_f: f64 = @as(f64, @floatFromInt(overlap.y_min));
+            //const yi_max_f: f64 = @as(f64, @floatFromInt(overlap.y_max));
+
+            // const subpx_start_ind_x: usize = sub_samp * @as(usize,overlap.x_min);
+            // const subpx_end_ind_x: usize = sub_samp * @as(usize,overlap.x_max);
+            // const subpx_start_ind_y: usize = sub_samp * @as(usize,overlap.y_min);
+            // const subpx_end_ind_y: usize = sub_samp * @as(usize,overlap.y_max);
+
+            const scratch_start_ind_x: usize = sub_samp
+                * (@as(usize,overlap.x_min) - tile_px_min_x);  
+            const scratch_end_ind_x: usize = sub_samp
+                * (@as(usize,overlap.x_max) - tile_px_min_x);
+            const scratch_start_ind_y: usize = sub_samp
+                * (@as(usize,overlap.y_min) - tile_px_min_y);  
+            const scratch_end_ind_y: usize = sub_samp
+                * (@as(usize,overlap.y_max) - tile_px_min_y);
+
+            var subpx_coord_x: f64 = xi_min_f + subpx_cent_offset;
+            var subpx_coord_y: f64 = yi_min_f + subpx_cent_offset;
+
+            //---------------------------------------------------------------------------------
+            // DEBUG
+            print("TILE IND: {}, OVERLAP IND: {}\n",.{tile_ind,overlap_ind});
+            print("tile_ind_start_x={}, tile_ind_start_y={}\n",
+                  .{tile_ind_min_x,tile_ind_min_y});
+            print("tile_px_start_x={}, tile_px_start_y={}\n",
+                  .{tile_px_min_x,tile_px_min_y});
+            print("overlap. elem_ind={}, px_x_min={}, px_y_min={} \n",
+                  .{overlap.elem_ind,overlap.x_min,overlap.x_max});
+            print("subpx_tile_size={}, subpx_tile_total={}\n",
+                  .{subpx_tile_size,subpx_tile_total});
+            print("scratch_start_x={}, scratch_end_x={}\n",
+                  .{scratch_start_ind_x, scratch_end_ind_x});
+            print("scratch_start_y={}, scratch_end_y={}\n",
+                  .{scratch_start_ind_y, scratch_end_ind_y});
+            const flat_start_x = flatInd2D(scratch_start_ind_y,
+                                           scratch_start_ind_x,
+                                           subpx_tile_size);
+            const flat_end_x = flatInd2D(scratch_end_ind_y-1,
+                                         scratch_end_ind_x,
+                                         subpx_tile_size);
+            print("scratch_flat_start_x={}, scratch_flat_end_x={}\n",
+                  .{flat_start_x, flat_end_x});
+            print("\n",.{});
+            //---------------------------------------------------------------------------------
+            
+            for (scratch_start_ind_y .. scratch_end_ind_y) |yy| {
+                subpx_coord_x = xi_min_f + subpx_cent_offset;
+            
+                for (scratch_start_ind_x .. scratch_end_ind_x) |xx| {
+
+                    weights[0] = edgeFun3(nodes.x[1],nodes.y[1],
+                                          nodes.x[2],nodes.y[2],
+                                          subpx_coord_x,subpx_coord_y);                        
+
+                    if (weights[0] < 0.0) {
+                        subpx_coord_x += subpx_cent_step;
+                        //weights_slice = .{0.0,0.0,0.0};
+                        //print("WEIGHTS[0] < 0.0, CONTINUE!\n",.{});
+                        continue;
+                    }
+
+                    weights[1] = edgeFun3(nodes.x[2],nodes.y[2],
+                                          nodes.x[0],nodes.y[0],
+                                          subpx_coord_x,subpx_coord_y);                        
+
+                    if (weights[1] < 0.0) {
+                        subpx_coord_x += subpx_cent_step;
+                        //weights = .{0.0,0.0,0.0};
+                        //print("WEIGHTS[1] < 0.0, CONTINUE!\n",.{});
+                        continue;
+                    }
+
+                    weights[2] = edgeFun3(nodes.x[0],nodes.y[0],
+                                          nodes.x[1],nodes.y[1],
+                                          subpx_coord_x,subpx_coord_y);                        
+
+                    if (weights[2] < 0.0) {
+                        subpx_coord_x += subpx_cent_step;
+                        //weights = .{0.0,0.0,0.0};
+                        //print("WEIGHTS[2] < 0.0, CONTINUE!\n",.{});
+                        continue;
+                    }
+
+                    var weights_dot_nodes: f64 = 0.0;
+                    for (0..3) |nn| {
+                        weights[nn] = inv_elem_area * weights[nn];
+                        weights_dot_nodes += weights[nn] * inv_z[nn];  
+                    }
+
+                    const subpx_coord_z: f64 = 1.0 / weights_dot_nodes;
+
+                    const scratch_flat_ind: usize = flatInd2D(yy,xx,subpx_tile_size);
+
+                    subpx_depth_scratch[scratch_flat_ind] = subpx_coord_z;           
+                    subpx_image_scratch[scratch_flat_ind] = subpx_coord_z;           
+
+                    subpx_coord_x += subpx_cent_step;        
+                }
+                subpx_coord_y += subpx_cent_step;
             }
         } 
-
-        // Average over the subpixels and write to image_out  
+        
+        // Average over the subpixels and write to image_out
+        var px_sum: f64 = 0.0;
+        for (tile_px_min_y .. (tile_px_min_y+tile_size)) |iy| { // Index into image_out
+            for (tile_px_min_x ..(tile_px_min_x+tile_size)) |ix| {
+                // Average over subpixels
+                px_sum = 0.0;
+                
+                
+                for (0..sub_samp) |sy| { // Index into scratch
+                    for (0..sub_samp) |sx| {
+                        const flat_ind = flatInd2D();
+                        px_sum += subpx_image_scratch;
+                    }
+                }
+                // Write to image_out buffer
+            }
+        }
+          
     }
 
 
