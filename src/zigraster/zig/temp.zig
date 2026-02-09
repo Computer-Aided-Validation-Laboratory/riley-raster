@@ -109,3 +109,82 @@ for (active_tiles) |tile| {
         }
     }
 }
+
+
+//---------------------------------------------------------------------------------------------
+// --- BARYCENTRIC PRE-CALCULATION (Per Element) ---
+// ... (keep your dw_dx, dw_dy, dz_dx, dz_dy calculations from before) ...
+// --- BARYCENTRIC PRE-CALCULATION (Per Element) ---
+const area = edgeFun3(x0, y0, x1, y1, x2, y2);
+if (area <= 1e-9) continue;
+const inv_area = 1.0 / area;
+
+// Normalized Step Constants (Change per sub-pixel in X and Y)
+const s_step = subpx_cent_step;
+const n_inv_area = inv_area * s_step;
+
+// Weight steps (pre-multiplied by sub-pixel step and inv_area)
+const dw0_dx = (y1 - y2) * n_inv_area;
+const dw0_dy = (x2 - x1) * n_inv_area;
+const dw1_dx = (y2 - y0) * n_inv_area;
+const dw1_dy = (x0 - x2) * n_inv_area;
+const dw2_dx = (y0 - y1) * n_inv_area;
+const dw2_dy = (x1 - x0) * n_inv_area;
+
+// Depth gradient (pre-multiplied for 1/z interpolation)
+const dz_dx = (dw0_dx * inv_z[0] + dw1_dx * inv_z[1] + dw2_dx * inv_z[2]);
+const dz_dy = (dw0_dy * inv_z[0] + dw1_dy * inv_z[1] + dw2_dy * inv_z[2]);
+
+// Initial values at the first sub-pixel center (start_px, start_py)
+const start_px = @as(f64, @floatFromInt(overlap.x_min)) + subpx_cent_offset;
+const start_py = @as(f64, @floatFromInt(overlap.y_min)) + subpx_cent_offset;
+
+var w0_row = edgeFun3(x1, y1, x2, y2, start_px, start_py) * inv_area;
+var w1_row = edgeFun3(x2, y2, x0, y0, start_px, start_py) * inv_area;
+var w2_row = edgeFun3(x0, y0, x1, y1, start_px, start_py) * inv_area;
+var z_row  = (w0_row * inv_z[0] + w1_row * inv_z[1] + w2_row * inv_z[2]);
+
+// INITIALIZE DEPTH BUFFER DIFFERENTLY
+// Before the tile loop:
+// @memset(subpx_depth_scratch, 0.0); 
+
+// --- THE HOT LOOP ---
+var sy = scratch_start_ind_y;
+while (sy < scratch_end_ind_y) : (sy += 1) {
+    var curr_w0 = w0_row;
+    var curr_w1 = w1_row;
+    var curr_w2 = w2_row;
+    var curr_z_inv = z_row;
+
+    const row_off = sy * subpx_tile_size;
+
+    var sx = scratch_start_ind_x;
+    while (sx < scratch_end_ind_x) : (sx += 1) {
+        
+        // 1. Inside check
+        if (curr_w0 >= 0 and curr_w1 >= 0 and curr_w2 >= 0) {
+            const scratch_idx = row_off + sx;
+
+            // 2. Inverse Depth Test: LARGER is CLOSER
+            if (curr_z_inv > subpx_depth_scratch[scratch_idx]) {
+                subpx_depth_scratch[scratch_idx] = curr_z_inv;
+                
+                // If you just need the depth map, store the inverse.
+                // If you need actual Z for shading later, you can divide 
+                // in the resolve pass, not here.
+                subpx_image_scratch[scratch_idx] = curr_z_inv; 
+            }
+        }
+
+        // 3. Increments (The only math in the loop)
+        curr_w0 += dw0_dx;
+        curr_w1 += dw1_dx;
+        curr_w2 += dw2_dx;
+        curr_z_inv += dz_dx;
+    }
+
+    w0_row += dw0_dy;
+    w1_row += dw1_dy;
+    w2_row += dw2_dy;
+    z_row  += dz_dy;
+}

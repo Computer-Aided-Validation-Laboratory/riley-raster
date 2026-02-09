@@ -152,20 +152,6 @@ pub inline fn flatInd2D(yy: usize, xx: usize, xx_len: usize) usize {
 //        transform. 
 // - Calculating element area in the raster loop, probably should do backface culling before
 //      - YES, can probably do this before storing the overlapping bounding boxes
-// 
-//
-// const images_mem = try render_alloc.alloc(f64, 
-//                                        num_fields
-//                                        * camera.pixels_num[1]
-//                                        * camera.pixels_num[0]);
-// @memset(images_mem,0.0);
-// 
-// var images_dims = [_]usize{num_fields,
-//                     	   camera.pixels_num[1],
-//                     	   camera.pixels_num[0]};
-// var images_arr = try NDArray(f64).init(render_alloc,
-//                                        images_mem,
-//                                        images_dims[0..]);
 //
 // NOTE: 
 // NOW: image_out_arr.dims=(num_fields,num_px_y,num_px_x)
@@ -181,7 +167,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
     const raster_start = try Instant.now();
     
-    _ = frame_ind;
+    //_ = frame_ind;
     _ = field;
     _ = image_out_arr;
 
@@ -476,173 +462,297 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     const subpx_tile_total: usize = subpx_tile_size * subpx_tile_size;
     
     const sub_samp_f: f64 = @as(f64, @floatFromInt(camera.sub_sample));
-    const subpx_cent_step: f64 = 1.0 / sub_samp_f;
-    const subpx_cent_offset: f64 = 1.0 / (2.0 * sub_samp_f);
+    const subpx_step: f64 = 1.0 / sub_samp_f;
+    const subpx_offset: f64 = 1.0 / (2.0 * sub_samp_f);
     
-    const subpx_depth_scratch = try arena_alloc.alloc(f64, subpx_tile_total);
+    const subpx_z_inv_scratch = try arena_alloc.alloc(f64, subpx_tile_total);
     const subpx_image_scratch = try arena_alloc.alloc(f64, subpx_tile_total);
 
+    //-----------------------------------------------------------------------------------------
     // TODO: thread this for large images and large meshes 
     // NOTE: this loop only works for linear triangles! It uses barycentric interpolation
-    for (active_tiles,0..) |tile,tile_ind| {
-        @memset(subpx_depth_scratch, std.math.inf(f64));
+
+    // DEBUG
+    const sp_image_size = camera.pixels_num[1]*sub_samp*camera.pixels_num[0]*sub_samp;
+    const sp_image_buff = try arena_alloc.alloc(f64, sp_image_size);
+    var sp_image = try MatSlice(f64).init(sp_image_buff,
+                                              camera.pixels_num[1]*sub_samp,
+                                              camera.pixels_num[0]*sub_samp);
+
+
+//=========================================================================================
+    for (active_tiles) |tile| {
+        @memset(subpx_z_inv_scratch, 0.0);
         @memset(subpx_image_scratch, 0.0);
 
         const overlaps: []BBox = overlap_bboxes[tile.overlap_start.. 
                                                 tile.overlap_start + tile.overlap_count];
 
-        // Integer division = floor. Rounds to nearest tile index.
-        const tile_ind_min_x: usize = @as(usize,@intCast(overlaps[0].x_min / tile_size));
-        const tile_ind_min_y: usize = @as(usize,@intCast(overlaps[0].y_min / tile_size));
-        const tile_px_min_x: usize = tile_ind_min_x*tile_size; 
-        const tile_px_min_y: usize = tile_ind_min_y*tile_size;
-
-        var weights: [3]f64 = [_]f64{0.0} ** 3;
-        var inv_z: [3]f64 = [_]f64{0.0} ** 3;
+        var inv_z: [3]f64 = undefined;
+        var weights: [3]f64 = undefined;
         
-        for (overlaps,0..) |overlap,overlap_ind| {
+        for (overlaps) |overlap| {
             const nodes: Vec3OfSlices(f64) = try loadVec3SlicesFromElemArray(
                 N,f64,&elem_coord_arr,overlap.elem_ind
             );
 
             for (0..3) |nn| {
-                inv_z[nn] = 1.0/nodes.z[nn];
+                inv_z[nn] = 1.0 / nodes.z[nn];
             }
 
-            const inv_elem_area: f64 = 1.0/edgeFun3Slices(0,1,2,nodes.x,nodes.y);
-
-            const xi_min_f: f64 = @as(f64, @floatFromInt(overlap.x_min));
-            //const xi_max_f: f64 = @as(f64, @floatFromInt(overlap.x_max));
-            const yi_min_f: f64 = @as(f64, @floatFromInt(overlap.y_min));
-            //const yi_max_f: f64 = @as(f64, @floatFromInt(overlap.y_max));
-
-            // const subpx_start_ind_x: usize = sub_samp * @as(usize,overlap.x_min);
-            // const subpx_end_ind_x: usize = sub_samp * @as(usize,overlap.x_max);
-            // const subpx_start_ind_y: usize = sub_samp * @as(usize,overlap.y_min);
-            // const subpx_end_ind_y: usize = sub_samp * @as(usize,overlap.y_max);
+            const inv_elem_area: f64 = 1.0 / edgeFun3(nodes.x[0],nodes.y[0],
+                                                      nodes.x[1],nodes.y[1],
+                                                      nodes.x[2],nodes.y[2]);
+            //const inv_area_step: f64 = inv_elem_area * subpx_step;
 
             const scratch_start_ind_x: usize = sub_samp
-                * (@as(usize,overlap.x_min) - tile_px_min_x);  
+                * (@as(usize,overlap.x_min) - tile.x_px_min);  
             const scratch_end_ind_x: usize = sub_samp
-                * (@as(usize,overlap.x_max) - tile_px_min_x);
+                * (@as(usize,overlap.x_max) - tile.x_px_min);
             const scratch_start_ind_y: usize = sub_samp
-                * (@as(usize,overlap.y_min) - tile_px_min_y);  
+                * (@as(usize,overlap.y_min) - tile.y_px_min);  
             const scratch_end_ind_y: usize = sub_samp
-                * (@as(usize,overlap.y_max) - tile_px_min_y);
+                * (@as(usize,overlap.y_max) - tile.y_px_min);
 
-            var subpx_coord_x: f64 = xi_min_f + subpx_cent_offset;
-            var subpx_coord_y: f64 = yi_min_f + subpx_cent_offset;
+            const xi_min_f: f64 = @as(f64, @floatFromInt(overlap.x_min));
+            const yi_min_f: f64 = @as(f64, @floatFromInt(overlap.y_min));
+
+            var subpx_coord_x: f64 = xi_min_f + subpx_offset;
+            var subpx_coord_y: f64 = yi_min_f + subpx_offset;
+
 
             //---------------------------------------------------------------------------------
-            // DEBUG
-            print("TILE IND: {}, OVERLAP IND: {}\n",.{tile_ind,overlap_ind});
-            print("tile_ind_start_x={}, tile_ind_start_y={}\n",
-                  .{tile_ind_min_x,tile_ind_min_y});
-            print("tile_px_start_x={}, tile_px_start_y={}\n",
-                  .{tile_px_min_x,tile_px_min_y});
-            print("overlap. elem_ind={}, px_x_min={}, px_y_min={} \n",
-                  .{overlap.elem_ind,overlap.x_min,overlap.x_max});
-            print("subpx_tile_size={}, subpx_tile_total={}\n",
-                  .{subpx_tile_size,subpx_tile_total});
-            print("scratch_start_x={}, scratch_end_x={}\n",
-                  .{scratch_start_ind_x, scratch_end_ind_x});
-            print("scratch_start_y={}, scratch_end_y={}\n",
-                  .{scratch_start_ind_y, scratch_end_ind_y});
-            const flat_start_x = flatInd2D(scratch_start_ind_y,
-                                           scratch_start_ind_x,
-                                           subpx_tile_size);
-            const flat_end_x = flatInd2D(scratch_end_ind_y-1,
-                                         scratch_end_ind_x,
-                                         subpx_tile_size);
-            print("scratch_flat_start_x={}, scratch_flat_end_x={}\n",
-                  .{flat_start_x, flat_end_x});
-            print("\n",.{});
-            //---------------------------------------------------------------------------------
-            
+            // RASTER HOT LOOP
             for (scratch_start_ind_y .. scratch_end_ind_y) |yy| {
-                subpx_coord_x = xi_min_f + subpx_cent_offset;
-            
+
+                const sp_image_iy: usize = tile.y_px_min*sub_samp + yy;
+                const scratch_row_offset: usize = yy * subpx_tile_size;
+
+                subpx_coord_x = xi_min_f + subpx_offset;
+                
                 for (scratch_start_ind_x .. scratch_end_ind_x) |xx| {
 
                     weights[0] = edgeFun3(nodes.x[1],nodes.y[1],
                                           nodes.x[2],nodes.y[2],
-                                          subpx_coord_x,subpx_coord_y);                        
-
-                    if (weights[0] < 0.0) {
-                        subpx_coord_x += subpx_cent_step;
-                        //weights_slice = .{0.0,0.0,0.0};
-                        //print("WEIGHTS[0] < 0.0, CONTINUE!\n",.{});
-                        continue;
-                    }
-
+                                          subpx_coord_x,subpx_coord_y);
                     weights[1] = edgeFun3(nodes.x[2],nodes.y[2],
                                           nodes.x[0],nodes.y[0],
-                                          subpx_coord_x,subpx_coord_y);                        
-
-                    if (weights[1] < 0.0) {
-                        subpx_coord_x += subpx_cent_step;
-                        //weights = .{0.0,0.0,0.0};
-                        //print("WEIGHTS[1] < 0.0, CONTINUE!\n",.{});
-                        continue;
-                    }
-
+                                          subpx_coord_x,subpx_coord_y);
                     weights[2] = edgeFun3(nodes.x[0],nodes.y[0],
                                           nodes.x[1],nodes.y[1],
-                                          subpx_coord_x,subpx_coord_y);                        
+                                          subpx_coord_x,subpx_coord_y);
 
-                    if (weights[2] < 0.0) {
-                        subpx_coord_x += subpx_cent_step;
-                        //weights = .{0.0,0.0,0.0};
-                        //print("WEIGHTS[2] < 0.0, CONTINUE!\n",.{});
-                        continue;
+                    const sp_image_ix: usize = tile.x_px_min*sub_samp + xx;
+                    const scratch_flat_ind: usize = scratch_row_offset + xx;
+
+                    if (weights[0] >= 0.0 and weights[1] >= 0.0 and weights[2] >= 0){
+
+                        var weight_dot_nodes: f64 = 0.0;
+                        for (0..3) |nn| {
+                            weights[nn] = weights[nn] * inv_elem_area;
+                            weight_dot_nodes += weights[nn]*nodes.z[nn];
+                        }
+
+                        const z_inv_curr: f64 = weight_dot_nodes;
+                
+                        if (z_inv_curr > subpx_z_inv_scratch[scratch_flat_ind]) {
+                            subpx_z_inv_scratch[scratch_flat_ind] = z_inv_curr;           
+                            subpx_image_scratch[scratch_flat_ind] = z_inv_curr;
+
+                            sp_image.set(sp_image_iy,sp_image_ix,1/z_inv_curr);
+                        }
                     }
 
-                    var weights_dot_nodes: f64 = 0.0;
-                    for (0..3) |nn| {
-                        weights[nn] = inv_elem_area * weights[nn];
-                        weights_dot_nodes += weights[nn] * inv_z[nn];  
-                    }
-
-                    const subpx_coord_z: f64 = 1.0 / weights_dot_nodes;
-
-                    const scratch_flat_ind: usize = flatInd2D(yy,xx,subpx_tile_size);
-
-                    subpx_depth_scratch[scratch_flat_ind] = subpx_coord_z;           
-                    subpx_image_scratch[scratch_flat_ind] = subpx_coord_z;           
-
-                    subpx_coord_x += subpx_cent_step;        
-                }
-                subpx_coord_y += subpx_cent_step;
-            }
-        } 
+                    subpx_coord_x += subpx_step;           
         
-        // Average over the subpixels and write to image_out
-        var px_sum: f64 = 0.0;
-        for (tile_px_min_y .. (tile_px_min_y+tile_size)) |iy| { // Index into image_out
-            for (tile_px_min_x ..(tile_px_min_x+tile_size)) |ix| {
-                // Average over subpixels
-                px_sum = 0.0;
-                
-                
-                for (0..sub_samp) |sy| { // Index into scratch
-                    for (0..sub_samp) |sx| {
-                        const flat_ind = flatInd2D();
-                        px_sum += subpx_image_scratch;
-                    }
                 }
-                // Write to image_out buffer
-            }
-        }
-          
+                
+                subpx_coord_y += subpx_step;
+            }   
+        }           
     }
-
+                                              
+    //=========================================================================================
+    // OPTIMISED EDGE FUNCTION
+//     for (active_tiles) |tile| {
+//         @memset(subpx_z_inv_scratch, 0.0);
+//         @memset(subpx_image_scratch, 0.0);
+// 
+//         const overlaps: []BBox = overlap_bboxes[tile.overlap_start.. 
+//                                                 tile.overlap_start + tile.overlap_count];
+// 
+//         var inv_z: [3]f64 = undefined;
+//         
+//         for (overlaps) |overlap| {
+//             const nodes: Vec3OfSlices(f64) = try loadVec3SlicesFromElemArray(
+//                 N,f64,&elem_coord_arr,overlap.elem_ind
+//             );
+// 
+//             for (0..3) |nn| {
+//                 inv_z[nn] = 1.0 / nodes.z[nn];
+//             }
+// 
+//             const inv_elem_area: f64 = 1.0 / edgeFun3(nodes.x[0],nodes.y[0],
+//                                                       nodes.x[1],nodes.y[1],
+//                                                       nodes.x[2],nodes.y[2]);
+//             const inv_area_step: f64 = inv_elem_area * subpx_step;
+// 
+//             const dw0_dx = (nodes.y[1] - nodes.y[2]) * inv_area_step;
+//             const dw0_dy = (nodes.x[2] - nodes.x[1]) * inv_area_step;
+//             const dw1_dx = (nodes.y[2] - nodes.y[0]) * inv_area_step;
+//             const dw1_dy = (nodes.x[0] - nodes.x[2]) * inv_area_step;
+//             const dw2_dx = (nodes.y[0] - nodes.y[1]) * inv_area_step;
+//             const dw2_dy = (nodes.x[1] - nodes.x[0]) * inv_area_step;
+// 
+//             const dz_dx = (dw0_dx * inv_z[0] + dw1_dx * inv_z[1] + dw2_dx * inv_z[2]);
+//             const dz_dy = (dw0_dy * inv_z[0] + dw1_dy * inv_z[1] + dw2_dy * inv_z[2]);
+// 
+//             const xi_min_f: f64 = @as(f64, @floatFromInt(overlap.x_min));
+//             const yi_min_f: f64 = @as(f64, @floatFromInt(overlap.y_min));
+// 
+//             const subpx_coord_x: f64 = xi_min_f + subpx_offset;
+//             const subpx_coord_y: f64 = yi_min_f + subpx_offset;
+// 
+//             var w0_row_start: f64 = edgeFun3(nodes.x[1], nodes.y[1], 
+//                                              nodes.x[2], nodes.y[2], 
+//                                              subpx_coord_x, subpx_coord_y) * inv_elem_area;
+//             var w1_row_start: f64 = edgeFun3(nodes.x[2], nodes.y[2], 
+//                                              nodes.x[0], nodes.y[0], 
+//                                              subpx_coord_x, subpx_coord_y) * inv_elem_area;
+//             var w2_row_start: f64 = edgeFun3(nodes.x[0], nodes.y[0], 
+//                                              nodes.x[1], nodes.y[1], 
+//                                              subpx_coord_x, subpx_coord_y) * inv_elem_area;
+//             var z_inv_row_start: f64  = (w0_row_start * inv_z[0] 
+//                                        + w1_row_start * inv_z[1] 
+//                                        + w2_row_start * inv_z[2]);
+// 
+//             const scratch_start_ind_x: usize = sub_samp
+//                 * (@as(usize,overlap.x_min) - tile.x_px_min);  
+//             const scratch_end_ind_x: usize = sub_samp
+//                 * (@as(usize,overlap.x_max) - tile.x_px_min);
+//             const scratch_start_ind_y: usize = sub_samp
+//                 * (@as(usize,overlap.y_min) - tile.y_px_min);  
+//             const scratch_end_ind_y: usize = sub_samp
+//                 * (@as(usize,overlap.y_max) - tile.y_px_min);
+//             //---------------------------------------------------------------------------------
+//             // DEBUG
+//             // print("tile_ind_start_x={}, tile_ind_start_y={}\n",
+//             //       .{tile_ind_min_x,tile_ind_min_y});
+//             // print("tile_px_start_x={}, tile_px_start_y={}\n",
+//             //       .{tile_px_min_x,tile_px_min_y});
+//             // print("overlap. elem_ind={}, px_x_min={}, px_y_min={} \n",
+//             //       .{overlap.elem_ind,overlap.x_min,overlap.x_max});
+//             // print("subpx_tile_size={}, subpx_tile_total={}\n",
+//             //       .{subpx_tile_size,subpx_tile_total});
+//             // print("scratch_start_x={}, scratch_end_x={}\n",
+//             //       .{scratch_start_ind_x, scratch_end_ind_x});
+//             // print("scratch_start_y={}, scratch_end_y={}\n",
+//             //       .{scratch_start_ind_y, scratch_end_ind_y});
+//             // const flat_start_x = flatInd2D(scratch_start_ind_y,
+//             //                                scratch_start_ind_x,
+//             //                                subpx_tile_size);
+//             // const flat_end_x = flatInd2D(scratch_end_ind_y-1,
+//             //                              scratch_end_ind_x,
+//             //                              subpx_tile_size);
+//             // print("scratch_flat_start_x={}, scratch_flat_end_x={}\n",
+//             //       .{flat_start_x, flat_end_x});
+//             // print("\n",.{});
+// 
+//             //---------------------------------------------------------------------------------
+//             // RASTER HOT LOOP
+//             for (scratch_start_ind_y .. scratch_end_ind_y) |yy| {
+//                 const sp_image_iy: usize = tile.y_px_min*sub_samp + yy;
+// 
+//                 var w0_curr: f64 = w0_row_start;
+//                 var w1_curr: f64 = w1_row_start;
+//                 var w2_curr: f64 = w2_row_start;
+//                 var z_inv_curr: f64 = z_inv_row_start;
+// 
+//                 const scratch_row_offset: usize = yy * subpx_tile_size;
+//                 
+//                 for (scratch_start_ind_x .. scratch_end_ind_x) |xx| {
+//                     const sp_image_ix: usize = tile.x_px_min*sub_samp + xx;
+//                     
+//                     const scratch_flat_ind: usize = scratch_row_offset + xx;
+// 
+//                     if (w0_curr >= 0.0 and w1_curr >= 0.0 and w2_curr >= 0){
+//                         if (z_inv_curr > subpx_z_inv_scratch[scratch_flat_ind]) {
+//                             subpx_z_inv_scratch[scratch_flat_ind] = z_inv_curr;           
+//                             subpx_image_scratch[scratch_flat_ind] = z_inv_curr;
+// 
+//                             sp_image.set(sp_image_iy,sp_image_ix,1/z_inv_curr);
+//                         }
+//                     }           
+// 
+//                     w0_curr += dw0_dx;
+//                     w1_curr += dw1_dx;
+//                     w2_curr += dw2_dx;
+//                     z_inv_curr += dz_dx;        
+//                 }
+// 
+//                 w0_row_start += dw0_dy;
+//                 w1_row_start += dw1_dy;
+//                 w2_row_start += dw2_dy;
+//                 z_inv_row_start += dz_dy;
+//             }   
+//         } 
+//         
+//         // Average over the subpixels and write to image_out
+//         const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
+//         for (0..tile_size) |ty| { 
+//             const image_px_y: usize = tile.y_px_min + ty;
+//             const subpx_start_y: usize = sub_samp * ty;
+//             
+//             for (0..tile_size) |tx| {
+//                 const image_px_x: usize = tile.x_px_min + tx;
+//                 const subpx_start_x: usize = sub_samp * tx;
+//                 
+//                 var px_sum: f64 = 0.0;
+//                         
+//                 for (0..sub_samp) |sy| { // Index into scratch
+//                     const scratch_row_offset: usize = (subpx_start_y + sy) 
+//                                                        * subpx_tile_size;  
+//                         
+//                     for (0..sub_samp) |sx| {
+//                         const scratch_flat_ind: usize = scratch_row_offset+subpx_start_x+sx;
+//                         px_sum += subpx_image_scratch[scratch_flat_ind];
+//                     }
+//                 }
+// 
+//                 const image_inds = [_]usize{0,image_px_y,image_px_x};
+//                 try image_out_arr.set(image_inds[0..], px_sum*inv_sub_samp_sq);
+//                 
+//             }
+//         }          
+//     }
+    // OPTIMISED EDGE FUNCTION
+    //-----------------------------------------------------------------------------------------
 
     //-----------------------------------------------------------------------------------------
-    // Write tile buffer -> image out buffer
+    // DEBUG: Save
+    var single_thread_io: std.Io.Threaded = .init_single_threaded;
+    const io = single_thread_io.io();
+
+    const cwd: std.Io.Dir = std.Io.Dir.cwd();        
+
+    const dir_name = "raster-test";
+    var name_buff: [1024]u8 = undefined;
     
+    cwd.createDir(io, dir_name, .default_dir) catch |err| switch (err) {
+        error.PathAlreadyExists => {}, // Path exists do nothing
+        else => return err, // Propagate any other error
+    };
+    
+    var out_dir: std.Io.Dir = try cwd.openDir(io, dir_name, .{});
+    defer out_dir.close(io);
+
+    const file_name = try std.fmt.bufPrint(name_buff[0..], 
+                                           "tile_depth_frame{d}.ppm", 
+                                           .{ frame_ind });
+    try rops.saveScaledPPM(io, out_dir, file_name, &sp_image);
+
     //-----------------------------------------------------------------------------------------
     const raster_end = try Instant.now();
     const time_raster: f64 = @floatFromInt(raster_end.since(raster_start));
     print("\nTOTAL TIME RASTER = {d}ns\n",.{time_raster});    
 }
-                      

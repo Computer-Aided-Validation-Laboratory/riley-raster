@@ -27,8 +27,8 @@ const NDArray = ndarray.NDArray;
 const Camera = @import("zigraster/zig/camera.zig").Camera;
 const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
 
+const rops = @import("zigraster/zig/rasterops.zig");
 const tileraster = @import("zigraster/zig/tileraster.zig");
-
 
 pub fn main() !void {
     const print_break = [_]u8{'-'} ** 80;
@@ -165,9 +165,58 @@ pub fn main() !void {
     print("Raster time = {d:.3}ms\n", .{time_raster / time.ns_per_ms});
     
     // Print diagnostics to console to see if there is an image
-    // const image_max = std.mem.max(f64, images_arr.elems);
-    // const image_min = std.mem.min(f64, images_arr.elems);
-    // print("Image: [max, min] = [{d:.6}, {d:.6}]\n", .{ image_max, image_min });
-    // print("{s}\n", .{print_break});
+    const image_max = std.mem.max(f64, images_arr.elems);
+    const image_min = std.mem.min(f64, images_arr.elems);
+    print("Image: [max, min] = [{d:.6}, {d:.6}]\n", .{ image_max, image_min });
+    print("{s}\n", .{print_break});
+
+    //======================================================================
+    // 6. Save image to disk
+    // const cwd = std.fs.cwd();
+    const cwd: std.Io.Dir = std.Io.Dir.cwd();
         
+    const dir_name = "raster-out";
+    var name_buff: [1024]u8 = undefined;
+    
+    cwd.createDir(io, dir_name, .default_dir) catch |err| switch (err) {
+        error.PathAlreadyExists => {}, // Path exists do nothing
+        else => return err, // Propagate any other error
+    };
+    
+    var out_dir: std.Io.Dir = try cwd.openDir(io, dir_name, .{});
+    defer out_dir.close(io);
+    
+    print("Saving output images to: {s}\n", .{dir_name});
+    
+    var image_slice_inds = [_]usize{0,0,0};
+            
+    for (0..num_fields) |ff|{
+        image_slice_inds[0] = ff;
+        
+        
+    
+        // Grab a matrix slice of the field images
+        const image_slice = try images_arr.getSlice(image_slice_inds[0..],0); 
+        const image_mat = try MatSlice(f64).init(image_slice,
+                                                 camera.pixels_num[1],
+                                                 camera.pixels_num[0]);
+        
+        time_start = try Instant.now();
+
+        // const file_name_csv = try std.fmt.bufPrint(name_buff[0..], 
+        //                                            "tile_one_field{d}_frame{d}.csv", 
+        //                                            .{ff,frame_ind});
+        // try rops.saveCSV(io, out_dir, file_name_csv, &image_mat);
+        
+        const file_name_ppm = try std.fmt.bufPrint(name_buff[0..], 
+                                                   "tile_one_field{d}_frame{d}.ppm", 
+                                                   .{ff,frame_ind});        
+        try rops.saveScaledPPM(io, out_dir, file_name_ppm, &image_mat);
+
+        time_end = try Instant.now();
+    
+        const time_save_image: f64 = @floatFromInt(time_end.since(time_start));
+        print("Field {d} image save time = {d:.3} ms\n", 
+              .{ff,time_save_image / time.ns_per_ms,});
+    }        
 } // main, end
