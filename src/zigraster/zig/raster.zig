@@ -166,9 +166,10 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         const num_bound_x: usize = sliceops.rangeLen(xi_min_f, xi_max_f, coord_step);
         const num_bound_y: usize = sliceops.rangeLen(yi_min_f, yi_max_f, coord_step);
 
+        // NOTE: only need inverse of node z coords
         var inv_buff: f64 = 0.0;
         for (0..connect.nodes_per_elem) |nn| {
-            inv_buff = 1.0 / nodes_raster_buff[nn].get(2);
+            inv_buff = 1.0 / nodes_raster_buff[nn].z();
             nodes_raster_buff[nn].set(2, inv_buff);
         }
 
@@ -233,8 +234,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                 var weight_dot_nodes: f64 = 0.0;
                 for (0..connect.nodes_per_elem) |nn| {
                     weights_buff[nn] = weights_buff[nn] / elem_area;
-                    weight_dot_nodes += weights_buff[nn] 
-                    			        * nodes_raster_buff[nn].get(2);
+                    weight_dot_nodes += weights_buff[nn] * nodes_raster_buff[nn].z();
                 }
 
                 // Calculate the depth for this sub-pixel
@@ -265,8 +265,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                 //     print("px_coord_z={d}\n", .{px_coord_z});
                 //     print("\n", .{});
                 // }
-
-
+ 
 	            var field_val: f64 = 0.0;
                 for (0..connect.nodes_per_elem) |nn| {
                     // NOTE:
@@ -277,6 +276,11 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
             			field_inds[2] = ff;
 
             			field_val = try	field.array.get(field_inds[0..]);
+
+            			//NOTE: need to multiple by inv z (see previous where inv z is put into
+            			//nodes_raster_buff) for perspective correct interp!
+                        field_val = field_val * nodes_raster_buff[nn].z();
+            			
                         field_raster_mat.set(ff,nn,field_val);
                      }
 
@@ -288,12 +292,11 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
             	for (0..num_fields) |ff| {
             		const field_slice = try field_raster_mat.getSlice(ff);
-                            	px_field = sliceops.dot(f64, field_slice, weights_buff);
+                	px_field = sliceops.dot(f64, field_slice, weights_buff);
+                    px_field = px_field * px_coord_z;
 
-                             px_field = px_field * px_coord_z;
-
-                             // print("\nind_y={} , ind_x={}, px_field={}\n",
-                             //      .{bound_ind_y,bound_ind_x,px_field});
+                     // print("\nind_y={} , ind_x={}, px_field={}\n",
+                     //      .{bound_ind_y,bound_ind_x,px_field});
 
             		image_subpx_inds[0] = ff;
             	    try image_subpx.set(image_subpx_inds[0..], px_field);
@@ -344,45 +347,43 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
     //----------------------------------------------------------------------
     // DEBUG: SAVE SUB-PIXEL IMAGES TO DISK
-//         const cwd = std.fs.cwd();
-//         const dir_name = "raster-out";
-// 
-//         cwd.makeDir(dir_name) catch |err| switch (err) {
-//          error.PathAlreadyExists => {}, // Path exists do nothing
-//          else => return err, // Propagate any other error
-//         };
-//         var out_dir = try cwd.openDir(dir_name, .{});
-//         defer out_dir.close();
-// 
-// 
-//         var name_buff: [1024]u8 = undefined;
-//         var file_name = try std.fmt.bufPrint(name_buff[0..], 
-//                                            "depthsp_frame{d}.csv", 
-//                                            .{ frame_ind });
-//         const depth_mat = try MatSlice(f64).init(depth_subpx.elems[0..],
-//                                              subpx_y,
-//                                              subpx_x);
-//         try depth_mat.saveCSV(out_dir,file_name);                                        
-// 
-//         for (0..num_fields) |ff| {
-//             out_slice_inds[0] = ff;
-//             
-//             file_name = try std.fmt.bufPrint(name_buff[0..], 
-//                                              "imagesp_field{d}_frame{d}.csv", 
-//                                              .{ ff,frame_ind });
-//             const imagesp_slice = try image_subpx.getSlice(out_slice_inds[0..],0);
-//             const imagesp_mat = try MatSlice(f64).init(imagesp_slice,subpx_y,subpx_x);
-//             try imagesp_mat.saveCSV(out_dir,file_name);
-// 
-//             file_name = try std.fmt.bufPrint(name_buff[0..], 
-//                                              "image_field{d}_frame{d}.csv", 
-//                                              .{ ff,frame_ind });
-//             const image_slice = try image_out_arr.getSlice(out_slice_inds[0..],0);
-//             const image_mat = try MatSlice(f64).init(image_slice,
-//                                                      camera.pixels_num[1],
-//                                                      camera.pixels_num[0]);
-//             try image_mat.saveCSV(out_dir,file_name);                                         
-//         }
+
+    var single_thread_io: std.Io.Threaded = .init_single_threaded;
+    const io = single_thread_io.io();
+
+    const cwd: std.Io.Dir = std.Io.Dir.cwd();        
+
+    const dir_name = "raster-test";
+    var name_buff: [1024]u8 = undefined;
+    
+    cwd.createDir(io, dir_name, .default_dir) catch |err| switch (err) {
+        error.PathAlreadyExists => {}, // Path exists do nothing
+        else => return err, // Propagate any other error
+    };
+    
+    var out_dir: std.Io.Dir = try cwd.openDir(io, dir_name, .{});
+    defer out_dir.close(io);
+
+    var file_name = try std.fmt.bufPrint(name_buff[0..], 
+                                       "rn_depthsp_frame{d}", 
+                                       .{ frame_ind });
+    const depth_mat = try MatSlice(f64).init(depth_subpx.elems[0..],
+                                         subpx_y,
+                                         subpx_x);
+    try rops.saveImage(io,out_dir,file_name,&depth_mat,.ppm);
+    try rops.saveImage(io,out_dir,file_name,&depth_mat,.csv);                             
+
+    for (0..num_fields) |ff| {
+        out_slice_inds[0] = ff;
+        
+        file_name = try std.fmt.bufPrint(name_buff[0..], 
+                                         "rn_imagesp_field{d}_frame{d}", 
+                                         .{ ff,frame_ind });
+        const imagesp_slice = try image_subpx.getSlice(out_slice_inds[0..],0);
+        const imagesp_mat = try MatSlice(f64).init(imagesp_slice,subpx_y,subpx_x);
+        try rops.saveImage(io,out_dir,file_name,&imagesp_mat,.ppm);
+        try rops.saveImage(io,out_dir,file_name,&imagesp_mat,.csv);         
+    }
     		
 }
 

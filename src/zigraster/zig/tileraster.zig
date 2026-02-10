@@ -475,12 +475,13 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     // DEBUG
     const sp_image_size = camera.pixels_num[1]*sub_samp*camera.pixels_num[0]*sub_samp;
     const sp_image_buff = try arena_alloc.alloc(f64, sp_image_size);
+    @memset(sp_image_buff,0.0);
     var sp_image = try MatSlice(f64).init(sp_image_buff,
-                                              camera.pixels_num[1]*sub_samp,
-                                              camera.pixels_num[0]*sub_samp);
+                                          camera.pixels_num[1]*sub_samp,
+                                          camera.pixels_num[0]*sub_samp);
 
 
-//=========================================================================================
+    //=========================================================================================
     for (active_tiles) |tile| {
         @memset(subpx_z_inv_scratch, 0.0);
         @memset(subpx_image_scratch, 0.0);
@@ -559,7 +560,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                             subpx_z_inv_scratch[scratch_flat_ind] = z_inv_curr;           
                             subpx_image_scratch[scratch_flat_ind] = z_inv_curr;
 
-                            sp_image.set(sp_image_iy,sp_image_ix,1/z_inv_curr);
+                            sp_image.set(sp_image_iy,sp_image_ix,z_inv_curr);
                         }
                     }
 
@@ -747,9 +748,10 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     defer out_dir.close(io);
 
     const file_name = try std.fmt.bufPrint(name_buff[0..], 
-                                           "tile_depth_frame{d}.ppm", 
+                                           "tile_depth_frame{d}", 
                                            .{ frame_ind });
-    try rops.saveScaledPPM(io, out_dir, file_name, &sp_image);
+    try rops.saveImage(io, out_dir, file_name, &sp_image, .ppm);
+    try rops.saveImage(io, out_dir, file_name, &sp_image, .csv);
 
     //-----------------------------------------------------------------------------------------
     const raster_end = try Instant.now();
