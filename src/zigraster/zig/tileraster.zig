@@ -169,13 +169,10 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     
     //_ = frame_ind;
     _ = field;
-    _ = image_out_arr;
+    //_ = image_out_arr;
 
     const N: usize = 3; // Set to nodes per elem 
     // SIMD lanes for batching bounding boxes of u16 - should be 32 for AVX-512
-    //const L: usize = 16; 
-    //print("DEBUG\n",.{});
-
     
     var time_start = try Instant.now();
     var time_end = try Instant.now();
@@ -570,19 +567,46 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
                             spx_inv_z_scratch[scratch_flat_ind] = spx_inv_z;           
                             spx_image_scratch[scratch_flat_ind] = spx_z;
-
+                            
                             spx_image.set(spx_image_iy,spx_image_ix,spx_z);
                         }
-                    }
-
+                    } 
                     spx_coord_x += spx_step;           
-        
-                }
-                
+                } // LOOP subpx x            
                 spx_coord_y += spx_step;
-            }   
-        }           
-    }
+            } // LOOP subpx y    
+        } // LOOP overlapping elems / boxes
+
+        // Average and push into main image buffer
+        const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
+        for (0..tile_size) |ty| { 
+            const image_px_y: usize = tile.y_px_min + ty;
+            const spx_start_y: usize = sub_samp * ty;
+            
+            for (0..tile_size) |tx| {
+                const image_px_x: usize = tile.x_px_min + tx;
+                const spx_start_x: usize = sub_samp * tx;
+                
+                var px_sum: f64 = 0.0;
+                        
+                for (0..sub_samp) |sy| { // Index into scratch
+                    const scratch_row_offset: usize = (spx_start_y + sy) 
+                                                     * spx_tile_size;  
+                        
+                    for (0..sub_samp) |sx| {
+                        const scratch_flat_ind: usize = scratch_row_offset+spx_start_x+sx;
+                        px_sum += spx_image_scratch[scratch_flat_ind];
+                    } // AVG LOOP: sub samp x
+                } // AVG LOOP: sub samp y
+
+                for (0..3) |ff| {
+                    const image_inds = [_]usize{ff,image_px_y,image_px_x};
+                    try image_out_arr.set(image_inds[0..], px_sum*inv_sub_samp_sq);
+                }
+            } // AVG LOOP: tile x
+        } // AVG LOOP: tile y        
+                   
+    } // LOOP active tiles
                                               
     //=========================================================================================
     // OPTIMISED EDGE FUNCTION

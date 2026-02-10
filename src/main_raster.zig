@@ -187,8 +187,6 @@ pub fn main() !void {
     defer out_dir.close(io);
     
     print("Saving output images to: {s}\n", .{dir_name});
-    
-    const ext = ".ppm";
 
     var image_slice_inds = [_]usize{0,0,0};
             
@@ -196,8 +194,8 @@ pub fn main() !void {
         image_slice_inds[0] = ff;
         
         const file_name = try std.fmt.bufPrint(name_buff[0..], 
-                                               "raster_one_field{d}_frame{d}{s}", 
-                                               .{ ff,frame_ind,ext });
+                                               "raster_one_field{d}_frame{d}", 
+                                               .{ ff,frame_ind});
     
         // Grab a matrix slice of the field images
         const image_slice = try images_arr.getSlice(image_slice_inds[0..],0); 
@@ -206,10 +204,10 @@ pub fn main() !void {
                                                  camera.pixels_num[0]);
         
         time_start = try Instant.now();
-        //try image_mat.saveCSV(io, out_dir, file_name);
-        try rops.saveCSV(io, out_dir, file_name, &image_mat);
-        try rops.saveScaledPPM(io, out_dir, file_name, &image_mat);
-
+        
+        try rops.saveImage(io, out_dir, file_name, &image_mat,.ppm);
+        try rops.saveImage(io, out_dir, file_name, &image_mat,.csv);
+        
         time_end = try Instant.now();
     
         const time_save_image: f64 = @floatFromInt(time_end.since(time_start));

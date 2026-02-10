@@ -192,9 +192,6 @@ pub fn main() !void {
             
     for (0..num_fields) |ff|{
         image_slice_inds[0] = ff;
-        
-        
-    
         // Grab a matrix slice of the field images
         const image_slice = try images_arr.getSlice(image_slice_inds[0..],0); 
         const image_mat = try MatSlice(f64).init(image_slice,
@@ -209,9 +206,10 @@ pub fn main() !void {
         // try rops.saveCSV(io, out_dir, file_name_csv, &image_mat);
         
         const file_name_ppm = try std.fmt.bufPrint(name_buff[0..], 
-                                                   "tile_one_field{d}_frame{d}.ppm", 
+                                                   "tile_one_field{d}_frame{d}", 
                                                    .{ff,frame_ind});        
-        try rops.saveScaledPPM(io, out_dir, file_name_ppm, &image_mat);
+        try rops.saveImage(io, out_dir, file_name_ppm, &image_mat, .ppm);
+        try rops.saveImage(io, out_dir, file_name_ppm, &image_mat, .csv);
 
         time_end = try Instant.now();
     

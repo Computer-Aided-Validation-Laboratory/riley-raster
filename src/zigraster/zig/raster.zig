@@ -286,7 +286,6 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
                 }
                 
-                // TODO: works up to here getting field values                        
             	image_subpx_inds[1] = bound_ind_y;
             	image_subpx_inds[2] = bound_ind_x;
 
@@ -302,6 +301,11 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
             	    try image_subpx.set(image_subpx_inds[0..], px_field);
             	}
 
+                // DEBUG
+                // Write depth buffer to first field for testing
+            	image_subpx_inds[0] = 0;
+                try image_subpx.set(image_subpx_inds[0..], px_coord_z);
+                
 	            //----------------------------------------------------------
                 // End for(x) - increment the x coords
                 bound_coord_x += coord_step;
