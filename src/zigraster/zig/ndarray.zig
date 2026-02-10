@@ -11,13 +11,14 @@ const expectEqualSlices = testing.expectEqualSlices;
 const MatSlice = @import("matslice.zig").MatSlice;
 const sliceops = @import("sliceops.zig");
 
-const NDArrayError = error{
-    ElemsWrongLenForDims,
-    IndexOutOfBounds,
-    DimOutOfBounds,
-    IndicesWrongLenForDims,
-    DimMismatch,
-};
+// NOTE: removed for performance and using assert instead
+// const NDArrayError = error{
+//     ElemsWrongLenForDims,
+//     IndexOutOfBounds,
+//     DimOutOfBounds,
+//     IndicesWrongLenForDims,
+//     DimMismatch,
+// };
 
 pub fn NDArray(comptime EType: type) type {
     return struct {
@@ -36,9 +37,7 @@ pub fn NDArray(comptime EType: type) type {
                 dim_prod *= dims[dd];
             }
 
-            if (elems.len < dim_prod) {
-                return NDArrayError.ElemsWrongLenForDims;
-            }
+            assert(elems.len >= dim_prod);
 
             const dims_heap = try allocator.dupe(usize, dims);
             const strides_heap = try allocator.alloc(usize, dims.len);
@@ -48,7 +47,7 @@ pub fn NDArray(comptime EType: type) type {
             							  .strides = strides_heap };
 
             for (0..dims.len) |dd| {
-                ndarray.strides[dd] = try ndarray.calcFlatStride(dd);
+                ndarray.strides[dd] = ndarray.calcFlatStride(dd);
             }
 
             return ndarray;
@@ -59,27 +58,22 @@ pub fn NDArray(comptime EType: type) type {
             allocator.free(self.strides);
         }
 
-        pub fn set(self: *Self, indices: []const usize, in_val: EType) !void {
-            const ind: usize = try self.getFlatInd(indices);
+        pub fn set(self: *Self, indices: []const usize, in_val: EType) void {
+            const ind: usize = self.getFlatInd(indices);
             self.elems[ind] = in_val;
         }
 
-        pub fn get(self: *const Self, indices: []const usize) !EType {
-            const ind: usize = try self.getFlatInd(indices);
+        pub fn get(self: *const Self, indices: []const usize) EType {
+            const ind: usize = self.getFlatInd(indices);
             return self.elems[ind];
         }
 
-        pub fn getFlatInd(self: *const Self, indices: []const usize) !usize {
-            if (indices.len != self.dims.len) {
-                return NDArrayError.IndicesWrongLenForDims;
-            }
+        pub fn getFlatInd(self: *const Self, indices: []const usize) usize {
+            assert(indices.len == self.dims.len);
 
             var flat: usize = 0;
-
             for (indices, 0..) |ind, dim| {
-                if (ind >= self.dims[dim]) {
-                    return NDArrayError.IndexOutOfBounds;
-                }
+                assert(ind < self.dims[dim]);
 
                 flat += ind * self.strides[dim];
             }
@@ -87,13 +81,11 @@ pub fn NDArray(comptime EType: type) type {
             return flat;
         }
 
-        pub fn calcFlatStride(self: *const Self, dim_ind: usize) !usize {
+        pub fn calcFlatStride(self: *const Self, dim_ind: usize) usize {
             // Row-major (C format) for flat NDArrays
             // stride = product of all dimensions to the right of the selected
             // dimension.
-            if (dim_ind >= self.dims.len) {
-                return NDArrayError.DimOutOfBounds;
-            }
+            assert(dim_ind < self.dims.len);
 
             var stride: usize = 1;
 
@@ -110,9 +102,7 @@ pub fn NDArray(comptime EType: type) type {
         }
 
         pub fn addInPlace(self: *const Self, to_add: *const Self) void {
-            if (!matchArrayDims(EType, self, to_add)) {
-                return NDArrayError.DimMismatch;
-            }
+            assert(matchArrayDims(EType, self, to_add));
 
             for (0..self.elems.len) |ii| {
                 self.elems[ii] += to_add.elems[ii];
@@ -120,9 +110,7 @@ pub fn NDArray(comptime EType: type) type {
         }
 
         pub fn subInPlace(self: *const Self, to_sub: *const Self) void {
-            if (!matchArrayDims(EType, self, to_sub)) {
-                return NDArrayError.DimMismatch;
-            }
+            assert(matchArrayDims(EType, self, to_sub));
 
             for (0..self.elems.len) |ii| {
                 self.elems[ii] -= to_sub.elems[ii];
@@ -130,9 +118,7 @@ pub fn NDArray(comptime EType: type) type {
         }
 
         pub fn mulInPlace(self: *const Self, to_mul: *const Self) void {
-            if (!matchArrayDims(EType, self, to_mul)) {
-                return NDArrayError.DimMismatch;
-            }
+            assert(matchArrayDims(EType, self, to_mul));
 
             for (0..self.elems.len) |ii| {
                 self.elems[ii] *= to_mul.elems[ii];
@@ -140,9 +126,7 @@ pub fn NDArray(comptime EType: type) type {
         }
 
         pub fn divInPlace(self: *const Self, to_div: *const Self) void {
-            if (!matchArrayDims(EType, self, to_div)) {
-                return NDArrayError.DimMismatch;
-            }
+            assert(matchArrayDims(EType, self, to_div));
 
             for (0..self.elems.len) |ii| {
                 self.elems[ii] /= to_div.elems[ii];
@@ -157,15 +141,10 @@ pub fn NDArray(comptime EType: type) type {
 
         pub fn getSlice(self: *const Self,
 							  fixed_inds: []usize,	
-                              slice_fixed_dim: usize) ![]EType {
-                              
-            if (fixed_inds.len != self.dims.len) {
-            	return NDArrayError.IndicesWrongLenForDims;
-            }
-                        
-            if ((slice_fixed_dim+1) >= self.dims.len) {
-            	return NDArrayError.DimOutOfBounds;
-            } 
+                              slice_fixed_dim: usize) []EType {
+
+            assert(fixed_inds.len == self.dims.len);
+            assert((slice_fixed_dim+1) < self.dims.len);             
 
 			// Have to zero off all other dimensions to ensure slice starts at
 			// the correct location
@@ -173,7 +152,7 @@ pub fn NDArray(comptime EType: type) type {
 				fixed_inds[ii] = 0;
 			}
 				
-        	const start_ind: usize = try self.getFlatInd(fixed_inds);
+        	const start_ind: usize = self.getFlatInd(fixed_inds);
         	const end_ind: usize = start_ind+self.strides[slice_fixed_dim];
 
 	    	return self.elems[start_ind..end_ind];                     	
@@ -187,37 +166,36 @@ pub fn NDArrayOps(comptime EType: type) type {
                    arr1: *const NDArray(EType), 
                    arr_out: *NDArray(EType)) !void {
 
-            if (!matchArrayDims(EType, arr0, arr1) 
-                or !matchArrayDims(EType, arr0, arr_out)) {
-                return NDArrayError.DimMismatch;
-            }
+            assert(matchArrayDims(EType, arr0, arr1));
+            assert(matchArrayDims(EType, arr0, arr_out));
+            
             sliceops.add(EType, arr0.elems, arr1.elems, arr_out.elems);
         }
 
         pub fn sub(arr0: *const NDArray(EType), 
         	       arr1: *const NDArray(EType), 
         	       arr_out: *NDArray(EType)) !void {
-            if (!matchArrayDims(EType, arr0, arr1) or !matchArrayDims(EType, arr0, arr_out)) {
-                return NDArrayError.DimMismatch;
-            }
+            assert(matchArrayDims(EType, arr0, arr1));
+            assert(matchArrayDims(EType, arr0, arr_out));
+
             sliceops.sub(EType, arr0.elems, arr1.elems, arr_out.elems);
         }
 
         pub fn mulElemWise(arr0: *const NDArray(EType), 
         				   arr1: *const NDArray(EType), 
         				   arr_out: *NDArray(EType)) !void {
-            if (!matchArrayDims(EType, arr0, arr1) or !matchArrayDims(EType, arr0, arr_out)) {
-                return NDArrayError.DimMismatch;
-            }
+            assert(matchArrayDims(EType, arr0, arr1));
+            assert(matchArrayDims(EType, arr0, arr_out));
+
             sliceops.mul(EType, arr0.elems, arr1.elems, arr_out.elems);
         }
 
         pub fn divElemWise(arr0: *const NDArray(EType), 
         				  arr1: *const NDArray(EType), 
         				  arr_out: *NDArray(EType)) !void {
-            if (!matchArrayDims(EType, arr0, arr1) or !matchArrayDims(EType, arr0, arr_out)) {
-                return NDArrayError.DimMismatch;
-            }
+            assert(matchArrayDims(EType, arr0, arr1));
+            assert(matchArrayDims(EType, arr0, arr_out));
+            
             sliceops.div(EType, arr0.elems, arr1.elems, arr_out.elems);
         }
 
@@ -227,20 +205,12 @@ pub fn NDArrayOps(comptime EType: type) type {
         				  row_ext: usize, 
         				  col_ext: usize,
         				  mat: *MatSlice(EType)) !void {
-        				  
-			if (fixed_inds.len != arr.dims.len) {
-                return NDArrayError.IndicesWrongLenForDims;
-            }
-            
-            if (row_ext > arr.dims.len or col_ext > arr.dims.len) {
-            	return NDArrayError.DimOutOfBounds;
-            }
-            
+        	assert(fixed_inds.len == arr.dims.len);			  
+			assert(row_ext <= arr.dims.len);
+            assert(col_ext <= arr.dims.len);
             const num_elems: usize = arr.dims[row_ext]*arr.dims[col_ext];
-            if (num_elems != mat.elems.len) {
-            	return NDArrayError.ElemsWrongLenForDims; 	
-            } 
-
+            assert(num_elems == mat.elems.len);
+            
             var get_dims_slice: []usize = try allocator.dupe(usize, fixed_inds);
 			defer allocator.free(get_dims_slice);
 
@@ -310,15 +280,15 @@ test "getFlatInd" {
 
     const inds0 = [_]usize{ 1, 2, 1 };
     const exp_ind0: usize = 16; 
-	const flat_ind0 = try arr0.getFlatInd(inds0[0..]);
+	const flat_ind0 = arr0.getFlatInd(inds0[0..]);
 	
 	const inds1 = [_]usize{0,0,0};
 	const exp_ind1: usize = 0;
-	const flat_ind1 = try arr0.getFlatInd(inds1[0..]);
+	const flat_ind1 = arr0.getFlatInd(inds1[0..]);
 
 	const inds2 = [_]usize{1,2,2};
 	const exp_ind2: usize = 17;
-    const flat_ind2 = try arr0.getFlatInd(inds2[0..]);
+    const flat_ind2 = arr0.getFlatInd(inds2[0..]);
 
 	try expectEqual(flat_ind0,exp_ind0);
 	try expectEqual(flat_ind1,exp_ind1);
@@ -360,7 +330,7 @@ test "getSlice" {
 		for (0..dims0[2]) |jj| {
 			set_inds[1] = ii;
 			set_inds[2] = jj;
-			try arr0.set(set_inds[0..],7);
+			arr0.set(set_inds[0..],7);
 		}
 	}
 
@@ -369,7 +339,7 @@ test "getSlice" {
 		for (0..dims0[2]) |jj|{
 			set_inds[1] = ii;
 			set_inds[2] = jj;
-			try arr0.set(set_inds[0..],9);
+			arr0.set(set_inds[0..],9);
 		}
 	}
 
@@ -377,10 +347,10 @@ test "getSlice" {
 	const check_arr1 = [_]f64{9} ** 4;
 
 	var fixed_inds = [_]usize{1,10,10};
-	const ext_slice0 = try arr0.getSlice(fixed_inds[0..],0);
+	const ext_slice0 = arr0.getSlice(fixed_inds[0..],0);
 
 	fixed_inds[0] = 2;
-	const ext_slice1 = try arr0.getSlice(fixed_inds[0..],0);
+	const ext_slice1 = arr0.getSlice(fixed_inds[0..],0);
  
 	// print("test: arr0.elems={any}\n",.{arr0.elems});
 	// print("test: check_arr0={any}\n",.{check_arr0});

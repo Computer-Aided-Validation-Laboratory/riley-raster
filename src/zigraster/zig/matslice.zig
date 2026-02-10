@@ -49,6 +49,8 @@ pub fn MatSlice(comptime EType: type) type {
         }
 
         pub fn get(self: *const Self, row: usize, col: usize) EType {
+            assert(row < self.rows_n);
+            assert(col < self.cols_n);
             return self.elems[(row * self.cols_n) + col];
         }
 
