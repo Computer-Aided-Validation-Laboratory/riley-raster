@@ -2,13 +2,17 @@
 # Nano temporary files
 *.swp
 
-# Library files
+# Zig library files
 *.so
 *.a
 *.o
 build/
 file-out/
+
+# Test files
 raster-out/
+raster-test/
+*.ppm
 
 # Cython
 *.html
