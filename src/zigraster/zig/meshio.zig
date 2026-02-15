@@ -239,7 +239,7 @@ pub fn parseField(csv_lines: *const std.ArrayList([]const u8),
             
             const num_f: f64 = try std.fmt.parseFloat(f64, num_str);
             
-            try field.array.set(inds[0..],num_f);
+            field.array.set(inds[0..],num_f);
           
             inds[0] += 1; // increment time_n as we step along the row
         }

@@ -85,7 +85,7 @@ pub fn loadVec3SIMDFromElemArray(comptime N: usize,
                                  elem_array: *const NDArray(T),
                                  elem_ind: usize) !Vec3SIMD(N,T) {
 
-    var start_slice: usize = try elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
+    var start_slice: usize = elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
     // if coords then stride=3, if fields then stride=fields_num
     const stride: usize = elem_array.strides[1];  
 
@@ -106,7 +106,7 @@ pub fn saveVec3SIMDToElemArray(comptime N: usize,
                            elem_ind: usize,
                            vec: Vec3SIMD(N,T)) !void {
                        
-    var start_slice: usize = try elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
+    var start_slice: usize = elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
     // if coords then stride=3, if fields then stride=fields_num
     const stride: usize = elem_array.strides[1];  
 
@@ -208,7 +208,7 @@ pub fn loadVecSIMDFromElemArray(comptime D: usize,
                                 elem_array: *const NDArray(T),
                                 elem_ind: usize) !Vec3SIMD(D,N,T) {
     const stride = elem_array.strides[1];
-    const flat_start = try elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
+    const flat_start = elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
 
     var out: VecSIMD(D,N,T) = undefined;
     inline for (0..D) |ii| {
@@ -225,7 +225,7 @@ pub fn saveVecSIMDToElemArray(comptime D: usize,
                            elem_ind: usize,
                            vec: VecSIMD(D,N,T)) !void {
     const stride = elem_array.strides[1];
-    const flat_start = try elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
+    const flat_start = elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
 
     inline for (0..D) |ii| {
         const start_slice = flat_start + (ii*stride);

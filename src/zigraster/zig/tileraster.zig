@@ -76,11 +76,11 @@ pub fn fillElemCoords(coords: *const Coords,
             elem_inds[dim_node] = nn;
                                 
             elem_inds[dim_field] = 0;            
-            try elem_array.set(elem_inds[0..],coords.x[coord_inds[nn]]);
+            elem_array.set(elem_inds[0..],coords.x[coord_inds[nn]]);
             elem_inds[dim_field] = 1;            
-            try elem_array.set(elem_inds[0..],coords.y[coord_inds[nn]]);
+            elem_array.set(elem_inds[0..],coords.y[coord_inds[nn]]);
             elem_inds[dim_field] = 2;            
-            try elem_array.set(elem_inds[0..],coords.z[coord_inds[nn]]);
+            elem_array.set(elem_inds[0..],coords.z[coord_inds[nn]]);
             
         } 
     }    
@@ -100,7 +100,7 @@ pub fn loadVec3SlicesFromElemArray(comptime N: usize,
                                    elem_array: *const NDArray(T),
                                    elem_ind: usize) !Vec3OfSlices(T) {
 
-    var start_slice: usize = try elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
+    var start_slice: usize = elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
     // if coords then stride=3, if fields then stride=fields_num
     const stride: usize = elem_array.strides[1];  
 
@@ -167,7 +167,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
     const raster_start = try Instant.now();
     
-    //_ = frame_ind;
+    _ = frame_ind;
     _ = field;
     //_ = image_out_arr;
 
@@ -188,7 +188,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     const elems_num: usize = connect.elem_n;
     const nodes_per_elem: usize = connect.nodes_per_elem;
     const coords_num: usize = 3;
-    const fields_num: usize = field.getFieldsN();
+    //const fields_num: usize = field.getFieldsN();
 
     // dims=(elems_num,coord[x,y,z],nodes_per_elem)
     const dim_elem: usize = 0; 
@@ -524,9 +524,10 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
             // RASTER HOT LOOP
             for (scratch_start_ind_y .. scratch_end_ind_y) |yy| {
 
-                const spx_image_iy: usize = tile.y_px_min*sub_samp + yy;
                 const scratch_row_offset: usize = yy * spx_tile_size;
-
+                //DEBUG
+                //const spx_image_iy: usize = tile.y_px_min*sub_samp + yy;
+                                
                 spx_coord_x = xi_min_f + spx_offset;
                 
                 for (scratch_start_ind_x .. scratch_end_ind_x) |xx| {
@@ -542,9 +543,11 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                                                nodes_rast.x[1],nodes_rast.y[1],
                                                spx_coord_x,spx_coord_y);
 
-                    const spx_image_ix: usize = tile.x_px_min*sub_samp + xx;
                     const scratch_flat_ind: usize = scratch_row_offset + xx;
 
+                    // DEBUG
+                    //const spx_image_ix: usize = tile.x_px_min*sub_samp + xx;
+                                        
                     if (nodes_weight[0] >= 0.0 and 
                         nodes_weight[1] >= 0.0 and 
                         nodes_weight[2] >= 0.0){
@@ -568,8 +571,9 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
                             spx_inv_z_scratch[scratch_flat_ind] = spx_inv_z;           
                             spx_image_scratch[scratch_flat_ind] = spx_z;
-                            
-                            spx_image.set(spx_image_iy,spx_image_ix,spx_z);
+
+                            // DEBUG
+                            //spx_image.set(spx_image_iy,spx_image_ix,spx_z);
                         }
                     } 
                     spx_coord_x += spx_step;           
@@ -578,7 +582,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
             } // LOOP subpx y    
         } // LOOP overlapping elems / boxes
 
-        // Average and push into main image buffer
+        // Average scratch and push into main image buffer
         const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
         for (0..tile_size) |ty| { 
             const image_px_y: usize = tile.y_px_min + ty;
@@ -602,7 +606,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
                 for (0..3) |ff| {
                     const image_inds = [_]usize{ff,image_px_y,image_px_x};
-                    try image_out_arr.set(image_inds[0..], px_sum*inv_sub_samp_sq);
+                    image_out_arr.set(image_inds[0..], px_sum*inv_sub_samp_sq);
                 }
             } // AVG LOOP: tile x
         } // AVG LOOP: tile y        
