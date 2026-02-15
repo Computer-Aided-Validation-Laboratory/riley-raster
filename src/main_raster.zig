@@ -77,7 +77,7 @@ pub fn main() !void {
     const field_fields_n = sim_data.field.getFieldsN();
     
     var fixed_inds = [_]usize{8,0,0};
-    const field_slice = try sim_data.field.array.getSlice(fixed_inds[0..],0);
+    const field_slice = sim_data.field.array.getSlice(fixed_inds[0..],0);
     const field_mat = try MatSlice(f64).init(field_slice,
                                             field_coord_n,
                                             field_fields_n);
@@ -198,7 +198,7 @@ pub fn main() !void {
                                                .{ ff,frame_ind});
     
         // Grab a matrix slice of the field images
-        const image_slice = try images_arr.getSlice(image_slice_inds[0..],0); 
+        const image_slice = images_arr.getSlice(image_slice_inds[0..],0); 
         const image_mat = try MatSlice(f64).init(image_slice,
                                                  camera.pixels_num[1],
                                                  camera.pixels_num[0]);

@@ -244,7 +244,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
             	depth_subpx_inds[0] = bound_ind_y;
             	depth_subpx_inds[1] = bound_ind_x;
             	
-            	const depth_arr_z: f64 = try depth_subpx.get(depth_subpx_inds[0..]); 
+            	const depth_arr_z: f64 = depth_subpx.get(depth_subpx_inds[0..]); 
 	
                 if (px_coord_z >= depth_arr_z) {
                     bound_coord_x += coord_step;
@@ -252,7 +252,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                     continue;
                 }
 
-                try depth_subpx.set(depth_subpx_inds[0..], px_coord_z);
+                depth_subpx.set(depth_subpx_inds[0..], px_coord_z);
 
                 // if ((ee % 10) == 0) {
                 //     print("Elem: {}\n", .{ee});
@@ -275,7 +275,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
             			field_inds[1] = coord_inds[nn]; // This is scattered
             			field_inds[2] = ff;
 
-            			field_val = try	field.array.get(field_inds[0..]);
+            			field_val = field.array.get(field_inds[0..]);
 
             			//NOTE: need to multiple by inv z (see previous where inv z is put into
             			//nodes_raster_buff) for perspective correct interp!
@@ -298,13 +298,13 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                      //      .{bound_ind_y,bound_ind_x,px_field});
 
             		image_subpx_inds[0] = ff;
-            	    try image_subpx.set(image_subpx_inds[0..], px_field);
+            	    image_subpx.set(image_subpx_inds[0..], px_field);
             	}
 
                 // DEBUG
                 // Write depth buffer to first field for testing
             	image_subpx_inds[0] = 0;
-                try image_subpx.set(image_subpx_inds[0..], px_coord_z);
+                image_subpx.set(image_subpx_inds[0..], px_coord_z);
                 
 	            //----------------------------------------------------------
                 // End for(x) - increment the x coords
@@ -331,7 +331,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         out_slice_inds[0] = ff;
 
         // 1) Create MatSlice for sub-pixel image for given field ff
-        const image_subpx_slice = try image_subpx.getSlice(
+        const image_subpx_slice = image_subpx.getSlice(
             out_slice_inds[0..],0);
         const image_subpx_mat = try MatSlice(f64).init(image_subpx_slice,
                                                       subpx_y,
@@ -340,7 +340,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         // 2) Create wrapper MatSlice for actual images dims from last
         // two dims of the image_out_arr using getSlice()
         // Need to get it from image_out_arr
-        const image_out_slice = try image_out_arr.getSlice(
+        const image_out_slice = image_out_arr.getSlice(
             out_slice_inds[0..],0);
         var image_out_mat = try MatSlice(f64).init(image_out_slice,
                                                   camera.pixels_num[1],
@@ -383,7 +383,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         file_name = try std.fmt.bufPrint(name_buff[0..], 
                                          "rn_imagesp_field{d}_frame{d}", 
                                          .{ ff,frame_ind });
-        const imagesp_slice = try image_subpx.getSlice(out_slice_inds[0..],0);
+        const imagesp_slice = image_subpx.getSlice(out_slice_inds[0..],0);
         const imagesp_mat = try MatSlice(f64).init(imagesp_slice,subpx_y,subpx_x);
         try rops.saveImage(io,out_dir,file_name,&imagesp_mat,.ppm);
         try rops.saveImage(io,out_dir,file_name,&imagesp_mat,.csv);         

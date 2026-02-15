@@ -30,7 +30,7 @@ pub fn NDArray(comptime EType: type) type {
 
         pub fn init(allocator: std.mem.Allocator, 
         			elems: []EType, 
-        			dims: []usize) !Self {
+        			dims: []const usize) !Self {
         			
             var dim_prod: usize = dims[0];
             for (1..dims.len) |dd| {

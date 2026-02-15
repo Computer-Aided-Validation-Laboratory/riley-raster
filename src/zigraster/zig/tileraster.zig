@@ -54,8 +54,8 @@ pub fn initElemArray(comptime T: type,
     const elem_arr_mem = try allocator.alloc(T, elem_arr_size);
     @memset(elem_arr_mem,0.0);
     const elem_arr = try NDArray(T).init(allocator, 
-                                             elem_arr_mem, 
-                                             elem_arr_dims[0..]);
+                                         elem_arr_mem, 
+                                         elem_arr_dims[0..]);
     return elem_arr;
 }
 
@@ -65,7 +65,7 @@ pub fn fillElemCoords(coords: *const Coords,
                       dim_node: usize,
                       dim_field: usize,
                       elem_array: *NDArray(f64),
-                      ) !void {
+                      ) void {
     var elem_inds = [_]usize{0,0,0};
 
     for (0..elem_array.dims[dim_elem]) |ee| {
@@ -82,6 +82,38 @@ pub fn fillElemCoords(coords: *const Coords,
             elem_inds[dim_field] = 2;            
             elem_array.set(elem_inds[0..],coords.z[coord_inds[nn]]);
             
+        } 
+    }    
+}
+
+pub fn fillElemFields(connect: *const Connect,
+                      field: *const Field,
+                      frame_ind: usize,
+                      dim_elem: usize,
+                      dim_node: usize,
+                      dim_field: usize,
+                      field_array: *NDArray(f64),
+                      ) void {
+
+    const fields_num = field.getFieldsN();
+    var set_elem_inds = [_]usize{0,0,0};
+    var get_field_inds = [_]usize{frame_ind,0,0};
+
+    for (0..field_array.dims[dim_elem]) |ee| {
+        set_elem_inds[dim_elem] = ee;
+        const coord_inds: []usize = connect.getElem(ee);
+
+        for (0..field_array.dims[dim_node]) |nn| {
+            set_elem_inds[dim_node] = nn;
+            get_field_inds[1] = coord_inds[nn];
+            
+            for (0..fields_num) |ff| {
+                get_field_inds[2] = ff;
+                const field_val: f64 = field.array.get(get_field_inds[0..]);
+
+                set_elem_inds[dim_field] = ff;
+                field_array.set(set_elem_inds[0..],field_val);    
+            }
         } 
     }    
 }
@@ -167,8 +199,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
     const raster_start = try Instant.now();
     
-    _ = frame_ind;
-    _ = field;
+    //_ = frame_ind;
     //_ = image_out_arr;
 
     const N: usize = 3; // Set to nodes per elem 
@@ -188,19 +219,30 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     const elems_num: usize = connect.elem_n;
     const nodes_per_elem: usize = connect.nodes_per_elem;
     const coords_num: usize = 3;
-    //const fields_num: usize = field.getFieldsN();
+    const fields_num: usize = field.getFieldsN();
 
     // dims=(elems_num,coord[x,y,z],nodes_per_elem)
-    const dim_elem: usize = 0; 
-    const dim_field: usize = 1;
-    const dim_node: usize = 2;
     var elem_coord_arr = try initElemArray(f64,
                                             arena_alloc,
                                             elems_num,
                                             coords_num,
                                             nodes_per_elem);
-    try fillElemCoords(coords,connect,dim_elem,dim_node,dim_field,&elem_coord_arr);
-    var elem_inds = [_]usize{0,0,0};
+    // dims=(elems_num,fields_num,nodes_per_elem) 
+    var elem_field_arr = try initElemArray(f64,
+                                            arena_alloc,
+                                            elems_num,
+                                            fields_num,
+                                            nodes_per_elem);
+
+    // dims=(elems_num,coord[x,y,z],nodes_per_elem)
+    const dim_elem: usize = 0; 
+    const dim_field: usize = 1;
+    const dim_node: usize = 2;
+
+    // NOTE: both these functions can be joined as a single loop
+    fillElemCoords(coords,connect,dim_elem,dim_node,dim_field,&elem_coord_arr);
+    fillElemFields(connect,field,frame_ind,dim_elem,dim_node,dim_field,&elem_field_arr);
+
     
     // DEBUG:
     // print("\n",.{});
@@ -254,9 +296,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     // - Add backface culling for higher order elements, performant and accurate:
     //     - Check normals at far corners, if they are all strongly backfacing discard
     //     - Then do normal check inside raster loop at hit location after Newton iterations
-    //     - Note need to do the Z divide
-    elem_inds = .{0,0,0}; 
-
+    //     - Note need to do the Z divide    
     const elem_bboxes: []BBox = try arena_alloc.alloc(BBox,elems_num);
     var elems_in_image: usize = 0;
     const area_tol: f64 = 1e-9;
@@ -464,10 +504,13 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     
     const spx_inv_z_scratch = try arena_alloc.alloc(f64, spx_tile_total);
 
-    // Image scratch need multiple channels
-    const spx_image_scratch = try arena_alloc.alloc(f64, spx_tile_total);
+    const spx_image_scratch_mem = try arena_alloc.alloc(f64, spx_tile_total*fields_num);
+    const spx_image_scratch_dims = [_]usize{spx_tile_total,fields_num}; 
+    var spx_image_scratch = try NDArray(f64).init(arena_alloc,
+                                                  spx_image_scratch_mem,
+                                                  spx_image_scratch_dims[0..]);
 
-    //const raster_tol = 1e-9;
+    const spx_field_buff = try arena_alloc.alloc(f64, fields_num);
 
     //-----------------------------------------------------------------------------------------
     // TODO: thread this for large images and large meshes 
@@ -484,7 +527,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     //=========================================================================================
     for (active_tiles) |tile| {
         @memset(spx_inv_z_scratch, 0.0);
-        @memset(spx_image_scratch, 0.0);
+        @memset(spx_image_scratch.elems, 0.0);
 
         const overlaps: []BBox = overlap_bboxes[tile.overlap_start.. 
                                                 tile.overlap_start + tile.overlap_count];
@@ -547,7 +590,6 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
                     // DEBUG
                     //const spx_image_ix: usize = tile.x_px_min*sub_samp + xx;
-                                        
                     if (nodes_weight[0] >= 0.0 and 
                         nodes_weight[1] >= 0.0 and 
                         nodes_weight[2] >= 0.0){
@@ -567,11 +609,29 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                         // 1/large number = far away = approach 0, far away = LESS THAN
                         // 1/small number = closer = approach inf, close = GREATER THAN
                         if (spx_inv_z > spx_inv_z_scratch[scratch_flat_ind]) {
-                            const spx_z: f64 = 1/spx_inv_z; 
-
+                            
                             spx_inv_z_scratch[scratch_flat_ind] = spx_inv_z;           
-                            spx_image_scratch[scratch_flat_ind] = spx_z;
+                            const spx_z: f64 = 1/spx_inv_z; 
+                            //spx_image_scratch[scratch_flat_ind] = spx_z;
 
+                            // Write to field buffer
+                            // NOTE: could SIMD the ops over nodes here
+                            var field_val: f64 = 0.0;
+                            for (0..fields_num) |ff| {
+                                for (0..N) |nn| { 
+
+                                    const elem_field_inds = [_]usize{overlap.elem_ind,
+                                                                     ff,
+                                                                     nn};
+
+                                    field_val = elem_field_arr.get(elem_field_inds[0..]);
+                                    field_val = field_val * nodes_rast.z[nn]; 
+                                
+                                    spx_image_scratch.set(
+                                        &[_]usize{scratch_flat_ind,ff},spx_z
+                                    );
+                                }
+                            }
                             // DEBUG
                             //spx_image.set(spx_image_iy,spx_image_ix,spx_z);
                         }
@@ -584,6 +644,8 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
         // Average scratch and push into main image buffer
         const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
+        
+        
         for (0..tile_size) |ty| { 
             const image_px_y: usize = tile.y_px_min + ty;
             const spx_start_y: usize = sub_samp * ty;
@@ -592,7 +654,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                 const image_px_x: usize = tile.x_px_min + tx;
                 const spx_start_x: usize = sub_samp * tx;
                 
-                var px_sum: f64 = 0.0;
+                //var px_sum: f64 = 0.0;
                         
                 for (0..sub_samp) |sy| { // Index into scratch
                     const scratch_row_offset: usize = (spx_start_y + sy) 
@@ -600,13 +662,18 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                         
                     for (0..sub_samp) |sx| {
                         const scratch_flat_ind: usize = scratch_row_offset+spx_start_x+sx;
-                        px_sum += spx_image_scratch[scratch_flat_ind];
+
+                        for (0..fields_num) |ff| {
+                            const spx_field_inds = [_]usize{scratch_flat_ind,ff};      
+                            spx_field_buff[ff] += spx_image_scratch.get(spx_field_inds[0..]);
+                        }
                     } // AVG LOOP: sub samp x
                 } // AVG LOOP: sub samp y
 
-                for (0..3) |ff| {
+                for (0..fields_num) |ff| {
                     const image_inds = [_]usize{ff,image_px_y,image_px_x};
-                    image_out_arr.set(image_inds[0..], px_sum*inv_sub_samp_sq);
+                    const image_val: f64 = spx_field_buff[ff]*inv_sub_samp_sq;
+                    image_out_arr.set(image_inds[0..], image_val);
                 }
             } // AVG LOOP: tile x
         } // AVG LOOP: tile y        
