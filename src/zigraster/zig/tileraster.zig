@@ -96,8 +96,8 @@ pub fn fillElemFields(connect: *const Connect,
                       ) void {
 
     const fields_num = field.getFieldsN();
-    var set_elem_inds = [_]usize{0,0,0};
-    var get_field_inds = [_]usize{frame_ind,0,0};
+    var set_elem_inds = [_]usize{0,0,0}; // dims=(elem,field,node)
+    var get_field_inds = [_]usize{frame_ind,0,0}; // dims=(time,coord,field)
 
     for (0..field_array.dims[dim_elem]) |ee| {
         set_elem_inds[dim_elem] = ee;
@@ -215,7 +215,6 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
     //-----------------------------------------------------------------------------------------
     // **ELEMENT WISE PRE-TRANSFORM**
-    
     const elems_num: usize = connect.elem_n;
     const nodes_per_elem: usize = connect.nodes_per_elem;
     const coords_num: usize = 3;
@@ -243,7 +242,6 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     fillElemCoords(coords,connect,dim_elem,dim_node,dim_field,&elem_coord_arr);
     fillElemFields(connect,field,frame_ind,dim_elem,dim_node,dim_field,&elem_field_arr);
 
-    
     // DEBUG:
     // print("\n",.{});
     // print("elem_coord_arr:\n",.{});
@@ -510,7 +508,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                                                   spx_image_scratch_mem,
                                                   spx_image_scratch_dims[0..]);
 
-    const spx_field_buff = try arena_alloc.alloc(f64, fields_num);
+    const spx_field_avg = try arena_alloc.alloc(f64, fields_num);
 
     //-----------------------------------------------------------------------------------------
     // TODO: thread this for large images and large meshes 
@@ -600,6 +598,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                         }
 
                         // Perspective correct interpolation to get the inverse of the z
+                        // (weights) dot (nodes_inv_z) 
                         var spx_inv_z: f64 = 0.0;
                         for (0..N) |nn| {
                             spx_inv_z += nodes_weight[nn] * nodes_inv_z[nn];
@@ -611,27 +610,38 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                         if (spx_inv_z > spx_inv_z_scratch[scratch_flat_ind]) {
                             
                             spx_inv_z_scratch[scratch_flat_ind] = spx_inv_z;           
-                            const spx_z: f64 = 1/spx_inv_z; 
+                            
                             //spx_image_scratch[scratch_flat_ind] = spx_z;
 
-                            // Write to field buffer
-                            // NOTE: could SIMD the ops over nodes here
-                            var field_val: f64 = 0.0;
+                            
+                            // CALC: for each field, subpx value based on node values and 
+                            // weights:
+                            // spx_field = (vec(nodes_field[nn] * nodes_inv_z[nn]) 
+                            //             dot vec(nodes_weights)) * spx_z_coord
+                            
+                            const spx_z: f64 = 1/spx_inv_z; 
                             for (0..fields_num) |ff| {
-                                for (0..N) |nn| { 
 
+                                var field_at_spx: f64 = 0.0;
+                                for (0..N) |nn| { 
                                     const elem_field_inds = [_]usize{overlap.elem_ind,
                                                                      ff,
                                                                      nn};
+                                    // CALC:(nodes_field[nn]) * (nodes_inv_z[nn])
+                                    const field_at_node_div_z = elem_field_arr.get(
+                                        elem_field_inds[0..]) * nodes_inv_z[nn];
 
-                                    field_val = elem_field_arr.get(elem_field_inds[0..]);
-                                    field_val = field_val * nodes_rast.z[nn]; 
-                                
-                                    spx_image_scratch.set(
-                                        &[_]usize{scratch_flat_ind,ff},spx_z
-                                    );
+                                    // CALC: (node_weights) dot (nodes_field_div_z)
+                                    field_at_spx += nodes_weight[nn]*field_at_node_div_z;  
                                 }
-                            }
+                                
+                                // CALC: ((node_weights) dot (nodes_field_div_z)) * subpx_z
+                                field_at_spx *= spx_z;
+                                
+                                spx_image_scratch.set(&[_]usize{scratch_flat_ind,ff},
+                                                      field_at_spx);
+                                
+                            }                                
                             // DEBUG
                             //spx_image.set(spx_image_iy,spx_image_ix,spx_z);
                         }
@@ -645,7 +655,6 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         // Average scratch and push into main image buffer
         const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
         
-        
         for (0..tile_size) |ty| { 
             const image_px_y: usize = tile.y_px_min + ty;
             const spx_start_y: usize = sub_samp * ty;
@@ -654,7 +663,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                 const image_px_x: usize = tile.x_px_min + tx;
                 const spx_start_x: usize = sub_samp * tx;
                 
-                //var px_sum: f64 = 0.0;
+                @memset(spx_field_avg,0.0);
                         
                 for (0..sub_samp) |sy| { // Index into scratch
                     const scratch_row_offset: usize = (spx_start_y + sy) 
@@ -665,14 +674,14 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
                         for (0..fields_num) |ff| {
                             const spx_field_inds = [_]usize{scratch_flat_ind,ff};      
-                            spx_field_buff[ff] += spx_image_scratch.get(spx_field_inds[0..]);
+                            spx_field_avg[ff] += spx_image_scratch.get(spx_field_inds[0..]);
                         }
                     } // AVG LOOP: sub samp x
                 } // AVG LOOP: sub samp y
 
                 for (0..fields_num) |ff| {
                     const image_inds = [_]usize{ff,image_px_y,image_px_x};
-                    const image_val: f64 = spx_field_buff[ff]*inv_sub_samp_sq;
+                    const image_val: f64 = spx_field_avg[ff]*inv_sub_samp_sq;
                     image_out_arr.set(image_inds[0..], image_val);
                 }
             } // AVG LOOP: tile x
