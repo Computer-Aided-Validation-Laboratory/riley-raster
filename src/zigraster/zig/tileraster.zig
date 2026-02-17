@@ -502,11 +502,10 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     
     const spx_inv_z_scratch = try arena_alloc.alloc(f64, spx_tile_total);
 
-    const spx_image_scratch_mem = try arena_alloc.alloc(f64, spx_tile_total*fields_num);
-    const spx_image_scratch_dims = [_]usize{spx_tile_total,fields_num}; 
-    var spx_image_scratch = try NDArray(f64).init(arena_alloc,
-                                                  spx_image_scratch_mem,
-                                                  spx_image_scratch_dims[0..]);
+    const spx_image_scratch_mem = try arena_alloc.alloc(f64, spx_tile_total*fields_num); 
+    var spx_image_scratch = MatSlice(f64).init(spx_image_scratch_mem,
+                                               spx_tile_total,
+                                               fields_num);
 
     const spx_field_avg = try arena_alloc.alloc(f64, fields_num);
 
@@ -638,9 +637,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                                 // CALC: ((node_weights) dot (nodes_field_div_z)) * subpx_z
                                 field_at_spx *= spx_z;
                                 
-                                spx_image_scratch.set(&[_]usize{scratch_flat_ind,ff},
-                                                      field_at_spx);
-                                
+                                spx_image_scratch.set(scratch_flat_ind,ff,field_at_spx);
                             }                                
                             // DEBUG
                             //spx_image.set(spx_image_iy,spx_image_ix,spx_z);
@@ -673,8 +670,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                         const scratch_flat_ind: usize = scratch_row_offset+spx_start_x+sx;
 
                         for (0..fields_num) |ff| {
-                            const spx_field_inds = [_]usize{scratch_flat_ind,ff};      
-                            spx_field_avg[ff] += spx_image_scratch.get(spx_field_inds[0..]);
+                            spx_field_avg[ff] += spx_image_scratch.get(scratch_flat_ind,ff);
                         }
                     } // AVG LOOP: sub samp x
                 } // AVG LOOP: sub samp y

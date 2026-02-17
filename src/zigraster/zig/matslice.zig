@@ -18,7 +18,7 @@ pub fn MatSlice(comptime EType: type) type {
 
         const Self: type = @This();
 
-        pub fn init(elems: []EType, rows_n: usize, cols_n: usize) !Self {
+        pub fn init(elems: []EType, rows_n: usize, cols_n: usize) Self {
             assert(elems.len == (rows_n * cols_n));
 
             return .{
