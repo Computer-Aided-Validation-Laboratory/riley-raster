@@ -78,7 +78,7 @@ pub fn main() !void {
     
     var fixed_inds = [_]usize{8,0,0};
     const field_slice = sim_data.field.array.getSlice(fixed_inds[0..],0);
-    const field_mat = try MatSlice(f64).init(field_slice,
+    const field_mat =MatSlice(f64).init(field_slice,
                                             field_coord_n,
                                             field_fields_n);
 
@@ -92,8 +92,8 @@ pub fn main() !void {
     // Build Camera
     
     const pixel_num = [_]u32{250,400};//[_]u32{900,1200};[_]u32{2000,2500};
-    const pixel_size = [_]f64{ 5.3e-3, 5.3e-3 };
-    const focal_leng: f64 = 50.0;
+    const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
+    const focal_leng: f64 = 50.0e-3;
     const alpha_z: f64 = std.math.degreesToRadians(0.0);
     const beta_y: f64 = std.math.degreesToRadians(-30.0);
     const gamma_x: f64 = std.math.degreesToRadians(-10.0);
@@ -199,7 +199,7 @@ pub fn main() !void {
     
         // Grab a matrix slice of the field images
         const image_slice = images_arr.getSlice(image_slice_inds[0..],0); 
-        const image_mat = try MatSlice(f64).init(image_slice,
+        const image_mat = MatSlice(f64).init(image_slice,
                                                  camera.pixels_num[1],
                                                  camera.pixels_num[0]);
         

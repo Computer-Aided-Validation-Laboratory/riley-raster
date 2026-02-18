@@ -76,11 +76,11 @@ pub fn fillElemCoords(coords: *const Coords,
             elem_inds[dim_node] = nn;
                                 
             elem_inds[dim_field] = 0;            
-            elem_array.set(elem_inds[0..],coords.x[coord_inds[nn]]);
+            elem_array.set(elem_inds[0..],coords.x(coord_inds[nn]));
             elem_inds[dim_field] = 1;            
-            elem_array.set(elem_inds[0..],coords.y[coord_inds[nn]]);
+            elem_array.set(elem_inds[0..],coords.y(coord_inds[nn]));
             elem_inds[dim_field] = 2;            
-            elem_array.set(elem_inds[0..],coords.z[coord_inds[nn]]);
+            elem_array.set(elem_inds[0..],coords.z(coord_inds[nn]));
             
         } 
     }    
@@ -405,7 +405,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     //-----------------------------------------------------------------------------------------
     // Element Tile Overlap, Pass 2: Store overlap bounding boxes for ACTIVE tiles only.
     // Coarse, bounding box overlap based raster. Assumes a sparse mesh with each element 
-    // touching ~5 tiles.
+    // touching few tiles.
     
     const screen_px_x = @as(u16,@intCast(camera.pixels_num[0]));
     const screen_px_y = @as(u16,@intCast(camera.pixels_num[1]));
@@ -447,7 +447,6 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         }
     }
 
-    // TODO
     // NOTE: only loops over elements in image so ee is not the element number for coord data
     // in the NDArray!    
     for (0..elems_in_image) |ee| {
@@ -510,7 +509,8 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     const spx_field_avg = try arena_alloc.alloc(f64, fields_num);
 
     //-----------------------------------------------------------------------------------------
-    // TODO: thread this for large images and large meshes 
+    // TODO: Thread this for large images and large meshes, each active tile is independent
+    // TODO: Implement non-linear elements   
     // NOTE: this loop only works for linear triangles! It uses barycentric interpolation
 
     // DEBUG
@@ -617,7 +617,6 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                             // weights:
                             // spx_field = (vec(nodes_field[nn] * nodes_inv_z[nn]) 
                             //             dot vec(nodes_weights)) * spx_z_coord
-                            
                             const spx_z: f64 = 1/spx_inv_z; 
                             for (0..fields_num) |ff| {
 
@@ -712,5 +711,5 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     //-----------------------------------------------------------------------------------------
     const raster_end = try Instant.now();
     const time_raster: f64 = @floatFromInt(raster_end.since(raster_start));
-    print("\nTOTAL TIME RASTER = {d}ns\n",.{time_raster});    
+    print("\nTOTAL RASTER TIME = {d}ns\n",.{time_raster});    
 }

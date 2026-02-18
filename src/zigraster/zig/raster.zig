@@ -52,9 +52,9 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     const field_buff: []f64 = try arena_alloc.alloc(
         f64, num_fields*connect.nodes_per_elem);
 
-    var field_raster_mat = try MatSlice(f64).init(field_buff,
-                                            connect.nodes_per_elem,
-                                            num_fields);
+    var field_raster_mat = MatSlice(f64).init(field_buff,
+                                              connect.nodes_per_elem,
+                                              num_fields);
 
     // Stores field value at the pixel
     var px_field: f64 = 0.0;
@@ -290,7 +290,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
             	image_subpx_inds[2] = bound_ind_x;
 
             	for (0..num_fields) |ff| {
-            		const field_slice = try field_raster_mat.getSlice(ff);
+            		const field_slice = field_raster_mat.getSlice(ff);
                 	px_field = sliceops.dot(f64, field_slice, weights_buff);
                     px_field = px_field * px_coord_z;
 
@@ -303,8 +303,8 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
                 // DEBUG
                 // Write depth buffer to first field for testing
-            	image_subpx_inds[0] = 0;
-                image_subpx.set(image_subpx_inds[0..], px_coord_z);
+            	// image_subpx_inds[0] = 0;
+                // image_subpx.set(image_subpx_inds[0..], px_coord_z);
                 
 	            //----------------------------------------------------------
                 // End for(x) - increment the x coords
@@ -333,7 +333,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         // 1) Create MatSlice for sub-pixel image for given field ff
         const image_subpx_slice = image_subpx.getSlice(
             out_slice_inds[0..],0);
-        const image_subpx_mat = try MatSlice(f64).init(image_subpx_slice,
+        const image_subpx_mat = MatSlice(f64).init(image_subpx_slice,
                                                       subpx_y,
                                                       subpx_x);
 
@@ -342,7 +342,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         // Need to get it from image_out_arr
         const image_out_slice = image_out_arr.getSlice(
             out_slice_inds[0..],0);
-        var image_out_mat = try MatSlice(f64).init(image_out_slice,
+        var image_out_mat = MatSlice(f64).init(image_out_slice,
                                                   camera.pixels_num[1],
                                                   camera.pixels_num[0]);
 
@@ -371,7 +371,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     var file_name = try std.fmt.bufPrint(name_buff[0..], 
                                        "rn_depthsp_frame{d}", 
                                        .{ frame_ind });
-    const depth_mat = try MatSlice(f64).init(depth_subpx.elems[0..],
+    const depth_mat = MatSlice(f64).init(depth_subpx.elems[0..],
                                          subpx_y,
                                          subpx_x);
     try rops.saveImage(io,out_dir,file_name,&depth_mat,.ppm);
@@ -384,7 +384,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                                          "rn_imagesp_field{d}_frame{d}", 
                                          .{ ff,frame_ind });
         const imagesp_slice = image_subpx.getSlice(out_slice_inds[0..],0);
-        const imagesp_mat = try MatSlice(f64).init(imagesp_slice,subpx_y,subpx_x);
+        const imagesp_mat = MatSlice(f64).init(imagesp_slice,subpx_y,subpx_x);
         try rops.saveImage(io,out_dir,file_name,&imagesp_mat,.ppm);
         try rops.saveImage(io,out_dir,file_name,&imagesp_mat,.csv);         
     }
@@ -470,7 +470,7 @@ pub fn rasterAllFrames(allocator: std.mem.Allocator,
             field_inds[0] = ff;
             const field_slice = try images_arr.getSlice(field_inds[0..],0);
 
-            const image_mat = try MatSlice(f64).init(field_slice,
+            const image_mat = MatSlice(f64).init(field_slice,
                                                     camera.pixels_num[1],
                                                     camera.pixels_num[0]);
 

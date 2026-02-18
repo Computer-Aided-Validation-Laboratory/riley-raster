@@ -118,7 +118,7 @@ pub fn MatSlice(comptime EType: type) type {
             }
         }
 
-		pub fn getSlice(self: *const Self, row_to_slice: usize) ![]EType {
+		pub fn getSlice(self: *const Self, row_to_slice: usize) []EType {
 			assert(row_to_slice <= self.rows_n);
 
 			const start_ind: usize = row_to_slice*self.cols_n; 
@@ -138,6 +138,36 @@ pub fn MatSlice(comptime EType: type) type {
                 print("]\n", .{});
             }
             print("\n", .{});
+        }
+
+        pub fn minByRow(self: *const Self, fixed_col: usize) EType {
+            assert(fixed_col < self.cols_n);
+
+            var val: EType = self.get(0,fixed_col);
+
+            for (1..self.rows_n) |ii| {
+                const check = self.get(ii,fixed_col);
+                if (check < val){
+                    val = check;
+                }     
+            }
+
+            return val;
+        }
+
+        pub fn maxByRow(self: *const Self, fixed_col: usize) EType {
+            assert(fixed_col < self.cols_n);
+
+            var val: EType = self.get(0,fixed_col);
+
+            for (1..self.rows_n) |ii| {
+                const check = self.get(ii,fixed_col);
+                if (check > val){
+                    val = check;
+                }     
+            }
+
+            return val;
         }
 
         pub fn saveCSV(self: *const Self,

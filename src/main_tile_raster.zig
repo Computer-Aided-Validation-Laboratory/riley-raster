@@ -53,8 +53,10 @@ pub fn main() !void {
     //==========================================================================
     // SETUP: load simulation data from file
     //const path_data = "data/cylinder/";
-    const path_data = "data/block/";
-
+    //const path_data = "data/block/";
+    const path_data = "data/lin_tri/";
+    const frame_ind: usize = 1;
+    
     const path_coords = path_data ++ "coords.csv";
     const path_connect = path_data ++ "connectivity.csv";
 
@@ -76,7 +78,7 @@ pub fn main() !void {
     const field_time_n = sim_data.field.getTimeN();
     const field_fields_n = sim_data.field.getFieldsN();
     
-    var fixed_inds = [_]usize{8,0,0};
+    var fixed_inds = [_]usize{frame_ind,0,0};
     const field_slice = sim_data.field.array.getSlice(fixed_inds[0..],0);
     const field_mat = MatSlice(f64).init(field_slice,
                                          field_coord_n,
@@ -90,10 +92,11 @@ pub fn main() !void {
 
     //==========================================================================
     // Build Camera
+    // [_]u32{900,1200};[_]u32{2000,2500};
     
-    const pixel_num = [_]u32{900,1200};//[_]u32{900,1200};[_]u32{2000,2500};
-    const pixel_size = [_]f64{ 5.3e-3, 5.3e-3 };
-    const focal_leng: f64 = 50.0;
+    const pixel_num = [_]u32{400,300};
+    const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
+    const focal_leng: f64 = 50.0e-3;
     const alpha_z: f64 = std.math.degreesToRadians(0.0);
     const beta_y: f64 = std.math.degreesToRadians(-30.0);
     const gamma_x: f64 = std.math.degreesToRadians(-10.0);
@@ -131,7 +134,6 @@ pub fn main() !void {
     //======================================================================
     // Raster One Frame
     print("{s}\nRastering Image\n{s}\n", .{print_break,print_break});
-    const frame_ind: usize = 8;
     const num_fields = sim_data.field.getFieldsN();
     
     const images_mem = try render_alloc.alloc(f64, 

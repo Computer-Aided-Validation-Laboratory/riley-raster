@@ -9,33 +9,46 @@ const slice = @import("sliceops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 
-
 pub const Coords = struct {
-    x: []f64,
-    y: []f64,
-    z: []f64,
-    len: usize,
+    mat: MatSlice(f64),
+    mat_mem: []f64,
 
+    const Self: type = @This();
+    
     pub fn init(allocator: std.mem.Allocator, coord_n: usize) !Coords {
+
+        const mat_heap = try allocator.alloc(f64,coord_n*3);
+        const mat_coords = MatSlice(f64).init(mat_heap,coord_n,3); 
+        
         return .{
-            .x = try allocator.alloc(f64, coord_n),
-            .y = try allocator.alloc(f64, coord_n),
-            .z = try allocator.alloc(f64, coord_n),
-            .len = coord_n,
+            .mat = mat_coords,
+            .mat_mem = mat_heap,
         };
     }
 
-    pub fn deinit(self: *Coords, allocator: std.mem.Allocator) void {
-        allocator.free(self.x);
-        allocator.free(self.y);
-        allocator.free(self.z);
+    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+        allocator.free(self.mat_mem);
+    }
+
+    pub fn x(self: *const Self, ind: usize) f64 {
+        return self.mat.get(ind,0);
+    }
+
+    pub fn y(self: *const Self, ind: usize) f64 {
+        return self.mat.get(ind,1);
+    }
+    
+    pub fn z(self: *const Self, ind: usize) f64 {
+        return self.mat.get(ind,2);
+    }
+
+    pub fn getVecSlice(self: *const Self, ind: usize) []f64 {
+        return self.mat.getSlice(ind);
     }
 
     pub fn getVec3(self: *const Coords, ind: usize) Vec3f {
-        var vec: Vec3f = undefined;
-        vec.set(0, self.x[ind]);
-        vec.set(1, self.y[ind]);
-        vec.set(2, self.z[ind]);
+        const vec_slice = self.mat.getSlice(ind);
+        const vec = Vec3f.initSlice(vec_slice);
         return vec;
     }
 };
@@ -61,10 +74,8 @@ pub const Connect = struct {
 };
 
 
-// TODO: buffer dims can be removed as NDArray has a copy of this.
 pub const Field = struct {
     array: NDArray(f64),
-    buffer_dims: []usize,
     buffer_array: []f64,
 
     const Self = @This();
@@ -83,15 +94,14 @@ pub const Field = struct {
         const arr = try NDArray(f64).init(alloc,buff_array,buff_dims[0..]);
         
         return .{
-            .array = arr,
-            .buffer_dims = buff_dims, 
+            .array = arr, 
             .buffer_array = buff_array,
         };
     }
 
-    pub fn getTimeN(self: *const Self) usize {return self.buffer_dims[0];}
-    pub fn getCoordN(self: *const Self) usize {return self.buffer_dims[1];}
-    pub fn getFieldsN(self: *const Self) usize {return self.buffer_dims[2];}
+    pub fn getTimeN(self: *const Self) usize {return self.array.dims[0];}
+    pub fn getCoordN(self: *const Self) usize {return self.array.dims[1];}
+    pub fn getFieldsN(self: *const Self) usize {return self.array.dims[2];}
    
     pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
         self.array.deinit(alloc);
@@ -143,13 +153,7 @@ pub fn parseCoords(csv_lines: *const std.ArrayList([]const u8),
         while (split_iter.next()) |num_str| {
             const num: f64 = try std.fmt.parseFloat(f64, num_str);
 
-            if (num_count == 0) {
-                coords.x[ii] = num;
-            } else if (num_count == 1) {
-                coords.y[ii] = num;
-            } else if (num_count == 2) {
-                coords.z[ii] = num;
-            }
+            coords.mat.set(ii,num_count,num);
 
             num_count += 1;
             if (num_count >= num_coords) {

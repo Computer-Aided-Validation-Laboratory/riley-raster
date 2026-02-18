@@ -30,7 +30,14 @@ pub const Camera = struct {
     cam_to_world_mat: Mat44f,
     world_to_cam_mat: Mat44f,
 
-    pub fn init(pixels_num: [2]u32, pixels_size: [2]f64, pos_world: Vec3f, rot_world: Rotation, roi_cent_world: Vec3f, focal_length: f64, sub_sample: u8) Camera {
+    pub fn init(pixels_num: [2]u32, 
+                pixels_size: [2]f64, 
+                pos_world: Vec3f, 
+                rot_world: Rotation, 
+                roi_cent_world: Vec3f, 
+                focal_length: f64, 
+                sub_sample: u8,) Camera {
+
         const sensor_size = CameraOps.calc_sensor_size(pixels_num, pixels_size);
         const image_dist: f64 = (pos_world.sub(roi_cent_world)).vecLen();
 
@@ -66,12 +73,13 @@ pub const CameraOps = struct {
     pub fn fov_from_cam_rot(cam_rot: Rotation, coords_world: *const Coords) [2]f64 {
         const world_to_cam_mat = Mat33Ops.inv(f64, cam_rot.matrix);
 
-        const bb_min_x = std.mem.min(f64, coords_world.x[0..]);
-        const bb_min_y = std.mem.min(f64, coords_world.y[0..]);
-        const bb_min_z = std.mem.min(f64, coords_world.z[0..]);
-        const bb_max_x = std.mem.max(f64, coords_world.x[0..]);
-        const bb_max_y = std.mem.max(f64, coords_world.y[0..]);
-        const bb_max_z = std.mem.max(f64, coords_world.z[0..]);
+        // 0=x, 1=y, 2=z
+        const bb_min_x = coords_world.mat.minByRow(0);
+        const bb_min_y = coords_world.mat.minByRow(1);
+        const bb_min_z = coords_world.mat.minByRow(2);
+        const bb_max_x = coords_world.mat.maxByRow(0);
+        const bb_max_y = coords_world.mat.maxByRow(1);
+        const bb_max_z = coords_world.mat.maxByRow(2);
 
         print("\n", .{});
         print("bb_min=[{d},{d},{d}]\n", .{ bb_min_x, bb_min_y, bb_min_z });
@@ -149,26 +157,35 @@ pub const CameraOps = struct {
 
     pub fn roi_cent_from_coords(coords_world: *const Coords) Vec3f {
         var max_vec: Vec3f = undefined;
-        max_vec.elems[0] = std.mem.max(f64, coords_world.x[0..]);
-        max_vec.elems[1] = std.mem.max(f64, coords_world.y[0..]);
-        max_vec.elems[2] = std.mem.max(f64, coords_world.z[0..]);
+        max_vec.elems[0] = coords_world.mat.maxByRow(0);
+        max_vec.elems[1] = coords_world.mat.maxByRow(1);
+        max_vec.elems[2] = coords_world.mat.maxByRow(2);
 
         var min_vec: Vec3f = undefined;
-        min_vec.elems[0] = std.mem.min(f64, coords_world.x[0..]);
-        min_vec.elems[1] = std.mem.min(f64, coords_world.y[0..]);
-        min_vec.elems[2] = std.mem.min(f64, coords_world.z[0..]);
+        min_vec.elems[0] = coords_world.mat.minByRow(0);
+        min_vec.elems[1] = coords_world.mat.minByRow(1);
+        min_vec.elems[2] = coords_world.mat.minByRow(2);
 
         var roi_cent: Vec3f = max_vec.sub(min_vec);
         roi_cent = roi_cent.mulScalar(0.5);
         return roi_cent;
     }
 
-    pub fn pos_fill_frame_from_rot(coords_world: *const Coords, pixels_num: [2]u32, pixels_size: [2]f64, focal_leng: f64, cam_rot: Rotation, frame_fill: f64) Vec3f {
+    pub fn pos_fill_frame_from_rot(coords_world: *const Coords, 
+                                   pixels_num: [2]u32, 
+                                   pixels_size: [2]f64, 
+                                   focal_leng: f64, 
+                                   cam_rot: Rotation, 
+                                   frame_fill: f64) Vec3f {
+                                   
         var fov_leng: [2]f64 = fov_from_cam_rot(cam_rot, coords_world);
         fov_leng[0] = frame_fill * fov_leng[0];
         fov_leng[1] = frame_fill * fov_leng[1];
 
-        const image_dists: [2]f64 = image_dist_from_fov(pixels_num, pixels_size, focal_leng, fov_leng);
+        const image_dists: [2]f64 = image_dist_from_fov(pixels_num, 
+                                                        pixels_size, 
+                                                        focal_leng, 
+                                                        fov_leng);
         const image_dist = @max(image_dists[0], image_dists[1]);
 
         print("fov_leng=[{any},{any}]\n", .{ fov_leng[0], fov_leng[1] });
