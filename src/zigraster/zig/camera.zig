@@ -134,7 +134,11 @@ pub const CameraOps = struct {
         return sensor_size;
     }
 
-    pub fn image_dist_from_fov(pixels_num: [2]u32, pixels_size: [2]f64, focal_leng: f64, fov_leng: [2]f64) [2]f64 {
+    pub fn image_dist_from_fov(pixels_num: [2]u32, 
+                               pixels_size: [2]f64, 
+                               focal_leng: f64, 
+                               fov_leng: [2]f64) [2]f64 {
+
         const sensor_size = calc_sensor_size(pixels_num, pixels_size);
 
         var fov_angle: [2]f64 = undefined;
@@ -160,14 +164,23 @@ pub const CameraOps = struct {
         max_vec.elems[0] = coords_world.mat.maxByRow(0);
         max_vec.elems[1] = coords_world.mat.maxByRow(1);
         max_vec.elems[2] = coords_world.mat.maxByRow(2);
-
+        print("\nmax_vec=",.{});
+        max_vec.vecPrint();
+    
         var min_vec: Vec3f = undefined;
         min_vec.elems[0] = coords_world.mat.minByRow(0);
         min_vec.elems[1] = coords_world.mat.minByRow(1);
         min_vec.elems[2] = coords_world.mat.minByRow(2);
+        print("min_vec=",.{});
+        min_vec.vecPrint();    
 
-        var roi_cent: Vec3f = max_vec.sub(min_vec);
+        // Should this be add?
+        var roi_cent: Vec3f = max_vec.add(min_vec);
+        print("roi_cent_add=",.{});
+        roi_cent.vecPrint();
         roi_cent = roi_cent.mulScalar(0.5);
+        print("roi_cent_mulscal=",.{});
+        roi_cent.vecPrint();
         return roi_cent;
     }
 

@@ -54,7 +54,10 @@ pub fn main() !void {
     // SETUP: load simulation data from file
     //const path_data = "data/cylinder/";
     //const path_data = "data/block/";
-    const path_data = "data/quad_tri_def/";
+    //const path_data = "data/lin_tri/";
+    //const path_data = "data/quad_tri_def/";
+    const path_data = "data/fill_lin_tri/";
+    //const path_data = "data/fill_uad_tri_def/";
     const frame_ind: usize = 1;
     
     const path_coords = path_data ++ "coords.csv";
@@ -78,30 +81,39 @@ pub fn main() !void {
     const field_time_n = sim_data.field.getTimeN();
     const field_fields_n = sim_data.field.getFieldsN();
     
-    var fixed_inds = [_]usize{frame_ind,0,0};
-    const field_slice = sim_data.field.array.getSlice(fixed_inds[0..],0);
-    const field_mat = MatSlice(f64).init(field_slice,
-                                         field_coord_n,
-                                         field_fields_n);
+    // var fixed_inds = [_]usize{frame_ind,0,0};
+    // const field_slice = sim_data.field.array.getSlice(fixed_inds[0..],0);
+    // const field_mat = MatSlice(f64).init(field_slice,
+    //                                      field_coord_n,
+    //                                      field_fields_n);
 
     print("\nfield: time_n = {d}\n",.{field_time_n});
     print("field: coord_n = {d}\n",.{field_coord_n});
     print("field: fields_n = {d}\n\n",.{field_fields_n});
-    print("field: mat = \n",.{});
-    field_mat.matPrint();
+    // print("field: mat = \n",.{});
+    // field_mat.matPrint();
 
     //==========================================================================
     // Build Camera
-    // [_]u32{900,1200};[_]u32{2000,2500};
     
-    const pixel_num = [_]u32{400,300};
+    // const pixel_num = [_]u32{2000,2500};
+    // const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
+    // const focal_leng: f64 = 50.0e-3;
+    // const alpha_z: f64 = std.math.degreesToRadians(0.0);
+    // const beta_y: f64 = std.math.degreesToRadians(-30.0);
+    // const gamma_x: f64 = std.math.degreesToRadians(-10.0);
+    // const cam_rot = Rotation.init(alpha_z, beta_y, gamma_x);
+    // const fov_scale_factor: f64 = 1.05;
+    // const subsample: u8 = 2;
+
+    const pixel_num = [_]u32{1000,1000};
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
     const alpha_z: f64 = std.math.degreesToRadians(0.0);
-    const beta_y: f64 = std.math.degreesToRadians(-30.0);
-    const gamma_x: f64 = std.math.degreesToRadians(-10.0);
+    const beta_y: f64 = std.math.degreesToRadians(0.0);
+    const gamma_x: f64 = std.math.degreesToRadians(0.0);
     const cam_rot = Rotation.init(alpha_z, beta_y, gamma_x);
-    const fov_scale_factor: f64 = 1.1;
+    const fov_scale_factor: f64 = 0.99;
     const subsample: u8 = 2;
     
     print("{s}\n", .{print_break});

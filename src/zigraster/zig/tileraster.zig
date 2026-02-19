@@ -26,16 +26,6 @@ const vsd = @import("vecsimd.zig");
 const Vec3SIMD = vsd.Vec3SIMD;
 
 
-pub fn BBoxSIMD(comptime L: usize) type {
-    return struct {
-        elem_ind: @Vector(L,usize),
-        x_min: @Vector(L,u16),
-        x_max: @Vector(L,u16),
-        y_min: @Vector(L,u16),
-        y_max: @Vector(L,u16),    
-    };
-} 
-
 const BBox = struct {
     elem_ind: usize,
     x_min: u16,
@@ -152,7 +142,6 @@ pub fn loadVec3SlicesFromElemArray(comptime N: usize,
 const ActiveTile = struct {
     overlap_start: usize, // index into overlap_bboxes
     overlap_count: usize, // count to take from overlap bboxes
-    flat_ind: usize,
     x_px_min: u16,
     y_px_min: u16,
 };
@@ -199,11 +188,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
     const raster_start = try Instant.now();
     
-    //_ = frame_ind;
-    //_ = image_out_arr;
-
     const N: usize = 3; // Set to nodes per elem 
-    // SIMD lanes for batching bounding boxes of u16 - should be 32 for AVX-512
     
     var time_start = try Instant.now();
     var time_end = try Instant.now();
@@ -215,6 +200,8 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
     //-----------------------------------------------------------------------------------------
     // **ELEMENT WISE PRE-TRANSFORM**
+    time_start = try Instant.now(); 
+
     const elems_num: usize = connect.elem_n;
     const nodes_per_elem: usize = connect.nodes_per_elem;
     const coords_num: usize = 3;
@@ -242,6 +229,8 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     fillElemCoords(coords,connect,dim_elem,dim_node,dim_field,&elem_coord_arr);
     fillElemFields(connect,field,frame_ind,dim_elem,dim_node,dim_field,&elem_field_arr);
 
+    time_end = try Instant.now();
+    const time0_data_transform: f64 = @floatFromInt(time_end.since(time_start));
     // DEBUG:
     // print("\n",.{});
     // print("elem_coord_arr:\n",.{});
@@ -265,8 +254,8 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         try vsd.saveVec3SIMDToElemArray(N,f64,&elem_coord_arr,ee,coords_raster);
     }
     time_end = try Instant.now();
-    const time_simd: f64 = @floatFromInt(time_end.since(time_start));
-    print("\nTIME SIMD WORLD TO RASTER = {d}ns\n",.{time_simd});
+    const time1_world_to_raster: f64 = @floatFromInt(time_end.since(time_start));
+    
 
     // DEBUG: print element raster coords in screen space for debugging
     // elem_inds = .{0,0,0};
@@ -289,6 +278,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     
     //-----------------------------------------------------------------------------------------
     // Extract Element Bounding Boxes
+    time_start = try Instant.now();
 
     // TODO: 
     // - Add backface culling for higher order elements, performant and accurate:
@@ -354,12 +344,17 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         // print("\n",.{});
     }
 
+    time_end = try Instant.now();
+    const time2_elem_bboxes_crop: f64 = @floatFromInt(time_end.since(time_start));
+
     //----------------------------------------------------------------------------------
     // Element Tile Overlap COUNT: Pass 1, How many element in each tile? 
     // - Need this to alloc for our overlapping bounding boxes
     // - Do this over elements as mesh is sparse and elements only overlap a few tiles on 
     //  average, therefore elements should be the outer loop
     // - Run this single threaded for low mesh counts
+
+    time_start = try Instant.now();
 
     const tile_size: u16 = 16;
     const tiles_num_x: usize = try std.math.divCeil(usize,camera.pixels_num[0],tile_size);
@@ -388,6 +383,8 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         }
     }
 
+    time_end = try Instant.now();
+    const time3_elem_tile_overlap_count: f64 = @floatFromInt(time_end.since(time_start));
     // DEBUG:
 //     print("TILES:\n    tile_size={d}, tiles_num_x={d}, tiles_num_y={d}, tiles_num={}\n\n",
 //           .{tile_size,tiles_num_x,tiles_num_y,tiles_num});
@@ -406,6 +403,8 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     // Element Tile Overlap, Pass 2: Store overlap bounding boxes for ACTIVE tiles only.
     // Coarse, bounding box overlap based raster. Assumes a sparse mesh with each element 
     // touching few tiles.
+
+    time_start = try Instant.now();
     
     const screen_px_x = @as(u16,@intCast(camera.pixels_num[0]));
     const screen_px_y = @as(u16,@intCast(camera.pixels_num[1]));
@@ -425,7 +424,6 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     const overlap_total: usize = sliceops.sum(usize,tile_elem_counts);
     const overlap_bboxes: []BBox = try arena_alloc.alloc(BBox,overlap_total);
 
-
     // Main raster loop will only need to analyse active tiles
     const active_tiles: []ActiveTile = try arena_alloc.alloc(ActiveTile,num_active_tiles);
 
@@ -439,7 +437,6 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
             active_tiles[active_ind] = ActiveTile{
                 .overlap_start = tile_write_inds[ii],
                 .overlap_count = cc,
-                .flat_ind = ii,
                 .x_px_min = tx*tile_size,
                 .y_px_min = ty*tile_size,
             };
@@ -488,8 +485,12 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         }
     }
 
+    time_end = try Instant.now();
+    const time4_elem_tile_overlap_store: f64 = @floatFromInt(time_end.since(time_start));
+    
     //-----------------------------------------------------------------------------------------
     // Raster Loop, pass 3: Loop over ACTIVE tiles and check corners
+    time_start = try Instant.now();
 
     const sub_samp: usize = @intCast(camera.sub_sample);
     const spx_tile_size: usize = tile_size * sub_samp;
@@ -508,20 +509,9 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
     const spx_field_avg = try arena_alloc.alloc(f64, fields_num);
 
-    //-----------------------------------------------------------------------------------------
     // TODO: Thread this for large images and large meshes, each active tile is independent
     // TODO: Implement non-linear elements   
     // NOTE: this loop only works for linear triangles! It uses barycentric interpolation
-
-    // DEBUG
-    // const spx_image_size = camera.pixels_num[1]*sub_samp*camera.pixels_num[0]*sub_samp;
-    // const spx_image_buff = try arena_alloc.alloc(f64, spx_image_size);
-    // @memset(spx_image_buff,0.0);
-    // var spx_image = try MatSlice(f64).init(spx_image_buff,
-    //                                       camera.pixels_num[1]*sub_samp,
-    //                                       camera.pixels_num[0]*sub_samp);
-
-    //=========================================================================================
     for (active_tiles) |tile| {
         @memset(spx_inv_z_scratch, 0.0);
         @memset(spx_image_scratch.elems, 0.0);
@@ -650,12 +640,14 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
         // Average scratch and push into main image buffer
         const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
-        
-        for (0..tile_size) |ty| { 
+        const curr_tile_size_x = @min(@as(u16, tile_size), screen_px_x - tile.x_px_min);
+        const curr_tile_size_y = @min(@as(u16, tile_size), screen_px_y - tile.y_px_min);        
+
+        for (0..curr_tile_size_y) |ty| { 
             const image_px_y: usize = tile.y_px_min + ty;
             const spx_start_y: usize = sub_samp * ty;
             
-            for (0..tile_size) |tx| {
+            for (0..curr_tile_size_x) |tx| {
                 const image_px_x: usize = tile.x_px_min + tx;
                 const spx_start_x: usize = sub_samp * tx;
                 
@@ -677,39 +669,45 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                 for (0..fields_num) |ff| {
                     const image_inds = [_]usize{ff,image_px_y,image_px_x};
                     const image_val: f64 = spx_field_avg[ff]*inv_sub_samp_sq;
+
                     image_out_arr.set(image_inds[0..], image_val);
                 }
             } // AVG LOOP: tile x
         } // AVG LOOP: tile y        
                    
     } // LOOP active tiles
-                                              
-    //-----------------------------------------------------------------------------------------
-    // DEBUG: Save
-//     var single_thread_io: std.Io.Threaded = .init_single_threaded;
-//     const io = single_thread_io.io();
-// 
-//     const cwd: std.Io.Dir = std.Io.Dir.cwd();        
-// 
-//     const dir_name = "raster-test";
-//     var name_buff: [1024]u8 = undefined;
-//     
-//     cwd.createDir(io, dir_name, .default_dir) catch |err| switch (err) {
-//         error.PathAlreadyExists => {}, // Path exists do nothing
-//         else => return err, // Propagate any other error
-//     };
-//     
-//     var out_dir: std.Io.Dir = try cwd.openDir(io, dir_name, .{});
-//     defer out_dir.close(io);
-// 
-//     const file_name = try std.fmt.bufPrint(name_buff[0..], 
-//                                            "tile_depth_frame{d}", 
-//                                            .{ frame_ind });
-//     try rops.saveImage(io, out_dir, file_name, &spx_image, .ppm);
-//     try rops.saveImage(io, out_dir, file_name, &spx_image, .csv);
+
+    time_end = try Instant.now();
+    const time5_raster_loop: f64 = @floatFromInt(time_end.since(time_start));
 
     //-----------------------------------------------------------------------------------------
     const raster_end = try Instant.now();
-    const time_raster: f64 = @floatFromInt(raster_end.since(raster_start));
-    print("\nTOTAL RASTER TIME = {d}ns\n",.{time_raster});    
-}
+    const time_raster_all: f64 = @floatFromInt(raster_end.since(raster_start));
+
+    // const time0_data_transform: f64 = @floatFromInt(time_end.since(time_start));
+    // const time1_world_to_raster: f64 = @floatFromInt(time_end.since(time_start));
+    // const time2_elem_bboxes_crop: f64 = @floatFromInt(time_end.since(time_start));
+    // const time3_elem_tile_overlap_count: f64 = @floatFromInt(time_end.since(time_start));
+    // const time4_elem_tile_overlap_store: f64 = @floatFromInt(time_end.since(time_start));
+    // const time5_raster_loop: f64 = @floatFromInt(time_end.since(time_start));        
+
+    var total_px: f64 = @as(f64,@floatFromInt(camera.pixels_num[0]*camera.pixels_num[1]));
+    total_px = total_px*sub_samp_f*sub_samp_f;
+    // conv ns->s *1e9, conv to million ops-> /1e6 = *1e3  
+    const mega_ops_per_sec: f64 = 1.0e3 * total_px/time_raster_all; // time in ns
+
+    const conv_units: f64 = 1.0/1.0e6;
+    const print_break = [_]u8{'='} ** 80;
+    print("\n{s}\nSoftware Raster Times\n{s}\n", .{ print_break, print_break });
+    print("Data transform          = {d:.6} ms\n",.{time0_data_transform*conv_units});
+    print("World to raster         = {d:.6} ms\n",.{time1_world_to_raster*conv_units});
+    print("Elem bbox crop          = {d:.6} ms\n",.{time2_elem_bboxes_crop*conv_units});
+    print("Elem tile overlap count = {d:.6} ms\n",.{time3_elem_tile_overlap_count*conv_units});
+    print("Elem tile overlap store = {d:.6} ms\n",.{time4_elem_tile_overlap_store*conv_units});
+    print("Raster loop time        = {d:.6} ms\n",.{time5_raster_loop*conv_units});
+    print("{s}\nTOTAL RASTER TIME  = {d:.3} ms\n",.{print_break,time_raster_all*conv_units});
+    print("{s}\n",.{print_break});
+    print("Total Ops   = {d}\n",.{total_px});
+    print("MOps/second = {d:.2}\n",.{mega_ops_per_sec});
+    print("{s}\n",.{print_break});
+}   
