@@ -1,7 +1,6 @@
 const std = @import("std");
 const print = std.debug.print;
 const time = std.time;
-const Instant = time.Instant;
 
 const meshio = @import("zigraster/zig/meshio.zig");
 const Coords = meshio.Coords;
@@ -34,8 +33,13 @@ pub fn main() !void {
     const print_break = [_]u8{'-'} ** 80;
     print("{s}\nZig Software rasteriser\n{s}\n", .{ print_break, print_break });
 
-    var time_start = try Instant.now();
-    var time_end = try Instant.now();
+    //=========================================================================
+    // IO
+    var single_thread_io: std.Io.Threaded = .init_single_threaded;
+    const io = single_thread_io.io();
+
+    var time_start = std.Io.Clock.Timestamp.now(io, .awake);
+    var time_end = std.Io.Clock.Timestamp.now(io, .awake);
 
     //==========================================================================
     // MEMORY ALLOCATORS
@@ -45,11 +49,6 @@ pub fn main() !void {
     defer render_arena.deinit();
     const render_alloc = render_arena.allocator();
 
-    //=========================================================================
-    // IO
-    var single_thread_io: std.Io.Threaded = .init_single_threaded;
-    const io = single_thread_io.io();
-
     //==========================================================================
     // SETUP: load simulation data from file
     //const path_data = "data/cylinder/";
@@ -58,6 +57,7 @@ pub fn main() !void {
     //const path_data = "data/quad_tri_def/";
     const path_data = "data/fill_lin_tri/";
     //const path_data = "data/fill_uad_tri_def/";
+
     const frame_ind: usize = 1;
     
     const path_coords = path_data ++ "coords.csv";
@@ -113,7 +113,7 @@ pub fn main() !void {
     const beta_y: f64 = std.math.degreesToRadians(0.0);
     const gamma_x: f64 = std.math.degreesToRadians(0.0);
     const cam_rot = Rotation.init(alpha_z, beta_y, gamma_x);
-    const fov_scale_factor: f64 = 0.99;
+    const fov_scale_factor: f64 = 1.0;
     const subsample: u8 = 2;
     
     print("{s}\n", .{print_break});
@@ -161,11 +161,12 @@ pub fn main() !void {
                                            images_mem,
                                            images_dims[0..]);
     
-    time_start = try Instant.now();
+    time_start = std.Io.Clock.Timestamp.now(io, .awake);
 
     // Creates own arena for temporary render buffers which should be 
     // cleared after rendering a frame.
-    try tileraster.rasterOneFrame(page_alloc, 
+    try tileraster.rasterOneFrame(page_alloc,
+                                  io, 
                                   frame_ind, 
                                   &sim_data.coords, 
                                   &sim_data.connect, 
@@ -173,10 +174,9 @@ pub fn main() !void {
                                   &camera, 
                                   &images_arr);
                            
-    time_end = try Instant.now();
-    const time_raster: f64 = @floatFromInt(time_end.since(time_start));
-    print("{s}\n", .{print_break});
-    print("Raster time = {d:.3}ms\n", .{time_raster / time.ns_per_ms});
+    time_end = std.Io.Clock.Timestamp.now(io, .awake);
+    // const time_raster: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
+    // print("Raster time = {d:.3}ms\n", .{time_raster / time.ns_per_ms});
     
     // Print diagnostics to console to see if there is an image
     const image_max = std.mem.max(f64, images_arr.elems);
@@ -189,7 +189,7 @@ pub fn main() !void {
     // const cwd = std.fs.cwd();
     const cwd: std.Io.Dir = std.Io.Dir.cwd();
         
-    const dir_name = "raster-out";
+    const dir_name = "out-tile-base";
     var name_buff: [1024]u8 = undefined;
     
     cwd.createDir(io, dir_name, .default_dir) catch |err| switch (err) {
@@ -212,7 +212,7 @@ pub fn main() !void {
                                              camera.pixels_num[1],
                                              camera.pixels_num[0]);
         
-        time_start = try Instant.now();
+        time_start = std.Io.Clock.Timestamp.now(io, .awake);
 
         // const file_name_csv = try std.fmt.bufPrint(name_buff[0..], 
         //                                            "tile_one_field{d}_frame{d}.csv", 
@@ -225,9 +225,11 @@ pub fn main() !void {
         try rops.saveImage(io, out_dir, file_name_ppm, &image_mat, .ppm);
         try rops.saveImage(io, out_dir, file_name_ppm, &image_mat, .csv);
 
-        time_end = try Instant.now();
+        time_end = std.Io.Clock.Timestamp.now(io, .awake);
     
-        const time_save_image: f64 = @floatFromInt(time_end.since(time_start));
+        const time_save_image: f64 = @floatFromInt(
+            time_start.durationTo(time_end).raw.nanoseconds
+        );
         print("Field {d} image save time = {d:.3} ms\n", 
               .{ff,time_save_image / time.ns_per_ms,});
     }        

@@ -12,6 +12,7 @@ file-out/
 # Test files
 raster-out/
 raster-test/
+out*/
 *.ppm
 
 # Cython

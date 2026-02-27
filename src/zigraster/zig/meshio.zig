@@ -1,7 +1,6 @@
 const std = @import("std");
 const print = std.debug.print;
 const time = std.time;
-const Instant = time.Instant;
 
 const Vec3f = @import("vecstack.zig").Vec3f;
 const slice = @import("sliceops.zig");
@@ -268,17 +267,17 @@ pub fn load_sim_data(allocator: std.mem.Allocator,
     const arena_alloc = arena.allocator();
 
     const field_n: usize = field_paths.len;
-    var time_start = try Instant.now();
-    var time_end = try Instant.now();
+    var time_start = std.Io.Clock.Timestamp.now(io, .awake);
+    var time_end = std.Io.Clock.Timestamp.now(io, .awake);
 
     //--------------------------------------------------------------------------
     // Read and parse coordinates csv file
 
     // Read the csv file into an array list
-    time_start = try Instant.now();
+    time_start = std.Io.Clock.Timestamp.now(io, .awake);
     var lines = try readCsvToList(arena_alloc, io, coord_path);
-    time_end = try Instant.now();
-    const time_read_coords: f64 = @floatFromInt(time_end.since(time_start));
+    time_end = std.Io.Clock.Timestamp.now(io, .awake);
+    const time_read_coords: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
 
     // Print the array list line by line
     // for (lines.items,0..) |line_str,line_num|{
@@ -292,10 +291,12 @@ pub fn load_sim_data(allocator: std.mem.Allocator,
     const coord_count: usize = lines.items.len;
     var coords = try Coords.init(allocator, coord_count);
 
-    time_start = try Instant.now();
+    time_start = std.Io.Clock.Timestamp.now(io, .awake);
     try parseCoords(&lines, &coords);
-    time_end = try Instant.now();
-    const time_parse_coords: f64 = @floatFromInt(time_end.since(time_start));
+    time_end = std.Io.Clock.Timestamp.now(io, .awake);
+    const time_parse_coords: f64 = @floatFromInt(
+        time_start.durationTo(time_end).raw.nanoseconds
+    );
     print("Coords: parse time = {d:.3}ms\n", 
         .{time_parse_coords / time.ns_per_ms});
 
@@ -312,18 +313,22 @@ pub fn load_sim_data(allocator: std.mem.Allocator,
     // Read and parse the connectivity table
 
     // Read the csv file into an array list
-    time_start = try Instant.now();
+    time_start = std.Io.Clock.Timestamp.now(io, .awake);
     lines = try readCsvToList(arena_alloc, io, connect_path);
-    time_end = try Instant.now();
-    const time_read_connect: f64 = @floatFromInt(time_end.since(time_start));
+    time_end = std.Io.Clock.Timestamp.now(io, .awake);
+    const time_read_connect: f64 = @floatFromInt(
+        time_start.durationTo(time_end).raw.nanoseconds
+    );
     print("\nConnect: read {} lines from csv.\n", .{lines.items.len});
     print("Connect: read time = {d:.3}ms\n", 
         .{time_read_connect / time.ns_per_ms});
 
-    time_start = try Instant.now();
+    time_start = std.Io.Clock.Timestamp.now(io, .awake);
     const connect = try parseConnect(allocator, &lines);
-    time_end = try Instant.now();
-    const time_parse_connect: f64 = @floatFromInt(time_end.since(time_start));
+    time_end = std.Io.Clock.Timestamp.now(io, .awake);
+    const time_parse_connect: f64 = @floatFromInt(
+        time_start.durationTo(time_end).raw.nanoseconds
+    );
     print("Connect: elements={}, nodes per element={}\n", 
        .{ connect.elem_n, connect.nodes_per_elem });
     print("Connect: parse time = {d:.3}ms\n", 
@@ -347,10 +352,10 @@ pub fn load_sim_data(allocator: std.mem.Allocator,
 
     // Read the csv for the first field as this will tell us how many time steps
     // we have and how many coords to pre-alloc our field struct
-    time_start = try Instant.now();
+    time_start = std.Io.Clock.Timestamp.now(io, .awake);
     lines = try readCsvToList(arena_alloc, io, field_paths[0]);
-    time_end = try Instant.now();
-    var time_read_field: f64 = @floatFromInt(time_end.since(time_start));
+    time_end = std.Io.Clock.Timestamp.now(io, .awake);
+    var time_read_field: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
     print("\nField 0: read {} lines from csv.\n", .{lines.items.len});
     print("Field 0: read time = {d:.3}ms\n", 
         .{time_read_field / time.ns_per_ms});
@@ -361,10 +366,10 @@ pub fn load_sim_data(allocator: std.mem.Allocator,
     var field = try Field.init(allocator,time_n,coord_n,field_n);   
 
     // Parse the first field 
-    time_start = try Instant.now();
+    time_start = std.Io.Clock.Timestamp.now(io, .awake);
     try parseField(&lines,&field,0);
-    time_end = try Instant.now();
-    var time_parse_field: f64 = @floatFromInt(time_end.since(time_start));
+    time_end = std.Io.Clock.Timestamp.now(io, .awake);
+    var time_parse_field: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
     print("Field 0: coords={}, time steps={}\n", 
         .{ field.getCoordN(), field.getTimeN() });
     print("Field 0: parse time = {d:.3}ms\n", 
@@ -375,18 +380,18 @@ pub fn load_sim_data(allocator: std.mem.Allocator,
     const remaining_field_paths = field_paths[1..];
     for (remaining_field_paths,1..) |field_path,ii| {
     
-        time_start = try Instant.now();
+        time_start = std.Io.Clock.Timestamp.now(io, .awake);
         lines = try readCsvToList(arena_alloc, io, field_path);
-        time_end = try Instant.now();
-        time_read_field = @floatFromInt(time_end.since(time_start));
+        time_end = std.Io.Clock.Timestamp.now(io, .awake);
+        time_read_field = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
         print("\nField {d}: read {d} lines from csv.\n", .{ii,lines.items.len});
         print("Field {d}: read time = {d:.3}ms\n", 
             .{ii,time_read_field / time.ns_per_ms});
 
-        time_start = try Instant.now();
+        time_start = std.Io.Clock.Timestamp.now(io, .awake);
         try parseField(&lines,&field,ii);
-        time_end = try Instant.now();
-        time_parse_field = @floatFromInt(time_end.since(time_start));
+        time_end = std.Io.Clock.Timestamp.now(io, .awake);
+        time_parse_field = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
         print("Field {d}: parse time = {d:.3}ms\n", 
             .{ii,time_parse_field / time.ns_per_ms});
 

@@ -351,43 +351,42 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
 
     //----------------------------------------------------------------------
     // DEBUG: SAVE SUB-PIXEL IMAGES TO DISK
-
-    var single_thread_io: std.Io.Threaded = .init_single_threaded;
-    const io = single_thread_io.io();
-
-    const cwd: std.Io.Dir = std.Io.Dir.cwd();        
-
-    const dir_name = "raster-test";
-    var name_buff: [1024]u8 = undefined;
-    
-    cwd.createDir(io, dir_name, .default_dir) catch |err| switch (err) {
-        error.PathAlreadyExists => {}, // Path exists do nothing
-        else => return err, // Propagate any other error
-    };
-    
-    var out_dir: std.Io.Dir = try cwd.openDir(io, dir_name, .{});
-    defer out_dir.close(io);
-
-    var file_name = try std.fmt.bufPrint(name_buff[0..], 
-                                       "rn_depthsp_frame{d}", 
-                                       .{ frame_ind });
-    const depth_mat = MatSlice(f64).init(depth_subpx.elems[0..],
-                                         subpx_y,
-                                         subpx_x);
-    try rops.saveImage(io,out_dir,file_name,&depth_mat,.ppm);
-    try rops.saveImage(io,out_dir,file_name,&depth_mat,.csv);                             
-
-    for (0..num_fields) |ff| {
-        out_slice_inds[0] = ff;
-        
-        file_name = try std.fmt.bufPrint(name_buff[0..], 
-                                         "rn_imagesp_field{d}_frame{d}", 
-                                         .{ ff,frame_ind });
-        const imagesp_slice = image_subpx.getSlice(out_slice_inds[0..],0);
-        const imagesp_mat = MatSlice(f64).init(imagesp_slice,subpx_y,subpx_x);
-        try rops.saveImage(io,out_dir,file_name,&imagesp_mat,.ppm);
-        try rops.saveImage(io,out_dir,file_name,&imagesp_mat,.csv);         
-    }
+//     var single_thread_io: std.Io.Threaded = .init_single_threaded;
+//     const io = single_thread_io.io();
+// 
+//     const cwd: std.Io.Dir = std.Io.Dir.cwd();        
+// 
+//     const dir_name = "raster-test";
+//     var name_buff: [1024]u8 = undefined;
+//     
+//     cwd.createDir(io, dir_name, .default_dir) catch |err| switch (err) {
+//         error.PathAlreadyExists => {}, // Path exists do nothing
+//         else => return err, // Propagate any other error
+//     };
+//     
+//     var out_dir: std.Io.Dir = try cwd.openDir(io, dir_name, .{});
+//     defer out_dir.close(io);
+// 
+//     var file_name = try std.fmt.bufPrint(name_buff[0..], 
+//                                        "rn_depthsp_frame{d}", 
+//                                        .{ frame_ind });
+//     const depth_mat = MatSlice(f64).init(depth_subpx.elems[0..],
+//                                          subpx_y,
+//                                          subpx_x);
+//     try rops.saveImage(io,out_dir,file_name,&depth_mat,.ppm);
+//     try rops.saveImage(io,out_dir,file_name,&depth_mat,.csv);                             
+// 
+//     for (0..num_fields) |ff| {
+//         out_slice_inds[0] = ff;
+//         
+//         file_name = try std.fmt.bufPrint(name_buff[0..], 
+//                                          "rn_imagesp_field{d}_frame{d}", 
+//                                          .{ ff,frame_ind });
+//         const imagesp_slice = image_subpx.getSlice(out_slice_inds[0..],0);
+//         const imagesp_mat = MatSlice(f64).init(imagesp_slice,subpx_y,subpx_x);
+//         try rops.saveImage(io,out_dir,file_name,&imagesp_mat,.ppm);
+//         try rops.saveImage(io,out_dir,file_name,&imagesp_mat,.csv);         
+//     }
     		
 }
 
