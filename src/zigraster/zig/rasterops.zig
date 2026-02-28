@@ -20,7 +20,11 @@ const sliceops = @import("sliceops.zig");
 
 const Camera = @import("camera.zig").Camera;
 
-// TODO: comptime these to allow switching from f32 to f64 to compare precision
+const meshio = @import("meshio.zig");
+const Coords = meshio.Coords;
+const Connect = meshio.Connect;
+const Field = meshio.Field;
+const SimData = meshio.SimData;
 
 pub fn worldToRasterCoords(coord_world: Vec3T(f64), camera: *const Camera) Vec3T(f64) {
     // TODO: simplify this to a matrix mult
@@ -81,7 +85,7 @@ pub fn worldToRasterSIMD(comptime N: usize,
     return coord_raster;
 }
 
-pub fn edgeFun3(vert_0: Vec3f, vert_1: Vec3f, vert_2: Vec3f) f64 {
+pub fn edgeFun(vert_0: Vec3f, vert_1: Vec3f, vert_2: Vec3f) f64 {
     return ((vert_2.get(0) - vert_0.get(0)) 
           * (vert_1.get(1) - vert_0.get(1)) 
           - (vert_2.get(1) - vert_0.get(1)) 
@@ -151,91 +155,137 @@ pub fn averageImage(image_subpx: *const MatSlice(f64),
     }
 }
 
-// TODO: this could be a tagged union of nested structs with the methods. But wait until there
-// is a third case 
-const ImageFormat = enum {
-    csv,
-    ppm,    
+pub const BBox = struct {
+    elem_ind: usize,
+    x_min: u16,
+    x_max: u16,
+    y_min: u16,
+    y_max: u16,
 };
 
-pub fn saveImage(io: std.Io,
-                 out_dir: std.Io.Dir, 
-                 file_name_no_ext: []const u8,
-                 image: *const MatSlice(f64),
-                 format: ImageFormat,
-                 ) !void {
-                    
-    var name_buff: [1024]u8 = undefined;                
-       
-    switch (format) {
-        .csv => {
-            const ext = ".csv";
-            const file_name_ext = try std.fmt.bufPrint(name_buff[0..], 
-                                                       "{s}{s}", 
-                                                       .{ file_name_no_ext, ext });     
-            try saveCSV(io,out_dir,file_name_ext,image);
-        },
-        .ppm => {
-            const ext = ".ppm";
-            const file_name_ext = try std.fmt.bufPrint(name_buff[0..], 
-                                                       "{s}{s}", 
-                                                      .{ file_name_no_ext, ext });
-            try saveScaledPPM(io,out_dir,file_name_ext,image);
-        },
-    }
+pub fn initElemArray(comptime T: type,
+                     allocator: std.mem.Allocator,
+                     dim0: usize, 
+                     dim1: usize, 
+                     dim2: usize) !NDArray(T) {
+    var elem_arr_dims = [_]usize{dim0,dim1,dim2};
+    const elem_arr_size: usize = dim0*dim1*dim2;
+    const elem_arr_mem = try allocator.alloc(T, elem_arr_size);
+    @memset(elem_arr_mem,0.0);
+    const elem_arr = try NDArray(T).init(allocator, 
+                                         elem_arr_mem, 
+                                         elem_arr_dims[0..]);
+    return elem_arr;
 }
 
-// NOTE: just for debugging due to how floats are scaled
-pub fn saveScaledPPM(io: std.Io,
-                     out_dir: std.Io.Dir, 
-                     file_name: []const u8,
-                     image: *const MatSlice(f64),
-                     ) !void {
+pub fn fillElemCoords(coords: *const Coords, 
+                      connect: *const Connect,
+                      dim_elem: usize,
+                      dim_node: usize,
+                      dim_field: usize,
+                      elem_array: *NDArray(f64),
+                      ) void {
+    var elem_inds = [_]usize{0,0,0};
 
-    const ppm_file: std.Io.File = try out_dir.createFile(io, file_name, .{});
-    defer ppm_file.close(io);
+    for (0..elem_array.dims[dim_elem]) |ee| {
+        elem_inds[dim_elem] = ee;
+        const coord_inds: []usize = connect.getElem(ee);
 
-    var write_buf: [4096]u8 = undefined;
-    var file_writer = ppm_file.writer(io, &write_buf);
-    const writer = &file_writer.interface;
-
-    try writer.print("P3\n{d} {d}\n255\n", .{ image.cols_n, image.rows_n});
-
-    const px_min: f64 = std.mem.min(f64,image.elems);
-    const px_max: f64 = std.mem.max(f64,image.elems);
-    const px_rng: f64 = px_max - px_min;
-
-    for (0..image.rows_n) |rr| {
-        for (0..image.cols_n) |cc| {
-            const px_scaled = @as(u8,
-                @intFromFloat((image.get(rr,cc) - px_min)/px_rng * 255.0)
-            );  
-            try writer.print("{d} {d} {d}\n", .{px_scaled,px_scaled,px_scaled});
-        }
-    }
-
-    try writer.flush();   
+        for (0..elem_array.dims[dim_node]) |nn| {
+            elem_inds[dim_node] = nn;
+                                
+            elem_inds[dim_field] = 0;            
+            elem_array.set(elem_inds[0..],coords.x(coord_inds[nn]));
+            elem_inds[dim_field] = 1;            
+            elem_array.set(elem_inds[0..],coords.y(coord_inds[nn]));
+            elem_inds[dim_field] = 2;            
+            elem_array.set(elem_inds[0..],coords.z(coord_inds[nn]));
+            
+        } 
+    }    
 }
 
-pub fn saveCSV(io: std.Io,
-               out_dir: std.Io.Dir, 
-               file_name: []const u8,
-               image: *const MatSlice(f64),
-               ) !void {
+pub fn fillElemFields(connect: *const Connect,
+                      field: *const Field,
+                      frame_ind: usize,
+                      dim_elem: usize,
+                      dim_node: usize,
+                      dim_field: usize,
+                      field_array: *NDArray(f64),
+                      ) void {
 
-    const csv_file = try out_dir.createFile(io, file_name, .{});
-    defer csv_file.close(io);
+    const fields_num = field.getFieldsN();
+    var set_elem_inds = [_]usize{0,0,0}; // dims=(elem,field,node)
+    var get_field_inds = [_]usize{frame_ind,0,0}; // dims=(time,coord,field)
 
-    var write_buf: [4096]u8 = undefined;
-    var file_writer = csv_file.writer(io,&write_buf);
-    const writer = &file_writer.interface;
+    for (0..field_array.dims[dim_elem]) |ee| {
+        set_elem_inds[dim_elem] = ee;
+        const coord_inds: []usize = connect.getElem(ee);
 
-    for (0..image.rows_n) |rr| {
-        for (0..image.cols_n) |cc| {
-            try writer.print("{d},", .{image.get(rr, cc)});
-        }
-        try writer.print("\n",.{});
-    }
+        for (0..field_array.dims[dim_node]) |nn| {
+            set_elem_inds[dim_node] = nn;
+            get_field_inds[1] = coord_inds[nn];
+            
+            for (0..fields_num) |ff| {
+                get_field_inds[2] = ff;
+                const field_val: f64 = field.array.get(get_field_inds[0..]);
 
-    try writer.flush();
+                set_elem_inds[dim_field] = ff;
+                field_array.set(set_elem_inds[0..],field_val);    
+            }
+        } 
+    }    
+}
+
+
+pub fn Vec3OfSlices(comptime T: type) type {
+    return struct{
+        x: []T,
+        y: []T,
+        z: []T,
+    };   
+}
+
+pub fn loadVec3SlicesFromElemArray(comptime N: usize,
+                                   comptime T: type, 
+                                   elem_array: *const NDArray(T),
+                                   elem_ind: usize) !Vec3OfSlices(T) {
+
+    var start_slice: usize = elem_array.getFlatInd(&[_]usize{elem_ind,0,0});
+    // if coords then stride=3, if fields then stride=fields_num
+    const stride: usize = elem_array.strides[1];  
+
+    const x_slice = elem_array.elems[start_slice..start_slice+N];
+    start_slice += stride;
+    const y_slice = elem_array.elems[start_slice..start_slice+N];
+    start_slice += stride;
+    const z_slice = elem_array.elems[start_slice..start_slice+N];
+
+    return Vec3OfSlices(T){
+        .x = x_slice,
+        .y = y_slice,
+        .z = z_slice,
+    };
+}
+
+pub const ActiveTile = struct {
+    overlap_start: usize, // index into overlap_bboxes
+    overlap_count: usize, // count to take from overlap bboxes
+    x_px_min: u16,
+    y_px_min: u16,
+};
+
+pub inline fn edgeFun3Slices(comptime ind0: usize, 
+                             comptime ind1: usize,
+                             comptime ind2: usize,
+                             x: []f64, 
+                             y: []f64) f64 {
+    return ((x[ind2] - x[ind0]) * (y[ind1] - y[ind0]) 
+          - (y[ind2] - y[ind0]) * (x[ind1] - x[ind0]));
+}
+
+pub inline fn edgeFun3(x0: f64, y0: f64,
+                       x1: f64, y1: f64,
+                       x2: f64, y2: f64) f64 {
+    return ((x2 - x0) * (y1 - y0) - (y2 - y0) * (x1 - x0));
 }
