@@ -32,16 +32,36 @@ const rlintri = @import("rasterlintri.zig");
 
 
 //---------------------------------------------------------------------------------------------
-// DISPATCH
+// DISPATCH: dynamics to static using comptime
 // pub const ElementType = enum {
 //     lin_tri,
+//     quad_tri,
+//     lin_quad,
+//     quad_quad, 
 // };
 // 
-// pub fn render(elem_type: ElementType, TODO) !void {
+// pub fn render(elem_type: ElementType, DATA) !void {
 //     switch (elem_type) {
 //         inline else => |tag| {
-//             rasterFrame(elem_type, TODO);
-//         }
+//             raster(elem_type, DATA);
+//         },
+//     }
+// }
+// 
+// pub fn raster(comptime elem_type: ElementType, DATA) !void {
+//     switch (elem_type) {
+//         .lin_tri => {
+//             rasterLinTri(DATA);
+//         },
+//         .quad_tri => {
+//             rasterQuadTri(DATA);    
+//         },
+//         .lin_quad => {
+//             rasterLinQuad(DATA);    
+//         },
+//         .quad_quad => {
+//             rasterQuadQuad(DATA);    
+//         },
 //     }
 // }
 //---------------------------------------------------------------------------------------------
@@ -71,7 +91,7 @@ pub fn rasterFrame(allocator: std.mem.Allocator,
     const arena_alloc = arena.allocator();
 
     //-----------------------------------------------------------------------------------------
-    // **ELEMENT WISE PRE-TRANSFORM**
+    // 0. Element Data Pre-Transform
     time_start = std.Io.Clock.Timestamp.now(io, .awake); 
 
     const elems_num: usize = connect.elem_n;
@@ -106,7 +126,7 @@ pub fn rasterFrame(allocator: std.mem.Allocator,
         time_start.durationTo(time_end).raw.nanoseconds);
     
     //-----------------------------------------------------------------------------------------
-    // World to Raster Coords - SIMD
+    // 1. World to Camera/Raster Coords - SIMD
         
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
@@ -123,7 +143,7 @@ pub fn rasterFrame(allocator: std.mem.Allocator,
         time_start.durationTo(time_end).raw.nanoseconds);
         
     //-----------------------------------------------------------------------------------------
-    // Extract Element Bounding Boxes
+    // 2. Calculate Element Bounding Boxes
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
 
     const elem_bboxes: []BBox = try arena_alloc.alloc(BBox,elems_num);
