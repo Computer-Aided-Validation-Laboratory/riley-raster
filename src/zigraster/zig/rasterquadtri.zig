@@ -24,103 +24,6 @@ const rops = @import("rasterops.zig");
 const vsd = @import("vecsimd.zig");
 const Vec3SIMD = vsd.Vec3SIMD;
 
-const BBox = struct {
-    elem_ind: usize,
-    x_min: u16,
-    x_max: u16,
-    y_min: u16,
-    y_max: u16,
-};
-
-const ActiveTile = struct {
-    overlap_start: usize, // index into overlap_bboxes
-    overlap_count: usize, // count to take from overlap bboxes
-    x_px_min: u16,
-    y_px_min: u16,
-};
-
-pub fn initElemArray(comptime T: type, allocator: std.mem.Allocator,
-                     dim0: usize, dim1: usize, dim2: usize) !NDArray(T) {
-
-    var elem_arr_dims = [_]usize{ dim0, dim1, dim2 };
-    const elem_arr_size: usize = dim0 * dim1 * dim2;
-    const elem_arr_mem = try allocator.alloc(T, elem_arr_size);
-    @memset(elem_arr_mem, 0.0);
-
-    const elem_arr = try NDArray(T).init(allocator, elem_arr_mem, elem_arr_dims[0..]);
-    return elem_arr;
-}
-
-pub fn fillElemCoords(coords: *const Coords, connect: *const Connect,
-                      dim_elem: usize, dim_node: usize, dim_field: usize,
-                      elem_array: *NDArray(f64)) void {
-
-    var elem_inds = [_]usize{ 0, 0, 0 };
-
-    for (0..elem_array.dims[dim_elem]) |ee| {
-        elem_inds[dim_elem] = ee;
-        const coord_inds: []usize = connect.getElem(ee);
-
-        for (0..elem_array.dims[dim_node]) |nn| {
-            elem_inds[dim_node] = nn;
-
-            elem_inds[dim_field] = 0;
-            elem_array.set(elem_inds[0..], coords.x(coord_inds[nn]));
-            elem_inds[dim_field] = 1;
-            elem_array.set(elem_inds[0..], coords.y(coord_inds[nn]));
-            elem_inds[dim_field] = 2;
-            elem_array.set(elem_inds[0..], coords.z(coord_inds[nn]));
-        }
-    }
-}
-
-pub fn fillElemFields(connect: *const Connect, field: *const Field, frame_ind: usize,
-                      dim_elem: usize, dim_node: usize, dim_field: usize,
-                      field_array: *NDArray(f64)) void {
-
-    const fields_num = field.getFieldsN();
-    var set_elem_inds = [_]usize{ 0, 0, 0 };
-    var get_field_inds = [_]usize{ frame_ind, 0, 0 };
-
-    for (0..field_array.dims[dim_elem]) |ee| {
-        set_elem_inds[dim_elem] = ee;
-        const coord_inds: []usize = connect.getElem(ee);
-
-        for (0..field_array.dims[dim_node]) |nn| {
-            set_elem_inds[dim_node] = nn;
-            get_field_inds[1] = coord_inds[nn];
-
-            for (0..fields_num) |ff| {
-                get_field_inds[2] = ff;
-                const field_val: f64 = field.array.get(get_field_inds[0..]);
-
-                set_elem_inds[dim_field] = ff;
-                field_array.set(set_elem_inds[0..], field_val);
-            }
-        }
-    }
-}
-
-pub fn Vec3OfSlices(comptime T: type) type {
-    return struct { x: []T, y: []T, z: []T };
-}
-
-pub fn loadVec3SlicesFromElemArray(comptime N: usize, comptime T: type,
-                                   elem_array: *const NDArray(T),
-                                   elem_ind: usize) !Vec3OfSlices(T) {
-
-    var start_slice: usize = elem_array.getFlatInd(&[_]usize{ elem_ind, 0, 0 });
-    const stride: usize = elem_array.strides[1];
-
-    const x_slice = elem_array.elems[start_slice .. start_slice + N];
-    start_slice += stride;
-    const y_slice = elem_array.elems[start_slice .. start_slice + N];
-    start_slice += stride;
-    const z_slice = elem_array.elems[start_slice .. start_slice + N];
-
-    return Vec3OfSlices(T){ .x = x_slice, .y = y_slice, .z = z_slice };
-}
-
 fn shapeFunctions(xi: f64, eta: f64, N: *[6]f64, dN_dxi: *[6]f64, dN_deta: *[6]f64) void {
     const L1 = 1.0 - xi - eta;
     const L2 = xi;
@@ -151,9 +54,6 @@ fn shapeFunctions(xi: f64, eta: f64, N: *[6]f64, dN_dxi: *[6]f64, dN_deta: *[6]f
     dN_deta[5] = 4.0 * (L1 - L3);
 }
 
-pub inline fn edgeFun3(x0: f64, y0: f64, x1: f64, y1: f64, x2: f64, y2: f64) f64 {
-    return (x2 - x0) * (y1 - y0) - (y2 - y0) * (x1 - x0);
-}
 
 fn getTessellatedGuess(txs: f64, tys: f64, ex: []f64, ey: []f64, ew: []f64,
                       xi_out: *f64, eta_out: *f64) bool {
@@ -248,21 +148,27 @@ fn solveInverseMapProjected(txs: f64, tys: f64, ex: []f64, ey: []f64, ew: []f64,
     return false;
 }
 
-pub fn rasterOneFrame(allocator: std.mem.Allocator,
-                      io: std.Io,
-                      frame_ind: usize,
-                      coords: *const Coords,
-                      connect: *const Connect,
-                      field: *const Field,
-                      camera: *const Camera,
-                      image_out_arr: *NDArray(f64)) !void {
+//---------------------------------------------------------------------------------------------
+pub fn rasterFrame(allocator: std.mem.Allocator,
+                   io: std.Io,
+                   frame_ind: usize,
+                   coords: *const Coords,
+                   connect: *const Connect,
+                   field: *const Field,
+                   camera: *const Camera,
+                   image_out_arr: *NDArray(f64)) !void {
+
+    const tile_size: u16 = 32;
 
     const raster_start = std.Io.Clock.Timestamp.now(io, .awake);
-    const tile_size: u16 = 32;
+
+    //-----------------------------------------------------------------------------------------
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
+    //-----------------------------------------------------------------------------------------
+    // 0. Element Data Pre-transform
     const elems_num = connect.elem_n;
     const fields_num = field.getFieldsN();
 
@@ -272,25 +178,44 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     fillElemCoords(coords, connect, 0, 2, 1, &elem_coord_arr);
     fillElemFields(connect, field, frame_ind, 0, 2, 1, &elem_field_arr);
 
-    const x_scale = camera.image_dist * @as(f64, @floatFromInt(camera.pixels_num[0])) / camera.image_dims[0];
-    const y_scale = camera.image_dist * @as(f64, @floatFromInt(camera.pixels_num[1])) / camera.image_dims[1];
+    const x_scale = camera.image_dist * @as(f64, @floatFromInt(camera.pixels_num[0])) 
+                    / camera.image_dims[0];
+    const y_scale = camera.image_dist * @as(f64, @floatFromInt(camera.pixels_num[1])) 
+                    / camera.image_dims[1];
 
+    //-----------------------------------------------------------------------------------------
+    // 1. World to Camera/Raster Coords
+    
+    // TODO: refactor this - SIMD check.
     for (0..elems_num) |ee| {
-        const cw: Vec3SIMD(6, f64) = try vsd.loadVec3SIMDFromElemArray(6, f64, &elem_coord_arr, ee);
+        const cw: Vec3SIMD(6, f64) = try vsd.loadVec3SIMDFromElemArray(6, 
+                                                                      f64, 
+                                                                      &elem_coord_arr, 
+                                                                      ee);
         var cr = vsd.mat44Mul(6, f64, camera.world_to_cam_mat, cw);
+
         cr.x *= @splat(x_scale);
         cr.y *= @splat(-y_scale);
-        try vsd.saveVec3SIMDToElemArray(6, f64, &elem_coord_arr, ee,
+        
+        try vsd.saveVec3SIMDToElemArray(6, 
+                                        f64, 
+                                        &elem_coord_arr, 
+                                        ee,
                                         Vec3SIMD(6, f64){ .x = cr.x, .y = cr.y, .z = -cr.z });
     }
 
+    //-----------------------------------------------------------------------------------------
+    // 2. Calculate Elem Bounding Boxes
+
     const elem_bboxes = try arena_alloc.alloc(BBox, elems_num);
     var elems_in_image: usize = 0;
+
     const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
     const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
 
     for (0..elems_num) |ee| {
         const cr = try loadVec3SlicesFromElemArray(6, f64, &elem_coord_arr, ee);
+
         var x_min: f64 = std.math.inf(f64); var x_max: f64 = -std.math.inf(f64);
         var y_min: f64 = std.math.inf(f64); var y_max: f64 = -std.math.inf(f64);
         for (0..6) |i| {
@@ -313,6 +238,10 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         elems_in_image += 1;
     }
 
+    //-----------------------------------------------------------------------------------------
+    // 3. Element Tile Overlap: COUNT only to alloc 
+
+    // TODO: refactor this for naming
     const tx_n = try std.math.divCeil(usize, camera.pixels_num[0], tile_size);
     const ty_n = try std.math.divCeil(usize, camera.pixels_num[1], tile_size);
     const t_elem_counts = try arena_alloc.alloc(usize, tx_n * ty_n);
@@ -330,12 +259,22 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         }
     }
 
+    
+    // Count the active tiles and work out the write offsets into the overlap boxes
     const t_write_inds = try arena_alloc.alloc(usize, tx_n * ty_n);
-    var offset: usize = 0; var num_active: usize = 0;
+    var offset: usize = 0; 
+    var num_active: usize = 0;
     for (t_elem_counts, 0..) |cc, ii| {
-        t_write_inds[ii] = offset; offset += cc;
-        if (cc > 0) num_active += 1;
+        t_write_inds[ii] = offset; 
+        offset += cc;
+        if (cc > 0) {
+            num_active += 1;
+        }
     }
+
+
+    //-----------------------------------------------------------------------------------------
+    // 4. Element Tile Overlap: Store overlap bounding boxes for ACTIVE tiles only.
 
     const overlap_bboxes = try arena_alloc.alloc(BBox, offset);
     const active_tiles = try arena_alloc.alloc(ActiveTile, num_active);
@@ -374,11 +313,21 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
         }
     }
 
-    try rasterTilesQuadProjected(allocator, camera, tile_size, active_tiles,
-                                 overlap_bboxes, &elem_coord_arr, &elem_field_arr, image_out_arr);
+    //-----------------------------------------------------------------------------------------
+    // 5. Raster Loop
+    
+    try rasterTilesQuadProjected(allocator, 
+                                 camera, 
+                                 tile_size, 
+                                 active_tiles,
+                                 overlap_bboxes, 
+                                 &elem_coord_arr, 
+                                 &elem_field_arr, 
+                                 image_out_arr);
 
     const raster_end = std.Io.Clock.Timestamp.now(io, .awake);
-    const time_all = @as(f64, @floatFromInt(raster_start.durationTo(raster_end).raw.nanoseconds));
+    const time_all = @as(f64, 
+        @floatFromInt(raster_start.durationTo(raster_end).raw.nanoseconds));
     const px_cnt = @as(f64, @floatFromInt(camera.pixels_num[0] * camera.pixels_num[1]));
     const total_px = px_cnt * @as(f64, @floatFromInt(camera.sub_sample * camera.sub_sample));
     const p_break = [_]u8{'='} ** 80;
@@ -399,21 +348,28 @@ pub fn rasterTilesQuadProjected(allocator: std.mem.Allocator,
                                 image_out_arr: *NDArray(f64)) !void {
 
     const fields_num = elem_field_arr.dims[1];
+
     const sub_samp = @as(usize, @intCast(camera.sub_sample));
-    const spx_tile_size = tile_size * sub_samp;
     const sub_samp_f = @as(f64, @floatFromInt(camera.sub_sample));
+        
+    const spx_tile_size = tile_size * sub_samp;
+
     const spx_step = 1.0 / sub_samp_f;
     const spx_offset = 1.0 / (2.0 * sub_samp_f);
+
     const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
     const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
 
     const spx_inv_z_scratch = try allocator.alloc(f64, spx_tile_size * spx_tile_size);
     defer allocator.free(spx_inv_z_scratch);
-    const spx_img_scratch_mem = try allocator.alloc(f64, spx_tile_size * spx_tile_size * fields_num);
+    
+    const spx_img_scratch_mem = try allocator.alloc(f64,spx_tile_size*spx_tile_size*fields_num)
     defer allocator.free(spx_img_scratch_mem);
+    
     var spx_image_scratch = MatSlice(f64).init(spx_img_scratch_mem,
                                                spx_tile_size * spx_tile_size,
                                                fields_num);
+
     const spx_field_avg = try allocator.alloc(f64, fields_num);
     defer allocator.free(spx_field_avg);
 
@@ -431,11 +387,18 @@ pub fn rasterTilesQuadProjected(allocator: std.mem.Allocator,
 
             for (s_start_y..s_end_y) |yy| {
                 const row_off = yy * spx_tile_size;
-                const spx_y = @as(f64, @floatFromInt(ov.y_min)) + spx_offset + @as(f64, @floatFromInt(yy - s_start_y)) * spx_step;
+
+                const spx_y = @as(f64, @floatFromInt(ov.y_min)) 
+                              + spx_offset 
+                              + @as(f64, @floatFromInt(yy - s_start_y)) * spx_step;
 
                 for (s_start_x..s_end_x) |xx| {
-                    const spx_x = @as(f64, @floatFromInt(ov.x_min)) + spx_offset + @as(f64, @floatFromInt(xx - s_start_x)) * spx_step;
-                    var xi: f64 = 0.0; var eta: f64 = 0.0;
+                    const spx_x = @as(f64, @floatFromInt(ov.x_min)) 
+                                  + spx_offset 
+                                  + @as(f64, @floatFromInt(xx - s_start_x)) * spx_step;
+
+                    var xi: f64 = 0.0; 
+                    var eta: f64 = 0.0;
 
                     if (solveInverseMapProjected(spx_x - x_off, spx_y - y_off, nr.x, nr.y, nr.z,
                                                  0.0, 0.0, &xi, &eta)) {

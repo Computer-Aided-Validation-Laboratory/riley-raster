@@ -8,8 +8,8 @@ const Vec3f = vecstack.Vec3f;
 const Vec3T = vecstack.Vec3T;
 const Vec3SliceOps = vecstack.Vec3SliceOps;
 
-const vecsimd = @import("vecsimd.zig");
-const Vec3SIMD = vecsimd.Vec3SIMD;
+const vsd = @import("vecsimd.zig");
+const Vec3SIMD = vsd.Vec3SIMD;
 
 const Mat44Ops = @import("matstack.zig").Mat44Ops;
 
@@ -53,43 +53,27 @@ pub fn worldToRasterCoords(coord_world: Vec3T(f64), camera: *const Camera) Vec3T
     return coord_raster;
 }
 
-pub fn worldToRasterSIMD(comptime N: usize,
-                         comptime T: type, 
-                         coord_world: Vec3SIMD(N,T), 
-                         camera: *const Camera) Vec3SIMD(N,T) {
-
-    var coord_raster: Vec3SIMD(N,T) = vecsimd.mat44Mul(N,T,
-                                                       camera.world_to_cam_mat,
-                                                       coord_world);
-
-    const image_dist_simd: @Vector(N,T) = @splat(camera.image_dist);
-    const inv_neg_z: @Vector(N,T) = @as(@Vector(N,T),@splat(1.0)) / (-coord_raster.z);
-
-    coord_raster.x = image_dist_simd * coord_raster.x * inv_neg_z; 
-    coord_raster.y = image_dist_simd * coord_raster.y * inv_neg_z;
-
-    coord_raster.x *= @splat(2.0/camera.image_dims[0]);
-    coord_raster.y *= @splat(2.0/camera.image_dims[1]);
-
-    const px_x = @as(T,@floatFromInt(camera.pixels_num[0]));
-    const px_y = @as(T,@floatFromInt(camera.pixels_num[1]));
-
-    const px_x_half_vec: @Vector(N,T) = @splat(px_x/2.0);
-    const px_y_half_vec: @Vector(N,T) = @splat(px_y/2.0); 
-    const ones_vec: @Vector(N,T) = @splat(1.0);
-    
-    coord_raster.x = px_x_half_vec*(coord_raster.x + ones_vec);
-    coord_raster.y = px_y_half_vec*(ones_vec - coord_raster.y);
-    coord_raster.z = -coord_raster.z;
-
-    return coord_raster;
-}
 
 pub fn edgeFun(vert_0: Vec3f, vert_1: Vec3f, vert_2: Vec3f) f64 {
     return ((vert_2.get(0) - vert_0.get(0)) 
           * (vert_1.get(1) - vert_0.get(1)) 
           - (vert_2.get(1) - vert_0.get(1)) 
           * (vert_1.get(0) - vert_0.get(0)));
+}
+
+pub inline fn edgeFun3Slices(comptime ind0: usize, 
+                             comptime ind1: usize,
+                             comptime ind2: usize,
+                             x: []f64, 
+                             y: []f64) f64 {
+    return ((x[ind2] - x[ind0]) * (y[ind1] - y[ind0]) 
+          - (y[ind2] - y[ind0]) * (x[ind1] - x[ind0]));
+}
+
+pub inline fn edgeFun3(x0: f64, y0: f64,
+                       x1: f64, y1: f64,
+                       x2: f64, y2: f64) f64 {
+    return ((x2 - x0) * (y1 - y0) - (y2 - y0) * (x1 - x0));
 }
 
 pub fn boundIndexMin(min_val: f64) usize {
@@ -155,13 +139,9 @@ pub fn averageImage(image_subpx: *const MatSlice(f64),
     }
 }
 
-pub const BBox = struct {
-    elem_ind: usize,
-    x_min: u16,
-    x_max: u16,
-    y_min: u16,
-    y_max: u16,
-};
+
+//---------------------------------------------------------------------------------------------
+// Tiling Raster Step 0: Element Data Pre-Transformations
 
 pub fn initElemArray(comptime T: type,
                      allocator: std.mem.Allocator,
@@ -268,6 +248,72 @@ pub fn loadVec3SlicesFromElemArray(comptime N: usize,
     };
 }
 
+//---------------------------------------------------------------------------------------------
+// Tiling Raster Step 1: World to Camera/Raster Coords
+
+pub fn worldToRasterSIMD(comptime N: usize,
+                         comptime T: type, 
+                         coord_world: Vec3SIMD(N,T), 
+                         camera: *const Camera) Vec3SIMD(N,T) {
+
+    var coord_raster: Vec3SIMD(N,T) = vsd.mat44Mul(N,T,
+                                                       camera.world_to_cam_mat,
+                                                       coord_world);
+
+    const image_dist_simd: @Vector(N,T) = @splat(camera.image_dist);
+    const inv_neg_z: @Vector(N,T) = @as(@Vector(N,T),@splat(1.0)) / (-coord_raster.z);
+
+    coord_raster.x = image_dist_simd * coord_raster.x * inv_neg_z; 
+    coord_raster.y = image_dist_simd * coord_raster.y * inv_neg_z;
+
+    coord_raster.x *= @splat(2.0/camera.image_dims[0]);
+    coord_raster.y *= @splat(2.0/camera.image_dims[1]);
+
+    const px_x = @as(T,@floatFromInt(camera.pixels_num[0]));
+    const px_y = @as(T,@floatFromInt(camera.pixels_num[1]));
+
+    const px_x_half_vec: @Vector(N,T) = @splat(px_x/2.0);
+    const px_y_half_vec: @Vector(N,T) = @splat(px_y/2.0); 
+    const ones_vec: @Vector(N,T) = @splat(1.0);
+    
+    coord_raster.x = px_x_half_vec*(coord_raster.x + ones_vec);
+    coord_raster.y = px_y_half_vec*(ones_vec - coord_raster.y);
+    coord_raster.z = -coord_raster.z;
+
+    return coord_raster;
+}
+
+pub fn transformElemsToRasterSIMD(comptime N: usize,
+                                  comptime T: type,
+                                  camera: *const Camera, 
+                                  dim_elem: usize,  
+                                  elem_coord_arr: *NDArray(T)) !void {
+
+    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
+        const coords_world: Vec3SIMD(N,T) = try vsd.loadVec3SIMDFromElemArray(
+            N,T,elem_coord_arr,ee);
+
+        const coords_raster: Vec3SIMD(N,T) = worldToRasterSIMD(
+            N,T,coords_world,camera); 
+
+        try vsd.saveVec3SIMDToElemArray(N,T,elem_coord_arr,ee,coords_raster);
+    }
+
+}
+
+// TODO: transformElemsToCameraSIMD()
+
+//---------------------------------------------------------------------------------------------
+// Tiling Raster Structs
+
+pub const BBox = struct {
+    elem_ind: usize,
+    x_min: u16,
+    x_max: u16,
+    y_min: u16,
+    y_max: u16,
+};
+
 pub const ActiveTile = struct {
     overlap_start: usize, // index into overlap_bboxes
     overlap_count: usize, // count to take from overlap bboxes
@@ -275,17 +321,120 @@ pub const ActiveTile = struct {
     y_px_min: u16,
 };
 
-pub inline fn edgeFun3Slices(comptime ind0: usize, 
-                             comptime ind1: usize,
-                             comptime ind2: usize,
-                             x: []f64, 
-                             y: []f64) f64 {
-    return ((x[ind2] - x[ind0]) * (y[ind1] - y[ind0]) 
-          - (y[ind2] - y[ind0]) * (x[ind1] - x[ind0]));
+//---------------------------------------------------------------------------------------------
+// Tiling Raster Step 3: Element Tile Overlap - COUNT only 
+
+// TODO: remove the divCeil for the error free version
+pub fn elemTileOverlapCount(tile_size: u16,
+                            tiles_num_x: usize,
+                            elems_in_image: usize,
+                            elem_bboxes: []BBox,
+                            tile_elem_counts: []usize,
+                            tile_write_inds: []usize) !usize {
+
+    for (0..elems_in_image) |ee| {
+        const tile_ind_min_x: u16 = elem_bboxes[ee].x_min / tile_size;
+        const tile_ind_max_x: u16 = try std.math.divCeil(u16,elem_bboxes[ee].x_max,tile_size);
+        const tile_ind_min_y: u16 = elem_bboxes[ee].y_min / tile_size;
+        const tile_ind_max_y: u16 = try std.math.divCeil(u16,elem_bboxes[ee].y_max,tile_size);
+
+        for (tile_ind_min_y..tile_ind_max_y) |ty| {
+            const tile_row_offset: usize = ty * tiles_num_x;
+            
+            for (tile_ind_min_x..tile_ind_max_x) |tx| {
+                const tile_ind_flat: usize = tile_row_offset + tx;
+
+                tile_elem_counts[tile_ind_flat] += 1;
+                
+            }
+        }
+    }
+
+    // Count the active tiles and work out the write offsets into the overlap boxes
+    var num_active_tiles: usize = 0;
+    var current_offset: usize = 0;
+    for (tile_elem_counts,0..) |cc,ii| {
+        tile_write_inds[ii] = current_offset;
+        current_offset += cc;
+        if (cc > 0) {
+            num_active_tiles += 1;            
+        }
+    }
+
+    return num_active_tiles;   
 }
 
-pub inline fn edgeFun3(x0: f64, y0: f64,
-                       x1: f64, y1: f64,
-                       x2: f64, y2: f64) f64 {
-    return ((x2 - x0) * (y1 - y0) - (y2 - y0) * (x1 - x0));
+//---------------------------------------------------------------------------------------------
+// Tiling Raster Step 4: Element Tile Overlap- Store overlap bounding boxes for ACTIVE tiles
+
+pub fn storeActiveTiles(tile_size: u16,
+                        tiles_num_x: usize,
+                        tiles_num_y: usize,
+                        screen_px_x: u16,
+                        screen_px_y: u16,
+                        elems_in_image: usize,
+                        elem_bboxes: []const BBox,
+                        tile_elem_counts: []const usize,
+                        tile_write_inds: []usize,
+                        overlap_bboxes: []BBox,
+                        active_tiles: []ActiveTile) void {
+
+    var active_ind: usize = 0;
+    for (tile_elem_counts,0..) |cc,ii| {
+    
+        if (cc > 0) {
+            // TODO: check for bug here - should this both be tiles_num_x?
+            const tx = @as(u16, @intCast(ii % tiles_num_x));
+            const ty = @as(u16, @intCast(ii / tiles_num_x));
+        
+            active_tiles[active_ind] = ActiveTile{
+                .overlap_start = tile_write_inds[ii],
+                .overlap_count = cc,
+                .x_px_min = tx*tile_size,
+                .y_px_min = ty*tile_size,
+            };
+            active_ind += 1;      
+        }
+    }
+
+    // NOTE: only loops over elements in image so ee is not the element number for coord data
+    // in the NDArray!    
+    for (0..elems_in_image) |ee| {
+        const tile_ind_min_x: u16 = elem_bboxes[ee].x_min / tile_size;
+        const tile_ind_min_y: u16 = elem_bboxes[ee].y_min / tile_size;
+        
+        // No 'try' divCeil
+        const tile_ind_max_x = @min(@as(u16, @intCast(tiles_num_x)),
+            (elem_bboxes[ee].x_max + tile_size - 1) / tile_size);
+        const tile_ind_max_y = @min(@as(u16, @intCast(tiles_num_y)),
+            (elem_bboxes[ee].y_max + tile_size - 1) / tile_size);
+
+        for (tile_ind_min_y..tile_ind_max_y) |ty| {
+            const tile_row_offset: usize = ty * tiles_num_x;
+
+            const tile_px_min_y: u16 = @as(u16,@intCast(ty*tile_size));
+            const tile_px_max_y: u16 = @as(u16,@min(tile_px_min_y+tile_size,screen_px_y));
+
+            const overlap_y_min = @max(elem_bboxes[ee].y_min, tile_px_min_y);
+            const overlap_y_max = @min(elem_bboxes[ee].y_max, tile_px_max_y);
+
+            for (tile_ind_min_x..tile_ind_max_x) |tx| {
+                
+                const tile_px_min_x: u16 = @as(u16,@intCast(tx*tile_size));
+                const tile_px_max_x: u16 = @as(u16,@min(tile_px_min_x+tile_size,screen_px_x));
+
+                const tile_ind_flat: usize = tile_row_offset + tx;
+                const write_ind = tile_write_inds[tile_ind_flat]; 
+                tile_write_inds[tile_ind_flat] += 1;
+
+                overlap_bboxes[write_ind] = BBox{
+                    .elem_ind = elem_bboxes[ee].elem_ind,
+                    .x_min = @max(elem_bboxes[ee].x_min,tile_px_min_x),
+                    .x_max = @min(elem_bboxes[ee].x_max,tile_px_max_x),
+                    .y_min = overlap_y_min,
+                    .y_max = overlap_y_max,
+                };  
+            }
+        }
+    }
 }
