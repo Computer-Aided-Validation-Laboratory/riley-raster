@@ -233,40 +233,15 @@ pub fn rasterElems(
         } // LOOP overlapping elems / boxes
 
         // Average scratch and push into main image buffer
-        const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
-        const curr_tile_size_x = @min(@as(u16, tile_size), screen_px_x - tile.x_px_min);
-        const curr_tile_size_y = @min(@as(u16, tile_size), screen_px_y - tile.y_px_min);       
-
-        for (0..curr_tile_size_y) |ty| { 
-            const image_px_y: usize = tile.y_px_min + ty;
-            const spx_start_y: usize = sub_samp * ty;
-            
-            for (0..curr_tile_size_x) |tx| {
-                const image_px_x: usize = tile.x_px_min + tx;
-                const spx_start_x: usize = sub_samp * tx;
-                
-                @memset(spx_field_avg,0.0);
-                        
-                for (0..sub_samp) |sy| { // Index into scratch
-                    const scratch_row_offset: usize = (spx_start_y + sy) 
-                                                     * spx_tile_size;  
-                        
-                    for (0..sub_samp) |sx| {
-                        const scratch_flat_ind: usize = scratch_row_offset+spx_start_x+sx;
-
-                        for (0..fields_num) |ff| {
-                            spx_field_avg[ff] += spx_image_scratch.get(scratch_flat_ind,ff);
-                        }
-                    } // AVG LOOP: sub samp x
-                } // AVG LOOP: sub samp y
-
-                for (0..fields_num) |ff| {
-                    const image_inds = [_]usize{ff,image_px_y,image_px_x};
-                    const image_val: f64 = spx_field_avg[ff]*inv_sub_samp_sq;
-
-                    image_out_arr.set(image_inds[0..], image_val);
-                }
-            } // AVG LOOP: tile x
-        } // AVG LOOP: tile y                           
+        rops.averageScratch(tile, 
+                            tile_size, 
+                            screen_px_x, 
+                            screen_px_y, 
+                            sub_samp, 
+                            spx_tile_size, 
+                            fields_num, 
+                            &spx_image_scratch, 
+                            spx_field_avg, 
+                            image_out_arr);    
     } // LOOP active tiles   
 }

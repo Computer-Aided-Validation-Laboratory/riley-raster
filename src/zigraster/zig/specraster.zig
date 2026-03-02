@@ -28,7 +28,10 @@ const BBox = rops.BBox;
 const ActiveTile = rops.ActiveTile;
 const Vec3OfSlices = rops.Vec3OfSlices;
 
-const rlintri = @import("rasterlintri.zig");
+const meshtypes = @import("meshtypes.zig");
+const MeshType = meshtypes.MeshType;
+const rltri = @import("rasterlintri.zig");
+const rqtri = @import("rasterquadtri.zig");
 
 
 //---------------------------------------------------------------------------------------------
@@ -51,10 +54,10 @@ const rlintri = @import("rasterlintri.zig");
 // pub fn raster(comptime elem_type: ElementType, DATA) !void {
 //     switch (elem_type) {
 //         .lin_tri => {
-//             rasterLinTri(DATA);
+//             rasterltri(DATA);
 //         },
 //         .quad_tri => {
-//             rasterQuadTri(DATA);    
+//             rasterqtri(DATA);    
 //         },
 //         .lin_quad => {
 //             rasterLinQuad(DATA);    
@@ -66,7 +69,8 @@ const rlintri = @import("rasterlintri.zig");
 // }
 //---------------------------------------------------------------------------------------------
 
-pub fn rasterFrame(allocator: std.mem.Allocator, 
+pub fn rasterFrame(comptime mesh_type: MeshType,
+                   allocator: std.mem.Allocator, 
                    io: std.Io,
                    frame_ind: usize, 
                    coords: *const Coords, 
@@ -82,9 +86,6 @@ pub fn rasterFrame(allocator: std.mem.Allocator,
 
     //-----------------------------------------------------------------------------------------
     // CONSTANTS
-
-    // NODES PER ELEM
-    const N: usize = 3;        // Set to nodes per elem 
 
     // MESH DIMS
     const elems_num: usize = connect.elem_n;
@@ -141,11 +142,19 @@ pub fn rasterFrame(allocator: std.mem.Allocator,
 
     
     //-----------------------------------------------------------------------------------------
-    // Tilin Raster Step 1: World to Camera/Raster Coords - SIMD
+    // Tiling Raster Step 1: World to Camera/Raster Coords - SIMD
         
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
-    
-    try rops.transformElemsToRasterSIMD(N,f64,camera,dim_elem,&elem_coord_arr);
+
+    // SWITCH HERE over ElementType    
+    switch (mesh_type) {
+        .lin_tri => {
+            try rops.transformElemsToRasterSIMD(3,f64,camera,dim_elem,&elem_coord_arr);
+        },
+        .quad_tri => {
+            try rqtri.transformElemsToCamSIMD(6,f64,camera,dim_elem,&elem_coord_arr);
+        },
+    }
     
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
     const time1_world_to_raster: f64 = @floatFromInt(
@@ -156,13 +165,23 @@ pub fn rasterFrame(allocator: std.mem.Allocator,
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
 
     const elem_bboxes: []BBox = try arena_alloc.alloc(BBox,elems_num);
-
-    // SWITCH HERE over ElementType
-    const elems_in_image = try rlintri.countElemsCalcBBoxes(camera,
+    var elems_in_image: usize = 0;
+    
+    switch (mesh_type) {
+        .lin_tri => {
+            elems_in_image = try rltri.countElemsCalcBBoxes(camera,
                                                             dim_elem,
                                                             &elem_coord_arr,
                                                             elem_bboxes);
-
+        },
+        .quad_tri => {
+            elems_in_image = try rqtri.countElemsCalcBBoxes(camera,
+                                                            dim_elem,
+                                                            &elem_coord_arr,
+                                                            elem_bboxes);
+        },
+    }
+    
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
     const time2_elem_bboxes_crop: f64 = @floatFromInt(
         time_start.durationTo(time_end).raw.nanoseconds);
@@ -218,17 +237,29 @@ pub fn rasterFrame(allocator: std.mem.Allocator,
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
 
     // SWITCH HERE over ElementType
-    try rlintri.rasterElems(
-        arena_alloc,
-        camera,
-        tile_size,
-        active_tiles,
-        overlap_bboxes,
-        &elem_coord_arr,
-        &elem_field_arr,
-        image_out_arr,
-    );
-
+    switch (mesh_type) {
+        .lin_tri => {
+            try rltri.rasterElems(arena_alloc,
+                                  camera,
+                                  tile_size,
+                                  active_tiles,
+                                  overlap_bboxes,
+                                  &elem_coord_arr,
+                                  &elem_field_arr,
+                                  image_out_arr,);        
+        },
+        .quad_tri => {
+           try rqtri.rasterElems(arena_alloc,
+                                 camera,
+                                 tile_size,
+                                 active_tiles,
+                                 overlap_bboxes,
+                                 &elem_coord_arr,
+                                 &elem_field_arr,
+                                 image_out_arr,); 
+        },
+    }    
+    
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
     const time5_raster_loop: f64 = @floatFromInt(
         time_start.durationTo(time_end).raw.nanoseconds);

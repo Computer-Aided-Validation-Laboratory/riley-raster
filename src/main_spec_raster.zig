@@ -8,13 +8,16 @@ const Connect = meshio.Connect;
 const Field = meshio.Field;
 const SimData = meshio.SimData;
 
+const meshtypes = @import("zigraster/zig/meshtypes.zig");
+const MeshType = meshtypes.MeshType;
+
 const VecStack = @import("zigraster/zig/vecstack.zig");
 const MatStack = @import("zigraster/zig/matstack.zig");
 
 const Rotation = @import("zigraster/zig/rotation.zig").Rotation;
 const Vec3f = VecStack.Vec3f;
 const Mat44f = MatStack.Mat44f;
-const Mat44Ops = MatStack.Mat44Ops;
+ const Mat44Ops = MatStack.Mat44Ops;
 
 const matslice = @import("zigraster/zig/matslice.zig");
 const MatSlice = matslice.MatSlice;
@@ -53,10 +56,15 @@ pub fn main() !void {
     // SETUP: load simulation data from file
     //const path_data = "data/cylinder/";
     //const path_data = "data/block/";
-    const path_data = "data/lin_tri/";
     //const path_data = "data/quad_tri_def/";
     //const path_data = "data/fill_lin_tri/";
-    //const path_data = "data/fill_uad_tri_def/";
+    //const path_data = "data/fill_quad_tri/";
+
+    // const path_data = "data/lin_tri/";
+    // const mesh_type: MeshType = .lin_tri;
+
+    const path_data = "data/quad_tri_def/";
+    const mesh_type: MeshType = .quad_tri;
 
     const frame_ind: usize = 1;
     
@@ -110,10 +118,10 @@ pub fn main() !void {
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
     const alpha_z: f64 = std.math.degreesToRadians(0.0);
-    const beta_y: f64 = std.math.degreesToRadians(-30.0);
-    const gamma_x: f64 = std.math.degreesToRadians(-10.0);
+    const beta_y: f64 = std.math.degreesToRadians(0.0);
+    const gamma_x: f64 = std.math.degreesToRadians(0.0);
     const cam_rot = Rotation.init(alpha_z, beta_y, gamma_x);
-    const fov_scale_factor: f64 = 1.0;
+    const fov_scale_factor: f64 = 1.01;
     const subsample: u8 = 2;
     
     print("{s}\n", .{print_break});
@@ -165,14 +173,15 @@ pub fn main() !void {
 
     // Creates own arena for temporary render buffers which should be 
     // cleared after rendering a frame.
-    try specraster.rasterFrame(page_alloc,
+    try specraster.rasterFrame(mesh_type,
+                               page_alloc,
                                io, 
-                              frame_ind, 
-                              &sim_data.coords, 
-                              &sim_data.connect, 
-                              &sim_data.field, 
-                              &camera, 
-                              &images_arr);
+                               frame_ind, 
+                               &sim_data.coords, 
+                               &sim_data.connect, 
+                               &sim_data.field, 
+                               &camera, 
+                               &images_arr);
                            
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
     // const time_raster: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
