@@ -38,29 +38,42 @@ const FieldShader = meshraster.FieldShader;
 const rltri = @import("rasterlintri.zig");
 const rqtri = @import("rasterquadtri.zig");
 
-pub fn rasterFrame(mesh_type: MeshType,
-                   allocator: std.mem.Allocator, 
-                   io: std.Io,
-                   frame_ind: usize,
-                   camera: *const Camera, 
-                   coords: *NDArray(f64),
-                   shader: *const FieldShader, 
-                   image_out_arr: *NDArray(f64),
-                   ) !void {    
+
+// pub fn rasterAllFrames(mesh_type: MeshType,
+//                        allocator: std.mem.Allocator, 
+//                        io: std.Io,
+//                        camera: *const Camera,
+//                        mesh_raster: *MeshRaster,
+//                        ) !NDArray(f64) {
+// 
+//     for (frames) |ff| {
+//         try rasterOneFrame();
+//     }                     
+// }
+
+pub fn rasterOneFrame(mesh_type: MeshType,
+                      allocator: std.mem.Allocator, 
+                      io: std.Io,
+                      frame_ind: usize,
+                      camera: *const Camera, 
+                      coords: *NDArray(f64),
+                      shader: *const FieldShader, 
+                      image_out_arr: *NDArray(f64),
+                      ) !void {    
     
     // Use inline switch to force comptime dispatch for every combination of
     // MeshType and Shader variant.
     switch (mesh_type) {
-        inline else => |m_tag| {
+        inline else => |mesh_tag| {
             switch (shader.*) {
-                inline else => |s_val| {
-                    try rasterInternal(m_tag,
+                inline else => |shader_val| {
+                    try rasterInternal(mesh_tag,
                                        allocator,
                                        io,
                                        frame_ind,
                                        camera,
                                        coords,
-                                       s_val,
+                                       shader_val,
                                        image_out_arr);
                 }
             }
@@ -110,7 +123,7 @@ fn rasterInternal(comptime mesh_type: MeshType,
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
 
     if (comptime mesh_type == .lin_tri) {
-        try rops.transformElemsToRasterSIMD(3, f64, camera, dim_elem, coords);
+        try rltri.transformElemsToRasterSIMD(3, f64, camera, dim_elem, coords);
     } else if (comptime mesh_type == .quad_tri) {
         try rqtri.transformElemsToCamSIMD(6, f64, camera, dim_elem, coords);
     }
@@ -241,7 +254,7 @@ fn rasterInternal(comptime mesh_type: MeshType,
 
     const conv_units: f64 = 1.0/1.0e6;
     const print_break = [_]u8{'='} ** 80;
-    print("\n{s}\nSoftware Raster Times (Specialized)\n{s}\n", .{ print_break, print_break });
+    print("\n{s}\nSoftware Raster Times\n{s}\n", .{ print_break, print_break });
     print("World to raster         = {d:.6} ms\n",.{time1_world_to_raster*conv_units});
     print("Elem bbox crop          = {d:.6} ms\n",.{time2_elem_bboxes_crop*conv_units});
     print("Elem tile overlap count = {d:.6} ms\n",.{time3_elem_tile_overlap_count*conv_units});

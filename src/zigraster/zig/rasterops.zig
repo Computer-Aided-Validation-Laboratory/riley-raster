@@ -208,23 +208,6 @@ pub fn worldToRasterSIMD(comptime N: usize,
     return coord_raster;
 }
 
-pub fn transformElemsToRasterSIMD(comptime N: usize,
-                                  comptime T: type,
-                                  camera: *const Camera, 
-                                  dim_elem: usize,  
-                                  elem_coord_arr: *NDArray(T)) !void {
-
-    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const coords_world: Vec3SIMD(N,T) = try vsd.loadVec3SIMDFromElemArray(
-            N,T,elem_coord_arr,ee);
-
-        const coords_raster: Vec3SIMD(N,T) = worldToRasterSIMD(
-            N,T,coords_world,camera); 
-
-        try vsd.saveVec3SIMDToElemArray(N,T,elem_coord_arr,ee,coords_raster);
-    }
-}
-
 
 //---------------------------------------------------------------------------------------------
 // Tiling Raster Structs

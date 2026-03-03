@@ -7,11 +7,30 @@ const Camera = @import("camera.zig").Camera;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 
+const vsd = @import("vecsimd.zig");
+const Vec3SIMD = vsd.Vec3SIMD;
+
 const rops = @import("rasterops.zig");
 const BBox = rops.BBox;
 const ActiveTile = rops.ActiveTile;
 const Vec3OfSlices = rops.Vec3OfSlices;
 
+pub fn transformElemsToRasterSIMD(comptime N: usize,
+                                  comptime T: type,
+                                  camera: *const Camera, 
+                                  dim_elem: usize,  
+                                  elem_coord_arr: *NDArray(T)) !void {
+
+    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
+        const coords_world: Vec3SIMD(N,T) = try vsd.loadVec3SIMDFromElemArray(
+            N,T,elem_coord_arr,ee);
+
+        const coords_raster: Vec3SIMD(N,T) = rops.worldToRasterSIMD(
+            N,T,coords_world,camera); 
+
+        try vsd.saveVec3SIMDToElemArray(N,T,elem_coord_arr,ee,coords_raster);
+    }
+}
 
 pub fn countElemsCalcBBoxes(camera: *const Camera,
                             dim_elem: usize,

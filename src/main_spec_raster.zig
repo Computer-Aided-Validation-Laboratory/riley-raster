@@ -63,7 +63,7 @@ pub fn main() !void {
     //const path_data = "data/fill_lin_tri/";
     //const path_data = "data/fill_quad_tri/";
 
-    const path_data = "data/fill_lin_tri/";
+    const path_data = "data/lin_tri/";
     const mesh_type: MeshType = .lin_tri;
 
     // const path_data = "data/quad_tri_def/";
@@ -138,10 +138,6 @@ pub fn main() !void {
 
     //=========================================================================================
     // Mesh Data Transformation
-    // TODO: make sure this step is also timed. Will probably have to do this reshuffle though
-    // python as well
-
-    // TODO: set image out fields by flat shader num fields!
 
     const elem_coords = try mr.transformCoords(page_alloc,&sim_data.coords,&sim_data.connect);
     const elem_disp = try mr.transformField(page_alloc,&sim_data.connect,&sim_data.field);
@@ -177,14 +173,14 @@ pub fn main() !void {
 
     // Creates own arena for temporary render buffers which should be 
     // cleared after rendering a frame.
-    try specraster.rasterFrame(mesh_type,
-                               page_alloc,
-                               io, 
-                               frame_ind, 
-                               &camera,
-                               &mesh_raster.coords,
-                               &mesh_raster.shader, 
-                               &images_arr);
+    try specraster.rasterOneFrame(mesh_type,
+                                  page_alloc,
+                                  io, 
+                                  frame_ind, 
+                                  &camera,
+                                  &mesh_raster.coords,
+                                  &mesh_raster.shader, 
+                                  &images_arr);
                            
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
     // const time_raster: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
