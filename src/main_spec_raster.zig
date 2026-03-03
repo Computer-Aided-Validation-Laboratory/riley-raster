@@ -8,8 +8,11 @@ const Connect = meshio.Connect;
 const Field = meshio.Field;
 const SimData = meshio.SimData;
 
-const meshtypes = @import("zigraster/zig/meshtypes.zig");
-const MeshType = meshtypes.MeshType;
+const mr = @import("zigraster/zig/meshraster.zig");
+const MeshType = mr.MeshType;
+const MeshRaster = mr.MeshRaster; 
+const FlatShader = mr.FlatShader;
+const TexShader = mr.TexShader;
 
 const VecStack = @import("zigraster/zig/vecstack.zig");
 const MatStack = @import("zigraster/zig/matstack.zig");
@@ -17,7 +20,7 @@ const MatStack = @import("zigraster/zig/matstack.zig");
 const Rotation = @import("zigraster/zig/rotation.zig").Rotation;
 const Vec3f = VecStack.Vec3f;
 const Mat44f = MatStack.Mat44f;
- const Mat44Ops = MatStack.Mat44Ops;
+const Mat44Ops = MatStack.Mat44Ops;
 
 const matslice = @import("zigraster/zig/matslice.zig");
 const MatSlice = matslice.MatSlice;
@@ -60,11 +63,11 @@ pub fn main() !void {
     //const path_data = "data/fill_lin_tri/";
     //const path_data = "data/fill_quad_tri/";
 
-    // const path_data = "data/lin_tri/";
-    // const mesh_type: MeshType = .lin_tri;
+    const path_data = "data/fill_lin_tri/";
+    const mesh_type: MeshType = .lin_tri;
 
-    const path_data = "data/quad_tri_def/";
-    const mesh_type: MeshType = .quad_tri;
+    // const path_data = "data/quad_tri_def/";
+    // const mesh_type: MeshType = .quad_tri;
 
     const frame_ind: usize = 1;
     
@@ -89,31 +92,12 @@ pub fn main() !void {
     const field_time_n = sim_data.field.getTimeN();
     const field_fields_n = sim_data.field.getFieldsN();
     
-    // var fixed_inds = [_]usize{frame_ind,0,0};
-    // const field_slice = sim_data.field.array.getSlice(fixed_inds[0..],0);
-    // const field_mat = MatSlice(f64).init(field_slice,
-    //                                      field_coord_n,
-    //                                      field_fields_n);
-
     print("\nfield: time_n = {d}\n",.{field_time_n});
     print("field: coord_n = {d}\n",.{field_coord_n});
     print("field: fields_n = {d}\n\n",.{field_fields_n});
-    // print("field: mat = \n",.{});
-    // field_mat.matPrint();
-
-    //==========================================================================
+        
+    //=========================================================================================
     // Build Camera
-    
-    // const pixel_num = [_]u32{2000,2500};
-    // const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
-    // const focal_leng: f64 = 50.0e-3;
-    // const alpha_z: f64 = std.math.degreesToRadians(0.0);
-    // const beta_y: f64 = std.math.degreesToRadians(-30.0);
-    // const gamma_x: f64 = std.math.degreesToRadians(-10.0);
-    // const cam_rot = Rotation.init(alpha_z, beta_y, gamma_x);
-    // const fov_scale_factor: f64 = 1.05;
-    // const subsample: u8 = 2;
-
     const pixel_num = [_]u32{1000,1000};
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
@@ -151,15 +135,35 @@ pub fn main() !void {
     print("\nWorld to camera matrix:\n", .{});
     camera.world_to_cam_mat.matPrint();
     
-    //======================================================================
+
+    //=========================================================================================
+    // Mesh Data Transformation
+    // TODO: make sure this step is also timed. Will probably have to do this reshuffle though
+    // python as well
+
+    // TODO: set image out fields by flat shader num fields!
+
+    const elem_coords = try mr.transformCoords(page_alloc,&sim_data.coords,&sim_data.connect);
+    const elem_disp = try mr.transformField(page_alloc,&sim_data.connect,&sim_data.field);
+    const elem_field = try mr.transformField(page_alloc,&sim_data.connect,&sim_data.field);
+    const elem_shader = FlatShader{ .field=elem_field }; 
+
+    var mesh_raster = MeshRaster{
+        .mesh_type = mesh_type,
+        .coords = elem_coords,
+        .disp = elem_disp,
+        .shader = .{ .flat = elem_shader},
+    };
+
+    //=========================================================================================
     // Raster One Frame
     print("{s}\nRastering Image\n{s}\n", .{print_break,print_break});
     const num_fields = sim_data.field.getFieldsN();
     
     const images_mem = try render_alloc.alloc(f64, 
-                                           num_fields
-                                           * camera.pixels_num[1]
-                                           * camera.pixels_num[0]);
+                                              num_fields
+                                              * camera.pixels_num[1]
+                                              * camera.pixels_num[0]);
     @memset(images_mem,0.0);
     
     var images_dims = [_]usize{num_fields,
@@ -177,10 +181,9 @@ pub fn main() !void {
                                page_alloc,
                                io, 
                                frame_ind, 
-                               &sim_data.coords, 
-                               &sim_data.connect, 
-                               &sim_data.field, 
-                               &camera, 
+                               &camera,
+                               &mesh_raster.coords,
+                               &mesh_raster.shader, 
                                &images_arr);
                            
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
@@ -222,17 +225,12 @@ pub fn main() !void {
                                              camera.pixels_num[0]);
         
         time_start = std.Io.Clock.Timestamp.now(io, .awake);
-
-        // const file_name_csv = try std.fmt.bufPrint(name_buff[0..], 
-        //                                            "tile_one_field{d}_frame{d}.csv", 
-        //                                            .{ff,frame_ind});
-        // try rops.saveCSV(io, out_dir, file_name_csv, &image_mat);
         
-        const file_name_ppm = try std.fmt.bufPrint(name_buff[0..], 
-                                                   "tile_one_field{d}_frame{d}", 
+        const file_name = try std.fmt.bufPrint(name_buff[0..], 
+                                                   "spec_field{d}_frame{d}", 
                                                    .{ff,frame_ind});        
-        try iops.saveImage(io, out_dir, file_name_ppm, &image_mat, .bmp, 8);
-        try iops.saveImage(io, out_dir, file_name_ppm, &image_mat, .csv, 8);
+        try iops.saveImage(io, out_dir, file_name, &image_mat, .bmp, 8);
+        try iops.saveImage(io, out_dir, file_name, &image_mat, .csv, 8);
 
         time_end = std.Io.Clock.Timestamp.now(io, .awake);
     

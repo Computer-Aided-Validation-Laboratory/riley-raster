@@ -228,18 +228,19 @@ fn solveInverseMapProjected(txs: f64, tys: f64, ex: []f64, ey: []f64, ew: []f64,
     return false;
 }
 
-pub fn rasterElems(allocator: std.mem.Allocator,
-                   camera: *const Camera,
-                   tile_size: u16,
-                   active_tiles: []ActiveTile,
-                   overlap_bboxes: []BBox,
-                   elem_coord_arr: *const NDArray(f64),
-                   elem_field_arr: *const NDArray(f64),
-                   image_out_arr: *NDArray(f64)) !void {
+pub fn rasterElemsFlat(allocator: std.mem.Allocator,
+                       camera: *const Camera,
+                       frame_ind: usize,
+                       tile_size: u16,
+                       active_tiles: []ActiveTile,
+                       overlap_bboxes: []BBox,
+                       elem_coord_arr: *const NDArray(f64),
+                       elem_field_arr: *const NDArray(f64),
+                       image_out_arr: *NDArray(f64)) !void {
 
     @setFloatMode(.optimized);
     const N: usize = 6;
-    const fields_num = elem_field_arr.dims[1];
+    const fields_num = elem_field_arr.dims[2];
     const sub_samp: usize = @intCast(camera.sub_sample);
     const spx_tile_size = tile_size * sub_samp;
     const sub_samp_f: f64 = @as(f64, @floatFromInt(camera.sub_sample));
@@ -312,8 +313,8 @@ pub fn rasterElems(allocator: std.mem.Allocator,
                             spx_inv_z_scratch[idx] = inv_z;
                             for (0..fields_num) |ff| {
                                 var vs: f64 = 0.0;
-                                for (0..6) |i| vs += n_vals[i] * elem_field_arr.get(
-                                    &[_]usize{ ov.elem_ind, ff, i },
+                                for (0..6) |ii| vs += n_vals[ii] * elem_field_arr.get(
+                                    &[_]usize{ frame_ind, ov.elem_ind, ff, ii },
                                 );
                                 spx_image_scratch.set(idx, ff, vs);
                             }

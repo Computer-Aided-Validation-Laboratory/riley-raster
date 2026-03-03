@@ -71,9 +71,10 @@ pub fn countElemsCalcBBoxes(camera: *const Camera,
     return elems_in_image;
 }
 
-pub fn rasterElems(
+pub fn rasterElemsFlat(
     allocator: std.mem.Allocator,
     camera: *const Camera,
+    frame_ind: usize,
     tile_size: u16,
     active_tiles: []ActiveTile,
     overlap_bboxes: []BBox,
@@ -206,7 +207,8 @@ pub fn rasterElems(
 
                                 var field_at_spx: f64 = 0.0;
                                 for (0..N) |nn| { 
-                                    const elem_field_inds = [_]usize{overlap.elem_ind,
+                                    const elem_field_inds = [_]usize{frame_ind,
+                                                                     overlap.elem_ind,
                                                                      ff,
                                                                      nn};
                                     // CALC:(nodes_field[nn]) * (nodes_inv_z[nn])

@@ -141,82 +141,7 @@ pub fn averageImage(image_subpx: *const MatSlice(f64),
 
 
 //---------------------------------------------------------------------------------------------
-// Tiling Raster Step 0: Element Data Pre-Transformations
-
-pub fn initElemArray(comptime T: type,
-                     allocator: std.mem.Allocator,
-                     dim0: usize, 
-                     dim1: usize, 
-                     dim2: usize) !NDArray(T) {
-    var elem_arr_dims = [_]usize{dim0,dim1,dim2};
-    const elem_arr_size: usize = dim0*dim1*dim2;
-    const elem_arr_mem = try allocator.alloc(T, elem_arr_size);
-    @memset(elem_arr_mem,0.0);
-    const elem_arr = try NDArray(T).init(allocator, 
-                                         elem_arr_mem, 
-                                         elem_arr_dims[0..]);
-    return elem_arr;
-}
-
-pub fn fillElemCoords(coords: *const Coords, 
-                      connect: *const Connect,
-                      dim_elem: usize,
-                      dim_node: usize,
-                      dim_field: usize,
-                      elem_array: *NDArray(f64),
-                      ) void {
-    var elem_inds = [_]usize{0,0,0};
-
-    for (0..elem_array.dims[dim_elem]) |ee| {
-        elem_inds[dim_elem] = ee;
-        const coord_inds: []usize = connect.getElem(ee);
-
-        for (0..elem_array.dims[dim_node]) |nn| {
-            elem_inds[dim_node] = nn;
-                                
-            elem_inds[dim_field] = 0;            
-            elem_array.set(elem_inds[0..],coords.x(coord_inds[nn]));
-            elem_inds[dim_field] = 1;            
-            elem_array.set(elem_inds[0..],coords.y(coord_inds[nn]));
-            elem_inds[dim_field] = 2;            
-            elem_array.set(elem_inds[0..],coords.z(coord_inds[nn]));
-            
-        } 
-    }    
-}
-
-pub fn fillElemFields(connect: *const Connect,
-                      field: *const Field,
-                      frame_ind: usize,
-                      dim_elem: usize,
-                      dim_node: usize,
-                      dim_field: usize,
-                      field_array: *NDArray(f64),
-                      ) void {
-
-    const fields_num = field.getFieldsN();
-    var set_elem_inds = [_]usize{0,0,0}; // dims=(elem,field,node)
-    var get_field_inds = [_]usize{frame_ind,0,0}; // dims=(time,coord,field)
-
-    for (0..field_array.dims[dim_elem]) |ee| {
-        set_elem_inds[dim_elem] = ee;
-        const coord_inds: []usize = connect.getElem(ee);
-
-        for (0..field_array.dims[dim_node]) |nn| {
-            set_elem_inds[dim_node] = nn;
-            get_field_inds[1] = coord_inds[nn];
-            
-            for (0..fields_num) |ff| {
-                get_field_inds[2] = ff;
-                const field_val: f64 = field.array.get(get_field_inds[0..]);
-
-                set_elem_inds[dim_field] = ff;
-                field_array.set(set_elem_inds[0..],field_val);    
-            }
-        } 
-    }    
-}
-
+// Tiling Raster: Helper Functions
 
 pub fn Vec3OfSlices(comptime T: type) type {
     return struct{
@@ -300,7 +225,6 @@ pub fn transformElemsToRasterSIMD(comptime N: usize,
     }
 }
 
-// TODO: transformElemsToCameraSIMD()
 
 //---------------------------------------------------------------------------------------------
 // Tiling Raster Structs
