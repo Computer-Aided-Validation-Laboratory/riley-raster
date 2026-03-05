@@ -35,29 +35,37 @@ const FlatShader = meshraster.FlatShader;
 const TexShader = meshraster.TexShader;
 const FieldShader = meshraster.FieldShader;
 
-const rltri = @import("rasterlintri.zig");
-const rqtri = @import("rasterquadtri.zig");
+const tri3 = @import("tri3.zig");
+const tri6 = @import("tri6.zig");
+
+const iops = @import("imageops.zig");
+const ImageFormat = iops.ImageFormat;
+
+pub const SaveOption = enum {
+    disk,
+    memory,
+    both,
+    none,
+};
+
+pub const RasterConfig = struct {
+    threads_within_image: usize = 0,
+    threads_over_image: usize = 0,
+    save_opt: SaveOption = .disk,
+    save_formats: []const ImageFormat = &[_]ImageFormat{.tiff},
+    add_displacements: bool = false,
+    tile_size: u16 = 32,
+};
 
 
-// pub fn rasterAllFrames(mesh_type: MeshType,
-//                        allocator: std.mem.Allocator, 
-//                        io: std.Io,
-//                        camera: *const Camera,
-//                        mesh_raster: *MeshRaster,
-//                        ) !NDArray(f64) {
-// 
-//     for (frames) |ff| {
-//         try rasterOneFrame();
-//     }                     
-// }
-
+// Modifies coords by transforming them in-place
 pub fn rasterOneFrame(mesh_type: MeshType,
                       allocator: std.mem.Allocator, 
                       io: std.Io,
                       frame_ind: usize,
                       camera: *const Camera, 
+                      shader: *const FieldShader,
                       coords: *NDArray(f64),
-                      shader: *const FieldShader, 
                       image_out_arr: *NDArray(f64),
                       ) !void {    
     
@@ -72,8 +80,8 @@ pub fn rasterOneFrame(mesh_type: MeshType,
                                        io,
                                        frame_ind,
                                        camera,
-                                       coords,
                                        shader_val,
+                                       coords, 
                                        image_out_arr);
                 }
             }
@@ -86,8 +94,8 @@ fn rasterInternal(comptime mesh_type: MeshType,
                   io: std.Io,
                   frame_ind: usize,
                   camera: *const Camera, 
-                  coords: *NDArray(f64),
                   shader: anytype, 
+                  coords: *NDArray(f64),
                   image_out_arr: *NDArray(f64),
                   ) !void {    
     
@@ -122,10 +130,10 @@ fn rasterInternal(comptime mesh_type: MeshType,
     // Tiling Raster Step 1: World to Camera/Raster Coords - SIMD
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
 
-    if (comptime mesh_type == .lin_tri) {
-        try rltri.transformElemsToRasterSIMD(3, f64, camera, dim_elem, coords);
-    } else if (comptime mesh_type == .quad_tri) {
-        try rqtri.transformElemsToCamSIMD(6, f64, camera, dim_elem, coords);
+    if (comptime mesh_type == .tri3) {
+        try tri3.transformElemsToRasterSIMD(3, f64, camera, dim_elem, coords);
+    } else if (comptime mesh_type == .tri6) {
+        try tri6.transformElemsToCamSIMD(6, f64, camera, dim_elem, coords);
     }
     
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
@@ -139,13 +147,13 @@ fn rasterInternal(comptime mesh_type: MeshType,
     const elem_bboxes: []BBox = try arena_alloc.alloc(BBox,elems_num);
     var elems_in_image: usize = 0;
     
-    if (comptime mesh_type == .lin_tri) {
-        elems_in_image = try rltri.countElemsCalcBBoxes(camera,
+    if (comptime mesh_type == .tri3) {
+        elems_in_image = try tri3.countElemsCalcBBoxes(camera,
                                                         dim_elem,
                                                         coords,
                                                         elem_bboxes);
-    } else if (comptime mesh_type == .quad_tri) {
-        elems_in_image = try rqtri.countElemsCalcBBoxes(camera,
+    } else if (comptime mesh_type == .tri6) {
+        elems_in_image = try tri6.countElemsCalcBBoxes(camera,
                                                         dim_elem,
                                                         coords,
                                                         elem_bboxes);
@@ -205,9 +213,9 @@ fn rasterInternal(comptime mesh_type: MeshType,
     // Tiling Raster Step 5: Main Raster Loop
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
 
-    if (comptime mesh_type == .lin_tri) {
+    if (comptime mesh_type == .tri3) {
         if (comptime ShaderType == FlatShader) {
-            try rltri.rasterElemsFlat(arena_alloc,
+            try tri3.rasterElemsFlat(arena_alloc,
                                       camera,
                                       frame_ind,
                                       tile_size,
@@ -219,9 +227,9 @@ fn rasterInternal(comptime mesh_type: MeshType,
         } else {
             print("No texture shading yet!",.{});
         }        
-    } else if (comptime mesh_type == .quad_tri) {
+    } else if (comptime mesh_type == .tri6) {
         if (comptime ShaderType == FlatShader) { 
-           try rqtri.rasterElemsFlat(arena_alloc,
+           try tri6.rasterElemsFlat(arena_alloc,
                                      camera,
                                      frame_ind,
                                      tile_size,

@@ -59,15 +59,12 @@ pub fn main() !void {
     // SETUP: load simulation data from file
     //const path_data = "data/cylinder/";
     //const path_data = "data/block/";
-    //const path_data = "data/quad_tri_def/";
-    //const path_data = "data/fill_lin_tri/";
-    //const path_data = "data/fill_quad_tri/";
+    
+    const path_data = "data/full_tri3/";
+    const mesh_type: MeshType = .tri3;
 
-    const path_data = "data/lin_tri/";
-    const mesh_type: MeshType = .lin_tri;
-
-    // const path_data = "data/quad_tri_def/";
-    // const mesh_type: MeshType = .quad_tri;
+    //const path_data = "data/full_tri6/";
+    //const mesh_type: MeshType = .tri6;
 
     const frame_ind: usize = 1;
     
@@ -98,14 +95,14 @@ pub fn main() !void {
         
     //=========================================================================================
     // Build Camera
-    const pixel_num = [_]u32{1000,1000};
+    const pixel_num = [_]u32{1200,800};
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
     const alpha_z: f64 = std.math.degreesToRadians(0.0);
     const beta_y: f64 = std.math.degreesToRadians(0.0);
     const gamma_x: f64 = std.math.degreesToRadians(0.0);
     const cam_rot = Rotation.init(alpha_z, beta_y, gamma_x);
-    const fov_scale_factor: f64 = 1.01;
+    const fov_scale_factor: f64 = 0.99;
     const subsample: u8 = 2;
     
     print("{s}\n", .{print_break});
@@ -135,10 +132,8 @@ pub fn main() !void {
     print("\nWorld to camera matrix:\n", .{});
     camera.world_to_cam_mat.matPrint();
     
-
     //=========================================================================================
     // Mesh Data Transformation
-
     const elem_coords = try mr.transformCoords(page_alloc,&sim_data.coords,&sim_data.connect);
     const elem_disp = try mr.transformField(page_alloc,&sim_data.connect,&sim_data.field);
     const elem_field = try mr.transformField(page_alloc,&sim_data.connect,&sim_data.field);
@@ -169,24 +164,15 @@ pub fn main() !void {
                                            images_mem,
                                            images_dims[0..]);
     
-    time_start = std.Io.Clock.Timestamp.now(io, .awake);
-
-    // Creates own arena for temporary render buffers which should be 
-    // cleared after rendering a frame.
     try specraster.rasterOneFrame(mesh_type,
                                   page_alloc,
                                   io, 
                                   frame_ind, 
                                   &camera,
+                                  &mesh_raster.shader,
                                   &mesh_raster.coords,
-                                  &mesh_raster.shader, 
                                   &images_arr);
                            
-    time_end = std.Io.Clock.Timestamp.now(io, .awake);
-    // const time_raster: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
-    // print("Raster time = {d:.3}ms\n", .{time_raster / time.ns_per_ms});
-    
-    // Print diagnostics to console to see if there is an image
     const image_max = std.mem.max(f64, images_arr.elems);
     const image_min = std.mem.min(f64, images_arr.elems);
     print("Image: [max, min] = [{d:.6}, {d:.6}]\n", .{ image_max, image_min });

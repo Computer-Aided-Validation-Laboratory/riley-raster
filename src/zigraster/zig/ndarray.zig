@@ -53,6 +53,17 @@ pub fn NDArray(comptime EType: type) type {
             return ndarray;
         }
 
+        pub fn initFlat(allocator: std.mem.Allocator, dims: []const usize) !Self {
+            var dim_prod: usize = 1;
+            for (dims) |dd| {
+                dim_prod *= dd;
+            }
+            
+            const elems = try allocator.alloc(EType, dim_prod);
+
+            return try Self.init(allocator, elems, dims);
+        }
+    
         pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
             allocator.free(self.dims);
             allocator.free(self.strides);
