@@ -37,6 +37,7 @@ const TexShader = meshraster.TexShader;
 const FieldShader = meshraster.FieldShader;
 
 const tri3 = @import("tri3.zig");
+const tri3opt = @import("tri3opt.zig");
 const tri6 = @import("tri6.zig");
 
 const iops = @import("imageops.zig");
@@ -241,12 +242,14 @@ fn rasterInternal(comptime mesh_type: MeshType,
 
     const MeshFun = switch (mesh_type) {
         .tri3 => tri3,
+        .tri3opt => tri3opt,
         .tri6 => tri6,
         else => unreachable,
     };
 
     const N: usize = switch (mesh_type) {
         .tri3 => 3,
+        .tri3opt => 3,
         .tri6 => 6,
         else => unreachable,
     };
@@ -278,9 +281,9 @@ fn rasterInternal(comptime mesh_type: MeshType,
     // Tiling Raster Step 1: World to Camera/Raster Coords - SIMD
     time_start = Timestamp.now(io, .awake);
 
-    if (comptime mesh_type == .tri3) {
+    if (comptime mesh_type == .tri3 or mesh_type == .tri3opt) {
         try MeshFun.transformElemsToRasterSIMD(N, f64, camera, dim_elem, coords);
-    } else if (comptime mesh_type == .tri6) {
+    } else {
         try MeshFun.transformElemsToCamSIMD(N, f64, camera, dim_elem, coords);
     }
     

@@ -81,14 +81,14 @@ pub const CameraOps = struct {
         const bb_max_y = coords_world.mat.maxByRow(1);
         const bb_max_z = coords_world.mat.maxByRow(2);
 
-        print("\n", .{});
-        print("bb_min=[{d},{d},{d}]\n", .{ bb_min_x, bb_min_y, bb_min_z });
-        print("bb_max=[{d},{d},{d}]\n", .{ bb_max_x, bb_max_y, bb_max_z });
-
-        print("\nCam to world mat:\n", .{});
-        cam_rot.matrix.matPrint();
-        print("World to cam mat:\n", .{});
-        world_to_cam_mat.matPrint();
+//         print("\n", .{});
+//         print("bb_min=[{d},{d},{d}]\n", .{ bb_min_x, bb_min_y, bb_min_z });
+//         print("bb_max=[{d},{d},{d}]\n", .{ bb_max_x, bb_max_y, bb_max_z });
+// 
+//         print("\nCam to world mat:\n", .{});
+//         cam_rot.matrix.matPrint();
+//         print("World to cam mat:\n", .{});
+//         world_to_cam_mat.matPrint();
 
         var bb_world_vecs: [8]Vec3f = undefined;
         bb_world_vecs[0] = vector.initVec3(f64, bb_min_x, bb_min_y, bb_max_z);
@@ -164,23 +164,15 @@ pub const CameraOps = struct {
         max_vec.elems[0] = coords_world.mat.maxByRow(0);
         max_vec.elems[1] = coords_world.mat.maxByRow(1);
         max_vec.elems[2] = coords_world.mat.maxByRow(2);
-        print("\nmax_vec=",.{});
-        max_vec.vecPrint();
     
         var min_vec: Vec3f = undefined;
         min_vec.elems[0] = coords_world.mat.minByRow(0);
         min_vec.elems[1] = coords_world.mat.minByRow(1);
         min_vec.elems[2] = coords_world.mat.minByRow(2);
-        print("min_vec=",.{});
-        min_vec.vecPrint();    
 
         // Should this be add?
         var roi_cent: Vec3f = max_vec.add(min_vec);
-        print("roi_cent_add=",.{});
-        roi_cent.vecPrint();
         roi_cent = roi_cent.mulScalar(0.5);
-        print("roi_cent_mulscal=",.{});
-        roi_cent.vecPrint();
         return roi_cent;
     }
 
@@ -201,9 +193,9 @@ pub const CameraOps = struct {
                                                         fov_leng);
         const image_dist = @max(image_dists[0], image_dists[1]);
 
-        print("fov_leng=[{any},{any}]\n", .{ fov_leng[0], fov_leng[1] });
-        print("image_dists=[{any},{any}]\n", .{ image_dists[0], image_dists[1] });
-        print("image_dist={any}\n", .{image_dist});
+        // print("fov_leng=[{any},{any}]\n", .{ fov_leng[0], fov_leng[1] });
+        // print("image_dists=[{any},{any}]\n", .{ image_dists[0], image_dists[1] });
+        // print("image_dist={any}\n", .{image_dist});
 
         const roi_pos: Vec3f = roi_cent_from_coords(coords_world);
 
