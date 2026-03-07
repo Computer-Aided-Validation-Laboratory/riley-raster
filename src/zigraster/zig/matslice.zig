@@ -197,7 +197,7 @@ pub fn MatSliceOps(comptime EType: type) type {
     return struct {
         pub fn add(mat0: *const MatSlice(EType), 
                    mat1: *const MatSlice(EType), 
-                   mat_out: *MatSlice(EType)) !void {
+                   mat_out: *MatSlice(EType)) void {
             assert(mat0.rows_n == mat1.rows_n);
             assert(mat0.cols_n == mat1.cols_n);
 
@@ -208,7 +208,7 @@ pub fn MatSliceOps(comptime EType: type) type {
 
         pub fn sub(mat0: *const MatSlice(EType), 
                    mat1: *const MatSlice(EType), 
-                   mat_out: *MatSlice(EType)) !void {
+                   mat_out: *MatSlice(EType)) void {
             assert(mat0.rows_n == mat1.rows_n);
             assert(mat0.cols_n == mat1.cols_n);
 
@@ -219,7 +219,7 @@ pub fn MatSliceOps(comptime EType: type) type {
 
         pub fn mulElemWise(mat0: *const MatSlice(EType), 
                            mat1: *const MatSlice(EType), 
-                           mat_out: *MatSlice(EType)) !void {
+                           mat_out: *MatSlice(EType)) void {
             assert(mat0.rows_n == mat1.rows_n);
             assert(mat0.cols_n == mat1.cols_n);
 
@@ -230,7 +230,7 @@ pub fn MatSliceOps(comptime EType: type) type {
 
         pub fn divElemWise(mat0: *const MatSlice(EType), 
                            mat1: *const MatSlice(EType), 
-                           mat_out: *MatSlice(EType)) !void {
+                           mat_out: *MatSlice(EType)) void {
             assert(mat0.rows_n == mat1.rows_n);
             assert(mat0.cols_n == mat1.cols_n);
 
@@ -241,7 +241,7 @@ pub fn MatSliceOps(comptime EType: type) type {
 
         pub fn mulScalar(mat0: *const MatSlice(EType), 
                          scalar: EType, 
-                         mat_out: *MatSlice(EType)) !void {
+                         mat_out: *MatSlice(EType)) void {
             for (0..mat0.elems.len) |ii| {
                 mat_out.elems[ii] = scalar * mat0.elems[ii];
             }
@@ -249,7 +249,7 @@ pub fn MatSliceOps(comptime EType: type) type {
 
         pub fn mulVec(mat: *const MatSlice(EType), 
                       vec_mul: *const VecSlice(EType), 
-                      vec_out: *VecSlice(EType)) !void {
+                      vec_out: *VecSlice(EType)) void {
             assert(mat.cols_n == vec_mul.elems.len);
 
             var sum: EType = 0;
@@ -265,7 +265,7 @@ pub fn MatSliceOps(comptime EType: type) type {
 
         pub fn mulMat(mat0: *const MatSlice(EType), 
                       mat1: *const MatSlice(EType), 
-                      mat_out: *MatSlice(EType)) !void {
+                      mat_out: *MatSlice(EType)) void {
                       
             assert(mat0.cols_n == mat1.rows_n);
 
@@ -296,7 +296,7 @@ test "MatSlice.getSlice" {
 
     const m0 = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m0);
-    var mat0 = try MatSlice(TestType).init(m0, rows, cols);
+    var mat0 = MatSlice(TestType).init(m0, rows, cols);
     mat0.fill(0.0);
 
     for (0..cols) |cc| {
@@ -310,9 +310,9 @@ test "MatSlice.getSlice" {
     const exp1 = [_]TestType{7} ** 4;
     const exp2 = [_]TestType{9} ** 4;
 
-	const slice0 = try mat0.getSlice(0);
-	const slice1 = try mat0.getSlice(1);
-	const slice2 = try mat0.getSlice(2);
+	const slice0 = mat0.getSlice(0);
+	const slice1 = mat0.getSlice(1);
+	const slice2 = mat0.getSlice(2);
 
     // mat0.matPrint();
     // print("exp0={any}\n",.{exp0});
@@ -333,15 +333,15 @@ test "MatSliceOps.add" {
 
     const m0 = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m0);
-    const mat0 = try MatSlice(TestType).init(m0, rows, cols);
+    const mat0 = MatSlice(TestType).init(m0, rows, cols);
 
     const m1 = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m1);
-    const mat1 = try MatSlice(TestType).init(m1, rows, cols);
+    const mat1 = MatSlice(TestType).init(m1, rows, cols);
 
     const m_exp = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m_exp);
-    const mat_exp = try MatSlice(TestType).init(m_exp, rows, cols);
+    const mat_exp = MatSlice(TestType).init(m_exp, rows, cols);
 
     mat0.fill(1.0);
     mat1.fill(1.0);
@@ -349,9 +349,9 @@ test "MatSliceOps.add" {
 
     const m_op = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m_op);
-    var mat_op = try MatSlice(TestType).init(m_op, rows, cols);
+    var mat_op = MatSlice(TestType).init(m_op, rows, cols);
 
-    try MatSliceOps(TestType).add(&mat0, &mat1, &mat_op);
+    MatSliceOps(TestType).add(&mat0, &mat1, &mat_op);
 
     try expectEqualSlices(TestType, mat_exp.elems, mat_op.elems);
 }
@@ -362,15 +362,15 @@ test "MatSliceOps.sub" {
 
     const m0 = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m0);
-    const mat0 = try MatSlice(TestType).init(m0, rows, cols);
+    const mat0 = MatSlice(TestType).init(m0, rows, cols);
 
     const m1 = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m1);
-    const mat1 = try MatSlice(TestType).init(m1, rows, cols);
+    const mat1 = MatSlice(TestType).init(m1, rows, cols);
 
     const m_exp = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m_exp);
-    const mat_exp = try MatSlice(TestType).init(m_exp, rows, cols);
+    const mat_exp = MatSlice(TestType).init(m_exp, rows, cols);
 
     mat0.fill(1.0);
     mat1.fill(1.0);
@@ -378,9 +378,9 @@ test "MatSliceOps.sub" {
 
     const m_op = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m_op);
-    var mat_op = try MatSlice(TestType).init(m_op, rows, cols);
+    var mat_op = MatSlice(TestType).init(m_op, rows, cols);
 
-    try MatSliceOps(TestType).sub(&mat0, &mat1, &mat_op);
+    MatSliceOps(TestType).sub(&mat0, &mat1, &mat_op);
 
     try expectEqualSlices(TestType, mat_exp.elems, mat_op.elems);
 }
@@ -391,15 +391,15 @@ test "MatSliceOps.mulElemWise" {
 
     const m0 = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m0);
-    const mat0 = try MatSlice(TestType).init(m0, rows, cols);
+    const mat0 = MatSlice(TestType).init(m0, rows, cols);
 
     const m1 = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m1);
-    const mat1 = try MatSlice(TestType).init(m1, rows, cols);
+    const mat1 = MatSlice(TestType).init(m1, rows, cols);
 
     const m_exp = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m_exp);
-    const mat_exp = try MatSlice(TestType).init(m_exp, rows, cols);
+    const mat_exp = MatSlice(TestType).init(m_exp, rows, cols);
 
     mat0.fill(1.0);
     mat1.fill(1.0);
@@ -407,9 +407,9 @@ test "MatSliceOps.mulElemWise" {
 
     const m_op = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m_op);
-    var mat_op = try MatSlice(TestType).init(m_op, rows, cols);
+    var mat_op = MatSlice(TestType).init(m_op, rows, cols);
 
-    try MatSliceOps(TestType).mulElemWise(&mat0, &mat1, &mat_op);
+    MatSliceOps(TestType).mulElemWise(&mat0, &mat1, &mat_op);
 
     try expectEqualSlices(TestType, mat_exp.elems, mat_op.elems);
 }
@@ -420,11 +420,11 @@ test "MatSliceOps.mulScalar" {
 
     const m0 = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m0);
-    const mat0 = try MatSlice(TestType).init(m0, rows, cols);
+    const mat0 = MatSlice(TestType).init(m0, rows, cols);
 
     const m_exp = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m_exp);
-    const mat_exp = try MatSlice(TestType).init(m_exp, rows, cols);
+    const mat_exp = MatSlice(TestType).init(m_exp, rows, cols);
 
     const scalar: TestType = 2.0;
 
@@ -433,9 +433,9 @@ test "MatSliceOps.mulScalar" {
 
     const m_op = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m_op);
-    var mat_op = try MatSlice(TestType).init(m_op, rows, cols);
+    var mat_op = MatSlice(TestType).init(m_op, rows, cols);
 
-    try MatSliceOps(TestType).mulScalar(&mat0, scalar, &mat_op);
+    MatSliceOps(TestType).mulScalar(&mat0, scalar, &mat_op);
 
     try expectEqualSlices(TestType, mat_exp.elems, mat_op.elems);
 }
@@ -446,15 +446,15 @@ test "MatSliceOps.divElemWise" {
 
     const m0 = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m0);
-    const mat0 = try MatSlice(TestType).init(m0, rows, cols);
+    const mat0 = MatSlice(TestType).init(m0, rows, cols);
 
     const m1 = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m1);
-    const mat1 = try MatSlice(TestType).init(m1, rows, cols);
+    const mat1 = MatSlice(TestType).init(m1, rows, cols);
 
     const m_exp = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m_exp);
-    const mat_exp = try MatSlice(TestType).init(m_exp, rows, cols);
+    const mat_exp = MatSlice(TestType).init(m_exp, rows, cols);
 
     mat0.fill(1.0);
     mat1.fill(1.0);
@@ -462,22 +462,22 @@ test "MatSliceOps.divElemWise" {
 
     const m_op = try talloc.alloc(TestType, rows * cols);
     defer talloc.free(m_op);
-    var mat_op = try MatSlice(TestType).init(m_op, rows, cols);
+    var mat_op = MatSlice(TestType).init(m_op, rows, cols);
 
-    try MatSliceOps(TestType).divElemWise(&mat0, &mat1, &mat_op);
+    MatSliceOps(TestType).divElemWise(&mat0, &mat1, &mat_op);
 
     try expectEqualSlices(TestType, mat_exp.elems, mat_op.elems);
 }
 
 test "MatSlice.addInPlace" {
     var m0 = [_]TestType{ 1, 2, 3, 4 };
-    const mat0 = try MatSlice(TestType).init(m0[0..], 2, 2);
+    const mat0 = MatSlice(TestType).init(m0[0..], 2, 2);
 
     var m1 = [_]TestType{ 5, 6, 7, 8 };
-    const mat1 = try MatSlice(TestType).init(m1[0..], 2, 2);
+    const mat1 = MatSlice(TestType).init(m1[0..], 2, 2);
 
     var m2 = [_]TestType{ 6, 8, 10, 12 };
-    const mat_exp = try MatSlice(TestType).init(m2[0..], 2, 2);
+    const mat_exp = MatSlice(TestType).init(m2[0..], 2, 2);
 
     mat0.addInPlace(&mat1);
 
@@ -486,13 +486,13 @@ test "MatSlice.addInPlace" {
 
 test "MatSlice.subInPlace" {
     var m0 = [_]TestType{ 1, 2, 3, 4 };
-    const mat0 = try MatSlice(TestType).init(m0[0..], 2, 2);
+    const mat0 = MatSlice(TestType).init(m0[0..], 2, 2);
 
     var m1 = [_]TestType{ 5, 6, 7, 8 };
-    const mat1 = try MatSlice(TestType).init(m1[0..], 2, 2);
+    const mat1 = MatSlice(TestType).init(m1[0..], 2, 2);
 
     var m2 = [_]TestType{ -4, -4, -4, -4 };
-    const mat_exp = try MatSlice(TestType).init(m2[0..], 2, 2);
+    const mat_exp = MatSlice(TestType).init(m2[0..], 2, 2);
 
     mat0.subInPlace(&mat1);
 
@@ -501,7 +501,7 @@ test "MatSlice.subInPlace" {
 
 test "MatSlice.trace" {
     var m0 = [_]TestType{ 1, 2, 3, 4 };
-    const mat0 = try MatSlice(TestType).init(m0[0..], 2, 2);
+    const mat0 = MatSlice(TestType).init(m0[0..], 2, 2);
 
     const trace_exp: TestType = 5;
 
@@ -510,13 +510,13 @@ test "MatSlice.trace" {
 
 test "MatSlice.transpose" {
     var m0 = [_]TestType{ 1, 2, 3, 4 };
-    var mat0 = try MatSlice(TestType).init(m0[0..], 2, 2);
+    var mat0 = MatSlice(TestType).init(m0[0..], 2, 2);
 
     var m_buff = [_]TestType{ 0, 0, 0, 0 };
-    var mat_buff = try MatSlice(TestType).init(m_buff[0..], 2, 2);
+    var mat_buff = MatSlice(TestType).init(m_buff[0..], 2, 2);
 
     var m1 = [_]TestType{ 1, 3, 2, 4 };
-    const mat_exp = try MatSlice(TestType).init(m1[0..], 2, 2);
+    const mat_exp = MatSlice(TestType).init(m1[0..], 2, 2);
 
     try mat0.transpose(&mat_buff);
 
@@ -525,12 +525,12 @@ test "MatSlice.transpose" {
 
 test "MatSlice.mulScalar" {
     var m0 = [_]TestType{ 1, 2, 3, 4 };
-    const mat0 = try MatSlice(TestType).init(m0[0..], 2, 2);
+    const mat0 = MatSlice(TestType).init(m0[0..], 2, 2);
 
     const scalar: TestType = 2;
 
     var m1 = [_]TestType{ 2, 4, 6, 8 };
-    const mat_exp = try MatSlice(TestType).init(m1[0..], 2, 2);
+    const mat_exp = MatSlice(TestType).init(m1[0..], 2, 2);
 
     mat0.mulScalarInPlace(scalar);
 
@@ -539,7 +539,7 @@ test "MatSlice.mulScalar" {
 
 test "MatSliceOps.mulVec" {
     var m0 = [_]TestType{ 1, 2, 3, 4, 5, 6, 7, 8, 9 };
-    const mat0 = try MatSlice(TestType).init(&m0, 3, 3);
+    const mat0 = MatSlice(TestType).init(&m0, 3, 3);
 
     var v0 = [_]TestType{ 3, 2, 1 };
     const vec0 = VecSlice(TestType).init(&v0);
@@ -550,25 +550,25 @@ test "MatSliceOps.mulVec" {
     var v_out = [_]TestType{0} ** 3;
     var vec_out = VecSlice(TestType).init(&v_out);
 
-    try MatSliceOps(TestType).mulVec(&mat0, &vec0, &vec_out);
+    MatSliceOps(TestType).mulVec(&mat0, &vec0, &vec_out);
 
     try expectEqualSlices(TestType, vec_exp.elems, vec_out.elems);
 }
 
 test "MatSliceOps.mulMat" {
     var m0 = [_]TestType{ 1, 2, 3, 4, 5, 6, 7, 8, 9 };
-    const mat0 = try MatSlice(TestType).init(&m0, 3, 3);
+    const mat0 = MatSlice(TestType).init(&m0, 3, 3);
 
     var m1 = [_]TestType{ 3, 1, 1, 1, 3, 1, 1, 1, 3 };
-    const mat1 = try MatSlice(TestType).init(&m1, 3, 3);
+    const mat1 = MatSlice(TestType).init(&m1, 3, 3);
 
     var m2 = [_]TestType{0} ** 9;
-    var mat_out = try MatSlice(TestType).init(&m2, 3, 3);
+    var mat_out = MatSlice(TestType).init(&m2, 3, 3);
 
     var m3 = [_]TestType{ 8, 10, 12, 23, 25, 27, 38, 40, 42 };
-    const mat_exp = try MatSlice(TestType).init(&m3, 3, 3);
+    const mat_exp = MatSlice(TestType).init(&m3, 3, 3);
 
-    try MatSliceOps(TestType).mulMat(&mat0, &mat1, &mat_out);
+    MatSliceOps(TestType).mulMat(&mat0, &mat1, &mat_out);
 
     try expectEqualSlices(TestType, mat_exp.elems, mat_out.elems);
 }

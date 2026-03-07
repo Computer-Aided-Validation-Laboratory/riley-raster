@@ -80,60 +80,60 @@ pub fn load_uvs(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !NDA
 
 const testing = std.testing;
 
-test "Load TexMap from uvs.csv" {
+test "Load TexMap from tri3_fullscreen/uvs.csv" {
     const allocator = testing.allocator;
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const path = "data/fill_lin_tri/uvs.csv";
+    const path = "data-simple/tri3_fullscreen/uvs.csv";
     var tex_map = try loadTexMap(allocator, io, path);
     defer tex_map.deinit(allocator);
 
     try testing.expectEqual(@as(usize, 4), tex_map.array.dims[0]);
     
-    // First row: 0.70292211,0.25680932
-    try testing.expectApproxEqAbs(@as(f64, 0.70292211), tex_map.getU(0), 1e-8);
-    try testing.expectApproxEqAbs(@as(f64, 0.25680932), tex_map.getV(0), 1e-8);
+    // First row: 0.4, 0.4
+    try testing.expectApproxEqAbs(@as(f64, 0.4), tex_map.getU(0), 1e-8);
+    try testing.expectApproxEqAbs(@as(f64, 0.4), tex_map.getV(0), 1e-8);
 
-    // Last row: 0.29707792,0.25680932
-    try testing.expectApproxEqAbs(@as(f64, 0.29707792), tex_map.getU(3), 1e-8);
-    try testing.expectApproxEqAbs(@as(f64, 0.25680932), tex_map.getV(3), 1e-8);
+    // Last row: 0.4, 0.6
+    try testing.expectApproxEqAbs(@as(f64, 0.4), tex_map.getU(3), 1e-8);
+    try testing.expectApproxEqAbs(@as(f64, 0.6), tex_map.getV(3), 1e-8);
 
     const uv = tex_map.getUV(0);
-    try testing.expectApproxEqAbs(@as(f64, 0.70292211), uv[0], 1e-8);
-    try testing.expectApproxEqAbs(@as(f64, 0.25680932), uv[1], 1e-8);
+    try testing.expectApproxEqAbs(@as(f64, 0.4), uv[0], 1e-8);
+    try testing.expectApproxEqAbs(@as(f64, 0.4), uv[1], 1e-8);
 }
 
-test "Load TexMap from fill_quad_tri/uvs.csv" {
+test "Load TexMap from tri6_fullscreen/uvs.csv" {
     const allocator = testing.allocator;
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const path = "data/fill_quad_tri/uvs.csv";
+    const path = "data-simple/tri6_fullscreen/uvs.csv";
     var tex_map = try loadTexMap(allocator, io, path);
     defer tex_map.deinit(allocator);
 
     try testing.expectEqual(@as(usize, 9), tex_map.array.dims[0]);
 }
 
-test "Load TexMap from lin_tri/uvs.csv" {
+test "Load TexMap from tri3_single/uvs.csv" {
     const allocator = testing.allocator;
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const path = "data/lin_tri/uvs.csv";
+    const path = "data-simple/tri3_single/uvs.csv";
     var tex_map = try loadTexMap(allocator, io, path);
     defer tex_map.deinit(allocator);
 
     try testing.expectEqual(@as(usize, 3), tex_map.array.dims[0]);
 }
 
-test "Load TexMap from quad_tri_def/uvs.csv" {
+test "Load TexMap from tri6_single/uvs.csv" {
     const allocator = testing.allocator;
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const path = "data/quad_tri_def/uvs.csv";
+    const path = "data-simple/tri6_single/uvs.csv";
     var tex_map = try loadTexMap(allocator, io, path);
     defer tex_map.deinit(allocator);
 

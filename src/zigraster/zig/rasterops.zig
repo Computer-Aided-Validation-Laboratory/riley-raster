@@ -93,21 +93,31 @@ pub fn boundIndexMax(max_val: f64, pixels_num: usize) usize {
     return @as(usize,@intCast(max_ind));
 }
 
-pub fn boundIndMin(comptime T: type, min_val: f64) T {
-    var min_ind: i32 = @as(i32, @intFromFloat(@floor(min_val)));
-    if (min_ind < 0) {
-        min_ind = 0;
-    }
-    return @as(T,@intCast(min_ind));
+// pub fn boundIndMin(comptime T: type, min_val: f64) T {
+//     var min_ind: i32 = @as(i32, @intFromFloat(@floor(min_val)));
+//     if (min_ind < 0) {
+//         min_ind = 0;
+//     }
+//     return @as(T,@intCast(min_ind));
+// }
+// 
+// pub fn boundIndMax(comptime T: type, max_val: f64, pixels_num: T) T {
+//     var max_ind: i32 = @as(i32, @intFromFloat(@ceil(max_val)));
+//     const px = @as(i32,@intCast(pixels_num - 1));
+//     if (max_ind > px) {
+//         max_ind = px;
+//     }
+//     return @as(T,@intCast(max_ind));
+// }
+
+pub inline fn boundIndMin(comptime T: type, val: f64) T {
+    const val_int = @as(isize, @intFromFloat(@floor(val)));
+    return @as(T, @intCast(@max(0, val_int)));
 }
 
-pub fn boundIndMax(comptime T: type, max_val: f64, pixels_num: T) T {
-    var max_ind: i32 = @as(i32, @intFromFloat(@ceil(max_val)));
-    const px = @as(i32,@intCast(pixels_num - 1));
-    if (max_ind > px) {
-        max_ind = px;
-    }
-    return @as(T,@intCast(max_ind));
+pub inline fn boundIndMax(comptime T: type, val: f64, max: T) T {
+    const val_int = @as(isize, @intFromFloat(@ceil(val)));
+    return @as(T, @intCast(@max(0, @min(val_int, @as(isize, @intCast(max))))));
 }
 
 pub fn averageImage(image_subpx: *const MatSlice(f64), 

@@ -1,0 +1,126 @@
+1/93 test_gold_simple.test.Gold Simple Suite...
+Coords: read 3 lines from csv.
+Coords: read time = 0.103ms
+Coords: parse time = 0.024ms
+
+Connect: read 1 lines from csv.
+Connect: read time = 0.012ms
+Connect: elements=1, nodes per element=3
+Connect: parse time = 0.003ms
+
+Field 0: read 3 lines from csv.
+Field 0: read time = 0.014ms
+Field 0: coords=3, time steps=2
+Field 0: parse time = 0.011ms
+
+Field 1: read 3 lines from csv.
+Field 1: read time = 0.012ms
+Field 1: parse time = 0.010ms
+
+Field 2: read 3 lines from csv.
+Field 2: read time = 0.042ms
+Field 2: parse time = 0.010ms
+
+bb_min=[0,0,0]
+bb_max=[10,8.660254037844386,0]
+
+Cam to world mat:
+[1.000e0,0.000e0,0.000e0,]
+[0.000e0,1.000e0,0.000e0,]
+[-0.000e0,0.000e0,1.000e0,]
+
+World to cam mat:
+[1.000e0,-0.000e0,0.000e0,]
+[-0.000e0,1.000e0,-0.000e0,]
+[0.000e0,-0.000e0,1.000e0,]
+
+fov_leng=[11,9.526279441628825]
+image_dists=[324.29245283018867,449.3528038504163]
+image_dist=449.3528038504163
+
+max_vec=[1.000e1,8.660e0,0.000e0,]
+min_vec=[0.000e0,0.000e0,0.000e0,]
+roi_cent_add=[1.000e1,8.660e0,0.000e0,]
+roi_cent_mulscal=[5.000e0,4.330e0,0.000e0,]
+
+max_vec=[1.000e1,8.660e0,0.000e0,]
+min_vec=[0.000e0,0.000e0,0.000e0,]
+roi_cent_add=[1.000e1,8.660e0,0.000e0,]
+roi_cent_mulscal=[5.000e0,4.330e0,0.000e0,]
+
+================================================================================
+Software Raster Times
+================================================================================
+World to raster         = 0.002695 ms
+Elem bbox crop          = 0.003296 ms
+Elem tile overlap count = 0.003577 ms
+Elem tile overlap store = 0.005801 ms
+Raster loop time        = 94.829720 ms
+================================================================================
+TOTAL RASTER TIME  = 94.849 ms
+================================================================================
+Total Ops   = 256000
+MOps/second = 2.70
+MTri/second = 0.00
+================================================================================
+
+================================================================================
+Software Raster Times
+================================================================================
+World to raster         = 0.004148 ms
+Elem bbox crop          = 0.004609 ms
+Elem tile overlap count = 0.003998 ms
+Elem tile overlap store = 0.006583 ms
+Raster loop time        = 109.539535 ms
+================================================================================
+TOTAL RASTER TIME  = 109.563 ms
+================================================================================
+Total Ops   = 256000
+MOps/second = 2.34
+MTri/second = 0.00
+================================================================================
+thread 208829 panic: reached unreachable code
+error return context:
+/home/lloydf/zig/zig-x86_64-linux-0.16.0-dev/lib/std/Io/Reader.zig:847:30: 0x10c1360 in peekDelimiterInclusive (std.zig)
+        error.WriteFailed => return error.StreamTooLong,
+                             ^
+/home/lloydf/zig/zig-x86_64-linux-0.16.0-dev/lib/std/Io/Reader.zig:903:21: 0x106d212 in takeDelimiter (std.zig)
+        else => |e| return e,
+                    ^
+/home/lloydf/zigraster/src/zigraster/zig/meshio.zig:129:12: 0x103c0fd in readCsvToList (test_gold_simple.zig)
+    while (try reader.takeDelimiter('\n')) |line| {
+           ^
+/home/lloydf/zigraster/src/tests/common.zig:45:17: 0x106361a in compareNDArrayToCSV (test_gold_simple.zig)
+    var lines = try meshio.readCsvToList(allocator, io, path);
+                ^
+
+stack trace:
+/home/lloydf/zig/zig-x86_64-linux-0.16.0-dev/lib/std/debug.zig:421:14: 0x10700a9 in assert (std.zig)
+    if (!ok) unreachable; // assertion failure
+             ^
+/home/lloydf/zigraster/src/zigraster/zig/matslice.zig:22:19: 0x106e0b3 in init (test_gold_simple.zig)
+            assert(elems.len == (rows_n * cols_n));
+                  ^
+/home/lloydf/zigraster/src/tests/common.zig:129:43: 0x1064c64 in saveResultToFails (test_gold_simple.zig)
+            const mat = MatSlice(f64).init(slice, array.dims[2], array.dims[3]);
+                                          ^
+/home/lloydf/zigraster/src/tests/common.zig:214:42: 0x1066961 in runTestInternal (test_gold_simple.zig)
+                    try saveResultToFails(aa, io, &result, case_dir_name);
+                                         ^
+/home/lloydf/zigraster/src/test_gold_simple.zig:25:35: 0x10685ef in test.Gold Simple Suite (test_gold_simple.zig)
+        try common.runTestInternal(allocator, 
+                                  ^
+/home/lloydf/zig/zig-x86_64-linux-0.16.0-dev/lib/compiler/test_runner.zig:255:25: 0x1271436 in mainTerminal (test_runner.zig)
+        if (test_fn.func()) |_| {
+                        ^
+/home/lloydf/zig/zig-x86_64-linux-0.16.0-dev/lib/compiler/test_runner.zig:70:28: 0x126b912 in main (test_runner.zig)
+        return mainTerminal(init);
+                           ^
+/home/lloydf/zig/zig-x86_64-linux-0.16.0-dev/lib/std/start.zig:678:88: 0x12684a0 in callMain (std.zig)
+    if (fn_info.params[0].type.? == std.process.Init.Minimal) return wrapMain(root.main(.{
+                                                                                       ^
+../sysdeps/nptl/libc_start_call_main.h:58:16: 0x75532e82a1c9 in __libc_start_call_main (../sysdeps/x86/libc-start.c)
+../csu/libc-start.c:360:3: 0x75532e82a28a in __libc_start_main_impl (../sysdeps/x86/libc-start.c)
+???:?:?: 0x12dbda4 in ??? (???)
+error: the following test command terminated with signal ABRT:
+.zig-cache/o/1243b03e5b6757e6dbdef090a35a4c70/test --seed=0x2d7d0559

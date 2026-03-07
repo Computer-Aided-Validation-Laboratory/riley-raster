@@ -119,23 +119,19 @@ pub fn readCsvToList(allocator: std.mem.Allocator,
     var file: std.Io.File = try cwd.openFile(io, path, .{ .mode = .read_only});
     defer file.close(io);
 
-    var read_buff: [4096]u8 = undefined;    
+    var read_buff: [65536]u8 = undefined;    
     var file_reader: std.Io.File.Reader = file.reader(io, &read_buff); 
     const reader = &file_reader.interface;
 
-    var lines: std.ArrayList([] const u8)  = .{};
-
     // Read lines without the trailing '\n' (exclusive).
-    while (try reader.takeDelimiter('\n')) |line| {
-        // Optional: trim Windows '\r'
-        const clean = if (@import("builtin").os.tag == .windows)
-            std.mem.trimRight(u8, line, "\r")
-        else
-            line;
+    var lines: std.ArrayList([]const u8) = .{};
 
-        const copy = try allocator.dupe(u8, clean);
-        try lines.append(allocator,copy);
-    } 
+    while (try reader.takeDelimiter('\n')) |line| {
+        const line_trimmed = std.mem.trim(u8, line, " \r\t");
+        if (line_trimmed.len == 0) continue;
+        const line_dup = try allocator.dupe(u8, line_trimmed);
+        try lines.append(allocator, line_dup);
+    }
     
     return lines;
 }

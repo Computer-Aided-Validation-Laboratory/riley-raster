@@ -34,6 +34,7 @@ const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
 
 const iops = @import("zigraster/zig/imageops.zig");
 const specraster = @import("zigraster/zig/specraster.zig");
+const RasterConfig = specraster.RasterConfig;
 
 pub fn main() !void {
     const print_break = [_]u8{'-'} ** 80;
@@ -147,28 +148,33 @@ pub fn main() !void {
     };
 
     //=========================================================================================
+    // Raster Config
+
+    const config = RasterConfig{
+        .threads_within_image = 0,
+        .threads_over_images = 0,
+        .save_opt = .none,
+        .save_formats = &[_]iops.ImageFormat{.csv},
+        .tile_size = 32,
+    };
+
+    //=========================================================================================
     // Raster One Frame
     print("{s}\nRastering Image\n{s}\n", .{print_break,print_break});
-    const num_fields = sim_data.field.getFieldsN();
     
-    const images_mem = try render_alloc.alloc(f64, 
-                                              num_fields
-                                              * camera.pixels_num[1]
-                                              * camera.pixels_num[0]);
-    @memset(images_mem,0.0);
-    
-    var images_dims = [_]usize{num_fields,
+    var images_dims = [_]usize{sim_data.field.getFieldsN(),
                         	   camera.pixels_num[1],
                         	   camera.pixels_num[0]};
-    var images_arr = try NDArray(f64).init(render_alloc,
-                                           images_mem,
-                                           images_dims[0..]);
+    var images_arr = try NDArray(f64).initFlat(render_alloc,images_dims[0..]);
+    @memset(images_arr.elems,0.0);
     
     try specraster.rasterOneFrame(mesh_type,
                                   page_alloc,
                                   io, 
-                                  frame_ind, 
                                   &camera,
+                                  frame_ind, 
+                                  config.tile_size,
+                                  config.threads_within_image,
                                   &mesh_raster.shader,
                                   &mesh_raster.coords,
                                   &images_arr);
@@ -198,7 +204,7 @@ pub fn main() !void {
     
     var image_slice_inds = [_]usize{0,0,0};
             
-    for (0..num_fields) |ff|{
+    for (0..sim_data.field.getFieldsN()) |ff|{
         image_slice_inds[0] = ff;
         // Grab a matrix slice of the field images
         const image_slice = images_arr.getSlice(image_slice_inds[0..],0); 

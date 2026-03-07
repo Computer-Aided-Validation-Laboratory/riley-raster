@@ -13,7 +13,12 @@ file-out/
 raster-out/
 raster-test/
 out*/
+gold*/
+fails/
+archive/
+
 *.ppm
+*.bmp
 
 # Cython
 *.html

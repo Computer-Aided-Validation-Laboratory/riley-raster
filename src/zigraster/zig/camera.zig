@@ -238,13 +238,15 @@ const cam_pos_exp = Vec3f.initSlice(&cam_pos_arr);
 test "CameraOps.pos_fill_frame_from_rot" {}
 
 test "CameraOps.calc_cam_pos" {
-    const coords = try Coords.init(testing.allocator, coord_n);
-    defer coords.deinit();
+    var coords = try Coords.init(testing.allocator, coord_n);
+    defer coords.deinit(testing.allocator);
 
-    @memcpy(coords.x, coord_x[0..]);
-    @memcpy(coords.y, coord_y[0..]);
-    @memcpy(coords.z, coord_z[0..]);
-
+    for (0..coord_n) |ii| {
+        coords.mat.set(ii, 0, coord_x[ii]);
+        coords.mat.set(ii, 1, coord_y[ii]);
+        coords.mat.set(ii, 2, coord_z[ii]);
+    }
+    
     const fov_leng = CameraOps.fov_from_cam_rot(rotat_world, &coords);
     const image_dist = CameraOps.image_dist_from_fov(pix_num, pix_size, foc_leng, fov_leng);
     const image_dist_max = @max(image_dist[0], image_dist[1]);
@@ -256,13 +258,15 @@ test "CameraOps.calc_cam_pos" {
 }
 
 test "CameraOps.image_dist_from_fov" {
-    const coords = try Coords.init(testing.allocator, coord_n);
-    defer coords.deinit();
+    var coords = try Coords.init(testing.allocator, coord_n);
+    defer coords.deinit(testing.allocator);
 
-    @memcpy(coords.x, coord_x[0..]);
-    @memcpy(coords.y, coord_y[0..]);
-    @memcpy(coords.z, coord_z[0..]);
-
+    for (0..coord_n) |ii| {
+        coords.mat.set(ii, 0, coord_x[ii]);
+        coords.mat.set(ii, 1, coord_y[ii]);
+        coords.mat.set(ii, 2, coord_z[ii]);
+    }
+    
     const fov_leng = CameraOps.fov_from_cam_rot(rotat_world, &coords);
     const image_dist = CameraOps.image_dist_from_fov(pix_num, pix_size, foc_leng, fov_leng);
 
@@ -271,13 +275,15 @@ test "CameraOps.image_dist_from_fov" {
 }
 
 test "CameraOps.fov_from_cam_rot" {
-    const coords = try Coords.init(testing.allocator, coord_n);
-    defer coords.deinit();
+    var coords = try Coords.init(testing.allocator, coord_n);
+    defer coords.deinit(testing.allocator);
 
-    @memcpy(coords.x, coord_x[0..]);
-    @memcpy(coords.y, coord_y[0..]);
-    @memcpy(coords.z, coord_z[0..]);
-
+    for (0..coord_n) |ii| {
+        coords.mat.set(ii, 0, coord_x[ii]);
+        coords.mat.set(ii, 1, coord_y[ii]);
+        coords.mat.set(ii, 2, coord_z[ii]);
+    }
+    
     const fov_leng = CameraOps.fov_from_cam_rot(rotat_world, &coords);
 
     try expectApproxEqAbs(fov_exp[0], fov_leng[0], test_tol);

@@ -2,7 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const textureio = @import("textureio.zig");
 
-pub const InterpolationType = enum {
+pub const InterpType = enum {
     linear,
     cubic,
     cubic_lut,
@@ -113,6 +113,7 @@ fn sample2D(comptime N: usize,
             y_i: isize,
             wx: [N]f64,
             wy: [N]f64) f64 {
+
     const offset = @as(isize, @intCast(N)) / 2 - 1;
     if (use_simd) {
         const vwx: @Vector(N, f64) = wx;
@@ -162,7 +163,7 @@ fn getLerpWeights(comptime N: usize, comptime table: [LUT_SIZE][N]f64, t: f64) [
 
 // --- Public Sampling Functions ---
 
-pub fn sampleGreyscale(comptime interp: InterpolationType,
+pub fn sampleGreyscale(comptime interp: InterpType,
                        texture: anytype,
                        u: f64,
                        v: f64) f64 {

@@ -1,6 +1,7 @@
 const std = @import("std");
 const print = std.debug.print;
 const time = std.time;
+const Timestamp = std.Io.Clock.Timestamp;
 
 const vecstack = @import("vecstack.zig");
 const Vec3T = @import("vecstack.zig").Vec3T;
@@ -49,21 +50,146 @@ pub const SaveOption = enum {
 };
 
 pub const RasterConfig = struct {
-    threads_within_image: usize = 0,
-    threads_over_image: usize = 0,
+    threads_within_image: u16 = 0,
+    threads_over_images: u16 = 0,
     save_opt: SaveOption = .disk,
     save_formats: []const ImageFormat = &[_]ImageFormat{.tiff},
-    add_displacements: bool = false,
     tile_size: u16 = 32,
 };
 
+fn applyDispToMesh(outer_alloc: std.mem.Allocator,
+                   tt: usize,
+                   coords: *const NDArray(f64),
+                   disp: *const NDArray(f64)) !NDArray(f64) {
+
+    var coords_disp = try NDArray(f64).initFlat(outer_alloc, coords.dims);
+    @memcpy(coords_disp.elems, coords.elems); // dest, source
+
+    const disp_frame_mem = disp.getSlice(&[_]usize{ tt, 0, 0, 0 }, 0);
+    var disp_frame = try NDArray(f64).init(outer_alloc, disp_frame_mem, disp.dims[1..]);
+    coords_disp.addInPlace(&disp_frame);
+    
+    return coords_disp;
+}
+
+
+pub fn rasterAllFrames(outer_alloc: std.mem.Allocator,
+                       io: std.Io,
+                       camera: *const Camera,
+                       mesh_raster: *MeshRaster,
+                       config: RasterConfig,
+                       out_dir: ?std.Io.Dir,
+                       ) !?NDArray(f64) {
+
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+
+    var num_time: usize = 1;
+    if (mesh_raster.disp) |d| {
+        num_time = d.dims[0];
+    } else if (mesh_raster.shader == .flat) {
+        num_time = mesh_raster.shader.flat.field.dims[0];
+    }
+    
+    const num_fields = switch (mesh_raster.shader) {
+        .flat => |f| f.field.dims[2],
+        .texture => 1,
+    };
+    
+    // Optional image buffer for returning all rendered frames to user in memory
+    var images_arr: ?NDArray(f64) = null;
+    if (config.save_opt == .memory or config.save_opt == .both) {
+        const dims = [_]usize{
+            num_time,
+            num_fields,
+            camera.pixels_num[1],
+            camera.pixels_num[0],
+        };
+        // If we are returning this put it on the outer allocator
+        images_arr = try NDArray(f64).initFlat(outer_alloc, dims[0..]);
+    }
+    
+    // Main render loop over frames    
+    for (0..num_time) |tt| {
+        _ = arena.reset(.free_all);
+
+        // Allocate some temporary coords for this frame that we can transform in place
+        var coords_transform: NDArray(f64) = undefined;
+        if (mesh_raster.disp) |disp| {
+            coords_transform = try applyDispToMesh(arena_alloc,tt,&mesh_raster.coords,&disp);
+        } else {
+            coords_transform = try NDArray(f64).initFlat(arena_alloc,mesh_raster.coords.dims);
+            @memcpy(coords_transform.elems,mesh_raster.coords.elems); // dest, source    
+        }
+
+        // Prepare the image buffer to render into for the current frame
+        var frame_arr: NDArray(f64) = undefined;
+        if (images_arr) |*ima| {
+            // If we are returning to the user we wrap a slice of image_arr we return 
+            const stride = ima.strides[0];
+            const mem = ima.elems[tt * stride .. (tt + 1) * stride];
+            frame_arr = try NDArray(f64).init(arena_alloc, mem, ima.dims[1..]);
+        } else {
+            // If we are not returning to user we alloc on our arena
+            const dims = [_]usize{ num_fields, camera.pixels_num[1], camera.pixels_num[0] };
+            frame_arr = try NDArray(f64).initFlat(arena_alloc, dims[0..]);
+        }
+        @memset(frame_arr.elems, 0.0);
+
+        try rasterOneFrame(mesh_raster.mesh_type,
+                           outer_alloc,
+                           io, 
+                           camera,
+                           tt,
+                           config.tile_size,
+                           config.threads_within_image,                           
+                           &mesh_raster.shader,
+                           &coords_transform,
+                           &frame_arr);
+
+        if (config.save_opt == .disk or config.save_opt == .both) {
+            if (out_dir) |save_dir| {
+                var name_buff: [1024]u8 = undefined;
+                
+                for (0..num_fields) |ff| {
+                    const file_name = try std.fmt.bufPrint(
+                        name_buff[0..],
+                        "frame_{d}_field_{d}",
+                        .{ tt, ff },
+                    );
+
+                    const save_slice = frame_arr.getSlice(&[_]usize{ ff, 0, 0 }, 0);
+                    const save_mat = MatSlice(f64).init(save_slice, 
+                                                        camera.pixels_num[1], 
+                                                        camera.pixels_num[0]);
+
+                    const bits: u8 = switch (mesh_raster.shader) {
+                        .flat => |f| @intCast(f.bits orelse 8),
+                        .texture => 8,
+                    };
+
+                    for (config.save_formats) |format| {
+                        try iops.saveImage(io, save_dir, file_name, &save_mat, format, bits);
+                    }
+                }
+            }
+        }
+
+
+    } // End render loop
+    
+    return images_arr;
+}
 
 // Modifies coords by transforming them in-place
 pub fn rasterOneFrame(mesh_type: MeshType,
                       allocator: std.mem.Allocator, 
                       io: std.Io,
+                      camera: *const Camera,
                       frame_ind: usize,
-                      camera: *const Camera, 
+                      tile_size: u16,
+                      threads: u16,                        
                       shader: *const FieldShader,
                       coords: *NDArray(f64),
                       image_out_arr: *NDArray(f64),
@@ -78,8 +204,10 @@ pub fn rasterOneFrame(mesh_type: MeshType,
                     try rasterInternal(mesh_tag,
                                        allocator,
                                        io,
-                                       frame_ind,
                                        camera,
+                                       frame_ind,
+                                       tile_size,
+                                       threads,
                                        shader_val,
                                        coords, 
                                        image_out_arr);
@@ -92,21 +220,42 @@ pub fn rasterOneFrame(mesh_type: MeshType,
 fn rasterInternal(comptime mesh_type: MeshType,
                   allocator: std.mem.Allocator, 
                   io: std.Io,
-                  frame_ind: usize,
                   camera: *const Camera, 
+                  frame_ind: usize,
+                  tile_size: u16,
+                  threads: u16,
                   shader: anytype, 
                   coords: *NDArray(f64),
                   image_out_arr: *NDArray(f64),
                   ) !void {    
+                  
+    // TODO: add threading for the raster hot loop
+    _ = threads;
     
-    const raster_start = std.Io.Clock.Timestamp.now(io, .awake);
-    var time_start = std.Io.Clock.Timestamp.now(io, .awake);
-    var time_end = std.Io.Clock.Timestamp.now(io, .awake);
+    const raster_start = Timestamp.now(io, .awake);
+    var time_start = Timestamp.now(io, .awake);
+    var time_end = Timestamp.now(io, .awake);
 
     //-----------------------------------------------------------------------------------------
-    // CONSTANTS
-    const ShaderType = @TypeOf(shader);
+    // Types and Namespaces
 
+    const MeshFun = switch (mesh_type) {
+        .tri3 => tri3,
+        .tri6 => tri6,
+        else => unreachable,
+    };
+
+    const N: usize = switch (mesh_type) {
+        .tri3 => 3,
+        .tri6 => 6,
+        else => unreachable,
+    };
+
+    const ShaderType = @TypeOf(shader);
+    
+    //-----------------------------------------------------------------------------------------
+    // CONSTANTS
+    
     // MESH DIMS
     const dim_elem: usize = 0; 
     const elems_num: usize = coords.dims[dim_elem];
@@ -116,7 +265,6 @@ fn rasterInternal(comptime mesh_type: MeshType,
     const screen_px_y = @as(u16,@intCast(camera.pixels_num[1]));
 
     // TILES
-    const tile_size: u16 = 32; // Tile pixels
     const tiles_num_x: usize = try std.math.divCeil(usize,camera.pixels_num[0],tile_size);
     const tiles_num_y: usize = try std.math.divCeil(usize,camera.pixels_num[1],tile_size);
     const tiles_num: usize = tiles_num_x*tiles_num_y;
@@ -128,44 +276,36 @@ fn rasterInternal(comptime mesh_type: MeshType,
     
     //-----------------------------------------------------------------------------------------
     // Tiling Raster Step 1: World to Camera/Raster Coords - SIMD
-    time_start = std.Io.Clock.Timestamp.now(io, .awake);
+    time_start = Timestamp.now(io, .awake);
 
     if (comptime mesh_type == .tri3) {
-        try tri3.transformElemsToRasterSIMD(3, f64, camera, dim_elem, coords);
+        try MeshFun.transformElemsToRasterSIMD(N, f64, camera, dim_elem, coords);
     } else if (comptime mesh_type == .tri6) {
-        try tri6.transformElemsToCamSIMD(6, f64, camera, dim_elem, coords);
+        try MeshFun.transformElemsToCamSIMD(N, f64, camera, dim_elem, coords);
     }
     
-    time_end = std.Io.Clock.Timestamp.now(io, .awake);
+    time_end = Timestamp.now(io, .awake);
     const time1_world_to_raster: f64 = @floatFromInt(
         time_start.durationTo(time_end).raw.nanoseconds);
         
     //-----------------------------------------------------------------------------------------
     // Tiling Raster Step 2: Calculate Element Bounding Boxes
-    time_start = std.Io.Clock.Timestamp.now(io, .awake);
+    time_start = Timestamp.now(io, .awake);
 
     const elem_bboxes: []BBox = try arena_alloc.alloc(BBox,elems_num);
-    var elems_in_image: usize = 0;
     
-    if (comptime mesh_type == .tri3) {
-        elems_in_image = try tri3.countElemsCalcBBoxes(camera,
-                                                        dim_elem,
-                                                        coords,
-                                                        elem_bboxes);
-    } else if (comptime mesh_type == .tri6) {
-        elems_in_image = try tri6.countElemsCalcBBoxes(camera,
-                                                        dim_elem,
-                                                        coords,
-                                                        elem_bboxes);
-    }
+    const elems_in_image = try MeshFun.countElemsCalcBBoxes(camera,
+                                                            dim_elem,
+                                                            coords,
+                                                            elem_bboxes);
     
-    time_end = std.Io.Clock.Timestamp.now(io, .awake);
+    time_end = Timestamp.now(io, .awake);
     const time2_elem_bboxes_crop: f64 = @floatFromInt(
         time_start.durationTo(time_end).raw.nanoseconds);
 
     //-----------------------------------------------------------------------------------------
     // Tiling Raster Step 3: Element Tile Overlap - COUNT only  
-    time_start = std.Io.Clock.Timestamp.now(io, .awake);        
+    time_start = Timestamp.now(io, .awake);        
 
     const tile_elem_counts: []usize = try arena_alloc.alloc(usize,tiles_num);
     @memset(tile_elem_counts,0);
@@ -178,7 +318,7 @@ fn rasterInternal(comptime mesh_type: MeshType,
                                                            tile_elem_counts,
                                                            tile_write_inds);
 
-    time_end = std.Io.Clock.Timestamp.now(io, .awake);
+    time_end = Timestamp.now(io, .awake);
     const time3_elem_tile_overlap_count: f64 = @floatFromInt(
         time_start.durationTo(time_end).raw.nanoseconds);
         
@@ -187,7 +327,7 @@ fn rasterInternal(comptime mesh_type: MeshType,
     // Coarse, bounding box overlap based raster. Assumes a sparse mesh with each element 
     // touching few tiles.
 
-    time_start = std.Io.Clock.Timestamp.now(io, .awake);
+    time_start = Timestamp.now(io, .awake);
     
     const overlap_total: usize = sliceops.sum(usize,tile_elem_counts);
     const overlap_bboxes: []BBox = try arena_alloc.alloc(BBox,overlap_total);
@@ -205,50 +345,36 @@ fn rasterInternal(comptime mesh_type: MeshType,
                           overlap_bboxes,
                           active_tiles);
                          
-    time_end = std.Io.Clock.Timestamp.now(io, .awake);
+    time_end = Timestamp.now(io, .awake);
     const time4_elem_tile_overlap_store: f64 = @floatFromInt(
         time_start.durationTo(time_end).raw.nanoseconds);
     
     //-----------------------------------------------------------------------------------------
     // Tiling Raster Step 5: Main Raster Loop
-    time_start = std.Io.Clock.Timestamp.now(io, .awake);
+    time_start = Timestamp.now(io, .awake);
 
-    if (comptime mesh_type == .tri3) {
-        if (comptime ShaderType == FlatShader) {
-            try tri3.rasterElemsFlat(arena_alloc,
-                                      camera,
-                                      frame_ind,
-                                      tile_size,
-                                      active_tiles,
-                                      overlap_bboxes,
-                                      coords,
-                                      &shader.field,
-                                      image_out_arr,);
-        } else {
-            print("No texture shading yet!",.{});
-        }        
-    } else if (comptime mesh_type == .tri6) {
-        if (comptime ShaderType == FlatShader) { 
-           try tri6.rasterElemsFlat(arena_alloc,
-                                     camera,
-                                     frame_ind,
-                                     tile_size,
-                                     active_tiles,
-                                     overlap_bboxes,
-                                     coords,
-                                     &shader.field,
-                                     image_out_arr,);
-        } else {
-            print("No texture shading yet!",.{});
-        } 
+    if (comptime ShaderType == FlatShader) {
+        try MeshFun.rasterElemsFlat(arena_alloc,
+                                    camera,
+                                    frame_ind,
+                                    tile_size,
+                                    active_tiles,
+                                    overlap_bboxes,
+                                    coords,
+                                    &shader.field,
+                                    image_out_arr,);
+                                    
+    } else if (comptime ShaderType == TexShader) {
+        // TODO: switch with inline else on shader.interp_type
+        print("WARNING: No texture shading yet!",.{});
     }
     
-    time_end = std.Io.Clock.Timestamp.now(io, .awake);
+    time_end = Timestamp.now(io, .awake);
     const time5_raster_loop: f64 = @floatFromInt(
         time_start.durationTo(time_end).raw.nanoseconds);
 
     //-----------------------------------------------------------------------------------------
-    const raster_end = std.Io.Clock.Timestamp.now(io, .awake);
+    const raster_end = Timestamp.now(io, .awake);
     const time_raster_all: f64 = @floatFromInt(
         raster_start.durationTo(raster_end).raw.nanoseconds);
 

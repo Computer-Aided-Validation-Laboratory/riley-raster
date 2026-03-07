@@ -151,23 +151,15 @@ pub fn NDArray(comptime EType: type) type {
         }
 
         pub fn getSlice(self: *const Self,
-							  fixed_inds: []usize,	
-                              slice_fixed_dim: usize) []EType {
+			            fixed_inds: []const usize,	
+                        fixed_dim: usize) []EType {
 
             assert(fixed_inds.len == self.dims.len);
-            assert((slice_fixed_dim+1) < self.dims.len);             
-
-			// Have to zero off all other dimensions to ensure slice starts at
-			// the correct location
-			for (slice_fixed_dim+1..fixed_inds.len) |ii| {
-				fixed_inds[ii] = 0;
-			}
+            assert((fixed_dim+1) < self.dims.len);             
 				
-        	const start_ind: usize = self.getFlatInd(fixed_inds);
-        	const end_ind: usize = start_ind+self.strides[slice_fixed_dim];
-
-	    	return self.elems[start_ind..end_ind];                     	
-        } 
+            const start = self.getFlatInd(fixed_inds);
+            const stride = self.strides[fixed_dim];
+            return self.elems[start .. start + stride];        } 
     };
 }
 
@@ -357,7 +349,7 @@ test "getSlice" {
 	const check_arr0 = [_]f64{7} ** 4;
 	const check_arr1 = [_]f64{9} ** 4;
 
-	var fixed_inds = [_]usize{1,10,10};
+	var fixed_inds = [_]usize{1,0,0};
 	const ext_slice0 = arr0.getSlice(fixed_inds[0..],0);
 
 	fixed_inds[0] = 2;
