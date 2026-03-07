@@ -14,27 +14,26 @@ const MeshRaster = mr.MeshRaster;
 const FlatShader = mr.FlatShader;
 const TexShader = mr.TexShader;
 
-const VecStack = @import("zigraster/zig/vecstack.zig");
-const MatStack = @import("zigraster/zig/matstack.zig");
-
-const Rotation = @import("zigraster/zig/rotation.zig").Rotation;
-const Vec3f = VecStack.Vec3f;
-const Mat44f = MatStack.Mat44f;
-const Mat44Ops = MatStack.Mat44Ops;
-
-const matslice = @import("zigraster/zig/matslice.zig");
-const MatSlice = matslice.MatSlice;
-const MatSliceOps = matslice.MatSliceOps;
-
 const ndarray = @import("zigraster/zig/ndarray.zig");
 const NDArray = ndarray.NDArray;
 
+const Rotation = @import("zigraster/zig/rotation.zig").Rotation;
 const Camera = @import("zigraster/zig/camera.zig").Camera;
 const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
 
 const iops = @import("zigraster/zig/imageops.zig");
+
 const specraster = @import("zigraster/zig/specraster.zig");
 const RasterConfig = specraster.RasterConfig;
+
+const texio = @import("zigraster/zig/textureio.zig");
+const uvio = @import("zigraster/zig/uvio.zig");
+
+const ShaderMode = enum { flat, texture };
+
+//=============================================================================================
+const shader_mode: ShaderMode = .texture;
+//=============================================================================================
 
 pub fn main() !void {
     const print_break = [_]u8{'-'} ** 80;
@@ -55,7 +54,7 @@ pub fn main() !void {
     // const path_data = "data-simple/tri3_single/"
     // const path_data = "data-simple/tri3_fullscreen/";
     // const mesh_type: MeshType = .tri3;
-
+         
     const path_data = "data-simple/tri6_single/";
     //const path_data = "data-simple/tri6_fullscreen/";
     const mesh_type: MeshType = .tri6;
@@ -130,15 +129,36 @@ pub fn main() !void {
     // Mesh Data Transformation
     const elem_coords = try mr.transformCoords(page_alloc,&sim_data.coords,&sim_data.connect);
     const elem_disp = try mr.transformField(page_alloc,&sim_data.connect,&sim_data.field);
-    const elem_field = try mr.transformField(page_alloc,&sim_data.connect,&sim_data.field);
-    const elem_shader = FlatShader{ .field=elem_field }; 
-
-    const mesh_raster = MeshRaster{
+    
+    var mesh_raster = MeshRaster{
         .mesh_type = mesh_type,
         .coords = elem_coords,
         .disp = elem_disp,
-        .shader = .{ .flat = elem_shader},
+        .shader = undefined,
     };
+
+    if (comptime shader_mode == .flat) {
+        const elem_field = try mr.transformField(page_alloc,&sim_data.connect,&sim_data.field);
+
+        mesh_raster.shader = .{ .flat = .{
+            .field = elem_field,
+            .bits = null,    
+        }};
+        
+    } else {
+        const path_uvs = path_data ++ "uvs.csv";
+        const path_tex = "texture/speckle.bmp";
+        
+        const uvs = try uvio.loadTexMap(page_alloc, io, path_uvs);
+        const texture = try texio.loadBMP(page_alloc, io, path_tex, u8, 1);
+        const elem_uvs = try mr.transformUVs(page_alloc, &uvs, &sim_data.connect);
+        
+        mesh_raster.shader = .{ .texture = .{
+            .uvs = elem_uvs,
+            .texture = texture,
+            .interp_type = .cubic_lut_lerp,
+        }};
+    }
 
     //-----------------------------------------------------------------------------------------
     // Raster Config

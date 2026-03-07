@@ -3,7 +3,7 @@ const common = @import("tests/common.zig");
 
 const REL_TOL: f64 = 1e-9;
 const ABS_TOL: f64 = 1e-9;
-const SHADER_FILTER: common.ShaderFilter = .flat; // .flat, .tex, or .both
+const SHADER_FILTER: common.ShaderFilter = .both; // .flat, .tex, or .both
 
 test "Gold Small Suite" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};

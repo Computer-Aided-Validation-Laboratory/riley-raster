@@ -31,6 +31,8 @@ archive/
 zig-out/
 .vscode/
 
+test_output.txt
+
 #-----------------------------------------------------------------------------
 # Standard Python Ignore
 

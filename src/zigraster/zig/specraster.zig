@@ -361,12 +361,24 @@ fn rasterInternal(comptime mesh_type: MeshType,
                                     active_tiles,
                                     overlap_bboxes,
                                     coords,
-                                    &shader.field,
+                                    &shader,
                                     image_out_arr,);
                                     
     } else if (comptime ShaderType == TexShader) {
-        // TODO: switch with inline else on shader.interp_type
-        print("WARNING: No texture shading yet!",.{});
+        switch (shader.interp_type) {
+            inline else => |interp_tag| {
+                try MeshFun.rasterElemsTex(interp_tag, 
+                                           arena_alloc, 
+                                           camera, 
+                                           tile_size, 
+                                           active_tiles,
+                                           overlap_bboxes, 
+                                           coords, 
+                                           &shader, 
+                                           image_out_arr,
+                );
+            }
+        }
     }
     
     time_end = Timestamp.now(io, .awake);
