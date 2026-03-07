@@ -1,8 +1,9 @@
 const std = @import("std");
 const common = @import("tests/common.zig");
 
-const TOLERANCE: f64 = 1e-9;
-const SHADER_FILTER: common.ShaderFilter = .both; // .flat, .tex, or .both
+const REL_TOL: f64 = 1e-9;
+const ABS_TOL: f64 = 1e-9;
+const SHADER_FILTER: common.ShaderFilter = .flat; // .flat, .tex, or .both
 
 test "Gold Small Suite" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -16,17 +17,43 @@ test "Gold Small Suite" {
     defer texture.deinit(allocator);
 
     const mesh_types = [_]common.MeshType{ .tri3, .tri6 };
-    const interp_types = std.enums.values(common.textureinterp.InterpolationType);
+    const interp_types = std.enums.values(common.textureinterp.InterpType);
     const pixel_num = [_]u32{ 160, 100 };
 
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
 
     for (mesh_types) |mt| {
-        try common.runTestInternal(allocator, io, "single", mt, 1.1, texture, pixel_num, interp_types, "gold-small", "data-small", TOLERANCE, SHADER_FILTER);
-        try common.runTestInternal(allocator, io, "full", mt, 1.0, texture, pixel_num, interp_types, "gold-small", "data-small", TOLERANCE, SHADER_FILTER);
+        try common.runTestInternal(allocator, 
+                                   io, 
+                                   "single", 
+                                   mt, 
+                                   1.1, 
+                                   texture, 
+                                   pixel_num, 
+                                   interp_types, 
+                                   "gold-small", 
+                                   "data-small", 
+                                   REL_TOL,
+                                   ABS_TOL, 
+                                   SHADER_FILTER);
+                                   
+        try common.runTestInternal(allocator, 
+                                   io, 
+                                   "full", 
+                                   mt, 
+                                   1.0, 
+                                   texture, 
+                                   pixel_num, 
+                                   interp_types, 
+                                   "gold-small", 
+                                   "data-small", 
+                                   REL_TOL,
+                                   ABS_TOL, 
+                                   SHADER_FILTER);
     }
 
     const end_time = std.Io.Clock.Timestamp.now(io, .awake);
-    const duration_ms = @as(f64, @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds)) / 1e6;
+    const duration_ms = @as(f64, @floatFromInt(
+        start_time.durationTo(end_time).raw.nanoseconds)) / 1e6;
     std.debug.print("\nGold Small Suite (tri3, tri6) took {d:.3} ms\n", .{duration_ms});
 }

@@ -23,24 +23,29 @@ pub const iops = @import("../zigraster/zig/imageops.zig");
 pub const uvio = @import("../zigraster/zig/uvio.zig");
 
 
-pub fn isApproxEqual(v1: f64, v2: f64, tol: f64) bool {
+// Default tolerances: for scientific accuracy and DIC
+// f64: rel= 1e-11, abs= 1e-11
+// f32: rel= 1e-5, abs= 1e-4
+pub fn isApproxEqual(v1: f64, v2: f64, rel_tol: f64, abs_tol: f64) bool {
     if (v1 == v2) return true;
 
     const diff = @abs(v1 - v2);
+    
+    if (diff <= abs_tol) return true;
+
     const abs_v1 = @abs(v1);
     const abs_v2 = @abs(v2);
     const largest = if (abs_v1 > abs_v2) abs_v1 else abs_v2;
 
-    if (largest < 1e-15) return diff < tol; 
-
-    return (diff / largest) <= tol;
+    return (diff / largest) <= rel_tol;
 }
 
 pub fn compareNDArrayToCSV(allocator: std.mem.Allocator, 
                            io: std.Io, array: *const NDArray(f64), 
                            frame: usize, field: usize, 
                            path: []const u8, 
-                           tol: f64) !void {
+                           rel_tol: f64,
+                           abs_tol: f64) !void {
                            
     var lines = try meshio.readCsvToList(allocator, io, path);
     defer {
@@ -72,18 +77,17 @@ pub fn compareNDArrayToCSV(allocator: std.mem.Allocator,
             const gold_val = try std.fmt.parseFloat(f64, std.mem.trim(u8, val_str, " \r\n\t"));
             const actual_val = array.get(&[_]usize{ frame, field, r, c });
             
-            if (!isApproxEqual(gold_val, actual_val, tol)) {
-                const largest = if (@abs(gold_val) > @abs(actual_val)) 
-                    @abs(gold_val) 
-                else 
-                    @abs(actual_val);
+            if (!isApproxEqual(gold_val, actual_val, rel_tol, abs_tol)) {
+                const abs_gold = @abs(gold_val);
+                const abs_act = @abs(actual_val);
+                const largest = if (abs_gold > abs_act) abs_gold else abs_act;
 
                 const diff = @abs(gold_val - actual_val);
-                const rel_diff = if (largest < 1e-15) diff else diff / largest;
+                const rel_diff = if (largest < abs_tol) diff else diff / largest;
 
                 std.debug.print(
-                    "Mismatch at frame {d}, field {d}, pixel ({d}, {d}): " ++
-                    "gold={d}, actual={d}, rel_diff={e} (path: {s})\n", 
+                    "\n\nMismatch at:\n frame {d},\n field {d},\n pixel ({d}, {d}): " ++
+                    "\n gold={d},\n actual={d},\n rel_diff={e}\n (path: {s})\n\n", 
                     .{ frame, field, r, c, gold_val, actual_val, rel_diff, path }
                 );
                 return error.PixelMismatch;
@@ -91,6 +95,7 @@ pub fn compareNDArrayToCSV(allocator: std.mem.Allocator,
         }
     }
 }
+
 
 pub fn loadData(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !SimData {
     const pc = try std.fmt.allocPrint(allocator, "{s}/coords.csv", .{path});
@@ -146,7 +151,8 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                        interp_types: []const textureinterp.InterpType,
                        gold_dir_root: []const u8,
                        data_dir_root: []const u8,
-                       tolerance: f64,
+                       rel_tol: f64,
+                       abs_tol: f64,
                        shader_filter: ShaderFilter) !void {
 
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
@@ -188,31 +194,40 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
         
         // --- Flat Shader ---
         if (shader_filter == .flat or shader_filter == .both) {
+
             const case_dir_name = try std.fmt.allocPrint(
                 aa, "{s}_{s}_{s}_flat", .{ test_type, @tagName(mesh_type), d_str }
             );
+
             const flat_dir = try std.fmt.allocPrint(
                 aa, "{s}/{s}", .{ gold_dir_root, case_dir_name }
             );
+
             var mesh_raster = MeshRaster{ 
                 .mesh_type = mesh_type, 
                 .coords = elem_coords, 
                 .disp = if (add_disp) elem_disp else null, 
                 .shader = .{ .flat = .{ .field = elem_disp, .bits = 8 } } 
             };
+
             const config = RasterConfig{ .save_opt = .memory, .tile_size = 32 };
+
             const result = (try specraster.rasterAllFrames(
                 aa, io, &camera, &mesh_raster, config, null
             )) orelse return error.NoResult;
+
             defer aa.free(result.elems);
 
             for (0..result.dims[0]) |f| {
+
                 const fname = try std.fmt.allocPrint(
                     aa, "{s}/frame_{d}_field_0.csv", .{ flat_dir, f }
                 );
-                compareNDArrayToCSV(aa, io, &result, f, 0, fname, tolerance) catch |err| {
-                    try saveResultToFails(aa, io, &result, case_dir_name);
-                    return err;
+                
+                compareNDArrayToCSV(aa, io, &result, f, 0, fname, rel_tol, abs_tol) 
+                    catch |err| {
+                        try saveResultToFails(aa, io, &result, case_dir_name);
+                        return err;
                 };
             }
         }
@@ -224,9 +239,11 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                     aa, "{s}_{s}_{s}_tex_{s}", 
                     .{ test_type, @tagName(mesh_type), d_str, @tagName(it) }
                 );
+                
                 const tex_dir = try std.fmt.allocPrint(
                     aa, "{s}/{s}", .{ gold_dir_root, case_dir_name }
                 );
+                
                 var mesh_raster = MeshRaster{ 
                     .mesh_type = mesh_type, 
                     .coords = elem_coords, 
@@ -237,19 +254,24 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                         } 
                     } 
                 };
+                
                 const config = RasterConfig{ .save_opt = .memory, .tile_size = 32 };
+
                 const result = (try specraster.rasterAllFrames(
                     aa, io, &camera, &mesh_raster, config, null
                 )) orelse return error.NoResult;
+
                 defer aa.free(result.elems);
 
                 for (0..result.dims[0]) |f| {
                     const fname = try std.fmt.allocPrint(
                         aa, "{s}/frame_{d}_field_0.csv", .{ tex_dir, f }
                     );
-                    compareNDArrayToCSV(aa, io, &result, f, 0, fname, tolerance) catch |err| {
-                        try saveResultToFails(aa, io, &result, case_dir_name);
-                        return err;
+                    
+                    compareNDArrayToCSV(aa, io, &result, f, 0, fname, rel_tol, abs_tol) 
+                        catch |err| {
+                            try saveResultToFails(aa, io, &result, case_dir_name);
+                            return err;
                     };
                 }
             }

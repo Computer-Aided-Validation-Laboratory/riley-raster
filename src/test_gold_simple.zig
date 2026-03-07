@@ -1,7 +1,9 @@
 const std = @import("std");
 const common = @import("tests/common.zig");
 
-const TOLERANCE: f64 = 1e-9;
+// NOTE: should probably be 1e-9 to 1e-11
+const REL_TOL: f64 = 1e-10;
+const ABS_TOL: f64 = 1e-10;
 const SHADER_FILTER: common.ShaderFilter = .flat; // .flat, .tex, or .both
 
 test "Gold Simple Suite" {
@@ -32,7 +34,8 @@ test "Gold Simple Suite" {
                                    &interp_types, 
                                    "gold-simple", 
                                    "data-simple", 
-                                   TOLERANCE, 
+                                   REL_TOL,
+                                   ABS_TOL, 
                                    SHADER_FILTER);
                                    
         try common.runTestInternal(allocator, 
@@ -45,11 +48,13 @@ test "Gold Simple Suite" {
                                    &interp_types, 
                                    "gold-simple", 
                                    "data-simple", 
-                                   TOLERANCE, 
+                                   REL_TOL,
+                                   ABS_TOL, 
                                    SHADER_FILTER);
     }
 
     const end_time = std.Io.Clock.Timestamp.now(io, .awake);
-    const duration_ms = @as(f64, @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds)) / 1e6;
+    const duration_ms = @as(f64, @floatFromInt(
+        start_time.durationTo(end_time).raw.nanoseconds)) / 1e6;
     std.debug.print("\nGold Simple Suite (tri3, tri6) took {d:.3} ms\n", .{duration_ms});
 }

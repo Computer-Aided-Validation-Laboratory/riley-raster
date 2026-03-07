@@ -105,8 +105,10 @@ pub fn rasterElemsFlat(
     @setFloatMode(.optimized);
 
     const N: usize = 3;
+    const F: usize = 3;
 
     const fields_num: usize = elem_field_arr.dims[2];
+
     const screen_px_x = @as(u16,@intCast(camera.pixels_num[0]));
     const screen_px_y = @as(u16,@intCast(camera.pixels_num[1]));
 
@@ -137,9 +139,9 @@ pub fn rasterElemsFlat(
         var nodes_inv_z: [N]f64 = undefined;
         var nodes_weight: [N]f64 = undefined;
         
-        for (overlaps) |overlap| {
+        for (overlaps) |ol| {
             const nodes_rast: Vec3OfSlices(f64) = try rops.loadVec3SlicesFromElemArray(
-                N,f64,elem_coord_arr,overlap.elem_ind
+                N,f64,elem_coord_arr,ol.elem_ind
             );
 
             for (0..N) |nn| {
@@ -150,17 +152,33 @@ pub fn rasterElemsFlat(
                                                            nodes_rast.x[1],nodes_rast.y[1],
                                                            nodes_rast.x[2],nodes_rast.y[2]);
 
-            const scratch_start_ind_x: usize = sub_samp
-                * (@as(usize,overlap.x_min) - tile.x_px_min);  
-            const scratch_end_ind_x: usize = sub_samp
-                * (@as(usize,overlap.x_max) - tile.x_px_min);
-            const scratch_start_ind_y: usize = sub_samp
-                * (@as(usize,overlap.y_min) - tile.y_px_min);  
-            const scratch_end_ind_y: usize = sub_samp
-                * (@as(usize,overlap.y_max) - tile.y_px_min);
+            // Index into the NDArray manually for speed
+            const elem_field_stride = elem_field_arr.strides[1];
+            const ff_stride = elem_field_arr.strides[2];
+            const frame_offset = frame_ind * elem_field_arr.strides[0];
+            const elem_offset = frame_offset + ol.elem_ind * elem_field_stride;
 
-            const xi_min_f: f64 = @as(f64, @floatFromInt(overlap.x_min));
-            const yi_min_f: f64 = @as(f64, @floatFromInt(overlap.y_min));
+            // Hoisted the nodal field values into a small array to keep in cache
+            var field_div_z = [F][N]f64{ undefined, undefined, undefined }; // [field][node]
+            for (0..F) |ff| {
+                const ff_offset = elem_offset + ff * ff_stride;
+                for (0..N) |nn| {
+                    field_div_z[ff][nn] = elem_field_arr.elems[ff_offset + nn] 
+                                          * nodes_inv_z[nn];
+                }
+            }
+
+            const scratch_start_ind_x: usize = sub_samp
+                * (@as(usize,ol.x_min) - tile.x_px_min);  
+            const scratch_end_ind_x: usize = sub_samp
+                * (@as(usize,ol.x_max) - tile.x_px_min);
+            const scratch_start_ind_y: usize = sub_samp
+                * (@as(usize,ol.y_min) - tile.y_px_min);  
+            const scratch_end_ind_y: usize = sub_samp
+                * (@as(usize,ol.y_max) - tile.y_px_min);
+
+            const xi_min_f: f64 = @as(f64, @floatFromInt(ol.x_min));
+            const yi_min_f: f64 = @as(f64, @floatFromInt(ol.y_min));
 
             var spx_coord_x: f64 = xi_min_f + spx_offset;
             var spx_coord_y: f64 = yi_min_f + spx_offset;
@@ -187,18 +205,20 @@ pub fn rasterElemsFlat(
                                                nodes_rast.x[1],nodes_rast.y[1],
                                                spx_coord_x,spx_coord_y);
 
+                    // NOTE: now it is a weight
+                    for (0..N) |nn| {
+                        nodes_weight[nn] = nodes_weight[nn] * inv_elem_area;
+                    }
+
                     const scratch_flat_ind: usize = scratch_row_offset + xx;
 
                     // DEBUG
                     //const spx_image_ix: usize = tile.x_px_min*sub_samp + xx;
-                    if (nodes_weight[0] >= 0.0 and 
-                        nodes_weight[1] >= 0.0 and 
-                        nodes_weight[2] >= 0.0){
+                    const tol = 1e-9;
+                    if (nodes_weight[0] >= -tol and 
+                        nodes_weight[1] >= -tol and 
+                        nodes_weight[2] >= -tol){
 
-                        // NOTE: now it is a weight
-                        for (0..N) |nn| {
-                            nodes_weight[nn] = nodes_weight[nn] * inv_elem_area;
-                        }
 
                         // Perspective correct interpolation to get the inverse of the z
                         // (weights) dot (nodes_inv_z) 
@@ -213,38 +233,26 @@ pub fn rasterElemsFlat(
                         if (spx_inv_z > spx_inv_z_scratch[scratch_flat_ind]) {
                             
                             spx_inv_z_scratch[scratch_flat_ind] = spx_inv_z;           
-                            
-                            //spx_image_scratch[scratch_flat_ind] = spx_z;
-
-                            
+                                    
                             // CALC: for each field, subpx value based on node values and 
                             // weights:
                             // spx_field = (vec(nodes_field[nn] * nodes_inv_z[nn]) 
                             //             dot vec(nodes_weights)) * spx_z_coord
                             const spx_z: f64 = 1/spx_inv_z; 
-                            for (0..fields_num) |ff| {
 
+                            for (0..F) |ff| {
+
+                                // CALC: ((node_weights) dot (nodes_field_div_z))
                                 var field_at_spx: f64 = 0.0;
                                 for (0..N) |nn| { 
-                                    const elem_field_inds = [_]usize{frame_ind,
-                                                                     overlap.elem_ind,
-                                                                     ff,
-                                                                     nn};
-                                    // CALC:(nodes_field[nn]) * (nodes_inv_z[nn])
-                                    const field_at_node_div_z = elem_field_arr.get(
-                                        elem_field_inds[0..]) * nodes_inv_z[nn];
-
-                                    // CALC: (node_weights) dot (nodes_field_div_z)
-                                    field_at_spx += nodes_weight[nn]*field_at_node_div_z;  
+                                    field_at_spx += nodes_weight[nn]*field_div_z[ff][nn]; 
                                 }
                                 
                                 // CALC: ((node_weights) dot (nodes_field_div_z)) * subpx_z
                                 field_at_spx *= spx_z;
-                                
+                
                                 spx_image_scratch.set(scratch_flat_ind,ff,field_at_spx);
                             }                                
-                            // DEBUG
-                            //spx_image.set(spx_image_iy,spx_image_ix,spx_z);
                         }
                     } 
                     spx_coord_x += spx_step;           

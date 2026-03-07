@@ -103,7 +103,7 @@ pub fn main() !void {
     const beta_y: f64 = std.math.degreesToRadians(0.0);
     const gamma_x: f64 = std.math.degreesToRadians(0.0);
     const cam_rot = Rotation.init(alpha_z, beta_y, gamma_x);
-    const fov_scale_factor: f64 = 0.99;
+    const fov_scale_factor: f64 = 1.0;
     const subsample: u8 = 2;
     
     print("{s}\n", .{print_break});
