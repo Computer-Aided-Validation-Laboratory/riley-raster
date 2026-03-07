@@ -76,7 +76,7 @@ fn applyDispToMesh(outer_alloc: std.mem.Allocator,
 pub fn rasterAllFrames(outer_alloc: std.mem.Allocator,
                        io: std.Io,
                        camera: *const Camera,
-                       mesh_raster: *MeshRaster,
+                       mesh_raster: *const MeshRaster,
                        config: RasterConfig,
                        out_dir: ?std.Io.Dir,
                        ) !?NDArray(f64) {

@@ -26,7 +26,9 @@ const Camera = @import("zigraster/zig/camera.zig").Camera;
 const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
 
 const rops = @import("zigraster/zig/rasterops.zig");
-const raster = @import("zigraster/zig/raster.zig");
+const raster = @import("zigraster/zig/oldraster.zig");
+
+const iops = @import("zigraster/zig/imageops.zig");
 
 
 pub fn main() !void {
@@ -54,7 +56,8 @@ pub fn main() !void {
     //const path_data = "data/cylinder/";
     //const path_data = "data/block/";
     //const path_data = "data/lin_tri/";
-    const path_data = "data/fill_lin_tri/";
+    //const path_data = "data/fill_lin_tri/";
+    const path_data = "data-simple/tri3_fullscreen/";
 
     const frame_ind: usize = 1;
  
@@ -94,14 +97,14 @@ pub fn main() !void {
     //==========================================================================
     // Build Camera
     
-    const pixel_num = [_]u32{1000,1000};
+    const pixel_num = [_]u32{1200,800};
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
     const alpha_z: f64 = std.math.degreesToRadians(0.0);
     const beta_y: f64 = std.math.degreesToRadians(0.0);
     const gamma_x: f64 = std.math.degreesToRadians(0.0);
     const cam_rot = Rotation.init(alpha_z, beta_y, gamma_x);
-    const fov_scale_factor: f64 = 1.1;
+    const fov_scale_factor: f64 = 1.0;
     const subsample: u8 = 2;
     
     print("{s}\n", .{print_break});
@@ -156,6 +159,7 @@ pub fn main() !void {
     // Creates own arena for temporary render buffers which should be 
     // cleared after rendering a frame.
     try raster.rasterOneFrame(page_alloc, 
+                              io,
                               frame_ind, 
                               &sim_data.coords, 
                               &sim_data.connect, 
@@ -207,8 +211,8 @@ pub fn main() !void {
         
         time_start = std.Io.Clock.Timestamp.now(io, .awake);
         
-        try rops.saveImage(io, out_dir, file_name, &image_mat,.ppm);
-        try rops.saveImage(io, out_dir, file_name, &image_mat,.csv);
+        try iops.saveImage(io, out_dir, file_name, &image_mat, .bmp, 8);
+        try iops.saveImage(io, out_dir, file_name, &image_mat, .csv, 8);
         
         time_end = std.Io.Clock.Timestamp.now(io, .awake);
     

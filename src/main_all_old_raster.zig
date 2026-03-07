@@ -1,7 +1,7 @@
 const std = @import("std");
 const print = std.debug.print;
 const time = std.time;
-const Instant = time.Instant;
+const Timestamp = std.Io.Clock.Timestamp;
 
 const meshio = @import("zigraster/zig/meshio.zig");
 const Coords = meshio.Coords;
@@ -28,24 +28,24 @@ const Camera = @import("zigraster/zig/camera.zig").Camera;
 const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
 
 const rops = @import("zigraster/zig/rasterops.zig");
-const raster = @import("zigraster/zig/raster.zig");
+const raster = @import("zigraster/zig/oldraster.zig");
 
 pub fn main() !void {
     const print_break = [_]u8{'-'} ** 80;
     print("{s}\nZig rasteriser\n{s}\n", .{ print_break, print_break });
 
-    var time_start = try Instant.now();
-    var time_end = try Instant.now();
+    //=========================================================================
+    // IO
+    var single_thread_io: std.Io.Threaded = .init_single_threaded;
+    const io = single_thread_io.io();
+
+    var time_start = Timestamp.now(io, .awake);
+    var time_end = Timestamp.now(io, .awake);
 
     //==========================================================================
     // MEMORY ALLOCATORS
     const page_alloc = std.heap.page_allocator;
 
-    //=========================================================================
-    // IO
-    var single_thread_io: std.Io.Threaded = .init_single_threaded;
-    const io = single_thread_io.io();
-    
     //==========================================================================
     // SETUP: load simulation data from file
     const path_data = "data/block/";
@@ -72,8 +72,8 @@ pub fn main() !void {
     const field_fields_n = sim_data.field.getFieldsN();
     
     var fixed_inds = [_]usize{8,0,0};
-    const field_slice = try sim_data.field.array.getSlice(fixed_inds[0..],0);
-    const field_mat = try MatSlice(f64).init(field_slice,
+    const field_slice = sim_data.field.array.getSlice(fixed_inds[0..],0);
+    const field_mat = MatSlice(f64).init(field_slice,
                                             field_coord_n,
                                             field_fields_n);
 
@@ -139,7 +139,7 @@ pub fn main() !void {
     var out_dir = try cwd.openDir(io, dir_name, .{});
     defer out_dir.close(io);
 
-    time_start = try Instant.now();
+    time_start = Timestamp.now(io, .awake);
 
     const image_array = try raster.rasterAllFrames(page_alloc, 
                                                    io, 
@@ -149,8 +149,8 @@ pub fn main() !void {
                                                    &sim_data.field, 
                                                    &camera);
 
-    time_end = try Instant.now();
-    const time_raster: f64 = @floatFromInt(time_end.since(time_start));
+    time_end = Timestamp.now(io, .awake);
+    const time_raster: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
     print("Total raster time = {d:.3}ms\n\n", .{time_raster / time.ns_per_ms});
 
     // Print diagnostics to console to see if there is an image

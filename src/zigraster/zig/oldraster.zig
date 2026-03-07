@@ -1,7 +1,7 @@
 const std = @import("std");
 const print = std.debug.print;
 const time = std.time;
-const Instant = time.Instant;
+const Timestamp = std.Io.Clock.Timestamp;
 
 const Vec3f = @import("vecstack.zig").Vec3f;
 const Vec3SliceOps = @import("vecstack.zig").Vec3SliceOps;
@@ -21,8 +21,10 @@ const Field = @import("meshio.zig").Field;
 const Camera = @import("camera.zig").Camera;
 
 const rops = @import("rasterops.zig");
+const iops = @import("imageops.zig");
 
 pub fn rasterOneFrame(allocator: std.mem.Allocator, 
+                      io: std.Io,
                       frame_ind: usize, 
                       coords: *const Coords, 
                       connect: *const Connect, 
@@ -87,6 +89,8 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     image_subpx.fill(0.0);
     depth_subpx.fill(1e6);
 
+    const raster_start = Timestamp.now(io, .awake);
+
     var px_coord_buff: Vec3f = Vec3f.initZeros();
 
     // Lifted constants out of loop
@@ -104,7 +108,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
             	coords.getVec3(coord_inds[nn]), camera);
         }
 
-        const elem_area: f64 = rops.edgeFun3(nodes_raster_buff[0], 
+        const elem_area: f64 = rops.edgeFun(nodes_raster_buff[0], 
                                              nodes_raster_buff[1], 
                                              nodes_raster_buff[2]);
 
@@ -193,7 +197,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                 px_coord_buff.set(0, bound_coord_x);
                 px_coord_buff.set(1, bound_coord_y);
 
-                weights_buff[0] = rops.edgeFun3(nodes_raster_buff[1], 
+                weights_buff[0] = rops.edgeFun(nodes_raster_buff[1], 
                                                 nodes_raster_buff[2], 
                                                 px_coord_buff);
                 if (weights_buff[0] < -tol) {
@@ -202,7 +206,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                     continue;
                 }
 
-                weights_buff[1] = rops.edgeFun3(nodes_raster_buff[2], 
+                weights_buff[1] = rops.edgeFun(nodes_raster_buff[2], 
                 						        nodes_raster_buff[0], 
                 						        px_coord_buff);
                 if (weights_buff[1] < -tol) {
@@ -211,7 +215,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
                     continue;
                 }
 
-                weights_buff[2] = rops.edgeFun3(nodes_raster_buff[0], 
+                weights_buff[2] = rops.edgeFun(nodes_raster_buff[0], 
                 						        nodes_raster_buff[1], 
                 						        px_coord_buff);
                 if (weights_buff[2] < -tol) {
@@ -317,6 +321,28 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
             bound_ind_y += 1;
         }
     }
+
+    const raster_end = Timestamp.now(io, .awake);
+    const time_raster_all: f64 = @floatFromInt(
+        raster_start.durationTo(raster_end).raw.nanoseconds);
+
+    var total_px: f64 = @as(f64,@floatFromInt(camera.pixels_num[0]*camera.pixels_num[1]));
+    const sub_samp_f_total: f64 = @as(f64, @floatFromInt(camera.sub_sample));
+    total_px = total_px*sub_samp_f_total*sub_samp_f_total;
+    // conv ns->s *1e9, conv to million ops-> /1e6 = *1e3  
+    const mega_ops_per_sec: f64 = 1.0e3 * total_px/time_raster_all; // time in ns
+    const mega_tris_per_sec: f64 = 1.0e3 * @as(f64, @floatFromInt(connect.elem_n)) 
+        / time_raster_all;
+
+    const conv_units: f64 = 1.0/1.0e6;
+    const print_break = [_]u8{'='} ** 80;
+    print("\n{s}\nSoftware Raster Times\n{s}\n", .{ print_break, print_break });
+    print("{s}\nTOTAL RASTER TIME  = {d:.3} ms\n",.{print_break,time_raster_all*conv_units});
+    print("{s}\n",.{print_break});
+    print("Total Ops   = {d}\n",.{total_px});
+    print("MOps/second = {d:.2}\n",.{mega_ops_per_sec});
+    print("MTri/second = {d:.2}\n",.{mega_tris_per_sec});
+    print("{s}\n",.{print_break});
 
     const image_subpx_max = std.mem.max(f64,image_subpx.elems);
     const image_subpx_min = std.mem.min(f64,image_subpx.elems);
@@ -434,8 +460,8 @@ pub fn rasterAllFrames(allocator: std.mem.Allocator,
     var image_inds = [_]usize{ 0, 0, 0 ,0}; // frame,field,px_y,px_x
     var field_inds = [_]usize{ 0, 0, 0}; // field,px_y_px_x
 
-    var time_start = try Instant.now();
-    var time_end = try Instant.now();
+    var time_start = Timestamp.now(io, .awake);
+    var time_end = Timestamp.now(io, .awake);
     var time_raster: f64 = 0.0;
 
     var name_buff: [1024]u8 = undefined;
@@ -443,10 +469,10 @@ pub fn rasterAllFrames(allocator: std.mem.Allocator,
     print("Starting rastering frames.\n", .{});
 
     for (0..num_time) |tt| {
-        time_start = try Instant.now();
+        time_start = Timestamp.now(io, .awake);
 
         image_inds[0] = tt;
-        const start_ind = try frame_arr.getFlatInd(image_inds[0..]);
+        const start_ind = frame_arr.getFlatInd(image_inds[0..]);
         const end_ind = start_ind + image_stride;
 
         const images_mem = frame_arr.elems[start_ind..end_ind];
@@ -458,7 +484,7 @@ pub fn rasterAllFrames(allocator: std.mem.Allocator,
 
         // This will create it's own arena for temporary storage so we pass
         // through the input allocator for this.
-        try rasterOneFrame(allocator, tt, coords, connect, 
+        try rasterOneFrame(allocator, io, tt, coords, connect, 
                            field, camera, &images_arr);
 
         for (0..num_fields) |ff| {
@@ -467,18 +493,18 @@ pub fn rasterAllFrames(allocator: std.mem.Allocator,
                                                        .{ ff,tt });
 
             field_inds[0] = ff;
-            const field_slice = try images_arr.getSlice(field_inds[0..],0);
+            const field_slice = images_arr.getSlice(field_inds[0..],0);
 
             const image_mat = MatSlice(f64).init(field_slice,
                                                     camera.pixels_num[1],
                                                     camera.pixels_num[0]);
 
-            try rops.saveImage(io, out_dir, file_name, &image_mat, .csv);
-            try rops.saveImage(io, out_dir, file_name, &image_mat, .ppm);
+            try iops.saveImage(io, out_dir, file_name, &image_mat, .csv, 8);
+            try iops.saveImage(io, out_dir, file_name, &image_mat, .ppm, 8);
         }
 
-        time_end = try Instant.now();
-        time_raster = @floatFromInt(time_end.since(time_start));
+        time_end = Timestamp.now(io, .awake);
+        time_raster = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
 
         print("Frame {}, raster time = {d:.3}ms\n", 
               .{ tt, time_raster / time.ns_per_ms });
