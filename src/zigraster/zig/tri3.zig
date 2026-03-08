@@ -68,6 +68,145 @@ inline fn fillTex(
     spx_image_scratch.set(scratch_flat_ind, 0, tex_at_spx);
 }
 
+fn shadeFlat(
+    comptime N: usize,
+    frame_ind: usize,
+    ol: BBox,
+    tile: ActiveTile,
+    sub_samp: usize,
+    spx_tile_size: usize,
+    spx_step: f64,
+    spx_offset: f64,
+    nodes_inv_z: [N]f64,
+    inv_elem_area: f64,
+    nr: Vec3OfSlices(f64),
+    shader: *const FlatShader,
+    spx_inv_z_scratch: []f64,
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    const F = 3;
+    const tol_edge: f64 = 1e-9;
+    const e_stride = shader.field.strides[1];
+    const f_stride = shader.field.strides[2];
+    const f_off = frame_ind * shader.field.strides[0] + ol.elem_ind * e_stride;
+
+    var field_div_z: [F][N]f64 = undefined;
+    inline for (0..F) |ff| {
+        const ff_off = f_off + ff * f_stride;
+        inline for (0..N) |nn| {
+            field_div_z[ff][nn] = shader.field.elems[ff_off + nn] * nodes_inv_z[nn];
+        }
+    }
+
+    const s_sx: usize = sub_samp * (@as(usize, ol.x_min) - tile.x_px_min);
+    const s_ex: usize = sub_samp * (@as(usize, ol.x_max) - tile.x_px_min);
+    const s_sy: usize = sub_samp * (@as(usize, ol.y_min) - tile.y_px_min);
+    const s_ey: usize = sub_samp * (@as(usize, ol.y_max) - tile.y_px_min);
+
+    const xi_min_f: f64 = @as(f64, @floatFromInt(ol.x_min));
+    const yi_min_f: f64 = @as(f64, @floatFromInt(ol.y_min));
+
+    var spx_coord_y: f64 = yi_min_f + spx_offset;
+
+    for (s_sy..s_ey) |yy| {
+        const row_off: usize = yy * spx_tile_size;
+        var spx_coord_x: f64 = xi_min_f + spx_offset;
+
+        for (s_sx..s_ex) |xx| {
+            var w: [N]f64 = undefined;
+            w[0] = rops.edgeFun3(nr.x[1], nr.y[1], nr.x[2], nr.y[2], spx_coord_x, spx_coord_y);
+            w[1] = rops.edgeFun3(nr.x[2], nr.y[2], nr.x[0], nr.y[0], spx_coord_x, spx_coord_y);
+            w[2] = rops.edgeFun3(nr.x[0], nr.y[0], nr.x[1], nr.y[1], spx_coord_x, spx_coord_y);
+
+            inline for (0..N) |nn| w[nn] *= inv_elem_area;
+
+            if (w[0] >= -tol_edge and w[1] >= -tol_edge and w[2] >= -tol_edge) {
+                var spx_inv_z: f64 = 0.0;
+                for (0..N) |nn| spx_inv_z += w[nn] * nodes_inv_z[nn];
+
+                const idx = row_off + xx;
+                if (spx_inv_z > spx_inv_z_scratch[idx]) {
+                    spx_inv_z_scratch[idx] = spx_inv_z;
+                    fillFlat(N, F, w, field_div_z, 1.0 / spx_inv_z, idx, spx_image_scratch);
+                }
+            }
+            spx_coord_x += spx_step;
+        }
+        spx_coord_y += spx_step;
+    }
+}
+
+fn shadeTex(
+    comptime N: usize,
+    ol: BBox,
+    tile: ActiveTile,
+    sub_samp: usize,
+    spx_tile_size: usize,
+    spx_step: f64,
+    spx_offset: f64,
+    nodes_inv_z: [N]f64,
+    inv_elem_area: f64,
+    nr: Vec3OfSlices(f64),
+    shader: *const TexShader,
+    spx_inv_z_scratch: []f64,
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    const tol_edge: f64 = 1e-9;
+    const U = 2;
+    const e_stride = shader.uvs.strides[0];
+    const c_stride = shader.uvs.strides[1];
+    const uv_off = ol.elem_ind * e_stride;
+
+    var uv_div_z: [U][N]f64 = undefined;
+    inline for (0..U) |uu| {
+        const c_off = uv_off + uu * c_stride;
+        inline for (0..N) |nn| {
+            uv_div_z[uu][nn] = shader.uvs.elems[c_off + nn] * nodes_inv_z[nn];
+        }
+    }
+
+    const s_sx: usize = sub_samp * (@as(usize, ol.x_min) - tile.x_px_min);
+    const s_ex: usize = sub_samp * (@as(usize, ol.x_max) - tile.x_px_min);
+    const s_sy: usize = sub_samp * (@as(usize, ol.y_min) - tile.y_px_min);
+    const s_ey: usize = sub_samp * (@as(usize, ol.y_max) - tile.y_px_min);
+
+    const xi_min_f: f64 = @as(f64, @floatFromInt(ol.x_min));
+    const yi_min_f: f64 = @as(f64, @floatFromInt(ol.y_min));
+
+    var spx_coord_y: f64 = yi_min_f + spx_offset;
+
+    for (s_sy..s_ey) |yy| {
+        const row_off: usize = yy * spx_tile_size;
+        var spx_coord_x: f64 = xi_min_f + spx_offset;
+
+        for (s_sx..s_ex) |xx| {
+            var w: [N]f64 = undefined;
+            w[0] = rops.edgeFun3(nr.x[1], nr.y[1], nr.x[2], nr.y[2], spx_coord_x, spx_coord_y);
+            w[1] = rops.edgeFun3(nr.x[2], nr.y[2], nr.x[0], nr.y[0], spx_coord_x, spx_coord_y);
+            w[2] = rops.edgeFun3(nr.x[0], nr.y[0], nr.x[1], nr.y[1], spx_coord_x, spx_coord_y);
+
+            inline for (0..N) |nn| w[nn] *= inv_elem_area;
+
+            if (w[0] >= -tol_edge and w[1] >= -tol_edge and w[2] >= -tol_edge) {
+                var spx_inv_z: f64 = 0.0;
+                for (0..N) |nn| spx_inv_z += w[nn] * nodes_inv_z[nn];
+
+                const idx = row_off + xx;
+                if (spx_inv_z > spx_inv_z_scratch[idx]) {
+                    spx_inv_z_scratch[idx] = spx_inv_z;
+                    const spx_z: f64 = 1.0 / spx_inv_z;
+                    switch (shader.interp_type) {
+                        inline else => |it| fillTex(N, it, w, uv_div_z, spx_z, shader, 
+                                                    idx, spx_image_scratch),
+                    }
+                }
+            }
+            spx_coord_x += spx_step;
+        }
+        spx_coord_y += spx_step;
+    }
+}
+
 pub fn rasterElems(
     allocator: std.mem.Allocator,
     camera: *const Camera,
@@ -82,7 +221,6 @@ pub fn rasterElems(
     @setFloatMode(.optimized);
 
     const N: usize = 3;
-    const tol_edge: f64 = 1e-9;
 
     const fields_num: usize = switch (@TypeOf(shader)) {
         *const FlatShader => shader.field.dims[2],
@@ -118,145 +256,31 @@ pub fn rasterElems(
         const overlaps = overlap_bboxes[tile.overlap_start .. 
                                         tile.overlap_start + tile.overlap_count];
 
-        var nodes_inv_z: [N]f64 = undefined;
-        var nodes_weight: [N]f64 = undefined;
-
         for (overlaps) |ol| {
             const nr: Vec3OfSlices(f64) = try rops.loadVec3SlicesFromElemArray(
-                N,
-                f64,
-                elem_coord_arr,
-                ol.elem_ind,
+                N, f64, elem_coord_arr, ol.elem_ind,
             );
 
-            inline for (0..N) |nn| {
-                nodes_inv_z[nn] = 1.0 / nr.z[nn];
-            }
+            var nodes_inv_z: [N]f64 = undefined;
+            inline for (0..N) |nn| nodes_inv_z[nn] = 1.0 / nr.z[nn];
 
             const inv_elem_area: f64 = 1.0 / rops.edgeFun3(
-                nr.x[0], nr.y[0],
-                nr.x[1], nr.y[1],
-                nr.x[2], nr.y[2],
+                nr.x[0], nr.y[0], nr.x[1], nr.y[1], nr.x[2], nr.y[2],
             );
 
-            const scratch_start_x: usize = sub_samp * (@as(usize, ol.x_min) - tile.x_px_min);
-            const scratch_end_x: usize = sub_samp * (@as(usize, ol.x_max) - tile.x_px_min);
-            const scratch_start_y: usize = sub_samp * (@as(usize, ol.y_min) - tile.y_px_min);
-            const scratch_end_y: usize = sub_samp * (@as(usize, ol.y_max) - tile.y_px_min);
-
-            const xi_min_f: f64 = @as(f64, @floatFromInt(ol.x_min));
-            const yi_min_f: f64 = @as(f64, @floatFromInt(ol.y_min));
-
-            var spx_coord_y: f64 = yi_min_f + spx_offset;
-
             switch (@TypeOf(shader)) {
-                *const FlatShader => {
-                    const F = 3; // Fixed for FlatShader in tri3
-                    const e_stride = shader.field.strides[1];
-                    const f_stride = shader.field.strides[2];
-                    const f_off = frame_ind * shader.field.strides[0] + ol.elem_ind * e_stride;
-
-                    var field_div_z: [F][N]f64 = undefined;
-                    inline for (0..F) |ff| {
-                        const ff_off = f_off + ff * f_stride;
-                        inline for (0..N) |nn| {
-                            field_div_z[ff][nn] = shader.field.elems[ff_off + nn] * 
-                                                  nodes_inv_z[nn];
-                        }
-                    }
-
-                    for (scratch_start_y..scratch_end_y) |yy| {
-                        const row_off: usize = yy * spx_tile_size;
-                        var spx_coord_x: f64 = xi_min_f + spx_offset;
-
-                        for (scratch_start_x..scratch_end_x) |xx| {
-                            nodes_weight[0] = rops.edgeFun3(nr.x[1], nr.y[1], nr.x[2], 
-                                                            nr.y[2], spx_coord_x, spx_coord_y);
-                            nodes_weight[1] = rops.edgeFun3(nr.x[2], nr.y[2], nr.x[0], 
-                                                            nr.y[0], spx_coord_x, spx_coord_y);
-                            nodes_weight[2] = rops.edgeFun3(nr.x[0], nr.y[0], nr.x[1], 
-                                                            nr.y[1], spx_coord_x, spx_coord_y);
-
-                            inline for (0..N) |nn| nodes_weight[nn] *= inv_elem_area;
-
-                            if (nodes_weight[0] >= -tol_edge and
-                                nodes_weight[1] >= -tol_edge and
-                                nodes_weight[2] >= -tol_edge)
-                            {
-                                var spx_inv_z: f64 = 0.0;
-                                for (0..N) |nn| spx_inv_z += nodes_weight[nn] * nodes_inv_z[nn];
-
-                                const idx = row_off + xx;
-                                if (spx_inv_z > spx_inv_z_scratch[idx]) {
-                                    spx_inv_z_scratch[idx] = spx_inv_z;
-                                    const spx_z: f64 = 1.0 / spx_inv_z;
-                                    fillFlat(N, F, nodes_weight, field_div_z, spx_z, idx, 
-                                             &spx_image_scratch);
-                                }
-                            }
-                            spx_coord_x += spx_step;
-                        }
-                        spx_coord_y += spx_step;
-                    }
-                },
-                *const TexShader => {
-                    const U = 2;
-                    const e_stride = shader.uvs.strides[0];
-                    const c_stride = shader.uvs.strides[1];
-                    const uv_off = ol.elem_ind * e_stride;
-
-                    var uv_div_z: [U][N]f64 = undefined;
-                    inline for (0..U) |uu| {
-                        const c_off = uv_off + uu * c_stride;
-                        inline for (0..N) |nn| {
-                            uv_div_z[uu][nn] = shader.uvs.elems[c_off + nn] * nodes_inv_z[nn];
-                        }
-                    }
-
-                    for (scratch_start_y..scratch_end_y) |yy| {
-                        const row_off: usize = yy * spx_tile_size;
-                        var spx_coord_x: f64 = xi_min_f + spx_offset;
-
-                        for (scratch_start_x..scratch_end_x) |xx| {
-                            nodes_weight[0] = rops.edgeFun3(nr.x[1], nr.y[1], nr.x[2], 
-                                                            nr.y[2], spx_coord_x, spx_coord_y);
-                            nodes_weight[1] = rops.edgeFun3(nr.x[2], nr.y[2], nr.x[0], 
-                                                            nr.y[0], spx_coord_x, spx_coord_y);
-                            nodes_weight[2] = rops.edgeFun3(nr.x[0], nr.y[0], nr.x[1], 
-                                                            nr.y[1], spx_coord_x, spx_coord_y);
-
-                            inline for (0..N) |nn| nodes_weight[nn] *= inv_elem_area;
-
-                            if (nodes_weight[0] >= -tol_edge and
-                                nodes_weight[1] >= -tol_edge and
-                                nodes_weight[2] >= -tol_edge)
-                            {
-                                var spx_inv_z: f64 = 0.0;
-                                for (0..N) |nn| spx_inv_z += nodes_weight[nn] * nodes_inv_z[nn];
-
-                                const idx = row_off + xx;
-                                if (spx_inv_z > spx_inv_z_scratch[idx]) {
-                                    spx_inv_z_scratch[idx] = spx_inv_z;
-                                    const spx_z: f64 = 1.0 / spx_inv_z;
-                                    switch (shader.interp_type) {
-                                        inline else => |it| fillTex(N, it, nodes_weight, 
-                                                                    uv_div_z, spx_z, shader, 
-                                                                    idx, &spx_image_scratch),
-                                    }
-                                }
-                            }
-                            spx_coord_x += spx_step;
-                        }
-                        spx_coord_y += spx_step;
-                    }
-                },
+                *const FlatShader => shadeFlat(N, frame_ind, ol, tile, sub_samp, 
+                    spx_tile_size, spx_step, spx_offset, nodes_inv_z, inv_elem_area, nr, 
+                    shader, spx_inv_z_scratch, &spx_image_scratch),
+                *const TexShader => shadeTex(N, ol, tile, sub_samp, spx_tile_size, 
+                    spx_step, spx_offset, nodes_inv_z, inv_elem_area, nr, shader, 
+                    spx_inv_z_scratch, &spx_image_scratch),
                 else => unreachable,
             }
         }
 
-        rops.averageScratch(
-            tile, tile_size, screen_px_x, screen_px_y, sub_samp, spx_tile_size, fields_num, 
-            &spx_image_scratch, spx_field_avg, image_out_arr,
-        );
+        rops.averageScratch(tile, tile_size, screen_px_x, screen_px_y, sub_samp, 
+                            spx_tile_size, fields_num, &spx_image_scratch, 
+                            spx_field_avg, image_out_arr);
     }
 }

@@ -111,6 +111,147 @@ inline fn fillTex(
     );
 }
 
+fn shadeFlat(
+    comptime N: usize,
+    frame_ind: usize,
+    fields_num: usize,
+    ov: BBox,
+    tile: ActiveTile,
+    sub_samp: usize,
+    spx_tile_size: usize,
+    spx_step: f64,
+    x_off: f64,
+    y_off: f64,
+    nr: Vec3OfSlices(f64),
+    shader: *const FlatShader,
+    spx_inv_z_scratch: []f64,
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    const s_sx = sub_samp * (@as(usize, ov.x_min) - tile.x_px_min);
+    const s_ex = sub_samp * (@as(usize, ov.x_max) - tile.x_px_min);
+    const s_sy = sub_samp * (@as(usize, ov.y_min) - tile.y_px_min);
+    const s_ey = sub_samp * (@as(usize, ov.y_max) - tile.y_px_min);
+
+    for (s_sy..s_ey) |yy| {
+        const row_off = yy * spx_tile_size;
+        const spx_y = @as(f64, @floatFromInt(tile.y_px_min)) +
+            (@as(f64, @floatFromInt(yy)) + 0.5) * spx_step;
+
+        for (s_sx..s_ex) |xx| {
+            const spx_x = @as(f64, @floatFromInt(tile.x_px_min)) +
+                (@as(f64, @floatFromInt(xx)) + 0.5) * spx_step;
+            var xi: f64 = 0.0; var eta: f64 = 0.0;
+            var converged = false;
+
+            if (getTessellatedGuess(spx_x - x_off, spx_y - y_off, nr.x, 
+                                    nr.y, nr.z, &xi, &eta)) {
+                converged = newton.solveInverse(N, spx_x - x_off, 
+                    spx_y - y_off, nr.x, nr.y, nr.z, xi, eta, &xi, &eta);
+            }
+
+            if (!converged) {
+                converged = newton.solveInverse(N, spx_x - x_off, 
+                    spx_y - y_off, nr.x, nr.y, nr.z, 1.0 / 3.0, 1.0 / 3.0, 
+                    &xi, &eta);
+            }
+
+            if (converged) {
+                var n_v: [6]f64 = undefined;
+                var dN_dxi: [6]f64 = undefined;
+                var dN_deta: [6]f64 = undefined;
+                shapeFunctions(xi, eta, &n_v, &dN_dxi, &dN_deta);
+
+                var sw: f64 = 0.0;
+                for (0..6) |i| sw += n_v[i] * nr.z[i];
+                const inv_z = 1.0 / sw;
+
+                const idx = row_off + xx;
+                if (inv_z > spx_inv_z_scratch[idx]) {
+                    spx_inv_z_scratch[idx] = inv_z;
+                    fillFlat(N, frame_ind, ov.elem_ind, fields_num, 
+                             n_v, shader, idx, spx_image_scratch);
+                }
+            }
+        }
+    }
+}
+
+fn shadeTex(
+    comptime N: usize,
+    ov: BBox,
+    tile: ActiveTile,
+    sub_samp: usize,
+    spx_tile_size: usize,
+    spx_step: f64,
+    x_off: f64,
+    y_off: f64,
+    nr: Vec3OfSlices(f64),
+    shader: *const TexShader,
+    spx_inv_z_scratch: []f64,
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    const e_stride = shader.uvs.strides[0];
+    const c_stride = shader.uvs.strides[1];
+    const uv_off = ov.elem_ind * e_stride;
+    var uv_vals = [2][6]f64{ undefined, undefined };
+    inline for (0..2) |cc| {
+        const c_off = uv_off + cc * c_stride;
+        inline for (0..6) |ii| {
+            uv_vals[cc][ii] = shader.uvs.elems[c_off + ii];
+        }
+    }
+
+    const s_sx = sub_samp * (@as(usize, ov.x_min) - tile.x_px_min);
+    const s_ex = sub_samp * (@as(usize, ov.x_max) - tile.x_px_min);
+    const s_sy = sub_samp * (@as(usize, ov.y_min) - tile.y_px_min);
+    const s_ey = sub_samp * (@as(usize, ov.y_max) - tile.y_px_min);
+
+    for (s_sy..s_ey) |yy| {
+        const row_off = yy * spx_tile_size;
+        const spx_y = @as(f64, @floatFromInt(tile.y_px_min)) +
+            (@as(f64, @floatFromInt(yy)) + 0.5) * spx_step;
+
+        for (s_sx..s_ex) |xx| {
+            const spx_x = @as(f64, @floatFromInt(tile.x_px_min)) +
+                (@as(f64, @floatFromInt(xx)) + 0.5) * spx_step;
+            var xi: f64 = 0.0; var eta: f64 = 0.0;
+            var converged = false;
+
+            if (getTessellatedGuess(spx_x - x_off, spx_y - y_off, nr.x, 
+                                    nr.y, nr.z, &xi, &eta)) {
+                converged = newton.solveInverse(N, spx_x - x_off, 
+                    spx_y - y_off, nr.x, nr.y, nr.z, xi, eta, &xi, &eta);
+            }
+
+            if (!converged) {
+                converged = newton.solveInverse(N, spx_x - x_off, 
+                    spx_y - y_off, nr.x, nr.y, nr.z, 1.0 / 3.0, 1.0 / 3.0, 
+                    &xi, &eta);
+            }
+
+            if (converged) {
+                var n_v: [6]f64 = undefined;
+                var dN_dxi: [6]f64 = undefined;
+                var dN_deta: [6]f64 = undefined;
+                shapeFunctions(xi, eta, &n_v, &dN_dxi, &dN_deta);
+
+                var sw: f64 = 0.0;
+                for (0..6) |i| sw += n_v[i] * nr.z[i];
+                const inv_z = 1.0 / sw;
+
+                const idx = row_off + xx;
+                if (inv_z > spx_inv_z_scratch[idx]) {
+                    spx_inv_z_scratch[idx] = inv_z;
+                    switch (shader.interp_type) {
+                        inline else => |it| fillTex(N, it, n_v, uv_vals, 
+                                                    shader, idx, spx_image_scratch),
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn rasterElems(
     allocator: std.mem.Allocator,
     camera: *const Camera,
@@ -158,114 +299,12 @@ pub fn rasterElems(
             const nr = try rops.loadVec3SlicesFromElemArray(N, f64, elem_coord_arr, 
                                                             ov.elem_ind);
 
-            const s_sx = sub_samp * (@as(usize, ov.x_min) - tile.x_px_min);
-            const s_ex = sub_samp * (@as(usize, ov.x_max) - tile.x_px_min);
-            const s_sy = sub_samp * (@as(usize, ov.y_min) - tile.y_px_min);
-            const s_ey = sub_samp * (@as(usize, ov.y_max) - tile.y_px_min);
-
             switch (@TypeOf(shader)) {
-                *const FlatShader => {
-                    for (s_sy..s_ey) |yy| {
-                        const row_off = yy * spx_tile_size;
-                        const spx_y = @as(f64, @floatFromInt(tile.y_px_min)) +
-                            (@as(f64, @floatFromInt(yy)) + 0.5) * spx_step;
-
-                        for (s_sx..s_ex) |xx| {
-                            const spx_x = @as(f64, @floatFromInt(tile.x_px_min)) +
-                                (@as(f64, @floatFromInt(xx)) + 0.5) * spx_step;
-                            var xi: f64 = 0.0; var eta: f64 = 0.0;
-                            var converged = false;
-
-                            if (getTessellatedGuess(spx_x - x_off, spx_y - y_off, nr.x, 
-                                                    nr.y, nr.z, &xi, &eta)) {
-                                converged = newton.solveInverse(N, spx_x - x_off, 
-                                    spx_y - y_off, nr.x, nr.y, nr.z, xi, eta, &xi, &eta);
-                            }
-
-                            if (!converged) {
-                                converged = newton.solveInverse(N, spx_x - x_off, 
-                                    spx_y - y_off, nr.x, nr.y, nr.z, 1.0 / 3.0, 1.0 / 3.0, 
-                                    &xi, &eta);
-                            }
-
-                            if (converged) {
-                                var n_vals: [6]f64 = undefined;
-                                var dN_dxi: [6]f64 = undefined;
-                                var dN_deta: [6]f64 = undefined;
-                                shapeFunctions(xi, eta, &n_vals, &dN_dxi, &dN_deta);
-
-                                var sw: f64 = 0.0;
-                                for (0..6) |i| sw += n_vals[i] * nr.z[i];
-                                const inv_z = 1.0 / sw;
-
-                                const idx = row_off + xx;
-                                if (inv_z > spx_inv_z_scratch[idx]) {
-                                    spx_inv_z_scratch[idx] = inv_z;
-                                    fillFlat(N, frame_ind, ov.elem_ind, fields_num, 
-                                             n_vals, shader, idx, &spx_image_scratch);
-                                }
-                            }
-                        }
-                    }
-                },
-                *const TexShader => {
-                    const e_stride = shader.uvs.strides[0];
-                    const c_stride = shader.uvs.strides[1];
-                    const uv_off = ov.elem_ind * e_stride;
-                    var uv_vals = [2][6]f64{ undefined, undefined };
-                    inline for (0..2) |cc| {
-                        const c_off = uv_off + cc * c_stride;
-                        inline for (0..6) |ii| {
-                            uv_vals[cc][ii] = shader.uvs.elems[c_off + ii];
-                        }
-                    }
-
-                    for (s_sy..s_ey) |yy| {
-                        const row_off = yy * spx_tile_size;
-                        const spx_y = @as(f64, @floatFromInt(tile.y_px_min)) +
-                            (@as(f64, @floatFromInt(yy)) + 0.5) * spx_step;
-
-                        for (s_sx..s_ex) |xx| {
-                            const spx_x = @as(f64, @floatFromInt(tile.x_px_min)) +
-                                (@as(f64, @floatFromInt(xx)) + 0.5) * spx_step;
-                            var xi: f64 = 0.0; var eta: f64 = 0.0;
-                            var converged = false;
-
-                            if (getTessellatedGuess(spx_x - x_off, spx_y - y_off, nr.x, 
-                                                    nr.y, nr.z, &xi, &eta)) {
-                                converged = newton.solveInverse(N, spx_x - x_off, 
-                                    spx_y - y_off, nr.x, nr.y, nr.z, xi, eta, &xi, &eta);
-                            }
-
-                            if (!converged) {
-                                converged = newton.solveInverse(N, spx_x - x_off, 
-                                    spx_y - y_off, nr.x, nr.y, nr.z, 1.0 / 3.0, 1.0 / 3.0, 
-                                    &xi, &eta);
-                            }
-
-                            if (converged) {
-                                var n_vals: [6]f64 = undefined;
-                                var dN_dxi: [6]f64 = undefined;
-                                var dN_deta: [6]f64 = undefined;
-                                shapeFunctions(xi, eta, &n_vals, &dN_dxi, &dN_deta);
-
-                                var sw: f64 = 0.0;
-                                for (0..6) |i| sw += n_vals[i] * nr.z[i];
-                                const inv_z = 1.0 / sw;
-
-                                const idx = row_off + xx;
-                                if (inv_z > spx_inv_z_scratch[idx]) {
-                                    spx_inv_z_scratch[idx] = inv_z;
-                                    switch (shader.interp_type) {
-                                        inline else => |it| fillTex(N, it, n_vals, uv_vals, 
-                                                                    shader, idx, 
-                                                                    &spx_image_scratch),
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
+                *const FlatShader => shadeFlat(N, frame_ind, fields_num, ov, tile, 
+                    sub_samp, spx_tile_size, spx_step, x_off, y_off, nr, shader, 
+                    spx_inv_z_scratch, &spx_image_scratch),
+                *const TexShader => shadeTex(N, ov, tile, sub_samp, spx_tile_size, 
+                    spx_step, x_off, y_off, nr, shader, spx_inv_z_scratch, &spx_image_scratch),
                 else => unreachable,
             }
         }
