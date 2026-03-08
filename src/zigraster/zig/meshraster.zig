@@ -8,7 +8,7 @@ const Connect = meshio.Connect;
 const Field = meshio.Field;
 
 const uvio = @import("uvio.zig");
-const TexMap = uvio.TexMap;
+const UVMap = uvio.UVMap;
 
 const shaderops = @import("shaderops.zig");
 pub const FlatShader = shaderops.FlatShader;
@@ -118,7 +118,7 @@ pub fn transformField(
 
 pub fn transformUVs(
     allocator: std.mem.Allocator,
-    uvs: *const TexMap,
+    uvs: *const UVMap,
     connect: *const Connect,
 ) !NDArray(f64) {
     const elems_num = connect.elem_n;

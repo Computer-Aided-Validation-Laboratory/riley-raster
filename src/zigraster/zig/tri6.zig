@@ -10,7 +10,7 @@ const BBox = rops.BBox;
 const ActiveTile = rops.ActiveTile;
 const Vec3OfSlices = rops.Vec3OfSlices;
 
-const ti = @import("textureinterp.zig");
+const texops = @import("textureops.zig");
 const shaderops = @import("shaderops.zig");
 const FlatShader = shaderops.FlatShader;
 const TexShader = shaderops.TexShader;

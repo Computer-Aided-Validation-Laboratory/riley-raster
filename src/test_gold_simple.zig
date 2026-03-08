@@ -21,7 +21,7 @@ test "Gold Simple Suite" {
                                            .tri6, 
                                            .quad4ibi, .quad4newton,
                                            .quad8, .quad9 };
-    const interp_types = [_]common.textureinterp.InterpType{ .cubic_lut_lerp };
+    const interp_types = [_]common.texops.InterpType{ .cubic_lut_lerp };
     const pixel_num = [_]u32{ 320, 200 };
 
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);

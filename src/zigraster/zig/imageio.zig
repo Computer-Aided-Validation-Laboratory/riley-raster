@@ -3,6 +3,9 @@ const assert = std.debug.assert;
 const print = std.debug.print;
 
 const MatSlice = @import("matslice.zig").MatSlice;
+const texops = @import("textureops.zig");
+pub const Pixel = texops.Pixel;
+pub const Texture = texops.Texture;
 
 pub const ImageFormat = enum {
     csv,
@@ -10,76 +13,6 @@ pub const ImageFormat = enum {
     bmp,
     tiff,
 };
-
-pub fn Pixel(comptime T: type, comptime channels: usize) type {
-    return struct {
-        channels: [channels]T,
-    };
-}
-
-pub fn Texture(comptime T: type, comptime channels: usize) type {
-    return struct {
-        const Self = @This();
-        const P = Pixel(T, channels);
-
-        pixels: []P,
-        rows_n: usize,
-        cols_n: usize,
-
-        pub fn init(allocator: std.mem.Allocator, rows: usize, cols: usize) !Self {
-            const pixels = try allocator.alloc(P, rows * cols);
-            return Self{
-                .pixels = pixels,
-                .rows_n = rows,
-                .cols_n = cols,
-            };
-        }
-
-        pub fn deinit(self: *const Self, allocator: std.mem.Allocator) void {
-            allocator.free(self.pixels);
-        }
-
-        pub fn getPixel(self: Self, row: usize, col: usize) P {
-            assert(row < self.rows_n);
-            assert(col < self.cols_n);
-            return self.pixels[row * self.cols_n + col];
-        }
-
-        pub fn setPixel(self: *Self, row: usize, col: usize, pixel: P) void {
-            assert(row < self.rows_n);
-            assert(col < self.cols_n);
-            self.pixels[row * self.cols_n + col] = pixel;
-        }
-
-        pub fn saveCSV(self: *const Self,
-                       io: std.Io, 
-                       out_dir: std.Io.Dir, 
-                       file_name: []const u8) !void {
-                       
-            const csv_file = try out_dir.createFile(io, file_name, .{});
-            defer csv_file.close(io);
-
-            var write_buf: [4096]u8 = undefined;
-            var file_writer = csv_file.writer(io, &write_buf);
-            const writer = &file_writer.interface;
-
-            for (0..self.rows_n) |rr| {
-                for (0..self.cols_n) |cc| {
-                    const px = self.getPixel(rr, cc);
-                    for (0..channels) |ch| {
-                        try writer.print("{d}", .{px.channels[ch]});
-                        if (ch < channels - 1) {
-                            try writer.writeAll(":");
-                        }
-                    }
-                    try writer.writeAll(",");
-                }
-                try writer.print("\n",.{});
-            }
-            try writer.flush();
-        }
-    };
-}
 
 //------------------------------------------------------------------------------
 // MatSlice IO

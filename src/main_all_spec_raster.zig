@@ -151,7 +151,7 @@ pub fn main() !void {
         const path_uvs = path_data ++ "uvs.csv";
         const path_tex = "texture/speckle.bmp";
         
-        const uvs = try uvio.loadTexMap(page_alloc, io, path_uvs);
+        const uvs = try uvio.loadUVMap(page_alloc, io, path_uvs);
         const texture = try iio.loadBMP(page_alloc, io, path_tex, u8, 1);
         const elem_uvs = try mr.transformUVs(page_alloc, &uvs, &sim_data.connect);
         

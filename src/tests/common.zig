@@ -18,7 +18,7 @@ pub const specraster = @import("../zigraster/zig/specraster.zig");
 pub const RasterConfig = specraster.RasterConfig;
 
 pub const iio = @import("../zigraster/zig/imageio.zig");
-pub const textureinterp = @import("../zigraster/zig/textureinterp.zig");
+pub const texops = @import("../zigraster/zig/textureops.zig");
 pub const uvio = @import("../zigraster/zig/uvio.zig");
 
 
@@ -147,7 +147,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                        fov_scale: f64,
                        texture: iio.Texture(u8, 1),
                        pixel_num: [2]u32,
-                       interp_types: []const textureinterp.InterpType,
+                       interp_types: []const texops.InterpType,
                        gold_dir_root: []const u8,
                        data_dir_root: []const u8,
                        rel_tol: f64,
@@ -173,7 +173,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
     
     var sim_data = try loadData(aa, io, data_path);
     const uv_path = try std.fmt.allocPrint(aa, "{s}/uvs.csv", .{data_path});
-    var uvs = try uvio.loadTexMap(aa, io, uv_path);
+    var uvs = try uvio.loadUVMap(aa, io, uv_path);
 
     const elem_coords = try mr.transformCoords(aa, &sim_data.coords, &sim_data.connect);
     const elem_disp = try mr.transformField(aa, &sim_data.connect, &sim_data.field);

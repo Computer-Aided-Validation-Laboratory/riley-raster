@@ -11,7 +11,7 @@ pub const CameraOps = @import("../src/zigraster/zig/camera.zig").CameraOps;
 pub const specraster = @import("../src/zigraster/zig/specraster.zig");
 pub const RasterConfig = specraster.RasterConfig;
 pub const iio = @import("../src/zigraster/zig/imageio.zig");
-pub const textureinterp = @import("../src/zigraster/zig/textureinterp.zig");
+pub const texops = @import("../src/zigraster/zig/textureops.zig");
 pub const uvio = @import("../src/zigraster/zig/uvio.zig");
 
 pub fn loadData(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !SimData {
@@ -66,7 +66,7 @@ pub fn runGenerationExt(
     fov_scale: f64,
     texture: iio.Texture(u8, 1),
     pixel_num: [2]u32,
-    interp_types: []const textureinterp.InterpType,
+    interp_types: []const texops.InterpType,
     gold_dir_root: []const u8,
     data_dir_root: []const u8,
 ) !void {
@@ -93,7 +93,7 @@ pub fn runGenerationExt(
             continue;
         };
         const uv_p = try std.fmt.allocPrint(aa, "{s}/uvs.csv", .{data_path});
-        var uvs = try uvio.loadTexMap(aa, io, uv_p);
+        var uvs = try uvio.loadUVMap(aa, io, uv_p);
 
         const elem_coords = try mr.transformCoords(aa, &sim_data.coords, &sim_data.connect);
         const elem_disp = try mr.transformField(aa, &sim_data.connect, &sim_data.field);
@@ -161,7 +161,7 @@ pub fn runGeneration(
     fov_scale: f64,
     texture: iio.Texture(u8, 1),
 ) !void {
-    const interp_types = [_]textureinterp.InterpType{.cubic_lut_lerp};
+    const interp_types = [_]texops.InterpType{.cubic_lut_lerp};
     const pixel_num = [_]u32{ 320, 200 };
     return runGenerationExt(
         allocator,

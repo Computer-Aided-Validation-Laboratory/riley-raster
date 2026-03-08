@@ -3,8 +3,8 @@ const NDArray = @import("ndarray.zig").NDArray;
 const MatSlice = @import("matslice.zig").MatSlice;
 const iio = @import("imageio.zig");
 const Texture = iio.Texture;
-const texinterp = @import("textureinterp.zig");
-const InterpType = texinterp.InterpType;
+const texops = @import("textureops.zig");
+const InterpType = texops.InterpType;
 
 pub const FlatShader = struct {
     field: NDArray(f64),
@@ -94,7 +94,7 @@ pub inline fn fillTex(
         v_at += weights[nn] * sh.uvs.elems[uv_off + c_stride + nn];
     }
 
-    spx_image_scratch.elems[idx] = texinterp.sampleGreyscale(
+    spx_image_scratch.elems[idx] = texops.sampleGreyscale(
         interp_type,
         sh.texture,
         u_at,
@@ -125,7 +125,7 @@ pub inline fn fillTexPerspective(
         v_at += weights[nn] * sh.uvs.elems[uv_off + c_stride + nn] * inv_z;
     }
 
-    spx_image_scratch.elems[idx] = texinterp.sampleGreyscale(
+    spx_image_scratch.elems[idx] = texops.sampleGreyscale(
         interp_type,
         sh.texture,
         u_at * spx_z,
