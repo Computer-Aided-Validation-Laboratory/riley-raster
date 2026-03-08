@@ -249,11 +249,8 @@ fn rasterInternal(comptime mesh_type: MeshType,
         //else => unreachable,
     };
 
-    const ShaderType = @TypeOf(shader);
-    
     //-----------------------------------------------------------------------------------------
-    // CONSTANTS
-    
+    // CONSTANTS    
     // MESH DIMS
     const dim_elem: usize = 0; 
     const elems_num: usize = coords.dims[dim_elem];
@@ -351,33 +348,16 @@ fn rasterInternal(comptime mesh_type: MeshType,
     // Tiling Raster Step 5: Main Raster Loop
     time_start = Timestamp.now(io, .awake);
 
-    if (comptime ShaderType == FlatShader) {
-        try MeshFun.rasterElemsFlat(arena_alloc, 
-                                    camera, 
-                                    frame_ind,
-                                    tile_size,
-                                    active_tiles,
-                                    overlap_bboxes,
-                                    coords,
-                                    &shader,
-                                    image_out_arr,);
+    try MeshFun.rasterElems(arena_alloc, 
+                            camera, 
+                            frame_ind,
+                            tile_size,
+                            active_tiles,
+                            overlap_bboxes,
+                            coords,
+                            &shader,
+                            image_out_arr,);
                                     
-    } else if (comptime ShaderType == TexShader) {
-        switch (shader.interp_type) {
-            inline else => |interp_tag| {
-                try MeshFun.rasterElemsTex(interp_tag, 
-                                           arena_alloc, 
-                                           camera, 
-                                           tile_size, 
-                                           active_tiles,
-                                           overlap_bboxes, 
-                                           coords, 
-                                           &shader, 
-                                           image_out_arr,
-                );
-            }
-        }
-    }    
     time_end = Timestamp.now(io, .awake);
     const time5_raster_loop: f64 = @floatFromInt(
         time_start.durationTo(time_end).raw.nanoseconds);
