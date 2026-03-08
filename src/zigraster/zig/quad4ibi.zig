@@ -94,14 +94,16 @@ pub fn rasterElems(
 ) !void {
     @setFloatMode(.optimized);
 
-    const ShaderType = @TypeOf(shader);
-    const is_flat = (ShaderType == *const FlatShader);
-
     const N: usize = 4;
     const tol_den = 1e-12;
 
-    const fields_num: usize = if (is_flat) shader.field.dims[2] else 1;
-    const actual_fields = if (is_flat) @min(fields_num, 3) else 1;
+    const fields_num: usize = switch (@TypeOf(shader)) {
+        *const FlatShader => shader.field.dims[2],
+        *const TexShader => 1,
+        else => @compileError("Unsupported shader type"),
+    };
+    const actual_fields = if (@TypeOf(shader) == *const FlatShader) 
+        @min(fields_num, 3) else 1;
 
     const sub_samp = @as(usize, @intCast(camera.sub_sample));
     const spx_tile_size = tile_size * sub_samp;
@@ -114,7 +116,8 @@ pub fn rasterElems(
     defer allocator.free(spx_inv_z_scratch);
     const spx_img_mem = try allocator.alloc(f64, spx_tile_size * spx_tile_size * fields_num);
     defer allocator.free(spx_img_mem);
-    var spx_image_scratch = MatSlice(f64).init(spx_img_mem, spx_tile_size * spx_tile_size, fields_num);
+    var spx_image_scratch = MatSlice(f64).init(spx_img_mem, spx_tile_size * spx_tile_size, 
+                                               fields_num);
     const spx_field_avg = try allocator.alloc(f64, fields_num);
     defer allocator.free(spx_field_avg);
 
@@ -122,8 +125,10 @@ pub fn rasterElems(
         @memset(spx_inv_z_scratch, 0.0);
         @memset(spx_image_scratch.elems, 0.0);
 
-        for (overlap_bboxes[tile.overlap_start .. tile.overlap_start + tile.overlap_count]) |ov| {
-            const nr = try rops.loadVec3SlicesFromElemArray(N, f64, elem_coord_arr, ov.elem_ind);
+        for (overlap_bboxes[tile.overlap_start .. 
+                            tile.overlap_start + tile.overlap_count]) |ov| {
+            const nr = try rops.loadVec3SlicesFromElemArray(N, f64, elem_coord_arr, 
+                                                            ov.elem_ind);
 
             const k_ae_x = nr.x[0] - nr.x[1] + nr.x[2] - nr.x[3];
             const k_ae_z = nr.z[0] - nr.z[1] + nr.z[2] - nr.z[3];
@@ -143,106 +148,128 @@ pub fn rasterElems(
             const k_df_x = nr.y[0];
             const k_df_z = nr.z[0];
 
-            var f_vals: [if (is_flat) 3 else 0][4]f64 = undefined;
-            var uv_vals: [if (is_flat) 0 else 2][4]f64 = undefined;
-
-            if (is_flat) {
-                const elem_field_stride = shader.field.strides[1];
-                const ff_stride = shader.field.strides[2];
-                const elem_off = frame_ind * shader.field.strides[0] + ov.elem_ind * elem_field_stride;
-                for (0..actual_fields) |ff| {
-                    const ff_off = elem_off + ff * ff_stride;
-                    inline for (0..4) |ii| {
-                        f_vals[ff][ii] = shader.field.elems[ff_off + ii];
-                    }
-                }
-            } else {
-                const elem_uv_stride = shader.uvs.strides[0];
-                const comp_uv_stride = shader.uvs.strides[1];
-                const elem_uv_off = ov.elem_ind * elem_uv_stride;
-                inline for (0..2) |cc| {
-                    const comp_off = elem_uv_off + cc * comp_uv_stride;
-                    inline for (0..4) |ii| {
-                        uv_vals[cc][ii] = shader.uvs.elems[comp_off + ii];
-                    }
-                }
-            }
-
             const s_sy = sub_samp * (@as(usize, ov.y_min) - tile.y_px_min);
             const s_ey = sub_samp * (@as(usize, ov.y_max) - tile.y_px_min);
             const s_sx = sub_samp * (@as(usize, ov.x_min) - tile.x_px_min);
             const s_ex = sub_samp * (@as(usize, ov.x_max) - tile.x_px_min);
 
-            for (s_sy..s_ey) |yy| {
-                const row_off = yy * spx_tile_size;
-                const spx_y = @as(f64, @floatFromInt(tile.y_px_min)) +
-                    (@as(f64, @floatFromInt(yy)) + 0.5) * spx_step;
-                const tys = spx_y - y_off;
+            switch (@TypeOf(shader)) {
+                *const FlatShader => {
+                    const e_stride = shader.field.strides[1];
+                    const f_stride = shader.field.strides[2];
+                    const e_off = frame_ind * shader.field.strides[0] + 
+                                  ov.elem_ind * e_stride;
+                    var f_vals = [3][4]f64{ undefined, undefined, undefined };
+                    for (0..actual_fields) |ff| {
+                        const ff_off = e_off + ff * f_stride;
+                        inline for (0..4) |ii| f_vals[ff][ii] = shader.field.elems[ff_off + ii];
+                    }
 
-                for (s_sx..s_ex) |xx| {
-                    const spx_x = @as(f64, @floatFromInt(tile.x_px_min)) +
-                        (@as(f64, @floatFromInt(xx)) + 0.5) * spx_step;
-                    const txs = spx_x - x_off;
-
-                    const ae = k_ae_x - k_ae_z * txs;
-                    const be = k_be_x - k_be_z * txs;
-                    const ce = k_ce_x - k_ce_z * txs;
-                    const de = k_de_x - k_de_z * txs;
-
-                    const af = k_af_x - k_af_z * tys;
-                    const bf = k_bf_x - k_bf_z * tys;
-                    const cf = k_cf_x - k_cf_z * tys;
-                    const df = k_df_x - k_df_z * tys;
-
-                    const qA = af * be - ae * bf;
-                    const qB = af * de - ae * df + be * cf - bf * ce;
-                    const qC = cf * de - ce * df;
-
-                    var u: f64 = -1.0;
-                    if (solveQuadraticRobust(qA, qB, qC, &u)) {
-                        const den_e = ae * u + ce;
-                        const den_f = af * u + cf;
-                        var v: f64 = -1.0;
-
-                        if (@abs(den_f) > @abs(den_e)) {
-                            if (@abs(den_f) > tol_den) v = -(bf * u + df) / den_f;
-                        } else {
-                            if (@abs(den_e) > @abs(den_f)) {
-                                if (@abs(den_e) > tol_den) v = -(be * u + de) / den_e;
-                            } else {
-                                if (@abs(den_e) > tol_den) v = -(be * u + de) / den_e;
-                            }
-                        }
-
-                        if (v >= -1e-7 and v <= 1.0 + 1e-7) {
-                            const N0 = (1.0 - u) * (1.0 - v);
-                            const N1 = u * (1.0 - v);
-                            const N2 = u * v;
-                            const N3 = (1.0 - u) * v;
-
-                            const sw: f64 = N0 * nr.z[0] + N1 * nr.z[1] +
-                                N2 * nr.z[2] + N3 * nr.z[3];
-                            const inv_z = 1.0 / sw;
-                            const idx = row_off + xx;
-
-                            if (inv_z > spx_inv_z_scratch[idx]) {
-                                spx_inv_z_scratch[idx] = inv_z;
-                                if (is_flat) {
-                                    fillFlat(actual_fields, fields_num, N0, N1, N2, N3, f_vals, idx, &spx_image_scratch);
+                    for (s_sy..s_ey) |yy| {
+                        const row_off = yy * spx_tile_size;
+                        const spx_y = @as(f64, @floatFromInt(tile.y_px_min)) +
+                            (@as(f64, @floatFromInt(yy)) + 0.5) * spx_step;
+                        const tys = spx_y - y_off;
+                        for (s_sx..s_ex) |xx| {
+                            const spx_x = @as(f64, @floatFromInt(tile.x_px_min)) +
+                                (@as(f64, @floatFromInt(xx)) + 0.5) * spx_step;
+                            const txs = spx_x - x_off;
+                            const ae = k_ae_x - k_ae_z * txs;
+                            const be = k_be_x - k_be_z * txs;
+                            const ce = k_ce_x - k_ce_z * txs;
+                            const de = k_de_x - k_de_z * txs;
+                            const af = k_af_x - k_af_z * tys;
+                            const bf = k_bf_x - k_bf_z * tys;
+                            const cf = k_cf_x - k_cf_z * tys;
+                            const df = k_df_x - k_df_z * tys;
+                            const qA = af * be - ae * bf;
+                            const qB = af * de - ae * df + be * cf - bf * ce;
+                            const qC = cf * de - ce * df;
+                            var u: f64 = -1.0;
+                            if (solveQuadraticRobust(qA, qB, qC, &u)) {
+                                const den_e = ae * u + ce; const den_f = af * u + cf;
+                                var v: f64 = -1.0;
+                                if (@abs(den_f) > @abs(den_e)) {
+                                    if (@abs(den_f) > tol_den) v = -(bf * u + df) / den_f;
                                 } else {
-                                    switch (shader.interp_type) {
-                                        inline else => |interp_tag| {
-                                            fillTex(interp_tag, N0, N1, N2, N3, uv_vals, shader, idx, &spx_image_scratch);
-                                        },
+                                    if (@abs(den_e) > tol_den) v = -(be * u + de) / den_e;
+                                }
+                                if (v >= -1e-7 and v <= 1.0 + 1e-7) {
+                                    const N0 = (1.0-u)*(1.0-v); const N1 = u*(1.0-v);
+                                    const N2 = u*v; const N3 = (1.0-u)*v;
+                                    const sw = N0*nr.z[0] + N1*nr.z[1] + N2*nr.z[2] + N3*nr.z[3];
+                                    const inv_z = 1.0 / sw; const idx = row_off + xx;
+                                    if (inv_z > spx_inv_z_scratch[idx]) {
+                                        spx_inv_z_scratch[idx] = inv_z;
+                                        fillFlat(actual_fields, fields_num, N0, N1, N2, N3, 
+                                                 f_vals, idx, &spx_image_scratch);
                                     }
                                 }
                             }
                         }
                     }
-                }
+                },
+                *const TexShader => {
+                    const e_stride = shader.uvs.strides[0];
+                    const c_stride = shader.uvs.strides[1];
+                    const uv_off = ov.elem_ind * e_stride;
+                    var uv_vals = [2][4]f64{ undefined, undefined };
+                    inline for (0..2) |cc| {
+                        const c_off = uv_off + cc * c_stride;
+                        inline for (0..4) |ii| uv_vals[cc][ii] = shader.uvs.elems[c_off + ii];
+                    }
+
+                    for (s_sy..s_ey) |yy| {
+                        const row_off = yy * spx_tile_size;
+                        const spx_y = @as(f64, @floatFromInt(tile.y_px_min)) +
+                            (@as(f64, @floatFromInt(yy)) + 0.5) * spx_step;
+                        const tys = spx_y - y_off;
+                        for (s_sx..s_ex) |xx| {
+                            const spx_x = @as(f64, @floatFromInt(tile.x_px_min)) +
+                                (@as(f64, @floatFromInt(xx)) + 0.5) * spx_step;
+                            const txs = spx_x - x_off;
+                            const ae = k_ae_x - k_ae_z * txs;
+                            const be = k_be_x - k_be_z * txs;
+                            const ce = k_ce_x - k_ce_z * txs;
+                            const de = k_de_x - k_de_z * txs;
+                            const af = k_af_x - k_af_z * tys;
+                            const bf = k_bf_x - k_bf_z * tys;
+                            const cf = k_cf_x - k_cf_z * tys;
+                            const df = k_df_x - k_df_z * tys;
+                            const qA = af * be - ae * bf;
+                            const qB = af * de - ae * df + be * cf - bf * ce;
+                            const qC = cf * de - ce * df;
+                            var u: f64 = -1.0;
+                            if (solveQuadraticRobust(qA, qB, qC, &u)) {
+                                const den_e = ae * u + ce; const den_f = af * u + cf;
+                                var v: f64 = -1.0;
+                                if (@abs(den_f) > @abs(den_e)) {
+                                    if (@abs(den_f) > tol_den) v = -(bf * u + df) / den_f;
+                                } else {
+                                    if (@abs(den_e) > tol_den) v = -(be * u + de) / den_e;
+                                }
+                                if (v >= -1e-7 and v <= 1.0 + 1e-7) {
+                                    const N0 = (1.0-u)*(1.0-v); const N1 = u*(1.0-v);
+                                    const N2 = u*v; const N3 = (1.0-u)*v;
+                                    const sw = N0*nr.z[0] + N1*nr.z[1] + N2*nr.z[2] + N3*nr.z[3];
+                                    const inv_z = 1.0 / sw; const idx = row_off + xx;
+                                    if (inv_z > spx_inv_z_scratch[idx]) {
+                                        spx_inv_z_scratch[idx] = inv_z;
+                                        switch (shader.interp_type) {
+                                            inline else => |it| fillTex(it, N0, N1, N2, N3, 
+                                                uv_vals, shader, idx, &spx_image_scratch),
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                else => unreachable,
             }
         }
-
-        rops.averageScratch(tile, tile_size, @intCast(camera.pixels_num[0]), @intCast(camera.pixels_num[1]), sub_samp, spx_tile_size, fields_num, &spx_image_scratch, spx_field_avg, image_out_arr);
+        rops.averageScratch(tile, tile_size, @intCast(camera.pixels_num[0]), 
+                            @intCast(camera.pixels_num[1]), sub_samp, spx_tile_size, 
+                            fields_num, &spx_image_scratch, spx_field_avg, image_out_arr);
     }
 }
