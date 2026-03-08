@@ -15,14 +15,15 @@ const FlatShader = shader.FlatShader;
 const TexShader = shader.TexShader;
 
 const newton = @import("newton.zig");
+const shapefun = @import("shapefun.zig");
 
-fn shapeFunctions4(u: f64, v: f64, n_v: *[4]f64, dNu: *[4]f64, dNv: *[4]f64) void {
-    const shapefun = @import("shapefun.zig");
-    shapefun.shapeFunctions(4, u, v, n_v, dNu, dNv);
+const N: usize = 4;
+
+fn shapeFunctions4(u: f64, v: f64, n_v: *[N]f64, dNu: *[N]f64, dNv: *[N]f64) void {
+    shapefun.shapeFunctions(N, u, v, n_v, dNu, dNv);
 }
 
 fn shadeFlat(
-    comptime N: usize,
     frame_ind: usize,
     actual_fields: usize,
     fields_num: usize,
@@ -54,11 +55,11 @@ fn shadeFlat(
             const txs = spx_x - x_off;
             var u: f64 = 0.0; var v: f64 = 0.0;
             if (newton.solveInverse(N, txs, tys, nr.x, nr.y, nr.z, u, v, &u, &v)) {
-                var n_v: [4]f64 = undefined; var dNu: [4]f64 = undefined; 
-                var dNv: [4]f64 = undefined;
+                var n_v: [N]f64 = undefined; var dNu: [N]f64 = undefined; 
+                var dNv: [N]f64 = undefined;
                 shapeFunctions4(u, v, &n_v, &dNu, &dNv);
                 var sw: f64 = 0.0;
-                for (0..4) |i| sw += n_v[i] * nr.z[i];
+                inline for (0..N) |i| sw += n_v[i] * nr.z[i];
                 const inv_z = 1.0 / sw; const idx = row_off + xx;
                 if (inv_z > spx_inv_z_scratch[idx]) {
                     spx_inv_z_scratch[idx] = inv_z;
@@ -71,7 +72,6 @@ fn shadeFlat(
 }
 
 fn shadeTex(
-    comptime N: usize,
     ov: BBox,
     tile: ActiveTile,
     sub_samp: usize,
@@ -100,11 +100,11 @@ fn shadeTex(
             const txs = spx_x - x_off;
             var u: f64 = 0.0; var v: f64 = 0.0;
             if (newton.solveInverse(N, txs, tys, nr.x, nr.y, nr.z, u, v, &u, &v)) {
-                var n_v: [4]f64 = undefined; var dNu: [4]f64 = undefined; 
-                var dNv: [4]f64 = undefined;
+                var n_v: [N]f64 = undefined; var dNu: [N]f64 = undefined; 
+                var dNv: [N]f64 = undefined;
                 shapeFunctions4(u, v, &n_v, &dNu, &dNv);
                 var sw: f64 = 0.0;
-                for (0..4) |i| sw += n_v[i] * nr.z[i];
+                inline for (0..N) |i| sw += n_v[i] * nr.z[i];
                 const inv_z = 1.0 / sw; const idx = row_off + xx;
                 if (inv_z > spx_inv_z_scratch[idx]) {
                     spx_inv_z_scratch[idx] = inv_z;
@@ -131,7 +131,6 @@ pub fn rasterElems(
 ) !void {
     @setFloatMode(.optimized);
 
-    const N: usize = 4;
     const fields_num: usize = switch (@TypeOf(sh)) {
         *const FlatShader => sh.field.dims[2],
         *const TexShader => 1,
@@ -165,10 +164,10 @@ pub fn rasterElems(
                                                             ov.elem_ind);
 
             switch (@TypeOf(sh)) {
-                *const FlatShader => shadeFlat(N, frame_ind, actual_fields, fields_num, 
+                *const FlatShader => shadeFlat(frame_ind, actual_fields, fields_num, 
                     ov, tile, sub_samp, spx_tile_size, spx_step, x_off, y_off, nr, sh, 
                     spx_inv_z_scratch, &spx_image_scratch),
-                *const TexShader => shadeTex(N, ov, tile, sub_samp, spx_tile_size, 
+                *const TexShader => shadeTex(ov, tile, sub_samp, spx_tile_size, 
                     spx_step, x_off, y_off, nr, sh, spx_inv_z_scratch, &spx_image_scratch),
                 else => unreachable,
             }

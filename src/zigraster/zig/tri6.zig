@@ -16,11 +16,12 @@ const FlatShader = shader.FlatShader;
 const TexShader = shader.TexShader;
 
 const newton = @import("newton.zig");
-const SolverConfig = newton.SolverConfig;
+const shapefun = @import("shapefun.zig");
 
-fn shapeFunctions(u: f64, v: f64, n_v: *[6]f64, dNu: *[6]f64, dNv: *[6]f64) void {
-    const shapefun = @import("shapefun.zig");
-    shapefun.shapeFunctions(6, u, v, n_v, dNu, dNv);
+const N: usize = 6;
+
+fn shapeFunctions(u: f64, v: f64, n_v: *[N]f64, dNu: *[N]f64, dNv: *[N]f64) void {
+    shapefun.shapeFunctions(N, u, v, n_v, dNu, dNv);
 }
 
 fn getTessellatedGuess(
@@ -70,7 +71,6 @@ fn getTessellatedGuess(
 }
 
 fn shadeFlat(
-    comptime N: usize,
     frame_ind: usize,
     actual_fields: usize,
     fields_num: usize,
@@ -115,13 +115,13 @@ fn shadeFlat(
             }
 
             if (converged) {
-                var n_vals: [6]f64 = undefined;
-                var dN_dxi: [6]f64 = undefined;
-                var dN_deta: [6]f64 = undefined;
+                var n_vals: [N]f64 = undefined;
+                var dN_dxi: [N]f64 = undefined;
+                var dN_deta: [N]f64 = undefined;
                 shapeFunctions(xi, eta, &n_vals, &dN_dxi, &dN_deta);
 
                 var sw: f64 = 0.0;
-                for (0..6) |i| sw += n_vals[i] * nr.z[i];
+                inline for (0..N) |i| sw += n_vals[i] * nr.z[i];
                 const inv_z = 1.0 / sw;
 
                 const idx = row_off + xx;
@@ -136,7 +136,6 @@ fn shadeFlat(
 }
 
 fn shadeTex(
-    comptime N: usize,
     ov: BBox,
     tile: ActiveTile,
     sub_samp: usize,
@@ -178,13 +177,13 @@ fn shadeTex(
             }
 
             if (converged) {
-                var n_vals: [6]f64 = undefined;
-                var dN_dxi: [6]f64 = undefined;
-                var dN_deta: [6]f64 = undefined;
+                var n_vals: [N]f64 = undefined;
+                var dN_dxi: [N]f64 = undefined;
+                var dN_deta: [N]f64 = undefined;
                 shapeFunctions(xi, eta, &n_vals, &dN_dxi, &dN_deta);
 
                 var sw: f64 = 0.0;
-                for (0..6) |i| sw += n_vals[i] * nr.z[i];
+                inline for (0..N) |i| sw += n_vals[i] * nr.z[i];
                 const inv_z = 1.0 / sw;
 
                 const idx = row_off + xx;
@@ -213,7 +212,6 @@ pub fn rasterElems(
 ) !void {
     @setFloatMode(.optimized);
 
-    const N: usize = 6;
     const fields_num: usize = switch (@TypeOf(sh)) {
         *const FlatShader => sh.field.dims[2],
         *const TexShader => 1,
@@ -250,10 +248,10 @@ pub fn rasterElems(
                                                             ov.elem_ind);
 
             switch (@TypeOf(sh)) {
-                *const FlatShader => shadeFlat(N, frame_ind, actual_fields, fields_num, 
+                *const FlatShader => shadeFlat(frame_ind, actual_fields, fields_num, 
                     ov, tile, sub_samp, spx_tile_size, spx_step, x_off, y_off, nr, sh, 
                     spx_inv_z_scratch, &spx_image_scratch),
-                *const TexShader => shadeTex(N, ov, tile, sub_samp, spx_tile_size, 
+                *const TexShader => shadeTex(ov, tile, sub_samp, spx_tile_size, 
                     spx_step, x_off, y_off, nr, sh, spx_inv_z_scratch, &spx_image_scratch),
                 else => unreachable,
             }

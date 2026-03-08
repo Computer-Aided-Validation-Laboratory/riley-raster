@@ -1,5 +1,4 @@
 const std = @import("std");
-const print = std.debug.print;
 
 const Camera = @import("camera.zig").Camera;
 
@@ -11,13 +10,13 @@ const BBox = rops.BBox;
 const ActiveTile = rops.ActiveTile;
 const Vec3OfSlices = rops.Vec3OfSlices;
 
-const ti = @import("textureinterp.zig");
 const shader = @import("shader.zig");
 const FlatShader = shader.FlatShader;
 const TexShader = shader.TexShader;
 
+const N: usize = 3;
+
 fn shadeFlat(
-    comptime N: usize,
     frame_ind: usize,
     actual_fields: usize,
     fields_num: usize,
@@ -52,15 +51,18 @@ fn shadeFlat(
 
         for (s_sx..s_ex) |xx| {
             var w: [N]f64 = undefined;
-            w[0] = rops.edgeFun3(nr.x[1], nr.y[1], nr.x[2], nr.y[2], spx_coord_x, spx_coord_y);
-            w[1] = rops.edgeFun3(nr.x[2], nr.y[2], nr.x[0], nr.y[0], spx_coord_x, spx_coord_y);
-            w[2] = rops.edgeFun3(nr.x[0], nr.y[0], nr.x[1], nr.y[1], spx_coord_x, spx_coord_y);
+            w[0] = rops.edgeFun3(nr.x[1], nr.y[1], nr.x[2], nr.y[2], spx_coord_x, 
+                                 spx_coord_y);
+            w[1] = rops.edgeFun3(nr.x[2], nr.y[2], nr.x[0], nr.y[0], spx_coord_x, 
+                                 spx_coord_y);
+            w[2] = rops.edgeFun3(nr.x[0], nr.y[0], nr.x[1], nr.y[1], spx_coord_x, 
+                                 spx_coord_y);
 
             inline for (0..N) |nn| w[nn] *= inv_elem_area;
 
             if (w[0] >= -tol_edge and w[1] >= -tol_edge and w[2] >= -tol_edge) {
                 var spx_inv_z: f64 = 0.0;
-                for (0..N) |nn| spx_inv_z += w[nn] * nodes_inv_z[nn];
+                inline for (0..N) |nn| spx_inv_z += w[nn] * nodes_inv_z[nn];
 
                 const idx = row_off + xx;
                 if (spx_inv_z > spx_inv_z_scratch[idx]) {
@@ -78,7 +80,6 @@ fn shadeFlat(
 }
 
 fn shadeTex(
-    comptime N: usize,
     ol: BBox,
     tile: ActiveTile,
     sub_samp: usize,
@@ -110,15 +111,18 @@ fn shadeTex(
 
         for (s_sx..s_ex) |xx| {
             var w: [N]f64 = undefined;
-            w[0] = rops.edgeFun3(nr.x[1], nr.y[1], nr.x[2], nr.y[2], spx_coord_x, spx_coord_y);
-            w[1] = rops.edgeFun3(nr.x[2], nr.y[2], nr.x[0], nr.y[0], spx_coord_x, spx_coord_y);
-            w[2] = rops.edgeFun3(nr.x[0], nr.y[0], nr.x[1], nr.y[1], spx_coord_x, spx_coord_y);
+            w[0] = rops.edgeFun3(nr.x[1], nr.y[1], nr.x[2], nr.y[2], spx_coord_x, 
+                                 spx_coord_y);
+            w[1] = rops.edgeFun3(nr.x[2], nr.y[2], nr.x[0], nr.y[0], spx_coord_x, 
+                                 spx_coord_y);
+            w[2] = rops.edgeFun3(nr.x[0], nr.y[0], nr.x[1], nr.y[1], spx_coord_x, 
+                                 spx_coord_y);
 
             inline for (0..N) |nn| w[nn] *= inv_elem_area;
 
             if (w[0] >= -tol_edge and w[1] >= -tol_edge and w[2] >= -tol_edge) {
                 var spx_inv_z: f64 = 0.0;
-                for (0..N) |nn| spx_inv_z += w[nn] * nodes_inv_z[nn];
+                inline for (0..N) |nn| spx_inv_z += w[nn] * nodes_inv_z[nn];
 
                 const idx = row_off + xx;
                 if (spx_inv_z > spx_inv_z_scratch[idx]) {
@@ -149,8 +153,6 @@ pub fn rasterElems(
     image_out_arr: *NDArray(f64),
 ) !void {
     @setFloatMode(.optimized);
-
-    const N: usize = 3;
 
     const fields_num: usize = switch (@TypeOf(sh)) {
         *const FlatShader => sh.field.dims[2],
@@ -201,10 +203,10 @@ pub fn rasterElems(
             );
 
             switch (@TypeOf(sh)) {
-                *const FlatShader => shadeFlat(N, frame_ind, actual_fields, fields_num, 
+                *const FlatShader => shadeFlat(frame_ind, actual_fields, fields_num, 
                     ol, tile, sub_samp, spx_tile_size, spx_step, spx_offset, nodes_inv_z, 
                     inv_elem_area, nr, sh, spx_inv_z_scratch, &spx_image_scratch),
-                *const TexShader => shadeTex(N, ol, tile, sub_samp, spx_tile_size, 
+                *const TexShader => shadeTex(ol, tile, sub_samp, spx_tile_size, 
                     spx_step, spx_offset, nodes_inv_z, inv_elem_area, nr, sh, 
                     spx_inv_z_scratch, &spx_image_scratch),
                 else => unreachable,

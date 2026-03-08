@@ -10,13 +10,13 @@ const BBox = rops.BBox;
 const ActiveTile = rops.ActiveTile;
 const Vec3OfSlices = rops.Vec3OfSlices;
 
-const ti = @import("textureinterp.zig");
 const shader = @import("shader.zig");
 const FlatShader = shader.FlatShader;
 const TexShader = shader.TexShader;
 
+const N: usize = 3;
+
 fn shadeFlat(
-    comptime N: usize,
     frame_ind: usize,
     actual_fields: usize,
     fields_num: usize,
@@ -81,7 +81,6 @@ fn shadeFlat(
 }
 
 fn shadeTex(
-    comptime N: usize,
     ol: BBox,
     tile: ActiveTile,
     sub_samp: usize,
@@ -157,7 +156,6 @@ pub fn rasterElems(
 ) !void {
     @setFloatMode(.optimized);
 
-    const N: usize = 3;
     const tol_area: f64 = 1e-12;
 
     const fields_num: usize = switch (@TypeOf(sh)) {
@@ -208,10 +206,10 @@ pub fn rasterElems(
             const inv_elem_area: f64 = 1.0 / area;
 
             switch (@TypeOf(sh)) {
-                *const FlatShader => shadeFlat(N, frame_ind, actual_fields, fields_num, 
+                *const FlatShader => shadeFlat(frame_ind, actual_fields, fields_num, 
                     ol, tile, sub_samp, spx_tile_size, spx_step, nodes_inv_z, 
                     inv_elem_area, nr, sh, spx_inv_z_scratch, &spx_image_scratch),
-                *const TexShader => shadeTex(N, ol, tile, sub_samp, spx_tile_size, 
+                *const TexShader => shadeTex(ol, tile, sub_samp, spx_tile_size, 
                     spx_step, nodes_inv_z, inv_elem_area, nr, sh, spx_inv_z_scratch, 
                     &spx_image_scratch),
                 else => unreachable,

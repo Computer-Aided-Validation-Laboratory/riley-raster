@@ -12,6 +12,8 @@ const shader = @import("shader.zig");
 const FlatShader = shader.FlatShader;
 const TexShader = shader.TexShader;
 
+const N: usize = 4;
+
 const SolverParams = struct {
     ae_x: f64, ae_z: f64, be_x: f64, be_z: f64, ce_x: f64, ce_z: f64, de_x: f64, de_z: f64,
     af_x: f64, af_z: f64, bf_x: f64, bf_z: f64, cf_x: f64, cf_z: f64, df_x: f64, df_z: f64,
@@ -61,7 +63,6 @@ fn shadeFlat(
     spx_inv_z_scratch: []f64,
     spx_image_scratch: *MatSlice(f64),
 ) void {
-    const N = 4;
     const tol_den = 1e-12;
 
     const s_sy = sub_samp * (@as(usize, ov.y_min) - tile.y_px_min);
@@ -98,8 +99,8 @@ fn shadeFlat(
                     const n_vals = [_]f64{
                         (1.0 - u) * (1.0 - v), u * (1.0 - v), u * v, (1.0 - u) * v,
                     };
-                    const sw = n_vals[0]*nr.z[0] + n_vals[1]*nr.z[1] + 
-                               n_vals[2]*nr.z[2] + n_vals[3]*nr.z[3];
+                    var sw: f64 = 0.0;
+                    inline for (0..N) |i| sw += n_vals[i] * nr.z[i];
                     const inv_z = 1.0 / sw; const idx = row_off + xx;
                     if (inv_z > spx_inv_z_scratch[idx]) {
                         spx_inv_z_scratch[idx] = inv_z;
@@ -126,7 +127,6 @@ fn shadeTex(
     spx_inv_z_scratch: []f64,
     spx_image_scratch: *MatSlice(f64),
 ) void {
-    const N = 4;
     const tol_den = 1e-12;
 
     const s_sy = sub_samp * (@as(usize, ov.y_min) - tile.y_px_min);
@@ -163,8 +163,8 @@ fn shadeTex(
                     const n_vals = [_]f64{
                         (1.0 - u) * (1.0 - v), u * (1.0 - v), u * v, (1.0 - u) * v,
                     };
-                    const sw = n_vals[0]*nr.z[0] + n_vals[1]*nr.z[1] + 
-                               n_vals[2]*nr.z[2] + n_vals[3]*nr.z[3];
+                    var sw: f64 = 0.0;
+                    inline for (0..N) |i| sw += n_vals[i] * nr.z[i];
                     const inv_z = 1.0 / sw; const idx = row_off + xx;
                     if (inv_z > spx_inv_z_scratch[idx]) {
                         spx_inv_z_scratch[idx] = inv_z;
@@ -191,8 +191,6 @@ pub fn rasterElems(
     image_out_arr: *NDArray(f64),
 ) !void {
     @setFloatMode(.optimized);
-
-    const N: usize = 4;
 
     const fields_num: usize = switch (@TypeOf(sh)) {
         *const FlatShader => sh.field.dims[2],
