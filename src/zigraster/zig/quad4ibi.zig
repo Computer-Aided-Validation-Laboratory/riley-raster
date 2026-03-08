@@ -1,14 +1,7 @@
 const std = @import("std");
-const print = std.debug.print;
 
-const vecstack = @import("vecstack.zig");
-const Vec3T = vecstack.Vec3T;
-const Mat44Ops = @import("matstack.zig").Mat44Ops;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
-const sliceops = @import("sliceops.zig");
-const vsd = @import("vecsimd.zig");
-const Vec3SIMD = vsd.Vec3SIMD;
 const Camera = @import("camera.zig").Camera;
 const rops = @import("rasterops.zig");
 const BBox = rops.BBox;
@@ -18,30 +11,6 @@ const ti = @import("textureinterp.zig");
 const mr = @import("meshraster.zig");
 const FlatShader = mr.FlatShader;
 const TexShader = mr.TexShader;
-
-pub fn transformElemsToCamSIMD(comptime N: usize,
-                               comptime T: type,
-                               camera: *const Camera, 
-                               dim_elem: usize,  
-                               elem_coord_arr: *NDArray(T)) !void {
-
-    const x_scale = camera.image_dist * @as(f64, @floatFromInt(camera.pixels_num[0])) / 
-                    camera.image_dims[0];
-    const y_scale = camera.image_dist * @as(f64, @floatFromInt(camera.pixels_num[1])) / 
-                    camera.image_dims[1];
-
-    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const cw: Vec3SIMD(N, f64) = try vsd.loadVec3SIMDFromElemArray(N, f64, 
-                                                                       elem_coord_arr, ee);
-        var cr = vsd.mat44Mul(N, f64, camera.world_to_cam_mat, cw);
-        cr.x *= @splat(x_scale);
-        cr.y *= @splat(-y_scale);
-
-        try vsd.saveVec3SIMDToElemArray(N, f64, elem_coord_arr, ee,
-                                        Vec3SIMD(N, f64){ .x = cr.x, .y = cr.y, 
-                                                          .z = -cr.z });
-    }
-}
 
 pub fn countElemsCalcBBoxes(camera: *const Camera,
                             dim_elem: usize,
@@ -91,9 +60,9 @@ pub fn countElemsCalcBBoxes(camera: *const Camera,
 }
 
 fn solveQuadraticRobust(a: f64, b: f64, c: f64, u_out: *f64) bool {
-    const tol = 1e-12;
-    if (@abs(a) < tol) {
-        if (@abs(b) < tol) return false;
+    const tol_area = 1e-12;
+    if (@abs(a) < tol_area) {
+        if (@abs(b) < tol_area) return false;
         const u = -c / b;
         if (u >= -1e-7 and u <= 1.0 + 1e-7) {
             u_out.* = u;
@@ -129,6 +98,7 @@ pub fn rasterElemsFlat(allocator: std.mem.Allocator,
     @setFloatMode(.optimized);
 
     const N: usize = 4; // nodes per element
+    const tol_den = 1e-12;
     //const F: usize = 3; // max number of fields to render
     
     const fields_num = shader.field.dims[2];
@@ -232,9 +202,9 @@ pub fn rasterElemsFlat(allocator: std.mem.Allocator,
                         var v: f64 = -1.0;
 
                         if (@abs(den_f) > @abs(den_e)) {
-                            if (@abs(den_f) > 1e-12) v = -(bf * u + df) / den_f;
+                            if (@abs(den_f) > tol_den) v = -(bf * u + df) / den_f;
                         } else {
-                            if (@abs(den_e) > 1e-12) v = -(be * u + de) / den_e;
+                            if (@abs(den_e) > tol_den) v = -(be * u + de) / den_e;
                         }
 
                         if (v >= -1e-7 and v <= 1.0 + 1e-7) {
@@ -282,6 +252,7 @@ pub fn rasterElemsTex(comptime interp_type: ti.InterpType,
     @setFloatMode(.optimized);
     
     const N: usize = 4;
+    const tol_den = 1e-12;
     const fields_num: usize = 1;
 
     const sub_samp = @as(usize, @intCast(camera.sub_sample));
@@ -384,9 +355,9 @@ pub fn rasterElemsTex(comptime interp_type: ti.InterpType,
                         const den_f = af * u + cf;
                         var v: f64 = -1.0;
                         if (@abs(den_f) > @abs(den_e)) {
-                            if (@abs(den_f) > 1e-12) v = -(bf * u + df) / den_f;
+                            if (@abs(den_f) > tol_den) v = -(bf * u + df) / den_f;
                         } else {
-                            if (@abs(den_e) > 1e-12) v = -(be * u + de) / den_e;
+                            if (@abs(den_e) > tol_den) v = -(be * u + de) / den_e;
                         }
 
                         if (v >= -1e-7 and v <= 1.0 + 1e-7) {

@@ -1,30 +1,19 @@
 const std = @import("std");
 const print = std.debug.print;
-const time = std.time;
-const Instant = time.Instant;
 
 const vecstack = @import("vecstack.zig");
 const Vec3f = vecstack.Vec3f;
 const Vec3T = vecstack.Vec3T;
-const Vec3SliceOps = vecstack.Vec3SliceOps;
 
 const vsd = @import("vecsimd.zig");
 const Vec3SIMD = vsd.Vec3SIMD;
 
 const Mat44Ops = @import("matstack.zig").Mat44Ops;
 
-const VecSlice = @import("vecslice.zig").VecSlice;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
-const sliceops = @import("sliceops.zig");
 
 const Camera = @import("camera.zig").Camera;
-
-const meshio = @import("meshio.zig");
-const Coords = meshio.Coords;
-const Connect = meshio.Connect;
-const Field = meshio.Field;
-const SimData = meshio.SimData;
 
 pub fn worldToRasterCoords(coord_world: Vec3T(f64), camera: *const Camera) Vec3T(f64) {
     // TODO: simplify this to a matrix mult
@@ -185,6 +174,47 @@ pub fn loadVec3SlicesFromElemArray(comptime N: usize,
 
 //---------------------------------------------------------------------------------------------
 // Tiling Raster Step 1: World to Camera/Raster Coords
+
+pub fn transformElemsRasterSIMD(comptime N: usize,
+                                 comptime T: type,
+                                 camera: *const Camera, 
+                                 dim_elem: usize,  
+                                 elem_coord_arr: *NDArray(T)) !void {
+
+    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
+        const coords_world: Vec3SIMD(N,T) = try vsd.loadVec3SIMDFromElemArray(
+            N,T,elem_coord_arr,ee);
+
+        const coords_raster: Vec3SIMD(N,T) = worldToRasterSIMD(
+            N,T,coords_world,camera); 
+
+        try vsd.saveVec3SIMDToElemArray(N,T,elem_coord_arr,ee,coords_raster);
+    }
+}
+
+pub fn transformElemsCamSIMD(comptime N: usize,
+                              comptime T: type,
+                              camera: *const Camera, 
+                              dim_elem: usize,  
+                              elem_coord_arr: *NDArray(T)) !void {
+
+    const x_scale = camera.image_dist * @as(f64, @floatFromInt(camera.pixels_num[0])) / 
+                    camera.image_dims[0];
+    const y_scale = camera.image_dist * @as(f64, @floatFromInt(camera.pixels_num[1])) / 
+                    camera.image_dims[1];
+
+    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
+        const cw: Vec3SIMD(N, f64) = try vsd.loadVec3SIMDFromElemArray(N, f64, 
+                                                                       elem_coord_arr, ee);
+        var cr = vsd.mat44Mul(N, f64, camera.world_to_cam_mat, cw);
+        cr.x *= @splat(x_scale);
+        cr.y *= @splat(-y_scale);
+        try vsd.saveVec3SIMDToElemArray(N, f64, elem_coord_arr, ee,
+                                        Vec3SIMD(N, f64){ .x = cr.x, .y = cr.y, 
+                                                          .z = -cr.z });
+    }
+}
+
 
 pub fn worldToRasterSIMD(comptime N: usize,
                          comptime T: type, 

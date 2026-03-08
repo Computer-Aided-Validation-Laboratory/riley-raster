@@ -1,25 +1,7 @@
 const std = @import("std");
-const print = std.debug.print;
-const time = std.time;
 
-const vecstack = @import("vecstack.zig");
-const Vec3T = @import("vecstack.zig").Vec3T;
-const Vec3SliceOps = @import("vecstack.zig").Vec3SliceOps;
-
-const Mat44Ops = @import("matstack.zig").Mat44Ops;
-
-const VecSlice = @import("vecslice.zig").VecSlice;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
-
-const sliceops = @import("sliceops.zig");
-
-const vsd = @import("vecsimd.zig");
-const Vec3SIMD = vsd.Vec3SIMD;
-
-const Coords = @import("meshio.zig").Coords;
-const Connect = @import("meshio.zig").Connect;
-const Field = @import("meshio.zig").Field;
 
 const Camera = @import("camera.zig").Camera;
 
@@ -33,29 +15,6 @@ const mr = @import("meshraster.zig");
 const FlatShader = mr.FlatShader;
 const TexShader = mr.TexShader;
 
-
-pub fn transformElemsToCamSIMD(comptime N: usize,
-                               comptime T: type,
-                               camera: *const Camera, 
-                               dim_elem: usize,  
-                               elem_coord_arr: *NDArray(T)) !void {
-
-    const x_scale = camera.image_dist * @as(f64, @floatFromInt(camera.pixels_num[0])) / 
-                    camera.image_dims[0];
-    const y_scale = camera.image_dist * @as(f64, @floatFromInt(camera.pixels_num[1])) / 
-                    camera.image_dims[1];
-
-    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const cw: Vec3SIMD(N, f64) = try vsd.loadVec3SIMDFromElemArray(N, f64, 
-                                                                       elem_coord_arr, ee);
-        var cr = vsd.mat44Mul(N, f64, camera.world_to_cam_mat, cw);
-        cr.x *= @splat(x_scale);
-        cr.y *= @splat(-y_scale);
-        try vsd.saveVec3SIMDToElemArray(N, f64, elem_coord_arr, ee,
-                                        Vec3SIMD(N, f64){ .x = cr.x, .y = cr.y, 
-                                                          .z = -cr.z });
-    }
-}
 
 pub fn countElemsCalcBBoxes(camera: *const Camera,
                             dim_elem: usize,
@@ -136,6 +95,9 @@ fn shapeFunctions(xi: f64, eta: f64, n_vals: *[6]f64, dN_dxi: *[6]f64, dN_deta: 
 fn getTessellatedGuess(txs: f64, tys: f64, ex: []f64, ey: []f64, ew: []f64,
                        xi_out: *f64, eta_out: *f64) bool {
 
+    const tol_area: f64 = 1e-12;
+    const eps = 1e-5;
+
     const SubTri = struct {
         n0: u8, n1: u8, n2: u8,
         xi0: f64, eta0: f64,
@@ -160,13 +122,12 @@ fn getTessellatedGuess(txs: f64, tys: f64, ex: []f64, ey: []f64, ew: []f64,
         const x2 = ex[st.n2]/ew[st.n2]; const y2 = ey[st.n2]/ew[st.n2];
 
         const area = (x2 - x0) * (y1 - y0) - (y2 - y0) * (x1 - x0);
-        if (@abs(area) < 1e-12) continue;
+        if (@abs(area) < tol_area) continue;
 
         const w0 = ((txs - x0) * (y1 - y0) - (tys - y0) * (x1 - x0)) / area;
         const w1 = ((txs - x1) * (y2 - y1) - (tys - y1) * (x2 - x1)) / area;
         const w2 = ((txs - x2) * (y0 - y2) - (tys - y2) * (x0 - x2)) / area;
 
-        const eps = 1e-5;
         if (w0 >= -eps and w1 >= -eps and w2 >= -eps) {
             xi_out.* = w0 * st.xi0 + w1 * st.xi1 + w2 * st.xi2;
             eta_out.* = w0 * st.eta0 + w1 * st.eta1 + w2 * st.eta2;
@@ -181,11 +142,14 @@ fn solveInverseMapProjected(txs: f64, tys: f64, ex: []f64, ey: []f64, ew: []f64,
                             xi_in: f64, eta_in: f64,
                             xi_out: *f64, eta_out: *f64) bool {
 
+    const tol_iter = 1e-8;
+    const tol_det = 1e-12;
+    const eps = 1e-5;
+
     var xi = xi_in;
     var eta = eta_in;
 
     const max_iter = 10;
-    const tol = 1e-8;
     
     var n_vals: [6]f64 = undefined;
     var dN_dxi: [6]f64 = undefined;
@@ -209,12 +173,12 @@ fn solveInverseMapProjected(txs: f64, tys: f64, ex: []f64, ey: []f64, ew: []f64,
             J22 += dN_deta[i] * ty;
         }
 
-        if (@abs(Rx) < tol and @abs(Ry) < tol) {
+        if (@abs(Rx) < tol_iter and @abs(Ry) < tol_iter) {
             break;
         }
 
         const det = J11 * J22 - J12 * J21;
-        if (@abs(det) < 1e-12) {
+        if (@abs(det) < tol_det) {
             return false;
         }
 
@@ -223,7 +187,6 @@ fn solveInverseMapProjected(txs: f64, tys: f64, ex: []f64, ey: []f64, ew: []f64,
         eta -= inv_det * (-J21 * Rx + J11 * Ry);
     }
 
-    const eps = 1e-5;
     if (xi >= -eps and eta >= -eps and (xi + eta) <= 1.0 + eps) {
         xi_out.* = xi;
         eta_out.* = eta;

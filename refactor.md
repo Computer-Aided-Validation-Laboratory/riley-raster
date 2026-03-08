@@ -11,6 +11,9 @@
 ## Performance / Functionality Updates
 - For tessalated guess - fall back to nearest triangle edge as initial guess?
 
+## meshio.zig
+- Remove prints 
+
 ## textureio.zig
 - Refactor load functions to have comptime parameters first in function signatures.
 - Refactor the nonsense tiff texture load function with hard coded libtiff path

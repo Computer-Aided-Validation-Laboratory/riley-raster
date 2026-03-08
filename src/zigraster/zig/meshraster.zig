@@ -6,7 +6,6 @@ const meshio = @import("meshio.zig");
 const Coords = meshio.Coords;
 const Connect = meshio.Connect;
 const Field = meshio.Field;
-const SimData = meshio.SimData;
 
 const texio = @import("textureio.zig");
 const Texture = texio.Texture;

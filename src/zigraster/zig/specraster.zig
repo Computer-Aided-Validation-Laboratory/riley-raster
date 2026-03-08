@@ -1,26 +1,11 @@
 const std = @import("std");
 const print = std.debug.print;
-const time = std.time;
 const Timestamp = std.Io.Clock.Timestamp;
 
-const vecstack = @import("vecstack.zig");
-const Vec3T = @import("vecstack.zig").Vec3T;
-const Vec3SliceOps = @import("vecstack.zig").Vec3SliceOps;
-
-const Mat44Ops = @import("matstack.zig").Mat44Ops;
-
-const VecSlice = @import("vecslice.zig").VecSlice;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 
 const sliceops = @import("sliceops.zig");
-
-const vsd = @import("vecsimd.zig");
-const Vec3SIMD = vsd.Vec3SIMD;
-
-const Coords = @import("meshio.zig").Coords;
-const Connect = @import("meshio.zig").Connect;
-const Field = @import("meshio.zig").Field;
 
 const Camera = @import("camera.zig").Camera;
 
@@ -292,9 +277,9 @@ fn rasterInternal(comptime mesh_type: MeshType,
     time_start = Timestamp.now(io, .awake);
 
     if (comptime mesh_type == .tri3 or mesh_type == .tri3opt) {
-        try MeshFun.transformElemsToRasterSIMD(N, f64, camera, dim_elem, coords);
+        try rops.transformElemsRasterSIMD(N, f64, camera, dim_elem, coords);
     } else {
-        try MeshFun.transformElemsToCamSIMD(N, f64, camera, dim_elem, coords);
+        try rops.transformElemsCamSIMD(N, f64, camera, dim_elem, coords);
     }
     
     time_end = Timestamp.now(io, .awake);

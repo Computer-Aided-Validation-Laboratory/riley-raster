@@ -1,15 +1,12 @@
 const std = @import("std");
-const print = std.debug.print;
 const testing = std.testing;
 const expectEqual = testing.expectEqual;
 const expectApproxEqAbs = testing.expectApproxEqAbs;
 
 const Coords = @import("meshio.zig").Coords;
 const vector = @import("vecstack.zig");
-const Vec2f = vector.Vec2f;
 const Vec3f = vector.Vec3f;
 const matrix = @import("matstack.zig");
-const Mat33f = matrix.Mat33f;
 const Mat33Ops = matrix.Mat33Ops;
 const Mat44f = matrix.Mat44f;
 const Mat44Ops = matrix.Mat44Ops;

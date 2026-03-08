@@ -1,25 +1,7 @@
 const std = @import("std");
-const print = std.debug.print;
-const time = std.time;
 
-const vecstack = @import("vecstack.zig");
-const Vec3T = vecstack.Vec3T;
-const Vec3SliceOps = vecstack.Vec3SliceOps;
-
-const Mat44Ops = @import("matstack.zig").Mat44Ops;
-
-const VecSlice = @import("vecslice.zig").VecSlice;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
-
-const sliceops = @import("sliceops.zig");
-
-const vsd = @import("vecsimd.zig");
-const Vec3SIMD = vsd.Vec3SIMD;
-
-const Coords = @import("meshio.zig").Coords;
-const Connect = @import("meshio.zig").Connect;
-const Field = @import("meshio.zig").Field;
 
 const Camera = @import("camera.zig").Camera;
 
@@ -31,28 +13,6 @@ const ti = @import("textureinterp.zig");
 const mr = @import("meshraster.zig");
 const FlatShader = mr.FlatShader;
 const TexShader = mr.TexShader;
-
-pub fn transformElemsToCamSIMD(comptime N: usize,
-                               comptime T: type,
-                               camera: *const Camera, 
-                               dim_elem: usize,  
-                               elem_coord_arr: *NDArray(T)) !void {
-    const x_scale = camera.image_dist * @as(f64, @floatFromInt(camera.pixels_num[0])) / 
-                    camera.image_dims[0];
-    const y_scale = camera.image_dist * @as(f64, @floatFromInt(camera.pixels_num[1])) / 
-                    camera.image_dims[1];
-
-    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const cw: Vec3SIMD(N, f64) = try vsd.loadVec3SIMDFromElemArray(N, f64, 
-                                                                       elem_coord_arr, ee);
-        var cr = vsd.mat44Mul(N, f64, camera.world_to_cam_mat, cw);
-        cr.x *= @splat(x_scale);
-        cr.y *= @splat(-y_scale);
-        try vsd.saveVec3SIMDToElemArray(N, f64, elem_coord_arr, ee,
-                                        Vec3SIMD(N, f64){ .x = cr.x, .y = cr.y, 
-                                                          .z = -cr.z });
-    }
-}
 
 pub fn countElemsCalcBBoxes(camera: *const Camera,
                             dim_elem: usize,
@@ -119,10 +79,11 @@ fn shapeFunctions8(xi: f64, eta: f64, n_v: *[8]f64, dNu: *[8]f64, dNv: *[8]f64) 
 
 fn solveInverseMapping(nr: Vec3OfSlices(f64), txs: f64, tys: f64,
                        xi_out: *f64, eta_out: *f64) bool {
-    const max_iter = 10; 
-    const tol = 1e-8;
-    const det_tol = 1e-12;
+    const tol_iter = 1e-8;
+    const tol_det = 1e-12;
     const eps = 1e-5;
+
+    const max_iter = 10; 
 
     var xi = xi_out.*; var eta = eta_out.*;
     var n_v: [8]f64 = undefined; var dNu: [8]f64 = undefined; var dNv: [8]f64 = undefined;
@@ -141,9 +102,9 @@ fn solveInverseMapping(nr: Vec3OfSlices(f64), txs: f64, tys: f64,
             J21 += dNu[i] * f_y; J22 += dNv[i] * f_y;
         }
 
-        if (@abs(Rx) < tol and @abs(Ry) < tol) break;
+        if (@abs(Rx) < tol_iter and @abs(Ry) < tol_iter) break;
         const det = J11 * J22 - J12 * J21;
-        if (@abs(det) < det_tol) return false;
+        if (@abs(det) < tol_det) return false;
         const inv_det = 1.0 / det;
         xi -= inv_det * (J22 * Rx - J12 * Ry);
         eta -= inv_det * (-J21 * Rx + J11 * Ry);

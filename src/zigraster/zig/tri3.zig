@@ -1,14 +1,10 @@
 const std = @import("std");
 const print = std.debug.print;
-const time = std.time;
 
 const Camera = @import("camera.zig").Camera;
 
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
-
-const vsd = @import("vecsimd.zig");
-const Vec3SIMD = vsd.Vec3SIMD;
 
 const rops = @import("rasterops.zig");
 const BBox = rops.BBox;
@@ -20,30 +16,13 @@ const mr = @import("meshraster.zig");
 const FlatShader = mr.FlatShader;
 const TexShader = mr.TexShader;
 
-pub fn transformElemsToRasterSIMD(comptime N: usize,
-                                  comptime T: type,
-                                  camera: *const Camera, 
-                                  dim_elem: usize,  
-                                  elem_coord_arr: *NDArray(T)) !void {
-
-    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const coords_world: Vec3SIMD(N,T) = try vsd.loadVec3SIMDFromElemArray(
-            N,T,elem_coord_arr,ee);
-
-        const coords_raster: Vec3SIMD(N,T) = rops.worldToRasterSIMD(
-            N,T,coords_world,camera); 
-
-        try vsd.saveVec3SIMDToElemArray(N,T,elem_coord_arr,ee,coords_raster);
-    }
-}
-
 pub fn countElemsCalcBBoxes(camera: *const Camera,
                             dim_elem: usize,
                             elem_coord_arr: *const NDArray(f64),
                             elem_bboxes: []BBox) !usize {
 
     const N: usize = 3;
-    const area_tol: f64 = -1e-9;
+    const tol_area: f64 = -1e-9;
     
     var elems_in_image: usize = 0;
 
@@ -69,7 +48,7 @@ pub fn countElemsCalcBBoxes(camera: *const Camera,
         // Backface culling, negative area = crop for linear triangles
         const elem_area: f64 = rops.edgeFun3Slices(0,1,2,coords_raster.x,coords_raster.y);
         
-        if (elem_area < area_tol) {
+        if (elem_area < tol_area) {
             continue;
         }
         
@@ -109,6 +88,7 @@ pub fn rasterElemsFlat(allocator: std.mem.Allocator,
 
     const N: usize = 3;
     const F: usize = 3;
+    const tol_edge: f64 = 1e-9;
 
     const elem_field_arr = shader.field;
     const fields_num: usize = elem_field_arr.dims[2];
@@ -221,10 +201,9 @@ pub fn rasterElemsFlat(allocator: std.mem.Allocator,
 
                     // DEBUG
                     //const spx_image_ix: usize = tile.x_px_min*sub_samp + xx;
-                    const tol = 1e-9;
-                    if (nodes_weight[0] >= -tol and 
-                        nodes_weight[1] >= -tol and 
-                        nodes_weight[2] >= -tol){
+                    if (nodes_weight[0] >= -tol_edge and 
+                        nodes_weight[1] >= -tol_edge and 
+                        nodes_weight[2] >= -tol_edge){
 
 
                         // Perspective correct interpolation to get the inverse of the z
@@ -296,6 +275,7 @@ pub fn rasterElemsTex(comptime interp_type: ti.InterpType,
 
     const N: usize = 3;
     const U: usize = 2;
+    const tol_edge: f64 = 1e-9;
 
     // TODO: update this to deal with RGB
     const fields_num: usize = 1;
@@ -400,10 +380,9 @@ pub fn rasterElemsTex(comptime interp_type: ti.InterpType,
 
                     const scratch_flat_ind: usize = scratch_row_offset + xx;
 
-                    const tol = 1e-9;
-                    if (nodes_weight[0] >= -tol and 
-                        nodes_weight[1] >= -tol and 
-                        nodes_weight[2] >= -tol){
+                    if (nodes_weight[0] >= -tol_edge and 
+                        nodes_weight[1] >= -tol_edge and 
+                        nodes_weight[2] >= -tol_edge){
 
 
                         // Perspective correct interpolation to get the inverse of the z

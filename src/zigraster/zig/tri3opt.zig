@@ -1,14 +1,9 @@
 const std = @import("std");
-const print = std.debug.print;
-const time = std.time;
 
 const Camera = @import("camera.zig").Camera;
 
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
-
-const vsd = @import("vecsimd.zig");
-const Vec3SIMD = vsd.Vec3SIMD;
 
 const rops = @import("rasterops.zig");
 const BBox = rops.BBox;
@@ -20,30 +15,13 @@ const mr = @import("meshraster.zig");
 const FlatShader = mr.FlatShader;
 const TexShader = mr.TexShader;
 
-pub fn transformElemsToRasterSIMD(comptime N: usize,
-                                  comptime T: type,
-                                  camera: *const Camera, 
-                                  dim_elem: usize,  
-                                  elem_coord_arr: *NDArray(T)) !void {
-
-    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const coords_world: Vec3SIMD(N,T) = try vsd.loadVec3SIMDFromElemArray(
-            N,T,elem_coord_arr,ee);
-
-        const coords_raster: Vec3SIMD(N,T) = rops.worldToRasterSIMD(
-            N,T,coords_world,camera); 
-
-        try vsd.saveVec3SIMDToElemArray(N,T,elem_coord_arr,ee,coords_raster);
-    }
-}
-
 pub fn countElemsCalcBBoxes(camera: *const Camera,
                             dim_elem: usize,
                             elem_coord_arr: *const NDArray(f64),
                             elem_bboxes: []BBox) !usize {
 
     const N: usize = 3;
-    const area_tol: f64 = -1e-9;
+    const tol_area: f64 = -1e-9;
     
     var elems_in_image: usize = 0;
 
@@ -69,7 +47,7 @@ pub fn countElemsCalcBBoxes(camera: *const Camera,
         // Backface culling, negative area = crop for linear triangles
         const elem_area: f64 = rops.edgeFun3Slices(0,1,2,coords_raster.x,coords_raster.y);
         
-        if (elem_area < area_tol) {
+        if (elem_area < tol_area) {
             continue;
         }
         
@@ -109,6 +87,8 @@ pub fn rasterElemsFlat(allocator: std.mem.Allocator,
 
     const N: usize = 3;
     const F: usize = 3;
+    const tol_area: f64 = 1e-12;
+    const tol_edge: f64 = 1e-9;
 
     const elem_field_arr = shader.field;
     const fields_num: usize = elem_field_arr.dims[2];
@@ -156,7 +136,7 @@ pub fn rasterElemsFlat(allocator: std.mem.Allocator,
             const area = rops.edgeFun3(nodes_rast.x[0],nodes_rast.y[0],
                                        nodes_rast.x[1],nodes_rast.y[1],
                                        nodes_rast.x[2],nodes_rast.y[2]);
-            if (@abs(area) < 1e-12) continue;
+            if (@abs(area) < tol_area) continue;
             const inv_elem_area: f64 = 1.0 / area;
 
             const s_start_x = sub_samp * (@as(usize,ol.x_min) - tile.x_px_min);  
@@ -213,8 +193,7 @@ pub fn rasterElemsFlat(allocator: std.mem.Allocator,
                 var w2 = w2_row;
                 
                 for (s_start_x .. s_end_x) |xx| {
-                    const eps = 1e-9;
-                    if (w0 >= -eps and w1 >= -eps and w2 >= -eps) {
+                    if (w0 >= -tol_edge and w1 >= -tol_edge and w2 >= -tol_edge) {
                         const idx = row_off + xx;
                         const inv_z = w0 * nodes_inv_z[0] 
                                     + w1 * nodes_inv_z[1] 
@@ -269,6 +248,8 @@ pub fn rasterElemsTex(comptime interp_type: ti.InterpType,
 
     const N: usize = 3;
     const U: usize = 2;
+    const tol_area: f64 = 1e-12;
+    const tol_edge: f64 = 1e-9;
     const fields_num: usize = 1;
 
     const screen_px_x = @as(u16,@intCast(camera.pixels_num[0]));
@@ -314,7 +295,7 @@ pub fn rasterElemsTex(comptime interp_type: ti.InterpType,
             const area = rops.edgeFun3(nodes_rast.x[0],nodes_rast.y[0],
                                        nodes_rast.x[1],nodes_rast.y[1],
                                        nodes_rast.x[2],nodes_rast.y[2]);
-            if (@abs(area) < 1e-12) continue;
+            if (@abs(area) < tol_area) continue;
             const inv_elem_area: f64 = 1.0 / area;
 
             // Hoisted the nodal uv values into a small array to keep in cache
@@ -367,8 +348,7 @@ pub fn rasterElemsTex(comptime interp_type: ti.InterpType,
                 var w2 = w2_row;
                 
                 for (s_start_x .. s_end_x) |xx| {
-                    const eps = 1e-9;
-                    if (w0 >= -eps and w1 >= -eps and w2 >= -eps) {
+                    if (w0 >= -tol_edge and w1 >= -tol_edge and w2 >= -tol_edge) {
                         const idx = row_off + xx;
                         const inv_z = w0 * nodes_inv_z[0] 
                                     + w1 * nodes_inv_z[1] 
