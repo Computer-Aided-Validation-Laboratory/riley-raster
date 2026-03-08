@@ -10,10 +10,10 @@ const Field = meshio.Field;
 const uvio = @import("uvio.zig");
 const TexMap = uvio.TexMap;
 
-const shader = @import("shader.zig");
-pub const FlatShader = shader.FlatShader;
-pub const TexShader = shader.TexShader;
-pub const FieldShader = shader.FieldShader;
+const shaderops = @import("shaderops.zig");
+pub const FlatShader = shaderops.FlatShader;
+pub const TexShader = shaderops.TexShader;
+pub const FieldShader = shaderops.FieldShader;
 
 pub const MeshType = enum {
     tri3,

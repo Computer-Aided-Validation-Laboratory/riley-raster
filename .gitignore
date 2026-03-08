@@ -16,6 +16,7 @@ out*/
 gold*/
 fails/
 archive/
+example/
 
 *.ppm
 *.bmp
