@@ -215,6 +215,107 @@ pub fn transformElemsCamSIMD(comptime N: usize,
     }
 }
 
+pub fn countElemsCalcBBoxes(comptime N: usize,
+                            camera: *const Camera,
+                            dim_elem: usize,
+                            elem_coord_arr: *const NDArray(f64),
+                            elem_bboxes: []BBox) !usize {
+    var elems_in_image: usize = 0;
+    const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
+    const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
+
+    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
+        const cr: Vec3OfSlices(f64) = try loadVec3SlicesFromElemArray(
+            N, f64, elem_coord_arr, ee,
+        );
+
+        var x_min: f64 = std.math.inf(f64);
+        var x_max: f64 = -std.math.inf(f64);
+        var y_min: f64 = std.math.inf(f64);
+        var y_max: f64 = -std.math.inf(f64);
+
+        for (0..N) |i| {
+            const sx = cr.x[i] / cr.z[i] + x_off;
+            const sy = cr.y[i] / cr.z[i] + y_off;
+            x_min = @min(x_min, sx);
+            x_max = @max(x_max, sx);
+            y_min = @min(y_min, sy);
+            y_max = @max(y_max, sy);
+        }
+
+        if (x_min > @as(f64, @floatFromInt(camera.pixels_num[0] - 1)) or
+            x_max < 0.0 or
+            y_min > @as(f64, @floatFromInt(camera.pixels_num[1] - 1)) or
+            y_max < 0.0)
+        {
+            continue;
+        }
+
+        elem_bboxes[elems_in_image] = BBox{
+            .elem_ind = ee,
+            .x_min = boundIndMin(u16, x_min),
+            .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
+            .y_min = boundIndMin(u16, y_min),
+            .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
+        };
+        elems_in_image += 1;
+    }
+    return elems_in_image;
+}
+
+pub fn countElemsCalcBBoxesTri3(camera: *const Camera,
+                               dim_elem: usize,
+                               elem_coord_arr: *const NDArray(f64),
+                               elem_bboxes: []BBox) !usize {
+    const N: usize = 3;
+    const tol_area: f64 = -1e-9;
+
+    var elems_in_image: usize = 0;
+
+    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
+        const coords_raster: Vec3OfSlices(f64) = try loadVec3SlicesFromElemArray(
+            N, f64, elem_coord_arr, ee,
+        );
+
+        // Width (X) on screen check and crop
+        const x_max: f64 = std.mem.max(f64, coords_raster.x);
+        const x_min: f64 = std.mem.min(f64, coords_raster.x);
+        if ((x_min > @as(f64, @floatFromInt(camera.pixels_num[0] - 1))) or (x_max < 0.0)) {
+            continue;
+        }
+
+        // Height (Y) on on screen check and crop
+        const y_max: f64 = std.mem.max(f64, coords_raster.y);
+        const y_min: f64 = std.mem.min(f64, coords_raster.y);
+        if ((y_min > @as(f64, @floatFromInt(camera.pixels_num[1] - 1))) or (y_max < 0.0)) {
+            continue;
+        }
+
+        // Backface culling, negative area = crop for linear triangles
+        const elem_area: f64 = edgeFun3Slices(0, 1, 2, coords_raster.x, coords_raster.y);
+
+        if (elem_area < tol_area) {
+            continue;
+        }
+
+        const x_min_i: u16 = boundIndMin(u16, x_min);
+        const x_max_i: u16 = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0]));
+        const y_min_i: u16 = boundIndMin(u16, y_min);
+        const y_max_i: u16 = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1]));
+
+        elem_bboxes[elems_in_image] = BBox{
+            .elem_ind = ee,
+            .x_min = x_min_i,
+            .x_max = x_max_i,
+            .y_min = y_min_i,
+            .y_max = y_max_i,
+        };
+        elems_in_image += 1;
+    }
+
+    return elems_in_image;
+}
+
 
 pub fn worldToRasterSIMD(comptime N: usize,
                          comptime T: type, 

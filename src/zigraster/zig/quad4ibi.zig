@@ -12,52 +12,6 @@ const mr = @import("meshraster.zig");
 const FlatShader = mr.FlatShader;
 const TexShader = mr.TexShader;
 
-pub fn countElemsCalcBBoxes(camera: *const Camera,
-                            dim_elem: usize,
-                            elem_coord_arr: *const NDArray(f64),
-                            elem_bboxes: []BBox) !usize {
-    const N: usize = 4;
-    var elems_in_image: usize = 0;
-
-    const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
-    const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
-
-    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const cr: Vec3OfSlices(f64) = try rops.loadVec3SlicesFromElemArray(
-            N, f64, elem_coord_arr, ee,
-        );
-
-        var x_min: f64 = std.math.inf(f64); 
-        var x_max: f64 = -std.math.inf(f64);
-        var y_min: f64 = std.math.inf(f64); 
-        var y_max: f64 = -std.math.inf(f64);
-
-        for (0..N) |i| {
-            const sx = cr.x[i] / cr.z[i] + x_off;
-            const sy = cr.y[i] / cr.z[i] + y_off;
-            x_min = @min(x_min, sx); x_max = @max(x_max, sx);
-            y_min = @min(y_min, sy); y_max = @max(y_max, sy);
-        }
-
-        if (x_min > @as(f64, @floatFromInt(camera.pixels_num[0]-1)) 
-            or x_max < 0.0 
-            or y_min > @as(f64, @floatFromInt(camera.pixels_num[1]-1)) 
-            or y_max < 0.0) {
-            continue;
-        }
-
-        elem_bboxes[elems_in_image] = BBox{
-            .elem_ind = ee,
-            .x_min = rops.boundIndMin(u16, x_min),
-            .x_max = rops.boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
-            .y_min = rops.boundIndMin(u16, y_min),
-            .y_max = rops.boundIndMax(u16, y_max, @intCast(camera.pixels_num[1]))
-        };
-        elems_in_image += 1;
-    }
-    
-    return elems_in_image;
-}
 
 fn solveQuadraticRobust(a: f64, b: f64, c: f64, u_out: *f64) bool {
     const tol_area = 1e-12;

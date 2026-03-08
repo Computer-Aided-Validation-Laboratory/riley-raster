@@ -292,10 +292,10 @@ fn rasterInternal(comptime mesh_type: MeshType,
 
     const elem_bboxes: []BBox = try arena_alloc.alloc(BBox,elems_num);
     
-    const elems_in_image = try MeshFun.countElemsCalcBBoxes(camera,
-                                                            dim_elem,
-                                                            coords,
-                                                            elem_bboxes);
+    const elems_in_image = if (comptime mesh_type == .tri3 or mesh_type == .tri3opt)
+        try rops.countElemsCalcBBoxesTri3(camera, dim_elem, coords, elem_bboxes)
+    else
+        try rops.countElemsCalcBBoxes(N, camera, dim_elem, coords, elem_bboxes);
     
     time_end = Timestamp.now(io, .awake);
     const time2_elem_bboxes_crop: f64 = @floatFromInt(

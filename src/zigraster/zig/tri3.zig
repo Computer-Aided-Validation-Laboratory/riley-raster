@@ -16,63 +16,6 @@ const mr = @import("meshraster.zig");
 const FlatShader = mr.FlatShader;
 const TexShader = mr.TexShader;
 
-pub fn countElemsCalcBBoxes(camera: *const Camera,
-                            dim_elem: usize,
-                            elem_coord_arr: *const NDArray(f64),
-                            elem_bboxes: []BBox) !usize {
-
-    const N: usize = 3;
-    const tol_area: f64 = -1e-9;
-    
-    var elems_in_image: usize = 0;
-
-    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const coords_raster: Vec3OfSlices(f64) = try rops.loadVec3SlicesFromElemArray(
-            N,f64,elem_coord_arr,ee
-        );
-
-        // Width (X) on screen check and crop
-        const x_max: f64 = std.mem.max(f64,coords_raster.x);
-        const x_min: f64 = std.mem.min(f64,coords_raster.x);
-        if ((x_min > @as(f64, @floatFromInt(camera.pixels_num[0] - 1))) or (x_max < 0.0)) {
-            continue;
-        }
-
-        // Height (Y) on on screen check and crop
-        const y_max: f64 = std.mem.max(f64,coords_raster.y);
-        const y_min: f64 = std.mem.min(f64,coords_raster.y);
-        if ((y_min > @as(f64, @floatFromInt(camera.pixels_num[1] - 1))) or (y_max < 0.0)) {
-            continue;
-        }
-
-        // Backface culling, negative area = crop for linear triangles
-        const elem_area: f64 = rops.edgeFun3Slices(0,1,2,coords_raster.x,coords_raster.y);
-        
-        if (elem_area < tol_area) {
-            continue;
-        }
-        
-        const x_min_i: u16 = rops.boundIndMin(u16,x_min);
-        const x_max_i: u16 = rops.boundIndMax(u16,
-                                              x_max, 
-                                              @intCast(camera.pixels_num[0]));
-        const y_min_i: u16 = rops.boundIndMin(u16,y_min);
-        const y_max_i: u16 = rops.boundIndMax(u16,
-                                              y_max, 
-                                              @intCast(camera.pixels_num[1]));
-
-        elem_bboxes[elems_in_image] = BBox{
-            .elem_ind = ee,
-            .x_min = x_min_i,
-            .x_max = x_max_i,
-            .y_min = y_min_i,
-            .y_max = y_max_i,
-        };
-        elems_in_image += 1;
-    }
-
-    return elems_in_image;
-}
 
 pub fn rasterElemsFlat(allocator: std.mem.Allocator,
                        camera: *const Camera,
