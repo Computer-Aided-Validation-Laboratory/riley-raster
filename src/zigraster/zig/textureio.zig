@@ -72,106 +72,13 @@ pub fn Texture(comptime T: type, comptime channels: usize) type {
     };
 }
 
-pub fn TextureTiled(comptime T: type, comptime channels: usize, comptime TileSize: usize) type {
-    return struct {
-        const Self = @This();
-        const P = Pixel(T, channels);
 
-        // Data format: [tile_row][tile_col][pixel_row][pixel_col]
-        // Following NDArray inspiration with strides.
-        pixels: []P,
-        rows_n: usize,
-        cols_n: usize,
-        tiles_rows: usize,
-        tiles_cols: usize,
-        strides: [4]usize,
+pub fn loadBMP(allocator: std.mem.Allocator, 
+               io: std.Io, 
+               path: []const u8, 
+               comptime T: type, 
+               comptime channels: usize) !Texture(T, channels) {
 
-        pub fn init(allocator: std.mem.Allocator, rows: usize, cols: usize) !Self {
-            const tiles_rows = (rows + TileSize - 1) / TileSize;
-            const tiles_cols = (cols + TileSize - 1) / TileSize;
-            const total_pixels = tiles_rows * tiles_cols * TileSize * TileSize;
-            
-            const pixels = try allocator.alloc(P, total_pixels);
-            @memset(pixels, std.mem.zeroes(P));
-
-            // calc strides (row-major order for the 4D array)
-            const s3 = 1; // pixel_col stride
-            const s2 = TileSize * s3; // pixel_row stride
-            const s1 = TileSize * s2; // tile_col stride
-            const s0 = tiles_cols * s1; // tile_row stride
-
-            return Self{
-                .pixels = pixels,
-                .rows_n = rows,
-                .cols_n = cols,
-                .tiles_rows = tiles_rows,
-                .tiles_cols = tiles_cols,
-                .strides = [4]usize{s0, s1, s2, s3},
-            };
-        }
-
-        pub fn deinit(self: *const Self, allocator: std.mem.Allocator) void {
-            allocator.free(self.pixels);
-        }
-
-        pub fn initFromTexture(allocator: std.mem.Allocator, source: anytype) !Self {
-            var self = try Self.init(allocator, source.rows_n, source.cols_n);
-            errdefer self.deinit(allocator);
-
-            for (0..source.rows_n) |r| {
-                for (0..source.cols_n) |c| {
-                    self.setPixel(r, c, source.getPixel(r, c));
-                }
-            }
-            return self;
-        }
-
-        pub fn getPixel(self: Self, row: usize, col: usize) P {
-            assert(row < self.rows_n);
-            assert(col < self.cols_n);
-
-            const tr = row / TileSize;
-            const tc = col / TileSize;
-            const pr = row % TileSize;
-            const pc = col % TileSize;
-
-            const flat_idx = tr * self.strides[0] + 
-                             tc * self.strides[1] + 
-                             pr * self.strides[2] + 
-                             pc * self.strides[3];
-            
-            return self.pixels[flat_idx];
-        }
-
-        pub fn setPixel(self: *Self, row: usize, col: usize, pixel: P) void {
-            assert(row < self.rows_n);
-            assert(col < self.cols_n);
-
-            const tr = row / TileSize;
-            const tc = col / TileSize;
-            const pr = row % TileSize;
-            const pc = col % TileSize;
-
-            const flat_idx = tr * self.strides[0] + 
-                             tc * self.strides[1] + 
-                             pr * self.strides[2] + 
-                             pc * self.strides[3];
-            
-            self.pixels[flat_idx] = pixel;
-        }
-
-        pub fn getTile(self: Self, tile_row: usize, tile_col: usize) []P {
-            assert(tile_row < self.tiles_rows);
-            assert(tile_col < self.tiles_cols);
-
-            const start = tile_row * self.strides[0] + tile_col * self.strides[1];
-            const end = start + TileSize * TileSize;
-            return self.pixels[start..end];
-        }
-    };
-}
-
-pub fn loadBMP(allocator: std.mem.Allocator, io: std.Io, path: []const u8, comptime T: type, comptime channels: usize) !Texture(T, channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{});
     defer file.close(io);
@@ -226,14 +133,18 @@ pub fn loadBMP(allocator: std.mem.Allocator, io: std.Io, path: []const u8, compt
                     px.channels[1] = convertValue(T, bgr[1]); // G
                     px.channels[2] = convertValue(T, bgr[0]); // B
                 } else if (channels == 1) {
-                    const val = 0.299 * @as(f64, @floatFromInt(bgr[2])) + 0.587 * @as(f64, @floatFromInt(bgr[1])) + 0.114 * @as(f64, @floatFromInt(bgr[0]));
+                    const val = 0.299 * @as(f64, @floatFromInt(bgr[2])) 
+                              + 0.587 * @as(f64, @floatFromInt(bgr[1])) 
+                              + 0.114 * @as(f64, @floatFromInt(bgr[0]));
                     px.channels[0] = convertValue(T, val);
+                    
                 }
                 texture.setPixel(r, x, px);
             }
             try file_reader.seekBy(@intCast(row_padding));
         }
     } else if (bit_count == 8) {
+    
         try file_reader.seekTo(14 + dib_size);
         const palette_size = (offset - (14 + dib_size)) / 4;
         const palette = try allocator.alloc([4]u8, palette_size);
@@ -255,7 +166,9 @@ pub fn loadBMP(allocator: std.mem.Allocator, io: std.Io, path: []const u8, compt
                     px.channels[1] = convertValue(T, color[1]); // G
                     px.channels[2] = convertValue(T, color[0]); // B
                 } else if (channels == 1) {
-                    const val = 0.299 * @as(f64, @floatFromInt(color[2])) + 0.587 * @as(f64, @floatFromInt(color[1])) + 0.114 * @as(f64, @floatFromInt(color[0]));
+                    const val = 0.299 * @as(f64, @floatFromInt(color[2])) 
+                              + 0.587 * @as(f64, @floatFromInt(color[1])) 
+                              + 0.114 * @as(f64, @floatFromInt(color[0]));
                     px.channels[0] = convertValue(T, val);
                 }
                 texture.setPixel(r, x, px);
@@ -269,7 +182,12 @@ pub fn loadBMP(allocator: std.mem.Allocator, io: std.Io, path: []const u8, compt
     return texture;
 }
 
-pub fn loadTIFF(allocator: std.mem.Allocator, io: std.Io, path: []const u8, comptime T: type, comptime channels: usize) !Texture(T, channels) {
+// TODO: try and fix this hard coded dynamic library mess.
+pub fn loadTIFF(allocator: std.mem.Allocator, 
+                io: std.Io, 
+                path: []const u8, 
+                comptime T: type, 
+                comptime channels: usize) !Texture(T, channels) {
     _ = io;
     const RTLD_LAZY = 1;
     const handle = dlopen("/usr/lib/x86_64-linux-gnu/libtiff.so.6", RTLD_LAZY) orelse return error.DlOpenFailed;
@@ -315,7 +233,9 @@ pub fn loadTIFF(allocator: std.mem.Allocator, io: std.Io, path: []const u8, comp
                 px.channels[1] = convertValue(T, g);
                 px.channels[2] = convertValue(T, b);
             } else if (channels == 1) {
-                const val = 0.299 * @as(f64, @floatFromInt(r)) + 0.587 * @as(f64, @floatFromInt(g)) + 0.114 * @as(f64, @floatFromInt(b));
+                const val = 0.299 * @as(f64, @floatFromInt(r)) 
+                          + 0.587 * @as(f64, @floatFromInt(g)) 
+                          + 0.114 * @as(f64, @floatFromInt(b));
                 px.channels[0] = convertValue(T, val);
             }
             texture.pixels[dst_row + col] = px;
@@ -345,56 +265,6 @@ extern "c" fn dlclose(handle: ?*anyopaque) c_int;
 
 const testing = std.testing;
 
-test "Texture BMP load and CSV save" {
-    const allocator = testing.allocator;
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
-    const path = "texture/speckle.bmp";
-    
-    var texture = try loadBMP(allocator, io, path, u8, 1);
-    defer texture.deinit(allocator);
-
-    const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, "raster-out", .default_dir) catch |err| switch (err) {
-        error.PathAlreadyExists => {},
-        else => return err,
-    };
-    cwd.createDir(io, "raster-out/test", .default_dir) catch |err| switch (err) {
-        error.PathAlreadyExists => {},
-        else => return err,
-    };
-
-    var out_dir = try cwd.openDir(io, "raster-out/test", .{});
-    defer out_dir.close(io);
-
-    try texture.saveCSV(io, out_dir, "speckle_bmp.csv");
-}
-
-test "Texture TIFF load and CSV save" {
-    const allocator = testing.allocator;
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
-    const path = "texture/speckle.tiff";
-    
-    var texture = try loadTIFF(allocator, io, path, u8, 1);
-    defer texture.deinit(allocator);
-
-    const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, "raster-out", .default_dir) catch |err| switch (err) {
-        error.PathAlreadyExists => {},
-        else => return err,
-    };
-    cwd.createDir(io, "raster-out/test", .default_dir) catch |err| switch (err) {
-        error.PathAlreadyExists => {},
-        else => return err,
-    };
-
-    var out_dir = try cwd.openDir(io, "raster-out/test", .{});
-    defer out_dir.close(io);
-
-    try texture.saveCSV(io, out_dir, "speckle_tiff.csv");
-}
-
 test "Compare BMP and TIFF load" {
     const allocator = testing.allocator;
     var io_threaded = std.Io.Threaded.init_single_threaded;
@@ -420,41 +290,3 @@ test "Compare BMP and TIFF load" {
     }
 }
 
-test "TextureTiled verification" {
-    const allocator = testing.allocator;
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
-    
-    const tex_bmp = try loadBMP(allocator, io, "texture/speckle.bmp", u8, 1);
-    defer tex_bmp.deinit(allocator);
-
-    var tex_tiled = try TextureTiled(u8, 1, 32).initFromTexture(allocator, tex_bmp);
-    defer tex_tiled.deinit(allocator);
-
-    try testing.expectEqual(tex_bmp.rows_n, tex_tiled.rows_n);
-    try testing.expectEqual(tex_bmp.cols_n, tex_tiled.cols_n);
-
-    // Check random pixels
-    var prng = std.Random.DefaultPrng.init(42);
-    const random = prng.random();
-
-    for (0..100) |_| {
-        const r = random.uintAtMost(usize, tex_bmp.rows_n - 1);
-        const c = random.uintAtMost(usize, tex_bmp.cols_n - 1);
-        
-        const p1 = tex_bmp.getPixel(r, c);
-        const p2 = tex_tiled.getPixel(r, c);
-        try testing.expectEqual(p1.channels[0], p2.channels[0]);
-    }
-
-    // Check a tile
-    const tile = tex_tiled.getTile(0, 0);
-    try testing.expectEqual(tile.len, 32 * 32);
-    for (0..32) |r| {
-        for (0..32) |c| {
-            const p_tile = tile[r * 32 + c];
-            const p_orig = tex_bmp.getPixel(r, c);
-            try testing.expectEqual(p_orig.channels[0], p_tile.channels[0]);
-        }
-    }
-}

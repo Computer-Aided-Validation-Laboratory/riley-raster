@@ -115,7 +115,7 @@ fn sample2D(comptime N: usize,
             wy: [N]f64) f64 {
 
     const offset = @as(isize, @intCast(N)) / 2 - 1;
-    if (use_simd) {
+    if (comptime use_simd) {
         const vwx: @Vector(N, f64) = wx;
         var res_v: @Vector(N, f64) = @splat(0.0);
         var w_sum_v: @Vector(N, f64) = @splat(0.0);

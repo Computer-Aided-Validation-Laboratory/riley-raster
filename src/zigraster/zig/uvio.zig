@@ -73,8 +73,6 @@ pub fn loadTexMap(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !T
 
 pub fn load_uvs(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !NDArray(f64) {
     const tex_map = try loadTexMap(allocator, io, path);
-    // Note: this leaks the TexMap structure but the NDArray holds the buffer.
-    // In these simple main files, it's probably fine as they don't deinit anyway.
     return tex_map.array;
 }
 

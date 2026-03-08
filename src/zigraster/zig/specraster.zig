@@ -39,6 +39,10 @@ const FieldShader = meshraster.FieldShader;
 const tri3 = @import("tri3.zig");
 const tri3opt = @import("tri3opt.zig");
 const tri6 = @import("tri6.zig");
+const quad4ibi = @import("quad4ibi.zig");
+const quad4newton = @import("quad4newton.zig");
+const quad8 = @import("quad8.zig");
+const quad9 = @import("quad9.zig");
 
 const iops = @import("imageops.zig");
 const ImageFormat = iops.ImageFormat;
@@ -244,14 +248,20 @@ fn rasterInternal(comptime mesh_type: MeshType,
         .tri3 => tri3,
         .tri3opt => tri3opt,
         .tri6 => tri6,
-        else => unreachable,
+        .quad4ibi => quad4ibi,
+        .quad4newton => quad4newton,
+        .quad8 => quad8,
+        .quad9 => quad9,
+        //else => unreachable,
     };
 
     const N: usize = switch (mesh_type) {
-        .tri3 => 3,
-        .tri3opt => 3,
+        .tri3, .tri3opt => 3,
         .tri6 => 6,
-        else => unreachable,
+        .quad4ibi, .quad4newton => 4,
+        .quad8 => 8,
+        .quad9 => 9,
+        //else => unreachable,
     };
 
     const ShaderType = @TypeOf(shader);

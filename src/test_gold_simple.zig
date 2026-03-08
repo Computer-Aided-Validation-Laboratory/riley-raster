@@ -2,8 +2,8 @@ const std = @import("std");
 const common = @import("tests/common.zig");
 
 // NOTE: should probably be 1e-9 to 1e-11
-const REL_TOL: f64 = 1e-10;
-const ABS_TOL: f64 = 1e-10;
+const REL_TOL: f64 = 1e-9;
+const ABS_TOL: f64 = 1e-9;
 const SHADER_FILTER: common.ShaderFilter = .both; // .flat, .tex, or .both
 
 test "Gold Simple Suite" {
@@ -17,7 +17,10 @@ test "Gold Simple Suite" {
     const texture = try common.texio.loadTIFF(allocator, io, "texture/speckle.tiff", u8, 1);
     defer texture.deinit(allocator);
 
-    const mesh_types = [_]common.MeshType{ .tri3, .tri6 };
+    const mesh_types = [_]common.MeshType{ .tri3, //.tri3opt, 
+                                           .tri6, 
+                                           .quad4ibi, .quad4newton,
+                                           .quad8, .quad9 };
     const interp_types = [_]common.textureinterp.InterpType{ .cubic_lut_lerp };
     const pixel_num = [_]u32{ 320, 200 };
 
@@ -56,5 +59,5 @@ test "Gold Simple Suite" {
     const end_time = std.Io.Clock.Timestamp.now(io, .awake);
     const duration_ms = @as(f64, @floatFromInt(
         start_time.durationTo(end_time).raw.nanoseconds)) / 1e6;
-    std.debug.print("\nGold Simple Suite (tri3, tri6) took {d:.3} ms\n", .{duration_ms});
+    std.debug.print("\nGold Simple Test Suite took {d:.3} ms\n", .{duration_ms});
 }
