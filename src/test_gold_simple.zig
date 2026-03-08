@@ -23,7 +23,9 @@ test "Gold Simple Suite" {
         const mat_size = tex_orig.rows_n * tex_orig.cols_n;
         const mat_mem = try allocator.alloc(f64, mat_size);
         defer allocator.free(mat_mem);
-        for (0..mat_size) |i| mat_mem[i] = @as(f64, @floatFromInt(tex_orig.pixels[i].channels[0]));
+        for (0..mat_size) |i| {
+            mat_mem[i] = @as(f64, @floatFromInt(tex_orig.pixels[i].channels[0]));
+        }
         const mat = common.MatSlice(f64).init(mat_mem, tex_orig.rows_n, tex_orig.cols_n);
         
         var io_threaded_internal = std.Io.Threaded.init_single_threaded;
@@ -31,7 +33,9 @@ test "Gold Simple Suite" {
         const out_dir = std.Io.Dir.cwd();
         
         try common.iio.saveTIFF(io_internal, out_dir, "texture/speckle-simple.tiff", &mat, 8);
-        break :blk try common.iio.loadImage(allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1);
+        break :blk try common.iio.loadImage(
+            allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1
+        );
     };
     defer texture.deinit(allocator);
 

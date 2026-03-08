@@ -147,7 +147,8 @@ pub fn mul(comptime EType: type,
 }
 
 
-pub fn div(comptime EType: type, vec0: []const EType, vec1: []const EType, vec_out: []EType) !void{
+pub fn div(comptime EType: type, vec0: []const EType, vec1: []const EType, 
+           vec_out: []EType) !void{
     assert(vec0.len == vec1.len);
 
     for (0..vec0.len) |ii| {
@@ -155,7 +156,8 @@ pub fn div(comptime EType: type, vec0: []const EType, vec1: []const EType, vec_o
     }
 }
 
-pub fn mulScalar(comptime EType: type, vec0: []const EType, scalar: EType, vec_out: []EType) !void{
+pub fn mulScalar(comptime EType: type, vec0: []const EType, scalar: EType, 
+                 vec_out: []EType) !void{
     assert(vec0.len == vec_out.len);
 
     for (0..vec0.len) |ii| {

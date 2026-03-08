@@ -316,7 +316,9 @@ pub fn rasterElems(
     const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
     const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
 
-    const sub_pixel_inv_z_scratch = try allocator.alloc(f64, sub_pixel_tile_size * sub_pixel_tile_size);
+    const sub_pixel_inv_z_scratch = try allocator.alloc(
+        f64, sub_pixel_tile_size * sub_pixel_tile_size
+    );
     defer allocator.free(sub_pixel_inv_z_scratch);
     const sub_pixel_img_mem = try allocator.alloc(
         f64,

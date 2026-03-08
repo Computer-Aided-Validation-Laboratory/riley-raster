@@ -4,6 +4,7 @@ const print = std.debug.print;
 
 const MatSlice = @import("matslice.zig").MatSlice;
 const texops = @import("textureops.zig");
+const clibtiff = @import("clibtiff.zig");
 pub const Pixel = texops.Pixel;
 pub const Texture = texops.Texture;
 
@@ -13,10 +14,6 @@ pub const ImageFormat = enum {
     bmp,
     tiff,
 };
-
-//------------------------------------------------------------------------------
-// Generic IO
-//------------------------------------------------------------------------------
 
 pub fn loadImage(allocator: std.mem.Allocator,
                  io: std.Io,
@@ -73,10 +70,6 @@ pub fn saveImage(io: std.Io,
         },
     }
 }
-
-//------------------------------------------------------------------------------
-// MatSlice IO
-//------------------------------------------------------------------------------
 
 pub fn savePPM(io: std.Io,
                out_dir: std.Io.Dir, 
@@ -183,14 +176,17 @@ pub fn loadPPM(allocator: std.mem.Allocator,
             }
 
             if (channels == 3) {
-                px.channels[0] = convertValue(T, @as(f64, @floatFromInt(rgb[0])) / @as(f64, @floatFromInt(max_val)) * 255.0);
-                px.channels[1] = convertValue(T, @as(f64, @floatFromInt(rgb[1])) / @as(f64, @floatFromInt(max_val)) * 255.0);
-                px.channels[2] = convertValue(T, @as(f64, @floatFromInt(rgb[2])) / @as(f64, @floatFromInt(max_val)) * 255.0);
+                const s0 = @as(f64, @floatFromInt(rgb[0])) / @as(f64, @floatFromInt(max_val));
+                const s1 = @as(f64, @floatFromInt(rgb[1])) / @as(f64, @floatFromInt(max_val));
+                const s2 = @as(f64, @floatFromInt(rgb[2])) / @as(f64, @floatFromInt(max_val));
+                px.channels[0] = convertValue(T, s0 * 255.0);
+                px.channels[1] = convertValue(T, s1 * 255.0);
+                px.channels[2] = convertValue(T, s2 * 255.0);
             } else if (channels == 1) {
                 const val = 0.299 * @as(f64, @floatFromInt(rgb[0])) 
                           + 0.587 * @as(f64, @floatFromInt(rgb[1])) 
                           + 0.114 * @as(f64, @floatFromInt(rgb[2]));
-                px.channels[0] = convertValue(T, val / @as(f64, @floatFromInt(max_val)) * 255.0);
+                px.channels[0] = convertValue(T, (val / @as(f64, @floatFromInt(max_val))) * 255.0);
             }
             texture.setPixel(rr, cc, px);
         }
@@ -371,7 +367,7 @@ pub fn saveTIFF(io: std.Io,
     if (bits == 16) {
         for (0..image.rows_n) |r| {
             for (0..image.cols_n) |c| {
-                const val = @as(u16,@intFromFloat(image.get(r, c) * 257.0)); // scale 0-255 to 0-65535
+                const val = @as(u16,@intFromFloat(image.get(r, c) * 257.0)); 
                 try writer.writeInt(u16, val, .little);
             }
         }
@@ -419,17 +415,11 @@ pub fn saveTIFF(io: std.Io,
     // ID: 279 (StripByteCounts), Type: 4 (Long), Count: 1
     try (Tag{ .id = 279, .type = 4, .count = 1, .value = pixel_data_size }).write(writer);
     // ID: 282 (XResolution), Type: 5 (Rational) - simplified: just use long 72
-    // For simplicity, we skip complex rationals and just set min required tags correctly.
-    // Let's use ResolutionUnit (296) instead of XRes for minimum compliance.
     try (Tag{ .id = 296, .type = 3, .count = 1, .value = 2 }).write(writer); // Inch
 
     try writer.writeInt(u32, 0, .little); // End of IFD
     try writer.flush();
 }
-
-//------------------------------------------------------------------------------
-// Texture IO
-//------------------------------------------------------------------------------
 
 pub fn loadBMP(allocator: std.mem.Allocator, 
                io: std.Io, 
@@ -540,7 +530,6 @@ pub fn loadBMP(allocator: std.mem.Allocator,
     return texture;
 }
 
-// Hand-written TIFF loader for basic grayscale TIFFs (like those saved by saveTIFF)
 pub fn loadTIFF(allocator: std.mem.Allocator, 
                 io: std.Io, 
                 path: []const u8, 
@@ -583,8 +572,10 @@ pub fn loadTIFF(allocator: std.mem.Allocator,
         const tag_value = try reader.takeInt(u32, endian);
 
         switch (tag_id) {
-            256 => width = if (tag_type == 3) @as(u32, @intCast(tag_value & 0xFFFF)) else tag_value, // Width
-            257 => height = if (tag_type == 3) @as(u32, @intCast(tag_value & 0xFFFF)) else tag_value, // Height
+            256 => width = if (tag_type == 3) @as(u32, @intCast(tag_value & 0xFFFF)) 
+                           else tag_value, // Width
+            257 => height = if (tag_type == 3) @as(u32, @intCast(tag_value & 0xFFFF)) 
+                            else tag_value, // Height
             258 => bits_per_sample = @intCast(tag_value & 0xFFFF), // BitsPerSample
             273 => strip_offsets = tag_value, // StripOffsets
             277 => samples_per_pixel = @intCast(tag_value & 0xFFFF), // SamplesPerPixel
@@ -622,38 +613,31 @@ pub fn loadTIFF(allocator: std.mem.Allocator,
     return texture;
 }
 
-// TODO: try and fix this hard coded dynamic library mess.
 pub fn CLoadTIFF(allocator: std.mem.Allocator, 
                 io: std.Io, 
                 path: []const u8, 
                 comptime T: type, 
                 comptime channels: usize) !Texture(T, channels) {
     _ = io;
-    const RTLD_LAZY = 1;
-    const handle = dlopen("/usr/lib/x86_64-linux-gnu/libtiff.so.6", RTLD_LAZY) orelse return error.DlOpenFailed;
-    defer _ = dlclose(handle);
-
-    const TIFFOpen = @as(*const fn ([*:0]const u8, [*:0]const u8) callconv(.c) ?*anyopaque, @ptrCast(dlsym(handle, "TIFFOpen") orelse return error.SymbolNotFound));
-    const TIFFClose = @as(*const fn (*anyopaque) callconv(.c) void, @ptrCast(dlsym(handle, "TIFFClose") orelse return error.SymbolNotFound));
-    const TIFFGetField = @as(*const fn (*anyopaque, u32, ...) callconv(.c) c_int, @ptrCast(dlsym(handle, "TIFFGetField") orelse return error.SymbolNotFound));
-    const TIFFReadRGBAImage = @as(*const fn (*anyopaque, u32, u32, [*]u32, c_int) callconv(.c) c_int, @ptrCast(dlsym(handle, "TIFFReadRGBAImage") orelse return error.SymbolNotFound));
+    var libtiff = try clibtiff.LibTiff.init();
+    defer libtiff.deinit();
 
     const path_c = try allocator.dupeZ(u8, path);
     defer allocator.free(path_c);
 
-    const tif = TIFFOpen(path_c, "r") orelse return error.OpenFailed;
-    defer TIFFClose(tif);
+    const tif = libtiff.open(path_c, "r") orelse return error.OpenFailed;
+    defer libtiff.close(tif);
 
     var w: u32 = 0;
     var h: u32 = 0;
-    _ = TIFFGetField(tif, @as(u32, 256), &w);
-    _ = TIFFGetField(tif, @as(u32, 257), &h);
+    _ = libtiff.getField(tif, 256, &w);
+    _ = libtiff.getField(tif, 257, &h);
 
     const pixel_count = w * h;
     const raster = try allocator.alloc(u32, pixel_count);
     defer allocator.free(raster);
 
-    if (TIFFReadRGBAImage(tif, w, h, raster.ptr, 0) == 0) return error.ReadFailed;
+    if (libtiff.readRGBAImage(tif, w, h, raster.ptr, 0) == 0) return error.ReadFailed;
 
     var texture = try Texture(T, channels).init(allocator, h, w);
     errdefer texture.deinit(allocator);
@@ -698,10 +682,6 @@ fn convertValue(comptime T: type, val: anytype) T {
     }
 }
 
-extern "c" fn dlopen(filename: [*:0]const u8, flags: c_int) ?*anyopaque;
-extern "c" fn dlsym(handle: ?*anyopaque, symbol: [*:0]const u8) ?*anyopaque;
-extern "c" fn dlclose(handle: ?*anyopaque) c_int;
-
 const testing = std.testing;
 
 test "Verify hand-written TIFF loader" {
@@ -720,7 +700,8 @@ test "Verify hand-written TIFF loader" {
     defer allocator.free(mat_mem);
     for (0..tex_c.rows_n) |rr| {
         for (0..tex_c.cols_n) |cc| {
-            mat_mem[rr * tex_c.cols_n + cc] = @as(f64, @floatFromInt(tex_c.getPixel(rr, cc).channels[0]));
+            mat_mem[rr * tex_c.cols_n + cc] = @as(f64, 
+                @floatFromInt(tex_c.getPixel(rr, cc).channels[0]));
         }
     }
     const mat = MatSlice(f64).init(mat_mem, tex_c.rows_n, tex_c.cols_n);

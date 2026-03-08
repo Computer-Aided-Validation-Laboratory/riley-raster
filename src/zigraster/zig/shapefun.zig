@@ -1,4 +1,5 @@
-pub fn shapeFunctions(comptime N: usize, xi: f64, eta: f64, n_v: *[N]f64, dNu: *[N]f64, dNv: *[N]f64) void {
+pub fn shapeFunctions(comptime N: usize, xi: f64, eta: f64, 
+                      n_v: *[N]f64, dNu: *[N]f64, dNv: *[N]f64) void {
     switch (N) {
         4 => shapeFunctions4(xi, eta, n_v, dNu, dNv),
         6 => shapeFunctions6(xi, eta, n_v, dNu, dNv),
@@ -21,7 +22,8 @@ fn shapeFunctions4(xi: f64, eta: f64, n_v: *[4]f64, dNu: *[4]f64, dNv: *[4]f64) 
     dNv[2] = 0.25 * (1.0 + xi);   dNv[3] = 0.25 * (1.0 - xi);
 }
 
-fn shapeFunctions6(xi: f64, eta: f64, n_vals: *[6]f64, dN_dxi: *[6]f64, dN_deta: *[6]f64) void {
+fn shapeFunctions6(xi: f64, eta: f64, n_vals: *[6]f64, 
+                   dN_dxi: *[6]f64, dN_deta: *[6]f64) void {
     const L1 = 1.0 - xi - eta;
     const L2 = xi;
     const L3 = eta;

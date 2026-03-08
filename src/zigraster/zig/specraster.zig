@@ -382,7 +382,8 @@ fn rasterInternal(
     total_px = total_px * sub_samp_f * sub_samp_f;
     // conv ns->s *1e9, conv to million ops-> /1e6 = *1e3
     const mega_ops_per_sec: f64 = 1.0e3 * total_px / time_raster_all; // time in ns
-    const mega_tris_per_sec: f64 = 1.0e3 * @as(f64, @floatFromInt(elems_num)) / time_raster_all;
+    const mega_tris_per_sec: f64 = 1.0e3 * @as(f64, @floatFromInt(elems_num)) / 
+                                   time_raster_all;
 
     const conv_units: f64 = 1.0 / 1.0e6;
     const print_break = [_]u8{'='} ** 80;
@@ -394,7 +395,8 @@ fn rasterInternal(
     print("Elem tile overlap store = {d:.6} ms\n", 
           .{ time4_elem_tile_overlap_store * conv_units });
     print("Raster loop time        = {d:.6} ms\n", .{ time5_raster_loop * conv_units });
-    print("{s}\nTOTAL RASTER TIME  = {d:.3} ms\n", .{ print_break, time_raster_all * conv_units });
+    print("{s}\nTOTAL RASTER TIME  = {d:.3} ms\n", 
+          .{ print_break, time_raster_all * conv_units });
     print("{s}\n", .{print_break});
     print("Total Ops   = {d}\n", .{total_px});
     print("MOps/second = {d:.2}\n", .{mega_ops_per_sec});

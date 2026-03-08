@@ -287,9 +287,15 @@ pub const Mat33Ops = struct {
     pub fn det(ElemType: type, mat33: Mat33T(ElemType)) ElemType {
         var sub_dets: [3]ElemType = undefined;
 
-        sub_dets[0] = mat33.get(0, 0) * ((mat33.get(1, 1) * mat33.get(2, 2)) - (mat33.get(1, 2) * mat33.get(2, 1)));
-        sub_dets[1] = mat33.get(0, 1) * ((mat33.get(1, 0) * mat33.get(2, 2)) - (mat33.get(1, 2) * mat33.get(2, 0)));
-        sub_dets[2] = mat33.get(0, 2) * ((mat33.get(1, 0) * mat33.get(2, 1)) - (mat33.get(1, 1) * mat33.get(2, 0)));
+        sub_dets[0] = mat33.get(0, 0) * (
+            (mat33.get(1, 1) * mat33.get(2, 2)) - (mat33.get(1, 2) * mat33.get(2, 1))
+        );
+        sub_dets[1] = mat33.get(0, 1) * (
+            (mat33.get(1, 0) * mat33.get(2, 2)) - (mat33.get(1, 2) * mat33.get(2, 0))
+        );
+        sub_dets[2] = mat33.get(0, 2) * (
+            (mat33.get(1, 0) * mat33.get(2, 1)) - (mat33.get(1, 1) * mat33.get(2, 0))
+        );
 
         return sub_dets[0] - sub_dets[1] + sub_dets[2];
     }
@@ -300,15 +306,33 @@ pub const Mat33Ops = struct {
         const detm = 1 / Mat33Ops.det(ElemType, mat33);
 
         // Calculate the cofactors and transpose in one step
-        inv33.elems[0] = detm * (mat33.get(1, 1) * mat33.get(2, 2) - mat33.get(1, 2) * mat33.get(2, 1));
-        inv33.elems[1] = -detm * (mat33.get(0, 1) * mat33.get(2, 2) - mat33.get(0, 2) * mat33.get(2, 1));
-        inv33.elems[2] = detm * (mat33.get(0, 1) * mat33.get(1, 2) - mat33.get(0, 2) * mat33.get(1, 1));
-        inv33.elems[3] = -detm * (mat33.get(1, 0) * mat33.get(2, 2) - mat33.get(1, 2) * mat33.get(2, 0));
-        inv33.elems[4] = detm * (mat33.get(0, 0) * mat33.get(2, 2) - mat33.get(0, 2) * mat33.get(2, 0));
-        inv33.elems[5] = -detm * (mat33.get(0, 0) * mat33.get(1, 2) - mat33.get(0, 2) * mat33.get(1, 0));
-        inv33.elems[6] = detm * (mat33.get(1, 0) * mat33.get(2, 1) - mat33.get(1, 1) * mat33.get(2, 0));
-        inv33.elems[7] = -detm * (mat33.get(0, 0) * mat33.get(2, 1) - mat33.get(0, 1) * mat33.get(2, 0));
-        inv33.elems[8] = detm * (mat33.get(0, 0) * mat33.get(1, 1) - mat33.get(0, 1) * mat33.get(1, 0));
+        inv33.elems[0] = detm * (
+            mat33.get(1, 1) * mat33.get(2, 2) - mat33.get(1, 2) * mat33.get(2, 1)
+        );
+        inv33.elems[1] = -detm * (
+            mat33.get(0, 1) * mat33.get(2, 2) - mat33.get(0, 2) * mat33.get(2, 1)
+        );
+        inv33.elems[2] = detm * (
+            mat33.get(0, 1) * mat33.get(1, 2) - mat33.get(0, 2) * mat33.get(1, 1)
+        );
+        inv33.elems[3] = -detm * (
+            mat33.get(1, 0) * mat33.get(2, 2) - mat33.get(1, 2) * mat33.get(2, 0)
+        );
+        inv33.elems[4] = detm * (
+            mat33.get(0, 0) * mat33.get(2, 2) - mat33.get(0, 2) * mat33.get(2, 0)
+        );
+        inv33.elems[5] = -detm * (
+            mat33.get(0, 0) * mat33.get(1, 2) - mat33.get(0, 2) * mat33.get(1, 0)
+        );
+        inv33.elems[6] = detm * (
+            mat33.get(1, 0) * mat33.get(2, 1) - mat33.get(1, 1) * mat33.get(2, 0)
+        );
+        inv33.elems[7] = -detm * (
+            mat33.get(0, 0) * mat33.get(2, 1) - mat33.get(0, 1) * mat33.get(2, 0)
+        );
+        inv33.elems[8] = detm * (
+            mat33.get(0, 0) * mat33.get(1, 1) - mat33.get(0, 1) * mat33.get(1, 0)
+        );
 
         return inv33;
     }

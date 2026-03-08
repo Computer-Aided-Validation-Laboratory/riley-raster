@@ -152,14 +152,16 @@ pub fn initVec2(comptime ElemType: type, x: ElemType, y: ElemType) Vec2T(ElemTyp
     };
 }
 
-pub fn initVec3(comptime ElemType: type, x: ElemType, y: ElemType, z: ElemType) Vec3T(ElemType) {
+pub fn initVec3(comptime ElemType: type, x: ElemType, y: ElemType, 
+                z: ElemType) Vec3T(ElemType) {
     return Vec3T(ElemType){
         .elems = [3]ElemType{ x, y, z },
     };
 }
 
 pub const Vec3Ops = struct {
-    pub fn cross(ElemType: type, vec0: Vec3T(ElemType), vec1: Vec3T(ElemType)) Vec3T(ElemType) {
+    pub fn cross(ElemType: type, vec0: Vec3T(ElemType), 
+                 vec1: Vec3T(ElemType)) Vec3T(ElemType) {
         var vec_out: Vec3T(ElemType) = undefined;
         vec_out.elems[0] = vec0.elems[1] * vec1.elems[2] - vec0.elems[2] * vec1.elems[1];
         vec_out.elems[1] = vec0.elems[0] * vec1.elems[2] - vec0.elems[2] * vec1.elems[0];

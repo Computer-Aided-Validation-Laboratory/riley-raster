@@ -275,9 +275,11 @@ pub fn sampleGreyscale(comptime interp: InterpType,
             .{ quinticWeightHorner(ty+2), quinticWeightHorner(ty+1),
                quinticWeightHorner(ty), quinticWeightHorner(ty-1),
                quinticWeightHorner(ty-2), quinticWeightHorner(ty-3) }),
-        .quintic_lut => sample2D(6, true, texture, x_i, y_i,
-            quintic_lut[@as(usize, @intFromFloat(tx * @as(f64, @floatFromInt(LUT_SIZE - 1))))],
-            quintic_lut[@as(usize, @intFromFloat(ty * @as(f64, @floatFromInt(LUT_SIZE - 1))))]),
+        .quintic_lut => {
+            const idx_tx = @as(usize, @intFromFloat(tx * @as(f64, @floatFromInt(LUT_SIZE - 1))));
+            const idx_ty = @as(usize, @intFromFloat(ty * @as(f64, @floatFromInt(LUT_SIZE - 1))));
+            return sample2D(6, true, texture, x_i, y_i, quintic_lut[idx_tx], quintic_lut[idx_ty]);
+        },
         .quintic_lut_lerp => {
             const wx = getLerpWeights(6, quintic_lut, tx);
             const wy = getLerpWeights(6, quintic_lut, ty);

@@ -273,7 +273,9 @@ pub fn load_sim_data(allocator: std.mem.Allocator,
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
     var lines = try readCsvToList(arena_alloc, io, coord_path);
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
-    const time_read_coords: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
+    const time_read_coords: f64 = @floatFromInt(
+        time_start.durationTo(time_end).raw.nanoseconds
+    );
 
     // Print the array list line by line
     // for (lines.items,0..) |line_str,line_num|{
