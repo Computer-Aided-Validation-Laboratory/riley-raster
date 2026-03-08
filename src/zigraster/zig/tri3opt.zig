@@ -44,24 +44,28 @@ fn shadeFlat(
     const start_y = @as(f64, @floatFromInt(tile.y_px_min)) +
         (@as(f64, @floatFromInt(scratch_start_y)) + 0.5) * sub_pixel_step;
 
-    const dw0_dx = (node_coords.y[2] - node_coords.y[1]) * sub_pixel_step * inv_elem_area;
-    const dw1_dx = (node_coords.y[0] - node_coords.y[2]) * sub_pixel_step * inv_elem_area;
-    const dw2_dx = (node_coords.y[1] - node_coords.y[0]) * sub_pixel_step * inv_elem_area;
-    const dw0_dy = (node_coords.x[1] - node_coords.x[2]) * sub_pixel_step * inv_elem_area;
-    const dw1_dy = (node_coords.x[2] - node_coords.x[0]) * sub_pixel_step * inv_elem_area;
-    const dw2_dy = (node_coords.x[0] - node_coords.x[1]) * sub_pixel_step * inv_elem_area;
+    var dweights_dx: [N]f64 = undefined;
+    dweights_dx[0] = (node_coords.y[2] - node_coords.y[1]) * sub_pixel_step * inv_elem_area;
+    dweights_dx[1] = (node_coords.y[0] - node_coords.y[2]) * sub_pixel_step * inv_elem_area;
+    dweights_dx[2] = (node_coords.y[1] - node_coords.y[0]) * sub_pixel_step * inv_elem_area;
 
-    var w0_row = rops.edgeFun3(
+    var dweights_dy: [N]f64 = undefined;
+    dweights_dy[0] = (node_coords.x[1] - node_coords.x[2]) * sub_pixel_step * inv_elem_area;
+    dweights_dy[1] = (node_coords.x[2] - node_coords.x[0]) * sub_pixel_step * inv_elem_area;
+    dweights_dy[2] = (node_coords.x[0] - node_coords.x[1]) * sub_pixel_step * inv_elem_area;
+
+    var weights_row: [N]f64 = undefined;
+    weights_row[0] = rops.edgeFun3(
         node_coords.x[1], node_coords.y[1],
         node_coords.x[2], node_coords.y[2],
         start_x, start_y,
     ) * inv_elem_area;
-    var w1_row = rops.edgeFun3(
+    weights_row[1] = rops.edgeFun3(
         node_coords.x[2], node_coords.y[2],
         node_coords.x[0], node_coords.y[0],
         start_x, start_y,
     ) * inv_elem_area;
-    var w2_row = rops.edgeFun3(
+    weights_row[2] = rops.edgeFun3(
         node_coords.x[0], node_coords.y[0],
         node_coords.x[1], node_coords.y[1],
         start_x, start_y,
@@ -69,15 +73,18 @@ fn shadeFlat(
 
     for (scratch_start_y..scratch_end_y) |yy| {
         const row_off = yy * sub_pixel_tile_size;
-        var w0 = w0_row;
-        var w1 = w1_row;
-        var w2 = w2_row;
+        var weights = weights_row;
+
         for (scratch_start_x..scratch_end_x) |xx| {
-            if (w0 >= -tol_edge and w1 >= -tol_edge and w2 >= -tol_edge) {
-                const node_weights = [_]f64{ w0, w1, w2 };
-                const sub_pixel_inv_z = w0 * nodes_inv_z[0] + 
-                                        w1 * nodes_inv_z[1] + 
-                                        w2 * nodes_inv_z[2];
+            if (weights[0] >= -tol_edge and
+                weights[1] >= -tol_edge and
+                weights[2] >= -tol_edge)
+            {
+                var sub_pixel_inv_z: f64 = 0.0;
+                inline for (0..N) |nn| {
+                    sub_pixel_inv_z += weights[nn] * nodes_inv_z[nn];
+                }
+
                 const idx = row_off + xx;
                 if (sub_pixel_inv_z > sub_pixel_inv_z_scratch[idx]) {
                     sub_pixel_inv_z_scratch[idx] = sub_pixel_inv_z;
@@ -87,7 +94,7 @@ fn shadeFlat(
                         overlap.elem_ind,
                         actual_fields,
                         fields_num,
-                        node_weights,
+                        weights,
                         nodes_inv_z,
                         1.0 / sub_pixel_inv_z,
                         flat_shader,
@@ -96,13 +103,13 @@ fn shadeFlat(
                     );
                 }
             }
-            w0 += dw0_dx;
-            w1 += dw1_dx;
-            w2 += dw2_dx;
+            inline for (0..N) |nn| {
+                weights[nn] += dweights_dx[nn];
+            }
         }
-        w0_row += dw0_dy;
-        w1_row += dw1_dy;
-        w2_row += dw2_dy;
+        inline for (0..N) |nn| {
+            weights_row[nn] += dweights_dy[nn];
+        }
     }
 }
 
@@ -131,24 +138,28 @@ fn shadeTex(
     const start_y = @as(f64, @floatFromInt(tile.y_px_min)) +
         (@as(f64, @floatFromInt(scratch_start_y)) + 0.5) * sub_pixel_step;
 
-    const dw0_dx = (node_coords.y[2] - node_coords.y[1]) * sub_pixel_step * inv_elem_area;
-    const dw1_dx = (node_coords.y[0] - node_coords.y[2]) * sub_pixel_step * inv_elem_area;
-    const dw2_dx = (node_coords.y[1] - node_coords.y[0]) * sub_pixel_step * inv_elem_area;
-    const dw0_dy = (node_coords.x[1] - node_coords.x[2]) * sub_pixel_step * inv_elem_area;
-    const dw1_dy = (node_coords.x[2] - node_coords.x[0]) * sub_pixel_step * inv_elem_area;
-    const dw2_dy = (node_coords.x[0] - node_coords.x[1]) * sub_pixel_step * inv_elem_area;
+    var dweights_dx: [N]f64 = undefined;
+    dweights_dx[0] = (node_coords.y[2] - node_coords.y[1]) * sub_pixel_step * inv_elem_area;
+    dweights_dx[1] = (node_coords.y[0] - node_coords.y[2]) * sub_pixel_step * inv_elem_area;
+    dweights_dx[2] = (node_coords.y[1] - node_coords.y[0]) * sub_pixel_step * inv_elem_area;
 
-    var w0_row = rops.edgeFun3(
+    var dweights_dy: [N]f64 = undefined;
+    dweights_dy[0] = (node_coords.x[1] - node_coords.x[2]) * sub_pixel_step * inv_elem_area;
+    dweights_dy[1] = (node_coords.x[2] - node_coords.x[0]) * sub_pixel_step * inv_elem_area;
+    dweights_dy[2] = (node_coords.x[0] - node_coords.x[1]) * sub_pixel_step * inv_elem_area;
+
+    var weights_row: [N]f64 = undefined;
+    weights_row[0] = rops.edgeFun3(
         node_coords.x[1], node_coords.y[1],
         node_coords.x[2], node_coords.y[2],
         start_x, start_y,
     ) * inv_elem_area;
-    var w1_row = rops.edgeFun3(
+    weights_row[1] = rops.edgeFun3(
         node_coords.x[2], node_coords.y[2],
         node_coords.x[0], node_coords.y[0],
         start_x, start_y,
     ) * inv_elem_area;
-    var w2_row = rops.edgeFun3(
+    weights_row[2] = rops.edgeFun3(
         node_coords.x[0], node_coords.y[0],
         node_coords.x[1], node_coords.y[1],
         start_x, start_y,
@@ -156,27 +167,27 @@ fn shadeTex(
 
     for (scratch_start_y..scratch_end_y) |yy| {
         const row_off = yy * sub_pixel_tile_size;
-        var w0 = w0_row;
-        var w1 = w1_row;
-        var w2 = w2_row;
+        var weights = weights_row;
 
         for (scratch_start_x..scratch_end_x) |xx| {
-            if (w0 >= -tol_edge and w1 >= -tol_edge and w2 >= -tol_edge) {
-                const node_weights = [_]f64{ w0, w1, w2 };
-                const sub_pixel_inv_z = w0 * nodes_inv_z[0] + 
-                                        w1 * nodes_inv_z[1] + 
-                                        w2 * nodes_inv_z[2];
+            if (weights[0] >= -tol_edge and
+                weights[1] >= -tol_edge and
+                weights[2] >= -tol_edge)
+            {
+                var sub_pixel_inv_z: f64 = 0.0;
+                inline for (0..N) |nn| {
+                    sub_pixel_inv_z += weights[nn] * nodes_inv_z[nn];
+                }
+
                 const idx = row_off + xx;
-                
                 if (sub_pixel_inv_z > sub_pixel_inv_z_scratch[idx]) {
                     sub_pixel_inv_z_scratch[idx] = sub_pixel_inv_z;
-
                     switch (tex_shader.interp_type) {
                         inline else => |it| shaderops.fillTexPerspective(
                             N,
                             it,
                             overlap.elem_ind,
-                            node_weights,
+                            weights,
                             nodes_inv_z,
                             1.0 / sub_pixel_inv_z,
                             tex_shader,
@@ -186,13 +197,13 @@ fn shadeTex(
                     }
                 }
             }
-            w0 += dw0_dx;
-            w1 += dw1_dx;
-            w2 += dw2_dx;
+            inline for (0..N) |nn| {
+                weights[nn] += dweights_dx[nn];
+            }
         }
-        w0_row += dw0_dy;
-        w1_row += dw1_dy;
-        w2_row += dw2_dy;
+        inline for (0..N) |nn| {
+            weights_row[nn] += dweights_dy[nn];
+        }
     }
 }
 
@@ -216,8 +227,10 @@ pub fn rasterElems(
         *const TexShader => 1,
         else => @compileError("Unsupported shader type"),
     };
-    const actual_fields = if (@TypeOf(shader) == *const FlatShader) 
-        @min(fields_num, 3) else 1;
+    const actual_fields = if (@TypeOf(shader) == *const FlatShader)
+        @min(fields_num, 3)
+    else
+        1;
 
     const screen_px_x = @as(u16, @intCast(camera.pixels_num[0]));
     const screen_px_y = @as(u16, @intCast(camera.pixels_num[1]));
@@ -234,9 +247,11 @@ pub fn rasterElems(
 
     const sub_pixel_img_mem = try allocator.alloc(f64, sub_pixel_tile_total * fields_num);
     defer allocator.free(sub_pixel_img_mem);
-    var sub_pixel_image_scratch = MatSlice(f64).init(sub_pixel_img_mem, 
-                                                     sub_pixel_tile_total, 
-                                                     fields_num);
+    var sub_pixel_image_scratch = MatSlice(f64).init(
+        sub_pixel_img_mem,
+        sub_pixel_tile_total,
+        fields_num,
+    );
 
     const sub_pixel_field_avg = try allocator.alloc(f64, fields_num);
     defer allocator.free(sub_pixel_field_avg);
@@ -249,16 +264,23 @@ pub fn rasterElems(
                                         tile.overlap_start + tile.overlap_count];
 
         for (overlaps) |overlap| {
-            const node_coords = try rops.loadVec3SlicesFromElemArray(N, f64, elem_coord_arr, 
-                                                                     overlap.elem_ind);
+            const node_coords = try rops.loadVec3SlicesFromElemArray(
+                N,
+                f64,
+                elem_coord_arr,
+                overlap.elem_ind,
+            );
 
             var nodes_inv_z: [N]f64 = undefined;
             inline for (0..N) |nn| {
                 nodes_inv_z[nn] = 1.0 / node_coords.z[nn];
             }
 
-            const area = rops.edgeFun3(node_coords.x[0], node_coords.y[0], node_coords.x[1], 
-                                       node_coords.y[1], node_coords.x[2], node_coords.y[2]);
+            const area = rops.edgeFun3(
+                node_coords.x[0], node_coords.y[0],
+                node_coords.x[1], node_coords.y[1],
+                node_coords.x[2], node_coords.y[2],
+            );
             if (@abs(area) < tol_area) continue;
             const inv_elem_area: f64 = 1.0 / area;
 
@@ -296,8 +318,17 @@ pub fn rasterElems(
             }
         }
 
-        rops.averageScratch(tile, tile_size, screen_px_x, screen_px_y, sub_samp, 
-                            sub_pixel_tile_size, fields_num, &sub_pixel_image_scratch, 
-                            sub_pixel_field_avg, image_out_arr);
+        rops.averageScratch(
+            tile,
+            tile_size,
+            screen_px_x,
+            screen_px_y,
+            sub_samp,
+            sub_pixel_tile_size,
+            fields_num,
+            &sub_pixel_image_scratch,
+            sub_pixel_field_avg,
+            image_out_arr,
+        );
     }
 }
