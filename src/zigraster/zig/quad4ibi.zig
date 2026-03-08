@@ -8,9 +8,9 @@ const BBox = rops.BBox;
 const ActiveTile = rops.ActiveTile;
 const Vec3OfSlices = rops.Vec3OfSlices;
 const ti = @import("textureinterp.zig");
-const mr = @import("meshraster.zig");
-const FlatShader = mr.FlatShader;
-const TexShader = mr.TexShader;
+const shader = @import("shader.zig");
+const FlatShader = shader.FlatShader;
+const TexShader = shader.TexShader;
 
 const SolverParams = struct {
     ae_x: f64, ae_z: f64, be_x: f64, be_z: f64, ce_x: f64, ce_z: f64, de_x: f64, de_z: f64,
@@ -44,48 +44,6 @@ fn solveQuadraticRobust(a: f64, b: f64, c: f64, u_out: *f64) bool {
     return false;
 }
 
-inline fn fillFlat(
-    actual_fields: usize,
-    fields_num: usize,
-    N0: f64,
-    N1: f64,
-    N2: f64,
-    N3: f64,
-    f_vals: [3][4]f64,
-    scratch_flat_ind: usize,
-    spx_image_scratch: *MatSlice(f64),
-) void {
-    for (0..actual_fields) |ff| {
-        const val = N0 * f_vals[ff][0] + N1 * f_vals[ff][1] +
-            N2 * f_vals[ff][2] + N3 * f_vals[ff][3];
-        spx_image_scratch.elems[scratch_flat_ind * fields_num + ff] = val;
-    }
-}
-
-inline fn fillTex(
-    comptime interp_type: ti.InterpType,
-    N0: f64,
-    N1: f64,
-    N2: f64,
-    N3: f64,
-    uv_vals: [2][4]f64,
-    shader: *const TexShader,
-    scratch_flat_ind: usize,
-    spx_image_scratch: *MatSlice(f64),
-) void {
-    const u_at = N0 * uv_vals[0][0] + N1 * uv_vals[0][1] +
-        N2 * uv_vals[0][2] + N3 * uv_vals[0][3];
-    const v_at = N0 * uv_vals[1][0] + N1 * uv_vals[1][1] +
-        N2 * uv_vals[1][2] + N3 * uv_vals[1][3];
-
-    spx_image_scratch.elems[scratch_flat_ind] = ti.sampleGreyscale(
-        interp_type,
-        shader.texture,
-        u_at,
-        v_at,
-    );
-}
-
 fn shadeFlat(
     frame_ind: usize,
     actual_fields: usize,
@@ -99,19 +57,12 @@ fn shadeFlat(
     y_off: f64,
     k: SolverParams,
     nr: Vec3OfSlices(f64),
-    shader: *const FlatShader,
+    sh: *const FlatShader,
     spx_inv_z_scratch: []f64,
     spx_image_scratch: *MatSlice(f64),
 ) void {
+    const N = 4;
     const tol_den = 1e-12;
-    const e_stride = shader.field.strides[1];
-    const f_stride = shader.field.strides[2];
-    const e_off = frame_ind * shader.field.strides[0] + ov.elem_ind * e_stride;
-    var f_vals = [3][4]f64{ undefined, undefined, undefined };
-    for (0..actual_fields) |ff| {
-        const ff_off = e_off + ff * f_stride;
-        inline for (0..4) |ii| f_vals[ff][ii] = shader.field.elems[ff_off + ii];
-    }
 
     const s_sy = sub_samp * (@as(usize, ov.y_min) - tile.y_px_min);
     const s_ey = sub_samp * (@as(usize, ov.y_max) - tile.y_px_min);
@@ -144,14 +95,16 @@ fn shadeFlat(
                     if (@abs(den_e) > tol_den) v = -(be * u + de) / den_e;
                 }
                 if (v >= -1e-7 and v <= 1.0 + 1e-7) {
-                    const N0 = (1.0-u)*(1.0-v); const N1 = u*(1.0-v);
-                    const N2 = u*v; const N3 = (1.0-u)*v;
-                    const sw = N0*nr.z[0] + N1*nr.z[1] + N2*nr.z[2] + N3*nr.z[3];
+                    const n_vals = [_]f64{
+                        (1.0 - u) * (1.0 - v), u * (1.0 - v), u * v, (1.0 - u) * v,
+                    };
+                    const sw = n_vals[0]*nr.z[0] + n_vals[1]*nr.z[1] + 
+                               n_vals[2]*nr.z[2] + n_vals[3]*nr.z[3];
                     const inv_z = 1.0 / sw; const idx = row_off + xx;
                     if (inv_z > spx_inv_z_scratch[idx]) {
                         spx_inv_z_scratch[idx] = inv_z;
-                        fillFlat(actual_fields, fields_num, N0, N1, N2, N3, 
-                                 f_vals, idx, spx_image_scratch);
+                        shader.fillFlat(N, frame_ind, ov.elem_ind, actual_fields, 
+                                        fields_num, n_vals, sh, idx, spx_image_scratch);
                     }
                 }
             }
@@ -169,19 +122,12 @@ fn shadeTex(
     y_off: f64,
     k: SolverParams,
     nr: Vec3OfSlices(f64),
-    shader: *const TexShader,
+    sh: *const TexShader,
     spx_inv_z_scratch: []f64,
     spx_image_scratch: *MatSlice(f64),
 ) void {
+    const N = 4;
     const tol_den = 1e-12;
-    const e_stride = shader.uvs.strides[0];
-    const c_stride = shader.uvs.strides[1];
-    const uv_off = ov.elem_ind * e_stride;
-    var uv_vals = [2][4]f64{ undefined, undefined };
-    inline for (0..2) |cc| {
-        const c_off = uv_off + cc * c_stride;
-        inline for (0..4) |ii| uv_vals[cc][ii] = shader.uvs.elems[c_off + ii];
-    }
 
     const s_sy = sub_samp * (@as(usize, ov.y_min) - tile.y_px_min);
     const s_ey = sub_samp * (@as(usize, ov.y_max) - tile.y_px_min);
@@ -214,15 +160,17 @@ fn shadeTex(
                     if (@abs(den_e) > tol_den) v = -(be * u + de) / den_e;
                 }
                 if (v >= -1e-7 and v <= 1.0 + 1e-7) {
-                    const N0 = (1.0-u)*(1.0-v); const N1 = u*(1.0-v);
-                    const N2 = u*v; const N3 = (1.0-u)*v;
-                    const sw = N0*nr.z[0] + N1*nr.z[1] + N2*nr.z[2] + N3*nr.z[3];
+                    const n_vals = [_]f64{
+                        (1.0 - u) * (1.0 - v), u * (1.0 - v), u * v, (1.0 - u) * v,
+                    };
+                    const sw = n_vals[0]*nr.z[0] + n_vals[1]*nr.z[1] + 
+                               n_vals[2]*nr.z[2] + n_vals[3]*nr.z[3];
                     const inv_z = 1.0 / sw; const idx = row_off + xx;
                     if (inv_z > spx_inv_z_scratch[idx]) {
                         spx_inv_z_scratch[idx] = inv_z;
-                        switch (shader.interp_type) {
-                            inline else => |it| fillTex(it, N0, N1, N2, N3, 
-                                uv_vals, shader, idx, spx_image_scratch),
+                        switch (sh.interp_type) {
+                            inline else => |it| shader.fillTex(N, it, ov.elem_ind, 
+                                n_vals, sh, idx, spx_image_scratch),
                         }
                     }
                 }
@@ -239,19 +187,19 @@ pub fn rasterElems(
     active_tiles: []ActiveTile,
     overlap_bboxes: []BBox,
     elem_coord_arr: *const NDArray(f64),
-    shader: anytype,
+    sh: anytype,
     image_out_arr: *NDArray(f64),
 ) !void {
     @setFloatMode(.optimized);
 
     const N: usize = 4;
 
-    const fields_num: usize = switch (@TypeOf(shader)) {
-        *const FlatShader => shader.field.dims[2],
+    const fields_num: usize = switch (@TypeOf(sh)) {
+        *const FlatShader => sh.field.dims[2],
         *const TexShader => 1,
         else => @compileError("Unsupported shader type"),
     };
-    const actual_fields = if (@TypeOf(shader) == *const FlatShader) 
+    const actual_fields = if (@TypeOf(sh) == *const FlatShader) 
         @min(fields_num, 3) else 1;
 
     const sub_samp = @as(usize, @intCast(camera.sub_sample));
@@ -292,12 +240,12 @@ pub fn rasterElems(
                 .df_x = nr.y[0], .df_z = nr.z[0],
             };
 
-            switch (@TypeOf(shader)) {
+            switch (@TypeOf(sh)) {
                 *const FlatShader => shadeFlat(frame_ind, actual_fields, fields_num, 
                     ov, tile, sub_samp, spx_tile_size, spx_step, x_off, y_off, k, nr, 
-                    shader, spx_inv_z_scratch, &spx_image_scratch),
+                    sh, spx_inv_z_scratch, &spx_image_scratch),
                 *const TexShader => shadeTex(ov, tile, sub_samp, spx_tile_size, 
-                    spx_step, x_off, y_off, k, nr, shader, spx_inv_z_scratch, 
+                    spx_step, x_off, y_off, k, nr, sh, spx_inv_z_scratch, 
                     &spx_image_scratch),
                 else => unreachable,
             }

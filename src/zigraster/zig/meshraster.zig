@@ -7,31 +7,13 @@ const Coords = meshio.Coords;
 const Connect = meshio.Connect;
 const Field = meshio.Field;
 
-const texio = @import("textureio.zig");
-const Texture = texio.Texture;
-const texinterp = @import("textureinterp.zig");
-const InterpType = texinterp.InterpType;
-
-
 const uvio = @import("uvio.zig");
 const TexMap = uvio.TexMap;
 
-pub const FlatShader = struct {
-    field: NDArray(f64),
-    bits: ?u16 = null, 
-};
-
-// TODO: implement RGB flat shading
-pub const TexShader = struct {
-    uvs: NDArray(f64),
-    texture: Texture(u8,1),    
-    interp_type: InterpType = .cubic_lut_lerp,
-};
-
-pub const FieldShader = union(enum) {
-    flat: FlatShader,
-    texture: TexShader,    
-};
+const shader = @import("shader.zig");
+pub const FlatShader = shader.FlatShader;
+pub const TexShader = shader.TexShader;
+pub const FieldShader = shader.FieldShader;
 
 pub const MeshType = enum {
     tri3,
@@ -47,24 +29,24 @@ pub const MeshRaster = struct {
     mesh_type: MeshType,
     coords: NDArray(f64),
     disp: ?NDArray(f64),
-    shader: FieldShader,  
+    shader: FieldShader,
 };
 
-
-pub fn transformCoords(allocator: std.mem.Allocator,
-                       coords: *const Coords, 
-                       connect: *const Connect,) !NDArray(f64) {
-
+pub fn transformCoords(
+    allocator: std.mem.Allocator,
+    coords: *const Coords,
+    connect: *const Connect,
+) !NDArray(f64) {
     // dims=(elems_num,coord[x,y,z],nodes_per_elem)
-    const coord_dims = [_]usize{ connect.elem_n, 3, connect.nodes_per_elem }; 
-    var elem_coord_arr = try NDArray(f64).initFlat(allocator,coord_dims[0..]);
+    const coord_dims = [_]usize{ connect.elem_n, 3, connect.nodes_per_elem };
+    var elem_coord_arr = try NDArray(f64).initFlat(allocator, coord_dims[0..]);
     @memset(elem_coord_arr.elems, 0.0);
 
-    const dim_elem: usize = 0; 
+    const dim_elem: usize = 0;
     const dim_field: usize = 1;
     const dim_node: usize = 2;
 
-    var elem_inds = [_]usize{0,0,0};
+    var elem_inds = [_]usize{ 0, 0, 0 };
 
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
         elem_inds[dim_elem] = ee;
@@ -72,44 +54,46 @@ pub fn transformCoords(allocator: std.mem.Allocator,
 
         for (0..elem_coord_arr.dims[dim_node]) |nn| {
             elem_inds[dim_node] = nn;
-                                
-            elem_inds[dim_field] = 0;            
-            elem_coord_arr.set(elem_inds[0..],coords.x(coord_inds[nn]));
-            elem_inds[dim_field] = 1;            
-            elem_coord_arr.set(elem_inds[0..],coords.y(coord_inds[nn]));
-            elem_inds[dim_field] = 2;            
-            elem_coord_arr.set(elem_inds[0..],coords.z(coord_inds[nn]));
-            
-        } 
+
+            elem_inds[dim_field] = 0;
+            elem_coord_arr.set(elem_inds[0..], coords.x(coord_inds[nn]));
+            elem_inds[dim_field] = 1;
+            elem_coord_arr.set(elem_inds[0..], coords.y(coord_inds[nn]));
+            elem_inds[dim_field] = 2;
+            elem_coord_arr.set(elem_inds[0..], coords.z(coord_inds[nn]));
+        }
     }
-    
+
     return elem_coord_arr;
 }
 
-pub fn transformField(allocator: std.mem.Allocator,
-                      connect: *const Connect, 
-                      field: *const Field) !NDArray(f64) {
-
-    // dims=(times_num,elems_num,fields_num,nodes_per_elem) 
-    const field_dims = [_]usize{ field.getTimeN(), 
-                                 connect.elem_n, 
-                                 field.getFieldsN(), 
-                                 connect.nodes_per_elem };
-    var elem_field_arr = try NDArray(f64).initFlat(allocator,field_dims[0..]);
+pub fn transformField(
+    allocator: std.mem.Allocator,
+    connect: *const Connect,
+    field: *const Field,
+) !NDArray(f64) {
+    // dims=(times_num,elems_num,fields_num,nodes_per_elem)
+    const field_dims = [_]usize{
+        field.getTimeN(),
+        connect.elem_n,
+        field.getFieldsN(),
+        connect.nodes_per_elem,
+    };
+    var elem_field_arr = try NDArray(f64).initFlat(allocator, field_dims[0..]);
     @memset(elem_field_arr.elems, 0.0);
 
     const dim_time: usize = 0;
-    const dim_elem: usize = 1; 
+    const dim_elem: usize = 1;
     const dim_field: usize = 2;
     const dim_node: usize = 3;
 
-    var set_elem_inds = [_]usize{0,0,0,0}; // dims=(time,elem,field,node)
-    var get_field_inds = [_]usize{0,0,0}; // dims=(time,coord,field)
+    var set_elem_inds = [_]usize{ 0, 0, 0, 0 }; // dims=(time,elem,field,node)
+    var get_field_inds = [_]usize{ 0, 0, 0 }; // dims=(time,coord,field)
 
-    for (0..elem_field_arr.dims[dim_time]) |tt|{
+    for (0..elem_field_arr.dims[dim_time]) |tt| {
         get_field_inds[0] = tt;
         set_elem_inds[dim_time] = tt;
-        
+
         for (0..elem_field_arr.dims[dim_elem]) |ee| {
             set_elem_inds[dim_elem] = ee;
             const coord_inds: []usize = connect.getElem(ee);
@@ -117,25 +101,26 @@ pub fn transformField(allocator: std.mem.Allocator,
             for (0..elem_field_arr.dims[dim_node]) |nn| {
                 set_elem_inds[dim_node] = nn;
                 get_field_inds[1] = coord_inds[nn];
-                
+
                 for (0..elem_field_arr.dims[dim_field]) |ff| {
                     get_field_inds[2] = ff;
                     const field_val: f64 = field.array.get(get_field_inds[0..]);
 
                     set_elem_inds[dim_field] = ff;
-                    elem_field_arr.set(set_elem_inds[0..],field_val);    
+                    elem_field_arr.set(set_elem_inds[0..], field_val);
                 }
-            } 
+            }
         }
     }
-    
+
     return elem_field_arr;
 }
 
-pub fn transformUVs(allocator: std.mem.Allocator,
-                     uvs: *const TexMap,
-                     connect: *const Connect) !NDArray(f64) {
-
+pub fn transformUVs(
+    allocator: std.mem.Allocator,
+    uvs: *const TexMap,
+    connect: *const Connect,
+) !NDArray(f64) {
     const elems_num = connect.elem_n;
     const nodes_per_elem = connect.nodes_per_elem;
     var elem_uv_arr = try NDArray(f64).initFlat(
@@ -153,6 +138,6 @@ pub fn transformUVs(allocator: std.mem.Allocator,
             }
         }
     }
-    
+
     return elem_uv_arr;
 }

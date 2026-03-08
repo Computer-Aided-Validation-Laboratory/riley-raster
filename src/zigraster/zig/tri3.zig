@@ -12,65 +12,15 @@ const ActiveTile = rops.ActiveTile;
 const Vec3OfSlices = rops.Vec3OfSlices;
 
 const ti = @import("textureinterp.zig");
-const mr = @import("meshraster.zig");
-const FlatShader = mr.FlatShader;
-const TexShader = mr.TexShader;
-
-inline fn fillFlat(
-    comptime N: usize,
-    comptime F: usize,
-    weights: [N]f64,
-    field_div_z: [F][N]f64,
-    spx_z: f64,
-    scratch_flat_ind: usize,
-    spx_image_scratch: *MatSlice(f64),
-) void {
-    for (0..F) |ff| {
-        var field_at_spx: f64 = 0.0;
-        for (0..N) |nn| {
-            field_at_spx += weights[nn] * field_div_z[ff][nn];
-        }
-        field_at_spx *= spx_z;
-        spx_image_scratch.set(scratch_flat_ind, ff, field_at_spx);
-    }
-}
-
-inline fn fillTex(
-    comptime N: usize,
-    comptime interp_type: ti.InterpType,
-    weights: [N]f64,
-    uv_div_z: [2][N]f64,
-    spx_z: f64,
-    shader: *const TexShader,
-    scratch_flat_ind: usize,
-    spx_image_scratch: *MatSlice(f64),
-) void {
-    var u_at_spx: f64 = 0.0;
-    inline for (0..N) |nn| {
-        u_at_spx += weights[nn] * uv_div_z[0][nn];
-    }
-
-    var v_at_spx: f64 = 0.0;
-    inline for (0..N) |nn| {
-        v_at_spx += weights[nn] * uv_div_z[1][nn];
-    }
-
-    u_at_spx *= spx_z;
-    v_at_spx *= spx_z;
-
-    const tex_at_spx = ti.sampleGreyscale(
-        interp_type,
-        shader.texture,
-        u_at_spx,
-        v_at_spx,
-    );
-
-    spx_image_scratch.set(scratch_flat_ind, 0, tex_at_spx);
-}
+const shader = @import("shader.zig");
+const FlatShader = shader.FlatShader;
+const TexShader = shader.TexShader;
 
 fn shadeFlat(
     comptime N: usize,
     frame_ind: usize,
+    actual_fields: usize,
+    fields_num: usize,
     ol: BBox,
     tile: ActiveTile,
     sub_samp: usize,
@@ -80,23 +30,11 @@ fn shadeFlat(
     nodes_inv_z: [N]f64,
     inv_elem_area: f64,
     nr: Vec3OfSlices(f64),
-    shader: *const FlatShader,
+    sh: *const FlatShader,
     spx_inv_z_scratch: []f64,
     spx_image_scratch: *MatSlice(f64),
 ) void {
-    const F = 3;
     const tol_edge: f64 = 1e-9;
-    const e_stride = shader.field.strides[1];
-    const f_stride = shader.field.strides[2];
-    const f_off = frame_ind * shader.field.strides[0] + ol.elem_ind * e_stride;
-
-    var field_div_z: [F][N]f64 = undefined;
-    inline for (0..F) |ff| {
-        const ff_off = f_off + ff * f_stride;
-        inline for (0..N) |nn| {
-            field_div_z[ff][nn] = shader.field.elems[ff_off + nn] * nodes_inv_z[nn];
-        }
-    }
 
     const s_sx: usize = sub_samp * (@as(usize, ol.x_min) - tile.x_px_min);
     const s_ex: usize = sub_samp * (@as(usize, ol.x_max) - tile.x_px_min);
@@ -127,7 +65,10 @@ fn shadeFlat(
                 const idx = row_off + xx;
                 if (spx_inv_z > spx_inv_z_scratch[idx]) {
                     spx_inv_z_scratch[idx] = spx_inv_z;
-                    fillFlat(N, F, w, field_div_z, 1.0 / spx_inv_z, idx, spx_image_scratch);
+                    shader.fillFlatPerspective(N, frame_ind, ol.elem_ind, actual_fields, 
+                                               fields_num, w, nodes_inv_z, 
+                                               1.0 / spx_inv_z, sh, idx, 
+                                               spx_image_scratch);
                 }
             }
             spx_coord_x += spx_step;
@@ -147,23 +88,11 @@ fn shadeTex(
     nodes_inv_z: [N]f64,
     inv_elem_area: f64,
     nr: Vec3OfSlices(f64),
-    shader: *const TexShader,
+    sh: *const TexShader,
     spx_inv_z_scratch: []f64,
     spx_image_scratch: *MatSlice(f64),
 ) void {
     const tol_edge: f64 = 1e-9;
-    const U = 2;
-    const e_stride = shader.uvs.strides[0];
-    const c_stride = shader.uvs.strides[1];
-    const uv_off = ol.elem_ind * e_stride;
-
-    var uv_div_z: [U][N]f64 = undefined;
-    inline for (0..U) |uu| {
-        const c_off = uv_off + uu * c_stride;
-        inline for (0..N) |nn| {
-            uv_div_z[uu][nn] = shader.uvs.elems[c_off + nn] * nodes_inv_z[nn];
-        }
-    }
 
     const s_sx: usize = sub_samp * (@as(usize, ol.x_min) - tile.x_px_min);
     const s_ex: usize = sub_samp * (@as(usize, ol.x_max) - tile.x_px_min);
@@ -194,10 +123,11 @@ fn shadeTex(
                 const idx = row_off + xx;
                 if (spx_inv_z > spx_inv_z_scratch[idx]) {
                     spx_inv_z_scratch[idx] = spx_inv_z;
-                    const spx_z: f64 = 1.0 / spx_inv_z;
-                    switch (shader.interp_type) {
-                        inline else => |it| fillTex(N, it, w, uv_div_z, spx_z, shader, 
-                                                    idx, spx_image_scratch),
+                    switch (sh.interp_type) {
+                        inline else => |it| shader.fillTexPerspective(N, it, 
+                                                ol.elem_ind, w, nodes_inv_z, 
+                                                1.0 / spx_inv_z, sh, idx, 
+                                                spx_image_scratch),
                     }
                 }
             }
@@ -215,18 +145,20 @@ pub fn rasterElems(
     active_tiles: []ActiveTile,
     overlap_bboxes: []BBox,
     elem_coord_arr: *const NDArray(f64),
-    shader: anytype,
+    sh: anytype,
     image_out_arr: *NDArray(f64),
 ) !void {
     @setFloatMode(.optimized);
 
     const N: usize = 3;
 
-    const fields_num: usize = switch (@TypeOf(shader)) {
-        *const FlatShader => shader.field.dims[2],
+    const fields_num: usize = switch (@TypeOf(sh)) {
+        *const FlatShader => sh.field.dims[2],
         *const TexShader => 1,
         else => @compileError("Unsupported shader type"),
     };
+    const actual_fields = if (@TypeOf(sh) == *const FlatShader) 
+        @min(fields_num, 3) else 1;
 
     const screen_px_x = @as(u16, @intCast(camera.pixels_num[0]));
     const screen_px_y = @as(u16, @intCast(camera.pixels_num[1]));
@@ -268,12 +200,12 @@ pub fn rasterElems(
                 nr.x[0], nr.y[0], nr.x[1], nr.y[1], nr.x[2], nr.y[2],
             );
 
-            switch (@TypeOf(shader)) {
-                *const FlatShader => shadeFlat(N, frame_ind, ol, tile, sub_samp, 
-                    spx_tile_size, spx_step, spx_offset, nodes_inv_z, inv_elem_area, nr, 
-                    shader, spx_inv_z_scratch, &spx_image_scratch),
+            switch (@TypeOf(sh)) {
+                *const FlatShader => shadeFlat(N, frame_ind, actual_fields, fields_num, 
+                    ol, tile, sub_samp, spx_tile_size, spx_step, spx_offset, nodes_inv_z, 
+                    inv_elem_area, nr, sh, spx_inv_z_scratch, &spx_image_scratch),
                 *const TexShader => shadeTex(N, ol, tile, sub_samp, spx_tile_size, 
-                    spx_step, spx_offset, nodes_inv_z, inv_elem_area, nr, shader, 
+                    spx_step, spx_offset, nodes_inv_z, inv_elem_area, nr, sh, 
                     spx_inv_z_scratch, &spx_image_scratch),
                 else => unreachable,
             }

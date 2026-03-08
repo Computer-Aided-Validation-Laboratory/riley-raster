@@ -11,60 +11,15 @@ const ActiveTile = rops.ActiveTile;
 const Vec3OfSlices = rops.Vec3OfSlices;
 
 const ti = @import("textureinterp.zig");
-const mr = @import("meshraster.zig");
-const FlatShader = mr.FlatShader;
-const TexShader = mr.TexShader;
-
-inline fn fillFlat(
-    actual_fields: usize,
-    w0: f64,
-    w1: f64,
-    w2: f64,
-    z: f64,
-    field_div_z: [3][3]f64,
-    idx: usize,
-    spx_image_scratch: *MatSlice(f64),
-) void {
-    for (0..actual_fields) |ff| {
-        const val = (w0 * field_div_z[ff][0] +
-            w1 * field_div_z[ff][1] +
-            w2 * field_div_z[ff][2]) * z;
-        spx_image_scratch.set(idx, ff, val);
-    }
-}
-
-inline fn fillTex(
-    comptime interp_type: ti.InterpType,
-    w0: f64,
-    w1: f64,
-    w2: f64,
-    z: f64,
-    uv_div_z: [2][3]f64,
-    shader: *const TexShader,
-    idx: usize,
-    spx_image_scratch: *MatSlice(f64),
-) void {
-    const u_at = (w0 * uv_div_z[0][0] +
-        w1 * uv_div_z[0][1] +
-        w2 * uv_div_z[0][2]) * z;
-    const v_at = (w0 * uv_div_z[1][0] +
-        w1 * uv_div_z[1][1] +
-        w2 * uv_div_z[1][2]) * z;
-
-    const tex_at_spx = ti.sampleGreyscale(
-        interp_type,
-        shader.texture,
-        u_at,
-        v_at,
-    );
-
-    spx_image_scratch.set(idx, 0, tex_at_spx);
-}
+const shader = @import("shader.zig");
+const FlatShader = shader.FlatShader;
+const TexShader = shader.TexShader;
 
 fn shadeFlat(
     comptime N: usize,
     frame_ind: usize,
     actual_fields: usize,
+    fields_num: usize,
     ol: BBox,
     tile: ActiveTile,
     sub_samp: usize,
@@ -73,20 +28,11 @@ fn shadeFlat(
     nodes_inv_z: [N]f64,
     inv_elem_area: f64,
     nr: Vec3OfSlices(f64),
-    shader: *const FlatShader,
+    sh: *const FlatShader,
     spx_inv_z_scratch: []f64,
     spx_image_scratch: *MatSlice(f64),
 ) void {
     const tol_edge: f64 = 1e-9;
-    const e_stride = shader.field.strides[1];
-    const f_stride = shader.field.strides[2];
-    const f_off = frame_ind * shader.field.strides[0] + ol.elem_ind * e_stride;
-    var field_div_z = [3][3]f64{ undefined, undefined, undefined };
-    for (0..actual_fields) |ff| {
-        const ff_off = f_off + ff * f_stride;
-        inline for (0..N) |nn| field_div_z[ff][nn] = 
-            shader.field.elems[ff_off + nn] * nodes_inv_z[nn];
-    }
 
     const s_sx = sub_samp * (@as(usize, ol.x_min) - tile.x_px_min);
     const s_ex = sub_samp * (@as(usize, ol.x_max) - tile.x_px_min);
@@ -117,13 +63,15 @@ fn shadeFlat(
         var w0 = w0_row; var w1 = w1_row; var w2 = w2_row;
         for (s_sx..s_ex) |xx| {
             if (w0 >= -tol_edge and w1 >= -tol_edge and w2 >= -tol_edge) {
+                const w = [_]f64{ w0, w1, w2 };
                 const inv_z = w0*nodes_inv_z[0] + w1*nodes_inv_z[1] + 
                               w2*nodes_inv_z[2];
                 const idx = row_off + xx;
                 if (inv_z > spx_inv_z_scratch[idx]) {
                     spx_inv_z_scratch[idx] = inv_z;
-                    fillFlat(actual_fields, w0, w1, w2, 1.0/inv_z, 
-                             field_div_z, idx, spx_image_scratch);
+                    shader.fillFlatPerspective(N, frame_ind, ol.elem_ind, 
+                        actual_fields, fields_num, w, nodes_inv_z, 1.0/inv_z, 
+                        sh, idx, spx_image_scratch);
                 }
             }
             w0 += dw0_dx; w1 += dw1_dx; w2 += dw2_dx;
@@ -142,20 +90,11 @@ fn shadeTex(
     nodes_inv_z: [N]f64,
     inv_elem_area: f64,
     nr: Vec3OfSlices(f64),
-    shader: *const TexShader,
+    sh: *const TexShader,
     spx_inv_z_scratch: []f64,
     spx_image_scratch: *MatSlice(f64),
 ) void {
     const tol_edge: f64 = 1e-9;
-    const e_stride = shader.uvs.strides[0];
-    const c_stride = shader.uvs.strides[1];
-    const uv_off = ol.elem_ind * e_stride;
-    var uv_div_z = [2][3]f64{ undefined, undefined };
-    inline for (0..2) |uu| {
-        const c_off = uv_off + uu * c_stride;
-        inline for (0..N) |nn| uv_div_z[uu][nn] = 
-            shader.uvs.elems[c_off + nn] * nodes_inv_z[nn];
-    }
 
     const s_sx = sub_samp * (@as(usize, ol.x_min) - tile.x_px_min);
     const s_ex = sub_samp * (@as(usize, ol.x_max) - tile.x_px_min);
@@ -186,14 +125,16 @@ fn shadeTex(
         var w0 = w0_row; var w1 = w1_row; var w2 = w2_row;
         for (s_sx..s_ex) |xx| {
             if (w0 >= -tol_edge and w1 >= -tol_edge and w2 >= -tol_edge) {
+                const w = [_]f64{ w0, w1, w2 };
                 const inv_z = w0*nodes_inv_z[0] + w1*nodes_inv_z[1] + 
                               w2*nodes_inv_z[2];
                 const idx = row_off + xx;
                 if (inv_z > spx_inv_z_scratch[idx]) {
                     spx_inv_z_scratch[idx] = inv_z;
-                    switch (shader.interp_type) {
-                        inline else => |it| fillTex(it, w0, w1, w2, 1.0/inv_z, 
-                            uv_div_z, shader, idx, spx_image_scratch),
+                    switch (sh.interp_type) {
+                        inline else => |it| shader.fillTexPerspective(N, it, 
+                            ol.elem_ind, w, nodes_inv_z, 1.0/inv_z, sh, idx, 
+                            spx_image_scratch),
                     }
                 }
             }
@@ -211,7 +152,7 @@ pub fn rasterElems(
     active_tiles: []ActiveTile,
     overlap_bboxes: []BBox,
     elem_coord_arr: *const NDArray(f64),
-    shader: anytype,
+    sh: anytype,
     image_out_arr: *NDArray(f64),
 ) !void {
     @setFloatMode(.optimized);
@@ -219,12 +160,12 @@ pub fn rasterElems(
     const N: usize = 3;
     const tol_area: f64 = 1e-12;
 
-    const fields_num: usize = switch (@TypeOf(shader)) {
-        *const FlatShader => shader.field.dims[2],
+    const fields_num: usize = switch (@TypeOf(sh)) {
+        *const FlatShader => sh.field.dims[2],
         *const TexShader => 1,
         else => @compileError("Unsupported shader type"),
     };
-    const actual_fields = if (@TypeOf(shader) == *const FlatShader) 
+    const actual_fields = if (@TypeOf(sh) == *const FlatShader) 
         @min(fields_num, 3) else 1;
 
     const screen_px_x = @as(u16, @intCast(camera.pixels_num[0]));
@@ -266,12 +207,12 @@ pub fn rasterElems(
             if (@abs(area) < tol_area) continue;
             const inv_elem_area: f64 = 1.0 / area;
 
-            switch (@TypeOf(shader)) {
-                *const FlatShader => shadeFlat(N, frame_ind, actual_fields, ol, tile, 
-                    sub_samp, spx_tile_size, spx_step, nodes_inv_z, inv_elem_area, nr, 
-                    shader, spx_inv_z_scratch, &spx_image_scratch),
+            switch (@TypeOf(sh)) {
+                *const FlatShader => shadeFlat(N, frame_ind, actual_fields, fields_num, 
+                    ol, tile, sub_samp, spx_tile_size, spx_step, nodes_inv_z, 
+                    inv_elem_area, nr, sh, spx_inv_z_scratch, &spx_image_scratch),
                 *const TexShader => shadeTex(N, ol, tile, sub_samp, spx_tile_size, 
-                    spx_step, nodes_inv_z, inv_elem_area, nr, shader, spx_inv_z_scratch, 
+                    spx_step, nodes_inv_z, inv_elem_area, nr, sh, spx_inv_z_scratch, 
                     &spx_image_scratch),
                 else => unreachable,
             }
