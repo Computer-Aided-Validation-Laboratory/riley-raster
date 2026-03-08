@@ -15,8 +15,22 @@ pub const ImageFormat = enum {
 };
 
 //------------------------------------------------------------------------------
-// MatSlice IO
+// Generic IO
 //------------------------------------------------------------------------------
+
+pub fn loadImage(allocator: std.mem.Allocator,
+                 io: std.Io,
+                 path: []const u8,
+                 format: ImageFormat,
+                 comptime T: type,
+                 comptime channels: usize) !Texture(T, channels) {
+    return switch (format) {
+        .csv => try loadCSV(allocator, io, path, T, channels),
+        .ppm => try loadPPM(allocator, io, path, T, channels),
+        .bmp => try loadBMP(allocator, io, path, T, channels),
+        .tiff => try loadTIFF(allocator, io, path, T, channels),
+    };
+}
 
 pub fn saveImage(io: std.Io,
                  out_dir: std.Io.Dir, 
@@ -60,6 +74,10 @@ pub fn saveImage(io: std.Io,
     }
 }
 
+//------------------------------------------------------------------------------
+// MatSlice IO
+//------------------------------------------------------------------------------
+
 pub fn savePPM(io: std.Io,
                out_dir: std.Io.Dir, 
                file_name: []const u8,
@@ -94,6 +112,93 @@ pub fn savePPM(io: std.Io,
     try writer.flush();   
 }
 
+pub fn loadPPM(allocator: std.mem.Allocator,
+                io: std.Io,
+                path: []const u8,
+                comptime T: type,
+                comptime channels: usize) !Texture(T, channels) {
+    const cwd = std.Io.Dir.cwd();
+    const file = try cwd.openFile(io, path, .{ .mode = .read_only });
+    defer file.close(io);
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    var read_buf: [4096]u8 = undefined;
+    var file_reader = file.reader(io, &read_buf);
+    const reader = &file_reader.interface;
+
+    var header: [2]u8 = undefined;
+    try reader.readSliceAll(&header);
+    if (!std.mem.eql(u8, &header, "P3")) return error.NotAPPM;
+
+    // Helper to read next token skipping comments
+    const readToken = struct {
+        fn readToken(r: anytype, a: std.mem.Allocator) ![]const u8 {
+            while (true) {
+                const char = try r.takeByte();
+                if (char == '#') {
+                    _ = try r.takeDelimiter('\n');
+                    continue;
+                }
+                if (std.ascii.isWhitespace(char)) continue;
+                
+                var list: std.ArrayList(u8) = .{};
+                try list.append(a, char);
+                while (true) {
+                    const next_char = r.takeByte() catch |err| switch (err) {
+                        error.EndOfStream => break,
+                        else => return err,
+                    };
+                    if (std.ascii.isWhitespace(next_char)) break;
+                    if (next_char == '#') {
+                        break; 
+                    }
+                    try list.append(a, next_char);
+                }
+                return list.toOwnedSlice(a);
+            }
+        }
+    }.readToken;
+
+    const width_str = try readToken(reader, aa);
+    const height_str = try readToken(reader, aa);
+    const max_val_str = try readToken(reader, aa);
+
+    const width = try std.fmt.parseInt(usize, width_str, 10);
+    const height = try std.fmt.parseInt(usize, height_str, 10);
+    const max_val = try std.fmt.parseInt(u32, max_val_str, 10);
+
+    var texture = try Texture(T, channels).init(allocator, height, width);
+    errdefer texture.deinit(allocator);
+
+    for (0..height) |rr| {
+        for (0..width) |cc| {
+            var px: Pixel(T, channels) = undefined;
+            var rgb: [3]u32 = undefined;
+            for (0..3) |i| {
+                const val_str = try readToken(reader, aa);
+                rgb[i] = try std.fmt.parseInt(u32, val_str, 10);
+            }
+
+            if (channels == 3) {
+                px.channels[0] = convertValue(T, @as(f64, @floatFromInt(rgb[0])) / @as(f64, @floatFromInt(max_val)) * 255.0);
+                px.channels[1] = convertValue(T, @as(f64, @floatFromInt(rgb[1])) / @as(f64, @floatFromInt(max_val)) * 255.0);
+                px.channels[2] = convertValue(T, @as(f64, @floatFromInt(rgb[2])) / @as(f64, @floatFromInt(max_val)) * 255.0);
+            } else if (channels == 1) {
+                const val = 0.299 * @as(f64, @floatFromInt(rgb[0])) 
+                          + 0.587 * @as(f64, @floatFromInt(rgb[1])) 
+                          + 0.114 * @as(f64, @floatFromInt(rgb[2]));
+                px.channels[0] = convertValue(T, val / @as(f64, @floatFromInt(max_val)) * 255.0);
+            }
+            texture.setPixel(rr, cc, px);
+        }
+    }
+
+    return texture;
+}
+
 pub fn saveCSV(io: std.Io,
                out_dir: std.Io.Dir, 
                file_name: []const u8,
@@ -116,6 +221,63 @@ pub fn saveCSV(io: std.Io,
     }
 
     try writer.flush();
+}
+
+pub fn loadCSV(allocator: std.mem.Allocator,
+                io: std.Io,
+                path: []const u8,
+                comptime T: type,
+                comptime channels: usize) !Texture(T, channels) {
+    const cwd = std.Io.Dir.cwd();
+    const file = try cwd.openFile(io, path, .{ .mode = .read_only });
+    defer file.close(io);
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    var read_buf: [4096]u8 = undefined;
+    var file_reader = file.reader(io, &read_buf);
+    const reader = &file_reader.interface;
+
+    var lines: std.ArrayList([]const u8) = .{};
+    while (try reader.takeDelimiter('\n')) |line| {
+        const line_trimmed = std.mem.trim(u8, line, " \r\t");
+        if (line_trimmed.len == 0) continue;
+        const line_dup = try aa.dupe(u8, line_trimmed);
+        try lines.append(aa, line_dup);
+    }
+
+    if (lines.items.len == 0) return error.EmptyFile;
+
+    const rows = lines.items.len;
+    var first_line_iter = std.mem.splitScalar(u8, lines.items[0], ',');
+    var cols: usize = 0;
+    while (first_line_iter.next()) |val| {
+        if (val.len > 0) cols += 1;
+    }
+
+    var texture = try Texture(T, channels).init(allocator, rows, cols);
+    errdefer texture.deinit(allocator);
+
+    for (lines.items, 0..) |line, rr| {
+        var col_iter = std.mem.splitScalar(u8, line, ',');
+        for (0..cols) |cc| {
+            const val_str = col_iter.next() orelse break;
+            if (val_str.len == 0) continue;
+            
+            var px: Pixel(T, channels) = undefined;
+            var vals_iter = std.mem.splitScalar(u8, val_str, ':');
+            for (0..channels) |ch| {
+                const ch_val_str = vals_iter.next() orelse "0";
+                const val = try std.fmt.parseFloat(f64, std.mem.trim(u8, ch_val_str, " \t\r"));
+                px.channels[ch] = convertValue(T, val);
+            }
+            texture.setPixel(rr, cc, px);
+        }
+    }
+
+    return texture;
 }
 
 pub fn saveBMP(io: std.Io, 
@@ -206,23 +368,17 @@ pub fn saveTIFF(io: std.Io,
     try writer.writeInt(u32, ifd_offset, .little);
 
     // 2. Pixel Data (Grayscale)
-    const px_min = std.mem.min(f64, image.elems);
-    const px_max = std.mem.max(f64, image.elems);
-    const px_rng = if (px_max > px_min) px_max - px_min else 1.0;
-
     if (bits == 16) {
         for (0..image.rows_n) |r| {
             for (0..image.cols_n) |c| {
-                const val_f = ((image.get(r, c) - px_min) / px_rng) * 65535.0;
-                const val = @as(u16,@intFromFloat(val_f));
+                const val = @as(u16,@intFromFloat(image.get(r, c) * 257.0)); // scale 0-255 to 0-65535
                 try writer.writeInt(u16, val, .little);
             }
         }
     } else {
         for (0..image.rows_n) |r| {
             for (0..image.cols_n) |c| {
-                const val_f = ((image.get(r, c) - px_min) / px_rng) * 255.0;
-                const val = @as(u8, @intFromFloat(val_f));
+                const val = @as(u8, @intFromFloat(@max(0.0, @min(255.0, image.get(r, c)))));
                 try writer.writeByte(val);
             }
         }
@@ -282,7 +438,7 @@ pub fn loadBMP(allocator: std.mem.Allocator,
                comptime channels: usize) !Texture(T, channels) {
 
     const cwd = std.Io.Dir.cwd();
-    const file = try cwd.openFile(io, path, .{});
+    const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
 
     var read_buf: [4096]u8 = undefined;
@@ -384,8 +540,90 @@ pub fn loadBMP(allocator: std.mem.Allocator,
     return texture;
 }
 
-// TODO: try and fix this hard coded dynamic library mess.
+// Hand-written TIFF loader for basic grayscale TIFFs (like those saved by saveTIFF)
 pub fn loadTIFF(allocator: std.mem.Allocator, 
+                io: std.Io, 
+                path: []const u8, 
+                comptime T: type, 
+                comptime channels: usize) !Texture(T, channels) {
+    const cwd = std.Io.Dir.cwd();
+    const file = try cwd.openFile(io, path, .{ .mode = .read_only });
+    defer file.close(io);
+
+    var read_buf: [4096]u8 = undefined;
+    var file_reader = file.reader(io, &read_buf);
+    const reader = &file_reader.interface;
+
+    var header: [4]u8 = undefined;
+    try reader.readSliceAll(&header);
+    
+    const is_little = if (std.mem.eql(u8, header[0..2], "II")) true 
+                      else if (std.mem.eql(u8, header[0..2], "MM")) false
+                      else return error.NotATIFF;
+    
+    const endian: std.builtin.Endian = if (is_little) .little else .big;
+    const magic = std.mem.readInt(u16, header[2..4], endian);
+    if (magic != 42) return error.InvalidTIFFMagic;
+
+    const ifd_offset = try reader.takeInt(u32, endian);
+    try file_reader.seekTo(ifd_offset);
+
+    const num_tags = try reader.takeInt(u16, endian);
+    
+    var width: u32 = 0;
+    var height: u32 = 0;
+    var bits_per_sample: u16 = 8;
+    var strip_offsets: u32 = 0;
+    var samples_per_pixel: u16 = 1;
+
+    for (0..num_tags) |_| {
+        const tag_id = try reader.takeInt(u16, endian);
+        const tag_type = try reader.takeInt(u16, endian);
+        const tag_count = try reader.takeInt(u32, endian);
+        const tag_value = try reader.takeInt(u32, endian);
+
+        switch (tag_id) {
+            256 => width = if (tag_type == 3) @as(u32, @intCast(tag_value & 0xFFFF)) else tag_value, // Width
+            257 => height = if (tag_type == 3) @as(u32, @intCast(tag_value & 0xFFFF)) else tag_value, // Height
+            258 => bits_per_sample = @intCast(tag_value & 0xFFFF), // BitsPerSample
+            273 => strip_offsets = tag_value, // StripOffsets
+            277 => samples_per_pixel = @intCast(tag_value & 0xFFFF), // SamplesPerPixel
+            else => {},
+        }
+        _ = tag_count;
+    }
+
+    if (samples_per_pixel != 1) return error.UnsupportedTIFFColorSpace;
+
+    var texture = try Texture(T, channels).init(allocator, height, width);
+    errdefer texture.deinit(allocator);
+
+    try file_reader.seekTo(strip_offsets);
+
+    for (0..height) |rr| {
+        for (0..width) |cc| {
+            var px: Pixel(T, channels) = undefined;
+            const val_f: f64 = if (bits_per_sample == 16) 
+                @as(f64, @floatFromInt(try reader.takeInt(u16, endian))) / 65535.0 * 255.0
+            else 
+                @as(f64, @floatFromInt(try reader.takeByte()));
+
+            if (channels == 3) {
+                px.channels[0] = convertValue(T, val_f);
+                px.channels[1] = convertValue(T, val_f);
+                px.channels[2] = convertValue(T, val_f);
+            } else if (channels == 1) {
+                px.channels[0] = convertValue(T, val_f);
+            }
+            texture.setPixel(rr, cc, px);
+        }
+    }
+
+    return texture;
+}
+
+// TODO: try and fix this hard coded dynamic library mess.
+pub fn CLoadTIFF(allocator: std.mem.Allocator, 
                 io: std.Io, 
                 path: []const u8, 
                 comptime T: type, 
@@ -422,7 +660,6 @@ pub fn loadTIFF(allocator: std.mem.Allocator,
 
     for (0..h) |row| {
         const src_row = (h - 1 - row) * w;
-        const dst_row = row * w;
         for (0..w) |col| {
             const pixel = raster[src_row + col];
             const r = @as(u8, @intCast(pixel & 0xFF));
@@ -440,7 +677,7 @@ pub fn loadTIFF(allocator: std.mem.Allocator,
                           + 0.114 * @as(f64, @floatFromInt(b));
                 px.channels[0] = convertValue(T, val);
             }
-            texture.pixels[dst_row + col] = px;
+            texture.setPixel(row, col, px);
         }
     }
 
@@ -467,27 +704,83 @@ extern "c" fn dlclose(handle: ?*anyopaque) c_int;
 
 const testing = std.testing;
 
-test "Compare BMP and TIFF load" {
+test "Verify hand-written TIFF loader" {
     const allocator = testing.allocator;
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
     
-    var tex_bmp = try loadBMP(allocator, io, "texture/speckle.bmp", u8, 1);
-    defer tex_bmp.deinit(allocator);
+    // 1. Load using C loader (libtiff)
+    var tex_c = try CLoadTIFF(allocator, io, "texture/speckle.tiff", u8, 1);
+    defer tex_c.deinit(allocator);
 
-    var tex_tiff = try loadTIFF(allocator, io, "texture/speckle.tiff", u8, 1);
-    defer tex_tiff.deinit(allocator);
-
-    try testing.expectEqual(tex_bmp.rows_n, tex_tiff.rows_n);
-    try testing.expectEqual(tex_bmp.cols_n, tex_tiff.cols_n);
-
-    for (0..tex_bmp.pixels.len) |i| {
-        const p1 = tex_bmp.pixels[i].channels[0];
-        const p2 = tex_tiff.pixels[i].channels[0];
-        if (p1 > p2) {
-            try testing.expect(p1 - p2 <= 1);
-        } else {
-            try testing.expect(p2 - p1 <= 1);
+    // 2. Save using our saveTIFF
+    const out_dir = std.Io.Dir.cwd();
+    const mat_size = tex_c.rows_n * tex_c.cols_n;
+    const mat_mem = try allocator.alloc(f64, mat_size);
+    defer allocator.free(mat_mem);
+    for (0..tex_c.rows_n) |rr| {
+        for (0..tex_c.cols_n) |cc| {
+            mat_mem[rr * tex_c.cols_n + cc] = @as(f64, @floatFromInt(tex_c.getPixel(rr, cc).channels[0]));
         }
+    }
+    const mat = MatSlice(f64).init(mat_mem, tex_c.rows_n, tex_c.cols_n);
+    
+    try saveTIFF(io, out_dir, "texture/speckle-simple.tiff", &mat, 8);
+
+    // 3. Load using our hand-written loadTIFF via generic loadImage
+    var tex_zig = try loadImage(allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1);
+    defer tex_zig.deinit(allocator);
+
+    try testing.expectEqual(tex_c.rows_n, tex_zig.rows_n);
+    try testing.expectEqual(tex_c.cols_n, tex_zig.cols_n);
+
+    for (0..tex_c.rows_n) |rr| {
+        for (0..tex_c.cols_n) |cc| {
+            const p1 = tex_c.getPixel(rr, cc).channels[0];
+            const p2 = tex_zig.getPixel(rr, cc).channels[0];
+            const p1_f: f64 = @floatFromInt(p1);
+            const p2_f: f64 = @floatFromInt(p2);
+            try testing.expectApproxEqAbs(p1_f, p2_f, 1.0);
+        }
+    }
+}
+
+test "Save and Load All Formats" {
+    const allocator = testing.allocator;
+    var io_threaded = std.Io.Threaded.init_single_threaded;
+    const io = io_threaded.io();
+    const out_dir = std.Io.Dir.cwd();
+
+    // Create a dummy 4x4 grayscale image
+    const rows = 4;
+    const cols = 4;
+    const mat_mem = try allocator.alloc(f64, rows * cols);
+    defer allocator.free(mat_mem);
+    for (0..rows) |r| {
+        for (0..cols) |c| {
+            mat_mem[r * cols + c] = @as(f64, @floatFromInt(r * cols + c)) * 10.0;
+        }
+    }
+    const mat = MatSlice(f64).init(mat_mem, rows, cols);
+
+    const formats = std.enums.values(ImageFormat);
+    for (formats) |fmt| {
+        const base_name = "texture/test_io";
+        try saveImage(io, out_dir, base_name, &mat, fmt, 8);
+        
+        var ext_buff: [1024]u8 = undefined;
+        const ext = switch(fmt) {
+            .csv => ".csv",
+            .ppm => ".ppm",
+            .bmp => ".bmp",
+            .tiff => ".tiff",
+        };
+        const full_path = try std.fmt.bufPrint(ext_buff[0..], "{s}{s}", .{base_name, ext});
+
+        var loaded = try loadImage(allocator, io, full_path, fmt, u8, 1);
+        defer loaded.deinit(allocator);
+
+        try testing.expectEqual(rows, loaded.rows_n);
+        try testing.expectEqual(cols, loaded.cols_n);
     }
 }
