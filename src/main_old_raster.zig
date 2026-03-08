@@ -28,7 +28,7 @@ const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
 const rops = @import("zigraster/zig/rasterops.zig");
 const raster = @import("zigraster/zig/oldraster.zig");
 
-const iops = @import("zigraster/zig/imageops.zig");
+const iio = @import("zigraster/zig/imageio.zig");
 
 
 pub fn main() !void {
@@ -211,8 +211,8 @@ pub fn main() !void {
         
         time_start = std.Io.Clock.Timestamp.now(io, .awake);
         
-        try iops.saveImage(io, out_dir, file_name, &image_mat, .bmp, 8);
-        try iops.saveImage(io, out_dir, file_name, &image_mat, .csv, 8);
+        try iio.saveImage(io, out_dir, file_name, &image_mat, .bmp, 8);
+        try iio.saveImage(io, out_dir, file_name, &image_mat, .csv, 8);
         
         time_end = std.Io.Clock.Timestamp.now(io, .awake);
     

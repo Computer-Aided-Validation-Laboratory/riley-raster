@@ -17,9 +17,8 @@ pub const CameraOps = @import("../zigraster/zig/camera.zig").CameraOps;
 pub const specraster = @import("../zigraster/zig/specraster.zig");
 pub const RasterConfig = specraster.RasterConfig;
 
-pub const texio = @import("../zigraster/zig/textureio.zig");
+pub const iio = @import("../zigraster/zig/imageio.zig");
 pub const textureinterp = @import("../zigraster/zig/textureinterp.zig");
-pub const iops = @import("../zigraster/zig/imageops.zig");
 pub const uvio = @import("../zigraster/zig/uvio.zig");
 
 
@@ -133,8 +132,8 @@ fn saveResultToFails(
             const slice = array.getSlice(&[_]usize{ f, fi, 0, 0 }, 1);
             const mat = MatSlice(f64).init(slice, array.dims[2], array.dims[3]);
             const name = try std.fmt.allocPrint(allocator, "frame_{d}_field_{d}", .{ f, fi });
-            try iops.saveImage(io, out_dir, name, &mat, .csv, 8);
-            try iops.saveImage(io, out_dir, name, &mat, .bmp, 8);
+            try iio.saveImage(io, out_dir, name, &mat, .csv, 8);
+            try iio.saveImage(io, out_dir, name, &mat, .bmp, 8);
         }
     }
 }
@@ -146,7 +145,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                        test_type: []const u8,
                        mesh_type: MeshType,
                        fov_scale: f64,
-                       texture: texio.Texture(u8, 1),
+                       texture: iio.Texture(u8, 1),
                        pixel_num: [2]u32,
                        interp_types: []const textureinterp.InterpType,
                        gold_dir_root: []const u8,

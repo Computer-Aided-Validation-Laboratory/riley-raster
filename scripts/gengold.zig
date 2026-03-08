@@ -10,9 +10,8 @@ pub const Camera = @import("../src/zigraster/zig/camera.zig").Camera;
 pub const CameraOps = @import("../src/zigraster/zig/camera.zig").CameraOps;
 pub const specraster = @import("../src/zigraster/zig/specraster.zig");
 pub const RasterConfig = specraster.RasterConfig;
-pub const texio = @import("../src/zigraster/zig/textureio.zig");
+pub const iio = @import("../src/zigraster/zig/imageio.zig");
 pub const textureinterp = @import("../src/zigraster/zig/textureinterp.zig");
-pub const iops = @import("../src/zigraster/zig/imageops.zig");
 pub const uvio = @import("../src/zigraster/zig/uvio.zig");
 
 pub fn loadData(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !SimData {
@@ -52,7 +51,7 @@ pub fn renderAndSave(
     };
     const config = RasterConfig{
         .save_opt = .disk,
-        .save_formats = &[_]iops.ImageFormat{ .csv, .bmp },
+        .save_formats = &[_]iio.ImageFormat{ .csv, .bmp },
         .tile_size = 32,
     };
 
@@ -65,7 +64,7 @@ pub fn runGenerationExt(
     test_type: []const u8,
     mesh_types: []const MeshType,
     fov_scale: f64,
-    texture: texio.Texture(u8, 1),
+    texture: iio.Texture(u8, 1),
     pixel_num: [2]u32,
     interp_types: []const textureinterp.InterpType,
     gold_dir_root: []const u8,
@@ -160,7 +159,7 @@ pub fn runGeneration(
     test_type: []const u8,
     mesh_types: []const MeshType,
     fov_scale: f64,
-    texture: texio.Texture(u8, 1),
+    texture: iio.Texture(u8, 1),
 ) !void {
     const interp_types = [_]textureinterp.InterpType{.cubic_lut_lerp};
     const pixel_num = [_]u32{ 320, 200 };

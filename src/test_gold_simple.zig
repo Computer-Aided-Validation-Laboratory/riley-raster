@@ -14,7 +14,7 @@ test "Gold Simple Suite" {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const texture = try common.texio.loadTIFF(allocator, io, "texture/speckle.tiff", u8, 1);
+    const texture = try common.iio.loadTIFF(allocator, io, "texture/speckle.tiff", u8, 1);
     defer texture.deinit(allocator);
 
     const mesh_types = [_]common.MeshType{ .tri3, //.tri3opt, 

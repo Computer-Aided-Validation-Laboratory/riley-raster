@@ -1,8 +1,8 @@
 const std = @import("std");
 const NDArray = @import("ndarray.zig").NDArray;
 const MatSlice = @import("matslice.zig").MatSlice;
-const texio = @import("textureio.zig");
-const Texture = texio.Texture;
+const iio = @import("imageio.zig");
+const Texture = iio.Texture;
 const texinterp = @import("textureinterp.zig");
 const InterpType = texinterp.InterpType;
 

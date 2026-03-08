@@ -21,12 +21,11 @@ const Rotation = @import("zigraster/zig/rotation.zig").Rotation;
 const Camera = @import("zigraster/zig/camera.zig").Camera;
 const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
 
-const iops = @import("zigraster/zig/imageops.zig");
+const iio = @import("zigraster/zig/imageio.zig");
 
 const specraster = @import("zigraster/zig/specraster.zig");
 const RasterConfig = specraster.RasterConfig;
 
-const texio = @import("zigraster/zig/textureio.zig");
 const uvio = @import("zigraster/zig/uvio.zig");
 
 const ShaderMode = enum { flat, texture };
@@ -153,7 +152,7 @@ pub fn main() !void {
         const path_tex = "texture/speckle.bmp";
         
         const uvs = try uvio.loadTexMap(page_alloc, io, path_uvs);
-        const texture = try texio.loadBMP(page_alloc, io, path_tex, u8, 1);
+        const texture = try iio.loadBMP(page_alloc, io, path_tex, u8, 1);
         const elem_uvs = try mr.transformUVs(page_alloc, &uvs, &sim_data.connect);
         
         mesh_raster.shader = .{ .texture = .{
@@ -169,7 +168,7 @@ pub fn main() !void {
         .threads_within_image = 0,
         .threads_over_images = 0,
         .save_opt = .disk,
-        .save_formats = &[_]iops.ImageFormat{.csv,.bmp},
+        .save_formats = &[_]iio.ImageFormat{.csv,.bmp},
         .tile_size = 32,
     };
 

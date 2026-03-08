@@ -32,7 +32,7 @@ const NDArray = ndarray.NDArray;
 const Camera = @import("zigraster/zig/camera.zig").Camera;
 const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
 
-const iops = @import("zigraster/zig/imageops.zig");
+const iio = @import("zigraster/zig/imageio.zig");
 const specraster = @import("zigraster/zig/specraster.zig");
 const RasterConfig = specraster.RasterConfig;
 
@@ -153,7 +153,7 @@ pub fn main() !void {
         .threads_within_image = 0,
         .threads_over_images = 0,
         .save_opt = .none,
-        .save_formats = &[_]iops.ImageFormat{.csv},
+        .save_formats = &[_]iio.ImageFormat{.csv},
         .tile_size = 32,
     };
 
@@ -216,8 +216,8 @@ pub fn main() !void {
         const file_name = try std.fmt.bufPrint(name_buff[0..], 
                                                    "spec_field{d}_frame{d}", 
                                                    .{ff,frame_ind});        
-        try iops.saveImage(io, out_dir, file_name, &image_mat, .bmp, 8);
-        try iops.saveImage(io, out_dir, file_name, &image_mat, .csv, 8);
+        try iio.saveImage(io, out_dir, file_name, &image_mat, .bmp, 8);
+        try iio.saveImage(io, out_dir, file_name, &image_mat, .csv, 8);
 
         time_end = std.Io.Clock.Timestamp.now(io, .awake);
     

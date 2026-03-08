@@ -1,6 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
-const textureio = @import("textureio.zig");
+const iio = @import("imageio.zig");
 
 pub const InterpType = enum {
     linear,

@@ -21,7 +21,7 @@ const Field = @import("meshio.zig").Field;
 const Camera = @import("camera.zig").Camera;
 
 const rops = @import("rasterops.zig");
-const iops = @import("imageops.zig");
+const iio = @import("imageio.zig");
 
 pub fn rasterOneFrame(allocator: std.mem.Allocator, 
                       io: std.Io,
@@ -499,8 +499,8 @@ pub fn rasterAllFrames(allocator: std.mem.Allocator,
                                                     camera.pixels_num[1],
                                                     camera.pixels_num[0]);
 
-            try iops.saveImage(io, out_dir, file_name, &image_mat, .csv, 8);
-            try iops.saveImage(io, out_dir, file_name, &image_mat, .ppm, 8);
+            try iio.saveImage(io, out_dir, file_name, &image_mat, .csv, 8);
+            try iio.saveImage(io, out_dir, file_name, &image_mat, .ppm, 8);
         }
 
         time_end = Timestamp.now(io, .awake);

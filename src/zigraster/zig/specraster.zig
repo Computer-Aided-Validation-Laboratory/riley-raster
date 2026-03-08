@@ -29,8 +29,8 @@ const quad4newton = @import("quad4newton.zig");
 const quad8 = @import("quad8.zig");
 const quad9 = @import("quad9.zig");
 
-const iops = @import("imageops.zig");
-const ImageFormat = iops.ImageFormat;
+const iio = @import("imageio.zig");
+const ImageFormat = iio.ImageFormat;
 
 pub const SaveOption = enum {
     disk,
@@ -164,7 +164,7 @@ pub fn rasterAllFrames(
                     };
 
                     for (config.save_formats) |format| {
-                        try iops.saveImage(io, save_dir, file_name, &save_mat, format, bits);
+                        try iio.saveImage(io, save_dir, file_name, &save_mat, format, bits);
                     }
                 }
             }
