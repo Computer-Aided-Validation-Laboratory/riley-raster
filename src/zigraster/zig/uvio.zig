@@ -51,7 +51,7 @@ pub const UVMap = struct {
     }
 };
 
-pub fn loadUVMap(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !UVMap {
+pub fn loadUVs(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !NDArray(f64) {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
@@ -59,8 +59,11 @@ pub fn loadUVMap(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !UV
     const lines = try meshio.readCsvToList(arena_alloc, io, path);
     const node_n = lines.items.len;
 
-    var uv_map = try UVMap.init(allocator, node_n);
-    errdefer uv_map.deinit(allocator);
+    var uv_arr = try NDArray(f64).initFlat(allocator, &[_]usize{ node_n, 2 });
+    errdefer {
+        allocator.free(uv_arr.elems);
+        uv_arr.deinit(allocator);
+    }
 
     for (lines.items, 0..) |line, i| {
         var split_iter = std.mem.splitScalar(u8, line, ',');
@@ -70,15 +73,19 @@ pub fn loadUVMap(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !UV
         const u = try std.fmt.parseFloat(f64, std.mem.trim(u8, u_str, " "));
         const v = try std.fmt.parseFloat(f64, std.mem.trim(u8, v_str, " "));
 
-        uv_map.setUV(i, u, v);
+        uv_arr.set(&[_]usize{ i, 0 }, u);
+        uv_arr.set(&[_]usize{ i, 1 }, v);
     }
 
-    return uv_map;
+    return uv_arr;
 }
 
-pub fn load_uvs(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !NDArray(f64) {
-    const uv_map = try loadUVMap(allocator, io, path);
-    return uv_map.array;
+pub fn loadUVMap(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !UVMap {
+    const uv_arr = try loadUVs(allocator, io, path);
+    return UVMap{
+        .array = uv_arr,
+        .buffer = uv_arr.elems,
+    };
 }
 
 const testing = std.testing;
