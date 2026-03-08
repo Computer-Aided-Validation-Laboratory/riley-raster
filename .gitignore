@@ -17,6 +17,7 @@ gold*/
 fails/
 archive/
 example/
+src-*/
 
 *.ppm
 *.bmp

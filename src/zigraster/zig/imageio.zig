@@ -186,7 +186,8 @@ pub fn loadPPM(allocator: std.mem.Allocator,
                 const val = 0.299 * @as(f64, @floatFromInt(rgb[0])) 
                           + 0.587 * @as(f64, @floatFromInt(rgb[1])) 
                           + 0.114 * @as(f64, @floatFromInt(rgb[2]));
-                px.channels[0] = convertValue(T, (val / @as(f64, @floatFromInt(max_val))) * 255.0);
+                px.channels[0] = convertValue(T, 
+                    (val / @as(f64, @floatFromInt(max_val))) * 255.0);
             }
             texture.setPixel(rr, cc, px);
         }

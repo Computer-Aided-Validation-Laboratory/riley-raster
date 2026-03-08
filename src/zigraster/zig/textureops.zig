@@ -82,7 +82,6 @@ pub fn Texture(comptime T: type, comptime channels: usize) type {
     };
 }
 
-// --- Weighting Functions ---
 
 fn cubicWeightHorner(x: f64) f64 {
     const ax = @abs(x);
@@ -120,7 +119,6 @@ fn quinticWeightHorner(x: f64) f64 {
     }
 }
 
-// --- LUT Generation (Comptime) ---
 
 const LUT_SIZE = 1024;
 
@@ -231,12 +229,12 @@ fn getLerpWeights(comptime N: usize, comptime table: [LUT_SIZE][N]f64, t: f64) [
     return res;
 }
 
-// --- Public Sampling Functions ---
 
 pub fn sampleGreyscale(comptime interp: InterpType,
                        texture: anytype,
                        u: f64,
                        v: f64) f64 {
+
     const cols_minus_1 = @as(isize, @intCast(texture.cols_n)) - 1;
     const rows_minus_1 = @as(isize, @intCast(texture.rows_n)) - 1;
     const x_f = u * @as(f64, @floatFromInt(cols_minus_1));
@@ -276,9 +274,12 @@ pub fn sampleGreyscale(comptime interp: InterpType,
                quinticWeightHorner(ty), quinticWeightHorner(ty-1),
                quinticWeightHorner(ty-2), quinticWeightHorner(ty-3) }),
         .quintic_lut => {
-            const idx_tx = @as(usize, @intFromFloat(tx * @as(f64, @floatFromInt(LUT_SIZE - 1))));
-            const idx_ty = @as(usize, @intFromFloat(ty * @as(f64, @floatFromInt(LUT_SIZE - 1))));
-            return sample2D(6, true, texture, x_i, y_i, quintic_lut[idx_tx], quintic_lut[idx_ty]);
+            const idx_tx = @as(usize, 
+                @intFromFloat(tx * @as(f64, @floatFromInt(LUT_SIZE - 1))));
+            const idx_ty = @as(usize, 
+                @intFromFloat(ty * @as(f64, @floatFromInt(LUT_SIZE - 1))));
+            return sample2D(6, true, texture, x_i, y_i, 
+                quintic_lut[idx_tx], quintic_lut[idx_ty]);
         },
         .quintic_lut_lerp => {
             const wx = getLerpWeights(6, quintic_lut, tx);
