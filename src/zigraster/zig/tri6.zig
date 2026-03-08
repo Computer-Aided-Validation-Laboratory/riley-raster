@@ -15,6 +15,8 @@ const mr = @import("meshraster.zig");
 const FlatShader = mr.FlatShader;
 const TexShader = mr.TexShader;
 
+const newton = @import("newton.zig");
+const SolverConfig = newton.SolverConfig;
 
 pub fn countElemsCalcBBoxes(camera: *const Camera,
                             dim_elem: usize,
@@ -62,37 +64,12 @@ pub fn countElemsCalcBBoxes(camera: *const Camera,
     return elems_in_image;
 }
 
-fn shapeFunctions(xi: f64, eta: f64, n_vals: *[6]f64, dN_dxi: *[6]f64, dN_deta: *[6]f64) void {
-    const L1 = 1.0 - xi - eta;
-    const L2 = xi;
-    const L3 = eta;
-
-    n_vals[0] = L1 * (2.0 * L1 - 1.0);
-    dN_dxi[0] = -(4.0 * L1 - 1.0);
-    dN_deta[0] = -(4.0 * L1 - 1.0);
-
-    n_vals[1] = L2 * (2.0 * L2 - 1.0);
-    dN_dxi[1] = 4.0 * L2 - 1.0;
-    dN_deta[1] = 0.0;
-
-    n_vals[2] = L3 * (2.0 * L3 - 1.0);
-    dN_dxi[2] = 0.0;
-    dN_deta[2] = 4.0 * L3 - 1.0;
-
-    n_vals[3] = 4.0 * L1 * L2;
-    dN_dxi[3] = 4.0 * (L1 - L2);
-    dN_deta[3] = -4.0 * L2;
-
-    n_vals[4] = 4.0 * L2 * L3;
-    dN_dxi[4] = 4.0 * L3;
-    dN_deta[4] = 4.0 * L2;
-
-    n_vals[5] = 4.0 * L3 * L1;
-    dN_dxi[5] = -4.0 * L3;
-    dN_deta[5] = 4.0 * (L1 - L3);
+fn shapeFunctions(u: f64, v: f64, n_v: *[6]f64, dNu: *[6]f64, dNv: *[6]f64) void {
+    const shapefun = @import("shapefun.zig");
+    shapefun.shapeFunctions(6, u, v, n_v, dNu, dNv);
 }
 
-fn getTessellatedGuess(txs: f64, tys: f64, ex: []f64, ey: []f64, ew: []f64,
+fn getTessellatedGuess(txs: f64, tys: f64, ex: []const f64, ey: []const f64, ew: []const f64,
                        xi_out: *f64, eta_out: *f64) bool {
 
     const tol_area: f64 = 1e-12;
@@ -133,64 +110,6 @@ fn getTessellatedGuess(txs: f64, tys: f64, ex: []f64, ey: []f64, ew: []f64,
             eta_out.* = w0 * st.eta0 + w1 * st.eta1 + w2 * st.eta2;
             return true;
         }
-    }
-    
-    return false;
-}
-
-fn solveInverseMapProjected(txs: f64, tys: f64, ex: []f64, ey: []f64, ew: []f64,
-                            xi_in: f64, eta_in: f64,
-                            xi_out: *f64, eta_out: *f64) bool {
-
-    const tol_iter = 1e-8;
-    const tol_det = 1e-12;
-    const eps = 1e-5;
-
-    var xi = xi_in;
-    var eta = eta_in;
-
-    const max_iter = 10;
-    
-    var n_vals: [6]f64 = undefined;
-    var dN_dxi: [6]f64 = undefined;
-    var dN_deta: [6]f64 = undefined;
-
-    for (0..max_iter) |_| {
-        shapeFunctions(xi, eta, &n_vals, &dN_dxi, &dN_deta);
-
-        var Rx: f64 = 0.0; var Ry: f64 = 0.0;
-        var J11: f64 = 0.0; var J12: f64 = 0.0;
-        var J21: f64 = 0.0; var J22: f64 = 0.0;
-
-        for (0..6) |i| {
-            const tx = txs * ew[i] - ex[i];
-            const ty = tys * ew[i] - ey[i];
-            Rx += n_vals[i] * tx;
-            Ry += n_vals[i] * ty;
-            J11 += dN_dxi[i] * tx;
-            J12 += dN_deta[i] * tx;
-            J21 += dN_dxi[i] * ty;
-            J22 += dN_deta[i] * ty;
-        }
-
-        if (@abs(Rx) < tol_iter and @abs(Ry) < tol_iter) {
-            break;
-        }
-
-        const det = J11 * J22 - J12 * J21;
-        if (@abs(det) < tol_det) {
-            return false;
-        }
-
-        const inv_det = 1.0 / det;
-        xi -= inv_det * (J22 * Rx - J12 * Ry);
-        eta -= inv_det * (-J21 * Rx + J11 * Ry);
-    }
-
-    if (xi >= -eps and eta >= -eps and (xi + eta) <= 1.0 + eps) {
-        xi_out.* = xi;
-        eta_out.* = eta;
-        return true;
     }
     
     return false;
@@ -253,16 +172,15 @@ pub fn rasterElemsFlat(allocator: std.mem.Allocator,
                     var xi: f64 = 0.0; var eta: f64 = 0.0;
                     var converged = false;
 
-                    if (getTessellatedGuess(spx_x - x_off, spx_y - y_off, nr.x, 
-                                            nr.y, nr.z, &xi, &eta)) {
-                        converged = solveInverseMapProjected(spx_x - x_off, 
+                    if (getTessellatedGuess(spx_x - x_off, spx_y - y_off, nr.x, nr.y, nr.z, &xi, &eta)) {
+                        converged = newton.solveInverse(N, spx_x - x_off, 
                                                              spx_y - y_off, 
                                                              nr.x, nr.y, nr.z, 
                                                              xi, eta, &xi, &eta);
                     }
-                    
+
                     if (!converged) {
-                        converged = solveInverseMapProjected(spx_x - x_off, 
+                        converged = newton.solveInverse(N, spx_x - x_off, 
                                                              spx_y - y_off, 
                                                              nr.x, nr.y, nr.z, 
                                                              1.0/3.0, 1.0/3.0, 
@@ -378,16 +296,15 @@ pub fn rasterElemsTex(
                                   (@as(f64, @floatFromInt(xx)) + 0.5) * spx_step;
                     var xi: f64 = 0.0; var eta: f64 = 0.0;
                     var converged = false;
-                    if (getTessellatedGuess(spx_x - x_off, spx_y - y_off, nr.x, nr.y, nr.z, 
-                                            &xi, &eta)) {
-                        converged = solveInverseMapProjected(
-                            spx_x - x_off, spx_y - y_off, nr.x, nr.y, nr.z, xi, eta, &xi, &eta,
+                    if (getTessellatedGuess(spx_x - x_off, spx_y - y_off, nr.x, nr.y, nr.z, &xi, &eta)) {
+                        converged = newton.solveInverse(
+                            N, spx_x - x_off, spx_y - y_off, nr.x, nr.y, nr.z, xi, eta, &xi, &eta
                         );
                     }
                     if (!converged) {
-                        converged = solveInverseMapProjected(
-                            spx_x - x_off, spx_y - y_off, nr.x, nr.y, nr.z, 1.0/3.0, 1.0/3.0, 
-                            &xi, &eta,
+                        converged = newton.solveInverse(
+                            N, spx_x - x_off, spx_y - y_off, nr.x, nr.y, nr.z, 1.0/3.0, 1.0/3.0, 
+                            &xi, &eta
                         );
                     }
 

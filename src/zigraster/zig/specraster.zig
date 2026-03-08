@@ -128,7 +128,7 @@ pub fn rasterAllFrames(outer_alloc: std.mem.Allocator,
         @memset(frame_arr.elems, 0.0);
 
         try rasterOneFrame(mesh_raster.mesh_type,
-                           outer_alloc,
+                           arena_alloc,
                            io, 
                            camera,
                            tt,
@@ -352,8 +352,8 @@ fn rasterInternal(comptime mesh_type: MeshType,
     time_start = Timestamp.now(io, .awake);
 
     if (comptime ShaderType == FlatShader) {
-        try MeshFun.rasterElemsFlat(arena_alloc,
-                                    camera,
+        try MeshFun.rasterElemsFlat(arena_alloc, 
+                                    camera, 
                                     frame_ind,
                                     tile_size,
                                     active_tiles,
@@ -377,8 +377,7 @@ fn rasterInternal(comptime mesh_type: MeshType,
                 );
             }
         }
-    }
-    
+    }    
     time_end = Timestamp.now(io, .awake);
     const time5_raster_loop: f64 = @floatFromInt(
         time_start.durationTo(time_end).raw.nanoseconds);

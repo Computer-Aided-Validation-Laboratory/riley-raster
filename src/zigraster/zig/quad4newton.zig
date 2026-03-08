@@ -14,6 +14,8 @@ const mr = @import("meshraster.zig");
 const FlatShader = mr.FlatShader;
 const TexShader = mr.TexShader;
 
+const newton = @import("newton.zig");
+
 pub fn countElemsCalcBBoxes(camera: *const Camera,
                             dim_elem: usize,
                             elem_coord_arr: *const NDArray(f64),
@@ -51,56 +53,9 @@ pub fn countElemsCalcBBoxes(camera: *const Camera,
     return elems_in_image;
 }
 
-fn shapeFunctions4(xi: f64, eta: f64, n_v: *[4]f64, dNu: *[4]f64, dNv: *[4]f64) void {
-    n_v[0] = 0.25 * (1.0 - xi) * (1.0 - eta);
-    n_v[1] = 0.25 * (1.0 + xi) * (1.0 - eta);
-    n_v[2] = 0.25 * (1.0 + xi) * (1.0 + eta);
-    n_v[3] = 0.25 * (1.0 - xi) * (1.0 + eta);
-
-    dNu[0] = -0.25 * (1.0 - eta); dNu[1] = 0.25 * (1.0 - eta);
-    dNu[2] = 0.25 * (1.0 + eta);  dNu[3] = -0.25 * (1.0 + eta);
-
-    dNv[0] = -0.25 * (1.0 - xi);  dNv[1] = -0.25 * (1.0 + xi);
-    dNv[2] = 0.25 * (1.0 + xi);   dNv[3] = 0.25 * (1.0 - xi);
-}
-
-fn solveInverseMapping(nr: Vec3OfSlices(f64), txs: f64, tys: f64,
-                       xi_out: *f64, eta_out: *f64) bool {
-    const tol_iter = 1e-8;
-    const tol_det = 1e-12;
-    const eps = 1e-5;
-
-    var xi = xi_out.*; var eta = eta_out.*;
-    const max_iter = 10;
-    var n_v: [4]f64 = undefined; var dNu: [4]f64 = undefined; var dNv: [4]f64 = undefined;
-
-    for (0..max_iter) |_| {
-        shapeFunctions4(xi, eta, &n_v, &dNu, &dNv);
-        var Rx: f64 = 0.0; var Ry: f64 = 0.0;
-        var J11: f64 = 0.0; var J12: f64 = 0.0;
-        var J21: f64 = 0.0; var J22: f64 = 0.0;
-
-        for (0..4) |i| {
-            const f_x = txs * nr.z[i] - nr.x[i];
-            const f_y = tys * nr.z[i] - nr.y[i];
-            Rx += n_v[i] * f_x; Ry += n_v[i] * f_y;
-            J11 += dNu[i] * f_x; J12 += dNv[i] * f_x;
-            J21 += dNu[i] * f_y; J22 += dNv[i] * f_y;
-        }
-
-        if (@abs(Rx) < tol_iter and @abs(Ry) < tol_iter) break;
-        const det = J11 * J22 - J12 * J21;
-        if (@abs(det) < tol_det) return false;
-        const inv_det = 1.0 / det;
-        xi -= inv_det * (J22 * Rx - J12 * Ry);
-        eta -= inv_det * (-J21 * Rx + J11 * Ry);
-    }
-    if (xi >= -1.0 - eps and xi <= 1.0 + eps and eta >= -1.0 - eps and 
-        eta <= 1.0 + eps) {
-        xi_out.* = xi; eta_out.* = eta;
-        return true;
-    }
-    return false;
+fn shapeFunctions4(u: f64, v: f64, n_v: *[4]f64, dNu: *[4]f64, dNv: *[4]f64) void {
+    const shapefun = @import("shapefun.zig");
+    shapefun.shapeFunctions(4, u, v, n_v, dNu, dNv);
 }
 
 pub fn rasterElemsFlat(allocator: std.mem.Allocator,
@@ -168,7 +123,7 @@ pub fn rasterElemsFlat(allocator: std.mem.Allocator,
                                   (@as(f64, @floatFromInt(xx)) + 0.5) * spx_step;
                     const txs = spx_x - x_off;
                     var u: f64 = 0.0; var v: f64 = 0.0;
-                    if (solveInverseMapping(nr, txs, tys, &u, &v)) {
+                    if (newton.solveInverse(N, txs, tys, nr.x, nr.y, nr.z, u, v, &u, &v)) {
                         var n_v: [4]f64 = undefined; var dNu: [4]f64 = undefined; 
                         var dNv: [4]f64 = undefined;
                         shapeFunctions4(u, v, &n_v, &dNu, &dNv);
@@ -260,7 +215,7 @@ pub fn rasterElemsTex(comptime interp_type: ti.InterpType,
                                   (@as(f64, @floatFromInt(xx)) + 0.5) * spx_step;
                     const txs = spx_x - x_off;
                     var u: f64 = 0.0; var v: f64 = 0.0;
-                    if (solveInverseMapping(nr, txs, tys, &u, &v)) {
+                    if (newton.solveInverse(N, txs, tys, nr.x, nr.y, nr.z, u, v, &u, &v)) {
                         var n_v: [4]f64 = undefined; var dNu: [4]f64 = undefined; 
                         var dNv: [4]f64 = undefined;
                         shapeFunctions4(u, v, &n_v, &dNu, &dNv);
