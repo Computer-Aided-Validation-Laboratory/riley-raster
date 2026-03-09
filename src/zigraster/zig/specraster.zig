@@ -232,7 +232,8 @@ fn rasterInternal(
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
-    
+    //-----------------------------------------------------------------------------------------
+    // Tiling Raster Step 1: Coordinate transformation
     const time_start_internal = Timestamp.now(io, .awake);
     
     if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
@@ -246,6 +247,8 @@ fn rasterInternal(
         time_start_internal.durationTo(time_end_internal).raw.nanoseconds
     );
 
+    //-----------------------------------------------------------------------------------------
+    // Tiling Raster Step 2: Count elements in image and calculate element bounding boxes
     const time_start_bbox = Timestamp.now(io, .awake);
 
     const element_bboxes: []BBox = try arena_alloc.alloc(BBox, elems_num);
@@ -260,10 +263,14 @@ fn rasterInternal(
         time_start_bbox.durationTo(time_end_bbox).raw.nanoseconds
     );
 
+    //-----------------------------------------------------------------------------------------
+    // Tiling Raster Step 3: Count number of elements overlapping each tile
     const time_start_overlap = Timestamp.now(io, .awake);
+
     const tile_elem_counts = try arena_alloc.alloc(usize, tiles_num);
     @memset(tile_elem_counts, 0);
     const tile_write_inds = try arena_alloc.alloc(usize, tiles_num);
+
     const num_active_tiles = try rops.elemTileOverlapCount(
         tile_size,
         tiles_num_x,
@@ -272,15 +279,20 @@ fn rasterInternal(
         tile_elem_counts,
         tile_write_inds,
     );
+    
     const time_end_overlap = Timestamp.now(io, .awake);
     const time3_elem_tile_overlap_count: f64 = @floatFromInt(
         time_start_overlap.durationTo(time_end_overlap).raw.nanoseconds
     );
 
+    //-----------------------------------------------------------------------------------------
+    // Tiling Raster Step 4: Store overlap bounding boxes for the active tiles
     const time_start_store = Timestamp.now(io, .awake);
+
     const overlap_total: usize = sliceops.sum(usize, tile_elem_counts);
     const overlap_bboxes = try arena_alloc.alloc(BBox, overlap_total);
     const active_tiles = try arena_alloc.alloc(ActiveTile, num_active_tiles);
+
     rops.storeActiveTiles(
         tile_size,
         tiles_num_x,
@@ -294,11 +306,14 @@ fn rasterInternal(
         overlap_bboxes,
         active_tiles,
     );
+
     const time_end_store = Timestamp.now(io, .awake);
     const time4_elem_tile_overlap_store: f64 = @floatFromInt(
         time_start_store.durationTo(time_end_store).raw.nanoseconds
     );
 
+    //-----------------------------------------------------------------------------------------
+    // Tiling Raster Step 5: Main raster loop
     const time_start_loop = Timestamp.now(io, .awake);
 
     try rasterengine.RasterEngine(GK, SK, SD).raster(
@@ -323,6 +338,8 @@ fn rasterInternal(
         raster_start.durationTo(raster_end).raw.nanoseconds
     );
 
+    //-----------------------------------------------------------------------------------------
+    // Tiling Raster: Performance
     var total_px: f64 = @as(f64, @floatFromInt(camera.pixels_num[0] * camera.pixels_num[1]));
     const sub_samp_f: f64 = @as(f64, @floatFromInt(camera.sub_sample));
     total_px = total_px * sub_samp_f * sub_samp_f;
@@ -333,8 +350,8 @@ fn rasterInternal(
     const conv_units: f64 = 1.0 / 1.0e6;
     const print_break = [_]u8{'='} ** 80;
     print("\n{s}\nSoftware Raster Times\n{s}\n", .{ print_break, print_break });
-    print("World to raster         = {d:.6} ms\n", .{ time1_world_to_raster * conv_units });
-    print("Elem bbox crop          = {d:.6} ms\n", .{ time2_elem_bboxes_crop * conv_units });
+    print("Coord transformation    = {d:.6} ms\n", .{ time1_world_to_raster * conv_units });
+    print("Elem screen crop & BBox = {d:.6} ms\n", .{ time2_elem_bboxes_crop * conv_units });
     print("Elem tile overlap count = {d:.6} ms\n", 
           .{ time3_elem_tile_overlap_count * conv_units });
     print("Elem tile overlap store = {d:.6} ms\n", 
