@@ -233,64 +233,82 @@ fn rasterInternalMono(
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
-    var time_start = Timestamp.now(io, .awake);
-    if (comptime !GK.is_parent_space) {
+    const time_start_internal = Timestamp.now(io, .awake);
+    if (comptime GK.coord_space == geometrykernels.CoordSpace.raster) {
         try rops.transformElemsRasterSIMD(N, f64, camera, dim_elem, coords);
     } else {
         try rops.transformElemsCamSIMD(N, f64, camera, dim_elem, coords);
     }
-    var time_end = Timestamp.now(io, .awake);
+    const time_end_internal = Timestamp.now(io, .awake);
     const time1_world_to_raster: f64 = @floatFromInt(
-        time_start.durationTo(time_end).raw.nanoseconds
+        time_start_internal.durationTo(time_end_internal).raw.nanoseconds
     );
 
-    time_start = Timestamp.now(io, .awake);
-    const elem_bboxes: []BBox = try arena_alloc.alloc(BBox, elems_num);
-    const elems_in_image = if (comptime !GK.is_parent_space)
-        try rops.countElemsCalcBBoxesTri3(camera, dim_elem, coords, elem_bboxes)
+    const time_start_bbox = Timestamp.now(io, .awake);
+    const element_bboxes: []BBox = try arena_alloc.alloc(BBox, elems_num);
+    const elements_in_image = if (comptime GK.coord_space == geometrykernels.CoordSpace.raster)
+        try rops.countElemsCalcBBoxesTri3(camera, dim_elem, coords, element_bboxes)
     else
-        try rops.countElemsCalcBBoxes(N, camera, dim_elem, coords, elem_bboxes);
-    time_end = Timestamp.now(io, .awake);
+        try rops.countElemsCalcBBoxes(N, camera, dim_elem, coords, element_bboxes);
+    const time_end_bbox = Timestamp.now(io, .awake);
     const time2_elem_bboxes_crop: f64 = @floatFromInt(
-        time_start.durationTo(time_end).raw.nanoseconds
+        time_start_bbox.durationTo(time_end_bbox).raw.nanoseconds
     );
 
-    time_start = Timestamp.now(io, .awake);
+    const time_start_overlap = Timestamp.now(io, .awake);
     const tile_elem_counts = try arena_alloc.alloc(usize, tiles_num);
     @memset(tile_elem_counts, 0);
     const tile_write_inds = try arena_alloc.alloc(usize, tiles_num);
     const num_active_tiles = try rops.elemTileOverlapCount(
-        tile_size, tiles_num_x, elems_in_image, elem_bboxes, 
-        tile_elem_counts, tile_write_inds
+        tile_size,
+        tiles_num_x,
+        elements_in_image,
+        element_bboxes,
+        tile_elem_counts,
+        tile_write_inds,
     );
-    time_end = Timestamp.now(io, .awake);
+    const time_end_overlap = Timestamp.now(io, .awake);
     const time3_elem_tile_overlap_count: f64 = @floatFromInt(
-        time_start.durationTo(time_end).raw.nanoseconds
+        time_start_overlap.durationTo(time_end_overlap).raw.nanoseconds
     );
 
-    time_start = Timestamp.now(io, .awake);
+    const time_start_store = Timestamp.now(io, .awake);
     const overlap_total: usize = sliceops.sum(usize, tile_elem_counts);
     const overlap_bboxes = try arena_alloc.alloc(BBox, overlap_total);
     const active_tiles = try arena_alloc.alloc(ActiveTile, num_active_tiles);
     rops.storeActiveTiles(
-        tile_size, tiles_num_x, tiles_num_y, screen_px_x, screen_px_y, 
-        elems_in_image, elem_bboxes, tile_elem_counts, tile_write_inds, 
-        overlap_bboxes, active_tiles
+        tile_size,
+        tiles_num_x,
+        tiles_num_y,
+        screen_px_x,
+        screen_px_y,
+        elements_in_image,
+        element_bboxes,
+        tile_elem_counts,
+        tile_write_inds,
+        overlap_bboxes,
+        active_tiles,
     );
-    time_end = Timestamp.now(io, .awake);
+    const time_end_store = Timestamp.now(io, .awake);
     const time4_elem_tile_overlap_store: f64 = @floatFromInt(
-        time_start.durationTo(time_end).raw.nanoseconds
+        time_start_store.durationTo(time_end_store).raw.nanoseconds
     );
 
-    time_start = Timestamp.now(io, .awake);
+    const time_start_loop = Timestamp.now(io, .awake);
     try rasterengine.RasterEngine(GK, SK, SD).raster(
-        arena_alloc, camera, frame_ind, tile_size, active_tiles, 
-        overlap_bboxes, coords, shader, image_out_arr
+        arena_alloc,
+        camera,
+        frame_ind,
+        tile_size,
+        active_tiles,
+        overlap_bboxes,
+        coords,
+        shader,
+        image_out_arr,
     );
-
-    time_end = Timestamp.now(io, .awake);
+    const time_end_loop = Timestamp.now(io, .awake);
     const time5_raster_loop: f64 = @floatFromInt(
-        time_start.durationTo(time_end).raw.nanoseconds
+        time_start_loop.durationTo(time_end_loop).raw.nanoseconds
     );
 
     const raster_end = Timestamp.now(io, .awake);
