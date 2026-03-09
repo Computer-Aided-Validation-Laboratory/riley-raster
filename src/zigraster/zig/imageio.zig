@@ -707,10 +707,10 @@ test "Verify hand-written TIFF loader" {
     }
     const mat = MatSlice(f64).init(mat_mem, tex_c.rows_n, tex_c.cols_n);
     
-    try saveTIFF(io, out_dir, "texture/speckle-simple.tiff", &mat, 8);
+    try saveTIFF(io, out_dir, "temp-test/speckle-simple.tiff", &mat, 8);
 
     // 3. Load using our hand-written loadTIFF via generic loadImage
-    var tex_zig = try loadImage(allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1);
+    var tex_zig = try loadImage(allocator, io, "temp-test/speckle-simple.tiff", .tiff, u8, 1);
     defer tex_zig.deinit(allocator);
 
     try testing.expectEqual(tex_c.rows_n, tex_zig.rows_n);
@@ -747,7 +747,7 @@ test "Save and Load All Formats" {
 
     const formats = std.enums.values(ImageFormat);
     for (formats) |fmt| {
-        const base_name = "texture/test_io";
+        const base_name = "temp-test/test_io";
         try saveImage(io, out_dir, base_name, &mat, fmt, 8);
         
         var ext_buff: [1024]u8 = undefined;

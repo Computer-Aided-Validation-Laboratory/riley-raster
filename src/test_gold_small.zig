@@ -32,9 +32,9 @@ test "Gold Small Suite" {
         const io_internal = io_threaded_internal.io();
         const out_dir = std.Io.Dir.cwd();
         
-        try common.iio.saveTIFF(io_internal, out_dir, "texture/speckle-simple.tiff", &mat, 8);
+        try common.iio.saveTIFF(io_internal, out_dir, "temp-test/speckle-simple.tiff", &mat, 8);
         break :blk try common.iio.loadImage(
-            allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1
+            allocator, io, "temp-test/speckle-simple.tiff", .tiff, u8, 1
         );
     };
     defer texture.deinit(allocator);

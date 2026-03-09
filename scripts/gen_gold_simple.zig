@@ -25,9 +25,9 @@ pub fn main() !void {
         const temp_mat = MatSlice(f64).init(mat_mem, tex_orig.rows_n, tex_orig.cols_n);
 
         const out_dir = std.Io.Dir.cwd();
-        try gengold.iio.saveTIFF(io, out_dir, "texture/speckle-simple.tiff", &temp_mat, 8);
+        try gengold.iio.saveTIFF(io, out_dir, "temp-test/speckle-simple.tiff", &temp_mat, 8);
         break :blk try gengold.iio.loadImage(
-            allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1
+            allocator, io, "temp-test/speckle-simple.tiff", .tiff, u8, 1
         );
     };
     defer texture.deinit(allocator);
