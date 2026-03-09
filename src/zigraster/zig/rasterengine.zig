@@ -74,13 +74,6 @@ pub fn RasterEngine(comptime Geometry: type,
                         nodes_inv_z[nn] = 1.0 / nodes.z[nn];
                     }
 
-                    const geom_state = if (@hasDecl(Geometry, "getInvElemArea"))
-                        Geometry.getInvElemArea(nodes)
-                    else if (@hasDecl(Geometry, "getSolverParams"))
-                        Geometry.getSolverParams(nodes)
-                    else
-                        {};
-
                     const scratch_start_x = sub_samp * (@as(usize, overlap.x_min) - 
                                                         tile.x_px_min);
                     const scratch_end_x = sub_samp * (@as(usize, overlap.x_max) - 
@@ -93,24 +86,30 @@ pub fn RasterEngine(comptime Geometry: type,
                     const xi_min_f: f64 = @as(f64, @floatFromInt(overlap.x_min));
                     const yi_min_f: f64 = @as(f64, @floatFromInt(overlap.y_min));
 
-                    if (comptime Geometry.supports_incremental) {
-                        const dw_dx = Geometry.getDWeightsDx(nodes, geom_state, 
-                                                             sub_pixel_step);
-                        const dw_dy = Geometry.getDWeightsDy(nodes, geom_state, 
-                                                             sub_pixel_step);
+                    // Use specialized loop for Tri3Opt
+                    if (comptime std.mem.indexOf(u8, @typeName(Geometry), "Tri3Opt") != null) {
+                        const inv_area = 1.0 / rops.edgeFun3(
+                            nodes.x[0], nodes.y[0],
+                            nodes.x[1], nodes.y[1],
+                            nodes.x[2], nodes.y[2],
+                        );
+                        const dw_dx = Geometry.getDWeightsDx(nodes, inv_area, sub_pixel_step);
+                        const dw_dy = Geometry.getDWeightsDy(nodes, inv_area, sub_pixel_step);
                         const start_x = xi_min_f + sub_pixel_offset;
                         const start_y = yi_min_f + sub_pixel_offset;
                         var weights_row = Geometry.getWeightsAt(nodes, start_x, 
-                                                                start_y, geom_state);
+                                                                start_y, inv_area);
 
-                        for (scratch_start_y..scratch_end_y) |yy| {
-                            const row_off = yy * sub_pixel_tile_size;
+                        var sy = scratch_start_y;
+                        while (sy < scratch_end_y) : (sy += 1) {
+                            const row_off = sy * sub_pixel_tile_size;
                             var weights = weights_row;
 
-                            for (scratch_start_x..scratch_end_x) |xx| {
+                            var sx = scratch_start_x;
+                            while (sx < scratch_end_x) : (sx += 1) {
                                 if (Geometry.isInElement(weights)) {
                                     const inv_z = Geometry.calcInvZ(nodes, weights);
-                                    const idx = row_off + xx;
+                                    const idx = row_off + sx;
 
                                     if (inv_z > sub_pixel_inv_z_scratch[idx]) {
                                         sub_pixel_inv_z_scratch[idx] = inv_z;
@@ -136,21 +135,29 @@ pub fn RasterEngine(comptime Geometry: type,
                             inline for (0..N) |nn| weights_row[nn] += dw_dy[nn];
                         }
                     } else {
+                        // Pointwise loop for all other kernels
+                        const geom_state = if (@hasDecl(Geometry, "getInvElemArea"))
+                            Geometry.getInvElemArea(nodes)
+                        else if (@hasDecl(Geometry, "getSolverParams"))
+                            Geometry.getSolverParams(nodes)
+                        else
+                            {};
+
                         var py: f64 = yi_min_f + sub_pixel_offset;
-                        for (scratch_start_y..scratch_end_y) |yy| {
-                            const row_off = yy * sub_pixel_tile_size;
+                        var sy = scratch_start_y;
+                        while (sy < scratch_end_y) : (sy += 1) {
+                            const row_off = sy * sub_pixel_tile_size;
                             var px: f64 = xi_min_f + sub_pixel_offset;
 
-                            for (scratch_start_x..scratch_end_x) |xx| {
-                                const maybe_weights = if (@hasDecl(Geometry, "getSolverParams"))
-                                    Geometry.solveWeights(nodes, px, py, x_off, y_off, 
-                                                          geom_state)
-                                else
-                                    Geometry.solveWeights(nodes, px, py, x_off, y_off);
+                            var sx = scratch_start_x;
+                            while (sx < scratch_end_x) : (sx += 1) {
+                                const maybe_weights = Geometry.solveWeights(
+                                    nodes, px, py, x_off, y_off, geom_state
+                                );
 
                                 if (maybe_weights) |weights| {
                                     const inv_z = Geometry.calcInvZ(nodes, weights);
-                                    const idx = row_off + xx;
+                                    const idx = row_off + sx;
 
                                     if (inv_z > sub_pixel_inv_z_scratch[idx]) {
                                         sub_pixel_inv_z_scratch[idx] = inv_z;

@@ -10,7 +10,6 @@ pub fn Tri3Kernel() type {
         const N = 3;
         pub const node_n = N;
         pub const is_parent_space = false;
-        pub const supports_incremental = true;
 
         pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), 
                                 elem_ind: usize) !Vec3OfSlices(f64) {
@@ -23,6 +22,48 @@ pub fn Tri3Kernel() type {
                 nodes.x[1], nodes.y[1],
                 nodes.x[2], nodes.y[2],
             );
+        }
+
+        pub inline fn solveWeights(nodes: Vec3OfSlices(f64), 
+                                   px: f64, py: f64, 
+                                   x_off: f64, y_off: f64,
+                                   inv_area: f64) ?[N]f64 {
+            _ = x_off; _ = y_off;
+            const tol_edge: f64 = 1e-9;
+            var weights: [N]f64 = undefined;
+            weights[0] = rops.edgeFun3(nodes.x[1], nodes.y[1], 
+                                       nodes.x[2], nodes.y[2], px, py) * inv_area;
+            weights[1] = rops.edgeFun3(nodes.x[2], nodes.y[2], 
+                                       nodes.x[0], nodes.y[0], px, py) * inv_area;
+            weights[2] = rops.edgeFun3(nodes.x[0], nodes.y[0], 
+                                       nodes.x[1], nodes.y[1], px, py) * inv_area;
+
+            if (weights[0] >= -tol_edge and weights[1] >= -tol_edge and 
+                weights[2] >= -tol_edge) {
+                return weights;
+            }
+            return null;
+        }
+
+        pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
+            var inv_z: f64 = 0.0;
+            inline for (0..N) |i| {
+                inv_z += weights[i] * (1.0 / nodes.z[i]);
+            }
+            return inv_z;
+        }
+    };
+}
+
+pub fn Tri3OptKernel() type {
+    return struct {
+        const N = 3;
+        pub const node_n = N;
+        pub const is_parent_space = false;
+
+        pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), 
+                                elem_ind: usize) !Vec3OfSlices(f64) {
+            return try rops.loadVec3SlicesFromElemArray(N, f64, elem_coord_arr, elem_ind);
         }
 
         pub inline fn getDWeightsDx(nodes: Vec3OfSlices(f64), inv_area: f64, 
@@ -68,12 +109,6 @@ pub fn Tri3Kernel() type {
             }
             return inv_z;
         }
-
-        // Dummy for interface compatibility
-        pub inline fn solveWeights(nodes: Vec3OfSlices(f64), px: f64, py: f64, 
-                                   inv_area: f64) ?[N]f64 {
-            _ = nodes; _ = px; _ = py; _ = inv_area; return null;
-        }
     };
 }
 
@@ -82,7 +117,6 @@ pub fn Tri6Kernel() type {
         const N = 6;
         pub const node_n = N;
         pub const is_parent_space = true;
-        pub const supports_incremental = false;
 
         pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), 
                                 elem_ind: usize) !Vec3OfSlices(f64) {
@@ -91,7 +125,9 @@ pub fn Tri6Kernel() type {
 
         pub inline fn solveWeights(nodes: Vec3OfSlices(f64), 
                                    px: f64, py: f64, 
-                                   x_off: f64, y_off: f64) ?[N]f64 {
+                                   x_off: f64, y_off: f64,
+                                   state: anytype) ?[N]f64 {
+            _ = state;
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
             var converged = false;
@@ -173,7 +209,6 @@ pub fn Quad4IBIKernel() type {
         const N = 4;
         pub const node_n = N;
         pub const is_parent_space = true;
-        pub const supports_incremental = false;
 
         pub const SolverParams = struct {
             ae_x: f64, ae_z: f64, be_x: f64, be_z: f64,
@@ -210,7 +245,7 @@ pub fn Quad4IBIKernel() type {
 
         pub inline fn solveWeights(nodes: Vec3OfSlices(f64), 
                                    px: f64, py: f64, 
-                                   x_off: f64, y_off: f64, 
+                                   x_off: f64, y_off: f64,
                                    solver_k: SolverParams) ?[N]f64 {
             _ = nodes;
             const txs = px - x_off;
@@ -287,7 +322,6 @@ pub fn Quad4NewtonKernel() type {
         const N = 4;
         pub const node_n = N;
         pub const is_parent_space = true;
-        pub const supports_incremental = false;
 
         pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), 
                                 elem_ind: usize) !Vec3OfSlices(f64) {
@@ -296,7 +330,9 @@ pub fn Quad4NewtonKernel() type {
 
         pub inline fn solveWeights(nodes: Vec3OfSlices(f64), 
                                    px: f64, py: f64, 
-                                   x_off: f64, y_off: f64) ?[N]f64 {
+                                   x_off: f64, y_off: f64,
+                                   state: anytype) ?[N]f64 {
+            _ = state;
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
             if (newton.solveInverse(N, px - x_off, py - y_off, nodes.x, nodes.y, 
@@ -324,7 +360,6 @@ pub fn HigherOrderKernel(comptime N: usize) type {
     return struct {
         pub const node_n = N;
         pub const is_parent_space = true;
-        pub const supports_incremental = false;
 
         pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), 
                                 elem_ind: usize) !Vec3OfSlices(f64) {
@@ -333,7 +368,9 @@ pub fn HigherOrderKernel(comptime N: usize) type {
 
         pub inline fn solveWeights(nodes: Vec3OfSlices(f64), 
                                    px: f64, py: f64, 
-                                   x_off: f64, y_off: f64) ?[N]f64 {
+                                   x_off: f64, y_off: f64,
+                                   state: anytype) ?[N]f64 {
+            _ = state;
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
             if (newton.solveInverse(N, px - x_off, py - y_off, nodes.x, nodes.y, 
