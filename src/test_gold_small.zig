@@ -39,10 +39,15 @@ test "Gold Small Suite" {
     };
     defer texture.deinit(allocator);
 
-    const mesh_types = [_]common.MeshType{ .tri3, //.tri3opt, 
-                                           .tri6, 
-                                           .quad4ibi, .quad4newton,
-                                           .quad8, .quad9 };
+    const mesh_types = [_]common.MeshType{
+        .tri3,
+        .tri3opt,
+        .tri6,
+        .quad4ibi,
+        .quad4newton,
+        .quad8,
+        .quad9,
+    };
     const interp_types = std.enums.values(common.texops.InterpType);
     const pixel_num = [_]u32{ 160, 100 };
 

@@ -24,8 +24,8 @@ const FieldShader = meshraster.FieldShader;
 const iio = @import("imageio.zig");
 const ImageFormat = iio.ImageFormat;
 
-const geometrykernels = @import("geometrykernels.zig");
-const shaderkernels = @import("shaderkernels.zig");
+const geomkerns = @import("geometrykernels.zig");
+const shadekerns = @import("shaderkernels.zig");
 const rasterengine = @import("rasterengine.zig");
 
 pub const SaveOption = enum {
@@ -165,37 +165,34 @@ pub fn rasterOneFrame(
     coords: *NDArray(f64),
     image_out_arr: *NDArray(f64),
 ) !void {
+
     _ = threads;
-    const raster_start = Timestamp.now(io, .awake);
 
     switch (mesh_type) {
         inline else => |m_tag| {
             const GK = switch (m_tag) {
-                .tri3, .tri3opt => geometrykernels.Tri3Kernel(),
-                .tri6 => geometrykernels.Tri6Kernel(),
-                .quad4ibi => geometrykernels.Quad4IBIKernel(),
-                .quad4newton => geometrykernels.Quad4NewtonKernel(),
-                .quad8 => geometrykernels.Quad89Kernel(8),
-                .quad9 => geometrykernels.Quad89Kernel(9),
+                .tri3 => geomkerns.Tri3Kernel(),
+                .tri3opt => geomkerns.Tri3OptKernel(),
+                .tri6 => geomkerns.Tri6Kernel(),
+                .quad4ibi => geomkerns.Quad4IBIKernel(),
+                .quad4newton => geomkerns.Quad4NewtonKernel(),
+                .quad8 => geomkerns.Quad89Kernel(8),
+                .quad9 => geomkerns.Quad89Kernel(9),
             };
             const N = GK.node_n;
 
             switch (shader.*) {
                 .flat => |*sh| {
-                    const SK = shaderkernels.FlatKernel(N);
-                    try rasterInternalMono(
-                        GK, SK, FlatShader, allocator, io, camera, frame_ind, 
-                        tile_size, sh, coords, image_out_arr, raster_start
-                    );
+                    const SK = shadekerns.FlatKernel(N);
+                    try rasterInternal(GK, SK, FlatShader, allocator, io, camera, frame_ind, 
+                        tile_size, sh, coords, image_out_arr,);
                 },
                 .texture => |*sh| {
                     switch (sh.interp_type) {
                         inline else => |it| {
-                            const SK = shaderkernels.TexKernel(N, it);
-                            try rasterInternalMono(
-                                GK, SK, TexShader, allocator, io, camera, frame_ind, 
-                                tile_size, sh, coords, image_out_arr, raster_start
-                            );
+                            const SK = shadekerns.TexKernel(N, it);
+                            try rasterInternal(GK, SK, TexShader, allocator, io, camera, 
+                                frame_ind, tile_size, sh, coords, image_out_arr,);
                         }
                     }
                 },
@@ -204,7 +201,7 @@ pub fn rasterOneFrame(
     }
 }
 
-fn rasterInternalMono(
+fn rasterInternal(
     comptime GK: type, // geometry kernel
     comptime SK: type, // shader kernel
     comptime SD: type, // shader data
@@ -215,9 +212,11 @@ fn rasterInternalMono(
     tile_size: u16,
     shader: *const SD,
     coords: *NDArray(f64),
-    image_out_arr: *NDArray(f64),
-    raster_start: Timestamp,
+    image_out_arr: *NDArray(f64)
 ) !void {
+
+    const raster_start = Timestamp.now(io, .awake);
+
     const N = GK.node_n;
     const dim_elem: usize = 0;
     const elems_num: usize = coords.dims[dim_elem];
@@ -233,23 +232,29 @@ fn rasterInternalMono(
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
+    
     const time_start_internal = Timestamp.now(io, .awake);
-    if (comptime GK.coord_space == geometrykernels.CoordSpace.raster) {
+    
+    if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
         try rops.transformElemsRasterSIMD(N, f64, camera, dim_elem, coords);
     } else {
-        try rops.transformElemsCamSIMD(N, f64, camera, dim_elem, coords);
+        try rops.transformElemsClipPxLengSIMD(N, f64, camera, dim_elem, coords);
     }
+
     const time_end_internal = Timestamp.now(io, .awake);
     const time1_world_to_raster: f64 = @floatFromInt(
         time_start_internal.durationTo(time_end_internal).raw.nanoseconds
     );
 
     const time_start_bbox = Timestamp.now(io, .awake);
+
     const element_bboxes: []BBox = try arena_alloc.alloc(BBox, elems_num);
-    const elements_in_image = if (comptime GK.coord_space == geometrykernels.CoordSpace.raster)
+
+    const elements_in_image = if (comptime GK.coord_space == geomkerns.CoordSpace.raster)
         try rops.countElemsCalcBBoxesTri3(camera, dim_elem, coords, element_bboxes)
     else
         try rops.countElemsCalcBBoxes(N, camera, dim_elem, coords, element_bboxes);
+
     const time_end_bbox = Timestamp.now(io, .awake);
     const time2_elem_bboxes_crop: f64 = @floatFromInt(
         time_start_bbox.durationTo(time_end_bbox).raw.nanoseconds
@@ -295,6 +300,7 @@ fn rasterInternalMono(
     );
 
     const time_start_loop = Timestamp.now(io, .awake);
+
     try rasterengine.RasterEngine(GK, SK, SD).raster(
         arena_alloc,
         camera,
@@ -306,6 +312,7 @@ fn rasterInternalMono(
         shader,
         image_out_arr,
     );
+    
     const time_end_loop = Timestamp.now(io, .awake);
     const time5_raster_loop: f64 = @floatFromInt(
         time_start_loop.durationTo(time_end_loop).raw.nanoseconds

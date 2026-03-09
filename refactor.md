@@ -6,6 +6,8 @@
 
 ## Performance / Functionality Updates
 - For tessalated guess - fall back to nearest triangle edge as initial guess?
+- Allow configuration of save name for files.
+- Threading
 
 ## meshio.zig
 - Remove prints 

@@ -16,7 +16,6 @@ const NDArray = @import("ndarray.zig").NDArray;
 const Camera = @import("camera.zig").Camera;
 
 pub fn worldToRasterCoords(coord_world: Vec3T(f64), camera: *const Camera) Vec3T(f64) {
-    // TODO: simplify this to a matrix mult
     var coord_raster: Vec3T(f64) = Mat44Ops.mulVec3(f64, 
     										        camera.world_to_cam_mat, 
     										        coord_world);
@@ -42,7 +41,6 @@ pub fn worldToRasterCoords(coord_world: Vec3T(f64), camera: *const Camera) Vec3T
     return coord_raster;
 }
 
-
 pub fn edgeFun(vert_0: Vec3f, vert_1: Vec3f, vert_2: Vec3f) f64 {
     return ((vert_2.get(0) - vert_0.get(0)) 
           * (vert_1.get(1) - vert_0.get(1)) 
@@ -66,7 +64,7 @@ pub inline fn edgeFun3(x0: f64, y0: f64,
 }
 
 pub fn boundIndexMin(min_val: f64) usize {
-    var min_ind: i32 = @as(i32, @intFromFloat(@floor(min_val)));
+    var min_ind: usize = @as(isize, @intFromFloat(@floor(min_val)));
     if (min_ind < 0) {
         min_ind = 0;
     }
@@ -74,30 +72,13 @@ pub fn boundIndexMin(min_val: f64) usize {
 }
 
 pub fn boundIndexMax(max_val: f64, pixels_num: usize) usize {
-    var max_ind: i32 = @as(i32, @intFromFloat(@ceil(max_val)));
-    const px = @as(i32,@intCast(pixels_num - 1));
+    var max_ind: isize = @as(isize, @intFromFloat(@ceil(max_val)));
+    const px = @as(isize,@intCast(pixels_num - 1));
     if (max_ind > px) {
         max_ind = px;
     }
     return @as(usize,@intCast(max_ind));
 }
-
-// pub fn boundIndMin(comptime T: type, min_val: f64) T {
-//     var min_ind: i32 = @as(i32, @intFromFloat(@floor(min_val)));
-//     if (min_ind < 0) {
-//         min_ind = 0;
-//     }
-//     return @as(T,@intCast(min_ind));
-// }
-// 
-// pub fn boundIndMax(comptime T: type, max_val: f64, pixels_num: T) T {
-//     var max_ind: i32 = @as(i32, @intFromFloat(@ceil(max_val)));
-//     const px = @as(i32,@intCast(pixels_num - 1));
-//     if (max_ind > px) {
-//         max_ind = px;
-//     }
-//     return @as(T,@intCast(max_ind));
-// }
 
 pub inline fn boundIndMin(comptime T: type, val: f64) T {
     const val_int = @as(isize, @intFromFloat(@floor(val)));
@@ -118,9 +99,6 @@ pub fn averageImage(image_subpx: *const MatSlice(f64),
     const sub_samp_us: usize = @as(usize, sub_samp);
     const sub_samp_f: f64 = @as(f64, @floatFromInt(sub_samp));
     const subpx_per_px: f64 = sub_samp_f * sub_samp_f;
-
-    // TODO: do some error checking on the Matrices here to check dims agree
-    // with the variables above
 
     var px_sum: f64 = 0.0;
 
@@ -192,11 +170,13 @@ pub fn transformElemsRasterSIMD(comptime N: usize,
     }
 }
 
-pub fn transformElemsCamSIMD(comptime N: usize,
-                              comptime T: type,
-                              camera: *const Camera, 
-                              dim_elem: usize,  
-                              elem_coord_arr: *NDArray(T)) !void {
+// Outputs scaled clip space coords in pixels.length units (everything except the perspective
+// divide). Used by the Newton solver.
+pub fn transformElemsClipPxLengSIMD(comptime N: usize,
+                             comptime T: type,
+                             camera: *const Camera, 
+                             dim_elem: usize,  
+                             elem_coord_arr: *NDArray(T)) !void {
 
     const x_scale = camera.image_dist * @as(f64, @floatFromInt(camera.pixels_num[0])) / 
                     camera.image_dims[0];
