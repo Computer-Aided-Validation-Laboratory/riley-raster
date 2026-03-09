@@ -630,7 +630,7 @@ pub fn Quad4NewtonKernel() type {
     };
 }
 
-pub fn HigherOrderKernel(comptime N: usize) type {
+pub fn Quad89Kernel(comptime N: usize) type {
     return struct {
         pub const node_n = N;
         pub const coord_space = CoordSpace.camera;
@@ -656,13 +656,11 @@ pub fn HigherOrderKernel(comptime N: usize) type {
             y_offset: f64,
             state: anytype,
         ) ?[N]f64 {
-
             _ = state;
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
-
             if (newton.solveInverse(
                 N,
                 target_x,

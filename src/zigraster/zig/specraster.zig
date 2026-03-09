@@ -175,8 +175,8 @@ pub fn rasterOneFrame(
                 .tri6 => geometrykernels.Tri6Kernel(),
                 .quad4ibi => geometrykernels.Quad4IBIKernel(),
                 .quad4newton => geometrykernels.Quad4NewtonKernel(),
-                .quad8 => geometrykernels.HigherOrderKernel(8),
-                .quad9 => geometrykernels.HigherOrderKernel(9),
+                .quad8 => geometrykernels.Quad89Kernel(8),
+                .quad9 => geometrykernels.Quad89Kernel(9),
             };
             const N = GK.node_n;
 
