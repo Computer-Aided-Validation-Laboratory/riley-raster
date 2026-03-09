@@ -305,6 +305,7 @@ pub fn Tri6Kernel() type {
         ) bool {
             const tolerance_area: f64 = 1e-12;
             const epsilon = 1e-5;
+            
             const SubTriangle = struct {
                 node0: u8,
                 node1: u8,
@@ -316,6 +317,7 @@ pub fn Tri6Kernel() type {
                 xi2: f64,
                 eta2: f64,
             };
+            
             const sub_triangle_definitions = [_]SubTriangle{
                 .{
                     .node0 = 0,
@@ -373,12 +375,19 @@ pub fn Tri6Kernel() type {
                 if (@abs(area) < tolerance_area) {
                     continue;
                 }
-                const weight0 = ((target_x - x0) * (y1 - y0) - (target_y - y0) * (x1 - x0)) / area;
-                const weight1 = ((target_x - x1) * (y2 - y1) - (target_y - y1) * (x2 - x1)) / area;
-                const weight2 = ((target_x - x2) * (y0 - y2) - (target_y - y2) * (x0 - x2)) / area;
+                const weight0 = ((target_x - x0) * (y1 - y0) - (target_y - y0) * (x1 - x0)) 
+                    / area;
+                const weight1 = ((target_x - x1) * (y2 - y1) - (target_y - y1) * (x2 - x1)) 
+                    / area;
+                const weight2 = ((target_x - x2) * (y0 - y2) - (target_y - y2) * (x0 - x2)) 
+                    / area;
                 if (weight0 >= -epsilon and weight1 >= -epsilon and weight2 >= -epsilon) {
-                    xi_out.* = weight0 * sub_tri.xi0 + weight1 * sub_tri.xi1 + weight2 * sub_tri.xi2;
-                    eta_out.* = weight0 * sub_tri.eta0 + weight1 * sub_tri.eta1 + weight2 * sub_tri.eta2;
+                    xi_out.* = weight0 * sub_tri.xi0 
+                             + weight1 * sub_tri.xi1 
+                             + weight2 * sub_tri.xi2;
+                    eta_out.* = weight0 * sub_tri.eta0 
+                              + weight1 * sub_tri.eta1 
+                              + weight2 * sub_tri.eta2;
                     return true;
                 }
             }
@@ -510,6 +519,7 @@ pub fn Quad4IBIKernel() type {
             root_output: *f64,
         ) bool {
             const tolerance_area = 1e-12;
+            
             if (@abs(a_coefficient) < tolerance_area) {
                 if (@abs(b_coefficient) < tolerance_area) {
                     return false;
@@ -521,7 +531,8 @@ pub fn Quad4IBIKernel() type {
                 }
                 return false;
             }
-            const discriminant = b_coefficient * b_coefficient - 4.0 * a_coefficient * c_coefficient;
+            const discriminant = b_coefficient * b_coefficient 
+                               - 4.0 * a_coefficient * c_coefficient;
             if (discriminant < 0) {
                 return false;
             }
@@ -574,10 +585,13 @@ pub fn Quad4NewtonKernel() type {
             state: anytype,
         ) ?[N]f64 {
             _ = state;
+
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
+
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
+
             if (newton.solveInverse(
                 N,
                 target_x,
@@ -642,11 +656,13 @@ pub fn HigherOrderKernel(comptime N: usize) type {
             y_offset: f64,
             state: anytype,
         ) ?[N]f64 {
+
             _ = state;
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
+
             if (newton.solveInverse(
                 N,
                 target_x,
