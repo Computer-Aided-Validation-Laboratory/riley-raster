@@ -184,13 +184,11 @@ pub fn RasterEngine(comptime Geometry: type,
             const start_y = yi_min_f + sub_pixel_offset;
             var weights_row = Geometry.getWeightsAt(nodes, start_x, start_y, inverse_area);
 
-            var scratch_y = scratch_start_y;
-            while (scratch_y < scratch_end_y) : (scratch_y += 1) {
+            for (scratch_start_y..scratch_end_y) |scratch_y| {
                 const row_offset = scratch_y * sub_pixel_tile_size;
                 var weights = weights_row;
 
-                var scratch_x = scratch_start_x;
-                while (scratch_x < scratch_end_x) : (scratch_x += 1) {
+                for (scratch_start_x..scratch_end_x) |scratch_x| {
                     if (Geometry.isInElement(weights)) {
                         const inverse_z = Geometry.calcInvZ(nodes, weights);
                         const index = row_offset + scratch_x;
@@ -259,13 +257,11 @@ pub fn RasterEngine(comptime Geometry: type,
                 {};
 
             var pixel_y: f64 = yi_min_f + sub_pixel_offset;
-            var scratch_y = scratch_start_y;
-            while (scratch_y < scratch_end_y) : (scratch_y += 1) {
+            for (scratch_start_y..scratch_end_y) |scratch_y| {
                 const row_offset = scratch_y * sub_pixel_tile_size;
                 var pixel_x: f64 = xi_min_f + sub_pixel_offset;
 
-                var scratch_x = scratch_start_x;
-                while (scratch_x < scratch_end_x) : (scratch_x += 1) {
+                for (scratch_start_x..scratch_end_x) |scratch_x| {
                     const maybe_weights = Geometry.solveWeights(
                         nodes,
                         pixel_x,
