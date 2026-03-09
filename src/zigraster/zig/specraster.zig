@@ -24,9 +24,9 @@ const FieldShader = meshraster.FieldShader;
 const iio = @import("imageio.zig");
 const ImageFormat = iio.ImageFormat;
 
-const geom_kernels = @import("geometry_kernels.zig");
-const shader_kernels = @import("shader_kernels.zig");
-const raster_engine = @import("raster_engine.zig");
+const geometrykernels = @import("geometrykernels.zig");
+const shaderkernels = @import("shaderkernels.zig");
+const rasterengine = @import("rasterengine.zig");
 
 pub const SaveOption = enum {
     disk,
@@ -171,18 +171,18 @@ pub fn rasterOneFrame(
     switch (mesh_type) {
         inline else => |m_tag| {
             const GK = switch (m_tag) {
-                .tri3, .tri3opt => geom_kernels.Tri3Kernel(),
-                .tri6 => geom_kernels.Tri6Kernel(),
-                .quad4ibi => geom_kernels.Quad4IBIKernel(),
-                .quad4newton => geom_kernels.Quad4NewtonKernel(),
-                .quad8 => geom_kernels.HigherOrderKernel(8),
-                .quad9 => geom_kernels.HigherOrderKernel(9),
+                .tri3, .tri3opt => geometrykernels.Tri3Kernel(),
+                .tri6 => geometrykernels.Tri6Kernel(),
+                .quad4ibi => geometrykernels.Quad4IBIKernel(),
+                .quad4newton => geometrykernels.Quad4NewtonKernel(),
+                .quad8 => geometrykernels.HigherOrderKernel(8),
+                .quad9 => geometrykernels.HigherOrderKernel(9),
             };
             const N = GK.node_n;
 
             switch (shader.*) {
                 .flat => |*sh| {
-                    const SK = shader_kernels.FlatKernel(N);
+                    const SK = shaderkernels.FlatKernel(N);
                     try rasterInternalMono(
                         GK, SK, FlatShader, allocator, io, camera, frame_ind, 
                         tile_size, sh, coords, image_out_arr, raster_start
@@ -191,7 +191,7 @@ pub fn rasterOneFrame(
                 .texture => |*sh| {
                     switch (sh.interp_type) {
                         inline else => |it| {
-                            const SK = shader_kernels.TexKernel(N, it);
+                            const SK = shaderkernels.TexKernel(N, it);
                             try rasterInternalMono(
                                 GK, SK, TexShader, allocator, io, camera, frame_ind, 
                                 tile_size, sh, coords, image_out_arr, raster_start
@@ -283,7 +283,7 @@ fn rasterInternalMono(
     );
 
     time_start = Timestamp.now(io, .awake);
-    try raster_engine.RasterEngine(GK, SK, SD).raster(
+    try rasterengine.RasterEngine(GK, SK, SD).raster(
         arena_alloc, camera, frame_ind, tile_size, active_tiles, 
         overlap_bboxes, coords, shader, image_out_arr
     );
