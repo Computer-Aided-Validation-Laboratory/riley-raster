@@ -45,7 +45,9 @@ pub fn solveInverse(
         var jacobian_22: f64 = 0.0;
 
         // \sum_{i=1}^N N_i(\xi, \eta) \cdot (X_{pixel} \cdot W_i - X_i) = 0
-        // $$\begin{bmatrix} \xi_{new} \\ \eta_{new} \end{bmatrix} = \begin{bmatrix} \xi \\ \eta \end{bmatrix} - J^{-1} \begin{bmatrix} R_x \\ R_y \end{bmatrix}$$
+        // $$\begin{bmatrix} \xi_{new} \\ \eta_{new} \end{bmatrix} = 
+        // \begin{bmatrix} \xi \\ \eta \end{bmatrix} - J^{-1} \begin{bmatrix} R_x 
+        // \\ R_y \end{bmatrix}$$
         for (0..N) |nn| {
             const term_x = target_screen_x * element_node_w[nn] - element_node_x[nn];
             const term_y = target_screen_y * element_node_w[nn] - element_node_y[nn];
