@@ -24,7 +24,6 @@ pub fn RasterEngine(comptime Geometry: type,
         ) !void {
             @setFloatMode(.optimized);
 
-            const N = Geometry.node_n;
             const fields_num = image_out_arr.dims[0];
             const actual_fields = if (@hasField(ShaderData, "field")) 
                 @min(fields_num, 3) 
@@ -69,11 +68,6 @@ pub fn RasterEngine(comptime Geometry: type,
                 for (overlaps) |overlap| {
                     const nodes = try Geometry.loadNodes(elem_coord_arr, overlap.elem_ind);
                     
-                    var nodes_inv_z: [N]f64 = undefined;
-                    inline for (0..N) |nn| {
-                        nodes_inv_z[nn] = 1.0 / nodes.z[nn];
-                    }
-
                     const scratch_start_x = sub_samp * (@as(usize, overlap.x_min) - 
                                                         tile.x_px_min);
                     const scratch_end_x = sub_samp * (@as(usize, overlap.x_max) - 
@@ -86,102 +80,33 @@ pub fn RasterEngine(comptime Geometry: type,
                     const xi_min_f: f64 = @as(f64, @floatFromInt(overlap.x_min));
                     const yi_min_f: f64 = @as(f64, @floatFromInt(overlap.y_min));
 
-                    // Use specialized loop for Tri3Opt
-                    if (comptime std.mem.indexOf(u8, @typeName(Geometry), "Tri3Opt") != null) {
-                        const inv_area = 1.0 / rops.edgeFun3(
-                            nodes.x[0], nodes.y[0],
-                            nodes.x[1], nodes.y[1],
-                            nodes.x[2], nodes.y[2],
-                        );
-                        const dw_dx = Geometry.getDWeightsDx(nodes, inv_area, sub_pixel_step);
-                        const dw_dy = Geometry.getDWeightsDy(nodes, inv_area, sub_pixel_step);
-                        const start_x = xi_min_f + sub_pixel_offset;
-                        const start_y = yi_min_f + sub_pixel_offset;
-                        var weights_row = Geometry.getWeightsAt(nodes, start_x, 
-                                                                start_y, inv_area);
-
-                        var sy = scratch_start_y;
-                        while (sy < scratch_end_y) : (sy += 1) {
-                            const row_off = sy * sub_pixel_tile_size;
-                            var weights = weights_row;
-
-                            var sx = scratch_start_x;
-                            while (sx < scratch_end_x) : (sx += 1) {
-                                if (Geometry.isInElement(weights)) {
-                                    const inv_z = Geometry.calcInvZ(nodes, weights);
-                                    const idx = row_off + sx;
-
-                                    if (inv_z > sub_pixel_inv_z_scratch[idx]) {
-                                        sub_pixel_inv_z_scratch[idx] = inv_z;
-                                        const sub_pixel_z = 1.0 / inv_z;
-
-                                        ShaderKernel.shade(
-                                            Geometry.is_parent_space,
-                                            frame_ind,
-                                            overlap.elem_ind,
-                                            actual_fields,
-                                            fields_num,
-                                            weights,
-                                            nodes_inv_z,
-                                            sub_pixel_z,
-                                            shader,
-                                            idx,
-                                            &sub_pixel_image_scratch,
-                                        );
-                                    }
-                                }
-                                inline for (0..N) |nn| weights[nn] += dw_dx[nn];
-                            }
-                            inline for (0..N) |nn| weights_row[nn] += dw_dy[nn];
-                        }
-                    } else {
-                        // Pointwise loop for all other kernels
-                        const geom_state = if (@hasDecl(Geometry, "getInvElemArea"))
-                            Geometry.getInvElemArea(nodes)
-                        else if (@hasDecl(Geometry, "getSolverParams"))
-                            Geometry.getSolverParams(nodes)
-                        else
-                            {};
-
-                        var py: f64 = yi_min_f + sub_pixel_offset;
-                        var sy = scratch_start_y;
-                        while (sy < scratch_end_y) : (sy += 1) {
-                            const row_off = sy * sub_pixel_tile_size;
-                            var px: f64 = xi_min_f + sub_pixel_offset;
-
-                            var sx = scratch_start_x;
-                            while (sx < scratch_end_x) : (sx += 1) {
-                                const maybe_weights = Geometry.solveWeights(
-                                    nodes, px, py, x_off, y_off, geom_state
+                    switch (Geometry.strategy) {
+                        inline else => |strat| {
+                            if (strat == .incremental) {
+                                try rasterIncremental(
+                                    frame_ind, overlap.elem_ind, 
+                                    actual_fields, fields_num, 
+                                    sub_pixel_tile_size, sub_pixel_step, sub_pixel_offset,
+                                    scratch_start_x, scratch_end_x,
+                                    scratch_start_y, scratch_end_y,
+                                    xi_min_f, yi_min_f,
+                                    nodes, shader,
+                                    sub_pixel_inv_z_scratch, &sub_pixel_image_scratch
                                 );
-
-                                if (maybe_weights) |weights| {
-                                    const inv_z = Geometry.calcInvZ(nodes, weights);
-                                    const idx = row_off + sx;
-
-                                    if (inv_z > sub_pixel_inv_z_scratch[idx]) {
-                                        sub_pixel_inv_z_scratch[idx] = inv_z;
-                                        const sub_pixel_z = 1.0 / inv_z;
-
-                                        ShaderKernel.shade(
-                                            Geometry.is_parent_space,
-                                            frame_ind,
-                                            overlap.elem_ind,
-                                            actual_fields,
-                                            fields_num,
-                                            weights,
-                                            nodes_inv_z,
-                                            sub_pixel_z,
-                                            shader,
-                                            idx,
-                                            &sub_pixel_image_scratch,
-                                        );
-                                    }
-                                }
-                                px += sub_pixel_step;
+                            } else {
+                                try rasterPointwise(
+                                    frame_ind, overlap.elem_ind, 
+                                    actual_fields, fields_num, 
+                                    sub_pixel_tile_size, sub_pixel_step, sub_pixel_offset,
+                                    x_off, y_off,
+                                    scratch_start_x, scratch_end_x,
+                                    scratch_start_y, scratch_end_y,
+                                    xi_min_f, yi_min_f,
+                                    nodes, shader,
+                                    sub_pixel_inv_z_scratch, &sub_pixel_image_scratch
+                                );
                             }
-                            py += sub_pixel_step;
-                        }
+                        },
                     }
                 }
 
@@ -190,6 +115,135 @@ pub fn RasterEngine(comptime Geometry: type,
                     sub_pixel_tile_size, fields_num, &sub_pixel_image_scratch, 
                     sub_pixel_field_avg, image_out_arr
                 );
+            }
+        }
+
+        fn rasterIncremental(
+            frame_ind: usize,
+            elem_ind: usize,
+            actual_fields: usize,
+            fields_num: usize,
+            sub_pixel_tile_size: usize,
+            sub_pixel_step: f64,
+            sub_pixel_offset: f64,
+            scratch_start_x: usize,
+            scratch_end_x: usize,
+            scratch_start_y: usize,
+            scratch_end_y: usize,
+            xi_min_f: f64,
+            yi_min_f: f64,
+            nodes: Vec3OfSlices(f64),
+            shader: *const ShaderData,
+            sub_pixel_inv_z_scratch: []f64,
+            sub_pixel_image_scratch: *MatSlice(f64),
+        ) !void {
+            const N = Geometry.node_n;
+            var nodes_inv_z: [N]f64 = undefined;
+            inline for (0..N) |nn| nodes_inv_z[nn] = 1.0 / nodes.z[nn];
+
+            const inv_area = 1.0 / rops.edgeFun3(
+                nodes.x[0], nodes.y[0],
+                nodes.x[1], nodes.y[1],
+                nodes.x[2], nodes.y[2],
+            );
+            const dw_dx = Geometry.getDWeightsDx(nodes, inv_area, sub_pixel_step);
+            
+            const start_x_base = xi_min_f + sub_pixel_offset;
+            var py = yi_min_f + sub_pixel_offset;
+
+            var sy = scratch_start_y;
+            while (sy < scratch_end_y) : (sy += 1) {
+                const row_off = sy * sub_pixel_tile_size;
+                // Recompute row start to avoid y-drift
+                var weights = Geometry.getWeightsAt(nodes, start_x_base, py, inv_area);
+
+                var sx = scratch_start_x;
+                while (sx < scratch_end_x) : (sx += 1) {
+                    if (Geometry.isInElement(weights)) {
+                        const inv_z = Geometry.calcInvZ(nodes, weights);
+                        const idx = row_off + sx;
+
+                        if (inv_z > sub_pixel_inv_z_scratch[idx]) {
+                            sub_pixel_inv_z_scratch[idx] = inv_z;
+                            const sub_pixel_z = 1.0 / inv_z;
+
+                            ShaderKernel.shade(
+                                Geometry.is_parent_space, frame_ind, elem_ind,
+                                actual_fields, fields_num,
+                                weights, nodes_inv_z, sub_pixel_z,
+                                shader, idx, sub_pixel_image_scratch,
+                            );
+                        }
+                    }
+                    inline for (0..N) |nn| weights[nn] += dw_dx[nn];
+                }
+                py += sub_pixel_step;
+            }
+        }
+
+        fn rasterPointwise(
+            frame_ind: usize,
+            elem_ind: usize,
+            actual_fields: usize,
+            fields_num: usize,
+            sub_pixel_tile_size: usize,
+            sub_pixel_step: f64,
+            sub_pixel_offset: f64,
+            x_off: f64,
+            y_off: f64,
+            scratch_start_x: usize,
+            scratch_end_x: usize,
+            scratch_start_y: usize,
+            scratch_end_y: usize,
+            xi_min_f: f64,
+            yi_min_f: f64,
+            nodes: Vec3OfSlices(f64),
+            shader: *const ShaderData,
+            sub_pixel_inv_z_scratch: []f64,
+            sub_pixel_image_scratch: *MatSlice(f64),
+        ) !void {
+            const N = Geometry.node_n;
+            var nodes_inv_z: [N]f64 = undefined;
+            inline for (0..N) |nn| nodes_inv_z[nn] = 1.0 / nodes.z[nn];
+
+            const geom_state = if (@hasDecl(Geometry, "getInvElemArea"))
+                Geometry.getInvElemArea(nodes)
+            else if (@hasDecl(Geometry, "getSolverParams"))
+                Geometry.getSolverParams(nodes)
+            else
+                {};
+
+            var py: f64 = yi_min_f + sub_pixel_offset;
+            var sy = scratch_start_y;
+            while (sy < scratch_end_y) : (sy += 1) {
+                const row_off = sy * sub_pixel_tile_size;
+                var px: f64 = xi_min_f + sub_pixel_offset;
+
+                var sx = scratch_start_x;
+                while (sx < scratch_end_x) : (sx += 1) {
+                    const maybe_weights = Geometry.solveWeights(
+                        nodes, px, py, x_off, y_off, geom_state
+                    );
+
+                    if (maybe_weights) |weights| {
+                        const inv_z = Geometry.calcInvZ(nodes, weights);
+                        const idx = row_off + sx;
+
+                        if (inv_z > sub_pixel_inv_z_scratch[idx]) {
+                            sub_pixel_inv_z_scratch[idx] = inv_z;
+                            const sub_pixel_z = 1.0 / inv_z;
+
+                            ShaderKernel.shade(
+                                Geometry.is_parent_space, frame_ind, elem_ind,
+                                actual_fields, fields_num,
+                                weights, nodes_inv_z, sub_pixel_z,
+                                shader, idx, sub_pixel_image_scratch,
+                            );
+                        }
+                    }
+                    px += sub_pixel_step;
+                }
+                py += sub_pixel_step;
             }
         }
     };

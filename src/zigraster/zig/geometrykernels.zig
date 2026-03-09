@@ -5,11 +5,18 @@ const shapefun = @import("shapefun.zig");
 const NDArray = @import("ndarray.zig").NDArray;
 const Vec3OfSlices = rops.Vec3OfSlices;
 
+pub const Strategy = enum {
+    pointwise,
+    incremental,
+};
+
 pub fn Tri3Kernel() type {
     return struct {
+        const Self = @This();
         const N = 3;
         pub const node_n = N;
         pub const is_parent_space = false;
+        pub const strategy = .pointwise;
 
         pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), 
                                 elem_ind: usize) !Vec3OfSlices(f64) {
@@ -60,6 +67,7 @@ pub fn Tri3OptKernel() type {
         const N = 3;
         pub const node_n = N;
         pub const is_parent_space = false;
+        pub const strategy = .incremental;
 
         pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), 
                                 elem_ind: usize) !Vec3OfSlices(f64) {
@@ -117,6 +125,7 @@ pub fn Tri6Kernel() type {
         const N = 6;
         pub const node_n = N;
         pub const is_parent_space = true;
+        pub const strategy = .pointwise;
 
         pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), 
                                 elem_ind: usize) !Vec3OfSlices(f64) {
@@ -209,6 +218,7 @@ pub fn Quad4IBIKernel() type {
         const N = 4;
         pub const node_n = N;
         pub const is_parent_space = true;
+        pub const strategy = .pointwise;
 
         pub const SolverParams = struct {
             ae_x: f64, ae_z: f64, be_x: f64, be_z: f64,
@@ -322,6 +332,7 @@ pub fn Quad4NewtonKernel() type {
         const N = 4;
         pub const node_n = N;
         pub const is_parent_space = true;
+        pub const strategy = .pointwise;
 
         pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), 
                                 elem_ind: usize) !Vec3OfSlices(f64) {
@@ -360,6 +371,7 @@ pub fn HigherOrderKernel(comptime N: usize) type {
     return struct {
         pub const node_n = N;
         pub const is_parent_space = true;
+        pub const strategy = .pointwise;
 
         pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), 
                                 elem_ind: usize) !Vec3OfSlices(f64) {
