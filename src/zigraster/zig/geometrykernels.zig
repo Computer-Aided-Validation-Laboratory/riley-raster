@@ -23,69 +23,38 @@ pub fn Tri3Kernel() type {
         pub const coord_space = CoordSpace.raster;
         pub const strategy = .pointwise;
 
-        pub inline fn loadNodes(
-            element_coordinate_array: *const NDArray(f64),
-            element_index: usize,
-        ) !Vec3OfSlices(f64) {
-            return try rops.loadVec3SlicesFromElemArray(
-                N,
-                f64,
-                element_coordinate_array,
-                element_index,
-            );
+        pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), elem_ind: usize,
+                                ) !Vec3OfSlices(f64) {
+            return try rops.loadVec3SlicesFromElemArray(N,f64,elem_coord_arr,elem_ind,);
         }
 
         pub inline fn getInvElemArea(nodes: Vec3OfSlices(f64)) f64 {
-            return 1.0 / rops.edgeFun3(
-                nodes.x[0],
-                nodes.y[0],
-                nodes.x[1],
-                nodes.y[1],
-                nodes.x[2],
-                nodes.y[2],
-            );
+            return 1.0 / rops.edgeFun3(nodes.x[0], nodes.y[0],
+                                       nodes.x[1], nodes.y[1],
+                                       nodes.x[2], nodes.y[2],);
         }
 
-        pub inline fn solveWeights(
-            nodes: Vec3OfSlices(f64),
-            pixel_x: f64,
-            pixel_y: f64,
-            x_offset: f64,
-            y_offset: f64,
-            inverse_area: f64,
-        ) ?[N]f64 {
+        pub inline fn solveWeights(nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
+                                   x_offset: f64, y_offset: f64, inv_area: f64, ) ?[N]f64 {
             _ = x_offset;
             _ = y_offset;
-            const tolerance_edge: f64 = 1e-9;
-            var weights: [N]f64 = undefined;
-            weights[0] = rops.edgeFun3(
-                nodes.x[1],
-                nodes.y[1],
-                nodes.x[2],
-                nodes.y[2],
-                pixel_x,
-                pixel_y,
-            ) * inverse_area;
-            weights[1] = rops.edgeFun3(
-                nodes.x[2],
-                nodes.y[2],
-                nodes.x[0],
-                nodes.y[0],
-                pixel_x,
-                pixel_y,
-            ) * inverse_area;
-            weights[2] = rops.edgeFun3(
-                nodes.x[0],
-                nodes.y[0],
-                nodes.x[1],
-                nodes.y[1],
-                pixel_x,
-                pixel_y,
-            ) * inverse_area;
+            
+            const edge_tol: f64 = 1e-9;
 
-            if (weights[0] >= -tolerance_edge and
-                weights[1] >= -tolerance_edge and
-                weights[2] >= -tolerance_edge)
+            var weights: [N]f64 = undefined;
+            weights[0] = rops.edgeFun3(nodes.x[1],nodes.y[1],
+                                       nodes.x[2],nodes.y[2],
+                                       pixel_x,pixel_y,) * inv_area;
+            weights[1] = rops.edgeFun3(nodes.x[2],nodes.y[2],
+                                       nodes.x[0],nodes.y[0],
+                                       pixel_x,pixel_y,) * inv_area;
+            weights[2] = rops.edgeFun3(nodes.x[0],nodes.y[0],
+                                       nodes.x[1],nodes.y[1],
+                                       pixel_x,pixel_y,) * inv_area;
+
+            if (weights[0] >= -edge_tol and
+                weights[1] >= -edge_tol and
+                weights[2] >= -edge_tol)
             {
                 return weights;
             }
@@ -93,11 +62,13 @@ pub fn Tri3Kernel() type {
         }
 
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
-            var inverse_z: f64 = 0.0;
-            inline for (0..N) |index| {
-                inverse_z += weights[index] * (1.0 / nodes.z[index]);
+            var inv_z: f64 = 0.0;
+            
+            inline for (0..N) |ind| {
+                inv_z += weights[ind] * (1.0 / nodes.z[ind]);
             }
-            return inverse_z;
+            
+            return inv_z;
         }
     };
 }
@@ -109,89 +80,62 @@ pub fn Tri3OptKernel() type {
         pub const coord_space = CoordSpace.raster;
         pub const strategy = .incremental;
 
-        pub inline fn loadNodes(
-            element_coordinate_array: *const NDArray(f64),
-            element_index: usize,
-        ) !Vec3OfSlices(f64) {
-            return try rops.loadVec3SlicesFromElemArray(
-                N,
-                f64,
-                element_coordinate_array,
-                element_index,
-            );
+        pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), elem_ind: usize,
+                                ) !Vec3OfSlices(f64) {
+            return try rops.loadVec3SlicesFromElemArray(N,f64,elem_coord_arr,elem_ind,);
         }
 
-        pub inline fn getDWeightsDx(
-            nodes: Vec3OfSlices(f64),
-            inverse_area: f64,
-            step_size: f64,
-        ) [N]f64 {
+        pub inline fn getDWeightsDx(nodes: Vec3OfSlices(f64),
+                                    inv_area: f64,
+                                    step_size: f64,
+                                    ) [N]f64 {
             return [_]f64{
-                (nodes.y[2] - nodes.y[1]) * step_size * inverse_area,
-                (nodes.y[0] - nodes.y[2]) * step_size * inverse_area,
-                (nodes.y[1] - nodes.y[0]) * step_size * inverse_area,
+                (nodes.y[2] - nodes.y[1]) * step_size * inv_area,
+                (nodes.y[0] - nodes.y[2]) * step_size * inv_area,
+                (nodes.y[1] - nodes.y[0]) * step_size * inv_area,
             };
         }
 
-        pub inline fn getDWeightsDy(
-            nodes: Vec3OfSlices(f64),
-            inverse_area: f64,
-            step_size: f64,
-        ) [N]f64 {
+        pub inline fn getDWeightsDy(nodes: Vec3OfSlices(f64), 
+                                    inv_area: f64,
+                                    step_size: f64,
+                                    ) [N]f64 {
             return [_]f64{
-                (nodes.x[1] - nodes.x[2]) * step_size * inverse_area,
-                (nodes.x[2] - nodes.x[0]) * step_size * inverse_area,
-                (nodes.x[0] - nodes.x[1]) * step_size * inverse_area,
+                (nodes.x[1] - nodes.x[2]) * step_size * inv_area,
+                (nodes.x[2] - nodes.x[0]) * step_size * inv_area,
+                (nodes.x[0] - nodes.x[1]) * step_size * inv_area,
             };
         }
 
-        pub inline fn getWeightsAt(
-            nodes: Vec3OfSlices(f64),
-            pixel_x: f64,
-            pixel_y: f64,
-            inverse_area: f64,
-        ) [N]f64 {
+        pub inline fn getWeightsAt(nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
+                                   inv_area: f64,) [N]f64 {
             return [_]f64{
-                rops.edgeFun3(
-                    nodes.x[1],
-                    nodes.y[1],
-                    nodes.x[2],
-                    nodes.y[2],
-                    pixel_x,
-                    pixel_y,
-                ) * inverse_area,
-                rops.edgeFun3(
-                    nodes.x[2],
-                    nodes.y[2],
-                    nodes.x[0],
-                    nodes.y[0],
-                    pixel_x,
-                    pixel_y,
-                ) * inverse_area,
-                rops.edgeFun3(
-                    nodes.x[0],
-                    nodes.y[0],
-                    nodes.x[1],
-                    nodes.y[1],
-                    pixel_x,
-                    pixel_y,
-                ) * inverse_area,
+                rops.edgeFun3(nodes.x[1], nodes.y[1],
+                              nodes.x[2], nodes.y[2],
+                              pixel_x, pixel_y,) * inv_area,
+                rops.edgeFun3(nodes.x[2], nodes.y[2],
+                              nodes.x[0], nodes.y[0],
+                              pixel_x, pixel_y,) * inv_area,
+                rops.edgeFun3(nodes.x[0], nodes.y[0],
+                              nodes.x[1], nodes.y[1],
+                              pixel_x, pixel_y,) * inv_area,
             };
         }
 
         pub inline fn isInElement(weights: [N]f64) bool {
-            const tolerance_edge: f64 = 1e-9;
-            return weights[0] >= -tolerance_edge and
-                weights[1] >= -tolerance_edge and
-                weights[2] >= -tolerance_edge;
+            const edge_tol: f64 = 1e-9;
+
+            return weights[0] >= -edge_tol and
+                   weights[1] >= -edge_tol and
+                   weights[2] >= -edge_tol;
         }
 
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
-            var inverse_z: f64 = 0.0;
-            inline for (0..N) |index| {
-                inverse_z += weights[index] * (1.0 / nodes.z[index]);
+            var inv_z: f64 = 0.0;
+            inline for (0..N) |ind| {
+                inv_z += weights[ind] * (1.0 / nodes.z[ind]);
             }
-            return inverse_z;
+            return inv_z;
         }
     };
 }
@@ -204,14 +148,14 @@ pub fn Tri6Kernel() type {
         pub const strategy = .pointwise;
 
         pub inline fn loadNodes(
-            element_coordinate_array: *const NDArray(f64),
-            element_index: usize,
+            elem_coord_arr: *const NDArray(f64),
+            elem_ind: usize,
         ) !Vec3OfSlices(f64) {
             return try rops.loadVec3SlicesFromElemArray(
                 N,
                 f64,
-                element_coordinate_array,
-                element_index,
+                elem_coord_arr,
+                elem_ind,
             );
         }
 
@@ -231,48 +175,24 @@ pub fn Tri6Kernel() type {
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
 
-            if (getTessellatedGuess(
-                target_x,
-                target_y,
-                nodes.x,
-                nodes.y,
-                nodes.z,
-                &xi,
-                &eta,
-            )) {
-                converged = newton.solveInverse(
-                    N,
-                    target_x,
-                    target_y,
-                    nodes.x,
-                    nodes.y,
-                    nodes.z,
-                    xi,
-                    eta,
-                    &xi,
-                    &eta,
-                );
+            if (getTessellatedGuess(target_x,target_y,
+                                    nodes.x,nodes.y,nodes.z,
+                                    &xi,&eta,)) {
+                                    
+                converged = newton.solveInverse(N, target_x, target_y, nodes.x, nodes.y,
+                                                nodes.z, xi, eta, &xi, &eta,);
             }
 
             if (!converged) {
-                converged = newton.solveInverse(
-                    N,
-                    target_x,
-                    target_y,
-                    nodes.x,
-                    nodes.y,
-                    nodes.z,
-                    1.0 / 3.0,
-                    1.0 / 3.0,
-                    &xi,
-                    &eta,
-                );
+                converged = newton.solveInverse(N, target_x, target_y, nodes.x, nodes.y,
+                                                nodes.z, 1.0 / 3.0, 1.0 / 3.0, &xi, &eta,);
             }
 
             if (converged) {
                 var node_values: [N]f64 = undefined;
                 var deriv_nu: [N]f64 = undefined;
                 var deriv_nv: [N]f64 = undefined;
+
                 shapefun.shapeFunctions(
                     N,
                     xi,
@@ -281,6 +201,7 @@ pub fn Tri6Kernel() type {
                     &deriv_nu,
                     &deriv_nv,
                 );
+
                 return node_values;
             }
             return null;
@@ -288,23 +209,20 @@ pub fn Tri6Kernel() type {
 
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
             var sum_weighted_z: f64 = 0.0;
-            inline for (0..N) |index| {
-                sum_weighted_z += weights[index] * nodes.z[index];
+
+            inline for (0..N) |ind| {
+                sum_weighted_z += weights[ind] * nodes.z[ind];
             }
+            
             return 1.0 / sum_weighted_z;
         }
 
-        fn getTessellatedGuess(
-            target_x: f64,
-            target_y: f64,
-            element_x: []const f64,
-            element_y: []const f64,
-            element_w: []const f64,
-            xi_out: *f64,
-            eta_out: *f64,
-        ) bool {
-            const tolerance_area: f64 = 1e-12;
-            const epsilon = 1e-5;
+        fn getTessellatedGuess(target_x: f64, target_y: f64, 
+                               elem_x: []const f64, elem_y: []const f64, elem_w: []const f64,
+                               xi_out: *f64, eta_out: *f64,) bool {
+
+            const area_tol: f64 = 1e-12;
+            const eps: f64 = 1e-5;
             
             const SubTriangle = struct {
                 node0: u8,
@@ -365,14 +283,16 @@ pub fn Tri6Kernel() type {
                 },
             };
             for (sub_triangle_definitions) |sub_tri| {
-                const x0 = element_x[sub_tri.node0] / element_w[sub_tri.node0];
-                const y0 = element_y[sub_tri.node0] / element_w[sub_tri.node0];
-                const x1 = element_x[sub_tri.node1] / element_w[sub_tri.node1];
-                const y1 = element_y[sub_tri.node1] / element_w[sub_tri.node1];
-                const x2 = element_x[sub_tri.node2] / element_w[sub_tri.node2];
-                const y2 = element_y[sub_tri.node2] / element_w[sub_tri.node2];
+                const x0 = elem_x[sub_tri.node0] / elem_w[sub_tri.node0];
+                const y0 = elem_y[sub_tri.node0] / elem_w[sub_tri.node0];
+                const x1 = elem_x[sub_tri.node1] / elem_w[sub_tri.node1];
+                const y1 = elem_y[sub_tri.node1] / elem_w[sub_tri.node1];
+                const x2 = elem_x[sub_tri.node2] / elem_w[sub_tri.node2];
+                const y2 = elem_y[sub_tri.node2] / elem_w[sub_tri.node2];
+
                 const area = (x2 - x0) * (y1 - y0) - (y2 - y0) * (x1 - x0);
-                if (@abs(area) < tolerance_area) {
+
+                if (@abs(area) < area_tol) {
                     continue;
                 }
                 const weight0 = ((target_x - x0) * (y1 - y0) - (target_y - y0) * (x1 - x0)) 
@@ -381,7 +301,8 @@ pub fn Tri6Kernel() type {
                     / area;
                 const weight2 = ((target_x - x2) * (y0 - y2) - (target_y - y2) * (x0 - x2)) 
                     / area;
-                if (weight0 >= -epsilon and weight1 >= -epsilon and weight2 >= -epsilon) {
+
+                if (weight0 >= -eps and weight1 >= -eps and weight2 >= -eps) {
                     xi_out.* = weight0 * sub_tri.xi0 
                              + weight1 * sub_tri.xi1 
                              + weight2 * sub_tri.xi2;
@@ -404,100 +325,87 @@ pub fn Quad4IBIKernel() type {
         pub const strategy = .pointwise;
 
         pub const SolverParams = struct {
-            ae_x: f64,
-            ae_z: f64,
-            be_x: f64,
-            be_z: f64,
-            ce_x: f64,
-            ce_z: f64,
-            de_x: f64,
-            de_z: f64,
-            af_x: f64,
-            af_z: f64,
-            bf_x: f64,
-            bf_z: f64,
-            cf_x: f64,
-            cf_z: f64,
-            df_x: f64,
-            df_z: f64,
+            x_uv_coeff: f64,
+            x_u_coeff: f64,
+            x_v_coeff: f64,
+            x_const: f64,
+            y_uv_coeff: f64,
+            y_u_coeff: f64,
+            y_v_coeff: f64,
+            y_const: f64,
+            w_uv_coeff: f64,
+            w_u_coeff: f64,
+            w_v_coeff: f64,
+            w_const: f64,
         };
 
-        pub inline fn loadNodes(
-            element_coordinate_array: *const NDArray(f64),
-            element_index: usize,
-        ) !Vec3OfSlices(f64) {
-            return try rops.loadVec3SlicesFromElemArray(
-                N,
-                f64,
-                element_coordinate_array,
-                element_index,
-            );
+        pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), elem_ind: usize,
+                                ) !Vec3OfSlices(f64) {
+            return try rops.loadVec3SlicesFromElemArray(N, f64, elem_coord_arr, elem_ind,);
         }
 
         pub inline fn getSolverParams(nodes: Vec3OfSlices(f64)) SolverParams {
             return SolverParams{
-                .ae_x = nodes.x[0] - nodes.x[1] + nodes.x[2] - nodes.x[3],
-                .ae_z = nodes.z[0] - nodes.z[1] + nodes.z[2] - nodes.z[3],
-                .be_x = nodes.x[1] - nodes.x[0],
-                .be_z = nodes.z[1] - nodes.z[0],
-                .ce_x = nodes.x[3] - nodes.x[0],
-                .ce_z = nodes.z[3] - nodes.z[0],
-                .de_x = nodes.x[0],
-                .de_z = nodes.z[0],
-                .af_x = nodes.y[0] - nodes.y[1] + nodes.y[2] - nodes.y[3],
-                .af_z = nodes.z[0] - nodes.z[1] + nodes.z[2] - nodes.z[3],
-                .bf_x = nodes.y[1] - nodes.y[0],
-                .bf_z = nodes.z[1] - nodes.z[0],
-                .cf_x = nodes.y[3] - nodes.y[0],
-                .cf_z = nodes.z[3] - nodes.z[0],
-                .df_x = nodes.y[0],
-                .df_z = nodes.z[0],
+                .x_uv_coeff = nodes.x[0] - nodes.x[1] + nodes.x[2] - nodes.x[3],
+                .x_u_coeff = nodes.x[1] - nodes.x[0],
+                .x_v_coeff = nodes.x[3] - nodes.x[0],
+                .x_const = nodes.x[0],
+                .y_uv_coeff = nodes.y[0] - nodes.y[1] + nodes.y[2] - nodes.y[3],
+                .y_u_coeff = nodes.y[1] - nodes.y[0],
+                .y_v_coeff = nodes.y[3] - nodes.y[0],
+                .y_const = nodes.y[0],
+                .w_uv_coeff = nodes.z[0] - nodes.z[1] + nodes.z[2] - nodes.z[3],
+                .w_u_coeff = nodes.z[1] - nodes.z[0],
+                .w_v_coeff = nodes.z[3] - nodes.z[0],
+                .w_const = nodes.z[0],
             };
         }
 
-        pub inline fn solveWeights(
-            nodes: Vec3OfSlices(f64),
-            pixel_x: f64,
-            pixel_y: f64,
-            x_offset: f64,
-            y_offset: f64,
-            solver_params: SolverParams,
-        ) ?[N]f64 {
+        pub inline fn solveWeights(nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
+                                   x_offset: f64,y_offset: f64, solve_params: SolverParams,
+                                   ) ?[N]f64 {
             _ = nodes;
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
-            const ae = solver_params.ae_x - solver_params.ae_z * target_x;
-            const be = solver_params.be_x - solver_params.be_z * target_x;
-            const ce = solver_params.ce_x - solver_params.ce_z * target_x;
-            const de = solver_params.de_x - solver_params.de_z * target_x;
-            const af = solver_params.af_x - solver_params.af_z * target_y;
-            const bf = solver_params.bf_x - solver_params.bf_z * target_y;
-            const cf = solver_params.cf_x - solver_params.cf_z * target_y;
-            const df = solver_params.df_x - solver_params.df_z * target_y;
-            const quad_a = af * be - ae * bf;
-            const quad_b = af * de - ae * df + be * cf - bf * ce;
-            const quad_c = cf * de - ce * df;
-            var coordinate_u: f64 = -1.0;
-            if (solveQuadraticRobust(quad_a, quad_b, quad_c, &coordinate_u)) {
-                const denominator_e = ae * coordinate_u + ce;
-                const denominator_f = af * coordinate_u + cf;
-                var coordinate_v: f64 = -1.0;
-                const tolerance_denominator = 1e-12;
-                if (@abs(denominator_f) > @abs(denominator_e)) {
-                    if (@abs(denominator_f) > tolerance_denominator) {
-                        coordinate_v = -(bf * coordinate_u + df) / denominator_f;
+
+            const ae = solve_params.x_uv_coeff - (solve_params.w_uv_coeff * target_x);
+            const be = solve_params.x_u_coeff - (solve_params.w_u_coeff * target_x);
+            const ce = solve_params.x_v_coeff - (solve_params.w_v_coeff * target_x);
+            const de = solve_params.x_const - (solve_params.w_const * target_x);
+
+            const af = solve_params.y_uv_coeff - (solve_params.w_uv_coeff * target_y);
+            const bf = solve_params.y_u_coeff - (solve_params.w_u_coeff * target_y);
+            const cf = solve_params.y_v_coeff - (solve_params.w_v_coeff * target_y);
+            const df = solve_params.y_const - (solve_params.w_const * target_y);
+
+            const quad_a = (af * be) - (ae * bf);
+            const quad_b = (af * de) - (ae * df) + (be * cf) - (bf * ce);
+            const quad_c = (cf * de) - (ce * df);
+
+            var coord_u: f64 = -1.0;
+
+            if (solveQuadraticRobust(quad_a, quad_b, quad_c, &coord_u)) {
+                const denom_e = (ae * coord_u) + ce;
+                const denom_f = (af * coord_u) + cf;
+                var coord_v: f64 = -1.0;
+                const tolerance_denom = 1e-12;
+
+                if (@abs(denom_f) > @abs(denom_e)) {
+                    if (@abs(denom_f) > tolerance_denom) {
+                        coord_v = -((bf * coord_u) + df) / denom_f;
                     }
                 } else {
-                    if (@abs(denominator_e) > tolerance_denominator) {
-                        coordinate_v = -(be * coordinate_u + de) / denominator_e;
+                    if (@abs(denom_e) > tolerance_denom) {
+                        coord_v = -((be * coord_u) + de) / denom_e;
                     }
                 }
-                if (coordinate_v >= -1e-7 and coordinate_v <= 1.0 + 1e-7) {
+
+                if (coord_v >= -1e-7 and coord_v <= 1.0 + 1e-7) {
                     return [_]f64{
-                        (1.0 - coordinate_u) * (1.0 - coordinate_v),
-                        coordinate_u * (1.0 - coordinate_v),
-                        coordinate_u * coordinate_v,
-                        (1.0 - coordinate_u) * coordinate_v,
+                        (1.0 - coord_u) * (1.0 - coord_v),
+                        coord_u * (1.0 - coord_v),
+                        coord_u * coord_v,
+                        (1.0 - coord_u) * coord_v,
                     };
                 }
             }
@@ -506,49 +414,51 @@ pub fn Quad4IBIKernel() type {
 
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
             var sum_weighted_z: f64 = 0.0;
-            inline for (0..N) |index| {
-                sum_weighted_z += weights[index] * nodes.z[index];
+            
+            inline for (0..N) |ind| {
+                sum_weighted_z += weights[ind] * nodes.z[ind];
             }
+            
             return 1.0 / sum_weighted_z;
         }
 
-        fn solveQuadraticRobust(
-            a_coefficient: f64,
-            b_coefficient: f64,
-            c_coefficient: f64,
-            root_output: *f64,
-        ) bool {
-            const tolerance_area = 1e-12;
+        fn solveQuadraticRobust(a_coeff: f64, b_coeff: f64, c_coeff: f64, root_out: *f64,
+                                ) bool {
+            const eps = 1e-7;
+            const area_tol = 1e-12;
             
-            if (@abs(a_coefficient) < tolerance_area) {
-                if (@abs(b_coefficient) < tolerance_area) {
+            if (@abs(a_coeff) < area_tol) {
+                if (@abs(b_coeff) < area_tol) {
                     return false;
                 }
-                const root = -c_coefficient / b_coefficient;
-                if (root >= -1e-7 and root <= 1.0 + 1e-7) {
-                    root_output.* = root;
+                const root = -c_coeff / b_coeff;
+                if (root >= -eps and root <= 1.0 + eps) {
+                    root_out.* = root;
                     return true;
                 }
                 return false;
             }
-            const discriminant = b_coefficient * b_coefficient 
-                               - 4.0 * a_coefficient * c_coefficient;
-            if (discriminant < 0) {
+
+            const disc = (b_coeff * b_coeff) - (4.0 * a_coeff * c_coeff);
+
+            if (disc < 0) {
                 return false;
             }
-            const sqrt_discriminant = @sqrt(discriminant);
-            const intermediate_q = -0.5 * (b_coefficient + (if (b_coefficient >= 0)
-                sqrt_discriminant
+
+            const sqrt_disc = @sqrt(disc);
+            const intermediate_q = -0.5 * (b_coeff + (if (b_coeff >= 0)
+                sqrt_disc
             else
-                -sqrt_discriminant));
+                -sqrt_disc));
+
             const roots = [2]f64{
-                intermediate_q / a_coefficient,
-                c_coefficient / intermediate_q,
+                intermediate_q / a_coeff,
+                c_coeff / intermediate_q,
             };
-            const epsilon = 1e-7;
+
             for (roots) |root| {
-                if (root >= -epsilon and root <= 1.0 + epsilon) {
-                    root_output.* = root;
+                if (root >= -eps and root <= 1.0 + eps) {
+                    root_out.* = root;
                     return true;
                 }
             }
@@ -564,26 +474,18 @@ pub fn Quad4NewtonKernel() type {
         pub const coord_space = CoordSpace.camera;
         pub const strategy = .pointwise;
 
-        pub inline fn loadNodes(
-            element_coordinate_array: *const NDArray(f64),
-            element_index: usize,
-        ) !Vec3OfSlices(f64) {
+        pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), elem_ind: usize,
+                                ) !Vec3OfSlices(f64) {
             return try rops.loadVec3SlicesFromElemArray(
                 N,
                 f64,
-                element_coordinate_array,
-                element_index,
+                elem_coord_arr,
+                elem_ind,
             );
         }
 
-        pub inline fn solveWeights(
-            nodes: Vec3OfSlices(f64),
-            pixel_x: f64,
-            pixel_y: f64,
-            x_offset: f64,
-            y_offset: f64,
-            state: anytype,
-        ) ?[N]f64 {
+        pub inline fn solveWeights(nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
+                                   x_offset: f64, y_offset: f64,state: anytype,) ?[N]f64 {
             _ = state;
 
             var xi: f64 = 0.0;
@@ -592,29 +494,14 @@ pub fn Quad4NewtonKernel() type {
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
 
-            if (newton.solveInverse(
-                N,
-                target_x,
-                target_y,
-                nodes.x,
-                nodes.y,
-                nodes.z,
-                0.5,
-                0.5,
-                &xi,
-                &eta,
-            )) {
+            if (newton.solveInverse(N, target_x, target_y, nodes.x, nodes.y, nodes.z, 
+                                    0.5, 0.5, &xi, &eta, )) {
                 var node_values: [N]f64 = undefined;
                 var deriv_nu: [N]f64 = undefined;
                 var deriv_nv: [N]f64 = undefined;
-                shapefun.shapeFunctions(
-                    N,
-                    xi,
-                    eta,
-                    &node_values,
-                    &deriv_nu,
-                    &deriv_nv,
-                );
+                
+                shapefun.shapeFunctions(N, xi, eta, &node_values, &deriv_nu, &deriv_nv,);
+                
                 return node_values;
             }
             return null;
@@ -622,9 +509,11 @@ pub fn Quad4NewtonKernel() type {
 
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
             var sum_weighted_z: f64 = 0.0;
-            inline for (0..N) |index| {
-                sum_weighted_z += weights[index] * nodes.z[index];
+
+            inline for (0..N) |ind| {
+                sum_weighted_z += weights[ind] * nodes.z[ind];
             }
+
             return 1.0 / sum_weighted_z;
         }
     };
@@ -636,54 +525,33 @@ pub fn Quad89Kernel(comptime N: usize) type {
         pub const coord_space = CoordSpace.camera;
         pub const strategy = .pointwise;
 
-        pub inline fn loadNodes(
-            element_coordinate_array: *const NDArray(f64),
-            element_index: usize,
-        ) !Vec3OfSlices(f64) {
+        pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), elem_ind: usize,
+                                ) !Vec3OfSlices(f64) {
             return try rops.loadVec3SlicesFromElemArray(
                 N,
                 f64,
-                element_coordinate_array,
-                element_index,
+                elem_coord_arr,
+                elem_ind,
             );
         }
 
-        pub inline fn solveWeights(
-            nodes: Vec3OfSlices(f64),
-            pixel_x: f64,
-            pixel_y: f64,
-            x_offset: f64,
-            y_offset: f64,
-            state: anytype,
-        ) ?[N]f64 {
+        pub inline fn solveWeights(nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
+                                   x_offset: f64, y_offset: f64, state: anytype,) ?[N]f64 {
             _ = state;
+            
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
-            if (newton.solveInverse(
-                N,
-                target_x,
-                target_y,
-                nodes.x,
-                nodes.y,
-                nodes.z,
-                0.5,
-                0.5,
-                &xi,
-                &eta,
-            )) {
+
+            if (newton.solveInverse(N, target_x, target_y, nodes.x, nodes.y, nodes.z, 
+                0.5, 0.5, &xi, &eta,)) {
+                
                 var node_values: [N]f64 = undefined;
                 var deriv_nu: [N]f64 = undefined;
                 var deriv_nv: [N]f64 = undefined;
-                shapefun.shapeFunctions(
-                    N,
-                    xi,
-                    eta,
-                    &node_values,
-                    &deriv_nu,
-                    &deriv_nv,
-                );
+
+                shapefun.shapeFunctions(N, xi, eta, &node_values, &deriv_nu, &deriv_nv,);
                 return node_values;
             }
             return null;
@@ -691,9 +559,11 @@ pub fn Quad89Kernel(comptime N: usize) type {
 
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
             var sum_weighted_z: f64 = 0.0;
-            inline for (0..N) |index| {
-                sum_weighted_z += weights[index] * nodes.z[index];
+
+            inline for (0..N) |ind| {
+                sum_weighted_z += weights[ind] * nodes.z[ind];
             }
+            
             return 1.0 / sum_weighted_z;
         }
     };

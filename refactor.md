@@ -5,7 +5,12 @@
 - Overlapping csv logic and parsing
 
 ## Performance / Functionality Updates
-- For tessalated guess - fall back to nearest triangle edge as initial guess?
+- Add tessalated guess back into quad4newton and quad89 kernel
+- Check calcInvZ for Newton and ClipPxM implementations - could be a bug
+
+
+- Is target_x, target_y in all ClipPxM kernels always subtracting x_off, y_off? Can we just bake this into the coord transform at the start? - Maybe not, cropping?
+
 - Allow configuration of save name for files.
 - Threading
 
