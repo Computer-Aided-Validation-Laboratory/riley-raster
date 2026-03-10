@@ -38,9 +38,8 @@ pub inline fn calcInvZClip(comptime N: usize, nodes: Vec3OfSlices(f64), weights:
 pub fn Tri3Kernel() type {
     return struct {
         const Self = @This();
-        const N = 3;
-        pub const node_n = N;
-        pub const coord_space = CoordSpace.raster;
+        pub const nodes_num = 3;
+        pub const coord_space = .raster;
         pub const strategy = .pointwise;
 
         pub inline fn getInvElemArea(nodes: Vec3OfSlices(f64)) f64 {
@@ -50,13 +49,14 @@ pub fn Tri3Kernel() type {
         }
 
         pub inline fn solveWeights(nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
-                                   x_offset: f64, y_offset: f64, inv_area: f64, ) ?[N]f64 {
+                                   x_offset: f64, y_offset: f64, inv_area: f64, 
+                                   ) ?[nodes_num]f64 {
             _ = x_offset;
             _ = y_offset;
             
             const edge_tol: f64 = 1e-9;
 
-            var weights: [N]f64 = undefined;
+            var weights: [nodes_num]f64 = undefined;
             weights[0] = rops.edgeFun3(nodes.x[1],nodes.y[1],
                                        nodes.x[2],nodes.y[2],
                                        pixel_x,pixel_y,) * inv_area;
@@ -76,23 +76,22 @@ pub fn Tri3Kernel() type {
             return null;
         }
 
-        pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
-            return calcInvZRast(N, nodes, weights);
+        pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [nodes_num]f64) f64 {
+            return calcInvZRast(nodes_num, nodes, weights);
         }
     };
 }
 
 pub fn Tri3OptKernel() type {
     return struct {
-        const N = 3;
-        pub const node_n = N;
-        pub const coord_space = CoordSpace.raster;
+        pub const nodes_num = 3;
+        pub const coord_space = .raster;
         pub const strategy = .incremental;
 
         pub inline fn getDWeightsDx(nodes: Vec3OfSlices(f64),
                                     inv_area: f64,
                                     step_size: f64,
-                                    ) [N]f64 {
+                                    ) [nodes_num]f64 {
             return [_]f64{
                 (nodes.y[2] - nodes.y[1]) * step_size * inv_area,
                 (nodes.y[0] - nodes.y[2]) * step_size * inv_area,
@@ -103,7 +102,7 @@ pub fn Tri3OptKernel() type {
         pub inline fn getDWeightsDy(nodes: Vec3OfSlices(f64), 
                                     inv_area: f64,
                                     step_size: f64,
-                                    ) [N]f64 {
+                                    ) [nodes_num]f64 {
             return [_]f64{
                 (nodes.x[1] - nodes.x[2]) * step_size * inv_area,
                 (nodes.x[2] - nodes.x[0]) * step_size * inv_area,
@@ -112,7 +111,7 @@ pub fn Tri3OptKernel() type {
         }
 
         pub inline fn getWeightsAt(nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
-                                   inv_area: f64,) [N]f64 {
+                                   inv_area: f64,) [nodes_num]f64 {
             return [_]f64{
                 rops.edgeFun3(nodes.x[1], nodes.y[1],
                               nodes.x[2], nodes.y[2],
@@ -126,7 +125,7 @@ pub fn Tri3OptKernel() type {
             };
         }
 
-        pub inline fn isInElement(weights: [N]f64) bool {
+        pub inline fn isInElement(weights: [nodes_num]f64) bool {
             const edge_tol: f64 = 1e-9;
 
             return weights[0] >= -edge_tol and
@@ -134,17 +133,16 @@ pub fn Tri3OptKernel() type {
                    weights[2] >= -edge_tol;
         }
 
-        pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
-            return calcInvZRast(N, nodes, weights);
+        pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [nodes_num]f64) f64 {
+            return calcInvZRast(nodes_num, nodes, weights);
         }
     };
 }
 
 pub fn Tri6Kernel() type {
     return struct {
-        const N = 6;
-        pub const node_n = N;
-        pub const coord_space = CoordSpace.clip_px_leng;
+        pub const nodes_num = 6;
+        pub const coord_space = .clip_px_leng;
         pub const strategy = .pointwise;
 
         pub inline fn solveWeights(
@@ -154,7 +152,7 @@ pub fn Tri6Kernel() type {
             x_offset: f64,
             y_offset: f64,
             state: anytype,
-        ) ?[N]f64 {
+        ) ?[nodes_num]f64 {
             _ = state;
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
@@ -167,22 +165,24 @@ pub fn Tri6Kernel() type {
                                     nodes.x,nodes.y,nodes.z,
                                     &xi,&eta,)) {
                                     
-                converged = newton.solveInverse(N, target_x, target_y, nodes.x, nodes.y,
-                                                nodes.z, xi, eta, &xi, &eta,);
+                converged = newton.solveInverse(nodes_num, target_x, target_y, 
+                                                nodes.x, nodes.y, nodes.z, 
+                                                xi, eta, &xi, &eta,);
             }
 
             if (!converged) {
-                converged = newton.solveInverse(N, target_x, target_y, nodes.x, nodes.y,
-                                                nodes.z, 1.0 / 3.0, 1.0 / 3.0, &xi, &eta,);
+                converged = newton.solveInverse(nodes_num, target_x, target_y, 
+                                                nodes.x, nodes.y, nodes.z, 
+                                                1.0 / 3.0, 1.0 / 3.0, &xi, &eta,);
             }
 
             if (converged) {
-                var node_values: [N]f64 = undefined;
-                var deriv_nu: [N]f64 = undefined;
-                var deriv_nv: [N]f64 = undefined;
+                var node_values: [nodes_num]f64 = undefined;
+                var deriv_nu: [nodes_num]f64 = undefined;
+                var deriv_nv: [nodes_num]f64 = undefined;
 
                 shapefun.shapeFunctions(
-                    N,
+                    nodes_num,
                     xi,
                     eta,
                     &node_values,
@@ -195,8 +195,8 @@ pub fn Tri6Kernel() type {
             return null;
         }
 
-        pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
-            return calcInvZClip(N, nodes, weights);
+        pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [nodes_num]f64) f64 {
+            return calcInvZClip(nodes_num, nodes, weights);
         }
 
         fn getTessellatedGuess(target_x: f64, target_y: f64, 
@@ -301,9 +301,8 @@ pub fn Tri6Kernel() type {
 
 pub fn Quad4IBIKernel() type {
     return struct {
-        const N = 4;
-        pub const node_n = N;
-        pub const coord_space = CoordSpace.clip_px_leng;
+        pub const nodes_num = 4;
+        pub const coord_space = .clip_px_leng;
         pub const strategy = .pointwise;
 
         pub const SolverParams = struct {
@@ -340,7 +339,7 @@ pub fn Quad4IBIKernel() type {
 
         pub inline fn solveWeights(nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
                                    x_offset: f64,y_offset: f64, solve_params: SolverParams,
-                                   ) ?[N]f64 {
+                                   ) ?[nodes_num]f64 {
             _ = nodes;
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
@@ -389,14 +388,8 @@ pub fn Quad4IBIKernel() type {
             return null;
         }
 
-        pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
-            var sum_weighted_z: f64 = 0.0;
-            
-            inline for (0..N) |ind| {
-                sum_weighted_z += weights[ind] * nodes.z[ind];
-            }
-            
-            return 1.0 / sum_weighted_z;
+        pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [nodes_num]f64) f64 {
+            return calcInvZClip(nodes_num, nodes, weights);
         }
 
         fn solveQuadraticRobust(a_coeff: f64, b_coeff: f64, c_coeff: f64, root_out: *f64,
@@ -446,13 +439,13 @@ pub fn Quad4IBIKernel() type {
 
 pub fn Quad4NewtonKernel() type {
     return struct {
-        const N = 4;
-        pub const node_n = N;
-        pub const coord_space = CoordSpace.clip_px_leng;
+        pub const nodes_num = 4;
+        pub const coord_space = .clip_px_leng;
         pub const strategy = .pointwise;
 
         pub inline fn solveWeights(nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
-                                   x_offset: f64, y_offset: f64,state: anytype,) ?[N]f64 {
+                                   x_offset: f64, y_offset: f64,state: anytype,
+                                   ) ?[nodes_num]f64 {
             _ = state;
 
             var xi: f64 = 0.0;
@@ -461,55 +454,58 @@ pub fn Quad4NewtonKernel() type {
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
 
-            if (newton.solveInverse(N, target_x, target_y, nodes.x, nodes.y, nodes.z, 
-                                    0.5, 0.5, &xi, &eta, )) {
-                var node_values: [N]f64 = undefined;
-                var deriv_nu: [N]f64 = undefined;
-                var deriv_nv: [N]f64 = undefined;
+            if (newton.solveInverse(nodes_num, target_x, target_y, nodes.x, nodes.y, 
+                                    nodes.z, 0.5, 0.5, &xi, &eta, )) {
+                var node_values: [nodes_num]f64 = undefined;
+                var deriv_nu: [nodes_num]f64 = undefined;
+                var deriv_nv: [nodes_num]f64 = undefined;
                 
-                shapefun.shapeFunctions(N, xi, eta, &node_values, &deriv_nu, &deriv_nv,);
+                shapefun.shapeFunctions(nodes_num, xi, eta, &node_values, 
+                                        &deriv_nu, &deriv_nv,);
                 
                 return node_values;
             }
             return null;
         }
 
-        pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
-            return calcInvZClip(N, nodes, weights);
+        pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [nodes_num]f64) f64 {
+            return calcInvZClip(nodes_num, nodes, weights);
         }
     };
 }
 
 pub fn Quad89Kernel(comptime N: usize) type {
     return struct {
-        pub const node_n = N;
-        pub const coord_space = CoordSpace.clip_px_leng;
+        pub const nodes_num = N;
+        pub const coord_space = .clip_px_leng;
         pub const strategy = .pointwise;
 
         pub inline fn solveWeights(nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
-                                   x_offset: f64, y_offset: f64, state: anytype,) ?[N]f64 {
+                                   x_offset: f64, y_offset: f64, state: anytype,
+                                   ) ?[nodes_num]f64 {
             _ = state;
-            
+
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
 
-            if (newton.solveInverse(N, target_x, target_y, nodes.x, nodes.y, nodes.z, 
-                0.5, 0.5, &xi, &eta,)) {
-                
-                var node_values: [N]f64 = undefined;
-                var deriv_nu: [N]f64 = undefined;
-                var deriv_nv: [N]f64 = undefined;
+            if (newton.solveInverse(nodes_num, target_x, target_y, nodes.x, nodes.y, 
+                nodes.z, 0.5, 0.5, &xi, &eta,)) {
 
-                shapefun.shapeFunctions(N, xi, eta, &node_values, &deriv_nu, &deriv_nv,);
+                var node_values: [nodes_num]f64 = undefined;
+                var deriv_nu: [nodes_num]f64 = undefined;
+                var deriv_nv: [nodes_num]f64 = undefined;
+
+                shapefun.shapeFunctions(nodes_num, xi, eta, &node_values, 
+                                        &deriv_nu, &deriv_nv,);
                 return node_values;
             }
             return null;
         }
 
-        pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
-            return calcInvZClip(N, nodes, weights);
+        pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [nodes_num]f64) f64 {
+            return calcInvZClip(nodes_num, nodes, weights);
         }
     };
 }

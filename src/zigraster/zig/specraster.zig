@@ -179,7 +179,7 @@ pub fn rasterOneFrame(
                 .quad8 => geomkerns.Quad89Kernel(8),
                 .quad9 => geomkerns.Quad89Kernel(9),
             };
-            const N = GK.node_n;
+            const N = GK.nodes_num;
 
             switch (shader.*) {
                 .flat => |*sh| {
@@ -217,7 +217,7 @@ fn rasterInternal(
 
     const raster_start = Timestamp.now(io, .awake);
 
-    const N = GK.node_n;
+    const N = GK.nodes_num;
     const dim_elem: usize = 0;
     const elems_num: usize = coords.dims[dim_elem];
 

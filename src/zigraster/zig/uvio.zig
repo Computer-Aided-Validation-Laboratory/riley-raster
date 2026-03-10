@@ -9,11 +9,11 @@ pub const UVMap = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator, node_n: usize) !Self {
-        const buffer = try allocator.alloc(f64, node_n * 2);
+    pub fn init(allocator: std.mem.Allocator, nodes_num: usize) !Self {
+        const buffer = try allocator.alloc(f64, nodes_num * 2);
         @memset(buffer, 0.0);
 
-        const dims = [_]usize{ node_n, 2 }; // u, v
+        const dims = [_]usize{ nodes_num, 2 }; // u, v
 
         const array = try NDArray(f64).init(allocator, buffer, dims[0..]);
 
@@ -57,9 +57,9 @@ pub fn loadUVs(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !NDAr
     const arena_alloc = arena.allocator();
 
     const lines = try meshio.readCsvToList(arena_alloc, io, path);
-    const node_n = lines.items.len;
+    const nodes_num = lines.items.len;
 
-    var uv_arr = try NDArray(f64).initFlat(allocator, &[_]usize{ node_n, 2 });
+    var uv_arr = try NDArray(f64).initFlat(allocator, &[_]usize{ nodes_num, 2 });
     errdefer {
         allocator.free(uv_arr.elems);
         uv_arr.deinit(allocator);
