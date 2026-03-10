@@ -12,7 +12,7 @@ pub const Strategy = enum {
 
 pub const CoordSpace = enum {
     raster,
-    camera,
+    clip_px_leng,
 };
 
 pub fn Tri3Kernel() type {
@@ -144,7 +144,7 @@ pub fn Tri6Kernel() type {
     return struct {
         const N = 6;
         pub const node_n = N;
-        pub const coord_space = CoordSpace.camera;
+        pub const coord_space = CoordSpace.clip_px_leng;
         pub const strategy = .pointwise;
 
         pub inline fn loadNodes(
@@ -321,7 +321,7 @@ pub fn Quad4IBIKernel() type {
     return struct {
         const N = 4;
         pub const node_n = N;
-        pub const coord_space = CoordSpace.camera;
+        pub const coord_space = CoordSpace.clip_px_leng;
         pub const strategy = .pointwise;
 
         pub const SolverParams = struct {
@@ -471,7 +471,7 @@ pub fn Quad4NewtonKernel() type {
     return struct {
         const N = 4;
         pub const node_n = N;
-        pub const coord_space = CoordSpace.camera;
+        pub const coord_space = CoordSpace.clip_px_leng;
         pub const strategy = .pointwise;
 
         pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), elem_ind: usize,
@@ -522,7 +522,7 @@ pub fn Quad4NewtonKernel() type {
 pub fn Quad89Kernel(comptime N: usize) type {
     return struct {
         pub const node_n = N;
-        pub const coord_space = CoordSpace.camera;
+        pub const coord_space = CoordSpace.clip_px_leng;
         pub const strategy = .pointwise;
 
         pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), elem_ind: usize,

@@ -20,7 +20,7 @@ pub fn FlatKernel(comptime N: usize) type {
             index: usize,
             spx_image_scratch: *MatSlice(f64),
         ) void {
-            if (comptime coord_space == CoordSpace.camera) {
+            if (comptime coord_space == CoordSpace.clip_px_leng) {
                 shaderops.fillFlat(
                     N,
                     frame_index,
@@ -69,7 +69,7 @@ pub fn TexKernel(comptime N: usize, comptime interp_type: InterpType) type {
             _ = frame_index;
             _ = actual_fields;
             _ = fields_num;
-            if (comptime coord_space == CoordSpace.camera) {
+            if (comptime coord_space == CoordSpace.clip_px_leng) {
                 shaderops.fillTex(
                     N,
                     interp_type,
