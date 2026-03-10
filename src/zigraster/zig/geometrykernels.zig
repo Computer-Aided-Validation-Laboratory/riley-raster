@@ -15,6 +15,26 @@ pub const CoordSpace = enum {
     clip_px_leng,
 };
 
+pub inline fn calcInvZRast(comptime N: usize, nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
+    var inv_z: f64 = 0.0;
+    
+    inline for (0..N) |ind| {
+        inv_z += weights[ind] * (1.0 / nodes.z[ind]);
+    }
+    
+    return inv_z;
+}
+
+pub inline fn calcInvZClip(comptime N: usize, nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
+    var sum_weighted_z: f64 = 0.0;
+    
+    inline for (0..N) |ind| {
+        sum_weighted_z += weights[ind] * nodes.z[ind];
+    }
+    
+    return 1.0 / sum_weighted_z;
+}
+
 pub fn Tri3Kernel() type {
     return struct {
         const Self = @This();
@@ -57,13 +77,7 @@ pub fn Tri3Kernel() type {
         }
 
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
-            var inv_z: f64 = 0.0;
-            
-            inline for (0..N) |ind| {
-                inv_z += weights[ind] * (1.0 / nodes.z[ind]);
-            }
-            
-            return inv_z;
+            return calcInvZRast(N, nodes, weights);
         }
     };
 }
@@ -121,11 +135,7 @@ pub fn Tri3OptKernel() type {
         }
 
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
-            var inv_z: f64 = 0.0;
-            inline for (0..N) |ind| {
-                inv_z += weights[ind] * (1.0 / nodes.z[ind]);
-            }
-            return inv_z;
+            return calcInvZRast(N, nodes, weights);
         }
     };
 }
@@ -186,13 +196,7 @@ pub fn Tri6Kernel() type {
         }
 
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
-            var sum_weighted_z: f64 = 0.0;
-
-            inline for (0..N) |ind| {
-                sum_weighted_z += weights[ind] * nodes.z[ind];
-            }
-            
-            return 1.0 / sum_weighted_z;
+            return calcInvZClip(N, nodes, weights);
         }
 
         fn getTessellatedGuess(target_x: f64, target_y: f64, 
@@ -471,13 +475,7 @@ pub fn Quad4NewtonKernel() type {
         }
 
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
-            var sum_weighted_z: f64 = 0.0;
-
-            inline for (0..N) |ind| {
-                sum_weighted_z += weights[ind] * nodes.z[ind];
-            }
-
-            return 1.0 / sum_weighted_z;
+            return calcInvZClip(N, nodes, weights);
         }
     };
 }
@@ -511,13 +509,7 @@ pub fn Quad89Kernel(comptime N: usize) type {
         }
 
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
-            var sum_weighted_z: f64 = 0.0;
-
-            inline for (0..N) |ind| {
-                sum_weighted_z += weights[ind] * nodes.z[ind];
-            }
-            
-            return 1.0 / sum_weighted_z;
+            return calcInvZClip(N, nodes, weights);
         }
     };
 }
