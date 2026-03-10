@@ -207,90 +207,69 @@ pub fn Tri6Kernel() type {
             const eps: f64 = 1e-5;
             
             const SubTriangle = struct {
-                node0: u8,
-                node1: u8,
-                node2: u8,
-                xi0: f64,
-                eta0: f64,
-                xi1: f64,
-                eta1: f64,
-                xi2: f64,
-                eta2: f64,
+                nodes: [3]u8,
+                xi: [3]f64,
+                eta: [3]f64,
             };
             
-            const sub_triangle_definitions = [_]SubTriangle{
+            const sub_triangles = [_]SubTriangle{
                 .{
-                    .node0 = 0,
-                    .node1 = 3,
-                    .node2 = 5,
-                    .xi0 = 0.0,
-                    .eta0 = 0.0,
-                    .xi1 = 0.5,
-                    .eta1 = 0.0,
-                    .xi2 = 0.0,
-                    .eta2 = 0.5,
+                    .nodes = .{ 0, 3, 5 },
+                    .xi = .{ 0.0, 0.5, 0.0 },
+                    .eta = .{ 0.0, 0.0, 0.5 },
                 },
                 .{
-                    .node0 = 3,
-                    .node1 = 1,
-                    .node2 = 4,
-                    .xi0 = 0.5,
-                    .eta0 = 0.0,
-                    .xi1 = 1.0,
-                    .eta1 = 0.0,
-                    .xi2 = 0.5,
-                    .eta2 = 0.5,
+                    .nodes = .{ 3, 1, 4 },
+                    .xi = .{ 0.5, 1.0, 0.5 },
+                    .eta = .{ 0.0, 0.0, 0.5 },
                 },
                 .{
-                    .node0 = 5,
-                    .node1 = 4,
-                    .node2 = 2,
-                    .xi0 = 0.0,
-                    .eta0 = 0.5,
-                    .xi1 = 0.5,
-                    .eta1 = 0.5,
-                    .xi2 = 0.0,
-                    .eta2 = 1.0,
+                    .nodes = .{ 5, 4, 2 },
+                    .xi = .{ 0.0, 0.5, 0.0 },
+                    .eta = .{ 0.5, 0.5, 1.0 },
                 },
                 .{
-                    .node0 = 3,
-                    .node1 = 4,
-                    .node2 = 5,
-                    .xi0 = 0.5,
-                    .eta0 = 0.0,
-                    .xi1 = 0.5,
-                    .eta1 = 0.5,
-                    .xi2 = 0.0,
-                    .eta2 = 0.5,
+                    .nodes = .{ 3, 4, 5 },
+                    .xi = .{ 0.5, 0.5, 0.0 },
+                    .eta = .{ 0.0, 0.5, 0.5 },
                 },
             };
-            for (sub_triangle_definitions) |sub_tri| {
-                const x0 = elem_x[sub_tri.node0] / elem_w[sub_tri.node0];
-                const y0 = elem_y[sub_tri.node0] / elem_w[sub_tri.node0];
-                const x1 = elem_x[sub_tri.node1] / elem_w[sub_tri.node1];
-                const y1 = elem_y[sub_tri.node1] / elem_w[sub_tri.node1];
-                const x2 = elem_x[sub_tri.node2] / elem_w[sub_tri.node2];
-                const y2 = elem_y[sub_tri.node2] / elem_w[sub_tri.node2];
 
-                const area = (x2 - x0) * (y1 - y0) - (y2 - y0) * (x1 - x0);
+            for (sub_triangles) |sub_tri| {
+                var vx: [3]f64 = undefined;
+                var vy: [3]f64 = undefined;
+
+                inline for (0..3) |ii| {
+                    const node_ind = sub_tri.nodes[ii];
+                    vx[ii] = elem_x[node_ind] / elem_w[node_ind];
+                    vy[ii] = elem_y[node_ind] / elem_w[node_ind];
+                }
+
+                const area = rops.edgeFun3(vx[0], vy[0], vx[1], vy[1], vx[2], vy[2]);
 
                 if (@abs(area) < area_tol) {
                     continue;
                 }
-                const weight0 = ((target_x - x0) * (y1 - y0) - (target_y - y0) * (x1 - x0)) 
-                    / area;
-                const weight1 = ((target_x - x1) * (y2 - y1) - (target_y - y1) * (x2 - x1)) 
-                    / area;
-                const weight2 = ((target_x - x2) * (y0 - y2) - (target_y - y2) * (x0 - x2)) 
-                    / area;
 
-                if (weight0 >= -eps and weight1 >= -eps and weight2 >= -eps) {
-                    xi_out.* = weight0 * sub_tri.xi0 
-                             + weight1 * sub_tri.xi1 
-                             + weight2 * sub_tri.xi2;
-                    eta_out.* = weight0 * sub_tri.eta0 
-                              + weight1 * sub_tri.eta1 
-                              + weight2 * sub_tri.eta2;
+                const inv_area = 1.0 / area;
+                var weights: [3]f64 = undefined;
+                weights[0] = rops.edgeFun3(vx[1], vy[1], vx[2], vy[2], 
+                                           target_x, target_y) * inv_area;
+                weights[1] = rops.edgeFun3(vx[2], vy[2], vx[0], vy[0], 
+                                           target_x, target_y) * inv_area;
+                weights[2] = 1.0 - weights[0] - weights[1];
+
+                if (weights[0] >= -eps and weights[1] >= -eps and weights[2] >= -eps) {
+                    var xi_res: f64 = 0.0;
+                    var eta_res: f64 = 0.0;
+
+                    inline for (0..3) |ii| {
+                        xi_res += weights[ii] * sub_tri.xi[ii];
+                        eta_res += weights[ii] * sub_tri.eta[ii];
+                    }
+
+                    xi_out.* = xi_res;
+                    eta_out.* = eta_res;
                     return true;
                 }
             }
@@ -461,7 +440,7 @@ pub fn Quad4NewtonKernel() type {
             const target_y = pixel_y - y_offset;
 
             if (newton.solveInverse(nodes_num, target_x, target_y, nodes.x, nodes.y, 
-                                    nodes.z, xi_guess_def, ets_guess_def, &xi, &eta, )) {
+                                    nodes.z, xi_guess_def, eta_guess_def, &xi, &eta, )) {
                 var node_values: [nodes_num]f64 = undefined;
                 var deriv_nu: [nodes_num]f64 = undefined;
                 var deriv_nv: [nodes_num]f64 = undefined;
