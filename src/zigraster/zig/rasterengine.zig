@@ -66,7 +66,12 @@ pub fn RasterEngine(comptime Geometry: type,
                                                 tile.overlap_start + tile.overlap_count];
 
                 for (overlaps) |overlap| {
-                    const nodes = try Geometry.loadNodes(elem_coord_arr, overlap.elem_ind);
+                    const nodes = try rops.loadVec3SlicesFromElemArray(
+                        Geometry.node_n,
+                        f64,
+                        elem_coord_arr,
+                        overlap.elem_ind,
+                    );
                     
                     const scratch_start_x = sub_samp * (@as(usize, overlap.x_min) - 
                                                         tile.x_px_min);

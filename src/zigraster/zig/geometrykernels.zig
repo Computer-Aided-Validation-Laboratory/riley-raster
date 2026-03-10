@@ -23,11 +23,6 @@ pub fn Tri3Kernel() type {
         pub const coord_space = CoordSpace.raster;
         pub const strategy = .pointwise;
 
-        pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), elem_ind: usize,
-                                ) !Vec3OfSlices(f64) {
-            return try rops.loadVec3SlicesFromElemArray(N,f64,elem_coord_arr,elem_ind,);
-        }
-
         pub inline fn getInvElemArea(nodes: Vec3OfSlices(f64)) f64 {
             return 1.0 / rops.edgeFun3(nodes.x[0], nodes.y[0],
                                        nodes.x[1], nodes.y[1],
@@ -79,11 +74,6 @@ pub fn Tri3OptKernel() type {
         pub const node_n = N;
         pub const coord_space = CoordSpace.raster;
         pub const strategy = .incremental;
-
-        pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), elem_ind: usize,
-                                ) !Vec3OfSlices(f64) {
-            return try rops.loadVec3SlicesFromElemArray(N,f64,elem_coord_arr,elem_ind,);
-        }
 
         pub inline fn getDWeightsDx(nodes: Vec3OfSlices(f64),
                                     inv_area: f64,
@@ -146,18 +136,6 @@ pub fn Tri6Kernel() type {
         pub const node_n = N;
         pub const coord_space = CoordSpace.clip_px_leng;
         pub const strategy = .pointwise;
-
-        pub inline fn loadNodes(
-            elem_coord_arr: *const NDArray(f64),
-            elem_ind: usize,
-        ) !Vec3OfSlices(f64) {
-            return try rops.loadVec3SlicesFromElemArray(
-                N,
-                f64,
-                elem_coord_arr,
-                elem_ind,
-            );
-        }
 
         pub inline fn solveWeights(
             nodes: Vec3OfSlices(f64),
@@ -339,11 +317,6 @@ pub fn Quad4IBIKernel() type {
             w_const: f64,
         };
 
-        pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), elem_ind: usize,
-                                ) !Vec3OfSlices(f64) {
-            return try rops.loadVec3SlicesFromElemArray(N, f64, elem_coord_arr, elem_ind,);
-        }
-
         pub inline fn getSolverParams(nodes: Vec3OfSlices(f64)) SolverParams {
             return SolverParams{
                 .x_uv_coeff = nodes.x[0] - nodes.x[1] + nodes.x[2] - nodes.x[3],
@@ -474,16 +447,6 @@ pub fn Quad4NewtonKernel() type {
         pub const coord_space = CoordSpace.clip_px_leng;
         pub const strategy = .pointwise;
 
-        pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), elem_ind: usize,
-                                ) !Vec3OfSlices(f64) {
-            return try rops.loadVec3SlicesFromElemArray(
-                N,
-                f64,
-                elem_coord_arr,
-                elem_ind,
-            );
-        }
-
         pub inline fn solveWeights(nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
                                    x_offset: f64, y_offset: f64,state: anytype,) ?[N]f64 {
             _ = state;
@@ -524,16 +487,6 @@ pub fn Quad89Kernel(comptime N: usize) type {
         pub const node_n = N;
         pub const coord_space = CoordSpace.clip_px_leng;
         pub const strategy = .pointwise;
-
-        pub inline fn loadNodes(elem_coord_arr: *const NDArray(f64), elem_ind: usize,
-                                ) !Vec3OfSlices(f64) {
-            return try rops.loadVec3SlicesFromElemArray(
-                N,
-                f64,
-                elem_coord_arr,
-                elem_ind,
-            );
-        }
 
         pub inline fn solveWeights(nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
                                    x_offset: f64, y_offset: f64, state: anytype,) ?[N]f64 {
