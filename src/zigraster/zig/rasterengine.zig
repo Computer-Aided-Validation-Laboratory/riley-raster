@@ -175,20 +175,16 @@ pub fn RasterEngine(comptime Geometry: type,
                 nodes_inv_z[node_index] = 1.0 / nodes.z[node_index];
             }
 
-            const inverse_area = 1.0 / rops.edgeFun3(
-                nodes.x[0],
-                nodes.y[0],
-                nodes.x[1],
-                nodes.y[1],
-                nodes.x[2],
-                nodes.y[2],
-            );
-            const dweights_dx = Geometry.getDWeightsDx(nodes, inverse_area, subpx_step);
-            const dweights_dy = Geometry.getDWeightsDy(nodes, inverse_area, subpx_step);
+            const inv_area = 1.0 / rops.edgeFun3(nodes.x[0], nodes.y[0],
+                                                 nodes.x[1], nodes.y[1],
+                                                 nodes.x[2], nodes.y[2],);
+            
+            const dweights_dx = Geometry.getDWeightsDx(nodes, inv_area, subpx_step);
+            const dweights_dy = Geometry.getDWeightsDy(nodes, inv_area, subpx_step);
 
             const start_x = xi_min_f + subpx_offset;
             const start_y = yi_min_f + subpx_offset;
-            var weights_row = Geometry.getWeightsAt(nodes, start_x, start_y, inverse_area);
+            var weights_row = Geometry.getWeightsAt(nodes, start_x, start_y, inv_area);
 
             for (scratch_start_y..scratch_end_y) |scratch_y| {
                 const row_offset = scratch_y * subpx_tile_size;
@@ -263,16 +259,16 @@ pub fn RasterEngine(comptime Geometry: type,
             else
                 {};
 
-            var pixel_y: f64 = yi_min_f + subpx_offset;
+            var subpx_y: f64 = yi_min_f + subpx_offset;
             for (scratch_start_y..scratch_end_y) |scratch_y| {
                 const row_offset = scratch_y * subpx_tile_size;
-                var pixel_x: f64 = xi_min_f + subpx_offset;
+                var subpx_x: f64 = xi_min_f + subpx_offset;
 
                 for (scratch_start_x..scratch_end_x) |scratch_x| {
                     const weights_or_null = Geometry.solveWeights(
                         nodes,
-                        pixel_x,
-                        pixel_y,
+                        subpx_x,
+                        subpx_y,
                         x_offset,
                         y_offset,
                         geometry_state,
@@ -301,9 +297,9 @@ pub fn RasterEngine(comptime Geometry: type,
                             );
                         }
                     }
-                    pixel_x += subpx_step;
+                    subpx_x += subpx_step;
                 }
-                pixel_y += subpx_step;
+                subpx_y += subpx_step;
             }
         }
     };
