@@ -254,8 +254,8 @@ pub fn RasterEngine(comptime Geometry: type,
 
             const geometry_state = if (@hasDecl(Geometry, "getInvElemArea"))
                 Geometry.getInvElemArea(nodes)
-            else if (@hasDecl(Geometry, "getSolverParams"))
-                Geometry.getSolverParams(nodes)
+            else if (@hasDecl(Geometry, "getBilinearParams"))
+                Geometry.getBilinearParams(nodes)
             else
                 {};
 

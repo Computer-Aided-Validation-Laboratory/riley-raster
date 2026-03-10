@@ -305,7 +305,7 @@ pub fn Quad4IBIKernel() type {
         pub const coord_space = .clip_px_leng;
         pub const strategy = .pointwise;
 
-        pub const SolverParams = struct {
+        pub const BilinearParams = struct {
             x_uv_coeff: f64,
             x_u_coeff: f64,
             x_v_coeff: f64,
@@ -320,8 +320,8 @@ pub fn Quad4IBIKernel() type {
             w_const: f64,
         };
 
-        pub inline fn getSolverParams(nodes: Vec3OfSlices(f64)) SolverParams {
-            return SolverParams{
+        pub inline fn getBilinearParams(nodes: Vec3OfSlices(f64)) BilinearParams {
+            return BilinearParams{
                 .x_uv_coeff = nodes.x[0] - nodes.x[1] + nodes.x[2] - nodes.x[3],
                 .x_u_coeff = nodes.x[1] - nodes.x[0],
                 .x_v_coeff = nodes.x[3] - nodes.x[0],
@@ -338,45 +338,48 @@ pub fn Quad4IBIKernel() type {
         }
 
         pub inline fn solveWeights(nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
-                                   x_offset: f64,y_offset: f64, solve_params: SolverParams,
+                                   x_offset: f64,y_offset: f64, solve_params: BilinearParams,
                                    ) ?[nodes_num]f64 {
             _ = nodes;
+            const eps: f64 = 1e-7;
+            const denom_tol = 1e-12;
+            
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
 
-            const ae = solve_params.x_uv_coeff - (solve_params.w_uv_coeff * target_x);
-            const be = solve_params.x_u_coeff - (solve_params.w_u_coeff * target_x);
-            const ce = solve_params.x_v_coeff - (solve_params.w_v_coeff * target_x);
-            const de = solve_params.x_const - (solve_params.w_const * target_x);
+            const res_x_uv = solve_params.x_uv_coeff - (solve_params.w_uv_coeff * target_x);
+            const res_x_u = solve_params.x_u_coeff - (solve_params.w_u_coeff * target_x);
+            const res_x_v = solve_params.x_v_coeff - (solve_params.w_v_coeff * target_x);
+            const res_x_const = solve_params.x_const - (solve_params.w_const * target_x);
 
-            const af = solve_params.y_uv_coeff - (solve_params.w_uv_coeff * target_y);
-            const bf = solve_params.y_u_coeff - (solve_params.w_u_coeff * target_y);
-            const cf = solve_params.y_v_coeff - (solve_params.w_v_coeff * target_y);
-            const df = solve_params.y_const - (solve_params.w_const * target_y);
+            const res_y_uv = solve_params.y_uv_coeff - (solve_params.w_uv_coeff * target_y);
+            const res_y_u = solve_params.y_u_coeff - (solve_params.w_u_coeff * target_y);
+            const res_y_v = solve_params.y_v_coeff - (solve_params.w_v_coeff * target_y);
+            const res_y_const = solve_params.y_const - (solve_params.w_const * target_y);
 
-            const quad_a = (af * be) - (ae * bf);
-            const quad_b = (af * de) - (ae * df) + (be * cf) - (bf * ce);
-            const quad_c = (cf * de) - (ce * df);
+            const quad_a = (res_y_uv * res_x_u) - (res_x_uv * res_y_u);
+            const quad_b = (res_y_uv * res_x_const) - (res_x_uv * res_y_const) + 
+                           (res_x_v * res_y_u) - (res_y_v * res_x_u);
+            const quad_c = (res_x_v * res_y_const) - (res_y_v * res_x_const);
 
             var coord_u: f64 = -1.0;
 
             if (solveQuadraticRobust(quad_a, quad_b, quad_c, &coord_u)) {
-                const denom_e = (ae * coord_u) + ce;
-                const denom_f = (af * coord_u) + cf;
+                const denom_e = (res_x_uv * coord_u) + res_x_v;
+                const denom_f = (res_y_uv * coord_u) + res_y_v;
                 var coord_v: f64 = -1.0;
-                const tolerance_denom = 1e-12;
 
                 if (@abs(denom_f) > @abs(denom_e)) {
-                    if (@abs(denom_f) > tolerance_denom) {
-                        coord_v = -((bf * coord_u) + df) / denom_f;
+                    if (@abs(denom_f) > denom_tol) {
+                        coord_v = -((res_y_u * coord_u) + res_y_const) / denom_f;
                     }
                 } else {
-                    if (@abs(denom_e) > tolerance_denom) {
-                        coord_v = -((be * coord_u) + de) / denom_e;
+                    if (@abs(denom_e) > denom_tol) {
+                        coord_v = -((res_x_u * coord_u) + res_x_const) / denom_e;
                     }
                 }
 
-                if (coord_v >= -1e-7 and coord_v <= 1.0 + 1e-7) {
+                if (coord_v >= -eps and coord_v <= 1.0 + eps) {
                     return [_]f64{
                         (1.0 - coord_u) * (1.0 - coord_v),
                         coord_u * (1.0 - coord_v),
@@ -451,11 +454,14 @@ pub fn Quad4NewtonKernel() type {
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
 
+            const xi_guess_def: f64 = 0.5;
+            const eta_guess_def: f64 = 0.5;
+
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
 
             if (newton.solveInverse(nodes_num, target_x, target_y, nodes.x, nodes.y, 
-                                    nodes.z, 0.5, 0.5, &xi, &eta, )) {
+                                    nodes.z, xi_guess_def, ets_guess_def, &xi, &eta, )) {
                 var node_values: [nodes_num]f64 = undefined;
                 var deriv_nu: [nodes_num]f64 = undefined;
                 var deriv_nv: [nodes_num]f64 = undefined;
@@ -487,11 +493,15 @@ pub fn Quad89Kernel(comptime N: usize) type {
 
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
+
+            const xi_guess_def: f64 = 0.5;
+            const eta_guess_def: f64 = 0.5;
+
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
 
             if (newton.solveInverse(nodes_num, target_x, target_y, nodes.x, nodes.y, 
-                nodes.z, 0.5, 0.5, &xi, &eta,)) {
+                nodes.z, xi_guess_def, eta_guess_def, &xi, &eta,)) {
 
                 var node_values: [nodes_num]f64 = undefined;
                 var deriv_nu: [nodes_num]f64 = undefined;
