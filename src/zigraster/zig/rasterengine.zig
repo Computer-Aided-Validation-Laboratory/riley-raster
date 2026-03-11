@@ -346,8 +346,8 @@ pub fn RasterEngine(
                             );
                         }
                     } else {
-                        if (result.iters > 0) {
-                            if (comptime report == .perf) {
+                        if (comptime report == .perf) {
+                            if (result.iters > 0) {
                                 perf_ctx.recordSolverDiverged();
                             }
                         }
