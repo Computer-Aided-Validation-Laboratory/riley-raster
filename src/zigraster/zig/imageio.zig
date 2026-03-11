@@ -71,6 +71,37 @@ pub fn saveImage(io: std.Io,
     }
 }
 
+pub fn saveImages(
+    io: std.Io,
+    out_dir: ?std.Io.Dir,
+    frame_idx: usize,
+    num_fields: usize,
+    pixels_num: [2]u32,
+    frame_arr: *const @import("ndarray.zig").NDArray(f64),
+    formats: []const ImageFormat,
+    bits: u8,
+) !void {
+    const save_dir = out_dir orelse return;
+    var name_buff: [1024]u8 = undefined;
+    for (0..num_fields) |ff| {
+        const file_name = try std.fmt.bufPrint(
+            name_buff[0..],
+            "frame_{d}_field_{d}",
+            .{ frame_idx, ff },
+        );
+        const save_slice = frame_arr.getSlice(&[_]usize{ ff, 0, 0 }, 0);
+        const save_mat = MatSlice(f64).init(
+            save_slice,
+            pixels_num[1],
+            pixels_num[0],
+        );
+        for (formats) |format| {
+            try saveImage(io, save_dir, file_name, &save_mat, format, bits);
+        }
+    }
+}
+
+
 pub fn savePPM(io: std.Io,
                out_dir: std.Io.Dir, 
                file_name: []const u8,

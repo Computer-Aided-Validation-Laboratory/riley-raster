@@ -124,26 +124,12 @@ pub fn rasterAllFrames(
 
         var frame_perf: ?Perf = null;
         if (config.report == .perf) {
-            frame_perf = Perf{};
-            if (config.perf_opts.save_iteration_map) {
-                frame_perf.?.iteration_map = try NDArray(f64).initFlat(
-                    outer_alloc, 
-                    &[_]usize{ camera.pixels_num[1], camera.pixels_num[0] }
-                );
-                @memset(frame_perf.?.iteration_map.?.elems, 0);
-            }
-            const tiles_num_x: usize = try std.math.divCeil(usize, camera.pixels_num[0], config.tile_size);
-            const tiles_num_y: usize = try std.math.divCeil(usize, camera.pixels_num[1], config.tile_size);
-            const tiles_num = tiles_num_x * tiles_num_y;
-            if (config.perf_opts.save_tile_timing_map) {
-                frame_perf.?.tile_timing_map = try NDArray(f64).initFlat(outer_alloc, &[_]usize{tiles_num});
-            }
-            if (config.perf_opts.save_tile_density_map) {
-                frame_perf.?.tile_density_map = try NDArray(f64).initFlat(outer_alloc, &[_]usize{tiles_num});
-            }
-            if (config.perf_opts.save_tile_occupancy_map) {
-                frame_perf.?.tile_occupancy_map = try NDArray(f64).initFlat(outer_alloc, &[_]usize{tiles_num});
-            }
+            frame_perf = try perf.initFramePerf(
+                outer_alloc,
+                camera.pixels_num,
+                config.tile_size,
+                config.perf_opts,
+            );
         }
         defer if (frame_perf) |*fp| fp.deinit(outer_alloc);
 
@@ -180,45 +166,20 @@ pub fn rasterAllFrames(
         }
 
         if (frame_perf) |*fp| {
-            if (out_dir) |save_dir| {
-                var name_buff: [1024]u8 = undefined;
-                const stats_file_name = try std.fmt.bufPrint(name_buff[0..], "perf_stats_frame{d}.txt", .{tt});
-                var stats_file = try save_dir.createFile(io, stats_file_name, .{});
-                defer stats_file.close(io);
-                var write_buf: [4096]u8 = undefined;
-                var file_writer = stats_file.writer(io, &write_buf);
-                try fp.writeReport(&file_writer.interface, tt);
-                try fp.writeReportToConsole(io, tt);
-
-                if (fp.iteration_map) |*m| {
-                    const mat = MatSlice(f64).init(m.elems, camera.pixels_num[1], camera.pixels_num[0]);
-                    const name = try std.fmt.bufPrint(name_buff[0..], "frame_{d}_iters", .{tt});
-                    for (config.perf_opts.formats) |fmt| try iio.saveImage(io, save_dir, name, &mat, fmt, 8);
-                }
-                // (Other map saves here if desired)
-            }
+            try fp.saveFrameReport(
+                io, out_dir, tt, camera.pixels_num, config.perf_opts,
+            );
         }
 
         if (config.save_opt == .disk or config.save_opt == .both) {
-            if (out_dir) |save_dir| {
-                var name_buff: [1024]u8 = undefined;
-                for (0..num_fields) |ff| {
-                    const file_name = try std.fmt.bufPrint(name_buff[0..], 
-                                                           "frame_{d}_field_{d}", 
-                                                           .{ tt, ff });
-                    const save_slice = frame_arr.getSlice(&[_]usize{ ff, 0, 0 }, 0);
-                    const save_mat = MatSlice(f64).init(save_slice, 
-                                                        camera.pixels_num[1], 
-                                                        camera.pixels_num[0]);
-                    const bits: u8 = switch (mesh_raster.shader) {
-                        .flat => |f| @intCast(f.bits orelse 8),
-                        .texture => 8,
-                    };
-                    for (config.save_formats) |format| {
-                        try iio.saveImage(io, save_dir, file_name, &save_mat, format, bits);
-                    }
-                }
-            }
+            const bits: u8 = switch (mesh_raster.shader) {
+                .flat => |f| @intCast(f.bits orelse 8),
+                .texture => 8,
+            };
+            try iio.saveImages(
+                io, out_dir, tt, num_fields, camera.pixels_num, &frame_arr, 
+                config.save_formats, bits,
+            );
         }
     }
     return images_arr;
@@ -265,7 +226,9 @@ pub fn rasterOneFrame(
                         inline else => |it| {
                             const SK = shadekerns.TexKernel(N, it);
                             try rasterInternal(GK, SK, TexShader, allocator, io, camera, 
-                                frame_ind, tile_size, sh, coords, image_out_arr, report, perf_data);
+                                frame_ind, tile_size, sh, coords, image_out_arr, report, 
+                                perf_data
+                            );
                         }
                     }
                 },
@@ -292,6 +255,7 @@ fn rasterInternal(
 
     const raster_start = Timestamp.now(io, .awake);
     const pctx = perf.PerfContext(report){ .perf = if (report == .perf) perf_data.? else {} };
+    var pipe_times = perf.PipeTimes{};
 
     const N = GK.nodes_num;
     const dim_elem: usize = 0;
@@ -319,7 +283,7 @@ fn rasterInternal(
     }
 
     const time_end_internal = Timestamp.now(io, .awake);
-    const time1_world_to_raster: f64 = @floatFromInt(
+    pipe_times.coord_transform = @floatFromInt(
         time_start_internal.durationTo(time_end_internal).raw.nanoseconds
     );
 
@@ -335,7 +299,7 @@ fn rasterInternal(
         try rops.countElemsCalcBBoxes(N, camera, dim_elem, coords, element_bboxes);
 
     const time_end_bbox = Timestamp.now(io, .awake);
-    const time2_elem_bboxes_crop: f64 = @floatFromInt(
+    pipe_times.bbox_calc = @floatFromInt(
         time_start_bbox.durationTo(time_end_bbox).raw.nanoseconds
     );
 
@@ -361,7 +325,7 @@ fn rasterInternal(
     );
     
     const time_end_overlap = Timestamp.now(io, .awake);
-    const time3_elem_tile_overlap_count: f64 = @floatFromInt(
+    pipe_times.tile_count = @floatFromInt(
         time_start_overlap.durationTo(time_end_overlap).raw.nanoseconds
     );
 
@@ -388,7 +352,7 @@ fn rasterInternal(
     );
 
     const time_end_store = Timestamp.now(io, .awake);
-    const time4_elem_tile_overlap_store: f64 = @floatFromInt(
+    pipe_times.tile_store = @floatFromInt(
         time_start_store.durationTo(time_end_store).raw.nanoseconds
     );
 
@@ -412,50 +376,20 @@ fn rasterInternal(
     );
     
     const time_end_loop = Timestamp.now(io, .awake);
-    const time5_raster_loop: f64 = @floatFromInt(
+    pipe_times.raster_loop = @floatFromInt(
         time_start_loop.durationTo(time_end_loop).raw.nanoseconds
     );
 
     const raster_end = Timestamp.now(io, .awake);
-    const time_raster_all: f64 = @floatFromInt(
+    pipe_times.total_time = @floatFromInt(
         raster_start.durationTo(raster_end).raw.nanoseconds
     );
 
     if (report == .perf) {
-        perf_data.?.coord_transform = @intCast(@as(i64, @intFromFloat(time1_world_to_raster)));
-        perf_data.?.bbox_calc = @intCast(@as(i64, @intFromFloat(time2_elem_bboxes_crop)));
-        perf_data.?.tile_count = @intCast(@as(i64, @intFromFloat(time3_elem_tile_overlap_count)));
-        perf_data.?.tile_store = @intCast(@as(i64, @intFromFloat(time4_elem_tile_overlap_store)));
-        perf_data.?.raster_loop = @intCast(@as(i64, @intFromFloat(time5_raster_loop)));
-        perf_data.?.total_time = @intCast(@as(i64, @intFromFloat(time_raster_all)));
+        perf_data.?.pipe_times = pipe_times;
     }
 
     if (comptime report == .off) {
-        //-----------------------------------------------------------------------------------------
-        // Tiling Raster: Performance
-        var total_px: f64 = @as(f64, @floatFromInt(camera.pixels_num[0] * camera.pixels_num[1]));
-        const sub_samp_f: f64 = @as(f64, @floatFromInt(camera.sub_sample));
-        total_px = total_px * sub_samp_f * sub_samp_f;
-        const mega_ops_per_sec: f64 = 1.0e3 * total_px / time_raster_all;
-        const mega_tris_per_sec: f64 = 1.0e3 * @as(f64, @floatFromInt(elems_num)) / 
-                                       time_raster_all;
-
-        const conv_units: f64 = 1.0 / 1.0e6;
-        const print_break = [_]u8{'='} ** 80;
-        print("\n{s}\nSoftware Raster Times\n{s}\n", .{ print_break, print_break });
-        print("Coord transformation    = {d:.6} ms\n", .{ time1_world_to_raster * conv_units });
-        print("Elem screen crop & BBox = {d:.6} ms\n", .{ time2_elem_bboxes_crop * conv_units });
-        print("Elem tile overlap count = {d:.6} ms\n", 
-              .{ time3_elem_tile_overlap_count * conv_units });
-        print("Elem tile overlap store = {d:.6} ms\n", 
-              .{ time4_elem_tile_overlap_store * conv_units });
-        print("Raster loop time        = {d:.6} ms\n", .{ time5_raster_loop * conv_units });
-        print("{s}\nTOTAL RASTER TIME  = {d:.3} ms\n", 
-              .{ print_break, time_raster_all * conv_units });
-        print("{s}\n", .{print_break});
-        print("Total Ops   = {d}\n", .{total_px});
-        print("MOps/second = {d:.2}\n", .{mega_ops_per_sec});
-        print("MTri/second = {d:.2}\n", .{mega_tris_per_sec});
-        print("{s}\n", .{print_break});
+        perf.standardReport(camera, pipe_times, elems_num);
     }
 }

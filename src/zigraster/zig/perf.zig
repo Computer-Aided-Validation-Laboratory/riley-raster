@@ -1,8 +1,10 @@
 const std = @import("std");
+const print = std.debug.print;
 const NDArray = @import("ndarray.zig").NDArray;
 const ImageFormat = @import("imageio.zig").ImageFormat;
 const iio = @import("imageio.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
+const Camera = @import("camera.zig").Camera;
 
 pub const Report = enum { off, perf };
 
@@ -14,14 +16,67 @@ pub const PerfOpts = struct {
     save_tile_occupancy_map: bool = true,
 };
 
+pub fn initFramePerf(
+    allocator: std.mem.Allocator,
+    pixels_num: [2]u32,
+    tile_size: u16,
+    opts: PerfOpts,
+) !Perf {
+    var self = Perf{};
+    if (opts.save_iteration_map) {
+        self.iteration_map = try NDArray(f64).initFlat(
+            allocator,
+            &[_]usize{ pixels_num[1], pixels_num[0] },
+        );
+        @memset(self.iteration_map.?.elems, 0);
+    }
+
+    const tiles_num_x: usize = try std.math.divCeil(
+        usize,
+        pixels_num[0],
+        tile_size,
+    );
+    const tiles_num_y: usize = try std.math.divCeil(
+        usize,
+        pixels_num[1],
+        tile_size,
+    );
+    const tiles_num = tiles_num_x * tiles_num_y;
+
+    if (opts.save_tile_timing_map) {
+        self.tile_timing_map = try NDArray(f64).initFlat(
+            allocator,
+            &[_]usize{tiles_num},
+        );
+    }
+    if (opts.save_tile_density_map) {
+        self.tile_density_map = try NDArray(f64).initFlat(
+            allocator,
+            &[_]usize{tiles_num},
+        );
+    }
+    if (opts.save_tile_occupancy_map) {
+        self.tile_occupancy_map = try NDArray(f64).initFlat(
+            allocator,
+            &[_]usize{tiles_num},
+        );
+    }
+
+    return self;
+}
+
+pub const PipeTimes = struct {
+    coord_transform: f64 = 0,
+    bbox_calc: f64 = 0,
+    tile_count: f64 = 0,
+    tile_store: f64 = 0,
+    raster_loop: f64 = 0,
+    total_time: f64 = 0,
+};
+
 pub const Perf = struct {
     // --- Timings (ns) ---
-    coord_transform: u64 = 0,
-    bbox_calc: u64 = 0,
-    tile_count: u64 = 0,
-    tile_store: u64 = 0,
-    raster_loop: u64 = 0,
-    total_time: u64 = 0,
+    pipe_times: PipeTimes = .{},
 
     // --- Geometry ---
     total_elements: usize = 0,
@@ -59,6 +114,48 @@ pub const Perf = struct {
         }
     }
 
+    pub fn saveFrameReport(
+        self: *const Perf,
+        io: std.Io,
+        out_dir: ?std.Io.Dir,
+        frame_idx: usize,
+        pixels_num: [2]u32,
+        opts: PerfOpts,
+    ) !void {
+        const save_dir = out_dir orelse return;
+
+        var name_buff: [1024]u8 = undefined;
+        const stats_file_name = try std.fmt.bufPrint(
+            name_buff[0..],
+            "perf_stats_frame{d}.txt",
+            .{frame_idx},
+        );
+
+        var stats_file = try save_dir.createFile(io, stats_file_name, .{});
+        defer stats_file.close(io);
+
+        var write_buf: [4096]u8 = undefined;
+        var file_writer = stats_file.writer(io, &write_buf);
+        try self.writeReport(&file_writer.interface, frame_idx);
+        try self.writeReportToConsole(io, frame_idx);
+
+        if (self.iteration_map) |*m| {
+            const mat = MatSlice(f64).init(
+                m.elems,
+                pixels_num[1],
+                pixels_num[0],
+            );
+            const name = try std.fmt.bufPrint(
+                name_buff[0..],
+                "frame_{d}_iters",
+                .{frame_idx},
+            );
+            for (opts.formats) |fmt| {
+                try iio.saveImage(io, save_dir, name, &mat, fmt, 8);
+            }
+        }
+    }
+
     pub fn writeReportToConsole(self: *const Perf, io: std.Io, frame_idx: usize) !void {
         var buffer: [4096]u8 = undefined;
         var stderr_writer = std.Io.File.stderr().writer(io, &buffer);
@@ -67,8 +164,8 @@ pub const Perf = struct {
     }
 
     pub fn writeReport(self: *const Perf, writer: anytype, frame_idx: usize) !void {
-        const total_ms = @as(f64, @floatFromInt(self.total_time)) / 1e6;
-        const total_sec = @as(f64, @floatFromInt(self.total_time)) / 1e9;
+        const total_ms = self.pipe_times.total_time / 1e6;
+        const total_sec = self.pipe_times.total_time / 1e9;
 
         const border = "========================================================================\n";
         const line = "------------------------------------------------------------------------\n";
@@ -133,19 +230,19 @@ pub const Perf = struct {
         try writer.print("--- PIPELINE TIMINGS (User Summary) ---\n", .{});
         const conv = 1.0 / 1e6;
         try writer.print("Coord transformation    = {d:.6} ms\n", .{
-            @as(f64, @floatFromInt(self.coord_transform)) * conv,
+            self.pipe_times.coord_transform * conv,
         });
         try writer.print("Elem screen crop & BBox = {d:.6} ms\n", .{
-            @as(f64, @floatFromInt(self.bbox_calc)) * conv,
+            self.pipe_times.bbox_calc * conv,
         });
         try writer.print("Elem tile overlap count = {d:.6} ms\n", .{
-            @as(f64, @floatFromInt(self.tile_count)) * conv,
+            self.pipe_times.tile_count * conv,
         });
         try writer.print("Elem tile overlap store = {d:.6} ms\n", .{
-            @as(f64, @floatFromInt(self.tile_store)) * conv,
+            self.pipe_times.tile_store * conv,
         });
         try writer.print("Raster loop time        = {d:.6} ms\n", .{
-            @as(f64, @floatFromInt(self.raster_loop)) * conv,
+            self.pipe_times.raster_loop * conv,
         });
         try writer.print("{s}", .{line});
         try writer.print("TOTAL RASTER TIME       = {d:.3} ms\n", .{total_ms});
@@ -285,4 +382,37 @@ pub fn PerfContext(comptime mode: Report) type {
             self.perf.solver_diverged += 1;
         }
     };
+}
+
+pub fn standardReport(
+    camera: *const Camera,
+    pipe_times: PipeTimes,
+    elems_num: usize,
+) void {
+    var total_px: f64 = @as(f64, @floatFromInt(camera.pixels_num[0] * camera.pixels_num[1]));
+    const sub_samp_f: f64 = @as(f64, @floatFromInt(camera.sub_sample));
+    total_px = total_px * sub_samp_f * sub_samp_f;
+
+    const mega_ops_per_sec: f64 = 1.0e3 * total_px / pipe_times.total_time;
+    const mega_tris_per_sec: f64 = 1.0e3 * @as(f64, @floatFromInt(elems_num)) /
+        pipe_times.total_time;
+
+    const conv_units: f64 = 1.0 / 1.0e6;
+    const print_break = [_]u8{'='} ** 80;
+
+    print("\n{s}\nSoftware Raster Times\n{s}\n", .{ print_break, print_break });
+    print("Coord transformation    = {d:.6} ms\n", .{ pipe_times.coord_transform * conv_units });
+    print("Elem screen crop & BBox = {d:.6} ms\n", .{ pipe_times.bbox_calc * conv_units });
+    print("Elem tile overlap count = {d:.6} ms\n", .{ pipe_times.tile_count * conv_units });
+    print("Elem tile overlap store = {d:.6} ms\n", .{ pipe_times.tile_store * conv_units });
+    print("Raster loop time        = {d:.6} ms\n", .{ pipe_times.raster_loop * conv_units });
+    print("{s}\nTOTAL RASTER TIME  = {d:.3} ms\n", .{
+        print_break,
+        pipe_times.total_time * conv_units,
+    });
+    print("{s}\n", .{print_break});
+    print("Total Ops   = {d}\n", .{total_px});
+    print("MOps/second = {d:.2}\n", .{mega_ops_per_sec});
+    print("MTri/second = {d:.2}\n", .{mega_tris_per_sec});
+    print("{s}\n", .{print_break});
 }
