@@ -45,10 +45,18 @@ pub const Perf = struct {
     tile_occupancy_map: ?NDArray(f64) = null,
 
     pub fn deinit(self: *Perf, allocator: std.mem.Allocator) void {
-        if (self.iteration_map) |*m| m.deinit(allocator);
-        if (self.tile_timing_map) |*m| m.deinit(allocator);
-        if (self.tile_density_map) |*m| m.deinit(allocator);
-        if (self.tile_occupancy_map) |*m| m.deinit(allocator);
+        if (self.iteration_map) |*imap| {
+            imap.deinit(allocator);
+        }
+        if (self.tile_timing_map) |*tmap| {
+            tmap.deinit(allocator);
+        }
+        if (self.tile_density_map) |*dmap| {
+            dmap.deinit(allocator);
+        }
+        if (self.tile_occupancy_map) |*omap| {
+            omap.deinit(allocator);
+        }
     }
 
     pub fn writeReportToConsole(self: *const Perf, io: std.Io, frame_idx: usize) !void {
@@ -74,7 +82,8 @@ pub const Perf = struct {
         try writer.print("Elements after Crop     = {d}\n", .{self.visible_elements});
         const cropped = self.total_elements - self.visible_elements;
         const crop_pct = if (self.total_elements > 0)
-            @as(f64, @floatFromInt(cropped)) * 100.0 / @as(f64, @floatFromInt(self.total_elements))
+            @as(f64, @floatFromInt(cropped)) * 100.0 /
+                @as(f64, @floatFromInt(self.total_elements))
         else
             0.0;
         try writer.print("Elements Cropped        = {d} ({d:.2}%)\n\n", .{cropped, crop_pct});
@@ -156,29 +165,35 @@ pub const Stats = struct {
 };
 
 pub fn calcStats(allocator: std.mem.Allocator, data: []const f64) !Stats {
-    if (data.len == 0) return Stats{
-        .min = 0,
-        .max = 0,
-        .median = 0,
-        .q1 = 0,
-        .q3 = 0,
-        .mad = 0,
-    };
+    if (data.len == 0) {
+        return Stats{
+            .min = 0,
+            .max = 0,
+            .median = 0,
+            .q1 = 0,
+            .q3 = 0,
+            .mad = 0,
+        };
+    }
 
     var filtered: std.ArrayList(f64) = .{};
     defer filtered.deinit(allocator);
-    for (data) |v| {
-        if (v > 0) try filtered.append(allocator, v);
+    for (data) |val| {
+        if (val > 0) {
+            try filtered.append(allocator, val);
+        }
     }
 
-    if (filtered.items.len == 0) return Stats{
-        .min = 0,
-        .max = 0,
-        .median = 0,
-        .q1 = 0,
-        .q3 = 0,
-        .mad = 0,
-    };
+    if (filtered.items.len == 0) {
+        return Stats{
+            .min = 0,
+            .max = 0,
+            .median = 0,
+            .q1 = 0,
+            .q3 = 0,
+            .mad = 0,
+        };
+    }
 
     const slice = filtered.items;
     std.mem.sort(f64, slice, {}, std.sort.asc(f64));
@@ -191,8 +206,8 @@ pub fn calcStats(allocator: std.mem.Allocator, data: []const f64) !Stats {
 
     var deviations = try allocator.alloc(f64, slice.len);
     defer allocator.free(deviations);
-    for (slice, 0..) |v, i| {
-        deviations[i] = @abs(v - median);
+    for (slice, 0..) |val, ii| {
+        deviations[ii] = @abs(val - median);
     }
     std.mem.sort(f64, deviations, {}, std.sort.asc(f64));
     const mad = getMedian(deviations);
@@ -208,7 +223,9 @@ pub fn calcStats(allocator: std.mem.Allocator, data: []const f64) !Stats {
 }
 
 fn getMedian(sorted_data: []const f64) f64 {
-    if (sorted_data.len == 0) return 0;
+    if (sorted_data.len == 0) {
+        return 0;
+    }
     const mid = sorted_data.len / 2;
     if (sorted_data.len % 2 == 0) {
         return (sorted_data[mid - 1] + sorted_data[mid]) / 2.0;
@@ -222,10 +239,8 @@ pub fn PerfContext(comptime mode: Report) type {
         perf: if (mode == .perf) *Perf else void,
 
         pub inline fn recordGeometry(self: @This(), total: usize, visible: usize) void {
-            if (comptime mode == .perf) {
-                self.perf.total_elements = total;
-                self.perf.visible_elements = visible;
-            }
+            self.perf.total_elements = total;
+            self.perf.visible_elements = visible;
         }
 
         pub inline fn recordTile(
@@ -235,39 +250,39 @@ pub fn PerfContext(comptime mode: Report) type {
             shaded_px: u64,
             elem_count: usize,
         ) void {
-            if (comptime mode == .perf) {
-                if (self.perf.tile_timing_map) |*m| m.elems[tile_idx] = @floatFromInt(time_ns);
-                if (self.perf.tile_occupancy_map) |*m| m.elems[tile_idx] = @floatFromInt(shaded_px);
-                if (self.perf.tile_density_map) |*m| m.elems[tile_idx] = @floatFromInt(elem_count);
-                self.perf.total_shaded_pixels += shaded_px;
-                if (elem_count > self.perf.max_tile_elements) {
-                    self.perf.max_tile_elements = elem_count;
-                }
+            if (self.perf.tile_timing_map) |*tmap| {
+                tmap.elems[tile_idx] = @floatFromInt(time_ns);
+            }
+            if (self.perf.tile_occupancy_map) |*omap| {
+                omap.elems[tile_idx] = @floatFromInt(shaded_px);
+            }
+            if (self.perf.tile_density_map) |*dmap| {
+                dmap.elems[tile_idx] = @floatFromInt(elem_count);
+            }
+            self.perf.total_shaded_pixels += shaded_px;
+            if (elem_count > self.perf.max_tile_elements) {
+                self.perf.max_tile_elements = elem_count;
             }
         }
 
         pub inline fn recordPixel(self: @This(), x: usize, y: usize, iters: u8) void {
-            if (comptime mode == .perf) {
-                if (self.perf.iteration_map) |*m| {
-                    const row_stride = m.strides[0];
-                    m.elems[y * row_stride + x] = @floatFromInt(iters);
-                }
-                self.perf.solver_calls += 1;
-                self.perf.total_iters += iters;
+            if (self.perf.iteration_map) |*imap| {
+                const row_stride = imap.strides[0];
+                imap.elems[y * row_stride + x] = @floatFromInt(iters);
             }
+            self.perf.solver_calls += 1;
+            self.perf.total_iters += iters;
         }
 
         pub inline fn recordDepthTest(self: @This(), failed: bool) void {
-            if (comptime mode == .perf) {
-                self.perf.total_depth_tests += 1;
-                if (failed) self.perf.depth_tests_failed += 1;
+            self.perf.total_depth_tests += 1;
+            if (failed) {
+                self.perf.depth_tests_failed += 1;
             }
         }
 
         pub inline fn recordSolverDiverged(self: @This()) void {
-            if (comptime mode == .perf) {
-                self.perf.solver_diverged += 1;
-            }
+            self.perf.solver_diverged += 1;
         }
     };
 }

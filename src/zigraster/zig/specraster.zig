@@ -339,7 +339,9 @@ fn rasterInternal(
         time_start_bbox.durationTo(time_end_bbox).raw.nanoseconds
     );
 
-    pctx.recordGeometry(elems_num, elements_in_image);
+    if (comptime report == .perf) {
+        pctx.recordGeometry(elems_num, elements_in_image);
+    }
 
     //-----------------------------------------------------------------------------------------
     // Tiling Raster Step 3: Count number of elements overlapping each tile

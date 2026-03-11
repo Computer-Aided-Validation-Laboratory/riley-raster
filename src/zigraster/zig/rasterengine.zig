@@ -222,7 +222,9 @@ pub fn RasterEngine(
                         const inv_z = Geometry.calcInvZ(nodes, weights);
                         const index = row_offset + scratch_x;
 
-                        perf_ctx.recordDepthTest(inv_z <= subpx_inv_z_scratch[index]);
+                        if (comptime report == .perf) {
+                            perf_ctx.recordDepthTest(inv_z <= subpx_inv_z_scratch[index]);
+                        }
 
                         if (inv_z > subpx_inv_z_scratch[index]) {
                             subpx_inv_z_scratch[index] = inv_z;
@@ -312,18 +314,22 @@ pub fn RasterEngine(
                         const inv_z = Geometry.calcInvZ(nodes, weights);
                         const index = row_offset + scratch_x;
 
-                        perf_ctx.recordDepthTest(inv_z <= subpx_inv_z_scratch[index]);
+                        if (comptime report == .perf) {
+                            perf_ctx.recordDepthTest(inv_z <= subpx_inv_z_scratch[index]);
+                        }
 
                         if (inv_z > subpx_inv_z_scratch[index]) {
                             subpx_inv_z_scratch[index] = inv_z;
                             const subpx_z = 1.0 / inv_z;
                             shaded_px += 1;
 
-                            perf_ctx.recordPixel(
-                                @intFromFloat(subpx_x), 
-                                @intFromFloat(subpx_y), 
-                                result.iters
-                            );
+                            if (comptime report == .perf) {
+                                perf_ctx.recordPixel(
+                                    @intFromFloat(subpx_x),
+                                    @intFromFloat(subpx_y),
+                                    result.iters,
+                                );
+                            }
 
                             ShaderKernel.shade(
                                 Geometry.coord_space,
@@ -340,7 +346,11 @@ pub fn RasterEngine(
                             );
                         }
                     } else {
-                        if (result.iters > 0) perf_ctx.recordSolverDiverged();
+                        if (result.iters > 0) {
+                            if (comptime report == .perf) {
+                                perf_ctx.recordSolverDiverged();
+                            }
+                        }
                     }
                     subpx_x += subpx_step;
                 }
