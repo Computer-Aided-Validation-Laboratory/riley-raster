@@ -34,6 +34,7 @@ pub fn solveInverse(
     var deriv_n_xi: [N]f64 = undefined;
     var deriv_n_eta: [N]f64 = undefined;
 
+    var met_residual = false;
     for (0..iter_max) |_| {
         shapefun.shapeFunctions(N, xi, eta, &node_values, &deriv_n_xi, &deriv_n_eta);
 
@@ -60,6 +61,7 @@ pub fn solveInverse(
         }
 
         if (@abs(residual_x) < iter_tol and @abs(residual_y) < iter_tol) {
+            met_residual = true;
             break;
         }
 
@@ -72,6 +74,8 @@ pub fn solveInverse(
         xi -= inverse_determinant * (jacobian_22 * residual_x - jacobian_12 * residual_y);
         eta -= inverse_determinant * (-jacobian_21 * residual_x + jacobian_11 * residual_y);
     }
+
+    if (!met_residual) return false;
 
     if (comptime N == 6) {
         // Tri 6: xi, eta in [0, 1], xi + eta <= 1
