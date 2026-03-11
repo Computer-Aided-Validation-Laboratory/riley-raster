@@ -216,7 +216,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                 .shader = .{ .flat = .{ .field = elem_disp, .bits = 8 } } 
             };
 
-            const config = RasterConfig{ .save_opt = .memory, .tile_size = 32 };
+            const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };
 
             const result = (try specraster.rasterAllFrames(
                 aa, io, &camera, &mesh_raster, config, null
@@ -262,7 +262,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                     } 
                 };
                 
-                const config = RasterConfig{ .save_opt = .memory, .tile_size = 32 };
+                const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };
 
                 const result = (try specraster.rasterAllFrames(
                     aa, io, &camera, &mesh_raster, config, null

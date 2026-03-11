@@ -153,7 +153,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                 .shader = .{ .flat = .{ .field = elem_disp, .bits = 8 } } 
             };
 
-            const config = RasterConfig{ .save_opt = .memory, .tile_size = 32 };
+            const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };
             const result = (try specraster.rasterAllFrames(aa, io, &camera, &mesh_raster, config, null)) orelse return error.NoResult;
             try saveResultToRoot(aa, io, &result, c_dir_name, render_root);
             defer aa.free(result.elems);
@@ -170,7 +170,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                     .shader = .{ .texture = .{ .uvs = elem_uvs, .texture = texture, .interp_type = it } } 
                 };
                 
-                const config = RasterConfig{ .save_opt = .memory, .tile_size = 32 };
+                const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };
                 const result = (try specraster.rasterAllFrames(aa, io, &camera, &mesh_raster, config, null)) orelse return error.NoResult;
                 try saveResultToRoot(aa, io, &result, c_dir_name, render_root);
                 defer aa.free(result.elems);

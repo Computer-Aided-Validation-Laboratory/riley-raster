@@ -52,7 +52,7 @@ pub fn renderAndSave(
     const config = RasterConfig{
         .save_opt = .disk,
         .save_formats = &[_]iio.ImageFormat{ .csv, .bmp },
-        .tile_size = 32,
+        .tile_size = 16,
     };
 
     _ = try specraster.rasterAllFrames(allocator, io, camera, &mesh_raster, config, out_dir);

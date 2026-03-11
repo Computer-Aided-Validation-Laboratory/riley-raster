@@ -32,6 +32,7 @@ const ShaderMode = enum { flat, texture };
 
 //=============================================================================================
 const shader_mode: ShaderMode = .texture;
+const report_perf: bool = true; // Set to true to enable performance diagnostics
 //=============================================================================================
 
 pub fn main() !void {
@@ -56,10 +57,11 @@ pub fn main() !void {
          
     //const path_data = "data-simple/tri6_single/";
     //const path_data = "data-simple/tri6_fullscreen/";
-    //const mesh_type: MeshType = .tri6;
+    const path_data = "data-simple/tri6_twoelems/"; 
+    const mesh_type: MeshType = .tri6;
 
-    const path_data = "data-simple/tri3_fullscreen/";
-    const mesh_type: MeshType = .tri3opt;
+    //const path_data = "data-simple/tri3_fullscreen/";
+    //const mesh_type: MeshType = .tri3opt;
 
     const out_dir_name = "out-all-specraster";
 
@@ -168,8 +170,14 @@ pub fn main() !void {
         .threads_within_image = 0,
         .threads_over_images = 0,
         .save_opt = .disk,
-        .save_formats = &[_]iio.ImageFormat{.csv,.bmp},
-        .tile_size = 32,
+        .save_formats = &[_]iio.ImageFormat{ .csv, .bmp },
+        .tile_size = 16,
+        .report = if (report_perf) .perf else .off,
+        .perf_opts = .{
+            .save_iteration_map = true,
+            .save_tile_timing_map = true,
+            .save_tile_density_map = true,
+        },
     };
 
     //-----------------------------------------------------------------------------------------

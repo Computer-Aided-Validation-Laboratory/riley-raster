@@ -6,13 +6,21 @@ const rops = @import("rasterops.zig");
 const BBox = rops.BBox;
 const ActiveTile = rops.ActiveTile;
 const Vec3OfSlices = rops.Vec3OfSlices;
+const perf = @import("perf.zig");
+const Report = perf.Report;
+const Timestamp = std.Io.Clock.Timestamp;
 
-pub fn RasterEngine(comptime Geometry: type, 
-                    comptime ShaderKernel: type, 
-                    comptime ShaderData: type) type {
+pub fn RasterEngine(
+    comptime Geometry: type,
+    comptime ShaderKernel: type,
+    comptime ShaderData: type,
+) type {
     return struct {
         pub fn raster(
+            comptime report: Report,
+            perf_ctx: perf.PerfContext(report),
             allocator: std.mem.Allocator,
+            io: std.Io,
             camera: *const Camera,
             frame_ind: usize,
             tile_size: u16,
@@ -25,9 +33,9 @@ pub fn RasterEngine(comptime Geometry: type,
             @setFloatMode(.optimized);
 
             const fields_num = image_out_arr.dims[0];
-            const actual_fields = if (@hasField(ShaderData, "field")) 
-                @min(fields_num, 3) 
-            else 
+            const actual_fields = if (@hasField(ShaderData, "field"))
+                @min(fields_num, 3)
+            else
                 1;
 
             const screen_px_x = @as(u16, @intCast(camera.pixels_num[0]));
@@ -47,18 +55,24 @@ pub fn RasterEngine(comptime Geometry: type,
             const subpx_inv_z_scratch = try allocator.alloc(f64, subpx_tile_total);
             defer allocator.free(subpx_inv_z_scratch);
 
-            const subpx_img_mem = try allocator.alloc(
-                f64, subpx_tile_total * fields_num
-            );
+            const subpx_img_mem = try allocator.alloc(f64, subpx_tile_total * fields_num);
             defer allocator.free(subpx_img_mem);
             var subpx_image_scratch = MatSlice(f64).init(
-                subpx_img_mem, subpx_tile_total, fields_num
+                subpx_img_mem,
+                subpx_tile_total,
+                fields_num,
             );
 
             const subpx_field_avg = try allocator.alloc(f64, fields_num);
             defer allocator.free(subpx_field_avg);
 
-            for (active_tiles) |tile| {
+            for (active_tiles, 0..) |tile, tile_idx| {
+                const tile_start = if (comptime report == .perf)
+                    Timestamp.now(io, .awake)
+                else
+                    {};
+                var shaded_px: u64 = 0;
+
                 @memset(subpx_inv_z_scratch, 0.0);
                 @memset(subpx_image_scratch.elems, 0.0);
 
@@ -72,7 +86,7 @@ pub fn RasterEngine(comptime Geometry: type,
                         elem_coord_arr,
                         overlap.elem_ind,
                     );
-                    
+
                     const scratch_start_x = sub_samp * (@as(usize, overlap.x_min) - 
                                                         tile.x_px_min);
                     const scratch_end_x = sub_samp * (@as(usize, overlap.x_max) - 
@@ -88,7 +102,9 @@ pub fn RasterEngine(comptime Geometry: type,
                     switch (Geometry.strategy) {
                         inline else => |strat| {
                             if (strat == .incremental) {
-                                try rasterIncremental(
+                                shaded_px += try rasterIncremental(
+                                    report,
+                                    perf_ctx,
                                     frame_ind,
                                     overlap.elem_ind,
                                     actual_fields,
@@ -108,7 +124,9 @@ pub fn RasterEngine(comptime Geometry: type,
                                     &subpx_image_scratch,
                                 );
                             } else {
-                                try rasterPointwise(
+                                shaded_px += try rasterPointwise(
+                                    report,
+                                    perf_ctx,
                                     frame_ind,
                                     overlap.elem_ind,
                                     actual_fields,
@@ -146,10 +164,18 @@ pub fn RasterEngine(comptime Geometry: type,
                     subpx_field_avg,
                     image_out_arr,
                 );
+
+                if (comptime report == .perf) {
+                    const tile_end = Timestamp.now(io, .awake);
+                    const dur = tile_start.durationTo(tile_end).raw.nanoseconds;
+                    perf_ctx.recordTile(tile_idx, @intCast(dur), shaded_px, overlaps.len);
+                }
             }
         }
 
         fn rasterIncremental(
+            comptime report: Report,
+            perf_ctx: perf.PerfContext(report),
             frame_index: usize,
             element_index: usize,
             actual_fields: usize,
@@ -167,8 +193,9 @@ pub fn RasterEngine(comptime Geometry: type,
             shader: *const ShaderData,
             subpx_inv_z_scratch: []f64,
             subpx_image_scratch: *MatSlice(f64),
-        ) !void {
+        ) !u64 {
             const N = Geometry.nodes_num;
+            var shaded_px: u64 = 0;
 
             var nodes_inv_z: [N]f64 = undefined;
             inline for (0..N) |node_index| {
@@ -177,7 +204,7 @@ pub fn RasterEngine(comptime Geometry: type,
 
             const inv_area = 1.0 / rops.edgeFun3(nodes.x[0], nodes.y[0],
                                                  nodes.x[1], nodes.y[1],
-                                                 nodes.x[2], nodes.y[2],);
+                                                 nodes.x[2], nodes.y[2]);
             
             const dweights_dx = Geometry.getDWeightsDx(nodes, inv_area, subpx_step);
             const dweights_dy = Geometry.getDWeightsDy(nodes, inv_area, subpx_step);
@@ -195,9 +222,12 @@ pub fn RasterEngine(comptime Geometry: type,
                         const inv_z = Geometry.calcInvZ(nodes, weights);
                         const index = row_offset + scratch_x;
 
+                        perf_ctx.recordDepthTest(inv_z <= subpx_inv_z_scratch[index]);
+
                         if (inv_z > subpx_inv_z_scratch[index]) {
                             subpx_inv_z_scratch[index] = inv_z;
                             const subpx_z = 1.0 / inv_z;
+                            shaded_px += 1;
 
                             ShaderKernel.shade(
                                 Geometry.coord_space,
@@ -222,9 +252,12 @@ pub fn RasterEngine(comptime Geometry: type,
                     weights_row[node_index] += dweights_dy[node_index];
                 }
             }
+            return shaded_px;
         }
 
         fn rasterPointwise(
+            comptime report: Report,
+            perf_ctx: perf.PerfContext(report),
             frame_index: usize,
             element_index: usize,
             actual_fields: usize,
@@ -244,8 +277,9 @@ pub fn RasterEngine(comptime Geometry: type,
             shader: *const ShaderData,
             subpx_inv_z_scratch: []f64,
             subpx_image_scratch: *MatSlice(f64),
-        ) !void {
+        ) !u64 {
             const N = Geometry.nodes_num;
+            var shaded_px: u64 = 0;
 
             var nodes_inv_z: [N]f64 = undefined;
             inline for (0..N) |nn| {
@@ -265,7 +299,7 @@ pub fn RasterEngine(comptime Geometry: type,
                 var subpx_x: f64 = xi_min_f + subpx_offset;
 
                 for (scratch_start_x..scratch_end_x) |scratch_x| {
-                    const weights_or_null = Geometry.solveWeights(
+                    const result = Geometry.solveWeights(
                         nodes,
                         subpx_x,
                         subpx_y,
@@ -274,13 +308,22 @@ pub fn RasterEngine(comptime Geometry: type,
                         geometry_state,
                     );
 
-                    if (weights_or_null) |weights| {
+                    if (result.weights) |weights| {
                         const inv_z = Geometry.calcInvZ(nodes, weights);
                         const index = row_offset + scratch_x;
+
+                        perf_ctx.recordDepthTest(inv_z <= subpx_inv_z_scratch[index]);
 
                         if (inv_z > subpx_inv_z_scratch[index]) {
                             subpx_inv_z_scratch[index] = inv_z;
                             const subpx_z = 1.0 / inv_z;
+                            shaded_px += 1;
+
+                            perf_ctx.recordPixel(
+                                @intFromFloat(subpx_x), 
+                                @intFromFloat(subpx_y), 
+                                result.iters
+                            );
 
                             ShaderKernel.shade(
                                 Geometry.coord_space,
@@ -296,11 +339,14 @@ pub fn RasterEngine(comptime Geometry: type,
                                 subpx_image_scratch,
                             );
                         }
+                    } else {
+                        if (result.iters > 0) perf_ctx.recordSolverDiverged();
                     }
                     subpx_x += subpx_step;
                 }
                 subpx_y += subpx_step;
             }
+            return shaded_px;
         }
     };
 }
