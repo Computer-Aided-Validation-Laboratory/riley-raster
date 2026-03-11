@@ -119,7 +119,7 @@ pub const Perf = struct {
         io: std.Io,
         out_dir: ?std.Io.Dir,
         frame_idx: usize,
-        pixels_num: [2]u32,
+        camera: *const Camera,
         opts: PerfOpts,
     ) !void {
         const save_dir = out_dir orelse return;
@@ -136,14 +136,14 @@ pub const Perf = struct {
 
         var write_buf: [4096]u8 = undefined;
         var file_writer = stats_file.writer(io, &write_buf);
-        try self.writeReport(&file_writer.interface, frame_idx);
-        try self.writeReportToConsole(io, frame_idx);
+        try self.writeReport(&file_writer.interface, frame_idx, camera);
+        try self.writeReportToConsole(io, frame_idx, camera);
 
         if (self.iteration_map) |*m| {
             const mat = MatSlice(f64).init(
                 m.elems,
-                pixels_num[1],
-                pixels_num[0],
+                camera.pixels_num[1],
+                camera.pixels_num[0],
             );
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
@@ -156,19 +156,29 @@ pub const Perf = struct {
         }
     }
 
-    pub fn writeReportToConsole(self: *const Perf, io: std.Io, frame_idx: usize) !void {
+    pub fn writeReportToConsole(
+        self: *const Perf,
+        io: std.Io,
+        frame_idx: usize,
+        camera: *const Camera,
+    ) !void {
         var buffer: [4096]u8 = undefined;
         var stderr_writer = std.Io.File.stderr().writer(io, &buffer);
         const writer = &stderr_writer.interface;
-        try self.writeReport(writer, frame_idx);
+        try self.writeReport(writer, frame_idx, camera);
     }
 
-    pub fn writeReport(self: *const Perf, writer: anytype, frame_idx: usize) !void {
+    pub fn writeReport(
+        self: *const Perf,
+        writer: anytype,
+        frame_idx: usize,
+        camera: *const Camera,
+    ) !void {
         const total_ms = self.pipe_times.total_time / 1e6;
         const total_sec = self.pipe_times.total_time / 1e9;
 
-        const border = "========================================================================\n";
-        const line = "------------------------------------------------------------------------\n";
+        const border = [_]u8{'='} ** 80 ++ "\n";
+        const line = [_]u8{'-'} ** 80 ++ "\n";
 
         try writer.print("{s}", .{border});
         try writer.print("SOFTWARE RASTER PERFORMANCE REPORT - FRAME {d}\n", .{frame_idx});
@@ -247,6 +257,20 @@ pub const Perf = struct {
         try writer.print("{s}", .{line});
         try writer.print("TOTAL RASTER TIME       = {d:.3} ms\n", .{total_ms});
         try writer.print("{s}", .{line});
+
+        var total_px: f64 = @as(f64, 
+            @floatFromInt(camera.pixels_num[0] * camera.pixels_num[1]));
+        const sub_samp_f: f64 = @as(f64, @floatFromInt(camera.sub_sample));
+        total_px = total_px * sub_samp_f * sub_samp_f;
+
+        const mega_ops_per_sec: f64 = 1.0e3 * total_px / self.pipe_times.total_time;
+        const mega_tris_per_sec: f64 = 1.0e3 * @as(f64, @floatFromInt(self.total_elements)) /
+            self.pipe_times.total_time;
+
+        try writer.print("Total Ops               = {d}\n", .{total_px});
+        try writer.print("MOps/second             = {d:.2}\n", .{mega_ops_per_sec});
+        try writer.print("MTri/second             = {d:.2}\n", .{mega_tris_per_sec});
+
         try writer.print("{s}", .{border});
         try writer.flush();
     }
@@ -405,12 +429,18 @@ pub fn standardReport(
     const conv_units: f64 = 1.0 / 1.0e6;
     const print_break = [_]u8{'='} ** 80;
 
-    try writer.print("\n{s}\nSoftware Raster Times\n{s}\n", .{ print_break, print_break });
-    try writer.print("Coord transformation    = {d:.6} ms\n", .{ pipe_times.coord_transform * conv_units });
-    try writer.print("Elem screen crop & BBox = {d:.6} ms\n", .{ pipe_times.bbox_calc * conv_units });
-    try writer.print("Elem tile overlap count = {d:.6} ms\n", .{ pipe_times.tile_count * conv_units });
-    try writer.print("Elem tile overlap store = {d:.6} ms\n", .{ pipe_times.tile_store * conv_units });
-    try writer.print("Raster loop time        = {d:.6} ms\n", .{ pipe_times.raster_loop * conv_units });
+    try writer.print("\n{s}\nSoftware Raster Times\n{s}\n", 
+        .{ print_break, print_break });
+    try writer.print("Coord transformation    = {d:.6} ms\n", 
+        .{ pipe_times.coord_transform * conv_units });
+    try writer.print("Elem screen crop & BBox = {d:.6} ms\n", 
+        .{ pipe_times.bbox_calc * conv_units });
+    try writer.print("Elem tile overlap count = {d:.6} ms\n", 
+        .{ pipe_times.tile_count * conv_units });
+    try writer.print("Elem tile overlap store = {d:.6} ms\n", 
+        .{ pipe_times.tile_store * conv_units });
+    try writer.print("Raster loop time        = {d:.6} ms\n", 
+        .{ pipe_times.raster_loop * conv_units });
     try writer.print("{s}\nTOTAL RASTER TIME  = {d:.3} ms\n", .{
         print_break,
         pipe_times.total_time * conv_units,
