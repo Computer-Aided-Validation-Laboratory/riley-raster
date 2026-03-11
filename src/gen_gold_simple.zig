@@ -33,7 +33,7 @@ pub fn main() !void {
     defer texture.deinit(allocator);
 
     const mesh_types = [_]gengold.MeshType{ 
-        .tri3, .tri6, .quad4ibi, .quad4newton, .quad8, .quad9 
+        .tri3, .tri3opt, .tri6, .quad4ibi, .quad4newton, .quad8, .quad9 
     };
     const interp_types = [_]gengold.texops.InterpType{ .cubic_lut_lerp };
 

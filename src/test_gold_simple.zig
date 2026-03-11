@@ -39,7 +39,8 @@ test "Gold Simple Suite" {
     };
     defer texture.deinit(allocator);
 
-    const mesh_types = [_]common.MeshType{ .tri3, //.tri3opt, 
+    const mesh_types = [_]common.MeshType{ .tri3, .tri3opt,
+ 
                                            .tri6, 
                                            .quad4ibi, .quad4newton,
                                            .quad8, .quad9 };
