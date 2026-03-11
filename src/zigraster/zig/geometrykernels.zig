@@ -46,7 +46,7 @@ pub fn Tri3Kernel() type {
     return struct {
         const Self = @This();
         pub const nodes_num = 3;
-        pub const is_nonlinear = false;
+        pub const has_hull = false;
         pub const coord_space = .raster;
         pub const strategy = .pointwise;
 
@@ -93,7 +93,7 @@ pub fn Tri3Kernel() type {
 pub fn Tri3OptKernel() type {
     return struct {
         pub const nodes_num = 3;
-        pub const is_nonlinear = false;
+        pub const has_hull = false;
         pub const coord_space = .raster;
         pub const strategy = .incremental;
 
@@ -151,7 +151,7 @@ pub fn Tri3OptKernel() type {
 pub fn Tri6Kernel() type {
     return struct {
         pub const nodes_num = 6;
-        pub const is_nonlinear = true;
+        pub const has_hull = true;
         pub const hull_nodes_num = 6;
         pub const coord_space = .clip_px_leng;
         pub const strategy = .pointwise;
@@ -299,7 +299,7 @@ pub fn Tri6Kernel() type {
 pub fn Quad4IBIKernel() type {
     return struct {
         pub const nodes_num = 4;
-        pub const is_nonlinear = false;
+        pub const has_hull = false;
         pub const coord_space = .clip_px_leng;
         pub const strategy = .pointwise;
 
@@ -444,7 +444,8 @@ pub fn Quad4IBIKernel() type {
 pub fn Quad4NewtonKernel() type {
     return struct {
         pub const nodes_num = 4;
-        pub const is_nonlinear = false;
+        pub const has_hull = true;
+        pub const hull_nodes_num = 4;
         pub const coord_space = .clip_px_leng;
         pub const strategy = .pointwise;
 
@@ -486,8 +487,8 @@ pub fn Quad4NewtonKernel() type {
 pub fn Quad89Kernel(comptime N: usize) type {
     return struct {
         pub const nodes_num = N;
-        pub const is_nonlinear = true;
-        pub const hull_nodes_num = N;
+        pub const has_hull = true;
+        pub const hull_nodes_num = 8;
         pub const coord_space = .clip_px_leng;
         pub const strategy = .pointwise;
 

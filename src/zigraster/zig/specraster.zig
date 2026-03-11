@@ -283,9 +283,9 @@ fn rasterInternal(
     }
 
     // Neede to handle quad9 - has a hull of 8 points
-    const NH = if (comptime GK.is_nonlinear) GK.hull_nodes_num else 0;
+    const NH = if (comptime GK.has_hull) GK.hull_nodes_num else 0;
     var raster_hull: ?NDArray(f64) = null;
-    if (comptime GK.is_nonlinear) {
+    if (comptime GK.has_hull) {
         raster_hull = try NDArray(f64).initFlat(
             arena_alloc,
             &[_]usize{ elems_num, 2, NH },

@@ -158,7 +158,6 @@ pub fn buildAdaptiveHulls(comptime N: usize,
                              elem_coord_arr: *NDArray(f64),
                              raster_hull: *NDArray(f64)) !void {
     const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
-
     const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
 
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
@@ -171,17 +170,16 @@ pub fn buildAdaptiveHulls(comptime N: usize,
         var ly: [N]f64 = undefined;
         for (0..N) |ii| {
             lx[ii] = cr.x[ii] / cr.z[ii] + x_off;
-            ly[ii] = ly[ii] / cr.z[ii] + y_off; // Wait, typo in my thought process? 
-            // Fix: ly[ii] = cr.y[ii] / cr.z[ii] + y_off;
-        }
-        // Correcting the typo immediately in the code:
-        for (0..N) |ii| {
-            lx[ii] = cr.x[ii] / cr.z[ii] + x_off;
             ly[ii] = cr.y[ii] / cr.z[ii] + y_off;
         }
 
-        // 2. Build Hull in loop order: Corner, Midside/Bezier, Corner...
-        if (N == 6) { // Tri6: Corners 0,1,2. Midsides 3,4,5. 
+        // 2. Build Hull in loop order: Corner, Adaptive Node, Corner...
+        if (N == 4) { // Quad4: Corners 0,1,2,3
+            inline for (0..4) |ii| {
+                raster_hull.set(&[_]usize{ ee, 0, ii }, lx[ii]);
+                raster_hull.set(&[_]usize{ ee, 1, ii }, ly[ii]);
+            }
+        } else if (N == 6) { // Tri6: Corners 0,1,2. Midsides 3,4,5. 
             // Hull: (0, 3, 1, 4, 2, 5)
             const edges = [3][3]usize{
                 .{ 0, 1, 3 }, // edge 0: corner 0 -> corner 1, mid 3
