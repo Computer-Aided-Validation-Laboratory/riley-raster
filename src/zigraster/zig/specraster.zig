@@ -390,6 +390,6 @@ fn rasterInternal(
     }
 
     if (comptime report == .off) {
-        perf.standardReport(camera, pipe_times, elems_num);
+        try perf.standardReport(io, camera, pipe_times, elems_num);
     }
 }

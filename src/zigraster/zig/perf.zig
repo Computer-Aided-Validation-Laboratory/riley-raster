@@ -385,10 +385,15 @@ pub fn PerfContext(comptime mode: Report) type {
 }
 
 pub fn standardReport(
+    io: std.Io,
     camera: *const Camera,
     pipe_times: PipeTimes,
     elems_num: usize,
-) void {
+) !void {
+    var buffer: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(io, &buffer);
+    const writer = &stdout_writer.interface;
+
     var total_px: f64 = @as(f64, @floatFromInt(camera.pixels_num[0] * camera.pixels_num[1]));
     const sub_samp_f: f64 = @as(f64, @floatFromInt(camera.sub_sample));
     total_px = total_px * sub_samp_f * sub_samp_f;
@@ -400,19 +405,20 @@ pub fn standardReport(
     const conv_units: f64 = 1.0 / 1.0e6;
     const print_break = [_]u8{'='} ** 80;
 
-    print("\n{s}\nSoftware Raster Times\n{s}\n", .{ print_break, print_break });
-    print("Coord transformation    = {d:.6} ms\n", .{ pipe_times.coord_transform * conv_units });
-    print("Elem screen crop & BBox = {d:.6} ms\n", .{ pipe_times.bbox_calc * conv_units });
-    print("Elem tile overlap count = {d:.6} ms\n", .{ pipe_times.tile_count * conv_units });
-    print("Elem tile overlap store = {d:.6} ms\n", .{ pipe_times.tile_store * conv_units });
-    print("Raster loop time        = {d:.6} ms\n", .{ pipe_times.raster_loop * conv_units });
-    print("{s}\nTOTAL RASTER TIME  = {d:.3} ms\n", .{
+    try writer.print("\n{s}\nSoftware Raster Times\n{s}\n", .{ print_break, print_break });
+    try writer.print("Coord transformation    = {d:.6} ms\n", .{ pipe_times.coord_transform * conv_units });
+    try writer.print("Elem screen crop & BBox = {d:.6} ms\n", .{ pipe_times.bbox_calc * conv_units });
+    try writer.print("Elem tile overlap count = {d:.6} ms\n", .{ pipe_times.tile_count * conv_units });
+    try writer.print("Elem tile overlap store = {d:.6} ms\n", .{ pipe_times.tile_store * conv_units });
+    try writer.print("Raster loop time        = {d:.6} ms\n", .{ pipe_times.raster_loop * conv_units });
+    try writer.print("{s}\nTOTAL RASTER TIME  = {d:.3} ms\n", .{
         print_break,
         pipe_times.total_time * conv_units,
     });
-    print("{s}\n", .{print_break});
-    print("Total Ops   = {d}\n", .{total_px});
-    print("MOps/second = {d:.2}\n", .{mega_ops_per_sec});
-    print("MTri/second = {d:.2}\n", .{mega_tris_per_sec});
-    print("{s}\n", .{print_break});
+    try writer.print("{s}\n", .{print_break});
+    try writer.print("Total Ops   = {d}\n", .{total_px});
+    try writer.print("MOps/second = {d:.2}\n", .{mega_ops_per_sec});
+    try writer.print("MTri/second = {d:.2}\n", .{mega_tris_per_sec});
+    try writer.print("{s}\n", .{print_break});
+    try writer.flush();
 }
