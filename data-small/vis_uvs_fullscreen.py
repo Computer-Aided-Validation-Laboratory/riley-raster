@@ -3,7 +3,7 @@ import numpy as np
 from pathlib import Path
 
 def visualize_case(case_name):
-    case_dir = Path("data-small") / case_name
+    case_dir = Path("data-simple") / case_name
     if not case_dir.exists():
         print(f"Error: {case_dir} does not exist.")
         return
