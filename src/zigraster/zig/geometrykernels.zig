@@ -154,8 +154,11 @@ pub fn Tri6Kernel() type {
             state: anytype,
         ) ?[nodes_num]f64 {
             _ = state;
+            
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
+            const xi_guess_def: f64 = 1.0/3.0;
+            const eta_guess_def: f64 = 1.0/3.0;
             var converged = false;
 
             const target_x = pixel_x - x_offset;
@@ -173,7 +176,7 @@ pub fn Tri6Kernel() type {
             if (!converged) {
                 converged = newton.solveInverse(nodes_num, target_x, target_y, 
                                                 nodes.x, nodes.y, nodes.z, 
-                                                1.0 / 3.0, 1.0 / 3.0, &xi, &eta,);
+                                                xi_guess_def, eta_guess_def, &xi, &eta,);
             }
 
             if (converged) {
@@ -252,6 +255,7 @@ pub fn Tri6Kernel() type {
                 }
 
                 const inv_area = 1.0 / area;
+                
                 var weights: [3]f64 = undefined;
                 weights[0] = rops.edgeFun3(vx[1], vy[1], vx[2], vy[2], 
                                            target_x, target_y) * inv_area;

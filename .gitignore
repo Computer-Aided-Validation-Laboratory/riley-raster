@@ -1,4 +1,3 @@
-
 # Nano temporary files
 *.swp
 
@@ -12,11 +11,14 @@ file-out/
 # Test files
 raster-out/
 raster-test/
+
 out*/
 gold*/
 fails/
 archive/
 example/
+
+temp-*/
 src-*/
 
 *.ppm
