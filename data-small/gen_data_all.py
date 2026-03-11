@@ -112,7 +112,7 @@ def main():
     WIDTH = 16.0
     HEIGHT = 10.0
     L = 10.0
-    D = 0.5
+    D = 1.5
     FRAME0_PARAMS = (-1e-6, 1e-6, -1e-6, 1e-6, -1e-6, 1e-6)
     FRAME1_PARAMS = (-0.5, 0.5, -0.5, 0.5, -0.5, 0.5)
     U_RANGE = (0.4, 0.6)

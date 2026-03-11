@@ -12,7 +12,9 @@ pub fn main() !void {
     // Load original using C loader once, then save as simple TIFF
     // and reload using our simple loader to ensure compatibility.
     const texture = blk: {
-        const tex_orig = try gengold.iio.CLoadTIFF(allocator, io, "texture/speckle.tiff", u8, 1);
+        const tex_orig = try gengold.iio.CLoadTIFF(
+            allocator, io, "texture/speckle.tiff", u8, 1
+        );
         defer tex_orig.deinit(allocator);
 
         const mat_size = tex_orig.rows_n * tex_orig.cols_n;
@@ -36,11 +38,13 @@ pub fn main() !void {
         .tri3, .tri6, .quad4ibi, .quad4newton, .quad8, .quad9 
     };
     const interp_types = std.enums.values(gengold.texops.InterpType);
-    const pixel_num = [_]u32{ 160, 100 };
+
+    const pixel_num = [_]u32{ 320, 200 };
+
     const gold_dir = "gold-small";
     const data_dir = "data-small";
 
-    std.debug.print("Generating ALL Small Gold Data (160x100)...\n", .{});
+    std.debug.print("Generating ALL Small Gold Data...\n", .{});
 
     std.debug.print("Single Element Cases...\n", .{});
     try gengold.runGenerationExt(
