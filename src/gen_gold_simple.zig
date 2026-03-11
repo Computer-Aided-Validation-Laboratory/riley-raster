@@ -1,5 +1,5 @@
 const std = @import("std");
-const gengold = @import("gengold.zig");
+const gengold = @import("common/gengold.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -9,8 +9,6 @@ pub fn main() !void {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    // Load original using C loader once, then save as simple TIFF
-    // and reload using our simple loader to ensure compatibility.
     const texture = blk: {
         const tex_orig = try gengold.iio.CLoadTIFF(
             allocator, io, "texture/speckle.tiff", u8, 1
@@ -23,7 +21,7 @@ pub fn main() !void {
         for (0..mat_size) |i| {
             mat_mem[i] = @as(f64, @floatFromInt(tex_orig.pixels[i].channels[0]));
         }
-        const MatSlice = @import("../src/zigraster/zig/matslice.zig").MatSlice;
+        const MatSlice = @import("zigraster/zig/matslice.zig").MatSlice;
         const temp_mat = MatSlice(f64).init(mat_mem, tex_orig.rows_n, tex_orig.cols_n);
 
         const out_dir = std.Io.Dir.cwd();
@@ -37,26 +35,19 @@ pub fn main() !void {
     const mesh_types = [_]gengold.MeshType{ 
         .tri3, .tri6, .quad4ibi, .quad4newton, .quad8, .quad9 
     };
-    const interp_types = std.enums.values(gengold.texops.InterpType);
+    const interp_types = [_]gengold.texops.InterpType{ .cubic_lut_lerp };
 
     const pixel_num = [_]u32{ 800, 500 };
 
     const gold_dir = "gold-simple";
     const data_dir = "data-simple";
 
-    std.debug.print("Generating ALL Simple Gold Data...\n", .{});
+    std.debug.print("Generating Simple Gold Data (Single Element only)...\n", .{});
 
-    std.debug.print("Single Element Cases...\n", .{});
     try gengold.runGenerationExt(
-        allocator, io, "single", &mesh_types, 1.1, texture, pixel_num, interp_types, 
+        allocator, io, "single", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
         gold_dir, data_dir
     );
-
-    // std.debug.print("Full Screen Cases...\n", .{});
-    // try gengold.runGenerationExt(
-    //     allocator, io, "full", &mesh_types, 1.0, texture, pixel_num, interp_types, 
-    //     gold_dir, data_dir
-    // );
     
     std.debug.print("Done.\n", .{});
 }

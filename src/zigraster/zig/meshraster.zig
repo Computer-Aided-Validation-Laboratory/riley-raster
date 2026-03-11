@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const NDArray = @import("ndarray.zig").NDArray;
+pub const NDArray = @import("ndarray.zig").NDArray;
 
 const meshio = @import("meshio.zig");
 const Coords = meshio.Coords;

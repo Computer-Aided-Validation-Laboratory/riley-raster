@@ -1,5 +1,5 @@
 const std = @import("std");
-const gengold = @import("gengold.zig");
+const gengold = @import("common/gengold.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -9,8 +9,6 @@ pub fn main() !void {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    // Load original using C loader once, then save as simple TIFF
-    // and reload using our simple loader to ensure compatibility.
     const texture = blk: {
         const tex_orig = try gengold.iio.CLoadTIFF(
             allocator, io, "texture/speckle.tiff", u8, 1
@@ -23,7 +21,7 @@ pub fn main() !void {
         for (0..mat_size) |i| {
             mat_mem[i] = @as(f64, @floatFromInt(tex_orig.pixels[i].channels[0]));
         }
-        const MatSlice = @import("../src/zigraster/zig/matslice.zig").MatSlice;
+        const MatSlice = @import("zigraster/zig/matslice.zig").MatSlice;
         const temp_mat = MatSlice(f64).init(mat_mem, tex_orig.rows_n, tex_orig.cols_n);
 
         const out_dir = std.Io.Dir.cwd();

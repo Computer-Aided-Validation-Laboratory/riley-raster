@@ -1,18 +1,18 @@
 const std = @import("std");
 
-pub const meshio = @import("../src/zigraster/zig/meshio.zig");
+pub const meshio = @import("../zigraster/zig/meshio.zig");
 pub const SimData = meshio.SimData;
-pub const mr = @import("../src/zigraster/zig/meshraster.zig");
+pub const mr = @import("../zigraster/zig/meshraster.zig");
 pub const MeshType = mr.MeshType;
 pub const MeshRaster = mr.MeshRaster;
-pub const Rotation = @import("../src/zigraster/zig/rotation.zig").Rotation;
-pub const Camera = @import("../src/zigraster/zig/camera.zig").Camera;
-pub const CameraOps = @import("../src/zigraster/zig/camera.zig").CameraOps;
-pub const specraster = @import("../src/zigraster/zig/specraster.zig");
+pub const Rotation = @import("../zigraster/zig/rotation.zig").Rotation;
+pub const Camera = @import("../zigraster/zig/camera.zig").Camera;
+pub const CameraOps = @import("../zigraster/zig/camera.zig").CameraOps;
+pub const specraster = @import("../zigraster/zig/specraster.zig");
 pub const RasterConfig = specraster.RasterConfig;
-pub const iio = @import("../src/zigraster/zig/imageio.zig");
-pub const texops = @import("../src/zigraster/zig/textureops.zig");
-pub const uvio = @import("../src/zigraster/zig/uvio.zig");
+pub const iio = @import("../zigraster/zig/imageio.zig");
+pub const texops = @import("../zigraster/zig/textureops.zig");
+pub const uvio = @import("../zigraster/zig/uvio.zig");
 
 pub fn loadData(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !SimData {
     const pc = try std.fmt.allocPrint(allocator, "{s}/coords.csv", .{path});

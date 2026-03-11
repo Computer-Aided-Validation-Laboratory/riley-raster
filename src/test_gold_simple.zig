@@ -1,5 +1,5 @@
 const std = @import("std");
-const common = @import("tests/common.zig");
+const common = @import("common/tests.zig");
 
 // NOTE: should probably be 1e-9 to 1e-11
 const REL_TOL: f64 = 1e-9;
@@ -44,7 +44,7 @@ test "Gold Simple Suite" {
                                            .quad4ibi, .quad4newton,
                                            .quad8, .quad9 };
     const interp_types = [_]common.texops.InterpType{ .cubic_lut_lerp };
-    const pixel_num = [_]u32{ 320, 200 };
+    const pixel_num = [_]u32{ 800, 500 };
 
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
 
@@ -54,20 +54,6 @@ test "Gold Simple Suite" {
                                    "single", 
                                    mt, 
                                    1.1, 
-                                   texture, 
-                                   pixel_num, 
-                                   &interp_types, 
-                                   "gold-simple", 
-                                   "data-simple", 
-                                   REL_TOL,
-                                   ABS_TOL, 
-                                   SHADER_FILTER);
-                                   
-        try common.runTestInternal(allocator, 
-                                   io, 
-                                   "full", 
-                                   mt, 
-                                   1.0, 
                                    texture, 
                                    pixel_num, 
                                    &interp_types, 

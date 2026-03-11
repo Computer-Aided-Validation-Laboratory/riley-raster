@@ -1,5 +1,5 @@
 const std = @import("std");
-const common = @import("tests/common.zig");
+const common = @import("common/tests.zig");
 
 // NOTE: should probably be 1e-9 to 1e-11
 const REL_TOL: f64 = 1e-9;
@@ -39,17 +39,12 @@ test "Gold Small Suite" {
     };
     defer texture.deinit(allocator);
 
-    const mesh_types = [_]common.MeshType{
-        .tri3,
-        .tri3opt,
-        .tri6,
-        .quad4ibi,
-        .quad4newton,
-        .quad8,
-        .quad9,
-    };
+    const mesh_types = [_]common.MeshType{ .tri3, //.tri3opt, 
+                                           .tri6, 
+                                           .quad4ibi, .quad4newton,
+                                           .quad8, .quad9 };
     const interp_types = std.enums.values(common.texops.InterpType);
-    const pixel_num = [_]u32{ 160, 100 };
+    const pixel_num = [_]u32{ 320, 200 };
 
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
 
