@@ -162,7 +162,12 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const suffix = if (std.mem.eql(u8, test_type, "full")) "fullscreen" else "single";
+    const suffix = if (std.mem.eql(u8, test_type, "full")) 
+        "fullscreen" 
+    else if (std.mem.eql(u8, test_type, "twoelems"))
+        "twoelems"
+    else 
+        "single";
     
     const data_name = switch (mesh_type) {
         .quad4ibi, .quad4newton => "quad4",

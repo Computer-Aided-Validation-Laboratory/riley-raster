@@ -1,6 +1,7 @@
 import numpy as np
 from pathlib import Path
 import gendata
+import gen_data_twoelems
 
 def generate_fullscreen(base_dir, width, height, frame0, frame1):
     # Tri3 Full Screen (2 elements)
@@ -97,7 +98,8 @@ def generate_singleelem(base_dir, length, d_shift, frame0, frame1):
 def generate_uvs(base_dir, u_range, v_range):
     cases = [
         "tri3_fullscreen", "tri6_fullscreen", "quad4_fullscreen", "quad8_fullscreen", "quad9_fullscreen",
-        "tri3_single", "tri6_single", "quad4_single", "quad8_single", "quad9_single"
+        "tri3_single", "tri6_single", "quad4_single", "quad8_single", "quad9_single",
+        "tri3_twoelems", "tri6_twoelems", "quad4_twoelems", "quad8_twoelems", "quad9_twoelems"
     ]
     for case in cases:
         case_dir = Path(base_dir) / case
@@ -120,6 +122,7 @@ def main():
 
     generate_fullscreen(base_dir, WIDTH, HEIGHT, FRAME0_PARAMS, FRAME1_PARAMS)
     generate_singleelem(base_dir, L, D, FRAME0_PARAMS, FRAME1_PARAMS)
+    gen_data_twoelems.generate_twoelems(base_dir, L, D, FRAME0_PARAMS, FRAME1_PARAMS)
     generate_uvs(base_dir, U_RANGE, V_RANGE)
     print(f"Generated all cases in {base_dir}/")
 

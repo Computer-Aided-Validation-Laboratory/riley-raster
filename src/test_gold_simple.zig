@@ -62,6 +62,20 @@ test "Gold Simple Suite" {
                                    REL_TOL,
                                    ABS_TOL, 
                                    SHADER_FILTER);
+
+        try common.runTestInternal(allocator, 
+                                   io, 
+                                   "twoelems", 
+                                   mt, 
+                                   1.1, 
+                                   texture, 
+                                   pixel_num, 
+                                   &interp_types, 
+                                   "gold-simple", 
+                                   "data-simple", 
+                                   REL_TOL,
+                                   ABS_TOL, 
+                                   SHADER_FILTER);
     }
 
     const end_time = std.Io.Clock.Timestamp.now(io, .awake);

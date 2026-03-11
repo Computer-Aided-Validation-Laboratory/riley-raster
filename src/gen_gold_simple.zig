@@ -43,9 +43,14 @@ pub fn main() !void {
     const data_dir = "data-simple";
 
     std.debug.print("Generating Simple Gold Data (Single Element only)...\n", .{});
-
     try gengold.runGenerationExt(
         allocator, io, "single", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
+        gold_dir, data_dir
+    );
+
+    std.debug.print("Generating Simple Gold Data (Two Elements only)...\n", .{});
+    try gengold.runGenerationExt(
+        allocator, io, "twoelems", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
         gold_dir, data_dir
     );
     
