@@ -78,7 +78,12 @@ pub fn runGenerationExt(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const suffix = if (std.mem.eql(u8, test_type, "full")) "fullscreen" else "single";
+    const suffix = if (std.mem.eql(u8, test_type, "full"))
+        "fullscreen"
+    else if (std.mem.eql(u8, test_type, "single"))
+        "single"
+    else
+        test_type;
     for (mesh_types) |mt| {
         _ = arena.reset(.free_all);
         const data_name = switch (mt) {

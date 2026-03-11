@@ -2,6 +2,11 @@ import numpy as np
 import os
 from pathlib import Path
 
+# Coordinate System: Right-handed Cartesian (X right, Y up, Z towards viewer).
+# Vertex Winding: All elements MUST follow Counter-Clockwise (CCW) winding.
+# This ensures positive signed area calculation in the rasterizer, which is 
+# critical for correct shape function interpolation and weight distribution.
+
 def save_case(base_dir, name, coords, connect, disp_x, disp_y, disp_z):
     out_dir = Path(base_dir) / name
     out_dir.mkdir(parents=True, exist_ok=True)

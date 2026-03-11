@@ -248,7 +248,7 @@ pub fn countElemsCalcBBoxesTri3(camera: *const Camera,
                                elem_coord_arr: *const NDArray(f64),
                                elem_bboxes: []BBox) !usize {
     const N: usize = 3;
-    const tol_area: f64 = -1e-9;
+    const tol_area: f64 = 1e-12;
 
     var elems_in_image: usize = 0;
 

@@ -2,11 +2,17 @@ import numpy as np
 from pathlib import Path
 import gendata
 
+# Coordinate System: Right-handed Cartesian (X right, Y up, Z towards viewer).
+# Vertex Winding: All elements MUST follow Counter-Clockwise (CCW) winding.
+# This ensures positive signed area calculation in the rasterizer, which is 
+# critical for correct shape function interpolation and weight distribution.
+
 def generate_fullscreen(base_dir, width, height, frame0, frame1):
     # Tri3 Full Screen (2 elements)
     coords_tri3 = np.array([
         [0, 0, 0], [width, 0, 0], [width, height, 0], [0, height, 0]
     ], dtype=float)
+    # 0,1,2 (CCW), 0,2,3 (CCW)
     connect_tri3 = np.array([[0, 1, 2], [0, 2, 3]])
     dx, dy, dz = gendata.compute_disps(coords_tri3, frame0, frame1)
     gendata.save_case(base_dir, "tri3_fullscreen", coords_tri3, connect_tri3, dx, dy, dz)
@@ -17,6 +23,8 @@ def generate_fullscreen(base_dir, width, height, frame0, frame1):
         [width/2, 0, 0], [width, height/2, 0], [width/2, height, 0], [0, height/2, 0],
         [width/2, height/2, 0]
     ], dtype=float)
+    # Elem 0: corners 0,1,2, midsides 4,5,8 (CCW)
+    # Elem 1: corners 0,2,3, midsides 8,6,7 (CCW)
     connect_tri6 = np.array([
         [0, 1, 2, 4, 5, 8],
         [0, 2, 3, 8, 6, 7]
@@ -26,6 +34,7 @@ def generate_fullscreen(base_dir, width, height, frame0, frame1):
 
     # Quad4 Full Screen (1 element)
     coords_quad4 = coords_tri3.copy()
+    # 0,1,2,3 (CCW)
     connect_quad4 = np.array([[0, 1, 2, 3]])
     dx, dy, dz = gendata.compute_disps(coords_quad4, frame0, frame1)
     gendata.save_case(base_dir, "quad4_fullscreen", coords_quad4, connect_quad4, dx, dy, dz)
@@ -35,6 +44,7 @@ def generate_fullscreen(base_dir, width, height, frame0, frame1):
         [0, 0, 0], [width, 0, 0], [width, height, 0], [0, height, 0],
         [width/2, 0, 0], [width, height/2, 0], [width/2, height, 0], [0, height/2, 0]
     ], dtype=float)
+    # 0,1,2,3, 4,5,6,7 (CCW)
     connect_quad8 = np.array([[0, 1, 2, 3, 4, 5, 6, 7]])
     dx, dy, dz = gendata.compute_disps(coords_quad8, frame0, frame1)
     gendata.save_case(base_dir, "quad8_fullscreen", coords_quad8, connect_quad8, dx, dy, dz)
@@ -45,11 +55,16 @@ def generate_fullscreen(base_dir, width, height, frame0, frame1):
         [width/2, 0, 0], [width, height/2, 0], [width/2, height, 0], [0, height/2, 0],
         [width/2, height/2, 0]
     ], dtype=float)
+    # 0,1,2,3, 4,5,6,7, 8 (CCW)
     connect_quad9 = np.array([[0, 1, 2, 3, 4, 5, 6, 7, 8]])
     dx, dy, dz = gendata.compute_disps(coords_quad9, frame0, frame1)
     gendata.save_case(base_dir, "quad9_fullscreen", coords_quad9, connect_quad9, dx, dy, dz)
 
 def generate_singleelem(base_dir, length, d_shift, frame0, frame1):
+    """
+    Generates single-element test cases with consistent Counter-Clockwise (CCW) winding.
+    CCW winding is REQUIRED for correct area and weight calculation in the rasterizer.
+    """
     h = np.sqrt(3) / 2 * length
     tri_centroid = np.array([length/2, h/3, 0])
     v_tri = np.array([
@@ -58,11 +73,11 @@ def generate_singleelem(base_dir, length, d_shift, frame0, frame1):
         [length/2, h, 0]
     ])
 
-    # Tri3 Single
+    # Tri3 Single: 0,1,2 (CCW)
     dx, dy, dz = gendata.compute_disps(v_tri, frame0, frame1)
     gendata.save_case(base_dir, "tri3_single", v_tri, np.array([[0, 1, 2]]), dx, dy, dz)
 
-    # Tri6 Single
+    # Tri6 Single: 0,1,2, 3,4,5 (CCW)
     m01 = (v_tri[0] + v_tri[1]) / 2.0
     m12 = gendata.move_midside(v_tri[1], v_tri[2], tri_centroid, d_shift)
     m20 = gendata.move_midside(v_tri[2], v_tri[0], tri_centroid, -d_shift)
@@ -76,11 +91,11 @@ def generate_singleelem(base_dir, length, d_shift, frame0, frame1):
     ])
     quad_centroid = np.array([length/2, length/2, 0])
 
-    # Quad4 Single
+    # Quad4 Single: 0,1,2,3 (CCW)
     dx, dy, dz = gendata.compute_disps(v_quad, frame0, frame1)
     gendata.save_case(base_dir, "quad4_single", v_quad, np.array([[0, 1, 2, 3]]), dx, dy, dz)
 
-    # Quad8 Single
+    # Quad8 Single: 0,1,2,3, 4,5,6,7 (CCW)
     m01_q = (v_quad[0] + v_quad[1]) / 2.0
     m12_q = gendata.move_midside(v_quad[1], v_quad[2], quad_centroid, d_shift)
     m23_q = gendata.move_midside(v_quad[2], v_quad[3], quad_centroid, -d_shift)
@@ -89,7 +104,7 @@ def generate_singleelem(base_dir, length, d_shift, frame0, frame1):
     dx, dy, dz = gendata.compute_disps(coords_quad8, frame0, frame1)
     gendata.save_case(base_dir, "quad8_single", coords_quad8, np.array([[0, 1, 2, 3, 4, 5, 6, 7]]), dx, dy, dz)
 
-    # Quad9 Single
+    # Quad9 Single: 0,1,2,3, 4,5,6,7, 8 (CCW)
     coords_quad9 = np.vstack([coords_quad8, [quad_centroid]])
     dx, dy, dz = gendata.compute_disps(coords_quad9, frame0, frame1)
     gendata.save_case(base_dir, "quad9_single", coords_quad9, np.array([[0, 1, 2, 3, 4, 5, 6, 7, 8]]), dx, dy, dz)

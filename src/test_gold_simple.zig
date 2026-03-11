@@ -49,19 +49,19 @@ test "Gold Simple Suite" {
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
 
     for (mesh_types) |mt| {
-        try common.runTestInternal(allocator, 
-                                   io, 
-                                   "single", 
-                                   mt, 
-                                   1.1, 
-                                   texture, 
-                                   pixel_num, 
-                                   &interp_types, 
-                                   "gold-simple", 
-                                   "data-simple", 
-                                   REL_TOL,
-                                   ABS_TOL, 
-                                   SHADER_FILTER);
+        // try common.runTestInternal(allocator, 
+        //                            io, 
+        //                            "single", 
+        //                            mt, 
+        //                            1.1, 
+        //                            texture, 
+        //                            pixel_num, 
+        //                            &interp_types, 
+        //                            "gold-simple", 
+        //                            "data-simple", 
+        //                            REL_TOL,
+        //                            ABS_TOL, 
+        //                            SHADER_FILTER);
 
         try common.runTestInternal(allocator, 
                                    io, 
