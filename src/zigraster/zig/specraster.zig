@@ -282,6 +282,16 @@ fn rasterInternal(
         try rops.transformElemsClipPxLengSIMD(N, f64, camera, dim_elem, coords);
     }
 
+    const NH = if (comptime GK.is_nonlinear) GK.hull_nodes_num else 0;
+    var raster_hull: ?NDArray(f64) = null;
+    if (comptime GK.is_nonlinear) {
+        raster_hull = try NDArray(f64).initFlat(
+            arena_alloc,
+            &[_]usize{ elems_num, 2, NH },
+        );
+        try rops.buildAdaptiveHulls(N, camera, dim_elem, coords, &raster_hull.?);
+    }
+
     const time_end_internal = Timestamp.now(io, .awake);
     pipe_times.coord_transform = @floatFromInt(
         time_start_internal.durationTo(time_end_internal).raw.nanoseconds
@@ -296,7 +306,7 @@ fn rasterInternal(
     const elements_in_image = if (comptime GK.coord_space == geomkerns.CoordSpace.raster)
         try rops.countElemsCalcBBoxesTri3(camera, dim_elem, coords, element_bboxes)
     else
-        try rops.countElemsCalcBBoxes(N, camera, dim_elem, coords, element_bboxes);
+        try rops.countElemsCalcBBoxes(N, NH, camera, dim_elem, coords, if (raster_hull) |*rh| rh else null, element_bboxes);
 
     const time_end_bbox = Timestamp.now(io, .awake);
     pipe_times.bbox_calc = @floatFromInt(
