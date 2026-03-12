@@ -174,24 +174,11 @@ pub fn Tri6Kernel() type {
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
 
-            var result = newton.NewtonResult{ .converged = false, .iterations = 0 };
-
-            if (getTessellatedGuess(target_x,target_y,
-                                    nodes.x,nodes.y,nodes.z,
-                                    &xi,&eta,)) {
-                                    
-                result = newton.solveInverse(nodes_num, target_x, target_y, 
-                                                nodes.x, nodes.y, nodes.z, 
-                                                xi, eta, &xi, &eta,);
-            }
-
-            if (!result.converged) {
-                const r2 = newton.solveInverse(nodes_num, target_x, target_y, 
-                                                nodes.x, nodes.y, nodes.z, 
-                                                xi_guess_def, eta_guess_def, &xi, &eta,);
-                result.converged = r2.converged;
-                result.iterations += r2.iterations;
-            }
+            const result = newton.solveInverse(
+                nodes_num, target_x, target_y, 
+                nodes.x, nodes.y, nodes.z, 
+                xi_guess_def, eta_guess_def, &xi, &eta,
+            );
 
             if (result.converged) {
                 var node_values: [nodes_num]f64 = undefined;
@@ -214,84 +201,6 @@ pub fn Tri6Kernel() type {
 
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [nodes_num]f64) f64 {
             return calcInvZClip(nodes_num, nodes, weights);
-        }
-
-        fn getTessellatedGuess(target_x: f64, target_y: f64, 
-                               elem_x: []const f64, elem_y: []const f64, elem_w: []const f64,
-                               xi_out: *f64, eta_out: *f64,) bool {
-
-            const area_tol: f64 = 1e-12;
-            const eps: f64 = 1e-5;
-            
-            const SubTriangle = struct {
-                nodes: [3]u8,
-                xi: [3]f64,
-                eta: [3]f64,
-            };
-            
-            const sub_triangles = [_]SubTriangle{
-                .{
-                    .nodes = .{ 0, 3, 5 },
-                    .xi = .{ 0.0, 0.5, 0.0 },
-                    .eta = .{ 0.0, 0.0, 0.5 },
-                },
-                .{
-                    .nodes = .{ 3, 1, 4 },
-                    .xi = .{ 0.5, 1.0, 0.5 },
-                    .eta = .{ 0.0, 0.0, 0.5 },
-                },
-                .{
-                    .nodes = .{ 5, 4, 2 },
-                    .xi = .{ 0.0, 0.5, 0.0 },
-                    .eta = .{ 0.5, 0.5, 1.0 },
-                },
-                .{
-                    .nodes = .{ 3, 4, 5 },
-                    .xi = .{ 0.5, 0.5, 0.0 },
-                    .eta = .{ 0.0, 0.5, 0.5 },
-                },
-            };
-
-            for (sub_triangles) |sub_tri| {
-                var vx: [3]f64 = undefined;
-                var vy: [3]f64 = undefined;
-
-                inline for (0..3) |ii| {
-                    const node_ind = sub_tri.nodes[ii];
-                    vx[ii] = elem_x[node_ind] / elem_w[node_ind];
-                    vy[ii] = elem_y[node_ind] / elem_w[node_ind];
-                }
-
-                const area = rops.edgeFun3(vx[0], vy[0], vx[1], vy[1], vx[2], vy[2]);
-
-                if (@abs(area) < area_tol) {
-                    continue;
-                }
-
-                const inv_area = 1.0 / area;
-                
-                var weights: [3]f64 = undefined;
-                weights[0] = rops.edgeFun3(vx[1], vy[1], vx[2], vy[2], 
-                                           target_x, target_y) * inv_area;
-                weights[1] = rops.edgeFun3(vx[2], vy[2], vx[0], vy[0], 
-                                           target_x, target_y) * inv_area;
-                weights[2] = 1.0 - weights[0] - weights[1];
-
-                if (weights[0] >= -eps and weights[1] >= -eps and weights[2] >= -eps) {
-                    var xi_res: f64 = 0.0;
-                    var eta_res: f64 = 0.0;
-
-                    inline for (0..3) |ii| {
-                        xi_res += weights[ii] * sub_tri.xi[ii];
-                        eta_res += weights[ii] * sub_tri.eta[ii];
-                    }
-
-                    xi_out.* = xi_res;
-                    eta_out.* = eta_res;
-                    return true;
-                }
-            }
-            return false;
         }
     };
 }
@@ -463,8 +372,11 @@ pub fn Quad4NewtonKernel() type {
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
 
-            const result = newton.solveInverse(nodes_num, target_x, target_y, nodes.x, nodes.y, 
-                                    nodes.z, xi_guess_def, eta_guess_def, &xi, &eta, );
+            const result = newton.solveInverse(
+                nodes_num, target_x, target_y, 
+                nodes.x, nodes.y, nodes.z, 
+                xi_guess_def, eta_guess_def, &xi, &eta,
+            );
             if (result.converged) {
                 var node_values: [nodes_num]f64 = undefined;
                 var deriv_nu: [nodes_num]f64 = undefined;
@@ -506,8 +418,11 @@ pub fn Quad89Kernel(comptime N: usize) type {
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
 
-            const result = newton.solveInverse(nodes_num, target_x, target_y, nodes.x, nodes.y, 
-                nodes.z, xi_guess_def, eta_guess_def, &xi, &eta,);
+            const result = newton.solveInverse(
+                nodes_num, target_x, target_y, 
+                nodes.x, nodes.y, nodes.z, 
+                xi_guess_def, eta_guess_def, &xi, &eta,
+            );
 
             if (result.converged) {
 
