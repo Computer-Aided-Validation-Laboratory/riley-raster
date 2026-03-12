@@ -4,46 +4,6 @@ const Camera = @import("camera.zig").Camera;
 const NDArray = @import("ndarray.zig").NDArray;
 const Vec3OfSlices = rops.Vec3OfSlices;
 
-pub const HullEdge = struct {
-    a: f64,
-    b: f64,
-    c: f64,
-};
-
-pub fn getHullEdges(
-    comptime NH: usize,
-    hull_x: []const f64,
-    hull_y: []const f64,
-    edges: *[NH]HullEdge,
-) void {
-    inline for (0..NH) |ii| {
-        const jj = (ii + 1) % NH;
-        const x0 = hull_x[ii];
-        const y0 = hull_y[ii];
-        const x1 = hull_x[jj];
-        const y1 = hull_y[jj];
-
-        edges[ii] = .{
-            .a = y1 - y0,
-            .b = x0 - x1,
-            .c = x1 * y0 - x0 * y1,
-        };
-    }
-}
-
-pub inline fn isInHull(
-    comptime NH: usize,
-    edges: [NH]HullEdge,
-    px: f64,
-    py: f64,
-) bool {
-    const eps: f64 = 1e-2;
-    inline for (0..NH) |ii| {
-        if (edges[ii].a * px + edges[ii].b * py + edges[ii].c < -eps) return false;
-    }
-    return true;
-}
-
 pub const TessTriangle = struct {
     x: [3]f64,
     y: [3]f64,
