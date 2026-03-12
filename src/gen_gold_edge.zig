@@ -40,7 +40,7 @@ pub fn main() !void {
 
     const config = gengold.specraster.RasterConfig{
         .save_opt = .disk,
-        .save_formats = &[_]gengold.iio.ImageFormat{ .bmp },
+        .save_formats = &[_]gengold.iio.ImageFormat{ .bmp, .csv },
         .report = .off,
     };
 
