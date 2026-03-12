@@ -243,6 +243,20 @@ pub fn RasterEngine(
                             const subpx_z = 1.0 / inv_z;
                             shaded_px += 1;
 
+                            if (comptime report == .perf) {
+                                const global_subx = tile_x_px_min * sub_samp + scratch_x;
+                                const global_suby = tile_y_px_min * sub_samp + scratch_y;
+                                perf_ctx.recordPixel(
+                                    global_subx,
+                                    global_suby,
+                                    0, // iters not applicable for incremental
+                                );
+                                perf_ctx.recordPixelOccupancy(
+                                    tile_x_px_min + scratch_x / sub_samp,
+                                    tile_y_px_min + scratch_y / sub_samp,
+                                );
+                            }
+
                             ShaderKernel.shade(
                                 Geometry.coord_space,
                                 frame_index,
@@ -365,10 +379,16 @@ pub fn RasterEngine(
                             shaded_px += 1;
 
                             if (comptime report == .perf) {
+                                const global_subx = tile_x_px_min * sub_samp + scratch_x;
+                                const global_suby = tile_y_px_min * sub_samp + scratch_y;
                                 perf_ctx.recordPixel(
-                                    @intFromFloat(subpx_x),
-                                    @intFromFloat(subpx_y),
+                                    global_subx,
+                                    global_suby,
                                     result.iters,
+                                );
+                                perf_ctx.recordPixelOccupancy(
+                                    tile_x_px_min + scratch_x / sub_samp,
+                                    tile_y_px_min + scratch_y / sub_samp,
                                 );
                             }
 

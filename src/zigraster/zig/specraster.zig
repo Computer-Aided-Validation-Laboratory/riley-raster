@@ -168,7 +168,7 @@ pub fn rasterAllFrames(
 
         if (frame_perf) |*fp| {
             try fp.saveFrameReport(
-                io, out_dir, tt, camera, config.perf_opts,
+                io, outer_alloc, out_dir, tt, camera, config.tile_size, config.perf_opts,
             );
         }
 

@@ -33,7 +33,7 @@ pub fn initFramePerf(
     if (opts.save_iteration_map) {
         self.iteration_map = try NDArray(f64).initFlat(
             allocator,
-            &[_]usize{ pixels_num[1], pixels_num[0] },
+            &sub_pixels_num,
         );
         @memset(self.iteration_map.?.elems, 0);
     }
@@ -157,12 +157,46 @@ pub const Perf = struct {
         }
     }
 
+    fn saveTileMapAsImage(
+        io: std.Io,
+        allocator: std.mem.Allocator,
+        save_dir: std.Io.Dir,
+        camera: *const Camera,
+        tile_size: u16,
+        tile_data: []const f64,
+        name_prefix: []const u8,
+        opts: PerfOpts,
+    ) !void {
+        const px_x = camera.pixels_num[0];
+        const px_y = camera.pixels_num[1];
+        const tiles_x = try std.math.divCeil(u32, px_x, tile_size);
+
+        var expanded = try NDArray(f64).initFlat(allocator, &[_]usize{ px_y, px_x });
+        defer expanded.deinit(allocator);
+
+        for (0..px_y) |yy| {
+            const tile_y = yy / tile_size;
+            for (0..px_x) |xx| {
+                const tile_x = xx / tile_size;
+                const tile_idx = tile_y * tiles_x + tile_x;
+                expanded.elems[yy * px_x + xx] = tile_data[tile_idx];
+            }
+        }
+
+        const mat = MatSlice(f64).init(expanded.elems, px_y, px_x);
+        for (opts.formats) |fmt| {
+            try iio.saveImage(io, save_dir, name_prefix, &mat, fmt, 8);
+        }
+    }
+
     pub fn saveFrameReport(
         self: *const Perf,
         io: std.Io,
+        allocator: std.mem.Allocator,
         out_dir: ?std.Io.Dir,
         frame_idx: usize,
         camera: *const Camera,
+        tile_size: u16,
         opts: PerfOpts,
     ) !void {
         const save_dir = out_dir orelse return;
@@ -183,10 +217,11 @@ pub const Perf = struct {
         try self.writeReportToConsole(io, frame_idx, camera);
 
         if (self.iteration_map) |*m| {
+            const sub_samp: usize = @intCast(camera.sub_sample);
             const mat = MatSlice(f64).init(
                 m.elems,
-                camera.pixels_num[1],
-                camera.pixels_num[0],
+                camera.pixels_num[1] * sub_samp,
+                camera.pixels_num[0] * sub_samp,
             );
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
@@ -246,6 +281,33 @@ pub const Perf = struct {
             for (opts.formats) |fmt| {
                 try iio.saveImage(io, save_dir, name, &mat, fmt, 8);
             }
+        }
+
+        if (self.tile_timing_map) |*m| {
+            const name = try std.fmt.bufPrint(
+                name_buff[0..],
+                "diag_frame_{d}_tile_timing",
+                .{frame_idx},
+            );
+            try saveTileMapAsImage(io, allocator, save_dir, camera, tile_size, m.elems, name, opts);
+        }
+
+        if (self.tile_density_map) |*m| {
+            const name = try std.fmt.bufPrint(
+                name_buff[0..],
+                "diag_frame_{d}_tile_density",
+                .{frame_idx},
+            );
+            try saveTileMapAsImage(io, allocator, save_dir, camera, tile_size, m.elems, name, opts);
+        }
+
+        if (self.tile_occupancy_map) |*m| {
+            const name = try std.fmt.bufPrint(
+                name_buff[0..],
+                "diag_frame_{d}_tile_occupancy",
+                .{frame_idx},
+            );
+            try saveTileMapAsImage(io, allocator, save_dir, camera, tile_size, m.elems, name, opts);
         }
     }
 
@@ -480,17 +542,20 @@ pub fn PerfContext(comptime _mode: Report) type {
             }
         }
 
-        pub inline fn recordPixel(self: @This(), x: usize, y: usize, iters: u8) void {
+        pub inline fn recordPixel(self: @This(), global_subx: usize, global_suby: usize, iters: u8) void {
             if (self.perf.iteration_map) |*imap| {
                 const row_stride = imap.strides[0];
-                imap.elems[y * row_stride + x] = @floatFromInt(iters);
+                imap.elems[global_suby * row_stride + global_subx] = @floatFromInt(iters);
             }
+            self.perf.solver_calls += 1;
+            self.perf.total_iters += iters;
+        }
+
+        pub inline fn recordPixelOccupancy(self: @This(), x: usize, y: usize) void {
             if (self.perf.pixel_occupancy_map) |*pomap| {
                 const row_stride = pomap.strides[0];
                 pomap.elems[y * row_stride + x] += 1.0;
             }
-            self.perf.solver_calls += 1;
-            self.perf.total_iters += iters;
         }
 
         pub inline fn recordDepth(self: @This(), global_subx: usize, global_suby: usize, inv_z: f64) void {
