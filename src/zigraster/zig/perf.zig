@@ -9,7 +9,7 @@ const Camera = @import("camera.zig").Camera;
 pub const Report = enum { off, perf };
 
 pub const PerfOpts = struct {
-    formats: []const ImageFormat = &[_]ImageFormat{.bmp},
+    formats: []const ImageFormat = &[_]ImageFormat{ .bmp, .csv },
     save_iteration_map: bool = true,
     save_tile_timing_map: bool = true,
     save_tile_density_map: bool = true,
@@ -190,7 +190,7 @@ pub const Perf = struct {
             );
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "frame_{d}_iters",
+                "diag_frame_{d}_iters",
                 .{frame_idx},
             );
             for (opts.formats) |fmt| {
@@ -206,7 +206,7 @@ pub const Perf = struct {
             );
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "frame_{d}_occupancy",
+                "diag_frame_{d}_occupancy",
                 .{frame_idx},
             );
             for (opts.formats) |fmt| {
@@ -223,7 +223,7 @@ pub const Perf = struct {
             );
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "frame_{d}_depth",
+                "diag_frame_{d}_depth",
                 .{frame_idx},
             );
             for (opts.formats) |fmt| {
@@ -240,7 +240,7 @@ pub const Perf = struct {
             );
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "frame_{d}_earlyout",
+                "diag_frame_{d}_earlyout",
                 .{frame_idx},
             );
             for (opts.formats) |fmt| {

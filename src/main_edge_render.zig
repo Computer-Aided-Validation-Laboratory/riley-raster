@@ -43,7 +43,7 @@ pub fn main() !void {
         .tile_size = 16,
         .report = .perf,
         .perf_opts = .{
-            .formats = &[_]gengold.iio.ImageFormat{ .bmp },
+            .formats = &[_]gengold.iio.ImageFormat{ .bmp, .csv },
             .save_iteration_map = true,
             .save_tile_timing_map = true,
             .save_tile_density_map = true,
