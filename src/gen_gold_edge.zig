@@ -32,27 +32,36 @@ pub fn main() !void {
     };
     defer texture.deinit(allocator);
 
-    // Only generate Tri6 as requested
-    const mesh_types = [_]gengold.MeshType{ .tri6 };
     const interp_types = [_]gengold.texops.InterpType{ .cubic_lut_lerp };
     const pixel_num = [_]u32{ 800, 500 };
-
     const gold_dir = "gold-edge";
     const data_dir = "data-edge";
 
-    std.debug.print("Generating Rotated Tri6 Edge Cases...\n", .{});
+    std.debug.print("Generating Edge Cases to gold-edge/...\n", .{});
     
-    // Generate tri6_bulgein_rot (All edges bulge in)
-    // Generate tri6_bulgeout_rot (All edges bulge out)
-    try gengold.runGenerationExt(
-        allocator, io, "bulgein_rot", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
-        gold_dir, data_dir
-    );
+    // Tri6
+    {
+        const mt = [_]gengold.MeshType{ .tri6 };
+        try gengold.runGenerationExt(allocator, io, "bulgein_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
+        try gengold.runGenerationExt(allocator, io, "bulgeout_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
+        try gengold.runGenerationExt(allocator, io, "vertbulge", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
+    }
 
-    try gengold.runGenerationExt(
-        allocator, io, "bulgeout_rot", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
-        gold_dir, data_dir
-    );
+    // Quad8
+    {
+        const mt = [_]gengold.MeshType{ .quad8 };
+        try gengold.runGenerationExt(allocator, io, "bulgein_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
+        try gengold.runGenerationExt(allocator, io, "bulgeout_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
+        try gengold.runGenerationExt(allocator, io, "vertbulge", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
+    }
+
+    // Quad9
+    {
+        const mt = [_]gengold.MeshType{ .quad9 };
+        try gengold.runGenerationExt(allocator, io, "bulgein_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
+        try gengold.runGenerationExt(allocator, io, "bulgeout_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
+        try gengold.runGenerationExt(allocator, io, "vertbulge", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
+    }
     
     std.debug.print("Done.\n", .{});
 }

@@ -273,17 +273,17 @@ pub fn load_sim_data(allocator: std.mem.Allocator,
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
     var lines = try readCsvToList(arena_alloc, io, coord_path);
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
-    const time_read_coords: f64 = @floatFromInt(
-        time_start.durationTo(time_end).raw.nanoseconds
-    );
+    // const time_read_coords: f64 = @floatFromInt(
+    //     time_start.durationTo(time_end).raw.nanoseconds
+    // );
 
     // Print the array list line by line
     // for (lines.items,0..) |line_str,line_num|{
     //     print("Line {}: {s}\n", .{line_num,line_str});
     // }
-    print("\nCoords: read {} lines from csv.\n", .{lines.items.len});
-    print("Coords: read time = {d:.3}ms\n", 
-        .{time_read_coords / time.ns_per_ms});
+    // print("\nCoords: read {} lines from csv.\n", .{lines.items.len});
+    // print("Coords: read time = {d:.3}ms\n", 
+    //     .{time_read_coords / time.ns_per_ms});
 
     // Pass the coords into a series of arrays
     const coord_count: usize = lines.items.len;
@@ -292,11 +292,11 @@ pub fn load_sim_data(allocator: std.mem.Allocator,
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
     try parseCoords(&lines, &coords);
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
-    const time_parse_coords: f64 = @floatFromInt(
-        time_start.durationTo(time_end).raw.nanoseconds
-    );
-    print("Coords: parse time = {d:.3}ms\n", 
-        .{time_parse_coords / time.ns_per_ms});
+    // const time_parse_coords: f64 = @floatFromInt(
+    //     time_start.durationTo(time_end).raw.nanoseconds
+    // );
+    // print("Coords: parse time = {d:.3}ms\n", 
+    //     .{time_parse_coords / time.ns_per_ms});
 
     // print("COORDS:\n",.{});
     // for (0..coords.len) |cc| {
@@ -314,23 +314,23 @@ pub fn load_sim_data(allocator: std.mem.Allocator,
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
     lines = try readCsvToList(arena_alloc, io, connect_path);
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
-    const time_read_connect: f64 = @floatFromInt(
-        time_start.durationTo(time_end).raw.nanoseconds
-    );
-    print("\nConnect: read {} lines from csv.\n", .{lines.items.len});
-    print("Connect: read time = {d:.3}ms\n", 
-        .{time_read_connect / time.ns_per_ms});
+    // const time_read_connect: f64 = @floatFromInt(
+    //     time_start.durationTo(time_end).raw.nanoseconds
+    // );
+    // print("\nConnect: read {} lines from csv.\n", .{lines.items.len});
+    // print("Connect: read time = {d:.3}ms\n", 
+    //     .{time_read_connect / time.ns_per_ms});
 
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
     const connect = try parseConnect(allocator, &lines);
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
-    const time_parse_connect: f64 = @floatFromInt(
-        time_start.durationTo(time_end).raw.nanoseconds
-    );
-    print("Connect: elements={}, nodes per element={}\n", 
-       .{ connect.elem_n, connect.nodes_per_elem });
-    print("Connect: parse time = {d:.3}ms\n", 
-        .{time_parse_connect / time.ns_per_ms});
+    // const time_parse_connect: f64 = @floatFromInt(
+    //     time_start.durationTo(time_end).raw.nanoseconds
+    // );
+    // print("Connect: elements={}, nodes per element={}\n", 
+    //    .{ connect.elem_n, connect.nodes_per_elem });
+    // print("Connect: parse time = {d:.3}ms\n", 
+    //     .{time_parse_connect / time.ns_per_ms});
 
     // print("\nCONNECT TABLE\n",.{});
     // var ii: usize = 0;
@@ -353,10 +353,10 @@ pub fn load_sim_data(allocator: std.mem.Allocator,
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
     lines = try readCsvToList(arena_alloc, io, field_paths[0]);
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
-    var time_read_field: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
-    print("\nField 0: read {} lines from csv.\n", .{lines.items.len});
-    print("Field 0: read time = {d:.3}ms\n", 
-        .{time_read_field / time.ns_per_ms});
+    // var time_read_field: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
+    // print("\nField 0: read {} lines from csv.\n", .{lines.items.len});
+    // print("Field 0: read time = {d:.3}ms\n", 
+    //     .{time_read_field / time.ns_per_ms});
                      
     // Create the field struct to hold all the data
     const time_n: usize = getFieldTimeN(&lines);
@@ -367,11 +367,11 @@ pub fn load_sim_data(allocator: std.mem.Allocator,
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
     try parseField(&lines,&field,0);
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
-    var time_parse_field: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
-    print("Field 0: coords={}, time steps={}\n", 
-        .{ field.getCoordN(), field.getTimeN() });
-    print("Field 0: parse time = {d:.3}ms\n", 
-        .{time_parse_field / time.ns_per_ms});
+    // var time_parse_field: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
+    // print("Field 0: coords={}, time steps={}\n", 
+    //     .{ field.getCoordN(), field.getTimeN() });
+    // print("Field 0: parse time = {d:.3}ms\n", 
+    //     .{time_parse_field / time.ns_per_ms});
 
     lines.clearRetainingCapacity();
 
@@ -381,17 +381,17 @@ pub fn load_sim_data(allocator: std.mem.Allocator,
         time_start = std.Io.Clock.Timestamp.now(io, .awake);
         lines = try readCsvToList(arena_alloc, io, field_path);
         time_end = std.Io.Clock.Timestamp.now(io, .awake);
-        time_read_field = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
-        print("\nField {d}: read {d} lines from csv.\n", .{ii,lines.items.len});
-        print("Field {d}: read time = {d:.3}ms\n", 
-            .{ii,time_read_field / time.ns_per_ms});
+        // time_read_field = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
+        // print("\nField {d}: read {d} lines from csv.\n", .{ii,lines.items.len});
+        // print("Field {d}: read time = {d:.3}ms\n", 
+        //     .{ii,time_read_field / time.ns_per_ms});
 
         time_start = std.Io.Clock.Timestamp.now(io, .awake);
         try parseField(&lines,&field,ii);
         time_end = std.Io.Clock.Timestamp.now(io, .awake);
-        time_parse_field = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
-        print("Field {d}: parse time = {d:.3}ms\n", 
-            .{ii,time_parse_field / time.ns_per_ms});
+        // time_parse_field = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
+        // print("Field {d}: parse time = {d:.3}ms\n", 
+        //     .{ii,time_parse_field / time.ns_per_ms});
 
         lines.clearRetainingCapacity();      
     }

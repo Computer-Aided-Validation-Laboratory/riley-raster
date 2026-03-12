@@ -18,9 +18,6 @@ fn saveNDArrayToCSV(io: std.Io, arr: *const NDArray(f64), path: []const u8) !voi
     var file_writer = file.writer(io, &write_buf);
     const writer = &file_writer.interface;
 
-    // Assuming 2D or 3D data stored in specific ways for our hull/coords
-    // Hull is {elems, 2, NH}
-    // Coords is {elems, 3, N}
     if (arr.dims.len == 3) {
         const d0 = arr.dims[0];
         const d1 = arr.dims[1];
@@ -38,7 +35,7 @@ fn saveNDArrayToCSV(io: std.Io, arr: *const NDArray(f64), path: []const u8) !voi
     try file_writer.flush();
 }
 
-fn processCase(allocator: std.mem.Allocator, io: std.Io, data_name: []const u8) !void {
+fn processCase(allocator: std.mem.Allocator, io: std.Io, comptime N: usize, data_name: []const u8) !void {
     const aa = allocator;
     const data_path = try std.fmt.allocPrint(aa, "data-edge/{s}", .{data_name});
     const coord_path = try std.fmt.allocPrint(aa, "{s}/coords.csv", .{data_path});
@@ -63,24 +60,24 @@ fn processCase(allocator: std.mem.Allocator, io: std.Io, data_name: []const u8) 
     );
     const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, Vec3f.initZeros(), focal_leng, 2);
 
-    try rops.transformElemsClipPxLengSIMD(6, f64, &camera, 0, &elem_coords);
+    try rops.transformElemsClipPxLengSIMD(N, f64, &camera, 0, &elem_coords);
 
-    // Calculate Raster Coords manually for saving
     const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
     const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
-    var raster_coords = try NDArray(f64).initFlat(aa, &[_]usize{ 1, 2, 6 });
-    for (0..6) |ii| {
+    var raster_coords = try NDArray(f64).initFlat(aa, &[_]usize{ 1, 2, N });
+    for (0..N) |ii| {
         const lx = elem_coords.get(&[_]usize{ 0, 0, ii }) / elem_coords.get(&[_]usize{ 0, 2, ii }) + x_off;
         const ly = elem_coords.get(&[_]usize{ 0, 1, ii }) / elem_coords.get(&[_]usize{ 0, 2, ii }) + y_off;
         raster_coords.set(&[_]usize{ 0, 0, ii }, lx);
         raster_coords.set(&[_]usize{ 0, 1, ii }, ly);
     }
 
-    var raster_hull = try NDArray(f64).initFlat(aa, &[_]usize{ 1, 2, 6 });
-    try hull.buildAdaptiveHulls(6, &camera, 0, &elem_coords, &raster_hull);
+    const NH = if (N == 6) 6 else 8;
+    var raster_hull = try NDArray(f64).initFlat(aa, &[_]usize{ 1, 2, NH });
+    try hull.buildAdaptiveHulls(N, &camera, 0, &elem_coords, &raster_hull);
 
-    const hull_csv_path = try std.fmt.allocPrint(aa, "temp-hull/{s}_hull.csv", .{data_name});
-    const coords_csv_path = try std.fmt.allocPrint(aa, "temp-hull/{s}_rastercoords.csv", .{data_name});
+    const hull_csv_path = try std.fmt.allocPrint(aa, "scripts/hull-diags/{s}_hull.csv", .{data_name});
+    const coords_csv_path = try std.fmt.allocPrint(aa, "scripts/hull-diags/{s}_rastercoords.csv", .{data_name});
 
     try saveNDArrayToCSV(io, &raster_hull, hull_csv_path);
     try saveNDArrayToCSV(io, &raster_coords, coords_csv_path);
@@ -94,8 +91,17 @@ pub fn main() !void {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    try processCase(allocator, io, "tri6_bulgein_rot");
-    try processCase(allocator, io, "tri6_bulgeout_rot");
+    try processCase(allocator, io, 6, "tri6_bulgein_rot");
+    try processCase(allocator, io, 6, "tri6_bulgeout_rot");
+    try processCase(allocator, io, 6, "tri6_vertbulge");
 
-    std.debug.print("Wrote hull CSVs to temp-hull/\n", .{});
+    try processCase(allocator, io, 8, "quad8_bulgein_rot");
+    try processCase(allocator, io, 8, "quad8_bulgeout_rot");
+    try processCase(allocator, io, 8, "quad8_vertbulge");
+
+    try processCase(allocator, io, 9, "quad9_bulgein_rot");
+    try processCase(allocator, io, 9, "quad9_bulgeout_rot");
+    try processCase(allocator, io, 9, "quad9_vertbulge");
+
+    std.debug.print("Wrote hull CSVs to scripts/hull-diags/\n", .{});
 }

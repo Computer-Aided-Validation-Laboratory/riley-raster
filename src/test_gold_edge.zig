@@ -39,7 +39,7 @@ test "Gold Edge Suite" {
     };
     defer texture.deinit(allocator);
 
-    const mesh_types = [_]common.MeshType{ .tri6 };
+    const mesh_types = [_]common.MeshType{ .tri6, .quad8, .quad9 };
     const interp_types = [_]common.texops.InterpType{ .cubic_lut_lerp };
     const pixel_num = [_]u32{ 800, 500 };
 
@@ -63,6 +63,20 @@ test "Gold Edge Suite" {
         try common.runTestInternal(allocator, 
                                    io, 
                                    "bulgeout_rot", 
+                                   mt, 
+                                   1.1, 
+                                   texture, 
+                                   pixel_num, 
+                                   &interp_types, 
+                                   "gold-edge", 
+                                   "data-edge", 
+                                   REL_TOL,
+                                   ABS_TOL, 
+                                   SHADER_FILTER);
+
+        try common.runTestInternal(allocator, 
+                                   io, 
+                                   "vertbulge", 
                                    mt, 
                                    1.1, 
                                    texture, 
