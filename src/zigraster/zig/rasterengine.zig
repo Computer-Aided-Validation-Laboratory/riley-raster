@@ -331,14 +331,14 @@ pub fn RasterEngine(
             else
                 {};
 
-            const NH = if (comptime Geometry.has_hull) Geometry.hull_nodes_num else 0;
-            var hull_edges: [NH]hull.HullEdge = undefined;
+            const NT = if (N == 4) 2 else if (N == 6) 6 else 8;
+            var element_tess: hull.Tessellation(NT) = undefined;
 
             if (comptime Geometry.has_hull) {
                 if (raster_hull) |rh| {
-                    const hull_x = rh.getSlice(&[_]usize{ element_index, 0, 0 }, 1);
-                    const hull_y = rh.getSlice(&[_]usize{ element_index, 1, 0 }, 1);
-                    hull.getHullEdges(NH, hull_x, hull_y, &hull_edges);
+                    const hx = rh.getSlice(&[_]usize{ element_index, 0, 0 }, 1);
+                    const hy = rh.getSlice(&[_]usize{ element_index, 1, 0 }, 1);
+                    element_tess = hull.getTessellation(N, hx, hy);
                 }
             }
 
@@ -351,21 +351,18 @@ pub fn RasterEngine(
                     const global_subx = tile_x_px_min * sub_samp + scratch_x;
                     const global_suby = tile_y_px_min * sub_samp + scratch_y;
 
-                    if (comptime report == .perf) {
+                    if (comptime Geometry.has_hull) {
+                        const in_tess = element_tess.isIn(subpx_x, subpx_y);
+                        if (comptime report == .perf) {
+                            perf_ctx.recordEarlyOut(global_subx, global_suby, in_tess);
+                        }
+                        if (!in_tess) {
+                            subpx_x += subpx_step;
+                            continue;
+                        }
+                    } else if (comptime report == .perf) {
                         perf_ctx.recordEarlyOut(global_subx, global_suby, true);
                     }
-                    // if (comptime Geometry.has_hull) {
-                    //     const in_hull = hull.isInHull(NH, hull_edges, subpx_x, subpx_y);
-                    //     if (comptime report == .perf) {
-                    //         perf_ctx.recordEarlyOut(global_subx, global_suby, in_hull);
-                    //     }
-                    //     if (!in_hull) {
-                    //         subpx_x += subpx_step;
-                    //         continue;
-                    //     }
-                    // } else if (comptime report == .perf) {
-                    //     perf_ctx.recordEarlyOut(global_subx, global_suby, true);
-                    // }
 
                     const result = Geometry.solveWeights(
                         nodes,
@@ -414,8 +411,8 @@ pub fn RasterEngine(
                                 index,
                                 subpx_image_scratch,
                                 perf_ctx,
-                                tile_x_px_min * sub_samp + scratch_x,
-                                tile_y_px_min * sub_samp + scratch_y,
+                                global_subx,
+                                global_suby,
                             );
                         }
                     } else {
