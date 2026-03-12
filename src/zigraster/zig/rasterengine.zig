@@ -111,6 +111,9 @@ pub fn RasterEngine(
                                     overlap.elem_ind,
                                     actual_fields,
                                     fields_num,
+                                    sub_samp,
+                                    tile.x_px_min,
+                                    tile.y_px_min,
                                     subpx_tile_size,
                                     subpx_step,
                                     subpx_offset,
@@ -133,6 +136,9 @@ pub fn RasterEngine(
                                     overlap.elem_ind,
                                     actual_fields,
                                     fields_num,
+                                    sub_samp,
+                                    tile.x_px_min,
+                                    tile.y_px_min,
                                     subpx_tile_size,
                                     subpx_step,
                                     subpx_offset,
@@ -183,6 +189,9 @@ pub fn RasterEngine(
             element_index: usize,
             actual_fields: usize,
             fields_num: usize,
+            sub_samp: usize,
+            tile_x_px_min: usize,
+            tile_y_px_min: usize,
             subpx_tile_size: usize,
             subpx_step: f64,
             subpx_offset: f64,
@@ -246,6 +255,9 @@ pub fn RasterEngine(
                                 shader,
                                 index,
                                 subpx_image_scratch,
+                                perf_ctx,
+                                tile_x_px_min * sub_samp + scratch_x,
+                                tile_y_px_min * sub_samp + scratch_y,
                             );
                         }
                     }
@@ -267,6 +279,9 @@ pub fn RasterEngine(
             element_index: usize,
             actual_fields: usize,
             fields_num: usize,
+            sub_samp: usize,
+            tile_x_px_min: usize,
+            tile_y_px_min: usize,
             subpx_tile_size: usize,
             subpx_step: f64,
             subpx_offset: f64,
@@ -316,12 +331,16 @@ pub fn RasterEngine(
                 var subpx_x: f64 = xi_min_f + subpx_offset;
 
                 for (scratch_start_x..scratch_end_x) |scratch_x| {
-                    if (comptime Geometry.has_hull) {
-                        if (!hull.isInHull(NH, hull_edges, subpx_x, subpx_y)) {
-                            subpx_x += subpx_step;
-                            continue;
-                        }
+                    if (comptime report == .perf) {
+                        perf_ctx.recordEarlyOut(tile_x_px_min * sub_samp + scratch_x, 
+                                                tile_y_px_min * sub_samp + scratch_y, true);
                     }
+                    // if (comptime Geometry.has_hull) {
+                    //     if (!hull.isInHull(NH, hull_edges, subpx_x, subpx_y)) {
+                    //         subpx_x += subpx_step;
+                    //         continue;
+                    //     }
+                    // }
 
                     const result = Geometry.solveWeights(
                         nodes,
@@ -365,6 +384,9 @@ pub fn RasterEngine(
                                 shader,
                                 index,
                                 subpx_image_scratch,
+                                perf_ctx,
+                                tile_x_px_min * sub_samp + scratch_x,
+                                tile_y_px_min * sub_samp + scratch_y,
                             );
                         }
                     } else {

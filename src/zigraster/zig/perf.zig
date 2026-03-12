@@ -14,21 +14,52 @@ pub const PerfOpts = struct {
     save_tile_timing_map: bool = true,
     save_tile_density_map: bool = true,
     save_tile_occupancy_map: bool = true,
+    save_depth_map: bool = true,
+    save_earlyout_map: bool = true,
+    save_pixel_occupancy_map: bool = true,
 };
 
 pub fn initFramePerf(
     allocator: std.mem.Allocator,
     pixels_num: [2]u32,
     tile_size: u16,
+    sub_sample: u8,
     opts: PerfOpts,
 ) !Perf {
     var self = Perf{};
+    const sub_samp: usize = @intCast(sub_sample);
+    const sub_pixels_num = [_]usize{ pixels_num[1] * sub_samp, pixels_num[0] * sub_samp };
+
     if (opts.save_iteration_map) {
         self.iteration_map = try NDArray(f64).initFlat(
             allocator,
             &[_]usize{ pixels_num[1], pixels_num[0] },
         );
         @memset(self.iteration_map.?.elems, 0);
+    }
+
+    if (opts.save_pixel_occupancy_map) {
+        self.pixel_occupancy_map = try NDArray(f64).initFlat(
+            allocator,
+            &[_]usize{ pixels_num[1], pixels_num[0] },
+        );
+        @memset(self.pixel_occupancy_map.?.elems, 0);
+    }
+
+    if (opts.save_depth_map) {
+        self.depth_map = try NDArray(f64).initFlat(
+            allocator,
+            &sub_pixels_num,
+        );
+        @memset(self.depth_map.?.elems, 0);
+    }
+
+    if (opts.save_earlyout_map) {
+        self.earlyout_map = try NDArray(f64).initFlat(
+            allocator,
+            &sub_pixels_num,
+        );
+        @memset(self.earlyout_map.?.elems, 0);
     }
 
     const tiles_num_x: usize = try std.math.divCeil(
@@ -95,6 +126,9 @@ pub const Perf = struct {
 
     // --- Spatial Maps ---
     iteration_map: ?NDArray(f64) = null,
+    pixel_occupancy_map: ?NDArray(f64) = null,
+    depth_map: ?NDArray(f64) = null,
+    earlyout_map: ?NDArray(f64) = null,
     tile_timing_map: ?NDArray(f64) = null,
     tile_density_map: ?NDArray(f64) = null,
     tile_occupancy_map: ?NDArray(f64) = null,
@@ -102,6 +136,15 @@ pub const Perf = struct {
     pub fn deinit(self: *Perf, allocator: std.mem.Allocator) void {
         if (self.iteration_map) |*imap| {
             imap.deinit(allocator);
+        }
+        if (self.pixel_occupancy_map) |*pomap| {
+            pomap.deinit(allocator);
+        }
+        if (self.depth_map) |*dmap| {
+            dmap.deinit(allocator);
+        }
+        if (self.earlyout_map) |*emap| {
+            emap.deinit(allocator);
         }
         if (self.tile_timing_map) |*tmap| {
             tmap.deinit(allocator);
@@ -148,6 +191,56 @@ pub const Perf = struct {
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
                 "frame_{d}_iters",
+                .{frame_idx},
+            );
+            for (opts.formats) |fmt| {
+                try iio.saveImage(io, save_dir, name, &mat, fmt, 8);
+            }
+        }
+
+        if (self.pixel_occupancy_map) |*m| {
+            const mat = MatSlice(f64).init(
+                m.elems,
+                camera.pixels_num[1],
+                camera.pixels_num[0],
+            );
+            const name = try std.fmt.bufPrint(
+                name_buff[0..],
+                "frame_{d}_occupancy",
+                .{frame_idx},
+            );
+            for (opts.formats) |fmt| {
+                try iio.saveImage(io, save_dir, name, &mat, fmt, 8);
+            }
+        }
+
+        if (self.depth_map) |*m| {
+            const sub_samp: usize = @intCast(camera.sub_sample);
+            const mat = MatSlice(f64).init(
+                m.elems,
+                camera.pixels_num[1] * sub_samp,
+                camera.pixels_num[0] * sub_samp,
+            );
+            const name = try std.fmt.bufPrint(
+                name_buff[0..],
+                "frame_{d}_depth",
+                .{frame_idx},
+            );
+            for (opts.formats) |fmt| {
+                try iio.saveImage(io, save_dir, name, &mat, fmt, 8);
+            }
+        }
+
+        if (self.earlyout_map) |*m| {
+            const sub_samp: usize = @intCast(camera.sub_sample);
+            const mat = MatSlice(f64).init(
+                m.elems,
+                camera.pixels_num[1] * sub_samp,
+                camera.pixels_num[0] * sub_samp,
+            );
+            const name = try std.fmt.bufPrint(
+                name_buff[0..],
+                "frame_{d}_earlyout",
                 .{frame_idx},
             );
             for (opts.formats) |fmt| {
@@ -355,8 +448,9 @@ fn getMedian(sorted_data: []const f64) f64 {
     }
 }
 
-pub fn PerfContext(comptime mode: Report) type {
+pub fn PerfContext(comptime _mode: Report) type {
     return struct {
+        pub const mode = _mode;
         perf: if (mode == .perf) *Perf else void,
 
         pub inline fn recordGeometry(self: @This(), total: usize, visible: usize) void {
@@ -391,8 +485,26 @@ pub fn PerfContext(comptime mode: Report) type {
                 const row_stride = imap.strides[0];
                 imap.elems[y * row_stride + x] = @floatFromInt(iters);
             }
+            if (self.perf.pixel_occupancy_map) |*pomap| {
+                const row_stride = pomap.strides[0];
+                pomap.elems[y * row_stride + x] += 1.0;
+            }
             self.perf.solver_calls += 1;
             self.perf.total_iters += iters;
+        }
+
+        pub inline fn recordDepth(self: @This(), global_subx: usize, global_suby: usize, inv_z: f64) void {
+            if (self.perf.depth_map) |*dmap| {
+                const row_stride = dmap.strides[0];
+                dmap.elems[global_suby * row_stride + global_subx] = inv_z;
+            }
+        }
+
+        pub inline fn recordEarlyOut(self: @This(), global_subx: usize, global_suby: usize, early: bool) void {
+            if (self.perf.earlyout_map) |*emap| {
+                const row_stride = emap.strides[0];
+                emap.elems[global_suby * row_stride + global_subx] = if (early) 1.0 else 0.0;
+            }
         }
 
         pub inline fn recordDepthTest(self: @This(), failed: bool) void {

@@ -19,7 +19,13 @@ pub fn FlatKernel(comptime N: usize) type {
             shader: *const shaderops.FlatShader,
             index: usize,
             spx_image_scratch: *MatSlice(f64),
+            perf_ctx: anytype,
+            global_subx: usize,
+            global_suby: usize,
         ) void {
+            if (@TypeOf(perf_ctx).mode == .perf) {
+                perf_ctx.recordDepth(global_subx, global_suby, 1.0 / sub_pixel_z);
+            }
             if (comptime coord_space == CoordSpace.clip_px_leng) {
                 shaderops.fillFlat(
                     N,
@@ -65,7 +71,13 @@ pub fn TexKernel(comptime N: usize, comptime interp_type: InterpType) type {
             shader: *const shaderops.TexShader,
             index: usize,
             spx_image_scratch: *MatSlice(f64),
+            perf_ctx: anytype,
+            global_subx: usize,
+            global_suby: usize,
         ) void {
+            if (@TypeOf(perf_ctx).mode == .perf) {
+                perf_ctx.recordDepth(global_subx, global_suby, 1.0 / sub_pixel_z);
+            }
             _ = frame_index;
             _ = actual_fields;
             _ = fields_num;

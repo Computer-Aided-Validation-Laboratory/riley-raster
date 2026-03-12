@@ -128,6 +128,7 @@ pub fn rasterAllFrames(
                 outer_alloc,
                 camera.pixels_num,
                 config.tile_size,
+                camera.sub_sample,
                 config.perf_opts,
             );
         }

@@ -35,6 +35,7 @@ pub fn renderAndSave(
     sh: mr.FieldShader,
     dir: []const u8,
     add_disp: bool,
+    config: RasterConfig,
 ) !void {
     const cwd = std.Io.Dir.cwd();
     // Manual recursive directory creation since makePath isn't in std.Io.Dir
@@ -61,11 +62,6 @@ pub fn renderAndSave(
         .disp = if (add_disp) disp else null,
         .shader = sh,
     };
-    const config = RasterConfig{
-        .save_opt = .disk,
-        .save_formats = &[_]iio.ImageFormat{ .csv, .bmp },
-        .tile_size = 16,
-    };
 
     _ = try specraster.rasterAllFrames(allocator, io, camera, &mesh_raster, config, out_dir);
 }
@@ -81,6 +77,7 @@ pub fn runGenerationExt(
     interp_types: []const texops.InterpType,
     gold_dir_root: []const u8,
     data_dir_root: []const u8,
+    config: RasterConfig,
 ) !void {
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
@@ -148,7 +145,7 @@ pub fn runGenerationExt(
             });
             try renderAndSave(aa, io, &camera, mt, elem_coords, elem_disp, .{
                 .flat = .{ .field = elem_disp, .bits = 8 },
-            }, flat_dir, add_disp);
+            }, flat_dir, add_disp, config);
 
             // Tex Shader
             for (interp_types) |it| {
@@ -165,7 +162,7 @@ pub fn runGenerationExt(
                         .texture = texture,
                         .interp_type = it,
                     },
-                }, tex_dir, add_disp);
+                }, tex_dir, add_disp, config);
             }
         }
     }
@@ -181,6 +178,11 @@ pub fn runGeneration(
 ) !void {
     const interp_types = [_]texops.InterpType{.cubic_lut_lerp};
     const pixel_num = [_]u32{ 320, 200 };
+    const config = RasterConfig{
+        .save_opt = .disk,
+        .save_formats = &[_]iio.ImageFormat{ .csv, .bmp },
+        .tile_size = 16,
+    };
     return runGenerationExt(
         allocator,
         io,
@@ -192,5 +194,6 @@ pub fn runGeneration(
         &interp_types,
         "gold-simple",
         "data-simple",
+        config,
     );
 }
