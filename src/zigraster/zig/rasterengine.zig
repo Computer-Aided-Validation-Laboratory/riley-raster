@@ -47,6 +47,8 @@ pub fn RasterEngine(
             const subpx_tile_size: usize = tile_size * sub_samp;
             const subpx_tile_total: usize = subpx_tile_size * subpx_tile_size;
 
+            const tiles_x = (screen_px_x + tile_size - 1) / tile_size;
+
             const sub_samp_f: f64 = @as(f64, @floatFromInt(camera.sub_sample));
             const subpx_step: f64 = 1.0 / sub_samp_f;
             const subpx_offset: f64 = 1.0 / (2.0 * sub_samp_f);
@@ -68,7 +70,7 @@ pub fn RasterEngine(
             const subpx_field_avg = try allocator.alloc(f64, fields_num);
             defer allocator.free(subpx_field_avg);
 
-            for (active_tiles, 0..) |tile, tile_idx| {
+            for (active_tiles) |tile| {
                 const tile_start = if (comptime report == .perf)
                     Timestamp.now(io, .awake)
                 else
@@ -177,7 +179,8 @@ pub fn RasterEngine(
                 if (comptime report == .perf) {
                     const tile_end = Timestamp.now(io, .awake);
                     const dur = tile_start.durationTo(tile_end).raw.nanoseconds;
-                    perf_ctx.recordTile(tile_idx, @intCast(dur), shaded_px, overlaps.len);
+                    const spatial_idx = (tile.y_px_min / tile_size) * tiles_x + (tile.x_px_min / tile_size);
+                    perf_ctx.recordTile(spatial_idx, @intCast(dur), shaded_px, overlaps.len);
                 }
             }
         }
