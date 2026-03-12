@@ -348,15 +348,23 @@ pub fn RasterEngine(
                 var subpx_x: f64 = xi_min_f + subpx_offset;
 
                 for (scratch_start_x..scratch_end_x) |scratch_x| {
+                    const global_subx = tile_x_px_min * sub_samp + scratch_x;
+                    const global_suby = tile_y_px_min * sub_samp + scratch_y;
+
                     if (comptime report == .perf) {
-                        perf_ctx.recordEarlyOut(tile_x_px_min * sub_samp + scratch_x, 
-                                                tile_y_px_min * sub_samp + scratch_y, true);
+                        perf_ctx.recordEarlyOut(global_subx, global_suby, true);
                     }
                     // if (comptime Geometry.has_hull) {
-                    //     if (!hull.isInHull(NH, hull_edges, subpx_x, subpx_y)) {
+                    //     const in_hull = hull.isInHull(NH, hull_edges, subpx_x, subpx_y);
+                    //     if (comptime report == .perf) {
+                    //         perf_ctx.recordEarlyOut(global_subx, global_suby, in_hull);
+                    //     }
+                    //     if (!in_hull) {
                     //         subpx_x += subpx_step;
                     //         continue;
                     //     }
+                    // } else if (comptime report == .perf) {
+                    //     perf_ctx.recordEarlyOut(global_subx, global_suby, true);
                     // }
 
                     const result = Geometry.solveWeights(
@@ -382,8 +390,6 @@ pub fn RasterEngine(
                             shaded_px += 1;
 
                             if (comptime report == .perf) {
-                                const global_subx = tile_x_px_min * sub_samp + scratch_x;
-                                const global_suby = tile_y_px_min * sub_samp + scratch_y;
                                 perf_ctx.recordPixel(
                                     global_subx,
                                     global_suby,
