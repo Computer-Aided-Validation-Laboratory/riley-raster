@@ -37,30 +37,36 @@ pub fn main() !void {
     const gold_dir = "gold-edge";
     const data_dir = "data-edge";
 
+    const config = gengold.specraster.RasterConfig{
+        .save_opt = .disk,
+        .save_formats = &[_]gengold.iio.ImageFormat{ .bmp },
+        .report = .off,
+    };
+
     std.debug.print("Generating Edge Cases to gold-edge/...\n", .{});
     
     // Tri6
     {
         const mt = [_]gengold.MeshType{ .tri6 };
-        try gengold.runGenerationExt(allocator, io, "bulgein_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
-        try gengold.runGenerationExt(allocator, io, "bulgeout_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
-        try gengold.runGenerationExt(allocator, io, "vertbulge", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
+        try gengold.runGenerationExt(allocator, io, "bulgein_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir, config);
+        try gengold.runGenerationExt(allocator, io, "bulgeout_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir, config);
+        try gengold.runGenerationExt(allocator, io, "vertbulge", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir, config);
     }
 
     // Quad8
     {
         const mt = [_]gengold.MeshType{ .quad8 };
-        try gengold.runGenerationExt(allocator, io, "bulgein_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
-        try gengold.runGenerationExt(allocator, io, "bulgeout_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
-        try gengold.runGenerationExt(allocator, io, "vertbulge", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
+        try gengold.runGenerationExt(allocator, io, "bulgein_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir, config);
+        try gengold.runGenerationExt(allocator, io, "bulgeout_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir, config);
+        try gengold.runGenerationExt(allocator, io, "vertbulge", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir, config);
     }
 
     // Quad9
     {
         const mt = [_]gengold.MeshType{ .quad9 };
-        try gengold.runGenerationExt(allocator, io, "bulgein_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
-        try gengold.runGenerationExt(allocator, io, "bulgeout_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
-        try gengold.runGenerationExt(allocator, io, "vertbulge", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir);
+        try gengold.runGenerationExt(allocator, io, "bulgein_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir, config);
+        try gengold.runGenerationExt(allocator, io, "bulgeout_rot", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir, config);
+        try gengold.runGenerationExt(allocator, io, "vertbulge", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, data_dir, config);
     }
     
     std.debug.print("Done.\n", .{});

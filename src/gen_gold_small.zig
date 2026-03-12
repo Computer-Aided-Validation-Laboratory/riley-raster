@@ -42,18 +42,24 @@ pub fn main() !void {
     const gold_dir = "gold-small";
     const data_dir = "data-small";
 
+    const config = gengold.specraster.RasterConfig{
+        .save_opt = .disk,
+        .save_formats = &[_]gengold.iio.ImageFormat{ .bmp },
+        .report = .off,
+    };
+
     std.debug.print("Generating ALL Small Gold Data...\n", .{});
 
     std.debug.print("Single Element Cases...\n", .{});
     try gengold.runGenerationExt(
         allocator, io, "single", &mesh_types, 1.1, texture, pixel_num, interp_types, 
-        gold_dir, data_dir
+        gold_dir, data_dir, config
     );
 
     std.debug.print("Full Screen Cases...\n", .{});
     try gengold.runGenerationExt(
         allocator, io, "full", &mesh_types, 1.0, texture, pixel_num, interp_types, 
-        gold_dir, data_dir
+        gold_dir, data_dir, config
     );
     
     std.debug.print("Done.\n", .{});

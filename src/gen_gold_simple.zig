@@ -42,10 +42,16 @@ pub fn main() !void {
     const gold_dir = "gold-simple";
     const data_dir = "data-simple";
 
+    const config = gengold.specraster.RasterConfig{
+        .save_opt = .disk,
+        .save_formats = &[_]gengold.iio.ImageFormat{ .bmp },
+        .report = .off,
+    };
+
     std.debug.print("Generating Simple Gold Data (Two Elements only)...\n", .{});
     try gengold.runGenerationExt(
         allocator, io, "twoelems", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
-        gold_dir, data_dir
+        gold_dir, data_dir, config
     );
 
     // std.debug.print("Generating Simple Gold Data (Single Element only)...\n", .{});
