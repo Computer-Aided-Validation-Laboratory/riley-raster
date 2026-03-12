@@ -2,6 +2,7 @@ const std = @import("std");
 const Camera = @import("camera.zig").Camera;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
+const hull = @import("hull.zig");
 const rops = @import("rasterops.zig");
 const BBox = rops.BBox;
 const ActiveTile = rops.ActiveTile;
@@ -299,12 +300,13 @@ pub fn RasterEngine(
                 {};
 
             const NH = if (comptime Geometry.has_hull) Geometry.hull_nodes_num else 0;
-            var hull_x: []f64 = &[_]f64{};
-            var hull_y: []f64 = &[_]f64{};
+            var hull_edges: [NH]hull.HullEdge = undefined;
+
             if (comptime Geometry.has_hull) {
                 if (raster_hull) |rh| {
-                    hull_x = rh.getSlice(&[_]usize{ element_index, 0, 0 }, 0);
-                    hull_y = rh.getSlice(&[_]usize{ element_index, 1, 0 }, 0);
+                    const hull_x = rh.getSlice(&[_]usize{ element_index, 0, 0 }, 1);
+                    const hull_y = rh.getSlice(&[_]usize{ element_index, 1, 0 }, 1);
+                    hull.getHullEdges(NH, hull_x, hull_y, &hull_edges);
                 }
             }
 
@@ -315,21 +317,7 @@ pub fn RasterEngine(
 
                 for (scratch_start_x..scratch_end_x) |scratch_x| {
                     if (comptime Geometry.has_hull) {
-                        var x_min = hull_x[0];
-                        var x_max = hull_x[0];
-                        var y_min = hull_y[0];
-                        var y_max = hull_y[0];
-                        
-                        inline for (1..NH) |i| {
-                            x_min = @min(x_min, hull_x[i]);
-                            x_max = @max(x_max, hull_x[i]);
-                            y_min = @min(y_min, hull_y[i]);
-                            y_max = @max(y_max, hull_y[i]);
-                        }
-                        
-                        // Expand by loose tolerance of 1e-3
-                        if (subpx_x < x_min - 1e-3 or subpx_x > x_max + 1e-3 or
-                            subpx_y < y_min - 1e-3 or subpx_y > y_max + 1e-3) {
+                        if (!hull.isInHull(NH, hull_edges, subpx_x, subpx_y)) {
                             subpx_x += subpx_step;
                             continue;
                         }
