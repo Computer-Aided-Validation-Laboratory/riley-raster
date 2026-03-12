@@ -10,8 +10,16 @@
 - Use adaptive hull for tri6, quad8 and quad9 to do early out test
 
 - Allow configuration of save name for files.
-- Threading
 
+## TODO: Mid-Term
+- SIMD
+- Threading
+- Ask LLM to do a detailed code review, or get another LLM to do a detailed code review, CodeRabbit?
+
+## TODO: Long-Term
+- Finalise actual interface for external calls
+- Create C ABI interfaces 
+- Hook up to python through cython
 
 ## General Refactor
 - Overlapping csv logic and parsing
