@@ -37,9 +37,21 @@ pub fn renderAndSave(
     add_disp: bool,
 ) !void {
     const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, dir, .default_dir) catch |err| {
-        if (err != error.PathAlreadyExists) return err;
-    };
+    // Manual recursive directory creation since makePath isn't in std.Io.Dir
+    var iter = std.mem.splitScalar(u8, dir, '/');
+    var path_buf: [256]u8 = undefined;
+    var path_len: usize = 0;
+    while (iter.next()) |part| {
+        if (path_len > 0) {
+            path_buf[path_len] = '/';
+            path_len += 1;
+        }
+        std.mem.copyForwards(u8, path_buf[path_len..], part);
+        path_len += part.len;
+        cwd.createDir(io, path_buf[0..path_len], .default_dir) catch |err| {
+            if (err != error.PathAlreadyExists) return err;
+        };
+    }
     var out_dir = try cwd.openDir(io, dir, .{});
     defer out_dir.close(io);
 

@@ -28,6 +28,7 @@ pub fn RasterEngine(
             overlap_bboxes: []BBox,
             elem_coord_arr: *const NDArray(f64),
             shader: *const ShaderData,
+            raster_hull: ?*const NDArray(f64),
             image_out_arr: *NDArray(f64),
         ) !void {
             @setFloatMode(.optimized);
@@ -144,6 +145,7 @@ pub fn RasterEngine(
                                     yi_min_f,
                                     nodes,
                                     shader,
+                                    raster_hull,
                                     subpx_inv_z_scratch,
                                     &subpx_image_scratch,
                                 );
@@ -277,6 +279,7 @@ pub fn RasterEngine(
             yi_min_f: f64,
             nodes: Vec3OfSlices(f64),
             shader: *const ShaderData,
+            raster_hull: ?*const NDArray(f64),
             subpx_inv_z_scratch: []f64,
             subpx_image_scratch: *MatSlice(f64),
         ) !u64 {
@@ -295,12 +298,43 @@ pub fn RasterEngine(
             else
                 {};
 
+            const NH = if (comptime Geometry.has_hull) Geometry.hull_nodes_num else 0;
+            var hull_x: []f64 = &[_]f64{};
+            var hull_y: []f64 = &[_]f64{};
+            if (comptime Geometry.has_hull) {
+                if (raster_hull) |rh| {
+                    hull_x = rh.getSlice(&[_]usize{ element_index, 0, 0 }, 0);
+                    hull_y = rh.getSlice(&[_]usize{ element_index, 1, 0 }, 0);
+                }
+            }
+
             var subpx_y: f64 = yi_min_f + subpx_offset;
             for (scratch_start_y..scratch_end_y) |scratch_y| {
                 const row_offset = scratch_y * subpx_tile_size;
                 var subpx_x: f64 = xi_min_f + subpx_offset;
 
                 for (scratch_start_x..scratch_end_x) |scratch_x| {
+                    if (comptime Geometry.has_hull) {
+                        var x_min = hull_x[0];
+                        var x_max = hull_x[0];
+                        var y_min = hull_y[0];
+                        var y_max = hull_y[0];
+                        
+                        inline for (1..NH) |i| {
+                            x_min = @min(x_min, hull_x[i]);
+                            x_max = @max(x_max, hull_x[i]);
+                            y_min = @min(y_min, hull_y[i]);
+                            y_max = @max(y_max, hull_y[i]);
+                        }
+                        
+                        // Expand by loose tolerance of 1e-3
+                        if (subpx_x < x_min - 1e-3 or subpx_x > x_max + 1e-3 or
+                            subpx_y < y_min - 1e-3 or subpx_y > y_max + 1e-3) {
+                            subpx_x += subpx_step;
+                            continue;
+                        }
+                    }
+
                     const result = Geometry.solveWeights(
                         nodes,
                         subpx_x,

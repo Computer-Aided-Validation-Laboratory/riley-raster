@@ -166,8 +166,10 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
         "fullscreen" 
     else if (std.mem.eql(u8, test_type, "twoelems"))
         "twoelems"
+    else if (std.mem.eql(u8, test_type, "single"))
+        "single"
     else 
-        "single";
+        test_type;
     
     const data_name = switch (mesh_type) {
         .quad4ibi, .quad4newton => "quad4",

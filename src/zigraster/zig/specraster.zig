@@ -399,6 +399,7 @@ fn rasterInternal(
         overlap_bboxes,
         coords,
         shader,
+        if (raster_hull) |*rh| rh else null,
         image_out_arr,
     );
     
