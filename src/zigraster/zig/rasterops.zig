@@ -215,8 +215,8 @@ pub fn countElemsCalcBBoxes(comptime N: usize,
 
         if (raster_hull) |rh| {
             // Use pre-calculated raster hull (NH points)
-            const hull_x = rh.getSlice(&[_]usize{ ee, 0, 0 }, 0);
-            const hull_y = rh.getSlice(&[_]usize{ ee, 1, 0 }, 0);
+            const hull_x = rh.getSlice(&[_]usize{ ee, 0, 0 }, 1);
+            const hull_y = rh.getSlice(&[_]usize{ ee, 1, 0 }, 1);
 
             for (0..NH) |ii| {
                 const sx = hull_x[ii];

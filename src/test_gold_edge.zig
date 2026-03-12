@@ -17,24 +17,24 @@ test "Gold Edge Suite" {
     // Load original using C loader once, then save as simple TIFF
     // and reload using our simple loader to ensure compatibility.
     const texture = blk: {
-        const tex_orig = try common.iio.CLoadTIFF(allocator, io, "texture/speckle.tiff", u8, 1);
-        defer tex_orig.deinit(allocator);
-        
-        const mat_size = tex_orig.rows_n * tex_orig.cols_n;
-        const mat_mem = try allocator.alloc(f64, mat_size);
-        defer allocator.free(mat_mem);
-        for (0..mat_size) |i| {
-            mat_mem[i] = @as(f64, @floatFromInt(tex_orig.pixels[i].channels[0]));
-        }
-        const mat = common.MatSlice(f64).init(mat_mem, tex_orig.rows_n, tex_orig.cols_n);
-        
-        var io_threaded_internal = std.Io.Threaded.init_single_threaded;
-        const io_internal = io_threaded_internal.io();
-        const out_dir = std.Io.Dir.cwd();
-        
-        try common.iio.saveTIFF(io_internal, out_dir, "temp-test/speckle-simple.tiff", &mat, 8);
+        // const tex_orig = try common.iio.CLoadTIFF(allocator, io, "texture/speckle.tiff", u8, 1);
+        // defer tex_orig.deinit(allocator);
+        // 
+        // const mat_size = tex_orig.rows_n * tex_orig.cols_n;
+        // const mat_mem = try allocator.alloc(f64, mat_size);
+        // defer allocator.free(mat_mem);
+        // for (0..mat_size) |i| {
+        //     mat_mem[i] = @as(f64, @floatFromInt(tex_orig.pixels[i].channels[0]));
+        // }
+        // const mat = common.MatSlice(f64).init(mat_mem, tex_orig.rows_n, tex_orig.cols_n);
+        // 
+        // var io_threaded_internal = std.Io.Threaded.init_single_threaded;
+        // const io_internal = io_threaded_internal.io();
+        // const out_dir = std.Io.Dir.cwd();
+        // 
+        // try common.iio.saveTIFF(io_internal, out_dir, "temp-test/speckle-simple.tiff", &mat, 8);
         break :blk try common.iio.loadImage(
-            allocator, io, "temp-test/speckle-simple.tiff", .tiff, u8, 1
+            allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1
         );
     };
     defer texture.deinit(allocator);

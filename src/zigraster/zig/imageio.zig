@@ -726,7 +726,11 @@ test "Verify hand-written TIFF loader" {
     defer tex_c.deinit(allocator);
 
     // 2. Save using our saveTIFF
-    const out_dir = std.Io.Dir.cwd();
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDir(io, "temp-test", .default_dir) catch |err| {
+        if (err != error.PathAlreadyExists) return err;
+    };
+    const out_dir = cwd;
     const mat_size = tex_c.rows_n * tex_c.cols_n;
     const mat_mem = try allocator.alloc(f64, mat_size);
     defer allocator.free(mat_mem);
@@ -762,7 +766,11 @@ test "Save and Load All Formats" {
     const allocator = testing.allocator;
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
-    const out_dir = std.Io.Dir.cwd();
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDir(io, "temp-test", .default_dir) catch |err| {
+        if (err != error.PathAlreadyExists) return err;
+    };
+    const out_dir = cwd;
 
     // Create a dummy 4x4 grayscale image
     const rows = 4;
