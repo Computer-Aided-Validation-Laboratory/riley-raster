@@ -151,10 +151,10 @@ pub fn main() !void {
         
     } else {
         const path_uvs = path_data ++ "uvs.csv";
-        const path_tex = "texture/speckle.bmp";
+        const path_tex = "texture/speckle-simple.tiff";
         
         const uvs = try uvio.loadUVMap(page_alloc, io, path_uvs);
-        const texture = try iio.loadImage(page_alloc, io, path_tex, .bmp, u8, 1);
+        const texture = try iio.loadImage(page_alloc, io, path_tex, .tiff, u8, 1);
         const elem_uvs = try mr.transformUVs(page_alloc, &uvs, &sim_data.connect);
         
         mesh_raster.shader = .{ .texture = .{
