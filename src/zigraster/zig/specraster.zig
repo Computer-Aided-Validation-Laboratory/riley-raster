@@ -14,13 +14,13 @@ const BBox = rops.BBox;
 const ActiveTile = rops.ActiveTile;
 const Vec3OfSlices = rops.Vec3OfSlices;
 
-const meshraster = @import("meshraster.zig");
-const MeshType = meshraster.MeshType;
-const MeshRaster = meshraster.MeshRaster;
-const MeshTransform = meshraster.MeshTransform;
-const FlatShader = meshraster.FlatShader;
-const TexShader = meshraster.TexShader;
-const Shader = meshraster.Shader;
+const mr = @import("meshraster.zig");
+const MeshType = mr.MeshType;
+const MeshRaster = mr.MeshRaster;
+const MeshTransform = mr.MeshTransform;
+const FlatShader = mr.FlatShader;
+const TexShader = mr.TexShader;
+const Shader = mr.Shader;
 
 const iio = @import("imageio.zig");
 const ImageFormat = iio.ImageFormat;
@@ -199,11 +199,10 @@ pub fn rasterOneFrame(
     allocator: std.mem.Allocator,
     io: std.Io,
     camera: *const Camera,
-    mesh: *const MeshTransform,
     frame_ind: usize,
     tile_size: u16,
     threads: u16,
-    shader: *const FieldShader,
+    shader: *const Shader,
     coords: *NDArray(f64),
     image_out_arr: *NDArray(f64),
     comptime report: Report,
@@ -250,13 +249,13 @@ pub fn rasterOneFrame(
 fn rasterInternal(
     comptime GK: type, // geometry kernel
     comptime SK: type, // shader kernel
-    comptime SD: type, // shader data
+    comptime ST: type, // shader type
     allocator: std.mem.Allocator,
     io: std.Io,
     camera: *const Camera,
     frame_ind: usize,
     tile_size: u16,
-    shader: *const SD,
+    shader: *const ST,
     coords: *NDArray(f64),
     image_out_arr: *NDArray(f64),
     comptime report: Report,
@@ -399,7 +398,7 @@ fn rasterInternal(
     // Tiling Raster Step 5: Main raster loop
     const time_start_loop = Timestamp.now(io, .awake);
 
-    try rasterengine.RasterEngine(GK, SK, SD).raster(
+    try rasterengine.RasterEngine(GK, SK, ST).raster(
         report,
         pctx,
         arena_alloc,

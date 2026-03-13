@@ -63,7 +63,7 @@ pub fn transformMesh(outer_alloc: std.mem.Allocator,
 
     switch (mesh_raster.shader) {
         .flat => |flat_shader| {
-            const elem_field = try mr.transformField(outer_alloc,
+            const elem_field = try transformField(outer_alloc,
                                                      mesh_raster.connect,
                                                      flat_shader.field);
             
@@ -72,9 +72,9 @@ pub fn transformMesh(outer_alloc: std.mem.Allocator,
             }};
         },
         .texture => |texture_shader| {
-            const elem_uvs = try mr.transformUVs(outer_alloc, 
-                                                 texture_shader.uvs, 
-                                                 mesh_raster.connect);
+            const elem_uvs = try transformUVs(outer_alloc, 
+                                              texture_shader.uvs, 
+                                              mesh_raster.connect);
                     
             mesh_raster.shader = .{ .texture = .{
                 .uvs = elem_uvs,
