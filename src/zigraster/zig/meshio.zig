@@ -127,6 +127,11 @@ pub const Field = struct {
     pub inline fn getTimeN(self: *const Self) usize {return self.array.dims[0];}
     pub inline fn getCoordN(self: *const Self) usize {return self.array.dims[1];}
     pub inline fn getFieldsN(self: *const Self) usize {return self.array.dims[2];}
+
+    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+        allocator.free(self.array_mem);
+        self.array.deinit(allocator);
+    }
 };
 
 pub fn readCsvToList(outer_alloc: std.mem.Allocator, 

@@ -183,10 +183,6 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
     const uv_path = try std.fmt.allocPrint(aa, "{s}/uvs.csv", .{data_path});
     var uvs = try uvio.loadUVMap(aa, io, uv_path);
 
-    const elem_coords = try mr.transformCoords(aa, &sim_data.coords, &sim_data.connect);
-    const elem_disp = try mr.transformField(aa, &sim_data.connect, &sim_data.field);
-    const elem_uvs = try mr.transformUVs(aa, &uvs, &sim_data.connect);
-
     const cam_pos = CameraOps.pos_fill_frame_from_rot(
         &sim_data.coords, pixel_num, pixel_size, focal_leng, rot, fov_scale,
     );
@@ -213,9 +209,10 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
 
             var mesh_raster = MeshRaster{ 
                 .mesh_type = mesh_type, 
-                .coords = elem_coords, 
-                .disp = if (add_disp) elem_disp else null, 
-                .shader = .{ .flat = .{ .field = elem_disp, .bits = 8 } } 
+                .coords = sim_data.coords, 
+                .connect = sim_data.connect,
+                .disp = if (add_disp) sim_data.field else null, 
+                .shader = .{ .flat = .{ .field = sim_data.field, .bits = 8 } } 
             };
 
             const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };
@@ -255,11 +252,12 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                 
                 var mesh_raster = MeshRaster{ 
                     .mesh_type = mesh_type, 
-                    .coords = elem_coords, 
-                    .disp = if (add_disp) elem_disp else null, 
+                    .coords = sim_data.coords, 
+                    .connect = sim_data.connect,
+                    .disp = if (add_disp) sim_data.field else null, 
                     .shader = .{ 
                         .texture = .{ 
-                            .uvs = elem_uvs, .texture = texture, .interp_type = it 
+                            .uvs = uvs.array, .texture = texture, .interp_type = it 
                         } 
                     } 
                 };

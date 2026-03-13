@@ -81,17 +81,17 @@ pub fn rasterAllFrames(
     const arena_alloc = arena.allocator();
 
     // TODO: time the data transformation step!
-    const mesh_trans = try mr.transformMesh(arena_alloc, mesh_in);
+    var mesh_trans = try mr.transformMesh(arena_alloc, mesh_in);
 
     var num_time: usize = 1;
     if (mesh_trans.disp) |d| {
         num_time = d.dims[0];
     } else if (mesh_trans.shader == .flat) {
-        num_time = mesh_trans.shader.flat.field.dims[0];
+        num_time = mesh_trans.shader.flat.field.array.dims[0];
     }
 
     const num_fields = switch (mesh_trans.shader) {
-        .flat => |f| f.field.dims[2],
+        .flat => |f| f.field.array.dims[2],
         .texture => 1,
     };
 

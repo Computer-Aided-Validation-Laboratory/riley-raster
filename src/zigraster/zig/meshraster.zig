@@ -44,13 +44,13 @@ pub fn transformMesh(outer_alloc: std.mem.Allocator,
                      mesh_raster: *const MeshRaster) !MeshTransform {
 
     const elem_coords = try transformCoords(outer_alloc,
-                                            mesh_raster.coords,
-                                            mesh_raster.connect);
+                                            &mesh_raster.coords,
+                                            &mesh_raster.connect);
 
     var elem_disp: ?NDArray(f64) = null;
-    if (mesh_raster.disp) |disp| {
+    if (mesh_raster.disp) |*disp| {
         elem_disp = try transformField(outer_alloc,
-                                       mesh_raster.connect,
+                                       &mesh_raster.connect,
                                        disp);
     }
 
@@ -62,21 +62,24 @@ pub fn transformMesh(outer_alloc: std.mem.Allocator,
     };
 
     switch (mesh_raster.shader) {
-        .flat => |flat_shader| {
+        .flat => |*flat_shader| {
             const elem_field = try transformField(outer_alloc,
-                                                     mesh_raster.connect,
-                                                     flat_shader.field);
+                                                  &mesh_raster.connect,
+                                                  &flat_shader.field);
             
             mesh_trans.shader = .{ .flat = .{
-                .field = elem_field,    
+                .field = Field{
+                    .array = elem_field,
+                    .array_mem = elem_field.elems,
+                },    
             }};
         },
-        .texture => |texture_shader| {
+        .texture => |*texture_shader| {
             const elem_uvs = try transformUVs(outer_alloc, 
-                                              texture_shader.uvs, 
-                                              mesh_raster.connect);
+                                              &texture_shader.uvs, 
+                                              &mesh_raster.connect);
                     
-            mesh_raster.shader = .{ .texture = .{
+            mesh_trans.shader = .{ .texture = .{
                 .uvs = elem_uvs,
                 .texture = texture_shader.texture,
                 .interp_type = texture_shader.interp_type,
@@ -173,7 +176,7 @@ pub fn transformField(
 
 pub fn transformUVs(
     allocator: std.mem.Allocator,
-    uvs: *const UVMap,
+    uvs: *const NDArray(f64),
     connect: *const Connect,
 ) !NDArray(f64) {
     const elems_num = connect.getElemsNum();
@@ -188,7 +191,7 @@ pub fn transformUVs(
         const coord_inds = connect.getElem(ee);
         for (0..nodes_per_elem) |nn| {
             for (0..2) |uu| {
-                const val = uvs.array.get(&[_]usize{ coord_inds[nn], uu });
+                const val = uvs.get(&[_]usize{ coord_inds[nn], uu });
                 elem_uv_arr.set(&[_]usize{ ee, uu, nn }, val);
             }
         }

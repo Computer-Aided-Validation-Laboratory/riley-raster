@@ -6,8 +6,12 @@ const Texture = iio.Texture;
 const texops = @import("textureops.zig");
 const InterpType = texops.InterpType;
 
+const meshio = @import("meshio.zig");
+const Field = meshio.Field;
+
 pub const FlatShader = struct {
-    field: NDArray(f64),
+    field: Field,
+    bits: ?u8 = null,
 };
 
 pub const TexShader = struct {
@@ -32,15 +36,15 @@ pub inline fn fillFlat(
     idx: usize,
     spx_image_scratch: *MatSlice(f64),
 ) void {
-    const e_stride = sh.field.strides[1];
-    const f_stride = sh.field.strides[2];
-    const f_off = frame_ind * sh.field.strides[0] + elem_ind * e_stride;
+    const e_stride = sh.field.array.strides[1];
+    const f_stride = sh.field.array.strides[2];
+    const f_off = frame_ind * sh.field.array.strides[0] + elem_ind * e_stride;
 
     for (0..actual_fields) |ff| {
         const ff_off = f_off + ff * f_stride;
         var vs: f64 = 0.0;
         inline for (0..N) |nn| {
-            vs += weights[nn] * sh.field.elems[ff_off + nn];
+            vs += weights[nn] * sh.field.array.elems[ff_off + nn];
         }
         spx_image_scratch.elems[idx * fields_num + ff] = vs;
     }
@@ -59,15 +63,15 @@ pub inline fn fillFlatPerspective(
     idx: usize,
     spx_image_scratch: *MatSlice(f64),
 ) void {
-    const e_stride = sh.field.strides[1];
-    const f_stride = sh.field.strides[2];
-    const f_off = frame_ind * sh.field.strides[0] + elem_ind * e_stride;
+    const e_stride = sh.field.array.strides[1];
+    const f_stride = sh.field.array.strides[2];
+    const f_off = frame_ind * sh.field.array.strides[0] + elem_ind * e_stride;
 
     for (0..actual_fields) |ff| {
         const ff_off = f_off + ff * f_stride;
         var vs: f64 = 0.0;
         inline for (0..N) |nn| {
-            vs += weights[nn] * sh.field.elems[ff_off + nn] * nodes_inv_z[nn];
+            vs += weights[nn] * sh.field.array.elems[ff_off + nn] * nodes_inv_z[nn];
         }
         spx_image_scratch.elems[idx * fields_num + ff] = vs * spx_z;
     }
