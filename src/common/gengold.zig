@@ -30,9 +30,10 @@ pub fn renderAndSave(
     io: std.Io,
     camera: *const Camera,
     mt: MeshType,
-    coords: mr.NDArray(f64),
-    disp: ?mr.NDArray(f64),
-    sh: mr.FieldShader,
+    coords: meshio.Coords,
+    connect: meshio.Connect,
+    disp: ?meshio.Field,
+    sh: mr.Shader,
     dir: []const u8,
     add_disp: bool,
     config: RasterConfig,
@@ -59,6 +60,7 @@ pub fn renderAndSave(
     var mesh_raster = MeshRaster{
         .mesh_type = mt,
         .coords = coords,
+        .connect = connect,
         .disp = if (add_disp) disp else null,
         .shader = sh,
     };
@@ -110,10 +112,6 @@ pub fn runGenerationExt(
         const uv_p = try std.fmt.allocPrint(aa, "{s}/uvs.csv", .{data_path});
         var uvs = try uvio.loadUVMap(aa, io, uv_p);
 
-        const elem_coords = try mr.transformCoords(aa, &sim_data.coords, &sim_data.connect);
-        const elem_disp = try mr.transformField(aa, &sim_data.connect, &sim_data.field);
-        const elem_uvs = try mr.transformUVs(aa, &uvs, &sim_data.connect);
-
         const cam_pos = CameraOps.pos_fill_frame_from_rot(
             &sim_data.coords,
             pixel_num,
@@ -143,8 +141,8 @@ pub fn runGenerationExt(
                 @tagName(mt),
                 d_str,
             });
-            try renderAndSave(aa, io, &camera, mt, elem_coords, elem_disp, .{
-                .flat = .{ .field = elem_disp, .bits = 8 },
+            try renderAndSave(aa, io, &camera, mt, sim_data.coords, sim_data.connect, sim_data.field, .{
+                .flat = .{ .field = sim_data.field, .bits = 8 },
             }, flat_dir, add_disp, config);
 
             // Tex Shader
@@ -156,9 +154,9 @@ pub fn runGenerationExt(
                     d_str,
                     @tagName(it),
                 });
-                try renderAndSave(aa, io, &camera, mt, elem_coords, elem_disp, .{
+                try renderAndSave(aa, io, &camera, mt, sim_data.coords, sim_data.connect, sim_data.field, .{
                     .texture = .{
-                        .uvs = elem_uvs,
+                        .uvs = uvs.array,
                         .texture = texture,
                         .interp_type = it,
                     },
