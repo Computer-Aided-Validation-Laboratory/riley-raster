@@ -38,7 +38,7 @@ pub fn transformCoords(
     connect: *const Connect,
 ) !NDArray(f64) {
     // dims=(elems_num,coord[x,y,z],nodes_per_elem)
-    const coord_dims = [_]usize{ connect.elem_n, 3, connect.nodes_per_elem };
+    const coord_dims = [_]usize{ connect.getElemsNum(), 3, connect.getNodesPerElem() };
     var elem_coord_arr = try NDArray(f64).initFlat(allocator, coord_dims[0..]);
     @memset(elem_coord_arr.elems, 0.0);
 
@@ -75,9 +75,9 @@ pub fn transformField(
     // dims=(times_num,elems_num,fields_num,nodes_per_elem)
     const field_dims = [_]usize{
         field.getTimeN(),
-        connect.elem_n,
+        connect.getElemsNum(),
         field.getFieldsN(),
-        connect.nodes_per_elem,
+        connect.getNodesPerElem(),
     };
     var elem_field_arr = try NDArray(f64).initFlat(allocator, field_dims[0..]);
     @memset(elem_field_arr.elems, 0.0);
@@ -121,8 +121,8 @@ pub fn transformUVs(
     uvs: *const UVMap,
     connect: *const Connect,
 ) !NDArray(f64) {
-    const elems_num = connect.elem_n;
-    const nodes_per_elem = connect.nodes_per_elem;
+    const elems_num = connect.getElemsNum();
+    const nodes_per_elem = connect.getNodesPerElem();
     var elem_uv_arr = try NDArray(f64).initFlat(
         allocator,
         &[_]usize{ elems_num, 2, nodes_per_elem },

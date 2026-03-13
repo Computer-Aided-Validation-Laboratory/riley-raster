@@ -10,34 +10,33 @@ const NDArray = @import("ndarray.zig").NDArray;
 
 pub const Coords = struct {
     mat: MatSlice(f64),
-    mat_mem: []f64,
+    mem: []f64,
 
     const Self: type = @This();
     
-    pub fn init(allocator: std.mem.Allocator, coord_n: usize) !Coords {
-
-        const mat_heap = try allocator.alloc(f64,coord_n*3);
-        const mat_coords = MatSlice(f64).init(mat_heap,coord_n,3); 
+    pub fn init(outer_alloc: std.mem.Allocator, coords_num: usize) !Self {
+        const mat_heap = try outer_alloc.alloc(f64,coords_num*3);
+        const mat_coords = MatSlice(f64).init(mat_heap,coords_num,3); 
         
         return .{
             .mat = mat_coords,
-            .mat_mem = mat_heap,
+            .mem = mat_heap,
         };
     }
 
-    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
-        allocator.free(self.mat_mem);
+    pub fn deinit(self: *Self, outer_alloc: std.mem.Allocator) void {
+        outer_alloc.free(self.mem);
     }
 
-    pub fn x(self: *const Self, ind: usize) f64 {
+    pub inline fn x(self: *const Self, ind: usize) f64 {
         return self.mat.get(ind,0);
     }
 
-    pub fn y(self: *const Self, ind: usize) f64 {
+    pub inline fn y(self: *const Self, ind: usize) f64 {
         return self.mat.get(ind,1);
     }
     
-    pub fn z(self: *const Self, ind: usize) f64 {
+    pub inline fn z(self: *const Self, ind: usize) f64 {
         return self.mat.get(ind,2);
     }
 
@@ -52,30 +51,48 @@ pub const Coords = struct {
     }
 };
 
-// TODO; this should wrap a MatSlice and allocate a buffer. Note: Row major so 
-// we need to have dims=[elem_num,node_nums]
 pub const Connect = struct {
-    nodes_per_elem: u8,
-    elem_n: usize,
-    table: []usize,
+    table: MatSlice(usize),
+    table_mem: []usize,
 
     const Self: type = @This();
 
-    pub fn getElem(self: *const Self, elem_num: usize) []usize {
-        const ind_start: usize = elem_num * self.nodes_per_elem;
-        const ind_end: usize = ind_start + self.nodes_per_elem;
-        return self.table[ind_start..ind_end];
+     pub fn init(outer_alloc: std.mem.Allocator, 
+                 elems_num: usize, 
+                 nodes_per_elem: usize) !Self {
+                 
+        const mat_heap = try outer_alloc.alloc(usize, elems_num*nodes_per_elem);
+        const mat_table = MatSlice(usize).init(mat_heap, elems_num, nodes_per_elem); 
+        
+        return .{
+            .table = mat_table,
+            .table_mem = mat_heap,
+        };
     }
 
-    pub fn getInd(self: *const Self, elem_num: usize, node_num: usize) usize {
-        return self.table[elem_num * self.nodes_per_elem + node_num];
+    pub inline fn getElemsNum(self: Self) usize {
+        return self.table.rows_num;
+    }
+
+    pub inline  fn getNodesPerElem(self: Self) usize {
+        return self.table.cols_num;
+    }
+
+    pub fn deinit(self: *Self, outer_alloc: std.mem.Allocator) void {
+        outer_alloc.free(self.table_mem);
+    }
+    
+    pub fn getElem(self: *const Self, elem_num: usize) []usize {
+        const ind_start: usize = elem_num * self.getNodesPerElem();
+        const ind_end: usize = ind_start + self.getNodesPerElem();
+        return self.table_mem[ind_start..ind_end];
     }
 };
 
 
 pub const Field = struct {
     array: NDArray(f64),
-    buffer_array: []f64,
+    array_mem: []f64,
 
     const Self = @This();
 
@@ -94,7 +111,7 @@ pub const Field = struct {
         
         return .{
             .array = arr, 
-            .buffer_array = buff_array,
+            .array_mem = buff_array,
         };
     }
 
@@ -108,9 +125,7 @@ pub const Field = struct {
     }
 };
 
-// TODO: should probably pass in an io struct here
-// NOTE: fixed for 0.16-dev to init io
-pub fn readCsvToList(allocator: std.mem.Allocator, 
+pub fn readCsvToList(outer_alloc: std.mem.Allocator, 
                      io: std.Io,
                      path: []const u8
                      ) !std.ArrayList([]const u8) {
@@ -129,15 +144,20 @@ pub fn readCsvToList(allocator: std.mem.Allocator,
     while (try reader.takeDelimiter('\n')) |line| {
         const line_trimmed = std.mem.trim(u8, line, " \r\t");
         if (line_trimmed.len == 0) continue;
-        const line_dup = try allocator.dupe(u8, line_trimmed);
-        try lines.append(allocator, line_dup);
+        const line_dup = try outer_alloc.dupe(u8, line_trimmed);
+        try lines.append(outer_alloc, line_dup);
     }
     
     return lines;
 }
 
-pub fn parseCoords(csv_lines: *const std.ArrayList([]const u8), 
-                   coords: *Coords) !void {
+pub fn parseCoords(outer_alloc: std.mem.Allocator,
+                   csv_lines: *const std.ArrayList([]const u8), 
+                   ) !Coords {
+
+    const coord_count: usize = csv_lines.items.len;
+    var coords = try Coords.init(outer_alloc, coord_count);
+
     const num_coords: u8 = 3;
     var num_count: u8 = 0;
 
@@ -157,13 +177,13 @@ pub fn parseCoords(csv_lines: *const std.ArrayList([]const u8),
             }
         }
     }
+
+    return coords;
 }
 
-// TODO: fix this so that connect has an allocator and passes back a reference 
-// and does not return the large connectivity table by copying!
-pub fn parseConnect(allocator: std.mem.Allocator, 
+pub fn parseConnect(outer_alloc: std.mem.Allocator, 
                     csv_lines: *const std.ArrayList([]const u8)) !Connect {
-    // Get the number of elements and the number of nodes per element
+
     const elem_count = csv_lines.items.len;
 
     var split_iter = std.mem.splitScalar(u8, csv_lines.items[0], ',');
@@ -172,16 +192,8 @@ pub fn parseConnect(allocator: std.mem.Allocator,
         _ = num_str;
         nodes_per_elem += 1;
     }
-    // print("Connect: total elements = {}\n", .{elem_count});
-    // print("Connect: nodes per element = {}\n",.{nodes_per_elem});
 
-    const connect = Connect{
-        .elem_n = elem_count,
-        .nodes_per_elem = nodes_per_elem,
-        .table = try allocator.alloc(usize, elem_count * nodes_per_elem),
-    };
-
-    // print("Connect: connect.len={}\n",.{connect.table.len});
+    const connect = try Connect.init(outer_alloc, elem_count, nodes_per_elem);
 
     var elem: usize = 0;
     var node: usize = 0;
@@ -195,14 +207,10 @@ pub fn parseConnect(allocator: std.mem.Allocator,
             const num_f: f64 = try std.fmt.parseFloat(f64, num_str);
             const num_i: usize = @intFromFloat(num_f);
 
-            connect.table[elem * nodes_per_elem + node] = num_i;
-
-            // print("Line: {}, num str: {s}, usize: {}\n", .{ii,num_str,num_i});
+            connect.table_mem[elem * nodes_per_elem + node] = num_i;
 
             node += 1;
         }
-        //print("\n",.{});
-
     }
     return connect;
 }
@@ -251,14 +259,14 @@ pub const SimData = struct {
     field: Field,
 };
 
-pub fn load_sim_data(allocator: std.mem.Allocator,
+pub fn load_sim_data(outer_alloc: std.mem.Allocator,
                      io: std.Io,
                      coord_path: []const u8,
                      connect_path: []const u8,
                      field_paths: []const []const u8,
                      ) !SimData {
                      
-    var arena = std.heap.ArenaAllocator.init(allocator);
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
@@ -269,109 +277,41 @@ pub fn load_sim_data(allocator: std.mem.Allocator,
     //--------------------------------------------------------------------------
     // Read and parse coordinates csv file
 
-    // Read the csv file into an array list
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
+
     var lines = try readCsvToList(arena_alloc, io, coord_path);
+    const coords = try parseCoords(outer_alloc, &lines);
+
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
-    // const time_read_coords: f64 = @floatFromInt(
-    //     time_start.durationTo(time_end).raw.nanoseconds
-    // );
 
-    // Print the array list line by line
-    // for (lines.items,0..) |line_str,line_num|{
-    //     print("Line {}: {s}\n", .{line_num,line_str});
-    // }
-    // print("\nCoords: read {} lines from csv.\n", .{lines.items.len});
-    // print("Coords: read time = {d:.3}ms\n", 
-    //     .{time_read_coords / time.ns_per_ms});
-
-    // Pass the coords into a series of arrays
-    const coord_count: usize = lines.items.len;
-    var coords = try Coords.init(allocator, coord_count);
-
-    time_start = std.Io.Clock.Timestamp.now(io, .awake);
-    try parseCoords(&lines, &coords);
-    time_end = std.Io.Clock.Timestamp.now(io, .awake);
-    // const time_parse_coords: f64 = @floatFromInt(
-    //     time_start.durationTo(time_end).raw.nanoseconds
-    // );
-    // print("Coords: parse time = {d:.3}ms\n", 
-    //     .{time_parse_coords / time.ns_per_ms});
-
-    // print("COORDS:\n",.{});
-    // for (0..coords.len) |cc| {
-    //     coords.getVec3(cc).vecPrint();
-    // }
-    // print("\n",.{});
-
-    // Clear the lines array for next read
     lines.clearRetainingCapacity();
 
     //--------------------------------------------------------------------------
-    // Read and parse the connectivity table
+    // Read and parse the connectivity table csv file
 
     // Read the csv file into an array list
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
+
     lines = try readCsvToList(arena_alloc, io, connect_path);
-    time_end = std.Io.Clock.Timestamp.now(io, .awake);
-    // const time_read_connect: f64 = @floatFromInt(
-    //     time_start.durationTo(time_end).raw.nanoseconds
-    // );
-    // print("\nConnect: read {} lines from csv.\n", .{lines.items.len});
-    // print("Connect: read time = {d:.3}ms\n", 
-    //     .{time_read_connect / time.ns_per_ms});
+    const connect = try parseConnect(outer_alloc, &lines);
 
-    time_start = std.Io.Clock.Timestamp.now(io, .awake);
-    const connect = try parseConnect(allocator, &lines);
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
-    // const time_parse_connect: f64 = @floatFromInt(
-    //     time_start.durationTo(time_end).raw.nanoseconds
-    // );
-    // print("Connect: elements={}, nodes per element={}\n", 
-    //    .{ connect.elem_n, connect.nodes_per_elem });
-    // print("Connect: parse time = {d:.3}ms\n", 
-    //     .{time_parse_connect / time.ns_per_ms});
-
-    // print("\nCONNECT TABLE\n",.{});
-    // var ii: usize = 0;
-    // for (0..connect.elem_n) |ee| {
-    //     print("{} : ", .{ee});
-    //     for (0..connect.nodes_per_elem) |nn| {
-    //         print("{}," , .{connect.table[ee*connect.nodes_per_elem+nn]});
-    //         ii += 1;
-    //     }
-    //     print("\n",.{});
-    // }
 
     lines.clearRetainingCapacity();
 
     //--------------------------------------------------------------------------
     // Parse fields
 
-    // Read the csv for the first field as this will tell us how many time steps
-    // we have and how many coords to pre-alloc our field struct
     time_start = std.Io.Clock.Timestamp.now(io, .awake);
+
     lines = try readCsvToList(arena_alloc, io, field_paths[0]);
-    time_end = std.Io.Clock.Timestamp.now(io, .awake);
-    // var time_read_field: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
-    // print("\nField 0: read {} lines from csv.\n", .{lines.items.len});
-    // print("Field 0: read time = {d:.3}ms\n", 
-    //     .{time_read_field / time.ns_per_ms});
-                     
-    // Create the field struct to hold all the data
+
     const time_n: usize = getFieldTimeN(&lines);
     const coord_n: usize = lines.items.len;
-    var field = try Field.init(allocator,time_n,coord_n,field_n);   
+    var field = try Field.init(outer_alloc,time_n,coord_n,field_n);   
 
-    // Parse the first field 
-    time_start = std.Io.Clock.Timestamp.now(io, .awake);
     try parseField(&lines,&field,0);
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
-    // var time_parse_field: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
-    // print("Field 0: coords={}, time steps={}\n", 
-    //     .{ field.getCoordN(), field.getTimeN() });
-    // print("Field 0: parse time = {d:.3}ms\n", 
-    //     .{time_parse_field / time.ns_per_ms});
 
     lines.clearRetainingCapacity();
 
@@ -379,19 +319,11 @@ pub fn load_sim_data(allocator: std.mem.Allocator,
     for (remaining_field_paths,1..) |field_path,ii| {
     
         time_start = std.Io.Clock.Timestamp.now(io, .awake);
-        lines = try readCsvToList(arena_alloc, io, field_path);
-        time_end = std.Io.Clock.Timestamp.now(io, .awake);
-        // time_read_field = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
-        // print("\nField {d}: read {d} lines from csv.\n", .{ii,lines.items.len});
-        // print("Field {d}: read time = {d:.3}ms\n", 
-        //     .{ii,time_read_field / time.ns_per_ms});
 
-        time_start = std.Io.Clock.Timestamp.now(io, .awake);
+        lines = try readCsvToList(arena_alloc, io, field_path);
         try parseField(&lines,&field,ii);
+
         time_end = std.Io.Clock.Timestamp.now(io, .awake);
-        // time_parse_field = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
-        // print("Field {d}: parse time = {d:.3}ms\n", 
-        //     .{ii,time_parse_field / time.ns_per_ms});
 
         lines.clearRetainingCapacity();      
     }

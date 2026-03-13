@@ -13,18 +13,18 @@ const sliceops = @import("sliceops.zig");
 pub fn MatSlice(comptime EType: type) type {
     return struct {
         elems: []EType,
-        rows_n: usize,
-        cols_n: usize,
+        rows_num: usize,
+        cols_num: usize,
 
         const Self: type = @This();
 
-        pub fn init(elems: []EType, rows_n: usize, cols_n: usize) Self {
-            assert(elems.len == (rows_n * cols_n));
+        pub fn init(elems: []EType, rows_num: usize, cols_num: usize) Self {
+            assert(elems.len == (rows_num * cols_num));
 
             return .{
                 .elems = elems,
-                .rows_n = rows_n,
-                .cols_n = cols_n,
+                .rows_num = rows_num,
+                .cols_num = cols_num,
             };
         }
 
@@ -33,8 +33,8 @@ pub fn MatSlice(comptime EType: type) type {
         }
 
         pub fn fillDiag(self: *const Self, fill_val: EType, diag_val: EType) void {
-            for (0..self.rows_n) |ii| {
-                for (ii..self.cols_n) |jj| {
+            for (0..self.rows_num) |ii| {
+                for (ii..self.cols_num) |jj| {
                     if (ii == jj) {
                         self.set(ii, jj, diag_val);
                     } else {
@@ -49,23 +49,23 @@ pub fn MatSlice(comptime EType: type) type {
         }
 
         pub fn get(self: *const Self, row: usize, col: usize) EType {
-            assert(row < self.rows_n);
-            assert(col < self.cols_n);
-            return self.elems[(row * self.cols_n) + col];
+            assert(row < self.rows_num);
+            assert(col < self.cols_num);
+            return self.elems[(row * self.cols_num) + col];
         }
 
         pub fn set(self: *Self, row: usize, col: usize, val: EType) void {
-            self.elems[(row * self.cols_n) + col] = val;
+            self.elems[(row * self.cols_num) + col] = val;
         }
 
         pub fn transpose(self: *Self, buffer: *Self) !void {
-            assert(self.cols_n == buffer.cols_n);
-            assert(self.rows_n == buffer.rows_n);
+            assert(self.cols_num == buffer.cols_num);
+            assert(self.rows_num == buffer.rows_num);
 
             @memcpy(buffer.elems, self.elems);
 
-            for (0..self.rows_n) |ii| {
-                for (ii..self.cols_n) |jj| {
+            for (0..self.rows_num) |ii| {
+                for (ii..self.cols_num) |jj| {
                     self.set(ii, jj, buffer.get(jj, ii));
                     self.set(jj, ii, buffer.get(ii, jj));
                 }
@@ -75,12 +75,12 @@ pub fn MatSlice(comptime EType: type) type {
         pub fn trace(self: *const Self) EType {
             var trace_out: EType = 0;
 
-            if (self.rows_n <= self.cols_n) {
-                for (0..self.rows_n) |ii| {
+            if (self.rows_num <= self.cols_num) {
+                for (0..self.rows_num) |ii| {
                     trace_out += self.get(ii, ii);
                 }
             } else {
-                for (0..self.cols_n) |ii| {
+                for (0..self.cols_num) |ii| {
                     trace_out += self.get(ii, ii);
                 }
             }
@@ -119,20 +119,20 @@ pub fn MatSlice(comptime EType: type) type {
         }
 
 		pub fn getSlice(self: *const Self, row_to_slice: usize) []EType {
-			assert(row_to_slice <= self.rows_n);
+			assert(row_to_slice <= self.rows_num);
 
-			const start_ind: usize = row_to_slice*self.cols_n; 
-			const end_ind: usize = start_ind+self.cols_n;
+			const start_ind: usize = row_to_slice*self.cols_num; 
+			const end_ind: usize = start_ind+self.cols_num;
 			return self.elems[start_ind..end_ind];
         }
 
         pub fn matPrint(self: *const Self) void {
             var ind: usize = 0;
 
-            for (0..self.rows_n) |ii| {
+            for (0..self.rows_num) |ii| {
                 print("[", .{});
-                for (0..self.cols_n) |jj| {
-                    ind = (ii * self.cols_n) + jj;
+                for (0..self.cols_num) |jj| {
+                    ind = (ii * self.cols_num) + jj;
                     print("{e:.3},", .{self.elems[ind]});
                 }
                 print("]\n", .{});
@@ -141,11 +141,11 @@ pub fn MatSlice(comptime EType: type) type {
         }
 
         pub fn minByRow(self: *const Self, fixed_col: usize) EType {
-            assert(fixed_col < self.cols_n);
+            assert(fixed_col < self.cols_num);
 
             var val: EType = self.get(0,fixed_col);
 
-            for (1..self.rows_n) |ii| {
+            for (1..self.rows_num) |ii| {
                 const check = self.get(ii,fixed_col);
                 if (check < val){
                     val = check;
@@ -156,11 +156,11 @@ pub fn MatSlice(comptime EType: type) type {
         }
 
         pub fn maxByRow(self: *const Self, fixed_col: usize) EType {
-            assert(fixed_col < self.cols_n);
+            assert(fixed_col < self.cols_num);
 
             var val: EType = self.get(0,fixed_col);
 
-            for (1..self.rows_n) |ii| {
+            for (1..self.rows_num) |ii| {
                 const check = self.get(ii,fixed_col);
                 if (check > val){
                     val = check;
@@ -182,8 +182,8 @@ pub fn MatSlice(comptime EType: type) type {
             var file_writer = csv_file.writer(io,&write_buf);
             const writer = &file_writer.interface;
 
-            for (0..self.rows_n) |rr| {
-                for (0..self.cols_n) |cc| {
+            for (0..self.rows_num) |rr| {
+                for (0..self.cols_num) |cc| {
                     try writer.print("{d},", .{self.get(rr, cc)});
                 }
                 try writer.print("\n",.{});
@@ -198,8 +198,8 @@ pub fn MatSliceOps(comptime EType: type) type {
         pub fn add(mat0: *const MatSlice(EType), 
                    mat1: *const MatSlice(EType), 
                    mat_out: *MatSlice(EType)) void {
-            assert(mat0.rows_n == mat1.rows_n);
-            assert(mat0.cols_n == mat1.cols_n);
+            assert(mat0.rows_num == mat1.rows_num);
+            assert(mat0.cols_num == mat1.cols_num);
 
             for (0..mat0.elems.len) |ii| {
                 mat_out.elems[ii] = mat0.elems[ii] + mat1.elems[ii];
@@ -209,8 +209,8 @@ pub fn MatSliceOps(comptime EType: type) type {
         pub fn sub(mat0: *const MatSlice(EType), 
                    mat1: *const MatSlice(EType), 
                    mat_out: *MatSlice(EType)) void {
-            assert(mat0.rows_n == mat1.rows_n);
-            assert(mat0.cols_n == mat1.cols_n);
+            assert(mat0.rows_num == mat1.rows_num);
+            assert(mat0.cols_num == mat1.cols_num);
 
             for (0..mat0.elems.len) |ii| {
                 mat_out.elems[ii] = mat0.elems[ii] - mat1.elems[ii];
@@ -220,8 +220,8 @@ pub fn MatSliceOps(comptime EType: type) type {
         pub fn mulElemWise(mat0: *const MatSlice(EType), 
                            mat1: *const MatSlice(EType), 
                            mat_out: *MatSlice(EType)) void {
-            assert(mat0.rows_n == mat1.rows_n);
-            assert(mat0.cols_n == mat1.cols_n);
+            assert(mat0.rows_num == mat1.rows_num);
+            assert(mat0.cols_num == mat1.cols_num);
 
             for (0..mat0.elems.len) |ii| {
                 mat_out.elems[ii] = mat0.elems[ii] * mat1.elems[ii];
@@ -231,8 +231,8 @@ pub fn MatSliceOps(comptime EType: type) type {
         pub fn divElemWise(mat0: *const MatSlice(EType), 
                            mat1: *const MatSlice(EType), 
                            mat_out: *MatSlice(EType)) void {
-            assert(mat0.rows_n == mat1.rows_n);
-            assert(mat0.cols_n == mat1.cols_n);
+            assert(mat0.rows_num == mat1.rows_num);
+            assert(mat0.cols_num == mat1.cols_num);
 
             for (0..mat0.elems.len) |ii| {
                 mat_out.elems[ii] = mat0.elems[ii] / mat1.elems[ii];
@@ -250,13 +250,13 @@ pub fn MatSliceOps(comptime EType: type) type {
         pub fn mulVec(mat: *const MatSlice(EType), 
                       vec_mul: *const VecSlice(EType), 
                       vec_out: *VecSlice(EType)) void {
-            assert(mat.cols_n == vec_mul.elems.len);
+            assert(mat.cols_num == vec_mul.elems.len);
 
             var sum: EType = 0;
 
-            for (0..mat.rows_n) |rr| {
+            for (0..mat.rows_num) |rr| {
                 sum = 0;
-                for (0..mat.cols_n) |cc| {
+                for (0..mat.cols_num) |cc| {
                     sum += mat.get(rr, cc) * vec_mul.get(cc);
                 }
                 vec_out.set(rr, sum);
@@ -267,15 +267,15 @@ pub fn MatSliceOps(comptime EType: type) type {
                       mat1: *const MatSlice(EType), 
                       mat_out: *MatSlice(EType)) void {
                       
-            assert(mat0.cols_n == mat1.rows_n);
+            assert(mat0.cols_num == mat1.rows_num);
 
             var sum: EType = 0;
 
-            for (0..mat0.rows_n) |rr| {
-                for (0..mat0.cols_n) |cc| {
+            for (0..mat0.rows_num) |rr| {
+                for (0..mat0.cols_num) |cc| {
                     sum = 0;
 
-                    for (0..mat1.cols_n) |mm| {
+                    for (0..mat1.cols_num) |mm| {
                         sum += mat0.get(rr, mm) * mat1.get(mm, cc);
                     }
 

@@ -9,27 +9,9 @@ pub fn main() !void {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const texture = blk: {
-        const tex_orig = try gengold.iio.CLoadTIFF(
-            allocator, io, "texture/speckle.tiff", u8, 1
-        );
-        defer tex_orig.deinit(allocator);
-
-        const mat_size = tex_orig.rows_n * tex_orig.cols_n;
-        const mat_mem = try allocator.alloc(f64, mat_size);
-        defer allocator.free(mat_mem);
-        for (0..mat_size) |i| {
-            mat_mem[i] = @as(f64, @floatFromInt(tex_orig.pixels[i].channels[0]));
-        }
-        const MatSlice = @import("zigraster/zig/matslice.zig").MatSlice;
-        const temp_mat = MatSlice(f64).init(mat_mem, tex_orig.rows_n, tex_orig.cols_n);
-
-        const out_dir = std.Io.Dir.cwd();
-        try gengold.iio.saveTIFF(io, out_dir, "temp-test/speckle-simple.tiff", &temp_mat, 8);
-        break :blk try gengold.iio.loadImage(
-            allocator, io, "temp-test/speckle-simple.tiff", .tiff, u8, 1
-        );
-    };
+    const texture =  try gengold.iio.loadImage(
+        allocator, io, "temp-test/speckle-simple.tiff", .tiff, u8, 1
+    );
     defer texture.deinit(allocator);
 
     const mesh_types = [_]gengold.MeshType{ 
@@ -42,18 +24,35 @@ pub fn main() !void {
     const out_dir_root = "out-small";
     const data_dir = "data-small";
 
+    const config = gengold.specraster.RasterConfig{
+        .save_opt = .disk,
+        .save_formats = &[_]gengold.iio.ImageFormat{ .bmp, .csv },
+        .tile_size = 16,
+        .report = .perf,
+        .perf_opts = .{
+            .formats = &[_]gengold.iio.ImageFormat{ .bmp, .csv },
+            .save_iteration_map = true,
+            .save_tile_timing_map = true,
+            .save_tile_density_map = true,
+            .save_tile_occupancy_map = true,
+            .save_depth_map = true,
+            .save_earlyout_map = true,
+            .save_pixel_occupancy_map = true,
+        },
+    };
+
     std.debug.print("Rendering Small Data to out-small/...\n", .{});
 
     std.debug.print("Single Element Cases...\n", .{});
     try gengold.runGenerationExt(
         allocator, io, "single", &mesh_types, 1.1, texture, pixel_num, interp_types, 
-        out_dir_root, data_dir
+        out_dir_root, data_dir, config,
     );
 
     std.debug.print("Full Screen Cases...\n", .{});
     try gengold.runGenerationExt(
         allocator, io, "full", &mesh_types, 1.0, texture, pixel_num, interp_types, 
-        out_dir_root, data_dir
+        out_dir_root, data_dir, config,
     );
     
     std.debug.print("Done.\n", .{});

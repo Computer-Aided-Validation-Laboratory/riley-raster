@@ -283,7 +283,9 @@ fn rasterInternal(
         try rops.transformElemsClipPxLengSIMD(N, f64, camera, dim_elem, coords);
     }
 
-    // Neede to handle quad9 - has a hull of 8 points
+    // TODO: Transform to NDArray here?
+
+    // Need to handle quad9 - has a hull of 8 points
     const NH = if (comptime GK.has_hull) GK.hull_nodes_num else 0;
     var raster_hull: ?NDArray(f64) = null;
     if (comptime GK.has_hull) {

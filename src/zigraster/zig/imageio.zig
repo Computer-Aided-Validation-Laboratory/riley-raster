@@ -117,15 +117,15 @@ pub fn savePPM(io: std.Io,
     const writer = &file_writer.interface;
 
     const max_val: u32 = (@as(u32, 1) << @as(u5, @intCast(bits))) - 1;
-    try writer.print("P3\n{d} {d}\n{d}\n", .{ image.cols_n, image.rows_n, max_val});
+    try writer.print("P3\n{d} {d}\n{d}\n", .{ image.cols_num, image.rows_num, max_val});
 
     const px_min: f64 = std.mem.min(f64,image.elems);
     const px_max: f64 = std.mem.max(f64,image.elems);
     const px_rng: f64 = if (px_max > px_min) px_max - px_min else 1.0;
     const scale = @as(f64, @floatFromInt(max_val));
 
-    for (0..image.rows_n) |rr| {
-        for (0..image.cols_n) |cc| {
+    for (0..image.rows_num) |rr| {
+        for (0..image.cols_num) |cc| {
             const px_scaled = @as(u32,
                 @intFromFloat((image.get(rr,cc) - px_min)/px_rng * scale)
             );  
@@ -241,8 +241,8 @@ pub fn saveCSV(io: std.Io,
     var file_writer = csv_file.writer(io,&write_buf);
     const writer = &file_writer.interface;
 
-    for (0..image.rows_n) |rr| {
-        for (0..image.cols_n) |cc| {
+    for (0..image.rows_num) |rr| {
+        for (0..image.cols_num) |cc| {
             try writer.print("{d},", .{image.get(rr, cc)});
         }
         try writer.print("\n",.{});
@@ -322,8 +322,8 @@ pub fn saveBMP(io: std.Io,
     var file_writer = file.writer(io, &write_buf);
     const writer = &file_writer.interface;
 
-    const width = @as(u32, @intCast(image.cols_n));
-    const height = @as(u32, @intCast(image.rows_n));
+    const width = @as(u32, @intCast(image.cols_num));
+    const height = @as(u32, @intCast(image.rows_num));
     const row_padding = (4 - (width * 3) % 4) % 4;
     const row_size = width * 3 + row_padding;
     const data_size = row_size * height;
@@ -355,10 +355,10 @@ pub fn saveBMP(io: std.Io,
     const px_rng = if (px_max > px_min) px_max - px_min else 1.0;
 
     // BMP data is bottom-up
-    var r: usize = image.rows_n;
+    var r: usize = image.rows_num;
     while (r > 0) {
         r -= 1;
-        for (0..image.cols_n) |c| {
+        for (0..image.cols_num) |c| {
             const val = @as(u8, @intFromFloat(((image.get(r, c) - px_min) / px_rng) * 255.0));
             // BGR order
             try writer.writeByte(val); // Blue
@@ -383,8 +383,8 @@ pub fn saveTIFF(io: std.Io,
     var file_writer = file.writer(io, &write_buf);
     const writer = &file_writer.interface;
 
-    const width = @as(u32, @intCast(image.cols_n));
-    const height = @as(u32, @intCast(image.rows_n));
+    const width = @as(u32, @intCast(image.cols_num));
+    const height = @as(u32, @intCast(image.rows_num));
     const pixel_data_offset: u32 = 8; // Header is 8 bytes
     const bytes_per_pixel: u32 = if (bits == 16) 2 else 1;
     const pixel_data_size = width * height * bytes_per_pixel;
@@ -397,15 +397,15 @@ pub fn saveTIFF(io: std.Io,
 
     // 2. Pixel Data (Grayscale)
     if (bits == 16) {
-        for (0..image.rows_n) |r| {
-            for (0..image.cols_n) |c| {
+        for (0..image.rows_num) |r| {
+            for (0..image.cols_num) |c| {
                 const val = @as(u16,@intFromFloat(image.get(r, c) * 257.0)); 
                 try writer.writeInt(u16, val, .little);
             }
         }
     } else {
-        for (0..image.rows_n) |r| {
-            for (0..image.cols_n) |c| {
+        for (0..image.rows_num) |r| {
+            for (0..image.cols_num) |c| {
                 const val = @as(u8, @intFromFloat(@max(0.0, @min(255.0, image.get(r, c)))));
                 try writer.writeByte(val);
             }
@@ -731,16 +731,16 @@ test "Verify hand-written TIFF loader" {
         if (err != error.PathAlreadyExists) return err;
     };
     const out_dir = cwd;
-    const mat_size = tex_c.rows_n * tex_c.cols_n;
+    const mat_size = tex_c.rows_num * tex_c.cols_num;
     const mat_mem = try allocator.alloc(f64, mat_size);
     defer allocator.free(mat_mem);
-    for (0..tex_c.rows_n) |rr| {
-        for (0..tex_c.cols_n) |cc| {
-            mat_mem[rr * tex_c.cols_n + cc] = @as(f64, 
+    for (0..tex_c.rows_num) |rr| {
+        for (0..tex_c.cols_num) |cc| {
+            mat_mem[rr * tex_c.cols_num + cc] = @as(f64, 
                 @floatFromInt(tex_c.getPixel(rr, cc).channels[0]));
         }
     }
-    const mat = MatSlice(f64).init(mat_mem, tex_c.rows_n, tex_c.cols_n);
+    const mat = MatSlice(f64).init(mat_mem, tex_c.rows_num, tex_c.cols_num);
     
     try saveTIFF(io, out_dir, "temp-test/speckle-simple.tiff", &mat, 8);
 
@@ -748,11 +748,11 @@ test "Verify hand-written TIFF loader" {
     var tex_zig = try loadImage(allocator, io, "temp-test/speckle-simple.tiff", .tiff, u8, 1);
     defer tex_zig.deinit(allocator);
 
-    try testing.expectEqual(tex_c.rows_n, tex_zig.rows_n);
-    try testing.expectEqual(tex_c.cols_n, tex_zig.cols_n);
+    try testing.expectEqual(tex_c.rows_num, tex_zig.rows_num);
+    try testing.expectEqual(tex_c.cols_num, tex_zig.cols_num);
 
-    for (0..tex_c.rows_n) |rr| {
-        for (0..tex_c.cols_n) |cc| {
+    for (0..tex_c.rows_num) |rr| {
+        for (0..tex_c.cols_num) |cc| {
             const p1 = tex_c.getPixel(rr, cc).channels[0];
             const p2 = tex_zig.getPixel(rr, cc).channels[0];
             const p1_f: f64 = @floatFromInt(p1);
@@ -801,7 +801,7 @@ test "Save and Load All Formats" {
         var loaded = try loadImage(allocator, io, full_path, fmt, u8, 1);
         defer loaded.deinit(allocator);
 
-        try testing.expectEqual(rows, loaded.rows_n);
-        try testing.expectEqual(cols, loaded.cols_n);
+        try testing.expectEqual(rows, loaded.rows_num);
+        try testing.expectEqual(cols, loaded.cols_num);
     }
 }

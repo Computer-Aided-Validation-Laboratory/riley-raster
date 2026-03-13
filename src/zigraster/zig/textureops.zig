@@ -24,15 +24,15 @@ pub fn Texture(comptime T: type, comptime channels: usize) type {
         const P = Pixel(T, channels);
 
         pixels: []P,
-        rows_n: usize,
-        cols_n: usize,
+        rows_num: usize,
+        cols_num: usize,
 
         pub fn init(allocator: std.mem.Allocator, rows: usize, cols: usize) !Self {
             const pixels = try allocator.alloc(P, rows * cols);
             return Self{
                 .pixels = pixels,
-                .rows_n = rows,
-                .cols_n = cols,
+                .rows_num = rows,
+                .cols_num = cols,
             };
         }
 
@@ -41,15 +41,15 @@ pub fn Texture(comptime T: type, comptime channels: usize) type {
         }
 
         pub fn getPixel(self: Self, row: usize, col: usize) P {
-            assert(row < self.rows_n);
-            assert(col < self.cols_n);
-            return self.pixels[row * self.cols_n + col];
+            assert(row < self.rows_num);
+            assert(col < self.cols_num);
+            return self.pixels[row * self.cols_num + col];
         }
 
         pub fn setPixel(self: *Self, row: usize, col: usize, pixel: P) void {
-            assert(row < self.rows_n);
-            assert(col < self.cols_n);
-            self.pixels[row * self.cols_n + col] = pixel;
+            assert(row < self.rows_num);
+            assert(col < self.cols_num);
+            self.pixels[row * self.cols_num + col] = pixel;
         }
 
         pub fn saveCSV(self: *const Self,
@@ -64,8 +64,8 @@ pub fn Texture(comptime T: type, comptime channels: usize) type {
             var file_writer = csv_file.writer(io, &write_buf);
             const writer = &file_writer.interface;
 
-            for (0..self.rows_n) |rr| {
-                for (0..self.cols_n) |cc| {
+            for (0..self.rows_num) |rr| {
+                for (0..self.cols_num) |cc| {
                     const px = self.getPixel(rr, cc);
                     for (0..channels) |ch| {
                         try writer.print("{d}", .{px.channels[ch]});
@@ -159,8 +159,8 @@ const quintic_lut = blk: {
 // --- Internal Helpers ---
 
 fn getPx1(texture: anytype, x: isize, y: isize) f64 {
-    const cols = @as(isize, @intCast(texture.cols_n));
-    const rows = @as(isize, @intCast(texture.rows_n));
+    const cols = @as(isize, @intCast(texture.cols_num));
+    const rows = @as(isize, @intCast(texture.rows_num));
     const ix = @as(usize, @intCast(@max(0, @min(x, cols - 1))));
     const iy = @as(usize, @intCast(@max(0, @min(y, rows - 1))));
     
@@ -235,8 +235,8 @@ pub fn sampleGreyscale(comptime interp: InterpType,
                        u: f64,
                        v: f64) f64 {
 
-    const cols_minus_1 = @as(isize, @intCast(texture.cols_n)) - 1;
-    const rows_minus_1 = @as(isize, @intCast(texture.rows_n)) - 1;
+    const cols_minus_1 = @as(isize, @intCast(texture.cols_num)) - 1;
+    const rows_minus_1 = @as(isize, @intCast(texture.rows_num)) - 1;
     const x_f = u * @as(f64, @floatFromInt(cols_minus_1));
     const y_f = v * @as(f64, @floatFromInt(rows_minus_1));
     const x_i = @as(isize, @intFromFloat(@floor(x_f)));
