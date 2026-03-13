@@ -1,6 +1,7 @@
 const std = @import("std");
 const print = std.debug.print;
 const time = std.time;
+const assert = std.debug.assert;
 
 const Vec3f = @import("vecstack.zig").Vec3f;
 const slice = @import("sliceops.zig");
@@ -14,19 +15,22 @@ pub const Coords = struct {
 
     const Self: type = @This();
     
-    pub fn init(outer_alloc: std.mem.Allocator, coords_num: usize) !Self {
-        const mat_heap = try outer_alloc.alloc(f64,coords_num*3);
-        const mat_coords = MatSlice(f64).init(mat_heap,coords_num,3); 
+    pub fn init(mem: []f64, coords_num: usize) !Self {
+        assert(mem.len == coords_num*3);
+        const mat_coords = MatSlice(f64).init(mem,coords_num,3); 
         
         return .{
             .mat = mat_coords,
-            .mem = mat_heap,
+            .mem = mem,
         };
     }
 
-    pub fn deinit(self: *Self, outer_alloc: std.mem.Allocator) void {
-        outer_alloc.free(self.mem);
+    pub fn initAlloc(outer_alloc: std.mem.Allocator, coords_num: usize) !Self {
+        const mat_mem = try outer_alloc.alloc(f64,coords_num*3);
+
+        return init(mat_mem,coords_num);
     }
+
 
     pub inline fn x(self: *const Self, ind: usize) f64 {
         return self.mat.get(ind,0);
@@ -57,17 +61,24 @@ pub const Connect = struct {
 
     const Self: type = @This();
 
-     pub fn init(outer_alloc: std.mem.Allocator, 
-                 elems_num: usize, 
-                 nodes_per_elem: usize) !Self {
-                 
-        const mat_heap = try outer_alloc.alloc(usize, elems_num*nodes_per_elem);
-        const mat_table = MatSlice(usize).init(mat_heap, elems_num, nodes_per_elem); 
-        
+    pub fn init(mem: []usize, elems_num: usize, nodes_per_elem: usize) Self {
+        assert(mem.len == elems_num*nodes_per_elem);
+
+        const mat_table = MatSlice(usize).init(mem, elems_num, nodes_per_elem); 
+
         return .{
-            .table = mat_table,
-            .table_mem = mat_heap,
-        };
+          .table = mat_table,
+          .table_mem = mem,  
+        };      
+    }
+
+    pub fn initAlloc(outer_alloc: std.mem.Allocator, 
+                     elems_num: usize, 
+                     nodes_per_elem: usize) !Self {
+                 
+        const mat_mem = try outer_alloc.alloc(usize, elems_num*nodes_per_elem);
+        
+        return init(mat_mem, elems_num, nodes_per_elem);
     }
 
     pub inline fn getElemsNum(self: Self) usize {
@@ -96,33 +107,26 @@ pub const Field = struct {
 
     const Self = @This();
 
-    pub fn init(alloc: std.mem.Allocator, time_n: usize, coord_n: usize,
-                fields_n: usize) !Self {
+    pub fn initAlloc(alloc: std.mem.Allocator, 
+                     time_n: usize, 
+                     coord_n: usize,
+                     fields_n: usize) !Self {
 
-        const buff_array = try alloc.alloc(f64, time_n*coord_n*fields_n);
-        @memset(buff_array,0.0);
+        const mem_array = try alloc.alloc(f64, time_n*coord_n*fields_n);
+        @memset(mem_array,0.0);
 
-        var buff_dims = try alloc.alloc(usize,3);
-        buff_dims[0] = time_n; 
-        buff_dims[1] = coord_n;
-        buff_dims[2] = fields_n;
-        
-        const arr = try NDArray(f64).init(alloc,buff_array,buff_dims[0..]);
+        const mem_dims = [3]usize{time_n,coord_n,fields_n};        
+        const arr = try NDArray(f64).init(alloc,mem_array,mem_dims[0..]);
         
         return .{
             .array = arr, 
-            .array_mem = buff_array,
+            .array_mem = mem_array,
         };
     }
 
-    pub fn getTimeN(self: *const Self) usize {return self.array.dims[0];}
-    pub fn getCoordN(self: *const Self) usize {return self.array.dims[1];}
-    pub fn getFieldsN(self: *const Self) usize {return self.array.dims[2];}
-   
-    pub fn deinit(self: *Self, alloc: std.mem.Allocator) void {
-        self.array.deinit(alloc);
-        alloc.free(self.buffer);
-    }
+    pub inline fn getTimeN(self: *const Self) usize {return self.array.dims[0];}
+    pub inline fn getCoordN(self: *const Self) usize {return self.array.dims[1];}
+    pub inline fn getFieldsN(self: *const Self) usize {return self.array.dims[2];}
 };
 
 pub fn readCsvToList(outer_alloc: std.mem.Allocator, 
@@ -156,7 +160,7 @@ pub fn parseCoords(outer_alloc: std.mem.Allocator,
                    ) !Coords {
 
     const coord_count: usize = csv_lines.items.len;
-    var coords = try Coords.init(outer_alloc, coord_count);
+    var coords = try Coords.initAlloc(outer_alloc, coord_count);
 
     const num_coords: u8 = 3;
     var num_count: u8 = 0;
@@ -193,7 +197,7 @@ pub fn parseConnect(outer_alloc: std.mem.Allocator,
         nodes_per_elem += 1;
     }
 
-    const connect = try Connect.init(outer_alloc, elem_count, nodes_per_elem);
+    const connect = try Connect.initAlloc(outer_alloc, elem_count, nodes_per_elem);
 
     var elem: usize = 0;
     var node: usize = 0;
@@ -308,7 +312,7 @@ pub fn load_sim_data(outer_alloc: std.mem.Allocator,
 
     const time_n: usize = getFieldTimeN(&lines);
     const coord_n: usize = lines.items.len;
-    var field = try Field.init(outer_alloc,time_n,coord_n,field_n);   
+    var field = try Field.initAlloc(outer_alloc,time_n,coord_n,field_n);   
 
     try parseField(&lines,&field,0);
     time_end = std.Io.Clock.Timestamp.now(io, .awake);

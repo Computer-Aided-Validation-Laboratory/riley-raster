@@ -227,9 +227,9 @@ const cam_pos_exp = Vec3f.initSlice(&cam_pos_arr);
 test "CameraOps.pos_fill_frame_from_rot" {}
 
 test "CameraOps.calc_cam_pos" {
-    var coords = try Coords.init(testing.allocator, coord_n);
-    defer coords.deinit(testing.allocator);
-
+    var coords = try Coords.initAlloc(testing.allocator, coord_n);
+    defer testing.allocator.free(coords.mem);
+    
     for (0..coord_n) |ii| {
         coords.mat.set(ii, 0, coord_x[ii]);
         coords.mat.set(ii, 1, coord_y[ii]);
@@ -247,8 +247,8 @@ test "CameraOps.calc_cam_pos" {
 }
 
 test "CameraOps.image_dist_from_fov" {
-    var coords = try Coords.init(testing.allocator, coord_n);
-    defer coords.deinit(testing.allocator);
+    var coords = try Coords.initAlloc(testing.allocator, coord_n);
+    defer testing.allocator.free(coords.mem);
 
     for (0..coord_n) |ii| {
         coords.mat.set(ii, 0, coord_x[ii]);
@@ -264,9 +264,9 @@ test "CameraOps.image_dist_from_fov" {
 }
 
 test "CameraOps.fov_from_cam_rot" {
-    var coords = try Coords.init(testing.allocator, coord_n);
-    defer coords.deinit(testing.allocator);
-
+    var coords = try Coords.initAlloc(testing.allocator, coord_n);
+    defer testing.allocator.free(coords.mem);
+    
     for (0..coord_n) |ii| {
         coords.mat.set(ii, 0, coord_x[ii]);
         coords.mat.set(ii, 1, coord_y[ii]);
