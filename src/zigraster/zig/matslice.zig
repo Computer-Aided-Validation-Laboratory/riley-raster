@@ -30,8 +30,8 @@ pub fn MatSlice(comptime EType: type) type {
 
         pub fn initAlloc(outer_alloc: std.mem.Allocator, 
                          rows_num: usize, 
-                         cols_num: usize) Self {
-            const slice = try outer_alloc.alloc(EType,rows_num,cols_num);
+                         cols_num: usize) !Self {
+            const slice = try outer_alloc.alloc(EType,rows_num*cols_num);
             
             return init(slice,rows_num,cols_num);
         }
@@ -66,7 +66,7 @@ pub fn MatSlice(comptime EType: type) type {
             self.elems[(row * self.cols_num) + col] = val;
         }
 
-        pub fn transpose(self: *Self, buffer: *Self) !void {
+        pub fn transpose(self: *Self, buffer: *Self) void {
             assert(self.cols_num == buffer.cols_num);
             assert(self.rows_num == buffer.rows_num);
 
@@ -526,7 +526,7 @@ test "MatSlice.transpose" {
     var m1 = [_]TestType{ 1, 3, 2, 4 };
     const mat_exp = MatSlice(TestType).init(m1[0..], 2, 2);
 
-    try mat0.transpose(&mat_buff);
+    mat0.transpose(&mat_buff);
 
     try expectEqualSlices(TestType, mat_exp.elems, mat0.elems);
 }

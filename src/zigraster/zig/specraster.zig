@@ -54,14 +54,20 @@ pub const RasterConfig = struct {
 fn applyDispToMesh(
     outer_alloc: std.mem.Allocator,
     tt: usize,
-    coords: *const NDArray(f64),
+    coords: *const MatSlice(f64),
     disp: *const NDArray(f64),
-) !NDArray(f64) {
-    var coords_disp = try NDArray(f64).initFlat(outer_alloc, coords.dims);
+) !MatSlice(f64) {
+
+    var coords_disp = try MatSlice(f64).initAlloc(
+        outer_alloc, coords.rows_num, coords.cols_num
+    );
     @memcpy(coords_disp.elems, coords.elems);
 
-    const disp_frame_mem = disp.getSlice(&[_]usize{ tt, 0, 0, 0 }, 0);
-    var disp_frame = try NDArray(f64).init(outer_alloc, disp_frame_mem, disp.dims[1..]);
+    const disp_frame_mem = disp.getSlice(&[_]usize{ tt, 0, 0 }, 0);
+    var disp_frame = MatSlice(f64).init(disp_frame_mem, 
+                                        disp.dims[1],
+                                        disp.dims[2]);
+
     coords_disp.addInPlace(&disp_frame);
 
     return coords_disp;
@@ -80,18 +86,19 @@ pub fn rasterAllFrames(
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
-    // TODO: time the data transformation step!
-    var mesh_trans = try mr.transformMesh(arena_alloc, mesh_in);
+    const dim_time_pre: usize = 0;
+    //const dim_coord_pre: usize = 1;
+    const dim_field_pre: usize = 2;
 
     var num_time: usize = 1;
-    if (mesh_trans.disp) |d| {
-        num_time = d.dims[0];
-    } else if (mesh_trans.shader == .flat) {
-        num_time = mesh_trans.shader.flat.field.array.dims[0];
+    if (mesh_in.disp) |field| {
+        num_time = field.array.dims[dim_time_pre];
+    } else if (mesh_in.shader == .flat) {
+        num_time = mesh_in.shader.flat.field.array.dims[dim_time_pre];
     }
 
-    const num_fields = switch (mesh_trans.shader) {
-        .flat => |f| f.field.array.dims[2],
+    const num_fields = switch (mesh_in.shader) {
+        .flat => |f| f.field.array.dims[dim_field_pre],
         .texture => 1,
     };
 
@@ -108,15 +115,19 @@ pub fn rasterAllFrames(
         _ = arena.reset(.free_all);
 
         // Add displacements to nodal coordinates if mesh is deforming
-        var coords_transform: NDArray(f64) = undefined;
-        if (mesh_trans.disp) |disp| {
-            coords_transform = try applyDispToMesh(arena_alloc, tt, &mesh_trans.coords, 
-                                                   &disp);
+        var coords_to_trans: MatSlice(f64) = undefined;
+        if (mesh_in.disp) |disp| {
+            coords_to_trans = try applyDispToMesh(
+                arena_alloc, tt, &mesh_in.coords.mat, &disp.array
+            );
         } else {
-            coords_transform = try NDArray(f64).initFlat(arena_alloc, 
-                                                         mesh_trans.coords.dims);
-            @memcpy(coords_transform.elems, mesh_trans.coords.elems);
+            coords_to_trans = MatSlice(f64).init(mesh_in.coords.mat.elems, 
+                                                 mesh_in.coords.mat.rows_num,
+                                                 mesh_in.coords.mat.cols_num);
         }
+
+        // Allocs and holds new NDArrays in form [elems_num,fields_num,nodes_per_elem]
+        var mesh_trans = try mr.transformMesh(arena_alloc, mesh_in, &coords_to_trans);
         
         // Allocate frame buffer or wrap images NDArray slice to return to user
         var frame_arr: NDArray(f64) = undefined;
@@ -153,7 +164,7 @@ pub fn rasterAllFrames(
                 config.tile_size,
                 config.threads_within_image,
                 &mesh_trans.shader,
-                &coords_transform,
+                &mesh_trans.coords,
                 &frame_arr,
                 .off,
                 null,
@@ -167,7 +178,7 @@ pub fn rasterAllFrames(
                 config.tile_size,
                 config.threads_within_image,
                 &mesh_trans.shader,
-                &coords_transform,
+                &mesh_trans.coords,
                 &frame_arr,
                 .perf,
                 &frame_perf.?,

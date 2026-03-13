@@ -1,6 +1,7 @@
 const std = @import("std");
 
 pub const NDArray = @import("ndarray.zig").NDArray;
+const MatSlice = @import("matslice.zig").MatSlice;
 
 const meshio = @import("meshio.zig");
 const Coords = meshio.Coords;
@@ -36,28 +37,22 @@ pub const MeshRaster = struct {
 pub const MeshTransform = struct {
     mesh_type: MeshType,
     coords: NDArray(f64),
-    disp: ?NDArray(f64),
     shader: Shader,
 };
 
 pub fn transformMesh(outer_alloc: std.mem.Allocator, 
-                     mesh_raster: *const MeshRaster) !MeshTransform {
+                     mesh_raster: *const MeshRaster,
+                     coords_disp: *const MatSlice(f64),) !MeshTransform {
 
+    const wrap_coords = Coords.init(coords_disp.elems, coords_disp.rows_num);
     const elem_coords = try transformCoords(outer_alloc,
-                                            &mesh_raster.coords,
+                                            &wrap_coords,
                                             &mesh_raster.connect);
 
-    var elem_disp: ?NDArray(f64) = null;
-    if (mesh_raster.disp) |*disp| {
-        elem_disp = try transformField(outer_alloc,
-                                       &mesh_raster.connect,
-                                       disp);
-    }
 
     var mesh_trans = MeshTransform{
         .mesh_type = mesh_raster.mesh_type,
         .coords = elem_coords,
-        .disp = elem_disp,
         .shader = undefined,    
     };
 

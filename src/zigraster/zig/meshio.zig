@@ -15,7 +15,7 @@ pub const Coords = struct {
 
     const Self: type = @This();
     
-    pub fn init(mem: []f64, coords_num: usize) !Self {
+    pub fn init(mem: []f64, coords_num: usize) Self {
         assert(mem.len == coords_num*3);
         const mat_coords = MatSlice(f64).init(mem,coords_num,3); 
         
