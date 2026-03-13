@@ -13,7 +13,7 @@ const UVMap = uvio.UVMap;
 const shaderops = @import("shaderops.zig");
 pub const FlatShader = shaderops.FlatShader;
 pub const TexShader = shaderops.TexShader;
-pub const FieldShader = shaderops.FieldShader;
+pub const Shader = shaderops.Shader;
 
 pub const MeshType = enum {
     tri3,
@@ -27,19 +27,74 @@ pub const MeshType = enum {
 
 pub const MeshRaster = struct {
     mesh_type: MeshType,
-    coords: NDArray(f64),
-    disp: ?NDArray(f64),
-    shader: FieldShader,
+    coords: Coords,
+    connect: Connect,
+    disp: ?Field,
+    shader: Shader,
 };
 
+pub const MeshTransform = struct {
+    mesh_type: MeshType,
+    coords: NDArray(f64),
+    disp: ?NDArray(f64),
+    shader: Shader,
+};
+
+pub fn transformMesh(outer_alloc: std.mem.Allocator, 
+                     mesh_raster: *const MeshRaster) !MeshTransform {
+
+    const elem_coords = try transformCoords(outer_alloc,
+                                            mesh_raster.coords,
+                                            mesh_raster.connect);
+
+    var elem_disp: ?NDArray(f64) = null;
+    if (mesh_raster.disp) |disp| {
+        elem_disp = try transformField(outer_alloc,
+                                       mesh_raster.connect,
+                                       disp);
+    }
+
+    var mesh_trans = MeshTransform{
+        .mesh_type = mesh_raster.mesh_type,
+        .coords = elem_coords,
+        .disp = elem_disp,
+        .shader = undefined,    
+    };
+
+    switch (mesh_raster.shader) {
+        .flat => |flat_shader| {
+            const elem_field = try mr.transformField(outer_alloc,
+                                                     mesh_raster.connect,
+                                                     flat_shader.field);
+            
+            mesh_trans.shader = .{ .flat = .{
+                .field = elem_field,    
+            }};
+        },
+        .texture => |texture_shader| {
+            const elem_uvs = try mr.transformUVs(outer_alloc, 
+                                                 texture_shader.uvs, 
+                                                 mesh_raster.connect);
+                    
+            mesh_raster.shader = .{ .texture = .{
+                .uvs = elem_uvs,
+                .texture = texture_shader.texture,
+                .interp_type = texture_shader.interp_type,
+            }};
+        },
+    }
+    
+    return mesh_trans;
+}
+
 pub fn transformCoords(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     coords: *const Coords,
     connect: *const Connect,
 ) !NDArray(f64) {
     // dims=(elems_num,coord[x,y,z],nodes_per_elem)
     const coord_dims = [_]usize{ connect.getElemsNum(), 3, connect.getNodesPerElem() };
-    var elem_coord_arr = try NDArray(f64).initFlat(allocator, coord_dims[0..]);
+    var elem_coord_arr = try NDArray(f64).initFlat(outer_alloc, coord_dims[0..]);
     @memset(elem_coord_arr.elems, 0.0);
 
     const dim_elem: usize = 0;

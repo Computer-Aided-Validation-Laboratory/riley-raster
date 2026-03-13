@@ -131,34 +131,28 @@ pub fn main() !void {
     
     //-----------------------------------------------------------------------------------------
     // Mesh Data Transformation
-    const elem_coords = try mr.transformCoords(page_alloc,&sim_data.coords,&sim_data.connect);
-    const elem_disp = try mr.transformField(page_alloc,&sim_data.connect,&sim_data.field);
     
     var mesh_raster = MeshRaster{
         .mesh_type = mesh_type,
-        .coords = elem_coords,
-        .disp = elem_disp,
+        .coords = sim_data.coords,
+        .connect = sim_data.connect,
+        .disp = sim_data.field,
         .shader = undefined,
     };
 
     if (comptime shader_mode == .flat) {
-        const elem_field = try mr.transformField(page_alloc,&sim_data.connect,&sim_data.field);
-
         mesh_raster.shader = .{ .flat = .{
-            .field = elem_field,
-            .bits = null,    
+            .field = sim_data.field,    
         }};
-        
     } else {
         const path_uvs = path_data ++ "uvs.csv";
         const path_tex = "texture/speckle-simple.tiff";
         
         const uvs = try uvio.loadUVMap(page_alloc, io, path_uvs);
         const texture = try iio.loadImage(page_alloc, io, path_tex, .tiff, u8, 1);
-        const elem_uvs = try mr.transformUVs(page_alloc, &uvs, &sim_data.connect);
         
         mesh_raster.shader = .{ .texture = .{
-            .uvs = elem_uvs,
+            .uvs = uvs,
             .texture = texture,
             .interp_type = .cubic_lut_lerp,
         }};

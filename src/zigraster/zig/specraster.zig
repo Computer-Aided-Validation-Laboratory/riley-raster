@@ -17,9 +17,10 @@ const Vec3OfSlices = rops.Vec3OfSlices;
 const meshraster = @import("meshraster.zig");
 const MeshType = meshraster.MeshType;
 const MeshRaster = meshraster.MeshRaster;
+const MeshTransform = meshraster.MeshTransform;
 const FlatShader = meshraster.FlatShader;
 const TexShader = meshraster.TexShader;
-const FieldShader = meshraster.FieldShader;
+const Shader = meshraster.Shader;
 
 const iio = @import("imageio.zig");
 const ImageFormat = iio.ImageFormat;
@@ -70,26 +71,31 @@ pub fn rasterAllFrames(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     camera: *const Camera,
-    mesh_raster: *const MeshRaster,
+    mesh_in: *const MeshRaster,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
 ) !?NDArray(f64) {
+
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
+    // TODO: time the data transformation step!
+    const mesh_trans = try mr.transformMesh(arena_alloc, mesh_in);
+
     var num_time: usize = 1;
-    if (mesh_raster.disp) |d| {
+    if (mesh_trans.disp) |d| {
         num_time = d.dims[0];
-    } else if (mesh_raster.shader == .flat) {
-        num_time = mesh_raster.shader.flat.field.dims[0];
+    } else if (mesh_trans.shader == .flat) {
+        num_time = mesh_trans.shader.flat.field.dims[0];
     }
 
-    const num_fields = switch (mesh_raster.shader) {
+    const num_fields = switch (mesh_trans.shader) {
         .flat => |f| f.field.dims[2],
         .texture => 1,
     };
 
+    // Allocate NDArray if we are returning everything to the user in memory
     var images_arr: ?NDArray(f64) = null;
     if (config.save_opt == .memory or config.save_opt == .both) {
         const dims = [_]usize{
@@ -101,16 +107,18 @@ pub fn rasterAllFrames(
     for (0..num_time) |tt| {
         _ = arena.reset(.free_all);
 
+        // Add displacements to nodal coordinates if mesh is deforming
         var coords_transform: NDArray(f64) = undefined;
-        if (mesh_raster.disp) |disp| {
-            coords_transform = try applyDispToMesh(arena_alloc, tt, &mesh_raster.coords, 
+        if (mesh_trans.disp) |disp| {
+            coords_transform = try applyDispToMesh(arena_alloc, tt, &mesh_trans.coords, 
                                                    &disp);
         } else {
             coords_transform = try NDArray(f64).initFlat(arena_alloc, 
-                                                        mesh_raster.coords.dims);
-            @memcpy(coords_transform.elems, mesh_raster.coords.elems);
+                                                         mesh_trans.coords.dims);
+            @memcpy(coords_transform.elems, mesh_trans.coords.elems);
         }
-
+        
+        // Allocate frame buffer or wrap images NDArray slice to return to user
         var frame_arr: NDArray(f64) = undefined;
         if (images_arr) |*ima| {
             const stride = ima.strides[0];
@@ -122,6 +130,7 @@ pub fn rasterAllFrames(
         }
         @memset(frame_arr.elems, 0.0);
 
+        // Performance allocs for rendering diagnostic images
         var frame_perf: ?Perf = null;
         if (config.report == .perf) {
             frame_perf = try perf.initFramePerf(
@@ -134,31 +143,30 @@ pub fn rasterAllFrames(
         }
         defer if (frame_perf) |*fp| fp.deinit(outer_alloc);
 
-        // Dispath based on comptime known report mode
         switch (config.report) {
             .off => try rasterOneFrame(
-                mesh_raster.mesh_type,
+                mesh_trans.mesh_type,
                 arena_alloc,
                 io,
                 camera,
                 tt,
                 config.tile_size,
                 config.threads_within_image,
-                &mesh_raster.shader,
+                &mesh_trans.shader,
                 &coords_transform,
                 &frame_arr,
                 .off,
                 null,
             ),
             .perf => try rasterOneFrame(
-                mesh_raster.mesh_type,
+                mesh_trans.mesh_type,
                 arena_alloc,
                 io,
                 camera,
                 tt,
                 config.tile_size,
                 config.threads_within_image,
-                &mesh_raster.shader,
+                &mesh_trans.shader,
                 &coords_transform,
                 &frame_arr,
                 .perf,
@@ -173,7 +181,7 @@ pub fn rasterAllFrames(
         }
 
         if (config.save_opt == .disk or config.save_opt == .both) {
-            const bits: u8 = switch (mesh_raster.shader) {
+            const bits: u8 = switch (mesh_trans.shader) {
                 .flat => |f| @intCast(f.bits orelse 8),
                 .texture => 8,
             };
@@ -191,6 +199,7 @@ pub fn rasterOneFrame(
     allocator: std.mem.Allocator,
     io: std.Io,
     camera: *const Camera,
+    mesh: *const MeshTransform,
     frame_ind: usize,
     tile_size: u16,
     threads: u16,

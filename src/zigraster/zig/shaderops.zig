@@ -8,7 +8,6 @@ const InterpType = texops.InterpType;
 
 pub const FlatShader = struct {
     field: NDArray(f64),
-    bits: ?u16 = null,
 };
 
 pub const TexShader = struct {
@@ -17,7 +16,7 @@ pub const TexShader = struct {
     interp_type: InterpType = .cubic_lut_lerp,
 };
 
-pub const FieldShader = union(enum) {
+pub const Shader = union(enum) {
     flat: FlatShader,
     texture: TexShader,
 };

@@ -28,6 +28,14 @@ pub fn MatSlice(comptime EType: type) type {
             };
         }
 
+        pub fn initAlloc(outer_alloc: std.mem.Allocator, 
+                         rows_num: usize, 
+                         cols_num: usize) Self {
+            const slice = try outer_alloc.alloc(EType,rows_num,cols_num);
+            
+            return init(slice,rows_num,cols_num);
+        }
+
         pub fn fill(self: *const Self, fill_val: EType) void {
             @memset(self.elems[0..], fill_val);
         }
