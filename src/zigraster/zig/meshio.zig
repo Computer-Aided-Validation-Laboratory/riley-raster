@@ -262,10 +262,26 @@ pub fn parseField(csv_lines: *const std.ArrayList([]const u8),
     }
 }
 
+pub const SimDataFiles = struct {
+    coord_file: []const u8 = "coords.csv",
+    connect_file: []const u8 = "connectivity.csv",
+    field_files: []const []const u8 = &[_][]const u8{
+        "field_disp_x.csv",
+        "field_disp_y.csv",
+        "field_disp_z.csv",
+    },
+};
+
 pub const SimData = struct {
     coords: Coords,
     connect: Connect,
     field: Field,
+
+    pub fn deinit(self: *SimData, allocator: std.mem.Allocator) void {
+        allocator.free(self.coords.mem);
+        self.connect.deinit(allocator);
+        self.field.deinit(allocator);
+    }
 };
 
 pub fn load_sim_data(outer_alloc: std.mem.Allocator,
@@ -280,39 +296,21 @@ pub fn load_sim_data(outer_alloc: std.mem.Allocator,
     const arena_alloc = arena.allocator();
 
     const field_n: usize = field_paths.len;
-    var time_start = std.Io.Clock.Timestamp.now(io, .awake);
-    var time_end = std.Io.Clock.Timestamp.now(io, .awake);
 
     //--------------------------------------------------------------------------
     // Read and parse coordinates csv file
-
-    time_start = std.Io.Clock.Timestamp.now(io, .awake);
-
     var lines = try readCsvToList(arena_alloc, io, coord_path);
     const coords = try parseCoords(outer_alloc, &lines);
-
-    time_end = std.Io.Clock.Timestamp.now(io, .awake);
-
     lines.clearRetainingCapacity();
 
     //--------------------------------------------------------------------------
     // Read and parse the connectivity table csv file
-
-    // Read the csv file into an array list
-    time_start = std.Io.Clock.Timestamp.now(io, .awake);
-
     lines = try readCsvToList(arena_alloc, io, connect_path);
     const connect = try parseConnect(outer_alloc, &lines);
-
-    time_end = std.Io.Clock.Timestamp.now(io, .awake);
-
     lines.clearRetainingCapacity();
 
     //--------------------------------------------------------------------------
     // Parse fields
-
-    time_start = std.Io.Clock.Timestamp.now(io, .awake);
-
     lines = try readCsvToList(arena_alloc, io, field_paths[0]);
 
     const time_n: usize = getFieldTimeN(&lines);
@@ -320,20 +318,12 @@ pub fn load_sim_data(outer_alloc: std.mem.Allocator,
     var field = try Field.initAlloc(outer_alloc,time_n,coord_n,field_n);   
 
     try parseField(&lines,&field,0);
-    time_end = std.Io.Clock.Timestamp.now(io, .awake);
-
     lines.clearRetainingCapacity();
 
     const remaining_field_paths = field_paths[1..];
     for (remaining_field_paths,1..) |field_path,ii| {
-    
-        time_start = std.Io.Clock.Timestamp.now(io, .awake);
-
         lines = try readCsvToList(arena_alloc, io, field_path);
         try parseField(&lines,&field,ii);
-
-        time_end = std.Io.Clock.Timestamp.now(io, .awake);
-
         lines.clearRetainingCapacity();      
     }
 
@@ -342,4 +332,76 @@ pub fn load_sim_data(outer_alloc: std.mem.Allocator,
       .connect = connect,
       .field = field,  
     };
+}
+
+pub fn loadMultiSimData(allocator: std.mem.Allocator,
+                        io: std.Io,
+                        dir_paths: []const []const u8,
+                        files: SimDataFiles) ![]SimData {
+    var sim_data_slice = try allocator.alloc(SimData, dir_paths.len);
+    var loaded_count: usize = 0;
+    errdefer {
+        for (0..loaded_count) |ii| {
+            sim_data_slice[ii].deinit(allocator);
+        }
+        allocator.free(sim_data_slice);
+    }
+
+    for (dir_paths, 0..) |dir_path, ii| {
+        const path_coords = try std.fmt.allocPrint(
+            allocator, "{s}{s}", .{dir_path, files.coord_file}
+        );
+        defer allocator.free(path_coords);
+        
+        const path_connect = try std.fmt.allocPrint(
+            allocator, "{s}{s}", .{dir_path, files.connect_file}
+        );
+        defer allocator.free(path_connect);
+        
+        var field_paths = try allocator.alloc([]const u8, files.field_files.len);
+        defer {
+            for (field_paths) |pp| allocator.free(pp);
+            allocator.free(field_paths);
+        }
+
+        for (files.field_files, 0..) |suffix, jj| {
+            field_paths[jj] = try std.fmt.allocPrint(
+                allocator, "{s}{s}", .{dir_path, suffix}
+            );
+        }
+
+        sim_data_slice[ii] = try load_sim_data(
+            allocator, io, path_coords, path_connect, field_paths
+        );
+        loaded_count += 1;
+    }
+    return sim_data_slice;
+}
+
+test "loadMultiSimData twoelems" {
+    const allocator = std.testing.allocator;
+    var single_thread_io: std.Io.Threaded = .init_single_threaded;
+    const io = single_thread_io.io();
+
+    const dir_paths = [_][]const u8{
+        "data-simple/tri3_twoelems/",
+        "data-simple/tri6_twoelems/",
+        "data-simple/quad4_twoelems/",
+        "data-simple/quad8_twoelems/",
+        "data-simple/quad9_twoelems/",
+    };
+
+    const sim_datas = try loadMultiSimData(allocator, io, &dir_paths, .{});
+    defer {
+        for (sim_datas) |*sim_data| sim_data.deinit(allocator);
+        allocator.free(sim_datas);
+    }
+    
+    const expected_nodes = [_]usize{ 3, 6, 4, 8, 9 };
+
+    for (sim_datas, 0..) |sim_data, ii| {
+        try std.testing.expectEqual(@as(usize, 2), sim_data.connect.getElemsNum());
+        try std.testing.expectEqual(expected_nodes[ii], sim_data.connect.getNodesPerElem());
+        try std.testing.expectEqual(sim_data.coords.mat.rows_num, sim_data.field.getCoordN());
+    }
 }

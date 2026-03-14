@@ -194,3 +194,61 @@ pub fn transformUVs(
 
     return elem_uv_arr;
 }
+
+pub fn meshRasterFromSimDataSlice(allocator: std.mem.Allocator,
+                                   io: std.Io,
+                                   sim_datas: []const meshio.SimData,
+                                   mesh_types: []const MeshType,
+                                   dir_paths: []const []const u8,
+                                   shader_mode: enum { flat, texture },
+                                   texture_path: ?[]const u8) ![]MeshRaster {
+    var mesh_rasters = try allocator.alloc(MeshRaster, sim_datas.len);
+    var initialized_count: usize = 0;
+    errdefer {
+        // Only need to free things if we allocated them here
+        // uvs and texture in TexShader are allocated.
+        for (0..initialized_count) |ii| {
+            switch (mesh_rasters[ii].shader) {
+                .texture => |tex| {
+                    allocator.free(tex.uvs.elems);
+                },
+                else => {},
+            }
+        }
+        allocator.free(mesh_rasters);
+    }
+
+    for (sim_datas, 0..) |sim_data, ii| {
+        mesh_rasters[ii] = MeshRaster{
+            .mesh_type = mesh_types[ii],
+            .coords = sim_data.coords,
+            .connect = sim_data.connect,
+            .disp = sim_data.field,
+            .shader = undefined,
+        };
+
+        if (shader_mode == .flat) {
+            mesh_rasters[ii].shader = .{ .flat = .{
+                .field = sim_data.field,
+                .bits = 8,
+            }};
+        } else {
+            const path_uvs = try std.fmt.allocPrint(allocator, "{s}uvs.csv", .{dir_paths[ii]});
+            defer allocator.free(path_uvs);
+            
+            var uvmap = try uvio.loadUVMap(allocator, io, path_uvs);
+            
+            const texture = try @import("imageio.zig").loadImage(
+                allocator, io, texture_path.?, .tiff, u8, 1
+            );
+            
+            mesh_rasters[ii].shader = .{ .texture = .{
+                .uvs = uvmap.array,
+                .texture = texture,
+                .interp_type = .cubic_lut_lerp,
+            }};
+        }
+        initialized_count += 1;
+    }
+    return mesh_rasters;
+}
