@@ -19,6 +19,9 @@ pub fn main() !void {
     print("{s}\nMulti-Mesh Software Rasteriser Test\n{s}\n", .{ print_break, print_break });    
 
     const page_alloc = std.heap.page_allocator;
+    var arena = std.heap.ArenaAllocator.init(page_alloc);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
 
     var single_thread_io: std.Io.Threaded = .init_single_threaded;
     const io = single_thread_io.io();
@@ -44,17 +47,13 @@ pub fn main() !void {
     //-----------------------------------------------------------------------------------------
     // Load Multi SimData
     print("Loading multi-mesh sim data...\n", .{});
-    const sim_datas = try meshio.loadMultiSimData(page_alloc, io, &dir_paths, .{});
-    defer {
-        for (sim_datas) |*sim_data| sim_data.deinit(page_alloc);
-        page_alloc.free(sim_datas);
-    }
+    const sim_datas = try meshio.loadMultiSimData(arena_alloc, io, &dir_paths, .{});
 
     //-----------------------------------------------------------------------------------------
     // Create Multi MeshRaster (Flat Shading for now)
     print("Creating multi-mesh rasters...\n", .{});
     const mesh_rasters = try mr.meshRasterFromSimDataSlice(
-        page_alloc, 
+        arena_alloc, 
         io, 
         sim_datas, 
         &mesh_types, 
@@ -63,9 +62,6 @@ pub fn main() !void {
         null,
         null
     );
-    // Note: in a real scenario we'd need to deinit mesh_rasters properly if they allocated 
-    // internal shader data like textures/uvs.
-    defer page_alloc.free(mesh_rasters);
 
     //-----------------------------------------------------------------------------------------
     // Arrange meshes in a grid
