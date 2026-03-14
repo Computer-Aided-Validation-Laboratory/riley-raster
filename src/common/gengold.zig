@@ -112,7 +112,7 @@ pub fn runGenerationExt(
         const uv_p = try std.fmt.allocPrint(aa, "{s}/uvs.csv", .{data_path});
         var uvs = try uvio.loadUVMap(aa, io, uv_p);
 
-        const cam_pos = CameraOps.pos_fill_frame_from_rot(
+        const cam_pos = CameraOps.posFillFrameFromRot(
             &sim_data.coords,
             pixel_num,
             pixel_size,
@@ -125,7 +125,7 @@ pub fn runGenerationExt(
             pixel_size,
             cam_pos,
             rot,
-            CameraOps.roi_cent_from_coords(&sim_data.coords),
+            CameraOps.roiCentFromCoords(&sim_data.coords),
             focal_leng,
             2,
         );

@@ -55,7 +55,7 @@ fn processCase(allocator: std.mem.Allocator, io: std.Io, comptime N: usize, data
     const fov_scale = 1.1;
     const rot = Rotation.init(0, 0, 0);
 
-    const cam_pos = CameraOps.pos_fill_frame_from_rot(
+    const cam_pos = CameraOps.posFillFrameFromRot(
         &sim_data.coords, pixel_num, pixel_size, focal_leng, rot, fov_scale,
     );
     const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, Vec3f.initZeros(), focal_leng, 2);

@@ -262,3 +262,102 @@ pub fn meshRasterFromSimDataSlice(allocator: std.mem.Allocator,
     }
     return mesh_rasters;
 }
+
+fn findAlignedCentroid(coords: *const Coords) struct {
+    centroid: [3]f64,
+    extent: [3]f64,
+} {
+    var min = [3]f64{
+        std.math.inf(f64),
+        std.math.inf(f64),
+        std.math.inf(f64),
+    };
+    var max = [3]f64{
+        -std.math.inf(f64),
+        -std.math.inf(f64),
+        -std.math.inf(f64),
+    };
+
+    for (0..coords.mat.rows_num) |ii| {
+        const x = coords.mat.get(ii, 0);
+        const y = coords.mat.get(ii, 1);
+        const z = coords.mat.get(ii, 2);
+
+        if (x < min[0]) min[0] = x;
+        if (x > max[0]) max[0] = x;
+        if (y < min[1]) min[1] = y;
+        if (y > max[1]) max[1] = y;
+        if (z < min[2]) min[2] = z;
+        if (z > max[2]) max[2] = z;
+    }
+
+    return .{
+        .centroid = .{
+            (min[0] + max[0]) * 0.5,
+            (min[1] + max[1]) * 0.5,
+            (min[2] + max[2]) * 0.5,
+        },
+        .extent = .{
+            max[0] - min[0],
+            max[1] - min[1],
+            max[2] - min[2],
+        },
+    };
+}
+
+pub fn arrangeMeshSlice(meshes: []MeshRaster,
+                       gap: [3]f64,
+                       max_divs: [3]usize) void {
+    var max_extent = [3]f64{ 0, 0, 0 };
+
+    // First pass: find the maximum extent among all individual meshes
+    for (meshes) |mesh| {
+        const bounds = findAlignedCentroid(&mesh.coords);
+        for (0..3) |ii| {
+            if (bounds.extent[ii] > max_extent[ii]) {
+                max_extent[ii] = bounds.extent[ii];
+            }
+        }
+    }
+
+    const stride = [3]f64{
+        max_extent[0] + gap[0],
+        max_extent[1] + gap[1],
+        max_extent[2] + gap[2],
+    };
+
+    // Second pass: arrange meshes in a regular grid
+    for (meshes, 0..) |mesh, nn| {
+        // Calculate grid indices based on max divisions per axis
+        const ix = nn % max_divs[0];
+        const iy = (nn / max_divs[0]) % max_divs[1];
+        const iz = nn / (max_divs[0] * max_divs[1]);
+
+        const target_center = [3]f64{
+            @as(f64, @floatFromInt(ix)) * stride[0],
+            @as(f64, @floatFromInt(iy)) * stride[1],
+            @as(f64, @floatFromInt(iz)) * stride[2],
+        };
+
+        const bounds = findAlignedCentroid(&mesh.coords);
+
+        const translation = [3]f64{
+            target_center[0] - bounds.centroid[0],
+            target_center[1] - bounds.centroid[1],
+            target_center[2] - bounds.centroid[2],
+        };
+
+        var mat = mesh.coords.mat;
+
+        // Apply translation in-place to the coordinate matrix
+        for (0..mesh.coords.mat.rows_num) |ii| {
+            const x = mat.get(ii, 0);
+            const y = mat.get(ii, 1);
+            const z = mat.get(ii, 2);
+
+            mat.set(ii, 0, x + translation[0]);
+            mat.set(ii, 1, y + translation[1]);
+            mat.set(ii, 2, z + translation[2]);
+        }
+    }
+}

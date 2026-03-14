@@ -110,12 +110,12 @@ pub fn main() !void {
     const subsample: u8 = 2;
     
     print("{s}\n", .{print_break});
-    const roi_pos = CameraOps.roi_cent_from_coords(&sim_data.coords);
+    const roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
     
     print("\nROI center position:\n", .{});
     roi_pos.vecPrint();
     
-    const cam_pos = CameraOps.pos_fill_frame_from_rot(&sim_data.coords, 
+    const cam_pos = CameraOps.posFillFrameFromRot(&sim_data.coords, 
                                                       pixel_num, 
                                                       pixel_size, 
                                                       focal_leng, 

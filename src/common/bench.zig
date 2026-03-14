@@ -130,12 +130,12 @@ const elem_disp = try mr.transformField(aa, &sim_data.connect, &sim_data.field.?
 const elem_field = try mr.transformField(aa, &sim_data.connect, &sim_data.field.?);
 const elem_uvs = try mr.transformUVs(aa, &uvs, &sim_data.connect);
 
-const cam_pos = CameraOps.pos_fill_frame_from_rot(
+const cam_pos = CameraOps.posFillFrameFromRot(
     &sim_data.coords, pixel_num, pixel_size, focal_leng, rot, fov_scale,
 );
 const camera = Camera.init(
     pixel_num, pixel_size, cam_pos, rot, 
-    CameraOps.roi_cent_from_coords(&sim_data.coords), focal_leng, 2,
+    CameraOps.roiCentFromCoords(&sim_data.coords), focal_leng, 2,
 );
 
 const disps = [_]bool{ true, false };

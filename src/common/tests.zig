@@ -183,12 +183,12 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
     const uv_path = try std.fmt.allocPrint(aa, "{s}/uvs.csv", .{data_path});
     var uvs = try uvio.loadUVMap(aa, io, uv_path);
 
-    const cam_pos = CameraOps.pos_fill_frame_from_rot(
+    const cam_pos = CameraOps.posFillFrameFromRot(
         &sim_data.coords, pixel_num, pixel_size, focal_leng, rot, fov_scale,
     );
     const camera = Camera.init(
         pixel_num, pixel_size, cam_pos, rot, 
-        CameraOps.roi_cent_from_coords(&sim_data.coords), focal_leng, 2,
+        CameraOps.roiCentFromCoords(&sim_data.coords), focal_leng, 2,
     );
 
     const disps = [_]bool{ true, false };
