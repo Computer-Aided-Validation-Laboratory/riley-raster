@@ -52,7 +52,7 @@ pub fn loadData(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !Sim
         try std.fmt.allocPrint(allocator, "{s}/field_disp_y.csv", .{path}),
         try std.fmt.allocPrint(allocator, "{s}/field_disp_z.csv", .{path}),
     };
-    return try meshio.load_sim_data(allocator, io, pc, pn, pf[0..]);
+    return try meshio.loadSimData(allocator, io, pc, pn, pf[0..], null);
 }
 
 fn saveResultToRoot(
@@ -125,33 +125,34 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
     var sim_data = try loadData(aa, io, data_path);
     const uv_path = try std.fmt.allocPrint(aa, "{s}/uvs.csv", .{data_path});
     var uvs = try uvio.loadUVMap(aa, io, uv_path);
+const elem_coords = try mr.transformCoords(aa, &sim_data.coords, &sim_data.connect);
+const elem_disp = try mr.transformField(aa, &sim_data.connect, &sim_data.field.?);
+const elem_field = try mr.transformField(aa, &sim_data.connect, &sim_data.field.?);
+const elem_uvs = try mr.transformUVs(aa, &uvs, &sim_data.connect);
 
-    const elem_coords = try mr.transformCoords(aa, &sim_data.coords, &sim_data.connect);
-    const elem_disp = try mr.transformField(aa, &sim_data.connect, &sim_data.field);
-    const elem_uvs = try mr.transformUVs(aa, &uvs, &sim_data.connect);
+const cam_pos = CameraOps.pos_fill_frame_from_rot(
+    &sim_data.coords, pixel_num, pixel_size, focal_leng, rot, fov_scale,
+);
+const camera = Camera.init(
+    pixel_num, pixel_size, cam_pos, rot, 
+    CameraOps.roi_cent_from_coords(&sim_data.coords), focal_leng, 2,
+);
 
-    const cam_pos = CameraOps.pos_fill_frame_from_rot(
-        &sim_data.coords, pixel_num, pixel_size, focal_leng, rot, fov_scale,
-    );
-    const camera = Camera.init(
-        pixel_num, pixel_size, cam_pos, rot, 
-        CameraOps.roi_cent_from_coords(&sim_data.coords), focal_leng, 2,
-    );
+const disps = [_]bool{ true, false };
+for (disps) |add_disp| {
+    const d_str = if (add_disp) "dispon" else "dispoff";
+    const mt_name = @tagName(mesh_type);
 
-    const disps = [_]bool{ true, false };
-    for (disps) |add_disp| {
-        const d_str = if (add_disp) "dispon" else "dispoff";
-        const mt_name = @tagName(mesh_type);
+    // --- Flat Shader ---
+    if (shader_filter == .flat or shader_filter == .both) {
+        const c_dir_name = try std.fmt.allocPrint(aa, "{s}_{s}_{s}_flat", .{ case_name, mt_name, d_str });
+        var mesh_raster = MeshRaster{ 
+            .mesh_type = mesh_type, 
+            .coords = elem_coords, 
+            .disp = if (add_disp) elem_disp else null, 
+            .shader = .{ .flat = .{ .field = elem_field, .bits = 8 } } 
+        };
 
-        // --- Flat Shader ---
-        if (shader_filter == .flat or shader_filter == .both) {
-            const c_dir_name = try std.fmt.allocPrint(aa, "{s}_{s}_{s}_flat", .{ case_name, mt_name, d_str });
-            var mesh_raster = MeshRaster{ 
-                .mesh_type = mesh_type, 
-                .coords = elem_coords, 
-                .disp = if (add_disp) elem_disp else null, 
-                .shader = .{ .flat = .{ .field = elem_disp, .bits = 8 } } 
-            };
 
             const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };
             const result = (try specraster.rasterAllFrames(aa, io, &camera, &mesh_raster, config, null)) orelse return error.NoResult;

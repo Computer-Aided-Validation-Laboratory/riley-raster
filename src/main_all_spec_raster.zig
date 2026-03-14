@@ -76,15 +76,16 @@ pub fn main() !void {
         path_data ++ "field_disp_z.csv",
     };
 
-    const sim_data: SimData = try meshio.load_sim_data(page_alloc,
-                                                       io,
-                                                       path_coords,
-                                                       path_connect,
-                                                       path_fields[0..]); 
+    const sim_data: SimData = try meshio.loadSimData(page_alloc,
+                                                      io,
+                                                      path_coords,
+                                                      path_connect,
+                                                      path_fields[0..],
+                                                      null); 
 
-    const field_coord_n = sim_data.field.getCoordN();
-    const field_time_n = sim_data.field.getTimeN();
-    const field_fields_n = sim_data.field.getFieldsN();
+    const field_coord_n = sim_data.field.?.getCoordN();
+    const field_time_n = sim_data.field.?.getTimeN();
+    const field_fields_n = sim_data.field.?.getFieldsN();
     
     print("\nfield: time_n = {d}\n",.{field_time_n});
     print("field: coord_n = {d}\n",.{field_coord_n});
@@ -136,13 +137,13 @@ pub fn main() !void {
         .mesh_type = mesh_type,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
-        .disp = sim_data.field,
+        .disp = sim_data.disp,
         .shader = undefined,
     };
 
     if (comptime shader_mode == .flat) {
         mesh_raster.shader = .{ .flat = .{
-            .field = sim_data.field,
+            .field = sim_data.field.?,
             .bits = 8,
         }};
     } else {

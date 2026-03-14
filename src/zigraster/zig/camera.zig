@@ -66,7 +66,6 @@ pub const Camera = struct {
 };
 
 pub const CameraOps = struct {
-    // TODO: maybe this should return a Vec2f?
     pub fn fov_from_cam_rot(cam_rot: Rotation, coords_world: *const Coords) [2]f64 {
         const world_to_cam_mat = Mat33Ops.inv(f64, cam_rot.matrix);
 

@@ -104,7 +104,7 @@ pub fn loadData(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !Sim
         try std.fmt.allocPrint(allocator, "{s}/field_disp_y.csv", .{path}),
         try std.fmt.allocPrint(allocator, "{s}/field_disp_z.csv", .{path}),
     };
-    return try meshio.load_sim_data(allocator, io, pc, pn, pf[0..]);
+    return try meshio.loadSimData(allocator, io, pc, pn, pf[0..], null);
 }
 
 fn saveResultToFails(
@@ -212,7 +212,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                 .coords = sim_data.coords, 
                 .connect = sim_data.connect,
                 .disp = if (add_disp) sim_data.field else null, 
-                .shader = .{ .flat = .{ .field = sim_data.field, .bits = 8 } } 
+                .shader = .{ .flat = .{ .field = sim_data.field.?, .bits = 8 } } 
             };
 
             const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };

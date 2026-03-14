@@ -52,8 +52,9 @@ pub fn main() !void {
         io, 
         sim_datas, 
         &mesh_types, 
-        &dir_paths, 
         .flat, 
+        null,
+        null,
         null
     );
     // Note: in a real scenario we'd need to deinit mesh_rasters properly if they allocated 

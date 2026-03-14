@@ -45,7 +45,7 @@ fn processCase(allocator: std.mem.Allocator, io: std.Io, comptime N: usize, data
         try std.fmt.allocPrint(aa, "{s}/field_disp_y.csv", .{data_path}),
         try std.fmt.allocPrint(aa, "{s}/field_disp_z.csv", .{data_path}),
     };
-    var sim_data = try meshio.load_sim_data(aa, io, coord_path, connect_path, &field_paths);
+    var sim_data = try meshio.loadSimData(aa, io, coord_path, connect_path, &field_paths, null);
 
     var elem_coords = try mr.transformCoords(aa, &sim_data.coords, &sim_data.connect);
 

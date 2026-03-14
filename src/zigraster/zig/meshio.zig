@@ -262,40 +262,44 @@ pub fn parseField(csv_lines: *const std.ArrayList([]const u8),
     }
 }
 
+const default_field_files = &[_][]const u8{
+    "field_disp_x.csv",
+    "field_disp_y.csv",
+    "field_disp_z.csv",
+};
+
 pub const SimDataFiles = struct {
     coord_file: []const u8 = "coords.csv",
     connect_file: []const u8 = "connectivity.csv",
-    field_files: []const []const u8 = &[_][]const u8{
-        "field_disp_x.csv",
-        "field_disp_y.csv",
-        "field_disp_z.csv",
-    },
+    field_files: ?[]const []const u8 = default_field_files,
+    disp_files: ?[]const []const u8 = default_field_files,
 };
 
 pub const SimData = struct {
     coords: Coords,
     connect: Connect,
-    field: Field,
+    field: ?Field,
+    disp: ?Field,
 
     pub fn deinit(self: *SimData, allocator: std.mem.Allocator) void {
         allocator.free(self.coords.mem);
         self.connect.deinit(allocator);
-        self.field.deinit(allocator);
+        if (self.field) |*ff| ff.deinit(allocator);
+        if (self.disp) |*dd| dd.deinit(allocator);
     }
 };
 
-pub fn load_sim_data(outer_alloc: std.mem.Allocator,
-                     io: std.Io,
-                     coord_path: []const u8,
-                     connect_path: []const u8,
-                     field_paths: []const []const u8,
-                     ) !SimData {
+pub fn loadSimData(outer_alloc: std.mem.Allocator,
+                    io: std.Io,
+                    coord_path: []const u8,
+                    connect_path: []const u8,
+                    field_paths: ?[]const []const u8,
+                    disp_paths: ?[]const []const u8,
+                    ) !SimData {
                      
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
-
-    const field_n: usize = field_paths.len;
 
     //--------------------------------------------------------------------------
     // Read and parse coordinates csv file
@@ -310,27 +314,50 @@ pub fn load_sim_data(outer_alloc: std.mem.Allocator,
     lines.clearRetainingCapacity();
 
     //--------------------------------------------------------------------------
-    // Parse fields
-    lines = try readCsvToList(arena_alloc, io, field_paths[0]);
+    // Parse field (optional)
+    var field: ?Field = null;
+    if (field_paths) |fp| {
+        if (fp.len > 0) {
+            lines = try readCsvToList(arena_alloc, io, fp[0]);
+            const time_n: usize = getFieldTimeN(&lines);
+            const coord_n: usize = lines.items.len;
+            field = try Field.initAlloc(outer_alloc, time_n, coord_n, fp.len);
+            try parseField(&lines, &field.?, 0);
+            lines.clearRetainingCapacity();
 
-    const time_n: usize = getFieldTimeN(&lines);
-    const coord_n: usize = lines.items.len;
-    var field = try Field.initAlloc(outer_alloc,time_n,coord_n,field_n);   
+            for (fp[1..], 1..) |path, ii| {
+                lines = try readCsvToList(arena_alloc, io, path);
+                try parseField(&lines, &field.?, ii);
+                lines.clearRetainingCapacity();
+            }
+        }
+    }
 
-    try parseField(&lines,&field,0);
-    lines.clearRetainingCapacity();
+    //--------------------------------------------------------------------------
+    // Parse displacement (optional)
+    var disp: ?Field = null;
+    if (disp_paths) |dp| {
+        if (dp.len > 0) {
+            lines = try readCsvToList(arena_alloc, io, dp[0]);
+            const time_n: usize = getFieldTimeN(&lines);
+            const coord_n: usize = lines.items.len;
+            disp = try Field.initAlloc(outer_alloc, time_n, coord_n, dp.len);
+            try parseField(&lines, &disp.?, 0);
+            lines.clearRetainingCapacity();
 
-    const remaining_field_paths = field_paths[1..];
-    for (remaining_field_paths,1..) |field_path,ii| {
-        lines = try readCsvToList(arena_alloc, io, field_path);
-        try parseField(&lines,&field,ii);
-        lines.clearRetainingCapacity();      
+            for (dp[1..], 1..) |path, ii| {
+                lines = try readCsvToList(arena_alloc, io, path);
+                try parseField(&lines, &disp.?, ii);
+                lines.clearRetainingCapacity();
+            }
+        }
     }
 
     return .{
       .coords = coords,
       .connect = connect,
-      .field = field,  
+      .field = field,
+      .disp = disp,
     };
 }
 
@@ -358,20 +385,36 @@ pub fn loadMultiSimData(allocator: std.mem.Allocator,
         );
         defer allocator.free(path_connect);
         
-        var field_paths = try allocator.alloc([]const u8, files.field_files.len);
-        defer {
-            for (field_paths) |pp| allocator.free(pp);
-            allocator.free(field_paths);
+        var field_paths: ?[][]const u8 = null;
+        if (files.field_files) |ff| {
+            field_paths = try allocator.alloc([]const u8, ff.len);
+            for (ff, 0..) |suffix, jj| {
+                field_paths.?[jj] = try std.fmt.allocPrint(
+                    allocator, "{s}{s}", .{dir_path, suffix}
+                );
+            }
         }
+        defer if (field_paths) |fp| {
+            for (fp) |pp| allocator.free(pp);
+            allocator.free(fp);
+        };
 
-        for (files.field_files, 0..) |suffix, jj| {
-            field_paths[jj] = try std.fmt.allocPrint(
-                allocator, "{s}{s}", .{dir_path, suffix}
-            );
+        var disp_paths: ?[][]const u8 = null;
+        if (files.disp_files) |df| {
+            disp_paths = try allocator.alloc([]const u8, df.len);
+            for (df, 0..) |suffix, jj| {
+                disp_paths.?[jj] = try std.fmt.allocPrint(
+                    allocator, "{s}{s}", .{dir_path, suffix}
+                );
+            }
         }
+        defer if (disp_paths) |dp| {
+            for (dp) |pp| allocator.free(pp);
+            allocator.free(dp);
+        };
 
-        sim_data_slice[ii] = try load_sim_data(
-            allocator, io, path_coords, path_connect, field_paths
+        sim_data_slice[ii] = try loadSimData(
+            allocator, io, path_coords, path_connect, field_paths, disp_paths
         );
         loaded_count += 1;
     }
@@ -402,6 +445,10 @@ test "loadMultiSimData twoelems" {
     for (sim_datas, 0..) |sim_data, ii| {
         try std.testing.expectEqual(@as(usize, 2), sim_data.connect.getElemsNum());
         try std.testing.expectEqual(expected_nodes[ii], sim_data.connect.getNodesPerElem());
-        try std.testing.expectEqual(sim_data.coords.mat.rows_num, sim_data.field.getCoordN());
+        if (sim_data.field) |field| {
+            try std.testing.expectEqual(sim_data.coords.mat.rows_num, field.getCoordN());
+        } else {
+            return error.TestExpectedField;
+        }
     }
 }

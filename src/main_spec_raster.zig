@@ -78,17 +78,18 @@ pub fn main() !void {
         path_data ++ "field_disp_z.csv",
     };
 
-    const sim_data: SimData = try meshio.load_sim_data(page_alloc,
-                                                       io,
-                                                       path_coords,
-                                                       path_connect,
-                                                       path_fields[0..]); 
+    const sim_data: SimData = try meshio.loadSimData(page_alloc,
+                                                      io,
+                                                      path_coords,
+                                                      path_connect,
+                                                      path_fields[0..],
+                                                      null); 
 
     //--------------------------------------------------------------------------
     // CHECK FIELD LOADED CORRECTLY
-    const field_coord_n = sim_data.field.getCoordN();
-    const field_time_n = sim_data.field.getTimeN();
-    const field_fields_n = sim_data.field.getFieldsN();
+    const field_coord_n = sim_data.field.?.getCoordN();
+    const field_time_n = sim_data.field.?.getTimeN();
+    const field_fields_n = sim_data.field.?.getFieldsN();
     
     print("\nfield: time_n = {d}\n",.{field_time_n});
     print("field: coord_n = {d}\n",.{field_coord_n});
@@ -136,8 +137,8 @@ pub fn main() !void {
     //=========================================================================================
     // Mesh Data Transformation
     const elem_coords = try mr.transformCoords(page_alloc,&sim_data.coords,&sim_data.connect);
-    const elem_disp = try mr.transformField(page_alloc,&sim_data.connect,&sim_data.field);
-    const elem_field = try mr.transformField(page_alloc,&sim_data.connect,&sim_data.field);
+    const elem_disp = try mr.transformField(page_alloc,&sim_data.connect,&sim_data.field.?);
+    const elem_field = try mr.transformField(page_alloc,&sim_data.connect,&sim_data.field.?);
     const elem_shader = FlatShader{ .field=elem_field }; 
 
     var mesh_raster = MeshRaster{
@@ -161,7 +162,7 @@ pub fn main() !void {
     // Raster One Frame
     print("{s}\nRastering Image\n{s}\n", .{print_break,print_break});
     
-    var images_dims = [_]usize{sim_data.field.getFieldsN(),
+    var images_dims = [_]usize{sim_data.field.?.getFieldsN(),
                         	   camera.pixels_num[1],
                         	   camera.pixels_num[0]};
     var images_arr = try NDArray(f64).initFlat(render_alloc,images_dims[0..]);
@@ -203,7 +204,7 @@ pub fn main() !void {
     
     var image_slice_inds = [_]usize{0,0,0};
             
-    for (0..sim_data.field.getFieldsN()) |ff|{
+    for (0..sim_data.field.?.getFieldsN()) |ff|{
         image_slice_inds[0] = ff;
         // Grab a matrix slice of the field images
         const image_slice = images_arr.getSlice(image_slice_inds[0..],0); 

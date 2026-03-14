@@ -199,9 +199,10 @@ pub fn meshRasterFromSimDataSlice(allocator: std.mem.Allocator,
                                    io: std.Io,
                                    sim_datas: []const meshio.SimData,
                                    mesh_types: []const MeshType,
-                                   dir_paths: []const []const u8,
                                    shader_mode: enum { flat, texture },
-                                   texture_path: ?[]const u8) ![]MeshRaster {
+                                   uv_paths: ?[]const []const u8,
+                                   texture_path: ?[]const u8,
+                                   uv_file: ?[]const u8) ![]MeshRaster {
     var mesh_rasters = try allocator.alloc(MeshRaster, sim_datas.len);
     var initialized_count: usize = 0;
     errdefer {
@@ -218,22 +219,31 @@ pub fn meshRasterFromSimDataSlice(allocator: std.mem.Allocator,
         allocator.free(mesh_rasters);
     }
 
+    const uv_file_name = uv_file orelse "uvs.csv";
+
     for (sim_datas, 0..) |sim_data, ii| {
         mesh_rasters[ii] = MeshRaster{
             .mesh_type = mesh_types[ii],
             .coords = sim_data.coords,
             .connect = sim_data.connect,
-            .disp = sim_data.field,
+            .disp = sim_data.disp,
             .shader = undefined,
         };
 
         if (shader_mode == .flat) {
-            mesh_rasters[ii].shader = .{ .flat = .{
-                .field = sim_data.field,
-                .bits = 8,
-            }};
+            if (sim_data.field) |field| {
+                mesh_rasters[ii].shader = .{ .flat = .{
+                    .field = field,
+                    .bits = 8,
+                }};
+            } else {
+                return error.MissingFieldData;
+            }
         } else {
-            const path_uvs = try std.fmt.allocPrint(allocator, "{s}uvs.csv", .{dir_paths[ii]});
+            const paths = uv_paths orelse return error.MissingUVPaths;
+            const path_uvs = try std.fmt.allocPrint(
+                allocator, "{s}{s}", .{paths[ii], uv_file_name}
+            );
             defer allocator.free(path_uvs);
             
             var uvmap = try uvio.loadUVMap(allocator, io, path_uvs);

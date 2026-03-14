@@ -70,20 +70,22 @@ pub fn main() !void {
         path_data ++ "field_disp_z.csv",
     };
 
-    const sim_data = try meshio.load_sim_data(page_alloc,
+    const sim_data = try meshio.loadSimData(page_alloc,
                                               io,
                                               path_coords,
                                               path_connect,
-                                              path_fields[0..]); 
+                                              path_fields[0..],
+                                              null); 
 
     //--------------------------------------------------------------------------
     // CHECK FIELD LOADED CORRECTLY
-    const field_coord_n = sim_data.field.getCoordN();
-    const field_time_n = sim_data.field.getTimeN();
-    const field_fields_n = sim_data.field.getFieldsN();
-    
+    const field_coord_n = sim_data.field.?.getCoordN();
+    const field_time_n = sim_data.field.?.getTimeN();
+    const field_fields_n = sim_data.field.?.getFieldsN();
+
     var fixed_inds = [_]usize{frame_ind,0,0};
-    const field_slice = sim_data.field.array.getSlice(fixed_inds[0..],0);
+    const field_slice = sim_data.field.?.array.getSlice(fixed_inds[0..],0);
+
     const field_mat =MatSlice(f64).init(field_slice,
                                             field_coord_n,
                                             field_fields_n);
@@ -163,7 +165,7 @@ pub fn main() !void {
                               frame_ind, 
                               &sim_data.coords, 
                               &sim_data.connect, 
-                              &sim_data.field, 
+                              &sim_data.field.?, 
                               &camera, 
                               &images_arr);
                            
