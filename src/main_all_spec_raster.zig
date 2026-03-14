@@ -63,7 +63,7 @@ pub fn main() !void {
     //const path_data = "data-simple/tri3_fullscreen/";
     //const mesh_type: MeshType = .tri3opt;
 
-    const out_dir_name = "out-all-specraster";
+    const out_dir_name = "out-specraster";
 
     //-----------------------------------------------------------------------------------------
     // Simulation input mesh        
@@ -168,11 +168,7 @@ pub fn main() !void {
         .save_formats = &[_]iio.ImageFormat{ .csv, .bmp },
         .tile_size = 16,
         .report = if (report_perf) .perf else .off,
-        .perf_opts = .{
-            .save_iteration_map = true,
-            .save_tile_timing_map = true,
-            .save_tile_density_map = true,
-        },
+        .perf_opts = .{}, // init to defaults
     };
 
     //-----------------------------------------------------------------------------------------
