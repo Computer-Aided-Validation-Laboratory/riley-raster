@@ -23,6 +23,7 @@ const Shader = mr.Shader;
 
 const iio = @import("imageio.zig");
 const ImageFormat = iio.ImageFormat;
+const imageops = @import("imageops.zig");
 
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
@@ -126,6 +127,19 @@ pub fn rasterAllFrames(
         images_arr = try NDArray(f64).initFlat(outer_alloc, dims[0..]);
     }
 
+    var global_scaling = try outer_alloc.alloc(?imageops.ScalingParams, meshes.len);
+    defer outer_alloc.free(global_scaling);
+    for (meshes, 0..) |mesh, ii| {
+        global_scaling[ii] = null;
+        if (mesh.shader == .flat) {
+            if (mesh.shader.flat.scale_over == .over_frames) {
+                global_scaling[ii] = imageops.getScalingParamsNDArray(
+                    &mesh.shader.flat.field.array, null, mesh.shader.flat.scaling
+                );
+            }
+        }
+    }
+
     for (0..num_time) |tt| {
         _ = arena.reset(.free_all);
 
@@ -143,8 +157,19 @@ pub fn rasterAllFrames(
                                                      mesh.coords.mat.rows_num,
                                                      mesh.coords.mat.cols_num);
             }
+
+            var frame_scaling: ?imageops.ScalingParams = null;
+            if (mesh.shader == .flat) {
+                if (mesh.shader.flat.scale_over == .over_frames) {
+                    frame_scaling = global_scaling[ii];
+                } else {
+                    frame_scaling = imageops.getScalingParamsNDArray(
+                        &mesh.shader.flat.field.array, tt, mesh.shader.flat.scaling
+                    );
+                }
+            }
             transformed_meshes[ii] = try mr.transformMesh(
-                arena_alloc, &mesh, &coords_to_trans
+                arena_alloc, &mesh, &coords_to_trans, frame_scaling
             );
         }
         

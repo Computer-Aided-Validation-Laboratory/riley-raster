@@ -15,12 +15,9 @@ pub const ImageFormat = enum {
     tiff,
 };
 
-pub const ScaleStrategy = union(enum) {
-    none,
-    auto,
-    fixed: [2]f64, // [min, max]
-    frac: [2]f64,  // [min_frac, max_frac]
-};
+const imageops = @import("imageops.zig");
+pub const ScaleStrategy = imageops.ScaleStrategy;
+pub const ScalingParams = imageops.ScalingParams;
 
 pub const ImageSaveOpts = struct {
     format: ImageFormat,
@@ -46,60 +43,6 @@ pub fn loadImage(allocator: std.mem.Allocator,
     };
 }
 
-fn getScaleMax(bits: ?u8) f64 {
-    if (bits) |b| {
-        const max_u32 = (@as(u32, 1) << @as(u5, @intCast(b))) - 1;
-        return @as(f64, @floatFromInt(max_u32));
-    }
-    return 1.0;
-}
-
-pub const ScalingParams = struct { min: f64, range: f64 };
-
-fn getScalingParams(
-    image: *const MatSlice(f64), 
-    strategy: ScaleStrategy
-) ScalingParams {
-    switch (strategy) {
-        .none => return .{ .min = 0.0, .range = 1.0 },
-        .auto, .frac => {
-            const px_min = std.mem.min(f64, image.elems);
-            const px_max = std.mem.max(f64, image.elems);
-            const px_rng = if (px_max > px_min) px_max - px_min else 1.0;
-            return .{ .min = px_min, .range = px_rng };
-        },
-        .fixed => |range| {
-            const px_rng = if (range[1] > range[0]) range[1] - range[0] else 1.0;
-            return .{ .min = range[0], .range = px_rng };
-        },
-    }
-}
-
-fn applyScaling(
-    val: f64, 
-    strategy: ScaleStrategy, 
-    bits: ?u8, 
-    params: ScalingParams
-) f64 {
-    const norm = switch (strategy) {
-        .none => return val,
-        .auto, .fixed => (val - params.min) / params.range,
-        .frac => |f| f[0] + ((val - params.min) / params.range) * (f[1] - f[0]),
-    };
-
-    if (bits) |b| {
-        return norm * getScaleMax(b);
-    }
-    return norm;
-}
-
-fn applyClamping(val: f64, bits: ?u8) f64 {
-    if (bits) |b| {
-        const max_v = getScaleMax(b);
-        return @round(@max(0.0, @min(max_v, val)));
-    }
-    return val;
-}
 
 pub fn saveImage(io: std.Io,
                  out_dir: std.Io.Dir, 
@@ -173,20 +116,20 @@ pub fn savePPM(io: std.Io,
     const writer = &file_writer.interface;
 
     const bits = opts.bits orelse 8;
-    const max_val_f = getScaleMax(bits);
+    const max_val_f = imageops.getScaleMax(bits);
     const max_val = @as(u32, @intFromFloat(max_val_f));
     try writer.print("P3\n{d} {d}\n{d}\n", .{ image.cols_num, image.rows_num, max_val});
 
-    const params = getScalingParams(image, opts.scaling);
+    const params = imageops.getScalingParams(image, opts.scaling);
 
     for (0..image.rows_num) |rr| {
         for (0..image.cols_num) |cc| {
             const raw_val = image.get(rr, cc);
-            var val = applyScaling(raw_val, opts.scaling, opts.bits, params);
+            var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
             if (opts.bits == null) {
-                val *= getScaleMax(bits);
+                val *= imageops.getScaleMax(bits);
             }
-            const px = @as(u32, @intFromFloat(applyClamping(val, bits)));
+            const px = @as(u32, @intFromFloat(imageops.applyClamping(val, bits)));
             try writer.print("{d} {d} {d}\n", .{px, px, px});
         }
     }
@@ -207,14 +150,14 @@ pub fn saveCSV(io: std.Io,
     var file_writer = csv_file.writer(io,&write_buf);
     const writer = &file_writer.interface;
 
-    const params = getScalingParams(image, opts.scaling);
+    const params = imageops.getScalingParams(image, opts.scaling);
 
     for (0..image.rows_num) |rr| {
         for (0..image.cols_num) |cc| {
             const raw_val = image.get(rr, cc);
-            var val = applyScaling(raw_val, opts.scaling, opts.bits, params);
+            var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
             if (opts.scaling == .none and opts.bits != null) {
-                val = applyClamping(val, opts.bits);
+                val = imageops.applyClamping(val, opts.bits);
             }
             try writer.print("{d},", .{val});
         }
@@ -270,7 +213,7 @@ pub fn saveBMP(io: std.Io,
     try writer.writeInt(u32, 0, .little);
     try writer.writeInt(u32, 0, .little);
 
-    const params = getScalingParams(image, opts.scaling);
+    const params = imageops.getScalingParams(image, opts.scaling);
 
     // BMP data is bottom-up
     var r: usize = image.rows_num;
@@ -278,11 +221,11 @@ pub fn saveBMP(io: std.Io,
         r -= 1;
         for (0..image.cols_num) |c| {
             const raw_val = image.get(r, c);
-            var val = applyScaling(raw_val, opts.scaling, opts.bits, params);
+            var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
             if (opts.bits == null and opts.scaling != .none) {
                 val *= if (is_16bit) 65535.0 else 255.0;
             }
-            const px_f = applyClamping(val, bits);
+            const px_f = imageops.applyClamping(val, bits);
             if (is_16bit) {
                 const px_u16 = @as(u16, @intFromFloat(px_f));
                 try writer.writeInt(u16, px_u16, .little); // Blue
@@ -326,19 +269,19 @@ pub fn saveTIFF(io: std.Io,
     try writer.writeInt(u16, 42, .little);
     try writer.writeInt(u32, ifd_offset, .little);
 
-    const params = getScalingParams(image, opts.scaling);
-    const max_v = getScaleMax(bits);
+    const params = imageops.getScalingParams(image, opts.scaling);
+    const max_v = imageops.getScaleMax(bits);
 
     // 2. Pixel Data
     for (0..image.rows_num) |r| {
         for (0..image.cols_num) |c| {
             const raw_val = image.get(r, c);
-            var val = applyScaling(raw_val, opts.scaling, opts.bits, params);
+            var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
             if (opts.bits == null and opts.scaling != .none) {
                 val *= max_v;
             }
             
-            const px_clamped = applyClamping(val, bits);
+            const px_clamped = imageops.applyClamping(val, bits);
             if (bits == 16) {
                 try writer.writeInt(u16, @as(u16, @intFromFloat(px_clamped)), .little);
             } else {

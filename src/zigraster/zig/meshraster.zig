@@ -11,6 +11,10 @@ const Field = meshio.Field;
 const uvio = @import("uvio.zig");
 const UVMap = uvio.UVMap;
 
+const imageops = @import("imageops.zig");
+const ScalingParams = imageops.ScalingParams;
+const ScaleStrategy = imageops.ScaleStrategy;
+
 const shaderops = @import("shaderops.zig");
 pub const FlatShader = shaderops.FlatShader;
 pub const TexShader = shaderops.TexShader;
@@ -39,12 +43,13 @@ pub const MeshTransform = struct {
     coords: NDArray(f64),
     shader: Shader,
 };
-
-pub fn transformMesh(outer_alloc: std.mem.Allocator, 
-                     mesh_raster: *const MeshRaster,
-                     coords_disp: *const MatSlice(f64),) !MeshTransform {
-
-    const wrap_coords = Coords.init(coords_disp.elems, coords_disp.rows_num);
+pub fn transformMesh(
+    outer_alloc: std.mem.Allocator,
+    mesh_raster: *const MeshRaster,
+    coords: *const MatSlice(f64),
+    scaling_params: ?ScalingParams,
+) !MeshTransform {
+    const wrap_coords = Coords.init(coords.elems, coords.rows_num);
     const elem_coords = try transformCoords(outer_alloc,
                                             &wrap_coords,
                                             &mesh_raster.connect);
@@ -58,9 +63,14 @@ pub fn transformMesh(outer_alloc: std.mem.Allocator,
 
     switch (mesh_raster.shader) {
         .flat => |*flat_shader| {
-            const elem_field = try transformField(outer_alloc,
-                                                  &mesh_raster.connect,
-                                                  &flat_shader.field);
+            const elem_field = try transformField(
+                outer_alloc,
+                &mesh_raster.connect,
+                &flat_shader.field,
+                scaling_params,
+                flat_shader.scaling,
+                flat_shader.bits,
+            );
             
             mesh_trans.shader = .{ .flat = .{
                 .field = Field{
@@ -68,6 +78,8 @@ pub fn transformMesh(outer_alloc: std.mem.Allocator,
                     .array_mem = elem_field.elems,
                 },
                 .bits = flat_shader.bits,
+                .scaling = flat_shader.scaling,
+                .scale_over = flat_shader.scale_over,
             }};
         },
         .texture => |*texture_shader| {
@@ -130,6 +142,9 @@ pub fn transformField(
     allocator: std.mem.Allocator,
     connect: *const Connect,
     field: *const Field,
+    scaling_params: ?ScalingParams,
+    scaling: ScaleStrategy,
+    bits: ?u8,
 ) !NDArray(f64) {
     // dims=(times_num,elems_num,fields_num,nodes_per_elem)
     const field_dims = [_]usize{
@@ -163,7 +178,10 @@ pub fn transformField(
 
                 for (0..elem_field_arr.dims[dim_field]) |ff| {
                     get_field_inds[2] = ff;
-                    const field_val: f64 = field.array.get(get_field_inds[0..]);
+                    var field_val: f64 = field.array.get(get_field_inds[0..]);
+                    if (scaling_params) |sp| {
+                        field_val = imageops.applyScaling(field_val, scaling, bits, sp);
+                    }
 
                     set_elem_inds[dim_field] = ff;
                     elem_field_arr.set(set_elem_inds[0..], field_val);

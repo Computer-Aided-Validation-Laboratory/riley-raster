@@ -386,3 +386,93 @@ pub fn runMultimeshTest(
         }
     }
 }
+
+test "Flat Shader Scaling Options" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const gpa_alloc = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(gpa_alloc);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    var io_threaded = std.Io.Threaded.init_single_threaded;
+    const io = io_threaded.io();
+
+    const data_path = "data-simple/tri3_twoelems";
+    var sim_data = try loadData(allocator, io, data_path);
+
+    const pixel_num = [_]u32{ 16, 16 };
+    const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
+    const focal_leng: f64 = 50.0e-3;
+    const rot = Rotation.init(0, 0, 0);
+    const cam_pos = CameraOps.posFillFrameFromRot(
+        &sim_data.coords, pixel_num, pixel_size, focal_leng, rot, 1.1,
+    );
+    const camera = Camera.init(
+        pixel_num, pixel_size, cam_pos, rot, 
+        CameraOps.roiCentFromCoords(&sim_data.coords), focal_leng, 1,
+    );
+
+    const config = RasterConfig{
+        .save_opt = .memory,
+        .save_opts = &[_]iio.ImageSaveOpts{
+            .{ .format = .csv, .bits = null, .scaling = .none },
+        },
+        .tile_size = 16,
+    };
+
+    // Test 1: Auto Scaling, bits = null (maps to 0.0 - 1.0)
+    var mesh_raster = MeshRaster{
+        .mesh_type = .tri3,
+        .coords = sim_data.coords,
+        .connect = sim_data.connect,
+        .disp = null,
+        .shader = .{ .flat = .{ 
+            .field = sim_data.field.?, 
+            .bits = null, 
+            .scaling = .auto, 
+            .scale_over = .over_frames 
+        } }
+    };
+    
+    var result_auto_float = (try specraster.rasterAllFrames(
+        allocator, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
+    )).?;
+    defer allocator.free(result_auto_float.elems);
+
+    for (result_auto_float.elems) |v| {
+        if (!(v >= 0.0 and v <= 1.0) and v != 0.0) {
+            std.debug.print("FAIL Test 1: v = {d}\n", .{v});
+        }
+        try std.testing.expect(v >= 0.0 and v <= 1.0);
+    }
+
+    // Test 2: Auto Scaling, bits = 8 (maps to 0 - 255)
+    mesh_raster.shader.flat.bits = 8;
+    var result_auto_int = (try specraster.rasterAllFrames(
+        allocator, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
+    )).?;
+    defer allocator.free(result_auto_int.elems);
+    for (result_auto_int.elems) |v| {
+        if (!(v >= 0.0 and v <= 255.0) and v != 0.0) {
+            std.debug.print("FAIL Test 2: v = {d}\n", .{v});
+        }
+        try std.testing.expect(v >= 0.0 and v <= 255.0);
+    }
+
+    // Test 3: Frac Scaling [0.4, 0.6], bits = 8
+    mesh_raster.shader.flat.scaling = .{ .frac = .{ 0.4, 0.6 } };
+    var result_frac_int = (try specraster.rasterAllFrames(
+        allocator, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
+    )).?;
+    defer allocator.free(result_frac_int.elems);
+    for (result_frac_int.elems) |v| {
+        if (v != 0.0) { // ignoring background which defaults to 0.0
+            if (!(v >= 102.0 and v <= 153.0)) {
+                std.debug.print("FAIL Test 3: v = {d}\n", .{v});
+            }
+            try std.testing.expect(v >= 102.0 and v <= 153.0);
+        }
+    }
+}

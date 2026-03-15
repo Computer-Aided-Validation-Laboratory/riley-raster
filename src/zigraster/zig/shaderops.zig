@@ -9,9 +9,14 @@ const InterpType = texops.InterpType;
 const meshio = @import("meshio.zig");
 const Field = meshio.Field;
 
+const imageops = @import("imageops.zig");
+pub const ScaleOver = enum { within_frames, over_frames };
+
 pub const FlatShader = struct {
     field: Field,
-    bits: ?u8 = null,
+    bits: ?u8 = 8,
+    scaling: imageops.ScaleStrategy = .none,
+    scale_over: ScaleOver = .over_frames,
 };
 
 pub const TexShader = struct {
