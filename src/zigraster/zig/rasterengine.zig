@@ -179,7 +179,8 @@ pub fn RasterEngine(
                 if (comptime report == .perf) {
                     const tile_end = Timestamp.now(io, .awake);
                     const dur = tile_start.durationTo(tile_end).raw.nanoseconds;
-                    const spatial_idx = (tile.y_px_min / tile_size) * tiles_x + (tile.x_px_min / tile_size);
+                    const spatial_idx = (tile.y_px_min / tile_size) 
+                        * tiles_x + (tile.x_px_min / tile_size);
                     perf_ctx.recordTile(spatial_idx, @intCast(dur), shaded_px, overlaps.len);
                 }
             }
