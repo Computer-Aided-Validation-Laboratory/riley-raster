@@ -11,7 +11,10 @@ pub fn main() !void {
 
     const config = gengold.specraster.RasterConfig{
         .save_opt = .disk,
-        .save_formats = &[_]gengold.iio.ImageFormat{ .bmp, .csv },
+        .save_opts = &[_]gengold.iio.ImageSaveOpts{
+            .{ .format = .bmp, .bits = 8, .scaling = .auto },
+            .{ .format = .csv, .bits = null, .scaling = .none },
+        },
         .tile_size = 32,
         .report = .off,
     };

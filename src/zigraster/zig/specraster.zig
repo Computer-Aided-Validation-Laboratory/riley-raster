@@ -44,7 +44,9 @@ pub const RasterConfig = struct {
     threads_within_image: u16 = 0,
     threads_over_images: u16 = 0,
     save_opt: SaveOption = .disk,
-    save_formats: []const ImageFormat = &[_]ImageFormat{.tiff},
+    save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
+        .{ .format = .tiff, .bits = 8, .scaling = .none },
+    },
     tile_size: u16 = 16,
     report: Report = .off,
     perf_opts: PerfOpts = .{},
@@ -141,7 +143,9 @@ pub fn rasterAllFrames(
                                                      mesh.coords.mat.rows_num,
                                                      mesh.coords.mat.cols_num);
             }
-            transformed_meshes[ii] = try mr.transformMesh(arena_alloc, &mesh, &coords_to_trans);
+            transformed_meshes[ii] = try mr.transformMesh(
+                arena_alloc, &mesh, &coords_to_trans
+            );
         }
         
         var frame_arr: NDArray(f64) = undefined;
@@ -155,7 +159,7 @@ pub fn rasterAllFrames(
         }
         @memset(frame_arr.elems, 0.0);
 
-        var frame_perf: ?Perf = null;
+        var frame_perf: ?perf.Perf = null;
         if (config.report == .perf) {
             frame_perf = try perf.initFramePerf(
                 outer_alloc,
@@ -185,16 +189,9 @@ pub fn rasterAllFrames(
         }
 
         if (config.save_opt == .disk or config.save_opt == .both) {
-            var bits: u8 = 8;
-            if (meshes.len > 0) {
-                bits = switch (meshes[0].shader) {
-                    .flat => |f| @intCast(f.bits orelse 8),
-                    .texture => 8,
-                };
-            }
             try iio.saveImages(
                 io, out_dir, tt, num_fields, camera.pixels_num, &frame_arr, 
-                config.save_formats, bits,
+                config.save_opts,
             );
         }
     }
@@ -270,7 +267,9 @@ fn rasterSceneInternal(
                 if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
                     try rops.transformElemsRasterSIMD(N, f64, camera, dim_elem, &mesh.coords);
                 } else {
-                    try rops.transformElemsClipPxLengSIMD(N, f64, camera, dim_elem, &mesh.coords);
+                    try rops.transformElemsClipPxLengSIMD(
+                        N, f64, camera, dim_elem, &mesh.coords
+                    );
                 }
 
                 if (comptime GK.has_hull) {
@@ -278,7 +277,9 @@ fn rasterSceneInternal(
                         arena_alloc,
                         &[_]usize{ elems_num, 2, NH },
                     );
-                    try rops.buildAdaptiveHulls(N, camera, dim_elem, &mesh.coords, &raster_hulls[ii].?);
+                    try rops.buildAdaptiveHulls(
+                        N, camera, dim_elem, &mesh.coords, &raster_hulls[ii].?
+                    );
                 }
 
                 if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
@@ -428,13 +429,17 @@ fn storeActiveTilesMM(
 
             for (ty_start..ty_end) |ty| {
                 const tile_px_min_y = @as(u16, @intCast(ty * tile_size));
-                const tile_px_max_y = @as(u16, @min(@as(u32, tile_px_min_y) + tile_size, screen_px_y));
+                const tile_px_max_y = @as(u16, @min(
+                    @as(u32, tile_px_min_y) + tile_size, screen_px_y
+                ));
                 const overlap_y_min = @max(bbox.y_min, tile_px_min_y);
                 const overlap_y_max = @min(bbox.y_max, tile_px_max_y);
 
                 for (tx_start..tx_end) |tx| {
                     const tile_px_min_x = @as(u16, @intCast(tx * tile_size));
-                    const tile_px_max_x = @as(u16, @min(@as(u32, tile_px_min_x) + tile_size, screen_px_x));
+                    const tile_px_max_x = @as(u16, @min(
+                        @as(u32, tile_px_min_x) + tile_size, screen_px_x
+                    ));
 
                     const tile_idx = ty * tiles_num_x + tx;
                     const write_idx = tile_write_inds[tile_idx];

@@ -132,8 +132,10 @@ fn saveResultToFails(
             const slice = array.getSlice(&[_]usize{ f, fi, 0, 0 }, 1);
             const mat = MatSlice(f64).init(slice, array.dims[2], array.dims[3]);
             const name = try std.fmt.allocPrint(allocator, "frame_{d}_field_{d}", .{ f, fi });
-            try iio.saveImage(io, out_dir, name, &mat, .csv, 8);
-            try iio.saveImage(io, out_dir, name, &mat, .bmp, 8);
+            try iio.saveImage(io, out_dir, name, &mat, 
+                .{ .format = .csv, .bits = null, .scaling = .none });
+            try iio.saveImage(io, out_dir, name, &mat, 
+                .{ .format = .bmp, .bits = 8, .scaling = .auto });
         }
     }
 }
@@ -216,7 +218,13 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
             };
 
 
-            const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };
+            const config = RasterConfig{ 
+                .save_opt = .memory, 
+                .save_opts = &[_]iio.ImageSaveOpts{
+                    .{ .format = .csv, .bits = null, .scaling = .none },
+                },
+                .tile_size = 16 
+            };
 
             const result = (try specraster.rasterAllFrames(
                 aa, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
@@ -263,7 +271,13 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                     } 
                 };
                 
-                const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };
+                const config = RasterConfig{ 
+                    .save_opt = .memory, 
+                    .save_opts = &[_]iio.ImageSaveOpts{
+                        .{ .format = .csv, .bits = null, .scaling = .none },
+                    },
+                    .tile_size = 16 
+                };
 
                 const result = (try specraster.rasterAllFrames(
                     aa, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
@@ -320,9 +334,14 @@ pub fn runMultimeshTest(
         const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
 
         const mesh_rasters = if (mode == .flat)
-            try mr.meshRasterFromSimDataSlice(aa, io, sim_datas, &mesh_types, .flat, null, null, null)
+            try mr.meshRasterFromSimDataSlice(
+                aa, io, sim_datas, &mesh_types, .flat, null, null, null
+            )
         else
-            try mr.meshRasterFromSimDataSlice(aa, io, sim_datas, &mesh_types, .texture, &dir_paths, "texture/speckle-simple.tiff", null);
+            try mr.meshRasterFromSimDataSlice(
+                aa, io, sim_datas, &mesh_types, .texture, &dir_paths, 
+                "texture/speckle-simple.tiff", null
+            );
 
         mr.arrangeMeshSlice(mesh_rasters, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
 
@@ -336,10 +355,15 @@ pub fn runMultimeshTest(
         const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
             mesh_rasters, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor,
         );
-        const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
+        const camera = Camera.init(
+            pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2
+        );
 
         const config = RasterConfig{
             .save_opt = .memory,
+            .save_opts = &[_]iio.ImageSaveOpts{
+                .{ .format = .csv, .bits = null, .scaling = .none },
+            },
             .tile_size = 32,
         };
 
@@ -354,7 +378,8 @@ pub fn runMultimeshTest(
         for (0..result.dims[0]) |f| {
             const fname = try std.fmt.allocPrint(aa, "{s}/frame_{d}_field_0.csv", .{ gold_dir, f });
             compareNDArrayToCSV(aa, io, &result, f, 0, fname, rel_tol, abs_tol) catch |err| {
-                const case_name = if (mode == .flat) "multimesh_allelem_flat" else "multimesh_allelem_tex";
+                const case_name = if (mode == .flat) "multimesh_allelem_flat" 
+                                  else "multimesh_allelem_tex";
                 try saveResultToFails(aa, io, &result, case_name);
                 return err;
             };

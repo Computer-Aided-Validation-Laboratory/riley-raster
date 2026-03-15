@@ -9,58 +9,50 @@ pub fn main() !void {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const texture = blk: {
-//         const tex_orig = try gengold.iio.CLoadTIFF(
-//             allocator, io, "texture/speckle.tiff", u8, 1
-//         );
-//         defer tex_orig.deinit(allocator);
-// 
-//         const mat_size = tex_orig.rows_n * tex_orig.cols_n;
-//         const mat_mem = try allocator.alloc(f64, mat_size);
-//         defer allocator.free(mat_mem);
-//         for (0..mat_size) |i| {
-//             mat_mem[i] = @as(f64, @floatFromInt(tex_orig.pixels[i].channels[0]));
-//         }
-//         const MatSlice = @import("zigraster/zig/matslice.zig").MatSlice;
-//         const temp_mat = MatSlice(f64).init(mat_mem, tex_orig.rows_n, tex_orig.cols_n);
-// 
-//         const out_dir = std.Io.Dir.cwd();
-//         try gengold.iio.saveTIFF(io, out_dir, "tecture/speckle-simple.tiff", &temp_mat, 8);
-        break :blk try gengold.iio.loadImage(
-            allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1
-        );
-    };
+    const texture = try gengold.iio.loadImage(
+        allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1
+    );
     defer texture.deinit(allocator);
 
-    const mesh_types = [_]gengold.MeshType{ 
-        .tri3, .tri3opt, .tri6, .quad4ibi, .quad4newton, .quad8, .quad9 
+    const mesh_types = [_]gengold.MeshType{
+        .tri3,
+        .tri6,
+        .quad4ibi,
+        .quad8,
+        .quad9,
     };
-    const interp_types = std.enums.values(gengold.texops.InterpType);
 
-    const pixel_num = [_]u32{ 320, 200 };
-
-    const gold_dir = "gold-small";
-    const data_dir = "data-small";
-
+    const interp_types = [_]gengold.texops.InterpType{
+        .linear, 
+        .cubic, 
+        .cubic_lut, 
+        .cubic_lut_lerp, 
+        .quintic, 
+        .quintic_lut, 
+        .quintic_lut_lerp
+    };
+    const pixel_num = [_]u32{ 16, 16 };
     const config = gengold.specraster.RasterConfig{
         .save_opt = .disk,
-        .save_formats = &[_]gengold.iio.ImageFormat{ .bmp, .csv },
-        .report = .off,
+        .save_opts = &[_]gengold.iio.ImageSaveOpts{
+            .{ .format = .csv, .bits = null, .scaling = .none },
+            .{ .format = .bmp, .bits = 8, .scaling = .auto },
+        },
+        .tile_size = 16,
     };
 
     std.debug.print("Generating ALL Small Gold Data...\n", .{});
-
     std.debug.print("Single Element Cases...\n", .{});
     try gengold.runGenerationExt(
-        allocator, io, "single", &mesh_types, 1.1, texture, pixel_num, interp_types, 
-        gold_dir, data_dir, config
+        allocator, io, "single", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
+        "gold-small", "data-small", config
     );
 
     std.debug.print("Full Screen Cases...\n", .{});
     try gengold.runGenerationExt(
-        allocator, io, "full", &mesh_types, 1.0, texture, pixel_num, interp_types, 
-        gold_dir, data_dir, config
+        allocator, io, "full", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
+        "gold-small", "data-small", config
     );
-    
+
     std.debug.print("Done.\n", .{});
 }

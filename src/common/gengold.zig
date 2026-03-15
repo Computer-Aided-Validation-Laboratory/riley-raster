@@ -65,7 +65,8 @@ pub fn renderAndSave(
         .shader = sh,
     };
 
-    _ = try specraster.rasterAllFrames(allocator, io, camera, &[_]MeshRaster{mesh_raster}, config, out_dir);
+    const meshes = &[_]MeshRaster{mesh_raster};
+    _ = try specraster.rasterAllFrames(allocator, io, camera, meshes, config, out_dir);
 }
 
 pub fn runGenerationExt(
@@ -141,9 +142,11 @@ pub fn runGenerationExt(
                 @tagName(mt),
                 d_str,
             });
-            try renderAndSave(aa, io, &camera, mt, sim_data.coords, sim_data.connect, sim_data.field, .{
-                .flat = .{ .field = sim_data.field.?, .bits = 8 },
-            }, flat_dir, add_disp, config);
+            try renderAndSave(
+                aa, io, &camera, mt, sim_data.coords, sim_data.connect, sim_data.field, .{
+                    .flat = .{ .field = sim_data.field.?, .bits = 8 },
+                }, flat_dir, add_disp, config
+            );
 
             // Tex Shader
             for (interp_types) |it| {
@@ -154,13 +157,15 @@ pub fn runGenerationExt(
                     d_str,
                     @tagName(it),
                 });
-                try renderAndSave(aa, io, &camera, mt, sim_data.coords, sim_data.connect, sim_data.field, .{
-                    .texture = .{
-                        .uvs = uvs.array,
-                        .texture = texture,
-                        .interp_type = it,
-                    },
-                }, tex_dir, add_disp, config);
+                try renderAndSave(
+                    aa, io, &camera, mt, sim_data.coords, sim_data.connect, sim_data.field, .{
+                        .texture = .{
+                            .uvs = uvs.array,
+                            .texture = texture,
+                            .interp_type = it,
+                        },
+                    }, tex_dir, add_disp, config
+                );
             }
         }
     }
@@ -203,9 +208,14 @@ pub fn runMultimeshGeneration(
             "gold-multimesh/allelem_tex_cubic_lut_lerp";
 
         const mesh_rasters = if (mode == .flat)
-            try mr.meshRasterFromSimDataSlice(aa, io, sim_datas, &mesh_types, .flat, null, null, null)
+            try mr.meshRasterFromSimDataSlice(
+                aa, io, sim_datas, &mesh_types, .flat, null, null, null
+            )
         else
-            try mr.meshRasterFromSimDataSlice(aa, io, sim_datas, &mesh_types, .texture, &dir_paths, "texture/speckle-simple.tiff", null);
+            try mr.meshRasterFromSimDataSlice(
+                aa, io, sim_datas, &mesh_types, .texture, &dir_paths, 
+                "texture/speckle-simple.tiff", null
+            );
 
         mr.arrangeMeshSlice(mesh_rasters, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
 
@@ -219,7 +229,9 @@ pub fn runMultimeshGeneration(
         const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
             mesh_rasters, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor,
         );
-        const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
+        const camera = Camera.init(
+            pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2
+        );
 
         const cwd = std.Io.Dir.cwd();
         var iter = std.mem.splitScalar(u8, gold_dir, '/');
@@ -243,4 +255,3 @@ pub fn runMultimeshGeneration(
         _ = try specraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, out_dir);
     }
 }
-

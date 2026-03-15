@@ -14,18 +14,29 @@ pub fn main() !void {
     );
     defer texture.deinit(allocator);
 
+    const mesh_types = [_]gengold.MeshType{ 
+        .tri6, .quad8, .quad9 
+    };
     const interp_types = [_]gengold.texops.InterpType{ .cubic_lut_lerp };
-    const pixel_num = [_]u32{ 800, 500 };
-    const gold_dir = "out-mm0-edge";
+
+    const pixel_num = [_]u32{ 320, 200 };
+
+    const out_dir_root = "out-mm0-edge";
     const data_dir = "data-edge";
 
     const config = gengold.specraster.RasterConfig{
         .save_opt = .disk,
-        .save_formats = &[_]gengold.iio.ImageFormat{ .bmp },
+        .save_opts = &[_]gengold.iio.ImageSaveOpts{
+            .{ .format = .bmp, .bits = 8, .scaling = .auto },
+            .{ .format = .csv, .bits = null, .scaling = .none },
+        },
         .tile_size = 16,
         .report = .perf,
         .perf_opts = .{
-            .formats = &[_]gengold.iio.ImageFormat{ .bmp, .csv },
+            .formats = &[_]gengold.iio.ImageSaveOpts{
+                .{ .format = .bmp, .bits = 8, .scaling = .auto },
+                .{ .format = .csv, .bits = null, .scaling = .none },
+            },
             .save_iteration_map = true,
             .save_tile_timing_map = true,
             .save_tile_density_map = true,
@@ -36,58 +47,22 @@ pub fn main() !void {
         },
     };
 
-    std.debug.print("Rendering Edge Cases to out-mm0-edge/...\n", .{});
+    std.debug.print("Rendering Edge Data to out-mm0-edge/...\n", .{});
     
-    // Tri6
-    {
-        const mt = [_]gengold.MeshType{ .tri6 };
-        try gengold.runGenerationExt(
-            allocator, io, "bulgein_rot", &mt, 1.1, texture, pixel_num, &interp_types, 
-            gold_dir, data_dir, config
-        );
-        try gengold.runGenerationExt(
-            allocator, io, "bulgeout_rot", &mt, 1.1, texture, pixel_num, &interp_types, 
-            gold_dir, data_dir, config
-        );
-        try gengold.runGenerationExt(
-            allocator, io, "vertbulge", &mt, 1.1, texture, pixel_num, &interp_types, 
-            gold_dir, data_dir, config
-        );
-    }
+    try gengold.runGenerationExt(
+        allocator, io, "vertbulge", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
+        out_dir_root, data_dir, config
+    );
 
-    // Quad8
-    {
-        const mt = [_]gengold.MeshType{ .quad8 };
-        try gengold.runGenerationExt(
-            allocator, io, "bulgein_rot", &mt, 1.1, texture, pixel_num, &interp_types, 
-            gold_dir, data_dir, config
-        );
-        try gengold.runGenerationExt(
-            allocator, io, "bulgeout_rot", &mt, 1.1, texture, pixel_num, &interp_types, 
-            gold_dir, data_dir, config
-        );
-        try gengold.runGenerationExt(
-            allocator, io, "vertbulge", &mt, 1.1, texture, pixel_num, &interp_types, gold_dir, 
-            data_dir, config
-        );
-    }
+    try gengold.runGenerationExt(
+        allocator, io, "bulgein_rot", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
+        out_dir_root, data_dir, config
+    );
 
-    // Quad9
-    {
-        const mt = [_]gengold.MeshType{ .quad9 };
-        try gengold.runGenerationExt(
-            allocator, io, "bulgein_rot", &mt, 1.1, texture, pixel_num, &interp_types, 
-            gold_dir, data_dir, config
-        );
-        try gengold.runGenerationExt(
-            allocator, io, "bulgeout_rot", &mt, 1.1, texture, pixel_num, &interp_types, 
-            gold_dir, data_dir, config
-        );
-        try gengold.runGenerationExt(
-            allocator, io, "vertbulge", &mt, 1.1, texture, pixel_num, &interp_types, 
-            gold_dir, data_dir, config
-        );
-    }
-    
+    try gengold.runGenerationExt(
+        allocator, io, "bulgeout_rot", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
+        out_dir_root, data_dir, config
+    );
+
     std.debug.print("Done.\n", .{});
 }

@@ -15,6 +15,23 @@ pub const ImageFormat = enum {
     tiff,
 };
 
+pub const ScaleStrategy = union(enum) {
+    none,
+    auto,
+    fixed: [2]f64, // [min, max]
+    frac: [2]f64,  // [min_frac, max_frac]
+};
+
+pub const ImageSaveOpts = struct {
+    format: ImageFormat,
+    bits: ?u8 = 8,
+    scaling: ScaleStrategy = .none,
+
+    pub fn init(format: ImageFormat, bits: ?u8, scaling: ScaleStrategy) ImageSaveOpts {
+        return .{ .format = format, .bits = bits, .scaling = scaling };
+    }
+};
+
 pub fn loadImage(allocator: std.mem.Allocator,
                  io: std.Io,
                  path: []const u8,
@@ -29,45 +46,86 @@ pub fn loadImage(allocator: std.mem.Allocator,
     };
 }
 
+fn getScaleMax(bits: ?u8) f64 {
+    if (bits) |b| {
+        const max_u32 = (@as(u32, 1) << @as(u5, @intCast(b))) - 1;
+        return @as(f64, @floatFromInt(max_u32));
+    }
+    return 1.0;
+}
+
+pub const ScalingParams = struct { min: f64, range: f64 };
+
+fn getScalingParams(
+    image: *const MatSlice(f64), 
+    strategy: ScaleStrategy
+) ScalingParams {
+    switch (strategy) {
+        .none => return .{ .min = 0.0, .range = 1.0 },
+        .auto, .frac => {
+            const px_min = std.mem.min(f64, image.elems);
+            const px_max = std.mem.max(f64, image.elems);
+            const px_rng = if (px_max > px_min) px_max - px_min else 1.0;
+            return .{ .min = px_min, .range = px_rng };
+        },
+        .fixed => |range| {
+            const px_rng = if (range[1] > range[0]) range[1] - range[0] else 1.0;
+            return .{ .min = range[0], .range = px_rng };
+        },
+    }
+}
+
+fn applyScaling(
+    val: f64, 
+    strategy: ScaleStrategy, 
+    bits: ?u8, 
+    params: ScalingParams
+) f64 {
+    const norm = switch (strategy) {
+        .none => return val,
+        .auto, .fixed => (val - params.min) / params.range,
+        .frac => |f| f[0] + ((val - params.min) / params.range) * (f[1] - f[0]),
+    };
+
+    if (bits) |b| {
+        return norm * getScaleMax(b);
+    }
+    return norm;
+}
+
+fn applyClamping(val: f64, bits: ?u8) f64 {
+    if (bits) |b| {
+        const max_v = getScaleMax(b);
+        return @round(@max(0.0, @min(max_v, val)));
+    }
+    return val;
+}
+
 pub fn saveImage(io: std.Io,
                  out_dir: std.Io.Dir, 
                  file_name_no_ext: []const u8,
                  image: *const MatSlice(f64),
-                 format: ImageFormat,
-                 bits: u8,
+                 opts: ImageSaveOpts,
                  ) !void {
                     
     var name_buff: [1024]u8 = undefined;                
-       
-    switch (format) {
-        .csv => {
-            const ext = ".csv";
-            const file_name_ext = try std.fmt.bufPrint(name_buff[0..], 
-                                                       "{s}{s}", 
-                                                       .{ file_name_no_ext, ext });     
-            try saveCSV(io,out_dir,file_name_ext,image,bits);
-        },
-        .ppm => {
-            const ext = ".ppm";
-            const file_name_ext = try std.fmt.bufPrint(name_buff[0..], 
-                                                       "{s}{s}", 
-                                                      .{ file_name_no_ext, ext });
-            try savePPM(io,out_dir,file_name_ext,image,bits);
-        },
-        .bmp => {
-            const ext = ".bmp";
-            const file_name_ext = try std.fmt.bufPrint(name_buff[0..], 
-                                                       "{s}{s}", 
-                                                      .{ file_name_no_ext, ext });
-            try saveBMP(io,out_dir,file_name_ext,image,bits);
-        },
-        .tiff => {
-            const ext = ".tiff";
-            const file_name_ext = try std.fmt.bufPrint(name_buff[0..], 
-                                                       "{s}{s}", 
-                                                      .{ file_name_no_ext, ext });
-            try saveTIFF(io,out_dir,file_name_ext,image,bits);
-        },
+    const ext = switch (opts.format) {
+        .csv => ".csv",
+        .ppm => ".ppm",
+        .bmp => ".bmp",
+        .tiff => ".tiff",
+    };
+    const file_name = try std.fmt.bufPrint(
+        name_buff[0..], 
+        "{s}{s}", 
+        .{ file_name_no_ext, ext }
+    );
+
+    switch (opts.format) {
+        .csv => try saveCSV(io, out_dir, file_name, image, opts),
+        .ppm => try savePPM(io, out_dir, file_name, image, opts),
+        .bmp => try saveBMP(io, out_dir, file_name, image, opts),
+        .tiff => try saveTIFF(io, out_dir, file_name, image, opts),
     }
 }
 
@@ -78,8 +136,7 @@ pub fn saveImages(
     num_fields: usize,
     pixels_num: [2]u32,
     frame_arr: *const @import("ndarray.zig").NDArray(f64),
-    formats: []const ImageFormat,
-    bits: u8,
+    opts_slice: []const ImageSaveOpts,
 ) !void {
     const save_dir = out_dir orelse return;
     var name_buff: [1024]u8 = undefined;
@@ -95,18 +152,17 @@ pub fn saveImages(
             pixels_num[1],
             pixels_num[0],
         );
-        for (formats) |format| {
-            try saveImage(io, save_dir, file_name, &save_mat, format, bits);
+        for (opts_slice) |opts| {
+            try saveImage(io, save_dir, file_name, &save_mat, opts);
         }
     }
 }
-
 
 pub fn savePPM(io: std.Io,
                out_dir: std.Io.Dir, 
                file_name: []const u8,
                image: *const MatSlice(f64),
-               bits: u8,
+               opts: ImageSaveOpts,
                ) !void {
 
     const ppm_file: std.Io.File = try out_dir.createFile(io, file_name, .{});
@@ -116,24 +172,208 @@ pub fn savePPM(io: std.Io,
     var file_writer = ppm_file.writer(io, &write_buf);
     const writer = &file_writer.interface;
 
-    const max_val: u32 = (@as(u32, 1) << @as(u5, @intCast(bits))) - 1;
+    const bits = opts.bits orelse 8;
+    const max_val_f = getScaleMax(bits);
+    const max_val = @as(u32, @intFromFloat(max_val_f));
     try writer.print("P3\n{d} {d}\n{d}\n", .{ image.cols_num, image.rows_num, max_val});
 
-    const px_min: f64 = std.mem.min(f64,image.elems);
-    const px_max: f64 = std.mem.max(f64,image.elems);
-    const px_rng: f64 = if (px_max > px_min) px_max - px_min else 1.0;
-    const scale = @as(f64, @floatFromInt(max_val));
+    const params = getScalingParams(image, opts.scaling);
 
     for (0..image.rows_num) |rr| {
         for (0..image.cols_num) |cc| {
-            const px_scaled = @as(u32,
-                @intFromFloat((image.get(rr,cc) - px_min)/px_rng * scale)
-            );  
-            try writer.print("{d} {d} {d}\n", .{px_scaled,px_scaled,px_scaled});
+            const raw_val = image.get(rr, cc);
+            var val = applyScaling(raw_val, opts.scaling, opts.bits, params);
+            if (opts.bits == null) {
+                val *= getScaleMax(bits);
+            }
+            const px = @as(u32, @intFromFloat(applyClamping(val, bits)));
+            try writer.print("{d} {d} {d}\n", .{px, px, px});
         }
     }
 
     try writer.flush();   
+}
+
+pub fn saveCSV(io: std.Io,
+               out_dir: std.Io.Dir, 
+               file_name: []const u8,
+               image: *const MatSlice(f64),
+               opts: ImageSaveOpts,
+               ) !void {
+    const csv_file = try out_dir.createFile(io, file_name, .{});
+    defer csv_file.close(io);
+
+    var write_buf: [4096]u8 = undefined;
+    var file_writer = csv_file.writer(io,&write_buf);
+    const writer = &file_writer.interface;
+
+    const params = getScalingParams(image, opts.scaling);
+
+    for (0..image.rows_num) |rr| {
+        for (0..image.cols_num) |cc| {
+            const raw_val = image.get(rr, cc);
+            var val = applyScaling(raw_val, opts.scaling, opts.bits, params);
+            if (opts.scaling == .none and opts.bits != null) {
+                val = applyClamping(val, opts.bits);
+            }
+            try writer.print("{d},", .{val});
+        }
+        try writer.print("\n",.{});
+    }
+
+    try writer.flush();
+}
+
+pub fn saveBMP(io: std.Io, 
+               out_dir: std.Io.Dir, 
+               file_name: []const u8, 
+               image: *const MatSlice(f64), 
+               opts: ImageSaveOpts) !void {
+
+    const file = try out_dir.createFile(io, file_name, .{});
+    defer file.close(io);
+
+    var write_buf: [4096]u8 = undefined;
+    var file_writer = file.writer(io, &write_buf);
+    const writer = &file_writer.interface;
+
+    const bits = opts.bits orelse 8;
+    const is_16bit = (bits == 16);
+    const bpp: u16 = if (is_16bit) 48 else 24;
+
+    const width = @as(u32, @intCast(image.cols_num));
+    const height = @as(u32, @intCast(image.rows_num));
+    const bytes_per_px: u32 = if (is_16bit) 6 else 3;
+    const row_padding = (4 - (width * bytes_per_px) % 4) % 4;
+    const row_size = width * bytes_per_px + row_padding;
+    const data_size = row_size * height;
+    const header_size: u32 = 14 + 40;
+    const file_size = header_size + data_size;
+
+    // Bitmap File Header (14 bytes)
+    try writer.writeAll("BM");
+    try writer.writeInt(u32, file_size, .little);
+    try writer.writeInt(u16, 0, .little);
+    try writer.writeInt(u16, 0, .little);
+    try writer.writeInt(u32, header_size, .little);
+
+    // DIB Header (BITMAPINFOHEADER - 40 bytes)
+    try writer.writeInt(u32, 40, .little);
+    try writer.writeInt(i32, @intCast(width), .little);
+    try writer.writeInt(i32, @intCast(height), .little);
+    try writer.writeInt(u16, 1, .little);
+    try writer.writeInt(u16, bpp, .little); 
+    try writer.writeInt(u32, 0, .little); // BI_RGB
+    try writer.writeInt(u32, data_size, .little);
+    try writer.writeInt(i32, 2835, .little);
+    try writer.writeInt(i32, 2835, .little);
+    try writer.writeInt(u32, 0, .little);
+    try writer.writeInt(u32, 0, .little);
+
+    const params = getScalingParams(image, opts.scaling);
+
+    // BMP data is bottom-up
+    var r: usize = image.rows_num;
+    while (r > 0) {
+        r -= 1;
+        for (0..image.cols_num) |c| {
+            const raw_val = image.get(r, c);
+            var val = applyScaling(raw_val, opts.scaling, opts.bits, params);
+            if (opts.bits == null and opts.scaling != .none) {
+                val *= if (is_16bit) 65535.0 else 255.0;
+            }
+            const px_f = applyClamping(val, bits);
+            if (is_16bit) {
+                const px_u16 = @as(u16, @intFromFloat(px_f));
+                try writer.writeInt(u16, px_u16, .little); // Blue
+                try writer.writeInt(u16, px_u16, .little); // Green
+                try writer.writeInt(u16, px_u16, .little); // Red
+            } else {
+                const px_u8 = @as(u8, @intFromFloat(px_f));
+                try writer.writeByte(px_u8); // Blue
+                try writer.writeByte(px_u8); // Green
+                try writer.writeByte(px_u8); // Red
+            }
+        }
+        for (0..row_padding) |_| try writer.writeByte(0);
+    }
+    try writer.flush();
+}
+
+pub fn saveTIFF(io: std.Io, 
+                out_dir: std.Io.Dir, 
+                file_name: []const u8, 
+                image: *const MatSlice(f64), 
+                opts: ImageSaveOpts) !void {
+                
+    const file = try out_dir.createFile(io, file_name, .{});
+    defer file.close(io);
+
+    var write_buf: [4096]u8 = undefined;
+    var file_writer = file.writer(io, &write_buf);
+    const writer = &file_writer.interface;
+
+    const bits = opts.bits orelse 8;
+    const width = @as(u32, @intCast(image.cols_num));
+    const height = @as(u32, @intCast(image.rows_num));
+    const pixel_data_offset: u32 = 8;
+    const bytes_per_pixel: u32 = if (bits == 16) 2 else 1;
+    const pixel_data_size = width * height * bytes_per_pixel;
+    const ifd_offset = pixel_data_offset + pixel_data_size;
+
+    // 1. Header (8 bytes)
+    try writer.writeAll("II"); // Little Endian
+    try writer.writeInt(u16, 42, .little);
+    try writer.writeInt(u32, ifd_offset, .little);
+
+    const params = getScalingParams(image, opts.scaling);
+    const max_v = getScaleMax(bits);
+
+    // 2. Pixel Data
+    for (0..image.rows_num) |r| {
+        for (0..image.cols_num) |c| {
+            const raw_val = image.get(r, c);
+            var val = applyScaling(raw_val, opts.scaling, opts.bits, params);
+            if (opts.bits == null and opts.scaling != .none) {
+                val *= max_v;
+            }
+            
+            const px_clamped = applyClamping(val, bits);
+            if (bits == 16) {
+                try writer.writeInt(u16, @as(u16, @intFromFloat(px_clamped)), .little);
+            } else {
+                try writer.writeByte(@as(u8, @intFromFloat(px_clamped)));
+            }
+        }
+    }
+
+    // 3. IFD
+    const num_tags: u16 = 10;
+    try writer.writeInt(u16, num_tags, .little);
+
+    const Tag = struct {
+        id: u16, type: u16, count: u32, value: u32,
+        fn write(self: @This(), w: anytype) !void {
+            try w.writeInt(u16, self.id, .little);
+            try w.writeInt(u16, self.type, .little);
+            try w.writeInt(u32, self.count, .little);
+            try w.writeInt(u32, self.value, .little);
+        }
+    };
+
+    try (Tag{ .id = 256, .type = 3, .count = 1, .value = width }).write(writer);
+    try (Tag{ .id = 257, .type = 3, .count = 1, .value = height }).write(writer);
+    try (Tag{ .id = 258, .type = 3, .count = 1, .value = bits }).write(writer);
+    try (Tag{ .id = 259, .type = 3, .count = 1, .value = 1 }).write(writer);
+    try (Tag{ .id = 262, .type = 3, .count = 1, .value = 1 }).write(writer);
+    try (Tag{ .id = 273, .type = 4, .count = 1, .value = pixel_data_offset }).write(writer);
+    try (Tag{ .id = 277, .type = 3, .count = 1, .value = 1 }).write(writer);
+    try (Tag{ .id = 278, .type = 3, .count = 1, .value = height }).write(writer);
+    try (Tag{ .id = 279, .type = 4, .count = 1, .value = pixel_data_size }).write(writer);
+    try (Tag{ .id = 296, .type = 3, .count = 1, .value = 2 }).write(writer);
+
+    try writer.writeInt(u32, 0, .little);
+    try writer.flush();
 }
 
 pub fn loadPPM(allocator: std.mem.Allocator,
@@ -157,7 +397,6 @@ pub fn loadPPM(allocator: std.mem.Allocator,
     try reader.readSliceAll(&header);
     if (!std.mem.eql(u8, &header, "P3")) return error.NotAPPM;
 
-    // Helper to read next token skipping comments
     const readToken = struct {
         fn readToken(r: anytype, a: std.mem.Allocator) ![]const u8 {
             while (true) {
@@ -176,9 +415,7 @@ pub fn loadPPM(allocator: std.mem.Allocator,
                         else => return err,
                     };
                     if (std.ascii.isWhitespace(next_char)) break;
-                    if (next_char == '#') {
-                        break; 
-                    }
+                    if (next_char == '#') break; 
                     try list.append(a, next_char);
                 }
                 return list.toOwnedSlice(a);
@@ -197,6 +434,8 @@ pub fn loadPPM(allocator: std.mem.Allocator,
     var texture = try Texture(T, channels).init(allocator, height, width);
     errdefer texture.deinit(allocator);
 
+    const max_val_f = @as(f64, @floatFromInt(max_val));
+
     for (0..height) |rr| {
         for (0..width) |cc| {
             var px: Pixel(T, channels) = undefined;
@@ -207,48 +446,23 @@ pub fn loadPPM(allocator: std.mem.Allocator,
             }
 
             if (channels == 3) {
-                const s0 = @as(f64, @floatFromInt(rgb[0])) / @as(f64, @floatFromInt(max_val));
-                const s1 = @as(f64, @floatFromInt(rgb[1])) / @as(f64, @floatFromInt(max_val));
-                const s2 = @as(f64, @floatFromInt(rgb[2])) / @as(f64, @floatFromInt(max_val));
-                px.channels[0] = convertValue(T, s0 * 255.0);
-                px.channels[1] = convertValue(T, s1 * 255.0);
-                px.channels[2] = convertValue(T, s2 * 255.0);
+                const s0 = @as(f64, @floatFromInt(rgb[0])) / max_val_f;
+                const s1 = @as(f64, @floatFromInt(rgb[1])) / max_val_f;
+                const s2 = @as(f64, @floatFromInt(rgb[2])) / max_val_f;
+                px.channels[0] = convertToTarget(T, s0);
+                px.channels[1] = convertToTarget(T, s1);
+                px.channels[2] = convertToTarget(T, s2);
             } else if (channels == 1) {
                 const val = 0.299 * @as(f64, @floatFromInt(rgb[0])) 
                           + 0.587 * @as(f64, @floatFromInt(rgb[1])) 
                           + 0.114 * @as(f64, @floatFromInt(rgb[2]));
-                px.channels[0] = convertValue(T, 
-                    (val / @as(f64, @floatFromInt(max_val))) * 255.0);
+                px.channels[0] = convertToTarget(T, val / max_val_f);
             }
             texture.setPixel(rr, cc, px);
         }
     }
 
     return texture;
-}
-
-pub fn saveCSV(io: std.Io,
-               out_dir: std.Io.Dir, 
-               file_name: []const u8,
-               image: *const MatSlice(f64),
-               bits: u8,
-               ) !void {
-    _ = bits; // CSV ignores bit depth as it saves raw floats
-    const csv_file = try out_dir.createFile(io, file_name, .{});
-    defer csv_file.close(io);
-
-    var write_buf: [4096]u8 = undefined;
-    var file_writer = csv_file.writer(io,&write_buf);
-    const writer = &file_writer.interface;
-
-    for (0..image.rows_num) |rr| {
-        for (0..image.cols_num) |cc| {
-            try writer.print("{d},", .{image.get(rr, cc)});
-        }
-        try writer.print("\n",.{});
-    }
-
-    try writer.flush();
 }
 
 pub fn loadCSV(allocator: std.mem.Allocator,
@@ -308,151 +522,6 @@ pub fn loadCSV(allocator: std.mem.Allocator,
     return texture;
 }
 
-pub fn saveBMP(io: std.Io, 
-               out_dir: std.Io.Dir, 
-               file_name: []const u8, 
-               image: *const MatSlice(f64), 
-               bits: u8) !void {
-
-    _ = bits; // BMP currently only supports 8-bit grayscale (as 24-bit RGB)
-    const file = try out_dir.createFile(io, file_name, .{});
-    defer file.close(io);
-
-    var write_buf: [4096]u8 = undefined;
-    var file_writer = file.writer(io, &write_buf);
-    const writer = &file_writer.interface;
-
-    const width = @as(u32, @intCast(image.cols_num));
-    const height = @as(u32, @intCast(image.rows_num));
-    const row_padding = (4 - (width * 3) % 4) % 4;
-    const row_size = width * 3 + row_padding;
-    const data_size = row_size * height;
-    const offset = 14 + 40;
-    const file_size = offset + data_size;
-
-    // Bitmap File Header (14 bytes)
-    try writer.writeAll("BM");
-    try writer.writeInt(u32, file_size, .little);
-    try writer.writeInt(u16, 0, .little); // Reserved 1
-    try writer.writeInt(u16, 0, .little); // Reserved 2
-    try writer.writeInt(u32, offset, .little);
-
-    // DIB Header (BITMAPINFOHEADER, 40 bytes)
-    try writer.writeInt(u32, 40, .little);
-    try writer.writeInt(i32, @intCast(width), .little);
-    try writer.writeInt(i32, @intCast(height), .little); // Positive = bottom-up
-    try writer.writeInt(u16, 1, .little); // Planes
-    try writer.writeInt(u16, 24, .little); // Bits per pixel
-    try writer.writeInt(u32, 0, .little); // Compression (none)
-    try writer.writeInt(u32, data_size, .little);
-    try writer.writeInt(i32, 2835, .little); // 72 DPI (ppm)
-    try writer.writeInt(i32, 2835, .little); // 72 DPI (ppm)
-    try writer.writeInt(u32, 0, .little); // Colors in palette
-    try writer.writeInt(u32, 0, .little); // Important colors
-
-    const px_min = std.mem.min(f64, image.elems);
-    const px_max = std.mem.max(f64, image.elems);
-    const px_rng = if (px_max > px_min) px_max - px_min else 1.0;
-
-    // BMP data is bottom-up
-    var r: usize = image.rows_num;
-    while (r > 0) {
-        r -= 1;
-        for (0..image.cols_num) |c| {
-            const val = @as(u8, @intFromFloat(((image.get(r, c) - px_min) / px_rng) * 255.0));
-            // BGR order
-            try writer.writeByte(val); // Blue
-            try writer.writeByte(val); // Green
-            try writer.writeByte(val); // Red
-        }
-        for (0..row_padding) |_| try writer.writeByte(0);
-    }
-    try writer.flush();
-}
-
-pub fn saveTIFF(io: std.Io, 
-                out_dir: std.Io.Dir, 
-                file_name: []const u8, 
-                image: *const MatSlice(f64), 
-                bits: u8) !void {
-                
-    const file = try out_dir.createFile(io, file_name, .{});
-    defer file.close(io);
-
-    var write_buf: [4096]u8 = undefined;
-    var file_writer = file.writer(io, &write_buf);
-    const writer = &file_writer.interface;
-
-    const width = @as(u32, @intCast(image.cols_num));
-    const height = @as(u32, @intCast(image.rows_num));
-    const pixel_data_offset: u32 = 8; // Header is 8 bytes
-    const bytes_per_pixel: u32 = if (bits == 16) 2 else 1;
-    const pixel_data_size = width * height * bytes_per_pixel;
-    const ifd_offset = pixel_data_offset + pixel_data_size;
-
-    // 1. Header (8 bytes)
-    try writer.writeAll("II"); // Little Endian
-    try writer.writeInt(u16, 42, .little); // Magic number
-    try writer.writeInt(u32, ifd_offset, .little);
-
-    // 2. Pixel Data (Grayscale)
-    if (bits == 16) {
-        for (0..image.rows_num) |r| {
-            for (0..image.cols_num) |c| {
-                const val = @as(u16,@intFromFloat(image.get(r, c) * 257.0)); 
-                try writer.writeInt(u16, val, .little);
-            }
-        }
-    } else {
-        for (0..image.rows_num) |r| {
-            for (0..image.cols_num) |c| {
-                const val = @as(u8, @intFromFloat(@max(0.0, @min(255.0, image.get(r, c)))));
-                try writer.writeByte(val);
-            }
-        }
-    }
-
-    // 3. Image File Directory (IFD)
-    // We'll write 10 tags
-    const num_tags: u16 = 10;
-    try writer.writeInt(u16, num_tags, .little);
-
-    // Helper to write a TIFF tag
-    const Tag = struct {
-        id: u16, type: u16, count: u32, value: u32,
-        fn write(self: @This(), w: anytype) !void {
-            try w.writeInt(u16, self.id, .little);
-            try w.writeInt(u16, self.type, .little);
-            try w.writeInt(u32, self.count, .little);
-            try w.writeInt(u32, self.value, .little);
-        }
-    };
-
-    // ID: 256 (Width), Type: 3 (Short), Count: 1
-    try (Tag{ .id = 256, .type = 3, .count = 1, .value = width }).write(writer);
-    // ID: 257 (Length/Height), Type: 3 (Short), Count: 1
-    try (Tag{ .id = 257, .type = 3, .count = 1, .value = height }).write(writer);
-    // ID: 258 (BitsPerSample), Type: 3 (Short), Count: 1
-    try (Tag{ .id = 258, .type = 3, .count = 1, .value = bits }).write(writer);
-    // ID: 259 (Compression), Type: 3 (Short), Count: 1, Value: 1 (None)
-    try (Tag{ .id = 259, .type = 3, .count = 1, .value = 1 }).write(writer);
-    // ID: 262 (PhotometricInterpretation), Type: 3 (Short), Count: 1, Value: 1 (BlackIsZero)
-    try (Tag{ .id = 262, .type = 3, .count = 1, .value = 1 }).write(writer);
-    // ID: 273 (StripOffsets), Type: 4 (Long), Count: 1
-    try (Tag{ .id = 273, .type = 4, .count = 1, .value = pixel_data_offset }).write(writer);
-    // ID: 277 (SamplesPerPixel), Type: 3 (Short), Count: 1
-    try (Tag{ .id = 277, .type = 3, .count = 1, .value = 1 }).write(writer);
-    // ID: 278 (RowsPerStrip), Type: 3 (Short), Count: 1
-    try (Tag{ .id = 278, .type = 3, .count = 1, .value = height }).write(writer);
-    // ID: 279 (StripByteCounts), Type: 4 (Long), Count: 1
-    try (Tag{ .id = 279, .type = 4, .count = 1, .value = pixel_data_size }).write(writer);
-    // ID: 282 (XResolution), Type: 5 (Rational) - simplified: just use long 72
-    try (Tag{ .id = 296, .type = 3, .count = 1, .value = 2 }).write(writer); // Inch
-
-    try writer.writeInt(u32, 0, .little); // End of IFD
-    try writer.flush();
-}
-
 pub fn loadBMP(allocator: std.mem.Allocator, 
                io: std.Io, 
                path: []const u8, 
@@ -472,7 +541,6 @@ pub fn loadBMP(allocator: std.mem.Allocator,
     if (!std.mem.eql(u8, header[0..2], "BM")) return error.NotABMP;
 
     const offset = std.mem.readInt(u32, header[10..14], .little);
-
     const dib_size = try reader.takeInt(u32, .little);
 
     var width: i32 = 0;
@@ -482,15 +550,12 @@ pub fn loadBMP(allocator: std.mem.Allocator,
     if (dib_size >= 40) {
         width = try reader.takeInt(i32, .little);
         height = try reader.takeInt(i32, .little);
-        _ = try reader.takeInt(u16, .little); // planes
+        _ = try reader.takeInt(u16, .little);
         bit_count = try reader.takeInt(u16, .little);
         const compression = try reader.takeInt(u32, .little);
         if (compression != 0) return error.CompressionNotSupported;
-        // Skip rest of DIB header
         try file_reader.seekBy(@as(i64, @intCast(dib_size)) - 20);
-    } else {
-        return error.UnsupportedDIBHeader;
-    }
+    } else return error.UnsupportedDIBHeader;
 
     const abs_height = @as(usize, @intCast(@abs(height)));
     const abs_width = @as(usize, @intCast(@abs(width)));
@@ -506,32 +571,52 @@ pub fn loadBMP(allocator: std.mem.Allocator,
             for (0..abs_width) |x| {
                 var bgr: [3]u8 = undefined;
                 try reader.readSliceAll(&bgr);
-                
                 var px: Pixel(T, channels) = undefined;
                 if (channels == 3) {
-                    px.channels[0] = convertValue(T, bgr[2]); // R
-                    px.channels[1] = convertValue(T, bgr[1]); // G
-                    px.channels[2] = convertValue(T, bgr[0]); // B
+                    px.channels[0] = convertToTarget(T, @as(f64, @floatFromInt(bgr[2])) / 255.0);
+                    px.channels[1] = convertToTarget(T, @as(f64, @floatFromInt(bgr[1])) / 255.0);
+                    px.channels[2] = convertToTarget(T, @as(f64, @floatFromInt(bgr[0])) / 255.0);
                 } else if (channels == 1) {
                     const val = 0.299 * @as(f64, @floatFromInt(bgr[2])) 
                               + 0.587 * @as(f64, @floatFromInt(bgr[1])) 
                               + 0.114 * @as(f64, @floatFromInt(bgr[0]));
-                    px.channels[0] = convertValue(T, val);
-                    
+                    px.channels[0] = convertToTarget(T, val / 255.0);
+                }
+                texture.setPixel(r, x, px);
+            }
+            try file_reader.seekBy(@intCast(row_padding));
+        }
+    } else if (bit_count == 48) {
+        try file_reader.seekTo(offset);
+        const row_padding = (4 - (abs_width * 6) % 4) % 4;
+        for (0..abs_height) |y| {
+            const r = if (height > 0) abs_height - 1 - y else y;
+            for (0..abs_width) |x| {
+                var bgr: [3]u16 = undefined;
+                bgr[0] = try reader.takeInt(u16, .little);
+                bgr[1] = try reader.takeInt(u16, .little);
+                bgr[2] = try reader.takeInt(u16, .little);
+                var px: Pixel(T, channels) = undefined;
+                if (channels == 3) {
+                    px.channels[0] = convertToTarget(T, @as(f64, @floatFromInt(bgr[2])) / 65535.0);
+                    px.channels[1] = convertToTarget(T, @as(f64, @floatFromInt(bgr[1])) / 65535.0);
+                    px.channels[2] = convertToTarget(T, @as(f64, @floatFromInt(bgr[0])) / 65535.0);
+                } else if (channels == 1) {
+                    const val = 0.299 * @as(f64, @floatFromInt(bgr[2])) 
+                              + 0.587 * @as(f64, @floatFromInt(bgr[1])) 
+                              + 0.114 * @as(f64, @floatFromInt(bgr[0]));
+                    px.channels[0] = convertToTarget(T, val / 65535.0);
                 }
                 texture.setPixel(r, x, px);
             }
             try file_reader.seekBy(@intCast(row_padding));
         }
     } else if (bit_count == 8) {
-    
         try file_reader.seekTo(14 + dib_size);
         const palette_size = (offset - (14 + dib_size)) / 4;
         const palette = try allocator.alloc([4]u8, palette_size);
         defer allocator.free(palette);
-        for (0..palette_size) |i| {
-            try reader.readSliceAll(&palette[i]);
-        }
+        for (0..palette_size) |i| try reader.readSliceAll(&palette[i]);
 
         try file_reader.seekTo(offset);
         const row_padding = (4 - abs_width % 4) % 4;
@@ -542,22 +627,20 @@ pub fn loadBMP(allocator: std.mem.Allocator,
                 const color = palette[index];
                 var px: Pixel(T, channels) = undefined;
                 if (channels == 3) {
-                    px.channels[0] = convertValue(T, color[2]); // R
-                    px.channels[1] = convertValue(T, color[1]); // G
-                    px.channels[2] = convertValue(T, color[0]); // B
+                    px.channels[0] = convertToTarget(T, @as(f64, @floatFromInt(color[2])) / 255.0);
+                    px.channels[1] = convertToTarget(T, @as(f64, @floatFromInt(color[1])) / 255.0);
+                    px.channels[2] = convertToTarget(T, @as(f64, @floatFromInt(color[0])) / 255.0);
                 } else if (channels == 1) {
                     const val = 0.299 * @as(f64, @floatFromInt(color[2])) 
                               + 0.587 * @as(f64, @floatFromInt(color[1])) 
                               + 0.114 * @as(f64, @floatFromInt(color[0]));
-                    px.channels[0] = convertValue(T, val);
+                    px.channels[0] = convertToTarget(T, val / 255.0);
                 }
                 texture.setPixel(r, x, px);
             }
             try file_reader.seekBy(@intCast(row_padding));
         }
-    } else {
-        return error.UnsupportedBitCount;
-    }
+    } else return error.UnsupportedBitCount;
 
     return texture;
 }
@@ -590,7 +673,6 @@ pub fn loadTIFF(allocator: std.mem.Allocator,
     try file_reader.seekTo(ifd_offset);
 
     const num_tags = try reader.takeInt(u16, endian);
-    
     var width: u32 = 0;
     var height: u32 = 0;
     var bits_per_sample: u16 = 8;
@@ -604,13 +686,11 @@ pub fn loadTIFF(allocator: std.mem.Allocator,
         const tag_value = try reader.takeInt(u32, endian);
 
         switch (tag_id) {
-            256 => width = if (tag_type == 3) @as(u32, @intCast(tag_value & 0xFFFF)) 
-                           else tag_value, // Width
-            257 => height = if (tag_type == 3) @as(u32, @intCast(tag_value & 0xFFFF)) 
-                            else tag_value, // Height
-            258 => bits_per_sample = @intCast(tag_value & 0xFFFF), // BitsPerSample
-            273 => strip_offsets = tag_value, // StripOffsets
-            277 => samples_per_pixel = @intCast(tag_value & 0xFFFF), // SamplesPerPixel
+            256 => width = if (tag_type == 3) @as(u32, @intCast(tag_value & 0xFFFF)) else tag_value,
+            257 => height = if (tag_type == 3) @as(u32, @intCast(tag_value & 0xFFFF)) else tag_value,
+            258 => bits_per_sample = @intCast(tag_value & 0xFFFF),
+            273 => strip_offsets = tag_value,
+            277 => samples_per_pixel = @intCast(tag_value & 0xFFFF),
             else => {},
         }
         _ = tag_count;
@@ -623,20 +703,24 @@ pub fn loadTIFF(allocator: std.mem.Allocator,
 
     try file_reader.seekTo(strip_offsets);
 
+    const max_val_f: f64 = if (bits_per_sample == 16) 65535.0 else 255.0;
+
     for (0..height) |rr| {
         for (0..width) |cc| {
             var px: Pixel(T, channels) = undefined;
-            const val_f: f64 = if (bits_per_sample == 16) 
-                @as(f64, @floatFromInt(try reader.takeInt(u16, endian))) / 65535.0 * 255.0
+            const val_raw: f64 = if (bits_per_sample == 16) 
+                @as(f64, @floatFromInt(try reader.takeInt(u16, endian)))
             else 
                 @as(f64, @floatFromInt(try reader.takeByte()));
 
+            const norm = val_raw / max_val_f;
+
             if (channels == 3) {
-                px.channels[0] = convertValue(T, val_f);
-                px.channels[1] = convertValue(T, val_f);
-                px.channels[2] = convertValue(T, val_f);
+                px.channels[0] = convertToTarget(T, norm);
+                px.channels[1] = convertToTarget(T, norm);
+                px.channels[2] = convertToTarget(T, norm);
             } else if (channels == 1) {
-                px.channels[0] = convertValue(T, val_f);
+                px.channels[0] = convertToTarget(T, norm);
             }
             texture.setPixel(rr, cc, px);
         }
@@ -684,20 +768,34 @@ pub fn CLoadTIFF(allocator: std.mem.Allocator,
             
             var px: Pixel(T, channels) = undefined;
             if (channels == 3) {
-                px.channels[0] = convertValue(T, r);
-                px.channels[1] = convertValue(T, g);
-                px.channels[2] = convertValue(T, b);
+                px.channels[0] = convertToTarget(T, @as(f64, @floatFromInt(r)) / 255.0);
+                px.channels[1] = convertToTarget(T, @as(f64, @floatFromInt(g)) / 255.0);
+                px.channels[2] = convertToTarget(T, @as(f64, @floatFromInt(b)) / 255.0);
             } else if (channels == 1) {
                 const val = 0.299 * @as(f64, @floatFromInt(r)) 
                           + 0.587 * @as(f64, @floatFromInt(g)) 
                           + 0.114 * @as(f64, @floatFromInt(b));
-                px.channels[0] = convertValue(T, val);
+                px.channels[0] = convertToTarget(T, val / 255.0);
             }
             texture.setPixel(row, col, px);
         }
     }
 
     return texture;
+}
+
+fn convertToTarget(comptime T: type, norm: f64) T {
+    const scale = switch (@typeInfo(T)) {
+        .int => |info| (@as(f64, 1.0) * @as(f64, @floatFromInt((@as(u64, 1) << info.bits) - 1))),
+        .float => 1.0,
+        else => @compileError("Unsupported type"),
+    };
+    const val = norm * scale;
+    switch (@typeInfo(T)) {
+        .int => return @as(T, @intFromFloat(@round(@max(0.0, @min(scale, val))))),
+        .float => return @as(T, @floatCast(val)),
+        else => @compileError("Unsupported type"),
+    }
 }
 
 fn convertValue(comptime T: type, val: anytype) T {
@@ -721,11 +819,9 @@ test "Verify hand-written TIFF loader" {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
     
-    // 1. Load using C loader (libtiff)
     var tex_c = try CLoadTIFF(allocator, io, "texture/speckle.tiff", u8, 1);
     defer tex_c.deinit(allocator);
 
-    // 2. Save using our saveTIFF
     const cwd = std.Io.Dir.cwd();
     cwd.createDir(io, "temp-test", .default_dir) catch |err| {
         if (err != error.PathAlreadyExists) return err;
@@ -742,9 +838,9 @@ test "Verify hand-written TIFF loader" {
     }
     const mat = MatSlice(f64).init(mat_mem, tex_c.rows_num, tex_c.cols_num);
     
-    try saveTIFF(io, out_dir, "temp-test/speckle-simple.tiff", &mat, 8);
+    try saveTIFF(io, out_dir, "temp-test/speckle-simple.tiff", &mat, 
+        .{ .format = .tiff, .bits = 8, .scaling = .none });
 
-    // 3. Load using our hand-written loadTIFF via generic loadImage
     var tex_zig = try loadImage(allocator, io, "temp-test/speckle-simple.tiff", .tiff, u8, 1);
     defer tex_zig.deinit(allocator);
 
@@ -762,7 +858,7 @@ test "Verify hand-written TIFF loader" {
     }
 }
 
-test "Save and Load All Formats" {
+test "Save and Load All Formats 8-bit and 16-bit" {
     const allocator = testing.allocator;
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
@@ -772,36 +868,91 @@ test "Save and Load All Formats" {
     };
     const out_dir = cwd;
 
-    // Create a dummy 4x4 grayscale image
     const rows = 4;
     const cols = 4;
     const mat_mem = try allocator.alloc(f64, rows * cols);
     defer allocator.free(mat_mem);
-    for (0..rows) |r| {
-        for (0..cols) |c| {
-            mat_mem[r * cols + c] = @as(f64, @floatFromInt(r * cols + c)) * 10.0;
+    // Data in [0, 100] range
+    for (0..rows) |rr| {
+        for (0..cols) |cc| {
+            mat_mem[rr * cols + cc] = @as(f64, @floatFromInt(rr * cols + cc)) * 5.0;
         }
     }
     const mat = MatSlice(f64).init(mat_mem, rows, cols);
 
-    const formats = std.enums.values(ImageFormat);
+    const formats = [_]ImageFormat{ .csv, .ppm, .tiff, .bmp };
+    const bit_depths = [_]u8{ 8, 16 };
+
     for (formats) |fmt| {
-        const base_name = "temp-test/test_io";
-        try saveImage(io, out_dir, base_name, &mat, fmt, 8);
-        
-        var ext_buff: [1024]u8 = undefined;
-        const ext = switch(fmt) {
-            .csv => ".csv",
-            .ppm => ".ppm",
-            .bmp => ".bmp",
-            .tiff => ".tiff",
-        };
-        const full_path = try std.fmt.bufPrint(ext_buff[0..], "{s}{s}", .{base_name, ext});
+        for (bit_depths) |bits| {
+            const base_name = try std.fmt.allocPrint(allocator, "temp-test/test_io_{s}_{d}bit", 
+                .{ @tagName(fmt), bits });
+            defer allocator.free(base_name);
 
-        var loaded = try loadImage(allocator, io, full_path, fmt, u8, 1);
-        defer loaded.deinit(allocator);
+            // 1. Save with auto-scaling
+            try saveImage(io, out_dir, base_name, &mat, 
+                .{ .format = fmt, .bits = bits, .scaling = .auto });
+            
+            var ext_buff: [1024]u8 = undefined;
+            const ext = switch(fmt) {
+                .csv => ".csv", .ppm => ".ppm", .bmp => ".bmp", .tiff => ".tiff",
+            };
+            const full_path = try std.fmt.bufPrint(ext_buff[0..], "{s}{s}", .{base_name, ext});
 
-        try testing.expectEqual(rows, loaded.rows_num);
-        try testing.expectEqual(cols, loaded.cols_num);
+            // 2. Load back into u8 or u16
+            if (bits == 8) {
+                var loaded = try loadImage(allocator, io, full_path, fmt, u8, 1);
+                defer loaded.deinit(allocator);
+                try testing.expectEqual(rows, loaded.rows_num);
+                try testing.expectEqual(cols, loaded.cols_num);
+            } else {
+                var loaded = try loadImage(allocator, io, full_path, fmt, u16, 1);
+                defer loaded.deinit(allocator);
+                try testing.expectEqual(rows, loaded.rows_num);
+                try testing.expectEqual(cols, loaded.cols_num);
+            }
+        }
     }
+}
+
+test "Scaling Strategy: Fractional" {
+    const allocator = testing.allocator;
+    var io_threaded = std.Io.Threaded.init_single_threaded;
+    const io = io_threaded.io();
+    const cwd = std.Io.Dir.cwd();
+    
+    const rows = 2;
+    const cols = 2;
+    const mat_mem = try allocator.alloc(f64, rows * cols);
+    defer allocator.free(mat_mem);
+    // Data [0, 10]
+    mat_mem[0] = 0.0; mat_mem[1] = 10.0;
+    mat_mem[2] = 5.0; mat_mem[3] = 2.5;
+    const mat = MatSlice(f64).init(mat_mem, rows, cols);
+
+    // Test 1: Frac [0.4, 0.6], bits = null (CSV) -> should map [0, 10] to [0.4, 0.6]
+    const opts1 = ImageSaveOpts{ 
+        .format = .csv, .bits = null, .scaling = .{ .frac = .{ 0.4, 0.6 } } 
+    };
+    try saveImage(io, cwd, "temp-test/test_frac_float", &mat, opts1);
+    
+    var loaded1 = try loadImage(allocator, io, "temp-test/test_frac_float.csv", .csv, f64, 1);
+    defer loaded1.deinit(allocator);
+    try testing.expectApproxEqAbs(loaded1.getPixel(0, 0).channels[0], 0.4, 1e-6);
+    try testing.expectApproxEqAbs(loaded1.getPixel(0, 1).channels[0], 0.6, 1e-6);
+    try testing.expectApproxEqAbs(loaded1.getPixel(1, 0).channels[0], 0.5, 1e-6);
+    try testing.expectApproxEqAbs(loaded1.getPixel(1, 1).channels[0], 0.45, 1e-6);
+
+    // Test 2: Frac [0.4, 0.6], bits = 8 (CSV) -> should map [0, 10] to [0.4*255, 0.6*255]
+    const opts2 = ImageSaveOpts{ 
+        .format = .csv, .bits = 8, .scaling = .{ .frac = .{ 0.4, 0.6 } } 
+    };
+    try saveImage(io, cwd, "temp-test/test_frac_bits", &mat, opts2);
+    
+    var loaded2 = try loadImage(allocator, io, "temp-test/test_frac_bits.csv", .csv, f64, 1);
+    defer loaded2.deinit(allocator);
+    try testing.expectApproxEqAbs(loaded2.getPixel(0, 0).channels[0], 0.4 * 255.0, 1e-6);
+    try testing.expectApproxEqAbs(loaded2.getPixel(0, 1).channels[0], 0.6 * 255.0, 1e-6);
+    try testing.expectApproxEqAbs(loaded2.getPixel(1, 0).channels[0], 0.5 * 255.0, 1e-6);
+    try testing.expectApproxEqAbs(loaded2.getPixel(1, 1).channels[0], 0.45 * 255.0, 1e-6);
 }

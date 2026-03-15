@@ -26,11 +26,17 @@ pub fn main() !void {
 
     const config = gengold.specraster.RasterConfig{
         .save_opt = .disk,
-        .save_formats = &[_]gengold.iio.ImageFormat{ .bmp, .csv },
+        .save_opts = &[_]gengold.iio.ImageSaveOpts{
+            .{ .format = .bmp, .bits = 8, .scaling = .auto },
+            .{ .format = .csv, .bits = null, .scaling = .none },
+        },
         .tile_size = 16,
         .report = .perf,
         .perf_opts = .{
-            .formats = &[_]gengold.iio.ImageFormat{ .bmp, .csv },
+            .formats = &[_]gengold.iio.ImageSaveOpts{
+                .{ .format = .bmp, .bits = 8, .scaling = .auto },
+                .{ .format = .csv, .bits = null, .scaling = .none },
+            },
             .save_iteration_map = true,
             .save_tile_timing_map = true,
             .save_tile_density_map = true,

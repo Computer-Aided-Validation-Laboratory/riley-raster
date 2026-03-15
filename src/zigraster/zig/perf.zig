@@ -9,7 +9,10 @@ const Camera = @import("camera.zig").Camera;
 pub const Report = enum { off, perf };
 
 pub const PerfOpts = struct {
-    formats: []const ImageFormat = &[_]ImageFormat{ .bmp, .csv },
+    formats: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
+        .{ .format = .bmp, .bits = 8, .scaling = .auto },
+        .{ .format = .csv, .bits = null, .scaling = .none },
+    },
     save_iteration_map: bool = true,
     save_tile_timing_map: bool = true,
     save_tile_density_map: bool = true,
@@ -184,8 +187,8 @@ pub const Perf = struct {
         }
 
         const mat = MatSlice(f64).init(expanded.elems, px_y, px_x);
-        for (opts.formats) |fmt| {
-            try iio.saveImage(io, save_dir, name_prefix, &mat, fmt, 8);
+        for (opts.formats) |opt| {
+            try iio.saveImage(io, save_dir, name_prefix, &mat, opt);
         }
     }
 
@@ -228,8 +231,8 @@ pub const Perf = struct {
                 "diag_frame_{d}_iters",
                 .{frame_idx},
             );
-            for (opts.formats) |fmt| {
-                try iio.saveImage(io, save_dir, name, &mat, fmt, 8);
+            for (opts.formats) |opt| {
+                try iio.saveImage(io, save_dir, name, &mat, opt);
             }
         }
 
@@ -244,8 +247,8 @@ pub const Perf = struct {
                 "diag_frame_{d}_occupancy",
                 .{frame_idx},
             );
-            for (opts.formats) |fmt| {
-                try iio.saveImage(io, save_dir, name, &mat, fmt, 8);
+            for (opts.formats) |opt| {
+                try iio.saveImage(io, save_dir, name, &mat, opt);
             }
         }
 
@@ -261,8 +264,8 @@ pub const Perf = struct {
                 "diag_frame_{d}_depth",
                 .{frame_idx},
             );
-            for (opts.formats) |fmt| {
-                try iio.saveImage(io, save_dir, name, &mat, fmt, 8);
+            for (opts.formats) |opt| {
+                try iio.saveImage(io, save_dir, name, &mat, opt);
             }
         }
 
@@ -278,8 +281,8 @@ pub const Perf = struct {
                 "diag_frame_{d}_earlyout",
                 .{frame_idx},
             );
-            for (opts.formats) |fmt| {
-                try iio.saveImage(io, save_dir, name, &mat, fmt, 8);
+            for (opts.formats) |opt| {
+                try iio.saveImage(io, save_dir, name, &mat, opt);
             }
         }
 
@@ -289,7 +292,9 @@ pub const Perf = struct {
                 "diag_frame_{d}_tile_timing",
                 .{frame_idx},
             );
-            try saveTileMapAsImage(io, allocator, save_dir, camera, tile_size, m.elems, name, opts);
+            try saveTileMapAsImage(
+                io, allocator, save_dir, camera, tile_size, m.elems, name, opts
+            );
         }
 
         if (self.tile_density_map) |*m| {
@@ -298,7 +303,9 @@ pub const Perf = struct {
                 "diag_frame_{d}_tile_density",
                 .{frame_idx},
             );
-            try saveTileMapAsImage(io, allocator, save_dir, camera, tile_size, m.elems, name, opts);
+            try saveTileMapAsImage(
+                io, allocator, save_dir, camera, tile_size, m.elems, name, opts
+            );
         }
 
         if (self.tile_occupancy_map) |*m| {
@@ -307,7 +314,9 @@ pub const Perf = struct {
                 "diag_frame_{d}_tile_occupancy",
                 .{frame_idx},
             );
-            try saveTileMapAsImage(io, allocator, save_dir, camera, tile_size, m.elems, name, opts);
+            try saveTileMapAsImage(
+                io, allocator, save_dir, camera, tile_size, m.elems, name, opts
+            );
         }
     }
 
@@ -375,7 +384,7 @@ pub const Perf = struct {
         try writer.print("--- TILING & RASTERIZATION ---\n", .{});
         try writer.print("Total Shaded Pixels     = {d}\n", .{self.total_shaded_pixels});
         try writer.print("Max Elements in a Tile  = {d}\n", .{self.max_tile_elements});
-        try writer.print("Total Depth Tests       = {d}\n", .{self.total_depth_tests});
+        try writer.print("Total Depth Tests       = {d}\n", .{self.total_shaded_pixels});
         const d_fail_pct = if (self.total_depth_tests > 0)
             @as(f64, @floatFromInt(self.depth_tests_failed)) * 100.0 /
                 @as(f64, @floatFromInt(self.total_depth_tests))
@@ -542,7 +551,12 @@ pub fn PerfContext(comptime _mode: Report) type {
             }
         }
 
-        pub inline fn recordPixel(self: @This(), global_subx: usize, global_suby: usize, iters: u8) void {
+        pub inline fn recordPixel(
+            self: @This(), 
+            global_subx: usize, 
+            global_suby: usize, 
+            iters: u8
+        ) void {
             if (self.perf.iteration_map) |*imap| {
                 const row_stride = imap.strides[0];
                 imap.elems[global_suby * row_stride + global_subx] = @floatFromInt(iters);
@@ -558,14 +572,24 @@ pub fn PerfContext(comptime _mode: Report) type {
             }
         }
 
-        pub inline fn recordDepth(self: @This(), global_subx: usize, global_suby: usize, inv_z: f64) void {
+        pub inline fn recordDepth(
+            self: @This(), 
+            global_subx: usize, 
+            global_suby: usize, 
+            inv_z: f64
+        ) void {
             if (self.perf.depth_map) |*dmap| {
                 const row_stride = dmap.strides[0];
                 dmap.elems[global_suby * row_stride + global_subx] = inv_z;
             }
         }
 
-        pub inline fn recordEarlyOut(self: @This(), global_subx: usize, global_suby: usize, early: bool) void {
+        pub inline fn recordEarlyOut(
+            self: @This(), 
+            global_subx: usize, 
+            global_suby: usize, 
+            early: bool
+        ) void {
             if (self.perf.earlyout_map) |*emap| {
                 const row_stride = emap.strides[0];
                 emap.elems[global_suby * row_stride + global_subx] = if (early) 1.0 else 0.0;
