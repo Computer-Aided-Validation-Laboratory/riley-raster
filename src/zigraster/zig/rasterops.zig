@@ -1,5 +1,4 @@
 const std = @import("std");
-const print = std.debug.print;
 
 const vecstack = @import("vecstack.zig");
 const Vec3f = vecstack.Vec3f;
@@ -187,7 +186,9 @@ pub fn transformElemsClipPxLengSIMD(comptime N: usize,
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
         const cw: Vec3SIMD(N, f64) = try vsd.loadVec3SIMDFromElemArray(N, f64, 
                                                                        elem_coord_arr, ee);
+        
         var cr = vsd.mat44Mul(N, f64, camera.world_to_cam_mat, cw);
+        
         cr.x *= @splat(x_scale);
         cr.y *= @splat(-y_scale);
         try vsd.saveVec3SIMDToElemArray(N, f64, elem_coord_arr, ee,
@@ -235,6 +236,7 @@ pub fn countElemsCalcBBoxes(comptime N: usize,
             for (0..N) |i| {
                 const sx = cr.x[i] / cr.z[i] + x_off;
                 const sy = cr.y[i] / cr.z[i] + y_off;
+                
                 x_min = @min(x_min, sx);
                 x_max = @max(x_max, sx);
                 y_min = @min(y_min, sy);
@@ -365,6 +367,8 @@ pub const ActiveTile = struct {
     overlap_count: usize, // count to take from overlap bboxes
     x_px_min: u16,
     y_px_min: u16,
+    x_px_max: u16,
+    y_px_max: u16,
 };
 
 //---------------------------------------------------------------------------------------------
@@ -438,6 +442,8 @@ pub fn storeActiveTiles(tile_size: u16,
                 .overlap_count = cc,
                 .x_px_min = tx*tile_size,
                 .y_px_min = ty*tile_size,
+                .x_px_max = @min(screen_px_x, (tx+1)*tile_size),
+                .y_px_max = @min(screen_px_y, (ty+1)*tile_size),
             };
             active_ind += 1;      
         }
@@ -498,9 +504,12 @@ pub fn averageScratch(tile: ActiveTile,
                       spx_image_scratch: *const MatSlice(f64),
                       spx_field_avg: []f64,
                       image_out_arr: *NDArray(f64)) void {
+    _ = tile_size;
+    _ = screen_px_x;
+    _ = screen_px_y;
 
-    const curr_tile_size_x = @min(@as(u16, tile_size), screen_px_x - tile.x_px_min);
-    const curr_tile_size_y = @min(@as(u16, tile_size), screen_px_y - tile.y_px_min);
+    const curr_tile_size_x = tile.x_px_max - tile.x_px_min;
+    const curr_tile_size_y = tile.y_px_max - tile.y_px_min;
     const sub_samp_f = @as(f64, @floatFromInt(sub_samp));
     const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
 
@@ -529,6 +538,7 @@ pub fn averageScratch(tile: ActiveTile,
             for (0..fields_num) |ff| {
                 const image_inds = [_]usize{ ff, image_px_y, image_px_x };
                 const image_val: f64 = spx_field_avg[ff] * inv_sub_samp_sq;
+                
                 image_out_arr.set(image_inds[0..], image_val);
             }
         }

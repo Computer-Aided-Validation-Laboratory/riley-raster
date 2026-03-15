@@ -21,7 +21,7 @@ pub fn main() !void {
 
     const pixel_num = [_]u32{ 320, 200 };
 
-    const out_dir_root = "out-small";
+    const out_dir_root = "out-mm0-small";
     const data_dir = "data-small";
 
     const config = gengold.specraster.RasterConfig{
@@ -41,7 +41,7 @@ pub fn main() !void {
         },
     };
 
-    std.debug.print("Rendering Small Data to out-small/...\n", .{});
+    std.debug.print("Rendering Small Data to out-mm0-small/...\n", .{});
 
     std.debug.print("Single Element Cases...\n", .{});
     try gengold.runGenerationExt(

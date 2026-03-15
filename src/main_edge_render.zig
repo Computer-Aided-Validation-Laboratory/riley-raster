@@ -16,7 +16,7 @@ pub fn main() !void {
 
     const interp_types = [_]gengold.texops.InterpType{ .cubic_lut_lerp };
     const pixel_num = [_]u32{ 800, 500 };
-    const gold_dir = "out-edge";
+    const gold_dir = "out-mm0-edge";
     const data_dir = "data-edge";
 
     const config = gengold.specraster.RasterConfig{
@@ -36,7 +36,7 @@ pub fn main() !void {
         },
     };
 
-    std.debug.print("Rendering Edge Cases to out-edge/...\n", .{});
+    std.debug.print("Rendering Edge Cases to out-mm0-edge/...\n", .{});
     
     // Tri6
     {

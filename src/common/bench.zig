@@ -155,7 +155,7 @@ for (disps) |add_disp| {
 
 
             const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };
-            const result = (try specraster.rasterAllFrames(aa, io, &camera, &mesh_raster, config, null)) orelse return error.NoResult;
+            const result = (try specraster.rasterAllFrames(aa, io, &camera, &[_]MeshRaster{mesh_raster}, config, null)) orelse return error.NoResult;
             try saveResultToRoot(aa, io, &result, c_dir_name, render_root);
             defer aa.free(result.elems);
         }
@@ -172,7 +172,7 @@ for (disps) |add_disp| {
                 };
                 
                 const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };
-                const result = (try specraster.rasterAllFrames(aa, io, &camera, &mesh_raster, config, null)) orelse return error.NoResult;
+                const result = (try specraster.rasterAllFrames(aa, io, &camera, &[_]MeshRaster{mesh_raster}, config, null)) orelse return error.NoResult;
                 try saveResultToRoot(aa, io, &result, c_dir_name, render_root);
                 defer aa.free(result.elems);
             }

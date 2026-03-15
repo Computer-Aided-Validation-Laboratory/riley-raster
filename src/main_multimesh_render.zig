@@ -14,6 +14,10 @@ const Rotation = @import("zigraster/zig/rotation.zig").Rotation;
 const VecStack = @import("zigraster/zig/vecstack.zig");
 const Vec3f = VecStack.Vec3f;
 
+const specraster = @import("zigraster/zig/specraster.zig");
+const RasterConfig = specraster.RasterConfig;
+const iio = @import("zigraster/zig/imageio.zig");
+
 pub fn main() !void {
     const print_break = [_]u8{'-'} ** 80;
     print("{s}\nMulti-Mesh Software Rasteriser Test\n{s}\n", .{ print_break, print_break });    
@@ -50,18 +54,20 @@ pub fn main() !void {
     const sim_datas = try meshio.loadMultiSimData(arena_alloc, io, &dir_paths, .{});
 
     //-----------------------------------------------------------------------------------------
-    // Create Multi MeshRaster (Flat Shading for now)
-    print("Creating multi-mesh rasters...\n", .{});
+    // Create Multi MeshRaster (Flat Shading)
+    print("Creating multi-mesh rasters (Flat Shading)...\n", .{});
     const mesh_rasters = try mr.meshRasterFromSimDataSlice(
         arena_alloc, 
         io, 
         sim_datas, 
         &mesh_types, 
         .flat, 
-        null,
+        null, 
         null,
         null
     );
+    // Note: in a real scenario we'd need to deinit mesh_rasters properly if they allocated 
+    // internal shader data like textures/uvs.
 
     //-----------------------------------------------------------------------------------------
     // Arrange meshes in a grid
@@ -117,6 +123,45 @@ pub fn main() !void {
     );
     print("\nWorld to camera matrix:\n", .{});
     camera.world_to_cam_mat.matPrint();
+
+    //-----------------------------------------------------------------------------------------
+    // Render
+    print("\n{s}\nRastering Scene\n{s}\n", .{print_break, print_break});
+    
+    const cwd = std.Io.Dir.cwd();
+    const out_dir_name = "out-multimesh";
+    cwd.createDir(io, out_dir_name, .default_dir) catch |err| switch (err) {
+        error.PathAlreadyExists => {},
+        else => return err,
+    };
+    var out_dir = try cwd.openDir(io, out_dir_name, .{});
+    defer out_dir.close(io);
+
+    const config = RasterConfig{
+        .save_opt = .disk,
+        .save_formats = &[_]iio.ImageFormat{ .bmp, .csv },
+        .tile_size = 32,
+        .report = .perf,
+        .perf_opts = .{
+            .formats = &[_]iio.ImageFormat{ .bmp, .csv },
+            .save_iteration_map = true,
+            .save_tile_timing_map = true,
+            .save_tile_density_map = true,
+            .save_tile_occupancy_map = true,
+            .save_depth_map = true,
+            .save_earlyout_map = true,
+            .save_pixel_occupancy_map = true,
+        },
+    };
+
+    const time_start = std.Io.Clock.Timestamp.now(io, .awake);
+    // Actually specraster calculates num_time automatically. 
+    // Let's ensure we render enough frames to see something.
+    _ = try specraster.rasterAllFrames(arena_alloc, io, &camera, mesh_rasters, config, out_dir);
+    const time_end = std.Io.Clock.Timestamp.now(io, .awake);
+
+    const total_time_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
+    print("\nTotal scene rendering time: {d:.3} ms\n", .{total_time_ms});
 
     print("{s}\nReady for multimesh refactor.\n{s}\n", .{print_break, print_break});
 }

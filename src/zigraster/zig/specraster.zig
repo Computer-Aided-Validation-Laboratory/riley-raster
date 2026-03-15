@@ -1,5 +1,4 @@
 const std = @import("std");
-const print = std.debug.print;
 const Timestamp = std.Io.Clock.Timestamp;
 
 const MatSlice = @import("matslice.zig").MatSlice;
@@ -51,6 +50,13 @@ pub const RasterConfig = struct {
     perf_opts: PerfOpts = .{},
 };
 
+// Represents an overlap of a specific element from a specific mesh onto a tile
+pub const OverlapMM = struct {
+    mesh_idx: u32,
+    elem_idx: u32,
+    bbox: BBox,
+};
+
 fn applyDispToMesh(
     outer_alloc: std.mem.Allocator,
     tt: usize,
@@ -77,7 +83,7 @@ pub fn rasterAllFrames(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     camera: *const Camera,
-    mesh_in: *const MeshRaster,
+    meshes: []const MeshRaster,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
 ) !?NDArray(f64) {
@@ -87,20 +93,27 @@ pub fn rasterAllFrames(
     const arena_alloc = arena.allocator();
 
     const dim_time_pre: usize = 0;
-    //const dim_coord_pre: usize = 1;
     const dim_field_pre: usize = 2;
 
+    // Work out max time across all meshes
     var num_time: usize = 1;
-    if (mesh_in.disp) |field| {
-        num_time = field.array.dims[dim_time_pre];
-    } else if (mesh_in.shader == .flat) {
-        num_time = mesh_in.shader.flat.field.array.dims[dim_time_pre];
+    for (meshes) |mesh| {
+        if (mesh.disp) |field| {
+            num_time = @max(num_time, field.array.dims[dim_time_pre]);
+        } else if (mesh.shader == .flat) {
+            num_time = @max(num_time, mesh.shader.flat.field.array.dims[dim_time_pre]);
+        }
     }
 
-    const num_fields = switch (mesh_in.shader) {
-        .flat => |f| f.field.array.dims[dim_field_pre],
-        .texture => 1,
-    };
+    // For now we assume all meshes in scene have SAME number of fields
+    var num_fields: usize = 0;
+    for (meshes) |mesh| {
+        const mesh_fields = switch (mesh.shader) {
+            .flat => |f| f.field.array.dims[dim_field_pre],
+            .texture => 1,
+        };
+        num_fields = @max(num_fields, mesh_fields);
+    }
 
     // Allocate NDArray if we are returning everything to the user in memory
     var images_arr: ?NDArray(f64) = null;
@@ -114,22 +127,23 @@ pub fn rasterAllFrames(
     for (0..num_time) |tt| {
         _ = arena.reset(.free_all);
 
-        // Add displacements to nodal coordinates if mesh is deforming
-        var coords_to_trans: MatSlice(f64) = undefined;
-        if (mesh_in.disp) |disp| {
-            coords_to_trans = try applyDispToMesh(
-                arena_alloc, tt, &mesh_in.coords.mat, &disp.array
-            );
-        } else {
-            coords_to_trans = MatSlice(f64).init(mesh_in.coords.mat.elems, 
-                                                 mesh_in.coords.mat.rows_num,
-                                                 mesh_in.coords.mat.cols_num);
+        // Transform all meshes for this frame
+        var transformed_meshes = try arena_alloc.alloc(MeshTransform, meshes.len);
+        for (meshes, 0..) |mesh, ii| {
+            var coords_to_trans: MatSlice(f64) = undefined;
+            if (mesh.disp) |disp| {
+                const frame_idx = @min(tt, disp.array.dims[dim_time_pre] - 1);
+                coords_to_trans = try applyDispToMesh(
+                    arena_alloc, frame_idx, &mesh.coords.mat, &disp.array
+                );
+            } else {
+                coords_to_trans = MatSlice(f64).init(mesh.coords.mat.elems, 
+                                                     mesh.coords.mat.rows_num,
+                                                     mesh.coords.mat.cols_num);
+            }
+            transformed_meshes[ii] = try mr.transformMesh(arena_alloc, &mesh, &coords_to_trans);
         }
-
-        // Allocs and holds new NDArrays in form [elems_num,fields_num,nodes_per_elem]
-        var mesh_trans = try mr.transformMesh(arena_alloc, mesh_in, &coords_to_trans);
         
-        // Allocate frame buffer or wrap images NDArray slice to return to user
         var frame_arr: NDArray(f64) = undefined;
         if (images_arr) |*ima| {
             const stride = ima.strides[0];
@@ -141,7 +155,6 @@ pub fn rasterAllFrames(
         }
         @memset(frame_arr.elems, 0.0);
 
-        // Performance allocs for rendering diagnostic images
         var frame_perf: ?Perf = null;
         if (config.report == .perf) {
             frame_perf = try perf.initFramePerf(
@@ -155,33 +168,13 @@ pub fn rasterAllFrames(
         defer if (frame_perf) |*fp| fp.deinit(outer_alloc);
 
         switch (config.report) {
-            .off => try rasterOneFrame(
-                mesh_trans.mesh_type,
-                arena_alloc,
-                io,
-                camera,
-                tt,
-                config.tile_size,
-                config.threads_within_image,
-                &mesh_trans.shader,
-                &mesh_trans.coords,
-                &frame_arr,
-                .off,
-                null,
+            .off => try rasterSceneInternal(
+                arena_alloc, io, camera, tt, transformed_meshes, &frame_arr, 
+                config.tile_size, .off, null,
             ),
-            .perf => try rasterOneFrame(
-                mesh_trans.mesh_type,
-                arena_alloc,
-                io,
-                camera,
-                tt,
-                config.tile_size,
-                config.threads_within_image,
-                &mesh_trans.shader,
-                &mesh_trans.coords,
-                &frame_arr,
-                .perf,
-                &frame_perf.?,
+            .perf => try rasterSceneInternal(
+                arena_alloc, io, camera, tt, transformed_meshes, &frame_arr, 
+                config.tile_size, .perf, &frame_perf.?,
             ),
         }
 
@@ -192,10 +185,13 @@ pub fn rasterAllFrames(
         }
 
         if (config.save_opt == .disk or config.save_opt == .both) {
-            const bits: u8 = switch (mesh_trans.shader) {
-                .flat => |f| @intCast(f.bits orelse 8),
-                .texture => 8,
-            };
+            var bits: u8 = 8;
+            if (meshes.len > 0) {
+                bits = switch (meshes[0].shader) {
+                    .flat => |f| @intCast(f.bits orelse 8),
+                    .texture => 8,
+                };
+            }
             try iio.saveImages(
                 io, out_dir, tt, num_fields, camera.pixels_num, &frame_arr, 
                 config.save_formats, bits,
@@ -205,81 +201,20 @@ pub fn rasterAllFrames(
     return images_arr;
 }
 
-pub fn rasterOneFrame(
-    mesh_type: MeshType,
+fn rasterSceneInternal(
     allocator: std.mem.Allocator,
     io: std.Io,
     camera: *const Camera,
     frame_ind: usize,
-    tile_size: u16,
-    threads: u16,
-    shader: *const Shader,
-    coords: *NDArray(f64),
+    meshes: []MeshTransform,
     image_out_arr: *NDArray(f64),
+    tile_size: u16,
     comptime report: Report,
     perf_data: ?*Perf,
 ) !void {
-
-    _ = threads;
-
-    switch (mesh_type) {
-        inline else => |m_tag| {
-            const GK = switch (m_tag) {
-                .tri3 => geomkerns.Tri3Kernel(),
-                .tri3opt => geomkerns.Tri3OptKernel(),
-                .tri6 => geomkerns.Tri6Kernel(),
-                .quad4ibi => geomkerns.Quad4IBIKernel(),
-                .quad4newton => geomkerns.Quad4NewtonKernel(),
-                .quad8 => geomkerns.Quad89Kernel(8),
-                .quad9 => geomkerns.Quad89Kernel(9),
-            };
-            const N = GK.nodes_num;
-
-            switch (shader.*) {
-                .flat => |*sh| {
-                    const SK = shadekerns.FlatKernel(N);
-                    try rasterInternal(GK, SK, FlatShader, allocator, io, camera, frame_ind, 
-                        tile_size, sh, coords, image_out_arr, report, perf_data);
-                },
-                .texture => |*sh| {
-                    switch (sh.interp_type) {
-                        inline else => |it| {
-                            const SK = shadekerns.TexKernel(N, it);
-                            try rasterInternal(GK, SK, TexShader, allocator, io, camera, 
-                                frame_ind, tile_size, sh, coords, image_out_arr, report, 
-                                perf_data
-                            );
-                        }
-                    }
-                },
-            }
-        }
-    }
-}
-
-fn rasterInternal(
-    comptime GK: type, // geometry kernel
-    comptime SK: type, // shader kernel
-    comptime ST: type, // shader type
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    camera: *const Camera,
-    frame_ind: usize,
-    tile_size: u16,
-    shader: *const ST,
-    coords: *NDArray(f64),
-    image_out_arr: *NDArray(f64),
-    comptime report: Report,
-    perf_data: ?*Perf,
-) !void {
-
     const raster_start = Timestamp.now(io, .awake);
     const pctx = perf.PerfContext(report){ .perf = if (report == .perf) perf_data.? else {} };
     var pipe_times = perf.PipeTimes{};
-
-    const N = GK.nodes_num;
-    const dim_elem: usize = 0;
-    const elems_num: usize = coords.dims[dim_elem];
 
     const screen_px_x = @as(u16, @intCast(camera.pixels_num[0]));
     const screen_px_y = @as(u16, @intCast(camera.pixels_num[1]));
@@ -292,59 +227,73 @@ fn rasterInternal(
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
-    //-----------------------------------------------------------------------------------------
-    // Tiling Raster Step 1: Coordinate transformation
     const time_start_internal = Timestamp.now(io, .awake);
-    
-    if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
-        try rops.transformElemsRasterSIMD(N, f64, camera, dim_elem, coords);
-    } else {
-        try rops.transformElemsClipPxLengSIMD(N, f64, camera, dim_elem, coords);
-    }
 
-    // TODO: Transform to NDArray here?
-
-    // Need to handle quad9 - has a hull of 8 points
-    const NH = if (comptime GK.has_hull) GK.hull_nodes_num else 0;
-    var raster_hull: ?NDArray(f64) = null;
-    if (comptime GK.has_hull) {
-        raster_hull = try NDArray(f64).initFlat(
-            arena_alloc,
-            &[_]usize{ elems_num, 2, NH },
-        );
-        try rops.buildAdaptiveHulls(N, camera, dim_elem, coords, &raster_hull.?);
-    }
+    var raster_hulls = try arena_alloc.alloc(?NDArray(f64), meshes.len);
+    for (0..meshes.len) |ii| raster_hulls[ii] = null;
 
     const time_end_internal = Timestamp.now(io, .awake);
     pipe_times.coord_transform = @floatFromInt(
         time_start_internal.durationTo(time_end_internal).raw.nanoseconds
     );
 
-    //-----------------------------------------------------------------------------------------
-    // Tiling Raster Step 2: Count elements in image and calculate element bounding boxes
     const time_start_bbox = Timestamp.now(io, .awake);
 
-    const element_bboxes: []BBox = try arena_alloc.alloc(BBox, elems_num);
+    var all_element_bboxes = try arena_alloc.alloc([]BBox, meshes.len);
+    var all_elements_in_image = try arena_alloc.alloc(usize, meshes.len);
+    var total_elements_in_image: usize = 0;
+    var total_elems_num: usize = 0;
 
-    var elements_in_image: usize = 0;
-    if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
-        elements_in_image = try rops.countElemsCalcBBoxesTri3(
-            camera,
-            dim_elem,
-            coords,
-            element_bboxes,
-        );
-    } else {
-        const rh_ptr = if (raster_hull) |*rh| rh else null;
-        elements_in_image = try rops.countElemsCalcBBoxes(
-            N,
-            NH,
-            camera,
-            dim_elem,
-            coords,
-            rh_ptr,
-            element_bboxes,
-        );
+    for (meshes, 0..) |*mesh, ii| {
+        const elems_num = mesh.coords.dims[0];
+        total_elems_num += elems_num;
+        all_element_bboxes[ii] = try arena_alloc.alloc(BBox, elems_num);
+        raster_hulls[ii] = null;
+        
+        const mt = mesh.mesh_type;
+        switch (mt) {
+            inline else => |m_tag| {
+                const GK = comptime switch (m_tag) {
+                    .tri3 => geomkerns.Tri3Kernel(),
+                    .tri3opt => geomkerns.Tri3OptKernel(),
+                    .tri6 => geomkerns.Tri6Kernel(),
+                    .quad4ibi => geomkerns.Quad4IBIKernel(),
+                    .quad4newton => geomkerns.Quad4NewtonKernel(),
+                    .quad8 => geomkerns.Quad89Kernel(8),
+                    .quad9 => geomkerns.Quad89Kernel(9),
+                };
+                const N = GK.nodes_num;
+                const NH = if (comptime GK.has_hull) GK.hull_nodes_num else 0;
+                const dim_elem = 0;
+
+                // Tiling Raster Step 1: Coordinate transformation
+                if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
+                    try rops.transformElemsRasterSIMD(N, f64, camera, dim_elem, &mesh.coords);
+                } else {
+                    try rops.transformElemsClipPxLengSIMD(N, f64, camera, dim_elem, &mesh.coords);
+                }
+
+                if (comptime GK.has_hull) {
+                    raster_hulls[ii] = try NDArray(f64).initFlat(
+                        arena_alloc,
+                        &[_]usize{ elems_num, 2, NH },
+                    );
+                    try rops.buildAdaptiveHulls(N, camera, dim_elem, &mesh.coords, &raster_hulls[ii].?);
+                }
+
+                if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
+                    all_elements_in_image[ii] = try rops.countElemsCalcBBoxesTri3(
+                        camera, dim_elem, &mesh.coords, all_element_bboxes[ii],
+                    );
+                } else {
+                    const rh_ptr = if (raster_hulls[ii]) |*rh| rh else null;
+                    all_elements_in_image[ii] = try rops.countElemsCalcBBoxes(
+                        N, NH, camera, dim_elem, &mesh.coords, rh_ptr, all_element_bboxes[ii],
+                    );
+                }
+            }
+        }
+        total_elements_in_image += all_elements_in_image[ii];
     }
 
     const time_end_bbox = Timestamp.now(io, .awake);
@@ -353,50 +302,54 @@ fn rasterInternal(
     );
 
     if (comptime report == .perf) {
-        pctx.recordGeometry(elems_num, elements_in_image);
+        pctx.recordGeometry(total_elems_num, total_elements_in_image);
     }
 
-    //-----------------------------------------------------------------------------------------
-    // Tiling Raster Step 3: Count number of elements overlapping each tile
     const time_start_overlap = Timestamp.now(io, .awake);
 
     const tile_elem_counts = try arena_alloc.alloc(usize, tiles_num);
     @memset(tile_elem_counts, 0);
     const tile_write_inds = try arena_alloc.alloc(usize, tiles_num);
 
-    const num_active_tiles = try rops.elemTileOverlapCount(
-        tile_size,
-        tiles_num_x,
-        elements_in_image,
-        element_bboxes,
-        tile_elem_counts,
-        tile_write_inds,
-    );
+    for (meshes, 0..) |_, ii| {
+        _ = try rops.elemTileOverlapCount(
+            tile_size,
+            tiles_num_x,
+            all_elements_in_image[ii],
+            all_element_bboxes[ii],
+            tile_elem_counts,
+            tile_write_inds,
+        );
+    }
     
     const time_end_overlap = Timestamp.now(io, .awake);
     pipe_times.tile_count = @floatFromInt(
         time_start_overlap.durationTo(time_end_overlap).raw.nanoseconds
     );
 
-    //-----------------------------------------------------------------------------------------
-    // Tiling Raster Step 4: Store overlap bounding boxes for the active tiles
     const time_start_store = Timestamp.now(io, .awake);
 
     const overlap_total: usize = sliceops.sum(usize, tile_elem_counts);
-    const overlap_bboxes = try arena_alloc.alloc(BBox, overlap_total);
+    const overlap_mms = try arena_alloc.alloc(OverlapMM, overlap_total);
+    
+    var num_active_tiles: usize = 0;
+    for (tile_elem_counts) |count| {
+        if (count > 0) num_active_tiles += 1;
+    }
     const active_tiles = try arena_alloc.alloc(ActiveTile, num_active_tiles);
 
-    rops.storeActiveTiles(
+    try storeActiveTilesMM(
         tile_size,
         tiles_num_x,
         tiles_num_y,
         screen_px_x,
         screen_px_y,
-        elements_in_image,
-        element_bboxes,
+        meshes,
+        all_elements_in_image,
+        all_element_bboxes,
         tile_elem_counts,
         tile_write_inds,
-        overlap_bboxes,
+        overlap_mms,
         active_tiles,
     );
 
@@ -405,11 +358,9 @@ fn rasterInternal(
         time_start_store.durationTo(time_end_store).raw.nanoseconds
     );
 
-    //-----------------------------------------------------------------------------------------
-    // Tiling Raster Step 5: Main raster loop
     const time_start_loop = Timestamp.now(io, .awake);
 
-    try rasterengine.RasterEngine(GK, SK, ST).raster(
+    try rasterengine.rasterScene(
         report,
         pctx,
         arena_alloc,
@@ -418,10 +369,9 @@ fn rasterInternal(
         frame_ind,
         tile_size,
         active_tiles,
-        overlap_bboxes,
-        coords,
-        shader,
-        if (raster_hull) |*rh| rh else null,
+        overlap_mms,
+        meshes,
+        raster_hulls,
         image_out_arr,
     );
     
@@ -440,6 +390,88 @@ fn rasterInternal(
     }
 
     if (comptime report == .off) {
-        try perf.standardReport(io, camera, pipe_times, elems_num);
+        try perf.standardReport(io, camera, pipe_times, total_elems_num);
+    }
+}
+
+fn storeActiveTilesMM(
+    tile_size: u16,
+    tiles_num_x: usize,
+    tiles_num_y: usize,
+    screen_px_x: u16,
+    screen_px_y: u16,
+    meshes: []const MeshTransform,
+    all_elements_in_image: []const usize,
+    all_element_bboxes: []const []BBox,
+    tile_elem_counts: []const usize,
+    tile_write_inds: []usize,
+    overlap_mms: []OverlapMM,
+    active_tiles: []ActiveTile,
+) !void {
+    _ = tiles_num_y;
+    var current_off: usize = 0;
+    for (0..tile_elem_counts.len) |ii| {
+        tile_write_inds[ii] = current_off;
+        current_off += tile_elem_counts[ii];
+    }
+
+    for (meshes, 0..) |_, mesh_idx| {
+        for (0..all_elements_in_image[mesh_idx]) |elem_idx| {
+            const bbox = all_element_bboxes[mesh_idx][elem_idx];
+            
+            const tx_start = bbox.x_min / tile_size;
+            const tx_end = @min(@as(usize, @intCast(tiles_num_x)), 
+                                @as(usize, (bbox.x_max + tile_size - 1) / tile_size));
+            const ty_start = bbox.y_min / tile_size;
+            const ty_end = @min(@as(usize, @intCast(tile_elem_counts.len / tiles_num_x)), 
+                                @as(usize, (bbox.y_max + tile_size - 1) / tile_size));
+
+            for (ty_start..ty_end) |ty| {
+                const tile_px_min_y = @as(u16, @intCast(ty * tile_size));
+                const tile_px_max_y = @as(u16, @min(@as(u32, tile_px_min_y) + tile_size, screen_px_y));
+                const overlap_y_min = @max(bbox.y_min, tile_px_min_y);
+                const overlap_y_max = @min(bbox.y_max, tile_px_max_y);
+
+                for (tx_start..tx_end) |tx| {
+                    const tile_px_min_x = @as(u16, @intCast(tx * tile_size));
+                    const tile_px_max_x = @as(u16, @min(@as(u32, tile_px_min_x) + tile_size, screen_px_x));
+
+                    const tile_idx = ty * tiles_num_x + tx;
+                    const write_idx = tile_write_inds[tile_idx];
+                    overlap_mms[write_idx] = .{
+                        .mesh_idx = @intCast(mesh_idx),
+                        .elem_idx = @intCast(elem_idx),
+                        .bbox = BBox{
+                            .elem_ind = bbox.elem_ind,
+                            .x_min = @max(bbox.x_min, tile_px_min_x),
+                            .x_max = @min(bbox.x_max, tile_px_max_x),
+                            .y_min = overlap_y_min,
+                            .y_max = overlap_y_max,
+                        },
+                    };
+                    tile_write_inds[tile_idx] += 1;
+                }
+            }
+        }
+    }
+
+    var active_idx: usize = 0;
+    current_off = 0;
+    for (0..tile_elem_counts.len) |ii| {
+        const count = tile_elem_counts[ii];
+        if (count > 0) {
+            const tx = ii % tiles_num_x;
+            const ty = ii / tiles_num_x;
+            active_tiles[active_idx] = .{
+                .overlap_start = current_off,
+                .overlap_count = count,
+                .x_px_min = @intCast(tx * tile_size),
+                .y_px_min = @intCast(ty * tile_size),
+                .x_px_max = @min(screen_px_x, @as(u16, @intCast((tx + 1) * tile_size))),
+                .y_px_max = @min(screen_px_y, @as(u16, @intCast((ty + 1) * tile_size))),
+            };
+            active_idx += 1;
+        }
+        current_off += count;
     }
 }

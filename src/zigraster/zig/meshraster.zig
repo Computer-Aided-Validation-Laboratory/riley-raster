@@ -66,7 +66,8 @@ pub fn transformMesh(outer_alloc: std.mem.Allocator,
                 .field = Field{
                     .array = elem_field,
                     .array_mem = elem_field.elems,
-                },    
+                },
+                .bits = flat_shader.bits,
             }};
         },
         .texture => |*texture_shader| {
@@ -90,7 +91,7 @@ pub fn transformCoords(
     coords: *const Coords,
     connect: *const Connect,
 ) !NDArray(f64) {
-    // dims=(elems_num,coord[x,y,z],nodes_per_elem)
+    // ... (keep unchanged)
     const coord_dims = [_]usize{ connect.getElemsNum(), 3, connect.getNodesPerElem() };
     var elem_coord_arr = try NDArray(f64).initFlat(outer_alloc, coord_dims[0..]);
     @memset(elem_coord_arr.elems, 0.0);
@@ -108,12 +109,17 @@ pub fn transformCoords(
         for (0..elem_coord_arr.dims[dim_node]) |nn| {
             elem_inds[dim_node] = nn;
 
+            const node_idx = coord_inds[nn];
+            const x = coords.x(node_idx);
+            const y = coords.y(node_idx);
+            const z = coords.z(node_idx);
+
             elem_inds[dim_field] = 0;
-            elem_coord_arr.set(elem_inds[0..], coords.x(coord_inds[nn]));
+            elem_coord_arr.set(elem_inds[0..], x);
             elem_inds[dim_field] = 1;
-            elem_coord_arr.set(elem_inds[0..], coords.y(coord_inds[nn]));
+            elem_coord_arr.set(elem_inds[0..], y);
             elem_inds[dim_field] = 2;
-            elem_coord_arr.set(elem_inds[0..], coords.z(coord_inds[nn]));
+            elem_coord_arr.set(elem_inds[0..], z);
         }
     }
 
@@ -248,8 +254,13 @@ pub fn meshRasterFromSimDataSlice(allocator: std.mem.Allocator,
             
             var uvmap = try uvio.loadUVMap(allocator, io, path_uvs);
             
+            const format: @import("imageio.zig").ImageFormat = if (std.mem.endsWith(u8, texture_path.?, ".bmp"))
+                .bmp
+            else
+                .tiff;
+
             const texture = try @import("imageio.zig").loadImage(
-                allocator, io, texture_path.?, .tiff, u8, 1
+                allocator, io, texture_path.?, format, u8, 1
             );
             
             mesh_rasters[ii].shader = .{ .texture = .{
@@ -320,7 +331,7 @@ pub fn arrangeMeshSlice(meshes: []MeshRaster,
         }
     }
 
-    const stride = [3]f64{
+        const stride = [3]f64{
         max_extent[0] + gap[0],
         max_extent[1] + gap[1],
         max_extent[2] + gap[2],

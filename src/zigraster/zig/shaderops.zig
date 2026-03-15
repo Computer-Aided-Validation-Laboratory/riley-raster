@@ -36,15 +36,18 @@ pub inline fn fillFlat(
     idx: usize,
     spx_image_scratch: *MatSlice(f64),
 ) void {
-    const e_stride = sh.field.array.strides[1];
-    const f_stride = sh.field.array.strides[2];
-    const f_off = frame_ind * sh.field.array.strides[0] + elem_ind * e_stride;
+    const f_idx = @min(frame_ind, sh.field.array.dims[0] - 1);
+    const s0 = sh.field.array.strides[0];
+    const s1 = sh.field.array.strides[1];
+    const s2 = sh.field.array.strides[2];
+    const s3 = sh.field.array.strides[3];
+    const base_off = f_idx * s0 + elem_ind * s1;
 
     for (0..actual_fields) |ff| {
-        const ff_off = f_off + ff * f_stride;
+        const ff_off = base_off + ff * s2;
         var vs: f64 = 0.0;
         inline for (0..N) |nn| {
-            vs += weights[nn] * sh.field.array.elems[ff_off + nn];
+            vs += weights[nn] * sh.field.array.elems[ff_off + nn * s3];
         }
         spx_image_scratch.elems[idx * fields_num + ff] = vs;
     }
@@ -63,17 +66,22 @@ pub inline fn fillFlatPerspective(
     idx: usize,
     spx_image_scratch: *MatSlice(f64),
 ) void {
-    const e_stride = sh.field.array.strides[1];
-    const f_stride = sh.field.array.strides[2];
-    const f_off = frame_ind * sh.field.array.strides[0] + elem_ind * e_stride;
+    const f_idx = @min(frame_ind, sh.field.array.dims[0] - 1);
+    const s0 = sh.field.array.strides[0];
+    const s1 = sh.field.array.strides[1];
+    const s2 = sh.field.array.strides[2];
+    const s3 = sh.field.array.strides[3];
+    const base_off = f_idx * s0 + elem_ind * s1;
 
     for (0..actual_fields) |ff| {
-        const ff_off = f_off + ff * f_stride;
+        const ff_off = base_off + ff * s2;
         var vs: f64 = 0.0;
         inline for (0..N) |nn| {
-            vs += weights[nn] * sh.field.array.elems[ff_off + nn] * nodes_inv_z[nn];
+            vs += weights[nn] * sh.field.array.elems[ff_off + nn * s3] * nodes_inv_z[nn];
         }
-        spx_image_scratch.elems[idx * fields_num + ff] = vs * spx_z;
+        
+        const final_val = vs * spx_z;
+        spx_image_scratch.elems[idx * fields_num + ff] = final_val;
     }
 }
 

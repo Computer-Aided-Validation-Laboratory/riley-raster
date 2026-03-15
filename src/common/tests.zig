@@ -207,7 +207,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                 aa, "{s}/{s}", .{ gold_dir_root, case_dir_name }
             );
 
-            var mesh_raster = MeshRaster{ 
+            const mesh_raster = MeshRaster{ 
                 .mesh_type = mesh_type, 
                 .coords = sim_data.coords, 
                 .connect = sim_data.connect,
@@ -215,10 +215,11 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                 .shader = .{ .flat = .{ .field = sim_data.field.?, .bits = 8 } } 
             };
 
+
             const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };
 
             const result = (try specraster.rasterAllFrames(
-                aa, io, &camera, &mesh_raster, config, null
+                aa, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
             )) orelse return error.NoResult;
 
             defer aa.free(result.elems);
@@ -250,7 +251,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                     aa, "{s}/{s}", .{ gold_dir_root, case_dir_name }
                 );
                 
-                var mesh_raster = MeshRaster{ 
+                const mesh_raster = MeshRaster{ 
                     .mesh_type = mesh_type, 
                     .coords = sim_data.coords, 
                     .connect = sim_data.connect,
@@ -265,7 +266,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                 const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };
 
                 const result = (try specraster.rasterAllFrames(
-                    aa, io, &camera, &mesh_raster, config, null
+                    aa, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
                 )) orelse return error.NoResult;
 
                 defer aa.free(result.elems);
@@ -282,6 +283,81 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                     };
                 }
             }
+        }
+    }
+}
+
+pub fn runMultimeshTest(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const dir_paths = [_][]const u8{
+        "data-simple/tri3_twoelems/",
+        "data-simple/tri6_twoelems/",
+        "data-simple/quad4_twoelems/",
+        "data-simple/quad8_twoelems/",
+        "data-simple/quad9_twoelems/",
+    };
+
+    const mesh_types = [_]MeshType{
+        .tri3,
+        .tri6,
+        .quad4ibi,
+        .quad8,
+        .quad9,
+    };
+
+    const shader_modes = [_]enum { flat, texture }{ .flat, .texture };
+
+    for (shader_modes) |mode| {
+        _ = arena.reset(.free_all);
+        const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
+
+        const mesh_rasters = if (mode == .flat)
+            try mr.meshRasterFromSimDataSlice(aa, io, sim_datas, &mesh_types, .flat, null, null, null)
+        else
+            try mr.meshRasterFromSimDataSlice(aa, io, sim_datas, &mesh_types, .texture, &dir_paths, "texture/speckle-simple.tiff", null);
+
+        mr.arrangeMeshSlice(mesh_rasters, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
+
+        const pixel_num = [_]u32{ 1200, 800 };
+        const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
+        const focal_leng: f64 = 50.0e-3;
+        const rot = Rotation.init(0, 0, 0);
+        const fov_scale_factor: f64 = 1.1;
+
+        const roi_pos = CameraOps.roiCentOverMeshes(mesh_rasters);
+        const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
+            mesh_rasters, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor,
+        );
+        const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
+
+        const config = RasterConfig{
+            .save_opt = .memory,
+            .tile_size = 32,
+        };
+
+        const result = (try specraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, null)) 
+            orelse return error.NoResult;
+
+        const gold_dir = if (mode == .flat)
+            "gold-multimesh/allelem_flat"
+        else
+            "gold-multimesh/allelem_tex_cubic_lut_lerp";
+
+        for (0..result.dims[0]) |f| {
+            const fname = try std.fmt.allocPrint(aa, "{s}/frame_{d}_field_0.csv", .{ gold_dir, f });
+            compareNDArrayToCSV(aa, io, &result, f, 0, fname, rel_tol, abs_tol) catch |err| {
+                const case_name = if (mode == .flat) "multimesh_allelem_flat" else "multimesh_allelem_tex";
+                try saveResultToFails(aa, io, &result, case_name);
+                return err;
+            };
         }
     }
 }
