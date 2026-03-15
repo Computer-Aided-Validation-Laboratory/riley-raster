@@ -168,7 +168,7 @@ for (disps) |add_disp| {
                     .mesh_type = mesh_type, 
                     .coords = elem_coords, 
                     .disp = if (add_disp) elem_disp else null, 
-                    .shader = .{ .texture = .{ .uvs = elem_uvs, .texture = texture, .interp_type = it } } 
+                    .shader = .{ .tex_u8 = .{ .uvs = elem_uvs, .texture = texture, .interp_type = it } } 
                 };
                 
                 const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };

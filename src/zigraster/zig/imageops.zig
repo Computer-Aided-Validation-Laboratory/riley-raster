@@ -10,6 +10,7 @@ pub const ScaleStrategy = union(enum) {
 };
 
 pub const ScalingParams = struct { min: f64, range: f64 };
+pub const ScaleFactors = struct { mul: f64, add: f64 };
 
 pub fn getScaleMax(bits: ?u8) f64 {
     if (bits) |b| {
@@ -17,6 +18,55 @@ pub fn getScaleMax(bits: ?u8) f64 {
         return @as(f64, @floatFromInt(max_u32));
     }
     return 1.0;
+}
+
+pub fn getScaleFactors(strategy: ScaleStrategy, bits: ?u8, params: ScalingParams) ScaleFactors {
+    if (strategy == .none) return .{ .mul = 1.0, .add = 0.0 };
+    var mul = 1.0 / params.range;
+    var add = -params.min / params.range;
+    switch (strategy) {
+        .frac => |f| {
+            mul = (f[1] - f[0]) / params.range;
+            add = f[0] - params.min * (f[1] - f[0]) / params.range;
+        },
+        else => {},
+    }
+    if (bits) |b| {
+        const m = getScaleMax(b);
+        mul *= m;
+        add *= m;
+    }
+    return .{ .mul = mul, .add = add };
+}
+
+pub fn getScalingParamsTexture(
+    comptime T: type,
+    comptime channels: usize,
+    texture: *const @import("textureops.zig").Texture(T, channels),
+    strategy: ScaleStrategy
+) ScalingParams {
+    switch (strategy) {
+        .none => return .{ .min = 0.0, .range = 1.0 },
+        .auto, .frac => {
+            var px_min: f64 = std.math.inf(f64);
+            var px_max: f64 = -std.math.inf(f64);
+            for (texture.pixels) |px| {
+                const val = switch (@typeInfo(T)) {
+                    .int => @as(f64, @floatFromInt(px.channels[0])),
+                    .float => @as(f64, px.channels[0]),
+                    else => @compileError("Unsupported type"),
+                };
+                if (val < px_min) px_min = val;
+                if (val > px_max) px_max = val;
+            }
+            const px_rng = if (px_max > px_min) px_max - px_min else 1.0;
+            return .{ .min = px_min, .range = px_rng };
+        },
+        .fixed => |range| {
+            const px_rng = if (range[1] > range[0]) range[1] - range[0] else 1.0;
+            return .{ .min = range[0], .range = px_rng };
+        },
+    }
 }
 
 pub fn getScalingParams(

@@ -82,15 +82,32 @@ pub fn transformMesh(
                 .scale_over = flat_shader.scale_over,
             }};
         },
-        .texture => |*texture_shader| {
-            const elem_uvs = try transformUVs(outer_alloc, 
-                                              &texture_shader.uvs, 
-                                              &mesh_raster.connect);
-                    
-            mesh_trans.shader = .{ .texture = .{
+        .tex_u8 => |*tex| {
+            const elem_uvs = try transformUVs(outer_alloc, &tex.uvs, &mesh_raster.connect);
+            const params = imageops.getScalingParamsTexture(u8, 1, &tex.texture, tex.scaling);
+            const factors = imageops.getScaleFactors(tex.scaling, tex.bits, params);
+            mesh_trans.shader = .{ .tex_u8 = .{
                 .uvs = elem_uvs,
-                .texture = texture_shader.texture,
-                .interp_type = texture_shader.interp_type,
+                .texture = tex.texture,
+                .interp_type = tex.interp_type,
+                .bits = tex.bits,
+                .scaling = tex.scaling,
+                .scale_mul = factors.mul,
+                .scale_add = factors.add,
+            }};
+        },
+        .tex_u16 => |*tex| {
+            const elem_uvs = try transformUVs(outer_alloc, &tex.uvs, &mesh_raster.connect);
+            const params = imageops.getScalingParamsTexture(u16, 1, &tex.texture, tex.scaling);
+            const factors = imageops.getScaleFactors(tex.scaling, tex.bits, params);
+            mesh_trans.shader = .{ .tex_u16 = .{
+                .uvs = elem_uvs,
+                .texture = tex.texture,
+                .interp_type = tex.interp_type,
+                .bits = tex.bits,
+                .scaling = tex.scaling,
+                .scale_mul = factors.mul,
+                .scale_add = factors.add,
             }};
         },
     }
@@ -234,7 +251,10 @@ pub fn meshRasterFromSimDataSlice(allocator: std.mem.Allocator,
         // uvs and texture in TexShader are allocated.
         for (0..initialized_count) |ii| {
             switch (mesh_rasters[ii].shader) {
-                .texture => |tex| {
+                .tex_u8 => |tex| {
+                    allocator.free(tex.uvs.elems);
+                },
+                .tex_u16 => |tex| {
                     allocator.free(tex.uvs.elems);
                 },
                 else => {},
@@ -281,7 +301,7 @@ pub fn meshRasterFromSimDataSlice(allocator: std.mem.Allocator,
                 allocator, io, texture_path.?, format, u8, 1
             );
             
-            mesh_rasters[ii].shader = .{ .texture = .{
+            mesh_rasters[ii].shader = .{ .tex_u8 = .{
                 .uvs = uvmap.array,
                 .texture = texture,
                 .interp_type = .cubic_lut_lerp,

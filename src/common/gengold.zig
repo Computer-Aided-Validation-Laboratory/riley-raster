@@ -159,7 +159,7 @@ pub fn runGenerationExt(
                 });
                 try renderAndSave(
                     aa, io, &camera, mt, sim_data.coords, sim_data.connect, sim_data.field, .{
-                        .texture = .{
+                        .tex_u8 = .{
                             .uvs = uvs.array,
                             .texture = texture,
                             .interp_type = it,

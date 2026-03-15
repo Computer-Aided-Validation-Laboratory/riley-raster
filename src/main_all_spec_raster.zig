@@ -153,7 +153,7 @@ pub fn main() !void {
         const uvs = try uvio.loadUVMap(page_alloc, io, path_uvs);
         const texture = try iio.loadImage(page_alloc, io, path_tex, .tiff, u8, 1);
         
-        mesh_raster.shader = .{ .texture = .{
+        mesh_raster.shader = .{ .tex_u8 = .{
             .uvs = uvs,
             .texture = texture,
             .interp_type = .cubic_lut_lerp,

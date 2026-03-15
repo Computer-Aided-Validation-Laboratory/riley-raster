@@ -98,11 +98,23 @@ pub fn rasterScene(
                                 subpx_inv_z_scratch, &subpx_image_scratch
                             );
                         },
-                        .texture => |*sh| {
+                        .tex_u8 => |*sh| {
                             switch (sh.interp_type) {
                                 inline else => |it| {
-                                    const SK = shadekerns.TexKernel(N, it);
-                                    shaded_px += try RasterPass(GK, SK, TexShader).render(
+                                    const SK = shadekerns.TexKernel(N, u8, it);
+                                    shaded_px += try RasterPass(GK, SK, TexShader(u8)).render(
+                                        report, perf_ctx, camera, frame_ind, ov.elem_idx, tile_size, tile, ov, &mesh.coords, sh, 
+                                        if (rh) |*h| h else null,
+                                        subpx_inv_z_scratch, &subpx_image_scratch
+                                    );
+                                }
+                            }
+                        },
+                        .tex_u16 => |*sh| {
+                            switch (sh.interp_type) {
+                                inline else => |it| {
+                                    const SK = shadekerns.TexKernel(N, u16, it);
+                                    shaded_px += try RasterPass(GK, SK, TexShader(u16)).render(
                                         report, perf_ctx, camera, frame_ind, ov.elem_idx, tile_size, tile, ov, &mesh.coords, sh, 
                                         if (rh) |*h| h else null,
                                         subpx_inv_z_scratch, &subpx_image_scratch

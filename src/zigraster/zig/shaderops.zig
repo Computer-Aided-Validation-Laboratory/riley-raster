@@ -19,15 +19,22 @@ pub const FlatShader = struct {
     scale_over: ScaleOver = .over_frames,
 };
 
-pub const TexShader = struct {
-    uvs: NDArray(f64),
-    texture: Texture(u8, 1),
-    interp_type: InterpType = .cubic_lut_lerp,
-};
+pub fn TexShader(comptime T: type) type {
+    return struct {
+        uvs: NDArray(f64),
+        texture: Texture(T, 1),
+        interp_type: InterpType = .cubic_lut_lerp,
+        bits: ?u8 = 8,
+        scaling: imageops.ScaleStrategy = .none,
+        scale_mul: f64 = 1.0,
+        scale_add: f64 = 0.0,
+    };
+}
 
 pub const Shader = union(enum) {
     flat: FlatShader,
-    texture: TexShader,
+    tex_u8: TexShader(u8),
+    tex_u16: TexShader(u16),
 };
 
 pub inline fn fillFlat(
@@ -92,10 +99,11 @@ pub inline fn fillFlatPerspective(
 
 pub inline fn fillTex(
     comptime N: usize,
+    comptime TexT: type,
     comptime interp_type: InterpType,
     elem_ind: usize,
     weights: [N]f64,
-    sh: *const TexShader,
+    sh: *const TexShader(TexT),
     idx: usize,
     spx_image_scratch: *MatSlice(f64),
 ) void {
@@ -110,22 +118,24 @@ pub inline fn fillTex(
         v_at += weights[nn] * sh.uvs.elems[uv_off + c_stride + nn];
     }
 
-    spx_image_scratch.elems[idx] = texops.sampleGreyscale(
+    const sampled = texops.sampleGreyscale(
         interp_type,
         sh.texture,
         u_at,
         v_at,
     );
+    spx_image_scratch.elems[idx] = sampled * sh.scale_mul + sh.scale_add;
 }
 
 pub inline fn fillTexPerspective(
     comptime N: usize,
+    comptime TexT: type,
     comptime interp_type: InterpType,
     elem_ind: usize,
     weights: [N]f64,
     nodes_inv_z: [N]f64,
     spx_z: f64,
-    sh: *const TexShader,
+    sh: *const TexShader(TexT),
     idx: usize,
     spx_image_scratch: *MatSlice(f64),
 ) void {
@@ -141,10 +151,11 @@ pub inline fn fillTexPerspective(
         v_at += weights[nn] * sh.uvs.elems[uv_off + c_stride + nn] * inv_z;
     }
 
-    spx_image_scratch.elems[idx] = texops.sampleGreyscale(
+    const sampled = texops.sampleGreyscale(
         interp_type,
         sh.texture,
         u_at * spx_z,
         v_at * spx_z,
     );
+    spx_image_scratch.elems[idx] = sampled * sh.scale_mul + sh.scale_add;
 }

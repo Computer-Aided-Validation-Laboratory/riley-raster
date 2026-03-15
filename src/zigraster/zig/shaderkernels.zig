@@ -67,7 +67,7 @@ pub fn FlatKernel(comptime N: usize) type {
     };
 }
 
-pub fn TexKernel(comptime N: usize, comptime interp_type: InterpType) type {
+pub fn TexKernel(comptime N: usize, comptime T: type, comptime interp_type: InterpType) type {
     return struct {
         pub inline fn shade(
             comptime coord_space: CoordSpace,
@@ -78,7 +78,7 @@ pub fn TexKernel(comptime N: usize, comptime interp_type: InterpType) type {
             weights: [N]f64,
             nodes_inv_z: [N]f64,
             sub_pixel_z: f64,
-            shader: *const shaderops.TexShader,
+            shader: *const shaderops.TexShader(T),
             index: usize,
             spx_image_scratch: *MatSlice(f64),
             perf_ctx: anytype,
@@ -94,6 +94,7 @@ pub fn TexKernel(comptime N: usize, comptime interp_type: InterpType) type {
             if (comptime coord_space == CoordSpace.clip_px_leng) {
                 shaderops.fillTex(
                     N,
+                    T,
                     interp_type,
                     element_index,
                     weights,
@@ -104,6 +105,7 @@ pub fn TexKernel(comptime N: usize, comptime interp_type: InterpType) type {
             } else {
                 shaderops.fillTexPerspective(
                     N,
+                    T,
                     interp_type,
                     element_index,
                     weights,

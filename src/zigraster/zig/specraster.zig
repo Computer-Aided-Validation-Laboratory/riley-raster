@@ -113,7 +113,7 @@ pub fn rasterAllFrames(
     for (meshes) |mesh| {
         const mesh_fields = switch (mesh.shader) {
             .flat => |f| f.field.array.dims[dim_field_pre],
-            .texture => 1,
+            .tex_u8, .tex_u16 => 1,
         };
         num_fields = @max(num_fields, mesh_fields);
     }
