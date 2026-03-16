@@ -9,7 +9,6 @@ const sliceops = @import("sliceops.zig");
 const Camera = @import("camera.zig").Camera;
 
 const rops = @import("rasterops.zig");
-const BBox = rops.BBox;
 const ElemBBox = rops.ElemBBox;
 const ActiveTile = rops.ActiveTile;
 const Vec3OfSlices = rops.Vec3OfSlices;

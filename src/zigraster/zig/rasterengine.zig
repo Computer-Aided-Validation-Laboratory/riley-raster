@@ -4,7 +4,6 @@ const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const hull = @import("hull.zig");
 const rops = @import("rasterops.zig");
-const BBox = rops.BBox;
 const ElemBBox = rops.ElemBBox;
 const OverlapBBox = rops.OverlapBBox;
 const ActiveTile = rops.ActiveTile;
@@ -200,17 +199,17 @@ pub fn RasterPass(
                 target.overlap.elem_idx,
             );
 
-            const scratch_start_x = sub_samp * (@as(usize, target.overlap.bbox.x_min) - 
+            const scratch_start_x = sub_samp * (@as(usize, target.overlap.x_min) - 
                                                 target.tile.x_px_min);
-            const scratch_end_x = sub_samp * (@as(usize, target.overlap.bbox.x_max) - 
+            const scratch_end_x = sub_samp * (@as(usize, target.overlap.x_max) - 
                                               target.tile.x_px_min);
-            const scratch_start_y = sub_samp * (@as(usize, target.overlap.bbox.y_min) - 
+            const scratch_start_y = sub_samp * (@as(usize, target.overlap.y_min) - 
                                                 target.tile.y_px_min);
-            const scratch_end_y = sub_samp * (@as(usize, target.overlap.bbox.y_max) - 
+            const scratch_end_y = sub_samp * (@as(usize, target.overlap.y_max) - 
                                               target.tile.y_px_min);
 
-            const xi_min_f: f64 = @as(f64, @floatFromInt(target.overlap.bbox.x_min));
-            const yi_min_f: f64 = @as(f64, @floatFromInt(target.overlap.bbox.y_min));
+            const xi_min_f: f64 = @as(f64, @floatFromInt(target.overlap.x_min));
+            const yi_min_f: f64 = @as(f64, @floatFromInt(target.overlap.y_min));
 
             const domain = SubpxDomain{
                 .step = subpx_step,

@@ -106,22 +106,21 @@ pub fn Vec3OfSlices(comptime T: type) type {
     };   
 }
 
-pub const BBox = struct {
+pub const ElemBBox = struct {
+    elem_ind: usize,
     x_min: u16,
     x_max: u16,
     y_min: u16,
     y_max: u16,
 };
 
-pub const ElemBBox = struct {
-    elem_ind: usize,
-    bbox: BBox,
-};
-
 pub const OverlapBBox = struct {
     mesh_idx: u32,
     elem_idx: u32, // Stores the original element index in the mesh
-    bbox: BBox,    // Geometric only
+    x_min: u16,
+    x_max: u16,
+    y_min: u16,
+    y_max: u16,
 };
 
 pub const ActiveTile = struct {
@@ -313,12 +312,10 @@ pub fn countElemsCalcBBoxes(comptime N: usize,
 
         elem_bboxes[elems_in_image] = ElemBBox{
             .elem_ind = ee,
-            .bbox = BBox{
-                .x_min = boundIndMin(u16, x_min),
-                .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
-                .y_min = boundIndMin(u16, y_min),
-                .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
-            },
+            .x_min = boundIndMin(u16, x_min),
+            .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
+            .y_min = boundIndMin(u16, y_min),
+            .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
         };
         elems_in_image += 1;
     }
@@ -367,12 +364,10 @@ pub fn countElemsCalcBBoxesTri3(camera: *const Camera,
 
         elem_bboxes[elems_in_image] = ElemBBox{
             .elem_ind = ee,
-            .bbox = BBox{
-                .x_min = x_min_i,
-                .x_max = x_max_i,
-                .y_min = y_min_i,
-                .y_max = y_max_i,
-            },
+            .x_min = x_min_i,
+            .x_max = x_max_i,
+            .y_min = y_min_i,
+            .y_max = y_max_i,
         };
         elems_in_image += 1;
     }
@@ -479,10 +474,10 @@ pub fn sceneTileElemOverlap(
     for (0..meshes_len) |mesh_idx| {
         for (0..elems_in_image_by_mesh[mesh_idx]) |ee| {
             const ebb = elem_bboxes_by_mesh[mesh_idx][ee];
-            const tile_ind_min_x: u16 = ebb.bbox.x_min / tile_size;
-            const tile_ind_max_x: u16 = (ebb.bbox.x_max + tile_size - 1) / tile_size;
-            const tile_ind_min_y: u16 = ebb.bbox.y_min / tile_size;
-            const tile_ind_max_y: u16 = (ebb.bbox.y_max + tile_size - 1) / tile_size;
+            const tile_ind_min_x: u16 = ebb.x_min / tile_size;
+            const tile_ind_max_x: u16 = (ebb.x_max + tile_size - 1) / tile_size;
+            const tile_ind_min_y: u16 = ebb.y_min / tile_size;
+            const tile_ind_max_y: u16 = (ebb.y_max + tile_size - 1) / tile_size;
 
             const tx_end = @min(tiles_num_x, @as(usize, tile_ind_max_x));
             const ty_end = @min(tiles_num_y, @as(usize, tile_ind_max_y));
@@ -532,19 +527,19 @@ pub fn sceneTileElemOverlap(
     for (0..meshes_len) |mesh_idx| {
         for (0..elems_in_image_by_mesh[mesh_idx]) |ee| {
             const ebb = elem_bboxes_by_mesh[mesh_idx][ee];
-            const tx_start = ebb.bbox.x_min / tile_size;
+            const tx_start = ebb.x_min / tile_size;
             const tx_end = @min(tiles_num_x, 
-                                @as(usize, (ebb.bbox.x_max + tile_size - 1) / tile_size));
-            const ty_start = ebb.bbox.y_min / tile_size;
+                                @as(usize, (ebb.x_max + tile_size - 1) / tile_size));
+            const ty_start = ebb.y_min / tile_size;
             const ty_end = @min(tiles_num_y, 
-                                @as(usize, (ebb.bbox.y_max + tile_size - 1) / tile_size));
+                                @as(usize, (ebb.y_max + tile_size - 1) / tile_size));
 
             for (ty_start..ty_end) |ty| {
                 const tile_px_min_y = @as(u16, @intCast(ty * tile_size));
                 const tile_px_max_y = @as(u16, @min(@as(u32, tile_px_min_y) + 
                                                    tile_size, screen_px_y));
-                const overlap_y_min = @max(ebb.bbox.y_min, tile_px_min_y);
-                const overlap_y_max = @min(ebb.bbox.y_max, tile_px_max_y);
+                const overlap_y_min = @max(ebb.y_min, tile_px_min_y);
+                const overlap_y_max = @min(ebb.y_max, tile_px_max_y);
 
                 for (tx_start..tx_end) |tx| {
                     const tile_px_min_x = @as(u16, @intCast(tx * tile_size));
@@ -556,12 +551,10 @@ pub fn sceneTileElemOverlap(
                     overlaps[write_idx] = .{
                         .mesh_idx = @intCast(mesh_idx),
                         .elem_idx = @intCast(ebb.elem_ind),
-                        .bbox = BBox{
-                            .x_min = @max(ebb.bbox.x_min, tile_px_min_x),
-                            .x_max = @min(ebb.bbox.x_max, tile_px_max_x),
-                            .y_min = overlap_y_min,
-                            .y_max = overlap_y_max,
-                        },
+                        .x_min = @max(ebb.x_min, tile_px_min_x),
+                        .x_max = @min(ebb.x_max, tile_px_max_x),
+                        .y_min = overlap_y_min,
+                        .y_max = overlap_y_max,
                     };
                     tile_write_inds[tile_idx] += 1;
                 }
