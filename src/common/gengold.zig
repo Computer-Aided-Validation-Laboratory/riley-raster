@@ -1,5 +1,6 @@
 const std = @import("std");
 
+pub const MatSlice = @import("../zigraster/zig/matslice.zig").MatSlice;
 pub const meshio = @import("../zigraster/zig/meshio.zig");
 pub const SimData = meshio.SimData;
 pub const mr = @import("../zigraster/zig/meshraster.zig");
@@ -176,6 +177,15 @@ pub fn runMultimeshGeneration(
     io: std.Io,
     config: RasterConfig,
 ) !void {
+    try runMultimeshGenerationExt(allocator, io, config, "gold-multimesh");
+}
+
+pub fn runMultimeshGenerationExt(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    config: RasterConfig,
+    out_dir_root: []const u8,
+) !void {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const aa = arena.allocator();
@@ -203,9 +213,9 @@ pub fn runMultimeshGeneration(
         const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
 
         const gold_dir = if (mode == .flat)
-            "gold-multimesh/allelem_flat"
+            try std.fmt.allocPrint(aa, "{s}/allelem_flat", .{out_dir_root})
         else
-            "gold-multimesh/allelem_tex_cubic_lut_lerp";
+            try std.fmt.allocPrint(aa, "{s}/allelem_tex_cubic_lut_lerp", .{out_dir_root});
 
         const mesh_rasters = if (mode == .flat)
             try mr.meshRasterFromSimDataSlice(
@@ -254,4 +264,131 @@ pub fn runMultimeshGeneration(
         std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
         _ = try specraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, out_dir);
     }
+}
+
+pub fn runMultimeshMixedGeneration(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    config: RasterConfig,
+) !void {
+    try runMultimeshMixedGenerationExt(
+        allocator, io, config, "gold-multimesh/allelem_allshade"
+    );
+}
+
+pub fn runMultimeshMixedGenerationExt(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    config: RasterConfig,
+    gold_dir: []const u8,
+) !void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const dir_paths = [_][]const u8{
+        "data-simple/tri3_twoelems/",
+        "data-simple/tri6_twoelems/",
+        "data-simple/quad4_twoelems/",
+        "data-simple/quad8_twoelems/",
+        "data-simple/quad9_twoelems/",
+    };
+
+    const mesh_types = [_]MeshType{
+        .tri3,
+        .tri6,
+        .quad4ibi,
+        .quad8,
+        .quad9,
+    };
+
+    const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
+    const texture = try iio.loadImage(
+        aa, io, "texture/speckle-simple.tiff", .tiff, u8, 1
+    );
+
+    var mesh_rasters = try aa.alloc(MeshRaster, 10);
+
+    // Top Row (0-4): Flat Shading
+    for (0..5) |ii| {
+        var coords_dup = try MatSlice(f64).initAlloc(
+            aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num
+        );
+        @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
+
+        mesh_rasters[ii] = MeshRaster{
+            .mesh_type = mesh_types[ii],
+            .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+            .connect = sim_datas[ii].connect,
+            .disp = sim_datas[ii].field,
+            .shader = .{ .flat = .{
+                .field = sim_datas[ii].field.?,
+                .bits = 8,
+                .scaling = .auto,
+                .scale_over = .within_frames,
+            } },
+        };
+    }
+
+    // Bottom Row (5-9): Texture Shading
+    for (0..5) |ii| {
+        const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[ii]});
+        const uvs = try uvio.loadUVMap(aa, io, uv_path);
+
+        var coords_dup = try MatSlice(f64).initAlloc(
+            aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num
+        );
+        @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
+
+        mesh_rasters[ii + 5] = MeshRaster{
+            .mesh_type = mesh_types[ii],
+            .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+            .connect = sim_datas[ii].connect,
+            .disp = sim_datas[ii].field,
+            .shader = .{ .tex_u8 = .{
+                .uvs = uvs.array,
+                .texture = texture,
+                .interp_type = .cubic_lut_lerp,
+                .bits = 8,
+                .scaling = .none,
+            } },
+        };
+    }
+
+    mr.arrangeMeshSlice(mesh_rasters, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+
+    const pixel_num = [_]u32{ 1600, 800 };
+    const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
+    const focal_leng: f64 = 50.0e-3;
+    const rot = Rotation.init(0, 0, 0);
+    const fov_scale_factor: f64 = 1.2;
+
+    const roi_pos = CameraOps.roiCentOverMeshes(mesh_rasters);
+    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
+        mesh_rasters, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
+    );
+    const camera = Camera.init(
+        pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2
+    );
+
+    const cwd = std.Io.Dir.cwd();
+    var iter = std.mem.splitScalar(u8, gold_dir, '/');
+    var path_buf: [256]u8 = undefined;
+    var path_len: usize = 0;
+    while (iter.next()) |part| {
+        if (path_len > 0) {
+            path_buf[path_len] = '/';
+            path_len += 1;
+        }
+        std.mem.copyForwards(u8, path_buf[path_len..], part);
+        path_len += part.len;
+        cwd.createDir(io, path_buf[0..path_len], .default_dir) catch |err| {
+            if (err != error.PathAlreadyExists) return err;
+        };
+    }
+    var out_dir = try cwd.openDir(io, gold_dir, .{});
+    defer out_dir.close(io);
+
+    std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
+    _ = try specraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, out_dir);
 }

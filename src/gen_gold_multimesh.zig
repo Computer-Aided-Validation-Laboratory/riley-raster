@@ -21,5 +21,6 @@ pub fn main() !void {
 
     std.debug.print("Generating Multimesh Gold Data...\n", .{});
     try gengold.runMultimeshGeneration(allocator, io, config);
+    try gengold.runMultimeshMixedGeneration(allocator, io, config);
     std.debug.print("Done.\n", .{});
 }
