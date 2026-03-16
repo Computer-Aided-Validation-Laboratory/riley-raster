@@ -178,7 +178,7 @@ pub fn countElemsCalcBBoxes(comptime N: usize,
                             dim_elem: usize,
                             elem_coord_arr: *const NDArray(f64),
                             raster_hull: ?*const NDArray(f64),
-                            elem_bboxes: []BBox) !usize {
+                            elem_bboxes: []ElemBBox) !usize {
     var elems_in_image: usize = 0;
     const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
     const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
@@ -227,12 +227,14 @@ pub fn countElemsCalcBBoxes(comptime N: usize,
             continue;
         }
 
-        elem_bboxes[elems_in_image] = BBox{
+        elem_bboxes[elems_in_image] = ElemBBox{
             .elem_ind = ee,
-            .x_min = boundIndMin(u16, x_min),
-            .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
-            .y_min = boundIndMin(u16, y_min),
-            .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
+            .bbox = BBox{
+                .x_min = boundIndMin(u16, x_min),
+                .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
+                .y_min = boundIndMin(u16, y_min),
+                .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
+            },
         };
         elems_in_image += 1;
     }
@@ -242,7 +244,7 @@ pub fn countElemsCalcBBoxes(comptime N: usize,
 pub fn countElemsCalcBBoxesTri3(camera: *const Camera,
                                dim_elem: usize,
                                elem_coord_arr: *const NDArray(f64),
-                               elem_bboxes: []BBox) !usize {
+                               elem_bboxes: []ElemBBox) !usize {
     const N: usize = 3;
     const tol_area: f64 = 1e-12;
 
@@ -279,12 +281,14 @@ pub fn countElemsCalcBBoxesTri3(camera: *const Camera,
         const y_min_i: u16 = boundIndMin(u16, y_min);
         const y_max_i: u16 = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1]));
 
-        elem_bboxes[elems_in_image] = BBox{
+        elem_bboxes[elems_in_image] = ElemBBox{
             .elem_ind = ee,
-            .x_min = x_min_i,
-            .x_max = x_max_i,
-            .y_min = y_min_i,
-            .y_max = y_max_i,
+            .bbox = BBox{
+                .x_min = x_min_i,
+                .x_max = x_max_i,
+                .y_min = y_min_i,
+                .y_max = y_max_i,
+            },
         };
         elems_in_image += 1;
     }
@@ -330,11 +334,22 @@ pub fn worldToRasterSIMD(comptime N: usize,
 // Tiling Raster Structs
 
 pub const BBox = struct {
-    elem_ind: usize,
     x_min: u16,
     x_max: u16,
     y_min: u16,
     y_max: u16,
+};
+
+pub const ElemBBox = struct {
+    elem_ind: usize,
+    bbox: BBox,
+};
+
+// Represents an overlap of a specific element from a specific mesh onto a tile
+pub const OverlapBBox = struct {
+    mesh_idx: u32,
+    elem_idx: u32, // Stores the original element index in the mesh
+    bbox: BBox,    // Geometric only
 };
 
 pub const ActiveTile = struct {
@@ -353,15 +368,15 @@ pub const ActiveTile = struct {
 pub fn elemTileOverlapCount(tile_size: u16,
                             tiles_num_x: usize,
                             elems_in_image: usize,
-                            elem_bboxes: []BBox,
+                            elem_bboxes: []ElemBBox,
                             tile_elem_counts: []usize,
                             tile_write_inds: []usize) !usize {
 
     for (0..elems_in_image) |ee| {
-        const tile_ind_min_x: u16 = elem_bboxes[ee].x_min / tile_size;
-        const tile_ind_max_x: u16 = try std.math.divCeil(u16,elem_bboxes[ee].x_max,tile_size);
-        const tile_ind_min_y: u16 = elem_bboxes[ee].y_min / tile_size;
-        const tile_ind_max_y: u16 = try std.math.divCeil(u16,elem_bboxes[ee].y_max,tile_size);
+        const tile_ind_min_x: u16 = elem_bboxes[ee].bbox.x_min / tile_size;
+        const tile_ind_max_x: u16 = try std.math.divCeil(u16,elem_bboxes[ee].bbox.x_max,tile_size);
+        const tile_ind_min_y: u16 = elem_bboxes[ee].bbox.y_min / tile_size;
+        const tile_ind_max_y: u16 = try std.math.divCeil(u16,elem_bboxes[ee].bbox.y_max,tile_size);
 
         for (tile_ind_min_y..tile_ind_max_y) |ty| {
             const tile_row_offset: usize = ty * tiles_num_x;
@@ -392,77 +407,88 @@ pub fn elemTileOverlapCount(tile_size: u16,
 //---------------------------------------------------------------------------------------------
 // Tiling Raster Step 4: Element Tile Overlap- Store overlap bounding boxes for ACTIVE tiles
 
-pub fn storeActiveTiles(tile_size: u16,
-                        tiles_num_x: usize,
-                        tiles_num_y: usize,
-                        screen_px_x: u16,
-                        screen_px_y: u16,
-                        elems_in_image: usize,
-                        elem_bboxes: []const BBox,
-                        tile_elem_counts: []const usize,
-                        tile_write_inds: []usize,
-                        overlap_bboxes: []BBox,
-                        active_tiles: []ActiveTile) void {
+pub fn storeActiveTiles(
+    tile_size: u16,
+    tiles_num_x: usize,
+    tiles_num_y: usize,
+    screen_px_x: u16,
+    screen_px_y: u16,
+    meshes_len: usize,
+    elems_in_image_by_mesh: []const usize,
+    elem_bboxes_by_mesh: []const []ElemBBox,
+    tile_elem_counts: []const usize,
+    tile_write_inds: []usize,
+    overlap_bboxes: []OverlapBBox,
+    active_tiles: []ActiveTile,
+) void {
+    _ = tiles_num_y;
+    var current_off: usize = 0;
+    for (0..tile_elem_counts.len) |ii| {
+        tile_write_inds[ii] = current_off;
+        current_off += tile_elem_counts[ii];
+    }
 
-    var active_ind: usize = 0;
-    for (tile_elem_counts,0..) |cc,ii| {
-    
-        if (cc > 0) {
-            // TODO: check for bug here - should this both be tiles_num_x?
-            const tx = @as(u16, @intCast(ii % tiles_num_x));
-            const ty = @as(u16, @intCast(ii / tiles_num_x));
-        
-            active_tiles[active_ind] = ActiveTile{
-                .overlap_start = tile_write_inds[ii],
-                .overlap_count = cc,
-                .x_px_min = tx*tile_size,
-                .y_px_min = ty*tile_size,
-                .x_px_max = @min(screen_px_x, (tx+1)*tile_size),
-                .y_px_max = @min(screen_px_y, (ty+1)*tile_size),
-            };
-            active_ind += 1;      
+    for (0..meshes_len) |mesh_idx| {
+        for (0..elems_in_image_by_mesh[mesh_idx]) |ii| {
+            const ebb = elem_bboxes_by_mesh[mesh_idx][ii];
+            
+            const tx_start = ebb.bbox.x_min / tile_size;
+            const tx_end = @min(@as(usize, @intCast(tiles_num_x)), 
+                                @as(usize, (ebb.bbox.x_max + tile_size - 1) / tile_size));
+            const ty_start = ebb.bbox.y_min / tile_size;
+            const ty_end = @min(@as(usize, @intCast(tile_elem_counts.len / tiles_num_x)), 
+                                @as(usize, (ebb.bbox.y_max + tile_size - 1) / tile_size));
+
+            for (ty_start..ty_end) |ty| {
+                const tile_px_min_y = @as(u16, @intCast(ty * tile_size));
+                const tile_px_max_y = @as(u16, @min(
+                    @as(u32, tile_px_min_y) + tile_size, screen_px_y
+                ));
+                const overlap_y_min = @max(ebb.bbox.y_min, tile_px_min_y);
+                const overlap_y_max = @min(ebb.bbox.y_max, tile_px_max_y);
+
+                for (tx_start..tx_end) |tx| {
+                    const tile_px_min_x = @as(u16, @intCast(tx * tile_size));
+                    const tile_px_max_x = @as(u16, @min(
+                        @as(u32, tile_px_min_x) + tile_size, screen_px_x
+                    ));
+
+                    const tile_idx = ty * tiles_num_x + tx;
+                    const write_idx = tile_write_inds[tile_idx];
+                    overlap_bboxes[write_idx] = .{
+                        .mesh_idx = @intCast(mesh_idx),
+                        .elem_idx = @intCast(ebb.elem_ind),
+                        .bbox = BBox{
+                            .x_min = @max(ebb.bbox.x_min, tile_px_min_x),
+                            .x_max = @min(ebb.bbox.x_max, tile_px_max_x),
+                            .y_min = overlap_y_min,
+                            .y_max = overlap_y_max,
+                        },
+                    };
+                    tile_write_inds[tile_idx] += 1;
+                }
+            }
         }
     }
 
-    // NOTE: only loops over elements in image so ee is not the element number for coord data
-    // in the NDArray!    
-    for (0..elems_in_image) |ee| {
-        const tile_ind_min_x: u16 = elem_bboxes[ee].x_min / tile_size;
-        const tile_ind_min_y: u16 = elem_bboxes[ee].y_min / tile_size;
-        
-        // No 'try' divCeil
-        const tile_ind_max_x = @min(@as(u16, @intCast(tiles_num_x)),
-            (elem_bboxes[ee].x_max + tile_size - 1) / tile_size);
-        const tile_ind_max_y = @min(@as(u16, @intCast(tiles_num_y)),
-            (elem_bboxes[ee].y_max + tile_size - 1) / tile_size);
-
-        for (tile_ind_min_y..tile_ind_max_y) |ty| {
-            const tile_row_offset: usize = ty * tiles_num_x;
-
-            const tile_px_min_y: u16 = @as(u16,@intCast(ty*tile_size));
-            const tile_px_max_y: u16 = @as(u16,@min(tile_px_min_y+tile_size,screen_px_y));
-
-            const overlap_y_min = @max(elem_bboxes[ee].y_min, tile_px_min_y);
-            const overlap_y_max = @min(elem_bboxes[ee].y_max, tile_px_max_y);
-
-            for (tile_ind_min_x..tile_ind_max_x) |tx| {
-                
-                const tile_px_min_x: u16 = @as(u16,@intCast(tx*tile_size));
-                const tile_px_max_x: u16 = @as(u16,@min(tile_px_min_x+tile_size,screen_px_x));
-
-                const tile_ind_flat: usize = tile_row_offset + tx;
-                const write_ind = tile_write_inds[tile_ind_flat]; 
-                tile_write_inds[tile_ind_flat] += 1;
-
-                overlap_bboxes[write_ind] = BBox{
-                    .elem_ind = elem_bboxes[ee].elem_ind,
-                    .x_min = @max(elem_bboxes[ee].x_min,tile_px_min_x),
-                    .x_max = @min(elem_bboxes[ee].x_max,tile_px_max_x),
-                    .y_min = overlap_y_min,
-                    .y_max = overlap_y_max,
-                };  
-            }
+    var active_idx: usize = 0;
+    current_off = 0;
+    for (0..tile_elem_counts.len) |ii| {
+        const count = tile_elem_counts[ii];
+        if (count > 0) {
+            const tx = ii % tiles_num_x;
+            const ty = ii / tiles_num_x;
+            active_tiles[active_idx] = .{
+                .overlap_start = current_off,
+                .overlap_count = count,
+                .x_px_min = @intCast(tx * tile_size),
+                .y_px_min = @intCast(ty * tile_size),
+                .x_px_max = @min(screen_px_x, @as(u16, @intCast((tx + 1) * tile_size))),
+                .y_px_max = @min(screen_px_y, @as(u16, @intCast((ty + 1) * tile_size))),
+            };
+            active_idx += 1;
         }
+        current_off += count;
     }
 }
 

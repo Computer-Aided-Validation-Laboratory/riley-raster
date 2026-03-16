@@ -5,6 +5,8 @@ const NDArray = @import("ndarray.zig").NDArray;
 const hull = @import("hull.zig");
 const rops = @import("rasterops.zig");
 const BBox = rops.BBox;
+const ElemBBox = rops.ElemBBox;
+const OverlapBBox = rops.OverlapBBox;
 const ActiveTile = rops.ActiveTile;
 const Vec3OfSlices = rops.Vec3OfSlices;
 const perf = @import("perf.zig");
@@ -12,7 +14,6 @@ const Report = perf.Report;
 const Timestamp = std.Io.Clock.Timestamp;
 
 const spec = @import("specraster.zig");
-const OverlapMM = spec.OverlapMM;
 const mr = @import("meshraster.zig");
 const MeshTransform = mr.MeshTransform;
 const MeshType = mr.MeshType;
@@ -31,7 +32,7 @@ pub fn rasterScene(
     frame_ind: usize,
     tile_size: u16,
     active_tiles: []const ActiveTile,
-    overlap_mms: []const OverlapMM,
+    overlap_mms: []const OverlapBBox,
     meshes: []const MeshTransform,
     raster_hulls: []const ?NDArray(f64),
     image_out_arr: *NDArray(f64),
@@ -163,7 +164,7 @@ pub fn RasterPass(
             elem_ind: usize,
             tile_size: u16,
             tile: ActiveTile,
-            overlap: OverlapMM,
+            overlap: OverlapBBox,
             elem_coord_arr: *const NDArray(f64),
             shader: *const ShaderData,
             raster_hull: ?*const NDArray(f64),
