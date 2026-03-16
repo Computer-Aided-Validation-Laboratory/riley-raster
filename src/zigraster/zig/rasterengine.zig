@@ -31,8 +31,7 @@ pub fn rasterScene(
     camera: *const Camera,
     frame_ind: usize,
     tile_size: u16,
-    active_tiles: []const ActiveTile,
-    overlap_mms: []const OverlapBBox,
+    tiling: rops.TilingOverlaps,
     meshes: []const MeshTransform,
     raster_hulls: []const ?NDArray(f64),
     image_out_arr: *NDArray(f64),
@@ -60,15 +59,15 @@ pub fn rasterScene(
     const subpx_field_avg = try allocator.alloc(f64, fields_num);
     defer allocator.free(subpx_field_avg);
 
-    for (active_tiles) |tile| {
+    for (tiling.active_tiles) |tile| {
         const tile_start = if (comptime report == .perf) Timestamp.now(io, .awake) else {};
         var shaded_px: u64 = 0;
 
         @memset(subpx_inv_z_scratch, 0.0);
         @memset(subpx_image_scratch.elems, 0.0);
 
-        const overlaps = overlap_mms[tile.overlap_start .. 
-                                     tile.overlap_start + tile.overlap_count];
+        const overlaps = tiling.overlaps[tile.overlap_start .. 
+                                         tile.overlap_start + tile.overlap_count];
 
         for (overlaps) |ov| {
             const mesh = &meshes[ov.mesh_idx];

@@ -232,9 +232,6 @@ fn rasterSceneInternal(
     const pctx = perf.PerfContext(report){ .perf = if (report == .perf) perf_data.? else {} };
     var pipe_times = perf.PipeTimes{};
 
-    const screen_px_x = @as(u16, @intCast(camera.pixels_num[0]));
-    const screen_px_y = @as(u16, @intCast(camera.pixels_num[1]));
-
     const tiles_num_x: usize = try std.math.divCeil(usize, camera.pixels_num[0], tile_size);
     const tiles_num_y: usize = try std.math.divCeil(usize, camera.pixels_num[1], tile_size);
 
@@ -275,8 +272,8 @@ fn rasterSceneInternal(
         tile_size,
         tiles_num_x,
         tiles_num_y,
-        screen_px_x,
-        screen_px_y,
+        @intCast(camera.pixels_num[0]),
+        @intCast(camera.pixels_num[1]),
         meshes.len,
         elems_in_image_by_mesh,
         elem_bboxes_by_mesh,
@@ -297,8 +294,7 @@ fn rasterSceneInternal(
         camera,
         frame_ind,
         tile_size,
-        tiling.active_tiles,
-        tiling.overlaps,
+        tiling,
         meshes,
         raster_hulls,
         image_out_arr,
