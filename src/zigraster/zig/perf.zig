@@ -23,11 +23,8 @@ pub const PerfOpts = struct {
 };
 
 pub const PipeTimes = struct {
-    coord_transform: f64 = 0,
-    bbox_calc: f64 = 0,
-    tile_count: f64 = 0,
-    tile_store: f64 = 0,
-    pre_process: f64 = 0,
+    geometry_prep: f64 = 0,
+    tile_overlap: f64 = 0,
     raster_loop: f64 = 0,
     total_time: f64 = 0,
 };
@@ -405,17 +402,11 @@ pub const Perf = struct {
 
         try writer.print("--- PIPELINE TIMINGS (User Summary) ---\n", .{});
         const conv = 1.0 / 1e6;
-        try writer.print("Coord transformation    = {d:.6} ms\n", .{
-            self.pipe_times.coord_transform * conv,
+        try writer.print("Geometry Preparation    = {d:.6} ms\n", .{
+            self.pipe_times.geometry_prep * conv,
         });
-        try writer.print("Elem screen crop & BBox = {d:.6} ms\n", .{
-            self.pipe_times.bbox_calc * conv,
-        });
-        try writer.print("Elem tile overlap count = {d:.6} ms\n", .{
-            self.pipe_times.tile_count * conv,
-        });
-        try writer.print("Elem tile overlap store = {d:.6} ms\n", .{
-            self.pipe_times.tile_store * conv,
+        try writer.print("Elem/Tile Overlap       = {d:.6} ms\n", .{
+            self.pipe_times.tile_overlap * conv,
         });
         try writer.print("Raster loop time        = {d:.6} ms\n", .{
             self.pipe_times.raster_loop * conv,
@@ -632,18 +623,15 @@ pub fn standardReport(
     const conv_units: f64 = 1.0 / 1.0e6;
     const print_break = [_]u8{'='} ** 80;
 
-    try writer.print("\n{s}\nSoftware Raster Times\n{s}\n", 
+    try writer.print("\n{s}\nSoftware Raster Times\n{s}\n",
         .{ print_break, print_break });
-    try writer.print("Coord transformation    = {d:.6} ms\n", 
-        .{ pipe_times.coord_transform * conv_units });
-    try writer.print("Elem screen crop & BBox = {d:.6} ms\n", 
-        .{ pipe_times.bbox_calc * conv_units });
-    try writer.print("Elem tile overlap count = {d:.6} ms\n", 
-        .{ pipe_times.tile_count * conv_units });
-    try writer.print("Elem tile overlap store = {d:.6} ms\n", 
-        .{ pipe_times.tile_store * conv_units });
-    try writer.print("Raster loop time        = {d:.6} ms\n", 
+    try writer.print("Geometry Preparation    = {d:.6} ms\n",
+        .{ pipe_times.geometry_prep * conv_units });
+    try writer.print("Elem/Tile Overlap       = {d:.6} ms\n",
+        .{ pipe_times.tile_overlap * conv_units });
+    try writer.print("Raster loop time        = {d:.6} ms\n",
         .{ pipe_times.raster_loop * conv_units });
+
     try writer.print("{s}\nTOTAL RASTER TIME  = {d:.3} ms\n", .{
         print_break,
         pipe_times.total_time * conv_units,

@@ -237,126 +237,41 @@ fn rasterSceneInternal(
 
     const tiles_num_x: usize = try std.math.divCeil(usize, camera.pixels_num[0], tile_size);
     const tiles_num_y: usize = try std.math.divCeil(usize, camera.pixels_num[1], tile_size);
-    const tiles_num: usize = tiles_num_x * tiles_num_y;
 
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
-    const time_start_internal = Timestamp.now(io, .awake);
+    const time_start_geo = Timestamp.now(io, .awake);
 
-    var raster_hulls = try arena_alloc.alloc(?NDArray(f64), meshes.len);
-    for (0..meshes.len) |ii| raster_hulls[ii] = null;
-
-    const time_end_internal = Timestamp.now(io, .awake);
-    pipe_times.coord_transform = @floatFromInt(
-        time_start_internal.durationTo(time_end_internal).raw.nanoseconds
-    );
-
-    const time_start_bbox = Timestamp.now(io, .awake);
-
-    var elem_bboxes_by_mesh = try arena_alloc.alloc([]ElemBBox, meshes.len);
-    var elems_in_image_by_mesh = try arena_alloc.alloc(usize, meshes.len);
+    const elem_bboxes_by_mesh = try arena_alloc.alloc([]ElemBBox, meshes.len);
+    const elems_in_image_by_mesh = try arena_alloc.alloc(usize, meshes.len);
     var total_elems_in_image: usize = 0;
     var total_elems_num: usize = 0;
+    const raster_hulls = try arena_alloc.alloc(?NDArray(f64), meshes.len);
 
-    for (meshes, 0..) |*mesh, ii| {
-        const elems_num = mesh.coords.dims[0];
-        total_elems_num += elems_num;
-        elem_bboxes_by_mesh[ii] = try arena_alloc.alloc(ElemBBox, elems_num);
-        raster_hulls[ii] = null;
-        
-        switch (mesh.mesh_type) {
-            inline else => |mesh_tag| {
-                const GK = comptime switch (mesh_tag) {
-                    .tri3 => geomkerns.Tri3Kernel(),
-                    .tri3opt => geomkerns.Tri3OptKernel(),
-                    .tri6 => geomkerns.Tri6Kernel(),
-                    .quad4ibi => geomkerns.Quad4IBIKernel(),
-                    .quad4newton => geomkerns.Quad4NewtonKernel(),
-                    .quad8 => geomkerns.Quad89Kernel(8),
-                    .quad9 => geomkerns.Quad89Kernel(9),
-                };
-                const N = GK.nodes_num;
-                const NH = if (comptime GK.has_hull) GK.hull_nodes_num else 0;
-                const dim_elem = 0;
-
-                if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
-                    try rops.transformElemsRasterSIMD(N, f64, camera, dim_elem, &mesh.coords);
-                } else {
-                    try rops.transformElemsClipPxLengSIMD(
-                        N, f64, camera, dim_elem, &mesh.coords
-                    );
-                }
-
-                if (comptime GK.has_hull) {
-                    raster_hulls[ii] = try NDArray(f64).initFlat(
-                        arena_alloc,
-                        &[_]usize{ elems_num, 2, NH },
-                    );
-                    try rops.buildAdaptiveHulls(
-                        N, camera, dim_elem, &mesh.coords, &raster_hulls[ii].?
-                    );
-                }
-
-                if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
-                    elems_in_image_by_mesh[ii] = try rops.countElemsCalcBBoxesTri3(
-                        camera, dim_elem, &mesh.coords, elem_bboxes_by_mesh[ii],
-                    );
-                } else {
-                    const rh_ptr = if (raster_hulls[ii]) |*rh| rh else null;
-                    elems_in_image_by_mesh[ii] = try rops.countElemsCalcBBoxes(
-                        N, NH, camera, dim_elem, &mesh.coords, rh_ptr, elem_bboxes_by_mesh[ii],
-                    );
-                }
-            }
-        }
-        total_elems_in_image += elems_in_image_by_mesh[ii];
-    }
-
-    const time_end_bbox = Timestamp.now(io, .awake);
-    pipe_times.bbox_calc = @floatFromInt(
-        time_start_bbox.durationTo(time_end_bbox).raw.nanoseconds
+    try rops.prepareSceneGeometry(
+        report,
+        pctx,
+        arena_alloc,
+        camera,
+        meshes,
+        raster_hulls,
+        elem_bboxes_by_mesh,
+        elems_in_image_by_mesh,
+        &total_elems_num,
+        &total_elems_in_image,
     );
 
-    if (comptime report == .perf) {
-        pctx.recordGeometry(total_elems_num, total_elems_in_image);
-    }
+    const time_end_geo = Timestamp.now(io, .awake);
+    pipe_times.geometry_prep = @floatFromInt(
+        time_start_geo.durationTo(time_end_geo).raw.nanoseconds
+    );
 
     const time_start_overlap = Timestamp.now(io, .awake);
 
-    const tile_elem_counts = try arena_alloc.alloc(usize, tiles_num);
-    @memset(tile_elem_counts, 0);
-    const tile_write_inds = try arena_alloc.alloc(usize, tiles_num);
-
-    for (meshes, 0..) |_, ii| {
-        _ = try rops.elemTileOverlapCount(
-            tile_size,
-            tiles_num_x,
-            elems_in_image_by_mesh[ii],
-            elem_bboxes_by_mesh[ii],
-            tile_elem_counts,
-            tile_write_inds,
-        );
-    }
-    
-    const time_end_overlap = Timestamp.now(io, .awake);
-    pipe_times.tile_count = @floatFromInt(
-        time_start_overlap.durationTo(time_end_overlap).raw.nanoseconds
-    );
-
-    const time_start_store = Timestamp.now(io, .awake);
-
-    const overlap_total: usize = sliceops.sum(usize, tile_elem_counts);
-    const overlap_mms = try arena_alloc.alloc(rops.OverlapBBox, overlap_total);
-    
-    var num_active_tiles: usize = 0;
-    for (tile_elem_counts) |count| {
-        if (count > 0) num_active_tiles += 1;
-    }
-    const active_tiles = try arena_alloc.alloc(ActiveTile, num_active_tiles);
-
-    rops.storeActiveTiles(
+    const tiling = try rops.sceneTileElemOverlap(
+        arena_alloc,
         tile_size,
         tiles_num_x,
         tiles_num_y,
@@ -365,15 +280,11 @@ fn rasterSceneInternal(
         meshes.len,
         elems_in_image_by_mesh,
         elem_bboxes_by_mesh,
-        tile_elem_counts,
-        tile_write_inds,
-        overlap_mms,
-        active_tiles,
     );
 
-    const time_end_store = Timestamp.now(io, .awake);
-    pipe_times.tile_store = @floatFromInt(
-        time_start_store.durationTo(time_end_store).raw.nanoseconds
+    const time_end_overlap = Timestamp.now(io, .awake);
+    pipe_times.tile_overlap = @floatFromInt(
+        time_start_overlap.durationTo(time_end_overlap).raw.nanoseconds
     );
 
     const time_start_loop = Timestamp.now(io, .awake);
@@ -386,8 +297,8 @@ fn rasterSceneInternal(
         camera,
         frame_ind,
         tile_size,
-        active_tiles,
-        overlap_mms,
+        tiling.active_tiles,
+        tiling.overlaps,
         meshes,
         raster_hulls,
         image_out_arr,
@@ -403,11 +314,9 @@ fn rasterSceneInternal(
         raster_start.durationTo(raster_end).raw.nanoseconds
     );
 
-    if (report == .perf) {
+    if (comptime report == .perf) {
         perf_data.?.pipe_times = pipe_times;
-    }
-
-    if (comptime report == .off) {
+    } else {
         try perf.standardReport(io, camera, pipe_times, total_elems_num);
     }
 }
