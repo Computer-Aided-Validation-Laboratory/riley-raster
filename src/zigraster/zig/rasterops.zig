@@ -15,33 +15,9 @@ const NDArray = @import("ndarray.zig").NDArray;
 const Camera = @import("camera.zig").Camera;
 
 pub const buildAdaptiveHulls = @import("hull.zig").buildAdaptiveHulls;
+const geomkerns = @import("geometrykernels.zig");
+const perf = @import("perf.zig");
 
-
-pub fn worldToRasterCoords(coord_world: Vec3T(f64), camera: *const Camera) Vec3T(f64) {
-    var coord_raster: Vec3T(f64) = Mat44Ops.mulVec3(f64, 
-    										        camera.world_to_cam_mat, 
-    										        coord_world);
-
-    coord_raster.elems[0] = camera.image_dist 
-                            * coord_raster.elems[0] 
-                            / (-coord_raster.elems[2]);
-    coord_raster.elems[1] = camera.image_dist 
-                            * coord_raster.elems[1] 
-                            / (-coord_raster.elems[2]);
-
-    coord_raster.elems[0] = 2.0 * coord_raster.elems[0] 
-                            / camera.image_dims[0];
-    coord_raster.elems[1] = 2.0 * coord_raster.elems[1] 
-                            / camera.image_dims[1];
-
-    coord_raster.elems[0] = (coord_raster.elems[0] + 1.0) 
-    	/ 2.0 * @as(f64, @floatFromInt(camera.pixels_num[0]));
-    coord_raster.elems[1] = (1.0 - coord_raster.elems[1]) 
-    	/ 2.0 * @as(f64, @floatFromInt(camera.pixels_num[1]));
-    coord_raster.elems[2] = -1.0 * coord_raster.elems[2];
-
-    return coord_raster;
-}
 
 pub fn edgeFun(vert_0: Vec3f, vert_1: Vec3f, vert_2: Vec3f) f64 {
     return ((vert_2.get(0) - vert_0.get(0)) 
@@ -92,8 +68,35 @@ pub inline fn boundIndMax(comptime T: type, val: f64, max: T) T {
     return @as(T, @intCast(@max(0, @min(val_int, @as(isize, @intCast(max))))));
 }
 
+pub fn worldToRasterCoords(coord_world: Vec3T(f64), camera: *const Camera) Vec3T(f64) {
+    var coord_raster: Vec3T(f64) = Mat44Ops.mulVec3(f64, 
+    										        camera.world_to_cam_mat, 
+    										        coord_world);
+
+    coord_raster.elems[0] = camera.image_dist 
+                            * coord_raster.elems[0] 
+                            / (-coord_raster.elems[2]);
+    coord_raster.elems[1] = camera.image_dist 
+                            * coord_raster.elems[1] 
+                            / (-coord_raster.elems[2]);
+
+    coord_raster.elems[0] = 2.0 * coord_raster.elems[0] 
+                            / camera.image_dims[0];
+    coord_raster.elems[1] = 2.0 * coord_raster.elems[1] 
+                            / camera.image_dims[1];
+
+    coord_raster.elems[0] = (coord_raster.elems[0] + 1.0) 
+    	/ 2.0 * @as(f64, @floatFromInt(camera.pixels_num[0]));
+    coord_raster.elems[1] = (1.0 - coord_raster.elems[1]) 
+    	/ 2.0 * @as(f64, @floatFromInt(camera.pixels_num[1]));
+    coord_raster.elems[2] = -1.0 * coord_raster.elems[2];
+
+    return coord_raster;
+}
+
+
 //---------------------------------------------------------------------------------------------
-// Tiling Raster: Helper Functions
+// Tiling Raster: Structs and Types
 
 pub fn Vec3OfSlices(comptime T: type) type {
     return struct{
@@ -102,6 +105,41 @@ pub fn Vec3OfSlices(comptime T: type) type {
         z: []T,
     };   
 }
+
+pub const BBox = struct {
+    x_min: u16,
+    x_max: u16,
+    y_min: u16,
+    y_max: u16,
+};
+
+pub const ElemBBox = struct {
+    elem_ind: usize,
+    bbox: BBox,
+};
+
+pub const OverlapBBox = struct {
+    mesh_idx: u32,
+    elem_idx: u32, // Stores the original element index in the mesh
+    bbox: BBox,    // Geometric only
+};
+
+pub const ActiveTile = struct {
+    overlap_start: usize, // index into overlap_bboxes
+    overlap_count: usize, // count to take from overlap bboxes
+    x_px_min: u16,
+    y_px_min: u16,
+    x_px_max: u16,
+    y_px_max: u16,
+};
+
+pub const TilingOverlaps = struct {
+    overlaps: []OverlapBBox,
+    active_tiles: []ActiveTile,
+};
+
+//---------------------------------------------------------------------------------------------
+// Tiling Raster: Helper Functions
 
 pub fn loadVec3SlicesFromElemArray(comptime N: usize,
                                    comptime T: type, 
@@ -125,8 +163,37 @@ pub fn loadVec3SlicesFromElemArray(comptime N: usize,
     };
 }
 
-//---------------------------------------------------------------------------------------------
-// Tiling Raster Step 1: World to Camera/Raster Coords
+pub fn worldToRasterSIMD(comptime N: usize,
+                         comptime T: type, 
+                         coord_world: Vec3SIMD(N,T), 
+                         camera: *const Camera) Vec3SIMD(N,T) {
+
+    var coord_raster: Vec3SIMD(N,T) = vsd.mat44Mul(N,T,
+                                                       camera.world_to_cam_mat,
+                                                       coord_world);
+
+    const image_dist_simd: @Vector(N,T) = @splat(camera.image_dist);
+    const inv_neg_z: @Vector(N,T) = @as(@Vector(N,T),@splat(1.0)) / (-coord_raster.z);
+
+    coord_raster.x = image_dist_simd * coord_raster.x * inv_neg_z; 
+    coord_raster.y = image_dist_simd * coord_raster.y * inv_neg_z;
+
+    coord_raster.x *= @splat(2.0/camera.image_dims[0]);
+    coord_raster.y *= @splat(2.0/camera.image_dims[1]);
+
+    const px_x = @as(T,@floatFromInt(camera.pixels_num[0]));
+    const px_y = @as(T,@floatFromInt(camera.pixels_num[1]));
+
+    const px_x_half_vec: @Vector(N,T) = @splat(px_x/2.0);
+    const px_y_half_vec: @Vector(N,T) = @splat(px_y/2.0); 
+    const ones_vec: @Vector(N,T) = @splat(1.0);
+    
+    coord_raster.x = px_x_half_vec*(coord_raster.x + ones_vec);
+    coord_raster.y = px_y_half_vec*(ones_vec - coord_raster.y);
+    coord_raster.z = -coord_raster.z;
+
+    return coord_raster;
+}
 
 pub fn transformElemsRasterSIMD(comptime N: usize,
                                  comptime T: type,
@@ -145,8 +212,6 @@ pub fn transformElemsRasterSIMD(comptime N: usize,
     }
 }
 
-// Outputs scaled clip space coords in pixels.length units (everything except the perspective
-// divide). Used by the Newton solver.
 pub fn transformElemsClipPxLengSIMD(comptime N: usize,
                              comptime T: type,
                              camera: *const Camera, 
@@ -296,76 +361,8 @@ pub fn countElemsCalcBBoxesTri3(camera: *const Camera,
     return elems_in_image;
 }
 
-
-pub fn worldToRasterSIMD(comptime N: usize,
-                         comptime T: type, 
-                         coord_world: Vec3SIMD(N,T), 
-                         camera: *const Camera) Vec3SIMD(N,T) {
-
-    var coord_raster: Vec3SIMD(N,T) = vsd.mat44Mul(N,T,
-                                                       camera.world_to_cam_mat,
-                                                       coord_world);
-
-    const image_dist_simd: @Vector(N,T) = @splat(camera.image_dist);
-    const inv_neg_z: @Vector(N,T) = @as(@Vector(N,T),@splat(1.0)) / (-coord_raster.z);
-
-    coord_raster.x = image_dist_simd * coord_raster.x * inv_neg_z; 
-    coord_raster.y = image_dist_simd * coord_raster.y * inv_neg_z;
-
-    coord_raster.x *= @splat(2.0/camera.image_dims[0]);
-    coord_raster.y *= @splat(2.0/camera.image_dims[1]);
-
-    const px_x = @as(T,@floatFromInt(camera.pixels_num[0]));
-    const px_y = @as(T,@floatFromInt(camera.pixels_num[1]));
-
-    const px_x_half_vec: @Vector(N,T) = @splat(px_x/2.0);
-    const px_y_half_vec: @Vector(N,T) = @splat(px_y/2.0); 
-    const ones_vec: @Vector(N,T) = @splat(1.0);
-    
-    coord_raster.x = px_x_half_vec*(coord_raster.x + ones_vec);
-    coord_raster.y = px_y_half_vec*(ones_vec - coord_raster.y);
-    coord_raster.z = -coord_raster.z;
-
-    return coord_raster;
-}
-
-
-const geomkerns = @import("geometrykernels.zig");
-const perf = @import("perf.zig");
-
 //---------------------------------------------------------------------------------------------
-// Tiling Raster Structs
-
-pub const BBox = struct {
-    x_min: u16,
-    x_max: u16,
-    y_min: u16,
-    y_max: u16,
-};
-
-pub const ElemBBox = struct {
-    elem_ind: usize,
-    bbox: BBox,
-};
-
-// Represents an overlap of a specific element from a specific mesh onto a tile
-pub const OverlapBBox = struct {
-    mesh_idx: u32,
-    elem_idx: u32, // Stores the original element index in the mesh
-    bbox: BBox,    // Geometric only
-};
-
-pub const ActiveTile = struct {
-    overlap_start: usize, // index into overlap_bboxes
-    overlap_count: usize, // count to take from overlap bboxes
-    x_px_min: u16,
-    y_px_min: u16,
-    x_px_max: u16,
-    y_px_max: u16,
-};
-
-//---------------------------------------------------------------------------------------------
-// Tiling Raster Step 2: Mesh to Raster Prep (Consolidated for Cache Locality)
+// Tiling Raster Step 1: Prepare Scene Geometry
 
 pub fn prepareSceneGeometry(
     comptime report: perf.Report,
@@ -441,13 +438,8 @@ pub fn prepareSceneGeometry(
     }
 }
 
-pub const TilingOverlaps = struct {
-    overlaps: []OverlapBBox,
-    active_tiles: []ActiveTile,
-};
-
 //---------------------------------------------------------------------------------------------
-// Tiling Raster Step 3: Scene to Tiles (Consolidated)
+// Tiling Raster Step 2: Tile/Element Overlaps for the Whole Scene
 
 pub fn sceneTileElemOverlap(
     allocator: std.mem.Allocator,
@@ -559,52 +551,4 @@ pub fn sceneTileElemOverlap(
     }
 
     return TilingOverlaps{ .overlaps = overlaps, .active_tiles = active_tiles };
-}
-
-//---------------------------------------------------------------------------------------------
-// Tiling Raster Step 5: Raster Loop Helpers
-
-pub fn averageScratch(tile: ActiveTile,
-                      sub_samp: usize,
-                      spx_tile_size: usize,
-                      fields_num: usize,
-                      spx_image_scratch: *const MatSlice(f64),
-                      spx_field_avg: []f64,
-                      image_out_arr: *NDArray(f64)) void {
-
-    const curr_tile_size_x = tile.x_px_max - tile.x_px_min;
-    const curr_tile_size_y = tile.y_px_max - tile.y_px_min;
-    const sub_samp_f = @as(f64, @floatFromInt(sub_samp));
-    const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
-
-    for (0..curr_tile_size_y) |ty| {
-        const image_px_y: usize = tile.y_px_min + ty;
-        const spx_start_y: usize = sub_samp * ty;
-
-        for (0..curr_tile_size_x) |tx| {
-            const image_px_x: usize = tile.x_px_min + tx;
-            const spx_start_x: usize = sub_samp * tx;
-
-            @memset(spx_field_avg, 0.0);
-
-            for (0..sub_samp) |sy| {
-                const scratch_row_offset: usize = (spx_start_y + sy) * spx_tile_size;
-
-                for (0..sub_samp) |sx| {
-                    const scratch_flat_ind: usize = scratch_row_offset + spx_start_x + sx;
-
-                    for (0..fields_num) |ff| {
-                        spx_field_avg[ff] += spx_image_scratch.get(scratch_flat_ind, ff);
-                    }
-                }
-            }
-
-            for (0..fields_num) |ff| {
-                const image_inds = [_]usize{ ff, image_px_y, image_px_x };
-                const image_val: f64 = spx_field_avg[ff] * inv_sub_samp_sq;
-                
-                image_out_arr.set(image_inds[0..], image_val);
-            }
-        }
-    }
 }

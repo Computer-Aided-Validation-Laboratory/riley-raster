@@ -128,7 +128,7 @@ pub fn rasterScene(
             }
         }
 
-        rops.averageScratch(
+        averageScratch(
             tile,
             @intCast(sub_samp),
             subpx_tile_size,
@@ -417,4 +417,49 @@ pub fn RasterPass(
             return shaded_px;
         }
     };
+}
+
+pub fn averageScratch(tile: ActiveTile,
+                      sub_samp: usize,
+                      spx_tile_size: usize,
+                      fields_num: usize,
+                      spx_image_scratch: *const MatSlice(f64),
+                      spx_field_avg: []f64,
+                      image_out_arr: *NDArray(f64)) void {
+
+    const curr_tile_size_x = tile.x_px_max - tile.x_px_min;
+    const curr_tile_size_y = tile.y_px_max - tile.y_px_min;
+    const sub_samp_f = @as(f64, @floatFromInt(sub_samp));
+    const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
+
+    for (0..curr_tile_size_y) |ty| {
+        const image_px_y: usize = tile.y_px_min + ty;
+        const spx_start_y: usize = sub_samp * ty;
+
+        for (0..curr_tile_size_x) |tx| {
+            const image_px_x: usize = tile.x_px_min + tx;
+            const spx_start_x: usize = sub_samp * tx;
+
+            @memset(spx_field_avg, 0.0);
+
+            for (0..sub_samp) |sy| {
+                const scratch_row_offset: usize = (spx_start_y + sy) * spx_tile_size;
+
+                for (0..sub_samp) |sx| {
+                    const scratch_flat_ind: usize = scratch_row_offset + spx_start_x + sx;
+
+                    for (0..fields_num) |ff| {
+                        spx_field_avg[ff] += spx_image_scratch.get(scratch_flat_ind, ff);
+                    }
+                }
+            }
+
+            for (0..fields_num) |ff| {
+                const image_inds = [_]usize{ ff, image_px_y, image_px_x };
+                const image_val: f64 = spx_field_avg[ff] * inv_sub_samp_sq;
+                
+                image_out_arr.set(image_inds[0..], image_val);
+            }
+        }
+    }
 }
