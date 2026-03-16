@@ -295,8 +295,8 @@ H_DIRS = [numpy.get_include(),
 
 # zig extension
 ext_zig = Extension(
-    name="zigraster.zig.zigraster",
-    sources=["src/zigraster/zig/zigraster.zig",],
+    name="zigraster.zig.cabi-zraster",
+    sources=["src/zigraster/zig/cabi-zraster.zig",],
     extra_compile_args=["-fincremental",],
 )
 
@@ -305,7 +305,7 @@ ext_cython = Extension(
         name="zigraster.cyth.zraster",
         sources=["src/zigraster/cyth/zraster.py",],
         include_dirs=H_DIRS,
-        libraries=["zigraster",],  # without the lib and so extension - e.g. libzigarray.so - zig
+        libraries=["cabi-zraster",],  # without the lib and so extension - e.g. libzigarray.so - zig
         library_dirs=[],            # populated by run() above
         runtime_library_dirs=[PLATFORM_INFO["runtime_lib_dir"],],
         extra_compile_args=["-ffast-math",

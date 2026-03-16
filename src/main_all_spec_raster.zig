@@ -23,8 +23,8 @@ const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
 
 const iio = @import("zigraster/zig/imageio.zig");
 
-const specraster = @import("zigraster/zig/specraster.zig");
-const RasterConfig = specraster.RasterConfig;
+const zraster = @import("zigraster/zig/zraster.zig");
+const RasterConfig = zraster.RasterConfig;
 
 const uvio = @import("zigraster/zig/uvio.zig");
 
@@ -63,7 +63,7 @@ pub fn main() !void {
     //const path_data = "data-simple/tri3_fullscreen/";
     //const mesh_type: MeshType = .tri3opt;
 
-    const out_dir_name = "out-specraster";
+    const out_dir_name = "out-zraster";
 
     //-----------------------------------------------------------------------------------------
     // Simulation input mesh        
@@ -190,7 +190,7 @@ pub fn main() !void {
 
     time_start = Timestamp.now(io, .awake);
     
-    const images_out = try specraster.rasterAllFrames(page_alloc,
+    const images_out = try zraster.rasterAllFrames(page_alloc,
                                                       io, 
                                                       &camera,
                                                       &mesh_raster,

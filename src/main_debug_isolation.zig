@@ -14,8 +14,8 @@ const Camera = @import("zigraster/zig/camera.zig").Camera;
 const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
 const Rotation = @import("zigraster/zig/rotation.zig").Rotation;
 
-const specraster = @import("zigraster/zig/specraster.zig");
-const RasterConfig = specraster.RasterConfig;
+const zraster = @import("zigraster/zig/zraster.zig");
+const RasterConfig = zraster.RasterConfig;
 
 const iio = @import("zigraster/zig/imageio.zig");
 const uvio = @import("zigraster/zig/uvio.zig");
@@ -114,7 +114,7 @@ pub fn main() !void {
             .save_opts = &[_]iio.ImageSaveOpts{ .{ .format = .bmp, .bits = 8, .scaling = .auto } },
             .tile_size = 32,
         };
-        _ = try specraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, out_dir);
+        _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, out_dir);
         // Rename frame_0_field_0.bmp to texture_only.bmp manually if needed, 
         // but for now it's in debug dir.
     }
@@ -176,7 +176,7 @@ pub fn main() !void {
         };
         // This will overwrite frame_0_field_0.bmp if we are not careful. 
         // In this simple script it's fine, we'll see the second run results.
-        _ = try specraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, out_dir);
+        _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, out_dir);
     }
 
     print("Done debug isolation.\n", .{});

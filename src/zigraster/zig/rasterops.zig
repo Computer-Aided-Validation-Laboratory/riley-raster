@@ -195,7 +195,7 @@ pub fn worldToRasterSIMD(comptime N: usize,
     return coord_raster;
 }
 
-pub fn transformElemsRasterSIMD(comptime N: usize,
+pub fn elemsToRasterSIMD(comptime N: usize,
                                  comptime T: type,
                                  camera: *const Camera, 
                                  dim_elem: usize,  
@@ -212,7 +212,7 @@ pub fn transformElemsRasterSIMD(comptime N: usize,
     }
 }
 
-pub fn transformElemsClipPxLengSIMD(comptime N: usize,
+pub fn elemsToClipPxLengSIMD(comptime N: usize,
                              comptime T: type,
                              camera: *const Camera, 
                              dim_elem: usize,  
@@ -401,9 +401,9 @@ pub fn prepareSceneGeometry(
                 const dim_elem = 0;
 
                 if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
-                    try transformElemsRasterSIMD(N, f64, camera, dim_elem, &mesh.coords);
+                    try elemsToRasterSIMD(N, f64, camera, dim_elem, &mesh.coords);
                 } else {
-                    try transformElemsClipPxLengSIMD(
+                    try elemsToClipPxLengSIMD(
                         N, f64, camera, dim_elem, &mesh.coords
                     );
                 }

@@ -9,8 +9,8 @@ pub const MeshRaster = mr.MeshRaster;
 pub const Rotation = @import("../zigraster/zig/rotation.zig").Rotation;
 pub const Camera = @import("../zigraster/zig/camera.zig").Camera;
 pub const CameraOps = @import("../zigraster/zig/camera.zig").CameraOps;
-pub const specraster = @import("../zigraster/zig/specraster.zig");
-pub const RasterConfig = specraster.RasterConfig;
+pub const zraster = @import("../zigraster/zig/zraster.zig");
+pub const RasterConfig = zraster.RasterConfig;
 pub const iio = @import("../zigraster/zig/imageio.zig");
 pub const texops = @import("../zigraster/zig/textureops.zig");
 pub const uvio = @import("../zigraster/zig/uvio.zig");
@@ -67,7 +67,7 @@ pub fn renderAndSave(
     };
 
     const meshes = &[_]MeshRaster{mesh_raster};
-    _ = try specraster.rasterAllFrames(allocator, io, camera, meshes, config, out_dir);
+    _ = try zraster.rasterAllFrames(allocator, io, camera, meshes, config, out_dir);
 }
 
 pub fn runGenerationExt(
@@ -262,7 +262,7 @@ pub fn runMultimeshGenerationExt(
         defer out_dir.close(io);
 
         std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
-        _ = try specraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, out_dir);
+        _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, out_dir);
     }
 }
 
@@ -390,5 +390,5 @@ pub fn runMultimeshMixedGenerationExt(
     defer out_dir.close(io);
 
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
-    _ = try specraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, out_dir);
+    _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, out_dir);
 }

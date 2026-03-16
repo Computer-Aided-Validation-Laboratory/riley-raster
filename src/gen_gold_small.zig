@@ -32,7 +32,7 @@ pub fn main() !void {
         .quintic_lut_lerp
     };
     const pixel_num = [_]u32{ 16, 16 };
-    const config = gengold.specraster.RasterConfig{
+    const config = gengold.zraster.RasterConfig{
         .save_opt = .disk,
         .save_opts = &[_]gengold.iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },

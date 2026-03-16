@@ -33,8 +33,8 @@ const Camera = @import("zigraster/zig/camera.zig").Camera;
 const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
 
 const iio = @import("zigraster/zig/imageio.zig");
-const specraster = @import("zigraster/zig/specraster.zig");
-const RasterConfig = specraster.RasterConfig;
+const zraster = @import("zigraster/zig/zraster.zig");
+const RasterConfig = zraster.RasterConfig;
 
 pub fn main() !void {
     const print_break = [_]u8{'-'} ** 80;
@@ -168,7 +168,7 @@ pub fn main() !void {
     var images_arr = try NDArray(f64).initFlat(render_alloc,images_dims[0..]);
     @memset(images_arr.elems,0.0);
     
-    try specraster.rasterOneFrame(mesh_type,
+    try zraster.rasterOneFrame(mesh_type,
                                   page_alloc,
                                   io, 
                                   &camera,

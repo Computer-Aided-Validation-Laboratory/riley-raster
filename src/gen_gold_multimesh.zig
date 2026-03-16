@@ -9,7 +9,7 @@ pub fn main() !void {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const config = gengold.specraster.RasterConfig{
+    const config = gengold.zraster.RasterConfig{
         .save_opt = .disk,
         .save_opts = &[_]gengold.iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto },

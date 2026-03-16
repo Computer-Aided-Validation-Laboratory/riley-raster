@@ -24,7 +24,7 @@ pub fn main() !void {
     const out_dir_root = "out-mm0-edge";
     const data_dir = "data-edge";
 
-    const config = gengold.specraster.RasterConfig{
+    const config = gengold.zraster.RasterConfig{
         .save_opt = .disk,
         .save_opts = &[_]gengold.iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto },

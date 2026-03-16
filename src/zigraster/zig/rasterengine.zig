@@ -13,7 +13,7 @@ const perf = @import("perf.zig");
 const Report = perf.Report;
 const Timestamp = std.Io.Clock.Timestamp;
 
-const spec = @import("specraster.zig");
+const spec = @import("zraster.zig");
 const mr = @import("meshraster.zig");
 const MeshTransform = mr.MeshTransform;
 const MeshType = mr.MeshType;

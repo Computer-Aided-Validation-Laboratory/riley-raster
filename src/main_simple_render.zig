@@ -24,7 +24,7 @@ pub fn main() !void {
     const out_dir_root = "out-mm0-simple";
     const data_dir = "data-simple";
 
-    const config = gengold.specraster.RasterConfig{
+    const config = gengold.zraster.RasterConfig{
         .save_opt = .disk,
         .save_opts = &[_]gengold.iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto },

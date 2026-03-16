@@ -14,8 +14,8 @@ pub const Rotation = @import("../zigraster/zig/rotation.zig").Rotation;
 pub const Camera = @import("../zigraster/zig/camera.zig").Camera;
 pub const CameraOps = @import("../zigraster/zig/camera.zig").CameraOps;
 
-pub const specraster = @import("../zigraster/zig/specraster.zig");
-pub const RasterConfig = specraster.RasterConfig;
+pub const zraster = @import("../zigraster/zig/zraster.zig");
+pub const RasterConfig = zraster.RasterConfig;
 
 pub const iio = @import("../zigraster/zig/imageio.zig");
 pub const texops = @import("../zigraster/zig/textureops.zig");
@@ -226,7 +226,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                 .tile_size = 16 
             };
 
-            const result = (try specraster.rasterAllFrames(
+            const result = (try zraster.rasterAllFrames(
                 aa, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
             )) orelse return error.NoResult;
 
@@ -279,7 +279,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                     .tile_size = 16 
                 };
 
-                const result = (try specraster.rasterAllFrames(
+                const result = (try zraster.rasterAllFrames(
                     aa, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
                 )) orelse return error.NoResult;
 
@@ -367,7 +367,7 @@ pub fn runMultimeshTest(
             .tile_size = 32,
         };
 
-        const result = (try specraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, null)) 
+        const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, null)) 
             orelse return error.NoResult;
 
         const gold_dir = if (mode == .flat)
@@ -490,7 +490,7 @@ pub fn runMultimeshMixedTest(
         .tile_size = 32,
     };
 
-    const result = (try specraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, null)) 
+    const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, null)) 
         orelse return error.NoResult;
 
     const gold_dir = "gold-multimesh/allelem_allshade";
@@ -553,7 +553,7 @@ test "Flat Shader Scaling Options" {
         } }
     };
     
-    var result_auto_float = (try specraster.rasterAllFrames(
+    var result_auto_float = (try zraster.rasterAllFrames(
         allocator, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
     )).?;
     defer allocator.free(result_auto_float.elems);
@@ -567,7 +567,7 @@ test "Flat Shader Scaling Options" {
 
     // Test 2: Auto Scaling, bits = 8 (maps to 0 - 255)
     mesh_raster.shader.flat.bits = 8;
-    var result_auto_int = (try specraster.rasterAllFrames(
+    var result_auto_int = (try zraster.rasterAllFrames(
         allocator, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
     )).?;
     defer allocator.free(result_auto_int.elems);
@@ -580,7 +580,7 @@ test "Flat Shader Scaling Options" {
 
     // Test 3: Frac Scaling [0.4, 0.6], bits = 8
     mesh_raster.shader.flat.scaling = .{ .frac = .{ 0.4, 0.6 } };
-    var result_frac_int = (try specraster.rasterAllFrames(
+    var result_frac_int = (try zraster.rasterAllFrames(
         allocator, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
     )).?;
     defer allocator.free(result_frac_int.elems);
@@ -660,7 +660,7 @@ test "Tex Shader Scaling Options" {
         } }
     };
     
-    var result_auto_float = (try specraster.rasterAllFrames(
+    var result_auto_float = (try zraster.rasterAllFrames(
         allocator, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
     )).?;
     defer allocator.free(result_auto_float.elems);
@@ -671,7 +671,7 @@ test "Tex Shader Scaling Options" {
 
     // Test 2: Auto Scaling, bits = 8 (maps to 0 - 255)
     mesh_raster.shader.tex_u8.bits = 8;
-    var result_auto_int = (try specraster.rasterAllFrames(
+    var result_auto_int = (try zraster.rasterAllFrames(
         allocator, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
     )).?;
     defer allocator.free(result_auto_int.elems);
@@ -681,7 +681,7 @@ test "Tex Shader Scaling Options" {
 
     // Test 3: Frac Scaling [0.4, 0.6], bits = 8
     mesh_raster.shader.tex_u8.scaling = .{ .frac = .{ 0.4, 0.6 } };
-    var result_frac_int = (try specraster.rasterAllFrames(
+    var result_frac_int = (try zraster.rasterAllFrames(
         allocator, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
     )).?;
     defer allocator.free(result_frac_int.elems);
