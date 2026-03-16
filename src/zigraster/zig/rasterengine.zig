@@ -97,7 +97,10 @@ pub fn rasterScene(
             const target = rops.OverlapTarget{ .tile = tile, .overlap = ov };
             const rhull_ptr = if (ov.mesh_idx < raster_hulls.len) 
                 raster_hulls[ov.mesh_idx] else null;
-            const input = rops.MeshInput{ .coords = &mesh.coords, .hull = if (rhull_ptr) |*h| h else null };
+            const input = rops.MeshInput{ 
+                .coords = &mesh.coords, 
+                .hull = if (rhull_ptr) |*h| h else null,
+            };
             
             switch (mesh.mesh_type) {
                 inline else => |mesh_tag| {
@@ -209,18 +212,30 @@ pub fn RasterPass(
             const xi_min_f: f64 = @as(f64, @floatFromInt(target.overlap.bbox.x_min));
             const yi_min_f: f64 = @as(f64, @floatFromInt(target.overlap.bbox.y_min));
 
+            const domain = SubpxDomain{
+                .step = subpx_step,
+                .offset = subpx_offset,
+                .tile_size = subpx_tile_size,
+                .x_off = x_off,
+                .y_off = y_off,
+            };
+
+            const bounds = RasterBounds{
+                .start_x = scratch_start_x,
+                .end_x = scratch_end_x,
+                .start_y = scratch_start_y,
+                .end_y = scratch_end_y,
+                .xi_min_f = xi_min_f,
+                .yi_min_f = yi_min_f,
+            };
+
             if (Geometry.strategy == .incremental) {
                 return try rasterIncremental(
-                    report, ctx, target, subpx_tile_size, subpx_step, subpx_offset,
-                    scratch_start_x, scratch_end_x, scratch_start_y, scratch_end_y,
-                    xi_min_f, yi_min_f, nodes, shader, scratch,
+                    report, ctx, target, domain, bounds, nodes, shader, scratch,
                 );
             } else {
                 return try rasterPointwise(
-                    report, ctx, target, input, subpx_tile_size, subpx_step,
-                    subpx_offset, x_off, y_off, scratch_start_x, scratch_end_x,
-                    scratch_start_y, scratch_end_y, xi_min_f, yi_min_f, nodes, 
-                    shader, scratch,
+                    report, ctx, target, input, domain, bounds, nodes, shader, scratch,
                 );
             }
         }
@@ -229,15 +244,8 @@ pub fn RasterPass(
             comptime report: Report,
             ctx: rops.RasterContext(report),
             target: rops.OverlapTarget,
-            subpx_tile_size: usize,
-            subpx_step: f64,
-            subpx_offset: f64,
-            scratch_start_x: usize,
-            scratch_end_x: usize,
-            scratch_start_y: usize,
-            scratch_end_y: usize,
-            xi_min_f: f64,
-            yi_min_f: f64,
+            domain: SubpxDomain,
+            bounds: RasterBounds,
             nodes: Vec3OfSlices(f64),
             shader: *const ShaderData,
             scratch: ScratchBuffers,
@@ -256,18 +264,18 @@ pub fn RasterPass(
                                                  nodes.x[1], nodes.y[1],
                                                  nodes.x[2], nodes.y[2]);
             
-            const dweights_dx = Geometry.getDWeightsDx(nodes, inv_area, subpx_step);
-            const dweights_dy = Geometry.getDWeightsDy(nodes, inv_area, subpx_step);
+            const dweights_dx = Geometry.getDWeightsDx(nodes, inv_area, domain.step);
+            const dweights_dy = Geometry.getDWeightsDy(nodes, inv_area, domain.step);
 
-            const start_x = xi_min_f + subpx_offset;
-            const start_y = yi_min_f + subpx_offset;
+            const start_x = bounds.xi_min_f + domain.offset;
+            const start_y = bounds.yi_min_f + domain.offset;
             var weights_row = Geometry.getWeightsAt(nodes, start_x, start_y, inv_area);
 
-            for (scratch_start_y..scratch_end_y) |scratch_y| {
-                const row_offset = scratch_y * subpx_tile_size;
+            for (bounds.start_y..bounds.end_y) |scratch_y| {
+                const row_offset = scratch_y * domain.tile_size;
                 var weights = weights_row;
 
-                for (scratch_start_x..scratch_end_x) |scratch_x| {
+                for (bounds.start_x..bounds.end_x) |scratch_x| {
                     if (Geometry.isInElement(weights)) {
                         const inv_z = Geometry.calcInvZ(nodes, weights);
                         const index = row_offset + scratch_x;
@@ -278,8 +286,10 @@ pub fn RasterPass(
                             shaded_px += 1;
 
                             if (comptime report == .perf) {
-                                const global_subx = target.tile.x_px_min * sub_samp + scratch_x;
-                                const global_suby = target.tile.y_px_min * sub_samp + scratch_y;
+                                const global_subx = target.tile.x_px_min * sub_samp + 
+                                                    scratch_x;
+                                const global_suby = target.tile.y_px_min * sub_samp + 
+                                                    scratch_y;
                                 ctx.perf_ctx.recordPixel(global_subx, global_suby, 0);
                                 ctx.perf_ctx.recordPixelOccupancy(
                                     target.tile.x_px_min + scratch_x / sub_samp,
@@ -312,17 +322,8 @@ pub fn RasterPass(
             ctx: rops.RasterContext(report),
             target: rops.OverlapTarget,
             input: rops.MeshInput,
-            subpx_tile_size: usize,
-            subpx_step: f64,
-            subpx_offset: f64,
-            x_offset: f64,
-            y_offset: f64,
-            scratch_start_x: usize,
-            scratch_end_x: usize,
-            scratch_start_y: usize,
-            scratch_end_y: usize,
-            xi_min_f: f64,
-            yi_min_f: f64,
+            domain: SubpxDomain,
+            bounds: RasterBounds,
             nodes: Vec3OfSlices(f64),
             shader: *const ShaderData,
             scratch: ScratchBuffers,
@@ -355,12 +356,12 @@ pub fn RasterPass(
                 }
             }
 
-            var subpx_y: f64 = yi_min_f + subpx_offset;
-            for (scratch_start_y..scratch_end_y) |scratch_y| {
-                const row_offset = scratch_y * subpx_tile_size;
-                var subpx_x: f64 = xi_min_f + subpx_offset;
+            var subpx_y: f64 = bounds.yi_min_f + domain.offset;
+            for (bounds.start_y..bounds.end_y) |scratch_y| {
+                const row_offset = scratch_y * domain.tile_size;
+                var subpx_x: f64 = bounds.xi_min_f + domain.offset;
 
-                for (scratch_start_x..scratch_end_x) |scratch_x| {
+                for (bounds.start_x..bounds.end_x) |scratch_x| {
                     const global_subx = target.tile.x_px_min * sub_samp + scratch_x;
                     const global_suby = target.tile.y_px_min * sub_samp + scratch_y;
 
@@ -370,7 +371,7 @@ pub fn RasterPass(
                             ctx.perf_ctx.recordEarlyOut(global_subx, global_suby, in_tess);
                         }
                         if (!in_tess) {
-                            subpx_x += subpx_step;
+                            subpx_x += domain.step;
                             continue;
                         }
                     } else if (comptime report == .perf) {
@@ -378,7 +379,7 @@ pub fn RasterPass(
                     }
 
                     const result = Geometry.solveWeights(
-                        nodes, subpx_x, subpx_y, x_offset, y_offset, geometry_state,
+                        nodes, subpx_x, subpx_y, domain.x_off, domain.y_off, geometry_state,
                     );
 
                     if (result.weights) |weights| {
@@ -391,7 +392,9 @@ pub fn RasterPass(
                             shaded_px += 1;
 
                             if (comptime report == .perf) {
-                                ctx.perf_ctx.recordPixel(global_subx, global_suby, result.iters);
+                                ctx.perf_ctx.recordPixel(
+                                    global_subx, global_suby, result.iters,
+                                );
                                 ctx.perf_ctx.recordPixelOccupancy(
                                     target.tile.x_px_min + scratch_x / sub_samp,
                                     target.tile.y_px_min + scratch_y / sub_samp,
@@ -408,9 +411,9 @@ pub fn RasterPass(
                     } else if (comptime report == .perf) {
                         if (result.iters > 0) ctx.perf_ctx.recordSolverDiverged();
                     }
-                    subpx_x += subpx_step;
+                    subpx_x += domain.step;
                 }
-                subpx_y += subpx_step;
+                subpx_y += domain.step;
             }
             return shaded_px;
         }
