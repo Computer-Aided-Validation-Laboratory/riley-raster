@@ -286,14 +286,18 @@ fn rasterSceneInternal(
 
     const time_start_loop = Timestamp.now(io, .awake);
 
+    const ctx = rops.RasterContext(report){
+        .perf_ctx = pctx,
+        .camera = camera,
+        .frame_ind = frame_ind,
+        .tile_size = tile_size,
+    };
+
     try rasterengine.rasterScene(
         report,
-        pctx,
+        ctx,
         arena_alloc,
         io,
-        camera,
-        frame_ind,
-        tile_size,
         tiling,
         meshes,
         raster_hulls,

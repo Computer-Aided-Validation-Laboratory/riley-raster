@@ -138,6 +138,25 @@ pub const TilingOverlaps = struct {
     active_tiles: []ActiveTile,
 };
 
+pub fn RasterContext(comptime report: perf.Report) type {
+    return struct {
+        perf_ctx: perf.PerfContext(report),
+        camera: *const Camera,
+        frame_ind: usize,
+        tile_size: u16,
+    };
+}
+
+pub const OverlapTarget = struct {
+    tile: ActiveTile,
+    overlap: OverlapBBox,
+};
+
+pub const MeshInput = struct {
+    coords: *const NDArray(f64),
+    hull: ?*const NDArray(f64),
+};
+
 //---------------------------------------------------------------------------------------------
 // Tiling Raster: Helper Functions
 

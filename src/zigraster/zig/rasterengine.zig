@@ -23,14 +23,16 @@ const TexShader = mr.TexShader;
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
 
+const ScratchBuffers = struct {
+    inv_z: []f64,
+    image: *MatSlice(f64),
+};
+
 pub fn rasterScene(
     comptime report: Report,
-    perf_ctx: perf.PerfContext(report),
+    ctx: rops.RasterContext(report),
     allocator: std.mem.Allocator,
     io: std.Io,
-    camera: *const Camera,
-    frame_ind: usize,
-    tile_size: u16,
     tiling: rops.TilingOverlaps,
     meshes: []const MeshTransform,
     raster_hulls: []const ?NDArray(f64),
@@ -41,8 +43,8 @@ pub fn rasterScene(
 
     const fields_num = image_out_arr.dims[0];
     
-    const sub_samp: usize = @intCast(camera.sub_sample);
-    const subpx_tile_size: usize = @as(usize, @intCast(tile_size)) * sub_samp;
+    const sub_samp: usize = @intCast(ctx.camera.sub_sample);
+    const subpx_tile_size: usize = @as(usize, @intCast(ctx.tile_size)) * sub_samp;
     const subpx_tile_total: usize = subpx_tile_size * subpx_tile_size;
 
     const subpx_inv_z_scratch = try allocator.alloc(f64, subpx_tile_total);
@@ -55,6 +57,10 @@ pub fn rasterScene(
         subpx_tile_total,
         fields_num,
     );
+    const scratch = ScratchBuffers{
+        .inv_z = subpx_inv_z_scratch,
+        .image = &subpx_image_scratch,
+    };
 
     const subpx_field_avg = try allocator.alloc(f64, fields_num);
     defer allocator.free(subpx_field_avg);
@@ -71,10 +77,10 @@ pub fn rasterScene(
 
         for (overlaps) |ov| {
             const mesh = &meshes[ov.mesh_idx];
-
-            const rhull = if (ov.mesh_idx < raster_hulls.len) 
+            const target = rops.OverlapTarget{ .tile = tile, .overlap = ov };
+            const rhull_ptr = if (ov.mesh_idx < raster_hulls.len) 
                 raster_hulls[ov.mesh_idx] else null;
-            const rhull_ptr = if (rhull) |*h| h else null;
+            const input = rops.MeshInput{ .coords = &mesh.coords, .hull = if (rhull_ptr) |*h| h else null };
             
             switch (mesh.mesh_type) {
                 inline else => |mesh_tag| {
@@ -93,9 +99,7 @@ pub fn rasterScene(
                         .flat => |*shader| {
                             const SK = shadekerns.FlatKernel(N);
                             shaded_px += try RasterPass(GK, SK, FlatShader).render(
-                                report, perf_ctx, camera, frame_ind, ov.elem_idx, tile_size,
-                                tile, ov, &mesh.coords, shader, rhull_ptr,
-                                subpx_inv_z_scratch, &subpx_image_scratch
+                                report, ctx, target, input, shader, scratch,
                             );
                         },
                         .tex_u8 => |*shader| {
@@ -103,9 +107,7 @@ pub fn rasterScene(
                                 inline else => |itp_type| {
                                     const SK = shadekerns.TexKernel(N, u8, itp_type);
                                     shaded_px += try RasterPass(GK, SK, TexShader(u8)).render(
-                                        report, perf_ctx, camera, frame_ind, ov.elem_idx,
-                                        tile_size, tile, ov, &mesh.coords, shader, rhull_ptr,
-                                        subpx_inv_z_scratch, &subpx_image_scratch
+                                        report, ctx, target, input, shader, scratch,
                                     );
                                 }
                             }
@@ -115,9 +117,7 @@ pub fn rasterScene(
                                 inline else => |itp_type| {
                                     const SK = shadekerns.TexKernel(N, u16, itp_type);
                                     shaded_px += try RasterPass(GK, SK, TexShader(u16)).render(
-                                        report, perf_ctx, camera, frame_ind, ov.elem_idx,
-                                        tile_size, tile, ov, &mesh.coords, shader, rhull_ptr,
-                                        subpx_inv_z_scratch, &subpx_image_scratch,
+                                        report, ctx, target, input, shader, scratch,
                                     );
                                 }
                             }
@@ -140,11 +140,11 @@ pub fn rasterScene(
         if (comptime report == .perf) {
             const tile_end = Timestamp.now(io, .awake);
             const dur = tile_start.durationTo(tile_end).raw.nanoseconds;
-            const screen_px_x = @as(u16, @intCast(camera.pixels_num[0])); 
-            const tiles_x = (screen_px_x + tile_size - 1) / tile_size;
-            const spatial_idx = (tile.y_px_min / tile_size) * tiles_x 
-                                + (tile.x_px_min / tile_size);
-            perf_ctx.recordTile(spatial_idx, @intCast(dur), shaded_px, overlaps.len);
+            const screen_px_x = @as(u16, @intCast(ctx.camera.pixels_num[0])); 
+            const tiles_x = (screen_px_x + ctx.tile_size - 1) / ctx.tile_size;
+            const spatial_idx = (tile.y_px_min / ctx.tile_size) * tiles_x 
+                                + (tile.x_px_min / ctx.tile_size);
+            ctx.perf_ctx.recordTile(spatial_idx, @intCast(dur), shaded_px, overlaps.len);
         }
     }
 }
@@ -157,75 +157,61 @@ pub fn RasterPass(
     return struct {
         pub fn render(
             comptime report: Report,
-            perf_ctx: perf.PerfContext(report),
-            camera: *const Camera,
-            frame_ind: usize,
-            elem_ind: usize,
-            tile_size: u16,
-            tile: ActiveTile,
-            overlap: OverlapBBox,
-            elem_coord_arr: *const NDArray(f64),
+            ctx: rops.RasterContext(report),
+            target: rops.OverlapTarget,
+            input: rops.MeshInput,
             shader: *const ShaderData,
-            raster_hull: ?*const NDArray(f64),
-            subpx_inv_z_scratch: []f64,
-            subpx_image_scratch: *MatSlice(f64),
+            scratch: ScratchBuffers,
         ) !u64 {
-            const fields_num = subpx_image_scratch.cols_num;
+            const sub_samp: usize = @intCast(ctx.camera.sub_sample);
+            const subpx_tile_size = @as(usize, @intCast(ctx.tile_size)) * sub_samp;
 
-            const sub_samp: usize = @intCast(camera.sub_sample);
-            const subpx_tile_size = @as(usize, @intCast(tile_size)) * sub_samp;
-
-            const sub_samp_f: f64 = @as(f64, @floatFromInt(camera.sub_sample));
+            const sub_samp_f: f64 = @as(f64, @floatFromInt(ctx.camera.sub_sample));
             const subpx_step: f64 = 1.0 / sub_samp_f;
             const subpx_offset: f64 = 1.0 / (2.0 * sub_samp_f);
 
-            const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
-            const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
+            const x_off = 0.5 * @as(f64, @floatFromInt(ctx.camera.pixels_num[0]));
+            const y_off = 0.5 * @as(f64, @floatFromInt(ctx.camera.pixels_num[1]));
 
             const nodes = try rops.loadVec3SlicesFromElemArray(
                 Geometry.nodes_num,
                 f64,
-                elem_coord_arr,
-                overlap.elem_idx,
+                input.coords,
+                target.overlap.elem_idx,
             );
 
-            const scratch_start_x = sub_samp * (@as(usize, overlap.bbox.x_min) - tile.x_px_min);
-            const scratch_end_x = sub_samp * (@as(usize, overlap.bbox.x_max) - tile.x_px_min);
-            const scratch_start_y = sub_samp * (@as(usize, overlap.bbox.y_min) - tile.y_px_min);
-            const scratch_end_y = sub_samp * (@as(usize, overlap.bbox.y_max) - tile.y_px_min);
+            const scratch_start_x = sub_samp * (@as(usize, target.overlap.bbox.x_min) - 
+                                                target.tile.x_px_min);
+            const scratch_end_x = sub_samp * (@as(usize, target.overlap.bbox.x_max) - 
+                                              target.tile.x_px_min);
+            const scratch_start_y = sub_samp * (@as(usize, target.overlap.bbox.y_min) - 
+                                                target.tile.y_px_min);
+            const scratch_end_y = sub_samp * (@as(usize, target.overlap.bbox.y_max) - 
+                                              target.tile.y_px_min);
 
-            const xi_min_f: f64 = @as(f64, @floatFromInt(overlap.bbox.x_min));
-            const yi_min_f: f64 = @as(f64, @floatFromInt(overlap.bbox.y_min));
+            const xi_min_f: f64 = @as(f64, @floatFromInt(target.overlap.bbox.x_min));
+            const yi_min_f: f64 = @as(f64, @floatFromInt(target.overlap.bbox.y_min));
 
             if (Geometry.strategy == .incremental) {
                 return try rasterIncremental(
-                    report, perf_ctx, frame_ind, elem_ind, fields_num, fields_num,
-                    sub_samp, tile.x_px_min, tile.y_px_min, subpx_tile_size, subpx_step,
-                    subpx_offset, scratch_start_x, scratch_end_x, scratch_start_y,
-                    scratch_end_y, xi_min_f, yi_min_f, nodes, shader, subpx_inv_z_scratch,
-                    subpx_image_scratch,
+                    report, ctx, target, subpx_tile_size, subpx_step, subpx_offset,
+                    scratch_start_x, scratch_end_x, scratch_start_y, scratch_end_y,
+                    xi_min_f, yi_min_f, nodes, shader, scratch,
                 );
             } else {
                 return try rasterPointwise(
-                    report, perf_ctx, frame_ind, elem_ind, fields_num, fields_num,
-                    sub_samp, tile.x_px_min, tile.y_px_min, subpx_tile_size, subpx_step, 
-                    subpx_offset, x_off, y_off, scratch_start_x, scratch_end_x, 
-                    scratch_start_y, scratch_end_y, xi_min_f, yi_min_f, nodes, shader, 
-                    raster_hull, subpx_inv_z_scratch, subpx_image_scratch,
+                    report, ctx, target, input, subpx_tile_size, subpx_step,
+                    subpx_offset, x_off, y_off, scratch_start_x, scratch_end_x,
+                    scratch_start_y, scratch_end_y, xi_min_f, yi_min_f, nodes, 
+                    shader, scratch,
                 );
             }
         }
 
         fn rasterIncremental(
             comptime report: Report,
-            perf_ctx: perf.PerfContext(report),
-            frame_index: usize,
-            elem_ind: usize,
-            actual_fields: usize,
-            fields_num: usize,
-            sub_samp: usize,
-            tile_x_px_min: usize,
-            tile_y_px_min: usize,
+            ctx: rops.RasterContext(report),
+            target: rops.OverlapTarget,
             subpx_tile_size: usize,
             subpx_step: f64,
             subpx_offset: f64,
@@ -237,11 +223,12 @@ pub fn RasterPass(
             yi_min_f: f64,
             nodes: Vec3OfSlices(f64),
             shader: *const ShaderData,
-            subpx_inv_z_scratch: []f64,
-            subpx_image_scratch: *MatSlice(f64),
+            scratch: ScratchBuffers,
         ) !u64 {
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
+            const sub_samp: usize = @intCast(ctx.camera.sub_sample);
+            const fields_num = scratch.image.cols_num;
 
             var nodes_inv_z: [N]f64 = undefined;
             inline for (0..N) |node_index| {
@@ -268,27 +255,27 @@ pub fn RasterPass(
                         const inv_z = Geometry.calcInvZ(nodes, weights);
                         const index = row_offset + scratch_x;
 
-                        if (inv_z >= subpx_inv_z_scratch[index]) {
-                            subpx_inv_z_scratch[index] = inv_z;
+                        if (inv_z >= scratch.inv_z[index]) {
+                            scratch.inv_z[index] = inv_z;
                             const subpx_z = 1.0 / inv_z;
                             shaded_px += 1;
 
                             if (comptime report == .perf) {
-                                const global_subx = tile_x_px_min * sub_samp + scratch_x;
-                                const global_suby = tile_y_px_min * sub_samp + scratch_y;
-                                perf_ctx.recordPixel(global_subx, global_suby, 0);
-                                perf_ctx.recordPixelOccupancy(
-                                    tile_x_px_min + scratch_x / sub_samp,
-                                    tile_y_px_min + scratch_y / sub_samp,
+                                const global_subx = target.tile.x_px_min * sub_samp + scratch_x;
+                                const global_suby = target.tile.y_px_min * sub_samp + scratch_y;
+                                ctx.perf_ctx.recordPixel(global_subx, global_suby, 0);
+                                ctx.perf_ctx.recordPixelOccupancy(
+                                    target.tile.x_px_min + scratch_x / sub_samp,
+                                    target.tile.y_px_min + scratch_y / sub_samp,
                                 );
                             }
 
                             ShaderKernel.shade(
-                                Geometry.coord_space, frame_index, elem_ind, 
-                                actual_fields, fields_num, weights, nodes_inv_z, subpx_z,
-                                shader, index, subpx_image_scratch, perf_ctx, 
-                                tile_x_px_min * sub_samp + scratch_x,
-                                tile_y_px_min * sub_samp + scratch_y,
+                                Geometry.coord_space, ctx.frame_ind, target.overlap.elem_idx, 
+                                fields_num, fields_num, weights, nodes_inv_z, subpx_z,
+                                shader, index, scratch.image, ctx.perf_ctx, 
+                                target.tile.x_px_min * sub_samp + scratch_x,
+                                target.tile.y_px_min * sub_samp + scratch_y,
                             );
                         }
                     }
@@ -305,14 +292,9 @@ pub fn RasterPass(
 
         fn rasterPointwise(
             comptime report: Report,
-            perf_ctx: perf.PerfContext(report),
-            frame_index: usize,
-            elem_ind: usize,
-            actual_fields: usize,
-            fields_num: usize,
-            sub_samp: usize,
-            tile_x_px_min: usize,
-            tile_y_px_min: usize,
+            ctx: rops.RasterContext(report),
+            target: rops.OverlapTarget,
+            input: rops.MeshInput,
             subpx_tile_size: usize,
             subpx_step: f64,
             subpx_offset: f64,
@@ -326,12 +308,12 @@ pub fn RasterPass(
             yi_min_f: f64,
             nodes: Vec3OfSlices(f64),
             shader: *const ShaderData,
-            raster_hull: ?*const NDArray(f64),
-            subpx_inv_z_scratch: []f64,
-            subpx_image_scratch: *MatSlice(f64),
+            scratch: ScratchBuffers,
         ) !u64 {
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
+            const sub_samp: usize = @intCast(ctx.camera.sub_sample);
+            const fields_num = scratch.image.cols_num;
 
             var nodes_inv_z: [N]f64 = undefined;
             inline for (0..N) |nn| {
@@ -349,9 +331,9 @@ pub fn RasterPass(
             var element_tess: hull.Tessellation(NT) = undefined;
 
             if (comptime Geometry.has_hull) {
-                if (raster_hull) |rh| {
-                    const hx = rh.getSlice(&[_]usize{ elem_ind, 0, 0 }, 1);
-                    const hy = rh.getSlice(&[_]usize{ elem_ind, 1, 0 }, 1);
+                if (input.hull) |rh| {
+                    const hx = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 0, 0 }, 1);
+                    const hy = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 1, 0 }, 1);
                     element_tess = hull.getTessellation(N, hx, hy);
                 }
             }
@@ -362,20 +344,20 @@ pub fn RasterPass(
                 var subpx_x: f64 = xi_min_f + subpx_offset;
 
                 for (scratch_start_x..scratch_end_x) |scratch_x| {
-                    const global_subx = tile_x_px_min * sub_samp + scratch_x;
-                    const global_suby = tile_y_px_min * sub_samp + scratch_y;
+                    const global_subx = target.tile.x_px_min * sub_samp + scratch_x;
+                    const global_suby = target.tile.y_px_min * sub_samp + scratch_y;
 
                     if (comptime Geometry.has_hull) {
                         const in_tess = element_tess.isIn(subpx_x, subpx_y);
                         if (comptime report == .perf) {
-                            perf_ctx.recordEarlyOut(global_subx, global_suby, in_tess);
+                            ctx.perf_ctx.recordEarlyOut(global_subx, global_suby, in_tess);
                         }
                         if (!in_tess) {
                             subpx_x += subpx_step;
                             continue;
                         }
                     } else if (comptime report == .perf) {
-                        perf_ctx.recordEarlyOut(global_subx, global_suby, true);
+                        ctx.perf_ctx.recordEarlyOut(global_subx, global_suby, true);
                     }
 
                     const result = Geometry.solveWeights(
@@ -386,28 +368,28 @@ pub fn RasterPass(
                         const inv_z = Geometry.calcInvZ(nodes, weights);
                         const index = row_offset + scratch_x;
 
-                        if (inv_z >= subpx_inv_z_scratch[index]) {
-                            subpx_inv_z_scratch[index] = inv_z;
+                        if (inv_z >= scratch.inv_z[index]) {
+                            scratch.inv_z[index] = inv_z;
                             const subpx_z = 1.0 / inv_z;
                             shaded_px += 1;
 
                             if (comptime report == .perf) {
-                                perf_ctx.recordPixel(global_subx, global_suby, result.iters);
-                                perf_ctx.recordPixelOccupancy(
-                                    tile_x_px_min + scratch_x / sub_samp,
-                                    tile_y_px_min + scratch_y / sub_samp,
+                                ctx.perf_ctx.recordPixel(global_subx, global_suby, result.iters);
+                                ctx.perf_ctx.recordPixelOccupancy(
+                                    target.tile.x_px_min + scratch_x / sub_samp,
+                                    target.tile.y_px_min + scratch_y / sub_samp,
                                 );
                             }
 
                             ShaderKernel.shade(
-                                Geometry.coord_space, frame_index, elem_ind, 
-                                actual_fields, fields_num, weights, nodes_inv_z, subpx_z,
-                                shader, index, subpx_image_scratch, perf_ctx, global_subx,
+                                Geometry.coord_space, ctx.frame_ind, target.overlap.elem_idx, 
+                                fields_num, fields_num, weights, nodes_inv_z, subpx_z,
+                                shader, index, scratch.image, ctx.perf_ctx, global_subx,
                                 global_suby,
                             );
                         }
                     } else if (comptime report == .perf) {
-                        if (result.iters > 0) perf_ctx.recordSolverDiverged();
+                        if (result.iters > 0) ctx.perf_ctx.recordSolverDiverged();
                     }
                     subpx_x += subpx_step;
                 }
