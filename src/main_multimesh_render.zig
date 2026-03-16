@@ -1,6 +1,7 @@
 const std = @import("std");
 const print = std.debug.print;
 
+const MatSlice = @import("zigraster/zig/matslice.zig").MatSlice;
 const meshio = @import("zigraster/zig/meshio.zig");
 const SimData = meshio.SimData;
 
@@ -17,10 +18,12 @@ const specraster = @import("zigraster/zig/specraster.zig");
 const RasterConfig = specraster.RasterConfig;
 
 const iio = @import("zigraster/zig/imageio.zig");
+const uvio = @import("zigraster/zig/uvio.zig");
 
 pub fn main() !void {
     const print_break = "--------------------------------------------------------------------------------";
-    print("{s}\nMulti-Mesh Software Rasteriser Test\n{s}\n", .{ print_break, print_break });    
+    print("{s}\nMulti-Mesh Mixed Shader Test (Flat & Texture)\n{s}\n", 
+        .{ print_break, print_break });    
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
@@ -31,7 +34,7 @@ pub fn main() !void {
 
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
-    const arena_alloc = arena.allocator();
+    const aa = arena.allocator();
 
     const dir_paths = [_][]const u8{
         "data-simple/tri3_twoelems/",
@@ -49,68 +52,83 @@ pub fn main() !void {
         .quad9,
     };
 
-    // Load Multi SimData
-    print("Loading multi-mesh sim data...\n", .{});
-    const sim_datas = try meshio.loadMultiSimData(arena_alloc, io, &dir_paths, .{});
+    // 1. Load SimData and Global Texture
+    print("Loading simulation data and texture...\n", .{});
+    const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
+    const texture = try iio.loadImage(aa, io, "texture/speckle-simple.tiff", .tiff, u8, 1);
 
-    //-----------------------------------------------------------------------------------------
-    // Create Multi MeshRaster (Flat Shading)
-    print("Creating multi-mesh rasters (Flat Shading)...\n", .{});
-    const mesh_rasters = try mr.meshRasterFromSimDataSlice(
-        arena_alloc, 
-        io, 
-        sim_datas, 
-        &mesh_types, 
-        .flat, 
-        null, 
-        null,
-        null
-    );
-    // Note: in a real scenario we'd need to deinit mesh_rasters properly if they allocated 
-    // internal shader data like textures/uvs.
+    // 2. Construct 10 MeshRasters (Row 1: Flat, Row 2: Texture)
+    var mesh_rasters = try aa.alloc(MeshRaster, 10);
+    
+    // Top Row (0-4): Flat Shading
+    for (0..5) |ii| {
+        // Duplicate coords to ensure independent translation
+        var coords_dup = try MatSlice(f64).initAlloc(
+            aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num
+        );
+        @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
-    // Arrange meshes in a grid
-    print("Arranging meshes in a grid...\n", .{});
-    mr.arrangeMeshSlice(mesh_rasters, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
-
-    print("Successfully loaded and arranged {d} meshes.\n", .{mesh_rasters.len});
-    for (mesh_rasters, 0..) |m, ii| {
-        print("Mesh {d}: type={s}, elems={d}, nodes_per_elem={d}\n", .{
-            ii, @tagName(m.mesh_type), m.coords.mat.rows_num, m.connect.getNodesPerElem(),
-        });
+        mesh_rasters[ii] = MeshRaster{
+            .mesh_type = mesh_types[ii],
+            .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+            .connect = sim_datas[ii].connect,
+            .disp = sim_datas[ii].field,
+            .shader = .{ .flat = .{
+                .field = sim_datas[ii].field.?,
+                .bits = 8,
+                .scaling = .auto,
+                .scale_over = .within_frames,
+            }},
+        };
     }
 
-    //-----------------------------------------------------------------------------------------
-    // Set up camera to view all meshes
-    const pixel_num = [_]u32{ 1200, 800 };
+    // Bottom Row (5-9): Texture Shading
+    for (0..5) |ii| {
+        const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[ii]});
+        const uvs = try uvio.loadUVMap(aa, io, uv_path);
+        
+        // Duplicate coords to ensure independent translation
+        var coords_dup = try MatSlice(f64).initAlloc(
+            aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num
+        );
+        @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
+
+        mesh_rasters[ii + 5] = MeshRaster{
+            .mesh_type = mesh_types[ii],
+            .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+            .connect = sim_datas[ii].connect,
+            .disp = sim_datas[ii].field,
+            .shader = .{ .tex_u8 = .{
+                .uvs = uvs.array,
+                .texture = texture,
+                .interp_type = .cubic_lut_lerp,
+                .bits = 8,
+                .scaling = .none,
+            }},
+        };
+    }
+
+    // 3. Arrange in a 5x2 grid
+    // grid_dims are {cols, rows, layers}
+    print("Arranging meshes in a 5x2 grid...\n", .{});
+    mr.arrangeMeshSlice(mesh_rasters, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+
+    // 4. Setup Camera
+    const pixel_num = [_]u32{ 1600, 800 };
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
     const rot = Rotation.init(0, 0, 0);
-    const fov_scale_factor: f64 = 1.1;
+    const fov_scale_factor: f64 = 1.2;
     const subsample: u8 = 2;
 
     const roi_pos = CameraOps.roiCentOverMeshes(mesh_rasters);
     const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
-        mesh_rasters, 
-        pixel_num, 
-        pixel_size, 
-        focal_leng, 
-        rot, 
-        fov_scale_factor
+        mesh_rasters, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
     );
 
-    const camera = Camera.init(
-        pixel_num, 
-        pixel_size, 
-        cam_pos, 
-        rot, 
-        roi_pos, 
-        focal_leng, 
-        subsample
-    );
+    const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, subsample);
 
-    //-----------------------------------------------------------------------------------------
-    // Output setup
+    // 5. Output Setup
     const out_dir_name = "out-multimesh";
     const cwd = std.Io.Dir.cwd();
     cwd.createDir(io, out_dir_name, .default_dir) catch |err| {
@@ -130,27 +148,20 @@ pub fn main() !void {
         .perf_opts = .{
             .formats = &[_]iio.ImageSaveOpts{
                 .{ .format = .bmp, .bits = 8, .scaling = .auto },
-                .{ .format = .csv, .bits = null, .scaling = .none },
             },
             .save_iteration_map = true,
-            .save_tile_timing_map = true,
-            .save_tile_density_map = true,
-            .save_tile_occupancy_map = true,
             .save_depth_map = true,
-            .save_earlyout_map = true,
-            .save_pixel_occupancy_map = true,
         },
     };
 
-    //-----------------------------------------------------------------------------------------
-    // Render all frames
+    // 6. Render
+    print("Rendering scene with {d} meshes...\n", .{mesh_rasters.len});
     const time_start = std.Io.Clock.Timestamp.now(io, .awake);
-    _ = try specraster.rasterAllFrames(arena_alloc, io, &camera, mesh_rasters, config, out_dir);
+    _ = try specraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, out_dir);
     const time_end = std.Io.Clock.Timestamp.now(io, .awake);
 
     const total_time_ms = @as(f64, 
         @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
     print("\nTotal scene rendering time: {d:.3} ms\n", .{total_time_ms});
-
-    print("{s}\nReady for multimesh refactor.\n{s}\n", .{print_break, print_break});
+    print("{s}\nDone.\n{s}\n", .{print_break, print_break});
 }

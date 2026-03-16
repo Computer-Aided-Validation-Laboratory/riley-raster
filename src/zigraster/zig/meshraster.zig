@@ -312,7 +312,7 @@ pub fn meshRasterFromSimDataSlice(allocator: std.mem.Allocator,
     return mesh_rasters;
 }
 
-fn findAlignedCentroid(coords: *const Coords) struct {
+pub fn findAlignedCentroid(coords: *const Coords) struct {
     centroid: [3]f64,
     extent: [3]f64,
 } {

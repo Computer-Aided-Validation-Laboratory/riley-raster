@@ -90,13 +90,13 @@ pub fn TexKernel(comptime N: usize, comptime T: type, comptime interp_type: Inte
             }
             _ = frame_index;
             _ = actual_fields;
-            _ = fields_num;
             if (comptime coord_space == CoordSpace.clip_px_leng) {
                 shaderops.fillTex(
                     N,
                     T,
                     interp_type,
                     element_index,
+                    fields_num,
                     weights,
                     shader,
                     index,
@@ -108,6 +108,7 @@ pub fn TexKernel(comptime N: usize, comptime T: type, comptime interp_type: Inte
                     T,
                     interp_type,
                     element_index,
+                    fields_num,
                     weights,
                     nodes_inv_z,
                     sub_pixel_z,

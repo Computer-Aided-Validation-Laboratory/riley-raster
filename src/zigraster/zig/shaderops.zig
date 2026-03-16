@@ -102,6 +102,7 @@ pub inline fn fillTex(
     comptime TexT: type,
     comptime interp_type: InterpType,
     elem_ind: usize,
+    fields_num: usize,
     weights: [N]f64,
     sh: *const TexShader(TexT),
     idx: usize,
@@ -124,7 +125,7 @@ pub inline fn fillTex(
         u_at,
         v_at,
     );
-    spx_image_scratch.elems[idx] = sampled * sh.scale_mul + sh.scale_add;
+    spx_image_scratch.elems[idx * fields_num] = sampled * sh.scale_mul + sh.scale_add;
 }
 
 pub inline fn fillTexPerspective(
@@ -132,6 +133,7 @@ pub inline fn fillTexPerspective(
     comptime TexT: type,
     comptime interp_type: InterpType,
     elem_ind: usize,
+    fields_num: usize,
     weights: [N]f64,
     nodes_inv_z: [N]f64,
     spx_z: f64,
@@ -157,5 +159,5 @@ pub inline fn fillTexPerspective(
         u_at * spx_z,
         v_at * spx_z,
     );
-    spx_image_scratch.elems[idx] = sampled * sh.scale_mul + sh.scale_add;
+    spx_image_scratch.elems[idx * fields_num] = sampled * sh.scale_mul + sh.scale_add;
 }
