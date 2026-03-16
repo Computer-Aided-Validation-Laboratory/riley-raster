@@ -23,28 +23,16 @@ pub fn FlatKernel(comptime N: usize) type {
             if (comptime coord_space == CoordSpace.clip_px_leng) {
                 shaderops.fillFlat(
                     N,
-                    ctx.frame_index,
-                    ctx.elem_index,
-                    ctx.actual_fields,
-                    ctx.fields_num,
-                    interp.weights,
+                    ctx,
+                    interp,
                     shader,
-                    ctx.idx,
-                    ctx.spx_image_scratch,
                 );
             } else {
                 shaderops.fillFlatPerspective(
                     N,
-                    ctx.frame_index,
-                    ctx.elem_index,
-                    ctx.actual_fields,
-                    ctx.fields_num,
-                    interp.weights,
-                    interp.nodes_inv_z,
-                    interp.sub_pixel_z,
+                    ctx,
+                    interp,
                     shader,
-                    ctx.idx,
-                    ctx.spx_image_scratch,
                 );
             }           
         }
@@ -70,26 +58,18 @@ pub fn TexKernel(comptime N: usize, comptime T: type, comptime interp_type: Inte
                     N,
                     T,
                     interp_type,
-                    ctx.elem_index,
-                    ctx.fields_num,
-                    interp.weights,
+                    ctx,
+                    interp,
                     shader,
-                    ctx.idx,
-                    ctx.spx_image_scratch,
                 );
             } else {
                 shaderops.fillTexPerspective(
                     N,
                     T,
                     interp_type,
-                    ctx.elem_index,
-                    ctx.fields_num,
-                    interp.weights,
-                    interp.nodes_inv_z,
-                    interp.sub_pixel_z,
+                    ctx,
+                    interp,
                     shader,
-                    ctx.idx,
-                    ctx.spx_image_scratch,
                 );
             }
         }
