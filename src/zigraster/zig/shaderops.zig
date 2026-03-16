@@ -31,6 +31,25 @@ pub fn TexShader(comptime T: type) type {
     };
 }
 
+pub const ShadeContext = struct {
+    frame_index: usize,
+    elem_index: usize,
+    fields_num: usize,
+    actual_fields: usize,
+    idx: usize,
+    spx_image_scratch: *MatSlice(f64),
+    global_subx: usize,
+    global_suby: usize,
+};
+
+pub fn InterpData(comptime N: usize) type {
+    return struct {
+        weights: [N]f64,
+        nodes_inv_z: [N]f64,
+        sub_pixel_z: f64,
+    };
+}
+
 pub const Shader = union(enum) {
     flat: FlatShader,
     tex_u8: TexShader(u8),

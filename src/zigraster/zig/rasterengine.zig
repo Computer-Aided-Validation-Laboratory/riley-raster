@@ -284,11 +284,12 @@ pub fn RasterPass(
                             const subpx_z = 1.0 / inv_z;
                             shaded_px += 1;
 
+                            const global_subx = target.tile.x_px_min * sub_samp + 
+                                                scratch_x;
+                            const global_suby = target.tile.y_px_min * sub_samp + 
+                                                scratch_y;
+
                             if (comptime report == .perf) {
-                                const global_subx = target.tile.x_px_min * sub_samp + 
-                                                    scratch_x;
-                                const global_suby = target.tile.y_px_min * sub_samp + 
-                                                    scratch_y;
                                 ctx.perf_ctx.recordPixel(global_subx, global_suby, 0);
                                 ctx.perf_ctx.recordPixelOccupancy(
                                     target.tile.x_px_min + scratch_x / sub_samp,
@@ -297,11 +298,24 @@ pub fn RasterPass(
                             }
 
                             ShaderKernel.shade(
-                                Geometry.coord_space, ctx.frame_ind, target.overlap.elem_idx, 
-                                fields_num, fields_num, weights, nodes_inv_z, subpx_z,
-                                shader, index, scratch.image, ctx.perf_ctx, 
-                                target.tile.x_px_min * sub_samp + scratch_x,
-                                target.tile.y_px_min * sub_samp + scratch_y,
+                                Geometry.coord_space,
+                                .{
+                                    .frame_index = ctx.frame_ind,
+                                    .elem_index = target.overlap.elem_idx,
+                                    .fields_num = fields_num,
+                                    .actual_fields = fields_num,
+                                    .idx = index,
+                                    .spx_image_scratch = scratch.image,
+                                    .global_subx = global_subx,
+                                    .global_suby = global_suby,
+                                },
+                                .{
+                                    .weights = weights,
+                                    .nodes_inv_z = nodes_inv_z,
+                                    .sub_pixel_z = subpx_z,
+                                },
+                                shader,
+                                ctx.perf_ctx,
                             );
                         }
                     }
@@ -401,10 +415,24 @@ pub fn RasterPass(
                             }
 
                             ShaderKernel.shade(
-                                Geometry.coord_space, ctx.frame_ind, target.overlap.elem_idx, 
-                                fields_num, fields_num, weights, nodes_inv_z, subpx_z,
-                                shader, index, scratch.image, ctx.perf_ctx, global_subx,
-                                global_suby,
+                                Geometry.coord_space,
+                                .{
+                                    .frame_index = ctx.frame_ind,
+                                    .elem_index = target.overlap.elem_idx,
+                                    .fields_num = fields_num,
+                                    .actual_fields = fields_num,
+                                    .idx = index,
+                                    .spx_image_scratch = scratch.image,
+                                    .global_subx = global_subx,
+                                    .global_suby = global_suby,
+                                },
+                                .{
+                                    .weights = weights,
+                                    .nodes_inv_z = nodes_inv_z,
+                                    .sub_pixel_z = subpx_z,
+                                },
+                                shader,
+                                ctx.perf_ctx,
                             );
                         }
                     } else if (comptime report == .perf) {
