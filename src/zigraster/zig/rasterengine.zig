@@ -36,17 +36,14 @@ pub fn rasterScene(
     raster_hulls: []const ?NDArray(f64),
     image_out_arr: *NDArray(f64),
 ) !void {
+
     @setFloatMode(.optimized);
 
     const fields_num = image_out_arr.dims[0];
-    const screen_px_x = @as(u16, @intCast(camera.pixels_num[0]));
-    const screen_px_y = @as(u16, @intCast(camera.pixels_num[1]));
-
+    
     const sub_samp: usize = @intCast(camera.sub_sample);
     const subpx_tile_size: usize = @as(usize, @intCast(tile_size)) * sub_samp;
     const subpx_tile_total: usize = subpx_tile_size * subpx_tile_size;
-
-    const tiles_x = (screen_px_x + tile_size - 1) / tile_size;
 
     const subpx_inv_z_scratch = try allocator.alloc(f64, subpx_tile_total);
     defer allocator.free(subpx_inv_z_scratch);
@@ -69,16 +66,19 @@ pub fn rasterScene(
         @memset(subpx_inv_z_scratch, 0.0);
         @memset(subpx_image_scratch.elems, 0.0);
 
-        const overlaps = overlap_mms[tile.overlap_start .. tile.overlap_start + tile.overlap_count];
+        const overlaps = overlap_mms[tile.overlap_start .. 
+                                     tile.overlap_start + tile.overlap_count];
 
         for (overlaps) |ov| {
             const mesh = &meshes[ov.mesh_idx];
-            const mt = mesh.mesh_type;
-            const rh = if (ov.mesh_idx < raster_hulls.len) raster_hulls[ov.mesh_idx] else null;
 
-            switch (mt) {
-                inline else => |m_tag| {
-                    const GK = comptime switch (m_tag) {
+            const rhull = if (ov.mesh_idx < raster_hulls.len) 
+                raster_hulls[ov.mesh_idx] else null;
+            const rhull_ptr = if (rhull) |*h| h else null;
+            
+            switch (mesh.mesh_type) {
+                inline else => |mesh_tag| {
+                    const GK = comptime switch (mesh_tag) {
                         .tri3 => geomkerns.Tri3Kernel(),
                         .tri3opt => geomkerns.Tri3OptKernel(),
                         .tri6 => geomkerns.Tri6Kernel(),
@@ -90,34 +90,34 @@ pub fn rasterScene(
                     const N = GK.nodes_num;
 
                     switch (mesh.shader) {
-                        .flat => |*sh| {
+                        .flat => |*shader| {
                             const SK = shadekerns.FlatKernel(N);
                             shaded_px += try RasterPass(GK, SK, FlatShader).render(
-                                report, perf_ctx, camera, frame_ind, ov.elem_idx, tile_size, tile, ov, &mesh.coords, sh, 
-                                if (rh) |*h| h else null,
+                                report, perf_ctx, camera, frame_ind, ov.elem_idx, tile_size,
+                                tile, ov, &mesh.coords, shader, rhull_ptr,
                                 subpx_inv_z_scratch, &subpx_image_scratch
                             );
                         },
-                        .tex_u8 => |*sh| {
-                            switch (sh.interp_type) {
-                                inline else => |it| {
-                                    const SK = shadekerns.TexKernel(N, u8, it);
+                        .tex_u8 => |*shader| {
+                            switch (shader.interp_type) {
+                                inline else => |itp_type| {
+                                    const SK = shadekerns.TexKernel(N, u8, itp_type);
                                     shaded_px += try RasterPass(GK, SK, TexShader(u8)).render(
-                                        report, perf_ctx, camera, frame_ind, ov.elem_idx, tile_size, tile, ov, &mesh.coords, sh, 
-                                        if (rh) |*h| h else null,
+                                        report, perf_ctx, camera, frame_ind, ov.elem_idx,
+                                        tile_size, tile, ov, &mesh.coords, shader, rhull_ptr,
                                         subpx_inv_z_scratch, &subpx_image_scratch
                                     );
                                 }
                             }
                         },
-                        .tex_u16 => |*sh| {
-                            switch (sh.interp_type) {
-                                inline else => |it| {
-                                    const SK = shadekerns.TexKernel(N, u16, it);
+                        .tex_u16 => |*shader| {
+                            switch (shader.interp_type) {
+                                inline else => |itp_type| {
+                                    const SK = shadekerns.TexKernel(N, u16, itp_type);
                                     shaded_px += try RasterPass(GK, SK, TexShader(u16)).render(
-                                        report, perf_ctx, camera, frame_ind, ov.elem_idx, tile_size, tile, ov, &mesh.coords, sh, 
-                                        if (rh) |*h| h else null,
-                                        subpx_inv_z_scratch, &subpx_image_scratch
+                                        report, perf_ctx, camera, frame_ind, ov.elem_idx,
+                                        tile_size, tile, ov, &mesh.coords, shader, rhull_ptr,
+                                        subpx_inv_z_scratch, &subpx_image_scratch,
                                     );
                                 }
                             }
@@ -129,9 +129,6 @@ pub fn rasterScene(
 
         rops.averageScratch(
             tile,
-            tile_size,
-            screen_px_x,
-            screen_px_y,
             @intCast(sub_samp),
             subpx_tile_size,
             fields_num,
@@ -143,7 +140,10 @@ pub fn rasterScene(
         if (comptime report == .perf) {
             const tile_end = Timestamp.now(io, .awake);
             const dur = tile_start.durationTo(tile_end).raw.nanoseconds;
-            const spatial_idx = (tile.y_px_min / tile_size) * tiles_x + (tile.x_px_min / tile_size);
+            const screen_px_x = @as(u16, @intCast(camera.pixels_num[0])); 
+            const tiles_x = (screen_px_x + tile_size - 1) / tile_size;
+            const spatial_idx = (tile.y_px_min / tile_size) * tiles_x 
+                                + (tile.x_px_min / tile_size);
             perf_ctx.recordTile(spatial_idx, @intCast(dur), shaded_px, overlaps.len);
         }
     }
@@ -160,7 +160,7 @@ pub fn RasterPass(
             perf_ctx: perf.PerfContext(report),
             camera: *const Camera,
             frame_ind: usize,
-            element_index: usize,
+            elem_ind: usize,
             tile_size: u16,
             tile: ActiveTile,
             overlap: OverlapMM,
@@ -199,18 +199,19 @@ pub fn RasterPass(
 
             if (Geometry.strategy == .incremental) {
                 return try rasterIncremental(
-                    report, perf_ctx, frame_ind, element_index, fields_num, fields_num, sub_samp,
-                    tile.x_px_min, tile.y_px_min, subpx_tile_size, subpx_step, subpx_offset,
-                    scratch_start_x, scratch_end_x, scratch_start_y, scratch_end_y,
-                    xi_min_f, yi_min_f, nodes, shader, subpx_inv_z_scratch, subpx_image_scratch
+                    report, perf_ctx, frame_ind, elem_ind, fields_num, fields_num,
+                    sub_samp, tile.x_px_min, tile.y_px_min, subpx_tile_size, subpx_step,
+                    subpx_offset, scratch_start_x, scratch_end_x, scratch_start_y,
+                    scratch_end_y, xi_min_f, yi_min_f, nodes, shader, subpx_inv_z_scratch,
+                    subpx_image_scratch,
                 );
             } else {
                 return try rasterPointwise(
-                    report, perf_ctx, frame_ind, element_index, fields_num, fields_num, sub_samp,
-                    tile.x_px_min, tile.y_px_min, subpx_tile_size, subpx_step, subpx_offset,
-                    x_off, y_off, scratch_start_x, scratch_end_x, scratch_start_y, scratch_end_y,
-                    xi_min_f, yi_min_f, nodes, shader, raster_hull,
-                    subpx_inv_z_scratch, subpx_image_scratch
+                    report, perf_ctx, frame_ind, elem_ind, fields_num, fields_num,
+                    sub_samp, tile.x_px_min, tile.y_px_min, subpx_tile_size, subpx_step, 
+                    subpx_offset, x_off, y_off, scratch_start_x, scratch_end_x, 
+                    scratch_start_y, scratch_end_y, xi_min_f, yi_min_f, nodes, shader, 
+                    raster_hull, subpx_inv_z_scratch, subpx_image_scratch,
                 );
             }
         }
@@ -219,7 +220,7 @@ pub fn RasterPass(
             comptime report: Report,
             perf_ctx: perf.PerfContext(report),
             frame_index: usize,
-            element_index: usize,
+            elem_ind: usize,
             actual_fields: usize,
             fields_num: usize,
             sub_samp: usize,
@@ -283,9 +284,9 @@ pub fn RasterPass(
                             }
 
                             ShaderKernel.shade(
-                                Geometry.coord_space, frame_index, element_index, actual_fields,
-                                fields_num, weights, nodes_inv_z, subpx_z, shader, index,
-                                subpx_image_scratch, perf_ctx, 
+                                Geometry.coord_space, frame_index, elem_ind, 
+                                actual_fields, fields_num, weights, nodes_inv_z, subpx_z,
+                                shader, index, subpx_image_scratch, perf_ctx, 
                                 tile_x_px_min * sub_samp + scratch_x,
                                 tile_y_px_min * sub_samp + scratch_y,
                             );
@@ -306,7 +307,7 @@ pub fn RasterPass(
             comptime report: Report,
             perf_ctx: perf.PerfContext(report),
             frame_index: usize,
-            element_index: usize,
+            elem_ind: usize,
             actual_fields: usize,
             fields_num: usize,
             sub_samp: usize,
@@ -349,8 +350,8 @@ pub fn RasterPass(
 
             if (comptime Geometry.has_hull) {
                 if (raster_hull) |rh| {
-                    const hx = rh.getSlice(&[_]usize{ element_index, 0, 0 }, 1);
-                    const hy = rh.getSlice(&[_]usize{ element_index, 1, 0 }, 1);
+                    const hx = rh.getSlice(&[_]usize{ elem_ind, 0, 0 }, 1);
+                    const hy = rh.getSlice(&[_]usize{ elem_ind, 1, 0 }, 1);
                     element_tess = hull.getTessellation(N, hx, hy);
                 }
             }
@@ -399,9 +400,10 @@ pub fn RasterPass(
                             }
 
                             ShaderKernel.shade(
-                                Geometry.coord_space, frame_index, element_index, actual_fields,
-                                fields_num, weights, nodes_inv_z, subpx_z, shader, index,
-                                subpx_image_scratch, perf_ctx, global_subx, global_suby,
+                                Geometry.coord_space, frame_index, elem_ind, 
+                                actual_fields, fields_num, weights, nodes_inv_z, subpx_z,
+                                shader, index, subpx_image_scratch, perf_ctx, global_subx,
+                                global_suby,
                             );
                         }
                     } else if (comptime report == .perf) {

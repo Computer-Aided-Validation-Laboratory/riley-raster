@@ -14,6 +14,9 @@ const NDArray = @import("ndarray.zig").NDArray;
 
 const Camera = @import("camera.zig").Camera;
 
+pub const buildAdaptiveHulls = @import("hull.zig").buildAdaptiveHulls;
+
+
 pub fn worldToRasterCoords(coord_world: Vec3T(f64), camera: *const Camera) Vec3T(f64) {
     var coord_raster: Vec3T(f64) = Mat44Ops.mulVec3(f64, 
     										        camera.world_to_cam_mat, 
@@ -89,33 +92,6 @@ pub inline fn boundIndMax(comptime T: type, val: f64, max: T) T {
     return @as(T, @intCast(@max(0, @min(val_int, @as(isize, @intCast(max))))));
 }
 
-pub fn averageImage(image_subpx: *const MatSlice(f64), 
-                    sub_samp: u8, 
-                    image_avg: *MatSlice(f64)) void {
-                    
-    const num_px_x: usize = (image_subpx.cols_n) / @as(usize, sub_samp);
-    const num_px_y: usize = (image_subpx.rows_n) / @as(usize, sub_samp);
-    const sub_samp_us: usize = @as(usize, sub_samp);
-    const sub_samp_f: f64 = @as(f64, @floatFromInt(sub_samp));
-    const subpx_per_px: f64 = sub_samp_f * sub_samp_f;
-
-    var px_sum: f64 = 0.0;
-
-    for (0..num_px_y) |iy| {
-        for (0..num_px_x) |ix| {
-            px_sum = 0.0;
-            for (0..sub_samp_us) |sy| {
-                for (0..sub_samp_us) |sx| {
-                    px_sum += image_subpx.get(sub_samp_us * iy + sy, 
-                                              sub_samp_us * ix + sx);
-                }
-            }
-            image_avg.set(iy, ix, px_sum / subpx_per_px);
-        }
-    }
-}
-
-
 //---------------------------------------------------------------------------------------------
 // Tiling Raster: Helper Functions
 
@@ -151,7 +127,6 @@ pub fn loadVec3SlicesFromElemArray(comptime N: usize,
 
 //---------------------------------------------------------------------------------------------
 // Tiling Raster Step 1: World to Camera/Raster Coords
-pub const buildAdaptiveHulls = @import("hull.zig").buildAdaptiveHulls;
 
 pub fn transformElemsRasterSIMD(comptime N: usize,
                                  comptime T: type,
@@ -495,18 +470,12 @@ pub fn storeActiveTiles(tile_size: u16,
 // Tiling Raster Step 5: Raster Loop Helpers
 
 pub fn averageScratch(tile: ActiveTile,
-                      tile_size: u16,
-                      screen_px_x: u16,
-                      screen_px_y: u16,
                       sub_samp: usize,
                       spx_tile_size: usize,
                       fields_num: usize,
                       spx_image_scratch: *const MatSlice(f64),
                       spx_field_avg: []f64,
                       image_out_arr: *NDArray(f64)) void {
-    _ = tile_size;
-    _ = screen_px_x;
-    _ = screen_px_y;
 
     const curr_tile_size_x = tile.x_px_max - tile.x_px_min;
     const curr_tile_size_y = tile.y_px_max - tile.y_px_min;

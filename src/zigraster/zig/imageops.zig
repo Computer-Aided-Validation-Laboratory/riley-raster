@@ -144,3 +144,29 @@ pub fn applyClamping(val: f64, bits: ?u8) f64 {
     }
     return val;
 }
+
+pub fn averageImage(image_subpx: *const MatSlice(f64), 
+                    sub_samp: u8, 
+                    image_avg: *MatSlice(f64)) void {
+                    
+    const num_px_x: usize = (image_subpx.cols_n) / @as(usize, sub_samp);
+    const num_px_y: usize = (image_subpx.rows_n) / @as(usize, sub_samp);
+    const sub_samp_us: usize = @as(usize, sub_samp);
+    const sub_samp_f: f64 = @as(f64, @floatFromInt(sub_samp));
+    const subpx_per_px: f64 = sub_samp_f * sub_samp_f;
+
+    var px_sum: f64 = 0.0;
+
+    for (0..num_px_y) |iy| {
+        for (0..num_px_x) |ix| {
+            px_sum = 0.0;
+            for (0..sub_samp_us) |sy| {
+                for (0..sub_samp_us) |sx| {
+                    px_sum += image_subpx.get(sub_samp_us * iy + sy, 
+                                              sub_samp_us * ix + sx);
+                }
+            }
+            image_avg.set(iy, ix, px_sum / subpx_per_px);
+        }
+    }
+}

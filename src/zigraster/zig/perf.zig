@@ -22,6 +22,16 @@ pub const PerfOpts = struct {
     save_pixel_occupancy_map: bool = true,
 };
 
+pub const PipeTimes = struct {
+    coord_transform: f64 = 0,
+    bbox_calc: f64 = 0,
+    tile_count: f64 = 0,
+    tile_store: f64 = 0,
+    pre_process: f64 = 0,
+    raster_loop: f64 = 0,
+    total_time: f64 = 0,
+};
+
 pub fn initFramePerf(
     allocator: std.mem.Allocator,
     pixels_num: [2]u32,
@@ -99,14 +109,6 @@ pub fn initFramePerf(
     return self;
 }
 
-pub const PipeTimes = struct {
-    coord_transform: f64 = 0,
-    bbox_calc: f64 = 0,
-    tile_count: f64 = 0,
-    tile_store: f64 = 0,
-    raster_loop: f64 = 0,
-    total_time: f64 = 0,
-};
 
 pub const Perf = struct {
     // --- Timings (ns) ---

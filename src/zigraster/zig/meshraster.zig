@@ -11,6 +11,9 @@ const Field = meshio.Field;
 const uvio = @import("uvio.zig");
 const UVMap = uvio.UVMap;
 
+const imageio = @import("imageio.zig");
+const ImageFormat = imageio.ImageFormat;
+
 const imageops = @import("imageops.zig");
 const ScalingParams = imageops.ScalingParams;
 const ScaleStrategy = imageops.ScaleStrategy;
@@ -292,12 +295,12 @@ pub fn meshRasterFromSimDataSlice(allocator: std.mem.Allocator,
             
             var uvmap = try uvio.loadUVMap(allocator, io, path_uvs);
             
-            const format: @import("imageio.zig").ImageFormat = if (std.mem.endsWith(u8, texture_path.?, ".bmp"))
+            const format: ImageFormat = if (std.mem.endsWith(u8, texture_path.?, ".bmp"))
                 .bmp
             else
                 .tiff;
 
-            const texture = try @import("imageio.zig").loadImage(
+            const texture = try imageio.loadImage(
                 allocator, io, texture_path.?, format, u8, 1
             );
             

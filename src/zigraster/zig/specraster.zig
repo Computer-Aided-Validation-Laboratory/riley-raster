@@ -127,13 +127,13 @@ pub fn rasterAllFrames(
         images_arr = try NDArray(f64).initFlat(outer_alloc, dims[0..]);
     }
 
-    var global_scaling = try outer_alloc.alloc(?imageops.ScalingParams, meshes.len);
-    defer outer_alloc.free(global_scaling);
+    var flat_global_scaling = try outer_alloc.alloc(?imageops.ScalingParams, meshes.len);
+    defer outer_alloc.free(flat_global_scaling);
     for (meshes, 0..) |mesh, ii| {
-        global_scaling[ii] = null;
+        flat_global_scaling[ii] = null;
         if (mesh.shader == .flat) {
             if (mesh.shader.flat.scale_over == .over_frames) {
-                global_scaling[ii] = imageops.getScalingParamsNDArray(
+                flat_global_scaling[ii] = imageops.getScalingParamsNDArray(
                     &mesh.shader.flat.field.array, null, mesh.shader.flat.scaling
                 );
             }
@@ -158,18 +158,18 @@ pub fn rasterAllFrames(
                                                      mesh.coords.mat.cols_num);
             }
 
-            var frame_scaling: ?imageops.ScalingParams = null;
+            var flat_frame_scaling: ?imageops.ScalingParams = null;
             if (mesh.shader == .flat) {
                 if (mesh.shader.flat.scale_over == .over_frames) {
-                    frame_scaling = global_scaling[ii];
+                    flat_frame_scaling = flat_global_scaling[ii];
                 } else {
-                    frame_scaling = imageops.getScalingParamsNDArray(
+                    flat_frame_scaling = imageops.getScalingParamsNDArray(
                         &mesh.shader.flat.field.array, tt, mesh.shader.flat.scaling
                     );
                 }
             }
             transformed_meshes[ii] = try mr.transformMesh(
-                arena_alloc, &mesh, &coords_to_trans, frame_scaling
+                arena_alloc, &mesh, &coords_to_trans, flat_frame_scaling
             );
         }
         
@@ -261,21 +261,20 @@ fn rasterSceneInternal(
 
     const time_start_bbox = Timestamp.now(io, .awake);
 
-    var all_element_bboxes = try arena_alloc.alloc([]BBox, meshes.len);
-    var all_elements_in_image = try arena_alloc.alloc(usize, meshes.len);
-    var total_elements_in_image: usize = 0;
+    var elem_bboxes_by_mesh = try arena_alloc.alloc([]BBox, meshes.len);
+    var elems_in_image_by_mesh = try arena_alloc.alloc(usize, meshes.len);
+    var total_elems_in_image: usize = 0;
     var total_elems_num: usize = 0;
 
     for (meshes, 0..) |*mesh, ii| {
         const elems_num = mesh.coords.dims[0];
         total_elems_num += elems_num;
-        all_element_bboxes[ii] = try arena_alloc.alloc(BBox, elems_num);
+        elem_bboxes_by_mesh[ii] = try arena_alloc.alloc(BBox, elems_num);
         raster_hulls[ii] = null;
         
-        const mt = mesh.mesh_type;
-        switch (mt) {
-            inline else => |m_tag| {
-                const GK = comptime switch (m_tag) {
+        switch (mesh.mesh_type) {
+            inline else => |mesh_tag| {
+                const GK = comptime switch (mesh_tag) {
                     .tri3 => geomkerns.Tri3Kernel(),
                     .tri3opt => geomkerns.Tri3OptKernel(),
                     .tri6 => geomkerns.Tri6Kernel(),
@@ -288,7 +287,6 @@ fn rasterSceneInternal(
                 const NH = if (comptime GK.has_hull) GK.hull_nodes_num else 0;
                 const dim_elem = 0;
 
-                // Tiling Raster Step 1: Coordinate transformation
                 if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
                     try rops.transformElemsRasterSIMD(N, f64, camera, dim_elem, &mesh.coords);
                 } else {
@@ -308,18 +306,18 @@ fn rasterSceneInternal(
                 }
 
                 if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
-                    all_elements_in_image[ii] = try rops.countElemsCalcBBoxesTri3(
-                        camera, dim_elem, &mesh.coords, all_element_bboxes[ii],
+                    elems_in_image_by_mesh[ii] = try rops.countElemsCalcBBoxesTri3(
+                        camera, dim_elem, &mesh.coords, elem_bboxes_by_mesh[ii],
                     );
                 } else {
                     const rh_ptr = if (raster_hulls[ii]) |*rh| rh else null;
-                    all_elements_in_image[ii] = try rops.countElemsCalcBBoxes(
-                        N, NH, camera, dim_elem, &mesh.coords, rh_ptr, all_element_bboxes[ii],
+                    elems_in_image_by_mesh[ii] = try rops.countElemsCalcBBoxes(
+                        N, NH, camera, dim_elem, &mesh.coords, rh_ptr, elem_bboxes_by_mesh[ii],
                     );
                 }
             }
         }
-        total_elements_in_image += all_elements_in_image[ii];
+        total_elems_in_image += elems_in_image_by_mesh[ii];
     }
 
     const time_end_bbox = Timestamp.now(io, .awake);
@@ -328,7 +326,7 @@ fn rasterSceneInternal(
     );
 
     if (comptime report == .perf) {
-        pctx.recordGeometry(total_elems_num, total_elements_in_image);
+        pctx.recordGeometry(total_elems_num, total_elems_in_image);
     }
 
     const time_start_overlap = Timestamp.now(io, .awake);
@@ -341,8 +339,8 @@ fn rasterSceneInternal(
         _ = try rops.elemTileOverlapCount(
             tile_size,
             tiles_num_x,
-            all_elements_in_image[ii],
-            all_element_bboxes[ii],
+            elems_in_image_by_mesh[ii],
+            elem_bboxes_by_mesh[ii],
             tile_elem_counts,
             tile_write_inds,
         );
@@ -371,8 +369,8 @@ fn rasterSceneInternal(
         screen_px_x,
         screen_px_y,
         meshes,
-        all_elements_in_image,
-        all_element_bboxes,
+        elems_in_image_by_mesh,
+        elem_bboxes_by_mesh,
         tile_elem_counts,
         tile_write_inds,
         overlap_mms,
@@ -427,8 +425,8 @@ fn storeActiveTilesMM(
     screen_px_x: u16,
     screen_px_y: u16,
     meshes: []const MeshTransform,
-    all_elements_in_image: []const usize,
-    all_element_bboxes: []const []BBox,
+    elems_in_image_by_mesh: []const usize,
+    elem_bboxes_by_mesh: []const []BBox,
     tile_elem_counts: []const usize,
     tile_write_inds: []usize,
     overlap_mms: []OverlapMM,
@@ -442,8 +440,8 @@ fn storeActiveTilesMM(
     }
 
     for (meshes, 0..) |_, mesh_idx| {
-        for (0..all_elements_in_image[mesh_idx]) |elem_idx| {
-            const bbox = all_element_bboxes[mesh_idx][elem_idx];
+        for (0..elems_in_image_by_mesh[mesh_idx]) |elem_idx| {
+            const bbox = elem_bboxes_by_mesh[mesh_idx][elem_idx];
             
             const tx_start = bbox.x_min / tile_size;
             const tx_end = @min(@as(usize, @intCast(tiles_num_x)), 

@@ -28,10 +28,6 @@ pub fn FlatKernel(comptime N: usize) type {
                 perf_ctx.recordDepth(global_subx, global_suby, 1.0 / sub_pixel_z);
             }
             
-            if (global_subx == 100 and global_suby == 100) {
-                std.debug.print("shade: element={d}, space={s}\n", .{element_index, @tagName(coord_space)});
-            }
-
             if (comptime coord_space == CoordSpace.clip_px_leng) {
                 shaderops.fillFlat(
                     N,
@@ -58,11 +54,7 @@ pub fn FlatKernel(comptime N: usize) type {
                     index,
                     spx_image_scratch,
                 );
-            }
-            
-            if (spx_image_scratch.elems[index * fields_num] != 0.0) {
-                // std.debug.print("shade: WRITE SUCCESS! val={d:.3}\n", .{spx_image_scratch.elems[index * fields_num]});
-            }
+            }           
         }
     };
 }
