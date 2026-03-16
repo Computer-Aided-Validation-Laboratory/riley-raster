@@ -28,6 +28,23 @@ const ScratchBuffers = struct {
     image: *MatSlice(f64),
 };
 
+const SubpxDomain = struct {
+    step: f64,
+    offset: f64,
+    tile_size: usize,
+    x_off: f64,
+    y_off: f64,
+};
+
+const RasterBounds = struct {
+    start_x: usize,
+    end_x: usize,
+    start_y: usize,
+    end_y: usize,
+    xi_min_f: f64,
+    yi_min_f: f64,
+};
+
 pub fn rasterScene(
     comptime report: Report,
     ctx: rops.RasterContext(report),
