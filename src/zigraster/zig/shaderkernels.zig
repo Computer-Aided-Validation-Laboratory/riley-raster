@@ -14,6 +14,7 @@ pub fn FlatKernel(comptime N: usize) type {
             shader: *const shaderops.FlatShader,
             perf_ctx: anytype,
         ) void {
+            _ = shader;
             if (@TypeOf(perf_ctx).mode == .perf) {
                 perf_ctx.recordDepth(
                     ctx.global_subx, ctx.global_suby, 1.0 / interp.sub_pixel_z,
@@ -25,16 +26,15 @@ pub fn FlatKernel(comptime N: usize) type {
                     N,
                     ctx,
                     interp,
-                    shader,
                 );
             } else {
                 shaderops.fillFlatPerspective(
                     N,
                     ctx,
                     interp,
-                    shader,
                 );
-            }           
+            }
+
         }
     };
 }

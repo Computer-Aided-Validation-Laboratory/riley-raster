@@ -98,9 +98,7 @@ pub inline fn fillFlat(
     comptime N: usize,
     ctx: ShadeContext(N),
     interp: InterpData(N),
-    sh: *const FlatShader,
 ) void {
-    _ = sh;
     for (0..ctx.actual_fields) |ff| {
         const vs = ctx.local_buf.interpolate(ff, interp.weights);
         ctx.spx_image_scratch.elems[ctx.idx * ctx.fields_num + ff] = vs;
@@ -111,9 +109,7 @@ pub inline fn fillFlatPerspective(
     comptime N: usize,
     ctx: ShadeContext(N),
     interp: InterpData(N),
-    sh: *const FlatShader,
 ) void {
-    _ = sh;
     for (0..ctx.actual_fields) |ff| {
         const base = ff * N;
         var vs: f64 = 0.0;
