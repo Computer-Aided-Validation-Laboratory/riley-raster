@@ -154,7 +154,8 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                        data_dir_root: []const u8,
                        rel_tol: f64,
                        abs_tol: f64,
-                       shader_filter: ShaderFilter) !void {
+                       shader_filter: ShaderFilter,
+                       report_perf: bool) !void {
 
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
@@ -223,7 +224,8 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                 .save_opts = &[_]iio.ImageSaveOpts{
                     .{ .format = .csv, .bits = null, .scaling = .none },
                 },
-                .tile_size = 16 
+                .tile_size = 16,
+                .report = if (report_perf) .perf else .off
             };
 
             const result = (try zraster.rasterAllFrames(
@@ -276,7 +278,8 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                     .save_opts = &[_]iio.ImageSaveOpts{
                         .{ .format = .csv, .bits = null, .scaling = .none },
                     },
-                    .tile_size = 16 
+                    .tile_size = 16,
+                    .report = if (report_perf) .perf else .off
                 };
 
                 const result = (try zraster.rasterAllFrames(

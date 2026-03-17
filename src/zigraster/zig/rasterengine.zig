@@ -40,8 +40,8 @@ const RasterBounds = struct {
     end_x: usize,
     start_y: usize,
     end_y: usize,
-    xi_min_f: f64,
-    yi_min_f: f64,
+    x_min_f: f64,
+    y_min_f: f64,
 };
 
 pub fn rasterScene(
@@ -118,7 +118,7 @@ pub fn rasterScene(
                         .flat => |*shader| {
                             const SK = shadekerns.FlatKernel(N);
                             shaded_px += try RasterPass(GK, SK, FlatShader).render(
-                                report, ctx, target, input, shader, scratch,
+                                report, ctx, target, input, mesh, shader, scratch,
                             );
                         },
                         .tex_u8 => |*shader| {
@@ -126,7 +126,7 @@ pub fn rasterScene(
                                 inline else => |itp_type| {
                                     const SK = shadekerns.TexKernel(N, u8, itp_type);
                                     shaded_px += try RasterPass(GK, SK, TexShader(u8)).render(
-                                        report, ctx, target, input, shader, scratch,
+                                        report, ctx, target, input, mesh, shader, scratch,
                                     );
                                 }
                             }
@@ -136,7 +136,7 @@ pub fn rasterScene(
                                 inline else => |itp_type| {
                                     const SK = shadekerns.TexKernel(N, u16, itp_type);
                                     shaded_px += try RasterPass(GK, SK, TexShader(u16)).render(
-                                        report, ctx, target, input, shader, scratch,
+                                        report, ctx, target, input, mesh, shader, scratch,
                                     );
                                 }
                             }
@@ -179,6 +179,7 @@ pub fn RasterPass(
             ctx: rops.RasterContext(report),
             target: rops.OverlapTarget,
             input: rops.MeshInput,
+            mesh: *const MeshTransform,
             shader: *const ShaderData,
             scratch: ScratchBuffers,
         ) !u64 {
@@ -208,8 +209,8 @@ pub fn RasterPass(
             const scratch_end_y = sub_samp * (@as(usize, target.overlap.y_max) - 
                                               target.tile.y_px_min);
 
-            const xi_min_f: f64 = @as(f64, @floatFromInt(target.overlap.x_min));
-            const yi_min_f: f64 = @as(f64, @floatFromInt(target.overlap.y_min));
+            const x_min_f: f64 = @as(f64, @floatFromInt(target.overlap.x_min));
+            const y_min_f: f64 = @as(f64, @floatFromInt(target.overlap.y_min));
 
             const domain = SubpxDomain{
                 .step = subpx_step,
@@ -224,17 +225,42 @@ pub fn RasterPass(
                 .end_x = scratch_end_x,
                 .start_y = scratch_start_y,
                 .end_y = scratch_end_y,
-                .xi_min_f = xi_min_f,
-                .yi_min_f = yi_min_f,
+                .x_min_f = x_min_f,
+                .y_min_f = y_min_f,
             };
+
+            const N = Geometry.nodes_num;
+            var local_buf = shadekerns.shaderops.LocalNodeBuffer(N){};
+
+            switch (mesh.shader) {
+                .flat => |*s| {
+                    const f_idx = @min(ctx.frame_ind, s.field.array.dims[0] - 1);
+                    const start_idx = s.field.array.getFlatInd(&[_]usize{ 
+                        f_idx, target.overlap.elem_idx, 0, 0 
+                    });
+                    local_buf.load(s.field.array, start_idx, scratch.image.cols_num);
+                },
+                .tex_u8 => |*s| {
+                    const start_idx = s.uvs.getFlatInd(&[_]usize{ 
+                        target.overlap.elem_idx, 0, 0 
+                    });
+                    local_buf.load(s.uvs, start_idx, 2);
+                },
+                .tex_u16 => |*s| {
+                    const start_idx = s.uvs.getFlatInd(&[_]usize{ 
+                        target.overlap.elem_idx, 0, 0 
+                    });
+                    local_buf.load(s.uvs, start_idx, 2);
+                },
+            }
 
             if (Geometry.strategy == .incremental) {
                 return try rasterIncremental(
-                    report, ctx, target, domain, bounds, nodes, shader, scratch,
+                    report, ctx, target, domain, bounds, nodes, shader, scratch, &local_buf,
                 );
             } else {
                 return try rasterPointwise(
-                    report, ctx, target, input, domain, bounds, nodes, shader, scratch,
+                    report, ctx, target, input, domain, bounds, nodes, shader, scratch, &local_buf,
                 );
             }
         }
@@ -248,6 +274,7 @@ pub fn RasterPass(
             nodes: Vec3OfSlices(f64),
             shader: *const ShaderData,
             scratch: ScratchBuffers,
+            local_buf: *const shadekerns.shaderops.LocalNodeBuffer(Geometry.nodes_num),
         ) !u64 {
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
@@ -266,8 +293,8 @@ pub fn RasterPass(
             const dweights_dx = Geometry.getDWeightsDx(nodes, inv_area, domain.step);
             const dweights_dy = Geometry.getDWeightsDy(nodes, inv_area, domain.step);
 
-            const start_x = bounds.xi_min_f + domain.offset;
-            const start_y = bounds.yi_min_f + domain.offset;
+            const start_x = bounds.x_min_f + domain.offset;
+            const start_y = bounds.y_min_f + domain.offset;
             var weights_row = Geometry.getWeightsAt(nodes, start_x, start_y, inv_area);
 
             for (bounds.start_y..bounds.end_y) |scratch_y| {
@@ -308,6 +335,7 @@ pub fn RasterPass(
                                     .spx_image_scratch = scratch.image,
                                     .global_subx = global_subx,
                                     .global_suby = global_suby,
+                                    .local_buf = local_buf,
                                 },
                                 .{
                                     .weights = weights,
@@ -340,6 +368,7 @@ pub fn RasterPass(
             nodes: Vec3OfSlices(f64),
             shader: *const ShaderData,
             scratch: ScratchBuffers,
+            local_buf: *const shadekerns.shaderops.LocalNodeBuffer(Geometry.nodes_num),
         ) !u64 {
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
@@ -369,10 +398,10 @@ pub fn RasterPass(
                 }
             }
 
-            var subpx_y: f64 = bounds.yi_min_f + domain.offset;
+            var subpx_y: f64 = bounds.y_min_f + domain.offset;
             for (bounds.start_y..bounds.end_y) |scratch_y| {
                 const row_offset = scratch_y * domain.tile_size;
-                var subpx_x: f64 = bounds.xi_min_f + domain.offset;
+                var subpx_x: f64 = bounds.x_min_f + domain.offset;
 
                 for (bounds.start_x..bounds.end_x) |scratch_x| {
                     const global_subx = target.tile.x_px_min * sub_samp + scratch_x;
@@ -425,6 +454,7 @@ pub fn RasterPass(
                                     .spx_image_scratch = scratch.image,
                                     .global_subx = global_subx,
                                     .global_suby = global_suby,
+                                    .local_buf = local_buf,
                                 },
                                 .{
                                     .weights = weights,

@@ -62,7 +62,8 @@ test "Gold Small Suite" {
                                    "data-small", 
                                    REL_TOL,
                                    ABS_TOL, 
-                                   SHADER_FILTER);
+                                   SHADER_FILTER,
+                                   false);
                                    
         try common.runTestInternal(allocator, 
                                    io, 
@@ -76,7 +77,8 @@ test "Gold Small Suite" {
                                    "data-small", 
                                    REL_TOL,
                                    ABS_TOL, 
-                                   SHADER_FILTER);
+                                   SHADER_FILTER,
+                                   false);
     }
 
     const end_time = std.Io.Clock.Timestamp.now(io, .awake);

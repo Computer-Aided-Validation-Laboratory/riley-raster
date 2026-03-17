@@ -1,5 +1,5 @@
 const std = @import("std");
-const shaderops = @import("shaderops.zig");
+pub const shaderops = @import("shaderops.zig");
 const texops = @import("textureops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const InterpType = texops.InterpType;
@@ -9,7 +9,7 @@ pub fn FlatKernel(comptime N: usize) type {
     return struct {
         pub inline fn shade(
             comptime coord_space: CoordSpace,
-            ctx: shaderops.ShadeContext,
+            ctx: shaderops.ShadeContext(N),
             interp: shaderops.InterpData(N),
             shader: *const shaderops.FlatShader,
             perf_ctx: anytype,
@@ -43,7 +43,7 @@ pub fn TexKernel(comptime N: usize, comptime T: type, comptime interp_type: Inte
     return struct {
         pub inline fn shade(
             comptime coord_space: CoordSpace,
-            ctx: shaderops.ShadeContext,
+            ctx: shaderops.ShadeContext(N),
             interp: shaderops.InterpData(N),
             shader: *const shaderops.TexShader(T),
             perf_ctx: anytype,

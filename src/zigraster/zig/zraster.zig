@@ -315,6 +315,7 @@ fn rasterSceneInternal(
 
     if (comptime report == .perf) {
         perf_data.?.pipe_times = pipe_times;
+        try perf_data.?.writeReportToConsole(io, frame_ind, camera);
     } else {
         try perf.standardReport(io, camera, pipe_times, total_elems_num);
     }

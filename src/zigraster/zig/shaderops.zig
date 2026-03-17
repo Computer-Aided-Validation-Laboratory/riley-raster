@@ -12,6 +12,41 @@ const Field = meshio.Field;
 const imageops = @import("imageops.zig");
 pub const ScaleOver = enum { within_frames, over_frames };
 
+pub const MAX_FIELDS = 8;
+
+pub fn LocalNodeBuffer(comptime N: usize) type {
+    return struct {
+        data: [MAX_FIELDS * N]f64 = undefined,
+        actual_fields: usize = 0,
+
+        const Self = @This();
+
+        pub inline fn load(
+            self: *Self, 
+            array: NDArray(f64), 
+            start_idx: usize, 
+            fields_num: usize
+        ) void {
+            self.actual_fields = fields_num;
+            const count = fields_num * N;
+            @memcpy(self.data[0..count], array.elems[start_idx .. start_idx + count]);
+        }
+
+        pub inline fn interpolate(
+            self: *const Self, 
+            field_idx: usize, 
+            weights: [N]f64
+        ) f64 {
+            const base = field_idx * N;
+            var sum: f64 = 0.0;
+            inline for (0..N) |nn| {
+                sum += weights[nn] * self.data[base + nn];
+            }
+            return sum;
+        }
+    };
+}
+
 pub const FlatShader = struct {
     field: Field,
     bits: ?u8 = 8,
@@ -31,16 +66,19 @@ pub fn TexShader(comptime T: type) type {
     };
 }
 
-pub const ShadeContext = struct {
-    frame_index: usize,
-    elem_index: usize,
-    fields_num: usize,
-    actual_fields: usize,
-    idx: usize,
-    spx_image_scratch: *MatSlice(f64),
-    global_subx: usize,
-    global_suby: usize,
-};
+pub fn ShadeContext(comptime N: usize) type {
+    return struct {
+        frame_index: usize,
+        elem_index: usize,
+        fields_num: usize,
+        actual_fields: usize,
+        idx: usize,
+        spx_image_scratch: *MatSlice(f64),
+        global_subx: usize,
+        global_suby: usize,
+        local_buf: *const LocalNodeBuffer(N),
+    };
+}
 
 pub fn InterpData(comptime N: usize) type {
     return struct {
@@ -58,46 +96,30 @@ pub const Shader = union(enum) {
 
 pub inline fn fillFlat(
     comptime N: usize,
-    ctx: ShadeContext,
+    ctx: ShadeContext(N),
     interp: InterpData(N),
     sh: *const FlatShader,
 ) void {
-    const f_idx = @min(ctx.frame_index, sh.field.array.dims[0] - 1);
-    const s0 = sh.field.array.strides[0];
-    const s1 = sh.field.array.strides[1];
-    const s2 = sh.field.array.strides[2];
-    const s3 = sh.field.array.strides[3];
-    const base_off = f_idx * s0 + ctx.elem_index * s1;
-
+    _ = sh;
     for (0..ctx.actual_fields) |ff| {
-        const ff_off = base_off + ff * s2;
-        var vs: f64 = 0.0;
-        inline for (0..N) |nn| {
-            vs += interp.weights[nn] * sh.field.array.elems[ff_off + nn * s3];
-        }
+        const vs = ctx.local_buf.interpolate(ff, interp.weights);
         ctx.spx_image_scratch.elems[ctx.idx * ctx.fields_num + ff] = vs;
     }
 }
 
 pub inline fn fillFlatPerspective(
     comptime N: usize,
-    ctx: ShadeContext,
+    ctx: ShadeContext(N),
     interp: InterpData(N),
     sh: *const FlatShader,
 ) void {
-    const f_idx = @min(ctx.frame_index, sh.field.array.dims[0] - 1);
-    const s0 = sh.field.array.strides[0];
-    const s1 = sh.field.array.strides[1];
-    const s2 = sh.field.array.strides[2];
-    const s3 = sh.field.array.strides[3];
-    const base_off = f_idx * s0 + ctx.elem_index * s1;
-
+    _ = sh;
     for (0..ctx.actual_fields) |ff| {
-        const ff_off = base_off + ff * s2;
+        const base = ff * N;
         var vs: f64 = 0.0;
         inline for (0..N) |nn| {
             const inv_z = interp.nodes_inv_z[nn];
-            vs += interp.weights[nn] * sh.field.array.elems[ff_off + nn * s3] * inv_z;
+            vs += interp.weights[nn] * ctx.local_buf.data[base + nn] * inv_z;
         }
         
         const final_val = vs * interp.sub_pixel_z;
@@ -109,19 +131,15 @@ pub inline fn fillTex(
     comptime N: usize,
     comptime TexT: type,
     comptime interp_type: InterpType,
-    ctx: ShadeContext,
+    ctx: ShadeContext(N),
     interp: InterpData(N),
     sh: *const TexShader(TexT),
 ) void {
-    const e_stride = sh.uvs.strides[0];
-    const c_stride = sh.uvs.strides[1];
-    const uv_off = ctx.elem_index * e_stride;
-
     var u_at: f64 = 0.0;
     var v_at: f64 = 0.0;
     inline for (0..N) |nn| {
-        u_at += interp.weights[nn] * sh.uvs.elems[uv_off + nn];
-        v_at += interp.weights[nn] * sh.uvs.elems[uv_off + c_stride + nn];
+        u_at += interp.weights[nn] * ctx.local_buf.data[nn];
+        v_at += interp.weights[nn] * ctx.local_buf.data[N + nn];
     }
 
     const sampled = texops.sampleGreyscale(
@@ -138,20 +156,16 @@ pub inline fn fillTexPerspective(
     comptime N: usize,
     comptime TexT: type,
     comptime interp_type: InterpType,
-    ctx: ShadeContext,
+    ctx: ShadeContext(N),
     interp: InterpData(N),
     sh: *const TexShader(TexT),
 ) void {
-    const e_stride = sh.uvs.strides[0];
-    const c_stride = sh.uvs.strides[1];
-    const uv_off = ctx.elem_index * e_stride;
-
     var u_at: f64 = 0.0;
     var v_at: f64 = 0.0;
     inline for (0..N) |nn| {
         const inv_z = interp.nodes_inv_z[nn];
-        u_at += interp.weights[nn] * sh.uvs.elems[uv_off + nn] * inv_z;
-        v_at += interp.weights[nn] * sh.uvs.elems[uv_off + c_stride + nn] * inv_z;
+        u_at += interp.weights[nn] * ctx.local_buf.data[nn] * inv_z;
+        v_at += interp.weights[nn] * ctx.local_buf.data[N + nn] * inv_z;
     }
 
     const sampled = texops.sampleGreyscale(
