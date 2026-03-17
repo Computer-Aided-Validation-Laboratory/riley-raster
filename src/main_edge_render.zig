@@ -47,7 +47,7 @@ pub fn main() !void {
         },
     };
 
-    std.debug.print("Rendering Edge Data to out-mm0-edge/...\n", .{});
+    std.debug.print("Rendering Edge Data to out-edge/...\n", .{});
     
     try gengold.runGenerationExt(
         allocator, io, "vertbulge", &mesh_types, 1.1, texture, pixel_num, &interp_types, 

@@ -55,23 +55,43 @@ pub fn main() !void {
 
     var mesh_rasters = try aa.alloc(MeshRaster, 10);
 
-    // Top Row (0-4): Flat RGB Shading
-    // We create 3 fields for R, G, B
+    // Top Row (0-4): Texture RGB Shading
+    for (0..5) |ii| {
+        const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[ii]});
+        const uvs = try uvio.loadUVMap(aa, io, uv_path);
+
+        var coords_dup = try MatSlice(f64).initAlloc(
+            aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num
+        );
+        @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
+
+        mesh_rasters[ii] = MeshRaster{
+            .mesh_type = mesh_types[ii],
+            .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+            .connect = sim_datas[ii].connect,
+            .disp = sim_datas[ii].field,
+            .shader = .{ .tex_rgb_u8 = .{
+                .uvs = uvs.array,
+                .texture = texture,
+                .interp_type = .cubic_lut_lerp,
+                .bits = 8,
+                .scaling = .none,
+            } },
+        };
+    }
+
+    // Bottom Row (5-9): Flat RGB Shading
     for (0..5) |ii| {
         const field = sim_datas[ii].field.?;
-        // Create an NDArray with 3 fields instead of 1
-        // Layout must be (time, coord, field)
-        // We MUST use the number of coordinates, not the number of field entries if they differ
         const num_coords = sim_datas[ii].coords.mat.rows_num;
         var rgb_field_arr = try zraster.NDArray(f64).initFlat(
             aa, &[_]usize{ field.array.dims[0], num_coords, 3 }
         );
         
-        // Fill fields with some RGB patterns
         for (0..field.array.dims[0]) |tt| {
-            for (0..field.array.dims[1]) |nn| {
+            for (0..@min(field.array.dims[1], num_coords)) |nn| {
                 const val = field.array.get(&[_]usize{ tt, nn, 0 });
-                rgb_field_arr.set(&[_]usize{ tt, nn, 0 }, val); // Red
+                rgb_field_arr.set(&[_]usize{ tt, nn, 0 }, val);       // Red
                 rgb_field_arr.set(&[_]usize{ tt, nn, 1 }, 1.0 - val); // Green
                 rgb_field_arr.set(&[_]usize{ tt, nn, 2 }, val * val); // Blue
             }
@@ -82,9 +102,14 @@ pub fn main() !void {
             .array_mem = rgb_field_arr.elems,
         };
 
-        mesh_rasters[ii] = MeshRaster{
+        var coords_dup = try MatSlice(f64).initAlloc(
+            aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num
+        );
+        @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
+
+        mesh_rasters[ii + 5] = MeshRaster{
             .mesh_type = mesh_types[ii],
-            .coords = sim_datas[ii].coords,
+            .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
             .shader = .{ .flat = .{
@@ -92,26 +117,6 @@ pub fn main() !void {
                 .bits = 8,
                 .scaling = .auto,
                 .scale_over = .within_frames,
-            } },
-        };
-    }
-
-    // Bottom Row (5-9): Texture RGB Shading
-    for (0..5) |ii| {
-        const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[ii]});
-        const uvs = try uvio.loadUVMap(aa, io, uv_path);
-
-        mesh_rasters[ii + 5] = MeshRaster{
-            .mesh_type = mesh_types[ii],
-            .coords = sim_datas[ii].coords,
-            .connect = sim_datas[ii].connect,
-            .disp = sim_datas[ii].field,
-            .shader = .{ .tex_rgb_u8 = .{
-                .uvs = uvs.array,
-                .texture = texture,
-                .interp_type = .cubic_lut_lerp,
-                .bits = 8,
-                .scaling = .none,
             } },
         };
     }
