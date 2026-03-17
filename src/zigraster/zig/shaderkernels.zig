@@ -39,13 +39,18 @@ pub fn FlatKernel(comptime N: usize) type {
     };
 }
 
-pub fn TexKernel(comptime N: usize, comptime T: type, comptime interp_type: InterpType) type {
+pub fn TexKernel(
+    comptime N: usize, 
+    comptime T: type, 
+    comptime channels: usize,
+    comptime interp_type: InterpType
+) type {
     return struct {
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx: shaderops.ShadeContext(N),
             interp: shaderops.InterpData(N),
-            shader: *const shaderops.TexShader(T),
+            shader: *const shaderops.TexShader(T, channels),
             perf_ctx: anytype,
         ) void {
             if (@TypeOf(perf_ctx).mode == .perf) {
@@ -57,6 +62,7 @@ pub fn TexKernel(comptime N: usize, comptime T: type, comptime interp_type: Inte
                 shaderops.fillTex(
                     N,
                     T,
+                    channels,
                     interp_type,
                     ctx,
                     interp,
@@ -66,6 +72,7 @@ pub fn TexKernel(comptime N: usize, comptime T: type, comptime interp_type: Inte
                 shaderops.fillTexPerspective(
                     N,
                     T,
+                    channels,
                     interp_type,
                     ctx,
                     interp,

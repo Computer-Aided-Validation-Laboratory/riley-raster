@@ -12,7 +12,7 @@ const matrix = @import("matstack.zig");
 const Mat33Ops = matrix.Mat33Ops;
 const Mat44f = matrix.Mat44f;
 const Mat44Ops = matrix.Mat44Ops;
-const Rotation = @import("rotation.zig").Rotation;
+pub const Rotation = @import("rotation.zig").Rotation;
 
 pub const Camera = struct {
     // TODO: which of these actually need to be stored?

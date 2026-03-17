@@ -187,7 +187,7 @@ pub const Perf = struct {
 
         const mat = MatSlice(f64).init(expanded.elems, px_y, px_x);
         for (opts.formats) |opt| {
-            try iio.saveImage(io, save_dir, name_prefix, &mat, opt);
+            try iio.saveMatAsImage(io, save_dir, name_prefix, &mat, opt);
         }
     }
 
@@ -231,7 +231,7 @@ pub const Perf = struct {
                 .{frame_idx},
             );
             for (opts.formats) |opt| {
-                try iio.saveImage(io, save_dir, name, &mat, opt);
+                try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
 
@@ -247,7 +247,7 @@ pub const Perf = struct {
                 .{frame_idx},
             );
             for (opts.formats) |opt| {
-                try iio.saveImage(io, save_dir, name, &mat, opt);
+                try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
 
@@ -264,7 +264,7 @@ pub const Perf = struct {
                 .{frame_idx},
             );
             for (opts.formats) |opt| {
-                try iio.saveImage(io, save_dir, name, &mat, opt);
+                try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
 
@@ -281,7 +281,7 @@ pub const Perf = struct {
                 .{frame_idx},
             );
             for (opts.formats) |opt| {
-                try iio.saveImage(io, save_dir, name, &mat, opt);
+                try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
             }
         }
 

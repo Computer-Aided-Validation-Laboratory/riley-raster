@@ -2,7 +2,7 @@ const std = @import("std");
 const Timestamp = std.Io.Clock.Timestamp;
 
 const MatSlice = @import("matslice.zig").MatSlice;
-const NDArray = @import("ndarray.zig").NDArray;
+pub const NDArray = @import("ndarray.zig").NDArray;
 
 const sliceops = @import("sliceops.zig");
 
@@ -105,9 +105,11 @@ pub fn rasterAllFrames(
     var num_fields: usize = 0;
     for (meshes) |mesh| {
         const mesh_fields = switch (mesh.shader) {
-            .flat => |f| f.field.array.dims[dim_field_pre],
+            .flat => |s| s.field.array.dims[dim_field_pre],
             .tex_u8, .tex_u16 => 1,
+            .tex_rgb_u8, .tex_rgb_u16 => 3,
         };
+
         num_fields = @max(num_fields, mesh_fields);
     }
 

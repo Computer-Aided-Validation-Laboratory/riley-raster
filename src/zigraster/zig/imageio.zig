@@ -8,6 +8,8 @@ const clibtiff = @import("clibtiff.zig");
 pub const Pixel = texops.Pixel;
 pub const Texture = texops.Texture;
 
+pub const MAX_CHANNELS = 8;
+
 pub const ImageFormat = enum {
     csv,
     ppm,
@@ -23,9 +25,15 @@ pub const ImageSaveOpts = struct {
     format: ImageFormat,
     bits: ?u8 = 8,
     scaling: ScaleStrategy = .none,
+    channels: usize = 1,
 
-    pub fn init(format: ImageFormat, bits: ?u8, scaling: ScaleStrategy) ImageSaveOpts {
-        return .{ .format = format, .bits = bits, .scaling = scaling };
+    pub fn init(format: ImageFormat, bits: ?u8, scaling: ScaleStrategy, channels: usize) ImageSaveOpts {
+        return .{ 
+            .format = format, 
+            .bits = bits, 
+            .scaling = scaling,
+            .channels = channels,
+        };
     }
 };
 
@@ -47,7 +55,8 @@ pub fn loadImage(allocator: std.mem.Allocator,
 pub fn saveImage(io: std.Io,
                  out_dir: std.Io.Dir, 
                  file_name_no_ext: []const u8,
-                 image: *const MatSlice(f64),
+                 image_arr: *const @import("ndarray.zig").NDArray(f64),
+                 start_field: usize,
                  opts: ImageSaveOpts,
                  ) !void {
                     
@@ -65,12 +74,29 @@ pub fn saveImage(io: std.Io,
     );
 
     switch (opts.format) {
-        .csv => try saveCSV(io, out_dir, file_name, image, opts),
-        .ppm => try savePPM(io, out_dir, file_name, image, opts),
-        .bmp => try saveBMP(io, out_dir, file_name, image, opts),
-        .tiff => try saveTIFF(io, out_dir, file_name, image, opts),
+        .csv => try saveCSV(io, out_dir, file_name, image_arr, start_field, opts),
+        .ppm => try savePPM(io, out_dir, file_name, image_arr, start_field, opts),
+        .bmp => try saveBMP(io, out_dir, file_name, image_arr, start_field, opts),
+        .tiff => try saveTIFF(io, out_dir, file_name, image_arr, start_field, opts),
     }
 }
+
+pub fn saveMatAsImage(io: std.Io,
+                      out_dir: std.Io.Dir, 
+                      file_name_no_ext: []const u8,
+                      image: *const MatSlice(f64),
+                      opts: ImageSaveOpts,
+                      ) !void {
+    var dims = [_]usize{ 1, image.rows_num, image.cols_num };
+    var strides = [_]usize{ image.rows_num * image.cols_num, image.cols_num, 1 };
+    const arr = @import("ndarray.zig").NDArray(f64){
+        .elems = image.elems,
+        .dims = &dims,
+        .strides = &strides,
+    };
+    try saveImage(io, out_dir, file_name_no_ext, &arr, 0, opts);
+}
+
 
 pub fn saveImages(
     io: std.Io,
@@ -83,20 +109,26 @@ pub fn saveImages(
 ) !void {
     const save_dir = out_dir orelse return;
     var name_buff: [1024]u8 = undefined;
-    for (0..num_fields) |ff| {
-        const file_name = try std.fmt.bufPrint(
-            name_buff[0..],
-            "frame_{d}_field_{d}",
-            .{ frame_idx, ff },
-        );
-        const save_slice = frame_arr.getSlice(&[_]usize{ ff, 0, 0 }, 0);
-        const save_mat = MatSlice(f64).init(
-            save_slice,
-            pixels_num[1],
-            pixels_num[0],
-        );
-        for (opts_slice) |opts| {
-            try saveImage(io, save_dir, file_name, &save_mat, opts);
+    _ = pixels_num;
+
+    for (opts_slice) |opts| {
+        var ff: usize = 0;
+        while (ff + opts.channels <= num_fields) {
+            const file_name = if (opts.channels == 1)
+                try std.fmt.bufPrint(
+                    name_buff[0..],
+                    "frame_{d}_field_{d}",
+                    .{ frame_idx, ff },
+                )
+            else
+                try std.fmt.bufPrint(
+                    name_buff[0..],
+                    "frame_{d}_field_{d}_{d}",
+                    .{ frame_idx, ff, ff + opts.channels - 1 },
+                );
+
+            try saveImage(io, save_dir, file_name, frame_arr, ff, opts);
+            ff += opts.channels;
         }
     }
 }
@@ -104,7 +136,8 @@ pub fn saveImages(
 pub fn savePPM(io: std.Io,
                out_dir: std.Io.Dir, 
                file_name: []const u8,
-               image: *const MatSlice(f64),
+               image_arr: *const @import("ndarray.zig").NDArray(f64),
+               start_field: usize,
                opts: ImageSaveOpts,
                ) !void {
 
@@ -118,20 +151,39 @@ pub fn savePPM(io: std.Io,
     const bits = opts.bits orelse 8;
     const max_val_f = imageops.getScaleMax(bits);
     const max_val = @as(u32, @intFromFloat(max_val_f));
-    try writer.print("P3\n{d} {d}\n{d}\n", .{ image.cols_num, image.rows_num, max_val});
+    
+    const rows = image_arr.dims[1];
+    const cols = image_arr.dims[2];
+    
+    try writer.print("P3\n{d} {d}\n{d}\n", .{ cols, rows, max_val});
 
-    const params = imageops.getScalingParams(image, opts.scaling);
+    // We need scaling params per field if we are doing auto scaling
+    var params_array: [3]ScalingParams = undefined;
+    for (0..opts.channels) |ch| {
+        const field_idx = start_field + ch;
+        const slice = image_arr.getSlice(&[_]usize{ field_idx, 0, 0 }, 0);
+        const mat = MatSlice(f64).init(slice, rows, cols);
+        params_array[ch] = imageops.getScalingParams(&mat, opts.scaling);
+    }
 
-    for (0..image.rows_num) |rr| {
-        for (0..image.cols_num) |cc| {
-            const raw_val = image.get(rr, cc);
-            var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
-            if (opts.bits == null) {
-                val *= imageops.getScaleMax(bits);
+    for (0..rows) |rr| {
+        for (0..cols) |cc| {
+            for (0..3) |ch| {
+                const field_idx = if (ch < opts.channels) start_field + ch else start_field;
+                const raw_val = image_arr.get(&[_]usize{ field_idx, rr, cc });
+                const params = if (ch < opts.channels) params_array[ch] else params_array[0];
+                
+                var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
+                if (opts.bits == null) {
+                    val *= imageops.getScaleMax(bits);
+                }
+                const px = @as(u32, @intFromFloat(imageops.applyClamping(val, bits)));
+                try writer.print("{d}", .{px});
+                if (ch < 2) try writer.writeByte(' ');
             }
-            const px = @as(u32, @intFromFloat(imageops.applyClamping(val, bits)));
-            try writer.print("{d} {d} {d}\n", .{px, px, px});
+            try writer.writeByte(' ');
         }
+        try writer.writeByte('\n');
     }
 
     try writer.flush();   
@@ -140,7 +192,8 @@ pub fn savePPM(io: std.Io,
 pub fn saveCSV(io: std.Io,
                out_dir: std.Io.Dir, 
                file_name: []const u8,
-               image: *const MatSlice(f64),
+               image_arr: *const @import("ndarray.zig").NDArray(f64),
+               start_field: usize,
                opts: ImageSaveOpts,
                ) !void {
     const csv_file = try out_dir.createFile(io, file_name, .{});
@@ -150,16 +203,33 @@ pub fn saveCSV(io: std.Io,
     var file_writer = csv_file.writer(io,&write_buf);
     const writer = &file_writer.interface;
 
-    const params = imageops.getScalingParams(image, opts.scaling);
+    const rows = image_arr.dims[1];
+    const cols = image_arr.dims[2];
 
-    for (0..image.rows_num) |rr| {
-        for (0..image.cols_num) |cc| {
-            const raw_val = image.get(rr, cc);
-            var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
-            if (opts.scaling == .none and opts.bits != null) {
-                val = imageops.applyClamping(val, opts.bits);
+    var params_array: [MAX_CHANNELS]ScalingParams = undefined;
+    const channels = @min(opts.channels, MAX_CHANNELS);
+    for (0..channels) |ch| {
+        const field_idx = start_field + ch;
+        const slice = image_arr.getSlice(&[_]usize{ field_idx, 0, 0 }, 0);
+        const mat = MatSlice(f64).init(slice, rows, cols);
+        params_array[ch] = imageops.getScalingParams(&mat, opts.scaling);
+    }
+
+    for (0..rows) |rr| {
+        for (0..cols) |cc| {
+            for (0..channels) |ch| {
+                const field_idx = start_field + ch;
+                const raw_val = image_arr.get(&[_]usize{ field_idx, rr, cc });
+                const params = params_array[ch];
+                
+                var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
+                if (opts.scaling == .none and opts.bits != null) {
+                    val = imageops.applyClamping(val, opts.bits);
+                }
+                try writer.print("{d}", .{val});
+                if (ch < channels - 1) try writer.writeByte(':');
             }
-            try writer.print("{d},", .{val});
+            try writer.writeByte(',');
         }
         try writer.print("\n",.{});
     }
@@ -167,11 +237,12 @@ pub fn saveCSV(io: std.Io,
     try writer.flush();
 }
 
-pub fn saveBMP(io: std.Io, 
-               out_dir: std.Io.Dir, 
-               file_name: []const u8, 
-               image: *const MatSlice(f64), 
-               opts: ImageSaveOpts) !void {
+pub fn saveBMP(io: std.Io,
+                out_dir: std.Io.Dir, 
+                file_name: []const u8,
+                image_arr: *const @import("ndarray.zig").NDArray(f64),
+                start_field: usize,
+                opts: ImageSaveOpts) !void {
 
     const file = try out_dir.createFile(io, file_name, .{});
     defer file.close(io);
@@ -184,8 +255,11 @@ pub fn saveBMP(io: std.Io,
     const is_16bit = (bits == 16);
     const bpp: u16 = if (is_16bit) 48 else 24;
 
-    const width = @as(u32, @intCast(image.cols_num));
-    const height = @as(u32, @intCast(image.rows_num));
+    const rows = image_arr.dims[1];
+    const cols = image_arr.dims[2];
+
+    const width = @as(u32, @intCast(cols));
+    const height = @as(u32, @intCast(rows));
     const bytes_per_px: u32 = if (is_16bit) 6 else 3;
     const row_padding = (4 - (width * bytes_per_px) % 4) % 4;
     const row_size = width * bytes_per_px + row_padding;
@@ -205,7 +279,7 @@ pub fn saveBMP(io: std.Io,
     try writer.writeInt(i32, @intCast(width), .little);
     try writer.writeInt(i32, @intCast(height), .little);
     try writer.writeInt(u16, 1, .little);
-    try writer.writeInt(u16, bpp, .little); 
+    try writer.writeInt(u16, bpp, .little);
     try writer.writeInt(u32, 0, .little); // BI_RGB
     try writer.writeInt(u32, data_size, .little);
     try writer.writeInt(i32, 2835, .little);
@@ -213,41 +287,53 @@ pub fn saveBMP(io: std.Io,
     try writer.writeInt(u32, 0, .little);
     try writer.writeInt(u32, 0, .little);
 
-    const params = imageops.getScalingParams(image, opts.scaling);
+    var params_array: [3]ScalingParams = undefined;
+    for (0..@min(opts.channels, 3)) |ch| {
+        const field_idx = start_field + ch;
+        const slice = image_arr.getSlice(&[_]usize{ field_idx, 0, 0 }, 0);
+        const mat = MatSlice(f64).init(slice, rows, cols);
+        params_array[ch] = imageops.getScalingParams(&mat, opts.scaling);
+    }
 
     // BMP data is bottom-up
-    var r: usize = image.rows_num;
-    while (r > 0) {
-        r -= 1;
-        for (0..image.cols_num) |c| {
-            const raw_val = image.get(r, c);
-            var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
-            if (opts.bits == null and opts.scaling != .none) {
-                val *= if (is_16bit) 65535.0 else 255.0;
-            }
-            const px_f = imageops.applyClamping(val, bits);
-            if (is_16bit) {
-                const px_u16 = @as(u16, @intFromFloat(px_f));
-                try writer.writeInt(u16, px_u16, .little); // Blue
-                try writer.writeInt(u16, px_u16, .little); // Green
-                try writer.writeInt(u16, px_u16, .little); // Red
-            } else {
-                const px_u8 = @as(u8, @intFromFloat(px_f));
-                try writer.writeByte(px_u8); // Blue
-                try writer.writeByte(px_u8); // Green
-                try writer.writeByte(px_u8); // Red
+    var rr: usize = rows;
+    while (rr > 0) {
+        rr -= 1;
+        for (0..cols) |cc| {
+            // Write BGR
+            const bgr_inds = [_]usize{ 2, 1, 0 };
+            for (bgr_inds) |ch| {
+                const field_idx = if (ch < opts.channels) start_field + ch else start_field;
+                const raw_val = image_arr.get(&[_]usize{ field_idx, rr, cc });
+                const params = if (ch < opts.channels) params_array[ch] else params_array[0];
+
+                var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
+                if (opts.bits == null and opts.scaling != .none) {
+                    val *= if (is_16bit) 65535.0 else 255.0;
+                }
+                const px_f = imageops.applyClamping(val, bits);
+                if (is_16bit) {
+                    try writer.writeInt(u16, @as(u16, @intFromFloat(px_f)), .little);
+                } else {
+                    try writer.writeByte(@as(u8, @intFromFloat(px_f)));
+                }
             }
         }
         for (0..row_padding) |_| try writer.writeByte(0);
     }
     try writer.flush();
 }
-
 pub fn saveTIFF(io: std.Io, 
                 out_dir: std.Io.Dir, 
                 file_name: []const u8, 
-                image: *const MatSlice(f64), 
+                image_arr: *const @import("ndarray.zig").NDArray(f64),
+                start_field: usize,
                 opts: ImageSaveOpts) !void {
+
+    const rows = image_arr.dims[1];
+    const cols = image_arr.dims[2];
+    const slice = image_arr.getSlice(&[_]usize{ start_field, 0, 0 }, 0);
+    const image = MatSlice(f64).init(slice, rows, cols);
                 
     const file = try out_dir.createFile(io, file_name, .{});
     defer file.close(io);
@@ -269,7 +355,7 @@ pub fn saveTIFF(io: std.Io,
     try writer.writeInt(u16, 42, .little);
     try writer.writeInt(u32, ifd_offset, .little);
 
-    const params = imageops.getScalingParams(image, opts.scaling);
+    const params = imageops.getScalingParams(&image, opts.scaling);
     const max_v = imageops.getScaleMax(bits);
 
     // 2. Pixel Data
@@ -781,7 +867,7 @@ test "Verify hand-written TIFF loader" {
     }
     const mat = MatSlice(f64).init(mat_mem, tex_c.rows_num, tex_c.cols_num);
     
-    try saveTIFF(io, out_dir, "temp-test/speckle-simple.tiff", &mat, 
+    try saveMatAsImage(io, out_dir, "temp-test/speckle-simple", &mat, 
         .{ .format = .tiff, .bits = 8, .scaling = .none });
 
     var tex_zig = try loadImage(allocator, io, "temp-test/speckle-simple.tiff", .tiff, u8, 1);
@@ -833,7 +919,7 @@ test "Save and Load All Formats 8-bit and 16-bit" {
             defer allocator.free(base_name);
 
             // 1. Save with auto-scaling
-            try saveImage(io, out_dir, base_name, &mat, 
+            try saveMatAsImage(io, out_dir, base_name, &mat, 
                 .{ .format = fmt, .bits = bits, .scaling = .auto });
             
             var ext_buff: [1024]u8 = undefined;
@@ -877,7 +963,7 @@ test "Scaling Strategy: Fractional" {
     const opts1 = ImageSaveOpts{ 
         .format = .csv, .bits = null, .scaling = .{ .frac = .{ 0.4, 0.6 } } 
     };
-    try saveImage(io, cwd, "temp-test/test_frac_float", &mat, opts1);
+    try saveMatAsImage(io, cwd, "temp-test/test_frac_float", &mat, opts1);
     
     var loaded1 = try loadImage(allocator, io, "temp-test/test_frac_float.csv", .csv, f64, 1);
     defer loaded1.deinit(allocator);
@@ -890,7 +976,7 @@ test "Scaling Strategy: Fractional" {
     const opts2 = ImageSaveOpts{ 
         .format = .csv, .bits = 8, .scaling = .{ .frac = .{ 0.4, 0.6 } } 
     };
-    try saveImage(io, cwd, "temp-test/test_frac_bits", &mat, opts2);
+    try saveMatAsImage(io, cwd, "temp-test/test_frac_bits", &mat, opts2);
     
     var loaded2 = try loadImage(allocator, io, "temp-test/test_frac_bits.csv", .csv, f64, 1);
     defer loaded2.deinit(allocator);

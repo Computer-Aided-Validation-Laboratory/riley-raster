@@ -113,6 +113,34 @@ pub fn transformMesh(
                 .scale_add = factors.add,
             }};
         },
+        .tex_rgb_u8 => |*tex| {
+            const elem_uvs = try transformUVs(outer_alloc, &tex.uvs, &mesh_raster.connect);
+            const params = imageops.getScalingParamsTexture(u8, 3, &tex.texture, tex.scaling);
+            const factors = imageops.getScaleFactors(tex.scaling, tex.bits, params);
+            mesh_trans.shader = .{ .tex_rgb_u8 = .{
+                .uvs = elem_uvs,
+                .texture = tex.texture,
+                .interp_type = tex.interp_type,
+                .bits = tex.bits,
+                .scaling = tex.scaling,
+                .scale_mul = factors.mul,
+                .scale_add = factors.add,
+            }};
+        },
+        .tex_rgb_u16 => |*tex| {
+            const elem_uvs = try transformUVs(outer_alloc, &tex.uvs, &mesh_raster.connect);
+            const params = imageops.getScalingParamsTexture(u16, 3, &tex.texture, tex.scaling);
+            const factors = imageops.getScaleFactors(tex.scaling, tex.bits, params);
+            mesh_trans.shader = .{ .tex_rgb_u16 = .{
+                .uvs = elem_uvs,
+                .texture = tex.texture,
+                .interp_type = tex.interp_type,
+                .bits = tex.bits,
+                .scaling = tex.scaling,
+                .scale_mul = factors.mul,
+                .scale_add = factors.add,
+            }};
+        },
     }
     
     return mesh_trans;
@@ -185,7 +213,7 @@ pub fn transformField(
     var get_field_inds = [_]usize{ 0, 0, 0 }; // dims=(time,coord,field)
 
     for (0..elem_field_arr.dims[dim_time]) |tt| {
-        get_field_inds[0] = tt;
+        get_field_inds[0] = @min(tt, field.array.dims[0] - 1);
         set_elem_inds[dim_time] = tt;
 
         for (0..elem_field_arr.dims[dim_elem]) |ee| {
@@ -198,6 +226,9 @@ pub fn transformField(
 
                 for (0..elem_field_arr.dims[dim_field]) |ff| {
                     get_field_inds[2] = ff;
+                    if (get_field_inds[1] >= field.array.dims[1]) {
+                        std.debug.print("OUT OF BOUNDS: coord_ind={d}, coord_dim={d}\n", .{get_field_inds[1], field.array.dims[1]});
+                    }
                     var field_val: f64 = field.array.get(get_field_inds[0..]);
                     if (scaling_params) |sp| {
                         field_val = imageops.applyScaling(field_val, scaling, bits, sp);

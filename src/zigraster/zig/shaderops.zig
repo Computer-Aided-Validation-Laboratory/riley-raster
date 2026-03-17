@@ -54,10 +54,10 @@ pub const FlatShader = struct {
     scale_over: ScaleOver = .over_frames,
 };
 
-pub fn TexShader(comptime T: type) type {
+pub fn TexShader(comptime T: type, comptime channels: usize) type {
     return struct {
         uvs: NDArray(f64),
-        texture: Texture(T, 1),
+        texture: Texture(T, channels),
         interp_type: InterpType = .cubic_lut_lerp,
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
@@ -90,8 +90,10 @@ pub fn InterpData(comptime N: usize) type {
 
 pub const Shader = union(enum) {
     flat: FlatShader,
-    tex_u8: TexShader(u8),
-    tex_u16: TexShader(u16),
+    tex_u8: TexShader(u8, 1),
+    tex_u16: TexShader(u16, 1),
+    tex_rgb_u8: TexShader(u8, 3),
+    tex_rgb_u16: TexShader(u16, 3),
 };
 
 pub inline fn fillFlat(
@@ -126,10 +128,11 @@ pub inline fn fillFlatPerspective(
 pub inline fn fillTex(
     comptime N: usize,
     comptime TexT: type,
+    comptime channels: usize,
     comptime interp_type: InterpType,
     ctx: ShadeContext(N),
     interp: InterpData(N),
-    sh: *const TexShader(TexT),
+    sh: *const TexShader(TexT, channels),
 ) void {
     var u_at: f64 = 0.0;
     var v_at: f64 = 0.0;
@@ -138,23 +141,27 @@ pub inline fn fillTex(
         v_at += interp.weights[nn] * ctx.local_buf.data[N + nn];
     }
 
-    const sampled = texops.sampleGreyscale(
+    const sampled = texops.sampleGeneric(
+        channels,
         interp_type,
         sh.texture,
         u_at,
         v_at,
     );
-    ctx.spx_image_scratch.elems[ctx.idx * ctx.fields_num] = sampled * sh.scale_mul + 
-                                                           sh.scale_add;
+    inline for (0..channels) |ch| {
+        ctx.spx_image_scratch.elems[ctx.idx * ctx.fields_num + ch] = 
+            sampled[ch] * sh.scale_mul + sh.scale_add;
+    }
 }
 
 pub inline fn fillTexPerspective(
     comptime N: usize,
     comptime TexT: type,
+    comptime channels: usize,
     comptime interp_type: InterpType,
     ctx: ShadeContext(N),
     interp: InterpData(N),
-    sh: *const TexShader(TexT),
+    sh: *const TexShader(TexT, channels),
 ) void {
     var u_at: f64 = 0.0;
     var v_at: f64 = 0.0;
@@ -164,12 +171,15 @@ pub inline fn fillTexPerspective(
         v_at += interp.weights[nn] * ctx.local_buf.data[N + nn] * inv_z;
     }
 
-    const sampled = texops.sampleGreyscale(
+    const sampled = texops.sampleGeneric(
+        channels,
         interp_type,
         sh.texture,
         u_at * interp.sub_pixel_z,
         v_at * interp.sub_pixel_z,
     );
-    ctx.spx_image_scratch.elems[ctx.idx * ctx.fields_num] = sampled * sh.scale_mul + 
-                                                           sh.scale_add;
+    inline for (0..channels) |ch| {
+        ctx.spx_image_scratch.elems[ctx.idx * ctx.fields_num + ch] = 
+            sampled[ch] * sh.scale_mul + sh.scale_add;
+    }
 }

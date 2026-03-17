@@ -132,9 +132,9 @@ fn saveResultToFails(
             const slice = array.getSlice(&[_]usize{ f, fi, 0, 0 }, 1);
             const mat = MatSlice(f64).init(slice, array.dims[2], array.dims[3]);
             const name = try std.fmt.allocPrint(allocator, "frame_{d}_field_{d}", .{ f, fi });
-            try iio.saveImage(io, out_dir, name, &mat, 
+            try iio.saveMatAsImage(io, out_dir, name, &mat, 
                 .{ .format = .csv, .bits = null, .scaling = .none });
-            try iio.saveImage(io, out_dir, name, &mat, 
+            try iio.saveMatAsImage(io, out_dir, name, &mat, 
                 .{ .format = .bmp, .bits = 8, .scaling = .auto });
         }
     }

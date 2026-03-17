@@ -51,13 +51,15 @@ pub fn getScalingParamsTexture(
             var px_min: f64 = std.math.inf(f64);
             var px_max: f64 = -std.math.inf(f64);
             for (texture.pixels) |px| {
-                const val = switch (@typeInfo(T)) {
-                    .int => @as(f64, @floatFromInt(px.channels[0])),
-                    .float => @as(f64, px.channels[0]),
-                    else => @compileError("Unsupported type"),
-                };
-                if (val < px_min) px_min = val;
-                if (val > px_max) px_max = val;
+                inline for (0..channels) |ch| {
+                    const val = switch (@typeInfo(T)) {
+                        .int => @as(f64, @floatFromInt(px.channels[ch])),
+                        .float => @as(f64, px.channels[ch]),
+                        else => @compileError("Unsupported type"),
+                    };
+                    if (val < px_min) px_min = val;
+                    if (val > px_max) px_max = val;
+                }
             }
             const px_rng = if (px_max > px_min) px_max - px_min else 1.0;
             return .{ .min = px_min, .range = px_rng };
@@ -100,8 +102,9 @@ pub fn getScalingParamsNDArray(
             var px_max: f64 = -std.math.inf(f64);
 
             if (frame_idx) |fi| {
+                const safe_fi = @min(fi, array.dims[0] - 1);
                 const stride = array.strides[0];
-                const frame_mem = array.elems[fi * stride .. (fi + 1) * stride];
+                const frame_mem = array.elems[safe_fi * stride .. (safe_fi + 1) * stride];
                 px_min = std.mem.min(f64, frame_mem);
                 px_max = std.mem.max(f64, frame_mem);
             } else {
