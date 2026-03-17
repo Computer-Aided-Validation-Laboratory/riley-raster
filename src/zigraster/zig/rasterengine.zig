@@ -122,44 +122,28 @@ pub fn rasterScene(
                             );
                         },
                         .tex_u8 => |*shader| {
-                            switch (shader.interp_type) {
-                                inline else => |itp_type| {
-                                    const SK = shadekerns.TexKernel(N, u8, 1, itp_type);
-                                    shaded_px += try RasterPass(GK, SK, TexShader(u8, 1)).render(
-                                        report, ctx, target, input, mesh, shader, scratch,
-                                    );
-                                }
-                            }
+                            const SK = shadekerns.TexKernel(N, u8, 1);
+                            shaded_px += try RasterPass(GK, SK, TexShader(u8, 1)).render(
+                                report, ctx, target, input, mesh, shader, scratch,
+                            );
                         },
                         .tex_u16 => |*shader| {
-                            switch (shader.interp_type) {
-                                inline else => |itp_type| {
-                                    const SK = shadekerns.TexKernel(N, u16, 1, itp_type);
-                                    shaded_px += try RasterPass(GK, SK, TexShader(u16, 1)).render(
-                                        report, ctx, target, input, mesh, shader, scratch,
-                                    );
-                                }
-                            }
+                            const SK = shadekerns.TexKernel(N, u16, 1);
+                            shaded_px += try RasterPass(GK, SK, TexShader(u16, 1)).render(
+                                report, ctx, target, input, mesh, shader, scratch,
+                            );
                         },
                         .tex_rgb_u8 => |*shader| {
-                            switch (shader.interp_type) {
-                                inline else => |itp_type| {
-                                    const SK = shadekerns.TexKernel(N, u8, 3, itp_type);
-                                    shaded_px += try RasterPass(GK, SK, TexShader(u8, 3)).render(
-                                        report, ctx, target, input, mesh, shader, scratch,
-                                    );
-                                }
-                            }
+                            const SK = shadekerns.TexKernel(N, u8, 3);
+                            shaded_px += try RasterPass(GK, SK, TexShader(u8, 3)).render(
+                                report, ctx, target, input, mesh, shader, scratch,
+                            );
                         },
                         .tex_rgb_u16 => |*shader| {
-                            switch (shader.interp_type) {
-                                inline else => |itp_type| {
-                                    const SK = shadekerns.TexKernel(N, u16, 3, itp_type);
-                                    shaded_px += try RasterPass(GK, SK, TexShader(u16, 3)).render(
-                                        report, ctx, target, input, mesh, shader, scratch,
-                                    );
-                                }
-                            }
+                            const SK = shadekerns.TexKernel(N, u16, 3);
+                            shaded_px += try RasterPass(GK, SK, TexShader(u16, 3)).render(
+                                report, ctx, target, input, mesh, shader, scratch,
+                            );
                         },
                     }
                 }

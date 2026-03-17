@@ -43,7 +43,6 @@ pub fn TexKernel(
     comptime N: usize, 
     comptime T: type, 
     comptime channels: usize,
-    comptime interp_type: InterpType
 ) type {
     return struct {
         pub inline fn shade(
@@ -63,7 +62,7 @@ pub fn TexKernel(
                     N,
                     T,
                     channels,
-                    interp_type,
+                    shader.interp_type,
                     ctx,
                     interp,
                     shader,
@@ -73,7 +72,7 @@ pub fn TexKernel(
                     N,
                     T,
                     channels,
-                    interp_type,
+                    shader.interp_type,
                     ctx,
                     interp,
                     shader,

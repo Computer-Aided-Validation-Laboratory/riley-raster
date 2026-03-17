@@ -226,7 +226,7 @@ fn getLerpWeights(comptime N: usize, comptime table: [LUT_SIZE][N]f64, t: f64) [
 
 
 pub fn sampleGeneric(comptime channels: usize,
-                     comptime interp: InterpType,
+                     interp: InterpType,
                      texture: anytype,
                      u: f64,
                      v: f64) [channels]f64 {
