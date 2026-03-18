@@ -93,9 +93,12 @@ pub fn rasterScene(
 
         for (overlaps) |ov| {
             const mesh = &meshes[ov.mesh_idx];
+
             const target = rops.OverlapTarget{ .tile = tile, .overlap = ov };
+
             const rhull_ptr = if (ov.mesh_idx < raster_hulls.len) 
                 raster_hulls[ov.mesh_idx] else null;
+
             const input = rops.MeshInput{ 
                 .coords = &mesh.coords, 
                 .hull = if (rhull_ptr) |*h| h else null,

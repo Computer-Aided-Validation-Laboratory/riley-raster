@@ -22,17 +22,9 @@ pub fn FlatKernel(comptime N: usize) type {
             }
             
             if (comptime coord_space == CoordSpace.clip_px_leng) {
-                shaderops.fillFlat(
-                    N,
-                    ctx,
-                    interp,
-                );
+                shaderops.fillFlat(N, ctx, interp, );
             } else {
-                shaderops.fillFlatPerspective(
-                    N,
-                    ctx,
-                    interp,
-                );
+                shaderops.fillFlatPerspective(N, ctx, interp, );
             }
 
         }
