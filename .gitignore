@@ -21,7 +21,6 @@ example/
 temp-test/
 scripts/hull-diags/
 temp-*/
-src-*/
 
 *.ppm
 *.bmp

@@ -3,14 +3,6 @@ const common = @import("bench_common.zig");
 const mr = @import("zigraster/zig/meshraster.zig");
 const iio = @import("zigraster/zig/imageio.zig");
 
-fn printPadded(writer: anytype, text: []const u8, width: usize) !void {
-    try writer.writeAll(text);
-    if (text.len < width) {
-        try writer.writeByteNTimes(' ', width - text.len);
-    }
-}
-
-// Since writeByteNTimes might be missing too, let's be ultra safe
 fn printPaddedSafe(writer: anytype, text: []const u8, width: usize) !void {
     try writer.writeAll(text);
     var ii: usize = text.len;
@@ -32,7 +24,7 @@ pub fn main() !void {
     const texture_rgb = try iio.loadImage(allocator, io, "texture/speckle_rgb.bmp", .bmp, u8, 3);
     defer texture_rgb.deinit(allocator);
 
-    const out_dir_base = "out-bench-fullraster";
+    const out_dir_base = "out-bench-old-geom";
     const pixel_num = [_]u32{ 640, 400 };
     const runs = 1;
 
@@ -47,7 +39,7 @@ pub fn main() !void {
 
     var max_name_len: usize = 0;
 
-    std.debug.print("Starting Full Raster Benchmark ({d}x{d}, {d} run per case)...\n", .{pixel_num[0], pixel_num[1], runs});
+    std.debug.print("Starting Geometry Throughput Benchmark ({d}x{d}, {d} run per case)...\n", .{pixel_num[0], pixel_num[1], runs});
 
     inline for (mesh_types) |mt| {
         inline for (shader_types) |st| {
@@ -70,7 +62,7 @@ pub fn main() !void {
             defer allocator.free(fps_vals);
 
             for (0..runs) |r| {
-                const data_dir = comptime "data-bench/" ++ @tagName(mt) ++ "_fullraster";
+                const data_dir = comptime "data-bench/" ++ @tagName(mt) ++ "_geom";
                 const res = try common.runBenchmark(allocator, io, mt, st, data_dir, out_dir_base, pixel_num, texture_grey, texture_rgb);
                 e2e_times[r] = res.e2e_ms;
                 geom_times[r] = res.geom_ms;
@@ -93,11 +85,11 @@ pub fn main() !void {
     }
 
     const date = try common.getDateString();
-    const report_name = try std.fmt.allocPrint(allocator, "out-bench-fullraster/bench_{s}.md", .{date});
+    const report_name = try std.fmt.allocPrint(allocator, "out-bench-old-geom/bench_{s}.md", .{date});
     defer allocator.free(report_name);
     
     const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, "out-bench-fullraster", .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
+    cwd.createDir(io, "out-bench-old-geom", .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
     const file = try cwd.createFile(io, report_name, .{});
     defer file.close(io);
     
@@ -105,7 +97,7 @@ pub fn main() !void {
     var file_writer = file.writer(io, &write_buf);
     const writer = &file_writer.interface;
 
-    try writer.print("# Full Raster Benchmark Results\n", .{});
+    try writer.print("# Geometry Throughput Benchmark Results\n", .{});
     try writer.print("Date: {s} | Res: {d}x{d}\n\n", .{date, pixel_num[0], pixel_num[1]});
 
     const col_w = @max(max_name_len, 16);
@@ -116,19 +108,19 @@ pub fn main() !void {
         // Header
         try writer.writeAll("| ");
         try printPaddedSafe(writer, "Case", col_w);
-        try writer.print(" | E2E Med (ms) | E2E MAD | Geom (ms) | Raster (ms) | MOps/s | FPS    |\n", .{});
+        try writer.print(" | E2E Med (ms) | E2E MAD | Geom (ms) | Raster (ms) | MElems/s | FPS    |\n", .{});
         
         // Separator
         try writer.writeByte('|');
         { var ii: usize = 0; while (ii < col_w + 2) : (ii += 1) try writer.writeByte('-'); }
-        try writer.print("| :----------: | :-----: | :-------: | :---------: | :----: | :-----: |\n", .{});
+        try writer.print("| :----------: | :-----: | :-------: | :---------: | :------: | :-----: |\n", .{});
         
         for (stats_list.items) |s| {
             if (std.mem.endsWith(u8, s.name, @tagName(st))) {
                 try writer.writeAll("| ");
                 try printPaddedSafe(writer, s.name, col_w);
-                try writer.print(" | {d:^12.2} | {d:^7.2} | {d:^9.2} | {d:^11.2} | {d:^6.2} | {d:^6.2} |\n", 
-                    .{s.e2e.median, s.e2e.mad, s.geom.median, s.raster.median, s.mops.median, s.fps.median});
+                try writer.print(" | {d:^12.2} | {d:^7.2} | {d:^9.2} | {d:^11.2} | {d:^8.2} | {d:^6.2} |\n", 
+                    .{s.e2e.median, s.e2e.mad, s.geom.median, s.raster.median, s.melems.median, s.fps.median});
             }
         }
         try writer.print("\n", .{});

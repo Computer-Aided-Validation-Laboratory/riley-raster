@@ -25,8 +25,8 @@ pub fn main() !void {
     defer texture_rgb.deinit(allocator);
 
     const out_dir_base = "out-bench-geom";
-    const pixel_num = [_]u32{ 512, 512 };
-    const runs = 5;
+    const pixel_num = [_]u32{ 640, 400 };
+    const runs = 1;
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
@@ -39,7 +39,7 @@ pub fn main() !void {
 
     var max_name_len: usize = 0;
 
-    std.debug.print("Starting Geometry Throughput Benchmark (128x128, 5 runs per case)...\n", .{});
+    std.debug.print("Starting Geometry Throughput Benchmark ({d}x{d}, {d} run per case)...\n", .{pixel_num[0], pixel_num[1], runs});
 
     inline for (mesh_types) |mt| {
         inline for (shader_types) |st| {
