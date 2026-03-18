@@ -257,6 +257,19 @@ pub fn runBenchmark(
     );
     const raster_end = Timestamp.now(io, .awake);
 
+    // Save one frame for inspection
+    const out_name = comptime @tagName(etype) ++ "_" ++ @tagName(shader_type);
+    const out_path = try std.fs.path.join(aa, &[_][]const u8{ out_dir_base, out_name });
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDir(io, out_dir_base, .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
+    cwd.createDir(io, out_path, .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
+    var out_dir_h = try cwd.openDir(io, out_path, .{});
+    defer out_dir_h.close(io);
+
+    try iio.saveImages(io, out_dir_h, 0, num_out_fields, pixel_num, &image_out_arr, &[_]iio.ImageSaveOpts{
+        .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = num_out_fields }
+    });
+
     const e2e_end = Timestamp.now(io, .awake);
 
     const e2e_ms = @as(f64, @floatFromInt(e2e_start.durationTo(e2e_end).raw.nanoseconds)) / 1e6;
@@ -268,19 +281,6 @@ pub fn runBenchmark(
     const total_ops = N * @as(f64, @floatFromInt(pixel_num[0] * pixel_num[1] * 4));
     const mops_sec = (total_ops / (raster_ms / 1000.0)) / 1e6;
     const fps = 1000.0 / e2e_ms;
-
-    // Save one frame for inspection
-    const out_name = comptime @tagName(etype) ++ "_" ++ @tagName(shader_type);
-    const out_path = try std.fs.path.join(aa, &[_][]const u8{ out_dir_base, out_name });
-    const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, out_dir_base, .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
-    cwd.createDir(io, out_path, .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
-    var out_dir_h = try cwd.openDir(io, out_path, .{});
-    defer out_dir_h.close(io);
-    
-    try iio.saveImages(io, out_dir_h, 0, num_out_fields, pixel_num, &image_out_arr, &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = num_out_fields }
-    });
 
     const total_melems = @as(f64, @floatFromInt(mesh_raster.connect.getElemsNum())) / 1e6;
     const melems_sec = total_melems / ((geom_ms + overlap_ms) / 1000.0);

@@ -16,14 +16,25 @@ def constrain_uvs(coords, u_range=(0.4, 0.6), v_range=(0.4, 0.6)):
     xmax, ymax = np.max(coords[:, :2], axis=0)
     xrng = xmax - xmin if xmax > xmin else 1.0
     yrng = ymax - ymin if ymax > ymin else 1.0
-    
     uvs = np.zeros((len(coords), 2))
     uvs[:, 0] = u_range[0] + (u_range[1] - u_range[0]) * (coords[:, 0] - xmin) / xrng
     uvs[:, 1] = v_range[0] + (v_range[1] - v_range[0]) * (coords[:, 1] - ymin) / yrng
     return uvs
 
+def get_rgb_gradient(coords):
+    xmin, ymin = np.min(coords[:, :2], axis=0)
+    xmax, ymax = np.max(coords[:, :2], axis=0)
+    xrng = xmax - xmin if xmax > xmin else 1.0
+    yrng = ymax - ymin if ymax > ymin else 1.0
+    xn = (coords[:, 0] - xmin) / xrng
+    yn = (coords[:, 1] - ymin) / yrng
+    # Red at bottom-left, Green at bottom-right, Blue at top
+    r = (1.0 - xn) * (1.0 - yn)
+    g = xn * (1.0 - yn)
+    b = yn
+    return np.stack([r, g, b], axis=1)
+
 def generate_fullraster(etype, out_dir):
-    # Perfect fullscreen coverage at Z=10
     if "tri" in etype:
         coords = np.array([[-1, -1, 10], [1, -1, 10], [1, 1, 10], [-1, 1, 10]], dtype=np.float64)
         if etype == "tri6":
@@ -39,10 +50,9 @@ def generate_fullraster(etype, out_dir):
             else: conn = np.array([[0, 1, 2, 3, 4, 5, 6, 7, 8]], dtype=np.int32)
         else:
             conn = np.array([[0, 1, 2, 3]], dtype=np.int32)
-
     save_csv(f"{out_dir}/coords.csv", coords)
     save_csv(f"{out_dir}/connect.csv", conn)
-    save_csv(f"{out_dir}/field.csv", np.linspace(0, 1, len(coords)).reshape(-1, 1))
+    save_csv(f"{out_dir}/field.csv", get_rgb_gradient(coords))
     save_csv(f"{out_dir}/uvs.csv", constrain_uvs(coords))
 
 def generate_grid(etype, out_dir, N=320):
@@ -50,43 +60,34 @@ def generate_grid(etype, out_dir, N=320):
     y = np.linspace(-1, 1, N+1)
     xv, yv = np.meshgrid(x, y)
     coords = np.stack([xv.flatten(), yv.flatten(), np.full_like(xv.flatten(), 10)], axis=1)
-    
     conn = []
     for jj in range(N):
         for ii in range(N):
             i0, i1, i2, i3 = jj*(N+1)+ii, jj*(N+1)+ii+1, (jj+1)*(N+1)+ii+1, (jj+1)*(N+1)+ii
             if "tri" in etype:
-                conn.append([i0, i1, i2])
-                conn.append([i0, i2, i3])
+                conn.append([i0, i1, i2]); conn.append([i0, i2, i3])
             else:
                 conn.append([i0, i1, i2, i3])
-    
     final_conn = np.array(conn)
     nodes_n = get_nodes_for_elem(etype)
     if nodes_n > final_conn.shape[1]:
-        padding = np.tile(final_conn[:, -1:], (1, nodes_n - final_conn.shape[1]))
-        final_conn = np.hstack([final_conn, padding])
-
+        final_conn = np.hstack([final_conn, np.tile(final_conn[:, -1:], (1, nodes_n - final_conn.shape[1]))])
     save_csv(f"{out_dir}/coords.csv", coords)
     save_csv(f"{out_dir}/connect.csv", final_conn)
-    save_csv(f"{out_dir}/field.csv", np.random.rand(len(coords), 1))
+    save_csv(f"{out_dir}/field.csv", get_rgb_gradient(coords))
     save_csv(f"{out_dir}/uvs.csv", constrain_uvs(coords))
 
 def generate_sphere(etype, out_dir):
     rows, cols = 60, 60
     u_vals = np.linspace(0, 2 * np.pi, cols)
     v_vals = np.linspace(0, np.pi, rows)
-    
     coords, u_polar, v_polar = [], [], []
-    for iv_idx, iv in enumerate(v_vals):
-        for iu_idx, iu in enumerate(u_vals):
+    for iv in v_vals:
+        for iu in u_vals:
             coords.append([np.cos(iu)*np.sin(iv), np.sin(iu)*np.sin(iv), np.cos(iv) + 10])
-            u_polar.append(iu)
-            v_polar.append(iv)
+            u_polar.append(iu); v_polar.append(iv)
     coords = np.array(coords)
-    u_polar = np.array(u_polar)
-    v_polar = np.array(v_polar)
-    
+    u_polar = np.array(u_polar); v_polar = np.array(v_polar)
     conn = []
     for r in range(rows - 1):
         for c in range(cols - 1):
@@ -95,21 +96,15 @@ def generate_sphere(etype, out_dir):
                 conn.append([i0, i1, i2]); conn.append([i0, i2, i3])
             else:
                 conn.append([i0, i1, i2, i3])
-                
     nodes_n = get_nodes_for_elem(etype)
     final_conn = np.array(conn)
     if nodes_n > final_conn.shape[1]:
         final_conn = np.hstack([final_conn, np.tile(final_conn[:, -1:], (1, nodes_n - final_conn.shape[1]))])
-
     save_csv(f"{out_dir}/coords.csv", coords)
     save_csv(f"{out_dir}/connect.csv", final_conn)
-    
-    # Smooth Spherical UVs [0.4, 0.6]
     u_uv = 0.4 + (u_polar / (2 * np.pi)) * 0.2
     v_uv = 0.4 + (v_polar / np.pi) * 0.2
     save_csv(f"{out_dir}/uvs.csv", np.stack([u_uv, v_uv], axis=1))
-
-    # Sinusoidal RGB with phase shifts
     r_c = np.sin(3 * u_polar) * 0.5 + 0.5
     g_c = np.sin(3 * u_polar + 2*np.pi/3) * 0.5 + 0.5
     b_c = np.sin(3 * u_polar + 4*np.pi/3) * 0.5 + 0.5
