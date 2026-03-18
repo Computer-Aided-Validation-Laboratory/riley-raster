@@ -82,7 +82,7 @@ pub fn getDateString() ![]const u8 {
     return "17-03-2026";
 }
 
-pub const ShaderType = enum { flat_grey, flat_rgb, tex8_grey, tex16_grey, tex8_rgb, tex16_rgb };
+pub const ShaderType = enum { flat_grey, flat_rgb, tex8_grey, tex8_rgb };
 
 pub fn loadNDArrayFromCSV(allocator: std.mem.Allocator, io: std.Io, path: []const u8, requested_channels: usize, is_time_series: bool) !NDArray(f64) {
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -187,21 +187,6 @@ pub fn runBenchmark(
             shader = .{ .tex_rgb_u8 = .{
                 .uvs = uvs_raw,
                 .texture = texture_rgb,
-                .interp_type = .cubic_lut_lerp,
-            } };
-        },
-        .tex16_grey => {
-            shader = .{ .tex_u16 = .{
-                .uvs = uvs_raw,
-                .texture = try iio.Texture(u16, 1).init(aa, 1, 1),
-                .interp_type = .cubic_lut_lerp,
-            } };
-        },
-        .tex16_rgb => {
-            num_out_fields = 3;
-            shader = .{ .tex_rgb_u16 = .{
-                .uvs = uvs_raw,
-                .texture = try iio.Texture(u16, 3).init(aa, 1, 1),
                 .interp_type = .cubic_lut_lerp,
             } };
         },

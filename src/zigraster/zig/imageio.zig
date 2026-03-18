@@ -3,10 +3,15 @@ const assert = std.debug.assert;
 const print = std.debug.print;
 
 const MatSlice = @import("matslice.zig").MatSlice;
+
 const texops = @import("textureops.zig");
 const clibtiff = @import("clibtiff.zig");
 pub const Pixel = texops.Pixel;
 pub const Texture = texops.Texture;
+
+const imageops = @import("imageops.zig");
+pub const ScaleStrategy = imageops.ScaleStrategy;
+pub const ScalingParams = imageops.ScalingParams;
 
 pub const MAX_CHANNELS = 8;
 
@@ -17,17 +22,16 @@ pub const ImageFormat = enum {
     tiff,
 };
 
-const imageops = @import("imageops.zig");
-pub const ScaleStrategy = imageops.ScaleStrategy;
-pub const ScalingParams = imageops.ScalingParams;
-
 pub const ImageSaveOpts = struct {
     format: ImageFormat,
     bits: ?u8 = 8,
     scaling: ScaleStrategy = .none,
     channels: usize = 1,
 
-    pub fn init(format: ImageFormat, bits: ?u8, scaling: ScaleStrategy, channels: usize) ImageSaveOpts {
+    pub fn init(format: ImageFormat, 
+                bits: ?u8, 
+                scaling: ScaleStrategy, 
+                channels: usize) ImageSaveOpts {
         return .{ 
             .format = format, 
             .bits = bits, 
@@ -715,8 +719,10 @@ pub fn loadTIFF(allocator: std.mem.Allocator,
         const tag_value = try reader.takeInt(u32, endian);
 
         switch (tag_id) {
-            256 => width = if (tag_type == 3) @as(u32, @intCast(tag_value & 0xFFFF)) else tag_value,
-            257 => height = if (tag_type == 3) @as(u32, @intCast(tag_value & 0xFFFF)) else tag_value,
+            256 => width = if (tag_type == 3) @as(u32, @intCast(tag_value & 0xFFFF)) 
+                else tag_value,
+            257 => height = if (tag_type == 3) @as(u32, @intCast(tag_value & 0xFFFF)) 
+                else tag_value,
             258 => bits_per_sample = @intCast(tag_value & 0xFFFF),
             273 => strip_offsets = tag_value,
             277 => samples_per_pixel = @intCast(tag_value & 0xFFFF),
@@ -815,7 +821,8 @@ pub fn CLoadTIFF(allocator: std.mem.Allocator,
 
 fn convertToTarget(comptime T: type, norm: f64) T {
     const scale = switch (@typeInfo(T)) {
-        .int => |info| (@as(f64, 1.0) * @as(f64, @floatFromInt((@as(u64, 1) << info.bits) - 1))),
+        .int => |info| (@as(f64, 1.0) 
+            * @as(f64, @floatFromInt((@as(u64, 1) << info.bits) - 1))),
         .float => 1.0,
         else => @compileError("Unsupported type"),
     };
@@ -914,8 +921,10 @@ test "Save and Load All Formats 8-bit and 16-bit" {
 
     for (formats) |fmt| {
         for (bit_depths) |bits| {
-            const base_name = try std.fmt.allocPrint(allocator, "temp-test/test_io_{s}_{d}bit", 
-                .{ @tagName(fmt), bits });
+            const base_name = try std.fmt.allocPrint(
+                allocator, "temp-test/test_io_{s}_{d}bit", 
+                .{ @tagName(fmt), bits }
+            );
             defer allocator.free(base_name);
 
             // 1. Save with auto-scaling
