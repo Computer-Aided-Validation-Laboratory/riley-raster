@@ -91,43 +91,49 @@ pub fn loadNDArrayFromCSV(allocator: std.mem.Allocator, io: std.Io, path: []cons
 
     const lines = try meshio.readCsvToList(aa, io, path);
     if (lines.items.len == 0) return error.EmptyCsv;
-    const rows = lines.items.len;
+    const rows_num = lines.items.len;
 
-    // Determine actual column count from first line
-    var col_count: usize = 0;
-    var count_iter = std.mem.splitScalar(u8, lines.items[0], ',');
-    while (count_iter.next()) |_| col_count += 1;
+    var cols_num: usize = 0;
+    var first_line_iter = std.mem.splitScalar(u8, lines.items[0], ',');
+    while (first_line_iter.next()) |col_str| {
+        if (col_str.len > 0) cols_num += 1;
+    }
 
-    var dims_buf: [3]usize = undefined;
-    const dims = if (is_time_series) blk: {
-        dims_buf[0] = 1;
-        dims_buf[1] = rows;
-        dims_buf[2] = requested_channels;
-        break :blk dims_buf[0..3];
-    } else blk: {
-        dims_buf[0] = rows;
-        dims_buf[1] = requested_channels;
-        break :blk dims_buf[0..2];
-    };
-
-    var arr = try NDArray(f64).initFlat(allocator, dims);
+    var arr: NDArray(f64) = undefined;
+    if (is_time_series) {
+        arr = try NDArray(f64).initFlat(allocator, &[_]usize{ 1, rows_num, requested_channels });
+    } else {
+        arr = try NDArray(f64).initFlat(allocator, &[_]usize{ rows_num, cols_num, requested_channels });
+    }
     errdefer {
         allocator.free(arr.elems);
         arr.deinit(allocator);
     }
 
-    for (lines.items, 0..) |line, i| {
-        var split_iter = std.mem.splitScalar(u8, line, ',');
-        for (0..col_count) |c| {
-            const str = split_iter.next() orelse break;
-            if (c < requested_channels) {
-                const val = try std.fmt.parseFloat(f64, std.mem.trim(u8, str, " "));
-                if (is_time_series) {
-                    arr.set(&[_]usize{ 0, i, c }, val);
-                } else {
-                    arr.set(&[_]usize{ i, c }, val);
+    for (lines.items, 0..) |line, rr| {
+        var col_iter = std.mem.splitScalar(u8, line, ',');
+        var cc: usize = 0;
+        while (col_iter.next()) |col_str| {
+            if (col_str.len == 0) continue;
+            if (is_time_series) {
+                // Source data: One node per line, channels in columns
+                if (cc < requested_channels) {
+                    const val = try std.fmt.parseFloat(f64, std.mem.trim(u8, col_str, " "));
+                    arr.set(&[_]usize{ 0, rr, cc }, val);
+                }
+            } else {
+                // Output data: One image row per line, channels colon-separated
+                var chan_iter = std.mem.splitScalar(u8, col_str, ':');
+                var ch: usize = 0;
+                while (chan_iter.next()) |chan_str| {
+                    if (ch < requested_channels) {
+                        const val = try std.fmt.parseFloat(f64, std.mem.trim(u8, chan_str, " "));
+                        arr.set(&[_]usize{ rr, cc, ch }, val);
+                    }
+                    ch += 1;
                 }
             }
+            cc += 1;
         }
     }
     return arr;
@@ -205,7 +211,7 @@ pub fn runBenchmark(
     const rot = Rotation.init(0, 0, 0);
     const roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
     const cam_pos = CameraOps.posFillFrameFromRot(
-        &sim_data.coords, pixel_num, pixel_size, focal_leng, rot, 1.1
+        &sim_data.coords, pixel_num, pixel_size, focal_leng, rot, 1.0
     );
     const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
 
@@ -267,7 +273,8 @@ pub fn runBenchmark(
     defer out_dir_h.close(io);
 
     try iio.saveImages(io, out_dir_h, 0, num_out_fields, pixel_num, &image_out_arr, &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = num_out_fields }
+        .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = num_out_fields },
+        .{ .format = .csv, .bits = null, .scaling = .none, .channels = num_out_fields },
     });
 
     const e2e_end = Timestamp.now(io, .awake);

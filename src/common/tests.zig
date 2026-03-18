@@ -396,6 +396,18 @@ pub fn runMultimeshMixedTest(
     rel_tol: f64,
     abs_tol: f64,
 ) !void {
+    try runMultimeshMixedTestExt(
+        allocator, io, "gold-multimesh/allelem_allshade", rel_tol, abs_tol
+    );
+}
+
+pub fn runMultimeshMixedTestExt(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    gold_dir: []const u8,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const aa = arena.allocator();
@@ -496,8 +508,6 @@ pub fn runMultimeshMixedTest(
     const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, null)) 
         orelse return error.NoResult;
 
-    const gold_dir = "gold-multimesh/allelem_allshade";
-
     for (0..result.dims[0]) |f| {
         const fname = try std.fmt.allocPrint(aa, "{s}/frame_{d}_field_0.csv", .{ gold_dir, f });
         compareNDArrayToCSV(aa, io, &result, f, 0, fname, rel_tol, abs_tol) catch |err| {
@@ -506,6 +516,182 @@ pub fn runMultimeshMixedTest(
         };
     }
 }
+
+pub fn runMultimeshMixedRGBTest(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    try runMultimeshMixedRGBTestExt(
+        allocator, io, "gold-multimesh/allelem_allshade_rgb", rel_tol, abs_tol
+    );
+}
+
+pub fn runMultimeshMixedRGBTestExt(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    gold_dir: []const u8,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const dir_paths = [_][]const u8{
+        "data-simple/tri3_twoelems/",
+        "data-simple/tri6_twoelems/",
+        "data-simple/quad4_twoelems/",
+        "data-simple/quad8_twoelems/",
+        "data-simple/quad9_twoelems/",
+    };
+
+    const mesh_types = [_]MeshType{
+        .tri3,
+        .tri6,
+        .quad4ibi,
+        .quad8,
+        .quad9,
+    };
+
+    const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
+    const texture = try iio.loadImage(
+        aa, io, "texture/speckle_rgb.bmp", .bmp, u8, 3
+    );
+
+    var mesh_rasters = try aa.alloc(MeshRaster, 10);
+
+    // Top Row (0-4): Texture RGB Shading
+    for (0..5) |ii| {
+        const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[ii]});
+        const uvs = try uvio.loadUVMap(aa, io, uv_path);
+
+        var coords_dup = try MatSlice(f64).initAlloc(
+            aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num
+        );
+        @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
+
+        mesh_rasters[ii] = MeshRaster{
+            .mesh_type = mesh_types[ii],
+            .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+            .connect = sim_datas[ii].connect,
+            .disp = sim_datas[ii].field,
+            .shader = .{ .tex_rgb_u8 = .{
+                .uvs = uvs.array,
+                .texture = texture,
+                .interp_type = .cubic_lut_lerp,
+                .bits = 8,
+                .scaling = .none,
+            } },
+        };
+    }
+
+    // Bottom Row (5-9): Flat RGB Shading with Gradient
+    for (0..5) |ii| {
+        const field = sim_datas[ii].field.?;
+        const num_coords = sim_datas[ii].coords.mat.rows_num;
+        var rgb_field_arr = try zraster.NDArray(f64).initFlat(
+            aa, &[_]usize{ field.array.dims[0], num_coords, 3 }
+        );
+
+        const coords = sim_datas[ii].coords;
+        var min_x: f64 = std.math.inf(f64);
+        var max_x: f64 = -std.math.inf(f64);
+        for (0..num_coords) |nn| {
+            const x_val = coords.x(nn);
+            if (x_val < min_x) min_x = x_val;
+            if (x_val > max_x) max_x = x_val;
+        }
+        const range_x = max_x - min_x;
+
+        for (0..field.array.dims[0]) |tt| {
+            for (0..num_coords) |nn| {
+                const x_val = coords.x(nn);
+                const t = if (range_x > 0) (x_val - min_x) / range_x else 0.5;
+
+                var rr: f64 = 0;
+                var gg: f64 = 0;
+                var bb: f64 = 0;
+
+                if (t < 0.5) {
+                    const t_scaled = t * 2.0;
+                    rr = 1.0 - t_scaled;
+                    gg = t_scaled;
+                    bb = 0.0;
+                } else {
+                    const t_scaled = (t - 0.5) * 2.0;
+                    rr = 0.0;
+                    gg = 1.0 - t_scaled;
+                    bb = t_scaled;
+                }
+
+                rgb_field_arr.set(&[_]usize{ tt, nn, 0 }, rr);
+                rgb_field_arr.set(&[_]usize{ tt, nn, 1 }, gg);
+                rgb_field_arr.set(&[_]usize{ tt, nn, 2 }, bb);
+            }
+        }
+
+        const rgb_field = meshio.Field{
+            .array = rgb_field_arr,
+            .array_mem = rgb_field_arr.elems,
+        };
+
+        var coords_dup = try MatSlice(f64).initAlloc(
+            aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num
+        );
+        @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
+
+        mesh_rasters[ii + 5] = MeshRaster{
+            .mesh_type = mesh_types[ii],
+            .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+            .connect = sim_datas[ii].connect,
+            .disp = sim_datas[ii].field,
+            .shader = .{ .flat = .{
+                .field = rgb_field,
+                .bits = 8,
+                .scaling = .auto,
+                .scale_over = .within_frames,
+            } },
+        };
+    }
+
+    mr.arrangeMeshSlice(mesh_rasters, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+
+    const pixel_num = [_]u32{ 1200, 800 };
+    const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
+    const focal_leng: f64 = 50.0e-3;
+    const rot = Rotation.init(0, 0, 0);
+    const fov_scale_factor: f64 = 1.1;
+
+    const roi_pos = CameraOps.roiCentOverMeshes(mesh_rasters);
+    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
+        mesh_rasters, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
+    );
+    const camera = Camera.init(
+        pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 3
+    );
+
+    const config_rgb = RasterConfig{
+        .save_opt = .memory,
+        .save_opts = &[_]iio.ImageSaveOpts{
+            .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
+        },
+        .tile_size = 32,
+    };
+
+    const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config_rgb, null))
+        orelse return error.NoResult;
+
+    for (0..result.dims[0]) |f| {
+        const fname = try std.fmt.allocPrint(aa, "{s}/frame_{d}_field_0_2.csv", .{ gold_dir, f });
+        compareNDArrayToCSV(aa, io, &result, f, 0, fname, rel_tol, abs_tol) catch |err| {
+            try saveResultToFails(aa, io, &result, "multimesh_allelem_allshade_rgb");
+            return err;
+        };
+    }
+}
+
 
 test "Flat Shader Scaling Options" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};

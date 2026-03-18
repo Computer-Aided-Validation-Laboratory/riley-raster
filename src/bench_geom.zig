@@ -25,7 +25,7 @@ pub fn main() !void {
     defer texture_rgb.deinit(allocator);
 
     const out_dir_base = "out-bench-geom";
-    const pixel_num = [_]u32{ 128, 128 };
+    const pixel_num = [_]u32{ 512, 512 };
     const runs = 5;
 
     const mesh_types = comptime std.enums.values(mr.MeshType);

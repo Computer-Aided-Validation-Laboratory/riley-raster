@@ -88,12 +88,40 @@ pub fn main() !void {
             aa, &[_]usize{ field.array.dims[0], num_coords, 3 }
         );
         
+        const coords = sim_datas[ii].coords;
+        var min_x: f64 = std.math.inf(f64);
+        var max_x: f64 = -std.math.inf(f64);
+        for (0..num_coords) |nn| {
+            const x_val = coords.x(nn);
+            if (x_val < min_x) min_x = x_val;
+            if (x_val > max_x) max_x = x_val;
+        }
+        const range_x = max_x - min_x;
+
         for (0..field.array.dims[0]) |tt| {
-            for (0..@min(field.array.dims[1], num_coords)) |nn| {
-                const val = field.array.get(&[_]usize{ tt, nn, 0 });
-                rgb_field_arr.set(&[_]usize{ tt, nn, 0 }, val);       // Red
-                rgb_field_arr.set(&[_]usize{ tt, nn, 1 }, 1.0 - val); // Green
-                rgb_field_arr.set(&[_]usize{ tt, nn, 2 }, val * val); // Blue
+            for (0..num_coords) |nn| {
+                const x_val = coords.x(nn);
+                const t = if (range_x > 0) (x_val - min_x) / range_x else 0.5;
+
+                var rr: f64 = 0;
+                var gg: f64 = 0;
+                var bb: f64 = 0;
+
+                if (t < 0.5) {
+                    const t_scaled = t * 2.0;
+                    rr = 1.0 - t_scaled;
+                    gg = t_scaled;
+                    bb = 0.0;
+                } else {
+                    const t_scaled = (t - 0.5) * 2.0;
+                    rr = 0.0;
+                    gg = 1.0 - t_scaled;
+                    bb = t_scaled;
+                }
+
+                rgb_field_arr.set(&[_]usize{ tt, nn, 0 }, rr);
+                rgb_field_arr.set(&[_]usize{ tt, nn, 1 }, gg);
+                rgb_field_arr.set(&[_]usize{ tt, nn, 2 }, bb);
             }
         }
 

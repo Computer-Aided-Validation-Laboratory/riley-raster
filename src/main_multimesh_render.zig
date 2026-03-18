@@ -33,6 +33,9 @@ pub fn main() !void {
     try gengold.runMultimeshMixedGenerationExt(
         allocator, io, config, out_dir_root ++ "/allelem_allshade"
     );
+    try gengold.runMultimeshMixedRGBGenerationExt(
+        allocator, io, config, out_dir_root ++ "/allelem_allshade_rgb"
+    );
 
     std.debug.print("Done.\n", .{});
 }

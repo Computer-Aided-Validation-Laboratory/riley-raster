@@ -14,4 +14,5 @@ test "Gold Multimesh Suite" {
 
     try common.runMultimeshTest(allocator, io, REL_TOL, ABS_TOL);
     try common.runMultimeshMixedTest(allocator, io, REL_TOL, ABS_TOL);
+    try common.runMultimeshMixedRGBTest(allocator, io, REL_TOL, ABS_TOL);
 }
