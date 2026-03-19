@@ -250,6 +250,13 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
         .tri3opt => "tri3",
         else => @tagName(mesh_type),
     };
+    
+    const gold_name = switch (mesh_type) {
+        .tri3opt => "tri3",
+        .quad4newton => "quad4ibi",
+        else => @tagName(mesh_type),
+    };
+
     const case_name = try std.fmt.allocPrint(aa, "{s}_{s}", .{ data_name, suffix });
     const data_path = try std.fmt.allocPrint(aa, "{s}/{s}", .{ data_dir_root, case_name });
     
@@ -272,7 +279,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
         // --- Flat Shader ---
         if (shader_filter == .flat or shader_filter == .both) {
 
-            const mt_name = @tagName(mesh_type);
+            const mt_name = gold_name;
             const case_dir_name = try std.fmt.allocPrint(
                 aa, "{s}_{s}_{s}_flat", .{ test_type, mt_name, d_str }
             );
@@ -322,7 +329,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
         // --- Tex Shader ---
         if (shader_filter == .tex or shader_filter == .both) {
             for (interp_types) |it| {
-                const mt_name = @tagName(mesh_type);
+                const mt_name = gold_name;
                 const case_dir_name = try std.fmt.allocPrint(
                     aa, "{s}_{s}_{s}_tex_{s}", 
                     .{ test_type, mt_name, d_str, @tagName(it) }
