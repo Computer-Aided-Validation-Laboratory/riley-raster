@@ -16,8 +16,10 @@ pub fn main() !void {
 
     const mesh_types = [_]gengold.MeshType{
         .tri3,
+        .tri3opt,
         .tri6,
         .quad4ibi,
+        .quad4newton,
         .quad8,
         .quad9,
     };
