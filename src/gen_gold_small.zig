@@ -31,14 +31,13 @@ pub fn main() !void {
         .quintic_lut, 
         .quintic_lut_lerp
     };
-    const pixel_num = [_]u32{ 16, 16 };
+    const pixel_num = [_]u32{ 160, 100 };
     const config = gengold.zraster.RasterConfig{
         .save_opt = .disk,
         .save_opts = &[_]gengold.iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
         },
-        .tile_size = 16,
     };
 
     std.debug.print("Generating ALL Small Gold Data...\n", .{});
@@ -50,7 +49,7 @@ pub fn main() !void {
 
     std.debug.print("Full Screen Cases...\n", .{});
     try gengold.runGenerationExt(
-        allocator, io, "full", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
+        allocator, io, "full", &mesh_types, 1.0, texture, pixel_num, &interp_types, 
         "gold-small", "data-small", config
     );
 

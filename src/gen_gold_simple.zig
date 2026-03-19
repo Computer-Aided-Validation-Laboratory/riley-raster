@@ -25,14 +25,13 @@ pub fn main() !void {
     };
 
     const interp_types = [_]gengold.texops.InterpType{.cubic_lut_lerp};
-    const pixel_num = [_]u32{ 320, 200 };
+    const pixel_num = [_]u32{ 640, 400 };
     const config = gengold.zraster.RasterConfig{
         .save_opt = .disk,
         .save_opts = &[_]gengold.iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
         },
-        .tile_size = 16,
     };
 
     std.debug.print("Generating Simple Gold Data (Two Elements only)...\n", .{});

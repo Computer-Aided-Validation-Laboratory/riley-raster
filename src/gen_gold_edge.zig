@@ -28,7 +28,6 @@ pub fn main() !void {
             .{ .format = .csv, .bits = null, .scaling = .none },
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
         },
-        .tile_size = 16,
     };
 
     std.debug.print("Generating Edge Cases to gold-edge/...\n", .{});
