@@ -22,7 +22,7 @@ test "Unified Fullscreen Benchmark Tests" {
     defer texture_rgb.deinit(allocator);
 
     const gold_dir_base = "gold-bench-fullscreen";
-    const pixel_num = [_]u32{ 640, 400 };
+    const pixel_num = [_]u32{ 800, 500 };
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);

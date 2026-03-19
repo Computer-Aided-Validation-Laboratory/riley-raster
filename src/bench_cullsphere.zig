@@ -24,8 +24,8 @@ pub fn main() !void {
     const texture_rgb = try iio.loadImage(allocator, io, "texture/speckle_rgb.bmp", .bmp, u8, 3);
     defer texture_rgb.deinit(allocator);
 
-    const out_dir_base = "out-bench-old-cullsphere";
-    const pixel_num = [_]u32{ 512, 512 };
+    const out_dir_base = "out-bench-cullsphere";
+    const pixel_num = [_]u32{ 800, 500 };
     const runs = 5;
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
