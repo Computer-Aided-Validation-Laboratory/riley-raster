@@ -613,9 +613,12 @@ pub fn loadBMP(allocator: std.mem.Allocator,
                 try reader.readSliceAll(&bgr);
                 var px: Pixel(T, channels) = undefined;
                 if (channels == 3) {
-                    px.channels[0] = convertToTarget(T, @as(f64, @floatFromInt(bgr[2])) / 255.0);
-                    px.channels[1] = convertToTarget(T, @as(f64, @floatFromInt(bgr[1])) / 255.0);
-                    px.channels[2] = convertToTarget(T, @as(f64, @floatFromInt(bgr[0])) / 255.0);
+                    px.channels[0] = convertToTarget(T, 
+                        @as(f64, @floatFromInt(bgr[2])) / 255.0);
+                    px.channels[1] = convertToTarget(T, 
+                        @as(f64, @floatFromInt(bgr[1])) / 255.0);
+                    px.channels[2] = convertToTarget(T, 
+                        @as(f64, @floatFromInt(bgr[0])) / 255.0);
                 } else if (channels == 1) {
                     const val = 0.299 * @as(f64, @floatFromInt(bgr[2])) 
                               + 0.587 * @as(f64, @floatFromInt(bgr[1])) 
@@ -638,9 +641,12 @@ pub fn loadBMP(allocator: std.mem.Allocator,
                 bgr[2] = try reader.takeInt(u16, .little);
                 var px: Pixel(T, channels) = undefined;
                 if (channels == 3) {
-                    px.channels[0] = convertToTarget(T, @as(f64, @floatFromInt(bgr[2])) / 65535.0);
-                    px.channels[1] = convertToTarget(T, @as(f64, @floatFromInt(bgr[1])) / 65535.0);
-                    px.channels[2] = convertToTarget(T, @as(f64, @floatFromInt(bgr[0])) / 65535.0);
+                    px.channels[0] = convertToTarget(T, 
+                        @as(f64, @floatFromInt(bgr[2])) / 65535.0);
+                    px.channels[1] = convertToTarget(T, 
+                        @as(f64, @floatFromInt(bgr[1])) / 65535.0);
+                    px.channels[2] = convertToTarget(T, 
+                        @as(f64, @floatFromInt(bgr[0])) / 65535.0);
                 } else if (channels == 1) {
                     const val = 0.299 * @as(f64, @floatFromInt(bgr[2])) 
                               + 0.587 * @as(f64, @floatFromInt(bgr[1])) 
@@ -667,9 +673,12 @@ pub fn loadBMP(allocator: std.mem.Allocator,
                 const color = palette[index];
                 var px: Pixel(T, channels) = undefined;
                 if (channels == 3) {
-                    px.channels[0] = convertToTarget(T, @as(f64, @floatFromInt(color[2])) / 255.0);
-                    px.channels[1] = convertToTarget(T, @as(f64, @floatFromInt(color[1])) / 255.0);
-                    px.channels[2] = convertToTarget(T, @as(f64, @floatFromInt(color[0])) / 255.0);
+                    px.channels[0] = convertToTarget(T, 
+                        @as(f64, @floatFromInt(color[2])) / 255.0);
+                    px.channels[1] = convertToTarget(T, 
+                        @as(f64, @floatFromInt(color[1])) / 255.0);
+                    px.channels[2] = convertToTarget(T, 
+                        @as(f64, @floatFromInt(color[0])) / 255.0);
                 } else if (channels == 1) {
                     const val = 0.299 * @as(f64, @floatFromInt(color[2])) 
                               + 0.587 * @as(f64, @floatFromInt(color[1])) 

@@ -24,7 +24,7 @@ pub fn main() !void {
     const texture_rgb = try iio.loadImage(allocator, io, "texture/speckle_rgb.bmp", .bmp, u8, 3);
     defer texture_rgb.deinit(allocator);
 
-    const out_dir_base = "out-bench-cullsphere";
+    const out_dir_base = "out-bench-old-cullsphere";
     const pixel_num = [_]u32{ 512, 512 };
     const runs = 5;
 
@@ -85,11 +85,11 @@ pub fn main() !void {
     }
 
     const date = try common.getDateString();
-    const report_name = try std.fmt.allocPrint(allocator, "out-bench-cullsphere/bench_{s}.md", .{date});
+    const report_name = try std.fmt.allocPrint(allocator, "out-bench-old-cullsphere/bench_{s}.md", .{date});
     defer allocator.free(report_name);
     
     const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, "out-bench-cullsphere", .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
+    cwd.createDir(io, "out-bench-old-cullsphere", .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
     const file = try cwd.createFile(io, report_name, .{});
     defer file.close(io);
     

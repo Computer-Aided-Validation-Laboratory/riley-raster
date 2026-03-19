@@ -4,7 +4,7 @@ const mr = @import("zigraster/zig/meshraster.zig");
 const iio = @import("zigraster/zig/imageio.zig");
 const NDArray = @import("zigraster/zig/ndarray.zig").NDArray;
 
-pub fn main() !void {
+test "Fullraster Gold Comparison" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
@@ -26,14 +26,14 @@ pub fn main() !void {
             
             const bench_csv = try std.fmt.allocPrint(allocator, "out-bench-old-fullraster/{s}/frame_0_field_0{s}.csv", .{
                 case_name,
-                if (st == .flat_rgb or st == .tex8_rgb) "_2" else ""
+                if (st == .flat_rgb or st == .tex8_rgb) "_rgb" else ""
             });
             defer allocator.free(bench_csv);
 
             const gold_csv: ?[]u8 = if (st == .flat_grey or st == .flat_rgb)
                 try std.fmt.allocPrint(allocator, "gold-rgb/{s}/frame_0_field_0{s}.csv", .{
                     case_name,
-                    if (st == .flat_rgb) "_2" else ""
+                    if (st == .flat_rgb) "_rgb" else ""
                 })
             else if (st == .tex8_grey)
                 try std.fmt.allocPrint(allocator, "gold-small/full_{s}_dispon_tex_cubic_lut_lerp/frame_0_field_0.csv", .{
@@ -93,5 +93,6 @@ pub fn main() !void {
         std.debug.print("\nALL COMPARISONS PASSED!\n", .{});
     } else {
         std.debug.print("\n{d} COMPARISONS FAILED!\n", .{total_fails});
+        try std.testing.expect(total_fails == 0);
     }
 }

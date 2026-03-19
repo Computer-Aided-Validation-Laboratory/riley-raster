@@ -84,7 +84,13 @@ pub fn getDateString() ![]const u8 {
 
 pub const ShaderType = enum { flat_grey, flat_rgb, tex8_grey, tex8_rgb };
 
-pub fn loadNDArrayFromCSV(allocator: std.mem.Allocator, io: std.Io, path: []const u8, requested_channels: usize, is_time_series: bool) !NDArray(f64) {
+pub fn loadNDArrayFromCSV(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+    requested_channels: usize,
+    is_time_series: bool,
+) !NDArray(f64) {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const aa = arena.allocator();
@@ -101,9 +107,28 @@ pub fn loadNDArrayFromCSV(allocator: std.mem.Allocator, io: std.Io, path: []cons
 
     var arr: NDArray(f64) = undefined;
     if (is_time_series) {
-        arr = try NDArray(f64).initFlat(allocator, &[_]usize{ 1, rows_num, requested_channels });
+        arr = try NDArray(f64).initFlat(
+            allocator, &[_]usize{ 1, rows_num, requested_channels }
+        );
     } else {
-        arr = try NDArray(f64).initFlat(allocator, &[_]usize{ rows_num, cols_num, requested_channels });
+        // We need to peek if it has colons to decide if it's (rows, cols, channels) or (nodes, channels)
+        var has_colons = false;
+        var first_line_peek = std.mem.splitScalar(u8, lines.items[0], ',');
+        if (first_line_peek.next()) |first_col| {
+            if (std.mem.indexOfScalar(u8, first_col, ':')) |_| {
+                has_colons = true;
+            }
+        }
+
+        if (has_colons) {
+            arr = try NDArray(f64).initFlat(
+                allocator, &[_]usize{ rows_num, cols_num, requested_channels }
+            );
+        } else {
+            arr = try NDArray(f64).initFlat(
+                allocator, &[_]usize{ rows_num, requested_channels }
+            );
+        }
     }
     errdefer {
         allocator.free(arr.elems);
@@ -121,16 +146,26 @@ pub fn loadNDArrayFromCSV(allocator: std.mem.Allocator, io: std.Io, path: []cons
                     const val = try std.fmt.parseFloat(f64, std.mem.trim(u8, col_str, " "));
                     arr.set(&[_]usize{ 0, rr, cc }, val);
                 }
-            } else {
+            } else if (arr.dims.len == 3) {
                 // Output data: One image row per line, channels colon-separated
                 var chan_iter = std.mem.splitScalar(u8, col_str, ':');
                 var ch: usize = 0;
                 while (chan_iter.next()) |chan_str| {
                     if (ch < requested_channels) {
-                        const val = try std.fmt.parseFloat(f64, std.mem.trim(u8, chan_str, " "));
+                        const val = try std.fmt.parseFloat(
+                            f64, std.mem.trim(u8, chan_str, " ")
+                        );
                         arr.set(&[_]usize{ rr, cc, ch }, val);
                     }
                     ch += 1;
+                }
+            } else {
+                // Column-based: like UVs or Coords
+                if (cc < requested_channels) {
+                    const val = try std.fmt.parseFloat(
+                        f64, std.mem.trim(u8, col_str, " ")
+                    );
+                    arr.set(&[_]usize{ rr, cc }, val);
                 }
             }
             cc += 1;
@@ -160,7 +195,9 @@ pub fn runBenchmark(
     const uv_path = try std.fs.path.join(aa, &[_][]const u8{ data_dir, "uvs.csv" });
 
     const sim_data = try meshio.loadSimData(aa, io, coord_path, conn_path, null, null);
-    const field_raw = try loadNDArrayFromCSV(aa, io, field_path, if (shader_type == .flat_rgb) 3 else 1, true);
+    const field_raw = try loadNDArrayFromCSV(
+        aa, io, field_path, if (shader_type == .flat_rgb) 3 else 1, true
+    );
     const uvs_raw = try loadNDArrayFromCSV(aa, io, uv_path, 2, false);
     
     var shader: mr.Shader = undefined;
@@ -222,7 +259,9 @@ pub fn runBenchmark(
     const mesh_transform = try mr.transformMesh(aa, &mesh_raster, &sim_data.coords.mat, null);
     var meshes = [_]mr.MeshTransform{ mesh_transform };
 
-    var image_out_arr = try NDArray(f64).initFlat(aa, &[_]usize{ num_out_fields, pixel_num[1], pixel_num[0] });
+    var image_out_arr = try NDArray(f64).initFlat(
+        aa, &[_]usize{ num_out_fields, pixel_num[1], pixel_num[0] }
+    );
 
     const e2e_start = Timestamp.now(io, .awake);
 
@@ -267,15 +306,22 @@ pub fn runBenchmark(
     const out_name = comptime @tagName(etype) ++ "_" ++ @tagName(shader_type);
     const out_path = try std.fs.path.join(aa, &[_][]const u8{ out_dir_base, out_name });
     const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, out_dir_base, .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
-    cwd.createDir(io, out_path, .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
+    cwd.createDir(io, out_dir_base, .default_dir) catch |err| {
+        if (err != error.PathAlreadyExists) return err;
+    };
+    cwd.createDir(io, out_path, .default_dir) catch |err| {
+        if (err != error.PathAlreadyExists) return err;
+    };
     var out_dir_h = try cwd.openDir(io, out_path, .{});
     defer out_dir_h.close(io);
 
-    try iio.saveImages(io, out_dir_h, 0, num_out_fields, pixel_num, &image_out_arr, &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = num_out_fields },
-        .{ .format = .csv, .bits = null, .scaling = .none, .channels = num_out_fields },
-    });
+    try iio.saveImages(
+        io, out_dir_h, 0, num_out_fields, pixel_num, &image_out_arr,
+        &[_]iio.ImageSaveOpts{
+            .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = num_out_fields },
+            .{ .format = .csv, .bits = null, .scaling = .none, .channels = num_out_fields },
+        }
+    );
 
     const e2e_end = Timestamp.now(io, .awake);
 
