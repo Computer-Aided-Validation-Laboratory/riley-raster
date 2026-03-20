@@ -130,4 +130,5 @@ if __name__ == "__main__":
         print(f"Generating data for {et}...")
         generate_fullscreen(et, f"data-bench/{et}_fullraster")
         generate_grid(et, f"data-bench/{et}_geom", N=320)
+        generate_grid(et, f"data-bench/{et}_bal", N=8)
         generate_sphere(et, f"data-bench/{et}_cullsphere")
