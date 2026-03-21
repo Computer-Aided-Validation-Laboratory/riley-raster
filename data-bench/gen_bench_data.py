@@ -99,31 +99,99 @@ def generate_grid(etype, out_dir, N=320):
     save_csv(f"{out_dir}/field.csv", compute_rgb_fields(coords))
     save_csv(f"{out_dir}/uvs.csv", compute_uvs(coords))
 
-def generate_sphere(etype, out_dir):
-    rows, cols = 60, 60
-    u_vals, v_vals = np.linspace(0, 2*np.pi, cols), np.linspace(0, np.pi, rows)
-    coords, u_polar = [], []
-    for iv in v_vals:
-        for iu in u_vals:
-            coords.append([np.cos(iu)*np.sin(iv), np.sin(iu)*np.sin(iv), np.cos(iv) + 10])
-            u_polar.append(iu)
-    coords = np.array(coords); u_polar = np.array(u_polar)
+def generate_sphere(etype, out_dir, N_target):
+    # side is the number of elements per side of the grid
+    side = int(np.sqrt(N_target)) + 1
+    
+    # For high order elements, we need a grid that provides mid-nodes
+    is_high = etype in ["tri6", "quad8", "quad9"]
+    grid_side = side * 2 if is_high else side
+    rows, cols = grid_side + 1, grid_side + 1
+    
+    v_vals = np.linspace(0, np.pi, rows)
+    # Move seam to the back by using -pi to pi
+    u_vals = np.linspace(-np.pi, np.pi, cols)
+    
+    coords = []
+    uvs = []
+    fields = []
+    
+    for r, v in enumerate(v_vals):
+        for c, u in enumerate(u_vals):
+            x = np.cos(u) * np.sin(v)
+            y = np.sin(u) * np.sin(v)
+            z = np.cos(v) + 5.0
+            coords.append([x, y, z])
+            # Normalize u from [-pi, pi] to [0, 1]
+            uu = (u + np.pi) / (2 * np.pi)
+            vv = v / np.pi
+            uvs.append([uu, vv])
+            fields.append([uu, vv, 1.0 - (uu + vv) / 2.0])
+            
+    coords = np.array(coords)
+    uvs = np.array(uvs)
+    fields = np.array(fields)
+    
     conn = []
-    for r in range(rows - 1):
-        for c in range(cols - 1):
-            i0, i1, i2, i3 = r*cols+c, r*cols+c+1, (r+1)*cols+c+1, (r+1)*cols+c
-            if "tri" in etype:
-                conn.append([i0, i1, i2]); conn.append([i0, i2, i3])
-            else:
+    step = 2 if is_high else 1
+    for r in range(0, grid_side, step):
+        for c in range(0, grid_side, step):
+            # Base grid indices for this element's corners
+            # i0 (0,0), i1 (1,0), i2 (1,1), i3 (0,1)
+            # Winding for outward normal: i0, i3, i2, i1
+            i0 = r * cols + c
+            i1 = r * cols + (c + step)
+            i2 = (r + step) * cols + (c + step)
+            i3 = (r + step) * cols + c
+            
+            if etype in ["tri3", "tri3opt"]:
+                conn.append([i0, i3, i2])
+                conn.append([i0, i2, i1])
+            elif etype in ["quad4ibi", "quad4newton"]:
                 conn.append([i0, i1, i2, i3])
-    final_conn = np.array(conn)
-    nodes_n = get_nodes_for_elem(etype)
-    if nodes_n > final_conn.shape[1]:
-        final_conn = np.hstack([final_conn, np.tile(final_conn[:, -1:], (1, nodes_n - final_conn.shape[1]))])
+            elif etype == "tri6":
+                # Tri 1: corners (i0, i3, i2)
+                # Mid-nodes: m03, m32, m20
+                m03 = (r + 1) * cols + c
+                m32 = (r + 2) * cols + (c + 1)
+                m20 = (r + 1) * cols + (c + 2) # This is wrong for a structured grid
+                # Let's use more standard structured grid mapping:
+                # Tri 1: (r,c), (r+2,c), (r+2,c+2)
+                # Midnodes: (r+1,c), (r+2,c+1), (r+1,c+1)
+                v0, v1, v2 = i0, i3, i2
+                m01, m12, m20 = (r + 1) * cols + c, (r + 2) * cols + (c + 1), (r + 1) * cols + (c + 1)
+                conn.append([v0, v1, v2, m01, m12, m20])
+                # Tri 2: (r,c), (r+2,c+2), (r,c+2)
+                # Midnodes: (r+1,c+1), (r,c+1), (r+1,c) --- wait, m20 above
+                # Let's be careful. Tri 1: i0, i3, i2. Tri 2: i0, i2, i1.
+                # Tri 1 (i0, i3, i2): m03, m32, m20(diag)
+                v0, v1, v2 = i0, i3, i2
+                m01 = (r + 1) * cols + c
+                m12 = (r + 2) * cols + (c + 1)
+                m20 = (r + 1) * cols + (c + 1) # diagonal
+                conn.append([v0, v1, v2, m01, m12, m20])
+                # Tri 2 (i0, i2, i1): m02(diag), m21, m10
+                v0, v1, v2 = i0, i2, i1
+                m01 = (r + 1) * cols + (c + 1) # diagonal
+                m12 = (r + 1) * cols + (c + 2)
+                m20 = r * cols + (c + 1)
+                conn.append([v0, v1, v2, m01, m12, m20])
+            elif etype in ["quad8", "quad9"]:
+                # Corners: i0, i1, i2, i3
+                # Mid-edges: m01, m12, m23, m30
+                m01 = r * cols + (c + 1)
+                m12 = (r + 1) * cols + (c + 2)
+                m23 = (r + 2) * cols + (c + 1)
+                m30 = (r + 1) * cols + c
+                q = [i0, i1, i2, i3, m01, m12, m23, m30]
+                if etype == "quad9":
+                    q.append((r + 1) * cols + (c + 1))
+                conn.append(q)
+                
     save_csv(f"{out_dir}/coords.csv", coords)
-    save_csv(f"{out_dir}/connect.csv", final_conn)
-    save_csv(f"{out_dir}/uvs.csv", 0.4 + np.random.rand(len(coords), 2) * 0.2)
-    save_csv(f"{out_dir}/field.csv", np.stack([np.sin(3*u_polar)*0.5+0.5, np.sin(3*u_polar+2*np.pi/3)*0.5+0.5, np.sin(3*u_polar+4*np.pi/3)*0.5+0.5], axis=1))
+    save_csv(f"{out_dir}/connect.csv", np.array(conn))
+    save_csv(f"{out_dir}/uvs.csv", uvs)
+    save_csv(f"{out_dir}/field.csv", fields)
 
 if __name__ == "__main__":
     for et in ["tri3", "tri3opt", "tri6", "quad4ibi", "quad4newton", "quad8", "quad9"]:
@@ -131,4 +199,5 @@ if __name__ == "__main__":
         generate_fullscreen(et, f"data-bench/{et}_fullraster")
         generate_grid(et, f"data-bench/{et}_geom", N=320)
         generate_grid(et, f"data-bench/{et}_bal", N=8)
-        generate_sphere(et, f"data-bench/{et}_cullsphere")
+        generate_sphere(et, f"data-bench/{et}_sphere200", 200)
+        generate_sphere(et, f"data-bench/{et}_sphere2000", 2000)

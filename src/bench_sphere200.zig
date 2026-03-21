@@ -24,7 +24,7 @@ pub fn main() !void {
     const texture_rgb = try iio.loadImage(allocator, io, "texture/speckle_rgb.bmp", .bmp, u8, 3);
     defer texture_rgb.deinit(allocator);
 
-    const out_dir_base = "out-bench-cullsphere";
+    const out_dir_base = "out-bench-sphere200";
     const pixel_num = [_]u32{ 800, 500 };
     const runs = 5;
 
@@ -39,7 +39,7 @@ pub fn main() !void {
 
     var max_name_len: usize = 0;
 
-    std.debug.print("Starting Cull Sphere Benchmark (512x512, 5 runs per case)...\n", .{});
+    std.debug.print("Starting Sphere 200 Benchmark ({d}x{d}, {d} runs per case)...\n", .{pixel_num[0], pixel_num[1], runs});
 
     inline for (mesh_types) |mt| {
         inline for (shader_types) |st| {
@@ -62,7 +62,7 @@ pub fn main() !void {
             defer allocator.free(fps_vals);
 
             for (0..runs) |r| {
-                const data_dir = comptime "data-bench/" ++ @tagName(mt) ++ "_cullsphere";
+                const data_dir = comptime "data-bench/" ++ @tagName(mt) ++ "_sphere200";
                 const res = try common.runBenchmark(allocator, io, mt, st, data_dir, out_dir_base, pixel_num, texture_grey, texture_rgb);
                 e2e_times[r] = res.e2e_ms;
                 geom_times[r] = res.geom_ms;
@@ -85,11 +85,11 @@ pub fn main() !void {
     }
 
     const date = try common.getDateString();
-    const report_name = try std.fmt.allocPrint(allocator, "out-bench-old-cullsphere/bench_{s}.md", .{date});
+    const report_name = try std.fmt.allocPrint(allocator, "out-bench-sphere200/bench_{s}.md", .{date});
     defer allocator.free(report_name);
     
     const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, "out-bench-old-cullsphere", .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
+    cwd.createDir(io, "out-bench-sphere200", .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
     const file = try cwd.createFile(io, report_name, .{});
     defer file.close(io);
     
@@ -97,7 +97,7 @@ pub fn main() !void {
     var file_writer = file.writer(io, &write_buf);
     const writer = &file_writer.interface;
 
-    try writer.print("# Cull Sphere Benchmark Results\n", .{});
+    try writer.print("# Sphere 200 Benchmark Results\n", .{});
     try writer.print("Date: {s} | Res: {d}x{d}\n\n", .{date, pixel_num[0], pixel_num[1]});
 
     const col_w = @max(max_name_len, 16);
