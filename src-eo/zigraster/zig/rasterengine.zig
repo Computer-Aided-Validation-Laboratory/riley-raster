@@ -21,6 +21,7 @@ const FlatShader = mr.FlatShader;
 const TexShader = mr.TexShader;
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
+const feat = @import("featureconfig.zig").FeatureConfig;
 
 const ScratchBuffers = struct {
     inv_z: []f64,
@@ -238,7 +239,7 @@ pub fn RasterPass(
 
             const N = Geometry.nodes_num;
 
-            if (comptime N == 3) {
+            if (comptime feat.tri3_earlyinout and N == 3) {
                 const ox_min = @as(f64, @floatFromInt(target.overlap.x_min));
                 const ox_max = @as(f64, @floatFromInt(target.overlap.x_max));
                 const oy_min = @as(f64, @floatFromInt(target.overlap.y_min));
