@@ -14,9 +14,8 @@ pub fn Tessellation(comptime NT: usize) type {
         triangles: [NT]TessTriangle,
 
         pub inline fn isIn(self: @This(), px: f64, py: f64) bool {
-            const eps: f64 = 1.0;
-            inline for (self.triangles) |tri| {
-                const e0 = rops.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], px, py);
+            const eps: f64 = 1e-6;
+            inline for (self.triangles) |tri| {                const e0 = rops.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], px, py);
                 const e1 = rops.edgeFun3(tri.x[1], tri.y[1], tri.x[2], tri.y[2], px, py);
                 const e2 = rops.edgeFun3(tri.x[2], tri.y[2], tri.x[0], tri.y[0], px, py);
                 if (e0 >= -eps and e1 >= -eps and e2 >= -eps) return true;
