@@ -92,11 +92,11 @@ pub fn main() !void {
     }
 
     const date = try common.getDateString();
-    const report_name = try std.fmt.allocPrint(allocator, "out-bench-old-fullraster/bench_{s}.md", .{date});
+    const report_name = try std.fmt.allocPrint(allocator, "out-bench-fullraster/bench_{s}.md", .{date});
     defer allocator.free(report_name);
     
     const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, "out-bench-old-fullraster", .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
+    cwd.createDir(io, "out-bench-fullraster", .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
     const file = try cwd.createFile(io, report_name, .{});
     defer file.close(io);
     
