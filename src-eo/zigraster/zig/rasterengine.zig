@@ -250,6 +250,9 @@ pub fn RasterPass(
                 var all_in = true;
                 var any_out = false;
                 const edge_tol: f64 = 1e-9;
+                
+                // Store results for reuse: corners are [TL, TR, BR, BL]
+                var corners_ef: [3][4]f64 = undefined;
 
                 inline for (0..3) |ii| {
                     const ii0 = ii;
@@ -260,6 +263,7 @@ pub fn RasterPass(
                         const ef = rops.edgeFun3(nodes.x[ii0], nodes.y[ii0],
                                                  nodes.x[ii1], nodes.y[ii1],
                                                  corners_x[jj], corners_y[jj]);
+                        corners_ef[ii][jj] = ef;
                         if (ef >= -edge_tol) {
                             corners_in_count += 1;
                         }
@@ -284,6 +288,29 @@ pub fn RasterPass(
                         bounds, nodes, shader, scratch, &local_buf,
                     );
                 }
+
+                // If partially in and using incremental, we can reuse TL corner [index 0]
+                if (Geometry.strategy == .incremental) {
+                    var local_buf = shadekerns.shaderops.LocalNodeBuffer(N){};
+                    try loadLocalBuf(N, report, ctx_rast, target, mesh, &local_buf);
+                    
+                    const inv_area = 1.0 / rops.edgeFun3(nodes.x[0], nodes.y[0],
+                                                         nodes.x[1], nodes.y[1],
+                                                         nodes.x[2], nodes.y[2]);
+                    // Weight 0: edge 1-2 [index 1 in corners_ef]
+                    // Weight 1: edge 2-0 [index 2 in corners_ef]
+                    // Weight 2: edge 0-1 [index 0 in corners_ef]
+                    const tl_weights = [_]f64{
+                        corners_ef[1][0] * inv_area,
+                        corners_ef[2][0] * inv_area,
+                        corners_ef[0][0] * inv_area,
+                    };
+
+                    return try rasterIncremental(
+                        report, ctx_rast, target, domain, bounds, nodes, shader, scratch, 
+                        &local_buf, tl_weights,
+                    );
+                }
             }
 
             var local_buf = shadekerns.shaderops.LocalNodeBuffer(N){};
@@ -291,7 +318,8 @@ pub fn RasterPass(
 
             if (Geometry.strategy == .incremental) {
                 return try rasterIncremental(
-                    report, ctx_rast, target, domain, bounds, nodes, shader, scratch, &local_buf,
+                    report, ctx_rast, target, domain, bounds, nodes, shader, scratch, 
+                    &local_buf, null,
                 );
             } else {
                 return try rasterPointwise(
@@ -354,6 +382,7 @@ pub fn RasterPass(
             shader: *const ShaderData,
             scratch: ScratchBuffers,
             local_buf: *const shadekerns.shaderops.LocalNodeBuffer(Geometry.nodes_num),
+            init_weights: ?[Geometry.nodes_num]f64,
         ) !u64 {
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
@@ -372,9 +401,20 @@ pub fn RasterPass(
             const dweights_dx = Geometry.getDWeightsDx(nodes, inv_area, domain.step);
             const dweights_dy = Geometry.getDWeightsDy(nodes, inv_area, domain.step);
 
-            const start_x = bounds.x_min_f + domain.offset;
-            const start_y = bounds.y_min_f + domain.offset;
-            var weights_row = Geometry.getWeightsAt(nodes, start_x, start_y, inv_area);
+            var weights_row = if (init_weights) |iw| iw else blk: {
+                const start_x = bounds.x_min_f + domain.offset;
+                const start_y = bounds.y_min_f + domain.offset;
+                break :blk Geometry.getWeightsAt(nodes, start_x, start_y, inv_area);
+            };
+
+            // If we reused weights from corner check, they are at the pixel edge.
+            // We need to shift them to the sub-pixel center.
+            if (init_weights != null) {
+                inline for (0..N) |nn| {
+                    weights_row[nn] += dweights_dx[nn] * (domain.offset / domain.step);
+                    weights_row[nn] += dweights_dy[nn] * (domain.offset / domain.step);
+                }
+            }
 
             for (bounds.start_y..bounds.end_y) |scratch_y| {
                 const row_offset = scratch_y * domain.tile_size;
