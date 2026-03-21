@@ -21,9 +21,9 @@ pub fn main() !void {
         .linear, .cubic, .cubic_lut, .cubic_lut_lerp, .quintic, .quintic_lut, .quintic_lut_lerp 
     };
 
-    const pixel_num = [_]u32{ 16, 16 };
+    const pixel_num = [_]u32{ 160, 100 };
 
-    const out_dir_root = "out-mm0-small";
+    const out_dir_root = "out-small";
     const data_dir = "data-small";
 
     const config = gengold.zraster.RasterConfig{

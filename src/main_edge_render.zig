@@ -21,7 +21,7 @@ pub fn main() !void {
 
     const pixel_num = [_]u32{ 320, 200 };
 
-    const out_dir_root = "out-mm0-edge";
+    const out_dir_root = "out-edge";
     const data_dir = "data-edge";
 
     const config = gengold.zraster.RasterConfig{

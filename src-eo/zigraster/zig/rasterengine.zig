@@ -501,6 +501,12 @@ pub fn RasterPass(
             return shaded_px;
         }
 
+const CornerCheck = enum {
+    all_in,
+    all_out,
+    partial,
+};
+
         fn rasterPointwise(
             comptime report: Report,
             ctx_rast: rops.RasterContext(report),
@@ -533,13 +539,35 @@ pub fn RasterPass(
             const NT = if (N == 4) 2 else if (N == 6) 6 else 8;
             var element_tess: hull.Tessellation(NT) = undefined;
 
+            var corner_state: CornerCheck = .partial;
+
             if (comptime Geometry.has_hull) {
                 if (input.hull) |rh| {
                     const hx = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 0, 0 }, 1);
                     const hy = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 1, 0 }, 1);
                     element_tess = hull.getTessellation(N, hx, hy);
+
+                    const ox_min = @as(f64, @floatFromInt(target.overlap.x_min));
+                    const ox_max = @as(f64, @floatFromInt(target.overlap.x_max));
+                    const oy_min = @as(f64, @floatFromInt(target.overlap.y_min));
+                    const oy_max = @as(f64, @floatFromInt(target.overlap.y_max));
+
+                    const c0 = element_tess.isIn(ox_min, oy_min);
+                    const c1 = element_tess.isIn(ox_max, oy_min);
+                    const c2 = element_tess.isIn(ox_max, oy_max);
+                    const c3 = element_tess.isIn(ox_min, oy_max);
+
+                    if (c0 and c1 and c2 and c3) {
+                        corner_state = .all_in;
+                    } else {
+                        // It is NOT safe to assume all_out if 4 corners are out.
+                        // The hull could still cross the box.
+                        corner_state = .partial;
+                    }
                 }
             }
+
+            if (corner_state == .all_out) return 0;
 
             var subpx_y: f64 = bounds.y_min_f + domain.offset;
             for (bounds.start_y..bounds.end_y) |scratch_y| {
@@ -551,7 +579,9 @@ pub fn RasterPass(
                     const global_suby = target.tile.y_px_min * sub_samp + scratch_y;
 
                     if (comptime Geometry.has_hull) {
-                        const in_tess = element_tess.isIn(subpx_x, subpx_y);
+                        const skip_hull = (corner_state == .all_in);
+                        const in_tess = if (skip_hull) true else element_tess.isIn(subpx_x, subpx_y);
+                        
                         if (comptime report == .perf) {
                             ctx_rast.ctx_perf.recordEarlyOut(global_subx, global_suby, in_tess);
                         }

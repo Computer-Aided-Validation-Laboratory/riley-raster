@@ -21,7 +21,7 @@ pub fn main() !void {
 
     const pixel_num = [_]u32{ 800, 500 };
 
-    const out_dir_root = "out-mm0-simple";
+    const out_dir_root = "out-simple";
     const data_dir = "data-simple";
 
     const config = gengold.zraster.RasterConfig{
@@ -30,7 +30,6 @@ pub fn main() !void {
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
-        .tile_size = 16,
         .report = .perf,
         .perf_opts = .{
             .formats = &[_]gengold.iio.ImageSaveOpts{
