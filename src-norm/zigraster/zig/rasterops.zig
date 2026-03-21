@@ -312,7 +312,9 @@ pub fn countElemsCalcBBoxes(comptime N: usize,
     const nodal_derivs = comptime getNodalDerivs(N);
     const tolerance = 1e-8;
 
-    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
+    const total_elems = elem_coord_arr.dims[dim_elem];
+
+    for (0..total_elems) |ee| {
         var x_min: f64 = std.math.inf(f64);
         var x_max: f64 = -std.math.inf(f64);
         var y_min: f64 = std.math.inf(f64);
@@ -330,7 +332,7 @@ pub fn countElemsCalcBBoxes(comptime N: usize,
             sy_nodes[ii] = cr.y[ii] / cr.z[ii] + y_off;
         }
 
-        if (comptime N > 4) {
+        if (comptime N >= 4) {
             var all_backface = true;
             for (0..N) |ii| {
                 var dx_dxi: f64 = 0;
