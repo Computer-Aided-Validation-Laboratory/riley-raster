@@ -151,7 +151,6 @@ pub fn transformCoords(
     coords: *const Coords,
     connect: *const Connect,
 ) !NDArray(f64) {
-    // ... (keep unchanged)
     const coord_dims = [_]usize{ connect.getElemsNum(), 3, connect.getNodesPerElem() };
     var elem_coord_arr = try NDArray(f64).initFlat(outer_alloc, coord_dims[0..]);
     @memset(elem_coord_arr.elems, 0.0);
@@ -226,9 +225,7 @@ pub fn transformField(
 
                 for (0..elem_field_arr.dims[dim_field]) |ff| {
                     get_field_inds[2] = ff;
-                    if (get_field_inds[1] >= field.array.dims[1]) {
-                        std.debug.print("OUT OF BOUNDS: coord_ind={d}, coord_dim={d}\n", .{get_field_inds[1], field.array.dims[1]});
-                    }
+
                     var field_val: f64 = field.array.get(get_field_inds[0..]);
                     if (scaling_params) |sp| {
                         field_val = imageops.applyScaling(field_val, scaling, bits, sp);
