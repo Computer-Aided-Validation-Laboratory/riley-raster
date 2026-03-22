@@ -45,6 +45,7 @@ pub const MeshInput = struct {
 pub const MeshPrepared = struct {
     mesh_type: MeshType,
     coords: NDArray(f64),
+    connect: Connect,
     shader: shaderops.ShaderPrepared,
 };
 
@@ -64,6 +65,7 @@ pub fn prepareMesh(
     var mesh_prep = MeshPrepared{
         .mesh_type = mesh_input.mesh_type,
         .coords = elem_coords,
+        .connect = mesh_input.connect,
         .shader = undefined,
     };
 
@@ -87,6 +89,31 @@ pub fn prepareMesh(
                 .scale_over = flat_in.scale_over,
                 .scale_mul = factors.mul,
                 .scale_add = factors.add,
+                .normal_type = flat_in.normal_type,
+                .elem_normals = null,
+            } };
+        },
+        .normals => |*flat_in| {
+            const elem_field = try prepareField(
+                outer_alloc,
+                &mesh_input.connect,
+                &flat_in.field,
+            );
+
+            const factors = if (scaling_params) |sp|
+                imageops.getScaleFactors(flat_in.scaling, flat_in.bits, sp)
+            else
+                imageops.ScaleFactors{ .mul = 1.0, .add = 0.0 };
+
+            mesh_prep.shader = .{ .normals = .{
+                .elem_field = elem_field,
+                .bits = flat_in.bits,
+                .scaling = flat_in.scaling,
+                .scale_over = flat_in.scale_over,
+                .scale_mul = factors.mul,
+                .scale_add = factors.add,
+                .normal_type = flat_in.normal_type,
+                .elem_normals = null,
             } };
         },
         .tex_u8 => |*tex_in| {
@@ -103,6 +130,8 @@ pub fn prepareMesh(
                 .scaling = tex_in.scaling,
                 .scale_mul = factors.mul,
                 .scale_add = factors.add,
+                .normal_type = tex_in.normal_type,
+                .elem_normals = null,
             } };
         },
         .tex_u16 => |*tex_in| {
@@ -119,6 +148,8 @@ pub fn prepareMesh(
                 .scaling = tex_in.scaling,
                 .scale_mul = factors.mul,
                 .scale_add = factors.add,
+                .normal_type = tex_in.normal_type,
+                .elem_normals = null,
             } };
         },
         .tex_rgb_u8 => |*tex_in| {
@@ -135,6 +166,8 @@ pub fn prepareMesh(
                 .scaling = tex_in.scaling,
                 .scale_mul = factors.mul,
                 .scale_add = factors.add,
+                .normal_type = tex_in.normal_type,
+                .elem_normals = null,
             } };
         },
         .tex_rgb_u16 => |*tex_in| {
@@ -151,6 +184,8 @@ pub fn prepareMesh(
                 .scaling = tex_in.scaling,
                 .scale_mul = factors.mul,
                 .scale_add = factors.add,
+                .normal_type = tex_in.normal_type,
+                .elem_normals = null,
             } };
         },
     }
@@ -315,6 +350,7 @@ pub fn meshInputFromSimDataSlice(
                 mesh_inputs[ii].shader = .{ .flat = .{
                     .field = field,
                     .bits = 8,
+                    .normal_type = .none,
                 } };
             } else {
                 return error.MissingFieldData;
@@ -348,6 +384,7 @@ pub fn meshInputFromSimDataSlice(
                 .uvs = uvmap.array,
                 .texture = texture,
                 .interp_type = .cubic_lut_lerp,
+                .normal_type = .none,
             } };
         }
         initialized_count += 1;

@@ -1,12 +1,31 @@
 pub fn shapeFunctions(comptime N: usize, xi: f64, eta: f64, 
                       n_v: *[N]f64, dNu: *[N]f64, dNv: *[N]f64) void {
     switch (N) {
+        3 => shapeFunctions3(xi, eta, n_v, dNu, dNv),
         4 => shapeFunctions4(xi, eta, n_v, dNu, dNv),
         6 => shapeFunctions6(xi, eta, n_v, dNu, dNv),
         8 => shapeFunctions8(xi, eta, n_v, dNu, dNv),
         9 => shapeFunctions9(xi, eta, n_v, dNu, dNv),
         else => @compileError("Unsupported number of nodes"),
     }
+}
+
+fn shapeFunctions3(xi: f64, eta: f64, n_v: *[3]f64, dNu: *[3]f64, dNv: *[3]f64) void {
+    const L1 = 1.0 - xi - eta;
+    const L2 = xi;
+    const L3 = eta;
+
+    n_v[0] = L1;
+    n_v[1] = L2;
+    n_v[2] = L3;
+
+    dNu[0] = -1.0;
+    dNu[1] = 1.0;
+    dNu[2] = 0.0;
+
+    dNv[0] = -1.0;
+    dNv[1] = 0.0;
+    dNv[2] = 1.0;
 }
 
 fn shapeFunctions4(xi: f64, eta: f64, n_v: *[4]f64, dNu: *[4]f64, dNv: *[4]f64) void {

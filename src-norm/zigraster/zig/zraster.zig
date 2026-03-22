@@ -94,16 +94,19 @@ pub fn rasterAllFrames(
     for (meshes) |mesh| {
         if (mesh.disp) |field| {
             num_time = @max(num_time, field.array.dims[dim_time_pre]);
-        } else if (mesh.shader == .flat) {
-            num_time = @max(num_time, mesh.shader.flat.field.array.dims[dim_time_pre]);
+        } else switch (mesh.shader) {
+            .flat, .normals => |s| {
+                num_time = @max(num_time, s.field.array.dims[dim_time_pre]);
+            },
+            else => {},
         }
     }
 
-    // For now we assume all meshes in scene have SAME number of fields
     var num_fields: usize = 0;
     for (meshes) |mesh| {
         const mesh_fields = switch (mesh.shader) {
             .flat => |s| s.field.getFieldsN(),
+            .normals => 3, // Normals are always RGB
             .tex_u8, .tex_u16 => 1,
             .tex_rgb_u8, .tex_rgb_u16 => 3,
         };
@@ -124,12 +127,15 @@ pub fn rasterAllFrames(
     defer outer_alloc.free(flat_global_scaling);
     for (meshes, 0..) |mesh, ii| {
         flat_global_scaling[ii] = null;
-        if (mesh.shader == .flat) {
-            if (mesh.shader.flat.scale_over == .over_frames) {
-                flat_global_scaling[ii] = imageops.getScalingParamsNDArray(
-                    &mesh.shader.flat.field.array, null, mesh.shader.flat.scaling
-                );
-            }
+        switch (mesh.shader) {
+            .flat, .normals => |s| {
+                if (s.scale_over == .over_frames) {
+                    flat_global_scaling[ii] = imageops.getScalingParamsNDArray(
+                        &s.field.array, null, s.scaling
+                    );
+                }
+            },
+            else => {},
         }
     }
 
@@ -152,14 +158,17 @@ pub fn rasterAllFrames(
             }
 
             var flat_frame_scaling: ?imageops.ScalingParams = null;
-            if (mesh.shader == .flat) {
-                if (mesh.shader.flat.scale_over == .over_frames) {
-                    flat_frame_scaling = flat_global_scaling[ii];
-                } else {
-                    flat_frame_scaling = imageops.getScalingParamsNDArray(
-                        &mesh.shader.flat.field.array, tt, mesh.shader.flat.scaling
-                    );
-                }
+            switch (mesh.shader) {
+                .flat, .normals => |s| {
+                    if (s.scale_over == .over_frames) {
+                        flat_frame_scaling = flat_global_scaling[ii];
+                    } else {
+                        flat_frame_scaling = imageops.getScalingParamsNDArray(
+                            &s.field.array, tt, s.scaling
+                        );
+                    }
+                },
+                else => {},
             }
             transformed_meshes[ii] = try mr.prepareMesh(
                 arena_alloc, &mesh, &coords_to_trans, flat_frame_scaling

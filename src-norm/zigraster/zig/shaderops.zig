@@ -1,5 +1,6 @@
-const std = @import("std");
-const NDArray = @import("ndarray.zig").NDArray;
+const ndarray = @import("ndarray.zig");
+const NDArray = ndarray.NDArray;
+const MappedNDArray = ndarray.MappedNDArray;
 const MatSlice = @import("matslice.zig").MatSlice;
 const iio = @import("imageio.zig");
 const Texture = iio.Texture;
@@ -11,13 +12,16 @@ const Field = meshio.Field;
 
 const imageops = @import("imageops.zig");
 pub const ScaleOver = enum { within_frames, over_frames };
+pub const NormalType = enum { none, exact, averaged };
 
 pub const MAX_FIELDS = 8;
 
 pub fn LocalNodeBuffer(comptime N: usize) type {
     return struct {
         data: [MAX_FIELDS * N]f64 = undefined,
+        normals: [3 * N]f64 = undefined,
         actual_fields: usize = 0,
+        has_normals: bool = false,
 
         const Self = @This();
 
@@ -32,6 +36,16 @@ pub fn LocalNodeBuffer(comptime N: usize) type {
             @memcpy(self.data[0..count], array.elems[start_idx .. start_idx + count]);
         }
 
+        pub inline fn loadNormals(
+            self: *Self,
+            array: NDArray(f64),
+            start_idx: usize,
+        ) void {
+            self.has_normals = true;
+            const count = 3 * N;
+            @memcpy(self.normals[0..count], array.elems[start_idx .. start_idx + count]);
+        }
+
         pub inline fn interpolate(
             self: *const Self, 
             field_idx: usize, 
@@ -44,6 +58,19 @@ pub fn LocalNodeBuffer(comptime N: usize) type {
             }
             return sum;
         }
+
+        pub inline fn interpolateNormal(
+            self: *const Self,
+            weights: [N]f64,
+        ) [3]f64 {
+            var norm = [3]f64{ 0.0, 0.0, 0.0 };
+            inline for (0..N) |nn| {
+                norm[0] += weights[nn] * self.normals[0 * N + nn];
+                norm[1] += weights[nn] * self.normals[1 * N + nn];
+                norm[2] += weights[nn] * self.normals[2 * N + nn];
+            }
+            return norm;
+        }
     };
 }
 
@@ -52,6 +79,7 @@ pub const FlatInput = struct {
     bits: ?u8 = 8,
     scaling: imageops.ScaleStrategy = .none,
     scale_over: ScaleOver = .over_frames,
+    normal_type: NormalType = .none,
 };
 
 pub const FlatPrepared = struct {
@@ -61,6 +89,8 @@ pub const FlatPrepared = struct {
     scale_over: ScaleOver = .over_frames,
     scale_mul: f64 = 1.0,
     scale_add: f64 = 0.0,
+    normal_type: NormalType = .none,
+    elem_normals: ?MappedNDArray(f64) = null,
 };
 
 pub fn TexInput(comptime T: type, comptime channels: usize) type {
@@ -70,6 +100,7 @@ pub fn TexInput(comptime T: type, comptime channels: usize) type {
         interp_type: InterpType = .cubic_lut_lerp,
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
+        normal_type: NormalType = .none,
     };
 }
 
@@ -82,6 +113,8 @@ pub fn TexPrepared(comptime T: type, comptime channels: usize) type {
         scaling: imageops.ScaleStrategy = .none,
         scale_mul: f64 = 1.0,
         scale_add: f64 = 0.0,
+        normal_type: NormalType = .none,
+        elem_normals: ?MappedNDArray(f64) = null,
     };
 }
 
@@ -112,6 +145,7 @@ pub const ShaderInput = union(enum) {
     tex_u16: TexInput(u16, 1),
     tex_rgb_u8: TexInput(u8, 3),
     tex_rgb_u16: TexInput(u16, 3),
+    normals: FlatInput,
 };
 
 pub const ShaderPrepared = union(enum) {
@@ -120,6 +154,7 @@ pub const ShaderPrepared = union(enum) {
     tex_u16: TexPrepared(u16, 1),
     tex_rgb_u8: TexPrepared(u8, 3),
     tex_rgb_u16: TexPrepared(u16, 3),
+    normals: FlatPrepared,
 };
 
 pub inline fn fillFlat(

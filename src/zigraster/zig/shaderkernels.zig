@@ -31,6 +31,33 @@ pub fn FlatKernel(comptime N: usize) type {
     };
 }
 
+pub fn NormalKernel(comptime N: usize) type {
+    return struct {
+        pub inline fn shade(
+            comptime coord_space: CoordSpace,
+            ctx_shade: shaderops.ShadeContext(N),
+            interp: shaderops.InterpData(N),
+            shader: anytype,
+            ctx_perf: anytype,
+            spx_image_scratch: *MatSlice(f64),
+        ) void {
+            _ = shader;
+            _ = coord_space;
+            if (@TypeOf(ctx_perf).mode == .perf) {
+                ctx_perf.recordDepth(
+                    ctx_shade.global_subx, ctx_shade.global_suby, 1.0 / interp.sub_pixel_z,
+                );
+            }
+            
+            const n = ctx_shade.local_buf.interpolateNormal(interp.weights);
+            
+            spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + 0] = n[0] * 0.5 + 0.5;
+            spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + 1] = n[1] * 0.5 + 0.5;
+            spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + 2] = n[2] * 0.5 + 0.5;
+        }
+    };
+}
+
 pub fn TexKernel(
     comptime N: usize, 
     comptime T: type, 

@@ -85,7 +85,7 @@ pub fn rasterScene(
         const tile_start = if (comptime report == .perf) Timestamp.now(io, .awake) else {};
         var shaded_px: u64 = 0;
 
-        @memset(subpx_inv_z_scratch, 0.0);
+        @memset(subpx_inv_z_scratch, -std.math.inf(f64));
         @memset(subpx_image_scratch.elems, 0.0);
 
         const overlaps = tiling.overlaps[tile.overlap_start .. 
@@ -117,6 +117,12 @@ pub fn rasterScene(
                     };
                     const N = GK.nodes_num;
 
+                    const mesh_fields = switch (mesh.shader) {
+                        .flat, .normals => |s| s.elem_field.dims[2],
+                        .tex_u8, .tex_u16 => 1,
+                        .tex_rgb_u8, .tex_rgb_u16 => 3,
+                    };
+
                     switch (mesh.shader) {
                         .flat => |*shader| {
                             const SK = shadekerns.FlatKernel(N);
@@ -130,8 +136,34 @@ pub fn rasterScene(
                             local_node_buf.load(
                                 shader.elem_field,
                                 start_idx,
-                                fields_num,
+                                mesh_fields,
                             );
+                            if (shader.elem_normals) |en| {
+                                const prep_idx = en.map[target.overlap.elem_idx];
+                                local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
+                            }
+                            shaded_px += try RasterPass(GK, SK, FlatPrepared).render(
+                                report, ctx_rast, target, input, mesh, shader, scratch, &local_node_buf,
+                            );
+                        },
+                        .normals => |*shader| {
+                            const SK = shadekerns.NormalKernel(N);
+                            var local_node_buf: shadekerns.shaderops.LocalNodeBuffer(N) = .{};
+                            
+                            const tt = @min(ctx_rast.frame_ind, shader.elem_field.dims[0] - 1);
+                            const start_idx = shader.elem_field.getFlatInd(&[_]usize{ 
+                                tt, target.overlap.elem_idx, 0, 0 
+                            });
+
+                            local_node_buf.load(
+                                shader.elem_field,
+                                start_idx,
+                                mesh_fields,
+                            );
+                            if (shader.elem_normals) |en| {
+                                const prep_idx = en.map[target.overlap.elem_idx];
+                                local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
+                            }
                             shaded_px += try RasterPass(GK, SK, FlatPrepared).render(
                                 report, ctx_rast, target, input, mesh, shader, scratch, &local_node_buf,
                             );
@@ -144,6 +176,10 @@ pub fn rasterScene(
                                 target.overlap.elem_idx * 2 * N,
                                 2,
                             );
+                            if (shader.elem_normals) |en| {
+                                const prep_idx = en.map[target.overlap.elem_idx];
+                                local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
+                            }
                             shaded_px += try RasterPass(GK, SK, TexPrepared(u8, 1)).render(
                                 report, ctx_rast, target, input, mesh, shader, scratch, &local_node_buf,
                             );
@@ -156,6 +192,10 @@ pub fn rasterScene(
                                 target.overlap.elem_idx * 2 * N,
                                 2,
                             );
+                            if (shader.elem_normals) |en| {
+                                const prep_idx = en.map[target.overlap.elem_idx];
+                                local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
+                            }
                             shaded_px += try RasterPass(GK, SK, TexPrepared(u16, 1)).render(
                                 report, ctx_rast, target, input, mesh, shader, scratch, &local_node_buf,
                             );
@@ -168,6 +208,10 @@ pub fn rasterScene(
                                 target.overlap.elem_idx * 2 * N,
                                 2,
                             );
+                            if (shader.elem_normals) |en| {
+                                const prep_idx = en.map[target.overlap.elem_idx];
+                                local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
+                            }
                             shaded_px += try RasterPass(GK, SK, TexPrepared(u8, 3)).render(
                                 report, ctx_rast, target, input, mesh, shader, scratch, &local_node_buf,
                             );
@@ -180,6 +224,10 @@ pub fn rasterScene(
                                 target.overlap.elem_idx * 2 * N,
                                 2,
                             );
+                            if (shader.elem_normals) |en| {
+                                const prep_idx = en.map[target.overlap.elem_idx];
+                                local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
+                            }
                             shaded_px += try RasterPass(GK, SK, TexPrepared(u16, 3)).render(
                                 report, ctx_rast, target, input, mesh, shader, scratch, &local_node_buf,
                             );
