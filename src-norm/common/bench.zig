@@ -8,7 +8,7 @@ pub const SimData = meshio.SimData;
 
 pub const mr = @import("../zigraster/zig/meshraster.zig");
 pub const MeshType = mr.MeshType;
-pub const MeshRaster = mr.MeshRaster;
+pub const MeshInput = mr.MeshInput;
 
 pub const Rotation = @import("../zigraster/zig/rotation.zig").Rotation;
 pub const Camera = @import("../zigraster/zig/camera.zig").Camera;
@@ -125,10 +125,10 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
     var sim_data = try loadData(aa, io, data_path);
     const uv_path = try std.fmt.allocPrint(aa, "{s}/uvs.csv", .{data_path});
     var uvs = try uvio.loadUVMap(aa, io, uv_path);
-const elem_coords = try mr.transformCoords(aa, &sim_data.coords, &sim_data.connect);
-const elem_disp = try mr.transformField(aa, &sim_data.connect, &sim_data.field.?);
-const elem_field = try mr.transformField(aa, &sim_data.connect, &sim_data.field.?);
-const elem_uvs = try mr.transformUVs(aa, &uvs, &sim_data.connect);
+const elem_coords = try mr.prepareCoords(aa, &sim_data.coords, &sim_data.connect);
+const elem_disp = try mr.prepareField(aa, &sim_data.connect, &sim_data.field.?);
+const elem_field = try mr.prepareField(aa, &sim_data.connect, &sim_data.field.?);
+const elem_uvs = try mr.prepareUVs(aa, &uvs, &sim_data.connect);
 
 const cam_pos = CameraOps.posFillFrameFromRot(
     &sim_data.coords, pixel_num, pixel_size, focal_leng, rot, fov_scale,
@@ -143,10 +143,10 @@ for (disps) |add_disp| {
     const d_str = if (add_disp) "dispon" else "dispoff";
     const mt_name = @tagName(mesh_type);
 
-    // --- Flat Shader ---
+    // --- Flat ShaderInput ---
     if (shader_filter == .flat or shader_filter == .both) {
         const c_dir_name = try std.fmt.allocPrint(aa, "{s}_{s}_{s}_flat", .{ case_name, mt_name, d_str });
-        var mesh_raster = MeshRaster{ 
+        var mesh_input = MeshInput{ 
             .mesh_type = mesh_type, 
             .coords = elem_coords, 
             .disp = if (add_disp) elem_disp else null, 
@@ -155,16 +155,16 @@ for (disps) |add_disp| {
 
 
             const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };
-            const result = (try zraster.rasterAllFrames(aa, io, &camera, &[_]MeshRaster{mesh_raster}, config, null)) orelse return error.NoResult;
+            const result = (try zraster.rasterAllFrames(aa, io, &camera, &[_]MeshInput{mesh_input}, config, null)) orelse return error.NoResult;
             try saveResultToRoot(aa, io, &result, c_dir_name, render_root);
             defer aa.free(result.elems);
         }
 
-        // --- Tex Shader ---
+        // --- Tex ShaderInput ---
         if (shader_filter == .tex or shader_filter == .both) {
             for (interp_types) |it| {
                 const c_dir_name = try std.fmt.allocPrint(aa, "{s}_{s}_{s}_tex_{s}", .{ case_name, mt_name, d_str, @tagName(it) });
-                var mesh_raster = MeshRaster{ 
+                var mesh_input = MeshInput{ 
                     .mesh_type = mesh_type, 
                     .coords = elem_coords, 
                     .disp = if (add_disp) elem_disp else null, 
@@ -172,7 +172,7 @@ for (disps) |add_disp| {
                 };
                 
                 const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };
-                const result = (try zraster.rasterAllFrames(aa, io, &camera, &[_]MeshRaster{mesh_raster}, config, null)) orelse return error.NoResult;
+                const result = (try zraster.rasterAllFrames(aa, io, &camera, &[_]MeshInput{mesh_input}, config, null)) orelse return error.NoResult;
                 try saveResultToRoot(aa, io, &result, c_dir_name, render_root);
                 defer aa.free(result.elems);
             }

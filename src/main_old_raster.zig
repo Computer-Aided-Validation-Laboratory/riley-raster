@@ -183,7 +183,7 @@ pub fn main() !void {
     // const cwd = std.fs.cwd();
     const cwd: std.Io.Dir = std.Io.Dir.cwd();
         
-    const dir_name = "out-naive";
+    const dir_name = "out-bench-naive";
     var name_buff: [1024]u8 = undefined;
     
     cwd.createDir(io, dir_name, .default_dir) catch |err| switch (err) {

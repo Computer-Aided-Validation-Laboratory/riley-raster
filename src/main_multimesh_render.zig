@@ -26,7 +26,7 @@ pub fn main() !void {
         },
     };
 
-    const out_dir_root = "out-multimesh";
+    const out_dir_root = "out-bench-multimesh";
     std.debug.print("Rendering Multimesh Data to {s}/...\n", .{out_dir_root});
 
     try gengold.runMultimeshGenerationExt(allocator, io, config, out_dir_root);

@@ -15,11 +15,10 @@ const Vec3OfSlices = rops.Vec3OfSlices;
 
 const mr = @import("meshraster.zig");
 const MeshType = mr.MeshType;
-const MeshRaster = mr.MeshRaster;
-const MeshTransform = mr.MeshTransform;
-const FlatShader = mr.FlatShader;
-const TexShader = mr.TexShader;
-const Shader = mr.Shader;
+const MeshInput = mr.MeshInput;
+const MeshPrepared = mr.MeshPrepared;
+const ShaderInput = shadekerns.shaderops.ShaderInput;
+const ShaderPrepared = shadekerns.shaderops.ShaderPrepared;
 
 const iio = @import("imageio.zig");
 const ImageFormat = iio.ImageFormat;
@@ -79,7 +78,7 @@ pub fn rasterAllFrames(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     camera: *const Camera,
-    meshes: []const MeshRaster,
+    meshes: []const MeshInput,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
 ) !?NDArray(f64) {
@@ -89,7 +88,6 @@ pub fn rasterAllFrames(
     const arena_alloc = arena.allocator();
 
     const dim_time_pre: usize = 0;
-    const dim_field_pre: usize = 2;
 
     // Work out max time across all meshes
     var num_time: usize = 1;
@@ -105,7 +103,7 @@ pub fn rasterAllFrames(
     var num_fields: usize = 0;
     for (meshes) |mesh| {
         const mesh_fields = switch (mesh.shader) {
-            .flat => |s| s.field.array.dims[dim_field_pre],
+            .flat => |s| s.field.getFieldsN(),
             .tex_u8, .tex_u16 => 1,
             .tex_rgb_u8, .tex_rgb_u16 => 3,
         };
@@ -139,7 +137,7 @@ pub fn rasterAllFrames(
         _ = arena.reset(.free_all);
 
         // Transform all meshes for this frame
-        var transformed_meshes = try arena_alloc.alloc(MeshTransform, meshes.len);
+        var transformed_meshes = try arena_alloc.alloc(MeshPrepared, meshes.len);
         for (meshes, 0..) |mesh, ii| {
             var coords_to_trans: MatSlice(f64) = undefined;
             if (mesh.disp) |disp| {
@@ -163,7 +161,7 @@ pub fn rasterAllFrames(
                     );
                 }
             }
-            transformed_meshes[ii] = try mr.transformMesh(
+            transformed_meshes[ii] = try mr.prepareMesh(
                 arena_alloc, &mesh, &coords_to_trans, flat_frame_scaling
             );
         }
@@ -223,7 +221,7 @@ fn rasterSceneInternal(
     io: std.Io,
     camera: *const Camera,
     frame_ind: usize,
-    meshes: []MeshTransform,
+    meshes: []MeshPrepared,
     image_out_arr: *NDArray(f64),
     tile_size: u16,
     comptime report: Report,

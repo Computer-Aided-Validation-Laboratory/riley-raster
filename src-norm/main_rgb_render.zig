@@ -6,7 +6,7 @@ const uvio = @import("zigraster/zig/uvio.zig");
 const Camera = @import("zigraster/zig/camera.zig").Camera;
 const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
 const Rotation = @import("zigraster/zig/camera.zig").Rotation;
-const MeshRaster = @import("zigraster/zig/meshraster.zig").MeshRaster;
+const MeshInput = @import("zigraster/zig/meshraster.zig").MeshInput;
 const mr = @import("zigraster/zig/meshraster.zig");
 const MatSlice = @import("zigraster/zig/matslice.zig").MatSlice;
 
@@ -53,7 +53,7 @@ pub fn main() !void {
         aa, io, "texture/speckle_rgb.bmp", .bmp, u8, 3
     );
 
-    var mesh_rasters = try aa.alloc(MeshRaster, 10);
+    var mesh_inputs = try aa.alloc(MeshInput, 10);
 
     // Top Row (0-4): Texture RGB Shading
     for (0..5) |ii| {
@@ -65,7 +65,7 @@ pub fn main() !void {
         );
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
-        mesh_rasters[ii] = MeshRaster{
+        mesh_inputs[ii] = MeshInput{
             .mesh_type = mesh_types[ii],
             .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
@@ -135,7 +135,7 @@ pub fn main() !void {
         );
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
-        mesh_rasters[ii + 5] = MeshRaster{
+        mesh_inputs[ii + 5] = MeshInput{
             .mesh_type = mesh_types[ii],
             .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
@@ -149,7 +149,7 @@ pub fn main() !void {
         };
     }
 
-    mr.arrangeMeshSlice(mesh_rasters, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+    mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
 
     const pixel_num = [_]u32{ 1200, 800 };
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
@@ -157,9 +157,9 @@ pub fn main() !void {
     const rot = Rotation.init(0, 0, 0);
     const fov_scale_factor: f64 = 1.1;
 
-    const roi_pos = CameraOps.roiCentOverMeshes(mesh_rasters);
+    const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
     const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
-        mesh_rasters, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor,
+        mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor,
     );
     const camera = Camera.init(
         pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2
@@ -175,7 +175,7 @@ pub fn main() !void {
     };
 
     std.debug.print("Rendering RGB Data to {s}/...\n", .{out_dir_root});
-    _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, out_dir);
+    _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, out_dir);
 
     std.debug.print("Done.\n", .{});
 }

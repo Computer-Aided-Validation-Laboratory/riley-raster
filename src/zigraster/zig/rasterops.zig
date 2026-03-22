@@ -255,6 +255,49 @@ pub fn elemsToClipPxLengSIMD(comptime N: usize,
     }
 }
 
+const NodalDerivs = struct {
+    dNu: [9][9]f64,
+    dNv: [9][9]f64,
+};
+
+fn getNodalDerivs(comptime N: usize) NodalDerivs {
+    var nd = NodalDerivs{
+        .dNu = [_][9]f64{[_]f64{0} ** 9} ** 9,
+        .dNv = [_][9]f64{[_]f64{0} ** 9} ** 9,
+    };
+    const shapefun = @import("shapefun.zig");
+    const node_coords = switch (N) {
+        4 => [4][2]f64{
+            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
+        },
+        6 => [6][2]f64{
+            .{ 0, 0 }, .{ 1, 0 }, .{ 0, 1 }, .{ 0.5, 0 }, .{ 0.5, 0.5 }, .{ 0, 0.5 },
+        },
+        8 => [8][2]f64{
+            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
+            .{ 0, -1 }, .{ 1, 0 }, .{ 0, 1 }, .{ -1, 0 },
+        },
+        9 => [9][2]f64{
+            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
+            .{ 0, -1 }, .{ 1, 0 }, .{ 0, 1 }, .{ -1, 0 },
+            .{ 0, 0 },
+        },
+        else => return nd,
+    };
+
+    for (0..N) |ii| {
+        var n_v: [N]f64 = undefined;
+        var dNu: [N]f64 = undefined;
+        var dNv: [N]f64 = undefined;
+        shapefun.shapeFunctions(N, node_coords[ii][0], node_coords[ii][1], &n_v, &dNu, &dNv);
+        for (0..N) |jj| {
+            nd.dNu[ii][jj] = dNu[jj];
+            nd.dNv[ii][jj] = dNv[jj];
+        }
+    }
+    return nd;
+}
+
 pub fn countElemsCalcBBoxes(comptime N: usize,
                             comptime NH: usize,
                             camera: *const Camera,
@@ -266,11 +309,50 @@ pub fn countElemsCalcBBoxes(comptime N: usize,
     const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
     const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
 
-    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
+    const nodal_derivs = comptime getNodalDerivs(N);
+    const tolerance = 1e-8;
+
+    const total_elems = elem_coord_arr.dims[dim_elem];
+
+    for (0..total_elems) |ee| {
         var x_min: f64 = std.math.inf(f64);
         var x_max: f64 = -std.math.inf(f64);
         var y_min: f64 = std.math.inf(f64);
         var y_max: f64 = -std.math.inf(f64);
+
+        const cr: Vec3OfSlices(f64) = try loadVec3SlicesFromElemArray(
+            N, f64, elem_coord_arr, ee,
+        );
+
+        var sx_nodes: [N]f64 = undefined;
+        var sy_nodes: [N]f64 = undefined;
+
+        for (0..N) |ii| {
+            sx_nodes[ii] = cr.x[ii] / cr.z[ii] + x_off;
+            sy_nodes[ii] = cr.y[ii] / cr.z[ii] + y_off;
+        }
+
+        if (comptime N >= 4) {
+            var all_backface = true;
+            for (0..N) |ii| {
+                var dx_dxi: f64 = 0;
+                var dx_deta: f64 = 0;
+                var dy_dxi: f64 = 0;
+                var dy_deta: f64 = 0;
+                for (0..N) |jj| {
+                    dx_dxi += nodal_derivs.dNu[ii][jj] * sx_nodes[jj];
+                    dx_deta += nodal_derivs.dNv[ii][jj] * sx_nodes[jj];
+                    dy_dxi += nodal_derivs.dNu[ii][jj] * sy_nodes[jj];
+                    dy_deta += nodal_derivs.dNv[ii][jj] * sy_nodes[jj];
+                }
+                const nz = dx_dxi * dy_deta - dx_deta * dy_dxi;
+                if (nz <= tolerance) {
+                    all_backface = false;
+                    break;
+                }
+            }
+            if (all_backface) continue;
+        }
 
         if (raster_hull) |rh| {
             // Use pre-calculated raster hull (NH points)
@@ -286,15 +368,9 @@ pub fn countElemsCalcBBoxes(comptime N: usize,
                 y_max = @max(y_max, sy);
             }
         } else {
-            // Use raw coords (N nodes) and do perspective divide
-            const cr: Vec3OfSlices(f64) = try loadVec3SlicesFromElemArray(
-                N, f64, elem_coord_arr, ee,
-            );
-
-            for (0..N) |i| {
-                const sx = cr.x[i] / cr.z[i] + x_off;
-                const sy = cr.y[i] / cr.z[i] + y_off;
-                
+            for (0..N) |ii| {
+                const sx = sx_nodes[ii];
+                const sy = sy_nodes[ii];
                 x_min = @min(x_min, sx);
                 x_max = @max(x_max, sx);
                 y_min = @min(y_min, sy);

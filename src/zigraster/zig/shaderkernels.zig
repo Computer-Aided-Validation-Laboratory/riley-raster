@@ -11,6 +11,7 @@ pub fn FlatKernel(comptime N: usize) type {
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext(N),
             interp: shaderops.InterpData(N),
+            shader: *const shaderops.FlatPrepared,
             ctx_perf: anytype,
             spx_image_scratch: *MatSlice(f64),
         ) void {
@@ -21,9 +22,9 @@ pub fn FlatKernel(comptime N: usize) type {
             }
             
             if (comptime coord_space == CoordSpace.clip_px_leng) {
-                shaderops.fillFlat(N, ctx_shade, interp, spx_image_scratch);
+                shaderops.fillFlat(N, ctx_shade, interp, shader, spx_image_scratch);
             } else {
-                shaderops.fillFlatPerspective(N, ctx_shade, interp, spx_image_scratch);
+                shaderops.fillFlatPerspective(N, ctx_shade, interp, shader, spx_image_scratch);
             }
 
         }
@@ -40,7 +41,7 @@ pub fn TexKernel(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext(N),
             interp: shaderops.InterpData(N),
-            shader: *const shaderops.TexShader(T, channels),
+            shader: *const shaderops.TexPrepared(T, channels),
             ctx_perf: anytype,
             spx_image_scratch: *MatSlice(f64),
         ) void {

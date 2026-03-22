@@ -7,8 +7,8 @@ const SimData = meshio.SimData;
 
 const mr = @import("zigraster/zig/meshraster.zig");
 const MeshType = mr.MeshType;
-const MeshRaster = mr.MeshRaster;
-const MeshTransform = mr.MeshTransform;
+const MeshInput = mr.MeshInput;
+const MeshPrepared = mr.MeshPrepared;
 
 const Camera = @import("zigraster/zig/camera.zig").Camera;
 const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
@@ -60,7 +60,7 @@ pub fn main() !void {
     // --- Case 1: Just Texture (Bottom Row) ---
     {
         print("Rendering Just Texture Isolation...\n", .{});
-        var mesh_rasters = try aa.alloc(MeshRaster, 10);
+        var mesh_inputs = try aa.alloc(MeshInput, 10);
         // Fill all with dummy or same data but only set bottom row to visible texture
         for (0..10) |ii| {
             const data_idx = ii % 5;
@@ -72,7 +72,7 @@ pub fn main() !void {
             if (ii >= 5) {
                 const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[data_idx]});
                 const uvs = try uvio.loadUVMap(aa, io, uv_path);
-                mesh_rasters[ii] = MeshRaster{
+                mesh_inputs[ii] = MeshInput{
                     .mesh_type = mesh_types[data_idx],
                     .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
                     .connect = sim_datas[data_idx].connect,
@@ -86,7 +86,7 @@ pub fn main() !void {
             } else {
                 // Top row empty (Flat shader with no field or just skip)
                 // We'll use a flat shader with scaling .none and no field to keep it blank
-                mesh_rasters[ii] = MeshRaster{
+                mesh_inputs[ii] = MeshInput{
                     .mesh_type = mesh_types[data_idx],
                     .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
                     .connect = sim_datas[data_idx].connect,
@@ -99,12 +99,12 @@ pub fn main() !void {
                 };
                 // Actually, let's just make it a very small triangle far away? 
                 // No, just render it but ensure field values are zero.
-                @memset(mesh_rasters[ii].shader.flat.field.array.elems, 0.0);
+                @memset(mesh_inputs[ii].shader.flat.field.array.elems, 0.0);
             }
         }
 
-        mr.arrangeMeshSlice(mesh_rasters, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
-        const camera = setupCamera(mesh_rasters);
+        mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+        const camera = setupCamera(mesh_inputs);
         
         var out_dir = try cwd.openDir(io, "out-norm-multimesh-debug", .{});
         defer out_dir.close(io);
@@ -114,7 +114,7 @@ pub fn main() !void {
             .save_opts = &[_]iio.ImageSaveOpts{ .{ .format = .bmp, .bits = 8, .scaling = .auto } },
             .tile_size = 32,
         };
-        _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, out_dir);
+        _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, out_dir);
         // Rename frame_0_field_0.bmp to texture_only.bmp manually if needed, 
         // but for now it's in debug dir.
     }
@@ -126,7 +126,7 @@ pub fn main() !void {
     // --- Case 2: Just Flat (Top Row) ---
     {
         print("Rendering Just Flat Isolation...\n", .{});
-        var mesh_rasters = try aa.alloc(MeshRaster, 10);
+        var mesh_inputs = try aa.alloc(MeshInput, 10);
         for (0..10) |ii| {
             const data_idx = ii % 5;
             var coords_dup = try MatSlice(f64).initAlloc(
@@ -135,7 +135,7 @@ pub fn main() !void {
             @memcpy(coords_dup.elems, sim_datas2[data_idx].coords.mat.elems);
 
             if (ii < 5) {
-                mesh_rasters[ii] = MeshRaster{
+                mesh_inputs[ii] = MeshInput{
                     .mesh_type = mesh_types[data_idx],
                     .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
                     .connect = sim_datas2[data_idx].connect,
@@ -148,7 +148,7 @@ pub fn main() !void {
                     }},
                 };
             } else {
-                mesh_rasters[ii] = MeshRaster{
+                mesh_inputs[ii] = MeshInput{
                     .mesh_type = mesh_types[data_idx],
                     .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
                     .connect = sim_datas2[data_idx].connect,
@@ -159,12 +159,12 @@ pub fn main() !void {
                         .bits = null,
                     }},
                 };
-                @memset(mesh_rasters[ii].shader.flat.field.array.elems, 0.0);
+                @memset(mesh_inputs[ii].shader.flat.field.array.elems, 0.0);
             }
         }
 
-        mr.arrangeMeshSlice(mesh_rasters, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
-        const camera = setupCamera(mesh_rasters);
+        mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+        const camera = setupCamera(mesh_inputs);
         
         var out_dir = try cwd.openDir(io, "out-norm-multimesh-debug", .{});
         defer out_dir.close(io);
@@ -176,13 +176,13 @@ pub fn main() !void {
         };
         // This will overwrite frame_0_field_0.bmp if we are not careful. 
         // In this simple script it's fine, we'll see the second run results.
-        _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, out_dir);
+        _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, out_dir);
     }
 
     print("Done debug isolation.\n", .{});
 }
 
-fn setupCamera(meshes: []const MeshRaster) Camera {
+fn setupCamera(meshes: []const MeshInput) Camera {
     const pixel_num = [_]u32{ 1600, 800 };
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;

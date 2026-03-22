@@ -47,7 +47,7 @@ fn processCase(allocator: std.mem.Allocator, io: std.Io, comptime N: usize, data
     };
     var sim_data = try meshio.loadSimData(aa, io, coord_path, connect_path, &field_paths, null);
 
-    var elem_coords = try mr.transformCoords(aa, &sim_data.coords, &sim_data.connect);
+    var elem_coords = try mr.prepareCoords(aa, &sim_data.coords, &sim_data.connect);
 
     const pixel_num = [_]u32{ 800, 500 };
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };

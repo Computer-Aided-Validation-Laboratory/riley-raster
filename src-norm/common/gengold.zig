@@ -5,7 +5,7 @@ pub const meshio = @import("../zigraster/zig/meshio.zig");
 pub const SimData = meshio.SimData;
 pub const mr = @import("../zigraster/zig/meshraster.zig");
 pub const MeshType = mr.MeshType;
-pub const MeshRaster = mr.MeshRaster;
+pub const MeshInput = mr.MeshInput;
 pub const Rotation = @import("../zigraster/zig/rotation.zig").Rotation;
 pub const Camera = @import("../zigraster/zig/camera.zig").Camera;
 pub const CameraOps = @import("../zigraster/zig/camera.zig").CameraOps;
@@ -34,7 +34,7 @@ pub fn renderAndSave(
     coords: meshio.Coords,
     connect: meshio.Connect,
     disp: ?meshio.Field,
-    sh: mr.Shader,
+    sh: mr.ShaderInput,
     dir: []const u8,
     add_disp: bool,
     config: RasterConfig,
@@ -58,7 +58,7 @@ pub fn renderAndSave(
     var out_dir = try cwd.openDir(io, dir, .{});
     defer out_dir.close(io);
 
-    const mesh_raster = MeshRaster{
+    const mesh_input = MeshInput{
         .mesh_type = mt,
         .coords = coords,
         .connect = connect,
@@ -66,7 +66,7 @@ pub fn renderAndSave(
         .shader = sh,
     };
 
-    const meshes = &[_]MeshRaster{mesh_raster};
+    const meshes = &[_]MeshInput{mesh_input};
     _ = try zraster.rasterAllFrames(allocator, io, camera, meshes, config, out_dir);
 }
 
@@ -136,7 +136,7 @@ pub fn runGenerationExt(
         for (disps) |add_disp| {
             const d_str = if (add_disp) "dispon" else "dispoff";
 
-            // Flat Shader
+            // Flat ShaderInput
             const flat_dir = try std.fmt.allocPrint(aa, "{s}/{s}_{s}_{s}_flat", .{
                 gold_dir_root,
                 test_type,
@@ -149,7 +149,7 @@ pub fn runGenerationExt(
                 }, flat_dir, add_disp, config
             );
 
-            // Tex Shader
+            // Tex ShaderInput
             for (interp_types) |it| {
                 const tex_dir = try std.fmt.allocPrint(aa, "{s}/{s}_{s}_{s}_tex_{s}", .{
                     gold_dir_root,
@@ -217,17 +217,17 @@ pub fn runMultimeshGenerationExt(
         else
             try std.fmt.allocPrint(aa, "{s}/allelem_tex_cubic_lut_lerp", .{out_dir_root});
 
-        const mesh_rasters = if (mode == .flat)
-            try mr.meshRasterFromSimDataSlice(
+        const mesh_inputs = if (mode == .flat)
+            try mr.meshInputFromSimDataSlice(
                 aa, io, sim_datas, &mesh_types, .flat, null, null, null
             )
         else
-            try mr.meshRasterFromSimDataSlice(
+            try mr.meshInputFromSimDataSlice(
                 aa, io, sim_datas, &mesh_types, .texture, &dir_paths, 
                 "texture/speckle-simple.tiff", null
             );
 
-        mr.arrangeMeshSlice(mesh_rasters, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
+        mr.arrangeMeshSlice(mesh_inputs, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
 
         const pixel_num = [_]u32{ 1200, 800 };
         const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
@@ -235,9 +235,9 @@ pub fn runMultimeshGenerationExt(
         const rot = Rotation.init(0, 0, 0);
         const fov_scale_factor: f64 = 1.1;
 
-        const roi_pos = CameraOps.roiCentOverMeshes(mesh_rasters);
+        const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
         const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
-            mesh_rasters, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor,
+            mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor,
         );
         const camera = Camera.init(
             pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2
@@ -262,7 +262,7 @@ pub fn runMultimeshGenerationExt(
         defer out_dir.close(io);
 
         std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
-        _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, out_dir);
+        _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, out_dir);
     }
 }
 
@@ -307,7 +307,7 @@ pub fn runMultimeshMixedGenerationExt(
         aa, io, "texture/speckle-simple.tiff", .tiff, u8, 1
     );
 
-    var mesh_rasters = try aa.alloc(MeshRaster, 10);
+    var mesh_inputs = try aa.alloc(MeshInput, 10);
 
     // Top Row (0-4): Flat Shading
     for (0..5) |ii| {
@@ -316,7 +316,7 @@ pub fn runMultimeshMixedGenerationExt(
         );
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
-        mesh_rasters[ii] = MeshRaster{
+        mesh_inputs[ii] = MeshInput{
             .mesh_type = mesh_types[ii],
             .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
@@ -340,7 +340,7 @@ pub fn runMultimeshMixedGenerationExt(
         );
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
-        mesh_rasters[ii + 5] = MeshRaster{
+        mesh_inputs[ii + 5] = MeshInput{
             .mesh_type = mesh_types[ii],
             .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
@@ -355,7 +355,7 @@ pub fn runMultimeshMixedGenerationExt(
         };
     }
 
-    mr.arrangeMeshSlice(mesh_rasters, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+    mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
 
     const pixel_num = [_]u32{ 1600, 800 };
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
@@ -363,9 +363,9 @@ pub fn runMultimeshMixedGenerationExt(
     const rot = Rotation.init(0, 0, 0);
     const fov_scale_factor: f64 = 1.2;
 
-    const roi_pos = CameraOps.roiCentOverMeshes(mesh_rasters);
+    const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
     const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
-        mesh_rasters, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
+        mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
     );
     const camera = Camera.init(
         pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2
@@ -390,7 +390,7 @@ pub fn runMultimeshMixedGenerationExt(
     defer out_dir.close(io);
 
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
-    _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, out_dir);
+    _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, out_dir);
 }
 
 pub fn runMultimeshMixedRGBGeneration(
@@ -434,7 +434,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
         aa, io, "texture/speckle_rgb.bmp", .bmp, u8, 3
     );
 
-    var mesh_rasters = try aa.alloc(MeshRaster, 10);
+    var mesh_inputs = try aa.alloc(MeshInput, 10);
 
     // Top Row (0-4): Texture RGB Shading
     for (0..5) |ii| {
@@ -446,7 +446,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
         );
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
-        mesh_rasters[ii] = MeshRaster{
+        mesh_inputs[ii] = MeshInput{
             .mesh_type = mesh_types[ii],
             .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
@@ -516,7 +516,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
         );
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
-        mesh_rasters[ii + 5] = MeshRaster{
+        mesh_inputs[ii + 5] = MeshInput{
             .mesh_type = mesh_types[ii],
             .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
@@ -530,7 +530,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
         };
     }
 
-    mr.arrangeMeshSlice(mesh_rasters, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+    mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
 
     const pixel_num = [_]u32{ 1200, 800 };
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
@@ -538,9 +538,9 @@ pub fn runMultimeshMixedRGBGenerationExt(
     const rot = Rotation.init(0, 0, 0);
     const fov_scale_factor: f64 = 1.1;
 
-    const roi_pos = CameraOps.roiCentOverMeshes(mesh_rasters);
+    const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
     const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
-        mesh_rasters, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
+        mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
     );
     const camera_rgb = Camera.init(
         pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 3
@@ -571,6 +571,6 @@ pub fn runMultimeshMixedRGBGenerationExt(
     defer out_dir.close(io);
 
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
-    _ = try zraster.rasterAllFrames(aa, io, &camera_rgb, mesh_rasters, config_rgb, out_dir);
+    _ = try zraster.rasterAllFrames(aa, io, &camera_rgb, mesh_inputs, config_rgb, out_dir);
 }
 

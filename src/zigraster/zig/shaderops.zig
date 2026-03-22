@@ -47,16 +47,35 @@ pub fn LocalNodeBuffer(comptime N: usize) type {
     };
 }
 
-pub const FlatShader = struct {
+pub const FlatInput = struct {
     field: Field,
     bits: ?u8 = 8,
     scaling: imageops.ScaleStrategy = .none,
     scale_over: ScaleOver = .over_frames,
 };
 
-pub fn TexShader(comptime T: type, comptime channels: usize) type {
+pub const FlatPrepared = struct {
+    elem_field: NDArray(f64),
+    bits: ?u8 = 8,
+    scaling: imageops.ScaleStrategy = .none,
+    scale_over: ScaleOver = .over_frames,
+    scale_mul: f64 = 1.0,
+    scale_add: f64 = 0.0,
+};
+
+pub fn TexInput(comptime T: type, comptime channels: usize) type {
     return struct {
         uvs: NDArray(f64),
+        texture: Texture(T, channels),
+        interp_type: InterpType = .cubic_lut_lerp,
+        bits: ?u8 = 8,
+        scaling: imageops.ScaleStrategy = .none,
+    };
+}
+
+pub fn TexPrepared(comptime T: type, comptime channels: usize) type {
+    return struct {
+        elem_uvs: NDArray(f64),
         texture: Texture(T, channels),
         interp_type: InterpType = .cubic_lut_lerp,
         bits: ?u8 = 8,
@@ -87,23 +106,33 @@ pub fn InterpData(comptime N: usize) type {
     };
 }
 
-pub const Shader = union(enum) {
-    flat: FlatShader,
-    tex_u8: TexShader(u8, 1),
-    tex_u16: TexShader(u16, 1),
-    tex_rgb_u8: TexShader(u8, 3),
-    tex_rgb_u16: TexShader(u16, 3),
+pub const ShaderInput = union(enum) {
+    flat: FlatInput,
+    tex_u8: TexInput(u8, 1),
+    tex_u16: TexInput(u16, 1),
+    tex_rgb_u8: TexInput(u8, 3),
+    tex_rgb_u16: TexInput(u16, 3),
+};
+
+pub const ShaderPrepared = union(enum) {
+    flat: FlatPrepared,
+    tex_u8: TexPrepared(u8, 1),
+    tex_u16: TexPrepared(u16, 1),
+    tex_rgb_u8: TexPrepared(u8, 3),
+    tex_rgb_u16: TexPrepared(u16, 3),
 };
 
 pub inline fn fillFlat(
     comptime N: usize,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
+    sh: *const FlatPrepared,
     spx_image_scratch: *MatSlice(f64),
 ) void {
     for (0..ctx_shade.actual_fields) |ff| {
         const vs = ctx_shade.local_buf.interpolate(ff, interp.weights);
-        spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + ff] = vs;
+        spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + ff] = 
+            vs * sh.scale_mul + sh.scale_add;
     }
 }
 
@@ -111,6 +140,7 @@ pub inline fn fillFlatPerspective(
     comptime N: usize,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
+    sh: *const FlatPrepared,
     spx_image_scratch: *MatSlice(f64),
 ) void {
     for (0..ctx_shade.actual_fields) |ff| {
@@ -122,7 +152,8 @@ pub inline fn fillFlatPerspective(
         }
         
         const final_val = vs * interp.sub_pixel_z;
-        spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + ff] = final_val;
+        spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + ff] = 
+            final_val * sh.scale_mul + sh.scale_add;
     }
 }
 
@@ -133,7 +164,7 @@ pub inline fn fillTex(
     interp_type: InterpType,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
-    sh: *const TexShader(TexT, channels),
+    sh: *const TexPrepared(TexT, channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
     var u_at: f64 = 0.0;
@@ -163,7 +194,7 @@ pub inline fn fillTexPerspective(
     interp_type: InterpType,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
-    sh: *const TexShader(TexT, channels),
+    sh: *const TexPrepared(TexT, channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
     var u_at: f64 = 0.0;

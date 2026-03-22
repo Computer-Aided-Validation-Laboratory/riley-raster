@@ -8,7 +8,7 @@ pub const SimData = meshio.SimData;
 
 pub const mr = @import("../zigraster/zig/meshraster.zig");
 pub const MeshType = mr.MeshType;
-pub const MeshRaster = mr.MeshRaster;
+pub const MeshInput = mr.MeshInput;
 
 pub const Rotation = @import("../zigraster/zig/rotation.zig").Rotation;
 pub const Camera = @import("../zigraster/zig/camera.zig").Camera;
@@ -270,7 +270,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
     for (disps) |add_disp| {
         const d_str = if (add_disp) "dispon" else "dispoff";
         
-        // --- Flat Shader ---
+        // --- Flat ShaderInput ---
         if (shader_filter == .flat or shader_filter == .both) {
 
             const mt_name = @tagName(mesh_type);
@@ -282,7 +282,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                 aa, "{s}/{s}", .{ gold_dir_root, case_dir_name }
             );
 
-            const mesh_raster = MeshRaster{ 
+            const mesh_input = MeshInput{ 
                 .mesh_type = mesh_type, 
                 .coords = sim_data.coords, 
                 .connect = sim_data.connect,
@@ -301,7 +301,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
             };
 
             const result = (try zraster.rasterAllFrames(
-                aa, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
+                aa, io, &camera, &[_]MeshInput{mesh_input}, config, null
             )) orelse return error.NoResult;
 
             defer aa.free(result.elems);
@@ -320,7 +320,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
             }
         }
 
-        // --- Tex Shader ---
+        // --- Tex ShaderInput ---
         if (shader_filter == .tex or shader_filter == .both) {
             for (interp_types) |it| {
                 const mt_name = @tagName(mesh_type);
@@ -333,7 +333,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                     aa, "{s}/{s}", .{ gold_dir_root, case_dir_name }
                 );
                 
-                const mesh_raster = MeshRaster{ 
+                const mesh_input = MeshInput{ 
                     .mesh_type = mesh_type, 
                     .coords = sim_data.coords, 
                     .connect = sim_data.connect,
@@ -355,7 +355,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                 };
 
                 const result = (try zraster.rasterAllFrames(
-                    aa, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
+                    aa, io, &camera, &[_]MeshInput{mesh_input}, config, null
                 )) orelse return error.NoResult;
 
                 defer aa.free(result.elems);
@@ -408,17 +408,17 @@ pub fn runMultimeshTest(
         _ = arena.reset(.free_all);
         const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
 
-        const mesh_rasters = if (mode == .flat)
-            try mr.meshRasterFromSimDataSlice(
+        const mesh_inputs = if (mode == .flat)
+            try mr.meshInputFromSimDataSlice(
                 aa, io, sim_datas, &mesh_types, .flat, null, null, null
             )
         else
-            try mr.meshRasterFromSimDataSlice(
+            try mr.meshInputFromSimDataSlice(
                 aa, io, sim_datas, &mesh_types, .texture, &dir_paths, 
                 "texture/speckle-simple.tiff", null
             );
 
-        mr.arrangeMeshSlice(mesh_rasters, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
+        mr.arrangeMeshSlice(mesh_inputs, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
 
         const pixel_num = [_]u32{ 1200, 800 };
         const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
@@ -426,9 +426,9 @@ pub fn runMultimeshTest(
         const rot = Rotation.init(0, 0, 0);
         const fov_scale_factor: f64 = 1.1;
 
-        const roi_pos = CameraOps.roiCentOverMeshes(mesh_rasters);
+        const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
         const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
-            mesh_rasters, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor,
+            mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor,
         );
         const camera = Camera.init(
             pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2
@@ -442,7 +442,7 @@ pub fn runMultimeshTest(
             .tile_size = 32,
         };
 
-        const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, null)) 
+        const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, null)) 
             orelse return error.NoResult;
 
         const gold_dir = if (mode == .flat)
@@ -505,7 +505,7 @@ pub fn runMultimeshMixedTestExt(
         aa, io, "texture/speckle-simple.tiff", .tiff, u8, 1
     );
 
-    var mesh_rasters = try aa.alloc(MeshRaster, 10);
+    var mesh_inputs = try aa.alloc(MeshInput, 10);
 
     // Top Row (0-4): Flat Shading
     for (0..5) |ii| {
@@ -514,7 +514,7 @@ pub fn runMultimeshMixedTestExt(
         );
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
-        mesh_rasters[ii] = MeshRaster{
+        mesh_inputs[ii] = MeshInput{
             .mesh_type = mesh_types[ii],
             .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
@@ -538,7 +538,7 @@ pub fn runMultimeshMixedTestExt(
         );
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
-        mesh_rasters[ii + 5] = MeshRaster{
+        mesh_inputs[ii + 5] = MeshInput{
             .mesh_type = mesh_types[ii],
             .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
@@ -553,7 +553,7 @@ pub fn runMultimeshMixedTestExt(
         };
     }
 
-    mr.arrangeMeshSlice(mesh_rasters, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+    mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
 
     const pixel_num = [_]u32{ 1600, 800 };
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
@@ -561,9 +561,9 @@ pub fn runMultimeshMixedTestExt(
     const rot = Rotation.init(0, 0, 0);
     const fov_scale_factor: f64 = 1.2;
 
-    const roi_pos = CameraOps.roiCentOverMeshes(mesh_rasters);
+    const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
     const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
-        mesh_rasters, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
+        mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
     );
     const camera = Camera.init(
         pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2
@@ -577,7 +577,7 @@ pub fn runMultimeshMixedTestExt(
         .tile_size = 32,
     };
 
-    const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config, null)) 
+    const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, null)) 
         orelse return error.NoResult;
 
     for (0..result.dims[0]) |f| {
@@ -632,7 +632,7 @@ pub fn runMultimeshMixedRGBTestExt(
         aa, io, "texture/speckle_rgb.bmp", .bmp, u8, 3
     );
 
-    var mesh_rasters = try aa.alloc(MeshRaster, 10);
+    var mesh_inputs = try aa.alloc(MeshInput, 10);
 
     // Top Row (0-4): Texture RGB Shading
     for (0..5) |ii| {
@@ -644,7 +644,7 @@ pub fn runMultimeshMixedRGBTestExt(
         );
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
-        mesh_rasters[ii] = MeshRaster{
+        mesh_inputs[ii] = MeshInput{
             .mesh_type = mesh_types[ii],
             .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
@@ -714,7 +714,7 @@ pub fn runMultimeshMixedRGBTestExt(
         );
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
-        mesh_rasters[ii + 5] = MeshRaster{
+        mesh_inputs[ii + 5] = MeshInput{
             .mesh_type = mesh_types[ii],
             .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
@@ -728,7 +728,7 @@ pub fn runMultimeshMixedRGBTestExt(
         };
     }
 
-    mr.arrangeMeshSlice(mesh_rasters, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+    mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
 
     const pixel_num = [_]u32{ 1200, 800 };
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
@@ -736,9 +736,9 @@ pub fn runMultimeshMixedRGBTestExt(
     const rot = Rotation.init(0, 0, 0);
     const fov_scale_factor: f64 = 1.1;
 
-    const roi_pos = CameraOps.roiCentOverMeshes(mesh_rasters);
+    const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
     const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
-        mesh_rasters, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
+        mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
     );
     const camera = Camera.init(
         pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 3
@@ -752,7 +752,7 @@ pub fn runMultimeshMixedRGBTestExt(
         .tile_size = 32,
     };
 
-    const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_rasters, config_rgb, null))
+    const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config_rgb, null))
         orelse return error.NoResult;
 
     for (0..result.dims[0]) |f| {
@@ -765,7 +765,7 @@ pub fn runMultimeshMixedRGBTestExt(
 }
 
 
-test "Flat Shader Scaling Options" {
+test "Flat ShaderInput Scaling Options" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const gpa_alloc = gpa.allocator();
     defer _ = gpa.deinit();
@@ -801,7 +801,7 @@ test "Flat Shader Scaling Options" {
     };
 
     // Test 1: Auto Scaling, bits = null (maps to 0.0 - 1.0)
-    var mesh_raster = MeshRaster{
+    var mesh_input = MeshInput{
         .mesh_type = .tri3,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
@@ -815,7 +815,7 @@ test "Flat Shader Scaling Options" {
     };
     
     var result_auto_float = (try zraster.rasterAllFrames(
-        allocator, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
+        allocator, io, &camera, &[_]MeshInput{mesh_input}, config, null
     )).?;
     defer allocator.free(result_auto_float.elems);
 
@@ -827,9 +827,9 @@ test "Flat Shader Scaling Options" {
     }
 
     // Test 2: Auto Scaling, bits = 8 (maps to 0 - 255)
-    mesh_raster.shader.flat.bits = 8;
+    mesh_input.shader.flat.bits = 8;
     var result_auto_int = (try zraster.rasterAllFrames(
-        allocator, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
+        allocator, io, &camera, &[_]MeshInput{mesh_input}, config, null
     )).?;
     defer allocator.free(result_auto_int.elems);
     for (result_auto_int.elems) |v| {
@@ -840,9 +840,9 @@ test "Flat Shader Scaling Options" {
     }
 
     // Test 3: Frac Scaling [0.4, 0.6], bits = 8
-    mesh_raster.shader.flat.scaling = .{ .frac = .{ 0.4, 0.6 } };
+    mesh_input.shader.flat.scaling = .{ .frac = .{ 0.4, 0.6 } };
     var result_frac_int = (try zraster.rasterAllFrames(
-        allocator, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
+        allocator, io, &camera, &[_]MeshInput{mesh_input}, config, null
     )).?;
     defer allocator.free(result_frac_int.elems);
     for (result_frac_int.elems) |v| {
@@ -855,7 +855,7 @@ test "Flat Shader Scaling Options" {
     }
 }
 
-test "Tex Shader Scaling Options" {
+test "Tex ShaderInput Scaling Options" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const gpa_alloc = gpa.allocator();
     defer _ = gpa.deinit();
@@ -908,7 +908,7 @@ test "Tex Shader Scaling Options" {
     texture.setPixel(0, 0, .{ .channels = [_]u8{0} });
     texture.setPixel(0, 1, .{ .channels = [_]u8{200} });
 
-    var mesh_raster = MeshRaster{
+    var mesh_input = MeshInput{
         .mesh_type = .tri3,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
@@ -922,7 +922,7 @@ test "Tex Shader Scaling Options" {
     };
     
     var result_auto_float = (try zraster.rasterAllFrames(
-        allocator, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
+        allocator, io, &camera, &[_]MeshInput{mesh_input}, config, null
     )).?;
     defer allocator.free(result_auto_float.elems);
 
@@ -931,9 +931,9 @@ test "Tex Shader Scaling Options" {
     }
 
     // Test 2: Auto Scaling, bits = 8 (maps to 0 - 255)
-    mesh_raster.shader.tex_u8.bits = 8;
+    mesh_input.shader.tex_u8.bits = 8;
     var result_auto_int = (try zraster.rasterAllFrames(
-        allocator, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
+        allocator, io, &camera, &[_]MeshInput{mesh_input}, config, null
     )).?;
     defer allocator.free(result_auto_int.elems);
     for (result_auto_int.elems) |v| {
@@ -941,9 +941,9 @@ test "Tex Shader Scaling Options" {
     }
 
     // Test 3: Frac Scaling [0.4, 0.6], bits = 8
-    mesh_raster.shader.tex_u8.scaling = .{ .frac = .{ 0.4, 0.6 } };
+    mesh_input.shader.tex_u8.scaling = .{ .frac = .{ 0.4, 0.6 } };
     var result_frac_int = (try zraster.rasterAllFrames(
-        allocator, io, &camera, &[_]MeshRaster{mesh_raster}, config, null
+        allocator, io, &camera, &[_]MeshInput{mesh_input}, config, null
     )).?;
     defer allocator.free(result_frac_int.elems);
     for (result_frac_int.elems) |v| {

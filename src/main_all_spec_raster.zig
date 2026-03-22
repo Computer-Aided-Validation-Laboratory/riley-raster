@@ -10,9 +10,9 @@ const SimData = meshio.SimData;
 
 const mr = @import("zigraster/zig/meshraster.zig");
 const MeshType = mr.MeshType;
-const MeshRaster = mr.MeshRaster; 
-const FlatShader = mr.FlatShader;
-const TexShader = mr.TexShader;
+const MeshInput = mr.MeshInput; 
+const FlatInput = mr.FlatInput;
+const TexInput = mr.TexInput;
 
 const ndarray = @import("zigraster/zig/ndarray.zig");
 const NDArray = ndarray.NDArray;
@@ -63,7 +63,7 @@ pub fn main() !void {
     //const path_data = "data-simple/tri3_fullscreen/";
     //const mesh_type: MeshType = .tri3opt;
 
-    const out_dir_name = "out-zraster";
+    const out_dir_name = "out-bench-zraster";
 
     //-----------------------------------------------------------------------------------------
     // Simulation input mesh        
@@ -133,7 +133,7 @@ pub fn main() !void {
     //-----------------------------------------------------------------------------------------
     // Mesh Data Transformation
     
-    var mesh_raster = MeshRaster{
+    var mesh_input = MeshInput{
         .mesh_type = mesh_type,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
@@ -142,7 +142,7 @@ pub fn main() !void {
     };
 
     if (comptime shader_mode == .flat) {
-        mesh_raster.shader = .{ .flat = .{
+        mesh_input.shader = .{ .flat = .{
             .field = sim_data.field.?,
             .bits = 8,
         }};
@@ -153,7 +153,7 @@ pub fn main() !void {
         const uvs = try uvio.loadUVMap(page_alloc, io, path_uvs);
         const texture = try iio.loadImage(page_alloc, io, path_tex, .tiff, u8, 1);
         
-        mesh_raster.shader = .{ .tex_u8 = .{
+        mesh_input.shader = .{ .tex_u8 = .{
             .uvs = uvs,
             .texture = texture,
             .interp_type = .cubic_lut_lerp,
@@ -193,7 +193,7 @@ pub fn main() !void {
     const images_out = try zraster.rasterAllFrames(page_alloc,
                                                       io, 
                                                       &camera,
-                                                      &mesh_raster,
+                                                      &mesh_input,
                                                       config,
                                                       out_dir);
 

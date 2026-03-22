@@ -18,13 +18,13 @@ test "Fullraster Gold Comparison" {
     const tol = 1e-6;
     var total_fails: usize = 0;
 
-    std.debug.print("Comparing out-bench-old-fullraster against Gold data...\n", .{});
+    std.debug.print("Comparing out-bench-norm-old-fullraster against Gold data...\n", .{});
 
     inline for (mesh_types) |mt| {
         inline for (shader_types) |st| {
             const case_name = comptime @tagName(mt) ++ "_" ++ @tagName(st);
             
-            const bench_csv = try std.fmt.allocPrint(allocator, "out-bench-old-fullraster/{s}/frame_0_field_0{s}.csv", .{
+            const bench_csv = try std.fmt.allocPrint(allocator, "out-bench-norm-old-fullraster/{s}/frame_0_field_0{s}.csv", .{
                 case_name,
                 if (st == .flat_rgb or st == .tex8_rgb) "_rgb" else ""
             });

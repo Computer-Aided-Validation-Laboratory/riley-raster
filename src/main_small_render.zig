@@ -23,7 +23,7 @@ pub fn main() !void {
 
     const pixel_num = [_]u32{ 160, 100 };
 
-    const out_dir_root = "out-small";
+    const out_dir_root = "out-bench-small";
     const data_dir = "data-small";
 
     const config = gengold.zraster.RasterConfig{
@@ -49,7 +49,7 @@ pub fn main() !void {
         },
     };
 
-    std.debug.print("Rendering Small Data to out-mm0-small/...\n", .{});
+    std.debug.print("Rendering Small Data to out-bench-mm0-small/...\n", .{});
     try gengold.runGenerationExt(
         allocator, io, "single", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
         out_dir_root, data_dir, config

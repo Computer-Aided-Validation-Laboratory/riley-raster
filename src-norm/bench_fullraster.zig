@@ -110,7 +110,7 @@ pub fn main() !void {
     const col_w = @max(max_name_len, 16);
 
     inline for (shader_types) |st| {
-        try writer.print("## Shader Type: {s}\n\n", .{@tagName(st)});
+        try writer.print("## ShaderInput Type: {s}\n\n", .{@tagName(st)});
         
         // Header
         try writer.writeAll("| ");

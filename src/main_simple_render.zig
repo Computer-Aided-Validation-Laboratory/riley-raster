@@ -21,7 +21,7 @@ pub fn main() !void {
 
     const pixel_num = [_]u32{ 800, 500 };
 
-    const out_dir_root = "out-simple";
+    const out_dir_root = "out-bench-simple";
     const data_dir = "data-simple";
 
     const config = gengold.zraster.RasterConfig{
@@ -46,7 +46,7 @@ pub fn main() !void {
         },
     };
 
-    std.debug.print("Rendering Simple Data (Two Elements only) to out-mm0-simple/...\n", .{});
+    std.debug.print("Rendering Simple Data (Two Elements only) to out-bench-mm0-simple/...\n", .{});
     try gengold.runGenerationExt(
         allocator, io, "twoelems", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
         out_dir_root, data_dir, config

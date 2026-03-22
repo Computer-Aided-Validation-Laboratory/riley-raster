@@ -21,7 +21,7 @@ pub fn main() !void {
 
     const pixel_num = [_]u32{ 320, 200 };
 
-    const out_dir_root = "out-edge";
+    const out_dir_root = "out-bench-edge";
     const data_dir = "data-edge";
 
     const config = gengold.zraster.RasterConfig{
@@ -47,7 +47,7 @@ pub fn main() !void {
         },
     };
 
-    std.debug.print("Rendering Edge Data to out-edge/...\n", .{});
+    std.debug.print("Rendering Edge Data to out-bench-edge/...\n", .{});
     
     try gengold.runGenerationExt(
         allocator, io, "vertbulge", &mesh_types, 1.1, texture, pixel_num, &interp_types, 

@@ -5,7 +5,7 @@ const expectApproxEqAbs = testing.expectApproxEqAbs;
 
 const Coords = @import("meshio.zig").Coords;
 const mr = @import("meshraster.zig");
-const MeshRaster = mr.MeshRaster;
+const MeshInput = mr.MeshInput;
 const vector = @import("vecstack.zig");
 const Vec3f = vector.Vec3f;
 const matrix = @import("matstack.zig");
@@ -116,7 +116,7 @@ pub const CameraOps = struct {
         return fov_leng;
     }
 
-    pub fn fovFromCamRotOverMeshes(cam_rot: Rotation, meshes: []const MeshRaster) [2]f64 {
+    pub fn fovFromCamRotOverMeshes(cam_rot: Rotation, meshes: []const MeshInput) [2]f64 {
         const world_to_cam_mat = Mat33Ops.inv(f64, cam_rot.matrix);
 
         var bb_min = [3]f64{
@@ -220,7 +220,7 @@ pub const CameraOps = struct {
         return roi_cent;
     }
 
-    pub fn roiCentOverMeshes(meshes: []const MeshRaster) Vec3f {
+    pub fn roiCentOverMeshes(meshes: []const MeshInput) Vec3f {
         var bb_min = [3]f64{
             std.math.inf(f64), std.math.inf(f64), std.math.inf(f64)
         };
@@ -269,7 +269,7 @@ pub const CameraOps = struct {
         return cam_pos;
     }
 
-    pub fn posFillFrameFromRotOverMeshes(meshes: []const MeshRaster, 
+    pub fn posFillFrameFromRotOverMeshes(meshes: []const MeshInput, 
                                          pixels_num: [2]u32, 
                                          pixels_size: [2]f64, 
                                          focal_leng: f64, 

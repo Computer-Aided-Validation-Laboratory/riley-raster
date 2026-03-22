@@ -200,7 +200,7 @@ pub fn runBenchmark(
     );
     const uvs_raw = try loadNDArrayFromCSV(aa, io, uv_path, 2, false);
     
-    var shader: mr.Shader = undefined;
+    var shader: mr.ShaderInput = undefined;
     var num_out_fields: usize = 1;
 
     switch (shader_type) {
@@ -235,7 +235,7 @@ pub fn runBenchmark(
         },
     }
 
-    const mesh_raster = mr.MeshRaster{
+    const mesh_input = mr.MeshInput{
         .mesh_type = etype,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
@@ -256,8 +256,8 @@ pub fn runBenchmark(
     const tiles_num_x: usize = try std.math.divCeil(usize, camera.pixels_num[0], tile_size);
     const tiles_num_y: usize = try std.math.divCeil(usize, camera.pixels_num[1], tile_size);
 
-    const mesh_transform = try mr.transformMesh(aa, &mesh_raster, &sim_data.coords.mat, null);
-    var meshes = [_]mr.MeshTransform{ mesh_transform };
+    const mesh_prepform = try mr.prepareMesh(aa, &mesh_input, &sim_data.coords.mat, null);
+    var meshes = [_]mr.MeshPrepared{ mesh_prepform };
 
     var image_out_arr = try NDArray(f64).initFlat(
         aa, &[_]usize{ num_out_fields, pixel_num[1], pixel_num[0] }
@@ -335,7 +335,7 @@ pub fn runBenchmark(
     const mops_sec = (total_ops / (raster_ms / 1000.0)) / 1e6;
     const fps = 1000.0 / e2e_ms;
 
-    const total_melems = @as(f64, @floatFromInt(mesh_raster.connect.getElemsNum())) / 1e6;
+    const total_melems = @as(f64, @floatFromInt(mesh_input.connect.getElemsNum())) / 1e6;
     const melems_sec = total_melems / ((geom_ms + overlap_ms) / 1000.0);
 
     return .{

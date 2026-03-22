@@ -10,9 +10,9 @@ const SimData = meshio.SimData;
 
 const mr = @import("zigraster/zig/meshraster.zig");
 const MeshType = mr.MeshType;
-const MeshRaster = mr.MeshRaster; 
-const FlatShader = mr.FlatShader;
-const TexShader = mr.TexShader;
+const MeshInput = mr.MeshInput; 
+const FlatInput = mr.FlatInput;
+const TexInput = mr.TexInput;
 
 const VecStack = @import("zigraster/zig/vecstack.zig");
 const MatStack = @import("zigraster/zig/matstack.zig");
@@ -136,12 +136,12 @@ pub fn main() !void {
     
     //=========================================================================================
     // Mesh Data Transformation
-    const elem_coords = try mr.transformCoords(page_alloc,&sim_data.coords,&sim_data.connect);
-    const elem_disp = try mr.transformField(page_alloc,&sim_data.connect,&sim_data.field.?);
-    const elem_field = try mr.transformField(page_alloc,&sim_data.connect,&sim_data.field.?);
-    const elem_shader = FlatShader{ .field=elem_field }; 
+    const elem_coords = try mr.prepareCoords(page_alloc,&sim_data.coords,&sim_data.connect);
+    const elem_disp = try mr.prepareField(page_alloc,&sim_data.connect,&sim_data.field.?);
+    const elem_field = try mr.prepareField(page_alloc,&sim_data.connect,&sim_data.field.?);
+    const elem_shader = FlatInput{ .field=elem_field }; 
 
-    var mesh_raster = MeshRaster{
+    var mesh_input = MeshInput{
         .mesh_type = mesh_type,
         .coords = elem_coords,
         .disp = elem_disp,
@@ -175,8 +175,8 @@ pub fn main() !void {
                                   frame_ind, 
                                   config.tile_size,
                                   config.threads_within_image,
-                                  &mesh_raster.shader,
-                                  &mesh_raster.coords,
+                                  &mesh_input.shader,
+                                  &mesh_input.coords,
                                   &images_arr);
                            
     const image_max = std.mem.max(f64, images_arr.elems);
@@ -189,7 +189,7 @@ pub fn main() !void {
     // const cwd = std.fs.cwd();
     const cwd: std.Io.Dir = std.Io.Dir.cwd();
         
-    const dir_name = "out-spec-raster";
+    const dir_name = "out-bench-spec-raster";
     var name_buff: [1024]u8 = undefined;
     
     cwd.createDir(io, dir_name, .default_dir) catch |err| switch (err) {

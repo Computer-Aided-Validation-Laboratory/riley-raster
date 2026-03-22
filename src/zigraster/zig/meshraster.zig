@@ -19,9 +19,10 @@ const ScalingParams = imageops.ScalingParams;
 const ScaleStrategy = imageops.ScaleStrategy;
 
 const shaderops = @import("shaderops.zig");
-pub const FlatShader = shaderops.FlatShader;
-pub const TexShader = shaderops.TexShader;
-pub const Shader = shaderops.Shader;
+pub const FlatInput = shaderops.FlatInput;
+pub const TexInput = shaderops.TexInput;
+pub const ShaderInput = shaderops.ShaderInput;
+pub const ShaderPrepared = shaderops.ShaderPrepared;
 
 pub const MeshType = enum {
     tri3,
@@ -33,120 +34,131 @@ pub const MeshType = enum {
     quad9,
 };
 
-pub const MeshRaster = struct {
+pub const MeshInput = struct {
     mesh_type: MeshType,
     coords: Coords,
     connect: Connect,
     disp: ?Field,
-    shader: Shader,
+    shader: shaderops.ShaderInput,
 };
 
-pub const MeshTransform = struct {
+pub const MeshPrepared = struct {
     mesh_type: MeshType,
     coords: NDArray(f64),
-    shader: Shader,
+    shader: shaderops.ShaderPrepared,
 };
-pub fn transformMesh(
+
+pub fn prepareMesh(
     outer_alloc: std.mem.Allocator,
-    mesh_raster: *const MeshRaster,
+    mesh_input: *const MeshInput,
     coords: *const MatSlice(f64),
     scaling_params: ?ScalingParams,
-) !MeshTransform {
+) !MeshPrepared {
     const wrap_coords = Coords.init(coords.elems, coords.rows_num);
-    const elem_coords = try transformCoords(outer_alloc,
-                                            &wrap_coords,
-                                            &mesh_raster.connect);
+    const elem_coords = try prepareCoords(
+        outer_alloc,
+        &wrap_coords,
+        &mesh_input.connect,
+    );
 
-
-    var mesh_trans = MeshTransform{
-        .mesh_type = mesh_raster.mesh_type,
+    var mesh_prep = MeshPrepared{
+        .mesh_type = mesh_input.mesh_type,
         .coords = elem_coords,
-        .shader = undefined,    
+        .shader = undefined,
     };
 
-    switch (mesh_raster.shader) {
-        .flat => |*flat_shader| {
-            const elem_field = try transformField(
+    switch (mesh_input.shader) {
+        .flat => |*flat_in| {
+            const elem_field = try prepareField(
                 outer_alloc,
-                &mesh_raster.connect,
-                &flat_shader.field,
-                scaling_params,
-                flat_shader.scaling,
-                flat_shader.bits,
+                &mesh_input.connect,
+                &flat_in.field,
             );
-            
-            mesh_trans.shader = .{ .flat = .{
-                .field = Field{
-                    .array = elem_field,
-                    .array_mem = elem_field.elems,
-                },
-                .bits = flat_shader.bits,
-                .scaling = flat_shader.scaling,
-                .scale_over = flat_shader.scale_over,
-            }};
-        },
-        .tex_u8 => |*tex| {
-            const elem_uvs = try transformUVs(outer_alloc, &tex.uvs, &mesh_raster.connect);
-            const params = imageops.getScalingParamsTexture(u8, 1, &tex.texture, tex.scaling);
-            const factors = imageops.getScaleFactors(tex.scaling, tex.bits, params);
-            mesh_trans.shader = .{ .tex_u8 = .{
-                .uvs = elem_uvs,
-                .texture = tex.texture,
-                .interp_type = tex.interp_type,
-                .bits = tex.bits,
-                .scaling = tex.scaling,
+
+            const factors = if (scaling_params) |sp|
+                imageops.getScaleFactors(flat_in.scaling, flat_in.bits, sp)
+            else
+                imageops.ScaleFactors{ .mul = 1.0, .add = 0.0 };
+
+            mesh_prep.shader = .{ .flat = .{
+                .elem_field = elem_field,
+                .bits = flat_in.bits,
+                .scaling = flat_in.scaling,
+                .scale_over = flat_in.scale_over,
                 .scale_mul = factors.mul,
                 .scale_add = factors.add,
-            }};
+            } };
         },
-        .tex_u16 => |*tex| {
-            const elem_uvs = try transformUVs(outer_alloc, &tex.uvs, &mesh_raster.connect);
-            const params = imageops.getScalingParamsTexture(u16, 1, &tex.texture, tex.scaling);
-            const factors = imageops.getScaleFactors(tex.scaling, tex.bits, params);
-            mesh_trans.shader = .{ .tex_u16 = .{
-                .uvs = elem_uvs,
-                .texture = tex.texture,
-                .interp_type = tex.interp_type,
-                .bits = tex.bits,
-                .scaling = tex.scaling,
+        .tex_u8 => |*tex_in| {
+            const elem_uvs = try prepareUVs(outer_alloc, &tex_in.uvs, &mesh_input.connect);
+            const params = imageops.getScalingParamsTexture(
+                u8, 1, &tex_in.texture, tex_in.scaling,
+            );
+            const factors = imageops.getScaleFactors(tex_in.scaling, tex_in.bits, params);
+            mesh_prep.shader = .{ .tex_u8 = .{
+                .elem_uvs = elem_uvs,
+                .texture = tex_in.texture,
+                .interp_type = tex_in.interp_type,
+                .bits = tex_in.bits,
+                .scaling = tex_in.scaling,
                 .scale_mul = factors.mul,
                 .scale_add = factors.add,
-            }};
+            } };
         },
-        .tex_rgb_u8 => |*tex| {
-            const elem_uvs = try transformUVs(outer_alloc, &tex.uvs, &mesh_raster.connect);
-            const params = imageops.getScalingParamsTexture(u8, 3, &tex.texture, tex.scaling);
-            const factors = imageops.getScaleFactors(tex.scaling, tex.bits, params);
-            mesh_trans.shader = .{ .tex_rgb_u8 = .{
-                .uvs = elem_uvs,
-                .texture = tex.texture,
-                .interp_type = tex.interp_type,
-                .bits = tex.bits,
-                .scaling = tex.scaling,
+        .tex_u16 => |*tex_in| {
+            const elem_uvs = try prepareUVs(outer_alloc, &tex_in.uvs, &mesh_input.connect);
+            const params = imageops.getScalingParamsTexture(
+                u16, 1, &tex_in.texture, tex_in.scaling,
+            );
+            const factors = imageops.getScaleFactors(tex_in.scaling, tex_in.bits, params);
+            mesh_prep.shader = .{ .tex_u16 = .{
+                .elem_uvs = elem_uvs,
+                .texture = tex_in.texture,
+                .interp_type = tex_in.interp_type,
+                .bits = tex_in.bits,
+                .scaling = tex_in.scaling,
                 .scale_mul = factors.mul,
                 .scale_add = factors.add,
-            }};
+            } };
         },
-        .tex_rgb_u16 => |*tex| {
-            const elem_uvs = try transformUVs(outer_alloc, &tex.uvs, &mesh_raster.connect);
-            const params = imageops.getScalingParamsTexture(u16, 3, &tex.texture, tex.scaling);
-            const factors = imageops.getScaleFactors(tex.scaling, tex.bits, params);
-            mesh_trans.shader = .{ .tex_rgb_u16 = .{
-                .uvs = elem_uvs,
-                .texture = tex.texture,
-                .interp_type = tex.interp_type,
-                .bits = tex.bits,
-                .scaling = tex.scaling,
+        .tex_rgb_u8 => |*tex_in| {
+            const elem_uvs = try prepareUVs(outer_alloc, &tex_in.uvs, &mesh_input.connect);
+            const params = imageops.getScalingParamsTexture(
+                u8, 3, &tex_in.texture, tex_in.scaling,
+            );
+            const factors = imageops.getScaleFactors(tex_in.scaling, tex_in.bits, params);
+            mesh_prep.shader = .{ .tex_rgb_u8 = .{
+                .elem_uvs = elem_uvs,
+                .texture = tex_in.texture,
+                .interp_type = tex_in.interp_type,
+                .bits = tex_in.bits,
+                .scaling = tex_in.scaling,
                 .scale_mul = factors.mul,
                 .scale_add = factors.add,
-            }};
+            } };
+        },
+        .tex_rgb_u16 => |*tex_in| {
+            const elem_uvs = try prepareUVs(outer_alloc, &tex_in.uvs, &mesh_input.connect);
+            const params = imageops.getScalingParamsTexture(
+                u16, 3, &tex_in.texture, tex_in.scaling,
+            );
+            const factors = imageops.getScaleFactors(tex_in.scaling, tex_in.bits, params);
+            mesh_prep.shader = .{ .tex_rgb_u16 = .{
+                .elem_uvs = elem_uvs,
+                .texture = tex_in.texture,
+                .interp_type = tex_in.interp_type,
+                .bits = tex_in.bits,
+                .scaling = tex_in.scaling,
+                .scale_mul = factors.mul,
+                .scale_add = factors.add,
+            } };
         },
     }
-    
-    return mesh_trans;
+
+    return mesh_prep;
 }
 
-pub fn transformCoords(
+pub fn prepareCoords(
     outer_alloc: std.mem.Allocator,
     coords: *const Coords,
     connect: *const Connect,
@@ -185,13 +197,10 @@ pub fn transformCoords(
     return elem_coord_arr;
 }
 
-pub fn transformField(
+pub fn prepareField(
     allocator: std.mem.Allocator,
     connect: *const Connect,
     field: *const Field,
-    scaling_params: ?ScalingParams,
-    scaling: ScaleStrategy,
-    bits: ?u8,
 ) !NDArray(f64) {
     // dims=(times_num,elems_num,fields_num,nodes_per_elem)
     const field_dims = [_]usize{
@@ -225,11 +234,7 @@ pub fn transformField(
 
                 for (0..elem_field_arr.dims[dim_field]) |ff| {
                     get_field_inds[2] = ff;
-
-                    var field_val: f64 = field.array.get(get_field_inds[0..]);
-                    if (scaling_params) |sp| {
-                        field_val = imageops.applyScaling(field_val, scaling, bits, sp);
-                    }
+                    const field_val: f64 = field.array.get(get_field_inds[0..]);
 
                     set_elem_inds[dim_field] = ff;
                     elem_field_arr.set(set_elem_inds[0..], field_val);
@@ -241,7 +246,7 @@ pub fn transformField(
     return elem_field_arr;
 }
 
-pub fn transformUVs(
+pub fn prepareUVs(
     allocator: std.mem.Allocator,
     uvs: *const NDArray(f64),
     connect: *const Connect,
@@ -267,21 +272,21 @@ pub fn transformUVs(
     return elem_uv_arr;
 }
 
-pub fn meshRasterFromSimDataSlice(allocator: std.mem.Allocator,
-                                   io: std.Io,
-                                   sim_datas: []const meshio.SimData,
-                                   mesh_types: []const MeshType,
-                                   shader_mode: enum { flat, texture },
-                                   uv_paths: ?[]const []const u8,
-                                   texture_path: ?[]const u8,
-                                   uv_file: ?[]const u8) ![]MeshRaster {
-    var mesh_rasters = try allocator.alloc(MeshRaster, sim_datas.len);
+pub fn meshInputFromSimDataSlice(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    sim_datas: []const meshio.SimData,
+    mesh_types: []const MeshType,
+    shader_mode: enum { flat, texture },
+    uv_paths: ?[]const []const u8,
+    texture_path: ?[]const u8,
+    uv_file: ?[]const u8,
+) ![]MeshInput {
+    var mesh_inputs = try allocator.alloc(MeshInput, sim_datas.len);
     var initialized_count: usize = 0;
     errdefer {
-        // Only need to free things if we allocated them here
-        // uvs and texture in TexShader are allocated.
         for (0..initialized_count) |ii| {
-            switch (mesh_rasters[ii].shader) {
+            switch (mesh_inputs[ii].shader) {
                 .tex_u8 => |tex| {
                     allocator.free(tex.uvs.elems);
                 },
@@ -291,13 +296,13 @@ pub fn meshRasterFromSimDataSlice(allocator: std.mem.Allocator,
                 else => {},
             }
         }
-        allocator.free(mesh_rasters);
+        allocator.free(mesh_inputs);
     }
 
     const uv_file_name = uv_file orelse "uvs.csv";
 
     for (sim_datas, 0..) |sim_data, ii| {
-        mesh_rasters[ii] = MeshRaster{
+        mesh_inputs[ii] = MeshInput{
             .mesh_type = mesh_types[ii],
             .coords = sim_data.coords,
             .connect = sim_data.connect,
@@ -307,40 +312,47 @@ pub fn meshRasterFromSimDataSlice(allocator: std.mem.Allocator,
 
         if (shader_mode == .flat) {
             if (sim_data.field) |field| {
-                mesh_rasters[ii].shader = .{ .flat = .{
+                mesh_inputs[ii].shader = .{ .flat = .{
                     .field = field,
                     .bits = 8,
-                }};
+                } };
             } else {
                 return error.MissingFieldData;
             }
         } else {
             const paths = uv_paths orelse return error.MissingUVPaths;
             const path_uvs = try std.fmt.allocPrint(
-                allocator, "{s}{s}", .{paths[ii], uv_file_name}
+                allocator,
+                "{s}{s}",
+                .{ paths[ii], uv_file_name },
             );
             defer allocator.free(path_uvs);
-            
+
             var uvmap = try uvio.loadUVMap(allocator, io, path_uvs);
-            
+
             const format: ImageFormat = if (std.mem.endsWith(u8, texture_path.?, ".bmp"))
                 .bmp
             else
                 .tiff;
 
             const texture = try imageio.loadImage(
-                allocator, io, texture_path.?, format, u8, 1
+                allocator,
+                io,
+                texture_path.?,
+                format,
+                u8,
+                1,
             );
-            
-            mesh_rasters[ii].shader = .{ .tex_u8 = .{
+
+            mesh_inputs[ii].shader = .{ .tex_u8 = .{
                 .uvs = uvmap.array,
                 .texture = texture,
                 .interp_type = .cubic_lut_lerp,
-            }};
+            } };
         }
         initialized_count += 1;
     }
-    return mesh_rasters;
+    return mesh_inputs;
 }
 
 pub fn findAlignedCentroid(coords: *const Coords) struct {
@@ -385,9 +397,11 @@ pub fn findAlignedCentroid(coords: *const Coords) struct {
     };
 }
 
-pub fn arrangeMeshSlice(meshes: []MeshRaster,
-                       gap: [3]f64,
-                       max_divs: [3]usize) void {
+pub fn arrangeMeshSlice(
+    meshes: []MeshInput,
+    gap: [3]f64,
+    max_divs: [3]usize,
+) void {
     var max_extent = [3]f64{ 0, 0, 0 };
 
     // First pass: find the maximum extent among all individual meshes
@@ -400,7 +414,7 @@ pub fn arrangeMeshSlice(meshes: []MeshRaster,
         }
     }
 
-        const stride = [3]f64{
+    const stride = [3]f64{
         max_extent[0] + gap[0],
         max_extent[1] + gap[1],
         max_extent[2] + gap[2],
