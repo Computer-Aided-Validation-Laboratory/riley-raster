@@ -84,8 +84,53 @@ pub fn Tri3Kernel() type {
             return .{ .weights = null, .iters = 0 };
         }
 
+        pub inline fn isInElementSIMD(weights: [nodes_num]@Vector(L, f64)) @Vector(L, bool) {
+            const edge_tol_vec: @Vector(L, f64) = @splat(1e-9);
+
+            return (weights[0] >= -edge_tol_vec) &
+                   (weights[1] >= -edge_tol_vec) &
+                   (weights[2] >= -edge_tol_vec);
+        }
+
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [nodes_num]f64) f64 {
             return calcInvZRast(nodes_num, nodes, weights);
+        }
+
+        pub inline fn calcInvZSIMD(nodes: Vec3OfSlices(f64), 
+                                   weights: [nodes_num]@Vector(L, f64)) @Vector(L, f64) {
+            return calcInvZRastSIMD(nodes_num, nodes, weights);
+        }
+
+        pub inline fn getWeightsAtSIMD(nodes: Vec3OfSlices(f64), 
+                                      pixel_x: f64, pixel_y: f64,
+                                      inv_area: f64, step_size: f64,
+                                      ) [nodes_num]@Vector(L, f64) {
+            const dwdx = [_]f64{
+                (nodes.y[2] - nodes.y[1]) * step_size * inv_area,
+                (nodes.y[0] - nodes.y[2]) * step_size * inv_area,
+                (nodes.y[1] - nodes.y[0]) * step_size * inv_area,
+            };
+            
+            var w0: [nodes_num]f64 = undefined;
+            w0[0] = rops.edgeFun3(nodes.x[1], nodes.y[1],
+                                  nodes.x[2], nodes.y[2],
+                                  pixel_x, pixel_y,) * inv_area;
+            w0[1] = rops.edgeFun3(nodes.x[2], nodes.y[2],
+                                  nodes.x[0], nodes.y[0],
+                                  pixel_x, pixel_y,) * inv_area;
+            w0[2] = rops.edgeFun3(nodes.x[0], nodes.y[0],
+                                  nodes.x[1], nodes.y[1],
+                                  pixel_x, pixel_y,) * inv_area;
+
+            var weights_simd: [nodes_num]@Vector(L, f64) = undefined;
+            inline for (0..nodes_num) |nn| {
+                var w_vec: @Vector(L, f64) = undefined;
+                inline for (0..L) |ll| {
+                    w_vec[ll] = w0[nn] + dwdx[nn] * @as(f64, @floatFromInt(ll));
+                }
+                weights_simd[nn] = w_vec;
+            }
+            return weights_simd;
         }
     };
 }

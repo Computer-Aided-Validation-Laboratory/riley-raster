@@ -378,13 +378,14 @@ pub fn RasterPass(
             const start_y = bounds.y_min_f + domain.offset;
             var weights_row = Geometry.getWeightsAt(nodes, start_x, start_y, inv_area);
 
-            const has_simd = @hasDecl(Geometry, "isInElementSIMD");
+            const has_geom_simd = @hasDecl(Geometry, "isInElementSIMD");
+            const has_shade_simd = @hasDecl(ShaderKernel, "shadeSIMD");
             const L = FeatureConfig.simd_lane_width;
 
             for (bounds.start_y..bounds.end_y) |scratch_y| {
                 const row_offset = scratch_y * domain.tile_size;
                 
-                if (has_simd) {
+                if (has_geom_simd) {
                     var weights_simd = Geometry.getWeightsAtSIMD(nodes, start_x, 
                                                                  bounds.y_min_f + @as(f64, @floatFromInt(scratch_y - bounds.start_y)) * domain.step + domain.offset, 
                                                                  inv_area, domain.step);
@@ -400,7 +401,6 @@ pub fn RasterPass(
                             const inv_z_simd = Geometry.calcInvZSIMD(nodes, weights_simd);
                             const index = row_offset + scratch_x;
                             
-                            // Load depth buffer into SIMD
                             var depth_simd: @Vector(L, f64) = undefined;
                             inline for (0..L) |ll| {
                                 depth_simd[ll] = scratch.inv_z[index + ll];
@@ -410,54 +410,83 @@ pub fn RasterPass(
                             const mask = mask_in & mask_z;
 
                             if (@reduce(.Or, mask)) {
-                                inline for (0..L) |ll| {
-                                    if (mask[ll]) {
-                                        const idx = index + ll;
-                                        const inv_z = inv_z_simd[ll];
-                                        scratch.inv_z[idx] = inv_z;
-                                        const subpx_z = 1.0 / inv_z;
-                                        shaded_px += 1;
+                                if (has_shade_simd) {
+                                    const global_subx_base: @Vector(L, usize) = @splat(target.tile.x_px_min * sub_samp + scratch_x);
+                                    const x_offsets: @Vector(L, usize) = comptime blk: {
+                                        var off: [L]usize = undefined;
+                                        for (0..L) |ii| off[ii] = ii;
+                                        break :blk off;
+                                    };
 
-                                        const cur_scratch_x = scratch_x + ll;
-                                        const global_subx = target.tile.x_px_min * sub_samp + 
-                                                            cur_scratch_x;
-                                        const global_suby = target.tile.y_px_min * sub_samp + 
-                                                            scratch_y;
+                                    ShaderKernel.shadeSIMD(
+                                        Geometry.coord_space,
+                                        mask,
+                                        .{
+                                            .frame_index = ctx_rast.frame_ind,
+                                            .elem_index = target.overlap.elem_idx,
+                                            .fields_num = fields_num,
+                                            .actual_fields = fields_num,
+                                            .idx = index,
+                                            .global_subx = global_subx_base + x_offsets,
+                                            .global_suby = target.tile.y_px_min * sub_samp + scratch_y,
+                                            .local_buf = local_buf,
+                                        },
+                                        .{
+                                            .weights = weights_simd,
+                                            .nodes_inv_z = nodes_inv_z,
+                                            .sub_pixel_z = @as(@Vector(L, f64), @splat(1.0)) / inv_z_simd,
+                                        },
+                                        shader,
+                                        ctx_rast.ctx_perf,
+                                        scratch.image,
+                                    );
 
-                                        if (comptime report == .perf) {
-                                            ctx_rast.ctx_perf.recordPixel(global_subx, global_suby, 0);
-                                            ctx_rast.ctx_perf.recordPixelOccupancy(
-                                                target.tile.x_px_min + cur_scratch_x / sub_samp,
-                                                target.tile.y_px_min + scratch_y / sub_samp,
+                                    inline for (0..L) |ll| {
+                                        if (mask[ll]) {
+                                            scratch.inv_z[index + ll] = inv_z_simd[ll];
+                                            shaded_px += 1;
+                                        }
+                                    }
+                                } else {
+                                    inline for (0..L) |ll| {
+                                        if (mask[ll]) {
+                                            const idx = index + ll;
+                                            const inv_z = inv_z_simd[ll];
+                                            scratch.inv_z[idx] = inv_z;
+                                            const subpx_z = 1.0 / inv_z;
+                                            shaded_px += 1;
+
+                                            const cur_scratch_x = scratch_x + ll;
+                                            const global_subx = target.tile.x_px_min * sub_samp + 
+                                                                cur_scratch_x;
+                                            const global_suby = target.tile.y_px_min * sub_samp + 
+                                                                scratch_y;
+
+                                            var w_fixed: [N]f64 = undefined;
+                                            inline for (0..N) |nn| { w_fixed[nn] = weights_simd[nn][ll]; }
+
+                                            ShaderKernel.shade(
+                                                Geometry.coord_space,
+                                                .{
+                                                    .frame_index = ctx_rast.frame_ind,
+                                                    .elem_index = target.overlap.elem_idx,
+                                                    .fields_num = fields_num,
+                                                    .actual_fields = fields_num,
+                                                    .idx = idx,
+                                                    .global_subx = global_subx,
+                                                    .global_suby = global_suby,
+                                                    .local_buf = local_buf,
+                                                },
+                                                .{
+                                                    .weights = w_fixed,
+                                                    .nodes_inv_z = nodes_inv_z,
+                                                    .sub_pixel_z = subpx_z,
+                                                },
+                                                shader,
+                                                ctx_rast.ctx_perf,
+                                                scratch.image,
                                             );
                                         }
-
-                                        var w_fixed: [N]f64 = undefined;
-                                        inline for (0..N) |nn| {
-                                            w_fixed[nn] = weights_simd[nn][ll];
-                                        }
-
-                                        ShaderKernel.shade(
-                                            Geometry.coord_space,
-                                            .{
-                                                .frame_index = ctx_rast.frame_ind,
-                                                .elem_index = target.overlap.elem_idx,
-                                                .fields_num = fields_num,
-                                                .actual_fields = fields_num,
-                                                .idx = idx,
-                                                .global_subx = global_subx,
-                                                .global_suby = global_suby,
-                                                .local_buf = local_buf,
-                                            },
-                                            .{
-                                                .weights = w_fixed,
-                                                .nodes_inv_z = nodes_inv_z,
-                                                .sub_pixel_z = subpx_z,
-                                            },
-                                            shader,
-                                            ctx_rast.ctx_perf,
-                                            scratch.image,
-                                        );
                                     }
                                 }
                             }
@@ -469,9 +498,7 @@ pub fn RasterPass(
 
                     // Fallback for remaining pixels in the row
                     var weights = [_]f64{0.0} ** N;
-                    inline for (0..N) |nn| {
-                        weights[nn] = weights_simd[nn][0];
-                    }
+                    inline for (0..N) |nn| { weights[nn] = weights_simd[nn][0]; }
                     for (scratch_x..bounds.end_x) |cur_scratch_x| {
                         if (Geometry.isInElement(weights)) {
                             const inv_z = Geometry.calcInvZ(nodes, weights);
@@ -486,14 +513,6 @@ pub fn RasterPass(
                                                     cur_scratch_x;
                                 const global_suby = target.tile.y_px_min * sub_samp + 
                                                     scratch_y;
-
-                                if (comptime report == .perf) {
-                                    ctx_rast.ctx_perf.recordPixel(global_subx, global_suby, 0);
-                                    ctx_rast.ctx_perf.recordPixelOccupancy(
-                                        target.tile.x_px_min + cur_scratch_x / sub_samp,
-                                        target.tile.y_px_min + scratch_y / sub_samp,
-                                    );
-                                }
 
                                 ShaderKernel.shade(
                                     Geometry.coord_space,
@@ -538,14 +557,6 @@ pub fn RasterPass(
                                                     scratch_x;
                                 const global_suby = target.tile.y_px_min * sub_samp + 
                                                     scratch_y;
-
-                                if (comptime report == .perf) {
-                                    ctx_rast.ctx_perf.recordPixel(global_subx, global_suby, 0);
-                                    ctx_rast.ctx_perf.recordPixelOccupancy(
-                                        target.tile.x_px_min + scratch_x / sub_samp,
-                                        target.tile.y_px_min + scratch_y / sub_samp,
-                                    );
-                                }
 
                                 ShaderKernel.shade(
                                     Geometry.coord_space,

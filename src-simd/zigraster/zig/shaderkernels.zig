@@ -10,7 +10,11 @@ else
     @import("geometrykernels.zig");
 const CoordSpace = geomkerns.CoordSpace;
 
+const shadekernsimd = @import("shaderkernsimd.zig");
+
 pub fn FlatKernel(comptime N: usize) type {
+    if (FeatureConfig.simd) return shadekernsimd.FlatKernelSIMD(N);
+    
     return struct {
         pub inline fn shade(
             comptime coord_space: CoordSpace,
@@ -37,6 +41,8 @@ pub fn FlatKernel(comptime N: usize) type {
 }
 
 pub fn NormalKernel(comptime N: usize) type {
+    if (FeatureConfig.simd) return shadekernsimd.NormalKernelSIMD(N);
+    
     return struct {
         pub inline fn shade(
             comptime coord_space: CoordSpace,
@@ -68,6 +74,8 @@ pub fn TexKernel(
     comptime T: type, 
     comptime channels: usize,
 ) type {
+    if (FeatureConfig.simd) return shadekernsimd.TexKernelSIMD(N, T, channels);
+
     return struct {
         pub inline fn shade(
             comptime coord_space: CoordSpace,
