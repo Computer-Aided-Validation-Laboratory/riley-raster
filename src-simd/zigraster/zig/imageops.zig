@@ -50,19 +50,12 @@ pub fn getScalingParamsTexture(
         .auto, .frac => {
             var px_min: f64 = std.math.inf(f64);
             var px_max: f64 = -std.math.inf(f64);
-            for (texture.pixels) |px| {
-                inline for (0..channels) |ch| {
-                    const val = switch (@typeInfo(T)) {
-                        .int => @as(f64, @floatFromInt(px.channels[ch])),
-                        .float => @as(f64, px.channels[ch]),
-                        else => @compileError("Unsupported type"),
-                    };
-                    if (val < px_min) px_min = val;
-                    if (val > px_max) px_max = val;
-                }
+            for (texture.array.elems) |val| {
+                if (val < px_min) px_min = val;
+                if (val > px_max) px_max = val;
             }
-            const px_rng = if (px_max > px_min) px_max - px_min else 1.0;
-            return .{ .min = px_min, .range = px_rng };
+            const range = if (@abs(px_max - px_min) < 1e-9) 1.0 else px_max - px_min;
+            return .{ .min = px_min, .range = range };
         },
         .fixed => |range| {
             const px_rng = if (range[1] > range[0]) range[1] - range[0] else 1.0;

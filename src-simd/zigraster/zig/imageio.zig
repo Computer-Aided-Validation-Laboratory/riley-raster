@@ -548,14 +548,12 @@ pub fn loadCSV(allocator: std.mem.Allocator,
             const val_str = col_iter.next() orelse break;
             if (val_str.len == 0) continue;
             
-            var px: Pixel(T, channels) = undefined;
             var vals_iter = std.mem.splitScalar(u8, val_str, ':');
             for (0..channels) |ch| {
                 const ch_val_str = vals_iter.next() orelse "0";
                 const val = try std.fmt.parseFloat(f64, std.mem.trim(u8, ch_val_str, " \t\r"));
-                px.channels[ch] = convertValue(T, val);
+                texture.setVal(ch, rr, cc, val);
             }
-            texture.setPixel(rr, cc, px);
         }
     }
 
@@ -611,21 +609,16 @@ pub fn loadBMP(allocator: std.mem.Allocator,
             for (0..abs_width) |x| {
                 var bgr: [3]u8 = undefined;
                 try reader.readSliceAll(&bgr);
-                var px: Pixel(T, channels) = undefined;
                 if (channels == 3) {
-                    px.channels[0] = convertToTarget(T, 
-                        @as(f64, @floatFromInt(bgr[2])) / 255.0);
-                    px.channels[1] = convertToTarget(T, 
-                        @as(f64, @floatFromInt(bgr[1])) / 255.0);
-                    px.channels[2] = convertToTarget(T, 
-                        @as(f64, @floatFromInt(bgr[0])) / 255.0);
+                    texture.setVal(0, r, x, @as(f64, @floatFromInt(bgr[2])));
+                    texture.setVal(1, r, x, @as(f64, @floatFromInt(bgr[1])));
+                    texture.setVal(2, r, x, @as(f64, @floatFromInt(bgr[0])));
                 } else if (channels == 1) {
                     const val = 0.299 * @as(f64, @floatFromInt(bgr[2])) 
                               + 0.587 * @as(f64, @floatFromInt(bgr[1])) 
                               + 0.114 * @as(f64, @floatFromInt(bgr[0]));
-                    px.channels[0] = convertToTarget(T, val / 255.0);
+                    texture.setVal(0, r, x, val);
                 }
-                texture.setPixel(r, x, px);
             }
             try file_reader.seekBy(@intCast(row_padding));
         }
@@ -639,21 +632,16 @@ pub fn loadBMP(allocator: std.mem.Allocator,
                 bgr[0] = try reader.takeInt(u16, .little);
                 bgr[1] = try reader.takeInt(u16, .little);
                 bgr[2] = try reader.takeInt(u16, .little);
-                var px: Pixel(T, channels) = undefined;
                 if (channels == 3) {
-                    px.channels[0] = convertToTarget(T, 
-                        @as(f64, @floatFromInt(bgr[2])) / 65535.0);
-                    px.channels[1] = convertToTarget(T, 
-                        @as(f64, @floatFromInt(bgr[1])) / 65535.0);
-                    px.channels[2] = convertToTarget(T, 
-                        @as(f64, @floatFromInt(bgr[0])) / 65535.0);
+                    texture.setVal(0, r, x, @as(f64, @floatFromInt(bgr[2])));
+                    texture.setVal(1, r, x, @as(f64, @floatFromInt(bgr[1])));
+                    texture.setVal(2, r, x, @as(f64, @floatFromInt(bgr[0])));
                 } else if (channels == 1) {
                     const val = 0.299 * @as(f64, @floatFromInt(bgr[2])) 
                               + 0.587 * @as(f64, @floatFromInt(bgr[1])) 
                               + 0.114 * @as(f64, @floatFromInt(bgr[0]));
-                    px.channels[0] = convertToTarget(T, val / 65535.0);
+                    texture.setVal(0, r, x, val);
                 }
-                texture.setPixel(r, x, px);
             }
             try file_reader.seekBy(@intCast(row_padding));
         }
@@ -671,25 +659,21 @@ pub fn loadBMP(allocator: std.mem.Allocator,
             for (0..abs_width) |x| {
                 const index = try reader.takeByte();
                 const color = palette[index];
-                var px: Pixel(T, channels) = undefined;
                 if (channels == 3) {
-                    px.channels[0] = convertToTarget(T, 
-                        @as(f64, @floatFromInt(color[2])) / 255.0);
-                    px.channels[1] = convertToTarget(T, 
-                        @as(f64, @floatFromInt(color[1])) / 255.0);
-                    px.channels[2] = convertToTarget(T, 
-                        @as(f64, @floatFromInt(color[0])) / 255.0);
+                    texture.setVal(0, r, x, @as(f64, @floatFromInt(color[2])));
+                    texture.setVal(1, r, x, @as(f64, @floatFromInt(color[1])));
+                    texture.setVal(2, r, x, @as(f64, @floatFromInt(color[0])));
                 } else if (channels == 1) {
                     const val = 0.299 * @as(f64, @floatFromInt(color[2])) 
                               + 0.587 * @as(f64, @floatFromInt(color[1])) 
                               + 0.114 * @as(f64, @floatFromInt(color[0]));
-                    px.channels[0] = convertToTarget(T, val / 255.0);
+                    texture.setVal(0, r, x, val);
                 }
-                texture.setPixel(r, x, px);
             }
             try file_reader.seekBy(@intCast(row_padding));
         }
-    } else return error.UnsupportedBitCount;
+    }
+ else return error.UnsupportedBitCount;
 
     return texture;
 }
@@ -817,18 +801,16 @@ pub fn CLoadTIFF(allocator: std.mem.Allocator,
             const g = @as(u8, @intCast((pixel >> 8) & 0xFF));
             const b = @as(u8, @intCast((pixel >> 16) & 0xFF));
             
-            var px: Pixel(T, channels) = undefined;
             if (channels == 3) {
-                px.channels[0] = convertToTarget(T, @as(f64, @floatFromInt(r)) / 255.0);
-                px.channels[1] = convertToTarget(T, @as(f64, @floatFromInt(g)) / 255.0);
-                px.channels[2] = convertToTarget(T, @as(f64, @floatFromInt(b)) / 255.0);
+                texture.setVal(0, row, col, @as(f64, @floatFromInt(r)));
+                texture.setVal(1, row, col, @as(f64, @floatFromInt(g)));
+                texture.setVal(2, row, col, @as(f64, @floatFromInt(b)));
             } else if (channels == 1) {
                 const val = 0.299 * @as(f64, @floatFromInt(r)) 
                           + 0.587 * @as(f64, @floatFromInt(g)) 
                           + 0.114 * @as(f64, @floatFromInt(b));
-                px.channels[0] = convertToTarget(T, val / 255.0);
+                texture.setVal(0, row, col, val);
             }
-            texture.setPixel(row, col, px);
         }
     }
 
@@ -884,8 +866,7 @@ test "Verify hand-written TIFF loader" {
     defer allocator.free(mat_mem);
     for (0..tex_c.rows_num) |rr| {
         for (0..tex_c.cols_num) |cc| {
-            mat_mem[rr * tex_c.cols_num + cc] = @as(f64, 
-                @floatFromInt(tex_c.getPixel(rr, cc).channels[0]));
+            mat_mem[rr * tex_c.cols_num + cc] = tex_c.getPixel(rr, cc).channels[0];
         }
     }
     const mat = MatSlice(f64).init(mat_mem, tex_c.rows_num, tex_c.cols_num);
@@ -903,9 +884,7 @@ test "Verify hand-written TIFF loader" {
         for (0..tex_c.cols_num) |cc| {
             const p1 = tex_c.getPixel(rr, cc).channels[0];
             const p2 = tex_zig.getPixel(rr, cc).channels[0];
-            const p1_f: f64 = @floatFromInt(p1);
-            const p2_f: f64 = @floatFromInt(p2);
-            try testing.expectApproxEqAbs(p1_f, p2_f, 1.0);
+            try testing.expectApproxEqAbs(p1, p2, 1.0);
         }
     }
 }

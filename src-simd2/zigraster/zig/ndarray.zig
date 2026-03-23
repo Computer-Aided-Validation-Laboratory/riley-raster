@@ -55,7 +55,7 @@ pub fn NDArray(comptime EType: type) type {
             return try Self.init(allocator, elems, dims);
         }
     
-        pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+        pub fn deinit(self: *const Self, allocator: std.mem.Allocator) void {
             allocator.free(self.dims);
             allocator.free(self.strides);
         }
@@ -68,6 +68,12 @@ pub fn NDArray(comptime EType: type) type {
         pub fn get(self: *const Self, indices: []const usize) EType {
             const ind: usize = self.getFlatInd(indices);
             return self.elems[ind];
+        }
+
+        pub fn getPlanePtr(self: *const Self, plane_idx: usize) []EType {
+            assert(self.dims.len > 0);
+            const start = plane_idx * self.strides[0];
+            return self.elems[start..];
         }
 
         pub fn getFlatInd(self: *const Self, indices: []const usize) usize {

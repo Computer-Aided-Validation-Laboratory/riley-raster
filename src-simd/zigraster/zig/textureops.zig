@@ -2,6 +2,8 @@ const std = @import("std");
 const assert = std.debug.assert;
 const print = std.debug.print;
 
+const NDArray = @import("ndarray.zig").NDArray;
+
 pub const InterpType = enum {
     linear,
     cubic,
@@ -19,37 +21,55 @@ pub fn Pixel(comptime T: type, comptime channels: usize) type {
 }
 
 pub fn Texture(comptime T: type, comptime channels: usize) type {
+    _ = T;
     return struct {
         const Self = @This();
-        const P = Pixel(T, channels);
 
-        pixels: []P,
+        array: NDArray(f64),
         rows_num: usize,
         cols_num: usize,
 
         pub fn init(allocator: std.mem.Allocator, rows: usize, cols: usize) !Self {
-            const pixels = try allocator.alloc(P, rows * cols);
+            const array = try NDArray(f64).initFlat(allocator, &[_]usize{ channels, rows, cols });
             return Self{
-                .pixels = pixels,
+                .array = array,
                 .rows_num = rows,
                 .cols_num = cols,
             };
         }
 
         pub fn deinit(self: *const Self, allocator: std.mem.Allocator) void {
-            allocator.free(self.pixels);
+            allocator.free(self.array.elems);
+            self.array.deinit(allocator);
         }
 
-        pub fn getPixel(self: Self, row: usize, col: usize) P {
-            assert(row < self.rows_num);
-            assert(col < self.cols_num);
-            return self.pixels[row * self.cols_num + col];
+        pub fn setVal(self: *Self, ch: usize, row: usize, col: usize, val: f64) void {
+            self.array.set(&[_]usize{ ch, row, col }, val);
         }
 
-        pub fn setPixel(self: *Self, row: usize, col: usize, pixel: P) void {
-            assert(row < self.rows_num);
-            assert(col < self.cols_num);
-            self.pixels[row * self.cols_num + col] = pixel;
+        pub fn getVal(self: *const Self, ch: usize, row: usize, col: usize) f64 {
+            return self.array.get(&[_]usize{ ch, row, col });
+        }
+
+        pub fn getPixel(self: Self, row: usize, col: usize) Pixel(f64, channels) {
+            var px: Pixel(f64, channels) = undefined;
+            inline for (0..channels) |ch| {
+                px.channels[ch] = self.getVal(ch, row, col);
+            }
+            return px;
+        }
+
+        pub fn setPixel(self: *Self, row: usize, col: usize, pixel: anytype) void {
+            inline for (0..channels) |ch| {
+                const val = pixel.channels[ch];
+                const PT = @TypeOf(val);
+                const fval = switch (@typeInfo(PT)) {
+                    .int => @as(f64, @floatFromInt(val)),
+                    .float => @as(f64, @floatCast(val)),
+                    else => @compileError("Unsupported pixel type"),
+                };
+                self.setVal(ch, row, col, fval);
+            }
         }
 
         pub fn saveCSV(self: *const Self,
@@ -66,9 +86,8 @@ pub fn Texture(comptime T: type, comptime channels: usize) type {
 
             for (0..self.rows_num) |rr| {
                 for (0..self.cols_num) |cc| {
-                    const px = self.getPixel(rr, cc);
                     for (0..channels) |ch| {
-                        try writer.print("{d}", .{px.channels[ch]});
+                        try writer.print("{d}", .{self.getVal(ch, rr, cc)});
                         if (ch < channels - 1) {
                             try writer.writeAll(":");
                         }
@@ -164,16 +183,50 @@ fn getPx(comptime channels: usize, texture: anytype, x: isize, y: isize) [channe
     const ix = @as(usize, @intCast(@max(0, @min(x, cols - 1))));
     const iy = @as(usize, @intCast(@max(0, @min(y, rows - 1))));
 
-    const px = texture.getPixel(iy, ix);
     var res: [channels]f64 = undefined;
     inline for (0..channels) |ch| {
-        const val = px.channels[ch];
-        const T = @TypeOf(val);
-        res[ch] = switch (@typeInfo(T)) {
-            .int => @as(f64, @floatFromInt(val)),
-            .float => @as(f64, @floatCast(val)),
-            else => @compileError("Unsupported texture type"),
-        };
+        res[ch] = texture.getVal(ch, iy, ix);
+    }
+    return res;
+}
+
+fn v_getPxSIMD(comptime channels: usize, 
+               texture: anytype, 
+               v_xi: @Vector(8, isize), 
+               v_yi: @Vector(8, isize)) [channels]@Vector(8, f64) {
+    const cols = @as(isize, @intCast(texture.cols_num));
+    const rows = @as(isize, @intCast(texture.rows_num));
+    
+    const v_0: @Vector(8, isize) = @splat(0);
+    const v_cols_m1: @Vector(8, isize) = @splat(cols - 1);
+    const v_rows_m1: @Vector(8, isize) = @splat(rows - 1);
+    
+    const v_ix = @as(@Vector(8, usize), @intCast(@max(v_0, @min(v_xi, v_cols_m1))));
+    const v_iy = @as(@Vector(8, usize), @intCast(@max(v_0, @min(v_yi, v_rows_m1))));
+    
+    var res: [channels]@Vector(8, f64) = undefined;
+    const stride_y = texture.array.strides[1];
+    
+    inline for (0..channels) |ch| {
+        const base_ptr = texture.array.getPlanePtr(ch);
+        const v_offsets = v_iy * @as(@Vector(8, usize), @splat(stride_y)) + v_ix;
+        
+        // Fast path for contiguous horizontal reads
+        const first_off = v_offsets[0];
+        const v_expected = @as(@Vector(8, usize), @splat(first_off)) + @Vector(8, usize){0, 1, 2, 3, 4, 5, 6, 7};
+        const is_contiguous = @reduce(.And, v_offsets == v_expected);
+        
+        if (is_contiguous) {
+            res[ch] = @as(*const [8]f64, @ptrCast(@alignCast(&base_ptr[first_off]))).*;
+        } else {
+            // Gather (scalar loop for now, hardware gather can be added later)
+            var lane_res: [8]f64 = undefined;
+            const offsets_arr: [8]usize = v_offsets;
+            for (0..8) |ii| {
+                lane_res[ii] = base_ptr[offsets_arr[ii]];
+            }
+            res[ch] = lane_res;
+        }
     }
     return res;
 }
@@ -357,36 +410,18 @@ pub fn sampleGenericSIMD(comptime channels: usize,
 
     return switch (interp) {
         .linear => {
-            var p00_arr: [channels][8]f64 = undefined;
-            var p10_arr: [channels][8]f64 = undefined;
-            var p01_arr: [channels][8]f64 = undefined;
-            var p11_arr: [channels][8]f64 = undefined;
-            
-            for (0..8) |ii| {
-                const p00 = getPx(channels, texture, v_xi[ii], v_yi[ii]);
-                const p10 = getPx(channels, texture, v_xi[ii] + 1, v_yi[ii]);
-                const p01 = getPx(channels, texture, v_xi[ii], v_yi[ii] + 1);
-                const p11 = getPx(channels, texture, v_xi[ii] + 1, v_yi[ii] + 1);
-                inline for (0..channels) |ch| {
-                    p00_arr[ch][ii] = p00[ch];
-                    p10_arr[ch][ii] = p10[ch];
-                    p01_arr[ch][ii] = p01[ch];
-                    p11_arr[ch][ii] = p11[ch];
-                }
-            }
+            const v_p00 = v_getPxSIMD(channels, texture, v_xi, v_yi);
+            const v_p10 = v_getPxSIMD(channels, texture, v_xi + @as(@Vector(8, isize), @splat(1)), v_yi);
+            const v_p01 = v_getPxSIMD(channels, texture, v_xi, v_yi + @as(@Vector(8, isize), @splat(1)));
+            const v_p11 = v_getPxSIMD(channels, texture, v_xi + @as(@Vector(8, isize), @splat(1)), v_yi + @as(@Vector(8, isize), @splat(1)));
             
             var res: [channels]@Vector(8, f64) = undefined;
             const v_1: @Vector(8, f64) = @splat(1.0);
             inline for (0..channels) |ch| {
-                const v_p00: @Vector(8, f64) = p00_arr[ch];
-                const v_p10: @Vector(8, f64) = p10_arr[ch];
-                const v_p01: @Vector(8, f64) = p01_arr[ch];
-                const v_p11: @Vector(8, f64) = p11_arr[ch];
-
-                res[ch] = (v_1 - v_tx) * (v_1 - v_ty) * v_p00 + 
-                          v_tx * (v_1 - v_ty) * v_p10 +
-                          (v_1 - v_tx) * v_ty * v_p01 + 
-                          v_tx * v_ty * v_p11;
+                res[ch] = (v_1 - v_tx) * (v_1 - v_ty) * v_p00[ch] + 
+                          v_tx * (v_1 - v_ty) * v_p10[ch] +
+                          (v_1 - v_tx) * v_ty * v_p01[ch] + 
+                          v_tx * v_ty * v_p11[ch];
             }
             return res;
         },
@@ -450,24 +485,18 @@ pub fn sampleGenericSIMD(comptime channels: usize,
             var v_res: [channels]@Vector(8, f64) = [_]@Vector(8, f64){ @splat(0.0) } ** channels;
             var v_w_sum: @Vector(8, f64) = @splat(0.0);
 
-            for (0..K) |jj| {
-                for (0..K) |ii| {
-                    const v_w = v_wx[ii] * v_wy[jj];
+            inline for (0..K) |jj| {
+                const v_wy_val = v_wy[jj];
+                inline for (0..K) |ii| {
+                    const v_w = v_wx[ii] * v_wy_val;
                     v_w_sum += v_w;
                     
-                    var p_arr: [channels][8]f64 = undefined;
-                    for (0..8) |ln| {
-                        const px = getPx(channels, texture, 
-                                         v_xi[ln] + @as(isize, @intCast(ii)) - offset,
-                                         v_yi[ln] + @as(isize, @intCast(jj)) - offset);
-                        inline for (0..channels) |ch| {
-                            p_arr[ch][ln] = px[ch];
-                        }
-                    }
+                    const v_px_vecs = v_getPxSIMD(channels, texture, 
+                                                  v_xi + @as(@Vector(8, isize), @splat(@as(isize, @intCast(ii)) - offset)),
+                                                  v_yi + @as(@Vector(8, isize), @splat(@as(isize, @intCast(jj)) - offset)));
                     
                     inline for (0..channels) |ch| {
-                        const v_px: @Vector(8, f64) = p_arr[ch];
-                        v_res[ch] += v_px * v_w;
+                        v_res[ch] += v_px_vecs[ch] * v_w;
                     }
                 }
             }
@@ -543,24 +572,18 @@ pub fn sampleGenericSIMD(comptime channels: usize,
             var v_res: [channels]@Vector(8, f64) = [_]@Vector(8, f64){ @splat(0.0) } ** channels;
             var v_w_sum: @Vector(8, f64) = @splat(0.0);
 
-            for (0..K) |jj| {
-                for (0..K) |ii| {
-                    const v_w = v_wx[ii] * v_wy[jj];
+            inline for (0..K) |jj| {
+                const v_wy_val = v_wy[jj];
+                inline for (0..K) |ii| {
+                    const v_w = v_wx[ii] * v_wy_val;
                     v_w_sum += v_w;
                     
-                    var p_arr: [channels][8]f64 = undefined;
-                    for (0..8) |ln| {
-                        const px = getPx(channels, texture, 
-                                         v_xi[ln] + @as(isize, @intCast(ii)) - offset,
-                                         v_yi[ln] + @as(isize, @intCast(jj)) - offset);
-                        inline for (0..channels) |ch| {
-                            p_arr[ch][ln] = px[ch];
-                        }
-                    }
+                    const v_px_vecs = v_getPxSIMD(channels, texture, 
+                                                  v_xi + @as(@Vector(8, isize), @splat(@as(isize, @intCast(ii)) - offset)),
+                                                  v_yi + @as(@Vector(8, isize), @splat(@as(isize, @intCast(jj)) - offset)));
                     
                     inline for (0..channels) |ch| {
-                        const v_px: @Vector(8, f64) = p_arr[ch];
-                        v_res[ch] += v_px * v_w;
+                        v_res[ch] += v_px_vecs[ch] * v_w;
                     }
                 }
             }
