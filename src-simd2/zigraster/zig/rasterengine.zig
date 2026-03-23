@@ -352,48 +352,6 @@ pub fn RasterPass(
             return shaded_px;
         }
 
-        fn flushSIMDQueue(
-            comptime rep: Report,
-            q: *shadekerns.shaderops.ShadeQueue(Geometry.nodes_num),
-            cr: rops.RasterContext(rep),
-            t: rops.OverlapTarget,
-            fn_num: usize,
-            orig_shader: *const PreparedShader,
-            lb: *const shadekerns.shaderops.LocalNodeBuffer(Geometry.nodes_num),
-            img: *MatSlice(f64),
-        ) void {
-            const N = Geometry.nodes_num;
-            if (q.count == 0) return;
-            if (q.count < 8) {
-                const last_idx = q.count - 1;
-                for (q.count..8) |ii| {
-                    q.v_idx[ii] = q.v_idx[last_idx];
-                    inline for (0..N) |nn| {
-                        q.v_weights[nn][ii] = q.v_weights[nn][last_idx];
-                    }
-                    q.v_subpx_z[ii] = q.v_subpx_z[last_idx];
-                }
-            }
-
-            ShaderKernel.shadeSIMDDeferred(
-                Geometry.coord_space,
-                .{
-                    .frame_index = cr.frame_ind,
-                    .elem_index = t.overlap.elem_idx,
-                    .fields_num = fn_num,
-                    .actual_fields = fn_num,
-                    .idx = 0, // not used in deferred
-                    .global_subx = 0,
-                    .global_suby = 0,
-                    .local_buf = lb,
-                },
-                q.*,
-                orig_shader,
-                img,
-            );
-            q.count = 0;
-        }
-
         fn rasterSIMD(
             comptime report: Report,
             ctx_rast: rops.RasterContext(report),
@@ -430,10 +388,6 @@ pub fn RasterPass(
             const edge_tol: f64 = 1e-9;
             const v_edge_tol: @Vector(8, f64) = @splat(-edge_tol);
 
-            var queue = shadekerns.shaderops.ShadeQueue(N){
-                .v_nodes_inv_z = v_nodes_inv_z,
-            };
-
             for (bounds.start_y..bounds.end_y) |scratch_y| {
                 const row_offset = scratch_y * domain.tile_size;
                 var v_weights = v_weights_row;
@@ -468,31 +422,33 @@ pub fn RasterPass(
                             ptr_new_inv_z.* = v_new_inv_z;
 
                             const v_subpx_z = @as(@Vector(8, f64), @splat(1.0)) / v_inv_z;
-                            
-                            // Process individual active pixels into the queue
-                            const mask_arr: [8]bool = v_depth_mask;
-                            const idx_arr: [8]usize = v_07 + @as(@Vector(8, usize), @splat(index));
-                            const subz_arr: [8]f64 = v_subpx_z;
-                            var weights_arr: [N][8]f64 = undefined;
-                            inline for (0..N) |nn| {
-                                weights_arr[nn] = v_weights[nn];
-                            }
+                            shaded_px += @intCast(@reduce(.Add, @as(@Vector(8, u8), 
+                                                                   @select(u8, v_depth_mask, 
+                                                                           @as(@Vector(8, u8), 
+                                                                               @splat(1)), 
+                                                                           @as(@Vector(8, u8), 
+                                                                               @splat(0))))));
 
-                            for (0..8) |ii| {
-                                if (mask_arr[ii]) {
-                                    queue.v_idx[queue.count] = idx_arr[ii];
-                                    inline for (0..N) |nn| {
-                                        queue.v_weights[nn][queue.count] = weights_arr[nn][ii];
-                                    }
-                                    queue.v_subpx_z[queue.count] = subz_arr[ii];
-                                    queue.count += 1;
-                                    shaded_px += 1;
-
-                                    if (queue.count == 8) {
-                                        flushSIMDQueue(report, &queue, ctx_rast, target, fields_num, shader, local_buf, scratch.image);
-                                    }
-                                }
-                            }
+                            ShaderKernel.shadeSIMD(
+                                Geometry.coord_space,
+                                .{
+                                    .frame_index = ctx_rast.frame_ind,
+                                    .elem_index = target.overlap.elem_idx,
+                                    .fields_num = fields_num,
+                                    .actual_fields = fields_num,
+                                    .idx = index,
+                                    .global_subx = 0, // TODO: support perf reporting in SIMD
+                                    .global_suby = 0,
+                                    .local_buf = local_buf,
+                                    .v_mask = v_depth_mask,
+                                },
+                                v_depth_mask,
+                                v_weights,
+                                v_nodes_inv_z,
+                                v_subpx_z,
+                                shader,
+                                scratch.image,
+                            );
                         }
                     }
                     inline for (0..N) |ii| {
@@ -503,7 +459,6 @@ pub fn RasterPass(
                     v_weights_row[ii] += v_steps.dy[ii];
                 }
             }
-            flushSIMDQueue(report, &queue, ctx_rast, target, fields_num, shader, local_buf, scratch.image);
             return shaded_px;
         }
 
