@@ -449,12 +449,22 @@ pub fn sampleGenericSIMD(comptime channels: usize,
 
             var v_res: [channels]@Vector(8, f64) = [_]@Vector(8, f64){ @splat(0.0) } ** channels;
             var v_w_sum: @Vector(8, f64) = @splat(0.0);
-
-            for (0..K) |jj| {
-                for (0..K) |ii| {
-                    const v_w = v_wx[ii] * v_wy[jj];
+            
+            // Fully unrolled plane shading implementation
+            // Pre-calculate weight planes to avoid redundant math in channels loop
+            var v_w_planes: [K * K]@Vector(8, f64) = undefined;
+            inline for (0..K) |jj| {
+                const v_wy_val = v_wy[jj];
+                inline for (0..K) |ii| {
+                    const v_w = v_wx[ii] * v_wy_val;
+                    v_w_planes[jj * K + ii] = v_w;
                     v_w_sum += v_w;
-                    
+                }
+            }
+
+            inline for (0..K) |jj| {
+                inline for (0..K) |ii| {
+                    const v_w = v_w_planes[jj * K + ii];
                     var p_arr: [channels][8]f64 = undefined;
                     for (0..8) |ln| {
                         const px = getPx(channels, texture, 
@@ -464,7 +474,6 @@ pub fn sampleGenericSIMD(comptime channels: usize,
                             p_arr[ch][ln] = px[ch];
                         }
                     }
-                    
                     inline for (0..channels) |ch| {
                         const v_px: @Vector(8, f64) = p_arr[ch];
                         v_res[ch] += v_px * v_w;
@@ -542,10 +551,13 @@ pub fn sampleGenericSIMD(comptime channels: usize,
 
             var v_res: [channels]@Vector(8, f64) = [_]@Vector(8, f64){ @splat(0.0) } ** channels;
             var v_w_sum: @Vector(8, f64) = @splat(0.0);
-
-            for (0..K) |jj| {
-                for (0..K) |ii| {
-                    const v_w = v_wx[ii] * v_wy[jj];
+            
+            // Fully unrolled plane shading implementation
+            inline for (0..6) |jj| {
+                const v_wy_val = v_wy[jj];
+                inline for (0..6) |ii| {
+                    const v_wx_val = v_wx[ii];
+                    const v_w = v_wx_val * v_wy_val;
                     v_w_sum += v_w;
                     
                     var p_arr: [channels][8]f64 = undefined;
@@ -557,7 +569,6 @@ pub fn sampleGenericSIMD(comptime channels: usize,
                             p_arr[ch][ln] = px[ch];
                         }
                     }
-                    
                     inline for (0..channels) |ch| {
                         const v_px: @Vector(8, f64) = p_arr[ch];
                         v_res[ch] += v_px * v_w;

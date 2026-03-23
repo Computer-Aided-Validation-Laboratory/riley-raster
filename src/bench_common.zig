@@ -82,7 +82,7 @@ pub fn getDateString() ![]const u8 {
     return "17-03-2026";
 }
 
-pub const ShaderType = enum { flat_grey, flat_rgb, tex8_grey, tex8_rgb };
+pub const ShaderType = enum { flat_grey, flat_rgb, tex8_grey, tex8_rgb, tex8_cubic, tex8_cubic_lut_lerp };
 
 pub fn loadNDArrayFromCSV(
     allocator: std.mem.Allocator,
@@ -222,7 +222,7 @@ pub fn runBenchmark(
             shader = .{ .tex_u8 = .{
                 .uvs = uvs_raw,
                 .texture = texture_grey,
-                .interp_type = .cubic_lut_lerp,
+                .interp_type = .linear,
             } };
         },
         .tex8_rgb => {
@@ -230,6 +230,20 @@ pub fn runBenchmark(
             shader = .{ .tex_rgb_u8 = .{
                 .uvs = uvs_raw,
                 .texture = texture_rgb,
+                .interp_type = .linear,
+            } };
+        },
+        .tex8_cubic => {
+            shader = .{ .tex_u8 = .{
+                .uvs = uvs_raw,
+                .texture = texture_grey,
+                .interp_type = .cubic,
+            } };
+        },
+        .tex8_cubic_lut_lerp => {
+            shader = .{ .tex_u8 = .{
+                .uvs = uvs_raw,
+                .texture = texture_grey,
                 .interp_type = .cubic_lut_lerp,
             } };
         },
