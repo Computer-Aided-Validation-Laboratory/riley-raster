@@ -119,16 +119,6 @@ pub fn TexPrepared(comptime T: type, comptime channels: usize) type {
     };
 }
 
-pub fn ShadeQueue(comptime N: usize) type {
-    return struct {
-        v_idx: [8]usize = undefined,
-        v_weights: [N][8]f64 = undefined,
-        v_subpx_z: [8]f64 = undefined,
-        v_nodes_inv_z: [N]@Vector(8, f64) = undefined,
-        count: usize = 0,
-    };
-}
-
 pub fn ShadeContext(comptime N: usize) type {
     return struct {
         frame_index: usize,
@@ -204,10 +194,12 @@ pub inline fn fillFlatPerspective(
     }
 }
 
-pub inline fn fillFlatPerspectiveSIMDDeferred(
+pub inline fn fillFlatPerspectiveSIMD(
     comptime N: usize,
     ctx_shade: ShadeContext(N),
-    queue: ShadeQueue(N),
+    v_weights: [N]@Vector(8, f64),
+    v_nodes_inv_z: [N]@Vector(8, f64),
+    v_subpx_z: @Vector(8, f64),
     sh: *const FlatPrepared,
     spx_image_scratch: *MatSlice(f64),
 ) void {
@@ -215,26 +207,22 @@ pub inline fn fillFlatPerspectiveSIMDDeferred(
     const v_add: @Vector(8, f64) = @splat(sh.scale_add);
     const px_stride = spx_image_scratch.cols_num;
 
-    const v_subpx_z: @Vector(8, f64) = queue.v_subpx_z;
-
     inline for (0..MAX_FIELDS) |ff| {
         if (ff >= ctx_shade.actual_fields) break;
         const base = ff * N;
         var v_vs: @Vector(8, f64) = @splat(0.0);
         inline for (0..N) |nn| {
-            const v_weights: @Vector(8, f64) = queue.v_weights[nn];
-            v_vs += v_weights * queue.v_nodes_inv_z[nn] * @as(@Vector(8, f64), 
+            v_vs += v_weights[nn] * v_nodes_inv_z[nn] * @as(@Vector(8, f64), 
                 @splat(ctx_shade.local_buf.data[base + nn]));
         }
         
-        const v_final_vec = (v_vs * v_subpx_z) * v_mul + v_add;
-        const v_final: [8]f64 = v_final_vec;
-        const flat_idx = ff * px_stride;
+        const v_final = (v_vs * v_subpx_z) * v_mul + v_add;
+        const flat_idx = ff * px_stride + ctx_shade.idx;
         
-        // Scatter store
-        for (0..8) |ii| {
-            spx_image_scratch.elems[flat_idx + queue.v_idx[ii]] = v_final[ii];
-        }
+        // Contiguous SIMD Store with depth mask
+        const ptr_out: *align(8) @Vector(8, f64) = @ptrCast(&spx_image_scratch.elems[flat_idx]);
+        const v_old_val: @Vector(8, f64) = ptr_out.*;
+        ptr_out.* = @select(f64, ctx_shade.v_mask.?, v_final, v_old_val);
     }
 }
 
@@ -299,13 +287,15 @@ pub inline fn fillTexPerspective(
     }
 }
 
-pub inline fn fillTexPerspectiveSIMDDeferred(
+pub inline fn fillTexPerspectiveSIMD(
     comptime N: usize,
     comptime TexT: type,
     comptime channels: usize,
     interp_type: InterpType,
     ctx_shade: ShadeContext(N),
-    queue: ShadeQueue(N),
+    v_weights: [N]@Vector(8, f64),
+    v_nodes_inv_z: [N]@Vector(8, f64),
+    v_subpx_z: @Vector(8, f64),
     sh: *const TexPrepared(TexT, channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
@@ -313,35 +303,33 @@ pub inline fn fillTexPerspectiveSIMDDeferred(
     const v_add: @Vector(8, f64) = @splat(sh.scale_add);
     const px_stride = spx_image_scratch.cols_num;
 
-    const v_subpx_z: @Vector(8, f64) = queue.v_subpx_z;
-
     // SIMD UV Interpolation
     var v_u_at: @Vector(8, f64) = @splat(0.0);
     var v_v_at: @Vector(8, f64) = @splat(0.0);
     inline for (0..N) |nn| {
-        const v_inv_z = queue.v_nodes_inv_z[nn];
-        const v_weights: @Vector(8, f64) = queue.v_weights[nn];
-        v_u_at += v_weights * @as(@Vector(8, f64), @splat(ctx_shade.local_buf.data[nn])) * v_inv_z;
-        v_v_at += v_weights * @as(@Vector(8, f64), @splat(ctx_shade.local_buf.data[N + nn])) * v_inv_z;
+        const v_inv_z = v_nodes_inv_z[nn];
+        v_u_at += v_weights[nn] * @as(@Vector(8, f64), @splat(ctx_shade.local_buf.data[nn])) * v_inv_z;
+        v_v_at += v_weights[nn] * @as(@Vector(8, f64), @splat(ctx_shade.local_buf.data[N + nn])) * v_inv_z;
     }
     
-    const u_at: [8]f64 = v_u_at * v_subpx_z;
-    const v_at: [8]f64 = v_v_at * v_subpx_z;
-    const mul: [8]f64 = v_mul;
-    const add: [8]f64 = v_add;
+    v_u_at *= v_subpx_z;
+    v_v_at *= v_subpx_z;
 
-    // Loop over 8 pixels for sampling
-    for (0..8) |ii| {
-        const sampled = texops.sampleGeneric(
-            channels,
-            interp_type,
-            sh.texture,
-            u_at[ii],
-            v_at[ii],
-        );
-        inline for (0..channels) |ch| {
-            const val = sampled[ch] * mul[ii] + add[ii];
-            spx_image_scratch.elems[ch * px_stride + queue.v_idx[ii]] = val;
-        }
+    const sampled_vecs = texops.sampleGenericSIMD(
+        channels,
+        interp_type,
+        sh.texture,
+        v_u_at,
+        v_v_at,
+    );
+
+    inline for (0..channels) |ch| {
+        const v_final = sampled_vecs[ch] * v_mul + v_add;
+        const flat_idx = ch * px_stride + ctx_shade.idx;
+        
+        // Contiguous SIMD Store with depth mask
+        const ptr_out: *align(8) @Vector(8, f64) = @ptrCast(&spx_image_scratch.elems[flat_idx]);
+        const v_old_val: @Vector(8, f64) = ptr_out.*;
+        ptr_out.* = @select(f64, ctx_shade.v_mask.?, v_final, v_old_val);
     }
 }

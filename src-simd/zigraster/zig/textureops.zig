@@ -290,6 +290,87 @@ pub fn sampleGeneric(comptime channels: usize,
     };
 }
 
+pub fn sampleGenericSIMD(comptime channels: usize,
+                         interp: InterpType,
+                         texture: anytype,
+                         v_u: @Vector(8, f64),
+                         v_v: @Vector(8, f64)) [channels]@Vector(8, f64) {
+
+    const cols_minus_1_f = @as(f64, @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1));
+    const rows_minus_1_f = @as(f64, @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1));
+    
+    const v_xf = v_u * @as(@Vector(8, f64), @splat(cols_minus_1_f));
+    const v_yf = v_v * @as(@Vector(8, f64), @splat(rows_minus_1_f));
+    
+    // v_xi = floor(v_xf)
+    var v_xi: [8]isize = undefined;
+    var v_yi: [8]isize = undefined;
+    const xf_arr: [8]f64 = v_xf;
+    const yf_arr: [8]f64 = v_yf;
+    const u_arr: [8]f64 = v_u;
+    const v_arr: [8]f64 = v_v;
+
+    for (0..8) |ii| {
+        v_xi[ii] = @as(isize, @intFromFloat(@floor(xf_arr[ii])));
+        v_yi[ii] = @as(isize, @intFromFloat(@floor(yf_arr[ii])));
+    }
+    
+    const v_tx = v_xf - @as(@Vector(8, f64), @floatFromInt(@as(@Vector(8, isize), v_xi)));
+    const v_ty = v_yf - @as(@Vector(8, f64), @floatFromInt(@as(@Vector(8, isize), v_yi)));
+
+    return switch (interp) {
+        .linear => {
+            var p00_arr: [channels][8]f64 = undefined;
+            var p10_arr: [channels][8]f64 = undefined;
+            var p01_arr: [channels][8]f64 = undefined;
+            var p11_arr: [channels][8]f64 = undefined;
+            
+            for (0..8) |ii| {
+                const p00 = getPx(channels, texture, v_xi[ii], v_yi[ii]);
+                const p10 = getPx(channels, texture, v_xi[ii] + 1, v_yi[ii]);
+                const p01 = getPx(channels, texture, v_xi[ii], v_yi[ii] + 1);
+                const p11 = getPx(channels, texture, v_xi[ii] + 1, v_yi[ii] + 1);
+                inline for (0..channels) |ch| {
+                    p00_arr[ch][ii] = p00[ch];
+                    p10_arr[ch][ii] = p10[ch];
+                    p01_arr[ch][ii] = p01[ch];
+                    p11_arr[ch][ii] = p11[ch];
+                }
+            }
+            
+            var res: [channels]@Vector(8, f64) = undefined;
+            const v_1: @Vector(8, f64) = @splat(1.0);
+            inline for (0..channels) |ch| {
+                const v_p00: @Vector(8, f64) = p00_arr[ch];
+                const v_p10: @Vector(8, f64) = p10_arr[ch];
+                const v_p01: @Vector(8, f64) = p01_arr[ch];
+                const v_p11: @Vector(8, f64) = p11_arr[ch];
+
+                res[ch] = (v_1 - v_tx) * (v_1 - v_ty) * v_p00 + 
+                          v_tx * (v_1 - v_ty) * v_p10 +
+                          (v_1 - v_tx) * v_ty * v_p01 + 
+                          v_tx * v_ty * v_p11;
+            }
+            return res;
+        },
+        // For higher order, we'll use a simplified scalar-in-vector-loop approach for now
+        else => {
+            var res_arr: [channels][8]f64 = undefined;
+            for (0..8) |ii| {
+                const sampled = sampleGeneric(channels, interp, texture, u_arr[ii], v_arr[ii]);
+                inline for (0..channels) |ch| {
+                    res_arr[ch][ii] = sampled[ch];
+                }
+            }
+            var res: [channels]@Vector(8, f64) = undefined;
+            inline for (0..channels) |ch| {
+                res[ch] = res_arr[ch];
+            }
+            return res;
+        }
+    };
+}
+
 pub fn sampleGreyscale(comptime interp: InterpType,
                        texture: anytype,
                        u: f64,
