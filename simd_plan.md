@@ -5,7 +5,6 @@ This plan outlines the steps to incorporate high-performance SIMD features (as d
 ## 1. Memory Foundation & Alignment (Features 3 & 4)
 *   **Action:** Update `ScratchBuffers` in `rasterengine.zig` to a **Planar** layout.
 *   **Planar Layout:** Store fields as `[fields_num][subpx_total]` instead of interleaved `[subpx_total][fields_num]`.
-*   **Alignment:** Use `allocator.alignedAlloc(f64, std.mem.Alignment.fromByteUnits(64), ...)` for `inv_z` and `image_scratch` to ensure 64-byte alignment (cache-line and AVX-512 friendly).
 
 ## 2. Geometry Kernel SIMD Extensions (Features 1 & 5)
 *   **Action:** Enhance `Tri3Kernel` and `Tri3OptKernel` in `geometrykernels.zig` with SIMD-specific methods.
