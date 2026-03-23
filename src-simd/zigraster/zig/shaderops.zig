@@ -1,3 +1,4 @@
+const std = @import("std");
 const ndarray = @import("ndarray.zig");
 const NDArray = ndarray.NDArray;
 const MappedNDArray = ndarray.MappedNDArray;
@@ -128,6 +129,7 @@ pub fn ShadeContext(comptime N: usize) type {
         global_subx: usize,
         global_suby: usize,
         local_buf: *const LocalNodeBuffer(N),
+        v_mask: ?@Vector(8, bool) = null,
     };
 }
 
@@ -166,7 +168,7 @@ pub inline fn fillFlat(
 ) void {
     for (0..ctx_shade.actual_fields) |ff| {
         const vs = ctx_shade.local_buf.interpolate(ff, interp.weights);
-        spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + ff] = 
+        spx_image_scratch.elems[ff * spx_image_scratch.cols_num + ctx_shade.idx] = 
             vs * sh.scale_mul + sh.scale_add;
     }
 }
@@ -187,8 +189,40 @@ pub inline fn fillFlatPerspective(
         }
         
         const final_val = vs * interp.sub_pixel_z;
-        spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + ff] = 
+        spx_image_scratch.elems[ff * spx_image_scratch.cols_num + ctx_shade.idx] = 
             final_val * sh.scale_mul + sh.scale_add;
+    }
+}
+
+pub inline fn fillFlatPerspectiveSIMD(
+    comptime N: usize,
+    ctx_shade: ShadeContext(N),
+    v_weights: [N]@Vector(8, f64),
+    v_nodes_inv_z: [N]@Vector(8, f64),
+    v_subpx_z: @Vector(8, f64),
+    sh: *const FlatPrepared,
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    const v_mul: @Vector(8, f64) = @splat(sh.scale_mul);
+    const v_add: @Vector(8, f64) = @splat(sh.scale_add);
+    const px_stride = spx_image_scratch.cols_num;
+
+    inline for (0..MAX_FIELDS) |ff| {
+        if (ff >= ctx_shade.actual_fields) break;
+        const base = ff * N;
+        var v_vs: @Vector(8, f64) = @splat(0.0);
+        inline for (0..N) |nn| {
+            v_vs += v_weights[nn] * v_nodes_inv_z[nn] * @as(@Vector(8, f64), 
+                @splat(ctx_shade.local_buf.data[base + nn]));
+        }
+        
+        const v_final = (v_vs * v_subpx_z) * v_mul + v_add;
+        const flat_idx = ff * px_stride + ctx_shade.idx;
+        
+        // Contiguous SIMD Store with depth mask
+        const ptr_out: *align(8) @Vector(8, f64) = @ptrCast(&spx_image_scratch.elems[flat_idx]);
+        const v_old_val: @Vector(8, f64) = ptr_out.*;
+        ptr_out.* = @select(f64, ctx_shade.v_mask.?, v_final, v_old_val);
     }
 }
 
@@ -217,7 +251,7 @@ pub inline fn fillTex(
         v_at,
     );
     inline for (0..channels) |ch| {
-        spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + ch] = 
+        spx_image_scratch.elems[ch * spx_image_scratch.cols_num + ctx_shade.idx] = 
             sampled[ch] * sh.scale_mul + sh.scale_add;
     }
 }
@@ -248,7 +282,59 @@ pub inline fn fillTexPerspective(
         v_at * interp.sub_pixel_z,
     );
     inline for (0..channels) |ch| {
-        spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + ch] = 
+        spx_image_scratch.elems[ch * spx_image_scratch.cols_num + ctx_shade.idx] = 
             sampled[ch] * sh.scale_mul + sh.scale_add;
+    }
+}
+
+pub inline fn fillTexPerspectiveSIMD(
+    comptime N: usize,
+    comptime TexT: type,
+    comptime channels: usize,
+    interp_type: InterpType,
+    ctx_shade: ShadeContext(N),
+    v_weights: [N]@Vector(8, f64),
+    v_nodes_inv_z: [N]@Vector(8, f64),
+    v_subpx_z: @Vector(8, f64),
+    sh: *const TexPrepared(TexT, channels),
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    const v_mul: @Vector(8, f64) = @splat(sh.scale_mul);
+    const v_add: @Vector(8, f64) = @splat(sh.scale_add);
+    const px_stride = spx_image_scratch.cols_num;
+
+    // SIMD UV Interpolation
+    var v_u_at: @Vector(8, f64) = @splat(0.0);
+    var v_v_at: @Vector(8, f64) = @splat(0.0);
+    inline for (0..N) |nn| {
+        const v_inv_z = v_nodes_inv_z[nn];
+        v_u_at += v_weights[nn] * @as(@Vector(8, f64), @splat(ctx_shade.local_buf.data[nn])) * v_inv_z;
+        v_v_at += v_weights[nn] * @as(@Vector(8, f64), @splat(ctx_shade.local_buf.data[N + nn])) * v_inv_z;
+    }
+    
+    v_u_at *= v_subpx_z;
+    v_v_at *= v_subpx_z;
+
+    // Loop over 8 pixels for sampling (texture sampling is hard to vectorize fully)
+    const mask: [8]bool = ctx_shade.v_mask.?;
+    const u_at: [8]f64 = v_u_at;
+    const v_at: [8]f64 = v_v_at;
+    const mul: [8]f64 = v_mul;
+    const add: [8]f64 = v_add;
+
+    for (0..8) |ii| {
+        if (mask[ii]) {
+            const sampled = texops.sampleGeneric(
+                channels,
+                interp_type,
+                sh.texture,
+                u_at[ii],
+                v_at[ii],
+            );
+            inline for (0..channels) |ch| {
+                const val = sampled[ch] * mul[ii] + add[ii];
+                spx_image_scratch.elems[ch * px_stride + ctx_shade.idx + ii] = val;
+            }
+        }
     }
 }

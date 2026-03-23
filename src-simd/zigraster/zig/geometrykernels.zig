@@ -56,6 +56,21 @@ pub fn Tri3Kernel() type {
                                        nodes.x[2], nodes.y[2],);
         }
 
+        pub inline fn getWeightsAt(nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
+                                   inv_area: f64,) [nodes_num]f64 {
+            return [_]f64{
+                rops.edgeFun3(nodes.x[1], nodes.y[1],
+                              nodes.x[2], nodes.y[2],
+                              pixel_x, pixel_y,) * inv_area,
+                rops.edgeFun3(nodes.x[2], nodes.y[2],
+                              nodes.x[0], nodes.y[0],
+                              pixel_x, pixel_y,) * inv_area,
+                rops.edgeFun3(nodes.x[0], nodes.y[0],
+                              nodes.x[1], nodes.y[1],
+                              pixel_x, pixel_y,) * inv_area,
+            };
+        }
+
         pub inline fn solveWeights(nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
                                    x_offset: f64, y_offset: f64, inv_area: f64, 
                                    ) GeometryResult(nodes_num) {
@@ -87,6 +102,47 @@ pub fn Tri3Kernel() type {
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [nodes_num]f64) f64 {
             return calcInvZRast(nodes_num, nodes, weights);
         }
+
+        pub inline fn getSIMDConstants(nodes: Vec3OfSlices(f64)) [nodes_num]@Vector(8, f64) {
+            var out: [nodes_num]@Vector(8, f64) = undefined;
+            inline for (0..nodes_num) |ii| {
+                out[ii] = @splat(1.0 / nodes.z[ii]);
+            }
+            return out;
+        }
+
+        pub inline fn getSIMDSteps(nodes: Vec3OfSlices(f64),
+                                   inv_area: f64,
+                                   step_size: f64,
+                                   ) struct { dx: [nodes_num]@Vector(8, f64), 
+                                              dy: [nodes_num]@Vector(8, f64),
+                                              x07: [nodes_num]@Vector(8, f64) } {
+            const dx_scalar = [_]f64{
+                (nodes.y[2] - nodes.y[1]) * step_size * inv_area,
+                (nodes.y[0] - nodes.y[2]) * step_size * inv_area,
+                (nodes.y[1] - nodes.y[0]) * step_size * inv_area,
+            };
+            const dy_scalar = [_]f64{
+                (nodes.x[1] - nodes.x[2]) * step_size * inv_area,
+                (nodes.x[2] - nodes.x[0]) * step_size * inv_area,
+                (nodes.x[0] - nodes.x[1]) * step_size * inv_area,
+            };
+            
+            var dx: [nodes_num]@Vector(8, f64) = undefined;
+            var dy: [nodes_num]@Vector(8, f64) = undefined;
+            var x07: [nodes_num]@Vector(8, f64) = undefined;
+            
+            const v_07: @Vector(8, f64) = .{ 0, 1, 2, 3, 4, 5, 6, 7 };
+
+            inline for (0..nodes_num) |ii| {
+                dx[ii] = @splat(dx_scalar[ii] * 8.0);
+                dy[ii] = @splat(dy_scalar[ii]);
+                x07[ii] = @splat(dx_scalar[ii]);
+                x07[ii] *= v_07;
+            }
+            
+            return .{ .dx = dx, .dy = dy, .x07 = x07 };
+        }
     };
 }
 
@@ -96,6 +152,12 @@ pub fn Tri3OptKernel() type {
         pub const has_hull = false;
         pub const coord_space = .raster;
         pub const strategy = .incremental;
+
+        pub inline fn getInvElemArea(nodes: Vec3OfSlices(f64)) f64 {
+            return 1.0 / rops.edgeFun3(nodes.x[0], nodes.y[0],
+                                       nodes.x[1], nodes.y[1],
+                                       nodes.x[2], nodes.y[2],);
+        }
 
         pub inline fn getDWeightsDx(nodes: Vec3OfSlices(f64),
                                     inv_area: f64,
@@ -144,6 +206,47 @@ pub fn Tri3OptKernel() type {
 
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [nodes_num]f64) f64 {
             return calcInvZRast(nodes_num, nodes, weights);
+        }
+
+        pub inline fn getSIMDConstants(nodes: Vec3OfSlices(f64)) [nodes_num]@Vector(8, f64) {
+            var out: [nodes_num]@Vector(8, f64) = undefined;
+            inline for (0..nodes_num) |ii| {
+                out[ii] = @splat(1.0 / nodes.z[ii]);
+            }
+            return out;
+        }
+
+        pub inline fn getSIMDSteps(nodes: Vec3OfSlices(f64),
+                                   inv_area: f64,
+                                   step_size: f64,
+                                   ) struct { dx: [nodes_num]@Vector(8, f64), 
+                                              dy: [nodes_num]@Vector(8, f64),
+                                              x07: [nodes_num]@Vector(8, f64) } {
+            const dx_scalar = [_]f64{
+                (nodes.y[2] - nodes.y[1]) * step_size * inv_area,
+                (nodes.y[0] - nodes.y[2]) * step_size * inv_area,
+                (nodes.y[1] - nodes.y[0]) * step_size * inv_area,
+            };
+            const dy_scalar = [_]f64{
+                (nodes.x[1] - nodes.x[2]) * step_size * inv_area,
+                (nodes.x[2] - nodes.x[0]) * step_size * inv_area,
+                (nodes.x[0] - nodes.x[1]) * step_size * inv_area,
+            };
+            
+            var dx: [nodes_num]@Vector(8, f64) = undefined;
+            var dy: [nodes_num]@Vector(8, f64) = undefined;
+            var x07: [nodes_num]@Vector(8, f64) = undefined;
+            
+            const v_07: @Vector(8, f64) = .{ 0, 1, 2, 3, 4, 5, 6, 7 };
+
+            inline for (0..nodes_num) |ii| {
+                dx[ii] = @splat(dx_scalar[ii] * 8.0);
+                dy[ii] = @splat(dy_scalar[ii]);
+                x07[ii] = @splat(dx_scalar[ii]);
+                x07[ii] *= v_07;
+            }
+            
+            return .{ .dx = dx, .dy = dy, .x07 = x07 };
         }
     };
 }

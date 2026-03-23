@@ -23,7 +23,7 @@ const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
 
 const ScratchBuffers = struct {
-    inv_z: []f64,
+    inv_z: []align(64) f64,
     image: *MatSlice(f64),
 };
 
@@ -61,18 +61,21 @@ pub fn rasterScene(
     
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     const subpx_tile_size: usize = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp;
-    const subpx_tile_total: usize = subpx_tile_size * subpx_tile_size;
+    const subpx_tile_size_padded = (subpx_tile_size + 7) & ~@as(usize, 7);
+    const subpx_tile_total_padded = subpx_tile_size_padded * subpx_tile_size;
 
-    const subpx_inv_z_scratch = try allocator.alloc(f64, subpx_tile_total);
+    const alignment = std.mem.Alignment.@"64";
+    const subpx_inv_z_scratch = try allocator.alignedAlloc(f64, alignment, subpx_tile_total_padded);
     defer allocator.free(subpx_inv_z_scratch);
 
-    const subpx_img_mem = try allocator.alloc(f64, subpx_tile_total * fields_num);
+    const subpx_img_mem = try allocator.alignedAlloc(f64, alignment, subpx_tile_total_padded * fields_num);
     defer allocator.free(subpx_img_mem);
     var subpx_image_scratch = MatSlice(f64).init(
         subpx_img_mem,
-        subpx_tile_total,
         fields_num,
+        subpx_tile_total_padded,
     );
+
     const scratch = ScratchBuffers{
         .inv_z = subpx_inv_z_scratch,
         .image = &subpx_image_scratch,
@@ -116,7 +119,6 @@ pub fn rasterScene(
                         .quad9 => geomkerns.Quad89Kernel(9),
                     };
                     const N = GK.nodes_num;
-
                     const mesh_fields = switch (mesh.shader) {
                         .flat, .normals => |s| s.elem_field.dims[2],
                         .tex_u8, .tex_u16 => 1,
@@ -240,7 +242,7 @@ pub fn rasterScene(
         averageScratch(
             tile,
             @intCast(sub_samp),
-            subpx_tile_size,
+            subpx_tile_size_padded,
             fields_num,
             &subpx_image_scratch,
             subpx_field_avg,
@@ -287,6 +289,7 @@ pub fn RasterPass(
             _ = mesh;
             const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
             const subpx_tile_size = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp;
+            const subpx_tile_size_padded = (subpx_tile_size + 7) & ~@as(usize, 7);
 
             const sub_samp_f: f64 = @as(f64, @floatFromInt(ctx_rast.camera.sub_sample));
             const subpx_step: f64 = 1.0 / sub_samp_f;
@@ -317,7 +320,7 @@ pub fn RasterPass(
             const domain = SubpxDomain{
                 .step = subpx_step,
                 .offset = subpx_offset,
-                .tile_size = subpx_tile_size,
+                .tile_size = subpx_tile_size_padded,
                 .x_off = x_off,
                 .y_off = y_off,
             };
@@ -331,7 +334,13 @@ pub fn RasterPass(
                 .y_min_f = y_min_f,
             };
 
-            const shaded_px = if (Geometry.strategy == .incremental)
+            const shaded_px = if (comptime (Geometry == geomkerns.Tri3Kernel() or 
+                                           Geometry == geomkerns.Tri3OptKernel()))
+                try rasterSIMD(
+                    report, ctx_rast, target, domain, bounds, scratch_start_x, nodes, shader, scratch, local_buf,
+                )
+
+            else if (Geometry.strategy == .incremental)
                 try rasterIncremental(
                     report, ctx_rast, target, domain, bounds, nodes, shader, scratch, local_buf,
                 )
@@ -342,6 +351,117 @@ pub fn RasterPass(
 
             return shaded_px;
         }
+
+        fn rasterSIMD(
+            comptime report: Report,
+            ctx_rast: rops.RasterContext(report),
+            target: rops.OverlapTarget,
+            domain: SubpxDomain,
+            bounds: RasterBounds,
+            original_start_x: usize,
+            nodes: Vec3OfSlices(f64),
+            shader: anytype,
+            scratch: ScratchBuffers,
+            local_buf: *const shadekerns.shaderops.LocalNodeBuffer(Geometry.nodes_num),
+        ) !u64 {
+            const N = Geometry.nodes_num;
+            var shaded_px: u64 = 0;
+            const fields_num = scratch.image.rows_num;
+
+            const inv_area = 1.0 / rops.edgeFun3(nodes.x[0], nodes.y[0],
+                                                 nodes.x[1], nodes.y[1],
+                                                 nodes.x[2], nodes.y[2]);
+
+            const v_nodes_inv_z = Geometry.getSIMDConstants(nodes);
+            const v_steps = Geometry.getSIMDSteps(nodes, inv_area, domain.step);
+
+            const start_x = bounds.x_min_f + domain.offset;
+            const start_y = bounds.y_min_f + domain.offset;
+            const weights_start = Geometry.getWeightsAt(nodes, start_x, start_y, inv_area);
+
+            var v_weights_row: [N]@Vector(8, f64) = undefined;
+            inline for (0..N) |ii| {
+                v_weights_row[ii] = @splat(weights_start[ii]);
+                v_weights_row[ii] += v_steps.x07[ii];
+            }
+
+            const edge_tol: f64 = 1e-9;
+            const v_edge_tol: @Vector(8, f64) = @splat(-edge_tol);
+
+            for (bounds.start_y..bounds.end_y) |scratch_y| {
+                const row_offset = scratch_y * domain.tile_size;
+                var v_weights = v_weights_row;
+
+                var scratch_x = bounds.start_x;
+                while (scratch_x < bounds.end_x) : (scratch_x += 8) {
+                    const v_07: @Vector(8, usize) = .{ 0, 1, 2, 3, 4, 5, 6, 7 };
+                    const v_scratch_x: @Vector(8, usize) = @splat(scratch_x);
+                    const v_x_mask = (v_scratch_x + v_07 >= @as(@Vector(8, usize), @splat(original_start_x))) &
+                                     (v_scratch_x + v_07 < @as(@Vector(8, usize), @splat(bounds.end_x)));
+
+                    var v_mask: @Vector(8, bool) = v_x_mask;
+                    inline for (0..N) |ii| {
+                        v_mask = v_mask & (v_weights[ii] >= v_edge_tol);
+                    }
+
+                    if (@reduce(.Or, v_mask)) {
+                        var v_inv_z: @Vector(8, f64) = @splat(0.0);
+                        inline for (0..N) |ii| {
+                            v_inv_z += v_weights[ii] * v_nodes_inv_z[ii];
+                        }
+
+                        const index = row_offset + scratch_x;
+                        const ptr_old_inv_z: *const align(8) @Vector(8, f64) = @ptrCast(&scratch.inv_z[index]);
+                        const v_old_inv_z = ptr_old_inv_z.*;
+
+                        const v_depth_mask = v_mask & (v_inv_z >= v_old_inv_z);
+
+                        if (@reduce(.Or, v_depth_mask)) {
+                            const v_new_inv_z = @select(f64, v_depth_mask, v_inv_z, v_old_inv_z);
+                            const ptr_new_inv_z: *align(8) @Vector(8, f64) = @ptrCast(&scratch.inv_z[index]);
+                            ptr_new_inv_z.* = v_new_inv_z;
+
+                            const v_subpx_z = @as(@Vector(8, f64), @splat(1.0)) / v_inv_z;
+                            shaded_px += @intCast(@reduce(.Add, @as(@Vector(8, u8), 
+                                                                   @select(u8, v_depth_mask, 
+                                                                           @as(@Vector(8, u8), 
+                                                                               @splat(1)), 
+                                                                           @as(@Vector(8, u8), 
+                                                                               @splat(0))))));
+
+                            ShaderKernel.shadeSIMD(
+                                Geometry.coord_space,
+                                .{
+                                    .frame_index = ctx_rast.frame_ind,
+                                    .elem_index = target.overlap.elem_idx,
+                                    .fields_num = fields_num,
+                                    .actual_fields = fields_num,
+                                    .idx = index,
+                                    .global_subx = 0, // TODO: support perf reporting in SIMD
+                                    .global_suby = 0,
+                                    .local_buf = local_buf,
+                                    .v_mask = v_depth_mask,
+                                },
+                                v_depth_mask,
+                                v_weights,
+                                v_nodes_inv_z,
+                                v_subpx_z,
+                                shader,
+                                scratch.image,
+                            );
+                        }
+                    }
+                    inline for (0..N) |ii| {
+                        v_weights[ii] += v_steps.dx[ii];
+                    }
+                }
+                inline for (0..N) |ii| {
+                    v_weights_row[ii] += v_steps.dy[ii];
+                }
+            }
+            return shaded_px;
+        }
+
         fn rasterIncremental(
             comptime report: Report,
             ctx_rast: rops.RasterContext(report),
@@ -356,7 +476,7 @@ pub fn RasterPass(
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
             const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-            const fields_num = scratch.image.cols_num;
+            const fields_num = scratch.image.rows_num;
 
             var nodes_inv_z: [N]f64 = undefined;
             inline for (0..N) |node_index| {
@@ -475,7 +595,7 @@ pub fn RasterPass(
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
             const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-            const fields_num = scratch.image.cols_num;
+            const fields_num = scratch.image.rows_num;
 
             var nodes_inv_z: [N]f64 = undefined;
             inline for (0..N) |nn| {
@@ -634,7 +754,7 @@ pub fn averageScratch(tile: ActiveTile,
                     const scratch_flat_ind: usize = scratch_row_offset + spx_start_x + sx;
 
                     for (0..fields_num) |ff| {
-                        spx_field_avg[ff] += spx_image_scratch.get(scratch_flat_ind, ff);
+                        spx_field_avg[ff] += spx_image_scratch.get(ff, scratch_flat_ind);
                     }
                 }
             }
