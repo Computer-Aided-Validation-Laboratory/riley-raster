@@ -256,9 +256,6 @@ pub fn elemsToClipPxLengSIMD(comptime N: usize,
     }
 }
 
-//---------------------------------------------------------------------------------------------
-// Element Normals Calculation
-
 const NodalDerivs = struct {
     dNu: [9][9]f64,
     dNv: [9][9]f64,
@@ -305,8 +302,6 @@ fn getNodalDerivs(comptime N: usize) NodalDerivs {
     return nd;
 }
 
-//---------------------------------------------------------------------------------------------
-// Prepare scene geometry
 pub fn countElemsCalcBBoxes(comptime N: usize,
                             comptime NH: usize,
                             camera: *const Camera,
