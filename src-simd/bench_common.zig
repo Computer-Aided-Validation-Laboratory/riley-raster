@@ -122,7 +122,7 @@ pub fn loadNDArrayFromCSV(
 
         if (has_colons) {
             arr = try NDArray(f64).initFlat(
-                allocator, &[_]usize{ rows_num, cols_num, requested_channels }
+                allocator, &[_]usize{ requested_channels, rows_num, cols_num }
             );
         } else {
             arr = try NDArray(f64).initFlat(
@@ -155,7 +155,7 @@ pub fn loadNDArrayFromCSV(
                         const val = try std.fmt.parseFloat(
                             f64, std.mem.trim(u8, chan_str, " ")
                         );
-                        arr.set(&[_]usize{ rr, cc, ch }, val);
+                        arr.set(&[_]usize{ ch, rr, cc }, val);
                     }
                     ch += 1;
                 }
@@ -222,7 +222,7 @@ pub fn runBenchmark(
             shader = .{ .tex_u8 = .{
                 .uvs = uvs_raw,
                 .texture = texture_grey,
-                .interp_type = .linear,
+                .interp_type = .cubic_lut_lerp,
             } };
         },
         .tex8_rgb => {
@@ -230,7 +230,7 @@ pub fn runBenchmark(
             shader = .{ .tex_rgb_u8 = .{
                 .uvs = uvs_raw,
                 .texture = texture_rgb,
-                .interp_type = .linear,
+                .interp_type = .cubic_lut_lerp,
             } };
         },
         .tex8_cubic => {
