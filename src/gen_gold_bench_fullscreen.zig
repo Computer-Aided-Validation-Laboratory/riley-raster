@@ -21,17 +21,26 @@ pub fn main() !void {
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
+    const interp_types = [_]common.InterpType{ .linear, .cubic, .cubic_lut_lerp, .quintic, .quintic_lut_lerp };
 
     std.debug.print("Generating Unified Fullscreen Gold data to {s}/...\n", .{out_dir_base});
 
     inline for (mesh_types) |mt| {
         inline for (shader_types) |st| {
-            const case_name = comptime @tagName(mt) ++ "_" ++ @tagName(st);
-            std.debug.print("Rendering reference: {s}\n", .{case_name});
-            
-            // We generate gold from the minimal 'fullraster' dataset
-            const data_dir = comptime "data-bench/" ++ @tagName(mt) ++ "_fullraster";
-            _ = try common.runBenchmark(allocator, io, mt, st, data_dir, out_dir_base, pixel_num, texture_grey, texture_rgb);
+            inline for (interp_types) |it| {
+                if (common.shouldRun(.{ .run = .all }, mt, st, it)) {
+                    const case_name = if (st == .tex8_grey or st == .tex8_rgb)
+                        comptime @tagName(mt) ++ "_" ++ @tagName(st) ++ "_" ++ @tagName(it)
+                    else
+                        comptime @tagName(mt) ++ "_" ++ @tagName(st);
+
+                    std.debug.print("Rendering reference: {s}\n", .{case_name});
+                    
+                    // We generate gold from the minimal 'fullraster' dataset
+                    const data_dir = comptime "data-bench/" ++ @tagName(mt) ++ "_fullraster";
+                    _ = try common.runBenchmark(allocator, io, mt, st, it, data_dir, out_dir_base, pixel_num, texture_grey, texture_rgb);
+                }
+            }
         }
     }
 

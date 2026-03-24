@@ -83,6 +83,30 @@ pub fn getDateString() ![]const u8 {
 }
 
 pub const ShaderType = enum { flat_grey, flat_rgb, tex8_grey, tex8_rgb };
+pub const InterpType = @import("zigraster/zig/textureops.zig").InterpType;
+
+pub const RunMode = enum { all, element, texture, interpolator };
+pub const BenchConfig = struct {
+    run: RunMode = .all,
+    element_type: mr.MeshType = .tri3,
+    texture_type: ShaderType = .tex8_grey,
+    interp_type: InterpType = .cubic_lut_lerp,
+};
+
+pub fn shouldRun(comptime config: BenchConfig, mt: mr.MeshType, st: ShaderType, it: InterpType) bool {
+    const is_tex = (st == .tex8_grey or st == .tex8_rgb);
+    // Flat shaders don't have interpolators, so we only run them once
+    // (e.g. when it == .linear) to avoid redundant tests.
+    if (!is_tex and it != .linear) return false;
+
+    return switch (config.run) {
+        .all => true,
+        .element => mt == config.element_type,
+        .texture => st == config.texture_type,
+        .interpolator => is_tex and it == config.interp_type,
+    };
+}
+
 
 pub fn loadNDArrayFromCSV(
     allocator: std.mem.Allocator,
@@ -179,6 +203,7 @@ pub fn runBenchmark(
     io: std.Io,
     comptime etype: mr.MeshType,
     comptime shader_type: ShaderType,
+    comptime interp_type: InterpType,
     data_dir: []const u8,
     out_dir_base: []const u8,
     pixel_num: [2]u32,
@@ -222,7 +247,7 @@ pub fn runBenchmark(
             shader = .{ .tex_u8 = .{
                 .uvs = uvs_raw,
                 .texture = texture_grey,
-                .interp_type = .cubic_lut_lerp,
+                .interp_type = interp_type,
             } };
         },
         .tex8_rgb => {
@@ -230,7 +255,7 @@ pub fn runBenchmark(
             shader = .{ .tex_rgb_u8 = .{
                 .uvs = uvs_raw,
                 .texture = texture_rgb,
-                .interp_type = .cubic_lut_lerp,
+                .interp_type = interp_type,
             } };
         },
     }
@@ -303,7 +328,10 @@ pub fn runBenchmark(
     const raster_end = Timestamp.now(io, .awake);
 
     // Save one frame for inspection
-    const out_name = comptime @tagName(etype) ++ "_" ++ @tagName(shader_type);
+    const out_name = if (shader_type == .tex8_grey or shader_type == .tex8_rgb)
+        comptime @tagName(etype) ++ "_" ++ @tagName(shader_type) ++ "_" ++ @tagName(interp_type)
+    else
+        comptime @tagName(etype) ++ "_" ++ @tagName(shader_type);
     const out_path = try std.fs.path.join(aa, &[_][]const u8{ out_dir_base, out_name });
     const cwd = std.Io.Dir.cwd();
     cwd.createDir(io, out_dir_base, .default_dir) catch |err| {
