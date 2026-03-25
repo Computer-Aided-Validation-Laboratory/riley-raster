@@ -485,12 +485,20 @@ pub fn sampleGenericSIMD(comptime channels: usize,
             var v_res: [channels]@Vector(8, f64) = [_]@Vector(8, f64){ @splat(0.0) } ** channels;
             var v_w_sum: @Vector(8, f64) = @splat(0.0);
 
+            // Pre-calculate weight planes
+            var v_w_planes: [K * K]@Vector(8, f64) = undefined;
             inline for (0..K) |jj| {
                 const v_wy_val = v_wy[jj];
                 inline for (0..K) |ii| {
                     const v_w = v_wx[ii] * v_wy_val;
+                    v_w_planes[jj * K + ii] = v_w;
                     v_w_sum += v_w;
-                    
+                }
+            }
+
+            inline for (0..K) |jj| {
+                inline for (0..K) |ii| {
+                    const v_w = v_w_planes[jj * K + ii];
                     const v_px_vecs = v_getPxSIMD(channels, texture, 
                                                   v_xi + @as(@Vector(8, isize), @splat(@as(isize, @intCast(ii)) - offset)),
                                                   v_yi + @as(@Vector(8, isize), @splat(@as(isize, @intCast(jj)) - offset)));
@@ -572,12 +580,20 @@ pub fn sampleGenericSIMD(comptime channels: usize,
             var v_res: [channels]@Vector(8, f64) = [_]@Vector(8, f64){ @splat(0.0) } ** channels;
             var v_w_sum: @Vector(8, f64) = @splat(0.0);
 
+            // Pre-calculate weight planes
+            var v_w_planes: [K * K]@Vector(8, f64) = undefined;
             inline for (0..K) |jj| {
                 const v_wy_val = v_wy[jj];
                 inline for (0..K) |ii| {
                     const v_w = v_wx[ii] * v_wy_val;
+                    v_w_planes[jj * K + ii] = v_w;
                     v_w_sum += v_w;
-                    
+                }
+            }
+
+            inline for (0..K) |jj| {
+                inline for (0..K) |ii| {
+                    const v_w = v_w_planes[jj * K + ii];
                     const v_px_vecs = v_getPxSIMD(channels, texture, 
                                                   v_xi + @as(@Vector(8, isize), @splat(@as(isize, @intCast(ii)) - offset)),
                                                   v_yi + @as(@Vector(8, isize), @splat(@as(isize, @intCast(jj)) - offset)));

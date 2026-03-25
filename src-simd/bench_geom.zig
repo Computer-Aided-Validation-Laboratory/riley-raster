@@ -108,7 +108,7 @@ pub fn main() !void {
     var file_writer = file.writer(io, &write_buf);
     const writer = &file_writer.interface;
 
-    try writer.print("# Geom Raster SIMD Benchmark Results\n", .{});
+    try writer.print("# Geom Raster SIMD2 Benchmark Results\n", .{});
     try writer.print("Date: {s} | Res: {d}x{d}\n\n", .{date, pixel_num[0], pixel_num[1]});
 
     const col_w = @max(max_name_len, 16);
