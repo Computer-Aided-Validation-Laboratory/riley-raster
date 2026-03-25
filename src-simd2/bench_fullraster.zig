@@ -3,12 +3,7 @@ const common = @import("bench_common.zig");
 const mr = @import("zigraster/zig/meshraster.zig");
 const iio = @import("zigraster/zig/imageio.zig");
 
-fn printPadded(writer: anytype, text: []const u8, width: usize) !void {
-    try writer.writeAll(text);
-    if (text.len < width) {
-        try writer.writeByteNTimes(' ', width - text.len);
-    }
-}
+const config = common.BenchConfig{ .run = .all };
 
 fn printPaddedSafe(writer: anytype, text: []const u8, width: usize) !void {
     try writer.writeAll(text);
@@ -37,6 +32,7 @@ pub fn main() !void {
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
+    const interp_types = [_]common.InterpType{ .linear, .cubic, .cubic_lut_lerp, .quintic, .quintic_lut_lerp };
 
     var stats_list: std.ArrayList(common.BenchStats) = .{};
     defer {
@@ -50,53 +46,61 @@ pub fn main() !void {
 
     inline for (mesh_types) |mt| {
         inline for (shader_types) |st| {
-            const case_name = comptime @tagName(mt) ++ "_" ++ @tagName(st);
-            std.debug.print("Case: {s}\n", .{case_name});
-            
-            if (case_name.len > max_name_len) max_name_len = case_name.len;
+            inline for (interp_types) |it| {
+                if (common.shouldRun(config, mt, st, it)) {
+                    const case_name = if (st == .tex8_grey or st == .tex8_rgb)
+                        comptime @tagName(mt) ++ "_" ++ @tagName(st) ++ "_" ++ @tagName(it)
+                    else
+                        comptime @tagName(mt) ++ "_" ++ @tagName(st);
 
-            var e2e_times = try allocator.alloc(f64, runs);
-            defer allocator.free(e2e_times);
-            var geom_times = try allocator.alloc(f64, runs);
-            defer allocator.free(geom_times);
-            var raster_times = try allocator.alloc(f64, runs);
-            defer allocator.free(raster_times);
-            var mops_vals = try allocator.alloc(f64, runs);
-            defer allocator.free(mops_vals);
-            var melems_vals = try allocator.alloc(f64, runs);
-            defer allocator.free(melems_vals);
-            var fps_vals = try allocator.alloc(f64, runs);
-            defer allocator.free(fps_vals);
+                    std.debug.print("Case: {s}\n", .{case_name});
+                    
+                    if (case_name.len > max_name_len) max_name_len = case_name.len;
 
-            for (0..runs) |r| {
-                const data_dir = comptime "data-bench/" ++ @tagName(mt) ++ "_fullraster";
-                const res = try common.runBenchmark(allocator, io, mt, st, data_dir, out_dir_base, pixel_num, texture_grey, texture_rgb);
-                e2e_times[r] = res.e2e_ms;
-                geom_times[r] = res.geom_ms;
-                raster_times[r] = res.raster_ms;
-                mops_vals[r] = res.mops_sec;
-                melems_vals[r] = res.melems_sec;
-                fps_vals[r] = res.fps;
+                    var e2e_times = try allocator.alloc(f64, runs);
+                    defer allocator.free(e2e_times);
+                    var geom_times = try allocator.alloc(f64, runs);
+                    defer allocator.free(geom_times);
+                    var raster_times = try allocator.alloc(f64, runs);
+                    defer allocator.free(raster_times);
+                    var mops_vals = try allocator.alloc(f64, runs);
+                    defer allocator.free(mops_vals);
+                    var melems_vals = try allocator.alloc(f64, runs);
+                    defer allocator.free(melems_vals);
+                    var fps_vals = try allocator.alloc(f64, runs);
+                    defer allocator.free(fps_vals);
+
+                    for (0..runs) |r| {
+                        const data_dir = comptime "data-bench/" ++ @tagName(mt) ++ "_fullraster";
+                        const res = try common.runBenchmark(allocator, io, mt, st, it, data_dir, out_dir_base, pixel_num, texture_grey, texture_rgb);
+                        e2e_times[r] = res.e2e_ms;
+                        geom_times[r] = res.geom_ms;
+                        raster_times[r] = res.raster_ms;
+                        mops_vals[r] = res.mops_sec;
+                        melems_vals[r] = res.melems_sec;
+                        fps_vals[r] = res.fps;
+                    }
+
+                    try stats_list.append(allocator, .{
+                        .name = try allocator.dupe(u8, case_name),
+                        .e2e = try common.calcMedianMAD(allocator, e2e_times),
+                        .geom = try common.calcMedianMAD(allocator, geom_times),
+                        .raster = try common.calcMedianMAD(allocator, raster_times),
+                        .mops = try common.calcMedianMAD(allocator, mops_vals),
+                        .melems = try common.calcMedianMAD(allocator, melems_vals),
+                        .fps = try common.calcMedianMAD(allocator, fps_vals),
+                    });
+                }
             }
-
-            try stats_list.append(allocator, .{
-                .name = try allocator.dupe(u8, case_name),
-                .e2e = try common.calcMedianMAD(allocator, e2e_times),
-                .geom = try common.calcMedianMAD(allocator, geom_times),
-                .raster = try common.calcMedianMAD(allocator, raster_times),
-                .mops = try common.calcMedianMAD(allocator, mops_vals),
-                .melems = try common.calcMedianMAD(allocator, melems_vals),
-                .fps = try common.calcMedianMAD(allocator, fps_vals),
-            });
         }
     }
 
     const date = try common.getDateString();
-    const report_name = try std.fmt.allocPrint(allocator, "out-simd2-bench-fullraster/bench_{s}.md", .{date});
+    const report_name = try std.fmt.allocPrint(allocator, "{s}/bench_{s}.md", .{out_dir_base, date});
     defer allocator.free(report_name);
     
     const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, "out-simd2-bench-fullraster", .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
+    cwd.createDir(io, out_dir_base, .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
     const file = try cwd.createFile(io, report_name, .{});
     defer file.close(io);
     
@@ -104,7 +108,7 @@ pub fn main() !void {
     var file_writer = file.writer(io, &write_buf);
     const writer = &file_writer.interface;
 
-    try writer.print("# Full Raster Benchmark Results\n", .{});
+    try writer.print("# Full Raster SIMD2 Benchmark Results\n", .{});
     try writer.print("Date: {s} | Res: {d}x{d}\n\n", .{date, pixel_num[0], pixel_num[1]});
 
     const col_w = @max(max_name_len, 16);
@@ -123,7 +127,7 @@ pub fn main() !void {
         try writer.print("| :----------: | :-----: | :-------: | :---------: | :----: | :-----: |\n", .{});
         
         for (stats_list.items) |s| {
-            if (std.mem.endsWith(u8, s.name, @tagName(st))) {
+            if (std.mem.indexOf(u8, s.name, @tagName(st)) != null) {
                 try writer.writeAll("| ");
                 try printPaddedSafe(writer, s.name, col_w);
                 try writer.print(" | {d:^12.2} | {d:^7.2} | {d:^9.2} | {d:^11.2} | {d:^6.2} | {d:^6.2} |\n", 
