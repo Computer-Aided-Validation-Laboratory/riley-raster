@@ -2,7 +2,7 @@ const std = @import("std");
 const Timestamp = std.Io.Clock.Timestamp;
 
 const MatSlice = @import("matslice.zig").MatSlice;
-pub const NDArray = @import("ndarray.zig").NDArray;
+const NDArray = @import("ndarray.zig").NDArray;
 
 const sliceops = @import("sliceops.zig");
 
@@ -17,8 +17,10 @@ const mr = @import("meshraster.zig");
 const MeshType = mr.MeshType;
 const MeshInput = mr.MeshInput;
 const MeshPrepared = mr.MeshPrepared;
-const ShaderInput = shadekerns.shaderops.ShaderInput;
-const ShaderPrepared = shadekerns.shaderops.ShaderPrepared;
+
+const shaderops = @import("shaderops.zig");
+const ShaderInput = shaderops.ShaderInput;
+const ShaderPrepared = shaderops.ShaderPrepared;
 
 const iio = @import("imageio.zig");
 const ImageFormat = iio.ImageFormat;
@@ -45,9 +47,9 @@ pub const RasterConfig = struct {
     threads_over_images: u16 = 0,
     save_opt: SaveOption = .disk,
     save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
-        .{ .format = .tiff, .bits = 8, .scaling = .none },
+        .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
-    tile_size: u16 = 32,
+    tile_size: u16 = 16,
     report: Report = .off,
     perf_opts: PerfOpts = .{},
 };

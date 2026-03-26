@@ -1,5 +1,5 @@
 const std = @import("std");
-pub const shaderops = @import("shaderops.zig");
+const shaderops = @import("shaderops.zig");
 const texops = @import("textureops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const InterpType = texops.InterpType;
