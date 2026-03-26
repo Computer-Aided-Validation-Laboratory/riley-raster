@@ -163,10 +163,9 @@ pub fn TexKernel(
             shader: *const shaderops.TexPrepared(T, channels),
             spx_image_scratch: *MatSlice(f64),
         ) void {
-            _ = v_mask;
             if (comptime coord_space == CoordSpace.raster) {
                 shaderops.fillTexPerspectiveSIMD(
-                    N, T, channels, shader.interp_type, ctx_shade, v_weights, v_nodes_inv_z, v_subpx_z, shader, spx_image_scratch,
+                    N, T, channels, shader.interp_type, ctx_shade, v_mask, v_weights, v_nodes_inv_z, v_subpx_z, shader, spx_image_scratch,
                 );
             } else {
                 @panic("shadeSIMD not implemented for this coord_space");

@@ -293,6 +293,7 @@ pub inline fn fillTexPerspectiveSIMD(
     comptime channels: usize,
     interp_type: InterpType,
     ctx_shade: ShadeContext(N),
+    v_mask: @Vector(8, bool),
     v_weights: [N]@Vector(8, f64),
     v_nodes_inv_z: [N]@Vector(8, f64),
     v_subpx_z: @Vector(8, f64),
@@ -315,9 +316,10 @@ pub inline fn fillTexPerspectiveSIMD(
     v_u_at *= v_subpx_z;
     v_v_at *= v_subpx_z;
 
-    const sampled_vecs = texops.sampleGenericSIMD(
+    const sampled_vecs = texops.sampleGenericHybrid(
         channels,
         interp_type,
+        v_mask,
         sh.texture,
         v_u_at,
         v_v_at,
@@ -330,6 +332,6 @@ pub inline fn fillTexPerspectiveSIMD(
         // Contiguous SIMD Store with depth mask
         const ptr_out: *align(8) @Vector(8, f64) = @ptrCast(&spx_image_scratch.elems[flat_idx]);
         const v_old_val: @Vector(8, f64) = ptr_out.*;
-        ptr_out.* = @select(f64, ctx_shade.v_mask.?, v_final, v_old_val);
+        ptr_out.* = @select(f64, v_mask, v_final, v_old_val);
     }
 }
