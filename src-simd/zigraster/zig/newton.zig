@@ -30,6 +30,9 @@ pub fn solveInverse(
     eta_in: f64,
     xi_out: *f64,   // Parametric coords output, unitless 
     eta_out: *f64,
+    node_values: *[N]f64,
+    deriv_n_xi: *[N]f64,
+    deriv_n_eta: *[N]f64,
 ) NewtonResult {
     const iter_tol: f64 = 1e-8;
     const det_tol: f64 = 1e-12;
@@ -39,15 +42,18 @@ pub fn solveInverse(
     var xi = xi_in;
     var eta = eta_in;
 
-    var node_values: [N]f64 = undefined;
-    var deriv_n_xi: [N]f64 = undefined;
-    var deriv_n_eta: [N]f64 = undefined;
+    var term_x: [N]f64 = undefined;
+    var term_y: [N]f64 = undefined;
+    inline for (0..N) |nn| {
+        term_x[nn] = target_screen_x * element_node_w[nn] - element_node_x[nn];
+        term_y[nn] = target_screen_y * element_node_w[nn] - element_node_y[nn];
+    }
 
     var met_residual = false;
     var iters: u8 = 0;
     for (0..iter_max) |ii| {
         iters = @intCast(ii + 1);
-        shapefun.shapeFunctions(N, xi, eta, &node_values, &deriv_n_xi, &deriv_n_eta);
+        shapefun.shapeFunctions(N, xi, eta, node_values, deriv_n_xi, deriv_n_eta);
 
         var residual_x: f64 = 0.0;
         var residual_y: f64 = 0.0;
@@ -57,14 +63,12 @@ pub fn solveInverse(
         var jacobian_22: f64 = 0.0;
 
         for (0..N) |nn| {
-            const term_x = target_screen_x * element_node_w[nn] - element_node_x[nn];
-            const term_y = target_screen_y * element_node_w[nn] - element_node_y[nn];
-            residual_x += node_values[nn] * term_x;
-            residual_y += node_values[nn] * term_y;
-            jacobian_11 += deriv_n_xi[nn] * term_x;
-            jacobian_12 += deriv_n_eta[nn] * term_x;
-            jacobian_21 += deriv_n_xi[nn] * term_y;
-            jacobian_22 += deriv_n_eta[nn] * term_y;
+            residual_x += node_values[nn] * term_x[nn];
+            residual_y += node_values[nn] * term_y[nn];
+            jacobian_11 += deriv_n_xi[nn] * term_x[nn];
+            jacobian_12 += deriv_n_eta[nn] * term_x[nn];
+            jacobian_21 += deriv_n_xi[nn] * term_y[nn];
+            jacobian_22 += deriv_n_eta[nn] * term_y[nn];
         }
 
         if (@abs(residual_x) < iter_tol and @abs(residual_y) < iter_tol) {
@@ -92,6 +96,8 @@ pub fn solveInverse(
     if (is_in) {
         xi_out.* = xi;
         eta_out.* = eta;
+        // NOTE: we do not re-calculate shape functions here, the ones from the last iteration
+        // are good enough as we are within tolerance.
         return .{ .converged = true, .iterations = iters };
     }
 
@@ -109,6 +115,9 @@ pub fn solveInverseSIMD(
     v_eta_in: @Vector(8, f64),
     v_xi_out: *@Vector(8, f64),
     v_eta_out: *@Vector(8, f64),
+    v_node_values: *[N]@Vector(8, f64),
+    v_deriv_n_xi: *[N]@Vector(8, f64),
+    v_deriv_n_eta: *[N]@Vector(8, f64),
 ) NewtonResultSIMD {
     const v_iter_tol: @Vector(8, f64) = @splat(1e-8);
     const v_det_tol: @Vector(8, f64) = @splat(1e-12);
@@ -118,20 +127,26 @@ pub fn solveInverseSIMD(
     var v_xi = v_xi_in;
     var v_eta = v_eta_in;
 
-    var v_node_values: [N]@Vector(8, f64) = undefined;
-    var v_deriv_n_xi: [N]@Vector(8, f64) = undefined;
-    var v_deriv_n_eta: [N]@Vector(8, f64) = undefined;
-
     var v_converged: @Vector(8, bool) = @splat(false);
     var v_iters: @Vector(8, u8) = @splat(0);
     var v_active: @Vector(8, bool) = @splat(true);
+
+    var v_term_x: [N]@Vector(8, f64) = undefined;
+    var v_term_y: [N]@Vector(8, f64) = undefined;
+    inline for (0..N) |nn| {
+        const v_node_x: @Vector(8, f64) = @splat(elem_node_x[nn]);
+        const v_node_y: @Vector(8, f64) = @splat(elem_node_y[nn]);
+        const v_node_w: @Vector(8, f64) = @splat(elem_node_w[nn]);
+        v_term_x[nn] = v_target_x * v_node_w - v_node_x;
+        v_term_y[nn] = v_target_y * v_node_w - v_node_y;
+    }
 
     for (0..iter_max) |ii| {
         if (!@reduce(.Or, v_active)) break;
         
         v_iters = @select(u8, v_active, @as(@Vector(8, u8), @splat(@intCast(ii + 1))), v_iters);
         
-        shapefun.shapeFunctionsSIMD(N, v_xi, v_eta, &v_node_values, &v_deriv_n_xi, &v_deriv_n_eta);
+        shapefun.shapeFunctionsSIMD(N, v_xi, v_eta, v_node_values, v_deriv_n_xi, v_deriv_n_eta);
 
         var v_residual_x: @Vector(8, f64) = @splat(0.0);
         var v_residual_y: @Vector(8, f64) = @splat(0.0);
@@ -141,19 +156,12 @@ pub fn solveInverseSIMD(
         var v_jac22: @Vector(8, f64) = @splat(0.0);
 
         inline for (0..N) |nn| {
-            const v_node_x: @Vector(8, f64) = @splat(elem_node_x[nn]);
-            const v_node_y: @Vector(8, f64) = @splat(elem_node_y[nn]);
-            const v_node_w: @Vector(8, f64) = @splat(elem_node_w[nn]);
-
-            const v_term_x = v_target_x * v_node_w - v_node_x;
-            const v_term_y = v_target_y * v_node_w - v_node_y;
-            
-            v_residual_x += v_node_values[nn] * v_term_x;
-            v_residual_y += v_node_values[nn] * v_term_y;
-            v_jac11 += v_deriv_n_xi[nn] * v_term_x;
-            v_jac12 += v_deriv_n_eta[nn] * v_term_x;
-            v_jac21 += v_deriv_n_xi[nn] * v_term_y;
-            v_jac22 += v_deriv_n_eta[nn] * v_term_y;
+            v_residual_x += v_node_values[nn] * v_term_x[nn];
+            v_residual_y += v_node_values[nn] * v_term_y[nn];
+            v_jac11 += v_deriv_n_xi[nn] * v_term_x[nn];
+            v_jac12 += v_deriv_n_eta[nn] * v_term_x[nn];
+            v_jac21 += v_deriv_n_xi[nn] * v_term_y[nn];
+            v_jac22 += v_deriv_n_eta[nn] * v_term_y[nn];
         }
 
         const v_met_tol = (@abs(v_residual_x) < v_iter_tol) & (@abs(v_residual_y) < v_iter_tol);
@@ -192,6 +200,12 @@ pub fn solveInverseSIMD(
     const v_final_converged = v_converged & v_is_in;
     v_xi_out.* = v_xi;
     v_eta_out.* = v_eta;
+
+    // NOTE: we may need a final shapeFunction evaluation if we exited due to iterations max
+    // or if we want to ensure the final xi, eta are used for the returned weights.
+    // However, if we converged, v_node_values from the last iteration are already good.
+    // To be perfectly safe we could re-run shapeFunctionsSIMD one last time here for all
+    // lanes, but it's probably not worth it if we just use them for shading.
 
     return .{ .converged = v_final_converged, .iterations = v_iters };
 }

@@ -515,8 +515,12 @@ pub fn RasterPass(
             const fields_num = scratch.image.rows_num;
 
             var nodes_inv_z: [N]f64 = undefined;
+            var v_nodes_z: [N]@Vector(8, f64) = undefined;
+            var v_nodes_inv_z_simd: [N]@Vector(8, f64) = undefined;
             inline for (0..N) |nn| {
                 nodes_inv_z[nn] = 1.0 / nodes.z[nn];
+                v_nodes_z[nn] = @splat(nodes.z[nn]);
+                v_nodes_inv_z_simd[nn] = @splat(nodes_inv_z[nn]);
             }
 
             const NT = if (N == 4) 2 else if (N == 6) 6 else 8;
@@ -536,17 +540,23 @@ pub fn RasterPass(
             var cand_count: usize = 0;
             const v_07: @Vector(8, usize) = .{ 0, 1, 2, 3, 4, 5, 6, 7 };
 
+            const v_px_min: @Vector(8, f64) = @splat(@as(f64, @floatFromInt(target.tile.x_px_min)));
+            const v_step: @Vector(8, f64) = @splat(domain.step);
+            const v_05: @Vector(8, f64) = @splat(0.5);
+            const v_original_start_x: @Vector(8, usize) = @splat(original_start_x);
+            const v_bounds_end_x: @Vector(8, usize) = @splat(bounds.end_x);
+
             // Pass 1: Vectorized Coarse In/Out
             for (bounds.start_y..bounds.end_y) |scratch_y| {
-                const subpx_y = @as(f64, @floatFromInt(target.tile.y_px_min)) + (@as(f64, @floatFromInt(scratch_y)) + 0.5) * domain.step;
+                const subpx_y = @as(f64, @floatFromInt(target.tile.y_px_min)) + 
+                                (@as(f64, @floatFromInt(scratch_y)) + 0.5) * domain.step;
                 var scratch_x = bounds.start_x;
                 while (scratch_x < bounds.end_x) : (scratch_x += 8) {
                     const v_scratch_x: @Vector(8, usize) = @splat(scratch_x);
-                    const v_x_mask = (v_scratch_x + v_07 >= @as(@Vector(8, usize), @splat(original_start_x))) &
-                                     (v_scratch_x + v_07 < @as(@Vector(8, usize), @splat(bounds.end_x)));
+                    const v_x_mask = (v_scratch_x + v_07 >= v_original_start_x) &
+                                     (v_scratch_x + v_07 < v_bounds_end_x);
 
-                    const v_subpx_x = @as(@Vector(8, f64), @splat(@as(f64, @floatFromInt(target.tile.x_px_min)))) + 
-                                      (@as(@Vector(8, f64), @floatFromInt(v_scratch_x + v_07)) + @as(@Vector(8, f64), @splat(0.5))) * @as(@Vector(8, f64), @splat(domain.step));
+                    const v_subpx_x = v_px_min + (@as(@Vector(8, f64), @floatFromInt(v_scratch_x + v_07)) + v_05) * v_step;
                     const v_subpx_y: @Vector(8, f64) = @splat(subpx_y);
 
                     const v_hull_res = element_tess.isInSIMD(v_subpx_x, v_subpx_y);
@@ -665,7 +675,7 @@ pub fn RasterPass(
 
                         var v_sum_z: @Vector(8, f64) = @splat(0.0);
                         inline for (0..N) |nn| {
-                            v_sum_z += v_weights[nn] * @as(@Vector(8, f64), @splat(nodes.z[nn]));
+                            v_sum_z += v_weights[nn] * v_nodes_z[nn];
                         }
                         const v_inv_z = @as(@Vector(8, f64), @splat(1.0)) / v_sum_z;
 
@@ -685,11 +695,6 @@ pub fn RasterPass(
                                                                                @splat(1)), 
                                                                            @as(@Vector(8, u8), 
                                                                                @splat(0))))));
-
-                            var v_nodes_inv_z_simd: [N]@Vector(8, f64) = undefined;
-                            inline for (0..N) |nn| {
-                                v_nodes_inv_z_simd[nn] = @splat(nodes_inv_z[nn]);
-                            }
 
                             ShaderKernel.shadeSIMD(
                                 Geometry.coord_space,

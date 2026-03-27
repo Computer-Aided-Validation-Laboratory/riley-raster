@@ -300,26 +300,18 @@ pub fn Tri6Kernel() type {
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
 
+            var node_values: [nodes_num]f64 = undefined;
+            var deriv_nu: [nodes_num]f64 = undefined;
+            var deriv_nv: [nodes_num]f64 = undefined;
+
             const result = newton.solveInverse(
                 nodes_num, target_x, target_y, 
                 nodes.x, nodes.y, nodes.z, 
                 xi_guess_def, eta_guess_def, &xi, &eta,
+                &node_values, &deriv_nu, &deriv_nv,
             );
 
             if (result.converged) {
-                var node_values: [nodes_num]f64 = undefined;
-                var deriv_nu: [nodes_num]f64 = undefined;
-                var deriv_nv: [nodes_num]f64 = undefined;
-
-                shapefun.shapeFunctions(
-                    nodes_num,
-                    xi,
-                    eta,
-                    &node_values,
-                    &deriv_nu,
-                    &deriv_nv,
-                );
-
                 return .{ .weights = node_values, .iters = result.iterations };
             }
             return .{ .weights = null, .iters = result.iterations };
@@ -343,17 +335,16 @@ pub fn Tri6Kernel() type {
             var v_xi_out: @Vector(8, f64) = undefined;
             var v_eta_out: @Vector(8, f64) = undefined;
 
-            const res = newton.solveInverseSIMD(
-                nodes_num, v_target_x, v_target_y, 
-                nodes.x, nodes.y, nodes.z, 
-                v_xi_guess, v_eta_guess, &v_xi_out, &v_eta_out,
-            );
-
             var v_weights: [nodes_num]@Vector(8, f64) = undefined;
             var v_dNu: [nodes_num]@Vector(8, f64) = undefined;
             var v_dNv: [nodes_num]@Vector(8, f64) = undefined;
 
-            shapefun.shapeFunctionsSIMD(nodes_num, v_xi_out, v_eta_out, &v_weights, &v_dNu, &v_dNv);
+            const res = newton.solveInverseSIMD(
+                nodes_num, v_target_x, v_target_y, 
+                nodes.x, nodes.y, nodes.z, 
+                v_xi_guess, v_eta_guess, &v_xi_out, &v_eta_out,
+                &v_weights, &v_dNu, &v_dNv,
+            );
 
             return .{ 
                 .weights = v_weights,
@@ -546,19 +537,17 @@ nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
 
+            var node_values: [nodes_num]f64 = undefined;
+            var deriv_nu: [nodes_num]f64 = undefined;
+            var deriv_nv: [nodes_num]f64 = undefined;
+
             const result = newton.solveInverse(
                 nodes_num, target_x, target_y, 
                 nodes.x, nodes.y, nodes.z, 
                 xi_guess_def, eta_guess_def, &xi, &eta,
+                &node_values, &deriv_nu, &deriv_nv,
             );
             if (result.converged) {
-                var node_values: [nodes_num]f64 = undefined;
-                var deriv_nu: [nodes_num]f64 = undefined;
-                var deriv_nv: [nodes_num]f64 = undefined;
-                
-                shapefun.shapeFunctions(nodes_num, xi, eta, &node_values, 
-                                        &deriv_nu, &deriv_nv,);
-                
                 return .{ .weights = node_values, .iters = result.iterations };
             }
             return .{ .weights = null, .iters = result.iterations };
@@ -582,17 +571,16 @@ nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
             var v_xi_out: @Vector(8, f64) = undefined;
             var v_eta_out: @Vector(8, f64) = undefined;
 
-            const res = newton.solveInverseSIMD(
-                nodes_num, v_target_x, v_target_y, 
-                nodes.x, nodes.y, nodes.z, 
-                v_xi_guess, v_eta_guess, &v_xi_out, &v_eta_out,
-            );
-
             var v_weights: [nodes_num]@Vector(8, f64) = undefined;
             var v_dNu: [nodes_num]@Vector(8, f64) = undefined;
             var v_dNv: [nodes_num]@Vector(8, f64) = undefined;
 
-            shapefun.shapeFunctionsSIMD(nodes_num, v_xi_out, v_eta_out, &v_weights, &v_dNu, &v_dNv);
+            const res = newton.solveInverseSIMD(
+                nodes_num, v_target_x, v_target_y, 
+                nodes.x, nodes.y, nodes.z, 
+                v_xi_guess, v_eta_guess, &v_xi_out, &v_eta_out,
+                &v_weights, &v_dNu, &v_dNv,
+            );
 
             return .{ 
                 .weights = v_weights,
@@ -640,20 +628,18 @@ nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
 
+            var node_values: [nodes_num]f64 = undefined;
+            var deriv_nu: [nodes_num]f64 = undefined;
+            var deriv_nv: [nodes_num]f64 = undefined;
+
             const result = newton.solveInverse(
                 nodes_num, target_x, target_y, 
                 nodes.x, nodes.y, nodes.z, 
                 xi_guess_def, eta_guess_def, &xi, &eta,
+                &node_values, &deriv_nu, &deriv_nv,
             );
 
             if (result.converged) {
-
-                var node_values: [nodes_num]f64 = undefined;
-                var deriv_nu: [nodes_num]f64 = undefined;
-                var deriv_nv: [nodes_num]f64 = undefined;
-
-                shapefun.shapeFunctions(nodes_num, xi, eta, &node_values, 
-                                        &deriv_nu, &deriv_nv,);
                 return .{ .weights = node_values, .iters = result.iterations };
             }
             return .{ .weights = null, .iters = result.iterations };
@@ -677,17 +663,16 @@ nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
             var v_xi_out: @Vector(8, f64) = undefined;
             var v_eta_out: @Vector(8, f64) = undefined;
 
-            const res = newton.solveInverseSIMD(
-                nodes_num, v_target_x, v_target_y, 
-                nodes.x, nodes.y, nodes.z, 
-                v_xi_guess, v_eta_guess, &v_xi_out, &v_eta_out,
-            );
-
             var v_weights: [nodes_num]@Vector(8, f64) = undefined;
             var v_dNu: [nodes_num]@Vector(8, f64) = undefined;
             var v_dNv: [nodes_num]@Vector(8, f64) = undefined;
 
-            shapefun.shapeFunctionsSIMD(nodes_num, v_xi_out, v_eta_out, &v_weights, &v_dNu, &v_dNv);
+            const res = newton.solveInverseSIMD(
+                nodes_num, v_target_x, v_target_y, 
+                nodes.x, nodes.y, nodes.z, 
+                v_xi_guess, v_eta_guess, &v_xi_out, &v_eta_out,
+                &v_weights, &v_dNu, &v_dNv,
+            );
 
             return .{ 
                 .weights = v_weights,

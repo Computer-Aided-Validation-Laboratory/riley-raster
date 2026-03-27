@@ -1,6 +1,7 @@
 const std = @import("std");
 
 pub const MatSlice = @import("../zigraster/zig/matslice.zig").MatSlice;
+pub const NDArray = @import("../zigraster/zig/ndarray").NDArray;
 pub const meshio = @import("../zigraster/zig/meshio.zig");
 pub const SimData = meshio.SimData;
 pub const mr = @import("../zigraster/zig/meshraster.zig");
@@ -465,7 +466,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
     for (0..5) |ii| {
         const field = sim_datas[ii].field.?;
         const num_coords = sim_datas[ii].coords.mat.rows_num;
-        var rgb_field_arr = try zraster.NDArray(f64).initFlat(
+        var rgb_field_arr = try NDArray(f64).initFlat(
             aa, &[_]usize{ field.array.dims[0], num_coords, 3 }
         );
 
