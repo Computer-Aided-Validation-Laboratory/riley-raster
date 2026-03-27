@@ -5,6 +5,11 @@ pub const NewtonResult = struct {
     iterations: u8,
 };
 
+pub const NewtonResultSIMD = struct {
+    converged: @Vector(8, bool),
+    iterations: @Vector(8, u8),
+};
+
 // Solves: $$ \sum_{i=1}^N N_i(\xi, \eta) \cdot (X_{pixel} \cdot W_i - X_i) = 0 $$
 // N_i are the shape functions,
 // xi, eta = element parametric coords, 0 to 1 for tri6 and -1 to 1 for quad8,quad9
@@ -91,4 +96,102 @@ pub fn solveInverse(
     }
 
     return .{ .converged = false, .iterations = iters };
+}
+
+pub fn solveInverseSIMD(
+    comptime N: usize,
+    v_target_x: @Vector(8, f64),
+    v_target_y: @Vector(8, f64),
+    elem_node_x: []const f64,
+    elem_node_y: []const f64,
+    elem_node_w: []const f64,
+    v_xi_in: @Vector(8, f64),
+    v_eta_in: @Vector(8, f64),
+    v_xi_out: *@Vector(8, f64),
+    v_eta_out: *@Vector(8, f64),
+) NewtonResultSIMD {
+    const v_iter_tol: @Vector(8, f64) = @splat(1e-8);
+    const v_det_tol: @Vector(8, f64) = @splat(1e-12);
+    const v_eps: @Vector(8, f64) = @splat(1e-5);
+    const iter_max: u8 = 50;
+
+    var v_xi = v_xi_in;
+    var v_eta = v_eta_in;
+
+    var v_node_values: [N]@Vector(8, f64) = undefined;
+    var v_deriv_n_xi: [N]@Vector(8, f64) = undefined;
+    var v_deriv_n_eta: [N]@Vector(8, f64) = undefined;
+
+    var v_converged: @Vector(8, bool) = @splat(false);
+    var v_iters: @Vector(8, u8) = @splat(0);
+    var v_active: @Vector(8, bool) = @splat(true);
+
+    for (0..iter_max) |ii| {
+        if (!@reduce(.Or, v_active)) break;
+        
+        v_iters = @select(u8, v_active, @as(@Vector(8, u8), @splat(@intCast(ii + 1))), v_iters);
+        
+        shapefun.shapeFunctionsSIMD(N, v_xi, v_eta, &v_node_values, &v_deriv_n_xi, &v_deriv_n_eta);
+
+        var v_residual_x: @Vector(8, f64) = @splat(0.0);
+        var v_residual_y: @Vector(8, f64) = @splat(0.0);
+        var v_jac11: @Vector(8, f64) = @splat(0.0);
+        var v_jac12: @Vector(8, f64) = @splat(0.0);
+        var v_jac21: @Vector(8, f64) = @splat(0.0);
+        var v_jac22: @Vector(8, f64) = @splat(0.0);
+
+        inline for (0..N) |nn| {
+            const v_node_x: @Vector(8, f64) = @splat(elem_node_x[nn]);
+            const v_node_y: @Vector(8, f64) = @splat(elem_node_y[nn]);
+            const v_node_w: @Vector(8, f64) = @splat(elem_node_w[nn]);
+
+            const v_term_x = v_target_x * v_node_w - v_node_x;
+            const v_term_y = v_target_y * v_node_w - v_node_y;
+            
+            v_residual_x += v_node_values[nn] * v_term_x;
+            v_residual_y += v_node_values[nn] * v_term_y;
+            v_jac11 += v_deriv_n_xi[nn] * v_term_x;
+            v_jac12 += v_deriv_n_eta[nn] * v_term_x;
+            v_jac21 += v_deriv_n_xi[nn] * v_term_y;
+            v_jac22 += v_deriv_n_eta[nn] * v_term_y;
+        }
+
+        const v_met_tol = (@abs(v_residual_x) < v_iter_tol) & (@abs(v_residual_y) < v_iter_tol);
+        v_converged = v_converged | (v_active & v_met_tol);
+        v_active = v_active & !v_met_tol;
+
+        if (!@reduce(.Or, v_active)) break;
+
+        const v_det = v_jac11 * v_jac22 - v_jac12 * v_jac21;
+        const v_bad_det = @abs(v_det) < v_det_tol;
+        
+        // Disable lanes with bad determinants
+        v_active = v_active & !v_bad_det;
+        
+        if (!@reduce(.Or, v_active)) break;
+
+        const v_safe_det = @select(f64, v_active, v_det, @as(@Vector(8, f64), @splat(1.0)));
+        const v_inv_det = @as(@Vector(8, f64), @splat(1.0)) / v_safe_det;
+        
+        const v_dxi = v_inv_det * (v_jac22 * v_residual_x - v_jac12 * v_residual_y);
+        const v_deta = v_inv_det * (-v_jac21 * v_residual_x + v_jac11 * v_residual_y);
+        
+        v_xi -= @select(f64, v_active, v_dxi, @as(@Vector(8, f64), @splat(0.0)));
+        v_eta -= @select(f64, v_active, v_deta, @as(@Vector(8, f64), @splat(0.0)));
+    }
+
+    const v_1: @Vector(8, f64) = @splat(1.0);
+    const v_m1: @Vector(8, f64) = @splat(-1.0);
+
+    const v_is_in = if (comptime N == 6)
+        (v_xi >= -v_eps) & (v_eta >= -v_eps) & ((v_xi + v_eta) <= v_1 + v_eps)
+    else
+        (v_xi >= v_m1 - v_eps) & (v_xi <= v_1 + v_eps) & 
+        (v_eta >= v_m1 - v_eps) & (v_eta <= v_1 + v_eps);
+
+    const v_final_converged = v_converged & v_is_in;
+    v_xi_out.* = v_xi;
+    v_eta_out.* = v_eta;
+
+    return .{ .converged = v_final_converged, .iterations = v_iters };
 }

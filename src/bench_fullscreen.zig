@@ -22,7 +22,7 @@ pub fn main() !void {
         .quad9 
     };
     
-    const pixel_num = [_]u32{ 320, 200 };
+    const pixel_num = [_]u32{ 160, 100 };
     const interp_types = [_]common.texops.InterpType{ .cubic_lut_lerp };
 
     std.debug.print("============================================================\n", .{});

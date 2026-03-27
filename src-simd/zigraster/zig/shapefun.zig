@@ -10,6 +10,22 @@ pub fn shapeFunctions(comptime N: usize, xi: f64, eta: f64,
     }
 }
 
+pub fn shapeFunctionsSIMD(comptime N: usize, 
+                          v_xi: @Vector(8, f64), 
+                          v_eta: @Vector(8, f64), 
+                          v_n_v: *[N]@Vector(8, f64), 
+                          v_dNu: *[N]@Vector(8, f64), 
+                          v_dNv: *[N]@Vector(8, f64)) void {
+    switch (N) {
+        3 => shapeFunctions3SIMD(v_xi, v_eta, v_n_v, v_dNu, v_dNv),
+        4 => shapeFunctions4SIMD(v_xi, v_eta, v_n_v, v_dNu, v_dNv),
+        6 => shapeFunctions6SIMD(v_xi, v_eta, v_n_v, v_dNu, v_dNv),
+        8 => shapeFunctions8SIMD(v_xi, v_eta, v_n_v, v_dNu, v_dNv),
+        9 => shapeFunctions9SIMD(v_xi, v_eta, v_n_v, v_dNu, v_dNv),
+        else => @compileError("Unsupported number of nodes"),
+    }
+}
+
 fn shapeFunctions3(xi: f64, eta: f64, n_v: *[3]f64, dNu: *[3]f64, dNv: *[3]f64) void {
     const L1 = 1.0 - xi - eta;
     const L2 = xi;
@@ -28,6 +44,30 @@ fn shapeFunctions3(xi: f64, eta: f64, n_v: *[3]f64, dNu: *[3]f64, dNv: *[3]f64) 
     dNv[2] = 1.0;
 }
 
+fn shapeFunctions3SIMD(v_xi: @Vector(8, f64), v_eta: @Vector(8, f64), 
+                       v_n_v: *[3]@Vector(8, f64), v_dNu: *[3]@Vector(8, f64), 
+                       v_dNv: *[3]@Vector(8, f64)) void {
+    const v_1: @Vector(8, f64) = @splat(1.0);
+    const v_0: @Vector(8, f64) = @splat(0.0);
+    const v_m1: @Vector(8, f64) = @splat(-1.0);
+
+    const v_L1 = v_1 - v_xi - v_eta;
+    const v_L2 = v_xi;
+    const v_L3 = v_eta;
+
+    v_n_v[0] = v_L1;
+    v_n_v[1] = v_L2;
+    v_n_v[2] = v_L3;
+
+    v_dNu[0] = v_m1;
+    v_dNu[1] = v_1;
+    v_dNu[2] = v_0;
+
+    v_dNv[0] = v_m1;
+    v_dNv[1] = v_0;
+    v_dNv[2] = v_1;
+}
+
 fn shapeFunctions4(xi: f64, eta: f64, n_v: *[4]f64, dNu: *[4]f64, dNv: *[4]f64) void {
     n_v[0] = 0.25 * (1.0 - xi) * (1.0 - eta);
     n_v[1] = 0.25 * (1.0 + xi) * (1.0 - eta);
@@ -39,6 +79,25 @@ fn shapeFunctions4(xi: f64, eta: f64, n_v: *[4]f64, dNu: *[4]f64, dNv: *[4]f64) 
 
     dNv[0] = -0.25 * (1.0 - xi);  dNv[1] = -0.25 * (1.0 + xi);
     dNv[2] = 0.25 * (1.0 + xi);   dNv[3] = 0.25 * (1.0 - xi);
+}
+
+fn shapeFunctions4SIMD(v_xi: @Vector(8, f64), v_eta: @Vector(8, f64), 
+                       v_n_v: *[4]@Vector(8, f64), v_dNu: *[4]@Vector(8, f64), 
+                       v_dNv: *[4]@Vector(8, f64)) void {
+    const v_025: @Vector(8, f64) = @splat(0.25);
+    const v_m025: @Vector(8, f64) = @splat(-0.25);
+    const v_1: @Vector(8, f64) = @splat(1.0);
+
+    v_n_v[0] = v_025 * (v_1 - v_xi) * (v_1 - v_eta);
+    v_n_v[1] = v_025 * (v_1 + v_xi) * (v_1 - v_eta);
+    v_n_v[2] = v_025 * (v_1 + v_xi) * (v_1 + v_eta);
+    v_n_v[3] = v_025 * (v_1 - v_xi) * (v_1 + v_eta);
+
+    v_dNu[0] = v_m025 * (v_1 - v_eta); v_dNu[1] = v_025 * (v_1 - v_eta);
+    v_dNu[2] = v_025 * (v_1 + v_eta);  v_dNu[3] = v_m025 * (v_1 + v_eta);
+
+    v_dNv[0] = v_m025 * (v_1 - v_xi);  v_dNv[1] = v_m025 * (v_1 + v_xi);
+    v_dNv[2] = v_025 * (v_1 + v_xi);   v_dNv[3] = v_025 * (v_1 - v_xi);
 }
 
 fn shapeFunctions6(xi: f64, eta: f64, n_vals: *[6]f64, 
@@ -72,6 +131,43 @@ fn shapeFunctions6(xi: f64, eta: f64, n_vals: *[6]f64,
     dN_deta[5] = 4.0 * (L1 - L3);
 }
 
+fn shapeFunctions6SIMD(v_xi: @Vector(8, f64), v_eta: @Vector(8, f64), 
+                       v_n_v: *[6]@Vector(8, f64), v_dNu: *[6]@Vector(8, f64), 
+                       v_dNv: *[6]@Vector(8, f64)) void {
+    const v_1: @Vector(8, f64) = @splat(1.0);
+    const v_2: @Vector(8, f64) = @splat(2.0);
+    const v_4: @Vector(8, f64) = @splat(4.0);
+    const v_0: @Vector(8, f64) = @splat(0.0);
+
+    const v_L1 = v_1 - v_xi - v_eta;
+    const v_L2 = v_xi;
+    const v_L3 = v_eta;
+
+    v_n_v[0] = v_L1 * (v_2 * v_L1 - v_1);
+    v_dNu[0] = -(v_4 * v_L1 - v_1);
+    v_dNv[0] = -(v_4 * v_L1 - v_1);
+
+    v_n_v[1] = v_L2 * (v_2 * v_L2 - v_1);
+    v_dNu[1] = v_4 * v_L2 - v_1;
+    v_dNv[1] = v_0;
+
+    v_n_v[2] = v_L3 * (v_2 * v_L3 - v_1);
+    v_dNu[2] = v_0;
+    v_dNv[2] = v_4 * v_L3 - v_1;
+
+    v_n_v[3] = v_4 * v_L1 * v_L2;
+    v_dNu[3] = v_4 * (v_L1 - v_L2);
+    v_dNv[3] = -v_4 * v_L2;
+
+    v_n_v[4] = v_4 * v_L2 * v_L3;
+    v_dNu[4] = v_4 * v_L3;
+    v_dNv[4] = v_4 * v_L2;
+
+    v_n_v[5] = v_4 * v_L3 * v_L1;
+    v_dNu[5] = -v_4 * v_L3;
+    v_dNv[5] = v_4 * (v_L1 - v_L3);
+}
+
 fn shapeFunctions8(xi: f64, eta: f64, n_v: *[8]f64, dNu: *[8]f64, dNv: *[8]f64) void {
     const x = xi; const y = eta;
     n_v[0] = -0.25 * (1.0 - x) * (1.0 - y) * (1.0 + x + y);
@@ -98,6 +194,41 @@ fn shapeFunctions8(xi: f64, eta: f64, n_v: *[8]f64, dNu: *[8]f64, dNv: *[8]f64) 
     dNv[6] = 0.5 * (1.0 - x * x);  dNv[7] = -y * (1.0 - x);
 }
 
+fn shapeFunctions8SIMD(v_xi: @Vector(8, f64), v_eta: @Vector(8, f64), 
+                       v_n_v: *[8]@Vector(8, f64), v_dNu: *[8]@Vector(8, f64), 
+                       v_dNv: *[8]@Vector(8, f64)) void {
+    const x = v_xi; const y = v_eta;
+    const v_1: @Vector(8, f64) = @splat(1.0);
+    const v_2: @Vector(8, f64) = @splat(2.0);
+    const v_05: @Vector(8, f64) = @splat(0.5);
+    const v_m05: @Vector(8, f64) = @splat(-0.5);
+    const v_025: @Vector(8, f64) = @splat(0.25);
+    const v_m025: @Vector(8, f64) = @splat(-0.25);
+
+    v_n_v[0] = v_m025 * (v_1 - x) * (v_1 - y) * (v_1 + x + y);
+    v_n_v[1] = v_m025 * (v_1 + x) * (v_1 - y) * (v_1 - x + y);
+    v_n_v[2] = v_m025 * (v_1 + x) * (v_1 + y) * (v_1 - x - y);
+    v_n_v[3] = v_m025 * (v_1 - x) * (v_1 + y) * (v_1 + x - y);
+    v_n_v[4] = v_05 * (v_1 - x * x) * (v_1 - y);
+    v_n_v[5] = v_05 * (v_1 + x) * (v_1 - y * y);
+    v_n_v[6] = v_05 * (v_1 - x * x) * (v_1 + y);
+    v_n_v[7] = v_05 * (v_1 - x) * (v_1 - y * y);
+
+    v_dNu[0] = v_025 * (v_1 - y) * (v_2 * x + y);
+    v_dNu[1] = v_025 * (v_1 - y) * (v_2 * x - y);
+    v_dNu[2] = v_025 * (v_1 + y) * (v_2 * x + y);
+    v_dNu[3] = v_025 * (v_1 + y) * (v_2 * x - y);
+    v_dNu[4] = -x * (v_1 - y); v_dNu[5] = v_05 * (v_1 - y * y);
+    v_dNu[6] = -x * (v_1 + y); v_dNu[7] = v_m05 * (v_1 - y * y);
+
+    v_dNv[0] = v_025 * (v_1 - x) * (x + v_2 * y);
+    v_dNv[1] = v_025 * (v_1 + x) * (v_2 * y - x);
+    v_dNv[2] = v_025 * (v_1 + x) * (x + v_2 * y);
+    v_dNv[3] = v_025 * (v_1 - x) * (v_2 * y - x);
+    v_dNv[4] = v_m05 * (v_1 - x * x); v_dNv[5] = -y * (v_1 + x);
+    v_dNv[6] = v_05 * (v_1 - x * x);  v_dNv[7] = -y * (v_1 - x);
+}
+
 fn shapeFunctions9(xi: f64, eta: f64, n_v: *[9]f64, dNu: *[9]f64, dNv: *[9]f64) void {
     const x = xi; const y = eta;
     const phi = [3]f64{ 0.5 * x * (x - 1.0), 1.0 - x * x, 0.5 * x * (x + 1.0) };
@@ -122,4 +253,36 @@ fn shapeFunctions9(xi: f64, eta: f64, n_v: *[9]f64, dNu: *[9]f64, dNv: *[9]f64) 
     dNv[4] = phi[1] * dpsi[0]; dNv[5] = phi[2] * dpsi[1]; 
     dNv[6] = phi[1] * dpsi[2]; dNv[7] = phi[0] * dpsi[1];
     dNv[8] = phi[1] * dpsi[1];
+}
+
+fn shapeFunctions9SIMD(v_xi: @Vector(8, f64), v_eta: @Vector(8, f64), 
+                       v_n_v: *[9]@Vector(8, f64), v_dNu: *[9]@Vector(8, f64), 
+                       v_dNv: *[9]@Vector(8, f64)) void {
+    const x = v_xi; const y = v_eta;
+    const v_1: @Vector(8, f64) = @splat(1.0);
+    const v_05: @Vector(8, f64) = @splat(0.5);
+    const v_m2: @Vector(8, f64) = @splat(-2.0);
+
+    const v_phi = [3]@Vector(8, f64){ v_05 * x * (x - v_1), v_1 - x * x, v_05 * x * (x + v_1) };
+    const v_psi = [3]@Vector(8, f64){ v_05 * y * (y - v_1), v_1 - y * y, v_05 * y * (y + v_1) };
+    const v_dphi = [3]@Vector(8, f64){ x - v_05, v_m2 * x, x + v_05 };
+    const v_dpsi = [3]@Vector(8, f64){ y - v_05, v_m2 * y, y + v_05 };
+
+    v_n_v[0] = v_phi[0] * v_psi[0]; v_n_v[1] = v_phi[2] * v_psi[0]; 
+    v_n_v[2] = v_phi[2] * v_psi[2]; v_n_v[3] = v_phi[0] * v_psi[2];
+    v_n_v[4] = v_phi[1] * v_psi[0]; v_n_v[5] = v_phi[2] * v_psi[1]; 
+    v_n_v[6] = v_phi[1] * v_psi[2]; v_n_v[7] = v_phi[0] * v_psi[1];
+    v_n_v[8] = v_phi[1] * v_psi[1];
+
+    v_dNu[0] = v_dphi[0] * v_psi[0]; v_dNu[1] = v_dphi[2] * v_psi[0]; 
+    v_dNu[2] = v_dphi[2] * v_psi[2]; v_dNu[3] = v_dphi[0] * v_psi[2];
+    v_dNu[4] = v_dphi[1] * v_psi[0]; v_dNu[5] = v_dphi[2] * v_psi[1]; 
+    v_dNu[6] = v_dphi[1] * v_psi[2]; v_dNu[7] = v_dphi[0] * v_psi[1];
+    v_dNu[8] = v_dphi[1] * v_psi[1];
+
+    v_dNv[0] = v_phi[0] * v_dpsi[0]; v_dNv[1] = v_phi[2] * v_dpsi[0]; 
+    v_dNv[2] = v_phi[2] * v_dpsi[2]; v_dNv[3] = v_phi[0] * v_dpsi[2];
+    v_dNv[4] = v_phi[1] * v_dpsi[0]; v_dNv[5] = v_phi[2] * v_dpsi[1]; 
+    v_dNv[6] = v_phi[1] * v_dpsi[2]; v_dNv[7] = v_phi[0] * v_dpsi[1];
+    v_dNv[8] = v_phi[1] * v_dpsi[1];
 }

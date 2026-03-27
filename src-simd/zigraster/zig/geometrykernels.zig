@@ -8,6 +8,7 @@ const Vec3OfSlices = rops.Vec3OfSlices;
 pub const Strategy = enum {
     pointwise,
     incremental,
+    newton_simd,
 };
 
 pub const CoordSpace = enum {
@@ -19,6 +20,16 @@ pub fn GeometryResult(comptime N: usize) type {
     return struct {
         weights: ?[N]f64,
         iters: u8,
+    };
+}
+
+pub fn GeometryResultSIMD(comptime N: usize) type {
+    return struct {
+        weights: [N]@Vector(8, f64),
+        mask: @Vector(8, bool),
+        iters: @Vector(8, u8),
+        xi_out: @Vector(8, f64),
+        eta_out: @Vector(8, f64),
     };
 }
 
@@ -41,6 +52,12 @@ pub inline fn calcInvZClip(comptime N: usize, nodes: Vec3OfSlices(f64), weights:
     
     return 1.0 / sum_weighted_z;
 }
+
+pub const NewtonParams = struct {
+    w_u_coeff: f64,
+    w_v_coeff: f64,
+    w_const: f64,
+};
 
 pub fn Tri3Kernel() type {
     return struct {
@@ -257,7 +274,13 @@ pub fn Tri6Kernel() type {
         pub const has_hull = true;
         pub const hull_nodes_num = 6;
         pub const coord_space = .clip_px_leng;
-        pub const strategy = .pointwise;
+        pub const strategy = .newton_simd;
+
+        pub inline fn getInvElemArea(nodes: Vec3OfSlices(f64)) f64 {
+            return 1.0 / rops.edgeFun3(nodes.x[0], nodes.y[0],
+                                       nodes.x[1], nodes.y[1],
+                                       nodes.x[2], nodes.y[2]);
+        }
 
         pub inline fn solveWeights(
             nodes: Vec3OfSlices(f64),
@@ -300,6 +323,45 @@ pub fn Tri6Kernel() type {
                 return .{ .weights = node_values, .iters = result.iterations };
             }
             return .{ .weights = null, .iters = result.iterations };
+        }
+
+        pub inline fn solveWeightsSIMD(
+            nodes: Vec3OfSlices(f64),
+            v_pixel_x: @Vector(8, f64),
+            v_pixel_y: @Vector(8, f64),
+            v_xi_guess: @Vector(8, f64),
+            v_eta_guess: @Vector(8, f64),
+            x_offset: f64,
+            y_offset: f64,
+            state: anytype,
+        ) GeometryResultSIMD(nodes_num) {
+            _ = state;
+            
+            const v_target_x = v_pixel_x - @as(@Vector(8, f64), @splat(x_offset));
+            const v_target_y = v_pixel_y - @as(@Vector(8, f64), @splat(y_offset));
+
+            var v_xi_out: @Vector(8, f64) = undefined;
+            var v_eta_out: @Vector(8, f64) = undefined;
+
+            const res = newton.solveInverseSIMD(
+                nodes_num, v_target_x, v_target_y, 
+                nodes.x, nodes.y, nodes.z, 
+                v_xi_guess, v_eta_guess, &v_xi_out, &v_eta_out,
+            );
+
+            var v_weights: [nodes_num]@Vector(8, f64) = undefined;
+            var v_dNu: [nodes_num]@Vector(8, f64) = undefined;
+            var v_dNv: [nodes_num]@Vector(8, f64) = undefined;
+
+            shapefun.shapeFunctionsSIMD(nodes_num, v_xi_out, v_eta_out, &v_weights, &v_dNu, &v_dNv);
+
+            return .{ 
+                .weights = v_weights,
+                .mask = res.converged,
+                .iters = res.iterations,
+                .xi_out = v_xi_out,
+                .eta_out = v_eta_out,
+            };
         }
 
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [nodes_num]f64) f64 {
@@ -459,9 +521,18 @@ pub fn Quad4NewtonKernel() type {
         pub const has_hull = true;
         pub const hull_nodes_num = 4;
         pub const coord_space = .clip_px_leng;
-        pub const strategy = .pointwise;
+        pub const strategy = .newton_simd;
 
-        pub inline fn solveWeights(nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
+        pub inline fn getNewtonParams(nodes: Vec3OfSlices(f64)) NewtonParams {
+            return .{
+                .w_u_coeff = nodes.z[1] - nodes.z[0],
+                .w_v_coeff = nodes.z[3] - nodes.z[0],
+                .w_const = nodes.z[0],
+            };
+        }
+
+        pub inline fn solveWeights(
+nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
                                    x_offset: f64, y_offset: f64,state: anytype,
                                    ) GeometryResult(nodes_num) {
             _ = state;
@@ -493,6 +564,45 @@ pub fn Quad4NewtonKernel() type {
             return .{ .weights = null, .iters = result.iterations };
         }
 
+        pub inline fn solveWeightsSIMD(
+            nodes: Vec3OfSlices(f64),
+            v_pixel_x: @Vector(8, f64),
+            v_pixel_y: @Vector(8, f64),
+            v_xi_guess: @Vector(8, f64),
+            v_eta_guess: @Vector(8, f64),
+            x_offset: f64,
+            y_offset: f64,
+            state: anytype,
+        ) GeometryResultSIMD(nodes_num) {
+            _ = state;
+            
+            const v_target_x = v_pixel_x - @as(@Vector(8, f64), @splat(x_offset));
+            const v_target_y = v_pixel_y - @as(@Vector(8, f64), @splat(y_offset));
+
+            var v_xi_out: @Vector(8, f64) = undefined;
+            var v_eta_out: @Vector(8, f64) = undefined;
+
+            const res = newton.solveInverseSIMD(
+                nodes_num, v_target_x, v_target_y, 
+                nodes.x, nodes.y, nodes.z, 
+                v_xi_guess, v_eta_guess, &v_xi_out, &v_eta_out,
+            );
+
+            var v_weights: [nodes_num]@Vector(8, f64) = undefined;
+            var v_dNu: [nodes_num]@Vector(8, f64) = undefined;
+            var v_dNv: [nodes_num]@Vector(8, f64) = undefined;
+
+            shapefun.shapeFunctionsSIMD(nodes_num, v_xi_out, v_eta_out, &v_weights, &v_dNu, &v_dNv);
+
+            return .{ 
+                .weights = v_weights,
+                .mask = res.converged,
+                .iters = res.iterations,
+                .xi_out = v_xi_out,
+                .eta_out = v_eta_out,
+            };
+        }
+
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [nodes_num]f64) f64 {
             return calcInvZClip(nodes_num, nodes, weights);
         }
@@ -505,9 +615,18 @@ pub fn Quad89Kernel(comptime N: usize) type {
         pub const has_hull = true;
         pub const hull_nodes_num = 8;
         pub const coord_space = .clip_px_leng;
-        pub const strategy = .pointwise;
+        pub const strategy = .newton_simd;
 
-        pub inline fn solveWeights(nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
+        pub inline fn getNewtonParams(nodes: Vec3OfSlices(f64)) NewtonParams {
+            return .{
+                .w_u_coeff = nodes.z[1] - nodes.z[0],
+                .w_v_coeff = nodes.z[3] - nodes.z[0],
+                .w_const = nodes.z[0],
+            };
+        }
+
+        pub inline fn solveWeights(
+nodes: Vec3OfSlices(f64), pixel_x: f64, pixel_y: f64,
                                    x_offset: f64, y_offset: f64, state: anytype,
                                    ) GeometryResult(nodes_num) {
             _ = state;
@@ -538,6 +657,45 @@ pub fn Quad89Kernel(comptime N: usize) type {
                 return .{ .weights = node_values, .iters = result.iterations };
             }
             return .{ .weights = null, .iters = result.iterations };
+        }
+
+        pub inline fn solveWeightsSIMD(
+            nodes: Vec3OfSlices(f64),
+            v_pixel_x: @Vector(8, f64),
+            v_pixel_y: @Vector(8, f64),
+            v_xi_guess: @Vector(8, f64),
+            v_eta_guess: @Vector(8, f64),
+            x_offset: f64,
+            y_offset: f64,
+            state: anytype,
+        ) GeometryResultSIMD(nodes_num) {
+            _ = state;
+            
+            const v_target_x = v_pixel_x - @as(@Vector(8, f64), @splat(x_offset));
+            const v_target_y = v_pixel_y - @as(@Vector(8, f64), @splat(y_offset));
+
+            var v_xi_out: @Vector(8, f64) = undefined;
+            var v_eta_out: @Vector(8, f64) = undefined;
+
+            const res = newton.solveInverseSIMD(
+                nodes_num, v_target_x, v_target_y, 
+                nodes.x, nodes.y, nodes.z, 
+                v_xi_guess, v_eta_guess, &v_xi_out, &v_eta_out,
+            );
+
+            var v_weights: [nodes_num]@Vector(8, f64) = undefined;
+            var v_dNu: [nodes_num]@Vector(8, f64) = undefined;
+            var v_dNv: [nodes_num]@Vector(8, f64) = undefined;
+
+            shapefun.shapeFunctionsSIMD(nodes_num, v_xi_out, v_eta_out, &v_weights, &v_dNu, &v_dNv);
+
+            return .{ 
+                .weights = v_weights,
+                .mask = res.converged,
+                .iters = res.iterations,
+                .xi_out = v_xi_out,
+                .eta_out = v_eta_out,
+            };
         }
 
         pub inline fn calcInvZ(nodes: Vec3OfSlices(f64), weights: [nodes_num]f64) f64 {

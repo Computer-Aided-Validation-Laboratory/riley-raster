@@ -37,10 +37,21 @@ pub inline fn edgeFun3Slices(comptime ind0: usize,
 }
 
 pub inline fn edgeFun3(x0: f64, y0: f64,
-                       x1: f64, y1: f64,
-                       x2: f64, y2: f64) f64 {
-    return ((x2 - x0) * (y1 - y0) - (y2 - y0) * (x1 - x0));
+                         x1: f64, y1: f64,
+                         px: f64, py: f64) f64 {
+    return (px - x0) * (y1 - y0) - (py - y0) * (x1 - x0);
 }
+
+pub inline fn edgeFun3SIMD(x0: f64, y0: f64,
+                             x1: f64, y1: f64,
+                             v_px: @Vector(8, f64), v_py: @Vector(8, f64)) @Vector(8, f64) {
+    const v_x0: @Vector(8, f64) = @splat(x0);
+    const v_y0: @Vector(8, f64) = @splat(y0);
+    const v_x1: @Vector(8, f64) = @splat(x1);
+    const v_y1: @Vector(8, f64) = @splat(y1);
+    return (v_px - v_x0) * (v_y1 - v_y0) - (v_py - v_y0) * (v_x1 - v_x0);
+}
+
 
 pub fn boundIndexMin(min_val: f64) usize {
     var min_ind: usize = @as(isize, @intFromFloat(@floor(min_val)));

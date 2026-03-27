@@ -194,6 +194,36 @@ pub inline fn fillFlatPerspective(
     }
 }
 
+pub inline fn fillFlatSIMD(
+    comptime N: usize,
+    ctx_shade: ShadeContext(N),
+    v_weights: [N]@Vector(8, f64),
+    sh: *const FlatPrepared,
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    const v_mul: @Vector(8, f64) = @splat(sh.scale_mul);
+    const v_add: @Vector(8, f64) = @splat(sh.scale_add);
+    const px_stride = spx_image_scratch.cols_num;
+
+    inline for (0..MAX_FIELDS) |ff| {
+        if (ff >= ctx_shade.actual_fields) break;
+        const base = ff * N;
+        var v_vs: @Vector(8, f64) = @splat(0.0);
+        inline for (0..N) |nn| {
+            v_vs += v_weights[nn] * @as(@Vector(8, f64), 
+                @splat(ctx_shade.local_buf.data[base + nn]));
+        }
+        
+        const v_final = v_vs * v_mul + v_add;
+        const flat_idx = ff * px_stride + ctx_shade.idx;
+        
+        // Contiguous SIMD Store with depth mask
+        const ptr_out: *align(8) @Vector(8, f64) = @ptrCast(&spx_image_scratch.elems[flat_idx]);
+        const v_old_val: @Vector(8, f64) = ptr_out.*;
+        ptr_out.* = @select(f64, ctx_shade.v_mask.?, v_final, v_old_val);
+    }
+}
+
 pub inline fn fillFlatPerspectiveSIMD(
     comptime N: usize,
     ctx_shade: ShadeContext(N),
@@ -284,6 +314,46 @@ pub inline fn fillTexPerspective(
     inline for (0..channels) |ch| {
         spx_image_scratch.elems[ch * spx_image_scratch.cols_num + ctx_shade.idx] = 
             sampled[ch] * sh.scale_mul + sh.scale_add;
+    }
+}
+
+pub inline fn fillTexSIMD(
+    comptime N: usize,
+    comptime TexT: type,
+    comptime channels: usize,
+    interp_type: InterpType,
+    ctx_shade: ShadeContext(N),
+    v_mask: @Vector(8, bool),
+    v_weights: [N]@Vector(8, f64),
+    sh: *const TexPrepared(TexT, channels),
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    var v_u_at: @Vector(8, f64) = @splat(0.0);
+    var v_v_at: @Vector(8, f64) = @splat(0.0);
+    inline for (0..N) |nn| {
+        v_u_at += v_weights[nn] * @as(@Vector(8, f64), @splat(ctx_shade.local_buf.data[nn]));
+        v_v_at += v_weights[nn] * @as(@Vector(8, f64), @splat(ctx_shade.local_buf.data[N + nn]));
+    }
+
+    const px_stride = spx_image_scratch.cols_num;
+    const mask_arr: [8]bool = v_mask;
+    const u_at_arr: [8]f64 = v_u_at;
+    const v_at_arr: [8]f64 = v_v_at;
+
+    for (0..8) |ii| {
+        if (mask_arr[ii]) {
+            const sampled = texops.sampleGeneric(
+                channels,
+                interp_type,
+                sh.texture,
+                u_at_arr[ii],
+                v_at_arr[ii],
+            );
+
+            inline for (0..channels) |ch| {
+                spx_image_scratch.elems[ch * px_stride + ctx_shade.idx + ii] = sampled[ch] * sh.scale_mul + sh.scale_add;
+            }
+        }
     }
 }
 
