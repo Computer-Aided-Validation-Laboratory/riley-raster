@@ -44,13 +44,12 @@ test "Unified Fullscreen Benchmark Tests" {
         inline for (mesh_types) |mt| {
             inline for (shader_types) |st| {
                 inline for (interp_types) |it| {
-                    if (common.shouldRun(config, mt, st, it)) {
+                    const data_dir = comptime "data-bench/" ++ @tagName(mt) ++ "_" ++ bt;
+                    if (common.shouldRun(config, mt, st, it, data_dir)) {
                         const case_name = if (st == .tex8_grey or st == .tex8_rgb)
                             comptime @tagName(mt) ++ "_" ++ @tagName(st) ++ "_" ++ @tagName(it)
                         else
                             comptime @tagName(mt) ++ "_" ++ @tagName(st);
-
-                        const data_dir = comptime "data-bench/" ++ @tagName(mt) ++ "_" ++ bt;
 
                         std.debug.print("Testing {s} ... ", .{case_name});
 
@@ -59,7 +58,6 @@ test "Unified Fullscreen Benchmark Tests" {
                             allocator, io, mt, st, it, data_dir, out_dir_base,
                             pixel_num, texture_grey, texture_rgb
                         );
-
                         // 2. Map filenames
                         const is_rgb = (st == .flat_rgb or st == .tex8_rgb);
                         const channels: usize = if (is_rgb) 3 else 1;
