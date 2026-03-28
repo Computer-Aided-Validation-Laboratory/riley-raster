@@ -28,7 +28,8 @@ pub fn main() !void {
     inline for (mesh_types) |mt| {
         inline for (shader_types) |st| {
             inline for (interp_types) |it| {
-                if (common.shouldRun(.{ .run = .all }, mt, st, it)) {
+                const data_dir = comptime "data-bench/" ++ @tagName(mt) ++ "_fullraster";
+                if (common.shouldRun(.{ .run = .all }, mt, st, it, data_dir)) {
                     const case_name = if (st == .tex8_grey or st == .tex8_rgb)
                         comptime @tagName(mt) ++ "_" ++ @tagName(st) ++ "_" ++ @tagName(it)
                     else
@@ -37,7 +38,6 @@ pub fn main() !void {
                     std.debug.print("Rendering reference: {s}\n", .{case_name});
                     
                     // We generate gold from the minimal 'fullraster' dataset
-                    const data_dir = comptime "data-bench/" ++ @tagName(mt) ++ "_fullraster";
                     _ = try common.runBenchmark(allocator, io, mt, st, it, data_dir, out_dir_base, pixel_num, texture_grey, texture_rgb);
                 }
             }

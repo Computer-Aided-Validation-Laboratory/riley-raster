@@ -525,18 +525,21 @@ pub fn RasterPass(
 
             const NT = if (N == 4) 2 else if (N == 6) 6 else 8;
             var element_tess: hull.Tessellation(NT) = undefined;
+if (comptime Geometry.has_hull) {
+    if (input.hull) |rh| {
+        const hx = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 0, 0 }, 1);
+        const hy = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 1, 0 }, 1);
+        element_tess = hull.getTessellation(N, hx, hy);
+    }
+} else {
+    @panic("rasterSIMDNewton requires has_hull = true");
+}
 
-            if (comptime Geometry.has_hull) {
-                if (input.hull) |rh| {
-                    const hx = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 0, 0 }, 1);
-                    const hy = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 1, 0 }, 1);
-                    element_tess = hull.getTessellation(N, hx, hy);
-                }
-            } else {
-                @panic("rasterSIMDNewton requires has_hull = true");
-            }
+for (bounds.start_y..bounds.end_y) |scratch_y| {
+    const row_offset = scratch_y * domain.tile_size;
+    @memset(scratch.subpx_mask[row_offset + bounds.start_x .. row_offset + bounds.end_x], false);
+}
 
-            @memset(scratch.subpx_mask, false);
             var cand_count: usize = 0;
             const v_07: @Vector(8, usize) = .{ 0, 1, 2, 3, 4, 5, 6, 7 };
 

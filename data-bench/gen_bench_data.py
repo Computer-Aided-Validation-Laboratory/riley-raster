@@ -125,6 +125,9 @@ def generate_sphere(etype, out_dir, N_target):
             # Normalize u from [-pi, pi] to [0, 1]
             uu = (u + np.pi) / (2 * np.pi)
             vv = v / np.pi
+            # Zoom in: map [0, 1] to [0.4, 0.6]
+            uu = 0.4 + 0.2 * uu
+            vv = 0.4 + 0.2 * vv
             uvs.append([uu, vv])
             fields.append([uu, vv, 1.0 - (uu + vv) / 2.0])
             

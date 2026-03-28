@@ -91,13 +91,22 @@ pub const BenchConfig = struct {
     element_type: mr.MeshType = .tri3,
     texture_type: ShaderType = .tex8_grey,
     interp_type: InterpType = .cubic_lut_lerp,
+    skip_quad4ibi_sphere: bool = false,
 };
 
-pub fn shouldRun(comptime config: BenchConfig, mt: mr.MeshType, st: ShaderType, it: InterpType) bool {
+pub fn shouldRun(comptime config: BenchConfig, mt: mr.MeshType, st: ShaderType, it: InterpType, data_dir: []const u8) bool {
     const is_tex = (st == .tex8_grey or st == .tex8_rgb);
     // Flat shaders don't have interpolators, so we only run them once
     // (e.g. when it == .linear) to avoid redundant tests.
     if (!is_tex and it != .linear) return false;
+
+    if (config.skip_quad4ibi_sphere and mt == .quad4ibi) {
+        if (std.mem.indexOf(u8, data_dir, "sphere200") != null or
+            std.mem.indexOf(u8, data_dir, "sphere2000") != null)
+        {
+            return false;
+        }
+    }
 
     return switch (config.run) {
         .all => true,

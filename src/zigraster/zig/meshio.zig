@@ -143,7 +143,7 @@ pub fn readCsvToList(outer_alloc: std.mem.Allocator,
     var file: std.Io.File = try cwd.openFile(io, path, .{ .mode = .read_only});
     defer file.close(io);
 
-    var read_buff: [65536]u8 = undefined;    
+    var read_buff: [1024 * 1024]u8 = undefined;    
     var file_reader: std.Io.File.Reader = file.reader(io, &read_buff); 
     const reader = &file_reader.interface;
 
