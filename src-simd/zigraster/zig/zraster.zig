@@ -195,13 +195,21 @@ pub fn rasterAllFrames(
                 camera.sub_sample,
                 config.perf_opts,
             );
+        } else if (config.report == .bench) {
+            frame_perf = perf.Perf{};
         }
-        defer if (frame_perf) |*fp| fp.deinit(outer_alloc);
+        defer if (frame_perf) |*fp| {
+            if (config.report == .perf) fp.deinit(outer_alloc);
+        };
 
         switch (config.report) {
             .off => try rasterSceneInternal(
                 arena_alloc, io, camera, tt, transformed_meshes, &frame_arr, 
                 config.tile_size, .off, null,
+            ),
+            .bench => try rasterSceneInternal(
+                arena_alloc, io, camera, tt, transformed_meshes, &frame_arr, 
+                config.tile_size, .bench, &frame_perf.?,
             ),
             .perf => try rasterSceneInternal(
                 arena_alloc, io, camera, tt, transformed_meshes, &frame_arr, 

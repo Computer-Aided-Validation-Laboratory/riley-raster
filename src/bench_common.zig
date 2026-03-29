@@ -167,7 +167,13 @@ pub const BenchConfig = struct {
     skip_quad4ibi_sphere: bool = false,
 };
 
-pub fn shouldRun(comptime config: BenchConfig, mt: mr.MeshType, st: ShaderType, it: InterpType, data_dir: []const u8) bool {
+pub fn shouldRun(
+    config: BenchConfig,
+    mt: mr.MeshType,
+    st: ShaderType,
+    it: InterpType,
+    data_dir: []const u8,
+) bool {
     const is_tex = (st == .tex8_grey or st == .tex8_rgb);
     if (!is_tex and it != .linear) return false;
 

@@ -626,19 +626,40 @@ pub fn standardReport(
     io: std.Io,
     camera: *const Camera,
     pipe_times: PipeTimes,
-    elems_num: usize,
+    total_elems: usize,
+    visible_elems: usize,
+    nodes_per_elem: f64,
+    comptime mode: Report,
+    perf_data: ?*const Perf,
 ) !void {
     var buffer: [4096]u8 = undefined;
     var stdout_writer = std.Io.File.stdout().writer(io, &buffer);
     const writer = &stdout_writer.interface;
 
-    var total_px: f64 = @as(f64, @floatFromInt(camera.pixels_num[0] * camera.pixels_num[1]));
+    const px_x = @as(f64, @floatFromInt(camera.pixels_num[0]));
+    const px_y = @as(f64, @floatFromInt(camera.pixels_num[1]));
     const sub_samp_f: f64 = @as(f64, @floatFromInt(camera.sub_sample));
-    total_px = total_px * sub_samp_f * sub_samp_f;
 
-    const mega_ops_per_sec: f64 = 1.0e3 * total_px / pipe_times.total_time;
-    const mega_tris_per_sec: f64 = 1.0e3 * @as(f64, @floatFromInt(elems_num)) /
-        pipe_times.total_time;
+    const total_subpx = px_x * px_y * sub_samp_f * sub_samp_f;
+
+    const raster_sec = pipe_times.raster_loop / 1e9;
+    const total_sec = pipe_times.total_time / 1e9;
+    const geom_tiling_sec = (pipe_times.geometry_prep + pipe_times.tile_overlap) / 1e9;
+
+    // 1. MsubPx/s
+    const msubpx_sec = if (raster_sec > 0) (total_subpx / (raster_sec * 1e6)) else 0;
+
+    // 2. MElems/s
+    const melems_sec = if (geom_tiling_sec > 0)
+        (@as(f64, @floatFromInt(total_elems)) / (geom_tiling_sec * 1e6))
+    else
+        0;
+
+    // 3. MOps/s
+    const mops_sec = if (total_sec > 0)
+        (nodes_per_elem * total_subpx / (total_sec * 1e6))
+    else
+        0;
 
     const conv_units: f64 = 1.0 / 1.0e6;
     const print_break = [_]u8{'='} ** 80;
@@ -657,9 +678,29 @@ pub fn standardReport(
         pipe_times.total_time * conv_units,
     });
     try writer.print("{s}\n", .{print_break});
-    try writer.print("Total Ops   = {d}\n", .{total_px});
-    try writer.print("MOps/second = {d:.2}\n", .{mega_ops_per_sec});
-    try writer.print("MTri/second = {d:.2}\n", .{mega_tris_per_sec});
+
+    if (mode == .bench) {
+        if (perf_data) |pd| {
+            const shaded_subpx = @as(f64, @floatFromInt(pd.total_shaded_pixels));
+            const shaded_pct = if (total_subpx > 0) (shaded_subpx * 100.0 / total_subpx) else 0;
+            const vis_elems_f = @as(f64, @floatFromInt(visible_elems));
+            const total_elems_f = @as(f64, @floatFromInt(total_elems));
+            const vis_pct = if (total_elems > 0) (vis_elems_f * 100.0 / total_elems_f) else 0;
+
+            try writer.print("Total SubPx   = {d:.0}\n", .{total_subpx});
+            try writer.print("Shaded SubPx  = {d:.0}\n", .{shaded_subpx});
+            try writer.print("Shaded %      = {d:.2}%\n", .{shaded_pct});
+            try writer.print("Visible Elems = {d}\n", .{visible_elems});
+            try writer.print("Total Elems   = {d}\n", .{total_elems});
+            try writer.print("Visible %     = {d:.2}%\n", .{vis_pct});
+            try writer.print("{s}\n", .{print_break});
+        }
+    }
+
+    try writer.print("MsubPx/second = {d:.2}\n", .{msubpx_sec});
+    try writer.print("MElem/second  = {d:.2}\n", .{melems_sec});
+    try writer.print("MOps/second   = {d:.2}\n", .{mops_sec});
+
     try writer.print("{s}\n", .{print_break});
     try writer.flush();
 }

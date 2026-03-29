@@ -197,13 +197,21 @@ pub fn rasterAllFrames(
                 camera.sub_sample,
                 config.perf_opts,
             );
+        } else if (config.report == .bench) {
+            frame_perf = perf.Perf{};
         }
-        defer if (frame_perf) |*fp| fp.deinit(outer_alloc);
+        defer if (frame_perf) |*fp| {
+            if (config.report == .perf) fp.deinit(outer_alloc);
+        };
 
         switch (config.report) {
             .off => try rasterSceneInternal(
                 arena_alloc, io, camera, tt, transformed_meshes, &frame_arr, 
                 config.tile_size, .off, null,
+            ),
+            .bench => try rasterSceneInternal(
+                arena_alloc, io, camera, tt, transformed_meshes, &frame_arr, 
+                config.tile_size, .bench, &frame_perf.?,
             ),
             .perf => try rasterSceneInternal(
                 arena_alloc, io, camera, tt, transformed_meshes, &frame_arr, 
@@ -329,7 +337,30 @@ pub fn rasterSceneInternal(
     if (report != .off) {
         perf_data.?.pipe_times = pipe_times;
         if (report == .perf) try perf_data.?.writeReportToConsole(io, frame_ind, camera);
+        if (report == .bench) {
+            var nodes_sum: usize = 0;
+            for (meshes) |mesh| {
+                nodes_sum += mesh.mesh_type.getNodesNum();
+            }
+            const nodes_per_elem: f64 = @as(f64, @floatFromInt(nodes_sum)) /
+                @as(f64, @floatFromInt(meshes.len));
+
+            try perf.standardReport(
+                io, camera, pipe_times, total_elems_num, total_elems_in_image,
+                nodes_per_elem, .bench, perf_data,
+            );
+        }
     } else {
-        try perf.standardReport(io, camera, pipe_times, total_elems_num);
+        var nodes_sum: usize = 0;
+        for (meshes) |mesh| {
+            nodes_sum += mesh.mesh_type.getNodesNum();
+        }
+        const nodes_per_elem: f64 = @as(f64, @floatFromInt(nodes_sum)) /
+            @as(f64, @floatFromInt(meshes.len));
+
+        try perf.standardReport(
+            io, camera, pipe_times, total_elems_num, total_elems_in_image,
+            nodes_per_elem, .off, null,
+        );
     }
 }

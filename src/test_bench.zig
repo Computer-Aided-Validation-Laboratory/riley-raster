@@ -56,8 +56,8 @@ test "Unified Benchmark Tests" {
 
     const pixel_num = [_]u32{ 800, 500 };
 
-    const mesh_types = comptime std.enums.values(mr.MeshType);
-    const shader_types = comptime std.enums.values(common.ShaderType);
+    const mesh_types = std.enums.values(mr.MeshType);
+    const shader_types = std.enums.values(common.ShaderType);
     const interp_types = [_]common.InterpType{
         .linear, .cubic, .cubic_lut_lerp, .quintic, .quintic_lut_lerp,
     };
@@ -66,13 +66,21 @@ test "Unified Benchmark Tests" {
 
     std.debug.print("Running Unified Benchmark Tests...\n", .{});
 
-    inline for (cases) |cc| {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    for (cases) |cc| {
         std.debug.print("\n--- Testing benchmark: {s} ---\n", .{cc.name});
 
-        inline for (mesh_types) |mt| {
-            inline for (shader_types) |st| {
-                inline for (interp_types) |it| {
-                    const data_dir = comptime "data-bench/" ++ @tagName(mt) ++ "_" ++ cc.name;
+        for (mesh_types) |mt| {
+            for (shader_types) |st| {
+                for (interp_types) |it| {
+                    _ = arena.reset(.free_all);
+
+                    const data_dir = try std.fmt.allocPrint(
+                        aa, "data-bench/{s}_{s}", .{ @tagName(mt), cc.name }
+                    );
 
                     const run_config = if (cc.is_sphere)
                         common.BenchConfig{ .run = .all, .skip_quad4ibi_sphere = true }
@@ -81,9 +89,15 @@ test "Unified Benchmark Tests" {
 
                     if (common.shouldRun(run_config, mt, st, it, data_dir)) {
                         const case_name = if (st == .tex8_grey or st == .tex8_rgb)
-                            comptime @tagName(mt) ++ "_" ++ @tagName(st) ++ "_" ++ @tagName(it)
+                            try std.fmt.allocPrint(
+                                aa, "{s}_{s}_{s}", 
+                                .{ @tagName(mt), @tagName(st), @tagName(it) }
+                            )
                         else
-                            comptime @tagName(mt) ++ "_" ++ @tagName(st);
+                            try std.fmt.allocPrint(
+                                aa, "{s}_{s}", 
+                                .{ @tagName(mt), @tagName(st) }
+                            );
 
                         std.debug.print("Testing {s}/{s} ... ", .{ cc.name, case_name });
 
@@ -99,15 +113,13 @@ test "Unified Benchmark Tests" {
                         const suffix = if (is_rgb) "_rgb" else "";
 
                         const test_csv = try std.fmt.allocPrint(
-                            allocator, "{s}/{s}/frame_0_field_0{s}.csv",
+                            aa, "{s}/{s}/frame_0_field_0{s}.csv",
                             .{ cc.out_dir, case_name, suffix }
                         );
-                        defer allocator.free(test_csv);
                         const gold_csv = try std.fmt.allocPrint(
-                            allocator, "{s}/{s}/frame_0_field_0{s}.csv",
+                            aa, "{s}/{s}/frame_0_field_0{s}.csv",
                             .{ cc.gold_dir, case_name, suffix }
                         );
-                        defer allocator.free(gold_csv);
 
                         // 3. Load and Compare
                         const t_arr_res = common.loadNDArrayFromCSV(

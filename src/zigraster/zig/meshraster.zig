@@ -32,6 +32,16 @@ pub const MeshType = enum {
     quad4newton,
     quad8,
     quad9,
+
+    pub fn getNodesNum(self: MeshType) usize {
+        return switch (self) {
+            .tri3, .tri3opt => 3,
+            .tri6 => 6,
+            .quad4ibi, .quad4newton => 4,
+            .quad8 => 8,
+            .quad9 => 9,
+        };
+    }
 };
 
 pub const MeshInput = struct {
