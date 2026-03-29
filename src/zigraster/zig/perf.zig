@@ -641,21 +641,25 @@ pub fn standardReport(
     const sub_samp_f: f64 = @as(f64, @floatFromInt(camera.sub_sample));
 
     const total_subpx = px_x * px_y * sub_samp_f * sub_samp_f;
+    const total_px = px_x * px_y;
 
     const raster_sec = pipe_times.raster_loop / 1e9;
     const total_sec = pipe_times.total_time / 1e9;
     const geom_tiling_sec = (pipe_times.geometry_prep + pipe_times.tile_overlap) / 1e9;
 
-    // 1. MsubPx/s
-    const msubpx_sec = if (raster_sec > 0) (total_subpx / (raster_sec * 1e6)) else 0;
-
-    // 2. MElems/s
+    // 1. MElems/s
     const melems_sec = if (geom_tiling_sec > 0)
         (@as(f64, @floatFromInt(total_elems)) / (geom_tiling_sec * 1e6))
     else
         0;
 
-    // 3. MOps/s
+    // 2. MPx/s
+    const mpx_sec = if (raster_sec > 0) (total_px / (raster_sec * 1e6)) else 0;
+
+    // 3. MsubPx/s
+    const msubpx_sec = if (raster_sec > 0) (total_subpx / (raster_sec * 1e6)) else 0;
+
+    // 4. MOps/s
     const mops_sec = if (total_sec > 0)
         (nodes_per_elem * total_subpx / (total_sec * 1e6))
     else
@@ -687,18 +691,19 @@ pub fn standardReport(
             const total_elems_f = @as(f64, @floatFromInt(total_elems));
             const vis_pct = if (total_elems > 0) (vis_elems_f * 100.0 / total_elems_f) else 0;
 
-            try writer.print("Total SubPx   = {d:.0}\n", .{total_subpx});
-            try writer.print("Shaded SubPx  = {d:.0}\n", .{shaded_subpx});
-            try writer.print("Shaded %      = {d:.2}%\n", .{shaded_pct});
             try writer.print("Visible Elems = {d}\n", .{visible_elems});
             try writer.print("Total Elems   = {d}\n", .{total_elems});
             try writer.print("Visible %     = {d:.2}%\n", .{vis_pct});
+            try writer.print("Total SubPx   = {d:.0}\n", .{total_subpx});
+            try writer.print("Shaded SubPx  = {d:.0}\n", .{shaded_subpx});
+            try writer.print("Shaded %      = {d:.2}%\n", .{shaded_pct});
             try writer.print("{s}\n", .{print_break});
         }
     }
 
-    try writer.print("MsubPx/second = {d:.2}\n", .{msubpx_sec});
     try writer.print("MElem/second  = {d:.2}\n", .{melems_sec});
+    try writer.print("MPx/second    = {d:.2}\n", .{mpx_sec});
+    try writer.print("MsubPx/second = {d:.2}\n", .{msubpx_sec});
     try writer.print("MOps/second   = {d:.2}\n", .{mops_sec});
 
     try writer.print("{s}\n", .{print_break});

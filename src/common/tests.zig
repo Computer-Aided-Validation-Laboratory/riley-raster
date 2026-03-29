@@ -263,7 +263,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
     );
     const camera = Camera.init(
         pixel_num, pixel_size, cam_pos, rot, 
-        CameraOps.roiCentFromCoords(&sim_data.coords), focal_leng, 2,
+        CameraOps.roiCentFromCoords(&sim_data.coords), focal_leng, 1,
     );
 
     const disps = [_]bool{ true, false };
@@ -296,7 +296,6 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                 .save_opts = &[_]iio.ImageSaveOpts{
                     .{ .format = .csv, .bits = null, .scaling = .none },
                 },
-                .tile_size = 16,
                 .report = if (report_perf) .perf else .off
             };
 
@@ -350,7 +349,6 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                     .save_opts = &[_]iio.ImageSaveOpts{
                         .{ .format = .csv, .bits = null, .scaling = .none },
                     },
-                    .tile_size = 16,
                     .report = if (report_perf) .perf else .off
                 };
 
@@ -439,7 +437,6 @@ pub fn runMultimeshTest(
             .save_opts = &[_]iio.ImageSaveOpts{
                 .{ .format = .csv, .bits = null, .scaling = .none },
             },
-            .tile_size = 32,
         };
 
         const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, null)) 
@@ -566,7 +563,7 @@ pub fn runMultimeshMixedTestExt(
         mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
     );
     const camera = Camera.init(
-        pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2
+        pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 1
     );
 
     const config = RasterConfig{
@@ -574,9 +571,7 @@ pub fn runMultimeshMixedTestExt(
         .save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
-        .tile_size = 32,
     };
-
     const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, null)) 
         orelse return error.NoResult;
 
@@ -749,7 +744,6 @@ pub fn runMultimeshMixedRGBTestExt(
         .save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
         },
-        .tile_size = 32,
     };
 
     const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config_rgb, null))
@@ -797,7 +791,6 @@ test "Flat ShaderInput Scaling Options" {
         .save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
-        .tile_size = 16,
     };
 
     // Test 1: Auto Scaling, bits = null (maps to 0.0 - 1.0)
@@ -898,7 +891,6 @@ test "Tex ShaderInput Scaling Options" {
         .save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
-        .tile_size = 16,
     };
 
     // Test 1: Auto Scaling, bits = null (maps to 0.0 - 1.0)

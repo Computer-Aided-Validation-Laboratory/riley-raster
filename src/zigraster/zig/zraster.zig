@@ -49,7 +49,7 @@ pub const RasterConfig = struct {
     save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
-    tile_size: u16 = 16,
+    tile_size: u16 = 32,
     report: Report = .off,
     perf_opts: PerfOpts = .{},
 };

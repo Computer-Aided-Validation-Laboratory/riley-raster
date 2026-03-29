@@ -170,7 +170,6 @@ pub fn main() !void {
         .save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = 3 },
         },
-        .tile_size = 32,
         .report = .perf,
     };
 

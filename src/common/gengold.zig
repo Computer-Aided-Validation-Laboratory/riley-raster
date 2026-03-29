@@ -544,7 +544,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
         mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
     );
     const camera_rgb = Camera.init(
-        pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 3
+        pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2
     );
 
     var config_rgb = config;

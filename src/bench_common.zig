@@ -358,7 +358,7 @@ pub fn runBenchmark(
     );
     const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
 
-    const tile_size: u16 = 32;
+    const config = zraster.RasterConfig{};
     const transformed_mesh = try mr.prepareMesh(aa, &mesh_input, &sim_data.coords.mat, null);
     
     var image_out_arr = try NDArray(f64).initFlat(
@@ -371,7 +371,7 @@ pub fn runBenchmark(
     var meshes = [_]mr.MeshPrepared{transformed_mesh};
     try zraster.rasterSceneInternal(
         aa, io, &camera, 0, &meshes, &image_out_arr, 
-        tile_size, .bench, &frame_perf,
+        config.tile_size, .bench, &frame_perf,
     );
     const e2e_end = Timestamp.now(io, .awake);
 
