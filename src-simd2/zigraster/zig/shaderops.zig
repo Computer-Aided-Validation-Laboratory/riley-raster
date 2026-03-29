@@ -26,12 +26,7 @@ pub fn LocalNodeBuffer(comptime N: usize) type {
 
         const Self = @This();
 
-        pub inline fn load(
-            self: *Self, 
-            array: NDArray(f64), 
-            start_idx: usize, 
-            fields_num: usize
-        ) void {
+        pub inline fn load(self: *Self, array: NDArray(f64), start_idx: usize, fields_num: usize) void {
             self.actual_fields = fields_num;
             const count = fields_num * N;
             @memcpy(self.data[0..count], array.elems[start_idx .. start_idx + count]);
@@ -47,11 +42,7 @@ pub fn LocalNodeBuffer(comptime N: usize) type {
             @memcpy(self.normals[0..count], array.elems[start_idx .. start_idx + count]);
         }
 
-        pub inline fn interpolate(
-            self: *const Self, 
-            field_idx: usize, 
-            weights: [N]f64
-        ) f64 {
+        pub inline fn interpolate(self: *const Self, field_idx: usize, weights: [N]f64) f64 {
             const base = field_idx * N;
             var sum: f64 = 0.0;
             inline for (0..N) |nn| {
@@ -168,7 +159,7 @@ pub inline fn fillFlat(
 ) void {
     for (0..ctx_shade.actual_fields) |ff| {
         const vs = ctx_shade.local_buf.interpolate(ff, interp.weights);
-        spx_image_scratch.elems[ff * spx_image_scratch.cols_num + ctx_shade.idx] = 
+        spx_image_scratch.elems[ff * spx_image_scratch.cols_num + ctx_shade.idx] =
             vs * sh.scale_mul + sh.scale_add;
     }
 }
@@ -187,9 +178,9 @@ pub inline fn fillFlatPerspective(
             const inv_z = interp.nodes_inv_z[nn];
             vs += interp.weights[nn] * ctx_shade.local_buf.data[base + nn] * inv_z;
         }
-        
+
         const final_val = vs * interp.sub_pixel_z;
-        spx_image_scratch.elems[ff * spx_image_scratch.cols_num + ctx_shade.idx] = 
+        spx_image_scratch.elems[ff * spx_image_scratch.cols_num + ctx_shade.idx] =
             final_val * sh.scale_mul + sh.scale_add;
     }
 }
@@ -210,14 +201,11 @@ pub inline fn fillFlatSIMD(
         const base = ff * N;
         var v_vs: @Vector(8, f64) = @splat(0.0);
         inline for (0..N) |nn| {
-            v_vs += v_weights[nn] * @as(@Vector(8, f64), 
-                @splat(ctx_shade.local_buf.data[base + nn]));
+            v_vs += v_weights[nn] * @as(@Vector(8, f64), @splat(ctx_shade.local_buf.data[base + nn]));
         }
-        
+
         const v_final = v_vs * v_mul + v_add;
         const flat_idx = ff * px_stride + ctx_shade.idx;
-        
-        // Contiguous SIMD Store with depth mask
         const ptr_out: *align(8) @Vector(8, f64) = @ptrCast(&spx_image_scratch.elems[flat_idx]);
         const v_old_val: @Vector(8, f64) = ptr_out.*;
         ptr_out.* = @select(f64, ctx_shade.v_mask.?, v_final, v_old_val);
@@ -242,14 +230,11 @@ pub inline fn fillFlatPerspectiveSIMD(
         const base = ff * N;
         var v_vs: @Vector(8, f64) = @splat(0.0);
         inline for (0..N) |nn| {
-            v_vs += v_weights[nn] * v_nodes_inv_z[nn] * @as(@Vector(8, f64), 
-                @splat(ctx_shade.local_buf.data[base + nn]));
+            v_vs += v_weights[nn] * v_nodes_inv_z[nn] * @as(@Vector(8, f64), @splat(ctx_shade.local_buf.data[base + nn]));
         }
-        
+
         const v_final = (v_vs * v_subpx_z) * v_mul + v_add;
         const flat_idx = ff * px_stride + ctx_shade.idx;
-        
-        // Contiguous SIMD Store with depth mask
         const ptr_out: *align(8) @Vector(8, f64) = @ptrCast(&spx_image_scratch.elems[flat_idx]);
         const v_old_val: @Vector(8, f64) = ptr_out.*;
         ptr_out.* = @select(f64, ctx_shade.v_mask.?, v_final, v_old_val);
@@ -281,7 +266,7 @@ pub inline fn fillTex(
         v_at,
     );
     inline for (0..channels) |ch| {
-        spx_image_scratch.elems[ch * spx_image_scratch.cols_num + ctx_shade.idx] = 
+        spx_image_scratch.elems[ch * spx_image_scratch.cols_num + ctx_shade.idx] =
             sampled[ch] * sh.scale_mul + sh.scale_add;
     }
 }
@@ -312,7 +297,7 @@ pub inline fn fillTexPerspective(
         v_at * interp.sub_pixel_z,
     );
     inline for (0..channels) |ch| {
-        spx_image_scratch.elems[ch * spx_image_scratch.cols_num + ctx_shade.idx] = 
+        spx_image_scratch.elems[ch * spx_image_scratch.cols_num + ctx_shade.idx] =
             sampled[ch] * sh.scale_mul + sh.scale_add;
     }
 }
@@ -382,7 +367,7 @@ pub inline fn fillTexPerspectiveSIMD(
         v_u_at += v_weights[nn] * @as(@Vector(8, f64), @splat(ctx_shade.local_buf.data[nn])) * v_inv_z;
         v_v_at += v_weights[nn] * @as(@Vector(8, f64), @splat(ctx_shade.local_buf.data[N + nn])) * v_inv_z;
     }
-    
+
     v_u_at *= v_subpx_z;
     v_v_at *= v_subpx_z;
 
@@ -398,8 +383,6 @@ pub inline fn fillTexPerspectiveSIMD(
     inline for (0..channels) |ch| {
         const v_final = sampled_vecs[ch] * v_mul + v_add;
         const flat_idx = ch * px_stride + ctx_shade.idx;
-        
-        // Contiguous SIMD Store with depth mask
         const ptr_out: *align(8) @Vector(8, f64) = @ptrCast(&spx_image_scratch.elems[flat_idx]);
         const v_old_val: @Vector(8, f64) = ptr_out.*;
         ptr_out.* = @select(f64, v_mask, v_final, v_old_val);

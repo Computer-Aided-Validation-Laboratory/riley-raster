@@ -524,12 +524,28 @@ pub fn RasterPass(
                         const v_depth_mask = v_mask & (v_inv_z >= v_old_inv_z);
 
                         if (@reduce(.Or, v_depth_mask)) {
-                            const v_new_inv_z = @select(f64, v_depth_mask, v_inv_z, v_old_inv_z);
                             const ptr_new_inv_z: *align(8) @Vector(8, f64) = @ptrCast(&scratch.inv_z[index]);
+                            const v_new_inv_z = @select(
+                                f64,
+                                v_depth_mask,
+                                v_inv_z,
+                                v_old_inv_z,
+                            );
                             ptr_new_inv_z.* = v_new_inv_z;
 
                             const v_subpx_z = @as(@Vector(8, f64), @splat(1.0)) / v_inv_z;
-                            shaded_px += @intCast(@reduce(.Add, @as(@Vector(8, u8), @select(u8, v_depth_mask, @as(@Vector(8, u8), @splat(1)), @as(@Vector(8, u8), @splat(0))))));
+                            shaded_px += @intCast(@reduce(
+                                .Add,
+                                @as(
+                                    @Vector(8, u8),
+                                    @select(
+                                        u8,
+                                        v_depth_mask,
+                                        @as(@Vector(8, u8), @splat(1)),
+                                        @as(@Vector(8, u8), @splat(0)),
+                                    ),
+                                ),
+                            ));
 
                             ShaderKernel.shadeSIMD(
                                 Geometry.coord_space,
