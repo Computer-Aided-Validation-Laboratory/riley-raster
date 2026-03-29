@@ -169,9 +169,8 @@ pub fn savePPM(io: std.Io,
     try writer.print("P3\n{d} {d}\n{d}\n", .{ cols, rows, max_val});
 
     // We need scaling params per field if we are doing auto scaling
-    var params_array: [MAX_CHANNELS]ScalingParams = undefined;
-    const channels = @min(opts.channels, MAX_CHANNELS);
-    for (0..channels) |ch| {
+    var params_array: [3]ScalingParams = undefined;
+    for (0..opts.channels) |ch| {
         const field_idx = start_field + ch;
         const slice = image_arr.getSlice(&[_]usize{ field_idx, 0, 0 }, 0);
         const mat = MatSlice(f64).init(slice, rows, cols);
@@ -181,9 +180,9 @@ pub fn savePPM(io: std.Io,
     for (0..rows) |rr| {
         for (0..cols) |cc| {
             for (0..3) |ch| {
-                const field_idx = if (ch < channels) start_field + ch else start_field;
+                const field_idx = if (ch < opts.channels) start_field + ch else start_field;
                 const raw_val = image_arr.get(&[_]usize{ field_idx, rr, cc });
-                const params = if (ch < channels) params_array[ch] else params_array[0];
+                const params = if (ch < opts.channels) params_array[ch] else params_array[0];
                 
                 var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
                 if (opts.bits == null) {
@@ -299,9 +298,8 @@ pub fn saveBMP(io: std.Io,
     try writer.writeInt(u32, 0, .little);
     try writer.writeInt(u32, 0, .little);
 
-    var params_array: [MAX_CHANNELS]ScalingParams = undefined;
-    const channels = @min(opts.channels, MAX_CHANNELS);
-    for (0..@min(channels, 3)) |ch| {
+    var params_array: [3]ScalingParams = undefined;
+    for (0..@min(opts.channels, 3)) |ch| {
         const field_idx = start_field + ch;
         const slice = image_arr.getSlice(&[_]usize{ field_idx, 0, 0 }, 0);
         const mat = MatSlice(f64).init(slice, rows, cols);
@@ -316,9 +314,9 @@ pub fn saveBMP(io: std.Io,
             // Write BGR
             const bgr_inds = [_]usize{ 2, 1, 0 };
             for (bgr_inds) |ch| {
-                const field_idx = if (ch < channels) start_field + ch else start_field;
+                const field_idx = if (ch < opts.channels) start_field + ch else start_field;
                 const raw_val = image_arr.get(&[_]usize{ field_idx, rr, cc });
-                const params = if (ch < channels) params_array[ch] else params_array[0];
+                const params = if (ch < opts.channels) params_array[ch] else params_array[0];
 
                 var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
                 if (opts.bits == null and opts.scaling != .none) {

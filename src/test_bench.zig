@@ -7,7 +7,7 @@ const NDArray = @import("zigraster/zig/ndarray.zig").NDArray;
 
 const config = common.BenchConfig{ .run = .all };
 
-test "Unified Fullscreen Benchmark Tests" {
+test "Unified Benchmark Tests" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
@@ -24,65 +24,100 @@ test "Unified Fullscreen Benchmark Tests" {
     );
     defer texture_rgb.deinit(allocator);
 
-    const gold_dir_base = "gold-bench-fullscreen";
+    const cases = [_]struct {
+        name: []const u8,
+        gold_dir: []const u8,
+        out_dir: []const u8,
+        is_sphere: bool = false,
+    }{
+        .{
+            .name = "fullraster",
+            .gold_dir = "gold-bench-fullscreen",
+            .out_dir = "out-bench-norm-old-fullraster",
+        },
+        .{
+            .name = "geom",
+            .gold_dir = "gold-bench-fullscreen",
+            .out_dir = "out-bench-norm-old-geom",
+        },
+        .{
+            .name = "sphere200",
+            .gold_dir = "gold-sphere200",
+            .out_dir = "out-sphere200",
+            .is_sphere = true,
+        },
+        .{
+            .name = "sphere2000",
+            .gold_dir = "gold-sphere2000",
+            .out_dir = "out-sphere2000",
+            .is_sphere = true,
+        },
+    };
+
     const pixel_num = [_]u32{ 800, 500 };
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
-    const interp_types = [_]common.InterpType{ .linear, .cubic, .cubic_lut_lerp, .quintic, .quintic_lut_lerp };
+    const interp_types = [_]common.InterpType{
+        .linear, .cubic, .cubic_lut_lerp, .quintic, .quintic_lut_lerp,
+    };
 
     var total_fails: usize = 0;
 
-    const bench_types = [_][]const u8{ "fullraster", "geom" };
+    std.debug.print("Running Unified Benchmark Tests...\n", .{});
 
-    std.debug.print("Running Unified Fullscreen Benchmark Tests...\n", .{});
-
-    inline for (bench_types) |bt| {
-        std.debug.print("\n--- Testing benchmark type: {s} ---\n", .{bt});
-        const out_dir_base = "out-simd-bench-norm-old-" ++ bt;
+    inline for (cases) |cc| {
+        std.debug.print("\n--- Testing benchmark: {s} ---\n", .{cc.name});
 
         inline for (mesh_types) |mt| {
             inline for (shader_types) |st| {
                 inline for (interp_types) |it| {
-                    const data_dir = comptime "data-bench/" ++ @tagName(mt) ++ "_" ++ bt;
-                    if (common.shouldRun(config, mt, st, it, data_dir)) {
+                    const data_dir = comptime "data-bench/" ++ @tagName(mt) ++ "_" ++ cc.name;
+
+                    const run_config = if (cc.is_sphere)
+                        common.BenchConfig{ .run = .all, .skip_quad4ibi_sphere = true }
+                    else
+                        config;
+
+                    if (common.shouldRun(run_config, mt, st, it, data_dir)) {
                         const case_name = if (st == .tex8_grey or st == .tex8_rgb)
                             comptime @tagName(mt) ++ "_" ++ @tagName(st) ++ "_" ++ @tagName(it)
                         else
                             comptime @tagName(mt) ++ "_" ++ @tagName(st);
 
-                        std.debug.print("Testing {s} ... ", .{case_name});
+                        std.debug.print("Testing {s}/{s} ... ", .{ cc.name, case_name });
 
                         // 1. Run benchmark
                         _ = try common.runBenchmark(
-                            allocator, io, mt, st, it, data_dir, out_dir_base,
+                            allocator, io, mt, st, it, data_dir, cc.out_dir,
                             pixel_num, texture_grey, texture_rgb
                         );
+
                         // 2. Map filenames
                         const is_rgb = (st == .flat_rgb or st == .tex8_rgb);
                         const channels: usize = if (is_rgb) 3 else 1;
                         const suffix = if (is_rgb) "_rgb" else "";
 
-                        const bench_csv = try std.fmt.allocPrint(
+                        const test_csv = try std.fmt.allocPrint(
                             allocator, "{s}/{s}/frame_0_field_0{s}.csv",
-                            .{ out_dir_base, case_name, suffix }
+                            .{ cc.out_dir, case_name, suffix }
                         );
-                        defer allocator.free(bench_csv);
+                        defer allocator.free(test_csv);
                         const gold_csv = try std.fmt.allocPrint(
                             allocator, "{s}/{s}/frame_0_field_0{s}.csv",
-                            .{ gold_dir_base, case_name, suffix }
+                            .{ cc.gold_dir, case_name, suffix }
                         );
                         defer allocator.free(gold_csv);
 
                         // 3. Load and Compare
-                        const b_arr_res = common.loadNDArrayFromCSV(
-                            allocator, io, bench_csv, channels, false
+                        const t_arr_res = common.loadNDArrayFromCSV(
+                            allocator, io, test_csv, channels, false
                         );
-                        if (b_arr_res) |b_arr| {
-                            var b_mut = b_arr;
+                        if (t_arr_res) |t_arr| {
+                            var t_mut = t_arr;
                             defer {
-                                allocator.free(b_mut.elems);
-                                b_mut.deinit(allocator);
+                                allocator.free(t_mut.elems);
+                                t_mut.deinit(allocator);
                             }
 
                             const g_arr_res = common.loadNDArrayFromCSV(
@@ -96,8 +131,10 @@ test "Unified Fullscreen Benchmark Tests" {
                                 }
 
                                 var diff_count: usize = 0;
-                                for (b_mut.elems, 0..) |v_b, ii| {
-                                    if (@abs(v_b - g_mut.elems[ii]) > tcfg.REL_TOL) diff_count += 1;
+                                for (t_mut.elems, 0..) |v_t, ii| {
+                                    if (@abs(v_t - g_mut.elems[ii]) > tcfg.REL_TOL) {
+                                        diff_count += 1;
+                                    }
                                 }
 
                                 if (diff_count == 0) {
@@ -115,8 +152,8 @@ test "Unified Fullscreen Benchmark Tests" {
                             }
                         } else |err| {
                             std.debug.print(
-                                "BENCH LOAD ERROR: {s} ({s})\n",
-                                .{ bench_csv, @errorName(err) }
+                                "TEST LOAD ERROR: {s} ({s})\n",
+                                .{ test_csv, @errorName(err) }
                             );
                             total_fails += 1;
                         }
@@ -127,7 +164,7 @@ test "Unified Fullscreen Benchmark Tests" {
     }
 
     if (total_fails == 0) {
-        std.debug.print("\nALL UNIFIED FULLSCREEN TESTS PASSED!\n", .{});
+        std.debug.print("\nALL UNIFIED BENCHMARK TESTS PASSED!\n", .{});
     } else {
         std.debug.print("\n{d} TESTS FAILED!\n", .{total_fails});
         try std.testing.expect(total_fails == 0);

@@ -669,9 +669,7 @@ pub fn prepareSceneGeometry(
         total_elems_in_image_out.* += elems_in_image_by_mesh[ii];
     }
     
-    if (comptime report == .perf) {
-        ctx_perf.recordGeometry(total_elems_num_out.*, total_elems_in_image_out.*);
-    }
+    ctx_perf.recordGeometry(total_elems_num_out.*, total_elems_in_image_out.*);
 }
 
 //---------------------------------------------------------------------------------------------

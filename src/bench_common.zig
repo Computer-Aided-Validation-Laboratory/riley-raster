@@ -14,13 +14,22 @@ const NDArray = @import("zigraster/zig/ndarray.zig").NDArray;
 const MatSlice = @import("zigraster/zig/matslice.zig").MatSlice;
 const Timestamp = std.Io.Clock.Timestamp;
 
+pub const CalculatedMetrics = struct {
+    mpx_sec: f64,
+    msubpx_sec: f64,
+    mshades_sec: f64,
+    msubshades_sec: f64,
+    melems_sec: f64,
+    mnodes_sec: f64,
+    mops_sec: f64,
+};
+
 pub const BenchResult = struct {
     e2e_ms: f64,
     geom_ms: f64,
     raster_ms: f64,
-    mops_sec: f64,
-    melems_sec: f64,
     fps: f64,
+    metrics: CalculatedMetrics,
 };
 
 pub const BenchStats = struct {
@@ -28,9 +37,14 @@ pub const BenchStats = struct {
     e2e: MedianMAD,
     geom: MedianMAD,
     raster: MedianMAD,
-    mops: MedianMAD,
-    melems: MedianMAD,
     fps: MedianMAD,
+    mpx: MedianMAD,
+    msubpx: MedianMAD,
+    mshades: MedianMAD,
+    msubshades: MedianMAD,
+    melems: MedianMAD,
+    mnodes: MedianMAD,
+    mops: MedianMAD,
 };
 
 pub const MedianMAD = struct {
@@ -45,6 +59,65 @@ pub fn getNodesNum(etype: mr.MeshType) usize {
         .quad4ibi, .quad4newton => 4,
         .quad8 => 8,
         .quad9 => 9,
+    };
+}
+
+pub fn calcMetrics(
+    etype: mr.MeshType,
+    pixel_num: [2]u32,
+    sub_samp: u8,
+    pipe_times: perf.PipeTimes,
+    perf_data: perf.Perf,
+) CalculatedMetrics {
+    const raster_sec = pipe_times.raster_loop / 1e9;
+    const geom_tiling_sec = (pipe_times.geometry_prep + pipe_times.tile_overlap) / 1e9;
+    const total_sec = pipe_times.total_time / 1e9;
+
+    const nodes_per_elem = @as(f64, @floatFromInt(getNodesNum(etype)));
+    const pixels_x = @as(f64, @floatFromInt(pixel_num[0]));
+    const pixels_y = @as(f64, @floatFromInt(pixel_num[1]));
+    const sub_samp_f = @as(f64, @floatFromInt(sub_samp));
+
+    const total_px = pixels_x * pixels_y;
+    const total_subpx = total_px * sub_samp_f * sub_samp_f;
+
+    // 1. MPx/s
+    const mpx_sec = if (raster_sec > 0) (total_px / (raster_sec * 1e6)) else 0;
+
+    // 2. MsubPx/s
+    const msubpx_sec = if (raster_sec > 0) (total_subpx / (raster_sec * 1e6)) else 0;
+
+    // 3. MShades/s (Approximated if we don't have pixel_occupancy_map)
+    // In .bench mode, we have total_shaded_pixels which is sub-pixels.
+    // We don't strictly have 'shaded camera pixels' without a map.
+    // Let's use total_shaded_pixels / sub_samp^2 as an estimate.
+    const shaded_subpx = @as(f64, @floatFromInt(perf_data.total_shaded_pixels));
+    const est_shaded_px = shaded_subpx / (sub_samp_f * sub_samp_f);
+    const mshades_sec = if (raster_sec > 0) (est_shaded_px / (raster_sec * 1e6)) else 0;
+
+    // 4. MsubShades/s
+    const msubshades_sec = if (raster_sec > 0) (shaded_subpx / (raster_sec * 1e6)) else 0;
+
+    // 5. MElems/s
+    const total_elems = @as(f64, @floatFromInt(perf_data.total_elements));
+    const melems_sec = if (geom_tiling_sec > 0) (total_elems / (geom_tiling_sec * 1e6)) else 0;
+
+    // 6. MNodes/s
+    const mnodes_sec = if (geom_tiling_sec > 0) 
+        (total_elems * nodes_per_elem / (geom_tiling_sec * 1e6)) else 0;
+
+    // 7. MOps/s
+    const mops_sec = if (total_sec > 0) 
+        (nodes_per_elem * total_subpx / (total_sec * 1e6)) else 0;
+
+    return .{
+        .mpx_sec = mpx_sec,
+        .msubpx_sec = msubpx_sec,
+        .mshades_sec = mshades_sec,
+        .msubshades_sec = msubshades_sec,
+        .melems_sec = melems_sec,
+        .mnodes_sec = mnodes_sec,
+        .mops_sec = mops_sec,
     };
 }
 
@@ -96,8 +169,6 @@ pub const BenchConfig = struct {
 
 pub fn shouldRun(comptime config: BenchConfig, mt: mr.MeshType, st: ShaderType, it: InterpType, data_dir: []const u8) bool {
     const is_tex = (st == .tex8_grey or st == .tex8_rgb);
-    // Flat shaders don't have interpolators, so we only run them once
-    // (e.g. when it == .linear) to avoid redundant tests.
     if (!is_tex and it != .linear) return false;
 
     if (config.skip_quad4ibi_sphere and mt == .quad4ibi) {
@@ -115,7 +186,6 @@ pub fn shouldRun(comptime config: BenchConfig, mt: mr.MeshType, st: ShaderType, 
         .interpolator => is_tex and it == config.interp_type,
     };
 }
-
 
 pub fn loadNDArrayFromCSV(
     allocator: std.mem.Allocator,
@@ -144,7 +214,6 @@ pub fn loadNDArrayFromCSV(
             allocator, &[_]usize{ 1, rows_num, requested_channels }
         );
     } else {
-        // We need to peek if it has colons to decide if it's (rows, cols, channels) or (nodes, channels)
         var has_colons = false;
         var first_line_peek = std.mem.splitScalar(u8, lines.items[0], ',');
         if (first_line_peek.next()) |first_col| {
@@ -174,13 +243,11 @@ pub fn loadNDArrayFromCSV(
         while (col_iter.next()) |col_str| {
             if (col_str.len == 0) continue;
             if (is_time_series) {
-                // Source data: One node per line, channels in columns
                 if (cc < requested_channels) {
                     const val = try std.fmt.parseFloat(f64, std.mem.trim(u8, col_str, " "));
                     arr.set(&[_]usize{ 0, rr, cc }, val);
                 }
             } else if (arr.dims.len == 3) {
-                // Output data: One image row per line, channels colon-separated
                 var chan_iter = std.mem.splitScalar(u8, col_str, ':');
                 var ch: usize = 0;
                 while (chan_iter.next()) |chan_str| {
@@ -193,7 +260,6 @@ pub fn loadNDArrayFromCSV(
                     ch += 1;
                 }
             } else {
-                // Column-based: like UVs or Coords
                 if (cc < requested_channels) {
                     const val = try std.fmt.parseFloat(
                         f64, std.mem.trim(u8, col_str, " ")
@@ -210,9 +276,9 @@ pub fn loadNDArrayFromCSV(
 pub fn runBenchmark(
     allocator: std.mem.Allocator,
     io: std.Io,
-    comptime etype: mr.MeshType,
-    comptime shader_type: ShaderType,
-    comptime interp_type: InterpType,
+    etype: mr.MeshType,
+    shader_type: ShaderType,
+    interp_type: InterpType,
     data_dir: []const u8,
     out_dir_base: []const u8,
     pixel_num: [2]u32,
@@ -287,60 +353,35 @@ pub fn runBenchmark(
     const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
 
     const tile_size: u16 = 32;
-    const tiles_num_x: usize = try std.math.divCeil(usize, camera.pixels_num[0], tile_size);
-    const tiles_num_y: usize = try std.math.divCeil(usize, camera.pixels_num[1], tile_size);
-
-    const mesh_prepform = try mr.prepareMesh(aa, &mesh_input, &sim_data.coords.mat, null);
-    var meshes = [_]mr.MeshPrepared{ mesh_prepform };
-
+    const transformed_mesh = try mr.prepareMesh(aa, &mesh_input, &sim_data.coords.mat, null);
+    
     var image_out_arr = try NDArray(f64).initFlat(
         aa, &[_]usize{ num_out_fields, pixel_num[1], pixel_num[0] }
     );
 
+    var frame_perf = perf.Perf{};
+
     const e2e_start = Timestamp.now(io, .awake);
-
-    // 1. Geometry Prep
-    const geom_start = Timestamp.now(io, .awake);
-    const elem_bboxes_by_mesh = try aa.alloc([]rops.ElemBBox, 1);
-    const elems_in_image_by_mesh = try aa.alloc(usize, 1);
-    var total_elems_in_image: usize = 0;
-    var total_elems_num: usize = 0;
-    const raster_hulls = try aa.alloc(?NDArray(f64), 1);
-
-    try rops.prepareSceneGeometry(
-        .off, .{ .perf = {} }, aa, &camera, &meshes, raster_hulls, 
-        elem_bboxes_by_mesh, elems_in_image_by_mesh, 
-        &total_elems_num, &total_elems_in_image,
+    var meshes = [_]mr.MeshPrepared{transformed_mesh};
+    try zraster.rasterSceneInternal(
+        aa, io, &camera, 0, &meshes, &image_out_arr, 
+        tile_size, .bench, &frame_perf,
     );
-    const geom_end = Timestamp.now(io, .awake);
+    const e2e_end = Timestamp.now(io, .awake);
 
-    // 2. Tile Overlap
-    const overlap_start = Timestamp.now(io, .awake);
-    const tiling = try rops.sceneTileElemOverlap(
-        aa, tile_size, tiles_num_x, tiles_num_y,
-        @intCast(camera.pixels_num[0]), @intCast(camera.pixels_num[1]),
-        1, elems_in_image_by_mesh, elem_bboxes_by_mesh,
-    );
-    const overlap_end = Timestamp.now(io, .awake);
+    const e2e_ms = @as(f64, @floatFromInt(e2e_start.durationTo(e2e_end).raw.nanoseconds)) / 1e6;
+    const geom_ms = frame_perf.pipe_times.geometry_prep / 1e6;
+    const overlap_ms = frame_perf.pipe_times.tile_overlap / 1e6;
+    const raster_ms = frame_perf.pipe_times.raster_loop / 1e6;
+    const fps = 1000.0 / e2e_ms;
 
-    // 3. Raster Loop
-    const raster_start = Timestamp.now(io, .awake);
-    const ctx_rast = rops.RasterContext(.off){
-        .ctx_perf = .{ .perf = {} },
-        .camera = &camera,
-        .frame_ind = 0,
-        .tile_size = tile_size,
-    };
-    try rasterengine.rasterScene(
-        .off, ctx_rast, aa, io, tiling, &meshes, raster_hulls, &image_out_arr,
-    );
-    const raster_end = Timestamp.now(io, .awake);
+    const metrics = calcMetrics(etype, pixel_num, camera.sub_sample, frame_perf.pipe_times, frame_perf);
 
     // Save one frame for inspection
     const out_name = if (shader_type == .tex8_grey or shader_type == .tex8_rgb)
-        comptime @tagName(etype) ++ "_" ++ @tagName(shader_type) ++ "_" ++ @tagName(interp_type)
+        try std.fmt.allocPrint(aa, "{s}_{s}_{s}", .{ @tagName(etype), @tagName(shader_type), @tagName(interp_type) })
     else
-        comptime @tagName(etype) ++ "_" ++ @tagName(shader_type);
+        try std.fmt.allocPrint(aa, "{s}_{s}", .{ @tagName(etype), @tagName(shader_type) });
     const out_path = try std.fs.path.join(aa, &[_][]const u8{ out_dir_base, out_name });
     const cwd = std.Io.Dir.cwd();
     cwd.createDir(io, out_dir_base, .default_dir) catch |err| {
@@ -360,27 +401,75 @@ pub fn runBenchmark(
         }
     );
 
-    const e2e_end = Timestamp.now(io, .awake);
-
-    const e2e_ms = @as(f64, @floatFromInt(e2e_start.durationTo(e2e_end).raw.nanoseconds)) / 1e6;
-    const geom_ms = @as(f64, @floatFromInt(geom_start.durationTo(geom_end).raw.nanoseconds)) / 1e6;
-    const overlap_ms = @as(f64, @floatFromInt(overlap_start.durationTo(overlap_end).raw.nanoseconds)) / 1e6;
-    const raster_ms = @as(f64, @floatFromInt(raster_start.durationTo(raster_end).raw.nanoseconds)) / 1e6;
-
-    const N = @as(f64, @floatFromInt(getNodesNum(etype)));
-    const total_ops = N * @as(f64, @floatFromInt(pixel_num[0] * pixel_num[1] * 4));
-    const mops_sec = (total_ops / (raster_ms / 1000.0)) / 1e6;
-    const fps = 1000.0 / e2e_ms;
-
-    const total_melems = @as(f64, @floatFromInt(mesh_input.connect.getElemsNum())) / 1e6;
-    const melems_sec = total_melems / ((geom_ms + overlap_ms) / 1000.0);
-
     return .{
         .e2e_ms = e2e_ms,
         .geom_ms = geom_ms + overlap_ms, 
         .raster_ms = raster_ms,
-        .mops_sec = mops_sec,
-        .melems_sec = melems_sec,
         .fps = fps,
+        .metrics = metrics,
     };
+}
+
+fn printPaddedSafe(writer: anytype, text: []const u8, width: usize) !void {
+    try writer.writeAll(text);
+    var ii: usize = text.len;
+    while (ii < width) : (ii += 1) {
+        try writer.writeByte(' ');
+    }
+}
+
+pub fn writeBenchmarkReport(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    title: []const u8,
+    out_dir_base: []const u8,
+    pixel_num: [2]u32,
+    stats_list: []const BenchStats,
+    max_name_len: usize,
+) !void {
+    const report_name = try std.fs.path.join(allocator, &[_][]const u8{ out_dir_base, "benchmark.md" });
+    defer allocator.free(report_name);
+    
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDir(io, out_dir_base, .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
+    const file = try cwd.createFile(io, report_name, .{});
+    defer file.close(io);
+    
+    var write_buf: [4096]u8 = undefined;
+    var file_writer = file.writer(io, &write_buf);
+    const writer = &file_writer.interface;
+
+    const date = try getDateString();
+    try writer.print("# {s}\n", .{title});
+    try writer.print("Date: {s} | Res: {d}x{d}\n\n", .{ date, pixel_num[0], pixel_num[1] });
+
+    const col_w = @max(max_name_len, 16);
+    const shader_types = comptime std.enums.values(ShaderType);
+
+    inline for (shader_types) |st| {
+        try writer.print("## Shader Type: {s}\n\n", .{@tagName(st)});
+        
+        // Header
+        try writer.writeAll("| ");
+        try printPaddedSafe(writer, "Case", col_w);
+        try writer.print(" | E2E Med | Geom | Raster | MPx/s | MsubPx/s | MShades/s | MsubShades/s | MElems/s | FPS | MOps/s |\n", .{});
+        
+        // Separator
+        try writer.writeByte('|');
+        { var ii: usize = 0; while (ii < col_w + 2) : (ii += 1) try writer.writeByte('-'); }
+        try writer.print("| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n", .{});
+        
+        for (stats_list) |s| {
+            if (std.mem.indexOf(u8, s.name, @tagName(st)) != null) {
+                try writer.writeAll("| ");
+                try printPaddedSafe(writer, s.name, col_w);
+                try writer.print(" | {d:^7.2} | {d:^4.2} | {d:^6.2} | {d:^5.2} | {d:^8.2} | {d:^9.2} | {d:^12.2} | {d:^8.2} | {d:^3.2} | {d:^6.2} |\n", 
+                    .{s.e2e.median, s.geom.median, s.raster.median, 
+                      s.mpx.median, s.msubpx.median, s.mshades.median, s.msubshades.median,
+                      s.melems.median, s.fps.median, s.mops.median});
+            }
+        }
+        try writer.print("\n", .{});
+    }
+    try writer.flush();
 }

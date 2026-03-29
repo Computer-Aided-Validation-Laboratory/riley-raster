@@ -116,7 +116,7 @@ pub fn rasterScene(
     defer allocator.free(subpx_field_avg);
 
     for (tiling.active_tiles) |tile| {
-        const tile_start = if (comptime report == .perf) Timestamp.now(io, .awake) else {};
+        const tile_start = if (comptime report != .off) Timestamp.now(io, .awake) else {};
         var shaded_px: u64 = 0;
 
         @memset(subpx_inv_z_scratch, -std.math.inf(f64));
@@ -280,8 +280,8 @@ pub fn rasterScene(
             image_out_arr,
         );
 
-        if (comptime report == .perf) {
-            const tile_end = Timestamp.now(io, .awake);
+        if (comptime report != .off) {
+            const tile_end = if (comptime report != .off) Timestamp.now(io, .awake) else {};
             const dur = tile_start.durationTo(tile_end).raw.nanoseconds;
             const screen_px_x = @as(u16, @intCast(ctx_rast.camera.pixels_num[0])); 
             const tiles_x = (screen_px_x + ctx_rast.tile_size - 1) / ctx_rast.tile_size;
@@ -525,21 +525,18 @@ pub fn RasterPass(
 
             const NT = if (N == 4) 2 else if (N == 6) 6 else 8;
             var element_tess: hull.Tessellation(NT) = undefined;
-if (comptime Geometry.has_hull) {
-    if (input.hull) |rh| {
-        const hx = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 0, 0 }, 1);
-        const hy = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 1, 0 }, 1);
-        element_tess = hull.getTessellation(N, hx, hy);
-    }
-} else {
-    @panic("rasterSIMDNewton requires has_hull = true");
-}
 
-for (bounds.start_y..bounds.end_y) |scratch_y| {
-    const row_offset = scratch_y * domain.tile_size;
-    @memset(scratch.subpx_mask[row_offset + bounds.start_x .. row_offset + bounds.end_x], false);
-}
+            if (comptime Geometry.has_hull) {
+                if (input.hull) |rh| {
+                    const hx = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 0, 0 }, 1);
+                    const hy = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 1, 0 }, 1);
+                    element_tess = hull.getTessellation(N, hx, hy);
+                }
+            } else {
+                @panic("rasterSIMDNewton requires has_hull = true");
+            }
 
+            @memset(scratch.subpx_mask, false);
             var cand_count: usize = 0;
             const v_07: @Vector(8, usize) = .{ 0, 1, 2, 3, 4, 5, 6, 7 };
 
@@ -778,7 +775,7 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
                             const global_suby = target.tile.y_px_min * sub_samp + 
                                                 scratch_y;
 
-                            if (comptime report == .perf) {
+                            if (comptime report != .off) {
                                 ctx_rast.ctx_perf.recordPixel(global_subx, global_suby, 0);
                                 ctx_rast.ctx_perf.recordPixelOccupancy(
                                     target.tile.x_px_min + scratch_x / sub_samp,
@@ -922,10 +919,8 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
                             const subpx_z = 1.0 / inv_z;
                             shaded_px += 1;
 
-                            if (comptime report == .perf) {
-                                ctx_rast.ctx_perf.recordPixel(
-                                    global_subx, global_suby, result.iters,
-                                );
+                            if (comptime report != .off) {
+                                ctx_rast.ctx_perf.recordPixel(global_subx, global_suby, result.iters);
                                 ctx_rast.ctx_perf.recordPixelOccupancy(
                                     target.tile.x_px_min + scratch_x / sub_samp,
                                     target.tile.y_px_min + scratch_y / sub_samp,
@@ -979,7 +974,7 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
                                 );
                             }
                         }
-                    } else if (comptime report == .perf) {
+                    } else if (comptime report != .off) {
                         if (result.iters > 0) ctx_rast.ctx_perf.recordSolverDiverged();
                     }
                     subpx_x += domain.step;

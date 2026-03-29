@@ -6,7 +6,7 @@ const iio = @import("imageio.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const Camera = @import("camera.zig").Camera;
 
-pub const Report = enum { off, perf };
+pub const Report = enum { off, bench, perf };
 
 pub const PerfOpts = struct {
     formats: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
@@ -515,11 +515,13 @@ fn getMedian(sorted_data: []const f64) f64 {
 pub fn PerfContext(comptime _mode: Report) type {
     return struct {
         pub const mode = _mode;
-        perf: if (mode == .perf) *Perf else void,
+        perf: if (mode != .off) *Perf else void,
 
         pub inline fn recordGeometry(self: @This(), total: usize, visible: usize) void {
-            self.perf.total_elements = total;
-            self.perf.visible_elements = visible;
+            if (mode != .off) {
+                self.perf.total_elements = total;
+                self.perf.visible_elements = visible;
+            }
         }
 
         pub inline fn recordTile(
@@ -529,18 +531,22 @@ pub fn PerfContext(comptime _mode: Report) type {
             shaded_px: u64,
             elem_count: usize,
         ) void {
-            if (self.perf.tile_timing_map) |*tmap| {
-                tmap.elems[tile_idx] = @floatFromInt(time_ns);
+            if (mode == .perf) {
+                if (self.perf.tile_timing_map) |*tmap| {
+                    tmap.elems[tile_idx] = @floatFromInt(time_ns);
+                }
+                if (self.perf.tile_occupancy_map) |*omap| {
+                    omap.elems[tile_idx] = @floatFromInt(shaded_px);
+                }
+                if (self.perf.tile_density_map) |*dmap| {
+                    dmap.elems[tile_idx] = @floatFromInt(elem_count);
+                }
             }
-            if (self.perf.tile_occupancy_map) |*omap| {
-                omap.elems[tile_idx] = @floatFromInt(shaded_px);
-            }
-            if (self.perf.tile_density_map) |*dmap| {
-                dmap.elems[tile_idx] = @floatFromInt(elem_count);
-            }
-            self.perf.total_shaded_pixels += shaded_px;
-            if (elem_count > self.perf.max_tile_elements) {
-                self.perf.max_tile_elements = elem_count;
+            if (mode != .off) {
+                self.perf.total_shaded_pixels += shaded_px;
+                if (elem_count > self.perf.max_tile_elements) {
+                    self.perf.max_tile_elements = elem_count;
+                }
             }
         }
 
@@ -550,18 +556,24 @@ pub fn PerfContext(comptime _mode: Report) type {
             global_suby: usize, 
             iters: u8
         ) void {
-            if (self.perf.iteration_map) |*imap| {
-                const row_stride = imap.strides[0];
-                imap.elems[global_suby * row_stride + global_subx] = @floatFromInt(iters);
+            if (mode == .perf) {
+                if (self.perf.iteration_map) |*imap| {
+                    const row_stride = imap.strides[0];
+                    imap.elems[global_suby * row_stride + global_subx] = @floatFromInt(iters);
+                }
             }
-            self.perf.solver_calls += 1;
-            self.perf.total_iters += iters;
+            if (mode != .off) {
+                self.perf.solver_calls += 1;
+                self.perf.total_iters += iters;
+            }
         }
 
         pub inline fn recordPixelOccupancy(self: @This(), x: usize, y: usize) void {
-            if (self.perf.pixel_occupancy_map) |*pomap| {
-                const row_stride = pomap.strides[0];
-                pomap.elems[y * row_stride + x] += 1.0;
+            if (mode == .perf) {
+                if (self.perf.pixel_occupancy_map) |*pomap| {
+                    const row_stride = pomap.strides[0];
+                    pomap.elems[y * row_stride + x] += 1.0;
+                }
             }
         }
 
@@ -571,9 +583,11 @@ pub fn PerfContext(comptime _mode: Report) type {
             global_suby: usize, 
             inv_z: f64
         ) void {
-            if (self.perf.depth_map) |*dmap| {
-                const row_stride = dmap.strides[0];
-                dmap.elems[global_suby * row_stride + global_subx] = inv_z;
+            if (mode == .perf) {
+                if (self.perf.depth_map) |*dmap| {
+                    const row_stride = dmap.strides[0];
+                    dmap.elems[global_suby * row_stride + global_subx] = inv_z;
+                }
             }
         }
 
@@ -583,21 +597,27 @@ pub fn PerfContext(comptime _mode: Report) type {
             global_suby: usize, 
             early: bool
         ) void {
-            if (self.perf.earlyout_map) |*emap| {
-                const row_stride = emap.strides[0];
-                emap.elems[global_suby * row_stride + global_subx] = if (early) 1.0 else 0.0;
+            if (mode == .perf) {
+                if (self.perf.earlyout_map) |*emap| {
+                    const row_stride = emap.strides[0];
+                    emap.elems[global_suby * row_stride + global_subx] = if (early) 1.0 else 0.0;
+                }
             }
         }
 
         pub inline fn recordDepthTest(self: @This(), failed: bool) void {
-            self.perf.total_depth_tests += 1;
-            if (failed) {
-                self.perf.depth_tests_failed += 1;
+            if (mode != .off) {
+                self.perf.total_depth_tests += 1;
+                if (failed) {
+                    self.perf.depth_tests_failed += 1;
+                }
             }
         }
 
         pub inline fn recordSolverDiverged(self: @This()) void {
-            self.perf.solver_diverged += 1;
+            if (mode != .off) {
+                self.perf.solver_diverged += 1;
+            }
         }
     };
 }

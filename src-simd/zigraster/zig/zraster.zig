@@ -225,7 +225,7 @@ pub fn rasterAllFrames(
     return images_arr;
 }
 
-fn rasterSceneInternal(
+pub fn rasterSceneInternal(
     allocator: std.mem.Allocator,
     io: std.Io,
     camera: *const Camera,
@@ -237,7 +237,9 @@ fn rasterSceneInternal(
     perf_data: ?*Perf,
 ) !void {
     const raster_start = Timestamp.now(io, .awake);
-    const pctx = perf.PerfContext(report){ .perf = if (report == .perf) perf_data.? else {} };
+    var dummy_perf = perf.Perf{};
+    const actual_perf = perf_data orelse &dummy_perf;
+    const pctx = perf.PerfContext(report){ .perf = if (report != .off) actual_perf else {} };
     var pipe_times = perf.PipeTimes{};
 
     const tiles_num_x: usize = try std.math.divCeil(usize, camera.pixels_num[0], tile_size);
@@ -322,9 +324,9 @@ fn rasterSceneInternal(
         raster_start.durationTo(raster_end).raw.nanoseconds
     );
 
-    if (comptime report == .perf) {
+    if (report != .off) {
         perf_data.?.pipe_times = pipe_times;
-        try perf_data.?.writeReportToConsole(io, frame_ind, camera);
+        if (report == .perf) try perf_data.?.writeReportToConsole(io, frame_ind, camera);
     } else {
         try perf.standardReport(io, camera, pipe_times, total_elems_num);
     }
