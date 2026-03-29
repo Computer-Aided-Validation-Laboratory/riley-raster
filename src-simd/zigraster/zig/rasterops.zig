@@ -227,10 +227,9 @@ pub fn worldToRasterSIMD(comptime N: usize,
 
 pub fn elemsToRasterSIMD(comptime N: usize,
                                  comptime T: type,
-                                 camera: *const Camera, 
-                                 dim_elem: usize,  
+                                 camera: *const Camera,
+                                 dim_elem: usize,
                                  elem_coord_arr: *NDArray(T)) !void {
-
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
         const coords_world: Vec3SIMD(N,T) = try vsd.loadVec3SIMDFromElemArray(
             N,T,elem_coord_arr,ee);
@@ -572,15 +571,15 @@ pub fn prepareSceneGeometry(
     raster_hulls: []?NDArray(f64),
     elem_bboxes_by_mesh: [][]ElemBBox,
     elems_in_image_by_mesh: []usize,
-    total_elems_num_out: *usize,
-    total_elems_in_image_out: *usize,
+    total_elems_num: *usize,
+    total_elems_in_image: *usize,
 ) !void {
-    total_elems_num_out.* = 0;
-    total_elems_in_image_out.* = 0;
+    total_elems_num.* = 0;
+    total_elems_in_image.* = 0;
 
     for (meshes, 0..) |*mesh, ii| {
         const elems_num = mesh.coords.dims[0];
-        total_elems_num_out.* += elems_num;
+        total_elems_num.* += elems_num;
         elem_bboxes_by_mesh[ii] = try arena_alloc.alloc(ElemBBox, elems_num);
         raster_hulls[ii] = null;
         
@@ -612,7 +611,7 @@ pub fn prepareSceneGeometry(
                 }
 
                 if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
-                    try elemsToRasterSIMD(N, f64, camera, dim_elem, &mesh.coords);
+                    try elemsToRasterSIMD(N, f64, camera, dim_elem, @constCast(&mesh.coords));
                 } else {
                     try elemsToClipPxLengSIMD(
                         N, f64, camera, dim_elem, &mesh.coords
@@ -666,10 +665,10 @@ pub fn prepareSceneGeometry(
                 }
             }
         }
-        total_elems_in_image_out.* += elems_in_image_by_mesh[ii];
+        total_elems_in_image.* += elems_in_image_by_mesh[ii];
     }
     
-    ctx_perf.recordGeometry(total_elems_num_out.*, total_elems_in_image_out.*);
+    ctx_perf.recordGeometry(total_elems_num.*, total_elems_in_image.*);
 }
 
 //---------------------------------------------------------------------------------------------

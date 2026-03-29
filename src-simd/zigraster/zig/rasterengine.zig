@@ -116,7 +116,7 @@ pub fn rasterScene(
     defer allocator.free(subpx_field_avg);
 
     for (tiling.active_tiles) |tile| {
-        const tile_start = if (comptime report != .off) Timestamp.now(io, .awake) else {};
+        const tile_start = Timestamp.now(io, .awake);
         var shaded_px: u64 = 0;
 
         @memset(subpx_inv_z_scratch, -std.math.inf(f64));
@@ -288,6 +288,8 @@ pub fn rasterScene(
             const spatial_idx = (tile.y_px_min / ctx_rast.tile_size) * tiles_x 
                                 + (tile.x_px_min / ctx_rast.tile_size);
             ctx_rast.ctx_perf.recordTile(spatial_idx, @intCast(dur), shaded_px, overlaps.len);
+        } else {
+            ctx_rast.ctx_perf.recordTile(0, 0, shaded_px, 0);
         }
     }
 }
@@ -525,18 +527,21 @@ pub fn RasterPass(
 
             const NT = if (N == 4) 2 else if (N == 6) 6 else 8;
             var element_tess: hull.Tessellation(NT) = undefined;
+if (comptime Geometry.has_hull) {
+    if (input.hull) |rh| {
+        const hx = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 0, 0 }, 1);
+        const hy = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 1, 0 }, 1);
+        element_tess = hull.getTessellation(N, hx, hy);
+    }
+} else {
+    @panic("rasterSIMDNewton requires has_hull = true");
+}
 
-            if (comptime Geometry.has_hull) {
-                if (input.hull) |rh| {
-                    const hx = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 0, 0 }, 1);
-                    const hy = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 1, 0 }, 1);
-                    element_tess = hull.getTessellation(N, hx, hy);
-                }
-            } else {
-                @panic("rasterSIMDNewton requires has_hull = true");
-            }
+for (bounds.start_y..bounds.end_y) |scratch_y| {
+    const row_offset = scratch_y * domain.tile_size;
+    @memset(scratch.subpx_mask[row_offset + bounds.start_x .. row_offset + bounds.end_x], false);
+}
 
-            @memset(scratch.subpx_mask, false);
             var cand_count: usize = 0;
             const v_07: @Vector(8, usize) = .{ 0, 1, 2, 3, 4, 5, 6, 7 };
 
@@ -566,8 +571,14 @@ pub fn RasterPass(
                         const mask_arr: [8]bool = v_mask;
                         const x_arr: [8]f64 = v_subpx_x;
                         const y_arr: [8]f64 = v_subpx_y;
-                        const xi_arr: [8]f64 = v_hull_res.guess_xi;
-                        const eta_arr: [8]f64 = v_hull_res.guess_eta;
+                        var xi_arr: [8]f64 = v_hull_res.guess_xi;
+                        var eta_arr: [8]f64 = v_hull_res.guess_eta;
+
+                        if (comptime @hasDecl(Geometry, "getNewtonGuess")) {
+                            const def_guess = Geometry.getNewtonGuess();
+                            xi_arr = [_]f64{def_guess.xi} ** 8;
+                            eta_arr = [_]f64{def_guess.eta} ** 8;
+                        }
                         
                         for (0..8) |jj| {
                             if (mask_arr[jj]) {

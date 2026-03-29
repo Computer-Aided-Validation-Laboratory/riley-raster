@@ -388,7 +388,7 @@ pub const Perf = struct {
         try writer.print("--- TILING & RASTERIZATION ---\n", .{});
         try writer.print("Total Shaded Pixels     = {d}\n", .{self.total_shaded_pixels});
         try writer.print("Max Elements in a Tile  = {d}\n", .{self.max_tile_elements});
-        try writer.print("Total Depth Tests       = {d}\n", .{self.total_depth_tests});
+        try writer.print("Total Depth Tests       = {d}\n", .{self.total_shaded_pixels});
         const d_fail_pct = if (self.total_depth_tests > 0)
             @as(f64, @floatFromInt(self.depth_tests_failed)) * 100.0 /
                 @as(f64, @floatFromInt(self.total_depth_tests))

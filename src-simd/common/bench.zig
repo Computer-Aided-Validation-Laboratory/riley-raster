@@ -10,7 +10,7 @@ pub const mr = @import("../zigraster/zig/meshraster.zig");
 pub const MeshType = mr.MeshType;
 pub const MeshInput = mr.MeshInput;
 
-pub const Rotation = @import("../zigraster/zig/rotation.zig").Rotation;
+pub const Rotation = @import("../zigraster/zig/camera.zig").Rotation;
 pub const Camera = @import("../zigraster/zig/camera.zig").Camera;
 pub const CameraOps = @import("../zigraster/zig/camera.zig").CameraOps;
 

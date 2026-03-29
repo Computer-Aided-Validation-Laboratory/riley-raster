@@ -39,7 +39,7 @@ test "Unified Fullscreen Benchmark Tests" {
 
     inline for (bench_types) |bt| {
         std.debug.print("\n--- Testing benchmark type: {s} ---\n", .{bt});
-        const out_dir_base = "out-simd2-bench-norm-old-" ++ bt;
+        const out_dir_base = "out-simd-bench-norm-old-" ++ bt;
 
         inline for (mesh_types) |mt| {
             inline for (shader_types) |st| {

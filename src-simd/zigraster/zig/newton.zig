@@ -1,3 +1,4 @@
+const std = @import("std");
 const shapefun = @import("shapefun.zig");
 
 pub const NewtonResult = struct {
@@ -51,6 +52,7 @@ pub fn solveInverse(
 
     var met_residual = false;
     var iters: u8 = 0;
+
     for (0..iter_max) |ii| {
         iters = @intCast(ii + 1);
         shapefun.shapeFunctions(N, xi, eta, node_values, deriv_n_xi, deriv_n_eta);
@@ -77,9 +79,7 @@ pub fn solveInverse(
         }
 
         const determinant = jacobian_11 * jacobian_22 - jacobian_12 * jacobian_21;
-        if (@abs(determinant) < det_tol) {
-            return .{ .converged = false, .iterations = iters };
-        }
+        if (@abs(determinant) < det_tol) return .{ .converged = false, .iterations = iters };
 
         const inverse_determinant = 1.0 / determinant;
         xi -= inverse_determinant * (jacobian_22 * residual_x - jacobian_12 * residual_y);
@@ -96,8 +96,6 @@ pub fn solveInverse(
     if (is_in) {
         xi_out.* = xi;
         eta_out.* = eta;
-        // NOTE: we do not re-calculate shape functions here, the ones from the last iteration
-        // are good enough as we are within tolerance.
         return .{ .converged = true, .iterations = iters };
     }
 
@@ -122,7 +120,7 @@ pub fn solveInverseSIMD(
     const v_iter_tol: @Vector(8, f64) = @splat(1e-8);
     const v_det_tol: @Vector(8, f64) = @splat(1e-12);
     const v_eps: @Vector(8, f64) = @splat(1e-5);
-    const iter_max: u8 = 50;
+    const iter_max: u8 = 10;
 
     var v_xi = v_xi_in;
     var v_eta = v_eta_in;
@@ -173,7 +171,6 @@ pub fn solveInverseSIMD(
         const v_det = v_jac11 * v_jac22 - v_jac12 * v_jac21;
         const v_bad_det = @abs(v_det) < v_det_tol;
         
-        // Disable lanes with bad determinants
         v_active = v_active & !v_bad_det;
         
         if (!@reduce(.Or, v_active)) break;
@@ -200,12 +197,6 @@ pub fn solveInverseSIMD(
     const v_final_converged = v_converged & v_is_in;
     v_xi_out.* = v_xi;
     v_eta_out.* = v_eta;
-
-    // NOTE: we may need a final shapeFunction evaluation if we exited due to iterations max
-    // or if we want to ensure the final xi, eta are used for the returned weights.
-    // However, if we converged, v_node_values from the last iteration are already good.
-    // To be perfectly safe we could re-run shapeFunctionsSIMD one last time here for all
-    // lanes, but it's probably not worth it if we just use them for shading.
 
     return .{ .converged = v_final_converged, .iterations = v_iters };
 }

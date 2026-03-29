@@ -343,7 +343,7 @@ pub fn rasterSceneInternal(
 
     if (report != .off) {
         perf_data.?.pipe_times = pipe_times;
-        
+
         var nodes_sum: usize = 0;
         for (meshes) |mesh| {
             nodes_sum += mesh.mesh_type.getNodesNum();
@@ -373,4 +373,5 @@ pub fn rasterSceneInternal(
             nodes_per_elem, .off, null,
         );
     }
-}
+    }
+

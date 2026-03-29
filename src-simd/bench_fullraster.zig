@@ -20,7 +20,7 @@ pub fn main() !void {
 
     const out_dir_base = "out-simd-bench-fullraster";
     const pixel_num = [_]u32{ 800, 500 };
-    const runs = 5;
+    const runs = 100;
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
@@ -37,7 +37,7 @@ pub fn main() !void {
     var max_name_len: usize = 0;
 
     std.debug.print(
-        "Starting Full Raster SIMD Benchmark ({d}x{d}, {d} run per case)...\n",
+        "Starting Full Raster SIMD2 Benchmark ({d}x{d}, {d} run per case)...\n",
         .{ pixel_num[0], pixel_num[1], runs }
     );
 
@@ -118,7 +118,7 @@ pub fn main() !void {
     }
 
     try common.writeBenchmarkReport(
-        allocator, io, "Full Raster SIMD Benchmark Results", out_dir_base, 
+        allocator, io, "Full Raster SIMD2 Benchmark Results", out_dir_base, 
         pixel_num, stats_list.items, max_name_len
     );
 }

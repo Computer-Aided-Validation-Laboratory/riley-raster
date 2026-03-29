@@ -37,7 +37,7 @@ pub fn main() !void {
     var max_name_len: usize = 0;
 
     std.debug.print(
-        "Starting Geom Raster SIMD Benchmark ({d}x{d}, {d} run per case)...\n",
+        "Starting Geom Raster SIMD2 Benchmark ({d}x{d}, {d} run per case)...\n",
         .{ pixel_num[0], pixel_num[1], runs }
     );
 
@@ -118,7 +118,7 @@ pub fn main() !void {
     }
 
     try common.writeBenchmarkReport(
-        allocator, io, "Geom Raster SIMD Benchmark Results", out_dir_base, 
+        allocator, io, "Geom Raster SIMD2 Benchmark Results", out_dir_base, 
         pixel_num, stats_list.items, max_name_len
     );
 }

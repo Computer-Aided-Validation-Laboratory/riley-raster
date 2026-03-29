@@ -276,6 +276,10 @@ pub fn Tri6Kernel() type {
         pub const coord_space = .clip_px_leng;
         pub const strategy = .newton_simd;
 
+        pub inline fn getNewtonGuess() struct { xi: f64, eta: f64 } {
+            return .{ .xi = 1.0 / 3.0, .eta = 1.0 / 3.0 };
+        }
+
         pub inline fn getInvElemArea(nodes: Vec3OfSlices(f64)) f64 {
             return 1.0 / rops.edgeFun3(nodes.x[0], nodes.y[0],
                                        nodes.x[1], nodes.y[1],
@@ -514,6 +518,10 @@ pub fn Quad4NewtonKernel() type {
         pub const coord_space = .clip_px_leng;
         pub const strategy = .newton_simd;
 
+        pub inline fn getNewtonGuess() struct { xi: f64, eta: f64 } {
+            return .{ .xi = 0.5, .eta = 0.5 };
+        }
+
         pub inline fn getNewtonParams(nodes: Vec3OfSlices(f64)) NewtonParams {
             return .{
                 .w_u_coeff = nodes.z[1] - nodes.z[0],
@@ -604,6 +612,10 @@ pub fn Quad89Kernel(comptime N: usize) type {
         pub const hull_nodes_num = 8;
         pub const coord_space = .clip_px_leng;
         pub const strategy = .newton_simd;
+
+        pub inline fn getNewtonGuess() struct { xi: f64, eta: f64 } {
+            return .{ .xi = 0.5, .eta = 0.5 };
+        }
 
         pub inline fn getNewtonParams(nodes: Vec3OfSlices(f64)) NewtonParams {
             return .{
