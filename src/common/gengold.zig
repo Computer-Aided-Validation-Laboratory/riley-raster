@@ -1,7 +1,7 @@
 const std = @import("std");
 
 pub const MatSlice = @import("../zigraster/zig/matslice.zig").MatSlice;
-pub const NDArray = @import("../zigraster/zig/ndarray").NDArray;
+pub const NDArray = @import("../zigraster/zig/ndarray.zig").NDArray;
 pub const meshio = @import("../zigraster/zig/meshio.zig");
 pub const SimData = meshio.SimData;
 pub const mr = @import("../zigraster/zig/meshraster.zig");

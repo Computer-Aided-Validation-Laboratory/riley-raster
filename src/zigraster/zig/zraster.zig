@@ -220,8 +220,16 @@ pub fn rasterAllFrames(
         }
 
         if (frame_perf) |*fp| {
+            var nodes_sum: usize = 0;
+            for (meshes) |mesh| {
+                nodes_sum += mesh.mesh_type.getNodesNum();
+            }
+            const nodes_per_elem: f64 = @as(f64, @floatFromInt(nodes_sum)) /
+                @as(f64, @floatFromInt(meshes.len));
+
             try fp.saveFrameReport(
-                io, outer_alloc, out_dir, tt, camera, config.tile_size, config.perf_opts,
+                io, outer_alloc, out_dir, tt, camera, config.tile_size, 
+                config.perf_opts, nodes_per_elem,
             );
         }
 
@@ -336,15 +344,18 @@ pub fn rasterSceneInternal(
 
     if (report != .off) {
         perf_data.?.pipe_times = pipe_times;
-        if (report == .perf) try perf_data.?.writeReportToConsole(io, frame_ind, camera);
-        if (report == .bench) {
-            var nodes_sum: usize = 0;
-            for (meshes) |mesh| {
-                nodes_sum += mesh.mesh_type.getNodesNum();
-            }
-            const nodes_per_elem: f64 = @as(f64, @floatFromInt(nodes_sum)) /
-                @as(f64, @floatFromInt(meshes.len));
+        
+        var nodes_sum: usize = 0;
+        for (meshes) |mesh| {
+            nodes_sum += mesh.mesh_type.getNodesNum();
+        }
+        const nodes_per_elem: f64 = @as(f64, @floatFromInt(nodes_sum)) /
+            @as(f64, @floatFromInt(meshes.len));
 
+        if (report == .perf) {
+            try perf_data.?.writeReportToConsole(io, frame_ind, camera, nodes_per_elem);
+        }
+        if (report == .bench) {
             try perf.standardReport(
                 io, camera, pipe_times, total_elems_num, total_elems_in_image,
                 nodes_per_elem, .bench, perf_data,

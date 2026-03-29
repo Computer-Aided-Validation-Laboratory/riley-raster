@@ -9,6 +9,7 @@ const Rotation = @import("zigraster/zig/camera.zig").Rotation;
 const MeshInput = @import("zigraster/zig/meshraster.zig").MeshInput;
 const mr = @import("zigraster/zig/meshraster.zig");
 const MatSlice = @import("zigraster/zig/matslice.zig").MatSlice;
+const NDArray = @import("zigraster/zig/ndarray.zig").NDArray;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -84,7 +85,7 @@ pub fn main() !void {
     for (0..5) |ii| {
         const field = sim_datas[ii].field.?;
         const num_coords = sim_datas[ii].coords.mat.rows_num;
-        var rgb_field_arr = try zraster.NDArray(f64).initFlat(
+        var rgb_field_arr = try NDArray(f64).initFlat(
             aa, &[_]usize{ field.array.dims[0], num_coords, 3 }
         );
         

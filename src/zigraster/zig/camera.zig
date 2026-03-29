@@ -35,8 +35,9 @@ pub const Camera = struct {
                 rot_world: Rotation, 
                 roi_cent_world: Vec3f, 
                 focal_length: f64, 
-                sub_sample: u8,) Camera {
+                sub_sample: u8) Camera {
 
+        const actual_sub_sample = if (sub_sample == 0) 2 else sub_sample;
         const sensor_size = CameraOps.calcSensorSize(pixels_num, pixels_size);
         const image_dist: f64 = (pos_world.sub(roi_cent_world)).vecLen();
 
@@ -57,7 +58,7 @@ pub const Camera = struct {
             .rot_world = rot_world,
             .roi_cent_world = roi_cent_world,
             .focal_length = focal_length,
-            .sub_sample = sub_sample,
+            .sub_sample = actual_sub_sample,
             .sensor_size = sensor_size,
             .image_dims = image_dims,
             .image_dist = image_dist,
