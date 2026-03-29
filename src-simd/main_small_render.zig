@@ -32,7 +32,6 @@ pub fn main() !void {
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
-        .tile_size = 16,
         .report = .perf,
         .perf_opts = .{
             .formats = &[_]gengold.iio.ImageSaveOpts{

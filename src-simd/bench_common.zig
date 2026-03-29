@@ -52,16 +52,6 @@ pub const MedianMAD = struct {
     mad: f64,
 };
 
-pub fn getNodesNum(etype: mr.MeshType) usize {
-    return switch (etype) {
-        .tri3, .tri3opt => 3,
-        .tri6 => 6,
-        .quad4ibi, .quad4newton => 4,
-        .quad8 => 8,
-        .quad9 => 9,
-    };
-}
-
 pub fn calcMetrics(
     etype: mr.MeshType,
     pixel_num: [2]u32,
@@ -73,7 +63,7 @@ pub fn calcMetrics(
     const geom_tiling_sec = (pipe_times.geometry_prep + pipe_times.tile_overlap) / 1e9;
     const total_sec = pipe_times.total_time / 1e9;
 
-    const nodes_per_elem = @as(f64, @floatFromInt(getNodesNum(etype)));
+    const nodes_per_elem = @as(f64, @floatFromInt(etype.getNodesNum()));
     const pixels_x = @as(f64, @floatFromInt(pixel_num[0]));
     const pixels_y = @as(f64, @floatFromInt(pixel_num[1]));
     const sub_samp_f = @as(f64, @floatFromInt(sub_samp));
@@ -164,7 +154,13 @@ pub const BenchConfig = struct {
     skip_quad4ibi_sphere: bool = false,
 };
 
-pub fn shouldRun(comptime config: BenchConfig, mt: mr.MeshType, st: ShaderType, it: InterpType, data_dir: []const u8) bool {
+pub fn shouldRun(
+    config: BenchConfig,
+    mt: mr.MeshType,
+    st: ShaderType,
+    it: InterpType,
+    data_dir: []const u8,
+) bool {
     const is_tex = (st == .tex8_grey or st == .tex8_rgb);
     if (!is_tex and it != .linear) return false;
 
@@ -349,7 +345,7 @@ pub fn runBenchmark(
     );
     const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
 
-    const tile_size: u16 = 32;
+    const config = zraster.RasterConfig{};
     const transformed_mesh = try mr.prepareMesh(aa, &mesh_input, &sim_data.coords.mat, null);
     
     var image_out_arr = try NDArray(f64).initFlat(
@@ -362,7 +358,7 @@ pub fn runBenchmark(
     var meshes = [_]mr.MeshPrepared{transformed_mesh};
     try zraster.rasterSceneInternal(
         aa, io, &camera, 0, &meshes, &image_out_arr, 
-        tile_size, .bench, &frame_perf,
+        config.tile_size, .bench, &frame_perf,
     );
     const e2e_end = Timestamp.now(io, .awake);
 
@@ -454,7 +450,7 @@ pub fn writeBenchmarkReport(
         // Separator
         try writer.writeByte('|');
         { var ii: usize = 0; while (ii < col_w + 2) : (ii += 1) try writer.writeByte('-'); }
-        try writer.print("| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n", .{});
+        try writer.print("| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n", .{});
         
         for (stats_list) |s| {
             if (std.mem.indexOf(u8, s.name, @tagName(st)) != null) {

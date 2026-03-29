@@ -66,7 +66,7 @@ test "Nodal Normals Sanity Check - Sphere" {
         },
     };
 
-    const out_dir_path = "outals-test";
+    const out_dir_path = "out-nodals-test";
     const cwd = std.Io.Dir.cwd();
     cwd.createDir(io, out_dir_path, .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
     var out_dir = try cwd.openDir(io, out_dir_path, .{});

@@ -10,7 +10,7 @@ pub const mr = @import("../zigraster/zig/meshraster.zig");
 pub const MeshType = mr.MeshType;
 pub const MeshInput = mr.MeshInput;
 
-pub const Rotation = @import("../zigraster/zig/rotation.zig").Rotation;
+pub const Rotation = @import("../zigraster/zig/camera.zig").Rotation;
 pub const Camera = @import("../zigraster/zig/camera.zig").Camera;
 pub const CameraOps = @import("../zigraster/zig/camera.zig").CameraOps;
 
@@ -154,7 +154,7 @@ for (disps) |add_disp| {
         };
 
 
-            const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };
+            const config = RasterConfig{ .save_opt = .memory };
             const result = (try zraster.rasterAllFrames(aa, io, &camera, &[_]MeshInput{mesh_input}, config, null)) orelse return error.NoResult;
             try saveResultToRoot(aa, io, &result, c_dir_name, render_root);
             defer aa.free(result.elems);
@@ -171,7 +171,7 @@ for (disps) |add_disp| {
                     .shader = .{ .tex_u8 = .{ .uvs = elem_uvs, .texture = texture, .interp_type = it } } 
                 };
                 
-                const config = RasterConfig{ .save_opt = .memory, .tile_size = 16 };
+                const config = RasterConfig{ .save_opt = .memory };
                 const result = (try zraster.rasterAllFrames(aa, io, &camera, &[_]MeshInput{mesh_input}, config, null)) orelse return error.NoResult;
                 try saveResultToRoot(aa, io, &result, c_dir_name, render_root);
                 defer aa.free(result.elems);

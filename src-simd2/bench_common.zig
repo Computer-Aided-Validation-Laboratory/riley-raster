@@ -52,16 +52,6 @@ pub const MedianMAD = struct {
     mad: f64,
 };
 
-pub fn getNodesNum(etype: mr.MeshType) usize {
-    return switch (etype) {
-        .tri3, .tri3opt => 3,
-        .tri6 => 6,
-        .quad4ibi, .quad4newton => 4,
-        .quad8 => 8,
-        .quad9 => 9,
-    };
-}
-
 pub fn calcMetrics(
     etype: mr.MeshType,
     pixel_num: [2]u32,
@@ -73,7 +63,7 @@ pub fn calcMetrics(
     const geom_tiling_sec = (pipe_times.geometry_prep + pipe_times.tile_overlap) / 1e9;
     const total_sec = pipe_times.total_time / 1e9;
 
-    const nodes_per_elem = @as(f64, @floatFromInt(getNodesNum(etype)));
+    const nodes_per_elem = @as(f64, @floatFromInt(etype.getNodesNum()));
     const pixels_x = @as(f64, @floatFromInt(pixel_num[0]));
     const pixels_y = @as(f64, @floatFromInt(pixel_num[1]));
     const sub_samp_f = @as(f64, @floatFromInt(sub_samp));
@@ -81,19 +71,29 @@ pub fn calcMetrics(
     const total_px = pixels_x * pixels_y;
     const total_subpx = total_px * sub_samp_f * sub_samp_f;
 
+    // 1. MPx/s
     const mpx_sec = if (raster_sec > 0) (total_px / (raster_sec * 1e6)) else 0;
+
+    // 2. MsubPx/s
     const msubpx_sec = if (raster_sec > 0) (total_subpx / (raster_sec * 1e6)) else 0;
 
+    // 3. MShades/s (Approximated)
     const shaded_subpx = @as(f64, @floatFromInt(perf_data.total_shaded_pixels));
     const est_shaded_px = shaded_subpx / (sub_samp_f * sub_samp_f);
     const mshades_sec = if (raster_sec > 0) (est_shaded_px / (raster_sec * 1e6)) else 0;
+
+    // 4. MsubShades/s
     const msubshades_sec = if (raster_sec > 0) (shaded_subpx / (raster_sec * 1e6)) else 0;
 
+    // 5. MElems/s
     const total_elems = @as(f64, @floatFromInt(perf_data.total_elements));
     const melems_sec = if (geom_tiling_sec > 0) (total_elems / (geom_tiling_sec * 1e6)) else 0;
+
+    // 6. MNodes/s
     const mnodes_sec = if (geom_tiling_sec > 0) 
         (total_elems * nodes_per_elem / (geom_tiling_sec * 1e6)) else 0;
 
+    // 7. MOps/s
     const mops_sec = if (total_sec > 0) 
         (nodes_per_elem * total_subpx / (total_sec * 1e6)) else 0;
 
@@ -154,7 +154,13 @@ pub const BenchConfig = struct {
     skip_quad4ibi_sphere: bool = false,
 };
 
-pub fn shouldRun(comptime config: BenchConfig, mt: mr.MeshType, st: ShaderType, it: InterpType, data_dir: []const u8) bool {
+pub fn shouldRun(
+    config: BenchConfig,
+    mt: mr.MeshType,
+    st: ShaderType,
+    it: InterpType,
+    data_dir: []const u8,
+) bool {
     const is_tex = (st == .tex8_grey or st == .tex8_rgb);
     if (!is_tex and it != .linear) return false;
 
@@ -181,11 +187,11 @@ pub fn loadNDArrayFromCSV(
     requested_channels: usize,
     is_time_series: bool,
 ) !NDArray(f64) {
-    var lines = try meshio.readCsvToList(allocator, io, path);
-    defer {
-        for (lines.items) |line| allocator.free(line);
-        lines.deinit(allocator);
-    }
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const lines = try meshio.readCsvToList(aa, io, path);
     if (lines.items.len == 0) return error.EmptyCsv;
     const rows_num = lines.items.len;
 
@@ -219,39 +225,39 @@ pub fn loadNDArrayFromCSV(
             );
         }
     }
+    errdefer {
+        allocator.free(arr.elems);
+        arr.deinit(allocator);
+    }
 
-    for (lines.items, 0..) |line_str, rr| {
-        var split_iter = std.mem.splitScalar(u8, line_str, ',');
+    for (lines.items, 0..) |line, rr| {
+        var col_iter = std.mem.splitScalar(u8, line, ',');
         var cc: usize = 0;
-        while (split_iter.next()) |num_str| {
-            if (num_str.len == 0) continue;
-            if (std.mem.indexOfScalar(u8, num_str, ':')) |colon_idx| {
-                const ch_idx_str = num_str[0..colon_idx];
-                const val_str = num_str[colon_idx + 1 ..];
-                const ch_idx = try std.fmt.parseInt(usize, ch_idx_str, 10);
-                const val = try std.fmt.parseFloat(f64, val_str);
-                
-                if (ch_idx < requested_channels) {
-                    if (arr.dims.len == 3) {
-                        arr.set(&[_]usize{ rr, cc, ch_idx }, val);
-                    } else {
-                        arr.set(&[_]usize{ rr, ch_idx }, val);
+        while (col_iter.next()) |col_str| {
+            if (col_str.len == 0) continue;
+            if (is_time_series) {
+                if (cc < requested_channels) {
+                    const val = try std.fmt.parseFloat(f64, std.mem.trim(u8, col_str, " "));
+                    arr.set(&[_]usize{ 0, rr, cc }, val);
+                }
+            } else if (arr.dims.len == 3) {
+                var chan_iter = std.mem.splitScalar(u8, col_str, ':');
+                var ch: usize = 0;
+                while (chan_iter.next()) |chan_str| {
+                    if (ch < requested_channels) {
+                        const val = try std.fmt.parseFloat(
+                            f64, std.mem.trim(u8, chan_str, " ")
+                        );
+                        arr.set(&[_]usize{ rr, cc, ch }, val);
                     }
+                    ch += 1;
                 }
             } else {
-                const val = try std.fmt.parseFloat(f64, num_str);
-                if (arr.dims.len == 3) {
-                    if (is_time_series) {
-                        if (cc < requested_channels) {
-                            arr.set(&[_]usize{ 0, rr, cc }, val);
-                        }
-                    } else {
-                        arr.set(&[_]usize{ rr, cc, 0 }, val);
-                    }
-                } else {
-                    if (cc < requested_channels) {
-                        arr.set(&[_]usize{ rr, cc }, val);
-                    }
+                if (cc < requested_channels) {
+                    const val = try std.fmt.parseFloat(
+                        f64, std.mem.trim(u8, col_str, " ")
+                    );
+                    arr.set(&[_]usize{ rr, cc }, val);
                 }
             }
             cc += 1;
@@ -306,12 +312,10 @@ pub fn runBenchmark(
             } };
         },
         .tex8_grey => {
-            num_out_fields = 1;
             shader = .{ .tex_u8 = .{
                 .uvs = uvs_raw,
                 .texture = texture_grey,
                 .interp_type = interp_type,
-                .scaling = .auto,
             } };
         },
         .tex8_rgb => {
@@ -320,7 +324,6 @@ pub fn runBenchmark(
                 .uvs = uvs_raw,
                 .texture = texture_rgb,
                 .interp_type = interp_type,
-                .scaling = .auto,
             } };
         },
     }
@@ -332,11 +335,19 @@ pub fn runBenchmark(
         .disp = null,
         .shader = shader,
     };
+
+    const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
+    const focal_leng: f64 = 50.0e-3;
+    const rot = Rotation.init(0, 0, 0);
+    const roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
+    const cam_pos = CameraOps.posFillFrameFromRot(
+        &sim_data.coords, pixel_num, pixel_size, focal_leng, rot, 1.0
+    );
+    const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
+
+    const config = zraster.RasterConfig{};
     const transformed_mesh = try mr.prepareMesh(aa, &mesh_input, &sim_data.coords.mat, null);
-
-    const camera = Camera.initDefault(pixel_num);
-
-    const tile_size: u16 = 32;
+    
     var image_out_arr = try NDArray(f64).initFlat(
         aa, &[_]usize{ num_out_fields, pixel_num[1], pixel_num[0] }
     );
@@ -347,7 +358,7 @@ pub fn runBenchmark(
     var meshes = [_]mr.MeshPrepared{transformed_mesh};
     try zraster.rasterSceneInternal(
         aa, io, &camera, 0, &meshes, &image_out_arr, 
-        tile_size, .bench, &frame_perf,
+        config.tile_size, .bench, &frame_perf,
     );
     const e2e_end = Timestamp.now(io, .awake);
 
@@ -439,7 +450,7 @@ pub fn writeBenchmarkReport(
         // Separator
         try writer.writeByte('|');
         { var ii: usize = 0; while (ii < col_w + 2) : (ii += 1) try writer.writeByte('-'); }
-        try writer.print("| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n", .{});
+        try writer.print("| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n", .{});
         
         for (stats_list) |s| {
             if (std.mem.indexOf(u8, s.name, @tagName(st)) != null) {

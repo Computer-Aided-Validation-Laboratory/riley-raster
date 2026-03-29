@@ -1,12 +1,13 @@
 const std = @import("std");
 
 pub const MatSlice = @import("../zigraster/zig/matslice.zig").MatSlice;
+pub const NDArray = @import("../zigraster/zig/ndarray.zig").NDArray;
 pub const meshio = @import("../zigraster/zig/meshio.zig");
 pub const SimData = meshio.SimData;
 pub const mr = @import("../zigraster/zig/meshraster.zig");
 pub const MeshType = mr.MeshType;
 pub const MeshInput = mr.MeshInput;
-pub const Rotation = @import("../zigraster/zig/rotation.zig").Rotation;
+pub const Rotation = @import("../zigraster/zig/camera.zig").Rotation;
 pub const Camera = @import("../zigraster/zig/camera.zig").Camera;
 pub const CameraOps = @import("../zigraster/zig/camera.zig").CameraOps;
 pub const zraster = @import("../zigraster/zig/zraster.zig");
@@ -465,7 +466,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
     for (0..5) |ii| {
         const field = sim_datas[ii].field.?;
         const num_coords = sim_datas[ii].coords.mat.rows_num;
-        var rgb_field_arr = try zraster.NDArray(f64).initFlat(
+        var rgb_field_arr = try NDArray(f64).initFlat(
             aa, &[_]usize{ field.array.dims[0], num_coords, 3 }
         );
 
@@ -543,7 +544,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
         mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
     );
     const camera_rgb = Camera.init(
-        pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 3
+        pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2
     );
 
     var config_rgb = config;
@@ -573,4 +574,3 @@ pub fn runMultimeshMixedRGBGenerationExt(
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
     _ = try zraster.rasterAllFrames(aa, io, &camera_rgb, mesh_inputs, config_rgb, out_dir);
 }
-

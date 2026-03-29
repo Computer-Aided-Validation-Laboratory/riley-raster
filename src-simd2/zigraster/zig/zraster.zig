@@ -45,10 +45,11 @@ pub const RasterConfig = struct {
     threads_over_images: u16 = 0,
     save_opt: SaveOption = .disk,
     save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
-        .{ .format = .tiff, .bits = 8, .scaling = .none },
+        .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
     tile_size: u16 = 32,
     report: Report = .off,
+
     perf_opts: PerfOpts = .{},
 };
 
@@ -218,8 +219,16 @@ pub fn rasterAllFrames(
         }
 
         if (frame_perf) |*fp| {
+            var nodes_sum: usize = 0;
+            for (transformed_meshes) |mesh| {
+                nodes_sum += mesh.mesh_type.getNodesNum();
+            }
+            const nodes_per_elem: f64 = @as(f64, @floatFromInt(nodes_sum)) /
+                @as(f64, @floatFromInt(transformed_meshes.len));
+
             try fp.saveFrameReport(
-                io, outer_alloc, out_dir, tt, camera, config.tile_size, config.perf_opts,
+                io, outer_alloc, out_dir, tt, camera, config.tile_size, 
+                config.perf_opts, nodes_per_elem,
             );
         }
 
@@ -333,9 +342,36 @@ pub fn rasterSceneInternal(
     );
 
     if (report != .off) {
-        actual_perf.pipe_times = pipe_times;
-        if (report == .perf) try actual_perf.writeReportToConsole(io, frame_ind, camera);
+        perf_data.?.pipe_times = pipe_times;
+
+        var nodes_sum: usize = 0;
+        for (meshes) |mesh| {
+            nodes_sum += mesh.mesh_type.getNodesNum();
+        }
+        const nodes_per_elem: f64 = @as(f64, @floatFromInt(nodes_sum)) /
+            @as(f64, @floatFromInt(meshes.len));
+
+        if (report == .perf) {
+            try perf_data.?.writeReportToConsole(io, frame_ind, camera, nodes_per_elem);
+        }
+        if (report == .bench) {
+            try perf.standardReport(
+                io, camera, pipe_times, total_elems_num, total_elems_in_image,
+                nodes_per_elem, .bench, perf_data,
+            );
+        }
     } else {
-        try perf.standardReport(io, camera, pipe_times, total_elems_num);
+        var nodes_sum: usize = 0;
+        for (meshes) |mesh| {
+            nodes_sum += mesh.mesh_type.getNodesNum();
+        }
+        const nodes_per_elem: f64 = @as(f64, @floatFromInt(nodes_sum)) /
+            @as(f64, @floatFromInt(meshes.len));
+
+        try perf.standardReport(
+            io, camera, pipe_times, total_elems_num, total_elems_in_image,
+            nodes_per_elem, .off, null,
+        );
     }
-}
+    }
+

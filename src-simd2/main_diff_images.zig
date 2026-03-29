@@ -186,7 +186,6 @@ pub fn main() !void {
             .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
             .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = 3 },
         },
-        .tile_size = 32,
     };
 
     std.debug.print("Rendering Mixed RGB Data for Difference analysis...\n", .{});

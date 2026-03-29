@@ -167,7 +167,6 @@ pub fn main() !void {
         .threads_over_images = 0,
         .save_opt = .disk,
         .save_formats = &[_]iio.ImageFormat{ .csv, .bmp },
-        .tile_size = 16,
         .report = if (report_perf) .perf else .off,
         .perf_opts = .{}, // init to defaults
     };

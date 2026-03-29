@@ -112,7 +112,6 @@ pub fn main() !void {
         const config = RasterConfig{
             .save_opt = .disk,
             .save_opts = &[_]iio.ImageSaveOpts{ .{ .format = .bmp, .bits = 8, .scaling = .auto } },
-            .tile_size = 32,
         };
         _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, out_dir);
         // Rename frame_0_field_0.bmp to texture_only.bmp manually if needed, 
@@ -172,7 +171,6 @@ pub fn main() !void {
         const config = RasterConfig{
             .save_opt = .disk,
             .save_opts = &[_]iio.ImageSaveOpts{ .{ .format = .bmp, .bits = 8, .scaling = .auto } },
-            .tile_size = 32,
         };
         // This will overwrite frame_0_field_0.bmp if we are not careful. 
         // In this simple script it's fine, we'll see the second run results.

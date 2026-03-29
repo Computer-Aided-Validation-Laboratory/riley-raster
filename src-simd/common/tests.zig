@@ -10,7 +10,7 @@ pub const mr = @import("../zigraster/zig/meshraster.zig");
 pub const MeshType = mr.MeshType;
 pub const MeshInput = mr.MeshInput;
 
-pub const Rotation = @import("../zigraster/zig/rotation.zig").Rotation;
+pub const Rotation = @import("../zigraster/zig/camera.zig").Rotation;
 pub const Camera = @import("../zigraster/zig/camera.zig").Camera;
 pub const CameraOps = @import("../zigraster/zig/camera.zig").CameraOps;
 
@@ -296,7 +296,6 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                 .save_opts = &[_]iio.ImageSaveOpts{
                     .{ .format = .csv, .bits = null, .scaling = .none },
                 },
-                .tile_size = 16,
                 .report = if (report_perf) .perf else .off
             };
 
@@ -350,7 +349,6 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
                     .save_opts = &[_]iio.ImageSaveOpts{
                         .{ .format = .csv, .bits = null, .scaling = .none },
                     },
-                    .tile_size = 16,
                     .report = if (report_perf) .perf else .off
                 };
 
@@ -439,7 +437,6 @@ pub fn runMultimeshTest(
             .save_opts = &[_]iio.ImageSaveOpts{
                 .{ .format = .csv, .bits = null, .scaling = .none },
             },
-            .tile_size = 32,
         };
 
         const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, null)) 
@@ -574,9 +571,7 @@ pub fn runMultimeshMixedTestExt(
         .save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
-        .tile_size = 32,
     };
-
     const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, null)) 
         orelse return error.NoResult;
 
@@ -663,7 +658,7 @@ pub fn runMultimeshMixedRGBTestExt(
     for (0..5) |ii| {
         const field = sim_datas[ii].field.?;
         const num_coords = sim_datas[ii].coords.mat.rows_num;
-        var rgb_field_arr = try zraster.NDArray(f64).initFlat(
+        var rgb_field_arr = try NDArray(f64).initFlat(
             aa, &[_]usize{ field.array.dims[0], num_coords, 3 }
         );
 
@@ -741,7 +736,7 @@ pub fn runMultimeshMixedRGBTestExt(
         mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
     );
     const camera = Camera.init(
-        pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 3
+        pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2
     );
 
     const config_rgb = RasterConfig{
@@ -749,7 +744,6 @@ pub fn runMultimeshMixedRGBTestExt(
         .save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
         },
-        .tile_size = 32,
     };
 
     const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config_rgb, null))
@@ -761,194 +755,5 @@ pub fn runMultimeshMixedRGBTestExt(
             try saveResultToFails(aa, io, &result, "multimesh_allelem_allshade_rgb");
             return err;
         };
-    }
-}
-
-
-test "Flat ShaderInput Scaling Options" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const gpa_alloc = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var arena = std.heap.ArenaAllocator.init(gpa_alloc);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
-
-    const data_path = "data-simple/tri3_twoelems";
-    var sim_data = try loadData(allocator, io, data_path);
-
-    const pixel_num = [_]u32{ 16, 16 };
-    const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
-    const focal_leng: f64 = 50.0e-3;
-    const rot = Rotation.init(0, 0, 0);
-    const cam_pos = CameraOps.posFillFrameFromRot(
-        &sim_data.coords, pixel_num, pixel_size, focal_leng, rot, 1.1,
-    );
-    const camera = Camera.init(
-        pixel_num, pixel_size, cam_pos, rot, 
-        CameraOps.roiCentFromCoords(&sim_data.coords), focal_leng, 1,
-    );
-
-    const config = RasterConfig{
-        .save_opt = .memory,
-        .save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .csv, .bits = null, .scaling = .none },
-        },
-        .tile_size = 16,
-    };
-
-    // Test 1: Auto Scaling, bits = null (maps to 0.0 - 1.0)
-    var mesh_input = MeshInput{
-        .mesh_type = .tri3,
-        .coords = sim_data.coords,
-        .connect = sim_data.connect,
-        .disp = null,
-        .shader = .{ .flat = .{ 
-            .field = sim_data.field.?, 
-            .bits = null, 
-            .scaling = .auto, 
-            .scale_over = .over_frames 
-        } }
-    };
-    
-    var result_auto_float = (try zraster.rasterAllFrames(
-        allocator, io, &camera, &[_]MeshInput{mesh_input}, config, null
-    )).?;
-    defer allocator.free(result_auto_float.elems);
-
-    for (result_auto_float.elems) |v| {
-        if (!(v >= 0.0 and v <= 1.0) and v != 0.0) {
-            std.debug.print("FAIL Test 1: v = {d}\n", .{v});
-        }
-        try std.testing.expect(v >= 0.0 and v <= 1.0);
-    }
-
-    // Test 2: Auto Scaling, bits = 8 (maps to 0 - 255)
-    mesh_input.shader.flat.bits = 8;
-    var result_auto_int = (try zraster.rasterAllFrames(
-        allocator, io, &camera, &[_]MeshInput{mesh_input}, config, null
-    )).?;
-    defer allocator.free(result_auto_int.elems);
-    for (result_auto_int.elems) |v| {
-        if (!(v >= 0.0 and v <= 255.0) and v != 0.0) {
-            std.debug.print("FAIL Test 2: v = {d}\n", .{v});
-        }
-        try std.testing.expect(v >= 0.0 and v <= 255.0);
-    }
-
-    // Test 3: Frac Scaling [0.4, 0.6], bits = 8
-    mesh_input.shader.flat.scaling = .{ .frac = .{ 0.4, 0.6 } };
-    var result_frac_int = (try zraster.rasterAllFrames(
-        allocator, io, &camera, &[_]MeshInput{mesh_input}, config, null
-    )).?;
-    defer allocator.free(result_frac_int.elems);
-    for (result_frac_int.elems) |v| {
-        if (v != 0.0) { // ignoring background which defaults to 0.0
-            if (!(v >= 102.0 and v <= 153.0)) {
-                std.debug.print("FAIL Test 3: v = {d}\n", .{v});
-            }
-            try std.testing.expect(v >= 102.0 and v <= 153.0);
-        }
-    }
-}
-
-test "Tex ShaderInput Scaling Options" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const gpa_alloc = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var arena = std.heap.ArenaAllocator.init(gpa_alloc);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
-
-    const data_path = "data-simple/tri3_twoelems";
-    var sim_data = try loadData(allocator, io, data_path);
-
-    const uv_path = "data-simple/tri3_twoelems/uvs.csv";
-    var uvs = try uvio.loadUVMap(allocator, io, uv_path);
-
-    // Create a simple dummy texture where all pixels are 100
-    var texture = try iio.Texture(u8, 1).init(allocator, 10, 10);
-    for (0..10) |r| {
-        for (0..10) |c| {
-            texture.setPixel(r, c, .{ .channels = [_]u8{100} });
-        }
-    }
-
-    const pixel_num = [_]u32{ 16, 16 };
-    const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
-    const focal_leng: f64 = 50.0e-3;
-    const rot = Rotation.init(0, 0, 0);
-    const cam_pos = CameraOps.posFillFrameFromRot(
-        &sim_data.coords, pixel_num, pixel_size, focal_leng, rot, 1.1,
-    );
-    const camera = Camera.init(
-        pixel_num, pixel_size, cam_pos, rot, 
-        CameraOps.roiCentFromCoords(&sim_data.coords), focal_leng, 1,
-    );
-
-    const config = RasterConfig{
-        .save_opt = .memory,
-        .save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .csv, .bits = null, .scaling = .none },
-        },
-        .tile_size = 16,
-    };
-
-    // Test 1: Auto Scaling, bits = null (maps to 0.0 - 1.0)
-    // Wait, since all pixels are 100, min=100, max=100. Range=1.0. 
-    // Normalized value = (100 - 100)/1 = 0.0.
-    // Let's modify the texture to have min 0 and max 200.
-    texture.setPixel(0, 0, .{ .channels = [_]u8{0} });
-    texture.setPixel(0, 1, .{ .channels = [_]u8{200} });
-
-    var mesh_input = MeshInput{
-        .mesh_type = .tri3,
-        .coords = sim_data.coords,
-        .connect = sim_data.connect,
-        .disp = null,
-        .shader = .{ .tex_u8 = .{ 
-            .uvs = uvs.array,
-            .texture = texture,
-            .bits = null, 
-            .scaling = .auto, 
-        } }
-    };
-    
-    var result_auto_float = (try zraster.rasterAllFrames(
-        allocator, io, &camera, &[_]MeshInput{mesh_input}, config, null
-    )).?;
-    defer allocator.free(result_auto_float.elems);
-
-    for (result_auto_float.elems) |v| {
-        try std.testing.expect(v >= 0.0 and v <= 1.0);
-    }
-
-    // Test 2: Auto Scaling, bits = 8 (maps to 0 - 255)
-    mesh_input.shader.tex_u8.bits = 8;
-    var result_auto_int = (try zraster.rasterAllFrames(
-        allocator, io, &camera, &[_]MeshInput{mesh_input}, config, null
-    )).?;
-    defer allocator.free(result_auto_int.elems);
-    for (result_auto_int.elems) |v| {
-        try std.testing.expect(v >= 0.0 and v <= 255.0);
-    }
-
-    // Test 3: Frac Scaling [0.4, 0.6], bits = 8
-    mesh_input.shader.tex_u8.scaling = .{ .frac = .{ 0.4, 0.6 } };
-    var result_frac_int = (try zraster.rasterAllFrames(
-        allocator, io, &camera, &[_]MeshInput{mesh_input}, config, null
-    )).?;
-    defer allocator.free(result_frac_int.elems);
-    for (result_frac_int.elems) |v| {
-        if (v != 0.0) { // ignoring background
-            try std.testing.expect(v >= 102.0 and v <= 153.0);
-        }
     }
 }

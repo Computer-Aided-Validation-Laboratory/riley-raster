@@ -33,23 +33,23 @@ test "Unified Benchmark Tests" {
         .{
             .name = "fullraster",
             .gold_dir = "gold-bench-fullscreen",
-            .out_dir = "out-simd-bench-fullraster",
+            .out_dir = "out-simd2-bench-fullraster",
         },
         .{
             .name = "geom",
             .gold_dir = "gold-bench-fullscreen",
-            .out_dir = "out-simd-bench-geom",
+            .out_dir = "out-simd2-bench-geom",
         },
         .{
             .name = "sphere200",
             .gold_dir = "gold-sphere200",
-            .out_dir = "out-simd-sphere200",
+            .out_dir = "out-simd2-sphere200",
             .is_sphere = true,
         },
         .{
             .name = "sphere2000",
             .gold_dir = "gold-sphere2000",
-            .out_dir = "out-simd-sphere2000",
+            .out_dir = "out-simd2-sphere2000",
             .is_sphere = true,
         },
     };
