@@ -708,12 +708,27 @@ pub fn RasterPass(
             else if (@hasDecl(Geometry, "getBilinearParams"))
                 Geometry.getBilinearParams(nodes)
             else {};
+            const default_guess = if (@hasDecl(Geometry, "getNewtonGuess"))
+                Geometry.getNewtonGuess()
+            else
+                .{ .xi = 0.0, .eta = 0.0 };
+            var last_seed_valid = false;
+            var last_seed_xi = default_guess.xi;
+            var last_seed_eta = default_guess.eta;
 
             for (0..candidate_block_count) |block_index| {
-                const candidate_block = scratch.candidate_buffer[block_index];
+                var candidate_block = scratch.candidate_buffer[block_index];
                 var chunk_mask_arr = [_]bool{false} ** 8;
                 for (0..candidate_block.count) |jj| {
                     chunk_mask_arr[jj] = true;
+                    candidate_block.guess_xi[jj] = if (last_seed_valid)
+                        last_seed_xi
+                    else
+                        default_guess.xi;
+                    candidate_block.guess_eta[jj] = if (last_seed_valid)
+                        last_seed_eta
+                    else
+                        default_guess.eta;
                 }
 
                 const v_target_x: @Vector(8, f64) = candidate_block.px;
@@ -738,6 +753,10 @@ pub fn RasterPass(
                     const conv_mask_arr: [8]bool = v_conv_mask;
                     const xi_out_arr: [8]f64 = result.xi_out;
                     const eta_out_arr: [8]f64 = result.eta_out;
+                    const residual_x_arr: [8]f64 = result.residual_x;
+                    const residual_y_arr: [8]f64 = result.residual_y;
+                    var best_lane: ?usize = null;
+                    var best_resid_sq = std.math.inf(f64);
 
                     for (0..8) |jj| {
                         if (conv_mask_arr[jj]) {
@@ -747,7 +766,21 @@ pub fn RasterPass(
                             scratch.subpx_xi[index] = xi_out_arr[jj];
                             scratch.subpx_eta[index] = eta_out_arr[jj];
                             scratch.subpx_mask[index] = true;
+
+                            const residual_sq =
+                                residual_x_arr[jj] * residual_x_arr[jj] +
+                                residual_y_arr[jj] * residual_y_arr[jj];
+                            if (best_lane == null or residual_sq < best_resid_sq) {
+                                best_lane = jj;
+                                best_resid_sq = residual_sq;
+                            }
                         }
+                    }
+
+                    if (best_lane) |lane_index| {
+                        last_seed_valid = true;
+                        last_seed_xi = xi_out_arr[lane_index];
+                        last_seed_eta = eta_out_arr[lane_index];
                     }
                 }
             }

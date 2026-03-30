@@ -15,6 +15,7 @@ raster-test/
 out*/
 gold*/
 fails/
+fails*/
 archive/
 example/
 

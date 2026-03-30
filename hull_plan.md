@@ -78,3 +78,15 @@ After implementation:
   enough.
 - `bench_sphere2000`:
   uncertain, because a looser convex hull may admit more pixels to the Newton solver.
+
+## Outcome
+
+- Implemented and tested in `src-simd2`, then rejected.
+- `zig test -lc -O ReleaseSafe ./src-simd2/test_bench.zig` failed with 18 image
+  mismatches before revert.
+- `zig test -lc -O ReleaseSafe ./src-simd2/test_gold_all.zig` also hit curved-case
+  mismatches on the `sphere200` suite before revert.
+- The mismatches were confined to the curved partial-visibility cases, which means the
+  convex-hull coarse pass was not preserving the original raster membership well enough.
+- The experiment was reverted, and `src-simd2` was restored to the last accepted
+  AoSoA-only Newton state.
