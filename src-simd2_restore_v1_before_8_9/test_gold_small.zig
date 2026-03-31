@@ -1,0 +1,49 @@
+const std = @import("std");
+const common = @import("common/tests.zig");
+const tcfg = @import("testconfig.zig");
+
+const SHADER_FILTER: common.ShaderFilter = .both; // .flat, .tex, or .both
+
+test "Gold Small Suite" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    var io_threaded = std.Io.Threaded.init_single_threaded;
+    const io = io_threaded.io();
+
+    // Load original using C loader once, then save as simple TIFF
+    // and reload using our simple loader to ensure compatibility.
+    const texture = blk: {
+        break :blk try common.iio.loadImage(
+            allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1
+        );
+    };
+    defer texture.deinit(allocator);
+
+    const mesh_types = [_]common.MeshType{ .tri3, .tri3opt,
+                                           .tri6, 
+                                           .quad4ibi, .quad4newton,
+                                           .quad8, .quad9 };
+    const interp_types = std.enums.values(common.texops.InterpType);
+    const pixel_num = [_]u32{ 160, 100 };
+
+    const start_time = std.Io.Clock.Timestamp.now(io, .awake);
+
+    for (mesh_types) |mt| {
+        try common.runTestInternal(
+            allocator, io, "single", mt, 1.1, texture, pixel_num, interp_types, "gold-small", 
+            "data-small", tcfg.REL_TOL, tcfg.ABS_TOL, SHADER_FILTER, false
+        );
+                                   
+        try common.runTestInternal(
+            allocator, io, "full", mt, 1.0, texture, pixel_num, interp_types, "gold-small", 
+            "data-small", tcfg.REL_TOL, tcfg.ABS_TOL, SHADER_FILTER, false
+        );
+    }
+
+    const end_time = std.Io.Clock.Timestamp.now(io, .awake);
+    const duration_ms = @as(f64, @floatFromInt(
+        start_time.durationTo(end_time).raw.nanoseconds)) / 1e6;
+    std.debug.print("\nGold Small Test Suite took {d:.3} ms\n", .{duration_ms});
+}

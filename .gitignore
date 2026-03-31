@@ -18,6 +18,8 @@ fails/
 fails*/
 archive/
 example/
+example*/
+examples*/
 
 temp-test/
 scripts/hull-diags/

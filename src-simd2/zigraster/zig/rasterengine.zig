@@ -22,6 +22,7 @@ const FlatPrepared = shadekerns.shaderops.FlatPrepared;
 const TexPrepared = shadekerns.shaderops.TexPrepared;
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
+const newton = @import("newton.zig");
 
 const CandidateBlock = struct {
     scratch_x: [8]usize,
@@ -632,6 +633,16 @@ pub fn RasterPass(
             const v_05: @Vector(8, f64) = @splat(0.5);
             const v_original_start_x: @Vector(8, usize) = @splat(original_start_x);
             const v_bounds_end_x: @Vector(8, usize) = @splat(bounds.end_x);
+            const default_guess = if (@hasDecl(Geometry, "getNewtonGuess"))
+                Geometry.getNewtonGuess()
+            else
+                .{ .xi = 0.0, .eta = 0.0 };
+            const v_default_xi: @Vector(8, f64) = @splat(default_guess.xi);
+            const v_default_eta: @Vector(8, f64) = @splat(default_guess.eta);
+            const v_hull_guess_eps: @Vector(8, f64) = @splat(1e-5);
+            const v_residual_thresh_sq: @Vector(8, f64) = @splat(1e-8);
+            const v_one: @Vector(8, f64) = @splat(1.0);
+            const v_neg_one: @Vector(8, f64) = @splat(-1.0);
 
             // Pass 1: Vectorized Coarse In/Out
             for (bounds.start_y..bounds.end_y) |scratch_y| {
@@ -653,14 +664,48 @@ pub fn RasterPass(
                         const mask_arr: [8]bool = v_mask;
                         const x_arr: [8]f64 = v_subpx_x;
                         const y_arr: [8]f64 = v_subpx_y;
-                        var xi_arr: [8]f64 = v_hull_res.guess_xi;
-                        var eta_arr: [8]f64 = v_hull_res.guess_eta;
-
-                        if (comptime @hasDecl(Geometry, "getNewtonGuess")) {
-                            const def_guess = Geometry.getNewtonGuess();
-                            xi_arr = [_]f64{def_guess.xi} ** 8;
-                            eta_arr = [_]f64{def_guess.eta} ** 8;
-                        }
+                        const v_hull_xi = v_hull_res.guess_xi;
+                        const v_hull_eta = v_hull_res.guess_eta;
+                        const v_domain_ok = if (comptime N == 6)
+                            (v_hull_xi >= -v_hull_guess_eps) &
+                                (v_hull_eta >= -v_hull_guess_eps) &
+                                ((v_hull_xi + v_hull_eta) <= v_one + v_hull_guess_eps)
+                        else
+                            (v_hull_xi >= v_neg_one - v_hull_guess_eps) &
+                                (v_hull_xi <= v_one + v_hull_guess_eps) &
+                                (v_hull_eta >= v_neg_one - v_hull_guess_eps) &
+                                (v_hull_eta <= v_one + v_hull_guess_eps);
+                        const v_target_x =
+                            v_subpx_x - @as(@Vector(8, f64), @splat(domain.x_off));
+                        const v_target_y =
+                            v_subpx_y - @as(@Vector(8, f64), @splat(domain.y_off));
+                        const hull_residual = newton.evalResidualSIMD(
+                            N,
+                            v_target_x,
+                            v_target_y,
+                            nodes.x,
+                            nodes.y,
+                            nodes.z,
+                            v_hull_xi,
+                            v_hull_eta,
+                        );
+                        const v_resid_sq = hull_residual.residual_x *
+                            hull_residual.residual_x +
+                            hull_residual.residual_y * hull_residual.residual_y;
+                        const v_use_hull = v_mask & v_domain_ok &
+                            (v_resid_sq <= v_residual_thresh_sq);
+                        const xi_arr: [8]f64 = @select(
+                            f64,
+                            v_use_hull,
+                            v_hull_xi,
+                            v_default_xi,
+                        );
+                        const eta_arr: [8]f64 = @select(
+                            f64,
+                            v_use_hull,
+                            v_hull_eta,
+                            v_default_eta,
+                        );
 
                         for (0..8) |jj| {
                             if (mask_arr[jj]) {
@@ -708,10 +753,6 @@ pub fn RasterPass(
             else if (@hasDecl(Geometry, "getBilinearParams"))
                 Geometry.getBilinearParams(nodes)
             else {};
-            const default_guess = if (@hasDecl(Geometry, "getNewtonGuess"))
-                Geometry.getNewtonGuess()
-            else
-                .{ .xi = 0.0, .eta = 0.0 };
             var last_seed_valid = false;
             var last_seed_xi = default_guess.xi;
             var last_seed_eta = default_guess.eta;
@@ -721,14 +762,10 @@ pub fn RasterPass(
                 var chunk_mask_arr = [_]bool{false} ** 8;
                 for (0..candidate_block.count) |jj| {
                     chunk_mask_arr[jj] = true;
-                    candidate_block.guess_xi[jj] = if (last_seed_valid)
-                        last_seed_xi
-                    else
-                        default_guess.xi;
-                    candidate_block.guess_eta[jj] = if (last_seed_valid)
-                        last_seed_eta
-                    else
-                        default_guess.eta;
+                    if (last_seed_valid) {
+                        candidate_block.guess_xi[jj] = last_seed_xi;
+                        candidate_block.guess_eta[jj] = last_seed_eta;
+                    }
                 }
 
                 const v_target_x: @Vector(8, f64) = candidate_block.px;
