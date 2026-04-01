@@ -23,24 +23,26 @@ const TexPrepared = shadekerns.shaderops.TexPrepared;
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
 
-const Candidate = struct {
-    scratch_x: usize,
-    scratch_y: usize,
-    px: f64,
-    py: f64,
-    guess_xi: f64,
-    guess_eta: f64,
+const CandidateBlock = struct {
+    scratch_x: [8]usize,
+    scratch_y: [8]usize,
+    px: [8]f64,
+    py: [8]f64,
+    guess_xi: [8]f64,
+    guess_eta: [8]f64,
+    count: usize,
 };
 
 pub const ScratchBuffers = struct {
     inv_z: []align(64) f64,
     image: *MatSlice(f64),
-    candidate_buffer: []Candidate,
+    candidate_buffer: []CandidateBlock,
     subpx_mask: []align(64) bool,
     subpx_xi: []align(64) f64,
     subpx_eta: []align(64) f64,
+    touched_min_x: []usize,
+    touched_max_x: []usize,
 };
-
 
 const SubpxDomain = struct {
     step: f64,
@@ -69,11 +71,10 @@ pub fn rasterScene(
     raster_hulls: []const ?NDArray(f64),
     image_out_arr: *NDArray(f64),
 ) !void {
-
     @setFloatMode(.optimized);
 
     const fields_num = image_out_arr.dims[0];
-    
+
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     const subpx_tile_size: usize = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp;
     const subpx_tile_total = subpx_tile_size * subpx_tile_size;
@@ -100,8 +101,15 @@ pub fn rasterScene(
         subpx_tile_total_padded + 8,
     );
 
-    const candidate_buffer = try allocator.alloc(Candidate, subpx_tile_total_padded + 8);
+    const candidate_block_count = @divFloor(subpx_tile_total_padded + 7, 8) + 1;
+    const candidate_buffer = try allocator.alloc(CandidateBlock, candidate_block_count);
     defer allocator.free(candidate_buffer);
+
+    const touched_min_x = try allocator.alloc(usize, subpx_tile_size);
+    defer allocator.free(touched_min_x);
+
+    const touched_max_x = try allocator.alloc(usize, subpx_tile_size);
+    defer allocator.free(touched_max_x);
 
     const scratch = ScratchBuffers{
         .inv_z = subpx_inv_z_scratch,
@@ -110,6 +118,8 @@ pub fn rasterScene(
         .subpx_mask = subpx_mask_scratch,
         .subpx_xi = subpx_xi_scratch,
         .subpx_eta = subpx_eta_scratch,
+        .touched_min_x = touched_min_x,
+        .touched_max_x = touched_max_x,
     };
 
     const subpx_field_avg = try allocator.alloc(f64, fields_num);
@@ -121,23 +131,28 @@ pub fn rasterScene(
 
         @memset(subpx_inv_z_scratch, -std.math.inf(f64));
         @memset(subpx_image_scratch.elems, 0.0);
+        for (0..subpx_tile_size) |yy| {
+            scratch.touched_min_x[yy] = subpx_tile_size;
+            scratch.touched_max_x[yy] = 0;
+        }
 
-        const overlaps = tiling.overlaps[tile.overlap_start .. 
-                                         tile.overlap_start + tile.overlap_count];
+        const overlaps = tiling.overlaps[tile.overlap_start .. tile.overlap_start + tile.overlap_count];
 
         for (overlaps) |ov| {
             const mesh = &meshes[ov.mesh_idx];
 
             const target = rops.OverlapTarget{ .tile = tile, .overlap = ov };
 
-            const rhull_ptr = if (ov.mesh_idx < raster_hulls.len) 
-                raster_hulls[ov.mesh_idx] else null;
+            const rhull_ptr = if (ov.mesh_idx < raster_hulls.len)
+                raster_hulls[ov.mesh_idx]
+            else
+                null;
 
-            const input = rops.MeshInput{ 
-                .coords = &mesh.coords, 
+            const input = rops.MeshInput{
+                .coords = &mesh.coords,
                 .hull = if (rhull_ptr) |*h| h else null,
             };
-            
+
             switch (mesh.mesh_type) {
                 inline else => |mesh_tag| {
                     const GK = comptime switch (mesh_tag) {
@@ -160,11 +175,9 @@ pub fn rasterScene(
                         .flat => |*shader| {
                             const SK = shadekerns.FlatKernel(N);
                             var local_node_buf: shadekerns.shaderops.LocalNodeBuffer(N) = .{};
-                            
+
                             const tt = @min(ctx_rast.frame_ind, shader.elem_field.dims[0] - 1);
-                            const start_idx = shader.elem_field.getFlatInd(&[_]usize{ 
-                                tt, target.overlap.elem_idx, 0, 0 
-                            });
+                            const start_idx = shader.elem_field.getFlatInd(&[_]usize{ tt, target.overlap.elem_idx, 0, 0 });
 
                             local_node_buf.load(
                                 shader.elem_field,
@@ -176,17 +189,22 @@ pub fn rasterScene(
                                 local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
                             }
                             shaded_px += try RasterPass(GK, SK, FlatPrepared).render(
-                                report, ctx_rast, target, input, mesh, shader, scratch, &local_node_buf,
+                                report,
+                                ctx_rast,
+                                target,
+                                input,
+                                mesh,
+                                shader,
+                                scratch,
+                                &local_node_buf,
                             );
                         },
                         .normals => |*shader| {
                             const SK = shadekerns.NormalKernel(N);
                             var local_node_buf: shadekerns.shaderops.LocalNodeBuffer(N) = .{};
-                            
+
                             const tt = @min(ctx_rast.frame_ind, shader.elem_field.dims[0] - 1);
-                            const start_idx = shader.elem_field.getFlatInd(&[_]usize{ 
-                                tt, target.overlap.elem_idx, 0, 0 
-                            });
+                            const start_idx = shader.elem_field.getFlatInd(&[_]usize{ tt, target.overlap.elem_idx, 0, 0 });
 
                             local_node_buf.load(
                                 shader.elem_field,
@@ -198,7 +216,14 @@ pub fn rasterScene(
                                 local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
                             }
                             shaded_px += try RasterPass(GK, SK, FlatPrepared).render(
-                                report, ctx_rast, target, input, mesh, shader, scratch, &local_node_buf,
+                                report,
+                                ctx_rast,
+                                target,
+                                input,
+                                mesh,
+                                shader,
+                                scratch,
+                                &local_node_buf,
                             );
                         },
                         .tex_u8 => |*shader| {
@@ -214,7 +239,14 @@ pub fn rasterScene(
                                 local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
                             }
                             shaded_px += try RasterPass(GK, SK, TexPrepared(u8, 1)).render(
-                                report, ctx_rast, target, input, mesh, shader, scratch, &local_node_buf,
+                                report,
+                                ctx_rast,
+                                target,
+                                input,
+                                mesh,
+                                shader,
+                                scratch,
+                                &local_node_buf,
                             );
                         },
                         .tex_u16 => |*shader| {
@@ -230,7 +262,14 @@ pub fn rasterScene(
                                 local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
                             }
                             shaded_px += try RasterPass(GK, SK, TexPrepared(u16, 1)).render(
-                                report, ctx_rast, target, input, mesh, shader, scratch, &local_node_buf,
+                                report,
+                                ctx_rast,
+                                target,
+                                input,
+                                mesh,
+                                shader,
+                                scratch,
+                                &local_node_buf,
                             );
                         },
                         .tex_rgb_u8 => |*shader| {
@@ -246,7 +285,14 @@ pub fn rasterScene(
                                 local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
                             }
                             shaded_px += try RasterPass(GK, SK, TexPrepared(u8, 3)).render(
-                                report, ctx_rast, target, input, mesh, shader, scratch, &local_node_buf,
+                                report,
+                                ctx_rast,
+                                target,
+                                input,
+                                mesh,
+                                shader,
+                                scratch,
+                                &local_node_buf,
                             );
                         },
                         .tex_rgb_u16 => |*shader| {
@@ -262,31 +308,49 @@ pub fn rasterScene(
                                 local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
                             }
                             shaded_px += try RasterPass(GK, SK, TexPrepared(u16, 3)).render(
-                                report, ctx_rast, target, input, mesh, shader, scratch, &local_node_buf,
+                                report,
+                                ctx_rast,
+                                target,
+                                input,
+                                mesh,
+                                shader,
+                                scratch,
+                                &local_node_buf,
                             );
                         },
                     }
-                }
+                },
             }
         }
 
-        averageScratch(
-            tile,
-            @intCast(sub_samp),
-            subpx_tile_size,
-            fields_num,
-            &subpx_image_scratch,
-            subpx_field_avg,
-            image_out_arr,
-        );
+        if (sub_samp > 1) {
+            averageScratch(
+                tile,
+                @intCast(sub_samp),
+                subpx_tile_size,
+                fields_num,
+                &subpx_image_scratch,
+                scratch.touched_min_x,
+                scratch.touched_max_x,
+                subpx_field_avg,
+                image_out_arr,
+            );
+        } else {
+            resolveScratchDirect(
+                tile,
+                subpx_tile_size,
+                fields_num,
+                &subpx_image_scratch,
+                image_out_arr,
+            );
+        }
 
         if (comptime report != .off) {
             const tile_end = if (comptime report != .off) Timestamp.now(io, .awake) else {};
             const dur = tile_start.durationTo(tile_end).raw.nanoseconds;
-            const screen_px_x = @as(u16, @intCast(ctx_rast.camera.pixels_num[0])); 
+            const screen_px_x = @as(u16, @intCast(ctx_rast.camera.pixels_num[0]));
             const tiles_x = (screen_px_x + ctx_rast.tile_size - 1) / ctx_rast.tile_size;
-            const spatial_idx = (tile.y_px_min / ctx_rast.tile_size) * tiles_x 
-                                + (tile.x_px_min / ctx_rast.tile_size);
+            const spatial_idx = (tile.y_px_min / ctx_rast.tile_size) * tiles_x + (tile.x_px_min / ctx_rast.tile_size);
             ctx_rast.ctx_perf.recordTile(spatial_idx, @intCast(dur), shaded_px, overlaps.len);
         } else {
             ctx_rast.ctx_perf.recordTile(0, 0, shaded_px, 0);
@@ -337,14 +401,14 @@ pub fn RasterPass(
                 target.overlap.elem_idx,
             );
 
-            const scratch_start_x = sub_samp * (@as(usize, @intCast(target.overlap.x_min)) - 
-                                                target.tile.x_px_min);
-            const scratch_end_x = sub_samp * (@as(usize, @intCast(target.overlap.x_max)) - 
-                                              target.tile.x_px_min);
-            const scratch_start_y = sub_samp * (@as(usize, @intCast(target.overlap.y_min)) - 
-                                                target.tile.y_px_min);
-            const scratch_end_y = sub_samp * (@as(usize, @intCast(target.overlap.y_max)) - 
-                                              target.tile.y_px_min);
+            const scratch_start_x = sub_samp * (@as(usize, @intCast(target.overlap.x_min)) -
+                target.tile.x_px_min);
+            const scratch_end_x = sub_samp * (@as(usize, @intCast(target.overlap.x_max)) -
+                target.tile.x_px_min);
+            const scratch_start_y = sub_samp * (@as(usize, @intCast(target.overlap.y_min)) -
+                target.tile.y_px_min);
+            const scratch_end_y = sub_samp * (@as(usize, @intCast(target.overlap.y_max)) -
+                target.tile.y_px_min);
 
             const x_min_f: f64 = @as(f64, @floatFromInt(target.overlap.x_min));
             const y_min_f: f64 = @as(f64, @floatFromInt(target.overlap.y_min));
@@ -366,23 +430,58 @@ pub fn RasterPass(
                 .y_min_f = y_min_f,
             };
 
-            const shaded_px = if (comptime (Geometry == geomkerns.Tri3Kernel() or 
-                                           Geometry == geomkerns.Tri3OptKernel()))
+            const shaded_px = if (comptime (Geometry == geomkerns.Tri3Kernel() or
+                Geometry == geomkerns.Tri3OptKernel()))
                 try rasterSIM(
-                    report, ctx_rast, target, domain, bounds, scratch_start_x, nodes, shader, scratch, local_buf,
+                    report,
+                    ctx_rast,
+                    target,
+                    domain,
+                    bounds,
+                    scratch_start_x,
+                    nodes,
+                    shader,
+                    scratch,
+                    local_buf,
                 )
-
             else if (Geometry.strategy == .incremental)
                 try rasterIncremental(
-                    report, ctx_rast, target, domain, bounds, nodes, shader, scratch, local_buf,
+                    report,
+                    ctx_rast,
+                    target,
+                    domain,
+                    bounds,
+                    nodes,
+                    shader,
+                    scratch,
+                    local_buf,
                 )
             else if (Geometry.strategy == .newton_simd)
                 try rasterSIMDNewton(
-                    report, ctx_rast, target, &input, domain, bounds, scratch_start_x, nodes, shader, scratch, local_buf,
+                    report,
+                    ctx_rast,
+                    target,
+                    &input,
+                    domain,
+                    bounds,
+                    scratch_start_x,
+                    nodes,
+                    shader,
+                    scratch,
+                    local_buf,
                 )
             else
                 try rasterPointwise(
-                    report, ctx_rast, target, input, domain, bounds, nodes, shader, scratch, local_buf,
+                    report,
+                    ctx_rast,
+                    target,
+                    input,
+                    domain,
+                    bounds,
+                    nodes,
+                    shader,
+                    scratch,
+                    local_buf,
                 );
 
             return shaded_px;
@@ -404,9 +503,7 @@ pub fn RasterPass(
             var shaded_px: u64 = 0;
             const fields_num = scratch.image.rows_num;
 
-            const inv_area = 1.0 / rops.edgeFun3(nodes.x[0], nodes.y[0],
-                                                 nodes.x[1], nodes.y[1],
-                                                 nodes.x[2], nodes.y[2]);
+            const inv_area = 1.0 / rops.edgeFun3(nodes.x[0], nodes.y[0], nodes.x[1], nodes.y[1], nodes.x[2], nodes.y[2]);
 
             const v_nodes_inv_z = Geometry.getSIMDConstants(nodes);
             const v_steps = Geometry.getSIMDSteps(nodes, inv_area, domain.step);
@@ -433,7 +530,7 @@ pub fn RasterPass(
                     const v_07: @Vector(8, usize) = .{ 0, 1, 2, 3, 4, 5, 6, 7 };
                     const v_scratch_x: @Vector(8, usize) = @splat(scratch_x);
                     const v_x_mask = (v_scratch_x + v_07 >= @as(@Vector(8, usize), @splat(original_start_x))) &
-                                     (v_scratch_x + v_07 < @as(@Vector(8, usize), @splat(bounds.end_x)));
+                        (v_scratch_x + v_07 < @as(@Vector(8, usize), @splat(bounds.end_x)));
 
                     var v_mask: @Vector(8, bool) = v_x_mask;
                     inline for (0..N) |ii| {
@@ -447,23 +544,47 @@ pub fn RasterPass(
                         }
 
                         const index = row_offset + scratch_x;
-                        const ptr_old_inv_z: *const align(8) @Vector(8, f64) = @ptrCast(&scratch.inv_z[index]);
+                        const ptr_old_inv_z: *align(8) const @Vector(8, f64) = @ptrCast(&scratch.inv_z[index]);
                         const v_old_inv_z = ptr_old_inv_z.*;
 
                         const v_depth_mask = v_mask & (v_inv_z >= v_old_inv_z);
 
                         if (@reduce(.Or, v_depth_mask)) {
-                            const v_new_inv_z = @select(f64, v_depth_mask, v_inv_z, v_old_inv_z);
                             const ptr_new_inv_z: *align(8) @Vector(8, f64) = @ptrCast(&scratch.inv_z[index]);
+                            const v_new_inv_z = @select(
+                                f64,
+                                v_depth_mask,
+                                v_inv_z,
+                                v_old_inv_z,
+                            );
                             ptr_new_inv_z.* = v_new_inv_z;
 
+                            const depth_mask_arr: [8]bool = v_depth_mask;
+                            for (0..8) |ll| {
+                                if (depth_mask_arr[ll]) {
+                                    const touched_x = scratch_x + ll;
+                                    if (touched_x < scratch.touched_min_x[scratch_y]) {
+                                        scratch.touched_min_x[scratch_y] = touched_x;
+                                    }
+                                    if (touched_x > scratch.touched_max_x[scratch_y]) {
+                                        scratch.touched_max_x[scratch_y] = touched_x;
+                                    }
+                                }
+                            }
+
                             const v_subpx_z = @as(@Vector(8, f64), @splat(1.0)) / v_inv_z;
-                            shaded_px += @intCast(@reduce(.Add, @as(@Vector(8, u8), 
-                                                                   @select(u8, v_depth_mask, 
-                                                                           @as(@Vector(8, u8), 
-                                                                               @splat(1)), 
-                                                                           @as(@Vector(8, u8), 
-                                                                               @splat(0))))));
+                            shaded_px += @intCast(@reduce(
+                                .Add,
+                                @as(
+                                    @Vector(8, u8),
+                                    @select(
+                                        u8,
+                                        v_depth_mask,
+                                        @as(@Vector(8, u8), @splat(1)),
+                                        @as(@Vector(8, u8), @splat(0)),
+                                    ),
+                                ),
+                            ));
 
                             ShaderKernel.shadeSIMD(
                                 Geometry.coord_space,
@@ -473,7 +594,7 @@ pub fn RasterPass(
                                     .fields_num = fields_num,
                                     .actual_fields = fields_num,
                                     .idx = index,
-                                    .global_subx = 0, 
+                                    .global_subx = 0,
                                     .global_suby = 0,
                                     .local_buf = local_buf,
                                     .v_mask = v_depth_mask,
@@ -527,22 +648,22 @@ pub fn RasterPass(
 
             const NT = if (N == 4) 2 else if (N == 6) 6 else 8;
             var element_tess: hull.Tessellation(NT) = undefined;
-if (comptime Geometry.has_hull) {
-    if (input.hull) |rh| {
-        const hx = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 0, 0 }, 1);
-        const hy = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 1, 0 }, 1);
-        element_tess = hull.getTessellation(N, hx, hy);
-    }
-} else {
-    @panic("rasterSIMDNewton requires has_hull = true");
-}
+            if (comptime Geometry.has_hull) {
+                if (input.hull) |rh| {
+                    const hx = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 0, 0 }, 1);
+                    const hy = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 1, 0 }, 1);
+                    element_tess = hull.getTessellation(N, hx, hy);
+                }
+            } else {
+                @panic("rasterSIMDNewton requires has_hull = true");
+            }
 
-for (bounds.start_y..bounds.end_y) |scratch_y| {
-    const row_offset = scratch_y * domain.tile_size;
-    @memset(scratch.subpx_mask[row_offset + bounds.start_x .. row_offset + bounds.end_x], false);
-}
+            for (bounds.start_y..bounds.end_y) |scratch_y| {
+                const row_offset = scratch_y * domain.tile_size;
+                @memset(scratch.subpx_mask[row_offset + bounds.start_x .. row_offset + bounds.end_x], false);
+            }
 
-            var cand_count: usize = 0;
+            var candidate_count: usize = 0;
             const v_07: @Vector(8, usize) = .{ 0, 1, 2, 3, 4, 5, 6, 7 };
 
             const v_px_min: @Vector(8, f64) = @splat(@as(f64, @floatFromInt(target.tile.x_px_min)));
@@ -553,13 +674,13 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
 
             // Pass 1: Vectorized Coarse In/Out
             for (bounds.start_y..bounds.end_y) |scratch_y| {
-                const subpx_y = @as(f64, @floatFromInt(target.tile.y_px_min)) + 
-                                (@as(f64, @floatFromInt(scratch_y)) + 0.5) * domain.step;
+                const subpx_y = @as(f64, @floatFromInt(target.tile.y_px_min)) +
+                    (@as(f64, @floatFromInt(scratch_y)) + 0.5) * domain.step;
                 var scratch_x = bounds.start_x;
                 while (scratch_x < bounds.end_x) : (scratch_x += 8) {
                     const v_scratch_x: @Vector(8, usize) = @splat(scratch_x);
                     const v_x_mask = (v_scratch_x + v_07 >= v_original_start_x) &
-                                     (v_scratch_x + v_07 < v_bounds_end_x);
+                        (v_scratch_x + v_07 < v_bounds_end_x);
 
                     const v_subpx_x = v_px_min + (@as(@Vector(8, f64), @floatFromInt(v_scratch_x + v_07)) + v_05) * v_step;
                     const v_subpx_y: @Vector(8, f64) = @splat(subpx_y);
@@ -579,18 +700,38 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
                             xi_arr = [_]f64{def_guess.xi} ** 8;
                             eta_arr = [_]f64{def_guess.eta} ** 8;
                         }
-                        
+
                         for (0..8) |jj| {
                             if (mask_arr[jj]) {
-                                scratch.candidate_buffer[cand_count] = .{
-                                    .scratch_x = scratch_x + jj,
-                                    .scratch_y = scratch_y,
-                                    .px = x_arr[jj],
-                                    .py = y_arr[jj],
-                                    .guess_xi = xi_arr[jj],
-                                    .guess_eta = eta_arr[jj],
-                                };
-                                cand_count += 1;
+                                const block_index = candidate_count / 8;
+                                const lane_index = candidate_count % 8;
+
+                                if (lane_index == 0) {
+                                    scratch.candidate_buffer[block_index] = .{
+                                        .scratch_x = [_]usize{0} ** 8,
+                                        .scratch_y = [_]usize{0} ** 8,
+                                        .px = [_]f64{0.0} ** 8,
+                                        .py = [_]f64{0.0} ** 8,
+                                        .guess_xi = [_]f64{0.0} ** 8,
+                                        .guess_eta = [_]f64{0.0} ** 8,
+                                        .count = 0,
+                                    };
+                                }
+
+                                scratch.candidate_buffer[block_index].scratch_x[lane_index] =
+                                    scratch_x + jj;
+                                scratch.candidate_buffer[block_index].scratch_y[lane_index] =
+                                    scratch_y;
+                                scratch.candidate_buffer[block_index].px[lane_index] =
+                                    x_arr[jj];
+                                scratch.candidate_buffer[block_index].py[lane_index] =
+                                    y_arr[jj];
+                                scratch.candidate_buffer[block_index].guess_xi[lane_index] =
+                                    xi_arr[jj];
+                                scratch.candidate_buffer[block_index].guess_eta[lane_index] =
+                                    eta_arr[jj];
+                                scratch.candidate_buffer[block_index].count = lane_index + 1;
+                                candidate_count += 1;
                             }
                         }
                     }
@@ -598,43 +739,52 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
             }
 
             // Pass 2: Vectorized Solving in chunks of 8
-            var ii: usize = 0;
+            const candidate_block_count = @divFloor(candidate_count + 7, 8);
             const geometry_state = if (@hasDecl(Geometry, "getNewtonParams"))
                 Geometry.getNewtonParams(nodes)
             else if (@hasDecl(Geometry, "getInvElemArea"))
                 Geometry.getInvElemArea(nodes)
             else if (@hasDecl(Geometry, "getBilinearParams"))
                 Geometry.getBilinearParams(nodes)
+            else {};
+            const default_guess = if (@hasDecl(Geometry, "getNewtonGuess"))
+                Geometry.getNewtonGuess()
             else
-                {};
+                .{ .xi = 0.0, .eta = 0.0 };
+            var last_seed_valid = false;
+            var last_seed_xi = default_guess.xi;
+            var last_seed_eta = default_guess.eta;
 
-            while (ii < cand_count) : (ii += 8) {
-                const chunk_size = @min(8, cand_count - ii);
-                var target_x_arr: [8]f64 = [_]f64{0.0} ** 8;
-                var target_y_arr: [8]f64 = [_]f64{0.0} ** 8;
-                var xi_guess_arr: [8]f64 = [_]f64{0.0} ** 8;
-                var eta_guess_arr: [8]f64 = [_]f64{0.0} ** 8;
-                var chunk_mask_arr: [8]bool = [_]bool{false} ** 8;
-
-                for (0..chunk_size) |jj| {
-                    const cand = scratch.candidate_buffer[ii + jj];
-                    target_x_arr[jj] = cand.px;
-                    target_y_arr[jj] = cand.py;
-                    xi_guess_arr[jj] = cand.guess_xi;
-                    eta_guess_arr[jj] = cand.guess_eta;
+            for (0..candidate_block_count) |block_index| {
+                var candidate_block = scratch.candidate_buffer[block_index];
+                var chunk_mask_arr = [_]bool{false} ** 8;
+                for (0..candidate_block.count) |jj| {
                     chunk_mask_arr[jj] = true;
+                    candidate_block.guess_xi[jj] = if (last_seed_valid)
+                        last_seed_xi
+                    else
+                        default_guess.xi;
+                    candidate_block.guess_eta[jj] = if (last_seed_valid)
+                        last_seed_eta
+                    else
+                        default_guess.eta;
                 }
 
-                const v_target_x: @Vector(8, f64) = target_x_arr;
-                const v_target_y: @Vector(8, f64) = target_y_arr;
-                const v_xi_guess: @Vector(8, f64) = xi_guess_arr;
-                const v_eta_guess: @Vector(8, f64) = eta_guess_arr;
+                const v_target_x: @Vector(8, f64) = candidate_block.px;
+                const v_target_y: @Vector(8, f64) = candidate_block.py;
+                const v_xi_guess: @Vector(8, f64) = candidate_block.guess_xi;
+                const v_eta_guess: @Vector(8, f64) = candidate_block.guess_eta;
                 const v_chunk_mask: @Vector(8, bool) = chunk_mask_arr;
 
                 const result = Geometry.solveWeightsSIMD(
-                    nodes, v_target_x, v_target_y, 
-                    v_xi_guess, v_eta_guess,
-                    domain.x_off, domain.y_off, geometry_state,
+                    nodes,
+                    v_target_x,
+                    v_target_y,
+                    v_xi_guess,
+                    v_eta_guess,
+                    domain.x_off,
+                    domain.y_off,
+                    geometry_state,
                 );
 
                 const v_conv_mask = v_chunk_mask & result.mask;
@@ -642,15 +792,34 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
                     const conv_mask_arr: [8]bool = v_conv_mask;
                     const xi_out_arr: [8]f64 = result.xi_out;
                     const eta_out_arr: [8]f64 = result.eta_out;
+                    const residual_x_arr: [8]f64 = result.residual_x;
+                    const residual_y_arr: [8]f64 = result.residual_y;
+                    var best_lane: ?usize = null;
+                    var best_resid_sq = std.math.inf(f64);
 
                     for (0..8) |jj| {
                         if (conv_mask_arr[jj]) {
-                            const cand = scratch.candidate_buffer[ii + jj];
-                            const index = cand.scratch_y * domain.tile_size + cand.scratch_x;
+                            const index =
+                                candidate_block.scratch_y[jj] * domain.tile_size +
+                                candidate_block.scratch_x[jj];
                             scratch.subpx_xi[index] = xi_out_arr[jj];
                             scratch.subpx_eta[index] = eta_out_arr[jj];
                             scratch.subpx_mask[index] = true;
+
+                            const residual_sq =
+                                residual_x_arr[jj] * residual_x_arr[jj] +
+                                residual_y_arr[jj] * residual_y_arr[jj];
+                            if (best_lane == null or residual_sq < best_resid_sq) {
+                                best_lane = jj;
+                                best_resid_sq = residual_sq;
+                            }
                         }
+                    }
+
+                    if (best_lane) |lane_index| {
+                        last_seed_valid = true;
+                        last_seed_xi = xi_out_arr[lane_index];
+                        last_seed_eta = eta_out_arr[lane_index];
                     }
                 }
             }
@@ -662,23 +831,23 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
                 while (scratch_x < bounds.end_x) : (scratch_x += 8) {
                     const index = row_offset + scratch_x;
                     var mask_arr: [8]bool = undefined;
-                    @memcpy(&mask_arr, scratch.subpx_mask[index..index+8]);
+                    @memcpy(&mask_arr, scratch.subpx_mask[index .. index + 8]);
                     const v_mask_full: @Vector(8, bool) = mask_arr;
 
                     const v_scratch_x: @Vector(8, usize) = @splat(scratch_x);
                     const v_x_mask = (v_scratch_x + v_07 >= @as(@Vector(8, usize), @splat(original_start_x))) &
-                                     (v_scratch_x + v_07 < @as(@Vector(8, usize), @splat(bounds.end_x)));
-                    
+                        (v_scratch_x + v_07 < @as(@Vector(8, usize), @splat(bounds.end_x)));
+
                     const v_mask = v_mask_full & v_x_mask;
 
                     if (@reduce(.Or, v_mask)) {
                         var xi_arr: [8]f64 = undefined;
                         var eta_arr: [8]f64 = undefined;
-                        @memcpy(&xi_arr, scratch.subpx_xi[index..index+8]);
-                        @memcpy(&eta_arr, scratch.subpx_eta[index..index+8]);
+                        @memcpy(&xi_arr, scratch.subpx_xi[index .. index + 8]);
+                        @memcpy(&eta_arr, scratch.subpx_eta[index .. index + 8]);
                         const v_xi: @Vector(8, f64) = xi_arr;
                         const v_eta: @Vector(8, f64) = eta_arr;
-                        
+
                         var v_weights: [N]@Vector(8, f64) = undefined;
                         var v_dNu: [N]@Vector(8, f64) = undefined;
                         var v_dNv: [N]@Vector(8, f64) = undefined;
@@ -690,7 +859,7 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
                         }
                         const v_inv_z = @as(@Vector(8, f64), @splat(1.0)) / v_sum_z;
 
-                        const ptr_old_inv_z: *const align(8) @Vector(8, f64) = @ptrCast(&scratch.inv_z[index]);
+                        const ptr_old_inv_z: *align(8) const @Vector(8, f64) = @ptrCast(&scratch.inv_z[index]);
                         const v_old_inv_z = ptr_old_inv_z.*;
                         const v_depth_mask = v_mask & (v_inv_z >= v_old_inv_z);
 
@@ -699,13 +868,21 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
                             const ptr_new_inv_z: *align(8) @Vector(8, f64) = @ptrCast(&scratch.inv_z[index]);
                             ptr_new_inv_z.* = v_new_inv_z;
 
+                            const depth_mask_arr: [8]bool = v_depth_mask;
+                            for (0..8) |ll| {
+                                if (depth_mask_arr[ll]) {
+                                    const touched_x = scratch_x + ll;
+                                    if (touched_x < scratch.touched_min_x[scratch_y]) {
+                                        scratch.touched_min_x[scratch_y] = touched_x;
+                                    }
+                                    if (touched_x > scratch.touched_max_x[scratch_y]) {
+                                        scratch.touched_max_x[scratch_y] = touched_x;
+                                    }
+                                }
+                            }
+
                             const v_subpx_z = @as(@Vector(8, f64), @splat(1.0)) / v_inv_z;
-                            shaded_px += @intCast(@reduce(.Add, @as(@Vector(8, u8), 
-                                                                   @select(u8, v_depth_mask, 
-                                                                           @as(@Vector(8, u8), 
-                                                                               @splat(1)), 
-                                                                           @as(@Vector(8, u8), 
-                                                                               @splat(0))))));
+                            shaded_px += @intCast(@reduce(.Add, @as(@Vector(8, u8), @select(u8, v_depth_mask, @as(@Vector(8, u8), @splat(1)), @as(@Vector(8, u8), @splat(0))))));
 
                             ShaderKernel.shadeSIMD(
                                 Geometry.coord_space,
@@ -756,10 +933,8 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
                 nodes_inv_z[node_index] = 1.0 / nodes.z[node_index];
             }
 
-            const inv_area = 1.0 / rops.edgeFun3(nodes.x[0], nodes.y[0],
-                                                 nodes.x[1], nodes.y[1],
-                                                 nodes.x[2], nodes.y[2]);
-            
+            const inv_area = 1.0 / rops.edgeFun3(nodes.x[0], nodes.y[0], nodes.x[1], nodes.y[1], nodes.x[2], nodes.y[2]);
+
             const dweights_dx = Geometry.getDWeightsDx(nodes, inv_area, domain.step);
             const dweights_dy = Geometry.getDWeightsDy(nodes, inv_area, domain.step);
 
@@ -778,13 +953,19 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
 
                         if (inv_z >= scratch.inv_z[index]) {
                             scratch.inv_z[index] = inv_z;
+                            if (scratch_x < scratch.touched_min_x[scratch_y]) {
+                                scratch.touched_min_x[scratch_y] = scratch_x;
+                            }
+                            if (scratch_x > scratch.touched_max_x[scratch_y]) {
+                                scratch.touched_max_x[scratch_y] = scratch_x;
+                            }
                             const subpx_z = 1.0 / inv_z;
                             shaded_px += 1;
 
-                            const global_subx = target.tile.x_px_min * sub_samp + 
-                                                scratch_x;
-                            const global_suby = target.tile.y_px_min * sub_samp + 
-                                                scratch_y;
+                            const global_subx = target.tile.x_px_min * sub_samp +
+                                scratch_x;
+                            const global_suby = target.tile.y_px_min * sub_samp +
+                                scratch_y;
 
                             if (comptime report != .off) {
                                 ctx_rast.ctx_perf.recordPixel(global_subx, global_suby, 0);
@@ -816,7 +997,6 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
                                     ctx_rast.ctx_perf,
                                     scratch.image,
                                 );
-
                             } else {
                                 ShaderKernel.shade(
                                     Geometry.coord_space,
@@ -881,8 +1061,7 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
                 Geometry.getInvElemArea(nodes)
             else if (@hasDecl(Geometry, "getBilinearParams"))
                 Geometry.getBilinearParams(nodes)
-            else
-                {};
+            else {};
 
             const NT = if (N == 4) 2 else if (N == 6) 6 else 8;
             var element_tess: hull.Tessellation(NT) = undefined;
@@ -918,7 +1097,12 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
                     }
 
                     const result = Geometry.solveWeights(
-                        nodes, subpx_x, subpx_y, domain.x_off, domain.y_off, geometry_state,
+                        nodes,
+                        subpx_x,
+                        subpx_y,
+                        domain.x_off,
+                        domain.y_off,
+                        geometry_state,
                     );
 
                     if (result.weights) |weights| {
@@ -927,6 +1111,12 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
 
                         if (inv_z >= scratch.inv_z[index]) {
                             scratch.inv_z[index] = inv_z;
+                            if (scratch_x < scratch.touched_min_x[scratch_y]) {
+                                scratch.touched_min_x[scratch_y] = scratch_x;
+                            }
+                            if (scratch_x > scratch.touched_max_x[scratch_y]) {
+                                scratch.touched_max_x[scratch_y] = scratch_x;
+                            }
                             const subpx_z = 1.0 / inv_z;
                             shaded_px += 1;
 
@@ -960,7 +1150,6 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
                                     ctx_rast.ctx_perf,
                                     scratch.image,
                                 );
-
                             } else {
                                 ShaderKernel.shade(
                                     Geometry.coord_space,
@@ -997,46 +1186,164 @@ for (bounds.start_y..bounds.end_y) |scratch_y| {
     };
 }
 
-pub fn averageScratch(tile: ActiveTile,
-                      sub_samp: usize,
-                      spx_tile_size: usize,
-                      fields_num: usize,
-                      spx_image_scratch: *const MatSlice(f64),
-                      spx_field_avg: []f64,
-                      image_out_arr: *NDArray(f64)) void {
+pub fn resolveScratchDirect(
+    tile: ActiveTile,
+    spx_tile_size: usize,
+    fields_num: usize,
+    spx_image_scratch: *const MatSlice(f64),
+    image_out_arr: *NDArray(f64),
+) void {
+    const curr_tile_size_x: usize = tile.x_px_max - tile.x_px_min;
+    const curr_tile_size_y: usize = tile.y_px_max - tile.y_px_min;
 
-    const curr_tile_size_x = tile.x_px_max - tile.x_px_min;
-    const curr_tile_size_y = tile.y_px_max - tile.y_px_min;
+    for (0..curr_tile_size_y) |ty| {
+        const image_px_y: usize = tile.y_px_min + ty;
+        const scratch_row_offset = ty * spx_tile_size;
+
+        for (0..curr_tile_size_x) |tx| {
+            const image_px_x: usize = tile.x_px_min + tx;
+            const scratch_flat_ind = scratch_row_offset + tx;
+
+            if (fields_num == 1) {
+                image_out_arr.set(
+                    &[_]usize{ 0, image_px_y, image_px_x },
+                    spx_image_scratch.get(0, scratch_flat_ind),
+                );
+            } else if (fields_num == 3) {
+                image_out_arr.set(
+                    &[_]usize{ 0, image_px_y, image_px_x },
+                    spx_image_scratch.get(0, scratch_flat_ind),
+                );
+                image_out_arr.set(
+                    &[_]usize{ 1, image_px_y, image_px_x },
+                    spx_image_scratch.get(1, scratch_flat_ind),
+                );
+                image_out_arr.set(
+                    &[_]usize{ 2, image_px_y, image_px_x },
+                    spx_image_scratch.get(2, scratch_flat_ind),
+                );
+            } else {
+                for (0..fields_num) |ff| {
+                    image_out_arr.set(
+                        &[_]usize{ ff, image_px_y, image_px_x },
+                        spx_image_scratch.get(ff, scratch_flat_ind),
+                    );
+                }
+            }
+        }
+    }
+}
+
+pub fn averageScratch(
+    tile: ActiveTile,
+    sub_samp: usize,
+    spx_tile_size: usize,
+    fields_num: usize,
+    spx_image_scratch: *const MatSlice(f64),
+    touched_min_x: []const usize,
+    touched_max_x: []const usize,
+    spx_field_avg: []f64,
+    image_out_arr: *NDArray(f64),
+) void {
+    const curr_tile_size_x: usize = tile.x_px_max - tile.x_px_min;
+    const curr_tile_size_y: usize = tile.y_px_max - tile.y_px_min;
     const sub_samp_f = @as(f64, @floatFromInt(sub_samp));
     const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
 
     for (0..curr_tile_size_y) |ty| {
         const image_px_y: usize = tile.y_px_min + ty;
         const spx_start_y: usize = sub_samp * ty;
+        var touched_min_px_x = curr_tile_size_x;
+        var touched_max_px_x: usize = 0;
 
-        for (0..curr_tile_size_x) |tx| {
+        for (0..sub_samp) |sy| {
+            const scratch_y = spx_start_y + sy;
+            const row_min_x = touched_min_x[scratch_y];
+            const row_max_x = touched_max_x[scratch_y];
+
+            if (row_min_x <= row_max_x) {
+                const row_min_px_x = row_min_x / sub_samp;
+                const row_max_px_x = row_max_x / sub_samp;
+                if (row_min_px_x < touched_min_px_x) {
+                    touched_min_px_x = row_min_px_x;
+                }
+                if (row_max_px_x > touched_max_px_x) {
+                    touched_max_px_x = row_max_px_x;
+                }
+            }
+        }
+
+        if (touched_min_px_x > touched_max_px_x) {
+            continue;
+        }
+
+        for (touched_min_px_x..@min(curr_tile_size_x, touched_max_px_x + 1)) |tx| {
             const image_px_x: usize = tile.x_px_min + tx;
             const spx_start_x: usize = sub_samp * tx;
 
-            @memset(spx_field_avg, 0.0);
+            if (fields_num == 1) {
+                var field_sum_0: f64 = 0.0;
 
-            for (0..sub_samp) |sy| {
-                const scratch_row_offset: usize = (spx_start_y + sy) * spx_tile_size;
+                for (0..sub_samp) |sy| {
+                    const scratch_row_offset: usize = (spx_start_y + sy) * spx_tile_size;
 
-                for (0..sub_samp) |sx| {
-                    const scratch_flat_ind: usize = scratch_row_offset + spx_start_x + sx;
-
-                    for (0..fields_num) |ff| {
-                        spx_field_avg[ff] += spx_image_scratch.get(ff, scratch_flat_ind);
+                    for (0..sub_samp) |sx| {
+                        const scratch_flat_ind: usize = scratch_row_offset + spx_start_x + sx;
+                        field_sum_0 += spx_image_scratch.get(0, scratch_flat_ind);
                     }
                 }
-            }
 
-            for (0..fields_num) |ff| {
-                const image_inds = [_]usize{ ff, image_px_y, image_px_x };
-                const image_val: f64 = spx_field_avg[ff] * inv_sub_samp_sq;
-                
-                image_out_arr.set(image_inds[0..], image_val);
+                image_out_arr.set(
+                    &[_]usize{ 0, image_px_y, image_px_x },
+                    field_sum_0 * inv_sub_samp_sq,
+                );
+            } else if (fields_num == 3) {
+                var field_sum_0: f64 = 0.0;
+                var field_sum_1: f64 = 0.0;
+                var field_sum_2: f64 = 0.0;
+
+                for (0..sub_samp) |sy| {
+                    const scratch_row_offset: usize = (spx_start_y + sy) * spx_tile_size;
+
+                    for (0..sub_samp) |sx| {
+                        const scratch_flat_ind: usize = scratch_row_offset + spx_start_x + sx;
+                        field_sum_0 += spx_image_scratch.get(0, scratch_flat_ind);
+                        field_sum_1 += spx_image_scratch.get(1, scratch_flat_ind);
+                        field_sum_2 += spx_image_scratch.get(2, scratch_flat_ind);
+                    }
+                }
+
+                image_out_arr.set(
+                    &[_]usize{ 0, image_px_y, image_px_x },
+                    field_sum_0 * inv_sub_samp_sq,
+                );
+                image_out_arr.set(
+                    &[_]usize{ 1, image_px_y, image_px_x },
+                    field_sum_1 * inv_sub_samp_sq,
+                );
+                image_out_arr.set(
+                    &[_]usize{ 2, image_px_y, image_px_x },
+                    field_sum_2 * inv_sub_samp_sq,
+                );
+            } else {
+                @memset(spx_field_avg, 0.0);
+
+                for (0..sub_samp) |sy| {
+                    const scratch_row_offset: usize = (spx_start_y + sy) * spx_tile_size;
+
+                    for (0..sub_samp) |sx| {
+                        const scratch_flat_ind: usize = scratch_row_offset + spx_start_x + sx;
+
+                        for (0..fields_num) |ff| {
+                            spx_field_avg[ff] += spx_image_scratch.get(ff, scratch_flat_ind);
+                        }
+                    }
+                }
+
+                for (0..fields_num) |ff| {
+                    const image_val: f64 = spx_field_avg[ff] * inv_sub_samp_sq;
+                    image_out_arr.set(&[_]usize{ ff, image_px_y, image_px_x }, image_val);
+                }
             }
         }
     }

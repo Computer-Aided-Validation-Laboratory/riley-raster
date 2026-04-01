@@ -134,3 +134,58 @@ Interpretation:
 - most non-`quad9` cases are substantially more stable than the worst-case tail
 - `quad9` should be treated as a special noisy family until the source of its
   variability is better understood
+
+## Geometry Throughput Thresholds (`MElem/s`)
+
+For geometry-pipeline work we should use a separate uncertainty model from the
+raster-loop `MPx/s` thresholds above.
+
+Source dataset:
+
+- `perf/v3_variability_rerun/geom/bench0.md` to `bench9.md`
+- `perf/v3_variability_rerun/sphere2000/bench0.md` to `bench9.md`
+
+Method:
+
+- metric used: `MElem/s`
+- suites analyzed: `geom`, `sphere2000`
+- cases analyzed: `112`
+- per case, compute:
+  - median `MElem/s`
+  - relative median absolute deviation (`MAD`)
+  - max deviation from median as a percent of median
+
+Aggregate results:
+
+- median relative `MAD`: `1.822%`
+- 95th percentile relative `MAD`: `4.422%`
+- median max deviation from median: `5.542%`
+- 90th percentile max deviation from median: `10.209%`
+- 95th percentile max deviation from median: `10.477%`
+- worst max deviation from median: `14.831%`
+
+Most unstable `MElem/s` cases in this rerun archive:
+
+- `sphere2000:tri6_flat_grey`: max deviation `14.831%`
+- `geom:quad4newton_flat_grey`: max deviation `12.408%`
+- `sphere2000:tri6_tex8_grey`: max deviation `11.952%`
+- `geom:quad4newton_tex8_grey_linear`: max deviation `10.917%`
+- `geom:tri3opt_tex8_grey_linear`: max deviation `10.590%`
+
+Recommended thresholds for `MElem/s` comparisons:
+
+- reasonable threshold: `5%`
+- conservative threshold: `11%`
+
+Recommended interpretation:
+
+- `< 5%`: treat as likely noise or too small to rely on from a single run
+- `5%` to `11%`: likely real, but worth confirming if the decision matters
+- `>= 11%`: strong evidence of a meaningful geometry-throughput change
+
+Working note:
+
+- unlike the earlier `MPx/s` studies, `quad9` is not the dominant `MElem/s`
+  outlier in this rerun archive
+- for now, use one geometry-throughput threshold set for all kernels rather than
+  splitting out a separate `quad9` rule

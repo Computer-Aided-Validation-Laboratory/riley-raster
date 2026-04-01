@@ -101,6 +101,91 @@ After implementing each optimisation:
       - `quad8`
       - `quad9`
 
+### Suggested Grouping
+
+These scalar and structural items should not all be attacked one by one. Several of
+them group naturally and are better implemented together to avoid reshaping the same
+data flow repeatedly.
+
+1. Group 1: BBox Prep Data Model
+   - remove repeated projection work
+   - store tile-span metadata
+   - split hull and non-hull bbox paths
+   - specialize bbox generation by kernel
+   - This group defines what a prepared visible element looks like and should be done as
+     one coordinated refactor.
+
+2. Group 2: Overlap Emission
+   - precompute clipped overlap metadata
+   - specialize 1-tile, 2-tile, and 4-tile overlap paths
+   - optionally sort or bucket visible elements for locality
+   - only consider replacing the two-pass overlap generation after the earlier overlap
+     fast paths are understood
+   - This group should be built on top of the output shape from Group 1.
+
+3. Group 3: Orientation And Culling Refinement
+   - kernel-specific orientation tests
+   - cheaper conservative tests before full nonlinear checks
+   - derivative and invariant caching
+   - This group is best done after the bbox structure is stable, and preferably one
+     kernel family at a time so wins and regressions are easy to attribute.
+
+4. Group 4: Visible-Element Packing
+   - prepack visible-element geometry after culling
+   - compact arrays for later overlap and raster setup
+   - This can either be folded into Group 1 if the visible-element representation is
+     being redesigned anyway, or done immediately after Group 1 once the data shape is
+     clear.
+
+Recommended sequencing:
+
+1. Group 1
+2. Group 2
+3. Group 3
+4. Group 4 if it did not already land as part of Group 1
+
+### Group 1 Result
+
+Rejected in the first full refactor attempt.
+
+What was implemented:
+
+- split projected-nodal and hull bbox paths
+- added projected screen-space scratch for bbox prep while keeping Newton solver data
+  in clip space
+- stored tile-span metadata in `ElemBBox`
+- updated overlap generation to consume stored tile spans
+
+Outcome:
+
+- correctness was restored and both `ReleaseSafe` suites passed
+- geometry throughput regressed heavily versus `v3` when measured with `MElem/s`
+
+Measured impact versus `v3`:
+
+- `bench_geom`: about `-29.1%` average
+- `bench_sphere2000`: about `-25.0%` average
+
+The worst regressions were concentrated in the nonlinear and quad kernels:
+
+- `quad4ibi`: about `-52%`
+- `quad4newton`: about `-36%` to `-37%`
+- `tri6`: about `-34%` to `-36%`
+- `quad9`: about `-37%` to `-44%`
+
+Likely reason:
+
+- the added screen-space scratch build and broader data-model indirection cost more than
+  the saved divide and tile-span recomputation work
+- for these scenes, the extra geometry-prep passes outweighed the simplified overlap math
+
+Decision:
+
+- revert to `v3`
+- do not continue this Group 1 design in its current form
+- future geometry work should focus on smaller, more targeted changes rather than a
+  broad bbox-prep data-model refactor
+
 ## Extended SIMD Plan
 
 This SIMD exploration is for geometry processing, not the raster loop. It is intended
@@ -174,6 +259,119 @@ Element fit with 8-wide SIMD:
       - `quad4`
       - `tri6`
       - `quad8`
+
+### SIMD Experiment Result
+
+Rejected overall in the first two SIMD geometry-prep experiments.
+
+What was tried:
+
+1. `src-simd2`: a generic SIMD path across all geometry kernels
+   - padded or generic 8-wide SIMD used for projected node generation, bbox min/max,
+     hull min/max, and nonlinear backface/orientation accumulation
+
+2. `src-simd3`: a hybrid specialized SIMD path across all geometry kernels
+   - exact-width SIMD for kernels with `N <= 8`
+   - `8 + 1` split path for `quad9`
+
+Measured impact versus `v3` baseline in `MElem/s`:
+
+- generic `src-simd2`:
+  - `bench_geom`: about `-7.4%`
+  - `bench_sphere2000`: about `-14.6%`
+
+- hybrid `src-simd3`:
+  - `bench_geom`: about `+1.0%`
+  - `bench_sphere2000`: about `-1.6%`
+
+Kernel-level read:
+
+- `quad8` responded well to SIMD
+- `tri3` and `tri3opt` were near flat in the hybrid version
+- `quad4newton` was close to flat in the hybrid version
+- `tri6` was mildly negative
+- `quad4ibi` and `quad9` regressed enough to make the overall result not worth keeping
+
+Decision:
+
+- reject both versions as full geometry-pipeline replacements
+- keep `v3` as the accepted baseline
+- revisit geometry SIMD with a better memory layout and dataflow design
+
+### Node-Width SIMD Result
+
+Rejected as a broad all-kernel geometry replacement.
+
+What was implemented:
+
+- node-width SIMD for nodal per-element geometry work using `N = nodes_per_elem`
+- applied to:
+  - projected node generation
+  - nodal bbox min/max reduction
+  - nonlinear backface and orientation accumulation
+  - local exact-normal and averaged-normal derivative accumulation
+- overlap generation remained scalar
+
+Measured impact versus `v3` baseline in `MElem/s`:
+
+- `bench_geom`: about `+2.9%`
+- `bench_sphere2000`: about `-3.9%`
+
+Kernel-level read:
+
+- strong positive:
+  - `quad8`
+    - about `+32.3%` on `geom`
+    - about `+14.0%` on `sphere2000`
+
+- near flat:
+  - `tri3`
+    - about `+0.1%` on `geom`
+    - about `-4.0%` on `sphere2000`
+  - `tri3opt`
+    - about `+0.6%` on `geom`
+    - about `+0.6%` on `sphere2000`
+  - `quad4newton`
+    - about `-0.9%` on `geom`
+    - about `-5.6%` on `sphere2000`
+
+- negative:
+  - `tri6`
+    - about `-3.0%` on `geom`
+    - about `-6.1%` on `sphere2000`
+  - `quad4ibi`
+    - about `-5.4%` on `geom`
+    - about `-6.5%` on `sphere2000`
+  - `quad9`
+    - about `-3.2%` on `geom`
+    - about `-19.7%` on `sphere2000`
+
+Representative outliers:
+
+- best `geom` case: `quad8_flat_grey +38.46%`
+- best `sphere2000` case: `quad8_tex8_rgb +15.26%`
+- worst `geom` case: `quad4ibi_tex8_rgb_quintic_lut_lerp -15.19%`
+- worst `sphere2000` case: `quad9_tex8_grey -23.02%`
+
+Decision:
+
+- reject this as a full-kernel default path
+- keep `v3` as the accepted baseline
+- carry forward the architectural lesson that node-width SIMD is promising for
+  contiguous nodal work, but should likely be applied selectively rather than forced
+  across every geometry kernel
+
+Important architectural note for future SIMD work:
+
+- a full-vector-width approach is not automatically best for this pipeline
+- for the coordinate transform, using `N = nodes_per_elem` to slice directly from the
+  `[elems, fields, nodes_per_elem]` layout was previously found to be more efficient
+  than forcing full-width vectors
+- even though that leaves vector lanes unused for smaller kernels, it preserves a much
+  better memory access pattern
+- the likely direction for future geometry SIMD is therefore a hybrid memory layout
+  that balances fetch locality and slicing cost against SIMD width, rather than
+  maximizing SIMD lane occupancy at all costs
       - `quad9`
 
 ### SIMD Priority Order

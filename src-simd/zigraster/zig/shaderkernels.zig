@@ -17,16 +17,17 @@ pub fn FlatKernel(comptime N: usize) type {
         ) void {
             if (@TypeOf(ctx_perf).mode == .perf) {
                 ctx_perf.recordDepth(
-                    ctx_shade.global_subx, ctx_shade.global_suby, 1.0 / interp.sub_pixel_z,
+                    ctx_shade.global_subx,
+                    ctx_shade.global_suby,
+                    1.0 / interp.sub_pixel_z,
                 );
             }
-            
+
             if (comptime coord_space == CoordSpace.clip_px_leng) {
                 shaderops.fillFlat(N, ctx_shade, interp, shader, spx_image_scratch);
             } else {
                 shaderops.fillFlatPerspective(N, ctx_shade, interp, shader, spx_image_scratch);
             }
-
         }
 
         pub inline fn shadeSIMD(
@@ -42,11 +43,21 @@ pub fn FlatKernel(comptime N: usize) type {
             _ = v_mask;
             if (comptime coord_space == CoordSpace.raster) {
                 shaderops.fillFlatPerspectiveSIMD(
-                    N, ctx_shade, v_weights, v_nodes_inv_z, v_subpx_z, shader, spx_image_scratch,
+                    N,
+                    ctx_shade,
+                    v_weights,
+                    v_nodes_inv_z,
+                    v_subpx_z,
+                    shader,
+                    spx_image_scratch,
                 );
             } else if (comptime coord_space == CoordSpace.clip_px_leng) {
                 shaderops.fillFlatSIMD(
-                    N, ctx_shade, v_weights, shader, spx_image_scratch,
+                    N,
+                    ctx_shade,
+                    v_weights,
+                    shader,
+                    spx_image_scratch,
                 );
             } else {
                 @panic("shadeSIMD not implemented for this coord_space");
@@ -69,13 +80,15 @@ pub fn NormalKernel(comptime N: usize) type {
             _ = coord_space;
             if (@TypeOf(ctx_perf).mode == .perf) {
                 ctx_perf.recordDepth(
-                    ctx_shade.global_subx, ctx_shade.global_suby, 1.0 / interp.sub_pixel_z,
+                    ctx_shade.global_subx,
+                    ctx_shade.global_suby,
+                    1.0 / interp.sub_pixel_z,
                 );
             }
-            
+
             const n = ctx_shade.local_buf.interpolateNormal(interp.weights);
             const px_stride = spx_image_scratch.cols_num;
-            
+
             spx_image_scratch.elems[0 * px_stride + ctx_shade.idx] = n[0] * 0.5 + 0.5;
             spx_image_scratch.elems[1 * px_stride + ctx_shade.idx] = n[1] * 0.5 + 0.5;
             spx_image_scratch.elems[2 * px_stride + ctx_shade.idx] = n[2] * 0.5 + 0.5;
@@ -91,7 +104,10 @@ pub fn NormalKernel(comptime N: usize) type {
             shader: anytype,
             spx_image_scratch: *MatSlice(f64),
         ) void {
-            _ = coord_space; _ = v_nodes_inv_z; _ = v_subpx_z; _ = shader;
+            _ = coord_space;
+            _ = v_nodes_inv_z;
+            _ = v_subpx_z;
+            _ = shader;
             const px_stride = spx_image_scratch.cols_num;
 
             // Vectorized Normal Interpolation
@@ -114,8 +130,8 @@ pub fn NormalKernel(comptime N: usize) type {
 }
 
 pub fn TexKernel(
-    comptime N: usize, 
-    comptime TexT: type, 
+    comptime N: usize,
+    comptime TexT: type,
     comptime channels: usize,
 ) type {
     return struct {
@@ -129,7 +145,9 @@ pub fn TexKernel(
         ) void {
             if (@TypeOf(ctx_perf).mode == .perf) {
                 ctx_perf.recordDepth(
-                    ctx_shade.global_subx, ctx_shade.global_suby, 1.0 / interp.sub_pixel_z,
+                    ctx_shade.global_subx,
+                    ctx_shade.global_suby,
+                    1.0 / interp.sub_pixel_z,
                 );
             }
             if (comptime coord_space == CoordSpace.clip_px_leng) {
@@ -168,12 +186,46 @@ pub fn TexKernel(
             spx_image_scratch: *MatSlice(f64),
         ) void {
             if (comptime coord_space == CoordSpace.raster) {
-                shaderops.fillTexPerspectiveSIMD(
-                    N, TexT, channels, shader.interp_type, ctx_shade, v_mask, v_weights, v_nodes_inv_z, v_subpx_z, shader, spx_image_scratch,
-                );
+                if (comptime N == 3) {
+                    shaderops.fillTexPerspectiveSIMDTri3(
+                        N,
+                        TexT,
+                        channels,
+                        shader.interp_type,
+                        ctx_shade,
+                        v_mask,
+                        v_weights,
+                        v_nodes_inv_z,
+                        v_subpx_z,
+                        shader,
+                        spx_image_scratch,
+                    );
+                } else {
+                    shaderops.fillTexPerspectiveSIMD(
+                        N,
+                        TexT,
+                        channels,
+                        shader.interp_type,
+                        ctx_shade,
+                        v_mask,
+                        v_weights,
+                        v_nodes_inv_z,
+                        v_subpx_z,
+                        shader,
+                        spx_image_scratch,
+                    );
+                }
             } else if (comptime coord_space == CoordSpace.clip_px_leng) {
                 shaderops.fillTexSIMD(
-                    N, TexT, channels, shader.interp_type, ctx_shade, v_mask, v_weights, shader, spx_image_scratch,
+                    N,
+                    TexT,
+                    channels,
+                    shader.interp_type,
+                    ctx_shade,
+                    v_mask,
+                    v_weights,
+                    shader,
+                    spx_image_scratch,
                 );
             } else {
                 @panic("shadeSIMD not implemented for this coord_space");
