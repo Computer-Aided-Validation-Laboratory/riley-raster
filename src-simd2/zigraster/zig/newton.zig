@@ -17,11 +17,6 @@ pub const NewtonResultSIMD = struct {
     residual_y: @Vector(8, f64),
 };
 
-pub const NewtonResidualSIMD = struct {
-    residual_x: @Vector(8, f64),
-    residual_y: @Vector(8, f64),
-};
-
 // Solves: $$ \sum_{i=1}^N N_i(\xi, \eta) \cdot (X_{pixel} \cdot W_i - X_i) = 0 $$
 // N_i are the shape functions,
 // xi, eta = element parametric coords, 0 to 1 for tri6 and -1 to 1 for quad8,quad9
@@ -250,46 +245,5 @@ pub fn solveInverseSIMD(
         .iterations = v_iters,
         .residual_x = v_residual_x_final,
         .residual_y = v_residual_y_final,
-    };
-}
-
-pub fn evalResidualSIMD(
-    comptime N: usize,
-    v_target_x: @Vector(8, f64),
-    v_target_y: @Vector(8, f64),
-    elem_node_x: []const f64,
-    elem_node_y: []const f64,
-    elem_node_w: []const f64,
-    v_xi: @Vector(8, f64),
-    v_eta: @Vector(8, f64),
-) NewtonResidualSIMD {
-    var v_node_values: [N]@Vector(8, f64) = undefined;
-    var v_deriv_n_xi: [N]@Vector(8, f64) = undefined;
-    var v_deriv_n_eta: [N]@Vector(8, f64) = undefined;
-    shapefun.shapeFunctionsSIMD(
-        N,
-        v_xi,
-        v_eta,
-        &v_node_values,
-        &v_deriv_n_xi,
-        &v_deriv_n_eta,
-    );
-
-    var v_residual_x: @Vector(8, f64) = @splat(0.0);
-    var v_residual_y: @Vector(8, f64) = @splat(0.0);
-
-    inline for (0..N) |nn| {
-        const v_node_x: @Vector(8, f64) = @splat(elem_node_x[nn]);
-        const v_node_y: @Vector(8, f64) = @splat(elem_node_y[nn]);
-        const v_node_w: @Vector(8, f64) = @splat(elem_node_w[nn]);
-        const v_term_x = v_target_x * v_node_w - v_node_x;
-        const v_term_y = v_target_y * v_node_w - v_node_y;
-        v_residual_x += v_node_values[nn] * v_term_x;
-        v_residual_y += v_node_values[nn] * v_term_y;
-    }
-
-    return .{
-        .residual_x = v_residual_x,
-        .residual_y = v_residual_y,
     };
 }

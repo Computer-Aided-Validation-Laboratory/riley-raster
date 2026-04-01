@@ -18,7 +18,7 @@ pub fn main() !void {
 
     const out_dir_base = "out-bench-bal1000";
     const pixel_num = [_]u32{ 800, 500 };
-    const runs = 5;
+    const runs = 10;
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
