@@ -2,10 +2,12 @@ const std = @import("std");
 const common = @import("bench_common.zig");
 const testcommon = @import("common/tests.zig");
 const tcfg = @import("testconfig.zig");
+const buildconfig = @import("zigraster/zig/buildconfig.zig");
 const mr = @import("zigraster/zig/meshraster.zig");
 const iio = @import("zigraster/zig/imageio.zig");
 
 const config = common.BenchConfig{ .run = .all };
+const simd_on = buildconfig.config.simd == .on;
 
 test "Unified Benchmark Tests" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -29,23 +31,41 @@ test "Unified Benchmark Tests" {
         .{
             .name = "fullraster",
             .gold_dir = "gold-bench-fullscreen",
-            .out_dir = "out-simd2-bench-fullraster",
+            .out_dir = if (simd_on)
+                "out-simd-bench-fullraster"
+            else
+                "out-bench-fullraster",
         },
         .{
             .name = "geom",
             .gold_dir = "gold-bench-fullscreen",
-            .out_dir = "out-simd2-bench-geom",
+            .out_dir = if (simd_on)
+                "out-simd-bench-geom"
+            else
+                "out-bench-geom",
         },
         .{
             .name = "sphere200",
-            .gold_dir = "gold-simd2-sphere200",
-            .out_dir = "out-simd2-sphere200",
+            .gold_dir = if (simd_on)
+                "gold-simd2-sphere200"
+            else
+                "gold-sphere200",
+            .out_dir = if (simd_on)
+                "out-simd-sphere200"
+            else
+                "out-sphere200",
             .is_sphere = true,
         },
         .{
             .name = "sphere2000",
-            .gold_dir = "gold-simd2-sphere2000",
-            .out_dir = "out-simd2-sphere2000",
+            .gold_dir = if (simd_on)
+                "gold-simd2-sphere2000"
+            else
+                "gold-sphere2000",
+            .out_dir = if (simd_on)
+                "out-simd-sphere2000"
+            else
+                "out-sphere2000",
             .is_sphere = true,
         },
     };

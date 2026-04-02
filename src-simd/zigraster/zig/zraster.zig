@@ -17,8 +17,9 @@ const mr = @import("meshraster.zig");
 const MeshType = mr.MeshType;
 const MeshInput = mr.MeshInput;
 const MeshPrepared = mr.MeshPrepared;
-const ShaderInput = shadekerns.shaderops.ShaderInput;
-const ShaderPrepared = shadekerns.shaderops.ShaderPrepared;
+const shaderops = @import("shaderops.zig");
+const ShaderInput = shaderops.ShaderInput;
+const ShaderPrepared = shaderops.ShaderPrepared;
 
 const iio = @import("imageio.zig");
 const ImageFormat = iio.ImageFormat;
@@ -59,16 +60,11 @@ fn applyDispToMesh(
     coords: *const MatSlice(f64),
     disp: *const NDArray(f64),
 ) !MatSlice(f64) {
-
-    var coords_disp = try MatSlice(f64).initAlloc(
-        outer_alloc, coords.rows_num, coords.cols_num
-    );
+    var coords_disp = try MatSlice(f64).initAlloc(outer_alloc, coords.rows_num, coords.cols_num);
     @memcpy(coords_disp.elems, coords.elems);
 
     const disp_frame_mem = disp.getSlice(&[_]usize{ tt, 0, 0 }, 0);
-    var disp_frame = MatSlice(f64).init(disp_frame_mem, 
-                                        disp.dims[1],
-                                        disp.dims[2]);
+    var disp_frame = MatSlice(f64).init(disp_frame_mem, disp.dims[1], disp.dims[2]);
 
     coords_disp.addInPlace(&disp_frame);
 
@@ -83,7 +79,6 @@ pub fn rasterAllFrames(
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
 ) !?NDArray(f64) {
-
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
@@ -118,9 +113,7 @@ pub fn rasterAllFrames(
     // Allocate NDArray if we are returning everything to the user in memory
     var images_arr: ?NDArray(f64) = null;
     if (config.save_opt == .memory or config.save_opt == .both) {
-        const dims = [_]usize{
-            num_time, num_fields, camera.pixels_num[1], camera.pixels_num[0]
-        };
+        const dims = [_]usize{ num_time, num_fields, camera.pixels_num[1], camera.pixels_num[0] };
         images_arr = try NDArray(f64).initFlat(outer_alloc, dims[0..]);
     }
 
@@ -131,9 +124,7 @@ pub fn rasterAllFrames(
         switch (mesh.shader) {
             .flat, .normals => |s| {
                 if (s.scale_over == .over_frames) {
-                    flat_global_scaling[ii] = imageops.getScalingParamsNDArray(
-                        &s.field.array, null, s.scaling
-                    );
+                    flat_global_scaling[ii] = imageops.getScalingParamsNDArray(&s.field.array, null, s.scaling);
                 }
             },
             else => {},
@@ -149,13 +140,9 @@ pub fn rasterAllFrames(
             var coords_to_trans: MatSlice(f64) = undefined;
             if (mesh.disp) |disp| {
                 const frame_idx = @min(tt, disp.array.dims[dim_time_pre] - 1);
-                coords_to_trans = try applyDispToMesh(
-                    arena_alloc, frame_idx, &mesh.coords.mat, &disp.array
-                );
+                coords_to_trans = try applyDispToMesh(arena_alloc, frame_idx, &mesh.coords.mat, &disp.array);
             } else {
-                coords_to_trans = MatSlice(f64).init(mesh.coords.mat.elems, 
-                                                     mesh.coords.mat.rows_num,
-                                                     mesh.coords.mat.cols_num);
+                coords_to_trans = MatSlice(f64).init(mesh.coords.mat.elems, mesh.coords.mat.rows_num, mesh.coords.mat.cols_num);
             }
 
             var flat_frame_scaling: ?imageops.ScalingParams = null;
@@ -164,18 +151,14 @@ pub fn rasterAllFrames(
                     if (s.scale_over == .over_frames) {
                         flat_frame_scaling = flat_global_scaling[ii];
                     } else {
-                        flat_frame_scaling = imageops.getScalingParamsNDArray(
-                            &s.field.array, tt, s.scaling
-                        );
+                        flat_frame_scaling = imageops.getScalingParamsNDArray(&s.field.array, tt, s.scaling);
                     }
                 },
                 else => {},
             }
-            transformed_meshes[ii] = try mr.prepareMesh(
-                arena_alloc, &mesh, &coords_to_trans, flat_frame_scaling
-            );
+            transformed_meshes[ii] = try mr.prepareMesh(arena_alloc, &mesh, &coords_to_trans, flat_frame_scaling);
         }
-        
+
         var frame_arr: NDArray(f64) = undefined;
         if (images_arr) |*ima| {
             const stride = ima.strides[0];
@@ -205,16 +188,37 @@ pub fn rasterAllFrames(
 
         switch (config.report) {
             .off => try rasterSceneInternal(
-                arena_alloc, io, camera, tt, transformed_meshes, &frame_arr, 
-                config.tile_size, .off, null,
+                arena_alloc,
+                io,
+                camera,
+                tt,
+                transformed_meshes,
+                &frame_arr,
+                config.tile_size,
+                .off,
+                null,
             ),
             .bench => try rasterSceneInternal(
-                arena_alloc, io, camera, tt, transformed_meshes, &frame_arr, 
-                config.tile_size, .bench, &frame_perf.?,
+                arena_alloc,
+                io,
+                camera,
+                tt,
+                transformed_meshes,
+                &frame_arr,
+                config.tile_size,
+                .bench,
+                &frame_perf.?,
             ),
             .perf => try rasterSceneInternal(
-                arena_alloc, io, camera, tt, transformed_meshes, &frame_arr, 
-                config.tile_size, .perf, &frame_perf.?,
+                arena_alloc,
+                io,
+                camera,
+                tt,
+                transformed_meshes,
+                &frame_arr,
+                config.tile_size,
+                .perf,
+                &frame_perf.?,
             ),
         }
 
@@ -227,14 +231,25 @@ pub fn rasterAllFrames(
                 @as(f64, @floatFromInt(transformed_meshes.len));
 
             try fp.saveFrameReport(
-                io, outer_alloc, out_dir, tt, camera, config.tile_size, 
-                config.perf_opts, nodes_per_elem,
+                io,
+                outer_alloc,
+                out_dir,
+                tt,
+                camera,
+                config.tile_size,
+                config.perf_opts,
+                nodes_per_elem,
             );
         }
 
         if (config.save_opt == .disk or config.save_opt == .both) {
             try iio.saveImages(
-                io, out_dir, tt, num_fields, camera.pixels_num, &frame_arr, 
+                io,
+                out_dir,
+                tt,
+                num_fields,
+                camera.pixels_num,
+                &frame_arr,
                 config.save_opts,
             );
         }
@@ -288,9 +303,7 @@ pub fn rasterSceneInternal(
     );
 
     const time_end_geo = Timestamp.now(io, .awake);
-    pipe_times.geometry_prep = @floatFromInt(
-        time_start_geo.durationTo(time_end_geo).raw.nanoseconds
-    );
+    pipe_times.geometry_prep = @floatFromInt(time_start_geo.durationTo(time_end_geo).raw.nanoseconds);
 
     const time_start_overlap = Timestamp.now(io, .awake);
 
@@ -307,9 +320,7 @@ pub fn rasterSceneInternal(
     );
 
     const time_end_overlap = Timestamp.now(io, .awake);
-    pipe_times.tile_overlap = @floatFromInt(
-        time_start_overlap.durationTo(time_end_overlap).raw.nanoseconds
-    );
+    pipe_times.tile_overlap = @floatFromInt(time_start_overlap.durationTo(time_end_overlap).raw.nanoseconds);
 
     const time_start_loop = Timestamp.now(io, .awake);
 
@@ -330,16 +341,12 @@ pub fn rasterSceneInternal(
         raster_hulls,
         image_out_arr,
     );
-    
+
     const time_end_loop = Timestamp.now(io, .awake);
-    pipe_times.raster_loop = @floatFromInt(
-        time_start_loop.durationTo(time_end_loop).raw.nanoseconds
-    );
+    pipe_times.raster_loop = @floatFromInt(time_start_loop.durationTo(time_end_loop).raw.nanoseconds);
 
     const raster_end = Timestamp.now(io, .awake);
-    pipe_times.total_time = @floatFromInt(
-        raster_start.durationTo(raster_end).raw.nanoseconds
-    );
+    pipe_times.total_time = @floatFromInt(raster_start.durationTo(raster_end).raw.nanoseconds);
 
     if (report != .off) {
         perf_data.?.pipe_times = pipe_times;
@@ -356,8 +363,14 @@ pub fn rasterSceneInternal(
         }
         if (report == .bench) {
             try perf.standardReport(
-                io, camera, pipe_times, total_elems_num, total_elems_in_image,
-                nodes_per_elem, .bench, perf_data,
+                io,
+                camera,
+                pipe_times,
+                total_elems_num,
+                total_elems_in_image,
+                nodes_per_elem,
+                .bench,
+                perf_data,
             );
         }
     } else {
@@ -369,9 +382,14 @@ pub fn rasterSceneInternal(
             @as(f64, @floatFromInt(meshes.len));
 
         try perf.standardReport(
-            io, camera, pipe_times, total_elems_num, total_elems_in_image,
-            nodes_per_elem, .off, null,
+            io,
+            camera,
+            pipe_times,
+            total_elems_num,
+            total_elems_in_image,
+            nodes_per_elem,
+            .off,
+            null,
         );
     }
-    }
-
+}
