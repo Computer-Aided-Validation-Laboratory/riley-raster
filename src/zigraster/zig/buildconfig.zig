@@ -10,7 +10,7 @@ pub const Config = struct {
 };
 
 pub const config = Config{
-    .simd = .off,
+    .simd = .on,
     .simd_vector_width = 8,
     .precision = f64,
 };
