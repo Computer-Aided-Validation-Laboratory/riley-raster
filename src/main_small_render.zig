@@ -9,17 +9,11 @@ pub fn main() !void {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const texture =  try gengold.iio.loadImage(
-        allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1
-    );
+    const texture = try gengold.iio.loadImage(allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1);
     defer texture.deinit(allocator);
 
-    const mesh_types = [_]gengold.MeshType{ 
-        .tri3, .tri6, .quad4ibi, .quad8, .quad9 
-    };
-    const interp_types = [_]gengold.texops.InterpType{ 
-        .linear, .cubic, .cubic_lut, .cubic_lut_lerp, .quintic, .quintic_lut, .quintic_lut_lerp 
-    };
+    const mesh_types = [_]gengold.MeshType{ .tri3, .tri6, .quad4ibi, .quad8, .quad9 };
+    const interp_types = [_]gengold.texops.InterpType{ .linear, .cubic, .cubic_lut, .cubic_lut_lerp, .quintic, .quintic_lut, .quintic_lut_lerp };
 
     const pixel_num = [_]u32{ 160, 100 };
 
@@ -48,11 +42,8 @@ pub fn main() !void {
         },
     };
 
-    std.debug.print("Rendering Small Data to out-bench-mm0-small/...\n", .{});
-    try gengold.runGenerationExt(
-        allocator, io, "single", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
-        out_dir_root, data_dir, config
-    );
+    std.debug.print("Rendering Small Data to {s}/...\n", .{out_dir_root});
+    try gengold.runGenerationExt(allocator, io, "single", &mesh_types, 1.1, texture, pixel_num, &interp_types, out_dir_root, data_dir, config);
 
     std.debug.print("Done.\n", .{});
 }

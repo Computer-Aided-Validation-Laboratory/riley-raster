@@ -7,7 +7,7 @@ const gen_fullscreen = @import("gen_gold_bench_fullscreen.zig");
 const gen_sphere = @import("gen_gold_sphere.zig");
 
 pub fn main() !void {
-    std.debug.print("Generating ALL Gold Data...\n\n", .{});
+    std.debug.print("Generating ALL SIMD Gold Data...\n\n", .{});
 
     std.debug.print("--- Small ---\n", .{});
     try gen_small.main();
@@ -27,5 +27,5 @@ pub fn main() !void {
     std.debug.print("\n--- Sphere ---\n", .{});
     try gen_sphere.main();
 
-    std.debug.print("\nALL Gold Data generation complete.\n", .{});
+    std.debug.print("\nALL SIMD Gold Data generation complete.\n", .{});
 }

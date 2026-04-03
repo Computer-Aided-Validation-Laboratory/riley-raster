@@ -36,59 +36,58 @@ pub fn main() !void {
 
     var max_name_len: usize = 0;
 
-    std.debug.print(
-        "Starting Full Raster Benchmark ({d}x{d}, {d} run per case)...\n",
-        .{ pixel_num[0], pixel_num[1], runs }
-    );
+    std.debug.print("Starting Full Raster Benchmark ({d}x{d}, {d} run per case)...\n", .{
+        pixel_num[0], pixel_num[1], runs,
+    });
 
     for (mesh_types) |mt| {
         for (shader_types) |st| {
             for (interp_types) |it| {
                 var data_dir_buf: [256]u8 = undefined;
-                const data_dir = try std.fmt.bufPrint(
-                    &data_dir_buf, "data-bench/{s}_fullraster", .{@tagName(mt)}
-                );
+                const data_dir = try std.fmt.bufPrint(&data_dir_buf, "data-bench/{s}_fullraster", .{@tagName(mt)});
 
                 if (common.shouldRun(config, mt, st, it, data_dir)) {
                     var case_name_buf: [256]u8 = undefined;
                     const case_name = if (st == .tex8_grey or st == .tex8_rgb)
-                        try std.fmt.bufPrint(
-                            &case_name_buf, "{s}_{s}_{s}",
-                            .{ @tagName(mt), @tagName(st), @tagName(it) }
-                        )
+                        try std.fmt.bufPrint(&case_name_buf, "{s}_{s}_{s}", .{ @tagName(mt), @tagName(st), @tagName(it) })
                     else
-                        try std.fmt.bufPrint(
-                            &case_name_buf, "{s}_{s}",
-                            .{ @tagName(mt), @tagName(st) }
-                        );
+                        try std.fmt.bufPrint(&case_name_buf, "{s}_{s}", .{ @tagName(mt), @tagName(st) });
 
                     std.debug.print("Case: {s}\n", .{case_name});
 
                     if (case_name.len > max_name_len) max_name_len = case_name.len;
 
-                    var e2e_times = try allocator.alloc(f64, runs); defer allocator.free(e2e_times);
-                    var geom_times = try allocator.alloc(f64, runs); defer allocator.free(geom_times);
-                    var raster_times = try allocator.alloc(f64, runs); defer allocator.free(raster_times);
-                    var fps_vals = try allocator.alloc(f64, runs); defer allocator.free(fps_vals);
-                    
-                    var mpx_vals = try allocator.alloc(f64, runs); defer allocator.free(mpx_vals);
-                    var msubpx_vals = try allocator.alloc(f64, runs); defer allocator.free(msubpx_vals);
-                    var mshades_vals = try allocator.alloc(f64, runs); defer allocator.free(mshades_vals);
-                    var msubshades_vals = try allocator.alloc(f64, runs); defer allocator.free(msubshades_vals);
-                    var melems_vals = try allocator.alloc(f64, runs); defer allocator.free(melems_vals);
-                    var mnodes_vals = try allocator.alloc(f64, runs); defer allocator.free(mnodes_vals);
-                    var mops_vals = try allocator.alloc(f64, runs); defer allocator.free(mops_vals);
+                    var e2e_times = try allocator.alloc(f64, runs);
+                    defer allocator.free(e2e_times);
+                    var geom_times = try allocator.alloc(f64, runs);
+                    defer allocator.free(geom_times);
+                    var raster_times = try allocator.alloc(f64, runs);
+                    defer allocator.free(raster_times);
+                    var fps_vals = try allocator.alloc(f64, runs);
+                    defer allocator.free(fps_vals);
+
+                    var mpx_vals = try allocator.alloc(f64, runs);
+                    defer allocator.free(mpx_vals);
+                    var msubpx_vals = try allocator.alloc(f64, runs);
+                    defer allocator.free(msubpx_vals);
+                    var mshades_vals = try allocator.alloc(f64, runs);
+                    defer allocator.free(mshades_vals);
+                    var msubshades_vals = try allocator.alloc(f64, runs);
+                    defer allocator.free(msubshades_vals);
+                    var melems_vals = try allocator.alloc(f64, runs);
+                    defer allocator.free(melems_vals);
+                    var mnodes_vals = try allocator.alloc(f64, runs);
+                    defer allocator.free(mnodes_vals);
+                    var mops_vals = try allocator.alloc(f64, runs);
+                    defer allocator.free(mops_vals);
 
                     for (0..runs) |r| {
-                        const res = try common.runBenchmark(
-                            allocator, io, mt, st, it, data_dir, out_dir_base,
-                            pixel_num, texture_grey, texture_rgb
-                        );
+                        const res = try common.runBenchmark(allocator, io, mt, st, it, data_dir, out_dir_base, pixel_num, texture_grey, texture_rgb);
                         e2e_times[r] = res.e2e_ms;
                         geom_times[r] = res.geom_ms;
                         raster_times[r] = res.raster_ms;
                         fps_vals[r] = res.fps;
-                        
+
                         mpx_vals[r] = res.metrics.mpx_sec;
                         msubpx_vals[r] = res.metrics.msubpx_sec;
                         mshades_vals[r] = res.metrics.mshades_sec;
@@ -118,7 +117,12 @@ pub fn main() !void {
     }
 
     try common.writeBenchmarkReport(
-        allocator, io, "Full Raster Benchmark Results", out_dir_base, 
-        pixel_num, stats_list.items, max_name_len
+        allocator,
+        io,
+        "Full Raster Benchmark Results",
+        out_dir_base,
+        pixel_num,
+        stats_list.items,
+        max_name_len,
     );
 }

@@ -7,7 +7,7 @@ pub const SimData = meshio.SimData;
 pub const mr = @import("../zigraster/zig/meshraster.zig");
 pub const MeshType = mr.MeshType;
 pub const MeshInput = mr.MeshInput;
-pub const Rotation = @import("../zigraster/zig/rotation.zig").Rotation;
+pub const Rotation = @import("../zigraster/zig/camera.zig").Rotation;
 pub const Camera = @import("../zigraster/zig/camera.zig").Camera;
 pub const CameraOps = @import("../zigraster/zig/camera.zig").CameraOps;
 pub const zraster = @import("../zigraster/zig/zraster.zig");
@@ -574,4 +574,3 @@ pub fn runMultimeshMixedRGBGenerationExt(
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
     _ = try zraster.rasterAllFrames(aa, io, &camera_rgb, mesh_inputs, config_rgb, out_dir);
 }
-

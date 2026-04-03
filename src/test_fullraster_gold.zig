@@ -23,39 +23,37 @@ test "Fullraster Gold Comparison" {
     inline for (mesh_types) |mt| {
         inline for (shader_types) |st| {
             const case_name = comptime @tagName(mt) ++ "_" ++ @tagName(st);
-            
-            const bench_csv = try std.fmt.allocPrint(allocator, "out-bench-norm-old-fullraster/{s}/frame_0_field_0{s}.csv", .{
-                case_name,
-                if (st == .flat_rgb or st == .tex8_rgb) "_rgb" else ""
-            });
+
+            const bench_csv = try std.fmt.allocPrint(allocator, "out-bench-norm-old-fullraster/{s}/frame_0_field_0{s}.csv", .{ case_name, if (st == .flat_rgb or st == .tex8_rgb) "_rgb" else "" });
             defer allocator.free(bench_csv);
 
             const gold_csv: ?[]u8 = if (st == .flat_grey or st == .flat_rgb)
-                try std.fmt.allocPrint(allocator, "gold-rgb/{s}/frame_0_field_0{s}.csv", .{
-                    case_name,
-                    if (st == .flat_rgb) "_rgb" else ""
-                })
+                try std.fmt.allocPrint(allocator, "gold-rgb/{s}/frame_0_field_0{s}.csv", .{ case_name, if (st == .flat_rgb) "_rgb" else "" })
             else if (st == .tex8_grey)
-                try std.fmt.allocPrint(allocator, "gold-small/full_{s}_dispon_tex_cubic_lut_lerp/frame_0_field_0.csv", .{
-                    @tagName(mt)
-                })
+                try std.fmt.allocPrint(allocator, "gold-small/full_{s}_dispon_tex_cubic_lut_lerp/frame_0_field_0.csv", .{@tagName(mt)})
             else
                 null;
 
             if (gold_csv) |g_csv| {
                 defer allocator.free(g_csv);
-                
+
                 std.debug.print("Checking {s} ... ", .{case_name});
 
                 const b_arr_maybe = common.loadNDArrayFromCSV(allocator, io, bench_csv, if (st == .flat_rgb or st == .tex8_rgb) 3 else 1, false);
                 if (b_arr_maybe) |b_arr| {
                     var b_arr_mut = b_arr;
-                    defer { allocator.free(b_arr_mut.elems); b_arr_mut.deinit(allocator); }
+                    defer {
+                        allocator.free(b_arr_mut.elems);
+                        b_arr_mut.deinit(allocator);
+                    }
 
                     const g_arr_maybe = common.loadNDArrayFromCSV(allocator, io, g_csv, if (st == .flat_rgb) 3 else 1, false);
                     if (g_arr_maybe) |g_arr| {
                         var g_arr_mut = g_arr;
-                        defer { allocator.free(g_arr_mut.elems); g_arr_mut.deinit(allocator); }
+                        defer {
+                            allocator.free(g_arr_mut.elems);
+                            g_arr_mut.deinit(allocator);
+                        }
 
                         var diff_count: usize = 0;
                         var max_diff: f64 = 0;
@@ -72,15 +70,15 @@ test "Fullraster Gold Comparison" {
                         if (diff_count == 0) {
                             std.debug.print("MATCHED\n", .{});
                         } else {
-                            std.debug.print("MISMATCH! ({d} px, max diff: {d:.10})\n", .{diff_count, max_diff});
+                            std.debug.print("MISMATCH! ({d} px, max diff: {d:.10})\n", .{ diff_count, max_diff });
                             total_fails += 1;
                         }
                     } else |err| {
-                        std.debug.print("FAILED to load gold CSV: {s} ({s})\n", .{g_csv, @errorName(err)});
+                        std.debug.print("FAILED to load gold CSV: {s} ({s})\n", .{ g_csv, @errorName(err) });
                         total_fails += 1;
                     }
                 } else |err| {
-                    std.debug.print("FAILED to load bench CSV: {s} ({s})\n", .{bench_csv, @errorName(err)});
+                    std.debug.print("FAILED to load bench CSV: {s} ({s})\n", .{ bench_csv, @errorName(err) });
                     total_fails += 1;
                 }
             } else {

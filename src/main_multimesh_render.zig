@@ -29,12 +29,8 @@ pub fn main() !void {
     std.debug.print("Rendering Multimesh Data to {s}/...\n", .{out_dir_root});
 
     try gengold.runMultimeshGenerationExt(allocator, io, config, out_dir_root);
-    try gengold.runMultimeshMixedGenerationExt(
-        allocator, io, config, out_dir_root ++ "/allelem_allshade"
-    );
-    try gengold.runMultimeshMixedRGBGenerationExt(
-        allocator, io, config, out_dir_root ++ "/allelem_allshade_rgb"
-    );
+    try gengold.runMultimeshMixedGenerationExt(allocator, io, config, out_dir_root ++ "/allelem_allshade");
+    try gengold.runMultimeshMixedRGBGenerationExt(allocator, io, config, out_dir_root ++ "/allelem_allshade_rgb");
 
     std.debug.print("Done.\n", .{});
 }

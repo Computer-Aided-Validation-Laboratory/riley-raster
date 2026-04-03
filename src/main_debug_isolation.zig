@@ -64,9 +64,7 @@ pub fn main() !void {
         // Fill all with dummy or same data but only set bottom row to visible texture
         for (0..10) |ii| {
             const data_idx = ii % 5;
-            var coords_dup = try MatSlice(f64).initAlloc(
-                aa, sim_datas[data_idx].coords.mat.rows_num, sim_datas[data_idx].coords.mat.cols_num
-            );
+            var coords_dup = try MatSlice(f64).initAlloc(aa, sim_datas[data_idx].coords.mat.rows_num, sim_datas[data_idx].coords.mat.cols_num);
             @memcpy(coords_dup.elems, sim_datas[data_idx].coords.mat.elems);
 
             if (ii >= 5) {
@@ -81,7 +79,7 @@ pub fn main() !void {
                         .uvs = uvs.array,
                         .texture = texture,
                         .interp_type = .cubic_lut_lerp,
-                    }},
+                    } },
                 };
             } else {
                 // Top row empty (Flat shader with no field or just skip)
@@ -95,9 +93,9 @@ pub fn main() !void {
                         .field = sim_datas[data_idx].field.?,
                         .scaling = .none,
                         .bits = null,
-                    }},
+                    } },
                 };
-                // Actually, let's just make it a very small triangle far away? 
+                // Actually, let's just make it a very small triangle far away?
                 // No, just render it but ensure field values are zero.
                 @memset(mesh_inputs[ii].shader.flat.field.array.elems, 0.0);
             }
@@ -105,16 +103,16 @@ pub fn main() !void {
 
         mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
         const camera = setupCamera(mesh_inputs);
-        
+
         var out_dir = try cwd.openDir(io, "out-bench-multimesh-debug", .{});
         defer out_dir.close(io);
-        
+
         const config = RasterConfig{
             .save_opt = .disk,
-            .save_opts = &[_]iio.ImageSaveOpts{ .{ .format = .bmp, .bits = 8, .scaling = .auto } },
+            .save_opts = &[_]iio.ImageSaveOpts{.{ .format = .bmp, .bits = 8, .scaling = .auto }},
         };
         _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, out_dir);
-        // Rename frame_0_field_0.bmp to texture_only.bmp manually if needed, 
+        // Rename frame_0_field_0.bmp to texture_only.bmp manually if needed,
         // but for now it's in debug dir.
     }
 
@@ -128,9 +126,7 @@ pub fn main() !void {
         var mesh_inputs = try aa.alloc(MeshInput, 10);
         for (0..10) |ii| {
             const data_idx = ii % 5;
-            var coords_dup = try MatSlice(f64).initAlloc(
-                aa, sim_datas2[data_idx].coords.mat.rows_num, sim_datas2[data_idx].coords.mat.cols_num
-            );
+            var coords_dup = try MatSlice(f64).initAlloc(aa, sim_datas2[data_idx].coords.mat.rows_num, sim_datas2[data_idx].coords.mat.cols_num);
             @memcpy(coords_dup.elems, sim_datas2[data_idx].coords.mat.elems);
 
             if (ii < 5) {
@@ -144,7 +140,7 @@ pub fn main() !void {
                         .bits = 8,
                         .scaling = .auto,
                         .scale_over = .within_frames,
-                    }},
+                    } },
                 };
             } else {
                 mesh_inputs[ii] = MeshInput{
@@ -156,7 +152,7 @@ pub fn main() !void {
                         .field = sim_datas2[data_idx].field.?,
                         .scaling = .none,
                         .bits = null,
-                    }},
+                    } },
                 };
                 @memset(mesh_inputs[ii].shader.flat.field.array.elems, 0.0);
             }
@@ -164,15 +160,15 @@ pub fn main() !void {
 
         mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
         const camera = setupCamera(mesh_inputs);
-        
+
         var out_dir = try cwd.openDir(io, "out-bench-multimesh-debug", .{});
         defer out_dir.close(io);
-        
+
         const config = RasterConfig{
             .save_opt = .disk,
-            .save_opts = &[_]iio.ImageSaveOpts{ .{ .format = .bmp, .bits = 8, .scaling = .auto } },
+            .save_opts = &[_]iio.ImageSaveOpts{.{ .format = .bmp, .bits = 8, .scaling = .auto }},
         };
-        // This will overwrite frame_0_field_0.bmp if we are not careful. 
+        // This will overwrite frame_0_field_0.bmp if we are not careful.
         // In this simple script it's fine, we'll see the second run results.
         _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, out_dir);
     }
@@ -189,9 +185,7 @@ fn setupCamera(meshes: []const MeshInput) Camera {
     const subsample: u8 = 2;
 
     const roi_pos = CameraOps.roiCentOverMeshes(meshes);
-    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
-        meshes, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
-    );
+    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(meshes, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor);
 
     return Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, subsample);
 }

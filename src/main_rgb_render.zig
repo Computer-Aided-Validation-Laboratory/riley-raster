@@ -9,7 +9,6 @@ const Rotation = @import("zigraster/zig/camera.zig").Rotation;
 const MeshInput = @import("zigraster/zig/meshraster.zig").MeshInput;
 const mr = @import("zigraster/zig/meshraster.zig");
 const MatSlice = @import("zigraster/zig/matslice.zig").MatSlice;
-const NDArray = @import("zigraster/zig/ndarray.zig").NDArray;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -48,11 +47,9 @@ pub fn main() !void {
     };
 
     const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
-    
+
     // Load RGB Texture
-    const texture = try iio.loadImage(
-        aa, io, "texture/speckle_rgb.bmp", .bmp, u8, 3
-    );
+    const texture = try iio.loadImage(aa, io, "texture/speckle_rgb.bmp", .bmp, u8, 3);
 
     var mesh_inputs = try aa.alloc(MeshInput, 10);
 
@@ -61,9 +58,7 @@ pub fn main() !void {
         const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[ii]});
         const uvs = try uvio.loadUVMap(aa, io, uv_path);
 
-        var coords_dup = try MatSlice(f64).initAlloc(
-            aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num
-        );
+        var coords_dup = try MatSlice(f64).initAlloc(aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num);
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
         mesh_inputs[ii] = MeshInput{
@@ -85,10 +80,8 @@ pub fn main() !void {
     for (0..5) |ii| {
         const field = sim_datas[ii].field.?;
         const num_coords = sim_datas[ii].coords.mat.rows_num;
-        var rgb_field_arr = try NDArray(f64).initFlat(
-            aa, &[_]usize{ field.array.dims[0], num_coords, 3 }
-        );
-        
+        var rgb_field_arr = try zraster.NDArray(f64).initFlat(aa, &[_]usize{ field.array.dims[0], num_coords, 3 });
+
         const coords = sim_datas[ii].coords;
         var min_x: f64 = std.math.inf(f64);
         var max_x: f64 = -std.math.inf(f64);
@@ -126,14 +119,12 @@ pub fn main() !void {
             }
         }
 
-        const rgb_field = meshio.Field{ 
+        const rgb_field = meshio.Field{
             .array = rgb_field_arr,
             .array_mem = rgb_field_arr.elems,
         };
 
-        var coords_dup = try MatSlice(f64).initAlloc(
-            aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num
-        );
+        var coords_dup = try MatSlice(f64).initAlloc(aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num);
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
         mesh_inputs[ii + 5] = MeshInput{
@@ -160,11 +151,14 @@ pub fn main() !void {
 
     const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
     const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
-        mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor,
+        mesh_inputs,
+        pixel_num,
+        pixel_size,
+        focal_leng,
+        rot,
+        fov_scale_factor,
     );
-    const camera = Camera.init(
-        pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2
-    );
+    const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
 
     const config = zraster.RasterConfig{
         .save_opt = .disk,
