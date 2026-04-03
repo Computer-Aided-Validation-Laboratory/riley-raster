@@ -1,13 +1,14 @@
 const std = @import("std");
-const common = @import("bench_common.zig");
+const common = @import("common/benchcommon.zig");
 const testcommon = @import("common/tests.zig");
-const tcfg = @import("testconfig.zig");
+const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("zigraster/zig/buildconfig.zig");
 const mr = @import("zigraster/zig/meshraster.zig");
 const iio = @import("zigraster/zig/imageio.zig");
 
 const config = common.BenchConfig{ .run = .all };
 const simd_on = buildconfig.config.simd == .on;
+const impl_suffix = if (simd_on) "_simd" else "_scalar";
 
 test "Unified Benchmark Tests" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -138,13 +139,13 @@ test "Unified Benchmark Tests" {
                                     std.debug.print("MISMATCH! ({d} px)\n", .{diff_count});
                                     const fail_dir_name = try std.fmt.allocPrint(
                                         aa,
-                                        "bench_{s}_{s}",
-                                        .{ cc.name, case_name },
+                                        "bench_{s}_{s}{s}",
+                                        .{ cc.name, case_name, impl_suffix },
                                     );
                                     try testcommon.saveComparisonArtifactsFromImages(
                                         aa,
                                         io,
-                                        if (simd_on) "fails-simd" else "fails",
+                                        "fails",
                                         fail_dir_name,
                                         &t_mut,
                                         &g_mut,

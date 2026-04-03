@@ -1,7 +1,7 @@
 const std = @import("std");
-const common = @import("bench_common.zig");
+const common = @import("common/benchcommon.zig");
 const testcommon = @import("common/tests.zig");
-const tcfg = @import("testconfig.zig");
+const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("zigraster/zig/buildconfig.zig");
 const mr = @import("zigraster/zig/meshraster.zig");
 const iio = @import("zigraster/zig/imageio.zig");
@@ -22,7 +22,8 @@ test "Sphere Gold Tests" {
     const texture_rgb = try iio.loadImage(allocator, io, "texture/speckle_rgb.bmp", .bmp, u8, 3);
     defer texture_rgb.deinit(allocator);
 
-    const fails_root = if (simd_on) "fails-simd" else "fails";
+    const fails_root = "fails";
+    const impl_suffix = if (simd_on) "_simd" else "_scalar";
 
     const cases = [_]struct { ds: []const u8, gold: []const u8, out: []const u8 }{
         .{
@@ -109,8 +110,8 @@ test "Sphere Gold Tests" {
 
                                     const fail_dir_name = try std.fmt.allocPrint(
                                         allocator,
-                                        "all_{s}_{s}",
-                                        .{ c.ds, case_name },
+                                        "all_{s}_{s}{s}",
+                                        .{ c.ds, case_name, impl_suffix },
                                     );
                                     try testcommon.saveComparisonArtifactsFromImages(
                                         allocator,

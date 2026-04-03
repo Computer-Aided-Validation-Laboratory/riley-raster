@@ -1,5 +1,5 @@
 const std = @import("std");
-const common = @import("bench_common.zig");
+const common = @import("common/benchcommon.zig");
 const mr = @import("zigraster/zig/meshraster.zig");
 const iio = @import("zigraster/zig/imageio.zig");
 const buildconfig = @import("zigraster/zig/buildconfig.zig");

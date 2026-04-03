@@ -11,7 +11,7 @@ fn loadData(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !meshio.
     defer allocator.free(pc);
     const pn = try std.fmt.allocPrint(allocator, "{s}/connect.csv", .{path});
     defer allocator.free(pn);
-    const pf = [_][]const u8{ 
+    const pf = [_][]const u8{
         try std.fmt.allocPrint(allocator, "{s}/field.csv", .{path}),
     };
     defer allocator.free(pf[0]);
@@ -36,12 +36,23 @@ test "Nodal Normals Sanity Check - Sphere" {
     const focal_leng = 2.0;
     const rot = Rotation.init(0, 0, 0);
     const cam_pos = @import("zigraster/zig/camera.zig").CameraOps.posFillFrameFromRot(
-        &sim_data.coords, pixel_num, pixel_size, focal_leng, rot, 1.0,
+        &sim_data.coords,
+        pixel_num,
+        pixel_size,
+        focal_leng,
+        rot,
+        1.0,
     );
     const roi_cent = @import("zigraster/zig/camera.zig").CameraOps.roiCentFromCoords(&sim_data.coords);
 
     var camera = Camera.init(
-        pixel_num, pixel_size, cam_pos, rot, roi_cent, focal_leng, 2,
+        pixel_num,
+        pixel_size,
+        cam_pos,
+        rot,
+        roi_cent,
+        focal_leng,
+        2,
     );
 
     // Normal-to-RGB diagnostic setup
@@ -53,7 +64,7 @@ test "Nodal Normals Sanity Check - Sphere" {
         .shader = .{ .normals = .{
             .field = sim_data.field.?,
             .normal_type = .averaged,
-        }},
+        } },
     };
 
     const iio = @import("zigraster/zig/imageio.zig");
@@ -66,15 +77,22 @@ test "Nodal Normals Sanity Check - Sphere" {
         },
     };
 
-    const out_dir_path = "out-nodals-test";
+    const tmp_test_root = "tmp-tests";
+    const out_dir_path = "tmp-tests/nodals";
     const cwd = std.Io.Dir.cwd();
+    cwd.createDir(io, tmp_test_root, .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
     cwd.createDir(io, out_dir_path, .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
     var out_dir = try cwd.openDir(io, out_dir_path, .{});
     defer out_dir.close(io);
 
     // 3. Rasterize
     const result = try zraster.rasterAllFrames(
-        allocator, io, &camera, &[_]meshraster.MeshInput{mesh_input}, config, out_dir,
+        allocator,
+        io,
+        &camera,
+        &[_]meshraster.MeshInput{mesh_input},
+        config,
+        out_dir,
     );
     if (result) |r| {
         allocator.free(r.elems);

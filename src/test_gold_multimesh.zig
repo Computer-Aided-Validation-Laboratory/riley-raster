@@ -1,6 +1,6 @@
 const std = @import("std");
 const common = @import("common/tests.zig");
-const tcfg = @import("testconfig.zig");
+const tcfg = @import("common/testconfig.zig");
 
 test "Gold Multimesh Suite" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};

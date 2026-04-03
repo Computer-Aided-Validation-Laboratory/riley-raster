@@ -1,5 +1,5 @@
 const std = @import("std");
-const common = @import("bench_common.zig");
+const common = @import("common/benchcommon.zig");
 const mr = @import("zigraster/zig/meshraster.zig");
 const iio = @import("zigraster/zig/imageio.zig");
 
@@ -36,7 +36,7 @@ pub fn main() !void {
                         comptime @tagName(mt) ++ "_" ++ @tagName(st);
 
                     std.debug.print("Rendering reference: {s}\n", .{case_name});
-                    
+
                     // We generate gold from the minimal 'fullraster' dataset
                     _ = try common.runBenchmark(allocator, io, mt, st, it, data_dir, out_dir_base, pixel_num, texture_grey, texture_rgb);
                 }

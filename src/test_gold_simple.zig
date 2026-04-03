@@ -1,6 +1,6 @@
 const std = @import("std");
 const common = @import("common/tests.zig");
-const tcfg = @import("testconfig.zig");
+const tcfg = @import("common/testconfig.zig");
 
 const SHADER_FILTER: common.ShaderFilter = .both; // .flat, .tex, or .both
 
@@ -13,40 +13,21 @@ test "Gold Simple Suite" {
     const io = io_threaded.io();
 
     const texture = blk: {
-        break :blk try common.iio.loadImage(
-            allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1
-        );
+        break :blk try common.iio.loadImage(allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1);
     };
     defer texture.deinit(allocator);
 
-    const mesh_types = [_]common.MeshType{ .tri3, .tri3opt, 
-                                           .tri6, 
-                                           .quad4ibi, .quad4newton,
-                                           .quad8, .quad9 };
-    const interp_types = [_]common.texops.InterpType{ .cubic_lut_lerp };
+    const mesh_types = [_]common.MeshType{ .tri3, .tri3opt, .tri6, .quad4ibi, .quad4newton, .quad8, .quad9 };
+    const interp_types = [_]common.texops.InterpType{.cubic_lut_lerp};
     const pixel_num = [_]u32{ 640, 400 };
 
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
 
     for (mesh_types) |mt| {
-        try common.runTestInternal(allocator, 
-                                   io, 
-                                   "twoelems", 
-                                   mt, 
-                                   1.1, 
-                                   texture, 
-                                   pixel_num, 
-                                   &interp_types, 
-                                   "gold-simple", 
-                                   "data-simple", 
-                                   tcfg.REL_TOL,
-                                   tcfg.ABS_TOL, 
-                                   SHADER_FILTER,
-                                   false);
+        try common.runTestInternal(allocator, io, "twoelems", mt, 1.1, texture, pixel_num, &interp_types, "gold-simple", "data-simple", tcfg.REL_TOL, tcfg.ABS_TOL, SHADER_FILTER, false);
     }
 
     const end_time = std.Io.Clock.Timestamp.now(io, .awake);
-    const duration_ms = @as(f64, @floatFromInt(
-        start_time.durationTo(end_time).raw.nanoseconds)) / 1e6;
+    const duration_ms = @as(f64, @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds)) / 1e6;
     std.debug.print("\nGold Simple Test Suite took {d:.3} ms\n", .{duration_ms});
 }

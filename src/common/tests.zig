@@ -20,6 +20,10 @@ pub const RasterConfig = zraster.RasterConfig;
 pub const iio = @import("../zigraster/zig/imageio.zig");
 pub const texops = @import("../zigraster/zig/textureops.zig");
 pub const uvio = @import("../zigraster/zig/uvio.zig");
+pub const buildconfig = @import("../zigraster/zig/buildconfig.zig");
+
+const default_fails_root = "fails";
+const impl_suffix = if (buildconfig.config.simd == .on) "_simd" else "_scalar";
 
 // Default tolerances: for scientific accuracy and DIC
 // f64: rel= 1e-11, abs= 1e-11
@@ -502,7 +506,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator, io: std.Io, test_type: []co
                     try saveComparisonArtifactsFromResult(
                         aa,
                         io,
-                        "fails-simd2",
+                        default_fails_root,
                         fail_dir_name,
                         &result,
                         f,
@@ -545,7 +549,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator, io: std.Io, test_type: []co
                         try saveComparisonArtifactsFromResult(
                             aa,
                             io,
-                            "fails-simd2",
+                            default_fails_root,
                             fail_dir_name,
                             &result,
                             f,
@@ -635,11 +639,15 @@ pub fn runMultimeshTest(
             const fname = try std.fmt.allocPrint(aa, "{s}/frame_{d}_field_0.csv", .{ gold_dir, f });
             compareNDArrayToCSV(aa, io, &result, f, 0, fname, rel_tol, abs_tol) catch |err| {
                 const case_name = if (mode == .flat) "multimesh_allelem_flat" else "multimesh_allelem_tex";
-                const fail_dir_name = try std.fmt.allocPrint(aa, "all_{s}", .{case_name});
+                const fail_dir_name = try std.fmt.allocPrint(
+                    aa,
+                    "all_{s}{s}",
+                    .{ case_name, impl_suffix },
+                );
                 try saveComparisonArtifactsFromResult(
                     aa,
                     io,
-                    "fails-simd2",
+                    default_fails_root,
                     fail_dir_name,
                     &result,
                     f,
@@ -762,8 +770,8 @@ pub fn runMultimeshMixedTestExt(
             try saveComparisonArtifactsFromResult(
                 aa,
                 io,
-                "fails-simd2",
-                "all_multimesh_allelem_allshade",
+                default_fails_root,
+                "all_multimesh_allelem_allshade" ++ impl_suffix,
                 &result,
                 f,
                 0,
@@ -931,8 +939,8 @@ pub fn runMultimeshMixedRGBTestExt(
             try saveComparisonArtifactsFromResult(
                 aa,
                 io,
-                "fails-simd2",
-                "all_multimesh_allelem_allshade_rgb",
+                default_fails_root,
+                "all_multimesh_allelem_allshade_rgb" ++ impl_suffix,
                 &result,
                 f,
                 0,

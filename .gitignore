@@ -16,12 +16,12 @@ out*/
 gold*/
 fails/
 fails*/
+tmp-tests/
 archive/
 example/
 example*/
 examples*/
 
-temp-test/
 scripts/hull-diags/
 temp-*/
 

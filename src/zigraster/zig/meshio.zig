@@ -14,11 +14,11 @@ pub const Coords = struct {
     mem: []f64,
 
     const Self: type = @This();
-    
+
     pub fn init(mem: []f64, coords_num: usize) Self {
-        assert(mem.len == coords_num*3);
-        const mat_coords = MatSlice(f64).init(mem,coords_num,3); 
-        
+        assert(mem.len == coords_num * 3);
+        const mat_coords = MatSlice(f64).init(mem, coords_num, 3);
+
         return .{
             .mat = mat_coords,
             .mem = mem,
@@ -26,22 +26,21 @@ pub const Coords = struct {
     }
 
     pub fn initAlloc(outer_alloc: std.mem.Allocator, coords_num: usize) !Self {
-        const mat_mem = try outer_alloc.alloc(f64,coords_num*3);
+        const mat_mem = try outer_alloc.alloc(f64, coords_num * 3);
 
-        return init(mat_mem,coords_num);
+        return init(mat_mem, coords_num);
     }
 
-
     pub inline fn x(self: *const Self, ind: usize) f64 {
-        return self.mat.get(ind,0);
+        return self.mat.get(ind, 0);
     }
 
     pub inline fn y(self: *const Self, ind: usize) f64 {
-        return self.mat.get(ind,1);
+        return self.mat.get(ind, 1);
     }
-    
+
     pub inline fn z(self: *const Self, ind: usize) f64 {
-        return self.mat.get(ind,2);
+        return self.mat.get(ind, 2);
     }
 
     pub fn getVecSlice(self: *const Self, ind: usize) []f64 {
@@ -62,22 +61,19 @@ pub const Connect = struct {
     const Self: type = @This();
 
     pub fn init(mem: []usize, elems_num: usize, nodes_per_elem: usize) Self {
-        assert(mem.len == elems_num*nodes_per_elem);
+        assert(mem.len == elems_num * nodes_per_elem);
 
-        const mat_table = MatSlice(usize).init(mem, elems_num, nodes_per_elem); 
+        const mat_table = MatSlice(usize).init(mem, elems_num, nodes_per_elem);
 
         return .{
-          .table = mat_table,
-          .table_mem = mem,  
-        };      
+            .table = mat_table,
+            .table_mem = mem,
+        };
     }
 
-    pub fn initAlloc(outer_alloc: std.mem.Allocator, 
-                     elems_num: usize, 
-                     nodes_per_elem: usize) !Self {
-                 
-        const mat_mem = try outer_alloc.alloc(usize, elems_num*nodes_per_elem);
-        
+    pub fn initAlloc(outer_alloc: std.mem.Allocator, elems_num: usize, nodes_per_elem: usize) !Self {
+        const mat_mem = try outer_alloc.alloc(usize, elems_num * nodes_per_elem);
+
         return init(mat_mem, elems_num, nodes_per_elem);
     }
 
@@ -85,14 +81,14 @@ pub const Connect = struct {
         return self.table.rows_num;
     }
 
-    pub inline  fn getNodesPerElem(self: Self) usize {
+    pub inline fn getNodesPerElem(self: Self) usize {
         return self.table.cols_num;
     }
 
     pub fn deinit(self: *Self, outer_alloc: std.mem.Allocator) void {
         outer_alloc.free(self.table_mem);
     }
-    
+
     pub fn getElem(self: *const Self, elem_num: usize) []usize {
         const ind_start: usize = elem_num * self.getNodesPerElem();
         const ind_end: usize = ind_start + self.getNodesPerElem();
@@ -100,33 +96,34 @@ pub const Connect = struct {
     }
 };
 
-
 pub const Field = struct {
     array: NDArray(f64),
     array_mem: []f64,
 
     const Self = @This();
 
-    pub fn initAlloc(alloc: std.mem.Allocator, 
-                     time_n: usize, 
-                     coord_n: usize,
-                     fields_n: usize) !Self {
+    pub fn initAlloc(alloc: std.mem.Allocator, time_n: usize, coord_n: usize, fields_n: usize) !Self {
+        const mem_array = try alloc.alloc(f64, time_n * coord_n * fields_n);
+        @memset(mem_array, 0.0);
 
-        const mem_array = try alloc.alloc(f64, time_n*coord_n*fields_n);
-        @memset(mem_array,0.0);
+        const mem_dims = [3]usize{ time_n, coord_n, fields_n };
+        const arr = try NDArray(f64).init(alloc, mem_array, mem_dims[0..]);
 
-        const mem_dims = [3]usize{time_n,coord_n,fields_n};        
-        const arr = try NDArray(f64).init(alloc,mem_array,mem_dims[0..]);
-        
         return .{
-            .array = arr, 
+            .array = arr,
             .array_mem = mem_array,
         };
     }
 
-    pub inline fn getTimeN(self: *const Self) usize {return self.array.dims[0];}
-    pub inline fn getCoordN(self: *const Self) usize {return self.array.dims[1];}
-    pub inline fn getFieldsN(self: *const Self) usize {return self.array.dims[2];}
+    pub inline fn getTimeN(self: *const Self) usize {
+        return self.array.dims[0];
+    }
+    pub inline fn getCoordN(self: *const Self) usize {
+        return self.array.dims[1];
+    }
+    pub inline fn getFieldsN(self: *const Self) usize {
+        return self.array.dims[2];
+    }
 
     pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
         allocator.free(self.array_mem);
@@ -134,17 +131,13 @@ pub const Field = struct {
     }
 };
 
-pub fn readCsvToList(outer_alloc: std.mem.Allocator, 
-                     io: std.Io,
-                     path: []const u8
-                     ) !std.ArrayList([]const u8) {
-
+pub fn readCsvToList(outer_alloc: std.mem.Allocator, io: std.Io, path: []const u8) !std.ArrayList([]const u8) {
     const cwd: std.Io.Dir = std.Io.Dir.cwd();
-    var file: std.Io.File = try cwd.openFile(io, path, .{ .mode = .read_only});
+    var file: std.Io.File = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
 
-    var read_buff: [1024 * 1024]u8 = undefined;    
-    var file_reader: std.Io.File.Reader = file.reader(io, &read_buff); 
+    var read_buff: [8 * 1024 * 1024]u8 = undefined;
+    var file_reader: std.Io.File.Reader = file.reader(io, &read_buff);
     const reader = &file_reader.interface;
 
     // Read lines without the trailing '\n' (exclusive).
@@ -156,14 +149,14 @@ pub fn readCsvToList(outer_alloc: std.mem.Allocator,
         const line_dup = try outer_alloc.dupe(u8, line_trimmed);
         try lines.append(outer_alloc, line_dup);
     }
-    
+
     return lines;
 }
 
-pub fn parseCoords(outer_alloc: std.mem.Allocator,
-                   csv_lines: *const std.ArrayList([]const u8), 
-                   ) !Coords {
-
+pub fn parseCoords(
+    outer_alloc: std.mem.Allocator,
+    csv_lines: *const std.ArrayList([]const u8),
+) !Coords {
     const coord_count: usize = csv_lines.items.len;
     var coords = try Coords.initAlloc(outer_alloc, coord_count);
 
@@ -177,7 +170,7 @@ pub fn parseCoords(outer_alloc: std.mem.Allocator,
         while (split_iter.next()) |num_str| {
             const num: f64 = try std.fmt.parseFloat(f64, num_str);
 
-            coords.mat.set(ii,num_count,num);
+            coords.mat.set(ii, num_count, num);
 
             num_count += 1;
             if (num_count >= num_coords) {
@@ -190,9 +183,7 @@ pub fn parseCoords(outer_alloc: std.mem.Allocator,
     return coords;
 }
 
-pub fn parseConnect(outer_alloc: std.mem.Allocator, 
-                    csv_lines: *const std.ArrayList([]const u8)) !Connect {
-
+pub fn parseConnect(outer_alloc: std.mem.Allocator, csv_lines: *const std.ArrayList([]const u8)) !Connect {
     const elem_count = csv_lines.items.len;
 
     var split_iter = std.mem.splitScalar(u8, csv_lines.items[0], ',');
@@ -225,7 +216,6 @@ pub fn parseConnect(outer_alloc: std.mem.Allocator,
 }
 
 pub fn getFieldTimeN(csv_lines: *const std.ArrayList([]const u8)) usize {
-
     var split_iter = std.mem.splitScalar(u8, csv_lines.items[0], ',');
     var time_n: usize = 0;
     while (split_iter.next()) |num_str| {
@@ -236,27 +226,24 @@ pub fn getFieldTimeN(csv_lines: *const std.ArrayList([]const u8)) usize {
     return time_n;
 }
 
-pub fn parseField(csv_lines: *const std.ArrayList([]const u8), 
-                  field: *Field,
-                  field_n: usize) !void {
+pub fn parseField(csv_lines: *const std.ArrayList([]const u8), field: *Field, field_n: usize) !void {
 
     // Each row is a coordinate
     // Each field csv has row where each column in the row is a time step
-    var inds = [_]usize{0,0,0}; // time_n,coord_n,field_n
+    var inds = [_]usize{ 0, 0, 0 }; // time_n,coord_n,field_n
     inds[2] = field_n;
 
     for (csv_lines.items, 0..) |line_str, ii| {
-        inds[0] = 0;     // time_n
-        inds[1] = ii;    // coord_n, each row is a new coord
+        inds[0] = 0; // time_n
+        inds[1] = ii; // coord_n, each row is a new coord
 
         var split_iter = std.mem.splitScalar(u8, line_str, ',');
 
         while (split_iter.next()) |num_str| {
-            
             const num_f: f64 = try std.fmt.parseFloat(f64, num_str);
-            
-            field.array.set(inds[0..],num_f);
-          
+
+            field.array.set(inds[0..], num_f);
+
             inds[0] += 1; // increment time_n as we step along the row
         }
     }
@@ -289,14 +276,14 @@ pub const SimData = struct {
     }
 };
 
-pub fn loadSimData(outer_alloc: std.mem.Allocator,
-                    io: std.Io,
-                    coord_path: []const u8,
-                    connect_path: []const u8,
-                    field_paths: ?[]const []const u8,
-                    disp_paths: ?[]const []const u8,
-                    ) !SimData {
-                     
+pub fn loadSimData(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    coord_path: []const u8,
+    connect_path: []const u8,
+    field_paths: ?[]const []const u8,
+    disp_paths: ?[]const []const u8,
+) !SimData {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
@@ -354,17 +341,14 @@ pub fn loadSimData(outer_alloc: std.mem.Allocator,
     }
 
     return .{
-      .coords = coords,
-      .connect = connect,
-      .field = field,
-      .disp = disp,
+        .coords = coords,
+        .connect = connect,
+        .field = field,
+        .disp = disp,
     };
 }
 
-pub fn loadMultiSimData(allocator: std.mem.Allocator,
-                        io: std.Io,
-                        dir_paths: []const []const u8,
-                        files: SimDataFiles) ![]SimData {
+pub fn loadMultiSimData(allocator: std.mem.Allocator, io: std.Io, dir_paths: []const []const u8, files: SimDataFiles) ![]SimData {
     var sim_data_slice = try allocator.alloc(SimData, dir_paths.len);
     var loaded_count: usize = 0;
     errdefer {
@@ -375,23 +359,17 @@ pub fn loadMultiSimData(allocator: std.mem.Allocator,
     }
 
     for (dir_paths, 0..) |dir_path, ii| {
-        const path_coords = try std.fmt.allocPrint(
-            allocator, "{s}{s}", .{dir_path, files.coord_file}
-        );
+        const path_coords = try std.fmt.allocPrint(allocator, "{s}{s}", .{ dir_path, files.coord_file });
         defer allocator.free(path_coords);
-        
-        const path_connect = try std.fmt.allocPrint(
-            allocator, "{s}{s}", .{dir_path, files.connect_file}
-        );
+
+        const path_connect = try std.fmt.allocPrint(allocator, "{s}{s}", .{ dir_path, files.connect_file });
         defer allocator.free(path_connect);
-        
+
         var field_paths: ?[][]const u8 = null;
         if (files.field_files) |ff| {
             field_paths = try allocator.alloc([]const u8, ff.len);
             for (ff, 0..) |suffix, jj| {
-                field_paths.?[jj] = try std.fmt.allocPrint(
-                    allocator, "{s}{s}", .{dir_path, suffix}
-                );
+                field_paths.?[jj] = try std.fmt.allocPrint(allocator, "{s}{s}", .{ dir_path, suffix });
             }
         }
         defer if (field_paths) |fp| {
@@ -403,9 +381,7 @@ pub fn loadMultiSimData(allocator: std.mem.Allocator,
         if (files.disp_files) |df| {
             disp_paths = try allocator.alloc([]const u8, df.len);
             for (df, 0..) |suffix, jj| {
-                disp_paths.?[jj] = try std.fmt.allocPrint(
-                    allocator, "{s}{s}", .{dir_path, suffix}
-                );
+                disp_paths.?[jj] = try std.fmt.allocPrint(allocator, "{s}{s}", .{ dir_path, suffix });
             }
         }
         defer if (disp_paths) |dp| {
@@ -413,9 +389,7 @@ pub fn loadMultiSimData(allocator: std.mem.Allocator,
             allocator.free(dp);
         };
 
-        sim_data_slice[ii] = try loadSimData(
-            allocator, io, path_coords, path_connect, field_paths, disp_paths
-        );
+        sim_data_slice[ii] = try loadSimData(allocator, io, path_coords, path_connect, field_paths, disp_paths);
         loaded_count += 1;
     }
     return sim_data_slice;
@@ -439,7 +413,7 @@ test "loadMultiSimData twoelems" {
         for (sim_datas) |*sim_data| sim_data.deinit(allocator);
         allocator.free(sim_datas);
     }
-    
+
     const expected_nodes = [_]usize{ 3, 6, 4, 8, 9 };
 
     for (sim_datas, 0..) |sim_data, ii| {
