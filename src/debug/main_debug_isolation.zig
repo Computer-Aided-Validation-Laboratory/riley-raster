@@ -1,24 +1,24 @@
 const std = @import("std");
 const print = std.debug.print;
 
-const MatSlice = @import("zigraster/zig/matslice.zig").MatSlice;
-const meshio = @import("zigraster/zig/meshio.zig");
+const MatSlice = @import("zraster/zig/matslice.zig").MatSlice;
+const meshio = @import("zraster/zig/meshio.zig");
 const SimData = meshio.SimData;
 
-const mr = @import("zigraster/zig/meshraster.zig");
+const mr = @import("zraster/zig/meshraster.zig");
 const MeshType = mr.MeshType;
 const MeshInput = mr.MeshInput;
 const MeshPrepared = mr.MeshPrepared;
 
-const Camera = @import("zigraster/zig/camera.zig").Camera;
-const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
-const Rotation = @import("zigraster/zig/rotation.zig").Rotation;
+const Camera = @import("zraster/zig/camera.zig").Camera;
+const CameraOps = @import("zraster/zig/camera.zig").CameraOps;
+const Rotation = @import("zraster/zig/rotation.zig").Rotation;
 
-const zraster = @import("zigraster/zig/zraster.zig");
+const zraster = @import("zraster/zig/zraster.zig");
 const RasterConfig = zraster.RasterConfig;
 
-const iio = @import("zigraster/zig/imageio.zig");
-const uvio = @import("zigraster/zig/uvio.zig");
+const iio = @import("zraster/zig/imageio.zig");
+const uvio = @import("zraster/zig/uvio.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};

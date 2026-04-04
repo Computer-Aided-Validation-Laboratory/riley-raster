@@ -1,7 +1,7 @@
 const std = @import("std");
 extern fn system(command: [*:0]const u8) c_int;
 
-const buildconfig_path = "src/zigraster/zig/buildconfig.zig";
+const buildconfig_path = "src/zraster/zig/buildconfig.zig";
 
 pub const TestKind = enum {
     gold,

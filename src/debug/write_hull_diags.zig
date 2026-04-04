@@ -1,13 +1,13 @@
 const std = @import("std");
-const rops = @import("zigraster/zig/rasterops.zig");
-const hull = @import("zigraster/zig/hull.zig");
-const Camera = @import("zigraster/zig/camera.zig").Camera;
-const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
-const NDArray = @import("zigraster/zig/ndarray.zig").NDArray;
-const meshio = @import("zigraster/zig/meshio.zig");
-const mr = @import("zigraster/zig/meshraster.zig");
-const Vec3f = @import("zigraster/zig/vecstack.zig").Vec3f;
-const Rotation = @import("zigraster/zig/rotation.zig").Rotation;
+const rops = @import("zraster/zig/rasterops.zig");
+const hull = @import("zraster/zig/hull.zig");
+const Camera = @import("zraster/zig/camera.zig").Camera;
+const CameraOps = @import("zraster/zig/camera.zig").CameraOps;
+const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
+const meshio = @import("zraster/zig/meshio.zig");
+const mr = @import("zraster/zig/meshraster.zig");
+const Vec3f = @import("zraster/zig/vecstack.zig").Vec3f;
+const Rotation = @import("zraster/zig/rotation.zig").Rotation;
 
 fn saveNDArrayToCSV(io: std.Io, arr: *const NDArray(f64), path: []const u8) !void {
     const cwd = std.Io.Dir.cwd();

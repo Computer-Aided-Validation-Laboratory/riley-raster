@@ -1,10 +1,10 @@
 const std = @import("std");
-const zraster = @import("zigraster/zig/zraster.zig");
-const shaderops = @import("zigraster/zig/shaderops.zig");
-const meshraster = @import("zigraster/zig/meshraster.zig");
-const meshio = @import("zigraster/zig/meshio.zig");
-const Camera = @import("zigraster/zig/camera.zig").Camera;
-const NDArray = @import("zigraster/zig/ndarray.zig").NDArray;
+const zraster = @import("zraster/zig/zraster.zig");
+const shaderops = @import("zraster/zig/shaderops.zig");
+const meshraster = @import("zraster/zig/meshraster.zig");
+const meshio = @import("zraster/zig/meshio.zig");
+const Camera = @import("zraster/zig/camera.zig").Camera;
+const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
 
 fn loadData(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !meshio.SimData {
     const pc = try std.fmt.allocPrint(allocator, "{s}/coords.csv", .{path});
@@ -23,7 +23,7 @@ test "Nodal Normals Sanity Check - Sphere" {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const Rotation = @import("zigraster/zig/rotation.zig").Rotation;
+    const Rotation = @import("zraster/zig/rotation.zig").Rotation;
 
     // 1. Load sphere200 tri3 data
     const data_path = "data-bench/tri3_sphere200";
@@ -35,7 +35,7 @@ test "Nodal Normals Sanity Check - Sphere" {
     const pixel_size = [_]f64{ 0.00625, 0.00625 };
     const focal_leng = 2.0;
     const rot = Rotation.init(0, 0, 0);
-    const cam_pos = @import("zigraster/zig/camera.zig").CameraOps.posFillFrameFromRot(
+    const cam_pos = @import("zraster/zig/camera.zig").CameraOps.posFillFrameFromRot(
         &sim_data.coords,
         pixel_num,
         pixel_size,
@@ -43,7 +43,9 @@ test "Nodal Normals Sanity Check - Sphere" {
         rot,
         1.0,
     );
-    const roi_cent = @import("zigraster/zig/camera.zig").CameraOps.roiCentFromCoords(&sim_data.coords);
+    const roi_cent = @import("zraster/zig/camera.zig").CameraOps.roiCentFromCoords(
+        &sim_data.coords,
+    );
 
     var camera = Camera.init(
         pixel_num,
@@ -67,7 +69,7 @@ test "Nodal Normals Sanity Check - Sphere" {
         } },
     };
 
-    const iio = @import("zigraster/zig/imageio.zig");
+    const iio = @import("zraster/zig/imageio.zig");
 
     const config = zraster.RasterConfig{
         .save_opt = .disk,

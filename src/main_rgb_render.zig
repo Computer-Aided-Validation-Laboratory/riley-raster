@@ -1,14 +1,14 @@
 const std = @import("std");
-const zraster = @import("zigraster/zig/zraster.zig");
-const meshio = @import("zigraster/zig/meshio.zig");
-const iio = @import("zigraster/zig/imageio.zig");
-const uvio = @import("zigraster/zig/uvio.zig");
-const Camera = @import("zigraster/zig/camera.zig").Camera;
-const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
-const Rotation = @import("zigraster/zig/camera.zig").Rotation;
-const MeshInput = @import("zigraster/zig/meshraster.zig").MeshInput;
-const mr = @import("zigraster/zig/meshraster.zig");
-const MatSlice = @import("zigraster/zig/matslice.zig").MatSlice;
+const zraster = @import("zraster/zig/zraster.zig");
+const meshio = @import("zraster/zig/meshio.zig");
+const iio = @import("zraster/zig/imageio.zig");
+const uvio = @import("zraster/zig/uvio.zig");
+const Camera = @import("zraster/zig/camera.zig").Camera;
+const CameraOps = @import("zraster/zig/camera.zig").CameraOps;
+const Rotation = @import("zraster/zig/camera.zig").Rotation;
+const MeshInput = @import("zraster/zig/meshraster.zig").MeshInput;
+const mr = @import("zraster/zig/meshraster.zig");
+const MatSlice = @import("zraster/zig/matslice.zig").MatSlice;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};

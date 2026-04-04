@@ -1,17 +1,17 @@
 const std = @import("std");
-const zraster = @import("../zigraster/zig/zraster.zig");
-const meshio = @import("../zigraster/zig/meshio.zig");
-const iio = @import("../zigraster/zig/imageio.zig");
-const uvio = @import("../zigraster/zig/uvio.zig");
-const mr = @import("../zigraster/zig/meshraster.zig");
-const rops = @import("../zigraster/zig/rasterops.zig");
-const rasterengine = @import("../zigraster/zig/rasterengine.zig");
-const Camera = @import("../zigraster/zig/camera.zig").Camera;
-const CameraOps = @import("../zigraster/zig/camera.zig").CameraOps;
-const Rotation = @import("../zigraster/zig/camera.zig").Rotation;
-const perf = @import("../zigraster/zig/perf.zig");
-const NDArray = @import("../zigraster/zig/ndarray.zig").NDArray;
-const MatSlice = @import("../zigraster/zig/matslice.zig").MatSlice;
+const zraster = @import("../zraster/zig/zraster.zig");
+const meshio = @import("../zraster/zig/meshio.zig");
+const iio = @import("../zraster/zig/imageio.zig");
+const uvio = @import("../zraster/zig/uvio.zig");
+const mr = @import("../zraster/zig/meshraster.zig");
+const rops = @import("../zraster/zig/rasterops.zig");
+const rasterengine = @import("../zraster/zig/rasterengine.zig");
+const Camera = @import("../zraster/zig/camera.zig").Camera;
+const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
+const Rotation = @import("../zraster/zig/camera.zig").Rotation;
+const perf = @import("../zraster/zig/perf.zig");
+const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
+const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
 const Timestamp = std.Io.Clock.Timestamp;
 
 pub const CalculatedMetrics = struct {
@@ -147,7 +147,7 @@ pub fn getDateString() ![]const u8 {
 }
 
 pub const ShaderType = enum { flat_grey, flat_rgb, tex8_grey, tex8_rgb };
-pub const InterpType = @import("../zigraster/zig/textureops.zig").InterpType;
+pub const InterpType = @import("../zraster/zig/textureops.zig").InterpType;
 
 pub const RunMode = enum { all, element, texture, interpolator };
 pub const BenchConfig = struct {

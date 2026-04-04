@@ -2,31 +2,31 @@ const std = @import("std");
 const print = std.debug.print;
 const Timestamp = std.Io.Clock.Timestamp;
 
-const meshio = @import("zigraster/zig/meshio.zig");
+const meshio = @import("zraster/zig/meshio.zig");
 const Coords = meshio.Coords;
 const Connect = meshio.Connect;
 const Field = meshio.Field;
 const SimData = meshio.SimData;
 
-const mr = @import("zigraster/zig/meshraster.zig");
+const mr = @import("zraster/zig/meshraster.zig");
 const MeshType = mr.MeshType;
 const MeshInput = mr.MeshInput;
 const FlatInput = mr.FlatInput;
 const TexInput = mr.TexInput;
 
-const ndarray = @import("zigraster/zig/ndarray.zig");
+const ndarray = @import("zraster/zig/ndarray.zig");
 const NDArray = ndarray.NDArray;
 
-const Rotation = @import("zigraster/zig/rotation.zig").Rotation;
-const Camera = @import("zigraster/zig/camera.zig").Camera;
-const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
+const Rotation = @import("zraster/zig/rotation.zig").Rotation;
+const Camera = @import("zraster/zig/camera.zig").Camera;
+const CameraOps = @import("zraster/zig/camera.zig").CameraOps;
 
-const iio = @import("zigraster/zig/imageio.zig");
+const iio = @import("zraster/zig/imageio.zig");
 
-const zraster = @import("zigraster/zig/zraster.zig");
+const zraster = @import("zraster/zig/zraster.zig");
 const RasterConfig = zraster.RasterConfig;
 
-const uvio = @import("zigraster/zig/uvio.zig");
+const uvio = @import("zraster/zig/uvio.zig");
 
 const ShaderMode = enum { flat, texture };
 

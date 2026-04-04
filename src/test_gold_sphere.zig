@@ -2,9 +2,9 @@ const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
-const buildconfig = @import("zigraster/zig/buildconfig.zig");
-const mr = @import("zigraster/zig/meshraster.zig");
-const iio = @import("zigraster/zig/imageio.zig");
+const buildconfig = @import("zraster/zig/buildconfig.zig");
+const mr = @import("zraster/zig/meshraster.zig");
+const iio = @import("zraster/zig/imageio.zig");
 
 const config = common.BenchConfig{ .run = .all };
 const simd_on = buildconfig.config.simd == .on;

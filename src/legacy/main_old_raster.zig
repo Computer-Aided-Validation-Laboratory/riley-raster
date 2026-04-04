@@ -2,33 +2,33 @@ const std = @import("std");
 const print = std.debug.print;
 const time = std.time;
 
-const meshio = @import("zigraster/zig/meshio.zig");
+const meshio = @import("zraster/zig/meshio.zig");
 const Coords = meshio.Coords;
 const Connect = meshio.Connect;
 const Field = meshio.Field;
 const SimData = meshio.SimData;
 
-const VecStack = @import("zigraster/zig/vecstack.zig");
-const MatStack = @import("zigraster/zig/matstack.zig");
+const VecStack = @import("zraster/zig/vecstack.zig");
+const MatStack = @import("zraster/zig/matstack.zig");
 
-const Rotation = @import("zigraster/zig/rotation.zig").Rotation;
+const Rotation = @import("zraster/zig/rotation.zig").Rotation;
 const Vec3f = VecStack.Vec3f;
 const Mat44f = MatStack.Mat44f;
 const Mat44Ops = MatStack.Mat44Ops;
 
-const matslice = @import("zigraster/zig/matslice.zig");
+const matslice = @import("zraster/zig/matslice.zig");
 const MatSlice = matslice.MatSlice;
 const MatSliceOps = matslice.MatSliceOps;
 
-const NDArray = @import("zigraster/zig/ndarray.zig").NDArray;
+const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
 
-const Camera = @import("zigraster/zig/camera.zig").Camera;
-const CameraOps = @import("zigraster/zig/camera.zig").CameraOps;
+const Camera = @import("zraster/zig/camera.zig").Camera;
+const CameraOps = @import("zraster/zig/camera.zig").CameraOps;
 
-const rops = @import("zigraster/zig/rasterops.zig");
-const raster = @import("zigraster/zig/oldraster.zig");
+const rops = @import("zraster/zig/rasterops.zig");
+const raster = @import("zraster/zig/oldraster.zig");
 
-const iio = @import("zigraster/zig/imageio.zig");
+const iio = @import("zraster/zig/imageio.zig");
 
 pub fn main() !void {
     const print_break = [_]u8{'-'} ** 80;

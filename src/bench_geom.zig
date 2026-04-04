@@ -1,7 +1,7 @@
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
-const mr = @import("zigraster/zig/meshraster.zig");
-const iio = @import("zigraster/zig/imageio.zig");
+const mr = @import("zraster/zig/meshraster.zig");
+const iio = @import("zraster/zig/imageio.zig");
 
 const config = common.BenchConfig{ .run = .all };
 
