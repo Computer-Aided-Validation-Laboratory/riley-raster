@@ -11,9 +11,23 @@ pub fn main() !void {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const texture_grey = try iio.loadImage(allocator, io, "texture/speckle.bmp", .bmp, u8, 1);
+    const texture_grey = try iio.loadImage(
+        allocator,
+        io,
+        "texture/speckle.bmp",
+        .bmp,
+        u8,
+        1,
+    );
     defer texture_grey.deinit(allocator);
-    const texture_rgb = try iio.loadImage(allocator, io, "texture/speckle_rgb.bmp", .bmp, u8, 3);
+    const texture_rgb = try iio.loadImage(
+        allocator,
+        io,
+        "texture/speckle_rgb.bmp",
+        .bmp,
+        u8,
+        3,
+    );
     defer texture_rgb.deinit(allocator);
 
     const out_dir_base = "out-sphere2000";
@@ -31,12 +45,19 @@ pub fn main() !void {
 
     var max_name_len: usize = 0;
 
-    std.debug.print("Starting Sphere 2000 Benchmark ({d}x{d}, {d} runs per case)...\n", .{ pixel_num[0], pixel_num[1], runs });
+    std.debug.print(
+        "Starting Sphere 2000 Benchmark ({d}x{d}, {d} runs per case)...\n",
+        .{ pixel_num[0], pixel_num[1], runs },
+    );
 
     for (mesh_types) |mt| {
         for (shader_types) |st| {
             var case_name_buf: [256]u8 = undefined;
-            const case_name = try std.fmt.bufPrint(&case_name_buf, "{s}_{s}", .{ @tagName(mt), @tagName(st) });
+            const case_name = try std.fmt.bufPrint(
+                &case_name_buf,
+                "{s}_{s}",
+                .{ @tagName(mt), @tagName(st) },
+            );
             std.debug.print("Case: {s}\n", .{case_name});
 
             if (case_name.len > max_name_len) max_name_len = case_name.len;
@@ -67,8 +88,23 @@ pub fn main() !void {
 
             for (0..runs) |r| {
                 var data_dir_buf: [256]u8 = undefined;
-                const data_dir = try std.fmt.bufPrint(&data_dir_buf, "data-bench/{s}_sphere2000", .{@tagName(mt)});
-                const res = try common.runBenchmark(allocator, io, mt, st, .linear, data_dir, out_dir_base, pixel_num, texture_grey, texture_rgb);
+                const data_dir = try std.fmt.bufPrint(
+                    &data_dir_buf,
+                    "data-bench/{s}_sphere2000",
+                    .{@tagName(mt)},
+                );
+                const res = try common.runBenchmark(
+                    allocator,
+                    io,
+                    mt,
+                    st,
+                    .linear,
+                    data_dir,
+                    out_dir_base,
+                    pixel_num,
+                    texture_grey,
+                    texture_rgb,
+                );
                 e2e_times[r] = res.e2e_ms;
                 geom_times[r] = res.geom_ms;
                 raster_times[r] = res.raster_ms;
@@ -100,5 +136,13 @@ pub fn main() !void {
         }
     }
 
-    try common.writeBenchmarkReport(allocator, io, "Sphere 2000 Benchmark Results", out_dir_base, pixel_num, stats_list.items, max_name_len);
+    try common.writeBenchmarkReport(
+        allocator,
+        io,
+        "Sphere 2000 Benchmark Results",
+        out_dir_base,
+        pixel_num,
+        stats_list.items,
+        max_name_len,
+    );
 }
