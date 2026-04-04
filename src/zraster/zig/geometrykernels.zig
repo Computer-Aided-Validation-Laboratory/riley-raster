@@ -1,4 +1,5 @@
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
 const rops = @import("rasterops.zig");
 const newton = @import("newton.zig");
 const shapefun = @import("shapefun.zig");
@@ -126,7 +127,7 @@ pub fn Tri3Kernel() type {
             _ = x_offset;
             _ = y_offset;
 
-            const edge_tol: f64 = 1e-9;
+            const edge_tol = buildconfig.config.tolerance.edge.tri_weight_inclusion;
 
             var weights: [nodes_num]f64 = undefined;
             weights[0] = rops.edgeFun3(
@@ -286,7 +287,7 @@ pub fn Tri3OptKernel() type {
         }
 
         pub inline fn isInElement(weights: [nodes_num]f64) bool {
-            const edge_tol: f64 = 1e-9;
+            const edge_tol = buildconfig.config.tolerance.edge.tri_weight_inclusion;
 
             return weights[0] >= -edge_tol and
                 weights[1] >= -edge_tol and
@@ -507,8 +508,8 @@ pub fn Quad4IBIKernel() type {
             solve_params: BilinearParams,
         ) GeometryResult(nodes_num) {
             _ = nodes;
-            const eps: f64 = 1e-7;
-            const denom_tol = 1e-12;
+            const eps = buildconfig.config.tolerance.geometry.bilinear_parametric_domain;
+            const denom_tol = buildconfig.config.tolerance.geometry.bilinear_denom;
 
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
@@ -570,8 +571,8 @@ pub fn Quad4IBIKernel() type {
             c_coeff: f64,
             root_out: *f64,
         ) bool {
-            const eps = 1e-7;
-            const area_tol = 1e-12;
+            const eps = buildconfig.config.tolerance.geometry.bilinear_parametric_domain;
+            const area_tol = buildconfig.config.tolerance.geometry.quadratic_area;
 
             if (@abs(a_coeff) < area_tol) {
                 if (@abs(b_coeff) < area_tol) {

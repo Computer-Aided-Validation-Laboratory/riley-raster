@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const print = std.debug.print;
+const buildconfig = @import("buildconfig.zig");
 const common = @import("textureops_common.zig");
 
 const NDArray = @import("ndarray.zig").NDArray;
@@ -21,7 +22,7 @@ fn cubicWeight(x: f64) f64 {
 
 fn quinticWeight(x: f64) f64 {
     const ax = @abs(x);
-    if (ax < 0.0001) return 1.0;
+    if (ax < buildconfig.config.tolerance.texture.quintic_centre_snap) return 1.0;
     if (ax >= 3.0) return 0.0;
     const pix = std.math.pi * x;
     const pix3 = pix / 3.0;
@@ -153,7 +154,12 @@ fn sample2DInnerSIMD(comptime channels: usize, comptime N: usize, texture: anyty
         const stride_y = texture.array.strides[1];
 
         const w_sum = @reduce(.Add, v_wx) * @reduce(.Add, v_wy);
-        const inv_w_sum = if (@abs(w_sum) > 1e-9) 1.0 / w_sum else 1.0;
+        const inv_w_sum = if (
+            @abs(w_sum) > buildconfig.config.tolerance.texture.weight_sum
+        )
+            1.0 / w_sum
+        else
+            1.0;
 
         inline for (0..N) |jj| {
             const row_off = @as(usize, @intCast(start_y + @as(isize, @intCast(jj)))) * stride_y + @as(usize, @intCast(start_x));
@@ -182,7 +188,7 @@ fn sample2DInnerSIMD(comptime channels: usize, comptime N: usize, texture: anyty
                 w_sum += w;
             }
         }
-        if (@abs(w_sum) > 1e-9) {
+        if (@abs(w_sum) > buildconfig.config.tolerance.texture.weight_sum) {
             inline for (0..channels) |ch| {
                 res[ch] /= w_sum;
             }
@@ -209,7 +215,10 @@ fn sample2D(comptime channels: usize, comptime N: usize, comptime use_simd: bool
         }
     }
 
-    const inv_w_sum = if (@abs(w_sum) < 1e-9) 1.0 else 1.0 / w_sum;
+    const inv_w_sum = if (@abs(w_sum) < buildconfig.config.tolerance.texture.weight_sum)
+        1.0
+    else
+        1.0 / w_sum;
     inline for (0..channels) |ch| {
         res[ch] *= inv_w_sum;
     }
@@ -434,7 +443,15 @@ pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: 
             }
 
             const v_1: @Vector(8, f64) = @splat(1.0);
-            const v_inv_w_sum = @select(f64, @abs(v_w_sum) < @as(@Vector(8, f64), @splat(1e-9)), v_1, v_1 / v_w_sum);
+            const v_inv_w_sum = @select(
+                f64,
+                @abs(v_w_sum) < @as(
+                    @Vector(8, f64),
+                    @splat(buildconfig.config.tolerance.texture.weight_sum),
+                ),
+                v_1,
+                v_1 / v_w_sum,
+            );
             inline for (0..channels) |ch| {
                 v_res[ch] *= v_inv_w_sum;
             }
@@ -527,7 +544,15 @@ pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: 
             }
 
             const v_1: @Vector(8, f64) = @splat(1.0);
-            const v_inv_w_sum = @select(f64, @abs(v_w_sum) < @as(@Vector(8, f64), @splat(1e-9)), v_1, v_1 / v_w_sum);
+            const v_inv_w_sum = @select(
+                f64,
+                @abs(v_w_sum) < @as(
+                    @Vector(8, f64),
+                    @splat(buildconfig.config.tolerance.texture.weight_sum),
+                ),
+                v_1,
+                v_1 / v_w_sum,
+            );
             inline for (0..channels) |ch| {
                 v_res[ch] *= v_inv_w_sum;
             }

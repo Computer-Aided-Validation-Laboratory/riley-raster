@@ -1,4 +1,5 @@
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 
@@ -54,7 +55,12 @@ pub fn getScalingParamsTexture(
                 if (val < px_min) px_min = val;
                 if (val > px_max) px_max = val;
             }
-            const range = if (@abs(px_max - px_min) < 1e-9) 1.0 else px_max - px_min;
+            const range = if (
+                @abs(px_max - px_min) < buildconfig.config.tolerance.image.auto_scale_range
+            )
+                1.0
+            else
+                px_max - px_min;
             return .{ .min = px_min, .range = range };
         },
         .fixed => |range| {

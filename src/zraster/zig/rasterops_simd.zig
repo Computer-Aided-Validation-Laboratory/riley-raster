@@ -13,6 +13,7 @@ const Mat44Ops = @import("matstack.zig").Mat44Ops;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 
+const buildconfig = @import("buildconfig.zig");
 const Camera = @import("camera.zig").Camera;
 
 pub const buildAdaptiveHulls = @import("hull.zig").buildAdaptiveHulls;
@@ -121,7 +122,7 @@ pub fn countElemsCalcBBoxes(comptime N: usize, comptime NH: usize, camera: *cons
     const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
 
     const nodal_derivs = comptime getNodalDerivs(N);
-    const tolerance = 1e-8;
+    const tolerance = buildconfig.config.tolerance.culling.higher_order_backface_nz;
 
     const total_elems = elem_coord_arr.dims[dim_elem];
 
@@ -214,7 +215,7 @@ pub fn countElemsCalcBBoxes(comptime N: usize, comptime NH: usize, camera: *cons
 
 pub fn countElemsCalcBBoxesTri3(camera: *const Camera, dim_elem: usize, elem_coord_arr: *const NDArray(f64), elem_bboxes: []ElemBBox) !usize {
     const N: usize = 3;
-    const tol_area: f64 = 1e-12;
+    const tol_area = buildconfig.config.tolerance.culling.tri3_signed_area;
 
     var elems_in_image: usize = 0;
 
@@ -306,7 +307,7 @@ fn calculateMeshNormals(
                 var ny = dz_dxi * dx_deta - dx_dxi * dz_deta;
                 var nz = dx_dxi * dy_deta - dy_dxi * dx_deta;
                 const mag = @sqrt(nx * nx + ny * ny + nz * nz);
-                if (mag > 1e-12) {
+                if (mag > buildconfig.config.tolerance.normals.normalise_magnitude) {
                     nx /= mag;
                     ny /= mag;
                     nz /= mag;
@@ -367,7 +368,7 @@ fn calculateMeshNormals(
                 var ny = node_normals[ni * 3 + 1];
                 var nz = node_normals[ni * 3 + 2];
                 const mag = @sqrt(nx * nx + ny * ny + nz * nz);
-                if (mag > 1e-12) {
+                if (mag > buildconfig.config.tolerance.normals.normalise_magnitude) {
                     nx /= mag;
                     ny /= mag;
                     nz /= mag;

@@ -1,5 +1,6 @@
 const std = @import("std");
 const Camera = @import("camera.zig").Camera;
+const buildconfig = @import("buildconfig.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const hull = @import("hull.zig");
@@ -505,7 +506,7 @@ pub fn RasterPass(
                 v_weights_row[ii] += v_steps.x07[ii];
             }
 
-            const edge_tol: f64 = 1e-9;
+            const edge_tol = buildconfig.config.tolerance.edge.simd_raster_weight_inclusion;
             const v_edge_tol: @Vector(8, f64) = @splat(-edge_tol);
 
             for (bounds.start_y..bounds.end_y) |scratch_y| {

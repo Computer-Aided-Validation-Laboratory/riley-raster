@@ -1,4 +1,5 @@
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
 const print = std.debug.print;
 const time = std.time;
 const Timestamp = std.Io.Clock.Timestamp;
@@ -38,7 +39,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator,
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
-    const tol: f64 = 1e-12;
+    const tol = buildconfig.config.tolerance.legacy.oldraster_area;
     var elems_in_image: usize = 0;
     const num_fields: usize = field.getFieldsN();
 
