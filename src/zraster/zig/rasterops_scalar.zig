@@ -19,7 +19,7 @@ const Camera = @import("camera.zig").Camera;
 pub const buildAdaptiveHulls = @import("hull.zig").buildAdaptiveHulls;
 const geomkerns = @import("geometrykernels.zig");
 const shaderops = @import("shaderops.zig");
-const perf = @import("perf.zig");
+const report = @import("report.zig");
 
 pub const edgeFun = common.edgeFun;
 
@@ -108,7 +108,15 @@ fn getNodalDerivs(comptime N: usize) NodalDerivs {
     return nd;
 }
 
-pub fn countElemsCalcBBoxes(comptime N: usize, comptime NH: usize, camera: *const Camera, dim_elem: usize, elem_coord_arr: *const NDArray(f64), raster_hull: ?*const NDArray(f64), elem_bboxes: []ElemBBox) !usize {
+pub fn countElemsCalcBBoxes(
+    comptime N: usize,
+    comptime NH: usize,
+    camera: *const Camera,
+    dim_elem: usize,
+    elem_coord_arr: *const NDArray(f64),
+    raster_hull: ?*const NDArray(f64),
+    elem_bboxes: []ElemBBox,
+) !usize {
     var elems_in_image: usize = 0;
     const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
     const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
@@ -205,7 +213,12 @@ pub fn countElemsCalcBBoxes(comptime N: usize, comptime NH: usize, camera: *cons
     return elems_in_image;
 }
 
-pub fn countElemsCalcBBoxesTri3(camera: *const Camera, dim_elem: usize, elem_coord_arr: *const NDArray(f64), elem_bboxes: []ElemBBox) !usize {
+pub fn countElemsCalcBBoxesTri3(
+    camera: *const Camera,
+    dim_elem: usize,
+    elem_coord_arr: *const NDArray(f64),
+    elem_bboxes: []ElemBBox,
+) !usize {
     const N: usize = 3;
     const tol_area = buildconfig.config.tolerance.culling.tri3_signed_area;
 
@@ -376,8 +389,8 @@ fn calculateMeshNormals(
 }
 
 pub fn prepareSceneGeometry(
-    comptime report: perf.Report,
-    ctx_perf: perf.PerfContext(report),
+    comptime report_mode: report.ReportMode,
+    ctx_perf: report.ReportContext(report_mode),
     arena_alloc: std.mem.Allocator,
     camera: *const Camera,
     meshes: anytype,
@@ -438,7 +451,13 @@ pub fn prepareSceneGeometry(
                         arena_alloc,
                         &[_]usize{ elems_num, 2, NH },
                     );
-                    try buildAdaptiveHulls(N, camera, dim_elem, &mesh.coords, &raster_hulls[ii].?);
+                    try buildAdaptiveHulls(
+                        N,
+                        camera,
+                        dim_elem,
+                        &mesh.coords,
+                        &raster_hulls[ii].?,
+                    );
                 }
 
                 if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
@@ -570,9 +589,15 @@ pub fn sceneTileElemOverlap(
         for (0..elems_in_image_by_mesh[mesh_idx]) |ee| {
             const ebb = elem_bboxes_by_mesh[mesh_idx][ee];
             const tx_start = ebb.x_min / tile_size;
-            const tx_end = @min(tiles_num_x, @as(usize, (ebb.x_max + tile_size - 1) / tile_size));
+            const tx_end = @min(
+                tiles_num_x,
+                @as(usize, (ebb.x_max + tile_size - 1) / tile_size),
+            );
             const ty_start = ebb.y_min / tile_size;
-            const ty_end = @min(tiles_num_y, @as(usize, (ebb.y_max + tile_size - 1) / tile_size));
+            const ty_end = @min(
+                tiles_num_y,
+                @as(usize, (ebb.y_max + tile_size - 1) / tile_size),
+            );
 
             for (ty_start..ty_end) |ty| {
                 const tile_px_min_y = @as(u16, @intCast(ty * tile_size));

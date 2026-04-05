@@ -20,7 +20,7 @@ const S = buildconfig.config.simd_vector_width;
 pub const buildAdaptiveHulls = @import("hull.zig").buildAdaptiveHulls;
 const geomkerns = @import("geometrykernels.zig");
 const shaderops = @import("shaderops.zig");
-const perf = @import("perf.zig");
+const report = @import("report.zig");
 
 pub const edgeFun = common.edgeFun;
 
@@ -392,8 +392,8 @@ fn calculateMeshNormals(
 }
 
 pub fn prepareSceneGeometry(
-    comptime report: perf.Report,
-    ctx_perf: perf.PerfContext(report),
+    comptime report_mode: report.ReportMode,
+    ctx_perf: report.ReportContext(report_mode),
     arena_alloc: std.mem.Allocator,
     camera: *const Camera,
     meshes: anytype,

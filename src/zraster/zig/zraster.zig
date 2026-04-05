@@ -29,10 +29,10 @@ const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
 const rasterengine = @import("rasterengine.zig");
 
-const perf = @import("perf.zig");
-const Report = perf.Report;
-const Perf = perf.Perf;
-const PerfOpts = perf.PerfOpts;
+const report = @import("report.zig");
+const ReportMode = report.ReportMode;
+const BenchLog = report.BenchLog;
+const FullStatsOpts = report.FullStatsOpts;
 
 pub const SaveOption = enum {
     disk,
@@ -49,8 +49,8 @@ pub const RasterConfig = struct {
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
     tile_size: u16 = 32,
-    report: Report = .off,
-    perf_opts: PerfOpts = .{},
+    report: ReportMode = .bench,
+    full_stats_opts: FullStatsOpts = .{},
 };
 
 fn applyDispToMesh(
@@ -170,7 +170,7 @@ pub fn rasterAllFrames(
                 );
             }
 
-            // Apply on-the-fly field scaling for rendering in bits, if required 
+            // Apply on-the-fly field scaling for rendering in bits, if required
             var flat_frame_scaling: ?imageops.ScalingParams = null;
             switch (mesh.shader) {
                 .flat, .normals => |s| {
@@ -209,78 +209,61 @@ pub fn rasterAllFrames(
         }
         @memset(frame_arr.elems, 0.0);
 
-        // Setup performance reporting as basic or intrusive, basic is comptime removed from
-        // hot loops
-        var frame_perf: ?perf.Perf = null;
-        if (config.report == .perf) {
-            frame_perf = try perf.initFramePerf(
-                outer_alloc,
-                camera.pixels_num,
-                config.tile_size,
-                camera.sub_sample,
-                config.perf_opts,
-            );
-        } else if (config.report == .bench) {
-            frame_perf = perf.Perf{};
-        }
-        defer if (frame_perf) |*fp| {
-            if (config.report == .perf) fp.deinit(outer_alloc);
-        };
-
         switch (config.report) {
-            .off => try rasterSceneInternal(
-                arena_alloc,
-                io,
-                camera,
-                tt,
-                prep_meshes,
-                &frame_arr,
-                config.tile_size,
-                .off,
-                null,
-            ),
-            .bench => try rasterSceneInternal(
-                arena_alloc,
-                io,
-                camera,
-                tt,
-                prep_meshes,
-                &frame_arr,
-                config.tile_size,
-                .bench,
-                &frame_perf.?,
-            ),
-            .perf => try rasterSceneInternal(
-                arena_alloc,
-                io,
-                camera,
-                tt,
-                prep_meshes,
-                &frame_arr,
-                config.tile_size,
-                .perf,
-                &frame_perf.?,
-            ),
-        }
+            .bench => {
+                var bench_log = BenchLog{};
+                try rasterSceneInternal(
+                    arena_alloc,
+                    io,
+                    camera,
+                    tt,
+                    prep_meshes,
+                    &frame_arr,
+                    config.tile_size,
+                    .bench,
+                    &bench_log,
+                );
+            },
+            .full_stats => {
+                var full_stats_log = try report.initFullStatsLog(
+                    outer_alloc,
+                    camera.pixels_num,
+                    config.tile_size,
+                    camera.sub_sample,
+                    config.full_stats_opts,
+                );
+                defer full_stats_log.deinit(outer_alloc);
 
-        if (frame_perf) |*fp| {
-            var nodes_sum: usize = 0;
-            for (prep_meshes) |mesh| {
-                nodes_sum += mesh.mesh_type.getNodesNum();
-            }
-            const nodes_per_elem: f64 = @as(f64, @floatFromInt(nodes_sum)) /
-                @as(f64, @floatFromInt(prep_meshes.len));
+                try rasterSceneInternal(
+                    arena_alloc,
+                    io,
+                    camera,
+                    tt,
+                    prep_meshes,
+                    &frame_arr,
+                    config.tile_size,
+                    .full_stats,
+                    &full_stats_log,
+                );
 
-            try fp.saveFrameReport(
-                io,
-                outer_alloc,
-                out_dir,
-                tt,
-                camera,
-                config.tile_size,
-                config.perf_opts,
-                nodes_per_elem,
-            );
+                var nodes_sum: usize = 0;
+                for (prep_meshes) |mesh| {
+                    nodes_sum += mesh.mesh_type.getNodesNum();
+                }
+                const nodes_per_elem: f64 = @as(f64, @floatFromInt(nodes_sum)) /
+                    @as(f64, @floatFromInt(prep_meshes.len));
+
+                try full_stats_log.saveFrameReport(
+                    io,
+                    outer_alloc,
+                    out_dir,
+                    tt,
+                    camera,
+                    config.tile_size,
+                    config.full_stats_opts,
+                    nodes_per_elem,
+                );
+            },
         }
 
         if (config.save_opt == .disk or config.save_opt == .both) {
@@ -306,14 +289,12 @@ pub fn rasterSceneInternal(
     meshes: []MeshPrepared,
     image_out_arr: *NDArray(f64),
     tile_size: u16,
-    comptime report: Report,
-    perf_data: ?*Perf,
+    comptime report_mode: ReportMode,
+    report_log: *report.LogType(report_mode),
 ) !void {
     const raster_start = Timestamp.now(io, .awake);
-    var dummy_perf = perf.Perf{};
-    const actual_perf = perf_data orelse &dummy_perf;
-    const pctx = perf.PerfContext(report){ .perf = if (report != .off) actual_perf else {} };
-    var pipe_times = perf.PipeTimes{};
+    const pctx = report.ReportContext(report_mode){ .log = report_log };
+    var pipe_times = report.PipeTimes{};
 
     const tiles_num_x: usize = try std.math.divCeil(usize, camera.pixels_num[0], tile_size);
     const tiles_num_y: usize = try std.math.divCeil(usize, camera.pixels_num[1], tile_size);
@@ -331,7 +312,7 @@ pub fn rasterSceneInternal(
     const raster_hulls = try arena_alloc.alloc(?NDArray(f64), meshes.len);
 
     try rops.prepareSceneGeometry(
-        report,
+        report_mode,
         pctx,
         arena_alloc,
         camera,
@@ -369,7 +350,7 @@ pub fn rasterSceneInternal(
 
     const time_start_loop = Timestamp.now(io, .awake);
 
-    const ctx_rast = rops.RasterContext(report){
+    const ctx_rast = rops.RasterContext(report_mode){
         .ctx_perf = pctx,
         .camera = camera,
         .frame_ind = frame_ind,
@@ -377,7 +358,7 @@ pub fn rasterSceneInternal(
     };
 
     try rasterengine.rasterScene(
-        report,
+        report_mode,
         ctx_rast,
         arena_alloc,
         io,
@@ -397,48 +378,31 @@ pub fn rasterSceneInternal(
         raster_start.durationTo(raster_end).raw.nanoseconds,
     );
 
-    if (report != .off) {
-        perf_data.?.pipe_times = pipe_times;
+    const bench_log = report.getBenchLog(report_mode, report_log);
+    bench_log.pipe_times = pipe_times;
 
-        var nodes_sum: usize = 0;
-        for (meshes) |mesh| {
-            nodes_sum += mesh.mesh_type.getNodesNum();
-        }
-        const nodes_per_elem: f64 = @as(f64, @floatFromInt(nodes_sum)) /
-            @as(f64, @floatFromInt(meshes.len));
+    var nodes_sum: usize = 0;
+    for (meshes) |mesh| {
+        nodes_sum += mesh.mesh_type.getNodesNum();
+    }
+    const nodes_per_elem: f64 = @as(f64, @floatFromInt(nodes_sum)) /
+        @as(f64, @floatFromInt(meshes.len));
 
-        if (report == .perf) {
-            try perf_data.?.writeReportToConsole(io, frame_ind, camera, nodes_per_elem);
-        }
-        if (report == .bench) {
-            try perf.standardReport(
-                io,
-                camera,
-                pipe_times,
-                total_elems_num,
-                total_elems_in_image,
-                nodes_per_elem,
-                .bench,
-                perf_data,
-            );
-        }
-    } else {
-        var nodes_sum: usize = 0;
-        for (meshes) |mesh| {
-            nodes_sum += mesh.mesh_type.getNodesNum();
-        }
-        const nodes_per_elem: f64 = @as(f64, @floatFromInt(nodes_sum)) /
-            @as(f64, @floatFromInt(meshes.len));
-
-        try perf.standardReport(
+    switch (report_mode) {
+        .bench => try report.standardReport(
             io,
             camera,
             pipe_times,
             total_elems_num,
             total_elems_in_image,
             nodes_per_elem,
-            .off,
-            null,
-        );
+            bench_log,
+        ),
+        .full_stats => try report_log.writeReportToConsole(
+            io,
+            frame_ind,
+            camera,
+            nodes_per_elem,
+        ),
     }
 }

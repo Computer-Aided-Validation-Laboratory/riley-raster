@@ -488,7 +488,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator, io: std.Io, test_type: []co
 
             const config = RasterConfig{ .save_opt = .memory, .save_opts = &[_]iio.ImageSaveOpts{
                 .{ .format = .csv, .bits = null, .scaling = .none },
-            }, .report = if (report_perf) .perf else .off };
+            }, .report = if (report_perf) .full_stats else .bench };
 
             const result = (try zraster.rasterAllFrames(aa, io, &camera, &[_]MeshInput{mesh_input}, config, null)) orelse return error.NoResult;
 
@@ -531,7 +531,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator, io: std.Io, test_type: []co
 
                 const config = RasterConfig{ .save_opt = .memory, .save_opts = &[_]iio.ImageSaveOpts{
                     .{ .format = .csv, .bits = null, .scaling = .none },
-                }, .report = if (report_perf) .perf else .off };
+                }, .report = if (report_perf) .full_stats else .bench };
 
                 const result = (try zraster.rasterAllFrames(aa, io, &camera, &[_]MeshInput{mesh_input}, config, null)) orelse return error.NoResult;
 

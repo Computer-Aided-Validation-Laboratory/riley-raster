@@ -7,7 +7,7 @@ const Vec3SIMD = vsd.Vec3SIMD;
 const Mat44Ops = @import("matstack.zig").Mat44Ops;
 const NDArray = @import("ndarray.zig").NDArray;
 const Camera = @import("camera.zig").Camera;
-const perf = @import("perf.zig");
+const report = @import("report.zig");
 
 pub fn edgeFun(vert_0: Vec3f, vert_1: Vec3f, vert_2: Vec3f) f64 {
     return ((vert_2.get(0) - vert_0.get(0)) *
@@ -113,9 +113,9 @@ pub const TilingOverlaps = struct {
     active_tiles: []ActiveTile,
 };
 
-pub fn RasterContext(comptime report: perf.Report) type {
+pub fn RasterContext(comptime report_mode: report.ReportMode) type {
     return struct {
-        ctx_perf: perf.PerfContext(report),
+        ctx_perf: report.ReportContext(report_mode),
         camera: *const Camera,
         frame_ind: usize,
         tile_size: u16,

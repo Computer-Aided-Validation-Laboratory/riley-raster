@@ -165,7 +165,7 @@ pub fn main() !void {
         .save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = 3 },
         },
-        .report = .perf,
+        .report = .full_stats,
     };
 
     std.debug.print("Rendering RGB Data to {s}/...\n", .{out_dir_root});

@@ -15,8 +15,8 @@ pub fn main() !void {
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
-        .report = .perf,
-        .perf_opts = .{
+        .report = .full_stats,
+        .full_stats_opts = .{
             .formats = &[_]gengold.iio.ImageSaveOpts{
                 .{ .format = .bmp, .bits = 8, .scaling = .auto },
             },

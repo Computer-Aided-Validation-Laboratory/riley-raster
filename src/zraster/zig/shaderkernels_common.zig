@@ -6,7 +6,7 @@ pub inline fn recordDepth(
     global_suby: usize,
     sub_pixel_z: f64,
 ) void {
-    if (@TypeOf(ctx_perf).mode == .perf) {
+    if (@TypeOf(ctx_perf).mode_tag == .full_stats) {
         ctx_perf.recordDepth(global_subx, global_suby, 1.0 / sub_pixel_z);
     }
 }

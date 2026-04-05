@@ -9,7 +9,7 @@ const rasterengine = @import("../zraster/zig/rasterengine.zig");
 const Camera = @import("../zraster/zig/camera.zig").Camera;
 const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
 const Rotation = @import("../zraster/zig/camera.zig").Rotation;
-const perf = @import("../zraster/zig/perf.zig");
+const report = @import("../zraster/zig/report.zig");
 const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
 const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
 const Timestamp = std.Io.Clock.Timestamp;
@@ -56,8 +56,8 @@ pub fn calcMetrics(
     etype: mr.MeshType,
     pixel_num: [2]u32,
     sub_samp: u8,
-    pipe_times: perf.PipeTimes,
-    perf_data: perf.Perf,
+    pipe_times: report.PipeTimes,
+    bench_log: report.BenchLog,
 ) CalculatedMetrics {
     const raster_sec = pipe_times.raster_loop / 1e9;
     const geom_tiling_sec = (pipe_times.geometry_prep + pipe_times.tile_overlap) / 1e9;
@@ -78,7 +78,7 @@ pub fn calcMetrics(
     const msubpx_sec = if (raster_sec > 0) (total_subpx / (raster_sec * 1e6)) else 0;
 
     // 3. MShades/s (Approximated)
-    const shaded_subpx = @as(f64, @floatFromInt(perf_data.total_shaded_pixels));
+    const shaded_subpx = @as(f64, @floatFromInt(bench_log.total_shaded_pixels));
     const est_shaded_px = shaded_subpx / (sub_samp_f * sub_samp_f);
     const mshades_sec = if (raster_sec > 0) (est_shaded_px / (raster_sec * 1e6)) else 0;
 
@@ -86,7 +86,7 @@ pub fn calcMetrics(
     const msubshades_sec = if (raster_sec > 0) (shaded_subpx / (raster_sec * 1e6)) else 0;
 
     // 5. MElems/s
-    const total_elems = @as(f64, @floatFromInt(perf_data.total_elements));
+    const total_elems = @as(f64, @floatFromInt(bench_log.total_elements));
     const melems_sec = if (geom_tiling_sec > 0) (total_elems / (geom_tiling_sec * 1e6)) else 0;
 
     // 6. MNodes/s
@@ -340,7 +340,7 @@ pub fn runBenchmark(
 
     var image_out_arr = try NDArray(f64).initFlat(aa, &[_]usize{ num_out_fields, pixel_num[1], pixel_num[0] });
 
-    var frame_perf = perf.Perf{};
+    var bench_log = report.BenchLog{};
 
     const e2e_start = Timestamp.now(io, .awake);
     var meshes = [_]mr.MeshPrepared{transformed_mesh};
@@ -353,17 +353,23 @@ pub fn runBenchmark(
         &image_out_arr,
         config.tile_size,
         .bench,
-        &frame_perf,
+        &bench_log,
     );
     const e2e_end = Timestamp.now(io, .awake);
 
     const e2e_ms = @as(f64, @floatFromInt(e2e_start.durationTo(e2e_end).raw.nanoseconds)) / 1e6;
-    const geom_ms = frame_perf.pipe_times.geometry_prep / 1e6;
-    const overlap_ms = frame_perf.pipe_times.tile_overlap / 1e6;
-    const raster_ms = frame_perf.pipe_times.raster_loop / 1e6;
+    const geom_ms = bench_log.pipe_times.geometry_prep / 1e6;
+    const overlap_ms = bench_log.pipe_times.tile_overlap / 1e6;
+    const raster_ms = bench_log.pipe_times.raster_loop / 1e6;
     const fps = 1000.0 / e2e_ms;
 
-    const metrics = calcMetrics(etype, pixel_num, camera.sub_sample, frame_perf.pipe_times, frame_perf);
+    const metrics = calcMetrics(
+        etype,
+        pixel_num,
+        camera.sub_sample,
+        bench_log.pipe_times,
+        bench_log,
+    );
 
     // Save one frame for inspection
     const out_name = if (shader_type == .tex8_grey or shader_type == .tex8_rgb)
