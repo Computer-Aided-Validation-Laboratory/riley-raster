@@ -1,7 +1,7 @@
-const backend = @import("backend.zig");
+const cfg = @import("buildconfig.zig").config;
 const scalar_impl = @import("textureops_scalar.zig");
 const simd_impl = @import("textureops_simd.zig");
-const impl = if (backend.simd_on) simd_impl else scalar_impl;
+const impl = if (cfg.simd == .on) simd_impl else scalar_impl;
 
 pub const InterpType = impl.InterpType;
 pub const Pixel = impl.Pixel;

@@ -2,6 +2,8 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const shapefun = @import("shapefun.zig");
 
+const S = buildconfig.config.simd_vector_width;
+
 pub const NewtonResult = struct {
     converged: bool,
     pre_domain_converged: bool,
@@ -11,11 +13,11 @@ pub const NewtonResult = struct {
 };
 
 pub const NewtonResultSIMD = struct {
-    converged: @Vector(8, bool),
-    pre_domain_converged: @Vector(8, bool),
-    iterations: @Vector(8, u8),
-    residual_x: @Vector(8, f64),
-    residual_y: @Vector(8, f64),
+    converged: @Vector(S, bool),
+    pre_domain_converged: @Vector(S, bool),
+    iterations: @Vector(S, u8),
+    residual_x: @Vector(S, f64),
+    residual_y: @Vector(S, f64),
 };
 
 // Solves: $$ \sum_{i=1}^N N_i(\xi, \eta) \cdot (X_{pixel} \cdot W_i - X_i) = 0 $$
@@ -141,26 +143,26 @@ pub fn solveInverse(
 
 pub fn solveInverseSIMD(
     comptime N: usize,
-    v_target_x: @Vector(8, f64),
-    v_target_y: @Vector(8, f64),
+    v_target_x: @Vector(S, f64),
+    v_target_y: @Vector(S, f64),
     elem_node_x: []const f64,
     elem_node_y: []const f64,
     elem_node_w: []const f64,
-    v_xi_in: @Vector(8, f64),
-    v_eta_in: @Vector(8, f64),
-    v_xi_out: *@Vector(8, f64),
-    v_eta_out: *@Vector(8, f64),
-    v_node_values: *[N]@Vector(8, f64),
-    v_deriv_n_xi: *[N]@Vector(8, f64),
-    v_deriv_n_eta: *[N]@Vector(8, f64),
+    v_xi_in: @Vector(S, f64),
+    v_eta_in: @Vector(S, f64),
+    v_xi_out: *@Vector(S, f64),
+    v_eta_out: *@Vector(S, f64),
+    v_node_values: *[N]@Vector(S, f64),
+    v_deriv_n_xi: *[N]@Vector(S, f64),
+    v_deriv_n_eta: *[N]@Vector(S, f64),
 ) NewtonResultSIMD {
-    const v_iter_tol: @Vector(8, f64) = @splat(
+    const v_iter_tol: @Vector(S, f64) = @splat(
         buildconfig.config.tolerance.newton.residual,
     );
-    const v_det_tol: @Vector(8, f64) = @splat(
+    const v_det_tol: @Vector(S, f64) = @splat(
         buildconfig.config.tolerance.newton.determinant,
     );
-    const v_eps: @Vector(8, f64) = @splat(
+    const v_eps: @Vector(S, f64) = @splat(
         buildconfig.config.tolerance.newton.parametric_domain,
     );
     const iter_max: u8 = 10;
@@ -168,18 +170,18 @@ pub fn solveInverseSIMD(
     var v_xi = v_xi_in;
     var v_eta = v_eta_in;
 
-    var v_converged: @Vector(8, bool) = @splat(false);
-    var v_iters: @Vector(8, u8) = @splat(0);
-    var v_active: @Vector(8, bool) = @splat(true);
-    var v_residual_x_final: @Vector(8, f64) = @splat(0.0);
-    var v_residual_y_final: @Vector(8, f64) = @splat(0.0);
+    var v_converged: @Vector(S, bool) = @splat(false);
+    var v_iters: @Vector(S, u8) = @splat(0);
+    var v_active: @Vector(S, bool) = @splat(true);
+    var v_residual_x_final: @Vector(S, f64) = @splat(0.0);
+    var v_residual_y_final: @Vector(S, f64) = @splat(0.0);
 
-    var v_term_x: [N]@Vector(8, f64) = undefined;
-    var v_term_y: [N]@Vector(8, f64) = undefined;
+    var v_term_x: [N]@Vector(S, f64) = undefined;
+    var v_term_y: [N]@Vector(S, f64) = undefined;
     inline for (0..N) |nn| {
-        const v_node_x: @Vector(8, f64) = @splat(elem_node_x[nn]);
-        const v_node_y: @Vector(8, f64) = @splat(elem_node_y[nn]);
-        const v_node_w: @Vector(8, f64) = @splat(elem_node_w[nn]);
+        const v_node_x: @Vector(S, f64) = @splat(elem_node_x[nn]);
+        const v_node_y: @Vector(S, f64) = @splat(elem_node_y[nn]);
+        const v_node_w: @Vector(S, f64) = @splat(elem_node_w[nn]);
         v_term_x[nn] = v_target_x * v_node_w - v_node_x;
         v_term_y[nn] = v_target_y * v_node_w - v_node_y;
     }
@@ -187,16 +189,21 @@ pub fn solveInverseSIMD(
     for (0..iter_max) |ii| {
         if (!@reduce(.Or, v_active)) break;
 
-        v_iters = @select(u8, v_active, @as(@Vector(8, u8), @splat(@intCast(ii + 1))), v_iters);
+        v_iters = @select(
+            u8,
+            v_active,
+            @as(@Vector(S, u8), @splat(@intCast(ii + 1))),
+            v_iters,
+        );
 
         shapefun.shapeFunctionsSIMD(N, v_xi, v_eta, v_node_values, v_deriv_n_xi, v_deriv_n_eta);
 
-        var v_residual_x: @Vector(8, f64) = @splat(0.0);
-        var v_residual_y: @Vector(8, f64) = @splat(0.0);
-        var v_jac11: @Vector(8, f64) = @splat(0.0);
-        var v_jac12: @Vector(8, f64) = @splat(0.0);
-        var v_jac21: @Vector(8, f64) = @splat(0.0);
-        var v_jac22: @Vector(8, f64) = @splat(0.0);
+        var v_residual_x: @Vector(S, f64) = @splat(0.0);
+        var v_residual_y: @Vector(S, f64) = @splat(0.0);
+        var v_jac11: @Vector(S, f64) = @splat(0.0);
+        var v_jac12: @Vector(S, f64) = @splat(0.0);
+        var v_jac21: @Vector(S, f64) = @splat(0.0);
+        var v_jac22: @Vector(S, f64) = @splat(0.0);
 
         inline for (0..N) |nn| {
             v_residual_x += v_node_values[nn] * v_term_x[nn];
@@ -210,7 +217,8 @@ pub fn solveInverseSIMD(
         v_residual_x_final = v_residual_x;
         v_residual_y_final = v_residual_y;
 
-        const v_met_tol = (@abs(v_residual_x) < v_iter_tol) & (@abs(v_residual_y) < v_iter_tol);
+        const v_met_tol = (@abs(v_residual_x) < v_iter_tol) &
+            (@abs(v_residual_y) < v_iter_tol);
         v_converged = v_converged | (v_active & v_met_tol);
         v_active = v_active & !v_met_tol;
 
@@ -223,18 +231,23 @@ pub fn solveInverseSIMD(
 
         if (!@reduce(.Or, v_active)) break;
 
-        const v_safe_det = @select(f64, v_active, v_det, @as(@Vector(8, f64), @splat(1.0)));
-        const v_inv_det = @as(@Vector(8, f64), @splat(1.0)) / v_safe_det;
+        const v_safe_det = @select(
+            f64,
+            v_active,
+            v_det,
+            @as(@Vector(S, f64), @splat(1.0)),
+        );
+        const v_inv_det = @as(@Vector(S, f64), @splat(1.0)) / v_safe_det;
 
         const v_dxi = v_inv_det * (v_jac22 * v_residual_x - v_jac12 * v_residual_y);
         const v_deta = v_inv_det * (-v_jac21 * v_residual_x + v_jac11 * v_residual_y);
 
-        v_xi -= @select(f64, v_active, v_dxi, @as(@Vector(8, f64), @splat(0.0)));
-        v_eta -= @select(f64, v_active, v_deta, @as(@Vector(8, f64), @splat(0.0)));
+        v_xi -= @select(f64, v_active, v_dxi, @as(@Vector(S, f64), @splat(0.0)));
+        v_eta -= @select(f64, v_active, v_deta, @as(@Vector(S, f64), @splat(0.0)));
     }
 
-    const v_1: @Vector(8, f64) = @splat(1.0);
-    const v_m1: @Vector(8, f64) = @splat(-1.0);
+    const v_1: @Vector(S, f64) = @splat(1.0);
+    const v_m1: @Vector(S, f64) = @splat(-1.0);
 
     const v_is_in = if (comptime N == 6)
         (v_xi >= -v_eps) & (v_eta >= -v_eps) & ((v_xi + v_eta) <= v_1 + v_eps)

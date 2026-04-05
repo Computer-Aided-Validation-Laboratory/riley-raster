@@ -1,10 +1,12 @@
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
 pub const shaderops = @import("shaderops.zig");
 const texops = @import("textureops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const InterpType = texops.InterpType;
 const common = @import("shaderkernels_common.zig");
 const CoordSpace = common.CoordSpace;
+const S = buildconfig.config.simd_vector_width;
 
 pub fn FlatKernel(comptime N: usize) type {
     return struct {
@@ -33,10 +35,10 @@ pub fn FlatKernel(comptime N: usize) type {
         pub inline fn shadeSIMD(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext(N),
-            v_mask: @Vector(8, bool),
-            v_weights: [N]@Vector(8, f64),
-            v_nodes_inv_z: [N]@Vector(8, f64),
-            v_subpx_z: @Vector(8, f64),
+            v_mask: @Vector(S, bool),
+            v_weights: [N]@Vector(S, f64),
+            v_nodes_inv_z: [N]@Vector(S, f64),
+            v_subpx_z: @Vector(S, f64),
             shader: *const shaderops.FlatPrepared,
             spx_image_scratch: *MatSlice(f64),
         ) void {
@@ -96,10 +98,10 @@ pub fn NormalKernel(comptime N: usize) type {
         pub inline fn shadeSIMD(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext(N),
-            v_mask: @Vector(8, bool),
-            v_weights: [N]@Vector(8, f64),
-            v_nodes_inv_z: [N]@Vector(8, f64),
-            v_subpx_z: @Vector(8, f64),
+            v_mask: @Vector(S, bool),
+            v_weights: [N]@Vector(S, f64),
+            v_nodes_inv_z: [N]@Vector(S, f64),
+            v_subpx_z: @Vector(S, f64),
             shader: anytype,
             spx_image_scratch: *MatSlice(f64),
         ) void {
@@ -110,17 +112,22 @@ pub fn NormalKernel(comptime N: usize) type {
             const px_stride = spx_image_scratch.cols_num;
 
             // Vectorized Normal Interpolation
-            var v_norm = [_]@Vector(8, f64){ @splat(0.0), @splat(0.0), @splat(0.0) };
+            var v_norm = [_]@Vector(S, f64){ @splat(0.0), @splat(0.0), @splat(0.0) };
             inline for (0..N) |nn| {
-                v_norm[0] += v_weights[nn] * @as(@Vector(8, f64), @splat(ctx_shade.local_buf.normals[0 * N + nn]));
-                v_norm[1] += v_weights[nn] * @as(@Vector(8, f64), @splat(ctx_shade.local_buf.normals[1 * N + nn]));
-                v_norm[2] += v_weights[nn] * @as(@Vector(8, f64), @splat(ctx_shade.local_buf.normals[2 * N + nn]));
+                v_norm[0] += v_weights[nn] *
+                    @as(@Vector(S, f64), @splat(ctx_shade.local_buf.normals[0 * N + nn]));
+                v_norm[1] += v_weights[nn] *
+                    @as(@Vector(S, f64), @splat(ctx_shade.local_buf.normals[1 * N + nn]));
+                v_norm[2] += v_weights[nn] *
+                    @as(@Vector(S, f64), @splat(ctx_shade.local_buf.normals[2 * N + nn]));
             }
 
             inline for (0..3) |ch| {
-                const v_final = v_norm[ch] * @as(@Vector(8, f64), @splat(0.5)) + @as(@Vector(8, f64), @splat(0.5));
+                const v_final = v_norm[ch] * @as(@Vector(S, f64), @splat(0.5)) +
+                    @as(@Vector(S, f64), @splat(0.5));
                 const flat_idx = ch * px_stride + ctx_shade.idx;
-                const ptr_out: *align(8) @Vector(8, f64) = @ptrCast(&spx_image_scratch.elems[flat_idx]);
+                const ptr_out: *align(8) @Vector(S, f64) =
+                    @ptrCast(&spx_image_scratch.elems[flat_idx]);
                 const v_old_val = ptr_out.*;
                 ptr_out.* = @select(f64, v_mask, v_final, v_old_val);
             }
@@ -176,10 +183,10 @@ pub fn TexKernel(
         pub inline fn shadeSIMD(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext(N),
-            v_mask: @Vector(8, bool),
-            v_weights: [N]@Vector(8, f64),
-            v_nodes_inv_z: [N]@Vector(8, f64),
-            v_subpx_z: @Vector(8, f64),
+            v_mask: @Vector(S, bool),
+            v_weights: [N]@Vector(S, f64),
+            v_nodes_inv_z: [N]@Vector(S, f64),
+            v_subpx_z: @Vector(S, f64),
             shader: *const shaderops.TexPrepared(TexT, channels),
             spx_image_scratch: *MatSlice(f64),
         ) void {

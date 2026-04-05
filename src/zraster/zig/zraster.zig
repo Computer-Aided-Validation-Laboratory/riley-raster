@@ -50,7 +50,6 @@ pub const RasterConfig = struct {
     },
     tile_size: u16 = 32,
     report: Report = .off,
-
     perf_opts: PerfOpts = .{},
 };
 
@@ -60,7 +59,11 @@ fn applyDispToMesh(
     coords: *const MatSlice(f64),
     disp: *const NDArray(f64),
 ) !MatSlice(f64) {
-    var coords_disp = try MatSlice(f64).initAlloc(outer_alloc, coords.rows_num, coords.cols_num);
+    var coords_disp = try MatSlice(f64).initAlloc(
+        outer_alloc,
+        coords.rows_num,
+        coords.cols_num,
+    );
     @memcpy(coords_disp.elems, coords.elems);
 
     const disp_frame_mem = disp.getSlice(&[_]usize{ tt, 0, 0 }, 0);
@@ -83,7 +86,7 @@ pub fn rasterAllFrames(
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
-    const dim_time_pre: usize = 0;
+    const dim_time_pre: usize = 0; // Array dimension for time pre-format prep
 
     // Work out max time across all meshes
     var num_time: usize = 1;
@@ -98,6 +101,7 @@ pub fn rasterAllFrames(
         }
     }
 
+    // Work out the number of fields/channels we are rendering to the final image
     var num_fields: usize = 0;
     for (meshes) |mesh| {
         const mesh_fields = switch (mesh.shader) {
@@ -113,10 +117,16 @@ pub fn rasterAllFrames(
     // Allocate NDArray if we are returning everything to the user in memory
     var images_arr: ?NDArray(f64) = null;
     if (config.save_opt == .memory or config.save_opt == .both) {
-        const dims = [_]usize{ num_time, num_fields, camera.pixels_num[1], camera.pixels_num[0] };
+        const dims = [_]usize{
+            num_time,
+            num_fields,
+            camera.pixels_num[1],
+            camera.pixels_num[0],
+        };
         images_arr = try NDArray(f64).initFlat(outer_alloc, dims[0..]);
     }
 
+    // Work out field scaling for on-the-fly scaled rendering
     var flat_global_scaling = try outer_alloc.alloc(?imageops.ScalingParams, meshes.len);
     defer outer_alloc.free(flat_global_scaling);
     for (meshes, 0..) |mesh, ii| {
@@ -124,41 +134,70 @@ pub fn rasterAllFrames(
         switch (mesh.shader) {
             .flat, .normals => |s| {
                 if (s.scale_over == .over_frames) {
-                    flat_global_scaling[ii] = imageops.getScalingParamsNDArray(&s.field.array, null, s.scaling);
+                    flat_global_scaling[ii] = imageops.getScalingParamsNDArray(
+                        &s.field.array,
+                        null,
+                        s.scaling,
+                    );
                 }
             },
             else => {},
         }
     }
 
+    // Main render loop, frame by frame
     for (0..num_time) |tt| {
         _ = arena.reset(.free_all);
 
-        // Transform all meshes for this frame
-        var transformed_meshes = try arena_alloc.alloc(MeshPrepared, meshes.len);
+        // Prepare and reshape data for all meshes in this frame
+        var prep_meshes = try arena_alloc.alloc(MeshPrepared, meshes.len);
         for (meshes, 0..) |mesh, ii| {
-            var coords_to_trans: MatSlice(f64) = undefined;
+            // Apply displacements to coords to deform mesh
+            var coords_to_prep: MatSlice(f64) = undefined;
             if (mesh.disp) |disp| {
                 const frame_idx = @min(tt, disp.array.dims[dim_time_pre] - 1);
-                coords_to_trans = try applyDispToMesh(arena_alloc, frame_idx, &mesh.coords.mat, &disp.array);
+                coords_to_prep = try applyDispToMesh(
+                    arena_alloc,
+                    frame_idx,
+                    &mesh.coords.mat,
+                    &disp.array,
+                );
             } else {
-                coords_to_trans = MatSlice(f64).init(mesh.coords.mat.elems, mesh.coords.mat.rows_num, mesh.coords.mat.cols_num);
+                coords_to_prep = MatSlice(f64).init(
+                    mesh.coords.mat.elems,
+                    mesh.coords.mat.rows_num,
+                    mesh.coords.mat.cols_num,
+                );
             }
 
+            // Apply on-the-fly field scaling for rendering in bits, if required 
             var flat_frame_scaling: ?imageops.ScalingParams = null;
             switch (mesh.shader) {
                 .flat, .normals => |s| {
                     if (s.scale_over == .over_frames) {
                         flat_frame_scaling = flat_global_scaling[ii];
                     } else {
-                        flat_frame_scaling = imageops.getScalingParamsNDArray(&s.field.array, tt, s.scaling);
+                        flat_frame_scaling = imageops.getScalingParamsNDArray(
+                            &s.field.array,
+                            tt,
+                            s.scaling,
+                        );
                     }
                 },
                 else => {},
             }
-            transformed_meshes[ii] = try mr.prepareMesh(arena_alloc, &mesh, &coords_to_trans, flat_frame_scaling);
+
+            // Final prepared meshes in NDArray format: [elems_num,field,nodes_per_elem]
+            prep_meshes[ii] = try mr.prepareMesh(
+                arena_alloc,
+                &mesh,
+                &coords_to_prep,
+                flat_frame_scaling,
+            );
         }
 
+        // Allocate frame buffer to render the image into or wrap the NDArray of frames to
+        // return to the user
         var frame_arr: NDArray(f64) = undefined;
         if (images_arr) |*ima| {
             const stride = ima.strides[0];
@@ -170,6 +209,8 @@ pub fn rasterAllFrames(
         }
         @memset(frame_arr.elems, 0.0);
 
+        // Setup performance reporting as basic or intrusive, basic is comptime removed from
+        // hot loops
         var frame_perf: ?perf.Perf = null;
         if (config.report == .perf) {
             frame_perf = try perf.initFramePerf(
@@ -192,7 +233,7 @@ pub fn rasterAllFrames(
                 io,
                 camera,
                 tt,
-                transformed_meshes,
+                prep_meshes,
                 &frame_arr,
                 config.tile_size,
                 .off,
@@ -203,7 +244,7 @@ pub fn rasterAllFrames(
                 io,
                 camera,
                 tt,
-                transformed_meshes,
+                prep_meshes,
                 &frame_arr,
                 config.tile_size,
                 .bench,
@@ -214,7 +255,7 @@ pub fn rasterAllFrames(
                 io,
                 camera,
                 tt,
-                transformed_meshes,
+                prep_meshes,
                 &frame_arr,
                 config.tile_size,
                 .perf,
@@ -224,11 +265,11 @@ pub fn rasterAllFrames(
 
         if (frame_perf) |*fp| {
             var nodes_sum: usize = 0;
-            for (transformed_meshes) |mesh| {
+            for (prep_meshes) |mesh| {
                 nodes_sum += mesh.mesh_type.getNodesNum();
             }
             const nodes_per_elem: f64 = @as(f64, @floatFromInt(nodes_sum)) /
-                @as(f64, @floatFromInt(transformed_meshes.len));
+                @as(f64, @floatFromInt(prep_meshes.len));
 
             try fp.saveFrameReport(
                 io,
@@ -303,7 +344,9 @@ pub fn rasterSceneInternal(
     );
 
     const time_end_geo = Timestamp.now(io, .awake);
-    pipe_times.geometry_prep = @floatFromInt(time_start_geo.durationTo(time_end_geo).raw.nanoseconds);
+    pipe_times.geometry_prep = @floatFromInt(
+        time_start_geo.durationTo(time_end_geo).raw.nanoseconds,
+    );
 
     const time_start_overlap = Timestamp.now(io, .awake);
 
@@ -320,7 +363,9 @@ pub fn rasterSceneInternal(
     );
 
     const time_end_overlap = Timestamp.now(io, .awake);
-    pipe_times.tile_overlap = @floatFromInt(time_start_overlap.durationTo(time_end_overlap).raw.nanoseconds);
+    pipe_times.tile_overlap = @floatFromInt(
+        time_start_overlap.durationTo(time_end_overlap).raw.nanoseconds,
+    );
 
     const time_start_loop = Timestamp.now(io, .awake);
 
@@ -343,10 +388,14 @@ pub fn rasterSceneInternal(
     );
 
     const time_end_loop = Timestamp.now(io, .awake);
-    pipe_times.raster_loop = @floatFromInt(time_start_loop.durationTo(time_end_loop).raw.nanoseconds);
+    pipe_times.raster_loop = @floatFromInt(
+        time_start_loop.durationTo(time_end_loop).raw.nanoseconds,
+    );
 
     const raster_end = Timestamp.now(io, .awake);
-    pipe_times.total_time = @floatFromInt(raster_start.durationTo(raster_end).raw.nanoseconds);
+    pipe_times.total_time = @floatFromInt(
+        raster_start.durationTo(raster_end).raw.nanoseconds,
+    );
 
     if (report != .off) {
         perf_data.?.pipe_times = pipe_times;

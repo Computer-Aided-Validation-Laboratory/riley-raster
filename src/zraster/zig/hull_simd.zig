@@ -5,6 +5,7 @@ const common = @import("hull_common.zig");
 const Camera = @import("camera.zig").Camera;
 const NDArray = @import("ndarray.zig").NDArray;
 const Vec3OfSlices = rops.Vec3OfSlices;
+const S = buildconfig.config.simd_vector_width;
 
 pub const TessTriangle = struct {
     x: [3]f64,
@@ -20,9 +21,9 @@ pub const HullResult = struct {
 };
 
 pub const HullResultSIMD = struct {
-    isIn: @Vector(8, bool),
-    guess_xi: @Vector(8, f64),
-    guess_eta: @Vector(8, f64),
+    isIn: @Vector(S, bool),
+    guess_xi: @Vector(S, f64),
+    guess_eta: @Vector(S, f64),
 };
 
 pub fn Tessellation(comptime NT: usize) type {
@@ -52,12 +53,16 @@ pub fn Tessellation(comptime NT: usize) type {
             return .{ .isIn = false, .guess_xi = 0, .guess_eta = 0 };
         }
 
-        pub inline fn isInSIMD(self: @This(), v_px: @Vector(8, f64), v_py: @Vector(8, f64)) HullResultSIMD {
+        pub inline fn isInSIMD(
+            self: @This(),
+            v_px: @Vector(S, f64),
+            v_py: @Vector(S, f64),
+        ) HullResultSIMD {
             const eps = buildconfig.config.tolerance.hull.simd_inclusion;
-            const v_m_eps: @Vector(8, f64) = @splat(-eps);
-            var v_isIn: @Vector(8, bool) = @splat(false);
-            var v_guess_xi: @Vector(8, f64) = @splat(0.0);
-            var v_guess_eta: @Vector(8, f64) = @splat(0.0);
+            const v_m_eps: @Vector(S, f64) = @splat(-eps);
+            var v_isIn: @Vector(S, bool) = @splat(false);
+            var v_guess_xi: @Vector(S, f64) = @splat(0.0);
+            var v_guess_eta: @Vector(S, f64) = @splat(0.0);
 
             inline for (self.triangles) |tri| {
                 const e0 = rops.edgeFun3SIMD(tri.x[0], tri.y[0], tri.x[1], tri.y[1], v_px, v_py);
@@ -68,17 +73,17 @@ pub fn Tessellation(comptime NT: usize) type {
 
                 if (@reduce(.Or, v_in_tri)) {
                     const area = rops.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2]);
-                    const v_inv_area: @Vector(8, f64) = @splat(1.0 / area);
+                    const v_inv_area: @Vector(S, f64) = @splat(1.0 / area);
                     const v_w0 = e1 * v_inv_area;
                     const v_w1 = e2 * v_inv_area;
                     const v_w2 = e0 * v_inv_area;
 
-                    const v_tri_xi0: @Vector(8, f64) = @splat(tri.xi[0]);
-                    const v_tri_xi1: @Vector(8, f64) = @splat(tri.xi[1]);
-                    const v_tri_xi2: @Vector(8, f64) = @splat(tri.xi[2]);
-                    const v_tri_eta0: @Vector(8, f64) = @splat(tri.eta[0]);
-                    const v_tri_eta1: @Vector(8, f64) = @splat(tri.eta[1]);
-                    const v_tri_eta2: @Vector(8, f64) = @splat(tri.eta[2]);
+                    const v_tri_xi0: @Vector(S, f64) = @splat(tri.xi[0]);
+                    const v_tri_xi1: @Vector(S, f64) = @splat(tri.xi[1]);
+                    const v_tri_xi2: @Vector(S, f64) = @splat(tri.xi[2]);
+                    const v_tri_eta0: @Vector(S, f64) = @splat(tri.eta[0]);
+                    const v_tri_eta1: @Vector(S, f64) = @splat(tri.eta[1]);
+                    const v_tri_eta2: @Vector(S, f64) = @splat(tri.eta[2]);
 
                     const v_curr_xi = v_w0 * v_tri_xi0 + v_w1 * v_tri_xi1 + v_w2 * v_tri_xi2;
                     const v_curr_eta = v_w0 * v_tri_eta0 + v_w1 * v_tri_eta1 + v_w2 * v_tri_eta2;

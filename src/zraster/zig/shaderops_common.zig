@@ -8,6 +8,8 @@ const InterpType = texops.InterpType;
 const meshio = @import("meshio.zig");
 const Field = meshio.Field;
 const imageops = @import("imageops.zig");
+const buildconfig = @import("buildconfig.zig");
+const S = buildconfig.config.simd_vector_width;
 
 pub const ScaleOver = enum { within_frames, over_frames };
 pub const NormalType = enum { none, exact, averaged };
@@ -126,7 +128,7 @@ pub fn ShadeContext(comptime N: usize) type {
         global_subx: usize,
         global_suby: usize,
         local_buf: *const LocalNodeBuffer(N),
-        v_mask: ?@Vector(8, bool) = null,
+        v_mask: ?@Vector(S, bool) = null,
     };
 }
 

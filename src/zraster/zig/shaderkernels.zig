@@ -1,5 +1,5 @@
-const backend = @import("backend.zig");
-const impl = if (backend.simd_on)
+const cfg = @import("buildconfig.zig").config;
+const impl = if (cfg.simd == .on)
     @import("shaderkernels_simd.zig")
 else
     @import("shaderkernels_scalar.zig");

@@ -1,5 +1,6 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const S = buildconfig.config.simd_vector_width;
 const rops = @import("rasterops.zig");
 const newton = @import("newton.zig");
 const shapefun = @import("shapefun.zig");
@@ -26,14 +27,14 @@ pub fn GeometryResult(comptime N: usize) type {
 
 pub fn GeometryResultSIMD(comptime N: usize) type {
     return struct {
-        weights: [N]@Vector(8, f64),
-        mask: @Vector(8, bool),
-        pre_domain_converged: @Vector(8, bool),
-        iters: @Vector(8, u8),
-        xi_out: @Vector(8, f64),
-        eta_out: @Vector(8, f64),
-        residual_x: @Vector(8, f64),
-        residual_y: @Vector(8, f64),
+        weights: [N]@Vector(S, f64),
+        mask: @Vector(S, bool),
+        pre_domain_converged: @Vector(S, bool),
+        iters: @Vector(S, u8),
+        xi_out: @Vector(S, f64),
+        eta_out: @Vector(S, f64),
+        residual_x: @Vector(S, f64),
+        residual_y: @Vector(S, f64),
     };
 }
 
@@ -168,8 +169,8 @@ pub fn Tri3Kernel() type {
             return calcInvZRast(nodes_num, nodes, weights);
         }
 
-        pub inline fn getSIMDConstants(nodes: Vec3OfSlices(f64)) [nodes_num]@Vector(8, f64) {
-            var out: [nodes_num]@Vector(8, f64) = undefined;
+        pub inline fn getSIMDConstants(nodes: Vec3OfSlices(f64)) [nodes_num]@Vector(S, f64) {
+            var out: [nodes_num]@Vector(S, f64) = undefined;
             inline for (0..nodes_num) |ii| {
                 out[ii] = @splat(1.0 / nodes.z[ii]);
             }
@@ -180,7 +181,7 @@ pub fn Tri3Kernel() type {
             nodes: Vec3OfSlices(f64),
             inv_area: f64,
             step_size: f64,
-        ) struct { dx: [nodes_num]@Vector(8, f64), dy: [nodes_num]@Vector(8, f64), x07: [nodes_num]@Vector(8, f64) } {
+        ) struct { dx: [nodes_num]@Vector(S, f64), dy: [nodes_num]@Vector(S, f64), x07: [nodes_num]@Vector(S, f64) } {
             const dx_scalar = [_]f64{
                 (nodes.y[2] - nodes.y[1]) * step_size * inv_area,
                 (nodes.y[0] - nodes.y[2]) * step_size * inv_area,
@@ -192,11 +193,11 @@ pub fn Tri3Kernel() type {
                 (nodes.x[0] - nodes.x[1]) * step_size * inv_area,
             };
 
-            var dx: [nodes_num]@Vector(8, f64) = undefined;
-            var dy: [nodes_num]@Vector(8, f64) = undefined;
-            var x07: [nodes_num]@Vector(8, f64) = undefined;
+            var dx: [nodes_num]@Vector(S, f64) = undefined;
+            var dy: [nodes_num]@Vector(S, f64) = undefined;
+            var x07: [nodes_num]@Vector(S, f64) = undefined;
 
-            const v_07: @Vector(8, f64) = .{ 0, 1, 2, 3, 4, 5, 6, 7 };
+            const v_07: @Vector(S, f64) = @floatFromInt(std.simd.iota(usize, S));
 
             inline for (0..nodes_num) |ii| {
                 dx[ii] = @splat(dx_scalar[ii] * 8.0);
@@ -298,8 +299,8 @@ pub fn Tri3OptKernel() type {
             return calcInvZRast(nodes_num, nodes, weights);
         }
 
-        pub inline fn getSIMDConstants(nodes: Vec3OfSlices(f64)) [nodes_num]@Vector(8, f64) {
-            var out: [nodes_num]@Vector(8, f64) = undefined;
+        pub inline fn getSIMDConstants(nodes: Vec3OfSlices(f64)) [nodes_num]@Vector(S, f64) {
+            var out: [nodes_num]@Vector(S, f64) = undefined;
             inline for (0..nodes_num) |ii| {
                 out[ii] = @splat(1.0 / nodes.z[ii]);
             }
@@ -310,7 +311,7 @@ pub fn Tri3OptKernel() type {
             nodes: Vec3OfSlices(f64),
             inv_area: f64,
             step_size: f64,
-        ) struct { dx: [nodes_num]@Vector(8, f64), dy: [nodes_num]@Vector(8, f64), x07: [nodes_num]@Vector(8, f64) } {
+        ) struct { dx: [nodes_num]@Vector(S, f64), dy: [nodes_num]@Vector(S, f64), x07: [nodes_num]@Vector(S, f64) } {
             const dx_scalar = [_]f64{
                 (nodes.y[2] - nodes.y[1]) * step_size * inv_area,
                 (nodes.y[0] - nodes.y[2]) * step_size * inv_area,
@@ -322,11 +323,11 @@ pub fn Tri3OptKernel() type {
                 (nodes.x[0] - nodes.x[1]) * step_size * inv_area,
             };
 
-            var dx: [nodes_num]@Vector(8, f64) = undefined;
-            var dy: [nodes_num]@Vector(8, f64) = undefined;
-            var x07: [nodes_num]@Vector(8, f64) = undefined;
+            var dx: [nodes_num]@Vector(S, f64) = undefined;
+            var dy: [nodes_num]@Vector(S, f64) = undefined;
+            var x07: [nodes_num]@Vector(S, f64) = undefined;
 
-            const v_07: @Vector(8, f64) = .{ 0, 1, 2, 3, 4, 5, 6, 7 };
+            const v_07: @Vector(S, f64) = @floatFromInt(std.simd.iota(usize, S));
 
             inline for (0..nodes_num) |ii| {
                 dx[ii] = @splat(dx_scalar[ii] * 8.0);
@@ -406,25 +407,25 @@ pub fn Tri6Kernel() type {
 
         pub inline fn solveWeightsSIMD(
             nodes: Vec3OfSlices(f64),
-            v_pixel_x: @Vector(8, f64),
-            v_pixel_y: @Vector(8, f64),
-            v_xi_guess: @Vector(8, f64),
-            v_eta_guess: @Vector(8, f64),
+            v_pixel_x: @Vector(S, f64),
+            v_pixel_y: @Vector(S, f64),
+            v_xi_guess: @Vector(S, f64),
+            v_eta_guess: @Vector(S, f64),
             x_offset: f64,
             y_offset: f64,
             state: anytype,
         ) GeometryResultSIMD(nodes_num) {
             _ = state;
 
-            const v_target_x = v_pixel_x - @as(@Vector(8, f64), @splat(x_offset));
-            const v_target_y = v_pixel_y - @as(@Vector(8, f64), @splat(y_offset));
+            const v_target_x = v_pixel_x - @as(@Vector(S, f64), @splat(x_offset));
+            const v_target_y = v_pixel_y - @as(@Vector(S, f64), @splat(y_offset));
 
-            var v_xi_out: @Vector(8, f64) = undefined;
-            var v_eta_out: @Vector(8, f64) = undefined;
+            var v_xi_out: @Vector(S, f64) = undefined;
+            var v_eta_out: @Vector(S, f64) = undefined;
 
-            var v_weights: [nodes_num]@Vector(8, f64) = undefined;
-            var v_dNu: [nodes_num]@Vector(8, f64) = undefined;
-            var v_dNv: [nodes_num]@Vector(8, f64) = undefined;
+            var v_weights: [nodes_num]@Vector(S, f64) = undefined;
+            var v_dNu: [nodes_num]@Vector(S, f64) = undefined;
+            var v_dNv: [nodes_num]@Vector(S, f64) = undefined;
 
             const res = newton.solveInverseSIMD(
                 nodes_num,
@@ -684,25 +685,25 @@ pub fn Quad4NewtonKernel() type {
 
         pub inline fn solveWeightsSIMD(
             nodes: Vec3OfSlices(f64),
-            v_pixel_x: @Vector(8, f64),
-            v_pixel_y: @Vector(8, f64),
-            v_xi_guess: @Vector(8, f64),
-            v_eta_guess: @Vector(8, f64),
+            v_pixel_x: @Vector(S, f64),
+            v_pixel_y: @Vector(S, f64),
+            v_xi_guess: @Vector(S, f64),
+            v_eta_guess: @Vector(S, f64),
             x_offset: f64,
             y_offset: f64,
             state: anytype,
         ) GeometryResultSIMD(nodes_num) {
             _ = state;
 
-            const v_target_x = v_pixel_x - @as(@Vector(8, f64), @splat(x_offset));
-            const v_target_y = v_pixel_y - @as(@Vector(8, f64), @splat(y_offset));
+            const v_target_x = v_pixel_x - @as(@Vector(S, f64), @splat(x_offset));
+            const v_target_y = v_pixel_y - @as(@Vector(S, f64), @splat(y_offset));
 
-            var v_xi_out: @Vector(8, f64) = undefined;
-            var v_eta_out: @Vector(8, f64) = undefined;
+            var v_xi_out: @Vector(S, f64) = undefined;
+            var v_eta_out: @Vector(S, f64) = undefined;
 
-            var v_weights: [nodes_num]@Vector(8, f64) = undefined;
-            var v_dNu: [nodes_num]@Vector(8, f64) = undefined;
-            var v_dNv: [nodes_num]@Vector(8, f64) = undefined;
+            var v_weights: [nodes_num]@Vector(S, f64) = undefined;
+            var v_dNu: [nodes_num]@Vector(S, f64) = undefined;
+            var v_dNv: [nodes_num]@Vector(S, f64) = undefined;
 
             const res = newton.solveInverseSIMD(
                 nodes_num,
@@ -809,25 +810,25 @@ pub fn Quad89Kernel(comptime N: usize) type {
 
         pub inline fn solveWeightsSIMD(
             nodes: Vec3OfSlices(f64),
-            v_pixel_x: @Vector(8, f64),
-            v_pixel_y: @Vector(8, f64),
-            v_xi_guess: @Vector(8, f64),
-            v_eta_guess: @Vector(8, f64),
+            v_pixel_x: @Vector(S, f64),
+            v_pixel_y: @Vector(S, f64),
+            v_xi_guess: @Vector(S, f64),
+            v_eta_guess: @Vector(S, f64),
             x_offset: f64,
             y_offset: f64,
             state: anytype,
         ) GeometryResultSIMD(nodes_num) {
             _ = state;
 
-            const v_target_x = v_pixel_x - @as(@Vector(8, f64), @splat(x_offset));
-            const v_target_y = v_pixel_y - @as(@Vector(8, f64), @splat(y_offset));
+            const v_target_x = v_pixel_x - @as(@Vector(S, f64), @splat(x_offset));
+            const v_target_y = v_pixel_y - @as(@Vector(S, f64), @splat(y_offset));
 
-            var v_xi_out: @Vector(8, f64) = undefined;
-            var v_eta_out: @Vector(8, f64) = undefined;
+            var v_xi_out: @Vector(S, f64) = undefined;
+            var v_eta_out: @Vector(S, f64) = undefined;
 
-            var v_weights: [nodes_num]@Vector(8, f64) = undefined;
-            var v_dNu: [nodes_num]@Vector(8, f64) = undefined;
-            var v_dNv: [nodes_num]@Vector(8, f64) = undefined;
+            var v_weights: [nodes_num]@Vector(S, f64) = undefined;
+            var v_dNu: [nodes_num]@Vector(S, f64) = undefined;
+            var v_dNv: [nodes_num]@Vector(S, f64) = undefined;
 
             const res = newton.solveInverseSIMD(
                 nodes_num,
