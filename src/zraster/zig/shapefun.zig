@@ -2,6 +2,52 @@ const buildconfig = @import("buildconfig.zig");
 
 const S = buildconfig.config.simd_vector_width;
 
+pub const NodalDerivs = struct {
+    dNu: [9][9]f64,
+    dNv: [9][9]f64,
+};
+
+pub fn getNodalDerivs(comptime N: usize) NodalDerivs {
+    var nodal_derivs = NodalDerivs{
+        .dNu = [_][9]f64{[_]f64{0} ** 9} ** 9,
+        .dNv = [_][9]f64{[_]f64{0} ** 9} ** 9,
+    };
+    const node_coords = switch (N) {
+        3 => [3][2]f64{
+            .{ 0, 0 }, .{ 1, 0 }, .{ 0, 1 },
+        },
+        4 => [4][2]f64{
+            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
+        },
+        6 => [6][2]f64{
+            .{ 0, 0 }, .{ 1, 0 }, .{ 0, 1 }, .{ 0.5, 0 }, .{ 0.5, 0.5 }, .{ 0, 0.5 },
+        },
+        8 => [8][2]f64{
+            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
+            .{ 0, -1 },  .{ 1, 0 },  .{ 0, 1 }, .{ -1, 0 },
+        },
+        9 => [9][2]f64{
+            .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
+            .{ 0, -1 },  .{ 1, 0 },  .{ 0, 1 }, .{ -1, 0 },
+            .{ 0, 0 },
+        },
+        else => return nodal_derivs,
+    };
+
+    for (0..N) |ii| {
+        var n_v: [N]f64 = undefined;
+        var dNu: [N]f64 = undefined;
+        var dNv: [N]f64 = undefined;
+        shapeFunctions(N, node_coords[ii][0], node_coords[ii][1], &n_v, &dNu, &dNv);
+        for (0..N) |jj| {
+            nodal_derivs.dNu[ii][jj] = dNu[jj];
+            nodal_derivs.dNv[ii][jj] = dNv[jj];
+        }
+    }
+
+    return nodal_derivs;
+}
+
 pub fn shapeFunctions(
     comptime N: usize,
     xi: f64,
