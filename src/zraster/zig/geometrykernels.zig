@@ -9,9 +9,9 @@ const NDArray = @import("ndarray.zig").NDArray;
 const Vec3Slices = rops.Vec3Slices;
 
 pub const Strategy = enum {
-    pointwise,
+    direct,
     incremental,
-    newton_simd,
+    newton,
 };
 
 pub const CoordSpace = enum {
@@ -69,9 +69,10 @@ pub fn Tri3Kernel() type {
     return struct {
         const Self = @This();
         pub const nodes_num = 3;
-        pub const has_hull = false;
+        pub const hull_nodes_num = 0;
+        pub const tess_triangles_num = 0;
         pub const coord_space = .raster;
-        pub const strategy = .pointwise;
+        pub const strategy = .direct;
 
         pub inline fn getInvElemArea(nodes: Vec3Slices(f64)) f64 {
             return 1.0 / rops.edgeFun3(
@@ -182,7 +183,11 @@ pub fn Tri3Kernel() type {
             nodes: Vec3Slices(f64),
             inv_area: f64,
             step_size: f64,
-        ) struct { dx: [nodes_num]@Vector(S, f64), dy: [nodes_num]@Vector(S, f64), x07: [nodes_num]@Vector(S, f64) } {
+        ) struct {
+            dx: [nodes_num]@Vector(S, f64),
+            dy: [nodes_num]@Vector(S, f64),
+            x07: [nodes_num]@Vector(S, f64),
+        } {
             const dx_scalar = [_]f64{
                 (nodes.y[2] - nodes.y[1]) * step_size * inv_area,
                 (nodes.y[0] - nodes.y[2]) * step_size * inv_area,
@@ -215,7 +220,8 @@ pub fn Tri3Kernel() type {
 pub fn Tri3OptKernel() type {
     return struct {
         pub const nodes_num = 3;
-        pub const has_hull = false;
+        pub const hull_nodes_num = 0;
+        pub const tess_triangles_num = 0;
         pub const coord_space = .raster;
         pub const strategy = .incremental;
 
@@ -312,7 +318,11 @@ pub fn Tri3OptKernel() type {
             nodes: Vec3Slices(f64),
             inv_area: f64,
             step_size: f64,
-        ) struct { dx: [nodes_num]@Vector(S, f64), dy: [nodes_num]@Vector(S, f64), x07: [nodes_num]@Vector(S, f64) } {
+        ) struct {
+            dx: [nodes_num]@Vector(S, f64),
+            dy: [nodes_num]@Vector(S, f64),
+            x07: [nodes_num]@Vector(S, f64),
+        } {
             const dx_scalar = [_]f64{
                 (nodes.y[2] - nodes.y[1]) * step_size * inv_area,
                 (nodes.y[0] - nodes.y[2]) * step_size * inv_area,
@@ -345,10 +355,10 @@ pub fn Tri3OptKernel() type {
 pub fn Tri6Kernel() type {
     return struct {
         pub const nodes_num = 6;
-        pub const has_hull = true;
         pub const hull_nodes_num = 6;
+        pub const tess_triangles_num = 6;
         pub const coord_space = .clip_px_leng;
-        pub const strategy = .newton_simd;
+        pub const strategy = .newton;
 
         pub inline fn getNewtonGuess() struct { xi: f64, eta: f64 } {
             return .{ .xi = 1.0 / 3.0, .eta = 1.0 / 3.0 };
@@ -359,7 +369,14 @@ pub fn Tri6Kernel() type {
         }
 
         pub inline fn getInvElemArea(nodes: Vec3Slices(f64)) f64 {
-            return 1.0 / rops.edgeFun3(nodes.x[0], nodes.y[0], nodes.x[1], nodes.y[1], nodes.x[2], nodes.y[2]);
+            return 1.0 / rops.edgeFun3(
+                nodes.x[0],
+                nodes.y[0],
+                nodes.x[1],
+                nodes.y[1],
+                nodes.x[2],
+                nodes.y[2],
+            );
         }
 
         pub inline fn solveWeights(
@@ -465,9 +482,10 @@ pub fn Tri6Kernel() type {
 pub fn Quad4IBIKernel() type {
     return struct {
         pub const nodes_num = 4;
-        pub const has_hull = false;
+        pub const hull_nodes_num = 0;
+        pub const tess_triangles_num = 0;
         pub const coord_space = .clip_px_leng;
-        pub const strategy = .pointwise;
+        pub const strategy = .direct;
 
         pub const BilinearParams = struct {
             x_uv_coeff: f64,
@@ -619,10 +637,10 @@ pub fn Quad4IBIKernel() type {
 pub fn Quad4NewtonKernel() type {
     return struct {
         pub const nodes_num = 4;
-        pub const has_hull = true;
         pub const hull_nodes_num = 4;
+        pub const tess_triangles_num = 2;
         pub const coord_space = .clip_px_leng;
-        pub const strategy = .newton_simd;
+        pub const strategy = .newton;
 
         pub inline fn getNewtonGuess() struct { xi: f64, eta: f64 } {
             return .{ .xi = 0.5, .eta = 0.5 };
@@ -743,10 +761,10 @@ pub fn Quad4NewtonKernel() type {
 pub fn Quad89Kernel(comptime N: usize) type {
     return struct {
         pub const nodes_num = N;
-        pub const has_hull = true;
         pub const hull_nodes_num = 8;
+        pub const tess_triangles_num = 8;
         pub const coord_space = .clip_px_leng;
-        pub const strategy = .newton_simd;
+        pub const strategy = .newton;
 
         pub inline fn getNewtonGuess() struct { xi: f64, eta: f64 } {
             return .{ .xi = 0.5, .eta = 0.5 };

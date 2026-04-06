@@ -77,7 +77,9 @@ pub fn rasterScene(
         @memset(subpx_inv_z_scratch, -std.math.inf(f64));
         @memset(subpx_image_scratch.elems, 0.0);
 
-        const overlaps = tiling.overlaps[tile.overlap_start .. tile.overlap_start + tile.overlap_count];
+        const overlap_start = tile.overlap_start;
+        const overlap_end = overlap_start + tile.overlap_count;
+        const overlaps = tiling.overlaps[overlap_start..overlap_end];
 
         for (overlaps) |ov| {
             const mesh = &meshes[ov.mesh_idx];
@@ -119,7 +121,9 @@ pub fn rasterScene(
                             var local_node_buf: shaderops.LocalNodeBuffer(N) = .{};
 
                             const tt = @min(ctx_rast.frame_ind, shader.elem_field.dims[0] - 1);
-                            const start_idx = shader.elem_field.getFlatInd(&[_]usize{ tt, target.overlap.elem_idx, 0, 0 });
+                            const start_idx = shader.elem_field.getFlatInd(
+                                &[_]usize{ tt, target.overlap.elem_idx, 0, 0 },
+                            );
 
                             local_node_buf.load(
                                 shader.elem_field,
@@ -287,10 +291,18 @@ pub fn RasterPass(
 ) type {
     const PreparedShader = switch (ShaderData) {
         shaderops.NodalInput, shaderops.NodalPrepared => shaderops.NodalPrepared,
-        shaderops.TexInput(u8, 1), shaderops.TexPrepared(u8, 1) => shaderops.TexPrepared(u8, 1),
-        shaderops.TexInput(u16, 1), shaderops.TexPrepared(u16, 1) => shaderops.TexPrepared(u16, 1),
-        shaderops.TexInput(u8, 3), shaderops.TexPrepared(u8, 3) => shaderops.TexPrepared(u8, 3),
-        shaderops.TexInput(u16, 3), shaderops.TexPrepared(u16, 3) => shaderops.TexPrepared(u16, 3),
+        shaderops.TexInput(u8, 1), shaderops.TexPrepared(u8, 1) => blk: {
+            break :blk shaderops.TexPrepared(u8, 1);
+        },
+        shaderops.TexInput(u16, 1), shaderops.TexPrepared(u16, 1) => blk: {
+            break :blk shaderops.TexPrepared(u16, 1);
+        },
+        shaderops.TexInput(u8, 3), shaderops.TexPrepared(u8, 3) => blk: {
+            break :blk shaderops.TexPrepared(u8, 3);
+        },
+        shaderops.TexInput(u16, 3), shaderops.TexPrepared(u16, 3) => blk: {
+            break :blk shaderops.TexPrepared(u16, 3);
+        },
         else => ShaderData,
     };
 
@@ -366,7 +378,7 @@ pub fn RasterPass(
                     local_buf,
                 )
             else
-                try rasterPointwise(
+                try rasterDirect(
                     report_mode,
                     ctx_rast,
                     target,
@@ -403,7 +415,14 @@ pub fn RasterPass(
                 nodes_inv_z[node_index] = 1.0 / nodes.z[node_index];
             }
 
-            const inv_area = 1.0 / rops.edgeFun3(nodes.x[0], nodes.y[0], nodes.x[1], nodes.y[1], nodes.x[2], nodes.y[2]);
+            const inv_area = 1.0 / rops.edgeFun3(
+                nodes.x[0],
+                nodes.y[0],
+                nodes.x[1],
+                nodes.y[1],
+                nodes.x[2],
+                nodes.y[2],
+            );
 
             const dweights_dx = Geometry.getDWeightsDx(nodes, inv_area, domain.step);
             const dweights_dy = Geometry.getDWeightsDy(nodes, inv_area, domain.step);
@@ -498,7 +517,7 @@ pub fn RasterPass(
             return shaded_px;
         }
 
-        fn rasterPointwise(
+        fn rasterDirect(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext(report_mode),
             target: rops.OverlapTarget,
@@ -526,19 +545,19 @@ pub fn RasterPass(
                 Geometry.getBilinearParams(nodes)
             else {};
 
-            const NT: comptime_int = if (Geometry.nodes_num == 4)
-                2
-            else if (Geometry.nodes_num == 6)
-                6
-            else
-                8;
-            var element_tess: hull.Tessellation(NT) = undefined;
+            var element_tess: hull.Tessellation(Geometry.tess_triangles_num) = undefined;
 
-            if (comptime Geometry.has_hull) {
+            if (comptime Geometry.hull_nodes_num > 0) {
                 if (input.hull) |rh| {
                     const hx = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 0, 0 }, 1);
                     const hy = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 1, 0 }, 1);
-                    element_tess = hull.getTessellation(N, hx, hy);
+                    element_tess = hull.getTessellation(
+                        N,
+                        Geometry.hull_nodes_num,
+                        Geometry.tess_triangles_num,
+                        hx,
+                        hy,
+                    );
                 }
             }
 
@@ -551,7 +570,7 @@ pub fn RasterPass(
                     const global_subx = target.tile.x_px_min * sub_samp + scratch_x;
                     const global_suby = target.tile.y_px_min * sub_samp + scratch_y;
 
-                    if (comptime Geometry.has_hull) {
+                    if (comptime Geometry.hull_nodes_num > 0) {
                         const in_tess = element_tess.isIn(subpx_x, subpx_y);
                         const is_in_tess = if (@TypeOf(in_tess) == bool)
                             in_tess
@@ -667,7 +686,15 @@ pub fn RasterPass(
     };
 }
 
-pub fn averageScratch(tile: ActiveTile, sub_samp: usize, spx_tile_size: usize, fields_num: usize, spx_image_scratch: *const MatSlice(f64), spx_field_avg: []f64, image_out_arr: *NDArray(f64)) void {
+pub fn averageScratch(
+    tile: ActiveTile,
+    sub_samp: usize,
+    spx_tile_size: usize,
+    fields_num: usize,
+    spx_image_scratch: *const MatSlice(f64),
+    spx_field_avg: []f64,
+    image_out_arr: *NDArray(f64),
+) void {
     const curr_tile_size_x = tile.x_px_max - tile.x_px_min;
     const curr_tile_size_y = tile.y_px_max - tile.y_px_min;
     const sub_samp_f = @as(f64, @floatFromInt(sub_samp));

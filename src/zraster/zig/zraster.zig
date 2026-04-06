@@ -337,7 +337,6 @@ pub fn rasterSceneInternal(
         tiles_num_y,
         @intCast(camera.pixels_num[0]),
         @intCast(camera.pixels_num[1]),
-        meshes.len,
         elems_in_image_by_mesh,
         elem_bboxes_by_mesh,
     );
@@ -397,7 +396,7 @@ pub fn rasterSceneInternal(
             nodes_per_elem,
             bench_log,
         ),
-        .full_stats => try report_log.writeReportToConsole(
+        .full_stats => try report_log.fullReport(
             io,
             frame_ind,
             camera,

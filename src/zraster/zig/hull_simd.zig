@@ -87,7 +87,8 @@ pub fn Tessellation(comptime NT: usize) type {
                     const v_tri_eta2: @Vector(S, f64) = @splat(tri.eta[2]);
 
                     const v_curr_xi = v_w0 * v_tri_xi0 + v_w1 * v_tri_xi1 + v_w2 * v_tri_xi2;
-                    const v_curr_eta = v_w0 * v_tri_eta0 + v_w1 * v_tri_eta1 + v_w2 * v_tri_eta2;
+                    const v_curr_eta =
+                        v_w0 * v_tri_eta0 + v_w1 * v_tri_eta1 + v_w2 * v_tri_eta2;
 
                     v_guess_xi = @select(f64, v_in_tri, v_curr_xi, v_guess_xi);
                     v_guess_eta = @select(f64, v_in_tri, v_curr_eta, v_guess_eta);
@@ -101,10 +102,11 @@ pub fn Tessellation(comptime NT: usize) type {
 
 pub fn getTessellation(
     comptime N: usize,
+    comptime NH: usize,
+    comptime NT: usize,
     hull_x: []const f64,
     hull_y: []const f64,
-) Tessellation(common.tessTrianglesNum(N)) {
-    const NT: comptime_int = common.tessTrianglesNum(N);
+) Tessellation(NT) {
     var tess = Tessellation(NT){ .triangles = undefined };
 
     if (N == 4) {
@@ -133,7 +135,6 @@ pub fn getTessellation(
         else
             [_]f64{ -1.0, -1.0, -1.0, 0.0, 1.0, 1.0, 1.0, 0.0 };
 
-        const NH = common.hullNodesNum(N);
         var cx: f64 = 0;
         var cy: f64 = 0;
         var c_xi: f64 = 0;

@@ -617,7 +617,7 @@ pub fn prepareSceneGeometry(
                     .quad9 => geomkerns.Quad89Kernel(9),
                 };
                 const N = GK.nodes_num;
-                const NH = if (comptime GK.has_hull) GK.hull_nodes_num else 0;
+                const NH = GK.hull_nodes_num;
                 const dim_elem = 0;
 
                 const normal_type = switch (mesh.shader) {
@@ -630,7 +630,7 @@ pub fn prepareSceneGeometry(
                     try elemsToClipPxLengSIMD(N, f64, camera, dim_elem, &mesh.coords);
                 }
 
-                if (comptime GK.has_hull) {
+                if (comptime GK.hull_nodes_num > 0) {
                     raster_hulls[ii] = try NDArray(f64).initFlat(
                         arena_alloc,
                         &[_]usize{ elems_num, 2, NH },
@@ -697,7 +697,6 @@ pub fn sceneTileElemOverlap(
     tiles_num_y: usize,
     screen_px_x: u16,
     screen_px_y: u16,
-    meshes_len: usize,
     elems_in_image_by_mesh: []const usize,
     elem_bboxes_by_mesh: []const []ElemBBox,
 ) !TilingOverlaps {
@@ -706,7 +705,7 @@ pub fn sceneTileElemOverlap(
     defer allocator.free(tile_elem_counts);
     @memset(tile_elem_counts, 0);
 
-    for (0..meshes_len) |mesh_idx| {
+    for (0..elems_in_image_by_mesh.len) |mesh_idx| {
         for (0..elems_in_image_by_mesh[mesh_idx]) |ee| {
             const ebb = elem_bboxes_by_mesh[mesh_idx][ee];
             const tile_ind_min_x: u16 = ebb.x_min / tile_size;
@@ -759,7 +758,7 @@ pub fn sceneTileElemOverlap(
         current_off += count;
     }
 
-    for (0..meshes_len) |mesh_idx| {
+    for (0..elems_in_image_by_mesh.len) |mesh_idx| {
         for (0..elems_in_image_by_mesh[mesh_idx]) |ee| {
             const ebb = elem_bboxes_by_mesh[mesh_idx][ee];
             const tx_start = ebb.x_min / tile_size;

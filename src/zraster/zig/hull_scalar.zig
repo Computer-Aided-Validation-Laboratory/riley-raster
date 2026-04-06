@@ -32,10 +32,11 @@ pub fn Tessellation(comptime NT: usize) type {
 
 pub fn getTessellation(
     comptime N: usize,
+    comptime NH: usize,
+    comptime NT: usize,
     hull_x: []const f64,
     hull_y: []const f64,
-) Tessellation(common.tessTrianglesNum(N)) {
-    const NT: comptime_int = common.tessTrianglesNum(N);
+) Tessellation(NT) {
     var tess = Tessellation(NT){ .triangles = undefined };
 
     if (N == 4) {
@@ -49,7 +50,6 @@ pub fn getTessellation(
             .y = .{ hull_y[0], hull_y[2], hull_y[3] },
         };
     } else if (N == 6 or N == 8 or N == 9) {
-        const NH = common.hullNodesNum(N);
         var cx: f64 = 0;
         var cy: f64 = 0;
         inline for (0..NH) |ii| {

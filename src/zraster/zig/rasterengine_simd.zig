@@ -72,19 +72,39 @@ pub fn rasterScene(
     const subpx_tile_total_padded = (subpx_tile_total + 7) & ~@as(usize, 7);
 
     const alignment = std.mem.Alignment.@"64";
-    const subpx_inv_z_scratch = try allocator.alignedAlloc(f64, alignment, subpx_tile_total_padded + 8);
+    const subpx_inv_z_scratch = try allocator.alignedAlloc(
+        f64,
+        alignment,
+        subpx_tile_total_padded + 8,
+    );
     defer allocator.free(subpx_inv_z_scratch);
 
-    const subpx_mask_scratch = try allocator.alignedAlloc(bool, alignment, subpx_tile_total_padded + 8);
+    const subpx_mask_scratch = try allocator.alignedAlloc(
+        bool,
+        alignment,
+        subpx_tile_total_padded + 8,
+    );
     defer allocator.free(subpx_mask_scratch);
 
-    const subpx_xi_scratch = try allocator.alignedAlloc(f64, alignment, subpx_tile_total_padded + 8);
+    const subpx_xi_scratch = try allocator.alignedAlloc(
+        f64,
+        alignment,
+        subpx_tile_total_padded + 8,
+    );
     defer allocator.free(subpx_xi_scratch);
 
-    const subpx_eta_scratch = try allocator.alignedAlloc(f64, alignment, subpx_tile_total_padded + 8);
+    const subpx_eta_scratch = try allocator.alignedAlloc(
+        f64,
+        alignment,
+        subpx_tile_total_padded + 8,
+    );
     defer allocator.free(subpx_eta_scratch);
 
-    const subpx_img_mem = try allocator.alignedAlloc(f64, alignment, (subpx_tile_total_padded + 8) * fields_num);
+    const subpx_img_mem = try allocator.alignedAlloc(
+        f64,
+        alignment,
+        (subpx_tile_total_padded + 8) * fields_num,
+    );
     defer allocator.free(subpx_img_mem);
     var subpx_image_scratch = MatSlice(f64).init(
         subpx_img_mem,
@@ -127,7 +147,9 @@ pub fn rasterScene(
             scratch.touched_max_x[yy] = 0;
         }
 
-        const overlaps = tiling.overlaps[tile.overlap_start .. tile.overlap_start + tile.overlap_count];
+        const overlap_start = tile.overlap_start;
+        const overlap_end = overlap_start + tile.overlap_count;
+        const overlaps = tiling.overlaps[overlap_start..overlap_end];
 
         for (overlaps) |ov| {
             const mesh = &meshes[ov.mesh_idx];
@@ -168,7 +190,9 @@ pub fn rasterScene(
                             var local_node_buf: shadekerns.shaderops.LocalNodeBuffer(N) = .{};
 
                             const tt = @min(ctx_rast.frame_ind, shader.elem_field.dims[0] - 1);
-                            const start_idx = shader.elem_field.getFlatInd(&[_]usize{ tt, target.overlap.elem_idx, 0, 0 });
+                            const start_idx = shader.elem_field.getFlatInd(
+                                &[_]usize{ tt, target.overlap.elem_idx, 0, 0 },
+                            );
 
                             local_node_buf.load(
                                 shader.elem_field,
@@ -334,12 +358,21 @@ pub fn RasterPass(
     comptime ShaderKernel: type,
     comptime ShaderData: type,
 ) type {
+    const sops = shadekerns.shaderops;
     const PreparedShader = switch (ShaderData) {
-        shadekerns.shaderops.NodalInput, shadekerns.shaderops.NodalPrepared => shadekerns.shaderops.NodalPrepared,
-        shadekerns.shaderops.TexInput(u8, 1), shadekerns.shaderops.TexPrepared(u8, 1) => shadekerns.shaderops.TexPrepared(u8, 1),
-        shadekerns.shaderops.TexInput(u16, 1), shadekerns.shaderops.TexPrepared(u16, 1) => shadekerns.shaderops.TexPrepared(u16, 1),
-        shadekerns.shaderops.TexInput(u8, 3), shadekerns.shaderops.TexPrepared(u8, 3) => shadekerns.shaderops.TexPrepared(u8, 3),
-        shadekerns.shaderops.TexInput(u16, 3), shadekerns.shaderops.TexPrepared(u16, 3) => shadekerns.shaderops.TexPrepared(u16, 3),
+        sops.NodalInput, sops.NodalPrepared => sops.NodalPrepared,
+        sops.TexInput(u8, 1), sops.TexPrepared(u8, 1) => blk: {
+            break :blk sops.TexPrepared(u8, 1);
+        },
+        sops.TexInput(u16, 1), sops.TexPrepared(u16, 1) => blk: {
+            break :blk sops.TexPrepared(u16, 1);
+        },
+        sops.TexInput(u8, 3), sops.TexPrepared(u8, 3) => blk: {
+            break :blk sops.TexPrepared(u8, 3);
+        },
+        sops.TexInput(u16, 3), sops.TexPrepared(u16, 3) => blk: {
+            break :blk sops.TexPrepared(u16, 3);
+        },
         else => ShaderData,
     };
 
@@ -403,7 +436,7 @@ pub fn RasterPass(
 
             const shaded_px = if (comptime (Geometry == geomkerns.Tri3Kernel() or
                 Geometry == geomkerns.Tri3OptKernel()))
-                try rasterSIM(
+                try rasterDirectSIMD(
                     report_mode,
                     ctx_rast,
                     target,
@@ -416,7 +449,7 @@ pub fn RasterPass(
                     local_buf,
                 )
             else if (Geometry.strategy == .incremental)
-                try rasterIncremental(
+                try rasterIncrementalSIMD(
                     report_mode,
                     ctx_rast,
                     target,
@@ -427,8 +460,8 @@ pub fn RasterPass(
                     scratch,
                     local_buf,
                 )
-            else if (Geometry.strategy == .newton_simd)
-                try rasterSIMDNewton(
+            else if (Geometry.strategy == .newton)
+                try rasterNewtonSIMD(
                     report_mode,
                     ctx_rast,
                     target,
@@ -442,7 +475,7 @@ pub fn RasterPass(
                     local_buf,
                 )
             else
-                try rasterPointwise(
+                try rasterDirect(
                     report_mode,
                     ctx_rast,
                     target,
@@ -458,7 +491,7 @@ pub fn RasterPass(
             return shaded_px;
         }
 
-        fn rasterSIM(
+        fn rasterDirectSIMD(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext(report_mode),
             target: rops.OverlapTarget,
@@ -474,7 +507,14 @@ pub fn RasterPass(
             var shaded_px: u64 = 0;
             const fields_num = scratch.image.rows_num;
 
-            const inv_area = 1.0 / rops.edgeFun3(nodes.x[0], nodes.y[0], nodes.x[1], nodes.y[1], nodes.x[2], nodes.y[2]);
+            const inv_area = 1.0 / rops.edgeFun3(
+                nodes.x[0],
+                nodes.y[0],
+                nodes.x[1],
+                nodes.y[1],
+                nodes.x[2],
+                nodes.y[2],
+            );
 
             const v_nodes_inv_z = Geometry.getSIMDConstants(nodes);
             const v_steps = Geometry.getSIMDSteps(nodes, inv_area, domain.step);
@@ -500,7 +540,8 @@ pub fn RasterPass(
                 while (scratch_x < bounds.end_x) : (scratch_x += 8) {
                     const v_07: @Vector(S, usize) = std.simd.iota(usize, S);
                     const v_scratch_x: @Vector(S, usize) = @splat(scratch_x);
-                    const v_x_mask = (v_scratch_x + v_07 >= @as(@Vector(S, usize), @splat(original_start_x))) &
+                    const v_x_mask = (v_scratch_x + v_07 >=
+                        @as(@Vector(S, usize), @splat(original_start_x))) &
                         (v_scratch_x + v_07 < @as(@Vector(S, usize), @splat(bounds.end_x)));
 
                     var v_mask: @Vector(S, bool) = v_x_mask;
@@ -593,7 +634,7 @@ pub fn RasterPass(
             return shaded_px;
         }
 
-        fn rasterSIMDNewton(
+        fn rasterNewtonSIMD(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext(report_mode),
             target: rops.OverlapTarget,
@@ -620,32 +661,38 @@ pub fn RasterPass(
                 v_nodes_inv_z_simd[nn] = @splat(nodes_inv_z[nn]);
             }
 
-            const NT: comptime_int = if (Geometry.nodes_num == 4)
-                2
-            else if (Geometry.nodes_num == 6)
-                6
-            else
-                8;
-            var element_tess: hull.Tessellation(NT) = undefined;
-            if (comptime Geometry.has_hull) {
+            var element_tess: hull.Tessellation(Geometry.tess_triangles_num) = undefined;
+            if (comptime Geometry.hull_nodes_num > 0) {
                 if (input.hull) |rh| {
                     const hx = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 0, 0 }, 1);
                     const hy = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 1, 0 }, 1);
-                    element_tess = hull.getTessellation(N, hx, hy);
+                    element_tess = hull.getTessellation(
+                        N,
+                        Geometry.hull_nodes_num,
+                        Geometry.tess_triangles_num,
+                        hx,
+                        hy,
+                    );
                 }
             } else {
-                @panic("rasterSIMDNewton requires has_hull = true");
+                @panic("rasterNewtonSIMD requires hull_nodes_num > 0");
             }
 
             for (bounds.start_y..bounds.end_y) |scratch_y| {
                 const row_offset = scratch_y * domain.tile_size;
-                @memset(scratch.subpx_mask[row_offset + bounds.start_x .. row_offset + bounds.end_x], false);
+                const mask_start = row_offset + bounds.start_x;
+                const mask_end = row_offset + bounds.end_x;
+                @memset(
+                    scratch.subpx_mask[mask_start..mask_end],
+                    false,
+                );
             }
 
             var candidate_count: usize = 0;
             const v_07: @Vector(S, usize) = std.simd.iota(usize, S);
 
-            const v_px_min: @Vector(S, f64) = @splat(@as(f64, @floatFromInt(target.tile.x_px_min)));
+            const v_px_min: @Vector(S, f64) =
+                @splat(@as(f64, @floatFromInt(target.tile.x_px_min)));
             const v_step: @Vector(S, f64) = @splat(domain.step);
             const v_05: @Vector(S, f64) = @splat(0.5);
             const v_original_start_x: @Vector(S, usize) = @splat(original_start_x);
@@ -661,7 +708,9 @@ pub fn RasterPass(
                     const v_x_mask = (v_scratch_x + v_07 >= v_original_start_x) &
                         (v_scratch_x + v_07 < v_bounds_end_x);
 
-                    const v_subpx_x = v_px_min + (@as(@Vector(S, f64), @floatFromInt(v_scratch_x + v_07)) + v_05) * v_step;
+                    const v_subpx_x = v_px_min +
+                        (@as(@Vector(S, f64), @floatFromInt(v_scratch_x + v_07)) + v_05) *
+                            v_step;
                     const v_subpx_y: @Vector(S, f64) = @splat(subpx_y);
 
                     const v_hull_res = element_tess.isInSIMD(v_subpx_x, v_subpx_y);
@@ -814,7 +863,8 @@ pub fn RasterPass(
                     const v_mask_full: @Vector(S, bool) = mask_arr;
 
                     const v_scratch_x: @Vector(S, usize) = @splat(scratch_x);
-                    const v_x_mask = (v_scratch_x + v_07 >= @as(@Vector(S, usize), @splat(original_start_x))) &
+                    const v_x_mask = (v_scratch_x + v_07 >=
+                        @as(@Vector(S, usize), @splat(original_start_x))) &
                         (v_scratch_x + v_07 < @as(@Vector(S, usize), @splat(bounds.end_x)));
 
                     const v_mask = v_mask_full & v_x_mask;
@@ -830,7 +880,14 @@ pub fn RasterPass(
                         var v_weights: [N]@Vector(S, f64) = undefined;
                         var v_dNu: [N]@Vector(S, f64) = undefined;
                         var v_dNv: [N]@Vector(S, f64) = undefined;
-                        shapefun.shapeFunctionsSIMD(N, v_xi, v_eta, &v_weights, &v_dNu, &v_dNv);
+                        shapefun.shapeFunctionsSIMD(
+                            N,
+                            v_xi,
+                            v_eta,
+                            &v_weights,
+                            &v_dNu,
+                            &v_dNv,
+                        );
 
                         var v_sum_z: @Vector(S, f64) = @splat(0.0);
                         inline for (0..N) |nn| {
@@ -844,7 +901,12 @@ pub fn RasterPass(
                         const v_depth_mask = v_mask & (v_inv_z >= v_old_inv_z);
 
                         if (@reduce(.Or, v_depth_mask)) {
-                            const v_new_inv_z = @select(f64, v_depth_mask, v_inv_z, v_old_inv_z);
+                            const v_new_inv_z = @select(
+                                f64,
+                                v_depth_mask,
+                                v_inv_z,
+                                v_old_inv_z,
+                            );
                             const ptr_new_inv_z: *align(8) @Vector(S, f64) =
                                 @ptrCast(&scratch.inv_z[index]);
                             ptr_new_inv_z.* = v_new_inv_z;
@@ -863,7 +925,18 @@ pub fn RasterPass(
                             }
 
                             const v_subpx_z = @as(@Vector(S, f64), @splat(1.0)) / v_inv_z;
-                            shaded_px += @intCast(@reduce(.Add, @as(@Vector(S, u8), @select(u8, v_depth_mask, @as(@Vector(S, u8), @splat(1)), @as(@Vector(S, u8), @splat(0))))));
+                            shaded_px += @intCast(@reduce(
+                                .Add,
+                                @as(
+                                    @Vector(S, u8),
+                                    @select(
+                                        u8,
+                                        v_depth_mask,
+                                        @as(@Vector(S, u8), @splat(1)),
+                                        @as(@Vector(S, u8), @splat(0)),
+                                    ),
+                                ),
+                            ));
 
                             ShaderKernel.shadeSIMD(
                                 Geometry.coord_space,
@@ -894,7 +967,7 @@ pub fn RasterPass(
             return shaded_px;
         }
 
-        fn rasterIncremental(
+        fn rasterIncrementalSIMD(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext(report_mode),
             target: rops.OverlapTarget,
@@ -915,7 +988,14 @@ pub fn RasterPass(
                 nodes_inv_z[node_index] = 1.0 / nodes.z[node_index];
             }
 
-            const inv_area = 1.0 / rops.edgeFun3(nodes.x[0], nodes.y[0], nodes.x[1], nodes.y[1], nodes.x[2], nodes.y[2]);
+            const inv_area = 1.0 / rops.edgeFun3(
+                nodes.x[0],
+                nodes.y[0],
+                nodes.x[1],
+                nodes.y[1],
+                nodes.x[2],
+                nodes.y[2],
+            );
 
             const dweights_dx = Geometry.getDWeightsDx(nodes, inv_area, domain.step);
             const dweights_dy = Geometry.getDWeightsDy(nodes, inv_area, domain.step);
@@ -1016,7 +1096,7 @@ pub fn RasterPass(
             return shaded_px;
         }
 
-        fn rasterPointwise(
+        fn rasterDirect(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext(report_mode),
             target: rops.OverlapTarget,
@@ -1046,19 +1126,19 @@ pub fn RasterPass(
                 Geometry.getBilinearParams(nodes)
             else {};
 
-            const NT: comptime_int = if (Geometry.nodes_num == 4)
-                2
-            else if (Geometry.nodes_num == 6)
-                6
-            else
-                8;
-            var element_tess: hull.Tessellation(NT) = undefined;
+            var element_tess: hull.Tessellation(Geometry.tess_triangles_num) = undefined;
 
-            if (comptime Geometry.has_hull) {
+            if (comptime Geometry.hull_nodes_num > 0) {
                 if (input.hull) |rh| {
                     const hx = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 0, 0 }, 1);
                     const hy = rh.getSlice(&[_]usize{ target.overlap.elem_idx, 1, 0 }, 1);
-                    element_tess = hull.getTessellation(N, hx, hy);
+                    element_tess = hull.getTessellation(
+                        N,
+                        Geometry.hull_nodes_num,
+                        Geometry.tess_triangles_num,
+                        hx,
+                        hy,
+                    );
                 }
             }
 
@@ -1071,7 +1151,7 @@ pub fn RasterPass(
                     const global_subx = target.tile.x_px_min * sub_samp + scratch_x;
                     const global_suby = target.tile.y_px_min * sub_samp + scratch_y;
 
-                    if (comptime Geometry.has_hull) {
+                    if (comptime Geometry.hull_nodes_num > 0) {
                         const hull_res = element_tess.isIn(subpx_x, subpx_y);
                         if (comptime report_mode == .full_stats) {
                             report.maybeRecordEarlyOut(

@@ -125,7 +125,7 @@ pub const FullStatsLog = struct {
         var write_buf: [4096]u8 = undefined;
         var file_writer = stats_file.writer(io, &write_buf);
         try self.writeReport(&file_writer.interface, frame_idx, camera, nodes_per_elem);
-        try self.writeReportToConsole(io, frame_idx, camera, nodes_per_elem);
+        try self.fullReport(io, frame_idx, camera, nodes_per_elem);
 
         if (self.iteration_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
@@ -262,7 +262,7 @@ pub const FullStatsLog = struct {
         }
     }
 
-    pub fn writeReportToConsole(
+    pub fn fullReport(
         self: *const FullStatsLog,
         io: std.Io,
         frame_idx: usize,
