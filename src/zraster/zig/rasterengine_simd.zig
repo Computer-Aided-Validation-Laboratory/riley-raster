@@ -720,14 +720,18 @@ pub fn RasterPass(
                         const mask_arr: [S]bool = v_mask;
                         const x_arr: [S]f64 = v_subpx_x;
                         const y_arr: [S]f64 = v_subpx_y;
-                        var xi_arr: [S]f64 = v_hull_res.guess_xi;
-                        var eta_arr: [S]f64 = v_hull_res.guess_eta;
-
-                        if (comptime @hasDecl(Geometry, "getNewtonGuess")) {
-                            const def_guess = Geometry.getNewtonGuess();
-                            xi_arr = [_]f64{def_guess.xi} ** S;
-                            eta_arr = [_]f64{def_guess.eta} ** S;
-                        }
+                        const init_guess = Geometry.initGuessSIMD(
+                            v_subpx_x,
+                            v_subpx_y,
+                            domain.x_off,
+                            domain.y_off,
+                            .{
+                                .xi = v_hull_res.guess_xi,
+                                .eta = v_hull_res.guess_eta,
+                            },
+                        );
+                        const xi_arr: [S]f64 = init_guess.xi;
+                        const eta_arr: [S]f64 = init_guess.eta;
 
                         for (0..S) |jj| {
                             if (mask_arr[jj]) {
@@ -768,10 +772,13 @@ pub fn RasterPass(
 
             // Pass 2: Vectorized Solving in chunks of 8
             const candidate_block_count = @divFloor(candidate_count + 7, 8);
-            const default_guess = if (@hasDecl(Geometry, "getNewtonGuess"))
-                Geometry.getNewtonGuess()
-            else
-                .{ .xi = 0.0, .eta = 0.0 };
+            const default_guess = Geometry.initGuess(
+                0.0,
+                0.0,
+                domain.x_off,
+                domain.y_off,
+                null,
+            );
             var last_seed_valid = false;
             var last_seed_xi = default_guess.xi;
             var last_seed_eta = default_guess.eta;

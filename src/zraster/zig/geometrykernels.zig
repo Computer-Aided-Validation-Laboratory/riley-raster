@@ -65,6 +65,16 @@ pub const NewtonParams = struct {
     w_const: f64,
 };
 
+pub const NewtonGuess = struct {
+    xi: f64,
+    eta: f64,
+};
+
+pub const NewtonGuessSIMD = struct {
+    xi: @Vector(S, f64),
+    eta: @Vector(S, f64),
+};
+
 pub fn TriWeightStepSIMD(comptime N: usize) type {
     return struct {
         dx: [N]@Vector(S, f64),
@@ -360,8 +370,37 @@ pub fn Tri6Kernel() type {
         pub const coord_space = .clip_px_leng;
         pub const strategy = .newton;
 
-        pub inline fn getNewtonGuess() struct { xi: f64, eta: f64 } {
+        pub inline fn initGuess(
+            pixel_x: f64,
+            pixel_y: f64,
+            x_offset: f64,
+            y_offset: f64,
+            hull_guess: ?NewtonGuess,
+        ) NewtonGuess {
+            _ = pixel_x;
+            _ = pixel_y;
+            _ = x_offset;
+            _ = y_offset;
+            _ = hull_guess;
             return .{ .xi = 1.0 / 3.0, .eta = 1.0 / 3.0 };
+        }
+
+        pub inline fn initGuessSIMD(
+            v_pixel_x: @Vector(S, f64),
+            v_pixel_y: @Vector(S, f64),
+            x_offset: f64,
+            y_offset: f64,
+            hull_guess: ?NewtonGuessSIMD,
+        ) NewtonGuessSIMD {
+            _ = v_pixel_x;
+            _ = v_pixel_y;
+            _ = x_offset;
+            _ = y_offset;
+            _ = hull_guess;
+            return .{
+                .xi = @splat(1.0 / 3.0),
+                .eta = @splat(1.0 / 3.0),
+            };
         }
 
         pub inline fn domainViolation(xi: f64, eta: f64) f64 {
@@ -385,11 +424,11 @@ pub fn Tri6Kernel() type {
             pixel_y: f64,
             x_offset: f64,
             y_offset: f64,
+            xi_guess: f64,
+            eta_guess: f64,
         ) GeometryResult(nodes_num) {
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
-            const xi_guess_def: f64 = 1.0 / 3.0;
-            const eta_guess_def: f64 = 1.0 / 3.0;
 
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
@@ -405,8 +444,8 @@ pub fn Tri6Kernel() type {
                 nodes.x,
                 nodes.y,
                 nodes.z,
-                xi_guess_def,
-                eta_guess_def,
+                xi_guess,
+                eta_guess,
                 &xi,
                 &eta,
                 &node_values,
@@ -636,8 +675,37 @@ pub fn Quad4NewtonKernel() type {
         pub const coord_space = .clip_px_leng;
         pub const strategy = .newton;
 
-        pub inline fn getNewtonGuess() struct { xi: f64, eta: f64 } {
+        pub inline fn initGuess(
+            pixel_x: f64,
+            pixel_y: f64,
+            x_offset: f64,
+            y_offset: f64,
+            hull_guess: ?NewtonGuess,
+        ) NewtonGuess {
+            _ = pixel_x;
+            _ = pixel_y;
+            _ = x_offset;
+            _ = y_offset;
+            _ = hull_guess;
             return .{ .xi = 0.5, .eta = 0.5 };
+        }
+
+        pub inline fn initGuessSIMD(
+            v_pixel_x: @Vector(S, f64),
+            v_pixel_y: @Vector(S, f64),
+            x_offset: f64,
+            y_offset: f64,
+            hull_guess: ?NewtonGuessSIMD,
+        ) NewtonGuessSIMD {
+            _ = v_pixel_x;
+            _ = v_pixel_y;
+            _ = x_offset;
+            _ = y_offset;
+            _ = hull_guess;
+            return .{
+                .xi = @splat(0.5),
+                .eta = @splat(0.5),
+            };
         }
 
         pub inline fn domainViolation(xi: f64, eta: f64) f64 {
@@ -650,12 +718,11 @@ pub fn Quad4NewtonKernel() type {
             pixel_y: f64,
             x_offset: f64,
             y_offset: f64,
+            xi_guess: f64,
+            eta_guess: f64,
         ) GeometryResult(nodes_num) {
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
-
-            const xi_guess_def: f64 = 0.5;
-            const eta_guess_def: f64 = 0.5;
 
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
@@ -671,8 +738,8 @@ pub fn Quad4NewtonKernel() type {
                 nodes.x,
                 nodes.y,
                 nodes.z,
-                xi_guess_def,
-                eta_guess_def,
+                xi_guess,
+                eta_guess,
                 &xi,
                 &eta,
                 &node_values,
@@ -746,8 +813,37 @@ pub fn Quad89Kernel(comptime N: usize) type {
         pub const coord_space = .clip_px_leng;
         pub const strategy = .newton;
 
-        pub inline fn getNewtonGuess() struct { xi: f64, eta: f64 } {
+        pub inline fn initGuess(
+            pixel_x: f64,
+            pixel_y: f64,
+            x_offset: f64,
+            y_offset: f64,
+            hull_guess: ?NewtonGuess,
+        ) NewtonGuess {
+            _ = pixel_x;
+            _ = pixel_y;
+            _ = x_offset;
+            _ = y_offset;
+            _ = hull_guess;
             return .{ .xi = 0.5, .eta = 0.5 };
+        }
+
+        pub inline fn initGuessSIMD(
+            v_pixel_x: @Vector(S, f64),
+            v_pixel_y: @Vector(S, f64),
+            x_offset: f64,
+            y_offset: f64,
+            hull_guess: ?NewtonGuessSIMD,
+        ) NewtonGuessSIMD {
+            _ = v_pixel_x;
+            _ = v_pixel_y;
+            _ = x_offset;
+            _ = y_offset;
+            _ = hull_guess;
+            return .{
+                .xi = @splat(0.5),
+                .eta = @splat(0.5),
+            };
         }
 
         pub inline fn domainViolation(xi: f64, eta: f64) f64 {
@@ -760,12 +856,11 @@ pub fn Quad89Kernel(comptime N: usize) type {
             pixel_y: f64,
             x_offset: f64,
             y_offset: f64,
+            xi_guess: f64,
+            eta_guess: f64,
         ) GeometryResult(nodes_num) {
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
-
-            const xi_guess_def: f64 = 0.5;
-            const eta_guess_def: f64 = 0.5;
 
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
@@ -781,8 +876,8 @@ pub fn Quad89Kernel(comptime N: usize) type {
                 nodes.x,
                 nodes.y,
                 nodes.z,
-                xi_guess_def,
-                eta_guess_def,
+                xi_guess,
+                eta_guess,
                 &xi,
                 &eta,
                 &node_values,

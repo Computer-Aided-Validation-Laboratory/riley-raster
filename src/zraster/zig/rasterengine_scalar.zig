@@ -597,23 +597,31 @@ pub fn RasterPass(
                         );
                     }
 
-                    const result = if (comptime Geometry.strategy == .newton)
-                        Geometry.solveWeights(
-                            nodes,
+                    const result = if (comptime Geometry.strategy == .newton) blk: {
+                        const guess = Geometry.initGuess(
                             subpx_x,
                             subpx_y,
                             domain.x_off,
                             domain.y_off,
-                        )
-                    else
-                        Geometry.solveWeights(
-                            nodes,
-                            subpx_x,
-                            subpx_y,
-                            domain.x_off,
-                            domain.y_off,
-                            geometry_state,
+                            null,
                         );
+                        break :blk Geometry.solveWeights(
+                            nodes,
+                            subpx_x,
+                            subpx_y,
+                            domain.x_off,
+                            domain.y_off,
+                            guess.xi,
+                            guess.eta,
+                        );
+                    } else Geometry.solveWeights(
+                        nodes,
+                        subpx_x,
+                        subpx_y,
+                        domain.x_off,
+                        domain.y_off,
+                        geometry_state,
+                    );
 
                     if (result.weights) |weights| {
                         const inv_z = Geometry.calcInvZ(nodes, weights);
