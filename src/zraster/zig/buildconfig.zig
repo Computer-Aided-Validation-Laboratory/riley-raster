@@ -62,6 +62,7 @@ pub const Tolerance = struct {
 pub const Config = struct {
     simd: SimdMode = .on,
     simd_vector_width: comptime_int = 8,
+    max_nodal_fields: comptime_int = 8,
     precision: type = f64,
     tolerance: Tolerance = .{},
 };
@@ -69,6 +70,7 @@ pub const Config = struct {
 pub const config = Config{
     .simd = .on,
     .simd_vector_width = 8,
+    .max_nodal_fields = 8,
     .precision = f64,
     .tolerance = .{},
 };

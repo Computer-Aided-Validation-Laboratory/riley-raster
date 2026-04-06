@@ -39,7 +39,14 @@ pub fn Tessellation(comptime NT: usize) type {
                 const e2 = rops.edgeFun3(tri.x[2], tri.y[2], tri.x[0], tri.y[0], px, py);
                 if (e0 >= -eps and e1 >= -eps and e2 >= -eps) {
                     // Simple barycentric coordinates for the guess
-                    const area = rops.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2]);
+                    const area = rops.edgeFun3(
+                        tri.x[0],
+                        tri.y[0],
+                        tri.x[1],
+                        tri.y[1],
+                        tri.x[2],
+                        tri.y[2],
+                    );
                     const inv_area = 1.0 / area;
                     const w0 = e1 * inv_area;
                     const w1 = e2 * inv_area;
@@ -66,14 +73,42 @@ pub fn Tessellation(comptime NT: usize) type {
             var v_guess_eta: @Vector(S, f64) = @splat(0.0);
 
             inline for (self.triangles) |tri| {
-                const e0 = rops.edgeFun3SIMD(tri.x[0], tri.y[0], tri.x[1], tri.y[1], v_px, v_py);
-                const e1 = rops.edgeFun3SIMD(tri.x[1], tri.y[1], tri.x[2], tri.y[2], v_px, v_py);
-                const e2 = rops.edgeFun3SIMD(tri.x[2], tri.y[2], tri.x[0], tri.y[0], v_px, v_py);
+                const e0 = rops.edgeFun3SIMD(
+                    tri.x[0],
+                    tri.y[0],
+                    tri.x[1],
+                    tri.y[1],
+                    v_px,
+                    v_py,
+                );
+                const e1 = rops.edgeFun3SIMD(
+                    tri.x[1],
+                    tri.y[1],
+                    tri.x[2],
+                    tri.y[2],
+                    v_px,
+                    v_py,
+                );
+                const e2 = rops.edgeFun3SIMD(
+                    tri.x[2],
+                    tri.y[2],
+                    tri.x[0],
+                    tri.y[0],
+                    v_px,
+                    v_py,
+                );
 
                 const v_in_tri = (e0 >= v_m_eps) & (e1 >= v_m_eps) & (e2 >= v_m_eps);
 
                 if (@reduce(.Or, v_in_tri)) {
-                    const area = rops.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], tri.x[2], tri.y[2]);
+                    const area = rops.edgeFun3(
+                        tri.x[0],
+                        tri.y[0],
+                        tri.x[1],
+                        tri.y[1],
+                        tri.x[2],
+                        tri.y[2],
+                    );
                     const v_inv_area: @Vector(S, f64) = @splat(1.0 / area);
                     const v_w0 = e1 * v_inv_area;
                     const v_w1 = e2 * v_inv_area;

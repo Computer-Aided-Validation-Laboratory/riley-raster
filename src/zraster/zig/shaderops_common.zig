@@ -9,16 +9,15 @@ const meshio = @import("meshio.zig");
 const Field = meshio.Field;
 const imageops = @import("imageops.zig");
 const buildconfig = @import("buildconfig.zig");
-const S = buildconfig.config.simd_vector_width;
+const cfg = buildconfig.config;
+const S = cfg.simd_vector_width;
 
 pub const ScaleOver = enum { within_frames, over_frames };
 pub const NormalType = enum { none, exact, averaged };
 
-pub const MAX_FIELDS = 8;
-
 pub fn LocalNodeBuffer(comptime N: usize) type {
     return struct {
-        data: [MAX_FIELDS * N]f64 = undefined,
+        data: [cfg.max_nodal_fields * N]f64 = undefined,
         normals: [3 * N]f64 = undefined,
         actual_fields: usize = 0,
         has_normals: bool = false,

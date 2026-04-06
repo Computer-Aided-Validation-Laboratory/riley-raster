@@ -5,13 +5,13 @@ const MatSlice = @import("matslice.zig").MatSlice;
 const texops = @import("textureops.zig");
 const InterpType = texops.InterpType;
 const common = @import("shaderops_common.zig");
-const S = buildconfig.config.simd_vector_width;
+const cfg = buildconfig.config;
+const S = cfg.simd_vector_width;
 
 const NDArray = ndarray.NDArray;
 
 pub const ScaleOver = common.ScaleOver;
 pub const NormalType = common.NormalType;
-pub const MAX_FIELDS = common.MAX_FIELDS;
 pub const NodalInput = common.NodalInput;
 pub const NodalPrepared = common.NodalPrepared;
 pub const TexInput = common.TexInput;
@@ -68,7 +68,7 @@ pub inline fn fillNodalSIMD(
     const v_add: @Vector(S, f64) = @splat(sh.scale_add);
     const px_stride = spx_image_scratch.cols_num;
 
-    inline for (0..MAX_FIELDS) |ff| {
+    inline for (0..cfg.max_nodal_fields) |ff| {
         if (ff >= ctx_shade.actual_fields) break;
         const base = ff * N;
         var v_vs: @Vector(S, f64) = @splat(0.0);
@@ -99,7 +99,7 @@ pub inline fn fillNodalPerspectiveSIMD(
     const v_add: @Vector(S, f64) = @splat(sh.scale_add);
     const px_stride = spx_image_scratch.cols_num;
 
-    inline for (0..MAX_FIELDS) |ff| {
+    inline for (0..cfg.max_nodal_fields) |ff| {
         if (ff >= ctx_shade.actual_fields) break;
         const base = ff * N;
         var v_vs: @Vector(S, f64) = @splat(0.0);

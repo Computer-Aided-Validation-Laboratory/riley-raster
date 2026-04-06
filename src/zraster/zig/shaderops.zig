@@ -7,7 +7,6 @@ const simd_impl = @import("shaderops_simd.zig");
 
 pub const ScaleOver = impl.ScaleOver;
 pub const NormalType = impl.NormalType;
-pub const MAX_FIELDS = impl.MAX_FIELDS;
 pub const LocalNodeBuffer = impl.LocalNodeBuffer;
 pub const NodalInput = impl.NodalInput;
 pub const NodalPrepared = impl.NodalPrepared;

@@ -8,7 +8,6 @@ const NDArray = ndarray.NDArray;
 
 pub const ScaleOver = common.ScaleOver;
 pub const NormalType = common.NormalType;
-pub const MAX_FIELDS = common.MAX_FIELDS;
 pub const NodalInput = common.NodalInput;
 pub const NodalPrepared = common.NodalPrepared;
 pub const TexInput = common.TexInput;
