@@ -3,7 +3,9 @@ const vecstack = @import("vecstack.zig");
 const Vec3T = vecstack.Vec3T;
 const vsd = @import("vecsimd.zig");
 const Vec3SIMD = vsd.Vec3SIMD;
-const NDArray = @import("ndarray.zig").NDArray;
+const ndarray = @import("ndarray.zig");
+const NDArray = ndarray.NDArray;
+const MappedNDArray = ndarray.MappedNDArray;
 const buildconfig = @import("buildconfig.zig");
 const Camera = @import("camera.zig").Camera;
 const shapefun = @import("shapefun.zig");
@@ -393,118 +395,193 @@ pub fn cullElemsCalcBBoxesTri3(
     return elems_in_image;
 }
 
-fn calculateMeshNormals(
+fn calcElementNodeNormal(
+    comptime N: usize,
+    nodal_derivs: shapefun.NodalDerivs,
+    sx: []const f64,
+    sy: []const f64,
+    sz: []const f64,
+    node_ind: usize,
+) [3]f64 {
+    var dx_dxi: f64 = 0;
+    var dx_deta: f64 = 0;
+    var dy_dxi: f64 = 0;
+    var dy_deta: f64 = 0;
+    var dz_dxi: f64 = 0;
+    var dz_deta: f64 = 0;
+
+    for (0..N) |nn| {
+        const du = nodal_derivs.dNu[node_ind][nn];
+        const dv = nodal_derivs.dNv[node_ind][nn];
+        dx_dxi += du * sx[nn];
+        dx_deta += dv * sx[nn];
+        dy_dxi += du * sy[nn];
+        dy_deta += dv * sy[nn];
+        dz_dxi += du * sz[nn];
+        dz_deta += dv * sz[nn];
+    }
+
+    return .{
+        dy_dxi * dz_deta - dz_dxi * dy_deta,
+        dz_dxi * dx_deta - dx_dxi * dz_deta,
+        dx_dxi * dy_deta - dy_dxi * dx_deta,
+    };
+}
+
+fn normalizeNormal(normal_vec: *[3]f64) void {
+    const nx = normal_vec[0];
+    const ny = normal_vec[1];
+    const nz = normal_vec[2];
+    const magnitude = @sqrt(nx * nx + ny * ny + nz * nz);
+
+    if (magnitude > tol.normals.normalise_magnitude) {
+        normal_vec[0] = nx / magnitude;
+        normal_vec[1] = ny / magnitude;
+        normal_vec[2] = nz / magnitude;
+    }
+}
+
+fn initPreparedNormals(
+    allocator: std.mem.Allocator,
+    mesh_coords: *const NDArray(f64),
+    elem_bboxes: []const ElemBBox,
+    prep_count: usize,
+    comptime N: usize,
+) !MappedNDArray(f64) {
+    const elems_num = mesh_coords.dims[0];
+    const prep_normals = try NDArray(f64).initFlat(allocator, &[_]usize{ prep_count, 3, N });
+    var map = try allocator.alloc(usize, elems_num);
+    @memset(map, std.math.maxInt(usize));
+
+    for (0..prep_count) |pp| {
+        const orig_ee = elem_bboxes[pp].elem_ind;
+        map[orig_ee] = pp;
+    }
+
+    return .{
+        .array = prep_normals,
+        .map = map,
+    };
+}
+
+fn calculatePreparedExactNormals(
+    mesh_coords: *const NDArray(f64),
+    prep_normals: *NDArray(f64),
+    elem_bboxes: []const ElemBBox,
+    prep_count: usize,
+    comptime N: usize,
+) void {
+    const nodal_derivs = comptime shapefun.getNodalDerivs(N);
+
+    for (0..prep_count) |pp| {
+        const orig_ee = elem_bboxes[pp].elem_ind;
+        const sx = mesh_coords.getSlice(&[_]usize{ orig_ee, 0, 0 }, 1);
+        const sy = mesh_coords.getSlice(&[_]usize{ orig_ee, 1, 0 }, 1);
+        const sz = mesh_coords.getSlice(&[_]usize{ orig_ee, 2, 0 }, 1);
+
+        for (0..N) |nn| {
+            var normal_vec = calcElementNodeNormal(N, nodal_derivs, sx, sy, sz, nn);
+            normalizeNormal(&normal_vec);
+            prep_normals.set(&[_]usize{ pp, 0, nn }, normal_vec[0]);
+            prep_normals.set(&[_]usize{ pp, 1, nn }, normal_vec[1]);
+            prep_normals.set(&[_]usize{ pp, 2, nn }, normal_vec[2]);
+        }
+    }
+}
+
+fn calculatePreparedAveragedNormals(
     allocator: std.mem.Allocator,
     mesh_coords: *const NDArray(f64),
     mesh_connect: anytype,
+    prep_normals: *NDArray(f64),
+    elem_bboxes: []const ElemBBox,
+    prep_count: usize,
+    comptime N: usize,
+) !void {
+    const nodal_derivs = comptime shapefun.getNodalDerivs(N);
+    var max_node_idx: usize = 0;
+    for (mesh_connect.table_mem) |node_idx| {
+        if (node_idx > max_node_idx) {
+            max_node_idx = node_idx;
+        }
+    }
+    const nodes_num = max_node_idx + 1;
+    const node_normals = try allocator.alloc(f64, nodes_num * 3);
+    defer allocator.free(node_normals);
+    @memset(node_normals, 0.0);
+
+    for (0..mesh_coords.dims[0]) |ee| {
+        const coord_inds = mesh_connect.getElem(ee);
+        const sx = mesh_coords.getSlice(&[_]usize{ ee, 0, 0 }, 1);
+        const sy = mesh_coords.getSlice(&[_]usize{ ee, 1, 0 }, 1);
+        const sz = mesh_coords.getSlice(&[_]usize{ ee, 2, 0 }, 1);
+
+        for (0..N) |nn| {
+            const normal_vec = calcElementNodeNormal(N, nodal_derivs, sx, sy, sz, nn);
+            const node_idx = coord_inds[nn];
+            node_normals[node_idx * 3 + 0] += normal_vec[0];
+            node_normals[node_idx * 3 + 1] += normal_vec[1];
+            node_normals[node_idx * 3 + 2] += normal_vec[2];
+        }
+    }
+
+    for (0..prep_count) |pp| {
+        const orig_ee = elem_bboxes[pp].elem_ind;
+        const coord_inds = mesh_connect.getElem(orig_ee);
+
+        for (0..N) |nn| {
+            const node_idx = coord_inds[nn];
+            var normal_vec = [3]f64{
+                node_normals[node_idx * 3 + 0],
+                node_normals[node_idx * 3 + 1],
+                node_normals[node_idx * 3 + 2],
+            };
+            normalizeNormal(&normal_vec);
+            prep_normals.set(&[_]usize{ pp, 0, nn }, normal_vec[0]);
+            prep_normals.set(&[_]usize{ pp, 1, nn }, normal_vec[1]);
+            prep_normals.set(&[_]usize{ pp, 2, nn }, normal_vec[2]);
+        }
+    }
+}
+
+fn calculatePreparedNormals(
+    allocator: std.mem.Allocator,
+    mesh_coords: *const NDArray(f64),
+    mesh_connect: anytype,
+    elem_bboxes: []const ElemBBox,
+    prep_count: usize,
     normal_type: shaderops.NormalType,
     comptime N: usize,
-) !NDArray(f64) {
-    const elems_num = mesh_coords.dims[0];
-    var all_normals = try NDArray(f64).initFlat(allocator, &[_]usize{ elems_num, 3, N });
-    const nodal_derivs = comptime shapefun.getNodalDerivs(N);
+) !MappedNDArray(f64) {
+    var prep_normals = try initPreparedNormals(
+        allocator,
+        mesh_coords,
+        elem_bboxes,
+        prep_count,
+        N,
+    );
 
-    if (normal_type == .exact) {
-        for (0..elems_num) |ee| {
-            const sx = mesh_coords.getSlice(&[_]usize{ ee, 0, 0 }, 1);
-            const sy = mesh_coords.getSlice(&[_]usize{ ee, 1, 0 }, 1);
-            const sz = mesh_coords.getSlice(&[_]usize{ ee, 2, 0 }, 1);
-
-            for (0..N) |ii| {
-                var dx_dxi: f64 = 0;
-                var dx_deta: f64 = 0;
-                var dy_dxi: f64 = 0;
-                var dy_deta: f64 = 0;
-                var dz_dxi: f64 = 0;
-                var dz_deta: f64 = 0;
-                for (0..N) |jj| {
-                    const du = nodal_derivs.dNu[ii][jj];
-                    const dv = nodal_derivs.dNv[ii][jj];
-                    dx_dxi += du * sx[jj];
-                    dx_deta += dv * sx[jj];
-                    dy_dxi += du * sy[jj];
-                    dy_deta += dv * sy[jj];
-                    dz_dxi += du * sz[jj];
-                    dz_deta += dv * sz[jj];
-                }
-                var nx = dy_dxi * dz_deta - dz_dxi * dy_deta;
-                var ny = dz_dxi * dx_deta - dx_dxi * dz_deta;
-                var nz = dx_dxi * dy_deta - dy_dxi * dx_deta;
-                const mag = @sqrt(nx * nx + ny * ny + nz * nz);
-                if (mag > tol.normals.normalise_magnitude) {
-                    nx /= mag;
-                    ny /= mag;
-                    nz /= mag;
-                }
-                all_normals.set(&[_]usize{ ee, 0, ii }, nx);
-                all_normals.set(&[_]usize{ ee, 1, ii }, ny);
-                all_normals.set(&[_]usize{ ee, 2, ii }, nz);
-            }
-        }
-    } else if (normal_type == .averaged) {
-        var max_node_idx: usize = 0;
-        for (mesh_connect.table_mem) |idx| {
-            if (idx > max_node_idx) max_node_idx = idx;
-        }
-        const num_nodes = max_node_idx + 1;
-        const node_normals = try allocator.alloc(f64, num_nodes * 3);
-        @memset(node_normals, 0.0);
-
-        for (0..elems_num) |ee| {
-            const coord_inds = mesh_connect.getElem(ee);
-            const sx = mesh_coords.getSlice(&[_]usize{ ee, 0, 0 }, 1);
-            const sy = mesh_coords.getSlice(&[_]usize{ ee, 1, 0 }, 1);
-            const sz = mesh_coords.getSlice(&[_]usize{ ee, 2, 0 }, 1);
-
-            for (0..N) |ii| {
-                var dx_dxi: f64 = 0;
-                var dx_deta: f64 = 0;
-                var dy_dxi: f64 = 0;
-                var dy_deta: f64 = 0;
-                var dz_dxi: f64 = 0;
-                var dz_deta: f64 = 0;
-                for (0..N) |jj| {
-                    const du = nodal_derivs.dNu[ii][jj];
-                    const dv = nodal_derivs.dNv[ii][jj];
-                    dx_dxi += du * sx[jj];
-                    dx_deta += dv * sx[jj];
-                    dy_dxi += du * sy[jj];
-                    dy_deta += dv * sy[jj];
-                    dz_dxi += du * sz[jj];
-                    dz_deta += dv * sz[jj];
-                }
-                const nx = dy_dxi * dz_deta - dz_dxi * dy_deta;
-                const ny = dz_dxi * dx_deta - dx_dxi * dz_deta;
-                const nz = dx_dxi * dy_deta - dy_dxi * dx_deta;
-
-                const ni = coord_inds[ii];
-                node_normals[ni * 3 + 0] += nx;
-                node_normals[ni * 3 + 1] += ny;
-                node_normals[ni * 3 + 2] += nz;
-            }
-        }
-
-        for (0..elems_num) |ee| {
-            const coord_inds = mesh_connect.getElem(ee);
-            for (0..N) |ii| {
-                const ni = coord_inds[ii];
-                var nx = node_normals[ni * 3 + 0];
-                var ny = node_normals[ni * 3 + 1];
-                var nz = node_normals[ni * 3 + 2];
-                const mag = @sqrt(nx * nx + ny * ny + nz * nz);
-                if (mag > tol.normals.normalise_magnitude) {
-                    nx /= mag;
-                    ny /= mag;
-                    nz /= mag;
-                }
-                all_normals.set(&[_]usize{ ee, 0, ii }, nx);
-                all_normals.set(&[_]usize{ ee, 1, ii }, ny);
-                all_normals.set(&[_]usize{ ee, 2, ii }, nz);
-            }
-        }
-        allocator.free(node_normals);
+    switch (normal_type) {
+        .none => unreachable,
+        .exact => calculatePreparedExactNormals(
+            mesh_coords,
+            &prep_normals.array,
+            elem_bboxes,
+            prep_count,
+            N,
+        ),
+        .averaged => try calculatePreparedAveragedNormals(
+            allocator,
+            mesh_coords,
+            mesh_connect,
+            &prep_normals.array,
+            elem_bboxes,
+            prep_count,
+            N,
+        ),
     }
-    return all_normals;
+
+    return prep_normals;
 }
 
 pub fn prepareSceneGeometry(
@@ -547,17 +624,6 @@ pub fn prepareSceneGeometry(
                     inline else => |s| s.normal_type,
                 };
 
-                var all_normals: ?NDArray(f64) = null;
-                if (normal_type != .none) {
-                    all_normals = try calculateMeshNormals(
-                        arena_alloc,
-                        &mesh.coords,
-                        mesh.connect,
-                        normal_type,
-                        N,
-                    );
-                }
-
                 if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
                     try elemsToRasterSIMD(N, f64, camera, dim_elem, @constCast(&mesh.coords));
                 } else {
@@ -598,32 +664,21 @@ pub fn prepareSceneGeometry(
                     );
                 }
 
-                if (all_normals) |an| {
+                if (normal_type != .none) {
                     const prep_count = elems_in_image_by_mesh[ii];
-                    var prep_normals = try NDArray(f64).initFlat(
+                    const prep_normals = try calculatePreparedNormals(
                         arena_alloc,
-                        &[_]usize{ prep_count, 3, N },
+                        &mesh.coords,
+                        mesh.connect,
+                        elem_bboxes_by_mesh[ii],
+                        prep_count,
+                        normal_type,
+                        N,
                     );
-                    var map = try arena_alloc.alloc(usize, elems_num);
-                    @memset(map, std.math.maxInt(usize));
-
-                    for (0..prep_count) |pp| {
-                        const orig_ee = elem_bboxes_by_mesh[ii][pp].elem_ind;
-                        map[orig_ee] = pp;
-
-                        // Contiguous copy of normal data for this element
-                        @memcpy(
-                            prep_normals.elems[pp * 3 * N .. (pp + 1) * 3 * N],
-                            an.elems[orig_ee * 3 * N .. (orig_ee + 1) * 3 * N],
-                        );
-                    }
 
                     switch (mesh.shader) {
                         inline else => |*s| {
-                            s.elem_normals = .{
-                                .array = prep_normals,
-                                .map = map,
-                            };
+                            s.elem_normals = prep_normals;
                         },
                     }
                 }
