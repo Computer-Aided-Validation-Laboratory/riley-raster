@@ -1,12 +1,13 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const cfg = buildconfig.config;
 const tol = buildconfig.config.tolerance;
 const rops = @import("rasterops.zig");
 const common = @import("hull_common.zig");
 const Camera = @import("camera.zig").Camera;
 const NDArray = @import("ndarray.zig").NDArray;
-const Vec3OfSlices = rops.Vec3OfSlices;
-const S = buildconfig.config.simd_vector_width;
+const Vec3Slices = rops.Vec3Slices;
+const S = cfg.simd_vector_width;
 
 pub const TessTriangle = struct {
     x: [3]f64,
@@ -139,7 +140,12 @@ pub fn getTessellation(
     hull_x: []const f64,
     hull_y: []const f64,
 ) Tessellation(if (N == 4) 2 else if (N == 6) 6 else 8) {
-    const NT = if (N == 4) 2 else if (N == 6) 6 else 8;
+    const NT: comptime_int = if (N == 4)
+        2
+    else if (N == 6)
+        6
+    else
+        8;
     var tess = Tessellation(NT){ .triangles = undefined };
 
     if (N == 4) {
@@ -158,15 +164,6 @@ pub fn getTessellation(
             .eta = .{ -1.0, 1.0, 1.0 },
         };
     } else if (N == 6 or N == 8 or N == 9) {
-        const NH = if (N == 6) 6 else 8;
-        var cx: f64 = 0;
-        var cy: f64 = 0;
-        var c_xi: f64 = 0;
-        var c_eta: f64 = 0;
-
-        // Define parametric centers and boundary node coordinates
-        // Tri6: boundary nodes in order are 0,3,1,4,2,5
-        // Quad8/9: boundary nodes in order are 0,4,1,5,2,6,3,7
         const node_xi = if (N == 6)
             [_]f64{ 0.0, 0.5, 1.0, 0.5, 0.0, 0.0 }
         else
@@ -176,6 +173,12 @@ pub fn getTessellation(
             [_]f64{ 0.0, 0.0, 0.0, 0.5, 1.0, 0.5 }
         else
             [_]f64{ -1.0, -1.0, -1.0, 0.0, 1.0, 1.0, 1.0, 0.0 };
+
+        const NH = if (N == 6) 6 else 8;
+        var cx: f64 = 0;
+        var cy: f64 = 0;
+        var c_xi: f64 = 0;
+        var c_eta: f64 = 0;
 
         for (0..NH) |ii| {
             cx += hull_x[ii];

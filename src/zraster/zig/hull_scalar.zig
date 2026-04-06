@@ -1,11 +1,12 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const cfg = buildconfig.config;
 const tol = buildconfig.config.tolerance;
 const rops = @import("rasterops.zig");
 const common = @import("hull_common.zig");
 const Camera = @import("camera.zig").Camera;
 const NDArray = @import("ndarray.zig").NDArray;
-const Vec3OfSlices = rops.Vec3OfSlices;
+const Vec3Slices = rops.Vec3Slices;
 
 pub const TessTriangle = struct {
     x: [3]f64,
@@ -34,7 +35,12 @@ pub fn getTessellation(
     hull_x: []const f64,
     hull_y: []const f64,
 ) Tessellation(if (N == 4) 2 else if (N == 6) 6 else 8) {
-    const NT = if (N == 4) 2 else if (N == 6) 6 else 8;
+    const NT: comptime_int = if (N == 4)
+        2
+    else if (N == 6)
+        6
+    else
+        8;
     var tess = Tessellation(NT){ .triangles = undefined };
 
     if (N == 4) {

@@ -1,7 +1,7 @@
 const Camera = @import("camera.zig").Camera;
 const NDArray = @import("ndarray.zig").NDArray;
 const rops = @import("rasterops.zig");
-const Vec3OfSlices = rops.Vec3OfSlices;
+const Vec3Slices = rops.Vec3Slices;
 
 pub fn buildAdaptiveHulls(
     comptime N: usize,
@@ -14,7 +14,7 @@ pub fn buildAdaptiveHulls(
     const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
 
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const cr: Vec3OfSlices(f64) = try rops.loadElemVec3Slices(
+        const cr: Vec3Slices(f64) = try rops.loadElemVec3Slices(
             N,
             f64,
             elem_coord_arr,

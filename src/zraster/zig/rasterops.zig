@@ -55,15 +55,13 @@ fn boundIndMax(comptime T: type, val: f64, max: T) T {
     return @as(T, @intCast(@max(0, @min(val_int, @as(isize, @intCast(max))))));
 }
 
-pub fn Vec3Slice(comptime T: type) type {
+pub fn Vec3Slices(comptime T: type) type {
     return struct {
         x: []T,
         y: []T,
         z: []T,
     };
 }
-
-pub const Vec3OfSlices = Vec3Slice;
 
 pub const ElemBBox = struct {
     elem_ind: usize,
@@ -120,7 +118,7 @@ pub fn loadElemVec3Slices(
     comptime T: type,
     elem_array: *const NDArray(T),
     elem_ind: usize,
-) !Vec3Slice(T) {
+) !Vec3Slices(T) {
     var start_slice: usize = elem_array.getFlatInd(&[_]usize{ elem_ind, 0, 0 });
     const stride: usize = elem_array.strides[1];
 
@@ -232,7 +230,7 @@ pub fn elemsToClipPxLengSIMD(
     }
 }
 
-pub fn countElemsCalcBBoxes(
+pub fn cullElemsCalcBBoxesHighOrd(
     comptime N: usize,
     comptime NH: usize,
     camera: *const Camera,
@@ -256,7 +254,7 @@ pub fn countElemsCalcBBoxes(
         var y_min: f64 = std.math.inf(f64);
         var y_max: f64 = -std.math.inf(f64);
 
-        const cr: Vec3Slice(f64) = try loadElemVec3Slices(
+        const cr: Vec3Slices(f64) = try loadElemVec3Slices(
             N,
             f64,
             elem_coord_arr,
@@ -337,7 +335,7 @@ pub fn countElemsCalcBBoxes(
     return elems_in_image;
 }
 
-pub fn countElemsCalcBBoxesTri3(
+pub fn cullElemsCalcBBoxesTri3(
     camera: *const Camera,
     dim_elem: usize,
     elem_coord_arr: *const NDArray(f64),
@@ -349,7 +347,7 @@ pub fn countElemsCalcBBoxesTri3(
     var elems_in_image: usize = 0;
 
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const coords_raster: Vec3Slice(f64) = try loadElemVec3Slices(
+        const coords_raster: Vec3Slices(f64) = try loadElemVec3Slices(
             N,
             f64,
             elem_coord_arr,
@@ -581,7 +579,7 @@ pub fn prepareSceneGeometry(
                 }
 
                 if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
-                    elems_in_image_by_mesh[ii] = try countElemsCalcBBoxesTri3(
+                    elems_in_image_by_mesh[ii] = try cullElemsCalcBBoxesTri3(
                         camera,
                         dim_elem,
                         &mesh.coords,
@@ -589,7 +587,7 @@ pub fn prepareSceneGeometry(
                     );
                 } else {
                     const rh_ptr = if (raster_hulls[ii]) |*rh| rh else null;
-                    elems_in_image_by_mesh[ii] = try countElemsCalcBBoxes(
+                    elems_in_image_by_mesh[ii] = try cullElemsCalcBBoxesHighOrd(
                         N,
                         NH,
                         camera,

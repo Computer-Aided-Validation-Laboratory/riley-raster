@@ -7,7 +7,7 @@ const rops = @import("rasterops.zig");
 const ElemBBox = rops.ElemBBox;
 const OverlapBBox = rops.OverlapBBox;
 const ActiveTile = rops.ActiveTile;
-const Vec3OfSlices = rops.Vec3OfSlices;
+const Vec3Slices = rops.Vec3Slices;
 const report = @import("report.zig");
 const ReportMode = report.ReportMode;
 const Timestamp = std.Io.Clock.Timestamp;
@@ -388,7 +388,7 @@ pub fn RasterPass(
             target: rops.OverlapTarget,
             domain: SubpxDomain,
             bounds: RasterBounds,
-            nodes: Vec3OfSlices(f64),
+            nodes: Vec3Slices(f64),
             shader: *const PreparedShader,
             scratch: ScratchBuffers,
             local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
@@ -505,7 +505,7 @@ pub fn RasterPass(
             input: rops.MeshInput,
             domain: SubpxDomain,
             bounds: RasterBounds,
-            nodes: Vec3OfSlices(f64),
+            nodes: Vec3Slices(f64),
             shader: *const PreparedShader,
             scratch: ScratchBuffers,
             local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
@@ -526,7 +526,12 @@ pub fn RasterPass(
                 Geometry.getBilinearParams(nodes)
             else {};
 
-            const NT = if (N == 4) 2 else if (N == 6) 6 else 8;
+            const NT: comptime_int = if (Geometry.nodes_num == 4)
+                2
+            else if (Geometry.nodes_num == 6)
+                6
+            else
+                8;
             var element_tess: hull.Tessellation(NT) = undefined;
 
             if (comptime Geometry.has_hull) {

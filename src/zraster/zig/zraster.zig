@@ -11,7 +11,7 @@ const Camera = @import("camera.zig").Camera;
 const rops = @import("rasterops.zig");
 const ElemBBox = rops.ElemBBox;
 const ActiveTile = rops.ActiveTile;
-const Vec3OfSlices = rops.Vec3OfSlices;
+const Vec3Slices = rops.Vec3Slices;
 
 const mr = @import("meshraster.zig");
 const MeshType = mr.MeshType;
