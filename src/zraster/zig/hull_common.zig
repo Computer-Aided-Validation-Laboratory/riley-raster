@@ -3,6 +3,19 @@ const NDArray = @import("ndarray.zig").NDArray;
 const rops = @import("rasterops.zig");
 const Vec3Slices = rops.Vec3Slices;
 
+pub inline fn tessTrianglesNum(comptime N: usize) comptime_int {
+    return if (N == 4)
+        2
+    else if (N == 6)
+        6
+    else
+        8;
+}
+
+pub inline fn hullNodesNum(comptime N: usize) comptime_int {
+    return if (N == 6) 6 else 8;
+}
+
 pub fn buildAdaptiveHulls(
     comptime N: usize,
     camera: *const Camera,

@@ -139,13 +139,8 @@ pub fn getTessellation(
     comptime N: usize,
     hull_x: []const f64,
     hull_y: []const f64,
-) Tessellation(if (N == 4) 2 else if (N == 6) 6 else 8) {
-    const NT: comptime_int = if (N == 4)
-        2
-    else if (N == 6)
-        6
-    else
-        8;
+) Tessellation(common.tessTrianglesNum(N)) {
+    const NT: comptime_int = common.tessTrianglesNum(N);
     var tess = Tessellation(NT){ .triangles = undefined };
 
     if (N == 4) {
@@ -174,7 +169,7 @@ pub fn getTessellation(
         else
             [_]f64{ -1.0, -1.0, -1.0, 0.0, 1.0, 1.0, 1.0, 0.0 };
 
-        const NH = if (N == 6) 6 else 8;
+        const NH = common.hullNodesNum(N);
         var cx: f64 = 0;
         var cy: f64 = 0;
         var c_xi: f64 = 0;
