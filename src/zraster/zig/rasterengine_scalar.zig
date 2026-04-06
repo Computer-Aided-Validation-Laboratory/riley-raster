@@ -432,10 +432,13 @@ pub fn RasterPass(
                                 scratch_y;
 
                             ctx_rast.ctx_perf.recordPixel(global_subx, global_suby, 0);
-                            ctx_rast.ctx_perf.recordPixelOccupancy(
-                                target.tile.x_px_min + scratch_x / sub_samp,
-                                target.tile.y_px_min + scratch_y / sub_samp,
-                            );
+                            if (comptime report_mode == .full_stats) {
+                                report.maybeRecordPixelOccupancy(
+                                    ctx_rast.ctx_perf,
+                                    target.tile.x_px_min + scratch_x / sub_samp,
+                                    target.tile.y_px_min + scratch_y / sub_samp,
+                                );
+                            }
 
                             if (comptime ShaderKernel == shadekerns.NodalKernel(N)) {
                                 ShaderKernel.shade(
@@ -550,7 +553,8 @@ pub fn RasterPass(
                         else
                             in_tess.isIn;
                         if (comptime report_mode == .full_stats) {
-                            ctx_rast.ctx_perf.recordEarlyOut(
+                            report.maybeRecordEarlyOut(
+                                ctx_rast.ctx_perf,
                                 global_subx,
                                 global_suby,
                                 is_in_tess,
@@ -561,7 +565,12 @@ pub fn RasterPass(
                             continue;
                         }
                     } else if (comptime report_mode == .full_stats) {
-                        ctx_rast.ctx_perf.recordEarlyOut(global_subx, global_suby, true);
+                        report.maybeRecordEarlyOut(
+                            ctx_rast.ctx_perf,
+                            global_subx,
+                            global_suby,
+                            true,
+                        );
                     }
 
                     const result = Geometry.solveWeights(
@@ -587,10 +596,13 @@ pub fn RasterPass(
                                 global_suby,
                                 result.iters,
                             );
-                            ctx_rast.ctx_perf.recordPixelOccupancy(
-                                target.tile.x_px_min + scratch_x / sub_samp,
-                                target.tile.y_px_min + scratch_y / sub_samp,
-                            );
+                            if (comptime report_mode == .full_stats) {
+                                report.maybeRecordPixelOccupancy(
+                                    ctx_rast.ctx_perf,
+                                    target.tile.x_px_min + scratch_x / sub_samp,
+                                    target.tile.y_px_min + scratch_y / sub_samp,
+                                );
+                            }
 
                             if (comptime ShaderKernel == shadekerns.NodalKernel(N)) {
                                 ShaderKernel.shade(

@@ -571,6 +571,7 @@ pub fn RasterPass(
                                     .local_buf = local_buf,
                                     .v_mask = v_depth_mask,
                                 },
+                                ctx_rast.ctx_perf,
                                 v_depth_mask,
                                 v_weights,
                                 v_nodes_inv_z,
@@ -871,6 +872,7 @@ pub fn RasterPass(
                                     .local_buf = local_buf,
                                     .v_mask = v_depth_mask,
                                 },
+                                ctx_rast.ctx_perf,
                                 v_depth_mask,
                                 v_weights,
                                 v_nodes_inv_z_simd,
@@ -942,10 +944,13 @@ pub fn RasterPass(
                                 scratch_y;
 
                             ctx_rast.ctx_perf.recordPixel(global_subx, global_suby, 0);
-                            ctx_rast.ctx_perf.recordPixelOccupancy(
-                                target.tile.x_px_min + scratch_x / sub_samp,
-                                target.tile.y_px_min + scratch_y / sub_samp,
-                            );
+                            if (comptime report_mode == .full_stats) {
+                                report.maybeRecordPixelOccupancy(
+                                    ctx_rast.ctx_perf,
+                                    target.tile.x_px_min + scratch_x / sub_samp,
+                                    target.tile.y_px_min + scratch_y / sub_samp,
+                                );
+                            }
 
                             if (comptime ShaderKernel == shadekerns.NodalKernel(N)) {
                                 ShaderKernel.shade(
@@ -1058,14 +1063,24 @@ pub fn RasterPass(
                     if (comptime Geometry.has_hull) {
                         const hull_res = element_tess.isIn(subpx_x, subpx_y);
                         if (comptime report_mode == .full_stats) {
-                            ctx_rast.ctx_perf.recordEarlyOut(global_subx, global_suby, hull_res.isIn);
+                            report.maybeRecordEarlyOut(
+                                ctx_rast.ctx_perf,
+                                global_subx,
+                                global_suby,
+                                hull_res.isIn,
+                            );
                         }
                         if (!hull_res.isIn) {
                             subpx_x += domain.step;
                             continue;
                         }
                     } else if (comptime report_mode == .full_stats) {
-                        ctx_rast.ctx_perf.recordEarlyOut(global_subx, global_suby, true);
+                        report.maybeRecordEarlyOut(
+                            ctx_rast.ctx_perf,
+                            global_subx,
+                            global_suby,
+                            true,
+                        );
                     }
 
                     const result = Geometry.solveWeights(
@@ -1097,10 +1112,13 @@ pub fn RasterPass(
                                 global_suby,
                                 result.iters,
                             );
-                            ctx_rast.ctx_perf.recordPixelOccupancy(
-                                target.tile.x_px_min + scratch_x / sub_samp,
-                                target.tile.y_px_min + scratch_y / sub_samp,
-                            );
+                            if (comptime report_mode == .full_stats) {
+                                report.maybeRecordPixelOccupancy(
+                                    ctx_rast.ctx_perf,
+                                    target.tile.x_px_min + scratch_x / sub_samp,
+                                    target.tile.y_px_min + scratch_y / sub_samp,
+                                );
+                            }
 
                             if (comptime ShaderKernel == shadekerns.NodalKernel(N)) {
                                 ShaderKernel.shade(

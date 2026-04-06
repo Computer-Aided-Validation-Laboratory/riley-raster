@@ -1,6 +1,7 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 pub const shaderops = @import("shaderops.zig");
+const report = @import("report.zig");
 const texops = @import("textureops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const InterpType = texops.InterpType;
@@ -41,6 +42,7 @@ pub fn NodalKernel(comptime N: usize) type {
         pub inline fn shadeSIMD(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext(N),
+            ctx_perf: anytype,
             v_mask: @Vector(S, bool),
             v_weights: [N]@Vector(S, f64),
             v_nodes_inv_z: [N]@Vector(S, f64),
@@ -48,7 +50,19 @@ pub fn NodalKernel(comptime N: usize) type {
             shader: *const shaderops.NodalPrepared,
             spx_image_scratch: *MatSlice(f64),
         ) void {
-            _ = v_mask;
+            if (comptime @TypeOf(ctx_perf).mode_tag == .full_stats) {
+                if (shader.elem_normals != null) {
+                    report.maybeRecordNormalSIMD(
+                        N,
+                        S,
+                        ctx_perf,
+                        ctx_shade,
+                        v_mask,
+                        v_weights,
+                    );
+                }
+            }
+
             if (comptime coord_space == CoordSpace.raster) {
                 shaderops.fillNodalPerspectiveSIMD(
                     N,
@@ -94,6 +108,18 @@ pub fn TexKernel(
                 ctx_shade.global_suby,
                 interp.sub_pixel_z,
             );
+
+            if (shader.elem_normals != null) {
+                const normal = ctx_shade.local_buf.interpolateNormal(interp.weights);
+                if (comptime @TypeOf(ctx_perf).mode_tag == .full_stats) {
+                    report.maybeRecordNormal(
+                        ctx_perf,
+                        ctx_shade.global_subx,
+                        ctx_shade.global_suby,
+                        normal,
+                    );
+                }
+            }
             if (comptime coord_space == CoordSpace.clip_px_leng) {
                 shaderops.fillTex(
                     N,
@@ -122,6 +148,7 @@ pub fn TexKernel(
         pub inline fn shadeSIMD(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext(N),
+            ctx_perf: anytype,
             v_mask: @Vector(S, bool),
             v_weights: [N]@Vector(S, f64),
             v_nodes_inv_z: [N]@Vector(S, f64),
@@ -129,6 +156,19 @@ pub fn TexKernel(
             shader: *const shaderops.TexPrepared(TexT, channels),
             spx_image_scratch: *MatSlice(f64),
         ) void {
+            if (comptime @TypeOf(ctx_perf).mode_tag == .full_stats) {
+                if (shader.elem_normals != null) {
+                    report.maybeRecordNormalSIMD(
+                        N,
+                        S,
+                        ctx_perf,
+                        ctx_shade,
+                        v_mask,
+                        v_weights,
+                    );
+                }
+            }
+
             if (comptime coord_space == CoordSpace.raster) {
                 if (comptime N == 3) {
                     shaderops.fillTexPerspectiveSIMDTri3(
