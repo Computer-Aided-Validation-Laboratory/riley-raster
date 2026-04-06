@@ -295,7 +295,6 @@ pub const CameraOps = struct {
     }
 };
 
-//------------------------------------------------------------------------------
 const test_tol: f64 = 1e-4;
 const pix_num = [_]u32{ 500, 500 };
 const pix_size = [_]f64{ 5e-3, 5e-3 };
@@ -315,9 +314,6 @@ const image_dist_exp = [2]f64{ 800.0, 1131.3708499 };
 const sensor_size_exp = [2]f64{ 2.5, 2.5 };
 const cam_pos_arr = [_]f64{ 0.0, 800.0, 800.0 };
 const cam_pos_exp = Vec3f.initSlice(&cam_pos_arr);
-
-//TODO
-test "CameraOps.posFillFrameFromRot" {}
 
 test "CameraOps.calcCamPos" {
     var coords = try Coords.initAlloc(testing.allocator, coord_n);

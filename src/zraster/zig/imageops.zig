@@ -41,7 +41,7 @@ pub fn getScaleFactors(strategy: ScaleStrategy, bits: ?u8, params: ScalingParams
     return .{ .mul = mul, .add = add };
 }
 
-pub fn getScalingParamsTexture(comptime T: type, comptime channels: usize, texture: *const @import("textureops.zig").Texture(T, channels), strategy: ScaleStrategy) ScalingParams {
+pub fn getScalingParamsTexture(comptime T: type, comptime channels: usize, texture: *const @import("textureops.zig").Texture(T, channels), strategy: ScaleStrategy,) ScalingParams {
     switch (strategy) {
         .none => return .{ .min = 0.0, .range = 1.0 },
         .auto, .frac => {
@@ -80,7 +80,7 @@ pub fn getScalingParams(image: *const MatSlice(f64), strategy: ScaleStrategy) Sc
     }
 }
 
-pub fn getScalingParamsNDArray(array: *const NDArray(f64), frame_idx: ?usize, strategy: ScaleStrategy) ScalingParams {
+pub fn getScalingParamsNDArray(array: *const NDArray(f64), frame_idx: ?usize, strategy: ScaleStrategy,) ScalingParams {
     switch (strategy) {
         .none => return .{ .min = 0.0, .range = 1.0 },
         .auto, .frac => {
@@ -129,7 +129,7 @@ pub fn applyClamping(val: f64, bits: ?u8) f64 {
     return val;
 }
 
-pub fn averageImage(image_subpx: *const MatSlice(f64), sub_samp: u8, image_avg: *MatSlice(f64)) void {
+pub fn averageImage(image_subpx: *const MatSlice(f64), sub_samp: u8, image_avg: *MatSlice(f64),) void {
     const num_px_x: usize = (image_subpx.cols_n) / @as(usize, sub_samp);
     const num_px_y: usize = (image_subpx.rows_n) / @as(usize, sub_samp);
     const sub_samp_us: usize = @as(usize, sub_samp);
