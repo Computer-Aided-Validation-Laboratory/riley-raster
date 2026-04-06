@@ -89,7 +89,7 @@ pub fn main() !void {
                     .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
                     .connect = sim_datas[data_idx].connect,
                     .disp = null,
-                    .shader = .{ .flat = .{
+                    .shader = .{ .nodal = .{
                         .field = sim_datas[data_idx].field.?,
                         .scaling = .none,
                         .bits = null,
@@ -97,7 +97,7 @@ pub fn main() !void {
                 };
                 // Actually, let's just make it a very small triangle far away?
                 // No, just render it but ensure field values are zero.
-                @memset(mesh_inputs[ii].shader.flat.field.array.elems, 0.0);
+                @memset(mesh_inputs[ii].shader.nodal.field.array.elems, 0.0);
             }
         }
 
@@ -135,7 +135,7 @@ pub fn main() !void {
                     .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
                     .connect = sim_datas2[data_idx].connect,
                     .disp = null,
-                    .shader = .{ .flat = .{
+                    .shader = .{ .nodal = .{
                         .field = sim_datas2[data_idx].field.?,
                         .bits = 8,
                         .scaling = .auto,
@@ -148,13 +148,13 @@ pub fn main() !void {
                     .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
                     .connect = sim_datas2[data_idx].connect,
                     .disp = null,
-                    .shader = .{ .flat = .{
+                    .shader = .{ .nodal = .{
                         .field = sim_datas2[data_idx].field.?,
                         .scaling = .none,
                         .bits = null,
                     } },
                 };
-                @memset(mesh_inputs[ii].shader.flat.field.array.elems, 0.0);
+                @memset(mesh_inputs[ii].shader.nodal.field.array.elems, 0.0);
             }
         }
 

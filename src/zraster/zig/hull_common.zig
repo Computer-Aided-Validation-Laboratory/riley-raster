@@ -14,7 +14,7 @@ pub fn buildAdaptiveHulls(
     const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
 
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const cr: Vec3OfSlices(f64) = try rops.loadVec3SlicesFromElemArray(
+        const cr: Vec3OfSlices(f64) = try rops.loadElemVec3Slices(
             N,
             f64,
             elem_coord_arr,

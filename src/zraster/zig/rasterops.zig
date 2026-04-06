@@ -8,8 +8,9 @@ const buildconfig = @import("buildconfig.zig");
 const Camera = @import("camera.zig").Camera;
 const shapefun = @import("shapefun.zig");
 const S = buildconfig.config.simd_vector_width;
+const tol = buildconfig.config.tolerance;
 
-pub const buildAdaptiveHulls = @import("hull.zig").buildAdaptiveHulls;
+const buildAdaptiveHulls = @import("hull.zig").buildAdaptiveHulls;
 const geomkerns = @import("geometrykernels.zig");
 const shaderops = @import("shaderops.zig");
 const report = @import("report.zig");
@@ -54,16 +55,15 @@ fn boundIndMax(comptime T: type, val: f64, max: T) T {
     return @as(T, @intCast(@max(0, @min(val_int, @as(isize, @intCast(max))))));
 }
 
-//---------------------------------------------------------------------------------------------
-// Tiling Raster: Structs and Types
-
-pub fn Vec3OfSlices(comptime T: type) type {
+pub fn Vec3Slice(comptime T: type) type {
     return struct {
         x: []T,
         y: []T,
         z: []T,
     };
 }
+
+pub const Vec3OfSlices = Vec3Slice;
 
 pub const ElemBBox = struct {
     elem_ind: usize,
@@ -115,15 +115,12 @@ pub const MeshInput = struct {
     hull: ?*const NDArray(f64),
 };
 
-//---------------------------------------------------------------------------------------------
-// Tiling Raster: Helper Functions
-
-pub fn loadVec3SlicesFromElemArray(
+pub fn loadElemVec3Slices(
     comptime N: usize,
     comptime T: type,
     elem_array: *const NDArray(T),
     elem_ind: usize,
-) !Vec3OfSlices(T) {
+) !Vec3Slice(T) {
     var start_slice: usize = elem_array.getFlatInd(&[_]usize{ elem_ind, 0, 0 });
     const stride: usize = elem_array.strides[1];
 
@@ -183,14 +180,14 @@ pub fn elemsToRasterSIMD(
     elem_coord_arr: *NDArray(T),
 ) !void {
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const coords_world: Vec3SIMD(N, T) = try vsd.loadVec3SIMDFromElemArray(
+        const coords_world: Vec3SIMD(N, T) = try vsd.loadElemVec3SIMD(
             N,
             T,
             elem_coord_arr,
             ee,
         );
         const coords_raster = worldToRasterSIMD(N, T, coords_world, camera);
-        try vsd.saveVec3SIMDToElemArray(N, T, elem_coord_arr, ee, coords_raster);
+        try vsd.saveElemVec3SIMD(N, T, elem_coord_arr, ee, coords_raster);
     }
 }
 
@@ -207,7 +204,7 @@ pub fn elemsToClipPxLengSIMD(
         @as(f64, @floatFromInt(camera.pixels_num[1])) / camera.image_dims[1];
 
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const coords_world = try vsd.loadVec3SIMDFromElemArray(
+        const coords_world = try vsd.loadElemVec3SIMD(
             N,
             f64,
             elem_coord_arr,
@@ -221,7 +218,7 @@ pub fn elemsToClipPxLengSIMD(
         );
         coords_raster.x *= @splat(x_scale);
         coords_raster.y *= @splat(-y_scale);
-        try vsd.saveVec3SIMDToElemArray(
+        try vsd.saveElemVec3SIMD(
             N,
             f64,
             elem_coord_arr,
@@ -235,13 +232,21 @@ pub fn elemsToClipPxLengSIMD(
     }
 }
 
-pub fn countElemsCalcBBoxes(comptime N: usize, comptime NH: usize, camera: *const Camera, dim_elem: usize, elem_coord_arr: *const NDArray(f64), raster_hull: ?*const NDArray(f64), elem_bboxes: []ElemBBox) !usize {
+pub fn countElemsCalcBBoxes(
+    comptime N: usize,
+    comptime NH: usize,
+    camera: *const Camera,
+    dim_elem: usize,
+    elem_coord_arr: *const NDArray(f64),
+    raster_hull: ?*const NDArray(f64),
+    elem_bboxes: []ElemBBox,
+) !usize {
     var elems_in_image: usize = 0;
     const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
     const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
 
     const nodal_derivs = comptime shapefun.getNodalDerivs(N);
-    const tolerance = buildconfig.config.tolerance.culling.higher_order_backface_nz;
+    const tolerance = tol.culling.higher_order_backface_nz;
 
     const total_elems = elem_coord_arr.dims[dim_elem];
 
@@ -251,7 +256,7 @@ pub fn countElemsCalcBBoxes(comptime N: usize, comptime NH: usize, camera: *cons
         var y_min: f64 = std.math.inf(f64);
         var y_max: f64 = -std.math.inf(f64);
 
-        const cr: Vec3OfSlices(f64) = try loadVec3SlicesFromElemArray(
+        const cr: Vec3Slice(f64) = try loadElemVec3Slices(
             N,
             f64,
             elem_coord_arr,
@@ -332,14 +337,19 @@ pub fn countElemsCalcBBoxes(comptime N: usize, comptime NH: usize, camera: *cons
     return elems_in_image;
 }
 
-pub fn countElemsCalcBBoxesTri3(camera: *const Camera, dim_elem: usize, elem_coord_arr: *const NDArray(f64), elem_bboxes: []ElemBBox) !usize {
+pub fn countElemsCalcBBoxesTri3(
+    camera: *const Camera,
+    dim_elem: usize,
+    elem_coord_arr: *const NDArray(f64),
+    elem_bboxes: []ElemBBox,
+) !usize {
     const N: usize = 3;
-    const tol_area = buildconfig.config.tolerance.culling.tri3_signed_area;
+    const tol_area = tol.culling.tri3_signed_area;
 
     var elems_in_image: usize = 0;
 
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const coords_raster: Vec3OfSlices(f64) = try loadVec3SlicesFromElemArray(
+        const coords_raster: Vec3Slice(f64) = try loadElemVec3Slices(
             N,
             f64,
             elem_coord_arr,
@@ -385,9 +395,6 @@ pub fn countElemsCalcBBoxesTri3(camera: *const Camera, dim_elem: usize, elem_coo
     return elems_in_image;
 }
 
-//---------------------------------------------------------------------------------------------
-// Tiling Raster Step 1: Prepare Scene Geometry
-
 fn calculateMeshNormals(
     allocator: std.mem.Allocator,
     mesh_coords: *const NDArray(f64),
@@ -426,7 +433,7 @@ fn calculateMeshNormals(
                 var ny = dz_dxi * dx_deta - dx_dxi * dz_deta;
                 var nz = dx_dxi * dy_deta - dy_dxi * dx_deta;
                 const mag = @sqrt(nx * nx + ny * ny + nz * nz);
-                if (mag > buildconfig.config.tolerance.normals.normalise_magnitude) {
+                if (mag > tol.normals.normalise_magnitude) {
                     nx /= mag;
                     ny /= mag;
                     nz /= mag;
@@ -487,7 +494,7 @@ fn calculateMeshNormals(
                 var ny = node_normals[ni * 3 + 1];
                 var nz = node_normals[ni * 3 + 2];
                 const mag = @sqrt(nx * nx + ny * ny + nz * nz);
-                if (mag > buildconfig.config.tolerance.normals.normalise_magnitude) {
+                if (mag > tol.normals.normalise_magnitude) {
                     nx /= mag;
                     ny /= mag;
                     nz /= mag;
@@ -539,7 +546,6 @@ pub fn prepareSceneGeometry(
                 const dim_elem = 0;
 
                 const normal_type = switch (mesh.shader) {
-                    .flat => |s| s.normal_type,
                     inline else => |s| s.normal_type,
                 };
 
@@ -565,7 +571,13 @@ pub fn prepareSceneGeometry(
                         arena_alloc,
                         &[_]usize{ elems_num, 2, NH },
                     );
-                    try buildAdaptiveHulls(N, camera, dim_elem, &mesh.coords, &raster_hulls[ii].?);
+                    try buildAdaptiveHulls(
+                        N,
+                        camera,
+                        dim_elem,
+                        &mesh.coords,
+                        &raster_hulls[ii].?,
+                    );
                 }
 
                 if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
@@ -609,8 +621,12 @@ pub fn prepareSceneGeometry(
                     }
 
                     switch (mesh.shader) {
-                        .flat => |*s| s.elem_normals = .{ .array = prep_normals, .map = map },
-                        inline else => |*s| s.elem_normals = .{ .array = prep_normals, .map = map },
+                        inline else => |*s| {
+                            s.elem_normals = .{
+                                .array = prep_normals,
+                                .map = map,
+                            };
+                        },
                     }
                 }
             },
@@ -620,9 +636,6 @@ pub fn prepareSceneGeometry(
 
     ctx_perf.recordGeometry(total_elems_num.*, total_elems_in_image.*);
 }
-
-//---------------------------------------------------------------------------------------------
-// Tiling Raster Step 2: Tile/Element Overlaps for the Whole Scene
 
 pub fn sceneTileElemOverlap(
     allocator: std.mem.Allocator,
@@ -697,9 +710,15 @@ pub fn sceneTileElemOverlap(
         for (0..elems_in_image_by_mesh[mesh_idx]) |ee| {
             const ebb = elem_bboxes_by_mesh[mesh_idx][ee];
             const tx_start = ebb.x_min / tile_size;
-            const tx_end = @min(tiles_num_x, @as(usize, (ebb.x_max + tile_size - 1) / tile_size));
+            const tx_end = @min(
+                tiles_num_x,
+                @as(usize, (ebb.x_max + tile_size - 1) / tile_size),
+            );
             const ty_start = ebb.y_min / tile_size;
-            const ty_end = @min(tiles_num_y, @as(usize, (ebb.y_max + tile_size - 1) / tile_size));
+            const ty_end = @min(
+                tiles_num_y,
+                @as(usize, (ebb.y_max + tile_size - 1) / tile_size),
+            );
 
             for (ty_start..ty_end) |ty| {
                 const tile_px_min_y = @as(u16, @intCast(ty * tile_size));

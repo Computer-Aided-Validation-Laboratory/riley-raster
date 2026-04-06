@@ -19,7 +19,8 @@ const ScalingParams = imageops.ScalingParams;
 const ScaleStrategy = imageops.ScaleStrategy;
 
 const shaderops = @import("shaderops.zig");
-pub const FlatInput = shaderops.FlatInput;
+pub const NodalInput = shaderops.NodalInput;
+pub const FlatInput = NodalInput;
 pub const TexInput = shaderops.TexInput;
 pub const ShaderInput = shaderops.ShaderInput;
 pub const ShaderPrepared = shaderops.ShaderPrepared;
@@ -80,56 +81,36 @@ pub fn prepareMesh(
     };
 
     switch (mesh_input.shader) {
-        .flat => |*flat_in| {
+        .nodal => |*nodal_in| {
             const elem_field = try prepareField(
                 outer_alloc,
                 &mesh_input.connect,
-                &flat_in.field,
+                &nodal_in.field,
             );
 
             const factors = if (scaling_params) |sp|
-                imageops.getScaleFactors(flat_in.scaling, flat_in.bits, sp)
+                imageops.getScaleFactors(nodal_in.scaling, nodal_in.bits, sp)
             else
                 imageops.ScaleFactors{ .mul = 1.0, .add = 0.0 };
 
-            mesh_prep.shader = .{ .flat = .{
+            mesh_prep.shader = .{ .nodal = .{
                 .elem_field = elem_field,
-                .bits = flat_in.bits,
-                .scaling = flat_in.scaling,
-                .scale_over = flat_in.scale_over,
+                .bits = nodal_in.bits,
+                .scaling = nodal_in.scaling,
+                .scale_over = nodal_in.scale_over,
                 .scale_mul = factors.mul,
                 .scale_add = factors.add,
-                .normal_type = flat_in.normal_type,
-                .elem_normals = null,
-            } };
-        },
-        .normals => |*flat_in| {
-            const elem_field = try prepareField(
-                outer_alloc,
-                &mesh_input.connect,
-                &flat_in.field,
-            );
-
-            const factors = if (scaling_params) |sp|
-                imageops.getScaleFactors(flat_in.scaling, flat_in.bits, sp)
-            else
-                imageops.ScaleFactors{ .mul = 1.0, .add = 0.0 };
-
-            mesh_prep.shader = .{ .normals = .{
-                .elem_field = elem_field,
-                .bits = flat_in.bits,
-                .scaling = flat_in.scaling,
-                .scale_over = flat_in.scale_over,
-                .scale_mul = factors.mul,
-                .scale_add = factors.add,
-                .normal_type = flat_in.normal_type,
+                .normal_type = nodal_in.normal_type,
                 .elem_normals = null,
             } };
         },
         .tex_u8 => |*tex_in| {
             const elem_uvs = try prepareUVs(outer_alloc, &tex_in.uvs, &mesh_input.connect);
             const params = imageops.getScalingParamsTexture(
-                u8, 1, &tex_in.texture, tex_in.scaling,
+                u8,
+                1,
+                &tex_in.texture,
+                tex_in.scaling,
             );
             const factors = imageops.getScaleFactors(tex_in.scaling, tex_in.bits, params);
             mesh_prep.shader = .{ .tex_u8 = .{
@@ -147,7 +128,10 @@ pub fn prepareMesh(
         .tex_u16 => |*tex_in| {
             const elem_uvs = try prepareUVs(outer_alloc, &tex_in.uvs, &mesh_input.connect);
             const params = imageops.getScalingParamsTexture(
-                u16, 1, &tex_in.texture, tex_in.scaling,
+                u16,
+                1,
+                &tex_in.texture,
+                tex_in.scaling,
             );
             const factors = imageops.getScaleFactors(tex_in.scaling, tex_in.bits, params);
             mesh_prep.shader = .{ .tex_u16 = .{
@@ -165,7 +149,10 @@ pub fn prepareMesh(
         .tex_rgb_u8 => |*tex_in| {
             const elem_uvs = try prepareUVs(outer_alloc, &tex_in.uvs, &mesh_input.connect);
             const params = imageops.getScalingParamsTexture(
-                u8, 3, &tex_in.texture, tex_in.scaling,
+                u8,
+                3,
+                &tex_in.texture,
+                tex_in.scaling,
             );
             const factors = imageops.getScaleFactors(tex_in.scaling, tex_in.bits, params);
             mesh_prep.shader = .{ .tex_rgb_u8 = .{
@@ -183,7 +170,10 @@ pub fn prepareMesh(
         .tex_rgb_u16 => |*tex_in| {
             const elem_uvs = try prepareUVs(outer_alloc, &tex_in.uvs, &mesh_input.connect);
             const params = imageops.getScalingParamsTexture(
-                u16, 3, &tex_in.texture, tex_in.scaling,
+                u16,
+                3,
+                &tex_in.texture,
+                tex_in.scaling,
             );
             const factors = imageops.getScaleFactors(tex_in.scaling, tex_in.bits, params);
             mesh_prep.shader = .{ .tex_rgb_u16 = .{
@@ -357,7 +347,7 @@ pub fn meshInputFromSimDataSlice(
 
         if (shader_mode == .flat) {
             if (sim_data.field) |field| {
-                mesh_inputs[ii].shader = .{ .flat = .{
+                mesh_inputs[ii].shader = .{ .nodal = .{
                     .field = field,
                     .bits = 8,
                     .normal_type = .none,

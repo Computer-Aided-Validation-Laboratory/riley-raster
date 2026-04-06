@@ -89,7 +89,9 @@ pub fn main() !void {
         const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[ii]});
         const uvs = try uvio.loadUVMap(aa, io, uv_path);
         var coords_dup = try MatSlice(f64).initAlloc(
-            aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num,
+            aa,
+            sim_datas[ii].coords.mat.rows_num,
+            sim_datas[ii].coords.mat.cols_num,
         );
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
@@ -113,7 +115,8 @@ pub fn main() !void {
         const field = sim_datas[ii].field.?;
         const num_coords = sim_datas[ii].coords.mat.rows_num;
         var rgb_field_arr = try zraster.NDArray(f64).initFlat(
-            aa, &[_]usize{ field.array.dims[0], num_coords, 3 },
+            aa,
+            &[_]usize{ field.array.dims[0], num_coords, 3 },
         );
 
         const coords = sim_datas[ii].coords;
@@ -130,13 +133,19 @@ pub fn main() !void {
             for (0..num_coords) |nn| {
                 const x_val = coords.x(nn);
                 const t = if (range_x > 0) (x_val - min_x) / range_x else 0.5;
-                var rr: f64 = 0; var gg: f64 = 0; var bb: f64 = 0;
+                var rr: f64 = 0;
+                var gg: f64 = 0;
+                var bb: f64 = 0;
                 if (t < 0.5) {
                     const t_scaled = t * 2.0;
-                    rr = 1.0 - t_scaled; gg = t_scaled; bb = 0.0;
+                    rr = 1.0 - t_scaled;
+                    gg = t_scaled;
+                    bb = 0.0;
                 } else {
                     const t_scaled = (t - 0.5) * 2.0;
-                    rr = 0.0; gg = 1.0 - t_scaled; bb = t_scaled;
+                    rr = 0.0;
+                    gg = 1.0 - t_scaled;
+                    bb = t_scaled;
                 }
                 rgb_field_arr.set(&[_]usize{ tt, nn, 0 }, rr);
                 rgb_field_arr.set(&[_]usize{ tt, nn, 1 }, gg);
@@ -148,7 +157,9 @@ pub fn main() !void {
             .array_mem = rgb_field_arr.elems,
         };
         var coords_dup = try MatSlice(f64).initAlloc(
-            aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num,
+            aa,
+            sim_datas[ii].coords.mat.rows_num,
+            sim_datas[ii].coords.mat.cols_num,
         );
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
@@ -157,7 +168,7 @@ pub fn main() !void {
             .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .flat = .{
+            .shader = .{ .nodal = .{
                 .field = rgb_field,
                 .bits = 8,
                 .scaling = .auto,
@@ -176,7 +187,12 @@ pub fn main() !void {
 
     const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
     const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
-        mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor,
+        mesh_inputs,
+        pixel_num,
+        pixel_size,
+        focal_leng,
+        rot,
+        fov_scale_factor,
     );
     const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 3);
 
@@ -189,17 +205,16 @@ pub fn main() !void {
     };
 
     std.debug.print("Rendering Mixed RGB Data for Difference analysis...\n", .{});
-    const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config_rgb, out_dir))
-        orelse return error.NoResult;
+    const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config_rgb, out_dir)) orelse return error.NoResult;
 
     const gold_dir = "gold-multimesh/allelem_allshade_rgb";
 
     for (0..result.dims[0]) |f| {
         const fname = try std.fmt.allocPrint(aa, "{s}/frame_{d}_field_0_rgb.csv", .{ gold_dir, f });
         std.debug.print("Comparing frame {d} with {s}\n", .{ f, fname });
-        
+
         const gold_arr = try loadNDArrayFromCSVRGB(aa, io, fname, 800, 1200);
-        
+
         var diff_arr = try NDArray(f64).initFlat(aa, &[_]usize{ 1, 3, 800, 1200 });
         for (0..3) |cc| {
             for (0..800) |rr| {
@@ -212,7 +227,7 @@ pub fn main() !void {
         }
 
         const base_name = try std.fmt.allocPrint(aa, "frame_{d}_field_0_rgb", .{f});
-        
+
         // Wrap frame in a 3D NDArray for saving
         var frame_dims = [_]usize{ result.dims[1], result.dims[2], result.dims[3] };
         var frame_strides = [_]usize{ result.strides[1], result.strides[2], result.strides[3] };
@@ -232,7 +247,7 @@ pub fn main() !void {
         const diff_base_name = try std.fmt.allocPrint(aa, "frame_{d}_field_0_rgb_diff", .{f});
         const diff_csv_name = try std.fmt.allocPrint(aa, "{s}.csv", .{diff_base_name});
         const diff_bmp_name = try std.fmt.allocPrint(aa, "{s}.bmp", .{diff_base_name});
-        
+
         var diff_dims = [_]usize{ diff_arr.dims[1], diff_arr.dims[2], diff_arr.dims[3] };
         var diff_strides = [_]usize{ diff_arr.strides[1], diff_arr.strides[2], diff_arr.strides[3] };
         const diff_arr_3d = NDArray(f64){

@@ -1,11 +1,13 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const S = buildconfig.config.simd_vector_width;
+const tol = buildconfig.config.tolerance;
 const rops = @import("rasterops.zig");
 const newton = @import("newton.zig");
 const shapefun = @import("shapefun.zig");
 const NDArray = @import("ndarray.zig").NDArray;
-const Vec3OfSlices = rops.Vec3OfSlices;
+const Vec3Slice = rops.Vec3Slice;
+const Vec3OfSlices = Vec3Slice;
 
 pub const Strategy = enum {
     pointwise,
@@ -38,7 +40,7 @@ pub fn GeometryResultSIMD(comptime N: usize) type {
     };
 }
 
-pub inline fn calcInvZRast(comptime N: usize, nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
+pub inline fn calcInvZRast(comptime N: usize, nodes: Vec3Slice(f64), weights: [N]f64) f64 {
     var inv_z: f64 = 0.0;
 
     inline for (0..N) |ind| {
@@ -48,7 +50,7 @@ pub inline fn calcInvZRast(comptime N: usize, nodes: Vec3OfSlices(f64), weights:
     return inv_z;
 }
 
-pub inline fn calcInvZClip(comptime N: usize, nodes: Vec3OfSlices(f64), weights: [N]f64) f64 {
+pub inline fn calcInvZClip(comptime N: usize, nodes: Vec3Slice(f64), weights: [N]f64) f64 {
     var sum_weighted_z: f64 = 0.0;
 
     inline for (0..N) |ind| {
@@ -128,7 +130,7 @@ pub fn Tri3Kernel() type {
             _ = x_offset;
             _ = y_offset;
 
-            const edge_tol = buildconfig.config.tolerance.edge.tri_weight_inclusion;
+            const edge_tol = tol.edge.tri_weight_inclusion;
 
             var weights: [nodes_num]f64 = undefined;
             weights[0] = rops.edgeFun3(
@@ -288,7 +290,7 @@ pub fn Tri3OptKernel() type {
         }
 
         pub inline fn isInElement(weights: [nodes_num]f64) bool {
-            const edge_tol = buildconfig.config.tolerance.edge.tri_weight_inclusion;
+            const edge_tol = tol.edge.tri_weight_inclusion;
 
             return weights[0] >= -edge_tol and
                 weights[1] >= -edge_tol and
@@ -509,8 +511,8 @@ pub fn Quad4IBIKernel() type {
             solve_params: BilinearParams,
         ) GeometryResult(nodes_num) {
             _ = nodes;
-            const eps = buildconfig.config.tolerance.geometry.bilinear_parametric_domain;
-            const denom_tol = buildconfig.config.tolerance.geometry.bilinear_denom;
+            const eps = tol.geometry.bilinear_parametric_domain;
+            const denom_tol = tol.geometry.bilinear_denom;
 
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
@@ -572,8 +574,8 @@ pub fn Quad4IBIKernel() type {
             c_coeff: f64,
             root_out: *f64,
         ) bool {
-            const eps = buildconfig.config.tolerance.geometry.bilinear_parametric_domain;
-            const area_tol = buildconfig.config.tolerance.geometry.quadratic_area;
+            const eps = tol.geometry.bilinear_parametric_domain;
+            const area_tol = tol.geometry.quadratic_area;
 
             if (@abs(a_coeff) < area_tol) {
                 if (@abs(b_coeff) < area_tol) {

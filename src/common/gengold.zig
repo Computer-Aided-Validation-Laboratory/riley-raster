@@ -144,11 +144,9 @@ pub fn runGenerationExt(
                 @tagName(mt),
                 d_str,
             });
-            try renderAndSave(
-                aa, io, &camera, mt, sim_data.coords, sim_data.connect, sim_data.field, .{
-                    .flat = .{ .field = sim_data.field.?, .bits = 8 },
-                }, flat_dir, add_disp, config
-            );
+            try renderAndSave(aa, io, &camera, mt, sim_data.coords, sim_data.connect, sim_data.field, .{
+                .nodal = .{ .field = sim_data.field.?, .bits = 8 },
+            }, flat_dir, add_disp, config);
 
             // Tex ShaderInput
             for (interp_types) |it| {
@@ -159,15 +157,13 @@ pub fn runGenerationExt(
                     d_str,
                     @tagName(it),
                 });
-                try renderAndSave(
-                    aa, io, &camera, mt, sim_data.coords, sim_data.connect, sim_data.field, .{
-                        .tex_u8 = .{
-                            .uvs = uvs.array,
-                            .texture = texture,
-                            .interp_type = it,
-                        },
-                    }, tex_dir, add_disp, config
-                );
+                try renderAndSave(aa, io, &camera, mt, sim_data.coords, sim_data.connect, sim_data.field, .{
+                    .tex_u8 = .{
+                        .uvs = uvs.array,
+                        .texture = texture,
+                        .interp_type = it,
+                    },
+                }, tex_dir, add_disp, config);
             }
         }
     }
@@ -219,14 +215,9 @@ pub fn runMultimeshGenerationExt(
             try std.fmt.allocPrint(aa, "{s}/allelem_tex_cubic_lut_lerp", .{out_dir_root});
 
         const mesh_inputs = if (mode == .flat)
-            try mr.meshInputFromSimDataSlice(
-                aa, io, sim_datas, &mesh_types, .flat, null, null, null
-            )
+            try mr.meshInputFromSimDataSlice(aa, io, sim_datas, &mesh_types, .flat, null, null, null)
         else
-            try mr.meshInputFromSimDataSlice(
-                aa, io, sim_datas, &mesh_types, .texture, &dir_paths, 
-                "texture/speckle-simple.tiff", null
-            );
+            try mr.meshInputFromSimDataSlice(aa, io, sim_datas, &mesh_types, .texture, &dir_paths, "texture/speckle-simple.tiff", null);
 
         mr.arrangeMeshSlice(mesh_inputs, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
 
@@ -238,11 +229,14 @@ pub fn runMultimeshGenerationExt(
 
         const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
         const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
-            mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor,
+            mesh_inputs,
+            pixel_num,
+            pixel_size,
+            focal_leng,
+            rot,
+            fov_scale_factor,
         );
-        const camera = Camera.init(
-            pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2
-        );
+        const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
 
         const cwd = std.Io.Dir.cwd();
         var iter = std.mem.splitScalar(u8, gold_dir, '/');
@@ -272,9 +266,7 @@ pub fn runMultimeshMixedGeneration(
     io: std.Io,
     config: RasterConfig,
 ) !void {
-    try runMultimeshMixedGenerationExt(
-        allocator, io, config, "gold-multimesh/allelem_allshade"
-    );
+    try runMultimeshMixedGenerationExt(allocator, io, config, "gold-multimesh/allelem_allshade");
 }
 
 pub fn runMultimeshMixedGenerationExt(
@@ -304,17 +296,13 @@ pub fn runMultimeshMixedGenerationExt(
     };
 
     const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
-    const texture = try iio.loadImage(
-        aa, io, "texture/speckle-simple.tiff", .tiff, u8, 1
-    );
+    const texture = try iio.loadImage(aa, io, "texture/speckle-simple.tiff", .tiff, u8, 1);
 
     var mesh_inputs = try aa.alloc(MeshInput, 10);
 
     // Top Row (0-4): Flat Shading
     for (0..5) |ii| {
-        var coords_dup = try MatSlice(f64).initAlloc(
-            aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num
-        );
+        var coords_dup = try MatSlice(f64).initAlloc(aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num);
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
         mesh_inputs[ii] = MeshInput{
@@ -322,7 +310,7 @@ pub fn runMultimeshMixedGenerationExt(
             .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .flat = .{
+            .shader = .{ .nodal = .{
                 .field = sim_datas[ii].field.?,
                 .bits = 8,
                 .scaling = .auto,
@@ -336,9 +324,7 @@ pub fn runMultimeshMixedGenerationExt(
         const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[ii]});
         const uvs = try uvio.loadUVMap(aa, io, uv_path);
 
-        var coords_dup = try MatSlice(f64).initAlloc(
-            aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num
-        );
+        var coords_dup = try MatSlice(f64).initAlloc(aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num);
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
         mesh_inputs[ii + 5] = MeshInput{
@@ -365,12 +351,8 @@ pub fn runMultimeshMixedGenerationExt(
     const fov_scale_factor: f64 = 1.2;
 
     const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
-    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
-        mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
-    );
-    const camera = Camera.init(
-        pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2
-    );
+    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor);
+    const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
 
     const cwd = std.Io.Dir.cwd();
     var iter = std.mem.splitScalar(u8, gold_dir, '/');
@@ -399,9 +381,7 @@ pub fn runMultimeshMixedRGBGeneration(
     io: std.Io,
     config: RasterConfig,
 ) !void {
-    try runMultimeshMixedRGBGenerationExt(
-        allocator, io, config, "gold-multimesh/allelem_allshade_rgb"
-    );
+    try runMultimeshMixedRGBGenerationExt(allocator, io, config, "gold-multimesh/allelem_allshade_rgb");
 }
 
 pub fn runMultimeshMixedRGBGenerationExt(
@@ -431,9 +411,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
     };
 
     const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
-    const texture = try iio.loadImage(
-        aa, io, "texture/speckle_rgb.bmp", .bmp, u8, 3
-    );
+    const texture = try iio.loadImage(aa, io, "texture/speckle_rgb.bmp", .bmp, u8, 3);
 
     var mesh_inputs = try aa.alloc(MeshInput, 10);
 
@@ -442,9 +420,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
         const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[ii]});
         const uvs = try uvio.loadUVMap(aa, io, uv_path);
 
-        var coords_dup = try MatSlice(f64).initAlloc(
-            aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num
-        );
+        var coords_dup = try MatSlice(f64).initAlloc(aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num);
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
         mesh_inputs[ii] = MeshInput{
@@ -466,9 +442,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
     for (0..5) |ii| {
         const field = sim_datas[ii].field.?;
         const num_coords = sim_datas[ii].coords.mat.rows_num;
-        var rgb_field_arr = try NDArray(f64).initFlat(
-            aa, &[_]usize{ field.array.dims[0], num_coords, 3 }
-        );
+        var rgb_field_arr = try NDArray(f64).initFlat(aa, &[_]usize{ field.array.dims[0], num_coords, 3 });
 
         const coords = sim_datas[ii].coords;
         var min_x: f64 = std.math.inf(f64);
@@ -512,9 +486,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
             .array_mem = rgb_field_arr.elems,
         };
 
-        var coords_dup = try MatSlice(f64).initAlloc(
-            aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num
-        );
+        var coords_dup = try MatSlice(f64).initAlloc(aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num);
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
         mesh_inputs[ii + 5] = MeshInput{
@@ -522,7 +494,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
             .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .flat = .{
+            .shader = .{ .nodal = .{
                 .field = rgb_field,
                 .bits = 8,
                 .scaling = .auto,
@@ -540,12 +512,8 @@ pub fn runMultimeshMixedRGBGenerationExt(
     const fov_scale_factor: f64 = 1.1;
 
     const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
-    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
-        mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor
-    );
-    const camera_rgb = Camera.init(
-        pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2
-    );
+    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor);
+    const camera_rgb = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
 
     var config_rgb = config;
     config_rgb.save_opts = &[_]iio.ImageSaveOpts{

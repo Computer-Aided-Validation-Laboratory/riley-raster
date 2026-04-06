@@ -484,7 +484,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator, io: std.Io, test_type: []co
 
             const flat_dir = try std.fmt.allocPrint(aa, "{s}/{s}", .{ gold_dir_root, case_dir_name });
 
-            const mesh_input = MeshInput{ .mesh_type = mesh_type, .coords = sim_data.coords, .connect = sim_data.connect, .disp = if (add_disp) sim_data.field else null, .shader = .{ .flat = .{ .field = sim_data.field.?, .bits = 8 } } };
+            const mesh_input = MeshInput{ .mesh_type = mesh_type, .coords = sim_data.coords, .connect = sim_data.connect, .disp = if (add_disp) sim_data.field else null, .shader = .{ .nodal = .{ .field = sim_data.field.?, .bits = 8 } } };
 
             const config = RasterConfig{ .save_opt = .memory, .save_opts = &[_]iio.ImageSaveOpts{
                 .{ .format = .csv, .bits = null, .scaling = .none },
@@ -712,7 +712,7 @@ pub fn runMultimeshMixedTestExt(
             .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .flat = .{
+            .shader = .{ .nodal = .{
                 .field = sim_datas[ii].field.?,
                 .bits = 8,
                 .scaling = .auto,
@@ -903,7 +903,7 @@ pub fn runMultimeshMixedRGBTestExt(
             .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .flat = .{
+            .shader = .{ .nodal = .{
                 .field = rgb_field,
                 .bits = 8,
                 .scaling = .auto,

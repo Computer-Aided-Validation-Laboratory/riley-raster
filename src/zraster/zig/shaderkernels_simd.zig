@@ -8,13 +8,13 @@ const common = @import("shaderkernels_common.zig");
 const CoordSpace = common.CoordSpace;
 const S = buildconfig.config.simd_vector_width;
 
-pub fn FlatKernel(comptime N: usize) type {
+pub fn NodalKernel(comptime N: usize) type {
     return struct {
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext(N),
             interp: shaderops.InterpData(N),
-            shader: *const shaderops.FlatPrepared,
+            shader: *const shaderops.NodalPrepared,
             ctx_perf: anytype,
             spx_image_scratch: *MatSlice(f64),
         ) void {
@@ -26,9 +26,15 @@ pub fn FlatKernel(comptime N: usize) type {
             );
 
             if (comptime coord_space == CoordSpace.clip_px_leng) {
-                shaderops.fillFlat(N, ctx_shade, interp, shader, spx_image_scratch);
+                shaderops.fillNodal(N, ctx_shade, interp, shader, spx_image_scratch);
             } else {
-                shaderops.fillFlatPerspective(N, ctx_shade, interp, shader, spx_image_scratch);
+                shaderops.fillNodalPerspective(
+                    N,
+                    ctx_shade,
+                    interp,
+                    shader,
+                    spx_image_scratch,
+                );
             }
         }
 
@@ -39,12 +45,12 @@ pub fn FlatKernel(comptime N: usize) type {
             v_weights: [N]@Vector(S, f64),
             v_nodes_inv_z: [N]@Vector(S, f64),
             v_subpx_z: @Vector(S, f64),
-            shader: *const shaderops.FlatPrepared,
+            shader: *const shaderops.NodalPrepared,
             spx_image_scratch: *MatSlice(f64),
         ) void {
             _ = v_mask;
             if (comptime coord_space == CoordSpace.raster) {
-                shaderops.fillFlatPerspectiveSIMD(
+                shaderops.fillNodalPerspectiveSIMD(
                     N,
                     ctx_shade,
                     v_weights,
@@ -54,7 +60,7 @@ pub fn FlatKernel(comptime N: usize) type {
                     spx_image_scratch,
                 );
             } else if (comptime coord_space == CoordSpace.clip_px_leng) {
-                shaderops.fillFlatSIMD(
+                shaderops.fillNodalSIMD(
                     N,
                     ctx_shade,
                     v_weights,
@@ -63,73 +69,6 @@ pub fn FlatKernel(comptime N: usize) type {
                 );
             } else {
                 @panic("shadeSIMD not implemented for this coord_space");
-            }
-        }
-    };
-}
-
-pub fn NormalKernel(comptime N: usize) type {
-    return struct {
-        pub inline fn shade(
-            comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext(N),
-            interp: shaderops.InterpData(N),
-            shader: anytype,
-            ctx_perf: anytype,
-            spx_image_scratch: *MatSlice(f64),
-        ) void {
-            _ = shader;
-            _ = coord_space;
-            common.recordDepth(
-                ctx_perf,
-                ctx_shade.global_subx,
-                ctx_shade.global_suby,
-                interp.sub_pixel_z,
-            );
-
-            const n = ctx_shade.local_buf.interpolateNormal(interp.weights);
-            const px_stride = spx_image_scratch.cols_num;
-
-            spx_image_scratch.elems[0 * px_stride + ctx_shade.idx] = n[0] * 0.5 + 0.5;
-            spx_image_scratch.elems[1 * px_stride + ctx_shade.idx] = n[1] * 0.5 + 0.5;
-            spx_image_scratch.elems[2 * px_stride + ctx_shade.idx] = n[2] * 0.5 + 0.5;
-        }
-
-        pub inline fn shadeSIMD(
-            comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext(N),
-            v_mask: @Vector(S, bool),
-            v_weights: [N]@Vector(S, f64),
-            v_nodes_inv_z: [N]@Vector(S, f64),
-            v_subpx_z: @Vector(S, f64),
-            shader: anytype,
-            spx_image_scratch: *MatSlice(f64),
-        ) void {
-            _ = coord_space;
-            _ = v_nodes_inv_z;
-            _ = v_subpx_z;
-            _ = shader;
-            const px_stride = spx_image_scratch.cols_num;
-
-            // Vectorized Normal Interpolation
-            var v_norm = [_]@Vector(S, f64){ @splat(0.0), @splat(0.0), @splat(0.0) };
-            inline for (0..N) |nn| {
-                v_norm[0] += v_weights[nn] *
-                    @as(@Vector(S, f64), @splat(ctx_shade.local_buf.normals[0 * N + nn]));
-                v_norm[1] += v_weights[nn] *
-                    @as(@Vector(S, f64), @splat(ctx_shade.local_buf.normals[1 * N + nn]));
-                v_norm[2] += v_weights[nn] *
-                    @as(@Vector(S, f64), @splat(ctx_shade.local_buf.normals[2 * N + nn]));
-            }
-
-            inline for (0..3) |ch| {
-                const v_final = v_norm[ch] * @as(@Vector(S, f64), @splat(0.5)) +
-                    @as(@Vector(S, f64), @splat(0.5));
-                const flat_idx = ch * px_stride + ctx_shade.idx;
-                const ptr_out: *align(8) @Vector(S, f64) =
-                    @ptrCast(&spx_image_scratch.elems[flat_idx]);
-                const v_old_val = ptr_out.*;
-                ptr_out.* = @select(f64, v_mask, v_final, v_old_val);
             }
         }
     };

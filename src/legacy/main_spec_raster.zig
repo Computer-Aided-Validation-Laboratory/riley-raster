@@ -11,7 +11,7 @@ const SimData = meshio.SimData;
 const mr = @import("zraster/zig/meshraster.zig");
 const MeshType = mr.MeshType;
 const MeshInput = mr.MeshInput;
-const FlatInput = mr.FlatInput;
+const NodalInput = mr.NodalInput;
 const TexInput = mr.TexInput;
 
 const VecStack = @import("zraster/zig/vecstack.zig");
@@ -123,13 +123,13 @@ pub fn main() !void {
     const elem_coords = try mr.prepareCoords(page_alloc, &sim_data.coords, &sim_data.connect);
     const elem_disp = try mr.prepareField(page_alloc, &sim_data.connect, &sim_data.field.?);
     const elem_field = try mr.prepareField(page_alloc, &sim_data.connect, &sim_data.field.?);
-    const elem_shader = FlatInput{ .field = elem_field };
+    const elem_shader = NodalInput{ .field = elem_field };
 
     var mesh_input = MeshInput{
         .mesh_type = mesh_type,
         .coords = elem_coords,
         .disp = elem_disp,
-        .shader = .{ .flat = elem_shader },
+        .shader = .{ .nodal = elem_shader },
     };
 
     //=========================================================================================

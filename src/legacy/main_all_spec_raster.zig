@@ -11,7 +11,7 @@ const SimData = meshio.SimData;
 const mr = @import("zraster/zig/meshraster.zig");
 const MeshType = mr.MeshType;
 const MeshInput = mr.MeshInput;
-const FlatInput = mr.FlatInput;
+const NodalInput = mr.NodalInput;
 const TexInput = mr.TexInput;
 
 const ndarray = @import("zraster/zig/ndarray.zig");
@@ -126,7 +126,7 @@ pub fn main() !void {
     };
 
     if (comptime shader_mode == .flat) {
-        mesh_input.shader = .{ .flat = .{
+        mesh_input.shader = .{ .nodal = .{
             .field = sim_data.field.?,
             .bits = 8,
         } };

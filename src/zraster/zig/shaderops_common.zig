@@ -74,7 +74,7 @@ pub fn LocalNodeBuffer(comptime N: usize) type {
     };
 }
 
-pub const FlatInput = struct {
+pub const NodalInput = struct {
     field: Field,
     bits: ?u8 = 8,
     scaling: imageops.ScaleStrategy = .none,
@@ -82,7 +82,7 @@ pub const FlatInput = struct {
     normal_type: NormalType = .none,
 };
 
-pub const FlatPrepared = struct {
+pub const NodalPrepared = struct {
     elem_field: NDArray(f64),
     bits: ?u8 = 8,
     scaling: imageops.ScaleStrategy = .none,
@@ -141,19 +141,17 @@ pub fn InterpData(comptime N: usize) type {
 }
 
 pub const ShaderInput = union(enum) {
-    flat: FlatInput,
+    nodal: NodalInput,
     tex_u8: TexInput(u8, 1),
     tex_u16: TexInput(u16, 1),
     tex_rgb_u8: TexInput(u8, 3),
     tex_rgb_u16: TexInput(u16, 3),
-    normals: FlatInput,
 };
 
 pub const ShaderPrepared = union(enum) {
-    flat: FlatPrepared,
+    nodal: NodalPrepared,
     tex_u8: TexPrepared(u8, 1),
     tex_u16: TexPrepared(u16, 1),
     tex_rgb_u8: TexPrepared(u8, 3),
     tex_rgb_u16: TexPrepared(u16, 3),
-    normals: FlatPrepared,
 };

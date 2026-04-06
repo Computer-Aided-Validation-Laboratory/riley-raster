@@ -21,7 +21,6 @@ pub const iio = @import("../zraster/zig/imageio.zig");
 pub const texops = @import("../zraster/zig/textureops.zig");
 pub const uvio = @import("../zraster/zig/uvio.zig");
 
-
 pub fn isApproxEqual(v1: f64, v2: f64, rel_tol: f64, abs_tol: f64) bool {
     if (v1 == v2) return true;
     const diff = @abs(v1 - v2);
@@ -32,22 +31,22 @@ pub fn isApproxEqual(v1: f64, v2: f64, rel_tol: f64, abs_tol: f64) bool {
     return (diff / largest) <= rel_tol;
 }
 
-pub fn compareNDArrayToCSV(allocator: std.mem.Allocator, 
-                           io: std.Io, array: *const NDArray(f64), 
-                           frame: usize, field: usize, 
-                           path: []const u8, 
-                           rel_tol: f64,
-                           abs_tol: f64) !void {
-    _ = allocator; _ = io; _ = array; _ = frame; _ = field; _ = path;
-    _ = rel_tol; _ = abs_tol;
+pub fn compareNDArrayToCSV(allocator: std.mem.Allocator, io: std.Io, array: *const NDArray(f64), frame: usize, field: usize, path: []const u8, rel_tol: f64, abs_tol: f64) !void {
+    _ = allocator;
+    _ = io;
+    _ = array;
+    _ = frame;
+    _ = field;
+    _ = path;
+    _ = rel_tol;
+    _ = abs_tol;
     return;
 }
-
 
 pub fn loadData(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !SimData {
     const pc = try std.fmt.allocPrint(allocator, "{s}/coords.csv", .{path});
     const pn = try std.fmt.allocPrint(allocator, "{s}/connectivity.csv", .{path});
-    const pf = [_][]const u8{ 
+    const pf = [_][]const u8{
         try std.fmt.allocPrint(allocator, "{s}/field_disp_x.csv", .{path}),
         try std.fmt.allocPrint(allocator, "{s}/field_disp_y.csv", .{path}),
         try std.fmt.allocPrint(allocator, "{s}/field_disp_z.csv", .{path}),
@@ -55,13 +54,7 @@ pub fn loadData(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !Sim
     return try meshio.loadSimData(allocator, io, pc, pn, pf[0..], null);
 }
 
-fn saveResultToRoot(
-    allocator: std.mem.Allocator, 
-    io: std.Io, 
-    array: *const NDArray(f64), 
-    dir_name: []const u8,
-    root_dir: []const u8
-) !void {
+fn saveResultToRoot(allocator: std.mem.Allocator, io: std.Io, array: *const NDArray(f64), dir_name: []const u8, root_dir: []const u8) !void {
     const cwd = std.Io.Dir.cwd();
     cwd.createDir(io, root_dir, .default_dir) catch {};
     var root_h = try cwd.openDir(io, root_dir, .{});
@@ -84,21 +77,10 @@ fn saveResultToRoot(
 
 pub const ShaderFilter = enum { flat, tex, both };
 
-pub fn runTestInternal(allocator: std.mem.Allocator,
-                       io: std.Io,
-                       test_type: []const u8,
-                       mesh_type: MeshType,
-                       fov_scale: f64,
-                       texture: iio.Texture(u8, 1),
-                       pixel_num: [2]u32,
-                       interp_types: []const texops.InterpType,
-                       gold_dir_root: []const u8,
-                       data_dir_root: []const u8,
-                       rel_tol: f64,
-                       abs_tol: f64,
-                       shader_filter: ShaderFilter,
-                       render_root: []const u8) !void {
-    _ = gold_dir_root; _ = rel_tol; _ = abs_tol;
+pub fn runTestInternal(allocator: std.mem.Allocator, io: std.Io, test_type: []const u8, mesh_type: MeshType, fov_scale: f64, texture: iio.Texture(u8, 1), pixel_num: [2]u32, interp_types: []const texops.InterpType, gold_dir_root: []const u8, data_dir_root: []const u8, rel_tol: f64, abs_tol: f64, shader_filter: ShaderFilter, render_root: []const u8) !void {
+    _ = gold_dir_root;
+    _ = rel_tol;
+    _ = abs_tol;
 
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
@@ -121,38 +103,42 @@ pub fn runTestInternal(allocator: std.mem.Allocator,
     };
 
     const data_path = try std.fmt.allocPrint(aa, "{s}/{s}", .{ data_dir_root, case_name });
-    
+
     var sim_data = try loadData(aa, io, data_path);
     const uv_path = try std.fmt.allocPrint(aa, "{s}/uvs.csv", .{data_path});
     var uvs = try uvio.loadUVMap(aa, io, uv_path);
-const elem_coords = try mr.prepareCoords(aa, &sim_data.coords, &sim_data.connect);
-const elem_disp = try mr.prepareField(aa, &sim_data.connect, &sim_data.field.?);
-const elem_field = try mr.prepareField(aa, &sim_data.connect, &sim_data.field.?);
-const elem_uvs = try mr.prepareUVs(aa, &uvs, &sim_data.connect);
+    const elem_coords = try mr.prepareCoords(aa, &sim_data.coords, &sim_data.connect);
+    const elem_disp = try mr.prepareField(aa, &sim_data.connect, &sim_data.field.?);
+    const elem_field = try mr.prepareField(aa, &sim_data.connect, &sim_data.field.?);
+    const elem_uvs = try mr.prepareUVs(aa, &uvs, &sim_data.connect);
 
-const cam_pos = CameraOps.posFillFrameFromRot(
-    &sim_data.coords, pixel_num, pixel_size, focal_leng, rot, fov_scale,
-);
-const camera = Camera.init(
-    pixel_num, pixel_size, cam_pos, rot, 
-    CameraOps.roiCentFromCoords(&sim_data.coords), focal_leng, 2,
-);
+    const cam_pos = CameraOps.posFillFrameFromRot(
+        &sim_data.coords,
+        pixel_num,
+        pixel_size,
+        focal_leng,
+        rot,
+        fov_scale,
+    );
+    const camera = Camera.init(
+        pixel_num,
+        pixel_size,
+        cam_pos,
+        rot,
+        CameraOps.roiCentFromCoords(&sim_data.coords),
+        focal_leng,
+        2,
+    );
 
-const disps = [_]bool{ true, false };
-for (disps) |add_disp| {
-    const d_str = if (add_disp) "dispon" else "dispoff";
-    const mt_name = @tagName(mesh_type);
+    const disps = [_]bool{ true, false };
+    for (disps) |add_disp| {
+        const d_str = if (add_disp) "dispon" else "dispoff";
+        const mt_name = @tagName(mesh_type);
 
-    // --- Flat ShaderInput ---
-    if (shader_filter == .flat or shader_filter == .both) {
-        const c_dir_name = try std.fmt.allocPrint(aa, "{s}_{s}_{s}_flat", .{ case_name, mt_name, d_str });
-        var mesh_input = MeshInput{ 
-            .mesh_type = mesh_type, 
-            .coords = elem_coords, 
-            .disp = if (add_disp) elem_disp else null, 
-            .shader = .{ .flat = .{ .field = elem_field, .bits = 8 } } 
-        };
-
+        // --- Flat ShaderInput ---
+        if (shader_filter == .flat or shader_filter == .both) {
+            const c_dir_name = try std.fmt.allocPrint(aa, "{s}_{s}_{s}_flat", .{ case_name, mt_name, d_str });
+            var mesh_input = MeshInput{ .mesh_type = mesh_type, .coords = elem_coords, .disp = if (add_disp) elem_disp else null, .shader = .{ .nodal = .{ .field = elem_field, .bits = 8 } } };
 
             const config = RasterConfig{ .save_opt = .memory };
             const result = (try zraster.rasterAllFrames(aa, io, &camera, &[_]MeshInput{mesh_input}, config, null)) orelse return error.NoResult;
@@ -164,13 +150,8 @@ for (disps) |add_disp| {
         if (shader_filter == .tex or shader_filter == .both) {
             for (interp_types) |it| {
                 const c_dir_name = try std.fmt.allocPrint(aa, "{s}_{s}_{s}_tex_{s}", .{ case_name, mt_name, d_str, @tagName(it) });
-                var mesh_input = MeshInput{ 
-                    .mesh_type = mesh_type, 
-                    .coords = elem_coords, 
-                    .disp = if (add_disp) elem_disp else null, 
-                    .shader = .{ .tex_u8 = .{ .uvs = elem_uvs, .texture = texture, .interp_type = it } } 
-                };
-                
+                var mesh_input = MeshInput{ .mesh_type = mesh_type, .coords = elem_coords, .disp = if (add_disp) elem_disp else null, .shader = .{ .tex_u8 = .{ .uvs = elem_uvs, .texture = texture, .interp_type = it } } };
+
                 const config = RasterConfig{ .save_opt = .memory };
                 const result = (try zraster.rasterAllFrames(aa, io, &camera, &[_]MeshInput{mesh_input}, config, null)) orelse return error.NoResult;
                 try saveResultToRoot(aa, io, &result, c_dir_name, render_root);

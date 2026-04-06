@@ -94,7 +94,7 @@ pub fn rasterAllFrames(
         if (mesh.disp) |field| {
             num_time = @max(num_time, field.array.dims[dim_time_pre]);
         } else switch (mesh.shader) {
-            .flat, .normals => |s| {
+            .nodal => |s| {
                 num_time = @max(num_time, s.field.array.dims[dim_time_pre]);
             },
             else => {},
@@ -105,8 +105,7 @@ pub fn rasterAllFrames(
     var num_fields: usize = 0;
     for (meshes) |mesh| {
         const mesh_fields = switch (mesh.shader) {
-            .flat => |s| s.field.getFieldsN(),
-            .normals => 3, // Normals are always RGB
+            .nodal => |s| s.field.getFieldsN(),
             .tex_u8, .tex_u16 => 1,
             .tex_rgb_u8, .tex_rgb_u16 => 3,
         };
@@ -132,7 +131,7 @@ pub fn rasterAllFrames(
     for (meshes, 0..) |mesh, ii| {
         flat_global_scaling[ii] = null;
         switch (mesh.shader) {
-            .flat, .normals => |s| {
+            .nodal => |s| {
                 if (s.scale_over == .over_frames) {
                     flat_global_scaling[ii] = imageops.getScalingParamsNDArray(
                         &s.field.array,
@@ -173,7 +172,7 @@ pub fn rasterAllFrames(
             // Apply on-the-fly field scaling for rendering in bits, if required
             var flat_frame_scaling: ?imageops.ScalingParams = null;
             switch (mesh.shader) {
-                .flat, .normals => |s| {
+                .nodal => |s| {
                     if (s.scale_over == .over_frames) {
                         flat_frame_scaling = flat_global_scaling[ii];
                     } else {

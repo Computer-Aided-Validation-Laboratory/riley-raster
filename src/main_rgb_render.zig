@@ -132,7 +132,7 @@ pub fn main() !void {
             .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .flat = .{
+            .shader = .{ .nodal = .{
                 .field = rgb_field,
                 .bits = 8,
                 .scaling = .auto,

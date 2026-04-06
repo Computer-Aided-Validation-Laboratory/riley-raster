@@ -12,8 +12,8 @@ const NDArray = ndarray.NDArray;
 pub const ScaleOver = common.ScaleOver;
 pub const NormalType = common.NormalType;
 pub const MAX_FIELDS = common.MAX_FIELDS;
-pub const FlatInput = common.FlatInput;
-pub const FlatPrepared = common.FlatPrepared;
+pub const NodalInput = common.NodalInput;
+pub const NodalPrepared = common.NodalPrepared;
 pub const TexInput = common.TexInput;
 pub const TexPrepared = common.TexPrepared;
 pub const LocalNodeBuffer = common.LocalNodeBuffer;
@@ -22,11 +22,11 @@ pub const InterpData = common.InterpData;
 pub const ShaderInput = common.ShaderInput;
 pub const ShaderPrepared = common.ShaderPrepared;
 
-pub inline fn fillFlat(
+pub inline fn fillNodal(
     comptime N: usize,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
-    sh: *const FlatPrepared,
+    sh: *const NodalPrepared,
     spx_image_scratch: *MatSlice(f64),
 ) void {
     for (0..ctx_shade.actual_fields) |ff| {
@@ -36,11 +36,11 @@ pub inline fn fillFlat(
     }
 }
 
-pub inline fn fillFlatPerspective(
+pub inline fn fillNodalPerspective(
     comptime N: usize,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
-    sh: *const FlatPrepared,
+    sh: *const NodalPrepared,
     spx_image_scratch: *MatSlice(f64),
 ) void {
     for (0..ctx_shade.actual_fields) |ff| {
@@ -57,11 +57,11 @@ pub inline fn fillFlatPerspective(
     }
 }
 
-pub inline fn fillFlatSIMD(
+pub inline fn fillNodalSIMD(
     comptime N: usize,
     ctx_shade: ShadeContext(N),
     v_weights: [N]@Vector(S, f64),
-    sh: *const FlatPrepared,
+    sh: *const NodalPrepared,
     spx_image_scratch: *MatSlice(f64),
 ) void {
     const v_mul: @Vector(S, f64) = @splat(sh.scale_mul);
@@ -86,13 +86,13 @@ pub inline fn fillFlatSIMD(
     }
 }
 
-pub inline fn fillFlatPerspectiveSIMD(
+pub inline fn fillNodalPerspectiveSIMD(
     comptime N: usize,
     ctx_shade: ShadeContext(N),
     v_weights: [N]@Vector(S, f64),
     v_nodes_inv_z: [N]@Vector(S, f64),
     v_subpx_z: @Vector(S, f64),
-    sh: *const FlatPrepared,
+    sh: *const NodalPrepared,
     spx_image_scratch: *MatSlice(f64),
 ) void {
     const v_mul: @Vector(S, f64) = @splat(sh.scale_mul);

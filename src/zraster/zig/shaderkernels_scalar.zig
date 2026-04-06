@@ -6,13 +6,13 @@ const InterpType = texops.InterpType;
 const common = @import("shaderkernels_common.zig");
 const CoordSpace = common.CoordSpace;
 
-pub fn FlatKernel(comptime N: usize) type {
+pub fn NodalKernel(comptime N: usize) type {
     return struct {
         pub inline fn shade(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext(N),
             interp: shaderops.InterpData(N),
-            shader: *const shaderops.FlatPrepared,
+            shader: *const shaderops.NodalPrepared,
             ctx_perf: anytype,
             spx_image_scratch: *MatSlice(f64),
         ) void {
@@ -24,38 +24,16 @@ pub fn FlatKernel(comptime N: usize) type {
             );
 
             if (comptime coord_space == CoordSpace.clip_px_leng) {
-                shaderops.fillFlat(N, ctx_shade, interp, shader, spx_image_scratch);
+                shaderops.fillNodal(N, ctx_shade, interp, shader, spx_image_scratch);
             } else {
-                shaderops.fillFlatPerspective(N, ctx_shade, interp, shader, spx_image_scratch);
+                shaderops.fillNodalPerspective(
+                    N,
+                    ctx_shade,
+                    interp,
+                    shader,
+                    spx_image_scratch,
+                );
             }
-        }
-    };
-}
-
-pub fn NormalKernel(comptime N: usize) type {
-    return struct {
-        pub inline fn shade(
-            comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext(N),
-            interp: shaderops.InterpData(N),
-            shader: anytype,
-            ctx_perf: anytype,
-            spx_image_scratch: *MatSlice(f64),
-        ) void {
-            _ = shader;
-            _ = coord_space;
-            common.recordDepth(
-                ctx_perf,
-                ctx_shade.global_subx,
-                ctx_shade.global_suby,
-                interp.sub_pixel_z,
-            );
-
-            const n = ctx_shade.local_buf.interpolateNormal(interp.weights);
-
-            spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + 0] = n[0] * 0.5 + 0.5;
-            spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + 1] = n[1] * 0.5 + 0.5;
-            spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + 2] = n[2] * 0.5 + 0.5;
         }
     };
 }

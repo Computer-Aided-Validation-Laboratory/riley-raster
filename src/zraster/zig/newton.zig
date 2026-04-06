@@ -3,6 +3,7 @@ const buildconfig = @import("buildconfig.zig");
 const shapefun = @import("shapefun.zig");
 
 const S = buildconfig.config.simd_vector_width;
+const tol = buildconfig.config.tolerance;
 
 pub const NewtonResult = struct {
     converged: bool,
@@ -44,9 +45,9 @@ pub fn solveInverse(
     deriv_n_xi: *[N]f64,
     deriv_n_eta: *[N]f64,
 ) NewtonResult {
-    const iter_tol = buildconfig.config.tolerance.newton.residual;
-    const det_tol = buildconfig.config.tolerance.newton.determinant;
-    const eps = buildconfig.config.tolerance.newton.parametric_domain;
+    const iter_tol = tol.newton.residual;
+    const det_tol = tol.newton.determinant;
+    const eps = tol.newton.parametric_domain;
     const iter_max: u8 = 10;
 
     var xi = xi_in;
@@ -157,13 +158,13 @@ pub fn solveInverseSIMD(
     v_deriv_n_eta: *[N]@Vector(S, f64),
 ) NewtonResultSIMD {
     const v_iter_tol: @Vector(S, f64) = @splat(
-        buildconfig.config.tolerance.newton.residual,
+        tol.newton.residual,
     );
     const v_det_tol: @Vector(S, f64) = @splat(
-        buildconfig.config.tolerance.newton.determinant,
+        tol.newton.determinant,
     );
     const v_eps: @Vector(S, f64) = @splat(
-        buildconfig.config.tolerance.newton.parametric_domain,
+        tol.newton.parametric_domain,
     );
     const iter_max: u8 = 10;
 

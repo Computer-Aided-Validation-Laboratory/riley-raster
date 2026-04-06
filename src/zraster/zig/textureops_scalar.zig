@@ -2,6 +2,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const print = std.debug.print;
 const buildconfig = @import("buildconfig.zig");
+const tol = buildconfig.config.tolerance;
 const common = @import("textureops_common.zig");
 
 pub const InterpType = common.InterpType;
@@ -20,7 +21,7 @@ fn cubicWeightHorner(x: f64) f64 {
 
 fn quinticWeight(x: f64) f64 {
     const ax = @abs(x);
-    if (ax < buildconfig.config.tolerance.texture.quintic_centre_snap) return 1.0;
+    if (ax < tol.texture.quintic_centre_snap) return 1.0;
     if (ax >= 3.0) return 0.0;
     const pix = std.math.pi * x;
     const pix3 = pix / 3.0;
@@ -119,7 +120,7 @@ fn sample2D(comptime channels: usize, comptime N: usize, comptime use_simd: bool
         }
     }
 
-    const inv_w_sum = if (@abs(w_sum) < buildconfig.config.tolerance.texture.weight_sum)
+    const inv_w_sum = if (@abs(w_sum) < tol.texture.weight_sum)
         1.0
     else
         1.0 / w_sum;

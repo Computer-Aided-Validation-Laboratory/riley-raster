@@ -1,5 +1,6 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const tol = buildconfig.config.tolerance;
 const rops = @import("rasterops.zig");
 const common = @import("hull_common.zig");
 const Camera = @import("camera.zig").Camera;
@@ -31,7 +32,7 @@ pub fn Tessellation(comptime NT: usize) type {
         triangles: [NT]TessTriangle,
 
         pub inline fn isIn(self: @This(), px: f64, py: f64) HullResult {
-            const eps = buildconfig.config.tolerance.hull.simd_inclusion;
+            const eps = tol.hull.simd_inclusion;
             inline for (self.triangles) |tri| {
                 const e0 = rops.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], px, py);
                 const e1 = rops.edgeFun3(tri.x[1], tri.y[1], tri.x[2], tri.y[2], px, py);
@@ -58,7 +59,7 @@ pub fn Tessellation(comptime NT: usize) type {
             v_px: @Vector(S, f64),
             v_py: @Vector(S, f64),
         ) HullResultSIMD {
-            const eps = buildconfig.config.tolerance.hull.simd_inclusion;
+            const eps = tol.hull.simd_inclusion;
             const v_m_eps: @Vector(S, f64) = @splat(-eps);
             var v_isIn: @Vector(S, bool) = @splat(false);
             var v_guess_xi: @Vector(S, f64) = @splat(0.0);

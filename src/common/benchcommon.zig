@@ -291,14 +291,14 @@ pub fn runBenchmark(
     switch (shader_type) {
         .flat_grey => {
             num_out_fields = 1;
-            shader = .{ .flat = .{
+            shader = .{ .nodal = .{
                 .field = .{ .array = field_raw, .array_mem = field_raw.elems },
                 .scaling = .auto,
             } };
         },
         .flat_rgb => {
             num_out_fields = 3;
-            shader = .{ .flat = .{
+            shader = .{ .nodal = .{
                 .field = .{ .array = field_raw, .array_mem = field_raw.elems },
                 .scaling = .auto,
             } };

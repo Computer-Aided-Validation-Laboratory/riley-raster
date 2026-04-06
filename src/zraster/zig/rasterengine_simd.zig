@@ -2,6 +2,7 @@ const std = @import("std");
 const Camera = @import("camera.zig").Camera;
 const buildconfig = @import("buildconfig.zig");
 const S = buildconfig.config.simd_vector_width;
+const tol = buildconfig.config.tolerance;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const hull = @import("hull.zig");
@@ -21,7 +22,7 @@ const mr = @import("meshraster.zig");
 const MeshPrepared = mr.MeshPrepared;
 const MeshType = mr.MeshType;
 const Shader = mr.Shader;
-const FlatPrepared = shadekerns.shaderops.FlatPrepared;
+const NodalPrepared = shadekerns.shaderops.NodalPrepared;
 const TexPrepared = shadekerns.shaderops.TexPrepared;
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
@@ -155,14 +156,14 @@ pub fn rasterScene(
                     };
                     const N = GK.nodes_num;
                     const mesh_fields = switch (mesh.shader) {
-                        .flat, .normals => |s| s.elem_field.dims[2],
+                        .nodal => |s| s.elem_field.dims[2],
                         .tex_u8, .tex_u16 => 1,
                         .tex_rgb_u8, .tex_rgb_u16 => 3,
                     };
 
                     switch (mesh.shader) {
-                        .flat => |*shader| {
-                            const SK = shadekerns.FlatKernel(N);
+                        .nodal => |*shader| {
+                            const SK = shadekerns.NodalKernel(N);
                             var local_node_buf: shadekerns.shaderops.LocalNodeBuffer(N) = .{};
 
                             const tt = @min(ctx_rast.frame_ind, shader.elem_field.dims[0] - 1);
@@ -177,34 +178,7 @@ pub fn rasterScene(
                                 const prep_idx = en.map[target.overlap.elem_idx];
                                 local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
                             }
-                            shaded_px += try RasterPass(GK, SK, FlatPrepared).render(
-                                report_mode,
-                                ctx_rast,
-                                target,
-                                input,
-                                mesh,
-                                shader,
-                                scratch,
-                                &local_node_buf,
-                            );
-                        },
-                        .normals => |*shader| {
-                            const SK = shadekerns.NormalKernel(N);
-                            var local_node_buf: shadekerns.shaderops.LocalNodeBuffer(N) = .{};
-
-                            const tt = @min(ctx_rast.frame_ind, shader.elem_field.dims[0] - 1);
-                            const start_idx = shader.elem_field.getFlatInd(&[_]usize{ tt, target.overlap.elem_idx, 0, 0 });
-
-                            local_node_buf.load(
-                                shader.elem_field,
-                                start_idx,
-                                mesh_fields,
-                            );
-                            if (shader.elem_normals) |en| {
-                                const prep_idx = en.map[target.overlap.elem_idx];
-                                local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
-                            }
-                            shaded_px += try RasterPass(GK, SK, FlatPrepared).render(
+                            shaded_px += try RasterPass(GK, SK, NodalPrepared).render(
                                 report_mode,
                                 ctx_rast,
                                 target,
@@ -360,7 +334,7 @@ pub fn RasterPass(
     comptime ShaderData: type,
 ) type {
     const PreparedShader = switch (ShaderData) {
-        shadekerns.shaderops.FlatInput, shadekerns.shaderops.FlatPrepared => shadekerns.shaderops.FlatPrepared,
+        shadekerns.shaderops.NodalInput, shadekerns.shaderops.NodalPrepared => shadekerns.shaderops.NodalPrepared,
         shadekerns.shaderops.TexInput(u8, 1), shadekerns.shaderops.TexPrepared(u8, 1) => shadekerns.shaderops.TexPrepared(u8, 1),
         shadekerns.shaderops.TexInput(u16, 1), shadekerns.shaderops.TexPrepared(u16, 1) => shadekerns.shaderops.TexPrepared(u16, 1),
         shadekerns.shaderops.TexInput(u8, 3), shadekerns.shaderops.TexPrepared(u8, 3) => shadekerns.shaderops.TexPrepared(u8, 3),
@@ -390,7 +364,7 @@ pub fn RasterPass(
             const x_off = 0.5 * @as(f64, @floatFromInt(ctx_rast.camera.pixels_num[0]));
             const y_off = 0.5 * @as(f64, @floatFromInt(ctx_rast.camera.pixels_num[1]));
 
-            const nodes = try rops.loadVec3SlicesFromElemArray(
+            const nodes = try rops.loadElemVec3Slices(
                 Geometry.nodes_num,
                 f64,
                 input.coords,
@@ -514,7 +488,7 @@ pub fn RasterPass(
                 v_weights_row[ii] += v_steps.x07[ii];
             }
 
-            const edge_tol = buildconfig.config.tolerance.edge.simd_raster_weight_inclusion;
+            const edge_tol = tol.edge.simd_raster_weight_inclusion;
             const v_edge_tol: @Vector(S, f64) = @splat(-edge_tol);
 
             for (bounds.start_y..bounds.end_y) |scratch_y| {
@@ -973,7 +947,7 @@ pub fn RasterPass(
                                 target.tile.y_px_min + scratch_y / sub_samp,
                             );
 
-                            if (comptime ShaderKernel == shadekerns.FlatKernel(N)) {
+                            if (comptime ShaderKernel == shadekerns.NodalKernel(N)) {
                                 ShaderKernel.shade(
                                     Geometry.coord_space,
                                     .{
@@ -1128,7 +1102,7 @@ pub fn RasterPass(
                                 target.tile.y_px_min + scratch_y / sub_samp,
                             );
 
-                            if (comptime ShaderKernel == shadekerns.FlatKernel(N)) {
+                            if (comptime ShaderKernel == shadekerns.NodalKernel(N)) {
                                 ShaderKernel.shade(
                                     Geometry.coord_space,
                                     .{
