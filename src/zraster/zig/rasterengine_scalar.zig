@@ -539,7 +539,7 @@ pub fn RasterPass(
                 nodes_inv_z[nn] = 1.0 / nodes.z[nn];
             }
 
-            const geometry_state = if (@hasDecl(Geometry, "getInvElemArea"))
+            const geometry_state = if (comptime Geometry.strategy == .newton) {} else if (@hasDecl(Geometry, "getInvElemArea"))
                 Geometry.getInvElemArea(nodes)
             else if (@hasDecl(Geometry, "getBilinearParams"))
                 Geometry.getBilinearParams(nodes)
@@ -597,14 +597,23 @@ pub fn RasterPass(
                         );
                     }
 
-                    const result = Geometry.solveWeights(
-                        nodes,
-                        subpx_x,
-                        subpx_y,
-                        domain.x_off,
-                        domain.y_off,
-                        geometry_state,
-                    );
+                    const result = if (comptime Geometry.strategy == .newton)
+                        Geometry.solveWeights(
+                            nodes,
+                            subpx_x,
+                            subpx_y,
+                            domain.x_off,
+                            domain.y_off,
+                        )
+                    else
+                        Geometry.solveWeights(
+                            nodes,
+                            subpx_x,
+                            subpx_y,
+                            domain.x_off,
+                            domain.y_off,
+                            geometry_state,
+                        );
 
                     if (result.weights) |weights| {
                         const inv_z = Geometry.calcInvZ(nodes, weights);

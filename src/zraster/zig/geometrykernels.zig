@@ -65,6 +65,14 @@ pub const NewtonParams = struct {
     w_const: f64,
 };
 
+pub fn TriWeightStepSIMD(comptime N: usize) type {
+    return struct {
+        dx: [N]@Vector(S, f64),
+        dy: [N]@Vector(S, f64),
+        x07: [N]@Vector(S, f64),
+    };
+}
+
 pub fn Tri3Kernel() type {
     return struct {
         const Self = @This();
@@ -183,11 +191,7 @@ pub fn Tri3Kernel() type {
             nodes: Vec3Slices(f64),
             inv_area: f64,
             step_size: f64,
-        ) struct {
-            dx: [nodes_num]@Vector(S, f64),
-            dy: [nodes_num]@Vector(S, f64),
-            x07: [nodes_num]@Vector(S, f64),
-        } {
+        ) TriWeightStepSIMD(nodes_num) {
             const dx_scalar = [_]f64{
                 (nodes.y[2] - nodes.y[1]) * step_size * inv_area,
                 (nodes.y[0] - nodes.y[2]) * step_size * inv_area,
@@ -318,11 +322,7 @@ pub fn Tri3OptKernel() type {
             nodes: Vec3Slices(f64),
             inv_area: f64,
             step_size: f64,
-        ) struct {
-            dx: [nodes_num]@Vector(S, f64),
-            dy: [nodes_num]@Vector(S, f64),
-            x07: [nodes_num]@Vector(S, f64),
-        } {
+        ) TriWeightStepSIMD(nodes_num) {
             const dx_scalar = [_]f64{
                 (nodes.y[2] - nodes.y[1]) * step_size * inv_area,
                 (nodes.y[0] - nodes.y[2]) * step_size * inv_area,
@@ -385,10 +385,7 @@ pub fn Tri6Kernel() type {
             pixel_y: f64,
             x_offset: f64,
             y_offset: f64,
-            state: anytype,
         ) GeometryResult(nodes_num) {
-            _ = state;
-
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
             const xi_guess_def: f64 = 1.0 / 3.0;
@@ -431,10 +428,7 @@ pub fn Tri6Kernel() type {
             v_eta_guess: @Vector(S, f64),
             x_offset: f64,
             y_offset: f64,
-            state: anytype,
         ) GeometryResultSIMD(nodes_num) {
-            _ = state;
-
             const v_target_x = v_pixel_x - @as(@Vector(S, f64), @splat(x_offset));
             const v_target_y = v_pixel_y - @as(@Vector(S, f64), @splat(y_offset));
 
@@ -650,24 +644,13 @@ pub fn Quad4NewtonKernel() type {
             return @max(@abs(xi) - 1.0, 0.0) + @max(@abs(eta) - 1.0, 0.0);
         }
 
-        pub inline fn getNewtonParams(nodes: Vec3Slices(f64)) NewtonParams {
-            return .{
-                .w_u_coeff = nodes.z[1] - nodes.z[0],
-                .w_v_coeff = nodes.z[3] - nodes.z[0],
-                .w_const = nodes.z[0],
-            };
-        }
-
         pub inline fn solveWeights(
             nodes: Vec3Slices(f64),
             pixel_x: f64,
             pixel_y: f64,
             x_offset: f64,
             y_offset: f64,
-            state: anytype,
         ) GeometryResult(nodes_num) {
-            _ = state;
-
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
 
@@ -710,10 +693,7 @@ pub fn Quad4NewtonKernel() type {
             v_eta_guess: @Vector(S, f64),
             x_offset: f64,
             y_offset: f64,
-            state: anytype,
         ) GeometryResultSIMD(nodes_num) {
-            _ = state;
-
             const v_target_x = v_pixel_x - @as(@Vector(S, f64), @splat(x_offset));
             const v_target_y = v_pixel_y - @as(@Vector(S, f64), @splat(y_offset));
 
@@ -774,24 +754,13 @@ pub fn Quad89Kernel(comptime N: usize) type {
             return @max(@abs(xi) - 1.0, 0.0) + @max(@abs(eta) - 1.0, 0.0);
         }
 
-        pub inline fn getNewtonParams(nodes: Vec3Slices(f64)) NewtonParams {
-            return .{
-                .w_u_coeff = nodes.z[1] - nodes.z[0],
-                .w_v_coeff = nodes.z[3] - nodes.z[0],
-                .w_const = nodes.z[0],
-            };
-        }
-
         pub inline fn solveWeights(
             nodes: Vec3Slices(f64),
             pixel_x: f64,
             pixel_y: f64,
             x_offset: f64,
             y_offset: f64,
-            state: anytype,
         ) GeometryResult(nodes_num) {
-            _ = state;
-
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
 
@@ -835,10 +804,7 @@ pub fn Quad89Kernel(comptime N: usize) type {
             v_eta_guess: @Vector(S, f64),
             x_offset: f64,
             y_offset: f64,
-            state: anytype,
         ) GeometryResultSIMD(nodes_num) {
-            _ = state;
-
             const v_target_x = v_pixel_x - @as(@Vector(S, f64), @splat(x_offset));
             const v_target_y = v_pixel_y - @as(@Vector(S, f64), @splat(y_offset));
 

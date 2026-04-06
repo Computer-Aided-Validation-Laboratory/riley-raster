@@ -768,13 +768,6 @@ pub fn RasterPass(
 
             // Pass 2: Vectorized Solving in chunks of 8
             const candidate_block_count = @divFloor(candidate_count + 7, 8);
-            const geometry_state = if (@hasDecl(Geometry, "getNewtonParams"))
-                Geometry.getNewtonParams(nodes)
-            else if (@hasDecl(Geometry, "getInvElemArea"))
-                Geometry.getInvElemArea(nodes)
-            else if (@hasDecl(Geometry, "getBilinearParams"))
-                Geometry.getBilinearParams(nodes)
-            else {};
             const default_guess = if (@hasDecl(Geometry, "getNewtonGuess"))
                 Geometry.getNewtonGuess()
             else
@@ -812,7 +805,6 @@ pub fn RasterPass(
                     v_eta_guess,
                     domain.x_off,
                     domain.y_off,
-                    geometry_state,
                 );
 
                 const v_conv_mask = v_chunk_mask & result.mask;
