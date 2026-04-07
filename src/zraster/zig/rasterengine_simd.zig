@@ -63,8 +63,6 @@ pub fn rasterScene(
     raster_hulls: []const ?NDArray(f64),
     image_out_arr: *NDArray(f64),
 ) !void {
-    //@setFloatMode(.optimized);
-
     const fields_num = image_out_arr.dims[0];
 
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
@@ -157,10 +155,8 @@ pub fn rasterScene(
 
             const target = rops.OverlapTarget{ .tile = tile, .overlap = ov };
 
-            const rhull_ptr = if (ov.mesh_idx < raster_hulls.len)
-                raster_hulls[ov.mesh_idx]
-            else
-                null;
+            std.debug.assert(ov.mesh_idx < raster_hulls.len);
+            const rhull_ptr = raster_hulls[ov.mesh_idx];
 
             const input = rops.MeshInput{
                 .coords = &mesh.coords,

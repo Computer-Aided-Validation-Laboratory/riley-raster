@@ -13,7 +13,6 @@ const ReportMode = report.ReportMode;
 const Timestamp = std.Io.Clock.Timestamp;
 const common = @import("rasterengine_common.zig");
 
-const spec = @import("zraster.zig");
 const mr = @import("meshraster.zig");
 const MeshPrepared = mr.MeshPrepared;
 const MeshType = mr.MeshType;
@@ -42,8 +41,6 @@ pub fn rasterScene(
     raster_hulls: []const ?NDArray(f64),
     image_out_arr: *NDArray(f64),
 ) !void {
-    //@setFloatMode(.optimized);
-
     const fields_num = image_out_arr.dims[0];
 
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
@@ -86,19 +83,15 @@ pub fn rasterScene(
 
             const target = rops.OverlapTarget{ .tile = tile, .overlap = ov };
 
-            const rhull_ptr = if (ov.mesh_idx < raster_hulls.len)
-                raster_hulls[ov.mesh_idx]
-            else
-                null;
-
+            std.debug.assert(ov.mesh_idx < raster_hulls.len);
             const input = rops.MeshInput{
                 .coords = &mesh.coords,
-                .hull = if (rhull_ptr) |*h| h else null,
+                .hull = if (raster_hulls[ov.mesh_idx]) |*h| h else null,
             };
 
             switch (mesh.mesh_type) {
-                inline else => |mesh_tag| {
-                    const GK = comptime switch (mesh_tag) {
+                inline else => |geom_tag| {
+                    const GK = comptime switch (geom_tag) {
                         .tri3 => geomkerns.Tri3Kernel(),
                         .tri3opt => geomkerns.Tri3OptKernel(),
                         .tri6 => geomkerns.Tri6Kernel(),
@@ -118,22 +111,24 @@ pub fn rasterScene(
                     switch (mesh.shader) {
                         .nodal => |*shader| {
                             const SK = shadekerns.NodalKernel(N);
-                            var local_node_buf: shaderops.LocalNodeBuffer(N) = .{};
-
+                            
                             const tt = @min(ctx_rast.frame_ind, shader.elem_field.dims[0] - 1);
                             const start_idx = shader.elem_field.getFlatInd(
                                 &[_]usize{ tt, target.overlap.elem_idx, 0, 0 },
                             );
 
+                            var local_node_buf: shaderops.LocalNodeBuffer(N) = .{};
                             local_node_buf.load(
                                 shader.elem_field,
                                 start_idx,
                                 mesh_fields,
                             );
+                            
                             if (shader.elem_normals) |en| {
                                 const prep_idx = en.map[target.overlap.elem_idx];
                                 local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
                             }
+                            
                             shaded_px += try RasterPass(GK, SK, NodalPrepared).render(
                                 report_mode,
                                 ctx_rast,
@@ -147,6 +142,7 @@ pub fn rasterScene(
                         },
                         .tex_u8 => |*shader| {
                             const SK = shadekerns.TexKernel(N, u8, 1);
+                            
                             var local_node_buf: shaderops.LocalNodeBuffer(N) = .{};
                             local_node_buf.load(
                                 shader.elem_uvs,
@@ -172,9 +168,8 @@ pub fn rasterScene(
                         },
                         .tex_u16 => |*shader| {
                             const SK = shadekerns.TexKernel(N, u16, 1);
-
+                            
                             var local_node_buf: shaderops.LocalNodeBuffer(N) = .{};
-
                             local_node_buf.load(
                                 shader.elem_uvs,
                                 target.overlap.elem_idx * 2 * N,
