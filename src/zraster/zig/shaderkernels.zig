@@ -4,6 +4,5 @@ const impl = if (cfg.simd == .on)
 else
     @import("shaderkernels_scalar.zig");
 
-pub const shaderops = @import("shaderops.zig");
 pub const NodalKernel = impl.NodalKernel;
 pub const TexKernel = impl.TexKernel;

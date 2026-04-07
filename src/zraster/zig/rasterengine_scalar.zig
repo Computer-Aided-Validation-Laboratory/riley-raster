@@ -42,7 +42,7 @@ pub fn rasterScene(
     raster_hulls: []const ?NDArray(f64),
     image_out_arr: *NDArray(f64),
 ) !void {
-    @setFloatMode(.optimized);
+    //@setFloatMode(.optimized);
 
     const fields_num = image_out_arr.dims[0];
 

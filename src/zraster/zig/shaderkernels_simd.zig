@@ -1,6 +1,6 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
-pub const shaderops = @import("shaderops.zig");
+const shaderops = @import("shaderops.zig");
 const report = @import("report.zig");
 const texops = @import("textureops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;

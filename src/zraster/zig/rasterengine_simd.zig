@@ -23,8 +23,9 @@ const mr = @import("meshraster.zig");
 const MeshPrepared = mr.MeshPrepared;
 const MeshType = mr.MeshType;
 const Shader = mr.Shader;
-const NodalPrepared = shadekerns.shaderops.NodalPrepared;
-const TexPrepared = shadekerns.shaderops.TexPrepared;
+const shaderops = @import("shaderops.zig");
+const NodalPrepared = shaderops.NodalPrepared;
+const TexPrepared = shaderops.TexPrepared;
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
 
@@ -62,7 +63,7 @@ pub fn rasterScene(
     raster_hulls: []const ?NDArray(f64),
     image_out_arr: *NDArray(f64),
 ) !void {
-    @setFloatMode(.optimized);
+    //@setFloatMode(.optimized);
 
     const fields_num = image_out_arr.dims[0];
 
@@ -187,7 +188,7 @@ pub fn rasterScene(
                     switch (mesh.shader) {
                         .nodal => |*shader| {
                             const SK = shadekerns.NodalKernel(N);
-                            var local_node_buf: shadekerns.shaderops.LocalNodeBuffer(N) = .{};
+                            var local_node_buf: shaderops.LocalNodeBuffer(N) = .{};
 
                             const tt = @min(ctx_rast.frame_ind, shader.elem_field.dims[0] - 1);
                             const start_idx = shader.elem_field.getFlatInd(
@@ -216,7 +217,7 @@ pub fn rasterScene(
                         },
                         .tex_u8 => |*shader| {
                             const SK = shadekerns.TexKernel(N, u8, 1);
-                            var local_node_buf: shadekerns.shaderops.LocalNodeBuffer(N) = .{};
+                            var local_node_buf: shaderops.LocalNodeBuffer(N) = .{};
                             local_node_buf.load(
                                 shader.elem_uvs,
                                 target.overlap.elem_idx * 2 * N,
@@ -239,7 +240,7 @@ pub fn rasterScene(
                         },
                         .tex_u16 => |*shader| {
                             const SK = shadekerns.TexKernel(N, u16, 1);
-                            var local_node_buf: shadekerns.shaderops.LocalNodeBuffer(N) = .{};
+                            var local_node_buf: shaderops.LocalNodeBuffer(N) = .{};
                             local_node_buf.load(
                                 shader.elem_uvs,
                                 target.overlap.elem_idx * 2 * N,
@@ -262,7 +263,7 @@ pub fn rasterScene(
                         },
                         .tex_rgb_u8 => |*shader| {
                             const SK = shadekerns.TexKernel(N, u8, 3);
-                            var local_node_buf: shadekerns.shaderops.LocalNodeBuffer(N) = .{};
+                            var local_node_buf: shaderops.LocalNodeBuffer(N) = .{};
                             local_node_buf.load(
                                 shader.elem_uvs,
                                 target.overlap.elem_idx * 2 * N,
@@ -285,7 +286,7 @@ pub fn rasterScene(
                         },
                         .tex_rgb_u16 => |*shader| {
                             const SK = shadekerns.TexKernel(N, u16, 3);
-                            var local_node_buf: shadekerns.shaderops.LocalNodeBuffer(N) = .{};
+                            var local_node_buf: shaderops.LocalNodeBuffer(N) = .{};
                             local_node_buf.load(
                                 shader.elem_uvs,
                                 target.overlap.elem_idx * 2 * N,
@@ -358,7 +359,7 @@ pub fn RasterPass(
     comptime ShaderKernel: type,
     comptime ShaderData: type,
 ) type {
-    const sops = shadekerns.shaderops;
+    const sops = shaderops;
     const PreparedShader = switch (ShaderData) {
         sops.NodalInput, sops.NodalPrepared => sops.NodalPrepared,
         sops.TexInput(u8, 1), sops.TexPrepared(u8, 1) => blk: {
@@ -385,7 +386,7 @@ pub fn RasterPass(
             mesh: *const MeshPrepared,
             shader: *const PreparedShader,
             scratch: ScratchBuffers,
-            local_buf: *const shadekerns.shaderops.LocalNodeBuffer(Geometry.nodes_num),
+            local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
         ) !u64 {
             _ = mesh;
             const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
@@ -501,7 +502,7 @@ pub fn RasterPass(
             nodes: Vec3Slices(f64),
             shader: anytype,
             scratch: ScratchBuffers,
-            local_buf: *const shadekerns.shaderops.LocalNodeBuffer(Geometry.nodes_num),
+            local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
         ) !u64 {
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
@@ -645,7 +646,7 @@ pub fn RasterPass(
             nodes: Vec3Slices(f64),
             shader: anytype,
             scratch: ScratchBuffers,
-            local_buf: *const shadekerns.shaderops.LocalNodeBuffer(Geometry.nodes_num),
+            local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
         ) !u64 {
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
@@ -975,7 +976,7 @@ pub fn RasterPass(
             nodes: Vec3Slices(f64),
             shader: *const PreparedShader,
             scratch: ScratchBuffers,
-            local_buf: *const shadekerns.shaderops.LocalNodeBuffer(Geometry.nodes_num),
+            local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
         ) !u64 {
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
@@ -1105,7 +1106,7 @@ pub fn RasterPass(
             nodes: Vec3Slices(f64),
             shader: *const PreparedShader,
             scratch: ScratchBuffers,
-            local_buf: *const shadekerns.shaderops.LocalNodeBuffer(Geometry.nodes_num),
+            local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
         ) !u64 {
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
