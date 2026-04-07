@@ -79,17 +79,17 @@ pub fn rasterScene(
         const overlaps = tiling.overlaps[overlap_start..overlap_end];
 
         for (overlaps) |ov| {
-            const mesh = &meshes[ov.mesh_idx];
+            const mesh_ptr = &meshes[ov.mesh_idx];
 
-            const target = rops.OverlapTarget{ .tile = tile, .overlap = ov };
+            const target = common.OverlapTarget{ .tile = tile, .overlap = ov };
 
             std.debug.assert(ov.mesh_idx < raster_hulls.len);
-            const input = rops.MeshInput{
-                .coords = &mesh.coords,
+            const mesh_in = rops.MeshInput{
+                .coords = &mesh_ptr.coords,
                 .hull = if (raster_hulls[ov.mesh_idx]) |*h| h else null,
             };
 
-            switch (mesh.mesh_type) {
+            switch (mesh_ptr.mesh_type) {
                 inline else => |geom_tag| {
                     const GK = comptime switch (geom_tag) {
                         .tri3 => geomkerns.Tri3Kernel(),
@@ -102,13 +102,13 @@ pub fn rasterScene(
                     };
                     const N = GK.nodes_num;
 
-                    const mesh_fields = switch (mesh.shader) {
+                    const mesh_fields = switch (mesh_ptr.shader) {
                         .nodal => |s| s.elem_field.dims[2],
                         .tex_u8, .tex_u16 => 1,
                         .tex_rgb_u8, .tex_rgb_u16 => 3,
                     };
 
-                    switch (mesh.shader) {
+                    switch (mesh_ptr.shader) {
                         .nodal => |*shader| {
                             const SK = shadekerns.NodalKernel(N);
                             
@@ -133,8 +133,7 @@ pub fn rasterScene(
                                 report_mode,
                                 ctx_rast,
                                 target,
-                                input,
-                                mesh,
+                                mesh_in,
                                 shader,
                                 scratch,
                                 &local_node_buf,
@@ -159,8 +158,7 @@ pub fn rasterScene(
                                 report_mode,
                                 ctx_rast,
                                 target,
-                                input,
-                                mesh,
+                                mesh_in,
                                 shader,
                                 scratch,
                                 &local_node_buf,
@@ -185,8 +183,7 @@ pub fn rasterScene(
                                 report_mode,
                                 ctx_rast,
                                 target,
-                                input,
-                                mesh,
+                                mesh_in,
                                 shader,
                                 scratch,
                                 &local_node_buf,
@@ -211,8 +208,7 @@ pub fn rasterScene(
                                 report_mode,
                                 ctx_rast,
                                 target,
-                                input,
-                                mesh,
+                                mesh_in,
                                 shader,
                                 scratch,
                                 &local_node_buf,
@@ -237,8 +233,7 @@ pub fn rasterScene(
                                 report_mode,
                                 ctx_rast,
                                 target,
-                                input,
-                                mesh,
+                                mesh_in,
                                 shader,
                                 scratch,
                                 &local_node_buf,
@@ -305,15 +300,13 @@ pub fn RasterPass(
         pub fn render(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext(report_mode),
-            target: rops.OverlapTarget,
+            target: common.OverlapTarget,
             input: rops.MeshInput,
-            mesh: *const MeshPrepared,
             shader: *const PreparedShader,
             scratch: ScratchBuffers,
             local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
         ) !u64 {
-            _ = mesh;
-
+ 
             const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
             const subpx_tile_size = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp;
 
@@ -392,7 +385,7 @@ pub fn RasterPass(
         fn rasterIncremental(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext(report_mode),
-            target: rops.OverlapTarget,
+            target: common.OverlapTarget,
             domain: SubpxDomain,
             bounds: RasterBounds,
             nodes: Vec3Slices(f64),
@@ -461,7 +454,7 @@ pub fn RasterPass(
                                         .frame_index = ctx_rast.frame_ind,
                                         .elem_index = target.overlap.elem_idx,
                                         .fields_num = fields_num,
-                                        .actual_fields = fields_num,
+                                        .actual_fields = @intCast(fields_num),
                                         .idx = index,
                                         .global_subx = global_subx,
                                         .global_suby = global_suby,
@@ -483,7 +476,7 @@ pub fn RasterPass(
                                         .frame_index = ctx_rast.frame_ind,
                                         .elem_index = target.overlap.elem_idx,
                                         .fields_num = fields_num,
-                                        .actual_fields = fields_num,
+                                        .actual_fields = @intCast(fields_num),
                                         .idx = index,
                                         .global_subx = global_subx,
                                         .global_suby = global_suby,
@@ -515,7 +508,7 @@ pub fn RasterPass(
         fn rasterDirect(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext(report_mode),
-            target: rops.OverlapTarget,
+            target: common.OverlapTarget,
             input: rops.MeshInput,
             domain: SubpxDomain,
             bounds: RasterBounds,
@@ -647,7 +640,7 @@ pub fn RasterPass(
                                         .frame_index = ctx_rast.frame_ind,
                                         .elem_index = target.overlap.elem_idx,
                                         .fields_num = fields_num,
-                                        .actual_fields = fields_num,
+                                        .actual_fields = @intCast(fields_num),
                                         .idx = index,
                                         .global_subx = global_subx,
                                         .global_suby = global_suby,
@@ -669,7 +662,7 @@ pub fn RasterPass(
                                         .frame_index = ctx_rast.frame_ind,
                                         .elem_index = target.overlap.elem_idx,
                                         .fields_num = fields_num,
-                                        .actual_fields = fields_num,
+                                        .actual_fields = @intCast(fields_num),
                                         .idx = index,
                                         .global_subx = global_subx,
                                         .global_suby = global_suby,

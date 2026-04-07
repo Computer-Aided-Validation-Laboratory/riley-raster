@@ -1,3 +1,10 @@
+const rops = @import("rasterops.zig");
+
+pub const OverlapTarget = struct {
+    tile: rops.ActiveTile,
+    overlap: rops.OverlapBBox,
+};
+
 pub const SubpxDomain = struct {
     step: f64,
     offset: f64,

@@ -68,6 +68,7 @@ pub fn rasterScene(
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     const subpx_tile_size: usize = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp;
     const subpx_tile_total = subpx_tile_size * subpx_tile_size;
+    // Round up to the nearest multiple of 8 for padding
     const subpx_tile_total_padded = (subpx_tile_total + 7) & ~@as(usize, 7);
 
     const alignment = std.mem.Alignment.@"64";
@@ -153,7 +154,7 @@ pub fn rasterScene(
         for (overlaps) |ov| {
             const mesh = &meshes[ov.mesh_idx];
 
-            const target = rops.OverlapTarget{ .tile = tile, .overlap = ov };
+            const target = common.OverlapTarget{ .tile = tile, .overlap = ov };
 
             std.debug.assert(ov.mesh_idx < raster_hulls.len);
             const rhull_ptr = raster_hulls[ov.mesh_idx];
@@ -377,7 +378,7 @@ pub fn RasterPass(
         pub fn render(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext(report_mode),
-            target: rops.OverlapTarget,
+            target: common.OverlapTarget,
             input: rops.MeshInput,
             mesh: *const MeshPrepared,
             shader: *const PreparedShader,
@@ -491,7 +492,7 @@ pub fn RasterPass(
         fn rasterDirectSIMD(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext(report_mode),
-            target: rops.OverlapTarget,
+            target: common.OverlapTarget,
             domain: SubpxDomain,
             bounds: RasterBounds,
             original_start_x: usize,
@@ -603,7 +604,7 @@ pub fn RasterPass(
                                     .frame_index = ctx_rast.frame_ind,
                                     .elem_index = target.overlap.elem_idx,
                                     .fields_num = fields_num,
-                                    .actual_fields = fields_num,
+                                    .actual_fields = @intCast(fields_num),
                                     .idx = index,
                                     .global_subx = 0,
                                     .global_suby = 0,
@@ -634,7 +635,7 @@ pub fn RasterPass(
         fn rasterNewtonSIMD(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext(report_mode),
-            target: rops.OverlapTarget,
+            target: common.OverlapTarget,
             input: *const rops.MeshInput,
             domain: SubpxDomain,
             bounds: RasterBounds,
@@ -940,7 +941,7 @@ pub fn RasterPass(
                                     .frame_index = ctx_rast.frame_ind,
                                     .elem_index = target.overlap.elem_idx,
                                     .fields_num = fields_num,
-                                    .actual_fields = fields_num,
+                                    .actual_fields = @intCast(fields_num),
                                     .idx = index,
                                     .global_subx = target.tile.x_px_min * sub_samp + scratch_x,
                                     .global_suby = target.tile.y_px_min * sub_samp + scratch_y,
@@ -966,7 +967,7 @@ pub fn RasterPass(
         fn rasterIncrementalSIMD(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext(report_mode),
-            target: rops.OverlapTarget,
+            target: common.OverlapTarget,
             domain: SubpxDomain,
             bounds: RasterBounds,
             nodes: Vec3Slices(f64),
@@ -1041,7 +1042,7 @@ pub fn RasterPass(
                                         .frame_index = ctx_rast.frame_ind,
                                         .elem_index = target.overlap.elem_idx,
                                         .fields_num = fields_num,
-                                        .actual_fields = fields_num,
+                                        .actual_fields = @intCast(fields_num),
                                         .idx = index,
                                         .global_subx = global_subx,
                                         .global_suby = global_suby,
@@ -1063,7 +1064,7 @@ pub fn RasterPass(
                                         .frame_index = ctx_rast.frame_ind,
                                         .elem_index = target.overlap.elem_idx,
                                         .fields_num = fields_num,
-                                        .actual_fields = fields_num,
+                                        .actual_fields = @intCast(fields_num),
                                         .idx = index,
                                         .global_subx = global_subx,
                                         .global_suby = global_suby,
@@ -1095,7 +1096,7 @@ pub fn RasterPass(
         fn rasterDirect(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext(report_mode),
-            target: rops.OverlapTarget,
+            target: common.OverlapTarget,
             input: rops.MeshInput,
             domain: SubpxDomain,
             bounds: RasterBounds,
@@ -1214,7 +1215,7 @@ pub fn RasterPass(
                                         .frame_index = ctx_rast.frame_ind,
                                         .elem_index = target.overlap.elem_idx,
                                         .fields_num = fields_num,
-                                        .actual_fields = fields_num,
+                                        .actual_fields = @intCast(fields_num),
                                         .idx = index,
                                         .global_subx = global_subx,
                                         .global_suby = global_suby,
@@ -1236,7 +1237,7 @@ pub fn RasterPass(
                                         .frame_index = ctx_rast.frame_ind,
                                         .elem_index = target.overlap.elem_idx,
                                         .fields_num = fields_num,
-                                        .actual_fields = fields_num,
+                                        .actual_fields = @intCast(fields_num),
                                         .idx = index,
                                         .global_subx = global_subx,
                                         .global_suby = global_suby,

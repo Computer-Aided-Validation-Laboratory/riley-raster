@@ -29,7 +29,7 @@ pub inline fn fillNodal(
     sh: *const NodalPrepared,
     spx_image_scratch: *MatSlice(f64),
 ) void {
-    for (0..ctx_shade.actual_fields) |ff| {
+    for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
         const vs = ctx_shade.local_buf.interpolate(ff, interp.weights);
         spx_image_scratch.elems[ff * spx_image_scratch.cols_num + ctx_shade.idx] =
             vs * sh.scale_mul + sh.scale_add;
@@ -43,7 +43,7 @@ pub inline fn fillNodalPerspective(
     sh: *const NodalPrepared,
     spx_image_scratch: *MatSlice(f64),
 ) void {
-    for (0..ctx_shade.actual_fields) |ff| {
+    for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
         const base = ff * N;
         var vs: f64 = 0.0;
         inline for (0..N) |nn| {
@@ -69,7 +69,7 @@ pub inline fn fillNodalSIMD(
     const px_stride = spx_image_scratch.cols_num;
 
     inline for (0..cfg.max_nodal_fields) |ff| {
-        if (ff >= ctx_shade.actual_fields) break;
+        if (ff >= @as(usize, ctx_shade.actual_fields)) break;
         const base = ff * N;
         var v_vs: @Vector(S, f64) = @splat(0.0);
         inline for (0..N) |nn| {
@@ -100,7 +100,7 @@ pub inline fn fillNodalPerspectiveSIMD(
     const px_stride = spx_image_scratch.cols_num;
 
     inline for (0..cfg.max_nodal_fields) |ff| {
-        if (ff >= ctx_shade.actual_fields) break;
+        if (ff >= @as(usize, ctx_shade.actual_fields)) break;
         const base = ff * N;
         var v_vs: @Vector(S, f64) = @splat(0.0);
         inline for (0..N) |nn| {

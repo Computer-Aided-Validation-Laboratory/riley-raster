@@ -25,7 +25,7 @@ pub inline fn fillNodal(
     sh: *const NodalPrepared,
     spx_image_scratch: *MatSlice(f64),
 ) void {
-    for (0..ctx_shade.actual_fields) |ff| {
+    for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
         const vs = ctx_shade.local_buf.interpolate(ff, interp.weights);
         spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + ff] =
             vs * sh.scale_mul + sh.scale_add;
@@ -39,7 +39,7 @@ pub inline fn fillNodalPerspective(
     sh: *const NodalPrepared,
     spx_image_scratch: *MatSlice(f64),
 ) void {
-    for (0..ctx_shade.actual_fields) |ff| {
+    for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
         const base = ff * N;
         var vs: f64 = 0.0;
         inline for (0..N) |nn| {

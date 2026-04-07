@@ -1,3 +1,4 @@
+const std = @import("std");
 const ndarray = @import("ndarray.zig");
 const NDArray = ndarray.NDArray;
 const MappedNDArray = ndarray.MappedNDArray;
@@ -19,7 +20,7 @@ pub fn LocalNodeBuffer(comptime N: usize) type {
     return struct {
         data: [cfg.max_nodal_fields * N]f64 = undefined,
         normals: [3 * N]f64 = undefined,
-        actual_fields: usize = 0,
+        actual_fields: u8 = 0,
         has_normals: bool = false,
 
         const Self = @This();
@@ -30,7 +31,8 @@ pub fn LocalNodeBuffer(comptime N: usize) type {
             start_idx: usize,
             fields_num: usize,
         ) void {
-            self.actual_fields = fields_num;
+            std.debug.assert(fields_num <= cfg.max_nodal_fields);
+            self.actual_fields = @intCast(fields_num);
             const count = fields_num * N;
             @memcpy(self.data[0..count], array.elems[start_idx .. start_idx + count]);
         }
@@ -122,7 +124,7 @@ pub fn ShadeContext(comptime N: usize) type {
         frame_index: usize,
         elem_index: usize,
         fields_num: usize,
-        actual_fields: usize,
+        actual_fields: u8,
         idx: usize,
         global_subx: usize,
         global_suby: usize,

@@ -105,11 +105,6 @@ pub fn RasterContext(comptime report_mode: report.ReportMode) type {
     };
 }
 
-pub const OverlapTarget = struct {
-    tile: ActiveTile,
-    overlap: OverlapBBox,
-};
-
 pub const MeshInput = struct {
     coords: *const NDArray(f64),
     hull: ?*const NDArray(f64),
