@@ -300,18 +300,18 @@ pub fn RasterPass(
             const domain = SubpxDomain{
                 .step = 1.0 / sub_samp_f,
                 .offset = 1.0 / (2.0 * sub_samp_f),
-                .tile_size = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp,
+                .tile_size = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp_u,
                 .x_off = 0.5 * @as(f64, @floatFromInt(ctx_rast.camera.pixels_num[0])),
                 .y_off = 0.5 * @as(f64, @floatFromInt(ctx_rast.camera.pixels_num[1])),
             };
             
-            const scratch_start_x_u = sub_samp * (@as(usize, target.overlap.x_min) -
+            const scratch_start_x_u = sub_samp_u * (@as(usize, target.overlap.x_min) -
                 target.tile.x_px_min);
-            const scratch_end_x_u = sub_samp * (@as(usize, target.overlap.x_max) -
+            const scratch_end_x_u = sub_samp_u * (@as(usize, target.overlap.x_max) -
                 target.tile.x_px_min);
-            const scratch_start_y_u = sub_samp * (@as(usize, target.overlap.y_min) -
+            const scratch_start_y_u = sub_samp_u * (@as(usize, target.overlap.y_min) -
                 target.tile.y_px_min);
-            const scratch_end_y_u = sub_samp * (@as(usize, target.overlap.y_max) -
+            const scratch_end_y_u = sub_samp_u * (@as(usize, target.overlap.y_max) -
                 target.tile.y_px_min);
 
             const bounds = RasterBounds{
@@ -426,51 +426,27 @@ pub fn RasterPass(
                                 );
                             }
 
-                            if (comptime ShaderKernel == shadekerns.NodalKernel(N)) {
-                                ShaderKernel.shade(
-                                    Geometry.coord_space,
-                                    .{
-                                        .frame_index = ctx_rast.frame_ind,
-                                        .elem_index = target.overlap.elem_idx,
-                                        .fields_num = fields_num,
-                                        .actual_fields = fields_num,
-                                        .idx = index,
-                                        .global_subx = global_subx,
-                                        .global_suby = global_suby,
-                                        .local_buf = local_buf,
-                                    },
-                                    .{
-                                        .weights = weights,
-                                        .nodes_inv_z = nodes_inv_z,
-                                        .sub_pixel_z = subpx_z,
-                                    },
-                                    shader,
-                                    ctx_rast.ctx_perf,
-                                    scratch.image,
-                                );
-                            } else {
-                                ShaderKernel.shade(
-                                    Geometry.coord_space,
-                                    .{
-                                        .frame_index = ctx_rast.frame_ind,
-                                        .elem_index = target.overlap.elem_idx,
-                                        .fields_num = fields_num,
-                                        .actual_fields = fields_num,
-                                        .idx = index,
-                                        .global_subx = global_subx,
-                                        .global_suby = global_suby,
-                                        .local_buf = local_buf,
-                                    },
-                                    .{
-                                        .weights = weights,
-                                        .nodes_inv_z = nodes_inv_z,
-                                        .sub_pixel_z = subpx_z,
-                                    },
-                                    shader,
-                                    ctx_rast.ctx_perf,
-                                    scratch.image,
-                                );
-                            }
+                            ShaderKernel.shade(
+                                Geometry.coord_space,
+                                .{
+                                    .frame_index = ctx_rast.frame_ind,
+                                    .elem_index = target.overlap.elem_idx,
+                                    .fields_num = fields_num,
+                                    .actual_fields = fields_num,
+                                    .idx = index,
+                                    .global_subx = global_subx,
+                                    .global_suby = global_suby,
+                                    .local_buf = local_buf,
+                                },
+                                .{
+                                    .weights = weights,
+                                    .nodes_inv_z = nodes_inv_z,
+                                    .sub_pixel_z = subpx_z,
+                                },
+                                shader,
+                                ctx_rast.ctx_perf,
+                                scratch.image,
+                            );
                         }
                     }
                     inline for (0..N) |node_index| {
@@ -613,51 +589,27 @@ pub fn RasterPass(
                                 );
                             }
 
-                            if (comptime ShaderKernel == shadekerns.NodalKernel(N)) {
-                                ShaderKernel.shade(
-                                    Geometry.coord_space,
-                                    .{
-                                        .frame_index = ctx_rast.frame_ind,
-                                        .elem_index = target.overlap.elem_idx,
-                                        .fields_num = fields_num,
-                                        .actual_fields = fields_num,
-                                        .idx = index,
-                                        .global_subx = global_subx,
-                                        .global_suby = global_suby,
-                                        .local_buf = local_buf,
-                                    },
-                                    .{
-                                        .weights = weights,
-                                        .nodes_inv_z = nodes_inv_z,
-                                        .sub_pixel_z = subpx_z,
-                                    },
-                                    shader,
-                                    ctx_rast.ctx_perf,
-                                    scratch.image,
-                                );
-                            } else {
-                                ShaderKernel.shade(
-                                    Geometry.coord_space,
-                                    .{
-                                        .frame_index = ctx_rast.frame_ind,
-                                        .elem_index = target.overlap.elem_idx,
-                                        .fields_num = fields_num,
-                                        .actual_fields = fields_num,
-                                        .idx = index,
-                                        .global_subx = global_subx,
-                                        .global_suby = global_suby,
-                                        .local_buf = local_buf,
-                                    },
-                                    .{
-                                        .weights = weights,
-                                        .nodes_inv_z = nodes_inv_z,
-                                        .sub_pixel_z = subpx_z,
-                                    },
-                                    shader,
-                                    ctx_rast.ctx_perf,
-                                    scratch.image,
-                                );
-                            }
+                            ShaderKernel.shade(
+                                Geometry.coord_space,
+                                .{
+                                    .frame_index = ctx_rast.frame_ind,
+                                    .elem_index = target.overlap.elem_idx,
+                                    .fields_num = fields_num,
+                                    .actual_fields = fields_num,
+                                    .idx = index,
+                                    .global_subx = global_subx,
+                                    .global_suby = global_suby,
+                                    .local_buf = local_buf,
+                                },
+                                .{
+                                    .weights = weights,
+                                    .nodes_inv_z = nodes_inv_z,
+                                    .sub_pixel_z = subpx_z,
+                                },
+                                shader,
+                                ctx_rast.ctx_perf,
+                                scratch.image,
+                            );
                         }
                     } else {
                         if (result.iters > 0) ctx_rast.ctx_perf.recordSolverDiverged();

@@ -518,17 +518,18 @@ pub fn RasterPass(
             const edge_tol = tol.edge.simd_raster_weight_inclusion;
             const v_edge_tol: @Vector(S, f64) = @splat(-edge_tol);
 
-            for (bounds.start_y..bounds.end_y) |scratch_y| {
+            for (bounds.start_y_u..bounds.end_y_u) |scratch_y| {
                 const row_offset = scratch_y * domain.tile_size;
                 var v_weights = v_weights_row;
 
-                var scratch_x = bounds.start_x;
-                while (scratch_x < bounds.end_x) : (scratch_x += 8) {
+                var scratch_x = bounds.start_x_u;
+                while (scratch_x < bounds.end_x_u) : (scratch_x += 8) {
                     const v_07: @Vector(S, usize) = std.simd.iota(usize, S);
                     const v_scratch_x: @Vector(S, usize) = @splat(scratch_x);
                     const v_x_mask = (v_scratch_x + v_07 >=
                         @as(@Vector(S, usize), @splat(original_start_x))) &
-                        (v_scratch_x + v_07 < @as(@Vector(S, usize), @splat(bounds.end_x)));
+                        (v_scratch_x + v_07 <
+                            @as(@Vector(S, usize), @splat(bounds.end_x_u)));
 
                     var v_mask: @Vector(S, bool) = v_x_mask;
                     inline for (0..N) |ii| {
@@ -665,10 +666,10 @@ pub fn RasterPass(
                 @panic("rasterNewtonSIMD requires hull_nodes_num > 0");
             }
 
-            for (bounds.start_y..bounds.end_y) |scratch_y| {
+            for (bounds.start_y_u..bounds.end_y_u) |scratch_y| {
                 const row_offset = scratch_y * domain.tile_size;
-                const mask_start = row_offset + bounds.start_x;
-                const mask_end = row_offset + bounds.end_x;
+                const mask_start = row_offset + bounds.start_x_u;
+                const mask_end = row_offset + bounds.end_x_u;
                 @memset(
                     scratch.subpx_mask[mask_start..mask_end],
                     false,
@@ -683,14 +684,14 @@ pub fn RasterPass(
             const v_step: @Vector(S, f64) = @splat(domain.step);
             const v_05: @Vector(S, f64) = @splat(0.5);
             const v_original_start_x: @Vector(S, usize) = @splat(original_start_x);
-            const v_bounds_end_x: @Vector(S, usize) = @splat(bounds.end_x);
+            const v_bounds_end_x: @Vector(S, usize) = @splat(bounds.end_x_u);
 
             // Pass 1: Vectorized Coarse In/Out
-            for (bounds.start_y..bounds.end_y) |scratch_y| {
+            for (bounds.start_y_u..bounds.end_y_u) |scratch_y| {
                 const subpx_y = @as(f64, @floatFromInt(target.tile.y_px_min)) +
                     (@as(f64, @floatFromInt(scratch_y)) + 0.5) * domain.step;
-                var scratch_x = bounds.start_x;
-                while (scratch_x < bounds.end_x) : (scratch_x += 8) {
+                var scratch_x = bounds.start_x_u;
+                while (scratch_x < bounds.end_x_u) : (scratch_x += 8) {
                     const v_scratch_x: @Vector(S, usize) = @splat(scratch_x);
                     const v_x_mask = (v_scratch_x + v_07 >= v_original_start_x) &
                         (v_scratch_x + v_07 < v_bounds_end_x);
@@ -839,10 +840,10 @@ pub fn RasterPass(
             }
 
             // Pass 3: Spatially Grouped SIMD Shading
-            for (bounds.start_y..bounds.end_y) |scratch_y| {
+            for (bounds.start_y_u..bounds.end_y_u) |scratch_y| {
                 const row_offset = scratch_y * domain.tile_size;
-                var scratch_x = bounds.start_x;
-                while (scratch_x < bounds.end_x) : (scratch_x += 8) {
+                var scratch_x = bounds.start_x_u;
+                while (scratch_x < bounds.end_x_u) : (scratch_x += 8) {
                     const index = row_offset + scratch_x;
                     var mask_arr: [S]bool = undefined;
                     @memcpy(&mask_arr, scratch.subpx_mask[index .. index + 8]);
@@ -851,7 +852,8 @@ pub fn RasterPass(
                     const v_scratch_x: @Vector(S, usize) = @splat(scratch_x);
                     const v_x_mask = (v_scratch_x + v_07 >=
                         @as(@Vector(S, usize), @splat(original_start_x))) &
-                        (v_scratch_x + v_07 < @as(@Vector(S, usize), @splat(bounds.end_x)));
+                        (v_scratch_x + v_07 <
+                            @as(@Vector(S, usize), @splat(bounds.end_x_u)));
 
                     const v_mask = v_mask_full & v_x_mask;
 
@@ -991,11 +993,11 @@ pub fn RasterPass(
             const start_y = bounds.y_min_f + domain.offset;
             var weights_row = Geometry.getWeightsAt(nodes, start_x, start_y, inv_area);
 
-            for (bounds.start_y..bounds.end_y) |scratch_y| {
+            for (bounds.start_y_u..bounds.end_y_u) |scratch_y| {
                 const row_offset = scratch_y * domain.tile_size;
                 var weights = weights_row;
 
-                for (bounds.start_x..bounds.end_x) |scratch_x| {
+                for (bounds.start_x_u..bounds.end_x_u) |scratch_x| {
                     if (Geometry.isInElement(weights)) {
                         const inv_z = Geometry.calcInvZ(nodes, weights);
                         const index = row_offset + scratch_x;
@@ -1025,51 +1027,27 @@ pub fn RasterPass(
                                 );
                             }
 
-                            if (comptime ShaderKernel == shadekerns.NodalKernel(N)) {
-                                ShaderKernel.shade(
-                                    Geometry.coord_space,
-                                    .{
-                                        .frame_index = ctx_rast.frame_ind,
-                                        .elem_index = target.overlap.elem_idx,
-                                        .fields_num = fields_num,
-                                        .actual_fields = fields_num,
-                                        .idx = index,
-                                        .global_subx = global_subx,
-                                        .global_suby = global_suby,
-                                        .local_buf = local_buf,
-                                    },
-                                    .{
-                                        .weights = weights,
-                                        .nodes_inv_z = nodes_inv_z,
-                                        .sub_pixel_z = subpx_z,
-                                    },
-                                    shader,
-                                    ctx_rast.ctx_perf,
-                                    scratch.image,
-                                );
-                            } else {
-                                ShaderKernel.shade(
-                                    Geometry.coord_space,
-                                    .{
-                                        .frame_index = ctx_rast.frame_ind,
-                                        .elem_index = target.overlap.elem_idx,
-                                        .fields_num = fields_num,
-                                        .actual_fields = fields_num,
-                                        .idx = index,
-                                        .global_subx = global_subx,
-                                        .global_suby = global_suby,
-                                        .local_buf = local_buf,
-                                    },
-                                    .{
-                                        .weights = weights,
-                                        .nodes_inv_z = nodes_inv_z,
-                                        .sub_pixel_z = subpx_z,
-                                    },
-                                    shader,
-                                    ctx_rast.ctx_perf,
-                                    scratch.image,
-                                );
-                            }
+                            ShaderKernel.shade(
+                                Geometry.coord_space,
+                                .{
+                                    .frame_index = ctx_rast.frame_ind,
+                                    .elem_index = target.overlap.elem_idx,
+                                    .fields_num = fields_num,
+                                    .actual_fields = fields_num,
+                                    .idx = index,
+                                    .global_subx = global_subx,
+                                    .global_suby = global_suby,
+                                    .local_buf = local_buf,
+                                },
+                                .{
+                                    .weights = weights,
+                                    .nodes_inv_z = nodes_inv_z,
+                                    .sub_pixel_z = subpx_z,
+                                },
+                                shader,
+                                ctx_rast.ctx_perf,
+                                scratch.image,
+                            );
                         }
                     }
                     inline for (0..N) |node_index| {
@@ -1131,11 +1109,11 @@ pub fn RasterPass(
             }
 
             var subpx_y: f64 = bounds.y_min_f + domain.offset;
-            for (bounds.start_y..bounds.end_y) |scratch_y| {
+            for (bounds.start_y_u..bounds.end_y_u) |scratch_y| {
                 const row_offset = scratch_y * domain.tile_size;
                 var subpx_x: f64 = bounds.x_min_f + domain.offset;
 
-                for (bounds.start_x..bounds.end_x) |scratch_x| {
+                for (bounds.start_x_u..bounds.end_x_u) |scratch_x| {
                     const global_subx = target.tile.x_px_min * sub_samp + scratch_x;
                     const global_suby = target.tile.y_px_min * sub_samp + scratch_y;
 
@@ -1199,51 +1177,27 @@ pub fn RasterPass(
                                 );
                             }
 
-                            if (comptime ShaderKernel == shadekerns.NodalKernel(N)) {
-                                ShaderKernel.shade(
-                                    Geometry.coord_space,
-                                    .{
-                                        .frame_index = ctx_rast.frame_ind,
-                                        .elem_index = target.overlap.elem_idx,
-                                        .fields_num = fields_num,
-                                        .actual_fields = fields_num,
-                                        .idx = index,
-                                        .global_subx = global_subx,
-                                        .global_suby = global_suby,
-                                        .local_buf = local_buf,
-                                    },
-                                    .{
-                                        .weights = weights,
-                                        .nodes_inv_z = nodes_inv_z,
-                                        .sub_pixel_z = subpx_z,
-                                    },
-                                    shader,
-                                    ctx_rast.ctx_perf,
-                                    scratch.image,
-                                );
-                            } else {
-                                ShaderKernel.shade(
-                                    Geometry.coord_space,
-                                    .{
-                                        .frame_index = ctx_rast.frame_ind,
-                                        .elem_index = target.overlap.elem_idx,
-                                        .fields_num = fields_num,
-                                        .actual_fields = fields_num,
-                                        .idx = index,
-                                        .global_subx = global_subx,
-                                        .global_suby = global_suby,
-                                        .local_buf = local_buf,
-                                    },
-                                    .{
-                                        .weights = weights,
-                                        .nodes_inv_z = nodes_inv_z,
-                                        .sub_pixel_z = subpx_z,
-                                    },
-                                    shader,
-                                    ctx_rast.ctx_perf,
-                                    scratch.image,
-                                );
-                            }
+                            ShaderKernel.shade(
+                                Geometry.coord_space,
+                                .{
+                                    .frame_index = ctx_rast.frame_ind,
+                                    .elem_index = target.overlap.elem_idx,
+                                    .fields_num = fields_num,
+                                    .actual_fields = fields_num,
+                                    .idx = index,
+                                    .global_subx = global_subx,
+                                    .global_suby = global_suby,
+                                    .local_buf = local_buf,
+                                },
+                                .{
+                                    .weights = weights,
+                                    .nodes_inv_z = nodes_inv_z,
+                                    .sub_pixel_z = subpx_z,
+                                },
+                                shader,
+                                ctx_rast.ctx_perf,
+                                scratch.image,
+                            );
                         }
                     } else {
                         if (result.iters > 0) ctx_rast.ctx_perf.recordSolverDiverged();
