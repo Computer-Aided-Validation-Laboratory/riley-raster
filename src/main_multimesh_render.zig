@@ -2,9 +2,7 @@ const std = @import("std");
 const gengold = @import("common/gengold.zig");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    const outer_alloc = std.heap.page_allocator;
 
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
@@ -28,9 +26,19 @@ pub fn main() !void {
     const out_dir_root = "out-bench-multimesh";
     std.debug.print("Rendering Multimesh Data to {s}/...\n", .{out_dir_root});
 
-    try gengold.runMultimeshGenerationExt(allocator, io, config, out_dir_root);
-    try gengold.runMultimeshMixedGenerationExt(allocator, io, config, out_dir_root ++ "/allelem_allshade");
-    try gengold.runMultimeshMixedRGBGenerationExt(allocator, io, config, out_dir_root ++ "/allelem_allshade_rgb");
+    try gengold.runMultimeshGenerationExt(outer_alloc, io, config, out_dir_root);
+    try gengold.runMultimeshMixedGenerationExt(
+        outer_alloc,
+        io,
+        config,
+        out_dir_root ++ "/allelem_allshade",
+    );
+    try gengold.runMultimeshMixedRGBGenerationExt(
+        outer_alloc,
+        io,
+        config,
+        out_dir_root ++ "/allelem_allshade_rgb",
+    );
 
     std.debug.print("Done.\n", .{});
 }

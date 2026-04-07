@@ -4,31 +4,29 @@ const mr = @import("zraster/zig/meshraster.zig");
 const iio = @import("zraster/zig/imageio.zig");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    const outer_alloc = std.heap.page_allocator;
 
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
     const texture_grey = try iio.loadImage(
-        allocator,
+        outer_alloc,
         io,
         "texture/speckle.bmp",
         .bmp,
         u8,
         1,
     );
-    defer texture_grey.deinit(allocator);
+    defer texture_grey.deinit(outer_alloc);
     const texture_rgb = try iio.loadImage(
-        allocator,
+        outer_alloc,
         io,
         "texture/speckle_rgb.bmp",
         .bmp,
         u8,
         3,
     );
-    defer texture_rgb.deinit(allocator);
+    defer texture_rgb.deinit(outer_alloc);
 
     const out_dir_base = "out-sphere2000";
     const pixel_num = [_]u32{ 800, 500 };
@@ -39,8 +37,8 @@ pub fn main() !void {
 
     var stats_list: std.ArrayList(common.BenchStats) = .{};
     defer {
-        for (stats_list.items) |s| allocator.free(s.name);
-        stats_list.deinit(allocator);
+        for (stats_list.items) |s| outer_alloc.free(s.name);
+        stats_list.deinit(outer_alloc);
     }
 
     var max_name_len: usize = 0;
@@ -62,29 +60,29 @@ pub fn main() !void {
 
             if (case_name.len > max_name_len) max_name_len = case_name.len;
 
-            var e2e_times = try allocator.alloc(f64, runs);
-            defer allocator.free(e2e_times);
-            var geom_times = try allocator.alloc(f64, runs);
-            defer allocator.free(geom_times);
-            var raster_times = try allocator.alloc(f64, runs);
-            defer allocator.free(raster_times);
-            var fps_vals = try allocator.alloc(f64, runs);
-            defer allocator.free(fps_vals);
+            var e2e_times = try outer_alloc.alloc(f64, runs);
+            defer outer_alloc.free(e2e_times);
+            var geom_times = try outer_alloc.alloc(f64, runs);
+            defer outer_alloc.free(geom_times);
+            var raster_times = try outer_alloc.alloc(f64, runs);
+            defer outer_alloc.free(raster_times);
+            var fps_vals = try outer_alloc.alloc(f64, runs);
+            defer outer_alloc.free(fps_vals);
 
-            var mpx_vals = try allocator.alloc(f64, runs);
-            defer allocator.free(mpx_vals);
-            var msubpx_vals = try allocator.alloc(f64, runs);
-            defer allocator.free(msubpx_vals);
-            var mshades_vals = try allocator.alloc(f64, runs);
-            defer allocator.free(mshades_vals);
-            var msubshades_vals = try allocator.alloc(f64, runs);
-            defer allocator.free(msubshades_vals);
-            var melems_vals = try allocator.alloc(f64, runs);
-            defer allocator.free(melems_vals);
-            var mnodes_vals = try allocator.alloc(f64, runs);
-            defer allocator.free(mnodes_vals);
-            var mops_vals = try allocator.alloc(f64, runs);
-            defer allocator.free(mops_vals);
+            var mpx_vals = try outer_alloc.alloc(f64, runs);
+            defer outer_alloc.free(mpx_vals);
+            var msubpx_vals = try outer_alloc.alloc(f64, runs);
+            defer outer_alloc.free(msubpx_vals);
+            var mshades_vals = try outer_alloc.alloc(f64, runs);
+            defer outer_alloc.free(mshades_vals);
+            var msubshades_vals = try outer_alloc.alloc(f64, runs);
+            defer outer_alloc.free(msubshades_vals);
+            var melems_vals = try outer_alloc.alloc(f64, runs);
+            defer outer_alloc.free(melems_vals);
+            var mnodes_vals = try outer_alloc.alloc(f64, runs);
+            defer outer_alloc.free(mnodes_vals);
+            var mops_vals = try outer_alloc.alloc(f64, runs);
+            defer outer_alloc.free(mops_vals);
 
             for (0..runs) |r| {
                 var data_dir_buf: [256]u8 = undefined;
@@ -94,7 +92,7 @@ pub fn main() !void {
                     .{@tagName(mt)},
                 );
                 const res = try common.runBenchmark(
-                    allocator,
+                    outer_alloc,
                     io,
                     mt,
                     st,
@@ -119,25 +117,25 @@ pub fn main() !void {
                 mops_vals[r] = res.metrics.mops_sec;
             }
 
-            try stats_list.append(allocator, .{
-                .name = try allocator.dupe(u8, case_name),
-                .e2e = try common.calcMedianMAD(allocator, e2e_times),
-                .geom = try common.calcMedianMAD(allocator, geom_times),
-                .raster = try common.calcMedianMAD(allocator, raster_times),
-                .fps = try common.calcMedianMAD(allocator, fps_vals),
-                .mpx = try common.calcMedianMAD(allocator, mpx_vals),
-                .msubpx = try common.calcMedianMAD(allocator, msubpx_vals),
-                .mshades = try common.calcMedianMAD(allocator, mshades_vals),
-                .msubshades = try common.calcMedianMAD(allocator, msubshades_vals),
-                .melems = try common.calcMedianMAD(allocator, melems_vals),
-                .mnodes = try common.calcMedianMAD(allocator, mnodes_vals),
-                .mops = try common.calcMedianMAD(allocator, mops_vals),
+            try stats_list.append(outer_alloc, .{
+                .name = try outer_alloc.dupe(u8, case_name),
+                .e2e = try common.calcMedianMAD(outer_alloc, e2e_times),
+                .geom = try common.calcMedianMAD(outer_alloc, geom_times),
+                .raster = try common.calcMedianMAD(outer_alloc, raster_times),
+                .fps = try common.calcMedianMAD(outer_alloc, fps_vals),
+                .mpx = try common.calcMedianMAD(outer_alloc, mpx_vals),
+                .msubpx = try common.calcMedianMAD(outer_alloc, msubpx_vals),
+                .mshades = try common.calcMedianMAD(outer_alloc, mshades_vals),
+                .msubshades = try common.calcMedianMAD(outer_alloc, msubshades_vals),
+                .melems = try common.calcMedianMAD(outer_alloc, melems_vals),
+                .mnodes = try common.calcMedianMAD(outer_alloc, mnodes_vals),
+                .mops = try common.calcMedianMAD(outer_alloc, mops_vals),
             });
         }
     }
 
     try common.writeBenchmarkReport(
-        allocator,
+        outer_alloc,
         io,
         "Sphere 2000 Benchmark Results",
         out_dir_base,

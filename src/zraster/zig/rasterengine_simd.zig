@@ -56,13 +56,17 @@ const RasterBounds = common.RasterBounds;
 pub fn rasterScene(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext(report_mode),
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     io: std.Io,
     tiling: rops.TilingOverlaps,
     meshes: []const MeshPrepared,
     raster_hulls: []const ?NDArray(f64),
     image_out_arr: *NDArray(f64),
 ) !void {
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+
     std.debug.assert(image_out_arr.dims[0] <= std.math.maxInt(u8));
     const fields_num: u8 = @intCast(image_out_arr.dims[0]);
 
@@ -73,40 +77,35 @@ pub fn rasterScene(
     const subpx_tile_total_padded = (subpx_tile_total + 7) & ~@as(usize, 7);
 
     const alignment = std.mem.Alignment.@"64";
-    const subpx_inv_z_scratch = try allocator.alignedAlloc(
+    const subpx_inv_z_scratch = try arena_alloc.alignedAlloc(
         f64,
         alignment,
         subpx_tile_total_padded + 8,
     );
-    defer allocator.free(subpx_inv_z_scratch);
 
-    const subpx_mask_scratch = try allocator.alignedAlloc(
+    const subpx_mask_scratch = try arena_alloc.alignedAlloc(
         bool,
         alignment,
         subpx_tile_total_padded + 8,
     );
-    defer allocator.free(subpx_mask_scratch);
 
-    const subpx_xi_scratch = try allocator.alignedAlloc(
+    const subpx_xi_scratch = try arena_alloc.alignedAlloc(
         f64,
         alignment,
         subpx_tile_total_padded + 8,
     );
-    defer allocator.free(subpx_xi_scratch);
 
-    const subpx_eta_scratch = try allocator.alignedAlloc(
+    const subpx_eta_scratch = try arena_alloc.alignedAlloc(
         f64,
         alignment,
         subpx_tile_total_padded + 8,
     );
-    defer allocator.free(subpx_eta_scratch);
 
-    const subpx_img_mem = try allocator.alignedAlloc(
+    const subpx_img_mem = try arena_alloc.alignedAlloc(
         f64,
         alignment,
         (subpx_tile_total_padded + 8) * @as(usize, fields_num),
     );
-    defer allocator.free(subpx_img_mem);
     var subpx_image_scratch = MatSlice(f64).init(
         subpx_img_mem,
         @as(usize, fields_num),
@@ -114,14 +113,11 @@ pub fn rasterScene(
     );
 
     const candidate_block_count = @divFloor(subpx_tile_total_padded + 7, 8) + 1;
-    const candidate_buffer = try allocator.alloc(CandidateBlock, candidate_block_count);
-    defer allocator.free(candidate_buffer);
+    const candidate_buffer = try arena_alloc.alloc(CandidateBlock, candidate_block_count);
 
-    const touched_min_x = try allocator.alloc(usize, subpx_tile_size);
-    defer allocator.free(touched_min_x);
+    const touched_min_x = try arena_alloc.alloc(usize, subpx_tile_size);
 
-    const touched_max_x = try allocator.alloc(usize, subpx_tile_size);
-    defer allocator.free(touched_max_x);
+    const touched_max_x = try arena_alloc.alloc(usize, subpx_tile_size);
 
     const scratch = ScratchBuffers{
         .inv_z = subpx_inv_z_scratch,
@@ -134,8 +130,7 @@ pub fn rasterScene(
         .touched_max_x = touched_max_x,
     };
 
-    const subpx_field_avg = try allocator.alloc(f64, fields_num);
-    defer allocator.free(subpx_field_avg);
+    const subpx_field_avg = try arena_alloc.alloc(f64, fields_num);
 
     for (tiling.active_tiles) |tile| {
         const tile_start = Timestamp.now(io, .awake);
@@ -186,21 +181,21 @@ pub fn rasterScene(
                     switch (mesh.shader) {
                         .nodal => |*shader| {
                             const SK = shadekerns.NodalKernel(N);
-                            var local_node_buf: shaderops.LocalNodeBuffer(N) = .{};
+                            var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
 
                             const tt = @min(ctx_rast.frame_ind, shader.elem_field.dims[0] - 1);
                             const start_idx = shader.elem_field.getFlatInd(
                                 &[_]usize{ tt, target.overlap.elem_idx, 0, 0 },
                             );
 
-                            local_node_buf.load(
+                            local_shader_buf.load(
                                 shader.elem_field,
                                 start_idx,
                                 mesh_fields,
                             );
                             if (shader.elem_normals) |en| {
                                 const prep_idx = en.map[target.overlap.elem_idx];
-                                local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
+                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
                             }
                             shaded_px += try RasterPass(GK, SK, NodalPrepared).render(
                                 report_mode,
@@ -209,21 +204,21 @@ pub fn rasterScene(
                                 input,
                                 mesh,
                                 shader,
-                                &local_node_buf,
+                                &local_shader_buf,
                                 scratch,
                             );
                         },
                         .tex_u8 => |*shader| {
                             const SK = shadekerns.TexKernel(N, u8, 1);
-                            var local_node_buf: shaderops.LocalNodeBuffer(N) = .{};
-                            local_node_buf.load(
+                            var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
+                            local_shader_buf.load(
                                 shader.elem_uvs,
                                 target.overlap.elem_idx * 2 * N,
                                 2,
                             );
                             if (shader.elem_normals) |en| {
                                 const prep_idx = en.map[target.overlap.elem_idx];
-                                local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
+                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
                             }
                             shaded_px += try RasterPass(GK, SK, TexPrepared(u8, 1)).render(
                                 report_mode,
@@ -232,21 +227,21 @@ pub fn rasterScene(
                                 input,
                                 mesh,
                                 shader,
-                                &local_node_buf,
+                                &local_shader_buf,
                                 scratch,
                             );
                         },
                         .tex_u16 => |*shader| {
                             const SK = shadekerns.TexKernel(N, u16, 1);
-                            var local_node_buf: shaderops.LocalNodeBuffer(N) = .{};
-                            local_node_buf.load(
+                            var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
+                            local_shader_buf.load(
                                 shader.elem_uvs,
                                 target.overlap.elem_idx * 2 * N,
                                 2,
                             );
                             if (shader.elem_normals) |en| {
                                 const prep_idx = en.map[target.overlap.elem_idx];
-                                local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
+                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
                             }
                             shaded_px += try RasterPass(GK, SK, TexPrepared(u16, 1)).render(
                                 report_mode,
@@ -255,21 +250,21 @@ pub fn rasterScene(
                                 input,
                                 mesh,
                                 shader,
-                                &local_node_buf,
+                                &local_shader_buf,
                                 scratch,
                             );
                         },
                         .tex_rgb_u8 => |*shader| {
                             const SK = shadekerns.TexKernel(N, u8, 3);
-                            var local_node_buf: shaderops.LocalNodeBuffer(N) = .{};
-                            local_node_buf.load(
+                            var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
+                            local_shader_buf.load(
                                 shader.elem_uvs,
                                 target.overlap.elem_idx * 2 * N,
                                 2,
                             );
                             if (shader.elem_normals) |en| {
                                 const prep_idx = en.map[target.overlap.elem_idx];
-                                local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
+                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
                             }
                             shaded_px += try RasterPass(GK, SK, TexPrepared(u8, 3)).render(
                                 report_mode,
@@ -278,21 +273,21 @@ pub fn rasterScene(
                                 input,
                                 mesh,
                                 shader,
-                                &local_node_buf,
+                                &local_shader_buf,
                                 scratch,
                             );
                         },
                         .tex_rgb_u16 => |*shader| {
                             const SK = shadekerns.TexKernel(N, u16, 3);
-                            var local_node_buf: shaderops.LocalNodeBuffer(N) = .{};
-                            local_node_buf.load(
+                            var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
+                            local_shader_buf.load(
                                 shader.elem_uvs,
                                 target.overlap.elem_idx * 2 * N,
                                 2,
                             );
                             if (shader.elem_normals) |en| {
                                 const prep_idx = en.map[target.overlap.elem_idx];
-                                local_node_buf.loadNormals(en.array, prep_idx * 3 * N);
+                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
                             }
                             shaded_px += try RasterPass(GK, SK, TexPrepared(u16, 3)).render(
                                 report_mode,
@@ -301,7 +296,7 @@ pub fn rasterScene(
                                 input,
                                 mesh,
                                 shader,
-                                &local_node_buf,
+                                &local_shader_buf,
                                 scratch,
                             );
                         },
@@ -365,7 +360,7 @@ pub fn RasterPass(
             input: rops.MeshInput,
             mesh: *const MeshPrepared,
             shader: *const ShaderData,
-            local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
+            shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
             scratch: ScratchBuffers,
         ) !u64 {
             _ = mesh;
@@ -430,7 +425,7 @@ pub fn RasterPass(
                     scratch_start_x_u,
                     nodes,
                     shader,
-                    local_buf,
+                    shader_buf,
                     scratch,
                 )
             else if (Geometry.strategy == .incremental)
@@ -442,7 +437,7 @@ pub fn RasterPass(
                     bounds,
                     nodes,
                     shader,
-                    local_buf,
+                    shader_buf,
                     scratch,
                 )
             else if (Geometry.strategy == .newton)
@@ -456,7 +451,7 @@ pub fn RasterPass(
                     scratch_start_x_u,
                     nodes,
                     shader,
-                    local_buf,
+                    shader_buf,
                     scratch,
                 )
             else
@@ -469,7 +464,7 @@ pub fn RasterPass(
                     bounds,
                     nodes,
                     shader,
-                    local_buf,
+                    shader_buf,
                     scratch,
                 );
 
@@ -485,7 +480,7 @@ pub fn RasterPass(
             original_start_x: usize,
             nodes: Vec3Slices(f64),
             shader: anytype,
-            local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
+            shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
             scratch: ScratchBuffers,
         ) !u64 {
             const N = Geometry.nodes_num;
@@ -597,7 +592,7 @@ pub fn RasterPass(
                                     .idx = index,
                                     .global_subx = 0,
                                     .global_suby = 0,
-                                    .local_buf = local_buf,
+                                    .shader_buf = shader_buf,
                                     .v_mask = v_depth_mask,
                                 },
                                 ctx_rast.ctx_perf,
@@ -631,7 +626,7 @@ pub fn RasterPass(
             original_start_x: usize,
             nodes: Vec3Slices(f64),
             shader: anytype,
-            local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
+            shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
             scratch: ScratchBuffers,
         ) !u64 {
             const N = Geometry.nodes_num;
@@ -936,7 +931,7 @@ pub fn RasterPass(
                                     .idx = index,
                                     .global_subx = target.tile.x_px_min * sub_samp + scratch_x,
                                     .global_suby = target.tile.y_px_min * sub_samp + scratch_y,
-                                    .local_buf = local_buf,
+                                    .shader_buf = shader_buf,
                                     .v_mask = v_depth_mask,
                                 },
                                 ctx_rast.ctx_perf,
@@ -963,7 +958,7 @@ pub fn RasterPass(
             bounds: RasterBounds,
             nodes: Vec3Slices(f64),
             shader: *const ShaderData,
-            local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
+            shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
             scratch: ScratchBuffers,
         ) !u64 {
             const N = Geometry.nodes_num;
@@ -1037,7 +1032,7 @@ pub fn RasterPass(
                                     .idx = index,
                                     .global_subx = global_subx,
                                     .global_suby = global_suby,
-                                    .local_buf = local_buf,
+                                    .shader_buf = shader_buf,
                                 },
                                 .{
                                     .weights = weights,
@@ -1070,7 +1065,7 @@ pub fn RasterPass(
             bounds: RasterBounds,
             nodes: Vec3Slices(f64),
             shader: *const ShaderData,
-            local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
+            shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
             scratch: ScratchBuffers,
         ) !u64 {
             const N = Geometry.nodes_num;
@@ -1187,7 +1182,7 @@ pub fn RasterPass(
                                     .idx = index,
                                     .global_subx = global_subx,
                                     .global_suby = global_suby,
-                                    .local_buf = local_buf,
+                                    .shader_buf = shader_buf,
                                 },
                                 .{
                                     .weights = weights,

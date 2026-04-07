@@ -25,7 +25,7 @@ pub fn NodalKernel(comptime N: usize) type {
             );
 
             if (shader.elem_normals != null) {
-                const normal = ctx_shade.local_buf.interpolateNormal(interp.weights);
+                const normal = ctx_shade.shader_buf.interpolateNormal(interp.weights);
                 if (comptime @TypeOf(ctx_perf).mode_tag == .full_stats) {
                     report.maybeRecordNormal(
                         ctx_perf,
@@ -73,7 +73,7 @@ pub fn TexKernel(
             );
 
             if (shader.elem_normals != null) {
-                const normal = ctx_shade.local_buf.interpolateNormal(interp.weights);
+                const normal = ctx_shade.shader_buf.interpolateNormal(interp.weights);
                 if (comptime @TypeOf(ctx_perf).mode_tag == .full_stats) {
                     report.maybeRecordNormal(
                         ctx_perf,

@@ -285,7 +285,7 @@ pub fn rasterAllFrames(
 }
 
 pub fn rasterSceneInternal(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     io: std.Io,
     camera: *const Camera,
     frame_ind: usize,
@@ -302,7 +302,7 @@ pub fn rasterSceneInternal(
     const tiles_num_x: usize = try std.math.divCeil(usize, camera.pixels_num[0], tile_size);
     const tiles_num_y: usize = try std.math.divCeil(usize, camera.pixels_num[1], tile_size);
 
-    var arena = std.heap.ArenaAllocator.init(allocator);
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
@@ -362,7 +362,7 @@ pub fn rasterSceneInternal(
     try rasterengine.rasterScene(
         report_mode,
         ctx_rast,
-        arena_alloc,
+        outer_alloc,
         io,
         tiling,
         meshes,

@@ -16,7 +16,7 @@ const S = cfg.simd_vector_width;
 pub const ScaleOver = enum { within_frames, over_frames };
 pub const NormalType = enum { none, exact, averaged };
 
-pub fn LocalNodeBuffer(comptime N: usize) type {
+pub fn LocalShaderBuffer(comptime N: usize) type {
     return struct {
         data: [cfg.max_nodal_fields * N]f64 = undefined,
         normals: [3 * N]f64 = undefined,
@@ -128,7 +128,7 @@ pub fn ShadeContext(comptime N: usize) type {
         idx: usize,
         global_subx: usize,
         global_suby: usize,
-        local_buf: *const LocalNodeBuffer(N),
+        shader_buf: *const LocalShaderBuffer(N),
         v_mask: ?@Vector(S, bool) = null,
     };
 }

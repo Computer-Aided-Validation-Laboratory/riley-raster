@@ -9,13 +9,13 @@ pub const UVMap = struct {
 
     const Self = @This();
 
-    pub fn init(allocator: std.mem.Allocator, nodes_num: usize) !Self {
-        const buffer = try allocator.alloc(f64, nodes_num * 2);
+    pub fn init(outer_alloc: std.mem.Allocator, nodes_num: usize) !Self {
+        const buffer = try outer_alloc.alloc(f64, nodes_num * 2);
         @memset(buffer, 0.0);
 
         const dims = [_]usize{ nodes_num, 2 }; // u, v
 
-        const array = try NDArray(f64).init(allocator, buffer, dims[0..]);
+        const array = try NDArray(f64).init(outer_alloc, buffer, dims[0..]);
 
         return .{
             .array = array,
@@ -23,9 +23,9 @@ pub const UVMap = struct {
         };
     }
 
-    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
-        self.array.deinit(allocator);
-        allocator.free(self.buffer);
+    pub fn deinit(self: *Self, outer_alloc: std.mem.Allocator) void {
+        self.array.deinit(outer_alloc);
+        outer_alloc.free(self.buffer);
     }
 
     pub fn getU(self: *const Self, node_idx: usize) f64 {
@@ -51,18 +51,18 @@ pub const UVMap = struct {
     }
 };
 
-pub fn loadUVs(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !NDArray(f64) {
-    var arena = std.heap.ArenaAllocator.init(allocator);
+pub fn loadUVs(outer_alloc: std.mem.Allocator, io: std.Io, path: []const u8) !NDArray(f64) {
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
     const lines = try meshio.readCsvToList(arena_alloc, io, path);
     const nodes_num = lines.items.len;
 
-    var uv_arr = try NDArray(f64).initFlat(allocator, &[_]usize{ nodes_num, 2 });
+    var uv_arr = try NDArray(f64).initFlat(outer_alloc, &[_]usize{ nodes_num, 2 });
     errdefer {
-        allocator.free(uv_arr.elems);
-        uv_arr.deinit(allocator);
+        outer_alloc.free(uv_arr.elems);
+        uv_arr.deinit(outer_alloc);
     }
 
     for (lines.items, 0..) |line, i| {
@@ -80,8 +80,8 @@ pub fn loadUVs(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !NDAr
     return uv_arr;
 }
 
-pub fn loadUVMap(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !UVMap {
-    const uv_arr = try loadUVs(allocator, io, path);
+pub fn loadUVMap(outer_alloc: std.mem.Allocator, io: std.Io, path: []const u8) !UVMap {
+    const uv_arr = try loadUVs(outer_alloc, io, path);
     return UVMap{
         .array = uv_arr,
         .buffer = uv_arr.elems,

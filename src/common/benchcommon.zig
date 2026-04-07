@@ -112,10 +112,10 @@ pub fn calcMetrics(
     };
 }
 
-pub fn calcMedianMAD(allocator: std.mem.Allocator, data: []f64) !MedianMAD {
+pub fn calcMedianMAD(outer_alloc: std.mem.Allocator, data: []f64) !MedianMAD {
     if (data.len == 0) return .{ .median = 0, .mad = 0 };
-    const data_copy = try allocator.dupe(f64, data);
-    defer allocator.free(data_copy);
+    const data_copy = try outer_alloc.dupe(f64, data);
+    defer outer_alloc.free(data_copy);
     std.mem.sort(f64, data_copy, {}, std.sort.asc(f64));
 
     const mid = data_copy.len / 2;
@@ -124,8 +124,8 @@ pub fn calcMedianMAD(allocator: std.mem.Allocator, data: []f64) !MedianMAD {
     else
         data_copy[mid];
 
-    var abs_devs = try allocator.alloc(f64, data_copy.len);
-    defer allocator.free(abs_devs);
+    var abs_devs = try outer_alloc.alloc(f64, data_copy.len);
+    defer outer_alloc.free(abs_devs);
     for (data_copy, 0..) |val, ii| {
         abs_devs[ii] = @abs(val - median);
     }
@@ -138,8 +138,8 @@ pub fn calcMedianMAD(allocator: std.mem.Allocator, data: []f64) !MedianMAD {
     return .{ .median = median, .mad = mad };
 }
 
-pub fn getCPUModel(allocator: std.mem.Allocator) []const u8 {
-    return allocator.dupe(u8, "BenchCPU") catch "BenchCPU";
+pub fn getCPUModel(outer_alloc: std.mem.Allocator) []const u8 {
+    return outer_alloc.dupe(u8, "BenchCPU") catch "BenchCPU";
 }
 
 pub fn getDateString() ![]const u8 {
@@ -185,13 +185,13 @@ pub fn shouldRun(
 }
 
 pub fn loadNDArrayFromCSV(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
     requested_channels: usize,
     is_time_series: bool,
 ) !NDArray(f64) {
-    var arena = std.heap.ArenaAllocator.init(allocator);
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
 
@@ -207,7 +207,10 @@ pub fn loadNDArrayFromCSV(
 
     var arr: NDArray(f64) = undefined;
     if (is_time_series) {
-        arr = try NDArray(f64).initFlat(allocator, &[_]usize{ 1, rows_num, requested_channels });
+        arr = try NDArray(f64).initFlat(
+            outer_alloc,
+            &[_]usize{ 1, rows_num, requested_channels },
+        );
     } else {
         var has_colons = false;
         var first_line_peek = std.mem.splitScalar(u8, lines.items[0], ',');
@@ -218,14 +221,20 @@ pub fn loadNDArrayFromCSV(
         }
 
         if (has_colons) {
-            arr = try NDArray(f64).initFlat(allocator, &[_]usize{ rows_num, cols_num, requested_channels });
+            arr = try NDArray(f64).initFlat(
+                outer_alloc,
+                &[_]usize{ rows_num, cols_num, requested_channels },
+            );
         } else {
-            arr = try NDArray(f64).initFlat(allocator, &[_]usize{ rows_num, requested_channels });
+            arr = try NDArray(f64).initFlat(
+                outer_alloc,
+                &[_]usize{ rows_num, requested_channels },
+            );
         }
     }
     errdefer {
-        allocator.free(arr.elems);
-        arr.deinit(allocator);
+        outer_alloc.free(arr.elems);
+        arr.deinit(outer_alloc);
     }
 
     for (lines.items, 0..) |line, rr| {
@@ -261,7 +270,7 @@ pub fn loadNDArrayFromCSV(
 }
 
 pub fn runBenchmark(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     io: std.Io,
     etype: mr.MeshType,
     shader_type: ShaderType,
@@ -272,7 +281,7 @@ pub fn runBenchmark(
     texture_grey: iio.Texture(u8, 1),
     texture_rgb: iio.Texture(u8, 3),
 ) !BenchResult {
-    var arena = std.heap.ArenaAllocator.init(allocator);
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
 
@@ -413,7 +422,7 @@ fn printPaddedSafe(writer: anytype, text: []const u8, width: usize) !void {
 }
 
 pub fn writeBenchmarkReport(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     io: std.Io,
     title: []const u8,
     out_dir_base: []const u8,
@@ -421,8 +430,11 @@ pub fn writeBenchmarkReport(
     stats_list: []const BenchStats,
     max_name_len: usize,
 ) !void {
-    const report_name = try std.fs.path.join(allocator, &[_][]const u8{ out_dir_base, "benchmark.md" });
-    defer allocator.free(report_name);
+    const report_name = try std.fs.path.join(
+        outer_alloc,
+        &[_][]const u8{ out_dir_base, "benchmark.md" },
+    );
+    defer outer_alloc.free(report_name);
 
     const cwd = std.Io.Dir.cwd();
     cwd.createDir(io, out_dir_base, .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;

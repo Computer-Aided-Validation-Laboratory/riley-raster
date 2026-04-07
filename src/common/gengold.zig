@@ -16,19 +16,19 @@ pub const iio = @import("../zraster/zig/imageio.zig");
 pub const texops = @import("../zraster/zig/textureops.zig");
 pub const uvio = @import("../zraster/zig/uvio.zig");
 
-pub fn loadData(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !SimData {
-    const pc = try std.fmt.allocPrint(allocator, "{s}/coords.csv", .{path});
-    const pn = try std.fmt.allocPrint(allocator, "{s}/connectivity.csv", .{path});
+pub fn loadData(outer_alloc: std.mem.Allocator, io: std.Io, path: []const u8) !SimData {
+    const pc = try std.fmt.allocPrint(outer_alloc, "{s}/coords.csv", .{path});
+    const pn = try std.fmt.allocPrint(outer_alloc, "{s}/connectivity.csv", .{path});
     const pf = [_][]const u8{
-        try std.fmt.allocPrint(allocator, "{s}/field_disp_x.csv", .{path}),
-        try std.fmt.allocPrint(allocator, "{s}/field_disp_y.csv", .{path}),
-        try std.fmt.allocPrint(allocator, "{s}/field_disp_z.csv", .{path}),
+        try std.fmt.allocPrint(outer_alloc, "{s}/field_disp_x.csv", .{path}),
+        try std.fmt.allocPrint(outer_alloc, "{s}/field_disp_y.csv", .{path}),
+        try std.fmt.allocPrint(outer_alloc, "{s}/field_disp_z.csv", .{path}),
     };
-    return try meshio.loadSimData(allocator, io, pc, pn, pf[0..], null);
+    return try meshio.loadSimData(outer_alloc, io, pc, pn, pf[0..], null);
 }
 
 pub fn renderAndSave(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     io: std.Io,
     camera: *const Camera,
     mt: MeshType,
@@ -68,11 +68,11 @@ pub fn renderAndSave(
     };
 
     const meshes = &[_]MeshInput{mesh_input};
-    _ = try zraster.rasterAllFrames(allocator, io, camera, meshes, config, out_dir);
+    _ = try zraster.rasterAllFrames(outer_alloc, io, camera, meshes, config, out_dir);
 }
 
 pub fn runGenerationExt(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     io: std.Io,
     test_type: []const u8,
     mesh_types: []const MeshType,
@@ -88,7 +88,7 @@ pub fn runGenerationExt(
     const focal_leng: f64 = 50.0e-3;
     const rot = Rotation.init(0, 0, 0);
 
-    var arena = std.heap.ArenaAllocator.init(allocator);
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
 
@@ -170,20 +170,20 @@ pub fn runGenerationExt(
 }
 
 pub fn runMultimeshGeneration(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     io: std.Io,
     config: RasterConfig,
 ) !void {
-    try runMultimeshGenerationExt(allocator, io, config, "gold-multimesh");
+    try runMultimeshGenerationExt(outer_alloc, io, config, "gold-multimesh");
 }
 
 pub fn runMultimeshGenerationExt(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     io: std.Io,
     config: RasterConfig,
     out_dir_root: []const u8,
 ) !void {
-    var arena = std.heap.ArenaAllocator.init(allocator);
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
 

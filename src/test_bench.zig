@@ -11,17 +11,29 @@ const simd_on = buildconfig.config.simd == .on;
 const impl_suffix = if (simd_on) "_simd" else "_scalar";
 
 test "Unified Benchmark Tests" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    const outer_alloc = std.heap.page_allocator;
 
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const texture_grey = try iio.loadImage(allocator, io, "texture/speckle.bmp", .bmp, u8, 1);
-    defer texture_grey.deinit(allocator);
-    const texture_rgb = try iio.loadImage(allocator, io, "texture/speckle_rgb.bmp", .bmp, u8, 3);
-    defer texture_rgb.deinit(allocator);
+    const texture_grey = try iio.loadImage(
+        outer_alloc,
+        io,
+        "texture/speckle.bmp",
+        .bmp,
+        u8,
+        1,
+    );
+    defer texture_grey.deinit(outer_alloc);
+    const texture_rgb = try iio.loadImage(
+        outer_alloc,
+        io,
+        "texture/speckle_rgb.bmp",
+        .bmp,
+        u8,
+        3,
+    );
+    defer texture_rgb.deinit(outer_alloc);
 
     const cases = [_]struct {
         name: []const u8,
@@ -71,7 +83,7 @@ test "Unified Benchmark Tests" {
 
     std.debug.print("Running Unified Benchmark Tests...\n", .{});
 
-    var arena = std.heap.ArenaAllocator.init(allocator);
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
 
@@ -99,7 +111,18 @@ test "Unified Benchmark Tests" {
                         std.debug.print("Testing {s}/{s} ... ", .{ cc.name, case_name });
 
                         // 1. Run benchmark
-                        _ = try common.runBenchmark(allocator, io, mt, st, it, data_dir, cc.out_dir, pixel_num, texture_grey, texture_rgb);
+                        _ = try common.runBenchmark(
+                            outer_alloc,
+                            io,
+                            mt,
+                            st,
+                            it,
+                            data_dir,
+                            cc.out_dir,
+                            pixel_num,
+                            texture_grey,
+                            texture_rgb,
+                        );
 
                         // 2. Map filenames
                         const is_rgb = (st == .flat_rgb or st == .tex8_rgb);
@@ -110,20 +133,32 @@ test "Unified Benchmark Tests" {
                         const gold_csv = try std.fmt.allocPrint(aa, "{s}/{s}/frame_0_field_0{s}.csv", .{ cc.gold_dir, case_name, suffix });
 
                         // 3. Load and Compare
-                        const t_arr_res = common.loadNDArrayFromCSV(allocator, io, test_csv, channels, false);
+                        const t_arr_res = common.loadNDArrayFromCSV(
+                            outer_alloc,
+                            io,
+                            test_csv,
+                            channels,
+                            false,
+                        );
                         if (t_arr_res) |t_arr| {
                             var t_mut = t_arr;
                             defer {
-                                allocator.free(t_mut.elems);
-                                t_mut.deinit(allocator);
+                                outer_alloc.free(t_mut.elems);
+                                t_mut.deinit(outer_alloc);
                             }
 
-                            const g_arr_res = common.loadNDArrayFromCSV(allocator, io, gold_csv, channels, false);
+                            const g_arr_res = common.loadNDArrayFromCSV(
+                                outer_alloc,
+                                io,
+                                gold_csv,
+                                channels,
+                                false,
+                            );
                             if (g_arr_res) |g_arr| {
                                 var g_mut = g_arr;
                                 defer {
-                                    allocator.free(g_mut.elems);
-                                    g_mut.deinit(allocator);
+                                    outer_alloc.free(g_mut.elems);
+                                    g_mut.deinit(outer_alloc);
                                 }
 
                                 var diff_count: usize = 0;

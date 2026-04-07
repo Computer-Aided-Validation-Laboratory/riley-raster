@@ -16,7 +16,7 @@ pub const NodalInput = common.NodalInput;
 pub const NodalPrepared = common.NodalPrepared;
 pub const TexInput = common.TexInput;
 pub const TexPrepared = common.TexPrepared;
-pub const LocalNodeBuffer = common.LocalNodeBuffer;
+pub const LocalShaderBuffer = common.LocalShaderBuffer;
 pub const ShadeContext = common.ShadeContext;
 pub const InterpData = common.InterpData;
 pub const ShaderInput = common.ShaderInput;
@@ -30,7 +30,7 @@ pub inline fn fillNodal(
     spx_image_scratch: *MatSlice(f64),
 ) void {
     for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
-        const vs = ctx_shade.local_buf.interpolate(ff, interp.weights);
+        const vs = ctx_shade.shader_buf.interpolate(ff, interp.weights);
         spx_image_scratch.elems[ff * spx_image_scratch.cols_num + ctx_shade.idx] =
             vs * sh.scale_mul + sh.scale_add;
     }
@@ -48,7 +48,7 @@ pub inline fn fillNodalPerspective(
         var vs: f64 = 0.0;
         inline for (0..N) |nn| {
             const inv_z = interp.nodes_inv_z[nn];
-            vs += interp.weights[nn] * ctx_shade.local_buf.data[base + nn] * inv_z;
+            vs += interp.weights[nn] * ctx_shade.shader_buf.data[base + nn] * inv_z;
         }
 
         const final_val = vs * interp.sub_pixel_z;
@@ -74,7 +74,7 @@ pub inline fn fillNodalSIMD(
         var v_vs: @Vector(S, f64) = @splat(0.0);
         inline for (0..N) |nn| {
             v_vs += v_weights[nn] *
-                @as(@Vector(S, f64), @splat(ctx_shade.local_buf.data[base + nn]));
+                @as(@Vector(S, f64), @splat(ctx_shade.shader_buf.data[base + nn]));
         }
 
         const v_final = v_vs * v_mul + v_add;
@@ -105,7 +105,7 @@ pub inline fn fillNodalPerspectiveSIMD(
         var v_vs: @Vector(S, f64) = @splat(0.0);
         inline for (0..N) |nn| {
             v_vs += v_weights[nn] * v_nodes_inv_z[nn] *
-                @as(@Vector(S, f64), @splat(ctx_shade.local_buf.data[base + nn]));
+                @as(@Vector(S, f64), @splat(ctx_shade.shader_buf.data[base + nn]));
         }
 
         const v_final = (v_vs * v_subpx_z) * v_mul + v_add;
@@ -130,8 +130,8 @@ pub inline fn fillTex(
     var u_at: f64 = 0.0;
     var v_at: f64 = 0.0;
     inline for (0..N) |nn| {
-        u_at += interp.weights[nn] * ctx_shade.local_buf.data[nn];
-        v_at += interp.weights[nn] * ctx_shade.local_buf.data[N + nn];
+        u_at += interp.weights[nn] * ctx_shade.shader_buf.data[nn];
+        v_at += interp.weights[nn] * ctx_shade.shader_buf.data[N + nn];
     }
 
     const sampled = texops.sampleGeneric(
@@ -161,8 +161,8 @@ pub inline fn fillTexPerspective(
     var v_at: f64 = 0.0;
     inline for (0..N) |nn| {
         const inv_z = interp.nodes_inv_z[nn];
-        u_at += interp.weights[nn] * ctx_shade.local_buf.data[nn] * inv_z;
-        v_at += interp.weights[nn] * ctx_shade.local_buf.data[N + nn] * inv_z;
+        u_at += interp.weights[nn] * ctx_shade.shader_buf.data[nn] * inv_z;
+        v_at += interp.weights[nn] * ctx_shade.shader_buf.data[N + nn] * inv_z;
     }
 
     const sampled = texops.sampleGeneric(
@@ -192,9 +192,9 @@ pub inline fn fillTexSIMD(
     var v_u_at: @Vector(S, f64) = @splat(0.0);
     var v_v_at: @Vector(S, f64) = @splat(0.0);
     inline for (0..N) |nn| {
-        v_u_at += v_weights[nn] * @as(@Vector(S, f64), @splat(ctx_shade.local_buf.data[nn]));
+        v_u_at += v_weights[nn] * @as(@Vector(S, f64), @splat(ctx_shade.shader_buf.data[nn]));
         v_v_at += v_weights[nn] *
-            @as(@Vector(S, f64), @splat(ctx_shade.local_buf.data[N + nn]));
+            @as(@Vector(S, f64), @splat(ctx_shade.shader_buf.data[N + nn]));
     }
 
     const px_stride = spx_image_scratch.cols_num;
@@ -242,9 +242,9 @@ pub inline fn fillTexPerspectiveSIMD(
     inline for (0..N) |nn| {
         const v_inv_z = v_nodes_inv_z[nn];
         v_u_at += v_weights[nn] *
-            @as(@Vector(S, f64), @splat(ctx_shade.local_buf.data[nn])) * v_inv_z;
+            @as(@Vector(S, f64), @splat(ctx_shade.shader_buf.data[nn])) * v_inv_z;
         v_v_at += v_weights[nn] *
-            @as(@Vector(S, f64), @splat(ctx_shade.local_buf.data[N + nn])) * v_inv_z;
+            @as(@Vector(S, f64), @splat(ctx_shade.shader_buf.data[N + nn])) * v_inv_z;
     }
 
     v_u_at *= v_subpx_z;
@@ -291,9 +291,9 @@ pub inline fn fillTexPerspectiveSIMDTri3(
     inline for (0..N) |nn| {
         const v_inv_z = v_nodes_inv_z[nn];
         v_u_at += v_weights[nn] *
-            @as(@Vector(S, f64), @splat(ctx_shade.local_buf.data[nn])) * v_inv_z;
+            @as(@Vector(S, f64), @splat(ctx_shade.shader_buf.data[nn])) * v_inv_z;
         v_v_at += v_weights[nn] *
-            @as(@Vector(S, f64), @splat(ctx_shade.local_buf.data[N + nn])) * v_inv_z;
+            @as(@Vector(S, f64), @splat(ctx_shade.shader_buf.data[N + nn])) * v_inv_z;
     }
 
     v_u_at *= v_subpx_z;

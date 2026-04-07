@@ -12,7 +12,7 @@ pub const NodalInput = common.NodalInput;
 pub const NodalPrepared = common.NodalPrepared;
 pub const TexInput = common.TexInput;
 pub const TexPrepared = common.TexPrepared;
-pub const LocalNodeBuffer = common.LocalNodeBuffer;
+pub const LocalShaderBuffer = common.LocalShaderBuffer;
 pub const ShadeContext = common.ShadeContext;
 pub const InterpData = common.InterpData;
 pub const ShaderInput = common.ShaderInput;
@@ -26,7 +26,7 @@ pub inline fn fillNodal(
     spx_image_scratch: *MatSlice(f64),
 ) void {
     for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
-        const vs = ctx_shade.local_buf.interpolate(ff, interp.weights);
+        const vs = ctx_shade.shader_buf.interpolate(ff, interp.weights);
         spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + ff] =
             vs * sh.scale_mul + sh.scale_add;
     }
@@ -44,7 +44,7 @@ pub inline fn fillNodalPerspective(
         var vs: f64 = 0.0;
         inline for (0..N) |nn| {
             const inv_z = interp.nodes_inv_z[nn];
-            vs += interp.weights[nn] * ctx_shade.local_buf.data[base + nn] * inv_z;
+            vs += interp.weights[nn] * ctx_shade.shader_buf.data[base + nn] * inv_z;
         }
 
         const final_val = vs * interp.sub_pixel_z;
@@ -66,8 +66,8 @@ pub inline fn fillTex(
     var u_at: f64 = 0.0;
     var v_at: f64 = 0.0;
     inline for (0..N) |nn| {
-        u_at += interp.weights[nn] * ctx_shade.local_buf.data[nn];
-        v_at += interp.weights[nn] * ctx_shade.local_buf.data[N + nn];
+        u_at += interp.weights[nn] * ctx_shade.shader_buf.data[nn];
+        v_at += interp.weights[nn] * ctx_shade.shader_buf.data[N + nn];
     }
 
     const sampled = texops.sampleGeneric(
@@ -97,8 +97,8 @@ pub inline fn fillTexPerspective(
     var v_at: f64 = 0.0;
     inline for (0..N) |nn| {
         const inv_z = interp.nodes_inv_z[nn];
-        u_at += interp.weights[nn] * ctx_shade.local_buf.data[nn] * inv_z;
-        v_at += interp.weights[nn] * ctx_shade.local_buf.data[N + nn] * inv_z;
+        u_at += interp.weights[nn] * ctx_shade.shader_buf.data[nn] * inv_z;
+        v_at += interp.weights[nn] * ctx_shade.shader_buf.data[N + nn] * inv_z;
     }
 
     const sampled = texops.sampleGeneric(

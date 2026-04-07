@@ -424,12 +424,12 @@ pub fn saveComparisonArtifactsFromImages(
 
 pub const ShaderFilter = enum { flat, tex, both };
 
-pub fn runTestInternal(allocator: std.mem.Allocator, io: std.Io, test_type: []const u8, mesh_type: MeshType, fov_scale: f64, texture: iio.Texture(u8, 1), pixel_num: [2]u32, interp_types: []const texops.InterpType, gold_dir_root: []const u8, data_dir_root: []const u8, rel_tol: f64, abs_tol: f64, shader_filter: ShaderFilter, report_perf: bool) !void {
+pub fn runTestInternal(outer_alloc: std.mem.Allocator, io: std.Io, test_type: []const u8, mesh_type: MeshType, fov_scale: f64, texture: iio.Texture(u8, 1), pixel_num: [2]u32, interp_types: []const texops.InterpType, gold_dir_root: []const u8, data_dir_root: []const u8, rel_tol: f64, abs_tol: f64, shader_filter: ShaderFilter, report_perf: bool) !void {
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
     const rot = Rotation.init(0, 0, 0);
 
-    var arena = std.heap.ArenaAllocator.init(allocator);
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
 
@@ -566,12 +566,12 @@ pub fn runTestInternal(allocator: std.mem.Allocator, io: std.Io, test_type: []co
 }
 
 pub fn runMultimeshTest(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     io: std.Io,
     rel_tol: f64,
     abs_tol: f64,
 ) !void {
-    var arena = std.heap.ArenaAllocator.init(allocator);
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
 
@@ -662,22 +662,28 @@ pub fn runMultimeshTest(
 }
 
 pub fn runMultimeshMixedTest(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     io: std.Io,
     rel_tol: f64,
     abs_tol: f64,
 ) !void {
-    try runMultimeshMixedTestExt(allocator, io, "gold-multimesh/allelem_allshade", rel_tol, abs_tol);
+    try runMultimeshMixedTestExt(
+        outer_alloc,
+        io,
+        "gold-multimesh/allelem_allshade",
+        rel_tol,
+        abs_tol,
+    );
 }
 
 pub fn runMultimeshMixedTestExt(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     io: std.Io,
     gold_dir: []const u8,
     rel_tol: f64,
     abs_tol: f64,
 ) !void {
-    var arena = std.heap.ArenaAllocator.init(allocator);
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
 
@@ -784,22 +790,28 @@ pub fn runMultimeshMixedTestExt(
 }
 
 pub fn runMultimeshMixedRGBTest(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     io: std.Io,
     rel_tol: f64,
     abs_tol: f64,
 ) !void {
-    try runMultimeshMixedRGBTestExt(allocator, io, "gold-multimesh/allelem_allshade_rgb", rel_tol, abs_tol);
+    try runMultimeshMixedRGBTestExt(
+        outer_alloc,
+        io,
+        "gold-multimesh/allelem_allshade_rgb",
+        rel_tol,
+        abs_tol,
+    );
 }
 
 pub fn runMultimeshMixedRGBTestExt(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     io: std.Io,
     gold_dir: []const u8,
     rel_tol: f64,
     abs_tol: f64,
 ) !void {
-    var arena = std.heap.ArenaAllocator.init(allocator);
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
 

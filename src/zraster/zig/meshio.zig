@@ -102,12 +102,12 @@ pub const Field = struct {
 
     const Self = @This();
 
-    pub fn initAlloc(alloc: std.mem.Allocator, time_n: usize, coord_n: usize, fields_n: u8) !Self {
-        const mem_array = try alloc.alloc(f64, time_n * coord_n * fields_n);
+    pub fn initAlloc(outer_alloc: std.mem.Allocator, time_n: usize, coord_n: usize, fields_n: u8) !Self {
+        const mem_array = try outer_alloc.alloc(f64, time_n * coord_n * fields_n);
         @memset(mem_array, 0.0);
 
         const mem_dims = [3]usize{ time_n, coord_n, @as(usize, fields_n) };
-        const arr = try NDArray(f64).init(alloc, mem_array, mem_dims[0..]);
+        const arr = try NDArray(f64).init(outer_alloc, mem_array, mem_dims[0..]);
 
         return .{
             .array = arr,
@@ -126,9 +126,9 @@ pub const Field = struct {
         return @intCast(self.array.dims[2]);
     }
 
-    pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
-        allocator.free(self.array_mem);
-        self.array.deinit(allocator);
+    pub fn deinit(self: *Self, outer_alloc: std.mem.Allocator) void {
+        outer_alloc.free(self.array_mem);
+        self.array.deinit(outer_alloc);
     }
 };
 
@@ -269,11 +269,11 @@ pub const SimData = struct {
     field: ?Field,
     disp: ?Field,
 
-    pub fn deinit(self: *SimData, allocator: std.mem.Allocator) void {
-        allocator.free(self.coords.mem);
-        self.connect.deinit(allocator);
-        if (self.field) |*ff| ff.deinit(allocator);
-        if (self.disp) |*dd| dd.deinit(allocator);
+    pub fn deinit(self: *SimData, outer_alloc: std.mem.Allocator) void {
+        outer_alloc.free(self.coords.mem);
+        self.connect.deinit(outer_alloc);
+        if (self.field) |*ff| ff.deinit(outer_alloc);
+        if (self.disp) |*dd| dd.deinit(outer_alloc);
     }
 };
 
@@ -351,48 +351,48 @@ pub fn loadSimData(
     };
 }
 
-pub fn loadMultiSimData(allocator: std.mem.Allocator, io: std.Io, dir_paths: []const []const u8, files: SimDataFiles) ![]SimData {
-    var sim_data_slice = try allocator.alloc(SimData, dir_paths.len);
+pub fn loadMultiSimData(outer_alloc: std.mem.Allocator, io: std.Io, dir_paths: []const []const u8, files: SimDataFiles) ![]SimData {
+    var sim_data_slice = try outer_alloc.alloc(SimData, dir_paths.len);
     var loaded_count: usize = 0;
     errdefer {
         for (0..loaded_count) |ii| {
-            sim_data_slice[ii].deinit(allocator);
+            sim_data_slice[ii].deinit(outer_alloc);
         }
-        allocator.free(sim_data_slice);
+        outer_alloc.free(sim_data_slice);
     }
 
     for (dir_paths, 0..) |dir_path, ii| {
-        const path_coords = try std.fmt.allocPrint(allocator, "{s}{s}", .{ dir_path, files.coord_file });
-        defer allocator.free(path_coords);
+        const path_coords = try std.fmt.allocPrint(outer_alloc, "{s}{s}", .{ dir_path, files.coord_file });
+        defer outer_alloc.free(path_coords);
 
-        const path_connect = try std.fmt.allocPrint(allocator, "{s}{s}", .{ dir_path, files.connect_file });
-        defer allocator.free(path_connect);
+        const path_connect = try std.fmt.allocPrint(outer_alloc, "{s}{s}", .{ dir_path, files.connect_file });
+        defer outer_alloc.free(path_connect);
 
         var field_paths: ?[][]const u8 = null;
         if (files.field_files) |ff| {
-            field_paths = try allocator.alloc([]const u8, ff.len);
+            field_paths = try outer_alloc.alloc([]const u8, ff.len);
             for (ff, 0..) |suffix, jj| {
-                field_paths.?[jj] = try std.fmt.allocPrint(allocator, "{s}{s}", .{ dir_path, suffix });
+                field_paths.?[jj] = try std.fmt.allocPrint(outer_alloc, "{s}{s}", .{ dir_path, suffix });
             }
         }
         defer if (field_paths) |fp| {
-            for (fp) |pp| allocator.free(pp);
-            allocator.free(fp);
+            for (fp) |pp| outer_alloc.free(pp);
+            outer_alloc.free(fp);
         };
 
         var disp_paths: ?[][]const u8 = null;
         if (files.disp_files) |df| {
-            disp_paths = try allocator.alloc([]const u8, df.len);
+            disp_paths = try outer_alloc.alloc([]const u8, df.len);
             for (df, 0..) |suffix, jj| {
-                disp_paths.?[jj] = try std.fmt.allocPrint(allocator, "{s}{s}", .{ dir_path, suffix });
+                disp_paths.?[jj] = try std.fmt.allocPrint(outer_alloc, "{s}{s}", .{ dir_path, suffix });
             }
         }
         defer if (disp_paths) |dp| {
-            for (dp) |pp| allocator.free(pp);
-            allocator.free(dp);
+            for (dp) |pp| outer_alloc.free(pp);
+            outer_alloc.free(dp);
         };
 
-        sim_data_slice[ii] = try loadSimData(allocator, io, path_coords, path_connect, field_paths, disp_paths);
+        sim_data_slice[ii] = try loadSimData(outer_alloc, io, path_coords, path_connect, field_paths, disp_paths);
         loaded_count += 1;
     }
     return sim_data_slice;

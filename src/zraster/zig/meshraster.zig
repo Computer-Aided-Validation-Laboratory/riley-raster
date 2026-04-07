@@ -233,7 +233,7 @@ pub fn prepareCoords(
 }
 
 pub fn prepareField(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     connect: *const Connect,
     field: *const Field,
 ) !NDArray(f64) {
@@ -244,7 +244,7 @@ pub fn prepareField(
         field.getFieldsN(),
         connect.getNodesPerElem(),
     };
-    var elem_field_arr = try NDArray(f64).initFlat(allocator, field_dims[0..]);
+    var elem_field_arr = try NDArray(f64).initFlat(outer_alloc, field_dims[0..]);
     @memset(elem_field_arr.elems, 0.0);
 
     const dim_time: usize = 0;
@@ -282,14 +282,14 @@ pub fn prepareField(
 }
 
 pub fn prepareUVs(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     uvs: *const NDArray(f64),
     connect: *const Connect,
 ) !NDArray(f64) {
     const elems_num = connect.getElemsNum();
     const nodes_per_elem = connect.getNodesPerElem();
     var elem_uv_arr = try NDArray(f64).initFlat(
-        allocator,
+        outer_alloc,
         &[_]usize{ elems_num, 2, nodes_per_elem },
     );
     @memset(elem_uv_arr.elems, 0.0);
@@ -308,7 +308,7 @@ pub fn prepareUVs(
 }
 
 pub fn meshInputFromSimDataSlice(
-    allocator: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
     io: std.Io,
     sim_datas: []const meshio.SimData,
     mesh_types: []const MeshType,
@@ -317,21 +317,21 @@ pub fn meshInputFromSimDataSlice(
     texture_path: ?[]const u8,
     uv_file: ?[]const u8,
 ) ![]MeshInput {
-    var mesh_inputs = try allocator.alloc(MeshInput, sim_datas.len);
+    var mesh_inputs = try outer_alloc.alloc(MeshInput, sim_datas.len);
     var initialized_count: usize = 0;
     errdefer {
         for (0..initialized_count) |ii| {
             switch (mesh_inputs[ii].shader) {
                 .tex_u8 => |tex| {
-                    allocator.free(tex.uvs.elems);
+                    outer_alloc.free(tex.uvs.elems);
                 },
                 .tex_u16 => |tex| {
-                    allocator.free(tex.uvs.elems);
+                    outer_alloc.free(tex.uvs.elems);
                 },
                 else => {},
             }
         }
-        allocator.free(mesh_inputs);
+        outer_alloc.free(mesh_inputs);
     }
 
     const uv_file_name = uv_file orelse "uvs.csv";
@@ -358,13 +358,13 @@ pub fn meshInputFromSimDataSlice(
         } else {
             const paths = uv_paths orelse return error.MissingUVPaths;
             const path_uvs = try std.fmt.allocPrint(
-                allocator,
+                outer_alloc,
                 "{s}{s}",
                 .{ paths[ii], uv_file_name },
             );
-            defer allocator.free(path_uvs);
+            defer outer_alloc.free(path_uvs);
 
-            var uvmap = try uvio.loadUVMap(allocator, io, path_uvs);
+            var uvmap = try uvio.loadUVMap(outer_alloc, io, path_uvs);
 
             const format: ImageFormat = if (std.mem.endsWith(u8, texture_path.?, ".bmp"))
                 .bmp
@@ -372,7 +372,7 @@ pub fn meshInputFromSimDataSlice(
                 .tiff;
 
             const texture = try imageio.loadImage(
-                allocator,
+                outer_alloc,
                 io,
                 texture_path.?,
                 format,

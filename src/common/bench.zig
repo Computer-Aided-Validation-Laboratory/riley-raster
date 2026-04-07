@@ -31,8 +31,8 @@ pub fn isApproxEqual(v1: f64, v2: f64, rel_tol: f64, abs_tol: f64) bool {
     return (diff / largest) <= rel_tol;
 }
 
-pub fn compareNDArrayToCSV(allocator: std.mem.Allocator, io: std.Io, array: *const NDArray(f64), frame: usize, field: usize, path: []const u8, rel_tol: f64, abs_tol: f64) !void {
-    _ = allocator;
+pub fn compareNDArrayToCSV(outer_alloc: std.mem.Allocator, io: std.Io, array: *const NDArray(f64), frame: usize, field: usize, path: []const u8, rel_tol: f64, abs_tol: f64) !void {
+    _ = outer_alloc;
     _ = io;
     _ = array;
     _ = frame;
@@ -43,18 +43,18 @@ pub fn compareNDArrayToCSV(allocator: std.mem.Allocator, io: std.Io, array: *con
     return;
 }
 
-pub fn loadData(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !SimData {
-    const pc = try std.fmt.allocPrint(allocator, "{s}/coords.csv", .{path});
-    const pn = try std.fmt.allocPrint(allocator, "{s}/connectivity.csv", .{path});
+pub fn loadData(outer_alloc: std.mem.Allocator, io: std.Io, path: []const u8) !SimData {
+    const pc = try std.fmt.allocPrint(outer_alloc, "{s}/coords.csv", .{path});
+    const pn = try std.fmt.allocPrint(outer_alloc, "{s}/connectivity.csv", .{path});
     const pf = [_][]const u8{
-        try std.fmt.allocPrint(allocator, "{s}/field_disp_x.csv", .{path}),
-        try std.fmt.allocPrint(allocator, "{s}/field_disp_y.csv", .{path}),
-        try std.fmt.allocPrint(allocator, "{s}/field_disp_z.csv", .{path}),
+        try std.fmt.allocPrint(outer_alloc, "{s}/field_disp_x.csv", .{path}),
+        try std.fmt.allocPrint(outer_alloc, "{s}/field_disp_y.csv", .{path}),
+        try std.fmt.allocPrint(outer_alloc, "{s}/field_disp_z.csv", .{path}),
     };
-    return try meshio.loadSimData(allocator, io, pc, pn, pf[0..], null);
+    return try meshio.loadSimData(outer_alloc, io, pc, pn, pf[0..], null);
 }
 
-fn saveResultToRoot(allocator: std.mem.Allocator, io: std.Io, array: *const NDArray(f64), dir_name: []const u8, root_dir: []const u8) !void {
+fn saveResultToRoot(outer_alloc: std.mem.Allocator, io: std.Io, array: *const NDArray(f64), dir_name: []const u8, root_dir: []const u8) !void {
     const cwd = std.Io.Dir.cwd();
     cwd.createDir(io, root_dir, .default_dir) catch {};
     var root_h = try cwd.openDir(io, root_dir, .{});
@@ -68,7 +68,11 @@ fn saveResultToRoot(allocator: std.mem.Allocator, io: std.Io, array: *const NDAr
         for (0..array.dims[1]) |fi| {
             const slice = array.getSlice(&[_]usize{ f, fi, 0, 0 }, 1);
             const mat = MatSlice(f64).init(slice, array.dims[2], array.dims[3]);
-            const name = try std.fmt.allocPrint(allocator, "frame_{d}_field_{d}", .{ f, fi });
+            const name = try std.fmt.allocPrint(
+                outer_alloc,
+                "frame_{d}_field_{d}",
+                .{ f, fi },
+            );
             try iio.saveImage(io, out_dir, name, &mat, .csv, 8);
             try iio.saveImage(io, out_dir, name, &mat, .bmp, 8);
         }
@@ -77,7 +81,7 @@ fn saveResultToRoot(allocator: std.mem.Allocator, io: std.Io, array: *const NDAr
 
 pub const ShaderFilter = enum { flat, tex, both };
 
-pub fn runTestInternal(allocator: std.mem.Allocator, io: std.Io, test_type: []const u8, mesh_type: MeshType, fov_scale: f64, texture: iio.Texture(u8, 1), pixel_num: [2]u32, interp_types: []const texops.InterpType, gold_dir_root: []const u8, data_dir_root: []const u8, rel_tol: f64, abs_tol: f64, shader_filter: ShaderFilter, render_root: []const u8) !void {
+pub fn runTestInternal(outer_alloc: std.mem.Allocator, io: std.Io, test_type: []const u8, mesh_type: MeshType, fov_scale: f64, texture: iio.Texture(u8, 1), pixel_num: [2]u32, interp_types: []const texops.InterpType, gold_dir_root: []const u8, data_dir_root: []const u8, rel_tol: f64, abs_tol: f64, shader_filter: ShaderFilter, render_root: []const u8) !void {
     _ = gold_dir_root;
     _ = rel_tol;
     _ = abs_tol;
@@ -86,7 +90,7 @@ pub fn runTestInternal(allocator: std.mem.Allocator, io: std.Io, test_type: []co
     const focal_leng: f64 = 50.0e-3;
     const rot = Rotation.init(0, 0, 0);
 
-    var arena = std.heap.ArenaAllocator.init(allocator);
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
 

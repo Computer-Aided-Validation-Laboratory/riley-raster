@@ -11,9 +11,7 @@ const mr = @import("zraster/zig/meshraster.zig");
 const MatSlice = @import("zraster/zig/matslice.zig").MatSlice;
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    const outer_alloc = std.heap.page_allocator;
 
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
@@ -26,7 +24,7 @@ pub fn main() !void {
     var out_dir = try cwd.openDir(io, out_dir_root, .{});
     defer out_dir.close(io);
 
-    var arena = std.heap.ArenaAllocator.init(allocator);
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
 

@@ -729,11 +729,11 @@ pub inline fn maybeRecordNormalSIMD(
             var normal = [3]f64{ 0.0, 0.0, 0.0 };
             inline for (0..nodes_num) |nn| {
                 normal[0] += v_weights[nn][ll] *
-                    ctx_shade.local_buf.normals[0 * nodes_num + nn];
+                    ctx_shade.shader_buf.normals[0 * nodes_num + nn];
                 normal[1] += v_weights[nn][ll] *
-                    ctx_shade.local_buf.normals[1 * nodes_num + nn];
+                    ctx_shade.shader_buf.normals[1 * nodes_num + nn];
                 normal[2] += v_weights[nn][ll] *
-                    ctx_shade.local_buf.normals[2 * nodes_num + nn];
+                    ctx_shade.shader_buf.normals[2 * nodes_num + nn];
             }
 
             maybeRecordNormal(
