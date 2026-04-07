@@ -14,10 +14,10 @@ pub const SubpxDomain = struct {
 };
 
 pub const RasterBounds = struct {
-    start_x: usize,
-    end_x: usize,
-    start_y: usize,
-    end_y: usize,
+    start_x_u: usize,
+    end_x_u: usize,
+    start_y_u: usize,
+    end_y_u: usize,
     x_min_f: f64,
     y_min_f: f64,
 };

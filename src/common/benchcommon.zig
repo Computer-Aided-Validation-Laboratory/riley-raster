@@ -286,7 +286,7 @@ pub fn runBenchmark(
     const uvs_raw = try loadNDArrayFromCSV(aa, io, uv_path, 2, false);
 
     var shader: mr.ShaderInput = undefined;
-    var num_out_fields: usize = 1;
+    var num_out_fields: u8 = 1;
 
     switch (shader_type) {
         .flat_grey => {
@@ -338,7 +338,10 @@ pub fn runBenchmark(
     const config = zraster.RasterConfig{};
     const transformed_mesh = try mr.prepareMesh(aa, &mesh_input, &sim_data.coords.mat, null);
 
-    var image_out_arr = try NDArray(f64).initFlat(aa, &[_]usize{ num_out_fields, pixel_num[1], pixel_num[0] });
+    var image_out_arr = try NDArray(f64).initFlat(
+        aa,
+        &[_]usize{ num_out_fields, pixel_num[1], pixel_num[0] },
+    );
 
     var bench_log = report.BenchLog{};
 

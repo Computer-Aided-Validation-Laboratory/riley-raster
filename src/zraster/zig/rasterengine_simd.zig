@@ -63,7 +63,8 @@ pub fn rasterScene(
     raster_hulls: []const ?NDArray(f64),
     image_out_arr: *NDArray(f64),
 ) !void {
-    const fields_num = image_out_arr.dims[0];
+    std.debug.assert(image_out_arr.dims[0] <= std.math.maxInt(u8));
+    const fields_num: u8 = @intCast(image_out_arr.dims[0]);
 
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     const subpx_tile_size: usize = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp;
@@ -103,12 +104,12 @@ pub fn rasterScene(
     const subpx_img_mem = try allocator.alignedAlloc(
         f64,
         alignment,
-        (subpx_tile_total_padded + 8) * fields_num,
+        (subpx_tile_total_padded + 8) * @as(usize, fields_num),
     );
     defer allocator.free(subpx_img_mem);
     var subpx_image_scratch = MatSlice(f64).init(
         subpx_img_mem,
-        fields_num,
+        @as(usize, fields_num),
         subpx_tile_total_padded + 8,
     );
 
@@ -176,8 +177,8 @@ pub fn rasterScene(
                         .quad9 => geomkerns.Quad89Kernel(9),
                     };
                     const N = GK.nodes_num;
-                    const mesh_fields = switch (mesh.shader) {
-                        .nodal => |s| s.elem_field.dims[2],
+                    const mesh_fields: u8 = switch (mesh.shader) {
+                        .nodal => |s| @intCast(s.elem_field.dims[2]),
                         .tex_u8, .tex_u16 => 1,
                         .tex_rgb_u8, .tex_rgb_u16 => 3,
                     };
@@ -208,8 +209,8 @@ pub fn rasterScene(
                                 input,
                                 mesh,
                                 shader,
-                                scratch,
                                 &local_node_buf,
+                                scratch,
                             );
                         },
                         .tex_u8 => |*shader| {
@@ -231,8 +232,8 @@ pub fn rasterScene(
                                 input,
                                 mesh,
                                 shader,
-                                scratch,
                                 &local_node_buf,
+                                scratch,
                             );
                         },
                         .tex_u16 => |*shader| {
@@ -254,8 +255,8 @@ pub fn rasterScene(
                                 input,
                                 mesh,
                                 shader,
-                                scratch,
                                 &local_node_buf,
+                                scratch,
                             );
                         },
                         .tex_rgb_u8 => |*shader| {
@@ -277,8 +278,8 @@ pub fn rasterScene(
                                 input,
                                 mesh,
                                 shader,
-                                scratch,
                                 &local_node_buf,
+                                scratch,
                             );
                         },
                         .tex_rgb_u16 => |*shader| {
@@ -300,8 +301,8 @@ pub fn rasterScene(
                                 input,
                                 mesh,
                                 shader,
-                                scratch,
                                 &local_node_buf,
+                                scratch,
                             );
                         },
                     }
@@ -356,24 +357,6 @@ pub fn RasterPass(
     comptime ShaderKernel: type,
     comptime ShaderData: type,
 ) type {
-    const sops = shaderops;
-    const PreparedShader = switch (ShaderData) {
-        sops.NodalInput, sops.NodalPrepared => sops.NodalPrepared,
-        sops.TexInput(u8, 1), sops.TexPrepared(u8, 1) => blk: {
-            break :blk sops.TexPrepared(u8, 1);
-        },
-        sops.TexInput(u16, 1), sops.TexPrepared(u16, 1) => blk: {
-            break :blk sops.TexPrepared(u16, 1);
-        },
-        sops.TexInput(u8, 3), sops.TexPrepared(u8, 3) => blk: {
-            break :blk sops.TexPrepared(u8, 3);
-        },
-        sops.TexInput(u16, 3), sops.TexPrepared(u16, 3) => blk: {
-            break :blk sops.TexPrepared(u16, 3);
-        },
-        else => ShaderData,
-    };
-
     return struct {
         pub fn render(
             comptime report_mode: ReportMode,
@@ -381,9 +364,9 @@ pub fn RasterPass(
             target: common.OverlapTarget,
             input: rops.MeshInput,
             mesh: *const MeshPrepared,
-            shader: *const PreparedShader,
-            scratch: ScratchBuffers,
+            shader: *const ShaderData,
             local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
+            scratch: ScratchBuffers,
         ) !u64 {
             _ = mesh;
             const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
@@ -403,13 +386,17 @@ pub fn RasterPass(
                 target.overlap.elem_idx,
             );
 
-            const scratch_start_x = sub_samp * (@as(usize, @intCast(target.overlap.x_min)) -
+            const scratch_start_x_u = sub_samp *
+                (@as(usize, @intCast(target.overlap.x_min)) -
                 target.tile.x_px_min);
-            const scratch_end_x = sub_samp * (@as(usize, @intCast(target.overlap.x_max)) -
+            const scratch_end_x_u = sub_samp *
+                (@as(usize, @intCast(target.overlap.x_max)) -
                 target.tile.x_px_min);
-            const scratch_start_y = sub_samp * (@as(usize, @intCast(target.overlap.y_min)) -
+            const scratch_start_y_u = sub_samp *
+                (@as(usize, @intCast(target.overlap.y_min)) -
                 target.tile.y_px_min);
-            const scratch_end_y = sub_samp * (@as(usize, @intCast(target.overlap.y_max)) -
+            const scratch_end_y_u = sub_samp *
+                (@as(usize, @intCast(target.overlap.y_max)) -
                 target.tile.y_px_min);
 
             const x_min_f: f64 = @as(f64, @floatFromInt(target.overlap.x_min));
@@ -424,10 +411,10 @@ pub fn RasterPass(
             };
 
             const bounds = RasterBounds{
-                .start_x = scratch_start_x,
-                .end_x = scratch_end_x,
-                .start_y = scratch_start_y,
-                .end_y = scratch_end_y,
+                .start_x_u = scratch_start_x_u,
+                .end_x_u = scratch_end_x_u,
+                .start_y_u = scratch_start_y_u,
+                .end_y_u = scratch_end_y_u,
                 .x_min_f = x_min_f,
                 .y_min_f = y_min_f,
             };
@@ -440,11 +427,11 @@ pub fn RasterPass(
                     target,
                     domain,
                     bounds,
-                    scratch_start_x,
+                    scratch_start_x_u,
                     nodes,
                     shader,
-                    scratch,
                     local_buf,
+                    scratch,
                 )
             else if (Geometry.strategy == .incremental)
                 try rasterIncrementalSIMD(
@@ -455,8 +442,8 @@ pub fn RasterPass(
                     bounds,
                     nodes,
                     shader,
-                    scratch,
                     local_buf,
+                    scratch,
                 )
             else if (Geometry.strategy == .newton)
                 try rasterNewtonSIMD(
@@ -466,11 +453,11 @@ pub fn RasterPass(
                     &input,
                     domain,
                     bounds,
-                    scratch_start_x,
+                    scratch_start_x_u,
                     nodes,
                     shader,
-                    scratch,
                     local_buf,
+                    scratch,
                 )
             else
                 try rasterDirect(
@@ -482,8 +469,8 @@ pub fn RasterPass(
                     bounds,
                     nodes,
                     shader,
-                    scratch,
                     local_buf,
+                    scratch,
                 );
 
             return shaded_px;
@@ -498,12 +485,13 @@ pub fn RasterPass(
             original_start_x: usize,
             nodes: Vec3Slices(f64),
             shader: anytype,
-            scratch: ScratchBuffers,
             local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
+            scratch: ScratchBuffers,
         ) !u64 {
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
-            const fields_num = scratch.image.rows_num;
+            std.debug.assert(scratch.image.rows_num <= std.math.maxInt(u8));
+            const fields_num: u8 = @intCast(scratch.image.rows_num);
 
             const inv_area = 1.0 / rops.edgeFun3(
                 nodes.x[0],
@@ -604,7 +592,7 @@ pub fn RasterPass(
                                     .frame_index = ctx_rast.frame_ind,
                                     .elem_index = target.overlap.elem_idx,
                                     .fields_num = fields_num,
-                                    .actual_fields = @intCast(fields_num),
+                                    .actual_fields = fields_num,
                                     .idx = index,
                                     .global_subx = 0,
                                     .global_suby = 0,
@@ -642,13 +630,14 @@ pub fn RasterPass(
             original_start_x: usize,
             nodes: Vec3Slices(f64),
             shader: anytype,
-            scratch: ScratchBuffers,
             local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
+            scratch: ScratchBuffers,
         ) !u64 {
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
             const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-            const fields_num = scratch.image.rows_num;
+            std.debug.assert(scratch.image.rows_num <= std.math.maxInt(u8));
+            const fields_num: u8 = @intCast(scratch.image.rows_num);
 
             var nodes_inv_z: [N]f64 = undefined;
             var v_nodes_z: [N]@Vector(S, f64) = undefined;
@@ -941,7 +930,7 @@ pub fn RasterPass(
                                     .frame_index = ctx_rast.frame_ind,
                                     .elem_index = target.overlap.elem_idx,
                                     .fields_num = fields_num,
-                                    .actual_fields = @intCast(fields_num),
+                                    .actual_fields = fields_num,
                                     .idx = index,
                                     .global_subx = target.tile.x_px_min * sub_samp + scratch_x,
                                     .global_suby = target.tile.y_px_min * sub_samp + scratch_y,
@@ -971,14 +960,15 @@ pub fn RasterPass(
             domain: SubpxDomain,
             bounds: RasterBounds,
             nodes: Vec3Slices(f64),
-            shader: *const PreparedShader,
-            scratch: ScratchBuffers,
+            shader: *const ShaderData,
             local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
+            scratch: ScratchBuffers,
         ) !u64 {
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
             const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-            const fields_num = scratch.image.rows_num;
+            std.debug.assert(scratch.image.rows_num <= std.math.maxInt(u8));
+            const fields_num: u8 = @intCast(scratch.image.rows_num);
 
             var nodes_inv_z: [N]f64 = undefined;
             inline for (0..N) |node_index| {
@@ -1042,7 +1032,7 @@ pub fn RasterPass(
                                         .frame_index = ctx_rast.frame_ind,
                                         .elem_index = target.overlap.elem_idx,
                                         .fields_num = fields_num,
-                                        .actual_fields = @intCast(fields_num),
+                                        .actual_fields = fields_num,
                                         .idx = index,
                                         .global_subx = global_subx,
                                         .global_suby = global_suby,
@@ -1064,7 +1054,7 @@ pub fn RasterPass(
                                         .frame_index = ctx_rast.frame_ind,
                                         .elem_index = target.overlap.elem_idx,
                                         .fields_num = fields_num,
-                                        .actual_fields = @intCast(fields_num),
+                                        .actual_fields = fields_num,
                                         .idx = index,
                                         .global_subx = global_subx,
                                         .global_suby = global_suby,
@@ -1101,14 +1091,15 @@ pub fn RasterPass(
             domain: SubpxDomain,
             bounds: RasterBounds,
             nodes: Vec3Slices(f64),
-            shader: *const PreparedShader,
-            scratch: ScratchBuffers,
+            shader: *const ShaderData,
             local_buf: *const shaderops.LocalNodeBuffer(Geometry.nodes_num),
+            scratch: ScratchBuffers,
         ) !u64 {
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
             const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-            const fields_num = scratch.image.rows_num;
+            std.debug.assert(scratch.image.rows_num <= std.math.maxInt(u8));
+            const fields_num: u8 = @intCast(scratch.image.rows_num);
 
             var nodes_inv_z: [N]f64 = undefined;
             inline for (0..N) |nn| {
@@ -1215,7 +1206,7 @@ pub fn RasterPass(
                                         .frame_index = ctx_rast.frame_ind,
                                         .elem_index = target.overlap.elem_idx,
                                         .fields_num = fields_num,
-                                        .actual_fields = @intCast(fields_num),
+                                        .actual_fields = fields_num,
                                         .idx = index,
                                         .global_subx = global_subx,
                                         .global_suby = global_suby,
@@ -1237,7 +1228,7 @@ pub fn RasterPass(
                                         .frame_index = ctx_rast.frame_ind,
                                         .elem_index = target.overlap.elem_idx,
                                         .fields_num = fields_num,
-                                        .actual_fields = @intCast(fields_num),
+                                        .actual_fields = fields_num,
                                         .idx = index,
                                         .global_subx = global_subx,
                                         .global_suby = global_suby,
@@ -1269,7 +1260,7 @@ pub fn RasterPass(
 pub fn resolveScratchDirect(
     tile: ActiveTile,
     spx_tile_size: usize,
-    fields_num: usize,
+    fields_num: u8,
     spx_image_scratch: *const MatSlice(f64),
     image_out_arr: *NDArray(f64),
 ) void {
@@ -1303,7 +1294,7 @@ pub fn resolveScratchDirect(
                     spx_image_scratch.get(2, scratch_flat_ind),
                 );
             } else {
-                for (0..fields_num) |ff| {
+                for (0..@as(usize, fields_num)) |ff| {
                     image_out_arr.set(
                         &[_]usize{ ff, image_px_y, image_px_x },
                         spx_image_scratch.get(ff, scratch_flat_ind),
@@ -1318,7 +1309,7 @@ pub fn averageScratch(
     tile: ActiveTile,
     sub_samp: usize,
     spx_tile_size: usize,
-    fields_num: usize,
+    fields_num: u8,
     spx_image_scratch: *const MatSlice(f64),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
@@ -1414,13 +1405,13 @@ pub fn averageScratch(
                     for (0..sub_samp) |sx| {
                         const scratch_flat_ind: usize = scratch_row_offset + spx_start_x + sx;
 
-                        for (0..fields_num) |ff| {
+                        for (0..@as(usize, fields_num)) |ff| {
                             spx_field_avg[ff] += spx_image_scratch.get(ff, scratch_flat_ind);
                         }
                     }
                 }
 
-                for (0..fields_num) |ff| {
+                for (0..@as(usize, fields_num)) |ff| {
                     const image_val: f64 = spx_field_avg[ff] * inv_sub_samp_sq;
                     image_out_arr.set(&[_]usize{ ff, image_px_y, image_px_x }, image_val);
                 }

@@ -29,11 +29,11 @@ pub fn LocalNodeBuffer(comptime N: usize) type {
             self: *Self,
             array: NDArray(f64),
             start_idx: usize,
-            fields_num: usize,
+            fields_num: u8,
         ) void {
             std.debug.assert(fields_num <= cfg.max_nodal_fields);
-            self.actual_fields = @intCast(fields_num);
-            const count = fields_num * N;
+            self.actual_fields = fields_num;
+            const count = @as(usize, fields_num) * N;
             @memcpy(self.data[0..count], array.elems[start_idx .. start_idx + count]);
         }
 
@@ -123,7 +123,7 @@ pub fn ShadeContext(comptime N: usize) type {
     return struct {
         frame_index: usize,
         elem_index: usize,
-        fields_num: usize,
+        fields_num: u8,
         actual_fields: u8,
         idx: usize,
         global_subx: usize,

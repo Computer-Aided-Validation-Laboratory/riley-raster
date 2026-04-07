@@ -102,9 +102,9 @@ pub fn rasterAllFrames(
     }
 
     // Work out the number of fields/channels we are rendering to the final image
-    var num_fields: usize = 0;
+    var num_fields: u8 = 0;
     for (meshes) |mesh| {
-        const mesh_fields = switch (mesh.shader) {
+        const mesh_fields: u8 = switch (mesh.shader) {
             .nodal => |s| s.field.getFieldsN(),
             .tex_u8, .tex_u16 => 1,
             .tex_rgb_u8, .tex_rgb_u16 => 3,
@@ -118,7 +118,7 @@ pub fn rasterAllFrames(
     if (config.save_opt == .memory or config.save_opt == .both) {
         const dims = [_]usize{
             num_time,
-            num_fields,
+            @as(usize, num_fields),
             camera.pixels_num[1],
             camera.pixels_num[0],
         };
@@ -203,7 +203,11 @@ pub fn rasterAllFrames(
             const mem = ima.elems[tt * stride .. (tt + 1) * stride];
             frame_arr = try NDArray(f64).init(arena_alloc, mem, ima.dims[1..]);
         } else {
-            const dims = [_]usize{ num_fields, camera.pixels_num[1], camera.pixels_num[0] };
+            const dims = [_]usize{
+                @as(usize, num_fields),
+                camera.pixels_num[1],
+                camera.pixels_num[0],
+            };
             frame_arr = try NDArray(f64).initFlat(arena_alloc, dims[0..]);
         }
         @memset(frame_arr.elems, 0.0);

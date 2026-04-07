@@ -102,11 +102,11 @@ pub const Field = struct {
 
     const Self = @This();
 
-    pub fn initAlloc(alloc: std.mem.Allocator, time_n: usize, coord_n: usize, fields_n: usize) !Self {
+    pub fn initAlloc(alloc: std.mem.Allocator, time_n: usize, coord_n: usize, fields_n: u8) !Self {
         const mem_array = try alloc.alloc(f64, time_n * coord_n * fields_n);
         @memset(mem_array, 0.0);
 
-        const mem_dims = [3]usize{ time_n, coord_n, fields_n };
+        const mem_dims = [3]usize{ time_n, coord_n, @as(usize, fields_n) };
         const arr = try NDArray(f64).init(alloc, mem_array, mem_dims[0..]);
 
         return .{
@@ -121,8 +121,9 @@ pub const Field = struct {
     pub inline fn getCoordN(self: *const Self) usize {
         return self.array.dims[1];
     }
-    pub inline fn getFieldsN(self: *const Self) usize {
-        return self.array.dims[2];
+    pub inline fn getFieldsN(self: *const Self) u8 {
+        std.debug.assert(self.array.dims[2] <= std.math.maxInt(u8));
+        return @intCast(self.array.dims[2]);
     }
 
     pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
@@ -226,7 +227,7 @@ pub fn getFieldTimeN(csv_lines: *const std.ArrayList([]const u8)) usize {
     return time_n;
 }
 
-pub fn parseField(csv_lines: *const std.ArrayList([]const u8), field: *Field, field_n: usize) !void {
+pub fn parseField(csv_lines: *const std.ArrayList([]const u8), field: *Field, field_n: u8) !void {
 
     // Each row is a coordinate
     // Each field csv has row where each column in the row is a time step
@@ -308,13 +309,14 @@ pub fn loadSimData(
             lines = try readCsvToList(arena_alloc, io, fp[0]);
             const time_n: usize = getFieldTimeN(&lines);
             const coord_n: usize = lines.items.len;
-            field = try Field.initAlloc(outer_alloc, time_n, coord_n, fp.len);
+            std.debug.assert(fp.len <= std.math.maxInt(u8));
+            field = try Field.initAlloc(outer_alloc, time_n, coord_n, @intCast(fp.len));
             try parseField(&lines, &field.?, 0);
             lines.clearRetainingCapacity();
 
             for (fp[1..], 1..) |path, ii| {
                 lines = try readCsvToList(arena_alloc, io, path);
-                try parseField(&lines, &field.?, ii);
+                try parseField(&lines, &field.?, @intCast(ii));
                 lines.clearRetainingCapacity();
             }
         }
@@ -328,13 +330,14 @@ pub fn loadSimData(
             lines = try readCsvToList(arena_alloc, io, dp[0]);
             const time_n: usize = getFieldTimeN(&lines);
             const coord_n: usize = lines.items.len;
-            disp = try Field.initAlloc(outer_alloc, time_n, coord_n, dp.len);
+            std.debug.assert(dp.len <= std.math.maxInt(u8));
+            disp = try Field.initAlloc(outer_alloc, time_n, coord_n, @intCast(dp.len));
             try parseField(&lines, &disp.?, 0);
             lines.clearRetainingCapacity();
 
             for (dp[1..], 1..) |path, ii| {
                 lines = try readCsvToList(arena_alloc, io, path);
-                try parseField(&lines, &disp.?, ii);
+                try parseField(&lines, &disp.?, @intCast(ii));
                 lines.clearRetainingCapacity();
             }
         }

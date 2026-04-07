@@ -106,7 +106,7 @@ pub fn saveImages(
     io: std.Io,
     out_dir: ?std.Io.Dir,
     frame_idx: usize,
-    num_fields: usize,
+    num_fields: u8,
     pixels_num: [2]u32,
     frame_arr: *const NDArray(f64),
     opts_slice: []const ImageSaveOpts,
@@ -117,7 +117,7 @@ pub fn saveImages(
 
     for (opts_slice) |opts| {
         var ff: usize = 0;
-        while (ff + opts.channels <= num_fields) {
+        while (ff + opts.channels <= @as(usize, num_fields)) {
             const file_name = if (opts.channels == 1)
                 try std.fmt.bufPrint(
                     name_buff[0..],
