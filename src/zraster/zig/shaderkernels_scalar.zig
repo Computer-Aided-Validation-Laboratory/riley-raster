@@ -87,7 +87,7 @@ pub fn TexKernel(
                 }
             }
             if (comptime coord_space == CoordSpace.clip_px_leng) {
-                shaderops.fillTex(
+                shaderops.fillTexClip(
                     N,
                     T,
                     channels,

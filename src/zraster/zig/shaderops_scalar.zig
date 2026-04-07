@@ -1,30 +1,16 @@
-const ndarray = @import("ndarray.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const texops = @import("textureops.zig");
 const InterpType = texops.InterpType;
 const common = @import("shaderops_common.zig");
 
-const NDArray = ndarray.NDArray;
-
-pub const ScaleOver = common.ScaleOver;
-pub const NormalType = common.NormalType;
-pub const NodalInput = common.NodalInput;
-pub const NodalPrepared = common.NodalPrepared;
-pub const TexInput = common.TexInput;
-pub const TexPrepared = common.TexPrepared;
-pub const LocalShaderBuffer = common.LocalShaderBuffer;
-pub const ShadeContext = common.ShadeContext;
-pub const InterpData = common.InterpData;
-pub const ShaderInput = common.ShaderInput;
-pub const ShaderPrepared = common.ShaderPrepared;
-
 pub inline fn fillNodal(
     comptime N: usize,
-    ctx_shade: ShadeContext(N),
-    interp: InterpData(N),
-    sh: *const NodalPrepared,
+    ctx_shade: common.ShadeContext(N),
+    interp: common.InterpData(N),
+    sh: *const common.NodalPrepared,
     spx_image_scratch: *MatSlice(f64),
 ) void {
+    // Scalar scratch stores one sub-pixel contiguously as [field0, field1, ...].
     for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
         const vs = ctx_shade.shader_buf.interpolate(ff, interp.weights);
         spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + ff] =
@@ -34,11 +20,12 @@ pub inline fn fillNodal(
 
 pub inline fn fillNodalPerspective(
     comptime N: usize,
-    ctx_shade: ShadeContext(N),
-    interp: InterpData(N),
-    sh: *const NodalPrepared,
+    ctx_shade: common.ShadeContext(N),
+    interp: common.InterpData(N),
+    sh: *const common.NodalPrepared,
     spx_image_scratch: *MatSlice(f64),
 ) void {
+    // Scalar scratch stores one sub-pixel contiguously as [field0, field1, ...].
     for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
         const base = ff * N;
         var vs: f64 = 0.0;
@@ -53,14 +40,14 @@ pub inline fn fillNodalPerspective(
     }
 }
 
-pub inline fn fillTex(
+pub inline fn fillTexClip(
     comptime N: usize,
     comptime TexT: type,
     comptime channels: usize,
     interp_type: InterpType,
-    ctx_shade: ShadeContext(N),
-    interp: InterpData(N),
-    sh: *const TexPrepared(TexT, channels),
+    ctx_shade: common.ShadeContext(N),
+    interp: common.InterpData(N),
+    sh: *const common.TexPrepared(TexT, channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
     var u_at: f64 = 0.0;
@@ -77,6 +64,7 @@ pub inline fn fillTex(
         u_at,
         v_at,
     );
+    // Scalar scratch stores one sub-pixel contiguously as [ch0, ch1, ...].
     inline for (0..channels) |ch| {
         spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + ch] =
             sampled[ch] * sh.scale_mul + sh.scale_add;
@@ -88,9 +76,9 @@ pub inline fn fillTexPerspective(
     comptime TexT: type,
     comptime channels: usize,
     interp_type: InterpType,
-    ctx_shade: ShadeContext(N),
-    interp: InterpData(N),
-    sh: *const TexPrepared(TexT, channels),
+    ctx_shade: common.ShadeContext(N),
+    interp: common.InterpData(N),
+    sh: *const common.TexPrepared(TexT, channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
     var u_at: f64 = 0.0;
@@ -108,6 +96,7 @@ pub inline fn fillTexPerspective(
         u_at * interp.sub_pixel_z,
         v_at * interp.sub_pixel_z,
     );
+    // Scalar scratch stores one sub-pixel contiguously as [ch0, ch1, ...].
     inline for (0..channels) |ch| {
         spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + ch] =
             sampled[ch] * sh.scale_mul + sh.scale_add;

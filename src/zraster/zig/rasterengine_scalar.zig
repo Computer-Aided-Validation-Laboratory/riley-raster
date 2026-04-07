@@ -428,23 +428,26 @@ pub fn RasterPass(
                                 );
                             }
 
+                            const ctx_shade = shaderops.ShadeContext(N){
+                                .frame_index = ctx_rast.frame_ind,
+                                .elem_index = target.overlap.elem_idx,
+                                .fields_num = fields_num,
+                                .actual_fields = fields_num,
+                                .idx = index,
+                                .global_subx = global_subx,
+                                .global_suby = global_suby,
+                                .shader_buf = shader_buf,
+                            };
+                            const interp_data = shaderops.InterpData(N){
+                                .weights = weights,
+                                .nodes_inv_z = nodes_inv_z,
+                                .sub_pixel_z = subpx_z,
+                            };
+
                             ShaderKernel.shade(
                                 Geometry.coord_space,
-                                .{
-                                    .frame_index = ctx_rast.frame_ind,
-                                    .elem_index = target.overlap.elem_idx,
-                                    .fields_num = fields_num,
-                                    .actual_fields = fields_num,
-                                    .idx = index,
-                                    .global_subx = global_subx,
-                                    .global_suby = global_suby,
-                                    .shader_buf = shader_buf,
-                                },
-                                .{
-                                    .weights = weights,
-                                    .nodes_inv_z = nodes_inv_z,
-                                    .sub_pixel_z = subpx_z,
-                                },
+                                ctx_shade,
+                                interp_data,
                                 shader,
                                 ctx_rast.ctx_perf,
                                 scratch.image,
@@ -591,23 +594,26 @@ pub fn RasterPass(
                                 );
                             }
 
+                            const ctx_shade = shaderops.ShadeContext(N){
+                                .frame_index = ctx_rast.frame_ind,
+                                .elem_index = target.overlap.elem_idx,
+                                .fields_num = fields_num,
+                                .actual_fields = fields_num,
+                                .idx = index,
+                                .global_subx = global_subx,
+                                .global_suby = global_suby,
+                                .shader_buf = shader_buf,
+                            };
+                            const interp_data = shaderops.InterpData(N){
+                                .weights = weights,
+                                .nodes_inv_z = nodes_inv_z,
+                                .sub_pixel_z = subpx_z,
+                            };
+
                             ShaderKernel.shade(
                                 Geometry.coord_space,
-                                .{
-                                    .frame_index = ctx_rast.frame_ind,
-                                    .elem_index = target.overlap.elem_idx,
-                                    .fields_num = fields_num,
-                                    .actual_fields = fields_num,
-                                    .idx = index,
-                                    .global_subx = global_subx,
-                                    .global_suby = global_suby,
-                                    .shader_buf = shader_buf,
-                                },
-                                .{
-                                    .weights = weights,
-                                    .nodes_inv_z = nodes_inv_z,
-                                    .sub_pixel_z = subpx_z,
-                                },
+                                ctx_shade,
+                                interp_data,
                                 shader,
                                 ctx_rast.ctx_perf,
                                 scratch.image,

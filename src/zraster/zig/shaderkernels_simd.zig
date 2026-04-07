@@ -124,7 +124,7 @@ pub fn TexKernel(
                 }
             }
             if (comptime coord_space == CoordSpace.clip_px_leng) {
-                shaderops.fillTex(
+                shaderops.fillTexClip(
                     N,
                     TexT,
                     channels,
@@ -203,7 +203,7 @@ pub fn TexKernel(
                     );
                 }
             } else if (comptime coord_space == CoordSpace.clip_px_leng) {
-                shaderops.fillTexSIMD(
+                shaderops.fillTexClipSIMD(
                     N,
                     TexT,
                     channels,

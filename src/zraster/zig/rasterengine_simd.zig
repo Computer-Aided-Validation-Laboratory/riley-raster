@@ -582,19 +582,21 @@ pub fn RasterPass(
                                 ),
                             ));
 
+                            const ctx_shade = shaderops.ShadeContext(N){
+                                .frame_index = ctx_rast.frame_ind,
+                                .elem_index = target.overlap.elem_idx,
+                                .fields_num = fields_num,
+                                .actual_fields = fields_num,
+                                .idx = index,
+                                .global_subx = 0,
+                                .global_suby = 0,
+                                .shader_buf = shader_buf,
+                                .v_mask = v_depth_mask,
+                            };
+
                             ShaderKernel.shadeSIMD(
                                 Geometry.coord_space,
-                                .{
-                                    .frame_index = ctx_rast.frame_ind,
-                                    .elem_index = target.overlap.elem_idx,
-                                    .fields_num = fields_num,
-                                    .actual_fields = fields_num,
-                                    .idx = index,
-                                    .global_subx = 0,
-                                    .global_suby = 0,
-                                    .shader_buf = shader_buf,
-                                    .v_mask = v_depth_mask,
-                                },
+                                ctx_shade,
                                 ctx_rast.ctx_perf,
                                 v_depth_mask,
                                 v_weights,
@@ -921,19 +923,23 @@ pub fn RasterPass(
                                 ),
                             ));
 
+                            const ctx_shade = shaderops.ShadeContext(N){
+                                .frame_index = ctx_rast.frame_ind,
+                                .elem_index = target.overlap.elem_idx,
+                                .fields_num = fields_num,
+                                .actual_fields = fields_num,
+                                .idx = index,
+                                .global_subx = target.tile.x_px_min * sub_samp +
+                                    scratch_x,
+                                .global_suby = target.tile.y_px_min * sub_samp +
+                                    scratch_y,
+                                .shader_buf = shader_buf,
+                                .v_mask = v_depth_mask,
+                            };
+
                             ShaderKernel.shadeSIMD(
                                 Geometry.coord_space,
-                                .{
-                                    .frame_index = ctx_rast.frame_ind,
-                                    .elem_index = target.overlap.elem_idx,
-                                    .fields_num = fields_num,
-                                    .actual_fields = fields_num,
-                                    .idx = index,
-                                    .global_subx = target.tile.x_px_min * sub_samp + scratch_x,
-                                    .global_suby = target.tile.y_px_min * sub_samp + scratch_y,
-                                    .shader_buf = shader_buf,
-                                    .v_mask = v_depth_mask,
-                                },
+                                ctx_shade,
                                 ctx_rast.ctx_perf,
                                 v_depth_mask,
                                 v_weights,
@@ -1022,23 +1028,26 @@ pub fn RasterPass(
                                 );
                             }
 
+                            const ctx_shade = shaderops.ShadeContext(N){
+                                .frame_index = ctx_rast.frame_ind,
+                                .elem_index = target.overlap.elem_idx,
+                                .fields_num = fields_num,
+                                .actual_fields = fields_num,
+                                .idx = index,
+                                .global_subx = global_subx,
+                                .global_suby = global_suby,
+                                .shader_buf = shader_buf,
+                            };
+                            const interp_data = shaderops.InterpData(N){
+                                .weights = weights,
+                                .nodes_inv_z = nodes_inv_z,
+                                .sub_pixel_z = subpx_z,
+                            };
+
                             ShaderKernel.shade(
                                 Geometry.coord_space,
-                                .{
-                                    .frame_index = ctx_rast.frame_ind,
-                                    .elem_index = target.overlap.elem_idx,
-                                    .fields_num = fields_num,
-                                    .actual_fields = fields_num,
-                                    .idx = index,
-                                    .global_subx = global_subx,
-                                    .global_suby = global_suby,
-                                    .shader_buf = shader_buf,
-                                },
-                                .{
-                                    .weights = weights,
-                                    .nodes_inv_z = nodes_inv_z,
-                                    .sub_pixel_z = subpx_z,
-                                },
+                                ctx_shade,
+                                interp_data,
                                 shader,
                                 ctx_rast.ctx_perf,
                                 scratch.image,
@@ -1172,23 +1181,26 @@ pub fn RasterPass(
                                 );
                             }
 
+                            const ctx_shade = shaderops.ShadeContext(N){
+                                .frame_index = ctx_rast.frame_ind,
+                                .elem_index = target.overlap.elem_idx,
+                                .fields_num = fields_num,
+                                .actual_fields = fields_num,
+                                .idx = index,
+                                .global_subx = global_subx,
+                                .global_suby = global_suby,
+                                .shader_buf = shader_buf,
+                            };
+                            const interp_data = shaderops.InterpData(N){
+                                .weights = weights,
+                                .nodes_inv_z = nodes_inv_z,
+                                .sub_pixel_z = subpx_z,
+                            };
+
                             ShaderKernel.shade(
                                 Geometry.coord_space,
-                                .{
-                                    .frame_index = ctx_rast.frame_ind,
-                                    .elem_index = target.overlap.elem_idx,
-                                    .fields_num = fields_num,
-                                    .actual_fields = fields_num,
-                                    .idx = index,
-                                    .global_subx = global_subx,
-                                    .global_suby = global_suby,
-                                    .shader_buf = shader_buf,
-                                },
-                                .{
-                                    .weights = weights,
-                                    .nodes_inv_z = nodes_inv_z,
-                                    .sub_pixel_z = subpx_z,
-                                },
+                                ctx_shade,
+                                interp_data,
                                 shader,
                                 ctx_rast.ctx_perf,
                                 scratch.image,
