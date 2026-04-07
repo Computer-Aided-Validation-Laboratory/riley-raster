@@ -4,8 +4,7 @@ const report = @import("report.zig");
 const texops = @import("textureops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const InterpType = texops.InterpType;
-const common = @import("shaderkernels_common.zig");
-const CoordSpace = common.CoordSpace;
+const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
 pub fn NodalKernel(comptime N: usize) type {
     return struct {
@@ -17,12 +16,14 @@ pub fn NodalKernel(comptime N: usize) type {
             ctx_perf: anytype,
             spx_image_scratch: *MatSlice(f64),
         ) void {
-            common.recordDepth(
-                ctx_perf,
-                ctx_shade.global_subx,
-                ctx_shade.global_suby,
-                interp.sub_pixel_z,
-            );
+            if (comptime @TypeOf(ctx_perf).mode_tag == .full_stats) {
+                report.maybeRecordDepth(
+                    ctx_perf,
+                    ctx_shade.global_subx,
+                    ctx_shade.global_suby,
+                    interp.sub_pixel_z,
+                );
+            }
 
             if (shader.elem_normals != null) {
                 const normal = ctx_shade.shader_buf.interpolateNormal(interp.weights);
@@ -65,12 +66,14 @@ pub fn TexKernel(
             ctx_perf: anytype,
             spx_image_scratch: *MatSlice(f64),
         ) void {
-            common.recordDepth(
-                ctx_perf,
-                ctx_shade.global_subx,
-                ctx_shade.global_suby,
-                interp.sub_pixel_z,
-            );
+            if (comptime @TypeOf(ctx_perf).mode_tag == .full_stats) {
+                report.maybeRecordDepth(
+                    ctx_perf,
+                    ctx_shade.global_subx,
+                    ctx_shade.global_suby,
+                    interp.sub_pixel_z,
+                );
+            }
 
             if (shader.elem_normals != null) {
                 const normal = ctx_shade.shader_buf.interpolateNormal(interp.weights);
