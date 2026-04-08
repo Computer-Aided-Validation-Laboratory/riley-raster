@@ -378,10 +378,7 @@ pub fn Tri6Kernel() type {
         pub const raster_mode = .direct;
         pub const solver_kind = .newton;
         pub const seed_mode = .centroid;
-        pub const seed_reuse = if (buildconfig.config.simd == .on)
-            .last_converged
-        else
-            .off;
+        pub const seed_reuse = .last_converged;
 
         pub inline fn initSeed(
             pixel_x: f64,
@@ -693,10 +690,7 @@ pub fn Quad4NewtonKernel() type {
         pub const raster_mode = .direct;
         pub const solver_kind = .newton;
         pub const seed_mode = .centroid;
-        pub const seed_reuse = if (buildconfig.config.simd == .on)
-            .last_converged
-        else
-            .off;
+        pub const seed_reuse = .last_converged;
 
         pub inline fn initSeed(
             pixel_x: f64,
@@ -842,10 +836,7 @@ pub fn Quad89Kernel(comptime N: usize) type {
         pub const raster_mode = .direct;
         pub const solver_kind = .newton;
         pub const seed_mode = .centroid;
-        pub const seed_reuse = if (buildconfig.config.simd == .on)
-            .last_converged
-        else
-            .off;
+        pub const seed_reuse = .last_converged;
 
         pub inline fn initSeed(
             pixel_x: f64,
