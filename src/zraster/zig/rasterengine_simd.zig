@@ -27,6 +27,7 @@ const shaderops = @import("shaderops.zig");
 const NodalPrepared = shaderops.NodalPrepared;
 const TexPrepared = shaderops.TexPrepared;
 const geomkerns = @import("geometrykernels.zig");
+const newton = @import("newton.zig");
 const shadekerns = @import("shaderkernels.zig");
 
 const CandidateBlock = struct {
@@ -802,24 +803,24 @@ pub fn RasterPass(
                 subpx_domain.y_off,
                 null,
             );
-            var last_seed_valid = false;
-            var last_seed_xi = default_seed.xi;
-            var last_seed_eta = default_seed.eta;
+            _ = default_seed;
+            var seed_state = newton.NewtonSeedState{};
 
             for (0..candidate_block_count) |block_idx| {
                 var candidate_block = scratch.candidate_buffer[block_idx];
                 var chunk_mask_arr = [_]bool{false} ** S;
                 for (0..candidate_block.count) |jj| {
                     chunk_mask_arr[jj] = true;
-                    candidate_block.seed_xi[jj] = if (last_seed_valid)
-                        last_seed_xi
-                    else
-                        default_seed.xi;
-                    candidate_block.seed_eta[jj] = if (last_seed_valid)
-                        last_seed_eta
-                    else
-                        default_seed.eta;
                 }
+                newton.fillSeedBlock(
+                    Geometry.seed_reuse,
+                    candidate_block.count,
+                    candidate_block.seed_xi[0..candidate_block.count],
+                    candidate_block.seed_eta[0..candidate_block.count],
+                    seed_state,
+                    candidate_block.seed_xi[0..candidate_block.count],
+                    candidate_block.seed_eta[0..candidate_block.count],
+                );
 
                 const v_target_x: @Vector(S, f64) = candidate_block.px;
                 const v_target_y: @Vector(S, f64) = candidate_block.py;
@@ -875,10 +876,18 @@ pub fn RasterPass(
                         }
                     }
 
-                    if (best_lane) |lane_idx| {
-                        last_seed_valid = true;
-                        last_seed_xi = xi_out_arr[lane_idx];
-                        last_seed_eta = eta_out_arr[lane_idx];
+                    if (comptime Geometry.seed_reuse == .last_converged) {
+                        if (best_lane != null) {
+                            newton.updateSeedStateFromSIMDResult(
+                                &seed_state,
+                                v_chunk_mask,
+                                result.mask,
+                                result.xi_out,
+                                result.eta_out,
+                                result.residual_x,
+                                result.residual_y,
+                            );
+                        }
                     }
                 }
             }

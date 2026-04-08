@@ -5,6 +5,22 @@ const shapefun = @import("shapefun.zig");
 const S = buildconfig.config.simd_vector_width;
 const tol = buildconfig.config.tolerance;
 
+pub const NewtonSeed = struct {
+    xi: f64,
+    eta: f64,
+};
+
+pub const NewtonSeedSIMD = struct {
+    xi: @Vector(S, f64),
+    eta: @Vector(S, f64),
+};
+
+pub const NewtonSeedState = struct {
+    is_valid: bool = false,
+    xi: f64 = 0.0,
+    eta: f64 = 0.0,
+};
+
 pub const NewtonResult = struct {
     converged: bool,
     pre_domain_converged: bool,
@@ -20,6 +36,102 @@ pub const NewtonResultSIMD = struct {
     residual_x: @Vector(S, f64),
     residual_y: @Vector(S, f64),
 };
+
+pub inline fn clearSeedState(seed_state: *NewtonSeedState) void {
+    seed_state.* = .{};
+}
+
+pub inline fn selectSeed(
+    comptime seed_reuse: anytype,
+    base_seed: NewtonSeed,
+    seed_state: NewtonSeedState,
+) NewtonSeed {
+    if (comptime seed_reuse == .last_converged) {
+        if (seed_state.is_valid) {
+            return .{
+                .xi = seed_state.xi,
+                .eta = seed_state.eta,
+            };
+        }
+    }
+    return base_seed;
+}
+
+pub inline fn updateSeedState(
+    seed_state: *NewtonSeedState,
+    xi: f64,
+    eta: f64,
+) void {
+    seed_state.* = .{
+        .is_valid = true,
+        .xi = xi,
+        .eta = eta,
+    };
+}
+
+pub inline fn fillSeedBlock(
+    comptime seed_reuse: anytype,
+    lane_count: usize,
+    base_seed_xi: []const f64,
+    base_seed_eta: []const f64,
+    seed_state: NewtonSeedState,
+    seed_xi_out: []f64,
+    seed_eta_out: []f64,
+) void {
+    if (comptime seed_reuse == .last_converged) {
+        if (seed_state.is_valid) {
+            for (0..lane_count) |jj| {
+                seed_xi_out[jj] = seed_state.xi;
+                seed_eta_out[jj] = seed_state.eta;
+            }
+            return;
+        }
+    }
+
+    for (0..lane_count) |jj| {
+        seed_xi_out[jj] = base_seed_xi[jj];
+        seed_eta_out[jj] = base_seed_eta[jj];
+    }
+}
+
+pub inline fn updateSeedStateFromSIMDResult(
+    seed_state: *NewtonSeedState,
+    chunk_mask: @Vector(S, bool),
+    converged_mask: @Vector(S, bool),
+    xi_out: @Vector(S, f64),
+    eta_out: @Vector(S, f64),
+    residual_x: @Vector(S, f64),
+    residual_y: @Vector(S, f64),
+) void {
+    const v_mask = chunk_mask & converged_mask;
+    if (!@reduce(.Or, v_mask)) {
+        return;
+    }
+
+    const mask_arr: [S]bool = v_mask;
+    const xi_out_arr: [S]f64 = xi_out;
+    const eta_out_arr: [S]f64 = eta_out;
+    const residual_x_arr: [S]f64 = residual_x;
+    const residual_y_arr: [S]f64 = residual_y;
+
+    var best_lane_idx: ?usize = null;
+    var best_resid_sq = std.math.inf(f64);
+
+    for (0..S) |jj| {
+        if (mask_arr[jj]) {
+            const resid_sq = residual_x_arr[jj] * residual_x_arr[jj] +
+                residual_y_arr[jj] * residual_y_arr[jj];
+            if (best_lane_idx == null or resid_sq < best_resid_sq) {
+                best_lane_idx = jj;
+                best_resid_sq = resid_sq;
+            }
+        }
+    }
+
+    if (best_lane_idx) |jj| {
+        updateSeedState(seed_state, xi_out_arr[jj], eta_out_arr[jj]);
+    }
+}
 
 // Solves: $$ \sum_{i=1}^N N_i(\xi, \eta) \cdot (X_{pixel} \cdot W_i - X_i) = 0 $$
 // N_i are the shape functions,

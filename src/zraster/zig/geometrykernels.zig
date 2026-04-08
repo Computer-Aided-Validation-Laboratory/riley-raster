@@ -38,6 +38,8 @@ pub fn GeometryResult(comptime N: usize) type {
     return struct {
         weights: ?[N]f64,
         iters: u8,
+        xi_out: f64 = 0.0,
+        eta_out: f64 = 0.0,
     };
 }
 
@@ -80,15 +82,8 @@ pub const NewtonParams = struct {
     w_const: f64,
 };
 
-pub const NewtonSeed = struct {
-    xi: f64,
-    eta: f64,
-};
-
-pub const NewtonSeedSIMD = struct {
-    xi: @Vector(S, f64),
-    eta: @Vector(S, f64),
-};
+pub const NewtonSeed = newton.NewtonSeed;
+pub const NewtonSeedSIMD = newton.NewtonSeedSIMD;
 
 pub fn TriWeightStepSIMD(comptime N: usize) type {
     return struct {
@@ -383,7 +378,10 @@ pub fn Tri6Kernel() type {
         pub const raster_mode = .direct;
         pub const solver_kind = .newton;
         pub const seed_mode = .centroid;
-        pub const seed_reuse = .off;
+        pub const seed_reuse = if (buildconfig.config.simd == .on)
+            .last_converged
+        else
+            .off;
 
         pub inline fn initSeed(
             pixel_x: f64,
@@ -469,7 +467,12 @@ pub fn Tri6Kernel() type {
             );
 
             if (result.converged) {
-                return .{ .weights = node_values, .iters = result.iterations };
+                return .{
+                    .weights = node_values,
+                    .iters = result.iterations,
+                    .xi_out = xi,
+                    .eta_out = eta,
+                };
             }
             return .{ .weights = null, .iters = result.iterations };
         }
@@ -690,7 +693,10 @@ pub fn Quad4NewtonKernel() type {
         pub const raster_mode = .direct;
         pub const solver_kind = .newton;
         pub const seed_mode = .centroid;
-        pub const seed_reuse = .off;
+        pub const seed_reuse = if (buildconfig.config.simd == .on)
+            .last_converged
+        else
+            .off;
 
         pub inline fn initSeed(
             pixel_x: f64,
@@ -764,7 +770,12 @@ pub fn Quad4NewtonKernel() type {
                 &deriv_nv,
             );
             if (result.converged) {
-                return .{ .weights = node_values, .iters = result.iterations };
+                return .{
+                    .weights = node_values,
+                    .iters = result.iterations,
+                    .xi_out = xi,
+                    .eta_out = eta,
+                };
             }
             return .{ .weights = null, .iters = result.iterations };
         }
@@ -831,7 +842,10 @@ pub fn Quad89Kernel(comptime N: usize) type {
         pub const raster_mode = .direct;
         pub const solver_kind = .newton;
         pub const seed_mode = .centroid;
-        pub const seed_reuse = .off;
+        pub const seed_reuse = if (buildconfig.config.simd == .on)
+            .last_converged
+        else
+            .off;
 
         pub inline fn initSeed(
             pixel_x: f64,
@@ -906,7 +920,12 @@ pub fn Quad89Kernel(comptime N: usize) type {
             );
 
             if (result.converged) {
-                return .{ .weights = node_values, .iters = result.iterations };
+                return .{
+                    .weights = node_values,
+                    .iters = result.iterations,
+                    .xi_out = xi,
+                    .eta_out = eta,
+                };
             }
             return .{ .weights = null, .iters = result.iterations };
         }

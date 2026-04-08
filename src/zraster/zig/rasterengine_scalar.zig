@@ -21,6 +21,7 @@ const shaderops = @import("shaderops.zig");
 const NodalPrepared = shaderops.NodalPrepared;
 const TexPrepared = shaderops.TexPrepared;
 const geomkerns = @import("geometrykernels.zig");
+const newton = @import("newton.zig");
 const shadekerns = @import("shaderkernels.zig");
 
 const ScratchBuffers = struct {
@@ -527,6 +528,8 @@ pub fn RasterPass(
                 }
             }
 
+            var seed_state = newton.NewtonSeedState{};
+
             var subpx_y: f64 = rast_bounds.y_min_f + subpx_domain.offset;
             for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
                 const row_offset = scratch_y * subpx_domain.tile_size;
@@ -565,12 +568,17 @@ pub fn RasterPass(
 
                     ctx_rast.ctx_perf.recordSolverCalls(1);
                     const result = if (comptime Geometry.solver_kind == .newton) blk: {
-                        const seed = Geometry.initSeed(
+                        const base_seed = Geometry.initSeed(
                             subpx_x,
                             subpx_y,
                             subpx_domain.x_off,
                             subpx_domain.y_off,
                             null,
+                        );
+                        const selected_seed = newton.selectSeed(
+                            Geometry.seed_reuse,
+                            base_seed,
+                            seed_state,
                         );
                         break :blk Geometry.solveWeightsNewton(
                             nodes_coords,
@@ -578,8 +586,8 @@ pub fn RasterPass(
                             subpx_y,
                             subpx_domain.x_off,
                             subpx_domain.y_off,
-                            seed.xi,
-                            seed.eta,
+                            selected_seed.xi,
+                            selected_seed.eta,
                         );
                     } else if (comptime Geometry.solver_kind == .inv_bi)
                         Geometry.solveWeightsInvBi(
@@ -597,6 +605,18 @@ pub fn RasterPass(
                             solver_state,
                         );
                     ctx_rast.ctx_perf.recordSolverIters(result.iters);
+
+                    if (comptime Geometry.solver_kind == .newton and
+                        Geometry.seed_reuse == .last_converged)
+                    {
+                        if (result.weights != null) {
+                            newton.updateSeedState(
+                                &seed_state,
+                                result.xi_out,
+                                result.eta_out,
+                            );
+                        }
+                    }
 
                     if (result.weights) |weights| {
                         const inv_z = Geometry.calcInvZ(nodes_coords, weights);
