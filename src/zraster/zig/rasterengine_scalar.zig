@@ -81,7 +81,7 @@ pub fn rasterScene(
         const tile_start = if (comptime report_mode == .full_stats)
             Timestamp.now(io, .awake)
         else {};
-        
+
         var shaded_px: u64 = 0;
 
         @memset(subpx_inv_z_scratch, -std.math.inf(f64));
@@ -128,7 +128,7 @@ pub fn rasterScene(
                     switch (mesh_ptr.shader) {
                         .nodal => |*shader| {
                             const SK = shadekerns.NodalKernel(N);
-                            
+
                             const tt = @min(ctx_rast.frame_idx, shader.elem_field.dims[0] - 1);
                             const start_idx = shader.elem_field.getFlatInd(
                                 &[_]usize{ tt, targ_overlap.overlap.elem_idx, 0, 0 },
@@ -140,12 +140,12 @@ pub fn rasterScene(
                                 start_idx,
                                 mesh_fields_num,
                             );
-                            
+
                             if (shader.elem_normals) |en| {
                                 const prep_idx = en.map[targ_overlap.overlap.elem_idx];
                                 local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
                             }
-                            
+
                             shaded_px += try RasterPass(GK, SK, NodalPrepared).render(
                                 report_mode,
                                 ctx_rast,
@@ -159,7 +159,7 @@ pub fn rasterScene(
                         },
                         .tex_u8 => |*shader| {
                             const SK = shadekerns.TexKernel(N, u8, 1);
-                            
+
                             var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
                             local_shader_buf.load(
                                 shader.elem_uvs,
@@ -185,7 +185,7 @@ pub fn rasterScene(
                         },
                         .tex_u16 => |*shader| {
                             const SK = shadekerns.TexKernel(N, u16, 1);
-                            
+
                             var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
                             local_shader_buf.load(
                                 shader.elem_uvs,
@@ -326,10 +326,9 @@ pub fn RasterPass(
             shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
             scratch: ScratchBuffers,
         ) !u64 {
- 
             const sub_samp_u: usize = @intCast(ctx_rast.camera.sub_sample);
             const sub_samp_f: f64 = @as(f64, @floatFromInt(ctx_rast.camera.sub_sample));
-            
+
             const subpx_domain = SubpxDomain{
                 .step = 1.0 / sub_samp_f,
                 .offset = 1.0 / (2.0 * sub_samp_f),
@@ -337,7 +336,7 @@ pub fn RasterPass(
                 .x_off = 0.5 * @as(f64, @floatFromInt(ctx_rast.camera.pixels_num[0])),
                 .y_off = 0.5 * @as(f64, @floatFromInt(ctx_rast.camera.pixels_num[1])),
             };
-            
+
             const scratch_start_x_u = sub_samp_u *
                 (@as(usize, targ_overlap.overlap.x_min) - targ_overlap.tile.x_px_min);
             const scratch_end_x_u = sub_samp_u *
@@ -361,7 +360,7 @@ pub fn RasterPass(
                 f64,
                 mesh_in.coords,
                 targ_overlap.overlap.elem_idx,
-            );            
+            );
 
             const shaded_px = if (Geometry.raster_mode == .incremental)
                 try rasterIncremental(
@@ -412,7 +411,7 @@ pub fn RasterPass(
             const fields_num: u8 = @intCast(scratch.image.cols_num);
 
             var shaded_px: u64 = 0;
-                        
+
             var nodes_inv_z: [N]f64 = undefined;
             inline for (0..N) |node_idx| {
                 nodes_inv_z[node_idx] = 1.0 / nodes_coords.z[node_idx];
@@ -543,19 +542,23 @@ pub fn RasterPass(
 
             const bilinear_params = if (comptime Geometry.solver_kind == .inv_bi)
                 Geometry.getBilinearParams(nodes_coords)
-            else
-                {};
+            else {};
             const inv_elem_area = if (comptime Geometry.solver_kind == .hyperb)
                 Geometry.getInvElemArea(nodes_coords)
-            else
-                {};
+            else {};
 
             var element_tess: hull.Tessellation(Geometry.tess_triangles_num) = undefined;
 
             if (comptime Geometry.hull_nodes_num > 0) {
                 if (mesh_in.hull) |rh| {
-                    const hx = rh.getSlice(&[_]usize{ targ_overlap.overlap.elem_idx, 0, 0 }, 1);
-                    const hy = rh.getSlice(&[_]usize{ targ_overlap.overlap.elem_idx, 1, 0 }, 1);
+                    const hx = rh.getSlice(
+                        &[_]usize{ targ_overlap.overlap.elem_idx, 0, 0 },
+                        1,
+                    );
+                    const hy = rh.getSlice(
+                        &[_]usize{ targ_overlap.overlap.elem_idx, 1, 0 },
+                        1,
+                    );
                     element_tess = hull.getTessellation(
                         N,
                         Geometry.hull_nodes_num,
