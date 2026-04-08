@@ -13,12 +13,12 @@ pub fn NodalKernel(comptime N: usize) type {
             ctx_shade: shaderops.ShadeContext(N),
             interp: shaderops.InterpData(N),
             shader: *const shaderops.NodalPrepared,
-            ctx_perf: anytype,
+            ctx_report: anytype,
             spx_image_scratch: *MatSlice(f64),
         ) void {
-            if (comptime @TypeOf(ctx_perf).mode_tag == .full_stats) {
+            if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
                 report.maybeRecordDepth(
-                    ctx_perf,
+                    ctx_report,
                     ctx_shade.global_subx,
                     ctx_shade.global_suby,
                     interp.sub_pixel_z,
@@ -27,9 +27,9 @@ pub fn NodalKernel(comptime N: usize) type {
 
             if (shader.elem_normals != null) {
                 const normal = ctx_shade.shader_buf.interpolateNormal(interp.weights);
-                if (comptime @TypeOf(ctx_perf).mode_tag == .full_stats) {
+                if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
                     report.maybeRecordNormal(
-                        ctx_perf,
+                        ctx_report,
                         ctx_shade.global_subx,
                         ctx_shade.global_suby,
                         normal,
@@ -63,12 +63,12 @@ pub fn TexKernel(
             ctx_shade: shaderops.ShadeContext(N),
             interp: shaderops.InterpData(N),
             shader: *const shaderops.TexPrepared(T, channels),
-            ctx_perf: anytype,
+            ctx_report: anytype,
             spx_image_scratch: *MatSlice(f64),
         ) void {
-            if (comptime @TypeOf(ctx_perf).mode_tag == .full_stats) {
+            if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
                 report.maybeRecordDepth(
-                    ctx_perf,
+                    ctx_report,
                     ctx_shade.global_subx,
                     ctx_shade.global_suby,
                     interp.sub_pixel_z,
@@ -77,9 +77,9 @@ pub fn TexKernel(
 
             if (shader.elem_normals != null) {
                 const normal = ctx_shade.shader_buf.interpolateNormal(interp.weights);
-                if (comptime @TypeOf(ctx_perf).mode_tag == .full_stats) {
+                if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
                     report.maybeRecordNormal(
-                        ctx_perf,
+                        ctx_report,
                         ctx_shade.global_subx,
                         ctx_shade.global_suby,
                         normal,

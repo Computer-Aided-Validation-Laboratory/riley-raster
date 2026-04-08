@@ -296,7 +296,7 @@ pub fn rasterSceneInternal(
     report_log: *report.LogType(report_mode),
 ) !void {
     const raster_start = Timestamp.now(io, .awake);
-    const pctx = report.ReportContext(report_mode){ .log = report_log };
+    const ctx_report = report.ReportContext(report_mode){ .log = report_log };
     var pipe_times = report.PipeTimes{};
 
     const tiles_num_x: usize = try std.math.divCeil(usize, camera.pixels_num[0], tile_size);
@@ -316,7 +316,7 @@ pub fn rasterSceneInternal(
 
     try rops.prepareSceneGeometry(
         report_mode,
-        pctx,
+        ctx_report,
         arena_alloc,
         camera,
         meshes,
@@ -353,7 +353,6 @@ pub fn rasterSceneInternal(
     const time_start_loop = Timestamp.now(io, .awake);
 
     const ctx_rast = rops.RasterContext(report_mode){
-        .ctx_perf = pctx,
         .camera = camera,
         .frame_idx = frame_idx,
         .tile_size = tile_size,
@@ -362,6 +361,7 @@ pub fn rasterSceneInternal(
     try rasterengine.rasterScene(
         report_mode,
         ctx_rast,
+        ctx_report,
         outer_alloc,
         io,
         tiling,

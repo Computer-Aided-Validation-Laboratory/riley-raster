@@ -97,8 +97,8 @@ pub const TilingOverlaps = struct {
 };
 
 pub fn RasterContext(comptime report_mode: report.ReportMode) type {
+    _ = report_mode;
     return struct {
-        ctx_perf: report.ReportContext(report_mode),
         camera: *const Camera,
         frame_idx: usize,
         tile_size: u16,
@@ -581,7 +581,7 @@ fn calculatePreparedNormals(
 
 pub fn prepareSceneGeometry(
     comptime report_mode: report.ReportMode,
-    ctx_perf: report.ReportContext(report_mode),
+    ctx_report: report.ReportContext(report_mode),
     arena_alloc: std.mem.Allocator,
     camera: *const Camera,
     meshes: anytype,
@@ -682,7 +682,7 @@ pub fn prepareSceneGeometry(
         total_elems_in_image.* += elems_in_image_by_mesh[ii];
     }
 
-    ctx_perf.recordGeometry(total_elems_num.*, total_elems_in_image.*);
+    ctx_report.recordGeometry(total_elems_num.*, total_elems_in_image.*);
 }
 
 pub fn sceneTileElemOverlap(

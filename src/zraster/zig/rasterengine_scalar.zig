@@ -35,6 +35,7 @@ const RasterBounds = common.RasterBounds;
 pub fn rasterScene(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext(report_mode),
+    ctx_report: report.ReportContext(report_mode),
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     tiling: rops.TilingOverlaps,
@@ -139,6 +140,7 @@ pub fn rasterScene(
                             shaded_px += try RasterPass(GK, SK, NodalPrepared).render(
                                 report_mode,
                                 ctx_rast,
+                                ctx_report,
                                 targ_overlap,
                                 mesh_in,
                                 shader,
@@ -164,6 +166,7 @@ pub fn rasterScene(
                             shaded_px += try RasterPass(GK, SK, TexPrepared(u8, 1)).render(
                                 report_mode,
                                 ctx_rast,
+                                ctx_report,
                                 targ_overlap,
                                 mesh_in,
                                 shader,
@@ -189,6 +192,7 @@ pub fn rasterScene(
                             shaded_px += try RasterPass(GK, SK, TexPrepared(u16, 1)).render(
                                 report_mode,
                                 ctx_rast,
+                                ctx_report,
                                 targ_overlap,
                                 mesh_in,
                                 shader,
@@ -214,6 +218,7 @@ pub fn rasterScene(
                             shaded_px += try RasterPass(GK, SK, TexPrepared(u8, 3)).render(
                                 report_mode,
                                 ctx_rast,
+                                ctx_report,
                                 targ_overlap,
                                 mesh_in,
                                 shader,
@@ -239,6 +244,7 @@ pub fn rasterScene(
                             shaded_px += try RasterPass(GK, SK, TexPrepared(u16, 3)).render(
                                 report_mode,
                                 ctx_rast,
+                                ctx_report,
                                 targ_overlap,
                                 mesh_in,
                                 shader,
@@ -272,7 +278,7 @@ pub fn rasterScene(
         const tiles_x = (screen_px_x + ctx_rast.tile_size - 1) / ctx_rast.tile_size;
         const spatial_idx = (tile.y_px_min / ctx_rast.tile_size) * tiles_x +
             (tile.x_px_min / ctx_rast.tile_size);
-        ctx_rast.ctx_perf.recordTile(
+        ctx_report.recordTile(
             spatial_idx,
             @intCast(tile_duration_ns),
             shaded_px,
@@ -290,6 +296,7 @@ pub fn RasterPass(
         pub fn render(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext(report_mode),
+            ctx_report: report.ReportContext(report_mode),
             targ_overlap: common.OverlapTarget,
             mesh_in: rops.MeshInput,
             shader: *const ShaderData,
@@ -337,6 +344,7 @@ pub fn RasterPass(
                 try rasterIncremental(
                     report_mode,
                     ctx_rast,
+                    ctx_report,
                     targ_overlap,
                     subpx_domain,
                     rast_bounds,
@@ -349,6 +357,7 @@ pub fn RasterPass(
                 try rasterDirect(
                     report_mode,
                     ctx_rast,
+                    ctx_report,
                     targ_overlap,
                     mesh_in,
                     subpx_domain,
@@ -365,6 +374,7 @@ pub fn RasterPass(
         fn rasterIncremental(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext(report_mode),
+            ctx_report: report.ReportContext(report_mode),
             targ_overlap: common.OverlapTarget,
             subpx_domain: SubpxDomain,
             rast_bounds: RasterBounds,
@@ -415,8 +425,8 @@ pub fn RasterPass(
 
                 for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x| {
                     if (Geometry.isInElement(weights)) {
-                        ctx_rast.ctx_perf.recordSolverCalls(1);
-                        ctx_rast.ctx_perf.recordSolverIters(0);
+                        ctx_report.recordSolverCalls(1);
+                        ctx_report.recordSolverIters(0);
                         const inv_z = Geometry.calcInvZ(nodes_coords, weights);
                         const scratch_idx = row_offset + scratch_x;
 
@@ -431,13 +441,13 @@ pub fn RasterPass(
                                 scratch_y;
 
                             if (comptime report_mode == .full_stats) {
-                                ctx_rast.ctx_perf.recordPixelIters(
+                                ctx_report.recordPixelIters(
                                     global_subx,
                                     global_suby,
                                     0,
                                 );
                                 report.maybeRecordPixelOccupancy(
-                                    ctx_rast.ctx_perf,
+                                    ctx_report,
                                     targ_overlap.tile.x_px_min + scratch_x / sub_samp,
                                     targ_overlap.tile.y_px_min + scratch_y / sub_samp,
                                 );
@@ -464,7 +474,7 @@ pub fn RasterPass(
                                 ctx_shade,
                                 interp_data,
                                 shader,
-                                ctx_rast.ctx_perf,
+                                ctx_report,
                                 scratch.image,
                             );
                         }
@@ -483,6 +493,7 @@ pub fn RasterPass(
         fn rasterDirect(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext(report_mode),
+            ctx_report: report.ReportContext(report_mode),
             targ_overlap: common.OverlapTarget,
             mesh_in: rops.MeshInput,
             subpx_domain: SubpxDomain,
@@ -541,10 +552,10 @@ pub fn RasterPass(
                     var hull_seed: ?newton.NewtonSeed = null;
 
                     if (comptime Geometry.hull_nodes_num > 0) {
-                        ctx_rast.ctx_perf.recordTessChecks(1);
+                        ctx_report.recordTessChecks(1);
                         const tess_res = element_tess.isInScalar(subpx_x, subpx_y);
                         if (tess_res.is_in) {
-                            ctx_rast.ctx_perf.recordTessPasses(1);
+                            ctx_report.recordTessPasses(1);
                             hull_seed = .{
                                 .xi = tess_res.seed_xi,
                                 .eta = tess_res.seed_eta,
@@ -552,7 +563,7 @@ pub fn RasterPass(
                         }
                         if (comptime report_mode == .full_stats) {
                             report.maybeRecordEarlyOut(
-                                ctx_rast.ctx_perf,
+                                ctx_report,
                                 global_subx,
                                 global_suby,
                                 tess_res.is_in,
@@ -564,14 +575,14 @@ pub fn RasterPass(
                         }
                     } else if (comptime report_mode == .full_stats) {
                         report.maybeRecordEarlyOut(
-                            ctx_rast.ctx_perf,
+                            ctx_report,
                             global_subx,
                             global_suby,
                             true,
                         );
                     }
 
-                    ctx_rast.ctx_perf.recordSolverCalls(1);
+                    ctx_report.recordSolverCalls(1);
                     const result = if (comptime Geometry.solver_kind == .newton) blk: {
                         if (comptime Geometry.seed_mode == .hull) {
                             if (hull_seed) |seed| {
@@ -620,7 +631,7 @@ pub fn RasterPass(
                             subpx_y,
                             inv_elem_area,
                         );
-                    ctx_rast.ctx_perf.recordSolverIters(result.iters);
+                    ctx_report.recordSolverIters(result.iters);
 
                     if (comptime Geometry.solver_kind == .newton and
                         Geometry.seed_reuse == .last_converged)
@@ -644,13 +655,13 @@ pub fn RasterPass(
                             shaded_px += 1;
 
                             if (comptime report_mode == .full_stats) {
-                                ctx_rast.ctx_perf.recordPixelIters(
+                                ctx_report.recordPixelIters(
                                     global_subx,
                                     global_suby,
                                     result.iters,
                                 );
                                 report.maybeRecordPixelOccupancy(
-                                    ctx_rast.ctx_perf,
+                                    ctx_report,
                                     targ_overlap.tile.x_px_min + scratch_x / sub_samp,
                                     targ_overlap.tile.y_px_min + scratch_y / sub_samp,
                                 );
@@ -677,12 +688,12 @@ pub fn RasterPass(
                                 ctx_shade,
                                 interp_data,
                                 shader,
-                                ctx_rast.ctx_perf,
+                                ctx_report,
                                 scratch.image,
                             );
                         }
                     } else {
-                        if (result.iters > 0) ctx_rast.ctx_perf.recordSolverDiverged();
+                        if (result.iters > 0) ctx_report.recordSolverDiverged();
                     }
                     subpx_x += subpx_domain.step;
                 }
