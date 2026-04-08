@@ -711,7 +711,33 @@ pub fn RasterPass(
                     const v_subpx_y: @Vector(S, f64) = @splat(subpx_y);
 
                     const v_hull_res = element_tess.isInSIMD(v_subpx_x, v_subpx_y);
+                    const tess_check_num: u64 = @intCast(@reduce(
+                        .Add,
+                        @as(
+                            @Vector(S, u8),
+                            @select(
+                                u8,
+                                v_x_mask,
+                                @as(@Vector(S, u8), @splat(1)),
+                                @as(@Vector(S, u8), @splat(0)),
+                            ),
+                        ),
+                    ));
+                    ctx_rast.ctx_perf.recordTessChecks(tess_check_num);
                     const v_mask = v_x_mask & v_hull_res.isIn;
+                    const tess_pass_num: u64 = @intCast(@reduce(
+                        .Add,
+                        @as(
+                            @Vector(S, u8),
+                            @select(
+                                u8,
+                                v_mask,
+                                @as(@Vector(S, u8), @splat(1)),
+                                @as(@Vector(S, u8), @splat(0)),
+                            ),
+                        ),
+                    ));
+                    ctx_rast.ctx_perf.recordTessPasses(tess_pass_num);
 
                     if (@reduce(.Or, v_mask)) {
                         const mask_arr: [S]bool = v_mask;
@@ -801,6 +827,7 @@ pub fn RasterPass(
                 const v_eta_guess: @Vector(S, f64) = candidate_block.guess_eta;
                 const v_chunk_mask: @Vector(S, bool) = chunk_mask_arr;
 
+                ctx_rast.ctx_perf.recordSolverCalls(candidate_block.count);
                 const result = Geometry.solveWeightsNewtonSIMD(
                     nodes_coords,
                     v_target_x,
@@ -810,6 +837,14 @@ pub fn RasterPass(
                     subpx_domain.x_off,
                     subpx_domain.y_off,
                 );
+                const v_solver_iters = @select(
+                    u8,
+                    v_chunk_mask,
+                    result.iters,
+                    @as(@Vector(S, u8), @splat(0)),
+                );
+                const solver_iters: u64 = @intCast(@reduce(.Add, v_solver_iters));
+                ctx_rast.ctx_perf.recordSolverIters(solver_iters);
 
                 const v_conv_mask = v_chunk_mask & result.mask;
                 if (@reduce(.Or, v_conv_mask)) {
@@ -1031,6 +1066,8 @@ pub fn RasterPass(
 
                 for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x| {
                     if (Geometry.isInElement(weights)) {
+                        ctx_rast.ctx_perf.recordSolverCalls(1);
+                        ctx_rast.ctx_perf.recordSolverIters(0);
                         const inv_z = Geometry.calcInvZ(nodes_coords, weights);
                         const scratch_idx = row_offset + scratch_x;
 
@@ -1050,8 +1087,12 @@ pub fn RasterPass(
                             const global_suby = targ_overlap.tile.y_px_min * sub_samp +
                                 scratch_y;
 
-                            ctx_rast.ctx_perf.recordPixel(global_subx, global_suby, 0);
                             if (comptime report_mode == .full_stats) {
+                                ctx_rast.ctx_perf.recordPixelIters(
+                                    global_subx,
+                                    global_suby,
+                                    0,
+                                );
                                 report.maybeRecordPixelOccupancy(
                                     ctx_rast.ctx_perf,
                                     targ_overlap.tile.x_px_min + scratch_x / sub_samp,
@@ -1163,16 +1204,20 @@ pub fn RasterPass(
                     const global_suby = targ_overlap.tile.y_px_min * sub_samp + scratch_y;
 
                     if (comptime Geometry.hull_nodes_num > 0) {
-                        const hull_res = element_tess.isIn(subpx_x, subpx_y);
+                        ctx_rast.ctx_perf.recordTessChecks(1);
+                        const is_in_tess = element_tess.isInScalar(subpx_x, subpx_y);
+                        if (is_in_tess) {
+                            ctx_rast.ctx_perf.recordTessPasses(1);
+                        }
                         if (comptime report_mode == .full_stats) {
                             report.maybeRecordEarlyOut(
                                 ctx_rast.ctx_perf,
                                 global_subx,
                                 global_suby,
-                                hull_res.isIn,
+                                is_in_tess,
                             );
                         }
-                        if (!hull_res.isIn) {
+                        if (!is_in_tess) {
                             subpx_x += subpx_domain.step;
                             continue;
                         }
@@ -1185,6 +1230,7 @@ pub fn RasterPass(
                         );
                     }
 
+                    ctx_rast.ctx_perf.recordSolverCalls(1);
                     const result = if (comptime Geometry.solver_kind == .inv_bi)
                         Geometry.solveWeightsInvBi(
                             subpx_x,
@@ -1200,6 +1246,7 @@ pub fn RasterPass(
                             subpx_y,
                             solver_state,
                         );
+                    ctx_rast.ctx_perf.recordSolverIters(result.iters);
 
                     if (result.weights) |weights| {
                         const inv_z = Geometry.calcInvZ(nodes_coords, weights);
@@ -1216,12 +1263,12 @@ pub fn RasterPass(
                             const subpx_z = 1.0 / inv_z;
                             shaded_px += 1;
 
-                            ctx_rast.ctx_perf.recordPixel(
-                                global_subx,
-                                global_suby,
-                                result.iters,
-                            );
                             if (comptime report_mode == .full_stats) {
+                                ctx_rast.ctx_perf.recordPixelIters(
+                                    global_subx,
+                                    global_suby,
+                                    result.iters,
+                                );
                                 report.maybeRecordPixelOccupancy(
                                     ctx_rast.ctx_perf,
                                     targ_overlap.tile.x_px_min + scratch_x / sub_samp,

@@ -37,8 +37,10 @@ pub const BenchLog = struct {
     total_elements: usize = 0,
     visible_elements: usize = 0,
     solver_calls: u64 = 0,
-    total_iters: u64 = 0,
+    total_solver_iters: u64 = 0,
     solver_diverged: u64 = 0,
+    tess_checks: u64 = 0,
+    tess_passes: u64 = 0,
     total_shaded_pixels: u64 = 0,
     total_depth_tests: u64 = 0,
     depth_tests_failed: u64 = 0,
@@ -306,10 +308,54 @@ pub const FullStatsLog = struct {
             0.0;
         try writer.print("Elements Cropped        = {d} ({d:.2}%)\n\n", .{ cropped, crop_pct });
 
-        try writer.print("--- NEWTON SOLVER STATS ---\n", .{});
+        const solver_calls_f = @as(f64, @floatFromInt(self.bench.solver_calls));
+        const solver_diverged_f = @as(f64, @floatFromInt(self.bench.solver_diverged));
+        const solver_converged = self.bench.solver_calls - self.bench.solver_diverged;
+        const solver_converged_f = @as(f64, @floatFromInt(solver_converged));
+        const solver_converged_pct = if (self.bench.solver_calls > 0)
+            solver_converged_f * 100.0 / solver_calls_f
+        else
+            0.0;
+        const solver_diverged_pct = if (self.bench.solver_calls > 0)
+            solver_diverged_f * 100.0 / solver_calls_f
+        else
+            0.0;
+        const avg_iters_per_call = if (self.bench.solver_calls > 0)
+            @as(f64, @floatFromInt(self.bench.total_solver_iters)) / solver_calls_f
+        else
+            0.0;
+
+        const px_x = @as(f64, @floatFromInt(camera.pixels_num[0]));
+        const px_y = @as(f64, @floatFromInt(camera.pixels_num[1]));
+        const sub_samp_f = @as(f64, @floatFromInt(camera.sub_sample));
+        const total_px = px_x * px_y;
+        const total_subpx = total_px * sub_samp_f * sub_samp_f;
+
+        const tess_checks_f = @as(f64, @floatFromInt(self.bench.tess_checks));
+        const tess_passes_f = @as(f64, @floatFromInt(self.bench.tess_passes));
+        const solver_coverage_pct = if (total_subpx > 0)
+            solver_calls_f * 100.0 / total_subpx
+        else
+            0.0;
+        const tess_coverage_pct = if (total_subpx > 0)
+            tess_checks_f * 100.0 / total_subpx
+        else
+            0.0;
+        const tess_pass_pct = if (self.bench.tess_checks > 0)
+            tess_passes_f * 100.0 / tess_checks_f
+        else
+            0.0;
+
+        try writer.print("--- SOLVER & TESSELLATION STATS ---\n", .{});
         try writer.print("Total Solver Calls      = {d}\n", .{self.bench.solver_calls});
-        try writer.print("Total Newton Iterations = {d}\n", .{self.bench.total_iters});
+        try writer.print("Avg Iters / Solver Call = {d:.2}\n", .{avg_iters_per_call});
+        try writer.print("Converged %             = {d:.2}%\n", .{solver_converged_pct});
+        try writer.print("Diverged/Failed %       = {d:.2}%\n", .{solver_diverged_pct});
         try writer.print("Solver Diverged/Failed  = {d}\n", .{self.bench.solver_diverged});
+        try writer.print("Solver Coverage %       = {d:.2}%\n", .{solver_coverage_pct});
+        try writer.print("Tessellation Checks     = {d}\n", .{self.bench.tess_checks});
+        try writer.print("Tessellation Coverage % = {d:.2}%\n", .{tess_coverage_pct});
+        try writer.print("Tessellation Pass %     = {d:.2}%\n", .{tess_pass_pct});
         try writer.print("{s}", .{line});
 
         if (self.iteration_map) |*imap| {
@@ -342,12 +388,6 @@ pub const FullStatsLog = struct {
             d_fail_pct,
         });
         try writer.print("{s}", .{line});
-
-        const px_x = @as(f64, @floatFromInt(camera.pixels_num[0]));
-        const px_y = @as(f64, @floatFromInt(camera.pixels_num[1]));
-        const sub_samp_f: f64 = @as(f64, @floatFromInt(camera.sub_sample));
-        const total_px = px_x * px_y;
-        const total_subpx = total_px * sub_samp_f * sub_samp_f;
 
         const vis_elems_f = @as(f64, @floatFromInt(self.bench.visible_elements));
         const total_elems_f = @as(f64, @floatFromInt(self.bench.total_elements));
@@ -587,7 +627,23 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             }
         }
 
-        pub inline fn recordPixel(
+        pub inline fn recordSolverCalls(self: @This(), solver_calls: u64) void {
+            self.bench().solver_calls += solver_calls;
+        }
+
+        pub inline fn recordSolverIters(self: @This(), solver_iters: u64) void {
+            self.bench().total_solver_iters += solver_iters;
+        }
+
+        pub inline fn recordTessChecks(self: @This(), tess_checks: u64) void {
+            self.bench().tess_checks += tess_checks;
+        }
+
+        pub inline fn recordTessPasses(self: @This(), tess_passes: u64) void {
+            self.bench().tess_passes += tess_passes;
+        }
+
+        pub inline fn recordPixelIters(
             self: @This(),
             global_subx: usize,
             global_suby: usize,
@@ -600,10 +656,6 @@ pub fn ReportContext(comptime mode: ReportMode) type {
                         @floatFromInt(iters);
                 }
             }
-
-            const bench_log = self.bench();
-            bench_log.solver_calls += 1;
-            bench_log.total_iters += iters;
         }
 
         pub inline fn recordPixelOccupancy(

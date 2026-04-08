@@ -17,7 +17,7 @@ pub fn Tessellation(comptime NT: usize) type {
     return struct {
         triangles: [NT]TessTriangle,
 
-        pub inline fn isIn(self: @This(), px: f64, py: f64) bool {
+        pub inline fn isInScalar(self: @This(), px: f64, py: f64) bool {
             const eps = tol.hull.scalar_inclusion;
             inline for (self.triangles) |tri| {
                 const e0 = rops.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], px, py);

@@ -414,6 +414,8 @@ pub fn RasterPass(
 
                 for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x| {
                     if (Geometry.isInElement(weights)) {
+                        ctx_rast.ctx_perf.recordSolverCalls(1);
+                        ctx_rast.ctx_perf.recordSolverIters(0);
                         const inv_z = Geometry.calcInvZ(nodes_coords, weights);
                         const scratch_idx = row_offset + scratch_x;
 
@@ -427,8 +429,12 @@ pub fn RasterPass(
                             const global_suby = targ_overlap.tile.y_px_min * sub_samp +
                                 scratch_y;
 
-                            ctx_rast.ctx_perf.recordPixel(global_subx, global_suby, 0);
                             if (comptime report_mode == .full_stats) {
+                                ctx_rast.ctx_perf.recordPixelIters(
+                                    global_subx,
+                                    global_suby,
+                                    0,
+                                );
                                 report.maybeRecordPixelOccupancy(
                                     ctx_rast.ctx_perf,
                                     targ_overlap.tile.x_px_min + scratch_x / sub_samp,
@@ -531,11 +537,11 @@ pub fn RasterPass(
                     const global_suby = targ_overlap.tile.y_px_min * sub_samp + scratch_y;
 
                     if (comptime Geometry.hull_nodes_num > 0) {
-                        const in_tess = element_tess.isIn(subpx_x, subpx_y);
-                        const is_in_tess = if (@TypeOf(in_tess) == bool)
-                            in_tess
-                        else
-                            in_tess.isIn;
+                        ctx_rast.ctx_perf.recordTessChecks(1);
+                        const is_in_tess = element_tess.isInScalar(subpx_x, subpx_y);
+                        if (is_in_tess) {
+                            ctx_rast.ctx_perf.recordTessPasses(1);
+                        }
                         if (comptime report_mode == .full_stats) {
                             report.maybeRecordEarlyOut(
                                 ctx_rast.ctx_perf,
@@ -557,6 +563,7 @@ pub fn RasterPass(
                         );
                     }
 
+                    ctx_rast.ctx_perf.recordSolverCalls(1);
                     const result = if (comptime Geometry.solver_kind == .newton) blk: {
                         const guess = Geometry.initGuess(
                             subpx_x,
@@ -589,6 +596,7 @@ pub fn RasterPass(
                             subpx_y,
                             solver_state,
                         );
+                    ctx_rast.ctx_perf.recordSolverIters(result.iters);
 
                     if (result.weights) |weights| {
                         const inv_z = Geometry.calcInvZ(nodes_coords, weights);
@@ -599,13 +607,12 @@ pub fn RasterPass(
                             const subpx_z = 1.0 / inv_z;
                             shaded_px += 1;
 
-                            ctx_rast.ctx_perf.recordPixel(
-                                global_subx,
-                                global_suby,
-                                result.iters,
-                            );
-                            
                             if (comptime report_mode == .full_stats) {
+                                ctx_rast.ctx_perf.recordPixelIters(
+                                    global_subx,
+                                    global_suby,
+                                    result.iters,
+                                );
                                 report.maybeRecordPixelOccupancy(
                                     ctx_rast.ctx_perf,
                                     targ_overlap.tile.x_px_min + scratch_x / sub_samp,
