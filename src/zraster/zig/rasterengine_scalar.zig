@@ -446,8 +446,7 @@ pub fn RasterPass(
                                     global_suby,
                                     0,
                                 );
-                                report.maybeRecordPixelOccupancy(
-                                    ctx_report,
+                                ctx_report.recordPixelOccupancy(
                                     targ_overlap.tile.x_px_min + scratch_x / sub_samp,
                                     targ_overlap.tile.y_px_min + scratch_y / sub_samp,
                                 );
@@ -562,8 +561,7 @@ pub fn RasterPass(
                             };
                         }
                         if (comptime report_mode == .full_stats) {
-                            report.maybeRecordEarlyOut(
-                                ctx_report,
+                            ctx_report.recordEarlyOut(
                                 global_subx,
                                 global_suby,
                                 tess_res.is_in,
@@ -574,8 +572,7 @@ pub fn RasterPass(
                             continue;
                         }
                     } else if (comptime report_mode == .full_stats) {
-                        report.maybeRecordEarlyOut(
-                            ctx_report,
+                        ctx_report.recordEarlyOut(
                             global_subx,
                             global_suby,
                             true,
@@ -660,8 +657,7 @@ pub fn RasterPass(
                                     global_suby,
                                     result.iters,
                                 );
-                                report.maybeRecordPixelOccupancy(
-                                    ctx_report,
+                                ctx_report.recordPixelOccupancy(
                                     targ_overlap.tile.x_px_min + scratch_x / sub_samp,
                                     targ_overlap.tile.y_px_min + scratch_y / sub_samp,
                                 );

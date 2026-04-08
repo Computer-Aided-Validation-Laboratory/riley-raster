@@ -19,11 +19,10 @@ pub fn NodalKernel(comptime N: usize) type {
             spx_image_scratch: *MatSlice(f64),
         ) void {
             if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
-                report.maybeRecordDepth(
-                    ctx_report,
+                ctx_report.recordDepth(
                     ctx_shade.global_subx,
                     ctx_shade.global_suby,
-                    interp.sub_pixel_z,
+                    1.0 / interp.sub_pixel_z,
                 );
             }
 
@@ -53,7 +52,7 @@ pub fn NodalKernel(comptime N: usize) type {
         ) void {
             if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
                 if (shader.elem_normals != null) {
-                    report.maybeRecordNormalSIMD(
+                    report.recordNormalSIMD(
                         N,
                         S,
                         ctx_report,
@@ -104,22 +103,22 @@ pub fn TexKernel(
             spx_image_scratch: *MatSlice(f64),
         ) void {
             if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
-                report.maybeRecordDepth(
-                    ctx_report,
+                ctx_report.recordDepth(
                     ctx_shade.global_subx,
                     ctx_shade.global_suby,
-                    interp.sub_pixel_z,
+                    1.0 / interp.sub_pixel_z,
                 );
             }
 
             if (shader.elem_normals != null) {
                 const normal = ctx_shade.shader_buf.interpolateNormal(interp.weights);
                 if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
-                    report.maybeRecordNormal(
-                        ctx_report,
+                    ctx_report.recordNormal(
                         ctx_shade.global_subx,
                         ctx_shade.global_suby,
-                        normal,
+                        normal[0],
+                        normal[1],
+                        normal[2],
                     );
                 }
             }
@@ -161,7 +160,7 @@ pub fn TexKernel(
         ) void {
             if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
                 if (shader.elem_normals != null) {
-                    report.maybeRecordNormalSIMD(
+                    report.recordNormalSIMD(
                         N,
                         S,
                         ctx_report,

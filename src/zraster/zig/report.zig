@@ -735,42 +735,10 @@ pub fn ReportContext(comptime mode: ReportMode) type {
     };
 }
 
-pub inline fn maybeRecordPixelOccupancy(
-    ctx_perf: anytype,
-    x: usize,
-    y: usize,
-) void {
-    ctx_perf.recordPixelOccupancy(x, y);
-}
-
-pub inline fn maybeRecordDepth(
-    ctx_perf: anytype,
-    global_subx: usize,
-    global_suby: usize,
-    sub_pixel_z: f64,
-) void {
-    ctx_perf.recordDepth(global_subx, global_suby, 1.0 / sub_pixel_z);
-}
-
-pub inline fn maybeRecordNormal(
-    ctx_perf: anytype,
-    global_subx: usize,
-    global_suby: usize,
-    normal: [3]f64,
-) void {
-    ctx_perf.recordNormal(
-        global_subx,
-        global_suby,
-        normal[0],
-        normal[1],
-        normal[2],
-    );
-}
-
-pub inline fn maybeRecordNormalSIMD(
+pub inline fn recordNormalSIMD(
     comptime nodes_num: usize,
     comptime lane_num: usize,
-    ctx_perf: anytype,
+    ctx_report: anytype,
     ctx_shade: anytype,
     v_mask: @Vector(lane_num, bool),
     v_weights: [nodes_num]@Vector(lane_num, f64),
@@ -788,23 +756,15 @@ pub inline fn maybeRecordNormalSIMD(
                     ctx_shade.shader_buf.normals[2 * nodes_num + nn];
             }
 
-            maybeRecordNormal(
-                ctx_perf,
+            ctx_report.recordNormal(
                 ctx_shade.global_subx + ll,
                 ctx_shade.global_suby,
-                normal,
+                normal[0],
+                normal[1],
+                normal[2],
             );
         }
     }
-}
-
-pub inline fn maybeRecordEarlyOut(
-    ctx_perf: anytype,
-    global_subx: usize,
-    global_suby: usize,
-    early: bool,
-) void {
-    ctx_perf.recordEarlyOut(global_subx, global_suby, early);
 }
 
 pub fn standardReport(
