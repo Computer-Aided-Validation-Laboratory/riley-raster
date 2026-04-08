@@ -27,10 +27,13 @@ const shadekerns = @import("shaderkernels.zig");
 const ScratchBuffers = struct {
     inv_z: []f64,
     image: *MatSlice(f64),
+    touched_min_x: []usize,
+    touched_max_x: []usize,
 };
 
 const SubpxDomain = common.SubpxDomain;
 const RasterBounds = common.RasterBounds;
+const ScratchLayout = common.ScratchLayout;
 
 pub fn rasterScene(
     comptime report_mode: ReportMode,
@@ -68,6 +71,8 @@ pub fn rasterScene(
     const scratch = ScratchBuffers{
         .inv_z = subpx_inv_z_scratch,
         .image = &subpx_image_scratch,
+        .touched_min_x = try arena_alloc.alloc(usize, subpx_tile_size),
+        .touched_max_x = try arena_alloc.alloc(usize, subpx_tile_size),
     };
 
     const subpx_field_avg = try arena_alloc.alloc(f64, fields_num);
@@ -81,6 +86,10 @@ pub fn rasterScene(
 
         @memset(subpx_inv_z_scratch, -std.math.inf(f64));
         @memset(subpx_image_scratch.elems, 0.0);
+        for (0..subpx_tile_size) |yy| {
+            scratch.touched_min_x[yy] = subpx_tile_size;
+            scratch.touched_max_x[yy] = 0;
+        }
 
         const overlap_start = tile.overlap_start;
         const overlap_end = overlap_start + tile.overlap_count;
@@ -257,15 +266,29 @@ pub fn rasterScene(
             }
         }
 
-        averageScratch(
-            tile,
-            @intCast(sub_samp),
-            subpx_tile_size,
-            fields_num,
-            &subpx_image_scratch,
-            subpx_field_avg,
-            image_out_arr,
-        );
+        if (sub_samp > 1) {
+            common.averageScratch(
+                ScratchLayout.subpx_major,
+                tile,
+                @intCast(sub_samp),
+                subpx_tile_size,
+                fields_num,
+                &subpx_image_scratch,
+                scratch.touched_min_x,
+                scratch.touched_max_x,
+                subpx_field_avg,
+                image_out_arr,
+            );
+        } else {
+            common.resolveScratchDirect(
+                ScratchLayout.subpx_major,
+                tile,
+                subpx_tile_size,
+                fields_num,
+                &subpx_image_scratch,
+                image_out_arr,
+            );
+        }
 
         const tile_end = if (comptime report_mode == .full_stats)
             Timestamp.now(io, .awake)
@@ -431,6 +454,12 @@ pub fn RasterPass(
 
                         if (inv_z >= scratch.inv_z[scratch_idx]) {
                             scratch.inv_z[scratch_idx] = inv_z;
+                            if (scratch_x < scratch.touched_min_x[scratch_y]) {
+                                scratch.touched_min_x[scratch_y] = scratch_x;
+                            }
+                            if (scratch_x > scratch.touched_max_x[scratch_y]) {
+                                scratch.touched_max_x[scratch_y] = scratch_x;
+                            }
                             const subpx_z = 1.0 / inv_z;
                             shaded_px += 1;
 
@@ -647,6 +676,12 @@ pub fn RasterPass(
 
                         if (inv_z >= scratch.inv_z[scratch_idx]) {
                             scratch.inv_z[scratch_idx] = inv_z;
+                            if (scratch_x < scratch.touched_min_x[scratch_y]) {
+                                scratch.touched_min_x[scratch_y] = scratch_x;
+                            }
+                            if (scratch_x > scratch.touched_max_x[scratch_y]) {
+                                scratch.touched_max_x[scratch_y] = scratch_x;
+                            }
                             const subpx_z = 1.0 / inv_z;
                             shaded_px += 1;
 
@@ -697,50 +732,4 @@ pub fn RasterPass(
             return shaded_px;
         }
     };
-}
-
-pub fn averageScratch(
-    tile: ActiveTile,
-    sub_samp: usize,
-    spx_tile_size: usize,
-    fields_num: u8,
-    spx_image_scratch: *const MatSlice(f64),
-    spx_field_avg: []f64,
-    image_out_arr: *NDArray(f64),
-) void {
-    const curr_tile_size_x = tile.x_px_max - tile.x_px_min;
-    const curr_tile_size_y = tile.y_px_max - tile.y_px_min;
-    const sub_samp_f = @as(f64, @floatFromInt(sub_samp));
-    const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
-
-    for (0..curr_tile_size_y) |ty| {
-        const image_px_y: usize = tile.y_px_min + ty;
-        const spx_start_y: usize = sub_samp * ty;
-
-        for (0..curr_tile_size_x) |tx| {
-            const image_px_x: usize = tile.x_px_min + tx;
-            const spx_start_x: usize = sub_samp * tx;
-
-            @memset(spx_field_avg, 0.0);
-
-            for (0..sub_samp) |sy| {
-                const scratch_row_offset: usize = (spx_start_y + sy) * spx_tile_size;
-
-                for (0..sub_samp) |sx| {
-                    const scratch_flat_idx: usize = scratch_row_offset + spx_start_x + sx;
-
-                    for (0..@as(usize, fields_num)) |ff| {
-                        spx_field_avg[ff] += spx_image_scratch.get(scratch_flat_idx, ff);
-                    }
-                }
-            }
-
-            for (0..@as(usize, fields_num)) |ff| {
-                const image_idxs = [_]usize{ ff, image_px_y, image_px_x };
-                const image_val: f64 = spx_field_avg[ff] * inv_sub_samp_sq;
-
-                image_out_arr.set(image_idxs[0..], image_val);
-            }
-        }
-    }
 }
