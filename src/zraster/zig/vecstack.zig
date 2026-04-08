@@ -5,7 +5,7 @@ const expectEqual = std.testing.expectEqual;
 const expectEqualSlices = std.testing.expectEqualSlices;
 
 const SliceOps = @import("sliceops.zig");
-const ValInd = SliceOps.ValInd;
+const ValIdx = SliceOps.ValIdx;
 
 const EType = f64;
 pub const Vec2f = Vec2T(EType);
@@ -104,11 +104,11 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime ElemType: type) type {
             return @sqrt(self.norm());
         }
 
-        pub fn max(self: *const Self) ValInd(ElemType) {
+        pub fn max(self: *const Self) ValIdx(ElemType) {
             return SliceOps.max(ElemType, &self.elems);
         }
 
-        pub fn min(self: *const Self) ValInd(ElemType) {
+        pub fn min(self: *const Self) ValIdx(ElemType) {
             return SliceOps.min(ElemType, &self.elems);
         }
 
@@ -247,9 +247,9 @@ test "Vec.max" {
     const v0 = [_]EType{ 1, 3, 6, 7, 8, 1, -2, -3, 0, 5 };
     const vec0 = VecStack(v0.len, EType).initSlice(&v0);
 
-    const exp_val = ValInd(EType){
+    const exp_val = ValIdx(EType){
         .val = 8,
-        .ind = 4,
+        .idx = 4,
     };
 
     try expectEqual(exp_val, vec0.max());
@@ -259,9 +259,9 @@ test "Vec.min" {
     const v0 = [_]EType{ 1, 3, 6, 7, 8, 1, -2, -3, 0, 5 };
     const vec0 = VecStack(v0.len, EType).initSlice(&v0);
 
-    const exp_val = ValInd(EType){
+    const exp_val = ValIdx(EType){
         .val = -3,
-        .ind = 7,
+        .idx = 7,
     };
 
     try expectEqual(exp_val, vec0.min());

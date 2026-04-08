@@ -645,11 +645,11 @@ pub fn ReportContext(comptime mode: ReportMode) type {
                 if (self.log.normals_map) |*nmap| {
                     const chan_stride = nmap.strides[0];
                     const row_stride = nmap.strides[1];
-                    const col_ind = global_suby * row_stride + global_subx;
+                    const col_idx = global_suby * row_stride + global_subx;
 
-                    nmap.elems[0 * chan_stride + col_ind] = 0.5 * nx + 0.5;
-                    nmap.elems[1 * chan_stride + col_ind] = 0.5 * ny + 0.5;
-                    nmap.elems[2 * chan_stride + col_ind] = 0.5 * nz + 0.5;
+                    nmap.elems[0 * chan_stride + col_idx] = 0.5 * nx + 0.5;
+                    nmap.elems[1 * chan_stride + col_idx] = 0.5 * ny + 0.5;
+                    nmap.elems[2 * chan_stride + col_idx] = 0.5 * nz + 0.5;
                 }
             }
         }

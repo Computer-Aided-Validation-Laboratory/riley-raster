@@ -28,9 +28,9 @@ pub fn NodalKernel(comptime N: usize) type {
             }
 
             if (comptime coord_space == CoordSpace.clip_px_leng) {
-                shaderops.fillNodal(N, ctx_shade, interp, shader, spx_image_scratch);
+                shaderops.fillNodalClip(N, ctx_shade, interp, shader, spx_image_scratch);
             } else {
-                shaderops.fillNodalPerspective(
+                shaderops.fillNodalPersp(
                     N,
                     ctx_shade,
                     interp,
@@ -65,7 +65,7 @@ pub fn NodalKernel(comptime N: usize) type {
             }
 
             if (comptime coord_space == CoordSpace.raster) {
-                shaderops.fillNodalPerspectiveSIMD(
+                shaderops.fillNodalPerspSIMD(
                     N,
                     ctx_shade,
                     v_weights,
@@ -75,7 +75,7 @@ pub fn NodalKernel(comptime N: usize) type {
                     spx_image_scratch,
                 );
             } else if (comptime coord_space == CoordSpace.clip_px_leng) {
-                shaderops.fillNodalSIMD(
+                shaderops.fillNodalClipSIMD(
                     N,
                     ctx_shade,
                     v_weights,
@@ -135,7 +135,7 @@ pub fn TexKernel(
                     spx_image_scratch,
                 );
             } else {
-                shaderops.fillTexPerspective(
+                shaderops.fillTexPersp(
                     N,
                     TexT,
                     channels,
@@ -174,7 +174,7 @@ pub fn TexKernel(
 
             if (comptime coord_space == CoordSpace.raster) {
                 if (comptime N == 3) {
-                    shaderops.fillTexPerspectiveSIMDTri3(
+                    shaderops.fillTexPerspSIMDTri3(
                         N,
                         TexT,
                         channels,
@@ -188,7 +188,7 @@ pub fn TexKernel(
                         spx_image_scratch,
                     );
                 } else {
-                    shaderops.fillTexPerspectiveSIMD(
+                    shaderops.fillTexPerspSIMD(
                         N,
                         TexT,
                         channels,

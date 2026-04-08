@@ -58,7 +58,7 @@ pub fn main() !void {
     //const path_data = "data/fill_lin_tri/";
     const path_data = "data-simple/tri3_fullscreen/";
 
-    const frame_ind: usize = 1;
+    const frame_idx: usize = 1;
 
     const path_coords = path_data ++ "coords.csv";
     const path_connect = path_data ++ "connectivity.csv";
@@ -77,8 +77,8 @@ pub fn main() !void {
     const field_time_n = sim_data.field.?.getTimeN();
     const field_fields_n = sim_data.field.?.getFieldsN();
 
-    var fixed_inds = [_]usize{ frame_ind, 0, 0 };
-    const field_slice = sim_data.field.?.array.getSlice(fixed_inds[0..], 0);
+    var fixed_idxs = [_]usize{ frame_idx, 0, 0 };
+    const field_slice = sim_data.field.?.array.getSlice(fixed_idxs[0..], 0);
 
     const field_mat = MatSlice(f64).init(field_slice, field_coord_n, field_fields_n);
 
@@ -134,7 +134,16 @@ pub fn main() !void {
 
     // Creates own arena for temporary render buffers which should be
     // cleared after rendering a frame.
-    try raster.rasterOneFrame(page_alloc, io, frame_ind, &sim_data.coords, &sim_data.connect, &sim_data.field.?, &camera, &images_arr);
+    try raster.rasterOneFrame(
+        page_alloc,
+        io,
+        frame_idx,
+        &sim_data.coords,
+        &sim_data.connect,
+        &sim_data.field.?,
+        &camera,
+        &images_arr,
+    );
 
     time_end = std.Io.Clock.Timestamp.now(io, .awake);
     const time_raster: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
@@ -168,7 +177,11 @@ pub fn main() !void {
     for (0..num_fields) |ff| {
         image_slice_inds[0] = ff;
 
-        const file_name = try std.fmt.bufPrint(name_buff[0..], "raster_one_field{d}_frame{d}", .{ ff, frame_ind });
+        const file_name = try std.fmt.bufPrint(
+            name_buff[0..],
+            "raster_one_field{d}_frame{d}",
+            .{ ff, frame_idx },
+        );
 
         // Grab a matrix slice of the field images
         const image_slice = images_arr.getSlice(image_slice_inds[0..], 0);

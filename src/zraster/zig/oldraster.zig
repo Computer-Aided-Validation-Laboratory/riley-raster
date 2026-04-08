@@ -31,14 +31,14 @@ fn edgeFun(vert_0: Vec3f, vert_1: Vec3f, vert_2: Vec3f) f64 {
 }
 
 fn boundIndexMin(min_val: f64) usize {
-    const min_ind = @as(isize, @intFromFloat(@floor(min_val)));
-    return @as(usize, @intCast(@max(0, min_ind)));
+    const min_idx = @as(isize, @intFromFloat(@floor(min_val)));
+    return @as(usize, @intCast(@max(0, min_idx)));
 }
 
 fn boundIndexMax(max_val: f64, pixels_num: usize) usize {
-    const max_ind = @as(isize, @intFromFloat(@ceil(max_val)));
+    const max_idx = @as(isize, @intFromFloat(@ceil(max_val)));
     const px = @as(isize, @intCast(pixels_num - 1));
-    return @as(usize, @intCast(@max(0, @min(max_ind, px))));
+    return @as(usize, @intCast(@max(0, @min(max_idx, px))));
 }
 
 fn worldToRasterCoords(coord_world: Vec3f, camera: *const Camera) Vec3f {
@@ -61,7 +61,7 @@ fn worldToRasterCoords(coord_world: Vec3f, camera: *const Camera) Vec3f {
     return coord_raster;
 }
 
-pub fn rasterOneFrame(allocator: std.mem.Allocator, io: std.Io, frame_ind: usize, coords: *const Coords, connect: *const Connect, field: *const Field, camera: *const Camera, image_out_arr: *NDArray(f64)) !void {
+pub fn rasterOneFrame(allocator: std.mem.Allocator, io: std.Io, frame_idx: usize, coords: *const Coords, connect: *const Connect, field: *const Field, camera: *const Camera, image_out_arr: *NDArray(f64)) !void {
 
     // We allocate all temporary buffers on our arena so no need to defer
     // free any temporary buffers in this function
@@ -79,7 +79,7 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator, io: std.Io, frame_ind: usize
     var weights_buff: []f64 = try arena_alloc.alloc(f64, connect.nodes_per_elem);
 
     // Stores all F field values at the N nodes per element
-    var field_inds = [_]usize{ frame_ind, 0, 0 };
+    var field_idxs = [_]usize{ frame_idx, 0, 0 };
     const field_buff: []f64 = try arena_alloc.alloc(f64, num_fields * connect.nodes_per_elem);
 
     var field_raster_mat = MatSlice(f64).init(field_buff, connect.nodes_per_elem, num_fields);
@@ -286,10 +286,10 @@ pub fn rasterOneFrame(allocator: std.mem.Allocator, io: std.Io, frame_ind: usize
                     // field.array, shape=(time_n,coord_n,field_n)
                     // field_raster_mat, shape=(field_n,nodes_per_elem)
                     for (0..num_fields) |ff| {
-                        field_inds[1] = coord_inds[nn]; // This is scattered
-                        field_inds[2] = ff;
+                        field_idxs[1] = coord_inds[nn]; // This is scattered
+                        field_idxs[2] = ff;
 
-                        field_val = field.array.get(field_inds[0..]);
+                        field_val = field.array.get(field_idxs[0..]);
 
                         //NOTE: need to multiple by inv z (see previous where inv z is put into
                         //nodes_raster_buff) for perspective correct interp!
@@ -455,8 +455,8 @@ pub fn rasterAllFrames(
     var frame_arr = try NDArray(f64).init(allocator, frame_arr_mem, frame_arr_dims[0..]);
 
     const image_stride: usize = frame_arr.strides[0];
-    var image_inds = [_]usize{ 0, 0, 0, 0 }; // frame,field,px_y,px_x
-    var field_inds = [_]usize{ 0, 0, 0 }; // field,px_y_px_x
+    var image_idxs = [_]usize{ 0, 0, 0, 0 }; // frame,field,px_y,px_x
+    var field_idxs = [_]usize{ 0, 0, 0 }; // field,px_y_px_x
 
     var time_start = Timestamp.now(io, .awake);
     var time_end = Timestamp.now(io, .awake);
@@ -469,11 +469,11 @@ pub fn rasterAllFrames(
     for (0..num_time) |tt| {
         time_start = Timestamp.now(io, .awake);
 
-        image_inds[0] = tt;
-        const start_ind = frame_arr.getFlatInd(image_inds[0..]);
-        const end_ind = start_ind + image_stride;
+        image_idxs[0] = tt;
+        const start_idx = frame_arr.getFlatInd(image_idxs[0..]);
+        const end_idx = start_idx + image_stride;
 
-        const images_mem = frame_arr.elems[start_ind..end_ind];
+        const images_mem = frame_arr.elems[start_idx..end_idx];
         // This is only temporary so we use our arena - the slice belongs to
         // the larger NDArray we will return which is on the input allocator
         var images_arr = try NDArray(f64).init(arena_alloc, images_mem, frame_arr_dims[1..]);
@@ -485,8 +485,8 @@ pub fn rasterAllFrames(
         for (0..num_fields) |ff| {
             const file_name = try std.fmt.bufPrint(name_buff[0..], "raster_all_field{d}_frame{d}", .{ ff, tt });
 
-            field_inds[0] = ff;
-            const field_slice = images_arr.getSlice(field_inds[0..], 0);
+            field_idxs[0] = ff;
+            const field_slice = images_arr.getSlice(field_idxs[0..], 0);
 
             const image_mat = MatSlice(f64).init(field_slice, camera.pixels_num[1], camera.pixels_num[0]);
 

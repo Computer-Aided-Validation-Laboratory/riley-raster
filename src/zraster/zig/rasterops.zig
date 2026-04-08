@@ -66,7 +66,7 @@ pub fn Vec3Slices(comptime T: type) type {
 }
 
 pub const ElemBBox = struct {
-    elem_ind: usize,
+    elem_idx: usize,
     x_min: u16,
     x_max: u16,
     y_min: u16,
@@ -100,7 +100,7 @@ pub fn RasterContext(comptime report_mode: report.ReportMode) type {
     return struct {
         ctx_perf: report.ReportContext(report_mode),
         camera: *const Camera,
-        frame_ind: usize,
+        frame_idx: usize,
         tile_size: u16,
     };
 }
@@ -114,9 +114,9 @@ pub fn loadElemVec3Slices(
     comptime N: usize,
     comptime T: type,
     elem_array: *const NDArray(T),
-    elem_ind: usize,
+    elem_idx: usize,
 ) !Vec3Slices(T) {
-    var start_slice: usize = elem_array.getFlatInd(&[_]usize{ elem_ind, 0, 0 });
+    var start_slice: usize = elem_array.getFlatInd(&[_]usize{ elem_idx, 0, 0 });
     const stride: usize = elem_array.strides[1];
 
     const x_slice = elem_array.elems[start_slice .. start_slice + N];
@@ -321,7 +321,7 @@ pub fn cullElemsCalcBBoxesHighOrd(
         }
 
         elem_bboxes[elems_in_image] = ElemBBox{
-            .elem_ind = ee,
+            .elem_idx = ee,
             .x_min = boundIndMin(u16, x_min),
             .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
             .y_min = boundIndMin(u16, y_min),
@@ -378,7 +378,7 @@ pub fn cullElemsCalcBBoxesTri3(
         const y_max_i: u16 = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1]));
 
         elem_bboxes[elems_in_image] = ElemBBox{
-            .elem_ind = ee,
+            .elem_idx = ee,
             .x_min = x_min_i,
             .x_max = x_max_i,
             .y_min = y_min_i,
@@ -396,7 +396,7 @@ fn calcElementNodeNormal(
     sx: []const f64,
     sy: []const f64,
     sz: []const f64,
-    node_ind: usize,
+    node_idx: usize,
 ) [3]f64 {
     var dx_dxi: f64 = 0;
     var dx_deta: f64 = 0;
@@ -406,8 +406,8 @@ fn calcElementNodeNormal(
     var dz_deta: f64 = 0;
 
     for (0..N) |nn| {
-        const du = nodal_derivs.dNu[node_ind][nn];
-        const dv = nodal_derivs.dNv[node_ind][nn];
+        const du = nodal_derivs.dNu[node_idx][nn];
+        const dv = nodal_derivs.dNv[node_idx][nn];
         dx_dxi += du * sx[nn];
         dx_deta += dv * sx[nn];
         dy_dxi += du * sy[nn];
@@ -449,7 +449,7 @@ fn initPreparedNormals(
     @memset(map, std.math.maxInt(usize));
 
     for (0..prep_count) |pp| {
-        const orig_ee = elem_bboxes[pp].elem_ind;
+        const orig_ee = elem_bboxes[pp].elem_idx;
         map[orig_ee] = pp;
     }
 
@@ -469,7 +469,7 @@ fn calculatePreparedExactNormals(
     const nodal_derivs = comptime shapefun.getNodalDerivs(N);
 
     for (0..prep_count) |pp| {
-        const orig_ee = elem_bboxes[pp].elem_ind;
+        const orig_ee = elem_bboxes[pp].elem_idx;
         const sx = mesh_coords.getSlice(&[_]usize{ orig_ee, 0, 0 }, 1);
         const sy = mesh_coords.getSlice(&[_]usize{ orig_ee, 1, 0 }, 1);
         const sz = mesh_coords.getSlice(&[_]usize{ orig_ee, 2, 0 }, 1);
@@ -521,7 +521,7 @@ fn calculatePreparedAveragedNormals(
     }
 
     for (0..prep_count) |pp| {
-        const orig_ee = elem_bboxes[pp].elem_ind;
+        const orig_ee = elem_bboxes[pp].elem_idx;
         const coord_inds = mesh_connect.getElem(orig_ee);
 
         for (0..N) |nn| {
@@ -783,7 +783,7 @@ pub fn sceneTileElemOverlap(
                     const write_idx = tile_write_inds[tile_idx];
                     overlaps[write_idx] = .{
                         .mesh_idx = @intCast(mesh_idx),
-                        .elem_idx = @intCast(ebb.elem_ind),
+                        .elem_idx = @intCast(ebb.elem_idx),
                         .x_min = @max(ebb.x_min, tile_px_min_x),
                         .x_max = @min(ebb.x_max, tile_px_max_x),
                         .y_min = overlap_y_min,

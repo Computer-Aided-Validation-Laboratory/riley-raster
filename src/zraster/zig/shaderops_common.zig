@@ -121,11 +121,11 @@ pub fn TexPrepared(comptime T: type, comptime channels: usize) type {
 
 pub fn ShadeContext(comptime N: usize) type {
     return struct {
-        frame_index: usize,
-        elem_index: usize,
+        frame_idx: usize,
+        elem_idx: usize,
         fields_num: u8,
         actual_fields: u8,
-        idx: usize,
+        scratch_idx: usize,
         global_subx: usize,
         global_suby: usize,
         shader_buf: *const LocalShaderBuffer(N),

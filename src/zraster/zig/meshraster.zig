@@ -206,26 +206,26 @@ pub fn prepareCoords(
     const dim_field: usize = 1;
     const dim_node: usize = 2;
 
-    var elem_inds = [_]usize{ 0, 0, 0 };
+    var elem_idxs = [_]usize{ 0, 0, 0 };
 
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        elem_inds[dim_elem] = ee;
+        elem_idxs[dim_elem] = ee;
         const coord_inds: []usize = connect.getElem(ee);
 
         for (0..elem_coord_arr.dims[dim_node]) |nn| {
-            elem_inds[dim_node] = nn;
+            elem_idxs[dim_node] = nn;
 
             const node_idx = coord_inds[nn];
             const x = coords.x(node_idx);
             const y = coords.y(node_idx);
             const z = coords.z(node_idx);
 
-            elem_inds[dim_field] = 0;
-            elem_coord_arr.set(elem_inds[0..], x);
-            elem_inds[dim_field] = 1;
-            elem_coord_arr.set(elem_inds[0..], y);
-            elem_inds[dim_field] = 2;
-            elem_coord_arr.set(elem_inds[0..], z);
+            elem_idxs[dim_field] = 0;
+            elem_coord_arr.set(elem_idxs[0..], x);
+            elem_idxs[dim_field] = 1;
+            elem_coord_arr.set(elem_idxs[0..], y);
+            elem_idxs[dim_field] = 2;
+            elem_coord_arr.set(elem_idxs[0..], z);
         }
     }
 
@@ -252,27 +252,27 @@ pub fn prepareField(
     const dim_field: usize = 2;
     const dim_node: usize = 3;
 
-    var set_elem_inds = [_]usize{ 0, 0, 0, 0 }; // dims=(time,elem,field,node)
-    var get_field_inds = [_]usize{ 0, 0, 0 }; // dims=(time,coord,field)
+    var set_elem_idxs = [_]usize{ 0, 0, 0, 0 }; // dims=(time,elem,field,node)
+    var get_field_idxs = [_]usize{ 0, 0, 0 }; // dims=(time,coord,field)
 
     for (0..elem_field_arr.dims[dim_time]) |tt| {
-        get_field_inds[0] = @min(tt, field.array.dims[0] - 1);
-        set_elem_inds[dim_time] = tt;
+        get_field_idxs[0] = @min(tt, field.array.dims[0] - 1);
+        set_elem_idxs[dim_time] = tt;
 
         for (0..elem_field_arr.dims[dim_elem]) |ee| {
-            set_elem_inds[dim_elem] = ee;
+            set_elem_idxs[dim_elem] = ee;
             const coord_inds: []usize = connect.getElem(ee);
 
             for (0..elem_field_arr.dims[dim_node]) |nn| {
-                set_elem_inds[dim_node] = nn;
-                get_field_inds[1] = coord_inds[nn];
+                set_elem_idxs[dim_node] = nn;
+                get_field_idxs[1] = coord_inds[nn];
 
                 for (0..elem_field_arr.dims[dim_field]) |ff| {
-                    get_field_inds[2] = ff;
-                    const field_val: f64 = field.array.get(get_field_inds[0..]);
+                    get_field_idxs[2] = ff;
+                    const field_val: f64 = field.array.get(get_field_idxs[0..]);
 
-                    set_elem_inds[dim_field] = ff;
-                    elem_field_arr.set(set_elem_inds[0..], field_val);
+                    set_elem_idxs[dim_field] = ff;
+                    elem_field_arr.set(set_elem_idxs[0..], field_val);
                 }
             }
         }

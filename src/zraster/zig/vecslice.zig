@@ -8,7 +8,7 @@ const expectApproxEqAbs = testing.expectApproxEqAbs;
 const expectEqualSlices = testing.expectEqualSlices;
 
 const SliceOps = @import("sliceops.zig");
-const ValInd = SliceOps.ValInd;
+const ValIdx = SliceOps.ValIdx;
 
 const TestType = f64;
 
@@ -92,11 +92,11 @@ pub fn VecSlice(comptime ElemType: type) type {
             return @sqrt(self.norm());
         }
 
-        pub fn max(self: *const Self) ValInd(ElemType) {
+        pub fn max(self: *const Self) ValIdx(ElemType) {
             return SliceOps.max(ElemType, self.elems);
         }
 
-        pub fn min(self: *const Self) ValInd(ElemType) {
+        pub fn min(self: *const Self) ValIdx(ElemType) {
             return SliceOps.min(ElemType, self.elems);
         }
 
@@ -228,36 +228,36 @@ test "VecSlice.max" {
     var v0 = [_]f64{0.0} ** 10;
     const vec0 = VecSlice(TestType).init(v0[0..]);
 
-    const exp_ind: usize = 4;
+    const exp_idx: usize = 4;
     const exp_val: f64 = 8.0;
 
     vec0.fill(0.0);
-    vec0.set(exp_ind,exp_val);
+    vec0.set(exp_idx,exp_val);
 
-    const exp_val_ind = ValInd(TestType){
+    const exp_val_idx = ValIdx(TestType){
         .val = exp_val,
-        .ind = exp_ind,
+        .idx = exp_idx,
     };
 
-    try expectEqual(exp_val_ind, vec0.max());
+    try expectEqual(exp_val_idx, vec0.max());
 }
 
 test "VecSlice.min" {
     var v0 = [_]f64{0.0} ** 10;
     const vec0 = VecSlice(TestType).init(v0[0..]);
 
-    const exp_ind: usize = 7;
+    const exp_idx: usize = 7;
     const exp_val: f64 = -3.0;
 
     vec0.fill(0.0);
-    vec0.set(exp_ind,exp_val);
+    vec0.set(exp_idx,exp_val);
 
-    const exp_val_ind = ValInd(TestType){
+    const exp_val_idx = ValIdx(TestType){
         .val = exp_val,
-        .ind = exp_ind,
+        .idx = exp_idx,
     };
 
-    try expectEqual(exp_val_ind, vec0.min());
+    try expectEqual(exp_val_idx, vec0.min());
 }
 
 test "VecSlice.sum" {

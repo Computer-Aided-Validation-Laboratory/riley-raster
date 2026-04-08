@@ -38,9 +38,9 @@ pub fn NodalKernel(comptime N: usize) type {
             }
 
             if (comptime coord_space == CoordSpace.clip_px_leng) {
-                shaderops.fillNodal(N, ctx_shade, interp, shader, spx_image_scratch);
+                shaderops.fillNodalClip(N, ctx_shade, interp, shader, spx_image_scratch);
             } else {
-                shaderops.fillNodalPerspective(
+                shaderops.fillNodalPersp(
                     N,
                     ctx_shade,
                     interp,
@@ -98,7 +98,7 @@ pub fn TexKernel(
                     spx_image_scratch,
                 );
             } else {
-                shaderops.fillTexPerspective(
+                shaderops.fillTexPersp(
                     N,
                     T,
                     channels,

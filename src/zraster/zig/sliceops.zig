@@ -7,47 +7,47 @@ const expectEqual = testing.expectEqual;
 const expectApproxEqAbs = testing.expectApproxEqAbs;
 const expectEqualSlices = testing.expectEqualSlices;
 
-pub fn ValInd(ValType: type) type {
+pub fn ValIdx(ValType: type) type {
     return struct {
         val: ValType,
-        ind: usize,
+        idx: usize,
     };
 }
 
-pub fn max(comptime EType: type, slice: []const EType) ValInd(EType) {
+pub fn max(comptime EType: type, slice: []const EType) ValIdx(EType) {
     assert(slice.len > 0);
 
-    var val_ind = ValInd(EType){
+    var val_idx = ValIdx(EType){
         .val = slice[0],
-        .ind = 0,
+        .idx = 0,
     };
 
     for (slice[1..], 1..) |elem, ii| {
-        if (elem > val_ind.val) {
-            val_ind.ind = ii;
-            val_ind.val = elem;
+        if (elem > val_idx.val) {
+            val_idx.idx = ii;
+            val_idx.val = elem;
         }
     }
 
-    return val_ind;
+    return val_idx;
 }
 
-pub fn min(comptime EType: type, slice: []const EType) ValInd(EType) {
+pub fn min(comptime EType: type, slice: []const EType) ValIdx(EType) {
     assert(slice.len > 0);
 
-    var val_ind = ValInd(EType){
+    var val_idx = ValIdx(EType){
         .val = slice[0],
-        .ind = 0,
+        .idx = 0,
     };
 
     for (slice[1..], 1..) |elem, ii| {
-        if (elem < val_ind.val) {
-            val_ind.ind = ii;
-            val_ind.val = elem;
+        if (elem < val_idx.val) {
+            val_idx.idx = ii;
+            val_idx.val = elem;
         }
     }
 
-    return val_ind;
+    return val_idx;
 }
 
 pub fn sum(comptime EType: type, slice: []const EType) EType {
@@ -277,26 +277,26 @@ test "slice.apply" {
 
 test "slice.max" {
     const array = [_]TestType{ 1, 2, 3, 7, 0, -3, 1 };
-    const max_ind = max(TestType, &array);
+    const max_idx = max(TestType, &array);
 
-    const max_ind_exp = ValInd(TestType){
+    const max_idx_exp = ValIdx(TestType){
         .val = 7,
-        .ind = 3,
+        .idx = 3,
     };
 
-    try expectEqual(max_ind_exp, max_ind);
+    try expectEqual(max_idx_exp, max_idx);
 }
 
 test "slice.min" {
     const array = [_]TestType{ 1, 2, 3, 7, 0, -3, 1 };
-    const min_ind = min(TestType, &array);
+    const min_idx = min(TestType, &array);
 
-    const min_ind_exp = ValInd(TestType){
+    const min_idx_exp = ValIdx(TestType){
         .val = -3,
-        .ind = 5,
+        .idx = 5,
     };
 
-    try expectEqual(min_ind_exp, min_ind);
+    try expectEqual(min_idx_exp, min_idx);
 }
 
 test "slice.sum" {

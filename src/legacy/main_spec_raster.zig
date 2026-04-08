@@ -67,7 +67,7 @@ pub fn main() !void {
     //const path_data = "data-simple/tri6_fullscreen/";
     //const mesh_type: MeshType = .tri6;
 
-    const frame_ind: usize = 1;
+    const frame_idx: usize = 1;
 
     const path_coords = path_data ++ "coords.csv";
     const path_connect = path_data ++ "connectivity.csv";
@@ -149,7 +149,18 @@ pub fn main() !void {
     var images_arr = try NDArray(f64).initFlat(render_alloc, images_dims[0..]);
     @memset(images_arr.elems, 0.0);
 
-    try zraster.rasterOneFrame(mesh_type, page_alloc, io, &camera, frame_ind, config.tile_size, config.threads_within_image, &mesh_input.shader, &mesh_input.coords, &images_arr);
+    try zraster.rasterOneFrame(
+        mesh_type,
+        page_alloc,
+        io,
+        &camera,
+        frame_idx,
+        config.tile_size,
+        config.threads_within_image,
+        &mesh_input.shader,
+        &mesh_input.coords,
+        &images_arr,
+    );
 
     const image_max = std.mem.max(f64, images_arr.elems);
     const image_min = std.mem.min(f64, images_arr.elems);
@@ -184,7 +195,11 @@ pub fn main() !void {
 
         time_start = std.Io.Clock.Timestamp.now(io, .awake);
 
-        const file_name = try std.fmt.bufPrint(name_buff[0..], "spec_field{d}_frame{d}", .{ ff, frame_ind });
+        const file_name = try std.fmt.bufPrint(
+            name_buff[0..],
+            "spec_field{d}_frame{d}",
+            .{ ff, frame_idx },
+        );
         try iio.saveImage(io, out_dir, file_name, &image_mat, .bmp, 8);
         try iio.saveImage(io, out_dir, file_name, &image_mat, .csv, 8);
 

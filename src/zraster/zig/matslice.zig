@@ -126,12 +126,12 @@ pub fn MatSlice(comptime EType: type) type {
             }
         }
 
-		pub fn getSlice(self: *const Self, row_to_slice: usize) []EType {
-			assert(row_to_slice <= self.rows_num);
+        pub fn getSlice(self: *const Self, row_to_slice: usize) []EType {
+            assert(row_to_slice <= self.rows_num);
 
-			const start_ind: usize = row_to_slice*self.cols_num; 
-			const end_ind: usize = start_ind+self.cols_num;
-			return self.elems[start_ind..end_ind];
+            const start_idx: usize = row_to_slice * self.cols_num;
+            const end_idx: usize = start_idx + self.cols_num;
+            return self.elems[start_idx..end_idx];
         }
 
         pub fn matPrint(self: *const Self) void {
@@ -580,4 +580,3 @@ test "MatSliceOps.mulMat" {
 
     try expectEqualSlices(TestType, mat_exp.elems, mat_out.elems);
 }
-

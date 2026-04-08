@@ -288,7 +288,7 @@ pub fn rasterSceneInternal(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     camera: *const Camera,
-    frame_ind: usize,
+    frame_idx: usize,
     meshes: []MeshPrepared,
     image_out_arr: *NDArray(f64),
     tile_size: u16,
@@ -355,7 +355,7 @@ pub fn rasterSceneInternal(
     const ctx_rast = rops.RasterContext(report_mode){
         .ctx_perf = pctx,
         .camera = camera,
-        .frame_ind = frame_ind,
+        .frame_idx = frame_idx,
         .tile_size = tile_size,
     };
 
@@ -402,7 +402,7 @@ pub fn rasterSceneInternal(
         ),
         .full_stats => try report_log.fullReport(
             io,
-            frame_ind,
+            frame_idx,
             camera,
             nodes_per_elem,
         ),

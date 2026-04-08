@@ -89,15 +89,15 @@ pub fn NDArray(comptime EType: type) type {
             return flat;
         }
 
-        pub fn calcFlatStride(self: *const Self, dim_ind: usize) usize {
+        pub fn calcFlatStride(self: *const Self, dim_idx: usize) usize {
             // Row-major (C format) for flat NDArrays
             // stride = product of all dimensions to the right of the selected
             // dimension.
-            assert(dim_ind < self.dims.len);
+            assert(dim_idx < self.dims.len);
 
             var stride: usize = 1;
 
-            var ii: usize = dim_ind + 1;
+            var ii: usize = dim_idx + 1;
             while (ii < self.dims.len) : (ii += 1) {
                 stride *= self.dims[ii];
             }
@@ -163,9 +163,9 @@ pub fn NDArray(comptime EType: type) type {
 
         pub fn getSlice(self: *const Self, indices: []const usize, slice_dim: usize) []EType {
             assert(indices.len == self.dims.len);
-            const start_ind = self.getFlatInd(indices);
+            const start_idx = self.getFlatInd(indices);
             const len = self.strides[slice_dim];
-            return self.elems[start_ind .. start_ind + len];
+            return self.elems[start_idx .. start_idx + len];
         }
     };
 }

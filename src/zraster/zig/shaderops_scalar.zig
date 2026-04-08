@@ -3,7 +3,7 @@ const texops = @import("textureops.zig");
 const InterpType = texops.InterpType;
 const common = @import("shaderops_common.zig");
 
-pub inline fn fillNodal(
+pub inline fn fillNodalClip(
     comptime N: usize,
     ctx_shade: common.ShadeContext(N),
     interp: common.InterpData(N),
@@ -13,12 +13,12 @@ pub inline fn fillNodal(
     // Scalar scratch stores one sub-pixel contiguously as [field0, field1, ...].
     for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
         const vs = ctx_shade.shader_buf.interpolate(ff, interp.weights);
-        spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + ff] =
+        spx_image_scratch.elems[ctx_shade.scratch_idx * ctx_shade.fields_num + ff] =
             vs * sh.scale_mul + sh.scale_add;
     }
 }
 
-pub inline fn fillNodalPerspective(
+pub inline fn fillNodalPersp(
     comptime N: usize,
     ctx_shade: common.ShadeContext(N),
     interp: common.InterpData(N),
@@ -35,7 +35,7 @@ pub inline fn fillNodalPerspective(
         }
 
         const final_val = vs * interp.sub_pixel_z;
-        spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + ff] =
+        spx_image_scratch.elems[ctx_shade.scratch_idx * ctx_shade.fields_num + ff] =
             final_val * sh.scale_mul + sh.scale_add;
     }
 }
@@ -66,12 +66,12 @@ pub inline fn fillTexClip(
     );
     // Scalar scratch stores one sub-pixel contiguously as [ch0, ch1, ...].
     inline for (0..channels) |ch| {
-        spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + ch] =
+        spx_image_scratch.elems[ctx_shade.scratch_idx * ctx_shade.fields_num + ch] =
             sampled[ch] * sh.scale_mul + sh.scale_add;
     }
 }
 
-pub inline fn fillTexPerspective(
+pub inline fn fillTexPersp(
     comptime N: usize,
     comptime TexT: type,
     comptime channels: usize,
@@ -98,7 +98,7 @@ pub inline fn fillTexPerspective(
     );
     // Scalar scratch stores one sub-pixel contiguously as [ch0, ch1, ...].
     inline for (0..channels) |ch| {
-        spx_image_scratch.elems[ctx_shade.idx * ctx_shade.fields_num + ch] =
+        spx_image_scratch.elems[ctx_shade.scratch_idx * ctx_shade.fields_num + ch] =
             sampled[ch] * sh.scale_mul + sh.scale_add;
     }
 }

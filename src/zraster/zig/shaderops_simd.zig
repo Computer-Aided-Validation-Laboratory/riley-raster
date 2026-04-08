@@ -7,7 +7,7 @@ const common = @import("shaderops_common.zig");
 const cfg = buildconfig.config;
 const S = cfg.simd_vector_width;
 
-pub inline fn fillNodal(
+pub inline fn fillNodalClip(
     comptime N: usize,
     ctx_shade: common.ShadeContext(N),
     interp: common.InterpData(N),
@@ -17,12 +17,12 @@ pub inline fn fillNodal(
     // SIMD scratch is field-major so one vector store writes the same field across lanes.
     for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
         const vs = ctx_shade.shader_buf.interpolate(ff, interp.weights);
-        spx_image_scratch.elems[ff * spx_image_scratch.cols_num + ctx_shade.idx] =
+        spx_image_scratch.elems[ff * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
             vs * sh.scale_mul + sh.scale_add;
     }
 }
 
-pub inline fn fillNodalPerspective(
+pub inline fn fillNodalPersp(
     comptime N: usize,
     ctx_shade: common.ShadeContext(N),
     interp: common.InterpData(N),
@@ -39,12 +39,12 @@ pub inline fn fillNodalPerspective(
         }
 
         const final_val = vs * interp.sub_pixel_z;
-        spx_image_scratch.elems[ff * spx_image_scratch.cols_num + ctx_shade.idx] =
+        spx_image_scratch.elems[ff * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
             final_val * sh.scale_mul + sh.scale_add;
     }
 }
 
-pub inline fn fillNodalSIMD(
+pub inline fn fillNodalClipSIMD(
     comptime N: usize,
     ctx_shade: common.ShadeContext(N),
     v_weights: [N]@Vector(S, f64),
@@ -65,7 +65,7 @@ pub inline fn fillNodalSIMD(
         }
 
         const v_final = v_vs * v_mul + v_add;
-        const flat_idx = ff * px_stride + ctx_shade.idx;
+        const flat_idx = ff * px_stride + ctx_shade.scratch_idx;
         const ptr_out: *align(8) @Vector(S, f64) =
             @ptrCast(&spx_image_scratch.elems[flat_idx]);
         const v_old_val: @Vector(S, f64) = ptr_out.*;
@@ -73,7 +73,7 @@ pub inline fn fillNodalSIMD(
     }
 }
 
-pub inline fn fillNodalPerspectiveSIMD(
+pub inline fn fillNodalPerspSIMD(
     comptime N: usize,
     ctx_shade: common.ShadeContext(N),
     v_weights: [N]@Vector(S, f64),
@@ -96,7 +96,7 @@ pub inline fn fillNodalPerspectiveSIMD(
         }
 
         const v_final = (v_vs * v_subpx_z) * v_mul + v_add;
-        const flat_idx = ff * px_stride + ctx_shade.idx;
+        const flat_idx = ff * px_stride + ctx_shade.scratch_idx;
         const ptr_out: *align(8) @Vector(S, f64) =
             @ptrCast(&spx_image_scratch.elems[flat_idx]);
         const v_old_val: @Vector(S, f64) = ptr_out.*;
@@ -130,12 +130,12 @@ pub inline fn fillTexClip(
     );
     // SIMD scratch is channel-major so one vector store writes the same channel across lanes.
     inline for (0..channels) |ch| {
-        spx_image_scratch.elems[ch * spx_image_scratch.cols_num + ctx_shade.idx] =
+        spx_image_scratch.elems[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
             sampled[ch] * sh.scale_mul + sh.scale_add;
     }
 }
 
-pub inline fn fillTexPerspective(
+pub inline fn fillTexPersp(
     comptime N: usize,
     comptime TexT: type,
     comptime channels: usize,
@@ -162,7 +162,7 @@ pub inline fn fillTexPerspective(
     );
     // SIMD scratch is channel-major so one vector store writes the same channel across lanes.
     inline for (0..channels) |ch| {
-        spx_image_scratch.elems[ch * spx_image_scratch.cols_num + ctx_shade.idx] =
+        spx_image_scratch.elems[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
             sampled[ch] * sh.scale_mul + sh.scale_add;
     }
 }
@@ -202,13 +202,14 @@ pub inline fn fillTexClipSIMD(
             );
 
             inline for (0..channels) |ch| {
-                spx_image_scratch.elems[ch * px_stride + ctx_shade.idx + ii] = sampled[ch] * sh.scale_mul + sh.scale_add;
+                spx_image_scratch.elems[ch * px_stride + ctx_shade.scratch_idx + ii] =
+                    sampled[ch] * sh.scale_mul + sh.scale_add;
             }
         }
     }
 }
 
-pub inline fn fillTexPerspectiveSIMD(
+pub inline fn fillTexPerspSIMD(
     comptime N: usize,
     comptime TexT: type,
     comptime channels: usize,
@@ -250,7 +251,7 @@ pub inline fn fillTexPerspectiveSIMD(
 
     inline for (0..channels) |ch| {
         const v_final = sampled_vecs[ch] * v_mul + v_add;
-        const flat_idx = ch * px_stride + ctx_shade.idx;
+        const flat_idx = ch * px_stride + ctx_shade.scratch_idx;
         const ptr_out: *align(8) @Vector(S, f64) =
             @ptrCast(&spx_image_scratch.elems[flat_idx]);
         const v_old_val: @Vector(S, f64) = ptr_out.*;
@@ -258,7 +259,7 @@ pub inline fn fillTexPerspectiveSIMD(
     }
 }
 
-pub inline fn fillTexPerspectiveSIMDTri3(
+pub inline fn fillTexPerspSIMDTri3(
     comptime N: usize,
     comptime TexT: type,
     comptime channels: usize,
@@ -299,7 +300,7 @@ pub inline fn fillTexPerspectiveSIMDTri3(
 
     inline for (0..channels) |ch| {
         const v_final = sampled_vecs[ch] * v_mul + v_add;
-        const flat_idx = ch * px_stride + ctx_shade.idx;
+        const flat_idx = ch * px_stride + ctx_shade.scratch_idx;
         const ptr_out: *align(8) @Vector(S, f64) =
             @ptrCast(&spx_image_scratch.elems[flat_idx]);
         const v_old_val: @Vector(S, f64) = ptr_out.*;
