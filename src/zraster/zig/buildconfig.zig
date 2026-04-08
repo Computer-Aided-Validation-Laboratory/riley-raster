@@ -1,3 +1,5 @@
+const std = @import("std");
+
 pub const SimdMode = enum {
     off,
     on,
@@ -28,6 +30,12 @@ pub const NewtonTolerance = struct {
     parametric_domain: f64 = 1e-7,
 };
 
+pub const NewtonSeedTolerance = struct {
+    determinant: f64 = 1e-10,
+    parametric_domain: f64 = 1e-5,
+    residual_sq: f64 = 1e-4,
+};
+
 pub const GeometryTolerance = struct {
     bilinear_parametric_domain: f64 = 1e-8,
     bilinear_denom: f64 = 1e-12,
@@ -53,6 +61,7 @@ pub const Tolerance = struct {
     culling: CullingTolerance = .{},
     normals: NormalTolerance = .{},
     newton: NewtonTolerance = .{},
+    newton_seed: NewtonSeedTolerance = .{},
     geometry: GeometryTolerance = .{},
     texture: TextureTolerance = .{},
     image: ImageTolerance = .{},

@@ -377,8 +377,14 @@ pub fn Tri6Kernel() type {
         pub const coord_space = .clip_px_leng;
         pub const raster_mode = .direct;
         pub const solver_kind = .newton;
-        pub const seed_mode = .centroid;
-        pub const seed_reuse = .last_converged;
+        pub const seed_mode = if (buildconfig.config.simd == .on)
+            .hull
+        else
+            .centroid;
+        pub const seed_reuse = if (buildconfig.config.simd == .on)
+            .last_converged
+        else
+            .off;
 
         pub inline fn initSeed(
             pixel_x: f64,
@@ -391,7 +397,11 @@ pub fn Tri6Kernel() type {
             _ = pixel_y;
             _ = x_offset;
             _ = y_offset;
-            _ = hull_seed;
+            if (comptime @This().seed_mode == .hull) {
+                if (hull_seed) |seed| {
+                    return seed;
+                }
+            }
             return .{ .xi = 1.0 / 3.0, .eta = 1.0 / 3.0 };
         }
 
@@ -406,7 +416,11 @@ pub fn Tri6Kernel() type {
             _ = v_pixel_y;
             _ = x_offset;
             _ = y_offset;
-            _ = hull_seed;
+            if (comptime @This().seed_mode == .hull) {
+                if (hull_seed) |seed| {
+                    return seed;
+                }
+            }
             return .{
                 .xi = @splat(1.0 / 3.0),
                 .eta = @splat(1.0 / 3.0),
@@ -689,8 +703,14 @@ pub fn Quad4NewtonKernel() type {
         pub const coord_space = .clip_px_leng;
         pub const raster_mode = .direct;
         pub const solver_kind = .newton;
-        pub const seed_mode = .centroid;
-        pub const seed_reuse = .last_converged;
+        pub const seed_mode = if (buildconfig.config.simd == .on)
+            .hull
+        else
+            .centroid;
+        pub const seed_reuse = if (buildconfig.config.simd == .on)
+            .last_converged
+        else
+            .off;
 
         pub inline fn initSeed(
             pixel_x: f64,
@@ -703,7 +723,11 @@ pub fn Quad4NewtonKernel() type {
             _ = pixel_y;
             _ = x_offset;
             _ = y_offset;
-            _ = hull_seed;
+            if (comptime @This().seed_mode == .hull) {
+                if (hull_seed) |seed| {
+                    return seed;
+                }
+            }
             return .{ .xi = 0.5, .eta = 0.5 };
         }
 
@@ -718,7 +742,11 @@ pub fn Quad4NewtonKernel() type {
             _ = v_pixel_y;
             _ = x_offset;
             _ = y_offset;
-            _ = hull_seed;
+            if (comptime @This().seed_mode == .hull) {
+                if (hull_seed) |seed| {
+                    return seed;
+                }
+            }
             return .{
                 .xi = @splat(0.5),
                 .eta = @splat(0.5),
@@ -835,8 +863,14 @@ pub fn Quad89Kernel(comptime N: usize) type {
         pub const coord_space = .clip_px_leng;
         pub const raster_mode = .direct;
         pub const solver_kind = .newton;
-        pub const seed_mode = .centroid;
-        pub const seed_reuse = .last_converged;
+        pub const seed_mode = if (buildconfig.config.simd == .on)
+            .hull
+        else
+            .centroid;
+        pub const seed_reuse = if (buildconfig.config.simd == .on)
+            .last_converged
+        else
+            .off;
 
         pub inline fn initSeed(
             pixel_x: f64,
@@ -849,7 +883,11 @@ pub fn Quad89Kernel(comptime N: usize) type {
             _ = pixel_y;
             _ = x_offset;
             _ = y_offset;
-            _ = hull_seed;
+            if (comptime @This().seed_mode == .hull) {
+                if (hull_seed) |seed| {
+                    return seed;
+                }
+            }
             return .{ .xi = 0.5, .eta = 0.5 };
         }
 
@@ -864,7 +902,11 @@ pub fn Quad89Kernel(comptime N: usize) type {
             _ = v_pixel_y;
             _ = x_offset;
             _ = y_offset;
-            _ = hull_seed;
+            if (comptime @This().seed_mode == .hull) {
+                if (hull_seed) |seed| {
+                    return seed;
+                }
+            }
             return .{
                 .xi = @splat(0.5),
                 .eta = @splat(0.5),

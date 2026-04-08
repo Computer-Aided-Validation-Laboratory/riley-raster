@@ -759,6 +759,37 @@ pub fn RasterPass(
 
                         for (0..S) |jj| {
                             if (mask_arr[jj]) {
+                                var seed_xi = xi_arr[jj];
+                                var seed_eta = eta_arr[jj];
+
+                                if (comptime Geometry.seed_mode == .hull) {
+                                    const hull_seed = newton.NewtonSeed{
+                                        .xi = seed_xi,
+                                        .eta = seed_eta,
+                                    };
+                                    const seed_quality = newton.evaluateSeedQuality(
+                                        Geometry.nodes_num,
+                                        Geometry.domainViolation,
+                                        x_arr[jj] - subpx_domain.x_off,
+                                        y_arr[jj] - subpx_domain.y_off,
+                                        nodes_coords.x,
+                                        nodes_coords.y,
+                                        nodes_coords.z,
+                                        hull_seed,
+                                    );
+                                    if (!seed_quality.is_usable) {
+                                        const centroid_seed = Geometry.initSeed(
+                                            x_arr[jj],
+                                            y_arr[jj],
+                                            subpx_domain.x_off,
+                                            subpx_domain.y_off,
+                                            null,
+                                        );
+                                        seed_xi = centroid_seed.xi;
+                                        seed_eta = centroid_seed.eta;
+                                    }
+                                }
+
                                 const block_idx = candidate_count / 8;
                                 const lane_idx = candidate_count % 8;
 
@@ -783,9 +814,9 @@ pub fn RasterPass(
                                 scratch.candidate_buffer[block_idx].py[lane_idx] =
                                     y_arr[jj];
                                 scratch.candidate_buffer[block_idx].seed_xi[lane_idx] =
-                                    xi_arr[jj];
+                                    seed_xi;
                                 scratch.candidate_buffer[block_idx].seed_eta[lane_idx] =
-                                    eta_arr[jj];
+                                    seed_eta;
                                 scratch.candidate_buffer[block_idx].count = lane_idx + 1;
                                 candidate_count += 1;
                             }
@@ -1214,8 +1245,8 @@ pub fn RasterPass(
 
                     if (comptime Geometry.hull_nodes_num > 0) {
                         ctx_rast.ctx_perf.recordTessChecks(1);
-                        const is_in_tess = element_tess.isInScalar(subpx_x, subpx_y);
-                        if (is_in_tess) {
+                        const tess_res = element_tess.isInScalar(subpx_x, subpx_y);
+                        if (tess_res.is_in) {
                             ctx_rast.ctx_perf.recordTessPasses(1);
                         }
                         if (comptime report_mode == .full_stats) {
@@ -1223,10 +1254,10 @@ pub fn RasterPass(
                                 ctx_rast.ctx_perf,
                                 global_subx,
                                 global_suby,
-                                is_in_tess,
+                                tess_res.is_in,
                             );
                         }
-                        if (!is_in_tess) {
+                        if (!tess_res.is_in) {
                             subpx_x += subpx_domain.step;
                             continue;
                         }

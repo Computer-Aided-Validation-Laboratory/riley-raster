@@ -21,6 +21,13 @@ pub const NewtonSeedState = struct {
     eta: f64 = 0.0,
 };
 
+pub const NewtonSeedQuality = struct {
+    is_usable: bool,
+    domain_violation: f64,
+    residual_sq: f64,
+    det_abs: f64,
+};
+
 pub const NewtonResult = struct {
     converged: bool,
     pre_domain_converged: bool,
@@ -55,6 +62,18 @@ pub inline fn selectSeed(
         }
     }
     return base_seed;
+}
+
+pub inline fn isSeedFinite(seed: NewtonSeed) bool {
+    return std.math.isFinite(seed.xi) and std.math.isFinite(seed.eta);
+}
+
+pub inline fn isSeedInRelaxedDomain(
+    comptime domainViolationFn: anytype,
+    seed: NewtonSeed,
+) bool {
+    const domain_tol = tol.newton.parametric_domain;
+    return domainViolationFn(seed.xi, seed.eta) <= domain_tol;
 }
 
 pub inline fn updateSeedState(
@@ -131,6 +150,73 @@ pub inline fn updateSeedStateFromSIMDResult(
     if (best_lane_idx) |jj| {
         updateSeedState(seed_state, xi_out_arr[jj], eta_out_arr[jj]);
     }
+}
+
+pub fn evaluateSeedQuality(
+    comptime N: usize,
+    comptime domainViolationFn: anytype,
+    target_screen_x: f64,
+    target_screen_y: f64,
+    element_node_x: []const f64,
+    element_node_y: []const f64,
+    element_node_w: []const f64,
+    seed: NewtonSeed,
+) NewtonSeedQuality {
+    if (!isSeedFinite(seed)) {
+        return .{
+            .is_usable = false,
+            .domain_violation = std.math.inf(f64),
+            .residual_sq = std.math.inf(f64),
+            .det_abs = 0.0,
+        };
+    }
+
+    var node_values: [N]f64 = undefined;
+    var deriv_n_xi: [N]f64 = undefined;
+    var deriv_n_eta: [N]f64 = undefined;
+    shapefun.shapeFunctions(
+        N,
+        seed.xi,
+        seed.eta,
+        &node_values,
+        &deriv_n_xi,
+        &deriv_n_eta,
+    );
+
+    var residual_x: f64 = 0.0;
+    var residual_y: f64 = 0.0;
+    var jacobian_11: f64 = 0.0;
+    var jacobian_12: f64 = 0.0;
+    var jacobian_21: f64 = 0.0;
+    var jacobian_22: f64 = 0.0;
+
+    for (0..N) |nn| {
+        const term_x = target_screen_x * element_node_w[nn] - element_node_x[nn];
+        const term_y = target_screen_y * element_node_w[nn] - element_node_y[nn];
+        residual_x += node_values[nn] * term_x;
+        residual_y += node_values[nn] * term_y;
+        jacobian_11 += deriv_n_xi[nn] * term_x;
+        jacobian_12 += deriv_n_eta[nn] * term_x;
+        jacobian_21 += deriv_n_xi[nn] * term_y;
+        jacobian_22 += deriv_n_eta[nn] * term_y;
+    }
+
+    const determinant = jacobian_11 * jacobian_22 - jacobian_12 * jacobian_21;
+    const det_abs = @abs(determinant);
+    const residual_sq = residual_x * residual_x + residual_y * residual_y;
+    const domain_violation = domainViolationFn(seed.xi, seed.eta);
+    const seed_tol = tol.newton_seed;
+    const is_usable = domain_violation <= seed_tol.parametric_domain and
+        det_abs >= seed_tol.determinant and
+        residual_sq <= seed_tol.residual_sq and
+        std.math.isFinite(residual_sq);
+
+    return .{
+        .is_usable = is_usable,
+        .domain_violation = domain_violation,
+        .residual_sq = residual_sq,
+        .det_abs = det_abs,
+    };
 }
 
 // Solves: $$ \sum_{i=1}^N N_i(\xi, \eta) \cdot (X_{pixel} \cdot W_i - X_i) = 0 $$

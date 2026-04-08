@@ -538,22 +538,27 @@ pub fn RasterPass(
                 for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x| {
                     const global_subx = targ_overlap.tile.x_px_min * sub_samp + scratch_x;
                     const global_suby = targ_overlap.tile.y_px_min * sub_samp + scratch_y;
+                    var hull_seed: ?newton.NewtonSeed = null;
 
                     if (comptime Geometry.hull_nodes_num > 0) {
                         ctx_rast.ctx_perf.recordTessChecks(1);
-                        const is_in_tess = element_tess.isInScalar(subpx_x, subpx_y);
-                        if (is_in_tess) {
+                        const tess_res = element_tess.isInScalar(subpx_x, subpx_y);
+                        if (tess_res.is_in) {
                             ctx_rast.ctx_perf.recordTessPasses(1);
+                            hull_seed = .{
+                                .xi = tess_res.seed_xi,
+                                .eta = tess_res.seed_eta,
+                            };
                         }
                         if (comptime report_mode == .full_stats) {
                             report.maybeRecordEarlyOut(
                                 ctx_rast.ctx_perf,
                                 global_subx,
                                 global_suby,
-                                is_in_tess,
+                                tess_res.is_in,
                             );
                         }
-                        if (!is_in_tess) {
+                        if (!tess_res.is_in) {
                             subpx_x += subpx_domain.step;
                             continue;
                         }
@@ -568,12 +573,29 @@ pub fn RasterPass(
 
                     ctx_rast.ctx_perf.recordSolverCalls(1);
                     const result = if (comptime Geometry.solver_kind == .newton) blk: {
+                        if (comptime Geometry.seed_mode == .hull) {
+                            if (hull_seed) |seed| {
+                                const seed_quality = newton.evaluateSeedQuality(
+                                    Geometry.nodes_num,
+                                    Geometry.domainViolation,
+                                    subpx_x - subpx_domain.x_off,
+                                    subpx_y - subpx_domain.y_off,
+                                    nodes_coords.x,
+                                    nodes_coords.y,
+                                    nodes_coords.z,
+                                    seed,
+                                );
+                                if (!seed_quality.is_usable) {
+                                    hull_seed = null;
+                                }
+                            }
+                        }
                         const base_seed = Geometry.initSeed(
                             subpx_x,
                             subpx_y,
                             subpx_domain.x_off,
                             subpx_domain.y_off,
-                            null,
+                            hull_seed,
                         );
                         const selected_seed = newton.selectSeed(
                             Geometry.seed_reuse,
