@@ -503,11 +503,11 @@ pub fn RasterPass(
                 nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
             }
 
-            const solver_state = if (comptime Geometry.solver_kind == .newton)
-                {}
-            else if (comptime Geometry.solver_kind == .inv_bi)
+            const bilinear_params = if (comptime Geometry.solver_kind == .inv_bi)
                 Geometry.getBilinearParams(nodes_coords)
-            else if (@hasDecl(Geometry, "getInvElemArea"))
+            else
+                {};
+            const inv_elem_area = if (comptime Geometry.solver_kind == .hyperb)
                 Geometry.getInvElemArea(nodes_coords)
             else
                 {};
@@ -590,13 +590,7 @@ pub fn RasterPass(
                                 }
                             }
                         }
-                        const base_seed = Geometry.initSeed(
-                            subpx_x,
-                            subpx_y,
-                            subpx_domain.x_off,
-                            subpx_domain.y_off,
-                            hull_seed,
-                        );
+                        const base_seed = Geometry.initSeed(hull_seed);
                         const selected_seed = newton.selectSeed(
                             Geometry.seed_reuse,
                             base_seed,
@@ -617,14 +611,14 @@ pub fn RasterPass(
                             subpx_y,
                             subpx_domain.x_off,
                             subpx_domain.y_off,
-                            solver_state,
+                            bilinear_params,
                         )
                     else
                         Geometry.solveWeightsHyperb(
                             nodes_coords,
                             subpx_x,
                             subpx_y,
-                            solver_state,
+                            inv_elem_area,
                         );
                     ctx_rast.ctx_perf.recordSolverIters(result.iters);
 

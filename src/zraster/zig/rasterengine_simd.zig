@@ -744,16 +744,10 @@ pub fn RasterPass(
                         const mask_arr: [S]bool = v_mask;
                         const x_arr: [S]f64 = v_subpx_x;
                         const y_arr: [S]f64 = v_subpx_y;
-                        const init_seed = Geometry.initSeedSIMD(
-                            v_subpx_x,
-                            v_subpx_y,
-                            subpx_domain.x_off,
-                            subpx_domain.y_off,
-                            .{
-                                .xi = v_hull_res.seed_xi,
-                                .eta = v_hull_res.seed_eta,
-                            },
-                        );
+                        const init_seed = Geometry.initSeedSIMD(.{
+                            .xi = v_hull_res.seed_xi,
+                            .eta = v_hull_res.seed_eta,
+                        });
                         const xi_arr: [S]f64 = init_seed.xi;
                         const eta_arr: [S]f64 = init_seed.eta;
 
@@ -778,13 +772,7 @@ pub fn RasterPass(
                                         hull_seed,
                                     );
                                     if (!seed_quality.is_usable) {
-                                        const centroid_seed = Geometry.initSeed(
-                                            x_arr[jj],
-                                            y_arr[jj],
-                                            subpx_domain.x_off,
-                                            subpx_domain.y_off,
-                                            null,
-                                        );
+                                        const centroid_seed = Geometry.initSeed(null);
                                         seed_xi = centroid_seed.xi;
                                         seed_eta = centroid_seed.eta;
                                     }
@@ -827,13 +815,7 @@ pub fn RasterPass(
 
             // Pass 2: Vectorized Solving in chunks of 8
             const candidate_block_count = @divFloor(candidate_count + 7, 8);
-            const default_seed = Geometry.initSeed(
-                0.0,
-                0.0,
-                subpx_domain.x_off,
-                subpx_domain.y_off,
-                null,
-            );
+            const default_seed = Geometry.initSeed(null);
             _ = default_seed;
             var seed_state = newton.NewtonSeedState{};
 
@@ -1200,14 +1182,11 @@ pub fn RasterPass(
                 nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
             }
 
-            const solver_state = if (comptime Geometry.solver_kind == .newton)
-                if (@hasDecl(Geometry, "getNewtonParams"))
-                    Geometry.getNewtonParams(nodes_coords)
-                else
-                    {}
-            else if (comptime Geometry.solver_kind == .inv_bi)
+            const bilinear_params = if (comptime Geometry.solver_kind == .inv_bi)
                 Geometry.getBilinearParams(nodes_coords)
-            else if (@hasDecl(Geometry, "getInvElemArea"))
+            else
+                {};
+            const inv_elem_area = if (comptime Geometry.solver_kind == .hyperb)
                 Geometry.getInvElemArea(nodes_coords)
             else
                 {};
@@ -1277,14 +1256,14 @@ pub fn RasterPass(
                             subpx_y,
                             subpx_domain.x_off,
                             subpx_domain.y_off,
-                            solver_state,
+                            bilinear_params,
                         )
                     else
                         Geometry.solveWeightsHyperb(
                             nodes_coords,
                             subpx_x,
                             subpx_y,
-                            solver_state,
+                            inv_elem_area,
                         );
                     ctx_rast.ctx_perf.recordSolverIters(result.iters);
 

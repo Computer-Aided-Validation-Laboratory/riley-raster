@@ -377,26 +377,10 @@ pub fn Tri6Kernel() type {
         pub const coord_space = .clip_px_leng;
         pub const raster_mode = .direct;
         pub const solver_kind = .newton;
-        pub const seed_mode = if (buildconfig.config.simd == .on)
-            .hull
-        else
-            .centroid;
-        pub const seed_reuse = if (buildconfig.config.simd == .on)
-            .last_converged
-        else
-            .off;
+        pub const seed_mode = .centroid;
+        pub const seed_reuse = .last_converged;
 
-        pub inline fn initSeed(
-            pixel_x: f64,
-            pixel_y: f64,
-            x_offset: f64,
-            y_offset: f64,
-            hull_seed: ?NewtonSeed,
-        ) NewtonSeed {
-            _ = pixel_x;
-            _ = pixel_y;
-            _ = x_offset;
-            _ = y_offset;
+        pub inline fn initSeed(hull_seed: ?NewtonSeed) NewtonSeed {
             if (comptime @This().seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
@@ -405,17 +389,7 @@ pub fn Tri6Kernel() type {
             return .{ .xi = 1.0 / 3.0, .eta = 1.0 / 3.0 };
         }
 
-        pub inline fn initSeedSIMD(
-            v_pixel_x: @Vector(S, f64),
-            v_pixel_y: @Vector(S, f64),
-            x_offset: f64,
-            y_offset: f64,
-            hull_seed: ?NewtonSeedSIMD,
-        ) NewtonSeedSIMD {
-            _ = v_pixel_x;
-            _ = v_pixel_y;
-            _ = x_offset;
-            _ = y_offset;
+        pub inline fn initSeedSIMD(hull_seed: ?NewtonSeedSIMD) NewtonSeedSIMD {
             if (comptime @This().seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
@@ -703,26 +677,10 @@ pub fn Quad4NewtonKernel() type {
         pub const coord_space = .clip_px_leng;
         pub const raster_mode = .direct;
         pub const solver_kind = .newton;
-        pub const seed_mode = if (buildconfig.config.simd == .on)
-            .hull
-        else
-            .centroid;
-        pub const seed_reuse = if (buildconfig.config.simd == .on)
-            .last_converged
-        else
-            .off;
+        pub const seed_mode = .centroid;
+        pub const seed_reuse = .last_converged;
 
-        pub inline fn initSeed(
-            pixel_x: f64,
-            pixel_y: f64,
-            x_offset: f64,
-            y_offset: f64,
-            hull_seed: ?NewtonSeed,
-        ) NewtonSeed {
-            _ = pixel_x;
-            _ = pixel_y;
-            _ = x_offset;
-            _ = y_offset;
+        pub inline fn initSeed(hull_seed: ?NewtonSeed) NewtonSeed {
             if (comptime @This().seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
@@ -731,17 +689,7 @@ pub fn Quad4NewtonKernel() type {
             return .{ .xi = 0.5, .eta = 0.5 };
         }
 
-        pub inline fn initSeedSIMD(
-            v_pixel_x: @Vector(S, f64),
-            v_pixel_y: @Vector(S, f64),
-            x_offset: f64,
-            y_offset: f64,
-            hull_seed: ?NewtonSeedSIMD,
-        ) NewtonSeedSIMD {
-            _ = v_pixel_x;
-            _ = v_pixel_y;
-            _ = x_offset;
-            _ = y_offset;
+        pub inline fn initSeedSIMD(hull_seed: ?NewtonSeedSIMD) NewtonSeedSIMD {
             if (comptime @This().seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
@@ -863,26 +811,10 @@ pub fn Quad89Kernel(comptime N: usize) type {
         pub const coord_space = .clip_px_leng;
         pub const raster_mode = .direct;
         pub const solver_kind = .newton;
-        pub const seed_mode = if (buildconfig.config.simd == .on)
-            .hull
-        else
-            .centroid;
-        pub const seed_reuse = if (buildconfig.config.simd == .on)
-            .last_converged
-        else
-            .off;
+        pub const seed_mode = .centroid;
+        pub const seed_reuse = .last_converged;
 
-        pub inline fn initSeed(
-            pixel_x: f64,
-            pixel_y: f64,
-            x_offset: f64,
-            y_offset: f64,
-            hull_seed: ?NewtonSeed,
-        ) NewtonSeed {
-            _ = pixel_x;
-            _ = pixel_y;
-            _ = x_offset;
-            _ = y_offset;
+        pub inline fn initSeed(hull_seed: ?NewtonSeed) NewtonSeed {
             if (comptime @This().seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
@@ -891,17 +823,7 @@ pub fn Quad89Kernel(comptime N: usize) type {
             return .{ .xi = 0.5, .eta = 0.5 };
         }
 
-        pub inline fn initSeedSIMD(
-            v_pixel_x: @Vector(S, f64),
-            v_pixel_y: @Vector(S, f64),
-            x_offset: f64,
-            y_offset: f64,
-            hull_seed: ?NewtonSeedSIMD,
-        ) NewtonSeedSIMD {
-            _ = v_pixel_x;
-            _ = v_pixel_y;
-            _ = x_offset;
-            _ = y_offset;
+        pub inline fn initSeedSIMD(hull_seed: ?NewtonSeedSIMD) NewtonSeedSIMD {
             if (comptime @This().seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
