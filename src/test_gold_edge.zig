@@ -13,7 +13,14 @@ test "Gold Edge Suite" {
     const io = io_threaded.io();
 
     const texture = blk: {
-        break :blk try common.iio.loadImage(allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1);
+        break :blk try common.iio.loadImage(
+            u8,
+            1,
+            allocator,
+            io,
+            "texture/speckle-simple.tiff",
+            .tiff,
+        );
     };
     defer texture.deinit(allocator);
 

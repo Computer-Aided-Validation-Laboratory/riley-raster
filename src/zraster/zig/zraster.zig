@@ -360,10 +360,10 @@ pub fn rasterSceneInternal(
 
     try rasterengine.rasterScene(
         report_mode,
-        ctx_rast,
-        ctx_report,
         outer_alloc,
         io,
+        ctx_rast,
+        ctx_report,
         tiling,
         meshes,
         raster_hulls,

@@ -50,7 +50,14 @@ pub fn main() !void {
 
     print("Loading data...\n", .{});
     const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
-    const texture = try iio.loadImage(aa, io, "texture/speckle-simple.tiff", .tiff, u8, 1);
+    const texture = try iio.loadImage(
+        u8,
+        1,
+        aa,
+        io,
+        "texture/speckle-simple.tiff",
+        .tiff,
+    );
 
     const cwd = std.Io.Dir.cwd();
     cwd.createDir(io, "out-bench-multimesh-debug", .default_dir) catch |err| {

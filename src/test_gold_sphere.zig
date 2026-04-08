@@ -17,9 +17,23 @@ test "Sphere Gold Tests" {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const texture_grey = try iio.loadImage(allocator, io, "texture/speckle.bmp", .bmp, u8, 1);
+    const texture_grey = try iio.loadImage(
+        u8,
+        1,
+        allocator,
+        io,
+        "texture/speckle.bmp",
+        .bmp,
+    );
     defer texture_grey.deinit(allocator);
-    const texture_rgb = try iio.loadImage(allocator, io, "texture/speckle_rgb.bmp", .bmp, u8, 3);
+    const texture_rgb = try iio.loadImage(
+        u8,
+        3,
+        allocator,
+        io,
+        "texture/speckle_rgb.bmp",
+        .bmp,
+    );
     defer texture_rgb.deinit(allocator);
 
     const fails_root = "fails";

@@ -15,7 +15,14 @@ test "Gold Small Suite" {
     // Load original using C loader once, then save as simple TIFF
     // and reload using our simple loader to ensure compatibility.
     const texture = blk: {
-        break :blk try common.iio.loadImage(allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1);
+        break :blk try common.iio.loadImage(
+            u8,
+            1,
+            allocator,
+            io,
+            "texture/speckle-simple.tiff",
+            .tiff,
+        );
     };
     defer texture.deinit(allocator);
 

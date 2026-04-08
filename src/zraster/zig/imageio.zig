@@ -51,12 +51,19 @@ pub const ImageSaveOpts = struct {
     }
 };
 
-pub fn loadImage(allocator: std.mem.Allocator, io: std.Io, path: []const u8, format: ImageFormat, comptime T: type, comptime channels: usize) !Texture(T, channels) {
+pub fn loadImage(
+    comptime T: type,
+    comptime channels: usize,
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+    format: ImageFormat,
+) !Texture(T, channels) {
     return switch (format) {
-        .csv => try loadCSV(allocator, io, path, T, channels),
-        .ppm => try loadPPM(allocator, io, path, T, channels),
-        .bmp => try loadBMP(allocator, io, path, T, channels),
-        .tiff => try loadTIFF(allocator, io, path, T, channels),
+        .csv => try loadCSV(T, channels, allocator, io, path),
+        .ppm => try loadPPM(T, channels, allocator, io, path),
+        .bmp => try loadBMP(T, channels, allocator, io, path),
+        .tiff => try loadTIFF(T, channels, allocator, io, path),
     };
 }
 
@@ -409,7 +416,13 @@ pub fn saveTIFF(io: std.Io, out_dir: std.Io.Dir, file_name: []const u8, image_ar
     try writer.flush();
 }
 
-pub fn loadPPM(allocator: std.mem.Allocator, io: std.Io, path: []const u8, comptime T: type, comptime channels: usize) !Texture(T, channels) {
+pub fn loadPPM(
+    comptime T: type,
+    comptime channels: usize,
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+) !Texture(T, channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -492,7 +505,13 @@ pub fn loadPPM(allocator: std.mem.Allocator, io: std.Io, path: []const u8, compt
     return texture;
 }
 
-pub fn loadCSV(allocator: std.mem.Allocator, io: std.Io, path: []const u8, comptime T: type, comptime channels: usize) !Texture(T, channels) {
+pub fn loadCSV(
+    comptime T: type,
+    comptime channels: usize,
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+) !Texture(T, channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -543,7 +562,13 @@ pub fn loadCSV(allocator: std.mem.Allocator, io: std.Io, path: []const u8, compt
     return texture;
 }
 
-pub fn loadBMP(allocator: std.mem.Allocator, io: std.Io, path: []const u8, comptime T: type, comptime channels: usize) !Texture(T, channels) {
+pub fn loadBMP(
+    comptime T: type,
+    comptime channels: usize,
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+) !Texture(T, channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -649,7 +674,13 @@ pub fn loadBMP(allocator: std.mem.Allocator, io: std.Io, path: []const u8, compt
     return texture;
 }
 
-pub fn loadTIFF(allocator: std.mem.Allocator, io: std.Io, path: []const u8, comptime T: type, comptime channels: usize) !Texture(T, channels) {
+pub fn loadTIFF(
+    comptime T: type,
+    comptime channels: usize,
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+) !Texture(T, channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -727,7 +758,13 @@ pub fn loadTIFF(allocator: std.mem.Allocator, io: std.Io, path: []const u8, comp
     return texture;
 }
 
-pub fn CLoadTIFF(allocator: std.mem.Allocator, io: std.Io, path: []const u8, comptime T: type, comptime channels: usize) !Texture(T, channels) {
+pub fn CLoadTIFF(
+    comptime T: type,
+    comptime channels: usize,
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+) !Texture(T, channels) {
     _ = io;
     var libtiff = try clibtiff.LibTiff.init();
     defer libtiff.deinit();
@@ -808,7 +845,7 @@ test "Verify hand-written TIFF loader" {
     const allocator = testing.allocator;
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
-    var tex_c = try CLoadTIFF(allocator, io, "texture/speckle.tiff", u8, 1);
+    var tex_c = try CLoadTIFF(u8, 1, allocator, io, "texture/speckle.tiff");
     defer tex_c.deinit(allocator);
 
     const cwd = std.Io.Dir.cwd();
@@ -827,12 +864,12 @@ test "Verify hand-written TIFF loader" {
     try saveMatAsImage(io, out_dir, tmp_test_dir ++ "/speckle-simple", &mat, .{ .format = .tiff, .bits = 8, .scaling = .none });
 
     var tex_zig = try loadImage(
+        u8,
+        1,
         allocator,
         io,
         tmp_test_dir ++ "/speckle-simple.tiff",
         .tiff,
-        u8,
-        1,
     );
     defer tex_zig.deinit(allocator);
 
@@ -890,12 +927,12 @@ test "Save and Load All Formats 8-bit and 16-bit" {
 
             // 2. Load back into u8 or u16
             if (bits == 8) {
-                var loaded = try loadImage(allocator, io, full_path, fmt, u8, 1);
+                var loaded = try loadImage(u8, 1, allocator, io, full_path, fmt);
                 defer loaded.deinit(allocator);
                 try testing.expectEqual(rows, loaded.rows_num);
                 try testing.expectEqual(cols, loaded.cols_num);
             } else {
-                var loaded = try loadImage(allocator, io, full_path, fmt, u16, 1);
+                var loaded = try loadImage(u16, 1, allocator, io, full_path, fmt);
                 defer loaded.deinit(allocator);
                 try testing.expectEqual(rows, loaded.rows_num);
                 try testing.expectEqual(cols, loaded.cols_num);
@@ -927,12 +964,12 @@ test "Scaling Strategy: Fractional" {
     try saveMatAsImage(io, cwd, tmp_test_dir ++ "/test_frac_float", &mat, opts1);
 
     var loaded1 = try loadImage(
+        f64,
+        1,
         allocator,
         io,
         tmp_test_dir ++ "/test_frac_float.csv",
         .csv,
-        f64,
-        1,
     );
     defer loaded1.deinit(allocator);
     try testing.expectApproxEqAbs(loaded1.getPixel(0, 0).channels[0], 0.4, 1e-6);
@@ -945,12 +982,12 @@ test "Scaling Strategy: Fractional" {
     try saveMatAsImage(io, cwd, tmp_test_dir ++ "/test_frac_bits", &mat, opts2);
 
     var loaded2 = try loadImage(
+        f64,
+        1,
         allocator,
         io,
         tmp_test_dir ++ "/test_frac_bits.csv",
         .csv,
-        f64,
-        1,
     );
     defer loaded2.deinit(allocator);
     try testing.expectApproxEqAbs(loaded2.getPixel(0, 0).channels[0], 0.4 * 255.0, 1e-6);

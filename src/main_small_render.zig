@@ -8,12 +8,12 @@ pub fn main() !void {
     const io = io_threaded.io();
 
     const texture = try gengold.iio.loadImage(
+        u8,
+        1,
         outer_alloc,
         io,
         "texture/speckle-simple.tiff",
         .tiff,
-        u8,
-        1,
     );
     defer texture.deinit(outer_alloc);
 

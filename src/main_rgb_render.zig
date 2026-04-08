@@ -47,7 +47,14 @@ pub fn main() !void {
     const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
 
     // Load RGB Texture
-    const texture = try iio.loadImage(aa, io, "texture/speckle_rgb.bmp", .bmp, u8, 3);
+    const texture = try iio.loadImage(
+        u8,
+        3,
+        aa,
+        io,
+        "texture/speckle_rgb.bmp",
+        .bmp,
+    );
 
     var mesh_inputs = try aa.alloc(MeshInput, 10);
 

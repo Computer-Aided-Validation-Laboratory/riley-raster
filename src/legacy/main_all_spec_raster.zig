@@ -135,7 +135,7 @@ pub fn main() !void {
         const path_tex = "texture/speckle-simple.tiff";
 
         const uvs = try uvio.loadUVMap(page_alloc, io, path_uvs);
-        const texture = try iio.loadImage(page_alloc, io, path_tex, .tiff, u8, 1);
+        const texture = try iio.loadImage(u8, 1, page_alloc, io, path_tex, .tiff);
 
         mesh_input.shader = .{ .tex_u8 = .{
             .uvs = uvs,

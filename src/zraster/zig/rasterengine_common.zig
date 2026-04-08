@@ -1,3 +1,5 @@
+const buildconfig = @import("buildconfig.zig");
+const cfg = buildconfig.config;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const rops = @import("rasterops.zig");
@@ -124,13 +126,14 @@ pub fn averageScratch(
     spx_image_scratch: *const MatSlice(f64),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
-    spx_field_avg: []f64,
     image_out_arr: *NDArray(f64),
 ) void {
     const curr_tile_size_x: usize = tile.x_px_max - tile.x_px_min;
     const curr_tile_size_y: usize = tile.y_px_max - tile.y_px_min;
     const sub_samp_f = @as(f64, @floatFromInt(sub_samp));
     const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
+    var field_avg_buff = [_]f64{0.0} ** cfg.max_nodal_fields;
+    const spx_field_avg = field_avg_buff[0..@as(usize, fields_num)];
 
     for (0..curr_tile_size_y) |ty| {
         const image_px_y: usize = tile.y_px_min + ty;

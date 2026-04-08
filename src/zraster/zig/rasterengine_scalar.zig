@@ -24,7 +24,7 @@ const geomkerns = @import("geometrykernels.zig");
 const newton = @import("newton.zig");
 const shadekerns = @import("shaderkernels.zig");
 
-const ScratchBuffers = struct {
+const SubpxScratchBuffers = struct {
     inv_z: []f64,
     image: *MatSlice(f64),
     touched_min_x: []usize,
@@ -37,10 +37,10 @@ const ScratchLayout = common.ScratchLayout;
 
 pub fn rasterScene(
     comptime report_mode: ReportMode,
-    ctx_rast: rops.RasterContext,
-    ctx_report: report.ReportContext(report_mode),
     outer_alloc: std.mem.Allocator,
     io: std.Io,
+    ctx_rast: rops.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
     tiling: rops.TilingOverlaps,
     meshes: []const MeshPrepared,
     raster_hulls: []const ?NDArray(f64),
@@ -68,14 +68,12 @@ pub fn rasterScene(
         subpx_tile_total,
         @as(usize, fields_num),
     );
-    const scratch = ScratchBuffers{
+    const subpx_scratch = SubpxScratchBuffers{
         .inv_z = subpx_inv_z_scratch,
         .image = &subpx_image_scratch,
         .touched_min_x = try arena_alloc.alloc(usize, subpx_tile_size),
         .touched_max_x = try arena_alloc.alloc(usize, subpx_tile_size),
     };
-
-    const subpx_field_avg = try arena_alloc.alloc(f64, fields_num);
 
     for (tiling.active_tiles) |tile| {
         const tile_start = if (comptime report_mode == .full_stats)
@@ -87,8 +85,8 @@ pub fn rasterScene(
         @memset(subpx_inv_z_scratch, -std.math.inf(f64));
         @memset(subpx_image_scratch.elems, 0.0);
         for (0..subpx_tile_size) |yy| {
-            scratch.touched_min_x[yy] = subpx_tile_size;
-            scratch.touched_max_x[yy] = 0;
+            subpx_scratch.touched_min_x[yy] = subpx_tile_size;
+            subpx_scratch.touched_max_x[yy] = 0;
         }
 
         const overlap_start = tile.overlap_start;
@@ -129,7 +127,10 @@ pub fn rasterScene(
                         .nodal => |*shader| {
                             const SK = shadekerns.NodalKernel(N);
 
-                            const tt = @min(ctx_rast.frame_idx, shader.elem_field.dims[0] - 1);
+                            const tt = @min(
+                                ctx_rast.frame_idx,
+                                shader.elem_field.dims[0] - 1,
+                            );
                             const start_idx = shader.elem_field.getFlatInd(
                                 &[_]usize{ tt, targ_overlap.overlap.elem_idx, 0, 0 },
                             );
@@ -154,7 +155,7 @@ pub fn rasterScene(
                                 mesh_in,
                                 shader,
                                 &local_shader_buf,
-                                scratch,
+                                subpx_scratch,
                             );
                         },
                         .tex_u8 => |*shader| {
@@ -180,7 +181,7 @@ pub fn rasterScene(
                                 mesh_in,
                                 shader,
                                 &local_shader_buf,
-                                scratch,
+                                subpx_scratch,
                             );
                         },
                         .tex_u16 => |*shader| {
@@ -206,7 +207,7 @@ pub fn rasterScene(
                                 mesh_in,
                                 shader,
                                 &local_shader_buf,
-                                scratch,
+                                subpx_scratch,
                             );
                         },
                         .tex_rgb_u8 => |*shader| {
@@ -232,7 +233,7 @@ pub fn rasterScene(
                                 mesh_in,
                                 shader,
                                 &local_shader_buf,
-                                scratch,
+                                subpx_scratch,
                             );
                         },
                         .tex_rgb_u16 => |*shader| {
@@ -258,7 +259,7 @@ pub fn rasterScene(
                                 mesh_in,
                                 shader,
                                 &local_shader_buf,
-                                scratch,
+                                subpx_scratch,
                             );
                         },
                     }
@@ -274,9 +275,8 @@ pub fn rasterScene(
                 subpx_tile_size,
                 fields_num,
                 &subpx_image_scratch,
-                scratch.touched_min_x,
-                scratch.touched_max_x,
-                subpx_field_avg,
+                subpx_scratch.touched_min_x,
+                subpx_scratch.touched_max_x,
                 image_out_arr,
             );
         } else {
@@ -324,7 +324,7 @@ pub fn RasterPass(
             mesh_in: rops.MeshInput,
             shader: *const ShaderData,
             shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
-            scratch: ScratchBuffers,
+            subpx_scratch: SubpxScratchBuffers,
         ) !u64 {
             const sub_samp_u: usize = @intCast(ctx_rast.camera.sub_sample);
             const sub_samp_f: f64 = @as(f64, @floatFromInt(ctx_rast.camera.sub_sample));
@@ -373,7 +373,7 @@ pub fn RasterPass(
                     nodes_coords,
                     shader,
                     shader_buf,
-                    scratch,
+                    subpx_scratch,
                 )
             else
                 try rasterDirect(
@@ -387,7 +387,7 @@ pub fn RasterPass(
                     nodes_coords,
                     shader,
                     shader_buf,
-                    scratch,
+                    subpx_scratch,
                 );
 
             return shaded_px;
@@ -403,12 +403,12 @@ pub fn RasterPass(
             nodes_coords: Vec3Slices(f64),
             shader: *const ShaderData,
             shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
-            scratch: ScratchBuffers,
+            subpx_scratch: SubpxScratchBuffers,
         ) !u64 {
             const N = Geometry.nodes_num;
             const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-            std.debug.assert(scratch.image.cols_num <= std.math.maxInt(u8));
-            const fields_num: u8 = @intCast(scratch.image.cols_num);
+            std.debug.assert(subpx_scratch.image.cols_num <= std.math.maxInt(u8));
+            const fields_num: u8 = @intCast(subpx_scratch.image.cols_num);
 
             var shaded_px: u64 = 0;
 
@@ -451,13 +451,13 @@ pub fn RasterPass(
                         const inv_z = Geometry.calcInvZ(nodes_coords, weights);
                         const scratch_idx = row_offset + scratch_x;
 
-                        if (inv_z >= scratch.inv_z[scratch_idx]) {
-                            scratch.inv_z[scratch_idx] = inv_z;
-                            if (scratch_x < scratch.touched_min_x[scratch_y]) {
-                                scratch.touched_min_x[scratch_y] = scratch_x;
+                        if (inv_z >= subpx_scratch.inv_z[scratch_idx]) {
+                            subpx_scratch.inv_z[scratch_idx] = inv_z;
+                            if (scratch_x < subpx_scratch.touched_min_x[scratch_y]) {
+                                subpx_scratch.touched_min_x[scratch_y] = scratch_x;
                             }
-                            if (scratch_x > scratch.touched_max_x[scratch_y]) {
-                                scratch.touched_max_x[scratch_y] = scratch_x;
+                            if (scratch_x > subpx_scratch.touched_max_x[scratch_y]) {
+                                subpx_scratch.touched_max_x[scratch_y] = scratch_x;
                             }
                             const subpx_z = 1.0 / inv_z;
                             shaded_px += 1;
@@ -501,7 +501,7 @@ pub fn RasterPass(
                                 interp_data,
                                 shader,
                                 ctx_report,
-                                scratch.image,
+                                subpx_scratch.image,
                             );
                         }
                     }
@@ -527,13 +527,13 @@ pub fn RasterPass(
             nodes_coords: Vec3Slices(f64),
             shader: *const ShaderData,
             shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
-            scratch: ScratchBuffers,
+            subpx_scratch: SubpxScratchBuffers,
         ) !u64 {
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
             const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-            std.debug.assert(scratch.image.cols_num <= std.math.maxInt(u8));
-            const fields_num: u8 = @intCast(scratch.image.cols_num);
+            std.debug.assert(subpx_scratch.image.cols_num <= std.math.maxInt(u8));
+            const fields_num: u8 = @intCast(subpx_scratch.image.cols_num);
 
             var nodes_inv_z: [N]f64 = undefined;
             inline for (0..N) |nn| {
@@ -677,13 +677,13 @@ pub fn RasterPass(
                         const inv_z = Geometry.calcInvZ(nodes_coords, weights);
                         const scratch_idx = row_offset + scratch_x;
 
-                        if (inv_z >= scratch.inv_z[scratch_idx]) {
-                            scratch.inv_z[scratch_idx] = inv_z;
-                            if (scratch_x < scratch.touched_min_x[scratch_y]) {
-                                scratch.touched_min_x[scratch_y] = scratch_x;
+                        if (inv_z >= subpx_scratch.inv_z[scratch_idx]) {
+                            subpx_scratch.inv_z[scratch_idx] = inv_z;
+                            if (scratch_x < subpx_scratch.touched_min_x[scratch_y]) {
+                                subpx_scratch.touched_min_x[scratch_y] = scratch_x;
                             }
-                            if (scratch_x > scratch.touched_max_x[scratch_y]) {
-                                scratch.touched_max_x[scratch_y] = scratch_x;
+                            if (scratch_x > subpx_scratch.touched_max_x[scratch_y]) {
+                                subpx_scratch.touched_max_x[scratch_y] = scratch_x;
                             }
                             const subpx_z = 1.0 / inv_z;
                             shaded_px += 1;
@@ -722,7 +722,7 @@ pub fn RasterPass(
                                 interp_data,
                                 shader,
                                 ctx_report,
-                                scratch.image,
+                                subpx_scratch.image,
                             );
                         }
                     } else {
