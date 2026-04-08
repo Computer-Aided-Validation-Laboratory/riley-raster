@@ -26,7 +26,7 @@ const shadekerns = @import("shaderkernels.zig");
 
 const SubpxScratchBuffers = struct {
     inv_z: []f64,
-    image: *MatSlice(f64),
+    image: MatSlice(f64),
     touched_min_x: []usize,
     touched_max_x: []usize,
 };
@@ -34,6 +34,45 @@ const SubpxScratchBuffers = struct {
 const SubpxDomain = common.SubpxDomain;
 const RasterBounds = common.RasterBounds;
 const ScratchLayout = common.ScratchLayout;
+
+pub const scratch_layout = ScratchLayout.subpx_major;
+
+pub fn initSubpxScratch(
+    arena_alloc: std.mem.Allocator,
+    fields_num: u8,
+    subpx_tile_size: usize,
+) !SubpxScratchBuffers {
+    const subpx_tile_total: usize = subpx_tile_size * subpx_tile_size;
+    const subpx_inv_z_scratch = try arena_alloc.alloc(f64, subpx_tile_total);
+    const subpx_img_mem = try arena_alloc.alloc(
+        f64,
+        subpx_tile_total * @as(usize, fields_num),
+    );
+    const subpx_image_scratch = MatSlice(f64).init(
+        subpx_img_mem,
+        subpx_tile_total,
+        @as(usize, fields_num),
+    );
+
+    return .{
+        .inv_z = subpx_inv_z_scratch,
+        .image = subpx_image_scratch,
+        .touched_min_x = try arena_alloc.alloc(usize, subpx_tile_size),
+        .touched_max_x = try arena_alloc.alloc(usize, subpx_tile_size),
+    };
+}
+
+pub fn resetSubpxScratch(
+    subpx_scratch: *SubpxScratchBuffers,
+    subpx_tile_size: usize,
+) void {
+    @memset(subpx_scratch.inv_z, -std.math.inf(f64));
+    @memset(subpx_scratch.image.elems, 0.0);
+    for (0..subpx_tile_size) |yy| {
+        subpx_scratch.touched_min_x[yy] = subpx_tile_size;
+        subpx_scratch.touched_max_x[yy] = 0;
+    }
+}
 
 pub fn rasterScene(
     comptime report_mode: ReportMode,
@@ -46,268 +85,18 @@ pub fn rasterScene(
     raster_hulls: []const ?NDArray(f64),
     image_out_arr: *NDArray(f64),
 ) !void {
-    var arena = std.heap.ArenaAllocator.init(outer_alloc);
-    defer arena.deinit();
-    const arena_alloc = arena.allocator();
-
-    std.debug.assert(image_out_arr.dims[0] <= std.math.maxInt(u8));
-    const fields_num: u8 = @intCast(image_out_arr.dims[0]);
-
-    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const subpx_tile_size: usize = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp;
-    const subpx_tile_total: usize = subpx_tile_size * subpx_tile_size;
-
-    const subpx_inv_z_scratch = try arena_alloc.alloc(f64, subpx_tile_total);
-
-    const subpx_img_mem = try arena_alloc.alloc(
-        f64,
-        subpx_tile_total * @as(usize, fields_num),
+    try common.rasterSceneCommon(
+        @This(),
+        report_mode,
+        outer_alloc,
+        io,
+        ctx_rast,
+        ctx_report,
+        tiling,
+        meshes,
+        raster_hulls,
+        image_out_arr,
     );
-    var subpx_image_scratch = MatSlice(f64).init(
-        subpx_img_mem,
-        subpx_tile_total,
-        @as(usize, fields_num),
-    );
-    const subpx_scratch = SubpxScratchBuffers{
-        .inv_z = subpx_inv_z_scratch,
-        .image = &subpx_image_scratch,
-        .touched_min_x = try arena_alloc.alloc(usize, subpx_tile_size),
-        .touched_max_x = try arena_alloc.alloc(usize, subpx_tile_size),
-    };
-
-    for (tiling.active_tiles) |tile| {
-        const tile_start = if (comptime report_mode == .full_stats)
-            Timestamp.now(io, .awake)
-        else {};
-
-        var shaded_px: u64 = 0;
-
-        @memset(subpx_inv_z_scratch, -std.math.inf(f64));
-        @memset(subpx_image_scratch.elems, 0.0);
-        for (0..subpx_tile_size) |yy| {
-            subpx_scratch.touched_min_x[yy] = subpx_tile_size;
-            subpx_scratch.touched_max_x[yy] = 0;
-        }
-
-        const overlap_start = tile.overlap_start;
-        const overlap_end = overlap_start + tile.overlap_count;
-        const overlaps = tiling.overlaps[overlap_start..overlap_end];
-
-        for (overlaps) |ov| {
-            const mesh_ptr = &meshes[ov.mesh_idx];
-
-            const targ_overlap = common.OverlapTarget{ .tile = tile, .overlap = ov };
-
-            std.debug.assert(ov.mesh_idx < raster_hulls.len);
-            const mesh_in = rops.MeshInput{
-                .coords = &mesh_ptr.coords,
-                .hull = if (raster_hulls[ov.mesh_idx]) |*h| h else null,
-            };
-
-            switch (mesh_ptr.mesh_type) {
-                inline else => |geom_tag| {
-                    const GK = comptime switch (geom_tag) {
-                        .tri3 => geomkerns.Tri3Kernel(),
-                        .tri3opt => geomkerns.Tri3OptKernel(),
-                        .tri6 => geomkerns.Tri6Kernel(),
-                        .quad4ibi => geomkerns.Quad4IBIKernel(),
-                        .quad4newton => geomkerns.Quad4NewtonKernel(),
-                        .quad8 => geomkerns.Quad89Kernel(8),
-                        .quad9 => geomkerns.Quad89Kernel(9),
-                    };
-                    const N = GK.nodes_num;
-
-                    const mesh_fields_num: u8 = switch (mesh_ptr.shader) {
-                        .nodal => |s| @intCast(s.elem_field.dims[2]),
-                        .tex_u8, .tex_u16 => 1,
-                        .tex_rgb_u8, .tex_rgb_u16 => 3,
-                    };
-
-                    switch (mesh_ptr.shader) {
-                        .nodal => |*shader| {
-                            const SK = shadekerns.NodalKernel(N);
-
-                            const tt = @min(
-                                ctx_rast.frame_idx,
-                                shader.elem_field.dims[0] - 1,
-                            );
-                            const start_idx = shader.elem_field.getFlatInd(
-                                &[_]usize{ tt, targ_overlap.overlap.elem_idx, 0, 0 },
-                            );
-
-                            var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
-                            local_shader_buf.load(
-                                shader.elem_field,
-                                start_idx,
-                                mesh_fields_num,
-                            );
-
-                            if (shader.elem_normals) |en| {
-                                const prep_idx = en.map[targ_overlap.overlap.elem_idx];
-                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                            }
-
-                            shaded_px += try RasterPass(GK, SK, NodalPrepared).render(
-                                report_mode,
-                                ctx_rast,
-                                ctx_report,
-                                targ_overlap,
-                                mesh_in,
-                                shader,
-                                &local_shader_buf,
-                                subpx_scratch,
-                            );
-                        },
-                        .tex_u8 => |*shader| {
-                            const SK = shadekerns.TexKernel(N, u8, 1);
-
-                            var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
-                            local_shader_buf.load(
-                                shader.elem_uvs,
-                                targ_overlap.overlap.elem_idx * 2 * N,
-                                2,
-                            );
-
-                            if (shader.elem_normals) |en| {
-                                const prep_idx = en.map[targ_overlap.overlap.elem_idx];
-                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                            }
-
-                            shaded_px += try RasterPass(GK, SK, TexPrepared(u8, 1)).render(
-                                report_mode,
-                                ctx_rast,
-                                ctx_report,
-                                targ_overlap,
-                                mesh_in,
-                                shader,
-                                &local_shader_buf,
-                                subpx_scratch,
-                            );
-                        },
-                        .tex_u16 => |*shader| {
-                            const SK = shadekerns.TexKernel(N, u16, 1);
-
-                            var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
-                            local_shader_buf.load(
-                                shader.elem_uvs,
-                                targ_overlap.overlap.elem_idx * 2 * N,
-                                2,
-                            );
-
-                            if (shader.elem_normals) |en| {
-                                const prep_idx = en.map[targ_overlap.overlap.elem_idx];
-                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                            }
-
-                            shaded_px += try RasterPass(GK, SK, TexPrepared(u16, 1)).render(
-                                report_mode,
-                                ctx_rast,
-                                ctx_report,
-                                targ_overlap,
-                                mesh_in,
-                                shader,
-                                &local_shader_buf,
-                                subpx_scratch,
-                            );
-                        },
-                        .tex_rgb_u8 => |*shader| {
-                            const SK = shadekerns.TexKernel(N, u8, 3);
-                            var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
-
-                            local_shader_buf.load(
-                                shader.elem_uvs,
-                                targ_overlap.overlap.elem_idx * 2 * N,
-                                2,
-                            );
-
-                            if (shader.elem_normals) |en| {
-                                const prep_idx = en.map[targ_overlap.overlap.elem_idx];
-                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                            }
-
-                            shaded_px += try RasterPass(GK, SK, TexPrepared(u8, 3)).render(
-                                report_mode,
-                                ctx_rast,
-                                ctx_report,
-                                targ_overlap,
-                                mesh_in,
-                                shader,
-                                &local_shader_buf,
-                                subpx_scratch,
-                            );
-                        },
-                        .tex_rgb_u16 => |*shader| {
-                            const SK = shadekerns.TexKernel(N, u16, 3);
-                            var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
-
-                            local_shader_buf.load(
-                                shader.elem_uvs,
-                                targ_overlap.overlap.elem_idx * 2 * N,
-                                2,
-                            );
-
-                            if (shader.elem_normals) |en| {
-                                const prep_idx = en.map[targ_overlap.overlap.elem_idx];
-                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                            }
-
-                            shaded_px += try RasterPass(GK, SK, TexPrepared(u16, 3)).render(
-                                report_mode,
-                                ctx_rast,
-                                ctx_report,
-                                targ_overlap,
-                                mesh_in,
-                                shader,
-                                &local_shader_buf,
-                                subpx_scratch,
-                            );
-                        },
-                    }
-                },
-            }
-        }
-
-        if (sub_samp > 1) {
-            common.averageScratch(
-                ScratchLayout.subpx_major,
-                tile,
-                @intCast(sub_samp),
-                subpx_tile_size,
-                fields_num,
-                &subpx_image_scratch,
-                subpx_scratch.touched_min_x,
-                subpx_scratch.touched_max_x,
-                image_out_arr,
-            );
-        } else {
-            common.resolveScratchDirect(
-                ScratchLayout.subpx_major,
-                tile,
-                subpx_tile_size,
-                fields_num,
-                &subpx_image_scratch,
-                image_out_arr,
-            );
-        }
-
-        const tile_end = if (comptime report_mode == .full_stats)
-            Timestamp.now(io, .awake)
-        else {};
-        const tile_duration_ns = if (comptime report_mode == .full_stats)
-            tile_start.durationTo(tile_end).raw.nanoseconds
-        else
-            0;
-        const screen_px_x = @as(u16, @intCast(ctx_rast.camera.pixels_num[0]));
-        const tiles_x = (screen_px_x + ctx_rast.tile_size - 1) / ctx_rast.tile_size;
-        const spatial_idx = (tile.y_px_min / ctx_rast.tile_size) * tiles_x +
-            (tile.x_px_min / ctx_rast.tile_size);
-        ctx_report.recordTile(
-            spatial_idx,
-            @intCast(tile_duration_ns),
-            shaded_px,
-            overlaps.len,
-        );
-    }
 }
 
 pub fn RasterPass(
@@ -324,7 +113,7 @@ pub fn RasterPass(
             mesh_in: rops.MeshInput,
             shader: *const ShaderData,
             shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
-            subpx_scratch: SubpxScratchBuffers,
+            subpx_scratch: *SubpxScratchBuffers,
         ) !u64 {
             const sub_samp_u: usize = @intCast(ctx_rast.camera.sub_sample);
             const sub_samp_f: f64 = @as(f64, @floatFromInt(ctx_rast.camera.sub_sample));
@@ -403,7 +192,7 @@ pub fn RasterPass(
             nodes_coords: Vec3Slices(f64),
             shader: *const ShaderData,
             shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
-            subpx_scratch: SubpxScratchBuffers,
+            subpx_scratch: *SubpxScratchBuffers,
         ) !u64 {
             const N = Geometry.nodes_num;
             const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
@@ -501,7 +290,7 @@ pub fn RasterPass(
                                 interp_data,
                                 shader,
                                 ctx_report,
-                                subpx_scratch.image,
+                                &subpx_scratch.image,
                             );
                         }
                     }
@@ -527,7 +316,7 @@ pub fn RasterPass(
             nodes_coords: Vec3Slices(f64),
             shader: *const ShaderData,
             shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
-            subpx_scratch: SubpxScratchBuffers,
+            subpx_scratch: *SubpxScratchBuffers,
         ) !u64 {
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
@@ -722,7 +511,7 @@ pub fn RasterPass(
                                 interp_data,
                                 shader,
                                 ctx_report,
-                                subpx_scratch.image,
+                                &subpx_scratch.image,
                             );
                         }
                     } else {
