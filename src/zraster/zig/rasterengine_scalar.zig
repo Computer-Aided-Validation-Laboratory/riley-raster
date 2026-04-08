@@ -576,7 +576,6 @@ pub fn RasterPass(
                         );
                     } else if (comptime Geometry.solver_kind == .inv_bi)
                         Geometry.solveWeightsInvBi(
-                            nodes_coords,
                             subpx_x,
                             subpx_y,
                             subpx_domain.x_off,
@@ -588,8 +587,6 @@ pub fn RasterPass(
                             nodes_coords,
                             subpx_x,
                             subpx_y,
-                            subpx_domain.x_off,
-                            subpx_domain.y_off,
                             solver_state,
                         );
 

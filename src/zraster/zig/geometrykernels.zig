@@ -147,13 +147,8 @@ pub fn Tri3Kernel() type {
             nodes: Vec3Slices(f64),
             pixel_x: f64,
             pixel_y: f64,
-            x_offset: f64,
-            y_offset: f64,
             inv_area: f64,
         ) GeometryResult(nodes_num) {
-            _ = x_offset;
-            _ = y_offset;
-
             const edge_tol = tol.edge.tri_weight_inclusion;
 
             var weights: [nodes_num]f64 = undefined;
@@ -562,14 +557,12 @@ pub fn Quad4IBIKernel() type {
         }
 
         pub inline fn solveWeightsInvBi(
-            nodes: Vec3Slices(f64),
             pixel_x: f64,
             pixel_y: f64,
             x_offset: f64,
             y_offset: f64,
             solve_params: BilinearParams,
         ) GeometryResult(nodes_num) {
-            _ = nodes;
             const eps = tol.geometry.bilinear_parametric_domain;
             const denom_tol = tol.geometry.bilinear_denom;
 
