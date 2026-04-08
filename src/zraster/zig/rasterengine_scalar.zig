@@ -565,7 +565,7 @@ pub fn RasterPass(
 
                     ctx_rast.ctx_perf.recordSolverCalls(1);
                     const result = if (comptime Geometry.solver_kind == .newton) blk: {
-                        const guess = Geometry.initGuess(
+                        const seed = Geometry.initSeed(
                             subpx_x,
                             subpx_y,
                             subpx_domain.x_off,
@@ -578,8 +578,8 @@ pub fn RasterPass(
                             subpx_y,
                             subpx_domain.x_off,
                             subpx_domain.y_off,
-                            guess.xi,
-                            guess.eta,
+                            seed.xi,
+                            seed.eta,
                         );
                     } else if (comptime Geometry.solver_kind == .inv_bi)
                         Geometry.solveWeightsInvBi(

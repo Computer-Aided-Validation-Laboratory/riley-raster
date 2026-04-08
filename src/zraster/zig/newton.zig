@@ -37,7 +37,7 @@ pub fn solveInverse(
     element_node_x: []const f64, // Scaled clip space x coord, in pixels.length
     element_node_y: []const f64, // Scaled clip space y coord, in pixels.length
     element_node_w: []const f64, // Perspective divisor, for pin-hole = z, in length units
-    xi_in: f64, // Parametric coords initial guess, unitless
+    xi_in: f64, // Parametric coords initial seed, unitless
     eta_in: f64,
     xi_out: *f64, // Parametric coords output, unitless
     eta_out: *f64,

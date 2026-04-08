@@ -34,8 +34,8 @@ const CandidateBlock = struct {
     scratch_y: [S]usize,
     px: [S]f64,
     py: [S]f64,
-    guess_xi: [S]f64,
-    guess_eta: [S]f64,
+    seed_xi: [S]f64,
+    seed_eta: [S]f64,
     count: usize,
 };
 
@@ -743,18 +743,18 @@ pub fn RasterPass(
                         const mask_arr: [S]bool = v_mask;
                         const x_arr: [S]f64 = v_subpx_x;
                         const y_arr: [S]f64 = v_subpx_y;
-                        const init_guess = Geometry.initGuessSIMD(
+                        const init_seed = Geometry.initSeedSIMD(
                             v_subpx_x,
                             v_subpx_y,
                             subpx_domain.x_off,
                             subpx_domain.y_off,
                             .{
-                                .xi = v_hull_res.guess_xi,
-                                .eta = v_hull_res.guess_eta,
+                                .xi = v_hull_res.seed_xi,
+                                .eta = v_hull_res.seed_eta,
                             },
                         );
-                        const xi_arr: [S]f64 = init_guess.xi;
-                        const eta_arr: [S]f64 = init_guess.eta;
+                        const xi_arr: [S]f64 = init_seed.xi;
+                        const eta_arr: [S]f64 = init_seed.eta;
 
                         for (0..S) |jj| {
                             if (mask_arr[jj]) {
@@ -767,8 +767,8 @@ pub fn RasterPass(
                                         .scratch_y = [_]usize{0} ** S,
                                         .px = [_]f64{0.0} ** S,
                                         .py = [_]f64{0.0} ** S,
-                                        .guess_xi = [_]f64{0.0} ** S,
-                                        .guess_eta = [_]f64{0.0} ** S,
+                                        .seed_xi = [_]f64{0.0} ** S,
+                                        .seed_eta = [_]f64{0.0} ** S,
                                         .count = 0,
                                     };
                                 }
@@ -781,9 +781,9 @@ pub fn RasterPass(
                                     x_arr[jj];
                                 scratch.candidate_buffer[block_idx].py[lane_idx] =
                                     y_arr[jj];
-                                scratch.candidate_buffer[block_idx].guess_xi[lane_idx] =
+                                scratch.candidate_buffer[block_idx].seed_xi[lane_idx] =
                                     xi_arr[jj];
-                                scratch.candidate_buffer[block_idx].guess_eta[lane_idx] =
+                                scratch.candidate_buffer[block_idx].seed_eta[lane_idx] =
                                     eta_arr[jj];
                                 scratch.candidate_buffer[block_idx].count = lane_idx + 1;
                                 candidate_count += 1;
@@ -795,7 +795,7 @@ pub fn RasterPass(
 
             // Pass 2: Vectorized Solving in chunks of 8
             const candidate_block_count = @divFloor(candidate_count + 7, 8);
-            const default_guess = Geometry.initGuess(
+            const default_seed = Geometry.initSeed(
                 0.0,
                 0.0,
                 subpx_domain.x_off,
@@ -803,28 +803,28 @@ pub fn RasterPass(
                 null,
             );
             var last_seed_valid = false;
-            var last_seed_xi = default_guess.xi;
-            var last_seed_eta = default_guess.eta;
+            var last_seed_xi = default_seed.xi;
+            var last_seed_eta = default_seed.eta;
 
             for (0..candidate_block_count) |block_idx| {
                 var candidate_block = scratch.candidate_buffer[block_idx];
                 var chunk_mask_arr = [_]bool{false} ** S;
                 for (0..candidate_block.count) |jj| {
                     chunk_mask_arr[jj] = true;
-                    candidate_block.guess_xi[jj] = if (last_seed_valid)
+                    candidate_block.seed_xi[jj] = if (last_seed_valid)
                         last_seed_xi
                     else
-                        default_guess.xi;
-                    candidate_block.guess_eta[jj] = if (last_seed_valid)
+                        default_seed.xi;
+                    candidate_block.seed_eta[jj] = if (last_seed_valid)
                         last_seed_eta
                     else
-                        default_guess.eta;
+                        default_seed.eta;
                 }
 
                 const v_target_x: @Vector(S, f64) = candidate_block.px;
                 const v_target_y: @Vector(S, f64) = candidate_block.py;
-                const v_xi_guess: @Vector(S, f64) = candidate_block.guess_xi;
-                const v_eta_guess: @Vector(S, f64) = candidate_block.guess_eta;
+                const v_xi_seed: @Vector(S, f64) = candidate_block.seed_xi;
+                const v_eta_seed: @Vector(S, f64) = candidate_block.seed_eta;
                 const v_chunk_mask: @Vector(S, bool) = chunk_mask_arr;
 
                 ctx_rast.ctx_perf.recordSolverCalls(candidate_block.count);
@@ -832,8 +832,8 @@ pub fn RasterPass(
                     nodes_coords,
                     v_target_x,
                     v_target_y,
-                    v_xi_guess,
-                    v_eta_guess,
+                    v_xi_seed,
+                    v_eta_seed,
                     subpx_domain.x_off,
                     subpx_domain.y_off,
                 );

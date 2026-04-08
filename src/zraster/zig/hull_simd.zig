@@ -18,8 +18,8 @@ pub const TessTriangle = struct {
 
 pub const HullResultSIMD = struct {
     isIn: @Vector(S, bool),
-    guess_xi: @Vector(S, f64),
-    guess_eta: @Vector(S, f64),
+    seed_xi: @Vector(S, f64),
+    seed_eta: @Vector(S, f64),
 };
 
 pub fn Tessellation(comptime NT: usize) type {
@@ -45,8 +45,8 @@ pub fn Tessellation(comptime NT: usize) type {
             const eps = tol.hull.simd_inclusion;
             const v_m_eps: @Vector(S, f64) = @splat(-eps);
             var v_isIn: @Vector(S, bool) = @splat(false);
-            var v_guess_xi: @Vector(S, f64) = @splat(0.0);
-            var v_guess_eta: @Vector(S, f64) = @splat(0.0);
+            var v_seed_xi: @Vector(S, f64) = @splat(0.0);
+            var v_seed_eta: @Vector(S, f64) = @splat(0.0);
 
             inline for (self.triangles) |tri| {
                 const e0 = rops.edgeFun3SIMD(
@@ -101,12 +101,12 @@ pub fn Tessellation(comptime NT: usize) type {
                     const v_curr_eta =
                         v_w0 * v_tri_eta0 + v_w1 * v_tri_eta1 + v_w2 * v_tri_eta2;
 
-                    v_guess_xi = @select(f64, v_in_tri, v_curr_xi, v_guess_xi);
-                    v_guess_eta = @select(f64, v_in_tri, v_curr_eta, v_guess_eta);
+                    v_seed_xi = @select(f64, v_in_tri, v_curr_xi, v_seed_xi);
+                    v_seed_eta = @select(f64, v_in_tri, v_curr_eta, v_seed_eta);
                     v_isIn = v_isIn | v_in_tri;
                 }
             }
-            return .{ .isIn = v_isIn, .guess_xi = v_guess_xi, .guess_eta = v_guess_eta };
+            return .{ .isIn = v_isIn, .seed_xi = v_seed_xi, .seed_eta = v_seed_eta };
         }
     };
 }

@@ -19,6 +19,16 @@ pub const SolverKind = enum {
     inv_bi,
 };
 
+pub const NewtonSeedMode = enum {
+    centroid,
+    hull,
+};
+
+pub const NewtonSeedReuse = enum {
+    off,
+    last_converged,
+};
+
 pub const CoordSpace = enum {
     raster,
     clip_px_leng,
@@ -70,12 +80,12 @@ pub const NewtonParams = struct {
     w_const: f64,
 };
 
-pub const NewtonGuess = struct {
+pub const NewtonSeed = struct {
     xi: f64,
     eta: f64,
 };
 
-pub const NewtonGuessSIMD = struct {
+pub const NewtonSeedSIMD = struct {
     xi: @Vector(S, f64),
     eta: @Vector(S, f64),
 };
@@ -372,34 +382,36 @@ pub fn Tri6Kernel() type {
         pub const coord_space = .clip_px_leng;
         pub const raster_mode = .direct;
         pub const solver_kind = .newton;
+        pub const seed_mode = .centroid;
+        pub const seed_reuse = .off;
 
-        pub inline fn initGuess(
+        pub inline fn initSeed(
             pixel_x: f64,
             pixel_y: f64,
             x_offset: f64,
             y_offset: f64,
-            hull_guess: ?NewtonGuess,
-        ) NewtonGuess {
+            hull_seed: ?NewtonSeed,
+        ) NewtonSeed {
             _ = pixel_x;
             _ = pixel_y;
             _ = x_offset;
             _ = y_offset;
-            _ = hull_guess;
+            _ = hull_seed;
             return .{ .xi = 1.0 / 3.0, .eta = 1.0 / 3.0 };
         }
 
-        pub inline fn initGuessSIMD(
+        pub inline fn initSeedSIMD(
             v_pixel_x: @Vector(S, f64),
             v_pixel_y: @Vector(S, f64),
             x_offset: f64,
             y_offset: f64,
-            hull_guess: ?NewtonGuessSIMD,
-        ) NewtonGuessSIMD {
+            hull_seed: ?NewtonSeedSIMD,
+        ) NewtonSeedSIMD {
             _ = v_pixel_x;
             _ = v_pixel_y;
             _ = x_offset;
             _ = y_offset;
-            _ = hull_guess;
+            _ = hull_seed;
             return .{
                 .xi = @splat(1.0 / 3.0),
                 .eta = @splat(1.0 / 3.0),
@@ -427,8 +439,8 @@ pub fn Tri6Kernel() type {
             pixel_y: f64,
             x_offset: f64,
             y_offset: f64,
-            xi_guess: f64,
-            eta_guess: f64,
+            xi_seed: f64,
+            eta_seed: f64,
         ) GeometryResult(nodes_num) {
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
@@ -447,8 +459,8 @@ pub fn Tri6Kernel() type {
                 nodes.x,
                 nodes.y,
                 nodes.z,
-                xi_guess,
-                eta_guess,
+                xi_seed,
+                eta_seed,
                 &xi,
                 &eta,
                 &node_values,
@@ -466,8 +478,8 @@ pub fn Tri6Kernel() type {
             nodes: Vec3Slices(f64),
             v_pixel_x: @Vector(S, f64),
             v_pixel_y: @Vector(S, f64),
-            v_xi_guess: @Vector(S, f64),
-            v_eta_guess: @Vector(S, f64),
+            v_xi_seed: @Vector(S, f64),
+            v_eta_seed: @Vector(S, f64),
             x_offset: f64,
             y_offset: f64,
         ) GeometryResultSIMD(nodes_num) {
@@ -488,8 +500,8 @@ pub fn Tri6Kernel() type {
                 nodes.x,
                 nodes.y,
                 nodes.z,
-                v_xi_guess,
-                v_eta_guess,
+                v_xi_seed,
+                v_eta_seed,
                 &v_xi_out,
                 &v_eta_out,
                 &v_weights,
@@ -677,34 +689,36 @@ pub fn Quad4NewtonKernel() type {
         pub const coord_space = .clip_px_leng;
         pub const raster_mode = .direct;
         pub const solver_kind = .newton;
+        pub const seed_mode = .centroid;
+        pub const seed_reuse = .off;
 
-        pub inline fn initGuess(
+        pub inline fn initSeed(
             pixel_x: f64,
             pixel_y: f64,
             x_offset: f64,
             y_offset: f64,
-            hull_guess: ?NewtonGuess,
-        ) NewtonGuess {
+            hull_seed: ?NewtonSeed,
+        ) NewtonSeed {
             _ = pixel_x;
             _ = pixel_y;
             _ = x_offset;
             _ = y_offset;
-            _ = hull_guess;
+            _ = hull_seed;
             return .{ .xi = 0.5, .eta = 0.5 };
         }
 
-        pub inline fn initGuessSIMD(
+        pub inline fn initSeedSIMD(
             v_pixel_x: @Vector(S, f64),
             v_pixel_y: @Vector(S, f64),
             x_offset: f64,
             y_offset: f64,
-            hull_guess: ?NewtonGuessSIMD,
-        ) NewtonGuessSIMD {
+            hull_seed: ?NewtonSeedSIMD,
+        ) NewtonSeedSIMD {
             _ = v_pixel_x;
             _ = v_pixel_y;
             _ = x_offset;
             _ = y_offset;
-            _ = hull_guess;
+            _ = hull_seed;
             return .{
                 .xi = @splat(0.5),
                 .eta = @splat(0.5),
@@ -721,8 +735,8 @@ pub fn Quad4NewtonKernel() type {
             pixel_y: f64,
             x_offset: f64,
             y_offset: f64,
-            xi_guess: f64,
-            eta_guess: f64,
+            xi_seed: f64,
+            eta_seed: f64,
         ) GeometryResult(nodes_num) {
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
@@ -741,8 +755,8 @@ pub fn Quad4NewtonKernel() type {
                 nodes.x,
                 nodes.y,
                 nodes.z,
-                xi_guess,
-                eta_guess,
+                xi_seed,
+                eta_seed,
                 &xi,
                 &eta,
                 &node_values,
@@ -759,8 +773,8 @@ pub fn Quad4NewtonKernel() type {
             nodes: Vec3Slices(f64),
             v_pixel_x: @Vector(S, f64),
             v_pixel_y: @Vector(S, f64),
-            v_xi_guess: @Vector(S, f64),
-            v_eta_guess: @Vector(S, f64),
+            v_xi_seed: @Vector(S, f64),
+            v_eta_seed: @Vector(S, f64),
             x_offset: f64,
             y_offset: f64,
         ) GeometryResultSIMD(nodes_num) {
@@ -781,8 +795,8 @@ pub fn Quad4NewtonKernel() type {
                 nodes.x,
                 nodes.y,
                 nodes.z,
-                v_xi_guess,
-                v_eta_guess,
+                v_xi_seed,
+                v_eta_seed,
                 &v_xi_out,
                 &v_eta_out,
                 &v_weights,
@@ -816,34 +830,36 @@ pub fn Quad89Kernel(comptime N: usize) type {
         pub const coord_space = .clip_px_leng;
         pub const raster_mode = .direct;
         pub const solver_kind = .newton;
+        pub const seed_mode = .centroid;
+        pub const seed_reuse = .off;
 
-        pub inline fn initGuess(
+        pub inline fn initSeed(
             pixel_x: f64,
             pixel_y: f64,
             x_offset: f64,
             y_offset: f64,
-            hull_guess: ?NewtonGuess,
-        ) NewtonGuess {
+            hull_seed: ?NewtonSeed,
+        ) NewtonSeed {
             _ = pixel_x;
             _ = pixel_y;
             _ = x_offset;
             _ = y_offset;
-            _ = hull_guess;
+            _ = hull_seed;
             return .{ .xi = 0.5, .eta = 0.5 };
         }
 
-        pub inline fn initGuessSIMD(
+        pub inline fn initSeedSIMD(
             v_pixel_x: @Vector(S, f64),
             v_pixel_y: @Vector(S, f64),
             x_offset: f64,
             y_offset: f64,
-            hull_guess: ?NewtonGuessSIMD,
-        ) NewtonGuessSIMD {
+            hull_seed: ?NewtonSeedSIMD,
+        ) NewtonSeedSIMD {
             _ = v_pixel_x;
             _ = v_pixel_y;
             _ = x_offset;
             _ = y_offset;
-            _ = hull_guess;
+            _ = hull_seed;
             return .{
                 .xi = @splat(0.5),
                 .eta = @splat(0.5),
@@ -860,8 +876,8 @@ pub fn Quad89Kernel(comptime N: usize) type {
             pixel_y: f64,
             x_offset: f64,
             y_offset: f64,
-            xi_guess: f64,
-            eta_guess: f64,
+            xi_seed: f64,
+            eta_seed: f64,
         ) GeometryResult(nodes_num) {
             var xi: f64 = 0.0;
             var eta: f64 = 0.0;
@@ -880,8 +896,8 @@ pub fn Quad89Kernel(comptime N: usize) type {
                 nodes.x,
                 nodes.y,
                 nodes.z,
-                xi_guess,
-                eta_guess,
+                xi_seed,
+                eta_seed,
                 &xi,
                 &eta,
                 &node_values,
@@ -899,8 +915,8 @@ pub fn Quad89Kernel(comptime N: usize) type {
             nodes: Vec3Slices(f64),
             v_pixel_x: @Vector(S, f64),
             v_pixel_y: @Vector(S, f64),
-            v_xi_guess: @Vector(S, f64),
-            v_eta_guess: @Vector(S, f64),
+            v_xi_seed: @Vector(S, f64),
+            v_eta_seed: @Vector(S, f64),
             x_offset: f64,
             y_offset: f64,
         ) GeometryResultSIMD(nodes_num) {
@@ -921,8 +937,8 @@ pub fn Quad89Kernel(comptime N: usize) type {
                 nodes.x,
                 nodes.y,
                 nodes.z,
-                v_xi_guess,
-                v_eta_guess,
+                v_xi_seed,
+                v_eta_seed,
                 &v_xi_out,
                 &v_eta_out,
                 &v_weights,
