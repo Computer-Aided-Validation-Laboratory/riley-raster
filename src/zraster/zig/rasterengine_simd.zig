@@ -428,7 +428,7 @@ pub fn RasterPass(
                     shader_buf,
                     scratch,
                 )
-            else if (Geometry.strategy == .incremental)
+            else if (Geometry.raster_mode == .incremental)
                 try rasterIncrementalSIMD(
                     report_mode,
                     ctx_rast,
@@ -440,7 +440,7 @@ pub fn RasterPass(
                     shader_buf,
                     scratch,
                 )
-            else if (Geometry.strategy == .newton)
+            else if (Geometry.solver_kind == .newton)
                 try rasterNewtonSIMD(
                     report_mode,
                     ctx_rast,
@@ -801,7 +801,7 @@ pub fn RasterPass(
                 const v_eta_guess: @Vector(S, f64) = candidate_block.guess_eta;
                 const v_chunk_mask: @Vector(S, bool) = chunk_mask_arr;
 
-                const result = Geometry.solveWeightsSIMD(
+                const result = Geometry.solveWeightsNewtonSIMD(
                     nodes_coords,
                     v_target_x,
                     v_target_y,
@@ -1119,13 +1119,17 @@ pub fn RasterPass(
                 nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
             }
 
-            const geometry_state = if (@hasDecl(Geometry, "getNewtonParams"))
-                Geometry.getNewtonParams(nodes_coords)
+            const solver_state = if (comptime Geometry.solver_kind == .newton)
+                if (@hasDecl(Geometry, "getNewtonParams"))
+                    Geometry.getNewtonParams(nodes_coords)
+                else
+                    {}
+            else if (comptime Geometry.solver_kind == .inv_bi)
+                Geometry.getBilinearParams(nodes_coords)
             else if (@hasDecl(Geometry, "getInvElemArea"))
                 Geometry.getInvElemArea(nodes_coords)
-            else if (@hasDecl(Geometry, "getBilinearParams"))
-                Geometry.getBilinearParams(nodes_coords)
-            else {};
+            else
+                {};
 
             var element_tess: hull.Tessellation(Geometry.tess_triangles_num) = undefined;
 
@@ -1181,14 +1185,24 @@ pub fn RasterPass(
                         );
                     }
 
-                    const result = Geometry.solveWeights(
-                        nodes_coords,
-                        subpx_x,
-                        subpx_y,
-                        subpx_domain.x_off,
-                        subpx_domain.y_off,
-                        geometry_state,
-                    );
+                    const result = if (comptime Geometry.solver_kind == .inv_bi)
+                        Geometry.solveWeightsInvBi(
+                            nodes_coords,
+                            subpx_x,
+                            subpx_y,
+                            subpx_domain.x_off,
+                            subpx_domain.y_off,
+                            solver_state,
+                        )
+                    else
+                        Geometry.solveWeightsHyperb(
+                            nodes_coords,
+                            subpx_x,
+                            subpx_y,
+                            subpx_domain.x_off,
+                            subpx_domain.y_off,
+                            solver_state,
+                        );
 
                     if (result.weights) |weights| {
                         const inv_z = Geometry.calcInvZ(nodes_coords, weights);

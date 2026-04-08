@@ -8,10 +8,15 @@ const shapefun = @import("shapefun.zig");
 const NDArray = @import("ndarray.zig").NDArray;
 const Vec3Slices = rops.Vec3Slices;
 
-pub const Strategy = enum {
+pub const RasterMode = enum {
     direct,
     incremental,
+};
+
+pub const SolverKind = enum {
+    hyperb,
     newton,
+    inv_bi,
 };
 
 pub const CoordSpace = enum {
@@ -90,7 +95,8 @@ pub fn Tri3Kernel() type {
         pub const hull_nodes_num = 0;
         pub const tess_triangles_num = 0;
         pub const coord_space = .raster;
-        pub const strategy = .direct;
+        pub const raster_mode = .direct;
+        pub const solver_kind = .hyperb;
 
         pub inline fn getInvElemArea(nodes: Vec3Slices(f64)) f64 {
             return 1.0 / rops.edgeFun3(
@@ -137,7 +143,7 @@ pub fn Tri3Kernel() type {
             };
         }
 
-        pub inline fn solveWeights(
+        pub inline fn solveWeightsHyperb(
             nodes: Vec3Slices(f64),
             pixel_x: f64,
             pixel_y: f64,
@@ -237,7 +243,8 @@ pub fn Tri3OptKernel() type {
         pub const hull_nodes_num = 0;
         pub const tess_triangles_num = 0;
         pub const coord_space = .raster;
-        pub const strategy = .incremental;
+        pub const raster_mode = .incremental;
+        pub const solver_kind = .hyperb;
 
         pub inline fn getInvElemArea(nodes: Vec3Slices(f64)) f64 {
             return 1.0 / rops.edgeFun3(
@@ -368,7 +375,8 @@ pub fn Tri6Kernel() type {
         pub const hull_nodes_num = 6;
         pub const tess_triangles_num = 6;
         pub const coord_space = .clip_px_leng;
-        pub const strategy = .newton;
+        pub const raster_mode = .direct;
+        pub const solver_kind = .newton;
 
         pub inline fn initGuess(
             pixel_x: f64,
@@ -418,7 +426,7 @@ pub fn Tri6Kernel() type {
             );
         }
 
-        pub inline fn solveWeights(
+        pub inline fn solveWeightsNewton(
             nodes: Vec3Slices(f64),
             pixel_x: f64,
             pixel_y: f64,
@@ -459,7 +467,7 @@ pub fn Tri6Kernel() type {
             return .{ .weights = null, .iters = result.iterations };
         }
 
-        pub inline fn solveWeightsSIMD(
+        pub inline fn solveWeightsNewtonSIMD(
             nodes: Vec3Slices(f64),
             v_pixel_x: @Vector(S, f64),
             v_pixel_y: @Vector(S, f64),
@@ -518,7 +526,8 @@ pub fn Quad4IBIKernel() type {
         pub const hull_nodes_num = 0;
         pub const tess_triangles_num = 0;
         pub const coord_space = .clip_px_leng;
-        pub const strategy = .direct;
+        pub const raster_mode = .direct;
+        pub const solver_kind = .inv_bi;
 
         pub const BilinearParams = struct {
             x_uv_coeff: f64,
@@ -552,7 +561,7 @@ pub fn Quad4IBIKernel() type {
             };
         }
 
-        pub inline fn solveWeights(
+        pub inline fn solveWeightsInvBi(
             nodes: Vec3Slices(f64),
             pixel_x: f64,
             pixel_y: f64,
@@ -673,7 +682,8 @@ pub fn Quad4NewtonKernel() type {
         pub const hull_nodes_num = 4;
         pub const tess_triangles_num = 2;
         pub const coord_space = .clip_px_leng;
-        pub const strategy = .newton;
+        pub const raster_mode = .direct;
+        pub const solver_kind = .newton;
 
         pub inline fn initGuess(
             pixel_x: f64,
@@ -712,7 +722,7 @@ pub fn Quad4NewtonKernel() type {
             return @max(@abs(xi) - 1.0, 0.0) + @max(@abs(eta) - 1.0, 0.0);
         }
 
-        pub inline fn solveWeights(
+        pub inline fn solveWeightsNewton(
             nodes: Vec3Slices(f64),
             pixel_x: f64,
             pixel_y: f64,
@@ -752,7 +762,7 @@ pub fn Quad4NewtonKernel() type {
             return .{ .weights = null, .iters = result.iterations };
         }
 
-        pub inline fn solveWeightsSIMD(
+        pub inline fn solveWeightsNewtonSIMD(
             nodes: Vec3Slices(f64),
             v_pixel_x: @Vector(S, f64),
             v_pixel_y: @Vector(S, f64),
@@ -811,7 +821,8 @@ pub fn Quad89Kernel(comptime N: usize) type {
         pub const hull_nodes_num = 8;
         pub const tess_triangles_num = 8;
         pub const coord_space = .clip_px_leng;
-        pub const strategy = .newton;
+        pub const raster_mode = .direct;
+        pub const solver_kind = .newton;
 
         pub inline fn initGuess(
             pixel_x: f64,
@@ -850,7 +861,7 @@ pub fn Quad89Kernel(comptime N: usize) type {
             return @max(@abs(xi) - 1.0, 0.0) + @max(@abs(eta) - 1.0, 0.0);
         }
 
-        pub inline fn solveWeights(
+        pub inline fn solveWeightsNewton(
             nodes: Vec3Slices(f64),
             pixel_x: f64,
             pixel_y: f64,
@@ -891,7 +902,7 @@ pub fn Quad89Kernel(comptime N: usize) type {
             return .{ .weights = null, .iters = result.iterations };
         }
 
-        pub inline fn solveWeightsSIMD(
+        pub inline fn solveWeightsNewtonSIMD(
             nodes: Vec3Slices(f64),
             v_pixel_x: @Vector(S, f64),
             v_pixel_y: @Vector(S, f64),

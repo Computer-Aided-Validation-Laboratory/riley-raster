@@ -332,7 +332,7 @@ pub fn RasterPass(
                 targ_overlap.overlap.elem_idx,
             );            
 
-            const shaded_px = if (Geometry.strategy == .incremental)
+            const shaded_px = if (Geometry.raster_mode == .incremental)
                 try rasterIncremental(
                     report_mode,
                     ctx_rast,
@@ -496,11 +496,14 @@ pub fn RasterPass(
                 nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
             }
 
-            const geometry_state = if (comptime Geometry.strategy == .newton) {} else if (@hasDecl(Geometry, "getInvElemArea"))
-                Geometry.getInvElemArea(nodes_coords)
-            else if (@hasDecl(Geometry, "getBilinearParams"))
+            const solver_state = if (comptime Geometry.solver_kind == .newton)
+                {}
+            else if (comptime Geometry.solver_kind == .inv_bi)
                 Geometry.getBilinearParams(nodes_coords)
-            else {};
+            else if (@hasDecl(Geometry, "getInvElemArea"))
+                Geometry.getInvElemArea(nodes_coords)
+            else
+                {};
 
             var element_tess: hull.Tessellation(Geometry.tess_triangles_num) = undefined;
 
@@ -554,7 +557,7 @@ pub fn RasterPass(
                         );
                     }
 
-                    const result = if (comptime Geometry.strategy == .newton) blk: {
+                    const result = if (comptime Geometry.solver_kind == .newton) blk: {
                         const guess = Geometry.initGuess(
                             subpx_x,
                             subpx_y,
@@ -562,7 +565,7 @@ pub fn RasterPass(
                             subpx_domain.y_off,
                             null,
                         );
-                        break :blk Geometry.solveWeights(
+                        break :blk Geometry.solveWeightsNewton(
                             nodes_coords,
                             subpx_x,
                             subpx_y,
@@ -571,14 +574,24 @@ pub fn RasterPass(
                             guess.xi,
                             guess.eta,
                         );
-                    } else Geometry.solveWeights(
-                        nodes_coords,
-                        subpx_x,
-                        subpx_y,
-                        subpx_domain.x_off,
-                        subpx_domain.y_off,
-                        geometry_state,
-                    );
+                    } else if (comptime Geometry.solver_kind == .inv_bi)
+                        Geometry.solveWeightsInvBi(
+                            nodes_coords,
+                            subpx_x,
+                            subpx_y,
+                            subpx_domain.x_off,
+                            subpx_domain.y_off,
+                            solver_state,
+                        )
+                    else
+                        Geometry.solveWeightsHyperb(
+                            nodes_coords,
+                            subpx_x,
+                            subpx_y,
+                            subpx_domain.x_off,
+                            subpx_domain.y_off,
+                            solver_state,
+                        );
 
                     if (result.weights) |weights| {
                         const inv_z = Geometry.calcInvZ(nodes_coords, weights);
