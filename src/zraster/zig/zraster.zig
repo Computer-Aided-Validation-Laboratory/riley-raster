@@ -352,7 +352,7 @@ pub fn rasterSceneInternal(
 
     const time_start_loop = Timestamp.now(io, .awake);
 
-    const ctx_rast = rops.RasterContext(report_mode){
+    const ctx_rast = rops.RasterContext{
         .camera = camera,
         .frame_idx = frame_idx,
         .tile_size = tile_size,

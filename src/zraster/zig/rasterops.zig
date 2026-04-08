@@ -96,14 +96,11 @@ pub const TilingOverlaps = struct {
     active_tiles: []ActiveTile,
 };
 
-pub fn RasterContext(comptime report_mode: report.ReportMode) type {
-    _ = report_mode;
-    return struct {
-        camera: *const Camera,
-        frame_idx: usize,
-        tile_size: u16,
-    };
-}
+pub const RasterContext = struct {
+    camera: *const Camera,
+    frame_idx: usize,
+    tile_size: u16,
+};
 
 pub const MeshInput = struct {
     coords: *const NDArray(f64),

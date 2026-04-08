@@ -56,7 +56,7 @@ const RasterBounds = common.RasterBounds;
 
 pub fn rasterScene(
     comptime report_mode: ReportMode,
-    ctx_rast: rops.RasterContext(report_mode),
+    ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -362,7 +362,7 @@ pub fn RasterPass(
     return struct {
         pub fn render(
             comptime report_mode: ReportMode,
-            ctx_rast: rops.RasterContext(report_mode),
+            ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
             targ_overlap: common.OverlapTarget,
             mesh_in: rops.MeshInput,
@@ -485,7 +485,7 @@ pub fn RasterPass(
 
         fn rasterDirectSIMD(
             comptime report_mode: ReportMode,
-            ctx_rast: rops.RasterContext(report_mode),
+            ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
             targ_overlap: common.OverlapTarget,
             subpx_domain: SubpxDomain,
@@ -638,7 +638,7 @@ pub fn RasterPass(
 
         fn rasterNewtonSIMD(
             comptime report_mode: ReportMode,
-            ctx_rast: rops.RasterContext(report_mode),
+            ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
             targ_overlap: common.OverlapTarget,
             mesh_in: *const rops.MeshInput,
@@ -1046,7 +1046,7 @@ pub fn RasterPass(
 
         fn rasterIncrementalSIMD(
             comptime report_mode: ReportMode,
-            ctx_rast: rops.RasterContext(report_mode),
+            ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
             targ_overlap: common.OverlapTarget,
             subpx_domain: SubpxDomain,
@@ -1102,8 +1102,7 @@ pub fn RasterPass(
 
                 for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x| {
                     if (Geometry.isInElement(weights)) {
-                        ctx_report.recordSolverCalls(1);
-                        ctx_report.recordSolverIters(0);
+                        ctx_report.recordSolverStats(1, 0);
                         const inv_z = Geometry.calcInvZ(nodes_coords, weights);
                         const scratch_idx = row_offset + scratch_x;
 
@@ -1174,7 +1173,7 @@ pub fn RasterPass(
 
         fn rasterDirect(
             comptime report_mode: ReportMode,
-            ctx_rast: rops.RasterContext(report_mode),
+            ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
             targ_overlap: common.OverlapTarget,
             mesh_in: rops.MeshInput,

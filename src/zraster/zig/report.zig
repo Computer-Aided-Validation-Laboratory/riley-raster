@@ -635,6 +635,16 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             self.bench().total_solver_iters += solver_iters;
         }
 
+        pub inline fn recordSolverStats(
+            self: @This(),
+            solver_calls: u64,
+            solver_iters: u64,
+        ) void {
+            const bench_log = self.bench();
+            bench_log.solver_calls += solver_calls;
+            bench_log.total_solver_iters += solver_iters;
+        }
+
         pub inline fn recordTessChecks(self: @This(), tess_checks: u64) void {
             self.bench().tess_checks += tess_checks;
         }
