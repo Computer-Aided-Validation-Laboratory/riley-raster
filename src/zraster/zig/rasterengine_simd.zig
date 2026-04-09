@@ -125,10 +125,8 @@ pub fn resetSubpxScratch(
 ) void {
     @memset(subpx_scratch.inv_z, -std.math.inf(f64));
     @memset(subpx_scratch.image.elems, 0.0);
-    for (0..subpx_tile_size) |yy| {
-        subpx_scratch.touched_min_x[yy] = subpx_tile_size;
-        subpx_scratch.touched_max_x[yy] = 0;
-    }
+    @memset(subpx_scratch.touched_min_x, subpx_tile_size);
+    @memset(subpx_scratch.touched_max_x, 0);
 }
 
 pub fn rasterScene(
@@ -184,17 +182,13 @@ pub fn RasterPass(
             };
 
             const scratch_start_x_u = sub_samp_u *
-                (@as(usize, targ_overlap.overlap.x_min) -
-                    targ_overlap.tile.x_px_min);
+                (@as(usize, targ_overlap.overlap.x_min) - targ_overlap.tile.x_px_min);
             const scratch_end_x_u = sub_samp_u *
-                (@as(usize, targ_overlap.overlap.x_max) -
-                    targ_overlap.tile.x_px_min);
+                (@as(usize, targ_overlap.overlap.x_max) - targ_overlap.tile.x_px_min);
             const scratch_start_y_u = sub_samp_u *
-                (@as(usize, targ_overlap.overlap.y_min) -
-                    targ_overlap.tile.y_px_min);
+                (@as(usize, targ_overlap.overlap.y_min) - targ_overlap.tile.y_px_min);
             const scratch_end_y_u = sub_samp_u *
-                (@as(usize, targ_overlap.overlap.y_max) -
-                    targ_overlap.tile.y_px_min);
+                (@as(usize, targ_overlap.overlap.y_max) - targ_overlap.tile.y_px_min);
 
             const rast_bounds = RasterBounds{
                 .start_x_u = scratch_start_x_u,
@@ -211,7 +205,6 @@ pub fn RasterPass(
                 mesh_in.coords,
                 targ_overlap.overlap.elem_idx,
             );
-
 
             const shaded_px = if (comptime (Geometry == geomkerns.Tri3Kernel() or
                 Geometry == geomkerns.Tri3OptKernel()))
@@ -327,13 +320,14 @@ pub fn RasterPass(
                 var v_weights = v_weights_row;
 
                 var scratch_x = rast_bounds.start_x_u;
-                while (scratch_x < rast_bounds.end_x_u) : (scratch_x += 8) {
+                while (scratch_x < rast_bounds.end_x_u) : (scratch_x += S) {
                     const v_07: @Vector(S, usize) = std.simd.iota(usize, S);
                     const v_scratch_x: @Vector(S, usize) = @splat(scratch_x);
-                    const v_x_mask = (v_scratch_x + v_07 >=
-                        @as(@Vector(S, usize), @splat(original_start_x))) &
-                        (v_scratch_x + v_07 <
-                            @as(@Vector(S, usize), @splat(rast_bounds.end_x_u)));
+
+                    const v_x = v_scratch_x + v_07;
+                    const v_start = @as(@Vector(S, usize), @splat(original_start_x));
+                    const v_end = @as(@Vector(S, usize), @splat(rast_bounds.end_x_u));
+                    const v_x_mask = (v_x >= v_start) & (v_x < v_end);
 
                     var v_mask: @Vector(S, bool) = v_x_mask;
                     inline for (0..N) |ii| {
@@ -494,8 +488,7 @@ pub fn RasterPass(
 
             const v_px_min: @Vector(S, f64) =
                 @splat(@as(f64, @floatFromInt(targ_overlap.tile.x_px_min)));
-            const v_step: @Vector(S, f64) =
-                @splat(subpx_domain.step);
+            const v_step: @Vector(S, f64) = @splat(subpx_domain.step);
             const v_05: @Vector(S, f64) = @splat(0.5);
             const v_original_start_x: @Vector(S, usize) = @splat(original_start_x);
             const v_bounds_end_x: @Vector(S, usize) = @splat(rast_bounds.end_x_u);
@@ -505,7 +498,8 @@ pub fn RasterPass(
                 const subpx_y = @as(f64, @floatFromInt(targ_overlap.tile.y_px_min)) +
                     (@as(f64, @floatFromInt(scratch_y)) + 0.5) * subpx_domain.step;
                 var scratch_x = rast_bounds.start_x_u;
-                while (scratch_x < rast_bounds.end_x_u) : (scratch_x += 8) {
+
+                while (scratch_x < rast_bounds.end_x_u) : (scratch_x += S) {
                     const v_scratch_x: @Vector(S, usize) = @splat(scratch_x);
                     const v_x_mask = (v_scratch_x + v_07 >= v_original_start_x) &
                         (v_scratch_x + v_07 < v_bounds_end_x);

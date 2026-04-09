@@ -68,10 +68,8 @@ pub fn resetSubpxScratch(
 ) void {
     @memset(subpx_scratch.inv_z, -std.math.inf(f64));
     @memset(subpx_scratch.image.elems, 0.0);
-    for (0..subpx_tile_size) |yy| {
-        subpx_scratch.touched_min_x[yy] = subpx_tile_size;
-        subpx_scratch.touched_max_x[yy] = 0;
-    }
+    @memset(subpx_scratch.touched_min_x, subpx_tile_size);
+    @memset(subpx_scratch.touched_max_x, 0);
 }
 
 pub fn rasterScene(
