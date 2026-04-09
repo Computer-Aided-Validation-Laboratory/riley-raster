@@ -102,7 +102,6 @@ pub fn runGenerationExt(
         _ = arena.reset(.free_all);
         const data_name = switch (mt) {
             .quad4ibi, .quad4newton => "quad4",
-            .tri3opt => "tri3",
             else => @tagName(mt),
         };
         const case_name = try std.fmt.allocPrint(aa, "{s}_{s}", .{ data_name, suffix });

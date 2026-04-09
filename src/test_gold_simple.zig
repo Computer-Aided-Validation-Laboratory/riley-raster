@@ -24,7 +24,14 @@ test "Gold Simple Suite" {
     };
     defer texture.deinit(allocator);
 
-    const mesh_types = [_]common.MeshType{ .tri3, .tri3opt, .tri6, .quad4ibi, .quad4newton, .quad8, .quad9 };
+    const mesh_types = [_]common.MeshType{
+        .tri3,
+        .tri6,
+        .quad4ibi,
+        .quad4newton,
+        .quad8,
+        .quad9,
+    };
     const interp_types = [_]common.texops.InterpType{.cubic_lut_lerp};
     const pixel_num = [_]u32{ 640, 400 };
 

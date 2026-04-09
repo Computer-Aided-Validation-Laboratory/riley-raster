@@ -206,8 +206,7 @@ pub fn RasterPass(
                 targ_overlap.overlap.elem_idx,
             );
 
-            const shaded_px = if (comptime (Geometry == geomkerns.Tri3Kernel() or
-                Geometry == geomkerns.Tri3OptKernel()))
+            const shaded_px = if (comptime Geometry == geomkerns.Tri3Kernel())
                 try rasterDirectSIMD(
                     report_mode,
                     ctx_rast,

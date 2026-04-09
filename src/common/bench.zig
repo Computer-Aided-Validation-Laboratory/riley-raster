@@ -100,7 +100,6 @@ pub fn runTestInternal(outer_alloc: std.mem.Allocator, io: std.Io, test_type: []
         const suffix = if (std.mem.eql(u8, test_type, "full")) "fullscreen" else "single";
         const data_name = switch (mesh_type) {
             .quad4ibi, .quad4newton => "quad4",
-            .tri3opt => "tri3",
             else => @tagName(mesh_type),
         };
         break :blk try std.fmt.allocPrint(aa, "{s}_{s}", .{ data_name, suffix });

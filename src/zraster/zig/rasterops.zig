@@ -601,7 +601,6 @@ pub fn prepareSceneGeometry(
             inline else => |mesh_tag| {
                 const GK = comptime switch (mesh_tag) {
                     .tri3 => geomkerns.Tri3Kernel(),
-                    .tri3opt => geomkerns.Tri3OptKernel(),
                     .tri6 => geomkerns.Tri6Kernel(),
                     .quad4ibi => geomkerns.Quad4IBIKernel(),
                     .quad4newton => geomkerns.Quad4NewtonKernel(),

@@ -61,7 +61,7 @@ pub fn main() !void {
     const mesh_type: MeshType = .tri6;
 
     //const path_data = "data-simple/tri3_fullscreen/";
-    //const mesh_type: MeshType = .tri3opt;
+    //const mesh_type: MeshType = .tri3;
 
     const out_dir_name = "out-bench-zraster";
 

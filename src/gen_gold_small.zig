@@ -9,14 +9,11 @@ pub fn main() !void {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const texture = try gengold.iio.loadImage(
-        allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1
-    );
+    const texture = try gengold.iio.loadImage(allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1);
     defer texture.deinit(allocator);
 
     const mesh_types = [_]gengold.MeshType{
         .tri3,
-        .tri3opt,
         .tri6,
         .quad4ibi,
         .quad4newton,
@@ -25,13 +22,13 @@ pub fn main() !void {
     };
 
     const interp_types = [_]gengold.texops.InterpType{
-        .linear, 
-        .cubic, 
-        .cubic_lut, 
-        .cubic_lut_lerp, 
-        .quintic, 
-        .quintic_lut, 
-        .quintic_lut_lerp
+        .linear,
+        .cubic,
+        .cubic_lut,
+        .cubic_lut_lerp,
+        .quintic,
+        .quintic_lut,
+        .quintic_lut_lerp,
     };
     const pixel_num = [_]u32{ 160, 100 };
     const config = gengold.zraster.RasterConfig{
@@ -45,14 +42,32 @@ pub fn main() !void {
     std.debug.print("Generating ALL Small Gold Data...\n", .{});
     std.debug.print("Single Element Cases...\n", .{});
     try gengold.runGenerationExt(
-        allocator, io, "single", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
-        "gold-small", "data-small", config
+        allocator,
+        io,
+        "single",
+        &mesh_types,
+        1.1,
+        texture,
+        pixel_num,
+        &interp_types,
+        "gold-small",
+        "data-small",
+        config,
     );
 
     std.debug.print("Full Screen Cases...\n", .{});
     try gengold.runGenerationExt(
-        allocator, io, "full", &mesh_types, 1.0, texture, pixel_num, &interp_types, 
-        "gold-small", "data-small", config
+        allocator,
+        io,
+        "full",
+        &mesh_types,
+        1.0,
+        texture,
+        pixel_num,
+        &interp_types,
+        "gold-small",
+        "data-small",
+        config,
     );
 
     std.debug.print("Done.\n", .{});

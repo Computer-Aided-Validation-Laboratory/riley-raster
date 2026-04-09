@@ -444,7 +444,6 @@ pub fn runTestInternal(outer_alloc: std.mem.Allocator, io: std.Io, test_type: []
 
     const data_name = switch (mesh_type) {
         .quad4ibi, .quad4newton => "quad4",
-        .tri3opt => "tri3",
         else => @tagName(mesh_type),
     };
 

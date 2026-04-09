@@ -9,14 +9,11 @@ pub fn main() !void {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const texture = try gengold.iio.loadImage(
-        allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1
-    );
+    const texture = try gengold.iio.loadImage(allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1);
     defer texture.deinit(allocator);
 
     const mesh_types = [_]gengold.MeshType{
         .tri3,
-        .tri3opt,
         .tri6,
         .quad4ibi,
         .quad4newton,
@@ -36,8 +33,17 @@ pub fn main() !void {
 
     std.debug.print("Generating Simple Gold Data (Two Elements only)...\n", .{});
     try gengold.runGenerationExt(
-        allocator, io, "twoelems", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
-        "gold-simple", "data-simple", config
+        allocator,
+        io,
+        "twoelems",
+        &mesh_types,
+        1.1,
+        texture,
+        pixel_num,
+        &interp_types,
+        "gold-simple",
+        "data-simple",
+        config,
     );
 
     std.debug.print("Done.\n", .{});

@@ -27,7 +27,6 @@ pub const ShaderPrepared = shaderops.ShaderPrepared;
 
 pub const MeshType = enum {
     tri3,
-    tri3opt,
     tri6,
     quad4ibi,
     quad4newton,
@@ -36,7 +35,7 @@ pub const MeshType = enum {
 
     pub fn getNodesNum(self: MeshType) usize {
         return switch (self) {
-            .tri3, .tri3opt => 3,
+            .tri3 => 3,
             .tri6 => 6,
             .quad4ibi, .quad4newton => 4,
             .quad8 => 8,
