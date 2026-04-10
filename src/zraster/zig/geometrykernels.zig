@@ -425,107 +425,454 @@ pub fn Quad4IBIKernel() type {
             solve_params: BilinearParams,
         ) GeometryResult(nodes_num) {
             const eps = tol.geometry.bilinear_parametric_domain;
+            const zero_tol = tol.geometry.quadratic_area;
             const denom_tol = tol.geometry.bilinear_denom;
 
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
 
-            const res_x_uv = solve_params.x_uv_coeff - (solve_params.w_uv_coeff * target_x);
-            const res_x_u = solve_params.x_u_coeff - (solve_params.w_u_coeff * target_x);
-            const res_x_v = solve_params.x_v_coeff - (solve_params.w_v_coeff * target_x);
-            const res_x_const = solve_params.x_const - (solve_params.w_const * target_x);
+            const a1 = solve_params.x_const - (solve_params.w_const * target_x);
+            const a2 = solve_params.x_u_coeff - (solve_params.w_u_coeff * target_x);
+            const a3 = solve_params.x_v_coeff - (solve_params.w_v_coeff * target_x);
+            const a4 = solve_params.x_uv_coeff - (solve_params.w_uv_coeff * target_x);
 
-            const res_y_uv = solve_params.y_uv_coeff - (solve_params.w_uv_coeff * target_y);
-            const res_y_u = solve_params.y_u_coeff - (solve_params.w_u_coeff * target_y);
-            const res_y_v = solve_params.y_v_coeff - (solve_params.w_v_coeff * target_y);
-            const res_y_const = solve_params.y_const - (solve_params.w_const * target_y);
+            const b1 = solve_params.y_const - (solve_params.w_const * target_y);
+            const b2 = solve_params.y_u_coeff - (solve_params.w_u_coeff * target_y);
+            const b3 = solve_params.y_v_coeff - (solve_params.w_v_coeff * target_y);
+            const b4 = solve_params.y_uv_coeff - (solve_params.w_uv_coeff * target_y);
 
-            const quad_a = (res_y_uv * res_x_u) - (res_x_uv * res_y_u);
-            const quad_b = (res_y_uv * res_x_const) - (res_x_uv * res_y_const) +
-                (res_x_v * res_y_u) - (res_y_v * res_x_u);
-            const quad_c = (res_x_v * res_y_const) - (res_y_v * res_x_const);
+            const p_coeff = (a4 * b2) - (a2 * b4);
+            const s_coeff = (a4 * b3) - (a3 * b4);
 
-            var coord_u: f64 = -1.0;
+            const Candidate = struct {
+                xi: f64,
+                eta: f64,
+                resid_sq: f64,
+            };
 
-            if (solveQuadraticRobust(quad_a, quad_b, quad_c, &coord_u)) {
-                const denom_e = (res_x_uv * coord_u) + res_x_v;
-                const denom_f = (res_y_uv * coord_u) + res_y_v;
-                var coord_v: f64 = -1.0;
+            var best_candidate: ?Candidate = null;
 
-                if (@abs(denom_f) > @abs(denom_e)) {
-                    if (@abs(denom_f) > denom_tol) {
-                        coord_v = -((res_y_u * coord_u) + res_y_const) / denom_f;
+            const tryCandidate = struct {
+                fn run(
+                    best: *?Candidate,
+                    xi: f64,
+                    eta: f64,
+                    ra1: f64,
+                    ra2: f64,
+                    ra3: f64,
+                    ra4: f64,
+                    rb1: f64,
+                    rb2: f64,
+                    rb3: f64,
+                    rb4: f64,
+                    domain_eps: f64,
+                ) void {
+                    if (xi < -domain_eps or xi > 1.0 + domain_eps) return;
+                    if (eta < -domain_eps or eta > 1.0 + domain_eps) return;
+
+                    const resid_x = ra1 + (ra2 * xi) + (ra3 * eta) + (ra4 * xi * eta);
+                    const resid_y = rb1 + (rb2 * xi) + (rb3 * eta) + (rb4 * xi * eta);
+                    const resid_sq = (resid_x * resid_x) + (resid_y * resid_y);
+
+                    if (best.*) |curr| {
+                        if (resid_sq >= curr.resid_sq) return;
+                    }
+                    best.* = .{ .xi = xi, .eta = eta, .resid_sq = resid_sq };
+                }
+            }.run;
+
+            const solveOtherCoordFromXi = struct {
+                fn run(
+                    xi: f64,
+                    ra1: f64,
+                    ra2: f64,
+                    ra3: f64,
+                    ra4: f64,
+                    rb1: f64,
+                    rb2: f64,
+                    rb3: f64,
+                    rb4: f64,
+                    local_denom_tol: f64,
+                ) ?f64 {
+                    const denom_x = ra3 + (ra4 * xi);
+                    const denom_y = rb3 + (rb4 * xi);
+
+                    if (@abs(denom_x) > @abs(denom_y)) {
+                        if (@abs(denom_x) <= local_denom_tol) return null;
+                        return -((ra1 + (ra2 * xi)) / denom_x);
+                    }
+                    if (@abs(denom_y) <= local_denom_tol) return null;
+                    return -((rb1 + (rb2 * xi)) / denom_y);
+                }
+            }.run;
+
+            const solveOtherCoordFromEta = struct {
+                fn run(
+                    eta: f64,
+                    ra1: f64,
+                    ra2: f64,
+                    ra3: f64,
+                    ra4: f64,
+                    rb1: f64,
+                    rb2: f64,
+                    rb3: f64,
+                    rb4: f64,
+                    local_denom_tol: f64,
+                ) ?f64 {
+                    const denom_x = ra2 + (ra4 * eta);
+                    const denom_y = rb2 + (rb4 * eta);
+
+                    if (@abs(denom_x) > @abs(denom_y)) {
+                        if (@abs(denom_x) <= local_denom_tol) return null;
+                        return -((ra1 + (ra3 * eta)) / denom_x);
+                    }
+                    if (@abs(denom_y) <= local_denom_tol) return null;
+                    return -((rb1 + (rb3 * eta)) / denom_y);
+                }
+            }.run;
+
+            const rootsFromQuadratic = struct {
+                fn run(
+                    a_coeff: f64,
+                    b_coeff: f64,
+                    c_coeff: f64,
+                ) struct { count: u8, roots: [2]f64 } {
+                    var roots = [2]f64{ 0.0, 0.0 };
+
+                    if (@abs(a_coeff) < zero_tol) {
+                        if (@abs(b_coeff) < zero_tol) {
+                            return .{ .count = 0, .roots = roots };
+                        }
+                        roots[0] = -c_coeff / b_coeff;
+                        return .{ .count = 1, .roots = roots };
+                    }
+
+                    var disc = (b_coeff * b_coeff) - (4.0 * a_coeff * c_coeff);
+                    if (disc < -zero_tol) {
+                        return .{ .count = 0, .roots = roots };
+                    }
+                    if (disc < 0.0) disc = 0.0;
+
+                    const sqrt_disc = @sqrt(disc);
+                    if (sqrt_disc < zero_tol) {
+                        roots[0] = -0.5 * b_coeff / a_coeff;
+                        return .{ .count = 1, .roots = roots };
+                    }
+
+                    const q_term = -0.5 * (b_coeff +
+                        (if (b_coeff >= 0.0) sqrt_disc else -sqrt_disc));
+
+                    if (@abs(q_term) < zero_tol) {
+                        roots[0] = (-b_coeff + sqrt_disc) / (2.0 * a_coeff);
+                        roots[1] = (-b_coeff - sqrt_disc) / (2.0 * a_coeff);
+                        return .{ .count = 2, .roots = roots };
+                    }
+
+                    roots[0] = q_term / a_coeff;
+                    roots[1] = c_coeff / q_term;
+                    return .{ .count = 2, .roots = roots };
+                }
+            }.run;
+
+            if (@abs(p_coeff) > zero_tol or @abs(s_coeff) > zero_tol) {
+                if (@abs(s_coeff) < @abs(p_coeff)) {
+                    const q_coeff = (a4 * b1) - (a1 * b4) + (a3 * b2) - (a2 * b3);
+                    const r_coeff = (a3 * b1) - (a1 * b3);
+                    const roots = rootsFromQuadratic(p_coeff, q_coeff, r_coeff);
+
+                    for (0..roots.count) |ii| {
+                        const xi = roots.roots[ii];
+                        if (solveOtherCoordFromXi(
+                            xi,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            b1,
+                            b2,
+                            b3,
+                            b4,
+                            denom_tol,
+                        )) |eta| {
+                            tryCandidate(
+                                &best_candidate,
+                                xi,
+                                eta,
+                                a1,
+                                a2,
+                                a3,
+                                a4,
+                                b1,
+                                b2,
+                                b3,
+                                b4,
+                                eps,
+                            );
+                        }
                     }
                 } else {
-                    if (@abs(denom_e) > denom_tol) {
-                        coord_v = -((res_x_u * coord_u) + res_x_const) / denom_e;
+                    const t_coeff = (a4 * b1) - (a1 * b4) - (a3 * b2) + (a2 * b3);
+                    const u_coeff = (a2 * b1) - (a1 * b2);
+                    const roots = rootsFromQuadratic(s_coeff, t_coeff, u_coeff);
+
+                    for (0..roots.count) |ii| {
+                        const eta = roots.roots[ii];
+                        if (solveOtherCoordFromEta(
+                            eta,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            b1,
+                            b2,
+                            b3,
+                            b4,
+                            denom_tol,
+                        )) |xi| {
+                            tryCandidate(
+                                &best_candidate,
+                                xi,
+                                eta,
+                                a1,
+                                a2,
+                                a3,
+                                a4,
+                                b1,
+                                b2,
+                                b3,
+                                b4,
+                                eps,
+                            );
+                        }
                     }
                 }
-
-                if (coord_v >= -eps and coord_v <= 1.0 + eps) {
-                    return .{
-                        .weights = [_]f64{
-                            (1.0 - coord_u) * (1.0 - coord_v),
-                            coord_u * (1.0 - coord_v),
-                            coord_u * coord_v,
-                            (1.0 - coord_u) * coord_v,
-                        },
-                        .iters = 1,
-                    };
+            } else if (@abs(a4) > zero_tol and @abs(b4) > zero_tol) {
+                if (@abs(p_coeff) < @abs(s_coeff)) {
+                    const eta = ((a4 * b1) - (a1 * b4) + (a3 * b2) - (a2 * b3)) /
+                        (-s_coeff);
+                    if (solveOtherCoordFromEta(
+                        eta,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        b1,
+                        b2,
+                        b3,
+                        b4,
+                        denom_tol,
+                    )) |xi| {
+                        tryCandidate(
+                            &best_candidate,
+                            xi,
+                            eta,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            b1,
+                            b2,
+                            b3,
+                            b4,
+                            eps,
+                        );
+                    }
+                } else {
+                    const xi = ((a4 * b1) - (a1 * b4) - (a3 * b2) + (a2 * b3)) /
+                        (-p_coeff);
+                    if (solveOtherCoordFromXi(
+                        xi,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        b1,
+                        b2,
+                        b3,
+                        b4,
+                        denom_tol,
+                    )) |eta| {
+                        tryCandidate(
+                            &best_candidate,
+                            xi,
+                            eta,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            b1,
+                            b2,
+                            b3,
+                            b4,
+                            eps,
+                        );
+                    }
+                }
+            } else if (@abs(a4) > zero_tol and @abs(b4) <= zero_tol) {
+                if (@abs(b3) > @abs(b2)) {
+                    if (@abs(b3) > denom_tol) {
+                        const eta = -b1 / b3;
+                        if (solveOtherCoordFromEta(
+                            eta,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            b1,
+                            b2,
+                            b3,
+                            b4,
+                            denom_tol,
+                        )) |xi| {
+                            tryCandidate(
+                                &best_candidate,
+                                xi,
+                                eta,
+                                a1,
+                                a2,
+                                a3,
+                                a4,
+                                b1,
+                                b2,
+                                b3,
+                                b4,
+                                eps,
+                            );
+                        }
+                    }
+                } else if (@abs(b2) > denom_tol) {
+                    const xi = -b1 / b2;
+                    if (solveOtherCoordFromXi(
+                        xi,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        b1,
+                        b2,
+                        b3,
+                        b4,
+                        denom_tol,
+                    )) |eta| {
+                        tryCandidate(
+                            &best_candidate,
+                            xi,
+                            eta,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            b1,
+                            b2,
+                            b3,
+                            b4,
+                            eps,
+                        );
+                    }
+                }
+            } else if (@abs(a4) <= zero_tol and @abs(b4) > zero_tol) {
+                if (@abs(a2) < @abs(a3)) {
+                    if (@abs(a3) > denom_tol) {
+                        const eta = -a1 / a3;
+                        if (solveOtherCoordFromEta(
+                            eta,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            b1,
+                            b2,
+                            b3,
+                            b4,
+                            denom_tol,
+                        )) |xi| {
+                            tryCandidate(
+                                &best_candidate,
+                                xi,
+                                eta,
+                                a1,
+                                a2,
+                                a3,
+                                a4,
+                                b1,
+                                b2,
+                                b3,
+                                b4,
+                                eps,
+                            );
+                        }
+                    }
+                } else if (@abs(a2) > denom_tol) {
+                    const xi = -a1 / a2;
+                    if (solveOtherCoordFromXi(
+                        xi,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        b1,
+                        b2,
+                        b3,
+                        b4,
+                        denom_tol,
+                    )) |eta| {
+                        tryCandidate(
+                            &best_candidate,
+                            xi,
+                            eta,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            b1,
+                            b2,
+                            b3,
+                            b4,
+                            eps,
+                        );
+                    }
+                }
+            } else {
+                const denom = (a2 * b3) - (a3 * b2);
+                if (@abs(denom) > denom_tol) {
+                    const xi = ((b1 * a3) - (a1 * b3)) / denom;
+                    const eta = ((a2 * b1) - (a1 * b2)) / (-denom);
+                    tryCandidate(
+                        &best_candidate,
+                        xi,
+                        eta,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        b1,
+                        b2,
+                        b3,
+                        b4,
+                        eps,
+                    );
                 }
             }
+
+            if (best_candidate) |candidate| {
+                return .{
+                    .weights = [_]f64{
+                        (1.0 - candidate.xi) * (1.0 - candidate.eta),
+                        candidate.xi * (1.0 - candidate.eta),
+                        candidate.xi * candidate.eta,
+                        (1.0 - candidate.xi) * candidate.eta,
+                    },
+                    .iters = 1,
+                    .xi_out = candidate.xi,
+                    .eta_out = candidate.eta,
+                };
+            }
+
             return .{ .weights = null, .iters = 0 };
         }
 
         pub inline fn calcInvZ(nodes: Vec3Slices(f64), weights: [nodes_num]f64) f64 {
             return calcInvZClip(nodes_num, nodes, weights);
-        }
-
-        fn solveQuadraticRobust(
-            a_coeff: f64,
-            b_coeff: f64,
-            c_coeff: f64,
-            root_out: *f64,
-        ) bool {
-            const eps = tol.geometry.bilinear_parametric_domain;
-            const area_tol = tol.geometry.quadratic_area;
-
-            if (@abs(a_coeff) < area_tol) {
-                if (@abs(b_coeff) < area_tol) {
-                    return false;
-                }
-                const root = -c_coeff / b_coeff;
-                if (root >= -eps and root <= 1.0 + eps) {
-                    root_out.* = root;
-                    return true;
-                }
-                return false;
-            }
-
-            const disc = (b_coeff * b_coeff) - (4.0 * a_coeff * c_coeff);
-
-            if (disc < 0) {
-                return false;
-            }
-
-            const sqrt_disc = @sqrt(disc);
-            const intermediate_q = -0.5 * (b_coeff + (if (b_coeff >= 0)
-                sqrt_disc
-            else
-                -sqrt_disc));
-
-            const roots = [2]f64{
-                intermediate_q / a_coeff,
-                c_coeff / intermediate_q,
-            };
-
-            for (roots) |root| {
-                if (root >= -eps and root <= 1.0 + eps) {
-                    root_out.* = root;
-                    return true;
-                }
-            }
-            return false;
         }
     };
 }

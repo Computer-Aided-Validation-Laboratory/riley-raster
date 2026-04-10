@@ -398,26 +398,7 @@ pub fn RasterPass(
                     }
 
                     ctx_report.recordSolverCalls(1);
-                    const result = if (comptime Geometry == geomkerns.Quad4IBIKernel()) blk: {
-                        const base_seed = newton.NewtonSeed{
-                            .xi = 0.5,
-                            .eta = 0.5,
-                        };
-                        const selected_seed = newton.selectSeed(
-                            .last_converged,
-                            base_seed,
-                            seed_state,
-                        );
-                        break :blk geomkerns.Quad4NewtonKernel().solveWeightsNewton(
-                            nodes_coords,
-                            subpx_x,
-                            subpx_y,
-                            subpx_domain.x_off,
-                            subpx_domain.y_off,
-                            selected_seed.xi,
-                            selected_seed.eta,
-                        );
-                    } else if (comptime Geometry.solver_kind == .newton) blk: {
+                    const result = if (comptime Geometry.solver_kind == .newton) blk: {
                         if (comptime Geometry.seed_mode == .hull) {
                             if (hull_seed) |seed| {
                                 const seed_quality = newton.evaluateSeedQuality(
@@ -467,9 +448,8 @@ pub fn RasterPass(
                         );
                     ctx_report.recordSolverIters(result.iters);
 
-                    if ((comptime Geometry == geomkerns.Quad4IBIKernel()) or
-                        (comptime Geometry.solver_kind == .newton and
-                            Geometry.seed_reuse == .last_converged))
+                    if (comptime Geometry.solver_kind == .newton and
+                        Geometry.seed_reuse == .last_converged)
                     {
                         if (result.weights != null) {
                             newton.updateSeedState(

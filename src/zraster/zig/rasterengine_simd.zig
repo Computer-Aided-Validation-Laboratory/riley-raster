@@ -310,11 +310,12 @@ pub fn RasterPass(
                     const v_lane_idx: @Vector(S, usize) = std.simd.iota(usize, S);
                     const v_scratch_x: @Vector(S, usize) = @splat(scratch_x);
 
+                    // Masking for when we hit the end of an X row of subpixels and it is
+                    // not divisible by S
                     const v_x = v_scratch_x + v_lane_idx;
                     const v_start = @as(@Vector(S, usize), @splat(original_start_x));
                     const v_end = @as(@Vector(S, usize), @splat(rast_bounds.end_x_u));
                     const v_x_mask = (v_x >= v_start) & (v_x < v_end);
-
                     var v_mask_active: @Vector(S, bool) = v_x_mask;
                     inline for (0..N) |ii| {
                         v_mask_active =
@@ -360,18 +361,16 @@ pub fn RasterPass(
                             }
 
                             const v_subpx_z = @as(@Vector(S, f64), @splat(1.0)) / v_inv_z;
-                            shaded_px += @intCast(@reduce(
-                                .Add,
-                                @as(
-                                    @Vector(S, u8),
-                                    @select(
-                                        u8,
-                                        v_depth_mask,
-                                        @as(@Vector(S, u8), @splat(1)),
-                                        @as(@Vector(S, u8), @splat(0)),
-                                    ),
-                                ),
-                            ));
+                            const v_hit_one: @Vector(S, u8) = @splat(1);
+                            const v_hit_zero: @Vector(S, u8) = @splat(0);
+                            const v_hit_count = @select(
+                                u8,
+                                v_depth_mask,
+                                v_hit_one,
+                                v_hit_zero,
+                            );
+                            const hit_count = @reduce(.Add, v_hit_count);
+                            shaded_px += @intCast(hit_count);
 
                             const ctx_shade = shaderops.ShadeContext(N){
                                 .frame_idx = ctx_rast.frame_idx,
@@ -867,8 +866,6 @@ pub fn RasterPass(
                 }
             }
 
-            var seed_state = newton.NewtonSeedState{};
-
             var subpx_y: f64 = rast_bounds.y_min_f + subpx_domain.offset;
             for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
                 const row_offset = scratch_y * subpx_domain.tile_size;
@@ -904,26 +901,7 @@ pub fn RasterPass(
                     }
 
                     ctx_report.recordSolverCalls(1);
-                    const result = if (comptime Geometry == geomkerns.Quad4IBIKernel()) blk: {
-                        const base_seed = newton.NewtonSeed{
-                            .xi = 0.5,
-                            .eta = 0.5,
-                        };
-                        const selected_seed = newton.selectSeed(
-                            .last_converged,
-                            base_seed,
-                            seed_state,
-                        );
-                        break :blk geomkerns.Quad4NewtonKernel().solveWeightsNewton(
-                            nodes_coords,
-                            subpx_x,
-                            subpx_y,
-                            subpx_domain.x_off,
-                            subpx_domain.y_off,
-                            selected_seed.xi,
-                            selected_seed.eta,
-                        );
-                    } else if (comptime Geometry.solver_kind == .inv_bi)
+                    const result = if (comptime Geometry.solver_kind == .inv_bi)
                         Geometry.solveWeightsInvBi(
                             subpx_x,
                             subpx_y,
@@ -942,13 +920,6 @@ pub fn RasterPass(
                     ctx_report.recordSolverIters(result.iters);
 
                     if (result.weights) |weights| {
-                        if (comptime Geometry == geomkerns.Quad4IBIKernel()) {
-                            newton.updateSeedState(
-                                &seed_state,
-                                result.xi_out,
-                                result.eta_out,
-                            );
-                        }
                         const inv_z = Geometry.calcInvZ(nodes_coords, weights);
                         const scratch_idx = row_offset + scratch_x;
 
