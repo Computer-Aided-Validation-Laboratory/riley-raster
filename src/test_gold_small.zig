@@ -40,12 +40,45 @@ test "Gold Small Suite" {
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
 
     for (mesh_types) |mt| {
-        try common.runTestInternal(allocator, io, "single", mt, 1.1, texture, pixel_num, interp_types, "gold-small", "data-small", tcfg.REL_TOL, tcfg.ABS_TOL, SHADER_FILTER, false);
+        try common.runTestInternal(
+            allocator,
+            io,
+            "single",
+            mt,
+            1.1,
+            texture,
+            pixel_num,
+            interp_types,
+            "gold-small",
+            "data-small",
+            tcfg.REL_TOL,
+            tcfg.ABS_TOL,
+            SHADER_FILTER,
+            false,
+        );
 
-        try common.runTestInternal(allocator, io, "full", mt, 1.0, texture, pixel_num, interp_types, "gold-small", "data-small", tcfg.REL_TOL, tcfg.ABS_TOL, SHADER_FILTER, false);
+        try common.runTestInternal(
+            allocator,
+            io,
+            "full",
+            mt,
+            1.0,
+            texture,
+            pixel_num,
+            interp_types,
+            "gold-small",
+            "data-small",
+            tcfg.REL_TOL,
+            tcfg.ABS_TOL,
+            SHADER_FILTER,
+            false,
+        );
     }
 
     const end_time = std.Io.Clock.Timestamp.now(io, .awake);
-    const duration_ms = @as(f64, @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds)) / 1e6;
-    std.debug.print("\nGold Small Test Suite took {d:.3} ms\n", .{duration_ms});
+    const duration_ms = @as(
+        f64,
+        @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds),
+    ) / 1e6;
+    std.debug.print("Gold Small Test Suite took {d:.3} ms\n", .{duration_ms});
 }

@@ -10,7 +10,16 @@ test "Gold Multimesh Suite" {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
+    const start_time = std.Io.Clock.Timestamp.now(io, .awake);
+
     try common.runMultimeshTest(allocator, io, tcfg.REL_TOL, tcfg.ABS_TOL);
     try common.runMultimeshMixedTest(allocator, io, tcfg.REL_TOL, tcfg.ABS_TOL);
     try common.runMultimeshMixedRGBTest(allocator, io, tcfg.REL_TOL, tcfg.ABS_TOL);
+
+    const end_time = std.Io.Clock.Timestamp.now(io, .awake);
+    const duration_ms = @as(
+        f64,
+        @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds),
+    ) / 1e6;
+    std.debug.print("Multi-Mesh Test Suite took {d:.3} ms\n", .{duration_ms});
 }

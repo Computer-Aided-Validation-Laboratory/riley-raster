@@ -111,7 +111,7 @@ test "Unified Benchmark Tests" {
                         std.debug.print("Testing {s}/{s} ... ", .{ cc.name, case_name });
 
                         // 1. Run benchmark
-                        _ = try common.runBenchmark(
+                        _ = try common.runBenchmarkQuiet(
                             outer_alloc,
                             io,
                             mt,

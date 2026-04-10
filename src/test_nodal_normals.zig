@@ -89,9 +89,9 @@ test "Nodal normals are prepared when requested" {
         ),
     };
 
-    var bench_log = report.BenchLog{};
-    const ctx_perf = report.ReportContext(.bench){
-        .log = &bench_log,
+    var off_log = report.OffLog{};
+    const ctx_perf = report.ReportContext(.off){
+        .log = &off_log,
     };
 
     var raster_hulls = [_]?NDArray(f64){null};
@@ -101,7 +101,7 @@ test "Nodal normals are prepared when requested" {
     var total_elems_in_image: usize = 0;
 
     try rops.prepareSceneGeometry(
-        .bench,
+        .off,
         ctx_perf,
         arena_alloc,
         &camera,

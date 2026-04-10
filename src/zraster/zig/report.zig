@@ -6,9 +6,12 @@ const MatSlice = @import("matslice.zig").MatSlice;
 const Camera = @import("camera.zig").Camera;
 
 pub const ReportMode = enum {
+    off,
     bench,
     full_stats,
 };
+
+pub const OffLog = struct {};
 
 pub const FullStatsOpts = struct {
     formats: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
@@ -444,12 +447,14 @@ pub const FullStatsLog = struct {
 };
 
 pub const ReportLog = union(ReportMode) {
+    off: OffLog,
     bench: BenchLog,
     full_stats: FullStatsLog,
 };
 
 pub fn LogType(comptime mode: ReportMode) type {
     return switch (mode) {
+        .off => OffLog,
         .bench => BenchLog,
         .full_stats => FullStatsLog,
     };
@@ -458,8 +463,9 @@ pub fn LogType(comptime mode: ReportMode) type {
 pub fn getBenchLog(
     comptime mode: ReportMode,
     log: *LogType(mode),
-) *BenchLog {
+) ?*BenchLog {
     return switch (mode) {
+        .off => null,
         .bench => log,
         .full_stats => &log.bench,
     };
@@ -589,16 +595,17 @@ pub fn ReportContext(comptime mode: ReportMode) type {
     return struct {
         log: *LogType(mode),
 
-        inline fn bench(self: @This()) *BenchLog {
+        inline fn bench(self: @This()) ?*BenchLog {
             return getBenchLog(mode, self.log);
         }
 
         pub const mode_tag = mode;
 
         pub inline fn recordGeometry(self: @This(), total: usize, visible: usize) void {
-            const bench_log = self.bench();
-            bench_log.total_elements = total;
-            bench_log.visible_elements = visible;
+            if (self.bench()) |bench_log| {
+                bench_log.total_elements = total;
+                bench_log.visible_elements = visible;
+            }
         }
 
         pub inline fn recordTile(
@@ -620,19 +627,24 @@ pub fn ReportContext(comptime mode: ReportMode) type {
                 }
             }
 
-            const bench_log = self.bench();
-            bench_log.total_shaded_pixels += shaded_px;
-            if (elem_count > bench_log.max_tile_elements) {
-                bench_log.max_tile_elements = elem_count;
+            if (self.bench()) |bench_log| {
+                bench_log.total_shaded_pixels += shaded_px;
+                if (elem_count > bench_log.max_tile_elements) {
+                    bench_log.max_tile_elements = elem_count;
+                }
             }
         }
 
         pub inline fn recordSolverCalls(self: @This(), solver_calls: u64) void {
-            self.bench().solver_calls += solver_calls;
+            if (self.bench()) |bench_log| {
+                bench_log.solver_calls += solver_calls;
+            }
         }
 
         pub inline fn recordSolverIters(self: @This(), solver_iters: u64) void {
-            self.bench().total_solver_iters += solver_iters;
+            if (self.bench()) |bench_log| {
+                bench_log.total_solver_iters += solver_iters;
+            }
         }
 
         pub inline fn recordSolverStats(
@@ -640,17 +652,22 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             solver_calls: u64,
             solver_iters: u64,
         ) void {
-            const bench_log = self.bench();
-            bench_log.solver_calls += solver_calls;
-            bench_log.total_solver_iters += solver_iters;
+            if (self.bench()) |bench_log| {
+                bench_log.solver_calls += solver_calls;
+                bench_log.total_solver_iters += solver_iters;
+            }
         }
 
         pub inline fn recordTessChecks(self: @This(), tess_checks: u64) void {
-            self.bench().tess_checks += tess_checks;
+            if (self.bench()) |bench_log| {
+                bench_log.tess_checks += tess_checks;
+            }
         }
 
         pub inline fn recordTessPasses(self: @This(), tess_passes: u64) void {
-            self.bench().tess_passes += tess_passes;
+            if (self.bench()) |bench_log| {
+                bench_log.tess_passes += tess_passes;
+            }
         }
 
         pub inline fn recordPixelIters(
@@ -732,15 +749,18 @@ pub fn ReportContext(comptime mode: ReportMode) type {
         }
 
         pub inline fn recordDepthTest(self: @This(), failed: bool) void {
-            const bench_log = self.bench();
-            bench_log.total_depth_tests += 1;
-            if (failed) {
-                bench_log.depth_tests_failed += 1;
+            if (self.bench()) |bench_log| {
+                bench_log.total_depth_tests += 1;
+                if (failed) {
+                    bench_log.depth_tests_failed += 1;
+                }
             }
         }
 
         pub inline fn recordSolverDiverged(self: @This()) void {
-            self.bench().solver_diverged += 1;
+            if (self.bench()) |bench_log| {
+                bench_log.solver_diverged += 1;
+            }
         }
     };
 }

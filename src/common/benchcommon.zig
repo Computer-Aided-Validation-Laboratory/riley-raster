@@ -281,6 +281,61 @@ pub fn runBenchmark(
     texture_grey: iio.Texture(u8, 1),
     texture_rgb: iio.Texture(u8, 3),
 ) !BenchResult {
+    return runBenchmarkInternal(
+        .bench,
+        outer_alloc,
+        io,
+        etype,
+        shader_type,
+        interp_type,
+        data_dir,
+        out_dir_base,
+        pixel_num,
+        texture_grey,
+        texture_rgb,
+    );
+}
+
+pub fn runBenchmarkQuiet(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    etype: mr.MeshType,
+    shader_type: ShaderType,
+    interp_type: InterpType,
+    data_dir: []const u8,
+    out_dir_base: []const u8,
+    pixel_num: [2]u32,
+    texture_grey: iio.Texture(u8, 1),
+    texture_rgb: iio.Texture(u8, 3),
+) !BenchResult {
+    return runBenchmarkInternal(
+        .off,
+        outer_alloc,
+        io,
+        etype,
+        shader_type,
+        interp_type,
+        data_dir,
+        out_dir_base,
+        pixel_num,
+        texture_grey,
+        texture_rgb,
+    );
+}
+
+fn runBenchmarkInternal(
+    comptime report_mode: report.ReportMode,
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    etype: mr.MeshType,
+    shader_type: ShaderType,
+    interp_type: InterpType,
+    data_dir: []const u8,
+    out_dir_base: []const u8,
+    pixel_num: [2]u32,
+    texture_grey: iio.Texture(u8, 1),
+    texture_rgb: iio.Texture(u8, 3),
+) !BenchResult {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
@@ -344,7 +399,9 @@ pub fn runBenchmark(
     const cam_pos = CameraOps.posFillFrameFromRot(&sim_data.coords, pixel_num, pixel_size, focal_leng, rot, 1.0);
     const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
 
-    const config = zraster.RasterConfig{};
+    const config = zraster.RasterConfig{
+        .report = report_mode,
+    };
     const transformed_mesh = try mr.prepareMesh(aa, &mesh_input, &sim_data.coords.mat, null);
 
     var image_out_arr = try NDArray(f64).initFlat(
@@ -352,7 +409,11 @@ pub fn runBenchmark(
         &[_]usize{ num_out_fields, pixel_num[1], pixel_num[0] },
     );
 
-    var bench_log = report.BenchLog{};
+    var report_log: report.LogType(report_mode) = switch (report_mode) {
+        .off => .{},
+        .bench => .{},
+        .full_stats => unreachable,
+    };
 
     const e2e_start = Timestamp.now(io, .awake);
     var meshes = [_]mr.MeshPrepared{transformed_mesh};
@@ -364,24 +425,41 @@ pub fn runBenchmark(
         &meshes,
         &image_out_arr,
         config.tile_size,
-        .bench,
-        &bench_log,
+        report_mode,
+        &report_log,
     );
     const e2e_end = Timestamp.now(io, .awake);
 
+    const bench_log = report.getBenchLog(report_mode, &report_log);
     const e2e_ms = @as(f64, @floatFromInt(e2e_start.durationTo(e2e_end).raw.nanoseconds)) / 1e6;
-    const geom_ms = bench_log.pipe_times.geometry_prep / 1e6;
-    const overlap_ms = bench_log.pipe_times.tile_overlap / 1e6;
-    const raster_ms = bench_log.pipe_times.raster_loop / 1e6;
+    const geom_ms = if (bench_log) |bl|
+        (bl.pipe_times.geometry_prep + bl.pipe_times.tile_overlap) / 1e6
+    else
+        0.0;
+    const raster_ms = if (bench_log) |bl|
+        bl.pipe_times.raster_loop / 1e6
+    else
+        0.0;
     const fps = 1000.0 / e2e_ms;
 
-    const metrics = calcMetrics(
-        etype,
-        pixel_num,
-        camera.sub_sample,
-        bench_log.pipe_times,
-        bench_log,
-    );
+    const metrics = if (bench_log) |bl|
+        calcMetrics(
+            etype,
+            pixel_num,
+            camera.sub_sample,
+            bl.pipe_times,
+            bl.*,
+        )
+    else
+        CalculatedMetrics{
+            .mpx_sec = 0.0,
+            .msubpx_sec = 0.0,
+            .mshades_sec = 0.0,
+            .msubshades_sec = 0.0,
+            .melems_sec = 0.0,
+            .mnodes_sec = 0.0,
+            .mops_sec = 0.0,
+        };
 
     // Save one frame for inspection
     const out_name = if (shader_type == .tex8_grey or shader_type == .tex8_rgb)
@@ -406,7 +484,7 @@ pub fn runBenchmark(
 
     return .{
         .e2e_ms = e2e_ms,
-        .geom_ms = geom_ms + overlap_ms,
+        .geom_ms = geom_ms,
         .raster_ms = raster_ms,
         .fps = fps,
         .metrics = metrics,

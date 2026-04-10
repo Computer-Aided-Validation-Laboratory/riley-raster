@@ -38,10 +38,28 @@ test "Gold Simple Suite" {
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
 
     for (mesh_types) |mt| {
-        try common.runTestInternal(allocator, io, "twoelems", mt, 1.1, texture, pixel_num, &interp_types, "gold-simple", "data-simple", tcfg.REL_TOL, tcfg.ABS_TOL, SHADER_FILTER, false);
+        try common.runTestInternal(
+            allocator,
+            io,
+            "twoelems",
+            mt,
+            1.1,
+            texture,
+            pixel_num,
+            &interp_types,
+            "gold-simple",
+            "data-simple",
+            tcfg.REL_TOL,
+            tcfg.ABS_TOL,
+            SHADER_FILTER,
+            false,
+        );
     }
 
     const end_time = std.Io.Clock.Timestamp.now(io, .awake);
-    const duration_ms = @as(f64, @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds)) / 1e6;
-    std.debug.print("\nGold Simple Test Suite took {d:.3} ms\n", .{duration_ms});
+    const duration_ms = @as(
+        f64,
+        @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds),
+    ) / 1e6;
+    std.debug.print("Gold Simple Test Suite took {d:.3} ms\n", .{duration_ms});
 }

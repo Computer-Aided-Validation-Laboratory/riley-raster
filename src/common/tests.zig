@@ -42,7 +42,16 @@ pub fn isApproxEqual(v1: f64, v2: f64, rel_tol: f64, abs_tol: f64) bool {
     return (diff / largest) <= rel_tol;
 }
 
-pub fn compareNDArrayToCSV(allocator: std.mem.Allocator, io: std.Io, array: *const NDArray(f64), frame: usize, field: usize, path: []const u8, rel_tol: f64, abs_tol: f64) !void {
+pub fn compareNDArrayToCSV(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    array: *const NDArray(f64),
+    frame: usize,
+    field: usize,
+    path: []const u8,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
     var lines = try meshio.readCsvToList(allocator, io, path);
     defer {
         for (lines.items) |line| allocator.free(line);
@@ -53,7 +62,10 @@ pub fn compareNDArrayToCSV(allocator: std.mem.Allocator, io: std.Io, array: *con
     const cols = array.dims[3];
 
     if (lines.items.len != rows) {
-        std.debug.print("Row count mismatch: CSV has {d}, array expects {d} (path: {s})\n", .{ lines.items.len, rows, path });
+        std.debug.print(
+            "Row count mismatch: CSV has {d}, array expects {d} (path: {s})\n",
+            .{ lines.items.len, rows, path },
+        );
         return error.CSVRowsMismatch;
     }
 
@@ -61,7 +73,10 @@ pub fn compareNDArrayToCSV(allocator: std.mem.Allocator, io: std.Io, array: *con
         var iter = std.mem.splitScalar(u8, line, ',');
         for (0..cols) |c| {
             const val_str = iter.next() orelse {
-                std.debug.print("Column count mismatch at row {d}: missing value (path: {s})\n", .{ r, path });
+                std.debug.print(
+                    "Column count mismatch at row {d}: missing value (path: {s})\n",
+                    .{ r, path },
+                );
                 return error.CSVColsMismatch;
             };
             const gold_val = try std.fmt.parseFloat(f64, std.mem.trim(u8, val_str, " \r\n\t"));
@@ -75,15 +90,27 @@ pub fn compareNDArrayToCSV(allocator: std.mem.Allocator, io: std.Io, array: *con
                 const diff = @abs(gold_val - actual_val);
                 const rel_diff = if (largest < abs_tol) diff else diff / largest;
 
-                std.debug.print("\n\nMismatch at:\n frame {d},\n field {d},\n pixel ({d}, {d}): " ++
-                    "\n gold={d},\n actual={d},\n rel_diff={e}\n (path: {s})\n\n", .{ frame, field, r, c, gold_val, actual_val, rel_diff, path });
+                std.debug.print(
+                    "\n\nMismatch at:\n frame {d},\n field {d},\n pixel ({d}, {d}): " ++
+                        "\n gold={d},\n actual={d},\n rel_diff={e}\n (path: {s})\n\n",
+                    .{ frame, field, r, c, gold_val, actual_val, rel_diff, path },
+                );
                 return error.PixelMismatch;
             }
         }
     }
 }
 
-pub fn compareNDArrayToCSVRGB(allocator: std.mem.Allocator, io: std.Io, array: *const NDArray(f64), frame: usize, field_start: usize, path: []const u8, rel_tol: f64, abs_tol: f64) !void {
+pub fn compareNDArrayToCSVRGB(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    array: *const NDArray(f64),
+    frame: usize,
+    field_start: usize,
+    path: []const u8,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
     var lines = try meshio.readCsvToList(allocator, io, path);
     defer {
         for (lines.items) |line| allocator.free(line);
@@ -94,7 +121,10 @@ pub fn compareNDArrayToCSVRGB(allocator: std.mem.Allocator, io: std.Io, array: *
     const cols = array.dims[3];
 
     if (lines.items.len != rows) {
-        std.debug.print("Row count mismatch: CSV has {d}, array expects {d} (path: {s})\n", .{ lines.items.len, rows, path });
+        std.debug.print(
+            "Row count mismatch: CSV has {d}, array expects {d} (path: {s})\n",
+            .{ lines.items.len, rows, path },
+        );
         return error.CSVRowsMismatch;
     }
 
@@ -102,18 +132,27 @@ pub fn compareNDArrayToCSVRGB(allocator: std.mem.Allocator, io: std.Io, array: *
         var iter = std.mem.splitScalar(u8, line, ',');
         for (0..cols) |c| {
             const pixel_str = iter.next() orelse {
-                std.debug.print("Column count mismatch at row {d}: missing value (path: {s})\n", .{ r, path });
+                std.debug.print(
+                    "Column count mismatch at row {d}: missing value (path: {s})\n",
+                    .{ r, path },
+                );
                 return error.CSVColsMismatch;
             };
 
             var sub_iter = std.mem.splitScalar(u8, pixel_str, ':');
             for (0..3) |cc| {
                 const val_str = sub_iter.next() orelse {
-                    std.debug.print("Channel mismatch at row {d}, col {d}: missing channel {d} (path: {s})\n", .{ r, c, cc, path });
+                    std.debug.print(
+                        "Channel mismatch at row {d}, col {d}: missing channel {d} (path: {s})\n",
+                        .{ r, c, cc, path },
+                    );
                     return error.CSVChannelsMismatch;
                 };
 
-                const gold_val = try std.fmt.parseFloat(f64, std.mem.trim(u8, val_str, " \r\n\t"));
+                const gold_val = try std.fmt.parseFloat(
+                    f64,
+                    std.mem.trim(u8, val_str, " \r\n\t"),
+                );
                 const actual_val = array.get(&[_]usize{ frame, field_start + cc, r, c });
 
                 if (!isApproxEqual(gold_val, actual_val, rel_tol, abs_tol)) {
@@ -124,8 +163,11 @@ pub fn compareNDArrayToCSVRGB(allocator: std.mem.Allocator, io: std.Io, array: *
                     const diff = @abs(gold_val - actual_val);
                     const rel_diff = if (largest < abs_tol) diff else diff / largest;
 
-                    std.debug.print("\n\nMismatch at:\n frame {d},\n field {d},\n pixel ({d}, {d}): " ++
-                        "\n gold={d},\n actual={d},\n rel_diff={e}\n (path: {s})\n\n", .{ frame, field_start + cc, r, c, gold_val, actual_val, rel_diff, path });
+                    std.debug.print(
+                        "\n\nMismatch at:\n frame {d},\n field {d},\n pixel ({d}, {d}): " ++
+                            "\n gold={d},\n actual={d},\n rel_diff={e}\n (path: {s})\n\n",
+                        .{ frame, field_start + cc, r, c, gold_val, actual_val, rel_diff, path },
+                    );
                     return error.PixelMismatch;
                 }
             }
@@ -177,8 +219,20 @@ fn saveResultToFails(
             const slice = array.getSlice(&[_]usize{ f, fi, 0, 0 }, 1);
             const mat = MatSlice(f64).init(slice, array.dims[2], array.dims[3]);
             const name = try std.fmt.allocPrint(allocator, "frame_{d}_field_{d}", .{ f, fi });
-            try iio.saveMatAsImage(io, out_dir, name, &mat, .{ .format = .csv, .bits = null, .scaling = .none });
-            try iio.saveMatAsImage(io, out_dir, name, &mat, .{ .format = .bmp, .bits = 8, .scaling = .auto });
+            try iio.saveMatAsImage(
+                io,
+                out_dir,
+                name,
+                &mat,
+                .{ .format = .csv, .bits = null, .scaling = .none },
+            );
+            try iio.saveMatAsImage(
+                io,
+                out_dir,
+                name,
+                &mat,
+                .{ .format = .bmp, .bits = 8, .scaling = .auto },
+            );
         }
     }
 }
@@ -245,7 +299,8 @@ fn loadImageFromCSV(
             } else {
                 var chan_iter = std.mem.splitScalar(u8, pixel_str, ':');
                 for (0..channels) |ch| {
-                    const chan_str = chan_iter.next() orelse return error.CSVChannelsMismatch;
+                    const chan_str = chan_iter.next() orelse
+                        return error.CSVChannelsMismatch;
                     const value = try std.fmt.parseFloat(
                         f64,
                         std.mem.trim(u8, chan_str, " \r\n\t"),
@@ -424,7 +479,22 @@ pub fn saveComparisonArtifactsFromImages(
 
 pub const ShaderFilter = enum { flat, tex, both };
 
-pub fn runTestInternal(outer_alloc: std.mem.Allocator, io: std.Io, test_type: []const u8, mesh_type: MeshType, fov_scale: f64, texture: iio.Texture(u8, 1), pixel_num: [2]u32, interp_types: []const texops.InterpType, gold_dir_root: []const u8, data_dir_root: []const u8, rel_tol: f64, abs_tol: f64, shader_filter: ShaderFilter, report_perf: bool) !void {
+pub fn runTestInternal(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    test_type: []const u8,
+    mesh_type: MeshType,
+    fov_scale: f64,
+    texture: iio.Texture(u8, 1),
+    pixel_num: [2]u32,
+    interp_types: []const texops.InterpType,
+    gold_dir_root: []const u8,
+    data_dir_root: []const u8,
+    rel_tol: f64,
+    abs_tol: f64,
+    shader_filter: ShaderFilter,
+    report_perf: bool,
+) !void {
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
     const rot = Rotation.init(0, 0, 0);
@@ -479,24 +549,54 @@ pub fn runTestInternal(outer_alloc: std.mem.Allocator, io: std.Io, test_type: []
         // --- Flat ShaderInput ---
         if (shader_filter == .flat or shader_filter == .both) {
             const mt_name = @tagName(mesh_type);
-            const case_dir_name = try std.fmt.allocPrint(aa, "{s}_{s}_{s}_flat", .{ test_type, mt_name, d_str });
+            const case_dir_name = try std.fmt.allocPrint(
+                aa,
+                "{s}_{s}_{s}_flat",
+                .{ test_type, mt_name, d_str },
+            );
 
-            const flat_dir = try std.fmt.allocPrint(aa, "{s}/{s}", .{ gold_dir_root, case_dir_name });
+            const flat_dir = try std.fmt.allocPrint(
+                aa,
+                "{s}/{s}",
+                .{ gold_dir_root, case_dir_name },
+            );
 
-            const mesh_input = MeshInput{ .mesh_type = mesh_type, .coords = sim_data.coords, .connect = sim_data.connect, .disp = if (add_disp) sim_data.field else null, .shader = .{ .nodal = .{ .field = sim_data.field.?, .bits = 8 } } };
+            const mesh_input = MeshInput{
+                .mesh_type = mesh_type,
+                .coords = sim_data.coords,
+                .connect = sim_data.connect,
+                .disp = if (add_disp) sim_data.field else null,
+                .shader = .{ .nodal = .{ .field = sim_data.field.?, .bits = 8 } },
+            };
 
-            const config = RasterConfig{ .save_opt = .memory, .save_opts = &[_]iio.ImageSaveOpts{
-                .{ .format = .csv, .bits = null, .scaling = .none },
-            }, .report = if (report_perf) .full_stats else .bench };
+            const config = RasterConfig{
+                .save_opt = .memory,
+                .save_opts = &[_]iio.ImageSaveOpts{
+                    .{ .format = .csv, .bits = null, .scaling = .none },
+                },
+                .report = if (report_perf) .full_stats else .off,
+            };
 
-            const result = (try zraster.rasterAllFrames(aa, io, &camera, &[_]MeshInput{mesh_input}, config, null)) orelse return error.NoResult;
+            const result = (try zraster.rasterAllFrames(
+                aa,
+                io,
+                &camera,
+                &[_]MeshInput{mesh_input},
+                config,
+                null,
+            )) orelse return error.NoResult;
 
             defer aa.free(result.elems);
 
             for (0..result.dims[0]) |f| {
-                const fname = try std.fmt.allocPrint(aa, "{s}/frame_{d}_field_0.csv", .{ flat_dir, f });
+                const fname = try std.fmt.allocPrint(
+                    aa,
+                    "{s}/frame_{d}_field_0.csv",
+                    .{ flat_dir, f },
+                );
 
-                compareNDArrayToCSV(aa, io, &result, f, 0, fname, rel_tol, abs_tol) catch |err| {
+                compareNDArrayToCSV(aa, io, &result, f, 0, fname, rel_tol, abs_tol) 
+                    catch |err| {
                     const fail_dir_name = try std.fmt.allocPrint(
                         aa,
                         "all_{s}",
@@ -522,24 +622,56 @@ pub fn runTestInternal(outer_alloc: std.mem.Allocator, io: std.Io, test_type: []
         if (shader_filter == .tex or shader_filter == .both) {
             for (interp_types) |it| {
                 const mt_name = @tagName(mesh_type);
-                const case_dir_name = try std.fmt.allocPrint(aa, "{s}_{s}_{s}_tex_{s}", .{ test_type, mt_name, d_str, @tagName(it) });
+                const case_dir_name = try std.fmt.allocPrint(
+                    aa,
+                    "{s}_{s}_{s}_tex_{s}",
+                    .{ test_type, mt_name, d_str, @tagName(it) },
+                );
 
-                const tex_dir = try std.fmt.allocPrint(aa, "{s}/{s}", .{ gold_dir_root, case_dir_name });
+                const tex_dir = try std.fmt.allocPrint(
+                    aa,
+                    "{s}/{s}",
+                    .{ gold_dir_root, case_dir_name },
+                );
 
-                const mesh_input = MeshInput{ .mesh_type = mesh_type, .coords = sim_data.coords, .connect = sim_data.connect, .disp = if (add_disp) sim_data.field else null, .shader = .{ .tex_u8 = .{ .uvs = uvs.array, .texture = texture, .interp_type = it } } };
+                const mesh_input = MeshInput{
+                    .mesh_type = mesh_type,
+                    .coords = sim_data.coords,
+                    .connect = sim_data.connect,
+                    .disp = if (add_disp) sim_data.field else null,
+                    .shader = .{
+                        .tex_u8 = .{ .uvs = uvs.array, .texture = texture, .interp_type = it }
+                    },
+                };
 
-                const config = RasterConfig{ .save_opt = .memory, .save_opts = &[_]iio.ImageSaveOpts{
-                    .{ .format = .csv, .bits = null, .scaling = .none },
-                }, .report = if (report_perf) .full_stats else .bench };
+                const config = RasterConfig{
+                    .save_opt = .memory,
+                    .save_opts = &[_]iio.ImageSaveOpts{
+                        .{ .format = .csv, .bits = null, .scaling = .none },
+                    },
+                    .report = if (report_perf) .full_stats else .off,
+                };
 
-                const result = (try zraster.rasterAllFrames(aa, io, &camera, &[_]MeshInput{mesh_input}, config, null)) orelse return error.NoResult;
+                const result = (try zraster.rasterAllFrames(
+                    aa,
+                    io,
+                    &camera,
+                    &[_]MeshInput{mesh_input},
+                    config,
+                    null,
+                )) orelse return error.NoResult;
 
                 defer aa.free(result.elems);
 
                 for (0..result.dims[0]) |f| {
-                    const fname = try std.fmt.allocPrint(aa, "{s}/frame_{d}_field_0.csv", .{ tex_dir, f });
+                    const fname = try std.fmt.allocPrint(
+                        aa,
+                        "{s}/frame_{d}_field_0.csv",
+                        .{ tex_dir, f },
+                    );
 
-                    compareNDArrayToCSV(aa, io, &result, f, 0, fname, rel_tol, abs_tol) catch |err| {
+                    compareNDArrayToCSV(aa, io, &result, f, 0, fname, rel_tol, abs_tol) 
+                        catch |err| {
                         const fail_dir_name = try std.fmt.allocPrint(
                             aa,
                             "all_{s}",
@@ -597,9 +729,27 @@ pub fn runMultimeshTest(
         const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
 
         const mesh_inputs = if (mode == .flat)
-            try mr.meshInputFromSimDataSlice(aa, io, sim_datas, &mesh_types, .flat, null, null, null)
+            try mr.meshInputFromSimDataSlice(
+                aa,
+                io,
+                sim_datas,
+                &mesh_types,
+                .flat,
+                null,
+                null,
+                null,
+            )
         else
-            try mr.meshInputFromSimDataSlice(aa, io, sim_datas, &mesh_types, .texture, &dir_paths, "texture/speckle-simple.tiff", null);
+            try mr.meshInputFromSimDataSlice(
+                aa,
+                io,
+                sim_datas,
+                &mesh_types,
+                .texture,
+                &dir_paths,
+                "texture/speckle-simple.tiff",
+                null,
+            );
 
         mr.arrangeMeshSlice(mesh_inputs, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
 
@@ -618,16 +768,32 @@ pub fn runMultimeshTest(
             rot,
             fov_scale_factor,
         );
-        const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
+        const camera = Camera.init(
+            pixel_num,
+            pixel_size,
+            cam_pos,
+            rot,
+            roi_pos,
+            focal_leng,
+            2,
+        );
 
         const config = RasterConfig{
             .save_opt = .memory,
             .save_opts = &[_]iio.ImageSaveOpts{
                 .{ .format = .csv, .bits = null, .scaling = .none },
             },
+            .report = .off,
         };
 
-        const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, null)) orelse return error.NoResult;
+        const result = (try zraster.rasterAllFrames(
+            aa,
+            io,
+            &camera,
+            mesh_inputs,
+            config,
+            null,
+        )) orelse return error.NoResult;
 
         const gold_dir = if (mode == .flat)
             "gold-multimesh/allelem_flat"
@@ -635,9 +801,14 @@ pub fn runMultimeshTest(
             "gold-multimesh/allelem_tex_cubic_lut_lerp";
 
         for (0..result.dims[0]) |f| {
-            const fname = try std.fmt.allocPrint(aa, "{s}/frame_{d}_field_0.csv", .{ gold_dir, f });
+            const fname = try std.fmt.allocPrint(
+                aa,
+                "{s}/frame_{d}_field_0.csv",
+                .{ gold_dir, f },
+            );
             compareNDArrayToCSV(aa, io, &result, f, 0, fname, rel_tol, abs_tol) catch |err| {
-                const case_name = if (mode == .flat) "multimesh_allelem_flat" else "multimesh_allelem_tex";
+                const case_name = if (mode == .flat) "multimesh_allelem_flat" 
+                    else "multimesh_allelem_tex";
                 const fail_dir_name = try std.fmt.allocPrint(
                     aa,
                     "all_{s}{s}",
@@ -716,7 +887,11 @@ pub fn runMultimeshMixedTestExt(
 
     // Top Row (0-4): Flat Shading
     for (0..5) |ii| {
-        var coords_dup = try MatSlice(f64).initAlloc(aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num);
+        var coords_dup = try MatSlice(f64).initAlloc(
+            aa,
+            sim_datas[ii].coords.mat.rows_num,
+            sim_datas[ii].coords.mat.cols_num,
+        );
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
         mesh_inputs[ii] = MeshInput{
@@ -738,7 +913,11 @@ pub fn runMultimeshMixedTestExt(
         const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[ii]});
         const uvs = try uvio.loadUVMap(aa, io, uv_path);
 
-        var coords_dup = try MatSlice(f64).initAlloc(aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num);
+        var coords_dup = try MatSlice(f64).initAlloc(
+            aa,
+            sim_datas[ii].coords.mat.rows_num,
+            sim_datas[ii].coords.mat.cols_num,
+        );
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
         mesh_inputs[ii + 5] = MeshInput{
@@ -765,19 +944,39 @@ pub fn runMultimeshMixedTestExt(
     const fov_scale_factor: f64 = 1.2;
 
     const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
-    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor);
-    const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
+    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
+        mesh_inputs,
+        pixel_num,
+        pixel_size,
+        focal_leng,
+        rot,
+        fov_scale_factor,
+    );
+    const camera = Camera.init(
+        pixel_num,
+        pixel_size,
+        cam_pos,
+        rot,
+        roi_pos,
+        focal_leng,
+        2,
+    );
 
     const config = RasterConfig{
         .save_opt = .memory,
         .save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
+        .report = .off,
     };
     const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, null)) orelse return error.NoResult;
 
     for (0..result.dims[0]) |f| {
-        const fname = try std.fmt.allocPrint(aa, "{s}/frame_{d}_field_0.csv", .{ gold_dir, f });
+        const fname = try std.fmt.allocPrint(
+            aa,
+            "{s}/frame_{d}_field_0.csv",
+            .{ gold_dir, f },
+        );
         compareNDArrayToCSV(aa, io, &result, f, 0, fname, rel_tol, abs_tol) catch |err| {
             try saveComparisonArtifactsFromResult(
                 aa,
@@ -854,7 +1053,11 @@ pub fn runMultimeshMixedRGBTestExt(
         const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[ii]});
         const uvs = try uvio.loadUVMap(aa, io, uv_path);
 
-        var coords_dup = try MatSlice(f64).initAlloc(aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num);
+        var coords_dup = try MatSlice(f64).initAlloc(
+            aa,
+            sim_datas[ii].coords.mat.rows_num,
+            sim_datas[ii].coords.mat.cols_num,
+        );
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
         mesh_inputs[ii] = MeshInput{
@@ -876,7 +1079,10 @@ pub fn runMultimeshMixedRGBTestExt(
     for (0..5) |ii| {
         const field = sim_datas[ii].field.?;
         const num_coords = sim_datas[ii].coords.mat.rows_num;
-        var rgb_field_arr = try NDArray(f64).initFlat(aa, &[_]usize{ field.array.dims[0], num_coords, 3 });
+        var rgb_field_arr = try NDArray(f64).initFlat(
+            aa,
+            &[_]usize{ field.array.dims[0], num_coords, 3 },
+        );
 
         const coords = sim_datas[ii].coords;
         var min_x: f64 = std.math.inf(f64);
@@ -920,7 +1126,11 @@ pub fn runMultimeshMixedRGBTestExt(
             .array_mem = rgb_field_arr.elems,
         };
 
-        var coords_dup = try MatSlice(f64).initAlloc(aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num);
+        var coords_dup = try MatSlice(f64).initAlloc(
+            aa,
+            sim_datas[ii].coords.mat.rows_num,
+            sim_datas[ii].coords.mat.cols_num,
+        );
         @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
 
         mesh_inputs[ii + 5] = MeshInput{
@@ -946,20 +1156,47 @@ pub fn runMultimeshMixedRGBTestExt(
     const fov_scale_factor: f64 = 1.1;
 
     const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
-    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(mesh_inputs, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor);
-    const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
+    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
+        mesh_inputs,
+        pixel_num,
+        pixel_size,
+        focal_leng,
+        rot,
+        fov_scale_factor,
+    );
+    const camera = Camera.init(
+        pixel_num,
+        pixel_size,
+        cam_pos,
+        rot,
+        roi_pos,
+        focal_leng,
+        2,
+    );
 
     const config_rgb = RasterConfig{
         .save_opt = .memory,
         .save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
         },
+        .report = .off,
     };
 
-    const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config_rgb, null)) orelse return error.NoResult;
+    const result = (try zraster.rasterAllFrames(
+        aa,
+        io,
+        &camera,
+        mesh_inputs,
+        config_rgb,
+        null,
+    )) orelse return error.NoResult;
 
     for (0..result.dims[0]) |f| {
-        const fname = try std.fmt.allocPrint(aa, "{s}/frame_{d}_field_0_rgb.csv", .{ gold_dir, f });
+        const fname = try std.fmt.allocPrint(
+            aa,
+            "{s}/frame_{d}_field_0_rgb.csv",
+            .{ gold_dir, f },
+        );
         compareNDArrayToCSVRGB(aa, io, &result, f, 0, fname, rel_tol, abs_tol) catch |err| {
             try saveComparisonArtifactsFromResult(
                 aa,

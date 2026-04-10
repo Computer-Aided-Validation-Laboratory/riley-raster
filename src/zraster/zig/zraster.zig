@@ -213,6 +213,20 @@ pub fn rasterAllFrames(
         @memset(frame_arr.elems, 0.0);
 
         switch (config.report) {
+            .off => {
+                var off_log = report.OffLog{};
+                try rasterSceneInternal(
+                    arena_alloc,
+                    io,
+                    camera,
+                    tt,
+                    prep_meshes,
+                    &frame_arr,
+                    config.tile_size,
+                    .off,
+                    &off_log,
+                );
+            },
             .bench => {
                 var bench_log = BenchLog{};
                 try rasterSceneInternal(
@@ -380,8 +394,9 @@ pub fn rasterSceneInternal(
         raster_start.durationTo(raster_end).raw.nanoseconds,
     );
 
-    const bench_log = report.getBenchLog(report_mode, report_log);
-    bench_log.pipe_times = pipe_times;
+    if (report.getBenchLog(report_mode, report_log)) |bench_log| {
+        bench_log.pipe_times = pipe_times;
+    }
 
     var nodes_sum: usize = 0;
     for (meshes) |mesh| {
@@ -391,15 +406,19 @@ pub fn rasterSceneInternal(
         @as(f64, @floatFromInt(meshes.len));
 
     switch (report_mode) {
-        .bench => try report.standardReport(
-            io,
-            camera,
-            pipe_times,
-            total_elems_num,
-            total_elems_in_image,
-            nodes_per_elem,
-            bench_log,
-        ),
+        .off => {},
+        .bench => {
+            const bench_log = report.getBenchLog(report_mode, report_log).?;
+            try report.standardReport(
+                io,
+                camera,
+                pipe_times,
+                total_elems_num,
+                total_elems_in_image,
+                nodes_per_elem,
+                bench_log,
+            );
+        },
         .full_stats => try report_log.fullReport(
             io,
             frame_idx,
