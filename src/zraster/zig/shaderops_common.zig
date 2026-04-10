@@ -129,7 +129,7 @@ pub fn ShadeContext(comptime N: usize) type {
         global_subx: usize,
         global_suby: usize,
         shader_buf: *const LocalShaderBuffer(N),
-        v_mask: ?@Vector(S, bool) = null,
+        v_mask_active: ?@Vector(S, bool) = null,
     };
 }
 

@@ -295,7 +295,7 @@ pub fn RasterPass(
             var v_weights_row: [N]@Vector(S, f64) = undefined;
             inline for (0..N) |ii| {
                 v_weights_row[ii] = @splat(weights_start[ii]);
-                v_weights_row[ii] += v_steps.x07[ii];
+                v_weights_row[ii] += v_steps.v_dx_lane_offset[ii];
             }
 
             const edge_tol = tol.edge.simd_raster_weight_inclusion;
@@ -307,20 +307,21 @@ pub fn RasterPass(
 
                 var scratch_x = rast_bounds.start_x_u;
                 while (scratch_x < rast_bounds.end_x_u) : (scratch_x += S) {
-                    const v_07: @Vector(S, usize) = std.simd.iota(usize, S);
+                    const v_lane_idx: @Vector(S, usize) = std.simd.iota(usize, S);
                     const v_scratch_x: @Vector(S, usize) = @splat(scratch_x);
 
-                    const v_x = v_scratch_x + v_07;
+                    const v_x = v_scratch_x + v_lane_idx;
                     const v_start = @as(@Vector(S, usize), @splat(original_start_x));
                     const v_end = @as(@Vector(S, usize), @splat(rast_bounds.end_x_u));
                     const v_x_mask = (v_x >= v_start) & (v_x < v_end);
 
-                    var v_mask: @Vector(S, bool) = v_x_mask;
+                    var v_mask_active: @Vector(S, bool) = v_x_mask;
                     inline for (0..N) |ii| {
-                        v_mask = v_mask & (v_weights[ii] >= v_edge_tol);
+                        v_mask_active =
+                            v_mask_active & (v_weights[ii] >= v_edge_tol);
                     }
 
-                    if (@reduce(.Or, v_mask)) {
+                    if (@reduce(.Or, v_mask_active)) {
                         var v_inv_z: @Vector(S, f64) = @splat(0.0);
                         inline for (0..N) |ii| {
                             v_inv_z += v_weights[ii] * v_nodes_inv_z[ii];
@@ -331,7 +332,8 @@ pub fn RasterPass(
                             @ptrCast(&subpx_scratch.inv_z[scratch_idx]);
                         const v_old_inv_z = ptr_old_inv_z.*;
 
-                        const v_depth_mask = v_mask & (v_inv_z >= v_old_inv_z);
+                        const v_depth_mask =
+                            v_mask_active & (v_inv_z >= v_old_inv_z);
 
                         if (@reduce(.Or, v_depth_mask)) {
                             const ptr_new_inv_z: *align(8) @Vector(S, f64) =
@@ -380,7 +382,7 @@ pub fn RasterPass(
                                 .global_subx = 0,
                                 .global_suby = 0,
                                 .shader_buf = shader_buf,
-                                .v_mask = v_depth_mask,
+                                .v_mask_active = v_depth_mask,
                             };
 
                             ShaderKernel.shadeSIMD(
@@ -397,11 +399,11 @@ pub fn RasterPass(
                         }
                     }
                     inline for (0..N) |ii| {
-                        v_weights[ii] += v_steps.dx[ii];
+                        v_weights[ii] += v_steps.v_dx_step[ii];
                     }
                 }
                 inline for (0..N) |ii| {
-                    v_weights_row[ii] += v_steps.dy[ii];
+                    v_weights_row[ii] += v_steps.v_dy_step[ii];
                 }
             }
             return shaded_px;
@@ -465,12 +467,12 @@ pub fn RasterPass(
             }
 
             var subpx_simd_sample_count: usize = 0;
-            const v_07: @Vector(S, usize) = std.simd.iota(usize, S);
+            const v_lane_idx: @Vector(S, usize) = std.simd.iota(usize, S);
 
             const v_px_min: @Vector(S, f64) =
                 @splat(@as(f64, @floatFromInt(targ_overlap.tile.x_px_min)));
             const v_step: @Vector(S, f64) = @splat(subpx_domain.step);
-            const v_05: @Vector(S, f64) = @splat(0.5);
+            const v_splat_half: @Vector(S, f64) = @splat(0.5);
             const v_original_start_x: @Vector(S, usize) = @splat(original_start_x);
             const v_bounds_end_x: @Vector(S, usize) = @splat(rast_bounds.end_x_u);
 
@@ -482,11 +484,11 @@ pub fn RasterPass(
 
                 while (scratch_x < rast_bounds.end_x_u) : (scratch_x += S) {
                     const v_scratch_x: @Vector(S, usize) = @splat(scratch_x);
-                    const v_x_mask = (v_scratch_x + v_07 >= v_original_start_x) &
-                        (v_scratch_x + v_07 < v_bounds_end_x);
+                    const v_x_mask = (v_scratch_x + v_lane_idx >= v_original_start_x) &
+                        (v_scratch_x + v_lane_idx < v_bounds_end_x);
 
                     const v_subpx_x = v_px_min +
-                        (@as(@Vector(S, f64), @floatFromInt(v_scratch_x + v_07)) + v_05) *
+                        (@as(@Vector(S, f64), @floatFromInt(v_scratch_x + v_lane_idx)) + v_splat_half) *
                             v_step;
                     const v_subpx_y: @Vector(S, f64) = @splat(subpx_y);
 
@@ -504,14 +506,14 @@ pub fn RasterPass(
                         ),
                     ));
                     ctx_report.recordTessChecks(tess_check_num);
-                    const v_mask = v_x_mask & v_hull_res.isIn;
+                    const v_mask_active = v_x_mask & v_hull_res.isIn;
                     const tess_pass_num: u64 = @intCast(@reduce(
                         .Add,
                         @as(
                             @Vector(S, u8),
                             @select(
                                 u8,
-                                v_mask,
+                                v_mask_active,
                                 @as(@Vector(S, u8), @splat(1)),
                                 @as(@Vector(S, u8), @splat(0)),
                             ),
@@ -519,8 +521,8 @@ pub fn RasterPass(
                     ));
                     ctx_report.recordTessPasses(tess_pass_num);
 
-                    if (@reduce(.Or, v_mask)) {
-                        const mask_arr: [S]bool = v_mask;
+                    if (@reduce(.Or, v_mask_active)) {
+                        const mask_arr: [S]bool = v_mask_active;
                         const x_arr: [S]f64 = v_subpx_x;
                         const y_arr: [S]f64 = v_subpx_y;
                         const init_seed = Geometry.initSeedSIMD(.{
@@ -699,14 +701,14 @@ pub fn RasterPass(
                     const v_mask_full: @Vector(S, bool) = mask_arr;
 
                     const v_scratch_x: @Vector(S, usize) = @splat(scratch_x);
-                    const v_x_mask = (v_scratch_x + v_07 >=
+                    const v_x_mask = (v_scratch_x + v_lane_idx >=
                         @as(@Vector(S, usize), @splat(original_start_x))) &
-                        (v_scratch_x + v_07 <
+                        (v_scratch_x + v_lane_idx <
                             @as(@Vector(S, usize), @splat(rast_bounds.end_x_u)));
 
-                    const v_mask = v_mask_full & v_x_mask;
+                    const v_mask_active = v_mask_full & v_x_mask;
 
-                    if (@reduce(.Or, v_mask)) {
+                    if (@reduce(.Or, v_mask_active)) {
                         var xi_arr: [S]f64 = undefined;
                         var eta_arr: [S]f64 = undefined;
                         @memcpy(&xi_arr, subpx_scratch.xi[scratch_idx .. scratch_idx + 8]);
@@ -738,7 +740,8 @@ pub fn RasterPass(
                         const ptr_old_inv_z: *align(8) const @Vector(S, f64) =
                             @ptrCast(&subpx_scratch.inv_z[scratch_idx]);
                         const v_old_inv_z = ptr_old_inv_z.*;
-                        const v_depth_mask = v_mask & (v_inv_z >= v_old_inv_z);
+                        const v_depth_mask =
+                            v_mask_active & (v_inv_z >= v_old_inv_z);
 
                         if (@reduce(.Or, v_depth_mask)) {
                             const v_new_inv_z = @select(
@@ -789,7 +792,7 @@ pub fn RasterPass(
                                 .global_suby = targ_overlap.tile.y_px_min * sub_samp +
                                     scratch_y,
                                 .shader_buf = shader_buf,
-                                .v_mask = v_depth_mask,
+                                .v_mask_active = v_depth_mask,
                             };
 
                             ShaderKernel.shadeSIMD(

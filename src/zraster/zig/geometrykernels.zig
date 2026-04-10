@@ -87,9 +87,9 @@ pub const NewtonSeedSIMD = newton.NewtonSeedSIMD;
 
 pub fn TriWeightStepSIMD(comptime N: usize) type {
     return struct {
-        dx: [N]@Vector(S, f64),
-        dy: [N]@Vector(S, f64),
-        x07: [N]@Vector(S, f64),
+        v_dx_step: [N]@Vector(S, f64),
+        v_dy_step: [N]@Vector(S, f64),
+        v_dx_lane_offset: [N]@Vector(S, f64),
     };
 }
 
@@ -207,20 +207,25 @@ pub fn Tri3Kernel() type {
                 (nodes.x[0] - nodes.x[1]) * step_size * inv_area,
             };
 
-            var dx: [nodes_num]@Vector(S, f64) = undefined;
-            var dy: [nodes_num]@Vector(S, f64) = undefined;
-            var x07: [nodes_num]@Vector(S, f64) = undefined;
+            var v_dx_step: [nodes_num]@Vector(S, f64) = undefined;
+            var v_dy_step: [nodes_num]@Vector(S, f64) = undefined;
+            var v_dx_lane_offset: [nodes_num]@Vector(S, f64) = undefined;
 
-            const v_07: @Vector(S, f64) = @floatFromInt(std.simd.iota(usize, S));
+            const v_lane_idx: @Vector(S, f64) =
+                @floatFromInt(std.simd.iota(usize, S));
 
             inline for (0..nodes_num) |ii| {
-                dx[ii] = @splat(dx_scalar[ii] * 8.0);
-                dy[ii] = @splat(dy_scalar[ii]);
-                x07[ii] = @splat(dx_scalar[ii]);
-                x07[ii] *= v_07;
+                v_dx_step[ii] = @splat(dx_scalar[ii] * 8.0);
+                v_dy_step[ii] = @splat(dy_scalar[ii]);
+                v_dx_lane_offset[ii] = @splat(dx_scalar[ii]);
+                v_dx_lane_offset[ii] *= v_lane_idx;
             }
 
-            return .{ .dx = dx, .dy = dy, .x07 = x07 };
+            return .{
+                .v_dx_step = v_dx_step,
+                .v_dy_step = v_dy_step,
+                .v_dx_lane_offset = v_dx_lane_offset,
+            };
         }
     };
 }

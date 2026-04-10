@@ -770,10 +770,10 @@ pub inline fn recordNormalSIMD(
     comptime lane_num: usize,
     ctx_report: anytype,
     ctx_shade: anytype,
-    v_mask: @Vector(lane_num, bool),
+    v_mask_active: @Vector(lane_num, bool),
     v_weights: [nodes_num]@Vector(lane_num, f64),
 ) void {
-    const lane_mask: [lane_num]bool = v_mask;
+    const lane_mask: [lane_num]bool = v_mask_active;
     inline for (0..lane_num) |ll| {
         if (lane_mask[ll]) {
             var normal = [3]f64{ 0.0, 0.0, 0.0 };

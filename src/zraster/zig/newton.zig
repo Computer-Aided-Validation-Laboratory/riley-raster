@@ -122,12 +122,12 @@ pub inline fn updateSeedStateFromSIMDResult(
     residual_x: @Vector(S, f64),
     residual_y: @Vector(S, f64),
 ) void {
-    const v_mask = chunk_mask & converged_mask;
-    if (!@reduce(.Or, v_mask)) {
+    const v_mask_valid = chunk_mask & converged_mask;
+    if (!@reduce(.Or, v_mask_valid)) {
         return;
     }
 
-    const mask_arr: [S]bool = v_mask;
+    const mask_arr: [S]bool = v_mask_valid;
     const xi_out_arr: [S]f64 = xi_out;
     const eta_out_arr: [S]f64 = eta_out;
     const residual_x_arr: [S]f64 = residual_x;
@@ -445,14 +445,14 @@ pub fn solveInverseSIMD(
         v_eta -= @select(f64, v_active, v_deta, @as(@Vector(S, f64), @splat(0.0)));
     }
 
-    const v_1: @Vector(S, f64) = @splat(1.0);
-    const v_m1: @Vector(S, f64) = @splat(-1.0);
+    const v_splat_one: @Vector(S, f64) = @splat(1.0);
+    const v_splat_neg_one: @Vector(S, f64) = @splat(-1.0);
 
     const v_is_in = if (comptime N == 6)
-        (v_xi >= -v_eps) & (v_eta >= -v_eps) & ((v_xi + v_eta) <= v_1 + v_eps)
+        (v_xi >= -v_eps) & (v_eta >= -v_eps) & ((v_xi + v_eta) <= v_splat_one + v_eps)
     else
-        (v_xi >= v_m1 - v_eps) & (v_xi <= v_1 + v_eps) &
-            (v_eta >= v_m1 - v_eps) & (v_eta <= v_1 + v_eps);
+        (v_xi >= v_splat_neg_one - v_eps) & (v_xi <= v_splat_one + v_eps) &
+            (v_eta >= v_splat_neg_one - v_eps) & (v_eta <= v_splat_one + v_eps);
 
     const v_final_converged = v_converged & v_is_in;
     v_xi_out.* = v_xi;

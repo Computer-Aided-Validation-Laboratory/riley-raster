@@ -51,10 +51,10 @@ pub inline fn fillTexClip(
     spx_image_scratch: *MatSlice(f64),
 ) void {
     var u_at: f64 = 0.0;
-    var v_at: f64 = 0.0;
+    var tex_v_at: f64 = 0.0;
     inline for (0..N) |nn| {
         u_at += interp.weights[nn] * ctx_shade.shader_buf.data[nn];
-        v_at += interp.weights[nn] * ctx_shade.shader_buf.data[N + nn];
+        tex_v_at += interp.weights[nn] * ctx_shade.shader_buf.data[N + nn];
     }
 
     const sampled = texops.sampleGeneric(
@@ -62,7 +62,7 @@ pub inline fn fillTexClip(
         interp_type,
         sh.texture,
         u_at,
-        v_at,
+        tex_v_at,
     );
     // Scalar scratch stores one sub-pixel contiguously as [ch0, ch1, ...].
     inline for (0..channels) |ch| {
@@ -82,11 +82,11 @@ pub inline fn fillTexPersp(
     spx_image_scratch: *MatSlice(f64),
 ) void {
     var u_at: f64 = 0.0;
-    var v_at: f64 = 0.0;
+    var tex_v_at: f64 = 0.0;
     inline for (0..N) |nn| {
         const inv_z = interp.nodes_inv_z[nn];
         u_at += interp.weights[nn] * ctx_shade.shader_buf.data[nn] * inv_z;
-        v_at += interp.weights[nn] * ctx_shade.shader_buf.data[N + nn] * inv_z;
+        tex_v_at += interp.weights[nn] * ctx_shade.shader_buf.data[N + nn] * inv_z;
     }
 
     const sampled = texops.sampleGeneric(
@@ -94,7 +94,7 @@ pub inline fn fillTexPersp(
         interp_type,
         sh.texture,
         u_at * interp.sub_pixel_z,
-        v_at * interp.sub_pixel_z,
+        tex_v_at * interp.sub_pixel_z,
     );
     // Scalar scratch stores one sub-pixel contiguously as [ch0, ch1, ...].
     inline for (0..channels) |ch| {
