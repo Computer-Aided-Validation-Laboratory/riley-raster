@@ -73,11 +73,28 @@ test "Sphere Gold Tests" {
                     const data_dir = try std.fmt.allocPrint(allocator, "data-bench/{s}_{s}", .{ @tagName(mt), c.ds });
                     defer allocator.free(data_dir);
 
-                    if (common.shouldRun(.{ .run = .all, .skip_quad4ibi_sphere = true }, mt, st, it, data_dir)) {
+                    if (common.shouldRun(.{ .run = .all }, mt, st, it, data_dir)) {
                         const case_name = if (st == .tex8_grey or st == .tex8_rgb)
                             comptime @tagName(mt) ++ "_" ++ @tagName(st) ++ "_" ++ @tagName(it)
                         else
                             comptime @tagName(mt) ++ "_" ++ @tagName(st);
+                        const gold_mesh_name = if (mt == .quad4ibi)
+                            "quad4newton"
+                        else
+                            @tagName(mt);
+                        const gold_case_name = if (st == .tex8_grey or st == .tex8_rgb)
+                            try std.fmt.allocPrint(
+                                allocator,
+                                "{s}_{s}_{s}",
+                                .{ gold_mesh_name, @tagName(st), @tagName(it) },
+                            )
+                        else
+                            try std.fmt.allocPrint(
+                                allocator,
+                                "{s}_{s}",
+                                .{ gold_mesh_name, @tagName(st) },
+                            );
+                        defer allocator.free(gold_case_name);
 
                         std.debug.print("Testing {s}/{s} ... ", .{ c.ds, case_name });
 
@@ -91,7 +108,11 @@ test "Sphere Gold Tests" {
 
                         const test_csv_rel = try std.fmt.allocPrint(allocator, "{s}/{s}/frame_0_field_0{s}.csv", .{ c.out, case_name, suffix });
                         defer allocator.free(test_csv_rel);
-                        const gold_csv_rel = try std.fmt.allocPrint(allocator, "{s}/{s}/frame_0_field_0{s}.csv", .{ c.gold, case_name, suffix });
+                        const gold_csv_rel = try std.fmt.allocPrint(
+                            allocator,
+                            "{s}/{s}/frame_0_field_0{s}.csv",
+                            .{ c.gold, gold_case_name, suffix },
+                        );
                         defer allocator.free(gold_csv_rel);
 
                         // 3. Load and Compare
@@ -127,6 +148,7 @@ test "Sphere Gold Tests" {
                                         "all_{s}_{s}{s}",
                                         .{ c.ds, case_name, impl_suffix },
                                     );
+                                    defer allocator.free(fail_dir_name);
                                     try testcommon.saveComparisonArtifactsFromImages(
                                         allocator,
                                         io,

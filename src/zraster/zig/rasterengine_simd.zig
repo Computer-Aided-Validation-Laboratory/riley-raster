@@ -864,6 +864,8 @@ pub fn RasterPass(
                 }
             }
 
+            var seed_state = newton.NewtonSeedState{};
+
             var subpx_y: f64 = rast_bounds.y_min_f + subpx_domain.offset;
             for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
                 const row_offset = scratch_y * subpx_domain.tile_size;
@@ -899,7 +901,26 @@ pub fn RasterPass(
                     }
 
                     ctx_report.recordSolverCalls(1);
-                    const result = if (comptime Geometry.solver_kind == .inv_bi)
+                    const result = if (comptime Geometry == geomkerns.Quad4IBIKernel()) blk: {
+                        const base_seed = newton.NewtonSeed{
+                            .xi = 0.5,
+                            .eta = 0.5,
+                        };
+                        const selected_seed = newton.selectSeed(
+                            .last_converged,
+                            base_seed,
+                            seed_state,
+                        );
+                        break :blk geomkerns.Quad4NewtonKernel().solveWeightsNewton(
+                            nodes_coords,
+                            subpx_x,
+                            subpx_y,
+                            subpx_domain.x_off,
+                            subpx_domain.y_off,
+                            selected_seed.xi,
+                            selected_seed.eta,
+                        );
+                    } else if (comptime Geometry.solver_kind == .inv_bi)
                         Geometry.solveWeightsInvBi(
                             subpx_x,
                             subpx_y,
@@ -914,9 +935,17 @@ pub fn RasterPass(
                             subpx_y,
                             inv_elem_area,
                         );
+
                     ctx_report.recordSolverIters(result.iters);
 
                     if (result.weights) |weights| {
+                        if (comptime Geometry == geomkerns.Quad4IBIKernel()) {
+                            newton.updateSeedState(
+                                &seed_state,
+                                result.xi_out,
+                                result.eta_out,
+                            );
+                        }
                         const inv_z = Geometry.calcInvZ(nodes_coords, weights);
                         const scratch_idx = row_offset + scratch_x;
 

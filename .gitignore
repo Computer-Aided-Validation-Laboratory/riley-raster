@@ -24,6 +24,7 @@ examples*/
 
 scripts/hull-diags/
 temp-*/
+temp/
 
 *.ppm
 *.bmp

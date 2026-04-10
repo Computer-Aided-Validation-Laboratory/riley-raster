@@ -374,8 +374,8 @@ pub fn Tri6Kernel() type {
 pub fn Quad4IBIKernel() type {
     return struct {
         pub const nodes_num = 4;
-        pub const hull_nodes_num = 0;
-        pub const tess_triangles_num = 0;
+        pub const hull_nodes_num = 4;
+        pub const tess_triangles_num = 2;
         pub const coord_space = .clip_px_leng;
         pub const raster_mode = .direct;
         pub const solver_kind = .inv_bi;
