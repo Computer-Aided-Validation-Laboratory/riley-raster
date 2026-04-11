@@ -32,10 +32,10 @@ const newton = @import("newton.zig");
 const shadekerns = @import("shaderkernels.zig");
 
 const SubpxSimdChunk = struct {
-    scratch_x: [S]usize,
-    scratch_y: [S]usize,
-    px: [S]f64,
-    py: [S]f64,
+    scratch_x_u: [S]usize,
+    scratch_y_u: [S]usize,
+    px_f: [S]f64,
+    py_f: [S]f64,
     seed_xi: [S]f64,
     seed_eta: [S]f64,
     count: usize,
@@ -63,11 +63,10 @@ pub fn initSubpxScratch(
     fields_num: u8,
     subpx_tile_size: usize,
 ) !SubpxScratchBuffers {
-    
     const subpx_tile_total = subpx_tile_size * subpx_tile_size;
-    const subpx_tile_total_padded = (subpx_tile_total + (S-1)) & ~@as(usize, (S-1));
+    const subpx_tile_total_padded = (subpx_tile_total + (S - 1)) & ~@as(usize, (S - 1));
     const alignment = std.mem.Alignment.@"64";
-    
+
     const subpx_inv_z_scratch = try arena_alloc.alignedAlloc(
         f64,
         alignment,
@@ -104,7 +103,7 @@ pub fn initSubpxScratch(
     );
 
     const subpx_simd_chunk_count =
-        @divFloor(subpx_tile_total_padded + (S-1), S) + 1;
+        @divFloor(subpx_tile_total_padded + (S - 1), S) + 1;
     const subpx_simd_chunks = try arena_alloc.alloc(
         SubpxSimdChunk,
         subpx_simd_chunk_count,
@@ -260,6 +259,10 @@ pub fn RasterPass(
             return shaded_px;
         }
 
+        /// We run our visibility checks S wide SIMD over sub-pixels. For interpolated nodal
+        /// shading we stay S wide over sub-pixels but for texture shading we switch to 
+        /// inner-SIMD within sub-pixels. This is because the texel fetches for cubic and 
+        /// quintic interpolation of the texture S wide made memory fetches the bottleneck.
         fn rasterIncrementalSIMD(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
@@ -267,7 +270,7 @@ pub fn RasterPass(
             targ_overlap: common.OverlapTarget,
             subpx_domain: SubpxDomain,
             rast_bounds: RasterBounds,
-            original_start_x: usize,
+            orig_start_x_u: usize,
             nodes_coords: Vec3Slices(f64),
             shader: anytype,
             shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
@@ -287,63 +290,77 @@ pub fn RasterPass(
                 nodes_coords.y[2],
             );
 
-            const v_nodes_inv_z = Geometry.getSIMDConstants(nodes_coords);
-            const v_steps = Geometry.getSIMDSteps(nodes_coords, inv_area, subpx_domain.step,);
+            // Init our sub-pixel step wise derivatives for weights and their initial
+            // values, also init vector constants
+            const v_nodes_inv_z: [N]@Vector(S, f64) =
+                Geometry.getSIMDConstants(nodes_coords);
+            const v_steps: geomkerns.TriWeightStepSIMD(N) = Geometry.getSIMDSteps(
+                nodes_coords,
+                inv_area,
+                subpx_domain.step,
+            );
 
-            const start_x = rast_bounds.x_min_f + subpx_domain.offset;
-            const start_y = rast_bounds.y_min_f + subpx_domain.offset;
+            const start_x_f = rast_bounds.x_min_f + subpx_domain.offset;
+            const start_y_f = rast_bounds.y_min_f + subpx_domain.offset;
             const weights_start = Geometry.getWeightsAt(
                 nodes_coords,
-                start_x,
-                start_y,
+                start_x_f,
+                start_y_f,
                 inv_area,
             );
 
             var v_weights_row: [N]@Vector(S, f64) = undefined;
-            inline for (0..N) |ii| {
-                v_weights_row[ii] = @splat(weights_start[ii]);
-                v_weights_row[ii] += v_steps.v_dx_lane_offset[ii];
+            inline for (0..N) |ss| {
+                v_weights_row[ss] = @splat(weights_start[ss]);
+                v_weights_row[ss] += v_steps.v_dx_lane_offset[ss];
             }
 
             const edge_tol = tol.edge.simd_raster_weight_inclusion;
             const v_edge_tol: @Vector(S, f64) = @splat(-edge_tol);
 
-            for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
-                const row_offset = scratch_y * subpx_domain.tile_size;
+            // Step row by row along y
+            for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
+                const row_offset = scratch_y_u * subpx_domain.tile_size;
                 var v_weights = v_weights_row;
 
-                var scratch_x = rast_bounds.start_x_u;
-                while (scratch_x < rast_bounds.end_x_u) : (scratch_x += S) {
+                // Step S width along the x row of subpixels in scratch
+                var scratch_x_u = rast_bounds.start_x_u;
+                while (scratch_x_u < rast_bounds.end_x_u) : (scratch_x_u += S) {
                     const v_lane_idx: @Vector(S, usize) = std.simd.iota(usize, S);
-                    const v_scratch_x: @Vector(S, usize) = @splat(scratch_x);
+                    const v_scratch_x_u: @Vector(S, usize) = @splat(scratch_x_u);
 
                     // Masking for when we hit the end of an X row of subpixels and it is
-                    // not divisible by S
-                    const v_x = v_scratch_x + v_lane_idx;
-                    const v_start = @as(@Vector(S, usize), @splat(original_start_x));
-                    const v_end = @as(@Vector(S, usize), @splat(rast_bounds.end_x_u));
-                    const v_x_mask = (v_x >= v_start) & (v_x < v_end);
+                    // not divisible by S, mask off inactive lanes that overflow.
+                    const v_subpx_x_u = v_scratch_x_u + v_lane_idx;
+                    const v_orig_start_x_u: @Vector(S, usize) =
+                        @splat(orig_start_x_u);
+                    const v_end_x_u: @Vector(S, usize) =
+                        @splat(rast_bounds.end_x_u);
+                    const v_x_mask =
+                        (v_subpx_x_u >= v_orig_start_x_u) &
+                        (v_subpx_x_u < v_end_x_u);
                     var v_mask_active: @Vector(S, bool) = v_x_mask;
-                    inline for (0..N) |ii| {
+                    inline for (0..N) |ss| {
                         v_mask_active =
-                            v_mask_active & (v_weights[ii] >= v_edge_tol);
+                            v_mask_active & (v_weights[ss] >= v_edge_tol);
                     }
 
                     if (@reduce(.Or, v_mask_active)) {
                         var v_inv_z: @Vector(S, f64) = @splat(0.0);
-                        inline for (0..N) |ii| {
-                            v_inv_z += v_weights[ii] * v_nodes_inv_z[ii];
+                        inline for (0..N) |ss| {
+                            v_inv_z += v_weights[ss] * v_nodes_inv_z[ss];
                         }
 
-                        const scratch_idx = row_offset + scratch_x;
+                        const scratch_idx = row_offset + scratch_x_u;
                         const ptr_old_inv_z: *align(8) const @Vector(S, f64) =
                             @ptrCast(&subpx_scratch.inv_z[scratch_idx]);
                         const v_old_inv_z = ptr_old_inv_z.*;
 
+                        // Depth visibility check on active lanes only
                         const v_depth_mask =
                             v_mask_active & (v_inv_z >= v_old_inv_z);
-
-                        if (@reduce(.Or, v_depth_mask)) {
+                        const has_depth_hit = @reduce(.Or, v_depth_mask);
+                        if (has_depth_hit) {
                             const ptr_new_inv_z: *align(8) @Vector(S, f64) =
                                 @ptrCast(&subpx_scratch.inv_z[scratch_idx]);
                             const v_new_inv_z = @select(
@@ -353,21 +370,36 @@ pub fn RasterPass(
                                 v_old_inv_z,
                             );
                             ptr_new_inv_z.* = v_new_inv_z;
-
-                            const depth_mask_arr: [S]bool = v_depth_mask;
+                            const v_subpx_z = @as(@Vector(S, f64), @splat(1.0)) / v_inv_z;
+                            
+                            // Record the x sub-pixel limits we have actually shaded to 
+                            // reduce the range of nested loops we evaluate to resolve the
+                            // sub-pixel anti-aliasing.
+                            var lane_depth_mask: [S]bool = undefined;
+                            inline for (0..S) |ll| {
+                                lane_depth_mask[ll] = v_depth_mask[ll];
+                            }
                             for (0..S) |ll| {
-                                if (depth_mask_arr[ll]) {
-                                    const touched_x = scratch_x + ll;
-                                    if (touched_x < subpx_scratch.touched_min_x[scratch_y]) {
-                                        subpx_scratch.touched_min_x[scratch_y] = touched_x;
+                                if (lane_depth_mask[ll]) {
+                                    const touched_x_u = scratch_x_u + ll;
+                                    if (touched_x_u <
+                                        subpx_scratch.touched_min_x[scratch_y_u])
+                                    {
+                                        subpx_scratch.touched_min_x[scratch_y_u] =
+                                            touched_x_u;
                                     }
-                                    if (touched_x > subpx_scratch.touched_max_x[scratch_y]) {
-                                        subpx_scratch.touched_max_x[scratch_y] = touched_x;
+                                    if (touched_x_u >
+                                        subpx_scratch.touched_max_x[scratch_y_u])
+                                    {
+                                        subpx_scratch.touched_max_x[scratch_y_u] =
+                                            touched_x_u;
                                     }
                                 }
                             }
 
-                            const v_subpx_z = @as(@Vector(S, f64), @splat(1.0)) / v_inv_z;
+                            
+                            // Count the number of shaded pixels for performance analysis
+                            // TODO: should we comptime remove this with report = .off?
                             const v_hit_one: @Vector(S, u8) = @splat(1);
                             const v_hit_zero: @Vector(S, u8) = @splat(0);
                             const v_hit_count = @select(
@@ -404,17 +436,20 @@ pub fn RasterPass(
                             );
                         }
                     }
-                    inline for (0..N) |ii| {
-                        v_weights[ii] += v_steps.v_dx_step[ii];
+                    inline for (0..N) |ss| {
+                        v_weights[ss] += v_steps.v_dx_step[ss];
                     }
                 }
-                inline for (0..N) |ii| {
-                    v_weights_row[ii] += v_steps.v_dy_step[ii];
+                inline for (0..N) |ss| {
+                    v_weights_row[ss] += v_steps.v_dy_step[ss];
                 }
             }
             return shaded_px;
         }
 
+        /// To use our S wide SIMD effectively for Newton we need to process in multiple 
+        /// passes to fill the S lanes where possible. Pass 1: Vectorised coarse in/out with
+        /// our hull tessellation. Pass 2: 
         fn rasterNewtonSIMD(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
@@ -423,7 +458,7 @@ pub fn RasterPass(
             mesh_in: *const rops.MeshInput,
             subpx_domain: SubpxDomain,
             rast_bounds: RasterBounds,
-            original_start_x: usize,
+            orig_start_x_u: usize,
             nodes_coords: Vec3Slices(f64),
             shader: anytype,
             shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
@@ -435,6 +470,7 @@ pub fn RasterPass(
             std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
             const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
 
+            // Hoist our node z and inverse z so we only need to do this once
             var nodes_inv_z: [N]f64 = undefined;
             var v_nodes_z: [N]@Vector(S, f64) = undefined;
             var v_nodes_inv_z_simd: [N]@Vector(S, f64) = undefined;
@@ -444,6 +480,8 @@ pub fn RasterPass(
                 v_nodes_inv_z_simd[nn] = @splat(nodes_inv_z[nn]);
             }
 
+            // Use our hull to get the triangular tessellation we will use for our coarse
+            // in/out check to avoid the Newton solver where possible.
             const raster_hull = mesh_in.hull orelse
                 @panic("rasterNewtonSIMD requires mesh hull data");
             const hx = raster_hull.getSlice(
@@ -462,8 +500,10 @@ pub fn RasterPass(
                 hy,
             );
 
-            for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
-                const row_offset = scratch_y * subpx_domain.tile_size;
+            // Mask off our buffer based on the tile/elem overlap bounds to avoid needless
+            // processing 
+            for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
+                const row_offset = scratch_y_u * subpx_domain.tile_size;
                 const mask_start = row_offset + rast_bounds.start_x_u;
                 const mask_end = row_offset + rast_bounds.end_x_u;
                 @memset(
@@ -475,62 +515,67 @@ pub fn RasterPass(
             var subpx_simd_sample_count: usize = 0;
             const v_lane_idx: @Vector(S, usize) = std.simd.iota(usize, S);
 
-            const v_px_min: @Vector(S, f64) =
+            const v_subpx_min_x_f: @Vector(S, f64) =
                 @splat(@as(f64, @floatFromInt(targ_overlap.tile.x_px_min)));
-            const v_step: @Vector(S, f64) = @splat(subpx_domain.step);
+            const v_step_f: @Vector(S, f64) = @splat(subpx_domain.step);
             const v_splat_half: @Vector(S, f64) = @splat(0.5);
-            const v_original_start_x: @Vector(S, usize) = @splat(original_start_x);
-            const v_bounds_end_x: @Vector(S, usize) = @splat(rast_bounds.end_x_u);
+            const v_orig_start_x_u: @Vector(S, usize) = @splat(orig_start_x_u);
+            const v_bounds_end_x_u: @Vector(S, usize) =
+                @splat(rast_bounds.end_x_u);
 
             // Pass 1: Vectorized Coarse In/Out
-            for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
-                const subpx_y = @as(f64, @floatFromInt(targ_overlap.tile.y_px_min)) +
-                    (@as(f64, @floatFromInt(scratch_y)) + 0.5) * subpx_domain.step;
-                var scratch_x = rast_bounds.start_x_u;
+            for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
+                const scratch_y_f: f64 = @as(f64, @floatFromInt(scratch_y_u));
+                const subpx_y_f: f64 =
+                    @as(f64, @floatFromInt(targ_overlap.tile.y_px_min)) +
+                    (scratch_y_f + 0.5) * subpx_domain.step;
 
-                while (scratch_x < rast_bounds.end_x_u) : (scratch_x += S) {
-                    const v_scratch_x: @Vector(S, usize) = @splat(scratch_x);
-                    const v_x_mask = (v_scratch_x + v_lane_idx >= v_original_start_x) &
-                        (v_scratch_x + v_lane_idx < v_bounds_end_x);
+                // Step S wide along the row 
+                var scratch_x_u: usize = rast_bounds.start_x_u;
+                while (scratch_x_u < rast_bounds.end_x_u) : (scratch_x_u += S) {
+                    const v_scratch_x_u: @Vector(S, usize) = @splat(scratch_x_u);
+                    const v_subpx_x_u = v_scratch_x_u + v_lane_idx;
+                    const v_x_mask =
+                        (v_subpx_x_u >= v_orig_start_x_u) &
+                        (v_subpx_x_u < v_bounds_end_x_u);
 
-                    const v_subpx_x = v_px_min +
-                        (@as(@Vector(S, f64), @floatFromInt(v_scratch_x + v_lane_idx)) + v_splat_half) *
-                            v_step;
-                    const v_subpx_y: @Vector(S, f64) = @splat(subpx_y);
+                    const v_subpx_x_lane_f: @Vector(S, f64) =
+                        @floatFromInt(v_subpx_x_u);
+                    const v_subpx_x_off_f =
+                        (v_subpx_x_lane_f + v_splat_half) * v_step_f;
+                    const v_subpx_x_f = v_subpx_min_x_f + v_subpx_x_off_f;
+                    const v_subpx_y_f: @Vector(S, f64) = @splat(subpx_y_f);
 
-                    const v_hull_res = element_tess.isInSIMD(v_subpx_x, v_subpx_y);
-                    const tess_check_num: u64 = @intCast(@reduce(
-                        .Add,
-                        @as(
-                            @Vector(S, u8),
-                            @select(
-                                u8,
-                                v_x_mask,
-                                @as(@Vector(S, u8), @splat(1)),
-                                @as(@Vector(S, u8), @splat(0)),
-                            ),
-                        ),
-                    ));
+                    const v_hull_res = element_tess.isInSIMD(
+                        v_subpx_x_f,
+                        v_subpx_y_f,
+                    );
+                    const v_mask_one_u8: @Vector(S, u8) = @splat(1);
+                    const v_mask_zero_u8: @Vector(S, u8) = @splat(0);
+                    const v_tess_check_u8 = @select(
+                        u8,
+                        v_x_mask,
+                        v_mask_one_u8,
+                        v_mask_zero_u8,
+                    );
+                    const tess_check_num: u64 =
+                        @intCast(@reduce(.Add, v_tess_check_u8));
                     ctx_report.recordTessChecks(tess_check_num);
                     const v_mask_active = v_x_mask & v_hull_res.isIn;
-                    const tess_pass_num: u64 = @intCast(@reduce(
-                        .Add,
-                        @as(
-                            @Vector(S, u8),
-                            @select(
-                                u8,
-                                v_mask_active,
-                                @as(@Vector(S, u8), @splat(1)),
-                                @as(@Vector(S, u8), @splat(0)),
-                            ),
-                        ),
-                    ));
+                    const v_tess_pass_u8 = @select(
+                        u8,
+                        v_mask_active,
+                        v_mask_one_u8,
+                        v_mask_zero_u8,
+                    );
+                    const tess_pass_num: u64 =
+                        @intCast(@reduce(.Add, v_tess_pass_u8));
                     ctx_report.recordTessPasses(tess_pass_num);
 
                     if (@reduce(.Or, v_mask_active)) {
                         const mask_arr: [S]bool = v_mask_active;
-                        const x_arr: [S]f64 = v_subpx_x;
-                        const y_arr: [S]f64 = v_subpx_y;
+                        const x_arr_f: [S]f64 = v_subpx_x_f;
+                        const y_arr_f: [S]f64 = v_subpx_y_f;
                         const init_seed = Geometry.initSeedSIMD(.{
                             .xi = v_hull_res.seed_xi,
                             .eta = v_hull_res.seed_eta,
@@ -551,8 +596,8 @@ pub fn RasterPass(
                                     const seed_quality = newton.evaluateSeedQuality(
                                         Geometry.nodes_num,
                                         Geometry.domainViolation,
-                                        x_arr[jj] - subpx_domain.x_off,
-                                        y_arr[jj] - subpx_domain.y_off,
+                                        x_arr_f[jj] - subpx_domain.x_off,
+                                        y_arr_f[jj] - subpx_domain.y_off,
                                         nodes_coords.x,
                                         nodes_coords.y,
                                         nodes_coords.z,
@@ -570,24 +615,24 @@ pub fn RasterPass(
 
                                 if (lane_idx == 0) {
                                     subpx_scratch.simd_chunks[chunk_idx] = .{
-                                        .scratch_x = [_]usize{0} ** S,
-                                        .scratch_y = [_]usize{0} ** S,
-                                        .px = [_]f64{0.0} ** S,
-                                        .py = [_]f64{0.0} ** S,
+                                        .scratch_x_u = [_]usize{0} ** S,
+                                        .scratch_y_u = [_]usize{0} ** S,
+                                        .px_f = [_]f64{0.0} ** S,
+                                        .py_f = [_]f64{0.0} ** S,
                                         .seed_xi = [_]f64{0.0} ** S,
                                         .seed_eta = [_]f64{0.0} ** S,
                                         .count = 0,
                                     };
                                 }
 
-                                subpx_scratch.simd_chunks[chunk_idx].scratch_x[lane_idx] =
-                                    scratch_x + jj;
-                                subpx_scratch.simd_chunks[chunk_idx].scratch_y[lane_idx] =
-                                    scratch_y;
-                                subpx_scratch.simd_chunks[chunk_idx].px[lane_idx] =
-                                    x_arr[jj];
-                                subpx_scratch.simd_chunks[chunk_idx].py[lane_idx] =
-                                    y_arr[jj];
+                                subpx_scratch.simd_chunks[chunk_idx].scratch_x_u[lane_idx] =
+                                    scratch_x_u + jj;
+                                subpx_scratch.simd_chunks[chunk_idx].scratch_y_u[lane_idx] =
+                                    scratch_y_u;
+                                subpx_scratch.simd_chunks[chunk_idx].px_f[lane_idx] =
+                                    x_arr_f[jj];
+                                subpx_scratch.simd_chunks[chunk_idx].py_f[lane_idx] =
+                                    y_arr_f[jj];
                                 subpx_scratch.simd_chunks[chunk_idx].seed_xi[lane_idx] =
                                     seed_xi;
                                 subpx_scratch.simd_chunks[chunk_idx].seed_eta[lane_idx] =
@@ -623,8 +668,8 @@ pub fn RasterPass(
                     subpx_simd_chunk.seed_eta[0..subpx_simd_chunk.count],
                 );
 
-                const v_target_x: @Vector(S, f64) = subpx_simd_chunk.px;
-                const v_target_y: @Vector(S, f64) = subpx_simd_chunk.py;
+                const v_target_x_f: @Vector(S, f64) = subpx_simd_chunk.px_f;
+                const v_target_y_f: @Vector(S, f64) = subpx_simd_chunk.py_f;
                 const v_xi_seed: @Vector(S, f64) = subpx_simd_chunk.seed_xi;
                 const v_eta_seed: @Vector(S, f64) = subpx_simd_chunk.seed_eta;
                 const v_chunk_mask: @Vector(S, bool) = chunk_mask_arr;
@@ -632,8 +677,8 @@ pub fn RasterPass(
                 ctx_report.recordSolverCalls(subpx_simd_chunk.count);
                 const result = Geometry.solveWeightsNewtonSIMD(
                     nodes_coords,
-                    v_target_x,
-                    v_target_y,
+                    v_target_x_f,
+                    v_target_y_f,
                     v_xi_seed,
                     v_eta_seed,
                     subpx_domain.x_off,
@@ -661,8 +706,9 @@ pub fn RasterPass(
                     for (0..S) |jj| {
                         if (conv_mask_arr[jj]) {
                             const scratch_idx =
-                                subpx_simd_chunk.scratch_y[jj] * subpx_domain.tile_size +
-                                subpx_simd_chunk.scratch_x[jj];
+                                subpx_simd_chunk.scratch_y_u[jj] *
+                                subpx_domain.tile_size +
+                                subpx_simd_chunk.scratch_x_u[jj];
                             subpx_scratch.xi[scratch_idx] = xi_out_arr[jj];
                             subpx_scratch.eta[scratch_idx] = eta_out_arr[jj];
                             subpx_scratch.mask[scratch_idx] = true;
@@ -694,11 +740,11 @@ pub fn RasterPass(
             }
 
             // Pass 3: Spatially Grouped SIMD Shading
-            for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
-                const row_offset = scratch_y * subpx_domain.tile_size;
-                var scratch_x = rast_bounds.start_x_u;
-                while (scratch_x < rast_bounds.end_x_u) : (scratch_x += 8) {
-                    const scratch_idx = row_offset + scratch_x;
+            for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
+                const row_offset = scratch_y_u * subpx_domain.tile_size;
+                var scratch_x_u = rast_bounds.start_x_u;
+                while (scratch_x_u < rast_bounds.end_x_u) : (scratch_x_u += 8) {
+                    const scratch_idx = row_offset + scratch_x_u;
                     var mask_arr: [S]bool = undefined;
                     @memcpy(
                         &mask_arr,
@@ -706,10 +752,10 @@ pub fn RasterPass(
                     );
                     const v_mask_full: @Vector(S, bool) = mask_arr;
 
-                    const v_scratch_x: @Vector(S, usize) = @splat(scratch_x);
-                    const v_x_mask = (v_scratch_x + v_lane_idx >=
-                        @as(@Vector(S, usize), @splat(original_start_x))) &
-                        (v_scratch_x + v_lane_idx <
+                    const v_scratch_x_u: @Vector(S, usize) = @splat(scratch_x_u);
+                    const v_x_mask = (v_scratch_x_u + v_lane_idx >=
+                        @as(@Vector(S, usize), @splat(orig_start_x_u))) &
+                        (v_scratch_x_u + v_lane_idx <
                             @as(@Vector(S, usize), @splat(rast_bounds.end_x_u)));
 
                     const v_mask_active = v_mask_full & v_x_mask;
@@ -749,7 +795,8 @@ pub fn RasterPass(
                         const v_depth_mask =
                             v_mask_active & (v_inv_z >= v_old_inv_z);
 
-                        if (@reduce(.Or, v_depth_mask)) {
+                        const has_depth_hit = @reduce(.Or, v_depth_mask);
+                        if (has_depth_hit) {
                             const v_new_inv_z = @select(
                                 f64,
                                 v_depth_mask,
@@ -760,15 +807,24 @@ pub fn RasterPass(
                                 @ptrCast(&subpx_scratch.inv_z[scratch_idx]);
                             ptr_new_inv_z.* = v_new_inv_z;
 
-                            const depth_mask_arr: [S]bool = v_depth_mask;
+                            var lane_depth_mask: [S]bool = undefined;
+                            inline for (0..S) |ll| {
+                                lane_depth_mask[ll] = v_depth_mask[ll];
+                            }
                             for (0..S) |ll| {
-                                if (depth_mask_arr[ll]) {
-                                    const touched_x = scratch_x + ll;
-                                    if (touched_x < subpx_scratch.touched_min_x[scratch_y]) {
-                                        subpx_scratch.touched_min_x[scratch_y] = touched_x;
+                                if (lane_depth_mask[ll]) {
+                                    const touched_x_u = scratch_x_u + ll;
+                                    if (touched_x_u <
+                                        subpx_scratch.touched_min_x[scratch_y_u])
+                                    {
+                                        subpx_scratch.touched_min_x[scratch_y_u] =
+                                            touched_x_u;
                                     }
-                                    if (touched_x > subpx_scratch.touched_max_x[scratch_y]) {
-                                        subpx_scratch.touched_max_x[scratch_y] = touched_x;
+                                    if (touched_x_u >
+                                        subpx_scratch.touched_max_x[scratch_y_u])
+                                    {
+                                        subpx_scratch.touched_max_x[scratch_y_u] =
+                                            touched_x_u;
                                     }
                                 }
                             }
@@ -794,9 +850,9 @@ pub fn RasterPass(
                                 .actual_fields = fields_num,
                                 .scratch_idx = scratch_idx,
                                 .global_subx = targ_overlap.tile.x_px_min * sub_samp +
-                                    scratch_x,
+                                    scratch_x_u,
                                 .global_suby = targ_overlap.tile.y_px_min * sub_samp +
-                                    scratch_y,
+                                    scratch_y_u,
                                 .shader_buf = shader_buf,
                                 .v_mask_active = v_depth_mask,
                             };
@@ -873,18 +929,23 @@ pub fn RasterPass(
                 }
             }
 
-            var subpx_y: f64 = rast_bounds.y_min_f + subpx_domain.offset;
-            for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
-                const row_offset = scratch_y * subpx_domain.tile_size;
-                var subpx_x: f64 = rast_bounds.x_min_f + subpx_domain.offset;
+            var subpx_y_f: f64 = rast_bounds.y_min_f + subpx_domain.offset;
+            for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
+                const row_offset = scratch_y_u * subpx_domain.tile_size;
+                var subpx_x_f: f64 = rast_bounds.x_min_f + subpx_domain.offset;
 
-                for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x| {
-                    const global_subx = targ_overlap.tile.x_px_min * sub_samp + scratch_x;
-                    const global_suby = targ_overlap.tile.y_px_min * sub_samp + scratch_y;
+                for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x_u| {
+                    const global_subx = targ_overlap.tile.x_px_min *
+                        sub_samp + scratch_x_u;
+                    const global_suby = targ_overlap.tile.y_px_min *
+                        sub_samp + scratch_y_u;
 
                     if (comptime Geometry.hull_nodes_num > 0) {
                         ctx_report.recordTessChecks(1);
-                        const tess_res = element_tess.isInScalar(subpx_x, subpx_y);
+                        const tess_res = element_tess.isInScalar(
+                            subpx_x_f,
+                            subpx_y_f,
+                        );
                         if (tess_res.is_in) {
                             ctx_report.recordTessPasses(1);
                         }
@@ -896,7 +957,7 @@ pub fn RasterPass(
                             );
                         }
                         if (!tess_res.is_in) {
-                            subpx_x += subpx_domain.step;
+                            subpx_x_f += subpx_domain.step;
                             continue;
                         }
                     } else if (comptime report_mode == .full_stats) {
@@ -910,8 +971,8 @@ pub fn RasterPass(
                     ctx_report.recordSolverCalls(1);
                     const result = if (comptime Geometry.solver_kind == .inv_bi)
                         Geometry.solveWeightsInvBi(
-                            subpx_x,
-                            subpx_y,
+                            subpx_x_f,
+                            subpx_y_f,
                             subpx_domain.x_off,
                             subpx_domain.y_off,
                             bilinear_params,
@@ -919,8 +980,8 @@ pub fn RasterPass(
                     else
                         Geometry.solveWeightsHyperb(
                             nodes_coords,
-                            subpx_x,
-                            subpx_y,
+                            subpx_x_f,
+                            subpx_y_f,
                             inv_elem_area,
                         );
 
@@ -928,15 +989,21 @@ pub fn RasterPass(
 
                     if (result.weights) |weights| {
                         const inv_z = Geometry.calcInvZ(nodes_coords, weights);
-                        const scratch_idx = row_offset + scratch_x;
+                        const scratch_idx = row_offset + scratch_x_u;
 
                         if (inv_z >= subpx_scratch.inv_z[scratch_idx]) {
                             subpx_scratch.inv_z[scratch_idx] = inv_z;
-                            if (scratch_x < subpx_scratch.touched_min_x[scratch_y]) {
-                                subpx_scratch.touched_min_x[scratch_y] = scratch_x;
+                            if (scratch_x_u <
+                                subpx_scratch.touched_min_x[scratch_y_u])
+                            {
+                                subpx_scratch.touched_min_x[scratch_y_u] =
+                                    scratch_x_u;
                             }
-                            if (scratch_x > subpx_scratch.touched_max_x[scratch_y]) {
-                                subpx_scratch.touched_max_x[scratch_y] = scratch_x;
+                            if (scratch_x_u >
+                                subpx_scratch.touched_max_x[scratch_y_u])
+                            {
+                                subpx_scratch.touched_max_x[scratch_y_u] =
+                                    scratch_x_u;
                             }
                             const subpx_z = 1.0 / inv_z;
                             shaded_px += 1;
@@ -948,8 +1015,10 @@ pub fn RasterPass(
                                     result.iters,
                                 );
                                 ctx_report.recordPixelOccupancy(
-                                    targ_overlap.tile.x_px_min + scratch_x / sub_samp,
-                                    targ_overlap.tile.y_px_min + scratch_y / sub_samp,
+                                    targ_overlap.tile.x_px_min +
+                                        scratch_x_u / sub_samp,
+                                    targ_overlap.tile.y_px_min +
+                                        scratch_y_u / sub_samp,
                                 );
                             }
 
@@ -981,9 +1050,9 @@ pub fn RasterPass(
                     } else {
                         if (result.iters > 0) ctx_report.recordSolverDiverged();
                     }
-                    subpx_x += subpx_domain.step;
+                    subpx_x_f += subpx_domain.step;
                 }
-                subpx_y += subpx_domain.step;
+                subpx_y_f += subpx_domain.step;
             }
             return shaded_px;
         }
