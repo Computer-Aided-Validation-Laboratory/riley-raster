@@ -417,6 +417,215 @@ pub fn Quad4IBIKernel() type {
             };
         }
 
+        const Candidate = struct {
+            xi: f64,
+            eta: f64,
+            resid_sq: f64,
+        };
+
+        inline fn buildWeights(xi: f64, eta: f64) [nodes_num]f64 {
+            const v_xi_terms = @Vector(2, f64){ 1.0 - xi, xi };
+            const v_eta_terms = @Vector(2, f64){ 1.0 - eta, eta };
+            return .{
+                v_xi_terms[0] * v_eta_terms[0],
+                v_xi_terms[1] * v_eta_terms[0],
+                v_xi_terms[1] * v_eta_terms[1],
+                v_xi_terms[0] * v_eta_terms[1],
+            };
+        }
+
+        pub inline fn calcInvZInnerSIMD(
+            nodes: Vec3Slices(f64),
+            weights: [nodes_num]f64,
+        ) f64 {
+            const v_weights = @Vector(4, f64){
+                weights[0],
+                weights[1],
+                weights[2],
+                weights[3],
+            };
+            const v_nodes_z = @Vector(4, f64){
+                nodes.z[0],
+                nodes.z[1],
+                nodes.z[2],
+                nodes.z[3],
+            };
+            return 1.0 / @reduce(.Add, v_weights * v_nodes_z);
+        }
+
+        inline fn solveOtherCoordFromXi(
+            xi: f64,
+            a1: f64,
+            a2: f64,
+            a3: f64,
+            a4: f64,
+            b1: f64,
+            b2: f64,
+            b3: f64,
+            b4: f64,
+            denom_tol: f64,
+        ) ?f64 {
+            const denom_x = a3 + (a4 * xi);
+            const denom_y = b3 + (b4 * xi);
+
+            if (@abs(denom_x) > @abs(denom_y)) {
+                if (@abs(denom_x) <= denom_tol) return null;
+                return -((a1 + (a2 * xi)) / denom_x);
+            }
+            if (@abs(denom_y) <= denom_tol) return null;
+            return -((b1 + (b2 * xi)) / denom_y);
+        }
+
+        inline fn solveOtherCoordFromEta(
+            eta: f64,
+            a1: f64,
+            a2: f64,
+            a3: f64,
+            a4: f64,
+            b1: f64,
+            b2: f64,
+            b3: f64,
+            b4: f64,
+            denom_tol: f64,
+        ) ?f64 {
+            const denom_x = a2 + (a4 * eta);
+            const denom_y = b2 + (b4 * eta);
+
+            if (@abs(denom_x) > @abs(denom_y)) {
+                if (@abs(denom_x) <= denom_tol) return null;
+                return -((a1 + (a3 * eta)) / denom_x);
+            }
+            if (@abs(denom_y) <= denom_tol) return null;
+            return -((b1 + (b3 * eta)) / denom_y);
+        }
+
+        inline fn rootsFromQuadratic(
+            a_coeff: f64,
+            b_coeff: f64,
+            c_coeff: f64,
+            zero_tol: f64,
+        ) struct { count: u8, roots: [2]f64 } {
+            var roots = [2]f64{ 0.0, 0.0 };
+
+            if (@abs(a_coeff) < zero_tol) {
+                if (@abs(b_coeff) < zero_tol) {
+                    return .{ .count = 0, .roots = roots };
+                }
+                roots[0] = -c_coeff / b_coeff;
+                return .{ .count = 1, .roots = roots };
+            }
+
+            var disc = (b_coeff * b_coeff) - (4.0 * a_coeff * c_coeff);
+            if (disc < -zero_tol) {
+                return .{ .count = 0, .roots = roots };
+            }
+            if (disc < 0.0) disc = 0.0;
+
+            const sqrt_disc = @sqrt(disc);
+            if (sqrt_disc < zero_tol) {
+                roots[0] = -0.5 * b_coeff / a_coeff;
+                return .{ .count = 1, .roots = roots };
+            }
+
+            const q_term = -0.5 * (b_coeff +
+                (if (b_coeff >= 0.0) sqrt_disc else -sqrt_disc));
+
+            if (@abs(q_term) < zero_tol) {
+                roots[0] = (-b_coeff + sqrt_disc) / (2.0 * a_coeff);
+                roots[1] = (-b_coeff - sqrt_disc) / (2.0 * a_coeff);
+                return .{ .count = 2, .roots = roots };
+            }
+
+            roots[0] = q_term / a_coeff;
+            roots[1] = c_coeff / q_term;
+            return .{ .count = 2, .roots = roots };
+        }
+
+        inline fn tryCandidate(
+            best_candidate: *?Candidate,
+            xi: f64,
+            eta: f64,
+            a1: f64,
+            a2: f64,
+            a3: f64,
+            a4: f64,
+            b1: f64,
+            b2: f64,
+            b3: f64,
+            b4: f64,
+            eps: f64,
+        ) void {
+            if (xi < -eps or xi > 1.0 + eps) return;
+            if (eta < -eps or eta > 1.0 + eps) return;
+
+            const resid_x = a1 + (a2 * xi) + (a3 * eta) + (a4 * xi * eta);
+            const resid_y = b1 + (b2 * xi) + (b3 * eta) + (b4 * xi * eta);
+            const resid_sq = (resid_x * resid_x) + (resid_y * resid_y);
+
+            if (best_candidate.*) |curr| {
+                if (resid_sq >= curr.resid_sq) return;
+            }
+            best_candidate.* = .{
+                .xi = xi,
+                .eta = eta,
+                .resid_sq = resid_sq,
+            };
+        }
+
+        inline fn tryCandidatesInnerSIMD(
+            best_candidate: *?Candidate,
+            xi_candidates: [2]f64,
+            eta_candidates: [2]f64,
+            candidate_count: u8,
+            a1: f64,
+            a2: f64,
+            a3: f64,
+            a4: f64,
+            b1: f64,
+            b2: f64,
+            b3: f64,
+            b4: f64,
+            eps: f64,
+        ) void {
+            if (candidate_count == 0) return;
+
+            const v_xi = @Vector(2, f64){ xi_candidates[0], xi_candidates[1] };
+            const v_eta = @Vector(2, f64){ eta_candidates[0], eta_candidates[1] };
+            const v_eps: @Vector(2, f64) = @splat(eps);
+            const v_zero: @Vector(2, f64) = @splat(0.0);
+            const v_one: @Vector(2, f64) = @splat(1.0);
+
+            const v_in_domain = (v_xi >= (v_zero - v_eps)) &
+                (v_xi <= (v_one + v_eps)) &
+                (v_eta >= (v_zero - v_eps)) &
+                (v_eta <= (v_one + v_eps));
+
+            const v_resid_x = @as(@Vector(2, f64), @splat(a1)) +
+                (@as(@Vector(2, f64), @splat(a2)) * v_xi) +
+                (@as(@Vector(2, f64), @splat(a3)) * v_eta) +
+                (@as(@Vector(2, f64), @splat(a4)) * v_xi * v_eta);
+            const v_resid_y = @as(@Vector(2, f64), @splat(b1)) +
+                (@as(@Vector(2, f64), @splat(b2)) * v_xi) +
+                (@as(@Vector(2, f64), @splat(b3)) * v_eta) +
+                (@as(@Vector(2, f64), @splat(b4)) * v_xi * v_eta);
+            const v_resid_sq = (v_resid_x * v_resid_x) + (v_resid_y * v_resid_y);
+
+            const in_domain_arr: [2]bool = v_in_domain;
+            const resid_sq_arr: [2]f64 = v_resid_sq;
+
+            for (0..candidate_count) |nn| {
+                if (!in_domain_arr[nn]) continue;
+                if (best_candidate.*) |curr| {
+                    if (resid_sq_arr[nn] >= curr.resid_sq) continue;
+                }
+                best_candidate.* = .{
+                    .xi = xi_candidates[nn],
+                    .eta = eta_candidates[nn],
+                    .resid_sq = resid_sq_arr[nn],
+                };
+            }
+        }
+
         pub inline fn solveWeightsInvBi(
             pixel_x: f64,
             pixel_y: f64,
@@ -444,141 +653,18 @@ pub fn Quad4IBIKernel() type {
             const p_coeff = (a4 * b2) - (a2 * b4);
             const s_coeff = (a4 * b3) - (a3 * b4);
 
-            const Candidate = struct {
-                xi: f64,
-                eta: f64,
-                resid_sq: f64,
-            };
-
             var best_candidate: ?Candidate = null;
-
-            const tryCandidate = struct {
-                fn run(
-                    best: *?Candidate,
-                    xi: f64,
-                    eta: f64,
-                    ra1: f64,
-                    ra2: f64,
-                    ra3: f64,
-                    ra4: f64,
-                    rb1: f64,
-                    rb2: f64,
-                    rb3: f64,
-                    rb4: f64,
-                    domain_eps: f64,
-                ) void {
-                    if (xi < -domain_eps or xi > 1.0 + domain_eps) return;
-                    if (eta < -domain_eps or eta > 1.0 + domain_eps) return;
-
-                    const resid_x = ra1 + (ra2 * xi) + (ra3 * eta) + (ra4 * xi * eta);
-                    const resid_y = rb1 + (rb2 * xi) + (rb3 * eta) + (rb4 * xi * eta);
-                    const resid_sq = (resid_x * resid_x) + (resid_y * resid_y);
-
-                    if (best.*) |curr| {
-                        if (resid_sq >= curr.resid_sq) return;
-                    }
-                    best.* = .{ .xi = xi, .eta = eta, .resid_sq = resid_sq };
-                }
-            }.run;
-
-            const solveOtherCoordFromXi = struct {
-                fn run(
-                    xi: f64,
-                    ra1: f64,
-                    ra2: f64,
-                    ra3: f64,
-                    ra4: f64,
-                    rb1: f64,
-                    rb2: f64,
-                    rb3: f64,
-                    rb4: f64,
-                    local_denom_tol: f64,
-                ) ?f64 {
-                    const denom_x = ra3 + (ra4 * xi);
-                    const denom_y = rb3 + (rb4 * xi);
-
-                    if (@abs(denom_x) > @abs(denom_y)) {
-                        if (@abs(denom_x) <= local_denom_tol) return null;
-                        return -((ra1 + (ra2 * xi)) / denom_x);
-                    }
-                    if (@abs(denom_y) <= local_denom_tol) return null;
-                    return -((rb1 + (rb2 * xi)) / denom_y);
-                }
-            }.run;
-
-            const solveOtherCoordFromEta = struct {
-                fn run(
-                    eta: f64,
-                    ra1: f64,
-                    ra2: f64,
-                    ra3: f64,
-                    ra4: f64,
-                    rb1: f64,
-                    rb2: f64,
-                    rb3: f64,
-                    rb4: f64,
-                    local_denom_tol: f64,
-                ) ?f64 {
-                    const denom_x = ra2 + (ra4 * eta);
-                    const denom_y = rb2 + (rb4 * eta);
-
-                    if (@abs(denom_x) > @abs(denom_y)) {
-                        if (@abs(denom_x) <= local_denom_tol) return null;
-                        return -((ra1 + (ra3 * eta)) / denom_x);
-                    }
-                    if (@abs(denom_y) <= local_denom_tol) return null;
-                    return -((rb1 + (rb3 * eta)) / denom_y);
-                }
-            }.run;
-
-            const rootsFromQuadratic = struct {
-                fn run(
-                    a_coeff: f64,
-                    b_coeff: f64,
-                    c_coeff: f64,
-                ) struct { count: u8, roots: [2]f64 } {
-                    var roots = [2]f64{ 0.0, 0.0 };
-
-                    if (@abs(a_coeff) < zero_tol) {
-                        if (@abs(b_coeff) < zero_tol) {
-                            return .{ .count = 0, .roots = roots };
-                        }
-                        roots[0] = -c_coeff / b_coeff;
-                        return .{ .count = 1, .roots = roots };
-                    }
-
-                    var disc = (b_coeff * b_coeff) - (4.0 * a_coeff * c_coeff);
-                    if (disc < -zero_tol) {
-                        return .{ .count = 0, .roots = roots };
-                    }
-                    if (disc < 0.0) disc = 0.0;
-
-                    const sqrt_disc = @sqrt(disc);
-                    if (sqrt_disc < zero_tol) {
-                        roots[0] = -0.5 * b_coeff / a_coeff;
-                        return .{ .count = 1, .roots = roots };
-                    }
-
-                    const q_term = -0.5 * (b_coeff +
-                        (if (b_coeff >= 0.0) sqrt_disc else -sqrt_disc));
-
-                    if (@abs(q_term) < zero_tol) {
-                        roots[0] = (-b_coeff + sqrt_disc) / (2.0 * a_coeff);
-                        roots[1] = (-b_coeff - sqrt_disc) / (2.0 * a_coeff);
-                        return .{ .count = 2, .roots = roots };
-                    }
-
-                    roots[0] = q_term / a_coeff;
-                    roots[1] = c_coeff / q_term;
-                    return .{ .count = 2, .roots = roots };
-                }
-            }.run;
 
             if (@abs(p_coeff) > zero_tol or @abs(s_coeff) > zero_tol) {
                 if (@abs(s_coeff) < @abs(p_coeff)) {
                     const q_coeff = (a4 * b1) - (a1 * b4) + (a3 * b2) - (a2 * b3);
                     const r_coeff = (a3 * b1) - (a1 * b3);
-                    const roots = rootsFromQuadratic(p_coeff, q_coeff, r_coeff);
+                    const roots = rootsFromQuadratic(
+                        p_coeff,
+                        q_coeff,
+                        r_coeff,
+                        zero_tol,
+                    );
 
                     for (0..roots.count) |ii| {
                         const xi = roots.roots[ii];
@@ -613,7 +699,12 @@ pub fn Quad4IBIKernel() type {
                 } else {
                     const t_coeff = (a4 * b1) - (a1 * b4) - (a3 * b2) + (a2 * b3);
                     const u_coeff = (a2 * b1) - (a1 * b2);
-                    const roots = rootsFromQuadratic(s_coeff, t_coeff, u_coeff);
+                    const roots = rootsFromQuadratic(
+                        s_coeff,
+                        t_coeff,
+                        u_coeff,
+                        zero_tol,
+                    );
 
                     for (0..roots.count) |ii| {
                         const eta = roots.roots[ii];
@@ -856,12 +947,361 @@ pub fn Quad4IBIKernel() type {
 
             if (best_candidate) |candidate| {
                 return .{
-                    .weights = [_]f64{
-                        (1.0 - candidate.xi) * (1.0 - candidate.eta),
-                        candidate.xi * (1.0 - candidate.eta),
-                        candidate.xi * candidate.eta,
-                        (1.0 - candidate.xi) * candidate.eta,
-                    },
+                    .weights = buildWeights(candidate.xi, candidate.eta),
+                    .iters = 1,
+                    .xi_out = candidate.xi,
+                    .eta_out = candidate.eta,
+                };
+            }
+
+            return .{ .weights = null, .iters = 0 };
+        }
+
+        pub inline fn solveWeightsInvBiInnerSIMD(
+            pixel_x: f64,
+            pixel_y: f64,
+            x_offset: f64,
+            y_offset: f64,
+            solve_params: BilinearParams,
+        ) GeometryResult(nodes_num) {
+            const eps = tol.geometry.bilinear_parametric_domain;
+            const zero_tol = tol.geometry.quadratic_area;
+            const denom_tol = tol.geometry.bilinear_denom;
+
+            const target_x = pixel_x - x_offset;
+            const target_y = pixel_y - y_offset;
+
+            const a1 = solve_params.x_const - (solve_params.w_const * target_x);
+            const a2 = solve_params.x_u_coeff - (solve_params.w_u_coeff * target_x);
+            const a3 = solve_params.x_v_coeff - (solve_params.w_v_coeff * target_x);
+            const a4 = solve_params.x_uv_coeff - (solve_params.w_uv_coeff * target_x);
+
+            const b1 = solve_params.y_const - (solve_params.w_const * target_y);
+            const b2 = solve_params.y_u_coeff - (solve_params.w_u_coeff * target_y);
+            const b3 = solve_params.y_v_coeff - (solve_params.w_v_coeff * target_y);
+            const b4 = solve_params.y_uv_coeff - (solve_params.w_uv_coeff * target_y);
+
+            const p_coeff = (a4 * b2) - (a2 * b4);
+            const s_coeff = (a4 * b3) - (a3 * b4);
+
+            var best_candidate: ?Candidate = null;
+
+            if (@abs(p_coeff) > zero_tol or @abs(s_coeff) > zero_tol) {
+                if (@abs(s_coeff) < @abs(p_coeff)) {
+                    const q_coeff = (a4 * b1) - (a1 * b4) + (a3 * b2) -
+                        (a2 * b3);
+                    const r_coeff = (a3 * b1) - (a1 * b3);
+                    const roots = rootsFromQuadratic(
+                        p_coeff,
+                        q_coeff,
+                        r_coeff,
+                        zero_tol,
+                    );
+                    var xi_candidates = [2]f64{ 0.0, 0.0 };
+                    var eta_candidates = [2]f64{ 0.0, 0.0 };
+                    var candidate_count: u8 = 0;
+
+                    for (0..roots.count) |nn| {
+                        const xi = roots.roots[nn];
+                        if (solveOtherCoordFromXi(
+                            xi,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            b1,
+                            b2,
+                            b3,
+                            b4,
+                            denom_tol,
+                        )) |eta| {
+                            xi_candidates[candidate_count] = xi;
+                            eta_candidates[candidate_count] = eta;
+                            candidate_count += 1;
+                        }
+                    }
+                    tryCandidatesInnerSIMD(
+                        &best_candidate,
+                        xi_candidates,
+                        eta_candidates,
+                        candidate_count,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        b1,
+                        b2,
+                        b3,
+                        b4,
+                        eps,
+                    );
+                } else {
+                    const t_coeff = (a4 * b1) - (a1 * b4) - (a3 * b2) +
+                        (a2 * b3);
+                    const u_coeff = (a2 * b1) - (a1 * b2);
+                    const roots = rootsFromQuadratic(
+                        s_coeff,
+                        t_coeff,
+                        u_coeff,
+                        zero_tol,
+                    );
+                    var xi_candidates = [2]f64{ 0.0, 0.0 };
+                    var eta_candidates = [2]f64{ 0.0, 0.0 };
+                    var candidate_count: u8 = 0;
+
+                    for (0..roots.count) |nn| {
+                        const eta = roots.roots[nn];
+                        if (solveOtherCoordFromEta(
+                            eta,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            b1,
+                            b2,
+                            b3,
+                            b4,
+                            denom_tol,
+                        )) |xi| {
+                            xi_candidates[candidate_count] = xi;
+                            eta_candidates[candidate_count] = eta;
+                            candidate_count += 1;
+                        }
+                    }
+                    tryCandidatesInnerSIMD(
+                        &best_candidate,
+                        xi_candidates,
+                        eta_candidates,
+                        candidate_count,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        b1,
+                        b2,
+                        b3,
+                        b4,
+                        eps,
+                    );
+                }
+            } else if (@abs(a4) > zero_tol and @abs(b4) > zero_tol) {
+                if (@abs(p_coeff) < @abs(s_coeff)) {
+                    const eta = ((a4 * b1) - (a1 * b4) + (a3 * b2) - (a2 * b3)) /
+                        (-s_coeff);
+                    if (solveOtherCoordFromEta(
+                        eta,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        b1,
+                        b2,
+                        b3,
+                        b4,
+                        denom_tol,
+                    )) |xi| {
+                        tryCandidatesInnerSIMD(
+                            &best_candidate,
+                            .{ xi, 0.0 },
+                            .{ eta, 0.0 },
+                            1,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            b1,
+                            b2,
+                            b3,
+                            b4,
+                            eps,
+                        );
+                    }
+                } else {
+                    const xi = ((a4 * b1) - (a1 * b4) - (a3 * b2) + (a2 * b3)) /
+                        (-p_coeff);
+                    if (solveOtherCoordFromXi(
+                        xi,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        b1,
+                        b2,
+                        b3,
+                        b4,
+                        denom_tol,
+                    )) |eta| {
+                        tryCandidatesInnerSIMD(
+                            &best_candidate,
+                            .{ xi, 0.0 },
+                            .{ eta, 0.0 },
+                            1,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            b1,
+                            b2,
+                            b3,
+                            b4,
+                            eps,
+                        );
+                    }
+                }
+            } else if (@abs(a4) > zero_tol and @abs(b4) <= zero_tol) {
+                if (@abs(b3) > @abs(b2)) {
+                    if (@abs(b3) > denom_tol) {
+                        const eta = -b1 / b3;
+                        if (solveOtherCoordFromEta(
+                            eta,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            b1,
+                            b2,
+                            b3,
+                            b4,
+                            denom_tol,
+                        )) |xi| {
+                            tryCandidatesInnerSIMD(
+                                &best_candidate,
+                                .{ xi, 0.0 },
+                                .{ eta, 0.0 },
+                                1,
+                                a1,
+                                a2,
+                                a3,
+                                a4,
+                                b1,
+                                b2,
+                                b3,
+                                b4,
+                                eps,
+                            );
+                        }
+                    }
+                } else if (@abs(b2) > denom_tol) {
+                    const xi = -b1 / b2;
+                    if (solveOtherCoordFromXi(
+                        xi,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        b1,
+                        b2,
+                        b3,
+                        b4,
+                        denom_tol,
+                    )) |eta| {
+                        tryCandidatesInnerSIMD(
+                            &best_candidate,
+                            .{ xi, 0.0 },
+                            .{ eta, 0.0 },
+                            1,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            b1,
+                            b2,
+                            b3,
+                            b4,
+                            eps,
+                        );
+                    }
+                }
+            } else if (@abs(a4) <= zero_tol and @abs(b4) > zero_tol) {
+                if (@abs(a2) < @abs(a3)) {
+                    if (@abs(a3) > denom_tol) {
+                        const eta = -a1 / a3;
+                        if (solveOtherCoordFromEta(
+                            eta,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            b1,
+                            b2,
+                            b3,
+                            b4,
+                            denom_tol,
+                        )) |xi| {
+                            tryCandidatesInnerSIMD(
+                                &best_candidate,
+                                .{ xi, 0.0 },
+                                .{ eta, 0.0 },
+                                1,
+                                a1,
+                                a2,
+                                a3,
+                                a4,
+                                b1,
+                                b2,
+                                b3,
+                                b4,
+                                eps,
+                            );
+                        }
+                    }
+                } else if (@abs(a2) > denom_tol) {
+                    const xi = -a1 / a2;
+                    if (solveOtherCoordFromXi(
+                        xi,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        b1,
+                        b2,
+                        b3,
+                        b4,
+                        denom_tol,
+                    )) |eta| {
+                        tryCandidatesInnerSIMD(
+                            &best_candidate,
+                            .{ xi, 0.0 },
+                            .{ eta, 0.0 },
+                            1,
+                            a1,
+                            a2,
+                            a3,
+                            a4,
+                            b1,
+                            b2,
+                            b3,
+                            b4,
+                            eps,
+                        );
+                    }
+                }
+            } else {
+                const denom = (a2 * b3) - (a3 * b2);
+                if (@abs(denom) > denom_tol) {
+                    const xi = ((b1 * a3) - (a1 * b3)) / denom;
+                    const eta = ((a2 * b1) - (a1 * b2)) / (-denom);
+                    tryCandidatesInnerSIMD(
+                        &best_candidate,
+                        .{ xi, 0.0 },
+                        .{ eta, 0.0 },
+                        1,
+                        a1,
+                        a2,
+                        a3,
+                        a4,
+                        b1,
+                        b2,
+                        b3,
+                        b4,
+                        eps,
+                    );
+                }
+            }
+
+            if (best_candidate) |candidate| {
+                return .{
+                    .weights = buildWeights(candidate.xi, candidate.eta),
                     .iters = 1,
                     .xi_out = candidate.xi,
                     .eta_out = candidate.eta,

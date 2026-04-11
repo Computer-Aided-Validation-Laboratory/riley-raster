@@ -221,15 +221,14 @@ pub fn RasterPass(
                     subpx_scratch,
                 )
             else if (Geometry.solver_kind == .inv_bi)
-                try rasterInvBiSIMD(
+                try rasterDirect(
                     report_mode,
                     ctx_rast,
                     ctx_report,
                     targ_overlap,
-                    &mesh_in,
+                    mesh_in,
                     subpx_domain,
                     rast_bounds,
-                    scratch_start_x_u,
                     nodes_coords,
                     shader,
                     shader_buf,
@@ -1199,7 +1198,7 @@ pub fn RasterPass(
 
                     ctx_report.recordSolverCalls(1);
                     const result = if (comptime Geometry.solver_kind == .inv_bi)
-                        Geometry.solveWeightsInvBi(
+                        Geometry.solveWeightsInvBiInnerSIMD(
                             subpx_x,
                             subpx_y,
                             subpx_domain.x_off,
@@ -1217,7 +1216,10 @@ pub fn RasterPass(
                     ctx_report.recordSolverIters(result.iters);
 
                     if (result.weights) |weights| {
-                        const inv_z = Geometry.calcInvZ(nodes_coords, weights);
+                        const inv_z = if (comptime Geometry.solver_kind == .inv_bi)
+                            Geometry.calcInvZInnerSIMD(nodes_coords, weights)
+                        else
+                            Geometry.calcInvZ(nodes_coords, weights);
                         const scratch_idx = row_offset + scratch_x;
 
                         if (inv_z >= subpx_scratch.inv_z[scratch_idx]) {
