@@ -2,7 +2,10 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const shapefun = @import("shapefun.zig");
 
-const S = buildconfig.config.simd_vector_width;
+const S = buildconfig.SimdWidth;
+const VecSB = buildconfig.VecSB;
+const VecSF = buildconfig.VecSF;
+const VecSU8 = buildconfig.VecSU8;
 const tol = buildconfig.config.tolerance;
 
 pub const NewtonSeed = struct {
@@ -11,8 +14,8 @@ pub const NewtonSeed = struct {
 };
 
 pub const NewtonSeedSIMD = struct {
-    xi: @Vector(S, f64),
-    eta: @Vector(S, f64),
+    v_xi: VecSF,
+    v_eta: VecSF,
 };
 
 pub const NewtonSeedState = struct {
@@ -37,11 +40,11 @@ pub const NewtonResult = struct {
 };
 
 pub const NewtonResultSIMD = struct {
-    converged: @Vector(S, bool),
-    pre_domain_converged: @Vector(S, bool),
-    iterations: @Vector(S, u8),
-    residual_x: @Vector(S, f64),
-    residual_y: @Vector(S, f64),
+    v_converged: VecSB,
+    v_pre_domain_converged: VecSB,
+    v_iterations: VecSU8,
+    v_residual_x: VecSF,
+    v_residual_y: VecSF,
 };
 
 pub inline fn clearSeedState(seed_state: *NewtonSeedState) void {
@@ -88,58 +91,51 @@ pub inline fn updateSeedState(
     };
 }
 
-pub inline fn fillSeedBlock(
+pub inline fn applySeedReuseInPlace(
     comptime seed_reuse: anytype,
     lane_count: usize,
-    base_seed_xi: []const f64,
-    base_seed_eta: []const f64,
     seed_state: NewtonSeedState,
-    seed_xi_out: []f64,
-    seed_eta_out: []f64,
+    seed_xi: []f64,
+    seed_eta: []f64,
 ) void {
     if (comptime seed_reuse == .last_converged) {
         if (seed_state.is_valid) {
             for (0..lane_count) |jj| {
-                seed_xi_out[jj] = seed_state.xi;
-                seed_eta_out[jj] = seed_state.eta;
+                seed_xi[jj] = seed_state.xi;
+                seed_eta[jj] = seed_state.eta;
             }
-            return;
         }
-    }
-
-    for (0..lane_count) |jj| {
-        seed_xi_out[jj] = base_seed_xi[jj];
-        seed_eta_out[jj] = base_seed_eta[jj];
     }
 }
 
 pub inline fn updateSeedStateFromSIMDResult(
     seed_state: *NewtonSeedState,
-    chunk_mask: @Vector(S, bool),
-    converged_mask: @Vector(S, bool),
-    xi_out: @Vector(S, f64),
-    eta_out: @Vector(S, f64),
-    residual_x: @Vector(S, f64),
-    residual_y: @Vector(S, f64),
+    v_chunk_mask: VecSB,
+    v_converged_mask: VecSB,
+    v_xi_out: VecSF,
+    v_eta_out: VecSF,
+    v_residual_x: VecSF,
+    v_residual_y: VecSF,
 ) void {
-    const v_mask_valid = chunk_mask & converged_mask;
+    const v_mask_valid = v_chunk_mask & v_converged_mask;
     if (!@reduce(.Or, v_mask_valid)) {
         return;
     }
 
-    const mask_arr: [S]bool = v_mask_valid;
-    const xi_out_arr: [S]f64 = xi_out;
-    const eta_out_arr: [S]f64 = eta_out;
-    const residual_x_arr: [S]f64 = residual_x;
-    const residual_y_arr: [S]f64 = residual_y;
+    const lane_mask_valid: [S]bool = v_mask_valid;
+    const lane_xi_out: [S]f64 = v_xi_out;
+    const lane_eta_out: [S]f64 = v_eta_out;
+    const lane_residual_x: [S]f64 = v_residual_x;
+    const lane_residual_y: [S]f64 = v_residual_y;
 
     var best_lane_idx: ?usize = null;
     var best_resid_sq = std.math.inf(f64);
 
     for (0..S) |jj| {
-        if (mask_arr[jj]) {
-            const resid_sq = residual_x_arr[jj] * residual_x_arr[jj] +
-                residual_y_arr[jj] * residual_y_arr[jj];
+        if (lane_mask_valid[jj]) {
+            const resid_sq =
+                lane_residual_x[jj] * lane_residual_x[jj] +
+                lane_residual_y[jj] * lane_residual_y[jj];
             if (best_lane_idx == null or resid_sq < best_resid_sq) {
                 best_lane_idx = jj;
                 best_resid_sq = resid_sq;
@@ -148,7 +144,7 @@ pub inline fn updateSeedStateFromSIMDResult(
     }
 
     if (best_lane_idx) |jj| {
-        updateSeedState(seed_state, xi_out_arr[jj], eta_out_arr[jj]);
+        updateSeedState(seed_state, lane_xi_out[jj], lane_eta_out[jj]);
     }
 }
 
@@ -342,26 +338,26 @@ pub fn solveInverse(
 
 pub fn solveInverseSIMD(
     comptime N: usize,
-    v_target_x: @Vector(S, f64),
-    v_target_y: @Vector(S, f64),
+    v_target_x: VecSF,
+    v_target_y: VecSF,
     elem_node_x: []const f64,
     elem_node_y: []const f64,
     elem_node_w: []const f64,
-    v_xi_in: @Vector(S, f64),
-    v_eta_in: @Vector(S, f64),
-    v_xi_out: *@Vector(S, f64),
-    v_eta_out: *@Vector(S, f64),
-    v_node_values: *[N]@Vector(S, f64),
-    v_deriv_n_xi: *[N]@Vector(S, f64),
-    v_deriv_n_eta: *[N]@Vector(S, f64),
+    v_xi_in: VecSF,
+    v_eta_in: VecSF,
+    v_xi_out: *VecSF,
+    v_eta_out: *VecSF,
+    v_node_values: *[N]VecSF,
+    v_deriv_n_xi: *[N]VecSF,
+    v_deriv_n_eta: *[N]VecSF,
 ) NewtonResultSIMD {
-    const v_iter_tol: @Vector(S, f64) = @splat(
+    const v_iter_tol: VecSF = @splat(
         tol.newton.residual,
     );
-    const v_det_tol: @Vector(S, f64) = @splat(
+    const v_det_tol: VecSF = @splat(
         tol.newton.determinant,
     );
-    const v_eps: @Vector(S, f64) = @splat(
+    const v_eps: VecSF = @splat(
         tol.newton.parametric_domain,
     );
     const iter_max: u8 = 10;
@@ -369,18 +365,18 @@ pub fn solveInverseSIMD(
     var v_xi = v_xi_in;
     var v_eta = v_eta_in;
 
-    var v_converged: @Vector(S, bool) = @splat(false);
-    var v_iters: @Vector(S, u8) = @splat(0);
-    var v_active: @Vector(S, bool) = @splat(true);
-    var v_residual_x_final: @Vector(S, f64) = @splat(0.0);
-    var v_residual_y_final: @Vector(S, f64) = @splat(0.0);
+    var v_converged: VecSB = @splat(false);
+    var v_iters: VecSU8 = @splat(0);
+    var v_active: VecSB = @splat(true);
+    var v_residual_x_final: VecSF = @splat(0.0);
+    var v_residual_y_final: VecSF = @splat(0.0);
 
-    var v_term_x: [N]@Vector(S, f64) = undefined;
-    var v_term_y: [N]@Vector(S, f64) = undefined;
+    var v_term_x: [N]VecSF = undefined;
+    var v_term_y: [N]VecSF = undefined;
     inline for (0..N) |nn| {
-        const v_node_x: @Vector(S, f64) = @splat(elem_node_x[nn]);
-        const v_node_y: @Vector(S, f64) = @splat(elem_node_y[nn]);
-        const v_node_w: @Vector(S, f64) = @splat(elem_node_w[nn]);
+        const v_node_x: VecSF = @splat(elem_node_x[nn]);
+        const v_node_y: VecSF = @splat(elem_node_y[nn]);
+        const v_node_w: VecSF = @splat(elem_node_w[nn]);
         v_term_x[nn] = v_target_x * v_node_w - v_node_x;
         v_term_y[nn] = v_target_y * v_node_w - v_node_y;
     }
@@ -391,18 +387,25 @@ pub fn solveInverseSIMD(
         v_iters = @select(
             u8,
             v_active,
-            @as(@Vector(S, u8), @splat(@intCast(ii + 1))),
+            @as(VecSU8, @splat(@intCast(ii + 1))),
             v_iters,
         );
 
-        shapefun.shapeFunctionsSIMD(N, v_xi, v_eta, v_node_values, v_deriv_n_xi, v_deriv_n_eta);
+        shapefun.shapeFunctionsSIMD(
+            N,
+            v_xi,
+            v_eta,
+            v_node_values,
+            v_deriv_n_xi,
+            v_deriv_n_eta,
+        );
 
-        var v_residual_x: @Vector(S, f64) = @splat(0.0);
-        var v_residual_y: @Vector(S, f64) = @splat(0.0);
-        var v_jac11: @Vector(S, f64) = @splat(0.0);
-        var v_jac12: @Vector(S, f64) = @splat(0.0);
-        var v_jac21: @Vector(S, f64) = @splat(0.0);
-        var v_jac22: @Vector(S, f64) = @splat(0.0);
+        var v_residual_x: VecSF = @splat(0.0);
+        var v_residual_y: VecSF = @splat(0.0);
+        var v_jac11: VecSF = @splat(0.0);
+        var v_jac12: VecSF = @splat(0.0);
+        var v_jac21: VecSF = @splat(0.0);
+        var v_jac22: VecSF = @splat(0.0);
 
         inline for (0..N) |nn| {
             v_residual_x += v_node_values[nn] * v_term_x[nn];
@@ -434,19 +437,19 @@ pub fn solveInverseSIMD(
             f64,
             v_active,
             v_det,
-            @as(@Vector(S, f64), @splat(1.0)),
+            @as(VecSF, @splat(1.0)),
         );
-        const v_inv_det = @as(@Vector(S, f64), @splat(1.0)) / v_safe_det;
+        const v_inv_det = @as(VecSF, @splat(1.0)) / v_safe_det;
 
         const v_dxi = v_inv_det * (v_jac22 * v_residual_x - v_jac12 * v_residual_y);
         const v_deta = v_inv_det * (-v_jac21 * v_residual_x + v_jac11 * v_residual_y);
 
-        v_xi -= @select(f64, v_active, v_dxi, @as(@Vector(S, f64), @splat(0.0)));
-        v_eta -= @select(f64, v_active, v_deta, @as(@Vector(S, f64), @splat(0.0)));
+        v_xi -= @select(f64, v_active, v_dxi, @as(VecSF, @splat(0.0)));
+        v_eta -= @select(f64, v_active, v_deta, @as(VecSF, @splat(0.0)));
     }
 
-    const v_splat_one: @Vector(S, f64) = @splat(1.0);
-    const v_splat_neg_one: @Vector(S, f64) = @splat(-1.0);
+    const v_splat_one: VecSF = @splat(1.0);
+    const v_splat_neg_one: VecSF = @splat(-1.0);
 
     const v_is_in = if (comptime N == 6)
         (v_xi >= -v_eps) & (v_eta >= -v_eps) & ((v_xi + v_eta) <= v_splat_one + v_eps)
@@ -459,10 +462,10 @@ pub fn solveInverseSIMD(
     v_eta_out.* = v_eta;
 
     return .{
-        .converged = v_final_converged,
-        .pre_domain_converged = v_converged,
-        .iterations = v_iters,
-        .residual_x = v_residual_x_final,
-        .residual_y = v_residual_y_final,
+        .v_converged = v_final_converged,
+        .v_pre_domain_converged = v_converged,
+        .v_iterations = v_iters,
+        .v_residual_x = v_residual_x_final,
+        .v_residual_y = v_residual_y_final,
     };
 }

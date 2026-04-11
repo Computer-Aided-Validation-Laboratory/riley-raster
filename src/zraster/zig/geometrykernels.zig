@@ -281,8 +281,8 @@ pub fn Tri6Kernel() type {
                 }
             }
             return .{
-                .xi = @splat(1.0 / 3.0),
-                .eta = @splat(1.0 / 3.0),
+                .v_xi = @splat(1.0 / 3.0),
+                .v_eta = @splat(1.0 / 3.0),
             };
         }
 
@@ -384,13 +384,13 @@ pub fn Tri6Kernel() type {
 
             return .{
                 .weights = v_weights,
-                .mask = res.converged,
-                .pre_domain_converged = res.pre_domain_converged,
-                .iters = res.iterations,
+                .mask = res.v_converged,
+                .pre_domain_converged = res.v_pre_domain_converged,
+                .iters = res.v_iterations,
                 .xi_out = v_xi_out,
                 .eta_out = v_eta_out,
-                .residual_x = res.residual_x,
-                .residual_y = res.residual_y,
+                .residual_x = res.v_residual_x,
+                .residual_y = res.v_residual_y,
             };
         }
 
@@ -941,8 +941,8 @@ pub fn Quad4NewtonKernel() type {
                 }
             }
             return .{
-                .xi = @splat(0.5),
-                .eta = @splat(0.5),
+                .v_xi = @splat(0.5),
+                .v_eta = @splat(0.5),
             };
         }
 
@@ -1032,13 +1032,13 @@ pub fn Quad4NewtonKernel() type {
 
             return .{
                 .weights = v_weights,
-                .mask = res.converged,
-                .pre_domain_converged = res.pre_domain_converged,
-                .iters = res.iterations,
+                .mask = res.v_converged,
+                .pre_domain_converged = res.v_pre_domain_converged,
+                .iters = res.v_iterations,
                 .xi_out = v_xi_out,
                 .eta_out = v_eta_out,
-                .residual_x = res.residual_x,
-                .residual_y = res.residual_y,
+                .residual_x = res.v_residual_x,
+                .residual_y = res.v_residual_y,
             };
         }
 
@@ -1075,8 +1075,8 @@ pub fn Quad89Kernel(comptime N: usize) type {
                 }
             }
             return .{
-                .xi = @splat(0.5),
-                .eta = @splat(0.5),
+                .v_xi = @splat(0.5),
+                .v_eta = @splat(0.5),
             };
         }
 
@@ -1167,13 +1167,13 @@ pub fn Quad89Kernel(comptime N: usize) type {
 
             return .{
                 .weights = v_weights,
-                .mask = res.converged,
-                .pre_domain_converged = res.pre_domain_converged,
-                .iters = res.iterations,
+                .mask = res.v_converged,
+                .pre_domain_converged = res.v_pre_domain_converged,
+                .iters = res.v_iterations,
                 .xi_out = v_xi_out,
                 .eta_out = v_eta_out,
-                .residual_x = res.residual_x,
-                .residual_y = res.residual_y,
+                .residual_x = res.v_residual_x,
+                .residual_y = res.v_residual_y,
             };
         }
 
