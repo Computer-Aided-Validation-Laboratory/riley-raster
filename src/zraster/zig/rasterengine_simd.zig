@@ -3,6 +3,7 @@ const Camera = @import("camera.zig").Camera;
 const buildconfig = @import("buildconfig.zig");
 const cfg = buildconfig.config;
 const S = buildconfig.config.simd_vector_width;
+
 const tol = buildconfig.config.tolerance;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
@@ -62,46 +63,48 @@ pub fn initSubpxScratch(
     fields_num: u8,
     subpx_tile_size: usize,
 ) !SubpxScratchBuffers {
+    
     const subpx_tile_total = subpx_tile_size * subpx_tile_size;
-    const subpx_tile_total_padded = (subpx_tile_total + 7) & ~@as(usize, 7);
+    const subpx_tile_total_padded = (subpx_tile_total + (S-1)) & ~@as(usize, (S-1));
     const alignment = std.mem.Alignment.@"64";
+    
     const subpx_inv_z_scratch = try arena_alloc.alignedAlloc(
         f64,
         alignment,
-        subpx_tile_total_padded + 8,
+        subpx_tile_total_padded + S,
     );
 
     const subpx_mask_scratch = try arena_alloc.alignedAlloc(
         bool,
         alignment,
-        subpx_tile_total_padded + 8,
+        subpx_tile_total_padded + S,
     );
 
     const subpx_xi_scratch = try arena_alloc.alignedAlloc(
         f64,
         alignment,
-        subpx_tile_total_padded + 8,
+        subpx_tile_total_padded + S,
     );
 
     const subpx_eta_scratch = try arena_alloc.alignedAlloc(
         f64,
         alignment,
-        subpx_tile_total_padded + 8,
+        subpx_tile_total_padded + S,
     );
 
     const subpx_img_mem = try arena_alloc.alignedAlloc(
         f64,
         alignment,
-        (subpx_tile_total_padded + 8) * @as(usize, fields_num),
+        (subpx_tile_total_padded + S) * @as(usize, fields_num),
     );
     const subpx_image_scratch = MatSlice(f64).init(
         subpx_img_mem,
         @as(usize, fields_num),
-        subpx_tile_total_padded + 8,
+        subpx_tile_total_padded + S,
     );
 
     const subpx_simd_chunk_count =
-        @divFloor(subpx_tile_total_padded + 7, 8) + 1;
+        @divFloor(subpx_tile_total_padded + (S-1), S) + 1;
     const subpx_simd_chunks = try arena_alloc.alloc(
         SubpxSimdChunk,
         subpx_simd_chunk_count,
@@ -141,7 +144,7 @@ pub fn rasterScene(
     image_out_arr: *NDArray(f64),
 ) !void {
     try common.rasterSceneCommon(
-        @This(),
+        @This(), // Link up the functions in this file to rasterScene
         report_mode,
         outer_alloc,
         io,
@@ -221,6 +224,8 @@ pub fn RasterPass(
                     subpx_scratch,
                 )
             else if (Geometry.solver_kind == .inv_bi)
+                // NOTE: SIMD is very inefficient for highly branched inverse bilinear solve
+                // fallback to scalar
                 try rasterDirect(
                     report_mode,
                     ctx_rast,
@@ -250,19 +255,7 @@ pub fn RasterPass(
                     subpx_scratch,
                 )
             else
-                try rasterDirect(
-                    report_mode,
-                    ctx_rast,
-                    ctx_report,
-                    targ_overlap,
-                    mesh_in,
-                    subpx_domain,
-                    rast_bounds,
-                    nodes_coords,
-                    shader,
-                    shader_buf,
-                    subpx_scratch,
-                );
+                @compileError("Unsupported geometry in rasterengine_simd");
 
             return shaded_px;
         }
@@ -295,7 +288,7 @@ pub fn RasterPass(
             );
 
             const v_nodes_inv_z = Geometry.getSIMDConstants(nodes_coords);
-            const v_steps = Geometry.getSIMDSteps(nodes_coords, inv_area, subpx_domain.step);
+            const v_steps = Geometry.getSIMDSteps(nodes_coords, inv_area, subpx_domain.step,);
 
             const start_x = rast_bounds.x_min_f + subpx_domain.offset;
             const start_y = rast_bounds.y_min_f + subpx_domain.offset;
