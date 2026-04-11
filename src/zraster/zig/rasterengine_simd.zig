@@ -63,18 +63,15 @@ const ScratchLayout = common.ScratchLayout;
 pub const scratch_layout = ScratchLayout.field_major;
 
 inline fn loadVecSF(subpx_vals: []const f64, start_u: usize) VecSF {
-    var lane_vals: [S]f64 = undefined;
-    inline for (0..S) |ll| {
-        lane_vals[ll] = subpx_vals[start_u + ll];
-    }
-    return lane_vals;
+    // slice of a slice, equivalent to [start_u..start_u+S]
+    const lane_vals: [S]f64 = subpx_vals[start_u..][0..S].*;
+    return @as(VecSF, lane_vals);
 }
 
 inline fn storeVecSF(subpx_vals: []f64, start_u: usize, v_vals: VecSF) void {
-    const lane_vals: [S]f64 = v_vals;
-    inline for (0..S) |ll| {
-        subpx_vals[start_u + ll] = lane_vals[ll];
-    }
+    const lane_vals: [S]f64 = @as([S]f64, v_vals);
+    // slice of a slice, equivalent to [start_u..start_u+S]
+    subpx_vals[start_u..][0..S].* = lane_vals;
 }
 
 pub fn initSubpxScratch(
