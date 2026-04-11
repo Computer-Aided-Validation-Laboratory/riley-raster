@@ -220,6 +220,21 @@ pub fn RasterPass(
                     shader_buf,
                     subpx_scratch,
                 )
+            else if (Geometry.solver_kind == .inv_bi)
+                try rasterInvBiSIMD(
+                    report_mode,
+                    ctx_rast,
+                    ctx_report,
+                    targ_overlap,
+                    &mesh_in,
+                    subpx_domain,
+                    rast_bounds,
+                    scratch_start_x_u,
+                    nodes_coords,
+                    shader,
+                    shader_buf,
+                    subpx_scratch,
+                )
             else if (Geometry.solver_kind == .newton)
                 try rasterNewtonSIMD(
                     report_mode,
@@ -779,6 +794,288 @@ pub fn RasterPass(
                                     ),
                                 ),
                             ));
+
+                            const ctx_shade = shaderops.ShadeContext(N){
+                                .frame_idx = ctx_rast.frame_idx,
+                                .elem_idx = targ_overlap.overlap.elem_idx,
+                                .fields_num = fields_num,
+                                .actual_fields = fields_num,
+                                .scratch_idx = scratch_idx,
+                                .global_subx = targ_overlap.tile.x_px_min * sub_samp +
+                                    scratch_x,
+                                .global_suby = targ_overlap.tile.y_px_min * sub_samp +
+                                    scratch_y,
+                                .shader_buf = shader_buf,
+                                .v_mask_active = v_depth_mask,
+                            };
+
+                            ShaderKernel.shadeSIMD(
+                                Geometry.coord_space,
+                                ctx_shade,
+                                ctx_report,
+                                v_depth_mask,
+                                v_weights,
+                                v_nodes_inv_z_simd,
+                                v_subpx_z,
+                                shader,
+                                &subpx_scratch.image,
+                            );
+                        }
+                    }
+                }
+            }
+
+            return shaded_px;
+        }
+
+        fn rasterInvBiSIMD(
+            comptime report_mode: ReportMode,
+            ctx_rast: rops.RasterContext,
+            ctx_report: report.ReportContext(report_mode),
+            targ_overlap: common.OverlapTarget,
+            mesh_in: *const rops.MeshInput,
+            subpx_domain: SubpxDomain,
+            rast_bounds: RasterBounds,
+            original_start_x: usize,
+            nodes_coords: Vec3Slices(f64),
+            shader: anytype,
+            shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
+            subpx_scratch: *SubpxScratchBuffers,
+        ) !u64 {
+            const N = Geometry.nodes_num;
+            var shaded_px: u64 = 0;
+            const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+            std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
+            const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
+
+            var nodes_inv_z: [N]f64 = undefined;
+            var v_nodes_z: [N]@Vector(S, f64) = undefined;
+            var v_nodes_inv_z_simd: [N]@Vector(S, f64) = undefined;
+            inline for (0..N) |nn| {
+                nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
+                v_nodes_z[nn] = @splat(nodes_coords.z[nn]);
+                v_nodes_inv_z_simd[nn] = @splat(nodes_inv_z[nn]);
+            }
+
+            const bilinear_params = Geometry.getBilinearParams(nodes_coords);
+            const raster_hull = mesh_in.hull orelse
+                @panic("rasterInvBiSIMD requires mesh hull data");
+            const hx = raster_hull.getSlice(
+                &[_]usize{ targ_overlap.overlap.elem_idx, 0, 0 },
+                1,
+            );
+            const hy = raster_hull.getSlice(
+                &[_]usize{ targ_overlap.overlap.elem_idx, 1, 0 },
+                1,
+            );
+            const element_tess = hull.getTessellation(
+                N,
+                Geometry.hull_nodes_num,
+                Geometry.tess_triangles_num,
+                hx,
+                hy,
+            );
+
+            for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
+                const row_offset = scratch_y * subpx_domain.tile_size;
+                const mask_start = row_offset + rast_bounds.start_x_u;
+                const mask_end = row_offset + rast_bounds.end_x_u;
+                @memset(
+                    subpx_scratch.mask[mask_start..mask_end],
+                    false,
+                );
+            }
+
+            var subpx_simd_sample_count: usize = 0;
+            const v_lane_idx: @Vector(S, usize) = std.simd.iota(usize, S);
+            const v_px_min: @Vector(S, f64) =
+                @splat(@as(f64, @floatFromInt(targ_overlap.tile.x_px_min)));
+            const v_step: @Vector(S, f64) = @splat(subpx_domain.step);
+            const v_splat_half: @Vector(S, f64) = @splat(0.5);
+            const v_original_start_x: @Vector(S, usize) = @splat(original_start_x);
+            const v_bounds_end_x: @Vector(S, usize) = @splat(rast_bounds.end_x_u);
+
+            for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
+                const subpx_y = @as(f64, @floatFromInt(targ_overlap.tile.y_px_min)) +
+                    (@as(f64, @floatFromInt(scratch_y)) + 0.5) * subpx_domain.step;
+                var scratch_x = rast_bounds.start_x_u;
+
+                while (scratch_x < rast_bounds.end_x_u) : (scratch_x += S) {
+                    const v_scratch_x: @Vector(S, usize) = @splat(scratch_x);
+                    const v_x_mask = (v_scratch_x + v_lane_idx >= v_original_start_x) &
+                        (v_scratch_x + v_lane_idx < v_bounds_end_x);
+
+                    const v_subpx_x = v_px_min +
+                        (@as(@Vector(S, f64), @floatFromInt(v_scratch_x + v_lane_idx)) +
+                            v_splat_half) * v_step;
+                    const v_subpx_y: @Vector(S, f64) = @splat(subpx_y);
+
+                    const v_hull_res = element_tess.isInSIMD(v_subpx_x, v_subpx_y);
+                    const v_tess_check = @select(
+                        u8,
+                        v_x_mask,
+                        @as(@Vector(S, u8), @splat(1)),
+                        @as(@Vector(S, u8), @splat(0)),
+                    );
+                    ctx_report.recordTessChecks(@intCast(@reduce(.Add, v_tess_check)));
+
+                    const v_mask_active = v_x_mask & v_hull_res.isIn;
+                    const v_tess_pass = @select(
+                        u8,
+                        v_mask_active,
+                        @as(@Vector(S, u8), @splat(1)),
+                        @as(@Vector(S, u8), @splat(0)),
+                    );
+                    ctx_report.recordTessPasses(@intCast(@reduce(.Add, v_tess_pass)));
+
+                    if (@reduce(.Or, v_mask_active)) {
+                        const mask_arr: [S]bool = v_mask_active;
+                        const x_arr: [S]f64 = v_subpx_x;
+                        const y_arr: [S]f64 = v_subpx_y;
+
+                        for (0..S) |jj| {
+                            if (mask_arr[jj]) {
+                                const chunk_idx = subpx_simd_sample_count / S;
+                                const lane_idx = subpx_simd_sample_count % S;
+
+                                if (lane_idx == 0) {
+                                    subpx_scratch.simd_chunks[chunk_idx] = .{
+                                        .scratch_x = [_]usize{0} ** S,
+                                        .scratch_y = [_]usize{0} ** S,
+                                        .px = [_]f64{0.0} ** S,
+                                        .py = [_]f64{0.0} ** S,
+                                        .seed_xi = [_]f64{0.0} ** S,
+                                        .seed_eta = [_]f64{0.0} ** S,
+                                        .count = 0,
+                                    };
+                                }
+
+                                subpx_scratch.simd_chunks[chunk_idx].scratch_x[lane_idx] =
+                                    scratch_x + jj;
+                                subpx_scratch.simd_chunks[chunk_idx].scratch_y[lane_idx] =
+                                    scratch_y;
+                                subpx_scratch.simd_chunks[chunk_idx].px[lane_idx] = x_arr[jj];
+                                subpx_scratch.simd_chunks[chunk_idx].py[lane_idx] = y_arr[jj];
+                                subpx_scratch.simd_chunks[chunk_idx].count = lane_idx + 1;
+                                subpx_simd_sample_count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            const subpx_simd_chunk_count = @divFloor(subpx_simd_sample_count + (S - 1), S);
+            for (0..subpx_simd_chunk_count) |chunk_idx| {
+                const subpx_simd_chunk = subpx_scratch.simd_chunks[chunk_idx];
+                ctx_report.recordSolverCalls(subpx_simd_chunk.count);
+
+                var solver_iters: u64 = 0;
+                for (0..subpx_simd_chunk.count) |jj| {
+                    const result = Geometry.solveWeightsInvBi(
+                        subpx_simd_chunk.px[jj],
+                        subpx_simd_chunk.py[jj],
+                        subpx_domain.x_off,
+                        subpx_domain.y_off,
+                        bilinear_params,
+                    );
+                    solver_iters += result.iters;
+                    if (result.weights) |_| {
+                        const scratch_idx =
+                            subpx_simd_chunk.scratch_y[jj] * subpx_domain.tile_size +
+                            subpx_simd_chunk.scratch_x[jj];
+                        subpx_scratch.xi[scratch_idx] = result.xi_out;
+                        subpx_scratch.eta[scratch_idx] = result.eta_out;
+                        subpx_scratch.mask[scratch_idx] = true;
+                    } else if (result.iters > 0) {
+                        ctx_report.recordSolverDiverged();
+                    }
+                }
+                ctx_report.recordSolverIters(solver_iters);
+            }
+
+            for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
+                const row_offset = scratch_y * subpx_domain.tile_size;
+                var scratch_x = rast_bounds.start_x_u;
+                while (scratch_x < rast_bounds.end_x_u) : (scratch_x += S) {
+                    const scratch_idx = row_offset + scratch_x;
+                    var mask_arr: [S]bool = undefined;
+                    @memcpy(
+                        &mask_arr,
+                        subpx_scratch.mask[scratch_idx .. scratch_idx + S],
+                    );
+                    const v_mask_full: @Vector(S, bool) = mask_arr;
+
+                    const v_scratch_x: @Vector(S, usize) = @splat(scratch_x);
+                    const v_x_mask = (v_scratch_x + v_lane_idx >=
+                        @as(@Vector(S, usize), @splat(original_start_x))) &
+                        (v_scratch_x + v_lane_idx <
+                            @as(@Vector(S, usize), @splat(rast_bounds.end_x_u)));
+
+                    const v_mask_active = v_mask_full & v_x_mask;
+
+                    if (@reduce(.Or, v_mask_active)) {
+                        var xi_arr: [S]f64 = undefined;
+                        var eta_arr: [S]f64 = undefined;
+                        @memcpy(&xi_arr, subpx_scratch.xi[scratch_idx .. scratch_idx + S]);
+                        @memcpy(&eta_arr, subpx_scratch.eta[scratch_idx .. scratch_idx + S]);
+                        const v_xi: @Vector(S, f64) = xi_arr;
+                        const v_eta: @Vector(S, f64) = eta_arr;
+
+                        var v_weights: [N]@Vector(S, f64) = undefined;
+                        const v_splat_one: @Vector(S, f64) = @splat(1.0);
+                        const v_one_minus_xi = v_splat_one - v_xi;
+                        const v_one_minus_eta = v_splat_one - v_eta;
+                        v_weights[0] = v_one_minus_xi * v_one_minus_eta;
+                        v_weights[1] = v_xi * v_one_minus_eta;
+                        v_weights[2] = v_xi * v_eta;
+                        v_weights[3] = v_one_minus_xi * v_eta;
+
+                        var v_sum_z: @Vector(S, f64) = @splat(0.0);
+                        inline for (0..N) |nn| {
+                            v_sum_z += v_weights[nn] * v_nodes_z[nn];
+                        }
+                        const v_inv_z = @as(@Vector(S, f64), @splat(1.0)) / v_sum_z;
+
+                        const ptr_old_inv_z: *align(8) const @Vector(S, f64) =
+                            @ptrCast(&subpx_scratch.inv_z[scratch_idx]);
+                        const v_old_inv_z = ptr_old_inv_z.*;
+                        const v_depth_mask = v_mask_active & (v_inv_z >= v_old_inv_z);
+
+                        if (@reduce(.Or, v_depth_mask)) {
+                            const v_new_inv_z = @select(
+                                f64,
+                                v_depth_mask,
+                                v_inv_z,
+                                v_old_inv_z,
+                            );
+                            const ptr_new_inv_z: *align(8) @Vector(S, f64) =
+                                @ptrCast(&subpx_scratch.inv_z[scratch_idx]);
+                            ptr_new_inv_z.* = v_new_inv_z;
+
+                            const depth_mask_arr: [S]bool = v_depth_mask;
+                            for (0..S) |ll| {
+                                if (depth_mask_arr[ll]) {
+                                    const touched_x = scratch_x + ll;
+                                    if (touched_x < subpx_scratch.touched_min_x[scratch_y]) {
+                                        subpx_scratch.touched_min_x[scratch_y] = touched_x;
+                                    }
+                                    if (touched_x > subpx_scratch.touched_max_x[scratch_y]) {
+                                        subpx_scratch.touched_max_x[scratch_y] = touched_x;
+                                    }
+                                }
+                            }
+
+                            const v_subpx_z = @as(@Vector(S, f64), @splat(1.0)) / v_inv_z;
+                            const v_hit_one: @Vector(S, u8) = @splat(1);
+                            const v_hit_zero: @Vector(S, u8) = @splat(0);
+                            const v_hit_count = @select(
+                                u8,
+                                v_depth_mask,
+                                v_hit_one,
+                                v_hit_zero,
+                            );
+                            const hit_count = @reduce(.Add, v_hit_count);
+                            shaded_px += @intCast(hit_count);
 
                             const ctx_shade = shaderops.ShadeContext(N){
                                 .frame_idx = ctx_rast.frame_idx,
