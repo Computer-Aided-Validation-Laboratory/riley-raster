@@ -83,3 +83,10 @@ pub const config = Config{
     .precision = f64,
     .tolerance = .{},
 };
+
+pub const SimdWidth = config.simd_vector_width;
+
+pub const VecSF = @Vector(SimdWidth, f64);
+pub const VecSU = @Vector(SimdWidth, usize);
+pub const VecSB = @Vector(SimdWidth, bool);
+pub const VecSU8 = @Vector(SimdWidth, u8);

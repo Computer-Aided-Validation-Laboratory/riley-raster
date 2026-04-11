@@ -1,6 +1,8 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
-const S = buildconfig.config.simd_vector_width;
+const S = buildconfig.SimdWidth;
+const VecSB = buildconfig.VecSB;
+const VecSF = buildconfig.VecSF;
 const tol = buildconfig.config.tolerance;
 const rops = @import("rasterops.zig");
 const newton = @import("newton.zig");
@@ -45,14 +47,14 @@ pub fn GeometryResult(comptime N: usize) type {
 
 pub fn GeometryResultSIMD(comptime N: usize) type {
     return struct {
-        weights: [N]@Vector(S, f64),
-        mask: @Vector(S, bool),
-        pre_domain_converged: @Vector(S, bool),
+        weights: [N]VecSF,
+        mask: VecSB,
+        pre_domain_converged: VecSB,
         iters: @Vector(S, u8),
-        xi_out: @Vector(S, f64),
-        eta_out: @Vector(S, f64),
-        residual_x: @Vector(S, f64),
-        residual_y: @Vector(S, f64),
+        xi_out: VecSF,
+        eta_out: VecSF,
+        residual_x: VecSF,
+        residual_y: VecSF,
     };
 }
 
@@ -87,9 +89,9 @@ pub const NewtonSeedSIMD = newton.NewtonSeedSIMD;
 
 pub fn TriWeightStepSIMD(comptime N: usize) type {
     return struct {
-        v_dx_step: [N]@Vector(S, f64),
-        v_dy_step: [N]@Vector(S, f64),
-        v_dx_lane_offset: [N]@Vector(S, f64),
+        v_dx_step: [N]VecSF,
+        v_dy_step: [N]VecSF,
+        v_dx_lane_offset: [N]VecSF,
     };
 }
 
@@ -183,12 +185,35 @@ pub fn Tri3Kernel() type {
             return calcInvZRast(nodes_num, nodes, weights);
         }
 
-        pub inline fn getSIMDConstants(nodes: Vec3Slices(f64)) [nodes_num]@Vector(S, f64) {
-            var out: [nodes_num]@Vector(S, f64) = undefined;
+        pub inline fn getSIMDInvZ(nodes: Vec3Slices(f64)) [nodes_num]VecSF {
+            var out: [nodes_num]VecSF = undefined;
             inline for (0..nodes_num) |ii| {
                 out[ii] = @splat(1.0 / nodes.z[ii]);
             }
             return out;
+        }
+
+        pub inline fn getSIMDRowWeights(
+            nodes: Vec3Slices(f64),
+            inv_area: f64,
+            start_x_f: f64,
+            start_y_f: f64,
+            v_steps: TriWeightStepSIMD(nodes_num),
+        ) [nodes_num]VecSF {
+            const weights_start = getWeightsAt(
+                nodes,
+                start_x_f,
+                start_y_f,
+                inv_area,
+            );
+
+            var v_weights_row: [nodes_num]VecSF = undefined;
+            inline for (0..nodes_num) |ii| {
+                v_weights_row[ii] = @splat(weights_start[ii]);
+                v_weights_row[ii] += v_steps.v_dx_lane_offset[ii];
+            }
+
+            return v_weights_row;
         }
 
         pub inline fn getSIMDSteps(
@@ -207,12 +232,11 @@ pub fn Tri3Kernel() type {
                 (nodes.x[0] - nodes.x[1]) * step_size * inv_area,
             };
 
-            var v_dx_step: [nodes_num]@Vector(S, f64) = undefined;
-            var v_dy_step: [nodes_num]@Vector(S, f64) = undefined;
-            var v_dx_lane_offset: [nodes_num]@Vector(S, f64) = undefined;
+            var v_dx_step: [nodes_num]VecSF = undefined;
+            var v_dy_step: [nodes_num]VecSF = undefined;
+            var v_dx_lane_offset: [nodes_num]VecSF = undefined;
 
-            const v_lane_idx: @Vector(S, f64) =
-                @floatFromInt(std.simd.iota(usize, S));
+            const v_lane_idx: VecSF = @floatFromInt(std.simd.iota(usize, S));
 
             inline for (0..nodes_num) |ii| {
                 v_dx_step[ii] = @splat(dx_scalar[ii] * 8.0);
