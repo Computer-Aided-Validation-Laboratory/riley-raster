@@ -9,7 +9,8 @@ const MappedNDArray = ndarray.MappedNDArray;
 const buildconfig = @import("buildconfig.zig");
 const Camera = @import("camera.zig").Camera;
 const shapefun = @import("shapefun.zig");
-const S = buildconfig.config.simd_vector_width;
+const S = buildconfig.SimdWidth;
+const VecSF = buildconfig.VecSF;
 const tol = buildconfig.config.tolerance;
 
 const buildAdaptiveHulls = @import("hull.zig").buildAdaptiveHulls;
@@ -37,13 +38,13 @@ pub inline fn edgeFun3SIMD(
     y0: f64,
     x1: f64,
     y1: f64,
-    v_px: @Vector(S, f64),
-    v_py: @Vector(S, f64),
-) @Vector(S, f64) {
-    const v_x0: @Vector(S, f64) = @splat(x0);
-    const v_y0: @Vector(S, f64) = @splat(y0);
-    const v_x1: @Vector(S, f64) = @splat(x1);
-    const v_y1: @Vector(S, f64) = @splat(y1);
+    v_px: VecSF,
+    v_py: VecSF,
+) VecSF {
+    const v_x0: VecSF = @splat(x0);
+    const v_y0: VecSF = @splat(y0);
+    const v_x1: VecSF = @splat(x1);
+    const v_y1: VecSF = @splat(y1);
     return (v_px - v_x0) * (v_y1 - v_y0) - (v_py - v_y0) * (v_x1 - v_x0);
 }
 

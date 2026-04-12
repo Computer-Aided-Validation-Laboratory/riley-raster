@@ -5,7 +5,9 @@ const texops = @import("textureops.zig");
 const InterpType = texops.InterpType;
 const common = @import("shaderops_common.zig");
 const cfg = buildconfig.config;
-const S = cfg.simd_vector_width;
+const S = buildconfig.SimdWidth;
+const VecSB = buildconfig.VecSB;
+const VecSF = buildconfig.VecSF;
 
 pub inline fn fillNodalClip(
     comptime N: usize,
@@ -47,28 +49,28 @@ pub inline fn fillNodalPersp(
 pub inline fn fillNodalClipSIMD(
     comptime N: usize,
     ctx_shade: common.ShadeContext(N),
-    v_weights: [N]@Vector(S, f64),
+    v_weights: [N]VecSF,
     sh: *const common.NodalPrepared,
     spx_image_scratch: *MatSlice(f64),
 ) void {
-    const v_splat_mul: @Vector(S, f64) = @splat(sh.scale_mul);
-    const v_splat_add: @Vector(S, f64) = @splat(sh.scale_add);
+    const v_splat_mul: VecSF = @splat(sh.scale_mul);
+    const v_splat_add: VecSF = @splat(sh.scale_add);
     const px_stride = spx_image_scratch.cols_num;
 
     inline for (0..cfg.max_nodal_fields) |ff| {
         if (ff >= @as(usize, ctx_shade.actual_fields)) break;
         const base = ff * N;
-        var v_vs: @Vector(S, f64) = @splat(0.0);
+        var v_vs: VecSF = @splat(0.0);
         inline for (0..N) |nn| {
             v_vs += v_weights[nn] *
-                @as(@Vector(S, f64), @splat(ctx_shade.shader_buf.data[base + nn]));
+                @as(VecSF, @splat(ctx_shade.shader_buf.data[base + nn]));
         }
 
         const v_final = v_vs * v_splat_mul + v_splat_add;
         const flat_idx = ff * px_stride + ctx_shade.scratch_idx;
-        const ptr_out: *align(8) @Vector(S, f64) =
+        const ptr_out: *align(8) VecSF =
             @ptrCast(&spx_image_scratch.elems[flat_idx]);
-        const v_old_val: @Vector(S, f64) = ptr_out.*;
+        const v_old_val: VecSF = ptr_out.*;
         ptr_out.* = @select(
             f64,
             ctx_shade.v_mask_active.?,
@@ -81,30 +83,30 @@ pub inline fn fillNodalClipSIMD(
 pub inline fn fillNodalPerspSIMD(
     comptime N: usize,
     ctx_shade: common.ShadeContext(N),
-    v_weights: [N]@Vector(S, f64),
-    v_nodes_inv_z: [N]@Vector(S, f64),
-    v_subpx_z: @Vector(S, f64),
+    v_weights: [N]VecSF,
+    v_nodes_inv_z: [N]VecSF,
+    v_subpx_z: VecSF,
     sh: *const common.NodalPrepared,
     spx_image_scratch: *MatSlice(f64),
 ) void {
-    const v_splat_mul: @Vector(S, f64) = @splat(sh.scale_mul);
-    const v_splat_add: @Vector(S, f64) = @splat(sh.scale_add);
+    const v_splat_mul: VecSF = @splat(sh.scale_mul);
+    const v_splat_add: VecSF = @splat(sh.scale_add);
     const px_stride = spx_image_scratch.cols_num;
 
     inline for (0..cfg.max_nodal_fields) |ff| {
         if (ff >= @as(usize, ctx_shade.actual_fields)) break;
         const base = ff * N;
-        var v_vs: @Vector(S, f64) = @splat(0.0);
+        var v_vs: VecSF = @splat(0.0);
         inline for (0..N) |nn| {
             v_vs += v_weights[nn] * v_nodes_inv_z[nn] *
-                @as(@Vector(S, f64), @splat(ctx_shade.shader_buf.data[base + nn]));
+                @as(VecSF, @splat(ctx_shade.shader_buf.data[base + nn]));
         }
 
         const v_final = (v_vs * v_subpx_z) * v_splat_mul + v_splat_add;
         const flat_idx = ff * px_stride + ctx_shade.scratch_idx;
-        const ptr_out: *align(8) @Vector(S, f64) =
+        const ptr_out: *align(8) VecSF =
             @ptrCast(&spx_image_scratch.elems[flat_idx]);
-        const v_old_val: @Vector(S, f64) = ptr_out.*;
+        const v_old_val: VecSF = ptr_out.*;
         ptr_out.* = @select(
             f64,
             ctx_shade.v_mask_active.?,
@@ -184,17 +186,17 @@ pub inline fn fillTexClipSIMD(
     comptime channels: usize,
     interp_type: InterpType,
     ctx_shade: common.ShadeContext(N),
-    v_mask_active: @Vector(S, bool),
-    v_weights: [N]@Vector(S, f64),
+    v_mask_active: VecSB,
+    v_weights: [N]VecSF,
     sh: *const common.TexPrepared(TexT, channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
-    var v_u_at: @Vector(S, f64) = @splat(0.0);
-    var v_v_at: @Vector(S, f64) = @splat(0.0);
+    var v_u_at: VecSF = @splat(0.0);
+    var v_v_at: VecSF = @splat(0.0);
     inline for (0..N) |nn| {
-        v_u_at += v_weights[nn] * @as(@Vector(S, f64), @splat(ctx_shade.shader_buf.data[nn]));
+        v_u_at += v_weights[nn] * @as(VecSF, @splat(ctx_shade.shader_buf.data[nn]));
         v_v_at += v_weights[nn] *
-            @as(@Vector(S, f64), @splat(ctx_shade.shader_buf.data[N + nn]));
+            @as(VecSF, @splat(ctx_shade.shader_buf.data[N + nn]));
     }
 
     const px_stride = spx_image_scratch.cols_num;
@@ -226,26 +228,26 @@ pub inline fn fillTexPerspSIMD(
     comptime channels: usize,
     interp_type: InterpType,
     ctx_shade: common.ShadeContext(N),
-    v_mask_active: @Vector(S, bool),
-    v_weights: [N]@Vector(S, f64),
-    v_nodes_inv_z: [N]@Vector(S, f64),
-    v_subpx_z: @Vector(S, f64),
+    v_mask_active: VecSB,
+    v_weights: [N]VecSF,
+    v_nodes_inv_z: [N]VecSF,
+    v_subpx_z: VecSF,
     sh: *const common.TexPrepared(TexT, channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
-    const v_splat_mul: @Vector(S, f64) = @splat(sh.scale_mul);
-    const v_splat_add: @Vector(S, f64) = @splat(sh.scale_add);
+    const v_splat_mul: VecSF = @splat(sh.scale_mul);
+    const v_splat_add: VecSF = @splat(sh.scale_add);
     const px_stride = spx_image_scratch.cols_num;
 
     // SIMD UV Interpolation
-    var v_u_at: @Vector(S, f64) = @splat(0.0);
-    var v_v_at: @Vector(S, f64) = @splat(0.0);
+    var v_u_at: VecSF = @splat(0.0);
+    var v_v_at: VecSF = @splat(0.0);
     inline for (0..N) |nn| {
         const v_inv_z = v_nodes_inv_z[nn];
         v_u_at += v_weights[nn] *
-            @as(@Vector(S, f64), @splat(ctx_shade.shader_buf.data[nn])) * v_inv_z;
+            @as(VecSF, @splat(ctx_shade.shader_buf.data[nn])) * v_inv_z;
         v_v_at += v_weights[nn] *
-            @as(@Vector(S, f64), @splat(ctx_shade.shader_buf.data[N + nn])) * v_inv_z;
+            @as(VecSF, @splat(ctx_shade.shader_buf.data[N + nn])) * v_inv_z;
     }
 
     v_u_at *= v_subpx_z;
@@ -263,9 +265,9 @@ pub inline fn fillTexPerspSIMD(
     inline for (0..channels) |ch| {
         const v_final = sampled_vecs[ch] * v_splat_mul + v_splat_add;
         const flat_idx = ch * px_stride + ctx_shade.scratch_idx;
-        const ptr_out: *align(8) @Vector(S, f64) =
+        const ptr_out: *align(8) VecSF =
             @ptrCast(&spx_image_scratch.elems[flat_idx]);
-        const v_old_val: @Vector(S, f64) = ptr_out.*;
+        const v_old_val: VecSF = ptr_out.*;
         ptr_out.* = @select(f64, v_mask_active, v_final, v_old_val);
     }
 }
@@ -276,25 +278,25 @@ pub inline fn fillTexPerspSIMDTri3(
     comptime channels: usize,
     interp_type: InterpType,
     ctx_shade: common.ShadeContext(N),
-    v_mask_active: @Vector(S, bool),
-    v_weights: [N]@Vector(S, f64),
-    v_nodes_inv_z: [N]@Vector(S, f64),
-    v_subpx_z: @Vector(S, f64),
+    v_mask_active: VecSB,
+    v_weights: [N]VecSF,
+    v_nodes_inv_z: [N]VecSF,
+    v_subpx_z: VecSF,
     sh: *const common.TexPrepared(TexT, channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
-    const v_splat_mul: @Vector(S, f64) = @splat(sh.scale_mul);
-    const v_splat_add: @Vector(S, f64) = @splat(sh.scale_add);
+    const v_splat_mul: VecSF = @splat(sh.scale_mul);
+    const v_splat_add: VecSF = @splat(sh.scale_add);
     const px_stride = spx_image_scratch.cols_num;
 
-    var v_u_at: @Vector(S, f64) = @splat(0.0);
-    var v_v_at: @Vector(S, f64) = @splat(0.0);
+    var v_u_at: VecSF = @splat(0.0);
+    var v_v_at: VecSF = @splat(0.0);
     inline for (0..N) |nn| {
         const v_inv_z = v_nodes_inv_z[nn];
         v_u_at += v_weights[nn] *
-            @as(@Vector(S, f64), @splat(ctx_shade.shader_buf.data[nn])) * v_inv_z;
+            @as(VecSF, @splat(ctx_shade.shader_buf.data[nn])) * v_inv_z;
         v_v_at += v_weights[nn] *
-            @as(@Vector(S, f64), @splat(ctx_shade.shader_buf.data[N + nn])) * v_inv_z;
+            @as(VecSF, @splat(ctx_shade.shader_buf.data[N + nn])) * v_inv_z;
     }
 
     v_u_at *= v_subpx_z;
@@ -312,9 +314,9 @@ pub inline fn fillTexPerspSIMDTri3(
     inline for (0..channels) |ch| {
         const v_final = sampled_vecs[ch] * v_splat_mul + v_splat_add;
         const flat_idx = ch * px_stride + ctx_shade.scratch_idx;
-        const ptr_out: *align(8) @Vector(S, f64) =
+        const ptr_out: *align(8) VecSF =
             @ptrCast(&spx_image_scratch.elems[flat_idx]);
-        const v_old_val: @Vector(S, f64) = ptr_out.*;
+        const v_old_val: VecSF = ptr_out.*;
         ptr_out.* = @select(f64, v_mask_active, v_final, v_old_val);
     }
 }

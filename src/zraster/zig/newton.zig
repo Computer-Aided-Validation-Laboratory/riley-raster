@@ -98,12 +98,10 @@ pub inline fn applySeedReuseInPlace(
     seed_xi: []f64,
     seed_eta: []f64,
 ) void {
-    if (comptime seed_reuse == .last_converged) {
-        if (seed_state.is_valid) {
-            for (0..lane_count) |jj| {
-                seed_xi[jj] = seed_state.xi;
-                seed_eta[jj] = seed_state.eta;
-            }
+    if (seed_state.is_valid) {
+        for (0..lane_count) |jj| {
+            seed_xi[jj] = seed_state.xi;
+            seed_eta[jj] = seed_state.eta;
         }
     }
 }

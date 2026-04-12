@@ -3,6 +3,7 @@ const buildconfig = @import("buildconfig.zig");
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
+const VecSU8 = buildconfig.VecSU8;
 const tol = buildconfig.config.tolerance;
 const rops = @import("rasterops.zig");
 const newton = @import("newton.zig");
@@ -47,14 +48,14 @@ pub fn GeometryResult(comptime N: usize) type {
 
 pub fn GeometryResultSIMD(comptime N: usize) type {
     return struct {
-        weights: [N]VecSF,
-        mask: VecSB,
-        pre_domain_converged: VecSB,
-        iters: @Vector(S, u8),
-        xi_out: VecSF,
-        eta_out: VecSF,
-        residual_x: VecSF,
-        residual_y: VecSF,
+        v_weights: [N]VecSF,
+        v_mask: VecSB,
+        v_pre_domain_converged: VecSB,
+        v_iters: VecSU8,
+        v_xi_out: VecSF,
+        v_eta_out: VecSF,
+        v_residual_x: VecSF,
+        v_residual_y: VecSF,
     };
 }
 
@@ -349,22 +350,22 @@ pub fn Tri6Kernel() type {
 
         pub inline fn solveWeightsNewtonSIMD(
             nodes: Vec3Slices(f64),
-            v_pixel_x: @Vector(S, f64),
-            v_pixel_y: @Vector(S, f64),
-            v_xi_seed: @Vector(S, f64),
-            v_eta_seed: @Vector(S, f64),
+            v_pixel_x: VecSF,
+            v_pixel_y: VecSF,
+            v_xi_seed: VecSF,
+            v_eta_seed: VecSF,
             x_offset: f64,
             y_offset: f64,
         ) GeometryResultSIMD(nodes_num) {
-            const v_target_x = v_pixel_x - @as(@Vector(S, f64), @splat(x_offset));
-            const v_target_y = v_pixel_y - @as(@Vector(S, f64), @splat(y_offset));
+            const v_target_x = v_pixel_x - @as(VecSF, @splat(x_offset));
+            const v_target_y = v_pixel_y - @as(VecSF, @splat(y_offset));
 
-            var v_xi_out: @Vector(S, f64) = undefined;
-            var v_eta_out: @Vector(S, f64) = undefined;
+            var v_xi_out: VecSF = undefined;
+            var v_eta_out: VecSF = undefined;
 
-            var v_weights: [nodes_num]@Vector(S, f64) = undefined;
-            var v_dNu: [nodes_num]@Vector(S, f64) = undefined;
-            var v_dNv: [nodes_num]@Vector(S, f64) = undefined;
+            var v_weights: [nodes_num]VecSF = undefined;
+            var v_dNu: [nodes_num]VecSF = undefined;
+            var v_dNv: [nodes_num]VecSF = undefined;
 
             const res = newton.solveInverseSIMD(
                 nodes_num,
@@ -383,14 +384,14 @@ pub fn Tri6Kernel() type {
             );
 
             return .{
-                .weights = v_weights,
-                .mask = res.v_converged,
-                .pre_domain_converged = res.v_pre_domain_converged,
-                .iters = res.v_iterations,
-                .xi_out = v_xi_out,
-                .eta_out = v_eta_out,
-                .residual_x = res.v_residual_x,
-                .residual_y = res.v_residual_y,
+                .v_weights = v_weights,
+                .v_mask = res.v_converged,
+                .v_pre_domain_converged = res.v_pre_domain_converged,
+                .v_iters = res.v_iterations,
+                .v_xi_out = v_xi_out,
+                .v_eta_out = v_eta_out,
+                .v_residual_x = res.v_residual_x,
+                .v_residual_y = res.v_residual_y,
             };
         }
 
@@ -997,22 +998,22 @@ pub fn Quad4NewtonKernel() type {
 
         pub inline fn solveWeightsNewtonSIMD(
             nodes: Vec3Slices(f64),
-            v_pixel_x: @Vector(S, f64),
-            v_pixel_y: @Vector(S, f64),
-            v_xi_seed: @Vector(S, f64),
-            v_eta_seed: @Vector(S, f64),
+            v_pixel_x: VecSF,
+            v_pixel_y: VecSF,
+            v_xi_seed: VecSF,
+            v_eta_seed: VecSF,
             x_offset: f64,
             y_offset: f64,
         ) GeometryResultSIMD(nodes_num) {
-            const v_target_x = v_pixel_x - @as(@Vector(S, f64), @splat(x_offset));
-            const v_target_y = v_pixel_y - @as(@Vector(S, f64), @splat(y_offset));
+            const v_target_x = v_pixel_x - @as(VecSF, @splat(x_offset));
+            const v_target_y = v_pixel_y - @as(VecSF, @splat(y_offset));
 
-            var v_xi_out: @Vector(S, f64) = undefined;
-            var v_eta_out: @Vector(S, f64) = undefined;
+            var v_xi_out: VecSF = undefined;
+            var v_eta_out: VecSF = undefined;
 
-            var v_weights: [nodes_num]@Vector(S, f64) = undefined;
-            var v_dNu: [nodes_num]@Vector(S, f64) = undefined;
-            var v_dNv: [nodes_num]@Vector(S, f64) = undefined;
+            var v_weights: [nodes_num]VecSF = undefined;
+            var v_dNu: [nodes_num]VecSF = undefined;
+            var v_dNv: [nodes_num]VecSF = undefined;
 
             const res = newton.solveInverseSIMD(
                 nodes_num,
@@ -1031,14 +1032,14 @@ pub fn Quad4NewtonKernel() type {
             );
 
             return .{
-                .weights = v_weights,
-                .mask = res.v_converged,
-                .pre_domain_converged = res.v_pre_domain_converged,
-                .iters = res.v_iterations,
-                .xi_out = v_xi_out,
-                .eta_out = v_eta_out,
-                .residual_x = res.v_residual_x,
-                .residual_y = res.v_residual_y,
+                .v_weights = v_weights,
+                .v_mask = res.v_converged,
+                .v_pre_domain_converged = res.v_pre_domain_converged,
+                .v_iters = res.v_iterations,
+                .v_xi_out = v_xi_out,
+                .v_eta_out = v_eta_out,
+                .v_residual_x = res.v_residual_x,
+                .v_residual_y = res.v_residual_y,
             };
         }
 
@@ -1132,22 +1133,22 @@ pub fn Quad89Kernel(comptime N: usize) type {
 
         pub inline fn solveWeightsNewtonSIMD(
             nodes: Vec3Slices(f64),
-            v_pixel_x: @Vector(S, f64),
-            v_pixel_y: @Vector(S, f64),
-            v_xi_seed: @Vector(S, f64),
-            v_eta_seed: @Vector(S, f64),
+            v_pixel_x: VecSF,
+            v_pixel_y: VecSF,
+            v_xi_seed: VecSF,
+            v_eta_seed: VecSF,
             x_offset: f64,
             y_offset: f64,
         ) GeometryResultSIMD(nodes_num) {
-            const v_target_x = v_pixel_x - @as(@Vector(S, f64), @splat(x_offset));
-            const v_target_y = v_pixel_y - @as(@Vector(S, f64), @splat(y_offset));
+            const v_target_x = v_pixel_x - @as(VecSF, @splat(x_offset));
+            const v_target_y = v_pixel_y - @as(VecSF, @splat(y_offset));
 
-            var v_xi_out: @Vector(S, f64) = undefined;
-            var v_eta_out: @Vector(S, f64) = undefined;
+            var v_xi_out: VecSF = undefined;
+            var v_eta_out: VecSF = undefined;
 
-            var v_weights: [nodes_num]@Vector(S, f64) = undefined;
-            var v_dNu: [nodes_num]@Vector(S, f64) = undefined;
-            var v_dNv: [nodes_num]@Vector(S, f64) = undefined;
+            var v_weights: [nodes_num]VecSF = undefined;
+            var v_dNu: [nodes_num]VecSF = undefined;
+            var v_dNv: [nodes_num]VecSF = undefined;
 
             const res = newton.solveInverseSIMD(
                 nodes_num,
@@ -1166,14 +1167,14 @@ pub fn Quad89Kernel(comptime N: usize) type {
             );
 
             return .{
-                .weights = v_weights,
-                .mask = res.v_converged,
-                .pre_domain_converged = res.v_pre_domain_converged,
-                .iters = res.v_iterations,
-                .xi_out = v_xi_out,
-                .eta_out = v_eta_out,
-                .residual_x = res.v_residual_x,
-                .residual_y = res.v_residual_y,
+                .v_weights = v_weights,
+                .v_mask = res.v_converged,
+                .v_pre_domain_converged = res.v_pre_domain_converged,
+                .v_iters = res.v_iterations,
+                .v_xi_out = v_xi_out,
+                .v_eta_out = v_eta_out,
+                .v_residual_x = res.v_residual_x,
+                .v_residual_y = res.v_residual_y,
             };
         }
 

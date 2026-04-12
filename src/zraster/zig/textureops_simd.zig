@@ -2,7 +2,11 @@ const std = @import("std");
 const assert = std.debug.assert;
 const print = std.debug.print;
 const buildconfig = @import("buildconfig.zig");
-const S = buildconfig.config.simd_vector_width;
+const S = buildconfig.SimdWidth;
+const VecSB = buildconfig.VecSB;
+const VecSF = buildconfig.VecSF;
+const VecSI = buildconfig.VecSI;
+const VecSU = buildconfig.VecSU;
 const tol = buildconfig.config.tolerance;
 const common = @import("textureops_common.zig");
 
@@ -99,33 +103,33 @@ fn getPx(comptime channels: usize, texture: anytype, x: isize, y: isize) [channe
     return res;
 }
 
-fn v_getPxSIMD(comptime channels: usize, texture: anytype, v_xi: @Vector(S, isize), v_yi: @Vector(S, isize)) [channels]@Vector(S, f64) {
+fn v_getPxSIMD(comptime channels: usize, texture: anytype, v_xi: VecSI, v_yi: VecSI) [channels]VecSF {
     const cols = @as(isize, @intCast(texture.cols_num));
     const rows = @as(isize, @intCast(texture.rows_num));
 
-    const v_splat_zero: @Vector(S, isize) = @splat(0);
-    const v_cols_m1: @Vector(S, isize) = @splat(cols - 1);
-    const v_rows_m1: @Vector(S, isize) = @splat(rows - 1);
+    const v_splat_zero: VecSI = @splat(0);
+    const v_cols_m1: VecSI = @splat(cols - 1);
+    const v_rows_m1: VecSI = @splat(rows - 1);
 
     const v_ix = @as(
-        @Vector(S, usize),
+        VecSU,
         @intCast(@max(v_splat_zero, @min(v_xi, v_cols_m1))),
     );
     const v_iy = @as(
-        @Vector(S, usize),
+        VecSU,
         @intCast(@max(v_splat_zero, @min(v_yi, v_rows_m1))),
     );
 
-    var res: [channels]@Vector(S, f64) = undefined;
+    var res: [channels]VecSF = undefined;
     const stride_y = texture.array.strides[1];
 
     inline for (0..channels) |ch| {
         const base_ptr = texture.array.getPlanePtr(ch);
-        const v_offsets = v_iy * @as(@Vector(S, usize), @splat(stride_y)) + v_ix;
+        const v_offsets = v_iy * @as(VecSU, @splat(stride_y)) + v_ix;
 
         // Fast path for contiguous horizontal reads
         const first_off = v_offsets[0];
-        const v_expected = @as(@Vector(S, usize), @splat(first_off)) + std.simd.iota(usize, S);
+        const v_expected = @as(VecSU, @splat(first_off)) + std.simd.iota(usize, S);
         const is_contiguous = @reduce(.And, v_offsets == v_expected);
 
         if (is_contiguous) {
@@ -289,40 +293,40 @@ pub fn sampleGeneric(comptime channels: usize, interp: InterpType, texture: anyt
     };
 }
 
-fn v_cubicWeightSIMD(v_x: @Vector(S, f64)) @Vector(S, f64) {
+fn v_cubicWeightSIMD(v_x: VecSF) VecSF {
     const v_ax = @abs(v_x);
-    const v_splat_one: @Vector(S, f64) = @splat(1.0);
-    const v_splat_two: @Vector(S, f64) = @splat(2.0);
+    const v_splat_one: VecSF = @splat(1.0);
+    const v_splat_two: VecSF = @splat(2.0);
 
     const v_mask_inner = v_ax <= v_splat_one;
     const v_mask_outer = (v_ax < v_splat_two) & !v_mask_inner;
 
     const v_w1 =
-        ((@as(@Vector(S, f64), @splat(1.5)) * v_ax -
-            @as(@Vector(S, f64), @splat(2.5))) * v_ax +
-            @as(@Vector(S, f64), @splat(0.0))) * v_ax +
+        ((@as(VecSF, @splat(1.5)) * v_ax -
+            @as(VecSF, @splat(2.5))) * v_ax +
+            @as(VecSF, @splat(0.0))) * v_ax +
         v_splat_one;
     const v_w2 =
-        ((-@as(@Vector(S, f64), @splat(0.5)) * v_ax +
-            @as(@Vector(S, f64), @splat(2.5))) * v_ax -
-            @as(@Vector(S, f64), @splat(4.0))) * v_ax +
+        ((-@as(VecSF, @splat(0.5)) * v_ax +
+            @as(VecSF, @splat(2.5))) * v_ax -
+            @as(VecSF, @splat(4.0))) * v_ax +
         v_splat_two;
 
     var res = @select(
         f64,
         v_mask_inner,
         v_w1,
-        @as(@Vector(S, f64), @splat(0.0)),
+        @as(VecSF, @splat(0.0)),
     );
     res = @select(f64, v_mask_outer, v_w2, res);
     return res;
 }
 
-fn v_quinticWeightSIMD(v_x: @Vector(S, f64)) @Vector(S, f64) {
+fn v_quinticWeightSIMD(v_x: VecSF) VecSF {
     const v_ax = @abs(v_x);
-    const v_splat_one: @Vector(S, f64) = @splat(1.0);
-    const v_splat_two: @Vector(S, f64) = @splat(2.0);
-    const v_splat_three: @Vector(S, f64) = @splat(3.0);
+    const v_splat_one: VecSF = @splat(1.0);
+    const v_splat_two: VecSF = @splat(2.0);
+    const v_splat_three: VecSF = @splat(3.0);
 
     const v_mask_inner = v_ax <= v_splat_one;
     const v_mask_middle = (v_ax <= v_splat_two) & !v_mask_inner;
@@ -330,46 +334,46 @@ fn v_quinticWeightSIMD(v_x: @Vector(S, f64)) @Vector(S, f64) {
         (v_ax < v_splat_three) & !v_mask_inner & !v_mask_middle;
 
     const v_w1 =
-        ((((-@as(@Vector(S, f64), @splat(0.416666)) * v_ax + v_splat_one) *
+        ((((-@as(VecSF, @splat(0.416666)) * v_ax + v_splat_one) *
             v_ax +
-            @as(@Vector(S, f64), @splat(0.583333))) * v_ax -
-            @as(@Vector(S, f64), @splat(1.5))) * v_ax -
-            @as(@Vector(S, f64), @splat(0.083333))) * v_ax +
+            @as(VecSF, @splat(0.583333))) * v_ax -
+            @as(VecSF, @splat(1.5))) * v_ax -
+            @as(VecSF, @splat(0.083333))) * v_ax +
         v_splat_one;
 
     const v_shift_two = v_ax - v_splat_one;
     const v_w2 =
-        ((((@as(@Vector(S, f64), @splat(0.25)) * v_shift_two -
-            @as(@Vector(S, f64), @splat(0.833333))) * v_shift_two +
-            @as(@Vector(S, f64), @splat(0.416666))) * v_shift_two +
-            @as(@Vector(S, f64), @splat(0.5))) * v_shift_two -
-            @as(@Vector(S, f64), @splat(0.083333))) * v_shift_two;
+        ((((@as(VecSF, @splat(0.25)) * v_shift_two -
+            @as(VecSF, @splat(0.833333))) * v_shift_two +
+            @as(VecSF, @splat(0.416666))) * v_shift_two +
+            @as(VecSF, @splat(0.5))) * v_shift_two -
+            @as(VecSF, @splat(0.083333))) * v_shift_two;
 
     const v_shift_three = v_ax - v_splat_two;
     const v_w3 =
-        ((((-@as(@Vector(S, f64), @splat(0.008333)) * v_shift_three +
-            @as(@Vector(S, f64), @splat(0.083333))) * v_shift_three -
-            @as(@Vector(S, f64), @splat(0.041666))) * v_shift_three -
-            @as(@Vector(S, f64), @splat(0.083333))) * v_shift_three +
-            @as(@Vector(S, f64), @splat(0.041666))) * v_shift_three;
+        ((((-@as(VecSF, @splat(0.008333)) * v_shift_three +
+            @as(VecSF, @splat(0.083333))) * v_shift_three -
+            @as(VecSF, @splat(0.041666))) * v_shift_three -
+            @as(VecSF, @splat(0.083333))) * v_shift_three +
+            @as(VecSF, @splat(0.041666))) * v_shift_three;
 
     var res = @select(
         f64,
         v_mask_inner,
         v_w1,
-        @as(@Vector(S, f64), @splat(0.0)),
+        @as(VecSF, @splat(0.0)),
     );
     res = @select(f64, v_mask_middle, v_w2, res);
     res = @select(f64, v_mask_outer, v_w3, res);
     return res;
 }
 
-pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: anytype, v_u: @Vector(S, f64), v_v: @Vector(S, f64)) [channels]@Vector(S, f64) {
+pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: anytype, v_u: VecSF, v_v: VecSF) [channels]VecSF {
     const cols_minus_1_f = @as(f64, @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1));
     const rows_minus_1_f = @as(f64, @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1));
 
-    const v_xf = v_u * @as(@Vector(S, f64), @splat(cols_minus_1_f));
-    const v_yf = v_v * @as(@Vector(S, f64), @splat(rows_minus_1_f));
+    const v_xf = v_u * @as(VecSF, @splat(cols_minus_1_f));
+    const v_yf = v_v * @as(VecSF, @splat(rows_minus_1_f));
 
     var v_xi: [S]isize = undefined;
     var v_yi: [S]isize = undefined;
@@ -381,18 +385,18 @@ pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: 
         v_yi[ii] = @as(isize, @intFromFloat(@floor(yf_arr[ii])));
     }
 
-    const v_tx = v_xf - @as(@Vector(S, f64), @floatFromInt(@as(@Vector(S, isize), v_xi)));
-    const v_ty = v_yf - @as(@Vector(S, f64), @floatFromInt(@as(@Vector(S, isize), v_yi)));
+    const v_tx = v_xf - @as(VecSF, @floatFromInt(@as(VecSI, v_xi)));
+    const v_ty = v_yf - @as(VecSF, @floatFromInt(@as(VecSI, v_yi)));
 
     return switch (interp) {
         .linear => {
             const v_p00 = v_getPxSIMD(channels, texture, v_xi, v_yi);
-            const v_p10 = v_getPxSIMD(channels, texture, v_xi + @as(@Vector(S, isize), @splat(1)), v_yi);
-            const v_p01 = v_getPxSIMD(channels, texture, v_xi, v_yi + @as(@Vector(S, isize), @splat(1)));
-            const v_p11 = v_getPxSIMD(channels, texture, v_xi + @as(@Vector(S, isize), @splat(1)), v_yi + @as(@Vector(S, isize), @splat(1)));
+            const v_p10 = v_getPxSIMD(channels, texture, v_xi + @as(VecSI, @splat(1)), v_yi);
+            const v_p01 = v_getPxSIMD(channels, texture, v_xi, v_yi + @as(VecSI, @splat(1)));
+            const v_p11 = v_getPxSIMD(channels, texture, v_xi + @as(VecSI, @splat(1)), v_yi + @as(VecSI, @splat(1)));
 
-            var res: [channels]@Vector(S, f64) = undefined;
-            const v_splat_one: @Vector(S, f64) = @splat(1.0);
+            var res: [channels]VecSF = undefined;
+            const v_splat_one: VecSF = @splat(1.0);
             inline for (0..channels) |ch| {
                 res[ch] = (v_splat_one - v_tx) * (v_splat_one - v_ty) *
                     v_p00[ch] +
@@ -406,23 +410,23 @@ pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: 
             const K = 4;
             const offset = @divTrunc(@as(isize, @intCast(K)), 2) - 1;
 
-            var v_wx: [K]@Vector(S, f64) = undefined;
-            var v_wy: [K]@Vector(S, f64) = undefined;
+            var v_wx: [K]VecSF = undefined;
+            var v_wy: [K]VecSF = undefined;
 
             const tx_arr: [S]f64 = v_tx;
             const ty_arr: [S]f64 = v_ty;
 
             switch (interp) {
                 .cubic => {
-                    v_wx[0] = v_cubicWeightSIMD(v_tx + @as(@Vector(S, f64), @splat(1.0)));
+                    v_wx[0] = v_cubicWeightSIMD(v_tx + @as(VecSF, @splat(1.0)));
                     v_wx[1] = v_cubicWeightSIMD(v_tx);
-                    v_wx[2] = v_cubicWeightSIMD(v_tx - @as(@Vector(S, f64), @splat(1.0)));
-                    v_wx[3] = v_cubicWeightSIMD(v_tx - @as(@Vector(S, f64), @splat(2.0)));
+                    v_wx[2] = v_cubicWeightSIMD(v_tx - @as(VecSF, @splat(1.0)));
+                    v_wx[3] = v_cubicWeightSIMD(v_tx - @as(VecSF, @splat(2.0)));
 
-                    v_wy[0] = v_cubicWeightSIMD(v_ty + @as(@Vector(S, f64), @splat(1.0)));
+                    v_wy[0] = v_cubicWeightSIMD(v_ty + @as(VecSF, @splat(1.0)));
                     v_wy[1] = v_cubicWeightSIMD(v_ty);
-                    v_wy[2] = v_cubicWeightSIMD(v_ty - @as(@Vector(S, f64), @splat(1.0)));
-                    v_wy[3] = v_cubicWeightSIMD(v_ty - @as(@Vector(S, f64), @splat(2.0)));
+                    v_wy[2] = v_cubicWeightSIMD(v_ty - @as(VecSF, @splat(1.0)));
+                    v_wy[3] = v_cubicWeightSIMD(v_ty - @as(VecSF, @splat(2.0)));
                 },
                 .cubic_lut => {
                     var wx_arr: [4][S]f64 = undefined;
@@ -459,11 +463,11 @@ pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: 
                 else => unreachable,
             }
 
-            var v_res: [channels]@Vector(S, f64) = [_]@Vector(S, f64){@splat(0.0)} ** channels;
-            var v_w_sum: @Vector(S, f64) = @splat(0.0);
+            var v_res: [channels]VecSF = [_]VecSF{@splat(0.0)} ** channels;
+            var v_w_sum: VecSF = @splat(0.0);
 
             // Pre-calculate weight planes
-            var v_w_planes: [K * K]@Vector(S, f64) = undefined;
+            var v_w_planes: [K * K]VecSF = undefined;
             inline for (0..K) |jj| {
                 const v_wy_val = v_wy[jj];
                 inline for (0..K) |ii| {
@@ -476,7 +480,7 @@ pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: 
             inline for (0..K) |jj| {
                 inline for (0..K) |ii| {
                     const v_w = v_w_planes[jj * K + ii];
-                    const v_px_vecs = v_getPxSIMD(channels, texture, v_xi + @as(@Vector(S, isize), @splat(@as(isize, @intCast(ii)) - offset)), v_yi + @as(@Vector(S, isize), @splat(@as(isize, @intCast(jj)) - offset)));
+                    const v_px_vecs = v_getPxSIMD(channels, texture, v_xi + @as(VecSI, @splat(@as(isize, @intCast(ii)) - offset)), v_yi + @as(VecSI, @splat(@as(isize, @intCast(jj)) - offset)));
 
                     inline for (0..channels) |ch| {
                         v_res[ch] += v_px_vecs[ch] * v_w;
@@ -484,11 +488,11 @@ pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: 
                 }
             }
 
-            const v_splat_one: @Vector(S, f64) = @splat(1.0);
+            const v_splat_one: VecSF = @splat(1.0);
             const v_inv_w_sum = @select(
                 f64,
                 @abs(v_w_sum) < @as(
-                    @Vector(S, f64),
+                    VecSF,
                     @splat(tol.texture.weight_sum),
                 ),
                 v_splat_one,
@@ -503,27 +507,27 @@ pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: 
             const K = 6;
             const offset = @divTrunc(@as(isize, @intCast(K)), 2) - 1;
 
-            var v_wx: [K]@Vector(S, f64) = undefined;
-            var v_wy: [K]@Vector(S, f64) = undefined;
+            var v_wx: [K]VecSF = undefined;
+            var v_wy: [K]VecSF = undefined;
 
             const tx_arr: [S]f64 = v_tx;
             const ty_arr: [S]f64 = v_ty;
 
             switch (interp) {
                 .quintic => {
-                    v_wx[0] = v_quinticWeightSIMD(v_tx + @as(@Vector(S, f64), @splat(2.0)));
-                    v_wx[1] = v_quinticWeightSIMD(v_tx + @as(@Vector(S, f64), @splat(1.0)));
+                    v_wx[0] = v_quinticWeightSIMD(v_tx + @as(VecSF, @splat(2.0)));
+                    v_wx[1] = v_quinticWeightSIMD(v_tx + @as(VecSF, @splat(1.0)));
                     v_wx[2] = v_quinticWeightSIMD(v_tx);
-                    v_wx[3] = v_quinticWeightSIMD(v_tx - @as(@Vector(S, f64), @splat(1.0)));
-                    v_wx[4] = v_quinticWeightSIMD(v_tx - @as(@Vector(S, f64), @splat(2.0)));
-                    v_wx[5] = v_quinticWeightSIMD(v_tx - @as(@Vector(S, f64), @splat(3.0)));
+                    v_wx[3] = v_quinticWeightSIMD(v_tx - @as(VecSF, @splat(1.0)));
+                    v_wx[4] = v_quinticWeightSIMD(v_tx - @as(VecSF, @splat(2.0)));
+                    v_wx[5] = v_quinticWeightSIMD(v_tx - @as(VecSF, @splat(3.0)));
 
-                    v_wy[0] = v_quinticWeightSIMD(v_ty + @as(@Vector(S, f64), @splat(2.0)));
-                    v_wy[1] = v_quinticWeightSIMD(v_ty + @as(@Vector(S, f64), @splat(1.0)));
+                    v_wy[0] = v_quinticWeightSIMD(v_ty + @as(VecSF, @splat(2.0)));
+                    v_wy[1] = v_quinticWeightSIMD(v_ty + @as(VecSF, @splat(1.0)));
                     v_wy[2] = v_quinticWeightSIMD(v_ty);
-                    v_wy[3] = v_quinticWeightSIMD(v_ty - @as(@Vector(S, f64), @splat(1.0)));
-                    v_wy[4] = v_quinticWeightSIMD(v_ty - @as(@Vector(S, f64), @splat(2.0)));
-                    v_wy[5] = v_quinticWeightSIMD(v_ty - @as(@Vector(S, f64), @splat(3.0)));
+                    v_wy[3] = v_quinticWeightSIMD(v_ty - @as(VecSF, @splat(1.0)));
+                    v_wy[4] = v_quinticWeightSIMD(v_ty - @as(VecSF, @splat(2.0)));
+                    v_wy[5] = v_quinticWeightSIMD(v_ty - @as(VecSF, @splat(3.0)));
                 },
                 .quintic_lut => {
                     var wx_arr: [6][S]f64 = undefined;
@@ -560,11 +564,11 @@ pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: 
                 else => unreachable,
             }
 
-            var v_res: [channels]@Vector(S, f64) = [_]@Vector(S, f64){@splat(0.0)} ** channels;
-            var v_w_sum: @Vector(S, f64) = @splat(0.0);
+            var v_res: [channels]VecSF = [_]VecSF{@splat(0.0)} ** channels;
+            var v_w_sum: VecSF = @splat(0.0);
 
             // Pre-calculate weight planes
-            var v_w_planes: [K * K]@Vector(S, f64) = undefined;
+            var v_w_planes: [K * K]VecSF = undefined;
             inline for (0..K) |jj| {
                 const v_wy_val = v_wy[jj];
                 inline for (0..K) |ii| {
@@ -577,7 +581,7 @@ pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: 
             inline for (0..K) |jj| {
                 inline for (0..K) |ii| {
                     const v_w = v_w_planes[jj * K + ii];
-                    const v_px_vecs = v_getPxSIMD(channels, texture, v_xi + @as(@Vector(S, isize), @splat(@as(isize, @intCast(ii)) - offset)), v_yi + @as(@Vector(S, isize), @splat(@as(isize, @intCast(jj)) - offset)));
+                    const v_px_vecs = v_getPxSIMD(channels, texture, v_xi + @as(VecSI, @splat(@as(isize, @intCast(ii)) - offset)), v_yi + @as(VecSI, @splat(@as(isize, @intCast(jj)) - offset)));
 
                     inline for (0..channels) |ch| {
                         v_res[ch] += v_px_vecs[ch] * v_w;
@@ -585,11 +589,11 @@ pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: 
                 }
             }
 
-            const v_splat_one: @Vector(S, f64) = @splat(1.0);
+            const v_splat_one: VecSF = @splat(1.0);
             const v_inv_w_sum = @select(
                 f64,
                 @abs(v_w_sum) < @as(
-                    @Vector(S, f64),
+                    VecSF,
                     @splat(tol.texture.weight_sum),
                 ),
                 v_splat_one,
@@ -658,11 +662,11 @@ pub fn sampleGenericInnerSIMD(comptime channels: usize, interp: InterpType, text
 pub fn sampleGenericHybrid(
     comptime channels: usize,
     interp: InterpType,
-    v_mask_active: @Vector(S, bool),
+    v_mask_active: VecSB,
     texture: anytype,
-    v_u: @Vector(S, f64),
-    v_v: @Vector(S, f64),
-) [channels]@Vector(S, f64) {
+    v_u: VecSF,
+    v_v: VecSF,
+) [channels]VecSF {
     var res_arr: [channels][S]f64 = [_][S]f64{[_]f64{0.0} ** S} ** channels;
     const mask_arr: [S]bool = v_mask_active;
     const u_arr: [S]f64 = v_u;
@@ -678,7 +682,7 @@ pub fn sampleGenericHybrid(
         }
     }
 
-    var res: [channels]@Vector(S, f64) = undefined;
+    var res: [channels]VecSF = undefined;
     inline for (0..channels) |ch| {
         res[ch] = res_arr[ch];
     }
@@ -689,11 +693,11 @@ pub fn sampleGenericHybrid(
 pub fn sampleGenericHybridTri3Local(
     comptime channels: usize,
     interp: InterpType,
-    v_mask_active: @Vector(S, bool),
+    v_mask_active: VecSB,
     texture: anytype,
-    v_u: @Vector(S, f64),
-    v_v: @Vector(S, f64),
-) [channels]@Vector(S, f64) {
+    v_u: VecSF,
+    v_v: VecSF,
+) [channels]VecSF {
     var res_arr: [channels][S]f64 = [_][S]f64{[_]f64{0.0} ** S} ** channels;
     const mask_arr: [S]bool = v_mask_active;
     const u_arr: [S]f64 = v_u;
@@ -760,7 +764,7 @@ pub fn sampleGenericHybridTri3Local(
         }
     }
 
-    var res: [channels]@Vector(S, f64) = undefined;
+    var res: [channels]VecSF = undefined;
     inline for (0..channels) |ch| {
         res[ch] = res_arr[ch];
     }

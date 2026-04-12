@@ -576,7 +576,7 @@ pub fn RasterPass(
                     const tess_check_num: u64 = @intCast(@reduce(.Add, v_tess_check_u8));
                     ctx_report.recordTessChecks(tess_check_num);
 
-                    const v_mask_active = v_x_mask & v_hull_res.isIn;
+                    const v_mask_active = v_x_mask & v_hull_res.v_is_in;
                     
                     // Report: count of masked passes of the tessellation for reporting
                     const v_tess_pass_u8 = @select(
@@ -585,7 +585,8 @@ pub fn RasterPass(
                         v_mask_one_u8,
                         v_mask_zero_u8,
                     );
-                    const tess_pass_num: u64 =@intCast(@reduce(.Add, v_tess_pass_u8));
+                    const tess_pass_num: u64 = 
+                        @intCast(@reduce(.Add, v_tess_pass_u8));
                     ctx_report.recordTessPasses(tess_pass_num);
 
                     // We only take sub-pixels that pass the tessellation check to run the
@@ -594,10 +595,13 @@ pub fn RasterPass(
                         const mask_arr: [S]bool = v_mask_active;
                         const x_arr_f: [S]f64 = v_subpx_x_f;
                         const y_arr_f: [S]f64 = v_subpx_y_f;
-                        
+
+                        // Initial seed can be the centroid in parametric coords or it can
+                        // be estimated from the hull check, testing showed centroid is more
+                        // robust.
                         const init_seed = Geometry.initSeedSIMD(.{
-                            .v_xi = v_hull_res.seed_xi,
-                            .v_eta = v_hull_res.seed_eta,
+                            .v_xi = v_hull_res.v_seed_xi,
+                            .v_eta = v_hull_res.v_seed_eta,
                         });
                         const xi_arr: [S]f64 = init_seed.v_xi;
                         const eta_arr: [S]f64 = init_seed.v_eta;
@@ -667,34 +671,41 @@ pub fn RasterPass(
                 }
             }
 
+            //------------------------------------------------------------------------------
             // Pass 2: Vectorized Newton solve in chunks of S from tessellation passes
-            const subpx_simd_chunk_count = @divFloor(subpx_tess_pass_count + (S-1), S);
+            const subpx_simd_chunk_count = 
+                @divFloor(subpx_tess_pass_count + (S-1), S);
+            // Storage for seed reuse if needed
             var seed_state = newton.NewtonSeedState{};
+            const v_full_mask: VecSB = @splat(true);
 
+            // Data is already in S wide chunks so we can just loop over our chunks
             for (0..subpx_simd_chunk_count) |chunk_idx| {
                 var subpx_simd_chunk = subpx_scratch.simd_chunks[chunk_idx];
 
-                var chunk_mask_arr = [_]bool{false} ** S;
-                for (0..subpx_simd_chunk.count) |ll| {
-                    chunk_mask_arr[ll] = true;
+                // If we have a good seed from the last run and we have set the mode to 
+                // reuse it we write it into our vector in place
+                if (comptime seed_reuse == .last_converged) {
+                    newton.applySeedReuseInPlace(
+                        Geometry.seed_reuse,
+                        subpx_simd_chunk.count,
+                        seed_state,
+                        subpx_simd_chunk.seed_xi[0..subpx_simd_chunk.count],
+                        subpx_simd_chunk.seed_eta[0..subpx_simd_chunk.count],
+                    );
                 }
-                
-                newton.applySeedReuseInPlace(
-                    Geometry.seed_reuse,
-                    subpx_simd_chunk.count,
-                    seed_state,
-                    subpx_simd_chunk.seed_xi[0..subpx_simd_chunk.count],
-                    subpx_simd_chunk.seed_eta[0..subpx_simd_chunk.count],
-                );
 
                 // Convert fixed size arrays to SIMD vectors for the Newton solve S wide
                 const v_target_x_f: VecSF = subpx_simd_chunk.px_f;
                 const v_target_y_f: VecSF = subpx_simd_chunk.py_f;
                 const v_xi_seed: VecSF = subpx_simd_chunk.seed_xi;
                 const v_eta_seed: VecSF = subpx_simd_chunk.seed_eta;
-                const v_chunk_mask: VecSB = chunk_mask_arr;
+                const v_chunk_mask: VecSB = if (subpx_simd_chunk.count == S)
+                    v_full_mask
+                else
+                    v_lane_idx < @as(VecSU, @splat(subpx_simd_chunk.count));
 
-                ctx_report.recordSolverCalls(subpx_simd_chunk.count);
+                // Actual Newton solver call S wide
                 const result = Geometry.solveWeightsNewtonSIMD(
                     nodes_coords,
                     v_target_x_f,
@@ -704,57 +715,60 @@ pub fn RasterPass(
                     subpx_domain.x_off,
                     subpx_domain.y_off,
                 );
+
+                // Report: solver statistics 
                 const v_solver_iters = @select(
                     u8,
                     v_chunk_mask,
-                    result.iters,
-                    @as(@Vector(S, u8), @splat(0)),
+                    result.v_iters,
+                    @as(VecSU8, @splat(0)),
                 );
                 const solver_iters: u64 = @intCast(@reduce(.Add, v_solver_iters));
                 ctx_report.recordSolverIters(solver_iters);
+                ctx_report.recordSolverCalls(subpx_simd_chunk.count);
 
-                const v_conv_mask = v_chunk_mask & result.mask;
+                // We store anything that converged with parametric coords inside the 
+                // element           
+                const v_conv_mask = v_chunk_mask & result.v_mask;
                 if (@reduce(.Or, v_conv_mask)) {
-                    const conv_mask_arr: [S]bool = v_conv_mask;
-                    const xi_out_arr: [S]f64 = result.xi_out;
-                    const eta_out_arr: [S]f64 = result.eta_out;
-                    const residual_x_arr: [S]f64 = result.residual_x;
-                    const residual_y_arr: [S]f64 = result.residual_y;
-                    var best_lane: ?usize = null;
-                    var best_resid_sq = std.math.inf(f64);
+                    // Vectorised flat index for writes to scratch buffer                 
+                    const v_scratch_idx = 
+                        @as(VecSU, subpx_simd_chunk.scratch_y_u) *
+                        @as(VecSU, @splat(subpx_domain.tile_size)) +
+                        @as(VecSU, subpx_simd_chunk.scratch_x_u);
 
+                    // Convert our vectors to fixed sized arrays for our scattered write
+                    const conv_mask_arr: [S]bool = v_conv_mask;
+                    const xi_out_arr: [S]f64 = result.v_xi_out;
+                    const eta_out_arr: [S]f64 = result.v_eta_out;
+                    const scratch_idx_arr: [S]usize = v_scratch_idx;
+
+                    // Scattered write into scratch buffer, not guaranteed to be aligned 
+                    // because of how we have assigned SIMD chunks from the tessellation 
+                    // check
                     for (0..S) |jj| {
                         if (conv_mask_arr[jj]) {
-                            const scratch_idx =
-                                subpx_simd_chunk.scratch_y_u[jj] *
-                                subpx_domain.tile_size +
-                                subpx_simd_chunk.scratch_x_u[jj];
+                            // Write the parametric coords to the scratch buffers along with
+                            // a mask so we know which sub-pixels to shade in the next pass
+                            const scratch_idx = scratch_idx_arr[jj];
                             subpx_scratch.xi[scratch_idx] = xi_out_arr[jj];
                             subpx_scratch.eta[scratch_idx] = eta_out_arr[jj];
                             subpx_scratch.mask[scratch_idx] = true;
-
-                            const residual_sq =
-                                residual_x_arr[jj] * residual_x_arr[jj] +
-                                residual_y_arr[jj] * residual_y_arr[jj];
-                            if (best_lane == null or residual_sq < best_resid_sq) {
-                                best_lane = jj;
-                                best_resid_sq = residual_sq;
-                            }
                         }
                     }
 
+                    // If we are reusing seeds for the solver we store the best one to splat
+                    // it as our seed for the next batch
                     if (comptime Geometry.seed_reuse == .last_converged) {
-                        if (best_lane != null) {
-                            newton.updateSeedStateFromSIMDResult(
-                                &seed_state,
-                                v_chunk_mask,
-                                result.mask,
-                                result.xi_out,
-                                result.eta_out,
-                                result.residual_x,
-                                result.residual_y,
-                            );
-                        }
+                        newton.updateSeedStateFromSIMDResult(
+                            &seed_state,
+                            v_chunk_mask,
+                            result.v_mask,
+                            result.v_xi_out,
+                            result.v_eta_out,
+                            result.v_residual_x,
+                            result.v_residual_y,
+                        );
                     }
                 }
             }

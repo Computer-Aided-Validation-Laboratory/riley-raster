@@ -88,5 +88,6 @@ pub const SimdWidth = config.simd_vector_width;
 
 pub const VecSF = @Vector(SimdWidth, f64);
 pub const VecSU = @Vector(SimdWidth, usize);
+pub const VecSI = @Vector(SimdWidth, isize);
 pub const VecSB = @Vector(SimdWidth, bool);
 pub const VecSU8 = @Vector(SimdWidth, u8);

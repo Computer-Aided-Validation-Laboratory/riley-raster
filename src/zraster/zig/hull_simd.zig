@@ -1,6 +1,8 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const cfg = buildconfig.config;
+const VecSB = buildconfig.VecSB;
+const VecSF = buildconfig.VecSF;
 const tol = buildconfig.config.tolerance;
 const rops = @import("rasterops.zig");
 const common = @import("hull_common.zig");
@@ -17,9 +19,9 @@ pub const TessTriangle = struct {
 };
 
 pub const HullResultSIMD = struct {
-    isIn: @Vector(S, bool),
-    seed_xi: @Vector(S, f64),
-    seed_eta: @Vector(S, f64),
+    v_is_in: VecSB,
+    v_seed_xi: VecSF,
+    v_seed_eta: VecSF,
 };
 
 pub const HullResultScalar = struct {
@@ -67,14 +69,14 @@ pub fn Tessellation(comptime NT: usize) type {
 
         pub inline fn isInSIMD(
             self: @This(),
-            v_px: @Vector(S, f64),
-            v_py: @Vector(S, f64),
+            v_px: VecSF,
+            v_py: VecSF,
         ) HullResultSIMD {
             const eps = tol.hull.simd_inclusion;
-            const v_m_eps: @Vector(S, f64) = @splat(-eps);
-            var v_isIn: @Vector(S, bool) = @splat(false);
-            var v_seed_xi: @Vector(S, f64) = @splat(0.0);
-            var v_seed_eta: @Vector(S, f64) = @splat(0.0);
+            const v_m_eps: VecSF = @splat(-eps);
+            var v_is_in: VecSB = @splat(false);
+            var v_seed_xi: VecSF = @splat(0.0);
+            var v_seed_eta: VecSF = @splat(0.0);
 
             inline for (self.triangles) |tri| {
                 const e0 = rops.edgeFun3SIMD(
@@ -113,17 +115,17 @@ pub fn Tessellation(comptime NT: usize) type {
                         tri.x[2],
                         tri.y[2],
                     );
-                    const v_inv_area: @Vector(S, f64) = @splat(1.0 / area);
+                    const v_inv_area: VecSF = @splat(1.0 / area);
                     const v_w0 = e1 * v_inv_area;
                     const v_w1 = e2 * v_inv_area;
                     const v_w2 = e0 * v_inv_area;
 
-                    const v_tri_xi0: @Vector(S, f64) = @splat(tri.xi[0]);
-                    const v_tri_xi1: @Vector(S, f64) = @splat(tri.xi[1]);
-                    const v_tri_xi2: @Vector(S, f64) = @splat(tri.xi[2]);
-                    const v_tri_eta0: @Vector(S, f64) = @splat(tri.eta[0]);
-                    const v_tri_eta1: @Vector(S, f64) = @splat(tri.eta[1]);
-                    const v_tri_eta2: @Vector(S, f64) = @splat(tri.eta[2]);
+                    const v_tri_xi0: VecSF = @splat(tri.xi[0]);
+                    const v_tri_xi1: VecSF = @splat(tri.xi[1]);
+                    const v_tri_xi2: VecSF = @splat(tri.xi[2]);
+                    const v_tri_eta0: VecSF = @splat(tri.eta[0]);
+                    const v_tri_eta1: VecSF = @splat(tri.eta[1]);
+                    const v_tri_eta2: VecSF = @splat(tri.eta[2]);
 
                     const v_curr_xi = v_w0 * v_tri_xi0 + v_w1 * v_tri_xi1 + v_w2 * v_tri_xi2;
                     const v_curr_eta =
@@ -131,10 +133,14 @@ pub fn Tessellation(comptime NT: usize) type {
 
                     v_seed_xi = @select(f64, v_in_tri, v_curr_xi, v_seed_xi);
                     v_seed_eta = @select(f64, v_in_tri, v_curr_eta, v_seed_eta);
-                    v_isIn = v_isIn | v_in_tri;
+                    v_is_in = v_is_in | v_in_tri;
                 }
             }
-            return .{ .isIn = v_isIn, .seed_xi = v_seed_xi, .seed_eta = v_seed_eta };
+            return .{
+                .v_is_in = v_is_in,
+                .v_seed_xi = v_seed_xi,
+                .v_seed_eta = v_seed_eta,
+            };
         }
     };
 }

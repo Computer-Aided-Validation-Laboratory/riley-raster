@@ -1,6 +1,7 @@
 const buildconfig = @import("buildconfig.zig");
 
-const S = buildconfig.config.simd_vector_width;
+const S = buildconfig.SimdWidth;
+const VecSF = buildconfig.VecSF;
 
 pub const NodalDerivs = struct {
     dNu: [9][9]f64,
@@ -68,11 +69,11 @@ pub fn shapeFunctions(
 
 pub fn shapeFunctionsSIMD(
     comptime N: usize,
-    v_xi: @Vector(S, f64),
-    v_eta: @Vector(S, f64),
-    v_shape_vals: *[N]@Vector(S, f64),
-    v_dN_dxi: *[N]@Vector(S, f64),
-    v_dN_deta: *[N]@Vector(S, f64),
+    v_xi: VecSF,
+    v_eta: VecSF,
+    v_shape_vals: *[N]VecSF,
+    v_dN_dxi: *[N]VecSF,
+    v_dN_deta: *[N]VecSF,
 ) void {
     switch (N) {
         3 => shapeFunctions3SIMD(
@@ -133,15 +134,15 @@ fn shapeFunctions3(xi: f64, eta: f64, n_v: *[3]f64, dNu: *[3]f64, dNv: *[3]f64) 
 }
 
 fn shapeFunctions3SIMD(
-    v_xi: @Vector(S, f64),
-    v_eta: @Vector(S, f64),
-    v_shape_vals: *[3]@Vector(S, f64),
-    v_dN_dxi: *[3]@Vector(S, f64),
-    v_dN_deta: *[3]@Vector(S, f64),
+    v_xi: VecSF,
+    v_eta: VecSF,
+    v_shape_vals: *[3]VecSF,
+    v_dN_dxi: *[3]VecSF,
+    v_dN_deta: *[3]VecSF,
 ) void {
-    const v_splat_one: @Vector(S, f64) = @splat(1.0);
-    const v_splat_zero: @Vector(S, f64) = @splat(0.0);
-    const v_splat_neg_one: @Vector(S, f64) = @splat(-1.0);
+    const v_splat_one: VecSF = @splat(1.0);
+    const v_splat_zero: VecSF = @splat(0.0);
+    const v_splat_neg_one: VecSF = @splat(-1.0);
 
     const v_L1 = v_splat_one - v_xi - v_eta;
     const v_L2 = v_xi;
@@ -178,15 +179,15 @@ fn shapeFunctions4(xi: f64, eta: f64, n_v: *[4]f64, dNu: *[4]f64, dNv: *[4]f64) 
 }
 
 fn shapeFunctions4SIMD(
-    v_xi: @Vector(S, f64),
-    v_eta: @Vector(S, f64),
-    v_shape_vals: *[4]@Vector(S, f64),
-    v_dN_dxi: *[4]@Vector(S, f64),
-    v_dN_deta: *[4]@Vector(S, f64),
+    v_xi: VecSF,
+    v_eta: VecSF,
+    v_shape_vals: *[4]VecSF,
+    v_dN_dxi: *[4]VecSF,
+    v_dN_deta: *[4]VecSF,
 ) void {
-    const v_splat_quarter: @Vector(S, f64) = @splat(0.25);
-    const v_splat_neg_quarter: @Vector(S, f64) = @splat(-0.25);
-    const v_splat_one: @Vector(S, f64) = @splat(1.0);
+    const v_splat_quarter: VecSF = @splat(0.25);
+    const v_splat_neg_quarter: VecSF = @splat(-0.25);
+    const v_splat_one: VecSF = @splat(1.0);
 
     const v_one_minus_xi = v_splat_one - v_xi;
     const v_one_plus_xi = v_splat_one + v_xi;
@@ -246,16 +247,16 @@ fn shapeFunctions6(
 }
 
 fn shapeFunctions6SIMD(
-    v_xi: @Vector(S, f64),
-    v_eta: @Vector(S, f64),
-    v_shape_vals: *[6]@Vector(S, f64),
-    v_dN_dxi: *[6]@Vector(S, f64),
-    v_dN_deta: *[6]@Vector(S, f64),
+    v_xi: VecSF,
+    v_eta: VecSF,
+    v_shape_vals: *[6]VecSF,
+    v_dN_dxi: *[6]VecSF,
+    v_dN_deta: *[6]VecSF,
 ) void {
-    const v_splat_one: @Vector(S, f64) = @splat(1.0);
-    const v_splat_two: @Vector(S, f64) = @splat(2.0);
-    const v_splat_four: @Vector(S, f64) = @splat(4.0);
-    const v_splat_zero: @Vector(S, f64) = @splat(0.0);
+    const v_splat_one: VecSF = @splat(1.0);
+    const v_splat_two: VecSF = @splat(2.0);
+    const v_splat_four: VecSF = @splat(4.0);
+    const v_splat_zero: VecSF = @splat(0.0);
 
     const v_L1 = v_splat_one - v_xi - v_eta;
     const v_L2 = v_xi;
@@ -322,20 +323,20 @@ fn shapeFunctions8(xi: f64, eta: f64, n_v: *[8]f64, dNu: *[8]f64, dNv: *[8]f64) 
 }
 
 fn shapeFunctions8SIMD(
-    v_xi: @Vector(S, f64),
-    v_eta: @Vector(S, f64),
-    v_shape_vals: *[8]@Vector(S, f64),
-    v_dN_dxi: *[8]@Vector(S, f64),
-    v_dN_deta: *[8]@Vector(S, f64),
+    v_xi: VecSF,
+    v_eta: VecSF,
+    v_shape_vals: *[8]VecSF,
+    v_dN_dxi: *[8]VecSF,
+    v_dN_deta: *[8]VecSF,
 ) void {
     const v_x = v_xi;
     const v_y = v_eta;
-    const v_splat_one: @Vector(S, f64) = @splat(1.0);
-    const v_splat_two: @Vector(S, f64) = @splat(2.0);
-    const v_splat_half: @Vector(S, f64) = @splat(0.5);
-    const v_splat_neg_half: @Vector(S, f64) = @splat(-0.5);
-    const v_splat_quarter: @Vector(S, f64) = @splat(0.25);
-    const v_splat_neg_quarter: @Vector(S, f64) = @splat(-0.25);
+    const v_splat_one: VecSF = @splat(1.0);
+    const v_splat_two: VecSF = @splat(2.0);
+    const v_splat_half: VecSF = @splat(0.5);
+    const v_splat_neg_half: VecSF = @splat(-0.5);
+    const v_splat_quarter: VecSF = @splat(0.25);
+    const v_splat_neg_quarter: VecSF = @splat(-0.25);
 
     const v_x_sq = v_x * v_x;
     const v_y_sq = v_y * v_y;
@@ -425,39 +426,39 @@ fn shapeFunctions9(xi: f64, eta: f64, n_v: *[9]f64, dNu: *[9]f64, dNv: *[9]f64) 
 }
 
 fn shapeFunctions9SIMD(
-    v_xi: @Vector(S, f64),
-    v_eta: @Vector(S, f64),
-    v_shape_vals: *[9]@Vector(S, f64),
-    v_dN_dxi: *[9]@Vector(S, f64),
-    v_dN_deta: *[9]@Vector(S, f64),
+    v_xi: VecSF,
+    v_eta: VecSF,
+    v_shape_vals: *[9]VecSF,
+    v_dN_dxi: *[9]VecSF,
+    v_dN_deta: *[9]VecSF,
 ) void {
     const v_x = v_xi;
     const v_y = v_eta;
-    const v_splat_one: @Vector(S, f64) = @splat(1.0);
-    const v_splat_half: @Vector(S, f64) = @splat(0.5);
-    const v_splat_neg_two: @Vector(S, f64) = @splat(-2.0);
+    const v_splat_one: VecSF = @splat(1.0);
+    const v_splat_half: VecSF = @splat(0.5);
+    const v_splat_neg_two: VecSF = @splat(-2.0);
 
     const v_x_minus_one = v_x - v_splat_one;
     const v_x_plus_one = v_x + v_splat_one;
     const v_y_minus_one = v_y - v_splat_one;
     const v_y_plus_one = v_y + v_splat_one;
 
-    const v_phi = [3]@Vector(S, f64){
+    const v_phi = [3]VecSF{
         v_splat_half * v_x * v_x_minus_one,
         v_splat_one - v_x * v_x,
         v_splat_half * v_x * v_x_plus_one,
     };
-    const v_psi = [3]@Vector(S, f64){
+    const v_psi = [3]VecSF{
         v_splat_half * v_y * v_y_minus_one,
         v_splat_one - v_y * v_y,
         v_splat_half * v_y * v_y_plus_one,
     };
-    const v_dphi = [3]@Vector(S, f64){
+    const v_dphi = [3]VecSF{
         v_x - v_splat_half,
         v_splat_neg_two * v_x,
         v_x + v_splat_half,
     };
-    const v_dpsi = [3]@Vector(S, f64){
+    const v_dpsi = [3]VecSF{
         v_y - v_splat_half,
         v_splat_neg_two * v_y,
         v_y + v_splat_half,

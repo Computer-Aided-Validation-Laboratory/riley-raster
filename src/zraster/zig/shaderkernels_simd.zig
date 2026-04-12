@@ -6,7 +6,9 @@ const texops = @import("textureops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const InterpType = texops.InterpType;
 const CoordSpace = @import("geometrykernels.zig").CoordSpace;
-const S = buildconfig.config.simd_vector_width;
+const S = buildconfig.SimdWidth;
+const VecSB = buildconfig.VecSB;
+const VecSF = buildconfig.VecSF;
 
 pub fn NodalKernel(comptime N: usize) type {
     return struct {
@@ -43,10 +45,10 @@ pub fn NodalKernel(comptime N: usize) type {
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext(N),
             ctx_report: anytype,
-            v_mask_active: @Vector(S, bool),
-            v_weights: [N]@Vector(S, f64),
-            v_nodes_inv_z: [N]@Vector(S, f64),
-            v_subpx_z: @Vector(S, f64),
+            v_mask_active: VecSB,
+            v_weights: [N]VecSF,
+            v_nodes_inv_z: [N]VecSF,
+            v_subpx_z: VecSF,
             shader: *const shaderops.NodalPrepared,
             spx_image_scratch: *MatSlice(f64),
         ) void {
@@ -151,10 +153,10 @@ pub fn TexKernel(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext(N),
             ctx_report: anytype,
-            v_mask_active: @Vector(S, bool),
-            v_weights: [N]@Vector(S, f64),
-            v_nodes_inv_z: [N]@Vector(S, f64),
-            v_subpx_z: @Vector(S, f64),
+            v_mask_active: VecSB,
+            v_weights: [N]VecSF,
+            v_nodes_inv_z: [N]VecSF,
+            v_subpx_z: VecSF,
             shader: *const shaderops.TexPrepared(TexT, channels),
             spx_image_scratch: *MatSlice(f64),
         ) void {

@@ -11,7 +11,8 @@ const Field = meshio.Field;
 const imageops = @import("imageops.zig");
 const buildconfig = @import("buildconfig.zig");
 const cfg = buildconfig.config;
-const S = cfg.simd_vector_width;
+const S = buildconfig.SimdWidth;
+const VecSB = buildconfig.VecSB;
 
 pub const ScaleOver = enum { within_frames, over_frames };
 pub const NormalType = enum { none, exact, averaged };
@@ -129,7 +130,7 @@ pub fn ShadeContext(comptime N: usize) type {
         global_subx: usize,
         global_suby: usize,
         shader_buf: *const LocalShaderBuffer(N),
-        v_mask_active: ?@Vector(S, bool) = null,
+        v_mask_active: ?VecSB = null,
     };
 }
 
