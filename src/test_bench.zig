@@ -95,7 +95,11 @@ test "Unified Benchmark Tests" {
                 for (interp_types) |it| {
                     _ = arena.reset(.free_all);
 
-                    const data_dir = try std.fmt.allocPrint(aa, "data-bench/{s}_{s}", .{ @tagName(mt), cc.name });
+                    const data_dir = try std.fmt.allocPrint(
+                        aa,
+                        "data-bench/{s}_{s}",
+                        .{ @tagName(mt), cc.name },
+                    );
 
                     const run_config = if (cc.is_sphere)
                         common.BenchConfig{ .run = .all, .skip_quad4ibi_sphere = true }
@@ -104,9 +108,17 @@ test "Unified Benchmark Tests" {
 
                     if (common.shouldRun(run_config, mt, st, it, data_dir)) {
                         const case_name = if (st == .tex8_grey or st == .tex8_rgb)
-                            try std.fmt.allocPrint(aa, "{s}_{s}_{s}", .{ @tagName(mt), @tagName(st), @tagName(it) })
+                            try std.fmt.allocPrint(
+                                aa,
+                                "{s}_{s}_{s}",
+                                .{ @tagName(mt), @tagName(st), @tagName(it) },
+                            )
                         else
-                            try std.fmt.allocPrint(aa, "{s}_{s}", .{ @tagName(mt), @tagName(st) });
+                            try std.fmt.allocPrint(
+                                aa,
+                                "{s}_{s}",
+                                .{ @tagName(mt), @tagName(st) },
+                            );
 
                         std.debug.print("Testing {s}/{s} ... ", .{ cc.name, case_name });
 
@@ -129,8 +141,16 @@ test "Unified Benchmark Tests" {
                         const channels: usize = if (is_rgb) 3 else 1;
                         const suffix = if (is_rgb) "_rgb" else "";
 
-                        const test_csv = try std.fmt.allocPrint(aa, "{s}/{s}/frame_0_field_0{s}.csv", .{ cc.out_dir, case_name, suffix });
-                        const gold_csv = try std.fmt.allocPrint(aa, "{s}/{s}/frame_0_field_0{s}.csv", .{ cc.gold_dir, case_name, suffix });
+                        const test_csv = try std.fmt.allocPrint(
+                            aa,
+                            "{s}/{s}/frame_0_field_0{s}.csv",
+                            .{ cc.out_dir, case_name, suffix },
+                        );
+                        const gold_csv = try std.fmt.allocPrint(
+                            aa,
+                            "{s}/{s}/frame_0_field_0{s}.csv",
+                            .{ cc.gold_dir, case_name, suffix },
+                        );
 
                         // 3. Load and Compare
                         const t_arr_res = common.loadNDArrayFromCSV(
@@ -143,7 +163,7 @@ test "Unified Benchmark Tests" {
                         if (t_arr_res) |t_arr| {
                             var t_mut = t_arr;
                             defer {
-                                outer_alloc.free(t_mut.elems);
+                                outer_alloc.free(t_mut.slice);
                                 t_mut.deinit(outer_alloc);
                             }
 
@@ -157,13 +177,13 @@ test "Unified Benchmark Tests" {
                             if (g_arr_res) |g_arr| {
                                 var g_mut = g_arr;
                                 defer {
-                                    outer_alloc.free(g_mut.elems);
+                                    outer_alloc.free(g_mut.slice);
                                     g_mut.deinit(outer_alloc);
                                 }
 
                                 var diff_count: usize = 0;
-                                for (t_mut.elems, 0..) |v_t, ii| {
-                                    if (@abs(v_t - g_mut.elems[ii]) > tcfg.REL_TOL) {
+                                for (t_mut.slice, 0..) |v_t, ii| {
+                                    if (@abs(v_t - g_mut.slice[ii]) > tcfg.REL_TOL) {
                                         diff_count += 1;
                                     }
                                 }
@@ -171,7 +191,10 @@ test "Unified Benchmark Tests" {
                                 if (diff_count == 0) {
                                     std.debug.print("MATCHED\n", .{});
                                 } else {
-                                    std.debug.print("MISMATCH! ({d} px)\n", .{diff_count});
+                                    std.debug.print(
+                                        "MISMATCH! ({d} px)\n",
+                                        .{diff_count},
+                                    );
                                     const fail_dir_name = try std.fmt.allocPrint(
                                         aa,
                                         "bench_{s}_{s}{s}",
@@ -188,11 +211,17 @@ test "Unified Benchmark Tests" {
                                     total_fails += 1;
                                 }
                             } else |err| {
-                                std.debug.print("GOLD LOAD ERROR: {s} ({s})\n", .{ gold_csv, @errorName(err) });
+                                std.debug.print(
+                                    "GOLD LOAD ERROR: {s} ({s})\n",
+                                    .{ gold_csv, @errorName(err) },
+                                );
                                 total_fails += 1;
                             }
                         } else |err| {
-                            std.debug.print("TEST LOAD ERROR: {s} ({s})\n", .{ test_csv, @errorName(err) });
+                            std.debug.print(
+                                "TEST LOAD ERROR: {s} ({s})\n",
+                                .{ test_csv, @errorName(err) },
+                            );
                             total_fails += 1;
                         }
                     }

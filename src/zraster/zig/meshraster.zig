@@ -65,7 +65,7 @@ pub fn prepareMesh(
     coords: *const MatSlice(f64),
     scaling_params: ?ScalingParams,
 ) !MeshPrepared {
-    const wrap_coords = Coords.init(coords.elems, coords.rows_num);
+    const wrap_coords = Coords.init(coords.slice, coords.rows_num);
     const elem_coords = try prepareCoords(
         outer_alloc,
         &wrap_coords,
@@ -104,7 +104,11 @@ pub fn prepareMesh(
             } };
         },
         .tex_u8 => |*tex_in| {
-            const elem_uvs = try prepareUVs(outer_alloc, &tex_in.uvs, &mesh_input.connect);
+            const elem_uvs = try prepareUVs(
+                outer_alloc,
+                &tex_in.uvs,
+                &mesh_input.connect,
+            );
             const params = imageops.getScalingParamsTexture(
                 u8,
                 1,
@@ -125,7 +129,11 @@ pub fn prepareMesh(
             } };
         },
         .tex_u16 => |*tex_in| {
-            const elem_uvs = try prepareUVs(outer_alloc, &tex_in.uvs, &mesh_input.connect);
+            const elem_uvs = try prepareUVs(
+                outer_alloc,
+                &tex_in.uvs,
+                &mesh_input.connect,
+            );
             const params = imageops.getScalingParamsTexture(
                 u16,
                 1,
@@ -146,7 +154,11 @@ pub fn prepareMesh(
             } };
         },
         .tex_rgb_u8 => |*tex_in| {
-            const elem_uvs = try prepareUVs(outer_alloc, &tex_in.uvs, &mesh_input.connect);
+            const elem_uvs = try prepareUVs(
+                outer_alloc,
+                &tex_in.uvs,
+                &mesh_input.connect,
+            );
             const params = imageops.getScalingParamsTexture(
                 u8,
                 3,
@@ -167,7 +179,11 @@ pub fn prepareMesh(
             } };
         },
         .tex_rgb_u16 => |*tex_in| {
-            const elem_uvs = try prepareUVs(outer_alloc, &tex_in.uvs, &mesh_input.connect);
+            const elem_uvs = try prepareUVs(
+                outer_alloc,
+                &tex_in.uvs,
+                &mesh_input.connect,
+            );
             const params = imageops.getScalingParamsTexture(
                 u16,
                 3,
@@ -199,7 +215,7 @@ pub fn prepareCoords(
 ) !NDArray(f64) {
     const coord_dims = [_]usize{ connect.getElemsNum(), 3, connect.getNodesPerElem() };
     var elem_coord_arr = try NDArray(f64).initFlat(outer_alloc, coord_dims[0..]);
-    @memset(elem_coord_arr.elems, 0.0);
+    @memset(elem_coord_arr.slice, 0.0);
 
     const dim_elem: usize = 0;
     const dim_field: usize = 1;
@@ -244,7 +260,7 @@ pub fn prepareField(
         connect.getNodesPerElem(),
     };
     var elem_field_arr = try NDArray(f64).initFlat(outer_alloc, field_dims[0..]);
-    @memset(elem_field_arr.elems, 0.0);
+    @memset(elem_field_arr.slice, 0.0);
 
     const dim_time: usize = 0;
     const dim_elem: usize = 1;
@@ -291,7 +307,7 @@ pub fn prepareUVs(
         outer_alloc,
         &[_]usize{ elems_num, 2, nodes_per_elem },
     );
-    @memset(elem_uv_arr.elems, 0.0);
+    @memset(elem_uv_arr.slice, 0.0);
 
     for (0..elems_num) |ee| {
         const coord_inds = connect.getElem(ee);
@@ -322,10 +338,10 @@ pub fn meshInputFromSimDataSlice(
         for (0..initialized_count) |ii| {
             switch (mesh_inputs[ii].shader) {
                 .tex_u8 => |tex| {
-                    outer_alloc.free(tex.uvs.elems);
+                    outer_alloc.free(tex.uvs.slice);
                 },
                 .tex_u16 => |tex| {
-                    outer_alloc.free(tex.uvs.elems);
+                    outer_alloc.free(tex.uvs.slice);
                 },
                 else => {},
             }

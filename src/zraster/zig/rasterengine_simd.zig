@@ -144,7 +144,7 @@ pub fn resetSubpxScratch(
     subpx_tile_size: usize,
 ) void {
     @memset(subpx_scratch.inv_z, -std.math.inf(f64));
-    @memset(subpx_scratch.image.elems, 0.0);
+    @memset(subpx_scratch.image.slice, 0.0);
     @memset(subpx_scratch.touched_min_x, subpx_tile_size);
     @memset(subpx_scratch.touched_max_x, 0);
 }
@@ -241,8 +241,8 @@ pub fn RasterPass(
                     subpx_scratch,
                 )
             else if (Geometry.solver_kind == .inv_bi)
-                // NOTE: SIMD is very inefficient for highly branched inverse bilinear solve
-                // fallback to scalar
+                // NOTE: SIMD is very inefficient for highly branched inverse bilinear
+                // solve fallback to scalar
                 try rasterDirect(
                     report_mode,
                     ctx_rast,
@@ -277,10 +277,11 @@ pub fn RasterPass(
             return shaded_px;
         }
 
-        /// We run our visibility checks S wide SIMD over sub-pixels. For interpolated nodal
-        /// shading we stay S wide over sub-pixels but for texture shading we switch to 
-        /// inner-SIMD within sub-pixels. This is because the texel fetches for cubic and 
-        /// quintic interpolation of the texture S wide made memory fetches the bottleneck.
+        /// We run our visibility checks S wide SIMD over sub-pixels. For interpolated
+        /// nodal shading we stay S wide over sub-pixels but for texture shading we
+        /// switch to inner-SIMD within sub-pixels. This is because the texel fetches
+        /// for cubic and quintic interpolation of the texture S wide made memory
+        /// fetches the bottleneck.
         fn rasterIncrementalSIMD(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
@@ -385,8 +386,8 @@ pub fn RasterPass(
                                 v_new_inv_z,
                             );
                             const v_subpx_z: VecSF = @as(VecSF, @splat(1.0)) / v_inv_z;
-                            
-                            // Record the x sub-pixel limits we have actually shaded to 
+
+                            // Record the x sub-pixel limits we have actually shaded to
                             // reduce the range of nested loops we evaluate to resolve the
                             // sub-pixel anti-aliasing.
                             const lane_depth_mask: [S]bool = v_depth_mask;
@@ -408,7 +409,6 @@ pub fn RasterPass(
                                 }
                             }
 
-                            
                             // Count the number of shaded pixels for performance analysis
                             // TODO: should we comptime remove this with report = .off?
                             const v_hit_one: VecSU8 = @splat(1);
@@ -458,9 +458,9 @@ pub fn RasterPass(
             return shaded_px;
         }
 
-        /// To use our S wide SIMD effectively for Newton we need to process in multiple 
-        /// passes to fill the S lanes where possible. Pass 1: Vectorised coarse in/out with
-        /// our hull tessellation. Pass 2: 
+        /// To use our S wide SIMD effectively for Newton we need to process in
+        /// multiple passes to fill the S lanes where possible.
+        /// Pass 1: Vectorised coarse in/out with our hull tessellation. Pass 2:
         fn rasterNewtonSIMD(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
@@ -512,7 +512,7 @@ pub fn RasterPass(
             );
 
             // Mask off our buffer based on the tile/elem overlap bounds to avoid needless
-            // processing 
+            // processing
             for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
                 const row_offset = scratch_y_u * subpx_domain.tile_size;
                 const mask_start = row_offset + rast_bounds.start_x_u;
@@ -523,7 +523,7 @@ pub fn RasterPass(
                 );
             }
 
-            // We count the passes of the tessellation check so we can assign chunks and 
+            // We count the passes of the tessellation check so we can assign chunks and
             // lane idx for the Newton solver in the next pass.
             var subpx_tess_pass_count: usize = 0;
 
@@ -545,7 +545,7 @@ pub fn RasterPass(
                     @as(f64, @floatFromInt(targ_overlap.tile.y_px_min)) +
                     (scratch_y_f + 0.5) * subpx_domain.step;
 
-                // Step S wide along the row 
+                // Step S wide along the row
                 var scratch_x_u: usize = rast_bounds.start_x_u;
                 while (scratch_x_u < rast_bounds.end_x_u) : (scratch_x_u += S) {
                     // Mask off lanes that overrun the edges of our bounds in x so when we
@@ -553,20 +553,20 @@ pub fn RasterPass(
                     const v_scratch_x_u: VecSU = @splat(scratch_x_u);
                     const v_subpx_x_u = v_scratch_x_u + v_lane_idx;
                     const v_x_mask = (v_subpx_x_u >= v_orig_start_x_u) &
-                                     (v_subpx_x_u < v_bounds_end_x_u);
+                        (v_subpx_x_u < v_bounds_end_x_u);
 
                     const v_subpx_x_lane_f: VecSF = @floatFromInt(v_subpx_x_u);
                     const v_subpx_x_off_f = (v_subpx_x_lane_f + v_splat_half) * v_step_f;
                     const v_subpx_x_f = v_subpx_min_x_f + v_subpx_x_off_f;
-                    
+
                     const v_subpx_y_f: VecSF = @splat(subpx_y_f);
 
                     const v_hull_res: HullResultSIMD = element_tess.isInSIMD(
                         v_subpx_x_f,
                         v_subpx_y_f,
                     );
-                    
-                    // Report: count passes of the tessellation check 
+
+                    // Report: count passes of the tessellation check
                     const v_mask_one_u8: VecSU8 = @splat(1);
                     const v_mask_zero_u8: VecSU8 = @splat(0);
                     const v_tess_check_u8 = @select(
@@ -579,7 +579,7 @@ pub fn RasterPass(
                     ctx_report.recordTessChecks(tess_check_num);
 
                     const v_mask_active = v_x_mask & v_hull_res.v_is_in;
-                    
+
                     // Report: count of masked passes of the tessellation for reporting
                     const v_tess_pass_u8 = @select(
                         u8,
@@ -587,7 +587,7 @@ pub fn RasterPass(
                         v_mask_one_u8,
                         v_mask_zero_u8,
                     );
-                    const tess_pass_num: u64 = 
+                    const tess_pass_num: u64 =
                         @intCast(@reduce(.Add, v_tess_pass_u8));
                     ctx_report.recordTessPasses(tess_pass_num);
 
@@ -598,9 +598,9 @@ pub fn RasterPass(
                         const x_arr_f: [S]f64 = v_subpx_x_f;
                         const y_arr_f: [S]f64 = v_subpx_y_f;
 
-                        // Initial seed can be the centroid in parametric coords or it can
-                        // be estimated from the hull check, testing showed centroid is more
-                        // robust.
+                        // Initial seed can be the centroid in parametric coords or it
+                        // can be estimated from the hull check, testing showed
+                        // centroid is more robust.
                         const init_seed = Geometry.initSeedSIMD(.{
                             .v_xi = v_hull_res.v_seed_xi,
                             .v_eta = v_hull_res.v_seed_eta,
@@ -635,7 +635,7 @@ pub fn RasterPass(
                                     }
                                 }
 
-                                // Assign an S wide chunk and a lane for this subpixel to 
+                                // Assign an S wide chunk and a lane for this subpixel to
                                 // be processed by the Newton solver
                                 const chunk_idx = subpx_tess_pass_count / S;
                                 const lane_idx = subpx_tess_pass_count % S;
@@ -675,8 +675,8 @@ pub fn RasterPass(
 
             //------------------------------------------------------------------------------
             // Pass 2: Vectorized Newton solve in chunks of S from tessellation passes
-            const subpx_simd_chunk_count = 
-                @divFloor(subpx_tess_pass_count + (S-1), S);
+            const subpx_simd_chunk_count =
+                @divFloor(subpx_tess_pass_count + (S - 1), S);
             // Storage for seed reuse if needed
             var seed_state = newton.NewtonSeedState{};
             const v_full_mask: VecSB = @splat(true);
@@ -685,7 +685,7 @@ pub fn RasterPass(
             for (0..subpx_simd_chunk_count) |chunk_idx| {
                 var subpx_simd_chunk = subpx_scratch.simd_chunks[chunk_idx];
 
-                // If we have a good seed from the last run and we have set the mode to 
+                // If we have a good seed from the last run and we have set the mode to
                 // reuse it we write it into our vector in place
                 if (comptime Geometry.seed_reuse == .last_converged) {
                     newton.applySeedReuseInPlace(
@@ -717,7 +717,7 @@ pub fn RasterPass(
                     subpx_domain.y_off,
                 );
 
-                // Report: solver statistics 
+                // Report: solver statistics
                 const v_solver_iters = @select(
                     u8,
                     v_chunk_mask,
@@ -728,12 +728,12 @@ pub fn RasterPass(
                 ctx_report.recordSolverIters(solver_iters);
                 ctx_report.recordSolverCalls(subpx_simd_chunk.count);
 
-                // We store anything that converged with parametric coords inside the 
-                // element           
+                // We store anything that converged with parametric coords inside the
+                // element
                 const v_conv_mask = v_chunk_mask & result.v_mask;
                 if (@reduce(.Or, v_conv_mask)) {
-                    // Vectorised flat index for writes to scratch buffer                 
-                    const v_scratch_idx = 
+                    // Vectorised flat index for writes to scratch buffer
+                    const v_scratch_idx =
                         @as(VecSU, subpx_simd_chunk.scratch_y_u) *
                         @as(VecSU, @splat(subpx_domain.tile_size)) +
                         @as(VecSU, subpx_simd_chunk.scratch_x_u);
@@ -744,13 +744,14 @@ pub fn RasterPass(
                     const eta_out_arr: [S]f64 = result.v_eta_out;
                     const scratch_idx_arr: [S]usize = v_scratch_idx;
 
-                    // Scattered write into scratch buffer, not guaranteed to be aligned 
-                    // because of how we have assigned SIMD chunks from the tessellation 
+                    // Scattered write into scratch buffer, not guaranteed to be aligned
+                    // because of how we have assigned SIMD chunks from the tessellation
                     // check
                     for (0..S) |jj| {
                         if (conv_mask_arr[jj]) {
-                            // Write the parametric coords to the scratch buffers along with
-                            // a mask so we know which sub-pixels to shade in the next pass
+                            // Write the parametric coords to the scratch buffers along
+                            // with a mask so we know which sub-pixels to shade in the
+                            // next pass
                             const scratch_idx = scratch_idx_arr[jj];
                             subpx_scratch.xi[scratch_idx] = xi_out_arr[jj];
                             subpx_scratch.eta[scratch_idx] = eta_out_arr[jj];
@@ -758,8 +759,8 @@ pub fn RasterPass(
                         }
                     }
 
-                    // If we are reusing seeds for the solver we store the best one to splat
-                    // it as our seed for the next batch
+                    // If we are reusing seeds for the solver we store the best one to
+                    // splat it as our seed for the next batch
                     if (comptime Geometry.seed_reuse == .last_converged) {
                         newton.updateSeedStateFromSIMDResult(
                             &seed_state,
@@ -773,7 +774,7 @@ pub fn RasterPass(
                     }
                 }
             }
-            
+
             //------------------------------------------------------------------------------
             // Pass 3: Spatially Grouped SIMD Shading
             for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
@@ -794,10 +795,10 @@ pub fn RasterPass(
 
                     // Mask based on bounds of the tile/elem overlap
                     const v_scratch_x_u: VecSU = @splat(scratch_x_u);
-                    const v_x_mask = (v_scratch_x_u + v_lane_idx >= v_orig_start_x_u) 
-                                   & (v_scratch_x_u + v_lane_idx < v_bounds_end_x_u);
+                    const v_x_mask = (v_scratch_x_u + v_lane_idx >= v_orig_start_x_u) &
+                        (v_scratch_x_u + v_lane_idx < v_bounds_end_x_u);
 
-                    // Combined mask for sub-pixels to be shaded 
+                    // Combined mask for sub-pixels to be shaded
                     const v_mask_active = v_mask_full & v_x_mask;
                     if (@reduce(.Or, v_mask_active)) {
                         // Load our parametric coords into vectors so we can calculate our
@@ -805,13 +806,14 @@ pub fn RasterPass(
                         var xi_arr: [S]f64 = undefined;
                         var eta_arr: [S]f64 = undefined;
                         const xi_slice = subpx_scratch.xi[scratch_idx .. scratch_idx + S];
-                        const eta_slice = subpx_scratch.eta[scratch_idx .. scratch_idx + S]; 
+                        const eta_slice =
+                            subpx_scratch.eta[scratch_idx .. scratch_idx + S];
                         @memcpy(&xi_arr, xi_slice);
                         @memcpy(&eta_arr, eta_slice);
                         const v_xi: VecSF = xi_arr;
                         const v_eta: VecSF = eta_arr;
 
-                        // Shape function weights and derivative calculation based on 
+                        // Shape function weights and derivative calculation based on
                         // paremetric coords for shading
                         var v_weights: [N]VecSF = undefined;
                         var v_dNu: [N]VecSF = undefined;
@@ -825,7 +827,7 @@ pub fn RasterPass(
                             &v_dNv,
                         );
 
-                        // Vectorised depth visibility check on active lanes only, S wide 
+                        // Vectorised depth visibility check on active lanes only, S wide
                         var v_sum_z: VecSF = @splat(0.0);
                         inline for (0..N) |nn| {
                             v_sum_z += v_weights[nn] * v_nodes_z[nn];
@@ -853,7 +855,7 @@ pub fn RasterPass(
                             );
                             const v_subpx_z: VecSF = @as(VecSF, @splat(1.0)) / v_inv_z;
 
-                            // Record the x sub-pixel limits we have actually shaded to 
+                            // Record the x sub-pixel limits we have actually shaded to
                             // reduce the range of nested loops we evaluate to resolve the
                             // sub-pixel anti-aliasing.
                             const lane_depth_mask: [S]bool = v_depth_mask;
@@ -874,7 +876,6 @@ pub fn RasterPass(
                                     }
                                 }
                             }
-
 
                             // Report: count the pixels to be shaded based on hits
                             const v_hit_one: VecSU8 = @splat(1);

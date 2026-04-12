@@ -9,7 +9,11 @@ pub const LibTiff = struct {
     _TIFFClose: *const fn (*anyopaque) callconv(.c) void,
     _TIFFGetField: *const fn (*anyopaque, u32, ...) callconv(.c) c_int,
     _TIFFReadRGBAImage: *const fn (
-        *anyopaque, u32, u32, [*]u32, c_int
+        *anyopaque,
+        u32,
+        u32,
+        [*]u32,
+        c_int,
     ) callconv(.c) c_int,
 
     pub fn init() !LibTiff {

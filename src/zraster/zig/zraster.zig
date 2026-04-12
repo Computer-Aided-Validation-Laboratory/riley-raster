@@ -64,7 +64,7 @@ fn applyDispToMesh(
         coords.rows_num,
         coords.cols_num,
     );
-    @memcpy(coords_disp.elems, coords.elems);
+    @memcpy(coords_disp.slice, coords.slice);
 
     const disp_frame_mem = disp.getSlice(&[_]usize{ tt, 0, 0 }, 0);
     var disp_frame = MatSlice(f64).init(disp_frame_mem, disp.dims[1], disp.dims[2]);
@@ -163,7 +163,7 @@ pub fn rasterAllFrames(
                 );
             } else {
                 coords_to_prep = MatSlice(f64).init(
-                    mesh.coords.mat.elems,
+                    mesh.coords.mat.slice,
                     mesh.coords.mat.rows_num,
                     mesh.coords.mat.cols_num,
                 );
@@ -200,7 +200,7 @@ pub fn rasterAllFrames(
         var frame_arr: NDArray(f64) = undefined;
         if (images_arr) |*ima| {
             const stride = ima.strides[0];
-            const mem = ima.elems[tt * stride .. (tt + 1) * stride];
+            const mem = ima.slice[tt * stride .. (tt + 1) * stride];
             frame_arr = try NDArray(f64).init(arena_alloc, mem, ima.dims[1..]);
         } else {
             const dims = [_]usize{
@@ -210,7 +210,7 @@ pub fn rasterAllFrames(
             };
             frame_arr = try NDArray(f64).initFlat(arena_alloc, dims[0..]);
         }
-        @memset(frame_arr.elems, 0.0);
+        @memset(frame_arr.slice, 0.0);
 
         switch (config.report) {
             .off => {
@@ -313,8 +313,16 @@ pub fn rasterSceneInternal(
     const ctx_report = report.ReportContext(report_mode){ .log = report_log };
     var pipe_times = report.PipeTimes{};
 
-    const tiles_num_x: usize = try std.math.divCeil(usize, camera.pixels_num[0], tile_size);
-    const tiles_num_y: usize = try std.math.divCeil(usize, camera.pixels_num[1], tile_size);
+    const tiles_num_x: usize = try std.math.divCeil(
+        usize,
+        camera.pixels_num[0],
+        tile_size,
+    );
+    const tiles_num_y: usize = try std.math.divCeil(
+        usize,
+        camera.pixels_num[1],
+        tile_size,
+    );
 
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();

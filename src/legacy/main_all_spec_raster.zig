@@ -76,7 +76,14 @@ pub fn main() !void {
         path_data ++ "field_disp_z.csv",
     };
 
-    const sim_data: SimData = try meshio.loadSimData(page_alloc, io, path_coords, path_connect, path_fields[0..], null);
+    const sim_data: SimData = try meshio.loadSimData(
+        page_alloc,
+        io,
+        path_coords,
+        path_connect,
+        path_fields[0..],
+        null,
+    );
 
     const field_coord_n = sim_data.field.?.getCoordN();
     const field_time_n = sim_data.field.?.getTimeN();
@@ -104,12 +111,27 @@ pub fn main() !void {
     print("\nROI center position:\n", .{});
     roi_pos.vecPrint();
 
-    const cam_pos = CameraOps.posFillFrameFromRot(&sim_data.coords, pixel_num, pixel_size, focal_leng, cam_rot, fov_scale_factor);
+    const cam_pos = CameraOps.posFillFrameFromRot(
+        &sim_data.coords,
+        pixel_num,
+        pixel_size,
+        focal_leng,
+        cam_rot,
+        fov_scale_factor,
+    );
 
     print("\nCamera position:\n", .{});
     cam_pos.vecPrint();
 
-    const camera = Camera.init(pixel_num, pixel_size, cam_pos, cam_rot, roi_pos, focal_leng, subsample);
+    const camera = Camera.init(
+        pixel_num,
+        pixel_size,
+        cam_pos,
+        cam_rot,
+        roi_pos,
+        focal_leng,
+        subsample,
+    );
 
     print("\nWorld to camera matrix:\n", .{});
     camera.world_to_cam_mat.matPrint();
@@ -173,13 +195,26 @@ pub fn main() !void {
 
     time_start = Timestamp.now(io, .awake);
 
-    const images_out = try zraster.rasterAllFrames(page_alloc, io, &camera, &mesh_input, config, out_dir);
+    const images_out = try zraster.rasterAllFrames(
+        page_alloc,
+        io,
+        &camera,
+        &mesh_input,
+        config,
+        out_dir,
+    );
 
     _ = images_out;
 
     time_end = Timestamp.now(io, .awake);
-    const end_to_end_time: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
+    const end_to_end_time: f64 = @floatFromInt(
+        time_start.durationTo(time_end).raw.nanoseconds,
+    );
 
     const conv_units: f64 = 1.0 / 1.0e6;
-    print("{s}\nEnd to end time: {d:.3} ms\n{s}\n", .{ print_break, end_to_end_time * conv_units, print_break });
+    print("{s}\nEnd to end time: {d:.3} ms\n{s}\n", .{
+        print_break,
+        end_to_end_time * conv_units,
+        print_break,
+    });
 }

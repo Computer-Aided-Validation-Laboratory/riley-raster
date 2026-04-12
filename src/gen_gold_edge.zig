@@ -10,7 +10,12 @@ pub fn main() !void {
     const io = io_threaded.io();
 
     const texture = try gengold.iio.loadImage(
-        allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1
+        allocator,
+        io,
+        "texture/speckle-simple.tiff",
+        .tiff,
+        u8,
+        1,
     );
     defer texture.deinit(allocator);
 
@@ -31,20 +36,45 @@ pub fn main() !void {
     };
 
     std.debug.print("Generating Edge Cases to gold-edge/...\n", .{});
-    
-    try gengold.runGenerationExt(
-        allocator, io, "vertbulge", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
-        "gold-edge", "data-edge", config
-    );
 
     try gengold.runGenerationExt(
-        allocator, io, "bulgein_rot", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
-        "gold-edge", "data-edge", config
+        allocator,
+        io,
+        "vertbulge",
+        &mesh_types,
+        1.1,
+        texture,
+        pixel_num,
+        &interp_types,
+        "gold-edge",
+        "data-edge",
+        config,
     );
-
     try gengold.runGenerationExt(
-        allocator, io, "bulgeout_rot", &mesh_types, 1.1, texture, pixel_num, &interp_types, 
-        "gold-edge", "data-edge", config
+        allocator,
+        io,
+        "bulgein_rot",
+        &mesh_types,
+        1.1,
+        texture,
+        pixel_num,
+        &interp_types,
+        "gold-edge",
+        "data-edge",
+        config,
+    );
+    try gengold.runGenerationExt(
+        allocator,
+        io,
+        "bulgeout_rot",
+        &mesh_types,
+        1.1,
+        texture,
+        pixel_num,
+        &interp_types,
+        "gold-edge",
+        "data-edge",
+        config,
     );
 
     std.debug.print("Done.\n", .{});

@@ -294,7 +294,8 @@ pub fn solveInverse(
 
         const inverse_determinant = 1.0 / determinant;
         xi -= inverse_determinant * (jacobian_22 * residual_x - jacobian_12 * residual_y);
-        eta -= inverse_determinant * (-jacobian_21 * residual_x + jacobian_11 * residual_y);
+        eta -= inverse_determinant *
+            (-jacobian_21 * residual_x + jacobian_11 * residual_y);
     }
 
     if (!met_residual) {

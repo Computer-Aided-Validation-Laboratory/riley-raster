@@ -71,7 +71,11 @@ pub const Connect = struct {
         };
     }
 
-    pub fn initAlloc(outer_alloc: std.mem.Allocator, elems_num: usize, nodes_per_elem: usize) !Self {
+    pub fn initAlloc(
+        outer_alloc: std.mem.Allocator,
+        elems_num: usize,
+        nodes_per_elem: usize,
+    ) !Self {
         const mat_mem = try outer_alloc.alloc(usize, elems_num * nodes_per_elem);
 
         return init(mat_mem, elems_num, nodes_per_elem);
@@ -102,7 +106,12 @@ pub const Field = struct {
 
     const Self = @This();
 
-    pub fn initAlloc(outer_alloc: std.mem.Allocator, time_n: usize, coord_n: usize, fields_n: u8) !Self {
+    pub fn initAlloc(
+        outer_alloc: std.mem.Allocator,
+        time_n: usize,
+        coord_n: usize,
+        fields_n: u8,
+    ) !Self {
         const mem_array = try outer_alloc.alloc(f64, time_n * coord_n * fields_n);
         @memset(mem_array, 0.0);
 
@@ -132,7 +141,11 @@ pub const Field = struct {
     }
 };
 
-pub fn readCsvToList(outer_alloc: std.mem.Allocator, io: std.Io, path: []const u8) !std.ArrayList([]const u8) {
+pub fn readCsvToList(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+) !std.ArrayList([]const u8) {
     const cwd: std.Io.Dir = std.Io.Dir.cwd();
     var file: std.Io.File = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -184,7 +197,10 @@ pub fn parseCoords(
     return coords;
 }
 
-pub fn parseConnect(outer_alloc: std.mem.Allocator, csv_lines: *const std.ArrayList([]const u8)) !Connect {
+pub fn parseConnect(
+    outer_alloc: std.mem.Allocator,
+    csv_lines: *const std.ArrayList([]const u8),
+) !Connect {
     const elem_count = csv_lines.items.len;
 
     var split_iter = std.mem.splitScalar(u8, csv_lines.items[0], ',');
@@ -227,7 +243,11 @@ pub fn getFieldTimeN(csv_lines: *const std.ArrayList([]const u8)) usize {
     return time_n;
 }
 
-pub fn parseField(csv_lines: *const std.ArrayList([]const u8), field: *Field, field_n: u8) !void {
+pub fn parseField(
+    csv_lines: *const std.ArrayList([]const u8),
+    field: *Field,
+    field_n: u8,
+) !void {
 
     // Each row is a coordinate
     // Each field csv has row where each column in the row is a time step
@@ -351,7 +371,12 @@ pub fn loadSimData(
     };
 }
 
-pub fn loadMultiSimData(outer_alloc: std.mem.Allocator, io: std.Io, dir_paths: []const []const u8, files: SimDataFiles) ![]SimData {
+pub fn loadMultiSimData(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    dir_paths: []const []const u8,
+    files: SimDataFiles,
+) ![]SimData {
     var sim_data_slice = try outer_alloc.alloc(SimData, dir_paths.len);
     var loaded_count: usize = 0;
     errdefer {
@@ -362,17 +387,29 @@ pub fn loadMultiSimData(outer_alloc: std.mem.Allocator, io: std.Io, dir_paths: [
     }
 
     for (dir_paths, 0..) |dir_path, ii| {
-        const path_coords = try std.fmt.allocPrint(outer_alloc, "{s}{s}", .{ dir_path, files.coord_file });
+        const path_coords = try std.fmt.allocPrint(
+            outer_alloc,
+            "{s}{s}",
+            .{ dir_path, files.coord_file },
+        );
         defer outer_alloc.free(path_coords);
 
-        const path_connect = try std.fmt.allocPrint(outer_alloc, "{s}{s}", .{ dir_path, files.connect_file });
+        const path_connect = try std.fmt.allocPrint(
+            outer_alloc,
+            "{s}{s}",
+            .{ dir_path, files.connect_file },
+        );
         defer outer_alloc.free(path_connect);
 
         var field_paths: ?[][]const u8 = null;
         if (files.field_files) |ff| {
             field_paths = try outer_alloc.alloc([]const u8, ff.len);
             for (ff, 0..) |suffix, jj| {
-                field_paths.?[jj] = try std.fmt.allocPrint(outer_alloc, "{s}{s}", .{ dir_path, suffix });
+                field_paths.?[jj] = try std.fmt.allocPrint(
+                    outer_alloc,
+                    "{s}{s}",
+                    .{ dir_path, suffix },
+                );
             }
         }
         defer if (field_paths) |fp| {
@@ -384,7 +421,11 @@ pub fn loadMultiSimData(outer_alloc: std.mem.Allocator, io: std.Io, dir_paths: [
         if (files.disp_files) |df| {
             disp_paths = try outer_alloc.alloc([]const u8, df.len);
             for (df, 0..) |suffix, jj| {
-                disp_paths.?[jj] = try std.fmt.allocPrint(outer_alloc, "{s}{s}", .{ dir_path, suffix });
+                disp_paths.?[jj] = try std.fmt.allocPrint(
+                    outer_alloc,
+                    "{s}{s}",
+                    .{ dir_path, suffix },
+                );
             }
         }
         defer if (disp_paths) |dp| {
@@ -392,7 +433,14 @@ pub fn loadMultiSimData(outer_alloc: std.mem.Allocator, io: std.Io, dir_paths: [
             outer_alloc.free(dp);
         };
 
-        sim_data_slice[ii] = try loadSimData(outer_alloc, io, path_coords, path_connect, field_paths, disp_paths);
+        sim_data_slice[ii] = try loadSimData(
+            outer_alloc,
+            io,
+            path_coords,
+            path_connect,
+            field_paths,
+            disp_paths,
+        );
         loaded_count += 1;
     }
     return sim_data_slice;
@@ -421,7 +469,10 @@ test "loadMultiSimData twoelems" {
 
     for (sim_datas, 0..) |sim_data, ii| {
         try std.testing.expectEqual(@as(usize, 2), sim_data.connect.getElemsNum());
-        try std.testing.expectEqual(expected_nodes[ii], sim_data.connect.getNodesPerElem());
+        try std.testing.expectEqual(
+            expected_nodes[ii],
+            sim_data.connect.getNodesPerElem(),
+        );
         if (sim_data.field) |field| {
             try std.testing.expectEqual(sim_data.coords.mat.rows_num, field.getCoordN());
         } else {

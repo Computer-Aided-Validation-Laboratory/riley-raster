@@ -23,7 +23,6 @@ pub const CMat44F = extern struct {
     elems_num: usize,
 };
 
-
 pub const CNDArrayF = extern struct {
     elems: [*c]f64,
     dims: [*c]usize,
@@ -51,14 +50,24 @@ pub export fn printCamera(cam: *const CCamera) void {
     print("--------------------\n", .{});
     print("pixels_num[y,x]=[{},{}]\n", .{ cam.pixels_num.y, cam.pixels_num.x });
     print("pixels_size[y,x]=[{},{}]\n", .{ cam.pixels_size.y, cam.pixels_size.x });
-    print("pos_world[x,y,z]=[{},{},{}]\n",.{cam.pos_world.x,cam.pos_world.y,cam.pos_world.z});
-    print("rot_world[x,y,z]=[{},{},{}]\n",.{cam.rot_world.x,cam.rot_world.y,cam.rot_world.z});
-    print("roi_cent[x,y,z]=[{},{},{}]\n",
-          .{cam.roi_cent_world.x,cam.roi_cent_world.y,cam.roi_cent_world.z});
-    print("subsample={}\n",.{cam.subsample});
+    print("pos_world[x,y,z]=[{},{},{}]\n", .{
+        cam.pos_world.x(),
+        cam.pos_world.y(),
+        cam.pos_world.z(),
+    });
+    print("rot_world[x,y,z]=[{},{},{}]\n", .{
+        cam.rot_world.x,
+        cam.rot_world.y,
+        cam.rot_world.z,
+    });
+    print("roi_cent[x,y,z]=[{},{},{}]\n", .{
+        cam.roi_cent_world.x,
+        cam.roi_cent_world.y,
+        cam.roi_cent_world.z,
+    });
+    print("subsample={}\n", .{cam.subsample});
     print("sensor_size[y,x]=[{},{}]\n", .{ cam.sensor_size.y, cam.sensor_size.x });
     print("image_dims[y,x]=[{},{}]\n", .{ cam.image_dims.y, cam.image_dims.x });
-    print("image_dist={}\n",.{cam.image_dist});
+    print("image_dist={}\n", .{cam.image_dist});
     print("\n", .{});
 }
-

@@ -103,7 +103,16 @@ fn getPx(comptime channels: usize, texture: anytype, x: isize, y: isize) [channe
     return res;
 }
 
-fn sample2D(comptime channels: usize, comptime N: usize, comptime use_simd: bool, texture: anytype, x_i: isize, y_i: isize, wx: [N]f64, wy: [N]f64) [channels]f64 {
+fn sample2D(
+    comptime channels: usize,
+    comptime N: usize,
+    comptime use_simd: bool,
+    texture: anytype,
+    x_i: isize,
+    y_i: isize,
+    wx: [N]f64,
+    wy: [N]f64,
+) [channels]f64 {
     const offset = @as(isize, @intCast(N)) / 2 - 1;
     _ = use_simd;
     var res: [channels]f64 = [_]f64{0.0} ** channels;
@@ -112,7 +121,12 @@ fn sample2D(comptime channels: usize, comptime N: usize, comptime use_simd: bool
     for (0..N) |jj| {
         for (0..N) |ii| {
             const w = wx[ii] * wy[jj];
-            const px = getPx(channels, texture, x_i + @as(isize, @intCast(ii)) - offset, y_i + @as(isize, @intCast(jj)) - offset);
+            const px = getPx(
+                channels,
+                texture,
+                x_i + @as(isize, @intCast(ii)) - offset,
+                y_i + @as(isize, @intCast(jj)) - offset,
+            );
             inline for (0..channels) |ch| {
                 res[ch] += px[ch] * w;
             }
@@ -143,7 +157,13 @@ fn getLerpWeights(comptime N: usize, comptime table: [LUT_SIZE][N]f64, t: f64) [
     return res;
 }
 
-pub fn sampleGeneric(comptime channels: usize, interp: InterpType, texture: anytype, u: f64, v: f64) [channels]f64 {
+pub fn sampleGeneric(
+    comptime channels: usize,
+    interp: InterpType,
+    texture: anytype,
+    u: f64,
+    v: f64,
+) [channels]f64 {
     const cols_minus_1 = @as(isize, @intCast(texture.cols_num)) - 1;
     const rows_minus_1 = @as(isize, @intCast(texture.rows_num)) - 1;
     const x_f = u * @as(f64, @floatFromInt(cols_minus_1));
@@ -166,18 +186,90 @@ pub fn sampleGeneric(comptime channels: usize, interp: InterpType, texture: anyt
             }
             return res;
         },
-        .cubic => sample2D(channels, 4, true, texture, x_i, y_i, .{ cubicWeightHorner(tx + 1), cubicWeightHorner(tx), cubicWeightHorner(tx - 1), cubicWeightHorner(tx - 2) }, .{ cubicWeightHorner(ty + 1), cubicWeightHorner(ty), cubicWeightHorner(ty - 1), cubicWeightHorner(ty - 2) }),
-        .cubic_lut => sample2D(channels, 4, true, texture, x_i, y_i, cubic_lut[@as(usize, @intFromFloat(tx * @as(f64, @floatFromInt(LUT_SIZE - 1))))], cubic_lut[@as(usize, @intFromFloat(ty * @as(f64, @floatFromInt(LUT_SIZE - 1))))]),
+        .cubic => sample2D(
+            channels,
+            4,
+            true,
+            texture,
+            x_i,
+            y_i,
+            .{
+                cubicWeightHorner(tx + 1),
+                cubicWeightHorner(tx),
+                cubicWeightHorner(tx - 1),
+                cubicWeightHorner(tx - 2),
+            },
+            .{
+                cubicWeightHorner(ty + 1),
+                cubicWeightHorner(ty),
+                cubicWeightHorner(ty - 1),
+                cubicWeightHorner(ty - 2),
+            },
+        ),
+        .cubic_lut => sample2D(
+            channels,
+            4,
+            true,
+            texture,
+            x_i,
+            y_i,
+            cubic_lut[
+                @as(usize, @intFromFloat(
+                    tx * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                ))
+            ],
+            cubic_lut[
+                @as(usize, @intFromFloat(
+                    ty * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                ))
+            ],
+        ),
         .cubic_lut_lerp => {
             const wx = getLerpWeights(4, cubic_lut, tx);
             const wy = getLerpWeights(4, cubic_lut, ty);
             return sample2D(channels, 4, true, texture, x_i, y_i, wx, wy);
         },
-        .quintic => sample2D(channels, 6, true, texture, x_i, y_i, .{ quinticWeightHorner(tx + 2), quinticWeightHorner(tx + 1), quinticWeightHorner(tx), quinticWeightHorner(tx - 1), quinticWeightHorner(tx - 2), quinticWeightHorner(tx - 3) }, .{ quinticWeightHorner(ty + 2), quinticWeightHorner(ty + 1), quinticWeightHorner(ty), quinticWeightHorner(ty - 1), quinticWeightHorner(ty - 2), quinticWeightHorner(ty - 3) }),
+        .quintic => sample2D(
+            channels,
+            6,
+            true,
+            texture,
+            x_i,
+            y_i,
+            .{
+                quinticWeightHorner(tx + 2),
+                quinticWeightHorner(tx + 1),
+                quinticWeightHorner(tx),
+                quinticWeightHorner(tx - 1),
+                quinticWeightHorner(tx - 2),
+                quinticWeightHorner(tx - 3),
+            },
+            .{
+                quinticWeightHorner(ty + 2),
+                quinticWeightHorner(ty + 1),
+                quinticWeightHorner(ty),
+                quinticWeightHorner(ty - 1),
+                quinticWeightHorner(ty - 2),
+                quinticWeightHorner(ty - 3),
+            },
+        ),
         .quintic_lut => {
-            const idx_tx = @as(usize, @intFromFloat(tx * @as(f64, @floatFromInt(LUT_SIZE - 1))));
-            const idx_ty = @as(usize, @intFromFloat(ty * @as(f64, @floatFromInt(LUT_SIZE - 1))));
-            return sample2D(channels, 6, true, texture, x_i, y_i, quintic_lut[idx_tx], quintic_lut[idx_ty]);
+            const idx_tx = @as(usize, @intFromFloat(
+                tx * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+            ));
+            const idx_ty = @as(usize, @intFromFloat(
+                ty * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+            ));
+            return sample2D(
+                channels,
+                6,
+                true,
+                texture,
+                x_i,
+                y_i,
+                quintic_lut[idx_tx],
+                quintic_lut[idx_ty],
+            );
         },
 
         .quintic_lut_lerp => {
@@ -188,6 +280,11 @@ pub fn sampleGeneric(comptime channels: usize, interp: InterpType, texture: anyt
     };
 }
 
-pub fn sampleGreyscale(comptime interp: InterpType, texture: anytype, u: f64, v: f64) f64 {
+pub fn sampleGreyscale(
+    comptime interp: InterpType,
+    texture: anytype,
+    u: f64,
+    v: f64,
+) f64 {
     return sampleGeneric(1, interp, texture, u, v)[0];
 }

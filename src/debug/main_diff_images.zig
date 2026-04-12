@@ -35,7 +35,10 @@ pub fn loadNDArrayFromCSVRGB(
             var sub_iter = std.mem.splitScalar(u8, pixel_str, ':');
             for (0..3) |cc| {
                 const val_str = sub_iter.next() orelse return error.CSVChannelsMismatch;
-                const val = try std.fmt.parseFloat(f64, std.mem.trim(u8, val_str, " \r\n\t"));
+                const val = try std.fmt.parseFloat(
+                    f64,
+                    std.mem.trim(u8, val_str, " \r\n\t"),
+                );
                 array.set(&[_]usize{ 0, cc, r, c }, val);
             }
         }
@@ -100,11 +103,11 @@ pub fn main() !void {
             sim_datas[ii].coords.mat.rows_num,
             sim_datas[ii].coords.mat.cols_num,
         );
-        @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
+        @memcpy(coords_dup.slice, sim_datas[ii].coords.mat.slice);
 
         mesh_inputs[ii] = MeshInput{
             .mesh_type = mesh_types[ii],
-            .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+            .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
             .shader = .{ .tex_rgb_u8 = .{
@@ -161,18 +164,18 @@ pub fn main() !void {
         }
         const rgb_field = meshio.Field{
             .array = rgb_field_arr,
-            .array_mem = rgb_field_arr.elems,
+            .array_mem = rgb_field_arr.slice,
         };
         var coords_dup = try MatSlice(f64).initAlloc(
             aa,
             sim_datas[ii].coords.mat.rows_num,
             sim_datas[ii].coords.mat.cols_num,
         );
-        @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
+        @memcpy(coords_dup.slice, sim_datas[ii].coords.mat.slice);
 
         mesh_inputs[ii + 5] = MeshInput{
             .mesh_type = mesh_types[ii],
-            .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+            .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
             .shader = .{ .nodal = .{
@@ -201,7 +204,15 @@ pub fn main() !void {
         rot,
         fov_scale_factor,
     );
-    const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 3);
+    const camera = Camera.init(
+        pixel_num,
+        pixel_size,
+        cam_pos,
+        rot,
+        roi_pos,
+        focal_leng,
+        3,
+    );
 
     const config_rgb = zraster.RasterConfig{
         .save_opt = .memory,
@@ -212,12 +223,23 @@ pub fn main() !void {
     };
 
     std.debug.print("Rendering Mixed RGB Data for Difference analysis...\n", .{});
-    const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config_rgb, out_dir)) orelse return error.NoResult;
+    const result = (try zraster.rasterAllFrames(
+        aa,
+        io,
+        &camera,
+        mesh_inputs,
+        config_rgb,
+        out_dir,
+    )) orelse return error.NoResult;
 
     const gold_dir = "gold-multimesh/allelem_allshade_rgb";
 
     for (0..result.dims[0]) |f| {
-        const fname = try std.fmt.allocPrint(aa, "{s}/frame_{d}_field_0_rgb.csv", .{ gold_dir, f });
+        const fname = try std.fmt.allocPrint(
+            aa,
+            "{s}/frame_{d}_field_0_rgb.csv",
+            .{ gold_dir, f },
+        );
         std.debug.print("Comparing frame {d} with {s}\n", .{ f, fname });
 
         const gold_arr = try loadNDArrayFromCSVRGB(aa, io, fname, 800, 1200);
@@ -237,9 +259,13 @@ pub fn main() !void {
 
         // Wrap frame in a 3D NDArray for saving
         var frame_dims = [_]usize{ result.dims[1], result.dims[2], result.dims[3] };
-        var frame_strides = [_]usize{ result.strides[1], result.strides[2], result.strides[3] };
+        var frame_strides = [_]usize{
+            result.strides[1],
+            result.strides[2],
+            result.strides[3],
+        };
         const frame_arr_3d = NDArray(f64){
-            .elems = result.elems[f * result.strides[0] ..],
+            .slice = result.slice[f * result.strides[0] ..],
             .dims = &frame_dims,
             .strides = &frame_strides,
         };
@@ -247,24 +273,60 @@ pub fn main() !void {
         // Save Actual
         const act_csv_name = try std.fmt.allocPrint(aa, "{s}.csv", .{base_name});
         const act_bmp_name = try std.fmt.allocPrint(aa, "{s}.bmp", .{base_name});
-        try iio.saveCSV(io, out_dir, act_csv_name, &frame_arr_3d, 0, config_rgb.save_opts[0]);
-        try iio.saveBMP(io, out_dir, act_bmp_name, &frame_arr_3d, 0, config_rgb.save_opts[1]);
+        try iio.saveCSV(
+            io,
+            out_dir,
+            act_csv_name,
+            &frame_arr_3d,
+            0,
+            config_rgb.save_opts[0],
+        );
+        try iio.saveBMP(
+            io,
+            out_dir,
+            act_bmp_name,
+            &frame_arr_3d,
+            0,
+            config_rgb.save_opts[1],
+        );
 
         // Save Diff
-        const diff_base_name = try std.fmt.allocPrint(aa, "frame_{d}_field_0_rgb_diff", .{f});
+        const diff_base_name = try std.fmt.allocPrint(
+            aa,
+            "frame_{d}_field_0_rgb_diff",
+            .{f},
+        );
         const diff_csv_name = try std.fmt.allocPrint(aa, "{s}.csv", .{diff_base_name});
         const diff_bmp_name = try std.fmt.allocPrint(aa, "{s}.bmp", .{diff_base_name});
 
         var diff_dims = [_]usize{ diff_arr.dims[1], diff_arr.dims[2], diff_arr.dims[3] };
-        var diff_strides = [_]usize{ diff_arr.strides[1], diff_arr.strides[2], diff_arr.strides[3] };
+        var diff_strides = [_]usize{
+            diff_arr.strides[1],
+            diff_arr.strides[2],
+            diff_arr.strides[3],
+        };
         const diff_arr_3d = NDArray(f64){
-            .elems = diff_arr.elems,
+            .slice = diff_arr.slice,
             .dims = &diff_dims,
             .strides = &diff_strides,
         };
 
-        try iio.saveCSV(io, out_dir, diff_csv_name, &diff_arr_3d, 0, config_rgb.save_opts[0]);
-        try iio.saveBMP(io, out_dir, diff_bmp_name, &diff_arr_3d, 0, config_rgb.save_opts[1]);
+        try iio.saveCSV(
+            io,
+            out_dir,
+            diff_csv_name,
+            &diff_arr_3d,
+            0,
+            config_rgb.save_opts[0],
+        );
+        try iio.saveBMP(
+            io,
+            out_dir,
+            diff_bmp_name,
+            &diff_arr_3d,
+            0,
+            config_rgb.save_opts[1],
+        );
     }
 
     std.debug.print("Done. Results in {s}/\n", .{out_dir_root});

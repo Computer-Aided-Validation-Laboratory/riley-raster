@@ -56,14 +56,26 @@ pub fn main() !void {
         for (shader_types) |st| {
             for (interp_types) |it| {
                 var data_dir_buf: [256]u8 = undefined;
-                const data_dir = try std.fmt.bufPrint(&data_dir_buf, "data-bench/{s}_geom", .{@tagName(mt)});
+                const data_dir = try std.fmt.bufPrint(
+                    &data_dir_buf,
+                    "data-bench/{s}_geom",
+                    .{@tagName(mt)},
+                );
 
                 if (common.shouldRun(config, mt, st, it, data_dir)) {
                     var case_name_buf: [256]u8 = undefined;
                     const case_name = if (st == .tex8_grey or st == .tex8_rgb)
-                        try std.fmt.bufPrint(&case_name_buf, "{s}_{s}_{s}", .{ @tagName(mt), @tagName(st), @tagName(it) })
+                        try std.fmt.bufPrint(
+                            &case_name_buf,
+                            "{s}_{s}_{s}",
+                            .{ @tagName(mt), @tagName(st), @tagName(it) },
+                        )
                     else
-                        try std.fmt.bufPrint(&case_name_buf, "{s}_{s}", .{ @tagName(mt), @tagName(st) });
+                        try std.fmt.bufPrint(
+                            &case_name_buf,
+                            "{s}_{s}",
+                            .{ @tagName(mt), @tagName(st) },
+                        );
 
                     std.debug.print("Case: {s}\n", .{case_name});
 
@@ -129,7 +141,10 @@ pub fn main() !void {
                         .mpx = try common.calcMedianMAD(outer_alloc, mpx_vals),
                         .msubpx = try common.calcMedianMAD(outer_alloc, msubpx_vals),
                         .mshades = try common.calcMedianMAD(outer_alloc, mshades_vals),
-                        .msubshades = try common.calcMedianMAD(outer_alloc, msubshades_vals),
+                        .msubshades = try common.calcMedianMAD(
+                            outer_alloc,
+                            msubshades_vals,
+                        ),
                         .melems = try common.calcMedianMAD(outer_alloc, melems_vals),
                         .mnodes = try common.calcMedianMAD(outer_alloc, mnodes_vals),
                         .mops = try common.calcMedianMAD(outer_alloc, mops_vals),

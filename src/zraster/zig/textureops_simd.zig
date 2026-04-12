@@ -103,7 +103,12 @@ fn getPx(comptime channels: usize, texture: anytype, x: isize, y: isize) [channe
     return res;
 }
 
-fn v_getPxSIMD(comptime channels: usize, texture: anytype, v_xi: VecSI, v_yi: VecSI) [channels]VecSF {
+fn v_getPxSIMD(
+    comptime channels: usize,
+    texture: anytype,
+    v_xi: VecSI,
+    v_yi: VecSI,
+) [channels]VecSF {
     const cols = @as(isize, @intCast(texture.cols_num));
     const rows = @as(isize, @intCast(texture.rows_num));
 
@@ -147,7 +152,15 @@ fn v_getPxSIMD(comptime channels: usize, texture: anytype, v_xi: VecSI, v_yi: Ve
     return res;
 }
 
-fn sample2DInnerSIMD(comptime channels: usize, comptime N: usize, texture: anytype, x_i: isize, y_i: isize, wx: [N]f64, wy: [N]f64) [channels]f64 {
+fn sample2DInnerSIMD(
+    comptime channels: usize,
+    comptime N: usize,
+    texture: anytype,
+    x_i: isize,
+    y_i: isize,
+    wx: [N]f64,
+    wy: [N]f64,
+) [channels]f64 {
     const offset = @as(isize, @intCast(N)) / 2 - 1;
     const start_x = x_i - offset;
     const start_y = y_i - offset;
@@ -172,7 +185,9 @@ fn sample2DInnerSIMD(comptime channels: usize, comptime N: usize, texture: anyty
             1.0;
 
         inline for (0..N) |jj| {
-            const row_off = @as(usize, @intCast(start_y + @as(isize, @intCast(jj)))) * stride_y + @as(usize, @intCast(start_x));
+            const row_off =
+                @as(usize, @intCast(start_y + @as(isize, @intCast(jj)))) * stride_y +
+                @as(usize, @intCast(start_x));
             const wy_val = v_wy[jj];
 
             inline for (0..channels) |ch| {
@@ -191,7 +206,12 @@ fn sample2DInnerSIMD(comptime channels: usize, comptime N: usize, texture: anyty
         for (0..N) |jj| {
             for (0..N) |ii| {
                 const w = wx[ii] * wy[jj];
-                const px = getPx(channels, texture, start_x + @as(isize, @intCast(ii)), start_y + @as(isize, @intCast(jj)));
+                const px = getPx(
+                    channels,
+                    texture,
+                    start_x + @as(isize, @intCast(ii)),
+                    start_y + @as(isize, @intCast(jj)),
+                );
                 inline for (0..channels) |ch| {
                     res[ch] += px[ch] * w;
                 }
@@ -208,7 +228,16 @@ fn sample2DInnerSIMD(comptime channels: usize, comptime N: usize, texture: anyty
     return res;
 }
 
-fn sample2D(comptime channels: usize, comptime N: usize, comptime use_simd: bool, texture: anytype, x_i: isize, y_i: isize, wx: [N]f64, wy: [N]f64) [channels]f64 {
+fn sample2D(
+    comptime channels: usize,
+    comptime N: usize,
+    comptime use_simd: bool,
+    texture: anytype,
+    x_i: isize,
+    y_i: isize,
+    wx: [N]f64,
+    wy: [N]f64,
+) [channels]f64 {
     const offset = @as(isize, @intCast(N)) / 2 - 1;
     _ = use_simd;
     var res: [channels]f64 = [_]f64{0.0} ** channels;
@@ -217,7 +246,12 @@ fn sample2D(comptime channels: usize, comptime N: usize, comptime use_simd: bool
     for (0..N) |jj| {
         for (0..N) |ii| {
             const w = wx[ii] * wy[jj];
-            const px = getPx(channels, texture, x_i + @as(isize, @intCast(ii)) - offset, y_i + @as(isize, @intCast(jj)) - offset);
+            const px = getPx(
+                channels,
+                texture,
+                x_i + @as(isize, @intCast(ii)) - offset,
+                y_i + @as(isize, @intCast(jj)) - offset,
+            );
             inline for (0..channels) |ch| {
                 res[ch] += px[ch] * w;
             }
@@ -248,7 +282,13 @@ fn getLerpWeights(comptime N: usize, comptime table: [LUT_SIZE][N]f64, t: f64) [
     return res;
 }
 
-pub fn sampleGeneric(comptime channels: usize, interp: InterpType, texture: anytype, u: f64, v: f64) [channels]f64 {
+pub fn sampleGeneric(
+    comptime channels: usize,
+    interp: InterpType,
+    texture: anytype,
+    u: f64,
+    v: f64,
+) [channels]f64 {
     const cols_minus_1 = @as(isize, @intCast(texture.cols_num)) - 1;
     const rows_minus_1 = @as(isize, @intCast(texture.rows_num)) - 1;
     const x_f = u * @as(f64, @floatFromInt(cols_minus_1));
@@ -271,18 +311,90 @@ pub fn sampleGeneric(comptime channels: usize, interp: InterpType, texture: anyt
             }
             return res;
         },
-        .cubic => sample2D(channels, 4, true, texture, x_i, y_i, .{ cubicWeight(tx + 1), cubicWeight(tx), cubicWeight(tx - 1), cubicWeight(tx - 2) }, .{ cubicWeight(ty + 1), cubicWeight(ty), cubicWeight(ty - 1), cubicWeight(ty - 2) }),
-        .cubic_lut => sample2D(channels, 4, true, texture, x_i, y_i, cubic_lut[@as(usize, @intFromFloat(tx * @as(f64, @floatFromInt(LUT_SIZE - 1))))], cubic_lut[@as(usize, @intFromFloat(ty * @as(f64, @floatFromInt(LUT_SIZE - 1))))]),
+        .cubic => sample2D(
+            channels,
+            4,
+            true,
+            texture,
+            x_i,
+            y_i,
+            .{
+                cubicWeight(tx + 1),
+                cubicWeight(tx),
+                cubicWeight(tx - 1),
+                cubicWeight(tx - 2),
+            },
+            .{
+                cubicWeight(ty + 1),
+                cubicWeight(ty),
+                cubicWeight(ty - 1),
+                cubicWeight(ty - 2),
+            },
+        ),
+        .cubic_lut => sample2D(
+            channels,
+            4,
+            true,
+            texture,
+            x_i,
+            y_i,
+            cubic_lut[
+                @as(usize, @intFromFloat(
+                    tx * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                ))
+            ],
+            cubic_lut[
+                @as(usize, @intFromFloat(
+                    ty * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                ))
+            ],
+        ),
         .cubic_lut_lerp => {
             const wx = getLerpWeights(4, cubic_lut, tx);
             const wy = getLerpWeights(4, cubic_lut, ty);
             return sample2D(channels, 4, true, texture, x_i, y_i, wx, wy);
         },
-        .quintic => sample2D(channels, 6, true, texture, x_i, y_i, .{ quinticWeightPoly(tx + 2), quinticWeightPoly(tx + 1), quinticWeightPoly(tx), quinticWeightPoly(tx - 1), quinticWeightPoly(tx - 2), quinticWeightPoly(tx - 3) }, .{ quinticWeightPoly(ty + 2), quinticWeightPoly(ty + 1), quinticWeightPoly(ty), quinticWeightPoly(ty - 1), quinticWeightPoly(ty - 2), quinticWeightPoly(ty - 3) }),
+        .quintic => sample2D(
+            channels,
+            6,
+            true,
+            texture,
+            x_i,
+            y_i,
+            .{
+                quinticWeightPoly(tx + 2),
+                quinticWeightPoly(tx + 1),
+                quinticWeightPoly(tx),
+                quinticWeightPoly(tx - 1),
+                quinticWeightPoly(tx - 2),
+                quinticWeightPoly(tx - 3),
+            },
+            .{
+                quinticWeightPoly(ty + 2),
+                quinticWeightPoly(ty + 1),
+                quinticWeightPoly(ty),
+                quinticWeightPoly(ty - 1),
+                quinticWeightPoly(ty - 2),
+                quinticWeightPoly(ty - 3),
+            },
+        ),
         .quintic_lut => {
-            const idx_tx = @as(usize, @intFromFloat(tx * @as(f64, @floatFromInt(LUT_SIZE - 1))));
-            const idx_ty = @as(usize, @intFromFloat(ty * @as(f64, @floatFromInt(LUT_SIZE - 1))));
-            return sample2D(channels, 6, true, texture, x_i, y_i, quintic_lut[idx_tx], quintic_lut[idx_ty]);
+            const idx_tx = @as(usize, @intFromFloat(
+                tx * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+            ));
+            const idx_ty = @as(usize, @intFromFloat(
+                ty * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+            ));
+            return sample2D(
+                channels,
+                6,
+                true,
+                texture,
+                x_i,
+                y_i,
+                quintic_lut[idx_tx],
+                quintic_lut[idx_ty],
+            );
         },
 
         .quintic_lut_lerp => {
@@ -368,9 +480,21 @@ fn v_quinticWeightSIMD(v_x: VecSF) VecSF {
     return res;
 }
 
-pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: anytype, v_u: VecSF, v_v: VecSF) [channels]VecSF {
-    const cols_minus_1_f = @as(f64, @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1));
-    const rows_minus_1_f = @as(f64, @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1));
+pub fn sampleGenericSIMD(
+    comptime channels: usize,
+    interp: InterpType,
+    texture: anytype,
+    v_u: VecSF,
+    v_v: VecSF,
+) [channels]VecSF {
+    const cols_minus_1_f = @as(
+        f64,
+        @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
+    );
+    const rows_minus_1_f = @as(
+        f64,
+        @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
+    );
 
     const v_xf = v_u * @as(VecSF, @splat(cols_minus_1_f));
     const v_yf = v_v * @as(VecSF, @splat(rows_minus_1_f));
@@ -391,9 +515,24 @@ pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: 
     return switch (interp) {
         .linear => {
             const v_p00 = v_getPxSIMD(channels, texture, v_xi, v_yi);
-            const v_p10 = v_getPxSIMD(channels, texture, v_xi + @as(VecSI, @splat(1)), v_yi);
-            const v_p01 = v_getPxSIMD(channels, texture, v_xi, v_yi + @as(VecSI, @splat(1)));
-            const v_p11 = v_getPxSIMD(channels, texture, v_xi + @as(VecSI, @splat(1)), v_yi + @as(VecSI, @splat(1)));
+            const v_p10 = v_getPxSIMD(
+                channels,
+                texture,
+                v_xi + @as(VecSI, @splat(1)),
+                v_yi,
+            );
+            const v_p01 = v_getPxSIMD(
+                channels,
+                texture,
+                v_xi,
+                v_yi + @as(VecSI, @splat(1)),
+            );
+            const v_p11 = v_getPxSIMD(
+                channels,
+                texture,
+                v_xi + @as(VecSI, @splat(1)),
+                v_yi + @as(VecSI, @splat(1)),
+            );
 
             var res: [channels]VecSF = undefined;
             const v_splat_one: VecSF = @splat(1.0);
@@ -432,8 +571,12 @@ pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: 
                     var wx_arr: [4][S]f64 = undefined;
                     var wy_arr: [4][S]f64 = undefined;
                     for (0..S) |ii| {
-                        const ix = @as(usize, @intFromFloat(tx_arr[ii] * @as(f64, @floatFromInt(LUT_SIZE - 1))));
-                        const iy = @as(usize, @intFromFloat(ty_arr[ii] * @as(f64, @floatFromInt(LUT_SIZE - 1))));
+                        const ix = @as(usize, @intFromFloat(
+                            tx_arr[ii] * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                        ));
+                        const iy = @as(usize, @intFromFloat(
+                            ty_arr[ii] * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                        ));
                         inline for (0..4) |kk| {
                             wx_arr[kk][ii] = cubic_lut[ix][kk];
                             wy_arr[kk][ii] = cubic_lut[iy][kk];
@@ -480,7 +623,12 @@ pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: 
             inline for (0..K) |jj| {
                 inline for (0..K) |ii| {
                     const v_w = v_w_planes[jj * K + ii];
-                    const v_px_vecs = v_getPxSIMD(channels, texture, v_xi + @as(VecSI, @splat(@as(isize, @intCast(ii)) - offset)), v_yi + @as(VecSI, @splat(@as(isize, @intCast(jj)) - offset)));
+                    const v_px_vecs = v_getPxSIMD(
+                        channels,
+                        texture,
+                        v_xi + @as(VecSI, @splat(@as(isize, @intCast(ii)) - offset)),
+                        v_yi + @as(VecSI, @splat(@as(isize, @intCast(jj)) - offset)),
+                    );
 
                     inline for (0..channels) |ch| {
                         v_res[ch] += v_px_vecs[ch] * v_w;
@@ -533,8 +681,12 @@ pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: 
                     var wx_arr: [6][S]f64 = undefined;
                     var wy_arr: [6][S]f64 = undefined;
                     for (0..S) |ii| {
-                        const ix = @as(usize, @intFromFloat(tx_arr[ii] * @as(f64, @floatFromInt(LUT_SIZE - 1))));
-                        const iy = @as(usize, @intFromFloat(ty_arr[ii] * @as(f64, @floatFromInt(LUT_SIZE - 1))));
+                        const ix = @as(usize, @intFromFloat(
+                            tx_arr[ii] * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                        ));
+                        const iy = @as(usize, @intFromFloat(
+                            ty_arr[ii] * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                        ));
                         inline for (0..6) |kk| {
                             wx_arr[kk][ii] = quintic_lut[ix][kk];
                             wy_arr[kk][ii] = quintic_lut[iy][kk];
@@ -581,7 +733,12 @@ pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: 
             inline for (0..K) |jj| {
                 inline for (0..K) |ii| {
                     const v_w = v_w_planes[jj * K + ii];
-                    const v_px_vecs = v_getPxSIMD(channels, texture, v_xi + @as(VecSI, @splat(@as(isize, @intCast(ii)) - offset)), v_yi + @as(VecSI, @splat(@as(isize, @intCast(jj)) - offset)));
+                    const v_px_vecs = v_getPxSIMD(
+                        channels,
+                        texture,
+                        v_xi + @as(VecSI, @splat(@as(isize, @intCast(ii)) - offset)),
+                        v_yi + @as(VecSI, @splat(@as(isize, @intCast(jj)) - offset)),
+                    );
 
                     inline for (0..channels) |ch| {
                         v_res[ch] += v_px_vecs[ch] * v_w;
@@ -607,9 +764,21 @@ pub fn sampleGenericSIMD(comptime channels: usize, interp: InterpType, texture: 
     };
 }
 
-pub fn sampleGenericInnerSIMD(comptime channels: usize, interp: InterpType, texture: anytype, u: f64, v: f64) [channels]f64 {
-    const cols_minus_1_f = @as(f64, @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1));
-    const rows_minus_1_f = @as(f64, @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1));
+pub fn sampleGenericInnerSIMD(
+    comptime channels: usize,
+    interp: InterpType,
+    texture: anytype,
+    u: f64,
+    v: f64,
+) [channels]f64 {
+    const cols_minus_1_f = @as(
+        f64,
+        @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
+    );
+    const rows_minus_1_f = @as(
+        f64,
+        @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
+    );
 
     const xf = u * cols_minus_1_f;
     const yf = v * rows_minus_1_f;
@@ -627,14 +796,36 @@ pub fn sampleGenericInnerSIMD(comptime channels: usize, interp: InterpType, text
             return sample2DInnerSIMD(channels, 2, texture, x_i, y_i, wx, wy);
         },
         .cubic => {
-            const wx = [4]f64{ cubicWeight(tx + 1), cubicWeight(tx), cubicWeight(tx - 1), cubicWeight(tx - 2) };
-            const wy = [4]f64{ cubicWeight(ty + 1), cubicWeight(ty), cubicWeight(ty - 1), cubicWeight(ty - 2) };
+            const wx = [4]f64{
+                cubicWeight(tx + 1),
+                cubicWeight(tx),
+                cubicWeight(tx - 1),
+                cubicWeight(tx - 2),
+            };
+            const wy = [4]f64{
+                cubicWeight(ty + 1),
+                cubicWeight(ty),
+                cubicWeight(ty - 1),
+                cubicWeight(ty - 2),
+            };
             return sample2DInnerSIMD(channels, 4, texture, x_i, y_i, wx, wy);
         },
         .cubic_lut => {
-            const idx_tx = @as(usize, @intFromFloat(tx * @as(f64, @floatFromInt(LUT_SIZE - 1))));
-            const idx_ty = @as(usize, @intFromFloat(ty * @as(f64, @floatFromInt(LUT_SIZE - 1))));
-            return sample2DInnerSIMD(channels, 4, texture, x_i, y_i, cubic_lut[idx_tx], cubic_lut[idx_ty]);
+            const idx_tx = @as(usize, @intFromFloat(
+                tx * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+            ));
+            const idx_ty = @as(usize, @intFromFloat(
+                ty * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+            ));
+            return sample2DInnerSIMD(
+                channels,
+                4,
+                texture,
+                x_i,
+                y_i,
+                cubic_lut[idx_tx],
+                cubic_lut[idx_ty],
+            );
         },
         .cubic_lut_lerp => {
             const wx = getLerpWeights(4, cubic_lut, tx);
@@ -642,14 +833,40 @@ pub fn sampleGenericInnerSIMD(comptime channels: usize, interp: InterpType, text
             return sample2DInnerSIMD(channels, 4, texture, x_i, y_i, wx, wy);
         },
         .quintic => {
-            const wx = [6]f64{ quinticWeightPoly(tx + 2), quinticWeightPoly(tx + 1), quinticWeightPoly(tx), quinticWeightPoly(tx - 1), quinticWeightPoly(tx - 2), quinticWeightPoly(tx - 3) };
-            const wy = [6]f64{ quinticWeightPoly(ty + 2), quinticWeightPoly(ty + 1), quinticWeightPoly(ty), quinticWeightPoly(ty - 1), quinticWeightPoly(ty - 2), quinticWeightPoly(ty - 3) };
+            const wx = [6]f64{
+                quinticWeightPoly(tx + 2),
+                quinticWeightPoly(tx + 1),
+                quinticWeightPoly(tx),
+                quinticWeightPoly(tx - 1),
+                quinticWeightPoly(tx - 2),
+                quinticWeightPoly(tx - 3),
+            };
+            const wy = [6]f64{
+                quinticWeightPoly(ty + 2),
+                quinticWeightPoly(ty + 1),
+                quinticWeightPoly(ty),
+                quinticWeightPoly(ty - 1),
+                quinticWeightPoly(ty - 2),
+                quinticWeightPoly(ty - 3),
+            };
             return sample2DInnerSIMD(channels, 6, texture, x_i, y_i, wx, wy);
         },
         .quintic_lut => {
-            const idx_tx = @as(usize, @intFromFloat(tx * @as(f64, @floatFromInt(LUT_SIZE - 1))));
-            const idx_ty = @as(usize, @intFromFloat(ty * @as(f64, @floatFromInt(LUT_SIZE - 1))));
-            return sample2DInnerSIMD(channels, 6, texture, x_i, y_i, quintic_lut[idx_tx], quintic_lut[idx_ty]);
+            const idx_tx = @as(usize, @intFromFloat(
+                tx * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+            ));
+            const idx_ty = @as(usize, @intFromFloat(
+                ty * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+            ));
+            return sample2DInnerSIMD(
+                channels,
+                6,
+                texture,
+                x_i,
+                y_i,
+                quintic_lut[idx_tx],
+                quintic_lut[idx_ty],
+            );
         },
         .quintic_lut_lerp => {
             const wx = getLerpWeights(6, quintic_lut, tx);
@@ -675,7 +892,13 @@ pub fn sampleGenericHybrid(
     // Process each active lane in the SIMD front
     for (0..S) |ii| {
         if (mask_arr[ii]) {
-            const sampled = sampleGenericInnerSIMD(channels, interp, texture, u_arr[ii], v_arr[ii]);
+            const sampled = sampleGenericInnerSIMD(
+                channels,
+                interp,
+                texture,
+                u_arr[ii],
+                v_arr[ii],
+            );
             inline for (0..channels) |ch| {
                 res_arr[ch][ii] = sampled[ch];
             }
@@ -758,7 +981,13 @@ pub fn sampleGenericHybridTri3Local(
 
     for (0..active_count) |ii| {
         const lane = active_lanes[ii];
-        const sampled = sampleGenericInnerSIMD(channels, interp, texture, u_arr[lane], v_arr[lane]);
+        const sampled = sampleGenericInnerSIMD(
+            channels,
+            interp,
+            texture,
+            u_arr[lane],
+            v_arr[lane],
+        );
         inline for (0..channels) |ch| {
             res_arr[ch][lane] = sampled[ch];
         }
@@ -772,6 +1001,11 @@ pub fn sampleGenericHybridTri3Local(
     return res;
 }
 
-pub fn sampleGreyscale(comptime interp: InterpType, texture: anytype, u: f64, v: f64) f64 {
+pub fn sampleGreyscale(
+    comptime interp: InterpType,
+    texture: anytype,
+    u: f64,
+    v: f64,
+) f64 {
     return sampleGeneric(1, interp, texture, u, v)[0];
 }

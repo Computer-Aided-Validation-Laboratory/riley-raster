@@ -67,7 +67,7 @@ pub fn resetSubpxScratch(
     subpx_tile_size: usize,
 ) void {
     @memset(subpx_scratch.inv_z, -std.math.inf(f64));
-    @memset(subpx_scratch.image.elems, 0.0);
+    @memset(subpx_scratch.image.slice, 0.0);
     @memset(subpx_scratch.touched_min_x, subpx_tile_size);
     @memset(subpx_scratch.touched_max_x, 0);
 }
@@ -226,7 +226,12 @@ pub fn RasterPass(
 
             const start_x = rast_bounds.x_min_f + subpx_domain.offset;
             const start_y = rast_bounds.y_min_f + subpx_domain.offset;
-            var weights_row = Geometry.getWeightsAt(nodes_coords, start_x, start_y, inv_area);
+            var weights_row = Geometry.getWeightsAt(
+                nodes_coords,
+                start_x,
+                start_y,
+                inv_area,
+            );
 
             for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
                 const row_offset = scratch_y * subpx_domain.tile_size;

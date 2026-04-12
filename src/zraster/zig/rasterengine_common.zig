@@ -449,7 +449,8 @@ pub fn averageScratch(
                     const scratch_row_offset: usize = (spx_start_y + sy) * spx_tile_size;
 
                     for (0..sub_samp) |sx| {
-                        const scratch_flat_idx: usize = scratch_row_offset + spx_start_x + sx;
+                        const scratch_flat_idx: usize =
+                            scratch_row_offset + spx_start_x + sx;
                         field_sum_0 += getScratchField(
                             scratch_layout,
                             spx_image_scratch,
@@ -472,7 +473,8 @@ pub fn averageScratch(
                     const scratch_row_offset: usize = (spx_start_y + sy) * spx_tile_size;
 
                     for (0..sub_samp) |sx| {
-                        const scratch_flat_idx: usize = scratch_row_offset + spx_start_x + sx;
+                        const scratch_flat_idx: usize =
+                            scratch_row_offset + spx_start_x + sx;
                         field_sum_0 += getScratchField(
                             scratch_layout,
                             spx_image_scratch,
@@ -513,7 +515,8 @@ pub fn averageScratch(
                     const scratch_row_offset: usize = (spx_start_y + sy) * spx_tile_size;
 
                     for (0..sub_samp) |sx| {
-                        const scratch_flat_idx: usize = scratch_row_offset + spx_start_x + sx;
+                        const scratch_flat_idx: usize =
+                            scratch_row_offset + spx_start_x + sx;
 
                         for (0..@as(usize, fields_num)) |ff| {
                             spx_field_avg[ff] += getScratchField(

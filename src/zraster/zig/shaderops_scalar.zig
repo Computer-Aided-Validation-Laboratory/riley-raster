@@ -13,7 +13,7 @@ pub inline fn fillNodalClip(
     // Scalar scratch stores one sub-pixel contiguously as [field0, field1, ...].
     for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
         const vs = ctx_shade.shader_buf.interpolate(ff, interp.weights);
-        spx_image_scratch.elems[ctx_shade.scratch_idx * ctx_shade.fields_num + ff] =
+        spx_image_scratch.slice[ctx_shade.scratch_idx * ctx_shade.fields_num + ff] =
             vs * sh.scale_mul + sh.scale_add;
     }
 }
@@ -35,7 +35,7 @@ pub inline fn fillNodalPersp(
         }
 
         const final_val = vs * interp.sub_pixel_z;
-        spx_image_scratch.elems[ctx_shade.scratch_idx * ctx_shade.fields_num + ff] =
+        spx_image_scratch.slice[ctx_shade.scratch_idx * ctx_shade.fields_num + ff] =
             final_val * sh.scale_mul + sh.scale_add;
     }
 }
@@ -66,7 +66,7 @@ pub inline fn fillTexClip(
     );
     // Scalar scratch stores one sub-pixel contiguously as [ch0, ch1, ...].
     inline for (0..channels) |ch| {
-        spx_image_scratch.elems[ctx_shade.scratch_idx * ctx_shade.fields_num + ch] =
+        spx_image_scratch.slice[ctx_shade.scratch_idx * ctx_shade.fields_num + ch] =
             sampled[ch] * sh.scale_mul + sh.scale_add;
     }
 }
@@ -98,7 +98,7 @@ pub inline fn fillTexPersp(
     );
     // Scalar scratch stores one sub-pixel contiguously as [ch0, ch1, ...].
     inline for (0..channels) |ch| {
-        spx_image_scratch.elems[ctx_shade.scratch_idx * ctx_shade.fields_num + ch] =
+        spx_image_scratch.slice[ctx_shade.scratch_idx * ctx_shade.fields_num + ch] =
             sampled[ch] * sh.scale_mul + sh.scale_add;
     }
 }

@@ -10,7 +10,8 @@ pub fn main() !void {
     std.debug.print("Running ALL Gold Test Suites...\n", .{});
 
     std.debug.print(
-        "Please use 'zig test -lc -O ReleaseSafe src/test_gold_all.zig' to run all tests.\n",
+        "Please use 'zig test -lc -O ReleaseSafe src/test_gold_all.zig' " ++
+            "to run all tests.\n",
         .{},
     );
 }

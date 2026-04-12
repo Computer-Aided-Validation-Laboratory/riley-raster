@@ -9,7 +9,14 @@ pub fn main() !void {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const texture = try gengold.iio.loadImage(allocator, io, "texture/speckle-simple.tiff", .tiff, u8, 1);
+    const texture = try gengold.iio.loadImage(
+        allocator,
+        io,
+        "texture/speckle-simple.tiff",
+        .tiff,
+        u8,
+        1,
+    );
     defer texture.deinit(allocator);
 
     const mesh_types = [_]gengold.MeshType{

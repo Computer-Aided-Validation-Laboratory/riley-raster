@@ -63,12 +63,16 @@ pub fn main() !void {
         const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[ii]});
         const uvs = try uvio.loadUVMap(aa, io, uv_path);
 
-        var coords_dup = try MatSlice(f64).initAlloc(aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num);
-        @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
+        var coords_dup = try MatSlice(f64).initAlloc(
+            aa,
+            sim_datas[ii].coords.mat.rows_num,
+            sim_datas[ii].coords.mat.cols_num,
+        );
+        @memcpy(coords_dup.slice, sim_datas[ii].coords.mat.slice);
 
         mesh_inputs[ii] = MeshInput{
             .mesh_type = mesh_types[ii],
-            .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+            .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
             .shader = .{ .tex_rgb_u8 = .{
@@ -85,7 +89,10 @@ pub fn main() !void {
     for (0..5) |ii| {
         const field = sim_datas[ii].field.?;
         const num_coords = sim_datas[ii].coords.mat.rows_num;
-        var rgb_field_arr = try zraster.NDArray(f64).initFlat(aa, &[_]usize{ field.array.dims[0], num_coords, 3 });
+        var rgb_field_arr = try zraster.NDArray(f64).initFlat(
+            aa,
+            &[_]usize{ field.array.dims[0], num_coords, 3 },
+        );
 
         const coords = sim_datas[ii].coords;
         var min_x: f64 = std.math.inf(f64);
@@ -126,15 +133,19 @@ pub fn main() !void {
 
         const rgb_field = meshio.Field{
             .array = rgb_field_arr,
-            .array_mem = rgb_field_arr.elems,
+            .array_mem = rgb_field_arr.slice,
         };
 
-        var coords_dup = try MatSlice(f64).initAlloc(aa, sim_datas[ii].coords.mat.rows_num, sim_datas[ii].coords.mat.cols_num);
-        @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
+        var coords_dup = try MatSlice(f64).initAlloc(
+            aa,
+            sim_datas[ii].coords.mat.rows_num,
+            sim_datas[ii].coords.mat.cols_num,
+        );
+        @memcpy(coords_dup.slice, sim_datas[ii].coords.mat.slice);
 
         mesh_inputs[ii + 5] = MeshInput{
             .mesh_type = mesh_types[ii],
-            .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+            .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
             .shader = .{ .nodal = .{
@@ -163,7 +174,15 @@ pub fn main() !void {
         rot,
         fov_scale_factor,
     );
-    const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
+    const camera = Camera.init(
+        pixel_num,
+        pixel_size,
+        cam_pos,
+        rot,
+        roi_pos,
+        focal_leng,
+        2,
+    );
 
     const config = zraster.RasterConfig{
         .save_opt = .disk,

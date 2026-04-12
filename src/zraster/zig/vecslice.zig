@@ -12,114 +12,111 @@ const ValIdx = SliceOps.ValIdx;
 
 const TestType = f64;
 
-pub fn VecSlice(comptime ElemType: type) type {
+pub fn VecSlice(comptime T: type) type {
     return struct {
-        elems: []ElemType,
+        slice: []T,
 
         const Self: type = @This();
 
-        pub fn init(elems: []ElemType) Self {
+        pub fn init(slice: []T) Self {
             return .{
-                .elems = elems,
+                .slice = slice,
             };
         }
 
-        pub fn fill(self: *const Self, fill_val: ElemType) void {
-            @memset(self.elems,fill_val);
+        pub fn fill(self: *const Self, fill_val: T) void {
+            @memset(self.slice, fill_val);
         }
 
-        pub fn get(self: *const Self, ind: usize) ElemType {
-            return self.elems[ind];
+        pub fn get(self: *const Self, ind: usize) T {
+            return self.slice[ind];
         }
 
-        pub fn set(self: *const Self, ind: usize, val: ElemType) void {
-            self.elems[ind] = val;
+        pub fn set(self: *const Self, ind: usize, val: T) void {
+            self.slice[ind] = val;
         }
 
         pub fn addInPlace(self: *const Self, to_add: *const Self) void {
-            for (0..self.elems.len) |ii| {
-                self.elems[ii] += to_add.elems[ii];
+            for (0..self.slice.len) |ii| {
+                self.slice[ii] += to_add.slice[ii];
             }
         }
 
         pub fn subInPlace(self: *const Self, to_sub: *const Self) void {
-            for (0..self.elems.len) |ii| {
-                self.elems[ii] -= to_sub.elems[ii];
+            for (0..self.slice.len) |ii| {
+                self.slice[ii] -= to_sub.slice[ii];
             }
         }
 
         pub fn mulInPlace(self: *const Self, to_mul: *const Self) void {
-            for (0..self.elems.len) |ii| {
-                self.elems[ii] *= to_mul.elems[ii];
+            for (0..self.slice.len) |ii| {
+                self.slice[ii] *= to_mul.slice[ii];
             }
         }
 
         pub fn divInPlace(self: *const Self, to_div: *const Self) void {
-            for (0..self.elems.len) |ii| {
-                self.elems[ii] /= to_div.elems[ii];
+            for (0..self.slice.len) |ii| {
+                self.slice[ii] /= to_div.slice[ii];
             }
         }
 
-        pub fn mulScalarInPlace(self: *const Self, scalar: ElemType) void {
-            for (0..self.elems.len) |ii| {
-                self.elems[ii] = scalar * self.elems[ii];
+        pub fn mulScalarInPlace(self: *const Self, scalar: T) void {
+            for (0..self.slice.len) |ii| {
+                self.slice[ii] = scalar * self.slice[ii];
             }
         }
 
-        pub fn applyInPlace(self: *const Self, func: *const fn(val: anytype) ElemType) void {
-            for (self.elems,0..) |elem,ii| {
-                self.elems[ii] = func(elem);
+        pub fn applyInPlace(self: *const Self, func: *const fn (val: anytype) T) void {
+            for (self.slice, 0..) |elem, ii| {
+                self.slice[ii] = func(elem);
             }
         }
 
-        pub fn dot(self: *const Self, to_dot: Self) ElemType {
-            var dot_prod: ElemType = 0;
-            for (0..self.elems.len) |ii| {
-                dot_prod += self.elems[ii] * to_dot.elems[ii];
+        pub fn dot(self: *const Self, to_dot: Self) T {
+            var dot_prod: T = 0;
+            for (0..self.slice.len) |ii| {
+                dot_prod += self.slice[ii] * to_dot.slice[ii];
             }
             return dot_prod;
         }
 
-        pub fn norm(self: *const Self) ElemType {
-            var norm_out: ElemType = 0;
-            for (0..self.elems.len) |ii| {
-                norm_out += self.elems[ii] * self.elems[ii];
+        pub fn norm(self: *const Self) T {
+            var norm_out: T = 0;
+            for (0..self.slice.len) |ii| {
+                norm_out += self.slice[ii] * self.slice[ii];
             }
             return norm_out;
         }
 
-        pub fn vecLen(self: *const Self) ElemType {
+        pub fn vecLen(self: *const Self) T {
             return @sqrt(self.norm());
         }
 
-        pub fn max(self: *const Self) ValIdx(ElemType) {
-            return SliceOps.max(ElemType, self.elems);
+        pub fn max(self: *const Self) ValIdx(T) {
+            return SliceOps.max(T, self.slice);
         }
 
-        pub fn min(self: *const Self) ValIdx(ElemType) {
-            return SliceOps.min(ElemType, self.elems);
+        pub fn min(self: *const Self) ValIdx(T) {
+            return SliceOps.min(T, self.slice);
         }
 
-        pub fn sum(self: *const Self) ElemType {
-            return SliceOps.sum(ElemType, self.elems);
+        pub fn sum(self: *const Self) T {
+            return SliceOps.sum(T, self.slice);
         }
 
-        pub fn mean(self: *const Self) ElemType {
-            return SliceOps.mean(ElemType, self.elems);
+        pub fn mean(self: *const Self) T {
+            return SliceOps.mean(T, self.slice);
         }
 
         pub fn vecPrint(self: *const Self) void {
             print("[", .{});
-            for (0..self.elems.len) |ii| {
-                print("{e:.3},", .{self.elems[ii]});
+            for (0..self.slice.len) |ii| {
+                print("{e:.3},", .{self.slice[ii]});
             }
             print("]\n", .{});
         }
     };
 }
-
-
-
 
 test "VecSlice.addInPlace" {
     const vec_len: usize = 10;
@@ -139,7 +136,7 @@ test "VecSlice.addInPlace" {
 
     vec0.addInPlace(&vec1);
 
-    try expectEqualSlices(TestType, vec_exp.elems, vec0.elems);
+    try expectEqualSlices(TestType, vec_exp.slice, vec0.slice);
 }
 
 test "VecSlice.subInPlace" {
@@ -160,7 +157,7 @@ test "VecSlice.subInPlace" {
 
     vec0.subInPlace(&vec1);
 
-    try expectEqualSlices(TestType, vec_exp.elems, vec0.elems);
+    try expectEqualSlices(TestType, vec_exp.slice, vec0.slice);
 }
 
 test "VecSlice.mulInPlace" {
@@ -181,7 +178,7 @@ test "VecSlice.mulInPlace" {
 
     vec0.mulInPlace(&vec1);
 
-    try expectEqualSlices(TestType, vec_exp.elems, vec0.elems);
+    try expectEqualSlices(TestType, vec_exp.slice, vec0.slice);
 }
 
 test "VecSlice.divInPlace" {
@@ -202,7 +199,7 @@ test "VecSlice.divInPlace" {
 
     vec0.divInPlace(&vec1);
 
-    try expectEqualSlices(TestType, vec_exp.elems, vec0.elems);
+    try expectEqualSlices(TestType, vec_exp.slice, vec0.slice);
 }
 
 test "VecSlice.mulScalarInPlace" {
@@ -221,7 +218,7 @@ test "VecSlice.mulScalarInPlace" {
 
     vec0.mulScalarInPlace(scalar);
 
-    try expectEqualSlices(TestType, vec_exp.elems, vec0.elems);
+    try expectEqualSlices(TestType, vec_exp.slice, vec0.slice);
 }
 
 test "VecSlice.max" {
@@ -232,7 +229,7 @@ test "VecSlice.max" {
     const exp_val: f64 = 8.0;
 
     vec0.fill(0.0);
-    vec0.set(exp_idx,exp_val);
+    vec0.set(exp_idx, exp_val);
 
     const exp_val_idx = ValIdx(TestType){
         .val = exp_val,
@@ -250,7 +247,7 @@ test "VecSlice.min" {
     const exp_val: f64 = -3.0;
 
     vec0.fill(0.0);
-    vec0.set(exp_idx,exp_val);
+    vec0.set(exp_idx, exp_val);
 
     const exp_val_idx = ValIdx(TestType){
         .val = exp_val,
@@ -265,7 +262,7 @@ test "VecSlice.sum" {
     const vec0 = VecSlice(TestType).init(v0[0..]);
 
     vec0.fill(1.0);
-    vec0.set(0,0.0);
+    vec0.set(0, 0.0);
 
     const exp_val: TestType = 11;
 
@@ -277,8 +274,8 @@ test "VecSlice.mean" {
     const vec0 = VecSlice(TestType).init(v0[0..]);
 
     vec0.fill(1.0);
-    vec0.set(2,0.0);
-    vec0.set(7,0.0);
+    vec0.set(2, 0.0);
+    vec0.set(7, 0.0);
 
     const exp_val: TestType = 0.8;
 
@@ -303,7 +300,7 @@ test "VecSlice.apply" {
 
     vec0.applyInPlace(std.math.sqrt);
 
-    try expectEqualSlices(TestType,vec_exp_ones.elems, vec0.elems);
+    try expectEqualSlices(TestType, vec_exp_ones.slice, vec0.slice);
 
     var v1 = [_]f64{0.0} ** vec_len;
     var vec1 = VecSlice(TestType).init(v1[0..]);
@@ -311,9 +308,9 @@ test "VecSlice.apply" {
     vec1.fill(0.0);
     vec1.applyInPlace(std.math.atan);
 
-    try expectEqualSlices(TestType,vec_exp_zeros.elems, vec1.elems);
+    try expectEqualSlices(TestType, vec_exp_zeros.slice, vec1.slice);
 
     vec1.applyInPlace(SliceOps.exp);
 
-    try expectEqualSlices(TestType, vec_exp_ones.elems, vec1.elems);
+    try expectEqualSlices(TestType, vec_exp_ones.slice, vec1.slice);
 }

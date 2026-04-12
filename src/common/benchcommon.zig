@@ -87,7 +87,10 @@ pub fn calcMetrics(
 
     // 5. MElems/s
     const total_elems = @as(f64, @floatFromInt(bench_log.total_elements));
-    const melems_sec = if (geom_tiling_sec > 0) (total_elems / (geom_tiling_sec * 1e6)) else 0;
+    const melems_sec = if (geom_tiling_sec > 0)
+        (total_elems / (geom_tiling_sec * 1e6))
+    else
+        0;
 
     // 6. MNodes/s
     const mnodes_sec = if (geom_tiling_sec > 0)
@@ -233,7 +236,7 @@ pub fn loadNDArrayFromCSV(
         }
     }
     errdefer {
-        outer_alloc.free(arr.elems);
+        outer_alloc.free(arr.slice);
         arr.deinit(outer_alloc);
     }
 
@@ -244,7 +247,10 @@ pub fn loadNDArrayFromCSV(
             if (col_str.len == 0) continue;
             if (is_time_series) {
                 if (cc < requested_channels) {
-                    const val = try std.fmt.parseFloat(f64, std.mem.trim(u8, col_str, " "));
+                    const val = try std.fmt.parseFloat(
+                        f64,
+                        std.mem.trim(u8, col_str, " "),
+                    );
                     arr.set(&[_]usize{ 0, rr, cc }, val);
                 }
             } else if (arr.dims.len == 3) {
@@ -252,14 +258,20 @@ pub fn loadNDArrayFromCSV(
                 var ch: usize = 0;
                 while (chan_iter.next()) |chan_str| {
                     if (ch < requested_channels) {
-                        const val = try std.fmt.parseFloat(f64, std.mem.trim(u8, chan_str, " "));
+                        const val = try std.fmt.parseFloat(
+                            f64,
+                            std.mem.trim(u8, chan_str, " "),
+                        );
                         arr.set(&[_]usize{ rr, cc, ch }, val);
                     }
                     ch += 1;
                 }
             } else {
                 if (cc < requested_channels) {
-                    const val = try std.fmt.parseFloat(f64, std.mem.trim(u8, col_str, " "));
+                    const val = try std.fmt.parseFloat(
+                        f64,
+                        std.mem.trim(u8, col_str, " "),
+                    );
                     arr.set(&[_]usize{ rr, cc }, val);
                 }
             }
@@ -346,7 +358,13 @@ fn runBenchmarkInternal(
     const uv_path = try std.fs.path.join(aa, &[_][]const u8{ data_dir, "uvs.csv" });
 
     const sim_data = try meshio.loadSimData(aa, io, coord_path, conn_path, null, null);
-    const field_raw = try loadNDArrayFromCSV(aa, io, field_path, if (shader_type == .flat_rgb) 3 else 1, true);
+    const field_raw = try loadNDArrayFromCSV(
+        aa,
+        io,
+        field_path,
+        if (shader_type == .flat_rgb) 3 else 1,
+        true,
+    );
     const uvs_raw = try loadNDArrayFromCSV(aa, io, uv_path, 2, false);
 
     var shader: mr.ShaderInput = undefined;
@@ -356,14 +374,14 @@ fn runBenchmarkInternal(
         .flat_grey => {
             num_out_fields = 1;
             shader = .{ .nodal = .{
-                .field = .{ .array = field_raw, .array_mem = field_raw.elems },
+                .field = .{ .array = field_raw, .array_mem = field_raw.slice },
                 .scaling = .auto,
             } };
         },
         .flat_rgb => {
             num_out_fields = 3;
             shader = .{ .nodal = .{
-                .field = .{ .array = field_raw, .array_mem = field_raw.elems },
+                .field = .{ .array = field_raw, .array_mem = field_raw.slice },
                 .scaling = .auto,
             } };
         },
@@ -396,13 +414,33 @@ fn runBenchmarkInternal(
     const focal_leng: f64 = 50.0e-3;
     const rot = Rotation.init(0, 0, 0);
     const roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
-    const cam_pos = CameraOps.posFillFrameFromRot(&sim_data.coords, pixel_num, pixel_size, focal_leng, rot, 1.0);
-    const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, 2);
+    const cam_pos = CameraOps.posFillFrameFromRot(
+        &sim_data.coords,
+        pixel_num,
+        pixel_size,
+        focal_leng,
+        rot,
+        1.0,
+    );
+    const camera = Camera.init(
+        pixel_num,
+        pixel_size,
+        cam_pos,
+        rot,
+        roi_pos,
+        focal_leng,
+        2,
+    );
 
     const config = zraster.RasterConfig{
         .report = report_mode,
     };
-    const transformed_mesh = try mr.prepareMesh(aa, &mesh_input, &sim_data.coords.mat, null);
+    const transformed_mesh = try mr.prepareMesh(
+        aa,
+        &mesh_input,
+        &sim_data.coords.mat,
+        null,
+    );
 
     var image_out_arr = try NDArray(f64).initFlat(
         aa,
@@ -431,7 +469,9 @@ fn runBenchmarkInternal(
     const e2e_end = Timestamp.now(io, .awake);
 
     const bench_log = report.getBenchLog(report_mode, &report_log);
-    const e2e_ms = @as(f64, @floatFromInt(e2e_start.durationTo(e2e_end).raw.nanoseconds)) / 1e6;
+    const e2e_ms = @as(f64, @floatFromInt(
+        e2e_start.durationTo(e2e_end).raw.nanoseconds,
+    )) / 1e6;
     const geom_ms = if (bench_log) |bl|
         (bl.pipe_times.geometry_prep + bl.pipe_times.tile_overlap) / 1e6
     else
@@ -463,9 +503,17 @@ fn runBenchmarkInternal(
 
     // Save one frame for inspection
     const out_name = if (shader_type == .tex8_grey or shader_type == .tex8_rgb)
-        try std.fmt.allocPrint(aa, "{s}_{s}_{s}", .{ @tagName(etype), @tagName(shader_type), @tagName(interp_type) })
+        try std.fmt.allocPrint(
+            aa,
+            "{s}_{s}_{s}",
+            .{ @tagName(etype), @tagName(shader_type), @tagName(interp_type) },
+        )
     else
-        try std.fmt.allocPrint(aa, "{s}_{s}", .{ @tagName(etype), @tagName(shader_type) });
+        try std.fmt.allocPrint(
+            aa,
+            "{s}_{s}",
+            .{ @tagName(etype), @tagName(shader_type) },
+        );
     const out_path = try std.fs.path.join(aa, &[_][]const u8{ out_dir_base, out_name });
     const cwd = std.Io.Dir.cwd();
     cwd.createDir(io, out_dir_base, .default_dir) catch |err| {
@@ -477,10 +525,18 @@ fn runBenchmarkInternal(
     var out_dir_h = try cwd.openDir(io, out_path, .{});
     defer out_dir_h.close(io);
 
-    try iio.saveImages(io, out_dir_h, 0, num_out_fields, pixel_num, &image_out_arr, &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = num_out_fields },
-        .{ .format = .csv, .bits = null, .scaling = .none, .channels = num_out_fields },
-    });
+    try iio.saveImages(
+        io,
+        out_dir_h,
+        0,
+        num_out_fields,
+        pixel_num,
+        &image_out_arr,
+        &[_]iio.ImageSaveOpts{
+            .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = num_out_fields },
+            .{ .format = .csv, .bits = null, .scaling = .none, .channels = num_out_fields },
+        },
+    );
 
     return .{
         .e2e_ms = e2e_ms,
@@ -515,7 +571,11 @@ pub fn writeBenchmarkReport(
     defer outer_alloc.free(report_name);
 
     const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, out_dir_base, .default_dir) catch |err| if (err != error.PathAlreadyExists) return err;
+    cwd.createDir(
+        io,
+        out_dir_base,
+        .default_dir,
+    ) catch |err| if (err != error.PathAlreadyExists) return err;
     const file = try cwd.createFile(io, report_name, .{});
     defer file.close(io);
 
@@ -525,7 +585,11 @@ pub fn writeBenchmarkReport(
 
     const date = try getDateString();
     try writer.print("# {s}\n", .{title});
-    try writer.print("Date: {s} | Res: {d}x{d}\n\n", .{ date, pixel_num[0], pixel_num[1] });
+    try writer.print("Date: {s} | Res: {d}x{d}\n\n", .{
+        date,
+        pixel_num[0],
+        pixel_num[1],
+    });
 
     const col_w = @max(max_name_len, 16);
     const shader_types = comptime std.enums.values(ShaderType);
@@ -536,7 +600,10 @@ pub fn writeBenchmarkReport(
         // Header
         try writer.writeAll("| ");
         try printPaddedSafe(writer, "Case", col_w);
-        try writer.print(" | E2E Med | Geom | Raster | MPx/s | MsubPx/s | MShades/s | MsubShades/s | MElems/s | FPS | MOps/s |\n", .{});
+        try writer.print(
+            " | E2E Med | Geom | Raster | MPx/s | MsubPx/s | MShades/s | MsubShades/s | MElems/s | FPS | MOps/s |\n",
+            .{},
+        );
 
         // Separator
         try writer.writeByte('|');
@@ -544,13 +611,30 @@ pub fn writeBenchmarkReport(
             var ii: usize = 0;
             while (ii < col_w + 2) : (ii += 1) try writer.writeByte('-');
         }
-        try writer.print("| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n", .{});
+        try writer.print(
+            "| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n",
+            .{},
+        );
 
         for (stats_list) |s| {
             if (std.mem.indexOf(u8, s.name, @tagName(st)) != null) {
                 try writer.writeAll("| ");
                 try printPaddedSafe(writer, s.name, col_w);
-                try writer.print(" | {d:^7.2} | {d:^4.2} | {d:^6.2} | {d:^5.2} | {d:^8.2} | {d:^9.2} | {d:^12.2} | {d:^8.2} | {d:^3.2} | {d:^6.2} |\n", .{ s.e2e.median, s.geom.median, s.raster.median, s.mpx.median, s.msubpx.median, s.mshades.median, s.msubshades.median, s.melems.median, s.fps.median, s.mops.median });
+                try writer.print(
+                    " | {d:^7.2} | {d:^4.2} | {d:^6.2} | {d:^5.2} | {d:^8.2} | {d:^9.2} | {d:^12.2} | {d:^8.2} | {d:^3.2} | {d:^6.2} |\n",
+                    .{
+                        s.e2e.median,
+                        s.geom.median,
+                        s.raster.median,
+                        s.mpx.median,
+                        s.msubpx.median,
+                        s.mshades.median,
+                        s.msubshades.median,
+                        s.melems.median,
+                        s.fps.median,
+                        s.mops.median,
+                    },
+                );
             }
         }
         try writer.print("\n", .{});

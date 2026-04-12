@@ -71,15 +71,23 @@ pub fn main() !void {
         // Fill all with dummy or same data but only set bottom row to visible texture
         for (0..10) |ii| {
             const data_idx = ii % 5;
-            var coords_dup = try MatSlice(f64).initAlloc(aa, sim_datas[data_idx].coords.mat.rows_num, sim_datas[data_idx].coords.mat.cols_num);
-            @memcpy(coords_dup.elems, sim_datas[data_idx].coords.mat.elems);
+            var coords_dup = try MatSlice(f64).initAlloc(
+                aa,
+                sim_datas[data_idx].coords.mat.rows_num,
+                sim_datas[data_idx].coords.mat.cols_num,
+            );
+            @memcpy(coords_dup.slice, sim_datas[data_idx].coords.mat.slice);
 
             if (ii >= 5) {
-                const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[data_idx]});
+                const uv_path = try std.fmt.allocPrint(
+                    aa,
+                    "{s}uvs.csv",
+                    .{dir_paths[data_idx]},
+                );
                 const uvs = try uvio.loadUVMap(aa, io, uv_path);
                 mesh_inputs[ii] = MeshInput{
                     .mesh_type = mesh_types[data_idx],
-                    .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+                    .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
                     .connect = sim_datas[data_idx].connect,
                     .disp = null,
                     .shader = .{ .tex_u8 = .{
@@ -93,7 +101,7 @@ pub fn main() !void {
                 // We'll use a flat shader with scaling .none and no field to keep it blank
                 mesh_inputs[ii] = MeshInput{
                     .mesh_type = mesh_types[data_idx],
-                    .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+                    .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
                     .connect = sim_datas[data_idx].connect,
                     .disp = null,
                     .shader = .{ .nodal = .{
@@ -104,7 +112,7 @@ pub fn main() !void {
                 };
                 // Actually, let's just make it a very small triangle far away?
                 // No, just render it but ensure field values are zero.
-                @memset(mesh_inputs[ii].shader.nodal.field.array.elems, 0.0);
+                @memset(mesh_inputs[ii].shader.nodal.field.array.slice, 0.0);
             }
         }
 
@@ -116,7 +124,9 @@ pub fn main() !void {
 
         const config = RasterConfig{
             .save_opt = .disk,
-            .save_opts = &[_]iio.ImageSaveOpts{.{ .format = .bmp, .bits = 8, .scaling = .auto }},
+            .save_opts = &[_]iio.ImageSaveOpts{
+                .{ .format = .bmp, .bits = 8, .scaling = .auto },
+            },
         };
         _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, out_dir);
         // Rename frame_0_field_0.bmp to texture_only.bmp manually if needed,
@@ -133,13 +143,17 @@ pub fn main() !void {
         var mesh_inputs = try aa.alloc(MeshInput, 10);
         for (0..10) |ii| {
             const data_idx = ii % 5;
-            var coords_dup = try MatSlice(f64).initAlloc(aa, sim_datas2[data_idx].coords.mat.rows_num, sim_datas2[data_idx].coords.mat.cols_num);
-            @memcpy(coords_dup.elems, sim_datas2[data_idx].coords.mat.elems);
+            var coords_dup = try MatSlice(f64).initAlloc(
+                aa,
+                sim_datas2[data_idx].coords.mat.rows_num,
+                sim_datas2[data_idx].coords.mat.cols_num,
+            );
+            @memcpy(coords_dup.slice, sim_datas2[data_idx].coords.mat.slice);
 
             if (ii < 5) {
                 mesh_inputs[ii] = MeshInput{
                     .mesh_type = mesh_types[data_idx],
-                    .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+                    .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
                     .connect = sim_datas2[data_idx].connect,
                     .disp = null,
                     .shader = .{ .nodal = .{
@@ -152,7 +166,7 @@ pub fn main() !void {
             } else {
                 mesh_inputs[ii] = MeshInput{
                     .mesh_type = mesh_types[data_idx],
-                    .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+                    .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
                     .connect = sim_datas2[data_idx].connect,
                     .disp = null,
                     .shader = .{ .nodal = .{
@@ -161,7 +175,7 @@ pub fn main() !void {
                         .bits = null,
                     } },
                 };
-                @memset(mesh_inputs[ii].shader.nodal.field.array.elems, 0.0);
+                @memset(mesh_inputs[ii].shader.nodal.field.array.slice, 0.0);
             }
         }
 
@@ -173,7 +187,9 @@ pub fn main() !void {
 
         const config = RasterConfig{
             .save_opt = .disk,
-            .save_opts = &[_]iio.ImageSaveOpts{.{ .format = .bmp, .bits = 8, .scaling = .auto }},
+            .save_opts = &[_]iio.ImageSaveOpts{
+                .{ .format = .bmp, .bits = 8, .scaling = .auto },
+            },
         };
         // This will overwrite frame_0_field_0.bmp if we are not careful.
         // In this simple script it's fine, we'll see the second run results.
@@ -192,7 +208,22 @@ fn setupCamera(meshes: []const MeshInput) Camera {
     const subsample: u8 = 2;
 
     const roi_pos = CameraOps.roiCentOverMeshes(meshes);
-    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(meshes, pixel_num, pixel_size, focal_leng, rot, fov_scale_factor);
+    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
+        meshes,
+        pixel_num,
+        pixel_size,
+        focal_leng,
+        rot,
+        fov_scale_factor,
+    );
 
-    return Camera.init(pixel_num, pixel_size, cam_pos, rot, roi_pos, focal_leng, subsample);
+    return Camera.init(
+        pixel_num,
+        pixel_size,
+        cam_pos,
+        rot,
+        roi_pos,
+        focal_leng,
+        subsample,
+    );
 }

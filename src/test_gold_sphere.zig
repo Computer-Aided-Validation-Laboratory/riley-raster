@@ -56,7 +56,13 @@ test "Sphere Gold Tests" {
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
-    const interp_types = [_]common.InterpType{ .linear, .cubic, .cubic_lut_lerp, .quintic, .quintic_lut_lerp };
+    const interp_types = [_]common.InterpType{
+        .linear,
+        .cubic,
+        .cubic_lut_lerp,
+        .quintic,
+        .quintic_lut_lerp,
+    };
 
     var total_fails: usize = 0;
 
@@ -70,12 +76,18 @@ test "Sphere Gold Tests" {
         inline for (mesh_types) |mt| {
             inline for (shader_types) |st| {
                 inline for (interp_types) |it| {
-                    const data_dir = try std.fmt.allocPrint(allocator, "data-bench/{s}_{s}", .{ @tagName(mt), c.ds });
+                    const data_dir = try std.fmt.allocPrint(
+                        allocator,
+                        "data-bench/{s}_{s}",
+                        .{ @tagName(mt), c.ds },
+                    );
                     defer allocator.free(data_dir);
 
                     if (common.shouldRun(.{ .run = .all }, mt, st, it, data_dir)) {
                         const case_name = if (st == .tex8_grey or st == .tex8_rgb)
-                            comptime @tagName(mt) ++ "_" ++ @tagName(st) ++ "_" ++ @tagName(it)
+                            comptime @tagName(mt) ++ "_" ++
+                                @tagName(st) ++ "_" ++
+                                @tagName(it)
                         else
                             comptime @tagName(mt) ++ "_" ++ @tagName(st);
                         const gold_mesh_name = if (mt == .quad4ibi)
@@ -117,7 +129,11 @@ test "Sphere Gold Tests" {
                         const channels: usize = if (is_rgb) 3 else 1;
                         const suffix = if (is_rgb) "_rgb" else "";
 
-                        const test_csv_rel = try std.fmt.allocPrint(allocator, "{s}/{s}/frame_0_field_0{s}.csv", .{ c.out, case_name, suffix });
+                        const test_csv_rel = try std.fmt.allocPrint(
+                            allocator,
+                            "{s}/{s}/frame_0_field_0{s}.csv",
+                            .{ c.out, case_name, suffix },
+                        );
                         defer allocator.free(test_csv_rel);
                         const gold_csv_rel = try std.fmt.allocPrint(
                             allocator,
@@ -127,31 +143,47 @@ test "Sphere Gold Tests" {
                         defer allocator.free(gold_csv_rel);
 
                         // 3. Load and Compare
-                        const t_arr_res = common.loadNDArrayFromCSV(allocator, io, test_csv_rel, channels, false);
+                        const t_arr_res = common.loadNDArrayFromCSV(
+                            allocator,
+                            io,
+                            test_csv_rel,
+                            channels,
+                            false,
+                        );
                         if (t_arr_res) |t_arr| {
                             var t_mut = t_arr;
                             defer {
-                                allocator.free(t_mut.elems);
+                                allocator.free(t_mut.slice);
                                 t_mut.deinit(allocator);
                             }
 
-                            const g_arr_res = common.loadNDArrayFromCSV(allocator, io, gold_csv_rel, channels, false);
+                            const g_arr_res = common.loadNDArrayFromCSV(
+                                allocator,
+                                io,
+                                gold_csv_rel,
+                                channels,
+                                false,
+                            );
                             if (g_arr_res) |g_arr| {
                                 var g_mut = g_arr;
                                 defer {
-                                    allocator.free(g_mut.elems);
+                                    allocator.free(g_mut.slice);
                                     g_mut.deinit(allocator);
                                 }
 
                                 var diff_count: usize = 0;
-                                for (t_mut.elems, 0..) |v_t, ii| {
-                                    if (@abs(v_t - g_mut.elems[ii]) > tcfg.REL_TOL) diff_count += 1;
+                                for (t_mut.slice, 0..) |v_t, ii| {
+                                    if (@abs(v_t - g_mut.slice[ii]) > tcfg.REL_TOL)
+                                        diff_count += 1;
                                 }
 
                                 if (diff_count == 0) {
                                     std.debug.print("MATCHED\n", .{});
                                 } else {
-                                    std.debug.print("MISMATCH! ({d} px)\n", .{diff_count});
+                                    std.debug.print(
+                                        "MISMATCH! ({d} px)\n",
+                                        .{diff_count},
+                                    );
                                     total_fails += 1;
 
                                     const fail_dir_name = try std.fmt.allocPrint(
@@ -170,11 +202,17 @@ test "Sphere Gold Tests" {
                                     );
                                 }
                             } else |err| {
-                                std.debug.print("GOLD LOAD ERROR: {s} ({s})\n", .{ gold_csv_rel, @errorName(err) });
+                                std.debug.print(
+                                    "GOLD LOAD ERROR: {s} ({s})\n",
+                                    .{ gold_csv_rel, @errorName(err) },
+                                );
                                 total_fails += 1;
                             }
                         } else |err| {
-                            std.debug.print("TEST LOAD ERROR: {s} ({s})\n", .{ test_csv_rel, @errorName(err) });
+                            std.debug.print(
+                                "TEST LOAD ERROR: {s} ({s})\n",
+                                .{ test_csv_rel, @errorName(err) },
+                            );
                             total_fails += 1;
                         }
                     }
@@ -186,7 +224,10 @@ test "Sphere Gold Tests" {
     if (total_fails == 0) {
         std.debug.print("\nALL SPHERE GOLD TESTS PASSED!\n", .{});
     } else {
-        std.debug.print("\n{d} TESTS FAILED! (Diagnostics in ./fails/)\n", .{total_fails});
+        std.debug.print(
+            "\n{d} TESTS FAILED! (Diagnostics in ./fails/)\n",
+            .{total_fails},
+        );
         try std.testing.expect(total_fails == 0);
     }
 }

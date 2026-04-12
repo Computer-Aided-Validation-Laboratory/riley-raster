@@ -117,11 +117,11 @@ pub fn loadElemVec3Slices(
     var start_slice: usize = elem_array.getFlatInd(&[_]usize{ elem_idx, 0, 0 });
     const stride: usize = elem_array.strides[1];
 
-    const x_slice = elem_array.elems[start_slice .. start_slice + N];
+    const x_slice = elem_array.slice[start_slice .. start_slice + N];
     start_slice += stride;
-    const y_slice = elem_array.elems[start_slice .. start_slice + N];
+    const y_slice = elem_array.slice[start_slice .. start_slice + N];
     start_slice += stride;
-    const z_slice = elem_array.elems[start_slice .. start_slice + N];
+    const z_slice = elem_array.slice[start_slice .. start_slice + N];
 
     return .{
         .x = x_slice,
@@ -352,14 +352,18 @@ pub fn cullElemsCalcBBoxesTri3(
         // Width (X) on screen check and crop
         const x_max: f64 = std.mem.max(f64, coords_raster.x);
         const x_min: f64 = std.mem.min(f64, coords_raster.x);
-        if ((x_min > @as(f64, @floatFromInt(camera.pixels_num[0] - 1))) or (x_max < 0.0)) {
+        if ((x_min > @as(f64, @floatFromInt(camera.pixels_num[0] - 1))) or
+            (x_max < 0.0))
+        {
             continue;
         }
 
         // Height (Y) on on screen check and crop
         const y_max: f64 = std.mem.max(f64, coords_raster.y);
         const y_min: f64 = std.mem.min(f64, coords_raster.y);
-        if ((y_min > @as(f64, @floatFromInt(camera.pixels_num[1] - 1))) or (y_max < 0.0)) {
+        if ((y_min > @as(f64, @floatFromInt(camera.pixels_num[1] - 1))) or
+            (y_max < 0.0))
+        {
             continue;
         }
 
@@ -442,7 +446,10 @@ fn initPreparedNormals(
     comptime N: usize,
 ) !MappedNDArray(f64) {
     const elems_num = mesh_coords.dims[0];
-    const prep_normals = try NDArray(f64).initFlat(allocator, &[_]usize{ prep_count, 3, N });
+    const prep_normals = try NDArray(f64).initFlat(
+        allocator,
+        &[_]usize{ prep_count, 3, N },
+    );
     var map = try allocator.alloc(usize, elems_num);
     @memset(map, std.math.maxInt(usize));
 
@@ -617,7 +624,13 @@ pub fn prepareSceneGeometry(
                 };
 
                 if (comptime GK.coord_space == geomkerns.CoordSpace.raster) {
-                    try elemsToRasterSIMD(N, f64, camera, dim_elem, @constCast(&mesh.coords));
+                    try elemsToRasterSIMD(
+                        N,
+                        f64,
+                        camera,
+                        dim_elem,
+                        @constCast(&mesh.coords),
+                    );
                 } else {
                     try elemsToClipPxLengSIMD(N, f64, camera, dim_elem, &mesh.coords);
                 }

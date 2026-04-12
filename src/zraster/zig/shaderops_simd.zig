@@ -19,7 +19,7 @@ pub inline fn fillNodalClip(
     // SIMD scratch is field-major so one vector store writes the same field across lanes.
     for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
         const vs = ctx_shade.shader_buf.interpolate(ff, interp.weights);
-        spx_image_scratch.elems[ff * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
+        spx_image_scratch.slice[ff * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
             vs * sh.scale_mul + sh.scale_add;
     }
 }
@@ -41,7 +41,7 @@ pub inline fn fillNodalPersp(
         }
 
         const final_val = vs * interp.sub_pixel_z;
-        spx_image_scratch.elems[ff * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
+        spx_image_scratch.slice[ff * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
             final_val * sh.scale_mul + sh.scale_add;
     }
 }
@@ -69,7 +69,7 @@ pub inline fn fillNodalClipSIMD(
         const v_final = v_vs * v_splat_mul + v_splat_add;
         const flat_idx = ff * px_stride + ctx_shade.scratch_idx;
         const ptr_out: *align(8) VecSF =
-            @ptrCast(&spx_image_scratch.elems[flat_idx]);
+            @ptrCast(&spx_image_scratch.slice[flat_idx]);
         const v_old_val: VecSF = ptr_out.*;
         ptr_out.* = @select(
             f64,
@@ -105,7 +105,7 @@ pub inline fn fillNodalPerspSIMD(
         const v_final = (v_vs * v_subpx_z) * v_splat_mul + v_splat_add;
         const flat_idx = ff * px_stride + ctx_shade.scratch_idx;
         const ptr_out: *align(8) VecSF =
-            @ptrCast(&spx_image_scratch.elems[flat_idx]);
+            @ptrCast(&spx_image_scratch.slice[flat_idx]);
         const v_old_val: VecSF = ptr_out.*;
         ptr_out.* = @select(
             f64,
@@ -140,9 +140,10 @@ pub inline fn fillTexClip(
         u_at,
         tex_v_at,
     );
-    // SIMD scratch is channel-major so one vector store writes the same channel across lanes.
+    // SIMD scratch is channel-major so one vector store writes the same channel
+    // across lanes.
     inline for (0..channels) |ch| {
-        spx_image_scratch.elems[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
+        spx_image_scratch.slice[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
             sampled[ch] * sh.scale_mul + sh.scale_add;
     }
 }
@@ -173,9 +174,10 @@ pub inline fn fillTexPersp(
         u_at * interp.sub_pixel_z,
         tex_v_at * interp.sub_pixel_z,
     );
-    // SIMD scratch is channel-major so one vector store writes the same channel across lanes.
+    // SIMD scratch is channel-major so one vector store writes the same channel
+    // across lanes.
     inline for (0..channels) |ch| {
-        spx_image_scratch.elems[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
+        spx_image_scratch.slice[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
             sampled[ch] * sh.scale_mul + sh.scale_add;
     }
 }
@@ -215,7 +217,7 @@ pub inline fn fillTexClipSIMD(
             );
 
             inline for (0..channels) |ch| {
-                spx_image_scratch.elems[ch * px_stride + ctx_shade.scratch_idx + ii] =
+                spx_image_scratch.slice[ch * px_stride + ctx_shade.scratch_idx + ii] =
                     sampled[ch] * sh.scale_mul + sh.scale_add;
             }
         }
@@ -266,7 +268,7 @@ pub inline fn fillTexPerspSIMD(
         const v_final = sampled_vecs[ch] * v_splat_mul + v_splat_add;
         const flat_idx = ch * px_stride + ctx_shade.scratch_idx;
         const ptr_out: *align(8) VecSF =
-            @ptrCast(&spx_image_scratch.elems[flat_idx]);
+            @ptrCast(&spx_image_scratch.slice[flat_idx]);
         const v_old_val: VecSF = ptr_out.*;
         ptr_out.* = @select(f64, v_mask_active, v_final, v_old_val);
     }
@@ -315,7 +317,7 @@ pub inline fn fillTexPerspSIMDTri3(
         const v_final = sampled_vecs[ch] * v_splat_mul + v_splat_add;
         const flat_idx = ch * px_stride + ctx_shade.scratch_idx;
         const ptr_out: *align(8) VecSF =
-            @ptrCast(&spx_image_scratch.elems[flat_idx]);
+            @ptrCast(&spx_image_scratch.slice[flat_idx]);
         const v_old_val: VecSF = ptr_out.*;
         ptr_out.* = @select(f64, v_mask_active, v_final, v_old_val);
     }

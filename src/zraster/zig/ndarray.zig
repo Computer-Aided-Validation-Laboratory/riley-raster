@@ -11,31 +11,30 @@ const expectEqualSlices = testing.expectEqualSlices;
 const MatSlice = @import("matslice.zig").MatSlice;
 const sliceops = @import("sliceops.zig");
 
-pub fn NDArray(comptime EType: type) type {
+pub fn NDArray(comptime T: type) type {
     return struct {
-        elems: []EType,
+        slice: []T,
         dims: []usize,
         strides: []usize,
 
         const Self: type = @This();
 
-        pub fn init(allocator: std.mem.Allocator, 
-        			elems: []EType, 
-        			dims: []const usize) !Self {
-        			
+        pub fn init(allocator: std.mem.Allocator, slice: []T, dims: []const usize) !Self {
             var dim_prod: usize = dims[0];
             for (1..dims.len) |dd| {
                 dim_prod *= dims[dd];
             }
 
-            assert(elems.len >= dim_prod);
+            assert(slice.len >= dim_prod);
 
             const dims_heap = try allocator.dupe(usize, dims);
             const strides_heap = try allocator.alloc(usize, dims.len);
 
-            var ndarray = NDArray(EType){ .elems = elems, 
-            							  .dims = dims_heap, 
-            							  .strides = strides_heap };
+            var ndarray = NDArray(T){
+                .slice = slice,
+                .dims = dims_heap,
+                .strides = strides_heap,
+            };
 
             for (0..dims.len) |dd| {
                 ndarray.strides[dd] = ndarray.calcFlatStride(dd);
@@ -49,31 +48,25 @@ pub fn NDArray(comptime EType: type) type {
             for (dims) |dd| {
                 dim_prod *= dd;
             }
-            
-            const elems = try allocator.alloc(EType, dim_prod);
 
-            return try Self.init(allocator, elems, dims);
+            const slice = try allocator.alloc(T, dim_prod);
+
+            return try Self.init(allocator, slice, dims);
         }
-    
+
         pub fn deinit(self: *const Self, allocator: std.mem.Allocator) void {
             allocator.free(self.dims);
             allocator.free(self.strides);
         }
 
-        pub fn set(self: *Self, indices: []const usize, in_val: EType) void {
+        pub fn set(self: *Self, indices: []const usize, in_val: T) void {
             const ind: usize = self.getFlatInd(indices);
-            self.elems[ind] = in_val;
+            self.slice[ind] = in_val;
         }
 
-        pub fn get(self: *const Self, indices: []const usize) EType {
+        pub fn get(self: *const Self, indices: []const usize) T {
             const ind: usize = self.getFlatInd(indices);
-            return self.elems[ind];
-        }
-
-        pub fn getPlanePtr(self: *const Self, plane_idx: usize) []EType {
-            assert(self.dims.len > 0);
-            const start = plane_idx * self.strides[0];
-            return self.elems[start..];
+            return self.slice[ind];
         }
 
         pub fn getFlatInd(self: *const Self, indices: []const usize) usize {
@@ -89,15 +82,12 @@ pub fn NDArray(comptime EType: type) type {
             return flat;
         }
 
-        pub fn calcFlatStride(self: *const Self, dim_idx: usize) usize {
-            // Row-major (C format) for flat NDArrays
-            // stride = product of all dimensions to the right of the selected
-            // dimension.
-            assert(dim_idx < self.dims.len);
+        pub fn calcFlatStride(self: *const Self, dim_ind: usize) usize {
+            assert(dim_ind < self.dims.len);
 
             var stride: usize = 1;
 
-            var ii: usize = dim_idx + 1;
+            var ii: usize = dim_ind + 1;
             while (ii < self.dims.len) : (ii += 1) {
                 stride *= self.dims[ii];
             }
@@ -105,92 +95,168 @@ pub fn NDArray(comptime EType: type) type {
             return stride;
         }
 
-        pub fn fill(self: *const Self, fill_val: EType) void {
-            @memset(self.elems[0..], fill_val);
+        pub fn fill(self: *const Self, fill_val: T) void {
+            @memset(self.slice[0..], fill_val);
         }
 
         pub fn addInPlace(self: *const Self, to_add: *const Self) void {
-            assert(matchArrayDims(EType, self, to_add));
+            assert(matchArrayDims(T, self, to_add));
 
-            for (0..self.elems.len) |ii| {
-                self.elems[ii] += to_add.elems[ii];
+            for (0..self.slice.len) |ii| {
+                self.slice[ii] += to_add.slice[ii];
             }
         }
 
         pub fn subInPlace(self: *const Self, to_sub: *const Self) void {
-            assert(matchArrayDims(EType, self, to_sub));
+            assert(matchArrayDims(T, self, to_sub));
 
-            for (0..self.elems.len) |ii| {
-                self.elems[ii] -= to_sub.elems[ii];
+            for (0..self.slice.len) |ii| {
+                self.slice[ii] -= to_sub.slice[ii];
             }
         }
 
         pub fn mulInPlace(self: *const Self, to_mul: *const Self) void {
-            assert(matchArrayDims(EType, self, to_mul));
+            assert(matchArrayDims(T, self, to_mul));
 
-            for (0..self.elems.len) |ii| {
-                self.elems[ii] *= to_mul.elems[ii];
+            for (0..self.slice.len) |ii| {
+                self.slice[ii] *= to_mul.slice[ii];
             }
         }
 
         pub fn divInPlace(self: *const Self, to_div: *const Self) void {
-            assert(matchArrayDims(EType, self, to_div));
+            assert(matchArrayDims(T, self, to_div));
 
-            for (0..self.elems.len) |ii| {
-                self.elems[ii] /= to_div.elems[ii];
+            for (0..self.slice.len) |ii| {
+                self.slice[ii] /= to_div.slice[ii];
             }
         }
 
-        pub fn mulScalarInPlace(self: *const Self, scalar: EType) void {
-            for (0..self.elems.len) |ii| {
-                self.elems[ii] *= scalar;
+        pub fn mulScalarInPlace(self: *const Self, scalar: T) void {
+            for (0..self.slice.len) |ii| {
+                self.slice[ii] *= scalar;
             }
         }
 
-        pub fn divScalarInPlace(self: *const Self, scalar: EType) void {
-            for (0..self.elems.len) |ii| {
-                self.elems[ii] /= scalar;
-            }
+        pub fn getSlice(
+            self: *const Self,
+            fixed_inds: []const usize,
+            fixed_dim: usize,
+        ) []T {
+            assert(fixed_inds.len == self.dims.len);
+            assert((fixed_dim + 1) < self.dims.len);
+
+            const start = self.getFlatInd(fixed_inds);
+            const stride = self.strides[fixed_dim];
+            return self.slice[start .. start + stride];
         }
 
-        pub fn max(self: *const Self) EType {
-            return std.mem.max(EType, self.elems);
-        }
-
-        pub fn min(self: *const Self) EType {
-            return std.mem.min(EType, self.elems);
-        }
-
-        pub fn getSlice(self: *const Self, indices: []const usize, slice_dim: usize) []EType {
-            assert(indices.len == self.dims.len);
-            const start_idx = self.getFlatInd(indices);
-            const len = self.strides[slice_dim];
-            return self.elems[start_idx .. start_idx + len];
+        pub fn getPlanePtr(self: *const Self, chan: usize) []T {
+            const start = chan * self.strides[0];
+            return self.slice[start..];
         }
     };
 }
 
-pub fn MappedNDArray(comptime EType: type) type {
+pub fn MappedNDArray(comptime T: type) type {
     return struct {
-        array: NDArray(EType),
-        map: []const usize,
+        array: NDArray(T),
+        map: []usize,
 
-        const Self = @This();
+        const Self: type = @This();
 
-        pub fn deinit(self: *Self, allocator: std.mem.Allocator) void {
+        pub fn deinit(self: *const Self, allocator: std.mem.Allocator) void {
             self.array.deinit(allocator);
             allocator.free(self.map);
         }
     };
 }
 
-pub fn matchArrayDims(comptime EType: type, array0: *const NDArray(EType), array1: *const NDArray(EType)) bool {
-    if (array0.dims.len != array1.dims.len) {
+pub fn NDArrayOps(comptime T: type) type {
+    return struct {
+        pub fn add(
+            arr0: *const NDArray(T),
+            arr1: *const NDArray(T),
+            arr_out: *NDArray(T),
+        ) void {
+            assert(matchArrayDims(T, arr0, arr1));
+            assert(matchArrayDims(T, arr0, arr_out));
+
+            sliceops.add(T, arr0.slice, arr1.slice, arr_out.slice);
+        }
+
+        pub fn sub(
+            arr0: *const NDArray(T),
+            arr1: *const NDArray(T),
+            arr_out: *NDArray(T),
+        ) void {
+            assert(matchArrayDims(T, arr0, arr1));
+            assert(matchArrayDims(T, arr0, arr_out));
+
+            sliceops.sub(T, arr0.slice, arr1.slice, arr_out.slice);
+        }
+
+        pub fn mulElemWise(
+            arr0: *const NDArray(T),
+            arr1: *const NDArray(T),
+            arr_out: *NDArray(T),
+        ) void {
+            assert(matchArrayDims(T, arr0, arr1));
+            assert(matchArrayDims(T, arr0, arr_out));
+
+            sliceops.mul(T, arr0.slice, arr1.slice, arr_out.slice);
+        }
+
+        pub fn divElemWise(
+            arr0: *const NDArray(T),
+            arr1: *const NDArray(T),
+            arr_out: *NDArray(T),
+        ) void {
+            assert(matchArrayDims(T, arr0, arr1));
+            assert(matchArrayDims(T, arr0, arr_out));
+
+            sliceops.div(T, arr0.slice, arr1.slice, arr_out.slice);
+        }
+
+        pub fn extractMat(
+            allocator: std.mem.Allocator,
+            arr: *const NDArray(T),
+            fixed_inds: []const usize,
+            row_ext: usize,
+            col_ext: usize,
+            mat: *MatSlice(T),
+        ) !void {
+            assert(fixed_inds.len == arr.dims.len);
+            assert(row_ext <= arr.dims.len);
+            assert(col_ext <= arr.dims.len);
+            const num_elems: usize = arr.dims[row_ext] * arr.dims[col_ext];
+            assert(num_elems == mat.slice.len);
+
+            var get_dims_slice: []usize = try allocator.dupe(usize, fixed_inds);
+            defer allocator.free(get_dims_slice);
+
+            for (0..arr.dims[row_ext]) |rr| {
+                for (0..arr.dims[col_ext]) |cc| {
+                    get_dims_slice[row_ext] = rr;
+                    get_dims_slice[col_ext] = cc;
+
+                    mat.set(rr, cc, arr.get(get_dims_slice));
+                }
+            }
+        }
+    };
+}
+
+pub fn matchArrayDims(
+    comptime T: type,
+    arr0: *const NDArray(T),
+    arr1: *const NDArray(T),
+) bool {
+    if (arr0.dims.len != arr1.dims.len) {
         return false;
     }
 
-    for (0..array0.dims.len) |ii| {
-        if (array0.dims[ii] != array1.dims[ii]) {
+    for (0..arr0.dims.len) |ii| {
+        if (arr0.dims[ii] != arr1.dims[ii]) {
             return false;
         }
     }
@@ -198,104 +264,70 @@ pub fn matchArrayDims(comptime EType: type, array0: *const NDArray(EType), array
     return true;
 }
 
-test "NDArray.init" {
-    const allocator = std.testing.allocator;
-    const dims = [_]usize{ 2, 3 };
-    const elems = try allocator.alloc(f64, 6);
-    defer allocator.free(elems);
+const talloc = testing.allocator;
 
-    var ndarray = try NDArray(f64).init(allocator, elems, dims[0..]);
-    defer ndarray.deinit(allocator);
+test "matchArrayDims" {
+    var dims0 = [_]usize{ 3, 3, 2 };
+    const slice0 = try talloc.alloc(f64, 18);
+    defer talloc.free(slice0);
+    var arr0 = try NDArray(f64).init(talloc, slice0, dims0[0..]);
+    defer arr0.deinit(talloc);
 
-    try expectEqual(ndarray.dims.len, 2);
-    try expectEqual(ndarray.dims[0], 2);
-    try expectEqual(ndarray.dims[1], 3);
-    try expectEqual(ndarray.strides[0], 3);
-    try expectEqual(ndarray.strides[1], 1);
+    var dims1 = [_]usize{ 3, 3, 2 };
+    const slice1 = try talloc.alloc(f64, 18);
+    defer talloc.free(slice1);
+    var arr1 = try NDArray(f64).init(talloc, slice1, dims1[0..]);
+    defer arr1.deinit(talloc);
+
+    try expect(matchArrayDims(f64, &arr0, &arr1));
 }
 
-test "NDArray.initFlat" {
-    const allocator = std.testing.allocator;
-    const dims = [_]usize{ 2, 3 };
+test "getFlatInd" {
+    var dims0 = [_]usize{ 2, 3, 3 };
+    const slice0 = try talloc.alloc(f64, 18);
+    defer talloc.free(slice0);
+    var arr0 = try NDArray(f64).init(talloc, slice0, dims0[0..]);
+    defer arr0.deinit(talloc);
 
-    var ndarray = try NDArray(f64).initFlat(allocator, dims[0..]);
-    defer {
-        allocator.free(ndarray.elems);
-        ndarray.deinit(allocator);
-    }
+    const inds0 = [_]usize{ 1, 2, 1 };
+    const exp_ind0: usize = 16;
+    const flat_ind0 = arr0.getFlatInd(inds0[0..]);
 
-    try expectEqual(ndarray.elems.len, 6);
-    try expectEqual(ndarray.dims[0], 2);
-    try expectEqual(ndarray.dims[1], 3);
+    try expectEqual(flat_ind0, exp_ind0);
 }
 
-test "NDArray.getSet" {
-    const allocator = std.testing.allocator;
-    const dims = [_]usize{ 2, 2 };
-    var ndarray = try NDArray(f64).initFlat(allocator, dims[0..]);
-    defer {
-        allocator.free(ndarray.elems);
-        ndarray.deinit(allocator);
+test "calcFlatStride" {
+    var dims0 = [_]usize{ 2, 3, 3 };
+    const slice0 = try talloc.alloc(f64, 18);
+    defer talloc.free(slice0);
+    var arr0 = try NDArray(f64).init(talloc, slice0, dims0[0..]);
+    defer arr0.deinit(talloc);
+    const check0 = [_]usize{ 9, 3, 1 };
+
+    for (0..3) |aa| {
+        try expectEqual(arr0.strides[aa], check0[aa]);
     }
-
-    ndarray.set(&[_]usize{ 0, 0 }, 1.0);
-    ndarray.set(&[_]usize{ 0, 1 }, 2.0);
-    ndarray.set(&[_]usize{ 1, 0 }, 3.0);
-    ndarray.set(&[_]usize{ 1, 1 }, 4.0);
-
-    try expectEqual(ndarray.get(&[_]usize{ 0, 0 }), 1.0);
-    try expectEqual(ndarray.get(&[_]usize{ 0, 1 }), 2.0);
-    try expectEqual(ndarray.get(&[_]usize{ 1, 0 }), 3.0);
-    try expectEqual(ndarray.get(&[_]usize{ 1, 1 }), 4.0);
 }
 
-test "NDArray.InPlaceOps" {
-    const allocator = std.testing.allocator;
-    const dims = [_]usize{ 2, 2 };
-    var nd0 = try NDArray(f64).initFlat(allocator, dims[0..]);
-    var nd1 = try NDArray(f64).initFlat(allocator, dims[0..]);
-    defer {
-        allocator.free(nd0.elems);
-        nd0.deinit(allocator);
-        allocator.free(nd1.elems);
-        nd1.deinit(allocator);
+test "getSlice" {
+    var dims0 = [_]usize{ 3, 2, 2 };
+    const slice0 = try talloc.alloc(f64, 12);
+    defer talloc.free(slice0);
+    var arr0 = try NDArray(f64).init(talloc, slice0, dims0[0..]);
+    defer arr0.deinit(talloc);
+
+    var set_inds = [_]usize{ 1, 0, 0 };
+    for (0..dims0[1]) |ii| {
+        for (0..dims0[2]) |jj| {
+            set_inds[1] = ii;
+            set_inds[2] = jj;
+            arr0.set(set_inds[0..], 7);
+        }
     }
 
-    nd0.fill(10.0);
-    nd1.fill(2.0);
+    var fixed_inds = [_]usize{ 1, 0, 0 };
+    const ext_slice0 = arr0.getSlice(fixed_inds[0..], 0);
 
-    nd0.addInPlace(&nd1);
-    try expectEqual(nd0.elems[0], 12.0);
-
-    nd0.subInPlace(&nd1);
-    try expectEqual(nd0.elems[0], 10.0);
-
-    nd0.mulInPlace(&nd1);
-    try expectEqual(nd0.elems[0], 20.0);
-
-    nd0.divInPlace(&nd1);
-    try expectEqual(nd0.elems[0], 10.0);
-
-    nd0.mulScalarInPlace(2.0);
-    try expectEqual(nd0.elems[0], 20.0);
-
-    nd0.divScalarInPlace(2.0);
-    try expectEqual(nd0.elems[0], 10.0);
-}
-
-test "NDArray.minMax" {
-    const allocator = std.testing.allocator;
-    const dims = [_]usize{ 3 };
-    var nd = try NDArray(f64).initFlat(allocator, dims[0..]);
-    defer {
-        allocator.free(nd.elems);
-        nd.deinit(allocator);
-    }
-
-    nd.elems[0] = 5.0;
-    nd.elems[1] = 10.0;
-    nd.elems[2] = 2.0;
-
-    try expectEqual(nd.max(), 10.0);
-    try expectEqual(nd.min(), 2.0);
+    try expectEqual(ext_slice0.len, 4);
+    try expectEqual(ext_slice0[0], 7);
 }

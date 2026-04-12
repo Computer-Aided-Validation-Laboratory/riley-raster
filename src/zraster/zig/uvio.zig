@@ -51,7 +51,11 @@ pub const UVMap = struct {
     }
 };
 
-pub fn loadUVs(outer_alloc: std.mem.Allocator, io: std.Io, path: []const u8) !NDArray(f64) {
+pub fn loadUVs(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+) !NDArray(f64) {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
@@ -61,7 +65,7 @@ pub fn loadUVs(outer_alloc: std.mem.Allocator, io: std.Io, path: []const u8) !ND
 
     var uv_arr = try NDArray(f64).initFlat(outer_alloc, &[_]usize{ nodes_num, 2 });
     errdefer {
-        outer_alloc.free(uv_arr.elems);
+        outer_alloc.free(uv_arr.slice);
         uv_arr.deinit(outer_alloc);
     }
 
@@ -84,7 +88,7 @@ pub fn loadUVMap(outer_alloc: std.mem.Allocator, io: std.Io, path: []const u8) !
     const uv_arr = try loadUVs(outer_alloc, io, path);
     return UVMap{
         .array = uv_arr,
-        .buffer = uv_arr.elems,
+        .buffer = uv_arr.slice,
     };
 }
 
@@ -100,7 +104,7 @@ test "Load UVMap from tri3_fullscreen/uvs.csv" {
     defer uv_map.deinit(allocator);
 
     try testing.expectEqual(@as(usize, 4), uv_map.array.dims[0]);
-    
+
     // First row: 0.4, 0.4
     try testing.expectApproxEqAbs(@as(f64, 0.4), uv_map.getU(0), 1e-8);
     try testing.expectApproxEqAbs(@as(f64, 0.4), uv_map.getV(0), 1e-8);

@@ -23,7 +23,11 @@ pub fn getScaleMax(bits: ?u8) f64 {
     return 1.0;
 }
 
-pub fn getScaleFactors(strategy: ScaleStrategy, bits: ?u8, params: ScalingParams) ScaleFactors {
+pub fn getScaleFactors(
+    strategy: ScaleStrategy,
+    bits: ?u8,
+    params: ScalingParams,
+) ScaleFactors {
     if (strategy == .none) return .{ .mul = 1.0, .add = 0.0 };
     var mul = 1.0 / params.range;
     var add = -params.min / params.range;
@@ -53,7 +57,7 @@ pub fn getScalingParamsTexture(
         .auto, .frac => {
             var px_min: f64 = std.math.inf(f64);
             var px_max: f64 = -std.math.inf(f64);
-            for (texture.array.elems) |val| {
+            for (texture.array.slice) |val| {
                 if (val < px_min) px_min = val;
                 if (val > px_max) px_max = val;
             }
@@ -70,12 +74,15 @@ pub fn getScalingParamsTexture(
     }
 }
 
-pub fn getScalingParams(image: *const MatSlice(f64), strategy: ScaleStrategy) ScalingParams {
+pub fn getScalingParams(
+    image: *const MatSlice(f64),
+    strategy: ScaleStrategy,
+) ScalingParams {
     switch (strategy) {
         .none => return .{ .min = 0.0, .range = 1.0 },
         .auto, .frac => {
-            const px_min = std.mem.min(f64, image.elems);
-            const px_max = std.mem.max(f64, image.elems);
+            const px_min = std.mem.min(f64, image.slice);
+            const px_max = std.mem.max(f64, image.slice);
             const px_rng = if (px_max > px_min) px_max - px_min else 1.0;
             return .{ .min = px_min, .range = px_rng };
         },
@@ -100,12 +107,12 @@ pub fn getScalingParamsNDArray(
             if (frame_idx) |fi| {
                 const safe_fi = @min(fi, array.dims[0] - 1);
                 const stride = array.strides[0];
-                const frame_mem = array.elems[safe_fi * stride .. (safe_fi + 1) * stride];
+                const frame_mem = array.slice[safe_fi * stride .. (safe_fi + 1) * stride];
                 px_min = std.mem.min(f64, frame_mem);
                 px_max = std.mem.max(f64, frame_mem);
             } else {
-                px_min = std.mem.min(f64, array.elems);
-                px_max = std.mem.max(f64, array.elems);
+                px_min = std.mem.min(f64, array.slice);
+                px_max = std.mem.max(f64, array.slice);
             }
 
             const px_rng = if (px_max > px_min) px_max - px_min else 1.0;
@@ -118,7 +125,12 @@ pub fn getScalingParamsNDArray(
     }
 }
 
-pub fn applyScaling(val: f64, strategy: ScaleStrategy, bits: ?u8, params: ScalingParams) f64 {
+pub fn applyScaling(
+    val: f64,
+    strategy: ScaleStrategy,
+    bits: ?u8,
+    params: ScalingParams,
+) f64 {
     const norm = switch (strategy) {
         .none => return val,
         .auto, .fixed => (val - params.min) / params.range,
@@ -157,7 +169,10 @@ pub fn averageImage(
             px_sum = 0.0;
             for (0..sub_samp_us) |sy| {
                 for (0..sub_samp_us) |sx| {
-                    px_sum += image_subpx.get(sub_samp_us * iy + sy, sub_samp_us * ix + sx);
+                    px_sum += image_subpx.get(
+                        sub_samp_us * iy + sy,
+                        sub_samp_us * ix + sx,
+                    );
                 }
             }
             image_avg.set(iy, ix, px_sum / subpx_per_px);

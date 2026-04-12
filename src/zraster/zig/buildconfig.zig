@@ -72,6 +72,7 @@ pub const Config = struct {
     simd: SimdMode = .on,
     simd_vector_width: comptime_int = 8,
     max_nodal_fields: comptime_int = 8,
+    max_image_channels: comptime_int = 8,
     precision: type = f64,
     tolerance: Tolerance = .{},
 };
@@ -80,6 +81,7 @@ pub const config = Config{
     .simd = .on,
     .simd_vector_width = 8,
     .max_nodal_fields = 8,
+    .max_image_channels = 8,
     .precision = f64,
     .tolerance = .{},
 };

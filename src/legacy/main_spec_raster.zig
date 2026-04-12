@@ -78,7 +78,14 @@ pub fn main() !void {
         path_data ++ "field_disp_z.csv",
     };
 
-    const sim_data: SimData = try meshio.loadSimData(page_alloc, io, path_coords, path_connect, path_fields[0..], null);
+    const sim_data: SimData = try meshio.loadSimData(
+        page_alloc,
+        io,
+        path_coords,
+        path_connect,
+        path_fields[0..],
+        null,
+    );
 
     //--------------------------------------------------------------------------
     // CHECK FIELD LOADED CORRECTLY
@@ -108,21 +115,48 @@ pub fn main() !void {
     print("\nROI center position:\n", .{});
     roi_pos.vecPrint();
 
-    const cam_pos = CameraOps.posFillFrameFromRot(&sim_data.coords, pixel_num, pixel_size, focal_leng, cam_rot, fov_scale_factor);
+    const cam_pos = CameraOps.posFillFrameFromRot(
+        &sim_data.coords,
+        pixel_num,
+        pixel_size,
+        focal_leng,
+        cam_rot,
+        fov_scale_factor,
+    );
 
     print("\nCamera position:\n", .{});
     cam_pos.vecPrint();
 
-    const camera = Camera.init(pixel_num, pixel_size, cam_pos, cam_rot, roi_pos, focal_leng, subsample);
+    const camera = Camera.init(
+        pixel_num,
+        pixel_size,
+        cam_pos,
+        cam_rot,
+        roi_pos,
+        focal_leng,
+        subsample,
+    );
 
     print("\nWorld to camera matrix:\n", .{});
     camera.world_to_cam_mat.matPrint();
 
     //=========================================================================================
     // Mesh Data Transformation
-    const elem_coords = try mr.prepareCoords(page_alloc, &sim_data.coords, &sim_data.connect);
-    const elem_disp = try mr.prepareField(page_alloc, &sim_data.connect, &sim_data.field.?);
-    const elem_field = try mr.prepareField(page_alloc, &sim_data.connect, &sim_data.field.?);
+    const elem_coords = try mr.prepareCoords(
+        page_alloc,
+        &sim_data.coords,
+        &sim_data.connect,
+    );
+    const elem_disp = try mr.prepareField(
+        page_alloc,
+        &sim_data.connect,
+        &sim_data.field.?,
+    );
+    const elem_field = try mr.prepareField(
+        page_alloc,
+        &sim_data.connect,
+        &sim_data.field.?,
+    );
     const elem_shader = NodalInput{ .field = elem_field };
 
     var mesh_input = MeshInput{
@@ -145,9 +179,13 @@ pub fn main() !void {
     // Raster One Frame
     print("{s}\nRastering Image\n{s}\n", .{ print_break, print_break });
 
-    var images_dims = [_]usize{ sim_data.field.?.getFieldsN(), camera.pixels_num[1], camera.pixels_num[0] };
+    var images_dims = [_]usize{
+        sim_data.field.?.getFieldsN(),
+        camera.pixels_num[1],
+        camera.pixels_num[0],
+    };
     var images_arr = try NDArray(f64).initFlat(render_alloc, images_dims[0..]);
-    @memset(images_arr.elems, 0.0);
+    @memset(images_arr.slice, 0.0);
 
     try zraster.rasterOneFrame(
         mesh_type,
@@ -162,8 +200,8 @@ pub fn main() !void {
         &images_arr,
     );
 
-    const image_max = std.mem.max(f64, images_arr.elems);
-    const image_min = std.mem.min(f64, images_arr.elems);
+    const image_max = std.mem.max(f64, images_arr.slice);
+    const image_min = std.mem.min(f64, images_arr.slice);
     print("Image: [max, min] = [{d:.6}, {d:.6}]\n", .{ image_max, image_min });
     print("{s}\n", .{print_break});
 
@@ -191,7 +229,11 @@ pub fn main() !void {
         image_slice_inds[0] = ff;
         // Grab a matrix slice of the field images
         const image_slice = images_arr.getSlice(image_slice_inds[0..], 0);
-        const image_mat = MatSlice(f64).init(image_slice, camera.pixels_num[1], camera.pixels_num[0]);
+        const image_mat = MatSlice(f64).init(
+            image_slice,
+            camera.pixels_num[1],
+            camera.pixels_num[0],
+        );
 
         time_start = std.Io.Clock.Timestamp.now(io, .awake);
 
@@ -205,7 +247,9 @@ pub fn main() !void {
 
         time_end = std.Io.Clock.Timestamp.now(io, .awake);
 
-        const time_save_image: f64 = @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds);
+        const time_save_image: f64 = @floatFromInt(
+            time_start.durationTo(time_end).raw.nanoseconds,
+        );
         print("Field {d} image save time = {d:.3} ms\n", .{
             ff,
             time_save_image / time.ns_per_ms,

@@ -5,6 +5,7 @@ const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const VecSU8 = buildconfig.VecSU8;
 const tol = buildconfig.config.tolerance;
+
 const rops = @import("rasterops.zig");
 const newton = @import("newton.zig");
 const shapefun = @import("shapefun.zig");
@@ -59,7 +60,11 @@ pub fn GeometryResultSIMD(comptime N: usize) type {
     };
 }
 
-pub inline fn calcInvZRast(comptime N: usize, nodes: Vec3Slices(f64), weights: [N]f64) f64 {
+pub inline fn calcInvZRast(
+    comptime N: usize,
+    nodes: Vec3Slices(f64),
+    weights: [N]f64,
+) f64 {
     var inv_z: f64 = 0.0;
 
     inline for (0..N) |ind| {
@@ -69,7 +74,11 @@ pub inline fn calcInvZRast(comptime N: usize, nodes: Vec3Slices(f64), weights: [
     return inv_z;
 }
 
-pub inline fn calcInvZClip(comptime N: usize, nodes: Vec3Slices(f64), weights: [N]f64) f64 {
+pub inline fn calcInvZClip(
+    comptime N: usize,
+    nodes: Vec3Slices(f64),
+    weights: [N]f64,
+) f64 {
     var sum_weighted_z: f64 = 0.0;
 
     inline for (0..N) |ind| {

@@ -79,7 +79,10 @@ pub fn compareNDArrayToCSV(
                 );
                 return error.CSVColsMismatch;
             };
-            const gold_val = try std.fmt.parseFloat(f64, std.mem.trim(u8, val_str, " \r\n\t"));
+            const gold_val = try std.fmt.parseFloat(
+                f64,
+                std.mem.trim(u8, val_str, " \r\n\t"),
+            );
             const actual_val = array.get(&[_]usize{ frame, field, r, c });
 
             if (!isApproxEqual(gold_val, actual_val, rel_tol, abs_tol)) {
@@ -91,7 +94,8 @@ pub fn compareNDArrayToCSV(
                 const rel_diff = if (largest < abs_tol) diff else diff / largest;
 
                 std.debug.print(
-                    "\n\nMismatch at:\n frame {d},\n field {d},\n pixel ({d}, {d}): " ++
+                    "\n\nMismatch at:\n frame {d},\n field {d},\n " ++
+                        "pixel ({d}, {d}): " ++
                         "\n gold={d},\n actual={d},\n rel_diff={e}\n (path: {s})\n\n",
                     .{ frame, field, r, c, gold_val, actual_val, rel_diff, path },
                 );
@@ -143,7 +147,8 @@ pub fn compareNDArrayToCSVRGB(
             for (0..3) |cc| {
                 const val_str = sub_iter.next() orelse {
                     std.debug.print(
-                        "Channel mismatch at row {d}, col {d}: missing channel {d} (path: {s})\n",
+                        "Channel mismatch at row {d}, col {d}: " ++
+                            "missing channel {d} (path: {s})\n",
                         .{ r, c, cc, path },
                     );
                     return error.CSVChannelsMismatch;
@@ -164,9 +169,19 @@ pub fn compareNDArrayToCSVRGB(
                     const rel_diff = if (largest < abs_tol) diff else diff / largest;
 
                     std.debug.print(
-                        "\n\nMismatch at:\n frame {d},\n field {d},\n pixel ({d}, {d}): " ++
+                        "\n\nMismatch at:\n frame {d},\n field {d},\n " ++
+                            "pixel ({d}, {d}): " ++
                             "\n gold={d},\n actual={d},\n rel_diff={e}\n (path: {s})\n\n",
-                        .{ frame, field_start + cc, r, c, gold_val, actual_val, rel_diff, path },
+                        .{
+                            frame,
+                            field_start + cc,
+                            r,
+                            c,
+                            gold_val,
+                            actual_val,
+                            rel_diff,
+                            path,
+                        },
                     );
                     return error.PixelMismatch;
                 }
@@ -218,7 +233,11 @@ fn saveResultToFails(
         for (0..array.dims[1]) |fi| {
             const slice = array.getSlice(&[_]usize{ f, fi, 0, 0 }, 1);
             const mat = MatSlice(f64).init(slice, array.dims[2], array.dims[3]);
-            const name = try std.fmt.allocPrint(allocator, "frame_{d}_field_{d}", .{ f, fi });
+            const name = try std.fmt.allocPrint(
+                allocator,
+                "frame_{d}_field_{d}",
+                .{ f, fi },
+            );
             try iio.saveMatAsImage(
                 io,
                 out_dir,
@@ -321,8 +340,8 @@ pub fn calculateDiffImage(
     gold: *const NDArray(f64),
 ) !NDArray(f64) {
     var diff = try NDArray(f64).initFlat(allocator, actual.dims);
-    for (0..actual.elems.len) |ii| {
-        diff.elems[ii] = @abs(actual.elems[ii] - gold.elems[ii]);
+    for (0..actual.slice.len) |ii| {
+        diff.slice[ii] = @abs(actual.slice[ii] - gold.slice[ii]);
     }
     return diff;
 }
@@ -399,7 +418,7 @@ fn saveImageArtifacts(
     defer allocator.free(bmp_name);
     var bmp_image = try makeBMPImageArray(allocator, image);
     defer {
-        allocator.free(bmp_image.elems);
+        allocator.free(bmp_image.slice);
         bmp_image.deinit(allocator);
     }
     try iio.saveBMP(io, dir, bmp_name, &bmp_image, 0, .{
@@ -426,19 +445,19 @@ pub fn saveComparisonArtifactsFromResult(
 
     var actual = try extractFrameImage(allocator, result, frame, field_start, channels);
     defer {
-        allocator.free(actual.elems);
+        allocator.free(actual.slice);
         actual.deinit(allocator);
     }
 
     var gold = try loadImageFromCSV(allocator, io, gold_csv_path, channels);
     defer {
-        allocator.free(gold.elems);
+        allocator.free(gold.slice);
         gold.deinit(allocator);
     }
 
     var diff = try calculateDiffImage(allocator, &actual, &gold);
     defer {
-        allocator.free(diff.elems);
+        allocator.free(diff.slice);
         diff.deinit(allocator);
     }
 
@@ -469,7 +488,7 @@ pub fn saveComparisonArtifactsFromImages(
 
     var diff = try calculateDiffImage(allocator, actual, gold);
     defer {
-        allocator.free(diff.elems);
+        allocator.free(diff.slice);
         diff.deinit(allocator);
     }
 
@@ -518,7 +537,11 @@ pub fn runTestInternal(
     };
 
     const case_name = try std.fmt.allocPrint(aa, "{s}_{s}", .{ data_name, suffix });
-    const data_path = try std.fmt.allocPrint(aa, "{s}/{s}", .{ data_dir_root, case_name });
+    const data_path = try std.fmt.allocPrint(
+        aa,
+        "{s}/{s}",
+        .{ data_dir_root, case_name },
+    );
 
     var sim_data = try loadData(aa, io, data_path);
     const uv_path = try std.fmt.allocPrint(aa, "{s}/uvs.csv", .{data_path});
@@ -586,7 +609,7 @@ pub fn runTestInternal(
                 null,
             )) orelse return error.NoResult;
 
-            defer aa.free(result.elems);
+            defer aa.free(result.slice);
 
             for (0..result.dims[0]) |f| {
                 const fname = try std.fmt.allocPrint(
@@ -595,8 +618,16 @@ pub fn runTestInternal(
                     .{ flat_dir, f },
                 );
 
-                compareNDArrayToCSV(aa, io, &result, f, 0, fname, rel_tol, abs_tol) 
-                    catch |err| {
+                compareNDArrayToCSV(
+                    aa,
+                    io,
+                    &result,
+                    f,
+                    0,
+                    fname,
+                    rel_tol,
+                    abs_tol,
+                ) catch |err| {
                     const fail_dir_name = try std.fmt.allocPrint(
                         aa,
                         "all_{s}",
@@ -640,7 +671,11 @@ pub fn runTestInternal(
                     .connect = sim_data.connect,
                     .disp = if (add_disp) sim_data.field else null,
                     .shader = .{
-                        .tex_u8 = .{ .uvs = uvs.array, .texture = texture, .interp_type = it }
+                        .tex_u8 = .{
+                            .uvs = uvs.array,
+                            .texture = texture,
+                            .interp_type = it,
+                        },
                     },
                 };
 
@@ -661,7 +696,7 @@ pub fn runTestInternal(
                     null,
                 )) orelse return error.NoResult;
 
-                defer aa.free(result.elems);
+                defer aa.free(result.slice);
 
                 for (0..result.dims[0]) |f| {
                     const fname = try std.fmt.allocPrint(
@@ -670,8 +705,16 @@ pub fn runTestInternal(
                         .{ tex_dir, f },
                     );
 
-                    compareNDArrayToCSV(aa, io, &result, f, 0, fname, rel_tol, abs_tol) 
-                        catch |err| {
+                    compareNDArrayToCSV(
+                        aa,
+                        io,
+                        &result,
+                        f,
+                        0,
+                        fname,
+                        rel_tol,
+                        abs_tol,
+                    ) catch |err| {
                         const fail_dir_name = try std.fmt.allocPrint(
                             aa,
                             "all_{s}",
@@ -806,9 +849,20 @@ pub fn runMultimeshTest(
                 "{s}/frame_{d}_field_0.csv",
                 .{ gold_dir, f },
             );
-            compareNDArrayToCSV(aa, io, &result, f, 0, fname, rel_tol, abs_tol) catch |err| {
-                const case_name = if (mode == .flat) "multimesh_allelem_flat" 
-                    else "multimesh_allelem_tex";
+            compareNDArrayToCSV(
+                aa,
+                io,
+                &result,
+                f,
+                0,
+                fname,
+                rel_tol,
+                abs_tol,
+            ) catch |err| {
+                const case_name = if (mode == .flat)
+                    "multimesh_allelem_flat"
+                else
+                    "multimesh_allelem_tex";
                 const fail_dir_name = try std.fmt.allocPrint(
                     aa,
                     "all_{s}{s}",
@@ -892,11 +946,11 @@ pub fn runMultimeshMixedTestExt(
             sim_datas[ii].coords.mat.rows_num,
             sim_datas[ii].coords.mat.cols_num,
         );
-        @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
+        @memcpy(coords_dup.slice, sim_datas[ii].coords.mat.slice);
 
         mesh_inputs[ii] = MeshInput{
             .mesh_type = mesh_types[ii],
-            .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+            .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
             .shader = .{ .nodal = .{
@@ -918,11 +972,11 @@ pub fn runMultimeshMixedTestExt(
             sim_datas[ii].coords.mat.rows_num,
             sim_datas[ii].coords.mat.cols_num,
         );
-        @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
+        @memcpy(coords_dup.slice, sim_datas[ii].coords.mat.slice);
 
         mesh_inputs[ii + 5] = MeshInput{
             .mesh_type = mesh_types[ii],
-            .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+            .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
             .shader = .{ .tex_u8 = .{
@@ -969,7 +1023,14 @@ pub fn runMultimeshMixedTestExt(
         },
         .report = .off,
     };
-    const result = (try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, null)) orelse return error.NoResult;
+    const result = (try zraster.rasterAllFrames(
+        aa,
+        io,
+        &camera,
+        mesh_inputs,
+        config,
+        null,
+    )) orelse return error.NoResult;
 
     for (0..result.dims[0]) |f| {
         const fname = try std.fmt.allocPrint(
@@ -1058,11 +1119,11 @@ pub fn runMultimeshMixedRGBTestExt(
             sim_datas[ii].coords.mat.rows_num,
             sim_datas[ii].coords.mat.cols_num,
         );
-        @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
+        @memcpy(coords_dup.slice, sim_datas[ii].coords.mat.slice);
 
         mesh_inputs[ii] = MeshInput{
             .mesh_type = mesh_types[ii],
-            .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+            .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
             .shader = .{ .tex_rgb_u8 = .{
@@ -1123,7 +1184,7 @@ pub fn runMultimeshMixedRGBTestExt(
 
         const rgb_field = meshio.Field{
             .array = rgb_field_arr,
-            .array_mem = rgb_field_arr.elems,
+            .array_mem = rgb_field_arr.slice,
         };
 
         var coords_dup = try MatSlice(f64).initAlloc(
@@ -1131,11 +1192,11 @@ pub fn runMultimeshMixedRGBTestExt(
             sim_datas[ii].coords.mat.rows_num,
             sim_datas[ii].coords.mat.cols_num,
         );
-        @memcpy(coords_dup.elems, sim_datas[ii].coords.mat.elems);
+        @memcpy(coords_dup.slice, sim_datas[ii].coords.mat.slice);
 
         mesh_inputs[ii + 5] = MeshInput{
             .mesh_type = mesh_types[ii],
-            .coords = meshio.Coords.init(coords_dup.elems, coords_dup.rows_num),
+            .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
             .shader = .{ .nodal = .{
@@ -1197,7 +1258,16 @@ pub fn runMultimeshMixedRGBTestExt(
             "{s}/frame_{d}_field_0_rgb.csv",
             .{ gold_dir, f },
         );
-        compareNDArrayToCSVRGB(aa, io, &result, f, 0, fname, rel_tol, abs_tol) catch |err| {
+        compareNDArrayToCSVRGB(
+            aa,
+            io,
+            &result,
+            f,
+            0,
+            fname,
+            rel_tol,
+            abs_tol,
+        ) catch |err| {
             try saveComparisonArtifactsFromResult(
                 aa,
                 io,

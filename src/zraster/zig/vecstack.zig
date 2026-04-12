@@ -11,17 +11,14 @@ const EType = f64;
 pub const Vec2f = Vec2T(EType);
 pub const Vec3f = Vec3T(EType);
 
-// TODO:
-// - Tests for VecSliceOps
-
-pub fn VecStack(comptime elem_n: comptime_int, comptime ElemType: type) type {
+pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
     return struct {
-        elems: [elem_n]ElemType,
+        slice: [elem_n]T,
 
         const Self: type = @This();
 
-        pub fn initFill(fill_val: ElemType) Self {
-            return .{ .elems = [_]ElemType{fill_val} ** elem_n };
+        pub fn initFill(fill_val: T) Self {
+            return .{ .slice = [_]T{fill_val} ** elem_n };
         }
 
         pub fn initOnes() Self {
@@ -32,38 +29,38 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime ElemType: type) type {
             return initFill(0);
         }
 
-        pub fn initSlice(slice_in: []const ElemType) Self {
-            return .{ .elems = slice_in[0..elem_n].* };
+        pub fn initSlice(slice_in: []const T) Self {
+            return .{ .slice = slice_in[0..elem_n].* };
         }
 
-        pub fn get(self: *const Self, ind: usize) ElemType {
-            return self.elems[ind];
+        pub fn get(self: *const Self, ind: usize) T {
+            return self.slice[ind];
         }
 
-        pub fn set(self: *Self, ind: usize, val: ElemType) void {
-            self.elems[ind] = val;
+        pub fn set(self: *Self, ind: usize, val: T) void {
+            self.slice[ind] = val;
         }
 
-        pub fn x(self: Self) ElemType {
-            return self.elems[0];
-        }
-        
-        pub fn y(self: Self) ElemType {
-            return self.elems[1];
+        pub fn x(self: Self) T {
+            return self.slice[0];
         }
 
-        pub fn z(self: Self) ElemType {
-            return self.elems[2];
+        pub fn y(self: Self) T {
+            return self.slice[1];
         }
 
-        pub fn w(self: Self) ElemType {
-            return self.elems[3];
+        pub fn z(self: Self) T {
+            return self.slice[2];
+        }
+
+        pub fn w(self: Self) T {
+            return self.slice[3];
         }
 
         pub fn add(self: *const Self, to_add: Self) Self {
             var vec_out: Self = undefined;
             for (0..elem_n) |ii| {
-                vec_out.elems[ii] = self.elems[ii] + to_add.elems[ii];
+                vec_out.slice[ii] = self.slice[ii] + to_add.slice[ii];
             }
             return vec_out;
         }
@@ -71,59 +68,59 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime ElemType: type) type {
         pub fn sub(self: *const Self, to_sub: Self) Self {
             var vec_out: Self = undefined;
             for (0..elem_n) |ii| {
-                vec_out.elems[ii] = self.elems[ii] - to_sub.elems[ii];
+                vec_out.slice[ii] = self.slice[ii] - to_sub.slice[ii];
             }
             return vec_out;
         }
 
-        pub fn mulScalar(self: *const Self, scalar: ElemType) Self {
+        pub fn mulScalar(self: *const Self, scalar: T) Self {
             var vec_out: Self = undefined;
             for (0..elem_n) |ii| {
-                vec_out.elems[ii] = scalar * self.elems[ii];
+                vec_out.slice[ii] = scalar * self.slice[ii];
             }
             return vec_out;
         }
 
-        pub fn dot(self: *const Self, to_dot: Self) ElemType {
-            var dot_prod: ElemType = 0;
+        pub fn dot(self: *const Self, to_dot: Self) T {
+            var dot_prod: T = 0;
             for (0..elem_n) |ii| {
-                dot_prod += self.elems[ii] * to_dot.elems[ii];
+                dot_prod += self.slice[ii] * to_dot.slice[ii];
             }
             return dot_prod;
         }
 
-        pub fn norm(self: *const Self) ElemType {
-            var norm_out: ElemType = 0;
+        pub fn norm(self: *const Self) T {
+            var norm_out: T = 0;
             for (0..elem_n) |ii| {
-                norm_out += self.elems[ii] * self.elems[ii];
+                norm_out += self.slice[ii] * self.slice[ii];
             }
             return norm_out;
         }
 
-        pub fn vecLen(self: *const Self) ElemType {
+        pub fn vecLen(self: *const Self) T {
             return @sqrt(self.norm());
         }
 
-        pub fn max(self: *const Self) ValIdx(ElemType) {
-            return SliceOps.max(ElemType, &self.elems);
+        pub fn max(self: *const Self) ValIdx(T) {
+            return SliceOps.max(T, &self.slice);
         }
 
-        pub fn min(self: *const Self) ValIdx(ElemType) {
-            return SliceOps.min(ElemType, &self.elems);
+        pub fn min(self: *const Self) ValIdx(T) {
+            return SliceOps.min(T, &self.slice);
         }
 
-        pub fn sum(self: *const Self) ElemType {
-            return SliceOps.sum(ElemType, &self.elems);
+        pub fn sum(self: *const Self) T {
+            return SliceOps.sum(T, &self.slice);
         }
 
-        pub fn mean(self: *const Self) ElemType {
-            return SliceOps.mean(ElemType, &self.elems);
+        pub fn mean(self: *const Self) T {
+            return SliceOps.mean(T, &self.slice);
         }
 
-        pub fn apply(self: *const Self, func: *const fn(val: anytype) ElemType) Self {
+        pub fn apply(self: *const Self, func: *const fn (val: anytype) T) Self {
             var applied: Self = undefined;
-            for (self.elems,0..) |elem,ii| {
-                applied.elems[ii] = func(elem);
+            for (self.slice, 0..) |elem, ii| {
+                applied.slice[ii] = func(elem);
             }
             return applied;
         }
@@ -131,53 +128,50 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime ElemType: type) type {
         pub fn vecPrint(self: *const Self) void {
             print("[", .{});
             for (0..elem_n) |ii| {
-                print("{e:.3},", .{self.elems[ii]});
+                print("{e:.3},", .{self.slice[ii]});
             }
             print("]\n", .{});
         }
     };
 }
 
-pub fn Vec2T(comptime ElemType: type) type {
-    return VecStack(2, ElemType);
+pub fn Vec2T(comptime T: type) type {
+    return VecStack(2, T);
 }
 
-pub fn Vec3T(comptime ElemType: type) type {
-    return VecStack(3, ElemType);
+pub fn Vec3T(comptime T: type) type {
+    return VecStack(3, T);
 }
 
-pub fn initVec2(comptime ElemType: type, x: ElemType, y: ElemType) Vec2T(ElemType) {
-    return Vec2T(ElemType){
-        .elems = [3]ElemType{ x, y },
+pub fn initVec2(comptime T: type, x_in: T, y_in: T) Vec2T(T) {
+    return Vec2T(T){
+        .slice = [2]T{ x_in, y_in },
     };
 }
 
-pub fn initVec3(comptime ElemType: type, x: ElemType, y: ElemType, 
-                z: ElemType) Vec3T(ElemType) {
-    return Vec3T(ElemType){
-        .elems = [3]ElemType{ x, y, z },
+pub fn initVec3(comptime T: type, x_in: T, y_in: T, z_in: T) Vec3T(T) {
+    return Vec3T(T){
+        .slice = [3]T{ x_in, y_in, z_in },
     };
 }
 
 pub const Vec3Ops = struct {
-    pub fn cross(ElemType: type, vec0: Vec3T(ElemType), 
-                 vec1: Vec3T(ElemType)) Vec3T(ElemType) {
-        var vec_out: Vec3T(ElemType) = undefined;
-        vec_out.elems[0] = vec0.elems[1] * vec1.elems[2] - vec0.elems[2] * vec1.elems[1];
-        vec_out.elems[1] = vec0.elems[0] * vec1.elems[2] - vec0.elems[2] * vec1.elems[0];
-        vec_out.elems[2] = vec0.elems[0] * vec1.elems[1] - vec0.elems[1] * vec1.elems[0];
+    pub fn cross(comptime T: type, vec0: Vec3T(T), vec1: Vec3T(T)) Vec3T(T) {
+        var vec_out: Vec3T(T) = undefined;
+        vec_out.slice[0] = vec0.slice[1] * vec1.slice[2] - vec0.slice[2] * vec1.slice[1];
+        vec_out.slice[1] = vec0.slice[0] * vec1.slice[2] - vec0.slice[2] * vec1.slice[0];
+        vec_out.slice[2] = vec0.slice[0] * vec1.slice[1] - vec0.slice[1] * vec1.slice[0];
         return vec_out;
     }
 };
 
 pub const Vec3SliceOps = struct {
-    pub fn max(ElemType: type, vec: []Vec3T(ElemType), ind: usize) ElemType {
+    pub fn max(comptime T: type, vec: []Vec3T(T), ind: usize) T {
         assert(vec.len > 0);
         assert(ind < 3);
 
-        var val: ElemType = vec[0].get(ind);
+        var val: T = vec[0].get(ind);
         for (vec[1..]) |vv| {
-
             if (vv.get(ind) > val) {
                 val = vv.get(ind);
             }
@@ -186,13 +180,12 @@ pub const Vec3SliceOps = struct {
         return val;
     }
 
-    pub fn min(ElemType: type, vec: []Vec3T(ElemType), ind: usize) ElemType {
+    pub fn min(comptime T: type, vec: []Vec3T(T), ind: usize) T {
         assert(vec.len > 0);
         assert(ind < 3);
 
-        var val: ElemType = vec[0].get(ind);
+        var val: T = vec[0].get(ind);
         for (vec[1..]) |vv| {
-
             if (vv.get(ind) < val) {
                 val = vv.get(ind);
             }
@@ -208,9 +201,9 @@ test "VecSliceOps.max" {
     vec_slice[1] = initVec3(f64, 2.0, -2.0, 7.0);
     vec_slice[2] = initVec3(f64, 5.0, -10.0, 0.0);
 
-    const max_x: f64 = Vec3SliceOps.max(f64,vec_slice[0..],0);
-    const max_y: f64 = Vec3SliceOps.max(f64,vec_slice[0..],1);
-    const max_z: f64 = Vec3SliceOps.max(f64,vec_slice[0..],2);
+    const max_x: f64 = Vec3SliceOps.max(f64, vec_slice[0..], 0);
+    const max_y: f64 = Vec3SliceOps.max(f64, vec_slice[0..], 1);
+    const max_z: f64 = Vec3SliceOps.max(f64, vec_slice[0..], 2);
 
     const exp_max_x: f64 = 5.0;
     const exp_max_y: f64 = 2.0;
@@ -221,26 +214,25 @@ test "VecSliceOps.max" {
     try expectEqual(exp_max_z, max_z);
 }
 
-
 test "Vec.apply" {
     const vec_len: usize = 7;
-    const vec0 = VecStack(vec_len,EType).initOnes();
+    const vec0 = VecStack(vec_len, EType).initOnes();
 
-    const vec_exp_ones = VecStack(vec_len,EType).initOnes();
-    const vec_exp_zeros = VecStack(vec_len,EType).initZeros();
+    const vec_exp_ones = VecStack(vec_len, EType).initOnes();
+    const vec_exp_zeros = VecStack(vec_len, EType).initZeros();
 
     const vec_sqrt = vec0.apply(std.math.sqrt);
 
-    try expectEqualSlices(EType, &vec_exp_ones.elems, &vec_sqrt.elems);
+    try expectEqualSlices(EType, &vec_exp_ones.slice, &vec_sqrt.slice);
 
-    const vec1 = VecStack(vec_len,EType).initZeros();
+    const vec1 = VecStack(vec_len, EType).initZeros();
     const vec_atan = vec1.apply(std.math.atan);
 
-    try expectEqualSlices(EType, &vec_exp_zeros.elems, &vec_atan.elems);
+    try expectEqualSlices(EType, &vec_exp_zeros.slice, &vec_atan.slice);
 
     const vec_e = vec1.apply(SliceOps.exp);
 
-    try expectEqualSlices(EType, &vec_exp_ones.elems, &vec_e.elems);
+    try expectEqualSlices(EType, &vec_exp_ones.slice, &vec_e.slice);
 }
 
 test "Vec.max" {
@@ -290,7 +282,7 @@ test "Vec3f.add" {
     const vec1 = Vec3f.initFill(2);
     const vec_exp = Vec3f.initFill(3);
 
-    try expectEqualSlices(EType,&vec0.add(vec1).elems, &vec_exp.elems);
+    try expectEqualSlices(EType, &vec0.add(vec1).slice, &vec_exp.slice);
 }
 
 test "Vec3f.sub" {
@@ -298,7 +290,7 @@ test "Vec3f.sub" {
     const vec1 = Vec3f.initFill(7);
     const vec_exp = Vec3f.initFill(-6);
 
-    try expectEqualSlices(EType, &vec0.sub(vec1).elems, &vec_exp.elems);
+    try expectEqualSlices(EType, &vec0.sub(vec1).slice, &vec_exp.slice);
 }
 
 test "Vec3f.mulScalar" {
@@ -306,7 +298,7 @@ test "Vec3f.mulScalar" {
     const scalar: EType = 1.23;
     const vec_exp = Vec3f.initFill(scalar);
 
-    try expectEqualSlices(EType,&vec0.mulScalar(scalar).elems, &vec_exp.elems);
+    try expectEqualSlices(EType, &vec0.mulScalar(scalar).slice, &vec_exp.slice);
 }
 
 test "Vec3f.dot" {
@@ -343,5 +335,5 @@ test "Vec3Ops.cross" {
     const v2 = [_]EType{ 0.0, 0.0, 1.0 };
     const cross_exp = Vec3f.initSlice(&v2);
 
-    try expectEqual(Vec3Ops.cross(EType, vec0, vec1), cross_exp);
+    try expectEqual(Vec3Ops.cross(f64, vec0, vec1), cross_exp);
 }

@@ -43,7 +43,7 @@ pub fn Texture(comptime T: type, comptime channels: usize) type {
         }
 
         pub fn deinit(self: *const Self, allocator: std.mem.Allocator) void {
-            allocator.free(self.array.elems);
+            allocator.free(self.array.slice);
             self.array.deinit(allocator);
         }
 

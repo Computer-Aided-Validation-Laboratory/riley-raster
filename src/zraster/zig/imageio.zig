@@ -2,6 +2,10 @@ const std = @import("std");
 const assert = std.debug.assert;
 const print = std.debug.print;
 
+const buildconfig = @import("buildconfig.zig");
+const cfg = buildconfig.config;
+const C = cfg.max_image_channels;
+
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 
@@ -14,7 +18,6 @@ const imageops = @import("imageops.zig");
 pub const ScaleStrategy = imageops.ScaleStrategy;
 pub const ScalingParams = imageops.ScalingParams;
 
-pub const MAX_CHANNELS = 8;
 const tmp_test_root_dir = "tmp-tests";
 const tmp_test_dir = "tmp-tests/imageio";
 
@@ -41,7 +44,12 @@ pub const ImageSaveOpts = struct {
     scaling: ScaleStrategy = .none,
     channels: usize = 1,
 
-    pub fn init(format: ImageFormat, bits: ?u8, scaling: ScaleStrategy, channels: usize) ImageSaveOpts {
+    pub fn init(
+        format: ImageFormat,
+        bits: ?u8,
+        scaling: ScaleStrategy,
+        channels: usize,
+    ) ImageSaveOpts {
         return .{
             .format = format,
             .bits = bits,
@@ -82,7 +90,11 @@ pub fn saveImage(
         .bmp => ".bmp",
         .tiff => ".tiff",
     };
-    const file_name = try std.fmt.bufPrint(name_buff[0..], "{s}{s}", .{ file_name_no_ext, ext });
+    const file_name = try std.fmt.bufPrint(
+        name_buff[0..],
+        "{s}{s}",
+        .{ file_name_no_ext, ext },
+    );
 
     switch (opts.format) {
         .csv => try saveCSV(io, out_dir, file_name, image_arr, start_field, opts),
@@ -102,7 +114,7 @@ pub fn saveMatAsImage(
     var dims = [_]usize{ 1, image.rows_num, image.cols_num };
     var strides = [_]usize{ image.rows_num * image.cols_num, image.cols_num, 1 };
     const arr = NDArray(f64){
-        .elems = image.elems,
+        .slice = image.slice,
         .dims = &dims,
         .strides = &strides,
     };
@@ -175,8 +187,8 @@ pub fn savePPM(
     try writer.print("P3\n{d} {d}\n{d}\n", .{ cols, rows, max_val });
 
     // We need scaling params per field if we are doing auto scaling
-    var params_array: [MAX_CHANNELS]ScalingParams = undefined;
-    const channels = @min(opts.channels, MAX_CHANNELS);
+    var params_array: [C]ScalingParams = undefined;
+    const channels = @min(opts.channels, C);
     for (0..channels) |ch| {
         const field_idx = start_field + ch;
         const slice = image_arr.getSlice(&[_]usize{ field_idx, 0, 0 }, 0);
@@ -225,8 +237,8 @@ pub fn saveCSV(
     const rows = image_arr.dims[1];
     const cols = image_arr.dims[2];
 
-    var params_array: [MAX_CHANNELS]ScalingParams = undefined;
-    const channels = @min(opts.channels, MAX_CHANNELS);
+    var params_array: [C]ScalingParams = undefined;
+    const channels = @min(opts.channels, C);
     for (0..channels) |ch| {
         const field_idx = start_field + ch;
         const slice = image_arr.getSlice(&[_]usize{ field_idx, 0, 0 }, 0);
@@ -256,7 +268,14 @@ pub fn saveCSV(
     try writer.flush();
 }
 
-pub fn saveBMP(io: std.Io, out_dir: std.Io.Dir, file_name: []const u8, image_arr: *const NDArray(f64), start_field: usize, opts: ImageSaveOpts) !void {
+pub fn saveBMP(
+    io: std.Io,
+    out_dir: std.Io.Dir,
+    file_name: []const u8,
+    image_arr: *const NDArray(f64),
+    start_field: usize,
+    opts: ImageSaveOpts,
+) !void {
     const file = try out_dir.createFile(io, file_name, .{});
     defer file.close(io);
 
@@ -300,8 +319,8 @@ pub fn saveBMP(io: std.Io, out_dir: std.Io.Dir, file_name: []const u8, image_arr
     try writer.writeInt(u32, 0, .little);
     try writer.writeInt(u32, 0, .little);
 
-    var params_array: [MAX_CHANNELS]ScalingParams = undefined;
-    const channels = @min(opts.channels, MAX_CHANNELS);
+    var params_array: [C]ScalingParams = undefined;
+    const channels = @min(opts.channels, C);
     for (0..@min(channels, 3)) |ch| {
         const field_idx = start_field + ch;
         const slice = image_arr.getSlice(&[_]usize{ field_idx, 0, 0 }, 0);
@@ -337,7 +356,14 @@ pub fn saveBMP(io: std.Io, out_dir: std.Io.Dir, file_name: []const u8, image_arr
     }
     try writer.flush();
 }
-pub fn saveTIFF(io: std.Io, out_dir: std.Io.Dir, file_name: []const u8, image_arr: *const NDArray(f64), start_field: usize, opts: ImageSaveOpts) !void {
+pub fn saveTIFF(
+    io: std.Io,
+    out_dir: std.Io.Dir,
+    file_name: []const u8,
+    image_arr: *const NDArray(f64),
+    start_field: usize,
+    opts: ImageSaveOpts,
+) !void {
     const rows = image_arr.dims[1];
     const cols = image_arr.dims[2];
     const slice = image_arr.getSlice(&[_]usize{ start_field, 0, 0 }, 0);
@@ -406,7 +432,12 @@ pub fn saveTIFF(io: std.Io, out_dir: std.Io.Dir, file_name: []const u8, image_ar
     try (Tag{ .id = 258, .type = 3, .count = 1, .value = bits }).write(writer);
     try (Tag{ .id = 259, .type = 3, .count = 1, .value = 1 }).write(writer);
     try (Tag{ .id = 262, .type = 3, .count = 1, .value = 1 }).write(writer);
-    try (Tag{ .id = 273, .type = 4, .count = 1, .value = pixel_data_offset }).write(writer);
+    try (Tag{
+        .id = 273,
+        .type = 4,
+        .count = 1,
+        .value = pixel_data_offset,
+    }).write(writer);
     try (Tag{ .id = 277, .type = 3, .count = 1, .value = 1 }).write(writer);
     try (Tag{ .id = 278, .type = 3, .count = 1, .value = height }).write(writer);
     try (Tag{ .id = 279, .type = 4, .count = 1, .value = pixel_data_size }).write(writer);
@@ -495,7 +526,7 @@ pub fn loadPPM(
                 px.channels[1] = convertToTarget(T, s1);
                 px.channels[2] = convertToTarget(T, s2);
             } else if (channels == 1) {
-                const val = 0.299 * @as(f64, @floatFromInt(rgb[0])) + 0.587 * @as(f64, @floatFromInt(rgb[1])) + 0.114 * @as(f64, @floatFromInt(rgb[2]));
+                const val = toGreyScale(rgb[0], rgb[1], rgb[2]);
                 px.channels[0] = convertToTarget(T, val / max_val_f);
             }
             texture.setPixel(rr, cc, px);
@@ -553,7 +584,10 @@ pub fn loadCSV(
             var vals_iter = std.mem.splitScalar(u8, val_str, ':');
             for (0..channels) |ch| {
                 const ch_val_str = vals_iter.next() orelse "0";
-                const val = try std.fmt.parseFloat(f64, std.mem.trim(u8, ch_val_str, " \t\r"));
+                const val = try std.fmt.parseFloat(
+                    f64,
+                    std.mem.trim(u8, ch_val_str, " \t\r"),
+                );
                 texture.setVal(ch, rr, cc, val);
             }
         }
@@ -617,7 +651,7 @@ pub fn loadBMP(
                     texture.setVal(1, r, x, @as(f64, @floatFromInt(bgr[1])));
                     texture.setVal(2, r, x, @as(f64, @floatFromInt(bgr[0])));
                 } else if (channels == 1) {
-                    const val = 0.299 * @as(f64, @floatFromInt(bgr[2])) + 0.587 * @as(f64, @floatFromInt(bgr[1])) + 0.114 * @as(f64, @floatFromInt(bgr[0]));
+                    const val = toGreyScale(bgr[2], bgr[1], bgr[0]);
                     texture.setVal(0, r, x, val);
                 }
             }
@@ -638,7 +672,7 @@ pub fn loadBMP(
                     texture.setVal(1, r, x, @as(f64, @floatFromInt(bgr[1])));
                     texture.setVal(2, r, x, @as(f64, @floatFromInt(bgr[0])));
                 } else if (channels == 1) {
-                    const val = 0.299 * @as(f64, @floatFromInt(bgr[2])) + 0.587 * @as(f64, @floatFromInt(bgr[1])) + 0.114 * @as(f64, @floatFromInt(bgr[0]));
+                    const val = toGreyScale(bgr[2], bgr[1], bgr[0]);
                     texture.setVal(0, r, x, val);
                 }
             }
@@ -663,7 +697,7 @@ pub fn loadBMP(
                     texture.setVal(1, r, x, @as(f64, @floatFromInt(color[1])));
                     texture.setVal(2, r, x, @as(f64, @floatFromInt(color[0])));
                 } else if (channels == 1) {
-                    const val = 0.299 * @as(f64, @floatFromInt(color[2])) + 0.587 * @as(f64, @floatFromInt(color[1])) + 0.114 * @as(f64, @floatFromInt(color[0]));
+                    const val = toGreyScale(color[2], color[1], color[0]);
                     texture.setVal(0, r, x, val);
                 }
             }
@@ -692,7 +726,12 @@ pub fn loadTIFF(
     var header: [4]u8 = undefined;
     try reader.readSliceAll(&header);
 
-    const is_little = if (std.mem.eql(u8, header[0..2], "II")) true else if (std.mem.eql(u8, header[0..2], "MM")) false else return error.NotATIFF;
+    const is_little = if (std.mem.eql(u8, header[0..2], "II"))
+        true
+    else if (std.mem.eql(u8, header[0..2], "MM"))
+        false
+    else
+        return error.NotATIFF;
 
     const endian: std.builtin.Endian = if (is_little) .little else .big;
     const magic = std.mem.readInt(u16, header[2..4], endian);
@@ -715,8 +754,14 @@ pub fn loadTIFF(
         const tag_value = try reader.takeInt(u32, endian);
 
         switch (tag_id) {
-            256 => width = if (tag_type == 3) @as(u32, @intCast(tag_value & 0xFFFF)) else tag_value,
-            257 => height = if (tag_type == 3) @as(u32, @intCast(tag_value & 0xFFFF)) else tag_value,
+            256 => width = if (tag_type == 3)
+                @as(u32, @intCast(tag_value & 0xFFFF))
+            else
+                tag_value,
+            257 => height = if (tag_type == 3)
+                @as(u32, @intCast(tag_value & 0xFFFF))
+            else
+                tag_value,
             258 => bits_per_sample = @intCast(tag_value & 0xFFFF),
             273 => strip_offsets = tag_value,
             277 => samples_per_pixel = @intCast(tag_value & 0xFFFF),
@@ -802,7 +847,7 @@ pub fn CLoadTIFF(
                 texture.setVal(1, row, col, @as(f64, @floatFromInt(g)));
                 texture.setVal(2, row, col, @as(f64, @floatFromInt(b)));
             } else if (channels == 1) {
-                const val = 0.299 * @as(f64, @floatFromInt(r)) + 0.587 * @as(f64, @floatFromInt(g)) + 0.114 * @as(f64, @floatFromInt(b));
+                const val = toGreyScale(r, g, b);
                 texture.setVal(0, row, col, val);
             }
         }
@@ -811,9 +856,18 @@ pub fn CLoadTIFF(
     return texture;
 }
 
+inline fn toGreyScale(r: anytype, g: anytype, b: anytype) f64 {
+    return 0.299 * @as(f64, @floatFromInt(r)) +
+        0.587 * @as(f64, @floatFromInt(g)) +
+        0.114 * @as(f64, @floatFromInt(b));
+}
+
 fn convertToTarget(comptime T: type, norm: f64) T {
     const scale = switch (@typeInfo(T)) {
-        .int => |info| (@as(f64, 1.0) * @as(f64, @floatFromInt((@as(u64, 1) << info.bits) - 1))),
+        .int => |info| (@as(f64, 1.0) * @as(
+            f64,
+            @floatFromInt((@as(u64, 1) << info.bits) - 1),
+        )),
         .float => 1.0,
         else => @compileError("Unsupported type"),
     };
@@ -861,7 +915,13 @@ test "Verify hand-written TIFF loader" {
     }
     const mat = MatSlice(f64).init(mat_mem, tex_c.rows_num, tex_c.cols_num);
 
-    try saveMatAsImage(io, out_dir, tmp_test_dir ++ "/speckle-simple", &mat, .{ .format = .tiff, .bits = 8, .scaling = .none });
+    try saveMatAsImage(
+        io,
+        out_dir,
+        tmp_test_dir ++ "/speckle-simple",
+        &mat,
+        .{ .format = .tiff, .bits = 8, .scaling = .none },
+    );
 
     var tex_zig = try loadImage(
         u8,
@@ -910,11 +970,21 @@ test "Save and Load All Formats 8-bit and 16-bit" {
 
     for (formats) |fmt| {
         for (bit_depths) |bits| {
-            const base_name = try std.fmt.allocPrint(allocator, tmp_test_dir ++ "/test_io_{s}_{d}bit", .{ @tagName(fmt), bits });
+            const base_name = try std.fmt.allocPrint(
+                allocator,
+                tmp_test_dir ++ "/test_io_{s}_{d}bit",
+                .{ @tagName(fmt), bits },
+            );
             defer allocator.free(base_name);
 
             // 1. Save with auto-scaling
-            try saveMatAsImage(io, out_dir, base_name, &mat, .{ .format = fmt, .bits = bits, .scaling = .auto });
+            try saveMatAsImage(
+                io,
+                out_dir,
+                base_name,
+                &mat,
+                .{ .format = fmt, .bits = bits, .scaling = .auto },
+            );
 
             var ext_buff: [1024]u8 = undefined;
             const ext = switch (fmt) {
@@ -923,7 +993,11 @@ test "Save and Load All Formats 8-bit and 16-bit" {
                 .bmp => ".bmp",
                 .tiff => ".tiff",
             };
-            const full_path = try std.fmt.bufPrint(ext_buff[0..], "{s}{s}", .{ base_name, ext });
+            const full_path = try std.fmt.bufPrint(
+                ext_buff[0..],
+                "{s}{s}",
+                .{ base_name, ext },
+            );
 
             // 2. Load back into u8 or u16
             if (bits == 8) {
@@ -960,7 +1034,11 @@ test "Scaling Strategy: Fractional" {
     const mat = MatSlice(f64).init(mat_mem, rows, cols);
 
     // Test 1: Frac [0.4, 0.6], bits = null (CSV) -> should map [0, 10] to [0.4, 0.6]
-    const opts1 = ImageSaveOpts{ .format = .csv, .bits = null, .scaling = .{ .frac = .{ 0.4, 0.6 } } };
+    const opts1 = ImageSaveOpts{
+        .format = .csv,
+        .bits = null,
+        .scaling = .{ .frac = .{ 0.4, 0.6 } },
+    };
     try saveMatAsImage(io, cwd, tmp_test_dir ++ "/test_frac_float", &mat, opts1);
 
     var loaded1 = try loadImage(
@@ -978,7 +1056,11 @@ test "Scaling Strategy: Fractional" {
     try testing.expectApproxEqAbs(loaded1.getPixel(1, 1).channels[0], 0.45, 1e-6);
 
     // Test 2: Frac [0.4, 0.6], bits = 8 (CSV) -> should map [0, 10] to [0.4*255, 0.6*255]
-    const opts2 = ImageSaveOpts{ .format = .csv, .bits = 8, .scaling = .{ .frac = .{ 0.4, 0.6 } } };
+    const opts2 = ImageSaveOpts{
+        .format = .csv,
+        .bits = 8,
+        .scaling = .{ .frac = .{ 0.4, 0.6 } },
+    };
     try saveMatAsImage(io, cwd, tmp_test_dir ++ "/test_frac_bits", &mat, opts2);
 
     var loaded2 = try loadImage(

@@ -35,7 +35,7 @@ pub fn LocalShaderBuffer(comptime N: usize) type {
             std.debug.assert(fields_num <= cfg.max_nodal_fields);
             self.actual_fields = fields_num;
             const count = @as(usize, fields_num) * N;
-            @memcpy(self.data[0..count], array.elems[start_idx .. start_idx + count]);
+            @memcpy(self.data[0..count], array.slice[start_idx .. start_idx + count]);
         }
 
         pub inline fn loadNormals(
@@ -45,7 +45,7 @@ pub fn LocalShaderBuffer(comptime N: usize) type {
         ) void {
             self.has_normals = true;
             const count = 3 * N;
-            @memcpy(self.normals[0..count], array.elems[start_idx .. start_idx + count]);
+            @memcpy(self.normals[0..count], array.slice[start_idx .. start_idx + count]);
         }
 
         pub inline fn interpolate(

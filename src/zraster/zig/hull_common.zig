@@ -21,6 +21,7 @@ pub fn buildAdaptiveHulls(
             ee,
         );
 
+        // Hull is formed in screen/raster space coords so we do the perspective divide
         var lx: [N]f64 = undefined;
         var ly: [N]f64 = undefined;
         for (0..N) |ii| {
@@ -44,7 +45,14 @@ pub fn buildAdaptiveHulls(
                 const p1 = edge[0];
                 const p2 = edge[1];
                 const pm = edge[2];
-                const edge_val = rops.edgeFun3(lx[p1], ly[p1], lx[p2], ly[p2], lx[pm], ly[pm]);
+                const edge_val = rops.edgeFun3(
+                    lx[p1],
+                    ly[p1],
+                    lx[p2],
+                    ly[p2],
+                    lx[pm],
+                    ly[pm],
+                );
                 raster_hull.set(&[_]usize{ ee, 0, ii * 2 }, lx[p1]);
                 raster_hull.set(&[_]usize{ ee, 1, ii * 2 }, ly[p1]);
                 if (edge_val < 0) {
@@ -69,7 +77,14 @@ pub fn buildAdaptiveHulls(
                 const p1 = edge[0];
                 const p2 = edge[1];
                 const pm = edge[2];
-                const edge_val = rops.edgeFun3(lx[p1], ly[p1], lx[p2], ly[p2], lx[pm], ly[pm]);
+                const edge_val = rops.edgeFun3(
+                    lx[p1],
+                    ly[p1],
+                    lx[p2],
+                    ly[p2],
+                    lx[pm],
+                    ly[pm],
+                );
                 raster_hull.set(&[_]usize{ ee, 0, ii * 2 }, lx[p1]);
                 raster_hull.set(&[_]usize{ ee, 1, ii * 2 }, ly[p1]);
                 if (edge_val < 0) {

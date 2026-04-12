@@ -13,7 +13,7 @@ fn saveNDArrayToCSV(io: std.Io, arr: *const NDArray(f64), path: []const u8) !voi
     const cwd = std.Io.Dir.cwd();
     var file = try cwd.createFile(io, path, .{});
     defer file.close(io);
-    
+
     var write_buf: [4096]u8 = undefined;
     var file_writer = file.writer(io, &write_buf);
     const writer = &file_writer.interface;
@@ -35,7 +35,12 @@ fn saveNDArrayToCSV(io: std.Io, arr: *const NDArray(f64), path: []const u8) !voi
     try file_writer.flush();
 }
 
-fn processCase(allocator: std.mem.Allocator, io: std.Io, comptime N: usize, data_name: []const u8) !void {
+fn processCase(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    comptime N: usize,
+    data_name: []const u8,
+) !void {
     const aa = allocator;
     const data_path = try std.fmt.allocPrint(aa, "data-edge/{s}", .{data_name});
     const coord_path = try std.fmt.allocPrint(aa, "{s}/coords.csv", .{data_path});
@@ -45,7 +50,14 @@ fn processCase(allocator: std.mem.Allocator, io: std.Io, comptime N: usize, data
         try std.fmt.allocPrint(aa, "{s}/field_disp_y.csv", .{data_path}),
         try std.fmt.allocPrint(aa, "{s}/field_disp_z.csv", .{data_path}),
     };
-    var sim_data = try meshio.loadSimData(aa, io, coord_path, connect_path, &field_paths, null);
+    var sim_data = try meshio.loadSimData(
+        aa,
+        io,
+        coord_path,
+        connect_path,
+        &field_paths,
+        null,
+    );
 
     var elem_coords = try mr.prepareCoords(aa, &sim_data.coords, &sim_data.connect);
 
@@ -56,9 +68,22 @@ fn processCase(allocator: std.mem.Allocator, io: std.Io, comptime N: usize, data
     const rot = Rotation.init(0, 0, 0);
 
     const cam_pos = CameraOps.posFillFrameFromRot(
-        &sim_data.coords, pixel_num, pixel_size, focal_leng, rot, fov_scale,
+        &sim_data.coords,
+        pixel_num,
+        pixel_size,
+        focal_leng,
+        rot,
+        fov_scale,
     );
-    const camera = Camera.init(pixel_num, pixel_size, cam_pos, rot, Vec3f.initZeros(), focal_leng, 2);
+    const camera = Camera.init(
+        pixel_num,
+        pixel_size,
+        cam_pos,
+        rot,
+        Vec3f.initZeros(),
+        focal_leng,
+        2,
+    );
 
     try rops.transformElemsClipPxLengSIMD(N, f64, &camera, 0, &elem_coords);
 
@@ -66,8 +91,10 @@ fn processCase(allocator: std.mem.Allocator, io: std.Io, comptime N: usize, data
     const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
     var raster_coords = try NDArray(f64).initFlat(aa, &[_]usize{ 1, 2, N });
     for (0..N) |ii| {
-        const lx = elem_coords.get(&[_]usize{ 0, 0, ii }) / elem_coords.get(&[_]usize{ 0, 2, ii }) + x_off;
-        const ly = elem_coords.get(&[_]usize{ 0, 1, ii }) / elem_coords.get(&[_]usize{ 0, 2, ii }) + y_off;
+        const lx = elem_coords.get(&[_]usize{ 0, 0, ii }) /
+            elem_coords.get(&[_]usize{ 0, 2, ii }) + x_off;
+        const ly = elem_coords.get(&[_]usize{ 0, 1, ii }) /
+            elem_coords.get(&[_]usize{ 0, 2, ii }) + y_off;
         raster_coords.set(&[_]usize{ 0, 0, ii }, lx);
         raster_coords.set(&[_]usize{ 0, 1, ii }, ly);
     }
@@ -76,8 +103,16 @@ fn processCase(allocator: std.mem.Allocator, io: std.Io, comptime N: usize, data
     var raster_hull = try NDArray(f64).initFlat(aa, &[_]usize{ 1, 2, NH });
     try hull.buildAdaptiveHulls(N, &camera, 0, &elem_coords, &raster_hull);
 
-    const hull_csv_path = try std.fmt.allocPrint(aa, "scripts/hull-diags/{s}_hull.csv", .{data_name});
-    const coords_csv_path = try std.fmt.allocPrint(aa, "scripts/hull-diags/{s}_rastercoords.csv", .{data_name});
+    const hull_csv_path = try std.fmt.allocPrint(
+        aa,
+        "scripts/hull-diags/{s}_hull.csv",
+        .{data_name},
+    );
+    const coords_csv_path = try std.fmt.allocPrint(
+        aa,
+        "scripts/hull-diags/{s}_rastercoords.csv",
+        .{data_name},
+    );
 
     try saveNDArrayToCSV(io, &raster_hull, hull_csv_path);
     try saveNDArrayToCSV(io, &raster_coords, coords_csv_path);

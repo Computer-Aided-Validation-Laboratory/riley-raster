@@ -73,13 +73,14 @@ pub fn Tessellation(comptime NT: usize) type {
             v_py: VecSF,
         ) HullResultSIMD {
             const eps = tol.hull.simd_inclusion;
+
             const v_m_eps: VecSF = @splat(-eps);
             var v_is_in: VecSB = @splat(false);
             var v_seed_xi: VecSF = @splat(0.0);
             var v_seed_eta: VecSF = @splat(0.0);
 
             inline for (self.triangles) |tri| {
-                const e0 = rops.edgeFun3SIMD(
+                const v_e0 = rops.edgeFun3SIMD(
                     tri.x[0],
                     tri.y[0],
                     tri.x[1],
@@ -87,7 +88,7 @@ pub fn Tessellation(comptime NT: usize) type {
                     v_px,
                     v_py,
                 );
-                const e1 = rops.edgeFun3SIMD(
+                const v_e1 = rops.edgeFun3SIMD(
                     tri.x[1],
                     tri.y[1],
                     tri.x[2],
@@ -95,7 +96,7 @@ pub fn Tessellation(comptime NT: usize) type {
                     v_px,
                     v_py,
                 );
-                const e2 = rops.edgeFun3SIMD(
+                const v_e2 = rops.edgeFun3SIMD(
                     tri.x[2],
                     tri.y[2],
                     tri.x[0],
@@ -104,7 +105,9 @@ pub fn Tessellation(comptime NT: usize) type {
                     v_py,
                 );
 
-                const v_in_tri = (e0 >= v_m_eps) & (e1 >= v_m_eps) & (e2 >= v_m_eps);
+                const v_in_tri = (v_e0 >= v_m_eps) &
+                    (v_e1 >= v_m_eps) &
+                    (v_e2 >= v_m_eps);
 
                 if (@reduce(.Or, v_in_tri)) {
                     const area = rops.edgeFun3(
@@ -115,10 +118,11 @@ pub fn Tessellation(comptime NT: usize) type {
                         tri.x[2],
                         tri.y[2],
                     );
+
                     const v_inv_area: VecSF = @splat(1.0 / area);
-                    const v_w0 = e1 * v_inv_area;
-                    const v_w1 = e2 * v_inv_area;
-                    const v_w2 = e0 * v_inv_area;
+                    const v_w0 = v_e1 * v_inv_area;
+                    const v_w1 = v_e2 * v_inv_area;
+                    const v_w2 = v_e0 * v_inv_area;
 
                     const v_tri_xi0: VecSF = @splat(tri.xi[0]);
                     const v_tri_xi1: VecSF = @splat(tri.xi[1]);
@@ -127,12 +131,14 @@ pub fn Tessellation(comptime NT: usize) type {
                     const v_tri_eta1: VecSF = @splat(tri.eta[1]);
                     const v_tri_eta2: VecSF = @splat(tri.eta[2]);
 
-                    const v_curr_xi = v_w0 * v_tri_xi0 + v_w1 * v_tri_xi1 + v_w2 * v_tri_xi2;
+                    const v_curr_xi =
+                        v_w0 * v_tri_xi0 + v_w1 * v_tri_xi1 + v_w2 * v_tri_xi2;
                     const v_curr_eta =
                         v_w0 * v_tri_eta0 + v_w1 * v_tri_eta1 + v_w2 * v_tri_eta2;
 
                     v_seed_xi = @select(f64, v_in_tri, v_curr_xi, v_seed_xi);
                     v_seed_eta = @select(f64, v_in_tri, v_curr_eta, v_seed_eta);
+
                     v_is_in = v_is_in | v_in_tri;
                 }
             }

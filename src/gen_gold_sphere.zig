@@ -37,7 +37,13 @@ pub fn main() !void {
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
-    const interp_types = [_]common.InterpType{ .linear, .cubic, .cubic_lut_lerp, .quintic, .quintic_lut_lerp };
+    const interp_types = [_]common.InterpType{
+        .linear,
+        .cubic,
+        .cubic_lut_lerp,
+        .quintic,
+        .quintic_lut_lerp,
+    };
 
     const cases = [_]struct { ds: []const u8, out: []const u8 }{
         .{
@@ -58,18 +64,44 @@ pub fn main() !void {
         inline for (mesh_types) |mt| {
             inline for (shader_types) |st| {
                 inline for (interp_types) |it| {
-                    const data_dir = try std.fmt.allocPrint(allocator, "data-bench/{s}_{s}", .{ @tagName(mt), case.ds });
+                    const data_dir = try std.fmt.allocPrint(
+                        allocator,
+                        "data-bench/{s}_{s}",
+                        .{ @tagName(mt), case.ds },
+                    );
                     defer allocator.free(data_dir);
 
-                    if (common.shouldRun(.{ .run = .all, .skip_quad4ibi_sphere = true }, mt, st, it, data_dir)) {
+                    if (common.shouldRun(
+                        .{ .run = .all, .skip_quad4ibi_sphere = true },
+                        mt,
+                        st,
+                        it,
+                        data_dir,
+                    )) {
                         const case_name = if (st == .tex8_grey or st == .tex8_rgb)
-                            comptime @tagName(mt) ++ "_" ++ @tagName(st) ++ "_" ++ @tagName(it)
+                            comptime @tagName(mt) ++ "_" ++
+                                @tagName(st) ++ "_" ++
+                                @tagName(it)
                         else
                             comptime @tagName(mt) ++ "_" ++ @tagName(st);
 
-                        std.debug.print("Rendering reference: {s}/{s}\n", .{ case.out, case_name });
+                        std.debug.print(
+                            "Rendering reference: {s}/{s}\n",
+                            .{ case.out, case_name },
+                        );
 
-                        _ = try common.runBenchmark(allocator, io, mt, st, it, data_dir, case.out, pixel_num, texture_grey, texture_rgb);
+                        _ = try common.runBenchmark(
+                            allocator,
+                            io,
+                            mt,
+                            st,
+                            it,
+                            data_dir,
+                            case.out,
+                            pixel_num,
+                            texture_grey,
+                            texture_rgb,
+                        );
                     }
                 }
             }

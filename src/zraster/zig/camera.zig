@@ -29,17 +29,18 @@ pub const Camera = struct {
     cam_to_world_mat: Mat44f,
     world_to_cam_mat: Mat44f,
 
-    pub fn init(pixels_num: [2]u32, 
-                pixels_size: [2]f64, 
-                pos_world: Vec3f, 
-                rot_world: Rotation, 
-                roi_cent_world: Vec3f, 
-                focal_length: f64, 
-                sub_sample: u8) Camera {
-
+    pub fn init(
+        pixels_num: [2]u32,
+        pixels_size: [2]f64,
+        pos_world: Vec3f,
+        rot_world: Rotation,
+        roi_cent_world: Vec3f,
+        focal_length: f64,
+        sub_sample: u8,
+    ) Camera {
         const actual_sub_sample = if (sub_sample == 0) 2 else sub_sample;
         const sensor_size = CameraOps.calcSensorSize(pixels_num, pixels_size);
-        const image_dist: f64 = (pos_world.sub(roi_cent_world)).vecLen();
+        const image_dist: f64 = (&pos_world).sub(roi_cent_world).vecLen();
 
         var image_dims: [2]f64 = undefined;
         image_dims[0] = (image_dist / focal_length) * sensor_size[0];
@@ -120,12 +121,8 @@ pub const CameraOps = struct {
     pub fn fovFromCamRotOverMeshes(cam_rot: Rotation, meshes: []const MeshInput) [2]f64 {
         const world_to_cam_mat = Mat33Ops.inv(f64, cam_rot.matrix);
 
-        var bb_min = [3]f64{
-            std.math.inf(f64), std.math.inf(f64), std.math.inf(f64)
-        };
-        var bb_max = [3]f64{
-            -std.math.inf(f64), -std.math.inf(f64), -std.math.inf(f64)
-        };
+        var bb_min = [3]f64{ std.math.inf(f64), std.math.inf(f64), std.math.inf(f64) };
+        var bb_max = [3]f64{ -std.math.inf(f64), -std.math.inf(f64), -std.math.inf(f64) };
 
         for (meshes) |mesh| {
             for (0..3) |ii| {
@@ -180,11 +177,12 @@ pub const CameraOps = struct {
         return sensor_size;
     }
 
-    pub fn imageDistFromFov(pixels_num: [2]u32, 
-                               pixels_size: [2]f64, 
-                               focal_leng: f64, 
-                               fov_leng: [2]f64) [2]f64 {
-
+    pub fn imageDistFromFov(
+        pixels_num: [2]u32,
+        pixels_size: [2]f64,
+        focal_leng: f64,
+        fov_leng: [2]f64,
+    ) [2]f64 {
         const sensor_size = calcSensorSize(pixels_num, pixels_size);
 
         var fov_angle: [2]f64 = undefined;
@@ -201,33 +199,29 @@ pub const CameraOps = struct {
     pub fn calcCamPos(roi_pos_world: Vec3f, cam_rot: Rotation, image_dist: f64) Vec3f {
         var cam_z_axis_vec = cam_rot.matrix.getColVec(2);
         cam_z_axis_vec = cam_z_axis_vec.mulScalar(image_dist);
-        const cam_pos = roi_pos_world.add(cam_z_axis_vec);
+        const cam_pos = (&roi_pos_world).add(cam_z_axis_vec);
         return cam_pos;
     }
 
     pub fn roiCentFromCoords(coords_world: *const Coords) Vec3f {
         var max_vec: Vec3f = undefined;
-        max_vec.elems[0] = coords_world.mat.maxByRow(0);
-        max_vec.elems[1] = coords_world.mat.maxByRow(1);
-        max_vec.elems[2] = coords_world.mat.maxByRow(2);
-    
-        var min_vec: Vec3f = undefined;
-        min_vec.elems[0] = coords_world.mat.minByRow(0);
-        min_vec.elems[1] = coords_world.mat.minByRow(1);
-        min_vec.elems[2] = coords_world.mat.minByRow(2);
+        max_vec.slice[0] = coords_world.mat.maxByRow(0);
+        max_vec.slice[1] = coords_world.mat.maxByRow(1);
+        max_vec.slice[2] = coords_world.mat.maxByRow(2);
 
-        var roi_cent: Vec3f = max_vec.add(min_vec);
+        var min_vec: Vec3f = undefined;
+        min_vec.slice[0] = coords_world.mat.minByRow(0);
+        min_vec.slice[1] = coords_world.mat.minByRow(1);
+        min_vec.slice[2] = coords_world.mat.minByRow(2);
+
+        var roi_cent: Vec3f = (&max_vec).add(min_vec);
         roi_cent = roi_cent.mulScalar(0.5);
         return roi_cent;
     }
 
     pub fn roiCentOverMeshes(meshes: []const MeshInput) Vec3f {
-        var bb_min = [3]f64{
-            std.math.inf(f64), std.math.inf(f64), std.math.inf(f64)
-        };
-        var bb_max = [3]f64{
-            -std.math.inf(f64), -std.math.inf(f64), -std.math.inf(f64)
-        };
+        var bb_min = [3]f64{ std.math.inf(f64), std.math.inf(f64), std.math.inf(f64) };
+        var bb_max = [3]f64{ -std.math.inf(f64), -std.math.inf(f64), -std.math.inf(f64) };
 
         for (meshes) |mesh| {
             for (0..3) |ii| {
@@ -241,26 +235,29 @@ pub const CameraOps = struct {
         const max_vec = vector.initVec3(f64, bb_max[0], bb_max[1], bb_max[2]);
         const min_vec = vector.initVec3(f64, bb_min[0], bb_min[1], bb_min[2]);
 
-        var roi_cent: Vec3f = max_vec.add(min_vec);
+        var roi_cent: Vec3f = (&max_vec).add(min_vec);
         roi_cent = roi_cent.mulScalar(0.5);
         return roi_cent;
     }
 
-    pub fn posFillFrameFromRot(coords_world: *const Coords, 
-                                   pixels_num: [2]u32, 
-                                   pixels_size: [2]f64, 
-                                   focal_leng: f64, 
-                                   cam_rot: Rotation, 
-                                   frame_fill: f64) Vec3f {
-                                   
+    pub fn posFillFrameFromRot(
+        coords_world: *const Coords,
+        pixels_num: [2]u32,
+        pixels_size: [2]f64,
+        focal_leng: f64,
+        cam_rot: Rotation,
+        frame_fill: f64,
+    ) Vec3f {
         var fov_leng: [2]f64 = fovFromCamRot(cam_rot, coords_world);
         fov_leng[0] = frame_fill * fov_leng[0];
         fov_leng[1] = frame_fill * fov_leng[1];
 
-        const image_dists: [2]f64 = imageDistFromFov(pixels_num, 
-                                                        pixels_size, 
-                                                        focal_leng, 
-                                                        fov_leng);
+        const image_dists: [2]f64 = imageDistFromFov(
+            pixels_num,
+            pixels_size,
+            focal_leng,
+            fov_leng,
+        );
         const image_dist = @max(image_dists[0], image_dists[1]);
 
         const roi_pos: Vec3f = roiCentFromCoords(coords_world);
@@ -270,21 +267,24 @@ pub const CameraOps = struct {
         return cam_pos;
     }
 
-    pub fn posFillFrameFromRotOverMeshes(meshes: []const MeshInput, 
-                                         pixels_num: [2]u32, 
-                                         pixels_size: [2]f64, 
-                                         focal_leng: f64, 
-                                         cam_rot: Rotation, 
-                                         frame_fill: f64) Vec3f {
-                                   
+    pub fn posFillFrameFromRotOverMeshes(
+        meshes: []const MeshInput,
+        pixels_num: [2]u32,
+        pixels_size: [2]f64,
+        focal_leng: f64,
+        cam_rot: Rotation,
+        frame_fill: f64,
+    ) Vec3f {
         var fov_leng: [2]f64 = fovFromCamRotOverMeshes(cam_rot, meshes);
         fov_leng[0] = frame_fill * fov_leng[0];
         fov_leng[1] = frame_fill * fov_leng[1];
 
-        const image_dists: [2]f64 = imageDistFromFov(pixels_num, 
-                                                     pixels_size, 
-                                                     focal_leng, 
-                                                     fov_leng);
+        const image_dists: [2]f64 = imageDistFromFov(
+            pixels_num,
+            pixels_size,
+            focal_leng,
+            fov_leng,
+        );
         const image_dist = @max(image_dists[0], image_dists[1]);
 
         const roi_pos: Vec3f = roiCentOverMeshes(meshes);
@@ -318,13 +318,13 @@ const cam_pos_exp = Vec3f.initSlice(&cam_pos_arr);
 test "CameraOps.calcCamPos" {
     var coords = try Coords.initAlloc(testing.allocator, coord_n);
     defer testing.allocator.free(coords.mem);
-    
+
     for (0..coord_n) |ii| {
         coords.mat.set(ii, 0, coord_x[ii]);
         coords.mat.set(ii, 1, coord_y[ii]);
         coords.mat.set(ii, 2, coord_z[ii]);
     }
-    
+
     const fov_leng = CameraOps.fovFromCamRot(rotat_world, &coords);
     const image_dist = CameraOps.imageDistFromFov(pix_num, pix_size, foc_leng, fov_leng);
     const image_dist_max = @max(image_dist[0], image_dist[1]);
@@ -344,7 +344,7 @@ test "CameraOps.imageDistFromFov" {
         coords.mat.set(ii, 1, coord_y[ii]);
         coords.mat.set(ii, 2, coord_z[ii]);
     }
-    
+
     const fov_leng = CameraOps.fovFromCamRot(rotat_world, &coords);
     const image_dist = CameraOps.imageDistFromFov(pix_num, pix_size, foc_leng, fov_leng);
 
@@ -355,13 +355,13 @@ test "CameraOps.imageDistFromFov" {
 test "CameraOps.fovFromCamRot" {
     var coords = try Coords.initAlloc(testing.allocator, coord_n);
     defer testing.allocator.free(coords.mem);
-    
+
     for (0..coord_n) |ii| {
         coords.mat.set(ii, 0, coord_x[ii]);
         coords.mat.set(ii, 1, coord_y[ii]);
         coords.mat.set(ii, 2, coord_z[ii]);
     }
-    
+
     const fov_leng = CameraOps.fovFromCamRot(rotat_world, &coords);
 
     try expectApproxEqAbs(fov_exp[0], fov_leng[0], test_tol);

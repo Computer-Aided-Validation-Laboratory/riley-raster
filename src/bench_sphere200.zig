@@ -43,12 +43,19 @@ pub fn main() !void {
 
     var max_name_len: usize = 0;
 
-    std.debug.print("Starting Sphere 200 Benchmark ({d}x{d}, {d} runs per case)...\n", .{ pixel_num[0], pixel_num[1], runs });
+    std.debug.print(
+        "Starting Sphere 200 Benchmark ({d}x{d}, {d} runs per case)...\n",
+        .{ pixel_num[0], pixel_num[1], runs },
+    );
 
     for (mesh_types) |mt| {
         for (shader_types) |st| {
             var case_name_buf: [256]u8 = undefined;
-            const case_name = try std.fmt.bufPrint(&case_name_buf, "{s}_{s}", .{ @tagName(mt), @tagName(st) });
+            const case_name = try std.fmt.bufPrint(
+                &case_name_buf,
+                "{s}_{s}",
+                .{ @tagName(mt), @tagName(st) },
+            );
             std.debug.print("Case: {s}\n", .{case_name});
 
             if (case_name.len > max_name_len) max_name_len = case_name.len;
@@ -79,7 +86,11 @@ pub fn main() !void {
 
             for (0..runs) |r| {
                 var data_dir_buf: [256]u8 = undefined;
-                const data_dir = try std.fmt.bufPrint(&data_dir_buf, "data-bench/{s}_sphere200", .{@tagName(mt)});
+                const data_dir = try std.fmt.bufPrint(
+                    &data_dir_buf,
+                    "data-bench/{s}_sphere200",
+                    .{@tagName(mt)},
+                );
                 const res = try common.runBenchmark(
                     outer_alloc,
                     io,

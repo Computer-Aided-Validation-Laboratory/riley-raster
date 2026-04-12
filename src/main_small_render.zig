@@ -18,7 +18,15 @@ pub fn main() !void {
     defer texture.deinit(outer_alloc);
 
     const mesh_types = [_]gengold.MeshType{ .tri3, .tri6, .quad4ibi, .quad8, .quad9 };
-    const interp_types = [_]gengold.texops.InterpType{ .linear, .cubic, .cubic_lut, .cubic_lut_lerp, .quintic, .quintic_lut, .quintic_lut_lerp };
+    const interp_types = [_]gengold.texops.InterpType{
+        .linear,
+        .cubic,
+        .cubic_lut,
+        .cubic_lut_lerp,
+        .quintic,
+        .quintic_lut,
+        .quintic_lut_lerp,
+    };
 
     const pixel_num = [_]u32{ 160, 100 };
 

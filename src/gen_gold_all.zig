@@ -11,7 +11,7 @@ pub fn main() !void {
 
     std.debug.print("--- Small ---\n", .{});
     try gen_small.main();
-    
+
     std.debug.print("\n--- Simple ---\n", .{});
     try gen_simple.main();
 
