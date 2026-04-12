@@ -92,7 +92,6 @@ pub inline fn updateSeedState(
 }
 
 pub inline fn applySeedReuseInPlace(
-    comptime seed_reuse: anytype,
     lane_count: usize,
     seed_state: NewtonSeedState,
     seed_xi: []f64,

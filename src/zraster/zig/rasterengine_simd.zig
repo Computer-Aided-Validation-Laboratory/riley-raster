@@ -330,6 +330,9 @@ pub fn RasterPass(
             const edge_tol = tol.edge.simd_raster_weight_inclusion;
             const v_edge_tol: VecSF = @splat(-edge_tol);
 
+            const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
+            const v_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
+
             // Step row by row along y
             for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
                 const row_offset = scratch_y_u * subpx_domain.tile_size;
@@ -344,8 +347,6 @@ pub fn RasterPass(
                     // Masking for when we hit the end of an X row of subpixels and it is
                     // not divisible by S, mask off inactive lanes that overflow.
                     const v_subpx_x_u = v_scratch_x_u + v_lane_idx;
-                    const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
-                    const v_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
                     const v_x_mask =
                         (v_subpx_x_u >= v_orig_start_x_u) &
                         (v_subpx_x_u < v_end_x_u);
@@ -388,7 +389,7 @@ pub fn RasterPass(
                             // Record the x sub-pixel limits we have actually shaded to 
                             // reduce the range of nested loops we evaluate to resolve the
                             // sub-pixel anti-aliasing.
-                            var lane_depth_mask: [S]bool = v_depth_mask[ll];
+                            const lane_depth_mask: [S]bool = v_depth_mask;
                             inline for (0..S) |ll| {
                                 if (lane_depth_mask[ll]) {
                                     const touched_x_u = scratch_x_u + ll;
@@ -686,9 +687,8 @@ pub fn RasterPass(
 
                 // If we have a good seed from the last run and we have set the mode to 
                 // reuse it we write it into our vector in place
-                if (comptime seed_reuse == .last_converged) {
+                if (comptime Geometry.seed_reuse == .last_converged) {
                     newton.applySeedReuseInPlace(
-                        Geometry.seed_reuse,
                         subpx_simd_chunk.count,
                         seed_state,
                         subpx_simd_chunk.seed_xi[0..subpx_simd_chunk.count],
@@ -794,8 +794,6 @@ pub fn RasterPass(
 
                     // Mask based on bounds of the tile/elem overlap
                     const v_scratch_x_u: VecSU = @splat(scratch_x_u);
-                    const v_orig_start_x_u: VecSU= @splat(orig_start_x_u);
-                    const v_bounds_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
                     const v_x_mask = (v_scratch_x_u + v_lane_idx >= v_orig_start_x_u) 
                                    & (v_scratch_x_u + v_lane_idx < v_bounds_end_x_u);
 
@@ -858,7 +856,7 @@ pub fn RasterPass(
                             // Record the x sub-pixel limits we have actually shaded to 
                             // reduce the range of nested loops we evaluate to resolve the
                             // sub-pixel anti-aliasing.
-                            var lane_depth_mask: [S]bool = v_depth_mask;
+                            const lane_depth_mask: [S]bool = v_depth_mask;
                             inline for (0..S) |ll| {
                                 if (lane_depth_mask[ll]) {
                                     const touched_x_u = scratch_x_u + ll;
