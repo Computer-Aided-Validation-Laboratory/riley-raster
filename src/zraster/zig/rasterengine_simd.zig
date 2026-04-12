@@ -383,17 +383,13 @@ pub fn RasterPass(
                                 scratch_idx,
                                 v_new_inv_z,
                             );
-                            const v_subpx_z: VecSF =
-                                @as(VecSF, @splat(1.0)) / v_inv_z;
+                            const v_subpx_z: VecSF = @as(VecSF, @splat(1.0)) / v_inv_z;
                             
                             // Record the x sub-pixel limits we have actually shaded to 
                             // reduce the range of nested loops we evaluate to resolve the
                             // sub-pixel anti-aliasing.
-                            var lane_depth_mask: [S]bool = undefined;
+                            var lane_depth_mask: [S]bool = v_depth_mask[ll];
                             inline for (0..S) |ll| {
-                                lane_depth_mask[ll] = v_depth_mask[ll];
-                            }
-                            for (0..S) |ll| {
                                 if (lane_depth_mask[ll]) {
                                     const touched_x_u = scratch_x_u + ll;
                                     if (touched_x_u <
@@ -526,9 +522,13 @@ pub fn RasterPass(
                 );
             }
 
+            // We count the passes of the tessellation check so we can assign chunks and 
+            // lane idx for the Newton solver in the next pass.
             var subpx_tess_pass_count: usize = 0;
+
             const v_lane_idx: VecSU = std.simd.iota(usize, S);
 
+            // Hoist these vector constants
             const v_subpx_min_x_f: VecSF =
                 @splat(@as(f64, @floatFromInt(targ_overlap.tile.x_px_min)));
             const v_step_f: VecSF = @splat(subpx_domain.step);
@@ -536,6 +536,7 @@ pub fn RasterPass(
             const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
             const v_bounds_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
 
+            //------------------------------------------------------------------------------
             // Pass 1: Vectorized Coarse In/Out
             for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
                 const scratch_y_f: f64 = @as(f64, @floatFromInt(scratch_y_u));
@@ -772,39 +773,48 @@ pub fn RasterPass(
                     }
                 }
             }
-
+            
+            //------------------------------------------------------------------------------
             // Pass 3: Spatially Grouped SIMD Shading
             for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
                 const row_offset = scratch_y_u * subpx_domain.tile_size;
+
+                // Raster in steps S wide along X rows of sub-pixels
                 var scratch_x_u = rast_bounds.start_x_u;
-                while (scratch_x_u < rast_bounds.end_x_u) : (scratch_x_u += 8) {
+                while (scratch_x_u < rast_bounds.end_x_u) : (scratch_x_u += S) {
                     const scratch_idx = row_offset + scratch_x_u;
+
+                    // Mask based on sub-pixels that have passed the Newton solve stage
                     var mask_arr: [S]bool = undefined;
                     @memcpy(
                         &mask_arr,
-                        subpx_scratch.mask[scratch_idx .. scratch_idx + 8],
+                        subpx_scratch.mask[scratch_idx .. scratch_idx + S],
                     );
                     const v_mask_full: VecSB = mask_arr;
 
+                    // Mask based on bounds of the tile/elem overlap
                     const v_scratch_x_u: VecSU = @splat(scratch_x_u);
-                    const v_x_mask = (v_scratch_x_u + v_lane_idx >=
-                        @as(VecSU, @splat(orig_start_x_u))) &
-                        (v_scratch_x_u + v_lane_idx <
-                            @as(VecSU, @splat(rast_bounds.end_x_u)));
+                    const v_orig_start_x_u: VecSU= @splat(orig_start_x_u);
+                    const v_bounds_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
+                    const v_x_mask = (v_scratch_x_u + v_lane_idx >= v_orig_start_x_u) 
+                                   & (v_scratch_x_u + v_lane_idx < v_bounds_end_x_u);
 
+                    // Combined mask for sub-pixels to be shaded 
                     const v_mask_active = v_mask_full & v_x_mask;
-
                     if (@reduce(.Or, v_mask_active)) {
+                        // Load our parametric coords into vectors so we can calculate our
+                        // shape functions and their derivatives for shading
                         var xi_arr: [S]f64 = undefined;
                         var eta_arr: [S]f64 = undefined;
-                        @memcpy(&xi_arr, subpx_scratch.xi[scratch_idx .. scratch_idx + 8]);
-                        @memcpy(
-                            &eta_arr,
-                            subpx_scratch.eta[scratch_idx .. scratch_idx + 8],
-                        );
+                        const xi_slice = subpx_scratch.xi[scratch_idx .. scratch_idx + S];
+                        const eta_slice = subpx_scratch.eta[scratch_idx .. scratch_idx + S]; 
+                        @memcpy(&xi_arr, xi_slice);
+                        @memcpy(&eta_arr, eta_slice);
                         const v_xi: VecSF = xi_arr;
                         const v_eta: VecSF = eta_arr;
 
+                        // Shape function weights and derivative calculation based on 
+                        // paremetric coords for shading
                         var v_weights: [N]VecSF = undefined;
                         var v_dNu: [N]VecSF = undefined;
                         var v_dNv: [N]VecSF = undefined;
@@ -817,21 +827,20 @@ pub fn RasterPass(
                             &v_dNv,
                         );
 
+                        // Vectorised depth visibility check on active lanes only, S wide 
                         var v_sum_z: VecSF = @splat(0.0);
                         inline for (0..N) |nn| {
                             v_sum_z += v_weights[nn] * v_nodes_z[nn];
                         }
-                        const v_inv_z: VecSF =
-                            @as(VecSF, @splat(1.0)) / v_sum_z;
+                        const v_inv_z: VecSF = @as(VecSF, @splat(1.0)) / v_sum_z;
 
                         const v_old_inv_z = loadVecSF(
                             subpx_scratch.inv_z,
                             scratch_idx,
                         );
-                        const v_depth_mask =
-                            v_mask_active & (v_inv_z >= v_old_inv_z);
-
+                        const v_depth_mask = v_mask_active & (v_inv_z >= v_old_inv_z);
                         const has_depth_hit = @reduce(.Or, v_depth_mask);
+
                         if (has_depth_hit) {
                             const v_new_inv_z = @select(
                                 f64,
@@ -844,12 +853,13 @@ pub fn RasterPass(
                                 scratch_idx,
                                 v_new_inv_z,
                             );
+                            const v_subpx_z: VecSF = @as(VecSF, @splat(1.0)) / v_inv_z;
 
-                            var lane_depth_mask: [S]bool = undefined;
+                            // Record the x sub-pixel limits we have actually shaded to 
+                            // reduce the range of nested loops we evaluate to resolve the
+                            // sub-pixel anti-aliasing.
+                            var lane_depth_mask: [S]bool = v_depth_mask;
                             inline for (0..S) |ll| {
-                                lane_depth_mask[ll] = v_depth_mask[ll];
-                            }
-                            for (0..S) |ll| {
                                 if (lane_depth_mask[ll]) {
                                     const touched_x_u = scratch_x_u + ll;
                                     if (touched_x_u <
@@ -867,9 +877,8 @@ pub fn RasterPass(
                                 }
                             }
 
-                            const v_subpx_z: VecSF = @as(VecSF, @splat(1.0)) / v_inv_z;
 
-                            // Count the pixels to be shaded based on hits
+                            // Report: count the pixels to be shaded based on hits
                             const v_hit_one: VecSU8 = @splat(1);
                             const v_hit_zero: VecSU8 = @splat(0);
                             const v_hit_count = @select(
@@ -915,7 +924,7 @@ pub fn RasterPass(
         }
 
         /// Scalar fallback for the quad4ibi kernel which didn't work well in SIMD due to
-        /// branching logic required.
+        /// the large amount of branching logic required to handle all cases.
         fn rasterDirect(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
