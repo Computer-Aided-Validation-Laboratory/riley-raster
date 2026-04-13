@@ -47,9 +47,8 @@ pub fn getScaleFactors(
 }
 
 pub fn getScalingParamsTexture(
-    comptime T: type,
     comptime channels: usize,
-    texture: *const Texture(T, channels),
+    texture: *const Texture(channels),
     strategy: ScaleStrategy,
 ) ScalingParams {
     switch (strategy) {

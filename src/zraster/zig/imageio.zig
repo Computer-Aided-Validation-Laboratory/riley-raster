@@ -11,7 +11,6 @@ const NDArray = @import("ndarray.zig").NDArray;
 
 const texops = @import("textureops.zig");
 const clibtiff = @import("clibtiff.zig");
-pub const Pixel = texops.Pixel;
 pub const Texture = texops.Texture;
 
 const imageops = @import("imageops.zig");
@@ -66,7 +65,7 @@ pub fn loadImage(
     io: std.Io,
     path: []const u8,
     format: ImageFormat,
-) !Texture(T, channels) {
+) !Texture(channels) {
     return switch (format) {
         .csv => try loadCSV(T, channels, allocator, io, path),
         .ppm => try loadPPM(T, channels, allocator, io, path),
@@ -453,7 +452,7 @@ pub fn loadPPM(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !Texture(T, channels) {
+) !Texture(channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -504,14 +503,13 @@ pub fn loadPPM(
     const height = try std.fmt.parseInt(usize, height_str, 10);
     const max_val = try std.fmt.parseInt(u32, max_val_str, 10);
 
-    var texture = try Texture(T, channels).init(allocator, height, width);
+    var texture = try Texture(channels).init(allocator, height, width);
     errdefer texture.deinit(allocator);
 
     const max_val_f = @as(f64, @floatFromInt(max_val));
 
     for (0..height) |rr| {
         for (0..width) |cc| {
-            var px: Pixel(T, channels) = undefined;
             var rgb: [3]u32 = undefined;
             for (0..3) |i| {
                 const val_str = try readToken(reader, aa);
@@ -522,14 +520,18 @@ pub fn loadPPM(
                 const s0 = @as(f64, @floatFromInt(rgb[0])) / max_val_f;
                 const s1 = @as(f64, @floatFromInt(rgb[1])) / max_val_f;
                 const s2 = @as(f64, @floatFromInt(rgb[2])) / max_val_f;
-                px.channels[0] = convertToTarget(T, s0);
-                px.channels[1] = convertToTarget(T, s1);
-                px.channels[2] = convertToTarget(T, s2);
+                texture.setVal(0, rr, cc, convertValue(f64, convertToTarget(T, s0)));
+                texture.setVal(1, rr, cc, convertValue(f64, convertToTarget(T, s1)));
+                texture.setVal(2, rr, cc, convertValue(f64, convertToTarget(T, s2)));
             } else if (channels == 1) {
                 const val = toGreyScale(rgb[0], rgb[1], rgb[2]);
-                px.channels[0] = convertToTarget(T, val / max_val_f);
+                texture.setVal(
+                    0,
+                    rr,
+                    cc,
+                    convertValue(f64, convertToTarget(T, val / max_val_f)),
+                );
             }
-            texture.setPixel(rr, cc, px);
         }
     }
 
@@ -542,7 +544,8 @@ pub fn loadCSV(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !Texture(T, channels) {
+) !Texture(channels) {
+    _ = T;
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -572,7 +575,7 @@ pub fn loadCSV(
         if (val.len > 0) cols += 1;
     }
 
-    var texture = try Texture(T, channels).init(allocator, rows, cols);
+    var texture = try Texture(channels).init(allocator, rows, cols);
     errdefer texture.deinit(allocator);
 
     for (lines.items, 0..) |line, rr| {
@@ -602,7 +605,8 @@ pub fn loadBMP(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !Texture(T, channels) {
+) !Texture(channels) {
+    _ = T;
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -635,7 +639,7 @@ pub fn loadBMP(
     const abs_height = @as(usize, @intCast(@abs(height)));
     const abs_width = @as(usize, @intCast(@abs(width)));
 
-    var texture = try Texture(T, channels).init(allocator, abs_height, abs_width);
+    var texture = try Texture(channels).init(allocator, abs_height, abs_width);
     errdefer texture.deinit(allocator);
 
     if (bit_count == 24) {
@@ -714,7 +718,7 @@ pub fn loadTIFF(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !Texture(T, channels) {
+) !Texture(channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -772,7 +776,7 @@ pub fn loadTIFF(
 
     if (samples_per_pixel != 1) return error.UnsupportedTIFFColorSpace;
 
-    var texture = try Texture(T, channels).init(allocator, height, width);
+    var texture = try Texture(channels).init(allocator, height, width);
     errdefer texture.deinit(allocator);
 
     try file_reader.seekTo(strip_offsets);
@@ -781,7 +785,6 @@ pub fn loadTIFF(
 
     for (0..height) |rr| {
         for (0..width) |cc| {
-            var px: Pixel(T, channels) = undefined;
             const val_raw: f64 = if (bits_per_sample == 16)
                 @as(f64, @floatFromInt(try reader.takeInt(u16, endian)))
             else
@@ -790,13 +793,18 @@ pub fn loadTIFF(
             const norm = val_raw / max_val_f;
 
             if (channels == 3) {
-                px.channels[0] = convertToTarget(T, norm);
-                px.channels[1] = convertToTarget(T, norm);
-                px.channels[2] = convertToTarget(T, norm);
+                const out_val = convertValue(f64, convertToTarget(T, norm));
+                texture.setVal(0, rr, cc, out_val);
+                texture.setVal(1, rr, cc, out_val);
+                texture.setVal(2, rr, cc, out_val);
             } else if (channels == 1) {
-                px.channels[0] = convertToTarget(T, norm);
+                texture.setVal(
+                    0,
+                    rr,
+                    cc,
+                    convertValue(f64, convertToTarget(T, norm)),
+                );
             }
-            texture.setPixel(rr, cc, px);
         }
     }
 
@@ -809,7 +817,8 @@ pub fn CLoadTIFF(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !Texture(T, channels) {
+) !Texture(channels) {
+    _ = T;
     _ = io;
     var libtiff = try clibtiff.LibTiff.init();
     defer libtiff.deinit();
@@ -831,7 +840,7 @@ pub fn CLoadTIFF(
 
     if (libtiff.readRGBAImage(tif, w, h, raster.ptr, 0) == 0) return error.ReadFailed;
 
-    var texture = try Texture(T, channels).init(allocator, h, w);
+    var texture = try Texture(channels).init(allocator, h, w);
     errdefer texture.deinit(allocator);
 
     for (0..h) |row| {
@@ -910,7 +919,7 @@ test "Verify hand-written TIFF loader" {
     defer allocator.free(mat_mem);
     for (0..tex_c.rows_num) |rr| {
         for (0..tex_c.cols_num) |cc| {
-            mat_mem[rr * tex_c.cols_num + cc] = tex_c.getPixel(rr, cc).channels[0];
+            mat_mem[rr * tex_c.cols_num + cc] = tex_c.getVal(0, rr, cc);
         }
     }
     const mat = MatSlice(f64).init(mat_mem, tex_c.rows_num, tex_c.cols_num);
@@ -938,8 +947,8 @@ test "Verify hand-written TIFF loader" {
 
     for (0..tex_c.rows_num) |rr| {
         for (0..tex_c.cols_num) |cc| {
-            const p1 = tex_c.getPixel(rr, cc).channels[0];
-            const p2 = tex_zig.getPixel(rr, cc).channels[0];
+            const p1 = tex_c.getVal(0, rr, cc);
+            const p2 = tex_zig.getVal(0, rr, cc);
             try testing.expectApproxEqAbs(p1, p2, 1.0);
         }
     }
@@ -1050,10 +1059,10 @@ test "Scaling Strategy: Fractional" {
         .csv,
     );
     defer loaded1.deinit(allocator);
-    try testing.expectApproxEqAbs(loaded1.getPixel(0, 0).channels[0], 0.4, 1e-6);
-    try testing.expectApproxEqAbs(loaded1.getPixel(0, 1).channels[0], 0.6, 1e-6);
-    try testing.expectApproxEqAbs(loaded1.getPixel(1, 0).channels[0], 0.5, 1e-6);
-    try testing.expectApproxEqAbs(loaded1.getPixel(1, 1).channels[0], 0.45, 1e-6);
+    try testing.expectApproxEqAbs(loaded1.getVal(0, 0, 0), 0.4, 1e-6);
+    try testing.expectApproxEqAbs(loaded1.getVal(0, 0, 1), 0.6, 1e-6);
+    try testing.expectApproxEqAbs(loaded1.getVal(0, 1, 0), 0.5, 1e-6);
+    try testing.expectApproxEqAbs(loaded1.getVal(0, 1, 1), 0.45, 1e-6);
 
     // Test 2: Frac [0.4, 0.6], bits = 8 (CSV) -> should map [0, 10] to [0.4*255, 0.6*255]
     const opts2 = ImageSaveOpts{
@@ -1072,8 +1081,8 @@ test "Scaling Strategy: Fractional" {
         .csv,
     );
     defer loaded2.deinit(allocator);
-    try testing.expectApproxEqAbs(loaded2.getPixel(0, 0).channels[0], 0.4 * 255.0, 1e-6);
-    try testing.expectApproxEqAbs(loaded2.getPixel(0, 1).channels[0], 0.6 * 255.0, 1e-6);
-    try testing.expectApproxEqAbs(loaded2.getPixel(1, 0).channels[0], 0.5 * 255.0, 1e-6);
-    try testing.expectApproxEqAbs(loaded2.getPixel(1, 1).channels[0], 0.45 * 255.0, 1e-6);
+    try testing.expectApproxEqAbs(loaded2.getVal(0, 0, 0), 0.4 * 255.0, 1e-6);
+    try testing.expectApproxEqAbs(loaded2.getVal(0, 0, 1), 0.6 * 255.0, 1e-6);
+    try testing.expectApproxEqAbs(loaded2.getVal(0, 1, 0), 0.5 * 255.0, 1e-6);
+    try testing.expectApproxEqAbs(loaded2.getVal(0, 1, 1), 0.45 * 255.0, 1e-6);
 }

@@ -110,7 +110,6 @@ pub fn prepareMesh(
                 &mesh_input.connect,
             );
             const params = imageops.getScalingParamsTexture(
-                u8,
                 1,
                 &tex_in.texture,
                 tex_in.scaling,
@@ -135,7 +134,6 @@ pub fn prepareMesh(
                 &mesh_input.connect,
             );
             const params = imageops.getScalingParamsTexture(
-                u16,
                 1,
                 &tex_in.texture,
                 tex_in.scaling,
@@ -160,7 +158,6 @@ pub fn prepareMesh(
                 &mesh_input.connect,
             );
             const params = imageops.getScalingParamsTexture(
-                u8,
                 3,
                 &tex_in.texture,
                 tex_in.scaling,
@@ -185,7 +182,6 @@ pub fn prepareMesh(
                 &mesh_input.connect,
             );
             const params = imageops.getScalingParamsTexture(
-                u16,
                 3,
                 &tex_in.texture,
                 tex_in.scaling,

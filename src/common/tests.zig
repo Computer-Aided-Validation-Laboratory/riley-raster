@@ -504,7 +504,7 @@ pub fn runTestInternal(
     test_type: []const u8,
     mesh_type: MeshType,
     fov_scale: f64,
-    texture: iio.Texture(u8, 1),
+    texture: iio.Texture(1),
     pixel_num: [2]u32,
     interp_types: []const texops.InterpType,
     gold_dir_root: []const u8,

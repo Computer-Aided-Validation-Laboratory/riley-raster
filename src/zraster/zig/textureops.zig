@@ -4,7 +4,6 @@ const simd_impl = @import("textureops_simd.zig");
 const impl = if (cfg.simd == .on) simd_impl else scalar_impl;
 
 pub const InterpType = impl.InterpType;
-pub const Pixel = impl.Pixel;
 pub const Texture = impl.Texture;
 pub const sampleGeneric = impl.sampleGeneric;
 pub const sampleGreyscale = impl.sampleGreyscale;

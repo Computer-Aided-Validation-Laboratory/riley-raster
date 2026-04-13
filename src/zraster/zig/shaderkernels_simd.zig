@@ -11,7 +11,6 @@ const report = @import("report.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
-
 pub fn NodalKernel(comptime N: usize) type {
     return struct {
         pub inline fn shade(
@@ -134,35 +133,19 @@ pub fn TexKernel(
             }
 
             if (comptime coord_space == CoordSpace.raster) {
-                if (comptime N == 3) {
-                    shaderops.fillTexPerspSIMDTri3(
-                        N,
-                        TexT,
-                        channels,
-                        shader.interp_type,
-                        ctx_shade,
-                        v_mask_active,
-                        v_weights,
-                        v_nodes_inv_z,
-                        v_subpx_z,
-                        shader,
-                        spx_image_scratch,
-                    );
-                } else {
-                    shaderops.fillTexPerspSIMD(
-                        N,
-                        TexT,
-                        channels,
-                        shader.interp_type,
-                        ctx_shade,
-                        v_mask_active,
-                        v_weights,
-                        v_nodes_inv_z,
-                        v_subpx_z,
-                        shader,
-                        spx_image_scratch,
-                    );
-                }
+                shaderops.fillTexPerspSIMD(
+                    N,
+                    TexT,
+                    channels,
+                    shader.interp_type,
+                    ctx_shade,
+                    v_mask_active,
+                    v_weights,
+                    v_nodes_inv_z,
+                    v_subpx_z,
+                    shader,
+                    spx_image_scratch,
+                );
             } else if (comptime coord_space == CoordSpace.clip_px_leng) {
                 shaderops.fillTexClipSIMD(
                     N,

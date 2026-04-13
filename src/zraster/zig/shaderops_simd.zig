@@ -12,12 +12,6 @@ const InterpType = texops.InterpType;
 const common = @import("shaderops_common.zig");
 const simdops = @import("simdops.zig");
 
-// NOTE: it looks like there is a lot of duplicated scalar code here but it is subtly
-// different. The reason for this is the handling of the Quad4IBI kernel with .simd = .on.
-// This is because the SIMD scratch buffers have a different layout to the scalar scratch
-// buffers, SIMD is field-major and scalar is pixel-major. We handle this special case
-// with specific scalar helpers for field-major buffers.
-
 inline fn storeMaskedVecSF(
     scratch_vals: []f64,
     start_u: usize,
@@ -168,7 +162,6 @@ pub inline fn fillTexPerspSIMD(
     const v_splat_add: VecSF = @splat(sh.scale_add);
     const px_stride = spx_image_scratch.cols_num;
 
-    // SIMD UV Interpolation
     var v_tex_u: VecSF = @splat(0.0);
     var v_tex_v: VecSF = @splat(0.0);
     inline for (0..N) |nn| {
@@ -182,65 +175,24 @@ pub inline fn fillTexPerspSIMD(
     v_tex_u *= v_subpx_z;
     v_tex_v *= v_subpx_z;
 
-    const sampled_vecs = texops.sampleGenericHybrid(
-        channels,
-        interp_type,
-        v_mask_active,
-        sh.texture,
-        v_tex_u,
-        v_tex_v,
-    );
-
-    inline for (0..channels) |ch| {
-        const v_final = sampled_vecs[ch] * v_splat_mul + v_splat_add;
-        const flat_idx = ch * px_stride + ctx_shade.scratch_idx;
-        storeMaskedVecSF(
-            spx_image_scratch.slice,
-            flat_idx,
+    const sampled_vecs = if (comptime N == 3)
+        texops.sampleGenericHybridTri3Local(
+            channels,
+            interp_type,
             v_mask_active,
-            v_final,
+            sh.texture,
+            v_tex_u,
+            v_tex_v,
+        )
+    else
+        texops.sampleGenericHybrid(
+            channels,
+            interp_type,
+            v_mask_active,
+            sh.texture,
+            v_tex_u,
+            v_tex_v,
         );
-    }
-}
-
-pub inline fn fillTexPerspSIMDTri3(
-    comptime N: usize,
-    comptime TexT: type,
-    comptime channels: usize,
-    interp_type: InterpType,
-    ctx_shade: common.ShadeContext(N),
-    v_mask_active: VecSB,
-    v_weights: [N]VecSF,
-    v_nodes_inv_z: [N]VecSF,
-    v_subpx_z: VecSF,
-    sh: *const common.TexPrepared(TexT, channels),
-    spx_image_scratch: *MatSlice(f64),
-) void {
-    const v_splat_mul: VecSF = @splat(sh.scale_mul);
-    const v_splat_add: VecSF = @splat(sh.scale_add);
-    const px_stride = spx_image_scratch.cols_num;
-
-    var v_tex_u: VecSF = @splat(0.0);
-    var v_tex_v: VecSF = @splat(0.0);
-    inline for (0..N) |nn| {
-        const v_inv_z = v_nodes_inv_z[nn];
-        v_tex_u += v_weights[nn] *
-            @as(VecSF, @splat(ctx_shade.shader_buf.data[nn])) * v_inv_z;
-        v_tex_v += v_weights[nn] *
-            @as(VecSF, @splat(ctx_shade.shader_buf.data[N + nn])) * v_inv_z;
-    }
-
-    v_tex_u *= v_subpx_z;
-    v_tex_v *= v_subpx_z;
-
-    const sampled_vecs = texops.sampleGenericHybridTri3Local(
-        channels,
-        interp_type,
-        v_mask_active,
-        sh.texture,
-        v_tex_u,
-        v_tex_v,
-    );
 
     inline for (0..channels) |ch| {
         const v_final = sampled_vecs[ch] * v_splat_mul + v_splat_add;

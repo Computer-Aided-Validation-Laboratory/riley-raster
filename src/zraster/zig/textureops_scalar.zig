@@ -6,7 +6,6 @@ const tol = buildconfig.config.tolerance;
 const common = @import("textureops_common.zig");
 
 pub const InterpType = common.InterpType;
-pub const Pixel = common.Pixel;
 pub const Texture = common.Texture;
 
 fn cubicWeightHorner(x: f64) f64 {
@@ -89,16 +88,9 @@ fn getPx(comptime channels: usize, texture: anytype, x: isize, y: isize) [channe
     const ix = @as(usize, @intCast(@max(0, @min(x, cols - 1))));
     const iy = @as(usize, @intCast(@max(0, @min(y, rows - 1))));
 
-    const px = texture.getPixel(iy, ix);
     var res: [channels]f64 = undefined;
     inline for (0..channels) |ch| {
-        const val = px.channels[ch];
-        const T = @TypeOf(val);
-        res[ch] = switch (@typeInfo(T)) {
-            .int => @as(f64, @floatFromInt(val)),
-            .float => @as(f64, @floatCast(val)),
-            else => @compileError("Unsupported texture type"),
-        };
+        res[ch] = texture.getVal(ch, iy, ix);
     }
     return res;
 }

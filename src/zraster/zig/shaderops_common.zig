@@ -102,9 +102,10 @@ pub const NodalPrepared = struct {
 };
 
 pub fn TexInput(comptime T: type, comptime channels: usize) type {
+    _ = T;
     return struct {
         uvs: NDArray(f64),
-        texture: Texture(T, channels),
+        texture: Texture(channels),
         interp_type: InterpType = .cubic_lut_lerp,
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
@@ -113,9 +114,10 @@ pub fn TexInput(comptime T: type, comptime channels: usize) type {
 }
 
 pub fn TexPrepared(comptime T: type, comptime channels: usize) type {
+    _ = T;
     return struct {
         elem_uvs: NDArray(f64),
-        texture: Texture(T, channels),
+        texture: Texture(channels),
         interp_type: InterpType = .cubic_lut_lerp,
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,

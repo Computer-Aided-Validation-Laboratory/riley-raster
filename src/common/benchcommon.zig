@@ -290,8 +290,8 @@ pub fn runBenchmark(
     data_dir: []const u8,
     out_dir_base: []const u8,
     pixel_num: [2]u32,
-    texture_grey: iio.Texture(u8, 1),
-    texture_rgb: iio.Texture(u8, 3),
+    texture_grey: iio.Texture(1),
+    texture_rgb: iio.Texture(3),
 ) !BenchResult {
     return runBenchmarkInternal(
         .bench,
@@ -317,8 +317,8 @@ pub fn runBenchmarkQuiet(
     data_dir: []const u8,
     out_dir_base: []const u8,
     pixel_num: [2]u32,
-    texture_grey: iio.Texture(u8, 1),
-    texture_rgb: iio.Texture(u8, 3),
+    texture_grey: iio.Texture(1),
+    texture_rgb: iio.Texture(3),
 ) !BenchResult {
     return runBenchmarkInternal(
         .off,
@@ -345,8 +345,8 @@ fn runBenchmarkInternal(
     data_dir: []const u8,
     out_dir_base: []const u8,
     pixel_num: [2]u32,
-    texture_grey: iio.Texture(u8, 1),
-    texture_rgb: iio.Texture(u8, 3),
+    texture_grey: iio.Texture(1),
+    texture_rgb: iio.Texture(3),
 ) !BenchResult {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();

@@ -11,14 +11,7 @@ pub const InterpType = enum {
     quintic_lut_lerp,
 };
 
-pub fn Pixel(comptime T: type, comptime channels: usize) type {
-    return struct {
-        channels: [channels]T,
-    };
-}
-
-pub fn Texture(comptime T: type, comptime channels: usize) type {
-    _ = T;
+pub fn Texture(comptime channels: usize) type {
     return struct {
         array: NDArray(f64),
         rows_num: usize,
@@ -66,27 +59,6 @@ pub fn Texture(comptime T: type, comptime channels: usize) type {
             return self.array.get(&[_]usize{ ch, row, col });
         }
 
-        pub fn getPixel(self: Self, row: usize, col: usize) Pixel(f64, channels) {
-            var px: Pixel(f64, channels) = undefined;
-            inline for (0..channels) |ch| {
-                px.channels[ch] = self.getVal(ch, row, col);
-            }
-            return px;
-        }
-
-        pub fn setPixel(self: *Self, row: usize, col: usize, pixel: anytype) void {
-            inline for (0..channels) |ch| {
-                const val = pixel.channels[ch];
-                const PT = @TypeOf(val);
-                const fval = switch (@typeInfo(PT)) {
-                    .int => @as(f64, @floatFromInt(val)),
-                    .float => @as(f64, @floatCast(val)),
-                    else => @compileError("Unsupported pixel type"),
-                };
-                self.setVal(ch, row, col, fval);
-            }
-        }
-
         pub fn saveCSV(
             self: *const Self,
             io: std.Io,
@@ -116,17 +88,17 @@ pub fn Texture(comptime T: type, comptime channels: usize) type {
     };
 }
 
-pub fn getLerpWeights(
-    comptime N: usize,
-    lut: [1024][N]f64,
-    t: f64,
-) [N]f64 {
-    const scaled = t * @as(f64, @floatFromInt(lut.len - 1));
-    const idx0 = @min(lut.len - 2, @as(usize, @intFromFloat(@floor(scaled))));
-    const frac = scaled - @as(f64, @floatFromInt(idx0));
-    var weights: [N]f64 = undefined;
-    inline for (0..N) |nn| {
-        weights[nn] = lut[idx0][nn] * (1.0 - frac) + lut[idx0 + 1][nn] * frac;
-    }
-    return weights;
-}
+// pub fn getLerpWeights(
+//     comptime N: usize,
+//     lut: [1024][N]f64,
+//     t: f64,
+// ) [N]f64 {
+//     const scaled = t * @as(f64, @floatFromInt(lut.len - 1));
+//     const idx0 = @min(lut.len - 2, @as(usize, @intFromFloat(@floor(scaled))));
+//     const frac = scaled - @as(f64, @floatFromInt(idx0));
+//     var weights: [N]f64 = undefined;
+//     inline for (0..N) |nn| {
+//         weights[nn] = lut[idx0][nn] * (1.0 - frac) + lut[idx0 + 1][nn] * frac;
+//     }
+//     return weights;
+// }

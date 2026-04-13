@@ -13,7 +13,6 @@ const common = @import("textureops_common.zig");
 const NDArray = @import("ndarray.zig").NDArray;
 
 pub const InterpType = common.InterpType;
-pub const Pixel = common.Pixel;
 pub const Texture = common.Texture;
 
 fn cubicWeight(x: f64) f64 {
