@@ -87,18 +87,3 @@ pub fn Texture(comptime channels: usize) type {
         }
     };
 }
-
-// pub fn getLerpWeights(
-//     comptime N: usize,
-//     lut: [1024][N]f64,
-//     t: f64,
-// ) [N]f64 {
-//     const scaled = t * @as(f64, @floatFromInt(lut.len - 1));
-//     const idx0 = @min(lut.len - 2, @as(usize, @intFromFloat(@floor(scaled))));
-//     const frac = scaled - @as(f64, @floatFromInt(idx0));
-//     var weights: [N]f64 = undefined;
-//     inline for (0..N) |nn| {
-//         weights[nn] = lut[idx0][nn] * (1.0 - frac) + lut[idx0 + 1][nn] * frac;
-//     }
-//     return weights;
-// }

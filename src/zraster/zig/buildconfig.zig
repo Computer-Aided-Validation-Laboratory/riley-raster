@@ -5,6 +5,11 @@ pub const SimdMode = enum {
     on,
 };
 
+pub const SimdTextureInterpMode = enum {
+    inner,
+    over_pixels,
+};
+
 pub const EdgeTolerance = struct {
     tri_weight_inclusion: f64 = 1e-9,
     simd_raster_weight_inclusion: f64 = 1e-9,
@@ -70,6 +75,7 @@ pub const Tolerance = struct {
 
 pub const Config = struct {
     simd: SimdMode = .on,
+    simd_texture_interp: SimdTextureInterpMode = .inner,
     simd_vector_width: comptime_int = 8,
     max_nodal_fields: comptime_int = 8,
     max_image_channels: comptime_int = 8,
@@ -80,6 +86,7 @@ pub const Config = struct {
 
 pub const config = Config{
     .simd = .on,
+    .simd_texture_interp = .inner,
     .simd_vector_width = 8,
     .max_nodal_fields = 8,
     .max_image_channels = 8,

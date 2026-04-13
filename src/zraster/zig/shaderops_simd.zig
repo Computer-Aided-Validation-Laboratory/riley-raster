@@ -123,25 +123,35 @@ pub inline fn fillTexClipSIMD(
     }
 
     const px_stride = spx_image_scratch.cols_num;
-    const mask_arr: [S]bool = v_mask_active;
-    const tex_u_arr: [S]f64 = v_tex_u;
-    const tex_v_arr: [S]f64 = v_tex_v;
+    const sampled_vecs = switch (cfg.simd_texture_interp) {
+        .inner => texops.samplePerLaneInnerSIMD(
+            channels,
+            interp_type,
+            v_mask_active,
+            sh.texture,
+            v_tex_u,
+            v_tex_v,
+        ),
+        .over_pixels => texops.sampleOverPixelsSIMD(
+            channels,
+            interp_type,
+            sh.texture,
+            v_tex_u,
+            v_tex_v,
+        ),
+    };
 
-    for (0..S) |ii| {
-        if (mask_arr[ii]) {
-            const sampled = texops.sampleGeneric(
-                channels,
-                interp_type,
-                sh.texture,
-                tex_u_arr[ii],
-                tex_v_arr[ii],
-            );
-
-            inline for (0..channels) |ch| {
-                spx_image_scratch.slice[ch * px_stride + ctx_shade.scratch_idx + ii] =
-                    sampled[ch] * sh.scale_mul + sh.scale_add;
-            }
-        }
+    inline for (0..channels) |ch| {
+        const v_final = sampled_vecs[ch] *
+            @as(VecSF, @splat(sh.scale_mul)) +
+            @as(VecSF, @splat(sh.scale_add));
+        const flat_idx = ch * px_stride + ctx_shade.scratch_idx;
+        storeMaskedVecSF(
+            spx_image_scratch.slice,
+            flat_idx,
+            v_mask_active,
+            v_final,
+        );
     }
 }
 
@@ -175,24 +185,33 @@ pub inline fn fillTexPerspSIMD(
     v_tex_u *= v_subpx_z;
     v_tex_v *= v_subpx_z;
 
-    const sampled_vecs = if (comptime N == 3)
-        texops.sampleGenericHybridTri3Local(
+    const sampled_vecs = switch (cfg.simd_texture_interp) {
+        .inner => if (comptime N == 3)
+            texops.samplePerLaneTri3SIMD(
+                channels,
+                interp_type,
+                v_mask_active,
+                sh.texture,
+                v_tex_u,
+                v_tex_v,
+            )
+        else
+            texops.samplePerLaneInnerSIMD(
+                channels,
+                interp_type,
+                v_mask_active,
+                sh.texture,
+                v_tex_u,
+                v_tex_v,
+            ),
+        .over_pixels => texops.sampleOverPixelsSIMD(
             channels,
             interp_type,
-            v_mask_active,
             sh.texture,
             v_tex_u,
             v_tex_v,
-        )
-    else
-        texops.sampleGenericHybrid(
-            channels,
-            interp_type,
-            v_mask_active,
-            sh.texture,
-            v_tex_u,
-            v_tex_v,
-        );
+        ),
+    };
 
     inline for (0..channels) |ch| {
         const v_final = sampled_vecs[ch] * v_splat_mul + v_splat_add;

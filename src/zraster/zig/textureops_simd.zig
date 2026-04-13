@@ -479,7 +479,7 @@ fn v_quinticWeightSIMD(v_x: VecSF) VecSF {
     return res;
 }
 
-pub fn sampleGenericSIMD(
+pub fn sampleOverPixelsSIMD(
     comptime channels: usize,
     interp: InterpType,
     texture: anytype,
@@ -763,7 +763,7 @@ pub fn sampleGenericSIMD(
     };
 }
 
-pub fn sampleGenericInnerSIMD(
+pub fn samplePerPixelInnerSIMD(
     comptime channels: usize,
     interp: InterpType,
     texture: anytype,
@@ -875,7 +875,7 @@ pub fn sampleGenericInnerSIMD(
     };
 }
 
-pub fn sampleGenericHybrid(
+pub fn samplePerLaneInnerSIMD(
     comptime channels: usize,
     interp: InterpType,
     v_mask_active: VecSB,
@@ -891,7 +891,7 @@ pub fn sampleGenericHybrid(
     // Process each active lane in the SIMD front
     for (0..S) |ii| {
         if (mask_arr[ii]) {
-            const sampled = sampleGenericInnerSIMD(
+            const sampled = samplePerPixelInnerSIMD(
                 channels,
                 interp,
                 texture,
@@ -912,7 +912,7 @@ pub fn sampleGenericHybrid(
     return res;
 }
 
-pub fn sampleGenericHybridTri3Local(
+pub fn samplePerLaneTri3SIMD(
     comptime channels: usize,
     interp: InterpType,
     v_mask_active: VecSB,
@@ -980,7 +980,7 @@ pub fn sampleGenericHybridTri3Local(
 
     for (0..active_count) |ii| {
         const lane = active_lanes[ii];
-        const sampled = sampleGenericInnerSIMD(
+        const sampled = samplePerPixelInnerSIMD(
             channels,
             interp,
             texture,
