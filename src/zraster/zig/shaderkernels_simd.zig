@@ -1,14 +1,17 @@
 const std = @import("std");
+
 const buildconfig = @import("buildconfig.zig");
+const S = buildconfig.SimdWidth;
+const VecSB = buildconfig.VecSB;
+const VecSF = buildconfig.VecSF;
+
 const shaderops = @import("shaderops.zig");
 const report = @import("report.zig");
 const texops = @import("textureops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const InterpType = texops.InterpType;
 const CoordSpace = @import("geometrykernels.zig").CoordSpace;
-const S = buildconfig.SimdWidth;
-const VecSB = buildconfig.VecSB;
-const VecSF = buildconfig.VecSF;
+
 
 pub fn NodalKernel(comptime N: usize) type {
     return struct {

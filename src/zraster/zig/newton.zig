@@ -6,6 +6,7 @@ const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const VecSU8 = buildconfig.VecSU8;
+const iter_max = buildconfig.config.newton_iter_max;
 const tol = buildconfig.config.tolerance;
 
 pub const NewtonSeed = struct {
@@ -47,10 +48,6 @@ pub const NewtonResultSIMD = struct {
     v_residual_y: VecSF,
 };
 
-pub inline fn clearSeedState(seed_state: *NewtonSeedState) void {
-    seed_state.* = .{};
-}
-
 pub inline fn selectSeed(
     comptime seed_reuse: anytype,
     base_seed: NewtonSeed,
@@ -69,14 +66,6 @@ pub inline fn selectSeed(
 
 pub inline fn isSeedFinite(seed: NewtonSeed) bool {
     return std.math.isFinite(seed.xi) and std.math.isFinite(seed.eta);
-}
-
-pub inline fn isSeedInRelaxedDomain(
-    comptime domainViolationFn: anytype,
-    seed: NewtonSeed,
-) bool {
-    const domain_tol = tol.newton.parametric_domain;
-    return domainViolationFn(seed.xi, seed.eta) <= domain_tol;
 }
 
 pub inline fn updateSeedState(
@@ -186,8 +175,10 @@ pub fn evaluateSeedQuality(
     for (0..N) |nn| {
         const term_x = target_screen_x * element_node_w[nn] - element_node_x[nn];
         const term_y = target_screen_y * element_node_w[nn] - element_node_y[nn];
+
         residual_x += node_values[nn] * term_x;
         residual_y += node_values[nn] * term_y;
+
         jacobian_11 += deriv_n_xi[nn] * term_x;
         jacobian_12 += deriv_n_eta[nn] * term_x;
         jacobian_21 += deriv_n_xi[nn] * term_y;
@@ -196,13 +187,16 @@ pub fn evaluateSeedQuality(
 
     const determinant = jacobian_11 * jacobian_22 - jacobian_12 * jacobian_21;
     const det_abs = @abs(determinant);
+
     const residual_sq = residual_x * residual_x + residual_y * residual_y;
+
     const domain_violation = domainViolationFn(seed.xi, seed.eta);
     const seed_tol = tol.newton_seed;
+
     const is_usable = domain_violation <= seed_tol.parametric_domain and
-        det_abs >= seed_tol.determinant and
-        residual_sq <= seed_tol.residual_sq and
-        std.math.isFinite(residual_sq);
+                      det_abs >= seed_tol.determinant and
+                      residual_sq <= seed_tol.residual_sq and
+                      std.math.isFinite(residual_sq);
 
     return .{
         .is_usable = is_usable,
@@ -236,10 +230,9 @@ pub fn solveInverse(
     deriv_n_xi: *[N]f64,
     deriv_n_eta: *[N]f64,
 ) NewtonResult {
-    const iter_tol = tol.newton.residual;
+    const resid_tol = tol.newton.residual;
     const det_tol = tol.newton.determinant;
     const eps = tol.newton.parametric_domain;
-    const iter_max: u8 = 10;
 
     var xi = xi_in;
     var eta = eta_in;
@@ -270,13 +263,14 @@ pub fn solveInverse(
         for (0..N) |nn| {
             residual_x += node_values[nn] * term_x[nn];
             residual_y += node_values[nn] * term_y[nn];
+
             jacobian_11 += deriv_n_xi[nn] * term_x[nn];
             jacobian_12 += deriv_n_eta[nn] * term_x[nn];
             jacobian_21 += deriv_n_xi[nn] * term_y[nn];
             jacobian_22 += deriv_n_eta[nn] * term_y[nn];
         }
 
-        if (@abs(residual_x) < iter_tol and @abs(residual_y) < iter_tol) {
+        if (@abs(residual_x) < resid_tol and @abs(residual_y) < resid_tol) {
             met_residual = true;
             break;
         }
@@ -349,17 +343,10 @@ pub fn solveInverseSIMD(
     v_deriv_n_xi: *[N]VecSF,
     v_deriv_n_eta: *[N]VecSF,
 ) NewtonResultSIMD {
-    const v_iter_tol: VecSF = @splat(
-        tol.newton.residual,
-    );
-    const v_det_tol: VecSF = @splat(
-        tol.newton.determinant,
-    );
-    const v_eps: VecSF = @splat(
-        tol.newton.parametric_domain,
-    );
-    const iter_max: u8 = 10;
-
+    const v_iter_tol: VecSF = @splat(tol.newton.residual);
+    const v_det_tol: VecSF = @splat(tol.newton.determinant);
+    const v_eps: VecSF = @splat(tol.newton.parametric_domain);
+    
     var v_xi = v_xi_in;
     var v_eta = v_eta_in;
 
@@ -453,7 +440,7 @@ pub fn solveInverseSIMD(
         (v_xi >= -v_eps) & (v_eta >= -v_eps) & ((v_xi + v_eta) <= v_splat_one + v_eps)
     else
         (v_xi >= v_splat_neg_one - v_eps) & (v_xi <= v_splat_one + v_eps) &
-            (v_eta >= v_splat_neg_one - v_eps) & (v_eta <= v_splat_one + v_eps);
+        (v_eta >= v_splat_neg_one - v_eps) & (v_eta <= v_splat_one + v_eps);
 
     const v_final_converged = v_converged & v_is_in;
     v_xi_out.* = v_xi;

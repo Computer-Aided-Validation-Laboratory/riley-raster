@@ -937,172 +937,26 @@ pub fn RasterPass(
             shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
             subpx_scratch: *SubpxScratchBuffers,
         ) !u64 {
-            const N = Geometry.nodes_num;
-            var shaded_px: u64 = 0;
-            const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
             std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
             const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
-
-            var nodes_inv_z: [N]f64 = undefined;
-            inline for (0..N) |nn| {
-                nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
-            }
-
-            const bilinear_params = if (comptime Geometry.solver_kind == .inv_bi)
-                Geometry.getBilinearParams(nodes_coords)
-            else {};
-            const inv_elem_area = if (comptime Geometry.solver_kind == .hyperb)
-                Geometry.getInvElemArea(nodes_coords)
-            else {};
-
-            var element_tess: hull.Tessellation(Geometry.tess_triangles_num) = undefined;
-
-            if (comptime Geometry.hull_nodes_num > 0) {
-                if (mesh_in.hull) |rh| {
-                    const hx = rh.getSlice(
-                        &[_]usize{ targ_overlap.overlap.elem_idx, 0, 0 },
-                        1,
-                    );
-                    const hy = rh.getSlice(
-                        &[_]usize{ targ_overlap.overlap.elem_idx, 1, 0 },
-                        1,
-                    );
-                    element_tess = hull.getTessellation(
-                        N,
-                        Geometry.hull_nodes_num,
-                        Geometry.tess_triangles_num,
-                        hx,
-                        hy,
-                    );
-                }
-            }
-
-            var subpx_y_f: f64 = rast_bounds.y_min_f + subpx_domain.offset;
-            for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
-                const row_offset = scratch_y_u * subpx_domain.tile_size;
-                var subpx_x_f: f64 = rast_bounds.x_min_f + subpx_domain.offset;
-
-                for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x_u| {
-                    const global_subx = targ_overlap.tile.x_px_min *
-                        sub_samp + scratch_x_u;
-                    const global_suby = targ_overlap.tile.y_px_min *
-                        sub_samp + scratch_y_u;
-
-                    if (comptime Geometry.hull_nodes_num > 0) {
-                        ctx_report.recordTessChecks(1);
-                        const tess_res = element_tess.isInScalar(
-                            subpx_x_f,
-                            subpx_y_f,
-                        );
-                        if (tess_res.is_in) {
-                            ctx_report.recordTessPasses(1);
-                        }
-                        if (comptime report_mode == .full_stats) {
-                            ctx_report.recordEarlyOut(
-                                global_subx,
-                                global_suby,
-                                tess_res.is_in,
-                            );
-                        }
-                        if (!tess_res.is_in) {
-                            subpx_x_f += subpx_domain.step;
-                            continue;
-                        }
-                    } else if (comptime report_mode == .full_stats) {
-                        ctx_report.recordEarlyOut(
-                            global_subx,
-                            global_suby,
-                            true,
-                        );
-                    }
-
-                    ctx_report.recordSolverCalls(1);
-                    const result = if (comptime Geometry.solver_kind == .inv_bi)
-                        Geometry.solveWeightsInvBi(
-                            subpx_x_f,
-                            subpx_y_f,
-                            subpx_domain.x_off,
-                            subpx_domain.y_off,
-                            bilinear_params,
-                        )
-                    else
-                        Geometry.solveWeightsHyperb(
-                            nodes_coords,
-                            subpx_x_f,
-                            subpx_y_f,
-                            inv_elem_area,
-                        );
-
-                    ctx_report.recordSolverIters(result.iters);
-
-                    if (result.weights) |weights| {
-                        const inv_z = Geometry.calcInvZ(nodes_coords, weights);
-                        const scratch_idx = row_offset + scratch_x_u;
-
-                        if (inv_z >= subpx_scratch.inv_z[scratch_idx]) {
-                            subpx_scratch.inv_z[scratch_idx] = inv_z;
-                            if (scratch_x_u <
-                                subpx_scratch.touched_min_x[scratch_y_u])
-                            {
-                                subpx_scratch.touched_min_x[scratch_y_u] =
-                                    scratch_x_u;
-                            }
-                            if (scratch_x_u >
-                                subpx_scratch.touched_max_x[scratch_y_u])
-                            {
-                                subpx_scratch.touched_max_x[scratch_y_u] =
-                                    scratch_x_u;
-                            }
-                            const subpx_z = 1.0 / inv_z;
-                            shaded_px += 1;
-
-                            if (comptime report_mode == .full_stats) {
-                                ctx_report.recordPixelIters(
-                                    global_subx,
-                                    global_suby,
-                                    result.iters,
-                                );
-                                ctx_report.recordPixelOccupancy(
-                                    targ_overlap.tile.x_px_min +
-                                        scratch_x_u / sub_samp,
-                                    targ_overlap.tile.y_px_min +
-                                        scratch_y_u / sub_samp,
-                                );
-                            }
-
-                            const ctx_shade = shaderops.ShadeContext(N){
-                                .frame_idx = ctx_rast.frame_idx,
-                                .elem_idx = targ_overlap.overlap.elem_idx,
-                                .fields_num = fields_num,
-                                .actual_fields = fields_num,
-                                .scratch_idx = scratch_idx,
-                                .global_subx = global_subx,
-                                .global_suby = global_suby,
-                                .shader_buf = shader_buf,
-                            };
-                            const interp_data = shaderops.InterpData(N){
-                                .weights = weights,
-                                .nodes_inv_z = nodes_inv_z,
-                                .sub_pixel_z = subpx_z,
-                            };
-
-                            ShaderKernel.shade(
-                                Geometry.coord_space,
-                                ctx_shade,
-                                interp_data,
-                                shader,
-                                ctx_report,
-                                &subpx_scratch.image,
-                            );
-                        }
-                    } else {
-                        if (result.iters > 0) ctx_report.recordSolverDiverged();
-                    }
-                    subpx_x_f += subpx_domain.step;
-                }
-                subpx_y_f += subpx_domain.step;
-            }
-            return shaded_px;
+            return common.rasterDirectScalarCommon(
+                Geometry,
+                ShaderKernel,
+                ShaderData,
+                report_mode,
+                SubpxScratchBuffers,
+                ctx_rast,
+                ctx_report,
+                targ_overlap,
+                mesh_in,
+                subpx_domain,
+                rast_bounds,
+                fields_num,
+                nodes_coords,
+                shader,
+                shader_buf,
+                subpx_scratch,
+            );
         }
     };
 }

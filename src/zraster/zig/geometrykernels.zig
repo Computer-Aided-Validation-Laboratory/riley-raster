@@ -60,20 +60,6 @@ pub fn GeometryResultSIMD(comptime N: usize) type {
     };
 }
 
-pub inline fn calcInvZRast(
-    comptime N: usize,
-    nodes: Vec3Slices(f64),
-    weights: [N]f64,
-) f64 {
-    var inv_z: f64 = 0.0;
-
-    inline for (0..N) |ind| {
-        inv_z += weights[ind] * (1.0 / nodes.z[ind]);
-    }
-
-    return inv_z;
-}
-
 pub inline fn calcInvZClip(
     comptime N: usize,
     nodes: Vec3Slices(f64),
@@ -192,7 +178,13 @@ pub fn Tri3Kernel() type {
         }
 
         pub inline fn calcInvZ(nodes: Vec3Slices(f64), weights: [nodes_num]f64) f64 {
-            return calcInvZRast(nodes_num, nodes, weights);
+            var inv_z: f64 = 0.0;
+
+            inline for (0..nodes_num) |nn| {
+                inv_z += weights[nn] * (1.0 / nodes.z[nn]);
+            }
+
+            return inv_z;
         }
 
         pub inline fn getSIMDInvZ(nodes: Vec3Slices(f64)) [nodes_num]VecSF {
@@ -298,17 +290,6 @@ pub fn Tri6Kernel() type {
 
         pub inline fn domainViolation(xi: f64, eta: f64) f64 {
             return @max(-xi, 0.0) + @max(-eta, 0.0) + @max(xi + eta - 1.0, 0.0);
-        }
-
-        pub inline fn getInvElemArea(nodes: Vec3Slices(f64)) f64 {
-            return 1.0 / rops.edgeFun3(
-                nodes.x[0],
-                nodes.y[0],
-                nodes.x[1],
-                nodes.y[1],
-                nodes.x[2],
-                nodes.y[2],
-            );
         }
 
         pub inline fn solveWeightsNewton(
@@ -451,6 +432,18 @@ pub fn Quad4IBIKernel() type {
             };
         }
 
+        const InvBiPoly = struct {
+            const_term: f64,
+            xi_term: f64,
+            eta_term: f64,
+            xi_eta_term: f64,
+        };
+
+        const InvBiResidual = struct {
+            x: InvBiPoly,
+            y: InvBiPoly,
+        };
+
         const Candidate = struct {
             xi: f64,
             eta: f64,
@@ -468,50 +461,59 @@ pub fn Quad4IBIKernel() type {
             };
         }
 
+        inline fn getInvBiResidual(
+            target_x: f64,
+            target_y: f64,
+            solve_params: BilinearParams,
+        ) InvBiResidual {
+            return .{
+                .x = .{
+                    .const_term = solve_params.x_const - (solve_params.w_const * target_x),
+                    .xi_term = solve_params.x_u_coeff - (solve_params.w_u_coeff * target_x),
+                    .eta_term = solve_params.x_v_coeff - (solve_params.w_v_coeff * target_x),
+                    .xi_eta_term = solve_params.x_uv_coeff -
+                        (solve_params.w_uv_coeff * target_x),
+                },
+                .y = .{
+                    .const_term = solve_params.y_const - (solve_params.w_const * target_y),
+                    .xi_term = solve_params.y_u_coeff - (solve_params.w_u_coeff * target_y),
+                    .eta_term = solve_params.y_v_coeff - (solve_params.w_v_coeff * target_y),
+                    .xi_eta_term = solve_params.y_uv_coeff -
+                        (solve_params.w_uv_coeff * target_y),
+                },
+            };
+        }
+
         inline fn solveOtherCoordFromXi(
             xi: f64,
-            a1: f64,
-            a2: f64,
-            a3: f64,
-            a4: f64,
-            b1: f64,
-            b2: f64,
-            b3: f64,
-            b4: f64,
+            residual: InvBiResidual,
             denom_tol: f64,
         ) ?f64 {
-            const denom_x = a3 + (a4 * xi);
-            const denom_y = b3 + (b4 * xi);
+            const denom_x = residual.x.eta_term + (residual.x.xi_eta_term * xi);
+            const denom_y = residual.y.eta_term + (residual.y.xi_eta_term * xi);
 
             if (@abs(denom_x) > @abs(denom_y)) {
                 if (@abs(denom_x) <= denom_tol) return null;
-                return -((a1 + (a2 * xi)) / denom_x);
+                return -((residual.x.const_term + (residual.x.xi_term * xi)) / denom_x);
             }
             if (@abs(denom_y) <= denom_tol) return null;
-            return -((b1 + (b2 * xi)) / denom_y);
+            return -((residual.y.const_term + (residual.y.xi_term * xi)) / denom_y);
         }
 
         inline fn solveOtherCoordFromEta(
             eta: f64,
-            a1: f64,
-            a2: f64,
-            a3: f64,
-            a4: f64,
-            b1: f64,
-            b2: f64,
-            b3: f64,
-            b4: f64,
+            residual: InvBiResidual,
             denom_tol: f64,
         ) ?f64 {
-            const denom_x = a2 + (a4 * eta);
-            const denom_y = b2 + (b4 * eta);
+            const denom_x = residual.x.xi_term + (residual.x.xi_eta_term * eta);
+            const denom_y = residual.y.xi_term + (residual.y.xi_eta_term * eta);
 
             if (@abs(denom_x) > @abs(denom_y)) {
                 if (@abs(denom_x) <= denom_tol) return null;
-                return -((a1 + (a3 * eta)) / denom_x);
+                return -((residual.x.const_term + (residual.x.eta_term * eta)) / denom_x);
             }
             if (@abs(denom_y) <= denom_tol) return null;
-            return -((b1 + (b3 * eta)) / denom_y);
+            return -((residual.y.const_term + (residual.y.eta_term * eta)) / denom_y);
         }
 
         inline fn rootsFromQuadratic(
@@ -560,21 +562,22 @@ pub fn Quad4IBIKernel() type {
             best_candidate: *?Candidate,
             xi: f64,
             eta: f64,
-            a1: f64,
-            a2: f64,
-            a3: f64,
-            a4: f64,
-            b1: f64,
-            b2: f64,
-            b3: f64,
-            b4: f64,
+            residual: InvBiResidual,
             eps: f64,
         ) void {
             if (xi < -eps or xi > 1.0 + eps) return;
             if (eta < -eps or eta > 1.0 + eps) return;
 
-            const resid_x = a1 + (a2 * xi) + (a3 * eta) + (a4 * xi * eta);
-            const resid_y = b1 + (b2 * xi) + (b3 * eta) + (b4 * xi * eta);
+            const resid_x =
+                residual.x.const_term +
+                (residual.x.xi_term * xi) +
+                (residual.x.eta_term * eta) +
+                (residual.x.xi_eta_term * xi * eta);
+            const resid_y =
+                residual.y.const_term +
+                (residual.y.xi_term * xi) +
+                (residual.y.eta_term * eta) +
+                (residual.y.xi_eta_term * xi * eta);
             const resid_sq = (resid_x * resid_x) + (resid_y * resid_y);
 
             if (best_candidate.*) |curr| {
@@ -600,26 +603,31 @@ pub fn Quad4IBIKernel() type {
 
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
+            const residual = getInvBiResidual(
+                target_x,
+                target_y,
+                solve_params,
+            );
 
-            const a1 = solve_params.x_const - (solve_params.w_const * target_x);
-            const a2 = solve_params.x_u_coeff - (solve_params.w_u_coeff * target_x);
-            const a3 = solve_params.x_v_coeff - (solve_params.w_v_coeff * target_x);
-            const a4 = solve_params.x_uv_coeff - (solve_params.w_uv_coeff * target_x);
-
-            const b1 = solve_params.y_const - (solve_params.w_const * target_y);
-            const b2 = solve_params.y_u_coeff - (solve_params.w_u_coeff * target_y);
-            const b3 = solve_params.y_v_coeff - (solve_params.w_v_coeff * target_y);
-            const b4 = solve_params.y_uv_coeff - (solve_params.w_uv_coeff * target_y);
-
-            const p_coeff = (a4 * b2) - (a2 * b4);
-            const s_coeff = (a4 * b3) - (a3 * b4);
+            const p_coeff =
+                (residual.x.xi_eta_term * residual.y.xi_term) -
+                (residual.x.xi_term * residual.y.xi_eta_term);
+            const s_coeff =
+                (residual.x.xi_eta_term * residual.y.eta_term) -
+                (residual.x.eta_term * residual.y.xi_eta_term);
 
             var best_candidate: ?Candidate = null;
 
             if (@abs(p_coeff) > zero_tol or @abs(s_coeff) > zero_tol) {
                 if (@abs(s_coeff) < @abs(p_coeff)) {
-                    const q_coeff = (a4 * b1) - (a1 * b4) + (a3 * b2) - (a2 * b3);
-                    const r_coeff = (a3 * b1) - (a1 * b3);
+                    const q_coeff =
+                        (residual.x.xi_eta_term * residual.y.const_term) -
+                        (residual.x.const_term * residual.y.xi_eta_term) +
+                        (residual.x.eta_term * residual.y.xi_term) -
+                        (residual.x.xi_term * residual.y.eta_term);
+                    const r_coeff =
+                        (residual.x.eta_term * residual.y.const_term) -
+                        (residual.x.const_term * residual.y.eta_term);
                     const roots = rootsFromQuadratic(
                         p_coeff,
                         q_coeff,
@@ -631,35 +639,27 @@ pub fn Quad4IBIKernel() type {
                         const xi = roots.roots[ii];
                         if (solveOtherCoordFromXi(
                             xi,
-                            a1,
-                            a2,
-                            a3,
-                            a4,
-                            b1,
-                            b2,
-                            b3,
-                            b4,
+                            residual,
                             denom_tol,
                         )) |eta| {
                             tryCandidate(
                                 &best_candidate,
                                 xi,
                                 eta,
-                                a1,
-                                a2,
-                                a3,
-                                a4,
-                                b1,
-                                b2,
-                                b3,
-                                b4,
+                                residual,
                                 eps,
                             );
                         }
                     }
                 } else {
-                    const t_coeff = (a4 * b1) - (a1 * b4) - (a3 * b2) + (a2 * b3);
-                    const u_coeff = (a2 * b1) - (a1 * b2);
+                    const t_coeff =
+                        (residual.x.xi_eta_term * residual.y.const_term) -
+                        (residual.x.const_term * residual.y.xi_eta_term) -
+                        (residual.x.eta_term * residual.y.xi_term) +
+                        (residual.x.xi_term * residual.y.eta_term);
+                    const u_coeff =
+                        (residual.x.xi_term * residual.y.const_term) -
+                        (residual.x.const_term * residual.y.xi_term);
                     const roots = rootsFromQuadratic(
                         s_coeff,
                         t_coeff,
@@ -671,236 +671,151 @@ pub fn Quad4IBIKernel() type {
                         const eta = roots.roots[ii];
                         if (solveOtherCoordFromEta(
                             eta,
-                            a1,
-                            a2,
-                            a3,
-                            a4,
-                            b1,
-                            b2,
-                            b3,
-                            b4,
+                            residual,
                             denom_tol,
                         )) |xi| {
                             tryCandidate(
                                 &best_candidate,
                                 xi,
                                 eta,
-                                a1,
-                                a2,
-                                a3,
-                                a4,
-                                b1,
-                                b2,
-                                b3,
-                                b4,
+                                residual,
                                 eps,
                             );
                         }
                     }
                 }
-            } else if (@abs(a4) > zero_tol and @abs(b4) > zero_tol) {
+            } else if (@abs(residual.x.xi_eta_term) > zero_tol and
+                @abs(residual.y.xi_eta_term) > zero_tol)
+            {
                 if (@abs(p_coeff) < @abs(s_coeff)) {
-                    const eta = ((a4 * b1) - (a1 * b4) + (a3 * b2) - (a2 * b3)) /
-                        (-s_coeff);
+                    const eta =
+                        ((residual.x.xi_eta_term * residual.y.const_term) -
+                            (residual.x.const_term * residual.y.xi_eta_term) +
+                            (residual.x.eta_term * residual.y.xi_term) -
+                            (residual.x.xi_term * residual.y.eta_term)) / (-s_coeff);
                     if (solveOtherCoordFromEta(
                         eta,
-                        a1,
-                        a2,
-                        a3,
-                        a4,
-                        b1,
-                        b2,
-                        b3,
-                        b4,
+                        residual,
                         denom_tol,
                     )) |xi| {
                         tryCandidate(
                             &best_candidate,
                             xi,
                             eta,
-                            a1,
-                            a2,
-                            a3,
-                            a4,
-                            b1,
-                            b2,
-                            b3,
-                            b4,
+                            residual,
                             eps,
                         );
                     }
                 } else {
-                    const xi = ((a4 * b1) - (a1 * b4) - (a3 * b2) + (a2 * b3)) /
-                        (-p_coeff);
+                    const xi =
+                        ((residual.x.xi_eta_term * residual.y.const_term) -
+                            (residual.x.const_term * residual.y.xi_eta_term) -
+                            (residual.x.eta_term * residual.y.xi_term) +
+                            (residual.x.xi_term * residual.y.eta_term)) / (-p_coeff);
                     if (solveOtherCoordFromXi(
                         xi,
-                        a1,
-                        a2,
-                        a3,
-                        a4,
-                        b1,
-                        b2,
-                        b3,
-                        b4,
+                        residual,
                         denom_tol,
                     )) |eta| {
                         tryCandidate(
                             &best_candidate,
                             xi,
                             eta,
-                            a1,
-                            a2,
-                            a3,
-                            a4,
-                            b1,
-                            b2,
-                            b3,
-                            b4,
+                            residual,
                             eps,
                         );
                     }
                 }
-            } else if (@abs(a4) > zero_tol and @abs(b4) <= zero_tol) {
-                if (@abs(b3) > @abs(b2)) {
-                    if (@abs(b3) > denom_tol) {
-                        const eta = -b1 / b3;
+            } else if (@abs(residual.x.xi_eta_term) > zero_tol and
+                @abs(residual.y.xi_eta_term) <= zero_tol)
+            {
+                if (@abs(residual.y.eta_term) > @abs(residual.y.xi_term)) {
+                    if (@abs(residual.y.eta_term) > denom_tol) {
+                        const eta =
+                            -residual.y.const_term / residual.y.eta_term;
                         if (solveOtherCoordFromEta(
                             eta,
-                            a1,
-                            a2,
-                            a3,
-                            a4,
-                            b1,
-                            b2,
-                            b3,
-                            b4,
+                            residual,
                             denom_tol,
                         )) |xi| {
                             tryCandidate(
                                 &best_candidate,
                                 xi,
                                 eta,
-                                a1,
-                                a2,
-                                a3,
-                                a4,
-                                b1,
-                                b2,
-                                b3,
-                                b4,
+                                residual,
                                 eps,
                             );
                         }
                     }
-                } else if (@abs(b2) > denom_tol) {
-                    const xi = -b1 / b2;
+                } else if (@abs(residual.y.xi_term) > denom_tol) {
+                    const xi = -residual.y.const_term / residual.y.xi_term;
                     if (solveOtherCoordFromXi(
                         xi,
-                        a1,
-                        a2,
-                        a3,
-                        a4,
-                        b1,
-                        b2,
-                        b3,
-                        b4,
+                        residual,
                         denom_tol,
                     )) |eta| {
                         tryCandidate(
                             &best_candidate,
                             xi,
                             eta,
-                            a1,
-                            a2,
-                            a3,
-                            a4,
-                            b1,
-                            b2,
-                            b3,
-                            b4,
+                            residual,
                             eps,
                         );
                     }
                 }
-            } else if (@abs(a4) <= zero_tol and @abs(b4) > zero_tol) {
-                if (@abs(a2) < @abs(a3)) {
-                    if (@abs(a3) > denom_tol) {
-                        const eta = -a1 / a3;
+            } else if (@abs(residual.x.xi_eta_term) <= zero_tol and
+                @abs(residual.y.xi_eta_term) > zero_tol)
+            {
+                if (@abs(residual.x.xi_term) < @abs(residual.x.eta_term)) {
+                    if (@abs(residual.x.eta_term) > denom_tol) {
+                        const eta =
+                            -residual.x.const_term / residual.x.eta_term;
                         if (solveOtherCoordFromEta(
                             eta,
-                            a1,
-                            a2,
-                            a3,
-                            a4,
-                            b1,
-                            b2,
-                            b3,
-                            b4,
+                            residual,
                             denom_tol,
                         )) |xi| {
                             tryCandidate(
                                 &best_candidate,
                                 xi,
                                 eta,
-                                a1,
-                                a2,
-                                a3,
-                                a4,
-                                b1,
-                                b2,
-                                b3,
-                                b4,
+                                residual,
                                 eps,
                             );
                         }
                     }
-                } else if (@abs(a2) > denom_tol) {
-                    const xi = -a1 / a2;
+                } else if (@abs(residual.x.xi_term) > denom_tol) {
+                    const xi = -residual.x.const_term / residual.x.xi_term;
                     if (solveOtherCoordFromXi(
                         xi,
-                        a1,
-                        a2,
-                        a3,
-                        a4,
-                        b1,
-                        b2,
-                        b3,
-                        b4,
+                        residual,
                         denom_tol,
                     )) |eta| {
                         tryCandidate(
                             &best_candidate,
                             xi,
                             eta,
-                            a1,
-                            a2,
-                            a3,
-                            a4,
-                            b1,
-                            b2,
-                            b3,
-                            b4,
+                            residual,
                             eps,
                         );
                     }
                 }
             } else {
-                const denom = (a2 * b3) - (a3 * b2);
+                const denom =
+                    (residual.x.xi_term * residual.y.eta_term) -
+                    (residual.x.eta_term * residual.y.xi_term);
                 if (@abs(denom) > denom_tol) {
-                    const xi = ((b1 * a3) - (a1 * b3)) / denom;
-                    const eta = ((a2 * b1) - (a1 * b2)) / (-denom);
+                    const xi =
+                        ((residual.y.const_term * residual.x.eta_term) -
+                            (residual.x.const_term * residual.y.eta_term)) / denom;
+                    const eta =
+                        ((residual.x.xi_term * residual.y.const_term) -
+                            (residual.x.const_term * residual.y.xi_term)) / (-denom);
                     tryCandidate(
                         &best_candidate,
                         xi,
                         eta,
-                        a1,
-                        a2,
-                        a3,
-                        a4,
-                        b1,
-                        b2,
-                        b3,
-                        b4,
+                        residual,
                         eps,
                     );
                 }

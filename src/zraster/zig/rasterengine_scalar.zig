@@ -321,6 +321,66 @@ pub fn RasterPass(
             shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
             subpx_scratch: *SubpxScratchBuffers,
         ) !u64 {
+            if (comptime Geometry.solver_kind != .newton) {
+                std.debug.assert(
+                    subpx_scratch.image.cols_num <= std.math.maxInt(u8),
+                );
+                const fields_num: u8 = @intCast(subpx_scratch.image.cols_num);
+
+                return common.rasterDirectScalarCommon(
+                    Geometry,
+                    ShaderKernel,
+                    ShaderData,
+                    report_mode,
+                    SubpxScratchBuffers,
+                    ctx_rast,
+                    ctx_report,
+                    targ_overlap,
+                    mesh_in,
+                    subpx_domain,
+                    rast_bounds,
+                    fields_num,
+                    nodes_coords,
+                    shader,
+                    shader_buf,
+                    subpx_scratch,
+                );
+            }
+
+            return rasterNewton(
+                report_mode,
+                ctx_rast,
+                ctx_report,
+                targ_overlap,
+                mesh_in,
+                subpx_domain,
+                rast_bounds,
+                nodes_coords,
+                shader,
+                shader_buf,
+                subpx_scratch,
+            );
+        }
+
+        fn rasterNewton(
+            comptime report_mode: ReportMode,
+            ctx_rast: rops.RasterContext,
+            ctx_report: report.ReportContext(report_mode),
+            targ_overlap: common.OverlapTarget,
+            mesh_in: rops.MeshInput,
+            subpx_domain: SubpxDomain,
+            rast_bounds: RasterBounds,
+            nodes_coords: Vec3Slices(f64),
+            shader: *const ShaderData,
+            shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
+            subpx_scratch: *SubpxScratchBuffers,
+        ) !u64 {
+            comptime {
+                if (Geometry.solver_kind != .newton) {
+                    @compileError("rasterNewton only supports Newton geometries");
+                }
+            }
+
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
             const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
@@ -331,13 +391,6 @@ pub fn RasterPass(
             inline for (0..N) |nn| {
                 nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
             }
-
-            const bilinear_params = if (comptime Geometry.solver_kind == .inv_bi)
-                Geometry.getBilinearParams(nodes_coords)
-            else {};
-            const inv_elem_area = if (comptime Geometry.solver_kind == .hyperb)
-                Geometry.getInvElemArea(nodes_coords)
-            else {};
 
             var element_tess: hull.Tessellation(Geometry.tess_triangles_num) = undefined;
 
@@ -403,7 +456,7 @@ pub fn RasterPass(
                     }
 
                     ctx_report.recordSolverCalls(1);
-                    const result = if (comptime Geometry.solver_kind == .newton) blk: {
+                    const result = blk: {
                         if (comptime Geometry.seed_mode == .hull) {
                             if (hull_seed) |seed| {
                                 const seed_quality = newton.evaluateSeedQuality(
@@ -436,26 +489,10 @@ pub fn RasterPass(
                             selected_seed.xi,
                             selected_seed.eta,
                         );
-                    } else if (comptime Geometry.solver_kind == .inv_bi)
-                        Geometry.solveWeightsInvBi(
-                            subpx_x,
-                            subpx_y,
-                            subpx_domain.x_off,
-                            subpx_domain.y_off,
-                            bilinear_params,
-                        )
-                    else
-                        Geometry.solveWeightsHyperb(
-                            nodes_coords,
-                            subpx_x,
-                            subpx_y,
-                            inv_elem_area,
-                        );
+                    };
                     ctx_report.recordSolverIters(result.iters);
 
-                    if (comptime Geometry.solver_kind == .newton and
-                        Geometry.seed_reuse == .last_converged)
-                    {
+                    if (comptime Geometry.seed_reuse == .last_converged) {
                         if (result.weights != null) {
                             newton.updateSeedState(
                                 &seed_state,
