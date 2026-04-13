@@ -35,7 +35,7 @@ const SubpxDomain = common.SubpxDomain;
 const RasterBounds = common.RasterBounds;
 const ScratchLayout = common.ScratchLayout;
 
-pub const scratch_layout = ScratchLayout.subpx_major;
+pub const scratch_layout = ScratchLayout.field_major;
 
 pub fn initSubpxScratch(
     arena_alloc: std.mem.Allocator,
@@ -50,8 +50,8 @@ pub fn initSubpxScratch(
     );
     const subpx_image_scratch = MatSlice(f64).init(
         subpx_img_mem,
-        subpx_tile_total,
         @as(usize, fields_num),
+        subpx_tile_total,
     );
 
     return .{
@@ -194,8 +194,8 @@ pub fn RasterPass(
         ) !u64 {
             const N = Geometry.nodes_num;
             const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-            std.debug.assert(subpx_scratch.image.cols_num <= std.math.maxInt(u8));
-            const fields_num: u8 = @intCast(subpx_scratch.image.cols_num);
+            std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
+            const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
 
             var shaded_px: u64 = 0;
 
@@ -323,9 +323,9 @@ pub fn RasterPass(
         ) !u64 {
             if (comptime Geometry.solver_kind != .newton) {
                 std.debug.assert(
-                    subpx_scratch.image.cols_num <= std.math.maxInt(u8),
+                    subpx_scratch.image.rows_num <= std.math.maxInt(u8),
                 );
-                const fields_num: u8 = @intCast(subpx_scratch.image.cols_num);
+                const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
 
                 return common.rasterDirectScalarCommon(
                     Geometry,
@@ -384,8 +384,8 @@ pub fn RasterPass(
             const N = Geometry.nodes_num;
             var shaded_px: u64 = 0;
             const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-            std.debug.assert(subpx_scratch.image.cols_num <= std.math.maxInt(u8));
-            const fields_num: u8 = @intCast(subpx_scratch.image.cols_num);
+            std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
+            const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
 
             var nodes_inv_z: [N]f64 = undefined;
             inline for (0..N) |nn| {

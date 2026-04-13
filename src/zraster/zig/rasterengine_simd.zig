@@ -23,6 +23,7 @@ const report = @import("report.zig");
 const ReportMode = report.ReportMode;
 const Timestamp = std.Io.Clock.Timestamp;
 const common = @import("rasterengine_common.zig");
+const simdops = @import("simdops.zig");
 
 const spec = @import("zraster.zig");
 const mr = @import("meshraster.zig");
@@ -62,18 +63,6 @@ const RasterBounds = common.RasterBounds;
 const ScratchLayout = common.ScratchLayout;
 
 pub const scratch_layout = ScratchLayout.field_major;
-
-inline fn loadVecSF(subpx_vals: []const f64, start_u: usize) VecSF {
-    // slice of a slice, equivalent to [start_u..start_u+S]
-    const lane_vals: [S]f64 = subpx_vals[start_u..][0..S].*;
-    return @as(VecSF, lane_vals);
-}
-
-inline fn storeVecSF(subpx_vals: []f64, start_u: usize, v_vals: VecSF) void {
-    const lane_vals: [S]f64 = @as([S]f64, v_vals);
-    // slice of a slice, equivalent to [start_u..start_u+S]
-    subpx_vals[start_u..][0..S].* = lane_vals;
-}
 
 pub fn initSubpxScratch(
     arena_alloc: std.mem.Allocator,
@@ -364,7 +353,7 @@ pub fn RasterPass(
                         }
 
                         const scratch_idx = row_offset + scratch_x_u;
-                        const v_old_inv_z = loadVecSF(
+                        const v_old_inv_z = simdops.loadVecSF(
                             subpx_scratch.inv_z,
                             scratch_idx,
                         );
@@ -380,7 +369,7 @@ pub fn RasterPass(
                                 v_inv_z,
                                 v_old_inv_z,
                             );
-                            storeVecSF(
+                            simdops.storeVecSF(
                                 subpx_scratch.inv_z,
                                 scratch_idx,
                                 v_new_inv_z,
@@ -834,7 +823,7 @@ pub fn RasterPass(
                         }
                         const v_inv_z: VecSF = @as(VecSF, @splat(1.0)) / v_sum_z;
 
-                        const v_old_inv_z = loadVecSF(
+                        const v_old_inv_z = simdops.loadVecSF(
                             subpx_scratch.inv_z,
                             scratch_idx,
                         );
@@ -848,7 +837,7 @@ pub fn RasterPass(
                                 v_inv_z,
                                 v_old_inv_z,
                             );
-                            storeVecSF(
+                            simdops.storeVecSF(
                                 subpx_scratch.inv_z,
                                 scratch_idx,
                                 v_new_inv_z,

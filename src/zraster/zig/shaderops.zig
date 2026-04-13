@@ -26,8 +26,3 @@ pub const fillNodalPerspSIMD = simd_impl.fillNodalPerspSIMD;
 pub const fillTexClipSIMD = simd_impl.fillTexClipSIMD;
 pub const fillTexPerspSIMD = simd_impl.fillTexPerspSIMD;
 pub const fillTexPerspSIMDTri3 = simd_impl.fillTexPerspSIMDTri3;
-
-pub const fillFlat = fillNodalClip;
-pub const fillFlatPersp = fillNodalPersp;
-pub const fillFlatSIMD = fillNodalClipSIMD;
-pub const fillFlatPerspSIMD = fillNodalPerspSIMD;

@@ -1,18 +1,24 @@
 const std = @import("std");
-const ndarray = @import("ndarray.zig");
-const NDArray = ndarray.NDArray;
-const MappedNDArray = ndarray.MappedNDArray;
-const iio = @import("imageio.zig");
-const Texture = iio.Texture;
-const texops = @import("textureops.zig");
-const InterpType = texops.InterpType;
-const meshio = @import("meshio.zig");
-const Field = meshio.Field;
-const imageops = @import("imageops.zig");
+
 const buildconfig = @import("buildconfig.zig");
 const cfg = buildconfig.config;
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
+
+const ndarray = @import("ndarray.zig");
+const NDArray = ndarray.NDArray;
+const MappedNDArray = ndarray.MappedNDArray;
+const MatSlice = @import("matslice.zig").MatSlice;
+
+const imageops = @import("imageops.zig");
+const iio = @import("imageio.zig");
+
+const Texture = iio.Texture;
+const texops = @import("textureops.zig");
+const InterpType = texops.InterpType;
+
+const meshio = @import("meshio.zig");
+const Field = meshio.Field;
 
 pub const ScaleOver = enum { within_frames, over_frames };
 pub const NormalType = enum { none, exact, averaged };
@@ -120,6 +126,22 @@ pub fn TexPrepared(comptime T: type, comptime channels: usize) type {
     };
 }
 
+pub const ShaderInput = union(enum) {
+    nodal: NodalInput,
+    tex_u8: TexInput(u8, 1),
+    tex_u16: TexInput(u16, 1),
+    tex_rgb_u8: TexInput(u8, 3),
+    tex_rgb_u16: TexInput(u16, 3),
+};
+
+pub const ShaderPrepared = union(enum) {
+    nodal: NodalPrepared,
+    tex_u8: TexPrepared(u8, 1),
+    tex_u16: TexPrepared(u16, 1),
+    tex_rgb_u8: TexPrepared(u8, 3),
+    tex_rgb_u16: TexPrepared(u16, 3),
+};
+
 pub fn ShadeContext(comptime N: usize) type {
     return struct {
         frame_idx: usize,
@@ -142,18 +164,104 @@ pub fn InterpData(comptime N: usize) type {
     };
 }
 
-pub const ShaderInput = union(enum) {
-    nodal: NodalInput,
-    tex_u8: TexInput(u8, 1),
-    tex_u16: TexInput(u16, 1),
-    tex_rgb_u8: TexInput(u8, 3),
-    tex_rgb_u16: TexInput(u16, 3),
-};
+pub inline fn fillNodalClip(
+    comptime N: usize,
+    ctx_shade: ShadeContext(N),
+    interp: InterpData(N),
+    sh: *const NodalPrepared,
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
+        const value = ctx_shade.shader_buf.interpolate(ff, interp.weights);
+        spx_image_scratch.slice[ff * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
+            value * sh.scale_mul + sh.scale_add;
+    }
+}
 
-pub const ShaderPrepared = union(enum) {
-    nodal: NodalPrepared,
-    tex_u8: TexPrepared(u8, 1),
-    tex_u16: TexPrepared(u16, 1),
-    tex_rgb_u8: TexPrepared(u8, 3),
-    tex_rgb_u16: TexPrepared(u16, 3),
-};
+pub inline fn fillNodalPersp(
+    comptime N: usize,
+    ctx_shade: ShadeContext(N),
+    interp: InterpData(N),
+    sh: *const NodalPrepared,
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
+        const base = ff * N;
+        var value: f64 = 0.0;
+        inline for (0..N) |nn| {
+            const inv_z = interp.nodes_inv_z[nn];
+            value += interp.weights[nn] *
+                ctx_shade.shader_buf.data[base + nn] *
+                inv_z;
+        }
+
+        const final_val = value * interp.sub_pixel_z;
+        spx_image_scratch.slice[ff * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
+            final_val * sh.scale_mul + sh.scale_add;
+    }
+}
+
+pub inline fn fillTexClip(
+    comptime N: usize,
+    comptime TexT: type,
+    comptime channels: usize,
+    interp_type: InterpType,
+    ctx_shade: ShadeContext(N),
+    interp: InterpData(N),
+    sh: *const TexPrepared(TexT, channels),
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    var tex_u: f64 = 0.0;
+    var tex_v: f64 = 0.0;
+    inline for (0..N) |nn| {
+        tex_u += interp.weights[nn] * ctx_shade.shader_buf.data[nn];
+        tex_v += interp.weights[nn] * ctx_shade.shader_buf.data[N + nn];
+    }
+
+    const sampled = texops.sampleGeneric(
+        channels,
+        interp_type,
+        sh.texture,
+        tex_u,
+        tex_v,
+    );
+
+    inline for (0..channels) |ch| {
+        spx_image_scratch.slice[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
+            sampled[ch] * sh.scale_mul + sh.scale_add;
+    }
+}
+
+pub inline fn fillTexPersp(
+    comptime N: usize,
+    comptime TexT: type,
+    comptime channels: usize,
+    interp_type: InterpType,
+    ctx_shade: ShadeContext(N),
+    interp: InterpData(N),
+    sh: *const TexPrepared(TexT, channels),
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    var tex_u: f64 = 0.0;
+    var tex_v: f64 = 0.0;
+    inline for (0..N) |nn| {
+        const inv_z = interp.nodes_inv_z[nn];
+        tex_u += interp.weights[nn] * ctx_shade.shader_buf.data[nn] * inv_z;
+        tex_v += interp.weights[nn] *
+            ctx_shade.shader_buf.data[N + nn] *
+            inv_z;
+    }
+
+    const sampled = texops.sampleGeneric(
+        channels,
+        interp_type,
+        sh.texture,
+        tex_u * interp.sub_pixel_z,
+        tex_v * interp.sub_pixel_z,
+    );
+
+    inline for (0..channels) |ch| {
+        spx_image_scratch.slice[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
+            sampled[ch] * sh.scale_mul + sh.scale_add;
+    }
+}
