@@ -86,7 +86,7 @@ pub const Config = struct {
 
 pub const config = Config{
     .simd = .on,
-    .simd_texture_interp = .inner,
+    .simd_texture_interp = .over_pixels,
     .simd_vector_width = 8,
     .max_nodal_fields = 8,
     .max_image_channels = 8,
