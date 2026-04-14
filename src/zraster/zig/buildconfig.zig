@@ -80,6 +80,7 @@ pub const Config = struct {
     max_nodal_fields: comptime_int = 8,
     max_image_channels: comptime_int = 8,
     newton_iter_max: comptime_int = 10,
+    interp_lut_size: comptime_int = 1024,
     precision: type = f64,
     tolerance: Tolerance = .{},
 };
@@ -91,6 +92,7 @@ pub const config = Config{
     .max_nodal_fields = 8,
     .max_image_channels = 8,
     .newton_iter_max = 10,
+    .interp_lut_size = 1024,
     .precision = f64,
     .tolerance = .{},
 };

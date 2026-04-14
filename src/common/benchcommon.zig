@@ -3,6 +3,7 @@ const zraster = @import("../zraster/zig/zraster.zig");
 const meshio = @import("../zraster/zig/meshio.zig");
 const iio = @import("../zraster/zig/imageio.zig");
 const uvio = @import("../zraster/zig/uvio.zig");
+const csvio = @import("../zraster/zig/csvio.zig");
 const mr = @import("../zraster/zig/meshraster.zig");
 const rops = @import("../zraster/zig/rasterops.zig");
 const rasterengine = @import("../zraster/zig/rasterengine.zig");
@@ -194,91 +195,44 @@ pub fn loadNDArrayFromCSV(
     requested_channels: usize,
     is_time_series: bool,
 ) !NDArray(f64) {
+    if (is_time_series) {
+        var base = try csvio.loadScalarCsv2D(outer_alloc, io, path);
+        defer {
+            outer_alloc.free(base.slice);
+            base.deinit(outer_alloc);
+        }
+
+        var arr = try NDArray(f64).initFlat(
+            outer_alloc,
+            &[_]usize{ 1, base.dims[0], requested_channels },
+        );
+        errdefer {
+            outer_alloc.free(arr.slice);
+            arr.deinit(outer_alloc);
+        }
+
+        for (0..base.dims[0]) |rr| {
+            for (0..requested_channels) |cc| {
+                arr.set(&[_]usize{ 0, rr, cc }, base.get(&[_]usize{ rr, cc }));
+            }
+        }
+        return arr;
+    }
+
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
+    const lines = try csvio.readCsvToList(aa, io, path);
 
-    const lines = try meshio.readCsvToList(aa, io, path);
-    if (lines.items.len == 0) return error.EmptyCsv;
-    const rows_num = lines.items.len;
-
-    var cols_num: usize = 0;
-    var first_line_iter = std.mem.splitScalar(u8, lines.items[0], ',');
-    while (first_line_iter.next()) |col_str| {
-        if (col_str.len > 0) cols_num += 1;
-    }
-
-    var arr: NDArray(f64) = undefined;
-    if (is_time_series) {
-        arr = try NDArray(f64).initFlat(
+    if (csvio.hasPackedChannels(lines.items[0])) {
+        return csvio.loadPackedCsv2DFromLines(
             outer_alloc,
-            &[_]usize{ 1, rows_num, requested_channels },
+            lines.items,
+            requested_channels,
         );
-    } else {
-        var has_colons = false;
-        var first_line_peek = std.mem.splitScalar(u8, lines.items[0], ',');
-        if (first_line_peek.next()) |first_col| {
-            if (std.mem.indexOfScalar(u8, first_col, ':')) |_| {
-                has_colons = true;
-            }
-        }
-
-        if (has_colons) {
-            arr = try NDArray(f64).initFlat(
-                outer_alloc,
-                &[_]usize{ rows_num, cols_num, requested_channels },
-            );
-        } else {
-            arr = try NDArray(f64).initFlat(
-                outer_alloc,
-                &[_]usize{ rows_num, requested_channels },
-            );
-        }
-    }
-    errdefer {
-        outer_alloc.free(arr.slice);
-        arr.deinit(outer_alloc);
     }
 
-    for (lines.items, 0..) |line, rr| {
-        var col_iter = std.mem.splitScalar(u8, line, ',');
-        var cc: usize = 0;
-        while (col_iter.next()) |col_str| {
-            if (col_str.len == 0) continue;
-            if (is_time_series) {
-                if (cc < requested_channels) {
-                    const val = try std.fmt.parseFloat(
-                        f64,
-                        std.mem.trim(u8, col_str, " "),
-                    );
-                    arr.set(&[_]usize{ 0, rr, cc }, val);
-                }
-            } else if (arr.dims.len == 3) {
-                var chan_iter = std.mem.splitScalar(u8, col_str, ':');
-                var ch: usize = 0;
-                while (chan_iter.next()) |chan_str| {
-                    if (ch < requested_channels) {
-                        const val = try std.fmt.parseFloat(
-                            f64,
-                            std.mem.trim(u8, chan_str, " "),
-                        );
-                        arr.set(&[_]usize{ rr, cc, ch }, val);
-                    }
-                    ch += 1;
-                }
-            } else {
-                if (cc < requested_channels) {
-                    const val = try std.fmt.parseFloat(
-                        f64,
-                        std.mem.trim(u8, col_str, " "),
-                    );
-                    arr.set(&[_]usize{ rr, cc }, val);
-                }
-            }
-            cc += 1;
-        }
-    }
-    return arr;
+    return csvio.loadScalarCsv2DFromLines(outer_alloc, lines.items);
 }
 
 pub fn runBenchmark(

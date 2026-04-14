@@ -16,6 +16,7 @@ pub const Texture = texops.Texture;
 const imageops = @import("imageops.zig");
 pub const ScaleStrategy = imageops.ScaleStrategy;
 pub const ScalingParams = imageops.ScalingParams;
+const csvio = @import("csvio.zig");
 
 const tmp_test_root_dir = "tmp-tests";
 const tmp_test_dir = "tmp-tests/imageio";
@@ -59,12 +60,12 @@ pub const ImageSaveOpts = struct {
 };
 
 pub fn loadImage(
-    comptime T: type,
-    comptime channels: usize,
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
     format: ImageFormat,
+    comptime T: type,
+    comptime channels: usize,
 ) !Texture(channels) {
     return switch (format) {
         .csv => try loadCSV(T, channels, allocator, io, path),
@@ -226,13 +227,6 @@ pub fn saveCSV(
     start_field: usize,
     opts: ImageSaveOpts,
 ) !void {
-    const csv_file = try out_dir.createFile(io, file_name, .{});
-    defer csv_file.close(io);
-
-    var write_buf: [4096]u8 = undefined;
-    var file_writer = csv_file.writer(io, &write_buf);
-    const writer = &file_writer.interface;
-
     const rows = image_arr.dims[1];
     const cols = image_arr.dims[2];
 
@@ -245,26 +239,45 @@ pub fn saveCSV(
         params_array[ch] = imageops.getScalingParams(&mat, opts.scaling);
     }
 
-    for (0..rows) |rr| {
-        for (0..cols) |cc| {
-            for (0..channels) |ch| {
-                const field_idx = start_field + ch;
-                const raw_val = image_arr.get(&[_]usize{ field_idx, rr, cc });
-                const params = params_array[ch];
+    const SaveCtx = struct {
+        image_arr: *const NDArray(f64),
+        start_field: usize,
+        opts: ImageSaveOpts,
+        params_array: [C]ScalingParams,
 
-                var val = imageops.applyScaling(raw_val, opts.scaling, opts.bits, params);
-                if (opts.scaling == .none and opts.bits != null) {
-                    val = imageops.applyClamping(val, opts.bits);
-                }
-                try writer.print("{d}", .{val});
-                if (ch < channels - 1) try writer.writeByte(':');
+        fn getVal(ctx: @This(), row: usize, col: usize, ch: usize) f64 {
+            const field_idx = ctx.start_field + ch;
+            const raw_val = ctx.image_arr.get(&[_]usize{ field_idx, row, col });
+            const params = ctx.params_array[ch];
+
+            var val = imageops.applyScaling(
+                raw_val,
+                ctx.opts.scaling,
+                ctx.opts.bits,
+                params,
+            );
+            if (ctx.opts.scaling == .none and ctx.opts.bits != null) {
+                val = imageops.applyClamping(val, ctx.opts.bits);
             }
-            try writer.writeByte(',');
+            return val;
         }
-        try writer.print("\n", .{});
-    }
+    };
 
-    try writer.flush();
+    try csvio.savePackedGridCSV(
+        io,
+        out_dir,
+        file_name,
+        rows,
+        cols,
+        channels,
+        SaveCtx{
+            .image_arr = image_arr,
+            .start_field = start_field,
+            .opts = opts,
+            .params_array = params_array,
+        },
+        SaveCtx.getVal,
+    );
 }
 
 pub fn saveBMP(
@@ -546,51 +559,28 @@ pub fn loadCSV(
     path: []const u8,
 ) !Texture(channels) {
     _ = T;
-    const cwd = std.Io.Dir.cwd();
-    const file = try cwd.openFile(io, path, .{ .mode = .read_only });
-    defer file.close(io);
-
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
-    const aa = arena.allocator();
-
-    var read_buf: [4096]u8 = undefined;
-    var file_reader = file.reader(io, &read_buf);
-    const reader = &file_reader.interface;
-
-    var lines: std.ArrayList([]const u8) = .{};
-    while (try reader.takeDelimiter('\n')) |line| {
-        const line_trimmed = std.mem.trim(u8, line, " \r\t");
-        if (line_trimmed.len == 0) continue;
-        const line_dup = try aa.dupe(u8, line_trimmed);
-        try lines.append(aa, line_dup);
+    const array = if (channels == 1)
+        try csvio.loadScalarCsv2D(allocator, io, path)
+    else
+        try csvio.loadPackedCsv2D(allocator, io, path, channels);
+    defer {
+        allocator.free(array.slice);
+        var tmp = array;
+        tmp.deinit(allocator);
     }
 
-    if (lines.items.len == 0) return error.EmptyFile;
-
-    const rows = lines.items.len;
-    var first_line_iter = std.mem.splitScalar(u8, lines.items[0], ',');
-    var cols: usize = 0;
-    while (first_line_iter.next()) |val| {
-        if (val.len > 0) cols += 1;
-    }
-
+    const rows = array.dims[0];
+    const cols = array.dims[1];
     var texture = try Texture(channels).init(allocator, rows, cols);
     errdefer texture.deinit(allocator);
 
-    for (lines.items, 0..) |line, rr| {
-        var col_iter = std.mem.splitScalar(u8, line, ',');
+    for (0..rows) |rr| {
         for (0..cols) |cc| {
-            const val_str = col_iter.next() orelse break;
-            if (val_str.len == 0) continue;
-
-            var vals_iter = std.mem.splitScalar(u8, val_str, ':');
             for (0..channels) |ch| {
-                const ch_val_str = vals_iter.next() orelse "0";
-                const val = try std.fmt.parseFloat(
-                    f64,
-                    std.mem.trim(u8, ch_val_str, " \t\r"),
-                );
+                const val = if (channels == 1)
+                    array.get(&[_]usize{ rr, cc })
+                else
+                    array.get(&[_]usize{ rr, cc, ch });
                 texture.setVal(ch, rr, cc, val);
             }
         }
@@ -933,12 +923,12 @@ test "Verify hand-written TIFF loader" {
     );
 
     var tex_zig = try loadImage(
-        u8,
-        1,
         allocator,
         io,
         tmp_test_dir ++ "/speckle-simple.tiff",
         .tiff,
+        u8,
+        1,
     );
     defer tex_zig.deinit(allocator);
 
@@ -1010,12 +1000,26 @@ test "Save and Load All Formats 8-bit and 16-bit" {
 
             // 2. Load back into u8 or u16
             if (bits == 8) {
-                var loaded = try loadImage(u8, 1, allocator, io, full_path, fmt);
+                var loaded = try loadImage(
+                    allocator,
+                    io,
+                    full_path,
+                    fmt,
+                    u8,
+                    1,
+                );
                 defer loaded.deinit(allocator);
                 try testing.expectEqual(rows, loaded.rows_num);
                 try testing.expectEqual(cols, loaded.cols_num);
             } else {
-                var loaded = try loadImage(u16, 1, allocator, io, full_path, fmt);
+                var loaded = try loadImage(
+                    allocator,
+                    io,
+                    full_path,
+                    fmt,
+                    u16,
+                    1,
+                );
                 defer loaded.deinit(allocator);
                 try testing.expectEqual(rows, loaded.rows_num);
                 try testing.expectEqual(cols, loaded.cols_num);
@@ -1051,12 +1055,12 @@ test "Scaling Strategy: Fractional" {
     try saveMatAsImage(io, cwd, tmp_test_dir ++ "/test_frac_float", &mat, opts1);
 
     var loaded1 = try loadImage(
-        f64,
-        1,
         allocator,
         io,
         tmp_test_dir ++ "/test_frac_float.csv",
         .csv,
+        f64,
+        1,
     );
     defer loaded1.deinit(allocator);
     try testing.expectApproxEqAbs(loaded1.getVal(0, 0, 0), 0.4, 1e-6);
@@ -1073,12 +1077,12 @@ test "Scaling Strategy: Fractional" {
     try saveMatAsImage(io, cwd, tmp_test_dir ++ "/test_frac_bits", &mat, opts2);
 
     var loaded2 = try loadImage(
-        f64,
-        1,
         allocator,
         io,
         tmp_test_dir ++ "/test_frac_bits.csv",
         .csv,
+        f64,
+        1,
     );
     defer loaded2.deinit(allocator);
     try testing.expectApproxEqAbs(loaded2.getVal(0, 0, 0), 0.4 * 255.0, 1e-6);

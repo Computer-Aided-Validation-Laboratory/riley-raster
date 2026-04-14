@@ -9,6 +9,7 @@ const expectEqualSlices = testing.expectEqualSlices;
 
 const VecSlice = @import("vecslice.zig").VecSlice;
 const sliceops = @import("sliceops.zig");
+const csvio = @import("csvio.zig");
 
 pub fn MatSlice(comptime T: type) type {
     return struct {
@@ -186,20 +187,21 @@ pub fn MatSlice(comptime T: type) type {
             out_dir: std.Io.Dir,
             file_name: []const u8,
         ) !void {
-            const csv_file = try out_dir.createFile(io, file_name, .{});
-            defer csv_file.close(io);
-
-            var write_buf: [4096]u8 = undefined;
-            var file_writer = csv_file.writer(io, &write_buf);
-            const writer = &file_writer.interface;
-
-            for (0..self.rows_num) |rr| {
-                for (0..self.cols_num) |cc| {
-                    try writer.print("{d},", .{self.get(rr, cc)});
+            const SaveCtx = struct {
+                fn getVal(ctx: *const Self, row: usize, col: usize) T {
+                    return ctx.get(row, col);
                 }
-                try writer.print("\n", .{});
-            }
-            try writer.flush();
+            };
+
+            try csvio.saveScalarGridCSV(
+                io,
+                out_dir,
+                file_name,
+                self.rows_num,
+                self.cols_num,
+                self,
+                SaveCtx.getVal,
+            );
         }
     };
 }

@@ -383,12 +383,12 @@ pub fn meshInputFromSimDataSlice(
                 .tiff;
 
             const texture = try imageio.loadImage(
-                u8,
-                1,
                 outer_alloc,
                 io,
                 texture_path.?,
                 format,
+                u8,
+                1,
             );
 
             mesh_inputs[ii].shader = .{ .tex_u8 = .{

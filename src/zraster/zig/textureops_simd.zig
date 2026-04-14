@@ -1,16 +1,17 @@
 const std = @import("std");
+
 const buildconfig = @import("buildconfig.zig");
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const VecSI = buildconfig.VecSI;
 const VecSU = buildconfig.VecSU;
+const lut_size = buildconfig.config.interp_lut_size;
 const tol = buildconfig.config.tolerance;
-const common = @import("textureops_common.zig");
 
+const common = @import("textureops_common.zig");
 pub const InterpType = common.InterpType;
 pub const Texture = common.Texture;
-const LUT_SIZE = common.LUT_SIZE;
 const cubic_lut = common.cubic_lut;
 const quintic_lut = common.quintic_lut;
 const cubicWeightPoly = common.cubicWeightPoly;
@@ -20,8 +21,6 @@ const getPx = common.getPx;
 
 pub const sampleGeneric = common.sampleGeneric;
 pub const sampleGreyscale = common.sampleGreyscale;
-
-// --- Internal Helpers ---
 
 fn v_getPxSIMD(
     comptime channels: usize,
@@ -315,10 +314,10 @@ pub fn sampleOverPixelsSIMD(
                     var wy_arr: [4][S]f64 = undefined;
                     for (0..S) |ii| {
                         const ix = @as(usize, @intFromFloat(
-                            tx_arr[ii] * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                            tx_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
                         ));
                         const iy = @as(usize, @intFromFloat(
-                            ty_arr[ii] * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                            ty_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
                         ));
                         inline for (0..4) |kk| {
                             wx_arr[kk][ii] = cubic_lut[ix][kk];
@@ -425,10 +424,10 @@ pub fn sampleOverPixelsSIMD(
                     var wy_arr: [6][S]f64 = undefined;
                     for (0..S) |ii| {
                         const ix = @as(usize, @intFromFloat(
-                            tx_arr[ii] * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                            tx_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
                         ));
                         const iy = @as(usize, @intFromFloat(
-                            ty_arr[ii] * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                            ty_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
                         ));
                         inline for (0..6) |kk| {
                             wx_arr[kk][ii] = quintic_lut[ix][kk];
@@ -555,10 +554,10 @@ pub fn samplePerPixelInnerSIMD(
         },
         .cubic_lut => {
             const idx_tx = @as(usize, @intFromFloat(
-                tx * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                tx * @as(f64, @floatFromInt(lut_size - 1)),
             ));
             const idx_ty = @as(usize, @intFromFloat(
-                ty * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                ty * @as(f64, @floatFromInt(lut_size - 1)),
             ));
             return sample2DInnerSIMD(
                 channels,
@@ -596,10 +595,10 @@ pub fn samplePerPixelInnerSIMD(
         },
         .quintic_lut => {
             const idx_tx = @as(usize, @intFromFloat(
-                tx * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                tx * @as(f64, @floatFromInt(lut_size - 1)),
             ));
             const idx_ty = @as(usize, @intFromFloat(
-                ty * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                ty * @as(f64, @floatFromInt(lut_size - 1)),
             ));
             return sample2DInnerSIMD(
                 channels,

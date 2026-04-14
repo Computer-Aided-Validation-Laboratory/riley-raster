@@ -17,21 +17,21 @@ test "Unified Benchmark Tests" {
     const io = io_threaded.io();
 
     const texture_grey = try iio.loadImage(
-        u8,
-        1,
         outer_alloc,
         io,
         "texture/speckle.bmp",
         .bmp,
+        u8,
+        1,
     );
     defer texture_grey.deinit(outer_alloc);
     const texture_rgb = try iio.loadImage(
-        u8,
-        3,
         outer_alloc,
         io,
         "texture/speckle_rgb.bmp",
         .bmp,
+        u8,
+        3,
     );
     defer texture_rgb.deinit(outer_alloc);
 

@@ -8,6 +8,7 @@ const slice = @import("sliceops.zig");
 
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
+const csvio = @import("csvio.zig");
 
 pub const Coords = struct {
     mat: MatSlice(f64),
@@ -146,25 +147,7 @@ pub fn readCsvToList(
     io: std.Io,
     path: []const u8,
 ) !std.ArrayList([]const u8) {
-    const cwd: std.Io.Dir = std.Io.Dir.cwd();
-    var file: std.Io.File = try cwd.openFile(io, path, .{ .mode = .read_only });
-    defer file.close(io);
-
-    var read_buff: [8 * 1024 * 1024]u8 = undefined;
-    var file_reader: std.Io.File.Reader = file.reader(io, &read_buff);
-    const reader = &file_reader.interface;
-
-    // Read lines without the trailing '\n' (exclusive).
-    var lines: std.ArrayList([]const u8) = .{};
-
-    while (try reader.takeDelimiter('\n')) |line| {
-        const line_trimmed = std.mem.trim(u8, line, " \r\t");
-        if (line_trimmed.len == 0) continue;
-        const line_dup = try outer_alloc.dupe(u8, line_trimmed);
-        try lines.append(outer_alloc, line_dup);
-    }
-
-    return lines;
+    return csvio.readCsvToList(outer_alloc, io, path);
 }
 
 pub fn parseCoords(

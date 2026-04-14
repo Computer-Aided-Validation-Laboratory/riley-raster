@@ -1,7 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const NDArray = @import("ndarray.zig").NDArray;
-const meshio = @import("meshio.zig");
+const csvio = @import("csvio.zig");
 
 pub const UVMap = struct {
     array: NDArray(f64),
@@ -56,29 +56,13 @@ pub fn loadUVs(
     io: std.Io,
     path: []const u8,
 ) !NDArray(f64) {
-    var arena = std.heap.ArenaAllocator.init(outer_alloc);
-    defer arena.deinit();
-    const arena_alloc = arena.allocator();
+    const uv_arr = try csvio.loadScalarCsv2D(outer_alloc, io, path);
 
-    const lines = try meshio.readCsvToList(arena_alloc, io, path);
-    const nodes_num = lines.items.len;
-
-    var uv_arr = try NDArray(f64).initFlat(outer_alloc, &[_]usize{ nodes_num, 2 });
-    errdefer {
+    if (uv_arr.dims.len != 2 or uv_arr.dims[1] != 2) {
         outer_alloc.free(uv_arr.slice);
-        uv_arr.deinit(outer_alloc);
-    }
-
-    for (lines.items, 0..) |line, i| {
-        var split_iter = std.mem.splitScalar(u8, line, ',');
-        const u_str = split_iter.next() orelse return error.InvalidCsvFormat;
-        const v_str = split_iter.next() orelse return error.InvalidCsvFormat;
-
-        const u = try std.fmt.parseFloat(f64, std.mem.trim(u8, u_str, " "));
-        const v = try std.fmt.parseFloat(f64, std.mem.trim(u8, v_str, " "));
-
-        uv_arr.set(&[_]usize{ i, 0 }, u);
-        uv_arr.set(&[_]usize{ i, 1 }, v);
+        var tmp = uv_arr;
+        tmp.deinit(outer_alloc);
+        return error.InvalidCsvFormat;
     }
 
     return uv_arr;

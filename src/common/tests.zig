@@ -21,6 +21,7 @@ pub const iio = @import("../zraster/zig/imageio.zig");
 pub const texops = @import("../zraster/zig/textureops.zig");
 pub const uvio = @import("../zraster/zig/uvio.zig");
 pub const buildconfig = @import("../zraster/zig/buildconfig.zig");
+pub const csvio = @import("../zraster/zig/csvio.zig");
 
 const default_fails_root = "fails";
 const impl_suffix = if (buildconfig.config.simd == .on) "_simd" else "_scalar";
@@ -52,37 +53,28 @@ pub fn compareNDArrayToCSV(
     rel_tol: f64,
     abs_tol: f64,
 ) !void {
-    var lines = try meshio.readCsvToList(allocator, io, path);
+    var gold = try csvio.loadScalarCsv2D(allocator, io, path);
     defer {
-        for (lines.items) |line| allocator.free(line);
-        lines.deinit(allocator);
+        allocator.free(gold.slice);
+        gold.deinit(allocator);
     }
 
     const rows = array.dims[2];
     const cols = array.dims[3];
 
-    if (lines.items.len != rows) {
+    if (gold.dims[0] != rows) {
         std.debug.print(
             "Row count mismatch: CSV has {d}, array expects {d} (path: {s})\n",
-            .{ lines.items.len, rows, path },
+            .{ gold.dims[0], rows, path },
         );
         return error.CSVRowsMismatch;
     }
 
-    for (lines.items, 0..) |line, r| {
-        var iter = std.mem.splitScalar(u8, line, ',');
+    if (gold.dims[1] != cols) return error.CSVColsMismatch;
+
+    for (0..rows) |r| {
         for (0..cols) |c| {
-            const val_str = iter.next() orelse {
-                std.debug.print(
-                    "Column count mismatch at row {d}: missing value (path: {s})\n",
-                    .{ r, path },
-                );
-                return error.CSVColsMismatch;
-            };
-            const gold_val = try std.fmt.parseFloat(
-                f64,
-                std.mem.trim(u8, val_str, " \r\n\t"),
-            );
+            const gold_val = gold.get(&[_]usize{ r, c });
             const actual_val = array.get(&[_]usize{ frame, field, r, c });
 
             if (!isApproxEqual(gold_val, actual_val, rel_tol, abs_tol)) {
@@ -115,49 +107,29 @@ pub fn compareNDArrayToCSVRGB(
     rel_tol: f64,
     abs_tol: f64,
 ) !void {
-    var lines = try meshio.readCsvToList(allocator, io, path);
+    var gold = try csvio.loadPackedCsv2D(allocator, io, path, 3);
     defer {
-        for (lines.items) |line| allocator.free(line);
-        lines.deinit(allocator);
+        allocator.free(gold.slice);
+        gold.deinit(allocator);
     }
 
     const rows = array.dims[2];
     const cols = array.dims[3];
 
-    if (lines.items.len != rows) {
+    if (gold.dims[0] != rows) {
         std.debug.print(
             "Row count mismatch: CSV has {d}, array expects {d} (path: {s})\n",
-            .{ lines.items.len, rows, path },
+            .{ gold.dims[0], rows, path },
         );
         return error.CSVRowsMismatch;
     }
 
-    for (lines.items, 0..) |line, r| {
-        var iter = std.mem.splitScalar(u8, line, ',');
+    if (gold.dims[1] != cols) return error.CSVColsMismatch;
+
+    for (0..rows) |r| {
         for (0..cols) |c| {
-            const pixel_str = iter.next() orelse {
-                std.debug.print(
-                    "Column count mismatch at row {d}: missing value (path: {s})\n",
-                    .{ r, path },
-                );
-                return error.CSVColsMismatch;
-            };
-
-            var sub_iter = std.mem.splitScalar(u8, pixel_str, ':');
             for (0..3) |cc| {
-                const val_str = sub_iter.next() orelse {
-                    std.debug.print(
-                        "Channel mismatch at row {d}, col {d}: " ++
-                            "missing channel {d} (path: {s})\n",
-                        .{ r, c, cc, path },
-                    );
-                    return error.CSVChannelsMismatch;
-                };
-
-                const gold_val = try std.fmt.parseFloat(
-                    f64,
-                    std.mem.trim(u8, val_str, " \r\n\t"),
-                );
+                const gold_val = gold.get(&[_]usize{ r, c, cc });
                 const actual_val = array.get(&[_]usize{ frame, field_start + cc, r, c });
 
                 if (!isApproxEqual(gold_val, actual_val, rel_tol, abs_tol)) {
@@ -287,51 +259,7 @@ fn loadImageFromCSV(
     path: []const u8,
     channels: usize,
 ) !NDArray(f64) {
-    var lines = try meshio.readCsvToList(allocator, io, path);
-    defer {
-        for (lines.items) |line| allocator.free(line);
-        lines.deinit(allocator);
-    }
-
-    const rows = lines.items.len;
-    if (rows == 0) return error.EmptyCsv;
-
-    var cols: usize = 0;
-    var first_iter = std.mem.splitScalar(u8, lines.items[0], ',');
-    while (first_iter.next()) |pixel_str| {
-        if (pixel_str.len > 0) cols += 1;
-    }
-
-    var image = try NDArray(f64).initFlat(allocator, &[_]usize{ rows, cols, channels });
-
-    for (lines.items, 0..) |line, rr| {
-        var pixel_iter = std.mem.splitScalar(u8, line, ',');
-        var cc: usize = 0;
-        while (pixel_iter.next()) |pixel_str| {
-            if (pixel_str.len == 0) continue;
-            if (channels == 1) {
-                const value = try std.fmt.parseFloat(
-                    f64,
-                    std.mem.trim(u8, pixel_str, " \r\n\t"),
-                );
-                image.set(&[_]usize{ rr, cc, 0 }, value);
-            } else {
-                var chan_iter = std.mem.splitScalar(u8, pixel_str, ':');
-                for (0..channels) |ch| {
-                    const chan_str = chan_iter.next() orelse
-                        return error.CSVChannelsMismatch;
-                    const value = try std.fmt.parseFloat(
-                        f64,
-                        std.mem.trim(u8, chan_str, " \r\n\t"),
-                    );
-                    image.set(&[_]usize{ rr, cc, ch }, value);
-                }
-            }
-            cc += 1;
-        }
-    }
-
-    return image;
+    return csvio.loadPackedCsv2D(allocator, io, path, channels);
 }
 
 pub fn calculateDiffImage(
@@ -352,29 +280,31 @@ fn saveImageCSV(
     path: []const u8,
     image: *const NDArray(f64),
 ) !void {
-    var file = try dir.createFile(io, path, .{});
-    defer file.close(io);
-
-    var write_buf: [4096]u8 = undefined;
-    var file_writer = file.writer(io, &write_buf);
-    const writer = &file_writer.interface;
-
     const rows = image.dims[0];
     const cols = image.dims[1];
     const channels = image.dims[2];
 
-    for (0..rows) |rr| {
-        for (0..cols) |cc| {
-            for (0..channels) |ch| {
-                try writer.print("{d}", .{image.get(&[_]usize{ rr, cc, ch })});
-                if (ch + 1 < channels) try writer.writeAll(":");
-            }
-            if (cc + 1 < cols) try writer.writeAll(",");
+    const SaveCtx = struct {
+        fn getVal(
+            ctx: *const NDArray(f64),
+            row: usize,
+            col: usize,
+            ch: usize,
+        ) f64 {
+            return ctx.get(&[_]usize{ row, col, ch });
         }
-        try writer.writeAll("\n");
-    }
+    };
 
-    try file_writer.flush();
+    try csvio.savePackedGridCSV(
+        io,
+        dir,
+        path,
+        rows,
+        cols,
+        channels,
+        image,
+        SaveCtx.getVal,
+    );
 }
 
 fn makeBMPImageArray(
@@ -929,12 +859,12 @@ pub fn runMultimeshMixedTestExt(
 
     const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
     const texture = try iio.loadImage(
-        u8,
-        1,
         aa,
         io,
         "texture/speckle-simple.tiff",
         .tiff,
+        u8,
+        1,
     );
 
     var mesh_inputs = try aa.alloc(MeshInput, 10);
@@ -1099,12 +1029,12 @@ pub fn runMultimeshMixedRGBTestExt(
 
     const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
     const texture = try iio.loadImage(
-        u8,
-        3,
         aa,
         io,
         "texture/speckle_rgb.bmp",
         .bmp,
+        u8,
+        3,
     );
 
     var mesh_inputs = try aa.alloc(MeshInput, 10);

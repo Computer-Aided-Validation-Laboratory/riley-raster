@@ -10,6 +10,7 @@ const MeshInput = @import("zraster/zig/meshraster.zig").MeshInput;
 const mr = @import("zraster/zig/meshraster.zig");
 const MatSlice = @import("zraster/zig/matslice.zig").MatSlice;
 const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
+const csvio = @import("zraster/zig/csvio.zig");
 
 pub fn loadNDArrayFromCSVRGB(
     allocator: std.mem.Allocator,
@@ -18,28 +19,20 @@ pub fn loadNDArrayFromCSVRGB(
     rows: usize,
     cols: usize,
 ) !NDArray(f64) {
-    var lines = try meshio.readCsvToList(allocator, io, path);
+    var image = try csvio.loadPackedCsv2D(allocator, io, path, 3);
     defer {
-        for (lines.items) |line| allocator.free(line);
-        lines.deinit(allocator);
+        allocator.free(image.slice);
+        image.deinit(allocator);
     }
 
-    if (lines.items.len != rows) return error.CSVRowsMismatch;
+    if (image.dims[0] != rows) return error.CSVRowsMismatch;
+    if (image.dims[1] != cols) return error.CSVColsMismatch;
 
     var array = try NDArray(f64).initFlat(allocator, &[_]usize{ 1, 3, rows, cols });
-
-    for (lines.items, 0..) |line, r| {
-        var iter = std.mem.splitScalar(u8, line, ',');
-        for (0..cols) |c| {
-            const pixel_str = iter.next() orelse return error.CSVColsMismatch;
-            var sub_iter = std.mem.splitScalar(u8, pixel_str, ':');
-            for (0..3) |cc| {
-                const val_str = sub_iter.next() orelse return error.CSVChannelsMismatch;
-                const val = try std.fmt.parseFloat(
-                    f64,
-                    std.mem.trim(u8, val_str, " \r\n\t"),
-                );
-                array.set(&[_]usize{ 0, cc, r, c }, val);
+    for (0..rows) |rr| {
+        for (0..cols) |cc| {
+            for (0..3) |ch| {
+                array.set(&[_]usize{ 0, ch, rr, cc }, image.get(&[_]usize{ rr, cc, ch }));
             }
         }
     }

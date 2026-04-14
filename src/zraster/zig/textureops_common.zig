@@ -1,7 +1,9 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const tol = buildconfig.config.tolerance;
+const lut_size = buildconfig.config.interp_lut_size;
 const NDArray = @import("ndarray.zig").NDArray;
+const csvio = @import("csvio.zig");
 
 pub const InterpType = enum {
     linear,
@@ -67,83 +69,101 @@ pub fn Texture(comptime channels: usize) type {
             out_dir: std.Io.Dir,
             file_name: []const u8,
         ) !void {
-            const csv_file = try out_dir.createFile(io, file_name, .{});
-            defer csv_file.close(io);
-
-            var writer = csv_file.writerStreaming(&.{});
-            defer writer.deinit();
-
-            for (0..self.rows_num) |rr| {
-                for (0..self.cols_num) |cc| {
-                    for (0..channels) |ch| {
-                        try writer.print("{d}", .{self.getVal(ch, rr, cc)});
-                        if (ch < channels - 1) {
-                            try writer.writeAll(":");
-                        }
-                    }
-                    try writer.writeAll(",");
+            const SaveCtx = struct {
+                fn getVal(
+                    ctx: *const Self,
+                    row: usize,
+                    col: usize,
+                    ch: usize,
+                ) f64 {
+                    return ctx.getVal(ch, row, col);
                 }
-                try writer.print("\n", .{});
-            }
-            try writer.flush();
+            };
+
+            try csvio.savePackedGridCSV(
+                io,
+                out_dir,
+                file_name,
+                self.rows_num,
+                self.cols_num,
+                channels,
+                self,
+                SaveCtx.getVal,
+            );
         }
     };
 }
 
 pub fn cubicWeightPoly(x: f64) f64 {
-    const ax = @abs(x);
-    if (ax <= 1.0) {
-        return ((1.5 * ax - 2.5) * ax + 0.0) * ax + 1.0;
-    } else if (ax < 2.0) {
-        return ((-0.5 * ax + 2.5) * ax - 4.0) * ax + 2.0;
+    const abs_x = @abs(x);
+    if (abs_x <= 1.0) {
+        return ((1.5 * abs_x - 2.5) * abs_x + 0.0) * abs_x + 1.0;
+    } else if (abs_x < 2.0) {
+        return ((-0.5 * abs_x + 2.5) * abs_x - 4.0) * abs_x + 2.0;
     }
     return 0.0;
 }
 
 pub fn quinticWeightSinc(x: f64) f64 {
-    const ax = @abs(x);
-    if (ax < tol.texture.quintic_centre_snap) return 1.0;
-    if (ax >= 3.0) return 0.0;
-    const pix = std.math.pi * x;
-    const pix3 = pix / 3.0;
-    return (std.math.sin(pix) / pix) * (std.math.sin(pix3) / pix3);
+    const abs_x = @abs(x);
+    if (abs_x < tol.texture.quintic_centre_snap) return 1.0;
+    if (abs_x >= 3.0) return 0.0;
+    const pi_x = std.math.pi * x;
+    const pi_x_3 = pi_x / 3.0;
+    return (std.math.sin(pi_x) / pi_x) * (std.math.sin(pi_x_3) / pi_x_3);
 }
 
+// pub fn quinticWeightPoly(x: f64) f64 {
+//     const abs_x = @abs(x);
+//     if (abs_x >= 3.0) return 0.0;
+//     if (abs_x <= 1.0) {
+//         return ((((-0.416666 * abs_x + 1.0) * abs_x + 0.583333) * abs_x - 1.5) *
+//             abs_x - 0.083333) * abs_x + 1.0;
+//     } else if (abs_x <= 2.0) {
+//         const t = abs_x - 1.0;
+//         return ((((0.25 * t - 0.833333) * t + 0.416666) * t + 0.5) *
+//             t - 0.083333) * t + 0.0;
+//     } else {
+//         const t = abs_x - 2.0;
+//         return ((((-0.008333 * t + 0.083333) * t - 0.041666) * t - 0.083333) *
+//             t + 0.041666) * t + 0.0;
+//     }
+// }
+
 pub fn quinticWeightPoly(x: f64) f64 {
-    const ax = @abs(x);
-    if (ax >= 3.0) return 0.0;
-    if (ax <= 1.0) {
-        return ((((-0.416666 * ax + 1.0) * ax + 0.583333) * ax - 1.5) *
-            ax - 0.083333) * ax + 1.0;
-    } else if (ax <= 2.0) {
-        const t = ax - 1.0;
-        return ((((0.25 * t - 0.833333) * t + 0.416666) * t + 0.5) *
-            t - 0.083333) * t + 0.0;
+    const r = @abs(x);
+
+    if (r >= 3.0) return 0.0;
+
+    if (r <= 1.0) {
+        return ((((-(1.0 / 12.0) * r + (1.0 / 4.0)) * r + 0.0) * r
+            - (1.0 / 2.0)) * r + 0.0) * r + (11.0 / 20.0);
+    } else if (r <= 2.0) {
+        const t = r - 1.0;
+        return (((((1.0 / 24.0) * t - (1.0 / 6.0)) * t + (1.0 / 6.0)) * t
+            + (1.0 / 6.0)) * t - (5.0 / 12.0)) * t + (13.0 / 60.0);
     } else {
-        const t = ax - 2.0;
-        return ((((-0.008333 * t + 0.083333) * t - 0.041666) * t - 0.083333) *
-            t + 0.041666) * t + 0.0;
+        const u = r - 2.0;
+        return (((((-(1.0 / 120.0) * u + (1.0 / 24.0)) * u - (1.0 / 12.0)) * u
+            + (1.0 / 12.0)) * u - (1.0 / 24.0)) * u + (1.0 / 120.0));
     }
 }
 
-pub const LUT_SIZE = 1024;
-
 pub const cubic_lut = blk: {
     @setEvalBranchQuota(100000);
-    var table: [LUT_SIZE][4]f64 = undefined;
-    for (0..LUT_SIZE) |ii| {
-        const tt = @as(f64, @floatFromInt(ii)) /
-            @as(f64, @floatFromInt(LUT_SIZE));
+    var table: [lut_size][4]f64 = undefined;
+    for (0..lut_size) |ii| {
+        const tt = @as(f64, @floatFromInt(ii)) / @as(f64, @floatFromInt(lut_size));
         for (0..4) |jj| {
             const xx = @as(f64, @floatFromInt(jj)) - 1.0 - tt;
-            const ax = @abs(xx);
+            const abs_x = @abs(xx);
             const a = -0.5;
-            if (ax <= 1.0) {
-                table[ii][jj] = (a + 2.0) * ax * ax * ax -
-                    (a + 3.0) * ax * ax + 1.0;
-            } else if (ax < 2.0) {
-                table[ii][jj] = a * ax * ax * ax - 5.0 * a * ax * ax +
-                    8.0 * a * ax - 4.0 * a;
+            if (abs_x <= 1.0) {
+                table[ii][jj] = (a + 2.0) * abs_x * abs_x * abs_x -
+                    (a + 3.0) * abs_x * abs_x + 1.0;
+            } else if (abs_x < 2.0) {
+                table[ii][jj] = a * abs_x * abs_x * abs_x - 5.0 * a * abs_x * abs_x +
+                    8.0 * a * abs_x - 4.0 * a;
             } else {
                 table[ii][jj] = 0.0;
             }
@@ -154,10 +174,10 @@ pub const cubic_lut = blk: {
 
 pub const quintic_lut = blk: {
     @setEvalBranchQuota(100000);
-    var table: [LUT_SIZE][6]f64 = undefined;
-    for (0..LUT_SIZE) |ii| {
+    var table: [lut_size][6]f64 = undefined;
+    for (0..lut_size) |ii| {
         const tt = @as(f64, @floatFromInt(ii)) /
-            @as(f64, @floatFromInt(LUT_SIZE));
+            @as(f64, @floatFromInt(lut_size));
         for (0..6) |jj| {
             table[ii][jj] = quinticWeightSinc(
                 @as(f64, @floatFromInt(jj)) - 2.0 - tt,
@@ -226,15 +246,15 @@ pub fn sample2D(
 
 pub fn getLerpWeights(
     comptime N: usize,
-    comptime table: [LUT_SIZE][N]f64,
+    comptime table: [lut_size][N]f64,
     t: f64,
 ) [N]f64 {
-    const scaled = t * (LUT_SIZE - 1);
+    const scaled = t * (lut_size - 1);
     const idx = @as(usize, @intFromFloat(@floor(scaled)));
     const frac = scaled - @as(f64, @floatFromInt(idx));
     var res: [N]f64 = undefined;
     const w0 = table[idx];
-    const w1 = table[@min(idx + 1, LUT_SIZE - 1)];
+    const w1 = table[@min(idx + 1, lut_size - 1)];
     inline for (0..N) |ii| {
         res[ii] = w0[ii] * (1.0 - frac) + w1[ii] * frac;
     }
@@ -299,12 +319,12 @@ pub fn sampleGeneric(
             y_i,
             cubic_lut[
                 @as(usize, @intFromFloat(
-                    tx * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                    tx * @as(f64, @floatFromInt(lut_size - 1)),
                 ))
             ],
             cubic_lut[
                 @as(usize, @intFromFloat(
-                    ty * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                    ty * @as(f64, @floatFromInt(lut_size - 1)),
                 ))
             ],
         ),
@@ -338,10 +358,10 @@ pub fn sampleGeneric(
         ),
         .quintic_lut => {
             const idx_tx = @as(usize, @intFromFloat(
-                tx * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                tx * @as(f64, @floatFromInt(lut_size - 1)),
             ));
             const idx_ty = @as(usize, @intFromFloat(
-                ty * @as(f64, @floatFromInt(LUT_SIZE - 1)),
+                ty * @as(f64, @floatFromInt(lut_size - 1)),
             ));
             return sample2D(
                 channels,

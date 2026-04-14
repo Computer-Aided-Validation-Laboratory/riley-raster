@@ -8,31 +8,39 @@ const meshio = @import("zraster/zig/meshio.zig");
 const mr = @import("zraster/zig/meshraster.zig");
 const Vec3f = @import("zraster/zig/vecstack.zig").Vec3f;
 const Rotation = @import("zraster/zig/rotation.zig").Rotation;
+const csvio = @import("zraster/zig/csvio.zig");
 
 fn saveNDArrayToCSV(io: std.Io, arr: *const NDArray(f64), path: []const u8) !void {
     const cwd = std.Io.Dir.cwd();
-    var file = try cwd.createFile(io, path, .{});
-    defer file.close(io);
-
-    var write_buf: [4096]u8 = undefined;
-    var file_writer = file.writer(io, &write_buf);
-    const writer = &file_writer.interface;
+    const parent_path = std.fs.path.dirname(path) orelse ".";
+    const file_name = std.fs.path.basename(path);
+    var out_dir = try cwd.openDir(io, parent_path, .{});
+    defer out_dir.close(io);
 
     if (arr.dims.len == 3) {
         const d0 = arr.dims[0];
         const d1 = arr.dims[1];
         const d2 = arr.dims[2];
-        for (0..d0) |ee| {
-            for (0..d2) |nn| {
-                for (0..d1) |ff| {
-                    try writer.print("{d}", .{arr.get(&[_]usize{ ee, ff, nn })});
-                    if (ff < d1 - 1) try writer.print(",", .{});
-                }
-                try writer.print("\n", .{});
+
+        const SaveCtx = struct {
+            fn getVal(ctx: *const NDArray(f64), row: usize, col: usize) f64 {
+                const d2 = ctx.dims[2];
+                const elem = row / d2;
+                const node = row % d2;
+                return ctx.get(&[_]usize{ elem, col, node });
             }
-        }
+        };
+
+        try csvio.saveScalarGridCSV(
+            io,
+            out_dir,
+            file_name,
+            d0 * d2,
+            d1,
+            arr,
+            SaveCtx.getVal,
+        );
     }
-    try file_writer.flush();
 }
 
 fn processCase(
