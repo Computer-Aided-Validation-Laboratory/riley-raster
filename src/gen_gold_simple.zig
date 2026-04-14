@@ -41,9 +41,10 @@ pub fn main() !void {
     const config = gengold.zraster.RasterConfig{
         .save_opt = .disk,
         .save_opts = &[_]gengold.iio.ImageSaveOpts{
-            .{ .format = .csv, .bits = null, .scaling = .none },
+            .{ .format = .fimg, .bits = null, .scaling = .none },
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
         },
+        .report = .off,
     };
 
     std.debug.print("Generating Simple Gold Data (Two Elements only)...\n", .{});

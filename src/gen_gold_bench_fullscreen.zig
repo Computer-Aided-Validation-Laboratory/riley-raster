@@ -73,7 +73,7 @@ pub fn main() !void {
                     std.debug.print("Rendering reference: {s}\n", .{case_name});
 
                     // We generate gold from the minimal 'fullraster' dataset
-                    _ = try common.runBenchmark(
+                    _ = try common.runBenchmarkQuiet(
                         allocator,
                         io,
                         mt,

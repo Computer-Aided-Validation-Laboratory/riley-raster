@@ -135,26 +135,17 @@ test "Sphere Gold Tests" {
                         // 2. Map filenames
                         const is_rgb = (st == .flat_rgb or st == .tex8_rgb);
                         const channels: usize = if (is_rgb) 3 else 1;
-                        const suffix = if (is_rgb) "_rgb" else "";
 
-                        const test_csv_rel = try std.fmt.allocPrint(
-                            allocator,
-                            "{s}/{s}/frame_0_field_0{s}.csv",
-                            .{ c.out, case_name, suffix },
-                        );
-                        defer allocator.free(test_csv_rel);
-                        const gold_csv_rel = try std.fmt.allocPrint(
-                            allocator,
-                            "{s}/{s}/frame_0_field_0{s}.csv",
-                            .{ c.gold, gold_case_name, suffix },
-                        );
-                        defer allocator.free(gold_csv_rel);
+                        const test_path = try common.findGoldPath(allocator, io, c.out, 0, 0, is_rgb);
+                        defer allocator.free(test_path);
+                        const gold_path = try common.findGoldPath(allocator, io, c.gold, 0, 0, is_rgb);
+                        defer allocator.free(gold_path);
 
                         // 3. Load and Compare
-                        const t_arr_res = common.loadNDArrayFromCSV(
+                        const t_arr_res = common.loadNDArray(
                             allocator,
                             io,
-                            test_csv_rel,
+                            test_path,
                             channels,
                             false,
                         );
@@ -165,10 +156,10 @@ test "Sphere Gold Tests" {
                                 t_mut.deinit(allocator);
                             }
 
-                            const g_arr_res = common.loadNDArrayFromCSV(
+                            const g_arr_res = common.loadNDArray(
                                 allocator,
                                 io,
-                                gold_csv_rel,
+                                gold_path,
                                 channels,
                                 false,
                             );

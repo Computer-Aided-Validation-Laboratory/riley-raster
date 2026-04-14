@@ -101,7 +101,7 @@ pub fn main() !void {
                             .{ case.out, case_name },
                         );
 
-                        _ = try common.runBenchmark(
+                        _ = try common.runBenchmarkQuiet(
                             allocator,
                             io,
                             mt,

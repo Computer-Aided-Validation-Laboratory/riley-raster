@@ -620,7 +620,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
     var config_rgb = config;
     config_rgb.save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = 3 },
-        .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
+        .{ .format = .fimg, .bits = null, .scaling = .none, .channels = 3 },
     };
 
     const cwd = std.Io.Dir.cwd();

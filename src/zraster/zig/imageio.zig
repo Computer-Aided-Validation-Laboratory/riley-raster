@@ -33,6 +33,7 @@ fn ensureTmpTestDir(io: std.Io) !void {
 
 pub const ImageFormat = enum {
     csv,
+    fimg,
     ppm,
     bmp,
     tiff,
@@ -69,6 +70,18 @@ pub fn loadImage(
 ) !Texture(channels) {
     return switch (format) {
         .csv => try loadCSV(T, channels, allocator, io, path),
+        .fimg => {
+            const array = try loadFIMG(allocator, io, path);
+            if (array.dims[0] != channels) {
+                // We might want to handle this more gracefully, but for now:
+                return error.ChannelMismatch;
+            }
+            return Texture(channels){
+                .array = array,
+                .rows_num = array.dims[1],
+                .cols_num = array.dims[2],
+            };
+        },
         .ppm => try loadPPM(T, channels, allocator, io, path),
         .bmp => try loadBMP(T, channels, allocator, io, path),
         .tiff => try loadTIFF(T, channels, allocator, io, path),
@@ -86,6 +99,7 @@ pub fn saveImage(
     var name_buff: [1024]u8 = undefined;
     const ext = switch (opts.format) {
         .csv => ".csv",
+        .fimg => ".fimg",
         .ppm => ".ppm",
         .bmp => ".bmp",
         .tiff => ".tiff",
@@ -98,6 +112,7 @@ pub fn saveImage(
 
     switch (opts.format) {
         .csv => try saveCSV(io, out_dir, file_name, image_arr, start_field, opts),
+        .fimg => try saveFIMG(io, out_dir, file_name, image_arr, start_field, opts),
         .ppm => try savePPM(io, out_dir, file_name, image_arr, start_field, opts),
         .bmp => try saveBMP(io, out_dir, file_name, image_arr, start_field, opts),
         .tiff => try saveTIFF(io, out_dir, file_name, image_arr, start_field, opts),
@@ -278,6 +293,44 @@ pub fn saveCSV(
         },
         SaveCtx.getVal,
     );
+}
+
+pub fn saveFIMG(
+    io: std.Io,
+    out_dir: std.Io.Dir,
+    file_name: []const u8,
+    image_arr: *const NDArray(f64),
+    start_field: usize,
+    opts: ImageSaveOpts,
+) !void {
+    const rows = image_arr.dims[1];
+    const cols = image_arr.dims[2];
+    const channels = @min(opts.channels, C);
+
+    const file = try out_dir.createFile(io, file_name, .{});
+    defer file.close(io);
+
+    var write_buf: [4096]u8 = undefined;
+    var file_writer = file.writer(io, &write_buf);
+    const writer = &file_writer.interface;
+
+    // Header: ASCII
+    try writer.print("FIMG\n{d} {d} {d}\n", .{ cols, rows, channels });
+
+    // Payload: Binary f64 Little-Endian
+    // Format is Planar: Channel by Channel (matching our NDArray layout for fields)
+    for (0..channels) |ch| {
+        const field_idx = start_field + ch;
+        for (0..rows) |rr| {
+            for (0..cols) |cc| {
+                const val = image_arr.get(&[_]usize{ field_idx, rr, cc });
+                const le_val = std.mem.nativeToLittle(f64, val);
+                try writer.writeAll(std.mem.asBytes(&le_val));
+            }
+        }
+    }
+
+    try writer.flush();
 }
 
 pub fn saveBMP(
@@ -587,6 +640,83 @@ pub fn loadCSV(
     }
 
     return texture;
+}
+
+pub fn loadFIMG(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+) !NDArray(f64) {
+    const cwd = std.Io.Dir.cwd();
+    const file = try cwd.openFile(io, path, .{ .mode = .read_only });
+    defer file.close(io);
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    var read_buf: [4096]u8 = undefined;
+    var file_reader = file.reader(io, &read_buf);
+    const reader = &file_reader.interface;
+
+    // 1. Validate Signature
+    var sig: [4]u8 = undefined;
+    try reader.readSliceAll(&sig);
+    if (!std.mem.eql(u8, &sig, "FIMG")) return error.InvalidFormat;
+
+    // Skip any leading whitespace/newlines before tokens
+    const readToken = struct {
+        fn readToken(r: anytype, a: std.mem.Allocator) ![]const u8 {
+            while (true) {
+                const char = try r.takeByte();
+                if (char == '#') {
+                    _ = try r.takeDelimiter('\n');
+                    continue;
+                }
+                if (std.ascii.isWhitespace(char)) continue;
+
+                var list: std.ArrayList(u8) = .{};
+                try list.append(a, char);
+                while (true) {
+                    const next_char = r.takeByte() catch |err| switch (err) {
+                        error.EndOfStream => break,
+                        else => return err,
+                    };
+                    if (std.ascii.isWhitespace(next_char)) break;
+                    if (next_char == '#') break;
+                    try list.append(a, next_char);
+                }
+                return list.toOwnedSlice(a);
+            }
+        }
+    }.readToken;
+
+    const width_str = try readToken(reader, aa);
+    const height_str = try readToken(reader, aa);
+    const chan_str = try readToken(reader, aa);
+
+    const width = try std.fmt.parseInt(usize, width_str, 10);
+    const height = try std.fmt.parseInt(usize, height_str, 10);
+    const chans = try std.fmt.parseInt(usize, chan_str, 10);
+
+    var array = try NDArray(f64).initFlat(allocator, &[_]usize{ chans, height, width });
+    errdefer array.deinit(allocator);
+
+    // 2. Read Binary Payload (f64 LE)
+    // The file is stored Planar: [chans, height, width]
+    for (0..chans) |ch| {
+        for (0..height) |rr| {
+            for (0..width) |cc| {
+                var bytes: [8]u8 = undefined;
+                try reader.readSliceAll(&bytes);
+                const le_val = std.mem.bytesAsValue(f64, &bytes).*;
+                const val = std.mem.littleToNative(f64, le_val);
+                array.set(&[_]usize{ ch, rr, cc }, val);
+            }
+        }
+    }
+
+    return array;
 }
 
 pub fn loadBMP(
@@ -964,7 +1094,7 @@ test "Save and Load All Formats 8-bit and 16-bit" {
     }
     const mat = MatSlice(f64).init(mat_mem, rows, cols);
 
-    const formats = [_]ImageFormat{ .csv, .ppm, .tiff, .bmp };
+    const formats = [_]ImageFormat{ .csv, .fimg, .ppm, .tiff, .bmp };
     const bit_depths = [_]u8{ 8, 16 };
 
     for (formats) |fmt| {
@@ -988,6 +1118,7 @@ test "Save and Load All Formats 8-bit and 16-bit" {
             var ext_buff: [1024]u8 = undefined;
             const ext = switch (fmt) {
                 .csv => ".csv",
+                .fimg => ".fimg",
                 .ppm => ".ppm",
                 .bmp => ".bmp",
                 .tiff => ".tiff",
@@ -1089,4 +1220,62 @@ test "Scaling Strategy: Fractional" {
     try testing.expectApproxEqAbs(loaded2.getVal(0, 0, 1), 0.6 * 255.0, 1e-6);
     try testing.expectApproxEqAbs(loaded2.getVal(0, 1, 0), 0.5 * 255.0, 1e-6);
     try testing.expectApproxEqAbs(loaded2.getVal(0, 1, 1), 0.45 * 255.0, 1e-6);
+}
+
+test "FIMG Save and Load Roundtrip" {
+    const allocator = std.testing.allocator;
+    var io_threaded = std.Io.Threaded.init_single_threaded;
+    const io = io_threaded.io();
+    const cwd = std.Io.Dir.cwd();
+
+    const width: usize = 4;
+    const height: usize = 3;
+    const channels: usize = 2;
+
+    var texture = try Texture(channels).init(allocator, height, width);
+    defer texture.deinit(allocator);
+
+    for (0..channels) |ch| {
+        for (0..height) |rr| {
+            for (0..width) |cc| {
+                const val = @as(f64, @floatFromInt(ch * 100 + rr * 10 + cc)) * 1.123456789;
+                texture.setVal(ch, rr, cc, val);
+            }
+        }
+    }
+
+    try ensureTmpTestDir(io);
+    const file_base = tmp_test_dir ++ "/test_roundtrip";
+    const file_full = file_base ++ ".fimg";
+
+    var dims = [_]usize{ channels, height, width };
+    var strides = [_]usize{ height * width, width, 1 };
+    const arr = NDArray(f64){
+        .slice = texture.array.slice,
+        .dims = &dims,
+        .strides = &strides,
+    };
+
+    const opts = ImageSaveOpts{
+        .format = .fimg,
+        .channels = channels,
+    };
+
+    try saveImage(io, cwd, file_base, &arr, 0, opts);
+
+    var loaded = try loadImage(allocator, io, file_full, .fimg, f64, channels);
+    defer loaded.deinit(allocator);
+
+    try std.testing.expectEqual(loaded.rows_num, height);
+    try std.testing.expectEqual(loaded.cols_num, width);
+
+    for (0..channels) |ch| {
+        for (0..height) |rr| {
+            for (0..width) |cc| {
+                const expected = texture.getVal(ch, rr, cc);
+                const actual = loaded.getVal(ch, rr, cc);
+                try std.testing.expectEqual(expected, actual);
+            }
+        }
+    }
 }

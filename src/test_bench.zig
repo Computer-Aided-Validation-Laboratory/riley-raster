@@ -147,24 +147,17 @@ test "Unified Benchmark Tests" {
                         // 2. Map filenames
                         const is_rgb = (st == .flat_rgb or st == .tex8_rgb);
                         const channels: usize = if (is_rgb) 3 else 1;
-                        const suffix = if (is_rgb) "_rgb" else "";
 
-                        const test_csv = try std.fmt.allocPrint(
-                            aa,
-                            "{s}/{s}/frame_0_field_0{s}.csv",
-                            .{ cc.out_dir, case_name, suffix },
-                        );
-                        const gold_csv = try std.fmt.allocPrint(
-                            aa,
-                            "{s}/{s}/frame_0_field_0{s}.csv",
-                            .{ cc.gold_dir, case_name, suffix },
-                        );
+                        const test_dir_case = try std.fs.path.join(aa, &[_][]const u8{ cc.out_dir, case_name });
+                        const test_path = try testcommon.findGoldPath(aa, io, test_dir_case, 0, 0, is_rgb);
+                        const gold_dir_case = try std.fs.path.join(aa, &[_][]const u8{ cc.gold_dir, case_name });
+                        const gold_path = try testcommon.findGoldPath(aa, io, gold_dir_case, 0, 0, is_rgb);
 
                         // 3. Load and Compare
-                        const t_arr_res = common.loadNDArrayFromCSV(
+                        const t_arr_res = common.loadNDArray(
                             outer_alloc,
                             io,
-                            test_csv,
+                            test_path,
                             channels,
                             false,
                         );
@@ -175,10 +168,10 @@ test "Unified Benchmark Tests" {
                                 t_mut.deinit(outer_alloc);
                             }
 
-                            const g_arr_res = common.loadNDArrayFromCSV(
+                            const g_arr_res = common.loadNDArray(
                                 outer_alloc,
                                 io,
-                                gold_csv,
+                                gold_path,
                                 channels,
                                 false,
                             );
@@ -221,14 +214,14 @@ test "Unified Benchmark Tests" {
                             } else |err| {
                                 std.debug.print(
                                     "GOLD LOAD ERROR: {s} ({s})\n",
-                                    .{ gold_csv, @errorName(err) },
+                                    .{ gold_path, @errorName(err) },
                                 );
                                 total_fails += 1;
                             }
                         } else |err| {
                             std.debug.print(
                                 "TEST LOAD ERROR: {s} ({s})\n",
-                                .{ test_csv, @errorName(err) },
+                                .{ test_path, @errorName(err) },
                             );
                             total_fails += 1;
                         }

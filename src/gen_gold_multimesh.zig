@@ -13,8 +13,9 @@ pub fn main() !void {
         .save_opt = .disk,
         .save_opts = &[_]gengold.iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
-            .{ .format = .csv, .bits = null, .scaling = .none },
+            .{ .format = .fimg, .bits = null, .scaling = .none },
         },
+        .report = .off,
     };
 
     std.debug.print("Generating Multimesh Gold Data...\n", .{});

@@ -43,6 +43,98 @@ pub fn isApproxEqual(v1: f64, v2: f64, rel_tol: f64, abs_tol: f64) bool {
     return (diff / largest) <= rel_tol;
 }
 
+pub fn compareNDArrayToGold(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    array: *const NDArray(f64),
+    frame: usize,
+    field_start: usize,
+    channels: usize,
+    path: []const u8,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    var gold = if (std.mem.endsWith(u8, path, ".fimg")) blk: {
+        const gold_array = try iio.loadFIMG(allocator, io, path);
+        break :blk gold_array;
+    } else if (channels == 1)
+        try csvio.loadScalarCsv2D(allocator, io, path)
+    else
+        try csvio.loadPackedCsv2D(allocator, io, path, channels);
+
+    defer {
+        allocator.free(gold.slice);
+        gold.deinit(allocator);
+    }
+
+    // Handle different dimension layouts:
+    // .fimg: [chans, rows, cols]
+    // .csv (scalar): [rows, cols]
+    // .csv (packed): [rows, cols, chans]
+    const gold_rows = if (gold.dims.len == 3 and std.mem.endsWith(u8, path, ".fimg"))
+        gold.dims[1]
+    else
+        gold.dims[0];
+    const gold_cols = if (gold.dims.len == 3 and std.mem.endsWith(u8, path, ".fimg"))
+        gold.dims[2]
+    else
+        gold.dims[1];
+
+    const rows = array.dims[2];
+    const cols = array.dims[3];
+
+    if (gold_rows != rows) {
+        std.debug.print(
+            "Row count mismatch: Gold has {d}, array expects {d} (path: {s})\n",
+            .{ gold_rows, rows, path },
+        );
+        return error.GoldRowsMismatch;
+    }
+
+    if (gold_cols != cols) return error.GoldColsMismatch;
+
+    for (0..rows) |r| {
+        for (0..cols) |c| {
+            for (0..channels) |ch| {
+                const gold_val = if (std.mem.endsWith(u8, path, ".fimg"))
+                    gold.get(&[_]usize{ ch, r, c })
+                else if (channels == 1)
+                    gold.get(&[_]usize{ r, c })
+                else
+                    gold.get(&[_]usize{ r, c, ch });
+
+                const actual_val = array.get(&[_]usize{ frame, field_start + ch, r, c });
+
+                if (!isApproxEqual(gold_val, actual_val, rel_tol, abs_tol)) {
+                    const abs_gold = @abs(gold_val);
+                    const abs_act = @abs(actual_val);
+                    const largest = if (abs_gold > abs_act) abs_gold else abs_act;
+
+                    const diff = @abs(gold_val - actual_val);
+                    const rel_diff = if (largest < abs_tol) diff else diff / largest;
+
+                    std.debug.print(
+                        "\n\nMismatch at:\n frame {d},\n field {d},\n " ++
+                            "pixel ({d}, {d}): " ++
+                            "\n gold={d},\n actual={d},\n rel_diff={e}\n (path: {s})\n\n",
+                        .{
+                            frame,
+                            field_start + ch,
+                            r,
+                            c,
+                            gold_val,
+                            actual_val,
+                            rel_diff,
+                            path,
+                        },
+                    );
+                    return error.PixelMismatch;
+                }
+            }
+        }
+    }
+}
+
 pub fn compareNDArrayToCSV(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -253,6 +345,48 @@ fn extractFrameImage(
     return image;
 }
 
+pub fn findGoldPath(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    dir: []const u8,
+    frame: usize,
+    field: usize,
+    is_rgb: bool,
+) ![]const u8 {
+    const base_name = if (is_rgb)
+        try std.fmt.allocPrint(allocator, "{s}/frame_{d}_field_{d}_rgb", .{ dir, frame, field })
+    else
+        try std.fmt.allocPrint(allocator, "{s}/frame_{d}_field_{d}", .{ dir, frame, field });
+    defer allocator.free(base_name);
+
+    const fimg_path = try std.fmt.allocPrint(allocator, "{s}.fimg", .{base_name});
+    errdefer allocator.free(fimg_path);
+
+    const cwd = std.Io.Dir.cwd();
+    if (cwd.access(io, fimg_path, .{})) |_| {
+        return fimg_path;
+    } else |_| {
+        allocator.free(fimg_path);
+        return try std.fmt.allocPrint(allocator, "{s}.csv", .{base_name});
+    }
+}
+
+fn loadNDArrayFromGold(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+    channels: usize,
+) !NDArray(f64) {
+    if (std.mem.endsWith(u8, path, ".fimg")) {
+        const array = try iio.loadFIMG(allocator, io, path);
+        if (array.dims[0] != channels) {
+            return error.ChannelMismatch;
+        }
+        return array;
+    }
+    return csvio.loadPackedCsv2D(allocator, io, path, channels);
+}
+
 fn loadImageFromCSV(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -379,7 +513,7 @@ pub fn saveComparisonArtifactsFromResult(
         actual.deinit(allocator);
     }
 
-    var gold = try loadImageFromCSV(allocator, io, gold_csv_path, channels);
+    var gold = try loadNDArrayFromGold(allocator, io, gold_csv_path, channels);
     defer {
         allocator.free(gold.slice);
         gold.deinit(allocator);
@@ -542,26 +676,23 @@ pub fn runTestInternal(
             defer aa.free(result.slice);
 
             for (0..result.dims[0]) |f| {
-                const fname = try std.fmt.allocPrint(
-                    aa,
-                    "{s}/frame_{d}_field_0.csv",
-                    .{ flat_dir, f },
-                );
+                const fname = try findGoldPath(aa, io, flat_dir, f, 0, false);
 
-                compareNDArrayToCSV(
+                compareNDArrayToGold(
                     aa,
                     io,
                     &result,
                     f,
                     0,
+                    1,
                     fname,
                     rel_tol,
                     abs_tol,
                 ) catch |err| {
                     const fail_dir_name = try std.fmt.allocPrint(
                         aa,
-                        "all_{s}",
-                        .{case_dir_name},
+                        "all_{s}{s}",
+                        .{ case_dir_name, impl_suffix },
                     );
                     try saveComparisonArtifactsFromResult(
                         aa,
@@ -629,26 +760,23 @@ pub fn runTestInternal(
                 defer aa.free(result.slice);
 
                 for (0..result.dims[0]) |f| {
-                    const fname = try std.fmt.allocPrint(
-                        aa,
-                        "{s}/frame_{d}_field_0.csv",
-                        .{ tex_dir, f },
-                    );
+                    const fname = try findGoldPath(aa, io, tex_dir, f, 0, false);
 
-                    compareNDArrayToCSV(
+                    compareNDArrayToGold(
                         aa,
                         io,
                         &result,
                         f,
                         0,
+                        1,
                         fname,
                         rel_tol,
                         abs_tol,
                     ) catch |err| {
                         const fail_dir_name = try std.fmt.allocPrint(
                             aa,
-                            "all_{s}",
-                            .{case_dir_name},
+                            "all_{s}{s}",
+                            .{ case_dir_name, impl_suffix },
                         );
                         try saveComparisonArtifactsFromResult(
                             aa,
@@ -774,17 +902,14 @@ pub fn runMultimeshTest(
             "gold-multimesh/allelem_tex_cubic_lut_lerp";
 
         for (0..result.dims[0]) |f| {
-            const fname = try std.fmt.allocPrint(
-                aa,
-                "{s}/frame_{d}_field_0.csv",
-                .{ gold_dir, f },
-            );
-            compareNDArrayToCSV(
+            const fname = try findGoldPath(aa, io, gold_dir, f, 0, false);
+            compareNDArrayToGold(
                 aa,
                 io,
                 &result,
                 f,
                 0,
+                1,
                 fname,
                 rel_tol,
                 abs_tol,
@@ -963,12 +1088,8 @@ pub fn runMultimeshMixedTestExt(
     )) orelse return error.NoResult;
 
     for (0..result.dims[0]) |f| {
-        const fname = try std.fmt.allocPrint(
-            aa,
-            "{s}/frame_{d}_field_0.csv",
-            .{ gold_dir, f },
-        );
-        compareNDArrayToCSV(aa, io, &result, f, 0, fname, rel_tol, abs_tol) catch |err| {
+        const fname = try findGoldPath(aa, io, gold_dir, f, 0, false);
+        compareNDArrayToGold(aa, io, &result, f, 0, 1, fname, rel_tol, abs_tol) catch |err| {
             try saveComparisonArtifactsFromResult(
                 aa,
                 io,
@@ -1183,17 +1304,14 @@ pub fn runMultimeshMixedRGBTestExt(
     )) orelse return error.NoResult;
 
     for (0..result.dims[0]) |f| {
-        const fname = try std.fmt.allocPrint(
-            aa,
-            "{s}/frame_{d}_field_0_rgb.csv",
-            .{ gold_dir, f },
-        );
-        compareNDArrayToCSVRGB(
+        const fname = try findGoldPath(aa, io, gold_dir, f, 0, true);
+        compareNDArrayToGold(
             aa,
             io,
             &result,
             f,
             0,
+            3,
             fname,
             rel_tol,
             abs_tol,

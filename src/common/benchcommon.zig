@@ -190,6 +190,23 @@ pub fn shouldRun(
     };
 }
 
+pub fn loadNDArray(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+    requested_channels: usize,
+    is_time_series: bool,
+) !NDArray(f64) {
+    if (std.mem.endsWith(u8, path, ".fimg")) {
+        const array = try iio.loadFIMG(outer_alloc, io, path);
+        if (array.dims[0] != requested_channels) {
+            return error.ChannelMismatch;
+        }
+        return array;
+    }
+    return try loadNDArrayFromCSV(outer_alloc, io, path, requested_channels, is_time_series);
+}
+
 pub fn loadNDArrayFromCSV(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -490,7 +507,7 @@ fn runBenchmarkInternal(
         &image_out_arr,
         &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = num_out_fields },
-            .{ .format = .csv, .bits = null, .scaling = .none, .channels = num_out_fields },
+            .{ .format = .fimg, .bits = null, .scaling = .none, .channels = num_out_fields },
         },
     );
 
