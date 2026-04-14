@@ -15,7 +15,7 @@ const iio = @import("imageio.zig");
 
 const Texture = iio.Texture;
 const texops = @import("textureops.zig");
-const InterpType = texops.InterpType;
+const TextureSampleConfig = texops.TextureSampleConfig;
 
 const meshio = @import("meshio.zig");
 const Field = meshio.Field;
@@ -106,7 +106,7 @@ pub fn TexInput(comptime T: type, comptime channels: usize) type {
     return struct {
         uvs: NDArray(f64),
         texture: Texture(channels),
-        interp_type: InterpType = .cubic_lut_lerp,
+        sample_config: TextureSampleConfig = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
         normal_type: NormalType = .none,
@@ -118,7 +118,7 @@ pub fn TexPrepared(comptime T: type, comptime channels: usize) type {
     return struct {
         elem_uvs: NDArray(f64),
         texture: Texture(channels),
-        interp_type: InterpType = .cubic_lut_lerp,
+        sample_config: TextureSampleConfig = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
         scale_mul: f64 = 1.0,
@@ -207,7 +207,7 @@ pub inline fn fillTexClip(
     comptime N: usize,
     comptime TexT: type,
     comptime channels: usize,
-    interp_type: InterpType,
+    comptime sample_config: TextureSampleConfig,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const TexPrepared(TexT, channels),
@@ -222,7 +222,7 @@ pub inline fn fillTexClip(
 
     const sampled = texops.sampleGeneric(
         channels,
-        interp_type,
+        sample_config,
         sh.texture,
         tex_u,
         tex_v,
@@ -238,7 +238,7 @@ pub inline fn fillTexPersp(
     comptime N: usize,
     comptime TexT: type,
     comptime channels: usize,
-    interp_type: InterpType,
+    comptime sample_config: TextureSampleConfig,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const TexPrepared(TexT, channels),
@@ -256,7 +256,7 @@ pub inline fn fillTexPersp(
 
     const sampled = texops.sampleGeneric(
         channels,
-        interp_type,
+        sample_config,
         sh.texture,
         tex_u * interp.sub_pixel_z,
         tex_v * interp.sub_pixel_z,

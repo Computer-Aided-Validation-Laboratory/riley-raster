@@ -1,7 +1,8 @@
+const std = @import("std");
 const shaderops = @import("shaderops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const texops = @import("textureops.zig");
-const InterpType = texops.InterpType;
+const TextureSampleConfig = texops.TextureSampleConfig;
 const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
 pub inline fn shadeNodalScalarCommon(
@@ -85,27 +86,51 @@ pub inline fn shadeTexScalarCommon(
         }
     }
 
-    if (comptime coord_space == CoordSpace.clip_px_leng) {
-        shaderops.fillTexClip(
-            N,
-            TexT,
-            channels,
-            shader.interp_type,
-            ctx_shade,
-            interp,
-            shader,
-            spx_image_scratch,
-        );
-    } else {
-        shaderops.fillTexPersp(
-            N,
-            TexT,
-            channels,
-            shader.interp_type,
-            ctx_shade,
-            interp,
-            shader,
-            spx_image_scratch,
-        );
+    const config = shader.sample_config;
+    inline for (.{
+        .nearest,
+        .linear,
+        .cubic_catmull_rom,
+        .cubic_mitchell_netravali,
+        .lanczos3,
+        .cubic_bspline,
+        .quintic_bspline,
+    }) |sample_type| {
+        if (config.sample == sample_type) {
+            inline for (.{ .direct, .lut, .lut_lerp }) |mode_type| {
+                if (config.mode == mode_type) {
+                    const comptime_config = texops.TextureSampleConfig{
+                        .sample = sample_type,
+                        .mode = mode_type,
+                    };
+                    if (comptime comptime_config.isValid()) {
+                        if (comptime coord_space == CoordSpace.clip_px_leng) {
+                            shaderops.fillTexClip(
+                                N,
+                                TexT,
+                                channels,
+                                comptime_config,
+                                ctx_shade,
+                                interp,
+                                shader,
+                                spx_image_scratch,
+                            );
+                        } else {
+                            shaderops.fillTexPersp(
+                                N,
+                                TexT,
+                                channels,
+                                comptime_config,
+                                ctx_shade,
+                                interp,
+                                shader,
+                                spx_image_scratch,
+                            );
+                        }
+                        return;
+                    }
+                }
+            }
+        }
     }
 }

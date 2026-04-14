@@ -10,21 +10,21 @@ pub fn main() !void {
     const io = io_threaded.io();
 
     const texture_grey = try iio.loadImage(
-        u8,
-        1,
         outer_alloc,
         io,
         "texture/speckle.bmp",
         .bmp,
+        u8,
+        1,
     );
     defer texture_grey.deinit(outer_alloc);
     const texture_rgb = try iio.loadImage(
-        u8,
-        3,
         outer_alloc,
         io,
         "texture/speckle_rgb.bmp",
         .bmp,
+        u8,
+        3,
     );
     defer texture_rgb.deinit(outer_alloc);
 
@@ -34,6 +34,14 @@ pub fn main() !void {
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
+    const sample_configs = [_]common.TextureSampleConfig{
+        .{ .sample = .linear, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+        .{ .sample = .cubic_mitchell_netravali, .mode = .lut_lerp },
+        .{ .sample = .lanczos3, .mode = .lut_lerp },
+        .{ .sample = .cubic_bspline, .mode = .lut_lerp },
+        .{ .sample = .quintic_bspline, .mode = .lut_lerp },
+    };
 
     var stats_list: std.ArrayList(common.BenchStats) = .{};
     defer {
@@ -50,72 +58,80 @@ pub fn main() !void {
 
     for (mesh_types) |mt| {
         for (shader_types) |st| {
-            var case_name_buf: [256]u8 = undefined;
-            const case_name = try std.fmt.bufPrint(
-                &case_name_buf,
-                "{s}_{s}",
-                .{ @tagName(mt), @tagName(st) },
-            );
-            std.debug.print("Case: {s}\n", .{case_name});
+            for (sample_configs) |sc| {
+                var case_name_buf: [256]u8 = undefined;
+                const case_name = if (st == .tex8_grey or st == .tex8_rgb)
+                    try std.fmt.bufPrint(
+                        &case_name_buf,
+                        "{s}_{s}_{s}_{s}",
+                        .{ @tagName(mt), @tagName(st), @tagName(sc.sample), @tagName(sc.mode) },
+                    )
+                else
+                    try std.fmt.bufPrint(
+                        &case_name_buf,
+                        "{s}_{s}",
+                        .{ @tagName(mt), @tagName(st) },
+                    );
+                std.debug.print("Case: {s}\n", .{case_name});
 
-            if (case_name.len > max_name_len) max_name_len = case_name.len;
+                if (case_name.len > max_name_len) max_name_len = case_name.len;
 
-            var e2e_times = try outer_alloc.alloc(f64, runs);
-            defer outer_alloc.free(e2e_times);
-            var geom_times = try outer_alloc.alloc(f64, runs);
-            defer outer_alloc.free(geom_times);
-            var raster_times = try outer_alloc.alloc(f64, runs);
-            defer outer_alloc.free(raster_times);
-            var fps_vals = try outer_alloc.alloc(f64, runs);
-            defer outer_alloc.free(fps_vals);
+                var e2e_times = try outer_alloc.alloc(f64, runs);
+                defer outer_alloc.free(e2e_times);
+                var geom_times = try outer_alloc.alloc(f64, runs);
+                defer outer_alloc.free(geom_times);
+                var raster_times = try outer_alloc.alloc(f64, runs);
+                defer outer_alloc.free(raster_times);
+                var fps_vals = try outer_alloc.alloc(f64, runs);
+                defer outer_alloc.free(fps_vals);
 
-            var mpx_vals = try outer_alloc.alloc(f64, runs);
-            defer outer_alloc.free(mpx_vals);
-            var msubpx_vals = try outer_alloc.alloc(f64, runs);
-            defer outer_alloc.free(msubpx_vals);
-            var mshades_vals = try outer_alloc.alloc(f64, runs);
-            defer outer_alloc.free(mshades_vals);
-            var msubshades_vals = try outer_alloc.alloc(f64, runs);
-            defer outer_alloc.free(msubshades_vals);
-            var melems_vals = try outer_alloc.alloc(f64, runs);
-            defer outer_alloc.free(melems_vals);
-            var mnodes_vals = try outer_alloc.alloc(f64, runs);
-            defer outer_alloc.free(mnodes_vals);
-            var mops_vals = try outer_alloc.alloc(f64, runs);
-            defer outer_alloc.free(mops_vals);
+                var mpx_vals = try outer_alloc.alloc(f64, runs);
+                defer outer_alloc.free(mpx_vals);
+                var msubpx_vals = try outer_alloc.alloc(f64, runs);
+                defer outer_alloc.free(msubpx_vals);
+                var mshades_vals = try outer_alloc.alloc(f64, runs);
+                defer outer_alloc.free(mshades_vals);
+                var msubshades_vals = try outer_alloc.alloc(f64, runs);
+                defer outer_alloc.free(msubshades_vals);
+                var melems_vals = try outer_alloc.alloc(f64, runs);
+                defer outer_alloc.free(melems_vals);
+                var mnodes_vals = try outer_alloc.alloc(f64, runs);
+                defer outer_alloc.free(mnodes_vals);
+                var mops_vals = try outer_alloc.alloc(f64, runs);
+                defer outer_alloc.free(mops_vals);
 
-            for (0..runs) |r| {
-                var data_dir_buf: [256]u8 = undefined;
-                const data_dir = try std.fmt.bufPrint(
-                    &data_dir_buf,
-                    "data-bench/{s}_sphere2000",
-                    .{@tagName(mt)},
-                );
-                const res = try common.runBenchmark(
-                    outer_alloc,
-                    io,
-                    mt,
-                    st,
-                    .linear,
-                    data_dir,
-                    out_dir_base,
-                    pixel_num,
-                    texture_grey,
-                    texture_rgb,
-                );
-                e2e_times[r] = res.e2e_ms;
-                geom_times[r] = res.geom_ms;
-                raster_times[r] = res.raster_ms;
-                fps_vals[r] = res.fps;
+                for (0..runs) |r| {
+                    var data_dir_buf: [256]u8 = undefined;
+                    const data_dir = try std.fmt.bufPrint(
+                        &data_dir_buf,
+                        "data-bench/{s}_sphere2000",
+                        .{@tagName(mt)},
+                    );
+                    const res = try common.runBenchmark(
+                        outer_alloc,
+                        io,
+                        mt,
+                        st,
+                        sc,
+                        data_dir,
+                        out_dir_base,
+                        pixel_num,
+                        texture_grey,
+                        texture_rgb,
+                    );
+                    e2e_times[r] = res.e2e_ms;
+                    geom_times[r] = res.geom_ms;
+                    raster_times[r] = res.raster_ms;
+                    fps_vals[r] = res.fps;
 
-                mpx_vals[r] = res.metrics.mpx_sec;
-                msubpx_vals[r] = res.metrics.msubpx_sec;
-                mshades_vals[r] = res.metrics.mshades_sec;
-                msubshades_vals[r] = res.metrics.msubshades_sec;
-                melems_vals[r] = res.metrics.melems_sec;
-                mnodes_vals[r] = res.metrics.mnodes_sec;
-                mops_vals[r] = res.metrics.mops_sec;
-            }
+                    mpx_vals[r] = res.metrics.mpx_sec;
+                    msubpx_vals[r] = res.metrics.msubpx_sec;
+                    mshades_vals[r] = res.metrics.mshades_sec;
+                    msubshades_vals[r] = res.metrics.msubshades_sec;
+                    melems_vals[r] = res.metrics.melems_sec;
+                    mnodes_vals[r] = res.metrics.mnodes_sec;
+                    mops_vals[r] = res.metrics.mops_sec;
+                }
 
             try stats_list.append(outer_alloc, .{
                 .name = try outer_alloc.dupe(u8, case_name),
@@ -133,6 +149,7 @@ pub fn main() !void {
             });
         }
     }
+}
 
     try common.writeBenchmarkReport(
         outer_alloc,

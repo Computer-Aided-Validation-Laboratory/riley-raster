@@ -436,7 +436,7 @@ pub fn runTestInternal(
     fov_scale: f64,
     texture: iio.Texture(1),
     pixel_num: [2]u32,
-    interp_types: []const texops.InterpType,
+    sample_configs: []const texops.TextureSampleConfig,
     gold_dir_root: []const u8,
     data_dir_root: []const u8,
     rel_tol: f64,
@@ -581,12 +581,12 @@ pub fn runTestInternal(
 
         // --- Tex ShaderInput ---
         if (shader_filter == .tex or shader_filter == .both) {
-            for (interp_types) |it| {
+            for (sample_configs) |sc| {
                 const mt_name = @tagName(mesh_type);
                 const case_dir_name = try std.fmt.allocPrint(
                     aa,
-                    "{s}_{s}_{s}_tex_{s}",
-                    .{ test_type, mt_name, d_str, @tagName(it) },
+                    "{s}_{s}_{s}_tex_{s}_{s}",
+                    .{ test_type, mt_name, d_str, @tagName(sc.sample), @tagName(sc.mode) },
                 );
 
                 const tex_dir = try std.fmt.allocPrint(
@@ -604,7 +604,7 @@ pub fn runTestInternal(
                         .tex_u8 = .{
                             .uvs = uvs.array,
                             .texture = texture,
-                            .interp_type = it,
+                            .sample_config = sc,
                         },
                     },
                 };
@@ -912,7 +912,7 @@ pub fn runMultimeshMixedTestExt(
             .shader = .{ .tex_u8 = .{
                 .uvs = uvs.array,
                 .texture = texture,
-                .interp_type = .cubic_lut_lerp,
+                .sample_config = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
                 .bits = 8,
                 .scaling = .none,
             } },
@@ -1059,7 +1059,7 @@ pub fn runMultimeshMixedRGBTestExt(
             .shader = .{ .tex_rgb_u8 = .{
                 .uvs = uvs.array,
                 .texture = texture,
-                .interp_type = .cubic_lut_lerp,
+                .sample_config = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
                 .bits = 8,
                 .scaling = .none,
             } },

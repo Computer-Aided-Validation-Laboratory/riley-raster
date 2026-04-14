@@ -10,12 +10,24 @@ const lut_size = buildconfig.config.interp_lut_size;
 const tol = buildconfig.config.tolerance;
 
 const common = @import("textureops_common.zig");
+pub const TextureSample = common.TextureSample;
+pub const TextureSampleMode = common.TextureSampleMode;
+pub const TextureSampleConfig = common.TextureSampleConfig;
 pub const InterpType = common.InterpType;
 pub const Texture = common.Texture;
+
+const catmull_rom_lut = common.catmull_rom_lut;
+const mitchell_netravali_lut = common.mitchell_netravali_lut;
+const cubic_bspline_lut = common.cubic_bspline_lut;
+const lanczos3_lut = common.lanczos3_lut;
+const quintic_bspline_lut = common.quintic_bspline_lut;
 const cubic_lut = common.cubic_lut;
 const quintic_lut = common.quintic_lut;
-const cubicWeightPoly = common.cubicWeightPoly;
-const quinticWeightPoly = common.quinticWeightPoly;
+const cubicWeightCatmullRom = common.cubicWeightCatmullRom;
+const cubicWeightMitchellNetravali = common.cubicWeightMitchellNetravali;
+const cubicWeightBSpline = common.cubicWeightBSpline;
+const lanczos3Weight = common.lanczos3Weight;
+const quinticBSplineWeight = common.quinticBSplineWeight;
 const getLerpWeights = common.getLerpWeights;
 const getPx = common.getPx;
 
@@ -147,7 +159,7 @@ fn sample2DInnerSIMD(
     return res;
 }
 
-fn v_cubicWeightSIMD(v_x: VecSF) VecSF {
+fn v_cubicWeightCatmullRomSIMD(v_x: VecSF) VecSF {
     const v_ax = @abs(v_x);
     const v_splat_one: VecSF = @splat(1.0);
     const v_splat_two: VecSF = @splat(2.0);
@@ -176,47 +188,82 @@ fn v_cubicWeightSIMD(v_x: VecSF) VecSF {
     return res;
 }
 
-fn v_quinticWeightSIMD(v_x: VecSF) VecSF {
+fn v_cubicWeightMitchellNetravaliSIMD(v_x: VecSF) VecSF {
+    const v_r = @abs(v_x);
+    const B = 1.0 / 3.0;
+    const C = 1.0 / 3.0;
+    const v_splat_one: VecSF = @splat(1.0);
+    const v_splat_two: VecSF = @splat(2.0);
+
+    const v_mask_inner = v_r < v_splat_one;
+    const v_mask_outer = (v_r < v_splat_two) & !v_mask_inner;
+
+    const v_w1 = ((@as(VecSF, @splat(12.0 - 9.0 * B - 6.0 * C)) * v_r * v_r * v_r +
+        @as(VecSF, @splat(-18.0 + 12.0 * B + 6.0 * C)) * v_r * v_r +
+        @as(VecSF, @splat(6.0 - 2.0 * B))) / @as(VecSF, @splat(6.0)));
+
+    const v_w2 = ((@as(VecSF, @splat(-B - 6.0 * C)) * v_r * v_r * v_r +
+        @as(VecSF, @splat(6.0 * B + 30.0 * C)) * v_r * v_r +
+        @as(VecSF, @splat(-12.0 * B - 48.0 * C)) * v_r +
+        @as(VecSF, @splat(8.0 * B + 24.0 * C))) / @as(VecSF, @splat(6.0)));
+
+    var res = @select(f64, v_mask_inner, v_w1, @as(VecSF, @splat(0.0)));
+    res = @select(f64, v_mask_outer, v_w2, res);
+    return res;
+}
+
+fn v_cubicWeightBSplineSIMD(v_x: VecSF) VecSF {
+    const v_r = @abs(v_x);
+    const v_splat_one: VecSF = @splat(1.0);
+    const v_splat_two: VecSF = @splat(2.0);
+
+    const v_mask_inner = v_r < v_splat_one;
+    const v_mask_outer = (v_r < v_splat_two) & !v_mask_inner;
+
+    const v_w1 = (@as(VecSF, @splat(3.0)) * v_r * v_r * v_r -
+        @as(VecSF, @splat(6.0)) * v_r * v_r + @as(VecSF, @splat(4.0))) / @as(VecSF, @splat(6.0));
+
+    const v_t = v_splat_two - v_r;
+    const v_w2 = v_t * v_t * v_t / @as(VecSF, @splat(6.0));
+
+    var res = @select(f64, v_mask_inner, v_w1, @as(VecSF, @splat(0.0)));
+    res = @select(f64, v_mask_outer, v_w2, res);
+    return res;
+}
+
+fn v_lanczos3WeightSIMD(v_x: VecSF) VecSF {
     const v_ax = @abs(v_x);
+    var res_arr: [S]f64 = undefined;
+    const ax_arr: [S]f64 = v_ax;
+    for (0..S) |ii| {
+        res_arr[ii] = lanczos3Weight(ax_arr[ii]);
+    }
+    return res_arr;
+}
+
+fn v_quinticBSplineWeightSIMD(v_x: VecSF) VecSF {
+    const v_r = @abs(v_x);
+    const v_splat_zero: VecSF = @splat(0.0);
     const v_splat_one: VecSF = @splat(1.0);
     const v_splat_two: VecSF = @splat(2.0);
     const v_splat_three: VecSF = @splat(3.0);
 
-    const v_mask_inner = v_ax <= v_splat_one;
-    const v_mask_middle = (v_ax <= v_splat_two) & !v_mask_inner;
-    const v_mask_outer =
-        (v_ax < v_splat_three) & !v_mask_inner & !v_mask_middle;
+    const v_mask_inner = v_r <= v_splat_one;
+    const v_mask_middle = (v_r <= v_splat_two) & !v_mask_inner;
+    const v_mask_outer = (v_r < v_splat_three) & !v_mask_inner & !v_mask_middle;
 
-    const v_w1 =
-        ((((-@as(VecSF, @splat(0.416666)) * v_ax + v_splat_one) *
-            v_ax +
-            @as(VecSF, @splat(0.583333))) * v_ax -
-            @as(VecSF, @splat(1.5))) * v_ax -
-            @as(VecSF, @splat(0.083333))) * v_ax +
-        v_splat_one;
+    const v_w1 = ((((-@as(VecSF, @splat(1.0 / 12.0)) * v_r + @as(VecSF, @splat(1.0 / 4.0))) * v_r +
+        v_splat_zero) * v_r - @as(VecSF, @splat(1.0 / 2.0))) * v_r + v_splat_zero) * v_r + @as(VecSF, @splat(11.0 / 20.0));
 
-    const v_shift_two = v_ax - v_splat_one;
-    const v_w2 =
-        ((((@as(VecSF, @splat(0.25)) * v_shift_two -
-            @as(VecSF, @splat(0.833333))) * v_shift_two +
-            @as(VecSF, @splat(0.416666))) * v_shift_two +
-            @as(VecSF, @splat(0.5))) * v_shift_two -
-            @as(VecSF, @splat(0.083333))) * v_shift_two;
+    const v_t = v_r - v_splat_one;
+    const v_w2 = (((((@as(VecSF, @splat(1.0 / 24.0)) * v_t - @as(VecSF, @splat(1.0 / 6.0))) * v_t +
+        @as(VecSF, @splat(1.0 / 6.0))) * v_t + @as(VecSF, @splat(1.0 / 6.0))) * v_t - @as(VecSF, @splat(5.0 / 12.0))) * v_t + @as(VecSF, @splat(13.0 / 60.0)));
 
-    const v_shift_three = v_ax - v_splat_two;
-    const v_w3 =
-        ((((-@as(VecSF, @splat(0.008333)) * v_shift_three +
-            @as(VecSF, @splat(0.083333))) * v_shift_three -
-            @as(VecSF, @splat(0.041666))) * v_shift_three -
-            @as(VecSF, @splat(0.083333))) * v_shift_three +
-            @as(VecSF, @splat(0.041666))) * v_shift_three;
+    const v_u = v_r - v_splat_two;
+    const v_w3 = (((((@as(VecSF, @splat(-1.0 / 120.0)) * v_u + @as(VecSF, @splat(1.0 / 24.0))) * v_u -
+        @as(VecSF, @splat(1.0 / 12.0))) * v_u + @as(VecSF, @splat(1.0 / 12.0))) * v_u - @as(VecSF, @splat(1.0 / 24.0))) * v_u + @as(VecSF, @splat(1.0 / 120.0)));
 
-    var res = @select(
-        f64,
-        v_mask_inner,
-        v_w1,
-        @as(VecSF, @splat(0.0)),
-    );
+    var res = @select(f64, v_mask_inner, v_w1, @as(VecSF, @splat(0.0)));
     res = @select(f64, v_mask_middle, v_w2, res);
     res = @select(f64, v_mask_outer, v_w3, res);
     return res;
@@ -224,11 +271,12 @@ fn v_quinticWeightSIMD(v_x: VecSF) VecSF {
 
 pub fn sampleOverPixelsSIMD(
     comptime channels: usize,
-    interp: InterpType,
+    comptime config: TextureSampleConfig,
     texture: anytype,
     v_u: VecSF,
     v_v: VecSF,
 ) [channels]VecSF {
+    std.debug.assert(config.isValid());
     const cols_minus_1_f = @as(
         f64,
         @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
@@ -254,7 +302,8 @@ pub fn sampleOverPixelsSIMD(
     const v_tx = v_xf - @as(VecSF, @floatFromInt(@as(VecSI, v_xi)));
     const v_ty = v_yf - @as(VecSF, @floatFromInt(@as(VecSI, v_yi)));
 
-    return switch (interp) {
+    return switch (config.sample) {
+        .nearest => v_getPxSIMD(channels, texture, @as(VecSI, @intFromFloat(@round(v_xf))), @as(VecSI, @intFromFloat(@round(v_yf)))),
         .linear => {
             const v_p00 = v_getPxSIMD(channels, texture, v_xi, v_yi);
             const v_p10 = v_getPxSIMD(
@@ -287,7 +336,7 @@ pub fn sampleOverPixelsSIMD(
             }
             return res;
         },
-        .cubic, .cubic_lut, .cubic_lut_lerp => {
+        .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => {
             const K = 4;
             const offset = @divTrunc(@as(isize, @intCast(K)), 2) - 1;
 
@@ -297,19 +346,32 @@ pub fn sampleOverPixelsSIMD(
             const tx_arr: [S]f64 = v_tx;
             const ty_arr: [S]f64 = v_ty;
 
-            switch (interp) {
-                .cubic => {
-                    v_wx[0] = v_cubicWeightSIMD(v_tx + @as(VecSF, @splat(1.0)));
-                    v_wx[1] = v_cubicWeightSIMD(v_tx);
-                    v_wx[2] = v_cubicWeightSIMD(v_tx - @as(VecSF, @splat(1.0)));
-                    v_wx[3] = v_cubicWeightSIMD(v_tx - @as(VecSF, @splat(2.0)));
+            const lut = switch (config.sample) {
+                .cubic_catmull_rom => catmull_rom_lut,
+                .cubic_mitchell_netravali => mitchell_netravali_lut,
+                .cubic_bspline => cubic_bspline_lut,
+                else => unreachable,
+            };
 
-                    v_wy[0] = v_cubicWeightSIMD(v_ty + @as(VecSF, @splat(1.0)));
-                    v_wy[1] = v_cubicWeightSIMD(v_ty);
-                    v_wy[2] = v_cubicWeightSIMD(v_ty - @as(VecSF, @splat(1.0)));
-                    v_wy[3] = v_cubicWeightSIMD(v_ty - @as(VecSF, @splat(2.0)));
+            switch (config.mode) {
+                .direct => {
+                    const v_kernel: *const fn (VecSF) VecSF = switch (config.sample) {
+                        .cubic_catmull_rom => v_cubicWeightCatmullRomSIMD,
+                        .cubic_mitchell_netravali => v_cubicWeightMitchellNetravaliSIMD,
+                        .cubic_bspline => v_cubicWeightBSplineSIMD,
+                        else => unreachable,
+                    };
+                    v_wx[0] = v_kernel(v_tx + @as(VecSF, @splat(1.0)));
+                    v_wx[1] = v_kernel(v_tx);
+                    v_wx[2] = v_kernel(v_tx - @as(VecSF, @splat(1.0)));
+                    v_wx[3] = v_kernel(v_tx - @as(VecSF, @splat(2.0)));
+
+                    v_wy[0] = v_kernel(v_ty + @as(VecSF, @splat(1.0)));
+                    v_wy[1] = v_kernel(v_ty);
+                    v_wy[2] = v_kernel(v_ty - @as(VecSF, @splat(1.0)));
+                    v_wy[3] = v_kernel(v_ty - @as(VecSF, @splat(2.0)));
                 },
-                .cubic_lut => {
+                .lut => {
                     var wx_arr: [4][S]f64 = undefined;
                     var wy_arr: [4][S]f64 = undefined;
                     for (0..S) |ii| {
@@ -320,8 +382,8 @@ pub fn sampleOverPixelsSIMD(
                             ty_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
                         ));
                         inline for (0..4) |kk| {
-                            wx_arr[kk][ii] = cubic_lut[ix][kk];
-                            wy_arr[kk][ii] = cubic_lut[iy][kk];
+                            wx_arr[kk][ii] = lut[ix][kk];
+                            wy_arr[kk][ii] = lut[iy][kk];
                         }
                     }
                     inline for (0..4) |kk| {
@@ -329,12 +391,12 @@ pub fn sampleOverPixelsSIMD(
                         v_wy[kk] = wy_arr[kk];
                     }
                 },
-                .cubic_lut_lerp => {
+                .lut_lerp => {
                     var wx_arr: [4][S]f64 = undefined;
                     var wy_arr: [4][S]f64 = undefined;
                     for (0..S) |ii| {
-                        const wx = getLerpWeights(4, cubic_lut, tx_arr[ii]);
-                        const wy = getLerpWeights(4, cubic_lut, ty_arr[ii]);
+                        const wx = getLerpWeights(4, lut, tx_arr[ii]);
+                        const wy = getLerpWeights(4, lut, ty_arr[ii]);
                         inline for (0..4) |kk| {
                             wx_arr[kk][ii] = wx[kk];
                             wy_arr[kk][ii] = wy[kk];
@@ -345,7 +407,6 @@ pub fn sampleOverPixelsSIMD(
                         v_wy[kk] = wy_arr[kk];
                     }
                 },
-                else => unreachable,
             }
 
             var v_res: [channels]VecSF = [_]VecSF{@splat(0.0)} ** channels;
@@ -393,7 +454,7 @@ pub fn sampleOverPixelsSIMD(
             }
             return v_res;
         },
-        .quintic, .quintic_lut, .quintic_lut_lerp => {
+        .lanczos3, .quintic_bspline => {
             const K = 6;
             const offset = @divTrunc(@as(isize, @intCast(K)), 2) - 1;
 
@@ -403,23 +464,34 @@ pub fn sampleOverPixelsSIMD(
             const tx_arr: [S]f64 = v_tx;
             const ty_arr: [S]f64 = v_ty;
 
-            switch (interp) {
-                .quintic => {
-                    v_wx[0] = v_quinticWeightSIMD(v_tx + @as(VecSF, @splat(2.0)));
-                    v_wx[1] = v_quinticWeightSIMD(v_tx + @as(VecSF, @splat(1.0)));
-                    v_wx[2] = v_quinticWeightSIMD(v_tx);
-                    v_wx[3] = v_quinticWeightSIMD(v_tx - @as(VecSF, @splat(1.0)));
-                    v_wx[4] = v_quinticWeightSIMD(v_tx - @as(VecSF, @splat(2.0)));
-                    v_wx[5] = v_quinticWeightSIMD(v_tx - @as(VecSF, @splat(3.0)));
+            const lut = switch (config.sample) {
+                .lanczos3 => lanczos3_lut,
+                .quintic_bspline => quintic_bspline_lut,
+                else => unreachable,
+            };
 
-                    v_wy[0] = v_quinticWeightSIMD(v_ty + @as(VecSF, @splat(2.0)));
-                    v_wy[1] = v_quinticWeightSIMD(v_ty + @as(VecSF, @splat(1.0)));
-                    v_wy[2] = v_quinticWeightSIMD(v_ty);
-                    v_wy[3] = v_quinticWeightSIMD(v_ty - @as(VecSF, @splat(1.0)));
-                    v_wy[4] = v_quinticWeightSIMD(v_ty - @as(VecSF, @splat(2.0)));
-                    v_wy[5] = v_quinticWeightSIMD(v_ty - @as(VecSF, @splat(3.0)));
+            switch (config.mode) {
+                .direct => {
+                    const v_kernel: *const fn (VecSF) VecSF = switch (config.sample) {
+                        .lanczos3 => v_lanczos3WeightSIMD,
+                        .quintic_bspline => v_quinticBSplineWeightSIMD,
+                        else => unreachable,
+                    };
+                    v_wx[0] = v_kernel(v_tx + @as(VecSF, @splat(2.0)));
+                    v_wx[1] = v_kernel(v_tx + @as(VecSF, @splat(1.0)));
+                    v_wx[2] = v_kernel(v_tx);
+                    v_wx[3] = v_kernel(v_tx - @as(VecSF, @splat(1.0)));
+                    v_wx[4] = v_kernel(v_tx - @as(VecSF, @splat(2.0)));
+                    v_wx[5] = v_kernel(v_tx - @as(VecSF, @splat(3.0)));
+
+                    v_wy[0] = v_kernel(v_ty + @as(VecSF, @splat(2.0)));
+                    v_wy[1] = v_kernel(v_ty + @as(VecSF, @splat(1.0)));
+                    v_wy[2] = v_kernel(v_ty);
+                    v_wy[3] = v_kernel(v_ty - @as(VecSF, @splat(1.0)));
+                    v_wy[4] = v_kernel(v_ty - @as(VecSF, @splat(2.0)));
+                    v_wy[5] = v_kernel(v_ty - @as(VecSF, @splat(3.0)));
                 },
-                .quintic_lut => {
+                .lut => {
                     var wx_arr: [6][S]f64 = undefined;
                     var wy_arr: [6][S]f64 = undefined;
                     for (0..S) |ii| {
@@ -430,8 +502,8 @@ pub fn sampleOverPixelsSIMD(
                             ty_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
                         ));
                         inline for (0..6) |kk| {
-                            wx_arr[kk][ii] = quintic_lut[ix][kk];
-                            wy_arr[kk][ii] = quintic_lut[iy][kk];
+                            wx_arr[kk][ii] = lut[ix][kk];
+                            wy_arr[kk][ii] = lut[iy][kk];
                         }
                     }
                     inline for (0..6) |kk| {
@@ -439,12 +511,12 @@ pub fn sampleOverPixelsSIMD(
                         v_wy[kk] = wy_arr[kk];
                     }
                 },
-                .quintic_lut_lerp => {
+                .lut_lerp => {
                     var wx_arr: [6][S]f64 = undefined;
                     var wy_arr: [6][S]f64 = undefined;
                     for (0..S) |ii| {
-                        const wx = getLerpWeights(6, quintic_lut, tx_arr[ii]);
-                        const wy = getLerpWeights(6, quintic_lut, ty_arr[ii]);
+                        const wx = getLerpWeights(6, lut, tx_arr[ii]);
+                        const wy = getLerpWeights(6, lut, ty_arr[ii]);
                         inline for (0..6) |kk| {
                             wx_arr[kk][ii] = wx[kk];
                             wy_arr[kk][ii] = wy[kk];
@@ -455,7 +527,6 @@ pub fn sampleOverPixelsSIMD(
                         v_wy[kk] = wy_arr[kk];
                     }
                 },
-                else => unreachable,
             }
 
             var v_res: [channels]VecSF = [_]VecSF{@splat(0.0)} ** channels;
@@ -508,7 +579,7 @@ pub fn sampleOverPixelsSIMD(
 
 pub fn samplePerPixelInnerSIMD(
     comptime channels: usize,
-    interp: InterpType,
+    comptime config: TextureSampleConfig,
     texture: anytype,
     u: f64,
     v: f64,
@@ -531,96 +602,135 @@ pub fn samplePerPixelInnerSIMD(
     const tx = xf - @as(f64, @floatFromInt(x_i));
     const ty = yf - @as(f64, @floatFromInt(y_i));
 
-    return switch (interp) {
+    return switch (config.sample) {
+        .nearest => getPx(channels, texture, @as(isize, @intFromFloat(@round(xf))), @as(isize, @intFromFloat(@round(yf)))),
         .linear => {
             const wx = [2]f64{ 1.0 - tx, tx };
             const wy = [2]f64{ 1.0 - ty, ty };
             return sample2DInnerSIMD(channels, 2, texture, x_i, y_i, wx, wy);
         },
-        .cubic => {
-            const wx = [4]f64{
-                cubicWeightPoly(tx + 1),
-                cubicWeightPoly(tx),
-                cubicWeightPoly(tx - 1),
-                cubicWeightPoly(tx - 2),
+        .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => {
+            const kernel: *const fn (f64) f64 = switch (config.sample) {
+                .cubic_catmull_rom => cubicWeightCatmullRom,
+                .cubic_mitchell_netravali => cubicWeightMitchellNetravali,
+                .cubic_bspline => cubicWeightBSpline,
+                else => unreachable,
             };
-            const wy = [4]f64{
-                cubicWeightPoly(ty + 1),
-                cubicWeightPoly(ty),
-                cubicWeightPoly(ty - 1),
-                cubicWeightPoly(ty - 2),
+            const lut = switch (config.sample) {
+                .cubic_catmull_rom => catmull_rom_lut,
+                .cubic_mitchell_netravali => mitchell_netravali_lut,
+                .cubic_bspline => cubic_bspline_lut,
+                else => unreachable,
             };
-            return sample2DInnerSIMD(channels, 4, texture, x_i, y_i, wx, wy);
-        },
-        .cubic_lut => {
-            const idx_tx = @as(usize, @intFromFloat(
-                tx * @as(f64, @floatFromInt(lut_size - 1)),
-            ));
-            const idx_ty = @as(usize, @intFromFloat(
-                ty * @as(f64, @floatFromInt(lut_size - 1)),
-            ));
-            return sample2DInnerSIMD(
-                channels,
-                4,
-                texture,
-                x_i,
-                y_i,
-                cubic_lut[idx_tx],
-                cubic_lut[idx_ty],
-            );
-        },
-        .cubic_lut_lerp => {
-            const wx = getLerpWeights(4, cubic_lut, tx);
-            const wy = getLerpWeights(4, cubic_lut, ty);
-            return sample2DInnerSIMD(channels, 4, texture, x_i, y_i, wx, wy);
-        },
-        .quintic => {
-            const wx = [6]f64{
-                quinticWeightPoly(tx + 2),
-                quinticWeightPoly(tx + 1),
-                quinticWeightPoly(tx),
-                quinticWeightPoly(tx - 1),
-                quinticWeightPoly(tx - 2),
-                quinticWeightPoly(tx - 3),
+            return switch (config.mode) {
+                .direct => sample2DInnerSIMD(
+                    channels,
+                    4,
+                    texture,
+                    x_i,
+                    y_i,
+                    .{
+                        kernel(tx + 1),
+                        kernel(tx),
+                        kernel(tx - 1),
+                        kernel(tx - 2),
+                    },
+                    .{
+                        kernel(ty + 1),
+                        kernel(ty),
+                        kernel(ty - 1),
+                        kernel(ty - 2),
+                    },
+                ),
+                .lut => {
+                    const idx_tx = @as(usize, @intFromFloat(
+                        tx * @as(f64, @floatFromInt(lut_size - 1)),
+                    ));
+                    const idx_ty = @as(usize, @intFromFloat(
+                        ty * @as(f64, @floatFromInt(lut_size - 1)),
+                    ));
+                    return sample2DInnerSIMD(
+                        channels,
+                        4,
+                        texture,
+                        x_i,
+                        y_i,
+                        lut[idx_tx],
+                        lut[idx_ty],
+                    );
+                },
+                .lut_lerp => {
+                    const wx = getLerpWeights(4, lut, tx);
+                    const wy = getLerpWeights(4, lut, ty);
+                    return sample2DInnerSIMD(channels, 4, texture, x_i, y_i, wx, wy);
+                },
             };
-            const wy = [6]f64{
-                quinticWeightPoly(ty + 2),
-                quinticWeightPoly(ty + 1),
-                quinticWeightPoly(ty),
-                quinticWeightPoly(ty - 1),
-                quinticWeightPoly(ty - 2),
-                quinticWeightPoly(ty - 3),
+        },
+        .lanczos3, .quintic_bspline => {
+            const kernel: *const fn (f64) f64 = switch (config.sample) {
+                .lanczos3 => lanczos3Weight,
+                .quintic_bspline => quinticBSplineWeight,
+                else => unreachable,
             };
-            return sample2DInnerSIMD(channels, 6, texture, x_i, y_i, wx, wy);
-        },
-        .quintic_lut => {
-            const idx_tx = @as(usize, @intFromFloat(
-                tx * @as(f64, @floatFromInt(lut_size - 1)),
-            ));
-            const idx_ty = @as(usize, @intFromFloat(
-                ty * @as(f64, @floatFromInt(lut_size - 1)),
-            ));
-            return sample2DInnerSIMD(
-                channels,
-                6,
-                texture,
-                x_i,
-                y_i,
-                quintic_lut[idx_tx],
-                quintic_lut[idx_ty],
-            );
-        },
-        .quintic_lut_lerp => {
-            const wx = getLerpWeights(6, quintic_lut, tx);
-            const wy = getLerpWeights(6, quintic_lut, ty);
-            return sample2DInnerSIMD(channels, 6, texture, x_i, y_i, wx, wy);
+            const lut = switch (config.sample) {
+                .lanczos3 => lanczos3_lut,
+                .quintic_bspline => quintic_bspline_lut,
+                else => unreachable,
+            };
+            return switch (config.mode) {
+                .direct => sample2DInnerSIMD(
+                    channels,
+                    6,
+                    texture,
+                    x_i,
+                    y_i,
+                    .{
+                        kernel(tx + 2),
+                        kernel(tx + 1),
+                        kernel(tx),
+                        kernel(tx - 1),
+                        kernel(tx - 2),
+                        kernel(tx - 3),
+                    },
+                    .{
+                        kernel(ty + 2),
+                        kernel(ty + 1),
+                        kernel(ty),
+                        kernel(ty - 1),
+                        kernel(ty - 2),
+                        kernel(ty - 3),
+                    },
+                ),
+                .lut => {
+                    const idx_tx = @as(usize, @intFromFloat(
+                        tx * @as(f64, @floatFromInt(lut_size - 1)),
+                    ));
+                    const idx_ty = @as(usize, @intFromFloat(
+                        ty * @as(f64, @floatFromInt(lut_size - 1)),
+                    ));
+                    return sample2DInnerSIMD(
+                        channels,
+                        6,
+                        texture,
+                        x_i,
+                        y_i,
+                        lut[idx_tx],
+                        lut[idx_ty],
+                    );
+                },
+                .lut_lerp => {
+                    const wx = getLerpWeights(6, lut, tx);
+                    const wy = getLerpWeights(6, lut, ty);
+                    return sample2DInnerSIMD(channels, 6, texture, x_i, y_i, wx, wy);
+                },
+            };
         },
     };
 }
 
 pub fn samplePerLaneInnerSIMD(
     comptime channels: usize,
-    interp: InterpType,
+    comptime config: TextureSampleConfig,
     v_mask_active: VecSB,
     texture: anytype,
     v_u: VecSF,
@@ -636,7 +746,7 @@ pub fn samplePerLaneInnerSIMD(
         if (mask_arr[ii]) {
             const sampled = samplePerPixelInnerSIMD(
                 channels,
-                interp,
+                config,
                 texture,
                 u_arr[ii],
                 v_arr[ii],
@@ -657,7 +767,7 @@ pub fn samplePerLaneInnerSIMD(
 
 pub fn samplePerLaneTri3SIMD(
     comptime channels: usize,
-    interp: InterpType,
+    comptime config: TextureSampleConfig,
     v_mask_active: VecSB,
     texture: anytype,
     v_u: VecSF,
@@ -725,7 +835,7 @@ pub fn samplePerLaneTri3SIMD(
         const lane = active_lanes[ii];
         const sampled = samplePerPixelInnerSIMD(
             channels,
-            interp,
+            config,
             texture,
             u_arr[lane],
             v_arr[lane],

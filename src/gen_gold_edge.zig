@@ -25,7 +25,15 @@ pub fn main() !void {
         .quad9,
     };
 
-    const interp_types = [_]gengold.texops.InterpType{.cubic_lut_lerp};
+    const sample_configs = [_]gengold.texops.TextureSampleConfig{
+        .{ .sample = .nearest, .mode = .direct },
+        .{ .sample = .linear, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+        .{ .sample = .cubic_mitchell_netravali, .mode = .lut_lerp },
+        .{ .sample = .lanczos3, .mode = .lut_lerp },
+        .{ .sample = .cubic_bspline, .mode = .lut_lerp },
+        .{ .sample = .quintic_bspline, .mode = .lut_lerp },
+    };
     const pixel_num = [_]u32{ 320, 200 };
     const config = gengold.zraster.RasterConfig{
         .save_opt = .disk,
@@ -45,7 +53,7 @@ pub fn main() !void {
         1.1,
         texture,
         pixel_num,
-        &interp_types,
+        &sample_configs,
         "gold-edge",
         "data-edge",
         config,
@@ -58,7 +66,7 @@ pub fn main() !void {
         1.1,
         texture,
         pixel_num,
-        &interp_types,
+        &sample_configs,
         "gold-edge",
         "data-edge",
         config,
@@ -71,7 +79,7 @@ pub fn main() !void {
         1.1,
         texture,
         pixel_num,
-        &interp_types,
+        &sample_configs,
         "gold-edge",
         "data-edge",
         config,

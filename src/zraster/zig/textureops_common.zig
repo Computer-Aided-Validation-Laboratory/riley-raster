@@ -5,6 +5,34 @@ const lut_size = buildconfig.config.interp_lut_size;
 const NDArray = @import("ndarray.zig").NDArray;
 const csvio = @import("csvio.zig");
 
+pub const TextureSample = enum {
+    nearest,
+    linear,
+    cubic_catmull_rom,
+    cubic_mitchell_netravali,
+    lanczos3,
+    cubic_bspline,
+    quintic_bspline,
+};
+
+pub const TextureSampleMode = enum {
+    direct,
+    lut,
+    lut_lerp,
+};
+
+pub const TextureSampleConfig = struct {
+    sample: TextureSample,
+    mode: TextureSampleMode = .direct,
+
+    pub fn isValid(self: TextureSampleConfig) bool {
+        return switch (self.sample) {
+            .nearest, .linear => self.mode == .direct,
+            else => true,
+        };
+    }
+};
+
 pub const InterpType = enum {
     linear,
     cubic,
@@ -13,6 +41,18 @@ pub const InterpType = enum {
     quintic,
     quintic_lut,
     quintic_lut_lerp,
+
+    pub fn toConfig(self: InterpType) TextureSampleConfig {
+        return switch (self) {
+            .linear => .{ .sample = .linear, .mode = .direct },
+            .cubic => .{ .sample = .cubic_catmull_rom, .mode = .direct },
+            .cubic_lut => .{ .sample = .cubic_catmull_rom, .mode = .lut },
+            .cubic_lut_lerp => .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+            .quintic => .{ .sample = .quintic_bspline, .mode = .direct },
+            .quintic_lut => .{ .sample = .quintic_bspline, .mode = .lut },
+            .quintic_lut_lerp => .{ .sample = .quintic_bspline, .mode = .lut_lerp },
+        };
+    }
 };
 
 pub fn Texture(comptime channels: usize) type {
@@ -94,7 +134,7 @@ pub fn Texture(comptime channels: usize) type {
     };
 }
 
-pub fn cubicWeightPoly(x: f64) f64 {
+pub fn cubicWeightCatmullRom(x: f64) f64 {
     const abs_x = @abs(x);
     if (abs_x <= 1.0) {
         return ((1.5 * abs_x - 2.5) * abs_x + 0.0) * abs_x + 1.0;
@@ -104,7 +144,35 @@ pub fn cubicWeightPoly(x: f64) f64 {
     return 0.0;
 }
 
-pub fn quinticWeightSinc(x: f64) f64 {
+pub fn cubicWeightMitchellNetravali(x: f64) f64 {
+    const r = @abs(x);
+    const B = 1.0 / 3.0;
+    const C = 1.0 / 3.0;
+    if (r < 1.0) {
+        return ((12.0 - 9.0 * B - 6.0 * C) * r * r * r +
+            (-18.0 + 12.0 * B + 6.0 * C) * r * r +
+            (6.0 - 2.0 * B)) / 6.0;
+    } else if (r < 2.0) {
+        return ((-B - 6.0 * C) * r * r * r +
+            (6.0 * B + 30.0 * C) * r * r +
+            (-12.0 * B - 48.0 * C) * r +
+            (8.0 * B + 24.0 * C)) / 6.0;
+    }
+    return 0.0;
+}
+
+pub fn cubicWeightBSpline(x: f64) f64 {
+    const r = @abs(x);
+    if (r < 1.0) {
+        return (3.0 * r * r * r - 6.0 * r * r + 4.0) / 6.0;
+    } else if (r < 2.0) {
+        const t = 2.0 - r;
+        return t * t * t / 6.0;
+    }
+    return 0.0;
+}
+
+pub fn lanczos3Weight(x: f64) f64 {
     const abs_x = @abs(x);
     if (abs_x < tol.texture.quintic_centre_snap) return 1.0;
     if (abs_x >= 3.0) return 0.0;
@@ -113,24 +181,7 @@ pub fn quinticWeightSinc(x: f64) f64 {
     return (std.math.sin(pi_x) / pi_x) * (std.math.sin(pi_x_3) / pi_x_3);
 }
 
-// pub fn quinticWeightPoly(x: f64) f64 {
-//     const abs_x = @abs(x);
-//     if (abs_x >= 3.0) return 0.0;
-//     if (abs_x <= 1.0) {
-//         return ((((-0.416666 * abs_x + 1.0) * abs_x + 0.583333) * abs_x - 1.5) *
-//             abs_x - 0.083333) * abs_x + 1.0;
-//     } else if (abs_x <= 2.0) {
-//         const t = abs_x - 1.0;
-//         return ((((0.25 * t - 0.833333) * t + 0.416666) * t + 0.5) *
-//             t - 0.083333) * t + 0.0;
-//     } else {
-//         const t = abs_x - 2.0;
-//         return ((((-0.008333 * t + 0.083333) * t - 0.041666) * t - 0.083333) *
-//             t + 0.041666) * t + 0.0;
-//     }
-// }
-
-pub fn quinticWeightPoly(x: f64) f64 {
+pub fn quinticBSplineWeight(x: f64) f64 {
     const r = @abs(x);
 
     if (r >= 3.0) return 0.0;
@@ -149,43 +200,77 @@ pub fn quinticWeightPoly(x: f64) f64 {
     }
 }
 
-pub const cubic_lut = blk: {
+pub const catmull_rom_lut = blk: {
     @setEvalBranchQuota(100000);
     var table: [lut_size][4]f64 = undefined;
     for (0..lut_size) |ii| {
         const tt = @as(f64, @floatFromInt(ii)) / @as(f64, @floatFromInt(lut_size));
         for (0..4) |jj| {
             const xx = @as(f64, @floatFromInt(jj)) - 1.0 - tt;
-            const abs_x = @abs(xx);
-            const a = -0.5;
-            if (abs_x <= 1.0) {
-                table[ii][jj] = (a + 2.0) * abs_x * abs_x * abs_x -
-                    (a + 3.0) * abs_x * abs_x + 1.0;
-            } else if (abs_x < 2.0) {
-                table[ii][jj] = a * abs_x * abs_x * abs_x - 5.0 * a * abs_x * abs_x +
-                    8.0 * a * abs_x - 4.0 * a;
-            } else {
-                table[ii][jj] = 0.0;
-            }
+            table[ii][jj] = cubicWeightCatmullRom(xx);
         }
     }
     break :blk table;
 };
 
-pub const quintic_lut = blk: {
+pub const mitchell_netravali_lut = blk: {
+    @setEvalBranchQuota(100000);
+    var table: [lut_size][4]f64 = undefined;
+    for (0..lut_size) |ii| {
+        const tt = @as(f64, @floatFromInt(ii)) / @as(f64, @floatFromInt(lut_size));
+        for (0..4) |jj| {
+            const xx = @as(f64, @floatFromInt(jj)) - 1.0 - tt;
+            table[ii][jj] = cubicWeightMitchellNetravali(xx);
+        }
+    }
+    break :blk table;
+};
+
+pub const cubic_bspline_lut = blk: {
+    @setEvalBranchQuota(100000);
+    var table: [lut_size][4]f64 = undefined;
+    for (0..lut_size) |ii| {
+        const tt = @as(f64, @floatFromInt(ii)) / @as(f64, @floatFromInt(lut_size));
+        for (0..4) |jj| {
+            const xx = @as(f64, @floatFromInt(jj)) - 1.0 - tt;
+            table[ii][jj] = cubicWeightBSpline(xx);
+        }
+    }
+    break :blk table;
+};
+
+pub const lanczos3_lut = blk: {
     @setEvalBranchQuota(100000);
     var table: [lut_size][6]f64 = undefined;
     for (0..lut_size) |ii| {
         const tt = @as(f64, @floatFromInt(ii)) /
             @as(f64, @floatFromInt(lut_size));
         for (0..6) |jj| {
-            table[ii][jj] = quinticWeightSinc(
+            table[ii][jj] = lanczos3Weight(
                 @as(f64, @floatFromInt(jj)) - 2.0 - tt,
             );
         }
     }
     break :blk table;
 };
+
+pub const quintic_bspline_lut = blk: {
+    @setEvalBranchQuota(100000);
+    var table: [lut_size][6]f64 = undefined;
+    for (0..lut_size) |ii| {
+        const tt = @as(f64, @floatFromInt(ii)) /
+            @as(f64, @floatFromInt(lut_size));
+        for (0..6) |jj| {
+            table[ii][jj] = quinticBSplineWeight(
+                @as(f64, @floatFromInt(jj)) - 2.0 - tt,
+            );
+        }
+    }
+    break :blk table;
+};
+
+pub const cubic_lut = catmull_rom_lut;
+pub const quintic_lut = quintic_bspline_lut;
 
 pub fn getPx(
     comptime channels: usize,
@@ -263,11 +348,12 @@ pub fn getLerpWeights(
 
 pub fn sampleGeneric(
     comptime channels: usize,
-    interp: InterpType,
+    comptime config: TextureSampleConfig,
     texture: anytype,
     u: f64,
     v: f64,
 ) [channels]f64 {
+    std.debug.assert(config.isValid());
     const cols_minus_1 = @as(isize, @intCast(texture.cols_num)) - 1;
     const rows_minus_1 = @as(isize, @intCast(texture.rows_num)) - 1;
     const x_f = u * @as(f64, @floatFromInt(cols_minus_1));
@@ -277,7 +363,8 @@ pub fn sampleGeneric(
     const tx = x_f - @as(f64, @floatFromInt(x_i));
     const ty = y_f - @as(f64, @floatFromInt(y_i));
 
-    return switch (interp) {
+    return switch (config.sample) {
+        .nearest => getPx(channels, texture, @as(isize, @intFromFloat(@round(x_f))), @as(isize, @intFromFloat(@round(y_f)))),
         .linear => {
             const p00 = getPx(channels, texture, x_i, y_i);
             const p10 = getPx(channels, texture, x_i + 1, y_i);
@@ -292,100 +379,114 @@ pub fn sampleGeneric(
             }
             return res;
         },
-        .cubic => sample2D(
-            channels,
-            4,
-            texture,
-            x_i,
-            y_i,
-            .{
-                cubicWeightPoly(tx + 1),
-                cubicWeightPoly(tx),
-                cubicWeightPoly(tx - 1),
-                cubicWeightPoly(tx - 2),
-            },
-            .{
-                cubicWeightPoly(ty + 1),
-                cubicWeightPoly(ty),
-                cubicWeightPoly(ty - 1),
-                cubicWeightPoly(ty - 2),
-            },
-        ),
-        .cubic_lut => sample2D(
-            channels,
-            4,
-            texture,
-            x_i,
-            y_i,
-            cubic_lut[
-                @as(usize, @intFromFloat(
-                    tx * @as(f64, @floatFromInt(lut_size - 1)),
-                ))
-            ],
-            cubic_lut[
-                @as(usize, @intFromFloat(
-                    ty * @as(f64, @floatFromInt(lut_size - 1)),
-                ))
-            ],
-        ),
-        .cubic_lut_lerp => {
-            const wx = getLerpWeights(4, cubic_lut, tx);
-            const wy = getLerpWeights(4, cubic_lut, ty);
-            return sample2D(channels, 4, texture, x_i, y_i, wx, wy);
+        .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => {
+            const kernel: *const fn (f64) f64 = switch (config.sample) {
+                .cubic_catmull_rom => cubicWeightCatmullRom,
+                .cubic_mitchell_netravali => cubicWeightMitchellNetravali,
+                .cubic_bspline => cubicWeightBSpline,
+                else => unreachable,
+            };
+            const lut = switch (config.sample) {
+                .cubic_catmull_rom => catmull_rom_lut,
+                .cubic_mitchell_netravali => mitchell_netravali_lut,
+                .cubic_bspline => cubic_bspline_lut,
+                else => unreachable,
+            };
+            return switch (config.mode) {
+                .direct => sample2D(
+                    channels,
+                    4,
+                    texture,
+                    x_i,
+                    y_i,
+                    .{
+                        kernel(tx + 1),
+                        kernel(tx),
+                        kernel(tx - 1),
+                        kernel(tx - 2),
+                    },
+                    .{
+                        kernel(ty + 1),
+                        kernel(ty),
+                        kernel(ty - 1),
+                        kernel(ty - 2),
+                    },
+                ),
+                .lut => sample2D(
+                    channels,
+                    4,
+                    texture,
+                    x_i,
+                    y_i,
+                    lut[@as(usize, @intFromFloat(tx * @as(f64, @floatFromInt(lut_size - 1))))],
+                    lut[@as(usize, @intFromFloat(ty * @as(f64, @floatFromInt(lut_size - 1))))],
+                ),
+                .lut_lerp => {
+                    const wx = getLerpWeights(4, lut, tx);
+                    const wy = getLerpWeights(4, lut, ty);
+                    return sample2D(channels, 4, texture, x_i, y_i, wx, wy);
+                },
+            };
         },
-        .quintic => sample2D(
-            channels,
-            6,
-            texture,
-            x_i,
-            y_i,
-            .{
-                quinticWeightPoly(tx + 2),
-                quinticWeightPoly(tx + 1),
-                quinticWeightPoly(tx),
-                quinticWeightPoly(tx - 1),
-                quinticWeightPoly(tx - 2),
-                quinticWeightPoly(tx - 3),
-            },
-            .{
-                quinticWeightPoly(ty + 2),
-                quinticWeightPoly(ty + 1),
-                quinticWeightPoly(ty),
-                quinticWeightPoly(ty - 1),
-                quinticWeightPoly(ty - 2),
-                quinticWeightPoly(ty - 3),
-            },
-        ),
-        .quintic_lut => {
-            const idx_tx = @as(usize, @intFromFloat(
-                tx * @as(f64, @floatFromInt(lut_size - 1)),
-            ));
-            const idx_ty = @as(usize, @intFromFloat(
-                ty * @as(f64, @floatFromInt(lut_size - 1)),
-            ));
-            return sample2D(
-                channels,
-                6,
-                texture,
-                x_i,
-                y_i,
-                quintic_lut[idx_tx],
-                quintic_lut[idx_ty],
-            );
-        },
-        .quintic_lut_lerp => {
-            const wx = getLerpWeights(6, quintic_lut, tx);
-            const wy = getLerpWeights(6, quintic_lut, ty);
-            return sample2D(channels, 6, texture, x_i, y_i, wx, wy);
+        .lanczos3, .quintic_bspline => {
+            const kernel: *const fn (f64) f64 = switch (config.sample) {
+                .lanczos3 => lanczos3Weight,
+                .quintic_bspline => quinticBSplineWeight,
+                else => unreachable,
+            };
+            const lut = switch (config.sample) {
+                .lanczos3 => lanczos3_lut,
+                .quintic_bspline => quintic_bspline_lut,
+                else => unreachable,
+            };
+            return switch (config.mode) {
+                .direct => sample2D(
+                    channels,
+                    6,
+                    texture,
+                    x_i,
+                    y_i,
+                    .{
+                        kernel(tx + 2),
+                        kernel(tx + 1),
+                        kernel(tx),
+                        kernel(tx - 1),
+                        kernel(tx - 2),
+                        kernel(tx - 3),
+                    },
+                    .{
+                        kernel(ty + 2),
+                        kernel(ty + 1),
+                        kernel(ty),
+                        kernel(ty - 1),
+                        kernel(ty - 2),
+                        kernel(ty - 3),
+                    },
+                ),
+                .lut => sample2D(
+                    channels,
+                    6,
+                    texture,
+                    x_i,
+                    y_i,
+                    lut[@as(usize, @intFromFloat(tx * @as(f64, @floatFromInt(lut_size - 1))))],
+                    lut[@as(usize, @intFromFloat(ty * @as(f64, @floatFromInt(lut_size - 1))))],
+                ),
+                .lut_lerp => {
+                    const wx = getLerpWeights(6, lut, tx);
+                    const wy = getLerpWeights(6, lut, ty);
+                    return sample2D(channels, 6, texture, x_i, y_i, wx, wy);
+                },
+            };
         },
     };
 }
 
 pub fn sampleGreyscale(
-    comptime interp: InterpType,
+    comptime config: TextureSampleConfig,
     texture: anytype,
     u: f64,
     v: f64,
 ) f64 {
-    return sampleGeneric(1, interp, texture, u, v)[0];
+    return sampleGeneric(1, config, texture, u, v)[0];
 }

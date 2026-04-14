@@ -75,8 +75,16 @@ test "Unified Benchmark Tests" {
 
     const mesh_types = std.enums.values(mr.MeshType);
     const shader_types = std.enums.values(common.ShaderType);
-    const interp_types = [_]common.InterpType{
-        .linear, .cubic, .cubic_lut_lerp, .quintic, .quintic_lut_lerp,
+    const sample_configs = [_]common.TextureSampleConfig{
+        .{ .sample = .nearest, .mode = .direct },
+        .{ .sample = .linear, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+        .{ .sample = .cubic_mitchell_netravali, .mode = .lut_lerp },
+        .{ .sample = .lanczos3, .mode = .lut_lerp },
+        .{ .sample = .cubic_bspline, .mode = .lut_lerp },
+        .{ .sample = .quintic_bspline, .mode = .direct },
+        .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
 
     var total_fails: usize = 0;
@@ -92,7 +100,7 @@ test "Unified Benchmark Tests" {
 
         for (mesh_types) |mt| {
             for (shader_types) |st| {
-                for (interp_types) |it| {
+                for (sample_configs) |sc| {
                     _ = arena.reset(.free_all);
 
                     const data_dir = try std.fmt.allocPrint(
@@ -106,12 +114,12 @@ test "Unified Benchmark Tests" {
                     else
                         config;
 
-                    if (common.shouldRun(run_config, mt, st, it, data_dir)) {
+                    if (common.shouldRun(run_config, mt, st, sc, data_dir)) {
                         const case_name = if (st == .tex8_grey or st == .tex8_rgb)
                             try std.fmt.allocPrint(
                                 aa,
-                                "{s}_{s}_{s}",
-                                .{ @tagName(mt), @tagName(st), @tagName(it) },
+                                "{s}_{s}_{s}_{s}",
+                                .{ @tagName(mt), @tagName(st), @tagName(sc.sample), @tagName(sc.mode) },
                             )
                         else
                             try std.fmt.allocPrint(
@@ -128,7 +136,7 @@ test "Unified Benchmark Tests" {
                             io,
                             mt,
                             st,
-                            it,
+                            sc,
                             data_dir,
                             cc.out_dir,
                             pixel_num,

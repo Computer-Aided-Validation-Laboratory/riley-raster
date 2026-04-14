@@ -35,12 +35,16 @@ pub fn main() !void {
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
-    const interp_types = [_]common.InterpType{
-        .linear,
-        .cubic,
-        .cubic_lut_lerp,
-        .quintic,
-        .quintic_lut_lerp,
+    const sample_configs = [_]common.TextureSampleConfig{
+        .{ .sample = .nearest, .mode = .direct },
+        .{ .sample = .linear, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+        .{ .sample = .cubic_mitchell_netravali, .mode = .lut_lerp },
+        .{ .sample = .lanczos3, .mode = .lut_lerp },
+        .{ .sample = .cubic_bspline, .mode = .lut_lerp },
+        .{ .sample = .quintic_bspline, .mode = .direct },
+        .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
 
     std.debug.print(
@@ -50,15 +54,22 @@ pub fn main() !void {
 
     inline for (mesh_types) |mt| {
         inline for (shader_types) |st| {
-            inline for (interp_types) |it| {
+            inline for (sample_configs) |sc| {
                 const data_dir = comptime "data-bench/" ++ @tagName(mt) ++ "_fullraster";
-                if (common.shouldRun(.{ .run = .all }, mt, st, it, data_dir)) {
+                if (common.shouldRun(.{ .run = .all }, mt, st, sc, data_dir)) {
                     const case_name = if (st == .tex8_grey or st == .tex8_rgb)
-                        comptime @tagName(mt) ++ "_" ++
-                            @tagName(st) ++ "_" ++
-                            @tagName(it)
+                        try std.fmt.allocPrint(
+                            allocator,
+                            "{s}_{s}_{s}_{s}",
+                            .{ @tagName(mt), @tagName(st), @tagName(sc.sample), @tagName(sc.mode) },
+                        )
                     else
-                        comptime @tagName(mt) ++ "_" ++ @tagName(st);
+                        try std.fmt.allocPrint(
+                            allocator,
+                            "{s}_{s}",
+                            .{ @tagName(mt), @tagName(st) },
+                        );
+                    defer allocator.free(case_name);
                     std.debug.print("Rendering reference: {s}\n", .{case_name});
 
                     // We generate gold from the minimal 'fullraster' dataset
@@ -67,7 +78,7 @@ pub fn main() !void {
                         io,
                         mt,
                         st,
-                        it,
+                        sc,
                         data_dir,
                         out_dir_base,
                         pixel_num,

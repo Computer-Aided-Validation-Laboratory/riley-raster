@@ -12,21 +12,21 @@ pub fn main() !void {
     const io = io_threaded.io();
 
     const texture_grey = try iio.loadImage(
-        u8,
-        1,
         outer_alloc,
         io,
         "texture/speckle.bmp",
         .bmp,
+        u8,
+        1,
     );
     defer texture_grey.deinit(outer_alloc);
     const texture_rgb = try iio.loadImage(
-        u8,
-        3,
         outer_alloc,
         io,
         "texture/speckle_rgb.bmp",
         .bmp,
+        u8,
+        3,
     );
     defer texture_rgb.deinit(outer_alloc);
 
@@ -36,8 +36,15 @@ pub fn main() !void {
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
-    const interp_types = [_]common.InterpType{
-        .linear, .cubic, .cubic_lut_lerp, .quintic, .quintic_lut_lerp,
+    const sample_configs = [_]common.TextureSampleConfig{
+        .{ .sample = .linear, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+        .{ .sample = .cubic_mitchell_netravali, .mode = .lut_lerp },
+        .{ .sample = .lanczos3, .mode = .lut_lerp },
+        .{ .sample = .cubic_bspline, .mode = .lut_lerp },
+        .{ .sample = .quintic_bspline, .mode = .direct },
+        .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
 
     var stats_list: std.ArrayList(common.BenchStats) = .{};
@@ -54,7 +61,7 @@ pub fn main() !void {
 
     for (mesh_types) |mt| {
         for (shader_types) |st| {
-            for (interp_types) |it| {
+            for (sample_configs) |sc| {
                 var data_dir_buf: [256]u8 = undefined;
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
@@ -62,13 +69,13 @@ pub fn main() !void {
                     .{@tagName(mt)},
                 );
 
-                if (common.shouldRun(config, mt, st, it, data_dir)) {
+                if (common.shouldRun(config, mt, st, sc, data_dir)) {
                     var case_name_buf: [256]u8 = undefined;
                     const case_name = if (st == .tex8_grey or st == .tex8_rgb)
                         try std.fmt.bufPrint(
                             &case_name_buf,
-                            "{s}_{s}_{s}",
-                            .{ @tagName(mt), @tagName(st), @tagName(it) },
+                            "{s}_{s}_{s}_{s}",
+                            .{ @tagName(mt), @tagName(st), @tagName(sc.sample), @tagName(sc.mode) },
                         )
                     else
                         try std.fmt.bufPrint(
@@ -111,7 +118,7 @@ pub fn main() !void {
                             io,
                             mt,
                             st,
-                            it,
+                            sc,
                             data_dir,
                             out_dir_base,
                             pixel_num,

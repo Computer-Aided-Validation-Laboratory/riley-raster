@@ -79,7 +79,7 @@ pub fn runGenerationExt(
     fov_scale: f64,
     texture: iio.Texture(1),
     pixel_num: [2]u32,
-    interp_types: []const texops.InterpType,
+    sample_configs: []const texops.TextureSampleConfig,
     gold_dir_root: []const u8,
     data_dir_root: []const u8,
     config: RasterConfig,
@@ -152,19 +152,20 @@ pub fn runGenerationExt(
             }, flat_dir, add_disp, config);
 
             // Tex ShaderInput
-            for (interp_types) |it| {
-                const tex_dir = try std.fmt.allocPrint(aa, "{s}/{s}_{s}_{s}_tex_{s}", .{
+            for (sample_configs) |sc| {
+                const tex_dir = try std.fmt.allocPrint(aa, "{s}/{s}_{s}_{s}_tex_{s}_{s}", .{
                     gold_dir_root,
                     test_type,
                     @tagName(mt),
                     d_str,
-                    @tagName(it),
+                    @tagName(sc.sample),
+                    @tagName(sc.mode),
                 });
                 try renderAndSave(aa, io, &camera, mt, sim_data.coords, sim_data.connect, sim_data.field, .{
                     .tex_u8 = .{
                         .uvs = uvs.array,
                         .texture = texture,
-                        .interp_type = it,
+                        .sample_config = sc,
                     },
                 }, tex_dir, add_disp, config);
             }
@@ -384,7 +385,7 @@ pub fn runMultimeshMixedGenerationExt(
             .shader = .{ .tex_u8 = .{
                 .uvs = uvs.array,
                 .texture = texture,
-                .interp_type = .cubic_lut_lerp,
+                .sample_config = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
                 .bits = 8,
                 .scaling = .none,
             } },
@@ -510,7 +511,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
             .shader = .{ .tex_rgb_u8 = .{
                 .uvs = uvs.array,
                 .texture = texture,
-                .interp_type = .cubic_lut_lerp,
+                .sample_config = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
                 .bits = 8,
                 .scaling = .none,
             } },

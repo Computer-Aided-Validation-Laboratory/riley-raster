@@ -8,7 +8,7 @@ const VecSF = buildconfig.VecSF;
 
 const MatSlice = @import("matslice.zig").MatSlice;
 const texops = @import("textureops.zig");
-const InterpType = texops.InterpType;
+const TextureSampleConfig = texops.TextureSampleConfig;
 const common = @import("shaderops_common.zig");
 const simdops = @import("simdops.zig");
 
@@ -107,7 +107,7 @@ pub inline fn fillTexClipSIMD(
     comptime N: usize,
     comptime TexT: type,
     comptime channels: usize,
-    interp_type: InterpType,
+    comptime sample_config: TextureSampleConfig,
     ctx_shade: common.ShadeContext(N),
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
@@ -126,7 +126,7 @@ pub inline fn fillTexClipSIMD(
     const sampled_vecs = switch (cfg.simd_texture_interp) {
         .inner => texops.samplePerLaneInnerSIMD(
             channels,
-            interp_type,
+            sample_config,
             v_mask_active,
             sh.texture,
             v_tex_u,
@@ -134,7 +134,7 @@ pub inline fn fillTexClipSIMD(
         ),
         .over_pixels => texops.sampleOverPixelsSIMD(
             channels,
-            interp_type,
+            sample_config,
             sh.texture,
             v_tex_u,
             v_tex_v,
@@ -159,7 +159,7 @@ pub inline fn fillTexPerspSIMD(
     comptime N: usize,
     comptime TexT: type,
     comptime channels: usize,
-    interp_type: InterpType,
+    comptime sample_config: TextureSampleConfig,
     ctx_shade: common.ShadeContext(N),
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
@@ -189,7 +189,7 @@ pub inline fn fillTexPerspSIMD(
         .inner => if (comptime N == 3)
             texops.samplePerLaneTri3SIMD(
                 channels,
-                interp_type,
+                sample_config,
                 v_mask_active,
                 sh.texture,
                 v_tex_u,
@@ -198,7 +198,7 @@ pub inline fn fillTexPerspSIMD(
         else
             texops.samplePerLaneInnerSIMD(
                 channels,
-                interp_type,
+                sample_config,
                 v_mask_active,
                 sh.texture,
                 v_tex_u,
@@ -206,7 +206,7 @@ pub inline fn fillTexPerspSIMD(
             ),
         .over_pixels => texops.sampleOverPixelsSIMD(
             channels,
-            interp_type,
+            sample_config,
             sh.texture,
             v_tex_u,
             v_tex_v,

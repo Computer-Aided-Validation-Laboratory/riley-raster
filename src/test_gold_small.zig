@@ -34,7 +34,19 @@ test "Gold Small Suite" {
         .quad8,
         .quad9,
     };
-    const interp_types = std.enums.values(common.texops.InterpType);
+    const sample_configs = [_]common.texops.TextureSampleConfig{
+        .{ .sample = .nearest, .mode = .direct },
+        .{ .sample = .linear, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .lut },
+        .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+        .{ .sample = .cubic_mitchell_netravali, .mode = .lut_lerp },
+        .{ .sample = .lanczos3, .mode = .lut_lerp },
+        .{ .sample = .cubic_bspline, .mode = .lut_lerp },
+        .{ .sample = .quintic_bspline, .mode = .direct },
+        .{ .sample = .quintic_bspline, .mode = .lut },
+        .{ .sample = .quintic_bspline, .mode = .lut_lerp },
+    };
     const pixel_num = [_]u32{ 160, 100 };
 
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
@@ -48,7 +60,7 @@ test "Gold Small Suite" {
             1.1,
             texture,
             pixel_num,
-            interp_types,
+            &sample_configs,
             "gold-small",
             "data-small",
             tcfg.REL_TOL,
@@ -65,7 +77,7 @@ test "Gold Small Suite" {
             1.0,
             texture,
             pixel_num,
-            interp_types,
+            &sample_configs,
             "gold-small",
             "data-small",
             tcfg.REL_TOL,

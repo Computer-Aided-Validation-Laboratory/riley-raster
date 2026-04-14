@@ -151,14 +151,14 @@ pub fn getDateString() ![]const u8 {
 }
 
 pub const ShaderType = enum { flat_grey, flat_rgb, tex8_grey, tex8_rgb };
-pub const InterpType = @import("../zraster/zig/textureops.zig").InterpType;
+pub const TextureSampleConfig = @import("../zraster/zig/textureops.zig").TextureSampleConfig;
 
 pub const RunMode = enum { all, element, texture, interpolator };
 pub const BenchConfig = struct {
     run: RunMode = .all,
     element_type: mr.MeshType = .tri3,
     texture_type: ShaderType = .tex8_grey,
-    interp_type: InterpType = .cubic_lut_lerp,
+    sample_config: TextureSampleConfig = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
     skip_quad4ibi_sphere: bool = false,
 };
 
@@ -166,11 +166,11 @@ pub fn shouldRun(
     config: BenchConfig,
     mt: mr.MeshType,
     st: ShaderType,
-    it: InterpType,
+    sc: TextureSampleConfig,
     data_dir: []const u8,
 ) bool {
     const is_tex = (st == .tex8_grey or st == .tex8_rgb);
-    if (!is_tex and it != .linear) return false;
+    if (!is_tex and (sc.sample != .linear or sc.mode != .direct)) return false;
 
     if (config.skip_quad4ibi_sphere and mt == .quad4ibi) {
         if (std.mem.indexOf(u8, data_dir, "sphere200") != null or
@@ -184,7 +184,9 @@ pub fn shouldRun(
         .all => true,
         .element => mt == config.element_type,
         .texture => st == config.texture_type,
-        .interpolator => is_tex and it == config.interp_type,
+        .interpolator => is_tex and
+            sc.sample == config.sample_config.sample and
+            sc.mode == config.sample_config.mode,
     };
 }
 
@@ -240,7 +242,7 @@ pub fn runBenchmark(
     io: std.Io,
     etype: mr.MeshType,
     shader_type: ShaderType,
-    interp_type: InterpType,
+    sample_config: TextureSampleConfig,
     data_dir: []const u8,
     out_dir_base: []const u8,
     pixel_num: [2]u32,
@@ -253,7 +255,7 @@ pub fn runBenchmark(
         io,
         etype,
         shader_type,
-        interp_type,
+        sample_config,
         data_dir,
         out_dir_base,
         pixel_num,
@@ -267,7 +269,7 @@ pub fn runBenchmarkQuiet(
     io: std.Io,
     etype: mr.MeshType,
     shader_type: ShaderType,
-    interp_type: InterpType,
+    sample_config: TextureSampleConfig,
     data_dir: []const u8,
     out_dir_base: []const u8,
     pixel_num: [2]u32,
@@ -280,7 +282,7 @@ pub fn runBenchmarkQuiet(
         io,
         etype,
         shader_type,
-        interp_type,
+        sample_config,
         data_dir,
         out_dir_base,
         pixel_num,
@@ -295,7 +297,7 @@ fn runBenchmarkInternal(
     io: std.Io,
     etype: mr.MeshType,
     shader_type: ShaderType,
-    interp_type: InterpType,
+    sample_config: TextureSampleConfig,
     data_dir: []const u8,
     out_dir_base: []const u8,
     pixel_num: [2]u32,
@@ -343,7 +345,7 @@ fn runBenchmarkInternal(
             shader = .{ .tex_u8 = .{
                 .uvs = uvs_raw,
                 .texture = texture_grey,
-                .interp_type = interp_type,
+                .sample_config = sample_config,
             } };
         },
         .tex8_rgb => {
@@ -351,7 +353,7 @@ fn runBenchmarkInternal(
             shader = .{ .tex_rgb_u8 = .{
                 .uvs = uvs_raw,
                 .texture = texture_rgb,
-                .interp_type = interp_type,
+                .sample_config = sample_config,
             } };
         },
     }
@@ -459,8 +461,8 @@ fn runBenchmarkInternal(
     const out_name = if (shader_type == .tex8_grey or shader_type == .tex8_rgb)
         try std.fmt.allocPrint(
             aa,
-            "{s}_{s}_{s}",
-            .{ @tagName(etype), @tagName(shader_type), @tagName(interp_type) },
+            "{s}_{s}_{s}_{s}",
+            .{ @tagName(etype), @tagName(shader_type), @tagName(sample_config.sample), @tagName(sample_config.mode) },
         )
     else
         try std.fmt.allocPrint(

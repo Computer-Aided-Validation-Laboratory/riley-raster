@@ -28,14 +28,18 @@ pub fn main() !void {
         .quad9,
     };
 
-    const interp_types = [_]gengold.texops.InterpType{
-        .linear,
-        .cubic,
-        .cubic_lut,
-        .cubic_lut_lerp,
-        .quintic,
-        .quintic_lut,
-        .quintic_lut_lerp,
+    const sample_configs = [_]gengold.texops.TextureSampleConfig{
+        .{ .sample = .nearest, .mode = .direct },
+        .{ .sample = .linear, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .lut },
+        .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+        .{ .sample = .cubic_mitchell_netravali, .mode = .lut_lerp },
+        .{ .sample = .lanczos3, .mode = .lut_lerp },
+        .{ .sample = .cubic_bspline, .mode = .lut_lerp },
+        .{ .sample = .quintic_bspline, .mode = .direct },
+        .{ .sample = .quintic_bspline, .mode = .lut },
+        .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
     const pixel_num = [_]u32{ 160, 100 };
     const config = gengold.zraster.RasterConfig{
@@ -56,7 +60,7 @@ pub fn main() !void {
         1.1,
         texture,
         pixel_num,
-        &interp_types,
+        &sample_configs,
         "gold-small",
         "data-small",
         config,
@@ -71,7 +75,7 @@ pub fn main() !void {
         1.0,
         texture,
         pixel_num,
-        &interp_types,
+        &sample_configs,
         "gold-small",
         "data-small",
         config,

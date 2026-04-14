@@ -7,6 +7,7 @@ const VecSF = buildconfig.VecSF;
 
 const common = @import("shaderkernels_common.zig");
 const shaderops = @import("shaderops.zig");
+const texops = @import("textureops.zig");
 const report = @import("report.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const CoordSpace = @import("geometrykernels.zig").CoordSpace;
@@ -132,34 +133,58 @@ pub fn TexKernel(
                 }
             }
 
-            if (comptime coord_space == CoordSpace.raster) {
-                shaderops.fillTexPerspSIMD(
-                    N,
-                    TexT,
-                    channels,
-                    shader.interp_type,
-                    ctx_shade,
-                    v_mask_active,
-                    v_weights,
-                    v_nodes_inv_z,
-                    v_subpx_z,
-                    shader,
-                    spx_image_scratch,
-                );
-            } else if (comptime coord_space == CoordSpace.clip_px_leng) {
-                shaderops.fillTexClipSIMD(
-                    N,
-                    TexT,
-                    channels,
-                    shader.interp_type,
-                    ctx_shade,
-                    v_mask_active,
-                    v_weights,
-                    shader,
-                    spx_image_scratch,
-                );
-            } else {
-                @panic("shadeSIMD not implemented for this coord_space");
+            const config = shader.sample_config;
+            inline for (.{
+                .nearest,
+                .linear,
+                .cubic_catmull_rom,
+                .cubic_mitchell_netravali,
+                .lanczos3,
+                .cubic_bspline,
+                .quintic_bspline,
+            }) |sample_type| {
+                if (config.sample == sample_type) {
+                    inline for (.{ .direct, .lut, .lut_lerp }) |mode_type| {
+                        if (config.mode == mode_type) {
+                            const comptime_config = texops.TextureSampleConfig{
+                                .sample = sample_type,
+                                .mode = mode_type,
+                            };
+                            if (comptime comptime_config.isValid()) {
+                                if (comptime coord_space == CoordSpace.raster) {
+                                    shaderops.fillTexPerspSIMD(
+                                        N,
+                                        TexT,
+                                        channels,
+                                        comptime_config,
+                                        ctx_shade,
+                                        v_mask_active,
+                                        v_weights,
+                                        v_nodes_inv_z,
+                                        v_subpx_z,
+                                        shader,
+                                        spx_image_scratch,
+                                    );
+                                } else if (comptime coord_space == CoordSpace.clip_px_leng) {
+                                    shaderops.fillTexClipSIMD(
+                                        N,
+                                        TexT,
+                                        channels,
+                                        comptime_config,
+                                        ctx_shade,
+                                        v_mask_active,
+                                        v_weights,
+                                        shader,
+                                        spx_image_scratch,
+                                    );
+                                } else {
+                                    @panic("shadeSIMD not implemented for this coord_space");
+                                }
+                                return;
+                            }
+                        }
+                    }
+                }
             }
         }
     };

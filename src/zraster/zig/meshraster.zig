@@ -118,7 +118,7 @@ pub fn prepareMesh(
             mesh_prep.shader = .{ .tex_u8 = .{
                 .elem_uvs = elem_uvs,
                 .texture = tex_in.texture,
-                .interp_type = tex_in.interp_type,
+                .sample_config = tex_in.sample_config,
                 .bits = tex_in.bits,
                 .scaling = tex_in.scaling,
                 .scale_mul = factors.mul,
@@ -142,7 +142,7 @@ pub fn prepareMesh(
             mesh_prep.shader = .{ .tex_u16 = .{
                 .elem_uvs = elem_uvs,
                 .texture = tex_in.texture,
-                .interp_type = tex_in.interp_type,
+                .sample_config = tex_in.sample_config,
                 .bits = tex_in.bits,
                 .scaling = tex_in.scaling,
                 .scale_mul = factors.mul,
@@ -166,7 +166,7 @@ pub fn prepareMesh(
             mesh_prep.shader = .{ .tex_rgb_u8 = .{
                 .elem_uvs = elem_uvs,
                 .texture = tex_in.texture,
-                .interp_type = tex_in.interp_type,
+                .sample_config = tex_in.sample_config,
                 .bits = tex_in.bits,
                 .scaling = tex_in.scaling,
                 .scale_mul = factors.mul,
@@ -190,7 +190,7 @@ pub fn prepareMesh(
             mesh_prep.shader = .{ .tex_rgb_u16 = .{
                 .elem_uvs = elem_uvs,
                 .texture = tex_in.texture,
-                .interp_type = tex_in.interp_type,
+                .sample_config = tex_in.sample_config,
                 .bits = tex_in.bits,
                 .scaling = tex_in.scaling,
                 .scale_mul = factors.mul,
@@ -394,7 +394,7 @@ pub fn meshInputFromSimDataSlice(
             mesh_inputs[ii].shader = .{ .tex_u8 = .{
                 .uvs = uvmap.array,
                 .texture = texture,
-                .interp_type = .cubic_lut_lerp,
+                .sample_config = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
                 .normal_type = .none,
             } };
         }

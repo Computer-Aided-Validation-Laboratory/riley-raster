@@ -56,12 +56,12 @@ test "Sphere Gold Tests" {
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
-    const interp_types = [_]common.InterpType{
-        .linear,
-        .cubic,
-        .cubic_lut_lerp,
-        .quintic,
-        .quintic_lut_lerp,
+    const sample_configs = [_]common.TextureSampleConfig{
+        .{ .sample = .linear, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+        .{ .sample = .quintic_bspline, .mode = .direct },
+        .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
 
     var total_fails: usize = 0;
@@ -75,7 +75,7 @@ test "Sphere Gold Tests" {
 
         inline for (mesh_types) |mt| {
             inline for (shader_types) |st| {
-                inline for (interp_types) |it| {
+                inline for (sample_configs) |sc| {
                     const data_dir = try std.fmt.allocPrint(
                         allocator,
                         "data-bench/{s}_{s}",
@@ -83,13 +83,21 @@ test "Sphere Gold Tests" {
                     );
                     defer allocator.free(data_dir);
 
-                    if (common.shouldRun(.{ .run = .all }, mt, st, it, data_dir)) {
+                    if (common.shouldRun(.{ .run = .all }, mt, st, sc, data_dir)) {
                         const case_name = if (st == .tex8_grey or st == .tex8_rgb)
-                            comptime @tagName(mt) ++ "_" ++
-                                @tagName(st) ++ "_" ++
-                                @tagName(it)
+                            try std.fmt.allocPrint(
+                                allocator,
+                                "{s}_{s}_{s}_{s}",
+                                .{ @tagName(mt), @tagName(st), @tagName(sc.sample), @tagName(sc.mode) },
+                            )
                         else
-                            comptime @tagName(mt) ++ "_" ++ @tagName(st);
+                            try std.fmt.allocPrint(
+                                allocator,
+                                "{s}_{s}",
+                                .{ @tagName(mt), @tagName(st) },
+                            );
+                        defer allocator.free(case_name);
+
                         const gold_mesh_name = if (mt == .quad4ibi)
                             "quad4newton"
                         else
@@ -97,8 +105,8 @@ test "Sphere Gold Tests" {
                         const gold_case_name = if (st == .tex8_grey or st == .tex8_rgb)
                             try std.fmt.allocPrint(
                                 allocator,
-                                "{s}_{s}_{s}",
-                                .{ gold_mesh_name, @tagName(st), @tagName(it) },
+                                "{s}_{s}_{s}_{s}",
+                                .{ gold_mesh_name, @tagName(st), @tagName(sc.sample), @tagName(sc.mode) },
                             )
                         else
                             try std.fmt.allocPrint(
@@ -116,7 +124,7 @@ test "Sphere Gold Tests" {
                             io,
                             mt,
                             st,
-                            it,
+                            sc,
                             data_dir,
                             c.out,
                             pixel_num,
