@@ -31,6 +31,14 @@ pub const BenchResult = struct {
     raster_ms: f64,
     fps: f64,
     metrics: CalculatedMetrics,
+    image: ?NDArray(f64) = null,
+
+    pub fn deinit(self: *BenchResult, allocator: std.mem.Allocator) void {
+        if (self.image) |img| {
+            allocator.free(img.slice);
+            img.deinit(allocator);
+        }
+    }
 };
 
 pub const BenchStats = struct {
@@ -266,6 +274,38 @@ pub fn runBenchmark(
     texture_grey: iio.Texture(1),
     texture_rgb: iio.Texture(3),
 ) !BenchResult {
+    const num_out_fields: u8 = if (shader_type == .flat_rgb or shader_type == .tex8_rgb) 3 else 1;
+    return runBenchmarkExt(
+        outer_alloc,
+        io,
+        etype,
+        shader_type,
+        sample_config,
+        data_dir,
+        out_dir_base,
+        pixel_num,
+        texture_grey,
+        texture_rgb,
+        &[_]iio.ImageSaveOpts{
+            .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = num_out_fields },
+            .{ .format = .fimg, .bits = null, .scaling = .none, .channels = num_out_fields },
+        },
+    );
+}
+
+pub fn runBenchmarkExt(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    etype: mr.MeshType,
+    shader_type: ShaderType,
+    sample_config: TextureSampleConfig,
+    data_dir: []const u8,
+    out_dir_base: []const u8,
+    pixel_num: [2]u32,
+    texture_grey: iio.Texture(1),
+    texture_rgb: iio.Texture(3),
+    save_opts: []const iio.ImageSaveOpts,
+) !BenchResult {
     return runBenchmarkInternal(
         .bench,
         outer_alloc,
@@ -278,6 +318,7 @@ pub fn runBenchmark(
         pixel_num,
         texture_grey,
         texture_rgb,
+        save_opts,
     );
 }
 
@@ -293,6 +334,38 @@ pub fn runBenchmarkQuiet(
     texture_grey: iio.Texture(1),
     texture_rgb: iio.Texture(3),
 ) !BenchResult {
+    const num_out_fields: u8 = if (shader_type == .flat_rgb or shader_type == .tex8_rgb) 3 else 1;
+    return runBenchmarkQuietExt(
+        outer_alloc,
+        io,
+        etype,
+        shader_type,
+        sample_config,
+        data_dir,
+        out_dir_base,
+        pixel_num,
+        texture_grey,
+        texture_rgb,
+        &[_]iio.ImageSaveOpts{
+            .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = num_out_fields },
+            .{ .format = .fimg, .bits = null, .scaling = .none, .channels = num_out_fields },
+        },
+    );
+}
+
+pub fn runBenchmarkQuietExt(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    etype: mr.MeshType,
+    shader_type: ShaderType,
+    sample_config: TextureSampleConfig,
+    data_dir: []const u8,
+    out_dir_base: []const u8,
+    pixel_num: [2]u32,
+    texture_grey: iio.Texture(1),
+    texture_rgb: iio.Texture(3),
+    save_opts: []const iio.ImageSaveOpts,
+) !BenchResult {
     return runBenchmarkInternal(
         .off,
         outer_alloc,
@@ -305,6 +378,7 @@ pub fn runBenchmarkQuiet(
         pixel_num,
         texture_grey,
         texture_rgb,
+        save_opts,
     );
 }
 
@@ -320,6 +394,7 @@ fn runBenchmarkInternal(
     pixel_num: [2]u32,
     texture_grey: iio.Texture(1),
     texture_rgb: iio.Texture(3),
+    save_opts: []const iio.ImageSaveOpts,
 ) !BenchResult {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -474,42 +549,43 @@ fn runBenchmarkInternal(
             .mops_sec = 0.0,
         };
 
-    // Save one frame for inspection
-    const out_name = if (shader_type == .tex8_grey or shader_type == .tex8_rgb)
-        try std.fmt.allocPrint(
-            aa,
-            "{s}_{s}_{s}_{s}",
-            .{ @tagName(etype), @tagName(shader_type), @tagName(sample_config.sample), @tagName(sample_config.mode) },
-        )
-    else
-        try std.fmt.allocPrint(
-            aa,
-            "{s}_{s}",
-            .{ @tagName(etype), @tagName(shader_type) },
-        );
-    const out_path = try std.fs.path.join(aa, &[_][]const u8{ out_dir_base, out_name });
-    const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, out_dir_base, .default_dir) catch |err| {
-        if (err != error.PathAlreadyExists) return err;
-    };
-    cwd.createDir(io, out_path, .default_dir) catch |err| {
-        if (err != error.PathAlreadyExists) return err;
-    };
-    var out_dir_h = try cwd.openDir(io, out_path, .{});
-    defer out_dir_h.close(io);
+    // Save one frame for inspection if out_dir_base is provided
+    if (out_dir_base.len > 0) {
+        const out_name = if (shader_type == .tex8_grey or shader_type == .tex8_rgb)
+            try std.fmt.allocPrint(
+                aa,
+                "{s}_{s}_{s}_{s}",
+                .{ @tagName(etype), @tagName(shader_type), @tagName(sample_config.sample), @tagName(sample_config.mode) },
+            )
+        else
+            try std.fmt.allocPrint(
+                aa,
+                "{s}_{s}",
+                .{ @tagName(etype), @tagName(shader_type) },
+            );
+        const out_path = try std.fs.path.join(aa, &[_][]const u8{ out_dir_base, out_name });
+        const cwd = std.Io.Dir.cwd();
+        cwd.createDir(io, out_dir_base, .default_dir) catch |err| {
+            if (err != error.PathAlreadyExists) return err;
+        };
+        cwd.createDir(io, out_path, .default_dir) catch |err| {
+            if (err != error.PathAlreadyExists) return err;
+        };
+        var out_dir_h = try cwd.openDir(io, out_path, .{});
+        defer out_dir_h.close(io);
 
-    try iio.saveImages(
-        io,
-        out_dir_h,
-        0,
-        num_out_fields,
-        pixel_num,
-        &image_out_arr,
-        &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = num_out_fields },
-            .{ .format = .fimg, .bits = null, .scaling = .none, .channels = num_out_fields },
-        },
-    );
+        try iio.saveImages(
+            io,
+            out_dir_h,
+            0,
+            num_out_fields,
+            pixel_num,
+            &image_out_arr,
+            save_opts,
+        );
+    }
+
+    const image_final = try image_out_arr.dupe(outer_alloc);
 
     return .{
         .e2e_ms = e2e_ms,
@@ -517,6 +593,7 @@ fn runBenchmarkInternal(
         .raster_ms = raster_ms,
         .fps = fps,
         .metrics = metrics,
+        .image = image_final,
     };
 }
 

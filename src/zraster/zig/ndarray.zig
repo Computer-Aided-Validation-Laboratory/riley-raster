@@ -154,6 +154,12 @@ pub fn NDArray(comptime T: type) type {
             const start = chan * self.strides[0];
             return self.slice[start..];
         }
+
+        pub fn dupe(self: *const Self, allocator: std.mem.Allocator) !Self {
+            const new_slice = try allocator.dupe(T, self.slice);
+            errdefer allocator.free(new_slice);
+            return try Self.init(allocator, new_slice, self.dims);
+        }
     };
 }
 

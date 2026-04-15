@@ -178,19 +178,6 @@ pub fn runMultimeshGeneration(
     io: std.Io,
     config: RasterConfig,
 ) !void {
-    try runMultimeshGenerationExt(outer_alloc, io, config, "gold-multimesh");
-}
-
-pub fn runMultimeshGenerationExt(
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    config: RasterConfig,
-    out_dir_root: []const u8,
-) !void {
-    var arena = std.heap.ArenaAllocator.init(outer_alloc);
-    defer arena.deinit();
-    const aa = arena.allocator();
-
     const dir_paths = [_][]const u8{
         "data-simple/tri3_twoelems/",
         "data-simple/tri6_twoelems/",
@@ -198,6 +185,27 @@ pub fn runMultimeshGenerationExt(
         "data-simple/quad8_twoelems/",
         "data-simple/quad9_twoelems/",
     };
+    try runMultimeshGenerationExt(
+        outer_alloc,
+        io,
+        config,
+        "gold-multimesh",
+        &dir_paths,
+        .{ 1200, 800 },
+    );
+}
+
+pub fn runMultimeshGenerationExt(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    config: RasterConfig,
+    out_dir_root: []const u8,
+    dir_paths: []const []const u8,
+    pixel_num: [2]u32,
+) !void {
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
+    defer arena.deinit();
+    const aa = arena.allocator();
 
     const mesh_types = [_]MeshType{
         .tri3,
@@ -211,7 +219,8 @@ pub fn runMultimeshGenerationExt(
 
     for (shader_modes) |mode| {
         _ = arena.reset(.free_all);
-        const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
+        const sim_datas = try meshio.loadMultiSimData(aa, io, dir_paths, .{});
+
 
         const gold_dir = if (mode == .flat)
             try std.fmt.allocPrint(aa, "{s}/allelem_flat", .{out_dir_root})
@@ -236,14 +245,13 @@ pub fn runMultimeshGenerationExt(
                 sim_datas,
                 &mesh_types,
                 .texture,
-                &dir_paths,
+                dir_paths,
                 "texture/speckle-simple.tiff",
                 null,
             );
 
         mr.arrangeMeshSlice(mesh_inputs, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
 
-        const pixel_num = [_]u32{ 1200, 800 };
         const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
         const focal_leng: f64 = 50.0e-3;
         const rot = Rotation.init(0, 0, 0);
@@ -296,11 +304,20 @@ pub fn runMultimeshMixedGeneration(
     io: std.Io,
     config: RasterConfig,
 ) !void {
+    const dir_paths = [_][]const u8{
+        "data-simple/tri3_twoelems/",
+        "data-simple/tri6_twoelems/",
+        "data-simple/quad4_twoelems/",
+        "data-simple/quad8_twoelems/",
+        "data-simple/quad9_twoelems/",
+    };
     try runMultimeshMixedGenerationExt(
         allocator,
         io,
         config,
         "gold-multimesh/allelem_allshade",
+        &dir_paths,
+        .{ 1600, 800 },
     );
 }
 
@@ -309,18 +326,12 @@ pub fn runMultimeshMixedGenerationExt(
     io: std.Io,
     config: RasterConfig,
     gold_dir: []const u8,
+    dir_paths: []const []const u8,
+    pixel_num: [2]u32,
 ) !void {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const aa = arena.allocator();
-
-    const dir_paths = [_][]const u8{
-        "data-simple/tri3_twoelems/",
-        "data-simple/tri6_twoelems/",
-        "data-simple/quad4_twoelems/",
-        "data-simple/quad8_twoelems/",
-        "data-simple/quad9_twoelems/",
-    };
 
     const mesh_types = [_]MeshType{
         .tri3,
@@ -330,7 +341,8 @@ pub fn runMultimeshMixedGenerationExt(
         .quad9,
     };
 
-    const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
+    const sim_datas = try meshio.loadMultiSimData(aa, io, dir_paths, .{});
+
     const texture = try iio.loadImage(
         aa,
         io,
@@ -394,7 +406,6 @@ pub fn runMultimeshMixedGenerationExt(
 
     mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
 
-    const pixel_num = [_]u32{ 1600, 800 };
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
     const rot = Rotation.init(0, 0, 0);
@@ -445,11 +456,20 @@ pub fn runMultimeshMixedRGBGeneration(
     io: std.Io,
     config: RasterConfig,
 ) !void {
+    const dir_paths = [_][]const u8{
+        "data-simple/tri3_twoelems/",
+        "data-simple/tri6_twoelems/",
+        "data-simple/quad4_twoelems/",
+        "data-simple/quad8_twoelems/",
+        "data-simple/quad9_twoelems/",
+    };
     try runMultimeshMixedRGBGenerationExt(
         allocator,
         io,
         config,
         "gold-multimesh/allelem_allshade_rgb",
+        &dir_paths,
+        .{ 1200, 800 },
     );
 }
 
@@ -458,18 +478,12 @@ pub fn runMultimeshMixedRGBGenerationExt(
     io: std.Io,
     config: RasterConfig,
     gold_dir: []const u8,
+    dir_paths: []const []const u8,
+    pixel_num: [2]u32,
 ) !void {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const aa = arena.allocator();
-
-    const dir_paths = [_][]const u8{
-        "data-simple/tri3_twoelems/",
-        "data-simple/tri6_twoelems/",
-        "data-simple/quad4_twoelems/",
-        "data-simple/quad8_twoelems/",
-        "data-simple/quad9_twoelems/",
-    };
 
     const mesh_types = [_]MeshType{
         .tri3,
@@ -479,7 +493,8 @@ pub fn runMultimeshMixedRGBGenerationExt(
         .quad9,
     };
 
-    const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
+    const sim_datas = try meshio.loadMultiSimData(aa, io, dir_paths, .{});
+
     const texture = try iio.loadImage(
         aa,
         io,
@@ -592,7 +607,6 @@ pub fn runMultimeshMixedRGBGenerationExt(
 
     mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
 
-    const pixel_num = [_]u32{ 1200, 800 };
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
     const rot = Rotation.init(0, 0, 0);
@@ -618,10 +632,20 @@ pub fn runMultimeshMixedRGBGenerationExt(
     );
 
     var config_rgb = config;
-    config_rgb.save_opts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = 3 },
-        .{ .format = .fimg, .bits = null, .scaling = .none, .channels = 3 },
-    };
+    if (config_rgb.save_opts.len == 0) {
+        config_rgb.save_opts = &[_]iio.ImageSaveOpts{
+            .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = 3 },
+            .{ .format = .fimg, .bits = null, .scaling = .none, .channels = 3 },
+        };
+    } else {
+        // If save_opts are provided, ensure they use 3 channels for RGB
+        const opts_rgb = try aa.alloc(iio.ImageSaveOpts, config_rgb.save_opts.len);
+        for (config_rgb.save_opts, 0..) |opt, ii| {
+            opts_rgb[ii] = opt;
+            opts_rgb[ii].channels = 3;
+        }
+        config_rgb.save_opts = opts_rgb;
+    }
 
     const cwd = std.Io.Dir.cwd();
     var iter = std.mem.splitScalar(u8, gold_dir, '/');

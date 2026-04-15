@@ -80,8 +80,8 @@ pub fn compareNDArrayToGold(
     else
         gold.dims[1];
 
-    const rows = array.dims[2];
-    const cols = array.dims[3];
+    const rows = if (array.dims.len == 4) array.dims[2] else array.dims[1];
+    const cols = if (array.dims.len == 4) array.dims[3] else array.dims[2];
 
     if (gold_rows != rows) {
         std.debug.print(
@@ -103,7 +103,10 @@ pub fn compareNDArrayToGold(
                 else
                     gold.get(&[_]usize{ r, c, ch });
 
-                const actual_val = array.get(&[_]usize{ frame, field_start + ch, r, c });
+                const actual_val = if (array.dims.len == 4)
+                    array.get(&[_]usize{ frame, field_start + ch, r, c })
+                else
+                    array.get(&[_]usize{ field_start + ch, r, c });
 
                 if (!isApproxEqual(gold_val, actual_val, rel_tol, abs_tol)) {
                     const abs_gold = @abs(gold_val);
@@ -327,17 +330,19 @@ fn extractFrameImage(
     field_start: usize,
     channels: usize,
 ) !NDArray(f64) {
-    const rows = array.dims[2];
-    const cols = array.dims[3];
+    const dims = array.dims;
+    const rows = if (dims.len == 4) dims[2] else dims[1];
+    const cols = if (dims.len == 4) dims[3] else dims[2];
     var image = try NDArray(f64).initFlat(allocator, &[_]usize{ rows, cols, channels });
 
     for (0..rows) |rr| {
         for (0..cols) |cc| {
             for (0..channels) |ch| {
-                image.set(
-                    &[_]usize{ rr, cc, ch },
-                    array.get(&[_]usize{ frame, field_start + ch, rr, cc }),
-                );
+                const val = if (dims.len == 4)
+                    array.get(&[_]usize{ frame, field_start + ch, rr, cc })
+                else
+                    array.get(&[_]usize{ field_start + ch, rr, cc });
+                image.set(&[_]usize{ rr, cc, ch }, val);
             }
         }
     }
@@ -803,10 +808,6 @@ pub fn runMultimeshTest(
     rel_tol: f64,
     abs_tol: f64,
 ) !void {
-    var arena = std.heap.ArenaAllocator.init(outer_alloc);
-    defer arena.deinit();
-    const aa = arena.allocator();
-
     const dir_paths = [_][]const u8{
         "data-simple/tri3_twoelems/",
         "data-simple/tri6_twoelems/",
@@ -814,6 +815,29 @@ pub fn runMultimeshTest(
         "data-simple/quad8_twoelems/",
         "data-simple/quad9_twoelems/",
     };
+    try runMultimeshTestExt(
+        outer_alloc,
+        io,
+        "gold-multimesh",
+        &dir_paths,
+        .{ 1200, 800 },
+        rel_tol,
+        abs_tol,
+    );
+}
+
+pub fn runMultimeshTestExt(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    gold_dir_root: []const u8,
+    dir_paths: []const []const u8,
+    pixel_num: [2]u32,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
+    defer arena.deinit();
+    const aa = arena.allocator();
 
     const mesh_types = [_]MeshType{
         .tri3,
@@ -827,7 +851,7 @@ pub fn runMultimeshTest(
 
     for (shader_modes) |mode| {
         _ = arena.reset(.free_all);
-        const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
+        const sim_datas = try meshio.loadMultiSimData(aa, io, dir_paths, .{});
 
         const mesh_inputs = if (mode == .flat)
             try mr.meshInputFromSimDataSlice(
@@ -847,14 +871,13 @@ pub fn runMultimeshTest(
                 sim_datas,
                 &mesh_types,
                 .texture,
-                &dir_paths,
+                dir_paths,
                 "texture/speckle-simple.tiff",
                 null,
             );
 
         mr.arrangeMeshSlice(mesh_inputs, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
 
-        const pixel_num = [_]u32{ 1200, 800 };
         const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
         const focal_leng: f64 = 50.0e-3;
         const rot = Rotation.init(0, 0, 0);
@@ -897,9 +920,9 @@ pub fn runMultimeshTest(
         )) orelse return error.NoResult;
 
         const gold_dir = if (mode == .flat)
-            "gold-multimesh/allelem_flat"
+            try std.fmt.allocPrint(aa, "{s}/allelem_flat", .{gold_dir_root})
         else
-            "gold-multimesh/allelem_tex_cubic_lut_lerp";
+            try std.fmt.allocPrint(aa, "{s}/allelem_tex_cubic_lut_lerp", .{gold_dir_root});
 
         for (0..result.dims[0]) |f| {
             const fname = try findGoldPath(aa, io, gold_dir, f, 0, false);
@@ -946,10 +969,19 @@ pub fn runMultimeshMixedTest(
     rel_tol: f64,
     abs_tol: f64,
 ) !void {
+    const dir_paths = [_][]const u8{
+        "data-simple/tri3_twoelems/",
+        "data-simple/tri6_twoelems/",
+        "data-simple/quad4_twoelems/",
+        "data-simple/quad8_twoelems/",
+        "data-simple/quad9_twoelems/",
+    };
     try runMultimeshMixedTestExt(
         outer_alloc,
         io,
         "gold-multimesh/allelem_allshade",
+        &dir_paths,
+        .{ 1600, 800 },
         rel_tol,
         abs_tol,
     );
@@ -959,20 +991,14 @@ pub fn runMultimeshMixedTestExt(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     gold_dir: []const u8,
+    dir_paths: []const []const u8,
+    pixel_num: [2]u32,
     rel_tol: f64,
     abs_tol: f64,
 ) !void {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
-
-    const dir_paths = [_][]const u8{
-        "data-simple/tri3_twoelems/",
-        "data-simple/tri6_twoelems/",
-        "data-simple/quad4_twoelems/",
-        "data-simple/quad8_twoelems/",
-        "data-simple/quad9_twoelems/",
-    };
 
     const mesh_types = [_]MeshType{
         .tri3,
@@ -982,7 +1008,7 @@ pub fn runMultimeshMixedTestExt(
         .quad9,
     };
 
-    const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
+    const sim_datas = try meshio.loadMultiSimData(aa, io, dir_paths, .{});
     const texture = try iio.loadImage(
         aa,
         io,
@@ -1046,7 +1072,6 @@ pub fn runMultimeshMixedTestExt(
 
     mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
 
-    const pixel_num = [_]u32{ 1600, 800 };
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
     const rot = Rotation.init(0, 0, 0);
@@ -1112,10 +1137,19 @@ pub fn runMultimeshMixedRGBTest(
     rel_tol: f64,
     abs_tol: f64,
 ) !void {
+    const dir_paths = [_][]const u8{
+        "data-simple/tri3_twoelems/",
+        "data-simple/tri6_twoelems/",
+        "data-simple/quad4_twoelems/",
+        "data-simple/quad8_twoelems/",
+        "data-simple/quad9_twoelems/",
+    };
     try runMultimeshMixedRGBTestExt(
         outer_alloc,
         io,
         "gold-multimesh/allelem_allshade_rgb",
+        &dir_paths,
+        .{ 1200, 800 },
         rel_tol,
         abs_tol,
     );
@@ -1125,20 +1159,14 @@ pub fn runMultimeshMixedRGBTestExt(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     gold_dir: []const u8,
+    dir_paths: []const []const u8,
+    pixel_num: [2]u32,
     rel_tol: f64,
     abs_tol: f64,
 ) !void {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
-
-    const dir_paths = [_][]const u8{
-        "data-simple/tri3_twoelems/",
-        "data-simple/tri6_twoelems/",
-        "data-simple/quad4_twoelems/",
-        "data-simple/quad8_twoelems/",
-        "data-simple/quad9_twoelems/",
-    };
 
     const mesh_types = [_]MeshType{
         .tri3,
@@ -1148,7 +1176,8 @@ pub fn runMultimeshMixedRGBTestExt(
         .quad9,
     };
 
-    const sim_datas = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
+    const sim_datas = try meshio.loadMultiSimData(aa, io, dir_paths, .{});
+
     const texture = try iio.loadImage(
         aa,
         io,
@@ -1261,7 +1290,6 @@ pub fn runMultimeshMixedRGBTestExt(
 
     mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
 
-    const pixel_num = [_]u32{ 1200, 800 };
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
     const rot = Rotation.init(0, 0, 0);

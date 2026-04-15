@@ -119,7 +119,7 @@ test "Sphere Gold Tests" {
                         std.debug.print("Testing {s}/{s} ... ", .{ c.ds, case_name });
 
                         // 1. Run benchmark
-                        _ = try common.runBenchmarkQuiet(
+                        var result = try common.runBenchmarkQuiet(
                             allocator,
                             io,
                             mt,
@@ -131,6 +131,7 @@ test "Sphere Gold Tests" {
                             texture_grey,
                             texture_rgb,
                         );
+                        result.deinit(allocator);
 
                         // 2. Map filenames
                         const is_rgb = (st == .flat_rgb or st == .tex8_rgb);

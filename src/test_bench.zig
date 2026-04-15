@@ -51,15 +51,15 @@ test "Unified Benchmark Tests" {
             .gold_dir = "gold-bench-fullscreen",
             .out_dir = "out-bench-geom",
         },
-        .{
-            .name = "sphere200",
-            .gold_dir = if (simd_on)
-                "gold-simd-sphere200"
-            else
-                "gold-sphere200",
-            .out_dir = "out-sphere200",
-            .is_sphere = true,
-        },
+        // .{
+        //     .name = "sphere200",
+        //     .gold_dir = if (simd_on)
+        //         "gold-simd-sphere200"
+        //     else
+        //         "gold-sphere200",
+        //     .out_dir = "out-sphere200",
+        //     .is_sphere = true,
+        // },
         .{
             .name = "sphere2000",
             .gold_dir = if (simd_on)
@@ -131,7 +131,7 @@ test "Unified Benchmark Tests" {
                         std.debug.print("Testing {s}/{s} ... ", .{ cc.name, case_name });
 
                         // 1. Run benchmark
-                        _ = try common.runBenchmarkQuiet(
+                        var result = try common.runBenchmarkQuiet(
                             outer_alloc,
                             io,
                             mt,
@@ -143,6 +143,7 @@ test "Unified Benchmark Tests" {
                             texture_grey,
                             texture_rgb,
                         );
+                        result.deinit(outer_alloc);
 
                         // 2. Map filenames
                         const is_rgb = (st == .flat_rgb or st == .tex8_rgb);

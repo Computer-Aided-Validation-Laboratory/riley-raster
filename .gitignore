@@ -216,3 +216,11 @@ cpp/Makefile
 data-bench/**/*.csv
 out-bench-*
 plans/
+
+# Min test suite
+!data-min/
+!data-min/**/*.csv
+!gold-min/
+!gold-min/**/*.fimg
+gold-min/**/*.bmp
+out-min/
