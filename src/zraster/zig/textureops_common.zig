@@ -33,7 +33,7 @@ pub const TextureSampleConfig = struct {
     }
 };
 
-pub fn Texture(comptime channels: usize) type {
+pub fn Texture(comptime CH: usize) type {
     return struct {
         array: NDArray(f64),
         rows_num: usize,
@@ -48,7 +48,7 @@ pub fn Texture(comptime channels: usize) type {
         ) !Self {
             const array = try NDArray(f64).initFlat(
                 allocator,
-                &[_]usize{ channels, rows, cols },
+                &[_]usize{ CH, rows, cols },
             );
             return .{
                 .array = array,
@@ -104,7 +104,7 @@ pub fn Texture(comptime channels: usize) type {
                 file_name,
                 self.rows_num,
                 self.cols_num,
-                channels,
+                CH,
                 self,
                 SaveCtx.getVal,
             );
@@ -165,16 +165,16 @@ pub fn quinticBSplineCoeff(x: f64) f64 {
     if (r >= 3.0) return 0.0;
 
     if (r <= 1.0) {
-        return ((((-(1.0 / 12.0) * r + (1.0 / 4.0)) * r + 0.0) * r 
-               - (1.0 / 2.0)) * r + 0.0) * r + (11.0 / 20.0);
+        return ((((-(1.0 / 12.0) * r + (1.0 / 4.0)) * r + 0.0) * r - (1.0 / 2.0)) * r + 0.0) *
+            r + (11.0 / 20.0);
     } else if (r <= 2.0) {
         const t = r - 1.0;
-        return (((((1.0 / 24.0) * t - (1.0 / 6.0)) * t + (1.0 / 6.0)) * t 
-               + (1.0 / 6.0)) * t - (5.0 / 12.0)) * t + (13.0 / 60.0);
+        return (((((1.0 / 24.0) * t - (1.0 / 6.0)) * t + (1.0 / 6.0)) * t + (1.0 / 6.0)) * t -
+            (5.0 / 12.0)) * t + (13.0 / 60.0);
     } else {
         const u = r - 2.0;
-        return (((((-(1.0 / 120.0) * u + (1.0 / 24.0)) * u - (1.0 / 12.0)) * u 
-               + (1.0 / 12.0)) * u - (1.0 / 24.0)) * u + (1.0 / 120.0));
+        return (((((-(1.0 / 120.0) * u + (1.0 / 24.0)) * u - (1.0 / 12.0)) * u +
+            (1.0 / 12.0)) * u - (1.0 / 24.0)) * u + (1.0 / 120.0));
     }
 }
 
@@ -248,47 +248,47 @@ pub const quintic_bspline_lut = blk: {
 };
 
 pub fn getPx(
-    comptime channels: usize,
+    comptime CH: usize,
     texture: anytype,
     x: isize,
     y: isize,
-) [channels]f64 {
+) [CH]f64 {
     const cols = @as(isize, @intCast(texture.cols_num));
     const rows = @as(isize, @intCast(texture.rows_num));
     // Clamp to texture edges so we don't try and access anything that doesn't exist
     const ix = @as(usize, @intCast(@max(0, @min(x, cols - 1))));
     const iy = @as(usize, @intCast(@max(0, @min(y, rows - 1))));
 
-    var res: [channels]f64 = undefined;
-    inline for (0..channels) |ch| {
-        res[ch] = texture.getVal(ch, iy, ix);
+    var samp_res: [CH]f64 = undefined;
+    inline for (0..CH) |ch| {
+        samp_res[ch] = texture.getVal(ch, iy, ix);
     }
-    return res;
+    return samp_res;
 }
 
 pub fn sample2D(
-    comptime channels: usize,
-    comptime N: usize,
+    comptime CH: usize,
+    comptime TAP: usize,
     texture: anytype,
     tex_x_i: isize,
     tex_y_i: isize,
-    samp_coeff_x: [N]f64,
-    samp_coeff_y: [N]f64,
-) [channels]f64 {
-    const offset = @as(isize, @intCast(N)) / 2 - 1;
-    var samp_res: [channels]f64 = [_]f64{0.0} ** channels;
+    samp_coeff_x: [TAP]f64,
+    samp_coeff_y: [TAP]f64,
+) [CH]f64 {
+    const tap_offset = @as(isize, @intCast(TAP)) / 2 - 1;
+    var samp_res: [CH]f64 = [_]f64{0.0} ** CH;
     var samp_coeff_sum: f64 = 0.0;
 
-    for (0..N) |jj| {
-        for (0..N) |ii| {
+    for (0..TAP) |jj| {
+        for (0..TAP) |ii| {
             const tap_samp_coeff = samp_coeff_x[ii] * samp_coeff_y[jj];
             const px = getPx(
-                channels,
+                CH,
                 texture,
-                tex_x_i + @as(isize, @intCast(ii)) - offset,
-                tex_y_i + @as(isize, @intCast(jj)) - offset,
+                tex_x_i + @as(isize, @intCast(ii)) - tap_offset,
+                tex_y_i + @as(isize, @intCast(jj)) - tap_offset,
             );
-            inline for (0..channels) |ch| {
+            inline for (0..CH) |ch| {
                 samp_res[ch] += px[ch] * tap_samp_coeff;
             }
             samp_coeff_sum += tap_samp_coeff;
@@ -300,36 +300,36 @@ pub fn sample2D(
     else
         1.0 / samp_coeff_sum;
 
-    inline for (0..channels) |ch| {
+    inline for (0..CH) |ch| {
         samp_res[ch] *= inv_samp_coeff_sum;
     }
     return samp_res;
 }
 
 pub fn getLerpSampCoeffs(
-    comptime N: usize,
-    comptime table: [lut_size][N]f64,
+    comptime TAP: usize,
+    comptime table: [lut_size][TAP]f64,
     t: f64,
-) [N]f64 {
+) [TAP]f64 {
     const scaled = t * (lut_size - 1);
     const idx = @as(usize, @intFromFloat(@floor(scaled)));
     const frac = scaled - @as(f64, @floatFromInt(idx));
-    var res: [N]f64 = undefined;
+    var res: [TAP]f64 = undefined;
     const w0 = table[idx];
     const w1 = table[@min(idx + 1, lut_size - 1)];
-    inline for (0..N) |ii| {
+    inline for (0..TAP) |ii| {
         res[ii] = w0[ii] * (1.0 - frac) + w1[ii] * frac;
     }
     return res;
 }
 
 pub fn sampleGeneric(
-    comptime channels: usize,
+    comptime CH: usize,
     comptime config: TextureSampleConfig,
     texture: anytype,
     u: f64,
     v: f64,
-) [channels]f64 {
+) [CH]f64 {
     std.debug.assert(config.isValid());
     const cols_minus_1 = @as(isize, @intCast(texture.cols_num)) - 1;
     const rows_minus_1 = @as(isize, @intCast(texture.rows_num)) - 1;
@@ -342,24 +342,24 @@ pub fn sampleGeneric(
 
     return switch (config.sample) {
         .nearest => getPx(
-            channels,
+            CH,
             texture,
             @as(isize, @intFromFloat(@round(tex_x_f))),
             @as(isize, @intFromFloat(@round(tex_y_f))),
         ),
         .linear => {
-            const p00 = getPx(channels, texture, tex_x_i, tex_y_i);
-            const p10 = getPx(channels, texture, tex_x_i + 1, tex_y_i);
-            const p01 = getPx(channels, texture, tex_x_i, tex_y_i + 1);
-            const p11 = getPx(channels, texture, tex_x_i + 1, tex_y_i + 1);
-            var res: [channels]f64 = undefined;
-            inline for (0..channels) |ch| {
-                res[ch] = (1.0 - tex_x_frac) * (1.0 - tex_y_frac) * p00[ch] +
+            const p00 = getPx(CH, texture, tex_x_i, tex_y_i);
+            const p10 = getPx(CH, texture, tex_x_i + 1, tex_y_i);
+            const p01 = getPx(CH, texture, tex_x_i, tex_y_i + 1);
+            const p11 = getPx(CH, texture, tex_x_i + 1, tex_y_i + 1);
+            var samp_res: [CH]f64 = undefined;
+            inline for (0..CH) |ch| {
+                samp_res[ch] = (1.0 - tex_x_frac) * (1.0 - tex_y_frac) * p00[ch] +
                     tex_x_frac * (1.0 - tex_y_frac) * p10[ch] +
                     (1.0 - tex_x_frac) * tex_y_frac * p01[ch] +
                     tex_x_frac * tex_y_frac * p11[ch];
             }
-            return res;
+            return samp_res;
         },
         .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => {
             const coeff_fun: *const fn (f64) f64 = switch (config.sample) {
@@ -376,7 +376,7 @@ pub fn sampleGeneric(
             };
             return switch (config.mode) {
                 .direct => sample2D(
-                    channels,
+                    CH,
                     4,
                     texture,
                     tex_x_i,
@@ -395,18 +395,32 @@ pub fn sampleGeneric(
                     },
                 ),
                 .lut => sample2D(
-                    channels,
+                    CH,
                     4,
                     texture,
                     tex_x_i,
                     tex_y_i,
-                    lut[@as(usize, @intFromFloat(tex_x_frac * @as(f64, @floatFromInt(lut_size - 1))))],
-                    lut[@as(usize, @intFromFloat(tex_y_frac * @as(f64, @floatFromInt(lut_size - 1))))],
+                    lut[@as(
+                        usize,
+                        @intFromFloat(tex_x_frac * @as(f64, @floatFromInt(lut_size - 1))),
+                    )],
+                    lut[@as(
+                        usize,
+                        @intFromFloat(tex_y_frac * @as(f64, @floatFromInt(lut_size - 1))),
+                    )],
                 ),
                 .lut_lerp => {
                     const samp_coeff_x = getLerpSampCoeffs(4, lut, tex_x_frac);
                     const samp_coeff_y = getLerpSampCoeffs(4, lut, tex_y_frac);
-                    return sample2D(channels, 4, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+                    return sample2D(
+                        CH,
+                        4,
+                        texture,
+                        tex_x_i,
+                        tex_y_i,
+                        samp_coeff_x,
+                        samp_coeff_y,
+                    );
                 },
             };
         },
@@ -423,7 +437,7 @@ pub fn sampleGeneric(
             };
             return switch (config.mode) {
                 .direct => sample2D(
-                    channels,
+                    CH,
                     6,
                     texture,
                     tex_x_i,
@@ -446,18 +460,32 @@ pub fn sampleGeneric(
                     },
                 ),
                 .lut => sample2D(
-                    channels,
+                    CH,
                     6,
                     texture,
                     tex_x_i,
                     tex_y_i,
-                    lut[@as(usize, @intFromFloat(tex_x_frac * @as(f64, @floatFromInt(lut_size - 1))))],
-                    lut[@as(usize, @intFromFloat(tex_y_frac * @as(f64, @floatFromInt(lut_size - 1))))],
+                    lut[@as(
+                        usize,
+                        @intFromFloat(tex_x_frac * @as(f64, @floatFromInt(lut_size - 1))),
+                    )],
+                    lut[@as(
+                        usize,
+                        @intFromFloat(tex_y_frac * @as(f64, @floatFromInt(lut_size - 1))),
+                    )],
                 ),
                 .lut_lerp => {
                     const samp_coeff_x = getLerpSampCoeffs(6, lut, tex_x_frac);
                     const samp_coeff_y = getLerpSampCoeffs(6, lut, tex_y_frac);
-                    return sample2D(channels, 6, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y,);
+                    return sample2D(
+                        CH,
+                        6,
+                        texture,
+                        tex_x_i,
+                        tex_y_i,
+                        samp_coeff_x,
+                        samp_coeff_y,
+                    );
                 },
             };
         },
@@ -465,7 +493,7 @@ pub fn sampleGeneric(
 }
 
 fn sampleGenericCubicRuntimeMode(
-    comptime channels: usize,
+    comptime CH: usize,
     comptime sample: TextureSample,
     mode: TextureSampleMode,
     texture: anytype,
@@ -473,7 +501,7 @@ fn sampleGenericCubicRuntimeMode(
     tex_y_i: isize,
     tex_x_frac: f64,
     tex_y_frac: f64,
-) [channels]f64 {
+) [CH]f64 {
     const coeff_fun: *const fn (f64) f64 = switch (sample) {
         .cubic_catmull_rom => cubicCoeffCatmullRom,
         .cubic_mitchell_netravali => cubicCoeffMitchellNetravali,
@@ -489,7 +517,7 @@ fn sampleGenericCubicRuntimeMode(
 
     return switch (mode) {
         .direct => sample2D(
-            channels,
+            CH,
             4,
             texture,
             tex_x_i,
@@ -508,7 +536,7 @@ fn sampleGenericCubicRuntimeMode(
             },
         ),
         .lut => sample2D(
-            channels,
+            CH,
             4,
             texture,
             tex_x_i,
@@ -529,13 +557,13 @@ fn sampleGenericCubicRuntimeMode(
         .lut_lerp => {
             const samp_coeff_x = getLerpSampCoeffs(4, lut, tex_x_frac);
             const samp_coeff_y = getLerpSampCoeffs(4, lut, tex_y_frac);
-            return sample2D(channels, 4, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+            return sample2D(CH, 4, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
         },
     };
 }
 
 fn sampleGenericWideRuntimeMode(
-    comptime channels: usize,
+    comptime CH: usize,
     comptime sample: TextureSample,
     mode: TextureSampleMode,
     texture: anytype,
@@ -543,7 +571,7 @@ fn sampleGenericWideRuntimeMode(
     tex_y_i: isize,
     tex_x_frac: f64,
     tex_y_frac: f64,
-) [channels]f64 {
+) [CH]f64 {
     const coeff_fun: *const fn (f64) f64 = switch (sample) {
         .lanczos3 => lanczos3Coeff,
         .quintic_bspline => quinticBSplineCoeff,
@@ -557,7 +585,7 @@ fn sampleGenericWideRuntimeMode(
 
     return switch (mode) {
         .direct => sample2D(
-            channels,
+            CH,
             6,
             texture,
             tex_x_i,
@@ -580,7 +608,7 @@ fn sampleGenericWideRuntimeMode(
             },
         ),
         .lut => sample2D(
-            channels,
+            CH,
             6,
             texture,
             tex_x_i,
@@ -601,13 +629,13 @@ fn sampleGenericWideRuntimeMode(
         .lut_lerp => {
             const samp_coeff_x = getLerpSampCoeffs(6, lut, tex_x_frac);
             const samp_coeff_y = getLerpSampCoeffs(6, lut, tex_y_frac);
-            return sample2D(channels, 6, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+            return sample2D(CH, 6, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
         },
     };
 }
 
 fn sampleGenericCubicModeDispatch(
-    comptime channels: usize,
+    comptime CH: usize,
     comptime sample: TextureSample,
     mode: TextureSampleMode,
     texture: anytype,
@@ -615,11 +643,11 @@ fn sampleGenericCubicModeDispatch(
     tex_y_i: isize,
     tex_x_frac: f64,
     tex_y_frac: f64,
-) [channels]f64 {
+) [CH]f64 {
     switch (buildconfig.config.texture_sample_mode_dispatch) {
         .run_time => {
             return sampleGenericCubicRuntimeMode(
-                channels,
+                CH,
                 sample,
                 mode,
                 texture,
@@ -637,7 +665,7 @@ fn sampleGenericCubicModeDispatch(
                         .mode = mode_type,
                     };
                     return sampleGeneric(
-                        channels,
+                        CH,
                         comptime_config,
                         texture,
                         (tex_x_frac + @as(f64, @floatFromInt(tex_x_i))) /
@@ -657,7 +685,7 @@ fn sampleGenericCubicModeDispatch(
 }
 
 fn sampleGenericWideModeDispatch(
-    comptime channels: usize,
+    comptime CH: usize,
     comptime sample: TextureSample,
     mode: TextureSampleMode,
     texture: anytype,
@@ -665,11 +693,11 @@ fn sampleGenericWideModeDispatch(
     tex_y_i: isize,
     tex_x_frac: f64,
     tex_y_frac: f64,
-) [channels]f64 {
+) [CH]f64 {
     switch (buildconfig.config.texture_sample_mode_dispatch) {
         .run_time => {
             return sampleGenericWideRuntimeMode(
-                channels,
+                CH,
                 sample,
                 mode,
                 texture,
@@ -687,7 +715,7 @@ fn sampleGenericWideModeDispatch(
                         .mode = mode_type,
                     };
                     return sampleGeneric(
-                        channels,
+                        CH,
                         comptime_config,
                         texture,
                         (tex_x_frac + @as(f64, @floatFromInt(tex_x_i))) /
@@ -707,12 +735,12 @@ fn sampleGenericWideModeDispatch(
 }
 
 pub fn sampleGenericRuntime(
-    comptime channels: usize,
+    comptime CH: usize,
     config: TextureSampleConfig,
     texture: anytype,
     u: f64,
     v: f64,
-) [channels]f64 {
+) [CH]f64 {
     std.debug.assert(config.isValid());
     const cols_minus_1 = @as(isize, @intCast(texture.cols_num)) - 1;
     const rows_minus_1 = @as(isize, @intCast(texture.rows_num)) - 1;
@@ -725,27 +753,27 @@ pub fn sampleGenericRuntime(
 
     return switch (config.sample) {
         .nearest => getPx(
-            channels,
+            CH,
             texture,
             @as(isize, @intFromFloat(@round(tex_x_f))),
             @as(isize, @intFromFloat(@round(tex_y_f))),
         ),
         .linear => {
-            const p00 = getPx(channels, texture, tex_x_i, tex_y_i);
-            const p10 = getPx(channels, texture, tex_x_i + 1, tex_y_i);
-            const p01 = getPx(channels, texture, tex_x_i, tex_y_i + 1);
-            const p11 = getPx(channels, texture, tex_x_i + 1, tex_y_i + 1);
-            var res: [channels]f64 = undefined;
-            inline for (0..channels) |ch| {
-                res[ch] = (1.0 - tex_x_frac) * (1.0 - tex_y_frac) * p00[ch] +
+            const p00 = getPx(CH, texture, tex_x_i, tex_y_i);
+            const p10 = getPx(CH, texture, tex_x_i + 1, tex_y_i);
+            const p01 = getPx(CH, texture, tex_x_i, tex_y_i + 1);
+            const p11 = getPx(CH, texture, tex_x_i + 1, tex_y_i + 1);
+            var samp_res: [CH]f64 = undefined;
+            inline for (0..CH) |ch| {
+                samp_res[ch] = (1.0 - tex_x_frac) * (1.0 - tex_y_frac) * p00[ch] +
                     tex_x_frac * (1.0 - tex_y_frac) * p10[ch] +
                     (1.0 - tex_x_frac) * tex_y_frac * p01[ch] +
                     tex_x_frac * tex_y_frac * p11[ch];
             }
-            return res;
+            return samp_res;
         },
         .cubic_catmull_rom => sampleGenericCubicModeDispatch(
-            channels,
+            CH,
             .cubic_catmull_rom,
             config.mode,
             texture,
@@ -755,7 +783,7 @@ pub fn sampleGenericRuntime(
             tex_y_frac,
         ),
         .cubic_mitchell_netravali => sampleGenericCubicModeDispatch(
-            channels,
+            CH,
             .cubic_mitchell_netravali,
             config.mode,
             texture,
@@ -765,7 +793,7 @@ pub fn sampleGenericRuntime(
             tex_y_frac,
         ),
         .cubic_bspline => sampleGenericCubicModeDispatch(
-            channels,
+            CH,
             .cubic_bspline,
             config.mode,
             texture,
@@ -775,7 +803,7 @@ pub fn sampleGenericRuntime(
             tex_y_frac,
         ),
         .lanczos3 => sampleGenericWideModeDispatch(
-            channels,
+            CH,
             .lanczos3,
             config.mode,
             texture,
@@ -785,7 +813,7 @@ pub fn sampleGenericRuntime(
             tex_y_frac,
         ),
         .quintic_bspline => sampleGenericWideModeDispatch(
-            channels,
+            CH,
             .quintic_bspline,
             config.mode,
             texture,

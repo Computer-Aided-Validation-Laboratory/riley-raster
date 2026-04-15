@@ -114,7 +114,7 @@ pub fn loadElemVec3Slices(
     elem_array: *const NDArray(T),
     elem_idx: usize,
 ) !Vec3Slices(T) {
-    var start_slice: usize = elem_array.getFlatInd(&[_]usize{ elem_idx, 0, 0 });
+    var start_slice: usize = elem_array.getFlatIdx(&[_]usize{ elem_idx, 0, 0 });
     const stride: usize = elem_array.strides[1];
 
     const x_slice = elem_array.slice[start_slice .. start_slice + N];

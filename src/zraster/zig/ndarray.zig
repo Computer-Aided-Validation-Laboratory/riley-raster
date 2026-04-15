@@ -60,34 +60,34 @@ pub fn NDArray(comptime T: type) type {
         }
 
         pub fn set(self: *Self, indices: []const usize, in_val: T) void {
-            const ind: usize = self.getFlatInd(indices);
-            self.slice[ind] = in_val;
+            const idx: usize = self.getFlatIdx(indices);
+            self.slice[idx] = in_val;
         }
 
         pub fn get(self: *const Self, indices: []const usize) T {
-            const ind: usize = self.getFlatInd(indices);
-            return self.slice[ind];
+            const idx: usize = self.getFlatIdx(indices);
+            return self.slice[idx];
         }
 
-        pub fn getFlatInd(self: *const Self, indices: []const usize) usize {
+        pub fn getFlatIdx(self: *const Self, indices: []const usize) usize {
             assert(indices.len == self.dims.len);
 
             var flat: usize = 0;
-            for (indices, 0..) |ind, dim| {
-                assert(ind < self.dims[dim]);
+            for (indices, 0..) |idx, dim| {
+                assert(idx < self.dims[dim]);
 
-                flat += ind * self.strides[dim];
+                flat += idx * self.strides[dim];
             }
 
             return flat;
         }
 
-        pub fn calcFlatStride(self: *const Self, dim_ind: usize) usize {
-            assert(dim_ind < self.dims.len);
+        pub fn calcFlatStride(self: *const Self, dim_idx: usize) usize {
+            assert(dim_idx < self.dims.len);
 
             var stride: usize = 1;
 
-            var ii: usize = dim_ind + 1;
+            var ii: usize = dim_idx + 1;
             while (ii < self.dims.len) : (ii += 1) {
                 stride *= self.dims[ii];
             }
@@ -145,12 +145,12 @@ pub fn NDArray(comptime T: type) type {
             assert(fixed_idx.len == self.dims.len);
             assert((fixed_dim + 1) < self.dims.len);
 
-            const start = self.getFlatInd(fixed_idx);
+            const start = self.getFlatIdx(fixed_idx);
             const stride = self.strides[fixed_dim];
             return self.slice[start .. start + stride];
         }
 
-        pub fn getPlanePtr(self: *const Self, chan: usize) []T {
+        pub fn getPlaneSlice(self: *const Self, chan: usize) []T {
             const start = chan * self.strides[0];
             return self.slice[start..];
         }
@@ -226,18 +226,18 @@ pub fn NDArrayOps(comptime T: type) type {
         pub fn extractMat(
             allocator: std.mem.Allocator,
             arr: *const NDArray(T),
-            fixed_inds: []const usize,
+            fixed_idxs: []const usize,
             row_ext: usize,
             col_ext: usize,
             mat: *MatSlice(T),
         ) !void {
-            assert(fixed_inds.len == arr.dims.len);
+            assert(fixed_idxs.len == arr.dims.len);
             assert(row_ext <= arr.dims.len);
             assert(col_ext <= arr.dims.len);
             const num_elems: usize = arr.dims[row_ext] * arr.dims[col_ext];
             assert(num_elems == mat.slice.len);
 
-            var get_dims_slice: []usize = try allocator.dupe(usize, fixed_inds);
+            var get_dims_slice: []usize = try allocator.dupe(usize, fixed_idxs);
             defer allocator.free(get_dims_slice);
 
             for (0..arr.dims[row_ext]) |rr| {
@@ -288,18 +288,18 @@ test "matchArrayDims" {
     try expect(matchArrayDims(f64, &arr0, &arr1));
 }
 
-test "getFlatInd" {
+test "getFlatIdx" {
     var dims0 = [_]usize{ 2, 3, 3 };
     const slice0 = try talloc.alloc(f64, 18);
     defer talloc.free(slice0);
     var arr0 = try NDArray(f64).init(talloc, slice0, dims0[0..]);
     defer arr0.deinit(talloc);
 
-    const inds0 = [_]usize{ 1, 2, 1 };
-    const exp_ind0: usize = 16;
-    const flat_ind0 = arr0.getFlatInd(inds0[0..]);
+    const idxs0 = [_]usize{ 1, 2, 1 };
+    const exp_idx0: usize = 16;
+    const flat_idx0 = arr0.getFlatIdx(idxs0[0..]);
 
-    try expectEqual(flat_ind0, exp_ind0);
+    try expectEqual(flat_idx0, exp_idx0);
 }
 
 test "calcFlatStride" {
@@ -322,12 +322,12 @@ test "getSlice" {
     var arr0 = try NDArray(f64).init(talloc, slice0, dims0[0..]);
     defer arr0.deinit(talloc);
 
-    var set_inds = [_]usize{ 1, 0, 0 };
+    var set_idxs = [_]usize{ 1, 0, 0 };
     for (0..dims0[1]) |ii| {
         for (0..dims0[2]) |jj| {
-            set_inds[1] = ii;
-            set_inds[2] = jj;
-            arr0.set(set_inds[0..], 7);
+            set_idxs[1] = ii;
+            set_idxs[2] = jj;
+            arr0.set(set_idxs[0..], 7);
         }
     }
 

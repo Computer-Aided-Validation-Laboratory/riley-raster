@@ -295,7 +295,7 @@ pub fn rasterSceneCommon(
                                 ctx_rast.frame_idx,
                                 shader.elem_field.dims[0] - 1,
                             );
-                            const start_idx = shader.elem_field.getFlatInd(
+                            const start_idx = shader.elem_field.getFlatIdx(
                                 &[_]usize{ tt, targ_overlap.overlap.elem_idx, 0, 0 },
                             );
 

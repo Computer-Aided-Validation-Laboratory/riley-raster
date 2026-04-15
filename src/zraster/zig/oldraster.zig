@@ -496,7 +496,7 @@ pub fn rasterAllFrames(
         time_start = Timestamp.now(io, .awake);
 
         image_idxs[0] = tt;
-        const start_idx = frame_arr.getFlatInd(image_idxs[0..]);
+        const start_idx = frame_arr.getFlatIdx(image_idxs[0..]);
         const end_idx = start_idx + image_stride;
 
         const images_mem = frame_arr.slice[start_idx..end_idx];
