@@ -134,7 +134,7 @@ pub fn Texture(comptime channels: usize) type {
     };
 }
 
-pub fn cubicWeightCatmullRom(x: f64) f64 {
+pub fn cubicCoeffCatmullRom(x: f64) f64 {
     const abs_x = @abs(x);
     if (abs_x <= 1.0) {
         return ((1.5 * abs_x - 2.5) * abs_x + 0.0) * abs_x + 1.0;
@@ -144,7 +144,7 @@ pub fn cubicWeightCatmullRom(x: f64) f64 {
     return 0.0;
 }
 
-pub fn cubicWeightMitchellNetravali(x: f64) f64 {
+pub fn cubicCoeffMitchellNetravali(x: f64) f64 {
     const r = @abs(x);
     const B = 1.0 / 3.0;
     const C = 1.0 / 3.0;
@@ -161,7 +161,7 @@ pub fn cubicWeightMitchellNetravali(x: f64) f64 {
     return 0.0;
 }
 
-pub fn cubicWeightBSpline(x: f64) f64 {
+pub fn cubicBSplineCoeff(x: f64) f64 {
     const r = @abs(x);
     if (r < 1.0) {
         return (3.0 * r * r * r - 6.0 * r * r + 4.0) / 6.0;
@@ -172,7 +172,7 @@ pub fn cubicWeightBSpline(x: f64) f64 {
     return 0.0;
 }
 
-pub fn lanczos3Weight(x: f64) f64 {
+pub fn lanczos3Coeff(x: f64) f64 {
     const abs_x = @abs(x);
     if (abs_x < tol.texture.lancsoz_centre_snap) return 1.0;
     if (abs_x >= 3.0) return 0.0;
@@ -181,7 +181,7 @@ pub fn lanczos3Weight(x: f64) f64 {
     return (std.math.sin(pi_x) / pi_x) * (std.math.sin(pi_x_3) / pi_x_3);
 }
 
-pub fn quinticBSplineWeight(x: f64) f64 {
+pub fn quinticBSplineCoeff(x: f64) f64 {
     const r = @abs(x);
 
     if (r >= 3.0) return 0.0;
@@ -204,7 +204,7 @@ pub const catmull_rom_lut = blk: {
         const tt = @as(f64, @floatFromInt(ii)) / @as(f64, @floatFromInt(lut_size));
         for (0..4) |jj| {
             const xx = @as(f64, @floatFromInt(jj)) - 1.0 - tt;
-            table[ii][jj] = cubicWeightCatmullRom(xx);
+            table[ii][jj] = cubicCoeffCatmullRom(xx);
         }
     }
     break :blk table;
@@ -217,7 +217,7 @@ pub const mitchell_netravali_lut = blk: {
         const tt = @as(f64, @floatFromInt(ii)) / @as(f64, @floatFromInt(lut_size));
         for (0..4) |jj| {
             const xx = @as(f64, @floatFromInt(jj)) - 1.0 - tt;
-            table[ii][jj] = cubicWeightMitchellNetravali(xx);
+            table[ii][jj] = cubicCoeffMitchellNetravali(xx);
         }
     }
     break :blk table;
@@ -230,7 +230,7 @@ pub const cubic_bspline_lut = blk: {
         const tt = @as(f64, @floatFromInt(ii)) / @as(f64, @floatFromInt(lut_size));
         for (0..4) |jj| {
             const xx = @as(f64, @floatFromInt(jj)) - 1.0 - tt;
-            table[ii][jj] = cubicWeightBSpline(xx);
+            table[ii][jj] = cubicBSplineCoeff(xx);
         }
     }
     break :blk table;
@@ -243,7 +243,7 @@ pub const lanczos3_lut = blk: {
         const tt = @as(f64, @floatFromInt(ii)) /
             @as(f64, @floatFromInt(lut_size));
         for (0..6) |jj| {
-            table[ii][jj] = lanczos3Weight(
+            table[ii][jj] = lanczos3Coeff(
                 @as(f64, @floatFromInt(jj)) - 2.0 - tt,
             );
         }
@@ -258,7 +258,7 @@ pub const quintic_bspline_lut = blk: {
         const tt = @as(f64, @floatFromInt(ii)) /
             @as(f64, @floatFromInt(lut_size));
         for (0..6) |jj| {
-            table[ii][jj] = quinticBSplineWeight(
+            table[ii][jj] = quinticBSplineCoeff(
                 @as(f64, @floatFromInt(jj)) - 2.0 - tt,
             );
         }
@@ -292,43 +292,43 @@ pub fn sample2D(
     comptime channels: usize,
     comptime N: usize,
     texture: anytype,
-    x_i: isize,
-    y_i: isize,
-    wx: [N]f64,
-    wy: [N]f64,
+    tex_x_i: isize,
+    tex_y_i: isize,
+    samp_coeff_x: [N]f64,
+    samp_coeff_y: [N]f64,
 ) [channels]f64 {
     const offset = @as(isize, @intCast(N)) / 2 - 1;
     var res: [channels]f64 = [_]f64{0.0} ** channels;
-    var w_sum: f64 = 0.0;
+    var samp_coeff_sum: f64 = 0.0;
 
     for (0..N) |jj| {
         for (0..N) |ii| {
-            const weight = wx[ii] * wy[jj];
+            const tap_samp_coeff = samp_coeff_x[ii] * samp_coeff_y[jj];
             const px = getPx(
                 channels,
                 texture,
-                x_i + @as(isize, @intCast(ii)) - offset,
-                y_i + @as(isize, @intCast(jj)) - offset,
+                tex_x_i + @as(isize, @intCast(ii)) - offset,
+                tex_y_i + @as(isize, @intCast(jj)) - offset,
             );
             inline for (0..channels) |ch| {
-                res[ch] += px[ch] * weight;
+                res[ch] += px[ch] * tap_samp_coeff;
             }
-            w_sum += weight;
+            samp_coeff_sum += tap_samp_coeff;
         }
     }
 
-    const inv_w_sum = if (@abs(w_sum) < tol.texture.weight_sum)
+    const inv_samp_coeff_sum = if (@abs(samp_coeff_sum) < tol.texture.samp_coeff_sum)
         1.0
     else
-        1.0 / w_sum;
+        1.0 / samp_coeff_sum;
 
     inline for (0..channels) |ch| {
-        res[ch] *= inv_w_sum;
+        res[ch] *= inv_samp_coeff_sum;
     }
     return res;
 }
 
-pub fn getLerpWeights(
+pub fn getLerpSampCoeffs(
     comptime N: usize,
     comptime table: [lut_size][N]f64,
     t: f64,
@@ -355,39 +355,39 @@ pub fn sampleGeneric(
     std.debug.assert(config.isValid());
     const cols_minus_1 = @as(isize, @intCast(texture.cols_num)) - 1;
     const rows_minus_1 = @as(isize, @intCast(texture.rows_num)) - 1;
-    const x_f = u * @as(f64, @floatFromInt(cols_minus_1));
-    const y_f = v * @as(f64, @floatFromInt(rows_minus_1));
-    const x_i = @as(isize, @intFromFloat(@floor(x_f)));
-    const y_i = @as(isize, @intFromFloat(@floor(y_f)));
-    const tx = x_f - @as(f64, @floatFromInt(x_i));
-    const ty = y_f - @as(f64, @floatFromInt(y_i));
+    const tex_x_f = u * @as(f64, @floatFromInt(cols_minus_1));
+    const tex_y_f = v * @as(f64, @floatFromInt(rows_minus_1));
+    const tex_x_i = @as(isize, @intFromFloat(@floor(tex_x_f)));
+    const tex_y_i = @as(isize, @intFromFloat(@floor(tex_y_f)));
+    const tex_x_frac = tex_x_f - @as(f64, @floatFromInt(tex_x_i));
+    const tex_y_frac = tex_y_f - @as(f64, @floatFromInt(tex_y_i));
 
     return switch (config.sample) {
         .nearest => getPx(
             channels,
             texture,
-            @as(isize, @intFromFloat(@round(x_f))),
-            @as(isize, @intFromFloat(@round(y_f))),
+            @as(isize, @intFromFloat(@round(tex_x_f))),
+            @as(isize, @intFromFloat(@round(tex_y_f))),
         ),
         .linear => {
-            const p00 = getPx(channels, texture, x_i, y_i);
-            const p10 = getPx(channels, texture, x_i + 1, y_i);
-            const p01 = getPx(channels, texture, x_i, y_i + 1);
-            const p11 = getPx(channels, texture, x_i + 1, y_i + 1);
+            const p00 = getPx(channels, texture, tex_x_i, tex_y_i);
+            const p10 = getPx(channels, texture, tex_x_i + 1, tex_y_i);
+            const p01 = getPx(channels, texture, tex_x_i, tex_y_i + 1);
+            const p11 = getPx(channels, texture, tex_x_i + 1, tex_y_i + 1);
             var res: [channels]f64 = undefined;
             inline for (0..channels) |ch| {
-                res[ch] = (1.0 - tx) * (1.0 - ty) * p00[ch] +
-                    tx * (1.0 - ty) * p10[ch] +
-                    (1.0 - tx) * ty * p01[ch] +
-                    tx * ty * p11[ch];
+                res[ch] = (1.0 - tex_x_frac) * (1.0 - tex_y_frac) * p00[ch] +
+                    tex_x_frac * (1.0 - tex_y_frac) * p10[ch] +
+                    (1.0 - tex_x_frac) * tex_y_frac * p01[ch] +
+                    tex_x_frac * tex_y_frac * p11[ch];
             }
             return res;
         },
         .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => {
-            const kernel: *const fn (f64) f64 = switch (config.sample) {
-                .cubic_catmull_rom => cubicWeightCatmullRom,
-                .cubic_mitchell_netravali => cubicWeightMitchellNetravali,
-                .cubic_bspline => cubicWeightBSpline,
+            const coeff_fun: *const fn (f64) f64 = switch (config.sample) {
+                .cubic_catmull_rom => cubicCoeffCatmullRom,
+                .cubic_mitchell_netravali => cubicCoeffMitchellNetravali,
+                .cubic_bspline => cubicBSplineCoeff,
                 else => unreachable,
             };
             const lut = switch (config.sample) {
@@ -401,41 +401,41 @@ pub fn sampleGeneric(
                     channels,
                     4,
                     texture,
-                    x_i,
-                    y_i,
+                    tex_x_i,
+                    tex_y_i,
                     .{
-                        kernel(tx + 1),
-                        kernel(tx),
-                        kernel(tx - 1),
-                        kernel(tx - 2),
+                        coeff_fun(tex_x_frac + 1),
+                        coeff_fun(tex_x_frac),
+                        coeff_fun(tex_x_frac - 1),
+                        coeff_fun(tex_x_frac - 2),
                     },
                     .{
-                        kernel(ty + 1),
-                        kernel(ty),
-                        kernel(ty - 1),
-                        kernel(ty - 2),
+                        coeff_fun(tex_y_frac + 1),
+                        coeff_fun(tex_y_frac),
+                        coeff_fun(tex_y_frac - 1),
+                        coeff_fun(tex_y_frac - 2),
                     },
                 ),
                 .lut => sample2D(
                     channels,
                     4,
                     texture,
-                    x_i,
-                    y_i,
-                    lut[@as(usize, @intFromFloat(tx * @as(f64, @floatFromInt(lut_size - 1))))],
-                    lut[@as(usize, @intFromFloat(ty * @as(f64, @floatFromInt(lut_size - 1))))],
+                    tex_x_i,
+                    tex_y_i,
+                    lut[@as(usize, @intFromFloat(tex_x_frac * @as(f64, @floatFromInt(lut_size - 1))))],
+                    lut[@as(usize, @intFromFloat(tex_y_frac * @as(f64, @floatFromInt(lut_size - 1))))],
                 ),
                 .lut_lerp => {
-                    const wx = getLerpWeights(4, lut, tx);
-                    const wy = getLerpWeights(4, lut, ty);
-                    return sample2D(channels, 4, texture, x_i, y_i, wx, wy);
+                    const samp_coeff_x = getLerpSampCoeffs(4, lut, tex_x_frac);
+                    const samp_coeff_y = getLerpSampCoeffs(4, lut, tex_y_frac);
+                    return sample2D(channels, 4, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
                 },
             };
         },
         .lanczos3, .quintic_bspline => {
-            const kernel: *const fn (f64) f64 = switch (config.sample) {
-                .lanczos3 => lanczos3Weight,
-                .quintic_bspline => quinticBSplineWeight,
+            const coeff_fun: *const fn (f64) f64 = switch (config.sample) {
+                .lanczos3 => lanczos3Coeff,
+                .quintic_bspline => quinticBSplineCoeff,
                 else => unreachable,
             };
             const lut = switch (config.sample) {
@@ -448,38 +448,38 @@ pub fn sampleGeneric(
                     channels,
                     6,
                     texture,
-                    x_i,
-                    y_i,
+                    tex_x_i,
+                    tex_y_i,
                     .{
-                        kernel(tx + 2),
-                        kernel(tx + 1),
-                        kernel(tx),
-                        kernel(tx - 1),
-                        kernel(tx - 2),
-                        kernel(tx - 3),
+                        coeff_fun(tex_x_frac + 2),
+                        coeff_fun(tex_x_frac + 1),
+                        coeff_fun(tex_x_frac),
+                        coeff_fun(tex_x_frac - 1),
+                        coeff_fun(tex_x_frac - 2),
+                        coeff_fun(tex_x_frac - 3),
                     },
                     .{
-                        kernel(ty + 2),
-                        kernel(ty + 1),
-                        kernel(ty),
-                        kernel(ty - 1),
-                        kernel(ty - 2),
-                        kernel(ty - 3),
+                        coeff_fun(tex_y_frac + 2),
+                        coeff_fun(tex_y_frac + 1),
+                        coeff_fun(tex_y_frac),
+                        coeff_fun(tex_y_frac - 1),
+                        coeff_fun(tex_y_frac - 2),
+                        coeff_fun(tex_y_frac - 3),
                     },
                 ),
                 .lut => sample2D(
                     channels,
                     6,
                     texture,
-                    x_i,
-                    y_i,
-                    lut[@as(usize, @intFromFloat(tx * @as(f64, @floatFromInt(lut_size - 1))))],
-                    lut[@as(usize, @intFromFloat(ty * @as(f64, @floatFromInt(lut_size - 1))))],
+                    tex_x_i,
+                    tex_y_i,
+                    lut[@as(usize, @intFromFloat(tex_x_frac * @as(f64, @floatFromInt(lut_size - 1))))],
+                    lut[@as(usize, @intFromFloat(tex_y_frac * @as(f64, @floatFromInt(lut_size - 1))))],
                 ),
                 .lut_lerp => {
-                    const wx = getLerpWeights(6, lut, tx);
-                    const wy = getLerpWeights(6, lut, ty);
-                    return sample2D(channels, 6, texture, x_i, y_i, wx, wy);
+                    const samp_coeff_x = getLerpSampCoeffs(6, lut, tex_x_frac);
+                    const samp_coeff_y = getLerpSampCoeffs(6, lut, tex_y_frac);
+                    return sample2D(channels, 6, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
                 },
             };
         },
@@ -491,15 +491,15 @@ fn sampleGenericCubicRuntimeMode(
     comptime sample: TextureSample,
     mode: TextureSampleMode,
     texture: anytype,
-    x_i: isize,
-    y_i: isize,
-    tx: f64,
-    ty: f64,
+    tex_x_i: isize,
+    tex_y_i: isize,
+    tex_x_frac: f64,
+    tex_y_frac: f64,
 ) [channels]f64 {
-    const kernel: *const fn (f64) f64 = switch (sample) {
-        .cubic_catmull_rom => cubicWeightCatmullRom,
-        .cubic_mitchell_netravali => cubicWeightMitchellNetravali,
-        .cubic_bspline => cubicWeightBSpline,
+    const coeff_fun: *const fn (f64) f64 = switch (sample) {
+        .cubic_catmull_rom => cubicCoeffCatmullRom,
+        .cubic_mitchell_netravali => cubicCoeffMitchellNetravali,
+        .cubic_bspline => cubicBSplineCoeff,
         else => unreachable,
     };
     const lut = switch (sample) {
@@ -514,44 +514,44 @@ fn sampleGenericCubicRuntimeMode(
             channels,
             4,
             texture,
-            x_i,
-            y_i,
+            tex_x_i,
+            tex_y_i,
             .{
-                kernel(tx + 1),
-                kernel(tx),
-                kernel(tx - 1),
-                kernel(tx - 2),
+                coeff_fun(tex_x_frac + 1),
+                coeff_fun(tex_x_frac),
+                coeff_fun(tex_x_frac - 1),
+                coeff_fun(tex_x_frac - 2),
             },
             .{
-                kernel(ty + 1),
-                kernel(ty),
-                kernel(ty - 1),
-                kernel(ty - 2),
+                coeff_fun(tex_y_frac + 1),
+                coeff_fun(tex_y_frac),
+                coeff_fun(tex_y_frac - 1),
+                coeff_fun(tex_y_frac - 2),
             },
         ),
         .lut => sample2D(
             channels,
             4,
             texture,
-            x_i,
-            y_i,
+            tex_x_i,
+            tex_y_i,
             lut[
                 @as(
                     usize,
-                    @intFromFloat(tx * @as(f64, @floatFromInt(lut_size - 1))),
+                    @intFromFloat(tex_x_frac * @as(f64, @floatFromInt(lut_size - 1))),
                 )
             ],
             lut[
                 @as(
                     usize,
-                    @intFromFloat(ty * @as(f64, @floatFromInt(lut_size - 1))),
+                    @intFromFloat(tex_y_frac * @as(f64, @floatFromInt(lut_size - 1))),
                 )
             ],
         ),
         .lut_lerp => {
-            const wx = getLerpWeights(4, lut, tx);
-            const wy = getLerpWeights(4, lut, ty);
-            return sample2D(channels, 4, texture, x_i, y_i, wx, wy);
+            const samp_coeff_x = getLerpSampCoeffs(4, lut, tex_x_frac);
+            const samp_coeff_y = getLerpSampCoeffs(4, lut, tex_y_frac);
+            return sample2D(channels, 4, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
         },
     };
 }
@@ -561,14 +561,14 @@ fn sampleGenericWideRuntimeMode(
     comptime sample: TextureSample,
     mode: TextureSampleMode,
     texture: anytype,
-    x_i: isize,
-    y_i: isize,
-    tx: f64,
-    ty: f64,
+    tex_x_i: isize,
+    tex_y_i: isize,
+    tex_x_frac: f64,
+    tex_y_frac: f64,
 ) [channels]f64 {
-    const kernel: *const fn (f64) f64 = switch (sample) {
-        .lanczos3 => lanczos3Weight,
-        .quintic_bspline => quinticBSplineWeight,
+    const coeff_fun: *const fn (f64) f64 = switch (sample) {
+        .lanczos3 => lanczos3Coeff,
+        .quintic_bspline => quinticBSplineCoeff,
         else => unreachable,
     };
     const lut = switch (sample) {
@@ -582,48 +582,48 @@ fn sampleGenericWideRuntimeMode(
             channels,
             6,
             texture,
-            x_i,
-            y_i,
+            tex_x_i,
+            tex_y_i,
             .{
-                kernel(tx + 2),
-                kernel(tx + 1),
-                kernel(tx),
-                kernel(tx - 1),
-                kernel(tx - 2),
-                kernel(tx - 3),
+                coeff_fun(tex_x_frac + 2),
+                coeff_fun(tex_x_frac + 1),
+                coeff_fun(tex_x_frac),
+                coeff_fun(tex_x_frac - 1),
+                coeff_fun(tex_x_frac - 2),
+                coeff_fun(tex_x_frac - 3),
             },
             .{
-                kernel(ty + 2),
-                kernel(ty + 1),
-                kernel(ty),
-                kernel(ty - 1),
-                kernel(ty - 2),
-                kernel(ty - 3),
+                coeff_fun(tex_y_frac + 2),
+                coeff_fun(tex_y_frac + 1),
+                coeff_fun(tex_y_frac),
+                coeff_fun(tex_y_frac - 1),
+                coeff_fun(tex_y_frac - 2),
+                coeff_fun(tex_y_frac - 3),
             },
         ),
         .lut => sample2D(
             channels,
             6,
             texture,
-            x_i,
-            y_i,
+            tex_x_i,
+            tex_y_i,
             lut[
                 @as(
                     usize,
-                    @intFromFloat(tx * @as(f64, @floatFromInt(lut_size - 1))),
+                    @intFromFloat(tex_x_frac * @as(f64, @floatFromInt(lut_size - 1))),
                 )
             ],
             lut[
                 @as(
                     usize,
-                    @intFromFloat(ty * @as(f64, @floatFromInt(lut_size - 1))),
+                    @intFromFloat(tex_y_frac * @as(f64, @floatFromInt(lut_size - 1))),
                 )
             ],
         ),
         .lut_lerp => {
-            const wx = getLerpWeights(6, lut, tx);
-            const wy = getLerpWeights(6, lut, ty);
-            return sample2D(channels, 6, texture, x_i, y_i, wx, wy);
+            const samp_coeff_x = getLerpSampCoeffs(6, lut, tex_x_frac);
+            const samp_coeff_y = getLerpSampCoeffs(6, lut, tex_y_frac);
+            return sample2D(channels, 6, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
         },
     };
 }
@@ -633,10 +633,10 @@ fn sampleGenericCubicModeDispatch(
     comptime sample: TextureSample,
     mode: TextureSampleMode,
     texture: anytype,
-    x_i: isize,
-    y_i: isize,
-    tx: f64,
-    ty: f64,
+    tex_x_i: isize,
+    tex_y_i: isize,
+    tex_x_frac: f64,
+    tex_y_frac: f64,
 ) [channels]f64 {
     switch (buildconfig.config.texture_sample_mode_dispatch) {
         .run_time => {
@@ -645,10 +645,10 @@ fn sampleGenericCubicModeDispatch(
                 sample,
                 mode,
                 texture,
-                x_i,
-                y_i,
-                tx,
-                ty,
+                tex_x_i,
+                tex_y_i,
+                tex_x_frac,
+                tex_y_frac,
             );
         },
         .comp_time => {
@@ -662,11 +662,11 @@ fn sampleGenericCubicModeDispatch(
                         channels,
                         comptime_config,
                         texture,
-                        (tx + @as(f64, @floatFromInt(x_i))) /
+                        (tex_x_frac + @as(f64, @floatFromInt(tex_x_i))) /
                             @as(f64, @floatFromInt(
                                 @as(isize, @intCast(texture.cols_num)) - 1,
                             )),
-                        (ty + @as(f64, @floatFromInt(y_i))) /
+                        (tex_y_frac + @as(f64, @floatFromInt(tex_y_i))) /
                             @as(f64, @floatFromInt(
                                 @as(isize, @intCast(texture.rows_num)) - 1,
                             )),
@@ -683,10 +683,10 @@ fn sampleGenericWideModeDispatch(
     comptime sample: TextureSample,
     mode: TextureSampleMode,
     texture: anytype,
-    x_i: isize,
-    y_i: isize,
-    tx: f64,
-    ty: f64,
+    tex_x_i: isize,
+    tex_y_i: isize,
+    tex_x_frac: f64,
+    tex_y_frac: f64,
 ) [channels]f64 {
     switch (buildconfig.config.texture_sample_mode_dispatch) {
         .run_time => {
@@ -695,10 +695,10 @@ fn sampleGenericWideModeDispatch(
                 sample,
                 mode,
                 texture,
-                x_i,
-                y_i,
-                tx,
-                ty,
+                tex_x_i,
+                tex_y_i,
+                tex_x_frac,
+                tex_y_frac,
             );
         },
         .comp_time => {
@@ -712,11 +712,11 @@ fn sampleGenericWideModeDispatch(
                         channels,
                         comptime_config,
                         texture,
-                        (tx + @as(f64, @floatFromInt(x_i))) /
+                        (tex_x_frac + @as(f64, @floatFromInt(tex_x_i))) /
                             @as(f64, @floatFromInt(
                                 @as(isize, @intCast(texture.cols_num)) - 1,
                             )),
-                        (ty + @as(f64, @floatFromInt(y_i))) /
+                        (tex_y_frac + @as(f64, @floatFromInt(tex_y_i))) /
                             @as(f64, @floatFromInt(
                                 @as(isize, @intCast(texture.rows_num)) - 1,
                             )),
@@ -738,31 +738,31 @@ pub fn sampleGenericRuntime(
     std.debug.assert(config.isValid());
     const cols_minus_1 = @as(isize, @intCast(texture.cols_num)) - 1;
     const rows_minus_1 = @as(isize, @intCast(texture.rows_num)) - 1;
-    const x_f = u * @as(f64, @floatFromInt(cols_minus_1));
-    const y_f = v * @as(f64, @floatFromInt(rows_minus_1));
-    const x_i = @as(isize, @intFromFloat(@floor(x_f)));
-    const y_i = @as(isize, @intFromFloat(@floor(y_f)));
-    const tx = x_f - @as(f64, @floatFromInt(x_i));
-    const ty = y_f - @as(f64, @floatFromInt(y_i));
+    const tex_x_f = u * @as(f64, @floatFromInt(cols_minus_1));
+    const tex_y_f = v * @as(f64, @floatFromInt(rows_minus_1));
+    const tex_x_i = @as(isize, @intFromFloat(@floor(tex_x_f)));
+    const tex_y_i = @as(isize, @intFromFloat(@floor(tex_y_f)));
+    const tex_x_frac = tex_x_f - @as(f64, @floatFromInt(tex_x_i));
+    const tex_y_frac = tex_y_f - @as(f64, @floatFromInt(tex_y_i));
 
     return switch (config.sample) {
         .nearest => getPx(
             channels,
             texture,
-            @as(isize, @intFromFloat(@round(x_f))),
-            @as(isize, @intFromFloat(@round(y_f))),
+            @as(isize, @intFromFloat(@round(tex_x_f))),
+            @as(isize, @intFromFloat(@round(tex_y_f))),
         ),
         .linear => {
-            const p00 = getPx(channels, texture, x_i, y_i);
-            const p10 = getPx(channels, texture, x_i + 1, y_i);
-            const p01 = getPx(channels, texture, x_i, y_i + 1);
-            const p11 = getPx(channels, texture, x_i + 1, y_i + 1);
+            const p00 = getPx(channels, texture, tex_x_i, tex_y_i);
+            const p10 = getPx(channels, texture, tex_x_i + 1, tex_y_i);
+            const p01 = getPx(channels, texture, tex_x_i, tex_y_i + 1);
+            const p11 = getPx(channels, texture, tex_x_i + 1, tex_y_i + 1);
             var res: [channels]f64 = undefined;
             inline for (0..channels) |ch| {
-                res[ch] = (1.0 - tx) * (1.0 - ty) * p00[ch] +
-                    tx * (1.0 - ty) * p10[ch] +
-                    (1.0 - tx) * ty * p01[ch] +
-                    tx * ty * p11[ch];
+                res[ch] = (1.0 - tex_x_frac) * (1.0 - tex_y_frac) * p00[ch] +
+                    tex_x_frac * (1.0 - tex_y_frac) * p10[ch] +
+                    (1.0 - tex_x_frac) * tex_y_frac * p01[ch] +
+                    tex_x_frac * tex_y_frac * p11[ch];
             }
             return res;
         },
@@ -771,50 +771,50 @@ pub fn sampleGenericRuntime(
             .cubic_catmull_rom,
             config.mode,
             texture,
-            x_i,
-            y_i,
-            tx,
-            ty,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
         ),
         .cubic_mitchell_netravali => sampleGenericCubicModeDispatch(
             channels,
             .cubic_mitchell_netravali,
             config.mode,
             texture,
-            x_i,
-            y_i,
-            tx,
-            ty,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
         ),
         .cubic_bspline => sampleGenericCubicModeDispatch(
             channels,
             .cubic_bspline,
             config.mode,
             texture,
-            x_i,
-            y_i,
-            tx,
-            ty,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
         ),
         .lanczos3 => sampleGenericWideModeDispatch(
             channels,
             .lanczos3,
             config.mode,
             texture,
-            x_i,
-            y_i,
-            tx,
-            ty,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
         ),
         .quintic_bspline => sampleGenericWideModeDispatch(
             channels,
             .quintic_bspline,
             config.mode,
             texture,
-            x_i,
-            y_i,
-            tx,
-            ty,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
         ),
     };
 }

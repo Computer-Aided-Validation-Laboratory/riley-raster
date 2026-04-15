@@ -23,12 +23,12 @@ const lanczos3_lut = common.lanczos3_lut;
 const quintic_bspline_lut = common.quintic_bspline_lut;
 const cubic_lut = common.cubic_lut;
 const quintic_lut = common.quintic_lut;
-const cubicWeightCatmullRom = common.cubicWeightCatmullRom;
-const cubicWeightMitchellNetravali = common.cubicWeightMitchellNetravali;
-const cubicWeightBSpline = common.cubicWeightBSpline;
-const lanczos3Weight = common.lanczos3Weight;
-const quinticBSplineWeight = common.quinticBSplineWeight;
-const getLerpWeights = common.getLerpWeights;
+const cubicCoeffCatmullRom = common.cubicCoeffCatmullRom;
+const cubicCoeffMitchellNetravali = common.cubicCoeffMitchellNetravali;
+const cubicBSplineCoeff = common.cubicBSplineCoeff;
+const lanczos3Coeff = common.lanczos3Coeff;
+const quinticBSplineCoeff = common.quinticBSplineCoeff;
+const getLerpSampCoeffs = common.getLerpSampCoeffs;
 const getPx = common.getPx;
 
 pub const sampleGeneric = common.sampleGeneric;
@@ -37,8 +37,8 @@ pub const sampleGreyscale = common.sampleGreyscale;
 fn v_getPxSIMD(
     comptime channels: usize,
     texture: anytype,
-    v_xi: VecSI,
-    v_yi: VecSI,
+    v_tex_x_i: VecSI,
+    v_tex_y_i: VecSI,
 ) [channels]VecSF {
     const cols = @as(isize, @intCast(texture.cols_num));
     const rows = @as(isize, @intCast(texture.rows_num));
@@ -50,11 +50,11 @@ fn v_getPxSIMD(
     // Clamp to texture edges so we don't try and access anything that doesn't exist
     const v_xu = @as(
         VecSU,
-        @intCast(@max(v_splat_zero, @min(v_xi, v_cols_m1))),
+        @intCast(@max(v_splat_zero, @min(v_tex_x_i, v_cols_m1))),
     );
     const v_yu = @as(
         VecSU,
-        @intCast(@max(v_splat_zero, @min(v_yi, v_rows_m1))),
+        @intCast(@max(v_splat_zero, @min(v_tex_y_i, v_rows_m1))),
     );
 
     var res: [channels]VecSF = undefined;
@@ -88,14 +88,14 @@ fn sample2DInnerSIMD(
     comptime channels: usize,
     comptime N: usize,
     texture: anytype,
-    x_i: isize,
-    y_i: isize,
-    wx: [N]f64,
-    wy: [N]f64,
+    tex_x_i: isize,
+    tex_y_i: isize,
+    samp_coeff_x: [N]f64,
+    samp_coeff_y: [N]f64,
 ) [channels]f64 {
     const offset = @as(isize, @intCast(N)) / 2 - 1;
-    const start_x = x_i - offset;
-    const start_y = y_i - offset;
+    const start_x = tex_x_i - offset;
+    const start_y = tex_y_i - offset;
 
     const cols = @as(isize, @intCast(texture.cols_num));
     const rows = @as(isize, @intCast(texture.rows_num));
@@ -106,13 +106,13 @@ fn sample2DInnerSIMD(
     if (start_x >= 0 and start_x + @as(isize, @intCast(N)) <= cols and
         start_y >= 0 and start_y + @as(isize, @intCast(N)) <= rows)
     {
-        const v_wx: @Vector(N, f64) = wx;
-        const v_wy: @Vector(N, f64) = wy;
+        const v_samp_coeff_x: @Vector(N, f64) = samp_coeff_x;
+        const v_samp_coeff_y: @Vector(N, f64) = samp_coeff_y;
         const stride_y = texture.array.strides[1];
 
-        const w_sum = @reduce(.Add, v_wx) * @reduce(.Add, v_wy);
-        const inv_w_sum = if (@abs(w_sum) > tol.texture.weight_sum)
-            1.0 / w_sum
+        const samp_coeff_sum = @reduce(.Add, v_samp_coeff_x) * @reduce(.Add, v_samp_coeff_y);
+        const inv_samp_coeff_sum = if (@abs(samp_coeff_sum) > tol.texture.samp_coeff_sum)
+            1.0 / samp_coeff_sum
         else
             1.0;
 
@@ -120,24 +120,24 @@ fn sample2DInnerSIMD(
             const row_off =
                 @as(usize, @intCast(start_y + @as(isize, @intCast(jj)))) * stride_y +
                 @as(usize, @intCast(start_x));
-            const wy_val = v_wy[jj];
+            const wy_val = v_samp_coeff_y[jj];
 
             inline for (0..channels) |ch| {
                 const plane_ptr = texture.array.getPlanePtr(ch);
                 const v_row: @Vector(N, f64) = plane_ptr[row_off..][0..N].*;
-                res[ch] += @reduce(.Add, v_row * v_wx) * wy_val;
+                res[ch] += @reduce(.Add, v_row * v_samp_coeff_x) * wy_val;
             }
         }
 
         inline for (0..channels) |ch| {
-            res[ch] *= inv_w_sum;
+            res[ch] *= inv_samp_coeff_sum;
         }
     } else {
         // Fallback to scalar sampling for edges
-        var w_sum: f64 = 0.0;
+        var samp_coeff_sum: f64 = 0.0;
         for (0..N) |jj| {
             for (0..N) |ii| {
-                const w = wx[ii] * wy[jj];
+                const w = samp_coeff_x[ii] * samp_coeff_y[jj];
                 const px = getPx(
                     channels,
                     texture,
@@ -147,12 +147,12 @@ fn sample2DInnerSIMD(
                 inline for (0..channels) |ch| {
                     res[ch] += px[ch] * w;
                 }
-                w_sum += w;
+                samp_coeff_sum += w;
             }
         }
-        if (@abs(w_sum) > tol.texture.weight_sum) {
+        if (@abs(samp_coeff_sum) > tol.texture.samp_coeff_sum) {
             inline for (0..channels) |ch| {
-                res[ch] /= w_sum;
+                res[ch] /= samp_coeff_sum;
             }
         }
     }
@@ -160,7 +160,7 @@ fn sample2DInnerSIMD(
     return res;
 }
 
-fn v_cubicWeightCatmullRomSIMD(v_x: VecSF) VecSF {
+fn v_cubicCoeffCatmullRomSIMD(v_x: VecSF) VecSF {
     const v_ax = @abs(v_x);
     const v_splat_one: VecSF = @splat(1.0);
     const v_splat_two: VecSF = @splat(2.0);
@@ -189,7 +189,7 @@ fn v_cubicWeightCatmullRomSIMD(v_x: VecSF) VecSF {
     return res;
 }
 
-fn v_cubicWeightMitchellNetravaliSIMD(v_x: VecSF) VecSF {
+fn v_cubicCoeffMitchellNetravaliSIMD(v_x: VecSF) VecSF {
     const v_r = @abs(v_x);
     const B = 1.0 / 3.0;
     const C = 1.0 / 3.0;
@@ -213,7 +213,7 @@ fn v_cubicWeightMitchellNetravaliSIMD(v_x: VecSF) VecSF {
     return res;
 }
 
-fn v_cubicWeightBSplineSIMD(v_x: VecSF) VecSF {
+fn v_cubicBSplineCoeffSIMD(v_x: VecSF) VecSF {
     const v_r = @abs(v_x);
     const v_splat_one: VecSF = @splat(1.0);
     const v_splat_two: VecSF = @splat(2.0);
@@ -232,17 +232,17 @@ fn v_cubicWeightBSplineSIMD(v_x: VecSF) VecSF {
     return res;
 }
 
-fn v_lanczos3WeightSIMD(v_x: VecSF) VecSF {
+fn v_lanczos3CoeffSIMD(v_x: VecSF) VecSF {
     const v_ax = @abs(v_x);
     var res_arr: [S]f64 = undefined;
     const ax_arr: [S]f64 = v_ax;
     for (0..S) |ii| {
-        res_arr[ii] = lanczos3Weight(ax_arr[ii]);
+        res_arr[ii] = lanczos3Coeff(ax_arr[ii]);
     }
     return res_arr;
 }
 
-fn v_quinticBSplineWeightSIMD(v_x: VecSF) VecSF {
+fn v_quinticBSplineCoeffSIMD(v_x: VecSF) VecSF {
     const v_r = @abs(v_x);
     const v_splat_zero: VecSF = @splat(0.0);
     const v_splat_one: VecSF = @splat(1.0);
@@ -287,53 +287,53 @@ pub fn sampleOverPixelsSIMD(
         @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
     );
 
-    const v_xf = v_u * @as(VecSF, @splat(cols_minus_1_f));
-    const v_yf = v_v * @as(VecSF, @splat(rows_minus_1_f));
+    const v_tex_x_f = v_u * @as(VecSF, @splat(cols_minus_1_f));
+    const v_tex_y_f = v_v * @as(VecSF, @splat(rows_minus_1_f));
 
-    var v_xi: [S]isize = undefined;
-    var v_yi: [S]isize = undefined;
-    const xf_arr: [S]f64 = v_xf;
-    const yf_arr: [S]f64 = v_yf;
+    var v_tex_x_i: [S]isize = undefined;
+    var v_tex_y_i: [S]isize = undefined;
+    const tex_x_f_arr: [S]f64 = v_tex_x_f;
+    const tex_y_f_arr: [S]f64 = v_tex_y_f;
 
     for (0..S) |ii| {
-        v_xi[ii] = @as(isize, @intFromFloat(@floor(xf_arr[ii])));
-        v_yi[ii] = @as(isize, @intFromFloat(@floor(yf_arr[ii])));
+        v_tex_x_i[ii] = @as(isize, @intFromFloat(@floor(tex_x_f_arr[ii])));
+        v_tex_y_i[ii] = @as(isize, @intFromFloat(@floor(tex_y_f_arr[ii])));
     }
 
-    const v_tx = v_xf - @as(VecSF, @floatFromInt(@as(VecSI, v_xi)));
-    const v_ty = v_yf - @as(VecSF, @floatFromInt(@as(VecSI, v_yi)));
+    const v_tex_x_frac = v_tex_x_f - @as(VecSF, @floatFromInt(@as(VecSI, v_tex_x_i)));
+    const v_tex_y_frac = v_tex_y_f - @as(VecSF, @floatFromInt(@as(VecSI, v_tex_y_i)));
 
     return switch (config.sample) {
-        .nearest => v_getPxSIMD(channels, texture, @as(VecSI, @intFromFloat(@round(v_xf))), @as(VecSI, @intFromFloat(@round(v_yf)))),
+        .nearest => v_getPxSIMD(channels, texture, @as(VecSI, @intFromFloat(@round(v_tex_x_f))), @as(VecSI, @intFromFloat(@round(v_tex_y_f)))),
         .linear => {
-            const v_p00 = v_getPxSIMD(channels, texture, v_xi, v_yi);
+            const v_p00 = v_getPxSIMD(channels, texture, v_tex_x_i, v_tex_y_i);
             const v_p10 = v_getPxSIMD(
                 channels,
                 texture,
-                v_xi + @as(VecSI, @splat(1)),
-                v_yi,
+                v_tex_x_i + @as(VecSI, @splat(1)),
+                v_tex_y_i,
             );
             const v_p01 = v_getPxSIMD(
                 channels,
                 texture,
-                v_xi,
-                v_yi + @as(VecSI, @splat(1)),
+                v_tex_x_i,
+                v_tex_y_i + @as(VecSI, @splat(1)),
             );
             const v_p11 = v_getPxSIMD(
                 channels,
                 texture,
-                v_xi + @as(VecSI, @splat(1)),
-                v_yi + @as(VecSI, @splat(1)),
+                v_tex_x_i + @as(VecSI, @splat(1)),
+                v_tex_y_i + @as(VecSI, @splat(1)),
             );
 
             var res: [channels]VecSF = undefined;
             const v_splat_one: VecSF = @splat(1.0);
             inline for (0..channels) |ch| {
-                res[ch] = (v_splat_one - v_tx) * (v_splat_one - v_ty) *
+                res[ch] = (v_splat_one - v_tex_x_frac) * (v_splat_one - v_tex_y_frac) *
                     v_p00[ch] +
-                    v_tx * (v_splat_one - v_ty) * v_p10[ch] +
-                    (v_splat_one - v_tx) * v_ty * v_p01[ch] +
-                    v_tx * v_ty * v_p11[ch];
+                    v_tex_x_frac * (v_splat_one - v_tex_y_frac) * v_p10[ch] +
+                    (v_splat_one - v_tex_x_frac) * v_tex_y_frac * v_p01[ch] +
+                    v_tex_x_frac * v_tex_y_frac * v_p11[ch];
             }
             return res;
         },
@@ -341,11 +341,11 @@ pub fn sampleOverPixelsSIMD(
             const K = 4;
             const offset = @divTrunc(@as(isize, @intCast(K)), 2) - 1;
 
-            var v_wx: [K]VecSF = undefined;
-            var v_wy: [K]VecSF = undefined;
+            var v_samp_coeff_x: [K]VecSF = undefined;
+            var v_samp_coeff_y: [K]VecSF = undefined;
 
-            const tx_arr: [S]f64 = v_tx;
-            const ty_arr: [S]f64 = v_ty;
+            const tex_x_frac_arr: [S]f64 = v_tex_x_frac;
+            const tex_y_frac_arr: [S]f64 = v_tex_y_frac;
 
             const lut = switch (config.sample) {
                 .cubic_catmull_rom => catmull_rom_lut,
@@ -357,85 +357,85 @@ pub fn sampleOverPixelsSIMD(
             switch (config.mode) {
                 .direct => {
                     const v_kernel: *const fn (VecSF) VecSF = switch (config.sample) {
-                        .cubic_catmull_rom => v_cubicWeightCatmullRomSIMD,
-                        .cubic_mitchell_netravali => v_cubicWeightMitchellNetravaliSIMD,
-                        .cubic_bspline => v_cubicWeightBSplineSIMD,
+                        .cubic_catmull_rom => v_cubicCoeffCatmullRomSIMD,
+                        .cubic_mitchell_netravali => v_cubicCoeffMitchellNetravaliSIMD,
+                        .cubic_bspline => v_cubicBSplineCoeffSIMD,
                         else => unreachable,
                     };
-                    v_wx[0] = v_kernel(v_tx + @as(VecSF, @splat(1.0)));
-                    v_wx[1] = v_kernel(v_tx);
-                    v_wx[2] = v_kernel(v_tx - @as(VecSF, @splat(1.0)));
-                    v_wx[3] = v_kernel(v_tx - @as(VecSF, @splat(2.0)));
+                    v_samp_coeff_x[0] = v_kernel(v_tex_x_frac + @as(VecSF, @splat(1.0)));
+                    v_samp_coeff_x[1] = v_kernel(v_tex_x_frac);
+                    v_samp_coeff_x[2] = v_kernel(v_tex_x_frac - @as(VecSF, @splat(1.0)));
+                    v_samp_coeff_x[3] = v_kernel(v_tex_x_frac - @as(VecSF, @splat(2.0)));
 
-                    v_wy[0] = v_kernel(v_ty + @as(VecSF, @splat(1.0)));
-                    v_wy[1] = v_kernel(v_ty);
-                    v_wy[2] = v_kernel(v_ty - @as(VecSF, @splat(1.0)));
-                    v_wy[3] = v_kernel(v_ty - @as(VecSF, @splat(2.0)));
+                    v_samp_coeff_y[0] = v_kernel(v_tex_y_frac + @as(VecSF, @splat(1.0)));
+                    v_samp_coeff_y[1] = v_kernel(v_tex_y_frac);
+                    v_samp_coeff_y[2] = v_kernel(v_tex_y_frac - @as(VecSF, @splat(1.0)));
+                    v_samp_coeff_y[3] = v_kernel(v_tex_y_frac - @as(VecSF, @splat(2.0)));
                 },
                 .lut => {
-                    var wx_arr: [4][S]f64 = undefined;
-                    var wy_arr: [4][S]f64 = undefined;
+                    var samp_coeff_x_arr: [4][S]f64 = undefined;
+                    var samp_coeff_y_arr: [4][S]f64 = undefined;
                     for (0..S) |ii| {
                         const ix = @as(usize, @intFromFloat(
-                            tx_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
+                            tex_x_frac_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
                         ));
                         const iy = @as(usize, @intFromFloat(
-                            ty_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
+                            tex_y_frac_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
                         ));
                         inline for (0..4) |kk| {
-                            wx_arr[kk][ii] = lut[ix][kk];
-                            wy_arr[kk][ii] = lut[iy][kk];
+                            samp_coeff_x_arr[kk][ii] = lut[ix][kk];
+                            samp_coeff_y_arr[kk][ii] = lut[iy][kk];
                         }
                     }
                     inline for (0..4) |kk| {
-                        v_wx[kk] = wx_arr[kk];
-                        v_wy[kk] = wy_arr[kk];
+                        v_samp_coeff_x[kk] = samp_coeff_x_arr[kk];
+                        v_samp_coeff_y[kk] = samp_coeff_y_arr[kk];
                     }
                 },
                 .lut_lerp => {
-                    var wx_arr: [4][S]f64 = undefined;
-                    var wy_arr: [4][S]f64 = undefined;
+                    var samp_coeff_x_arr: [4][S]f64 = undefined;
+                    var samp_coeff_y_arr: [4][S]f64 = undefined;
                     for (0..S) |ii| {
-                        const wx = getLerpWeights(4, lut, tx_arr[ii]);
-                        const wy = getLerpWeights(4, lut, ty_arr[ii]);
+                        const samp_coeff_x = getLerpSampCoeffs(4, lut, tex_x_frac_arr[ii]);
+                        const samp_coeff_y = getLerpSampCoeffs(4, lut, tex_y_frac_arr[ii]);
                         inline for (0..4) |kk| {
-                            wx_arr[kk][ii] = wx[kk];
-                            wy_arr[kk][ii] = wy[kk];
+                            samp_coeff_x_arr[kk][ii] = samp_coeff_x[kk];
+                            samp_coeff_y_arr[kk][ii] = samp_coeff_y[kk];
                         }
                     }
                     inline for (0..4) |kk| {
-                        v_wx[kk] = wx_arr[kk];
-                        v_wy[kk] = wy_arr[kk];
+                        v_samp_coeff_x[kk] = samp_coeff_x_arr[kk];
+                        v_samp_coeff_y[kk] = samp_coeff_y_arr[kk];
                     }
                 },
             }
 
             var v_res: [channels]VecSF = [_]VecSF{@splat(0.0)} ** channels;
-            var v_w_sum: VecSF = @splat(0.0);
+            var v_samp_coeff_sum: VecSF = @splat(0.0);
 
-            // Pre-calculate weight planes
-            var v_w_planes: [K * K]VecSF = undefined;
+            // Pre-calculate tap_samp_coeff planes
+            var v_tap_samp_coeff_planes: [K * K]VecSF = undefined;
             inline for (0..K) |jj| {
-                const v_wy_val = v_wy[jj];
+                const v_samp_coeff_y_val = v_samp_coeff_y[jj];
                 inline for (0..K) |ii| {
-                    const v_w = v_wx[ii] * v_wy_val;
-                    v_w_planes[jj * K + ii] = v_w;
-                    v_w_sum += v_w;
+                    const v_tap_samp_coeff = v_samp_coeff_x[ii] * v_samp_coeff_y_val;
+                    v_tap_samp_coeff_planes[jj * K + ii] = v_tap_samp_coeff;
+                    v_samp_coeff_sum += v_tap_samp_coeff;
                 }
             }
 
             inline for (0..K) |jj| {
                 inline for (0..K) |ii| {
-                    const v_w = v_w_planes[jj * K + ii];
+                    const v_tap_samp_coeff = v_tap_samp_coeff_planes[jj * K + ii];
                     const v_px_vecs = v_getPxSIMD(
                         channels,
                         texture,
-                        v_xi + @as(VecSI, @splat(@as(isize, @intCast(ii)) - offset)),
-                        v_yi + @as(VecSI, @splat(@as(isize, @intCast(jj)) - offset)),
+                        v_tex_x_i + @as(VecSI, @splat(@as(isize, @intCast(ii)) - offset)),
+                        v_tex_y_i + @as(VecSI, @splat(@as(isize, @intCast(jj)) - offset)),
                     );
 
                     inline for (0..channels) |ch| {
-                        v_res[ch] += v_px_vecs[ch] * v_w;
+                        v_res[ch] += v_px_vecs[ch] * v_tap_samp_coeff;
                     }
                 }
             }
@@ -443,12 +443,12 @@ pub fn sampleOverPixelsSIMD(
             const v_splat_one: VecSF = @splat(1.0);
             const v_inv_w_sum = @select(
                 f64,
-                @abs(v_w_sum) < @as(
+                @abs(v_samp_coeff_sum) < @as(
                     VecSF,
-                    @splat(tol.texture.weight_sum),
+                    @splat(tol.texture.samp_coeff_sum),
                 ),
                 v_splat_one,
-                v_splat_one / v_w_sum,
+                v_splat_one / v_samp_coeff_sum,
             );
             inline for (0..channels) |ch| {
                 v_res[ch] *= v_inv_w_sum;
@@ -459,11 +459,11 @@ pub fn sampleOverPixelsSIMD(
             const K = 6;
             const offset = @divTrunc(@as(isize, @intCast(K)), 2) - 1;
 
-            var v_wx: [K]VecSF = undefined;
-            var v_wy: [K]VecSF = undefined;
+            var v_samp_coeff_x: [K]VecSF = undefined;
+            var v_samp_coeff_y: [K]VecSF = undefined;
 
-            const tx_arr: [S]f64 = v_tx;
-            const ty_arr: [S]f64 = v_ty;
+            const tex_x_frac_arr: [S]f64 = v_tex_x_frac;
+            const tex_y_frac_arr: [S]f64 = v_tex_y_frac;
 
             const lut = switch (config.sample) {
                 .lanczos3 => lanczos3_lut,
@@ -474,88 +474,88 @@ pub fn sampleOverPixelsSIMD(
             switch (config.mode) {
                 .direct => {
                     const v_kernel: *const fn (VecSF) VecSF = switch (config.sample) {
-                        .lanczos3 => v_lanczos3WeightSIMD,
-                        .quintic_bspline => v_quinticBSplineWeightSIMD,
+                        .lanczos3 => v_lanczos3CoeffSIMD,
+                        .quintic_bspline => v_quinticBSplineCoeffSIMD,
                         else => unreachable,
                     };
-                    v_wx[0] = v_kernel(v_tx + @as(VecSF, @splat(2.0)));
-                    v_wx[1] = v_kernel(v_tx + @as(VecSF, @splat(1.0)));
-                    v_wx[2] = v_kernel(v_tx);
-                    v_wx[3] = v_kernel(v_tx - @as(VecSF, @splat(1.0)));
-                    v_wx[4] = v_kernel(v_tx - @as(VecSF, @splat(2.0)));
-                    v_wx[5] = v_kernel(v_tx - @as(VecSF, @splat(3.0)));
+                    v_samp_coeff_x[0] = v_kernel(v_tex_x_frac + @as(VecSF, @splat(2.0)));
+                    v_samp_coeff_x[1] = v_kernel(v_tex_x_frac + @as(VecSF, @splat(1.0)));
+                    v_samp_coeff_x[2] = v_kernel(v_tex_x_frac);
+                    v_samp_coeff_x[3] = v_kernel(v_tex_x_frac - @as(VecSF, @splat(1.0)));
+                    v_samp_coeff_x[4] = v_kernel(v_tex_x_frac - @as(VecSF, @splat(2.0)));
+                    v_samp_coeff_x[5] = v_kernel(v_tex_x_frac - @as(VecSF, @splat(3.0)));
 
-                    v_wy[0] = v_kernel(v_ty + @as(VecSF, @splat(2.0)));
-                    v_wy[1] = v_kernel(v_ty + @as(VecSF, @splat(1.0)));
-                    v_wy[2] = v_kernel(v_ty);
-                    v_wy[3] = v_kernel(v_ty - @as(VecSF, @splat(1.0)));
-                    v_wy[4] = v_kernel(v_ty - @as(VecSF, @splat(2.0)));
-                    v_wy[5] = v_kernel(v_ty - @as(VecSF, @splat(3.0)));
+                    v_samp_coeff_y[0] = v_kernel(v_tex_y_frac + @as(VecSF, @splat(2.0)));
+                    v_samp_coeff_y[1] = v_kernel(v_tex_y_frac + @as(VecSF, @splat(1.0)));
+                    v_samp_coeff_y[2] = v_kernel(v_tex_y_frac);
+                    v_samp_coeff_y[3] = v_kernel(v_tex_y_frac - @as(VecSF, @splat(1.0)));
+                    v_samp_coeff_y[4] = v_kernel(v_tex_y_frac - @as(VecSF, @splat(2.0)));
+                    v_samp_coeff_y[5] = v_kernel(v_tex_y_frac - @as(VecSF, @splat(3.0)));
                 },
                 .lut => {
-                    var wx_arr: [6][S]f64 = undefined;
-                    var wy_arr: [6][S]f64 = undefined;
+                    var samp_coeff_x_arr: [6][S]f64 = undefined;
+                    var samp_coeff_y_arr: [6][S]f64 = undefined;
                     for (0..S) |ii| {
                         const ix = @as(usize, @intFromFloat(
-                            tx_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
+                            tex_x_frac_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
                         ));
                         const iy = @as(usize, @intFromFloat(
-                            ty_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
+                            tex_y_frac_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
                         ));
                         inline for (0..6) |kk| {
-                            wx_arr[kk][ii] = lut[ix][kk];
-                            wy_arr[kk][ii] = lut[iy][kk];
+                            samp_coeff_x_arr[kk][ii] = lut[ix][kk];
+                            samp_coeff_y_arr[kk][ii] = lut[iy][kk];
                         }
                     }
                     inline for (0..6) |kk| {
-                        v_wx[kk] = wx_arr[kk];
-                        v_wy[kk] = wy_arr[kk];
+                        v_samp_coeff_x[kk] = samp_coeff_x_arr[kk];
+                        v_samp_coeff_y[kk] = samp_coeff_y_arr[kk];
                     }
                 },
                 .lut_lerp => {
-                    var wx_arr: [6][S]f64 = undefined;
-                    var wy_arr: [6][S]f64 = undefined;
+                    var samp_coeff_x_arr: [6][S]f64 = undefined;
+                    var samp_coeff_y_arr: [6][S]f64 = undefined;
                     for (0..S) |ii| {
-                        const wx = getLerpWeights(6, lut, tx_arr[ii]);
-                        const wy = getLerpWeights(6, lut, ty_arr[ii]);
+                        const samp_coeff_x = getLerpSampCoeffs(6, lut, tex_x_frac_arr[ii]);
+                        const samp_coeff_y = getLerpSampCoeffs(6, lut, tex_y_frac_arr[ii]);
                         inline for (0..6) |kk| {
-                            wx_arr[kk][ii] = wx[kk];
-                            wy_arr[kk][ii] = wy[kk];
+                            samp_coeff_x_arr[kk][ii] = samp_coeff_x[kk];
+                            samp_coeff_y_arr[kk][ii] = samp_coeff_y[kk];
                         }
                     }
                     inline for (0..6) |kk| {
-                        v_wx[kk] = wx_arr[kk];
-                        v_wy[kk] = wy_arr[kk];
+                        v_samp_coeff_x[kk] = samp_coeff_x_arr[kk];
+                        v_samp_coeff_y[kk] = samp_coeff_y_arr[kk];
                     }
                 },
             }
 
             var v_res: [channels]VecSF = [_]VecSF{@splat(0.0)} ** channels;
-            var v_w_sum: VecSF = @splat(0.0);
+            var v_samp_coeff_sum: VecSF = @splat(0.0);
 
-            // Pre-calculate weight planes
-            var v_w_planes: [K * K]VecSF = undefined;
+            // Pre-calculate tap_samp_coeff planes
+            var v_tap_samp_coeff_planes: [K * K]VecSF = undefined;
             inline for (0..K) |jj| {
-                const v_wy_val = v_wy[jj];
+                const v_samp_coeff_y_val = v_samp_coeff_y[jj];
                 inline for (0..K) |ii| {
-                    const v_w = v_wx[ii] * v_wy_val;
-                    v_w_planes[jj * K + ii] = v_w;
-                    v_w_sum += v_w;
+                    const v_tap_samp_coeff = v_samp_coeff_x[ii] * v_samp_coeff_y_val;
+                    v_tap_samp_coeff_planes[jj * K + ii] = v_tap_samp_coeff;
+                    v_samp_coeff_sum += v_tap_samp_coeff;
                 }
             }
 
             inline for (0..K) |jj| {
                 inline for (0..K) |ii| {
-                    const v_w = v_w_planes[jj * K + ii];
+                    const v_tap_samp_coeff = v_tap_samp_coeff_planes[jj * K + ii];
                     const v_px_vecs = v_getPxSIMD(
                         channels,
                         texture,
-                        v_xi + @as(VecSI, @splat(@as(isize, @intCast(ii)) - offset)),
-                        v_yi + @as(VecSI, @splat(@as(isize, @intCast(jj)) - offset)),
+                        v_tex_x_i + @as(VecSI, @splat(@as(isize, @intCast(ii)) - offset)),
+                        v_tex_y_i + @as(VecSI, @splat(@as(isize, @intCast(jj)) - offset)),
                     );
 
                     inline for (0..channels) |ch| {
-                        v_res[ch] += v_px_vecs[ch] * v_w;
+                        v_res[ch] += v_px_vecs[ch] * v_tap_samp_coeff;
                     }
                 }
             }
@@ -563,12 +563,12 @@ pub fn sampleOverPixelsSIMD(
             const v_splat_one: VecSF = @splat(1.0);
             const v_inv_w_sum = @select(
                 f64,
-                @abs(v_w_sum) < @as(
+                @abs(v_samp_coeff_sum) < @as(
                     VecSF,
-                    @splat(tol.texture.weight_sum),
+                    @splat(tol.texture.samp_coeff_sum),
                 ),
                 v_splat_one,
-                v_splat_one / v_w_sum,
+                v_splat_one / v_samp_coeff_sum,
             );
             inline for (0..channels) |ch| {
                 v_res[ch] *= v_inv_w_sum;
@@ -597,24 +597,24 @@ pub fn samplePerPixelInnerSIMD(
     const xf = u * cols_minus_1_f;
     const yf = v * rows_minus_1_f;
 
-    const x_i = @as(isize, @intFromFloat(@floor(xf)));
-    const y_i = @as(isize, @intFromFloat(@floor(yf)));
+    const tex_x_i = @as(isize, @intFromFloat(@floor(xf)));
+    const tex_y_i = @as(isize, @intFromFloat(@floor(yf)));
 
-    const tx = xf - @as(f64, @floatFromInt(x_i));
-    const ty = yf - @as(f64, @floatFromInt(y_i));
+    const tex_x_frac = xf - @as(f64, @floatFromInt(tex_x_i));
+    const tex_y_frac = yf - @as(f64, @floatFromInt(tex_y_i));
 
     return switch (config.sample) {
         .nearest => getPx(channels, texture, @as(isize, @intFromFloat(@round(xf))), @as(isize, @intFromFloat(@round(yf)))),
         .linear => {
-            const wx = [2]f64{ 1.0 - tx, tx };
-            const wy = [2]f64{ 1.0 - ty, ty };
-            return sample2DInnerSIMD(channels, 2, texture, x_i, y_i, wx, wy);
+            const samp_coeff_x = [2]f64{ 1.0 - tex_x_frac, tex_x_frac };
+            const samp_coeff_y = [2]f64{ 1.0 - tex_y_frac, tex_y_frac };
+            return sample2DInnerSIMD(channels, 2, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
         },
         .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => {
-            const kernel: *const fn (f64) f64 = switch (config.sample) {
-                .cubic_catmull_rom => cubicWeightCatmullRom,
-                .cubic_mitchell_netravali => cubicWeightMitchellNetravali,
-                .cubic_bspline => cubicWeightBSpline,
+            const coeff_fun: *const fn (f64) f64 = switch (config.sample) {
+                .cubic_catmull_rom => cubicCoeffCatmullRom,
+                .cubic_mitchell_netravali => cubicCoeffMitchellNetravali,
+                .cubic_bspline => cubicBSplineCoeff,
                 else => unreachable,
             };
             const lut = switch (config.sample) {
@@ -628,49 +628,49 @@ pub fn samplePerPixelInnerSIMD(
                     channels,
                     4,
                     texture,
-                    x_i,
-                    y_i,
+                    tex_x_i,
+                    tex_y_i,
                     .{
-                        kernel(tx + 1),
-                        kernel(tx),
-                        kernel(tx - 1),
-                        kernel(tx - 2),
+                        coeff_fun(tex_x_frac + 1),
+                        coeff_fun(tex_x_frac),
+                        coeff_fun(tex_x_frac - 1),
+                        coeff_fun(tex_x_frac - 2),
                     },
                     .{
-                        kernel(ty + 1),
-                        kernel(ty),
-                        kernel(ty - 1),
-                        kernel(ty - 2),
+                        coeff_fun(tex_y_frac + 1),
+                        coeff_fun(tex_y_frac),
+                        coeff_fun(tex_y_frac - 1),
+                        coeff_fun(tex_y_frac - 2),
                     },
                 ),
                 .lut => {
-                    const idx_tx = @as(usize, @intFromFloat(
-                        tx * @as(f64, @floatFromInt(lut_size - 1)),
+                    const idx_tex_x_frac = @as(usize, @intFromFloat(
+                        tex_x_frac * @as(f64, @floatFromInt(lut_size - 1)),
                     ));
-                    const idx_ty = @as(usize, @intFromFloat(
-                        ty * @as(f64, @floatFromInt(lut_size - 1)),
+                    const idx_tex_y_frac = @as(usize, @intFromFloat(
+                        tex_y_frac * @as(f64, @floatFromInt(lut_size - 1)),
                     ));
                     return sample2DInnerSIMD(
                         channels,
                         4,
                         texture,
-                        x_i,
-                        y_i,
-                        lut[idx_tx],
-                        lut[idx_ty],
+                        tex_x_i,
+                        tex_y_i,
+                        lut[idx_tex_x_frac],
+                        lut[idx_tex_y_frac],
                     );
                 },
                 .lut_lerp => {
-                    const wx = getLerpWeights(4, lut, tx);
-                    const wy = getLerpWeights(4, lut, ty);
-                    return sample2DInnerSIMD(channels, 4, texture, x_i, y_i, wx, wy);
+                    const samp_coeff_x = getLerpSampCoeffs(4, lut, tex_x_frac);
+                    const samp_coeff_y = getLerpSampCoeffs(4, lut, tex_y_frac);
+                    return sample2DInnerSIMD(channels, 4, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
                 },
             };
         },
         .lanczos3, .quintic_bspline => {
-            const kernel: *const fn (f64) f64 = switch (config.sample) {
-                .lanczos3 => lanczos3Weight,
-                .quintic_bspline => quinticBSplineWeight,
+            const coeff_fun: *const fn (f64) f64 = switch (config.sample) {
+                .lanczos3 => lanczos3Coeff,
+                .quintic_bspline => quinticBSplineCoeff,
                 else => unreachable,
             };
             const lut = switch (config.sample) {
@@ -683,46 +683,46 @@ pub fn samplePerPixelInnerSIMD(
                     channels,
                     6,
                     texture,
-                    x_i,
-                    y_i,
+                    tex_x_i,
+                    tex_y_i,
                     .{
-                        kernel(tx + 2),
-                        kernel(tx + 1),
-                        kernel(tx),
-                        kernel(tx - 1),
-                        kernel(tx - 2),
-                        kernel(tx - 3),
+                        coeff_fun(tex_x_frac + 2),
+                        coeff_fun(tex_x_frac + 1),
+                        coeff_fun(tex_x_frac),
+                        coeff_fun(tex_x_frac - 1),
+                        coeff_fun(tex_x_frac - 2),
+                        coeff_fun(tex_x_frac - 3),
                     },
                     .{
-                        kernel(ty + 2),
-                        kernel(ty + 1),
-                        kernel(ty),
-                        kernel(ty - 1),
-                        kernel(ty - 2),
-                        kernel(ty - 3),
+                        coeff_fun(tex_y_frac + 2),
+                        coeff_fun(tex_y_frac + 1),
+                        coeff_fun(tex_y_frac),
+                        coeff_fun(tex_y_frac - 1),
+                        coeff_fun(tex_y_frac - 2),
+                        coeff_fun(tex_y_frac - 3),
                     },
                 ),
                 .lut => {
-                    const idx_tx = @as(usize, @intFromFloat(
-                        tx * @as(f64, @floatFromInt(lut_size - 1)),
+                    const idx_tex_x_frac = @as(usize, @intFromFloat(
+                        tex_x_frac * @as(f64, @floatFromInt(lut_size - 1)),
                     ));
-                    const idx_ty = @as(usize, @intFromFloat(
-                        ty * @as(f64, @floatFromInt(lut_size - 1)),
+                    const idx_tex_y_frac = @as(usize, @intFromFloat(
+                        tex_y_frac * @as(f64, @floatFromInt(lut_size - 1)),
                     ));
                     return sample2DInnerSIMD(
                         channels,
                         6,
                         texture,
-                        x_i,
-                        y_i,
-                        lut[idx_tx],
-                        lut[idx_ty],
+                        tex_x_i,
+                        tex_y_i,
+                        lut[idx_tex_x_frac],
+                        lut[idx_tex_y_frac],
                     );
                 },
                 .lut_lerp => {
-                    const wx = getLerpWeights(6, lut, tx);
-                    const wy = getLerpWeights(6, lut, ty);
-                    return sample2DInnerSIMD(channels, 6, texture, x_i, y_i, wx, wy);
+                    const samp_coeff_x = getLerpSampCoeffs(6, lut, tex_x_frac);
+                    const samp_coeff_y = getLerpSampCoeffs(6, lut, tex_y_frac);
+                    return sample2DInnerSIMD(channels, 6, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
                 },
             };
         },
@@ -806,15 +806,15 @@ pub fn samplePerLaneTri3SIMD(
             const lane = active_lanes[ii];
             const xf = u_arr[lane] * cols_minus_1_f;
             const yf = v_arr[lane] * rows_minus_1_f;
-            const x_i = @as(isize, @intFromFloat(@floor(xf)));
-            const y_i = @as(isize, @intFromFloat(@floor(yf)));
+            const tex_x_i = @as(isize, @intFromFloat(@floor(xf)));
+            const tex_y_i = @as(isize, @intFromFloat(@floor(yf)));
             const x_key = @as(
                 usize,
-                @intCast(@max(@as(isize, 0), @min(x_i, cols_minus_1_i))),
+                @intCast(@max(@as(isize, 0), @min(tex_x_i, cols_minus_1_i))),
             );
             const y_key = @as(
                 usize,
-                @intCast(@max(@as(isize, 0), @min(y_i, rows_minus_1_i))),
+                @intCast(@max(@as(isize, 0), @min(tex_y_i, rows_minus_1_i))),
             );
             lane_keys[ii] = (@as(u64, @intCast(y_key)) << 32) | @as(u64, @intCast(x_key));
         }
