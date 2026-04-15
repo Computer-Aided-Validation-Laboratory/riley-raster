@@ -361,138 +361,82 @@ pub fn sampleGeneric(
             }
             return samp_res;
         },
-        .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => {
-            const coeff_fun: *const fn (f64) f64 = switch (config.sample) {
-                .cubic_catmull_rom => cubicCoeffCatmullRom,
-                .cubic_mitchell_netravali => cubicCoeffMitchellNetravali,
-                .cubic_bspline => cubicBSplineCoeff,
-                else => unreachable,
-            };
-            const lut = switch (config.sample) {
-                .cubic_catmull_rom => catmull_rom_lut,
-                .cubic_mitchell_netravali => mitchell_netravali_lut,
-                .cubic_bspline => cubic_bspline_lut,
-                else => unreachable,
-            };
-            return switch (config.mode) {
-                .direct => sample2D(
-                    CH,
-                    4,
-                    texture,
-                    tex_x_i,
-                    tex_y_i,
-                    .{
-                        coeff_fun(tex_x_frac + 1),
-                        coeff_fun(tex_x_frac),
-                        coeff_fun(tex_x_frac - 1),
-                        coeff_fun(tex_x_frac - 2),
-                    },
-                    .{
-                        coeff_fun(tex_y_frac + 1),
-                        coeff_fun(tex_y_frac),
-                        coeff_fun(tex_y_frac - 1),
-                        coeff_fun(tex_y_frac - 2),
-                    },
-                ),
-                .lut => sample2D(
-                    CH,
-                    4,
-                    texture,
-                    tex_x_i,
-                    tex_y_i,
-                    lut[@as(
-                        usize,
-                        @intFromFloat(tex_x_frac * @as(f64, @floatFromInt(lut_size - 1))),
-                    )],
-                    lut[@as(
-                        usize,
-                        @intFromFloat(tex_y_frac * @as(f64, @floatFromInt(lut_size - 1))),
-                    )],
-                ),
-                .lut_lerp => {
-                    const samp_coeff_x = getLerpSampCoeffs(4, lut, tex_x_frac);
-                    const samp_coeff_y = getLerpSampCoeffs(4, lut, tex_y_frac);
-                    return sample2D(
-                        CH,
-                        4,
-                        texture,
-                        tex_x_i,
-                        tex_y_i,
-                        samp_coeff_x,
-                        samp_coeff_y,
-                    );
-                },
-            };
-        },
-        .lanczos3, .quintic_bspline => {
-            const coeff_fun: *const fn (f64) f64 = switch (config.sample) {
-                .lanczos3 => lanczos3Coeff,
-                .quintic_bspline => quinticBSplineCoeff,
-                else => unreachable,
-            };
-            const lut = switch (config.sample) {
-                .lanczos3 => lanczos3_lut,
-                .quintic_bspline => quintic_bspline_lut,
-                else => unreachable,
-            };
-            return switch (config.mode) {
-                .direct => sample2D(
-                    CH,
-                    6,
-                    texture,
-                    tex_x_i,
-                    tex_y_i,
-                    .{
-                        coeff_fun(tex_x_frac + 2),
-                        coeff_fun(tex_x_frac + 1),
-                        coeff_fun(tex_x_frac),
-                        coeff_fun(tex_x_frac - 1),
-                        coeff_fun(tex_x_frac - 2),
-                        coeff_fun(tex_x_frac - 3),
-                    },
-                    .{
-                        coeff_fun(tex_y_frac + 2),
-                        coeff_fun(tex_y_frac + 1),
-                        coeff_fun(tex_y_frac),
-                        coeff_fun(tex_y_frac - 1),
-                        coeff_fun(tex_y_frac - 2),
-                        coeff_fun(tex_y_frac - 3),
-                    },
-                ),
-                .lut => sample2D(
-                    CH,
-                    6,
-                    texture,
-                    tex_x_i,
-                    tex_y_i,
-                    lut[@as(
-                        usize,
-                        @intFromFloat(tex_x_frac * @as(f64, @floatFromInt(lut_size - 1))),
-                    )],
-                    lut[@as(
-                        usize,
-                        @intFromFloat(tex_y_frac * @as(f64, @floatFromInt(lut_size - 1))),
-                    )],
-                ),
-                .lut_lerp => {
-                    const samp_coeff_x = getLerpSampCoeffs(6, lut, tex_x_frac);
-                    const samp_coeff_y = getLerpSampCoeffs(6, lut, tex_y_frac);
-                    return sample2D(
-                        CH,
-                        6,
-                        texture,
-                        tex_x_i,
-                        tex_y_i,
-                        samp_coeff_x,
-                        samp_coeff_y,
-                    );
-                },
-            };
-        },
+        .cubic_catmull_rom => sampleTex4TapComptime(
+            CH,
+            .cubic_catmull_rom,
+            config.mode,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .cubic_mitchell_netravali => sampleTex4TapComptime(
+            CH,
+            .cubic_mitchell_netravali,
+            config.mode,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .cubic_bspline => sampleTex4TapComptime(
+            CH,
+            .cubic_bspline,
+            config.mode,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .lanczos3 => sampleTex6TapComptime(
+            CH,
+            .lanczos3,
+            config.mode,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .quintic_bspline => sampleTex6TapComptime(
+            CH,
+            .quintic_bspline,
+            config.mode,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
     };
 }
 
-fn sampleGenericCubicRuntimeMode(
+fn sampleTex4TapComptime(
+    comptime CH: usize,
+    comptime sample: TextureSample,
+    comptime mode: TextureSampleMode,
+    texture: anytype,
+    tex_x_i: isize,
+    tex_y_i: isize,
+    tex_x_frac: f64,
+    tex_y_frac: f64,
+) [CH]f64 {
+    return sampleTex4TapRuntime(
+        CH,
+        sample,
+        mode,
+        texture,
+        tex_x_i,
+        tex_y_i,
+        tex_x_frac,
+        tex_y_frac,
+    );
+}
+
+fn sampleTex4TapRuntime(
     comptime CH: usize,
     comptime sample: TextureSample,
     mode: TextureSampleMode,
@@ -562,7 +506,29 @@ fn sampleGenericCubicRuntimeMode(
     };
 }
 
-fn sampleGenericWideRuntimeMode(
+fn sampleTex6TapComptime(
+    comptime CH: usize,
+    comptime sample: TextureSample,
+    comptime mode: TextureSampleMode,
+    texture: anytype,
+    tex_x_i: isize,
+    tex_y_i: isize,
+    tex_x_frac: f64,
+    tex_y_frac: f64,
+) [CH]f64 {
+    return sampleTex6TapRuntime(
+        CH,
+        sample,
+        mode,
+        texture,
+        tex_x_i,
+        tex_y_i,
+        tex_x_frac,
+        tex_y_frac,
+    );
+}
+
+fn sampleTex6TapRuntime(
     comptime CH: usize,
     comptime sample: TextureSample,
     mode: TextureSampleMode,
@@ -634,7 +600,7 @@ fn sampleGenericWideRuntimeMode(
     };
 }
 
-fn sampleGenericCubicModeDispatch(
+fn sampleTex4TapDispatchMode(
     comptime CH: usize,
     comptime sample: TextureSample,
     mode: TextureSampleMode,
@@ -646,7 +612,7 @@ fn sampleGenericCubicModeDispatch(
 ) [CH]f64 {
     switch (buildconfig.config.texture_sample_mode_dispatch) {
         .run_time => {
-            return sampleGenericCubicRuntimeMode(
+            return sampleTex4TapRuntime(
                 CH,
                 sample,
                 mode,
@@ -684,7 +650,7 @@ fn sampleGenericCubicModeDispatch(
     unreachable;
 }
 
-fn sampleGenericWideModeDispatch(
+fn sampleTex6TapDispatchMode(
     comptime CH: usize,
     comptime sample: TextureSample,
     mode: TextureSampleMode,
@@ -696,7 +662,7 @@ fn sampleGenericWideModeDispatch(
 ) [CH]f64 {
     switch (buildconfig.config.texture_sample_mode_dispatch) {
         .run_time => {
-            return sampleGenericWideRuntimeMode(
+            return sampleTex6TapRuntime(
                 CH,
                 sample,
                 mode,
@@ -772,7 +738,7 @@ pub fn sampleGenericRuntime(
             }
             return samp_res;
         },
-        .cubic_catmull_rom => sampleGenericCubicModeDispatch(
+        .cubic_catmull_rom => sampleTex4TapDispatchMode(
             CH,
             .cubic_catmull_rom,
             config.mode,
@@ -782,7 +748,7 @@ pub fn sampleGenericRuntime(
             tex_x_frac,
             tex_y_frac,
         ),
-        .cubic_mitchell_netravali => sampleGenericCubicModeDispatch(
+        .cubic_mitchell_netravali => sampleTex4TapDispatchMode(
             CH,
             .cubic_mitchell_netravali,
             config.mode,
@@ -792,7 +758,7 @@ pub fn sampleGenericRuntime(
             tex_x_frac,
             tex_y_frac,
         ),
-        .cubic_bspline => sampleGenericCubicModeDispatch(
+        .cubic_bspline => sampleTex4TapDispatchMode(
             CH,
             .cubic_bspline,
             config.mode,
@@ -802,7 +768,7 @@ pub fn sampleGenericRuntime(
             tex_x_frac,
             tex_y_frac,
         ),
-        .lanczos3 => sampleGenericWideModeDispatch(
+        .lanczos3 => sampleTex6TapDispatchMode(
             CH,
             .lanczos3,
             config.mode,
@@ -812,7 +778,7 @@ pub fn sampleGenericRuntime(
             tex_x_frac,
             tex_y_frac,
         ),
-        .quintic_bspline => sampleGenericWideModeDispatch(
+        .quintic_bspline => sampleTex6TapDispatchMode(
             CH,
             .quintic_bspline,
             config.mode,
