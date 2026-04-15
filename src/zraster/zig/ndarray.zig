@@ -139,13 +139,13 @@ pub fn NDArray(comptime T: type) type {
 
         pub fn getSlice(
             self: *const Self,
-            fixed_inds: []const usize,
+            fixed_idx: []const usize,
             fixed_dim: usize,
         ) []T {
-            assert(fixed_inds.len == self.dims.len);
+            assert(fixed_idx.len == self.dims.len);
             assert((fixed_dim + 1) < self.dims.len);
 
-            const start = self.getFlatInd(fixed_inds);
+            const start = self.getFlatInd(fixed_idx);
             const stride = self.strides[fixed_dim];
             return self.slice[start .. start + stride];
         }
@@ -331,8 +331,8 @@ test "getSlice" {
         }
     }
 
-    var fixed_inds = [_]usize{ 1, 0, 0 };
-    const ext_slice0 = arr0.getSlice(fixed_inds[0..], 0);
+    var fixed_idxs = [_]usize{ 1, 0, 0 };
+    const ext_slice0 = arr0.getSlice(fixed_idxs[0..], 0);
 
     try expectEqual(ext_slice0.len, 4);
     try expectEqual(ext_slice0[0], 7);

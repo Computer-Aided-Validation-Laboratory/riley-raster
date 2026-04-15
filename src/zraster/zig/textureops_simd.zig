@@ -853,3 +853,198 @@ pub fn samplePerLaneTri3SIMD(
 
     return res;
 }
+
+pub fn sampleOverPixelsSIMDRuntime(
+    comptime channels: usize,
+    config: TextureSampleConfig,
+    texture: anytype,
+    v_u: VecSF,
+    v_v: VecSF,
+) [channels]VecSF {
+    inline for (.{
+        .nearest,
+        .linear,
+        .cubic_catmull_rom,
+        .cubic_mitchell_netravali,
+        .lanczos3,
+        .cubic_bspline,
+        .quintic_bspline,
+    }) |sample_type| {
+        if (config.sample == sample_type) {
+            switch (buildconfig.config.texture_sample_mode_dispatch) {
+                .comp_time => {
+                    inline for (.{ .direct, .lut, .lut_lerp }) |mode_type| {
+                        const comptime_config = TextureSampleConfig{
+                            .sample = sample_type,
+                            .mode = mode_type,
+                        };
+                        if (config.mode == mode_type and
+                            comptime comptime_config.isValid())
+                        {
+                            return sampleOverPixelsSIMD(
+                                channels,
+                                comptime_config,
+                                texture,
+                                v_u,
+                                v_v,
+                            );
+                        }
+                    }
+                },
+                .run_time => {
+                    inline for (.{ .direct, .lut, .lut_lerp }) |mode_type| {
+                        const comptime_config = TextureSampleConfig{
+                            .sample = sample_type,
+                            .mode = mode_type,
+                        };
+                        if (config.mode == mode_type and
+                            comptime comptime_config.isValid())
+                        {
+                            return sampleOverPixelsSIMD(
+                                channels,
+                                comptime_config,
+                                texture,
+                                v_u,
+                                v_v,
+                            );
+                        }
+                    }
+                },
+            }
+        }
+    }
+    unreachable;
+}
+
+pub fn samplePerPixelInnerSIMDRuntime(
+    comptime channels: usize,
+    config: TextureSampleConfig,
+    texture: anytype,
+    u: f64,
+    v: f64,
+) [channels]f64 {
+    switch (buildconfig.config.texture_sample_mode_dispatch) {
+        .comp_time, .run_time => {
+            inline for (.{
+                .nearest,
+                .linear,
+                .cubic_catmull_rom,
+                .cubic_mitchell_netravali,
+                .lanczos3,
+                .cubic_bspline,
+                .quintic_bspline,
+            }) |sample_type| {
+                if (config.sample == sample_type) {
+                    inline for (.{ .direct, .lut, .lut_lerp }) |mode_type| {
+                        const comptime_config = TextureSampleConfig{
+                            .sample = sample_type,
+                            .mode = mode_type,
+                        };
+                        if (config.mode == mode_type and
+                            comptime comptime_config.isValid())
+                        {
+                            return samplePerPixelInnerSIMD(
+                                channels,
+                                comptime_config,
+                                texture,
+                                u,
+                                v,
+                            );
+                        }
+                    }
+                }
+            }
+        },
+    }
+    unreachable;
+}
+
+pub fn samplePerLaneInnerSIMDRuntime(
+    comptime channels: usize,
+    config: TextureSampleConfig,
+    v_mask_active: VecSB,
+    texture: anytype,
+    v_u: VecSF,
+    v_v: VecSF,
+) [channels]VecSF {
+    switch (buildconfig.config.texture_sample_mode_dispatch) {
+        .comp_time, .run_time => {
+            inline for (.{
+                .nearest,
+                .linear,
+                .cubic_catmull_rom,
+                .cubic_mitchell_netravali,
+                .lanczos3,
+                .cubic_bspline,
+                .quintic_bspline,
+            }) |sample_type| {
+                if (config.sample == sample_type) {
+                    inline for (.{ .direct, .lut, .lut_lerp }) |mode_type| {
+                        const comptime_config = TextureSampleConfig{
+                            .sample = sample_type,
+                            .mode = mode_type,
+                        };
+                        if (config.mode == mode_type and
+                            comptime comptime_config.isValid())
+                        {
+                            return samplePerLaneInnerSIMD(
+                                channels,
+                                comptime_config,
+                                v_mask_active,
+                                texture,
+                                v_u,
+                                v_v,
+                            );
+                        }
+                    }
+                }
+            }
+        },
+    }
+    unreachable;
+}
+
+pub fn samplePerLaneTri3SIMDRuntime(
+    comptime channels: usize,
+    config: TextureSampleConfig,
+    v_mask_active: VecSB,
+    texture: anytype,
+    v_u: VecSF,
+    v_v: VecSF,
+) [channels]VecSF {
+    switch (buildconfig.config.texture_sample_mode_dispatch) {
+        .comp_time, .run_time => {
+            inline for (.{
+                .nearest,
+                .linear,
+                .cubic_catmull_rom,
+                .cubic_mitchell_netravali,
+                .lanczos3,
+                .cubic_bspline,
+                .quintic_bspline,
+            }) |sample_type| {
+                if (config.sample == sample_type) {
+                    inline for (.{ .direct, .lut, .lut_lerp }) |mode_type| {
+                        const comptime_config = TextureSampleConfig{
+                            .sample = sample_type,
+                            .mode = mode_type,
+                        };
+                        if (config.mode == mode_type and
+                            comptime comptime_config.isValid())
+                        {
+                            return samplePerLaneTri3SIMD(
+                                channels,
+                                comptime_config,
+                                v_mask_active,
+                                texture,
+                                v_u,
+                                v_v,
+                            );
+                        }
+                    }
+                }
+            }
+        },
+    }
+    unreachable;
+}

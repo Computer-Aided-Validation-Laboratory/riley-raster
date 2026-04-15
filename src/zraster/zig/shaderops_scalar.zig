@@ -4,3 +4,5 @@ pub const fillNodalClip = common.fillNodalClip;
 pub const fillNodalPersp = common.fillNodalPersp;
 pub const fillTexClip = common.fillTexClip;
 pub const fillTexPersp = common.fillTexPersp;
+pub const fillTexClipRuntime = common.fillTexClipRuntime;
+pub const fillTexPerspRuntime = common.fillTexPerspRuntime;
