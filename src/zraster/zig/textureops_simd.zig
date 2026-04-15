@@ -67,7 +67,7 @@ fn v_getPxSIMD(
         const is_contiguous = @reduce(.And, v_node_idx_offsets == v_expected);
 
         if (is_contiguous) {
-            res[ch] = @as(*const [S]f64, @ptrCast(@alignCast(&base_ptr[first_off]))).*;
+            res[ch] = base_ptr[first_off..][0..S].*;
         } else {
             // Gather (scalar loop for now, hardware gather can be added later)
             var lane_res: [S]f64 = undefined;
