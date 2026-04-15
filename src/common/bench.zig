@@ -94,7 +94,7 @@ fn saveResultToRoot(
     }
 }
 
-pub const ShaderFilter = enum { flat, tex, both };
+pub const ShaderFilter = enum { nodal, tex, both };
 
 pub fn runTestInternal(
     outer_alloc: std.mem.Allocator,
@@ -172,11 +172,11 @@ pub fn runTestInternal(
         const d_str = if (add_disp) "dispon" else "dispoff";
         const mt_name = @tagName(mesh_type);
 
-        // --- Flat ShaderInput ---
-        if (shader_filter == .flat or shader_filter == .both) {
+        // --- Nodal ShaderInput ---
+        if (shader_filter == .nodal or shader_filter == .both) {
             const c_dir_name = try std.fmt.allocPrint(
                 aa,
-                "{s}_{s}_{s}_flat",
+                "{s}_{s}_{s}_nodal",
                 .{ case_name, mt_name, d_str },
             );
             var mesh_input = MeshInput{

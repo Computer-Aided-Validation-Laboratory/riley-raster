@@ -15,7 +15,6 @@ const Mat44Ops = matrix.Mat44Ops;
 pub const Rotation = @import("rotation.zig").Rotation;
 
 pub const Camera = struct {
-    // TODO: which of these actually need to be stored?
     pixels_num: [2]u32,
     pixels_size: [2]f64,
     pos_world: Vec3f,

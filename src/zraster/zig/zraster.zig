@@ -126,14 +126,14 @@ pub fn rasterAllFrames(
     }
 
     // Work out field scaling for on-the-fly scaled rendering
-    var flat_global_scaling = try outer_alloc.alloc(?imageops.ScalingParams, meshes.len);
-    defer outer_alloc.free(flat_global_scaling);
+    var nodal_global_scaling = try outer_alloc.alloc(?imageops.ScalingParams, meshes.len);
+    defer outer_alloc.free(nodal_global_scaling);
     for (meshes, 0..) |mesh, ii| {
-        flat_global_scaling[ii] = null;
+        nodal_global_scaling[ii] = null;
         switch (mesh.shader) {
             .nodal => |s| {
                 if (s.scale_over == .over_frames) {
-                    flat_global_scaling[ii] = imageops.getScalingParamsNDArray(
+                    nodal_global_scaling[ii] = imageops.getScalingParamsNDArray(
                         &s.field.array,
                         null,
                         s.scaling,
@@ -170,13 +170,13 @@ pub fn rasterAllFrames(
             }
 
             // Apply on-the-fly field scaling for rendering in bits, if required
-            var flat_frame_scaling: ?imageops.ScalingParams = null;
+            var nodal_frame_scaling: ?imageops.ScalingParams = null;
             switch (mesh.shader) {
                 .nodal => |s| {
                     if (s.scale_over == .over_frames) {
-                        flat_frame_scaling = flat_global_scaling[ii];
+                        nodal_frame_scaling = nodal_global_scaling[ii];
                     } else {
-                        flat_frame_scaling = imageops.getScalingParamsNDArray(
+                        nodal_frame_scaling = imageops.getScalingParamsNDArray(
                             &s.field.array,
                             tt,
                             s.scaling,
@@ -191,7 +191,7 @@ pub fn rasterAllFrames(
                 arena_alloc,
                 &mesh,
                 &coords_to_prep,
-                flat_frame_scaling,
+                nodal_frame_scaling,
             );
         }
 

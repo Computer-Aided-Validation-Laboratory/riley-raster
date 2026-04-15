@@ -158,7 +158,7 @@ pub fn getDateString() ![]const u8 {
     return "17-03-2026";
 }
 
-pub const ShaderType = enum { flat_grey, flat_rgb, tex8_grey, tex8_rgb };
+pub const ShaderType = enum { nodal_grey, nodal_rgb, tex8_grey, tex8_rgb };
 pub const TextureSampleConfig = @import("../zraster/zig/textureops.zig").TextureSampleConfig;
 
 pub const RunMode = enum { all, element, texture, interpolator };
@@ -274,7 +274,7 @@ pub fn runBenchmark(
     texture_grey: iio.Texture(1),
     texture_rgb: iio.Texture(3),
 ) !BenchResult {
-    const num_out_fields: u8 = if (shader_type == .flat_rgb or shader_type == .tex8_rgb) 3 else 1;
+    const num_out_fields: u8 = if (shader_type == .nodal_rgb or shader_type == .tex8_rgb) 3 else 1;
     return runBenchmarkExt(
         outer_alloc,
         io,
@@ -334,7 +334,7 @@ pub fn runBenchmarkQuiet(
     texture_grey: iio.Texture(1),
     texture_rgb: iio.Texture(3),
 ) !BenchResult {
-    const num_out_fields: u8 = if (shader_type == .flat_rgb or shader_type == .tex8_rgb) 3 else 1;
+    const num_out_fields: u8 = if (shader_type == .nodal_rgb or shader_type == .tex8_rgb) 3 else 1;
     return runBenchmarkQuietExt(
         outer_alloc,
         io,
@@ -410,7 +410,7 @@ fn runBenchmarkInternal(
         aa,
         io,
         field_path,
-        if (shader_type == .flat_rgb) 3 else 1,
+        if (shader_type == .nodal_rgb) 3 else 1,
         true,
     );
     const uvs_raw = try loadNDArrayFromCSV(aa, io, uv_path, 2, false);
@@ -419,14 +419,14 @@ fn runBenchmarkInternal(
     var num_out_fields: u8 = 1;
 
     switch (shader_type) {
-        .flat_grey => {
+        .nodal_grey => {
             num_out_fields = 1;
             shader = .{ .nodal = .{
                 .field = .{ .array = field_raw, .array_mem = field_raw.slice },
                 .scaling = .auto,
             } };
         },
-        .flat_rgb => {
+        .nodal_rgb => {
             num_out_fields = 3;
             shader = .{ .nodal = .{
                 .field = .{ .array = field_raw, .array_mem = field_raw.slice },

@@ -51,10 +51,6 @@ pub fn main() !void {
 
     const cases = [_]struct { ds: []const u8, out: []const u8 }{
         .{
-            .ds = "sphere200",
-            .out = if (simd_on) "gold-simd-sphere200" else "gold-sphere200",
-        },
-        .{
             .ds = "sphere2000",
             .out = if (simd_on) "gold-simd-sphere2000" else "gold-sphere2000",
         },

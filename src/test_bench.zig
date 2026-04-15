@@ -51,15 +51,6 @@ test "Unified Benchmark Tests" {
             .gold_dir = "gold-bench-fullscreen",
             .out_dir = "out-bench-geom",
         },
-        // .{
-        //     .name = "sphere200",
-        //     .gold_dir = if (simd_on)
-        //         "gold-simd-sphere200"
-        //     else
-        //         "gold-sphere200",
-        //     .out_dir = "out-sphere200",
-        //     .is_sphere = true,
-        // },
         .{
             .name = "sphere2000",
             .gold_dir = if (simd_on)
@@ -146,7 +137,7 @@ test "Unified Benchmark Tests" {
                         result.deinit(outer_alloc);
 
                         // 2. Map filenames
-                        const is_rgb = (st == .flat_rgb or st == .tex8_rgb);
+                        const is_rgb = (st == .nodal_rgb or st == .tex8_rgb);
                         const channels: usize = if (is_rgb) 3 else 1;
 
                         const test_dir_case = try std.fs.path.join(aa, &[_][]const u8{ cc.out_dir, case_name });

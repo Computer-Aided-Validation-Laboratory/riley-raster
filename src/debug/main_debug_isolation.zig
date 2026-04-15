@@ -97,8 +97,8 @@ pub fn main() !void {
                     } },
                 };
             } else {
-                // Top row empty (Flat shader with no field or just skip)
-                // We'll use a flat shader with scaling .none and no field to keep it blank
+                // Top row empty (Nodal shader with no field or just skip)
+                // We'll use a nodal shader with scaling .none and no field to keep it blank
                 mesh_inputs[ii] = MeshInput{
                     .mesh_type = mesh_types[data_idx],
                     .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
@@ -137,9 +137,9 @@ pub fn main() !void {
     // Reload sim_datas as we cleared arena and modified field in Test 1
     const sim_datas2 = try meshio.loadMultiSimData(aa, io, &dir_paths, .{});
 
-    // --- Case 2: Just Flat (Top Row) ---
+    // --- Case 2: Just Nodal (Top Row) ---
     {
-        print("Rendering Just Flat Isolation...\n", .{});
+        print("Rendering Just Nodal Isolation...\n", .{});
         var mesh_inputs = try aa.alloc(MeshInput, 10);
         for (0..10) |ii| {
             const data_idx = ii % 5;

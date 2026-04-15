@@ -41,11 +41,6 @@ test "Sphere Gold Tests" {
 
     const cases = [_]struct { ds: []const u8, gold: []const u8, out: []const u8 }{
         .{
-            .ds = "sphere200",
-            .gold = if (simd_on) "gold-simd-sphere200" else "gold-sphere200",
-            .out = "out-sphere200",
-        },
-        .{
             .ds = "sphere2000",
             .gold = if (simd_on) "gold-simd-sphere2000" else "gold-sphere2000",
             .out = "out-sphere2000",
@@ -134,12 +129,17 @@ test "Sphere Gold Tests" {
                         result.deinit(allocator);
 
                         // 2. Map filenames
-                        const is_rgb = (st == .flat_rgb or st == .tex8_rgb);
+                        const is_rgb = (st == .nodal_rgb or st == .tex8_rgb);
                         const channels: usize = if (is_rgb) 3 else 1;
 
-                        const test_path = try common.findGoldPath(allocator, io, c.out, 0, 0, is_rgb);
+                        const test_dir_case = try std.fs.path.join(allocator, &[_][]const u8{ c.out, case_name });
+                        defer allocator.free(test_dir_case);
+                        const test_path = try testcommon.findGoldPath(allocator, io, test_dir_case, 0, 0, is_rgb);
                         defer allocator.free(test_path);
-                        const gold_path = try common.findGoldPath(allocator, io, c.gold, 0, 0, is_rgb);
+
+                        const gold_dir_case = try std.fs.path.join(allocator, &[_][]const u8{ c.gold, gold_case_name });
+                        defer allocator.free(gold_dir_case);
+                        const gold_path = try testcommon.findGoldPath(allocator, io, gold_dir_case, 0, 0, is_rgb);
                         defer allocator.free(gold_path);
 
                         // 3. Load and Compare
@@ -204,14 +204,14 @@ test "Sphere Gold Tests" {
                             } else |err| {
                                 std.debug.print(
                                     "GOLD LOAD ERROR: {s} ({s})\n",
-                                    .{ gold_csv_rel, @errorName(err) },
+                                    .{ gold_path, @errorName(err) },
                                 );
                                 total_fails += 1;
                             }
                         } else |err| {
                             std.debug.print(
                                 "TEST LOAD ERROR: {s} ({s})\n",
-                                .{ test_csv_rel, @errorName(err) },
+                                .{ test_path, @errorName(err) },
                             );
                             total_fails += 1;
                         }

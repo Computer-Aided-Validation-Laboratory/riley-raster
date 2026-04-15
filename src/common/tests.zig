@@ -565,7 +565,7 @@ pub fn saveComparisonArtifactsFromImages(
     try saveImageArtifacts(allocator, io, out_dir, "frame_0_field_0_diff", &diff);
 }
 
-pub const ShaderFilter = enum { flat, tex, both };
+pub const ShaderFilter = enum { nodal, tex, both };
 
 pub fn runTestInternal(
     outer_alloc: std.mem.Allocator,
@@ -638,16 +638,16 @@ pub fn runTestInternal(
     for (disps) |add_disp| {
         const d_str = if (add_disp) "dispon" else "dispoff";
 
-        // --- Flat ShaderInput ---
-        if (shader_filter == .flat or shader_filter == .both) {
+        // --- Nodal ShaderInput ---
+        if (shader_filter == .nodal or shader_filter == .both) {
             const mt_name = @tagName(mesh_type);
             const case_dir_name = try std.fmt.allocPrint(
                 aa,
-                "{s}_{s}_{s}_flat",
+                "{s}_{s}_{s}_nodal",
                 .{ test_type, mt_name, d_str },
             );
 
-            const flat_dir = try std.fmt.allocPrint(
+            const nodal_dir = try std.fmt.allocPrint(
                 aa,
                 "{s}/{s}",
                 .{ gold_dir_root, case_dir_name },
@@ -681,7 +681,7 @@ pub fn runTestInternal(
             defer aa.free(result.slice);
 
             for (0..result.dims[0]) |f| {
-                const fname = try findGoldPath(aa, io, flat_dir, f, 0, false);
+                const fname = try findGoldPath(aa, io, nodal_dir, f, 0, false);
 
                 compareNDArrayToGold(
                     aa,
@@ -847,19 +847,19 @@ pub fn runMultimeshTestExt(
         .quad9,
     };
 
-    const shader_modes = [_]enum { flat, texture }{ .flat, .texture };
+    const shader_modes = [_]enum { nodal, texture }{ .nodal, .texture };
 
     for (shader_modes) |mode| {
         _ = arena.reset(.free_all);
         const sim_datas = try meshio.loadMultiSimData(aa, io, dir_paths, .{});
 
-        const mesh_inputs = if (mode == .flat)
+        const mesh_inputs = if (mode == .nodal)
             try mr.meshInputFromSimDataSlice(
                 aa,
                 io,
                 sim_datas,
                 &mesh_types,
-                .flat,
+                .nodal,
                 null,
                 null,
                 null,
@@ -919,8 +919,8 @@ pub fn runMultimeshTestExt(
             null,
         )) orelse return error.NoResult;
 
-        const gold_dir = if (mode == .flat)
-            try std.fmt.allocPrint(aa, "{s}/allelem_flat", .{gold_dir_root})
+        const gold_dir = if (mode == .nodal)
+            try std.fmt.allocPrint(aa, "{s}/allelem_nodal", .{gold_dir_root})
         else
             try std.fmt.allocPrint(aa, "{s}/allelem_tex_cubic_lut_lerp", .{gold_dir_root});
 
@@ -937,8 +937,8 @@ pub fn runMultimeshTestExt(
                 rel_tol,
                 abs_tol,
             ) catch |err| {
-                const case_name = if (mode == .flat)
-                    "multimesh_allelem_flat"
+                const case_name = if (mode == .nodal)
+                    "multimesh_allelem_nodal"
                 else
                     "multimesh_allelem_tex";
                 const fail_dir_name = try std.fmt.allocPrint(
@@ -1020,7 +1020,7 @@ pub fn runMultimeshMixedTestExt(
 
     var mesh_inputs = try aa.alloc(MeshInput, 10);
 
-    // Top Row (0-4): Flat Shading
+    // Top Row (0-4): Nodal Shading
     for (0..5) |ii| {
         var coords_dup = try MatSlice(f64).initAlloc(
             aa,
@@ -1216,7 +1216,7 @@ pub fn runMultimeshMixedRGBTestExt(
         };
     }
 
-    // Bottom Row (5-9): Flat RGB Shading with Gradient
+    // Bottom Row (5-9): Nodal RGB Shading with Gradient
     for (0..5) |ii| {
         const field = sim_datas[ii].field.?;
         const num_coords = sim_datas[ii].coords.mat.rows_num;

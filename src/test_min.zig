@@ -62,8 +62,8 @@ test "MIN Suite: sphere200 and multimesh" {
                 defer allocator.free(data_dir);
 
                 // Filter for Min Suite:
-                const is_rgb = (st == .tex8_rgb or st == .flat_rgb);
-                const is_allowed_rgb = (st == .flat_rgb) or
+                const is_rgb = (st == .tex8_rgb or st == .nodal_rgb);
+                const is_allowed_rgb = (st == .nodal_rgb) or
                     (st == .tex8_rgb and sc.sample == .cubic_catmull_rom and sc.mode == .lut_lerp);
 
                 if (is_rgb and !is_allowed_rgb) continue;

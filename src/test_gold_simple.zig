@@ -2,7 +2,7 @@ const std = @import("std");
 const common = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
 
-const SHADER_FILTER: common.ShaderFilter = .both; // .flat, .tex, or .both
+const SHADER_FILTER: common.ShaderFilter = .both; // .nodal, .tex, or .both
 
 test "Gold Simple Suite" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};

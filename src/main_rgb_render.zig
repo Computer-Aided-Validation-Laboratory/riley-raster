@@ -85,7 +85,7 @@ pub fn main() !void {
         };
     }
 
-    // Bottom Row (5-9): Flat RGB Shading
+    // Bottom Row (5-9): Nodal RGB Shading
     for (0..5) |ii| {
         const field = sim_datas[ii].field.?;
         const num_coords = sim_datas[ii].coords.mat.rows_num;

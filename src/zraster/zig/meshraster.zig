@@ -20,7 +20,6 @@ const ScaleStrategy = imageops.ScaleStrategy;
 
 const shaderops = @import("shaderops.zig");
 pub const NodalInput = shaderops.NodalInput;
-pub const FlatInput = NodalInput;
 pub const TexInput = shaderops.TexInput;
 pub const ShaderInput = shaderops.ShaderInput;
 pub const ShaderPrepared = shaderops.ShaderPrepared;
@@ -323,7 +322,7 @@ pub fn meshInputFromSimDataSlice(
     io: std.Io,
     sim_datas: []const meshio.SimData,
     mesh_types: []const MeshType,
-    shader_mode: enum { flat, texture },
+    shader_mode: enum { nodal, texture },
     uv_paths: ?[]const []const u8,
     texture_path: ?[]const u8,
     uv_file: ?[]const u8,
@@ -356,7 +355,7 @@ pub fn meshInputFromSimDataSlice(
             .shader = undefined,
         };
 
-        if (shader_mode == .flat) {
+        if (shader_mode == .nodal) {
             if (sim_data.field) |field| {
                 mesh_inputs[ii].shader = .{ .nodal = .{
                     .field = field,

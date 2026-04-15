@@ -140,8 +140,8 @@ pub fn runGenerationExt(
         for (disps) |add_disp| {
             const d_str = if (add_disp) "dispon" else "dispoff";
 
-            // Flat ShaderInput
-            const flat_dir = try std.fmt.allocPrint(aa, "{s}/{s}_{s}_{s}_flat", .{
+            // Nodal ShaderInput
+            const nodal_dir = try std.fmt.allocPrint(aa, "{s}/{s}_{s}_{s}_nodal", .{
                 gold_dir_root,
                 test_type,
                 @tagName(mt),
@@ -149,7 +149,7 @@ pub fn runGenerationExt(
             });
             try renderAndSave(aa, io, &camera, mt, sim_data.coords, sim_data.connect, sim_data.field, .{
                 .nodal = .{ .field = sim_data.field.?, .bits = 8 },
-            }, flat_dir, add_disp, config);
+            }, nodal_dir, add_disp, config);
 
             // Tex ShaderInput
             for (sample_configs) |sc| {
@@ -215,25 +215,25 @@ pub fn runMultimeshGenerationExt(
         .quad9,
     };
 
-    const shader_modes = [_]enum { flat, texture }{ .flat, .texture };
+    const shader_modes = [_]enum { nodal, texture }{ .nodal, .texture };
 
     for (shader_modes) |mode| {
         _ = arena.reset(.free_all);
         const sim_datas = try meshio.loadMultiSimData(aa, io, dir_paths, .{});
 
 
-        const gold_dir = if (mode == .flat)
-            try std.fmt.allocPrint(aa, "{s}/allelem_flat", .{out_dir_root})
+        const gold_dir = if (mode == .nodal)
+            try std.fmt.allocPrint(aa, "{s}/allelem_nodal", .{out_dir_root})
         else
             try std.fmt.allocPrint(aa, "{s}/allelem_tex_cubic_lut_lerp", .{out_dir_root});
 
-        const mesh_inputs = if (mode == .flat)
+        const mesh_inputs = if (mode == .nodal)
             try mr.meshInputFromSimDataSlice(
                 aa,
                 io,
                 sim_datas,
                 &mesh_types,
-                .flat,
+                .nodal,
                 null,
                 null,
                 null,
@@ -354,7 +354,7 @@ pub fn runMultimeshMixedGenerationExt(
 
     var mesh_inputs = try aa.alloc(MeshInput, 10);
 
-    // Top Row (0-4): Flat Shading
+    // Top Row (0-4): Nodal Shading
     for (0..5) |ii| {
         var coords_dup = try MatSlice(f64).initAlloc(
             aa,
@@ -533,7 +533,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
         };
     }
 
-    // Bottom Row (5-9): Flat RGB Shading with Gradient
+    // Bottom Row (5-9): Nodal RGB Shading with Gradient
     for (0..5) |ii| {
         const field = sim_datas[ii].field.?;
         const num_coords = sim_datas[ii].coords.mat.rows_num;

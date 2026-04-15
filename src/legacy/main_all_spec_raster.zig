@@ -28,7 +28,7 @@ const RasterConfig = zraster.RasterConfig;
 
 const uvio = @import("zraster/zig/uvio.zig");
 
-const ShaderMode = enum { flat, texture };
+const ShaderMode = enum { nodal, texture };
 
 //=============================================================================================
 const shader_mode: ShaderMode = .texture;
@@ -147,7 +147,7 @@ pub fn main() !void {
         .shader = undefined,
     };
 
-    if (comptime shader_mode == .flat) {
+    if (comptime shader_mode == .nodal) {
         mesh_input.shader = .{ .nodal = .{
             .field = sim_data.field.?,
             .bits = 8,
