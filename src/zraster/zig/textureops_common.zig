@@ -255,7 +255,6 @@ pub fn getPx(
 ) [CH]f64 {
     const cols = @as(isize, @intCast(texture.cols_num));
     const rows = @as(isize, @intCast(texture.rows_num));
-    // Clamp to texture edges so we don't try and access anything that doesn't exist
     const ix = @as(usize, @intCast(@max(0, @min(x, cols - 1))));
     const iy = @as(usize, @intCast(@max(0, @min(y, rows - 1))));
 
@@ -323,98 +322,7 @@ pub fn getLerpSampCoeffs(
     return res;
 }
 
-pub fn sampleGeneric(
-    comptime CH: usize,
-    comptime config: TextureSampleConfig,
-    texture: anytype,
-    u: f64,
-    v: f64,
-) [CH]f64 {
-    std.debug.assert(config.isValid());
-    const cols_minus_1 = @as(isize, @intCast(texture.cols_num)) - 1;
-    const rows_minus_1 = @as(isize, @intCast(texture.rows_num)) - 1;
-    const tex_x_f = u * @as(f64, @floatFromInt(cols_minus_1));
-    const tex_y_f = v * @as(f64, @floatFromInt(rows_minus_1));
-    const tex_x_i = @as(isize, @intFromFloat(@floor(tex_x_f)));
-    const tex_y_i = @as(isize, @intFromFloat(@floor(tex_y_f)));
-    const tex_x_frac = tex_x_f - @as(f64, @floatFromInt(tex_x_i));
-    const tex_y_frac = tex_y_f - @as(f64, @floatFromInt(tex_y_i));
-
-    return switch (config.sample) {
-        .nearest => getPx(
-            CH,
-            texture,
-            @as(isize, @intFromFloat(@round(tex_x_f))),
-            @as(isize, @intFromFloat(@round(tex_y_f))),
-        ),
-        .linear => {
-            const p00 = getPx(CH, texture, tex_x_i, tex_y_i);
-            const p10 = getPx(CH, texture, tex_x_i + 1, tex_y_i);
-            const p01 = getPx(CH, texture, tex_x_i, tex_y_i + 1);
-            const p11 = getPx(CH, texture, tex_x_i + 1, tex_y_i + 1);
-            var samp_res: [CH]f64 = undefined;
-            inline for (0..CH) |ch| {
-                samp_res[ch] = (1.0 - tex_x_frac) * (1.0 - tex_y_frac) * p00[ch] +
-                    tex_x_frac * (1.0 - tex_y_frac) * p10[ch] +
-                    (1.0 - tex_x_frac) * tex_y_frac * p01[ch] +
-                    tex_x_frac * tex_y_frac * p11[ch];
-            }
-            return samp_res;
-        },
-        .cubic_catmull_rom => sampleTex4TapComptime(
-            CH,
-            .cubic_catmull_rom,
-            config.mode,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            tex_x_frac,
-            tex_y_frac,
-        ),
-        .cubic_mitchell_netravali => sampleTex4TapComptime(
-            CH,
-            .cubic_mitchell_netravali,
-            config.mode,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            tex_x_frac,
-            tex_y_frac,
-        ),
-        .cubic_bspline => sampleTex4TapComptime(
-            CH,
-            .cubic_bspline,
-            config.mode,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            tex_x_frac,
-            tex_y_frac,
-        ),
-        .lanczos3 => sampleTex6TapComptime(
-            CH,
-            .lanczos3,
-            config.mode,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            tex_x_frac,
-            tex_y_frac,
-        ),
-        .quintic_bspline => sampleTex6TapComptime(
-            CH,
-            .quintic_bspline,
-            config.mode,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            tex_x_frac,
-            tex_y_frac,
-        ),
-    };
-}
-
-fn sampleTex4TapComptime(
+fn sampleTex4Tap(
     comptime CH: usize,
     comptime sample: TextureSample,
     comptime mode: TextureSampleMode,
@@ -424,16 +332,64 @@ fn sampleTex4TapComptime(
     tex_x_frac: f64,
     tex_y_frac: f64,
 ) [CH]f64 {
-    return sampleTex4TapRuntime(
-        CH,
-        sample,
-        mode,
-        texture,
-        tex_x_i,
-        tex_y_i,
-        tex_x_frac,
-        tex_y_frac,
-    );
+    const coeff_fun = switch (sample) {
+        .cubic_catmull_rom => cubicCoeffCatmullRom,
+        .cubic_mitchell_netravali => cubicCoeffMitchellNetravali,
+        .cubic_bspline => cubicBSplineCoeff,
+        else => unreachable,
+    };
+    const lut = switch (sample) {
+        .cubic_catmull_rom => catmull_rom_lut,
+        .cubic_mitchell_netravali => mitchell_netravali_lut,
+        .cubic_bspline => cubic_bspline_lut,
+        else => unreachable,
+    };
+
+    return switch (mode) {
+        .direct => sample2D(
+            CH,
+            4,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            .{
+                coeff_fun(tex_x_frac + 1),
+                coeff_fun(tex_x_frac),
+                coeff_fun(tex_x_frac - 1),
+                coeff_fun(tex_x_frac - 2),
+            },
+            .{
+                coeff_fun(tex_y_frac + 1),
+                coeff_fun(tex_y_frac),
+                coeff_fun(tex_y_frac - 1),
+                coeff_fun(tex_y_frac - 2),
+            },
+        ),
+        .lut => sample2D(
+            CH,
+            4,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            lut[
+                @as(
+                    usize,
+                    @intFromFloat(tex_x_frac * @as(f64, @floatFromInt(lut_size - 1))),
+                )
+            ],
+            lut[
+                @as(
+                    usize,
+                    @intFromFloat(tex_y_frac * @as(f64, @floatFromInt(lut_size - 1))),
+                )
+            ],
+        ),
+        .lut_lerp => blk: {
+            const samp_coeff_x = getLerpSampCoeffs(4, lut, tex_x_frac);
+            const samp_coeff_y = getLerpSampCoeffs(4, lut, tex_y_frac);
+            break :blk sample2D(CH, 4, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+        },
+    };
 }
 
 fn sampleTex4TapRuntime(
@@ -506,7 +462,7 @@ fn sampleTex4TapRuntime(
     };
 }
 
-fn sampleTex6TapComptime(
+fn sampleTex6Tap(
     comptime CH: usize,
     comptime sample: TextureSample,
     comptime mode: TextureSampleMode,
@@ -516,16 +472,66 @@ fn sampleTex6TapComptime(
     tex_x_frac: f64,
     tex_y_frac: f64,
 ) [CH]f64 {
-    return sampleTex6TapRuntime(
-        CH,
-        sample,
-        mode,
-        texture,
-        tex_x_i,
-        tex_y_i,
-        tex_x_frac,
-        tex_y_frac,
-    );
+    const coeff_fun = switch (sample) {
+        .lanczos3 => lanczos3Coeff,
+        .quintic_bspline => quinticBSplineCoeff,
+        else => unreachable,
+    };
+    const lut = switch (sample) {
+        .lanczos3 => lanczos3_lut,
+        .quintic_bspline => quintic_bspline_lut,
+        else => unreachable,
+    };
+
+    return switch (mode) {
+        .direct => sample2D(
+            CH,
+            6,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            .{
+                coeff_fun(tex_x_frac + 2),
+                coeff_fun(tex_x_frac + 1),
+                coeff_fun(tex_x_frac),
+                coeff_fun(tex_x_frac - 1),
+                coeff_fun(tex_x_frac - 2),
+                coeff_fun(tex_x_frac - 3),
+            },
+            .{
+                coeff_fun(tex_y_frac + 2),
+                coeff_fun(tex_y_frac + 1),
+                coeff_fun(tex_y_frac),
+                coeff_fun(tex_y_frac - 1),
+                coeff_fun(tex_y_frac - 2),
+                coeff_fun(tex_y_frac - 3),
+            },
+        ),
+        .lut => sample2D(
+            CH,
+            6,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            lut[
+                @as(
+                    usize,
+                    @intFromFloat(tex_x_frac * @as(f64, @floatFromInt(lut_size - 1))),
+                )
+            ],
+            lut[
+                @as(
+                    usize,
+                    @intFromFloat(tex_y_frac * @as(f64, @floatFromInt(lut_size - 1))),
+                )
+            ],
+        ),
+        .lut_lerp => blk: {
+            const samp_coeff_x = getLerpSampCoeffs(6, lut, tex_x_frac);
+            const samp_coeff_y = getLerpSampCoeffs(6, lut, tex_y_frac);
+            break :blk sample2D(CH, 6, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+        },
+    };
 }
 
 fn sampleTex6TapRuntime(
@@ -610,44 +616,30 @@ fn sampleTex4TapDispatchMode(
     tex_x_frac: f64,
     tex_y_frac: f64,
 ) [CH]f64 {
-    switch (buildconfig.config.texture_sample_mode_dispatch) {
-        .run_time => {
-            return sampleTex4TapRuntime(
+    return switch (buildconfig.config.texture_sample_mode_dispatch) {
+        .run_time => sampleTex4TapRuntime(
+            CH,
+            sample,
+            mode,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .comp_time => switch (mode) {
+            inline else => |m| sampleTex4Tap(
                 CH,
                 sample,
-                mode,
+                m,
                 texture,
                 tex_x_i,
                 tex_y_i,
                 tex_x_frac,
                 tex_y_frac,
-            );
+            ),
         },
-        .comp_time => {
-            inline for (.{ .direct, .lut, .lut_lerp }) |mode_type| {
-                if (mode == mode_type) {
-                    const comptime_config = TextureSampleConfig{
-                        .sample = sample,
-                        .mode = mode_type,
-                    };
-                    return sampleGeneric(
-                        CH,
-                        comptime_config,
-                        texture,
-                        (tex_x_frac + @as(f64, @floatFromInt(tex_x_i))) /
-                            @as(f64, @floatFromInt(
-                                @as(isize, @intCast(texture.cols_num)) - 1,
-                            )),
-                        (tex_y_frac + @as(f64, @floatFromInt(tex_y_i))) /
-                            @as(f64, @floatFromInt(
-                                @as(isize, @intCast(texture.rows_num)) - 1,
-                            )),
-                    );
-                }
-            }
-        },
-    }
-    unreachable;
+    };
 }
 
 fn sampleTex6TapDispatchMode(
@@ -660,44 +652,121 @@ fn sampleTex6TapDispatchMode(
     tex_x_frac: f64,
     tex_y_frac: f64,
 ) [CH]f64 {
-    switch (buildconfig.config.texture_sample_mode_dispatch) {
-        .run_time => {
-            return sampleTex6TapRuntime(
+    return switch (buildconfig.config.texture_sample_mode_dispatch) {
+        .run_time => sampleTex6TapRuntime(
+            CH,
+            sample,
+            mode,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .comp_time => switch (mode) {
+            inline else => |m| sampleTex6Tap(
                 CH,
                 sample,
-                mode,
+                m,
                 texture,
                 tex_x_i,
                 tex_y_i,
                 tex_x_frac,
                 tex_y_frac,
-            );
+            ),
         },
-        .comp_time => {
-            inline for (.{ .direct, .lut, .lut_lerp }) |mode_type| {
-                if (mode == mode_type) {
-                    const comptime_config = TextureSampleConfig{
-                        .sample = sample,
-                        .mode = mode_type,
-                    };
-                    return sampleGeneric(
-                        CH,
-                        comptime_config,
-                        texture,
-                        (tex_x_frac + @as(f64, @floatFromInt(tex_x_i))) /
-                            @as(f64, @floatFromInt(
-                                @as(isize, @intCast(texture.cols_num)) - 1,
-                            )),
-                        (tex_y_frac + @as(f64, @floatFromInt(tex_y_i))) /
-                            @as(f64, @floatFromInt(
-                                @as(isize, @intCast(texture.rows_num)) - 1,
-                            )),
-                    );
-                }
+    };
+}
+
+pub fn sampleGeneric(
+    comptime CH: usize,
+    comptime config: TextureSampleConfig,
+    texture: anytype,
+    u: f64,
+    v: f64,
+) [CH]f64 {
+    std.debug.assert(config.isValid());
+    const cols_minus_1 = @as(isize, @intCast(texture.cols_num)) - 1;
+    const rows_minus_1 = @as(isize, @intCast(texture.rows_num)) - 1;
+    const tex_x_f = u * @as(f64, @floatFromInt(cols_minus_1));
+    const tex_y_f = v * @as(f64, @floatFromInt(rows_minus_1));
+    const tex_x_i = @as(isize, @intFromFloat(@floor(tex_x_f)));
+    const tex_y_i = @as(isize, @intFromFloat(@floor(tex_y_f)));
+    const tex_x_frac = tex_x_f - @as(f64, @floatFromInt(tex_x_i));
+    const tex_y_frac = tex_y_f - @as(f64, @floatFromInt(tex_y_i));
+
+    return switch (config.sample) {
+        .nearest => getPx(
+            CH,
+            texture,
+            @as(isize, @intFromFloat(@round(tex_x_f))),
+            @as(isize, @intFromFloat(@round(tex_y_f))),
+        ),
+        .linear => {
+            const p00 = getPx(CH, texture, tex_x_i, tex_y_i);
+            const p10 = getPx(CH, texture, tex_x_i + 1, tex_y_i);
+            const p01 = getPx(CH, texture, tex_x_i, tex_y_i + 1);
+            const p11 = getPx(CH, texture, tex_x_i + 1, tex_y_i + 1);
+            var samp_res: [CH]f64 = undefined;
+            inline for (0..CH) |ch| {
+                samp_res[ch] = (1.0 - tex_x_frac) * (1.0 - tex_y_frac) * p00[ch] +
+                    tex_x_frac * (1.0 - tex_y_frac) * p10[ch] +
+                    (1.0 - tex_x_frac) * tex_y_frac * p01[ch] +
+                    tex_x_frac * tex_y_frac * p11[ch];
             }
+            return samp_res;
         },
-    }
-    unreachable;
+        .cubic_catmull_rom => sampleTex4Tap(
+            CH,
+            .cubic_catmull_rom,
+            config.mode,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .cubic_mitchell_netravali => sampleTex4Tap(
+            CH,
+            .cubic_mitchell_netravali,
+            config.mode,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .cubic_bspline => sampleTex4Tap(
+            CH,
+            .cubic_bspline,
+            config.mode,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .lanczos3 => sampleTex6Tap(
+            CH,
+            .lanczos3,
+            config.mode,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .quintic_bspline => sampleTex6Tap(
+            CH,
+            .quintic_bspline,
+            config.mode,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+    };
 }
 
 pub fn sampleGenericRuntime(
