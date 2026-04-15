@@ -104,7 +104,7 @@ pub fn runTestInternal(
     fov_scale: f64,
     texture: iio.Texture(1),
     pixel_num: [2]u32,
-    interp_types: []const texops.InterpType,
+    sample_configs: []const texops.TextureSampleConfig,
     gold_dir_root: []const u8,
     data_dir_root: []const u8,
     rel_tol: f64,
@@ -201,11 +201,17 @@ pub fn runTestInternal(
 
         // --- Tex ShaderInput ---
         if (shader_filter == .tex or shader_filter == .both) {
-            for (interp_types) |it| {
+            for (sample_configs) |sc| {
                 const c_dir_name = try std.fmt.allocPrint(
                     aa,
-                    "{s}_{s}_{s}_tex_{s}",
-                    .{ case_name, mt_name, d_str, @tagName(it) },
+                    "{s}_{s}_{s}_tex_{s}_{s}",
+                    .{
+                        case_name,
+                        mt_name,
+                        d_str,
+                        @tagName(sc.sample),
+                        @tagName(sc.mode),
+                    },
                 );
                 var mesh_input = MeshInput{
                     .mesh_type = mesh_type,
@@ -215,7 +221,7 @@ pub fn runTestInternal(
                         .tex = .{
                             .uvs = elem_uvs,
                             .texture = texture,
-                            .sample_config = it.toConfig(),
+                            .sample_config = sc,
                         },
                     },
                 };

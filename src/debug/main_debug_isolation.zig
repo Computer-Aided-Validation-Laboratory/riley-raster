@@ -93,7 +93,10 @@ pub fn main() !void {
                     .shader = .{ .tex = .{
                         .uvs = uvs.array,
                         .texture = texture,
-                        .sample_config = zraster.InterpType.cubic_lut_lerp.toConfig(),
+                        .sample_config = .{
+                            .sample = .cubic_catmull_rom,
+                            .mode = .lut_lerp,
+                        },
                     } },
                 };
             } else {

@@ -276,7 +276,7 @@ pub fn sample2D(
     samp_coeff_y: [N]f64,
 ) [channels]f64 {
     const offset = @as(isize, @intCast(N)) / 2 - 1;
-    var res: [channels]f64 = [_]f64{0.0} ** channels;
+    var samp_res: [channels]f64 = [_]f64{0.0} ** channels;
     var samp_coeff_sum: f64 = 0.0;
 
     for (0..N) |jj| {
@@ -289,7 +289,7 @@ pub fn sample2D(
                 tex_y_i + @as(isize, @intCast(jj)) - offset,
             );
             inline for (0..channels) |ch| {
-                res[ch] += px[ch] * tap_samp_coeff;
+                samp_res[ch] += px[ch] * tap_samp_coeff;
             }
             samp_coeff_sum += tap_samp_coeff;
         }
@@ -301,9 +301,9 @@ pub fn sample2D(
         1.0 / samp_coeff_sum;
 
     inline for (0..channels) |ch| {
-        res[ch] *= inv_samp_coeff_sum;
+        samp_res[ch] *= inv_samp_coeff_sum;
     }
-    return res;
+    return samp_res;
 }
 
 pub fn getLerpSampCoeffs(
@@ -457,7 +457,7 @@ pub fn sampleGeneric(
                 .lut_lerp => {
                     const samp_coeff_x = getLerpSampCoeffs(6, lut, tex_x_frac);
                     const samp_coeff_y = getLerpSampCoeffs(6, lut, tex_y_frac);
-                    return sample2D(channels, 6, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+                    return sample2D(channels, 6, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y,);
                 },
             };
         },

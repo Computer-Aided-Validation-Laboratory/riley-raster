@@ -18,14 +18,14 @@ pub fn main() !void {
     defer texture.deinit(outer_alloc);
 
     const mesh_types = [_]gengold.MeshType{ .tri3, .tri6, .quad4ibi, .quad8, .quad9 };
-    const interp_types = [_]gengold.texops.InterpType{
-        .linear,
-        .cubic,
-        .cubic_lut,
-        .cubic_lut_lerp,
-        .quintic,
-        .quintic_lut,
-        .quintic_lut_lerp,
+    const sample_configs = [_]gengold.texops.TextureSampleConfig{
+        .{ .sample = .linear, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .lut },
+        .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+        .{ .sample = .quintic_bspline, .mode = .direct },
+        .{ .sample = .quintic_bspline, .mode = .lut },
+        .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
 
     const pixel_num = [_]u32{ 160, 100 };
@@ -64,7 +64,7 @@ pub fn main() !void {
         1.1,
         texture,
         pixel_num,
-        &interp_types,
+        &sample_configs,
         out_dir_root,
         data_dir,
         config,

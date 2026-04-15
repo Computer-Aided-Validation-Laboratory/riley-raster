@@ -37,21 +37,21 @@ fn v_getPxSIMD(
     v_tex_x_i: VecSI,
     v_tex_y_i: VecSI,
 ) [channels]VecSF {
-    const cols = @as(isize, @intCast(texture.cols_num));
-    const rows = @as(isize, @intCast(texture.rows_num));
+    const tex_cols = @as(isize, @intCast(texture.cols_num));
+    const tex_rows = @as(isize, @intCast(texture.rows_num));
 
     const v_splat_zero: VecSI = @splat(0);
-    const v_cols_m1: VecSI = @splat(cols - 1);
-    const v_rows_m1: VecSI = @splat(rows - 1);
+    const v_tex_cols_m1: VecSI = @splat(tex_cols - 1);
+    const v_tex_rows_m1: VecSI = @splat(tex_rows - 1);
 
     // Clamp to texture edges so we don't try and access anything that doesn't exist
     const v_xu = @as(
         VecSU,
-        @intCast(@max(v_splat_zero, @min(v_tex_x_i, v_cols_m1))),
+        @intCast(@max(v_splat_zero, @min(v_tex_x_i, v_tex_cols_m1))),
     );
     const v_yu = @as(
         VecSU,
-        @intCast(@max(v_splat_zero, @min(v_tex_y_i, v_rows_m1))),
+        @intCast(@max(v_splat_zero, @min(v_tex_y_i, v_tex_rows_m1))),
     );
 
     var res: [channels]VecSF = undefined;
@@ -59,21 +59,21 @@ fn v_getPxSIMD(
 
     inline for (0..channels) |ch| {
         const base_ptr = texture.array.getPlanePtr(ch);
-        const v_offsets = v_yu * @as(VecSU, @splat(stride_y)) + v_xu;
+        const v_node_idx_offsets = v_yu * @as(VecSU, @splat(stride_y)) + v_xu;
 
         // Fast path for contiguous horizontal reads
-        const first_off = v_offsets[0];
+        const first_off = v_node_idx_offsets[0];
         const v_expected = @as(VecSU, @splat(first_off)) + std.simd.iota(usize, S);
-        const is_contiguous = @reduce(.And, v_offsets == v_expected);
+        const is_contiguous = @reduce(.And, v_node_idx_offsets == v_expected);
 
         if (is_contiguous) {
             res[ch] = @as(*const [S]f64, @ptrCast(@alignCast(&base_ptr[first_off]))).*;
         } else {
             // Gather (scalar loop for now, hardware gather can be added later)
             var lane_res: [S]f64 = undefined;
-            const offsets_arr: [S]usize = v_offsets;
+            const node_idx_offsets_arr: [S]usize = v_node_idx_offsets;
             for (0..S) |ii| {
-                lane_res[ii] = base_ptr[offsets_arr[ii]];
+                lane_res[ii] = base_ptr[node_idx_offsets_arr[ii]];
             }
             res[ch] = lane_res;
         }
@@ -90,24 +90,25 @@ fn sample2DInnerSIMD(
     samp_coeff_x: [N]f64,
     samp_coeff_y: [N]f64,
 ) [channels]f64 {
-    const offset = @as(isize, @intCast(N)) / 2 - 1;
-    const start_x = tex_x_i - offset;
-    const start_y = tex_y_i - offset;
+    const node_idx_offset = @as(isize, @intCast(N)) / 2 - 1;
+    const tex_start_x = tex_x_i - node_idx_offset;
+    const tex_start_y = tex_y_i - node_idx_offset;
 
-    const cols = @as(isize, @intCast(texture.cols_num));
-    const rows = @as(isize, @intCast(texture.rows_num));
+    const tex_cols = @as(isize, @intCast(texture.cols_num));
+    const tex_rows = @as(isize, @intCast(texture.rows_num));
 
     var res: [channels]f64 = [_]f64{0.0} ** channels;
 
     // Check if the entire NxN footprint is within bounds for fast vector access
-    if (start_x >= 0 and start_x + @as(isize, @intCast(N)) <= cols and
-        start_y >= 0 and start_y + @as(isize, @intCast(N)) <= rows)
+    if (tex_start_x >= 0 and tex_start_x + @as(isize, @intCast(N)) <= tex_cols and
+        tex_start_y >= 0 and tex_start_y + @as(isize, @intCast(N)) <= tex_rows)
     {
         const v_samp_coeff_x: @Vector(N, f64) = samp_coeff_x;
         const v_samp_coeff_y: @Vector(N, f64) = samp_coeff_y;
         const stride_y = texture.array.strides[1];
 
-        const samp_coeff_sum = @reduce(.Add, v_samp_coeff_x) * @reduce(.Add, v_samp_coeff_y);
+        const samp_coeff_sum = @reduce(.Add, v_samp_coeff_x) 
+                             * @reduce(.Add, v_samp_coeff_y);
         const inv_samp_coeff_sum = if (@abs(samp_coeff_sum) > tol.texture.samp_coeff_sum)
             1.0 / samp_coeff_sum
         else
@@ -115,8 +116,8 @@ fn sample2DInnerSIMD(
 
         inline for (0..N) |jj| {
             const row_off =
-                @as(usize, @intCast(start_y + @as(isize, @intCast(jj)))) * stride_y +
-                @as(usize, @intCast(start_x));
+                @as(usize, @intCast(tex_start_y + @as(isize, @intCast(jj)))) * stride_y +
+                @as(usize, @intCast(tex_start_x));
             const wy_val = v_samp_coeff_y[jj];
 
             inline for (0..channels) |ch| {
@@ -138,8 +139,8 @@ fn sample2DInnerSIMD(
                 const px = getPx(
                     channels,
                     texture,
-                    start_x + @as(isize, @intCast(ii)),
-                    start_y + @as(isize, @intCast(jj)),
+                    tex_start_x + @as(isize, @intCast(ii)),
+                    tex_start_y + @as(isize, @intCast(jj)),
                 );
                 inline for (0..channels) |ch| {
                     res[ch] += px[ch] * w;
@@ -275,17 +276,17 @@ pub fn sampleOverPixelsSIMD(
     v_v: VecSF,
 ) [channels]VecSF {
     std.debug.assert(config.isValid());
-    const cols_minus_1_f = @as(
+    const tex_cols_minus_1_f = @as(
         f64,
         @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
     );
-    const rows_minus_1_f = @as(
+    const tex_rows_minus_1_f = @as(
         f64,
         @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
     );
 
-    const v_tex_x_f = v_u * @as(VecSF, @splat(cols_minus_1_f));
-    const v_tex_y_f = v_v * @as(VecSF, @splat(rows_minus_1_f));
+    const v_tex_x_f = v_u * @as(VecSF, @splat(tex_cols_minus_1_f));
+    const v_tex_y_f = v_v * @as(VecSF, @splat(tex_rows_minus_1_f));
 
     var v_tex_x_i: [S]isize = undefined;
     var v_tex_y_i: [S]isize = undefined;
@@ -336,7 +337,7 @@ pub fn sampleOverPixelsSIMD(
         },
         .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => {
             const K = 4;
-            const offset = @divTrunc(@as(isize, @intCast(K)), 2) - 1;
+            const node_idx_offset = @divTrunc(@as(isize, @intCast(K)), 2) - 1;
 
             var v_samp_coeff_x: [K]VecSF = undefined;
             var v_samp_coeff_y: [K]VecSF = undefined;
@@ -427,8 +428,8 @@ pub fn sampleOverPixelsSIMD(
                     const v_px_vecs = v_getPxSIMD(
                         channels,
                         texture,
-                        v_tex_x_i + @as(VecSI, @splat(@as(isize, @intCast(ii)) - offset)),
-                        v_tex_y_i + @as(VecSI, @splat(@as(isize, @intCast(jj)) - offset)),
+                        v_tex_x_i + @as(VecSI, @splat(@as(isize, @intCast(ii)) - node_idx_offset)),
+                        v_tex_y_i + @as(VecSI, @splat(@as(isize, @intCast(jj)) - node_idx_offset)),
                     );
 
                     inline for (0..channels) |ch| {
@@ -454,7 +455,7 @@ pub fn sampleOverPixelsSIMD(
         },
         .lanczos3, .quintic_bspline => {
             const K = 6;
-            const offset = @divTrunc(@as(isize, @intCast(K)), 2) - 1;
+            const node_idx_offset = @divTrunc(@as(isize, @intCast(K)), 2) - 1;
 
             var v_samp_coeff_x: [K]VecSF = undefined;
             var v_samp_coeff_y: [K]VecSF = undefined;
@@ -547,8 +548,8 @@ pub fn sampleOverPixelsSIMD(
                     const v_px_vecs = v_getPxSIMD(
                         channels,
                         texture,
-                        v_tex_x_i + @as(VecSI, @splat(@as(isize, @intCast(ii)) - offset)),
-                        v_tex_y_i + @as(VecSI, @splat(@as(isize, @intCast(jj)) - offset)),
+                        v_tex_x_i + @as(VecSI, @splat(@as(isize, @intCast(ii)) - node_idx_offset)),
+                        v_tex_y_i + @as(VecSI, @splat(@as(isize, @intCast(jj)) - node_idx_offset)),
                     );
 
                     inline for (0..channels) |ch| {
@@ -582,17 +583,17 @@ pub fn samplePerPixelInnerSIMD(
     u: f64,
     v: f64,
 ) [channels]f64 {
-    const cols_minus_1_f = @as(
+    const tex_cols_minus_1_f = @as(
         f64,
         @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
     );
-    const rows_minus_1_f = @as(
+    const tex_rows_minus_1_f = @as(
         f64,
         @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
     );
 
-    const xf = u * cols_minus_1_f;
-    const yf = v * rows_minus_1_f;
+    const xf = u * tex_cols_minus_1_f;
+    const yf = v * tex_rows_minus_1_f;
 
     const tex_x_i = @as(isize, @intFromFloat(@floor(xf)));
     const tex_y_i = @as(isize, @intFromFloat(@floor(yf)));
@@ -779,16 +780,16 @@ pub fn samplePerLaneTri3SIMD(
     var active_lanes: [S]usize = undefined;
     var active_count: usize = 0;
 
-    const cols_minus_1_f = @as(
+    const tex_cols_minus_1_f = @as(
         f64,
         @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
     );
-    const rows_minus_1_f = @as(
+    const tex_rows_minus_1_f = @as(
         f64,
         @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
     );
-    const cols_minus_1_i = @as(isize, @intCast(texture.cols_num)) - 1;
-    const rows_minus_1_i = @as(isize, @intCast(texture.rows_num)) - 1;
+    const tex_cols_minus_1_i = @as(isize, @intCast(texture.cols_num)) - 1;
+    const tex_rows_minus_1_i = @as(isize, @intCast(texture.rows_num)) - 1;
 
     for (0..S) |ii| {
         if (mask_arr[ii]) {
@@ -801,17 +802,17 @@ pub fn samplePerLaneTri3SIMD(
         var lane_keys: [8]u64 = undefined;
         for (0..active_count) |ii| {
             const lane = active_lanes[ii];
-            const xf = u_arr[lane] * cols_minus_1_f;
-            const yf = v_arr[lane] * rows_minus_1_f;
+            const xf = u_arr[lane] * tex_cols_minus_1_f;
+            const yf = v_arr[lane] * tex_rows_minus_1_f;
             const tex_x_i = @as(isize, @intFromFloat(@floor(xf)));
             const tex_y_i = @as(isize, @intFromFloat(@floor(yf)));
             const x_key = @as(
                 usize,
-                @intCast(@max(@as(isize, 0), @min(tex_x_i, cols_minus_1_i))),
+                @intCast(@max(@as(isize, 0), @min(tex_x_i, tex_cols_minus_1_i))),
             );
             const y_key = @as(
                 usize,
-                @intCast(@max(@as(isize, 0), @min(tex_y_i, rows_minus_1_i))),
+                @intCast(@max(@as(isize, 0), @min(tex_y_i, tex_rows_minus_1_i))),
             );
             lane_keys[ii] = (@as(u64, @intCast(y_key)) << 32) | @as(u64, @intCast(x_key));
         }

@@ -25,7 +25,9 @@ pub fn main() !void {
         .quad8,
         .quad9,
     };
-    const interp_types = [_]gengold.texops.InterpType{.cubic_lut_lerp};
+    const sample_configs = [_]gengold.texops.TextureSampleConfig{
+        .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+    };
 
     const pixel_num = [_]u32{ 800, 500 };
 
@@ -65,7 +67,7 @@ pub fn main() !void {
         1.1,
         texture,
         pixel_num,
-        &interp_types,
+        &sample_configs,
         out_dir_root,
         data_dir,
         config,
