@@ -84,7 +84,6 @@ pub fn NodalKernel(comptime N: usize) type {
 
 pub fn TexKernel(
     comptime N: usize,
-    comptime TexT: type,
     comptime channels: usize,
 ) type {
     return struct {
@@ -92,13 +91,12 @@ pub fn TexKernel(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext(N),
             interp: shaderops.InterpData(N),
-            shader: *const shaderops.TexPrepared(TexT, channels),
+            shader: *const shaderops.TexPrepared(channels),
             ctx_report: anytype,
             spx_image_scratch: *MatSlice(f64),
         ) void {
             common.shadeTexScalarCommon(
                 N,
-                TexT,
                 channels,
                 coord_space,
                 ctx_shade,
@@ -117,7 +115,7 @@ pub fn TexKernel(
             v_weights: [N]VecSF,
             v_nodes_inv_z: [N]VecSF,
             v_subpx_z: VecSF,
-            shader: *const shaderops.TexPrepared(TexT, channels),
+            shader: *const shaderops.TexPrepared(channels),
             spx_image_scratch: *MatSlice(f64),
         ) void {
             if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
@@ -154,7 +152,6 @@ pub fn TexKernel(
                                 if (comptime coord_space == CoordSpace.raster) {
                                     shaderops.fillTexPerspSIMD(
                                         N,
-                                        TexT,
                                         channels,
                                         comptime_config,
                                         ctx_shade,
@@ -168,7 +165,6 @@ pub fn TexKernel(
                                 } else if (comptime coord_space == CoordSpace.clip_px_leng) {
                                     shaderops.fillTexClipSIMD(
                                         N,
-                                        TexT,
                                         channels,
                                         comptime_config,
                                         ctx_shade,
@@ -177,7 +173,8 @@ pub fn TexKernel(
                                         shader,
                                         spx_image_scratch,
                                     );
-                                } else {
+                                }
+ else {
                                     @panic("shadeSIMD not implemented for this coord_space");
                                 }
                                 return;

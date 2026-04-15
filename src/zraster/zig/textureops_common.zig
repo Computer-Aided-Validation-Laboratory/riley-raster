@@ -174,7 +174,7 @@ pub fn cubicWeightBSpline(x: f64) f64 {
 
 pub fn lanczos3Weight(x: f64) f64 {
     const abs_x = @abs(x);
-    if (abs_x < tol.texture.quintic_centre_snap) return 1.0;
+    if (abs_x < tol.texture.lancsoz_centre_snap) return 1.0;
     if (abs_x >= 3.0) return 0.0;
     const pi_x = std.math.pi * x;
     const pi_x_3 = pi_x / 3.0;
@@ -187,16 +187,16 @@ pub fn quinticBSplineWeight(x: f64) f64 {
     if (r >= 3.0) return 0.0;
 
     if (r <= 1.0) {
-        return ((((-(1.0 / 12.0) * r + (1.0 / 4.0)) * r + 0.0) * r
-            - (1.0 / 2.0)) * r + 0.0) * r + (11.0 / 20.0);
+        return ((((-(1.0 / 12.0) * r + (1.0 / 4.0)) * r + 0.0) * r - (1.0 / 2.0)) * r 
+               + 0.0) * r + (11.0 / 20.0);
     } else if (r <= 2.0) {
         const t = r - 1.0;
-        return (((((1.0 / 24.0) * t - (1.0 / 6.0)) * t + (1.0 / 6.0)) * t
-            + (1.0 / 6.0)) * t - (5.0 / 12.0)) * t + (13.0 / 60.0);
+        return (((((1.0 / 24.0) * t - (1.0 / 6.0)) * t + (1.0 / 6.0)) * t 
+               + (1.0 / 6.0)) * t - (5.0 / 12.0)) * t + (13.0 / 60.0);
     } else {
         const u = r - 2.0;
-        return (((((-(1.0 / 120.0) * u + (1.0 / 24.0)) * u - (1.0 / 12.0)) * u
-            + (1.0 / 12.0)) * u - (1.0 / 24.0)) * u + (1.0 / 120.0));
+        return (((((-(1.0 / 120.0) * u + (1.0 / 24.0)) * u - (1.0 / 12.0)) * u 
+               + (1.0 / 12.0)) * u - (1.0 / 24.0)) * u + (1.0 / 120.0));
     }
 }
 
@@ -280,6 +280,7 @@ pub fn getPx(
 ) [channels]f64 {
     const cols = @as(isize, @intCast(texture.cols_num));
     const rows = @as(isize, @intCast(texture.rows_num));
+    // Clamp to texture edges so we don't try and access anything that doesn't exist
     const ix = @as(usize, @intCast(@max(0, @min(x, cols - 1))));
     const iy = @as(usize, @intCast(@max(0, @min(y, rows - 1))));
 
@@ -323,6 +324,7 @@ pub fn sample2D(
         1.0
     else
         1.0 / w_sum;
+
     inline for (0..channels) |ch| {
         res[ch] *= inv_w_sum;
     }
@@ -364,7 +366,12 @@ pub fn sampleGeneric(
     const ty = y_f - @as(f64, @floatFromInt(y_i));
 
     return switch (config.sample) {
-        .nearest => getPx(channels, texture, @as(isize, @intFromFloat(@round(x_f))), @as(isize, @intFromFloat(@round(y_f)))),
+        .nearest => getPx(
+            channels,
+            texture,
+            @as(isize, @intFromFloat(@round(x_f))),
+            @as(isize, @intFromFloat(@round(y_f))),
+        ),
         .linear => {
             const p00 = getPx(channels, texture, x_i, y_i);
             const p10 = getPx(channels, texture, x_i + 1, y_i);

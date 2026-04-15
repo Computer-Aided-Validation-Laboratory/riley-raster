@@ -105,13 +105,12 @@ pub const fillTexPersp = common.fillTexPersp;
 
 pub inline fn fillTexClipSIMD(
     comptime N: usize,
-    comptime TexT: type,
     comptime channels: usize,
     comptime sample_config: TextureSampleConfig,
     ctx_shade: common.ShadeContext(N),
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
-    sh: *const common.TexPrepared(TexT, channels),
+    sh: *const common.TexPrepared(channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
     var v_tex_u: VecSF = @splat(0.0);
@@ -157,7 +156,6 @@ pub inline fn fillTexClipSIMD(
 
 pub inline fn fillTexPerspSIMD(
     comptime N: usize,
-    comptime TexT: type,
     comptime channels: usize,
     comptime sample_config: TextureSampleConfig,
     ctx_shade: common.ShadeContext(N),
@@ -165,7 +163,7 @@ pub inline fn fillTexPerspSIMD(
     v_weights: [N]VecSF,
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
-    sh: *const common.TexPrepared(TexT, channels),
+    sh: *const common.TexPrepared(channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
     const v_splat_mul: VecSF = @splat(sh.scale_mul);

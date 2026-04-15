@@ -106,8 +106,8 @@ pub fn rasterAllFrames(
     for (meshes) |mesh| {
         const mesh_fields: u8 = switch (mesh.shader) {
             .nodal => |s| s.field.getFieldsN(),
-            .tex_u8, .tex_u16 => 1,
-            .tex_rgb_u8, .tex_rgb_u16 => 3,
+            .tex => 1,
+            .tex_rgb => 3,
         };
 
         num_fields = @max(num_fields, mesh_fields);

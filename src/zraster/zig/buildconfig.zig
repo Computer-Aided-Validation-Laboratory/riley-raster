@@ -48,7 +48,7 @@ pub const GeometryTolerance = struct {
 };
 
 pub const TextureTolerance = struct {
-    quintic_centre_snap: f64 = 1e-6,
+    lancsoz_centre_snap: f64 = 1e-6,
     weight_sum: f64 = 1e-9,
 };
 

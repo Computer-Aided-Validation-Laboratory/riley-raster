@@ -212,10 +212,10 @@ pub fn runTestInternal(
                     .coords = elem_coords,
                     .disp = if (add_disp) elem_disp else null,
                     .shader = .{
-                        .tex_u8 = .{
+                        .tex = .{
                             .uvs = elem_uvs,
                             .texture = texture,
-                            .interp_type = it,
+                            .sample_config = it.toConfig(),
                         },
                     },
                 };

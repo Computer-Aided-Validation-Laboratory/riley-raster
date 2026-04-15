@@ -47,11 +47,12 @@ fn v_getPxSIMD(
     const v_cols_m1: VecSI = @splat(cols - 1);
     const v_rows_m1: VecSI = @splat(rows - 1);
 
-    const v_ix = @as(
+    // Clamp to texture edges so we don't try and access anything that doesn't exist
+    const v_xu = @as(
         VecSU,
         @intCast(@max(v_splat_zero, @min(v_xi, v_cols_m1))),
     );
-    const v_iy = @as(
+    const v_yu = @as(
         VecSU,
         @intCast(@max(v_splat_zero, @min(v_yi, v_rows_m1))),
     );
@@ -61,7 +62,7 @@ fn v_getPxSIMD(
 
     inline for (0..channels) |ch| {
         const base_ptr = texture.array.getPlanePtr(ch);
-        const v_offsets = v_iy * @as(VecSU, @splat(stride_y)) + v_ix;
+        const v_offsets = v_yu * @as(VecSU, @splat(stride_y)) + v_xu;
 
         // Fast path for contiguous horizontal reads
         const first_off = v_offsets[0];

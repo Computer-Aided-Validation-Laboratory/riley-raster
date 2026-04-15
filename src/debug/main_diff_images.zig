@@ -103,10 +103,10 @@ pub fn main() !void {
             .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .tex_rgb_u8 = .{
+            .shader = .{ .tex_rgb = .{
                 .uvs = uvs.array,
                 .texture = texture,
-                .interp_type = .cubic_lut_lerp,
+                .sample_config = zraster.InterpType.cubic_lut_lerp.toConfig(),
                 .bits = 8,
                 .scaling = .none,
             } },

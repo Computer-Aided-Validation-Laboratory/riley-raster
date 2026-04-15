@@ -159,10 +159,10 @@ pub fn main() !void {
         const uvs = try uvio.loadUVMap(page_alloc, io, path_uvs);
         const texture = try iio.loadImage(u8, 1, page_alloc, io, path_tex, .tiff);
 
-        mesh_input.shader = .{ .tex_u8 = .{
+        mesh_input.shader = .{ .tex = .{
             .uvs = uvs,
             .texture = texture,
-            .interp_type = .cubic_lut_lerp,
+            .sample_config = zraster.InterpType.cubic_lut_lerp.toConfig(),
         } };
     }
 

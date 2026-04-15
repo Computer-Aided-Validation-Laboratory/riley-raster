@@ -162,7 +162,7 @@ pub fn runGenerationExt(
                     @tagName(sc.mode),
                 });
                 try renderAndSave(aa, io, &camera, mt, sim_data.coords, sim_data.connect, sim_data.field, .{
-                    .tex_u8 = .{
+                    .tex = .{
                         .uvs = uvs.array,
                         .texture = texture,
                         .sample_config = sc,
@@ -394,7 +394,7 @@ pub fn runMultimeshMixedGenerationExt(
             .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .tex_u8 = .{
+            .shader = .{ .tex = .{
                 .uvs = uvs.array,
                 .texture = texture,
                 .sample_config = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
@@ -523,7 +523,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
             .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .tex_rgb_u8 = .{
+            .shader = .{ .tex_rgb = .{
                 .uvs = uvs.array,
                 .texture = texture,
                 .sample_config = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },

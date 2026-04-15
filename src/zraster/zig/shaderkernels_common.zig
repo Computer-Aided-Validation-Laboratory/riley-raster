@@ -56,12 +56,11 @@ pub inline fn shadeNodalScalarCommon(
 
 pub inline fn shadeTexScalarCommon(
     comptime N: usize,
-    comptime TexT: type,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
     ctx_shade: shaderops.ShadeContext(N),
     interp: shaderops.InterpData(N),
-    shader: *const shaderops.TexPrepared(TexT, channels),
+    shader: *const shaderops.TexPrepared(channels),
     ctx_report: anytype,
     spx_image_scratch: *MatSlice(f64),
 ) void {
@@ -107,7 +106,6 @@ pub inline fn shadeTexScalarCommon(
                         if (comptime coord_space == CoordSpace.clip_px_leng) {
                             shaderops.fillTexClip(
                                 N,
-                                TexT,
                                 channels,
                                 comptime_config,
                                 ctx_shade,
@@ -118,7 +116,6 @@ pub inline fn shadeTexScalarCommon(
                         } else {
                             shaderops.fillTexPersp(
                                 N,
-                                TexT,
                                 channels,
                                 comptime_config,
                                 ctx_shade,

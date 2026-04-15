@@ -434,7 +434,7 @@ fn runBenchmarkInternal(
             } };
         },
         .tex8_grey => {
-            shader = .{ .tex_u8 = .{
+            shader = .{ .tex = .{
                 .uvs = uvs_raw,
                 .texture = texture_grey,
                 .sample_config = sample_config,
@@ -442,7 +442,7 @@ fn runBenchmarkInternal(
         },
         .tex8_rgb => {
             num_out_fields = 3;
-            shader = .{ .tex_rgb_u8 = .{
+            shader = .{ .tex_rgb = .{
                 .uvs = uvs_raw,
                 .texture = texture_rgb,
                 .sample_config = sample_config,

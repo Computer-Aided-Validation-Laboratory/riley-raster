@@ -737,7 +737,7 @@ pub fn runTestInternal(
                     .connect = sim_data.connect,
                     .disp = if (add_disp) sim_data.field else null,
                     .shader = .{
-                        .tex_u8 = .{
+                        .tex = .{
                             .uvs = uvs.array,
                             .texture = texture,
                             .sample_config = sc,
@@ -1060,7 +1060,7 @@ pub fn runMultimeshMixedTestExt(
             .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .tex_u8 = .{
+            .shader = .{ .tex = .{
                 .uvs = uvs.array,
                 .texture = texture,
                 .sample_config = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
@@ -1206,7 +1206,7 @@ pub fn runMultimeshMixedRGBTestExt(
             .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .tex_rgb_u8 = .{
+            .shader = .{ .tex_rgb = .{
                 .uvs = uvs.array,
                 .texture = texture,
                 .sample_config = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },

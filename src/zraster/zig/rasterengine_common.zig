@@ -282,8 +282,8 @@ pub fn rasterSceneCommon(
 
                     const mesh_fields_num: u8 = switch (mesh_ptr.shader) {
                         .nodal => |s| @intCast(s.elem_field.dims[2]),
-                        .tex_u8, .tex_u16 => 1,
-                        .tex_rgb_u8, .tex_rgb_u16 => 3,
+                        .tex => 1,
+                        .tex_rgb => 3,
                     };
 
                     switch (mesh_ptr.shader) {
@@ -324,8 +324,8 @@ pub fn rasterSceneCommon(
                                 &subpx_scratch,
                             );
                         },
-                        .tex_u8 => |*shader| {
-                            const SK = shadekerns.TexKernel(N, u8, 1);
+                        .tex => |*shader| {
+                            const SK = shadekerns.TexKernel(N, 1);
                             var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
                             local_shader_buf.load(
                                 shader.elem_uvs,
@@ -340,7 +340,7 @@ pub fn rasterSceneCommon(
                             shaded_px += try Backend.RasterPass(
                                 GK,
                                 SK,
-                                TexPrepared(u8, 1),
+                                TexPrepared(1),
                             ).render(
                                 report_mode,
                                 ctx_rast,
@@ -352,8 +352,8 @@ pub fn rasterSceneCommon(
                                 &subpx_scratch,
                             );
                         },
-                        .tex_u16 => |*shader| {
-                            const SK = shadekerns.TexKernel(N, u16, 1);
+                        .tex_rgb => |*shader| {
+                            const SK = shadekerns.TexKernel(N, 3);
                             var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
                             local_shader_buf.load(
                                 shader.elem_uvs,
@@ -368,63 +368,7 @@ pub fn rasterSceneCommon(
                             shaded_px += try Backend.RasterPass(
                                 GK,
                                 SK,
-                                TexPrepared(u16, 1),
-                            ).render(
-                                report_mode,
-                                ctx_rast,
-                                ctx_report,
-                                targ_overlap,
-                                mesh_in,
-                                shader,
-                                &local_shader_buf,
-                                &subpx_scratch,
-                            );
-                        },
-                        .tex_rgb_u8 => |*shader| {
-                            const SK = shadekerns.TexKernel(N, u8, 3);
-                            var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
-                            local_shader_buf.load(
-                                shader.elem_uvs,
-                                targ_overlap.overlap.elem_idx * 2 * N,
-                                2,
-                            );
-                            if (shader.elem_normals) |en| {
-                                const prep_idx = en.map[targ_overlap.overlap.elem_idx];
-                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                            }
-
-                            shaded_px += try Backend.RasterPass(
-                                GK,
-                                SK,
-                                TexPrepared(u8, 3),
-                            ).render(
-                                report_mode,
-                                ctx_rast,
-                                ctx_report,
-                                targ_overlap,
-                                mesh_in,
-                                shader,
-                                &local_shader_buf,
-                                &subpx_scratch,
-                            );
-                        },
-                        .tex_rgb_u16 => |*shader| {
-                            const SK = shadekerns.TexKernel(N, u16, 3);
-                            var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
-                            local_shader_buf.load(
-                                shader.elem_uvs,
-                                targ_overlap.overlap.elem_idx * 2 * N,
-                                2,
-                            );
-                            if (shader.elem_normals) |en| {
-                                const prep_idx = en.map[targ_overlap.overlap.elem_idx];
-                                local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
-                            }
-
-                            shaded_px += try Backend.RasterPass(
-                                GK,
-                                SK,
-                                TexPrepared(u16, 3),
+                                TexPrepared(3),
                             ).render(
                                 report_mode,
                                 ctx_rast,

@@ -102,7 +102,7 @@ pub fn prepareMesh(
                 .elem_normals = null,
             } };
         },
-        .tex_u8 => |*tex_in| {
+        .tex => |*tex_in| {
             const elem_uvs = try prepareUVs(
                 outer_alloc,
                 &tex_in.uvs,
@@ -114,7 +114,7 @@ pub fn prepareMesh(
                 tex_in.scaling,
             );
             const factors = imageops.getScaleFactors(tex_in.scaling, tex_in.bits, params);
-            mesh_prep.shader = .{ .tex_u8 = .{
+            mesh_prep.shader = .{ .tex = .{
                 .elem_uvs = elem_uvs,
                 .texture = tex_in.texture,
                 .sample_config = tex_in.sample_config,
@@ -126,31 +126,7 @@ pub fn prepareMesh(
                 .elem_normals = null,
             } };
         },
-        .tex_u16 => |*tex_in| {
-            const elem_uvs = try prepareUVs(
-                outer_alloc,
-                &tex_in.uvs,
-                &mesh_input.connect,
-            );
-            const params = imageops.getScalingParamsTexture(
-                1,
-                &tex_in.texture,
-                tex_in.scaling,
-            );
-            const factors = imageops.getScaleFactors(tex_in.scaling, tex_in.bits, params);
-            mesh_prep.shader = .{ .tex_u16 = .{
-                .elem_uvs = elem_uvs,
-                .texture = tex_in.texture,
-                .sample_config = tex_in.sample_config,
-                .bits = tex_in.bits,
-                .scaling = tex_in.scaling,
-                .scale_mul = factors.mul,
-                .scale_add = factors.add,
-                .normal_type = tex_in.normal_type,
-                .elem_normals = null,
-            } };
-        },
-        .tex_rgb_u8 => |*tex_in| {
+        .tex_rgb => |*tex_in| {
             const elem_uvs = try prepareUVs(
                 outer_alloc,
                 &tex_in.uvs,
@@ -162,31 +138,7 @@ pub fn prepareMesh(
                 tex_in.scaling,
             );
             const factors = imageops.getScaleFactors(tex_in.scaling, tex_in.bits, params);
-            mesh_prep.shader = .{ .tex_rgb_u8 = .{
-                .elem_uvs = elem_uvs,
-                .texture = tex_in.texture,
-                .sample_config = tex_in.sample_config,
-                .bits = tex_in.bits,
-                .scaling = tex_in.scaling,
-                .scale_mul = factors.mul,
-                .scale_add = factors.add,
-                .normal_type = tex_in.normal_type,
-                .elem_normals = null,
-            } };
-        },
-        .tex_rgb_u16 => |*tex_in| {
-            const elem_uvs = try prepareUVs(
-                outer_alloc,
-                &tex_in.uvs,
-                &mesh_input.connect,
-            );
-            const params = imageops.getScalingParamsTexture(
-                3,
-                &tex_in.texture,
-                tex_in.scaling,
-            );
-            const factors = imageops.getScaleFactors(tex_in.scaling, tex_in.bits, params);
-            mesh_prep.shader = .{ .tex_rgb_u16 = .{
+            mesh_prep.shader = .{ .tex_rgb = .{
                 .elem_uvs = elem_uvs,
                 .texture = tex_in.texture,
                 .sample_config = tex_in.sample_config,
@@ -332,10 +284,10 @@ pub fn meshInputFromSimDataSlice(
     errdefer {
         for (0..initialized_count) |ii| {
             switch (mesh_inputs[ii].shader) {
-                .tex_u8 => |tex| {
+                .tex => |tex| {
                     outer_alloc.free(tex.uvs.slice);
                 },
-                .tex_u16 => |tex| {
+                .tex_rgb => |tex| {
                     outer_alloc.free(tex.uvs.slice);
                 },
                 else => {},
@@ -390,7 +342,7 @@ pub fn meshInputFromSimDataSlice(
                 1,
             );
 
-            mesh_inputs[ii].shader = .{ .tex_u8 = .{
+            mesh_inputs[ii].shader = .{ .tex = .{
                 .uvs = uvmap.array,
                 .texture = texture,
                 .sample_config = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },

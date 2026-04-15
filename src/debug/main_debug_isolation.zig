@@ -90,10 +90,10 @@ pub fn main() !void {
                     .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
                     .connect = sim_datas[data_idx].connect,
                     .disp = null,
-                    .shader = .{ .tex_u8 = .{
+                    .shader = .{ .tex = .{
                         .uvs = uvs.array,
                         .texture = texture,
-                        .interp_type = .cubic_lut_lerp,
+                        .sample_config = zraster.InterpType.cubic_lut_lerp.toConfig(),
                     } },
                 };
             } else {

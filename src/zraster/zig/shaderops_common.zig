@@ -101,8 +101,7 @@ pub const NodalPrepared = struct {
     elem_normals: ?MappedNDArray(f64) = null,
 };
 
-pub fn TexInput(comptime T: type, comptime channels: usize) type {
-    _ = T;
+pub fn TexInput(comptime channels: usize) type {
     return struct {
         uvs: NDArray(f64),
         texture: Texture(channels),
@@ -113,8 +112,7 @@ pub fn TexInput(comptime T: type, comptime channels: usize) type {
     };
 }
 
-pub fn TexPrepared(comptime T: type, comptime channels: usize) type {
-    _ = T;
+pub fn TexPrepared(comptime channels: usize) type {
     return struct {
         elem_uvs: NDArray(f64),
         texture: Texture(channels),
@@ -130,18 +128,14 @@ pub fn TexPrepared(comptime T: type, comptime channels: usize) type {
 
 pub const ShaderInput = union(enum) {
     nodal: NodalInput,
-    tex_u8: TexInput(u8, 1),
-    tex_u16: TexInput(u16, 1),
-    tex_rgb_u8: TexInput(u8, 3),
-    tex_rgb_u16: TexInput(u16, 3),
+    tex: TexInput(1),
+    tex_rgb: TexInput(3),
 };
 
 pub const ShaderPrepared = union(enum) {
     nodal: NodalPrepared,
-    tex_u8: TexPrepared(u8, 1),
-    tex_u16: TexPrepared(u16, 1),
-    tex_rgb_u8: TexPrepared(u8, 3),
-    tex_rgb_u16: TexPrepared(u16, 3),
+    tex: TexPrepared(1),
+    tex_rgb: TexPrepared(3),
 };
 
 pub fn ShadeContext(comptime N: usize) type {
@@ -205,12 +199,11 @@ pub inline fn fillNodalPersp(
 
 pub inline fn fillTexClip(
     comptime N: usize,
-    comptime TexT: type,
     comptime channels: usize,
     comptime sample_config: TextureSampleConfig,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
-    sh: *const TexPrepared(TexT, channels),
+    sh: *const TexPrepared(channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
     var tex_u: f64 = 0.0;
@@ -236,12 +229,11 @@ pub inline fn fillTexClip(
 
 pub inline fn fillTexPersp(
     comptime N: usize,
-    comptime TexT: type,
     comptime channels: usize,
     comptime sample_config: TextureSampleConfig,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
-    sh: *const TexPrepared(TexT, channels),
+    sh: *const TexPrepared(channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
     var tex_u: f64 = 0.0;
