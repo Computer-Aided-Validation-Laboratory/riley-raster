@@ -6,7 +6,6 @@ const impl = if (cfg.simd == .on) simd_impl else common_impl;
 pub const TextureSample = common_impl.TextureSample;
 pub const TextureSampleMode = common_impl.TextureSampleMode;
 pub const TextureSampleConfig = common_impl.TextureSampleConfig;
-pub const InterpType = impl.InterpType;
 pub const Texture = impl.Texture;
 pub const sampleGeneric = impl.sampleGeneric;
 pub const sampleGenericRuntime = common_impl.sampleGenericRuntime;

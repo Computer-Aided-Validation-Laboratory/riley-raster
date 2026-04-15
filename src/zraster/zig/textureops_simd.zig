@@ -13,7 +13,6 @@ const common = @import("textureops_common.zig");
 pub const TextureSample = common.TextureSample;
 pub const TextureSampleMode = common.TextureSampleMode;
 pub const TextureSampleConfig = common.TextureSampleConfig;
-pub const InterpType = common.InterpType;
 pub const Texture = common.Texture;
 
 const catmull_rom_lut = common.catmull_rom_lut;
@@ -21,8 +20,6 @@ const mitchell_netravali_lut = common.mitchell_netravali_lut;
 const cubic_bspline_lut = common.cubic_bspline_lut;
 const lanczos3_lut = common.lanczos3_lut;
 const quintic_bspline_lut = common.quintic_bspline_lut;
-const cubic_lut = common.cubic_lut;
-const quintic_lut = common.quintic_lut;
 const cubicCoeffCatmullRom = common.cubicCoeffCatmullRom;
 const cubicCoeffMitchellNetravali = common.cubicCoeffMitchellNetravali;
 const cubicBSplineCoeff = common.cubicBSplineCoeff;

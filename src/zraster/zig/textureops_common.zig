@@ -33,28 +33,6 @@ pub const TextureSampleConfig = struct {
     }
 };
 
-pub const InterpType = enum {
-    linear,
-    cubic,
-    cubic_lut,
-    cubic_lut_lerp,
-    quintic,
-    quintic_lut,
-    quintic_lut_lerp,
-
-    pub fn toConfig(self: InterpType) TextureSampleConfig {
-        return switch (self) {
-            .linear => .{ .sample = .linear, .mode = .direct },
-            .cubic => .{ .sample = .cubic_catmull_rom, .mode = .direct },
-            .cubic_lut => .{ .sample = .cubic_catmull_rom, .mode = .lut },
-            .cubic_lut_lerp => .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
-            .quintic => .{ .sample = .quintic_bspline, .mode = .direct },
-            .quintic_lut => .{ .sample = .quintic_bspline, .mode = .lut },
-            .quintic_lut_lerp => .{ .sample = .quintic_bspline, .mode = .lut_lerp },
-        };
-    }
-};
-
 pub fn Texture(comptime channels: usize) type {
     return struct {
         array: NDArray(f64),
@@ -187,13 +165,16 @@ pub fn quinticBSplineCoeff(x: f64) f64 {
     if (r >= 3.0) return 0.0;
 
     if (r <= 1.0) {
-        return ((((-(1.0 / 12.0) * r + (1.0 / 4.0)) * r + 0.0) * r - (1.0 / 2.0)) * r + 0.0) * r + (11.0 / 20.0);
+        return ((((-(1.0 / 12.0) * r + (1.0 / 4.0)) * r + 0.0) * r 
+               - (1.0 / 2.0)) * r + 0.0) * r + (11.0 / 20.0);
     } else if (r <= 2.0) {
         const t = r - 1.0;
-        return (((((1.0 / 24.0) * t - (1.0 / 6.0)) * t + (1.0 / 6.0)) * t + (1.0 / 6.0)) * t - (5.0 / 12.0)) * t + (13.0 / 60.0);
+        return (((((1.0 / 24.0) * t - (1.0 / 6.0)) * t + (1.0 / 6.0)) * t 
+               + (1.0 / 6.0)) * t - (5.0 / 12.0)) * t + (13.0 / 60.0);
     } else {
         const u = r - 2.0;
-        return (((((-(1.0 / 120.0) * u + (1.0 / 24.0)) * u - (1.0 / 12.0)) * u + (1.0 / 12.0)) * u - (1.0 / 24.0)) * u + (1.0 / 120.0));
+        return (((((-(1.0 / 120.0) * u + (1.0 / 24.0)) * u - (1.0 / 12.0)) * u 
+               + (1.0 / 12.0)) * u - (1.0 / 24.0)) * u + (1.0 / 120.0));
     }
 }
 
@@ -265,9 +246,6 @@ pub const quintic_bspline_lut = blk: {
     }
     break :blk table;
 };
-
-pub const cubic_lut = catmull_rom_lut;
-pub const quintic_lut = quintic_bspline_lut;
 
 pub fn getPx(
     comptime channels: usize,
