@@ -166,12 +166,12 @@ pub fn quinticBSplineCoeff(x: f64) f64 {
     if (r >= 3.0) return 0.0;
 
     if (r <= 1.0) {
-        return ((((-(1.0 / 12.0) * r + (1.0 / 4.0)) * r + 0.0) * r - (1.0 / 2.0)) * r + 0.0) *
-            r + (11.0 / 20.0);
+        return ((((-(1.0 / 12.0) * r + (1.0 / 4.0)) * r + 0.0) * r  - (1.0 / 2.0)) * r 
+               + 0.0) * r + (11.0 / 20.0);
     } else if (r <= 2.0) {
         const t = r - 1.0;
-        return (((((1.0 / 24.0) * t - (1.0 / 6.0)) * t + (1.0 / 6.0)) * t + (1.0 / 6.0)) * t -
-            (5.0 / 12.0)) * t + (13.0 / 60.0);
+        return (((((1.0 / 24.0) * t - (1.0 / 6.0)) * t + (1.0 / 6.0)) * t 
+               + (1.0 / 6.0)) * t - (5.0 / 12.0)) * t + (13.0 / 60.0);
     } else {
         const u = r - 2.0;
         return (((((-(1.0 / 120.0) * u + (1.0 / 24.0)) * u - (1.0 / 12.0)) * u +
@@ -254,14 +254,37 @@ pub fn getPx(
     x: isize,
     y: isize,
 ) [CH]f64 {
-    const cols = @as(isize, @intCast(texture.cols_num));
-    const rows = @as(isize, @intCast(texture.rows_num));
-    const ix = @as(usize, @intCast(@max(0, @min(x, cols - 1))));
-    const iy = @as(usize, @intCast(@max(0, @min(y, rows - 1))));
+    const tex_cols = @as(isize, @intCast(texture.cols_num));
+    const tex_rows = @as(isize, @intCast(texture.rows_num));
+    // Clamp to the edges of the tex
+    const tex_x_i = @as(usize, @intCast(@max(0, @min(x, tex_cols - 1))));
+    const tex_y_i = @as(usize, @intCast(@max(0, @min(y, tex_rows - 1))));
 
     var samp_res: [CH]f64 = undefined;
     inline for (0..CH) |ch| {
-        samp_res[ch] = texture.getVal(ch, iy, ix);
+        samp_res[ch] = texture.getVal(ch, tex_y_i, tex_x_i);
+    }
+    return samp_res;
+}
+
+pub fn sampleLinear(
+    comptime CH: usize,
+    texture: anytype,
+    tex_x_i: isize,
+    tex_y_i: isize,
+    tex_x_frac: f64,
+    tex_y_frac: f64,
+) [CH]f64 {
+    const p00 = getPx(CH, texture, tex_x_i, tex_y_i);
+    const p10 = getPx(CH, texture, tex_x_i + 1, tex_y_i);
+    const p01 = getPx(CH, texture, tex_x_i, tex_y_i + 1);
+    const p11 = getPx(CH, texture, tex_x_i + 1, tex_y_i + 1);
+    var samp_res: [CH]f64 = undefined;
+    inline for (0..CH) |ch| {
+        samp_res[ch] = (1.0 - tex_x_frac) * (1.0 - tex_y_frac) * p00[ch] +
+            tex_x_frac * (1.0 - tex_y_frac) * p10[ch] +
+            (1.0 - tex_x_frac) * tex_y_frac * p01[ch] +
+            tex_x_frac * tex_y_frac * p11[ch];
     }
     return samp_res;
 }
@@ -314,30 +337,35 @@ pub fn getLerpSampCoeffs(
     const scaled = t * (lut_size - 1);
     const idx = @as(usize, @intFromFloat(@floor(scaled)));
     const frac = scaled - @as(f64, @floatFromInt(idx));
-    var res: [TAP]f64 = undefined;
-    const w0 = table[idx];
-    const w1 = table[@min(idx + 1, lut_size - 1)];
+    var lerp_res: [TAP]f64 = undefined;
+
+    const lut0 = table[idx];
+    const lut1 = table[@min(idx + 1, lut_size - 1)];
+
     inline for (0..TAP) |ii| {
-        res[ii] = w0[ii] * (1.0 - frac) + w1[ii] * frac;
+        lerp_res[ii] = lut0[ii] * (1.0 - frac) + lut1[ii] * frac;
     }
-    return res;
+    return lerp_res;
 }
 
 pub fn getLerpSampCoeffsRuntime(
     comptime TAP: usize,
     table: [lut_size][TAP]f64,
-    t: f64,
+    t: f64, // Between 0.0 and 1.0
 ) [TAP]f64 {
     const scaled = t * (lut_size - 1);
     const idx = @as(usize, @intFromFloat(@floor(scaled)));
     const frac = scaled - @as(f64, @floatFromInt(idx));
-    var res: [TAP]f64 = undefined;
-    const w0 = table[idx];
-    const w1 = table[@min(idx + 1, lut_size - 1)];
+
+    var lerp_res: [TAP]f64 = undefined;
+    const lut0 = table[idx];
+    const lut1 = table[@min(idx + 1, lut_size - 1)];
+
     inline for (0..TAP) |ii| {
-        res[ii] = w0[ii] * (1.0 - frac) + w1[ii] * frac;
+        lerp_res[ii] = lut0[ii] * (1.0 - frac) + lut1[ii] * frac;
     }
-    return res;
+
+    return lerp_res;
 }
 
 fn sampleTex4Tap(
@@ -350,6 +378,7 @@ fn sampleTex4Tap(
     tex_x_frac: f64,
     tex_y_frac: f64,
 ) [CH]f64 {
+    const TAP = 4;
     const coeff_fun = switch (sample) {
         .cubic_catmull_rom => cubicCoeffCatmullRom,
         .cubic_mitchell_netravali => cubicCoeffMitchellNetravali,
@@ -364,48 +393,31 @@ fn sampleTex4Tap(
     };
 
     return switch (mode) {
-        .direct => sample2D(
-            CH,
-            4,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            .{
+        .direct => blk: {
+            const sx = .{
                 coeff_fun(tex_x_frac + 1),
                 coeff_fun(tex_x_frac),
                 coeff_fun(tex_x_frac - 1),
                 coeff_fun(tex_x_frac - 2),
-            },
-            .{
+            };
+            const sy = .{
                 coeff_fun(tex_y_frac + 1),
                 coeff_fun(tex_y_frac),
                 coeff_fun(tex_y_frac - 1),
                 coeff_fun(tex_y_frac - 2),
-            },
-        ),
-        .lut => sample2D(
-            CH,
-            4,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            lut[
-                @as(
-                    usize,
-                    @intFromFloat(tex_x_frac * @as(f64, @floatFromInt(lut_size - 1))),
-                )
-            ],
-            lut[
-                @as(
-                    usize,
-                    @intFromFloat(tex_y_frac * @as(f64, @floatFromInt(lut_size - 1))),
-                )
-            ],
-        ),
+            };
+            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
+        },
+        .lut => blk: {
+            const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
+            const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
+            const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
+            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
+        },
         .lut_lerp => blk: {
-            const samp_coeff_x = getLerpSampCoeffs(4, lut, tex_x_frac);
-            const samp_coeff_y = getLerpSampCoeffs(4, lut, tex_y_frac);
-            break :blk sample2D(CH, 4, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+            const samp_coeff_x = getLerpSampCoeffs(TAP, lut, tex_x_frac);
+            const samp_coeff_y = getLerpSampCoeffs(TAP, lut, tex_y_frac);
+            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
         },
     };
 }
@@ -420,6 +432,7 @@ fn sampleTex4TapRuntime(
     tex_x_frac: f64,
     tex_y_frac: f64,
 ) [CH]f64 {
+    const TAP = 4;
     const coeff_fun: *const fn (f64) f64 = switch (sample) {
         .cubic_catmull_rom => cubicCoeffCatmullRom,
         .cubic_mitchell_netravali => cubicCoeffMitchellNetravali,
@@ -434,48 +447,31 @@ fn sampleTex4TapRuntime(
     };
 
     return switch (mode) {
-        .direct => sample2D(
-            CH,
-            4,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            .{
+        .direct => blk: {
+            const sx = .{
                 coeff_fun(tex_x_frac + 1),
                 coeff_fun(tex_x_frac),
                 coeff_fun(tex_x_frac - 1),
                 coeff_fun(tex_x_frac - 2),
-            },
-            .{
+            };
+            const sy = .{
                 coeff_fun(tex_y_frac + 1),
                 coeff_fun(tex_y_frac),
                 coeff_fun(tex_y_frac - 1),
                 coeff_fun(tex_y_frac - 2),
-            },
-        ),
-        .lut => sample2D(
-            CH,
-            4,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            lut[
-                @as(
-                    usize,
-                    @intFromFloat(tex_x_frac * @as(f64, @floatFromInt(lut_size - 1))),
-                )
-            ],
-            lut[
-                @as(
-                    usize,
-                    @intFromFloat(tex_y_frac * @as(f64, @floatFromInt(lut_size - 1))),
-                )
-            ],
-        ),
+            };
+            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
+        },
+        .lut => blk: {
+            const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
+            const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
+            const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
+            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
+        },
         .lut_lerp => {
-            const samp_coeff_x = getLerpSampCoeffsRuntime(4, lut, tex_x_frac);
-            const samp_coeff_y = getLerpSampCoeffsRuntime(4, lut, tex_y_frac);
-            return sample2D(CH, 4, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+            const samp_coeff_x = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
+            const samp_coeff_y = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
+            return sample2D(CH, TAP, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
         },
     };
 }
@@ -490,6 +486,7 @@ fn sampleTex6Tap(
     tex_x_frac: f64,
     tex_y_frac: f64,
 ) [CH]f64 {
+    const TAP = 6;
     const coeff_fun = switch (sample) {
         .lanczos3 => lanczos3Coeff,
         .quintic_bspline => quinticBSplineCoeff,
@@ -502,52 +499,35 @@ fn sampleTex6Tap(
     };
 
     return switch (mode) {
-        .direct => sample2D(
-            CH,
-            6,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            .{
+        .direct => blk: {
+            const sx = .{
                 coeff_fun(tex_x_frac + 2),
                 coeff_fun(tex_x_frac + 1),
                 coeff_fun(tex_x_frac),
                 coeff_fun(tex_x_frac - 1),
                 coeff_fun(tex_x_frac - 2),
                 coeff_fun(tex_x_frac - 3),
-            },
-            .{
+            };
+            const sy = .{
                 coeff_fun(tex_y_frac + 2),
                 coeff_fun(tex_y_frac + 1),
                 coeff_fun(tex_y_frac),
                 coeff_fun(tex_y_frac - 1),
                 coeff_fun(tex_y_frac - 2),
                 coeff_fun(tex_y_frac - 3),
-            },
-        ),
-        .lut => sample2D(
-            CH,
-            6,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            lut[
-                @as(
-                    usize,
-                    @intFromFloat(tex_x_frac * @as(f64, @floatFromInt(lut_size - 1))),
-                )
-            ],
-            lut[
-                @as(
-                    usize,
-                    @intFromFloat(tex_y_frac * @as(f64, @floatFromInt(lut_size - 1))),
-                )
-            ],
-        ),
+            };
+            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
+        },
+        .lut => blk: {
+            const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
+            const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
+            const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
+            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
+        },
         .lut_lerp => blk: {
-            const samp_coeff_x = getLerpSampCoeffs(6, lut, tex_x_frac);
-            const samp_coeff_y = getLerpSampCoeffs(6, lut, tex_y_frac);
-            break :blk sample2D(CH, 6, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+            const samp_coeff_x = getLerpSampCoeffs(TAP, lut, tex_x_frac);
+            const samp_coeff_y = getLerpSampCoeffs(TAP, lut, tex_y_frac);
+            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
         },
     };
 }
@@ -562,6 +542,7 @@ fn sampleTex6TapRuntime(
     tex_x_frac: f64,
     tex_y_frac: f64,
 ) [CH]f64 {
+    const TAP = 6;
     const coeff_fun: *const fn (f64) f64 = switch (sample) {
         .lanczos3 => lanczos3Coeff,
         .quintic_bspline => quinticBSplineCoeff,
@@ -574,52 +555,35 @@ fn sampleTex6TapRuntime(
     };
 
     return switch (mode) {
-        .direct => sample2D(
-            CH,
-            6,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            .{
+        .direct => blk: {
+            const sx = .{
                 coeff_fun(tex_x_frac + 2),
                 coeff_fun(tex_x_frac + 1),
                 coeff_fun(tex_x_frac),
                 coeff_fun(tex_x_frac - 1),
                 coeff_fun(tex_x_frac - 2),
                 coeff_fun(tex_x_frac - 3),
-            },
-            .{
+            };
+            const sy = .{
                 coeff_fun(tex_y_frac + 2),
                 coeff_fun(tex_y_frac + 1),
                 coeff_fun(tex_y_frac),
                 coeff_fun(tex_y_frac - 1),
                 coeff_fun(tex_y_frac - 2),
                 coeff_fun(tex_y_frac - 3),
-            },
-        ),
-        .lut => sample2D(
-            CH,
-            6,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            lut[
-                @as(
-                    usize,
-                    @intFromFloat(tex_x_frac * @as(f64, @floatFromInt(lut_size - 1))),
-                )
-            ],
-            lut[
-                @as(
-                    usize,
-                    @intFromFloat(tex_y_frac * @as(f64, @floatFromInt(lut_size - 1))),
-                )
-            ],
-        ),
+            };
+            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
+        },
+        .lut => blk: {
+            const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
+            const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
+            const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
+            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
+        },
         .lut_lerp => {
-            const samp_coeff_x = getLerpSampCoeffsRuntime(6, lut, tex_x_frac);
-            const samp_coeff_y = getLerpSampCoeffsRuntime(6, lut, tex_y_frac);
-            return sample2D(CH, 6, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+            const samp_coeff_x = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
+            const samp_coeff_y = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
+            return sample2D(CH, TAP, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
         },
     };
 }
@@ -720,20 +684,7 @@ pub fn sampleGeneric(
             @as(isize, @intFromFloat(@round(tex_x_f))),
             @as(isize, @intFromFloat(@round(tex_y_f))),
         ),
-        .linear => {
-            const p00 = getPx(CH, texture, tex_x_i, tex_y_i);
-            const p10 = getPx(CH, texture, tex_x_i + 1, tex_y_i);
-            const p01 = getPx(CH, texture, tex_x_i, tex_y_i + 1);
-            const p11 = getPx(CH, texture, tex_x_i + 1, tex_y_i + 1);
-            var samp_res: [CH]f64 = undefined;
-            inline for (0..CH) |ch| {
-                samp_res[ch] = (1.0 - tex_x_frac) * (1.0 - tex_y_frac) * p00[ch] +
-                    tex_x_frac * (1.0 - tex_y_frac) * p10[ch] +
-                    (1.0 - tex_x_frac) * tex_y_frac * p01[ch] +
-                    tex_x_frac * tex_y_frac * p11[ch];
-            }
-            return samp_res;
-        },
+        .linear => sampleLinear(CH, texture, tex_x_i, tex_y_i, tex_x_frac, tex_y_frac),
         .cubic_catmull_rom => sampleTex4Tap(
             CH,
             .cubic_catmull_rom,
@@ -811,20 +762,7 @@ pub fn sampleGenericRuntime(
             @as(isize, @intFromFloat(@round(tex_x_f))),
             @as(isize, @intFromFloat(@round(tex_y_f))),
         ),
-        .linear => {
-            const p00 = getPx(CH, texture, tex_x_i, tex_y_i);
-            const p10 = getPx(CH, texture, tex_x_i + 1, tex_y_i);
-            const p01 = getPx(CH, texture, tex_x_i, tex_y_i + 1);
-            const p11 = getPx(CH, texture, tex_x_i + 1, tex_y_i + 1);
-            var samp_res: [CH]f64 = undefined;
-            inline for (0..CH) |ch| {
-                samp_res[ch] = (1.0 - tex_x_frac) * (1.0 - tex_y_frac) * p00[ch] +
-                    tex_x_frac * (1.0 - tex_y_frac) * p10[ch] +
-                    (1.0 - tex_x_frac) * tex_y_frac * p01[ch] +
-                    tex_x_frac * tex_y_frac * p11[ch];
-            }
-            return samp_res;
-        },
+        .linear => sampleLinear(CH, texture, tex_x_i, tex_y_i, tex_x_frac, tex_y_frac),
         .cubic_catmull_rom => sampleTex4TapDispatchMode(
             CH,
             .cubic_catmull_rom,

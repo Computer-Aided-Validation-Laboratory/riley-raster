@@ -133,7 +133,7 @@ pub fn TexKernel(
             }
 
             const config = shader.sample_config;
-            if (cfg.texture_dispatch_policy == .comptime_comptime) {
+            if (comptime cfg.texture_dispatch_policy == .comptime_comptime) {
                 inline for (.{
                     .nearest,
                     .linear,
