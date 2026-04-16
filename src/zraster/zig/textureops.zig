@@ -7,15 +7,21 @@ pub const TextureSample = common_impl.TextureSample;
 pub const TextureSampleMode = common_impl.TextureSampleMode;
 pub const TextureSampleConfig = common_impl.TextureSampleConfig;
 pub const Texture = impl.Texture;
-pub const sampleGeneric = impl.sampleGeneric;
-pub const sampleGenericRuntime = common_impl.sampleGenericRuntime;
+pub const sampleScalar = impl.sampleScalar;
+pub const sampleScalarRuntime = common_impl.sampleScalarRuntime;
 pub const sampleGreyscale = impl.sampleGreyscale;
 pub const sampleGreyscaleRuntime = common_impl.sampleGreyscaleRuntime;
-pub const sampleOverPixelsSIMD = simd_impl.sampleOverPixelsSIMD;
-pub const sampleOverPixelsSIMDRuntime = simd_impl.sampleOverPixelsSIMDRuntime;
-pub const samplePerPixelInnerSIMD = simd_impl.samplePerPixelInnerSIMD;
-pub const samplePerPixelInnerSIMDRuntime = simd_impl.samplePerPixelInnerSIMDRuntime;
-pub const samplePerLaneInnerSIMD = simd_impl.samplePerLaneInnerSIMD;
-pub const samplePerLaneInnerSIMDRuntime = simd_impl.samplePerLaneInnerSIMDRuntime;
-pub const samplePerLaneTri3SIMD = simd_impl.samplePerLaneTri3SIMD;
-pub const samplePerLaneTri3SIMDRuntime = simd_impl.samplePerLaneTri3SIMDRuntime;
+
+// Scalar/Single Lane helper
+pub const sampleOneLane = simd_impl.sampleOneLane;
+pub const sampleOneLaneRuntime = simd_impl.sampleOneLaneRuntime;
+
+// Strategy 1: Wide (Parallel over pixels)
+pub const sampleWide = simd_impl.sampleWide;
+pub const sampleWideRuntime = simd_impl.sampleWideRuntime;
+
+// Strategy 2: Lanes (Serial over pixels, SIMD math)
+pub const sampleLanes = simd_impl.sampleLanes;
+pub const sampleLanesRuntime = simd_impl.sampleLanesRuntime;
+pub const sampleLanesTri3 = simd_impl.sampleLanesTri3;
+pub const sampleLanesTri3Runtime = simd_impl.sampleLanesTri3Runtime;

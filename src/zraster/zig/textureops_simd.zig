@@ -30,10 +30,39 @@ const getLerpSampCoeffs = common.getLerpSampCoeffs;
 const getLerpSampCoeffsRuntime = common.getLerpSampCoeffsRuntime;
 const getPx = common.getPx;
 
-pub const sampleGeneric = common.sampleGeneric;
+pub const sampleScalar = common.sampleScalar;
 pub const sampleGreyscale = common.sampleGreyscale;
 
-fn v_getPxSIMD(
+// --------------------------------------------------------------------------
+// Strategy Map:
+//
+// PIPELINE ENTRY POINTS (Dispatched by Shader/Kernel):
+// │
+// ├── PATH 1: sampleScalar (Purely Scalar)
+// │   "Used when .simd = .off or as fallback for complex elements (quad4ibi)"
+// │   ├── getPx()           (Scalar Load)
+// │   ├── sampleLinear()    (Scalar Linear)
+// │   └── sampleConv()      (Scalar Convolution)
+// │
+// ├── PATH 2: sampleWide (Wide SIMD - Parallel over Pixels)
+// │   "Each lane is a unique pixel; processes N pixels simultaneously"
+// │   ├── getPxWide()       (Wide Load: N pixels)
+// │   ├── sampleLinearWide()(Wide Linear: N pixels)
+// │   └── sampleConvWide()  (Wide Convolution: N pixels)
+// │
+// └── PATH 3: sampleLanes (Lane SIMD - Serial over Pixels, SIMD over Taps)
+//     "Processes N lanes serially; math inside each lane uses SIMD for taps"
+//     └── sampleOneLane()   (Helper: Process 1 lane)
+//         ├── getPx()       (Scalar Load: 1 pixel)
+//         ├── sampleLinearOneLane() (Scalar Linear: 1 pixel)
+//         └── sampleConvOneLane()   (SIMD-Tap Convolution: 1 pixel)
+// --------------------------------------------------------------------------
+
+// --------------------------------------------------------------------------
+// Infrastructure & Helpers
+// --------------------------------------------------------------------------
+
+fn getPxWide(
     comptime CH: usize,
     texture: anytype,
     v_tex_x_i: VecSI,
@@ -80,7 +109,7 @@ fn v_getPxSIMD(
     return samp_res;
 }
 
-pub fn sampleLinearSIMD(
+pub fn sampleLinearWide(
     comptime CH: usize,
     texture: anytype,
     v_tex_x_i: VecSI,
@@ -88,20 +117,20 @@ pub fn sampleLinearSIMD(
     v_tex_x_frac: VecSF,
     v_tex_y_frac: VecSF,
 ) [CH]VecSF {
-    const v_p00 = v_getPxSIMD(CH, texture, v_tex_x_i, v_tex_y_i);
-    const v_p10 = v_getPxSIMD(
+    const v_p00 = getPxWide(CH, texture, v_tex_x_i, v_tex_y_i);
+    const v_p10 = getPxWide(
         CH,
         texture,
         v_tex_x_i + @as(VecSI, @splat(1)),
         v_tex_y_i,
     );
-    const v_p01 = v_getPxSIMD(
+    const v_p01 = getPxWide(
         CH,
         texture,
         v_tex_x_i,
         v_tex_y_i + @as(VecSI, @splat(1)),
     );
-    const v_p11 = v_getPxSIMD(
+    const v_p11 = getPxWide(
         CH,
         texture,
         v_tex_x_i + @as(VecSI, @splat(1)),
@@ -120,7 +149,7 @@ pub fn sampleLinearSIMD(
     return samp_res;
 }
 
-pub fn sampleLinearPerPixelSIMD(
+pub fn sampleLinearOneLane(
     comptime CH: usize,
     texture: anytype,
     tex_x_i: isize,
@@ -130,7 +159,7 @@ pub fn sampleLinearPerPixelSIMD(
 ) [CH]f64 {
     const samp_coeff_x = [2]f64{ 1.0 - tex_x_frac, tex_x_frac };
     const samp_coeff_y = [2]f64{ 1.0 - tex_y_frac, tex_y_frac };
-    return sample2DInnerSIMD(
+    return sampleConvOneLane(
         CH,
         2,
         texture,
@@ -141,7 +170,7 @@ pub fn sampleLinearPerPixelSIMD(
     );
 }
 
-fn sample2DInnerSIMD(
+fn sampleConvOneLane(
     comptime CH: usize,
     comptime TAP: usize,
     texture: anytype,
@@ -216,6 +245,62 @@ fn sample2DInnerSIMD(
     return samp_res;
 }
 
+fn sampleConvWide(
+    comptime CH: usize,
+    comptime TAP: usize,
+    texture: anytype,
+    v_tex_x_i: VecSI,
+    v_tex_y_i: VecSI,
+    tap_offset: isize,
+    v_samp_coeff_x: [TAP]VecSF,
+    v_samp_coeff_y: [TAP]VecSF,
+    v_samp_coeff_sum: VecSF,
+) [CH]VecSF {
+    var samp_res: [CH]VecSF = [_]VecSF{@splat(0.0)} ** CH;
+    var v_tap_samp_coeff_planes: [TAP * TAP]VecSF = undefined;
+
+    inline for (0..TAP) |jj| {
+        const v_samp_coeff_y_val = v_samp_coeff_y[jj];
+        inline for (0..TAP) |ii| {
+            const v_tap_samp_coeff = v_samp_coeff_x[ii] * v_samp_coeff_y_val;
+            v_tap_samp_coeff_planes[jj * TAP + ii] = v_tap_samp_coeff;
+        }
+    }
+
+    inline for (0..TAP) |jj| {
+        inline for (0..TAP) |ii| {
+            const v_tap_samp_coeff = v_tap_samp_coeff_planes[jj * TAP + ii];
+            const v_px_vecs = getPxWide(
+                CH,
+                texture,
+                v_tex_x_i + @as(
+                    VecSI,
+                    @splat(@as(isize, @intCast(ii)) - tap_offset),
+                ),
+                v_tex_y_i + @as(
+                    VecSI,
+                    @splat(@as(isize, @intCast(jj)) - tap_offset),
+                ),
+            );
+            inline for (0..CH) |ch| {
+                samp_res[ch] += v_px_vecs[ch] * v_tap_samp_coeff;
+            }
+        }
+    }
+
+    const v_splat_one: VecSF = @splat(1.0);
+    const v_inv_w_sum = @select(
+        f64,
+        @abs(v_samp_coeff_sum) < @as(VecSF, @splat(tol.texture.samp_coeff_sum)),
+        v_splat_one,
+        v_splat_one / v_samp_coeff_sum,
+    );
+    inline for (0..CH) |ch| {
+        samp_res[ch] *= v_inv_w_sum;
+    }
+    return samp_res;
+}
+
 fn v_cubicCoeffCatmullRomSIMD(v_x: VecSF) VecSF {
     const v_ax = @abs(v_x);
     const v_splat_one: VecSF = @splat(1.0);
@@ -278,7 +363,8 @@ fn v_cubicBSplineCoeffSIMD(v_x: VecSF) VecSF {
     const v_mask_outer = (v_r < v_splat_two) & !v_mask_inner;
 
     const v_w1 = (@as(VecSF, @splat(3.0)) * v_r * v_r * v_r -
-        @as(VecSF, @splat(6.0)) * v_r * v_r + @as(VecSF, @splat(4.0))) / @as(VecSF, @splat(6.0));
+        @as(VecSF, @splat(6.0)) * v_r * v_r +
+        @as(VecSF, @splat(4.0))) / @as(VecSF, @splat(6.0));
 
     const v_t = v_splat_two - v_r;
     const v_w2 = v_t * v_t * v_t / @as(VecSF, @splat(6.0));
@@ -309,13 +395,16 @@ fn v_quinticBSplineCoeffSIMD(v_x: VecSF) VecSF {
     const v_mask_middle = (v_r <= v_splat_two) & !v_mask_inner;
     const v_mask_outer = (v_r < v_splat_three) & !v_mask_inner & !v_mask_middle;
 
-    const v_w1 = ((((-@as(VecSF, @splat(1.0 / 12.0)) * v_r + @as(VecSF, @splat(1.0 / 4.0))) *
+    const v_w1 = ((((-@as(VecSF, @splat(1.0 / 12.0)) * v_r +
+        @as(VecSF, @splat(1.0 / 4.0))) *
         v_r + v_splat_zero) * v_r - @as(VecSF, @splat(1.0 / 2.0))) * v_r +
         v_splat_zero) * v_r + @as(VecSF, @splat(11.0 / 20.0));
 
     const v_t = v_r - v_splat_one;
-    const v_w2 = (((((@as(VecSF, @splat(1.0 / 24.0)) * v_t - @as(VecSF, @splat(1.0 / 6.0))) *
-        v_t + @as(VecSF, @splat(1.0 / 6.0))) * v_t + @as(VecSF, @splat(1.0 / 6.0))) * v_t -
+    const v_w2 = (((((@as(VecSF, @splat(1.0 / 24.0)) * v_t -
+        @as(VecSF, @splat(1.0 / 6.0))) *
+        v_t + @as(VecSF, @splat(1.0 / 6.0))) *
+        v_t + @as(VecSF, @splat(1.0 / 6.0))) * v_t -
         @as(VecSF, @splat(5.0 / 12.0))) * v_t + @as(VecSF, @splat(13.0 / 60.0)));
 
     const v_u = v_r - v_splat_two;
@@ -330,315 +419,11 @@ fn v_quinticBSplineCoeffSIMD(v_x: VecSF) VecSF {
     return samp_res;
 }
 
-pub fn sampleOverPixelsSIMD(
-    comptime CH: usize,
-    comptime config: TextureSampleConfig,
-    texture: anytype,
-    v_u: VecSF,
-    v_v: VecSF,
-) [CH]VecSF {
-    std.debug.assert(config.isValid());
-    const tex_cols_minus_1_f = @as(
-        f64,
-        @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
-    );
-    const tex_rows_minus_1_f = @as(
-        f64,
-        @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
-    );
+// --------------------------------------------------------------------------
+// Scalar Sampler (Helper)
+// --------------------------------------------------------------------------
 
-    const v_tex_x_f = v_u * @as(VecSF, @splat(tex_cols_minus_1_f));
-    const v_tex_y_f = v_v * @as(VecSF, @splat(tex_rows_minus_1_f));
-
-    var v_tex_x_i: [S]isize = undefined;
-    var v_tex_y_i: [S]isize = undefined;
-    const tex_x_f_arr: [S]f64 = v_tex_x_f;
-    const tex_y_f_arr: [S]f64 = v_tex_y_f;
-
-    for (0..S) |ii| {
-        v_tex_x_i[ii] = @as(isize, @intFromFloat(@floor(tex_x_f_arr[ii])));
-        v_tex_y_i[ii] = @as(isize, @intFromFloat(@floor(tex_y_f_arr[ii])));
-    }
-
-    const v_tex_x_frac = v_tex_x_f - @as(VecSF, @floatFromInt(@as(VecSI, v_tex_x_i)));
-    const v_tex_y_frac = v_tex_y_f - @as(VecSF, @floatFromInt(@as(VecSI, v_tex_y_i)));
-
-    return switch (config.sample) {
-        .nearest => v_getPxSIMD(
-            CH,
-            texture,
-            @as(VecSI, @intFromFloat(@round(v_tex_x_f))),
-            @as(VecSI, @intFromFloat(@round(v_tex_y_f))),
-        ),
-        .linear => sampleLinearSIMD(CH, texture, v_tex_x_i, v_tex_y_i, v_tex_x_frac, v_tex_y_frac),
-        .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => {
-            const TAP = 4;
-            const tap_offset = @divTrunc(@as(isize, @intCast(TAP)), 2) - 1;
-
-            var v_samp_coeff_x: [TAP]VecSF = undefined;
-            var v_samp_coeff_y: [TAP]VecSF = undefined;
-
-            const tex_x_frac_arr: [S]f64 = v_tex_x_frac;
-            const tex_y_frac_arr: [S]f64 = v_tex_y_frac;
-
-            const lut = switch (config.sample) {
-                .cubic_catmull_rom => catmull_rom_lut,
-                .cubic_mitchell_netravali => mitchell_netravali_lut,
-                .cubic_bspline => cubic_bspline_lut,
-                else => unreachable,
-            };
-
-            switch (config.mode) {
-                .direct => {
-                    const v_kernel: *const fn (VecSF) VecSF = switch (config.sample) {
-                        .cubic_catmull_rom => v_cubicCoeffCatmullRomSIMD,
-                        .cubic_mitchell_netravali => v_cubicCoeffMitchellNetravaliSIMD,
-                        .cubic_bspline => v_cubicBSplineCoeffSIMD,
-                        else => unreachable,
-                    };
-                    v_samp_coeff_x[0] = v_kernel(v_tex_x_frac + @as(VecSF, @splat(1.0)));
-                    v_samp_coeff_x[1] = v_kernel(v_tex_x_frac);
-                    v_samp_coeff_x[2] = v_kernel(v_tex_x_frac - @as(VecSF, @splat(1.0)));
-                    v_samp_coeff_x[3] = v_kernel(v_tex_x_frac - @as(VecSF, @splat(2.0)));
-
-                    v_samp_coeff_y[0] = v_kernel(v_tex_y_frac + @as(VecSF, @splat(1.0)));
-                    v_samp_coeff_y[1] = v_kernel(v_tex_y_frac);
-                    v_samp_coeff_y[2] = v_kernel(v_tex_y_frac - @as(VecSF, @splat(1.0)));
-                    v_samp_coeff_y[3] = v_kernel(v_tex_y_frac - @as(VecSF, @splat(2.0)));
-                },
-                .lut => {
-                    var samp_coeff_x_arr: [4][S]f64 = undefined;
-                    var samp_coeff_y_arr: [4][S]f64 = undefined;
-                    for (0..S) |ii| {
-                        const ix = @as(usize, @intFromFloat(
-                            tex_x_frac_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
-                        ));
-                        const iy = @as(usize, @intFromFloat(
-                            tex_y_frac_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
-                        ));
-                        inline for (0..4) |kk| {
-                            samp_coeff_x_arr[kk][ii] = lut[ix][kk];
-                            samp_coeff_y_arr[kk][ii] = lut[iy][kk];
-                        }
-                    }
-                    inline for (0..4) |kk| {
-                        v_samp_coeff_x[kk] = samp_coeff_x_arr[kk];
-                        v_samp_coeff_y[kk] = samp_coeff_y_arr[kk];
-                    }
-                },
-                .lut_lerp => {
-                    var samp_coeff_x_arr: [4][S]f64 = undefined;
-                    var samp_coeff_y_arr: [4][S]f64 = undefined;
-                    for (0..S) |ii| {
-                        const samp_coeff_x = getLerpSampCoeffs(
-                            4,
-                            lut,
-                            tex_x_frac_arr[ii],
-                        );
-                        const samp_coeff_y = getLerpSampCoeffs(
-                            4,
-                            lut,
-                            tex_y_frac_arr[ii],
-                        );
-                        inline for (0..4) |kk| {
-                            samp_coeff_x_arr[kk][ii] = samp_coeff_x[kk];
-                            samp_coeff_y_arr[kk][ii] = samp_coeff_y[kk];
-                        }
-                    }
-                    inline for (0..4) |kk| {
-                        v_samp_coeff_x[kk] = samp_coeff_x_arr[kk];
-                        v_samp_coeff_y[kk] = samp_coeff_y_arr[kk];
-                    }
-                },
-            }
-
-            var samp_res: [CH]VecSF = [_]VecSF{@splat(0.0)} ** CH;
-            var v_samp_coeff_sum: VecSF = @splat(0.0);
-
-            var v_tap_samp_coeff_planes: [TAP * TAP]VecSF = undefined;
-            inline for (0..TAP) |jj| {
-                const v_samp_coeff_y_val = v_samp_coeff_y[jj];
-                inline for (0..TAP) |ii| {
-                    const v_tap_samp_coeff = v_samp_coeff_x[ii] * v_samp_coeff_y_val;
-                    v_tap_samp_coeff_planes[jj * TAP + ii] = v_tap_samp_coeff;
-                    v_samp_coeff_sum += v_tap_samp_coeff;
-                }
-            }
-
-            inline for (0..TAP) |jj| {
-                inline for (0..TAP) |ii| {
-                    const v_tap_samp_coeff = v_tap_samp_coeff_planes[jj * TAP + ii];
-                    const v_px_vecs = v_getPxSIMD(
-                        CH,
-                        texture,
-                        v_tex_x_i + @as(
-                            VecSI,
-                            @splat(@as(isize, @intCast(ii)) - tap_offset),
-                        ),
-                        v_tex_y_i + @as(
-                            VecSI,
-                            @splat(@as(isize, @intCast(jj)) - tap_offset),
-                        ),
-                    );
-
-                    inline for (0..CH) |ch| {
-                        samp_res[ch] += v_px_vecs[ch] * v_tap_samp_coeff;
-                    }
-                }
-            }
-
-            const v_splat_one: VecSF = @splat(1.0);
-            const v_inv_w_sum = @select(
-                f64,
-                @abs(v_samp_coeff_sum) < @as(
-                    VecSF,
-                    @splat(tol.texture.samp_coeff_sum),
-                ),
-                v_splat_one,
-                v_splat_one / v_samp_coeff_sum,
-            );
-            inline for (0..CH) |ch| {
-                samp_res[ch] *= v_inv_w_sum;
-            }
-            return samp_res;
-        },
-        .lanczos3, .quintic_bspline => {
-            const TAP = 6;
-            const tap_offset = @divTrunc(@as(isize, @intCast(TAP)), 2) - 1;
-
-            var v_samp_coeff_x: [TAP]VecSF = undefined;
-            var v_samp_coeff_y: [TAP]VecSF = undefined;
-
-            const tex_x_frac_arr: [S]f64 = v_tex_x_frac;
-            const tex_y_frac_arr: [S]f64 = v_tex_y_frac;
-
-            const lut = switch (config.sample) {
-                .lanczos3 => lanczos3_lut,
-                .quintic_bspline => quintic_bspline_lut,
-                else => unreachable,
-            };
-
-            switch (config.mode) {
-                .direct => {
-                    const v_kernel: *const fn (VecSF) VecSF = switch (config.sample) {
-                        .lanczos3 => v_lanczos3CoeffSIMD,
-                        .quintic_bspline => v_quinticBSplineCoeffSIMD,
-                        else => unreachable,
-                    };
-                    v_samp_coeff_x[0] = v_kernel(v_tex_x_frac + @as(VecSF, @splat(2.0)));
-                    v_samp_coeff_x[1] = v_kernel(v_tex_x_frac + @as(VecSF, @splat(1.0)));
-                    v_samp_coeff_x[2] = v_kernel(v_tex_x_frac);
-                    v_samp_coeff_x[3] = v_kernel(v_tex_x_frac - @as(VecSF, @splat(1.0)));
-                    v_samp_coeff_x[4] = v_kernel(v_tex_x_frac - @as(VecSF, @splat(2.0)));
-                    v_samp_coeff_x[5] = v_kernel(v_tex_x_frac - @as(VecSF, @splat(3.0)));
-
-                    v_samp_coeff_y[0] = v_kernel(v_tex_y_frac + @as(VecSF, @splat(2.0)));
-                    v_samp_coeff_y[1] = v_kernel(v_tex_y_frac + @as(VecSF, @splat(1.0)));
-                    v_samp_coeff_y[2] = v_kernel(v_tex_y_frac);
-                    v_samp_coeff_y[3] = v_kernel(v_tex_y_frac - @as(VecSF, @splat(1.0)));
-                    v_samp_coeff_y[4] = v_kernel(v_tex_y_frac - @as(VecSF, @splat(2.0)));
-                    v_samp_coeff_y[5] = v_kernel(v_tex_y_frac - @as(VecSF, @splat(3.0)));
-                },
-                .lut => {
-                    var samp_coeff_x_arr: [6][S]f64 = undefined;
-                    var samp_coeff_y_arr: [6][S]f64 = undefined;
-                    for (0..S) |ii| {
-                        const ix = @as(usize, @intFromFloat(
-                            tex_x_frac_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
-                        ));
-                        const iy = @as(usize, @intFromFloat(
-                            tex_y_frac_arr[ii] * @as(f64, @floatFromInt(lut_size - 1)),
-                        ));
-                        inline for (0..6) |kk| {
-                            samp_coeff_x_arr[kk][ii] = lut[ix][kk];
-                            samp_coeff_y_arr[kk][ii] = lut[iy][kk];
-                        }
-                    }
-                    inline for (0..6) |kk| {
-                        v_samp_coeff_x[kk] = samp_coeff_x_arr[kk];
-                        v_samp_coeff_y[kk] = samp_coeff_y_arr[kk];
-                    }
-                },
-                .lut_lerp => {
-                    var samp_coeff_x_arr: [6][S]f64 = undefined;
-                    var samp_coeff_y_arr: [6][S]f64 = undefined;
-                    for (0..S) |ii| {
-                        const samp_coeff_x = getLerpSampCoeffs(
-                            6,
-                            lut,
-                            tex_x_frac_arr[ii],
-                        );
-                        const samp_coeff_y = getLerpSampCoeffs(
-                            6,
-                            lut,
-                            tex_y_frac_arr[ii],
-                        );
-                        inline for (0..6) |kk| {
-                            samp_coeff_x_arr[kk][ii] = samp_coeff_x[kk];
-                            samp_coeff_y_arr[kk][ii] = samp_coeff_y[kk];
-                        }
-                    }
-                    inline for (0..6) |kk| {
-                        v_samp_coeff_x[kk] = samp_coeff_x_arr[kk];
-                        v_samp_coeff_y[kk] = samp_coeff_y_arr[kk];
-                    }
-                },
-            }
-
-            var samp_res: [CH]VecSF = [_]VecSF{@splat(0.0)} ** CH;
-            var v_samp_coeff_sum: VecSF = @splat(0.0);
-
-            var v_tap_samp_coeff_planes: [TAP * TAP]VecSF = undefined;
-            inline for (0..TAP) |jj| {
-                const v_samp_coeff_y_val = v_samp_coeff_y[jj];
-                inline for (0..TAP) |ii| {
-                    const v_tap_samp_coeff = v_samp_coeff_x[ii] * v_samp_coeff_y_val;
-                    v_tap_samp_coeff_planes[jj * TAP + ii] = v_tap_samp_coeff;
-                    v_samp_coeff_sum += v_tap_samp_coeff;
-                }
-            }
-
-            inline for (0..TAP) |jj| {
-                inline for (0..TAP) |ii| {
-                    const v_tap_samp_coeff = v_tap_samp_coeff_planes[jj * TAP + ii];
-                    const v_px_vecs = v_getPxSIMD(
-                        CH,
-                        texture,
-                        v_tex_x_i + @as(
-                            VecSI,
-                            @splat(@as(isize, @intCast(ii)) - tap_offset),
-                        ),
-                        v_tex_y_i + @as(
-                            VecSI,
-                            @splat(@as(isize, @intCast(jj)) - tap_offset),
-                        ),
-                    );
-
-                    inline for (0..CH) |ch| {
-                        samp_res[ch] += v_px_vecs[ch] * v_tap_samp_coeff;
-                    }
-                }
-            }
-
-            const v_splat_one: VecSF = @splat(1.0);
-            const v_inv_w_sum = @select(
-                f64,
-                @abs(v_samp_coeff_sum) < @as(
-                    VecSF,
-                    @splat(tol.texture.samp_coeff_sum),
-                ),
-                v_splat_one,
-                v_splat_one / v_samp_coeff_sum,
-            );
-            inline for (0..CH) |ch| {
-                samp_res[ch] *= v_inv_w_sum;
-            }
-            return samp_res;
-        },
-    };
-}
-
-pub fn samplePerPixelInnerSIMD(
+pub fn sampleOneLane(
     comptime CH: usize,
     comptime config: TextureSampleConfig,
     texture: anytype,
@@ -670,7 +455,14 @@ pub fn samplePerPixelInnerSIMD(
             @as(isize, @intFromFloat(@round(xf))),
             @as(isize, @intFromFloat(@round(yf))),
         ),
-        .linear => sampleLinearPerPixelSIMD(CH, texture, tex_x_i, tex_y_i, tex_x_frac, tex_y_frac),
+        .linear => sampleLinearOneLane(
+            CH,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
         .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => {
             const TAP = 4;
             const coeff_fun = switch (config.sample) {
@@ -699,18 +491,42 @@ pub fn samplePerPixelInnerSIMD(
                         coeff_fun(tex_y_frac - 1),
                         coeff_fun(tex_y_frac - 2),
                     };
-                    break :blk sample2DInnerSIMD(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
+                    break :blk sampleConvOneLane(
+                        CH,
+                        TAP,
+                        texture,
+                        tex_x_i,
+                        tex_y_i,
+                        sx,
+                        sy,
+                    );
                 },
                 .lut => blk: {
                     const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
                     const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
                     const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
-                    break :blk sample2DInnerSIMD(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
+                    break :blk sampleConvOneLane(
+                        CH,
+                        TAP,
+                        texture,
+                        tex_x_i,
+                        tex_y_i,
+                        lut[idx_x],
+                        lut[idx_y],
+                    );
                 },
                 .lut_lerp => blk: {
                     const sx = getLerpSampCoeffs(TAP, lut, tex_x_frac);
                     const sy = getLerpSampCoeffs(TAP, lut, tex_y_frac);
-                    break :blk sample2DInnerSIMD(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
+                    break :blk sampleConvOneLane(
+                        CH,
+                        TAP,
+                        texture,
+                        tex_x_i,
+                        tex_y_i,
+                        sx,
+                        sy,
+                    );
                 },
             };
         },
@@ -744,25 +560,53 @@ pub fn samplePerPixelInnerSIMD(
                         coeff_fun(tex_y_frac - 2),
                         coeff_fun(tex_y_frac - 3),
                     };
-                    break :blk sample2DInnerSIMD(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
+                    break :blk sampleConvOneLane(
+                        CH,
+                        TAP,
+                        texture,
+                        tex_x_i,
+                        tex_y_i,
+                        sx,
+                        sy,
+                    );
                 },
                 .lut => blk: {
                     const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
                     const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
                     const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
-                    break :blk sample2DInnerSIMD(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
+                    break :blk sampleConvOneLane(
+                        CH,
+                        TAP,
+                        texture,
+                        tex_x_i,
+                        tex_y_i,
+                        lut[idx_x],
+                        lut[idx_y],
+                    );
                 },
                 .lut_lerp => blk: {
                     const sx = getLerpSampCoeffs(TAP, lut, tex_x_frac);
                     const sy = getLerpSampCoeffs(TAP, lut, tex_y_frac);
-                    break :blk sample2DInnerSIMD(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
+                    break :blk sampleConvOneLane(
+                        CH,
+                        TAP,
+                        texture,
+                        tex_x_i,
+                        tex_y_i,
+                        sx,
+                        sy,
+                    );
                 },
             };
         },
     };
 }
 
-pub fn samplePerLaneInnerSIMD(
+// --------------------------------------------------------------------------
+// Sampling Strategies
+// --------------------------------------------------------------------------
+
+pub fn sampleLanes(
     comptime CH: usize,
     comptime config: TextureSampleConfig,
     v_mask_active: VecSB,
@@ -777,7 +621,7 @@ pub fn samplePerLaneInnerSIMD(
 
     for (0..S) |ii| {
         if (mask_arr[ii]) {
-            const sampled = samplePerPixelInnerSIMD(
+            const sampled = sampleOneLane(
                 CH,
                 config,
                 texture,
@@ -798,7 +642,7 @@ pub fn samplePerLaneInnerSIMD(
     return samp_res;
 }
 
-pub fn samplePerLaneTri3SIMD(
+pub fn sampleLanesTri3(
     comptime CH: usize,
     comptime config: TextureSampleConfig,
     v_mask_active: VecSB,
@@ -866,7 +710,7 @@ pub fn samplePerLaneTri3SIMD(
 
     for (0..active_count) |ii| {
         const lane = active_lanes[ii];
-        const sampled = samplePerPixelInnerSIMD(
+        const sampled = sampleOneLane(
             CH,
             config,
             texture,
@@ -886,7 +730,609 @@ pub fn samplePerLaneTri3SIMD(
     return samp_res;
 }
 
-fn sampleOverPixelsSIMDRuntimeImpl(
+pub fn sampleWide(
+    comptime CH: usize,
+    comptime config: TextureSampleConfig,
+    texture: anytype,
+    v_u: VecSF,
+    v_v: VecSF,
+) [CH]VecSF {
+    std.debug.assert(config.isValid());
+    const tex_cols_minus_1_f = @as(
+        f64,
+        @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
+    );
+    const tex_rows_minus_1_f = @as(
+        f64,
+        @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
+    );
+
+    const v_tex_x_f = v_u * @as(VecSF, @splat(tex_cols_minus_1_f));
+    const v_tex_y_f = v_v * @as(VecSF, @splat(tex_rows_minus_1_f));
+
+    var v_tex_x_i: [S]isize = undefined;
+    var v_tex_y_i: [S]isize = undefined;
+    const tex_x_f_arr: [S]f64 = v_tex_x_f;
+    const tex_y_f_arr: [S]f64 = v_tex_y_f;
+
+    for (0..S) |ii| {
+        v_tex_x_i[ii] = @as(isize, @intFromFloat(@floor(tex_x_f_arr[ii])));
+        v_tex_y_i[ii] = @as(isize, @intFromFloat(@floor(tex_y_f_arr[ii])));
+    }
+
+    const v_tex_x_frac = v_tex_x_f - @as(VecSF, @floatFromInt(@as(VecSI, v_tex_x_i)));
+    const v_tex_y_frac = v_tex_y_f - @as(VecSF, @floatFromInt(@as(VecSI, v_tex_y_i)));
+
+    return switch (config.sample) {
+        .nearest => getPxWide(
+            CH,
+            texture,
+            @as(VecSI, @intFromFloat(@round(v_tex_x_f))),
+            @as(VecSI, @intFromFloat(@round(v_tex_y_f))),
+        ),
+        .linear => sampleLinearWide(
+            CH,
+            texture,
+            v_tex_x_i,
+            v_tex_y_i,
+            v_tex_x_frac,
+            v_tex_y_frac,
+        ),
+        .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => {
+            const TAP = 4;
+            const tap_offset = @divTrunc(@as(isize, @intCast(TAP)), 2) - 1;
+
+            const tex_x_frac_arr: [S]f64 = v_tex_x_frac;
+            const tex_y_frac_arr: [S]f64 = v_tex_y_frac;
+
+            const lut = switch (config.sample) {
+                .cubic_catmull_rom => catmull_rom_lut,
+                .cubic_mitchell_netravali => mitchell_netravali_lut,
+                .cubic_bspline => cubic_bspline_lut,
+                else => unreachable,
+            };
+
+            var v_samp_coeff_sum: VecSF = @splat(0.0);
+            const v_samp_coeffs = switch (config.mode) {
+                .direct => blk: {
+                    const v_kernel: *const fn (VecSF) VecSF = switch (config.sample) {
+                        .cubic_catmull_rom => v_cubicCoeffCatmullRomSIMD,
+                        .cubic_mitchell_netravali => v_cubicCoeffMitchellNetravaliSIMD,
+                        .cubic_bspline => v_cubicBSplineCoeffSIMD,
+                        else => unreachable,
+                    };
+                    const sx = [TAP]VecSF{
+                        v_kernel(v_tex_x_frac + @as(VecSF, @splat(1.0))),
+                        v_kernel(v_tex_x_frac),
+                        v_kernel(v_tex_x_frac - @as(VecSF, @splat(1.0))),
+                        v_kernel(v_tex_x_frac - @as(VecSF, @splat(2.0))),
+                    };
+                    const sy = [TAP]VecSF{
+                        v_kernel(v_tex_y_frac + @as(VecSF, @splat(1.0))),
+                        v_kernel(v_tex_y_frac),
+                        v_kernel(v_tex_y_frac - @as(VecSF, @splat(1.0))),
+                        v_kernel(v_tex_y_frac - @as(VecSF, @splat(2.0))),
+                    };
+                    inline for (0..TAP) |jj| {
+                        inline for (0..TAP) |ii| {
+                            v_samp_coeff_sum += sx[ii] * sy[jj];
+                        }
+                    }
+                    break :blk [2][TAP]VecSF{ sx, sy };
+                },
+                .lut => blk: {
+                    var sx_arr: [4][S]f64 = undefined;
+                    var sy_arr: [4][S]f64 = undefined;
+                    for (0..S) |ii| {
+                        const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
+                        const ix = @as(
+                            usize,
+                            @intFromFloat(tex_x_frac_arr[ii] * lut_size_f),
+                        );
+                        const iy = @as(
+                            usize,
+                            @intFromFloat(tex_y_frac_arr[ii] * lut_size_f),
+                        );
+                        inline for (0..4) |kk| {
+                            sx_arr[kk][ii] = lut[ix][kk];
+                            sy_arr[kk][ii] = lut[iy][kk];
+                            v_samp_coeff_sum[ii] += lut[ix][kk] * lut[iy][0]; // Simplified sum for LUT
+                        }
+                    }
+                    // Proper sum for LUT modes
+                    v_samp_coeff_sum = @splat(0.0);
+                    for (0..S) |ii| {
+                        var sum: f64 = 0.0;
+                        const ix = @as(usize, @intFromFloat(tex_x_frac_arr[ii] * @as(f64, @floatFromInt(lut_size - 1))));
+                        const iy = @as(usize, @intFromFloat(tex_y_frac_arr[ii] * @as(f64, @floatFromInt(lut_size - 1))));
+                        for (0..TAP) |jj| {
+                            for (0..TAP) |kk| {
+                                sum += lut[ix][kk] * lut[iy][jj];
+                            }
+                        }
+                        v_samp_coeff_sum[ii] = sum;
+                    }
+                    var sx: [4]VecSF = undefined;
+                    var sy: [4]VecSF = undefined;
+                    inline for (0..4) |kk| {
+                        sx[kk] = sx_arr[kk];
+                        sy[kk] = sy_arr[kk];
+                    }
+                    break :blk [2][TAP]VecSF{ sx, sy };
+                },
+                .lut_lerp => blk: {
+                    var sx_arr: [4][S]f64 = undefined;
+                    var sy_arr: [4][S]f64 = undefined;
+                    v_samp_coeff_sum = @splat(0.0);
+                    for (0..S) |ii| {
+                        const sxx = getLerpSampCoeffs(4, lut, tex_x_frac_arr[ii]);
+                        const syy = getLerpSampCoeffs(4, lut, tex_y_frac_arr[ii]);
+                        var sum: f64 = 0.0;
+                        inline for (0..4) |kk| {
+                            sx_arr[kk][ii] = sxx[kk];
+                            sy_arr[kk][ii] = syy[kk];
+                        }
+                        for (0..4) |jj| {
+                            for (0..4) |kk| {
+                                sum += sxx[kk] * syy[jj];
+                            }
+                        }
+                        v_samp_coeff_sum[ii] = sum;
+                    }
+                    var sx: [4]VecSF = undefined;
+                    var sy: [4]VecSF = undefined;
+                    inline for (0..4) |kk| {
+                        sx[kk] = sx_arr[kk];
+                        sy[kk] = sy_arr[kk];
+                    }
+                    break :blk [2][TAP]VecSF{ sx, sy };
+                },
+            };
+
+            return sampleConvWide(
+                CH,
+                TAP,
+                texture,
+                v_tex_x_i,
+                v_tex_y_i,
+                tap_offset,
+                v_samp_coeffs[0],
+                v_samp_coeffs[1],
+                v_samp_coeff_sum,
+            );
+        },
+        .lanczos3, .quintic_bspline => {
+            const TAP = 6;
+            const tap_offset = @divTrunc(@as(isize, @intCast(TAP)), 2) - 1;
+
+            const tex_x_frac_arr: [S]f64 = v_tex_x_frac;
+            const tex_y_frac_arr: [S]f64 = v_tex_y_frac;
+
+            const lut = switch (config.sample) {
+                .lanczos3 => lanczos3_lut,
+                .quintic_bspline => quintic_bspline_lut,
+                else => unreachable,
+            };
+
+            var v_samp_coeff_sum: VecSF = @splat(0.0);
+            const v_samp_coeffs = switch (config.mode) {
+                .direct => blk: {
+                    const v_kernel: *const fn (VecSF) VecSF = switch (config.sample) {
+                        .lanczos3 => v_lanczos3CoeffSIMD,
+                        .quintic_bspline => v_quinticBSplineCoeffSIMD,
+                        else => unreachable,
+                    };
+                    const sx = [TAP]VecSF{
+                        v_kernel(v_tex_x_frac + @as(VecSF, @splat(2.0))),
+                        v_kernel(v_tex_x_frac + @as(VecSF, @splat(1.0))),
+                        v_kernel(v_tex_x_frac),
+                        v_kernel(v_tex_x_frac - @as(VecSF, @splat(1.0))),
+                        v_kernel(v_tex_x_frac - @as(VecSF, @splat(2.0))),
+                        v_kernel(v_tex_x_frac - @as(VecSF, @splat(3.0))),
+                    };
+                    const sy = [TAP]VecSF{
+                        v_kernel(v_tex_y_frac + @as(VecSF, @splat(2.0))),
+                        v_kernel(v_tex_y_frac + @as(VecSF, @splat(1.0))),
+                        v_kernel(v_tex_y_frac),
+                        v_kernel(v_tex_y_frac - @as(VecSF, @splat(1.0))),
+                        v_kernel(v_tex_y_frac - @as(VecSF, @splat(2.0))),
+                        v_kernel(v_tex_y_frac - @as(VecSF, @splat(3.0))),
+                    };
+                    inline for (0..TAP) |jj| {
+                        inline for (0..TAP) |ii| {
+                            v_samp_coeff_sum += sx[ii] * sy[jj];
+                        }
+                    }
+                    break :blk [2][TAP]VecSF{ sx, sy };
+                },
+                .lut => blk: {
+                    var sx_arr: [6][S]f64 = undefined;
+                    var sy_arr: [6][S]f64 = undefined;
+                    v_samp_coeff_sum = @splat(0.0);
+                    for (0..S) |ii| {
+                        const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
+                        const ix = @as(
+                            usize,
+                            @intFromFloat(tex_x_frac_arr[ii] * lut_size_f),
+                        );
+                        const iy = @as(
+                            usize,
+                            @intFromFloat(tex_y_frac_arr[ii] * lut_size_f),
+                        );
+                        var sum: f64 = 0.0;
+                        inline for (0..6) |kk| {
+                            sx_arr[kk][ii] = lut[ix][kk];
+                            sy_arr[kk][ii] = lut[iy][kk];
+                        }
+                        for (0..6) |jj| {
+                            for (0..6) |kk| {
+                                sum += lut[ix][kk] * lut[iy][jj];
+                            }
+                        }
+                        v_samp_coeff_sum[ii] = sum;
+                    }
+                    var sx: [TAP]VecSF = undefined;
+                    var sy: [TAP]VecSF = undefined;
+                    inline for (0..TAP) |kk| {
+                        sx[kk] = sx_arr[kk];
+                        sy[kk] = sy_arr[kk];
+                    }
+                    break :blk [2][TAP]VecSF{ sx, sy };
+                },
+                .lut_lerp => blk: {
+                    var sx_arr: [6][S]f64 = undefined;
+                    var sy_arr: [6][S]f64 = undefined;
+                    v_samp_coeff_sum = @splat(0.0);
+                    for (0..S) |ii| {
+                        const sxx = getLerpSampCoeffs(6, lut, tex_x_frac_arr[ii]);
+                        const syy = getLerpSampCoeffs(6, lut, tex_y_frac_arr[ii]);
+                        var sum: f64 = 0.0;
+                        inline for (0..6) |kk| {
+                            sx_arr[kk][ii] = sxx[kk];
+                            sy_arr[kk][ii] = syy[kk];
+                        }
+                        for (0..6) |jj| {
+                            for (0..6) |kk| {
+                                sum += sxx[kk] * syy[jj];
+                            }
+                        }
+                        v_samp_coeff_sum[ii] = sum;
+                    }
+                    var sx: [TAP]VecSF = undefined;
+                    var sy: [TAP]VecSF = undefined;
+                    inline for (0..TAP) |kk| {
+                        sx[kk] = sx_arr[kk];
+                        sy[kk] = sy_arr[kk];
+                    }
+                    break :blk [2][TAP]VecSF{ sx, sy };
+                },
+            };
+
+            return sampleConvWide(
+                CH,
+                TAP,
+                texture,
+                v_tex_x_i,
+                v_tex_y_i,
+                tap_offset,
+                v_samp_coeffs[0],
+                v_samp_coeffs[1],
+                v_samp_coeff_sum,
+            );
+        },
+    };
+}
+
+// --------------------------------------------------------------------------
+// Dispatch & Runtime Boilerplate
+// --------------------------------------------------------------------------
+
+fn sampleOneLaneRuntimeImpl(
+    comptime CH: usize,
+    config: TextureSampleConfig,
+    texture: anytype,
+    u: f64,
+    v: f64,
+) [CH]f64 {
+    std.debug.assert(config.isValid());
+
+    const tex_cols_minus_1_f = @as(
+        f64,
+        @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
+    );
+    const tex_rows_minus_1_f = @as(
+        f64,
+        @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
+    );
+
+    const xf = u * tex_cols_minus_1_f;
+    const yf = v * tex_rows_minus_1_f;
+
+    const tex_x_i = @as(isize, @intFromFloat(@floor(xf)));
+    const tex_y_i = @as(isize, @intFromFloat(@floor(yf)));
+
+    const tex_x_frac = xf - @as(f64, @floatFromInt(tex_x_i));
+    const tex_y_frac = yf - @as(f64, @floatFromInt(tex_y_i));
+
+    return switch (config.sample) {
+        .nearest => getPx(
+            CH,
+            texture,
+            @as(isize, @intFromFloat(@round(xf))),
+            @as(isize, @intFromFloat(@round(yf))),
+        ),
+        .linear => sampleLinearOneLane(
+            CH,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => {
+            const TAP = 4;
+            const coeff_fun: *const fn (f64) f64 = switch (config.sample) {
+                .cubic_catmull_rom => cubicCoeffCatmullRom,
+                .cubic_mitchell_netravali => cubicCoeffMitchellNetravali,
+                .cubic_bspline => cubicBSplineCoeff,
+                else => unreachable,
+            };
+            const lut = switch (config.sample) {
+                .cubic_catmull_rom => catmull_rom_lut,
+                .cubic_mitchell_netravali => mitchell_netravali_lut,
+                .cubic_bspline => cubic_bspline_lut,
+                else => unreachable,
+            };
+            return switch (config.mode) {
+                .direct => blk: {
+                    const sx = .{
+                        coeff_fun(tex_x_frac + 1),
+                        coeff_fun(tex_x_frac),
+                        coeff_fun(tex_x_frac - 1),
+                        coeff_fun(tex_x_frac - 2),
+                    };
+                    const sy = .{
+                        coeff_fun(tex_y_frac + 1),
+                        coeff_fun(tex_y_frac),
+                        coeff_fun(tex_y_frac - 1),
+                        coeff_fun(tex_y_frac - 2),
+                    };
+                    break :blk sampleConvOneLane(
+                        CH,
+                        TAP,
+                        texture,
+                        tex_x_i,
+                        tex_y_i,
+                        sx,
+                        sy,
+                    );
+                },
+                .lut => blk: {
+                    const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
+                    const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
+                    const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
+                    break :blk sampleConvOneLane(
+                        CH,
+                        TAP,
+                        texture,
+                        tex_x_i,
+                        tex_y_i,
+                        lut[idx_x],
+                        lut[idx_y],
+                    );
+                },
+                .lut_lerp => blk: {
+                    const sx = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
+                    const sy = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
+                    break :blk sampleConvOneLane(
+                        CH,
+                        TAP,
+                        texture,
+                        tex_x_i,
+                        tex_y_i,
+                        sx,
+                        sy,
+                    );
+                },
+            };
+        },
+        .lanczos3, .quintic_bspline => {
+            const TAP = 6;
+            const coeff_fun: *const fn (f64) f64 = switch (config.sample) {
+                .lanczos3 => lanczos3Coeff,
+                .quintic_bspline => quinticBSplineCoeff,
+                else => unreachable,
+            };
+            const lut = switch (config.sample) {
+                .lanczos3 => lanczos3_lut,
+                .quintic_bspline => quintic_bspline_lut,
+                else => unreachable,
+            };
+            return switch (config.mode) {
+                .direct => blk: {
+                    const sx = .{
+                        coeff_fun(tex_x_frac + 2),
+                        coeff_fun(tex_x_frac + 1),
+                        coeff_fun(tex_x_frac),
+                        coeff_fun(tex_x_frac - 1),
+                        coeff_fun(tex_x_frac - 2),
+                        coeff_fun(tex_x_frac - 3),
+                    };
+                    const sy = .{
+                        coeff_fun(tex_y_frac + 2),
+                        coeff_fun(tex_y_frac + 1),
+                        coeff_fun(tex_y_frac),
+                        coeff_fun(tex_y_frac - 1),
+                        coeff_fun(tex_y_frac - 2),
+                        coeff_fun(tex_y_frac - 3),
+                    };
+                    break :blk sampleConvOneLane(
+                        CH,
+                        TAP,
+                        texture,
+                        tex_x_i,
+                        tex_y_i,
+                        sx,
+                        sy,
+                    );
+                },
+                .lut => blk: {
+                    const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
+                    const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
+                    const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
+                    break :blk sampleConvOneLane(
+                        CH,
+                        TAP,
+                        texture,
+                        tex_x_i,
+                        tex_y_i,
+                        lut[idx_x],
+                        lut[idx_y],
+                    );
+                },
+                .lut_lerp => blk: {
+                    const sx = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
+                    const sy = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
+                    break :blk sampleConvOneLane(
+                        CH,
+                        TAP,
+                        texture,
+                        tex_x_i,
+                        tex_y_i,
+                        sx,
+                        sy,
+                    );
+                },
+            };
+        },
+    };
+}
+
+fn sampleLanesRuntimeImpl(
+    comptime CH: usize,
+    config: TextureSampleConfig,
+    v_mask_active: VecSB,
+    texture: anytype,
+    v_u: VecSF,
+    v_v: VecSF,
+) [CH]VecSF {
+    var samp_res_arr: [CH][S]f64 = [_][S]f64{[_]f64{0.0} ** S} ** CH;
+    const mask_arr: [S]bool = v_mask_active;
+    const u_arr: [S]f64 = v_u;
+    const v_arr: [S]f64 = v_v;
+
+    for (0..S) |ii| {
+        if (mask_arr[ii]) {
+            const sampled = sampleOneLaneRuntimeImpl(
+                CH,
+                config,
+                texture,
+                u_arr[ii],
+                v_arr[ii],
+            );
+            inline for (0..CH) |ch| {
+                samp_res_arr[ch][ii] = sampled[ch];
+            }
+        }
+    }
+
+    var samp_res: [CH]VecSF = undefined;
+    inline for (0..CH) |ch| {
+        samp_res[ch] = samp_res_arr[ch];
+    }
+
+    return samp_res;
+}
+
+fn sampleLanesTri3RuntimeImpl(
+    comptime CH: usize,
+    config: TextureSampleConfig,
+    v_mask_active: VecSB,
+    texture: anytype,
+    v_u: VecSF,
+    v_v: VecSF,
+) [CH]VecSF {
+    var samp_res_arr: [CH][S]f64 = [_][S]f64{[_]f64{0.0} ** S} ** CH;
+    const mask_arr: [S]bool = v_mask_active;
+    const u_arr: [S]f64 = v_u;
+    const v_arr: [S]f64 = v_v;
+
+    var active_lanes: [S]usize = undefined;
+    var active_count: usize = 0;
+
+    const tex_cols_minus_1_f = @as(
+        f64,
+        @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
+    );
+    const tex_rows_minus_1_f = @as(
+        f64,
+        @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
+    );
+    const tex_cols_minus_1_i = @as(isize, @intCast(texture.cols_num)) - 1;
+    const tex_rows_minus_1_i = @as(isize, @intCast(texture.rows_num)) - 1;
+
+    for (0..S) |ii| {
+        if (mask_arr[ii]) {
+            active_lanes[active_count] = ii;
+            active_count += 1;
+        }
+    }
+
+    if (active_count > 1) {
+        var lane_keys: [8]u64 = undefined;
+        for (0..active_count) |ii| {
+            const lane = active_lanes[ii];
+            const xf = u_arr[lane] * tex_cols_minus_1_f;
+            const yf = v_arr[lane] * tex_rows_minus_1_f;
+            const tex_x_i = @as(isize, @intFromFloat(@floor(xf)));
+            const tex_y_i = @as(isize, @intFromFloat(@floor(yf)));
+            const x_key = @as(
+                usize,
+                @intCast(@max(@as(isize, 0), @min(tex_x_i, tex_cols_minus_1_i))),
+            );
+            const y_key = @as(
+                usize,
+                @intCast(@max(@as(isize, 0), @min(tex_y_i, tex_rows_minus_1_i))),
+            );
+            lane_keys[ii] = (@as(u64, @intCast(y_key)) << 32) | @as(u64, @intCast(x_key));
+        }
+
+        for (1..active_count) |ii| {
+            const lane = active_lanes[ii];
+            const lane_key = lane_keys[ii];
+            var jj = ii;
+            while (jj > 0 and lane_key < lane_keys[jj - 1]) : (jj -= 1) {
+                lane_keys[jj] = lane_keys[jj - 1];
+                active_lanes[jj] = active_lanes[jj - 1];
+            }
+            lane_keys[jj] = lane_key;
+            active_lanes[jj] = lane;
+        }
+    }
+
+    for (0..active_count) |ii| {
+        const lane = active_lanes[ii];
+        const sampled = sampleOneLaneRuntimeImpl(
+            CH,
+            config,
+            texture,
+            u_arr[lane],
+            v_arr[lane],
+        );
+        inline for (0..CH) |ch| {
+            samp_res_arr[ch][lane] = sampled[ch];
+        }
+    }
+
+    var samp_res: [CH]VecSF = undefined;
+    inline for (0..CH) |ch| {
+        samp_res[ch] = samp_res_arr[ch];
+    }
+
+    return samp_res;
+}
+
+fn sampleWideRuntimeImpl(
     comptime CH: usize,
     config: TextureSampleConfig,
     texture: anytype,
@@ -922,13 +1368,20 @@ fn sampleOverPixelsSIMDRuntimeImpl(
     const v_tex_y_frac = v_tex_y_f - @as(VecSF, @floatFromInt(v_tex_y_i));
 
     return switch (config.sample) {
-        .nearest => v_getPxSIMD(
+        .nearest => getPxWide(
             CH,
             texture,
             @as(VecSI, @intFromFloat(@round(v_tex_x_f))),
             @as(VecSI, @intFromFloat(@round(v_tex_y_f))),
         ),
-        .linear => sampleLinearSIMD(CH, texture, v_tex_x_i, v_tex_y_i, v_tex_x_frac, v_tex_y_frac),
+        .linear => sampleLinearWide(
+            CH,
+            texture,
+            v_tex_x_i,
+            v_tex_y_i,
+            v_tex_x_frac,
+            v_tex_y_frac,
+        ),
         .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => {
             const TAP = 4;
             const tap_offset = @divTrunc(@as(isize, @intCast(TAP)), 2) - 1;
@@ -943,6 +1396,7 @@ fn sampleOverPixelsSIMDRuntimeImpl(
                 else => unreachable,
             };
 
+            var v_samp_coeff_sum: VecSF = @splat(0.0);
             const v_samp_coeffs = switch (config.mode) {
                 .direct => blk: {
                     const v_kernel: *const fn (VecSF) VecSF = switch (config.sample) {
@@ -951,32 +1405,50 @@ fn sampleOverPixelsSIMDRuntimeImpl(
                         .cubic_bspline => v_cubicBSplineCoeffSIMD,
                         else => unreachable,
                     };
-                    break :blk [2][4]VecSF{
-                        .{
-                            v_kernel(v_tex_x_frac + @as(VecSF, @splat(1.0))),
-                            v_kernel(v_tex_x_frac),
-                            v_kernel(v_tex_x_frac - @as(VecSF, @splat(1.0))),
-                            v_kernel(v_tex_x_frac - @as(VecSF, @splat(2.0))),
-                        },
-                        .{
-                            v_kernel(v_tex_y_frac + @as(VecSF, @splat(1.0))),
-                            v_kernel(v_tex_y_frac),
-                            v_kernel(v_tex_y_frac - @as(VecSF, @splat(1.0))),
-                            v_kernel(v_tex_y_frac - @as(VecSF, @splat(2.0))),
-                        },
+                    const sx = [TAP]VecSF{
+                        v_kernel(v_tex_x_frac + @as(VecSF, @splat(1.0))),
+                        v_kernel(v_tex_x_frac),
+                        v_kernel(v_tex_x_frac - @as(VecSF, @splat(1.0))),
+                        v_kernel(v_tex_x_frac - @as(VecSF, @splat(2.0))),
                     };
+                    const sy = [TAP]VecSF{
+                        v_kernel(v_tex_y_frac + @as(VecSF, @splat(1.0))),
+                        v_kernel(v_tex_y_frac),
+                        v_kernel(v_tex_y_frac - @as(VecSF, @splat(1.0))),
+                        v_kernel(v_tex_y_frac - @as(VecSF, @splat(2.0))),
+                    };
+                    inline for (0..TAP) |jj| {
+                        inline for (0..TAP) |ii| {
+                            v_samp_coeff_sum += sx[ii] * sy[jj];
+                        }
+                    }
+                    break :blk [2][TAP]VecSF{ sx, sy };
                 },
                 .lut => blk: {
                     var sx_arr: [4][S]f64 = undefined;
                     var sy_arr: [4][S]f64 = undefined;
+                    v_samp_coeff_sum = @splat(0.0);
                     for (0..S) |ii| {
                         const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
-                        const ix = @as(usize, @intFromFloat(tex_x_frac_arr2[ii] * lut_size_f));
-                        const iy = @as(usize, @intFromFloat(tex_y_frac_arr2[ii] * lut_size_f));
+                        const ix = @as(
+                            usize,
+                            @intFromFloat(tex_x_frac_arr2[ii] * lut_size_f),
+                        );
+                        const iy = @as(
+                            usize,
+                            @intFromFloat(tex_y_frac_arr2[ii] * lut_size_f),
+                        );
+                        var sum: f64 = 0.0;
                         inline for (0..4) |kk| {
                             sx_arr[kk][ii] = lut[ix][kk];
                             sy_arr[kk][ii] = lut[iy][kk];
                         }
+                        for (0..4) |jj| {
+                            for (0..4) |kk| {
+                                sum += lut[ix][kk] * lut[iy][jj];
+                            }
+                        }
+                        v_samp_coeff_sum[ii] = sum;
                     }
                     var sx: [4]VecSF = undefined;
                     var sy: [4]VecSF = undefined;
@@ -984,18 +1456,26 @@ fn sampleOverPixelsSIMDRuntimeImpl(
                         sx[kk] = sx_arr[kk];
                         sy[kk] = sy_arr[kk];
                     }
-                    break :blk [2][4]VecSF{ sx, sy };
+                    break :blk [2][TAP]VecSF{ sx, sy };
                 },
                 .lut_lerp => blk: {
                     var sx_arr: [4][S]f64 = undefined;
                     var sy_arr: [4][S]f64 = undefined;
+                    v_samp_coeff_sum = @splat(0.0);
                     for (0..S) |ii| {
                         const sxx = getLerpSampCoeffsRuntime(4, lut, tex_x_frac_arr2[ii]);
                         const syy = getLerpSampCoeffsRuntime(4, lut, tex_y_frac_arr2[ii]);
+                        var sum: f64 = 0.0;
                         inline for (0..4) |kk| {
                             sx_arr[kk][ii] = sxx[kk];
                             sy_arr[kk][ii] = syy[kk];
                         }
+                        for (0..4) |jj| {
+                            for (0..4) |kk| {
+                                sum += sxx[kk] * syy[jj];
+                            }
+                        }
+                        v_samp_coeff_sum[ii] = sum;
                     }
                     var sx: [4]VecSF = undefined;
                     var sy: [4]VecSF = undefined;
@@ -1003,52 +1483,21 @@ fn sampleOverPixelsSIMDRuntimeImpl(
                         sx[kk] = sx_arr[kk];
                         sy[kk] = sy_arr[kk];
                     }
-                    break :blk [2][4]VecSF{ sx, sy };
+                    break :blk [2][TAP]VecSF{ sx, sy };
                 },
             };
 
-            const v_samp_coeff_x = v_samp_coeffs[0];
-            const v_samp_coeff_y = v_samp_coeffs[1];
-
-            var samp_res: [CH]VecSF = [_]VecSF{@splat(0.0)} ** CH;
-            var v_samp_coeff_sum: VecSF = @splat(0.0);
-
-            var v_tap_samp_coeff_planes: [TAP * TAP]VecSF = undefined;
-            inline for (0..TAP) |jj| {
-                const v_samp_coeff_y_val = v_samp_coeff_y[jj];
-                inline for (0..TAP) |ii| {
-                    const v_tap_samp_coeff = v_samp_coeff_x[ii] * v_samp_coeff_y_val;
-                    v_tap_samp_coeff_planes[jj * TAP + ii] = v_tap_samp_coeff;
-                    v_samp_coeff_sum += v_tap_samp_coeff;
-                }
-            }
-
-            inline for (0..TAP) |jj| {
-                inline for (0..TAP) |ii| {
-                    const v_tap_samp_coeff = v_tap_samp_coeff_planes[jj * TAP + ii];
-                    const v_px_vecs = v_getPxSIMD(
-                        CH,
-                        texture,
-                        v_tex_x_i + @as(VecSI, @splat(@as(isize, @intCast(ii)) - tap_offset)),
-                        v_tex_y_i + @as(VecSI, @splat(@as(isize, @intCast(jj)) - tap_offset)),
-                    );
-                    inline for (0..CH) |ch| {
-                        samp_res[ch] += v_px_vecs[ch] * v_tap_samp_coeff;
-                    }
-                }
-            }
-
-            const v_splat_one: VecSF = @splat(1.0);
-            const v_inv_w_sum = @select(
-                f64,
-                @abs(v_samp_coeff_sum) < @as(VecSF, @splat(tol.texture.samp_coeff_sum)),
-                v_splat_one,
-                v_splat_one / v_samp_coeff_sum,
+            return sampleConvWide(
+                CH,
+                TAP,
+                texture,
+                v_tex_x_i,
+                v_tex_y_i,
+                tap_offset,
+                v_samp_coeffs[0],
+                v_samp_coeffs[1],
+                v_samp_coeff_sum,
             );
-            inline for (0..CH) |ch| {
-                samp_res[ch] *= v_inv_w_sum;
-            }
-            return samp_res;
         },
         .lanczos3, .quintic_bspline => {
             const TAP = 6;
@@ -1063,6 +1512,7 @@ fn sampleOverPixelsSIMDRuntimeImpl(
                 else => unreachable,
             };
 
+            var v_samp_coeff_sum: VecSF = @splat(0.0);
             const v_samp_coeffs = switch (config.mode) {
                 .direct => blk: {
                     const v_kernel: *const fn (VecSF) VecSF = switch (config.sample) {
@@ -1070,363 +1520,108 @@ fn sampleOverPixelsSIMDRuntimeImpl(
                         .quintic_bspline => v_quinticBSplineCoeffSIMD,
                         else => unreachable,
                     };
-                    break :blk [2][6]VecSF{
-                        .{
-                            v_kernel(v_tex_x_frac + @as(VecSF, @splat(2.0))),
-                            v_kernel(v_tex_x_frac + @as(VecSF, @splat(1.0))),
-                            v_kernel(v_tex_x_frac),
-                            v_kernel(v_tex_x_frac - @as(VecSF, @splat(1.0))),
-                            v_kernel(v_tex_x_frac - @as(VecSF, @splat(2.0))),
-                            v_kernel(v_tex_x_frac - @as(VecSF, @splat(3.0))),
-                        },
-                        .{
-                            v_kernel(v_tex_y_frac + @as(VecSF, @splat(2.0))),
-                            v_kernel(v_tex_y_frac + @as(VecSF, @splat(1.0))),
-                            v_kernel(v_tex_y_frac),
-                            v_kernel(v_tex_y_frac - @as(VecSF, @splat(1.0))),
-                            v_kernel(v_tex_y_frac - @as(VecSF, @splat(2.0))),
-                            v_kernel(v_tex_y_frac - @as(VecSF, @splat(3.0))),
-                        },
+                    const sx = [TAP]VecSF{
+                        v_kernel(v_tex_x_frac + @as(VecSF, @splat(2.0))),
+                        v_kernel(v_tex_x_frac + @as(VecSF, @splat(1.0))),
+                        v_kernel(v_tex_x_frac),
+                        v_kernel(v_tex_x_frac - @as(VecSF, @splat(1.0))),
+                        v_kernel(v_tex_x_frac - @as(VecSF, @splat(2.0))),
+                        v_kernel(v_tex_x_frac - @as(VecSF, @splat(3.0))),
                     };
+                    const sy = [TAP]VecSF{
+                        v_kernel(v_tex_y_frac + @as(VecSF, @splat(2.0))),
+                        v_kernel(v_tex_y_frac + @as(VecSF, @splat(1.0))),
+                        v_kernel(v_tex_y_frac),
+                        v_kernel(v_tex_y_frac - @as(VecSF, @splat(1.0))),
+                        v_kernel(v_tex_y_frac - @as(VecSF, @splat(2.0))),
+                        v_kernel(v_tex_y_frac - @as(VecSF, @splat(3.0))),
+                    };
+                    inline for (0..TAP) |jj| {
+                        inline for (0..TAP) |ii| {
+                            v_samp_coeff_sum += sx[ii] * sy[jj];
+                        }
+                    }
+                    break :blk [2][TAP]VecSF{ sx, sy };
                 },
                 .lut => blk: {
                     var sx_arr: [6][S]f64 = undefined;
                     var sy_arr: [6][S]f64 = undefined;
+                    v_samp_coeff_sum = @splat(0.0);
                     for (0..S) |ii| {
                         const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
-                        const ix = @as(usize, @intFromFloat(tex_x_frac_arr2[ii] * lut_size_f));
-                        const iy = @as(usize, @intFromFloat(tex_y_frac_arr2[ii] * lut_size_f));
+                        const ix = @as(
+                            usize,
+                            @intFromFloat(tex_x_frac_arr2[ii] * lut_size_f),
+                        );
+                        const iy = @as(
+                            usize,
+                            @intFromFloat(tex_y_frac_arr2[ii] * lut_size_f),
+                        );
+                        var sum: f64 = 0.0;
                         inline for (0..6) |kk| {
                             sx_arr[kk][ii] = lut[ix][kk];
                             sy_arr[kk][ii] = lut[iy][kk];
                         }
+                        for (0..6) |jj| {
+                            for (0..6) |kk| {
+                                sum += lut[ix][kk] * lut[iy][jj];
+                            }
+                        }
+                        v_samp_coeff_sum[ii] = sum;
                     }
-                    var sx: [6]VecSF = undefined;
-                    var sy: [6]VecSF = undefined;
-                    inline for (0..6) |kk| {
+                    var sx: [TAP]VecSF = undefined;
+                    var sy: [TAP]VecSF = undefined;
+                    inline for (0..TAP) |kk| {
                         sx[kk] = sx_arr[kk];
                         sy[kk] = sy_arr[kk];
                     }
-                    break :blk [2][6]VecSF{ sx, sy };
+                    break :blk [2][TAP]VecSF{ sx, sy };
                 },
                 .lut_lerp => blk: {
                     var sx_arr: [6][S]f64 = undefined;
                     var sy_arr: [6][S]f64 = undefined;
+                    v_samp_coeff_sum = @splat(0.0);
                     for (0..S) |ii| {
                         const sxx = getLerpSampCoeffsRuntime(6, lut, tex_x_frac_arr2[ii]);
                         const syy = getLerpSampCoeffsRuntime(6, lut, tex_y_frac_arr2[ii]);
+                        var sum: f64 = 0.0;
                         inline for (0..6) |kk| {
                             sx_arr[kk][ii] = sxx[kk];
                             sy_arr[kk][ii] = syy[kk];
                         }
+                        for (0..6) |jj| {
+                            for (0..6) |kk| {
+                                sum += sxx[kk] * syy[jj];
+                            }
+                        }
+                        v_samp_coeff_sum[ii] = sum;
                     }
-                    var sx: [6]VecSF = undefined;
-                    var sy: [6]VecSF = undefined;
-                    inline for (0..6) |kk| {
+                    var sx: [TAP]VecSF = undefined;
+                    var sy: [TAP]VecSF = undefined;
+                    inline for (0..TAP) |kk| {
                         sx[kk] = sx_arr[kk];
                         sy[kk] = sy_arr[kk];
                     }
-                    break :blk [2][6]VecSF{ sx, sy };
+                    break :blk [2][TAP]VecSF{ sx, sy };
                 },
             };
 
-            const v_samp_coeff_x = v_samp_coeffs[0];
-            const v_samp_coeff_y = v_samp_coeffs[1];
-
-            var samp_res: [CH]VecSF = [_]VecSF{@splat(0.0)} ** CH;
-            var v_samp_coeff_sum: VecSF = @splat(0.0);
-
-            var v_tap_samp_coeff_planes: [TAP * TAP]VecSF = undefined;
-            inline for (0..TAP) |jj| {
-                const v_samp_coeff_y_val = v_samp_coeff_y[jj];
-                inline for (0..TAP) |ii| {
-                    const v_tap_samp_coeff = v_samp_coeff_x[ii] * v_samp_coeff_y_val;
-                    v_tap_samp_coeff_planes[jj * TAP + ii] = v_tap_samp_coeff;
-                    v_samp_coeff_sum += v_tap_samp_coeff;
-                }
-            }
-
-            inline for (0..TAP) |jj| {
-                inline for (0..TAP) |ii| {
-                    const v_tap_samp_coeff = v_tap_samp_coeff_planes[jj * TAP + ii];
-                    const v_px_vecs = v_getPxSIMD(
-                        CH,
-                        texture,
-                        v_tex_x_i + @as(VecSI, @splat(@as(isize, @intCast(ii)) - tap_offset)),
-                        v_tex_y_i + @as(VecSI, @splat(@as(isize, @intCast(jj)) - tap_offset)),
-                    );
-                    inline for (0..CH) |ch| {
-                        samp_res[ch] += v_px_vecs[ch] * v_tap_samp_coeff;
-                    }
-                }
-            }
-
-            const v_splat_one: VecSF = @splat(1.0);
-            const v_inv_w_sum = @select(
-                f64,
-                @abs(v_samp_coeff_sum) < @as(VecSF, @splat(tol.texture.samp_coeff_sum)),
-                v_splat_one,
-                v_splat_one / v_samp_coeff_sum,
-            );
-            inline for (0..CH) |ch| {
-                samp_res[ch] *= v_inv_w_sum;
-            }
-            return samp_res;
-        },
-    };
-}
-
-fn samplePerPixelInnerSIMDRuntimeImpl(
-    comptime CH: usize,
-    config: TextureSampleConfig,
-    texture: anytype,
-    u: f64,
-    v: f64,
-) [CH]f64 {
-    std.debug.assert(config.isValid());
-
-    const tex_cols_minus_1_f = @as(
-        f64,
-        @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
-    );
-    const tex_rows_minus_1_f = @as(
-        f64,
-        @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
-    );
-
-    const xf = u * tex_cols_minus_1_f;
-    const yf = v * tex_rows_minus_1_f;
-
-    const tex_x_i = @as(isize, @intFromFloat(@floor(xf)));
-    const tex_y_i = @as(isize, @intFromFloat(@floor(yf)));
-
-    const tex_x_frac = xf - @as(f64, @floatFromInt(tex_x_i));
-    const tex_y_frac = yf - @as(f64, @floatFromInt(tex_y_i));
-
-    return switch (config.sample) {
-        .nearest => getPx(
-            CH,
-            texture,
-            @as(isize, @intFromFloat(@round(xf))),
-            @as(isize, @intFromFloat(@round(yf))),
-        ),
-        .linear => sampleLinearPerPixelSIMD(CH, texture, tex_x_i, tex_y_i, tex_x_frac, tex_y_frac),
-        .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => {
-            const TAP = 4;
-            const coeff_fun: *const fn (f64) f64 = switch (config.sample) {
-                .cubic_catmull_rom => cubicCoeffCatmullRom,
-                .cubic_mitchell_netravali => cubicCoeffMitchellNetravali,
-                .cubic_bspline => cubicBSplineCoeff,
-                else => unreachable,
-            };
-            const lut = switch (config.sample) {
-                .cubic_catmull_rom => catmull_rom_lut,
-                .cubic_mitchell_netravali => mitchell_netravali_lut,
-                .cubic_bspline => cubic_bspline_lut,
-                else => unreachable,
-            };
-            return switch (config.mode) {
-                .direct => blk: {
-                    const sx = .{
-                        coeff_fun(tex_x_frac + 1),
-                        coeff_fun(tex_x_frac),
-                        coeff_fun(tex_x_frac - 1),
-                        coeff_fun(tex_x_frac - 2),
-                    };
-                    const sy = .{
-                        coeff_fun(tex_y_frac + 1),
-                        coeff_fun(tex_y_frac),
-                        coeff_fun(tex_y_frac - 1),
-                        coeff_fun(tex_y_frac - 2),
-                    };
-                    break :blk sample2DInnerSIMD(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
-                },
-                .lut => blk: {
-                    const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
-                    const ix = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
-                    const iy = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
-                    break :blk sample2DInnerSIMD(CH, TAP, texture, tex_x_i, tex_y_i, lut[ix], lut[iy]);
-                },
-                .lut_lerp => blk: {
-                    const sx = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
-                    const sy = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
-                    break :blk sample2DInnerSIMD(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
-                },
-            };
-        },
-        .lanczos3, .quintic_bspline => {
-            const TAP = 6;
-            const coeff_fun: *const fn (f64) f64 = switch (config.sample) {
-                .lanczos3 => lanczos3Coeff,
-                .quintic_bspline => quinticBSplineCoeff,
-                else => unreachable,
-            };
-            const lut = switch (config.sample) {
-                .lanczos3 => lanczos3_lut,
-                .quintic_bspline => quintic_bspline_lut,
-                else => unreachable,
-            };
-            return switch (config.mode) {
-                .direct => blk: {
-                    const sx = .{
-                        coeff_fun(tex_x_frac + 2),
-                        coeff_fun(tex_x_frac + 1),
-                        coeff_fun(tex_x_frac),
-                        coeff_fun(tex_x_frac - 1),
-                        coeff_fun(tex_x_frac - 2),
-                        coeff_fun(tex_x_frac - 3),
-                    };
-                    const sy = .{
-                        coeff_fun(tex_y_frac + 2),
-                        coeff_fun(tex_y_frac + 1),
-                        coeff_fun(tex_y_frac),
-                        coeff_fun(tex_y_frac - 1),
-                        coeff_fun(tex_y_frac - 2),
-                        coeff_fun(tex_y_frac - 3),
-                    };
-                    break :blk sample2DInnerSIMD(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
-                },
-                .lut => blk: {
-                    const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
-                    const ix = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
-                    const iy = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
-                    break :blk sample2DInnerSIMD(CH, TAP, texture, tex_x_i, tex_y_i, lut[ix], lut[iy]);
-                },
-                .lut_lerp => blk: {
-                    const sx = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
-                    const sy = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
-                    break :blk sample2DInnerSIMD(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
-                },
-            };
-        },
-    };
-}
-
-fn samplePerLaneInnerSIMDRuntimeImpl(
-    comptime CH: usize,
-    config: TextureSampleConfig,
-    v_mask_active: VecSB,
-    texture: anytype,
-    v_u: VecSF,
-    v_v: VecSF,
-) [CH]VecSF {
-    var samp_res_arr: [CH][S]f64 = [_][S]f64{[_]f64{0.0} ** S} ** CH;
-    const mask_arr: [S]bool = v_mask_active;
-    const u_arr: [S]f64 = v_u;
-    const v_arr: [S]f64 = v_v;
-
-    for (0..S) |ii| {
-        if (mask_arr[ii]) {
-            const sampled = samplePerPixelInnerSIMDRuntimeImpl(
+            return sampleConvWide(
                 CH,
-                config,
+                TAP,
                 texture,
-                u_arr[ii],
-                v_arr[ii],
+                v_tex_x_i,
+                v_tex_y_i,
+                tap_offset,
+                v_samp_coeffs[0],
+                v_samp_coeffs[1],
+                v_samp_coeff_sum,
             );
-            inline for (0..CH) |ch| {
-                samp_res_arr[ch][ii] = sampled[ch];
-            }
-        }
-    }
-
-    var samp_res: [CH]VecSF = undefined;
-    inline for (0..CH) |ch| {
-        samp_res[ch] = samp_res_arr[ch];
-    }
-
-    return samp_res;
+        },
+    };
 }
 
-fn samplePerLaneTri3SIMDRuntimeImpl(
-    comptime CH: usize,
-    config: TextureSampleConfig,
-    v_mask_active: VecSB,
-    texture: anytype,
-    v_u: VecSF,
-    v_v: VecSF,
-) [CH]VecSF {
-    var samp_res_arr: [CH][S]f64 = [_][S]f64{[_]f64{0.0} ** S} ** CH;
-    const mask_arr: [S]bool = v_mask_active;
-    const u_arr: [S]f64 = v_u;
-    const v_arr: [S]f64 = v_v;
-
-    var active_lanes: [S]usize = undefined;
-    var active_count: usize = 0;
-
-    const tex_cols_minus_1_f = @as(
-        f64,
-        @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
-    );
-    const tex_rows_minus_1_f = @as(
-        f64,
-        @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
-    );
-    const tex_cols_minus_1_i = @as(isize, @intCast(texture.cols_num)) - 1;
-    const tex_rows_minus_1_i = @as(isize, @intCast(texture.rows_num)) - 1;
-
-    for (0..S) |ii| {
-        if (mask_arr[ii]) {
-            active_lanes[active_count] = ii;
-            active_count += 1;
-        }
-    }
-
-    if (active_count > 1) {
-        var lane_keys: [8]u64 = undefined;
-        for (0..active_count) |ii| {
-            const lane = active_lanes[ii];
-            const xf = u_arr[lane] * tex_cols_minus_1_f;
-            const yf = v_arr[lane] * tex_rows_minus_1_f;
-            const tex_x_i = @as(isize, @intFromFloat(@floor(xf)));
-            const tex_y_i = @as(isize, @intFromFloat(@floor(yf)));
-            const x_key = @as(
-                usize,
-                @intCast(@max(@as(isize, 0), @min(tex_x_i, tex_cols_minus_1_i))),
-            );
-            const y_key = @as(
-                usize,
-                @intCast(@max(@as(isize, 0), @min(tex_y_i, tex_rows_minus_1_i))),
-            );
-            lane_keys[ii] = (@as(u64, @intCast(y_key)) << 32) | @as(u64, @intCast(x_key));
-        }
-
-        for (1..active_count) |ii| {
-            const lane = active_lanes[ii];
-            const lane_key = lane_keys[ii];
-            var jj = ii;
-            while (jj > 0 and lane_key < lane_keys[jj - 1]) : (jj -= 1) {
-                lane_keys[jj] = lane_keys[jj - 1];
-                active_lanes[jj] = active_lanes[jj - 1];
-            }
-            lane_keys[jj] = lane_key;
-            active_lanes[jj] = lane;
-        }
-    }
-
-    for (0..active_count) |ii| {
-        const lane = active_lanes[ii];
-        const sampled = samplePerPixelInnerSIMDRuntimeImpl(
-            CH,
-            config,
-            texture,
-            u_arr[lane],
-            v_arr[lane],
-        );
-        inline for (0..CH) |ch| {
-            samp_res_arr[ch][lane] = sampled[ch];
-        }
-    }
-
-    var samp_res: [CH]VecSF = undefined;
-    inline for (0..CH) |ch| {
-        samp_res[ch] = samp_res_arr[ch];
-    }
-
-    return samp_res;
-}
-
-fn sampleOverPixelsSIMDDispatch(
+fn sampleWideDispatch(
     comptime CH: usize,
     config: TextureSampleConfig,
     texture: anytype,
@@ -1436,7 +1631,7 @@ fn sampleOverPixelsSIMDDispatch(
     std.debug.assert(config.isValid());
 
     return switch (cfg.texture_dispatch_policy) {
-        .runtime_runtime => sampleOverPixelsSIMDRuntimeImpl(CH, config, texture, v_u, v_v),
+        .runtime_runtime => sampleWideRuntimeImpl(CH, config, texture, v_u, v_v),
         .runtime_comptime => switch (config.sample) {
             inline else => |sample_type| switch (config.mode) {
                 inline else => |mode_type| blk: {
@@ -1445,7 +1640,7 @@ fn sampleOverPixelsSIMDDispatch(
                         .mode = mode_type,
                     };
                     if (comptime comptime_config.isValid()) {
-                        break :blk sampleOverPixelsSIMD(
+                        break :blk sampleWide(
                             CH,
                             comptime_config,
                             texture,
@@ -1465,7 +1660,7 @@ fn sampleOverPixelsSIMDDispatch(
                         .mode = mode_type,
                     };
                     if (comptime comptime_config.isValid()) {
-                        break :blk sampleOverPixelsSIMD(
+                        break :blk sampleWide(
                             CH,
                             comptime_config,
                             texture,
@@ -1480,7 +1675,7 @@ fn sampleOverPixelsSIMDDispatch(
     };
 }
 
-fn samplePerPixelInnerSIMDDispatch(
+fn sampleOneLaneDispatch(
     comptime CH: usize,
     config: TextureSampleConfig,
     texture: anytype,
@@ -1490,7 +1685,7 @@ fn samplePerPixelInnerSIMDDispatch(
     std.debug.assert(config.isValid());
 
     return switch (cfg.texture_dispatch_policy) {
-        .runtime_runtime => samplePerPixelInnerSIMDRuntimeImpl(CH, config, texture, u, v),
+        .runtime_runtime => sampleOneLaneRuntimeImpl(CH, config, texture, u, v),
         .runtime_comptime => switch (config.sample) {
             inline else => |sample_type| switch (config.mode) {
                 inline else => |mode_type| blk: {
@@ -1499,7 +1694,7 @@ fn samplePerPixelInnerSIMDDispatch(
                         .mode = mode_type,
                     };
                     if (comptime comptime_config.isValid()) {
-                        break :blk samplePerPixelInnerSIMD(
+                        break :blk sampleOneLane(
                             CH,
                             comptime_config,
                             texture,
@@ -1519,7 +1714,7 @@ fn samplePerPixelInnerSIMDDispatch(
                         .mode = mode_type,
                     };
                     if (comptime comptime_config.isValid()) {
-                        break :blk samplePerPixelInnerSIMD(
+                        break :blk sampleOneLane(
                             CH,
                             comptime_config,
                             texture,
@@ -1534,7 +1729,7 @@ fn samplePerPixelInnerSIMDDispatch(
     };
 }
 
-fn samplePerLaneInnerSIMDDispatch(
+fn sampleLanesDispatch(
     comptime CH: usize,
     config: TextureSampleConfig,
     v_mask_active: VecSB,
@@ -1545,7 +1740,7 @@ fn samplePerLaneInnerSIMDDispatch(
     std.debug.assert(config.isValid());
 
     return switch (cfg.texture_dispatch_policy) {
-        .runtime_runtime => samplePerLaneInnerSIMDRuntimeImpl(
+        .runtime_runtime => sampleLanesRuntimeImpl(
             CH,
             config,
             v_mask_active,
@@ -1561,7 +1756,7 @@ fn samplePerLaneInnerSIMDDispatch(
                         .mode = mode_type,
                     };
                     if (comptime comptime_config.isValid()) {
-                        break :blk samplePerLaneInnerSIMD(
+                        break :blk sampleLanes(
                             CH,
                             comptime_config,
                             v_mask_active,
@@ -1582,7 +1777,7 @@ fn samplePerLaneInnerSIMDDispatch(
                         .mode = mode_type,
                     };
                     if (comptime comptime_config.isValid()) {
-                        break :blk samplePerLaneInnerSIMD(
+                        break :blk sampleLanes(
                             CH,
                             comptime_config,
                             v_mask_active,
@@ -1598,7 +1793,7 @@ fn samplePerLaneInnerSIMDDispatch(
     };
 }
 
-fn samplePerLaneTri3SIMDDispatch(
+fn sampleLanesTri3Dispatch(
     comptime CH: usize,
     config: TextureSampleConfig,
     v_mask_active: VecSB,
@@ -1609,7 +1804,7 @@ fn samplePerLaneTri3SIMDDispatch(
     std.debug.assert(config.isValid());
 
     return switch (cfg.texture_dispatch_policy) {
-        .runtime_runtime => samplePerLaneTri3SIMDRuntimeImpl(
+        .runtime_runtime => sampleLanesTri3RuntimeImpl(
             CH,
             config,
             v_mask_active,
@@ -1625,7 +1820,7 @@ fn samplePerLaneTri3SIMDDispatch(
                         .mode = mode_type,
                     };
                     if (comptime comptime_config.isValid()) {
-                        break :blk samplePerLaneTri3SIMD(
+                        break :blk sampleLanesTri3(
                             CH,
                             comptime_config,
                             v_mask_active,
@@ -1646,7 +1841,7 @@ fn samplePerLaneTri3SIMDDispatch(
                         .mode = mode_type,
                     };
                     if (comptime comptime_config.isValid()) {
-                        break :blk samplePerLaneTri3SIMD(
+                        break :blk sampleLanesTri3(
                             CH,
                             comptime_config,
                             v_mask_active,
@@ -1662,27 +1857,27 @@ fn samplePerLaneTri3SIMDDispatch(
     };
 }
 
-pub fn sampleOverPixelsSIMDRuntime(
+pub fn sampleWideRuntime(
     comptime CH: usize,
     config: TextureSampleConfig,
     texture: anytype,
     v_u: VecSF,
     v_v: VecSF,
 ) [CH]VecSF {
-    return sampleOverPixelsSIMDDispatch(CH, config, texture, v_u, v_v);
+    return sampleWideDispatch(CH, config, texture, v_u, v_v);
 }
 
-pub fn samplePerPixelInnerSIMDRuntime(
+pub fn sampleOneLaneRuntime(
     comptime CH: usize,
     config: TextureSampleConfig,
     texture: anytype,
     u: f64,
     v: f64,
 ) [CH]f64 {
-    return samplePerPixelInnerSIMDDispatch(CH, config, texture, u, v);
+    return sampleOneLaneDispatch(CH, config, texture, u, v);
 }
 
-pub fn samplePerLaneInnerSIMDRuntime(
+pub fn sampleLanesRuntime(
     comptime CH: usize,
     config: TextureSampleConfig,
     v_mask_active: VecSB,
@@ -1690,10 +1885,10 @@ pub fn samplePerLaneInnerSIMDRuntime(
     v_u: VecSF,
     v_v: VecSF,
 ) [CH]VecSF {
-    return samplePerLaneInnerSIMDDispatch(CH, config, v_mask_active, texture, v_u, v_v);
+    return sampleLanesDispatch(CH, config, v_mask_active, texture, v_u, v_v);
 }
 
-pub fn samplePerLaneTri3SIMDRuntime(
+pub fn sampleLanesTri3Runtime(
     comptime CH: usize,
     config: TextureSampleConfig,
     v_mask_active: VecSB,
@@ -1701,5 +1896,5 @@ pub fn samplePerLaneTri3SIMDRuntime(
     v_u: VecSF,
     v_v: VecSF,
 ) [CH]VecSF {
-    return samplePerLaneTri3SIMDDispatch(CH, config, v_mask_active, texture, v_u, v_v);
+    return sampleLanesTri3Dispatch(CH, config, v_mask_active, texture, v_u, v_v);
 }

@@ -213,7 +213,7 @@ pub inline fn fillTexClip(
         tex_v += interp.weights[nn] * ctx_shade.shader_buf.data[N + nn];
     }
 
-    const sampled = texops.sampleGeneric(
+    const sampled = texops.sampleScalar(
         channels,
         sample_config,
         sh.texture,
@@ -243,7 +243,7 @@ pub inline fn fillTexClipRuntime(
         tex_v += interp.weights[nn] * ctx_shade.shader_buf.data[N + nn];
     }
 
-    const sampled = texops.sampleGenericRuntime(
+    const sampled = texops.sampleScalarRuntime(
         channels,
         sample_config,
         sh.texture,
@@ -276,7 +276,7 @@ pub inline fn fillTexPersp(
             inv_z;
     }
 
-    const sampled = texops.sampleGeneric(
+    const sampled = texops.sampleScalar(
         channels,
         sample_config,
         sh.texture,
@@ -309,7 +309,7 @@ pub inline fn fillTexPerspRuntime(
             inv_z;
     }
 
-    const sampled = texops.sampleGenericRuntime(
+    const sampled = texops.sampleScalar(
         channels,
         sample_config,
         sh.texture,

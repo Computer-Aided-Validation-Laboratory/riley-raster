@@ -6,6 +6,31 @@ const lut_size = cfg.interp_lut_size;
 const NDArray = @import("ndarray.zig").NDArray;
 const csvio = @import("csvio.zig");
 
+// --------------------------------------------------------------------------
+// Strategy Map:
+//
+// PIPELINE ENTRY POINTS (Dispatched by Shader/Kernel):
+// │
+// ├── PATH 1: sampleScalar (Purely Scalar)
+// │   "Used when .simd = .off or as fallback for complex elements (quad4ibi)"
+// │   ├── getPx()           (Scalar Load)
+// │   ├── sampleLinear()    (Scalar Linear)
+// │   └── sampleConv()      (Scalar Convolution)
+// │
+// ├── PATH 2: sampleWide (Wide SIMD - Parallel over Pixels)
+// │   "Each lane is a unique pixel; processes N pixels simultaneously"
+// │   ├── getPxWide()       (Wide Load: N pixels)
+// │   ├── sampleLinearWide()(Wide Linear: N pixels)
+// │   └── sampleConvWide()  (Wide Convolution: N pixels)
+// │
+// └── PATH 3: sampleLanes (Lane SIMD - Serial over Pixels, SIMD over Taps)
+//     "Processes N lanes serially; math inside each lane uses SIMD for taps"
+//     └── sampleOneLane()   (Helper: Process 1 lane)
+//         ├── getPx()       (Scalar Load: 1 pixel)
+//         ├── sampleLinearOneLane() (Scalar Linear: 1 pixel)
+//         └── sampleConvOneLane()   (SIMD-Tap Convolution: 1 pixel)
+// --------------------------------------------------------------------------
+
 pub const TextureSample = enum {
     nearest,
     linear,
@@ -289,7 +314,7 @@ pub fn sampleLinear(
     return samp_res;
 }
 
-pub fn sample2D(
+pub fn sampleConv(
     comptime CH: usize,
     comptime TAP: usize,
     texture: anytype,
@@ -406,18 +431,18 @@ fn sampleTex4Tap(
                 coeff_fun(tex_y_frac - 1),
                 coeff_fun(tex_y_frac - 2),
             };
-            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
+            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
         },
         .lut => blk: {
             const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
             const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
             const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
-            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
+            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
         },
         .lut_lerp => blk: {
             const samp_coeff_x = getLerpSampCoeffs(TAP, lut, tex_x_frac);
             const samp_coeff_y = getLerpSampCoeffs(TAP, lut, tex_y_frac);
-            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
         },
     };
 }
@@ -460,18 +485,18 @@ fn sampleTex4TapRuntime(
                 coeff_fun(tex_y_frac - 1),
                 coeff_fun(tex_y_frac - 2),
             };
-            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
+            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
         },
         .lut => blk: {
             const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
             const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
             const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
-            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
+            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
         },
         .lut_lerp => {
             const samp_coeff_x = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
             const samp_coeff_y = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
-            return sample2D(CH, TAP, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+            return sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
         },
     };
 }
@@ -516,18 +541,18 @@ fn sampleTex6Tap(
                 coeff_fun(tex_y_frac - 2),
                 coeff_fun(tex_y_frac - 3),
             };
-            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
+            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
         },
         .lut => blk: {
             const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
             const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
             const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
-            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
+            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
         },
         .lut_lerp => blk: {
             const samp_coeff_x = getLerpSampCoeffs(TAP, lut, tex_x_frac);
             const samp_coeff_y = getLerpSampCoeffs(TAP, lut, tex_y_frac);
-            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
         },
     };
 }
@@ -572,18 +597,18 @@ fn sampleTex6TapRuntime(
                 coeff_fun(tex_y_frac - 2),
                 coeff_fun(tex_y_frac - 3),
             };
-            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
+            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
         },
         .lut => blk: {
             const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
             const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
             const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
-            break :blk sample2D(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
+            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
         },
         .lut_lerp => {
             const samp_coeff_x = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
             const samp_coeff_y = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
-            return sample2D(CH, TAP, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+            return sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
         },
     };
 }
@@ -660,7 +685,7 @@ fn sampleTex6TapDispatchMode(
     };
 }
 
-pub fn sampleGeneric(
+pub fn sampleScalar(
     comptime CH: usize,
     comptime config: TextureSampleConfig,
     texture: anytype,
@@ -738,7 +763,7 @@ pub fn sampleGeneric(
     };
 }
 
-pub fn sampleGenericRuntime(
+pub fn sampleScalarRuntime(
     comptime CH: usize,
     config: TextureSampleConfig,
     texture: anytype,
@@ -822,7 +847,7 @@ pub fn sampleGreyscale(
     u: f64,
     v: f64,
 ) f64 {
-    return sampleGeneric(1, config, texture, u, v)[0];
+    return sampleScalar(1, config, texture, u, v)[0];
 }
 
 pub fn sampleGreyscaleRuntime(
@@ -831,5 +856,5 @@ pub fn sampleGreyscaleRuntime(
     u: f64,
     v: f64,
 ) f64 {
-    return sampleGenericRuntime(1, config, texture, u, v)[0];
+    return sampleScalarRuntime(1, config, texture, u, v)[0];
 }

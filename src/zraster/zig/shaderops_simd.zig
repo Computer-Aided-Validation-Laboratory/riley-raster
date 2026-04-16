@@ -125,7 +125,7 @@ pub inline fn fillTexClipSIMD(
 
     const px_stride = spx_image_scratch.cols_num;
     const sampled_vecs = switch (cfg.simd_texture_interp) {
-        .inner => texops.samplePerLaneInnerSIMD(
+        .inner => texops.sampleLanes(
             channels,
             sample_config,
             v_mask_active,
@@ -133,7 +133,7 @@ pub inline fn fillTexClipSIMD(
             v_tex_u,
             v_tex_v,
         ),
-        .over_pixels => texops.sampleOverPixelsSIMD(
+        .over_pixels => texops.sampleWide(
             channels,
             sample_config,
             sh.texture,
@@ -176,7 +176,7 @@ pub inline fn fillTexClipSIMDRuntime(
 
     const px_stride = spx_image_scratch.cols_num;
     const sampled_vecs = switch (cfg.simd_texture_interp) {
-        .inner => texops.samplePerLaneInnerSIMDRuntime(
+        .inner => texops.sampleLanesRuntime(
             channels,
             sample_config,
             v_mask_active,
@@ -184,7 +184,7 @@ pub inline fn fillTexClipSIMDRuntime(
             v_tex_u,
             v_tex_v,
         ),
-        .over_pixels => texops.sampleOverPixelsSIMDRuntime(
+        .over_pixels => texops.sampleWideRuntime(
             channels,
             sample_config,
             sh.texture,
@@ -238,7 +238,7 @@ pub inline fn fillTexPerspSIMD(
 
     const sampled_vecs = switch (cfg.simd_texture_interp) {
         .inner => if (comptime N == 3)
-            texops.samplePerLaneTri3SIMD(
+            texops.sampleLanesTri3(
                 channels,
                 sample_config,
                 v_mask_active,
@@ -247,7 +247,7 @@ pub inline fn fillTexPerspSIMD(
                 v_tex_v,
             )
         else
-            texops.samplePerLaneInnerSIMD(
+            texops.sampleLanes(
                 channels,
                 sample_config,
                 v_mask_active,
@@ -255,7 +255,7 @@ pub inline fn fillTexPerspSIMD(
                 v_tex_u,
                 v_tex_v,
             ),
-        .over_pixels => texops.sampleOverPixelsSIMD(
+        .over_pixels => texops.sampleWide(
             channels,
             sample_config,
             sh.texture,
@@ -307,7 +307,7 @@ pub inline fn fillTexPerspSIMDRuntime(
 
     const sampled_vecs = switch (cfg.simd_texture_interp) {
         .inner => if (comptime N == 3)
-            texops.samplePerLaneTri3SIMDRuntime(
+            texops.sampleLanesTri3Runtime(
                 channels,
                 sample_config,
                 v_mask_active,
@@ -316,7 +316,7 @@ pub inline fn fillTexPerspSIMDRuntime(
                 v_tex_v,
             )
         else
-            texops.samplePerLaneInnerSIMDRuntime(
+            texops.sampleLanesRuntime(
                 channels,
                 sample_config,
                 v_mask_active,
@@ -324,7 +324,7 @@ pub inline fn fillTexPerspSIMDRuntime(
                 v_tex_u,
                 v_tex_v,
             ),
-        .over_pixels => texops.sampleOverPixelsSIMDRuntime(
+        .over_pixels => texops.sampleWideRuntime(
             channels,
             sample_config,
             sh.texture,
