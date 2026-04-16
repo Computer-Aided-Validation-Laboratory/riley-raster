@@ -1,3 +1,11 @@
+// --------------------------------------------------------------------------
+// zraster: A High Performance Rasteriser for DIC UQ
+//
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Licensed under the MIT License (see LICENSE file for details)
+//
+// Authors: scepticalrabbit (Lloyd Fletcher)
+// --------------------------------------------------------------------------
 const Camera = @import("camera.zig").Camera;
 const NDArray = @import("ndarray.zig").NDArray;
 const rops = @import("rasterops.zig");

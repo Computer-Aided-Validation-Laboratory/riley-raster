@@ -1,19 +1,37 @@
-# Zig Raster
-My implementation of a rasterisation renderer in Zig. I am using this project to learn Zig for scientific computing applications and a rasteriser includes enough linear algebra to explore the language for this purpose. I come from a Python background with some limited experience in Cython and C but wanted a new high performance compiled language with good Python interop, hence Zig.
+# zaster
+`zraster` is a performant software rasteriser written in Zig specifically designed for digital image correlation (DIC) uncertainty quantification (UQ). `zraster` performs off-line rendering of deformed speckle pattern images from an input finite element simulation. `zraster` supports accurate rendering of higher order finite elements including tri3, tri6, quad4, quad8 and quad9 surface elements. Texture shading with higher order texture sampling is also supported for accurate speckle pattern rendering including: cubic sampling (Catmull-Rom, Mitchell-Netravali, BSpline), quintic sampling (BSpline) and Lancsoz (lancsoz3). Rendering multiple meshes with different element types and shading strategies in the same scene is supported. 
 
-The rasteriser is built using [Zig 0.14](https://ziglang.org/download/) and can be run using:
+We specifically chose to implement `zraster` in Zig as it is a compiled language with manual memory management. It also allows for compile time code generation and has excellent support for SIMD vector types. We have used `comptime` to generate speciliased kernels for geometry and shader types removing run time dispatch overhead. 
+
+## Getting Started
+`zraster` has been built using a developement version of the Zig 0.16 compiler.  
+
+The `zraster` repository contains a minimal set of regression tests (called the "min" test suite) which should be run before generating a wider set gold regression data and running performance benchmark suites. The min test suite can be run from the project root directory using:
 ```shell
-zig run -O ReleaseFast src/main_raster.zig
+zig test -lc -O ReleaseSafe ./src/test_min.zig
+```
+The min test suite contains two cases a render of the "multimesh" case which is two elements of each type in a single scene that are rendered with nodal interpolation shading or texture shading. The min test suite also contains a rendering of the "sphere200" case which is a sphere with 200 elements of a single type with every possible combination of nodal or texture shading. the sphere200 case is particularly sensitive to breaking changes due to the range of element orientations.
+
+Once the min test suite passes the remaining gold regression data can be generated with:
+```shell
+zig run -lc -O ReleaseSafe ./src/gen_gold_all.zig
 ```
 
-This project is inspired by the rasteriser implementation on [Scratchapixel](https://www.scratchapixel.com/index.html), this taught me a lot about computer graphics! See their description of the rasterisation process [here](https://www.scratchapixel.com/lessons/3d-basic-rendering/rasterization-practical-implementation/overview-rasterization-algorithm.html) and their code [here](https://github.com/scratchapixel/scratchapixel-code/tree/main/rasterization-practical-implementation).
+## Input Data and User Interface  
 
-## Test Case
-The test case for rendering is a finite element solid mechanics simulation of a linear elastic cylinder loaded in compression, see visualisation below of the vertical displacement field using [Paraview](https://www.paraview.org/). The goal of the test case is to render the vertical displacement field based on given camera parameters. I performed this simulation using [Gmsh](https://gmsh.info/) to create the mesh and [MOOSE](https://mooseframework.inl.gov/) as the physics solver. The Gmsh `.geo` and MOOSE input `.i` file can be found in the [data directory](https://github.com/ScepticalRabbit/zigraster/tree/main/data). I skinned the 3D mesh using `pyvista` then I parsed the surface mesh (nodal coordinates and connectivity table) and the output displacement field to `.csv` files to be read into Zig (files are in the [data directory](https://github.com/ScepticalRabbit/zigraster/tree/main/data)). Note that the simulation itself is in SI units but the `.csv` files have been scaled to `mm`.
 
-|![fig_test_case_cylinder](images/testcase_cylinder_mesh1_dispy.png)|
-|:--:|
-|*Rasterisation rendering test case: a linear elastic cylinder loaded in compression showing the vertical displacement field.*|
+## Capability Demo
 
-## Core Functionality
-This project provides support for basic linear algebra operations on vectors and matrices through the `Vector` and `Matrix` types. This supports small vectors and matrices through the types: `Vec2f`, `Vec3f`,` Mat22f`, `Mat33f` and `Mat44f`.
+
+## Benchmarks
+We used three cases to analyse the performance of `zraster`: 1) Minimum elements filling the screen (2 triangles or 1 quadrilateral), called "fullraster", 2) 1e5 elements filling screen, called "geom", 3) A sphere in the centre of the screen with 2000 elements, called sphere2000. Case 1 is intended to test the throughput of the raster hot loop. Case 2 is intended to test the throughput of the geometry pre-processing. Case 3 is a more realistic case with a balance of element orientations. These benchmark suites can be run using:
+
+```shell
+zig run -O ReleaseFast ./src/bench_fullraster.zig
+zig run -O ReleaseFast ./src/bench_geom.zig
+zig run -O ReleaseFast ./src/bench_sphere2000.zig
+``` 
+
+## Contributors
+The Computer Aided Validation Team at UKAEA:
+- Lloyd Fletcher ([ScepticalRabbit](https://github.com/ScepticalRabbit)), UK Atomic Energy Authority
