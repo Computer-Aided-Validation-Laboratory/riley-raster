@@ -1,7 +1,8 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
-const tol = buildconfig.config.tolerance;
-const lut_size = buildconfig.config.interp_lut_size;
+const cfg = buildconfig.config;
+const tol = cfg.tolerance;
+const lut_size = cfg.interp_lut_size;
 const NDArray = @import("ndarray.zig").NDArray;
 const csvio = @import("csvio.zig");
 
@@ -322,6 +323,23 @@ pub fn getLerpSampCoeffs(
     return res;
 }
 
+pub fn getLerpSampCoeffsRuntime(
+    comptime TAP: usize,
+    table: [lut_size][TAP]f64,
+    t: f64,
+) [TAP]f64 {
+    const scaled = t * (lut_size - 1);
+    const idx = @as(usize, @intFromFloat(@floor(scaled)));
+    const frac = scaled - @as(f64, @floatFromInt(idx));
+    var res: [TAP]f64 = undefined;
+    const w0 = table[idx];
+    const w1 = table[@min(idx + 1, lut_size - 1)];
+    inline for (0..TAP) |ii| {
+        res[ii] = w0[ii] * (1.0 - frac) + w1[ii] * frac;
+    }
+    return res;
+}
+
 fn sampleTex4Tap(
     comptime CH: usize,
     comptime sample: TextureSample,
@@ -455,8 +473,8 @@ fn sampleTex4TapRuntime(
             ],
         ),
         .lut_lerp => {
-            const samp_coeff_x = getLerpSampCoeffs(4, lut, tex_x_frac);
-            const samp_coeff_y = getLerpSampCoeffs(4, lut, tex_y_frac);
+            const samp_coeff_x = getLerpSampCoeffsRuntime(4, lut, tex_x_frac);
+            const samp_coeff_y = getLerpSampCoeffsRuntime(4, lut, tex_y_frac);
             return sample2D(CH, 4, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
         },
     };
@@ -599,8 +617,8 @@ fn sampleTex6TapRuntime(
             ],
         ),
         .lut_lerp => {
-            const samp_coeff_x = getLerpSampCoeffs(6, lut, tex_x_frac);
-            const samp_coeff_y = getLerpSampCoeffs(6, lut, tex_y_frac);
+            const samp_coeff_x = getLerpSampCoeffsRuntime(6, lut, tex_x_frac);
+            const samp_coeff_y = getLerpSampCoeffsRuntime(6, lut, tex_y_frac);
             return sample2D(CH, 6, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
         },
     };
@@ -616,8 +634,8 @@ fn sampleTex4TapDispatchMode(
     tex_x_frac: f64,
     tex_y_frac: f64,
 ) [CH]f64 {
-    return switch (buildconfig.config.texture_sample_mode_dispatch) {
-        .run_time => sampleTex4TapRuntime(
+    return switch (cfg.texture_dispatch_policy) {
+        .runtime_runtime => sampleTex4TapRuntime(
             CH,
             sample,
             mode,
@@ -627,7 +645,7 @@ fn sampleTex4TapDispatchMode(
             tex_x_frac,
             tex_y_frac,
         ),
-        .comp_time => switch (mode) {
+        .runtime_comptime, .comptime_comptime => switch (mode) {
             inline else => |m| sampleTex4Tap(
                 CH,
                 sample,
@@ -652,8 +670,8 @@ fn sampleTex6TapDispatchMode(
     tex_x_frac: f64,
     tex_y_frac: f64,
 ) [CH]f64 {
-    return switch (buildconfig.config.texture_sample_mode_dispatch) {
-        .run_time => sampleTex6TapRuntime(
+    return switch (cfg.texture_dispatch_policy) {
+        .runtime_runtime => sampleTex6TapRuntime(
             CH,
             sample,
             mode,
@@ -663,7 +681,7 @@ fn sampleTex6TapDispatchMode(
             tex_x_frac,
             tex_y_frac,
         ),
-        .comp_time => switch (mode) {
+        .runtime_comptime, .comptime_comptime => switch (mode) {
             inline else => |m| sampleTex6Tap(
                 CH,
                 sample,

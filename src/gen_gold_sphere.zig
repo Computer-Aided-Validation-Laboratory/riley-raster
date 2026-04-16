@@ -3,8 +3,9 @@ const common = @import("common/benchcommon.zig");
 const mr = @import("zraster/zig/meshraster.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const buildconfig = @import("zraster/zig/buildconfig.zig");
+const cfg = buildconfig.config;
 
-const simd_on = buildconfig.config.simd == .on;
+const simd_on = cfg.simd == .on;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};

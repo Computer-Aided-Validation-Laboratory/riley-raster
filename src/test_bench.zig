@@ -3,11 +3,12 @@ const common = @import("common/benchcommon.zig");
 const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("zraster/zig/buildconfig.zig");
+const cfg = buildconfig.config;
 const mr = @import("zraster/zig/meshraster.zig");
 const iio = @import("zraster/zig/imageio.zig");
 
 const config = common.BenchConfig{ .run = .all };
-const simd_on = buildconfig.config.simd == .on;
+const simd_on = cfg.simd == .on;
 const impl_suffix = if (simd_on) "_simd" else "_scalar";
 
 test "Unified Benchmark Tests" {

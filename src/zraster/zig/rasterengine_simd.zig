@@ -8,7 +8,7 @@ const VecSF = buildconfig.VecSF;
 const VecSU = buildconfig.VecSU;
 const VecSU8 = buildconfig.VecSU8;
 
-const tol = buildconfig.config.tolerance;
+const tol = cfg.tolerance;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const hull = @import("hull.zig");

@@ -1,13 +1,14 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const cfg = buildconfig.config;
 const shapefun = @import("shapefun.zig");
 
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const VecSU8 = buildconfig.VecSU8;
-const iter_max = buildconfig.config.newton_iter_max;
-const tol = buildconfig.config.tolerance;
+const iter_max = cfg.newton_iter_max;
+const tol = cfg.tolerance;
 
 pub const NewtonSeed = struct {
     xi: f64,

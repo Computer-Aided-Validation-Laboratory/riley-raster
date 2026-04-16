@@ -1,10 +1,11 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const cfg = buildconfig.config;
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const VecSU8 = buildconfig.VecSU8;
-const tol = buildconfig.config.tolerance;
+const tol = cfg.tolerance;
 
 const rops = @import("rasterops.zig");
 const newton = @import("newton.zig");

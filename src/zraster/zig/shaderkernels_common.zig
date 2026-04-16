@@ -1,5 +1,6 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const cfg = buildconfig.config;
 const shaderops = @import("shaderops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const texops = @import("textureops.zig");
@@ -87,9 +88,7 @@ pub inline fn shadeTexScalarCommon(
     }
 
     const config = shader.sample_config;
-    if (buildconfig.config.texture_sample_dispatch == .comp_time and
-        buildconfig.config.texture_sample_mode_dispatch == .comp_time)
-    {
+    if (cfg.texture_dispatch_policy == .comptime_comptime) {
         inline for (.{
             .nearest,
             .linear,

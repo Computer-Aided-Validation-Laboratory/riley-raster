@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const buildconfig = @import("buildconfig.zig");
+const cfg = buildconfig.config;
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
@@ -132,9 +133,7 @@ pub fn TexKernel(
             }
 
             const config = shader.sample_config;
-            if (buildconfig.config.texture_sample_dispatch == .comp_time and
-                buildconfig.config.texture_sample_mode_dispatch == .comp_time)
-            {
+            if (cfg.texture_dispatch_policy == .comptime_comptime) {
                 inline for (.{
                     .nearest,
                     .linear,

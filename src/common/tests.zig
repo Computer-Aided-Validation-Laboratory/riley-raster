@@ -21,10 +21,11 @@ pub const iio = @import("../zraster/zig/imageio.zig");
 pub const texops = @import("../zraster/zig/textureops.zig");
 pub const uvio = @import("../zraster/zig/uvio.zig");
 pub const buildconfig = @import("../zraster/zig/buildconfig.zig");
+const cfg = buildconfig.config;
 pub const csvio = @import("../zraster/zig/csvio.zig");
 
 const default_fails_root = "fails";
-const impl_suffix = if (buildconfig.config.simd == .on) "_simd" else "_scalar";
+const impl_suffix = if (cfg.simd == .on) "_simd" else "_scalar";
 
 // Default tolerances: for scientific accuracy and DIC
 // f64: rel= 1e-11, abs= 1e-11

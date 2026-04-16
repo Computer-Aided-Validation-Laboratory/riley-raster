@@ -7,11 +7,12 @@ const ndarray = @import("ndarray.zig");
 const NDArray = ndarray.NDArray;
 const MappedNDArray = ndarray.MappedNDArray;
 const buildconfig = @import("buildconfig.zig");
+const cfg = buildconfig.config;
 const Camera = @import("camera.zig").Camera;
 const shapefun = @import("shapefun.zig");
 const S = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
-const tol = buildconfig.config.tolerance;
+const tol = cfg.tolerance;
 
 const buildAdaptiveHulls = @import("hull.zig").buildAdaptiveHulls;
 const geomkerns = @import("geometrykernels.zig");

@@ -5,9 +5,10 @@ pub const SimdMode = enum {
     on,
 };
 
-pub const Dispatch = enum {
-    run_time,
-    comp_time,
+pub const TextureDispatchPolicy = enum {
+    runtime_runtime,
+    runtime_comptime,
+    comptime_comptime,
 };
 
 pub const SimdTextureInterpMode = enum {
@@ -81,8 +82,7 @@ pub const Tolerance = struct {
 pub const Config = struct {
     simd: SimdMode = .on,
     simd_texture_interp: SimdTextureInterpMode = .inner,
-    texture_sample_dispatch: Dispatch = .run_time,
-    texture_sample_mode_dispatch: Dispatch = .comp_time,
+    texture_dispatch_policy: TextureDispatchPolicy = .runtime_comptime,
     simd_vector_width: comptime_int = 8,
     max_nodal_fields: comptime_int = 8,
     max_image_channels: comptime_int = 8,
@@ -95,8 +95,7 @@ pub const Config = struct {
 pub const config = Config{
     .simd = .on,
     .simd_texture_interp = .inner,
-    .texture_sample_dispatch = .run_time,
-    .texture_sample_mode_dispatch = .comp_time,
+    .texture_dispatch_policy = .runtime_comptime,
     .simd_vector_width = 8,
     .max_nodal_fields = 8,
     .max_image_channels = 8,
