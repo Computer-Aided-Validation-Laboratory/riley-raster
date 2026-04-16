@@ -1,17 +1,15 @@
-# Nano temporary files
-*.swp
-
-# Zig library files
+# Zig ignores
 *.so
 *.a
 *.o
 build/
 file-out/
+.zig-cache/
+zig-out/
 
-# Test files
+# Do not keep any large output directories with images or other output in them
 raster-out/
 raster-test/
-
 out*/
 gold*/
 fails/
@@ -21,26 +19,39 @@ archive/
 example/
 example*/
 examples*/
-
 scripts/hull-diags/
 temp-*/
 temp/
+data-bench/**/*.csv
+out-bench-*
+plans/
+gold-min/**/*.bmp
+out-min/
 
+# Don't commit large image files to the repo unless we have to
 *.ppm
 *.bmp
+*.tiff
+
+# Keep the min test suite
+!data-min/
+!data-min/**/*.csv
+!gold-min/
+!gold-min/**/*.fimg
+
+# We need to keep the textures for the tests
+!texture/*.bmp
+!texture/*.tiff
+
+# Misc
+*.swp
+test_output.txt
+.vscode/
+.venv/
 
 # Cython
 *.html
 
-# Python ignores
-.venv/
-
-# Zig ignores
-.zig-cache/
-zig-out/
-.vscode/
-
-test_output.txt
 
 #-----------------------------------------------------------------------------
 # Standard Python Ignore
@@ -213,14 +224,3 @@ cpp/Makefile
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-data-bench/**/*.csv
-out-bench-*
-plans/
-
-# Min test suite
-!data-min/
-!data-min/**/*.csv
-!gold-min/
-!gold-min/**/*.fimg
-gold-min/**/*.bmp
-out-min/
