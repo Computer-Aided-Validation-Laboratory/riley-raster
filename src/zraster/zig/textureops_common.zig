@@ -419,30 +419,46 @@ fn sampleTex4Tap(
 
     return switch (mode) {
         .direct => blk: {
-            const sx = .{
+            const coeffs_x = .{
                 coeff_fun(tex_x_frac + 1),
                 coeff_fun(tex_x_frac),
                 coeff_fun(tex_x_frac - 1),
                 coeff_fun(tex_x_frac - 2),
             };
-            const sy = .{
+            const coeffs_y = .{
                 coeff_fun(tex_y_frac + 1),
                 coeff_fun(tex_y_frac),
                 coeff_fun(tex_y_frac - 1),
                 coeff_fun(tex_y_frac - 2),
             };
-            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
+            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, coeffs_x, coeffs_y);
         },
         .lut => blk: {
             const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
             const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
             const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
-            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
+            break :blk sampleConv(
+                CH,
+                TAP,
+                texture,
+                tex_x_i,
+                tex_y_i,
+                lut[idx_x],
+                lut[idx_y],
+            );
         },
         .lut_lerp => blk: {
-            const samp_coeff_x = getLerpSampCoeffs(TAP, lut, tex_x_frac);
-            const samp_coeff_y = getLerpSampCoeffs(TAP, lut, tex_y_frac);
-            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+            const coeffs_x = getLerpSampCoeffs(TAP, lut, tex_x_frac);
+            const coeffs_y = getLerpSampCoeffs(TAP, lut, tex_y_frac);
+            break :blk sampleConv(
+                CH,
+                TAP,
+                texture,
+                tex_x_i,
+                tex_y_i,
+                coeffs_x,
+                coeffs_y,
+            );
         },
     };
 }
@@ -473,30 +489,46 @@ fn sampleTex4TapRuntime(
 
     return switch (mode) {
         .direct => blk: {
-            const sx = .{
+            const coeffs_x = .{
                 coeff_fun(tex_x_frac + 1),
                 coeff_fun(tex_x_frac),
                 coeff_fun(tex_x_frac - 1),
                 coeff_fun(tex_x_frac - 2),
             };
-            const sy = .{
+            const coeffs_y = .{
                 coeff_fun(tex_y_frac + 1),
                 coeff_fun(tex_y_frac),
                 coeff_fun(tex_y_frac - 1),
                 coeff_fun(tex_y_frac - 2),
             };
-            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
+            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, coeffs_x, coeffs_y);
         },
         .lut => blk: {
             const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
             const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
             const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
-            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
+            break :blk sampleConv(
+                CH,
+                TAP,
+                texture,
+                tex_x_i,
+                tex_y_i,
+                lut[idx_x],
+                lut[idx_y],
+            );
         },
         .lut_lerp => {
-            const samp_coeff_x = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
-            const samp_coeff_y = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
-            return sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+            const coeffs_x = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
+            const coeffs_y = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
+            return sampleConv(
+                CH,
+                TAP,
+                texture,
+                tex_x_i,
+                tex_y_i,
+                coeffs_x,
+                coeffs_y,
+            );
         },
     };
 }
@@ -525,7 +557,7 @@ fn sampleTex6Tap(
 
     return switch (mode) {
         .direct => blk: {
-            const sx = .{
+            const coeffs_x = .{
                 coeff_fun(tex_x_frac + 2),
                 coeff_fun(tex_x_frac + 1),
                 coeff_fun(tex_x_frac),
@@ -533,7 +565,7 @@ fn sampleTex6Tap(
                 coeff_fun(tex_x_frac - 2),
                 coeff_fun(tex_x_frac - 3),
             };
-            const sy = .{
+            const coeffs_y = .{
                 coeff_fun(tex_y_frac + 2),
                 coeff_fun(tex_y_frac + 1),
                 coeff_fun(tex_y_frac),
@@ -541,18 +573,34 @@ fn sampleTex6Tap(
                 coeff_fun(tex_y_frac - 2),
                 coeff_fun(tex_y_frac - 3),
             };
-            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
+            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, coeffs_x, coeffs_y);
         },
         .lut => blk: {
             const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
             const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
             const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
-            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
+            break :blk sampleConv(
+                CH,
+                TAP,
+                texture,
+                tex_x_i,
+                tex_y_i,
+                lut[idx_x],
+                lut[idx_y],
+            );
         },
         .lut_lerp => blk: {
-            const samp_coeff_x = getLerpSampCoeffs(TAP, lut, tex_x_frac);
-            const samp_coeff_y = getLerpSampCoeffs(TAP, lut, tex_y_frac);
-            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+            const coeffs_x = getLerpSampCoeffs(TAP, lut, tex_x_frac);
+            const coeffs_y = getLerpSampCoeffs(TAP, lut, tex_y_frac);
+            break :blk sampleConv(
+                CH,
+                TAP,
+                texture,
+                tex_x_i,
+                tex_y_i,
+                coeffs_x,
+                coeffs_y,
+            );
         },
     };
 }
@@ -581,7 +629,7 @@ fn sampleTex6TapRuntime(
 
     return switch (mode) {
         .direct => blk: {
-            const sx = .{
+            const coeffs_x = .{
                 coeff_fun(tex_x_frac + 2),
                 coeff_fun(tex_x_frac + 1),
                 coeff_fun(tex_x_frac),
@@ -589,7 +637,7 @@ fn sampleTex6TapRuntime(
                 coeff_fun(tex_x_frac - 2),
                 coeff_fun(tex_x_frac - 3),
             };
-            const sy = .{
+            const coeffs_y = .{
                 coeff_fun(tex_y_frac + 2),
                 coeff_fun(tex_y_frac + 1),
                 coeff_fun(tex_y_frac),
@@ -597,18 +645,34 @@ fn sampleTex6TapRuntime(
                 coeff_fun(tex_y_frac - 2),
                 coeff_fun(tex_y_frac - 3),
             };
-            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, sx, sy);
+            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, coeffs_x, coeffs_y);
         },
         .lut => blk: {
             const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
             const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
             const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
-            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
+            break :blk sampleConv(
+                CH,
+                TAP,
+                texture,
+                tex_x_i,
+                tex_y_i,
+                lut[idx_x],
+                lut[idx_y],
+            );
         },
         .lut_lerp => {
-            const samp_coeff_x = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
-            const samp_coeff_y = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
-            return sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, samp_coeff_x, samp_coeff_y);
+            const coeffs_x = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
+            const coeffs_y = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
+            return sampleConv(
+                CH,
+                TAP,
+                texture,
+                tex_x_i,
+                tex_y_i,
+                coeffs_x,
+                coeffs_y,
+            );
         },
     };
 }

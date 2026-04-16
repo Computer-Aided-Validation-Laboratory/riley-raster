@@ -301,7 +301,7 @@ fn sampleConvWide(
     return samp_res;
 }
 
-fn v_cubicCoeffCatmullRomSIMD(v_x: VecSF) VecSF {
+fn cubicCoeffCatmullRomSIMD(v_x: VecSF) VecSF {
     const v_ax = @abs(v_x);
     const v_splat_one: VecSF = @splat(1.0);
     const v_splat_two: VecSF = @splat(2.0);
@@ -330,7 +330,7 @@ fn v_cubicCoeffCatmullRomSIMD(v_x: VecSF) VecSF {
     return samp_res;
 }
 
-fn v_cubicCoeffMitchellNetravaliSIMD(v_x: VecSF) VecSF {
+fn cubicCoeffMitchellNetravaliSIMD(v_x: VecSF) VecSF {
     const v_r = @abs(v_x);
     const B = 1.0 / 3.0;
     const C = 1.0 / 3.0;
@@ -354,7 +354,7 @@ fn v_cubicCoeffMitchellNetravaliSIMD(v_x: VecSF) VecSF {
     return samp_res;
 }
 
-fn v_cubicBSplineCoeffSIMD(v_x: VecSF) VecSF {
+fn cubicBSplineCoeffSIMD(v_x: VecSF) VecSF {
     const v_r = @abs(v_x);
     const v_splat_one: VecSF = @splat(1.0);
     const v_splat_two: VecSF = @splat(2.0);
@@ -374,7 +374,7 @@ fn v_cubicBSplineCoeffSIMD(v_x: VecSF) VecSF {
     return samp_res;
 }
 
-fn v_lanczos3CoeffSIMD(v_x: VecSF) VecSF {
+fn lanczos3CoeffSIMD(v_x: VecSF) VecSF {
     const v_ax = @abs(v_x);
     var samp_res_arr: [S]f64 = undefined;
     const ax_arr: [S]f64 = v_ax;
@@ -384,7 +384,7 @@ fn v_lanczos3CoeffSIMD(v_x: VecSF) VecSF {
     return samp_res_arr;
 }
 
-fn v_quinticBSplineCoeffSIMD(v_x: VecSF) VecSF {
+fn quinticBSplineCoeffSIMD(v_x: VecSF) VecSF {
     const v_r = @abs(v_x);
     const v_splat_zero: VecSF = @splat(0.0);
     const v_splat_one: VecSF = @splat(1.0);
@@ -479,13 +479,13 @@ pub fn sampleOneLane(
             };
             return switch (config.mode) {
                 .direct => blk: {
-                    const sx = .{
+                    const coeffs_x = .{
                         coeff_fun(tex_x_frac + 1),
                         coeff_fun(tex_x_frac),
                         coeff_fun(tex_x_frac - 1),
                         coeff_fun(tex_x_frac - 2),
                     };
-                    const sy = .{
+                    const coeffs_y = .{
                         coeff_fun(tex_y_frac + 1),
                         coeff_fun(tex_y_frac),
                         coeff_fun(tex_y_frac - 1),
@@ -497,8 +497,8 @@ pub fn sampleOneLane(
                         texture,
                         tex_x_i,
                         tex_y_i,
-                        sx,
-                        sy,
+                        coeffs_x,
+                        coeffs_y,
                     );
                 },
                 .lut => blk: {
@@ -516,16 +516,16 @@ pub fn sampleOneLane(
                     );
                 },
                 .lut_lerp => blk: {
-                    const sx = getLerpSampCoeffs(TAP, lut, tex_x_frac);
-                    const sy = getLerpSampCoeffs(TAP, lut, tex_y_frac);
+                    const coeffs_x = getLerpSampCoeffs(TAP, lut, tex_x_frac);
+                    const coeffs_y = getLerpSampCoeffs(TAP, lut, tex_y_frac);
                     break :blk sampleConvOneLane(
                         CH,
                         TAP,
                         texture,
                         tex_x_i,
                         tex_y_i,
-                        sx,
-                        sy,
+                        coeffs_x,
+                        coeffs_y,
                     );
                 },
             };
@@ -544,7 +544,7 @@ pub fn sampleOneLane(
             };
             return switch (config.mode) {
                 .direct => blk: {
-                    const sx = .{
+                    const coeffs_x = .{
                         coeff_fun(tex_x_frac + 2),
                         coeff_fun(tex_x_frac + 1),
                         coeff_fun(tex_x_frac),
@@ -552,7 +552,7 @@ pub fn sampleOneLane(
                         coeff_fun(tex_x_frac - 2),
                         coeff_fun(tex_x_frac - 3),
                     };
-                    const sy = .{
+                    const coeffs_y = .{
                         coeff_fun(tex_y_frac + 2),
                         coeff_fun(tex_y_frac + 1),
                         coeff_fun(tex_y_frac),
@@ -566,8 +566,8 @@ pub fn sampleOneLane(
                         texture,
                         tex_x_i,
                         tex_y_i,
-                        sx,
-                        sy,
+                        coeffs_x,
+                        coeffs_y,
                     );
                 },
                 .lut => blk: {
@@ -585,16 +585,16 @@ pub fn sampleOneLane(
                     );
                 },
                 .lut_lerp => blk: {
-                    const sx = getLerpSampCoeffs(TAP, lut, tex_x_frac);
-                    const sy = getLerpSampCoeffs(TAP, lut, tex_y_frac);
+                    const coeffs_x = getLerpSampCoeffs(TAP, lut, tex_x_frac);
+                    const coeffs_y = getLerpSampCoeffs(TAP, lut, tex_y_frac);
                     break :blk sampleConvOneLane(
                         CH,
                         TAP,
                         texture,
                         tex_x_i,
                         tex_y_i,
-                        sx,
-                        sy,
+                        coeffs_x,
+                        coeffs_y,
                     );
                 },
             };
@@ -677,7 +677,7 @@ pub fn sampleLanesTri3(
     }
 
     if (active_count > 1) {
-        var lane_keys: [8]u64 = undefined;
+        var lane_keys: [S]u64 = undefined;
         for (0..active_count) |ii| {
             const lane = active_lanes[ii];
             const xf = u_arr[lane] * tex_cols_minus_1_f;
@@ -796,18 +796,18 @@ pub fn sampleWide(
             const v_samp_coeffs = switch (config.mode) {
                 .direct => blk: {
                     const v_kernel: *const fn (VecSF) VecSF = switch (config.sample) {
-                        .cubic_catmull_rom => v_cubicCoeffCatmullRomSIMD,
-                        .cubic_mitchell_netravali => v_cubicCoeffMitchellNetravaliSIMD,
-                        .cubic_bspline => v_cubicBSplineCoeffSIMD,
+                        .cubic_catmull_rom => cubicCoeffCatmullRomSIMD,
+                        .cubic_mitchell_netravali => cubicCoeffMitchellNetravaliSIMD,
+                        .cubic_bspline => cubicBSplineCoeffSIMD,
                         else => unreachable,
                     };
-                    const sx = [TAP]VecSF{
+                    const coeffs_x = [TAP]VecSF{
                         v_kernel(v_tex_x_frac + @as(VecSF, @splat(1.0))),
                         v_kernel(v_tex_x_frac),
                         v_kernel(v_tex_x_frac - @as(VecSF, @splat(1.0))),
                         v_kernel(v_tex_x_frac - @as(VecSF, @splat(2.0))),
                     };
-                    const sy = [TAP]VecSF{
+                    const coeffs_y = [TAP]VecSF{
                         v_kernel(v_tex_y_frac + @as(VecSF, @splat(1.0))),
                         v_kernel(v_tex_y_frac),
                         v_kernel(v_tex_y_frac - @as(VecSF, @splat(1.0))),
@@ -815,14 +815,14 @@ pub fn sampleWide(
                     };
                     inline for (0..TAP) |jj| {
                         inline for (0..TAP) |ii| {
-                            v_samp_coeff_sum += sx[ii] * sy[jj];
+                            v_samp_coeff_sum += coeffs_x[ii] * coeffs_y[jj];
                         }
                     }
-                    break :blk [2][TAP]VecSF{ sx, sy };
+                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
                 },
                 .lut => blk: {
-                    var sx_arr: [4][S]f64 = undefined;
-                    var sy_arr: [4][S]f64 = undefined;
+                    var coeffs_x_arr: [TAP][S]f64 = undefined;
+                    var coeffs_y_arr: [TAP][S]f64 = undefined;
                     for (0..S) |ii| {
                         const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
                         const ix = @as(
@@ -833,18 +833,29 @@ pub fn sampleWide(
                             usize,
                             @intFromFloat(tex_y_frac_arr[ii] * lut_size_f),
                         );
-                        inline for (0..4) |kk| {
-                            sx_arr[kk][ii] = lut[ix][kk];
-                            sy_arr[kk][ii] = lut[iy][kk];
-                            v_samp_coeff_sum[ii] += lut[ix][kk] * lut[iy][0]; // Simplified sum for LUT
+                        inline for (0..TAP) |kk| {
+                            coeffs_x_arr[kk][ii] = lut[ix][kk];
+                            coeffs_y_arr[kk][ii] = lut[iy][kk];
                         }
                     }
                     // Proper sum for LUT modes
                     v_samp_coeff_sum = @splat(0.0);
                     for (0..S) |ii| {
                         var sum: f64 = 0.0;
-                        const ix = @as(usize, @intFromFloat(tex_x_frac_arr[ii] * @as(f64, @floatFromInt(lut_size - 1))));
-                        const iy = @as(usize, @intFromFloat(tex_y_frac_arr[ii] * @as(f64, @floatFromInt(lut_size - 1))));
+                        const ix = @as(
+                            usize,
+                            @intFromFloat(tex_x_frac_arr[ii] * @as(
+                                f64,
+                                @floatFromInt(lut_size - 1),
+                            )),
+                        );
+                        const iy = @as(
+                            usize,
+                            @intFromFloat(tex_y_frac_arr[ii] * @as(
+                                f64,
+                                @floatFromInt(lut_size - 1),
+                            )),
+                        );
                         for (0..TAP) |jj| {
                             for (0..TAP) |kk| {
                                 sum += lut[ix][kk] * lut[iy][jj];
@@ -852,40 +863,48 @@ pub fn sampleWide(
                         }
                         v_samp_coeff_sum[ii] = sum;
                     }
-                    var sx: [4]VecSF = undefined;
-                    var sy: [4]VecSF = undefined;
-                    inline for (0..4) |kk| {
-                        sx[kk] = sx_arr[kk];
-                        sy[kk] = sy_arr[kk];
+                    var coeffs_x: [TAP]VecSF = undefined;
+                    var coeffs_y: [TAP]VecSF = undefined;
+                    inline for (0..TAP) |kk| {
+                        coeffs_x[kk] = coeffs_x_arr[kk];
+                        coeffs_y[kk] = coeffs_y_arr[kk];
                     }
-                    break :blk [2][TAP]VecSF{ sx, sy };
+                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
                 },
                 .lut_lerp => blk: {
-                    var sx_arr: [4][S]f64 = undefined;
-                    var sy_arr: [4][S]f64 = undefined;
+                    var coeffs_x_arr: [TAP][S]f64 = undefined;
+                    var coeffs_y_arr: [TAP][S]f64 = undefined;
                     v_samp_coeff_sum = @splat(0.0);
                     for (0..S) |ii| {
-                        const sxx = getLerpSampCoeffs(4, lut, tex_x_frac_arr[ii]);
-                        const syy = getLerpSampCoeffs(4, lut, tex_y_frac_arr[ii]);
+                        const coeffs_x_lane = getLerpSampCoeffs(
+                            TAP,
+                            lut,
+                            tex_x_frac_arr[ii],
+                        );
+                        const coeffs_y_lane = getLerpSampCoeffs(
+                            TAP,
+                            lut,
+                            tex_y_frac_arr[ii],
+                        );
                         var sum: f64 = 0.0;
-                        inline for (0..4) |kk| {
-                            sx_arr[kk][ii] = sxx[kk];
-                            sy_arr[kk][ii] = syy[kk];
+                        inline for (0..TAP) |kk| {
+                            coeffs_x_arr[kk][ii] = coeffs_x_lane[kk];
+                            coeffs_y_arr[kk][ii] = coeffs_y_lane[kk];
                         }
-                        for (0..4) |jj| {
-                            for (0..4) |kk| {
-                                sum += sxx[kk] * syy[jj];
+                        for (0..TAP) |jj| {
+                            for (0..TAP) |kk| {
+                                sum += coeffs_x_lane[kk] * coeffs_y_lane[jj];
                             }
                         }
                         v_samp_coeff_sum[ii] = sum;
                     }
-                    var sx: [4]VecSF = undefined;
-                    var sy: [4]VecSF = undefined;
-                    inline for (0..4) |kk| {
-                        sx[kk] = sx_arr[kk];
-                        sy[kk] = sy_arr[kk];
+                    var coeffs_x: [TAP]VecSF = undefined;
+                    var coeffs_y: [TAP]VecSF = undefined;
+                    inline for (0..TAP) |kk| {
+                        coeffs_x[kk] = coeffs_x_arr[kk];
+                        coeffs_y[kk] = coeffs_y_arr[kk];
                     }
-                    break :blk [2][TAP]VecSF{ sx, sy };
+                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
                 },
             };
 
@@ -918,11 +937,11 @@ pub fn sampleWide(
             const v_samp_coeffs = switch (config.mode) {
                 .direct => blk: {
                     const v_kernel: *const fn (VecSF) VecSF = switch (config.sample) {
-                        .lanczos3 => v_lanczos3CoeffSIMD,
-                        .quintic_bspline => v_quinticBSplineCoeffSIMD,
+                        .lanczos3 => lanczos3CoeffSIMD,
+                        .quintic_bspline => quinticBSplineCoeffSIMD,
                         else => unreachable,
                     };
-                    const sx = [TAP]VecSF{
+                    const coeffs_x = [TAP]VecSF{
                         v_kernel(v_tex_x_frac + @as(VecSF, @splat(2.0))),
                         v_kernel(v_tex_x_frac + @as(VecSF, @splat(1.0))),
                         v_kernel(v_tex_x_frac),
@@ -930,7 +949,7 @@ pub fn sampleWide(
                         v_kernel(v_tex_x_frac - @as(VecSF, @splat(2.0))),
                         v_kernel(v_tex_x_frac - @as(VecSF, @splat(3.0))),
                     };
-                    const sy = [TAP]VecSF{
+                    const coeffs_y = [TAP]VecSF{
                         v_kernel(v_tex_y_frac + @as(VecSF, @splat(2.0))),
                         v_kernel(v_tex_y_frac + @as(VecSF, @splat(1.0))),
                         v_kernel(v_tex_y_frac),
@@ -940,14 +959,14 @@ pub fn sampleWide(
                     };
                     inline for (0..TAP) |jj| {
                         inline for (0..TAP) |ii| {
-                            v_samp_coeff_sum += sx[ii] * sy[jj];
+                            v_samp_coeff_sum += coeffs_x[ii] * coeffs_y[jj];
                         }
                     }
-                    break :blk [2][TAP]VecSF{ sx, sy };
+                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
                 },
                 .lut => blk: {
-                    var sx_arr: [6][S]f64 = undefined;
-                    var sy_arr: [6][S]f64 = undefined;
+                    var coeffs_x_arr: [TAP][S]f64 = undefined;
+                    var coeffs_y_arr: [TAP][S]f64 = undefined;
                     v_samp_coeff_sum = @splat(0.0);
                     for (0..S) |ii| {
                         const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
@@ -960,51 +979,59 @@ pub fn sampleWide(
                             @intFromFloat(tex_y_frac_arr[ii] * lut_size_f),
                         );
                         var sum: f64 = 0.0;
-                        inline for (0..6) |kk| {
-                            sx_arr[kk][ii] = lut[ix][kk];
-                            sy_arr[kk][ii] = lut[iy][kk];
+                        inline for (0..TAP) |kk| {
+                            coeffs_x_arr[kk][ii] = lut[ix][kk];
+                            coeffs_y_arr[kk][ii] = lut[iy][kk];
                         }
-                        for (0..6) |jj| {
-                            for (0..6) |kk| {
+                        for (0..TAP) |jj| {
+                            for (0..TAP) |kk| {
                                 sum += lut[ix][kk] * lut[iy][jj];
                             }
                         }
                         v_samp_coeff_sum[ii] = sum;
                     }
-                    var sx: [TAP]VecSF = undefined;
-                    var sy: [TAP]VecSF = undefined;
+                    var coeffs_x: [TAP]VecSF = undefined;
+                    var coeffs_y: [TAP]VecSF = undefined;
                     inline for (0..TAP) |kk| {
-                        sx[kk] = sx_arr[kk];
-                        sy[kk] = sy_arr[kk];
+                        coeffs_x[kk] = coeffs_x_arr[kk];
+                        coeffs_y[kk] = coeffs_y_arr[kk];
                     }
-                    break :blk [2][TAP]VecSF{ sx, sy };
+                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
                 },
                 .lut_lerp => blk: {
-                    var sx_arr: [6][S]f64 = undefined;
-                    var sy_arr: [6][S]f64 = undefined;
+                    var coeffs_x_arr: [TAP][S]f64 = undefined;
+                    var coeffs_y_arr: [TAP][S]f64 = undefined;
                     v_samp_coeff_sum = @splat(0.0);
                     for (0..S) |ii| {
-                        const sxx = getLerpSampCoeffs(6, lut, tex_x_frac_arr[ii]);
-                        const syy = getLerpSampCoeffs(6, lut, tex_y_frac_arr[ii]);
+                        const coeffs_x_lane = getLerpSampCoeffs(
+                            TAP,
+                            lut,
+                            tex_x_frac_arr[ii],
+                        );
+                        const coeffs_y_lane = getLerpSampCoeffs(
+                            TAP,
+                            lut,
+                            tex_y_frac_arr[ii],
+                        );
                         var sum: f64 = 0.0;
-                        inline for (0..6) |kk| {
-                            sx_arr[kk][ii] = sxx[kk];
-                            sy_arr[kk][ii] = syy[kk];
+                        inline for (0..TAP) |kk| {
+                            coeffs_x_arr[kk][ii] = coeffs_x_lane[kk];
+                            coeffs_y_arr[kk][ii] = coeffs_y_lane[kk];
                         }
-                        for (0..6) |jj| {
-                            for (0..6) |kk| {
-                                sum += sxx[kk] * syy[jj];
+                        for (0..TAP) |jj| {
+                            for (0..TAP) |kk| {
+                                sum += coeffs_x_lane[kk] * coeffs_y_lane[jj];
                             }
                         }
                         v_samp_coeff_sum[ii] = sum;
                     }
-                    var sx: [TAP]VecSF = undefined;
-                    var sy: [TAP]VecSF = undefined;
+                    var coeffs_x: [TAP]VecSF = undefined;
+                    var coeffs_y: [TAP]VecSF = undefined;
                     inline for (0..TAP) |kk| {
-                        sx[kk] = sx_arr[kk];
-                        sy[kk] = sy_arr[kk];
+                        coeffs_x[kk] = coeffs_x_arr[kk];
+                        coeffs_y[kk] = coeffs_y_arr[kk];
                     }
-                    break :blk [2][TAP]VecSF{ sx, sy };
+                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
                 },
             };
 
@@ -1085,13 +1112,13 @@ fn sampleOneLaneRuntimeImpl(
             };
             return switch (config.mode) {
                 .direct => blk: {
-                    const sx = .{
+                    const coeffs_x = .{
                         coeff_fun(tex_x_frac + 1),
                         coeff_fun(tex_x_frac),
                         coeff_fun(tex_x_frac - 1),
                         coeff_fun(tex_x_frac - 2),
                     };
-                    const sy = .{
+                    const coeffs_y = .{
                         coeff_fun(tex_y_frac + 1),
                         coeff_fun(tex_y_frac),
                         coeff_fun(tex_y_frac - 1),
@@ -1103,8 +1130,8 @@ fn sampleOneLaneRuntimeImpl(
                         texture,
                         tex_x_i,
                         tex_y_i,
-                        sx,
-                        sy,
+                        coeffs_x,
+                        coeffs_y,
                     );
                 },
                 .lut => blk: {
@@ -1122,16 +1149,16 @@ fn sampleOneLaneRuntimeImpl(
                     );
                 },
                 .lut_lerp => blk: {
-                    const sx = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
-                    const sy = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
+                    const coeffs_x = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
+                    const coeffs_y = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
                     break :blk sampleConvOneLane(
                         CH,
                         TAP,
                         texture,
                         tex_x_i,
                         tex_y_i,
-                        sx,
-                        sy,
+                        coeffs_x,
+                        coeffs_y,
                     );
                 },
             };
@@ -1150,7 +1177,7 @@ fn sampleOneLaneRuntimeImpl(
             };
             return switch (config.mode) {
                 .direct => blk: {
-                    const sx = .{
+                    const coeffs_x = .{
                         coeff_fun(tex_x_frac + 2),
                         coeff_fun(tex_x_frac + 1),
                         coeff_fun(tex_x_frac),
@@ -1158,7 +1185,7 @@ fn sampleOneLaneRuntimeImpl(
                         coeff_fun(tex_x_frac - 2),
                         coeff_fun(tex_x_frac - 3),
                     };
-                    const sy = .{
+                    const coeffs_y = .{
                         coeff_fun(tex_y_frac + 2),
                         coeff_fun(tex_y_frac + 1),
                         coeff_fun(tex_y_frac),
@@ -1172,8 +1199,8 @@ fn sampleOneLaneRuntimeImpl(
                         texture,
                         tex_x_i,
                         tex_y_i,
-                        sx,
-                        sy,
+                        coeffs_x,
+                        coeffs_y,
                     );
                 },
                 .lut => blk: {
@@ -1191,16 +1218,16 @@ fn sampleOneLaneRuntimeImpl(
                     );
                 },
                 .lut_lerp => blk: {
-                    const sx = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
-                    const sy = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
+                    const coeffs_x = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
+                    const coeffs_y = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
                     break :blk sampleConvOneLane(
                         CH,
                         TAP,
                         texture,
                         tex_x_i,
                         tex_y_i,
-                        sx,
-                        sy,
+                        coeffs_x,
+                        coeffs_y,
                     );
                 },
             };
@@ -1279,7 +1306,7 @@ fn sampleLanesTri3RuntimeImpl(
     }
 
     if (active_count > 1) {
-        var lane_keys: [8]u64 = undefined;
+        var lane_keys: [S]u64 = undefined;
         for (0..active_count) |ii| {
             const lane = active_lanes[ii];
             const xf = u_arr[lane] * tex_cols_minus_1_f;
@@ -1400,18 +1427,18 @@ fn sampleWideRuntimeImpl(
             const v_samp_coeffs = switch (config.mode) {
                 .direct => blk: {
                     const v_kernel: *const fn (VecSF) VecSF = switch (config.sample) {
-                        .cubic_catmull_rom => v_cubicCoeffCatmullRomSIMD,
-                        .cubic_mitchell_netravali => v_cubicCoeffMitchellNetravaliSIMD,
-                        .cubic_bspline => v_cubicBSplineCoeffSIMD,
+                        .cubic_catmull_rom => cubicCoeffCatmullRomSIMD,
+                        .cubic_mitchell_netravali => cubicCoeffMitchellNetravaliSIMD,
+                        .cubic_bspline => cubicBSplineCoeffSIMD,
                         else => unreachable,
                     };
-                    const sx = [TAP]VecSF{
+                    const coeffs_x = [TAP]VecSF{
                         v_kernel(v_tex_x_frac + @as(VecSF, @splat(1.0))),
                         v_kernel(v_tex_x_frac),
                         v_kernel(v_tex_x_frac - @as(VecSF, @splat(1.0))),
                         v_kernel(v_tex_x_frac - @as(VecSF, @splat(2.0))),
                     };
-                    const sy = [TAP]VecSF{
+                    const coeffs_y = [TAP]VecSF{
                         v_kernel(v_tex_y_frac + @as(VecSF, @splat(1.0))),
                         v_kernel(v_tex_y_frac),
                         v_kernel(v_tex_y_frac - @as(VecSF, @splat(1.0))),
@@ -1419,14 +1446,14 @@ fn sampleWideRuntimeImpl(
                     };
                     inline for (0..TAP) |jj| {
                         inline for (0..TAP) |ii| {
-                            v_samp_coeff_sum += sx[ii] * sy[jj];
+                            v_samp_coeff_sum += coeffs_x[ii] * coeffs_y[jj];
                         }
                     }
-                    break :blk [2][TAP]VecSF{ sx, sy };
+                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
                 },
                 .lut => blk: {
-                    var sx_arr: [4][S]f64 = undefined;
-                    var sy_arr: [4][S]f64 = undefined;
+                    var coeffs_x_arr: [TAP][S]f64 = undefined;
+                    var coeffs_y_arr: [TAP][S]f64 = undefined;
                     v_samp_coeff_sum = @splat(0.0);
                     for (0..S) |ii| {
                         const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
@@ -1439,51 +1466,59 @@ fn sampleWideRuntimeImpl(
                             @intFromFloat(tex_y_frac_arr2[ii] * lut_size_f),
                         );
                         var sum: f64 = 0.0;
-                        inline for (0..4) |kk| {
-                            sx_arr[kk][ii] = lut[ix][kk];
-                            sy_arr[kk][ii] = lut[iy][kk];
+                        inline for (0..TAP) |kk| {
+                            coeffs_x_arr[kk][ii] = lut[ix][kk];
+                            coeffs_y_arr[kk][ii] = lut[iy][kk];
                         }
-                        for (0..4) |jj| {
-                            for (0..4) |kk| {
+                        for (0..TAP) |jj| {
+                            for (0..TAP) |kk| {
                                 sum += lut[ix][kk] * lut[iy][jj];
                             }
                         }
                         v_samp_coeff_sum[ii] = sum;
                     }
-                    var sx: [4]VecSF = undefined;
-                    var sy: [4]VecSF = undefined;
-                    inline for (0..4) |kk| {
-                        sx[kk] = sx_arr[kk];
-                        sy[kk] = sy_arr[kk];
+                    var coeffs_x: [TAP]VecSF = undefined;
+                    var coeffs_y: [TAP]VecSF = undefined;
+                    inline for (0..TAP) |kk| {
+                        coeffs_x[kk] = coeffs_x_arr[kk];
+                        coeffs_y[kk] = coeffs_y_arr[kk];
                     }
-                    break :blk [2][TAP]VecSF{ sx, sy };
+                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
                 },
                 .lut_lerp => blk: {
-                    var sx_arr: [4][S]f64 = undefined;
-                    var sy_arr: [4][S]f64 = undefined;
+                    var coeffs_x_arr: [TAP][S]f64 = undefined;
+                    var coeffs_y_arr: [TAP][S]f64 = undefined;
                     v_samp_coeff_sum = @splat(0.0);
                     for (0..S) |ii| {
-                        const sxx = getLerpSampCoeffsRuntime(4, lut, tex_x_frac_arr2[ii]);
-                        const syy = getLerpSampCoeffsRuntime(4, lut, tex_y_frac_arr2[ii]);
+                        const coeffs_x_lane = getLerpSampCoeffsRuntime(
+                            TAP,
+                            lut,
+                            tex_x_frac_arr2[ii],
+                        );
+                        const coeffs_y_lane = getLerpSampCoeffsRuntime(
+                            TAP,
+                            lut,
+                            tex_y_frac_arr2[ii],
+                        );
                         var sum: f64 = 0.0;
-                        inline for (0..4) |kk| {
-                            sx_arr[kk][ii] = sxx[kk];
-                            sy_arr[kk][ii] = syy[kk];
+                        inline for (0..TAP) |kk| {
+                            coeffs_x_arr[kk][ii] = coeffs_x_lane[kk];
+                            coeffs_y_arr[kk][ii] = coeffs_y_lane[kk];
                         }
-                        for (0..4) |jj| {
-                            for (0..4) |kk| {
-                                sum += sxx[kk] * syy[jj];
+                        for (0..TAP) |jj| {
+                            for (0..TAP) |kk| {
+                                sum += coeffs_x_lane[kk] * coeffs_y_lane[jj];
                             }
                         }
                         v_samp_coeff_sum[ii] = sum;
                     }
-                    var sx: [4]VecSF = undefined;
-                    var sy: [4]VecSF = undefined;
-                    inline for (0..4) |kk| {
-                        sx[kk] = sx_arr[kk];
-                        sy[kk] = sy_arr[kk];
+                    var coeffs_x: [TAP]VecSF = undefined;
+                    var coeffs_y: [TAP]VecSF = undefined;
+                    inline for (0..TAP) |kk| {
+                        coeffs_x[kk] = coeffs_x_arr[kk];
+                        coeffs_y[kk] = coeffs_y_arr[kk];
                     }
-                    break :blk [2][TAP]VecSF{ sx, sy };
+                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
                 },
             };
 
@@ -1516,11 +1551,11 @@ fn sampleWideRuntimeImpl(
             const v_samp_coeffs = switch (config.mode) {
                 .direct => blk: {
                     const v_kernel: *const fn (VecSF) VecSF = switch (config.sample) {
-                        .lanczos3 => v_lanczos3CoeffSIMD,
-                        .quintic_bspline => v_quinticBSplineCoeffSIMD,
+                        .lanczos3 => lanczos3CoeffSIMD,
+                        .quintic_bspline => quinticBSplineCoeffSIMD,
                         else => unreachable,
                     };
-                    const sx = [TAP]VecSF{
+                    const coeffs_x = [TAP]VecSF{
                         v_kernel(v_tex_x_frac + @as(VecSF, @splat(2.0))),
                         v_kernel(v_tex_x_frac + @as(VecSF, @splat(1.0))),
                         v_kernel(v_tex_x_frac),
@@ -1528,7 +1563,7 @@ fn sampleWideRuntimeImpl(
                         v_kernel(v_tex_x_frac - @as(VecSF, @splat(2.0))),
                         v_kernel(v_tex_x_frac - @as(VecSF, @splat(3.0))),
                     };
-                    const sy = [TAP]VecSF{
+                    const coeffs_y = [TAP]VecSF{
                         v_kernel(v_tex_y_frac + @as(VecSF, @splat(2.0))),
                         v_kernel(v_tex_y_frac + @as(VecSF, @splat(1.0))),
                         v_kernel(v_tex_y_frac),
@@ -1538,14 +1573,14 @@ fn sampleWideRuntimeImpl(
                     };
                     inline for (0..TAP) |jj| {
                         inline for (0..TAP) |ii| {
-                            v_samp_coeff_sum += sx[ii] * sy[jj];
+                            v_samp_coeff_sum += coeffs_x[ii] * coeffs_y[jj];
                         }
                     }
-                    break :blk [2][TAP]VecSF{ sx, sy };
+                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
                 },
                 .lut => blk: {
-                    var sx_arr: [6][S]f64 = undefined;
-                    var sy_arr: [6][S]f64 = undefined;
+                    var coeffs_x_arr: [TAP][S]f64 = undefined;
+                    var coeffs_y_arr: [TAP][S]f64 = undefined;
                     v_samp_coeff_sum = @splat(0.0);
                     for (0..S) |ii| {
                         const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
@@ -1558,51 +1593,59 @@ fn sampleWideRuntimeImpl(
                             @intFromFloat(tex_y_frac_arr2[ii] * lut_size_f),
                         );
                         var sum: f64 = 0.0;
-                        inline for (0..6) |kk| {
-                            sx_arr[kk][ii] = lut[ix][kk];
-                            sy_arr[kk][ii] = lut[iy][kk];
+                        inline for (0..TAP) |kk| {
+                            coeffs_x_arr[kk][ii] = lut[ix][kk];
+                            coeffs_y_arr[kk][ii] = lut[iy][kk];
                         }
-                        for (0..6) |jj| {
-                            for (0..6) |kk| {
+                        for (0..TAP) |jj| {
+                            for (0..TAP) |kk| {
                                 sum += lut[ix][kk] * lut[iy][jj];
                             }
                         }
                         v_samp_coeff_sum[ii] = sum;
                     }
-                    var sx: [TAP]VecSF = undefined;
-                    var sy: [TAP]VecSF = undefined;
+                    var coeffs_x: [TAP]VecSF = undefined;
+                    var coeffs_y: [TAP]VecSF = undefined;
                     inline for (0..TAP) |kk| {
-                        sx[kk] = sx_arr[kk];
-                        sy[kk] = sy_arr[kk];
+                        coeffs_x[kk] = coeffs_x_arr[kk];
+                        coeffs_y[kk] = coeffs_y_arr[kk];
                     }
-                    break :blk [2][TAP]VecSF{ sx, sy };
+                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
                 },
                 .lut_lerp => blk: {
-                    var sx_arr: [6][S]f64 = undefined;
-                    var sy_arr: [6][S]f64 = undefined;
+                    var coeffs_x_arr: [TAP][S]f64 = undefined;
+                    var coeffs_y_arr: [TAP][S]f64 = undefined;
                     v_samp_coeff_sum = @splat(0.0);
                     for (0..S) |ii| {
-                        const sxx = getLerpSampCoeffsRuntime(6, lut, tex_x_frac_arr2[ii]);
-                        const syy = getLerpSampCoeffsRuntime(6, lut, tex_y_frac_arr2[ii]);
+                        const coeffs_x_lane = getLerpSampCoeffsRuntime(
+                            TAP,
+                            lut,
+                            tex_x_frac_arr2[ii],
+                        );
+                        const coeffs_y_lane = getLerpSampCoeffsRuntime(
+                            TAP,
+                            lut,
+                            tex_y_frac_arr2[ii],
+                        );
                         var sum: f64 = 0.0;
-                        inline for (0..6) |kk| {
-                            sx_arr[kk][ii] = sxx[kk];
-                            sy_arr[kk][ii] = syy[kk];
+                        inline for (0..TAP) |kk| {
+                            coeffs_x_arr[kk][ii] = coeffs_x_lane[kk];
+                            coeffs_y_arr[kk][ii] = coeffs_y_lane[kk];
                         }
-                        for (0..6) |jj| {
-                            for (0..6) |kk| {
-                                sum += sxx[kk] * syy[jj];
+                        for (0..TAP) |jj| {
+                            for (0..TAP) |kk| {
+                                sum += coeffs_x_lane[kk] * coeffs_y_lane[jj];
                             }
                         }
                         v_samp_coeff_sum[ii] = sum;
                     }
-                    var sx: [TAP]VecSF = undefined;
-                    var sy: [TAP]VecSF = undefined;
+                    var coeffs_x: [TAP]VecSF = undefined;
+                    var coeffs_y: [TAP]VecSF = undefined;
                     inline for (0..TAP) |kk| {
-                        sx[kk] = sx_arr[kk];
-                        sy[kk] = sy_arr[kk];
+                        coeffs_x[kk] = coeffs_x_arr[kk];
+                        coeffs_y[kk] = coeffs_y_arr[kk];
                     }
-                    break :blk [2][TAP]VecSF{ sx, sy };
+                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
                 },
             };
 
