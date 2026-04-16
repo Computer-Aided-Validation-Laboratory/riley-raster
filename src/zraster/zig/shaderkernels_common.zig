@@ -88,23 +88,17 @@ pub inline fn shadeTexScalarCommon(
     }
 
     const config = shader.sample_config;
-    if (cfg.texture_dispatch_policy == .comptime_comptime) {
-        inline for (.{
-            .nearest,
-            .linear,
-            .cubic_catmull_rom,
-            .cubic_mitchell_netravali,
-            .lanczos3,
-            .cubic_bspline,
-            .quintic_bspline,
-        }) |sample_type| {
-            if (config.sample == sample_type) {
-                inline for (.{ .direct, .lut, .lut_lerp }) |mode_type| {
-                    if (config.mode == mode_type) {
-                        const comptime_config = texops.TextureSampleConfig{
+
+    if (comptime cfg.texture_dispatch_policy == .comptime_comptime) {
+        switch (config.sample) {
+            inline else => |sample_type| {
+                switch (config.mode) {
+                    inline else => |mode_type| {
+                        const comptime_config = TextureSampleConfig{
                             .sample = sample_type,
                             .mode = mode_type,
                         };
+
                         if (comptime comptime_config.isValid()) {
                             if (comptime coord_space == CoordSpace.clip_px_leng) {
                                 shaderops.fillTexClip(
@@ -129,9 +123,10 @@ pub inline fn shadeTexScalarCommon(
                             }
                             return;
                         }
-                    }
+                        unreachable;
+                    },
                 }
-            }
+            },
         }
     } else {
         if (comptime coord_space == CoordSpace.clip_px_leng) {
