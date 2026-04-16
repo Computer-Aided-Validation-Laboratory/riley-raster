@@ -92,7 +92,8 @@ pub fn main() !void {
                             try std.fmt.allocPrint(
                                 aa,
                                 "{s}_{s}_{s}_{s}",
-                                .{ @tagName(mt), @tagName(st), @tagName(sc.sample), @tagName(sc.mode) },
+                                .{ @tagName(mt), @tagName(st), @tagName(sc.sample), 
+                                   @tagName(sc.mode) },
                             )
                         else
                             try std.fmt.allocPrint(
@@ -116,7 +117,7 @@ pub fn main() !void {
                             pixel_num,
                             texture_grey,
                             texture_rgb,
-                            .{ .out_dir_base = out_dir_base },
+                            .{ .out_dir_base = case.out },
                         );
                     }
                 }
