@@ -17,9 +17,6 @@ Once the min test suite passes the remaining gold regression data can be generat
 zig run -lc -O ReleaseSafe ./src/gen_gold_all.zig
 ```
 
-## Input Data and User Interface  
-
-
 ## Capability Demo
 
 
@@ -27,11 +24,10 @@ zig run -lc -O ReleaseSafe ./src/gen_gold_all.zig
 We used three cases to analyse the performance of `zraster`: 1) Minimum elements filling the screen (2 triangles or 1 quadrilateral), called "fullraster", 2) 1e5 elements filling screen, called "geom", 3) A sphere in the centre of the screen with 2000 elements, called sphere2000. Case 1 is intended to test the throughput of the raster hot loop. Case 2 is intended to test the throughput of the geometry pre-processing. Case 3 is a more realistic case with a balance of element orientations. These benchmark suites can be run using:
 
 ```shell
-zig run -O ReleaseFast ./src/bench_fullraster.zig
-zig run -O ReleaseFast ./src/bench_geom.zig
-zig run -O ReleaseFast ./src/bench_sphere2000.zig
+zig run -lc -O ReleaseFast ./src/bench_fullraster.zig
+zig run -lc -O ReleaseFast ./src/bench_geom.zig
+zig run -lc -O ReleaseFast ./src/bench_sphere2000.zig
 ``` 
 
 ## Contributors
-The Computer Aided Validation Team at UKAEA:
 - Lloyd Fletcher ([ScepticalRabbit](https://github.com/ScepticalRabbit)), UK Atomic Energy Authority
