@@ -10,6 +10,7 @@ const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const mr = @import("zraster/zig/meshraster.zig");
 const iio = @import("zraster/zig/imageio.zig");
+const texops = @import("zraster/zig/textureops.zig");
 
 pub fn main() !void {
     const outer_alloc = std.heap.page_allocator;
@@ -42,7 +43,7 @@ pub fn main() !void {
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
-    const sample_configs = [_]common.TextureSampleConfig{
+    const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
         .{ .sample = .cubic_mitchell_netravali, .mode = .lut_lerp },
@@ -115,31 +116,34 @@ pub fn main() !void {
                         "data-bench/{s}_sphere2000",
                         .{@tagName(mt)},
                     );
-                    const res = try common.runBenchmark(
-                        outer_alloc,
-                        io,
-                        mt,
-                        st,
-                        sc,
-                        data_dir,
-                        out_dir_base,
-                        pixel_num,
-                        texture_grey,
-                        texture_rgb,
-                    );
-                    e2e_times[r] = res.e2e_ms;
-                    geom_times[r] = res.geom_ms;
-                    raster_times[r] = res.raster_ms;
-                    fps_vals[r] = res.fps;
+                    for (0..runs) |rr| {
+                        var res = try common.runBenchmark(
+                            outer_alloc,
+                            io,
+                            mt,
+                            st,
+                            sc,
+                            data_dir,
+                            pixel_num,
+                            texture_grey,
+                            texture_rgb,
+                            .{ .out_dir_base = if (rr == 0) out_dir_base else "" },
+                        );
+                        defer res.deinit(outer_alloc);
 
-                    mpx_vals[r] = res.metrics.mpx_sec;
-                    msubpx_vals[r] = res.metrics.msubpx_sec;
-                    mshades_vals[r] = res.metrics.mshades_sec;
-                    msubshades_vals[r] = res.metrics.msubshades_sec;
-                    melems_vals[r] = res.metrics.melems_sec;
-                    mnodes_vals[r] = res.metrics.mnodes_sec;
-                    mops_vals[r] = res.metrics.mops_sec;
-                }
+                        e2e_times[rr] = res.e2e_ms;
+                        geom_times[rr] = res.geom_ms;
+                        raster_times[rr] = res.raster_ms;
+                        fps_vals[rr] = res.fps;
+
+                        mpx_vals[rr] = res.metrics.mpx_sec;
+                        msubpx_vals[rr] = res.metrics.msubpx_sec;
+                        mshades_vals[rr] = res.metrics.mshades_sec;
+                        msubshades_vals[rr] = res.metrics.msubshades_sec;
+                        melems_vals[rr] = res.metrics.melems_sec;
+                        mnodes_vals[rr] = res.metrics.mnodes_sec;
+                        mops_vals[rr] = res.metrics.mops_sec;
+                    }
 
             try stats_list.append(outer_alloc, .{
                 .name = try outer_alloc.dupe(u8, case_name),

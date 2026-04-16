@@ -10,6 +10,7 @@ const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const mr = @import("zraster/zig/meshraster.zig");
 const iio = @import("zraster/zig/imageio.zig");
+const texops = @import("zraster/zig/textureops.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -43,7 +44,7 @@ pub fn main() !void {
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
-    const sample_configs = [_]common.TextureSampleConfig{
+    const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
@@ -87,10 +88,10 @@ pub fn main() !void {
                         st,
                         sc,
                         data_dir,
-                        out_dir_base,
                         pixel_num,
                         texture_grey,
                         texture_rgb,
+                        .{ .out_dir_base = out_dir_base },
                     );
                 }
             }

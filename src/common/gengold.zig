@@ -8,21 +8,21 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-pub const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
-pub const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
-pub const meshio = @import("../zraster/zig/meshio.zig");
-pub const SimData = meshio.SimData;
-pub const mr = @import("../zraster/zig/meshraster.zig");
-pub const MeshType = mr.MeshType;
-pub const MeshInput = mr.MeshInput;
-pub const Rotation = @import("../zraster/zig/camera.zig").Rotation;
-pub const Camera = @import("../zraster/zig/camera.zig").Camera;
-pub const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
-pub const zraster = @import("../zraster/zig/zraster.zig");
-pub const RasterConfig = zraster.RasterConfig;
-pub const iio = @import("../zraster/zig/imageio.zig");
-pub const texops = @import("../zraster/zig/textureops.zig");
-pub const uvio = @import("../zraster/zig/uvio.zig");
+const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
+const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
+const meshio = @import("../zraster/zig/meshio.zig");
+const SimData = meshio.SimData;
+const mr = @import("../zraster/zig/meshraster.zig");
+const MeshType = mr.MeshType;
+const MeshInput = mr.MeshInput;
+const Rotation = @import("../zraster/zig/camera.zig").Rotation;
+const Camera = @import("../zraster/zig/camera.zig").Camera;
+const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
+const zraster = @import("../zraster/zig/zraster.zig");
+const RasterConfig = zraster.RasterConfig;
+const iio = @import("../zraster/zig/imageio.zig");
+const texops = @import("../zraster/zig/textureops.zig");
+const uvio = @import("../zraster/zig/uvio.zig");
 
 pub fn loadData(outer_alloc: std.mem.Allocator, io: std.Io, path: []const u8) !SimData {
     const pc = try std.fmt.allocPrint(outer_alloc, "{s}/coords.csv", .{path});

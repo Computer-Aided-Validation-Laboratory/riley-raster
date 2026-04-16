@@ -11,6 +11,7 @@ const common = @import("common/benchcommon.zig");
 const tests = @import("common/tests.zig");
 const mr = @import("zraster/zig/meshraster.zig");
 const iio = @import("zraster/zig/imageio.zig");
+const texops = @import("zraster/zig/textureops.zig");
 
 pub const REL_TOL: f64 = 1.0e-10;
 pub const ABS_TOL: f64 = 1.0e-11;
@@ -46,7 +47,7 @@ test "MIN Suite: sphere200 and multimesh" {
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
-    const sample_configs = [_]common.TextureSampleConfig{
+    const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
@@ -83,18 +84,20 @@ test "MIN Suite: sphere200 and multimesh" {
                     sc,
                     data_dir,
                 )) {
-                    var result = try common.runBenchmarkQuietExt(
+                    var result = try common.runBenchmarkQuiet(
                         allocator,
                         io,
                         mt,
                         st,
                         sc,
                         data_dir,
-                        "", // memory only
                         pixel_num_sphere,
                         texture_grey,
                         texture_rgb,
-                        &[_]iio.ImageSaveOpts{}, // no disk save
+                        .{
+                            .return_image = true,
+                            .save_opts = &[_]iio.ImageSaveOpts{},
+                        },
                     );
                     defer result.deinit(allocator);
 

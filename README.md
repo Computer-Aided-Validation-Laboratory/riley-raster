@@ -4,7 +4,7 @@
 We specifically chose to implement `zraster` in Zig as it is a compiled language with manual memory management. It also allows for compile time code generation and has excellent support for SIMD vector types. We have used `comptime` to generate speciliased kernels for geometry and shader types removing run time dispatch overhead. 
 
 ## Getting Started
-`zraster` has been built using a developement version of the Zig 0.16 compiler.  
+`zraster` has been built using a developement version of the Zig 0.16 compiler from the 2670 commit. It is in the process of being updated to use the latest full release of the Zig 0.16 compiler from the 13th April 2026.
 
 The `zraster` repository contains a minimal set of regression tests (called the "min" test suite) which should be run before generating a wider set gold regression data and running performance benchmark suites. The min test suite can be run from the project root directory using:
 ```shell
@@ -29,7 +29,20 @@ zig test -lc -O ReleaseSafe ./src/test_bench.zig
 ```
 
 ## Capability Demo
+We have included two capability demonstration scripts: 1) The sphere200 demo in 'demo_sphere200_tri6.zig' and 2) The multimesh demo in 'demo_multimesh.zig'. The sphere200 case demonstrates rendering a speckle pattern texture applied to a 200 element sphere of tri6 elements. This demo can be run using:
+```shell
+zig run -lc -O ReleaseFast ./src/demo_sphere200_tri6.zig
+```
 
+The output from the sphere200 render will be rendered to the ./demo_sphere200 directory and an example render is shown below:
+![fig_sphere200_tri6](./images/sphere200.bmp)
+
+The "multimesh" capability demonstration shows rendering of multiple meshes with all support element types and different shading strategies. This demo can be run using:
+```shell
+zig run -lc -O ReleaseFast ./src/demo_multimesh.zig
+``` 
+The output from the multimesh render will be rendered to the ./demo_multimesh directory and an example render is shown below:
+![fig_multimesh_multishade](./images/allelem_allshade_grey.bmp)
 
 ## Benchmarks
 We used three cases to analyse the performance of `zraster`: 1) Minimum elements filling the screen (2 triangles or 1 quadrilateral), called "fullraster", 2) 1e5 elements filling screen, called "geom", 3) A sphere in the centre of the screen with 2000 elements, called sphere2000. Case 1 is intended to test the throughput of the raster hot loop. Case 2 is intended to test the throughput of the geometry pre-processing. Case 3 is a more realistic case with a balance of element orientations. These benchmark suites can be run using:
@@ -39,6 +52,10 @@ zig run -lc -O ReleaseFast ./src/bench_fullraster.zig
 zig run -lc -O ReleaseFast ./src/bench_geom.zig
 zig run -lc -O ReleaseFast ./src/bench_sphere2000.zig
 ``` 
+You will find the rendered output for these benchmarks in ./out-bench-X where X is fullraster,geom,sphere2000. There will also be a 'benchmark.md' file summarising the measured performance metrics in the ./out-bench-X directory.
+
+## Navigating the Codebase
+The main entry point for the `zraster` rendering pipeline is the `rasterAllFrames` function in ./src/zraster/zig/zraster.zig. 
 
 ## Contributors
 - Lloyd Fletcher ([ScepticalRabbit](https://github.com/ScepticalRabbit)), UK Atomic Energy Authority

@@ -9,6 +9,9 @@
 const std = @import("std");
 const common = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
+const mr = @import("zraster/zig/meshraster.zig");
+const iio = @import("zraster/zig/imageio.zig");
+const texops = @import("zraster/zig/textureops.zig");
 
 const SHADER_FILTER: common.ShaderFilter = .both; // .nodal, .tex, or .both
 
@@ -21,7 +24,7 @@ test "Gold Edge Suite" {
     const io = io_threaded.io();
 
     const texture = blk: {
-        break :blk try common.iio.loadImage(
+        break :blk try iio.loadImage(
             allocator,
             io,
             "texture/speckle-simple.tiff",
@@ -32,8 +35,8 @@ test "Gold Edge Suite" {
     };
     defer texture.deinit(allocator);
 
-    const mesh_types = [_]common.MeshType{ .tri6, .quad8, .quad9 };
-    const sample_configs = [_]common.texops.TextureSampleConfig{
+    const mesh_types = [_]mr.MeshType{ .tri6, .quad8, .quad9 };
+    const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },

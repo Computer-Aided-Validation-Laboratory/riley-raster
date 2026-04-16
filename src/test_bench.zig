@@ -138,10 +138,10 @@ test "Unified Benchmark Tests" {
                             st,
                             sc,
                             data_dir,
-                            cc.out_dir,
                             pixel_num,
                             texture_grey,
                             texture_rgb,
+                            .{ .out_dir_base = cc.out_dir },
                         );
                         result.deinit(outer_alloc);
 

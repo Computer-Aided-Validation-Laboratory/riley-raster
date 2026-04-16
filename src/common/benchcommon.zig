@@ -167,7 +167,7 @@ pub fn getDateString() ![]const u8 {
 }
 
 pub const ShaderType = enum { nodal_grey, nodal_rgb, tex8_grey, tex8_rgb };
-pub const TextureSampleConfig = @import("../zraster/zig/textureops.zig").TextureSampleConfig;
+const TextureSampleConfig = @import("../zraster/zig/textureops.zig").TextureSampleConfig;
 
 pub const RunMode = enum { all, element, texture, interpolator };
 pub const BenchConfig = struct {
@@ -234,7 +234,6 @@ pub fn loadNDArrayFromCSV(
         var base = try csvio.loadScalarCsv2D(outer_alloc, io, path);
         defer {
             outer_alloc.free(base.slice);
-            // No deinit() needed here as we just freed the slice and NDArray is a struct
         }
 
         var arr = try NDArray(f64).initFlat(
@@ -269,6 +268,12 @@ pub fn loadNDArrayFromCSV(
     return csvio.loadScalarCsv2DFromLines(outer_alloc, lines.items);
 }
 
+pub const BenchOptions = struct {
+    out_dir_base: []const u8 = "",
+    save_opts: ?[]const iio.ImageSaveOpts = null,
+    return_image: bool = false,
+};
+
 pub fn runBenchmark(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -276,42 +281,10 @@ pub fn runBenchmark(
     shader_type: ShaderType,
     sample_config: TextureSampleConfig,
     data_dir: []const u8,
-    out_dir_base: []const u8,
     pixel_num: [2]u32,
     texture_grey: iio.Texture(1),
     texture_rgb: iio.Texture(3),
-) !BenchResult {
-    const num_out_fields: u8 = if (shader_type == .nodal_rgb or shader_type == .tex8_rgb) 3 else 1;
-    return runBenchmarkExt(
-        outer_alloc,
-        io,
-        etype,
-        shader_type,
-        sample_config,
-        data_dir,
-        out_dir_base,
-        pixel_num,
-        texture_grey,
-        texture_rgb,
-        &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = num_out_fields },
-            .{ .format = .fimg, .bits = null, .scaling = .none, .channels = num_out_fields },
-        },
-    );
-}
-
-pub fn runBenchmarkExt(
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    etype: mr.MeshType,
-    shader_type: ShaderType,
-    sample_config: TextureSampleConfig,
-    data_dir: []const u8,
-    out_dir_base: []const u8,
-    pixel_num: [2]u32,
-    texture_grey: iio.Texture(1),
-    texture_rgb: iio.Texture(3),
-    save_opts: []const iio.ImageSaveOpts,
+    options: BenchOptions,
 ) !BenchResult {
     return runBenchmarkInternal(
         .bench,
@@ -321,11 +294,10 @@ pub fn runBenchmarkExt(
         shader_type,
         sample_config,
         data_dir,
-        out_dir_base,
         pixel_num,
         texture_grey,
         texture_rgb,
-        save_opts,
+        options,
     );
 }
 
@@ -336,42 +308,10 @@ pub fn runBenchmarkQuiet(
     shader_type: ShaderType,
     sample_config: TextureSampleConfig,
     data_dir: []const u8,
-    out_dir_base: []const u8,
     pixel_num: [2]u32,
     texture_grey: iio.Texture(1),
     texture_rgb: iio.Texture(3),
-) !BenchResult {
-    const num_out_fields: u8 = if (shader_type == .nodal_rgb or shader_type == .tex8_rgb) 3 else 1;
-    return runBenchmarkQuietExt(
-        outer_alloc,
-        io,
-        etype,
-        shader_type,
-        sample_config,
-        data_dir,
-        out_dir_base,
-        pixel_num,
-        texture_grey,
-        texture_rgb,
-        &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = num_out_fields },
-            .{ .format = .fimg, .bits = null, .scaling = .none, .channels = num_out_fields },
-        },
-    );
-}
-
-pub fn runBenchmarkQuietExt(
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    etype: mr.MeshType,
-    shader_type: ShaderType,
-    sample_config: TextureSampleConfig,
-    data_dir: []const u8,
-    out_dir_base: []const u8,
-    pixel_num: [2]u32,
-    texture_grey: iio.Texture(1),
-    texture_rgb: iio.Texture(3),
-    save_opts: []const iio.ImageSaveOpts,
+    options: BenchOptions,
 ) !BenchResult {
     return runBenchmarkInternal(
         .off,
@@ -381,11 +321,10 @@ pub fn runBenchmarkQuietExt(
         shader_type,
         sample_config,
         data_dir,
-        out_dir_base,
         pixel_num,
         texture_grey,
         texture_rgb,
-        save_opts,
+        options,
     );
 }
 
@@ -397,11 +336,10 @@ fn runBenchmarkInternal(
     shader_type: ShaderType,
     sample_config: TextureSampleConfig,
     data_dir: []const u8,
-    out_dir_base: []const u8,
     pixel_num: [2]u32,
     texture_grey: iio.Texture(1),
     texture_rgb: iio.Texture(3),
-    save_opts: []const iio.ImageSaveOpts,
+    options: BenchOptions,
 ) !BenchResult {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -557,12 +495,13 @@ fn runBenchmarkInternal(
         };
 
     // Save one frame for inspection if out_dir_base is provided
-    if (out_dir_base.len > 0) {
+    if (options.out_dir_base.len > 0) {
         const out_name = if (shader_type == .tex8_grey or shader_type == .tex8_rgb)
             try std.fmt.allocPrint(
                 aa,
                 "{s}_{s}_{s}_{s}",
-                .{ @tagName(etype), @tagName(shader_type), @tagName(sample_config.sample), @tagName(sample_config.mode) },
+                .{ @tagName(etype), @tagName(shader_type), @tagName(sample_config.sample),
+                   @tagName(sample_config.mode) },
             )
         else
             try std.fmt.allocPrint(
@@ -570,9 +509,9 @@ fn runBenchmarkInternal(
                 "{s}_{s}",
                 .{ @tagName(etype), @tagName(shader_type) },
             );
-        const out_path = try std.fs.path.join(aa, &[_][]const u8{ out_dir_base, out_name });
+        const out_path = try std.fs.path.join(aa, &[_][]const u8{ options.out_dir_base, out_name });
         const cwd = std.Io.Dir.cwd();
-        cwd.createDir(io, out_dir_base, .default_dir) catch |err| {
+        cwd.createDir(io, options.out_dir_base, .default_dir) catch |err| {
             if (err != error.PathAlreadyExists) return err;
         };
         cwd.createDir(io, out_path, .default_dir) catch |err| {
@@ -581,6 +520,11 @@ fn runBenchmarkInternal(
         var out_dir_h = try cwd.openDir(io, out_path, .{});
         defer out_dir_h.close(io);
 
+        const active_save_opts = options.save_opts orelse &[_]iio.ImageSaveOpts{
+            .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = num_out_fields },
+            .{ .format = .fimg, .bits = null, .scaling = .none, .channels = num_out_fields },
+        };
+
         try iio.saveImages(
             io,
             out_dir_h,
@@ -588,11 +532,11 @@ fn runBenchmarkInternal(
             num_out_fields,
             pixel_num,
             &image_out_arr,
-            save_opts,
+            active_save_opts,
         );
     }
 
-    const image_final = try image_out_arr.dupe(outer_alloc);
+    const image_final = if (options.return_image) try image_out_arr.dupe(outer_alloc) else null;
 
     return .{
         .e2e_ms = e2e_ms,

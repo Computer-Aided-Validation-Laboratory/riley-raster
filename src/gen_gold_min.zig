@@ -9,6 +9,7 @@
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const gengold = @import("common/gengold.zig");
+const zraster = @import("zraster/zig/zraster.zig");
 const mr = @import("zraster/zig/meshraster.zig");
 const iio = @import("zraster/zig/imageio.zig");
 
@@ -46,7 +47,7 @@ pub fn main() !void {
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
-    const sample_configs = [_]common.TextureSampleConfig{
+    const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
@@ -58,9 +59,9 @@ pub fn main() !void {
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
 
-    const config = gengold.RasterConfig{
+    const config = zraster.RasterConfig{
         .save_opt = .disk,
-        .save_opts = &[_]gengold.iio.ImageSaveOpts{
+        .save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .fimg, .bits = null, .scaling = .none },
         },
         .report = .off,
@@ -94,19 +95,21 @@ pub fn main() !void {
                     data_dir,
                 )) {
                     const num_ch: u8 = if (is_rgb) 3 else 1;
-                    var result = try common.runBenchmarkQuietExt(
+                    var result = try common.runBenchmarkQuiet(
                         allocator,
                         io,
                         mt,
                         st,
                         sc,
                         data_dir,
-                        out_dir,
                         pixel_num_sphere,
                         texture_grey,
                         texture_rgb,
-                        &[_]iio.ImageSaveOpts{
-                            .{ .format = .fimg, .bits = null, .scaling = .none, .channels = num_ch },
+                        .{
+                            .out_dir_base = out_dir,
+                            .save_opts = &[_]iio.ImageSaveOpts{
+                                .{ .format = .fimg, .bits = null, .scaling = .none, .channels = num_ch },
+                            },
                         },
                     );
                     result.deinit(allocator);

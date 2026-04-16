@@ -14,6 +14,7 @@ const buildconfig = @import("zraster/zig/buildconfig.zig");
 const cfg = buildconfig.config;
 const mr = @import("zraster/zig/meshraster.zig");
 const iio = @import("zraster/zig/imageio.zig");
+const texops = @import("zraster/zig/textureops.zig");
 
 const config = common.BenchConfig{ .run = .all };
 const simd_on = cfg.simd == .on;
@@ -60,7 +61,7 @@ test "Sphere Gold Tests" {
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
-    const sample_configs = [_]common.TextureSampleConfig{
+    const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
@@ -130,10 +131,10 @@ test "Sphere Gold Tests" {
                             st,
                             sc,
                             data_dir,
-                            c.out,
                             pixel_num,
                             texture_grey,
                             texture_rgb,
+                            .{ .out_dir_base = c.out },
                         );
                         result.deinit(allocator);
 

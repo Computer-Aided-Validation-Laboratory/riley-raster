@@ -27,6 +27,7 @@ out-bench-*
 plans/
 gold-min/**/*.bmp
 out-min/
+demo*/
 
 # Don't commit large image files to the repo unless we have to
 *.ppm

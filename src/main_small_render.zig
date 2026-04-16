@@ -8,6 +8,10 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const gengold = @import("common/gengold.zig");
+const zraster = @import("zraster/zig/zraster.zig");
+const mr = @import("zraster/zig/meshraster.zig");
+const iio = @import("zraster/zig/imageio.zig");
+const texops = @import("zraster/zig/textureops.zig");
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -17,7 +21,7 @@ pub fn main() !void {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const texture = try gengold.iio.loadImage(
+    const texture = try iio.loadImage(
         u8,
         1,
         aa,
@@ -26,8 +30,8 @@ pub fn main() !void {
         .tiff,
     );
 
-    const mesh_types = [_]gengold.MeshType{ .tri3, .tri6, .quad4ibi, .quad8, .quad9 };
-    const sample_configs = [_]gengold.texops.TextureSampleConfig{
+    const mesh_types = [_]mr.MeshType{ .tri3, .tri6, .quad4ibi, .quad8, .quad9 };
+    const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut },
@@ -42,15 +46,15 @@ pub fn main() !void {
     const out_dir_root = "out-bench-small";
     const data_dir = "data-small";
 
-    const config = gengold.zraster.RasterConfig{
+    const config = zraster.RasterConfig{
         .save_opt = .disk,
-        .save_opts = &[_]gengold.iio.ImageSaveOpts{
+        .save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
         .report = .full_stats,
         .full_stats_opts = .{
-            .formats = &[_]gengold.iio.ImageSaveOpts{
+            .formats = &[_]iio.ImageSaveOpts{
                 .{ .format = .bmp, .bits = 8, .scaling = .auto },
                 .{ .format = .csv, .bits = null, .scaling = .none },
             },

@@ -8,29 +8,29 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-pub const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
-pub const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
+const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
+const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
 
-pub const meshio = @import("../zraster/zig/meshio.zig");
-pub const SimData = meshio.SimData;
+const meshio = @import("../zraster/zig/meshio.zig");
+const SimData = meshio.SimData;
 
-pub const mr = @import("../zraster/zig/meshraster.zig");
-pub const MeshType = mr.MeshType;
-pub const MeshInput = mr.MeshInput;
+const mr = @import("../zraster/zig/meshraster.zig");
+const MeshType = mr.MeshType;
+const MeshInput = mr.MeshInput;
 
-pub const Rotation = @import("../zraster/zig/camera.zig").Rotation;
-pub const Camera = @import("../zraster/zig/camera.zig").Camera;
-pub const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
+const Rotation = @import("../zraster/zig/camera.zig").Rotation;
+const Camera = @import("../zraster/zig/camera.zig").Camera;
+const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
 
-pub const zraster = @import("../zraster/zig/zraster.zig");
-pub const RasterConfig = zraster.RasterConfig;
+const zraster = @import("../zraster/zig/zraster.zig");
+const RasterConfig = zraster.RasterConfig;
 
-pub const iio = @import("../zraster/zig/imageio.zig");
-pub const texops = @import("../zraster/zig/textureops.zig");
-pub const uvio = @import("../zraster/zig/uvio.zig");
-pub const buildconfig = @import("../zraster/zig/buildconfig.zig");
+const iio = @import("../zraster/zig/imageio.zig");
+const texops = @import("../zraster/zig/textureops.zig");
+const uvio = @import("../zraster/zig/uvio.zig");
+const buildconfig = @import("../zraster/zig/buildconfig.zig");
 const cfg = buildconfig.config;
-pub const csvio = @import("../zraster/zig/csvio.zig");
+const csvio = @import("../zraster/zig/csvio.zig");
 
 const default_fails_root = "fails";
 const impl_suffix = if (cfg.simd == .on) "_simd" else "_scalar";

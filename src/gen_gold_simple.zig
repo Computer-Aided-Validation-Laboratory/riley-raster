@@ -8,6 +8,10 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const gengold = @import("common/gengold.zig");
+const zraster = @import("zraster/zig/zraster.zig");
+const mr = @import("zraster/zig/meshraster.zig");
+const iio = @import("zraster/zig/imageio.zig");
+const texops = @import("zraster/zig/textureops.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -19,7 +23,7 @@ pub fn main() !void {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-    const texture = try gengold.iio.loadImage(
+    const texture = try iio.loadImage(
         aa,
         io,
         "texture/speckle-simple.tiff",
@@ -28,7 +32,7 @@ pub fn main() !void {
         1,
     );
 
-    const mesh_types = [_]gengold.MeshType{
+    const mesh_types = [_]mr.MeshType{
         .tri3,
         .tri6,
         .quad4ibi,
@@ -37,7 +41,7 @@ pub fn main() !void {
         .quad9,
     };
 
-    const sample_configs = [_]gengold.texops.TextureSampleConfig{
+    const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
@@ -47,9 +51,9 @@ pub fn main() !void {
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
     const pixel_num = [_]u32{ 640, 400 };
-    const config = gengold.zraster.RasterConfig{
+    const config = zraster.RasterConfig{
         .save_opt = .disk,
-        .save_opts = &[_]gengold.iio.ImageSaveOpts{
+        .save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .fimg, .bits = null, .scaling = .none },
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
         },

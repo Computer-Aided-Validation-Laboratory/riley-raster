@@ -9,8 +9,10 @@
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const gengold = @import("common/gengold.zig");
+const zraster = @import("zraster/zig/zraster.zig");
 const mr = @import("zraster/zig/meshraster.zig");
 const iio = @import("zraster/zig/imageio.zig");
+const texops = @import("zraster/zig/textureops.zig");
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -43,7 +45,7 @@ pub fn main() !void {
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
-    const sample_configs = [_]common.TextureSampleConfig{
+    const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
@@ -55,9 +57,9 @@ pub fn main() !void {
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
 
-    const config = gengold.RasterConfig{
+    const config = zraster.RasterConfig{
         .save_opt = .disk,
-        .save_opts = &[_]gengold.iio.ImageSaveOpts{
+        .save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .fimg, .bits = null, .scaling = .none },
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
         },
@@ -94,10 +96,10 @@ pub fn main() !void {
                         st,
                         sc,
                         data_dir,
-                        out_dir,
                         pixel_num_sphere,
                         texture_grey,
                         texture_rgb,
+                        .{ .out_dir_base = out_dir },
                     );
                 }
             }
