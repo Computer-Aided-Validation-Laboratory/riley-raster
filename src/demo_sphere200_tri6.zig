@@ -32,7 +32,6 @@ pub fn main() !void {
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
-
     // 1. Setup Rasteriser Configuration
     const config = RasterConfig{
         .save_opt = .disk,
@@ -61,12 +60,12 @@ pub fn main() !void {
     // 4. Load Texture for shading
     std.debug.print("Loading speckle texture...\n", .{});
     const texture = try iio.loadImage(
+        u8,
+        1,
         aa,
         io,
         "texture/speckle.bmp",
         .bmp,
-        u8,
-        1,
     );
 
     // 5. Prepare Mesh Input
@@ -139,7 +138,6 @@ pub fn main() !void {
         aa.free(img.slice);
         img.deinit(aa);
     }
-
 
     std.debug.print("Demo complete. Images saved to {s}/\n", .{out_dir_root});
 }

@@ -14,6 +14,8 @@ const buildconfig = @import("zraster/zig/buildconfig.zig");
 const cfg = buildconfig.config;
 const mr = @import("zraster/zig/meshraster.zig");
 const iio = @import("zraster/zig/imageio.zig");
+const texops = @import("zraster/zig/textureops.zig");
+
 
 const config = common.BenchConfig{ .run = .all };
 const simd_on = cfg.simd == .on;
@@ -26,21 +28,21 @@ test "Unified Benchmark Tests" {
     const io = io_threaded.io();
 
     const texture_grey = try iio.loadImage(
+        u8,
+        1,
         outer_alloc,
         io,
         "texture/speckle.bmp",
         .bmp,
-        u8,
-        1,
     );
     defer texture_grey.deinit(outer_alloc);
     const texture_rgb = try iio.loadImage(
+        u8,
+        3,
         outer_alloc,
         io,
         "texture/speckle_rgb.bmp",
         .bmp,
-        u8,
-        3,
     );
     defer texture_rgb.deinit(outer_alloc);
 
@@ -75,7 +77,7 @@ test "Unified Benchmark Tests" {
 
     const mesh_types = std.enums.values(mr.MeshType);
     const shader_types = std.enums.values(common.ShaderType);
-    const sample_configs = [_]common.TextureSampleConfig{
+    const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },

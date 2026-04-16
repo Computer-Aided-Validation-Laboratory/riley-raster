@@ -21,21 +21,21 @@ pub fn main() !void {
     const io = io_threaded.io();
 
     const texture_grey = try iio.loadImage(
+        u8,
+        1,
         outer_alloc,
         io,
         "texture/speckle.bmp",
         .bmp,
-        u8,
-        1,
     );
     defer texture_grey.deinit(outer_alloc);
     const texture_rgb = try iio.loadImage(
+        u8,
+        3,
         outer_alloc,
         io,
         "texture/speckle_rgb.bmp",
         .bmp,
-        u8,
-        3,
     );
     defer texture_rgb.deinit(outer_alloc);
 
@@ -84,8 +84,7 @@ pub fn main() !void {
                         try std.fmt.bufPrint(
                             &case_name_buf,
                             "{s}_{s}_{s}_{s}",
-                            .{ @tagName(mt), @tagName(st), @tagName(sc.sample),
-                               @tagName(sc.mode) },
+                            .{ @tagName(mt), @tagName(st), @tagName(sc.sample), @tagName(sc.mode) },
                         )
                     else
                         try std.fmt.bufPrint(

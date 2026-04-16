@@ -23,20 +23,20 @@ pub fn main() !void {
     const io = io_threaded.io();
 
     const texture_grey = try iio.loadImage(
+        u8,
+        1,
         aa,
         io,
         "texture/speckle.bmp",
         .bmp,
-        u8,
-        1,
     );
     const texture_rgb = try iio.loadImage(
+        u8,
+        3,
         aa,
         io,
         "texture/speckle_rgb.bmp",
         .bmp,
-        u8,
-        3,
     );
 
     const out_dir_base = "gold-bench-fullscreen";

@@ -43,7 +43,10 @@ pub fn main() !void {
 
     const mesh_types = comptime std.enums.values(mr.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
-    const sc = texops.TextureSampleConfig{ .sample = .cubic_catmull_rom, .mode = .lut_lerp };
+    const sc = texops.TextureSampleConfig{
+        .sample = .cubic_catmull_rom,
+        .mode = .lut_lerp,
+    };
 
     var stats_list: std.ArrayList(common.BenchStats) = .{};
     defer {
@@ -68,7 +71,9 @@ pub fn main() !void {
             );
             std.debug.print("Case: {s}\n", .{case_name});
 
-            if (case_name.len > max_name_len) max_name_len = case_name.len;
+            if (case_name.len > max_name_len) {
+                max_name_len = case_name.len;
+            }
 
             var e2e_times = try outer_alloc.alloc(f64, runs);
             defer outer_alloc.free(e2e_times);
@@ -94,7 +99,7 @@ pub fn main() !void {
             var mops_vals = try outer_alloc.alloc(f64, runs);
             defer outer_alloc.free(mops_vals);
 
-            for (0..runs) |r| {
+            for (0..runs) |_| {
                 var data_dir_buf: [256]u8 = undefined;
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
@@ -129,6 +134,7 @@ pub fn main() !void {
                     mnodes_vals[rr] = res.metrics.mnodes_sec;
                     mops_vals[rr] = res.metrics.mops_sec;
                 }
+            }
 
             try stats_list.append(outer_alloc, .{
                 .name = try outer_alloc.dupe(u8, case_name),
@@ -139,7 +145,10 @@ pub fn main() !void {
                 .mpx = try common.calcMedianMAD(outer_alloc, mpx_vals),
                 .msubpx = try common.calcMedianMAD(outer_alloc, msubpx_vals),
                 .mshades = try common.calcMedianMAD(outer_alloc, mshades_vals),
-                .msubshades = try common.calcMedianMAD(outer_alloc, msubshades_vals),
+                .msubshades = try common.calcMedianMAD(
+                    outer_alloc,
+                    msubshades_vals,
+                ),
                 .melems = try common.calcMedianMAD(outer_alloc, melems_vals),
                 .mnodes = try common.calcMedianMAD(outer_alloc, mnodes_vals),
                 .mops = try common.calcMedianMAD(outer_alloc, mops_vals),

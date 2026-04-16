@@ -32,22 +32,40 @@ pub fn main() !void {
             .save_depth_map = true,
         },
     };
+    const dir_paths = [_][]const u8{
+        "data-simple/tri3_twoelems/",
+        "data-simple/tri6_twoelems/",
+        "data-simple/quad4_twoelems/",
+        "data-simple/quad8_twoelems/",
+        "data-simple/quad9_twoelems/",
+    };
 
     const out_dir_root = "out-bench-multimesh";
     std.debug.print("Rendering Multimesh Data to {s}/...\n", .{out_dir_root});
 
-    try gengold.runMultimeshGenerationExt(outer_alloc, io, config, out_dir_root);
+    try gengold.runMultimeshGenerationExt(
+        outer_alloc,
+        io,
+        config,
+        out_dir_root,
+        &dir_paths,
+        .{ 1200, 800 },
+    );
     try gengold.runMultimeshMixedGenerationExt(
         outer_alloc,
         io,
         config,
         out_dir_root ++ "/allelem_allshade",
+        &dir_paths,
+        .{ 1600, 800 },
     );
     try gengold.runMultimeshMixedRGBGenerationExt(
         outer_alloc,
         io,
         config,
         out_dir_root ++ "/allelem_allshade_rgb",
+        &dir_paths,
+        .{ 1200, 800 },
     );
 
     std.debug.print("Done.\n", .{});

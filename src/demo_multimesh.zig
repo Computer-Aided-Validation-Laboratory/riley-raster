@@ -73,12 +73,12 @@ pub fn main() !void {
     // 4. Load Texture for shading
     std.debug.print("Loading texture...\n", .{});
     const texture = try iio.loadImage(
+        u8,
+        1,
         aa,
         io,
         "texture/speckle-simple.tiff",
         .tiff,
-        u8,
-        1,
     );
 
     // 5. Prepare Mesh Inputs

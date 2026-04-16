@@ -25,12 +25,12 @@ test "Gold Edge Suite" {
 
     const texture = blk: {
         break :blk try iio.loadImage(
+            u8,
+            1,
             allocator,
             io,
             "texture/speckle-simple.tiff",
             .tiff,
-            u8,
-            1,
         );
     };
     defer texture.deinit(allocator);

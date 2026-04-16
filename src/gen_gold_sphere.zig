@@ -28,20 +28,20 @@ pub fn main() !void {
     const io = io_threaded.io();
 
     const texture_grey = try iio.loadImage(
+        u8,
+        1,
         aa,
         io,
         "texture/speckle.bmp",
         .bmp,
-        u8,
-        1,
     );
     const texture_rgb = try iio.loadImage(
+        u8,
+        3,
         aa,
         io,
         "texture/speckle_rgb.bmp",
         .bmp,
-        u8,
-        3,
     );
 
     const pixel_num = [_]u32{ 800, 500 };
@@ -92,8 +92,7 @@ pub fn main() !void {
                             try std.fmt.allocPrint(
                                 aa,
                                 "{s}_{s}_{s}_{s}",
-                                .{ @tagName(mt), @tagName(st), @tagName(sc.sample), 
-                                   @tagName(sc.mode) },
+                                .{ @tagName(mt), @tagName(st), @tagName(sc.sample), @tagName(sc.mode) },
                             )
                         else
                             try std.fmt.allocPrint(

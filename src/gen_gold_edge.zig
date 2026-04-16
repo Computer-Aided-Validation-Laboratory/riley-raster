@@ -24,12 +24,12 @@ pub fn main() !void {
     const io = io_threaded.io();
 
     const texture = try iio.loadImage(
+        u8,
+        1,
         aa,
         io,
         "texture/speckle-simple.tiff",
         .tiff,
-        u8,
-        1,
     );
 
     const mesh_types = [_]mr.MeshType{

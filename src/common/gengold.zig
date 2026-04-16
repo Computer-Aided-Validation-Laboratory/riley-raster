@@ -235,7 +235,6 @@ pub fn runMultimeshGenerationExt(
         _ = arena.reset(.free_all);
         const sim_datas = try meshio.loadMultiSimData(aa, io, dir_paths, .{});
 
-
         const gold_dir = if (mode == .nodal)
             try std.fmt.allocPrint(aa, "{s}/allelem_nodal", .{out_dir_root})
         else
@@ -362,12 +361,12 @@ pub fn runMultimeshMixedGenerationExt(
     const sim_datas = try meshio.loadMultiSimData(aa, io, dir_paths, .{});
 
     const texture = try iio.loadImage(
+        u8,
+        1,
         aa,
         io,
         "texture/speckle-simple.tiff",
         .tiff,
-        u8,
-        1,
     );
 
     var mesh_inputs = try aa.alloc(MeshInput, 10);
@@ -518,12 +517,12 @@ pub fn runMultimeshMixedRGBGenerationExt(
     const sim_datas = try meshio.loadMultiSimData(aa, io, dir_paths, .{});
 
     const texture = try iio.loadImage(
+        u8,
+        3,
         aa,
         io,
         "texture/speckle_rgb.bmp",
         .bmp,
-        u8,
-        3,
     );
 
     var mesh_inputs = try aa.alloc(MeshInput, 10);

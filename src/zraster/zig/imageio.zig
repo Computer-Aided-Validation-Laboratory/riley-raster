@@ -69,12 +69,12 @@ pub const ImageSaveOpts = struct {
 };
 
 pub fn loadImage(
+    comptime T: type,
+    comptime channels: usize,
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
     format: ImageFormat,
-    comptime T: type,
-    comptime channels: usize,
 ) !Texture(channels) {
     return switch (format) {
         .csv => try loadCSV(T, channels, allocator, io, path),
@@ -1061,12 +1061,12 @@ test "Verify hand-written TIFF loader" {
     );
 
     var tex_zig = try loadImage(
+        u8,
+        1,
         allocator,
         io,
         tmp_test_dir ++ "/speckle-simple.tiff",
         .tiff,
-        u8,
-        1,
     );
     defer tex_zig.deinit(allocator);
 
@@ -1140,24 +1140,24 @@ test "Save and Load All Formats 8-bit and 16-bit" {
             // 2. Load back into u8 or u16
             if (bits == 8) {
                 var loaded = try loadImage(
+                    u8,
+                    1,
                     allocator,
                     io,
                     full_path,
                     fmt,
-                    u8,
-                    1,
                 );
                 defer loaded.deinit(allocator);
                 try testing.expectEqual(rows, loaded.rows_num);
                 try testing.expectEqual(cols, loaded.cols_num);
             } else {
                 var loaded = try loadImage(
+                    u16,
+                    1,
                     allocator,
                     io,
                     full_path,
                     fmt,
-                    u16,
-                    1,
                 );
                 defer loaded.deinit(allocator);
                 try testing.expectEqual(rows, loaded.rows_num);
@@ -1194,12 +1194,12 @@ test "Scaling Strategy: Fractional" {
     try saveMatAsImage(io, cwd, tmp_test_dir ++ "/test_frac_float", &mat, opts1);
 
     var loaded1 = try loadImage(
+        f64,
+        1,
         allocator,
         io,
         tmp_test_dir ++ "/test_frac_float.csv",
         .csv,
-        f64,
-        1,
     );
     defer loaded1.deinit(allocator);
     try testing.expectApproxEqAbs(loaded1.getVal(0, 0, 0), 0.4, 1e-6);
@@ -1216,12 +1216,12 @@ test "Scaling Strategy: Fractional" {
     try saveMatAsImage(io, cwd, tmp_test_dir ++ "/test_frac_bits", &mat, opts2);
 
     var loaded2 = try loadImage(
+        f64,
+        1,
         allocator,
         io,
         tmp_test_dir ++ "/test_frac_bits.csv",
         .csv,
-        f64,
-        1,
     );
     defer loaded2.deinit(allocator);
     try testing.expectApproxEqAbs(loaded2.getVal(0, 0, 0), 0.4 * 255.0, 1e-6);
@@ -1271,7 +1271,7 @@ test "FIMG Save and Load Roundtrip" {
 
     try saveImage(io, cwd, file_base, &arr, 0, opts);
 
-    var loaded = try loadImage(allocator, io, file_full, .fimg, f64, channels);
+    var loaded = try loadImage(f64, channels, allocator, io, file_full, .fimg);
     defer loaded.deinit(allocator);
 
     try std.testing.expectEqual(loaded.rows_num, height);
