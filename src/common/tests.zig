@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
+const orch = @import("orchestration.zig");
 const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
 const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
 
@@ -17,10 +18,6 @@ const SimData = meshio.SimData;
 const mr = @import("../zraster/zig/meshraster.zig");
 const MeshType = mr.MeshType;
 const MeshInput = mr.MeshInput;
-
-const Rotation = @import("../zraster/zig/camera.zig").Rotation;
-const Camera = @import("../zraster/zig/camera.zig").Camera;
-const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
 
 const zraster = @import("../zraster/zig/zraster.zig");
 const RasterConfig = zraster.RasterConfig;
@@ -267,14 +264,7 @@ pub fn compareNDArrayToCSVRGB(
 }
 
 pub fn loadData(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !SimData {
-    const pc = try std.fmt.allocPrint(allocator, "{s}/coords.csv", .{path});
-    const pn = try std.fmt.allocPrint(allocator, "{s}/connectivity.csv", .{path});
-    const pf = [_][]const u8{
-        try std.fmt.allocPrint(allocator, "{s}/field_disp_x.csv", .{path}),
-        try std.fmt.allocPrint(allocator, "{s}/field_disp_y.csv", .{path}),
-        try std.fmt.allocPrint(allocator, "{s}/field_disp_z.csv", .{path}),
-    };
-    return try meshio.loadSimData(allocator, io, pc, pn, pf[0..], null);
+    return try orch.loadData(allocator, io, path);
 }
 
 fn openFailsSubDir(
@@ -592,27 +582,12 @@ pub fn runTestInternal(
     shader_filter: ShaderFilter,
     report_perf: bool,
 ) !void {
-    const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
-    const focal_leng: f64 = 50.0e-3;
-    const rot = Rotation.init(0, 0, 0);
-
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const suffix = if (std.mem.eql(u8, test_type, "full"))
-        "fullscreen"
-    else if (std.mem.eql(u8, test_type, "twoelems"))
-        "twoelems"
-    else if (std.mem.eql(u8, test_type, "single"))
-        "single"
-    else
-        test_type;
-
-    const data_name = switch (mesh_type) {
-        .quad4ibi, .quad4newton => "quad4",
-        else => @tagName(mesh_type),
-    };
+    const suffix = orch.testTypeSuffix(test_type);
+    const data_name = orch.meshDataName(mesh_type);
 
     const case_name = try std.fmt.allocPrint(aa, "{s}_{s}", .{ data_name, suffix });
     const data_path = try std.fmt.allocPrint(
@@ -625,22 +600,10 @@ pub fn runTestInternal(
     const uv_path = try std.fmt.allocPrint(aa, "{s}/uvs.csv", .{data_path});
     var uvs = try uvio.loadUVMap(aa, io, uv_path);
 
-    const cam_pos = CameraOps.posFillFrameFromRot(
+    const camera = orch.initCameraForCoords(
         &sim_data.coords,
         pixel_num,
-        pixel_size,
-        focal_leng,
-        rot,
         fov_scale,
-    );
-    const camera = Camera.init(
-        pixel_num,
-        pixel_size,
-        cam_pos,
-        rot,
-        CameraOps.roiCentFromCoords(&sim_data.coords),
-        focal_leng,
-        2,
     );
 
     const disps = [_]bool{ true, false };
@@ -817,18 +780,11 @@ pub fn runMultimeshTest(
     rel_tol: f64,
     abs_tol: f64,
 ) !void {
-    const dir_paths = [_][]const u8{
-        "data-simple/tri3_twoelems/",
-        "data-simple/tri6_twoelems/",
-        "data-simple/quad4_twoelems/",
-        "data-simple/quad8_twoelems/",
-        "data-simple/quad9_twoelems/",
-    };
     try runMultimeshTestExt(
         outer_alloc,
         io,
         "gold-multimesh",
-        &dir_paths,
+        &orch.default_multimesh_dir_paths,
         .{ 1200, 800 },
         rel_tol,
         abs_tol,
@@ -848,67 +804,22 @@ pub fn runMultimeshTestExt(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const mesh_types = [_]MeshType{
-        .tri3,
-        .tri6,
-        .quad4ibi,
-        .quad8,
-        .quad9,
-    };
-
     const shader_modes = [_]enum { nodal, texture }{ .nodal, .texture };
 
     for (shader_modes) |mode| {
         _ = arena.reset(.free_all);
-        const sim_datas = try meshio.loadMultiSimData(aa, io, dir_paths, .{});
+        const mesh_inputs = try orch.buildMultimeshInputs(
+            aa,
+            io,
+            dir_paths,
+            if (mode == .nodal) .nodal else .texture,
+        );
 
-        const mesh_inputs = if (mode == .nodal)
-            try mr.meshInputFromSimDataSlice(
-                aa,
-                io,
-                sim_datas,
-                &mesh_types,
-                .nodal,
-                null,
-                null,
-                null,
-            )
-        else
-            try mr.meshInputFromSimDataSlice(
-                aa,
-                io,
-                sim_datas,
-                &mesh_types,
-                .texture,
-                dir_paths,
-                "texture/speckle-simple.tiff",
-                null,
-            );
-
-        mr.arrangeMeshSlice(mesh_inputs, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
-
-        const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
-        const focal_leng: f64 = 50.0e-3;
-        const rot = Rotation.init(0, 0, 0);
         const fov_scale_factor: f64 = 1.1;
-
-        const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
-        const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
+        const camera = orch.initCameraForMeshes(
             mesh_inputs,
             pixel_num,
-            pixel_size,
-            focal_leng,
-            rot,
             fov_scale_factor,
-        );
-        const camera = Camera.init(
-            pixel_num,
-            pixel_size,
-            cam_pos,
-            rot,
-            roi_pos,
-            focal_leng,
-            2,
         );
 
         const config = RasterConfig{
@@ -978,18 +889,11 @@ pub fn runMultimeshMixedTest(
     rel_tol: f64,
     abs_tol: f64,
 ) !void {
-    const dir_paths = [_][]const u8{
-        "data-simple/tri3_twoelems/",
-        "data-simple/tri6_twoelems/",
-        "data-simple/quad4_twoelems/",
-        "data-simple/quad8_twoelems/",
-        "data-simple/quad9_twoelems/",
-    };
     try runMultimeshMixedTestExt(
         outer_alloc,
         io,
         "gold-multimesh/allelem_allshade",
-        &dir_paths,
+        &orch.default_multimesh_dir_paths,
         .{ 1600, 800 },
         rel_tol,
         abs_tol,
@@ -1009,15 +913,6 @@ pub fn runMultimeshMixedTestExt(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const mesh_types = [_]MeshType{
-        .tri3,
-        .tri6,
-        .quad4ibi,
-        .quad8,
-        .quad9,
-    };
-
-    const sim_datas = try meshio.loadMultiSimData(aa, io, dir_paths, .{});
     const texture = try iio.loadImage(
         u8,
         1,
@@ -1027,82 +922,18 @@ pub fn runMultimeshMixedTestExt(
         .tiff,
     );
 
-    var mesh_inputs = try aa.alloc(MeshInput, 10);
+    const mesh_inputs = try orch.buildMixedMeshInputs(
+        aa,
+        io,
+        dir_paths,
+        texture,
+    );
 
-    // Top Row (0-4): Nodal Shading
-    for (0..5) |ii| {
-        var coords_dup = try MatSlice(f64).initAlloc(
-            aa,
-            sim_datas[ii].coords.mat.rows_num,
-            sim_datas[ii].coords.mat.cols_num,
-        );
-        @memcpy(coords_dup.slice, sim_datas[ii].coords.mat.slice);
-
-        mesh_inputs[ii] = MeshInput{
-            .mesh_type = mesh_types[ii],
-            .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
-            .connect = sim_datas[ii].connect,
-            .disp = sim_datas[ii].field,
-            .shader = .{ .nodal = .{
-                .field = sim_datas[ii].field.?,
-                .bits = 8,
-                .scaling = .auto,
-                .scale_over = .within_frames,
-            } },
-        };
-    }
-
-    // Bottom Row (5-9): Texture Shading
-    for (0..5) |ii| {
-        const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[ii]});
-        const uvs = try uvio.loadUVMap(aa, io, uv_path);
-
-        var coords_dup = try MatSlice(f64).initAlloc(
-            aa,
-            sim_datas[ii].coords.mat.rows_num,
-            sim_datas[ii].coords.mat.cols_num,
-        );
-        @memcpy(coords_dup.slice, sim_datas[ii].coords.mat.slice);
-
-        mesh_inputs[ii + 5] = MeshInput{
-            .mesh_type = mesh_types[ii],
-            .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
-            .connect = sim_datas[ii].connect,
-            .disp = sim_datas[ii].field,
-            .shader = .{ .tex = .{
-                .uvs = uvs.array,
-                .texture = texture,
-                .sample_config = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
-                .bits = 8,
-                .scaling = .none,
-            } },
-        };
-    }
-
-    mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
-
-    const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
-    const focal_leng: f64 = 50.0e-3;
-    const rot = Rotation.init(0, 0, 0);
     const fov_scale_factor: f64 = 1.2;
-
-    const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
-    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
+    const camera = orch.initCameraForMeshes(
         mesh_inputs,
         pixel_num,
-        pixel_size,
-        focal_leng,
-        rot,
         fov_scale_factor,
-    );
-    const camera = Camera.init(
-        pixel_num,
-        pixel_size,
-        cam_pos,
-        rot,
-        roi_pos,
-        focal_leng,
-        2,
     );
 
     const config = RasterConfig{
@@ -1146,18 +977,11 @@ pub fn runMultimeshMixedRGBTest(
     rel_tol: f64,
     abs_tol: f64,
 ) !void {
-    const dir_paths = [_][]const u8{
-        "data-simple/tri3_twoelems/",
-        "data-simple/tri6_twoelems/",
-        "data-simple/quad4_twoelems/",
-        "data-simple/quad8_twoelems/",
-        "data-simple/quad9_twoelems/",
-    };
     try runMultimeshMixedRGBTestExt(
         outer_alloc,
         io,
         "gold-multimesh/allelem_allshade_rgb",
-        &dir_paths,
+        &orch.default_multimesh_dir_paths,
         .{ 1200, 800 },
         rel_tol,
         abs_tol,
@@ -1177,16 +1001,6 @@ pub fn runMultimeshMixedRGBTestExt(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const mesh_types = [_]MeshType{
-        .tri3,
-        .tri6,
-        .quad4ibi,
-        .quad8,
-        .quad9,
-    };
-
-    const sim_datas = try meshio.loadMultiSimData(aa, io, dir_paths, .{});
-
     const texture = try iio.loadImage(
         u8,
         3,
@@ -1196,131 +1010,18 @@ pub fn runMultimeshMixedRGBTestExt(
         .bmp,
     );
 
-    var mesh_inputs = try aa.alloc(MeshInput, 10);
+    const mesh_inputs = try orch.buildMixedRgbMeshInputs(
+        aa,
+        io,
+        dir_paths,
+        texture,
+    );
 
-    // Top Row (0-4): Texture RGB Shading
-    for (0..5) |ii| {
-        const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[ii]});
-        const uvs = try uvio.loadUVMap(aa, io, uv_path);
-
-        var coords_dup = try MatSlice(f64).initAlloc(
-            aa,
-            sim_datas[ii].coords.mat.rows_num,
-            sim_datas[ii].coords.mat.cols_num,
-        );
-        @memcpy(coords_dup.slice, sim_datas[ii].coords.mat.slice);
-
-        mesh_inputs[ii] = MeshInput{
-            .mesh_type = mesh_types[ii],
-            .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
-            .connect = sim_datas[ii].connect,
-            .disp = sim_datas[ii].field,
-            .shader = .{ .tex_rgb = .{
-                .uvs = uvs.array,
-                .texture = texture,
-                .sample_config = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
-                .bits = 8,
-                .scaling = .none,
-            } },
-        };
-    }
-
-    // Bottom Row (5-9): Nodal RGB Shading with Gradient
-    for (0..5) |ii| {
-        const field = sim_datas[ii].field.?;
-        const num_coords = sim_datas[ii].coords.mat.rows_num;
-        var rgb_field_arr = try NDArray(f64).initFlat(
-            aa,
-            &[_]usize{ field.array.dims[0], num_coords, 3 },
-        );
-
-        const coords = sim_datas[ii].coords;
-        var min_x: f64 = std.math.inf(f64);
-        var max_x: f64 = -std.math.inf(f64);
-        for (0..num_coords) |nn| {
-            const x_val = coords.x(nn);
-            if (x_val < min_x) min_x = x_val;
-            if (x_val > max_x) max_x = x_val;
-        }
-        const range_x = max_x - min_x;
-
-        for (0..field.array.dims[0]) |tt| {
-            for (0..num_coords) |nn| {
-                const x_val = coords.x(nn);
-                const t = if (range_x > 0) (x_val - min_x) / range_x else 0.5;
-
-                var rr: f64 = 0;
-                var gg: f64 = 0;
-                var bb: f64 = 0;
-
-                if (t < 0.5) {
-                    const t_scaled = t * 2.0;
-                    rr = 1.0 - t_scaled;
-                    gg = t_scaled;
-                    bb = 0.0;
-                } else {
-                    const t_scaled = (t - 0.5) * 2.0;
-                    rr = 0.0;
-                    gg = 1.0 - t_scaled;
-                    bb = t_scaled;
-                }
-
-                rgb_field_arr.set(&[_]usize{ tt, nn, 0 }, rr);
-                rgb_field_arr.set(&[_]usize{ tt, nn, 1 }, gg);
-                rgb_field_arr.set(&[_]usize{ tt, nn, 2 }, bb);
-            }
-        }
-
-        const rgb_field = meshio.Field{
-            .array = rgb_field_arr,
-            .array_mem = rgb_field_arr.slice,
-        };
-
-        var coords_dup = try MatSlice(f64).initAlloc(
-            aa,
-            sim_datas[ii].coords.mat.rows_num,
-            sim_datas[ii].coords.mat.cols_num,
-        );
-        @memcpy(coords_dup.slice, sim_datas[ii].coords.mat.slice);
-
-        mesh_inputs[ii + 5] = MeshInput{
-            .mesh_type = mesh_types[ii],
-            .coords = meshio.Coords.init(coords_dup.slice, coords_dup.rows_num),
-            .connect = sim_datas[ii].connect,
-            .disp = sim_datas[ii].field,
-            .shader = .{ .nodal = .{
-                .field = rgb_field,
-                .bits = 8,
-                .scaling = .auto,
-                .scale_over = .within_frames,
-            } },
-        };
-    }
-
-    mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
-
-    const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
-    const focal_leng: f64 = 50.0e-3;
-    const rot = Rotation.init(0, 0, 0);
     const fov_scale_factor: f64 = 1.1;
-
-    const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
-    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
+    const camera = orch.initCameraForMeshes(
         mesh_inputs,
         pixel_num,
-        pixel_size,
-        focal_leng,
-        rot,
         fov_scale_factor,
-    );
-    const camera = Camera.init(
-        pixel_num,
-        pixel_size,
-        cam_pos,
-        rot,
-        roi_pos,
-        focal_leng,
-        2,
     );
 
     const config_rgb = RasterConfig{

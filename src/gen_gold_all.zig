@@ -21,6 +21,8 @@ pub fn main() !void {
     defer arena.deinit();
     // const aa = arena.allocator();
 
+    // Intentionally excludes the committed `min` suite, which is
+    // generated separately by `gen_gold_min.zig`.
     std.debug.print("Generating ALL SIMD Gold Data...\n\n", .{});
 
     std.debug.print("--- Small ---\n", .{});

@@ -44,6 +44,10 @@ demo*/
 !texture/*.bmp
 !texture/*.tiff
 
+# We need to keep the demo images for the README
+!images/*.bmp
+!images/*.tiff
+
 # Misc
 *.swp
 test_output.txt
