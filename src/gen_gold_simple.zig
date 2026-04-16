@@ -11,21 +11,22 @@ const gengold = @import("common/gengold.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
     defer _ = gpa.deinit();
+    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+    defer arena.deinit();
+    const aa = arena.allocator();
 
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
     const texture = try gengold.iio.loadImage(
-        allocator,
+        aa,
         io,
         "texture/speckle-simple.tiff",
         .tiff,
         u8,
         1,
     );
-    defer texture.deinit(allocator);
 
     const mesh_types = [_]gengold.MeshType{
         .tri3,
@@ -57,7 +58,7 @@ pub fn main() !void {
 
     std.debug.print("Generating Simple Gold Data (Two Elements only)...\n", .{});
     try gengold.runGenerationExt(
-        allocator,
+        aa,
         io,
         "twoelems",
         &mesh_types,

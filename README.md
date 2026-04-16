@@ -12,9 +12,20 @@ zig test -lc -O ReleaseSafe ./src/test_min.zig
 ```
 The min test suite contains two cases a render of the "multimesh" case which is two elements of each type in a single scene that are rendered with nodal interpolation shading or texture shading. The min test suite also contains a rendering of the "sphere200" case which is a sphere with 200 elements of a single type with every possible combination of nodal or texture shading. the sphere200 case is particularly sensitive to breaking changes due to the range of element orientations.
 
-Once the min test suite passes the remaining gold regression data can be generated with:
+Once the min test suite passes the additional gold regression data can be generated for two suites the first is the "all" suite and the second is the "bench" suite. The "bench" suite is based on the benchmarks described in the "Benchmarks" section below. Before we can render the gold images we first need to generate the larger meshes for the "bench" cases using a python script that has numpy as a dependency, run this from the project root:
+```shell
+python ./data-bench/gen_bench_data.py
+```
+
+You should see a range of directories generated in the data-bench directory with different element types and case tags. Once that is done we can render the required gold output with:
 ```shell
 zig run -lc -O ReleaseSafe ./src/gen_gold_all.zig
+```
+
+Now we can run the remaining "all" and "bench" test suites:
+```shell
+zig test -lc -O ReleaseSafe ./src/test_gold_all.zig
+zig test -lc -O ReleaseSafe ./src/test_bench.zig
 ```
 
 ## Capability Demo

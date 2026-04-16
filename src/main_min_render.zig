@@ -13,32 +13,29 @@ const mr = @import("zraster/zig/meshraster.zig");
 const iio = @import("zraster/zig/imageio.zig");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
 
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
     const texture_grey = try iio.loadImage(
-        allocator,
+        aa,
         io,
         "texture/speckle.bmp",
         .bmp,
         u8,
         1,
     );
-    defer texture_grey.deinit(allocator);
-
     const texture_rgb = try iio.loadImage(
-        allocator,
+        aa,
         io,
         "texture/speckle_rgb.bmp",
         .bmp,
         u8,
         3,
     );
-    defer texture_rgb.deinit(allocator);
 
     const out_dir = "out-min";
     const pixel_num_sphere = [_]u32{ 160, 100 };
@@ -72,11 +69,10 @@ pub fn main() !void {
         for (shader_types) |st| {
             for (sample_configs) |sc| {
                 const data_dir = try std.fmt.allocPrint(
-                    allocator,
+                    aa,
                     "data-min/{s}_sphere200",
                     .{@tagName(mt)},
                 );
-                defer allocator.free(data_dir);
 
                 const is_rgb = (st == .tex8_rgb or st == .nodal_rgb);
                 const is_allowed_rgb = (st == .nodal_rgb) or
@@ -91,8 +87,8 @@ pub fn main() !void {
                     sc,
                     data_dir,
                 )) {
-                    var result = try common.runBenchmarkQuiet(
-                        allocator,
+                    _ = try common.runBenchmarkQuiet(
+                        aa,
                         io,
                         mt,
                         st,
@@ -103,7 +99,6 @@ pub fn main() !void {
                         texture_grey,
                         texture_rgb,
                     );
-                    result.deinit(allocator);
                 }
             }
         }
@@ -119,7 +114,7 @@ pub fn main() !void {
     };
 
     try gengold.runMultimeshGenerationExt(
-        allocator,
+        aa,
         io,
         config,
         out_dir,
@@ -127,7 +122,7 @@ pub fn main() !void {
         pixel_num_multi,
     );
     try gengold.runMultimeshMixedGenerationExt(
-        allocator,
+        aa,
         io,
         config,
         out_dir ++ "/allelem_allshade",
@@ -135,7 +130,7 @@ pub fn main() !void {
         pixel_num_multi,
     );
     try gengold.runMultimeshMixedRGBGenerationExt(
-        allocator,
+        aa,
         io,
         config,
         out_dir ++ "/allelem_allshade_rgb",

@@ -10,7 +10,9 @@ const std = @import("std");
 const gengold = @import("common/gengold.zig");
 
 pub fn main() !void {
-    const outer_alloc = std.heap.page_allocator;
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
 
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
@@ -18,12 +20,11 @@ pub fn main() !void {
     const texture = try gengold.iio.loadImage(
         u8,
         1,
-        outer_alloc,
+        aa,
         io,
         "texture/speckle-simple.tiff",
         .tiff,
     );
-    defer texture.deinit(outer_alloc);
 
     const mesh_types = [_]gengold.MeshType{ .tri3, .tri6, .quad4ibi, .quad8, .quad9 };
     const sample_configs = [_]gengold.texops.TextureSampleConfig{
@@ -65,7 +66,7 @@ pub fn main() !void {
 
     std.debug.print("Rendering Small Data to {s}/...\n", .{out_dir_root});
     try gengold.runGenerationExt(
-        outer_alloc,
+        aa,
         io,
         "single",
         &mesh_types,

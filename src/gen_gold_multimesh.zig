@@ -11,8 +11,10 @@ const gengold = @import("common/gengold.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
     defer _ = gpa.deinit();
+    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+    defer arena.deinit();
+    const aa = arena.allocator();
 
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
@@ -27,8 +29,10 @@ pub fn main() !void {
     };
 
     std.debug.print("Generating Multimesh Gold Data...\n", .{});
-    try gengold.runMultimeshGeneration(allocator, io, config);
-    try gengold.runMultimeshMixedGeneration(allocator, io, config);
-    try gengold.runMultimeshMixedRGBGeneration(allocator, io, config);
+
+    try gengold.runMultimeshGeneration(aa, io, config);
+    try gengold.runMultimeshMixedGeneration(aa, io, config);
+    try gengold.runMultimeshMixedRGBGeneration(aa, io, config);
+
     std.debug.print("Done.\n", .{});
 }

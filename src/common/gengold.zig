@@ -76,7 +76,11 @@ pub fn renderAndSave(
     };
 
     const meshes = &[_]MeshInput{mesh_input};
-    _ = try zraster.rasterAllFrames(outer_alloc, io, camera, meshes, config, out_dir);
+    const images = try zraster.rasterAllFrames(outer_alloc, io, camera, meshes, config, out_dir);
+    if (images) |img| {
+        outer_alloc.free(img.slice);
+        img.deinit(outer_alloc);
+    }
 }
 
 pub fn runGenerationExt(
@@ -178,6 +182,8 @@ pub fn runGenerationExt(
                 }, tex_dir, add_disp, config);
             }
         }
+        // Explicitly cleanup sim_data if it has manual allocations
+        // Though here SimData was allocated on aa (Arena) so it will be freed on reset
     }
 }
 
@@ -303,7 +309,11 @@ pub fn runMultimeshGenerationExt(
         defer out_dir.close(io);
 
         std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
-        _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, out_dir);
+        const images = try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, out_dir);
+        if (images) |img| {
+            aa.free(img.slice);
+            img.deinit(aa);
+        }
     }
 }
 
@@ -456,7 +466,11 @@ pub fn runMultimeshMixedGenerationExt(
     defer out_dir.close(io);
 
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
-    _ = try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, out_dir);
+    const images = try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, out_dir);
+    if (images) |img| {
+        aa.free(img.slice);
+        img.deinit(aa);
+    }
 }
 
 pub fn runMultimeshMixedRGBGeneration(

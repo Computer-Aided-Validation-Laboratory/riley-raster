@@ -66,7 +66,7 @@ test "Unified Benchmark Tests" {
                 "gold-simd-sphere2000"
             else
                 "gold-sphere2000",
-            .out_dir = "out-sphere2000",
+            .out_dir = "out-bench-sphere2000",
             .is_sphere = true,
         },
     };

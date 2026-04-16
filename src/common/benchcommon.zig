@@ -234,7 +234,7 @@ pub fn loadNDArrayFromCSV(
         var base = try csvio.loadScalarCsv2D(outer_alloc, io, path);
         defer {
             outer_alloc.free(base.slice);
-            base.deinit(outer_alloc);
+            // No deinit() needed here as we just freed the slice and NDArray is a struct
         }
 
         var arr = try NDArray(f64).initFlat(
@@ -243,7 +243,6 @@ pub fn loadNDArrayFromCSV(
         );
         errdefer {
             outer_alloc.free(arr.slice);
-            arr.deinit(outer_alloc);
         }
 
         for (0..base.dims[0]) |rr| {

@@ -17,30 +17,30 @@ const simd_on = cfg.simd == .on;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
     defer _ = gpa.deinit();
+    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+    defer arena.deinit();
+    const aa = arena.allocator();
 
     var io_threaded = std.Io.Threaded.init_single_threaded;
     const io = io_threaded.io();
 
     const texture_grey = try iio.loadImage(
-        allocator,
+        aa,
         io,
         "texture/speckle.bmp",
         .bmp,
         u8,
         1,
     );
-    defer texture_grey.deinit(allocator);
     const texture_rgb = try iio.loadImage(
-        allocator,
+        aa,
         io,
         "texture/speckle_rgb.bmp",
         .bmp,
         u8,
         3,
     );
-    defer texture_rgb.deinit(allocator);
 
     const pixel_num = [_]u32{ 800, 500 };
 
@@ -74,11 +74,10 @@ pub fn main() !void {
             inline for (shader_types) |st| {
                 inline for (sample_configs) |sc| {
                     const data_dir = try std.fmt.allocPrint(
-                        allocator,
+                        aa,
                         "data-bench/{s}_{s}",
                         .{ @tagName(mt), case.ds },
                     );
-                    defer allocator.free(data_dir);
 
                     if (common.shouldRun(
                         .{ .run = .all, .skip_quad4ibi_sphere = true },
@@ -89,17 +88,16 @@ pub fn main() !void {
                     )) {
                         const case_name = if (st == .tex8_grey or st == .tex8_rgb)
                             try std.fmt.allocPrint(
-                                allocator,
+                                aa,
                                 "{s}_{s}_{s}_{s}",
                                 .{ @tagName(mt), @tagName(st), @tagName(sc.sample), @tagName(sc.mode) },
                             )
                         else
                             try std.fmt.allocPrint(
-                                allocator,
+                                aa,
                                 "{s}_{s}",
                                 .{ @tagName(mt), @tagName(st) },
                             );
-                        defer if (st == .tex8_grey or st == .tex8_rgb or true) allocator.free(case_name);
 
                         std.debug.print(
                             "Rendering reference: {s}/{s}\n",
@@ -107,7 +105,7 @@ pub fn main() !void {
                         );
 
                         _ = try common.runBenchmarkQuiet(
-                            allocator,
+                            aa,
                             io,
                             mt,
                             st,
