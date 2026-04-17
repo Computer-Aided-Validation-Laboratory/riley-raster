@@ -13,7 +13,6 @@ const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
 const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
 
 const meshio = @import("../zraster/zig/meshio.zig");
-const SimData = meshio.SimData;
 
 const mr = @import("../zraster/zig/meshraster.zig");
 const MeshType = mr.MeshType;
@@ -24,7 +23,6 @@ const RasterConfig = zraster.RasterConfig;
 
 const iio = @import("../zraster/zig/imageio.zig");
 const texops = @import("../zraster/zig/textureops.zig");
-const uvio = @import("../zraster/zig/uvio.zig");
 const buildconfig = @import("../zraster/zig/buildconfig.zig");
 const cfg = buildconfig.config;
 const csvio = @import("../zraster/zig/csvio.zig");
@@ -263,10 +261,6 @@ pub fn compareNDArrayToCSVRGB(
     }
 }
 
-pub fn loadData(allocator: std.mem.Allocator, io: std.Io, path: []const u8) !SimData {
-    return try orch.loadData(allocator, io, path);
-}
-
 fn openFailsSubDir(
     io: std.Io,
     fails_root: []const u8,
@@ -388,15 +382,6 @@ fn loadNDArrayFromGold(
         }
         return array;
     }
-    return csvio.loadPackedCsv2D(allocator, io, path, channels);
-}
-
-fn loadImageFromCSV(
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    path: []const u8,
-    channels: usize,
-) !NDArray(f64) {
     return csvio.loadPackedCsv2D(allocator, io, path, channels);
 }
 
@@ -586,24 +571,14 @@ pub fn runTestInternal(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const suffix = orch.testTypeSuffix(test_type);
-    const data_name = orch.meshDataName(mesh_type);
-
-    const case_name = try std.fmt.allocPrint(aa, "{s}_{s}", .{ data_name, suffix });
-    const data_path = try std.fmt.allocPrint(
+    const prepared = try orch.prepareSingleMeshCase(
         aa,
-        "{s}/{s}",
-        .{ data_dir_root, case_name },
-    );
-
-    var sim_data = try loadData(aa, io, data_path);
-    const uv_path = try std.fmt.allocPrint(aa, "{s}/uvs.csv", .{data_path});
-    var uvs = try uvio.loadUVMap(aa, io, uv_path);
-
-    const camera = orch.initCameraForCoords(
-        &sim_data.coords,
+        io,
+        test_type,
+        mesh_type,
         pixel_num,
         fov_scale,
+        data_dir_root,
     );
 
     const disps = [_]bool{ true, false };
@@ -627,10 +602,15 @@ pub fn runTestInternal(
 
             const mesh_input = MeshInput{
                 .mesh_type = mesh_type,
-                .coords = sim_data.coords,
-                .connect = sim_data.connect,
-                .disp = if (add_disp) sim_data.field else null,
-                .shader = .{ .nodal = .{ .field = sim_data.field.?, .bits = 8 } },
+                .coords = prepared.sim_data.coords,
+                .connect = prepared.sim_data.connect,
+                .disp = if (add_disp) prepared.sim_data.field else null,
+                .shader = .{
+                    .nodal = .{
+                        .field = prepared.sim_data.field.?,
+                        .bits = 8,
+                    },
+                },
             };
 
             const config = RasterConfig{
@@ -644,7 +624,7 @@ pub fn runTestInternal(
             const result = (try zraster.rasterAllFrames(
                 aa,
                 io,
-                &camera,
+                &prepared.camera,
                 &[_]MeshInput{mesh_input},
                 config,
                 null,
@@ -705,12 +685,12 @@ pub fn runTestInternal(
 
                 const mesh_input = MeshInput{
                     .mesh_type = mesh_type,
-                    .coords = sim_data.coords,
-                    .connect = sim_data.connect,
-                    .disp = if (add_disp) sim_data.field else null,
+                    .coords = prepared.sim_data.coords,
+                    .connect = prepared.sim_data.connect,
+                    .disp = if (add_disp) prepared.sim_data.field else null,
                     .shader = .{
                         .tex = .{
-                            .uvs = uvs.array,
+                            .uvs = prepared.uvs.array,
                             .texture = texture,
                             .sample_config = sc,
                         },
@@ -728,7 +708,7 @@ pub fn runTestInternal(
                 const result = (try zraster.rasterAllFrames(
                     aa,
                     io,
-                    &camera,
+                    &prepared.camera,
                     &[_]MeshInput{mesh_input},
                     config,
                     null,

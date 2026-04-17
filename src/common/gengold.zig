@@ -9,10 +9,7 @@
 const std = @import("std");
 
 const orch = @import("orchestration.zig");
-const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
-const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
 const meshio = @import("../zraster/zig/meshio.zig");
-const SimData = meshio.SimData;
 const mr = @import("../zraster/zig/meshraster.zig");
 const MeshType = mr.MeshType;
 const MeshInput = mr.MeshInput;
@@ -21,11 +18,6 @@ const zraster = @import("../zraster/zig/zraster.zig");
 const RasterConfig = zraster.RasterConfig;
 const iio = @import("../zraster/zig/imageio.zig");
 const texops = @import("../zraster/zig/textureops.zig");
-const uvio = @import("../zraster/zig/uvio.zig");
-
-pub fn loadData(outer_alloc: std.mem.Allocator, io: std.Io, path: []const u8) !SimData {
-    return try orch.loadData(outer_alloc, io, path);
-}
 
 pub fn renderAndSave(
     outer_alloc: std.mem.Allocator,
@@ -76,28 +68,16 @@ pub fn runGenerationExt(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const suffix = orch.testTypeSuffix(test_type);
     for (mesh_types) |mt| {
         _ = arena.reset(.free_all);
-        const data_name = orch.meshDataName(mt);
-        const case_name = try std.fmt.allocPrint(aa, "{s}_{s}", .{ data_name, suffix });
-        const data_path = try std.fmt.allocPrint(
+        const prepared = try orch.prepareSingleMeshCase(
             aa,
-            "{s}/{s}",
-            .{ data_dir_root, case_name },
-        );
-
-        var sim_data = loadData(aa, io, data_path) catch |err| {
-            std.debug.print("Failed to load data for {s}: {any}\n", .{ case_name, err });
-            continue;
-        };
-        const uv_p = try std.fmt.allocPrint(aa, "{s}/uvs.csv", .{data_path});
-        var uvs = try uvio.loadUVMap(aa, io, uv_p);
-
-        const camera = orch.initCameraForCoords(
-            &sim_data.coords,
+            io,
+            test_type,
+            mt,
             pixel_num,
             fov_scale,
+            data_dir_root,
         );
 
         const disps = [_]bool{ true, false };
@@ -111,9 +91,24 @@ pub fn runGenerationExt(
                 @tagName(mt),
                 d_str,
             });
-            try renderAndSave(aa, io, &camera, mt, sim_data.coords, sim_data.connect, sim_data.field, .{
-                .nodal = .{ .field = sim_data.field.?, .bits = 8 },
-            }, nodal_dir, add_disp, config);
+            try renderAndSave(
+                aa,
+                io,
+                &prepared.camera,
+                mt,
+                prepared.sim_data.coords,
+                prepared.sim_data.connect,
+                prepared.sim_data.field,
+                .{
+                    .nodal = .{
+                        .field = prepared.sim_data.field.?,
+                        .bits = 8,
+                    },
+                },
+                nodal_dir,
+                add_disp,
+                config,
+            );
 
             // Tex ShaderInput
             for (sample_configs) |sc| {
@@ -125,17 +120,27 @@ pub fn runGenerationExt(
                     @tagName(sc.sample),
                     @tagName(sc.mode),
                 });
-                try renderAndSave(aa, io, &camera, mt, sim_data.coords, sim_data.connect, sim_data.field, .{
-                    .tex = .{
-                        .uvs = uvs.array,
-                        .texture = texture,
-                        .sample_config = sc,
+                try renderAndSave(
+                    aa,
+                    io,
+                    &prepared.camera,
+                    mt,
+                    prepared.sim_data.coords,
+                    prepared.sim_data.connect,
+                    prepared.sim_data.field,
+                    .{
+                        .tex = .{
+                            .uvs = prepared.uvs.array,
+                            .texture = texture,
+                            .sample_config = sc,
+                        },
                     },
-                }, tex_dir, add_disp, config);
+                    tex_dir,
+                    add_disp,
+                    config,
+                );
             }
         }
-        // Explicitly cleanup sim_data if it has manual allocations
-        // Though here SimData was allocated on aa (Arena) so it will be freed on reset
     }
 }
 

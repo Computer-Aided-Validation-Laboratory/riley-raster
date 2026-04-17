@@ -85,6 +85,46 @@ pub fn testTypeSuffix(test_type: []const u8) []const u8 {
     return test_type;
 }
 
+pub const SingleMeshPrepared = struct {
+    sim_data: meshio.SimData,
+    uvs: uvio.UVMap,
+    camera: Camera,
+};
+
+pub fn prepareSingleMeshCase(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    test_type: []const u8,
+    mesh_type: mr.MeshType,
+    pixel_num: [2]u32,
+    fov_scale: f64,
+    data_dir_root: []const u8,
+) !SingleMeshPrepared {
+    const suffix = testTypeSuffix(test_type);
+    const data_name = meshDataName(mesh_type);
+    const case_name = try std.fmt.allocPrint(
+        allocator,
+        "{s}_{s}",
+        .{ data_name, suffix },
+    );
+    const data_path = try std.fmt.allocPrint(
+        allocator,
+        "{s}/{s}",
+        .{ data_dir_root, case_name },
+    );
+
+    const sim_data = try loadData(allocator, io, data_path);
+    const uv_path = try std.fmt.allocPrint(allocator, "{s}/uvs.csv", .{data_path});
+    const uvs = try uvio.loadUVMap(allocator, io, uv_path);
+    const camera = initCameraForCoords(&sim_data.coords, pixel_num, fov_scale);
+
+    return .{
+        .sim_data = sim_data,
+        .uvs = uvs,
+        .camera = camera,
+    };
+}
+
 pub fn initCameraForCoords(
     coords: *const meshio.Coords,
     pixel_num: [2]u32,
