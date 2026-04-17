@@ -1,0 +1,1051 @@
+// --------------------------------------------------------------------------
+// zraster: A High Performance Rasteriser for DIC UQ
+//
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Licensed under the MIT License (see LICENSE file for details)
+//
+// Authors: scepticalrabbit (Lloyd Fletcher)
+// --------------------------------------------------------------------------
+const std = @import("std");
+
+const orch = @import("orchestration.zig");
+const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
+const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
+
+const meshio = @import("../zraster/zig/meshio.zig");
+
+const mr = @import("../zraster/zig/meshraster.zig");
+const MeshType = mr.MeshType;
+const MeshInput = mr.MeshInput;
+
+const zraster = @import("../zraster/zig/zraster.zig");
+const RasterConfig = zraster.RasterConfig;
+
+const iio = @import("../zraster/zig/imageio.zig");
+const texops = @import("../zraster/zig/textureops.zig");
+const buildconfig = @import("../zraster/zig/buildconfig.zig");
+const cfg = buildconfig.config;
+const csvio = @import("../zraster/zig/csvio.zig");
+
+const default_fails_root = "fails";
+const impl_suffix = if (cfg.simd == .on) "_simd" else "_scalar";
+
+// Default tolerances: for scientific accuracy and DIC
+// f64: rel= 1e-11, abs= 1e-11
+// f32: rel= 1e-5, abs= 1e-4
+pub fn isApproxEqual(v1: f64, v2: f64, rel_tol: f64, abs_tol: f64) bool {
+    if (v1 == v2) return true;
+
+    const diff = @abs(v1 - v2);
+
+    if (diff <= abs_tol) return true;
+
+    const abs_v1 = @abs(v1);
+    const abs_v2 = @abs(v2);
+    const largest = if (abs_v1 > abs_v2) abs_v1 else abs_v2;
+
+    return (diff / largest) <= rel_tol;
+}
+
+pub fn compareNDArrayToGold(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    array: *const NDArray(f64),
+    frame: usize,
+    field_start: usize,
+    channels: usize,
+    path: []const u8,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    var gold = if (std.mem.endsWith(u8, path, ".fimg")) blk: {
+        const gold_array = try iio.loadFIMG(allocator, io, path);
+        break :blk gold_array;
+    } else if (channels == 1)
+        try csvio.loadScalarCsv2D(allocator, io, path)
+    else
+        try csvio.loadPackedCsv2D(allocator, io, path, channels);
+
+    defer {
+        allocator.free(gold.slice);
+        gold.deinit(allocator);
+    }
+
+    // Handle different dimension layouts:
+    // .fimg: [chans, rows, cols]
+    // .csv (scalar): [rows, cols]
+    // .csv (packed): [rows, cols, chans]
+    const gold_rows = if (gold.dims.len == 3 and std.mem.endsWith(u8, path, ".fimg"))
+        gold.dims[1]
+    else
+        gold.dims[0];
+    const gold_cols = if (gold.dims.len == 3 and std.mem.endsWith(u8, path, ".fimg"))
+        gold.dims[2]
+    else
+        gold.dims[1];
+
+    const rows = if (array.dims.len == 4) array.dims[2] else array.dims[1];
+    const cols = if (array.dims.len == 4) array.dims[3] else array.dims[2];
+
+    if (gold_rows != rows) {
+        std.debug.print(
+            "Row count mismatch: Gold has {d}, array expects {d} (path: {s})\n",
+            .{ gold_rows, rows, path },
+        );
+        return error.GoldRowsMismatch;
+    }
+
+    if (gold_cols != cols) return error.GoldColsMismatch;
+
+    for (0..rows) |r| {
+        for (0..cols) |c| {
+            for (0..channels) |ch| {
+                const gold_val = if (std.mem.endsWith(u8, path, ".fimg"))
+                    gold.get(&[_]usize{ ch, r, c })
+                else if (channels == 1)
+                    gold.get(&[_]usize{ r, c })
+                else
+                    gold.get(&[_]usize{ r, c, ch });
+
+                const actual_val = if (array.dims.len == 4)
+                    array.get(&[_]usize{ frame, field_start + ch, r, c })
+                else
+                    array.get(&[_]usize{ field_start + ch, r, c });
+
+                if (!isApproxEqual(gold_val, actual_val, rel_tol, abs_tol)) {
+                    const abs_gold = @abs(gold_val);
+                    const abs_act = @abs(actual_val);
+                    const largest = if (abs_gold > abs_act) abs_gold else abs_act;
+
+                    const diff = @abs(gold_val - actual_val);
+                    const rel_diff = if (largest < abs_tol) diff else diff / largest;
+
+                    std.debug.print(
+                        "\n\nMismatch at:\n frame {d},\n field {d},\n " ++
+                            "pixel ({d}, {d}): " ++
+                            "\n gold={d},\n actual={d},\n rel_diff={e}\n (path: {s})\n\n",
+                        .{
+                            frame,
+                            field_start + ch,
+                            r,
+                            c,
+                            gold_val,
+                            actual_val,
+                            rel_diff,
+                            path,
+                        },
+                    );
+                    return error.PixelMismatch;
+                }
+            }
+        }
+    }
+}
+
+pub fn compareNDArrayToCSV(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    array: *const NDArray(f64),
+    frame: usize,
+    field: usize,
+    path: []const u8,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    var gold = try csvio.loadScalarCsv2D(allocator, io, path);
+    defer {
+        allocator.free(gold.slice);
+        gold.deinit(allocator);
+    }
+
+    const rows = array.dims[2];
+    const cols = array.dims[3];
+
+    if (gold.dims[0] != rows) {
+        std.debug.print(
+            "Row count mismatch: CSV has {d}, array expects {d} (path: {s})\n",
+            .{ gold.dims[0], rows, path },
+        );
+        return error.CSVRowsMismatch;
+    }
+
+    if (gold.dims[1] != cols) return error.CSVColsMismatch;
+
+    for (0..rows) |r| {
+        for (0..cols) |c| {
+            const gold_val = gold.get(&[_]usize{ r, c });
+            const actual_val = array.get(&[_]usize{ frame, field, r, c });
+
+            if (!isApproxEqual(gold_val, actual_val, rel_tol, abs_tol)) {
+                const abs_gold = @abs(gold_val);
+                const abs_act = @abs(actual_val);
+                const largest = if (abs_gold > abs_act) abs_gold else abs_act;
+
+                const diff = @abs(gold_val - actual_val);
+                const rel_diff = if (largest < abs_tol) diff else diff / largest;
+
+                std.debug.print(
+                    "\n\nMismatch at:\n frame {d},\n field {d},\n " ++
+                        "pixel ({d}, {d}): " ++
+                        "\n gold={d},\n actual={d},\n rel_diff={e}\n (path: {s})\n\n",
+                    .{ frame, field, r, c, gold_val, actual_val, rel_diff, path },
+                );
+                return error.PixelMismatch;
+            }
+        }
+    }
+}
+
+pub fn compareNDArrayToCSVRGB(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    array: *const NDArray(f64),
+    frame: usize,
+    field_start: usize,
+    path: []const u8,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    var gold = try csvio.loadPackedCsv2D(allocator, io, path, 3);
+    defer {
+        allocator.free(gold.slice);
+        gold.deinit(allocator);
+    }
+
+    const rows = array.dims[2];
+    const cols = array.dims[3];
+
+    if (gold.dims[0] != rows) {
+        std.debug.print(
+            "Row count mismatch: CSV has {d}, array expects {d} (path: {s})\n",
+            .{ gold.dims[0], rows, path },
+        );
+        return error.CSVRowsMismatch;
+    }
+
+    if (gold.dims[1] != cols) return error.CSVColsMismatch;
+
+    for (0..rows) |r| {
+        for (0..cols) |c| {
+            for (0..3) |cc| {
+                const gold_val = gold.get(&[_]usize{ r, c, cc });
+                const actual_val = array.get(&[_]usize{ frame, field_start + cc, r, c });
+
+                if (!isApproxEqual(gold_val, actual_val, rel_tol, abs_tol)) {
+                    const abs_gold = @abs(gold_val);
+                    const abs_act = @abs(actual_val);
+                    const largest = if (abs_gold > abs_act) abs_gold else abs_act;
+
+                    const diff = @abs(gold_val - actual_val);
+                    const rel_diff = if (largest < abs_tol) diff else diff / largest;
+
+                    std.debug.print(
+                        "\n\nMismatch at:\n frame {d},\n field {d},\n " ++
+                            "pixel ({d}, {d}): " ++
+                            "\n gold={d},\n actual={d},\n rel_diff={e}\n (path: {s})\n\n",
+                        .{
+                            frame,
+                            field_start + cc,
+                            r,
+                            c,
+                            gold_val,
+                            actual_val,
+                            rel_diff,
+                            path,
+                        },
+                    );
+                    return error.PixelMismatch;
+                }
+            }
+        }
+    }
+}
+
+fn openFailsSubDir(
+    io: std.Io,
+    fails_root: []const u8,
+    dir_name: []const u8,
+) !std.Io.Dir {
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDir(io, fails_root, .default_dir) catch |err| {
+        if (err != error.PathAlreadyExists) return err;
+    };
+    var fails_dir = try cwd.openDir(io, fails_root, .{});
+    fails_dir.createDir(io, dir_name, .default_dir) catch |err| {
+        fails_dir.close(io);
+        if (err != error.PathAlreadyExists) return err;
+    };
+    defer fails_dir.close(io);
+    return try fails_dir.openDir(io, dir_name, .{});
+}
+
+fn saveResultToFails(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    fails_root: []const u8,
+    array: *const NDArray(f64),
+    dir_name: []const u8,
+) !void {
+    var out_dir = try openFailsSubDir(io, fails_root, dir_name);
+    defer out_dir.close(io);
+
+    for (0..array.dims[0]) |f| {
+        for (0..array.dims[1]) |fi| {
+            const slice = array.getSlice(&[_]usize{ f, fi, 0, 0 }, 1);
+            const mat = MatSlice(f64).init(slice, array.dims[2], array.dims[3]);
+            const name = try std.fmt.allocPrint(
+                allocator,
+                "frame_{d}_field_{d}",
+                .{ f, fi },
+            );
+            try iio.saveMatAsImage(
+                io,
+                out_dir,
+                name,
+                &mat,
+                .{ .format = .csv, .bits = null, .scaling = .none },
+            );
+            try iio.saveMatAsImage(
+                io,
+                out_dir,
+                name,
+                &mat,
+                .{ .format = .bmp, .bits = 8, .scaling = .auto },
+            );
+        }
+    }
+}
+
+fn extractFrameImage(
+    allocator: std.mem.Allocator,
+    array: *const NDArray(f64),
+    frame: usize,
+    field_start: usize,
+    channels: usize,
+) !NDArray(f64) {
+    const dims = array.dims;
+    const rows = if (dims.len == 4) dims[2] else dims[1];
+    const cols = if (dims.len == 4) dims[3] else dims[2];
+    var image = try NDArray(f64).initFlat(allocator, &[_]usize{ rows, cols, channels });
+
+    for (0..rows) |rr| {
+        for (0..cols) |cc| {
+            for (0..channels) |ch| {
+                const val = if (dims.len == 4)
+                    array.get(&[_]usize{ frame, field_start + ch, rr, cc })
+                else
+                    array.get(&[_]usize{ field_start + ch, rr, cc });
+                image.set(&[_]usize{ rr, cc, ch }, val);
+            }
+        }
+    }
+
+    return image;
+}
+
+pub fn findGoldPath(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    dir: []const u8,
+    frame: usize,
+    field: usize,
+    is_rgb: bool,
+) ![]const u8 {
+    const base_name = if (is_rgb)
+        try std.fmt.allocPrint(allocator, "{s}/frame_{d}_field_{d}_rgb", .{ dir, frame, field })
+    else
+        try std.fmt.allocPrint(allocator, "{s}/frame_{d}_field_{d}", .{ dir, frame, field });
+    defer allocator.free(base_name);
+
+    const fimg_path = try std.fmt.allocPrint(allocator, "{s}.fimg", .{base_name});
+    errdefer allocator.free(fimg_path);
+
+    const cwd = std.Io.Dir.cwd();
+    if (cwd.access(io, fimg_path, .{})) |_| {
+        return fimg_path;
+    } else |_| {
+        allocator.free(fimg_path);
+        return try std.fmt.allocPrint(allocator, "{s}.csv", .{base_name});
+    }
+}
+
+fn loadNDArrayFromGold(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+    channels: usize,
+) !NDArray(f64) {
+    if (std.mem.endsWith(u8, path, ".fimg")) {
+        const array = try iio.loadFIMG(allocator, io, path);
+        if (array.dims[0] != channels) {
+            return error.ChannelMismatch;
+        }
+        return array;
+    }
+    return csvio.loadPackedCsv2D(allocator, io, path, channels);
+}
+
+pub fn calculateDiffImage(
+    allocator: std.mem.Allocator,
+    actual: *const NDArray(f64),
+    gold: *const NDArray(f64),
+) !NDArray(f64) {
+    var diff = try NDArray(f64).initFlat(allocator, actual.dims);
+    for (0..actual.slice.len) |ii| {
+        diff.slice[ii] = @abs(actual.slice[ii] - gold.slice[ii]);
+    }
+    return diff;
+}
+
+fn saveImageCSV(
+    io: std.Io,
+    dir: std.Io.Dir,
+    path: []const u8,
+    image: *const NDArray(f64),
+) !void {
+    const rows = image.dims[0];
+    const cols = image.dims[1];
+    const channels = image.dims[2];
+
+    const SaveCtx = struct {
+        fn getVal(
+            ctx: *const NDArray(f64),
+            row: usize,
+            col: usize,
+            ch: usize,
+        ) f64 {
+            return ctx.get(&[_]usize{ row, col, ch });
+        }
+    };
+
+    try csvio.savePackedGridCSV(
+        io,
+        dir,
+        path,
+        rows,
+        cols,
+        channels,
+        image,
+        SaveCtx.getVal,
+    );
+}
+
+fn makeBMPImageArray(
+    allocator: std.mem.Allocator,
+    image: *const NDArray(f64),
+) !NDArray(f64) {
+    const rows = image.dims[0];
+    const cols = image.dims[1];
+    const channels = image.dims[2];
+    var bmp_image = try NDArray(f64).initFlat(
+        allocator,
+        &[_]usize{ channels, rows, cols },
+    );
+
+    for (0..rows) |rr| {
+        for (0..cols) |cc| {
+            for (0..channels) |ch| {
+                bmp_image.set(
+                    &[_]usize{ ch, rr, cc },
+                    image.get(&[_]usize{ rr, cc, ch }),
+                );
+            }
+        }
+    }
+
+    return bmp_image;
+}
+
+fn saveImageArtifacts(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    dir: std.Io.Dir,
+    base_name: []const u8,
+    image: *const NDArray(f64),
+) !void {
+    const csv_name = try std.fmt.allocPrint(allocator, "{s}.csv", .{base_name});
+    defer allocator.free(csv_name);
+    try saveImageCSV(io, dir, csv_name, image);
+
+    const bmp_name = try std.fmt.allocPrint(allocator, "{s}.bmp", .{base_name});
+    defer allocator.free(bmp_name);
+    var bmp_image = try makeBMPImageArray(allocator, image);
+    defer {
+        allocator.free(bmp_image.slice);
+        bmp_image.deinit(allocator);
+    }
+    try iio.saveBMP(io, dir, bmp_name, &bmp_image, 0, .{
+        .format = .bmp,
+        .bits = 8,
+        .scaling = .auto,
+        .channels = bmp_image.dims[0],
+    });
+}
+
+pub fn saveComparisonArtifactsFromResult(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    fails_root: []const u8,
+    dir_name: []const u8,
+    result: *const NDArray(f64),
+    frame: usize,
+    field_start: usize,
+    gold_csv_path: []const u8,
+    channels: usize,
+) !void {
+    var out_dir = try openFailsSubDir(io, fails_root, dir_name);
+    defer out_dir.close(io);
+
+    var actual = try extractFrameImage(allocator, result, frame, field_start, channels);
+    defer {
+        allocator.free(actual.slice);
+        actual.deinit(allocator);
+    }
+
+    var gold = try loadNDArrayFromGold(allocator, io, gold_csv_path, channels);
+    defer {
+        allocator.free(gold.slice);
+        gold.deinit(allocator);
+    }
+
+    var diff = try calculateDiffImage(allocator, &actual, &gold);
+    defer {
+        allocator.free(diff.slice);
+        diff.deinit(allocator);
+    }
+
+    const base_name = try std.fmt.allocPrint(
+        allocator,
+        "frame_{d}_field_{d}",
+        .{ frame, field_start },
+    );
+    defer allocator.free(base_name);
+
+    try saveImageArtifacts(allocator, io, out_dir, base_name, &actual);
+
+    const diff_name = try std.fmt.allocPrint(allocator, "{s}_diff", .{base_name});
+    defer allocator.free(diff_name);
+    try saveImageArtifacts(allocator, io, out_dir, diff_name, &diff);
+}
+
+pub fn saveComparisonArtifactsFromImages(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    fails_root: []const u8,
+    dir_name: []const u8,
+    actual: *const NDArray(f64),
+    gold: *const NDArray(f64),
+) !void {
+    var out_dir = try openFailsSubDir(io, fails_root, dir_name);
+    defer out_dir.close(io);
+
+    var diff = try calculateDiffImage(allocator, actual, gold);
+    defer {
+        allocator.free(diff.slice);
+        diff.deinit(allocator);
+    }
+
+    try saveImageArtifacts(allocator, io, out_dir, "frame_0_field_0", actual);
+    try saveImageArtifacts(allocator, io, out_dir, "frame_0_field_0_diff", &diff);
+}
+
+pub const ShaderFilter = enum { nodal, tex, both };
+
+pub fn runTestInternal(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    test_type: []const u8,
+    mesh_type: MeshType,
+    fov_scale: f64,
+    texture: iio.Texture(1),
+    pixel_num: [2]u32,
+    sample_configs: []const texops.TextureSampleConfig,
+    gold_dir_root: []const u8,
+    data_dir_root: []const u8,
+    rel_tol: f64,
+    abs_tol: f64,
+    shader_filter: ShaderFilter,
+    report_perf: bool,
+) !void {
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const prepared = try orch.prepareSingleMeshCase(
+        aa,
+        io,
+        test_type,
+        mesh_type,
+        pixel_num,
+        fov_scale,
+        data_dir_root,
+    );
+
+    const disps = [_]bool{ true, false };
+    for (disps) |add_disp| {
+        const d_str = if (add_disp) "dispon" else "dispoff";
+
+        // --- Nodal ShaderInput ---
+        if (shader_filter == .nodal or shader_filter == .both) {
+            const mt_name = @tagName(mesh_type);
+            const case_dir_name = try std.fmt.allocPrint(
+                aa,
+                "{s}_{s}_{s}_nodal",
+                .{ test_type, mt_name, d_str },
+            );
+
+            const nodal_dir = try std.fmt.allocPrint(
+                aa,
+                "{s}/{s}",
+                .{ gold_dir_root, case_dir_name },
+            );
+
+            const mesh_input = MeshInput{
+                .mesh_type = mesh_type,
+                .coords = prepared.sim_data.coords,
+                .connect = prepared.sim_data.connect,
+                .disp = if (add_disp) prepared.sim_data.field else null,
+                .shader = .{
+                    .nodal = .{
+                        .field = prepared.sim_data.field.?,
+                        .bits = 8,
+                    },
+                },
+            };
+
+            const config = RasterConfig{
+                .save_opt = .memory,
+                .save_opts = &[_]iio.ImageSaveOpts{
+                    .{ .format = .csv, .bits = null, .scaling = .none },
+                },
+                .report = if (report_perf) .full_stats else .off,
+            };
+
+            const result = (try zraster.rasterAllFrames(
+                aa,
+                io,
+                &prepared.camera,
+                &[_]MeshInput{mesh_input},
+                config,
+                null,
+            )) orelse return error.NoResult;
+
+            defer aa.free(result.slice);
+
+            for (0..result.dims[0]) |f| {
+                const fname = try findGoldPath(aa, io, nodal_dir, f, 0, false);
+
+                compareNDArrayToGold(
+                    aa,
+                    io,
+                    &result,
+                    f,
+                    0,
+                    1,
+                    fname,
+                    rel_tol,
+                    abs_tol,
+                ) catch |err| {
+                    const fail_dir_name = try std.fmt.allocPrint(
+                        aa,
+                        "all_{s}{s}",
+                        .{ case_dir_name, impl_suffix },
+                    );
+                    try saveComparisonArtifactsFromResult(
+                        aa,
+                        io,
+                        default_fails_root,
+                        fail_dir_name,
+                        &result,
+                        f,
+                        0,
+                        fname,
+                        1,
+                    );
+                    return err;
+                };
+            }
+        }
+
+        // --- Tex ShaderInput ---
+        if (shader_filter == .tex or shader_filter == .both) {
+            for (sample_configs) |sc| {
+                const mt_name = @tagName(mesh_type);
+                const case_dir_name = try std.fmt.allocPrint(
+                    aa,
+                    "{s}_{s}_{s}_tex_{s}_{s}",
+                    .{ test_type, mt_name, d_str, @tagName(sc.sample), @tagName(sc.mode) },
+                );
+
+                const tex_dir = try std.fmt.allocPrint(
+                    aa,
+                    "{s}/{s}",
+                    .{ gold_dir_root, case_dir_name },
+                );
+
+                const mesh_input = MeshInput{
+                    .mesh_type = mesh_type,
+                    .coords = prepared.sim_data.coords,
+                    .connect = prepared.sim_data.connect,
+                    .disp = if (add_disp) prepared.sim_data.field else null,
+                    .shader = .{
+                        .tex = .{
+                            .uvs = prepared.uvs.array,
+                            .texture = texture,
+                            .sample_config = sc,
+                        },
+                    },
+                };
+
+                const config = RasterConfig{
+                    .save_opt = .memory,
+                    .save_opts = &[_]iio.ImageSaveOpts{
+                        .{ .format = .csv, .bits = null, .scaling = .none },
+                    },
+                    .report = if (report_perf) .full_stats else .off,
+                };
+
+                const result = (try zraster.rasterAllFrames(
+                    aa,
+                    io,
+                    &prepared.camera,
+                    &[_]MeshInput{mesh_input},
+                    config,
+                    null,
+                )) orelse return error.NoResult;
+
+                defer aa.free(result.slice);
+
+                for (0..result.dims[0]) |f| {
+                    const fname = try findGoldPath(aa, io, tex_dir, f, 0, false);
+
+                    compareNDArrayToGold(
+                        aa,
+                        io,
+                        &result,
+                        f,
+                        0,
+                        1,
+                        fname,
+                        rel_tol,
+                        abs_tol,
+                    ) catch |err| {
+                        const fail_dir_name = try std.fmt.allocPrint(
+                            aa,
+                            "all_{s}{s}",
+                            .{ case_dir_name, impl_suffix },
+                        );
+                        try saveComparisonArtifactsFromResult(
+                            aa,
+                            io,
+                            default_fails_root,
+                            fail_dir_name,
+                            &result,
+                            f,
+                            0,
+                            fname,
+                            1,
+                        );
+                        return err;
+                    };
+                }
+            }
+        }
+    }
+}
+
+pub fn runMultimeshTest(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    try runMultimeshTestExt(
+        outer_alloc,
+        io,
+        "gold-multimesh",
+        &orch.default_multimesh_dir_paths,
+        .{ 1200, 800 },
+        rel_tol,
+        abs_tol,
+    );
+}
+
+pub fn runMultimeshTestExt(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    gold_dir_root: []const u8,
+    dir_paths: []const []const u8,
+    pixel_num: [2]u32,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const shader_modes = [_]enum { nodal, texture }{ .nodal, .texture };
+
+    for (shader_modes) |mode| {
+        _ = arena.reset(.free_all);
+        const mesh_inputs = try orch.buildMultimeshInputs(
+            aa,
+            io,
+            dir_paths,
+            if (mode == .nodal) .nodal else .texture,
+        );
+
+        const fov_scale_factor: f64 = 1.1;
+        const camera = orch.initCameraForMeshes(
+            mesh_inputs,
+            pixel_num,
+            fov_scale_factor,
+        );
+
+        const config = RasterConfig{
+            .save_opt = .memory,
+            .save_opts = &[_]iio.ImageSaveOpts{
+                .{ .format = .csv, .bits = null, .scaling = .none },
+            },
+            .report = .off,
+        };
+
+        const result = (try zraster.rasterAllFrames(
+            aa,
+            io,
+            &camera,
+            mesh_inputs,
+            config,
+            null,
+        )) orelse return error.NoResult;
+
+        const gold_dir = if (mode == .nodal)
+            try std.fmt.allocPrint(aa, "{s}/allelem_nodal", .{gold_dir_root})
+        else
+            try std.fmt.allocPrint(aa, "{s}/allelem_tex_cubic_lut_lerp", .{gold_dir_root});
+
+        for (0..result.dims[0]) |f| {
+            const fname = try findGoldPath(aa, io, gold_dir, f, 0, false);
+            compareNDArrayToGold(
+                aa,
+                io,
+                &result,
+                f,
+                0,
+                1,
+                fname,
+                rel_tol,
+                abs_tol,
+            ) catch |err| {
+                const case_name = if (mode == .nodal)
+                    "multimesh_allelem_nodal"
+                else
+                    "multimesh_allelem_tex";
+                const fail_dir_name = try std.fmt.allocPrint(
+                    aa,
+                    "all_{s}{s}",
+                    .{ case_name, impl_suffix },
+                );
+                try saveComparisonArtifactsFromResult(
+                    aa,
+                    io,
+                    default_fails_root,
+                    fail_dir_name,
+                    &result,
+                    f,
+                    0,
+                    fname,
+                    1,
+                );
+                return err;
+            };
+        }
+    }
+}
+
+pub fn runMultimeshMixedTest(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    try runMultimeshMixedTestExt(
+        outer_alloc,
+        io,
+        "gold-multimesh/allelem_allshade",
+        &orch.default_multimesh_dir_paths,
+        .{ 1600, 800 },
+        rel_tol,
+        abs_tol,
+    );
+}
+
+pub fn runMultimeshMixedTestExt(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    gold_dir: []const u8,
+    dir_paths: []const []const u8,
+    pixel_num: [2]u32,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const texture = try iio.loadImage(
+        u8,
+        1,
+        aa,
+        io,
+        "texture/speckle-simple.tiff",
+        .tiff,
+    );
+
+    const mesh_inputs = try orch.buildMixedMeshInputs(
+        aa,
+        io,
+        dir_paths,
+        texture,
+    );
+
+    const fov_scale_factor: f64 = 1.2;
+    const camera = orch.initCameraForMeshes(
+        mesh_inputs,
+        pixel_num,
+        fov_scale_factor,
+    );
+
+    const config = RasterConfig{
+        .save_opt = .memory,
+        .save_opts = &[_]iio.ImageSaveOpts{
+            .{ .format = .csv, .bits = null, .scaling = .none },
+        },
+        .report = .off,
+    };
+    const result = (try zraster.rasterAllFrames(
+        aa,
+        io,
+        &camera,
+        mesh_inputs,
+        config,
+        null,
+    )) orelse return error.NoResult;
+
+    for (0..result.dims[0]) |f| {
+        const fname = try findGoldPath(aa, io, gold_dir, f, 0, false);
+        compareNDArrayToGold(aa, io, &result, f, 0, 1, fname, rel_tol, abs_tol) catch |err| {
+            try saveComparisonArtifactsFromResult(
+                aa,
+                io,
+                default_fails_root,
+                "all_multimesh_allelem_allshade" ++ impl_suffix,
+                &result,
+                f,
+                0,
+                fname,
+                1,
+            );
+            return err;
+        };
+    }
+}
+
+pub fn runMultimeshMixedRGBTest(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    try runMultimeshMixedRGBTestExt(
+        outer_alloc,
+        io,
+        "gold-multimesh/allelem_allshade_rgb",
+        &orch.default_multimesh_dir_paths,
+        .{ 1200, 800 },
+        rel_tol,
+        abs_tol,
+    );
+}
+
+pub fn runMultimeshMixedRGBTestExt(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    gold_dir: []const u8,
+    dir_paths: []const []const u8,
+    pixel_num: [2]u32,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const texture = try iio.loadImage(
+        u8,
+        3,
+        aa,
+        io,
+        "texture/speckle_rgb.bmp",
+        .bmp,
+    );
+
+    const mesh_inputs = try orch.buildMixedRgbMeshInputs(
+        aa,
+        io,
+        dir_paths,
+        texture,
+    );
+
+    const fov_scale_factor: f64 = 1.1;
+    const camera = orch.initCameraForMeshes(
+        mesh_inputs,
+        pixel_num,
+        fov_scale_factor,
+    );
+
+    const config_rgb = RasterConfig{
+        .save_opt = .memory,
+        .save_opts = &[_]iio.ImageSaveOpts{
+            .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
+        },
+        .report = .off,
+    };
+
+    const result = (try zraster.rasterAllFrames(
+        aa,
+        io,
+        &camera,
+        mesh_inputs,
+        config_rgb,
+        null,
+    )) orelse return error.NoResult;
+
+    for (0..result.dims[0]) |f| {
+        const fname = try findGoldPath(aa, io, gold_dir, f, 0, true);
+        compareNDArrayToGold(
+            aa,
+            io,
+            &result,
+            f,
+            0,
+            3,
+            fname,
+            rel_tol,
+            abs_tol,
+        ) catch |err| {
+            try saveComparisonArtifactsFromResult(
+                aa,
+                io,
+                default_fails_root,
+                "all_multimesh_allelem_allshade_rgb" ++ impl_suffix,
+                &result,
+                f,
+                0,
+                fname,
+                3,
+            );
+            return err;
+        };
+    }
+}

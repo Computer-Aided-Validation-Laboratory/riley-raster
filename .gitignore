@@ -1,25 +1,62 @@
-
-# Nano temporary files
-*.swp
-
-# Library files
+# Zig ignores
 *.so
 *.a
 *.o
 build/
 file-out/
+.zig-cache/
+zig-out/
+
+# Do not keep any large output directories with images or other output in them
 raster-out/
+raster-test/
+out*/
+gold*/
+fails/
+fails*/
+tmp-tests/
+archive/
+example/
+example*/
+examples*/
+scripts/hull-diags/
+temp-*/
+temp/
+data-bench/**/*.csv
+out-bench-*
+plans/
+gold-min/**/*.bmp
+out-min/
+demo*/
+
+# Don't commit large image files to the repo unless we have to
+*.ppm
+*.bmp
+*.tiff
+
+# Keep the min test suite
+!data-min/
+!data-min/**/*.csv
+!gold-min/
+!gold-min/**/*.fimg
+
+# We need to keep the textures for the tests
+!texture/*.bmp
+!texture/*.tiff
+
+# We need to keep the demo images for the README
+!images/*.bmp
+!images/*.tiff
+
+# Misc
+*.swp
+test_output.txt
+.vscode/
+.venv/
 
 # Cython
 *.html
 
-# Python ignores
-.venv/
-
-# Zig ignores
-.zig-cache/
-zig-out/
-.vscode/
 
 #-----------------------------------------------------------------------------
 # Standard Python Ignore
@@ -191,3 +228,4 @@ cpp/Makefile
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+

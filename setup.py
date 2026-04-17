@@ -8,7 +8,7 @@ from setuptools.command.build_ext import build_ext
 from Cython.Build import cythonize
 import numpy
 
-PACKAGE_NAME = "zigraster"
+PACKAGE_NAME = "zraster"
 
 #-------------------------------------------------------------------------------
 # Platform-specific utilities
@@ -290,22 +290,22 @@ class MultiBuildExt(build_ext):
 
 H_DIRS = [numpy.get_include(),
           str(Path.cwd()/"src"),
-          str(Path.cwd()/"src"/"cyth"),
-          str(Path.cwd()/"src"/"zig"),]
+          str(Path.cwd()/"src"/"zraster"/"cyth"),
+          str(Path.cwd()/"src"/"zraster"/"zig"),]
 
 # zig extension
 ext_zig = Extension(
-    name="zigraster.zig.zigraster",
-    sources=["src/zigraster/zig/zigraster.zig",],
+    name="zraster.zig.cabi-zraster",
+    sources=["src/zraster/zig/cabi-zraster.zig",],
     extra_compile_args=["-fincremental",],
 )
 
 # cython extension linking zig
 ext_cython = Extension(
-        name="zigraster.cyth.zraster",
-        sources=["src/zigraster/cyth/zraster.py",],
+        name="zraster.cyth.zraster",
+        sources=["src/zraster/cyth/zraster.py",],
         include_dirs=H_DIRS,
-        libraries=["zigraster",],  # without the lib and so extension - e.g. libzigarray.so - zig
+        libraries=["cabi-zraster",],  # without the lib and so extension - e.g. libzigarray.so - zig
         library_dirs=[],            # populated by run() above
         runtime_library_dirs=[PLATFORM_INFO["runtime_lib_dir"],],
         extra_compile_args=["-ffast-math",
@@ -319,16 +319,15 @@ ext_modules = [ext_zig] + cythonize(ext_cython,annotate=True)
 # Setup
 
 setup(
-    name="zigraster",
+    name="zraster",
     ext_modules=ext_modules,
     cmdclass={"build_ext": MultiBuildExt},
     zip_safe=False,
     package_data={
-        "zigraster": [f"*{PLATFORM_INFO['lib_ext']}"],
-        "zigraster.cython": [f"*{PLATFORM_INFO['lib_ext']}"],
-        "zigraster.zig": [f"*{PLATFORM_INFO['lib_ext']}"],
+        "zraster": [f"*{PLATFORM_INFO['lib_ext']}"],
+        "zraster.cython": [f"*{PLATFORM_INFO['lib_ext']}"],
+        "zraster.zig": [f"*{PLATFORM_INFO['lib_ext']}"],
         "": [f"*{PLATFORM_INFO['lib_ext']}"],
     },
     include_package_data=True,
 )
-
