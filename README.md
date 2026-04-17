@@ -4,9 +4,7 @@
 We specifically chose to implement `zraster` in Zig as it is a compiled language with manual memory management. It also allows for compile time code generation and has excellent support for SIMD vector types. We have used `comptime` to generate speciliased kernels for geometry and shader types removing run time dispatch overhead. 
 
 ## Getting Started
-`zraster` has been built using a developement version of the Zig 0.16 compiler from the 2670 commit. It is in the process of being updated to use the latest full release of the Zig 0.16 compiler from the 13th April 2026.
-
-The `zraster` repository contains a minimal set of regression tests (called the "min" test suite) which should be run before generating a wider set gold regression data and running performance benchmark suites. The min test suite can be run from the project root directory using:
+`zraster` uses the Zig 0.16.0 compiler release which can be downloaded from [here](https://ziglang.org/download/). The `zraster` repository contains a minimal set of regression tests (called the "min" test suite) which should be run before generating a wider set gold regression data and running performance benchmark suites. The min test suite can be run from the project root directory using:
 ```shell
 zig test -lc -O ReleaseSafe ./src/test_min.zig
 ```

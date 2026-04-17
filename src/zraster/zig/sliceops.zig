@@ -72,7 +72,7 @@ pub fn mean(comptime T: type, slice: []const T) T {
     return sum(T, slice) / @as(T, @floatFromInt(slice.len));
 }
 
-// Removing inline from from the stdlib version for use with 'apply'
+// Removing inline from the stdlib version for use with 'apply'
 pub fn exp(value: anytype) @TypeOf(value) {
     return @exp(value);
 }

@@ -89,7 +89,7 @@ pub fn main() !void {
     // Top Row (0-4): Nodal Shading
     for (0..5) |ii| {
         // Duplicate coordinates as they are modified by the rasteriser (displacement)
-        var coords_dup = try MatSlice(f64).initAlloc(
+        const coords_dup = try MatSlice(f64).initAlloc(
             aa,
             sim_datas[ii].coords.mat.rows_num,
             sim_datas[ii].coords.mat.cols_num,
@@ -115,7 +115,7 @@ pub fn main() !void {
         const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[ii]});
         const uvs = try uvio.loadUVMap(aa, io, uv_path);
 
-        var coords_dup = try MatSlice(f64).initAlloc(
+        const coords_dup = try MatSlice(f64).initAlloc(
             aa,
             sim_datas[ii].coords.mat.rows_num,
             sim_datas[ii].coords.mat.cols_num,
