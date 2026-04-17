@@ -553,7 +553,7 @@ pub fn loadPPM(
                 }
                 if (std.ascii.isWhitespace(char)) continue;
 
-                var list: std.ArrayList(u8) = .{};
+                var list: std.ArrayList(u8) = .empty;
                 try list.append(a, char);
                 while (true) {
                     const next_char = r.takeByte() catch |err| switch (err) {
@@ -683,7 +683,7 @@ pub fn loadFIMG(
                 }
                 if (std.ascii.isWhitespace(char)) continue;
 
-                var list: std.ArrayList(u8) = .{};
+                var list: std.ArrayList(u8) = .empty;
                 try list.append(a, char);
                 while (true) {
                     const next_char = r.takeByte() catch |err| switch (err) {

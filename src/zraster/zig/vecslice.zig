@@ -74,7 +74,10 @@ pub fn VecSlice(comptime T: type) type {
             }
         }
 
-        pub fn applyInPlace(self: *const Self, func: *const fn (val: anytype) T) void {
+        pub fn applyInPlace(
+            self: *const Self,
+            comptime func: anytype,
+        ) void {
             for (self.slice, 0..) |elem, ii| {
                 self.slice[ii] = func(elem);
             }

@@ -16,7 +16,6 @@ const mr = @import("zraster/zig/meshraster.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
 
-
 const config = common.BenchConfig{ .run = .all };
 const simd_on = cfg.simd == .on;
 const impl_suffix = if (simd_on) "_simd" else "_scalar";
@@ -99,6 +98,14 @@ test "Unified Benchmark Tests" {
 
     for (cases) |cc| {
         std.debug.print("\n--- Testing benchmark: {s} ---\n", .{cc.name});
+
+        if (!simd_on and cc.is_sphere) {
+            std.debug.print(
+                "Skipping scalar sphere benchmark comparisons.\n",
+                .{},
+            );
+            continue;
+        }
 
         for (mesh_types) |mt| {
             for (shader_types) |st| {

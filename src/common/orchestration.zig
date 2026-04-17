@@ -215,7 +215,7 @@ fn copyCoords(
     allocator: std.mem.Allocator,
     coords: meshio.Coords,
 ) !meshio.Coords {
-    var coords_dup = try MatSlice(f64).initAlloc(
+    const coords_dup = try MatSlice(f64).initAlloc(
         allocator,
         coords.mat.rows_num,
         coords.mat.cols_num,

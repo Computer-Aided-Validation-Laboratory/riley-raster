@@ -48,7 +48,7 @@ pub fn main() !void {
         .mode = .lut_lerp,
     };
 
-    var stats_list: std.ArrayList(common.BenchStats) = .{};
+    var stats_list: std.ArrayList(common.BenchStats) = .empty;
     defer {
         for (stats_list.items) |s| outer_alloc.free(s.name);
         stats_list.deinit(outer_alloc);

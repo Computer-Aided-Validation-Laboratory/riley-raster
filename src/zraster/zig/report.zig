@@ -380,7 +380,7 @@ pub const FullStatsLog = struct {
         try writer.print("{s}", .{line});
 
         if (self.iteration_map) |*imap| {
-            var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+            var gpa: std.heap.DebugAllocator(.{}) = .init;
             defer _ = gpa.deinit();
             const allocator = gpa.allocator();
 
@@ -583,7 +583,7 @@ pub fn calcStats(allocator: std.mem.Allocator, data: []const f64) !Stats {
         return .{ .min = 0, .max = 0, .median = 0, .q1 = 0, .q3 = 0, .mad = 0 };
     }
 
-    var filtered: std.ArrayList(f64) = .{};
+    var filtered: std.ArrayList(f64) = .empty;
     defer filtered.deinit(allocator);
     for (data) |val| {
         if (val > 0) try filtered.append(allocator, val);

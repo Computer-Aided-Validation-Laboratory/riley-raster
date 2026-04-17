@@ -18,7 +18,7 @@ const cfg = buildconfig.config;
 const simd_on = cfg.simd == .on;
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     var arena = std.heap.ArenaAllocator.init(gpa.allocator());
     defer arena.deinit();

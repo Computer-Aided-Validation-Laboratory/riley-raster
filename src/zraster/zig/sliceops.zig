@@ -82,7 +82,7 @@ pub fn apply(
     comptime T: type,
     dest: []T,
     source: []const T,
-    func: *const fn (val: anytype) T,
+    comptime func: anytype,
 ) void {
     for (dest[0..source.len], source) |*dd, ss| {
         dd.* = func(ss);

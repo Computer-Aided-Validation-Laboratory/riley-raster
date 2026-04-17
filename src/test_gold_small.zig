@@ -16,7 +16,7 @@ const texops = @import("zraster/zig/textureops.zig");
 const SHADER_FILTER: common.ShaderFilter = .both; // .nodal, .tex, or .both
 
 test "Gold Small Suite" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
 

@@ -20,7 +20,7 @@ const config = common.BenchConfig{ .run = .all };
 const simd_on = cfg.simd == .on;
 
 test "Sphere Gold Tests" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
 

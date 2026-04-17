@@ -16,7 +16,7 @@ const texops = @import("zraster/zig/textureops.zig");
 const SHADER_FILTER: common.ShaderFilter = .both;
 
 test "Gold Simple Suite" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
 

@@ -11,7 +11,7 @@ const common = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
 
 test "Gold Multimesh Suite" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
 

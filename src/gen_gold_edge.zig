@@ -14,7 +14,7 @@ const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     var arena = std.heap.ArenaAllocator.init(gpa.allocator());
     defer arena.deinit();

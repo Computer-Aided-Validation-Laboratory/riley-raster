@@ -29,7 +29,7 @@ const iio = @import("zraster/zig/imageio.zig");
 const uvio = @import("zraster/zig/uvio.zig");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
 

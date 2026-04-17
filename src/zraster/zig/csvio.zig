@@ -22,7 +22,7 @@ pub fn readCsvToList(
     var file_reader = file.reader(io, &read_buf);
     const reader = &file_reader.interface;
 
-    var lines: std.ArrayList([]const u8) = .{};
+    var lines: std.ArrayList([]const u8) = .empty;
     while (try reader.takeDelimiter('\n')) |line| {
         const line_trimmed = std.mem.trim(u8, line, " \r\t");
         if (line_trimmed.len == 0) continue;

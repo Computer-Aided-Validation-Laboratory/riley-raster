@@ -125,7 +125,10 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
             return SliceOps.mean(T, &self.slice);
         }
 
-        pub fn apply(self: *const Self, func: *const fn (val: anytype) T) Self {
+        pub fn apply(
+            self: *const Self,
+            comptime func: anytype,
+        ) Self {
             var applied: Self = undefined;
             for (self.slice, 0..) |elem, ii| {
                 applied.slice[ii] = func(elem);

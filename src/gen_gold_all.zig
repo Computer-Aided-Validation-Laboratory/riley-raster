@@ -15,7 +15,7 @@ const gen_fullscreen = @import("gen_gold_bench_fullscreen.zig");
 const gen_sphere = @import("gen_gold_sphere.zig");
 
 pub fn main() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
     var arena = std.heap.ArenaAllocator.init(gpa.allocator());
     defer arena.deinit();

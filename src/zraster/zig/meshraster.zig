@@ -334,7 +334,7 @@ pub fn meshInputFromSimDataSlice(
             );
             defer outer_alloc.free(path_uvs);
 
-            var uvmap = try uvio.loadUVMap(outer_alloc, io, path_uvs);
+            const uvmap = try uvio.loadUVMap(outer_alloc, io, path_uvs);
 
             const format: ImageFormat = if (std.mem.endsWith(u8, texture_path.?, ".bmp"))
                 .bmp

@@ -284,7 +284,7 @@ pub inline fn fillTexPersp(
             inv_z;
     }
 
-    const sampled = texops.sampleScalar(
+    const sampled = texops.sampleScalarRuntime(
         channels,
         sample_config,
         sh.texture,
@@ -317,7 +317,7 @@ pub inline fn fillTexPerspRuntime(
             inv_z;
     }
 
-    const sampled = texops.sampleScalar(
+    const sampled = texops.sampleScalarRuntime(
         channels,
         sample_config,
         sh.texture,

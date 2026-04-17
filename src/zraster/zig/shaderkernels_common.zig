@@ -96,7 +96,7 @@ pub inline fn shadeTexScalarCommon(
     }
 
     const config = shader.sample_config;
-    if (comptime cfg.texture_dispatch_policy == .comptime_comptime) {
+    if (comptime cfg.texture_dispatch_policy != .runtime_runtime) {
         inline for (.{
             .nearest,
             .linear,
