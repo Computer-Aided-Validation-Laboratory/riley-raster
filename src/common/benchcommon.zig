@@ -427,10 +427,12 @@ fn runBenchmarkInternal(
     );
 
     const config = zraster.RasterConfig{
+        .render_mode = tcfg.RENDER_MODE,
+        .total_threads = tcfg.TOTAL_THREADS,
+        .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
+        .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
+        .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
         .report = report_mode,
-        .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
-        .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
-        .threads_over_images = tcfg.THREADS_OVER_IMAGES,
     };
     const transformed_mesh = try mr.prepareMesh(
         aa,
@@ -460,7 +462,7 @@ fn runBenchmarkInternal(
         &meshes,
         &image_out_arr,
         config.tile_size,
-        config.threads_within_image,
+        config.max_raster_threads_per_frame,
         report_mode,
         &report_log,
     );

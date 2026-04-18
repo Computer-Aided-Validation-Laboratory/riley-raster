@@ -615,14 +615,16 @@ pub fn runTestInternal(
             };
 
             const config = RasterConfig{
+                .render_mode = tcfg.RENDER_MODE,
+                .total_threads = tcfg.TOTAL_THREADS,
+                .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
+                .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
+                .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
                 .save_opt = .memory,
                 .save_opts = &[_]iio.ImageSaveOpts{
                     .{ .format = .csv, .bits = null, .scaling = .none },
                 },
                 .report = if (report_perf) .full_stats else .off,
-                .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
-                .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
-                .threads_over_images = tcfg.THREADS_OVER_IMAGES,
             };
 
             const result = (try zraster.rasterAllFrames(
@@ -702,14 +704,16 @@ pub fn runTestInternal(
                 };
 
                 const config = RasterConfig{
+                    .render_mode = tcfg.RENDER_MODE,
+                    .total_threads = tcfg.TOTAL_THREADS,
+                    .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
+                    .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
+                    .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
                     .save_opt = .memory,
                     .save_opts = &[_]iio.ImageSaveOpts{
                         .{ .format = .csv, .bits = null, .scaling = .none },
                     },
                     .report = if (report_perf) .full_stats else .off,
-                    .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
-                    .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
-                    .threads_over_images = tcfg.THREADS_OVER_IMAGES,
                 };
 
                 const result = (try zraster.rasterAllFrames(
@@ -810,14 +814,16 @@ pub fn runMultimeshTestExt(
         );
 
         const config = RasterConfig{
+            .render_mode = tcfg.RENDER_MODE,
+            .total_threads = tcfg.TOTAL_THREADS,
+            .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
+            .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
+            .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
             .save_opt = .memory,
             .save_opts = &[_]iio.ImageSaveOpts{
                 .{ .format = .csv, .bits = null, .scaling = .none },
             },
             .report = .off,
-            .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
-            .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
-            .threads_over_images = tcfg.THREADS_OVER_IMAGES,
         };
 
         const result = (try zraster.rasterAllFrames(
@@ -927,14 +933,16 @@ pub fn runMultimeshMixedTestExt(
     );
 
     const config = RasterConfig{
+        .render_mode = tcfg.RENDER_MODE,
+        .total_threads = tcfg.TOTAL_THREADS,
+        .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
+        .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
+        .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
         .save_opt = .memory,
         .save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
         .report = .off,
-        .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
-        .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
-        .threads_over_images = tcfg.THREADS_OVER_IMAGES,
     };
     const result = (try zraster.rasterAllFrames(
         aa,
@@ -1018,14 +1026,16 @@ pub fn runMultimeshMixedRGBTestExt(
     );
 
     const config_rgb = RasterConfig{
+        .render_mode = tcfg.RENDER_MODE,
+        .total_threads = tcfg.TOTAL_THREADS,
+        .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
+        .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
+        .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
         .save_opt = .memory,
         .save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
         },
         .report = .off,
-        .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
-        .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
-        .threads_over_images = tcfg.THREADS_OVER_IMAGES,
     };
 
     const result = (try zraster.rasterAllFrames(

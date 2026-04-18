@@ -52,10 +52,17 @@ pub const SaveOption = enum {
     none,
 };
 
+pub const RenderMode = enum {
+    in_order,
+    offline,
+};
+
 pub const RasterConfig = struct {
-    threads_geom_preproc: u16 = 0,
-    threads_within_image: u16 = 0,
-    threads_over_images: u16 = 1,
+    render_mode: RenderMode = .in_order,
+    total_threads: u16 = 0,
+    max_frames_in_flight: u16 = 1,
+    max_geom_threads_per_frame: u16 = 0,
+    max_raster_threads_per_frame: u16 = 0,
     save_opt: SaveOption = .disk,
     save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .none },
@@ -329,12 +336,44 @@ fn findGeomReadyFrameSlot(
     return selected_slot;
 }
 
+fn findLargestGeomReadyFrameSlot(
+    slots: []FramePipelineContext,
+) ?*FramePipelineContext {
+    var selected_slot: ?*FramePipelineContext = null;
+    for (slots) |*slot| {
+        if (slot.state != .geom_ready) {
+            continue;
+        }
+        if (selected_slot == null or
+            slot.total_elems_in_image > selected_slot.?.total_elems_in_image)
+        {
+            selected_slot = slot;
+        }
+    }
+    return selected_slot;
+}
+
 fn findInGeometryFrameSlot(
     slots: []FramePipelineContext,
 ) ?*FramePipelineContext {
     var selected_slot: ?*FramePipelineContext = null;
     for (slots) |*slot| {
         if (slot.state != .in_geometry) {
+            continue;
+        }
+        if (selected_slot == null or slot.frame_idx < selected_slot.?.frame_idx) {
+            selected_slot = slot;
+        }
+    }
+    return selected_slot;
+}
+
+fn findInRasterFrameSlot(
+    slots: []FramePipelineContext,
+) ?*FramePipelineContext {
+    var selected_slot: ?*FramePipelineContext = null;
+    for (slots) |*slot| {
+        if (slot.state != .in_raster) {
             continue;
         }
         if (selected_slot == null or slot.frame_idx < selected_slot.?.frame_idx) {
@@ -356,35 +395,81 @@ fn countActiveFrameSlots(
     return active_slots;
 }
 
-fn countSlotsInState(
-    slots: []const FramePipelineContext,
-    target_state: FramePipelineState,
-) usize {
-    var slots_num: usize = 0;
-    for (slots) |slot| {
-        if (slot.state == target_state) {
-            slots_num += 1;
-        }
+fn normalizePhaseThreadCap(
+    phase_cap: u16,
+) u16 {
+    if (phase_cap == 0) {
+        return 1;
     }
-    return slots_num;
+    return phase_cap;
 }
 
-fn calcPerSlotThreads(
+fn calcInOrderSlotThreads(
     total_threads: u16,
-    active_slots: usize,
+    phase_cap: u16,
 ) u16 {
-    if (active_slots == 0) {
-        return total_threads;
-    }
     if (total_threads == 0) {
+        return 1;
+    }
+    return @min(total_threads, normalizePhaseThreadCap(phase_cap));
+}
+
+fn calcOfflineLaunchThreads(
+    total_threads: u16,
+    phase_cap: u16,
+    reserved_threads: u16,
+) u16 {
+    if (total_threads == 0 or reserved_threads >= total_threads) {
         return 0;
     }
-    const total_threads_num: usize = @intCast(total_threads);
-    const slot_threads = @max(
-        @as(usize, 1),
-        total_threads_num / active_slots,
+    const available_threads = total_threads - reserved_threads;
+    return @min(available_threads, normalizePhaseThreadCap(phase_cap));
+}
+
+fn countReservedPhaseThreads(
+    slots: []const FramePipelineContext,
+    target_state: FramePipelineState,
+) u16 {
+    var reserved_threads: u16 = 0;
+    for (slots) |slot| {
+        if (slot.state != target_state) {
+            continue;
+        }
+        const slot_threads: u16 = switch (target_state) {
+            .in_geometry => slot.slot_geom_threads,
+            .in_raster => slot.slot_raster_threads,
+            else => 0,
+        };
+        reserved_threads += slot_threads;
+    }
+    return reserved_threads;
+}
+
+fn initSlotGeomPool(
+    slot: *FramePipelineContext,
+) !void {
+    if (slot.slot_geom_threads <= 1) {
+        return;
+    }
+    if (slot.geom_pool_active) {
+        return;
+    }
+    try slot.geom_pool_storage.init(
+        slot.outer_alloc,
+        slot.io,
+        slot.slot_geom_threads - 1,
     );
-    return @intCast(slot_threads);
+    slot.geom_pool_active = true;
+}
+
+fn deinitSlotGeomPool(
+    slot: *FramePipelineContext,
+) void {
+    if (!slot.geom_pool_active) {
+        return;
+    }
+    slot.geom_pool_storage.deinit(slot.outer_alloc);
+    slot.geom_pool_active = false;
 }
 
 fn initFrameReportStorage(
@@ -410,8 +495,6 @@ fn admitFrameSlot(
     outer_alloc: std.mem.Allocator,
     camera: *const Camera,
     config: RasterConfig,
-    slot_geom_threads: u16,
-    slot_raster_threads: u16,
     frame_idx: usize,
     num_fields: u8,
     images_arr: ?*NDArray(f64),
@@ -428,8 +511,8 @@ fn admitFrameSlot(
     slot.out_dir = out_dir;
     slot.outer_alloc = outer_alloc;
     slot.tile_size = config.tile_size;
-    slot.slot_geom_threads = slot_geom_threads;
-    slot.slot_raster_threads = slot_raster_threads;
+    slot.slot_geom_threads = 0;
+    slot.slot_raster_threads = 0;
     slot.report_mode = config.report;
     slot.save_opt = config.save_opt;
     slot.save_opts = config.save_opts;
@@ -441,15 +524,6 @@ fn admitFrameSlot(
     slot.raster_done.store(false, .monotonic);
     slot.raster_failed = false;
     slot.raster_error = null;
-
-    if (slot.slot_geom_threads > 1) {
-        try slot.geom_pool_storage.init(
-            outer_alloc,
-            io,
-            slot.slot_geom_threads - 1,
-        );
-        slot.geom_pool_active = true;
-    }
 
     if (images_arr) |images| {
         const stride = images.strides[0];
@@ -589,7 +663,10 @@ fn spawnFrameGeometry(
     camera: *const Camera,
     mesh_static_prepared: []const MeshStaticPrepared,
     nodal_global_scaling: []const ?imageops.ScalingParams,
+    slot_geom_threads: u16,
 ) !void {
+    slot.slot_geom_threads = slot_geom_threads;
+    try initSlotGeomPool(slot);
     slot.state = .in_geometry;
     slot.geom_done.store(false, .monotonic);
     slot.geom_failed = false;
@@ -613,10 +690,7 @@ fn finishFrameGeometry(
     thread.join();
     slot.geom_thread = null;
 
-    if (slot.geom_pool_active) {
-        slot.geom_pool_storage.deinit(slot.outer_alloc);
-        slot.geom_pool_active = false;
-    }
+    deinitSlotGeomPool(slot);
 
     if (slot.geom_failed) {
         slot.state = .failed;
@@ -641,7 +715,9 @@ fn frameRasterWorker(
 
 fn spawnFrameRaster(
     slot: *FramePipelineContext,
+    slot_raster_threads: u16,
 ) !void {
+    slot.slot_raster_threads = slot_raster_threads;
     slot.state = .in_raster;
     slot.raster_done.store(false, .monotonic);
     slot.raster_failed = false;
@@ -745,7 +821,7 @@ pub fn rasterAllFrames(
     const static_alloc = static_arena.allocator();
     const num_time = countFrames(meshes);
     const num_fields = countOutputFields(meshes);
-    var images_arr = try initImagesArray(
+    var images_arr_opt = try initImagesArray(
         outer_alloc,
         config,
         num_time,
@@ -756,14 +832,115 @@ pub fn rasterAllFrames(
     defer outer_alloc.free(nodal_global_scaling);
     const mesh_static_prepared = try prepareMeshStatics(static_alloc, meshes);
 
-    const frames_in_flight = @max(@as(u16, 1), config.threads_over_images);
+    if (config.render_mode == .in_order or config.total_threads == 0) {
+        return rasterAllFramesInOrder(
+            outer_alloc,
+            io,
+            camera,
+            config,
+            out_dir,
+            num_time,
+            num_fields,
+            if (images_arr_opt) |*ima| ima else null,
+            mesh_static_prepared,
+            nodal_global_scaling,
+        );
+    }
+
+    try rasterAllFramesOffline(
+        outer_alloc,
+        io,
+        camera,
+        config,
+        out_dir,
+        num_time,
+        num_fields,
+        if (images_arr_opt) |*ima| ima else null,
+        mesh_static_prepared,
+        nodal_global_scaling,
+    );
+
+    return images_arr_opt;
+}
+
+fn rasterAllFramesInOrder(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    camera: *const Camera,
+    config: RasterConfig,
+    out_dir: ?std.Io.Dir,
+    num_time: usize,
+    num_fields: u8,
+    images_arr: ?*NDArray(f64),
+    mesh_static_prepared: []const MeshStaticPrepared,
+    nodal_global_scaling: []const ?imageops.ScalingParams,
+) !?NDArray(f64) {
+    const frame_slots = try initFrameSlots(outer_alloc, 1);
+    defer deinitFrameSlots(outer_alloc, frame_slots);
+    const slot = &frame_slots[0];
+
+    for (0..num_time) |frame_idx| {
+        try admitFrameSlot(
+            slot,
+            outer_alloc,
+            camera,
+            config,
+            frame_idx,
+            num_fields,
+            images_arr,
+            out_dir,
+            io,
+        );
+
+        slot.slot_geom_threads = calcInOrderSlotThreads(
+            config.total_threads,
+            config.max_geom_threads_per_frame,
+        );
+        try initSlotGeomPool(slot);
+        slot.state = .in_geometry;
+        try prepareFrameGeometry(
+            slot,
+            camera,
+            mesh_static_prepared,
+            nodal_global_scaling,
+        );
+        deinitSlotGeomPool(slot);
+        slot.state = .geom_ready;
+
+        slot.slot_raster_threads = calcInOrderSlotThreads(
+            config.total_threads,
+            config.max_raster_threads_per_frame,
+        );
+        slot.state = .in_raster;
+        try runFrameRaster(slot);
+        slot.state = .raster_ready;
+
+        try finalizeFrameSlot(slot);
+        slot.reset(outer_alloc);
+    }
+
+    return if (images_arr) |ima| ima.* else null;
+}
+
+fn rasterAllFramesOffline(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    camera: *const Camera,
+    config: RasterConfig,
+    out_dir: ?std.Io.Dir,
+    num_time: usize,
+    num_fields: u8,
+    images_arr: ?*NDArray(f64),
+    mesh_static_prepared: []const MeshStaticPrepared,
+    nodal_global_scaling: []const ?imageops.ScalingParams,
+) !void {
+    const frames_in_flight = @max(@as(u16, 1), config.max_frames_in_flight);
     const slots_num = @min(@as(usize, @intCast(frames_in_flight)), num_time);
     const frame_slots = try initFrameSlots(outer_alloc, slots_num);
     defer deinitFrameSlots(outer_alloc, frame_slots);
 
     var next_frame_idx: usize = 0;
     var completed_frames: usize = 0;
-    var raster_slot: ?*FramePipelineContext = null;
 
     while (completed_frames < num_time) {
         var progressed = false;
@@ -779,76 +956,131 @@ pub fn rasterAllFrames(
             progressed = true;
         }
 
-        if (raster_slot) |slot| {
-            if (slot.raster_done.load(.acquire)) {
-                try finishFrameRaster(slot);
-                try finalizeFrameSlot(slot);
-                slot.reset(outer_alloc);
-                completed_frames += 1;
-                raster_slot = null;
-                progressed = true;
+        for (frame_slots) |*slot| {
+            if (slot.state != .in_raster) {
+                continue;
             }
+            if (!slot.raster_done.load(.acquire)) {
+                continue;
+            }
+            try finishFrameRaster(slot);
+            try finalizeFrameSlot(slot);
+            slot.reset(outer_alloc);
+            completed_frames += 1;
+            progressed = true;
         }
 
-        if (raster_slot == null) {
-            if (findGeomReadyFrameSlot(frame_slots)) |slot| {
-                try spawnFrameRaster(slot);
-                raster_slot = slot;
-                progressed = true;
+        for (next_frame_idx..num_time) |frame_idx| {
+            if (countActiveFrameSlots(frame_slots) >= slots_num) {
+                break;
             }
-        }
-
-        if (next_frame_idx < num_time and countActiveFrameSlots(frame_slots) < slots_num) {
-            const slot = findFreeFrameSlot(frame_slots).?;
-            const slot_geom_threads = calcPerSlotThreads(
-                config.threads_geom_preproc,
-                countSlotsInState(frame_slots, .in_geometry) + 1,
-            );
-            const slot_raster_threads = calcPerSlotThreads(
-                config.threads_within_image,
-                1,
-            );
+            const slot = findFreeFrameSlot(frame_slots) orelse break;
             try admitFrameSlot(
                 slot,
                 outer_alloc,
                 camera,
                 config,
-                slot_geom_threads,
-                slot_raster_threads,
-                next_frame_idx,
+                frame_idx,
                 num_fields,
-                if (images_arr) |*ima| ima else null,
+                images_arr,
                 out_dir,
                 io,
-            );
-            try spawnFrameGeometry(
-                slot,
-                camera,
-                mesh_static_prepared,
-                nodal_global_scaling,
             );
             next_frame_idx += 1;
             progressed = true;
         }
 
+        for (frame_slots) |*slot| {
+            if (slot.state != .queued) {
+                continue;
+            }
+            const reserved_threads = countReservedPhaseThreads(
+                frame_slots,
+                .in_geometry,
+            ) + countReservedPhaseThreads(frame_slots, .in_raster);
+            const slot_geom_threads = calcOfflineLaunchThreads(
+                config.total_threads,
+                config.max_geom_threads_per_frame,
+                reserved_threads,
+            );
+            if (slot_geom_threads == 0) {
+                continue;
+            }
+            try spawnFrameGeometry(
+                slot,
+                camera,
+                mesh_static_prepared,
+                nodal_global_scaling,
+                slot_geom_threads,
+            );
+            progressed = true;
+        }
+
+        while (findLargestGeomReadyFrameSlot(frame_slots)) |slot| {
+            const reserved_threads = countReservedPhaseThreads(
+                frame_slots,
+                .in_geometry,
+            ) + countReservedPhaseThreads(frame_slots, .in_raster);
+            const slot_raster_threads = calcOfflineLaunchThreads(
+                config.total_threads,
+                config.max_raster_threads_per_frame,
+                reserved_threads,
+            );
+            if (slot_raster_threads == 0) {
+                break;
+            }
+            try spawnFrameRaster(slot, slot_raster_threads);
+            progressed = true;
+        }
+
         if (!progressed) {
-            if (raster_slot) |slot| {
+            if (findInRasterFrameSlot(frame_slots)) |slot| {
                 try finishFrameRaster(slot);
                 try finalizeFrameSlot(slot);
                 slot.reset(outer_alloc);
                 completed_frames += 1;
-                raster_slot = null;
+                progressed = true;
                 continue;
             }
             if (findInGeometryFrameSlot(frame_slots)) |slot| {
                 try finishFrameGeometry(slot);
                 continue;
             }
+            if (findGeomReadyFrameSlot(frame_slots)) |slot| {
+                const slot_raster_threads = calcOfflineLaunchThreads(
+                    config.total_threads,
+                    config.max_raster_threads_per_frame,
+                    0,
+                );
+                if (slot_raster_threads > 0) {
+                    try spawnFrameRaster(slot, slot_raster_threads);
+                    continue;
+                }
+            }
+            if (findFreeFrameSlot(frame_slots)) |slot| {
+                if (next_frame_idx < num_time) {
+                    try admitFrameSlot(
+                        slot,
+                        outer_alloc,
+                        camera,
+                        config,
+                        next_frame_idx,
+                        num_fields,
+                        images_arr,
+                        out_dir,
+                        io,
+                    );
+                    next_frame_idx += 1;
+                    continue;
+                }
+            }
+            if (findGeomReadyFrameSlot(frame_slots)) |slot| {
+                try spawnFrameRaster(slot, 1);
+                continue;
+            }
             return error.FramePipelineStalled;
         }
     }
-
-    return images_arr;
 }
 
 pub fn rasterSceneInternal(
