@@ -14,6 +14,9 @@ const Vec3SIMD = vsd.Vec3SIMD;
 const ndarray = @import("ndarray.zig");
 const NDArray = ndarray.NDArray;
 const MappedNDArray = ndarray.MappedNDArray;
+const meshio = @import("meshio.zig");
+const Coords = meshio.Coords;
+const Connect = meshio.Connect;
 const buildconfig = @import("buildconfig.zig");
 const cfg = buildconfig.config;
 const Camera = @import("camera.zig").Camera;
@@ -21,6 +24,8 @@ const shapefun = @import("shapefun.zig");
 const S = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
 const tol = cfg.tolerance;
+const matrix = @import("matstack.zig");
+const Mat44Ops = matrix.Mat44Ops;
 
 const buildAdaptiveHulls = @import("hull.zig").buildAdaptiveHulls;
 const geomkerns = @import("geometrykernels.zig");
@@ -84,8 +89,8 @@ pub const ElemBBox = struct {
 };
 
 pub const OverlapBBox = struct {
-    mesh_idx: u32,
-    elem_idx: u32,
+    mesh_idx: usize,
+    elem_idx: usize,
     x_min: u16,
     x_max: u16,
     y_min: u16,
@@ -117,13 +122,210 @@ pub const MeshInput = struct {
     hull: ?*const NDArray(f64),
 };
 
+fn AdaptiveHullPoints(comptime N: usize) type {
+    const NH = comptime switch (N) {
+        4 => 4,
+        6 => 6,
+        8, 9 => 8,
+        else => 0,
+    };
+
+    return struct {
+        x: [NH]f64,
+        y: [NH]f64,
+    };
+}
+
+fn GatheredElemCoords(comptime N: usize) type {
+    return struct {
+        x: [N]f64,
+        y: [N]f64,
+        z: [N]f64,
+    };
+}
+
+fn transformWorldNodeToRaster(
+    camera: *const Camera,
+    coord_world: Vec3T(f64),
+) Vec3T(f64) {
+    var coord_raster = Mat44Ops.mulVec3(f64, camera.world_to_cam_mat, coord_world);
+
+    coord_raster.slice[0] = camera.image_dist * coord_raster.slice[0] /
+        (-coord_raster.slice[2]);
+    coord_raster.slice[1] = camera.image_dist * coord_raster.slice[1] /
+        (-coord_raster.slice[2]);
+
+    coord_raster.slice[0] = 2.0 * coord_raster.slice[0] / camera.image_dims[0];
+    coord_raster.slice[1] = 2.0 * coord_raster.slice[1] / camera.image_dims[1];
+
+    coord_raster.slice[0] = (coord_raster.slice[0] + 1.0) * 0.5 *
+        @as(f64, @floatFromInt(camera.pixels_num[0]));
+    coord_raster.slice[1] = (1.0 - coord_raster.slice[1]) * 0.5 *
+        @as(f64, @floatFromInt(camera.pixels_num[1]));
+    coord_raster.slice[2] = -coord_raster.slice[2];
+
+    return coord_raster;
+}
+
+fn transformWorldNodeToClipPx(
+    camera: *const Camera,
+    coord_world: Vec3T(f64),
+) Vec3T(f64) {
+    const x_scale = camera.image_dist *
+        @as(f64, @floatFromInt(camera.pixels_num[0])) / camera.image_dims[0];
+    const y_scale = camera.image_dist *
+        @as(f64, @floatFromInt(camera.pixels_num[1])) / camera.image_dims[1];
+
+    var coord_clip = Mat44Ops.mulVec3(f64, camera.world_to_cam_mat, coord_world);
+    coord_clip.slice[0] *= x_scale;
+    coord_clip.slice[1] *= -y_scale;
+    coord_clip.slice[2] = -coord_clip.slice[2];
+    return coord_clip;
+}
+
+pub fn nodesToRasterInPlace(
+    camera: *const Camera,
+    coords_nodes: *Coords,
+) void {
+    for (0..coords_nodes.mat.rows_num) |nn| {
+        const coord_world = coords_nodes.getVec3(nn);
+        const coord_raster = transformWorldNodeToRaster(camera, coord_world);
+        coords_nodes.mat.set(nn, 0, coord_raster.slice[0]);
+        coords_nodes.mat.set(nn, 1, coord_raster.slice[1]);
+        coords_nodes.mat.set(nn, 2, coord_raster.slice[2]);
+    }
+}
+
+pub fn nodesToClipPxLengInPlace(
+    camera: *const Camera,
+    coords_nodes: *Coords,
+) void {
+    for (0..coords_nodes.mat.rows_num) |nn| {
+        const coord_world = coords_nodes.getVec3(nn);
+        const coord_clip = transformWorldNodeToClipPx(camera, coord_world);
+        coords_nodes.mat.set(nn, 0, coord_clip.slice[0]);
+        coords_nodes.mat.set(nn, 1, coord_clip.slice[1]);
+        coords_nodes.mat.set(nn, 2, coord_clip.slice[2]);
+    }
+}
+
+fn gatherElemNodeCoords(
+    comptime N: usize,
+    coords_nodes: *const Coords,
+    connect: *const Connect,
+    elem_idx: usize,
+) GatheredElemCoords(N) {
+    var coords_elem: GatheredElemCoords(N) = undefined;
+    const coord_inds = connect.getElem(elem_idx);
+
+    for (0..N) |nn| {
+        const node_idx = coord_inds[nn];
+        coords_elem.x[nn] = coords_nodes.x(node_idx);
+        coords_elem.y[nn] = coords_nodes.y(node_idx);
+        coords_elem.z[nn] = coords_nodes.z(node_idx);
+    }
+
+    return coords_elem;
+}
+
+fn buildAdaptiveHullPoints(
+    comptime N: usize,
+    camera: *const Camera,
+    coords_elem: GatheredElemCoords(N),
+) AdaptiveHullPoints(N) {
+    const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
+    const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
+
+    var lx: [N]f64 = undefined;
+    var ly: [N]f64 = undefined;
+    for (0..N) |nn| {
+        lx[nn] = coords_elem.x[nn] / coords_elem.z[nn] + x_off;
+        ly[nn] = coords_elem.y[nn] / coords_elem.z[nn] + y_off;
+    }
+
+    var hull_points: AdaptiveHullPoints(N) = undefined;
+    if (N == 4) {
+        inline for (0..4) |nn| {
+            hull_points.x[nn] = lx[nn];
+            hull_points.y[nn] = ly[nn];
+        }
+    } else if (N == 6) {
+        const edges = [3][3]usize{
+            .{ 0, 1, 3 },
+            .{ 1, 2, 4 },
+            .{ 2, 0, 5 },
+        };
+
+        inline for (edges, 0..) |edge, ee| {
+            const p0 = edge[0];
+            const p1 = edge[1];
+            const pm = edge[2];
+            const edge_val = edgeFun3(
+                lx[p0],
+                ly[p0],
+                lx[p1],
+                ly[p1],
+                lx[pm],
+                ly[pm],
+            );
+            hull_points.x[ee * 2] = lx[p0];
+            hull_points.y[ee * 2] = ly[p0];
+            if (edge_val < 0.0) {
+                hull_points.x[ee * 2 + 1] =
+                    2.0 * lx[pm] - 0.5 * (lx[p0] + lx[p1]);
+                hull_points.y[ee * 2 + 1] =
+                    2.0 * ly[pm] - 0.5 * (ly[p0] + ly[p1]);
+            } else {
+                hull_points.x[ee * 2 + 1] = lx[pm];
+                hull_points.y[ee * 2 + 1] = ly[pm];
+            }
+        }
+    } else if (N == 8 or N == 9) {
+        const edges = [4][3]usize{
+            .{ 0, 1, 4 },
+            .{ 1, 2, 5 },
+            .{ 2, 3, 6 },
+            .{ 3, 0, 7 },
+        };
+
+        inline for (edges, 0..) |edge, ee| {
+            const p0 = edge[0];
+            const p1 = edge[1];
+            const pm = edge[2];
+            const edge_val = edgeFun3(
+                lx[p0],
+                ly[p0],
+                lx[p1],
+                ly[p1],
+                lx[pm],
+                ly[pm],
+            );
+            hull_points.x[ee * 2] = lx[p0];
+            hull_points.y[ee * 2] = ly[p0];
+            if (edge_val < 0.0) {
+                hull_points.x[ee * 2 + 1] =
+                    2.0 * lx[pm] - 0.5 * (lx[p0] + lx[p1]);
+                hull_points.y[ee * 2 + 1] =
+                    2.0 * ly[pm] - 0.5 * (ly[p0] + ly[p1]);
+            } else {
+                hull_points.x[ee * 2 + 1] = lx[pm];
+                hull_points.y[ee * 2 + 1] = ly[pm];
+            }
+        }
+    }
+
+    return hull_points;
+}
+
 pub fn loadElemVec3Slices(
     comptime N: usize,
     comptime T: type,
     elem_array: *const NDArray(T),
     elem_idx: usize,
 ) !Vec3Slices(T) {
-    var start_slice: usize = elem_array.getFlatIdx(&[_]usize{ elem_idx, 0, 0 });
+    std.debug.assert(elem_array.dims.len == 3);
+    std.debug.assert(elem_idx < elem_array.dims[0]);
+    var start_slice: usize = elem_idx * elem_array.strides[0];
     const stride: usize = elem_array.strides[1];
 
     const x_slice = elem_array.slice[start_slice .. start_slice + N];
@@ -401,6 +603,188 @@ pub fn cullElemsCalcBBoxesTri3(
     return elems_in_image;
 }
 
+fn cullNodesCalcBBoxesTri3(
+    camera: *const Camera,
+    coords_nodes: *const Coords,
+    connect: *const Connect,
+    elem_bboxes: []ElemBBox,
+) usize {
+    const tol_area = tol.culling.tri3_signed_area;
+    var elems_in_image: usize = 0;
+
+    for (0..connect.getElemsNum()) |ee| {
+        const coords_elem = gatherElemNodeCoords(3, coords_nodes, connect, ee);
+        const x_max = std.mem.max(f64, &coords_elem.x);
+        const x_min = std.mem.min(f64, &coords_elem.x);
+        if (x_min > @as(f64, @floatFromInt(camera.pixels_num[0] - 1)) or
+            x_max < 0.0)
+        {
+            continue;
+        }
+
+        const y_max = std.mem.max(f64, &coords_elem.y);
+        const y_min = std.mem.min(f64, &coords_elem.y);
+        if (y_min > @as(f64, @floatFromInt(camera.pixels_num[1] - 1)) or
+            y_max < 0.0)
+        {
+            continue;
+        }
+
+        const elem_area = edgeFun3(
+            coords_elem.x[0],
+            coords_elem.y[0],
+            coords_elem.x[1],
+            coords_elem.y[1],
+            coords_elem.x[2],
+            coords_elem.y[2],
+        );
+        if (elem_area < tol_area) {
+            continue;
+        }
+
+        elem_bboxes[elems_in_image] = .{
+            .elem_idx = ee,
+            .x_min = boundIndMin(u16, x_min),
+            .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
+            .y_min = boundIndMin(u16, y_min),
+            .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
+        };
+        elems_in_image += 1;
+    }
+
+    return elems_in_image;
+}
+
+fn cullNodesCalcBBoxesHighOrd(
+    comptime N: usize,
+    camera: *const Camera,
+    coords_nodes: *const Coords,
+    connect: *const Connect,
+    elem_bboxes: []ElemBBox,
+) usize {
+    const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
+    const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
+    const nodal_derivs = comptime shapefun.getNodalDerivs(N);
+    const tolerance = tol.culling.higher_order_backface_nz;
+    var elems_in_image: usize = 0;
+
+    for (0..connect.getElemsNum()) |ee| {
+        const coords_elem = gatherElemNodeCoords(N, coords_nodes, connect, ee);
+        var sx_nodes: [N]f64 = undefined;
+        var sy_nodes: [N]f64 = undefined;
+
+        for (0..N) |nn| {
+            sx_nodes[nn] = coords_elem.x[nn] / coords_elem.z[nn] + x_off;
+            sy_nodes[nn] = coords_elem.y[nn] / coords_elem.z[nn] + y_off;
+        }
+
+        var all_backface = true;
+        for (0..N) |nn| {
+            var dx_dxi: f64 = 0.0;
+            var dx_deta: f64 = 0.0;
+            var dy_dxi: f64 = 0.0;
+            var dy_deta: f64 = 0.0;
+
+            for (0..N) |mm| {
+                dx_dxi += nodal_derivs.dNu[nn][mm] * sx_nodes[mm];
+                dx_deta += nodal_derivs.dNv[nn][mm] * sx_nodes[mm];
+                dy_dxi += nodal_derivs.dNu[nn][mm] * sy_nodes[mm];
+                dy_deta += nodal_derivs.dNv[nn][mm] * sy_nodes[mm];
+            }
+
+            const nz = dx_dxi * dy_deta - dx_deta * dy_dxi;
+            if (nz <= tolerance) {
+                all_backface = false;
+                break;
+            }
+        }
+        if (all_backface) {
+            continue;
+        }
+
+        const hull_points = buildAdaptiveHullPoints(N, camera, coords_elem);
+        const x_min = std.mem.min(f64, &hull_points.x);
+        const x_max = std.mem.max(f64, &hull_points.x);
+        const y_min = std.mem.min(f64, &hull_points.y);
+        const y_max = std.mem.max(f64, &hull_points.y);
+
+        if (x_min > @as(f64, @floatFromInt(camera.pixels_num[0] - 1)) or
+            x_max < 0.0 or
+            y_min > @as(f64, @floatFromInt(camera.pixels_num[1] - 1)) or
+            y_max < 0.0)
+        {
+            continue;
+        }
+
+        elem_bboxes[elems_in_image] = .{
+            .elem_idx = ee,
+            .x_min = boundIndMin(u16, x_min),
+            .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
+            .y_min = boundIndMin(u16, y_min),
+            .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
+        };
+        elems_in_image += 1;
+    }
+
+    return elems_in_image;
+}
+
+pub fn prepareVisibleWorkspace(
+    allocator: std.mem.Allocator,
+    camera: *const Camera,
+    mesh_type: anytype,
+    connect: *const Connect,
+    coords_nodes: *const Coords,
+    visible_orig_elem_indices: *[]usize,
+    elem_bboxes: *[]ElemBBox,
+    elems_in_image: *usize,
+) !void {
+    const elems_num = connect.getElemsNum();
+    elem_bboxes.* = try allocator.alloc(ElemBBox, elems_num);
+
+    elems_in_image.* = switch (mesh_type) {
+        .tri3 => cullNodesCalcBBoxesTri3(
+            camera,
+            coords_nodes,
+            connect,
+            elem_bboxes.*,
+        ),
+        .tri6 => cullNodesCalcBBoxesHighOrd(
+            6,
+            camera,
+            coords_nodes,
+            connect,
+            elem_bboxes.*,
+        ),
+        .quad4ibi, .quad4newton => cullNodesCalcBBoxesHighOrd(
+            4,
+            camera,
+            coords_nodes,
+            connect,
+            elem_bboxes.*,
+        ),
+        .quad8 => cullNodesCalcBBoxesHighOrd(
+            8,
+            camera,
+            coords_nodes,
+            connect,
+            elem_bboxes.*,
+        ),
+        .quad9 => cullNodesCalcBBoxesHighOrd(
+            9,
+            camera,
+            coords_nodes,
+            connect,
+            elem_bboxes.*,
+        ),
+    };
+
+    visible_orig_elem_indices.* = try allocator.alloc(usize, elems_in_image.*);
+    for (0..elems_in_image.*) |pp| {
+        visible_orig_elem_indices.*[pp] = elem_bboxes.*[pp].elem_idx;
+    }
+}
+
 fn calcElementNodeNormal(
     comptime N: usize,
     nodal_derivs: shapefun.NodalDerivs,
@@ -591,6 +975,295 @@ fn calculatePreparedNormals(
     }
 
     return prep_normals;
+}
+
+fn initIdentityMappedNormals(
+    allocator: std.mem.Allocator,
+    prep_count: usize,
+    comptime N: usize,
+) !MappedNDArray(f64) {
+    const prep_normals = try NDArray(f64).initFlat(
+        allocator,
+        &[_]usize{ prep_count, 3, N },
+    );
+    const map = try allocator.alloc(usize, prep_count);
+    for (0..prep_count) |pp| {
+        map[pp] = pp;
+    }
+
+    return .{
+        .array = prep_normals,
+        .map = map,
+    };
+}
+
+fn calculateVisibleExactNormals(
+    coords_nodes: *const Coords,
+    connect: *const Connect,
+    visible_orig_elem_indices: []const usize,
+    prep_normals: *NDArray(f64),
+    comptime N: usize,
+) void {
+    const nodal_derivs = comptime shapefun.getNodalDerivs(N);
+
+    for (visible_orig_elem_indices, 0..) |orig_ee, pp| {
+        const coords_elem = gatherElemNodeCoords(N, coords_nodes, connect, orig_ee);
+        for (0..N) |nn| {
+            var normal_vec = calcElementNodeNormal(
+                N,
+                nodal_derivs,
+                &coords_elem.x,
+                &coords_elem.y,
+                &coords_elem.z,
+                nn,
+            );
+            normalizeNormal(&normal_vec);
+            prep_normals.set(&[_]usize{ pp, 0, nn }, normal_vec[0]);
+            prep_normals.set(&[_]usize{ pp, 1, nn }, normal_vec[1]);
+            prep_normals.set(&[_]usize{ pp, 2, nn }, normal_vec[2]);
+        }
+    }
+}
+
+fn calculateVisibleAveragedNormals(
+    allocator: std.mem.Allocator,
+    coords_nodes: *const Coords,
+    connect: *const Connect,
+    visible_orig_elem_indices: []const usize,
+    prep_normals: *NDArray(f64),
+    comptime N: usize,
+) !void {
+    const nodal_derivs = comptime shapefun.getNodalDerivs(N);
+    var max_node_idx: usize = 0;
+    for (connect.table_mem) |node_idx| {
+        max_node_idx = @max(max_node_idx, node_idx);
+    }
+
+    const nodes_num = max_node_idx + 1;
+    const node_normals = try allocator.alloc(f64, nodes_num * 3);
+    defer allocator.free(node_normals);
+    @memset(node_normals, 0.0);
+
+    for (0..connect.getElemsNum()) |ee| {
+        const coords_elem = gatherElemNodeCoords(N, coords_nodes, connect, ee);
+        const coord_inds = connect.getElem(ee);
+
+        for (0..N) |nn| {
+            const normal_vec = calcElementNodeNormal(
+                N,
+                nodal_derivs,
+                &coords_elem.x,
+                &coords_elem.y,
+                &coords_elem.z,
+                nn,
+            );
+            const node_idx = coord_inds[nn];
+            node_normals[node_idx * 3 + 0] += normal_vec[0];
+            node_normals[node_idx * 3 + 1] += normal_vec[1];
+            node_normals[node_idx * 3 + 2] += normal_vec[2];
+        }
+    }
+
+    for (visible_orig_elem_indices, 0..) |orig_ee, pp| {
+        const coord_inds = connect.getElem(orig_ee);
+        for (0..N) |nn| {
+            const node_idx = coord_inds[nn];
+            var normal_vec = [3]f64{
+                node_normals[node_idx * 3 + 0],
+                node_normals[node_idx * 3 + 1],
+                node_normals[node_idx * 3 + 2],
+            };
+            normalizeNormal(&normal_vec);
+            prep_normals.set(&[_]usize{ pp, 0, nn }, normal_vec[0]);
+            prep_normals.set(&[_]usize{ pp, 1, nn }, normal_vec[1]);
+            prep_normals.set(&[_]usize{ pp, 2, nn }, normal_vec[2]);
+        }
+    }
+}
+
+pub fn prepareVisibleNormals(
+    allocator: std.mem.Allocator,
+    mesh_type: anytype,
+    coords_nodes: *const Coords,
+    connect: *const Connect,
+    visible_orig_elem_indices: []const usize,
+    normal_type: shaderops.NormalType,
+) !MappedNDArray(f64) {
+    return switch (mesh_type) {
+        .tri3 => blk: {
+            var prep_normals = try initIdentityMappedNormals(
+                allocator,
+                visible_orig_elem_indices.len,
+                3,
+            );
+            switch (normal_type) {
+                .none => unreachable,
+                .exact => calculateVisibleExactNormals(
+                    coords_nodes,
+                    connect,
+                    visible_orig_elem_indices,
+                    &prep_normals.array,
+                    3,
+                ),
+                .averaged => try calculateVisibleAveragedNormals(
+                    allocator,
+                    coords_nodes,
+                    connect,
+                    visible_orig_elem_indices,
+                    &prep_normals.array,
+                    3,
+                ),
+            }
+            break :blk prep_normals;
+        },
+        .tri6 => blk: {
+            var prep_normals = try initIdentityMappedNormals(
+                allocator,
+                visible_orig_elem_indices.len,
+                6,
+            );
+            switch (normal_type) {
+                .none => unreachable,
+                .exact => calculateVisibleExactNormals(
+                    coords_nodes,
+                    connect,
+                    visible_orig_elem_indices,
+                    &prep_normals.array,
+                    6,
+                ),
+                .averaged => try calculateVisibleAveragedNormals(
+                    allocator,
+                    coords_nodes,
+                    connect,
+                    visible_orig_elem_indices,
+                    &prep_normals.array,
+                    6,
+                ),
+            }
+            break :blk prep_normals;
+        },
+        .quad4ibi, .quad4newton => blk: {
+            var prep_normals = try initIdentityMappedNormals(
+                allocator,
+                visible_orig_elem_indices.len,
+                4,
+            );
+            switch (normal_type) {
+                .none => unreachable,
+                .exact => calculateVisibleExactNormals(
+                    coords_nodes,
+                    connect,
+                    visible_orig_elem_indices,
+                    &prep_normals.array,
+                    4,
+                ),
+                .averaged => try calculateVisibleAveragedNormals(
+                    allocator,
+                    coords_nodes,
+                    connect,
+                    visible_orig_elem_indices,
+                    &prep_normals.array,
+                    4,
+                ),
+            }
+            break :blk prep_normals;
+        },
+        .quad8 => blk: {
+            var prep_normals = try initIdentityMappedNormals(
+                allocator,
+                visible_orig_elem_indices.len,
+                8,
+            );
+            switch (normal_type) {
+                .none => unreachable,
+                .exact => calculateVisibleExactNormals(
+                    coords_nodes,
+                    connect,
+                    visible_orig_elem_indices,
+                    &prep_normals.array,
+                    8,
+                ),
+                .averaged => try calculateVisibleAveragedNormals(
+                    allocator,
+                    coords_nodes,
+                    connect,
+                    visible_orig_elem_indices,
+                    &prep_normals.array,
+                    8,
+                ),
+            }
+            break :blk prep_normals;
+        },
+        .quad9 => blk: {
+            var prep_normals = try initIdentityMappedNormals(
+                allocator,
+                visible_orig_elem_indices.len,
+                9,
+            );
+            switch (normal_type) {
+                .none => unreachable,
+                .exact => calculateVisibleExactNormals(
+                    coords_nodes,
+                    connect,
+                    visible_orig_elem_indices,
+                    &prep_normals.array,
+                    9,
+                ),
+                .averaged => try calculateVisibleAveragedNormals(
+                    allocator,
+                    coords_nodes,
+                    connect,
+                    visible_orig_elem_indices,
+                    &prep_normals.array,
+                    9,
+                ),
+            }
+            break :blk prep_normals;
+        },
+    };
+}
+
+pub fn prepareVisibleRasterHulls(
+    allocator: std.mem.Allocator,
+    camera: *const Camera,
+    mesh_type: anytype,
+    elem_coords: *NDArray(f64),
+) !?NDArray(f64) {
+    return switch (mesh_type) {
+        .tri3 => null,
+        .quad4ibi, .quad4newton => blk: {
+            var raster_hull = try NDArray(f64).initFlat(
+                allocator,
+                &[_]usize{ elem_coords.dims[0], 2, 4 },
+            );
+            try buildAdaptiveHulls(4, camera, 0, elem_coords, &raster_hull);
+            break :blk raster_hull;
+        },
+        .tri6 => blk: {
+            var raster_hull = try NDArray(f64).initFlat(
+                allocator,
+                &[_]usize{ elem_coords.dims[0], 2, 6 },
+            );
+            try buildAdaptiveHulls(6, camera, 0, elem_coords, &raster_hull);
+            break :blk raster_hull;
+        },
+        .quad8 => blk: {
+            var raster_hull = try NDArray(f64).initFlat(
+                allocator,
+                &[_]usize{ elem_coords.dims[0], 2, 8 },
+            );
+            try buildAdaptiveHulls(8, camera, 0, elem_coords, &raster_hull);
+            break :blk raster_hull;
+        },
+        .quad9 => blk: {
+            var raster_hull = try NDArray(f64).initFlat(
+                allocator,
+                &[_]usize{ elem_coords.dims[0], 2, 8 },
+            );
+            try buildAdaptiveHulls(9, camera, 0, elem_coords, &raster_hull);
+            break :blk raster_hull;
+        },
+    };
 }
 
 pub fn prepareSceneGeometry(
@@ -801,8 +1474,8 @@ pub fn sceneTileElemOverlap(
                     const tile_idx = ty * tiles_num_x + tx;
                     const write_idx = tile_write_inds[tile_idx];
                     overlaps[write_idx] = .{
-                        .mesh_idx = @intCast(mesh_idx),
-                        .elem_idx = @intCast(ebb.elem_idx),
+                        .mesh_idx = mesh_idx,
+                        .elem_idx = ebb.elem_idx,
                         .x_min = @max(ebb.x_min, tile_px_min_x),
                         .x_max = @min(ebb.x_max, tile_px_max_x),
                         .y_min = overlap_y_min,

@@ -151,8 +151,12 @@ pub fn rasterDirectScalarCommon(
         var subpx_x_f: f64 = rast_bounds.x_min_f + subpx_domain.offset;
 
         for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x_u| {
-            const global_subx = targ_overlap.tile.x_px_min * sub_samp + scratch_x_u;
-            const global_suby = targ_overlap.tile.y_px_min * sub_samp + scratch_y_u;
+            const tile_subx: usize = @intCast(targ_overlap.tile.x_px_min);
+            const tile_suby: usize = @intCast(targ_overlap.tile.y_px_min);
+            const tile_subx_off: usize = tile_subx * sub_samp;
+            const tile_suby_off: usize = tile_suby * sub_samp;
+            const global_subx: usize = tile_subx_off +% scratch_x_u;
+            const global_suby: usize = tile_suby_off +% scratch_y_u;
 
             if (comptime Geometry.hull_nodes_num > 0) {
                 ctx_report.recordTessChecks(1);
@@ -505,13 +509,14 @@ fn rasterTileCommon(
     const overlaps = overlaps_all[overlap_start..overlap_end];
 
     for (overlaps) |ov| {
-        const mesh_ptr = &meshes[ov.mesh_idx];
+        const mesh_idx: usize = ov.mesh_idx;
+        const mesh_ptr = &meshes[mesh_idx];
         const targ_overlap = OverlapTarget{ .tile = tile, .overlap = ov };
 
-        std.debug.assert(ov.mesh_idx < raster_hulls.len);
+        std.debug.assert(mesh_idx < raster_hulls.len);
         const mesh_in = rops.MeshInput{
             .coords = &mesh_ptr.coords,
-            .hull = if (raster_hulls[ov.mesh_idx]) |*h| h else null,
+            .hull = if (raster_hulls[mesh_idx]) |*h| h else null,
         };
 
         switch (mesh_ptr.mesh_type) {
@@ -527,7 +532,10 @@ fn rasterTileCommon(
                 const N = GK.nodes_num;
 
                 const mesh_fields_num: u8 = switch (mesh_ptr.shader) {
-                    .nodal => |s| @intCast(s.elem_field.dims[2]),
+                    .nodal => |s| if (s.elem_field.dims.len == 3)
+                        @intCast(s.elem_field.dims[1])
+                    else
+                        @intCast(s.elem_field.dims[2]),
                     .tex => 1,
                     .tex_rgb => 3,
                 };
@@ -536,14 +544,19 @@ fn rasterTileCommon(
                     .nodal => |*shader| {
                         const SK = shadekerns.NodalKernel(N);
                         var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
-
-                        const tt = @min(
-                            ctx_rast.frame_idx,
-                            shader.elem_field.dims[0] - 1,
-                        );
-                        const start_idx = shader.elem_field.getFlatIdx(
-                            &[_]usize{ tt, targ_overlap.overlap.elem_idx, 0, 0 },
-                        );
+                        const start_idx = if (shader.elem_field.dims.len == 3)
+                            shader.elem_field.getFlatIdx(
+                                &[_]usize{ targ_overlap.overlap.elem_idx, 0, 0 },
+                            )
+                        else blk: {
+                            const tt = @min(
+                                ctx_rast.frame_idx,
+                                shader.elem_field.dims[0] - 1,
+                            );
+                            break :blk shader.elem_field.getFlatIdx(
+                                &[_]usize{ tt, targ_overlap.overlap.elem_idx, 0, 0 },
+                            );
+                        };
 
                         local_shader_buf.load(
                             shader.elem_field,

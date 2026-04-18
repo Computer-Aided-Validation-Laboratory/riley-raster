@@ -25,6 +25,8 @@ const mr = @import("meshraster.zig");
 const MeshType = mr.MeshType;
 const MeshInput = mr.MeshInput;
 const MeshPrepared = mr.MeshPrepared;
+const MeshStaticPrepared = mr.MeshStaticPrepared;
+const FrameMeshPrepared = mr.FrameMeshPrepared;
 const shaderops = @import("shaderops.zig");
 const ShaderInput = shaderops.ShaderInput;
 const ShaderPrepared = shaderops.ShaderPrepared;
@@ -91,6 +93,10 @@ pub fn rasterAllFrames(
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
 ) !?NDArray(f64) {
+    var static_arena = std.heap.ArenaAllocator.init(outer_alloc);
+    defer static_arena.deinit();
+    const static_alloc = static_arena.allocator();
+
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
@@ -153,34 +159,27 @@ pub fn rasterAllFrames(
         }
     }
 
+    const mesh_static_prepared = try static_alloc.alloc(MeshStaticPrepared, meshes.len);
+    for (meshes, 0..) |mesh, ii| {
+        mesh_static_prepared[ii] = try mr.prepareMeshStatic(static_alloc, &mesh);
+    }
+
     // Main render loop, frame by frame
     for (0..num_time) |tt| {
         _ = arena.reset(.free_all);
 
-        // Prepare and reshape data for all meshes in this frame
+        const time_start_geo = Timestamp.now(io, .awake);
+        var frame_meshes = try arena_alloc.alloc(FrameMeshPrepared, meshes.len);
         var prep_meshes = try arena_alloc.alloc(MeshPrepared, meshes.len);
-        for (meshes, 0..) |mesh, ii| {
-            // Apply displacements to coords to deform mesh
-            var coords_to_prep: MatSlice(f64) = undefined;
-            if (mesh.disp) |disp| {
-                const frame_idx = @min(tt, disp.array.dims[dim_time_pre] - 1);
-                coords_to_prep = try applyDispToMesh(
-                    arena_alloc,
-                    frame_idx,
-                    &mesh.coords.mat,
-                    &disp.array,
-                );
-            } else {
-                coords_to_prep = MatSlice(f64).init(
-                    mesh.coords.mat.slice,
-                    mesh.coords.mat.rows_num,
-                    mesh.coords.mat.cols_num,
-                );
-            }
+        const elem_bboxes_by_mesh = try arena_alloc.alloc([]ElemBBox, meshes.len);
+        const elems_in_image_by_mesh = try arena_alloc.alloc(usize, meshes.len);
+        const raster_hulls = try arena_alloc.alloc(?NDArray(f64), meshes.len);
+        var total_elems_in_image: usize = 0;
+        var total_elems_num: usize = 0;
 
-            // Apply on-the-fly field scaling for rendering in bits, if required
+        for (mesh_static_prepared, 0..) |*mesh_static, ii| {
             var nodal_frame_scaling: ?imageops.ScalingParams = null;
-            switch (mesh.shader) {
+            switch (mesh_static.shader) {
                 .nodal => |s| {
                     if (s.scale_over == .over_frames) {
                         nodal_frame_scaling = nodal_global_scaling[ii];
@@ -195,14 +194,25 @@ pub fn rasterAllFrames(
                 else => {},
             }
 
-            // Final prepared meshes in NDArray format: [elems_num,field,nodes_per_elem]
-            prep_meshes[ii] = try mr.prepareMesh(
+            frame_meshes[ii] = try mr.prepareVisibleFrameMesh(
                 arena_alloc,
-                &mesh,
-                &coords_to_prep,
+                camera,
+                mesh_static,
+                tt,
                 nodal_frame_scaling,
             );
+            prep_meshes[ii] = frame_meshes[ii].mesh;
+            elem_bboxes_by_mesh[ii] = frame_meshes[ii].elem_bboxes;
+            elems_in_image_by_mesh[ii] = frame_meshes[ii].elems_in_image;
+            raster_hulls[ii] = frame_meshes[ii].raster_hull;
+            total_elems_num += frame_meshes[ii].total_elems_num;
+            total_elems_in_image += frame_meshes[ii].elems_in_image;
         }
+        const time_end_geo = Timestamp.now(io, .awake);
+        var pipe_times = report.PipeTimes{};
+        pipe_times.geometry_prep = @floatFromInt(
+            time_start_geo.durationTo(time_end_geo).raw.nanoseconds,
+        );
 
         // Allocate frame buffer to render the image into or wrap the NDArray of frames to
         // return to the user
@@ -224,32 +234,48 @@ pub fn rasterAllFrames(
         switch (config.report) {
             .off => {
                 var off_log = report.OffLog{};
-                try rasterSceneInternal(
+                try rasterPreparedVisibleInternal(
                     arena_alloc,
                     io,
                     camera,
                     tt,
                     prep_meshes,
+                    elem_bboxes_by_mesh,
+                    elems_in_image_by_mesh,
+                    raster_hulls,
+                    total_elems_num,
+                    total_elems_in_image,
                     &frame_arr,
                     config.tile_size,
                     config.threads_within_image,
                     .off,
                     &off_log,
+                    outer_alloc,
+                    time_start_geo,
+                    pipe_times,
                 );
             },
             .bench => {
                 var bench_log = BenchLog{};
-                try rasterSceneInternal(
+                try rasterPreparedVisibleInternal(
                     arena_alloc,
                     io,
                     camera,
                     tt,
                     prep_meshes,
+                    elem_bboxes_by_mesh,
+                    elems_in_image_by_mesh,
+                    raster_hulls,
+                    total_elems_num,
+                    total_elems_in_image,
                     &frame_arr,
                     config.tile_size,
                     config.threads_within_image,
                     .bench,
                     &bench_log,
+                    outer_alloc,
+                    time_start_geo,
+                    pipe_times,
                 );
             },
             .full_stats => {
@@ -262,17 +288,25 @@ pub fn rasterAllFrames(
                 );
                 defer full_stats_log.deinit(outer_alloc);
 
-                try rasterSceneInternal(
+                try rasterPreparedVisibleInternal(
                     arena_alloc,
                     io,
                     camera,
                     tt,
                     prep_meshes,
+                    elem_bboxes_by_mesh,
+                    elems_in_image_by_mesh,
+                    raster_hulls,
+                    total_elems_num,
+                    total_elems_in_image,
                     &frame_arr,
                     config.tile_size,
                     config.threads_within_image,
                     .full_stats,
                     &full_stats_log,
+                    outer_alloc,
+                    time_start_geo,
+                    pipe_times,
                 );
 
                 var nodes_sum: usize = 0;
@@ -326,17 +360,6 @@ pub fn rasterSceneInternal(
     const ctx_report = report.ReportContext(report_mode){ .log = report_log };
     var pipe_times = report.PipeTimes{};
 
-    const tiles_num_x: usize = try std.math.divCeil(
-        usize,
-        camera.pixels_num[0],
-        tile_size,
-    );
-    const tiles_num_y: usize = try std.math.divCeil(
-        usize,
-        camera.pixels_num[1],
-        tile_size,
-    );
-
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const arena_alloc = arena.allocator();
@@ -365,6 +388,61 @@ pub fn rasterSceneInternal(
     const time_end_geo = Timestamp.now(io, .awake);
     pipe_times.geometry_prep = @floatFromInt(
         time_start_geo.durationTo(time_end_geo).raw.nanoseconds,
+    );
+
+    try rasterPreparedVisibleInternal(
+        arena_alloc,
+        io,
+        camera,
+        frame_idx,
+        meshes,
+        elem_bboxes_by_mesh,
+        elems_in_image_by_mesh,
+        raster_hulls,
+        total_elems_num,
+        total_elems_in_image,
+        image_out_arr,
+        tile_size,
+        threads_within_image,
+        report_mode,
+        report_log,
+        outer_alloc,
+        raster_start,
+        pipe_times,
+    );
+}
+
+fn rasterPreparedVisibleInternal(
+    arena_alloc: std.mem.Allocator,
+    io: std.Io,
+    camera: *const Camera,
+    frame_idx: usize,
+    meshes: []MeshPrepared,
+    elem_bboxes_by_mesh: [][]ElemBBox,
+    elems_in_image_by_mesh: []usize,
+    raster_hulls: []?NDArray(f64),
+    total_elems_num: usize,
+    total_elems_in_image: usize,
+    image_out_arr: *NDArray(f64),
+    tile_size: u16,
+    threads_within_image: u16,
+    comptime report_mode: ReportMode,
+    report_log: *report.LogType(report_mode),
+    outer_alloc: std.mem.Allocator,
+    raster_start: Timestamp,
+    pipe_times_in: report.PipeTimes,
+) !void {
+    const ctx_report = report.ReportContext(report_mode){ .log = report_log };
+    var pipe_times = pipe_times_in;
+    const tiles_num_x: usize = try std.math.divCeil(
+        usize,
+        camera.pixels_num[0],
+        tile_size,
+    );
+    const tiles_num_y: usize = try std.math.divCeil(
+        usize,
+        camera.pixels_num[1],
+        tile_size,
     );
 
     const time_start_overlap = Timestamp.now(io, .awake);

@@ -25,6 +25,11 @@ const ImageFormat = imageio.ImageFormat;
 const imageops = @import("imageops.zig");
 const ScalingParams = imageops.ScalingParams;
 const ScaleStrategy = imageops.ScaleStrategy;
+const Camera = @import("camera.zig").Camera;
+const rops = @import("rasterops.zig");
+const ElemBBox = rops.ElemBBox;
+const texops = @import("textureops.zig");
+const TextureSampleConfig = texops.TextureSampleConfig;
 
 const shaderops = @import("shaderops.zig");
 pub const NodalInput = shaderops.NodalInput;
@@ -64,6 +69,58 @@ pub const MeshPrepared = struct {
     coords: NDArray(f64),
     connect: Connect,
     shader: shaderops.ShaderPrepared,
+};
+
+pub const MeshStaticPrepared = struct {
+    mesh_type: MeshType,
+    coords_orig: Coords,
+    connect: Connect,
+    disp: ?Field,
+    shader: ShaderStaticPrepared,
+};
+
+pub const FrameMeshWorkspace = struct {
+    coords_nodes: Coords,
+    visible_orig_elem_indices: []usize,
+    elem_bboxes: []ElemBBox,
+    elems_in_image: usize,
+    raster_hull: ?NDArray(f64),
+};
+
+pub const FrameMeshPrepared = struct {
+    mesh: MeshPrepared,
+    elem_bboxes: []ElemBBox,
+    elems_in_image: usize,
+    total_elems_num: usize,
+    raster_hull: ?NDArray(f64),
+};
+
+pub const NodalStaticPrepared = struct {
+    field: Field,
+    bits: ?u8 = 8,
+    scaling: imageops.ScaleStrategy = .none,
+    scale_over: shaderops.ScaleOver = .over_frames,
+    normal_type: shaderops.NormalType = .none,
+};
+
+pub fn TexStaticPrepared(comptime channels: usize) type {
+    return struct {
+        elem_uvs: NDArray(f64),
+        texture: imageio.Texture(channels),
+        sample_config: TextureSampleConfig = .{
+            .sample = .cubic_catmull_rom,
+            .mode = .lut_lerp,
+        },
+        bits: ?u8 = 8,
+        scaling: imageops.ScaleStrategy = .none,
+        normal_type: shaderops.NormalType = .none,
+    };
+}
+
+pub const ShaderStaticPrepared = union(enum) {
+    nodal: NodalStaticPrepared,
+    tex: TexStaticPrepared(1),
+    tex_rgb: TexStaticPrepared(3),
 };
 
 pub fn prepareMesh(
@@ -161,6 +218,401 @@ pub fn prepareMesh(
     }
 
     return mesh_prep;
+}
+
+fn copyCoordsAlloc(
+    allocator: std.mem.Allocator,
+    coords: *const Coords,
+) !Coords {
+    const coords_copy = try Coords.initAlloc(allocator, coords.mat.rows_num);
+    @memcpy(coords_copy.mem, coords.mem);
+    return coords_copy;
+}
+
+fn applyDispToCoordsInPlace(
+    frame_idx: usize,
+    coords_nodes: *Coords,
+    disp: *const Field,
+) void {
+    const actual_frame_idx = @min(frame_idx, disp.array.dims[0] - 1);
+
+    for (0..coords_nodes.mat.rows_num) |nn| {
+        for (0..3) |cc| {
+            const disp_val = disp.array.get(
+                &[_]usize{ actual_frame_idx, nn, cc },
+            );
+            const coord_val = coords_nodes.mat.get(nn, cc);
+            coords_nodes.mat.set(nn, cc, coord_val + disp_val);
+        }
+    }
+}
+
+pub fn prepareMeshStatic(
+    allocator: std.mem.Allocator,
+    mesh_input: *const MeshInput,
+) !MeshStaticPrepared {
+    const coords_orig = try copyCoordsAlloc(allocator, &mesh_input.coords);
+
+    var shader_static: ShaderStaticPrepared = undefined;
+    switch (mesh_input.shader) {
+        .nodal => |nodal_in| {
+            shader_static = .{ .nodal = .{
+                .field = nodal_in.field,
+                .bits = nodal_in.bits,
+                .scaling = nodal_in.scaling,
+                .scale_over = nodal_in.scale_over,
+                .normal_type = nodal_in.normal_type,
+            } };
+        },
+        .tex => |tex_in| {
+            const elem_uvs = try prepareUVs(
+                allocator,
+                &tex_in.uvs,
+                &mesh_input.connect,
+            );
+            shader_static = .{ .tex = .{
+                .elem_uvs = elem_uvs,
+                .texture = tex_in.texture,
+                .sample_config = tex_in.sample_config,
+                .bits = tex_in.bits,
+                .scaling = tex_in.scaling,
+                .normal_type = tex_in.normal_type,
+            } };
+        },
+        .tex_rgb => |tex_in| {
+            const elem_uvs = try prepareUVs(
+                allocator,
+                &tex_in.uvs,
+                &mesh_input.connect,
+            );
+            shader_static = .{ .tex_rgb = .{
+                .elem_uvs = elem_uvs,
+                .texture = tex_in.texture,
+                .sample_config = tex_in.sample_config,
+                .bits = tex_in.bits,
+                .scaling = tex_in.scaling,
+                .normal_type = tex_in.normal_type,
+            } };
+        },
+    }
+
+    return .{
+        .mesh_type = mesh_input.mesh_type,
+        .coords_orig = coords_orig,
+        .connect = mesh_input.connect,
+        .disp = mesh_input.disp,
+        .shader = shader_static,
+    };
+}
+
+pub fn initFrameMeshWorkspace(
+    allocator: std.mem.Allocator,
+    mesh_static: *const MeshStaticPrepared,
+) !FrameMeshWorkspace {
+    return .{
+        .coords_nodes = try copyCoordsAlloc(allocator, &mesh_static.coords_orig),
+        .visible_orig_elem_indices = &.{},
+        .elem_bboxes = &.{},
+        .elems_in_image = 0,
+        .raster_hull = null,
+    };
+}
+
+pub fn prepareFrameMeshCoords(
+    frame_workspace: *FrameMeshWorkspace,
+    mesh_static: *const MeshStaticPrepared,
+    frame_idx: usize,
+) void {
+    @memcpy(frame_workspace.coords_nodes.mem, mesh_static.coords_orig.mem);
+    if (mesh_static.disp) |*disp| {
+        applyDispToCoordsInPlace(frame_idx, &frame_workspace.coords_nodes, disp);
+    }
+}
+
+pub fn transformFrameMeshCoords(
+    camera: *const Camera,
+    mesh_type: MeshType,
+    frame_workspace: *FrameMeshWorkspace,
+) void {
+    switch (mesh_type) {
+        .tri3 => rops.nodesToRasterInPlace(camera, &frame_workspace.coords_nodes),
+        .quad4ibi => rops.nodesToClipPxLengInPlace(
+            camera,
+            &frame_workspace.coords_nodes,
+        ),
+        .tri6,
+        .quad4newton,
+        .quad8,
+        .quad9,
+        => rops.nodesToClipPxLengInPlace(camera, &frame_workspace.coords_nodes),
+    }
+}
+
+fn compactVisibleCoords(
+    allocator: std.mem.Allocator,
+    mesh_static: *const MeshStaticPrepared,
+    frame_workspace: *const FrameMeshWorkspace,
+) !NDArray(f64) {
+    const elems_visible = frame_workspace.elems_in_image;
+    const nodes_num = mesh_static.mesh_type.getNodesNum();
+    var elem_coords = try NDArray(f64).initFlat(
+        allocator,
+        &[_]usize{ elems_visible, 3, nodes_num },
+    );
+
+    for (frame_workspace.visible_orig_elem_indices, 0..) |orig_ee, pp| {
+        const coord_inds = mesh_static.connect.getElem(orig_ee);
+        for (0..nodes_num) |nn| {
+            const node_idx = coord_inds[nn];
+            elem_coords.set(
+                &[_]usize{ pp, 0, nn },
+                frame_workspace.coords_nodes.x(node_idx),
+            );
+            elem_coords.set(
+                &[_]usize{ pp, 1, nn },
+                frame_workspace.coords_nodes.y(node_idx),
+            );
+            elem_coords.set(
+                &[_]usize{ pp, 2, nn },
+                frame_workspace.coords_nodes.z(node_idx),
+            );
+        }
+    }
+
+    return elem_coords;
+}
+
+fn compactVisibleUVs(
+    allocator: std.mem.Allocator,
+    elem_uvs_full: NDArray(f64),
+    visible_orig_elem_indices: []const usize,
+) !NDArray(f64) {
+    const nodes_num = elem_uvs_full.dims[2];
+    var elem_uvs = try NDArray(f64).initFlat(
+        allocator,
+        &[_]usize{ visible_orig_elem_indices.len, 2, nodes_num },
+    );
+
+    for (visible_orig_elem_indices, 0..) |orig_ee, pp| {
+        const src_start = elem_uvs_full.getFlatIdx(&[_]usize{ orig_ee, 0, 0 });
+        const dst_start = elem_uvs.getFlatIdx(&[_]usize{ pp, 0, 0 });
+        @memcpy(
+            elem_uvs.slice[dst_start .. dst_start + 2 * nodes_num],
+            elem_uvs_full.slice[src_start .. src_start + 2 * nodes_num],
+        );
+    }
+
+    return elem_uvs;
+}
+
+fn compactVisibleFieldFrame(
+    allocator: std.mem.Allocator,
+    connect: *const Connect,
+    field: *const Field,
+    frame_idx: usize,
+    visible_orig_elem_indices: []const usize,
+) !NDArray(f64) {
+    const actual_frame_idx = @min(frame_idx, field.array.dims[0] - 1);
+    const fields_num = field.getFieldsN();
+    const nodes_num = connect.getNodesPerElem();
+    var elem_field = try NDArray(f64).initFlat(
+        allocator,
+        &[_]usize{
+            visible_orig_elem_indices.len,
+            @as(usize, fields_num),
+            nodes_num,
+        },
+    );
+
+    for (visible_orig_elem_indices, 0..) |orig_ee, pp| {
+        const coord_inds = connect.getElem(orig_ee);
+        for (0..nodes_num) |nn| {
+            for (0..@as(usize, fields_num)) |ff| {
+                const field_val = field.array.get(
+                    &[_]usize{ actual_frame_idx, coord_inds[nn], ff },
+                );
+                elem_field.set(&[_]usize{ pp, ff, nn }, field_val);
+            }
+        }
+    }
+
+    return elem_field;
+}
+
+pub fn prepareVisibleFrameMesh(
+    allocator: std.mem.Allocator,
+    camera: *const Camera,
+    mesh_static: *const MeshStaticPrepared,
+    frame_idx: usize,
+    scaling_params: ?ScalingParams,
+) !FrameMeshPrepared {
+    var frame_workspace = try initFrameMeshWorkspace(allocator, mesh_static);
+    prepareFrameMeshCoords(&frame_workspace, mesh_static, frame_idx);
+    transformFrameMeshCoords(camera, mesh_static.mesh_type, &frame_workspace);
+
+    try rops.prepareVisibleWorkspace(
+        allocator,
+        camera,
+        mesh_static.mesh_type,
+        &mesh_static.connect,
+        &frame_workspace.coords_nodes,
+        &frame_workspace.visible_orig_elem_indices,
+        &frame_workspace.elem_bboxes,
+        &frame_workspace.elems_in_image,
+    );
+
+    var elem_coords = try compactVisibleCoords(
+        allocator,
+        mesh_static,
+        &frame_workspace,
+    );
+
+    frame_workspace.raster_hull = try rops.prepareVisibleRasterHulls(
+        allocator,
+        camera,
+        mesh_static.mesh_type,
+        &elem_coords,
+    );
+
+    var mesh_prep = MeshPrepared{
+        .mesh_type = mesh_static.mesh_type,
+        .coords = elem_coords,
+        .connect = mesh_static.connect,
+        .shader = undefined,
+    };
+
+    switch (mesh_static.shader) {
+        .nodal => |nodal_static| {
+            const elem_field = try compactVisibleFieldFrame(
+                allocator,
+                &mesh_static.connect,
+                &nodal_static.field,
+                frame_idx,
+                frame_workspace.visible_orig_elem_indices,
+            );
+            const factors = if (scaling_params) |sp|
+                imageops.getScaleFactors(
+                    nodal_static.scaling,
+                    nodal_static.bits,
+                    sp,
+                )
+            else
+                imageops.ScaleFactors{ .mul = 1.0, .add = 0.0 };
+
+            const elem_normals = if (nodal_static.normal_type != .none)
+                try rops.prepareVisibleNormals(
+                    allocator,
+                    mesh_static.mesh_type,
+                    &frame_workspace.coords_nodes,
+                    &mesh_static.connect,
+                    frame_workspace.visible_orig_elem_indices,
+                    nodal_static.normal_type,
+                )
+            else
+                null;
+
+            mesh_prep.shader = .{ .nodal = .{
+                .elem_field = elem_field,
+                .bits = nodal_static.bits,
+                .scaling = nodal_static.scaling,
+                .scale_over = nodal_static.scale_over,
+                .scale_mul = factors.mul,
+                .scale_add = factors.add,
+                .normal_type = nodal_static.normal_type,
+                .elem_normals = elem_normals,
+            } };
+        },
+        .tex => |tex_static| {
+            const params = imageops.getScalingParamsTexture(
+                1,
+                &tex_static.texture,
+                tex_static.scaling,
+            );
+            const factors = imageops.getScaleFactors(
+                tex_static.scaling,
+                tex_static.bits,
+                params,
+            );
+            const elem_normals = if (tex_static.normal_type != .none)
+                try rops.prepareVisibleNormals(
+                    allocator,
+                    mesh_static.mesh_type,
+                    &frame_workspace.coords_nodes,
+                    &mesh_static.connect,
+                    frame_workspace.visible_orig_elem_indices,
+                    tex_static.normal_type,
+                )
+            else
+                null;
+
+            mesh_prep.shader = .{ .tex = .{
+                .elem_uvs = try compactVisibleUVs(
+                    allocator,
+                    tex_static.elem_uvs,
+                    frame_workspace.visible_orig_elem_indices,
+                ),
+                .texture = tex_static.texture,
+                .sample_config = tex_static.sample_config,
+                .bits = tex_static.bits,
+                .scaling = tex_static.scaling,
+                .scale_mul = factors.mul,
+                .scale_add = factors.add,
+                .normal_type = tex_static.normal_type,
+                .elem_normals = elem_normals,
+            } };
+        },
+        .tex_rgb => |tex_static| {
+            const params = imageops.getScalingParamsTexture(
+                3,
+                &tex_static.texture,
+                tex_static.scaling,
+            );
+            const factors = imageops.getScaleFactors(
+                tex_static.scaling,
+                tex_static.bits,
+                params,
+            );
+            const elem_normals = if (tex_static.normal_type != .none)
+                try rops.prepareVisibleNormals(
+                    allocator,
+                    mesh_static.mesh_type,
+                    &frame_workspace.coords_nodes,
+                    &mesh_static.connect,
+                    frame_workspace.visible_orig_elem_indices,
+                    tex_static.normal_type,
+                )
+            else
+                null;
+
+            mesh_prep.shader = .{ .tex_rgb = .{
+                .elem_uvs = try compactVisibleUVs(
+                    allocator,
+                    tex_static.elem_uvs,
+                    frame_workspace.visible_orig_elem_indices,
+                ),
+                .texture = tex_static.texture,
+                .sample_config = tex_static.sample_config,
+                .bits = tex_static.bits,
+                .scaling = tex_static.scaling,
+                .scale_mul = factors.mul,
+                .scale_add = factors.add,
+                .normal_type = tex_static.normal_type,
+                .elem_normals = elem_normals,
+            } };
+        },
+    }
+
+    for (frame_workspace.elem_bboxes, 0..) |*elem_bbox, pp| {
+        elem_bbox.elem_idx = pp;
+    }
+
+    return .{
+        .mesh = mesh_prep,
+        .elem_bboxes = frame_workspace.elem_bboxes,
+        .elems_in_image = frame_workspace.elems_in_image,
+        .total_elems_num = mesh_static.connect.getElemsNum(),
+        .raster_hull = frame_workspace.raster_hull,
+    };
 }
 
 pub fn prepareCoords(
