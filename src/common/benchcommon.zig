@@ -428,6 +428,7 @@ fn runBenchmarkInternal(
 
     const config = zraster.RasterConfig{
         .report = report_mode,
+        .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
         .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
     };
     const transformed_mesh = try mr.prepareMesh(

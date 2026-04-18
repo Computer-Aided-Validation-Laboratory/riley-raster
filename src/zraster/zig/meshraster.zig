@@ -9,6 +9,7 @@
 const std = @import("std");
 
 pub const NDArray = @import("ndarray.zig").NDArray;
+const MappedNDArray = @import("ndarray.zig").MappedNDArray;
 const MatSlice = @import("matslice.zig").MatSlice;
 
 const meshio = @import("meshio.zig");
@@ -26,6 +27,7 @@ const imageops = @import("imageops.zig");
 const ScalingParams = imageops.ScalingParams;
 const ScaleStrategy = imageops.ScaleStrategy;
 const Camera = @import("camera.zig").Camera;
+const geomthread = @import("geomthread.zig");
 const rops = @import("rasterops.zig");
 const ElemBBox = rops.ElemBBox;
 const texops = @import("textureops.zig");
@@ -121,6 +123,30 @@ pub const ShaderStaticPrepared = union(enum) {
     nodal: NodalStaticPrepared,
     tex: TexStaticPrepared(1),
     tex_rgb: TexStaticPrepared(3),
+};
+
+const GeomTaskState = enum {
+    init,
+    coords_ready,
+    transformed,
+    cull_count_done,
+    cull_fill_done,
+    coords_compacted,
+    shader_compacted,
+    hulls_ready,
+    normals_ready,
+    mesh_ready,
+    failed,
+};
+
+const MeshFrameContext = struct {
+    frame_idx: usize,
+    mesh_static: *const MeshStaticPrepared,
+    frame_workspace: FrameMeshWorkspace,
+    visible_counts_by_chunk: []usize,
+    visible_offsets_by_chunk: []usize,
+    visible_elems_num: usize,
+    state: GeomTaskState,
 };
 
 pub fn prepareMesh(
@@ -310,7 +336,10 @@ pub fn initFrameMeshWorkspace(
     mesh_static: *const MeshStaticPrepared,
 ) !FrameMeshWorkspace {
     return .{
-        .coords_nodes = try copyCoordsAlloc(allocator, &mesh_static.coords_orig),
+        .coords_nodes = try Coords.initAlloc(
+            allocator,
+            mesh_static.coords_orig.mat.rows_num,
+        ),
         .visible_orig_elem_indices = &.{},
         .elem_bboxes = &.{},
         .elems_in_image = 0,
@@ -329,22 +358,81 @@ pub fn prepareFrameMeshCoords(
     }
 }
 
+pub fn prepareFrameMeshCoordsRange(
+    frame_workspace: *FrameMeshWorkspace,
+    mesh_static: *const MeshStaticPrepared,
+    frame_idx: usize,
+    node_start: usize,
+    node_end: usize,
+) void {
+    const actual_frame_idx = if (mesh_static.disp) |disp|
+        @min(frame_idx, disp.array.dims[0] - 1)
+    else
+        0;
+
+    for (node_start..node_end) |nn| {
+        const coord_off = nn * 3;
+        frame_workspace.coords_nodes.mem[coord_off + 0] =
+            mesh_static.coords_orig.mem[coord_off + 0];
+        frame_workspace.coords_nodes.mem[coord_off + 1] =
+            mesh_static.coords_orig.mem[coord_off + 1];
+        frame_workspace.coords_nodes.mem[coord_off + 2] =
+            mesh_static.coords_orig.mem[coord_off + 2];
+
+        if (mesh_static.disp) |disp| {
+            for (0..3) |cc| {
+                frame_workspace.coords_nodes.mem[coord_off + cc] += disp.array.get(
+                    &[_]usize{ actual_frame_idx, nn, cc },
+                );
+            }
+        }
+    }
+}
+
 pub fn transformFrameMeshCoords(
     camera: *const Camera,
     mesh_type: MeshType,
     frame_workspace: *FrameMeshWorkspace,
 ) void {
+    transformFrameMeshCoordsRange(
+        camera,
+        mesh_type,
+        frame_workspace,
+        0,
+        frame_workspace.coords_nodes.mat.rows_num,
+    );
+}
+
+pub fn transformFrameMeshCoordsRange(
+    camera: *const Camera,
+    mesh_type: MeshType,
+    frame_workspace: *FrameMeshWorkspace,
+    node_start: usize,
+    node_end: usize,
+) void {
     switch (mesh_type) {
-        .tri3 => rops.nodesToRasterInPlace(camera, &frame_workspace.coords_nodes),
-        .quad4ibi => rops.nodesToClipPxLengInPlace(
+        .tri3 => rops.nodesToRasterRangeInPlace(
             camera,
             &frame_workspace.coords_nodes,
+            node_start,
+            node_end,
+        ),
+        .quad4ibi => rops.nodesToClipPxLengRangeInPlace(
+            camera,
+            &frame_workspace.coords_nodes,
+            node_start,
+            node_end,
         ),
         .tri6,
         .quad4newton,
         .quad8,
         .quad9,
-        => rops.nodesToClipPxLengInPlace(camera, &frame_workspace.coords_nodes),
+        => rops.nodesToClipPxLengRangeInPlace(
+            camera,
+            &frame_workspace.coords_nodes,
+            node_start,
+            node_end,
+        ),
     }
 }
 
@@ -382,6 +470,36 @@ fn compactVisibleCoords(
     return elem_coords;
 }
 
+pub fn compactVisibleCoordsRange(
+    mesh_static: *const MeshStaticPrepared,
+    frame_workspace: *const FrameMeshWorkspace,
+    elem_coords: *NDArray(f64),
+    visible_start: usize,
+    visible_end: usize,
+) void {
+    const nodes_num = mesh_static.mesh_type.getNodesNum();
+
+    for (visible_start..visible_end) |pp| {
+        const orig_ee = frame_workspace.visible_orig_elem_indices[pp];
+        const coord_inds = mesh_static.connect.getElem(orig_ee);
+        for (0..nodes_num) |nn| {
+            const node_idx = coord_inds[nn];
+            elem_coords.set(
+                &[_]usize{ pp, 0, nn },
+                frame_workspace.coords_nodes.x(node_idx),
+            );
+            elem_coords.set(
+                &[_]usize{ pp, 1, nn },
+                frame_workspace.coords_nodes.y(node_idx),
+            );
+            elem_coords.set(
+                &[_]usize{ pp, 2, nn },
+                frame_workspace.coords_nodes.z(node_idx),
+            );
+        }
+    }
+}
+
 fn compactVisibleUVs(
     allocator: std.mem.Allocator,
     elem_uvs_full: NDArray(f64),
@@ -403,6 +521,26 @@ fn compactVisibleUVs(
     }
 
     return elem_uvs;
+}
+
+fn compactVisibleUVsRange(
+    elem_uvs_full: NDArray(f64),
+    visible_orig_elem_indices: []const usize,
+    elem_uvs: *NDArray(f64),
+    visible_start: usize,
+    visible_end: usize,
+) void {
+    const nodes_num = elem_uvs_full.dims[2];
+
+    for (visible_start..visible_end) |pp| {
+        const orig_ee = visible_orig_elem_indices[pp];
+        const src_start = elem_uvs_full.getFlatIdx(&[_]usize{ orig_ee, 0, 0 });
+        const dst_start = elem_uvs.getFlatIdx(&[_]usize{ pp, 0, 0 });
+        @memcpy(
+            elem_uvs.slice[dst_start .. dst_start + 2 * nodes_num],
+            elem_uvs_full.slice[src_start .. src_start + 2 * nodes_num],
+        );
+    }
 }
 
 fn compactVisibleFieldFrame(
@@ -439,40 +577,557 @@ fn compactVisibleFieldFrame(
     return elem_field;
 }
 
+fn compactVisibleFieldFrameRange(
+    connect: *const Connect,
+    field: *const Field,
+    frame_idx: usize,
+    visible_orig_elem_indices: []const usize,
+    elem_field: *NDArray(f64),
+    visible_start: usize,
+    visible_end: usize,
+) void {
+    const actual_frame_idx = @min(frame_idx, field.array.dims[0] - 1);
+    const fields_num = field.getFieldsN();
+    const nodes_num = connect.getNodesPerElem();
+
+    for (visible_start..visible_end) |pp| {
+        const orig_ee = visible_orig_elem_indices[pp];
+        const coord_inds = connect.getElem(orig_ee);
+        for (0..nodes_num) |nn| {
+            for (0..@as(usize, fields_num)) |ff| {
+                const field_val = field.array.get(
+                    &[_]usize{ actual_frame_idx, coord_inds[nn], ff },
+                );
+                elem_field.set(&[_]usize{ pp, ff, nn }, field_val);
+            }
+        }
+    }
+}
+
+fn getChunkSize(domain_len: usize, workers_num: usize) usize {
+    if (domain_len == 0) {
+        return 1;
+    }
+
+    const chunk_count = @max(@as(usize, 1), workers_num * 4);
+    return @max(@as(usize, 1), (domain_len + chunk_count - 1) / chunk_count);
+}
+
+fn getChunksNum(domain_len: usize, chunk_size: usize) usize {
+    if (domain_len == 0) {
+        return 0;
+    }
+    return (domain_len + chunk_size - 1) / chunk_size;
+}
+
+fn getWorkerCount(geom_pool: ?*geomthread.GeometryWorkerPool) usize {
+    if (geom_pool) |pool| {
+        return pool.threads.len;
+    }
+    return 1;
+}
+
+fn runStageRange(
+    geom_pool: ?*geomthread.GeometryWorkerPool,
+    ctx_ptr: *anyopaque,
+    job_func: geomthread.RangeFn,
+    domain_len: usize,
+    chunk_size: usize,
+) void {
+    if (domain_len == 0) {
+        return;
+    }
+
+    if (geom_pool) |pool| {
+        pool.runRange(ctx_ptr, job_func, domain_len, chunk_size);
+        return;
+    }
+
+    const chunks_num = getChunksNum(domain_len, chunk_size);
+    for (0..chunks_num) |chunk_idx| {
+        const range_start = chunk_idx * chunk_size;
+        const range_end = @min(domain_len, range_start + chunk_size);
+        job_func(ctx_ptr, chunk_idx, range_start, range_end);
+    }
+}
+
+const PrepareFrameCoordsStage = struct {
+    frame_workspace: *FrameMeshWorkspace,
+    mesh_static: *const MeshStaticPrepared,
+    frame_idx: usize,
+};
+
+fn runPrepareFrameCoordsStage(
+    ctx_ptr: *anyopaque,
+    chunk_idx: usize,
+    range_start: usize,
+    range_end: usize,
+) void {
+    _ = chunk_idx;
+    const stage: *PrepareFrameCoordsStage = @ptrCast(@alignCast(ctx_ptr));
+    prepareFrameMeshCoordsRange(
+        stage.frame_workspace,
+        stage.mesh_static,
+        stage.frame_idx,
+        range_start,
+        range_end,
+    );
+}
+
+const TransformFrameCoordsStage = struct {
+    camera: *const Camera,
+    mesh_type: MeshType,
+    frame_workspace: *FrameMeshWorkspace,
+};
+
+fn runTransformFrameCoordsStage(
+    ctx_ptr: *anyopaque,
+    chunk_idx: usize,
+    range_start: usize,
+    range_end: usize,
+) void {
+    _ = chunk_idx;
+    const stage: *TransformFrameCoordsStage = @ptrCast(@alignCast(ctx_ptr));
+    transformFrameMeshCoordsRange(
+        stage.camera,
+        stage.mesh_type,
+        stage.frame_workspace,
+        range_start,
+        range_end,
+    );
+}
+
+const CullVisibleCountStage = struct {
+    camera: *const Camera,
+    mesh_type: MeshType,
+    connect: *const Connect,
+    coords_nodes: *const Coords,
+    visible_counts_by_chunk: []usize,
+};
+
+fn runCullVisibleCountStage(
+    ctx_ptr: *anyopaque,
+    chunk_idx: usize,
+    range_start: usize,
+    range_end: usize,
+) void {
+    const stage: *CullVisibleCountStage = @ptrCast(@alignCast(ctx_ptr));
+    stage.visible_counts_by_chunk[chunk_idx] = rops.countVisibleElemsRange(
+        stage.camera,
+        stage.mesh_type,
+        stage.connect,
+        stage.coords_nodes,
+        range_start,
+        range_end,
+    );
+}
+
+fn prefixVisibleCounts(mesh_frame: *MeshFrameContext) void {
+    var running_total: usize = 0;
+    for (mesh_frame.visible_counts_by_chunk, 0..) |visible_count, cc| {
+        mesh_frame.visible_offsets_by_chunk[cc] = running_total;
+        running_total += visible_count;
+    }
+    mesh_frame.visible_elems_num = running_total;
+    mesh_frame.frame_workspace.elems_in_image = running_total;
+}
+
+const CullVisibleFillStage = struct {
+    camera: *const Camera,
+    mesh_type: MeshType,
+    connect: *const Connect,
+    coords_nodes: *const Coords,
+    visible_orig_elem_indices: []usize,
+    elem_bboxes: []ElemBBox,
+    visible_offsets_by_chunk: []const usize,
+};
+
+fn runCullVisibleFillStage(
+    ctx_ptr: *anyopaque,
+    chunk_idx: usize,
+    range_start: usize,
+    range_end: usize,
+) void {
+    const stage: *CullVisibleFillStage = @ptrCast(@alignCast(ctx_ptr));
+    rops.fillVisibleElemsRange(
+        stage.camera,
+        stage.mesh_type,
+        stage.connect,
+        stage.coords_nodes,
+        stage.visible_orig_elem_indices,
+        stage.elem_bboxes,
+        range_start,
+        range_end,
+        stage.visible_offsets_by_chunk[chunk_idx],
+    );
+}
+
+const CompactVisibleCoordsStage = struct {
+    mesh_static: *const MeshStaticPrepared,
+    frame_workspace: *const FrameMeshWorkspace,
+    elem_coords: *NDArray(f64),
+};
+
+fn runCompactVisibleCoordsStage(
+    ctx_ptr: *anyopaque,
+    chunk_idx: usize,
+    range_start: usize,
+    range_end: usize,
+) void {
+    _ = chunk_idx;
+    const stage: *CompactVisibleCoordsStage = @ptrCast(@alignCast(ctx_ptr));
+    compactVisibleCoordsRange(
+        stage.mesh_static,
+        stage.frame_workspace,
+        stage.elem_coords,
+        range_start,
+        range_end,
+    );
+}
+
+const CompactVisibleFieldStage = struct {
+    connect: *const Connect,
+    field: *const Field,
+    frame_idx: usize,
+    visible_orig_elem_indices: []const usize,
+    elem_field: *NDArray(f64),
+};
+
+fn runCompactVisibleFieldStage(
+    ctx_ptr: *anyopaque,
+    chunk_idx: usize,
+    range_start: usize,
+    range_end: usize,
+) void {
+    _ = chunk_idx;
+    const stage: *CompactVisibleFieldStage = @ptrCast(@alignCast(ctx_ptr));
+    compactVisibleFieldFrameRange(
+        stage.connect,
+        stage.field,
+        stage.frame_idx,
+        stage.visible_orig_elem_indices,
+        stage.elem_field,
+        range_start,
+        range_end,
+    );
+}
+
+const CompactVisibleUVStage = struct {
+    elem_uvs_full: NDArray(f64),
+    visible_orig_elem_indices: []const usize,
+    elem_uvs: *NDArray(f64),
+};
+
+fn runCompactVisibleUVStage(
+    ctx_ptr: *anyopaque,
+    chunk_idx: usize,
+    range_start: usize,
+    range_end: usize,
+) void {
+    _ = chunk_idx;
+    const stage: *CompactVisibleUVStage = @ptrCast(@alignCast(ctx_ptr));
+    compactVisibleUVsRange(
+        stage.elem_uvs_full,
+        stage.visible_orig_elem_indices,
+        stage.elem_uvs,
+        range_start,
+        range_end,
+    );
+}
+
+const PrepareVisibleHullsStage = struct {
+    camera: *const Camera,
+    mesh_type: MeshType,
+    elem_coords: *const NDArray(f64),
+    raster_hull: *NDArray(f64),
+};
+
+fn runPrepareVisibleHullsStage(
+    ctx_ptr: *anyopaque,
+    chunk_idx: usize,
+    range_start: usize,
+    range_end: usize,
+) void {
+    _ = chunk_idx;
+    const stage: *PrepareVisibleHullsStage = @ptrCast(@alignCast(ctx_ptr));
+    rops.prepareVisibleRasterHullsRange(
+        stage.camera,
+        stage.mesh_type,
+        stage.elem_coords,
+        stage.raster_hull,
+        range_start,
+        range_end,
+    );
+}
+
+const PrepareVisibleExactNormalsStage = struct {
+    mesh_type: MeshType,
+    coords_nodes: *const Coords,
+    connect: *const Connect,
+    visible_orig_elem_indices: []const usize,
+    prep_normals: *NDArray(f64),
+};
+
+fn runPrepareVisibleExactNormalsStage(
+    ctx_ptr: *anyopaque,
+    chunk_idx: usize,
+    range_start: usize,
+    range_end: usize,
+) void {
+    _ = chunk_idx;
+    const stage: *PrepareVisibleExactNormalsStage = @ptrCast(@alignCast(ctx_ptr));
+    rops.prepareVisibleExactNormalsRange(
+        stage.mesh_type,
+        stage.coords_nodes,
+        stage.connect,
+        stage.visible_orig_elem_indices,
+        stage.prep_normals,
+        range_start,
+        range_end,
+    );
+}
+
+const AccumulateAveragedNormalsStage = struct {
+    mesh_type: MeshType,
+    coords_nodes: *const Coords,
+    connect: *const Connect,
+    chunk_node_normals: []f64,
+    node_normals_stride: usize,
+};
+
+fn runAccumulateAveragedNormalsStage(
+    ctx_ptr: *anyopaque,
+    chunk_idx: usize,
+    range_start: usize,
+    range_end: usize,
+) void {
+    const stage: *AccumulateAveragedNormalsStage = @ptrCast(@alignCast(ctx_ptr));
+    const accum_start = chunk_idx * stage.node_normals_stride;
+    const accum_end = accum_start + stage.node_normals_stride;
+    rops.accumulateAveragedNodeNormalsRange(
+        stage.mesh_type,
+        stage.coords_nodes,
+        stage.connect,
+        stage.chunk_node_normals[accum_start..accum_end],
+        range_start,
+        range_end,
+    );
+}
+
+const WriteVisibleAveragedNormalsStage = struct {
+    mesh_type: MeshType,
+    connect: *const Connect,
+    visible_orig_elem_indices: []const usize,
+    node_normals: []const f64,
+    prep_normals: *NDArray(f64),
+};
+
+fn runWriteVisibleAveragedNormalsStage(
+    ctx_ptr: *anyopaque,
+    chunk_idx: usize,
+    range_start: usize,
+    range_end: usize,
+) void {
+    _ = chunk_idx;
+    const stage: *WriteVisibleAveragedNormalsStage = @ptrCast(@alignCast(ctx_ptr));
+    rops.writeVisibleAveragedNormalsRange(
+        stage.mesh_type,
+        stage.connect,
+        stage.visible_orig_elem_indices,
+        stage.node_normals,
+        stage.prep_normals,
+        range_start,
+        range_end,
+    );
+}
+
+fn getConnectNodesNum(connect: *const Connect) usize {
+    var max_node_idx: usize = 0;
+    for (connect.table_mem) |node_idx| {
+        max_node_idx = @max(max_node_idx, node_idx);
+    }
+    return max_node_idx + 1;
+}
+
+fn initIdentityMappedNormals(
+    allocator: std.mem.Allocator,
+    prep_count: usize,
+    comptime N: usize,
+) !MappedNDArray(f64) {
+    const prep_normals = try NDArray(f64).initFlat(
+        allocator,
+        &[_]usize{ prep_count, 3, N },
+    );
+    const map = try allocator.alloc(usize, prep_count);
+    for (0..prep_count) |pp| {
+        map[pp] = pp;
+    }
+
+    return .{
+        .array = prep_normals,
+        .map = map,
+    };
+}
+
 pub fn prepareVisibleFrameMesh(
     allocator: std.mem.Allocator,
     camera: *const Camera,
     mesh_static: *const MeshStaticPrepared,
     frame_idx: usize,
     scaling_params: ?ScalingParams,
+    geom_pool: ?*geomthread.GeometryWorkerPool,
 ) !FrameMeshPrepared {
-    var frame_workspace = try initFrameMeshWorkspace(allocator, mesh_static);
-    prepareFrameMeshCoords(&frame_workspace, mesh_static, frame_idx);
-    transformFrameMeshCoords(camera, mesh_static.mesh_type, &frame_workspace);
+    var mesh_frame = MeshFrameContext{
+        .frame_idx = frame_idx,
+        .mesh_static = mesh_static,
+        .frame_workspace = try initFrameMeshWorkspace(allocator, mesh_static),
+        .visible_counts_by_chunk = &.{},
+        .visible_offsets_by_chunk = &.{},
+        .visible_elems_num = 0,
+        .state = .init,
+    };
 
-    try rops.prepareVisibleWorkspace(
-        allocator,
-        camera,
-        mesh_static.mesh_type,
-        &mesh_static.connect,
-        &frame_workspace.coords_nodes,
-        &frame_workspace.visible_orig_elem_indices,
-        &frame_workspace.elem_bboxes,
-        &frame_workspace.elems_in_image,
+    const workers_num = getWorkerCount(geom_pool);
+    const nodes_num = mesh_static.coords_orig.mat.rows_num;
+    const elems_num = mesh_static.connect.getElemsNum();
+
+    const node_chunk_size = getChunkSize(nodes_num, workers_num);
+    const elem_chunk_size = getChunkSize(elems_num, workers_num);
+    const elem_chunks_num = getChunksNum(elems_num, elem_chunk_size);
+
+    var prepare_stage = PrepareFrameCoordsStage{
+        .frame_workspace = &mesh_frame.frame_workspace,
+        .mesh_static = mesh_static,
+        .frame_idx = frame_idx,
+    };
+    runStageRange(
+        geom_pool,
+        &prepare_stage,
+        runPrepareFrameCoordsStage,
+        nodes_num,
+        node_chunk_size,
+    );
+    mesh_frame.state = .coords_ready;
+
+    var transform_stage = TransformFrameCoordsStage{
+        .camera = camera,
+        .mesh_type = mesh_static.mesh_type,
+        .frame_workspace = &mesh_frame.frame_workspace,
+    };
+    runStageRange(
+        geom_pool,
+        &transform_stage,
+        runTransformFrameCoordsStage,
+        nodes_num,
+        node_chunk_size,
+    );
+    mesh_frame.state = .transformed;
+
+    mesh_frame.visible_counts_by_chunk = try allocator.alloc(usize, elem_chunks_num);
+    mesh_frame.visible_offsets_by_chunk = try allocator.alloc(usize, elem_chunks_num);
+    @memset(mesh_frame.visible_counts_by_chunk, 0);
+    @memset(mesh_frame.visible_offsets_by_chunk, 0);
+
+    var cull_count_stage = CullVisibleCountStage{
+        .camera = camera,
+        .mesh_type = mesh_static.mesh_type,
+        .connect = &mesh_static.connect,
+        .coords_nodes = &mesh_frame.frame_workspace.coords_nodes,
+        .visible_counts_by_chunk = mesh_frame.visible_counts_by_chunk,
+    };
+    runStageRange(
+        geom_pool,
+        &cull_count_stage,
+        runCullVisibleCountStage,
+        elems_num,
+        elem_chunk_size,
+    );
+    prefixVisibleCounts(&mesh_frame);
+    mesh_frame.state = .cull_count_done;
+
+    mesh_frame.frame_workspace.visible_orig_elem_indices = try allocator.alloc(
+        usize,
+        mesh_frame.visible_elems_num,
+    );
+    mesh_frame.frame_workspace.elem_bboxes = try allocator.alloc(
+        ElemBBox,
+        mesh_frame.visible_elems_num,
     );
 
-    var elem_coords = try compactVisibleCoords(
+    var cull_fill_stage = CullVisibleFillStage{
+        .camera = camera,
+        .mesh_type = mesh_static.mesh_type,
+        .connect = &mesh_static.connect,
+        .coords_nodes = &mesh_frame.frame_workspace.coords_nodes,
+        .visible_orig_elem_indices = mesh_frame.frame_workspace.visible_orig_elem_indices,
+        .elem_bboxes = mesh_frame.frame_workspace.elem_bboxes,
+        .visible_offsets_by_chunk = mesh_frame.visible_offsets_by_chunk,
+    };
+    runStageRange(
+        geom_pool,
+        &cull_fill_stage,
+        runCullVisibleFillStage,
+        elems_num,
+        elem_chunk_size,
+    );
+    mesh_frame.state = .cull_fill_done;
+
+    var elem_coords = try NDArray(f64).initFlat(
         allocator,
-        mesh_static,
-        &frame_workspace,
+        &[_]usize{
+            mesh_frame.visible_elems_num,
+            3,
+            mesh_static.mesh_type.getNodesNum(),
+        },
     );
 
-    frame_workspace.raster_hull = try rops.prepareVisibleRasterHulls(
-        allocator,
-        camera,
-        mesh_static.mesh_type,
-        &elem_coords,
+    const visible_chunk_size = getChunkSize(mesh_frame.visible_elems_num, workers_num);
+    var compact_coords_stage = CompactVisibleCoordsStage{
+        .mesh_static = mesh_static,
+        .frame_workspace = &mesh_frame.frame_workspace,
+        .elem_coords = &elem_coords,
+    };
+    runStageRange(
+        geom_pool,
+        &compact_coords_stage,
+        runCompactVisibleCoordsStage,
+        mesh_frame.visible_elems_num,
+        visible_chunk_size,
     );
+    mesh_frame.state = .coords_compacted;
+
+    mesh_frame.frame_workspace.raster_hull = switch (mesh_static.mesh_type) {
+        .tri3 => null,
+        .quad4ibi, .quad4newton => try NDArray(f64).initFlat(
+            allocator,
+            &[_]usize{ mesh_frame.visible_elems_num, 2, 4 },
+        ),
+        .tri6 => try NDArray(f64).initFlat(
+            allocator,
+            &[_]usize{ mesh_frame.visible_elems_num, 2, 6 },
+        ),
+        .quad8, .quad9 => try NDArray(f64).initFlat(
+            allocator,
+            &[_]usize{ mesh_frame.visible_elems_num, 2, 8 },
+        ),
+    };
+
+    if (mesh_frame.frame_workspace.raster_hull) |*raster_hull| {
+        var hulls_stage = PrepareVisibleHullsStage{
+            .camera = camera,
+            .mesh_type = mesh_static.mesh_type,
+            .elem_coords = &elem_coords,
+            .raster_hull = raster_hull,
+        };
+        runStageRange(
+            geom_pool,
+            &hulls_stage,
+            runPrepareVisibleHullsStage,
+            mesh_frame.visible_elems_num,
+            visible_chunk_size,
+        );
+    }
+    mesh_frame.state = .hulls_ready;
 
     var mesh_prep = MeshPrepared{
         .mesh_type = mesh_static.mesh_type,
@@ -483,12 +1138,27 @@ pub fn prepareVisibleFrameMesh(
 
     switch (mesh_static.shader) {
         .nodal => |nodal_static| {
-            const elem_field = try compactVisibleFieldFrame(
+            var elem_field = try NDArray(f64).initFlat(
                 allocator,
-                &mesh_static.connect,
-                &nodal_static.field,
-                frame_idx,
-                frame_workspace.visible_orig_elem_indices,
+                &[_]usize{
+                    mesh_frame.visible_elems_num,
+                    @as(usize, nodal_static.field.getFieldsN()),
+                    mesh_static.connect.getNodesPerElem(),
+                },
+            );
+            var field_stage = CompactVisibleFieldStage{
+                .connect = &mesh_static.connect,
+                .field = &nodal_static.field,
+                .frame_idx = frame_idx,
+                .visible_orig_elem_indices = mesh_frame.frame_workspace.visible_orig_elem_indices,
+                .elem_field = &elem_field,
+            };
+            runStageRange(
+                geom_pool,
+                &field_stage,
+                runCompactVisibleFieldStage,
+                mesh_frame.visible_elems_num,
+                visible_chunk_size,
             );
             const factors = if (scaling_params) |sp|
                 imageops.getScaleFactors(
@@ -500,13 +1170,16 @@ pub fn prepareVisibleFrameMesh(
                 imageops.ScaleFactors{ .mul = 1.0, .add = 0.0 };
 
             const elem_normals = if (nodal_static.normal_type != .none)
-                try rops.prepareVisibleNormals(
+                try prepareVisibleNormalsThreaded(
                     allocator,
                     mesh_static.mesh_type,
-                    &frame_workspace.coords_nodes,
+                    &mesh_frame.frame_workspace.coords_nodes,
                     &mesh_static.connect,
-                    frame_workspace.visible_orig_elem_indices,
+                    mesh_frame.frame_workspace.visible_orig_elem_indices,
                     nodal_static.normal_type,
+                    geom_pool,
+                    elem_chunk_size,
+                    visible_chunk_size,
                 )
             else
                 null;
@@ -521,6 +1194,10 @@ pub fn prepareVisibleFrameMesh(
                 .normal_type = nodal_static.normal_type,
                 .elem_normals = elem_normals,
             } };
+            mesh_frame.state = .shader_compacted;
+            if (nodal_static.normal_type != .none) {
+                mesh_frame.state = .normals_ready;
+            }
         },
         .tex => |tex_static| {
             const params = imageops.getScalingParamsTexture(
@@ -533,24 +1210,43 @@ pub fn prepareVisibleFrameMesh(
                 tex_static.bits,
                 params,
             );
+            var elem_uvs = try NDArray(f64).initFlat(
+                allocator,
+                &[_]usize{
+                    mesh_frame.visible_elems_num,
+                    2,
+                    tex_static.elem_uvs.dims[2],
+                },
+            );
+            var uv_stage = CompactVisibleUVStage{
+                .elem_uvs_full = tex_static.elem_uvs,
+                .visible_orig_elem_indices = mesh_frame.frame_workspace.visible_orig_elem_indices,
+                .elem_uvs = &elem_uvs,
+            };
+            runStageRange(
+                geom_pool,
+                &uv_stage,
+                runCompactVisibleUVStage,
+                mesh_frame.visible_elems_num,
+                visible_chunk_size,
+            );
             const elem_normals = if (tex_static.normal_type != .none)
-                try rops.prepareVisibleNormals(
+                try prepareVisibleNormalsThreaded(
                     allocator,
                     mesh_static.mesh_type,
-                    &frame_workspace.coords_nodes,
+                    &mesh_frame.frame_workspace.coords_nodes,
                     &mesh_static.connect,
-                    frame_workspace.visible_orig_elem_indices,
+                    mesh_frame.frame_workspace.visible_orig_elem_indices,
                     tex_static.normal_type,
+                    geom_pool,
+                    elem_chunk_size,
+                    visible_chunk_size,
                 )
             else
                 null;
 
             mesh_prep.shader = .{ .tex = .{
-                .elem_uvs = try compactVisibleUVs(
-                    allocator,
-                    tex_static.elem_uvs,
-                    frame_workspace.visible_orig_elem_indices,
-                ),
+                .elem_uvs = elem_uvs,
                 .texture = tex_static.texture,
                 .sample_config = tex_static.sample_config,
                 .bits = tex_static.bits,
@@ -560,6 +1256,10 @@ pub fn prepareVisibleFrameMesh(
                 .normal_type = tex_static.normal_type,
                 .elem_normals = elem_normals,
             } };
+            mesh_frame.state = .shader_compacted;
+            if (tex_static.normal_type != .none) {
+                mesh_frame.state = .normals_ready;
+            }
         },
         .tex_rgb => |tex_static| {
             const params = imageops.getScalingParamsTexture(
@@ -572,24 +1272,43 @@ pub fn prepareVisibleFrameMesh(
                 tex_static.bits,
                 params,
             );
+            var elem_uvs = try NDArray(f64).initFlat(
+                allocator,
+                &[_]usize{
+                    mesh_frame.visible_elems_num,
+                    2,
+                    tex_static.elem_uvs.dims[2],
+                },
+            );
+            var uv_stage = CompactVisibleUVStage{
+                .elem_uvs_full = tex_static.elem_uvs,
+                .visible_orig_elem_indices = mesh_frame.frame_workspace.visible_orig_elem_indices,
+                .elem_uvs = &elem_uvs,
+            };
+            runStageRange(
+                geom_pool,
+                &uv_stage,
+                runCompactVisibleUVStage,
+                mesh_frame.visible_elems_num,
+                visible_chunk_size,
+            );
             const elem_normals = if (tex_static.normal_type != .none)
-                try rops.prepareVisibleNormals(
+                try prepareVisibleNormalsThreaded(
                     allocator,
                     mesh_static.mesh_type,
-                    &frame_workspace.coords_nodes,
+                    &mesh_frame.frame_workspace.coords_nodes,
                     &mesh_static.connect,
-                    frame_workspace.visible_orig_elem_indices,
+                    mesh_frame.frame_workspace.visible_orig_elem_indices,
                     tex_static.normal_type,
+                    geom_pool,
+                    elem_chunk_size,
+                    visible_chunk_size,
                 )
             else
                 null;
 
             mesh_prep.shader = .{ .tex_rgb = .{
-                .elem_uvs = try compactVisibleUVs(
-                    allocator,
-                    tex_static.elem_uvs,
-                    frame_workspace.visible_orig_elem_indices,
-                ),
+                .elem_uvs = elem_uvs,
                 .texture = tex_static.texture,
                 .sample_config = tex_static.sample_config,
                 .bits = tex_static.bits,
@@ -599,20 +1318,194 @@ pub fn prepareVisibleFrameMesh(
                 .normal_type = tex_static.normal_type,
                 .elem_normals = elem_normals,
             } };
+            mesh_frame.state = .shader_compacted;
+            if (tex_static.normal_type != .none) {
+                mesh_frame.state = .normals_ready;
+            }
         },
     }
 
-    for (frame_workspace.elem_bboxes, 0..) |*elem_bbox, pp| {
+    for (mesh_frame.frame_workspace.elem_bboxes, 0..) |*elem_bbox, pp| {
         elem_bbox.elem_idx = pp;
     }
+    mesh_frame.state = .mesh_ready;
 
     return .{
         .mesh = mesh_prep,
-        .elem_bboxes = frame_workspace.elem_bboxes,
-        .elems_in_image = frame_workspace.elems_in_image,
+        .elem_bboxes = mesh_frame.frame_workspace.elem_bboxes,
+        .elems_in_image = mesh_frame.frame_workspace.elems_in_image,
         .total_elems_num = mesh_static.connect.getElemsNum(),
-        .raster_hull = frame_workspace.raster_hull,
+        .raster_hull = mesh_frame.frame_workspace.raster_hull,
     };
+}
+
+fn prepareVisibleNormalsThreaded(
+    allocator: std.mem.Allocator,
+    mesh_type: MeshType,
+    coords_nodes: *const Coords,
+    connect: *const Connect,
+    visible_orig_elem_indices: []const usize,
+    normal_type: shaderops.NormalType,
+    geom_pool: ?*geomthread.GeometryWorkerPool,
+    elem_chunk_size: usize,
+    visible_chunk_size: usize,
+) !MappedNDArray(f64) {
+    return switch (mesh_type) {
+        .tri3 => try prepareVisibleNormalsThreadedN(
+            allocator,
+            mesh_type,
+            coords_nodes,
+            connect,
+            visible_orig_elem_indices,
+            normal_type,
+            geom_pool,
+            elem_chunk_size,
+            visible_chunk_size,
+            3,
+        ),
+        .tri6 => try prepareVisibleNormalsThreadedN(
+            allocator,
+            mesh_type,
+            coords_nodes,
+            connect,
+            visible_orig_elem_indices,
+            normal_type,
+            geom_pool,
+            elem_chunk_size,
+            visible_chunk_size,
+            6,
+        ),
+        .quad4ibi, .quad4newton => try prepareVisibleNormalsThreadedN(
+            allocator,
+            mesh_type,
+            coords_nodes,
+            connect,
+            visible_orig_elem_indices,
+            normal_type,
+            geom_pool,
+            elem_chunk_size,
+            visible_chunk_size,
+            4,
+        ),
+        .quad8 => try prepareVisibleNormalsThreadedN(
+            allocator,
+            mesh_type,
+            coords_nodes,
+            connect,
+            visible_orig_elem_indices,
+            normal_type,
+            geom_pool,
+            elem_chunk_size,
+            visible_chunk_size,
+            8,
+        ),
+        .quad9 => try prepareVisibleNormalsThreadedN(
+            allocator,
+            mesh_type,
+            coords_nodes,
+            connect,
+            visible_orig_elem_indices,
+            normal_type,
+            geom_pool,
+            elem_chunk_size,
+            visible_chunk_size,
+            9,
+        ),
+    };
+}
+
+fn prepareVisibleNormalsThreadedN(
+    allocator: std.mem.Allocator,
+    mesh_type: MeshType,
+    coords_nodes: *const Coords,
+    connect: *const Connect,
+    visible_orig_elem_indices: []const usize,
+    normal_type: shaderops.NormalType,
+    geom_pool: ?*geomthread.GeometryWorkerPool,
+    elem_chunk_size: usize,
+    visible_chunk_size: usize,
+    comptime N: usize,
+) !MappedNDArray(f64) {
+    var prep_normals = try initIdentityMappedNormals(
+        allocator,
+        visible_orig_elem_indices.len,
+        N,
+    );
+
+    switch (normal_type) {
+        .none => unreachable,
+        .exact => {
+            var exact_stage = PrepareVisibleExactNormalsStage{
+                .mesh_type = mesh_type,
+                .coords_nodes = coords_nodes,
+                .connect = connect,
+                .visible_orig_elem_indices = visible_orig_elem_indices,
+                .prep_normals = &prep_normals.array,
+            };
+            runStageRange(
+                geom_pool,
+                &exact_stage,
+                runPrepareVisibleExactNormalsStage,
+                visible_orig_elem_indices.len,
+                visible_chunk_size,
+            );
+        },
+        .averaged => {
+            const nodes_num = getConnectNodesNum(connect);
+            const elem_chunks_num = getChunksNum(connect.getElemsNum(), elem_chunk_size);
+            const node_normals_stride = nodes_num * 3;
+            const chunk_node_normals = try allocator.alloc(
+                f64,
+                elem_chunks_num * node_normals_stride,
+            );
+            defer allocator.free(chunk_node_normals);
+            @memset(chunk_node_normals, 0.0);
+
+            var accum_stage = AccumulateAveragedNormalsStage{
+                .mesh_type = mesh_type,
+                .coords_nodes = coords_nodes,
+                .connect = connect,
+                .chunk_node_normals = chunk_node_normals,
+                .node_normals_stride = node_normals_stride,
+            };
+            runStageRange(
+                geom_pool,
+                &accum_stage,
+                runAccumulateAveragedNormalsStage,
+                connect.getElemsNum(),
+                elem_chunk_size,
+            );
+
+            const node_normals = try allocator.alloc(f64, node_normals_stride);
+            defer allocator.free(node_normals);
+            @memset(node_normals, 0.0);
+
+            for (0..elem_chunks_num) |cc| {
+                const chunk_start = cc * node_normals_stride;
+                const chunk_end = chunk_start + node_normals_stride;
+                for (chunk_start..chunk_end) |ii| {
+                    node_normals[ii - chunk_start] += chunk_node_normals[ii];
+                }
+            }
+
+            var write_stage = WriteVisibleAveragedNormalsStage{
+                .mesh_type = mesh_type,
+                .connect = connect,
+                .visible_orig_elem_indices = visible_orig_elem_indices,
+                .node_normals = node_normals,
+                .prep_normals = &prep_normals.array,
+            };
+            runStageRange(
+                geom_pool,
+                &write_stage,
+                runWriteVisibleAveragedNormalsStage,
+                visible_orig_elem_indices.len,
+                visible_chunk_size,
+            );
+        },
+    }
+
+    return prep_normals;
 }
 
 pub fn prepareCoords(

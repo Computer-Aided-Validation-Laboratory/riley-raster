@@ -34,6 +34,7 @@ const ShaderPrepared = shaderops.ShaderPrepared;
 const iio = @import("imageio.zig");
 const ImageFormat = iio.ImageFormat;
 const imageops = @import("imageops.zig");
+const geomthread = @import("geomthread.zig");
 
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
@@ -164,6 +165,21 @@ pub fn rasterAllFrames(
         mesh_static_prepared[ii] = try mr.prepareMeshStatic(static_alloc, &mesh);
     }
 
+    var geom_pool_storage: geomthread.GeometryWorkerPool = undefined;
+    var geom_pool: ?*geomthread.GeometryWorkerPool = null;
+    defer if (geom_pool) |pool| {
+        pool.deinit(outer_alloc);
+    };
+
+    if (config.threads_geom_preproc > 1) {
+        try geom_pool_storage.init(
+            outer_alloc,
+            io,
+            config.threads_geom_preproc,
+        );
+        geom_pool = &geom_pool_storage;
+    }
+
     // Main render loop, frame by frame
     for (0..num_time) |tt| {
         _ = arena.reset(.free_all);
@@ -200,6 +216,7 @@ pub fn rasterAllFrames(
                 mesh_static,
                 tt,
                 nodal_frame_scaling,
+                geom_pool,
             );
             prep_meshes[ii] = frame_meshes[ii].mesh;
             elem_bboxes_by_mesh[ii] = frame_meshes[ii].elem_bboxes;

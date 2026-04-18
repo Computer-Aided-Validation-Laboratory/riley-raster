@@ -620,6 +620,7 @@ pub fn runTestInternal(
                     .{ .format = .csv, .bits = null, .scaling = .none },
                 },
                 .report = if (report_perf) .full_stats else .off,
+                .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
                 .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
             };
 
@@ -705,6 +706,7 @@ pub fn runTestInternal(
                         .{ .format = .csv, .bits = null, .scaling = .none },
                     },
                     .report = if (report_perf) .full_stats else .off,
+                    .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
                     .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
                 };
 
@@ -811,6 +813,7 @@ pub fn runMultimeshTestExt(
                 .{ .format = .csv, .bits = null, .scaling = .none },
             },
             .report = .off,
+            .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
             .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
         };
 
@@ -926,6 +929,7 @@ pub fn runMultimeshMixedTestExt(
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
         .report = .off,
+        .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
         .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
     };
     const result = (try zraster.rasterAllFrames(
@@ -1015,6 +1019,7 @@ pub fn runMultimeshMixedRGBTestExt(
             .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
         },
         .report = .off,
+        .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
         .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
     };
 
