@@ -430,6 +430,7 @@ fn runBenchmarkInternal(
         .report = report_mode,
         .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
         .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
+        .threads_over_images = tcfg.THREADS_OVER_IMAGES,
     };
     const transformed_mesh = try mr.prepareMesh(
         aa,

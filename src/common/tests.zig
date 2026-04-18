@@ -622,6 +622,7 @@ pub fn runTestInternal(
                 .report = if (report_perf) .full_stats else .off,
                 .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
                 .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
+                .threads_over_images = tcfg.THREADS_OVER_IMAGES,
             };
 
             const result = (try zraster.rasterAllFrames(
@@ -708,6 +709,7 @@ pub fn runTestInternal(
                     .report = if (report_perf) .full_stats else .off,
                     .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
                     .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
+                    .threads_over_images = tcfg.THREADS_OVER_IMAGES,
                 };
 
                 const result = (try zraster.rasterAllFrames(
@@ -815,6 +817,7 @@ pub fn runMultimeshTestExt(
             .report = .off,
             .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
             .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
+            .threads_over_images = tcfg.THREADS_OVER_IMAGES,
         };
 
         const result = (try zraster.rasterAllFrames(
@@ -931,6 +934,7 @@ pub fn runMultimeshMixedTestExt(
         .report = .off,
         .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
         .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
+        .threads_over_images = tcfg.THREADS_OVER_IMAGES,
     };
     const result = (try zraster.rasterAllFrames(
         aa,
@@ -1021,6 +1025,7 @@ pub fn runMultimeshMixedRGBTestExt(
         .report = .off,
         .threads_geom_preproc = tcfg.THREADS_GEOM_PREPROC,
         .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
+        .threads_over_images = tcfg.THREADS_OVER_IMAGES,
     };
 
     const result = (try zraster.rasterAllFrames(

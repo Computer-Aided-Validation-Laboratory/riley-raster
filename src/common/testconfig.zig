@@ -10,3 +10,4 @@ pub const REL_TOL: f64 = 1e-6;
 pub const ABS_TOL: f64 = 1e-6;
 pub const THREADS_GEOM_PREPROC: u16 = 0;
 pub const THREADS_WITHIN_IMAGE: u16 = 0;
+pub const THREADS_OVER_IMAGES: u16 = 1;
