@@ -32,7 +32,7 @@ const geomkerns = @import("geometrykernels.zig");
 const newton = @import("newton.zig");
 const shadekerns = @import("shaderkernels.zig");
 
-const SubpxScratchBuffers = struct {
+pub const SubpxScratchBuffers = struct {
     inv_z: []f64,
     image: MatSlice(f64),
     touched_min_x: []usize,
@@ -86,6 +86,7 @@ pub fn rasterScene(
     io: std.Io,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
+    threads_within_image: u16,
     tiling: rops.TilingOverlaps,
     meshes: []const MeshPrepared,
     raster_hulls: []const ?NDArray(f64),
@@ -98,6 +99,7 @@ pub fn rasterScene(
         io,
         ctx_rast,
         ctx_report,
+        threads_within_image,
         tiling,
         meshes,
         raster_hulls,

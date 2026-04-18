@@ -22,6 +22,7 @@ const report = @import("../zraster/zig/report.zig");
 const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
 const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
 const Timestamp = std.Io.Clock.Timestamp;
+const tcfg = @import("testconfig.zig");
 
 pub const CalculatedMetrics = struct {
     mpx_sec: f64,
@@ -427,6 +428,7 @@ fn runBenchmarkInternal(
 
     const config = zraster.RasterConfig{
         .report = report_mode,
+        .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
     };
     const transformed_mesh = try mr.prepareMesh(
         aa,
@@ -456,6 +458,7 @@ fn runBenchmarkInternal(
         &meshes,
         &image_out_arr,
         config.tile_size,
+        config.threads_within_image,
         report_mode,
         &report_log,
     );
@@ -500,8 +503,7 @@ fn runBenchmarkInternal(
             try std.fmt.allocPrint(
                 aa,
                 "{s}_{s}_{s}_{s}",
-                .{ @tagName(etype), @tagName(shader_type), @tagName(sample_config.sample),
-                   @tagName(sample_config.mode) },
+                .{ @tagName(etype), @tagName(shader_type), @tagName(sample_config.sample), @tagName(sample_config.mode) },
             )
         else
             try std.fmt.allocPrint(

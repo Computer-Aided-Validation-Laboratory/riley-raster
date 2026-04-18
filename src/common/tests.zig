@@ -26,6 +26,7 @@ const texops = @import("../zraster/zig/textureops.zig");
 const buildconfig = @import("../zraster/zig/buildconfig.zig");
 const cfg = buildconfig.config;
 const csvio = @import("../zraster/zig/csvio.zig");
+const tcfg = @import("testconfig.zig");
 
 const default_fails_root = "fails";
 const impl_suffix = if (cfg.simd == .on) "_simd" else "_scalar";
@@ -619,6 +620,7 @@ pub fn runTestInternal(
                     .{ .format = .csv, .bits = null, .scaling = .none },
                 },
                 .report = if (report_perf) .full_stats else .off,
+                .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
             };
 
             const result = (try zraster.rasterAllFrames(
@@ -703,6 +705,7 @@ pub fn runTestInternal(
                         .{ .format = .csv, .bits = null, .scaling = .none },
                     },
                     .report = if (report_perf) .full_stats else .off,
+                    .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
                 };
 
                 const result = (try zraster.rasterAllFrames(
@@ -808,6 +811,7 @@ pub fn runMultimeshTestExt(
                 .{ .format = .csv, .bits = null, .scaling = .none },
             },
             .report = .off,
+            .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
         };
 
         const result = (try zraster.rasterAllFrames(
@@ -922,6 +926,7 @@ pub fn runMultimeshMixedTestExt(
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
         .report = .off,
+        .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
     };
     const result = (try zraster.rasterAllFrames(
         aa,
@@ -1010,6 +1015,7 @@ pub fn runMultimeshMixedRGBTestExt(
             .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
         },
         .report = .off,
+        .threads_within_image = tcfg.THREADS_WITHIN_IMAGE,
     };
 
     const result = (try zraster.rasterAllFrames(

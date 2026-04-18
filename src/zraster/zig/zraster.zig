@@ -50,6 +50,7 @@ pub const SaveOption = enum {
 };
 
 pub const RasterConfig = struct {
+    threads_geom_preproc: u16 = 0,
     threads_within_image: u16 = 0,
     threads_over_images: u16 = 0,
     save_opt: SaveOption = .disk,
@@ -231,6 +232,7 @@ pub fn rasterAllFrames(
                     prep_meshes,
                     &frame_arr,
                     config.tile_size,
+                    config.threads_within_image,
                     .off,
                     &off_log,
                 );
@@ -245,6 +247,7 @@ pub fn rasterAllFrames(
                     prep_meshes,
                     &frame_arr,
                     config.tile_size,
+                    config.threads_within_image,
                     .bench,
                     &bench_log,
                 );
@@ -267,6 +270,7 @@ pub fn rasterAllFrames(
                     prep_meshes,
                     &frame_arr,
                     config.tile_size,
+                    config.threads_within_image,
                     .full_stats,
                     &full_stats_log,
                 );
@@ -314,6 +318,7 @@ pub fn rasterSceneInternal(
     meshes: []MeshPrepared,
     image_out_arr: *NDArray(f64),
     tile_size: u16,
+    threads_within_image: u16,
     comptime report_mode: ReportMode,
     report_log: *report.LogType(report_mode),
 ) !void {
@@ -394,6 +399,7 @@ pub fn rasterSceneInternal(
         io,
         ctx_rast,
         ctx_report,
+        threads_within_image,
         tiling,
         meshes,
         raster_hulls,

@@ -58,6 +58,18 @@ pub const BenchLog = struct {
     max_tile_elements: usize = 0,
 };
 
+pub fn reduceBenchLog(dst: *BenchLog, src: *const BenchLog) void {
+    dst.solver_calls += src.solver_calls;
+    dst.total_solver_iters += src.total_solver_iters;
+    dst.solver_diverged += src.solver_diverged;
+    dst.tess_checks += src.tess_checks;
+    dst.tess_passes += src.tess_passes;
+    dst.total_shaded_pixels += src.total_shaded_pixels;
+    dst.total_depth_tests += src.total_depth_tests;
+    dst.depth_tests_failed += src.depth_tests_failed;
+    dst.max_tile_elements = @max(dst.max_tile_elements, src.max_tile_elements);
+}
+
 pub const FullStatsLog = struct {
     bench: BenchLog = .{},
     iteration_map: ?NDArray(f64) = null,
