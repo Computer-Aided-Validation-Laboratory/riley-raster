@@ -96,6 +96,12 @@ const FramePipelineContext = struct {
     frame_arr: NDArray(f64) = undefined,
     pipe_times: report.PipeTimes = .{},
     report_storage: FrameReportStorage = .{ .off = .{} },
+    geom_thread: ?std.Thread = null,
+    geom_done: std.atomic.Value(bool) = .init(false),
+    geom_failed: bool = false,
+    geom_error: ?anyerror = null,
+    geom_pool_storage: geomthread.GeometryWorkerPool = undefined,
+    geom_pool_active: bool = false,
     raster_thread: ?std.Thread = null,
     raster_done: std.atomic.Value(bool) = .init(false),
     raster_failed: bool = false,
@@ -105,7 +111,8 @@ const FramePipelineContext = struct {
     out_dir: ?std.Io.Dir = null,
     outer_alloc: std.mem.Allocator = undefined,
     tile_size: u16 = 0,
-    threads_within_image: u16 = 0,
+    slot_geom_threads: u16 = 0,
+    slot_raster_threads: u16 = 0,
     report_mode: ReportMode = .off,
     save_opt: SaveOption = .none,
     save_opts: []const iio.ImageSaveOpts = &.{},
@@ -115,6 +122,15 @@ const FramePipelineContext = struct {
         self: *FramePipelineContext,
         outer_alloc: std.mem.Allocator,
     ) void {
+        if (self.geom_thread) |thread| {
+            thread.join();
+        }
+        if (self.raster_thread) |thread| {
+            thread.join();
+        }
+        if (self.geom_pool_active) {
+            self.geom_pool_storage.deinit(outer_alloc);
+        }
         if (self.report_mode == .full_stats) {
             self.report_storage.full_stats.deinit(outer_alloc);
         }
@@ -132,6 +148,11 @@ const FramePipelineContext = struct {
         self.total_elems_in_image = 0;
         self.pipe_times = .{};
         self.report_storage = .{ .off = .{} };
+        self.geom_thread = null;
+        self.geom_done.store(false, .monotonic);
+        self.geom_failed = false;
+        self.geom_error = null;
+        self.geom_pool_active = false;
         self.raster_thread = null;
         self.raster_done.store(false, .monotonic);
         self.raster_failed = false;
@@ -141,7 +162,8 @@ const FramePipelineContext = struct {
         self.out_dir = null;
         self.outer_alloc = undefined;
         self.tile_size = 0;
-        self.threads_within_image = 0;
+        self.slot_geom_threads = 0;
+        self.slot_raster_threads = 0;
         self.report_mode = .off;
         self.save_opt = .none;
         self.save_opts = &.{};
@@ -307,6 +329,21 @@ fn findGeomReadyFrameSlot(
     return selected_slot;
 }
 
+fn findInGeometryFrameSlot(
+    slots: []FramePipelineContext,
+) ?*FramePipelineContext {
+    var selected_slot: ?*FramePipelineContext = null;
+    for (slots) |*slot| {
+        if (slot.state != .in_geometry) {
+            continue;
+        }
+        if (selected_slot == null or slot.frame_idx < selected_slot.?.frame_idx) {
+            selected_slot = slot;
+        }
+    }
+    return selected_slot;
+}
+
 fn countActiveFrameSlots(
     slots: []FramePipelineContext,
 ) usize {
@@ -317,6 +354,37 @@ fn countActiveFrameSlots(
         }
     }
     return active_slots;
+}
+
+fn countSlotsInState(
+    slots: []const FramePipelineContext,
+    target_state: FramePipelineState,
+) usize {
+    var slots_num: usize = 0;
+    for (slots) |slot| {
+        if (slot.state == target_state) {
+            slots_num += 1;
+        }
+    }
+    return slots_num;
+}
+
+fn calcPerSlotThreads(
+    total_threads: u16,
+    active_slots: usize,
+) u16 {
+    if (active_slots == 0) {
+        return total_threads;
+    }
+    if (total_threads == 0) {
+        return 0;
+    }
+    const total_threads_num: usize = @intCast(total_threads);
+    const slot_threads = @max(
+        @as(usize, 1),
+        total_threads_num / active_slots,
+    );
+    return @intCast(slot_threads);
 }
 
 fn initFrameReportStorage(
@@ -342,6 +410,8 @@ fn admitFrameSlot(
     outer_alloc: std.mem.Allocator,
     camera: *const Camera,
     config: RasterConfig,
+    slot_geom_threads: u16,
+    slot_raster_threads: u16,
     frame_idx: usize,
     num_fields: u8,
     images_arr: ?*NDArray(f64),
@@ -358,15 +428,28 @@ fn admitFrameSlot(
     slot.out_dir = out_dir;
     slot.outer_alloc = outer_alloc;
     slot.tile_size = config.tile_size;
-    slot.threads_within_image = config.threads_within_image;
+    slot.slot_geom_threads = slot_geom_threads;
+    slot.slot_raster_threads = slot_raster_threads;
     slot.report_mode = config.report;
     slot.save_opt = config.save_opt;
     slot.save_opts = config.save_opts;
     slot.full_stats_opts = config.full_stats_opts;
     slot.report_storage = try initFrameReportStorage(outer_alloc, camera, config);
+    slot.geom_done.store(false, .monotonic);
+    slot.geom_failed = false;
+    slot.geom_error = null;
     slot.raster_done.store(false, .monotonic);
     slot.raster_failed = false;
     slot.raster_error = null;
+
+    if (slot.slot_geom_threads > 1) {
+        try slot.geom_pool_storage.init(
+            outer_alloc,
+            io,
+            slot.slot_geom_threads - 1,
+        );
+        slot.geom_pool_active = true;
+    }
 
     if (images_arr) |images| {
         const stride = images.strides[0];
@@ -388,11 +471,13 @@ fn prepareFrameGeometry(
     camera: *const Camera,
     mesh_static_prepared: []const MeshStaticPrepared,
     nodal_global_scaling: []const ?imageops.ScalingParams,
-    geom_pool: ?*geomthread.GeometryWorkerPool,
 ) !void {
-    slot.state = .in_geometry;
     const arena_alloc = slot.arena.allocator();
     const time_start_geo = Timestamp.now(slot.io, .awake);
+    const geom_pool = if (slot.geom_pool_active)
+        &slot.geom_pool_storage
+    else
+        null;
 
     slot.frame_meshes = try arena_alloc.alloc(FrameMeshPrepared, mesh_static_prepared.len);
     slot.prep_meshes = try arena_alloc.alloc(MeshPrepared, mesh_static_prepared.len);
@@ -440,7 +525,6 @@ fn prepareFrameGeometry(
     slot.pipe_times.geometry_prep = @floatFromInt(
         time_start_geo.durationTo(time_end_geo).raw.nanoseconds,
     );
-    slot.state = .geom_ready;
 }
 
 fn runFrameRasterMode(
@@ -460,7 +544,7 @@ fn runFrameRasterMode(
         slot.total_elems_in_image,
         &slot.frame_arr,
         slot.tile_size,
-        slot.threads_within_image,
+        slot.slot_raster_threads,
         report_mode,
         getFrameReportPtr(report_mode, slot),
         slot.outer_alloc,
@@ -479,18 +563,79 @@ fn runFrameRaster(
     }
 }
 
+fn frameGeometryWorker(
+    slot: *FramePipelineContext,
+    camera: *const Camera,
+    mesh_static_prepared: []const MeshStaticPrepared,
+    nodal_global_scaling: []const ?imageops.ScalingParams,
+) void {
+    prepareFrameGeometry(
+        slot,
+        camera,
+        mesh_static_prepared,
+        nodal_global_scaling,
+    ) catch |err| {
+        slot.geom_failed = true;
+        slot.geom_error = err;
+        slot.geom_done.store(true, .release);
+        return;
+    };
+
+    slot.geom_done.store(true, .release);
+}
+
+fn spawnFrameGeometry(
+    slot: *FramePipelineContext,
+    camera: *const Camera,
+    mesh_static_prepared: []const MeshStaticPrepared,
+    nodal_global_scaling: []const ?imageops.ScalingParams,
+) !void {
+    slot.state = .in_geometry;
+    slot.geom_done.store(false, .monotonic);
+    slot.geom_failed = false;
+    slot.geom_error = null;
+    slot.geom_thread = try std.Thread.spawn(
+        .{},
+        frameGeometryWorker,
+        .{
+            slot,
+            camera,
+            mesh_static_prepared,
+            nodal_global_scaling,
+        },
+    );
+}
+
+fn finishFrameGeometry(
+    slot: *FramePipelineContext,
+) !void {
+    const thread = slot.geom_thread orelse return;
+    thread.join();
+    slot.geom_thread = null;
+
+    if (slot.geom_pool_active) {
+        slot.geom_pool_storage.deinit(slot.outer_alloc);
+        slot.geom_pool_active = false;
+    }
+
+    if (slot.geom_failed) {
+        slot.state = .failed;
+        return slot.geom_error orelse error.GeometryFailed;
+    }
+
+    slot.state = .geom_ready;
+}
+
 fn frameRasterWorker(
     slot: *FramePipelineContext,
 ) void {
     runFrameRaster(slot) catch |err| {
         slot.raster_failed = true;
         slot.raster_error = err;
-        slot.state = .failed;
         slot.raster_done.store(true, .release);
         return;
     };
 
-    slot.state = .raster_ready;
     slot.raster_done.store(true, .release);
 }
 
@@ -512,8 +657,11 @@ fn finishFrameRaster(
     slot.raster_thread = null;
 
     if (slot.raster_failed) {
+        slot.state = .failed;
         return slot.raster_error orelse error.RasterFailed;
     }
+
+    slot.state = .raster_ready;
 }
 
 fn calcNodesPerElem(
@@ -608,21 +756,6 @@ pub fn rasterAllFrames(
     defer outer_alloc.free(nodal_global_scaling);
     const mesh_static_prepared = try prepareMeshStatics(static_alloc, meshes);
 
-    var geom_pool_storage: geomthread.GeometryWorkerPool = undefined;
-    var geom_pool: ?*geomthread.GeometryWorkerPool = null;
-    defer if (geom_pool) |pool| {
-        pool.deinit(outer_alloc);
-    };
-
-    if (config.threads_geom_preproc > 1) {
-        try geom_pool_storage.init(
-            outer_alloc,
-            io,
-            config.threads_geom_preproc,
-        );
-        geom_pool = &geom_pool_storage;
-    }
-
     const frames_in_flight = @max(@as(u16, 1), config.threads_over_images);
     const slots_num = @min(@as(usize, @intCast(frames_in_flight)), num_time);
     const frame_slots = try initFrameSlots(outer_alloc, slots_num);
@@ -634,6 +767,17 @@ pub fn rasterAllFrames(
 
     while (completed_frames < num_time) {
         var progressed = false;
+
+        for (frame_slots) |*slot| {
+            if (slot.state != .in_geometry) {
+                continue;
+            }
+            if (!slot.geom_done.load(.acquire)) {
+                continue;
+            }
+            try finishFrameGeometry(slot);
+            progressed = true;
+        }
 
         if (raster_slot) |slot| {
             if (slot.raster_done.load(.acquire)) {
@@ -656,23 +800,32 @@ pub fn rasterAllFrames(
 
         if (next_frame_idx < num_time and countActiveFrameSlots(frame_slots) < slots_num) {
             const slot = findFreeFrameSlot(frame_slots).?;
+            const slot_geom_threads = calcPerSlotThreads(
+                config.threads_geom_preproc,
+                countSlotsInState(frame_slots, .in_geometry) + 1,
+            );
+            const slot_raster_threads = calcPerSlotThreads(
+                config.threads_within_image,
+                1,
+            );
             try admitFrameSlot(
                 slot,
                 outer_alloc,
                 camera,
                 config,
+                slot_geom_threads,
+                slot_raster_threads,
                 next_frame_idx,
                 num_fields,
                 if (images_arr) |*ima| ima else null,
                 out_dir,
                 io,
             );
-            try prepareFrameGeometry(
+            try spawnFrameGeometry(
                 slot,
                 camera,
                 mesh_static_prepared,
                 nodal_global_scaling,
-                geom_pool,
             );
             next_frame_idx += 1;
             progressed = true;
@@ -685,6 +838,10 @@ pub fn rasterAllFrames(
                 slot.reset(outer_alloc);
                 completed_frames += 1;
                 raster_slot = null;
+                continue;
+            }
+            if (findInGeometryFrameSlot(frame_slots)) |slot| {
+                try finishFrameGeometry(slot);
                 continue;
             }
             return error.FramePipelineStalled;
