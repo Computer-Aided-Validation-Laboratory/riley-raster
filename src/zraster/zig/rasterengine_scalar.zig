@@ -159,162 +159,20 @@ pub fn RasterPass(
                 targ_overlap.overlap.elem_idx,
             );
 
-            const shaded_px = if (Geometry.raster_mode == .incremental)
-                try rasterIncremental(
-                    report_mode,
-                    ctx_rast,
-                    ctx_report,
-                    targ_overlap,
-                    subpx_domain,
-                    rast_bounds,
-                    nodes_coords,
-                    shader,
-                    shader_buf,
-                    subpx_scratch,
-                )
-            else
-                try rasterDirect(
-                    report_mode,
-                    ctx_rast,
-                    ctx_report,
-                    targ_overlap,
-                    mesh_in,
-                    subpx_domain,
-                    rast_bounds,
-                    nodes_coords,
-                    shader,
-                    shader_buf,
-                    subpx_scratch,
-                );
-
-            return shaded_px;
-        }
-
-        fn rasterIncremental(
-            comptime report_mode: ReportMode,
-            ctx_rast: rops.RasterContext,
-            ctx_report: report.ReportContext(report_mode),
-            targ_overlap: common.OverlapTarget,
-            subpx_domain: SubpxDomain,
-            rast_bounds: RasterBounds,
-            nodes_coords: Vec3Slices(f64),
-            shader: *const ShaderData,
-            shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
-            subpx_scratch: *SubpxScratchBuffers,
-        ) !u64 {
-            const N = Geometry.nodes_num;
-            const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-            std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
-            const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
-
-            var shaded_px: u64 = 0;
-
-            var nodes_inv_z: [N]f64 = undefined;
-            inline for (0..N) |node_idx| {
-                nodes_inv_z[node_idx] = 1.0 / nodes_coords.z[node_idx];
-            }
-
-            const inv_area = 1.0 / rops.edgeFun3(
-                nodes_coords.x[0],
-                nodes_coords.y[0],
-                nodes_coords.x[1],
-                nodes_coords.y[1],
-                nodes_coords.x[2],
-                nodes_coords.y[2],
-            );
-
-            const dweights_dx = Geometry.getDWeightsDx(
+            const shaded_px = try rasterDirect(
+                report_mode,
+                ctx_rast,
+                ctx_report,
+                targ_overlap,
+                mesh_in,
+                subpx_domain,
+                rast_bounds,
                 nodes_coords,
-                inv_area,
-                subpx_domain.step,
-            );
-            const dweights_dy = Geometry.getDWeightsDy(
-                nodes_coords,
-                inv_area,
-                subpx_domain.step,
+                shader,
+                shader_buf,
+                subpx_scratch,
             );
 
-            const start_x = rast_bounds.x_min_f + subpx_domain.offset;
-            const start_y = rast_bounds.y_min_f + subpx_domain.offset;
-            var weights_row = Geometry.getWeightsAt(
-                nodes_coords,
-                start_x,
-                start_y,
-                inv_area,
-            );
-
-            for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
-                const row_offset = scratch_y * subpx_domain.tile_size;
-                var weights = weights_row;
-
-                for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x| {
-                    if (Geometry.isInElement(weights)) {
-                        ctx_report.recordSolverStats(1, 0);
-                        const inv_z = Geometry.calcInvZ(nodes_coords, weights);
-                        const scratch_idx = row_offset + scratch_x;
-
-                        if (inv_z >= subpx_scratch.inv_z[scratch_idx]) {
-                            subpx_scratch.inv_z[scratch_idx] = inv_z;
-                            if (scratch_x < subpx_scratch.touched_min_x[scratch_y]) {
-                                subpx_scratch.touched_min_x[scratch_y] = scratch_x;
-                            }
-                            if (scratch_x > subpx_scratch.touched_max_x[scratch_y]) {
-                                subpx_scratch.touched_max_x[scratch_y] = scratch_x;
-                            }
-                            const subpx_z = 1.0 / inv_z;
-                            shaded_px += 1;
-
-                            const global_subx = targ_overlap.tile.x_px_min * sub_samp +
-                                scratch_x;
-                            const global_suby = targ_overlap.tile.y_px_min * sub_samp +
-                                scratch_y;
-
-                            if (comptime report_mode == .full_stats) {
-                                ctx_report.recordPixelIters(
-                                    global_subx,
-                                    global_suby,
-                                    0,
-                                );
-                                ctx_report.recordPixelOccupancy(
-                                    targ_overlap.tile.x_px_min + scratch_x / sub_samp,
-                                    targ_overlap.tile.y_px_min + scratch_y / sub_samp,
-                                );
-                            }
-
-                            const ctx_shade = shaderops.ShadeContext(N){
-                                .frame_idx = ctx_rast.frame_idx,
-                                .elem_idx = targ_overlap.overlap.elem_idx,
-                                .fields_num = fields_num,
-                                .actual_fields = fields_num,
-                                .scratch_idx = scratch_idx,
-                                .global_subx = global_subx,
-                                .global_suby = global_suby,
-                                .shader_buf = shader_buf,
-                            };
-                            const interp_data = shaderops.InterpData(N){
-                                .weights = weights,
-                                .nodes_inv_z = nodes_inv_z,
-                                .sub_pixel_z = subpx_z,
-                            };
-
-                            ShaderKernel.shade(
-                                Geometry.coord_space,
-                                ctx_shade,
-                                interp_data,
-                                shader,
-                                ctx_report,
-                                &subpx_scratch.image,
-                            );
-                        }
-                    }
-                    inline for (0..N) |node_idx| {
-                        weights[node_idx] += dweights_dx[node_idx];
-                    }
-                }
-                inline for (0..N) |node_idx| {
-                    weights_row[node_idx] += dweights_dy[node_idx];
-                }
-            }
             return shaded_px;
         }
 

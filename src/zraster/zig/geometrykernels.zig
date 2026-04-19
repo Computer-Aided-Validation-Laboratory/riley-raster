@@ -21,11 +21,6 @@ const shapefun = @import("shapefun.zig");
 const NDArray = @import("ndarray.zig").NDArray;
 const Vec3Slices = rops.Vec3Slices;
 
-pub const RasterMode = enum {
-    direct,
-    incremental,
-};
-
 pub const SolverKind = enum {
     hyperb,
     newton,
@@ -60,12 +55,12 @@ pub fn GeometryResultSIMD(comptime N: usize) type {
     return struct {
         v_weights: [N]VecSF,
         v_mask: VecSB,
-        v_pre_domain_converged: VecSB,
+        v_pre_domain_converged: VecSB = @splat(true),
         v_iters: VecSU8,
-        v_xi_out: VecSF,
-        v_eta_out: VecSF,
-        v_residual_x: VecSF,
-        v_residual_y: VecSF,
+        v_xi_out: VecSF = undefined,
+        v_eta_out: VecSF = undefined,
+        v_residual_x: VecSF = undefined,
+        v_residual_y: VecSF = undefined,
     };
 }
 
@@ -92,21 +87,12 @@ pub const NewtonParams = struct {
 pub const NewtonSeed = newton.NewtonSeed;
 pub const NewtonSeedSIMD = newton.NewtonSeedSIMD;
 
-pub fn TriWeightStepSIMD(comptime N: usize) type {
-    return struct {
-        v_dx_step: [N]VecSF,
-        v_dy_step: [N]VecSF,
-        v_dx_lane_offset: [N]VecSF,
-    };
-}
-
 pub fn Tri3Kernel() type {
     return struct {
         pub const nodes_num = 3;
         pub const hull_nodes_num = 0;
         pub const tess_triangles_num = 0;
         pub const coord_space = .raster;
-        pub const raster_mode = .incremental;
         pub const solver_kind = .hyperb;
 
         pub inline fn getInvElemArea(nodes: Vec3Slices(f64)) f64 {
@@ -120,28 +106,19 @@ pub fn Tri3Kernel() type {
             );
         }
 
-        pub inline fn getDWeightsDx(
+        pub inline fn solveWeightsHyperb(
             nodes: Vec3Slices(f64),
+            pixel_x: f64,
+            pixel_y: f64,
             inv_area: f64,
-            step_size: f64,
-        ) [nodes_num]f64 {
-            return [_]f64{
-                (nodes.y[2] - nodes.y[1]) * step_size * inv_area,
-                (nodes.y[0] - nodes.y[2]) * step_size * inv_area,
-                (nodes.y[1] - nodes.y[0]) * step_size * inv_area,
-            };
-        }
+        ) GeometryResult(nodes_num) {
+            const weights = getWeightsAt(nodes, pixel_x, pixel_y, inv_area);
 
-        pub inline fn getDWeightsDy(
-            nodes: Vec3Slices(f64),
-            inv_area: f64,
-            step_size: f64,
-        ) [nodes_num]f64 {
-            return [_]f64{
-                (nodes.x[1] - nodes.x[2]) * step_size * inv_area,
-                (nodes.x[2] - nodes.x[0]) * step_size * inv_area,
-                (nodes.x[0] - nodes.x[1]) * step_size * inv_area,
-            };
+            if (isInElement(weights)) {
+                return .{ .weights = weights, .iters = 1 };
+            }
+
+            return .{ .weights = null, .iters = 1 };
         }
 
         pub inline fn getWeightsAt(
@@ -196,71 +173,89 @@ pub fn Tri3Kernel() type {
             return inv_z;
         }
 
+        pub inline fn solveWeightsHyperbSIMD(
+            nodes: Vec3Slices(f64),
+            v_pixel_x: VecSF,
+            v_pixel_y: VecSF,
+            v_inv_area: VecSF,
+        ) GeometryResultSIMD(nodes_num) {
+            const v_weights = getWeightsAtSIMD(
+                nodes,
+                v_pixel_x,
+                v_pixel_y,
+                v_inv_area,
+            );
+            const v_mask = isInElementSIMD(v_weights);
+
+            return .{
+                .v_weights = v_weights,
+                .v_mask = v_mask,
+                .v_iters = @splat(1),
+            };
+        }
+
+        pub inline fn getWeightsAtSIMD(
+            nodes: Vec3Slices(f64),
+            v_pixel_x: VecSF,
+            v_pixel_y: VecSF,
+            v_inv_area: VecSF,
+        ) [nodes_num]VecSF {
+            return [_]VecSF{
+                rops.edgeFun3SIMD(
+                    nodes.x[1],
+                    nodes.y[1],
+                    nodes.x[2],
+                    nodes.y[2],
+                    v_pixel_x,
+                    v_pixel_y,
+                ) * v_inv_area,
+                rops.edgeFun3SIMD(
+                    nodes.x[2],
+                    nodes.y[2],
+                    nodes.x[0],
+                    nodes.y[0],
+                    v_pixel_x,
+                    v_pixel_y,
+                ) * v_inv_area,
+                rops.edgeFun3SIMD(
+                    nodes.x[0],
+                    nodes.y[0],
+                    nodes.x[1],
+                    nodes.y[1],
+                    v_pixel_x,
+                    v_pixel_y,
+                ) * v_inv_area,
+            };
+        }
+
+        pub inline fn isInElementSIMD(v_weights: [nodes_num]VecSF) VecSB {
+            const edge_tol = tol.edge.tri_weight_inclusion;
+            const v_edge_tol: VecSF = @splat(-edge_tol);
+
+            return (v_weights[0] >= v_edge_tol) &
+                (v_weights[1] >= v_edge_tol) &
+                (v_weights[2] >= v_edge_tol);
+        }
+
+        pub inline fn calcInvZSIMD(
+            nodes_inv_z: [nodes_num]VecSF,
+            v_weights: [nodes_num]VecSF,
+        ) VecSF {
+            var v_inv_z: VecSF = @splat(0.0);
+
+            inline for (0..nodes_num) |nn| {
+                v_inv_z += v_weights[nn] * nodes_inv_z[nn];
+            }
+
+            return v_inv_z;
+        }
+
         pub inline fn getSIMDInvZ(nodes: Vec3Slices(f64)) [nodes_num]VecSF {
             var out: [nodes_num]VecSF = undefined;
             inline for (0..nodes_num) |ii| {
                 out[ii] = @splat(1.0 / nodes.z[ii]);
             }
             return out;
-        }
-
-        pub inline fn getSIMDRowWeights(
-            nodes: Vec3Slices(f64),
-            inv_area: f64,
-            start_x_f: f64,
-            start_y_f: f64,
-            v_steps: TriWeightStepSIMD(nodes_num),
-        ) [nodes_num]VecSF {
-            const weights_start = getWeightsAt(
-                nodes,
-                start_x_f,
-                start_y_f,
-                inv_area,
-            );
-
-            var v_weights_row: [nodes_num]VecSF = undefined;
-            inline for (0..nodes_num) |ii| {
-                v_weights_row[ii] = @splat(weights_start[ii]);
-                v_weights_row[ii] += v_steps.v_dx_lane_offset[ii];
-            }
-
-            return v_weights_row;
-        }
-
-        pub inline fn getSIMDSteps(
-            nodes: Vec3Slices(f64),
-            inv_area: f64,
-            step_size: f64,
-        ) TriWeightStepSIMD(nodes_num) {
-            const dx_scalar = [_]f64{
-                (nodes.y[2] - nodes.y[1]) * step_size * inv_area,
-                (nodes.y[0] - nodes.y[2]) * step_size * inv_area,
-                (nodes.y[1] - nodes.y[0]) * step_size * inv_area,
-            };
-            const dy_scalar = [_]f64{
-                (nodes.x[1] - nodes.x[2]) * step_size * inv_area,
-                (nodes.x[2] - nodes.x[0]) * step_size * inv_area,
-                (nodes.x[0] - nodes.x[1]) * step_size * inv_area,
-            };
-
-            var v_dx_step: [nodes_num]VecSF = undefined;
-            var v_dy_step: [nodes_num]VecSF = undefined;
-            var v_dx_lane_offset: [nodes_num]VecSF = undefined;
-
-            const v_lane_idx: VecSF = @floatFromInt(std.simd.iota(usize, S));
-
-            inline for (0..nodes_num) |ii| {
-                v_dx_step[ii] = @splat(dx_scalar[ii] * 8.0);
-                v_dy_step[ii] = @splat(dy_scalar[ii]);
-                v_dx_lane_offset[ii] = @splat(dx_scalar[ii]);
-                v_dx_lane_offset[ii] *= v_lane_idx;
-            }
-
-            return .{
-                .v_dx_step = v_dx_step,
-                .v_dy_step = v_dy_step,
-                .v_dx_lane_offset = v_dx_lane_offset,
-            };
         }
     };
 }
@@ -271,7 +266,6 @@ pub fn Tri6Kernel() type {
         pub const hull_nodes_num = 6;
         pub const tess_triangles_num = 6;
         pub const coord_space = .clip_px_leng;
-        pub const raster_mode = .direct;
         pub const solver_kind = .newton;
         pub const seed_mode = .centroid;
         pub const seed_reuse = .last_converged;
@@ -406,7 +400,6 @@ pub fn Quad4IBIKernel() type {
         pub const hull_nodes_num = 4;
         pub const tess_triangles_num = 2;
         pub const coord_space = .clip_px_leng;
-        pub const raster_mode = .direct;
         pub const solver_kind = .inv_bi;
 
         pub const BilinearParams = struct {
@@ -854,7 +847,6 @@ pub fn Quad4NewtonKernel() type {
         pub const hull_nodes_num = 4;
         pub const tess_triangles_num = 2;
         pub const coord_space = .clip_px_leng;
-        pub const raster_mode = .direct;
         pub const solver_kind = .newton;
         pub const seed_mode = .centroid;
         pub const seed_reuse = .last_converged;
@@ -988,7 +980,6 @@ pub fn Quad89Kernel(comptime N: usize) type {
         pub const hull_nodes_num = 8;
         pub const tess_triangles_num = 8;
         pub const coord_space = .clip_px_leng;
-        pub const raster_mode = .direct;
         pub const solver_kind = .newton;
         pub const seed_mode = .centroid;
         pub const seed_reuse = .last_converged;
