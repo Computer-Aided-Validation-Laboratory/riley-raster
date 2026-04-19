@@ -622,7 +622,7 @@ fn getChunksNum(domain_len: usize, chunk_size: usize) usize {
 
 fn getWorkerCount(geom_pool: ?*geomthread.GeometryWorkerPool) usize {
     if (geom_pool) |pool| {
-        return pool.threads.len;
+        return pool.workers_num;
     }
     return 1;
 }
@@ -639,7 +639,7 @@ fn runStageRange(
     }
 
     if (geom_pool) |pool| {
-        pool.runRange(ctx_ptr, job_func, domain_len, chunk_size);
+        pool.runRange(ctx_ptr, job_func, domain_len, chunk_size) catch unreachable;
         return;
     }
 

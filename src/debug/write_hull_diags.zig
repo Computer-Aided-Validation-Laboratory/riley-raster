@@ -134,13 +134,9 @@ fn processCase(
     try saveNDArrayToCSV(io, &raster_coords, coords_csv_path);
 }
 
-pub fn main() !void {
-    var gpa: std.heap.DebugAllocator(.{}) = .init;
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
+    const io = init.io;
 
     try processCase(allocator, io, 6, "tri6_bulgein_rot");
     try processCase(allocator, io, 6, "tri6_bulgeout_rot");

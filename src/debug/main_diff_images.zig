@@ -47,13 +47,9 @@ pub fn loadNDArrayFromCSVRGB(
     return array;
 }
 
-pub fn main() !void {
-    var gpa: std.heap.DebugAllocator(.{}) = .init;
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
+    const io = init.io;
 
     const out_dir_root = "out-diff";
     const cwd = std.Io.Dir.cwd();
@@ -99,7 +95,7 @@ pub fn main() !void {
     for (0..5) |ii| {
         const uv_path = try std.fmt.allocPrint(aa, "{s}uvs.csv", .{dir_paths[ii]});
         const uvs = try uvio.loadUVMap(aa, io, uv_path);
-        var coords_dup = try MatSlice(f64).initAlloc(
+        const coords_dup = try MatSlice(f64).initAlloc(
             aa,
             sim_datas[ii].coords.mat.rows_num,
             sim_datas[ii].coords.mat.cols_num,
@@ -170,7 +166,7 @@ pub fn main() !void {
             .array = rgb_field_arr,
             .array_mem = rgb_field_arr.slice,
         };
-        var coords_dup = try MatSlice(f64).initAlloc(
+        const coords_dup = try MatSlice(f64).initAlloc(
             aa,
             sim_datas[ii].coords.mat.rows_num,
             sim_datas[ii].coords.mat.cols_num,

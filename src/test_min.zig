@@ -20,8 +20,7 @@ const simd_on = buildconfig.config.simd == .on;
 
 test "MIN Suite: sphere200 and multimesh" {
     const allocator = std.testing.allocator;
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
 
     const texture_grey = try iio.loadImage(
         u8,

@@ -14,34 +14,31 @@ const gen_multimesh = @import("gen_gold_multimesh.zig");
 const gen_fullscreen = @import("gen_gold_bench_fullscreen.zig");
 const gen_sphere = @import("gen_gold_sphere.zig");
 
-pub fn main() !void {
-    var gpa: std.heap.DebugAllocator(.{}) = .init;
-    defer _ = gpa.deinit();
-    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+pub fn main(init: std.process.Init) !void {
+    var arena = std.heap.ArenaAllocator.init(init.gpa);
     defer arena.deinit();
-    // const aa = arena.allocator();
 
     // Intentionally excludes the committed `min` suite, which is
     // generated separately by `gen_gold_min.zig`.
     std.debug.print("Generating ALL SIMD Gold Data...\n\n", .{});
 
     std.debug.print("--- Small ---\n", .{});
-    try gen_small.main();
+    try gen_small.main(init);
 
     std.debug.print("\n--- Simple ---\n", .{});
-    try gen_simple.main();
+    try gen_simple.main(init);
 
     std.debug.print("\n--- Edge ---\n", .{});
-    try gen_edge.main();
+    try gen_edge.main(init);
 
     std.debug.print("\n--- Multimesh ---\n", .{});
-    try gen_multimesh.main();
+    try gen_multimesh.main(init);
 
     std.debug.print("\n--- Fullscreen ---\n", .{});
-    try gen_fullscreen.main();
+    try gen_fullscreen.main(init);
 
     std.debug.print("\n--- Sphere ---\n", .{});
-    try gen_sphere.main();
+    try gen_sphere.main(init);
 
     std.debug.print("\nALL SIMD Gold Data generation complete.\n", .{});
 }

@@ -17,20 +17,7 @@ pub const RangeFn = *const fn (
 
 pub const GeometryWorkerPool = struct {
     io: std.Io,
-    threads: []std.Thread,
-    mutex: std.Io.Mutex = .init,
-    start_cond: std.Io.Condition = .init,
-    done_cond: std.Io.Condition = .init,
-    next_chunk_idx: std.atomic.Value(usize) = .init(0),
-    domain_len: usize = 0,
-    chunk_size: usize = 1,
-    chunks_num: usize = 0,
-    workers_done: usize = 0,
-    generation: usize = 0,
-    stop_requested: bool = false,
-    active_job: bool = false,
-    job_ctx_ptr: *anyopaque = undefined,
-    job_func: RangeFn = undefined,
+    workers_num: usize,
 
     pub fn init(
         self: *GeometryWorkerPool,
@@ -38,35 +25,19 @@ pub const GeometryWorkerPool = struct {
         io: std.Io,
         workers_num: u16,
     ) !void {
-        const workers_len: usize = @intCast(workers_num);
+        _ = allocator;
         self.* = .{
             .io = io,
-            .threads = try allocator.alloc(std.Thread, workers_len),
+            .workers_num = @intCast(workers_num),
         };
-        errdefer allocator.free(self.threads);
-
-        for (0..workers_len) |worker_idx| {
-            self.threads[worker_idx] = try std.Thread.spawn(
-                .{},
-                workerMain,
-                .{ self, worker_idx },
-            );
-        }
     }
 
     pub fn deinit(
         self: *GeometryWorkerPool,
         allocator: std.mem.Allocator,
     ) void {
-        self.mutex.lockUncancelable(self.io);
-        self.stop_requested = true;
-        self.start_cond.broadcast(self.io);
-        self.mutex.unlock(self.io);
-
-        for (self.threads) |thread| {
-            thread.join();
-        }
-        allocator.free(self.threads);
+        _ = self;
+        _ = allocator;
     }
 
     pub fn runRange(
@@ -75,75 +46,37 @@ pub const GeometryWorkerPool = struct {
         job_func: RangeFn,
         domain_len: usize,
         chunk_size: usize,
-    ) void {
+    ) !void {
         if (domain_len == 0) {
             return;
         }
 
         std.debug.assert(chunk_size > 0);
 
-        self.mutex.lockUncancelable(self.io);
-        self.job_ctx_ptr = ctx_ptr;
-        self.job_func = job_func;
-        self.domain_len = domain_len;
-        self.chunk_size = chunk_size;
-        self.chunks_num = (domain_len + chunk_size - 1) / chunk_size;
-        self.workers_done = 0;
-        self.next_chunk_idx.store(0, .monotonic);
-        self.active_job = true;
-        self.generation += 1;
-        self.start_cond.broadcast(self.io);
+        var group: std.Io.Group = .init;
+        errdefer group.cancel(self.io);
 
-        while (self.active_job) {
-            self.done_cond.waitUncancelable(self.io, &self.mutex);
+        const chunks_num = @divFloor(domain_len + chunk_size - 1, chunk_size);
+        for (0..chunks_num) |chunk_idx| {
+            const range_start = chunk_idx * chunk_size;
+            const range_end = @min(domain_len, range_start + chunk_size);
+            group.async(
+                self.io,
+                runChunkTask,
+                .{ ctx_ptr, job_func, chunk_idx, range_start, range_end },
+            );
         }
-        self.mutex.unlock(self.io);
+
+        try group.await(self.io);
     }
 };
 
-fn workerMain(
-    pool: *GeometryWorkerPool,
-    worker_idx: usize,
-) void {
-    _ = worker_idx;
-    var generation_seen: usize = 0;
-
-    pool.mutex.lockUncancelable(pool.io);
-    defer pool.mutex.unlock(pool.io);
-
-    while (true) {
-        while (!pool.stop_requested and generation_seen == pool.generation) {
-            pool.start_cond.waitUncancelable(pool.io, &pool.mutex);
-        }
-
-        if (pool.stop_requested) {
-            return;
-        }
-
-        generation_seen = pool.generation;
-        const job_ctx_ptr = pool.job_ctx_ptr;
-        const job_func = pool.job_func;
-        const domain_len = pool.domain_len;
-        const chunk_size = pool.chunk_size;
-        const chunks_num = pool.chunks_num;
-        pool.mutex.unlock(pool.io);
-
-        while (true) {
-            const chunk_idx = pool.next_chunk_idx.fetchAdd(1, .monotonic);
-            if (chunk_idx >= chunks_num) {
-                break;
-            }
-
-            const range_start = chunk_idx * chunk_size;
-            const range_end = @min(domain_len, range_start + chunk_size);
-            job_func(job_ctx_ptr, chunk_idx, range_start, range_end);
-        }
-
-        pool.mutex.lockUncancelable(pool.io);
-        pool.workers_done += 1;
-        if (pool.workers_done == pool.threads.len) {
-            pool.active_job = false;
-            pool.done_cond.signal(pool.io);
-        }
-    }
+fn runChunkTask(
+    ctx_ptr: *anyopaque,
+    job_func: RangeFn,
+    chunk_idx: usize,
+    range_start: usize,
+    range_end: usize,
+) std.Io.Cancelable!void {
+    job_func(ctx_ptr, chunk_idx, range_start, range_end);
 }

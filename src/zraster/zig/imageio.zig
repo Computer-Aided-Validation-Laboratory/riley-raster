@@ -1034,8 +1034,7 @@ const testing = std.testing;
 
 test "Verify hand-written TIFF loader" {
     const allocator = testing.allocator;
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
     var tex_c = try CLoadTIFF(u8, 1, allocator, io, "texture/speckle.tiff");
     defer tex_c.deinit(allocator);
 
@@ -1084,8 +1083,7 @@ test "Verify hand-written TIFF loader" {
 
 test "Save and Load All Formats 8-bit and 16-bit" {
     const allocator = testing.allocator;
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
     const cwd = std.Io.Dir.cwd();
     try ensureTmpTestDir(io);
     const out_dir = cwd;
@@ -1169,8 +1167,7 @@ test "Save and Load All Formats 8-bit and 16-bit" {
 
 test "Scaling Strategy: Fractional" {
     const allocator = testing.allocator;
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
     const cwd = std.Io.Dir.cwd();
     try ensureTmpTestDir(io);
 
@@ -1232,8 +1229,7 @@ test "Scaling Strategy: Fractional" {
 
 test "FIMG Save and Load Roundtrip" {
     const allocator = std.testing.allocator;
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
     const cwd = std.Io.Dir.cwd();
 
     const width: usize = 4;

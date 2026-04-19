@@ -20,8 +20,7 @@ test "Gold Small Suite" {
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
 
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
 
     // Load original using C loader once, then save as simple TIFF
     // and reload using our simple loader to ensure compatibility.

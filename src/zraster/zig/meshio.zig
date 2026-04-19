@@ -439,8 +439,7 @@ pub fn loadMultiSimData(
 
 test "loadMultiSimData twoelems" {
     const allocator = std.testing.allocator;
-    var single_thread_io: std.Io.Threaded = .init_single_threaded;
-    const io = single_thread_io.io();
+    const io = std.testing.io;
 
     const dir_paths = [_][]const u8{
         "data-simple/tri3_twoelems/",

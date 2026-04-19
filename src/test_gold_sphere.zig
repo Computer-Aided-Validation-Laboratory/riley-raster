@@ -24,8 +24,7 @@ test "Sphere Gold Tests" {
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
 
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
 
     const texture_grey = try iio.loadImage(
         u8,

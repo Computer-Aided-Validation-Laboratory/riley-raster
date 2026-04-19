@@ -46,8 +46,7 @@ test "Nodal normals are prepared when requested" {
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
 
     var sim_data = try loadData(arena_alloc, io, "data-bench/tri3_sphere200");
 

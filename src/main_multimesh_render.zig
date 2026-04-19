@@ -11,11 +11,9 @@ const gengold = @import("common/gengold.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 const iio = @import("zraster/zig/imageio.zig");
 
-pub fn main() !void {
-    const outer_alloc = std.heap.page_allocator;
-
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+pub fn main(init: std.process.Init) !void {
+    const outer_alloc = init.gpa;
+    const io = init.io;
 
     const config = zraster.RasterConfig{
         .save_opt = .disk,

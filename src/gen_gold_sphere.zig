@@ -17,15 +17,11 @@ const cfg = buildconfig.config;
 
 const simd_on = cfg.simd == .on;
 
-pub fn main() !void {
-    var gpa: std.heap.DebugAllocator(.{}) = .init;
-    defer _ = gpa.deinit();
-    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    var arena = std.heap.ArenaAllocator.init(init.gpa);
     defer arena.deinit();
     const aa = arena.allocator();
-
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
 
     const texture_grey = try iio.loadImage(
         u8,

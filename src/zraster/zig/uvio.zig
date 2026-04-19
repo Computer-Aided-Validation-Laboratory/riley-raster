@@ -88,8 +88,7 @@ const testing = std.testing;
 
 test "Load UVMap from tri3_fullscreen/uvs.csv" {
     const allocator = testing.allocator;
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
 
     const path = "data-simple/tri3_fullscreen/uvs.csv";
     var uv_map = try loadUVMap(allocator, io, path);
@@ -112,8 +111,7 @@ test "Load UVMap from tri3_fullscreen/uvs.csv" {
 
 test "Load UVMap from tri6_fullscreen/uvs.csv" {
     const allocator = testing.allocator;
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
 
     const path = "data-simple/tri6_fullscreen/uvs.csv";
     var uv_map = try loadUVMap(allocator, io, path);
@@ -124,8 +122,7 @@ test "Load UVMap from tri6_fullscreen/uvs.csv" {
 
 test "Load UVMap from tri3_single/uvs.csv" {
     const allocator = testing.allocator;
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
 
     const path = "data-simple/tri3_single/uvs.csv";
     var uv_map = try loadUVMap(allocator, io, path);
@@ -136,8 +133,7 @@ test "Load UVMap from tri3_single/uvs.csv" {
 
 test "Load UVMap from tri6_single/uvs.csv" {
     const allocator = testing.allocator;
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
 
     const path = "data-simple/tri6_single/uvs.csv";
     var uv_map = try loadUVMap(allocator, io, path);

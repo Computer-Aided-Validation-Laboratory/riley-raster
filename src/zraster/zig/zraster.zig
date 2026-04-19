@@ -44,6 +44,7 @@ const report = @import("report.zig");
 const ReportMode = report.ReportMode;
 const BenchLog = report.BenchLog;
 const FullStatsOpts = report.FullStatsOpts;
+const PhaseFuture = std.Io.Future(anyerror!void);
 
 pub const SaveOption = enum {
     disk,
@@ -103,16 +104,12 @@ const FramePipelineContext = struct {
     frame_arr: NDArray(f64) = undefined,
     pipe_times: report.PipeTimes = .{},
     report_storage: FrameReportStorage = .{ .off = .{} },
-    geom_thread: ?std.Thread = null,
+    geom_future: ?PhaseFuture = null,
     geom_done: std.atomic.Value(bool) = .init(false),
-    geom_failed: bool = false,
-    geom_error: ?anyerror = null,
     geom_pool_storage: geomthread.GeometryWorkerPool = undefined,
     geom_pool_active: bool = false,
-    raster_thread: ?std.Thread = null,
+    raster_future: ?PhaseFuture = null,
     raster_done: std.atomic.Value(bool) = .init(false),
-    raster_failed: bool = false,
-    raster_error: ?anyerror = null,
     io: std.Io = undefined,
     camera: *const Camera = undefined,
     out_dir: ?std.Io.Dir = null,
@@ -129,11 +126,11 @@ const FramePipelineContext = struct {
         self: *FramePipelineContext,
         outer_alloc: std.mem.Allocator,
     ) void {
-        if (self.geom_thread) |thread| {
-            thread.join();
+        if (self.geom_future) |*future| {
+            _ = future.cancel(self.io) catch {};
         }
-        if (self.raster_thread) |thread| {
-            thread.join();
+        if (self.raster_future) |*future| {
+            _ = future.cancel(self.io) catch {};
         }
         if (self.geom_pool_active) {
             self.geom_pool_storage.deinit(outer_alloc);
@@ -155,15 +152,11 @@ const FramePipelineContext = struct {
         self.total_elems_in_image = 0;
         self.pipe_times = .{};
         self.report_storage = .{ .off = .{} };
-        self.geom_thread = null;
+        self.geom_future = null;
         self.geom_done.store(false, .monotonic);
-        self.geom_failed = false;
-        self.geom_error = null;
         self.geom_pool_active = false;
-        self.raster_thread = null;
+        self.raster_future = null;
         self.raster_done.store(false, .monotonic);
-        self.raster_failed = false;
-        self.raster_error = null;
         self.io = undefined;
         self.camera = undefined;
         self.out_dir = null;
@@ -301,9 +294,6 @@ fn deinitFrameSlots(
     slots: []FramePipelineContext,
 ) void {
     for (slots) |*slot| {
-        if (slot.raster_thread) |thread| {
-            thread.join();
-        }
         slot.reset(outer_alloc);
         slot.arena.deinit();
     }
@@ -457,7 +447,7 @@ fn initSlotGeomPool(
     try slot.geom_pool_storage.init(
         slot.outer_alloc,
         slot.io,
-        slot.slot_geom_threads - 1,
+        slot.slot_geom_threads,
     );
     slot.geom_pool_active = true;
 }
@@ -519,11 +509,7 @@ fn admitFrameSlot(
     slot.full_stats_opts = config.full_stats_opts;
     slot.report_storage = try initFrameReportStorage(outer_alloc, camera, config);
     slot.geom_done.store(false, .monotonic);
-    slot.geom_failed = false;
-    slot.geom_error = null;
     slot.raster_done.store(false, .monotonic);
-    slot.raster_failed = false;
-    slot.raster_error = null;
 
     if (images_arr) |images| {
         const stride = images.strides[0];
@@ -637,25 +623,19 @@ fn runFrameRaster(
     }
 }
 
-fn frameGeometryWorker(
+fn frameGeometryTask(
     slot: *FramePipelineContext,
     camera: *const Camera,
     mesh_static_prepared: []const MeshStaticPrepared,
     nodal_global_scaling: []const ?imageops.ScalingParams,
-) void {
-    prepareFrameGeometry(
+) anyerror!void {
+    defer slot.geom_done.store(true, .release);
+    try prepareFrameGeometry(
         slot,
         camera,
         mesh_static_prepared,
         nodal_global_scaling,
-    ) catch |err| {
-        slot.geom_failed = true;
-        slot.geom_error = err;
-        slot.geom_done.store(true, .release);
-        return;
-    };
-
-    slot.geom_done.store(true, .release);
+    );
 }
 
 fn spawnFrameGeometry(
@@ -669,11 +649,8 @@ fn spawnFrameGeometry(
     try initSlotGeomPool(slot);
     slot.state = .in_geometry;
     slot.geom_done.store(false, .monotonic);
-    slot.geom_failed = false;
-    slot.geom_error = null;
-    slot.geom_thread = try std.Thread.spawn(
-        .{},
-        frameGeometryWorker,
+    slot.geom_future = slot.io.async(
+        frameGeometryTask,
         .{
             slot,
             camera,
@@ -686,31 +663,23 @@ fn spawnFrameGeometry(
 fn finishFrameGeometry(
     slot: *FramePipelineContext,
 ) !void {
-    const thread = slot.geom_thread orelse return;
-    thread.join();
-    slot.geom_thread = null;
+    const future = &(slot.geom_future orelse return);
+    defer slot.geom_future = null;
+    defer deinitSlotGeomPool(slot);
 
-    deinitSlotGeomPool(slot);
-
-    if (slot.geom_failed) {
+    future.await(slot.io) catch |err| {
         slot.state = .failed;
-        return slot.geom_error orelse error.GeometryFailed;
-    }
+        return err;
+    };
 
     slot.state = .geom_ready;
 }
 
-fn frameRasterWorker(
+fn frameRasterTask(
     slot: *FramePipelineContext,
-) void {
-    runFrameRaster(slot) catch |err| {
-        slot.raster_failed = true;
-        slot.raster_error = err;
-        slot.raster_done.store(true, .release);
-        return;
-    };
-
-    slot.raster_done.store(true, .release);
+) anyerror!void {
+    defer slot.raster_done.store(true, .release);
+    try runFrameRaster(slot);
 }
 
 fn spawnFrameRaster(
@@ -720,22 +689,19 @@ fn spawnFrameRaster(
     slot.slot_raster_threads = slot_raster_threads;
     slot.state = .in_raster;
     slot.raster_done.store(false, .monotonic);
-    slot.raster_failed = false;
-    slot.raster_error = null;
-    slot.raster_thread = try std.Thread.spawn(.{}, frameRasterWorker, .{slot});
+    slot.raster_future = slot.io.async(frameRasterTask, .{slot});
 }
 
 fn finishFrameRaster(
     slot: *FramePipelineContext,
 ) !void {
-    const thread = slot.raster_thread orelse return;
-    thread.join();
-    slot.raster_thread = null;
+    const future = &(slot.raster_future orelse return);
+    defer slot.raster_future = null;
 
-    if (slot.raster_failed) {
+    future.await(slot.io) catch |err| {
         slot.state = .failed;
-        return slot.raster_error orelse error.RasterFailed;
-    }
+        return err;
+    };
 
     slot.state = .raster_ready;
 }

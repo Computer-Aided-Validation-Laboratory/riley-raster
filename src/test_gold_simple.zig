@@ -20,8 +20,7 @@ test "Gold Simple Suite" {
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
 
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
 
     const texture = blk: {
         break :blk try iio.loadImage(

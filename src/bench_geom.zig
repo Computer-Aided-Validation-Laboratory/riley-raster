@@ -14,11 +14,9 @@ const texops = @import("zraster/zig/textureops.zig");
 
 const config = common.BenchConfig{ .run = .all };
 
-pub fn main() !void {
-    const outer_alloc = std.heap.page_allocator;
-
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+pub fn main(init: std.process.Init) !void {
+    const outer_alloc = init.gpa;
+    const io = init.io;
 
     const texture_grey = try iio.loadImage(
         u8,

@@ -23,8 +23,7 @@ const impl_suffix = if (simd_on) "_simd" else "_scalar";
 test "Unified Benchmark Tests" {
     const outer_alloc = std.heap.page_allocator;
 
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
 
     const texture_grey = try iio.loadImage(
         u8,

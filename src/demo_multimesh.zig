@@ -23,15 +23,13 @@ const Camera = camera_mod.Camera;
 const CameraOps = camera_mod.CameraOps;
 const MatSlice = @import("zraster/zig/matslice.zig").MatSlice;
 
-pub fn main() !void {
-    const outer_alloc = std.heap.page_allocator;
+pub fn main(init: std.process.Init) !void {
+    const outer_alloc = init.gpa;
+    const io = init.io;
 
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
-
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
 
     // 1. Setup Rasteriser Configuration
     // We want to save to disk as BMP files and also get a full report

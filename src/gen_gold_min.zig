@@ -12,14 +12,11 @@ const gengold = @import("common/gengold.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 const mr = @import("zraster/zig/meshraster.zig");
 const iio = @import("zraster/zig/imageio.zig");
+const texops = @import("zraster/zig/textureops.zig");
 
-pub fn main() !void {
-    var gpa: std.heap.DebugAllocator(.{}) = .init;
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
+    const io = init.io;
 
     const texture_grey = try iio.loadImage(
         u8,
