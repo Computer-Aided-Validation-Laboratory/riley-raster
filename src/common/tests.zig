@@ -13,6 +13,7 @@ const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
 const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
 
 const meshio = @import("../zraster/zig/meshio.zig");
+const Camera = @import("../zraster/zig/camera.zig").Camera;
 
 const mr = @import("../zraster/zig/meshraster.zig");
 const MeshType = mr.MeshType;
@@ -52,6 +53,7 @@ pub fn compareNDArrayToGold(
     allocator: std.mem.Allocator,
     io: std.Io,
     array: *const NDArray(f64),
+    camera_idx: usize,
     frame: usize,
     field_start: usize,
     channels: usize,
@@ -85,8 +87,16 @@ pub fn compareNDArrayToGold(
     else
         gold.dims[1];
 
-    const rows = if (array.dims.len == 4) array.dims[2] else array.dims[1];
-    const cols = if (array.dims.len == 4) array.dims[3] else array.dims[2];
+    const rows = switch (array.dims.len) {
+        5 => array.dims[3],
+        4 => array.dims[2],
+        else => array.dims[1],
+    };
+    const cols = switch (array.dims.len) {
+        5 => array.dims[4],
+        4 => array.dims[3],
+        else => array.dims[2],
+    };
 
     if (gold_rows != rows) {
         std.debug.print(
@@ -108,10 +118,17 @@ pub fn compareNDArrayToGold(
                 else
                     gold.get(&[_]usize{ r, c, ch });
 
-                const actual_val = if (array.dims.len == 4)
-                    array.get(&[_]usize{ frame, field_start + ch, r, c })
-                else
-                    array.get(&[_]usize{ field_start + ch, r, c });
+                const actual_val = switch (array.dims.len) {
+                    5 => array.get(&[_]usize{
+                        camera_idx,
+                        frame,
+                        field_start + ch,
+                        r,
+                        c,
+                    }),
+                    4 => array.get(&[_]usize{ frame, field_start + ch, r, c }),
+                    else => array.get(&[_]usize{ field_start + ch, r, c }),
+                };
 
                 if (!isApproxEqual(gold_val, actual_val, rel_tol, abs_tol)) {
                     const abs_gold = @abs(gold_val);
@@ -147,6 +164,7 @@ pub fn compareNDArrayToCSV(
     allocator: std.mem.Allocator,
     io: std.Io,
     array: *const NDArray(f64),
+    camera_idx: usize,
     frame: usize,
     field: usize,
     path: []const u8,
@@ -159,8 +177,8 @@ pub fn compareNDArrayToCSV(
         gold.deinit(allocator);
     }
 
-    const rows = array.dims[2];
-    const cols = array.dims[3];
+    const rows = if (array.dims.len == 5) array.dims[3] else array.dims[2];
+    const cols = if (array.dims.len == 5) array.dims[4] else array.dims[3];
 
     if (gold.dims[0] != rows) {
         std.debug.print(
@@ -175,7 +193,10 @@ pub fn compareNDArrayToCSV(
     for (0..rows) |r| {
         for (0..cols) |c| {
             const gold_val = gold.get(&[_]usize{ r, c });
-            const actual_val = array.get(&[_]usize{ frame, field, r, c });
+            const actual_val = if (array.dims.len == 5)
+                array.get(&[_]usize{ camera_idx, frame, field, r, c })
+            else
+                array.get(&[_]usize{ frame, field, r, c });
 
             if (!isApproxEqual(gold_val, actual_val, rel_tol, abs_tol)) {
                 const abs_gold = @abs(gold_val);
@@ -201,6 +222,7 @@ pub fn compareNDArrayToCSVRGB(
     allocator: std.mem.Allocator,
     io: std.Io,
     array: *const NDArray(f64),
+    camera_idx: usize,
     frame: usize,
     field_start: usize,
     path: []const u8,
@@ -213,8 +235,8 @@ pub fn compareNDArrayToCSVRGB(
         gold.deinit(allocator);
     }
 
-    const rows = array.dims[2];
-    const cols = array.dims[3];
+    const rows = if (array.dims.len == 5) array.dims[3] else array.dims[2];
+    const cols = if (array.dims.len == 5) array.dims[4] else array.dims[3];
 
     if (gold.dims[0] != rows) {
         std.debug.print(
@@ -230,7 +252,16 @@ pub fn compareNDArrayToCSVRGB(
         for (0..cols) |c| {
             for (0..3) |cc| {
                 const gold_val = gold.get(&[_]usize{ r, c, cc });
-                const actual_val = array.get(&[_]usize{ frame, field_start + cc, r, c });
+                const actual_val = if (array.dims.len == 5)
+                    array.get(&[_]usize{
+                        camera_idx,
+                        frame,
+                        field_start + cc,
+                        r,
+                        c,
+                    })
+                else
+                    array.get(&[_]usize{ frame, field_start + cc, r, c });
 
                 if (!isApproxEqual(gold_val, actual_val, rel_tol, abs_tol)) {
                     const abs_gold = @abs(gold_val);
@@ -287,32 +318,53 @@ fn saveResultToFails(
     array: *const NDArray(f64),
     dir_name: []const u8,
 ) !void {
+    _ = allocator;
     var out_dir = try openFailsSubDir(io, fails_root, dir_name);
     defer out_dir.close(io);
 
-    for (0..array.dims[0]) |f| {
-        for (0..array.dims[1]) |fi| {
-            const slice = array.getSlice(&[_]usize{ f, fi, 0, 0 }, 1);
-            const mat = MatSlice(f64).init(slice, array.dims[2], array.dims[3]);
-            const name = try std.fmt.allocPrint(
-                allocator,
-                "frame_{d}_field_{d}",
-                .{ f, fi },
-            );
-            try iio.saveMatAsImage(
-                io,
-                out_dir,
-                name,
-                &mat,
-                .{ .format = .csv, .bits = null, .scaling = .none },
-            );
-            try iio.saveMatAsImage(
-                io,
-                out_dir,
-                name,
-                &mat,
-                .{ .format = .bmp, .bits = 8, .scaling = .auto },
-            );
+    const cameras_num = if (array.dims.len == 5) array.dims[0] else 1;
+    const frames_num = if (array.dims.len == 5) array.dims[1] else array.dims[0];
+    const fields_num = if (array.dims.len == 5) array.dims[2] else array.dims[1];
+    const rows = if (array.dims.len == 5) array.dims[3] else array.dims[2];
+    const cols = if (array.dims.len == 5) array.dims[4] else array.dims[3];
+
+    for (0..cameras_num) |camera_idx| {
+        for (0..frames_num) |frame_idx| {
+            for (0..fields_num) |field_idx| {
+                const slice = if (array.dims.len == 5)
+                    array.getSlice(&[_]usize{
+                        camera_idx,
+                        frame_idx,
+                        field_idx,
+                        0,
+                        0,
+                    }, 2)
+                else
+                    array.getSlice(&[_]usize{ frame_idx, field_idx, 0, 0 }, 1);
+                const mat = MatSlice(f64).init(slice, rows, cols);
+                var name_buff: [128]u8 = undefined;
+                const name = try iio.formatFrameFieldBaseName(
+                    name_buff[0..],
+                    camera_idx,
+                    frame_idx,
+                    field_idx,
+                    1,
+                );
+                try iio.saveMatAsImage(
+                    io,
+                    out_dir,
+                    name,
+                    &mat,
+                    .{ .format = .csv, .bits = null, .scaling = .none },
+                );
+                try iio.saveMatAsImage(
+                    io,
+                    out_dir,
+                    name,
+                    &mat,
+                    .{ .format = .bmp, .bits = 8, .scaling = .auto },
+                );
+            }
         }
     }
 }
@@ -320,22 +372,38 @@ fn saveResultToFails(
 fn extractFrameImage(
     allocator: std.mem.Allocator,
     array: *const NDArray(f64),
+    camera_idx: usize,
     frame: usize,
     field_start: usize,
     channels: usize,
 ) !NDArray(f64) {
     const dims = array.dims;
-    const rows = if (dims.len == 4) dims[2] else dims[1];
-    const cols = if (dims.len == 4) dims[3] else dims[2];
+    const rows = switch (dims.len) {
+        5 => dims[3],
+        4 => dims[2],
+        else => dims[1],
+    };
+    const cols = switch (dims.len) {
+        5 => dims[4],
+        4 => dims[3],
+        else => dims[2],
+    };
     var image = try NDArray(f64).initFlat(allocator, &[_]usize{ rows, cols, channels });
 
     for (0..rows) |rr| {
         for (0..cols) |cc| {
             for (0..channels) |ch| {
-                const val = if (dims.len == 4)
-                    array.get(&[_]usize{ frame, field_start + ch, rr, cc })
-                else
-                    array.get(&[_]usize{ field_start + ch, rr, cc });
+                const val = switch (dims.len) {
+                    5 => array.get(&[_]usize{
+                        camera_idx,
+                        frame,
+                        field_start + ch,
+                        rr,
+                        cc,
+                    }),
+                    4 => array.get(&[_]usize{ frame, field_start + ch, rr, cc }),
+                    else => array.get(&[_]usize{ field_start + ch, rr, cc }),
+                };
                 image.set(&[_]usize{ rr, cc, ch }, val);
             }
         }
@@ -348,26 +416,78 @@ pub fn findGoldPath(
     allocator: std.mem.Allocator,
     io: std.Io,
     dir: []const u8,
+    camera_idx: usize,
     frame: usize,
     field: usize,
     is_rgb: bool,
 ) ![]const u8 {
-    const base_name = if (is_rgb)
-        try std.fmt.allocPrint(allocator, "{s}/frame_{d}_field_{d}_rgb", .{ dir, frame, field })
+    const base_name_new = if (is_rgb)
+        try std.fmt.allocPrint(
+            allocator,
+            "{s}/cam{d}_frame{d}_field{d}_rgb",
+            .{ dir, camera_idx, frame, field },
+        )
     else
-        try std.fmt.allocPrint(allocator, "{s}/frame_{d}_field_{d}", .{ dir, frame, field });
-    defer allocator.free(base_name);
+        try std.fmt.allocPrint(
+            allocator,
+            "{s}/cam{d}_frame{d}_field{d}",
+            .{ dir, camera_idx, frame, field },
+        );
+    defer allocator.free(base_name_new);
 
-    const fimg_path = try std.fmt.allocPrint(allocator, "{s}.fimg", .{base_name});
-    errdefer allocator.free(fimg_path);
+    const fimg_path_new = try std.fmt.allocPrint(
+        allocator,
+        "{s}.fimg",
+        .{base_name_new},
+    );
+    errdefer allocator.free(fimg_path_new);
 
     const cwd = std.Io.Dir.cwd();
-    if (cwd.access(io, fimg_path, .{})) |_| {
-        return fimg_path;
+    if (cwd.access(io, fimg_path_new, .{})) |_| {
+        return fimg_path_new;
     } else |_| {
-        allocator.free(fimg_path);
-        return try std.fmt.allocPrint(allocator, "{s}.csv", .{base_name});
+        allocator.free(fimg_path_new);
     }
+
+    const csv_path_new = try std.fmt.allocPrint(
+        allocator,
+        "{s}.csv",
+        .{base_name_new},
+    );
+    errdefer allocator.free(csv_path_new);
+    if (cwd.access(io, csv_path_new, .{})) |_| {
+        return csv_path_new;
+    } else |_| {
+        allocator.free(csv_path_new);
+    }
+
+    const base_name_old = if (is_rgb)
+        try std.fmt.allocPrint(
+            allocator,
+            "{s}/frame_{d}_field_{d}_rgb",
+            .{ dir, frame, field },
+        )
+    else
+        try std.fmt.allocPrint(
+            allocator,
+            "{s}/frame_{d}_field_{d}",
+            .{ dir, frame, field },
+        );
+    defer allocator.free(base_name_old);
+
+    const fimg_path_old = try std.fmt.allocPrint(
+        allocator,
+        "{s}.fimg",
+        .{base_name_old},
+    );
+    errdefer allocator.free(fimg_path_old);
+    if (cwd.access(io, fimg_path_old, .{})) |_| {
+        return fimg_path_old;
+    } else |_| {
+        allocator.free(fimg_path_old);
+    }
+
+    return try std.fmt.allocPrint(allocator, "{s}.csv", .{base_name_old});
 }
 
 fn loadNDArrayFromGold(
@@ -489,6 +609,7 @@ pub fn saveComparisonArtifactsFromResult(
     fails_root: []const u8,
     dir_name: []const u8,
     result: *const NDArray(f64),
+    camera_idx: usize,
     frame: usize,
     field_start: usize,
     gold_csv_path: []const u8,
@@ -497,7 +618,14 @@ pub fn saveComparisonArtifactsFromResult(
     var out_dir = try openFailsSubDir(io, fails_root, dir_name);
     defer out_dir.close(io);
 
-    var actual = try extractFrameImage(allocator, result, frame, field_start, channels);
+    var actual = try extractFrameImage(
+        allocator,
+        result,
+        camera_idx,
+        frame,
+        field_start,
+        channels,
+    );
     defer {
         allocator.free(actual.slice);
         actual.deinit(allocator);
@@ -517,8 +645,8 @@ pub fn saveComparisonArtifactsFromResult(
 
     const base_name = try std.fmt.allocPrint(
         allocator,
-        "frame_{d}_field_{d}",
-        .{ frame, field_start },
+        "cam{d}_frame{d}_field{d}",
+        .{ camera_idx, frame, field_start },
     );
     defer allocator.free(base_name);
 
@@ -630,7 +758,7 @@ pub fn runTestInternal(
             const result = (try zraster.rasterAllFrames(
                 aa,
                 io,
-                &prepared.camera,
+                &[_]Camera{prepared.camera},
                 &[_]MeshInput{mesh_input},
                 config,
                 null,
@@ -638,13 +766,15 @@ pub fn runTestInternal(
 
             defer aa.free(result.slice);
 
-            for (0..result.dims[0]) |f| {
-                const fname = try findGoldPath(aa, io, nodal_dir, f, 0, false);
+            const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
+            for (0..frames_num) |f| {
+                const fname = try findGoldPath(aa, io, nodal_dir, 0, f, 0, false);
 
                 compareNDArrayToGold(
                     aa,
                     io,
                     &result,
+                    0,
                     f,
                     0,
                     1,
@@ -663,6 +793,7 @@ pub fn runTestInternal(
                         default_fails_root,
                         fail_dir_name,
                         &result,
+                        0,
                         f,
                         0,
                         fname,
@@ -719,7 +850,7 @@ pub fn runTestInternal(
                 const result = (try zraster.rasterAllFrames(
                     aa,
                     io,
-                    &prepared.camera,
+                    &[_]Camera{prepared.camera},
                     &[_]MeshInput{mesh_input},
                     config,
                     null,
@@ -727,13 +858,18 @@ pub fn runTestInternal(
 
                 defer aa.free(result.slice);
 
-                for (0..result.dims[0]) |f| {
-                    const fname = try findGoldPath(aa, io, tex_dir, f, 0, false);
+                const frames_num = if (result.dims.len == 5)
+                    result.dims[1]
+                else
+                    result.dims[0];
+                for (0..frames_num) |f| {
+                    const fname = try findGoldPath(aa, io, tex_dir, 0, f, 0, false);
 
                     compareNDArrayToGold(
                         aa,
                         io,
                         &result,
+                        0,
                         f,
                         0,
                         1,
@@ -752,6 +888,7 @@ pub fn runTestInternal(
                             default_fails_root,
                             fail_dir_name,
                             &result,
+                            0,
                             f,
                             0,
                             fname,
@@ -829,7 +966,7 @@ pub fn runMultimeshTestExt(
         const result = (try zraster.rasterAllFrames(
             aa,
             io,
-            &camera,
+            &[_]Camera{camera},
             mesh_inputs,
             config,
             null,
@@ -840,12 +977,14 @@ pub fn runMultimeshTestExt(
         else
             try std.fmt.allocPrint(aa, "{s}/allelem_tex_cubic_lut_lerp", .{gold_dir_root});
 
-        for (0..result.dims[0]) |f| {
-            const fname = try findGoldPath(aa, io, gold_dir, f, 0, false);
+        const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
+        for (0..frames_num) |f| {
+            const fname = try findGoldPath(aa, io, gold_dir, 0, f, 0, false);
             compareNDArrayToGold(
                 aa,
                 io,
                 &result,
+                0,
                 f,
                 0,
                 1,
@@ -868,6 +1007,7 @@ pub fn runMultimeshTestExt(
                     default_fails_root,
                     fail_dir_name,
                     &result,
+                    0,
                     f,
                     0,
                     fname,
@@ -947,21 +1087,34 @@ pub fn runMultimeshMixedTestExt(
     const result = (try zraster.rasterAllFrames(
         aa,
         io,
-        &camera,
+        &[_]Camera{camera},
         mesh_inputs,
         config,
         null,
     )) orelse return error.NoResult;
 
-    for (0..result.dims[0]) |f| {
-        const fname = try findGoldPath(aa, io, gold_dir, f, 0, false);
-        compareNDArrayToGold(aa, io, &result, f, 0, 1, fname, rel_tol, abs_tol) catch |err| {
+    const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
+    for (0..frames_num) |f| {
+        const fname = try findGoldPath(aa, io, gold_dir, 0, f, 0, false);
+        compareNDArrayToGold(
+            aa,
+            io,
+            &result,
+            0,
+            f,
+            0,
+            1,
+            fname,
+            rel_tol,
+            abs_tol,
+        ) catch |err| {
             try saveComparisonArtifactsFromResult(
                 aa,
                 io,
                 default_fails_root,
                 "all_multimesh_allelem_allshade" ++ impl_suffix,
                 &result,
+                0,
                 f,
                 0,
                 fname,
@@ -1041,18 +1194,20 @@ pub fn runMultimeshMixedRGBTestExt(
     const result = (try zraster.rasterAllFrames(
         aa,
         io,
-        &camera,
+        &[_]Camera{camera},
         mesh_inputs,
         config_rgb,
         null,
     )) orelse return error.NoResult;
 
-    for (0..result.dims[0]) |f| {
-        const fname = try findGoldPath(aa, io, gold_dir, f, 0, true);
+    const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
+    for (0..frames_num) |f| {
+        const fname = try findGoldPath(aa, io, gold_dir, 0, f, 0, true);
         compareNDArrayToGold(
             aa,
             io,
             &result,
+            0,
             f,
             0,
             3,
@@ -1066,6 +1221,7 @@ pub fn runMultimeshMixedRGBTestExt(
                 default_fails_root,
                 "all_multimesh_allelem_allshade_rgb" ++ impl_suffix,
                 &result,
+                0,
                 f,
                 0,
                 fname,

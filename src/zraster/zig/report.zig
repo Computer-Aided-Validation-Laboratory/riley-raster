@@ -129,6 +129,7 @@ pub const FullStatsLog = struct {
         io: std.Io,
         allocator: std.mem.Allocator,
         out_dir: ?std.Io.Dir,
+        camera_idx: usize,
         frame_idx: usize,
         camera: *const Camera,
         tile_size: u16,
@@ -140,8 +141,8 @@ pub const FullStatsLog = struct {
         var name_buff: [1024]u8 = undefined;
         const stats_file_name = try std.fmt.bufPrint(
             name_buff[0..],
-            "report_stats_frame{d}.txt",
-            .{frame_idx},
+            "report_stats_cam{d}_frame{d}.txt",
+            .{ camera_idx, frame_idx },
         );
 
         var stats_file = try save_dir.createFile(io, stats_file_name, .{});
@@ -161,8 +162,8 @@ pub const FullStatsLog = struct {
             );
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "diag_frame_{d}_iters",
-                .{frame_idx},
+                "diag_cam{d}_frame{d}_iters",
+                .{ camera_idx, frame_idx },
             );
             for (opts.formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
@@ -177,8 +178,8 @@ pub const FullStatsLog = struct {
             );
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "diag_frame_{d}_occupancy",
-                .{frame_idx},
+                "diag_cam{d}_frame{d}_occupancy",
+                .{ camera_idx, frame_idx },
             );
             for (opts.formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
@@ -194,8 +195,8 @@ pub const FullStatsLog = struct {
             );
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "diag_frame_{d}_depth",
-                .{frame_idx},
+                "diag_cam{d}_frame{d}_depth",
+                .{ camera_idx, frame_idx },
             );
             for (opts.formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
@@ -205,8 +206,8 @@ pub const FullStatsLog = struct {
         if (self.normals_map) |*m| {
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "diag_frame_{d}_normals",
-                .{frame_idx},
+                "diag_cam{d}_frame{d}_normals",
+                .{ camera_idx, frame_idx },
             );
             for (opts.formats) |opt| {
                 var save_opt = opt;
@@ -224,8 +225,8 @@ pub const FullStatsLog = struct {
             );
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "diag_frame_{d}_earlyout",
-                .{frame_idx},
+                "diag_cam{d}_frame{d}_earlyout",
+                .{ camera_idx, frame_idx },
             );
             for (opts.formats) |opt| {
                 try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
@@ -235,8 +236,8 @@ pub const FullStatsLog = struct {
         if (self.tile_timing_map) |*m| {
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "diag_frame_{d}_tile_timing",
-                .{frame_idx},
+                "diag_cam{d}_frame{d}_tile_timing",
+                .{ camera_idx, frame_idx },
             );
             try saveTileMapAsImage(
                 io,
@@ -253,8 +254,8 @@ pub const FullStatsLog = struct {
         if (self.tile_density_map) |*m| {
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "diag_frame_{d}_tile_density",
-                .{frame_idx},
+                "diag_cam{d}_frame{d}_tile_density",
+                .{ camera_idx, frame_idx },
             );
             try saveTileMapAsImage(
                 io,
@@ -271,8 +272,8 @@ pub const FullStatsLog = struct {
         if (self.tile_occupancy_map) |*m| {
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "diag_frame_{d}_tile_occupancy",
-                .{frame_idx},
+                "diag_cam{d}_frame{d}_tile_occupancy",
+                .{ camera_idx, frame_idx },
             );
             try saveTileMapAsImage(
                 io,

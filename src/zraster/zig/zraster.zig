@@ -93,6 +93,7 @@ const FrameReportStorage = union(ReportMode) {
 const FramePipelineContext = struct {
     arena: std.heap.ArenaAllocator,
     state: FramePipelineState = .free,
+    camera_idx: usize = 0,
     frame_idx: usize = 0,
     frame_meshes: []FrameMeshPrepared = &.{},
     prep_meshes: []MeshPrepared = &.{},
@@ -142,6 +143,7 @@ const FramePipelineContext = struct {
             _ = self.arena.reset(.free_all);
         }
         self.state = .free;
+        self.camera_idx = 0;
         self.frame_idx = 0;
         self.frame_meshes = &.{};
         self.prep_meshes = &.{};
@@ -256,12 +258,18 @@ fn prepareMeshStatics(
 fn initImagesArray(
     outer_alloc: std.mem.Allocator,
     config: RasterConfig,
+    cameras: []const Camera,
     num_time: usize,
     num_fields: u8,
-    camera: *const Camera,
 ) !?NDArray(f64) {
     if (config.save_opt == .memory or config.save_opt == .both) {
+        std.debug.assert(cameras.len > 0);
+        const camera = &cameras[0];
+        for (cameras[1..]) |camera_check| {
+            std.debug.assert(std.meta.eql(camera_check.pixels_num, camera.pixels_num));
+        }
         const dims = [_]usize{
+            cameras.len,
             num_time,
             @as(usize, num_fields),
             camera.pixels_num[1],
@@ -319,7 +327,11 @@ fn findGeomReadyFrameSlot(
         if (slot.state != .geom_ready) {
             continue;
         }
-        if (selected_slot == null or slot.frame_idx < selected_slot.?.frame_idx) {
+        if (selected_slot == null or
+            slot.frame_idx < selected_slot.?.frame_idx or
+            (slot.frame_idx == selected_slot.?.frame_idx and
+                slot.camera_idx < selected_slot.?.camera_idx))
+        {
             selected_slot = slot;
         }
     }
@@ -351,7 +363,11 @@ fn findInGeometryFrameSlot(
         if (slot.state != .in_geometry) {
             continue;
         }
-        if (selected_slot == null or slot.frame_idx < selected_slot.?.frame_idx) {
+        if (selected_slot == null or
+            slot.frame_idx < selected_slot.?.frame_idx or
+            (slot.frame_idx == selected_slot.?.frame_idx and
+                slot.camera_idx < selected_slot.?.camera_idx))
+        {
             selected_slot = slot;
         }
     }
@@ -366,7 +382,11 @@ fn findInRasterFrameSlot(
         if (slot.state != .in_raster) {
             continue;
         }
-        if (selected_slot == null or slot.frame_idx < selected_slot.?.frame_idx) {
+        if (selected_slot == null or
+            slot.frame_idx < selected_slot.?.frame_idx or
+            (slot.frame_idx == selected_slot.?.frame_idx and
+                slot.camera_idx < selected_slot.?.camera_idx))
+        {
             selected_slot = slot;
         }
     }
@@ -484,6 +504,7 @@ fn admitFrameSlot(
     slot: *FramePipelineContext,
     outer_alloc: std.mem.Allocator,
     camera: *const Camera,
+    camera_idx: usize,
     config: RasterConfig,
     frame_idx: usize,
     num_fields: u8,
@@ -495,6 +516,7 @@ fn admitFrameSlot(
 
     const arena_alloc = slot.arena.allocator();
     slot.state = .queued;
+    slot.camera_idx = camera_idx;
     slot.frame_idx = frame_idx;
     slot.io = io;
     slot.camera = camera;
@@ -512,9 +534,9 @@ fn admitFrameSlot(
     slot.raster_done.store(false, .monotonic);
 
     if (images_arr) |images| {
-        const stride = images.strides[0];
-        const mem = images.slice[frame_idx * stride .. (frame_idx + 1) * stride];
-        slot.frame_arr = try NDArray(f64).init(arena_alloc, mem, images.dims[1..]);
+        const start_idx = camera_idx * images.strides[0] + frame_idx * images.strides[1];
+        const mem = images.slice[start_idx .. start_idx + images.strides[1]];
+        slot.frame_arr = try NDArray(f64).init(arena_alloc, mem, images.dims[2..]);
     } else {
         const dims = [_]usize{
             @as(usize, num_fields),
@@ -729,6 +751,7 @@ fn finalizeFrameSlot(
             slot.io,
             slot.outer_alloc,
             slot.out_dir,
+            slot.camera_idx,
             slot.frame_idx,
             slot.camera,
             slot.tile_size,
@@ -742,6 +765,7 @@ fn finalizeFrameSlot(
         try iio.saveImages(
             slot.io,
             slot.out_dir,
+            slot.camera_idx,
             slot.frame_idx,
             @intCast(slot.frame_arr.dims[0]),
             slot.camera.pixels_num,
@@ -777,7 +801,7 @@ fn applyDispToMesh(
 pub fn rasterAllFrames(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    camera: *const Camera,
+    cameras: []const Camera,
     meshes: []const MeshInput,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
@@ -785,14 +809,15 @@ pub fn rasterAllFrames(
     var static_arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer static_arena.deinit();
     const static_alloc = static_arena.allocator();
+    std.debug.assert(cameras.len > 0);
     const num_time = countFrames(meshes);
     const num_fields = countOutputFields(meshes);
     var images_arr_opt = try initImagesArray(
         outer_alloc,
         config,
+        cameras,
         num_time,
         num_fields,
-        camera,
     );
     const nodal_global_scaling = try initNodalGlobalScaling(outer_alloc, meshes);
     defer outer_alloc.free(nodal_global_scaling);
@@ -802,7 +827,7 @@ pub fn rasterAllFrames(
         return rasterAllFramesInOrder(
             outer_alloc,
             io,
-            camera,
+            cameras,
             config,
             out_dir,
             num_time,
@@ -816,7 +841,7 @@ pub fn rasterAllFrames(
     try rasterAllFramesOffline(
         outer_alloc,
         io,
-        camera,
+        cameras,
         config,
         out_dir,
         num_time,
@@ -832,7 +857,7 @@ pub fn rasterAllFrames(
 fn rasterAllFramesInOrder(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    camera: *const Camera,
+    cameras: []const Camera,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
     num_time: usize,
@@ -846,43 +871,46 @@ fn rasterAllFramesInOrder(
     const slot = &frame_slots[0];
 
     for (0..num_time) |frame_idx| {
-        try admitFrameSlot(
-            slot,
-            outer_alloc,
-            camera,
-            config,
-            frame_idx,
-            num_fields,
-            images_arr,
-            out_dir,
-            io,
-        );
+        for (cameras, 0..) |*camera, camera_idx| {
+            try admitFrameSlot(
+                slot,
+                outer_alloc,
+                camera,
+                camera_idx,
+                config,
+                frame_idx,
+                num_fields,
+                images_arr,
+                out_dir,
+                io,
+            );
 
-        slot.slot_geom_threads = calcInOrderSlotThreads(
-            config.total_threads,
-            config.max_geom_threads_per_frame,
-        );
-        try initSlotGeomPool(slot);
-        slot.state = .in_geometry;
-        try prepareFrameGeometry(
-            slot,
-            camera,
-            mesh_static_prepared,
-            nodal_global_scaling,
-        );
-        deinitSlotGeomPool(slot);
-        slot.state = .geom_ready;
+            slot.slot_geom_threads = calcInOrderSlotThreads(
+                config.total_threads,
+                config.max_geom_threads_per_frame,
+            );
+            try initSlotGeomPool(slot);
+            slot.state = .in_geometry;
+            try prepareFrameGeometry(
+                slot,
+                camera,
+                mesh_static_prepared,
+                nodal_global_scaling,
+            );
+            deinitSlotGeomPool(slot);
+            slot.state = .geom_ready;
 
-        slot.slot_raster_threads = calcInOrderSlotThreads(
-            config.total_threads,
-            config.max_raster_threads_per_frame,
-        );
-        slot.state = .in_raster;
-        try runFrameRaster(slot);
-        slot.state = .raster_ready;
+            slot.slot_raster_threads = calcInOrderSlotThreads(
+                config.total_threads,
+                config.max_raster_threads_per_frame,
+            );
+            slot.state = .in_raster;
+            try runFrameRaster(slot);
+            slot.state = .raster_ready;
 
-        try finalizeFrameSlot(slot);
-        slot.reset(outer_alloc);
+            try finalizeFrameSlot(slot);
+            slot.reset(outer_alloc);
+        }
     }
 
     return if (images_arr) |ima| ima.* else null;
@@ -891,7 +919,7 @@ fn rasterAllFramesInOrder(
 fn rasterAllFramesOffline(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    camera: *const Camera,
+    cameras: []const Camera,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
     num_time: usize,
@@ -900,15 +928,16 @@ fn rasterAllFramesOffline(
     mesh_static_prepared: []const MeshStaticPrepared,
     nodal_global_scaling: []const ?imageops.ScalingParams,
 ) !void {
+    const jobs_num = cameras.len * num_time;
     const frames_in_flight = @max(@as(u16, 1), config.max_frames_in_flight);
-    const slots_num = @min(@as(usize, @intCast(frames_in_flight)), num_time);
+    const slots_num = @min(@as(usize, @intCast(frames_in_flight)), jobs_num);
     const frame_slots = try initFrameSlots(outer_alloc, slots_num);
     defer deinitFrameSlots(outer_alloc, frame_slots);
 
-    var next_frame_idx: usize = 0;
-    var completed_frames: usize = 0;
+    var next_job_idx: usize = 0;
+    var completed_jobs: usize = 0;
 
-    while (completed_frames < num_time) {
+    while (completed_jobs < jobs_num) {
         var progressed = false;
 
         for (frame_slots) |*slot| {
@@ -932,19 +961,22 @@ fn rasterAllFramesOffline(
             try finishFrameRaster(slot);
             try finalizeFrameSlot(slot);
             slot.reset(outer_alloc);
-            completed_frames += 1;
+            completed_jobs += 1;
             progressed = true;
         }
 
-        for (next_frame_idx..num_time) |frame_idx| {
+        for (next_job_idx..jobs_num) |job_idx| {
             if (countActiveFrameSlots(frame_slots) >= slots_num) {
                 break;
             }
             const slot = findFreeFrameSlot(frame_slots) orelse break;
+            const frame_idx = @divFloor(job_idx, cameras.len);
+            const camera_idx = @mod(job_idx, cameras.len);
             try admitFrameSlot(
                 slot,
                 outer_alloc,
-                camera,
+                &cameras[camera_idx],
+                camera_idx,
                 config,
                 frame_idx,
                 num_fields,
@@ -952,7 +984,7 @@ fn rasterAllFramesOffline(
                 out_dir,
                 io,
             );
-            next_frame_idx += 1;
+            next_job_idx += 1;
             progressed = true;
         }
 
@@ -974,7 +1006,7 @@ fn rasterAllFramesOffline(
             }
             try spawnFrameGeometry(
                 slot,
-                camera,
+                slot.camera,
                 mesh_static_prepared,
                 nodal_global_scaling,
                 slot_geom_threads,
@@ -1004,7 +1036,7 @@ fn rasterAllFramesOffline(
                 try finishFrameRaster(slot);
                 try finalizeFrameSlot(slot);
                 slot.reset(outer_alloc);
-                completed_frames += 1;
+                completed_jobs += 1;
                 progressed = true;
                 continue;
             }
@@ -1024,19 +1056,22 @@ fn rasterAllFramesOffline(
                 }
             }
             if (findFreeFrameSlot(frame_slots)) |slot| {
-                if (next_frame_idx < num_time) {
+                if (next_job_idx < jobs_num) {
+                    const frame_idx = @divFloor(next_job_idx, cameras.len);
+                    const camera_idx = @mod(next_job_idx, cameras.len);
                     try admitFrameSlot(
                         slot,
                         outer_alloc,
-                        camera,
+                        &cameras[camera_idx],
+                        camera_idx,
                         config,
-                        next_frame_idx,
+                        frame_idx,
                         num_fields,
                         images_arr,
                         out_dir,
                         io,
                     );
-                    next_frame_idx += 1;
+                    next_job_idx += 1;
                     continue;
                 }
             }

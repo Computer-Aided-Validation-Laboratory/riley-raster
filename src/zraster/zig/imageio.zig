@@ -147,6 +147,7 @@ pub fn saveMatAsImage(
 pub fn saveImages(
     io: std.Io,
     out_dir: ?std.Io.Dir,
+    camera_idx: usize,
     frame_idx: usize,
     num_fields: u8,
     pixels_num: [2]u32,
@@ -160,29 +161,45 @@ pub fn saveImages(
     for (opts_slice) |opts| {
         var ff: usize = 0;
         while (ff + opts.channels <= @as(usize, num_fields)) {
-            const file_name = if (opts.channels == 1)
-                try std.fmt.bufPrint(
-                    name_buff[0..],
-                    "frame_{d}_field_{d}",
-                    .{ frame_idx, ff },
-                )
-            else if (opts.channels == 3)
-                try std.fmt.bufPrint(
-                    name_buff[0..],
-                    "frame_{d}_field_{d}_rgb",
-                    .{ frame_idx, ff },
-                )
-            else
-                try std.fmt.bufPrint(
-                    name_buff[0..],
-                    "frame_{d}_field_{d}_{d}",
-                    .{ frame_idx, ff, ff + opts.channels - 1 },
-                );
+            const file_name = try formatFrameFieldBaseName(
+                name_buff[0..],
+                camera_idx,
+                frame_idx,
+                ff,
+                opts.channels,
+            );
 
             try saveImage(io, save_dir, file_name, frame_arr, ff, opts);
             ff += opts.channels;
         }
     }
+}
+
+pub fn formatFrameFieldBaseName(
+    buffer: []u8,
+    camera_idx: usize,
+    frame_idx: usize,
+    field_idx: usize,
+    channels: usize,
+) ![]const u8 {
+    return if (channels == 1)
+        std.fmt.bufPrint(
+            buffer,
+            "cam{d}_frame{d}_field{d}",
+            .{ camera_idx, frame_idx, field_idx },
+        )
+    else if (channels == 3)
+        std.fmt.bufPrint(
+            buffer,
+            "cam{d}_frame{d}_field{d}_rgb",
+            .{ camera_idx, frame_idx, field_idx },
+        )
+    else
+        std.fmt.bufPrint(
+            buffer,
+            "cam{d}_frame{d}_field{d}_{d}",
+            .{ camera_idx, frame_idx, field_idx, field_idx + channels - 1 },
+        );
 }
 
 pub fn savePPM(

@@ -44,7 +44,14 @@ pub fn renderAndSave(
     };
 
     const meshes = &[_]MeshInput{mesh_input};
-    const images = try zraster.rasterAllFrames(outer_alloc, io, camera, meshes, config, out_dir);
+    const images = try zraster.rasterAllFrames(
+        outer_alloc,
+        io,
+        &[_]Camera{camera.*},
+        meshes,
+        config,
+        out_dir,
+    );
     if (images) |img| {
         outer_alloc.free(img.slice);
         img.deinit(outer_alloc);
@@ -198,7 +205,14 @@ pub fn runMultimeshGenerationExt(
         defer out_dir.close(io);
 
         std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
-        const images = try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, out_dir);
+        const images = try zraster.rasterAllFrames(
+            aa,
+            io,
+            &[_]Camera{camera},
+            mesh_inputs,
+            config,
+            out_dir,
+        );
         if (images) |img| {
             aa.free(img.slice);
             img.deinit(aa);
@@ -259,7 +273,14 @@ pub fn runMultimeshMixedGenerationExt(
     defer out_dir.close(io);
 
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
-    const images = try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, out_dir);
+    const images = try zraster.rasterAllFrames(
+        aa,
+        io,
+        &[_]Camera{camera},
+        mesh_inputs,
+        config,
+        out_dir,
+    );
     if (images) |img| {
         aa.free(img.slice);
         img.deinit(aa);
@@ -339,7 +360,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
     _ = try zraster.rasterAllFrames(
         aa,
         io,
-        &camera_rgb,
+        &[_]Camera{camera_rgb},
         mesh_inputs,
         config_rgb,
         out_dir,

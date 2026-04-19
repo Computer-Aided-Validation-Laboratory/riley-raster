@@ -130,7 +130,20 @@ pub fn initCameraForCoords(
     pixel_num: [2]u32,
     fov_scale: f64,
 ) Camera {
-    const rot = defaultRotation();
+    return initCameraForCoordsWithRotation(
+        coords,
+        pixel_num,
+        fov_scale,
+        defaultRotation(),
+    );
+}
+
+pub fn initCameraForCoordsWithRotation(
+    coords: *const meshio.Coords,
+    pixel_num: [2]u32,
+    fov_scale: f64,
+    rot: Rotation,
+) Camera {
     const cam_pos = CameraOps.posFillFrameFromRot(
         coords,
         pixel_num,
@@ -148,6 +161,29 @@ pub fn initCameraForCoords(
         default_focal_length,
         2,
     );
+}
+
+pub fn initStereoCamerasForCoords(
+    coords: *const meshio.Coords,
+    pixel_num: [2]u32,
+    fov_scale: f64,
+    half_angle_deg: f64,
+) [2]Camera {
+    const half_angle_rad = half_angle_deg * std.math.pi / 180.0;
+    return .{
+        initCameraForCoordsWithRotation(
+            coords,
+            pixel_num,
+            fov_scale,
+            Rotation.init(0.0, -half_angle_rad, 0.0),
+        ),
+        initCameraForCoordsWithRotation(
+            coords,
+            pixel_num,
+            fov_scale,
+            Rotation.init(0.0, half_angle_rad, 0.0),
+        ),
+    };
 }
 
 pub fn initCameraForMeshes(

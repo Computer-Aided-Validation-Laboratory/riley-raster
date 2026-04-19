@@ -182,7 +182,7 @@ pub fn main(init: std.process.Init) !void {
     const images = try zraster.rasterAllFrames(
         aa,
         io,
-        &camera,
+        &[_]Camera{camera},
         mesh_inputs,
         config,
         out_dir,

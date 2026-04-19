@@ -535,6 +535,7 @@ fn runBenchmarkInternal(
             io,
             out_dir_h,
             0,
+            0,
             num_out_fields,
             pixel_num,
             &image_out_arr,

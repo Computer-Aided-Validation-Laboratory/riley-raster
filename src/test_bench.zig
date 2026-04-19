@@ -158,9 +158,25 @@ test "Unified Benchmark Tests" {
                         const channels: usize = if (is_rgb) 3 else 1;
 
                         const test_dir_case = try std.fs.path.join(aa, &[_][]const u8{ cc.out_dir, case_name });
-                        const test_path = try testcommon.findGoldPath(aa, io, test_dir_case, 0, 0, is_rgb);
+                        const test_path = try testcommon.findGoldPath(
+                            aa,
+                            io,
+                            test_dir_case,
+                            0,
+                            0,
+                            0,
+                            is_rgb,
+                        );
                         const gold_dir_case = try std.fs.path.join(aa, &[_][]const u8{ cc.gold_dir, case_name });
-                        const gold_path = try testcommon.findGoldPath(aa, io, gold_dir_case, 0, 0, is_rgb);
+                        const gold_path = try testcommon.findGoldPath(
+                            aa,
+                            io,
+                            gold_dir_case,
+                            0,
+                            0,
+                            0,
+                            is_rgb,
+                        );
 
                         // 3. Load and Compare
                         const t_arr_res = common.loadNDArray(

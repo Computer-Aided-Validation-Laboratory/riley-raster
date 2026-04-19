@@ -143,12 +143,28 @@ test "Sphere Gold Tests" {
 
                         const test_dir_case = try std.fs.path.join(allocator, &[_][]const u8{ c.out, case_name });
                         defer allocator.free(test_dir_case);
-                        const test_path = try testcommon.findGoldPath(allocator, io, test_dir_case, 0, 0, is_rgb);
+                        const test_path = try testcommon.findGoldPath(
+                            allocator,
+                            io,
+                            test_dir_case,
+                            0,
+                            0,
+                            0,
+                            is_rgb,
+                        );
                         defer allocator.free(test_path);
 
                         const gold_dir_case = try std.fs.path.join(allocator, &[_][]const u8{ c.gold, gold_case_name });
                         defer allocator.free(gold_dir_case);
-                        const gold_path = try testcommon.findGoldPath(allocator, io, gold_dir_case, 0, 0, is_rgb);
+                        const gold_path = try testcommon.findGoldPath(
+                            allocator,
+                            io,
+                            gold_dir_case,
+                            0,
+                            0,
+                            0,
+                            is_rgb,
+                        );
                         defer allocator.free(gold_path);
 
                         // 3. Load and Compare

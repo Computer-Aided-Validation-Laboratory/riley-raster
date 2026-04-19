@@ -11,6 +11,7 @@ const gen_small = @import("gen_gold_small.zig");
 const gen_simple = @import("gen_gold_simple.zig");
 const gen_edge = @import("gen_gold_edge.zig");
 const gen_multimesh = @import("gen_gold_multimesh.zig");
+const gen_multicamera = @import("gen_gold_multicamera.zig");
 const gen_fullscreen = @import("gen_gold_bench_fullscreen.zig");
 const gen_sphere = @import("gen_gold_sphere.zig");
 
@@ -33,6 +34,9 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("\n--- Multimesh ---\n", .{});
     try gen_multimesh.main(init);
+
+    std.debug.print("\n--- Multicamera ---\n", .{});
+    try gen_multicamera.main(init);
 
     std.debug.print("\n--- Fullscreen ---\n", .{});
     try gen_fullscreen.main(init);

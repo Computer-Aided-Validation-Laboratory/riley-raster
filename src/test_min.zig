@@ -124,10 +124,19 @@ test "MIN Suite: sphere200 and multimesh" {
                             );
                         defer allocator.free(case_name);
 
-                        const gold_fname = try std.fmt.allocPrint(
+                        const gold_case_dir = try std.fs.path.join(
                             allocator,
-                            "{s}/{s}/frame_0_field_0{s}.fimg",
-                            .{ gold_dir, case_name, if (is_rgb) "_rgb" else "" },
+                            &[_][]const u8{ gold_dir, case_name },
+                        );
+                        defer allocator.free(gold_case_dir);
+                        const gold_fname = try tests.findGoldPath(
+                            allocator,
+                            io,
+                            gold_case_dir,
+                            0,
+                            0,
+                            0,
+                            is_rgb,
                         );
                         defer allocator.free(gold_fname);
 
@@ -136,6 +145,7 @@ test "MIN Suite: sphere200 and multimesh" {
                             allocator,
                             io,
                             &result.image.?,
+                            0,
                             0,
                             0,
                             channels,
@@ -149,6 +159,7 @@ test "MIN Suite: sphere200 and multimesh" {
                                 "fails",
                                 case_name,
                                 &result.image.?,
+                                0,
                                 0,
                                 0,
                                 gold_fname,
