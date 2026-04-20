@@ -944,11 +944,13 @@ pub fn runMultimeshTestExt(
         );
 
         const fov_scale_factor: f64 = 1.1;
-        const camera = orch.initCameraForMeshes(
+        const camera = try orch.initCameraForMeshes(
+            aa,
             mesh_inputs,
             pixel_num,
             fov_scale_factor,
         );
+        defer camera.deinit(aa);
 
         const config = RasterConfig{
             .render_mode = tcfg.RENDER_MODE,
@@ -1066,11 +1068,13 @@ pub fn runMultimeshMixedTestExt(
     );
 
     const fov_scale_factor: f64 = 1.2;
-    const camera = orch.initCameraForMeshes(
+    const camera = try orch.initCameraForMeshes(
+        aa,
         mesh_inputs,
         pixel_num,
         fov_scale_factor,
     );
+    defer camera.deinit(aa);
 
     const config = RasterConfig{
         .render_mode = tcfg.RENDER_MODE,
@@ -1172,11 +1176,13 @@ pub fn runMultimeshMixedRGBTestExt(
     );
 
     const fov_scale_factor: f64 = 1.1;
-    const camera = orch.initCameraForMeshes(
+    const camera = try orch.initCameraForMeshes(
+        aa,
         mesh_inputs,
         pixel_num,
         fov_scale_factor,
     );
+    defer camera.deinit(aa);
 
     const config_rgb = RasterConfig{
         .render_mode = tcfg.RENDER_MODE,

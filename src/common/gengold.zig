@@ -195,11 +195,13 @@ pub fn runMultimeshGenerationExt(
         );
 
         const fov_scale_factor: f64 = 1.1;
-        const camera = orch.initCameraForMeshes(
+        const camera = try orch.initCameraForMeshes(
+            aa,
             mesh_inputs,
             pixel_num,
             fov_scale_factor,
         );
+        defer camera.deinit(aa);
 
         var out_dir = try orch.openDirEnsured(io, gold_dir);
         defer out_dir.close(io);
@@ -264,11 +266,13 @@ pub fn runMultimeshMixedGenerationExt(
     );
 
     const fov_scale_factor: f64 = 1.2;
-    const camera = orch.initCameraForMeshes(
+    const camera = try orch.initCameraForMeshes(
+        aa,
         mesh_inputs,
         pixel_num,
         fov_scale_factor,
     );
+    defer camera.deinit(aa);
     var out_dir = try orch.openDirEnsured(io, gold_dir);
     defer out_dir.close(io);
 
@@ -331,11 +335,13 @@ pub fn runMultimeshMixedRGBGenerationExt(
     );
 
     const fov_scale_factor: f64 = 1.1;
-    const camera_rgb = orch.initCameraForMeshes(
+    const camera_rgb = try orch.initCameraForMeshes(
+        aa,
         mesh_inputs,
         pixel_num,
         fov_scale_factor,
     );
+    defer camera_rgb.deinit(aa);
 
     var config_rgb = config;
     if (config_rgb.save_opts.len == 0) {

@@ -111,12 +111,14 @@ pub fn main(init: std.process.Init) !void {
             if (render_case.channels == 3) 3 else 1,
             true,
         );
-        const cameras = orch.initStereoCamerasForCoords(
+        const cameras = try orch.initStereoCamerasForCoords(
+            aa,
             &sim_data.coords,
             pixel_num,
             1.0,
             10.0,
         );
+        defer for (cameras) |cam| cam.deinit(aa);
 
         const mesh_input = switch (render_case.shader) {
             .nodal_grey => mr.MeshInput{

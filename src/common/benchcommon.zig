@@ -416,15 +416,19 @@ fn runBenchmarkInternal(
         rot,
         1.0,
     );
-    const camera = Camera.init(
-        pixel_num,
-        pixel_size,
-        cam_pos,
-        rot,
-        roi_pos,
-        focal_leng,
-        2,
+    const camera = try Camera.init(
+        aa,
+        .{
+            .pixels_num = pixel_num,
+            .pixels_size = pixel_size,
+            .pos_world = cam_pos,
+            .rot_world = rot,
+            .roi_cent_world = roi_pos,
+            .focal_length = focal_leng,
+            .sub_sample = 2,
+        },
     );
+    defer camera.deinit(aa);
 
     const config = zraster.RasterConfig{
         .render_mode = tcfg.RENDER_MODE,

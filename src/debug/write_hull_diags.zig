@@ -91,15 +91,19 @@ fn processCase(
         rot,
         fov_scale,
     );
-    const camera = Camera.init(
-        pixel_num,
-        pixel_size,
-        cam_pos,
-        rot,
-        Vec3f.initZeros(),
-        focal_leng,
-        2,
+    const camera = try Camera.init(
+        aa,
+        .{
+            .pixels_num = pixel_num,
+            .pixels_size = pixel_size,
+            .pos_world = cam_pos,
+            .rot_world = rot,
+            .roi_cent_world = Vec3f.initZeros(),
+            .focal_length = focal_leng,
+            .sub_sample = 2,
+        },
     );
+    defer camera.deinit(aa);
 
     try rops.transformElemsClipPxLengSIMD(N, f64, &camera, 0, &elem_coords);
 

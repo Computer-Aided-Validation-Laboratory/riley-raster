@@ -124,7 +124,8 @@ pub fn main(init: std.process.Init) !void {
         }
 
         mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
-        const camera = setupCamera(mesh_inputs);
+        const camera = try setupCamera(aa, mesh_inputs);
+        defer camera.deinit(aa);
 
         var out_dir = try cwd.openDir(io, "out-bench-multimesh-debug", .{});
         defer out_dir.close(io);
@@ -194,7 +195,8 @@ pub fn main(init: std.process.Init) !void {
         }
 
         mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
-        const camera = setupCamera(mesh_inputs);
+        const camera = try setupCamera(aa, mesh_inputs);
+        defer camera.deinit(aa);
 
         var out_dir = try cwd.openDir(io, "out-bench-multimesh-debug", .{});
         defer out_dir.close(io);
@@ -220,7 +222,7 @@ pub fn main(init: std.process.Init) !void {
     print("Done debug isolation.\n", .{});
 }
 
-fn setupCamera(meshes: []const MeshInput) Camera {
+fn setupCamera(allocator: std.mem.Allocator, meshes: []const MeshInput) !Camera {
     const pixel_num = [_]u32{ 1600, 800 };
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
@@ -238,13 +240,16 @@ fn setupCamera(meshes: []const MeshInput) Camera {
         fov_scale_factor,
     );
 
-    return Camera.init(
-        pixel_num,
-        pixel_size,
-        cam_pos,
-        rot,
-        roi_pos,
-        focal_leng,
-        subsample,
+    return try Camera.init(
+        allocator,
+        .{
+            .pixels_num = pixel_num,
+            .pixels_size = pixel_size,
+            .pos_world = cam_pos,
+            .rot_world = rot,
+            .roi_cent_world = roi_pos,
+            .focal_length = focal_leng,
+            .sub_sample = subsample,
+        },
     );
 }

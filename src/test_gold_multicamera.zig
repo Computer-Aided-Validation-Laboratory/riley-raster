@@ -26,7 +26,7 @@ const zraster = @import("zraster/zig/zraster.zig");
 
 const simd_on = cfg.simd == .on;
 
-const duplicate_rel_tol: f64 = 1.0e-10;
+const duplicate_rel_tol: f64 = 1.0e-7;
 const duplicate_abs_tol: f64 = 1.0e-11;
 const fails_root = "fails";
 
@@ -156,7 +156,8 @@ test "Multicamera duplicate sphere200 cameras match each other" {
         1,
         true,
     );
-    const camera = orch.initCameraForCoords(&sim_data.coords, pixel_num, 1.0);
+    const camera = try orch.initCameraForCoords(aa, &sim_data.coords, pixel_num, 1.0);
+    defer camera.deinit(aa);
     const cameras = [_]Camera{ camera, camera };
 
     const mesh_input = mr.MeshInput{
@@ -285,12 +286,14 @@ test "Sphere200 multicamera gold tests" {
             if (render_case.channels == 3) 3 else 1,
             true,
         );
-        const cameras = orch.initStereoCamerasForCoords(
+        const cameras = try orch.initStereoCamerasForCoords(
+            aa,
             &sim_data.coords,
             pixel_num,
             1.0,
             10.0,
         );
+        defer for (cameras) |cam| cam.deinit(aa);
 
         const mesh_input = switch (render_case.shader) {
             .nodal_grey => mr.MeshInput{

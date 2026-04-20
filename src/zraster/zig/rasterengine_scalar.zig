@@ -37,6 +37,7 @@ pub const SubpxScratchBuffers = struct {
     image: MatSlice(f64),
     touched_min_x: []usize,
     touched_max_x: []usize,
+    ideal_pixel_centers: []f64,
 };
 
 const SubpxDomain = common.SubpxDomain;
@@ -62,11 +63,14 @@ pub fn initSubpxScratch(
         subpx_tile_total,
     );
 
+    const ideal_pixel_centers = try arena_alloc.alloc(f64, subpx_tile_total * 2);
+
     return .{
         .inv_z = subpx_inv_z_scratch,
         .image = subpx_image_scratch,
         .touched_min_x = try arena_alloc.alloc(usize, subpx_tile_size),
         .touched_max_x = try arena_alloc.alloc(usize, subpx_tile_size),
+        .ideal_pixel_centers = ideal_pixel_centers,
     };
 }
 
@@ -284,19 +288,24 @@ pub fn RasterPass(
 
             var seed_state = newton.NewtonSeedState{};
 
-            var subpx_y: f64 = rast_bounds.y_min_f + subpx_domain.offset;
             for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
                 const row_offset = scratch_y * subpx_domain.tile_size;
-                var subpx_x: f64 = rast_bounds.x_min_f + subpx_domain.offset;
 
                 for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x| {
-                    const global_subx = targ_overlap.tile.x_px_min * sub_samp + scratch_x;
-                    const global_suby = targ_overlap.tile.y_px_min * sub_samp + scratch_y;
+                    const scratch_idx = row_offset + scratch_x;
+                    const ideal_x_px = subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 0];
+                    const ideal_y_px = subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 1];
+
+                    const global_subx = targ_overlap.tile.x_px_min * sub_samp +
+                        scratch_x;
+                    const global_suby = targ_overlap.tile.y_px_min * sub_samp +
+                        scratch_y;
+
                     var hull_seed: ?newton.NewtonSeed = null;
 
                     if (comptime Geometry.hull_nodes_num > 0) {
                         ctx_report.recordTessChecks(1);
-                        const tess_res = element_tess.isInScalar(subpx_x, subpx_y);
+                        const tess_res = element_tess.isInScalar(ideal_x_px, ideal_y_px);
                         if (tess_res.is_in) {
                             ctx_report.recordTessPasses(1);
                             hull_seed = .{
@@ -312,7 +321,6 @@ pub fn RasterPass(
                             );
                         }
                         if (!tess_res.is_in) {
-                            subpx_x += subpx_domain.step;
                             continue;
                         }
                     } else if (comptime report_mode == .full_stats) {
@@ -330,8 +338,8 @@ pub fn RasterPass(
                                 const seed_quality = newton.evaluateSeedQuality(
                                     Geometry.nodes_num,
                                     Geometry.domainViolation,
-                                    subpx_x - subpx_domain.x_off,
-                                    subpx_y - subpx_domain.y_off,
+                                    ideal_x_px - subpx_domain.x_off,
+                                    ideal_y_px - subpx_domain.y_off,
                                     nodes_coords.x,
                                     nodes_coords.y,
                                     nodes_coords.z,
@@ -350,14 +358,15 @@ pub fn RasterPass(
                         );
                         break :blk Geometry.solveWeightsNewton(
                             nodes_coords,
-                            subpx_x,
-                            subpx_y,
+                            ideal_x_px,
+                            ideal_y_px,
                             subpx_domain.x_off,
                             subpx_domain.y_off,
                             selected_seed.xi,
                             selected_seed.eta,
                         );
                     };
+
                     ctx_report.recordSolverIters(result.iters);
 
                     if (comptime Geometry.seed_reuse == .last_converged) {
@@ -372,7 +381,6 @@ pub fn RasterPass(
 
                     if (result.weights) |weights| {
                         const inv_z = Geometry.calcInvZ(nodes_coords, weights);
-                        const scratch_idx = row_offset + scratch_x;
 
                         if (inv_z >= subpx_scratch.inv_z[scratch_idx]) {
                             subpx_scratch.inv_z[scratch_idx] = inv_z;
@@ -425,9 +433,7 @@ pub fn RasterPass(
                     } else {
                         if (result.iters > 0) ctx_report.recordSolverDiverged();
                     }
-                    subpx_x += subpx_domain.step;
                 }
-                subpx_y += subpx_domain.step;
             }
             return shaded_px;
         }

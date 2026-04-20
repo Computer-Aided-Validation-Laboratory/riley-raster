@@ -66,15 +66,19 @@ test "Nodal normals are prepared when requested" {
         &sim_data.coords,
     );
 
-    const camera = Camera.init(
-        pixel_num,
-        pixel_size,
-        cam_pos,
-        rot,
-        roi_cent,
-        focal_leng,
-        2,
+    const camera = try Camera.init(
+        arena_alloc,
+        .{
+            .pixels_num = pixel_num,
+            .pixels_size = pixel_size,
+            .pos_world = cam_pos,
+            .rot_world = rot,
+            .roi_cent_world = roi_cent,
+            .focal_length = focal_leng,
+            .sub_sample = 2,
+        },
     );
+    defer camera.deinit(arena_alloc);
 
     const mesh_input = meshraster.MeshInput{
         .mesh_type = .tri3,

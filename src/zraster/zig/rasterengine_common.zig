@@ -152,12 +152,14 @@ pub fn rasterDirectScalarCommon(
         }
     }
 
-    var subpx_y_f: f64 = rast_bounds.y_min_f + subpx_domain.offset;
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
         const row_offset = scratch_y_u * subpx_domain.tile_size;
-        var subpx_x_f: f64 = rast_bounds.x_min_f + subpx_domain.offset;
 
         for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x_u| {
+            const scratch_idx = row_offset + scratch_x_u;
+            const ideal_x_px = subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 0];
+            const ideal_y_px = subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 1];
+
             const tile_subx: usize = @intCast(targ_overlap.tile.x_px_min);
             const tile_suby: usize = @intCast(targ_overlap.tile.y_px_min);
             const tile_subx_off: usize = tile_subx * sub_samp;
@@ -167,7 +169,7 @@ pub fn rasterDirectScalarCommon(
 
             if (comptime Geometry.hull_nodes_num > 0) {
                 ctx_report.recordTessChecks(1);
-                const tess_res = element_tess.isInScalar(subpx_x_f, subpx_y_f);
+                const tess_res = element_tess.isInScalar(ideal_x_px, ideal_y_px);
                 if (tess_res.is_in) {
                     ctx_report.recordTessPasses(1);
                 }
@@ -179,7 +181,6 @@ pub fn rasterDirectScalarCommon(
                     );
                 }
                 if (!tess_res.is_in) {
-                    subpx_x_f += subpx_domain.step;
                     continue;
                 }
             } else if (comptime report_mode == .full_stats) {
@@ -189,8 +190,8 @@ pub fn rasterDirectScalarCommon(
             ctx_report.recordSolverCalls(1);
             const result = if (comptime Geometry.solver_kind == .inv_bi)
                 Geometry.solveWeightsInvBi(
-                    subpx_x_f,
-                    subpx_y_f,
+                    ideal_x_px,
+                    ideal_y_px,
                     subpx_domain.x_off,
                     subpx_domain.y_off,
                     bilinear_params,
@@ -198,8 +199,8 @@ pub fn rasterDirectScalarCommon(
             else
                 Geometry.solveWeightsHyperb(
                     nodes_coords,
-                    subpx_x_f,
-                    subpx_y_f,
+                    ideal_x_px,
+                    ideal_y_px,
                     inv_elem_area,
                 );
 
@@ -207,7 +208,6 @@ pub fn rasterDirectScalarCommon(
 
             if (result.weights) |weights| {
                 const inv_z = Geometry.calcInvZ(nodes_coords, weights);
-                const scratch_idx = row_offset + scratch_x_u;
 
                 if (inv_z >= subpx_scratch.inv_z[scratch_idx]) {
                     subpx_scratch.inv_z[scratch_idx] = inv_z;
@@ -260,9 +260,7 @@ pub fn rasterDirectScalarCommon(
             } else {
                 if (result.iters > 0) ctx_report.recordSolverDiverged();
             }
-            subpx_x_f += subpx_domain.step;
         }
-        subpx_y_f += subpx_domain.step;
     }
 
     return shaded_px;
@@ -497,6 +495,36 @@ fn rasterTileCommon(
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     Backend.resetSubpxScratch(subpx_scratch, subpx_tile_size);
+
+    // Hoist tile-local ideal pixel centers
+    {
+        const cam = ctx_rast.camera;
+        const stride_y = cam.ideal_pixel_centers.strides[0];
+        const stride_x = cam.ideal_pixel_centers.strides[1];
+        const slice = cam.ideal_pixel_centers.slice;
+
+        const start_x = @as(usize, @intCast(tile.x_px_min)) * sub_samp;
+        const start_y = @as(usize, @intCast(tile.y_px_min)) * sub_samp;
+        const tile_w = @as(usize, tile.x_px_max - tile.x_px_min) * sub_samp;
+        const tile_h = @as(usize, tile.y_px_max - tile.y_px_min) * sub_samp;
+
+        for (0..tile_h) |jj| {
+            const global_y = start_y + jj;
+            const row_off = global_y * stride_y;
+            const scratch_row_off = jj * subpx_tile_size;
+
+            for (0..tile_w) |ii| {
+                const global_x = start_x + ii;
+                const col_off = global_x * stride_x;
+                const scratch_idx = scratch_row_off + ii;
+
+                subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 0] =
+                    slice[row_off + col_off + 0];
+                subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 1] =
+                    slice[row_off + col_off + 1];
+            }
+        }
+    }
 
     const overlap_start = tile.overlap_start;
     const overlap_end = overlap_start + tile.overlap_count;

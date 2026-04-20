@@ -204,15 +204,20 @@ pub fn main(init: std.process.Init) !void {
         rot,
         fov_scale_factor,
     );
-    const camera = Camera.init(
-        pixel_num,
-        pixel_size,
-        cam_pos,
-        rot,
-        roi_pos,
-        focal_leng,
-        3,
+    const camera = try Camera.init(
+        aa,
+        .{
+            .pixels_num = pixel_num,
+            .pixels_size = pixel_size,
+            .pos_world = cam_pos,
+            .rot_world = rot,
+            .roi_cent_world = roi_pos,
+            .focal_length = focal_leng,
+            .sub_sample = 3,
+        },
     );
+    defer camera.deinit(aa);
+
 
     const config_rgb = zraster.RasterConfig{
         .save_opt = .memory,

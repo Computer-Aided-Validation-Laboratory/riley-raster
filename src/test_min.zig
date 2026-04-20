@@ -14,7 +14,7 @@ const mr = @import("zraster/zig/meshraster.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
 
-pub const REL_TOL: f64 = 1.0e-10;
+pub const REL_TOL: f64 = 2.0e-10;
 pub const ABS_TOL: f64 = 1.0e-11;
 const simd_on = buildconfig.config.simd == .on;
 

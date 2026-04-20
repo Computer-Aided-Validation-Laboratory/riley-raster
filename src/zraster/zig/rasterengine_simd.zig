@@ -64,6 +64,7 @@ pub const SubpxScratchBuffers = struct {
     eta: []align(64) f64,
     touched_min_x: []usize,
     touched_max_x: []usize,
+    ideal_pixel_centers: []align(64) f64,
 };
 
 const SubpxDomain = common.SubpxDomain;
@@ -124,6 +125,12 @@ pub fn initSubpxScratch(
         subpx_simd_chunk_count,
     );
 
+    const ideal_pixel_centers = try arena_alloc.alignedAlloc(
+        f64,
+        alignment,
+        (subpx_tile_total_padded + S) * 2,
+    );
+
     return .{
         .inv_z = subpx_inv_z_scratch,
         .image = subpx_image_scratch,
@@ -133,6 +140,7 @@ pub fn initSubpxScratch(
         .eta = subpx_eta_scratch,
         .touched_min_x = try arena_alloc.alloc(usize, subpx_tile_size),
         .touched_max_x = try arena_alloc.alloc(usize, subpx_tile_size),
+        .ideal_pixel_centers = ideal_pixel_centers,
     };
 }
 
@@ -301,14 +309,9 @@ pub fn RasterPass(
 
             const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
             const v_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
-            const v_lane_idx_f: VecSF = @floatFromInt(std.simd.iota(usize, S));
 
             for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
                 const row_offset = scratch_y_u * subpx_domain.tile_size;
-                const subpx_y_f = rast_bounds.y_min_f + subpx_domain.offset +
-                    @as(f64, @floatFromInt(scratch_y_u - rast_bounds.start_y_u)) *
-                    subpx_domain.step;
-                const v_subpx_y_f: VecSF = @splat(subpx_y_f);
 
                 var scratch_x_u = rast_bounds.start_x_u;
                 while (scratch_x_u < rast_bounds.end_x_u) : (scratch_x_u += S) {
@@ -319,17 +322,19 @@ pub fn RasterPass(
                     const v_x_mask = (v_subpx_x_u >= v_orig_start_x_u) &
                         (v_subpx_x_u < v_end_x_u);
 
-                    const subpx_x_base_f = rast_bounds.x_min_f + subpx_domain.offset +
-                        @as(f64, @floatFromInt(scratch_x_u - rast_bounds.start_x_u)) *
-                        subpx_domain.step;
-                    const v_subpx_x_f = @as(VecSF, @splat(subpx_x_base_f)) +
-                        v_lane_idx_f * @as(VecSF, @splat(subpx_domain.step));
+                    const scratch_idx = row_offset + scratch_x_u;
+                    var v_ideal_x_px: VecSF = undefined;
+                    var v_ideal_y_px: VecSF = undefined;
+                    inline for (0..S) |ll| {
+                        v_ideal_x_px[ll] = subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 0];
+                        v_ideal_y_px[ll] = subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 1];
+                    }
 
                     ctx_report.recordSolverCalls(S);
                     const res = Geometry.solveWeightsHyperbSIMD(
                         nodes_coords,
-                        v_subpx_x_f,
-                        v_subpx_y_f,
+                        v_ideal_x_px,
+                        v_ideal_y_px,
                         v_inv_area,
                     );
 
@@ -340,7 +345,6 @@ pub fn RasterPass(
                             v_nodes_inv_z,
                             res.v_weights,
                         );
-                        const scratch_idx = row_offset + scratch_x_u;
                         const v_old_inv_z = simdops.loadVecSF(
                             subpx_scratch.inv_z,
                             scratch_idx,
@@ -494,21 +498,13 @@ pub fn RasterPass(
 
             const v_lane_idx: VecSU = std.simd.iota(usize, S);
 
-            // Hoist these vector constants
-            const v_subpx_min_x_f: VecSF =
-                @splat(@as(f64, @floatFromInt(targ_overlap.tile.x_px_min)));
-            const v_step_f: VecSF = @splat(subpx_domain.step);
-            const v_splat_half: VecSF = @splat(0.5);
             const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
             const v_bounds_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
 
             //------------------------------------------------------------------------------
             // Pass 1: Vectorized Coarse In/Out
             for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
-                const scratch_y_f: f64 = @as(f64, @floatFromInt(scratch_y_u));
-                const subpx_y_f: f64 =
-                    @as(f64, @floatFromInt(targ_overlap.tile.y_px_min)) +
-                    (scratch_y_f + 0.5) * subpx_domain.step;
+                const row_offset = scratch_y_u * subpx_domain.tile_size;
 
                 // Step S wide along the row
                 var scratch_x_u: usize = rast_bounds.start_x_u;
@@ -520,15 +516,17 @@ pub fn RasterPass(
                     const v_x_mask = (v_subpx_x_u >= v_orig_start_x_u) &
                         (v_subpx_x_u < v_bounds_end_x_u);
 
-                    const v_subpx_x_lane_f: VecSF = @floatFromInt(v_subpx_x_u);
-                    const v_subpx_x_off_f = (v_subpx_x_lane_f + v_splat_half) * v_step_f;
-                    const v_subpx_x_f = v_subpx_min_x_f + v_subpx_x_off_f;
-
-                    const v_subpx_y_f: VecSF = @splat(subpx_y_f);
+                    const scratch_idx = row_offset + scratch_x_u;
+                    var v_ideal_x_px: VecSF = undefined;
+                    var v_ideal_y_px: VecSF = undefined;
+                    inline for (0..S) |ll| {
+                        v_ideal_x_px[ll] = subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 0];
+                        v_ideal_y_px[ll] = subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 1];
+                    }
 
                     const v_hull_res: HullResultSIMD = element_tess.isInSIMD(
-                        v_subpx_x_f,
-                        v_subpx_y_f,
+                        v_ideal_x_px,
+                        v_ideal_y_px,
                     );
 
                     // Report: count passes of the tessellation check
@@ -560,8 +558,8 @@ pub fn RasterPass(
                     // Newton solver in the next pass
                     if (@reduce(.Or, v_mask_active)) {
                         const mask_arr: [S]bool = v_mask_active;
-                        const x_arr_f: [S]f64 = v_subpx_x_f;
-                        const y_arr_f: [S]f64 = v_subpx_y_f;
+                        const x_arr_f: [S]f64 = v_ideal_x_px;
+                        const y_arr_f: [S]f64 = v_ideal_y_px;
 
                         // Initial seed can be the centroid in parametric coords or it
                         // can be estimated from the hull check, testing showed

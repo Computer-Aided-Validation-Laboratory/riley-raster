@@ -116,7 +116,7 @@ pub fn prepareSingleMeshCase(
     const sim_data = try loadData(allocator, io, data_path);
     const uv_path = try std.fmt.allocPrint(allocator, "{s}/uvs.csv", .{data_path});
     const uvs = try uvio.loadUVMap(allocator, io, uv_path);
-    const camera = initCameraForCoords(&sim_data.coords, pixel_num, fov_scale);
+    const camera = try initCameraForCoords(allocator, &sim_data.coords, pixel_num, fov_scale);
 
     return .{
         .sim_data = sim_data,
@@ -126,11 +126,13 @@ pub fn prepareSingleMeshCase(
 }
 
 pub fn initCameraForCoords(
+    allocator: std.mem.Allocator,
     coords: *const meshio.Coords,
     pixel_num: [2]u32,
     fov_scale: f64,
-) Camera {
-    return initCameraForCoordsWithRotation(
+) !Camera {
+    return try initCameraForCoordsWithRotation(
+        allocator,
         coords,
         pixel_num,
         fov_scale,
@@ -139,11 +141,12 @@ pub fn initCameraForCoords(
 }
 
 pub fn initCameraForCoordsWithRotation(
+    allocator: std.mem.Allocator,
     coords: *const meshio.Coords,
     pixel_num: [2]u32,
     fov_scale: f64,
     rot: Rotation,
-) Camera {
+) !Camera {
     const cam_pos = CameraOps.posFillFrameFromRot(
         coords,
         pixel_num,
@@ -152,32 +155,38 @@ pub fn initCameraForCoordsWithRotation(
         rot,
         fov_scale,
     );
-    return Camera.init(
-        pixel_num,
-        default_pixel_size,
-        cam_pos,
-        rot,
-        CameraOps.roiCentFromCoords(coords),
-        default_focal_length,
-        2,
+    return try Camera.init(
+        allocator,
+        .{
+            .pixels_num = pixel_num,
+            .pixels_size = default_pixel_size,
+            .pos_world = cam_pos,
+            .rot_world = rot,
+            .roi_cent_world = CameraOps.roiCentFromCoords(coords),
+            .focal_length = default_focal_length,
+            .sub_sample = 2,
+        },
     );
 }
 
 pub fn initStereoCamerasForCoords(
+    allocator: std.mem.Allocator,
     coords: *const meshio.Coords,
     pixel_num: [2]u32,
     fov_scale: f64,
     half_angle_deg: f64,
-) [2]Camera {
+) ![2]Camera {
     const half_angle_rad = half_angle_deg * std.math.pi / 180.0;
     return .{
-        initCameraForCoordsWithRotation(
+        try initCameraForCoordsWithRotation(
+            allocator,
             coords,
             pixel_num,
             fov_scale,
             Rotation.init(0.0, -half_angle_rad, 0.0),
         ),
-        initCameraForCoordsWithRotation(
+        try initCameraForCoordsWithRotation(
+            allocator,
             coords,
             pixel_num,
             fov_scale,
@@ -187,10 +196,11 @@ pub fn initStereoCamerasForCoords(
 }
 
 pub fn initCameraForMeshes(
+    allocator: std.mem.Allocator,
     mesh_inputs: []mr.MeshInput,
     pixel_num: [2]u32,
     fov_scale: f64,
-) Camera {
+) !Camera {
     const rot = defaultRotation();
     const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
     const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
@@ -201,14 +211,17 @@ pub fn initCameraForMeshes(
         rot,
         fov_scale,
     );
-    return Camera.init(
-        pixel_num,
-        default_pixel_size,
-        cam_pos,
-        rot,
-        roi_pos,
-        default_focal_length,
-        2,
+    return try Camera.init(
+        allocator,
+        .{
+            .pixels_num = pixel_num,
+            .pixels_size = default_pixel_size,
+            .pos_world = cam_pos,
+            .rot_world = rot,
+            .roi_cent_world = roi_pos,
+            .focal_length = default_focal_length,
+            .sub_sample = 2,
+        },
     );
 }
 
