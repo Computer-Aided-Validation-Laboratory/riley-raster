@@ -32,8 +32,8 @@ pub fn main(init: std.process.Init) !void {
 
     // 1. Setup Rasteriser Configuration
     const config = RasterConfig{
-        .save_opt = .disk,
-        .save_opts = &[_]iio.ImageSaveOpts{
+        .save_strategy = .disk,
+        .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
         },
         .report = .bench,

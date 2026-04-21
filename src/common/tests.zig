@@ -748,8 +748,8 @@ pub fn runTestInternal(
                 .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
                 .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
                 .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-                .save_opt = .memory,
-                .save_opts = &[_]iio.ImageSaveOpts{
+                .save_strategy = .memory,
+                .image_save_opts = &[_]iio.ImageSaveOpts{
                     .{ .format = .csv, .bits = null, .scaling = .none },
                 },
                 .report = if (report_perf) .full_stats else .off,
@@ -840,8 +840,8 @@ pub fn runTestInternal(
                     .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
                     .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
                     .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-                    .save_opt = .memory,
-                    .save_opts = &[_]iio.ImageSaveOpts{
+                    .save_strategy = .memory,
+                    .image_save_opts = &[_]iio.ImageSaveOpts{
                         .{ .format = .csv, .bits = null, .scaling = .none },
                     },
                     .report = if (report_perf) .full_stats else .off,
@@ -958,8 +958,8 @@ pub fn runMultimeshTestExt(
             .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
             .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
             .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-            .save_opt = .memory,
-            .save_opts = &[_]iio.ImageSaveOpts{
+            .save_strategy = .memory,
+            .image_save_opts = &[_]iio.ImageSaveOpts{
                 .{ .format = .csv, .bits = null, .scaling = .none },
             },
             .report = .off,
@@ -1082,8 +1082,8 @@ pub fn runMultimeshMixedTestExt(
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
         .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
         .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-        .save_opt = .memory,
-        .save_opts = &[_]iio.ImageSaveOpts{
+        .save_strategy = .memory,
+        .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
         .report = .off,
@@ -1190,8 +1190,8 @@ pub fn runMultimeshMixedRGBTestExt(
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
         .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
         .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-        .save_opt = .memory,
-        .save_opts = &[_]iio.ImageSaveOpts{
+        .save_strategy = .memory,
+        .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
         },
         .report = .off,
