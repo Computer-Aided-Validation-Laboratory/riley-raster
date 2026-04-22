@@ -1037,7 +1037,7 @@ pub fn prepareFrameMeshes(
     return res;
 }
 //==========================================================================================
-// Second entry point 
+// Second entry point
 pub fn prepareVisibleFrameMesh(
     allocator: std.mem.Allocator,
     camera: *const Camera,

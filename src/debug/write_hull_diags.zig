@@ -13,7 +13,7 @@ const Camera = @import("zraster/zig/camera.zig").Camera;
 const CameraOps = @import("zraster/zig/camera.zig").CameraOps;
 const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
 const meshio = @import("zraster/zig/meshio.zig");
-const mr = @import("zraster/zig/meshraster.zig");
+const mo = @import("zraster/zig/meshops.zig");
 const Vec3f = @import("zraster/zig/vecstack.zig").Vec3f;
 const Rotation = @import("zraster/zig/rotation.zig").Rotation;
 const csvio = @import("zraster/zig/csvio.zig");
@@ -75,7 +75,7 @@ fn processCase(
         null,
     );
 
-    var elem_coords = try mr.prepareCoords(aa, &sim_data.coords, &sim_data.connect);
+    var elem_coords = try mo.prepareCoords(aa, &sim_data.coords, &sim_data.connect);
 
     const pixel_num = [_]u32{ 800, 500 };
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };

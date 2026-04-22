@@ -12,8 +12,8 @@ const expectEqual = testing.expectEqual;
 const expectApproxEqAbs = testing.expectApproxEqAbs;
 
 const Coords = @import("meshio.zig").Coords;
-const mr = @import("meshraster.zig");
-const MeshInput = mr.MeshInput;
+const mo = @import("meshops.zig");
+const MeshInput = mo.MeshInput;
 const vector = @import("vecstack.zig");
 const Vec3f = vector.Vec3f;
 const matrix = @import("matstack.zig");

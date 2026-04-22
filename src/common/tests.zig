@@ -16,9 +16,9 @@ const meshio = @import("../zraster/zig/meshio.zig");
 const Camera = @import("../zraster/zig/camera.zig").Camera;
 const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
 
-const mr = @import("../zraster/zig/meshraster.zig");
-const MeshType = mr.MeshType;
-const MeshInput = mr.MeshInput;
+const mo = @import("../zraster/zig/meshops.zig");
+const MeshType = mo.MeshType;
+const MeshInput = mo.MeshInput;
 
 const zraster = @import("../zraster/zig/zraster.zig");
 const RasterConfig = zraster.RasterConfig;

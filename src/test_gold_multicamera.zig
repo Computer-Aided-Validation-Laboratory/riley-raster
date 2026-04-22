@@ -18,7 +18,7 @@ const cfg = buildconfig.config;
 const camera_mod = @import("zraster/zig/camera.zig");
 const Camera = camera_mod.Camera;
 const iio = @import("zraster/zig/imageio.zig");
-const mr = @import("zraster/zig/meshraster.zig");
+const mo = @import("zraster/zig/meshops.zig");
 const meshio = @import("zraster/zig/meshio.zig");
 const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
 const texops = @import("zraster/zig/textureops.zig");
@@ -34,7 +34,7 @@ const fails_root = "fails";
 const RenderCase = struct {
     case_name: []const u8,
     data_dir: []const u8,
-    mesh_type: mr.MeshType,
+    mesh_type: mo.MeshType,
     channels: usize,
     shader: union(enum) {
         nodal_grey,
@@ -162,7 +162,7 @@ test "Multicamera duplicate sphere200 cameras match each other" {
     const camera_input = camera.toInput();
     const cameras = [_]CameraInput{ camera_input, camera_input };
 
-    const mesh_input = mr.MeshInput{
+    const mesh_input = mo.MeshInput{
         .mesh_type = render_case.mesh_type,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
@@ -195,7 +195,7 @@ test "Multicamera duplicate sphere200 cameras match each other" {
         aa,
         io,
         &cameras,
-        &[_]mr.MeshInput{mesh_input},
+        &[_]mo.MeshInput{mesh_input},
         config,
         null,
         null,
@@ -303,7 +303,7 @@ test "Sphere200 multicamera gold tests" {
         };
 
         const mesh_input = switch (render_case.shader) {
-            .nodal_grey => mr.MeshInput{
+            .nodal_grey => mo.MeshInput{
                 .mesh_type = render_case.mesh_type,
                 .coords = sim_data.coords,
                 .connect = sim_data.connect,
@@ -329,7 +329,7 @@ test "Sphere200 multicamera gold tests" {
                     io,
                     uv_path,
                 );
-                break :blk mr.MeshInput{
+                break :blk mo.MeshInput{
                     .mesh_type = render_case.mesh_type,
                     .coords = sim_data.coords,
                     .connect = sim_data.connect,
@@ -367,7 +367,7 @@ test "Sphere200 multicamera gold tests" {
             aa,
             io,
             &camera_inputs,
-            &[_]mr.MeshInput{mesh_input},
+            &[_]mo.MeshInput{mesh_input},
             config,
             null,
             null,

@@ -10,9 +10,9 @@ const std = @import("std");
 
 const orch = @import("orchestration.zig");
 const meshio = @import("../zraster/zig/meshio.zig");
-const mr = @import("../zraster/zig/meshraster.zig");
-const MeshType = mr.MeshType;
-const MeshInput = mr.MeshInput;
+const mo = @import("../zraster/zig/meshops.zig");
+const MeshType = mo.MeshType;
+const MeshInput = mo.MeshInput;
 const Camera = @import("../zraster/zig/camera.zig").Camera;
 const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
 const zraster = @import("../zraster/zig/zraster.zig");
@@ -28,7 +28,7 @@ pub fn renderAndSave(
     coords: meshio.Coords,
     connect: meshio.Connect,
     disp: ?meshio.Field,
-    sh: mr.ShaderInput,
+    sh: mo.ShaderInput,
     dir: []const u8,
     add_disp: bool,
     config: RasterConfig,

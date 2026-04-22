@@ -14,7 +14,7 @@ const zraster = @import("zraster/zig/zraster.zig");
 const csvio = @import("zraster/zig/csvio.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const meshio = @import("zraster/zig/meshio.zig");
-const mr = @import("zraster/zig/meshraster.zig");
+const mo = @import("zraster/zig/meshops.zig");
 const texops = @import("zraster/zig/textureops.zig");
 const uvio = @import("zraster/zig/uvio.zig");
 const Camera = @import("zraster/zig/camera.zig").Camera;
@@ -128,7 +128,7 @@ fn goldDirExists(io: std.Io, path: []const u8) bool {
 fn runSphereCase(
     allocator: std.mem.Allocator,
     io: std.Io,
-    mesh_type: mr.MeshType,
+    mesh_type: mo.MeshType,
     shader_type: ShaderType,
     sample_config: texops.TextureSampleConfig,
     texture_grey: iio.Texture(1),
@@ -186,7 +186,7 @@ fn runSphereCase(
     var camera = try initCameraForCoords(allocator, &sim_data.coords, pixel_num);
     defer camera.deinit(allocator);
 
-    const shader: mr.ShaderInput = switch (shader_type) {
+    const shader: mo.ShaderInput = switch (shader_type) {
         .nodal_grey, .nodal_rgb => .{ .nodal = .{
             .field = field,
             .scaling = .none,
@@ -203,7 +203,7 @@ fn runSphereCase(
         } },
     };
 
-    const mesh_input = mr.MeshInput{
+    const mesh_input = mo.MeshInput{
         .mesh_type = mesh_type,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
@@ -226,7 +226,7 @@ fn runSphereCase(
         allocator,
         io,
         &[_]@TypeOf(camera_input){camera_input},
-        &[_]mr.MeshInput{mesh_input},
+        &[_]mo.MeshInput{mesh_input},
         config,
         null,
         null,
@@ -371,7 +371,7 @@ test "Temp sphere2000 public API path" {
     );
     defer texture_rgb.deinit(allocator);
 
-    const mesh_types = std.enums.values(mr.MeshType);
+    const mesh_types = std.enums.values(mo.MeshType);
     const shader_types = std.enums.values(ShaderType);
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },

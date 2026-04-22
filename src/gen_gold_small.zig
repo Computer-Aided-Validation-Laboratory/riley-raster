@@ -9,7 +9,7 @@
 const std = @import("std");
 const gengold = @import("common/gengold.zig");
 const zraster = @import("zraster/zig/zraster.zig");
-const mr = @import("zraster/zig/meshraster.zig");
+const mo = @import("zraster/zig/meshops.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
 
@@ -29,7 +29,7 @@ pub fn main(init: std.process.Init) !void {
     );
     // No explicit deinit needed as we use the arena aa
 
-    const mesh_types = [_]mr.MeshType{
+    const mesh_types = [_]mo.MeshType{
         .tri3,
         .tri6,
         .quad4ibi,

@@ -14,8 +14,8 @@ const uvio = @import("zraster/zig/uvio.zig");
 const Camera = @import("zraster/zig/camera.zig").Camera;
 const CameraOps = @import("zraster/zig/camera.zig").CameraOps;
 const Rotation = @import("zraster/zig/camera.zig").Rotation;
-const MeshInput = @import("zraster/zig/meshraster.zig").MeshInput;
-const mr = @import("zraster/zig/meshraster.zig");
+const MeshInput = @import("zraster/zig/meshops.zig").MeshInput;
+const mo = @import("zraster/zig/meshops.zig");
 const MatSlice = @import("zraster/zig/matslice.zig").MatSlice;
 const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
 const csvio = @import("zraster/zig/csvio.zig");
@@ -71,7 +71,7 @@ pub fn main(init: std.process.Init) !void {
         "data-simple/quad9_twoelems/",
     };
 
-    const mesh_types = [_]mr.MeshType{
+    const mesh_types = [_]mo.MeshType{
         .tri3,
         .tri6,
         .quad4ibi,
@@ -187,7 +187,7 @@ pub fn main(init: std.process.Init) !void {
         };
     }
 
-    mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+    mo.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
 
     const pixel_num = [_]u32{ 1200, 800 };
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };

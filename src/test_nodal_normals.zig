@@ -7,7 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const meshraster = @import("zraster/zig/meshraster.zig");
+const mo = @import("zraster/zig/meshops.zig");
 const meshio = @import("zraster/zig/meshio.zig");
 const report = @import("zraster/zig/report.zig");
 const rops = @import("zraster/zig/rasterops.zig");
@@ -79,7 +79,7 @@ test "Nodal normals are prepared when requested" {
         },
     );
     defer camera.deinit(arena_alloc);
-    const mesh_input = meshraster.MeshInput{
+    const mesh_input = mo.MeshInput{
         .mesh_type = .tri3,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
@@ -90,8 +90,8 @@ test "Nodal normals are prepared when requested" {
         } },
     };
 
-    var prep_meshes = [_]meshraster.MeshPrepared{
-        try meshraster.prepareMesh(
+    var prep_meshes = [_]mo.MeshPrepared{
+        try mo.prepareMesh(
             arena_alloc,
             &mesh_input,
             &sim_data.coords.mat,

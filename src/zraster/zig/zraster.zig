@@ -21,12 +21,12 @@ const rops = @import("rasterops.zig");
 const ElemBBox = rops.ElemBBox;
 const Vec3Slices = rops.Vec3Slices;
 
-const mr = @import("meshraster.zig");
-const MeshType = mr.MeshType;
-const MeshInput = mr.MeshInput;
-const MeshPrepared = mr.MeshPrepared;
-const MeshStaticPrepared = mr.MeshStaticPrepared;
-const FrameMeshPrepared = mr.FrameMeshPrepared;
+const mo = @import("meshops.zig");
+const MeshType = mo.MeshType;
+const MeshInput = mo.MeshInput;
+const MeshPrepared = mo.MeshPrepared;
+const MeshStaticPrepared = mo.MeshStaticPrepared;
+const FrameMeshPrepared = mo.FrameMeshPrepared;
 const shaderops = @import("shaderops.zig");
 const ShaderInput = shaderops.ShaderInput;
 const ShaderPrepared = shaderops.ShaderPrepared;
@@ -194,7 +194,7 @@ fn prepareMeshStatics(
     const mesh_static_prepared = try allocator.alloc(MeshStaticPrepared, meshes.len);
 
     for (meshes, 0..) |mesh, ii| {
-        mesh_static_prepared[ii] = try mr.prepareMeshStatic(allocator, &mesh);
+        mesh_static_prepared[ii] = try mo.prepareMeshStatic(allocator, &mesh);
     }
 
     return mesh_static_prepared;
@@ -571,7 +571,7 @@ fn processFrameJobInternal(
     const time_start_geo = Timestamp.now(io, .awake);
     const arena_alloc = ctx.arena.allocator();
 
-    const geo_res = try mr.prepareFrameMeshes(
+    const geo_res = try mo.prepareFrameMeshes(
         arena_alloc,
         outer_alloc,
         io,

@@ -34,10 +34,10 @@ const common = @import("rasterengine_common.zig");
 const simdops = @import("simdops.zig");
 
 const spec = @import("zraster.zig");
-const mr = @import("meshraster.zig");
-const MeshPrepared = mr.MeshPrepared;
-const MeshType = mr.MeshType;
-const Shader = mr.Shader;
+const mo = @import("meshops.zig");
+const MeshPrepared = mo.MeshPrepared;
+const MeshType = mo.MeshType;
+const Shader = mo.Shader;
 const shaderops = @import("shaderops.zig");
 const NodalPrepared = shaderops.NodalPrepared;
 const TexPrepared = shaderops.TexPrepared;

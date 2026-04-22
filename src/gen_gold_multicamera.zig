@@ -14,7 +14,7 @@ const buildconfig = @import("zraster/zig/buildconfig.zig");
 const cfg = buildconfig.config;
 const Camera = @import("zraster/zig/camera.zig").Camera;
 const iio = @import("zraster/zig/imageio.zig");
-const mr = @import("zraster/zig/meshraster.zig");
+const mo = @import("zraster/zig/meshops.zig");
 const meshio = @import("zraster/zig/meshio.zig");
 const texops = @import("zraster/zig/textureops.zig");
 const uvio = @import("zraster/zig/uvio.zig");
@@ -25,7 +25,7 @@ const simd_on = cfg.simd == .on;
 const RenderCase = struct {
     case_name: []const u8,
     data_dir: []const u8,
-    mesh_type: mr.MeshType,
+    mesh_type: mo.MeshType,
     channels: usize,
     shader: union(enum) {
         nodal_grey,
@@ -125,7 +125,7 @@ pub fn main(init: std.process.Init) !void {
         };
 
         const mesh_input = switch (render_case.shader) {
-            .nodal_grey => mr.MeshInput{
+            .nodal_grey => mo.MeshInput{
                 .mesh_type = render_case.mesh_type,
                 .coords = sim_data.coords,
                 .connect = sim_data.connect,
@@ -147,7 +147,7 @@ pub fn main(init: std.process.Init) !void {
                     .{render_case.data_dir},
                 );
                 const uv_map = try uvio.loadUVMap(aa, io, uv_path);
-                break :blk mr.MeshInput{
+                break :blk mo.MeshInput{
                     .mesh_type = render_case.mesh_type,
                     .coords = sim_data.coords,
                     .connect = sim_data.connect,
@@ -189,7 +189,7 @@ pub fn main(init: std.process.Init) !void {
             aa,
             io,
             &camera_inputs,
-            &[_]mr.MeshInput{mesh_input},
+            &[_]mo.MeshInput{mesh_input},
             config,
             out_dir_path,
             null,

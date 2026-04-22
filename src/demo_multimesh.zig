@@ -14,9 +14,9 @@ const RasterConfig = zraster.RasterConfig;
 const meshio = @import("zraster/zig/meshio.zig");
 const uvio = @import("zraster/zig/uvio.zig");
 const iio = @import("zraster/zig/imageio.zig");
-const mr = @import("zraster/zig/meshraster.zig");
-const MeshType = mr.MeshType;
-const MeshInput = mr.MeshInput;
+const mo = @import("zraster/zig/meshops.zig");
+const MeshType = mo.MeshType;
+const MeshInput = mo.MeshInput;
 const camera_mod = @import("zraster/zig/camera.zig");
 const Rotation = camera_mod.Rotation;
 const Camera = camera_mod.Camera;
@@ -140,7 +140,7 @@ pub fn main(init: std.process.Init) !void {
 
     // 6. Arrange Meshes in a Grid
     // We arrange them in a 5x2 grid with 0.15 spacing
-    mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+    mo.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
 
     // 7. Setup Camera
     // Automatically position camera to fill frame based on mesh layout

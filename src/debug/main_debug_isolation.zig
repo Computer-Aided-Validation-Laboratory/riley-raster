@@ -13,10 +13,10 @@ const MatSlice = @import("zraster/zig/matslice.zig").MatSlice;
 const meshio = @import("zraster/zig/meshio.zig");
 const SimData = meshio.SimData;
 
-const mr = @import("zraster/zig/meshraster.zig");
-const MeshType = mr.MeshType;
-const MeshInput = mr.MeshInput;
-const MeshPrepared = mr.MeshPrepared;
+const mo = @import("zraster/zig/meshops.zig");
+const MeshType = mo.MeshType;
+const MeshInput = mo.MeshInput;
+const MeshPrepared = mo.MeshPrepared;
 
 const Camera = @import("zraster/zig/camera.zig").Camera;
 const CameraOps = @import("zraster/zig/camera.zig").CameraOps;
@@ -123,7 +123,7 @@ pub fn main(init: std.process.Init) !void {
             }
         }
 
-        mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+        mo.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
         const camera = try setupCamera(aa, mesh_inputs);
         defer camera.deinit(aa);
 
@@ -193,7 +193,7 @@ pub fn main(init: std.process.Init) !void {
             }
         }
 
-        mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+        mo.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
         const camera = try setupCamera(aa, mesh_inputs);
         defer camera.deinit(aa);
 

@@ -12,13 +12,13 @@ const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
 const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
 const iio = @import("../zraster/zig/imageio.zig");
 const meshio = @import("../zraster/zig/meshio.zig");
-const mr = @import("../zraster/zig/meshraster.zig");
+const mo = @import("../zraster/zig/meshops.zig");
 const uvio = @import("../zraster/zig/uvio.zig");
 const Camera = @import("../zraster/zig/camera.zig").Camera;
 const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
 const Rotation = @import("../zraster/zig/rotation.zig").Rotation;
 
-pub const default_multimesh_mesh_types = [_]mr.MeshType{
+pub const default_multimesh_mesh_types = [_]mo.MeshType{
     .tri3,
     .tri6,
     .quad4ibi,
@@ -71,7 +71,7 @@ pub fn loadData(
     );
 }
 
-pub fn meshDataName(mesh_type: mr.MeshType) []const u8 {
+pub fn meshDataName(mesh_type: mo.MeshType) []const u8 {
     return switch (mesh_type) {
         .quad4ibi, .quad4newton => "quad4",
         else => @tagName(mesh_type),
@@ -95,7 +95,7 @@ pub fn prepareSingleMeshCase(
     allocator: std.mem.Allocator,
     io: std.Io,
     test_type: []const u8,
-    mesh_type: mr.MeshType,
+    mesh_type: mo.MeshType,
     pixel_num: [2]u32,
     fov_scale: f64,
     data_dir_root: []const u8,
@@ -197,7 +197,7 @@ pub fn initStereoCamerasForCoords(
 
 pub fn initCameraForMeshes(
     allocator: std.mem.Allocator,
-    mesh_inputs: []mr.MeshInput,
+    mesh_inputs: []mo.MeshInput,
     pixel_num: [2]u32,
     fov_scale: f64,
 ) !Camera {
@@ -232,10 +232,10 @@ pub fn buildMultimeshInputs(
     io: std.Io,
     dir_paths: []const []const u8,
     shader_mode: MultimeshShaderMode,
-) ![]mr.MeshInput {
+) ![]mo.MeshInput {
     const sim_datas = try meshio.loadMultiSimData(allocator, io, dir_paths, .{});
     const mesh_inputs = switch (shader_mode) {
-        .nodal => try mr.meshInputFromSimDataSlice(
+        .nodal => try mo.meshInputFromSimDataSlice(
             allocator,
             io,
             sim_datas,
@@ -245,7 +245,7 @@ pub fn buildMultimeshInputs(
             null,
             null,
         ),
-        .texture => try mr.meshInputFromSimDataSlice(
+        .texture => try mo.meshInputFromSimDataSlice(
             allocator,
             io,
             sim_datas,
@@ -256,7 +256,7 @@ pub fn buildMultimeshInputs(
             null,
         ),
     };
-    mr.arrangeMeshSlice(mesh_inputs, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
+    mo.arrangeMeshSlice(mesh_inputs, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
     return mesh_inputs;
 }
 
@@ -329,9 +329,9 @@ pub fn buildMixedMeshInputs(
     io: std.Io,
     dir_paths: []const []const u8,
     texture: iio.Texture(1),
-) ![]mr.MeshInput {
+) ![]mo.MeshInput {
     const sim_datas = try meshio.loadMultiSimData(allocator, io, dir_paths, .{});
-    var mesh_inputs = try allocator.alloc(mr.MeshInput, 10);
+    var mesh_inputs = try allocator.alloc(mo.MeshInput, 10);
 
     for (0..default_multimesh_mesh_types.len) |ii| {
         mesh_inputs[ii] = .{
@@ -374,7 +374,7 @@ pub fn buildMixedMeshInputs(
         };
     }
 
-    mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+    mo.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
     return mesh_inputs;
 }
 
@@ -383,9 +383,9 @@ pub fn buildMixedRgbMeshInputs(
     io: std.Io,
     dir_paths: []const []const u8,
     texture: iio.Texture(3),
-) ![]mr.MeshInput {
+) ![]mo.MeshInput {
     const sim_datas = try meshio.loadMultiSimData(allocator, io, dir_paths, .{});
-    var mesh_inputs = try allocator.alloc(mr.MeshInput, 10);
+    var mesh_inputs = try allocator.alloc(mo.MeshInput, 10);
 
     for (0..default_multimesh_mesh_types.len) |ii| {
         const uv_path = try std.fmt.allocPrint(
@@ -434,7 +434,7 @@ pub fn buildMixedRgbMeshInputs(
         };
     }
 
-    mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+    mo.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
     return mesh_inputs;
 }
 
