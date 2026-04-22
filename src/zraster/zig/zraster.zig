@@ -315,7 +315,7 @@ fn runFrameRaster(
 }
 
 
-fn finaliseFrameframe_ctx(
+fn finaliseFrame(
     frame_ctx: *FrameContext,
 ) !void {
     const nodes_per_elem = calcNodesPerElem(frame_ctx.prep_meshes);
@@ -791,7 +791,7 @@ fn processFrameJobAsync(
         },
     };
 
-    finaliseFrameframe_ctx(&frame_ctx) catch |err| switch (err) {
+    finaliseFrame(&frame_ctx) catch |err| switch (err) {
         else => {
             job.err_state.setFirst(err);
             return;
@@ -842,7 +842,7 @@ fn processFrameJobSerial(
     
     try runFrameRaster(&frame_ctx, raster_threads);
 
-    try finaliseFrameframe_ctx(&frame_ctx);
+    try finaliseFrame(&frame_ctx);
 }
 
 //------------------------------------------------------------------------------------------
