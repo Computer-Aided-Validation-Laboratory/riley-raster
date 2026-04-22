@@ -218,7 +218,6 @@ pub fn main(init: std.process.Init) !void {
     );
     defer camera.deinit(aa);
 
-
     const config_rgb = zraster.RasterConfig{
         .save_opt = .memory,
         .save_opts = &[_]iio.ImageSaveOpts{
@@ -235,6 +234,7 @@ pub fn main(init: std.process.Init) !void {
         mesh_inputs,
         config_rgb,
         out_dir,
+        null,
     )) orelse return error.NoResult;
 
     const gold_dir = "gold-multimesh/allelem_allshade_rgb";

@@ -13,14 +13,11 @@ const iio = @import("../zraster/zig/imageio.zig");
 const uvio = @import("../zraster/zig/uvio.zig");
 const csvio = @import("../zraster/zig/csvio.zig");
 const mr = @import("../zraster/zig/meshraster.zig");
-const rops = @import("../zraster/zig/rasterops.zig");
-const rasterengine = @import("../zraster/zig/rasterengine.zig");
 const Camera = @import("../zraster/zig/camera.zig").Camera;
 const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
 const Rotation = @import("../zraster/zig/camera.zig").Rotation;
 const report = @import("../zraster/zig/report.zig");
 const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
-const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
 const Timestamp = std.Io.Clock.Timestamp;
 const tcfg = @import("testconfig.zig");
 
@@ -275,6 +272,72 @@ pub const BenchOptions = struct {
     return_image: bool = false,
 };
 
+fn calcSaveStrategy(options: BenchOptions) zraster.SaveStrategy {
+    if (options.out_dir_base.len > 0 and options.return_image) {
+        return .both;
+    }
+    if (options.out_dir_base.len > 0) {
+        return .disk;
+    }
+    if (options.return_image) {
+        return .memory;
+    }
+    return .none;
+}
+
+fn calcCaseName(
+    allocator: std.mem.Allocator,
+    etype: mr.MeshType,
+    shader_type: ShaderType,
+    sample_config: TextureSampleConfig,
+) ![]const u8 {
+    if (shader_type == .tex8_grey or shader_type == .tex8_rgb) {
+        return std.fmt.allocPrint(
+            allocator,
+            "{s}_{s}_{s}_{s}",
+            .{
+                @tagName(etype),
+                @tagName(shader_type),
+                @tagName(sample_config.sample),
+                @tagName(sample_config.mode),
+            },
+        );
+    }
+
+    return std.fmt.allocPrint(
+        allocator,
+        "{s}_{s}",
+        .{ @tagName(etype), @tagName(shader_type) },
+    );
+}
+
+fn extractFirstFrameImage(
+    allocator: std.mem.Allocator,
+    image_arr: *const NDArray(f64),
+) !NDArray(f64) {
+    std.debug.assert(image_arr.dims.len == 5);
+    const num_fields = image_arr.dims[2];
+    const rows = image_arr.dims[3];
+    const cols = image_arr.dims[4];
+    var image = try NDArray(f64).initFlat(
+        allocator,
+        &[_]usize{ num_fields, rows, cols },
+    );
+
+    for (0..num_fields) |ff| {
+        for (0..rows) |rr| {
+            for (0..cols) |cc| {
+                image.set(
+                    &[_]usize{ ff, rr, cc },
+                    image_arr.get(&[_]usize{ 0, 0, ff, rr, cc }),
+                );
+            }
+        }
+    }
+
+    return image;
+}
+
 pub fn runBenchmark(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -369,14 +432,14 @@ fn runBenchmarkInternal(
             num_out_fields = 1;
             shader = .{ .nodal = .{
                 .field = .{ .array = field_raw, .array_mem = field_raw.slice },
-                .scaling = .auto,
+                .scaling = .none,
             } };
         },
         .nodal_rgb => {
             num_out_fields = 3;
             shader = .{ .nodal = .{
                 .field = .{ .array = field_raw, .array_mem = field_raw.slice },
-                .scaling = .auto,
+                .scaling = .none,
             } };
         },
         .tex8_grey => {
@@ -436,43 +499,64 @@ fn runBenchmarkInternal(
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
         .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
         .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
+        .save_strategy = calcSaveStrategy(options),
+        .image_save_opts = options.save_opts orelse &[_]iio.ImageSaveOpts{
+            .{
+                .format = .bmp,
+                .bits = 8,
+                .scaling = .auto,
+                .channels = num_out_fields,
+            },
+            .{
+                .format = .fimg,
+                .bits = null,
+                .scaling = .none,
+                .channels = num_out_fields,
+            },
+        },
         .report = report_mode,
     };
-    const transformed_mesh = try mr.prepareMesh(
-        aa,
-        &mesh_input,
-        &sim_data.coords.mat,
-        null,
-    );
 
-    var image_out_arr = try NDArray(f64).initFlat(
-        aa,
-        &[_]usize{ num_out_fields, pixel_num[1], pixel_num[0] },
-    );
+    const case_name = try calcCaseName(aa, etype, shader_type, sample_config);
+    var out_dir_h: ?std.Io.Dir = null;
+    if (options.out_dir_base.len > 0) {
+        const out_path = try std.fs.path.join(
+            aa,
+            &[_][]const u8{ options.out_dir_base, case_name },
+        );
+        const cwd = std.Io.Dir.cwd();
+        cwd.createDir(io, options.out_dir_base, .default_dir) catch |err| {
+            if (err != error.PathAlreadyExists) return err;
+        };
+        cwd.createDir(io, out_path, .default_dir) catch |err| {
+            if (err != error.PathAlreadyExists) return err;
+        };
+        out_dir_h = try cwd.openDir(io, out_path, .{});
+    }
+    defer if (out_dir_h) |*out_dir| out_dir.close(io);
 
-    var report_log: report.LogType(report_mode) = switch (report_mode) {
-        .off => .{},
-        .bench => .{},
-        .full_stats => unreachable,
-    };
+    var bench_capture_storage: [1]zraster.FrameBenchCapture = undefined;
+    const bench_capture = if (report_mode == .bench)
+        bench_capture_storage[0..]
+    else
+        null;
 
     const e2e_start = Timestamp.now(io, .awake);
-    var meshes = [_]mr.MeshPrepared{transformed_mesh};
-    try zraster.rasterSceneInternal(
-        aa,
+    var image_arr = try zraster.rasterAllFrames(
+        outer_alloc,
         io,
-        &camera,
-        0,
-        &meshes,
-        &image_out_arr,
-        config.tile_size,
-        config.max_raster_threads_per_frame,
-        report_mode,
-        &report_log,
+        &[_]Camera{camera},
+        &[_]mr.MeshInput{mesh_input},
+        config,
+        out_dir_h,
+        bench_capture,
     );
     const e2e_end = Timestamp.now(io, .awake);
 
-    const bench_log = report.getBenchLog(report_mode, &report_log);
+    const bench_log = if (report_mode == .bench)
+        &bench_capture_storage[0].bench_log
+    else
+        null;
     const e2e_ms = @as(f64, @floatFromInt(
         e2e_start.durationTo(e2e_end).raw.nanoseconds,
     )) / 1e6;
@@ -504,50 +588,21 @@ fn runBenchmarkInternal(
             .mnodes_sec = 0.0,
             .mops_sec = 0.0,
         };
+    const image_final = if (options.return_image) blk: {
+        var images = image_arr orelse return error.NoResult;
+        image_arr = null;
+        defer {
+            outer_alloc.free(images.slice);
+            images.deinit(outer_alloc);
+        }
+        break :blk try extractFirstFrameImage(outer_alloc, &images);
+    } else null;
 
-    // Save one frame for inspection if out_dir_base is provided
-    if (options.out_dir_base.len > 0) {
-        const out_name = if (shader_type == .tex8_grey or shader_type == .tex8_rgb)
-            try std.fmt.allocPrint(
-                aa,
-                "{s}_{s}_{s}_{s}",
-                .{ @tagName(etype), @tagName(shader_type), @tagName(sample_config.sample), @tagName(sample_config.mode) },
-            )
-        else
-            try std.fmt.allocPrint(
-                aa,
-                "{s}_{s}",
-                .{ @tagName(etype), @tagName(shader_type) },
-            );
-        const out_path = try std.fs.path.join(aa, &[_][]const u8{ options.out_dir_base, out_name });
-        const cwd = std.Io.Dir.cwd();
-        cwd.createDir(io, options.out_dir_base, .default_dir) catch |err| {
-            if (err != error.PathAlreadyExists) return err;
-        };
-        cwd.createDir(io, out_path, .default_dir) catch |err| {
-            if (err != error.PathAlreadyExists) return err;
-        };
-        var out_dir_h = try cwd.openDir(io, out_path, .{});
-        defer out_dir_h.close(io);
-
-        const active_save_opts = options.save_opts orelse &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = num_out_fields },
-            .{ .format = .fimg, .bits = null, .scaling = .none, .channels = num_out_fields },
-        };
-
-        try iio.saveImages(
-            io,
-            out_dir_h,
-            0,
-            0,
-            num_out_fields,
-            pixel_num,
-            &image_out_arr,
-            active_save_opts,
-        );
+    if (image_arr) |images| {
+        outer_alloc.free(images.slice);
+        var images_mut = images;
+        images_mut.deinit(outer_alloc);
     }
-
-    const image_final = if (options.return_image) try image_out_arr.dupe(outer_alloc) else null;
 
     return .{
         .e2e_ms = e2e_ms,

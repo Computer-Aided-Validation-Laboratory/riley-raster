@@ -13,9 +13,8 @@ const tests = @import("common/tests.zig");
 const mr = @import("zraster/zig/meshraster.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
+const tcfg = @import("common/testconfig.zig");
 
-pub const REL_TOL: f64 = 2.0e-10;
-pub const ABS_TOL: f64 = 1.0e-11;
 const simd_on = buildconfig.config.simd == .on;
 
 test "MIN Suite: sphere200 and multimesh" {
@@ -59,6 +58,7 @@ test "MIN Suite: sphere200 and multimesh" {
         .{ .sample = .quintic_bspline, .mode = .direct },
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
+    var total_fails: usize = 0;
 
     if (simd_on) {
         std.debug.print("\nRunning MIN Suite sphere200 tests...\n", .{});
@@ -150,8 +150,8 @@ test "MIN Suite: sphere200 and multimesh" {
                             0,
                             channels,
                             gold_fname,
-                            REL_TOL,
-                            ABS_TOL,
+                            tcfg.REL_TOL,
+                            tcfg.ABS_TOL,
                         ) catch |err| {
                             try tests.saveComparisonArtifactsFromResult(
                                 allocator,
@@ -165,6 +165,10 @@ test "MIN Suite: sphere200 and multimesh" {
                                 gold_fname,
                                 channels,
                             );
+                            if (err == error.PixelMismatch) {
+                                total_fails += 1;
+                                continue;
+                            }
                             return err;
                         };
                     }
@@ -187,33 +191,56 @@ test "MIN Suite: sphere200 and multimesh" {
         "data-min/quad9_twoelems/",
     };
 
-    try tests.runMultimeshTestExt(
+    tests.runMultimeshTestExt(
         allocator,
         io,
         gold_dir,
         &multi_dir_paths,
         pixel_num_multi,
-        REL_TOL,
-        ABS_TOL,
-    );
-    try tests.runMultimeshMixedTestExt(
+        tcfg.REL_TOL,
+        tcfg.ABS_TOL,
+    ) catch |err| {
+        total_fails += 1;
+        if (err != error.PixelMismatch) {
+            return err;
+        }
+    };
+    tests.runMultimeshMixedTestExt(
         allocator,
         io,
         gold_dir ++ "/allelem_allshade",
         &multi_dir_paths,
         pixel_num_multi,
-        REL_TOL,
-        ABS_TOL,
-    );
-    try tests.runMultimeshMixedRGBTestExt(
+        tcfg.REL_TOL,
+        tcfg.ABS_TOL,
+    ) catch |err| {
+        total_fails += 1;
+        if (err != error.PixelMismatch) {
+            return err;
+        }
+    };
+    tests.runMultimeshMixedRGBTestExt(
         allocator,
         io,
         gold_dir ++ "/allelem_allshade_rgb",
         &multi_dir_paths,
         pixel_num_multi,
-        REL_TOL,
-        ABS_TOL,
-    );
+        tcfg.REL_TOL,
+        tcfg.ABS_TOL,
+    ) catch |err| {
+        total_fails += 1;
+        if (err != error.PixelMismatch) {
+            return err;
+        }
+    };
+
+    if (total_fails != 0) {
+        std.debug.print(
+            "MIN Suite found {d} failing cases.\n",
+            .{total_fails},
+        );
+        return error.TestUnexpectedResult;
+    }
 
     std.debug.print("MIN Suite tests passed.\n", .{});
 }

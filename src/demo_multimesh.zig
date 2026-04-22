@@ -190,6 +190,7 @@ pub fn main(init: std.process.Init) !void {
         mesh_inputs,
         config,
         out_dir,
+        null,
     );
 
     if (images) |img| {

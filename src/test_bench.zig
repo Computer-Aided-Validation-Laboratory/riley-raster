@@ -149,24 +149,17 @@ test "Unified Benchmark Tests" {
                             pixel_num,
                             texture_grey,
                             texture_rgb,
-                            .{ .out_dir_base = cc.out_dir },
+                            .{
+                                .out_dir_base = cc.out_dir,
+                                .return_image = true,
+                                .save_opts = &[_]iio.ImageSaveOpts{},
+                            },
                         );
-                        result.deinit(outer_alloc);
 
                         // 2. Map filenames
                         const is_rgb = (st == .nodal_rgb or st == .tex8_rgb);
                         const channels: usize = if (is_rgb) 3 else 1;
 
-                        const test_dir_case = try std.fs.path.join(aa, &[_][]const u8{ cc.out_dir, case_name });
-                        const test_path = try testcommon.findGoldPath(
-                            aa,
-                            io,
-                            test_dir_case,
-                            0,
-                            0,
-                            0,
-                            is_rgb,
-                        );
                         const gold_dir_case = try std.fs.path.join(aa, &[_][]const u8{ cc.gold_dir, case_name });
                         const gold_path = try testcommon.findGoldPath(
                             aa,
@@ -178,78 +171,48 @@ test "Unified Benchmark Tests" {
                             is_rgb,
                         );
 
-                        // 3. Load and Compare
-                        const t_arr_res = common.loadNDArray(
+                        // 3. Compare in-memory result to gold
+                        testcommon.compareNDArrayToGold(
                             outer_alloc,
                             io,
-                            test_path,
+                            &result.image.?,
+                            0,
+                            0,
+                            0,
                             channels,
-                            false,
-                        );
-                        if (t_arr_res) |t_arr| {
-                            var t_mut = t_arr;
-                            defer {
-                                outer_alloc.free(t_mut.slice);
-                                t_mut.deinit(outer_alloc);
-                            }
-
-                            const g_arr_res = common.loadNDArray(
-                                outer_alloc,
-                                io,
-                                gold_path,
-                                channels,
-                                false,
-                            );
-                            if (g_arr_res) |g_arr| {
-                                var g_mut = g_arr;
-                                defer {
-                                    outer_alloc.free(g_mut.slice);
-                                    g_mut.deinit(outer_alloc);
-                                }
-
-                                var diff_count: usize = 0;
-                                for (t_mut.slice, 0..) |v_t, ii| {
-                                    if (@abs(v_t - g_mut.slice[ii]) > tcfg.REL_TOL) {
-                                        diff_count += 1;
-                                    }
-                                }
-
-                                if (diff_count == 0) {
-                                    std.debug.print("MATCHED\n", .{});
-                                } else {
-                                    std.debug.print(
-                                        "MISMATCH! ({d} px)\n",
-                                        .{diff_count},
-                                    );
-                                    const fail_dir_name = try std.fmt.allocPrint(
-                                        aa,
-                                        "bench_{s}_{s}{s}",
-                                        .{ cc.name, case_name, impl_suffix },
-                                    );
-                                    try testcommon.saveComparisonArtifactsFromImages(
-                                        aa,
-                                        io,
-                                        "fails",
-                                        fail_dir_name,
-                                        &t_mut,
-                                        &g_mut,
-                                    );
-                                    total_fails += 1;
-                                }
-                            } else |err| {
-                                std.debug.print(
-                                    "GOLD LOAD ERROR: {s} ({s})\n",
-                                    .{ gold_path, @errorName(err) },
+                            gold_path,
+                            tcfg.REL_TOL,
+                            tcfg.ABS_TOL,
+                        ) catch |err| {
+                            if (err == error.PixelMismatch) {
+                                std.debug.print("MISMATCH!\n", .{});
+                                const fail_dir_name = try std.fmt.allocPrint(
+                                    aa,
+                                    "bench_{s}_{s}{s}",
+                                    .{ cc.name, case_name, impl_suffix },
+                                );
+                                try testcommon.saveComparisonArtifactsFromResult(
+                                    aa,
+                                    io,
+                                    "fails",
+                                    fail_dir_name,
+                                    &result.image.?,
+                                    0,
+                                    0,
+                                    0,
+                                    gold_path,
+                                    channels,
                                 );
                                 total_fails += 1;
+                                result.deinit(outer_alloc);
+                                continue;
                             }
-                        } else |err| {
-                            std.debug.print(
-                                "TEST LOAD ERROR: {s} ({s})\n",
-                                .{ test_path, @errorName(err) },
-                            );
-                            total_fails += 1;
-                        }
+                            result.deinit(outer_alloc);
+                            return err;
+                        };
+
+                        std.debug.print("MATCHED\n", .{});
+                        result.deinit(outer_alloc);
                     }
                 }
             }

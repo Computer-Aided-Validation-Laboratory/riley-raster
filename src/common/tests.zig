@@ -497,11 +497,37 @@ fn loadNDArrayFromGold(
     channels: usize,
 ) !NDArray(f64) {
     if (std.mem.endsWith(u8, path, ".fimg")) {
-        const array = try iio.loadFIMG(allocator, io, path);
+        var array = try iio.loadFIMG(allocator, io, path);
+        errdefer {
+            allocator.free(array.slice);
+            array.deinit(allocator);
+        }
+
         if (array.dims[0] != channels) {
             return error.ChannelMismatch;
         }
-        return array;
+
+        const rows = array.dims[1];
+        const cols = array.dims[2];
+        var image_packed = try NDArray(f64).initFlat(
+            allocator,
+            &[_]usize{ rows, cols, channels },
+        );
+
+        for (0..rows) |rr| {
+            for (0..cols) |cc| {
+                for (0..channels) |ch| {
+                    image_packed.set(
+                        &[_]usize{ rr, cc, ch },
+                        array.get(&[_]usize{ ch, rr, cc }),
+                    );
+                }
+            }
+        }
+
+        allocator.free(array.slice);
+        array.deinit(allocator);
+        return image_packed;
     }
     return csvio.loadPackedCsv2D(allocator, io, path, channels);
 }
@@ -762,6 +788,7 @@ pub fn runTestInternal(
                 &[_]MeshInput{mesh_input},
                 config,
                 null,
+                null,
             )) orelse return error.NoResult;
 
             defer aa.free(result.slice);
@@ -853,6 +880,7 @@ pub fn runTestInternal(
                     &[_]Camera{prepared.camera},
                     &[_]MeshInput{mesh_input},
                     config,
+                    null,
                     null,
                 )) orelse return error.NoResult;
 
@@ -971,6 +999,7 @@ pub fn runMultimeshTestExt(
             &[_]Camera{camera},
             mesh_inputs,
             config,
+            null,
             null,
         )) orelse return error.NoResult;
 
@@ -1095,6 +1124,7 @@ pub fn runMultimeshMixedTestExt(
         mesh_inputs,
         config,
         null,
+        null,
     )) orelse return error.NoResult;
 
     const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
@@ -1203,6 +1233,7 @@ pub fn runMultimeshMixedRGBTestExt(
         &[_]Camera{camera},
         mesh_inputs,
         config_rgb,
+        null,
         null,
     )) orelse return error.NoResult;
 

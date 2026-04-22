@@ -51,6 +51,7 @@ pub fn renderAndSave(
         meshes,
         config,
         out_dir,
+        null,
     );
     if (images) |img| {
         outer_alloc.free(img.slice);
@@ -214,6 +215,7 @@ pub fn runMultimeshGenerationExt(
             mesh_inputs,
             config,
             out_dir,
+            null,
         );
         if (images) |img| {
             aa.free(img.slice);
@@ -284,6 +286,7 @@ pub fn runMultimeshMixedGenerationExt(
         mesh_inputs,
         config,
         out_dir,
+        null,
     );
     if (images) |img| {
         aa.free(img.slice);
@@ -344,19 +347,19 @@ pub fn runMultimeshMixedRGBGenerationExt(
     defer camera_rgb.deinit(aa);
 
     var config_rgb = config;
-    if (config_rgb.save_opts.len == 0) {
-        config_rgb.save_opts = &[_]iio.ImageSaveOpts{
+    if (config_rgb.image_save_opts.len == 0) {
+        config_rgb.image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = 3 },
             .{ .format = .fimg, .bits = null, .scaling = .none, .channels = 3 },
         };
     } else {
         // If save_opts are provided, ensure they use 3 channels for RGB
-        const opts_rgb = try aa.alloc(iio.ImageSaveOpts, config_rgb.save_opts.len);
-        for (config_rgb.save_opts, 0..) |opt, ii| {
+        const opts_rgb = try aa.alloc(iio.ImageSaveOpts, config_rgb.image_save_opts.len);
+        for (config_rgb.image_save_opts, 0..) |opt, ii| {
             opts_rgb[ii] = opt;
             opts_rgb[ii].channels = 3;
         }
-        config_rgb.save_opts = opts_rgb;
+        config_rgb.image_save_opts = opts_rgb;
     }
 
     var out_dir = try orch.openDirEnsured(io, gold_dir);
@@ -370,5 +373,6 @@ pub fn runMultimeshMixedRGBGenerationExt(
         mesh_inputs,
         config_rgb,
         out_dir,
+        null,
     );
 }

@@ -143,6 +143,7 @@ pub fn main(init: std.process.Init) !void {
             mesh_inputs,
             config,
             out_dir,
+            null,
         );
         // Rename frame_0_field_0.bmp to texture_only.bmp manually if needed,
         // but for now it's in debug dir.
@@ -216,6 +217,7 @@ pub fn main(init: std.process.Init) !void {
             mesh_inputs,
             config,
             out_dir,
+            null,
         );
     }
 

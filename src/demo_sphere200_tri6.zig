@@ -134,6 +134,7 @@ pub fn main(init: std.process.Init) !void {
         &meshes,
         config,
         out_dir,
+        null,
     );
 
     if (images) |img| {

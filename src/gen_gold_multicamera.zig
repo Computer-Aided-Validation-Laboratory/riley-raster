@@ -194,6 +194,7 @@ pub fn main(init: std.process.Init) !void {
             &[_]mr.MeshInput{mesh_input},
             config,
             out_dir,
+            null,
         );
     }
 

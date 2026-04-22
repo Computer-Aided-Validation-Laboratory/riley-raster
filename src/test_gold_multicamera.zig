@@ -196,6 +196,7 @@ test "Multicamera duplicate sphere200 cameras match each other" {
         &[_]mr.MeshInput{mesh_input},
         config,
         null,
+        null,
     )) orelse return error.NoResult;
     defer aa.free(result.slice);
 
@@ -362,6 +363,7 @@ test "Sphere200 multicamera gold tests" {
             &cameras,
             &[_]mr.MeshInput{mesh_input},
             config,
+            null,
             null,
         )) orelse return error.NoResult;
         defer aa.free(result.slice);
