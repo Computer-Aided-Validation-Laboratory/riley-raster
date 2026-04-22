@@ -517,6 +517,15 @@ fn runBenchmarkInternal(
         .report = report_mode,
     };
 
+    if (options.out_dir_base.len > 0) {
+        const cwd = std.Io.Dir.cwd();
+        cwd.createDir(
+            io,
+            options.out_dir_base,
+            .default_dir,
+        ) catch |err| if (err != error.PathAlreadyExists) return err;
+    }
+
     const case_name = try calcCaseName(aa, etype, shader_type, sample_config);
     const out_path = if (options.out_dir_base.len > 0)
         try std.fs.path.join(
@@ -544,30 +553,27 @@ fn runBenchmarkInternal(
     );
     const e2e_end = Timestamp.now(io, .awake);
 
-    const bench_log = if (report_mode == .bench)
-        &bench_capture_storage[0].bench_log
-    else
-        null;
     const e2e_ms = @as(f64, @floatFromInt(
         e2e_start.durationTo(e2e_end).raw.nanoseconds,
     )) / 1e6;
-    const geom_ms = if (bench_log) |bl|
-        (bl.pipe_times.geometry_prep + bl.pipe_times.tile_overlap) / 1e6
+    const geom_ms = if (report_mode == .bench)
+        (bench_capture_storage[0].bench_log.pipe_times.geometry_prep +
+            bench_capture_storage[0].bench_log.pipe_times.tile_overlap) / 1e6
     else
         0.0;
-    const raster_ms = if (bench_log) |bl|
-        bl.pipe_times.raster_loop / 1e6
+    const raster_ms = if (report_mode == .bench)
+        bench_capture_storage[0].bench_log.pipe_times.raster_loop / 1e6
     else
         0.0;
     const fps = 1000.0 / e2e_ms;
 
-    const metrics = if (bench_log) |bl|
+    const metrics = if (report_mode == .bench)
         calcMetrics(
             etype,
             pixel_num,
             camera.sub_sample,
-            bl.pipe_times,
-            bl.*,
+            bench_capture_storage[0].bench_log.pipe_times,
+            bench_capture_storage[0].bench_log,
         )
     else
         CalculatedMetrics{

@@ -239,7 +239,7 @@ fn calcPhaseThreadCap(
         norm_cap = phase_cap;
     } 
 
-    return @min(total_threads, norm_cap;
+    return @min(total_threads, norm_cap);
 }
 
 fn calcFramesInFlight(

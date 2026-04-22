@@ -35,7 +35,7 @@ pub fn main(init: std.process.Init) !void {
     );
     defer texture_rgb.deinit(outer_alloc);
 
-    const out_dir_base = "out-sphere2000";
+    const out_dir_base = "out-bench-sphere2000";
     const pixel_num = [_]u32{ 800, 500 };
     const runs = 10;
 
@@ -115,41 +115,39 @@ pub fn main(init: std.process.Init) !void {
                 var mops_vals = try outer_alloc.alloc(f64, runs);
                 defer outer_alloc.free(mops_vals);
 
-                for (0..runs) |_| {
-                    var data_dir_buf: [256]u8 = undefined;
-                    const data_dir = try std.fmt.bufPrint(
-                        &data_dir_buf,
-                        "data-bench/{s}_sphere2000",
-                        .{@tagName(mt)},
+                var data_dir_buf: [256]u8 = undefined;
+                const data_dir = try std.fmt.bufPrint(
+                    &data_dir_buf,
+                    "data-bench/{s}_sphere2000",
+                    .{@tagName(mt)},
+                );
+                for (0..runs) |rr| {
+                    var res = try common.runBenchmark(
+                        outer_alloc,
+                        io,
+                        mt,
+                        st,
+                        sc,
+                        data_dir,
+                        pixel_num,
+                        texture_grey,
+                        texture_rgb,
+                        .{ .out_dir_base = if (rr == 0) out_dir_base else "" },
                     );
-                    for (0..runs) |rr| {
-                        var res = try common.runBenchmark(
-                            outer_alloc,
-                            io,
-                            mt,
-                            st,
-                            sc,
-                            data_dir,
-                            pixel_num,
-                            texture_grey,
-                            texture_rgb,
-                            .{ .out_dir_base = if (rr == 0) out_dir_base else "" },
-                        );
-                        defer res.deinit(outer_alloc);
+                    defer res.deinit(outer_alloc);
 
-                        e2e_times[rr] = res.e2e_ms;
-                        geom_times[rr] = res.geom_ms;
-                        raster_times[rr] = res.raster_ms;
-                        fps_vals[rr] = res.fps;
+                    e2e_times[rr] = res.e2e_ms;
+                    geom_times[rr] = res.geom_ms;
+                    raster_times[rr] = res.raster_ms;
+                    fps_vals[rr] = res.fps;
 
-                        mpx_vals[rr] = res.metrics.mpx_sec;
-                        msubpx_vals[rr] = res.metrics.msubpx_sec;
-                        mshades_vals[rr] = res.metrics.mshades_sec;
-                        msubshades_vals[rr] = res.metrics.msubshades_sec;
-                        melems_vals[rr] = res.metrics.melems_sec;
-                        mnodes_vals[rr] = res.metrics.mnodes_sec;
-                        mops_vals[rr] = res.metrics.mops_sec;
-                    }
+                    mpx_vals[rr] = res.metrics.mpx_sec;
+                    msubpx_vals[rr] = res.metrics.msubpx_sec;
+                    mshades_vals[rr] = res.metrics.mshades_sec;
+                    msubshades_vals[rr] = res.metrics.msubshades_sec;
+                    melems_vals[rr] = res.metrics.melems_sec;
+                    mnodes_vals[rr] = res.metrics.mnodes_sec;
+                    mops_vals[rr] = res.metrics.mops_sec;
                 }
 
                 try stats_list.append(outer_alloc, .{
