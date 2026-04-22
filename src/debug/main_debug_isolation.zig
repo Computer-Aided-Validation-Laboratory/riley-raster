@@ -133,10 +133,11 @@ pub fn main(init: std.process.Init) !void {
                 .{ .format = .bmp, .bits = 8, .scaling = .auto },
             },
         };
+        const camera_input = camera.toInput();
         _ = try zraster.rasterAllFrames(
             aa,
             io,
-            &[_]Camera{camera},
+            &[_]@TypeOf(camera_input){camera_input},
             mesh_inputs,
             config,
             "out-bench-multimesh-debug",
@@ -207,10 +208,11 @@ pub fn main(init: std.process.Init) !void {
         };
         // This will overwrite frame_0_field_0.bmp if we are not careful.
         // In this simple script it's fine, we'll see the second run results.
+        const camera_input = camera.toInput();
         _ = try zraster.rasterAllFrames(
             aa,
             io,
-            &[_]Camera{camera},
+            &[_]@TypeOf(camera_input){camera_input},
             mesh_inputs,
             config,
             out_dir,

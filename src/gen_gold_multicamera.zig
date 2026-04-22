@@ -119,6 +119,10 @@ pub fn main(init: std.process.Init) !void {
             10.0,
         );
         defer for (cameras) |cam| cam.deinit(aa);
+        const camera_inputs = [_]@TypeOf(cameras[0].toInput()){
+            cameras[0].toInput(),
+            cameras[1].toInput(),
+        };
 
         const mesh_input = switch (render_case.shader) {
             .nodal_grey => mr.MeshInput{
@@ -175,6 +179,7 @@ pub fn main(init: std.process.Init) !void {
         const out_dir_path = try std.fs.path.join(
             aa,
             &[_][]const u8{ out_root, render_case.case_name },
+        );
         std.debug.print(
             "Rendering multicamera gold: {s}/{s}\n",
             .{ out_root, render_case.case_name },
@@ -183,7 +188,7 @@ pub fn main(init: std.process.Init) !void {
         _ = try zraster.rasterAllFrames(
             aa,
             io,
-            &cameras,
+            &camera_inputs,
             &[_]mr.MeshInput{mesh_input},
             config,
             out_dir_path,

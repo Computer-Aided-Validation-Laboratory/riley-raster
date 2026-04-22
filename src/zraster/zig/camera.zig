@@ -161,6 +161,19 @@ pub const CameraPrepared = struct {
         self.ideal_pixel_centers.deinit(allocator);
     }
 
+    pub fn toInput(self: *const CameraPrepared) CameraInput {
+        return .{
+            .pixels_num = self.pixels_num,
+            .pixels_size = self.pixels_size,
+            .pos_world = self.pos_world,
+            .rot_world = self.rot_world,
+            .roi_cent_world = self.roi_cent_world,
+            .focal_length = self.focal_length,
+            .sub_sample = self.sub_sample,
+            .distortion = self.distortion,
+        };
+    }
+
     pub fn brownConradyForward(
         x: f64,
         y: f64,

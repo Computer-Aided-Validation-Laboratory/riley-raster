@@ -14,7 +14,8 @@ const NDArray = @import("ndarray.zig").NDArray;
 
 const sliceops = @import("sliceops.zig");
 
-const Camera = @import("camera.zig").Camera;
+const CameraInput = @import("camera.zig").CameraInput;
+const CameraPrepared = @import("camera.zig").CameraPrepared;
 
 const rops = @import("rasterops.zig");
 const ElemBBox = rops.ElemBBox;
@@ -42,6 +43,7 @@ const rasterengine = @import("rasterengine.zig");
 const report = @import("report.zig");
 const ReportMode = report.ReportMode;
 const BenchLog = report.BenchLog;
+const EndToEndTimes = report.EndToEndTimes;
 const FullStatsOpts = report.FullStatsOpts;
 
 pub const RasterConfig = struct {
@@ -201,7 +203,7 @@ fn prepareMeshStatics(
 fn initImagesArray(
     outer_alloc: std.mem.Allocator,
     config: RasterConfig,
-    cameras: []const Camera,
+    cameras: []const CameraPrepared,
     num_time: usize,
     num_fields: u8,
 ) !?NDArray(f64) {
@@ -257,7 +259,7 @@ fn calcFramesInFlight(
 
 fn initFrameReportStorage(
     outer_alloc: std.mem.Allocator,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     config: RasterConfig,
 ) !FrameReportStorage {
     return switch (config.report) {
@@ -299,7 +301,7 @@ const FrameContext = struct {
     frame_arr: NDArray(f64) = undefined,
 
     report_storage: FrameReportStorage = .{ .off = .{} },
-    pipe_times: report.PipeTimes = .{},
+    frame_times: report.FrameTimes = .{},
 
     fn init(
         outer_alloc: std.mem.Allocator,
@@ -388,7 +390,7 @@ fn rasterFrame(
     );
 
     const time_end_loop = Timestamp.now(io, .awake);
-    ctx.pipe_times.raster_loop = @floatFromInt(
+    ctx.frame_times.raster_loop = @floatFromInt(
         time_start_loop.durationTo(time_end_loop).raw.nanoseconds,
     );
 }
@@ -424,7 +426,7 @@ fn publishFrameResults(
     switch (input.config.report) {
         .off => {},
         .bench => {
-            ctx.report_storage.bench.pipe_times = ctx.pipe_times;
+            ctx.report_storage.bench.frame_times = ctx.frame_times;
             if (input.bench_capture) |capture| {
                 const capture_idx = calcBenchCaptureIdx(
                     input.cameras_num,
@@ -440,7 +442,7 @@ fn publishFrameResults(
             try report.standardReport(
                 io,
                 input.camera,
-                ctx.pipe_times,
+                ctx.frame_times,
                 ctx.total_elems_num,
                 ctx.total_elems_in_image,
                 nodes_per_elem,
@@ -448,7 +450,7 @@ fn publishFrameResults(
             );
         },
         .full_stats => {
-            ctx.report_storage.full_stats.bench.pipe_times = ctx.pipe_times;
+            ctx.report_storage.full_stats.bench.frame_times = ctx.frame_times;
             try ctx.report_storage.full_stats.saveFrameReport(
                 io,
                 outer_alloc,
@@ -493,7 +495,7 @@ fn sceneTileOverlapBinning(
         ctx.elem_bboxes_by_mesh,
     );
     const time_end_overlap = Timestamp.now(io, .awake);
-    ctx.pipe_times.tile_overlap = @floatFromInt(
+    ctx.frame_times.tile_overlap = @floatFromInt(
         time_start_overlap.durationTo(time_end_overlap).raw.nanoseconds,
     );
 }
@@ -532,7 +534,7 @@ fn runFrameRaster(
 //------------------------------------------------------------------------------------------
 // 3. Process: frame jobs for a given camera and frame
 const FrameInput = struct {
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     camera_idx: usize,
     frame_idx: usize,
     num_fields: u8,
@@ -588,7 +590,7 @@ fn processFrameJobInternal(
     ctx.total_elems_in_image = geo_res.total_elems_in_image;
 
     const time_end_geo = Timestamp.now(io, .awake);
-    ctx.pipe_times.geometry_prep = @floatFromInt(
+    ctx.frame_times.geometry_prep = @floatFromInt(
         time_start_geo.durationTo(time_end_geo).raw.nanoseconds,
     );
 
@@ -611,12 +613,12 @@ fn processFrameJobInternal(
     const time_start_save = Timestamp.now(io, .awake);
     try finaliseFrame(io, &input, &ctx);
     const time_end_save = Timestamp.now(io, .awake);
-    ctx.pipe_times.save_frame = @floatFromInt(
+    ctx.frame_times.save_frame = @floatFromInt(
         time_start_save.durationTo(time_end_save).raw.nanoseconds,
     );
 
     const time_end_frame = Timestamp.now(io, .awake);
-    ctx.pipe_times.total_time = @floatFromInt(
+    ctx.frame_times.total_time = @floatFromInt(
         time_start_frame.durationTo(time_end_frame).raw.nanoseconds,
     );
 
@@ -653,7 +655,7 @@ fn processFrameJobSerial(
 fn dispatchSerialFrameJobs(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    cameras: []const Camera,
+    cameras: []const CameraPrepared,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
     num_time: usize,
@@ -695,7 +697,7 @@ fn dispatchSerialFrameJobs(
 fn dispatchOfflineFrameJobs(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    cameras: []const Camera,
+    cameras: []const CameraPrepared,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
     num_time: usize,
@@ -768,7 +770,7 @@ fn dispatchOfflineFrameJobs(
 fn dispatchInOrderFrameJobs(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    cameras: []const Camera,
+    cameras: []const CameraPrepared,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
     num_time: usize,
@@ -827,12 +829,28 @@ fn dispatchInOrderFrameJobs(
     }
 }
 
+fn prepareCameras(
+    outer_alloc: std.mem.Allocator,
+    camera_inputs: []const CameraInput,
+) ![]CameraPrepared {
+    const cameras = try outer_alloc.alloc(CameraPrepared, camera_inputs.len);
+    for (camera_inputs, 0..) |camera_input, cc| {
+        cameras[cc] = CameraPrepared.init(outer_alloc, camera_input) catch |err| {
+            for (0..cc) |pp| cameras[pp].deinit(outer_alloc);
+            outer_alloc.free(cameras);
+            return err;
+        };
+    }
+
+    return cameras;
+}
+
 //==========================================================================================
 // 1. Main entry point function to the rasteriser
 pub fn rasterAllFrames(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    cameras: []const Camera,
+    camera_inputs: []const CameraInput,
     meshes: []const MeshInput,
     config: RasterConfig,
     out_dir_path: ?[]const u8,
@@ -853,6 +871,12 @@ pub fn rasterAllFrames(
     var static_arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer static_arena.deinit();
     const static_alloc = static_arena.allocator();
+
+    const cameras = try prepareCameras(outer_alloc, camera_inputs);
+    defer {
+        for (cameras) |camera| camera.deinit(outer_alloc);
+        outer_alloc.free(cameras);
+    }
 
     const num_time = countFrames(meshes);
     const num_fields = countOutputFields(meshes);
@@ -876,6 +900,13 @@ pub fn rasterAllFrames(
         num_time,
         num_fields,
     );
+    const time_end_setup = Timestamp.now(io, .awake);
+    var end_to_end_times = EndToEndTimes{
+        .setup_time = @floatFromInt(
+            time_start_render.durationTo(time_end_setup).raw.nanoseconds,
+        ),
+    };
+    const time_start_dispatch = Timestamp.now(io, .awake);
 
     if (config.total_threads == 0) {
         try dispatchSerialFrameJobs(
@@ -893,13 +924,18 @@ pub fn rasterAllFrames(
         );
 
         const time_end_render = Timestamp.now(io, .awake);
+        end_to_end_times.dispatch_time = @floatFromInt(
+            time_start_dispatch.durationTo(time_end_render).raw.nanoseconds,
+        );
+        end_to_end_times.total_time = @floatFromInt(
+            time_start_render.durationTo(time_end_render).raw.nanoseconds,
+        );
         try printRenderSummary(
             io,
             cameras,
             num_time,
             config.report,
-            time_start_render,
-            time_end_render,
+            end_to_end_times,
         );
         return images_arr_opt;
     }
@@ -920,13 +956,18 @@ pub fn rasterAllFrames(
         );
 
         const time_end_render = Timestamp.now(io, .awake);
+        end_to_end_times.dispatch_time = @floatFromInt(
+            time_start_dispatch.durationTo(time_end_render).raw.nanoseconds,
+        );
+        end_to_end_times.total_time = @floatFromInt(
+            time_start_render.durationTo(time_end_render).raw.nanoseconds,
+        );
         try printRenderSummary(
             io,
             cameras,
             num_time,
             config.report,
-            time_start_render,
-            time_end_render,
+            end_to_end_times,
         );
         return images_arr_opt;
     }
@@ -946,24 +987,28 @@ pub fn rasterAllFrames(
     );
 
     const time_end_render = Timestamp.now(io, .awake);
+    end_to_end_times.dispatch_time = @floatFromInt(
+        time_start_dispatch.durationTo(time_end_render).raw.nanoseconds,
+    );
+    end_to_end_times.total_time = @floatFromInt(
+        time_start_render.durationTo(time_end_render).raw.nanoseconds,
+    );
     try printRenderSummary(
         io,
         cameras,
         num_time,
         config.report,
-        time_start_render,
-        time_end_render,
+        end_to_end_times,
     );
     return images_arr_opt;
 }
 
 fn printRenderSummary(
     io: std.Io,
-    cameras: []const Camera,
+    cameras: []const CameraPrepared,
     num_time: usize,
     report_mode: ReportMode,
-    time_start_render: Timestamp,
-    time_end_render: Timestamp,
+    end_to_end_times: EndToEndTimes,
 ) !void {
     if (report_mode == .off) {
         return;
@@ -976,11 +1021,10 @@ fn printRenderSummary(
     total_pixels *= num_time;
 
     const total_frames = cameras.len * num_time;
-    const end_to_end_time = @as(f64, @floatFromInt(
-        time_start_render.durationTo(time_end_render).raw.nanoseconds,
-    ));
-    const total_render_ms = end_to_end_time / 1e6;
-    const total_render_sec = end_to_end_time / 1e9;
+    const total_render_ms = end_to_end_times.total_time / 1e6;
+    const total_render_sec = end_to_end_times.total_time / 1e9;
+    const setup_ms = end_to_end_times.setup_time / 1e6;
+    const dispatch_ms = end_to_end_times.dispatch_time / 1e6;
     const avg_frame_ms = total_render_ms / @as(
         f64,
         @floatFromInt(total_frames),
@@ -1000,6 +1044,8 @@ fn printRenderSummary(
         print_break,
     });
     try writer.print("Total render time       = {d:.3} ms\n", .{total_render_ms});
+    try writer.print("Setup time              = {d:.3} ms\n", .{setup_ms});
+    try writer.print("Dispatch time           = {d:.3} ms\n", .{dispatch_ms});
     try writer.print("Average frame time      = {d:.3} ms\n", .{avg_frame_ms});
     try writer.print("Average MPx/s           = {d:.3}\n", .{avg_mpx_sec});
     try writer.print("{s}\n", .{print_break});

@@ -79,7 +79,6 @@ test "Nodal normals are prepared when requested" {
         },
     );
     defer camera.deinit(arena_alloc);
-
     const mesh_input = meshraster.MeshInput{
         .mesh_type = .tri3,
         .coords = sim_data.coords,

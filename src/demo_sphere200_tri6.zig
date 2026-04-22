@@ -119,10 +119,11 @@ pub fn main(init: std.process.Init) !void {
     // 7. Run the Rasteriser
     std.debug.print("Rendering sphere to {s}/...\n", .{out_dir_root});
     const meshes = [_]MeshInput{mesh_input};
+    const camera_input = camera.toInput();
     const images = try zraster.rasterAllFrames(
         aa,
         io,
-        &[_]Camera{camera},
+        &[_]@TypeOf(camera_input){camera_input},
         &meshes,
         config,
         out_dir_root,

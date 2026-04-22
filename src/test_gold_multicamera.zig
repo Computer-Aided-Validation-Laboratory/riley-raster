@@ -12,6 +12,7 @@ const benchcommon = @import("common/benchcommon.zig");
 const orch = @import("common/orchestration.zig");
 const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
+const CameraInput = @import("zraster/zig/camera.zig").CameraInput;
 const buildconfig = @import("zraster/zig/buildconfig.zig");
 const cfg = buildconfig.config;
 const camera_mod = @import("zraster/zig/camera.zig");
@@ -158,7 +159,8 @@ test "Multicamera duplicate sphere200 cameras match each other" {
     );
     const camera = try orch.initCameraForCoords(aa, &sim_data.coords, pixel_num, 1.0);
     defer camera.deinit(aa);
-    const cameras = [_]Camera{ camera, camera };
+    const camera_input = camera.toInput();
+    const cameras = [_]CameraInput{ camera_input, camera_input };
 
     const mesh_input = mr.MeshInput{
         .mesh_type = render_case.mesh_type,
@@ -295,6 +297,10 @@ test "Sphere200 multicamera gold tests" {
             10.0,
         );
         defer for (cameras) |cam| cam.deinit(aa);
+        const camera_inputs = [_]CameraInput{
+            cameras[0].toInput(),
+            cameras[1].toInput(),
+        };
 
         const mesh_input = switch (render_case.shader) {
             .nodal_grey => mr.MeshInput{
@@ -360,7 +366,7 @@ test "Sphere200 multicamera gold tests" {
         const result = (try zraster.rasterAllFrames(
             aa,
             io,
-            &cameras,
+            &camera_inputs,
             &[_]mr.MeshInput{mesh_input},
             config,
             null,

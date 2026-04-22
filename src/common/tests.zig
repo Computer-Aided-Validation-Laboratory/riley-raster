@@ -14,6 +14,7 @@ const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
 
 const meshio = @import("../zraster/zig/meshio.zig");
 const Camera = @import("../zraster/zig/camera.zig").Camera;
+const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
 
 const mr = @import("../zraster/zig/meshraster.zig");
 const MeshType = mr.MeshType;
@@ -781,10 +782,11 @@ pub fn runTestInternal(
                 .report = if (report_perf) .full_stats else .off,
             };
 
+            const prepared_camera_input = prepared.camera.toInput();
             const result = (try zraster.rasterAllFrames(
                 aa,
                 io,
-                &[_]Camera{prepared.camera},
+                &[_]CameraInput{prepared_camera_input},
                 &[_]MeshInput{mesh_input},
                 config,
                 null,
@@ -874,10 +876,11 @@ pub fn runTestInternal(
                     .report = if (report_perf) .full_stats else .off,
                 };
 
+                const prepared_camera_input = prepared.camera.toInput();
                 const result = (try zraster.rasterAllFrames(
                     aa,
                     io,
-                    &[_]Camera{prepared.camera},
+                    &[_]CameraInput{prepared_camera_input},
                     &[_]MeshInput{mesh_input},
                     config,
                     null,
@@ -993,10 +996,11 @@ pub fn runMultimeshTestExt(
             .report = .off,
         };
 
+        const camera_input = camera.toInput();
         const result = (try zraster.rasterAllFrames(
             aa,
             io,
-            &[_]Camera{camera},
+            &[_]CameraInput{camera_input},
             mesh_inputs,
             config,
             null,
@@ -1117,10 +1121,11 @@ pub fn runMultimeshMixedTestExt(
         },
         .report = .off,
     };
+    const camera_input = camera.toInput();
     const result = (try zraster.rasterAllFrames(
         aa,
         io,
-        &[_]Camera{camera},
+        &[_]CameraInput{camera_input},
         mesh_inputs,
         config,
         null,
@@ -1227,10 +1232,11 @@ pub fn runMultimeshMixedRGBTestExt(
         .report = .off,
     };
 
+    const camera_input = camera.toInput();
     const result = (try zraster.rasterAllFrames(
         aa,
         io,
-        &[_]Camera{camera},
+        &[_]CameraInput{camera_input},
         mesh_inputs,
         config_rgb,
         null,

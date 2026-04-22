@@ -14,6 +14,7 @@ const mr = @import("../zraster/zig/meshraster.zig");
 const MeshType = mr.MeshType;
 const MeshInput = mr.MeshInput;
 const Camera = @import("../zraster/zig/camera.zig").Camera;
+const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
 const zraster = @import("../zraster/zig/zraster.zig");
 const RasterConfig = zraster.RasterConfig;
 const iio = @import("../zraster/zig/imageio.zig");
@@ -41,10 +42,11 @@ pub fn renderAndSave(
     };
 
     const meshes = &[_]MeshInput{mesh_input};
+    const camera_input = camera.toInput();
     const images = try zraster.rasterAllFrames(
         outer_alloc,
         io,
-        &[_]Camera{camera.*},
+        &[_]CameraInput{camera_input},
         meshes,
         config,
         dir,
@@ -202,10 +204,11 @@ pub fn runMultimeshGenerationExt(
         defer camera.deinit(aa);
 
         std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
+        const camera_input = camera.toInput();
         const images = try zraster.rasterAllFrames(
             aa,
             io,
-            &[_]Camera{camera},
+            &[_]CameraInput{camera_input},
             mesh_inputs,
             config,
             gold_dir,
@@ -271,10 +274,11 @@ pub fn runMultimeshMixedGenerationExt(
     defer camera.deinit(aa);
 
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
+    const camera_input = camera.toInput();
     const images = try zraster.rasterAllFrames(
         aa,
         io,
-        &[_]Camera{camera},
+        &[_]CameraInput{camera_input},
         mesh_inputs,
         config,
         gold_dir,
@@ -355,10 +359,11 @@ pub fn runMultimeshMixedRGBGenerationExt(
     }
 
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
+    const camera_input = camera_rgb.toInput();
     _ = try zraster.rasterAllFrames(
         aa,
         io,
-        &[_]Camera{camera_rgb},
+        &[_]CameraInput{camera_input},
         mesh_inputs,
         config_rgb,
         gold_dir,

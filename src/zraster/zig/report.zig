@@ -36,7 +36,7 @@ pub const FullStatsOpts = struct {
     save_normals_map: bool = false,
 };
 
-pub const PipeTimes = struct {
+pub const FrameTimes = struct {
     geometry_prep: f64 = 0,
     tile_overlap: f64 = 0,
     raster_loop: f64 = 0,
@@ -44,8 +44,14 @@ pub const PipeTimes = struct {
     total_time: f64 = 0,
 };
 
+pub const EndToEndTimes = struct {
+    setup_time: f64 = 0,
+    dispatch_time: f64 = 0,
+    total_time: f64 = 0,
+};
+
 pub const BenchLog = struct {
-    pipe_times: PipeTimes = .{},
+    frame_times: FrameTimes = .{},
     total_elements: usize = 0,
     visible_elements: usize = 0,
     solver_calls: u64 = 0,
@@ -309,11 +315,11 @@ pub const FullStatsLog = struct {
         camera: *const Camera,
         nodes_per_elem: f64,
     ) !void {
-        const total_ms = self.bench.pipe_times.total_time / 1e6;
-        const total_sec = self.bench.pipe_times.total_time / 1e9;
-        const raster_sec = self.bench.pipe_times.raster_loop / 1e9;
+        const total_ms = self.bench.frame_times.total_time / 1e6;
+        const total_sec = self.bench.frame_times.total_time / 1e9;
+        const raster_sec = self.bench.frame_times.raster_loop / 1e9;
         const geom_tiling_sec =
-            (self.bench.pipe_times.geometry_prep + self.bench.pipe_times.tile_overlap) /
+            (self.bench.frame_times.geometry_prep + self.bench.frame_times.tile_overlap) /
             1e9;
 
         const border = [_]u8{'='} ** 80 ++ "\n";
@@ -458,16 +464,16 @@ pub const FullStatsLog = struct {
         try writer.print("--- PIPELINE TIMINGS (User Summary) ---\n", .{});
         const conv = 1.0 / 1e6;
         try writer.print("Geometry Preparation    = {d:.6} ms\n", .{
-            self.bench.pipe_times.geometry_prep * conv,
+            self.bench.frame_times.geometry_prep * conv,
         });
         try writer.print("Elem/Tile Overlap       = {d:.6} ms\n", .{
-            self.bench.pipe_times.tile_overlap * conv,
+            self.bench.frame_times.tile_overlap * conv,
         });
         try writer.print("Raster loop time        = {d:.6} ms\n", .{
-            self.bench.pipe_times.raster_loop * conv,
+            self.bench.frame_times.raster_loop * conv,
         });
         try writer.print("Save Time               = {d:.6} ms\n", .{
-            self.bench.pipe_times.save_frame * conv,
+            self.bench.frame_times.save_frame * conv,
         });
         try writer.print("{s}", .{line});
         try writer.print("TOTAL FRAME TIME        = {d:.3} ms\n", .{total_ms});
@@ -856,7 +862,7 @@ pub inline fn recordNormalSIMD(
 pub fn standardReport(
     io: std.Io,
     camera: *const Camera,
-    pipe_times: PipeTimes,
+    frame_times: FrameTimes,
     total_elems: usize,
     visible_elems: usize,
     nodes_per_elem: f64,
@@ -873,9 +879,9 @@ pub fn standardReport(
     const total_subpx = px_x * px_y * sub_samp_f * sub_samp_f;
     const total_px = px_x * px_y;
 
-    const raster_sec = pipe_times.raster_loop / 1e9;
-    const total_sec = pipe_times.total_time / 1e9;
-    const geom_tiling_sec = (pipe_times.geometry_prep + pipe_times.tile_overlap) / 1e9;
+    const raster_sec = frame_times.raster_loop / 1e9;
+    const total_sec = frame_times.total_time / 1e9;
+    const geom_tiling_sec = (frame_times.geometry_prep + frame_times.tile_overlap) / 1e9;
 
     const melems_sec = if (geom_tiling_sec > 0)
         (@as(f64, @floatFromInt(total_elems)) / (geom_tiling_sec * 1e6))
@@ -896,21 +902,21 @@ pub fn standardReport(
         print_break,
     });
     try writer.print("Geometry Preparation    = {d:.6} ms\n", .{
-        pipe_times.geometry_prep * conv_units,
+        frame_times.geometry_prep * conv_units,
     });
     try writer.print("Elem/Tile Overlap       = {d:.6} ms\n", .{
-        pipe_times.tile_overlap * conv_units,
+        frame_times.tile_overlap * conv_units,
     });
     try writer.print("Raster loop time        = {d:.6} ms\n", .{
-        pipe_times.raster_loop * conv_units,
+        frame_times.raster_loop * conv_units,
     });
     try writer.print("Save Time               = {d:.6} ms\n", .{
-        pipe_times.save_frame * conv_units,
+        frame_times.save_frame * conv_units,
     });
 
     try writer.print("{s}\nTOTAL FRAME TIME   = {d:.3} ms\n", .{
         print_break,
-        pipe_times.total_time * conv_units,
+        frame_times.total_time * conv_units,
     });
     try writer.print("{s}\n", .{print_break});
 

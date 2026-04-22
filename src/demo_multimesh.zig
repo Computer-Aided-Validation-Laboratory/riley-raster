@@ -175,10 +175,11 @@ pub fn main(init: std.process.Init) !void {
 
     // 8. Run the Rasteriser
     std.debug.print("Rendering to {s}/...\n", .{out_dir_root});
+    const camera_input = camera.toInput();
     const images = try zraster.rasterAllFrames(
         aa,
         io,
-        &[_]Camera{camera},
+        &[_]@TypeOf(camera_input){camera_input},
         mesh_inputs,
         config,
         out_dir_root,

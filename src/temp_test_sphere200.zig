@@ -221,10 +221,11 @@ fn runSphereCase(
         .report = .off,
     };
 
+    const camera_input = camera.toInput();
     const result = (try zraster.rasterAllFrames(
         allocator,
         io,
-        &[_]Camera{camera},
+        &[_]@TypeOf(camera_input){camera_input},
         &[_]mr.MeshInput{mesh_input},
         config,
         null,

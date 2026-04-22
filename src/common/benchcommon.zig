@@ -14,6 +14,7 @@ const uvio = @import("../zraster/zig/uvio.zig");
 const csvio = @import("../zraster/zig/csvio.zig");
 const mr = @import("../zraster/zig/meshraster.zig");
 const Camera = @import("../zraster/zig/camera.zig").Camera;
+const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
 const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
 const Rotation = @import("../zraster/zig/rotation.zig").Rotation;
 const report = @import("../zraster/zig/report.zig");
@@ -71,12 +72,12 @@ pub fn calcMetrics(
     etype: mr.MeshType,
     pixel_num: [2]u32,
     sub_samp: u8,
-    pipe_times: report.PipeTimes,
+    frame_times: report.FrameTimes,
     bench_log: report.BenchLog,
 ) CalculatedMetrics {
-    const raster_sec = pipe_times.raster_loop / 1e9;
-    const geom_tiling_sec = (pipe_times.geometry_prep + pipe_times.tile_overlap) / 1e9;
-    const total_sec = pipe_times.total_time / 1e9;
+    const raster_sec = frame_times.raster_loop / 1e9;
+    const geom_tiling_sec = (frame_times.geometry_prep + frame_times.tile_overlap) / 1e9;
+    const total_sec = frame_times.total_time / 1e9;
 
     const nodes_per_elem = @as(f64, @floatFromInt(etype.getNodesNum()));
     const pixels_x = @as(f64, @floatFromInt(pixel_num[0]));
@@ -492,6 +493,16 @@ fn runBenchmarkInternal(
         },
     );
     defer camera.deinit(aa);
+    const camera_input = CameraInput{
+        .pixels_num = camera.pixels_num,
+        .pixels_size = camera.pixels_size,
+        .pos_world = camera.pos_world,
+        .rot_world = camera.rot_world,
+        .roi_cent_world = camera.roi_cent_world,
+        .focal_length = camera.focal_length,
+        .sub_sample = camera.sub_sample,
+        .distortion = camera.distortion,
+    };
 
     const config = zraster.RasterConfig{
         .render_mode = tcfg.RENDER_MODE,
@@ -545,7 +556,7 @@ fn runBenchmarkInternal(
     var image_arr = try zraster.rasterAllFrames(
         outer_alloc,
         io,
-        &[_]Camera{camera},
+        &[_]CameraInput{camera_input},
         &[_]mr.MeshInput{mesh_input},
         config,
         out_path,
@@ -557,12 +568,12 @@ fn runBenchmarkInternal(
         e2e_start.durationTo(e2e_end).raw.nanoseconds,
     )) / 1e6;
     const geom_ms = if (report_mode == .bench)
-        (bench_capture_storage[0].bench_log.pipe_times.geometry_prep +
-            bench_capture_storage[0].bench_log.pipe_times.tile_overlap) / 1e6
+        (bench_capture_storage[0].bench_log.frame_times.geometry_prep +
+            bench_capture_storage[0].bench_log.frame_times.tile_overlap) / 1e6
     else
         0.0;
     const raster_ms = if (report_mode == .bench)
-        bench_capture_storage[0].bench_log.pipe_times.raster_loop / 1e6
+        bench_capture_storage[0].bench_log.frame_times.raster_loop / 1e6
     else
         0.0;
     const fps = 1000.0 / e2e_ms;
@@ -572,7 +583,7 @@ fn runBenchmarkInternal(
             etype,
             pixel_num,
             camera.sub_sample,
-            bench_capture_storage[0].bench_log.pipe_times,
+            bench_capture_storage[0].bench_log.frame_times,
             bench_capture_storage[0].bench_log,
         )
     else
