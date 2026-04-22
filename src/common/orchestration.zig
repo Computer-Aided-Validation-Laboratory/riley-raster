@@ -16,7 +16,7 @@ const mr = @import("../zraster/zig/meshraster.zig");
 const uvio = @import("../zraster/zig/uvio.zig");
 const Camera = @import("../zraster/zig/camera.zig").Camera;
 const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
-const Rotation = @import("../zraster/zig/camera.zig").Rotation;
+const Rotation = @import("../zraster/zig/rotation.zig").Rotation;
 
 pub const default_multimesh_mesh_types = [_]mr.MeshType{
     .tri3,

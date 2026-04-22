@@ -10,7 +10,7 @@ const std = @import("std");
 const Timestamp = std.Io.Clock.Timestamp;
 
 const MatSlice = @import("matslice.zig").MatSlice;
-pub const NDArray = @import("ndarray.zig").NDArray;
+const NDArray = @import("ndarray.zig").NDArray;
 
 const sliceops = @import("sliceops.zig");
 
@@ -464,7 +464,7 @@ fn publishFrameResults(
     }
 }
 
-fn calcSceneTileOverlap(
+fn sceneTileOverlapBinning(
     io: std.Io,
     input: *const FrameInput,
     ctx: *FrameContext,
@@ -593,7 +593,7 @@ fn processFrameJobInternal(
     );
 
     // Stage 3: Scene-tile overlap
-    try calcSceneTileOverlap(
+    try sceneTileOverlapBinning(
         io,
         &input,
         &ctx,
