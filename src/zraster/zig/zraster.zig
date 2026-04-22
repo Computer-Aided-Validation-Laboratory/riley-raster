@@ -18,7 +18,6 @@ const Camera = @import("camera.zig").Camera;
 
 const rops = @import("rasterops.zig");
 const ElemBBox = rops.ElemBBox;
-const ActiveTile = rops.ActiveTile;
 const Vec3Slices = rops.Vec3Slices;
 
 const mr = @import("meshraster.zig");
@@ -71,7 +70,6 @@ pub const RenderMode = enum {
     in_order,
     offline,
 };
-
 
 const FrameReportStorage = union(ReportMode) {
     off: report.OffLog,
@@ -235,9 +233,9 @@ fn calcPhaseThreadCap(
     }
 
     var norm_cap: u16 = 1;
-    if (phase_cap > 1){
+    if (phase_cap > 1) {
         norm_cap = phase_cap;
-    } 
+    }
 
     return @min(total_threads, norm_cap);
 }
@@ -294,6 +292,7 @@ const FrameContext = struct {
     elem_bboxes_by_mesh: [][]ElemBBox = &.{},
     elems_in_image_by_mesh: []usize = &.{},
     raster_hulls: []?NDArray(f64) = &.{},
+    tiling: ?rops.TilingOverlaps = null,
     total_elems_num: usize = 0,
     total_elems_in_image: usize = 0,
 
@@ -367,37 +366,6 @@ fn rasterFrame(
 ) !void {
     const report_ptr = getFrameReportPtr(report_mode, ctx);
     const ctx_report = report.ReportContext(report_mode){ .log = report_ptr };
-    const arena_alloc = ctx.arena.allocator();
-
-    const tiles_num_x: usize = try std.math.divCeil(
-        usize,
-        input.camera.pixels_num[0],
-        input.config.tile_size,
-    );
-    const tiles_num_y: usize = try std.math.divCeil(
-        usize,
-        input.camera.pixels_num[1],
-        input.config.tile_size,
-    );
-
-    const time_start_overlap = Timestamp.now(io, .awake);
-
-    const tiling = try rops.sceneTileElemOverlap(
-        arena_alloc,
-        input.config.tile_size,
-        tiles_num_x,
-        tiles_num_y,
-        @intCast(input.camera.pixels_num[0]),
-        @intCast(input.camera.pixels_num[1]),
-        ctx.elems_in_image_by_mesh,
-        ctx.elem_bboxes_by_mesh,
-    );
-
-    const time_end_overlap = Timestamp.now(io, .awake);
-    ctx.pipe_times.tile_overlap = @floatFromInt(
-        time_start_overlap.durationTo(time_end_overlap).raw.nanoseconds,
-    );
-
     const time_start_loop = Timestamp.now(io, .awake);
 
     const ctx_rast = rops.RasterContext{
@@ -413,7 +381,7 @@ fn rasterFrame(
         ctx_rast,
         ctx_report,
         input.raster_threads,
-        tiling,
+        ctx.tiling.?,
         ctx.prep_meshes,
         ctx.raster_hulls,
         &ctx.frame_arr,
@@ -423,22 +391,52 @@ fn rasterFrame(
     ctx.pipe_times.raster_loop = @floatFromInt(
         time_start_loop.durationTo(time_end_loop).raw.nanoseconds,
     );
+}
 
-    const raster_end = Timestamp.now(io, .awake);
-    ctx.pipe_times.total_time = @floatFromInt(
-        time_start_overlap.durationTo(raster_end).raw.nanoseconds,
-    );
-
-    if (report.getBenchLog(report_mode, report_ptr)) |bench_log| {
-        bench_log.pipe_times = ctx.pipe_times;
+fn finaliseFrame(
+    io: std.Io,
+    input: *const FrameInput,
+    ctx: *FrameContext,
+) !void {
+    if (input.config.save_strategy == .disk or input.config.save_strategy == .both) {
+        std.debug.assert(ctx.frame_arr.dims[0] <= std.math.maxInt(u8));
+        try iio.saveImages(
+            io,
+            input.out_dir,
+            input.camera_idx,
+            input.frame_idx,
+            @intCast(ctx.frame_arr.dims[0]),
+            input.camera.pixels_num,
+            &ctx.frame_arr,
+            input.config.image_save_opts,
+        );
     }
+}
 
+fn publishFrameResults(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    input: *const FrameInput,
+    ctx: *FrameContext,
+) !void {
     const nodes_per_elem = calcNodesPerElem(ctx.prep_meshes);
 
-    switch (report_mode) {
+    switch (input.config.report) {
         .off => {},
         .bench => {
-            const bench_log = report.getBenchLog(report_mode, report_ptr).?;
+            ctx.report_storage.bench.pipe_times = ctx.pipe_times;
+            if (input.bench_capture) |capture| {
+                const capture_idx = calcBenchCaptureIdx(
+                    input.cameras_num,
+                    input.camera_idx,
+                    input.frame_idx,
+                );
+                capture[capture_idx] = .{
+                    .camera_idx = input.camera_idx,
+                    .frame_idx = input.frame_idx,
+                    .bench_log = ctx.report_storage.bench,
+                };
+            }
             try report.standardReport(
                 io,
                 input.camera,
@@ -446,16 +444,58 @@ fn rasterFrame(
                 ctx.total_elems_num,
                 ctx.total_elems_in_image,
                 nodes_per_elem,
-                bench_log,
+                &ctx.report_storage.bench,
             );
         },
-        .full_stats => try report_ptr.fullReport(
-            io,
-            input.frame_idx,
-            input.camera,
-            nodes_per_elem,
-        ),
+        .full_stats => {
+            ctx.report_storage.full_stats.bench.pipe_times = ctx.pipe_times;
+            try ctx.report_storage.full_stats.saveFrameReport(
+                io,
+                outer_alloc,
+                input.out_dir,
+                input.camera_idx,
+                input.frame_idx,
+                input.camera,
+                input.config.tile_size,
+                input.config.full_stats_opts,
+                nodes_per_elem,
+            );
+        },
     }
+}
+
+fn calcSceneTileOverlap(
+    io: std.Io,
+    input: *const FrameInput,
+    ctx: *FrameContext,
+) !void {
+    const arena_alloc = ctx.arena.allocator();
+    const tiles_num_x: usize = try std.math.divCeil(
+        usize,
+        input.camera.pixels_num[0],
+        input.config.tile_size,
+    );
+    const tiles_num_y: usize = try std.math.divCeil(
+        usize,
+        input.camera.pixels_num[1],
+        input.config.tile_size,
+    );
+
+    const time_start_overlap = Timestamp.now(io, .awake);
+    ctx.tiling = try rops.sceneTileElemOverlap(
+        arena_alloc,
+        input.config.tile_size,
+        tiles_num_x,
+        tiles_num_y,
+        @intCast(input.camera.pixels_num[0]),
+        @intCast(input.camera.pixels_num[1]),
+        ctx.elems_in_image_by_mesh,
+        ctx.elem_bboxes_by_mesh,
+    );
+    const time_end_overlap = Timestamp.now(io, .awake);
+    ctx.pipe_times.tile_overlap = @floatFromInt(
+        time_start_overlap.durationTo(time_end_overlap).raw.nanoseconds,
+    );
 }
 
 fn runFrameRaster(
@@ -489,58 +529,6 @@ fn runFrameRaster(
     }
 }
 
-fn finaliseFrame(
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    input: *const FrameInput,
-    ctx: *FrameContext,
-) !void {
-    const nodes_per_elem = calcNodesPerElem(ctx.prep_meshes);
-
-    switch (input.config.report) {
-        .off => {},
-        .bench => {
-            if (input.bench_capture) |capture| {
-                const capture_idx = calcBenchCaptureIdx(
-                    input.cameras_num,
-                    input.camera_idx,
-                    input.frame_idx,
-                );
-                capture[capture_idx] = .{
-                    .camera_idx = input.camera_idx,
-                    .frame_idx = input.frame_idx,
-                    .bench_log = ctx.report_storage.bench,
-                };
-            }
-        },
-        .full_stats => try ctx.report_storage.full_stats.saveFrameReport(
-            io,
-            outer_alloc,
-            input.out_dir,
-            input.camera_idx,
-            input.frame_idx,
-            input.camera,
-            input.config.tile_size,
-            input.config.full_stats_opts,
-            nodes_per_elem,
-        ),
-    }
-
-    if (input.config.save_strategy == .disk or input.config.save_strategy == .both) {
-        std.debug.assert(ctx.frame_arr.dims[0] <= std.math.maxInt(u8));
-        try iio.saveImages(
-            io,
-            input.out_dir,
-            input.camera_idx,
-            input.frame_idx,
-            @intCast(ctx.frame_arr.dims[0]),
-            input.camera.pixels_num,
-            &ctx.frame_arr,
-            input.config.image_save_opts,
-        );
-    }
-}
-
 //------------------------------------------------------------------------------------------
 // 3. Process: frame jobs for a given camera and frame
 const FrameInput = struct {
@@ -565,6 +553,8 @@ fn processFrameJobInternal(
     io: std.Io,
     input: FrameInput,
 ) !void {
+    const time_start_frame = Timestamp.now(io, .awake);
+
     // Stage 1: Allocate and Prepare Frame Context
     var ctx = FrameContext.init(outer_alloc);
     defer ctx.deinit(outer_alloc, &input);
@@ -602,7 +592,14 @@ fn processFrameJobInternal(
         time_start_geo.durationTo(time_end_geo).raw.nanoseconds,
     );
 
-    // Stage 3: Render the frame by rasterisation
+    // Stage 3: Scene-tile overlap
+    try calcSceneTileOverlap(
+        io,
+        &input,
+        &ctx,
+    );
+
+    // Stage 4: Render the frame by rasterisation
     try runFrameRaster(
         outer_alloc,
         io,
@@ -610,8 +607,25 @@ fn processFrameJobInternal(
         &ctx,
     );
 
-    // Stage 4: Finalise frame
-    try finaliseFrame(outer_alloc, io, &input, &ctx);
+    // Stage 5: Finalise frame
+    const time_start_save = Timestamp.now(io, .awake);
+    try finaliseFrame(io, &input, &ctx);
+    const time_end_save = Timestamp.now(io, .awake);
+    ctx.pipe_times.save_frame = @floatFromInt(
+        time_start_save.durationTo(time_end_save).raw.nanoseconds,
+    );
+
+    const time_end_frame = Timestamp.now(io, .awake);
+    ctx.pipe_times.total_time = @floatFromInt(
+        time_start_frame.durationTo(time_end_frame).raw.nanoseconds,
+    );
+
+    try publishFrameResults(
+        outer_alloc,
+        io,
+        &input,
+        &ctx,
+    );
 }
 
 // Async/parallel processing function
@@ -824,6 +838,8 @@ pub fn rasterAllFrames(
     out_dir_path: ?[]const u8,
     bench_capture: ?[]FrameBenchCapture,
 ) !?NDArray(f64) {
+    const time_start_render = Timestamp.now(io, .awake);
+
     var out_dir: ?std.Io.Dir = null;
     if (out_dir_path) |path| {
         const cwd = std.Io.Dir.cwd();
@@ -876,6 +892,15 @@ pub fn rasterAllFrames(
             bench_capture,
         );
 
+        const time_end_render = Timestamp.now(io, .awake);
+        try printRenderSummary(
+            io,
+            cameras,
+            num_time,
+            config.report,
+            time_start_render,
+            time_end_render,
+        );
         return images_arr_opt;
     }
 
@@ -894,6 +919,15 @@ pub fn rasterAllFrames(
             bench_capture,
         );
 
+        const time_end_render = Timestamp.now(io, .awake);
+        try printRenderSummary(
+            io,
+            cameras,
+            num_time,
+            config.report,
+            time_start_render,
+            time_end_render,
+        );
         return images_arr_opt;
     }
 
@@ -911,5 +945,63 @@ pub fn rasterAllFrames(
         bench_capture,
     );
 
+    const time_end_render = Timestamp.now(io, .awake);
+    try printRenderSummary(
+        io,
+        cameras,
+        num_time,
+        config.report,
+        time_start_render,
+        time_end_render,
+    );
     return images_arr_opt;
+}
+
+fn printRenderSummary(
+    io: std.Io,
+    cameras: []const Camera,
+    num_time: usize,
+    report_mode: ReportMode,
+    time_start_render: Timestamp,
+    time_end_render: Timestamp,
+) !void {
+    if (report_mode == .off) {
+        return;
+    }
+
+    var total_pixels: usize = 0;
+    for (cameras) |camera| {
+        total_pixels += camera.pixels_num[0] * camera.pixels_num[1];
+    }
+    total_pixels *= num_time;
+
+    const total_frames = cameras.len * num_time;
+    const end_to_end_time = @as(f64, @floatFromInt(
+        time_start_render.durationTo(time_end_render).raw.nanoseconds,
+    ));
+    const total_render_ms = end_to_end_time / 1e6;
+    const total_render_sec = end_to_end_time / 1e9;
+    const avg_frame_ms = total_render_ms / @as(
+        f64,
+        @floatFromInt(total_frames),
+    );
+    const avg_mpx_sec = if (total_render_sec > 0)
+        @as(f64, @floatFromInt(total_pixels)) / (total_render_sec * 1e6)
+    else
+        0.0;
+
+    var buffer: [1024]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(io, &buffer);
+    const writer = &stdout_writer.interface;
+    const print_break = [_]u8{'='} ** 80;
+
+    try writer.print("\n{s}\nSoftware Raster Render Summary\n{s}\n", .{
+        print_break,
+        print_break,
+    });
+    try writer.print("Total render time       = {d:.3} ms\n", .{total_render_ms});
+    try writer.print("Average frame time      = {d:.3} ms\n", .{avg_frame_ms});
+    try writer.print("Average MPx/s           = {d:.3}\n", .{avg_mpx_sec});
+    try writer.print("{s}\n", .{print_break});
+    try writer.flush();
 }

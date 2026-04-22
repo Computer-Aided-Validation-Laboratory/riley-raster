@@ -40,6 +40,7 @@ pub const PipeTimes = struct {
     geometry_prep: f64 = 0,
     tile_overlap: f64 = 0,
     raster_loop: f64 = 0,
+    save_frame: f64 = 0,
     total_time: f64 = 0,
 };
 
@@ -465,8 +466,11 @@ pub const FullStatsLog = struct {
         try writer.print("Raster loop time        = {d:.6} ms\n", .{
             self.bench.pipe_times.raster_loop * conv,
         });
+        try writer.print("Save Time               = {d:.6} ms\n", .{
+            self.bench.pipe_times.save_frame * conv,
+        });
         try writer.print("{s}", .{line});
-        try writer.print("TOTAL RASTER TIME       = {d:.3} ms\n", .{total_ms});
+        try writer.print("TOTAL FRAME TIME        = {d:.3} ms\n", .{total_ms});
         try writer.print("{s}", .{line});
 
         const melems_sec = if (geom_tiling_sec > 0)
@@ -900,8 +904,11 @@ pub fn standardReport(
     try writer.print("Raster loop time        = {d:.6} ms\n", .{
         pipe_times.raster_loop * conv_units,
     });
+    try writer.print("Save Time               = {d:.6} ms\n", .{
+        pipe_times.save_frame * conv_units,
+    });
 
-    try writer.print("{s}\nTOTAL RASTER TIME  = {d:.3} ms\n", .{
+    try writer.print("{s}\nTOTAL FRAME TIME   = {d:.3} ms\n", .{
         print_break,
         pipe_times.total_time * conv_units,
     });
