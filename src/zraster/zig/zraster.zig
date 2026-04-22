@@ -45,18 +45,6 @@ const ReportMode = report.ReportMode;
 const BenchLog = report.BenchLog;
 const FullStatsOpts = report.FullStatsOpts;
 
-pub const SaveStrategy = enum {
-    disk,
-    memory,
-    both,
-    none,
-};
-
-pub const RenderMode = enum {
-    in_order,
-    offline,
-};
-
 pub const RasterConfig = struct {
     render_mode: RenderMode = .in_order,
     total_threads: u16 = 0,
@@ -71,6 +59,19 @@ pub const RasterConfig = struct {
     report: ReportMode = .bench,
     full_stats_opts: FullStatsOpts = .{},
 };
+
+pub const SaveStrategy = enum {
+    disk,
+    memory,
+    both,
+    none,
+};
+
+pub const RenderMode = enum {
+    in_order,
+    offline,
+};
+
 
 const FrameReportStorage = union(ReportMode) {
     off: report.OffLog,
@@ -225,15 +226,6 @@ fn initImagesArray(
     return null;
 }
 
-fn normalizePhaseThreadCap(
-    phase_cap: u16,
-) u16 {
-    if (phase_cap == 0) {
-        return 1;
-    }
-    return phase_cap;
-}
-
 fn calcPhaseThreadCap(
     total_threads: u16,
     phase_cap: u16,
@@ -241,7 +233,13 @@ fn calcPhaseThreadCap(
     if (total_threads == 0) {
         return 1;
     }
-    return @min(total_threads, normalizePhaseThreadCap(phase_cap));
+
+    var norm_cap: u16 = 1;
+    if (phase_cap > 1){
+        norm_cap = phase_cap;
+    } 
+
+    return @min(total_threads, norm_cap;
 }
 
 fn calcFramesInFlight(
@@ -285,56 +283,79 @@ fn calcBenchCaptureIdx(
     return frame_idx * cameras_num + camera_idx;
 }
 
-fn finaliseFrame(
+//------------------------------------------------------------------------------------------
+// 4. Pipeline Stages
+
+const FrameContext = struct {
+    arena: std.heap.ArenaAllocator,
+
+    frame_meshes: []FrameMeshPrepared = &.{},
+    prep_meshes: []MeshPrepared = &.{},
+    elem_bboxes_by_mesh: [][]ElemBBox = &.{},
+    elems_in_image_by_mesh: []usize = &.{},
+    raster_hulls: []?NDArray(f64) = &.{},
+    total_elems_num: usize = 0,
+    total_elems_in_image: usize = 0,
+
+    frame_arr: NDArray(f64) = undefined,
+
+    report_storage: FrameReportStorage = .{ .off = .{} },
+    pipe_times: report.PipeTimes = .{},
+
+    fn init(
+        outer_alloc: std.mem.Allocator,
+    ) FrameContext {
+        return .{
+            .arena = std.heap.ArenaAllocator.init(outer_alloc),
+        };
+    }
+
+    fn deinit(
+        self: *FrameContext,
+        outer_alloc: std.mem.Allocator,
+        input: *const FrameInput,
+    ) void {
+        if (input.config.report == .full_stats) {
+            self.report_storage.full_stats.deinit(outer_alloc);
+        }
+        self.arena.deinit();
+    }
+};
+
+fn prepareFrameContext(
     outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    input: *const FrameInput,
     ctx: *FrameContext,
+    input: *const FrameInput,
 ) !void {
-    const nodes_per_elem = calcNodesPerElem(ctx.prep_meshes);
+    const arena_alloc = ctx.arena.allocator();
 
-    switch (input.config.report) {
-        .off => {},
-        .bench => {
-            if (input.bench_capture) |capture| {
-                const capture_idx = calcBenchCaptureIdx(
-                    input.cameras_num,
-                    input.camera_idx,
-                    input.frame_idx,
-                );
-                capture[capture_idx] = .{
-                    .camera_idx = input.camera_idx,
-                    .frame_idx = input.frame_idx,
-                    .bench_log = ctx.report_storage.bench,
-                };
-            }
-        },
-        .full_stats => try ctx.report_storage.full_stats.saveFrameReport(
-            io,
-            outer_alloc,
-            input.out_dir,
-            input.camera_idx,
-            input.frame_idx,
-            input.camera,
-            input.config.tile_size,
-            input.config.full_stats_opts,
-            nodes_per_elem,
-        ),
-    }
+    ctx.report_storage = try initFrameReportStorage(
+        outer_alloc,
+        input.camera,
+        input.config,
+    );
 
-    if (input.config.save_strategy == .disk or input.config.save_strategy == .both) {
-        std.debug.assert(ctx.frame_arr.dims[0] <= std.math.maxInt(u8));
-        try iio.saveImages(
-            io,
-            input.out_dir,
-            input.camera_idx,
-            input.frame_idx,
-            @intCast(ctx.frame_arr.dims[0]),
-            input.camera.pixels_num,
-            &ctx.frame_arr,
-            input.config.image_save_opts,
-        );
+    const mesh_n = input.mesh_static_prepared.len;
+    ctx.frame_meshes = try arena_alloc.alloc(FrameMeshPrepared, mesh_n);
+    ctx.prep_meshes = try arena_alloc.alloc(MeshPrepared, mesh_n);
+    ctx.elem_bboxes_by_mesh = try arena_alloc.alloc([]ElemBBox, mesh_n);
+    ctx.elems_in_image_by_mesh = try arena_alloc.alloc(usize, mesh_n);
+    ctx.raster_hulls = try arena_alloc.alloc(?NDArray(f64), mesh_n);
+
+    if (input.images_arr) |images| {
+        const start_idx = input.camera_idx * images.strides[0] +
+            input.frame_idx * images.strides[1];
+        const mem = images.slice[start_idx .. start_idx + images.strides[1]];
+        ctx.frame_arr = try NDArray(f64).init(arena_alloc, mem, images.dims[2..]);
+    } else {
+        const dims = [_]usize{
+            @as(usize, input.num_fields),
+            input.camera.pixels_num[1],
+            input.camera.pixels_num[0],
+        };
+        ctx.frame_arr = try NDArray(f64).initFlat(arena_alloc, dims[0..]);
     }
+    @memset(ctx.frame_arr.slice, 0.0);
 }
 
 fn rasterFrame(
@@ -468,82 +489,57 @@ fn runFrameRaster(
     }
 }
 
-//------------------------------------------------------------------------------------------
-// 4. Pipeline Stages
-
-const FrameContext = struct {
-    arena: std.heap.ArenaAllocator,
-
-    frame_meshes: []FrameMeshPrepared = &.{},
-    prep_meshes: []MeshPrepared = &.{},
-    elem_bboxes_by_mesh: [][]ElemBBox = &.{},
-    elems_in_image_by_mesh: []usize = &.{},
-    raster_hulls: []?NDArray(f64) = &.{},
-    total_elems_num: usize = 0,
-    total_elems_in_image: usize = 0,
-
-    frame_arr: NDArray(f64) = undefined,
-
-    report_storage: FrameReportStorage = .{ .off = .{} },
-    pipe_times: report.PipeTimes = .{},
-
-    fn init(
-        outer_alloc: std.mem.Allocator,
-    ) FrameContext {
-        return .{
-            .arena = std.heap.ArenaAllocator.init(outer_alloc),
-        };
-    }
-
-    fn deinit(
-        self: *FrameContext,
-        outer_alloc: std.mem.Allocator,
-        input: *const FrameInput,
-    ) void {
-        if (input.config.report == .full_stats) {
-            self.report_storage.full_stats.deinit(outer_alloc);
-        }
-        self.arena.deinit();
-    }
-};
-
-fn prepareFrameContext(
+fn finaliseFrame(
     outer_alloc: std.mem.Allocator,
-    ctx: *FrameContext,
+    io: std.Io,
     input: *const FrameInput,
+    ctx: *FrameContext,
 ) !void {
-    const arena_alloc = ctx.arena.allocator();
+    const nodes_per_elem = calcNodesPerElem(ctx.prep_meshes);
 
-    ctx.report_storage = try initFrameReportStorage(
-        outer_alloc,
-        input.camera,
-        input.config,
-    );
-
-    const mesh_n = input.mesh_static_prepared.len;
-    ctx.frame_meshes = try arena_alloc.alloc(FrameMeshPrepared, mesh_n);
-    ctx.prep_meshes = try arena_alloc.alloc(MeshPrepared, mesh_n);
-    ctx.elem_bboxes_by_mesh = try arena_alloc.alloc([]ElemBBox, mesh_n);
-    ctx.elems_in_image_by_mesh = try arena_alloc.alloc(usize, mesh_n);
-    ctx.raster_hulls = try arena_alloc.alloc(?NDArray(f64), mesh_n);
-
-    if (input.images_arr) |images| {
-        const start_idx = input.camera_idx * images.strides[0] +
-            input.frame_idx * images.strides[1];
-        const mem = images.slice[start_idx .. start_idx + images.strides[1]];
-        ctx.frame_arr = try NDArray(f64).init(arena_alloc, mem, images.dims[2..]);
-    } else {
-        const dims = [_]usize{
-            @as(usize, input.num_fields),
-            input.camera.pixels_num[1],
-            input.camera.pixels_num[0],
-        };
-        ctx.frame_arr = try NDArray(f64).initFlat(arena_alloc, dims[0..]);
+    switch (input.config.report) {
+        .off => {},
+        .bench => {
+            if (input.bench_capture) |capture| {
+                const capture_idx = calcBenchCaptureIdx(
+                    input.cameras_num,
+                    input.camera_idx,
+                    input.frame_idx,
+                );
+                capture[capture_idx] = .{
+                    .camera_idx = input.camera_idx,
+                    .frame_idx = input.frame_idx,
+                    .bench_log = ctx.report_storage.bench,
+                };
+            }
+        },
+        .full_stats => try ctx.report_storage.full_stats.saveFrameReport(
+            io,
+            outer_alloc,
+            input.out_dir,
+            input.camera_idx,
+            input.frame_idx,
+            input.camera,
+            input.config.tile_size,
+            input.config.full_stats_opts,
+            nodes_per_elem,
+        ),
     }
-    @memset(ctx.frame_arr.slice, 0.0);
+
+    if (input.config.save_strategy == .disk or input.config.save_strategy == .both) {
+        std.debug.assert(ctx.frame_arr.dims[0] <= std.math.maxInt(u8));
+        try iio.saveImages(
+            io,
+            input.out_dir,
+            input.camera_idx,
+            input.frame_idx,
+            @intCast(ctx.frame_arr.dims[0]),
+            input.camera.pixels_num,
+            &ctx.frame_arr,
+            input.config.image_save_opts,
+        );
+    }
 }
-
-
 
 //------------------------------------------------------------------------------------------
 // 3. Process: frame jobs for a given camera and frame
