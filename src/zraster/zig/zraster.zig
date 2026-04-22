@@ -285,27 +285,6 @@ fn calcBenchCaptureIdx(
     return frame_idx * cameras_num + camera_idx;
 }
 
-fn writeBenchCapture(
-    input: *const FrameInput,
-    ctx: *const FrameContext,
-) void {
-    if (input.config.report != .bench) {
-        return;
-    }
-
-    const capture = input.bench_capture orelse return;
-    const capture_idx = calcBenchCaptureIdx(
-        input.cameras_num,
-        input.camera_idx,
-        input.frame_idx,
-    );
-    capture[capture_idx] = .{
-        .camera_idx = input.camera_idx,
-        .frame_idx = input.frame_idx,
-        .bench_log = ctx.report_storage.bench,
-    };
-}
-
 fn finaliseFrame(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -316,7 +295,20 @@ fn finaliseFrame(
 
     switch (input.config.report) {
         .off => {},
-        .bench => {},
+        .bench => {
+            if (input.bench_capture) |capture| {
+                const capture_idx = calcBenchCaptureIdx(
+                    input.cameras_num,
+                    input.camera_idx,
+                    input.frame_idx,
+                );
+                capture[capture_idx] = .{
+                    .camera_idx = input.camera_idx,
+                    .frame_idx = input.frame_idx,
+                    .bench_log = ctx.report_storage.bench,
+                };
+            }
+        },
         .full_stats => try ctx.report_storage.full_stats.saveFrameReport(
             io,
             outer_alloc,
@@ -623,8 +615,6 @@ fn processFrameJobInternal(
     );
 
     // Stage 4: Finalise frame
-    writeBenchCapture(&input, &ctx);
-
     try finaliseFrame(outer_alloc, io, &input, &ctx);
 }
 
