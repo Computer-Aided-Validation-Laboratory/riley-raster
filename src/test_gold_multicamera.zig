@@ -182,8 +182,8 @@ test "Multicamera duplicate sphere200 cameras match each other" {
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
         .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
         .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-        .save_opt = .memory,
-        .save_opts = &[_]iio.ImageSaveOpts{
+        .save_strategy = .memory,
+        .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
         .report = .off,
@@ -344,8 +344,8 @@ test "Sphere200 multicamera gold tests" {
             .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
             .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
             .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-            .save_opt = .memory,
-            .save_opts = &[_]iio.ImageSaveOpts{
+            .save_strategy = .memory,
+            .image_save_opts = &[_]iio.ImageSaveOpts{
                 .{
                     .format = .csv,
                     .bits = null,
