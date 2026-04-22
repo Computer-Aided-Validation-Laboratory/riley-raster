@@ -308,6 +308,8 @@ fn writeBenchCapture(
 }
 
 fn finaliseFrame(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
     frame_ctx: *FrameContext,
 ) !void {
     const nodes_per_elem = calcNodesPerElem(frame_ctx.prep_meshes);
@@ -316,8 +318,8 @@ fn finaliseFrame(
         .off => {},
         .bench => {},
         .full_stats => try frame_ctx.report_storage.full_stats.saveFrameReport(
-            frame_ctx.io,
-            frame_ctx.outer_alloc,
+            io,
+            outer_alloc,
             frame_ctx.out_dir,
             frame_ctx.camera_idx,
             frame_ctx.frame_idx,
@@ -331,7 +333,7 @@ fn finaliseFrame(
     if (frame_ctx.save_strategy == .disk or frame_ctx.save_strategy == .both) {
         std.debug.assert(frame_ctx.frame_arr.dims[0] <= std.math.maxInt(u8));
         try iio.saveImages(
-            frame_ctx.io,
+            io,
             frame_ctx.out_dir,
             frame_ctx.camera_idx,
             frame_ctx.frame_idx,
@@ -345,6 +347,8 @@ fn finaliseFrame(
 
 fn rasterFrame(
     comptime report_mode: ReportMode,
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
     frame_ctx: *FrameContext,
     raster_threads: u16,
 ) !void {
@@ -363,7 +367,7 @@ fn rasterFrame(
         frame_ctx.tile_size,
     );
 
-    const time_start_overlap = Timestamp.now(frame_ctx.io, .awake);
+    const time_start_overlap = Timestamp.now(io, .awake);
 
     const tiling = try rops.sceneTileElemOverlap(
         arena_alloc,
@@ -376,12 +380,12 @@ fn rasterFrame(
         frame_ctx.elem_bboxes_by_mesh,
     );
 
-    const time_end_overlap = Timestamp.now(frame_ctx.io, .awake);
+    const time_end_overlap = Timestamp.now(io, .awake);
     frame_ctx.pipe_times.tile_overlap = @floatFromInt(
         time_start_overlap.durationTo(time_end_overlap).raw.nanoseconds,
     );
 
-    const time_start_loop = Timestamp.now(frame_ctx.io, .awake);
+    const time_start_loop = Timestamp.now(io, .awake);
 
     const ctx_rast = rops.RasterContext{
         .camera = frame_ctx.camera,
@@ -391,8 +395,8 @@ fn rasterFrame(
 
     try rasterengine.rasterScene(
         report_mode,
-        frame_ctx.outer_alloc,
-        frame_ctx.io,
+        outer_alloc,
+        io,
         ctx_rast,
         ctx_report,
         raster_threads,
@@ -402,12 +406,12 @@ fn rasterFrame(
         &frame_ctx.frame_arr,
     );
 
-    const time_end_loop = Timestamp.now(frame_ctx.io, .awake);
+    const time_end_loop = Timestamp.now(io, .awake);
     frame_ctx.pipe_times.raster_loop = @floatFromInt(
         time_start_loop.durationTo(time_end_loop).raw.nanoseconds,
     );
 
-    const raster_end = Timestamp.now(frame_ctx.io, .awake);
+    const raster_end = Timestamp.now(io, .awake);
     frame_ctx.pipe_times.total_time = @floatFromInt(
         time_start_overlap.durationTo(raster_end).raw.nanoseconds,
     );
@@ -423,7 +427,7 @@ fn rasterFrame(
         .bench => {
             const bench_log = report.getBenchLog(report_mode, report_ptr).?;
             try report.standardReport(
-                frame_ctx.io,
+                io,
                 frame_ctx.camera,
                 frame_ctx.pipe_times,
                 frame_ctx.total_elems_num,
@@ -433,7 +437,7 @@ fn rasterFrame(
             );
         },
         .full_stats => try report_ptr.fullReport(
-            frame_ctx.io,
+            io,
             frame_ctx.frame_idx,
             frame_ctx.camera,
             nodes_per_elem,
@@ -442,13 +446,15 @@ fn rasterFrame(
 }
 
 fn runFrameRaster(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
     frame_ctx: *FrameContext,
     raster_threads: u16,
 ) !void {
     switch (frame_ctx.report_mode) {
-        .off => try rasterFrame(.off, frame_ctx, raster_threads),
-        .bench => try rasterFrame(.bench, frame_ctx, raster_threads),
-        .full_stats => try rasterFrame(.full_stats, frame_ctx, raster_threads),
+        .off => try rasterFrame(.off, outer_alloc, io, frame_ctx, raster_threads),
+        .bench => try rasterFrame(.bench, outer_alloc, io, frame_ctx, raster_threads),
+        .full_stats => try rasterFrame(.full_stats, outer_alloc, io, frame_ctx, raster_threads),
     }
 }
 
@@ -456,8 +462,6 @@ fn runFrameRaster(
 // 4. Pipeline Stages
 
 const FrameContext = struct {
-    outer_alloc: std.mem.Allocator = undefined,
-    io: std.Io = undefined,
     arena: std.heap.ArenaAllocator,
     camera: *const Camera = undefined,
     tile_size: u16 = 0,
@@ -504,6 +508,8 @@ const FrameContext = struct {
 };
 
 fn prepareFrameContext(
+    outer_alloc: std.mem.Allocator,
+    _io: std.Io,
     frame_ctx: *FrameContext,
     camera: *const Camera,
     camera_idx: usize,
@@ -512,13 +518,9 @@ fn prepareFrameContext(
     num_fields: u8,
     images_arr: ?*NDArray(f64),
     out_dir: ?std.Io.Dir,
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
 ) !void {
+    _ = _io;
     const arena_alloc = frame_ctx.arena.allocator();
-
-    frame_ctx.outer_alloc = outer_alloc;
-    frame_ctx.io = io;
 
     frame_ctx.camera = camera;
     frame_ctx.tile_size = config.tile_size;
@@ -533,7 +535,7 @@ fn prepareFrameContext(
     frame_ctx.report_mode = config.report;
     frame_ctx.full_stats_opts = config.full_stats_opts;
     frame_ctx.report_storage = try initFrameReportStorage(
-        frame_ctx.outer_alloc,
+        outer_alloc,
         camera,
         config,
     );
@@ -558,8 +560,6 @@ fn prepareFrameContext(
 //------------------------------------------------------------------------------------------
 // 3. Process: frame jobs for a given camera and frame
 const FrameJobParams = struct {
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
     camera: *const Camera,
     camera_idx: usize,
     frame_idx: usize,
@@ -578,12 +578,16 @@ const FrameJobParams = struct {
 
 // Async/parallel processing function
 fn processFrameJobAsync(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
     job: FrameJobParams,
 ) std.Io.Cancelable!void {
-    var frame_ctx = FrameContext.init(job.outer_alloc);
-    defer frame_ctx.deinit(job.outer_alloc);
+    var frame_ctx = FrameContext.init(outer_alloc);
+    defer frame_ctx.deinit(outer_alloc);
 
     prepareFrameContext(
+        outer_alloc,
+        io,
         &frame_ctx,
         job.camera,
         job.camera_idx,
@@ -592,8 +596,6 @@ fn processFrameJobAsync(
         job.num_fields,
         job.images_arr,
         job.out_dir,
-        job.outer_alloc,
-        job.io,
     ) catch |err| switch (err) {
         else => {
             job.err_state.setFirst(err);
@@ -602,7 +604,7 @@ fn processFrameJobAsync(
     };
 
     // Stage 2: Geometry Preparation
-    const time_start_geo = Timestamp.now(job.io, .awake);
+    const time_start_geo = Timestamp.now(io, .awake);
     const arena_alloc = frame_ctx.arena.allocator();
     const mesh_n = job.mesh_static_prepared.len;
 
@@ -629,8 +631,8 @@ fn processFrameJobAsync(
 
     const geo_res = mr.prepareFrameMeshes(
         arena_alloc,
-        job.outer_alloc,
-        job.io,
+        outer_alloc,
+        io,
         job.camera,
         job.frame_idx,
         job.mesh_static_prepared,
@@ -648,12 +650,12 @@ fn processFrameJobAsync(
     frame_ctx.total_elems_num = geo_res.total_elems_num;
     frame_ctx.total_elems_in_image = geo_res.total_elems_in_image;
 
-    const time_end_geo = Timestamp.now(job.io, .awake);
+    const time_end_geo = Timestamp.now(io, .awake);
     frame_ctx.pipe_times.geometry_prep = @floatFromInt(
         time_start_geo.durationTo(time_end_geo).raw.nanoseconds,
     );
 
-    runFrameRaster(&frame_ctx, job.raster_threads) catch |err| switch (err) {
+    runFrameRaster(outer_alloc, io, &frame_ctx, job.raster_threads) catch |err| switch (err) {
         else => {
             job.err_state.setFirst(err);
             return;
@@ -662,7 +664,7 @@ fn processFrameJobAsync(
 
     writeBenchCapture(job.bench_capture, job.cameras_num, &frame_ctx);
 
-    finaliseFrame(&frame_ctx) catch |err| switch (err) {
+    finaliseFrame(outer_alloc, io, &frame_ctx) catch |err| switch (err) {
         else => {
             job.err_state.setFirst(err);
             return;
@@ -691,6 +693,8 @@ fn processFrameJobSerial(
     defer frame_ctx.deinit(outer_alloc);
 
     try prepareFrameContext(
+        outer_alloc,
+        io,
         &frame_ctx,
         camera,
         camera_idx,
@@ -699,8 +703,6 @@ fn processFrameJobSerial(
         num_fields,
         images_arr,
         out_dir,
-        outer_alloc,
-        io,
     );
 
     // Stage 2: Geometry Preparation
@@ -737,11 +739,11 @@ fn processFrameJobSerial(
         time_start_geo.durationTo(time_end_geo).raw.nanoseconds,
     );
 
-    try runFrameRaster(&frame_ctx, raster_threads);
+    try runFrameRaster(outer_alloc, io, &frame_ctx, raster_threads);
 
     writeBenchCapture(bench_capture, cameras_num, &frame_ctx);
 
-    try finaliseFrame(&frame_ctx);
+    try finaliseFrame(outer_alloc, io, &frame_ctx);
 }
 
 //------------------------------------------------------------------------------------------
@@ -828,24 +830,26 @@ fn dispatchOfflineFrameJobs(
             group.async(
                 io,
                 processFrameJobAsync,
-                .{FrameJobParams{
-                    .outer_alloc = outer_alloc,
-                    .io = io,
-                    .camera = camera,
-                    .camera_idx = camera_idx,
-                    .frame_idx = frame_idx,
-                    .num_fields = num_fields,
-                    .config = config,
-                    .out_dir = out_dir,
-                    .mesh_static_prepared = mesh_static_prepared,
-                    .nodal_global_scaling = nodal_global_scaling,
-                    .geom_threads = geom_threads,
-                    .raster_threads = raster_threads,
-                    .images_arr = images_arr,
-                    .bench_capture = bench_capture,
-                    .cameras_num = cameras.len,
-                    .err_state = &err_state,
-                }},
+                .{
+                    outer_alloc,
+                    io,
+                    FrameJobParams{
+                        .camera = camera,
+                        .camera_idx = camera_idx,
+                        .frame_idx = frame_idx,
+                        .num_fields = num_fields,
+                        .config = config,
+                        .out_dir = out_dir,
+                        .mesh_static_prepared = mesh_static_prepared,
+                        .nodal_global_scaling = nodal_global_scaling,
+                        .geom_threads = geom_threads,
+                        .raster_threads = raster_threads,
+                        .images_arr = images_arr,
+                        .bench_capture = bench_capture,
+                        .cameras_num = cameras.len,
+                        .err_state = &err_state,
+                    },
+                },
             );
         }
 
@@ -888,24 +892,26 @@ fn dispatchInOrderFrameJobs(
             group.async(
                 io,
                 processFrameJobAsync,
-                .{FrameJobParams{
-                    .outer_alloc = outer_alloc,
-                    .io = io,
-                    .camera = camera,
-                    .camera_idx = camera_idx,
-                    .frame_idx = frame_idx,
-                    .num_fields = num_fields,
-                    .config = config,
-                    .out_dir = out_dir,
-                    .mesh_static_prepared = mesh_static_prepared,
-                    .nodal_global_scaling = nodal_global_scaling,
-                    .geom_threads = geom_threads,
-                    .raster_threads = raster_threads,
-                    .images_arr = images_arr,
-                    .bench_capture = bench_capture,
-                    .cameras_num = cameras.len,
-                    .err_state = &err_state,
-                }},
+                .{
+                    outer_alloc,
+                    io,
+                    FrameJobParams{
+                        .camera = camera,
+                        .camera_idx = camera_idx,
+                        .frame_idx = frame_idx,
+                        .num_fields = num_fields,
+                        .config = config,
+                        .out_dir = out_dir,
+                        .mesh_static_prepared = mesh_static_prepared,
+                        .nodal_global_scaling = nodal_global_scaling,
+                        .geom_threads = geom_threads,
+                        .raster_threads = raster_threads,
+                        .images_arr = images_arr,
+                        .bench_capture = bench_capture,
+                        .cameras_num = cameras.len,
+                        .err_state = &err_state,
+                    },
+                },
             );
         }
 
