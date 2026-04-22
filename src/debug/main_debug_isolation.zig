@@ -127,9 +127,6 @@ pub fn main(init: std.process.Init) !void {
         const camera = try setupCamera(aa, mesh_inputs);
         defer camera.deinit(aa);
 
-        var out_dir = try cwd.openDir(io, "out-bench-multimesh-debug", .{});
-        defer out_dir.close(io);
-
         const config = RasterConfig{
             .save_opt = .disk,
             .save_opts = &[_]iio.ImageSaveOpts{
@@ -142,7 +139,7 @@ pub fn main(init: std.process.Init) !void {
             &[_]Camera{camera},
             mesh_inputs,
             config,
-            out_dir,
+            "out-bench-multimesh-debug",
             null,
         );
         // Rename frame_0_field_0.bmp to texture_only.bmp manually if needed,

@@ -969,6 +969,75 @@ fn initIdentityMappedNormals(
     };
 }
 
+pub const FrameGeometryResult = struct {
+    total_elems_num: usize,
+    total_elems_in_image: usize,
+};
+
+//==========================================================================================
+// Main Entry Point to Geometry Pipeline
+pub fn prepareFrameMeshes(
+    arena_alloc: std.mem.Allocator,
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    camera: *const Camera,
+    frame_idx: usize,
+    mesh_static_prepared: []const MeshStaticPrepared,
+    nodal_global_scaling: []const ?imageops.ScalingParams,
+    geom_threads: u16,
+    frame_meshes: []FrameMeshPrepared,
+    prep_meshes: []MeshPrepared,
+    elem_bboxes_by_mesh: [][]ElemBBox,
+    elems_in_image_by_mesh: []usize,
+    raster_hulls: []?NDArray(f64),
+) !FrameGeometryResult {
+    var geom_pool: ?geomthread.GeometryWorkerPool = null;
+    if (geom_threads > 1) {
+        var pool: geomthread.GeometryWorkerPool = undefined;
+        try pool.init(outer_alloc, io, geom_threads);
+        geom_pool = pool;
+    }
+    defer if (geom_pool) |*pool| pool.deinit(outer_alloc);
+
+    var res = FrameGeometryResult{ .total_elems_num = 0, .total_elems_in_image = 0 };
+
+    for (mesh_static_prepared, 0..) |*mesh_static, ii| {
+        var nodal_frame_scaling: ?imageops.ScalingParams = null;
+        switch (mesh_static.shader) {
+            .nodal => |s| {
+                if (s.scale_over == .over_frames) {
+                    nodal_frame_scaling = nodal_global_scaling[ii];
+                } else {
+                    nodal_frame_scaling = imageops.getScalingParamsNDArray(
+                        &s.field.array,
+                        frame_idx,
+                        s.scaling,
+                    );
+                }
+            },
+            else => {},
+        }
+
+        frame_meshes[ii] = try prepareVisibleFrameMesh(
+            arena_alloc,
+            camera,
+            mesh_static,
+            frame_idx,
+            nodal_frame_scaling,
+            if (geom_pool) |*p| p else null,
+        );
+        prep_meshes[ii] = frame_meshes[ii].mesh;
+        elem_bboxes_by_mesh[ii] = frame_meshes[ii].elem_bboxes;
+        elems_in_image_by_mesh[ii] = frame_meshes[ii].elems_in_image;
+        raster_hulls[ii] = frame_meshes[ii].raster_hull;
+        res.total_elems_num += frame_meshes[ii].total_elems_num;
+        res.total_elems_in_image += frame_meshes[ii].elems_in_image;
+    }
+
+    return res;
+}
+//==========================================================================================
+// Second entry point 
 pub fn prepareVisibleFrameMesh(
     allocator: std.mem.Allocator,
     camera: *const Camera,
@@ -1338,6 +1407,7 @@ pub fn prepareVisibleFrameMesh(
         .raster_hull = mesh_frame.frame_workspace.raster_hull,
     };
 }
+//==========================================================================================
 
 fn prepareVisibleNormalsThreaded(
     allocator: std.mem.Allocator,

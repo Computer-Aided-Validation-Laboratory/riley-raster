@@ -175,13 +175,6 @@ pub fn main(init: std.process.Init) !void {
         const out_dir_path = try std.fs.path.join(
             aa,
             &[_][]const u8{ out_root, render_case.case_name },
-        );
-        cwd.createDir(io, out_dir_path, .default_dir) catch |err| {
-            if (err != error.PathAlreadyExists) return err;
-        };
-        var out_dir = try cwd.openDir(io, out_dir_path, .{});
-        defer out_dir.close(io);
-
         std.debug.print(
             "Rendering multicamera gold: {s}/{s}\n",
             .{ out_root, render_case.case_name },
@@ -193,7 +186,7 @@ pub fn main(init: std.process.Init) !void {
             &cameras,
             &[_]mr.MeshInput{mesh_input},
             config,
-            out_dir,
+            out_dir_path,
             null,
         );
     }

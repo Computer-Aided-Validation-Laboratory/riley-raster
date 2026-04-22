@@ -173,15 +173,7 @@ pub fn main(init: std.process.Init) !void {
     );
     defer camera.deinit(aa);
 
-    // 8. Create Output Directory
-    const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, out_dir_root, .default_dir) catch |err| {
-        if (err != error.PathAlreadyExists) return err;
-    };
-    var out_dir = try cwd.openDir(io, out_dir_root, .{});
-    defer out_dir.close(io);
-
-    // 9. Run the Rasteriser
+    // 8. Run the Rasteriser
     std.debug.print("Rendering to {s}/...\n", .{out_dir_root});
     const images = try zraster.rasterAllFrames(
         aa,
@@ -189,7 +181,7 @@ pub fn main(init: std.process.Init) !void {
         &[_]Camera{camera},
         mesh_inputs,
         config,
-        out_dir,
+        out_dir_root,
         null,
     );
 

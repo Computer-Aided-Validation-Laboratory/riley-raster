@@ -307,44 +307,6 @@ fn writeBenchCapture(
     };
 }
 
-fn runFrameRasterMode(
-    comptime report_mode: ReportMode,
-    frame_ctx: *FrameContext,
-    raster_threads: u16,
-) !void {
-    try rasterPreparedVisibleInternal(
-        frame_ctx.arena.allocator(),
-        frame_ctx.io,
-        frame_ctx.camera,
-        frame_ctx.frame_idx,
-        frame_ctx.prep_meshes,
-        frame_ctx.elem_bboxes_by_mesh,
-        frame_ctx.elems_in_image_by_mesh,
-        frame_ctx.raster_hulls,
-        frame_ctx.total_elems_num,
-        frame_ctx.total_elems_in_image,
-        &frame_ctx.frame_arr,
-        frame_ctx.tile_size,
-        raster_threads,
-        report_mode,
-        getFrameReportPtr(report_mode, frame_ctx),
-        frame_ctx.outer_alloc,
-        Timestamp.now(frame_ctx.io, .awake),
-        frame_ctx.pipe_times,
-    );
-}
-
-fn runFrameRaster(
-    frame_ctx: *FrameContext,
-    raster_threads: u16,
-) !void {
-    switch (frame_ctx.report_mode) {
-        .off => try runFrameRasterMode(.off, frame_ctx, raster_threads),
-        .bench => try runFrameRasterMode(.bench, frame_ctx, raster_threads),
-        .full_stats => try runFrameRasterMode(.full_stats, frame_ctx, raster_threads),
-    }
-}
-
 fn finaliseFrame(
     frame_ctx: *FrameContext,
 ) !void {
@@ -381,119 +343,112 @@ fn finaliseFrame(
     }
 }
 
-fn rasterPreparedVisibleInternal(
-    arena_alloc: std.mem.Allocator,
-    io: std.Io,
-    camera: *const Camera,
-    frame_idx: usize,
-    meshes: []MeshPrepared,
-    elem_bboxes_by_mesh: [][]ElemBBox,
-    elems_in_image_by_mesh: []usize,
-    raster_hulls: []?NDArray(f64),
-    total_elems_num: usize,
-    total_elems_in_image: usize,
-    image_out_arr: *NDArray(f64),
-    tile_size: u16,
-    threads_within_image: u16,
+fn rasterFrame(
     comptime report_mode: ReportMode,
-    report_log: *report.LogType(report_mode),
-    outer_alloc: std.mem.Allocator,
-    raster_start: Timestamp,
-    pipe_times_in: report.PipeTimes,
+    frame_ctx: *FrameContext,
+    raster_threads: u16,
 ) !void {
-    const ctx_report = report.ReportContext(report_mode){ .log = report_log };
-    var pipe_times = pipe_times_in;
+    const report_ptr = getFrameReportPtr(report_mode, frame_ctx);
+    const ctx_report = report.ReportContext(report_mode){ .log = report_ptr };
+    const arena_alloc = frame_ctx.arena.allocator();
+
     const tiles_num_x: usize = try std.math.divCeil(
         usize,
-        camera.pixels_num[0],
-        tile_size,
+        frame_ctx.camera.pixels_num[0],
+        frame_ctx.tile_size,
     );
     const tiles_num_y: usize = try std.math.divCeil(
         usize,
-        camera.pixels_num[1],
-        tile_size,
+        frame_ctx.camera.pixels_num[1],
+        frame_ctx.tile_size,
     );
 
-    const time_start_overlap = Timestamp.now(io, .awake);
+    const time_start_overlap = Timestamp.now(frame_ctx.io, .awake);
 
     const tiling = try rops.sceneTileElemOverlap(
         arena_alloc,
-        tile_size,
+        frame_ctx.tile_size,
         tiles_num_x,
         tiles_num_y,
-        @intCast(camera.pixels_num[0]),
-        @intCast(camera.pixels_num[1]),
-        elems_in_image_by_mesh,
-        elem_bboxes_by_mesh,
+        @intCast(frame_ctx.camera.pixels_num[0]),
+        @intCast(frame_ctx.camera.pixels_num[1]),
+        frame_ctx.elems_in_image_by_mesh,
+        frame_ctx.elem_bboxes_by_mesh,
     );
 
-    const time_end_overlap = Timestamp.now(io, .awake);
-    pipe_times.tile_overlap = @floatFromInt(
+    const time_end_overlap = Timestamp.now(frame_ctx.io, .awake);
+    frame_ctx.pipe_times.tile_overlap = @floatFromInt(
         time_start_overlap.durationTo(time_end_overlap).raw.nanoseconds,
     );
 
-    const time_start_loop = Timestamp.now(io, .awake);
+    const time_start_loop = Timestamp.now(frame_ctx.io, .awake);
 
     const ctx_rast = rops.RasterContext{
-        .camera = camera,
-        .frame_idx = frame_idx,
-        .tile_size = tile_size,
+        .camera = frame_ctx.camera,
+        .frame_idx = frame_ctx.frame_idx,
+        .tile_size = frame_ctx.tile_size,
     };
 
     try rasterengine.rasterScene(
         report_mode,
-        outer_alloc,
-        io,
+        frame_ctx.outer_alloc,
+        frame_ctx.io,
         ctx_rast,
         ctx_report,
-        threads_within_image,
+        raster_threads,
         tiling,
-        meshes,
-        raster_hulls,
-        image_out_arr,
+        frame_ctx.prep_meshes,
+        frame_ctx.raster_hulls,
+        &frame_ctx.frame_arr,
     );
 
-    const time_end_loop = Timestamp.now(io, .awake);
-    pipe_times.raster_loop = @floatFromInt(
+    const time_end_loop = Timestamp.now(frame_ctx.io, .awake);
+    frame_ctx.pipe_times.raster_loop = @floatFromInt(
         time_start_loop.durationTo(time_end_loop).raw.nanoseconds,
     );
 
-    const raster_end = Timestamp.now(io, .awake);
-    pipe_times.total_time = @floatFromInt(
-        raster_start.durationTo(raster_end).raw.nanoseconds,
+    const raster_end = Timestamp.now(frame_ctx.io, .awake);
+    frame_ctx.pipe_times.total_time = @floatFromInt(
+        time_start_overlap.durationTo(raster_end).raw.nanoseconds,
     );
 
-    if (report.getBenchLog(report_mode, report_log)) |bench_log| {
-        bench_log.pipe_times = pipe_times;
+    if (report.getBenchLog(report_mode, report_ptr)) |bench_log| {
+        bench_log.pipe_times = frame_ctx.pipe_times;
     }
 
-    var nodes_sum: usize = 0;
-    for (meshes) |mesh| {
-        nodes_sum += mesh.mesh_type.getNodesNum();
-    }
-    const nodes_per_elem: f64 = @as(f64, @floatFromInt(nodes_sum)) /
-        @as(f64, @floatFromInt(meshes.len));
+    const nodes_per_elem = calcNodesPerElem(frame_ctx.prep_meshes);
 
     switch (report_mode) {
         .off => {},
         .bench => {
-            const bench_log = report.getBenchLog(report_mode, report_log).?;
+            const bench_log = report.getBenchLog(report_mode, report_ptr).?;
             try report.standardReport(
-                io,
-                camera,
-                pipe_times,
-                total_elems_num,
-                total_elems_in_image,
+                frame_ctx.io,
+                frame_ctx.camera,
+                frame_ctx.pipe_times,
+                frame_ctx.total_elems_num,
+                frame_ctx.total_elems_in_image,
                 nodes_per_elem,
                 bench_log,
             );
         },
-        .full_stats => try report_log.fullReport(
-            io,
-            frame_idx,
-            camera,
+        .full_stats => try report_ptr.fullReport(
+            frame_ctx.io,
+            frame_ctx.frame_idx,
+            frame_ctx.camera,
             nodes_per_elem,
         ),
+    }
+}
+
+fn runFrameRaster(
+    frame_ctx: *FrameContext,
+    raster_threads: u16,
+) !void {
+    switch (frame_ctx.report_mode) {
+        .off => try rasterFrame(.off, frame_ctx, raster_threads),
+        .bench => try rasterFrame(.bench, frame_ctx, raster_threads),
+        .full_stats => try rasterFrame(.full_stats, frame_ctx, raster_threads),
     }
 }
 
@@ -598,106 +553,7 @@ fn prepareFrameContext(
     @memset(frame_ctx.frame_arr.slice, 0.0);
 }
 
-fn prepareFrameGeometry(
-    frame_ctx: *FrameContext,
-    camera: *const Camera,
-    mesh_static_prepared: []const MeshStaticPrepared,
-    nodal_global_scaling: []const ?imageops.ScalingParams,
-    geom_pool: ?*geomthread.GeometryWorkerPool,
-) !void {
-    const arena_alloc = frame_ctx.arena.allocator();
-    const time_start_geo = Timestamp.now(frame_ctx.io, .awake);
 
-    frame_ctx.frame_meshes = try arena_alloc.alloc(
-        FrameMeshPrepared,
-        mesh_static_prepared.len,
-    );
-    frame_ctx.prep_meshes = try arena_alloc.alloc(MeshPrepared, mesh_static_prepared.len);
-    frame_ctx.elem_bboxes_by_mesh = try arena_alloc.alloc(
-        []ElemBBox,
-        mesh_static_prepared.len,
-    );
-    frame_ctx.elems_in_image_by_mesh = try arena_alloc.alloc(
-        usize,
-        mesh_static_prepared.len,
-    );
-    frame_ctx.raster_hulls = try arena_alloc.alloc(
-        ?NDArray(f64),
-        mesh_static_prepared.len,
-    );
-    frame_ctx.total_elems_in_image = 0;
-    frame_ctx.total_elems_num = 0;
-
-    for (mesh_static_prepared, 0..) |*mesh_static, ii| {
-        var nodal_frame_scaling: ?imageops.ScalingParams = null;
-        switch (mesh_static.shader) {
-            .nodal => |s| {
-                if (s.scale_over == .over_frames) {
-                    nodal_frame_scaling = nodal_global_scaling[ii];
-                } else {
-                    nodal_frame_scaling = imageops.getScalingParamsNDArray(
-                        &s.field.array,
-                        frame_ctx.frame_idx,
-                        s.scaling,
-                    );
-                }
-            },
-            else => {},
-        }
-
-        frame_ctx.frame_meshes[ii] = try mr.prepareVisibleFrameMesh(
-            arena_alloc,
-            camera,
-            mesh_static,
-            frame_ctx.frame_idx,
-            nodal_frame_scaling,
-            geom_pool,
-        );
-        frame_ctx.prep_meshes[ii] = frame_ctx.frame_meshes[ii].mesh;
-        frame_ctx.elem_bboxes_by_mesh[ii] = frame_ctx.frame_meshes[ii].elem_bboxes;
-        frame_ctx.elems_in_image_by_mesh[ii] = frame_ctx.frame_meshes[ii].elems_in_image;
-        frame_ctx.raster_hulls[ii] = frame_ctx.frame_meshes[ii].raster_hull;
-        frame_ctx.total_elems_num += frame_ctx.frame_meshes[ii].total_elems_num;
-        frame_ctx.total_elems_in_image += frame_ctx.frame_meshes[ii].elems_in_image;
-    }
-
-    const time_end_geo = Timestamp.now(frame_ctx.io, .awake);
-    frame_ctx.pipe_times = .{};
-    frame_ctx.pipe_times.geometry_prep = @floatFromInt(
-        time_start_geo.durationTo(time_end_geo).raw.nanoseconds,
-    );
-}
-
-fn prepareFrameGeometryLinear(
-    frame_ctx: *FrameContext,
-    camera: *const Camera,
-    mesh_static_prepared: []const MeshStaticPrepared,
-    nodal_global_scaling: []const ?imageops.ScalingParams,
-    geom_threads: u16,
-) !void {
-    if (geom_threads <= 1) {
-        try prepareFrameGeometry(
-            frame_ctx,
-            camera,
-            mesh_static_prepared,
-            nodal_global_scaling,
-            null,
-        );
-        return;
-    }
-
-    var geom_pool: geomthread.GeometryWorkerPool = undefined;
-    try geom_pool.init(frame_ctx.outer_alloc, frame_ctx.io, geom_threads);
-    defer geom_pool.deinit(frame_ctx.outer_alloc);
-
-    try prepareFrameGeometry(
-        frame_ctx,
-        camera,
-        mesh_static_prepared,
-        nodal_global_scaling,
-        &geom_pool,
-    );
-}
 
 //------------------------------------------------------------------------------------------
 // 3. Process: frame jobs for a given camera and frame
@@ -745,18 +601,57 @@ fn processFrameJobAsync(
         },
     };
 
-    prepareFrameGeometryLinear(
-        &frame_ctx,
+    // Stage 2: Geometry Preparation
+    const time_start_geo = Timestamp.now(job.io, .awake);
+    const arena_alloc = frame_ctx.arena.allocator();
+    const mesh_n = job.mesh_static_prepared.len;
+
+    frame_ctx.frame_meshes = arena_alloc.alloc(FrameMeshPrepared, mesh_n) catch |err| {
+        job.err_state.setFirst(err);
+        return;
+    };
+    frame_ctx.prep_meshes = arena_alloc.alloc(MeshPrepared, mesh_n) catch |err| {
+        job.err_state.setFirst(err);
+        return;
+    };
+    frame_ctx.elem_bboxes_by_mesh = arena_alloc.alloc([]ElemBBox, mesh_n) catch |err| {
+        job.err_state.setFirst(err);
+        return;
+    };
+    frame_ctx.elems_in_image_by_mesh = arena_alloc.alloc(usize, mesh_n) catch |err| {
+        job.err_state.setFirst(err);
+        return;
+    };
+    frame_ctx.raster_hulls = arena_alloc.alloc(?NDArray(f64), mesh_n) catch |err| {
+        job.err_state.setFirst(err);
+        return;
+    };
+
+    const geo_res = mr.prepareFrameMeshes(
+        arena_alloc,
+        job.outer_alloc,
+        job.io,
         job.camera,
+        job.frame_idx,
         job.mesh_static_prepared,
         job.nodal_global_scaling,
         job.geom_threads,
-    ) catch |err| switch (err) {
-        else => {
-            job.err_state.setFirst(err);
-            return;
-        },
+        frame_ctx.frame_meshes,
+        frame_ctx.prep_meshes,
+        frame_ctx.elem_bboxes_by_mesh,
+        frame_ctx.elems_in_image_by_mesh,
+        frame_ctx.raster_hulls,
+    ) catch |err| {
+        job.err_state.setFirst(err);
+        return;
     };
+    frame_ctx.total_elems_num = geo_res.total_elems_num;
+    frame_ctx.total_elems_in_image = geo_res.total_elems_in_image;
+
+    const time_end_geo = Timestamp.now(job.io, .awake);
+    frame_ctx.pipe_times.geometry_prep = @floatFromInt(
+        time_start_geo.durationTo(time_end_geo).raw.nanoseconds,
+    );
 
     runFrameRaster(&frame_ctx, job.raster_threads) catch |err| switch (err) {
         else => {
@@ -808,12 +703,38 @@ fn processFrameJobSerial(
         io,
     );
 
-    try prepareFrameGeometryLinear(
-        &frame_ctx,
+    // Stage 2: Geometry Preparation
+    const time_start_geo = Timestamp.now(io, .awake);
+    const arena_alloc = frame_ctx.arena.allocator();
+    const mesh_n = mesh_static_prepared.len;
+
+    frame_ctx.frame_meshes = try arena_alloc.alloc(FrameMeshPrepared, mesh_n);
+    frame_ctx.prep_meshes = try arena_alloc.alloc(MeshPrepared, mesh_n);
+    frame_ctx.elem_bboxes_by_mesh = try arena_alloc.alloc([]ElemBBox, mesh_n);
+    frame_ctx.elems_in_image_by_mesh = try arena_alloc.alloc(usize, mesh_n);
+    frame_ctx.raster_hulls = try arena_alloc.alloc(?NDArray(f64), mesh_n);
+
+    const geo_res = try mr.prepareFrameMeshes(
+        arena_alloc,
+        outer_alloc,
+        io,
         camera,
+        frame_idx,
         mesh_static_prepared,
         nodal_global_scaling,
         geom_threads,
+        frame_ctx.frame_meshes,
+        frame_ctx.prep_meshes,
+        frame_ctx.elem_bboxes_by_mesh,
+        frame_ctx.elems_in_image_by_mesh,
+        frame_ctx.raster_hulls,
+    );
+    frame_ctx.total_elems_num = geo_res.total_elems_num;
+    frame_ctx.total_elems_in_image = geo_res.total_elems_in_image;
+
+    const time_end_geo = Timestamp.now(io, .awake);
+    frame_ctx.pipe_times.geometry_prep = @floatFromInt(
+        time_start_geo.durationTo(time_end_geo).raw.nanoseconds,
     );
 
     try runFrameRaster(&frame_ctx, raster_threads);
@@ -1003,9 +924,19 @@ pub fn rasterAllFrames(
     cameras: []const Camera,
     meshes: []const MeshInput,
     config: RasterConfig,
-    out_dir: ?std.Io.Dir,
+    out_dir_path: ?[]const u8,
     bench_capture: ?[]FrameBenchCapture,
 ) !?NDArray(f64) {
+    var out_dir: ?std.Io.Dir = null;
+    if (out_dir_path) |path| {
+        const cwd = std.Io.Dir.cwd();
+        cwd.createDir(io, path, .default_dir) catch |err| {
+            if (err != error.PathAlreadyExists) return err;
+        };
+        out_dir = try cwd.openDir(io, path, .{});
+    }
+    defer if (out_dir) |*od| od.close(io);
+
     var static_arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer static_arena.deinit();
     const static_alloc = static_arena.allocator();

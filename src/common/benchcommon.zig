@@ -518,22 +518,13 @@ fn runBenchmarkInternal(
     };
 
     const case_name = try calcCaseName(aa, etype, shader_type, sample_config);
-    var out_dir_h: ?std.Io.Dir = null;
-    if (options.out_dir_base.len > 0) {
-        const out_path = try std.fs.path.join(
+    const out_path = if (options.out_dir_base.len > 0)
+        try std.fs.path.join(
             aa,
             &[_][]const u8{ options.out_dir_base, case_name },
-        );
-        const cwd = std.Io.Dir.cwd();
-        cwd.createDir(io, options.out_dir_base, .default_dir) catch |err| {
-            if (err != error.PathAlreadyExists) return err;
-        };
-        cwd.createDir(io, out_path, .default_dir) catch |err| {
-            if (err != error.PathAlreadyExists) return err;
-        };
-        out_dir_h = try cwd.openDir(io, out_path, .{});
-    }
-    defer if (out_dir_h) |*out_dir| out_dir.close(io);
+        )
+    else
+        null;
 
     var bench_capture_storage: [1]zraster.FrameBenchCapture = undefined;
     const bench_capture = if (report_mode == .bench)
@@ -548,7 +539,7 @@ fn runBenchmarkInternal(
         &[_]Camera{camera},
         &[_]mr.MeshInput{mesh_input},
         config,
-        out_dir_h,
+        out_path,
         bench_capture,
     );
     const e2e_end = Timestamp.now(io, .awake);

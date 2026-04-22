@@ -32,9 +32,6 @@ pub fn renderAndSave(
     add_disp: bool,
     config: RasterConfig,
 ) !void {
-    var out_dir = try orch.openDirEnsured(io, dir);
-    defer out_dir.close(io);
-
     const mesh_input = MeshInput{
         .mesh_type = mt,
         .coords = coords,
@@ -50,7 +47,7 @@ pub fn renderAndSave(
         &[_]Camera{camera.*},
         meshes,
         config,
-        out_dir,
+        dir,
         null,
     );
     if (images) |img| {
@@ -204,9 +201,6 @@ pub fn runMultimeshGenerationExt(
         );
         defer camera.deinit(aa);
 
-        var out_dir = try orch.openDirEnsured(io, gold_dir);
-        defer out_dir.close(io);
-
         std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
         const images = try zraster.rasterAllFrames(
             aa,
@@ -214,7 +208,7 @@ pub fn runMultimeshGenerationExt(
             &[_]Camera{camera},
             mesh_inputs,
             config,
-            out_dir,
+            gold_dir,
             null,
         );
         if (images) |img| {
@@ -275,8 +269,6 @@ pub fn runMultimeshMixedGenerationExt(
         fov_scale_factor,
     );
     defer camera.deinit(aa);
-    var out_dir = try orch.openDirEnsured(io, gold_dir);
-    defer out_dir.close(io);
 
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
     const images = try zraster.rasterAllFrames(
@@ -285,7 +277,7 @@ pub fn runMultimeshMixedGenerationExt(
         &[_]Camera{camera},
         mesh_inputs,
         config,
-        out_dir,
+        gold_dir,
         null,
     );
     if (images) |img| {
@@ -362,9 +354,6 @@ pub fn runMultimeshMixedRGBGenerationExt(
         config_rgb.image_save_opts = opts_rgb;
     }
 
-    var out_dir = try orch.openDirEnsured(io, gold_dir);
-    defer out_dir.close(io);
-
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
     _ = try zraster.rasterAllFrames(
         aa,
@@ -372,7 +361,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
         &[_]Camera{camera_rgb},
         mesh_inputs,
         config_rgb,
-        out_dir,
+        gold_dir,
         null,
     );
 }
