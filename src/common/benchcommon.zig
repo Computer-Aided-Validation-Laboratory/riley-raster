@@ -13,6 +13,7 @@ const iio = @import("../zraster/zig/imageio.zig");
 const uvio = @import("../zraster/zig/uvio.zig");
 const csvio = @import("../zraster/zig/csvio.zig");
 const mo = @import("../zraster/zig/meshops.zig");
+const so = @import("../zraster/zig/shaderops.zig");
 const Camera = @import("../zraster/zig/camera.zig").Camera;
 const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
 const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
@@ -425,7 +426,7 @@ fn runBenchmarkInternal(
     );
     const uvs_raw = try loadNDArrayFromCSV(aa, io, uv_path, 2, false);
 
-    var shader: mo.ShaderInput = undefined;
+    var shader: so.ShaderInput = undefined;
     var num_out_fields: u8 = 1;
 
     switch (shader_type) {
