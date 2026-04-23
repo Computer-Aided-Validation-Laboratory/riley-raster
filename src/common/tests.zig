@@ -13,7 +13,7 @@ const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
 const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
 
 const meshio = @import("../zraster/zig/meshio.zig");
-const Camera = @import("../zraster/zig/camera.zig").Camera;
+const CameraPrepared = @import("../zraster/zig/camera.zig").CameraPrepared;
 const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
 
 const mo = @import("../zraster/zig/meshops.zig");

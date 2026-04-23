@@ -49,6 +49,12 @@ pub const NewtonTolerance = struct {
     parametric_domain: f64 = 1e-7,
 };
 
+pub const DistortionTolerance = struct {
+    residual: f64 = 1e-10,
+    delta: f64 = 1e-10,
+    determinant: f64 = 1e-12,
+};
+
 pub const NewtonSeedTolerance = struct {
     determinant: f64 = 1e-10,
     parametric_domain: f64 = 1e-5,
@@ -80,6 +86,7 @@ pub const Tolerance = struct {
     culling: CullingTolerance = .{},
     normals: NormalTolerance = .{},
     newton: NewtonTolerance = .{},
+    distortion: DistortionTolerance = .{},
     newton_seed: NewtonSeedTolerance = .{},
     geometry: GeometryTolerance = .{},
     texture: TextureTolerance = .{},
@@ -94,7 +101,8 @@ pub const Config = struct {
     simd_vector_width: comptime_int = 8,
     max_nodal_fields: comptime_int = 8,
     max_image_channels: comptime_int = 8,
-    newton_iter_max: comptime_int = 10,
+    raster_newton_iter_max: comptime_int = 10,
+    distortion_newton_iter_max: comptime_int = 15,
     interp_lut_size: comptime_int = 1024,
     precision: type = f64,
     tolerance: Tolerance = .{},
@@ -107,7 +115,8 @@ pub const config = Config{
     .simd_vector_width = 8,
     .max_nodal_fields = 8,
     .max_image_channels = 8,
-    .newton_iter_max = 10,
+    .raster_newton_iter_max = 10,
+    .distortion_newton_iter_max = 15,
     .interp_lut_size = 1024,
     .precision = f64,
     .tolerance = .{},

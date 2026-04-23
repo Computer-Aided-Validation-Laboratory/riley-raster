@@ -18,7 +18,7 @@ const MeshType = mo.MeshType;
 const MeshInput = mo.MeshInput;
 const camera_mod = @import("zraster/zig/camera.zig");
 const Rotation = camera_mod.Rotation;
-const Camera = camera_mod.Camera;
+const CameraPrepared = camera_mod.CameraPrepared;
 const CameraOps = camera_mod.CameraOps;
 const MatSlice = @import("zraster/zig/matslice.zig").MatSlice;
 
@@ -102,7 +102,7 @@ pub fn main(init: std.process.Init) !void {
         rot,
         fov_scale_factor,
     );
-    const camera = try Camera.init(
+    const camera = try CameraPrepared.init(
         aa,
         .{
             .pixels_num = pixel_num,

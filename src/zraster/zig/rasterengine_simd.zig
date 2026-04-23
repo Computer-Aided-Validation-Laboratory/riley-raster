@@ -7,7 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const Camera = @import("camera.zig").Camera;
+const CameraPrepared = @import("camera.zig").CameraPrepared;
 const buildconfig = @import("buildconfig.zig");
 const cfg = buildconfig.config;
 const S = buildconfig.SimdWidth;

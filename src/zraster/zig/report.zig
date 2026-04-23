@@ -11,7 +11,7 @@ const NDArray = @import("ndarray.zig").NDArray;
 const ImageFormat = @import("imageio.zig").ImageFormat;
 const iio = @import("imageio.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
-const Camera = @import("camera.zig").Camera;
+const CameraPrepared = @import("camera.zig").CameraPrepared;
 
 pub const ReportMode = enum {
     off,
@@ -103,7 +103,7 @@ pub const FullStatsLog = struct {
         io: std.Io,
         allocator: std.mem.Allocator,
         save_dir: std.Io.Dir,
-        camera: *const Camera,
+        camera: *const CameraPrepared,
         tile_size: u16,
         tile_data: []const f64,
         name_prefix: []const u8,
@@ -138,7 +138,7 @@ pub const FullStatsLog = struct {
         out_dir: ?std.Io.Dir,
         camera_idx: usize,
         frame_idx: usize,
-        camera: *const Camera,
+        camera: *const CameraPrepared,
         tile_size: u16,
         opts: FullStatsOpts,
         nodes_per_elem: f64,
@@ -299,7 +299,7 @@ pub const FullStatsLog = struct {
         self: *const FullStatsLog,
         io: std.Io,
         frame_idx: usize,
-        camera: *const Camera,
+        camera: *const CameraPrepared,
         nodes_per_elem: f64,
     ) !void {
         var buffer: [4096]u8 = undefined;
@@ -312,7 +312,7 @@ pub const FullStatsLog = struct {
         self: *const FullStatsLog,
         writer: anytype,
         frame_idx: usize,
-        camera: *const Camera,
+        camera: *const CameraPrepared,
         nodes_per_elem: f64,
     ) !void {
         const total_ms = self.bench.frame_times.total_time / 1e6;
@@ -861,7 +861,7 @@ pub inline fn recordNormalSIMD(
 
 pub fn standardReport(
     io: std.Io,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     frame_times: FrameTimes,
     total_elems: usize,
     visible_elems: usize,

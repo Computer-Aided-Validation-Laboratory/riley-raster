@@ -18,7 +18,7 @@ const MeshType = mo.MeshType;
 const MeshInput = mo.MeshInput;
 const MeshPrepared = mo.MeshPrepared;
 
-const Camera = @import("zraster/zig/camera.zig").Camera;
+const CameraPrepared = @import("zraster/zig/camera.zig").CameraPrepared;
 const CameraOps = @import("zraster/zig/camera.zig").CameraOps;
 const Rotation = @import("zraster/zig/rotation.zig").Rotation;
 
@@ -223,7 +223,10 @@ pub fn main(init: std.process.Init) !void {
     print("Done debug isolation.\n", .{});
 }
 
-fn setupCamera(allocator: std.mem.Allocator, meshes: []const MeshInput) !Camera {
+fn setupCamera(
+    allocator: std.mem.Allocator,
+    meshes: []const MeshInput,
+) !CameraPrepared {
     const pixel_num = [_]u32{ 1600, 800 };
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
@@ -241,7 +244,7 @@ fn setupCamera(allocator: std.mem.Allocator, meshes: []const MeshInput) !Camera 
         fov_scale_factor,
     );
 
-    return try Camera.init(
+    return try CameraPrepared.init(
         allocator,
         .{
             .pixels_num = pixel_num,

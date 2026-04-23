@@ -17,7 +17,7 @@ const meshio = @import("zraster/zig/meshio.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const texops = @import("zraster/zig/textureops.zig");
 const uvio = @import("zraster/zig/uvio.zig");
-const Camera = @import("zraster/zig/camera.zig").Camera;
+const CameraPrepared = @import("zraster/zig/camera.zig").CameraPrepared;
 const CameraOps = @import("zraster/zig/camera.zig").CameraOps;
 const Rotation = @import("zraster/zig/camera.zig").Rotation;
 const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
@@ -88,7 +88,7 @@ fn initCameraForCoords(
     allocator: std.mem.Allocator,
     coords: *const meshio.Coords,
     pixel_num: [2]u32,
-) !Camera {
+) !CameraPrepared {
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_length: f64 = 50.0e-3;
     const rot = Rotation.init(0.0, 0.0, 0.0);
@@ -101,7 +101,7 @@ fn initCameraForCoords(
         1.0,
     );
 
-    return try Camera.init(
+    return try CameraPrepared.init(
         allocator,
         .{
             .pixels_num = pixel_num,

@@ -23,10 +23,14 @@ const Mat44Ops = matrix.Mat44Ops;
 const Rotation = @import("rotation.zig").Rotation;
 
 const NDArray = @import("ndarray.zig").NDArray;
+const buildconfig = @import("buildconfig.zig");
+const cfg = buildconfig.config;
+const tol = cfg.tolerance;
 
 pub const DistortionModel = union(enum) {
     none,
     brown_conrady: BrownConrady,
+    brown_conrady_ext: BrownConradyExt,
 };
 
 pub const BrownConrady = struct {
@@ -35,7 +39,220 @@ pub const BrownConrady = struct {
     k3: f64 = 0,
     p1: f64 = 0,
     p2: f64 = 0,
+
+    pub fn forward(self: BrownConrady, x: f64, y: f64) [2]f64 {
+        const r2 = x * x + y * y;
+        const r4 = r2 * r2;
+        const r6 = r4 * r2;
+        const radial_scale = 1.0 + self.k1 * r2 + self.k2 * r4 + self.k3 * r6;
+        return distortionForwardFromRadialScale(
+            x,
+            y,
+            radial_scale,
+            self.p1,
+            self.p2,
+        );
+    }
+
+    pub fn forwardWithJac(
+        self: BrownConrady,
+        x: f64,
+        y: f64,
+    ) DistortionForwardJacResult {
+        const r2 = x * x + y * y;
+        const r4 = r2 * r2;
+        const r6 = r4 * r2;
+        const radial_scale = 1.0 + self.k1 * r2 + self.k2 * r4 + self.k3 * r6;
+        const dradial_dr2 = self.k1 + 2.0 * self.k2 * r2 + 3.0 * self.k3 * r4;
+        return distortionForwardWithJacFromRadialScale(
+            x,
+            y,
+            radial_scale,
+            dradial_dr2,
+            self.p1,
+            self.p2,
+        );
+    }
+
+    pub fn inverse(
+        self: BrownConrady,
+        x_d: f64,
+        y_d: f64,
+    ) !DistortionInverseResult {
+        return try distortionInverseFromModel(BrownConrady, self, x_d, y_d);
+    }
 };
+
+pub const BrownConradyExt = struct {
+    k1: f64 = 0,
+    k2: f64 = 0,
+    k3: f64 = 0,
+    k4: f64 = 0,
+    k5: f64 = 0,
+    k6: f64 = 0,
+    p1: f64 = 0,
+    p2: f64 = 0,
+
+    pub fn forward(self: BrownConradyExt, x: f64, y: f64) [2]f64 {
+        const radial = self.calcRadialScaleAndDerivative(x, y);
+        return distortionForwardFromRadialScale(
+            x,
+            y,
+            radial.radial_scale,
+            self.p1,
+            self.p2,
+        );
+    }
+
+    pub fn forwardWithJac(
+        self: BrownConradyExt,
+        x: f64,
+        y: f64,
+    ) DistortionForwardJacResult {
+        const radial = self.calcRadialScaleAndDerivative(x, y);
+        return distortionForwardWithJacFromRadialScale(
+            x,
+            y,
+            radial.radial_scale,
+            radial.dradial_dr2,
+            self.p1,
+            self.p2,
+        );
+    }
+
+    pub fn inverse(
+        self: BrownConradyExt,
+        x_d: f64,
+        y_d: f64,
+    ) !DistortionInverseResult {
+        return try distortionInverseFromModel(BrownConradyExt, self, x_d, y_d);
+    }
+
+    fn calcRadialScaleAndDerivative(
+        self: BrownConradyExt,
+        x: f64,
+        y: f64,
+    ) struct { radial_scale: f64, dradial_dr2: f64 } {
+        const r2 = x * x + y * y;
+        const r4 = r2 * r2;
+        const r6 = r4 * r2;
+        const numerator = 1.0 + self.k1 * r2 + self.k2 * r4 + self.k3 * r6;
+        const denominator = 1.0 + self.k4 * r2 + self.k5 * r4 + self.k6 * r6;
+        const dnum_dr2 = self.k1 + 2.0 * self.k2 * r2 + 3.0 * self.k3 * r4;
+        const dden_dr2 = self.k4 + 2.0 * self.k5 * r2 + 3.0 * self.k6 * r4;
+        const radial_scale = numerator / denominator;
+        const dradial_dr2 =
+            (dnum_dr2 * denominator - numerator * dden_dr2) /
+            (denominator * denominator);
+        return .{
+            .radial_scale = radial_scale,
+            .dradial_dr2 = dradial_dr2,
+        };
+    }
+};
+
+pub const DistortionInverseResult = struct {
+    x: f64,
+    y: f64,
+};
+
+pub const DistortionForwardJacResult = struct {
+    x_d: f64,
+    y_d: f64,
+    jac: [2][2]f64,
+};
+
+fn distortionForwardFromRadialScale(
+    x: f64,
+    y: f64,
+    radial_scale: f64,
+    p1: f64,
+    p2: f64,
+) [2]f64 {
+    const r2 = x * x + y * y;
+    const x_d = x * radial_scale + 2.0 * p1 * x * y + p2 * (r2 + 2.0 * x * x);
+    const y_d = y * radial_scale + p1 * (r2 + 2.0 * y * y) + 2.0 * p2 * x * y;
+    return .{ x_d, y_d };
+}
+
+fn distortionForwardWithJacFromRadialScale(
+    x: f64,
+    y: f64,
+    radial_scale: f64,
+    dradial_dr2: f64,
+    p1: f64,
+    p2: f64,
+) DistortionForwardJacResult {
+    const distorted = distortionForwardFromRadialScale(
+        x,
+        y,
+        radial_scale,
+        p1,
+        p2,
+    );
+    const dradial_dx = dradial_dr2 * 2.0 * x;
+    const dradial_dy = dradial_dr2 * 2.0 * y;
+
+    const dx_fwd_dx = radial_scale + x * dradial_dx + 2.0 * p1 * y + 6.0 * p2 * x;
+    const dx_fwd_dy = x * dradial_dy + 2.0 * p1 * x + 2.0 * p2 * y;
+    const dy_fwd_dx = y * dradial_dx + 2.0 * p1 * x + 2.0 * p2 * y;
+    const dy_fwd_dy = radial_scale + y * dradial_dy + 6.0 * p1 * y + 2.0 * p2 * x;
+
+    return .{
+        .x_d = distorted[0],
+        .y_d = distorted[1],
+        .jac = .{
+            .{ dx_fwd_dx, dx_fwd_dy },
+            .{ dy_fwd_dx, dy_fwd_dy },
+        },
+    };
+}
+
+fn distortionInverseFromModel(
+    comptime DistortionType: type,
+    distortion: DistortionType,
+    x_d: f64,
+    y_d: f64,
+) !DistortionInverseResult {
+    var x = x_d;
+    var y = y_d;
+
+    const max_iters = cfg.distortion_newton_iter_max;
+    const tol_resid = tol.distortion.residual;
+    const tol_delta = tol.distortion.delta;
+
+    for (0..max_iters) |_| {
+        const fwd = distortion.forwardWithJac(x, y);
+        const f0 = fwd.x_d - x_d;
+        const f1 = fwd.y_d - y_d;
+
+        if (@max(@abs(f0), @abs(f1)) < tol_resid) {
+            return .{ .x = x, .y = y };
+        }
+
+        const a = fwd.jac[0][0];
+        const b = fwd.jac[0][1];
+        const c = fwd.jac[1][0];
+        const d = fwd.jac[1][1];
+
+        const det = a * d - b * c;
+        if (@abs(det) < tol.distortion.determinant) {
+            return error.SingularJacobian;
+        }
+
+        const delta_x = (-f0 * d + b * f1) / det;
+        const delta_y = (c * f0 - a * f1) / det;
+
+        x += delta_x;
+        y += delta_y;
+
+        if (@max(@abs(delta_x), @abs(delta_y)) < tol_delta) {
+            return .{ .x = x, .y = y };
+        }
+    }
+
+    return error.DistortionInverseFailed;
+}
 
 pub const CameraInput = struct {
     pixels_num: [2]u32,
@@ -141,7 +358,12 @@ pub const CameraPrepared = struct {
                         ideal_y = y_d;
                     },
                     .brown_conrady => |bc| {
-                        const solved = try brownConradyInverse(x_d, y_d, bc);
+                        const solved = try bc.inverse(x_d, y_d);
+                        ideal_x = solved.x;
+                        ideal_y = solved.y;
+                    },
+                    .brown_conrady_ext => |bc_ext| {
+                        const solved = try bc_ext.inverse(x_d, y_d);
                         ideal_x = solved.x;
                         ideal_y = solved.y;
                     },
@@ -173,96 +395,7 @@ pub const CameraPrepared = struct {
             .distortion = self.distortion,
         };
     }
-
-    pub fn brownConradyForward(
-        x: f64,
-        y: f64,
-        bc: BrownConrady,
-    ) [2]f64 {
-        const r2 = x * x + y * y;
-        const rad = 1.0 + bc.k1 * r2 + bc.k2 * r2 * r2 + bc.k3 * r2 * r2 * r2;
-        const x_d = x * rad + 2.0 * bc.p1 * x * y + bc.p2 * (r2 + 2.0 * x * x);
-        const y_d = y * rad + bc.p1 * (r2 + 2.0 * y * y) + 2.0 * bc.p2 * x * y;
-        return .{ x_d, y_d };
-    }
-
-    pub fn brownConradyForwardWithJacobian(
-        x: f64,
-        y: f64,
-        bc: BrownConrady,
-    ) struct { x_d: f64, y_d: f64, jac: [2][2]f64 } {
-        const r2 = x * x + y * y;
-        const r4 = r2 * r2;
-        const r6 = r4 * r2;
-        const rad = 1.0 + bc.k1 * r2 + bc.k2 * r4 + bc.k3 * r6;
-
-        const x_d = x * rad + 2.0 * bc.p1 * x * y + bc.p2 * (r2 + 2.0 * x * x);
-        const y_d = y * rad + bc.p1 * (r2 + 2.0 * y * y) + 2.0 * bc.p2 * x * y;
-
-        const drad_dr2 = bc.k1 + 2.0 * bc.k2 * r2 + 3.0 * bc.k3 * r4;
-        const drad_dx = drad_dr2 * 2.0 * x;
-        const drad_dy = drad_dr2 * 2.0 * y;
-
-        const dx_fwd_dx = rad + x * drad_dx + 2.0 * bc.p1 * y + 6.0 * bc.p2 * x;
-        const dx_fwd_dy = x * drad_dy + 2.0 * bc.p1 * x + 2.0 * bc.p2 * y;
-        const dy_fwd_dx = y * drad_dx + 2.0 * bc.p1 * x + 2.0 * bc.p2 * y;
-        const dy_fwd_dy = rad + y * drad_dy + 6.0 * bc.p1 * y + 2.0 * bc.p2 * x;
-
-        return .{
-            .x_d = x_d,
-            .y_d = y_d,
-            .jac = .{
-                .{ dx_fwd_dx, dx_fwd_dy },
-                .{ dy_fwd_dx, dy_fwd_dy },
-            },
-        };
-    }
-
-    pub fn brownConradyInverse(
-        x_d: f64,
-        y_d: f64,
-        bc: BrownConrady,
-    ) !struct { x: f64, y: f64 } {
-        var x = x_d;
-        var y = y_d;
-
-        const max_iters = 12;
-        const tol_resid = 1e-12;
-        const tol_delta = 1e-12;
-
-        for (0..max_iters) |_| {
-            const fwd = brownConradyForwardWithJacobian(x, y, bc);
-            const f0 = fwd.x_d - x_d;
-            const f1 = fwd.y_d - y_d;
-
-            if (@max(@abs(f0), @abs(f1)) < tol_resid) {
-                return .{ .x = x, .y = y };
-            }
-
-            const a = fwd.jac[0][0];
-            const b = fwd.jac[0][1];
-            const c = fwd.jac[1][0];
-            const d = fwd.jac[1][1];
-
-            const det = a * d - b * c;
-            if (@abs(det) < 1e-15) return error.SingularJacobian;
-
-            const delta_x = (-f0 * d + b * f1) / det;
-            const delta_y = (c * f0 - a * f1) / det;
-
-            x += delta_x;
-            y += delta_y;
-
-            if (@max(@abs(delta_x), @abs(delta_y)) < tol_delta) {
-                return .{ .x = x, .y = y };
-            }
-        }
-
-        return error.BrownConradyInverseFailed;
-    }
 };
-
-pub const Camera = CameraPrepared;
 
 pub const CameraOps = struct {
     pub fn fovFromCamRot(cam_rot: Rotation, coords_world: *const Coords) [2]f64 {
@@ -510,6 +643,49 @@ const sensor_size_exp = [2]f64{ 2.5, 2.5 };
 const cam_pos_arr = [_]f64{ 0.0, 800.0, 800.0 };
 const cam_pos_exp = Vec3f.initSlice(&cam_pos_arr);
 
+fn expectApproxEqRelAbs(
+    expected: f64,
+    actual: f64,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    const diff = @abs(expected - actual);
+    if (diff <= abs_tol) {
+        return;
+    }
+
+    const scale = @max(@abs(expected), @abs(actual));
+    if (scale == 0.0) {
+        return error.TestExpectedApproxEqRelAbs;
+    }
+    if (diff / scale > rel_tol) {
+        return error.TestExpectedApproxEqRelAbs;
+    }
+}
+
+fn checkDistortionGridInverse(
+    comptime DistortionType: type,
+    distortion: DistortionType,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    const grid_num = 25;
+    const min_coord = -0.45;
+    const max_coord = 0.45;
+    const coord_step = (max_coord - min_coord) / @as(f64, grid_num - 1);
+
+    for (0..grid_num) |jj| {
+        const y = min_coord + @as(f64, @floatFromInt(jj)) * coord_step;
+        for (0..grid_num) |ii| {
+            const x = min_coord + @as(f64, @floatFromInt(ii)) * coord_step;
+            const distorted = distortion.forward(x, y);
+            const recovered = try distortion.inverse(distorted[0], distorted[1]);
+            try expectApproxEqRelAbs(x, recovered.x, rel_tol, abs_tol);
+            try expectApproxEqRelAbs(y, recovered.y, rel_tol, abs_tol);
+        }
+    }
+}
+
 test "CameraOps.calcCamPos" {
     var coords = try Coords.initAlloc(testing.allocator, coord_n);
     defer testing.allocator.free(coords.mem);
@@ -562,11 +738,79 @@ test "BrownConrady.forwardInverse" {
     const x_ideal = 0.1;
     const y_ideal = -0.15;
 
-    const distorted = CameraPrepared.brownConradyForward(x_ideal, y_ideal, bc);
-    const recovered = try CameraPrepared.brownConradyInverse(distorted[0], distorted[1], bc);
+    const distorted = bc.forward(x_ideal, y_ideal);
+    const recovered = try bc.inverse(distorted[0], distorted[1]);
 
     try expectApproxEqAbs(x_ideal, recovered.x, 1e-10);
     try expectApproxEqAbs(y_ideal, recovered.y, 1e-10);
+}
+
+test "BrownConradyExt.forwardInverse" {
+    const bc_ext = BrownConradyExt{
+        .k1 = -0.18,
+        .k2 = 0.02,
+        .k3 = -0.004,
+        .k4 = 0.01,
+        .k5 = -0.002,
+        .k6 = 0.0004,
+        .p1 = 0.0012,
+        .p2 = -0.0018,
+    };
+
+    const x_ideal = -0.12;
+    const y_ideal = 0.18;
+
+    const distorted = bc_ext.forward(x_ideal, y_ideal);
+    const recovered = try bc_ext.inverse(distorted[0], distorted[1]);
+
+    try expectApproxEqAbs(x_ideal, recovered.x, 1e-10);
+    try expectApproxEqAbs(y_ideal, recovered.y, 1e-10);
+}
+
+test "BrownConrady.gridInverseRoundTrip" {
+    const bc_mild = BrownConrady{
+        .k1 = -0.08,
+        .k2 = 0.01,
+        .k3 = -0.002,
+        .p1 = 0.0004,
+        .p2 = -0.0007,
+    };
+    const bc_strong = BrownConrady{
+        .k1 = -0.2,
+        .k2 = 0.03,
+        .k3 = -0.005,
+        .p1 = 0.001,
+        .p2 = -0.0015,
+    };
+
+    try checkDistortionGridInverse(BrownConrady, bc_mild, 1e-6, 1e-6);
+    try checkDistortionGridInverse(BrownConrady, bc_strong, 1e-6, 1e-6);
+}
+
+test "BrownConradyExt.gridInverseRoundTrip" {
+    const bc_ext_mild = BrownConradyExt{
+        .k1 = -0.09,
+        .k2 = 0.012,
+        .k3 = -0.0015,
+        .k4 = 0.004,
+        .k5 = -0.0008,
+        .k6 = 0.00015,
+        .p1 = 0.0005,
+        .p2 = -0.0006,
+    };
+    const bc_ext_strong = BrownConradyExt{
+        .k1 = -0.18,
+        .k2 = 0.02,
+        .k3 = -0.004,
+        .k4 = 0.01,
+        .k5 = -0.002,
+        .k6 = 0.0004,
+        .p1 = 0.0012,
+        .p2 = -0.0018,
+    };
+
+    try checkDistortionGridInverse(BrownConradyExt, bc_ext_mild, 1e-6, 1e-6);
+    try checkDistortionGridInverse(BrownConradyExt, bc_ext_strong, 1e-6, 1e-6);
 }
 
 test "CameraPrepared.distortionNone" {
@@ -589,6 +833,45 @@ test "CameraPrepared.distortionNone" {
     const x_px_exp = 0.5;
     const x_ideal = camera.ideal_pixel_centers.get(&[_]usize{ 0, 0, 0 });
     try expectApproxEqAbs(x_px_exp, x_ideal, 1e-10);
+}
+
+test "CameraPrepared.brownConradyExtDistortionApplied" {
+    const distortion = BrownConradyExt{
+        .k1 = -0.18,
+        .k2 = 0.02,
+        .k3 = -0.004,
+        .k4 = 0.01,
+        .k5 = -0.002,
+        .k6 = 0.0004,
+        .p1 = 0.0012,
+        .p2 = -0.0018,
+    };
+    const input = CameraInput{
+        .pixels_num = .{ 10, 10 },
+        .pixels_size = .{ 0.01, 0.01 },
+        .pos_world = Vec3f.initZeros(),
+        .rot_world = Rotation.init(0, 0, 0),
+        .roi_cent_world = Vec3f.initZeros(),
+        .focal_length = 1.0,
+        .sub_sample = 1,
+        .distortion = .{ .brown_conrady_ext = distortion },
+    };
+
+    const camera = try CameraPrepared.init(testing.allocator, input);
+    defer camera.deinit(testing.allocator);
+
+    const x_off = 0.5 * @as(f64, @floatFromInt(input.pixels_num[0]));
+    const y_off = 0.5 * @as(f64, @floatFromInt(input.pixels_num[1]));
+    const fx = input.focal_length / input.pixels_size[0];
+    const fy = input.focal_length / input.pixels_size[1];
+    const x_d = (0.5 - x_off) / fx;
+    const y_d = (0.5 - y_off) / fy;
+    const solved = try distortion.inverse(x_d, y_d);
+
+    const x_ideal = camera.ideal_pixel_centers.get(&[_]usize{ 0, 0, 0 });
+    const y_ideal = camera.ideal_pixel_centers.get(&[_]usize{ 0, 0, 1 });
+    try expectApproxEqRelAbs(solved.x * fx + x_off, x_ideal, 1e-6, 1e-6);
+    try expectApproxEqRelAbs(solved.y * fy + y_off, y_ideal, 1e-6, 1e-6);
 }
 
 test "CameraOps.calcSensorSize" {

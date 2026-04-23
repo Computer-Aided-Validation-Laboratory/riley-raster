@@ -15,7 +15,7 @@ const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const VecSU8 = buildconfig.VecSU8;
-const iter_max = cfg.newton_iter_max;
+const iter_max = cfg.raster_newton_iter_max;
 const tol = cfg.tolerance;
 
 pub const NewtonSeed = struct {
@@ -203,9 +203,9 @@ pub fn evaluateSeedQuality(
     const seed_tol = tol.newton_seed;
 
     const is_usable = domain_violation <= seed_tol.parametric_domain and
-                      det_abs >= seed_tol.determinant and
-                      residual_sq <= seed_tol.residual_sq and
-                      std.math.isFinite(residual_sq);
+        det_abs >= seed_tol.determinant and
+        residual_sq <= seed_tol.residual_sq and
+        std.math.isFinite(residual_sq);
 
     return .{
         .is_usable = is_usable,
@@ -355,7 +355,7 @@ pub fn solveInverseSIMD(
     const v_iter_tol: VecSF = @splat(tol.newton.residual);
     const v_det_tol: VecSF = @splat(tol.newton.determinant);
     const v_eps: VecSF = @splat(tol.newton.parametric_domain);
-    
+
     var v_xi = v_xi_in;
     var v_eta = v_eta_in;
 
@@ -449,7 +449,7 @@ pub fn solveInverseSIMD(
         (v_xi >= -v_eps) & (v_eta >= -v_eps) & ((v_xi + v_eta) <= v_splat_one + v_eps)
     else
         (v_xi >= v_splat_neg_one - v_eps) & (v_xi <= v_splat_one + v_eps) &
-        (v_eta >= v_splat_neg_one - v_eps) & (v_eta <= v_splat_one + v_eps);
+            (v_eta >= v_splat_neg_one - v_eps) & (v_eta <= v_splat_one + v_eps);
 
     const v_final_converged = v_converged & v_is_in;
     v_xi_out.* = v_xi;

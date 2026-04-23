@@ -13,7 +13,7 @@ const meshio = @import("../zraster/zig/meshio.zig");
 const mo = @import("../zraster/zig/meshops.zig");
 const MeshType = mo.MeshType;
 const MeshInput = mo.MeshInput;
-const Camera = @import("../zraster/zig/camera.zig").Camera;
+const CameraPrepared = @import("../zraster/zig/camera.zig").CameraPrepared;
 const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
 const zraster = @import("../zraster/zig/zraster.zig");
 const RasterConfig = zraster.RasterConfig;
@@ -23,7 +23,7 @@ const texops = @import("../zraster/zig/textureops.zig");
 pub fn renderAndSave(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     mt: MeshType,
     coords: meshio.Coords,
     connect: meshio.Connect,

@@ -12,7 +12,7 @@ const cfg = buildconfig.config;
 const tol = cfg.tolerance;
 const rops = @import("rasterops.zig");
 const common = @import("hull_common.zig");
-const Camera = @import("camera.zig").Camera;
+const CameraPrepared = @import("camera.zig").CameraPrepared;
 const NDArray = @import("ndarray.zig").NDArray;
 const Vec3Slices = rops.Vec3Slices;
 

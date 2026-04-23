@@ -24,7 +24,7 @@ const ImageFormat = imageio.ImageFormat;
 
 const imageops = @import("imageops.zig");
 const ScalingParams = imageops.ScalingParams;
-const Camera = @import("camera.zig").Camera;
+const CameraPrepared = @import("camera.zig").CameraPrepared;
 const geomthread = @import("geomthread.zig");
 const rops = @import("rasterops.zig");
 const ElemBBox = rops.ElemBBox;
@@ -706,7 +706,7 @@ fn prepareFrameMeshCoordsRange(
 }
 
 fn transformFrameMeshCoordsRange(
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     mesh_type: MeshType,
     frame_workspace: *FrameMeshWorkspace,
     node_start: usize,
@@ -839,7 +839,7 @@ fn runPrepareFrameCoordsStage(
 }
 
 const TransformFrameCoordsStage = struct {
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     mesh_type: MeshType,
     frame_workspace: *FrameMeshWorkspace,
 };
@@ -862,7 +862,7 @@ fn runTransformFrameCoordsStage(
 }
 
 const CullVisibleCountStage = struct {
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     mesh_type: MeshType,
     connect: *const Connect,
     coords_nodes: *const Coords,
@@ -897,7 +897,7 @@ fn prefixVisibleCounts(mesh_frame: *MeshFrameContext) void {
 }
 
 const CullVisibleFillStage = struct {
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     mesh_type: MeshType,
     connect: *const Connect,
     coords_nodes: *const Coords,
@@ -1000,7 +1000,7 @@ fn runCompactVisibleUVStage(
 }
 
 const PrepareVisibleHullsStage = struct {
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     mesh_type: MeshType,
     elem_coords: *const NDArray(f64),
     raster_hull: *NDArray(f64),
@@ -1312,7 +1312,7 @@ fn runWriteVisibleAveragedNormalsStage(
 
 const FrameMeshPipeline = struct {
     allocator: std.mem.Allocator,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     mesh_static: *const MeshStaticPrepared,
     frame_idx: usize,
     scaling_params: ?ScalingParams,
@@ -1328,7 +1328,7 @@ const FrameMeshPipeline = struct {
 
     fn init(
         allocator: std.mem.Allocator,
-        camera: *const Camera,
+        camera: *const CameraPrepared,
         mesh_static: *const MeshStaticPrepared,
         frame_idx: usize,
         scaling_params: ?ScalingParams,
@@ -1712,7 +1712,7 @@ const FrameMeshPipeline = struct {
 
 fn prepareVisibleFrameMesh(
     allocator: std.mem.Allocator,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     mesh_static: *const MeshStaticPrepared,
     frame_idx: usize,
     scaling_params: ?ScalingParams,
@@ -1744,7 +1744,7 @@ pub fn prepareFrameMeshes(
     arena_alloc: std.mem.Allocator,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     frame_idx: usize,
     mesh_static_prepared: []const MeshStaticPrepared,
     nodal_global_scaling: []const ?imageops.ScalingParams,

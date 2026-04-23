@@ -9,7 +9,7 @@
 const std = @import("std");
 const rops = @import("zraster/zig/rasterops.zig");
 const hull = @import("zraster/zig/hull.zig");
-const Camera = @import("zraster/zig/camera.zig").Camera;
+const CameraPrepared = @import("zraster/zig/camera.zig").CameraPrepared;
 const CameraOps = @import("zraster/zig/camera.zig").CameraOps;
 const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
 const meshio = @import("zraster/zig/meshio.zig");
@@ -91,7 +91,7 @@ fn processCase(
         rot,
         fov_scale,
     );
-    const camera = try Camera.init(
+    const camera = try CameraPrepared.init(
         aa,
         .{
             .pixels_num = pixel_num,

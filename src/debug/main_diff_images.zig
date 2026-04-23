@@ -11,7 +11,7 @@ const zraster = @import("zraster/zig/zraster.zig");
 const meshio = @import("zraster/zig/meshio.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const uvio = @import("zraster/zig/uvio.zig");
-const Camera = @import("zraster/zig/camera.zig").Camera;
+const CameraPrepared = @import("zraster/zig/camera.zig").CameraPrepared;
 const CameraOps = @import("zraster/zig/camera.zig").CameraOps;
 const Rotation = @import("zraster/zig/camera.zig").Rotation;
 const MeshInput = @import("zraster/zig/meshops.zig").MeshInput;
@@ -204,7 +204,7 @@ pub fn main(init: std.process.Init) !void {
         rot,
         fov_scale_factor,
     );
-    const camera = try Camera.init(
+    const camera = try CameraPrepared.init(
         aa,
         .{
             .pixels_num = pixel_num,

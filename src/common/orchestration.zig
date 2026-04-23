@@ -14,7 +14,7 @@ const iio = @import("../zraster/zig/imageio.zig");
 const meshio = @import("../zraster/zig/meshio.zig");
 const mo = @import("../zraster/zig/meshops.zig");
 const uvio = @import("../zraster/zig/uvio.zig");
-const Camera = @import("../zraster/zig/camera.zig").Camera;
+const CameraPrepared = @import("../zraster/zig/camera.zig").CameraPrepared;
 const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
 const Rotation = @import("../zraster/zig/rotation.zig").Rotation;
 
@@ -88,7 +88,7 @@ pub fn testTypeSuffix(test_type: []const u8) []const u8 {
 pub const SingleMeshPrepared = struct {
     sim_data: meshio.SimData,
     uvs: uvio.UVMap,
-    camera: Camera,
+    camera: CameraPrepared,
 };
 
 pub fn prepareSingleMeshCase(
@@ -130,7 +130,7 @@ pub fn initCameraForCoords(
     coords: *const meshio.Coords,
     pixel_num: [2]u32,
     fov_scale: f64,
-) !Camera {
+) !CameraPrepared {
     return try initCameraForCoordsWithRotation(
         allocator,
         coords,
@@ -146,7 +146,7 @@ pub fn initCameraForCoordsWithRotation(
     pixel_num: [2]u32,
     fov_scale: f64,
     rot: Rotation,
-) !Camera {
+) !CameraPrepared {
     const cam_pos = CameraOps.posFillFrameFromRot(
         coords,
         pixel_num,
@@ -155,7 +155,7 @@ pub fn initCameraForCoordsWithRotation(
         rot,
         fov_scale,
     );
-    return try Camera.init(
+    return try CameraPrepared.init(
         allocator,
         .{
             .pixels_num = pixel_num,
@@ -175,7 +175,7 @@ pub fn initStereoCamerasForCoords(
     pixel_num: [2]u32,
     fov_scale: f64,
     half_angle_deg: f64,
-) ![2]Camera {
+) ![2]CameraPrepared {
     const half_angle_rad = half_angle_deg * std.math.pi / 180.0;
     return .{
         try initCameraForCoordsWithRotation(
@@ -200,7 +200,7 @@ pub fn initCameraForMeshes(
     mesh_inputs: []mo.MeshInput,
     pixel_num: [2]u32,
     fov_scale: f64,
-) !Camera {
+) !CameraPrepared {
     const rot = defaultRotation();
     const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
     const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
@@ -211,7 +211,7 @@ pub fn initCameraForMeshes(
         rot,
         fov_scale,
     );
-    return try Camera.init(
+    return try CameraPrepared.init(
         allocator,
         .{
             .pixels_num = pixel_num,

@@ -6,14 +6,14 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
-const Camera = @import("camera.zig").Camera;
+const CameraPrepared = @import("camera.zig").CameraPrepared;
 const NDArray = @import("ndarray.zig").NDArray;
 const rops = @import("rasterops.zig");
 const Vec3Slices = rops.Vec3Slices;
 
 pub fn buildAdaptiveHulls(
     comptime N: usize,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     dim_elem: usize,
     elem_coord_arr: *NDArray(f64),
     raster_hull: *NDArray(f64),

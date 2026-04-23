@@ -14,7 +14,7 @@ const uvio = @import("../zraster/zig/uvio.zig");
 const csvio = @import("../zraster/zig/csvio.zig");
 const mo = @import("../zraster/zig/meshops.zig");
 const so = @import("../zraster/zig/shaderops.zig");
-const Camera = @import("../zraster/zig/camera.zig").Camera;
+const CameraPrepared = @import("../zraster/zig/camera.zig").CameraPrepared;
 const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
 const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
 const Rotation = @import("../zraster/zig/rotation.zig").Rotation;
@@ -481,7 +481,7 @@ fn runBenchmarkInternal(
         rot,
         1.0,
     );
-    const camera = try Camera.init(
+    const camera = try CameraPrepared.init(
         aa,
         .{
             .pixels_num = pixel_num,

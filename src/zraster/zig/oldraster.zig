@@ -28,7 +28,7 @@ const Coords = @import("meshio.zig").Coords;
 const Connect = @import("meshio.zig").Connect;
 const Field = @import("meshio.zig").Field;
 
-const Camera = @import("camera.zig").Camera;
+const CameraPrepared = @import("camera.zig").CameraPrepared;
 
 const iio = @import("imageio.zig");
 
@@ -50,7 +50,7 @@ fn boundIndexMax(max_val: f64, pixels_num: usize) usize {
     return @as(usize, @intCast(@max(0, @min(max_idx, px))));
 }
 
-fn worldToRasterCoords(coord_world: Vec3f, camera: *const Camera) Vec3f {
+fn worldToRasterCoords(coord_world: Vec3f, camera: *const CameraPrepared) Vec3f {
     var coord_raster = Mat44Ops.mulVec3(f64, camera.world_to_cam_mat, coord_world);
 
     coord_raster.slice[0] = camera.image_dist * coord_raster.slice[0] /
@@ -77,7 +77,7 @@ pub fn rasterOneFrame(
     coords: *const Coords,
     connect: *const Connect,
     field: *const Field,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     image_out_arr: *NDArray(f64),
 ) !void {
 
@@ -458,7 +458,7 @@ pub fn rasterAllFrames(
     coords: *const Coords,
     connect: *const Connect,
     field: *const Field,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
 ) !NDArray(f64) {
 
     // We allocate all temporary buffers on our arena so no need to defer

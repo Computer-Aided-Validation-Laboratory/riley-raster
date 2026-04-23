@@ -19,7 +19,7 @@ const Coords = meshio.Coords;
 const Connect = meshio.Connect;
 const buildconfig = @import("buildconfig.zig");
 const cfg = buildconfig.config;
-const Camera = @import("camera.zig").Camera;
+const CameraPrepared = @import("camera.zig").CameraPrepared;
 const shapefun = @import("shapefun.zig");
 const S = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
@@ -112,7 +112,7 @@ pub const TilingOverlaps = struct {
 };
 
 pub const RasterContext = struct {
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     frame_idx: usize,
     tile_size: u16,
 };
@@ -145,7 +145,7 @@ fn GatheredElemCoords(comptime N: usize) type {
 }
 
 fn transformWorldNodeToRaster(
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     coord_world: Vec3T(f64),
 ) Vec3T(f64) {
     var coord_raster = Mat44Ops.mulVec3(f64, camera.world_to_cam_mat, coord_world);
@@ -168,7 +168,7 @@ fn transformWorldNodeToRaster(
 }
 
 fn transformWorldNodeToClipPx(
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     coord_world: Vec3T(f64),
 ) Vec3T(f64) {
     const x_scale = camera.image_dist *
@@ -184,14 +184,14 @@ fn transformWorldNodeToClipPx(
 }
 
 pub fn nodesToRasterInPlace(
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     coords_nodes: *Coords,
 ) void {
     nodesToRasterRangeInPlace(camera, coords_nodes, 0, coords_nodes.mat.rows_num);
 }
 
 pub fn nodesToRasterRangeInPlace(
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     coords_nodes: *Coords,
     node_start: usize,
     node_end: usize,
@@ -206,7 +206,7 @@ pub fn nodesToRasterRangeInPlace(
 }
 
 pub fn nodesToClipPxLengInPlace(
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     coords_nodes: *Coords,
 ) void {
     nodesToClipPxLengRangeInPlace(
@@ -218,7 +218,7 @@ pub fn nodesToClipPxLengInPlace(
 }
 
 pub fn nodesToClipPxLengRangeInPlace(
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     coords_nodes: *Coords,
     node_start: usize,
     node_end: usize,
@@ -253,7 +253,7 @@ fn gatherElemNodeCoords(
 
 fn buildAdaptiveHullPoints(
     comptime N: usize,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     coords_elem: GatheredElemCoords(N),
 ) AdaptiveHullPoints(N) {
     const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
@@ -368,7 +368,7 @@ pub fn worldToRasterSIMD(
     comptime N: usize,
     comptime T: type,
     coord_world: Vec3SIMD(N, T),
-    camera: *const Camera,
+    camera: *const CameraPrepared,
 ) Vec3SIMD(N, T) {
     var coord_raster: Vec3SIMD(N, T) = vsd.mat44Mul(
         N,
@@ -402,7 +402,7 @@ pub fn worldToRasterSIMD(
 pub fn elemsToRasterSIMD(
     comptime N: usize,
     comptime T: type,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     dim_elem: usize,
     elem_coord_arr: *NDArray(T),
 ) !void {
@@ -421,7 +421,7 @@ pub fn elemsToRasterSIMD(
 pub fn elemsToClipPxLengSIMD(
     comptime N: usize,
     comptime T: type,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     dim_elem: usize,
     elem_coord_arr: *NDArray(T),
 ) !void {
@@ -462,7 +462,7 @@ pub fn elemsToClipPxLengSIMD(
 pub fn cullElemsCalcBBoxesHighOrd(
     comptime N: usize,
     comptime NH: usize,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     dim_elem: usize,
     elem_coord_arr: *const NDArray(f64),
     raster_hull: ?*const NDArray(f64),
@@ -565,7 +565,7 @@ pub fn cullElemsCalcBBoxesHighOrd(
 }
 
 pub fn cullElemsCalcBBoxesTri3(
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     dim_elem: usize,
     elem_coord_arr: *const NDArray(f64),
     elem_bboxes: []ElemBBox,
@@ -627,7 +627,7 @@ pub fn cullElemsCalcBBoxesTri3(
 }
 
 fn cullNodesCalcBBoxesTri3(
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     coords_nodes: *const Coords,
     connect: *const Connect,
     elem_bboxes: []ElemBBox,
@@ -679,7 +679,7 @@ fn cullNodesCalcBBoxesTri3(
 }
 
 fn calcVisibleNodeBBoxTri3(
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     coords_nodes: *const Coords,
     connect: *const Connect,
     elem_idx: usize,
@@ -714,7 +714,7 @@ fn calcVisibleNodeBBoxTri3(
 
 fn cullNodesCalcBBoxesHighOrd(
     comptime N: usize,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     coords_nodes: *const Coords,
     connect: *const Connect,
     elem_bboxes: []ElemBBox,
@@ -788,7 +788,7 @@ fn cullNodesCalcBBoxesHighOrd(
 
 fn calcVisibleNodeBBoxHighOrd(
     comptime N: usize,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     coords_nodes: *const Coords,
     connect: *const Connect,
     elem_idx: usize,
@@ -829,7 +829,7 @@ fn calcVisibleNodeBBoxHighOrd(
 }
 
 pub fn countVisibleElemsRange(
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     mesh_type: anytype,
     connect: *const Connect,
     coords_nodes: *const Coords,
@@ -904,7 +904,7 @@ pub fn countVisibleElemsRange(
 }
 
 pub fn fillVisibleElemsRange(
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     mesh_type: anytype,
     connect: *const Connect,
     coords_nodes: *const Coords,
@@ -991,7 +991,7 @@ pub fn fillVisibleElemsRange(
 
 pub fn prepareVisibleWorkspace(
     allocator: std.mem.Allocator,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     mesh_type: anytype,
     connect: *const Connect,
     coords_nodes: *const Coords,
@@ -1741,7 +1741,7 @@ pub fn writeVisibleAveragedNormalsRange(
 
 pub fn prepareVisibleRasterHulls(
     allocator: std.mem.Allocator,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     mesh_type: anytype,
     elem_coords: *NDArray(f64),
 ) !?NDArray(f64) {
@@ -1785,7 +1785,7 @@ pub fn prepareVisibleRasterHulls(
 fn prepareVisibleRasterHullsRangeImpl(
     comptime N: usize,
     comptime NH: usize,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     elem_coords: *const NDArray(f64),
     raster_hull: *NDArray(f64),
     visible_start: usize,
@@ -1811,7 +1811,7 @@ fn prepareVisibleRasterHullsRangeImpl(
 }
 
 pub fn prepareVisibleRasterHullsRange(
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     mesh_type: anytype,
     elem_coords: *const NDArray(f64),
     raster_hull: *NDArray(f64),
@@ -1863,7 +1863,7 @@ pub fn prepareSceneGeometry(
     comptime report_mode: report.ReportMode,
     ctx_report: report.ReportContext(report_mode),
     arena_alloc: std.mem.Allocator,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     meshes: anytype,
     raster_hulls: []?NDArray(f64),
     elem_bboxes_by_mesh: [][]ElemBBox,

@@ -12,7 +12,7 @@ const meshio = @import("zraster/zig/meshio.zig");
 const report = @import("zraster/zig/report.zig");
 const rops = @import("zraster/zig/rasterops.zig");
 const shaderops = @import("zraster/zig/shaderops.zig");
-const Camera = @import("zraster/zig/camera.zig").Camera;
+const CameraPrepared = @import("zraster/zig/camera.zig").CameraPrepared;
 const Rotation = @import("zraster/zig/rotation.zig").Rotation;
 const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
 
@@ -66,7 +66,7 @@ test "Nodal normals are prepared when requested" {
         &sim_data.coords,
     );
 
-    const camera = try Camera.init(
+    const camera = try CameraPrepared.init(
         arena_alloc,
         .{
             .pixels_num = pixel_num,
