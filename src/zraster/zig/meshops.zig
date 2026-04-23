@@ -468,147 +468,6 @@ fn runStageRange(
 // Geometry Pipeline Stages: meshio.Coords, Transform, Culling and Compaction
 //------------------------------------------------------------------------------------------
 
-fn prepareFrameMeshCoordsRange(
-    frame_workspace: *MeshFrameWorkspace,
-    mesh_static: *const MeshStatic,
-    frame_idx: usize,
-    node_start: usize,
-    node_end: usize,
-) void {
-    const actual_frame_idx = if (mesh_static.disp) |disp|
-        @min(frame_idx, disp.array.dims[0] - 1)
-    else
-        0;
-
-    for (node_start..node_end) |nn| {
-        const coord_off = nn * 3;
-        frame_workspace.coords_nodes.mem[coord_off + 0] =
-            mesh_static.coords_orig.mem[coord_off + 0];
-        frame_workspace.coords_nodes.mem[coord_off + 1] =
-            mesh_static.coords_orig.mem[coord_off + 1];
-        frame_workspace.coords_nodes.mem[coord_off + 2] =
-            mesh_static.coords_orig.mem[coord_off + 2];
-
-        if (mesh_static.disp) |disp| {
-            for (0..3) |cc| {
-                frame_workspace.coords_nodes.mem[coord_off + cc] += disp.array.get(
-                    &[_]usize{ actual_frame_idx, nn, cc },
-                );
-            }
-        }
-    }
-}
-
-fn transformFrameMeshCoordsRange(
-    camera: *const cam.CameraPrepared,
-    mesh_type: MeshType,
-    frame_workspace: *MeshFrameWorkspace,
-    node_start: usize,
-    node_end: usize,
-) void {
-    switch (mesh_type) {
-        .tri3 => rops.nodesToRasterRangeInPlace(
-            camera,
-            &frame_workspace.coords_nodes,
-            node_start,
-            node_end,
-        ),
-        .quad4ibi => rops.nodesToClipPxLengRangeInPlace(
-            camera,
-            &frame_workspace.coords_nodes,
-            node_start,
-            node_end,
-        ),
-        .tri6,
-        .quad4newton,
-        .quad8,
-        .quad9,
-        => rops.nodesToClipPxLengRangeInPlace(
-            camera,
-            &frame_workspace.coords_nodes,
-            node_start,
-            node_end,
-        ),
-    }
-}
-
-fn compactVisibleCoordsRange(
-    mesh_static: *const MeshStatic,
-    frame_workspace: *const MeshFrameWorkspace,
-    elem_coords: *ndarray.NDArray(f64),
-    visible_start: usize,
-    visible_end: usize,
-) void {
-    const nodes_num = mesh_static.mesh_type.getNodesNum();
-
-    for (visible_start..visible_end) |pp| {
-        const orig_ee = frame_workspace.visible_orig_elem_indices[pp];
-        const coord_inds = mesh_static.connect.getElem(orig_ee);
-        for (0..nodes_num) |nn| {
-            const node_idx = coord_inds[nn];
-            elem_coords.set(
-                &[_]usize{ pp, 0, nn },
-                frame_workspace.coords_nodes.x(node_idx),
-            );
-            elem_coords.set(
-                &[_]usize{ pp, 1, nn },
-                frame_workspace.coords_nodes.y(node_idx),
-            );
-            elem_coords.set(
-                &[_]usize{ pp, 2, nn },
-                frame_workspace.coords_nodes.z(node_idx),
-            );
-        }
-    }
-}
-
-fn compactVisibleUVsRange(
-    elem_uvs_full: ndarray.NDArray(f64),
-    visible_orig_elem_indices: []const usize,
-    elem_uvs: *ndarray.NDArray(f64),
-    visible_start: usize,
-    visible_end: usize,
-) void {
-    const nodes_num = elem_uvs_full.dims[2];
-
-    for (visible_start..visible_end) |pp| {
-        const orig_ee = visible_orig_elem_indices[pp];
-        const src_start = elem_uvs_full.getFlatIdx(&[_]usize{ orig_ee, 0, 0 });
-        const dst_start = elem_uvs.getFlatIdx(&[_]usize{ pp, 0, 0 });
-        @memcpy(
-            elem_uvs.slice[dst_start .. dst_start + 2 * nodes_num],
-            elem_uvs_full.slice[src_start .. src_start + 2 * nodes_num],
-        );
-    }
-}
-
-fn compactVisibleFieldFrameRange(
-    connect: *const meshio.Connect,
-    field: *const meshio.Field,
-    frame_idx: usize,
-    visible_orig_elem_indices: []const usize,
-    elem_field: *ndarray.NDArray(f64),
-    visible_start: usize,
-    visible_end: usize,
-) void {
-    const actual_frame_idx = @min(frame_idx, field.array.dims[0] - 1);
-    const fields_num = field.getFieldsN();
-    const nodes_num = connect.getNodesPerElem();
-
-    for (visible_start..visible_end) |pp| {
-        const orig_ee = visible_orig_elem_indices[pp];
-        const coord_inds = connect.getElem(orig_ee);
-        for (0..nodes_num) |nn| {
-            for (0..@as(usize, fields_num)) |ff| {
-                const field_val = field.array.get(
-                    &[_]usize{ actual_frame_idx, coord_inds[nn], ff },
-                );
-                elem_field.set(&[_]usize{ pp, ff, nn }, field_val);
-            }
-        }
-    }
-}
-
 const PrepareCoordsStage = struct {
     frame_workspace: *MeshFrameWorkspace,
     mesh_static: *const MeshStatic,
@@ -623,13 +482,29 @@ fn runPrepareCoordsStage(
 ) void {
     _ = chunk_idx;
     const stage: *PrepareCoordsStage = @ptrCast(@alignCast(ctx_ptr));
-    prepareFrameMeshCoordsRange(
-        stage.frame_workspace,
-        stage.mesh_static,
-        stage.frame_idx,
-        range_start,
-        range_end,
-    );
+
+    const actual_frame_idx = if (stage.mesh_static.disp) |disp|
+        @min(stage.frame_idx, disp.array.dims[0] - 1)
+    else
+        0;
+
+    for (range_start..range_end) |nn| {
+        const coord_off = nn * 3;
+        stage.frame_workspace.coords_nodes.mem[coord_off + 0] =
+            stage.mesh_static.coords_orig.mem[coord_off + 0];
+        stage.frame_workspace.coords_nodes.mem[coord_off + 1] =
+            stage.mesh_static.coords_orig.mem[coord_off + 1];
+        stage.frame_workspace.coords_nodes.mem[coord_off + 2] =
+            stage.mesh_static.coords_orig.mem[coord_off + 2];
+
+        if (stage.mesh_static.disp) |disp| {
+            for (0..3) |cc| {
+                stage.frame_workspace.coords_nodes.mem[coord_off + cc] += disp.array.get(
+                    &[_]usize{ actual_frame_idx, nn, cc },
+                );
+            }
+        }
+    }
 }
 
 const TransformCoordsStage = struct {
@@ -646,13 +521,30 @@ fn runTransformCoordsStage(
 ) void {
     _ = chunk_idx;
     const stage: *TransformCoordsStage = @ptrCast(@alignCast(ctx_ptr));
-    transformFrameMeshCoordsRange(
-        stage.camera,
-        stage.mesh_type,
-        stage.frame_workspace,
-        range_start,
-        range_end,
-    );
+    switch (stage.mesh_type) {
+        .tri3 => rops.nodesToRasterRangeInPlace(
+            stage.camera,
+            &stage.frame_workspace.coords_nodes,
+            range_start,
+            range_end,
+        ),
+        .quad4ibi => rops.nodesToClipPxLengRangeInPlace(
+            stage.camera,
+            &stage.frame_workspace.coords_nodes,
+            range_start,
+            range_end,
+        ),
+        .tri6,
+        .quad4newton,
+        .quad8,
+        .quad9,
+        => rops.nodesToClipPxLengRangeInPlace(
+            stage.camera,
+            &stage.frame_workspace.coords_nodes,
+            range_start,
+            range_end,
+        ),
+    }
 }
 
 const CullVisibleCountStage = struct {
@@ -734,13 +626,27 @@ fn runCompactVisibleCoordsStage(
 ) void {
     _ = chunk_idx;
     const stage: *CompactVisibleCoordsStage = @ptrCast(@alignCast(ctx_ptr));
-    compactVisibleCoordsRange(
-        stage.mesh_static,
-        stage.frame_workspace,
-        stage.elem_coords,
-        range_start,
-        range_end,
-    );
+    const nodes_num = stage.mesh_static.mesh_type.getNodesNum();
+
+    for (range_start..range_end) |pp| {
+        const orig_ee = stage.frame_workspace.visible_orig_elem_indices[pp];
+        const coord_inds = stage.mesh_static.connect.getElem(orig_ee);
+        for (0..nodes_num) |nn| {
+            const node_idx = coord_inds[nn];
+            stage.elem_coords.set(
+                &[_]usize{ pp, 0, nn },
+                stage.frame_workspace.coords_nodes.x(node_idx),
+            );
+            stage.elem_coords.set(
+                &[_]usize{ pp, 1, nn },
+                stage.frame_workspace.coords_nodes.y(node_idx),
+            );
+            stage.elem_coords.set(
+                &[_]usize{ pp, 2, nn },
+                stage.frame_workspace.coords_nodes.z(node_idx),
+            );
+        }
+    }
 }
 
 const CompactVisibleFieldStage = struct {
@@ -759,15 +665,22 @@ fn runCompactVisibleFieldStage(
 ) void {
     _ = chunk_idx;
     const stage: *CompactVisibleFieldStage = @ptrCast(@alignCast(ctx_ptr));
-    compactVisibleFieldFrameRange(
-        stage.connect,
-        stage.field,
-        stage.frame_idx,
-        stage.visible_orig_elem_indices,
-        stage.elem_field,
-        range_start,
-        range_end,
-    );
+    const actual_frame_idx = @min(stage.frame_idx, stage.field.array.dims[0] - 1);
+    const fields_num = stage.field.getFieldsN();
+    const nodes_num = stage.connect.getNodesPerElem();
+
+    for (range_start..range_end) |pp| {
+        const orig_ee = stage.visible_orig_elem_indices[pp];
+        const coord_inds = stage.connect.getElem(orig_ee);
+        for (0..nodes_num) |nn| {
+            for (0..@as(usize, fields_num)) |ff| {
+                const field_val = stage.field.array.get(
+                    &[_]usize{ actual_frame_idx, coord_inds[nn], ff },
+                );
+                stage.elem_field.set(&[_]usize{ pp, ff, nn }, field_val);
+            }
+        }
+    }
 }
 
 const CompactVisibleUVStage = struct {
@@ -784,13 +697,17 @@ fn runCompactVisibleUVStage(
 ) void {
     _ = chunk_idx;
     const stage: *CompactVisibleUVStage = @ptrCast(@alignCast(ctx_ptr));
-    compactVisibleUVsRange(
-        stage.elem_uvs_full,
-        stage.visible_orig_elem_indices,
-        stage.elem_uvs,
-        range_start,
-        range_end,
-    );
+    const nodes_num = stage.elem_uvs_full.dims[2];
+
+    for (range_start..range_end) |pp| {
+        const orig_ee = stage.visible_orig_elem_indices[pp];
+        const src_start = stage.elem_uvs_full.getFlatIdx(&[_]usize{ orig_ee, 0, 0 });
+        const dst_start = stage.elem_uvs.getFlatIdx(&[_]usize{ pp, 0, 0 });
+        @memcpy(
+            stage.elem_uvs.slice[dst_start .. dst_start + 2 * nodes_num],
+            stage.elem_uvs_full.slice[src_start .. src_start + 2 * nodes_num],
+        );
+    }
 }
 
 const PrepareRasterHullsStage = struct {
