@@ -1160,17 +1160,24 @@ const FrameMeshPipeline = struct {
         };
     }
 
+    //--------------------------------------------------------------------------------------
+    // 
     fn run(self: *FrameMeshPipeline) !MeshFrame {
+    
         self.prepareCoords();
         self.transformCoords();
+        
         try self.cullVisible();
-
         var mesh_prep = try self.compactVisibleMesh();
+        
         try self.prepareRasterHulls(&mesh_prep.coords);
         try self.prepareShader(&mesh_prep);
+        
         self.assignVisibleElemIndices();
+        
         return self.finish(mesh_prep);
     }
+    //--------------------------------------------------------------------------------------
 
     fn prepareCoords(self: *FrameMeshPipeline) void {
         var prepare_stage = PrepareFrameCoordsStage{
@@ -1503,6 +1510,8 @@ const FrameMeshPipeline = struct {
     }
 };
 
+// We need this thin wrapper to expose this to tests that want to enter at this part of the
+// pipeline with a single mesh.
 pub fn prepareMeshFrame(
     allocator: std.mem.Allocator,
     camera: *const cam.CameraPrepared,
@@ -1544,6 +1553,8 @@ pub fn prepareMeshFrames(
     geom_threads: u16,
     frame_meshes: []MeshFrame,
 ) !FrameGeometryResult {
+
+    // Worker pool for geometry parallelisation
     var geom_pool: ?geomthread.GeometryWorkerPool = null;
     if (geom_threads > 1) {
         var pool: geomthread.GeometryWorkerPool = undefined;
@@ -1555,10 +1566,8 @@ pub fn prepareMeshFrames(
     var res = FrameGeometryResult{ .total_elems_num = 0, .total_elems_in_image = 0 };
 
     for (static_meshes, 0..) |*mesh_static, ii| {
-        // Scaling nodal interpolation fields based on user specified bits if needed so 
-        // images of nodal fields are visible in raster images. Setting to .none will just
-        // directly render float fields. Here we take the global scaling over all frames or
-        // just the scaling within frames
+        // Only needed for nodal interpolation shading and only if not .none. If .none we 
+        // directly render float fields unscaled.
         var nodal_frame_scaling: ?imageops.ScalingParams = null;
         switch (mesh_static.shader) {
             .nodal => |s| {
@@ -1575,7 +1584,8 @@ pub fn prepareMeshFrames(
             else => {},
         }
 
-        // 
+        // Prepares meshes for each frame including coord transforms to camera space and
+        // data reshaping to element order for a given frame. 
         frame_meshes[ii] = try prepareMeshFrame(
             arena_alloc,
             camera,
