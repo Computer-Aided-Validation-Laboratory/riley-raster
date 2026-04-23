@@ -90,6 +90,9 @@ pub fn LocalShaderBuffer(comptime N: usize) type {
     };
 }
 
+// The "Blueprint": Raw user shader data for all frames.
+// Nodal Fields: Node-order [num_frames, total_nodes, num_fields]
+// UVs: Node-order [total_nodes, 2]
 pub const NodalInput = struct {
     field: Field,
     bits: ?u8 = 8,
@@ -98,6 +101,61 @@ pub const NodalInput = struct {
     normal_type: NormalType = .none,
 };
 
+pub fn TexInput(comptime channels: usize) type {
+    return struct {
+        uvs: NDArray(f64),
+        texture: Texture(channels),
+        sample_config: TextureSampleConfig = .{
+            .sample = .cubic_catmull_rom,
+            .mode = .lut_lerp,
+        },
+        bits: ?u8 = 8,
+        scaling: imageops.ScaleStrategy = .none,
+        normal_type: NormalType = .none,
+    };
+}
+
+pub const ShaderInput = union(enum) {
+    nodal: NodalInput,
+    tex: TexInput(1),
+    tex_rgb: TexInput(3),
+};
+
+// The "Archive": Persistent multi-frame shader resources in engine memory.
+// Nodal Fields: Node-order [num_frames, total_nodes, num_fields]
+// UVs: Element-order [total_elems, 2, nodes_per_elem]
+pub const NodalStatic = struct {
+    field: Field,
+    bits: ?u8 = 8,
+    scaling: imageops.ScaleStrategy = .none,
+    scale_over: ScaleOver = .over_frames,
+    normal_type: NormalType = .none,
+};
+
+pub fn TexStatic(comptime channels: usize) type {
+    return struct {
+        elem_uvs: NDArray(f64),
+        texture: Texture(channels),
+        sample_config: TextureSampleConfig = .{
+            .sample = .cubic_catmull_rom,
+            .mode = .lut_lerp,
+        },
+        bits: ?u8 = 8,
+        scaling: imageops.ScaleStrategy = .none,
+        normal_type: NormalType = .none,
+    };
+}
+
+pub const ShaderStatic = union(enum) {
+    nodal: NodalStatic,
+    tex: TexStatic(1),
+    tex_rgb: TexStatic(3),
+};
+
+// The "Payload": Culled and expanded shader data for a SINGLE frame.
+// Prepared means culled element-order NDArray data ready for the raster loop.
+// Nodal Fields: Element-order [visible_elems, num_fields, nodes_per_elem]
+// UVs: Element-order [visible_elems, 2, nodes_per_elem]
 pub const NodalPrepared = struct {
     elem_field: NDArray(f64),
     bits: ?u8 = 8,
@@ -109,22 +167,14 @@ pub const NodalPrepared = struct {
     elem_normals: ?MappedNDArray(f64) = null,
 };
 
-pub fn TexInput(comptime channels: usize) type {
-    return struct {
-        uvs: NDArray(f64),
-        texture: Texture(channels),
-        sample_config: TextureSampleConfig = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
-        bits: ?u8 = 8,
-        scaling: imageops.ScaleStrategy = .none,
-        normal_type: NormalType = .none,
-    };
-}
-
 pub fn TexPrepared(comptime channels: usize) type {
     return struct {
         elem_uvs: NDArray(f64),
         texture: Texture(channels),
-        sample_config: TextureSampleConfig = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+        sample_config: TextureSampleConfig = .{
+            .sample = .cubic_catmull_rom,
+            .mode = .lut_lerp,
+        },
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
         scale_mul: f64 = 1.0,
@@ -133,12 +183,6 @@ pub fn TexPrepared(comptime channels: usize) type {
         elem_normals: ?MappedNDArray(f64) = null,
     };
 }
-
-pub const ShaderInput = union(enum) {
-    nodal: NodalInput,
-    tex: TexInput(1),
-    tex_rgb: TexInput(3),
-};
 
 pub const ShaderPrepared = union(enum) {
     nodal: NodalPrepared,

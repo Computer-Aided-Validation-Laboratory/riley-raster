@@ -35,6 +35,9 @@ const shaderops = @import("shaderops.zig");
 const NodalInput = shaderops.NodalInput;
 const TexInput = shaderops.TexInput;
 const ShaderInput = shaderops.ShaderInput;
+const NodalStatic = shaderops.NodalStatic;
+const TexStatic = shaderops.TexStatic;
+const ShaderStatic = shaderops.ShaderStatic;
 const ShaderPrepared = shaderops.ShaderPrepared;
 
 //------------------------------------------------------------------------------------------
@@ -71,15 +74,6 @@ pub const MeshInput = struct {
     shader: shaderops.ShaderInput,
 };
 
-// The "Payload": Data culled and expanded for the raster loop for a SINGLE frame.
-// Prepared means culled element-order NDArray data ready for the raster loop.
-// Coords/Fields: Element-order [visible_elems, ..., nodes_per_elem]
-pub const MeshPrepared = struct {
-    mesh_type: MeshType,
-    coords: NDArray(f64),
-    connect: Connect,
-    shader: shaderops.ShaderPrepared,
-};
 
 // The "Archive": Persistent multi-frame resources in the engine's memory.
 // Coords/Fields: Node-order [total_nodes, ...]
@@ -112,33 +106,16 @@ pub const MeshFrame = struct {
     raster_hull: ?NDArray(f64),
 };
 
-pub const NodalStatic = struct {
-    field: Field,
-    bits: ?u8 = 8,
-    scaling: imageops.ScaleStrategy = .none,
-    scale_over: shaderops.ScaleOver = .over_frames,
-    normal_type: shaderops.NormalType = .none,
+// The "Payload": Data culled and expanded for the raster loop for a SINGLE frame.
+// Prepared means culled element-order NDArray data ready for the raster loop.
+// Coords/Fields: Element-order [visible_elems, ..., nodes_per_elem]
+pub const MeshPrepared = struct {
+    mesh_type: MeshType,
+    coords: NDArray(f64),
+    shader: shaderops.ShaderPrepared,
 };
 
-pub fn TexStatic(comptime channels: usize) type {
-    return struct {
-        elem_uvs: NDArray(f64),
-        texture: imageio.Texture(channels),
-        sample_config: TextureSampleConfig = .{
-            .sample = .cubic_catmull_rom,
-            .mode = .lut_lerp,
-        },
-        bits: ?u8 = 8,
-        scaling: imageops.ScaleStrategy = .none,
-        normal_type: shaderops.NormalType = .none,
-    };
-}
 
-pub const ShaderStatic = union(enum) {
-    nodal: NodalStatic,
-    tex: TexStatic(1),
-    tex_rgb: TexStatic(3),
-};
 
 // External helper function for finding mesh centroids
 pub fn findAlignedCentroid(coords: *const Coords) struct {
@@ -1325,7 +1302,6 @@ const FrameMeshPipeline = struct {
         return .{
             .mesh_type = self.mesh_static.mesh_type,
             .coords = elem_coords,
-            .connect = self.mesh_static.connect,
             .shader = undefined,
         };
     }
