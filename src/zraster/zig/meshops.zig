@@ -38,7 +38,94 @@ const ShaderInput = shaderops.ShaderInput;
 const ShaderPrepared = shaderops.ShaderPrepared;
 
 //------------------------------------------------------------------------------------------
-// Helper functions 
+// External Helper Functions: General geometry and mesh utilities
+//------------------------------------------------------------------------------------------
+
+pub const MeshType = enum {
+    tri3,
+    tri6,
+    quad4ibi,
+    quad4newton,
+    quad8,
+    quad9,
+
+    pub fn getNodesNum(self: MeshType) usize {
+        return switch (self) {
+            .tri3 => 3,
+            .tri6 => 6,
+            .quad4ibi, .quad4newton => 4,
+            .quad8 => 8,
+            .quad9 => 9,
+        };
+    }
+};
+
+pub const MeshInput = struct {
+    mesh_type: MeshType,
+    coords: Coords,
+    connect: Connect,
+    disp: ?Field,
+    shader: shaderops.ShaderInput,
+};
+
+pub const MeshPrepared = struct {
+    mesh_type: MeshType,
+    coords: NDArray(f64),
+    connect: Connect,
+    shader: shaderops.ShaderPrepared,
+};
+
+pub const MeshStaticPrepared = struct {
+    mesh_type: MeshType,
+    coords_orig: Coords,
+    connect: Connect,
+    disp: ?Field,
+    shader: ShaderStaticPrepared,
+};
+
+pub const FrameMeshWorkspace = struct {
+    coords_nodes: Coords,
+    visible_orig_elem_indices: []usize,
+    elem_bboxes: []ElemBBox,
+    elems_in_image: usize,
+    raster_hull: ?NDArray(f64),
+};
+
+pub const FrameMeshPrepared = struct {
+    mesh: MeshPrepared,
+    elem_bboxes: []ElemBBox,
+    elems_in_image: usize,
+    total_elems_num: usize,
+    raster_hull: ?NDArray(f64),
+};
+
+pub const NodalStaticPrepared = struct {
+    field: Field,
+    bits: ?u8 = 8,
+    scaling: imageops.ScaleStrategy = .none,
+    scale_over: shaderops.ScaleOver = .over_frames,
+    normal_type: shaderops.NormalType = .none,
+};
+
+pub fn TexStaticPrepared(comptime channels: usize) type {
+    return struct {
+        elem_uvs: NDArray(f64),
+        texture: imageio.Texture(channels),
+        sample_config: TextureSampleConfig = .{
+            .sample = .cubic_catmull_rom,
+            .mode = .lut_lerp,
+        },
+        bits: ?u8 = 8,
+        scaling: imageops.ScaleStrategy = .none,
+        normal_type: shaderops.NormalType = .none,
+    };
+}
+
+pub const ShaderStaticPrepared = union(enum) {
+    nodal: NodalStaticPrepared,
+    tex: TexStaticPrepared(1),
+    tex_rgb: TexStaticPrepared(3),
+};
 
 pub fn findAlignedCentroid(coords: *const Coords) struct {
     centroid: [3]f64,
@@ -142,101 +229,94 @@ pub fn arrangeMeshSlice(
     }
 }
 
-
-//------------------------------------------------------------------------------------------
-
-pub const MeshType = enum {
-    tri3,
-    tri6,
-    quad4ibi,
-    quad4newton,
-    quad8,
-    quad9,
-
-    pub fn getNodesNum(self: MeshType) usize {
-        return switch (self) {
-            .tri3 => 3,
-            .tri6 => 6,
-            .quad4ibi, .quad4newton => 4,
-            .quad8 => 8,
-            .quad9 => 9,
-        };
+pub fn meshInputFromSimDataSlice(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    sim_datas: []const meshio.SimData,
+    mesh_types: []const MeshType,
+    shader_mode: enum { nodal, texture },
+    uv_paths: ?[]const []const u8,
+    texture_path: ?[]const u8,
+    uv_file: ?[]const u8,
+) ![]MeshInput {
+    var mesh_inputs = try outer_alloc.alloc(MeshInput, sim_datas.len);
+    var initialized_count: usize = 0;
+    errdefer {
+        for (0..initialized_count) |ii| {
+            switch (mesh_inputs[ii].shader) {
+                .tex => |tex| {
+                    outer_alloc.free(tex.uvs.slice);
+                },
+                .tex_rgb => |tex| {
+                    outer_alloc.free(tex.uvs.slice);
+                },
+                else => {},
+            }
+        }
+        outer_alloc.free(mesh_inputs);
     }
-};
 
-pub const MeshInput = struct {
-    mesh_type: MeshType,
-    coords: Coords,
-    connect: Connect,
-    disp: ?Field,
-    shader: shaderops.ShaderInput,
-};
+    const uv_file_name = uv_file orelse "uvs.csv";
 
-pub const MeshPrepared = struct {
-    mesh_type: MeshType,
-    coords: NDArray(f64),
-    connect: Connect,
-    shader: shaderops.ShaderPrepared,
-};
+    for (sim_datas, 0..) |sim_data, ii| {
+        mesh_inputs[ii] = MeshInput{
+            .mesh_type = mesh_types[ii],
+            .coords = sim_data.coords,
+            .connect = sim_data.connect,
+            .disp = sim_data.disp,
+            .shader = undefined,
+        };
 
-pub const MeshStaticPrepared = struct {
-    mesh_type: MeshType,
-    coords_orig: Coords,
-    connect: Connect,
-    disp: ?Field,
-    shader: ShaderStaticPrepared,
-};
+        if (shader_mode == .nodal) {
+            if (sim_data.field) |field| {
+                mesh_inputs[ii].shader = .{ .nodal = .{
+                    .field = field,
+                    .bits = 8,
+                    .normal_type = .none,
+                } };
+            } else {
+                return error.MissingFieldData;
+            }
+        } else {
+            const paths = uv_paths orelse return error.MissingUVPaths;
+            const path_uvs = try std.fmt.allocPrint(
+                outer_alloc,
+                "{s}{s}",
+                .{ paths[ii], uv_file_name },
+            );
+            defer outer_alloc.free(path_uvs);
 
-pub const FrameMeshWorkspace = struct {
-    coords_nodes: Coords,
-    visible_orig_elem_indices: []usize,
-    elem_bboxes: []ElemBBox,
-    elems_in_image: usize,
-    raster_hull: ?NDArray(f64),
-};
+            const uvmap = try uvio.loadUVMap(outer_alloc, io, path_uvs);
 
-pub const FrameMeshPrepared = struct {
-    mesh: MeshPrepared,
-    elem_bboxes: []ElemBBox,
-    elems_in_image: usize,
-    total_elems_num: usize,
-    raster_hull: ?NDArray(f64),
-};
+            const format: ImageFormat = if (std.mem.endsWith(u8, texture_path.?, ".bmp"))
+                .bmp
+            else
+                .tiff;
 
-pub const NodalStaticPrepared = struct {
-    field: Field,
-    bits: ?u8 = 8,
-    scaling: imageops.ScaleStrategy = .none,
-    scale_over: shaderops.ScaleOver = .over_frames,
-    normal_type: shaderops.NormalType = .none,
-};
+            const texture = try imageio.loadImage(
+                u8,
+                1,
+                outer_alloc,
+                io,
+                texture_path.?,
+                format,
+            );
 
-pub fn TexStaticPrepared(comptime channels: usize) type {
-    return struct {
-        elem_uvs: NDArray(f64),
-        texture: imageio.Texture(channels),
-        sample_config: TextureSampleConfig = .{
-            .sample = .cubic_catmull_rom,
-            .mode = .lut_lerp,
-        },
-        bits: ?u8 = 8,
-        scaling: imageops.ScaleStrategy = .none,
-        normal_type: shaderops.NormalType = .none,
-    };
+            mesh_inputs[ii].shader = .{ .tex = .{
+                .uvs = uvmap.array,
+                .texture = texture,
+                .sample_config = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+                .normal_type = .none,
+            } };
+        }
+        initialized_count += 1;
+    }
+    return mesh_inputs;
 }
 
-pub const ShaderStaticPrepared = union(enum) {
-    nodal: NodalStaticPrepared,
-    tex: TexStaticPrepared(1),
-    tex_rgb: TexStaticPrepared(3),
-};
-
-const MeshFrameContext = struct {
-    frame_workspace: FrameMeshWorkspace,
-    visible_counts_by_chunk: []usize,
-    visible_offsets_by_chunk: []usize,
-    visible_elems_num: usize,
-};
+//------------------------------------------------------------------------------------------
+// Mesh Initialization: Initial mesh and coordinate preparation
+//------------------------------------------------------------------------------------------
 
 pub fn prepareMesh(
     outer_alloc: std.mem.Allocator,
@@ -335,15 +415,6 @@ pub fn prepareMesh(
     return mesh_prep;
 }
 
-fn copyCoordsAlloc(
-    allocator: std.mem.Allocator,
-    coords: *const Coords,
-) !Coords {
-    const coords_copy = try Coords.initAlloc(allocator, coords.mat.rows_num);
-    @memcpy(coords_copy.mem, coords.mem);
-    return coords_copy;
-}
-
 pub fn prepareMeshStatic(
     allocator: std.mem.Allocator,
     mesh_input: *const MeshInput,
@@ -402,6 +473,140 @@ pub fn prepareMeshStatic(
     };
 }
 
+pub fn prepareCoords(
+    outer_alloc: std.mem.Allocator,
+    coords: *const Coords,
+    connect: *const Connect,
+) !NDArray(f64) {
+    const coord_dims = [_]usize{ connect.getElemsNum(), 3, connect.getNodesPerElem() };
+    var elem_coord_arr = try NDArray(f64).initFlat(outer_alloc, coord_dims[0..]);
+    @memset(elem_coord_arr.slice, 0.0);
+
+    const dim_elem: usize = 0;
+    const dim_field: usize = 1;
+    const dim_node: usize = 2;
+
+    var elem_idxs = [_]usize{ 0, 0, 0 };
+
+    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
+        elem_idxs[dim_elem] = ee;
+        const coord_inds: []usize = connect.getElem(ee);
+
+        for (0..elem_coord_arr.dims[dim_node]) |nn| {
+            elem_idxs[dim_node] = nn;
+
+            const node_idx = coord_inds[nn];
+            const x = coords.x(node_idx);
+            const y = coords.y(node_idx);
+            const z = coords.z(node_idx);
+
+            elem_idxs[dim_field] = 0;
+            elem_coord_arr.set(elem_idxs[0..], x);
+            elem_idxs[dim_field] = 1;
+            elem_coord_arr.set(elem_idxs[0..], y);
+            elem_idxs[dim_field] = 2;
+            elem_coord_arr.set(elem_idxs[0..], z);
+        }
+    }
+
+    return elem_coord_arr;
+}
+
+pub fn prepareField(
+    outer_alloc: std.mem.Allocator,
+    connect: *const Connect,
+    field: *const Field,
+) !NDArray(f64) {
+    // dims=(times_num,elems_num,fields_num,nodes_per_elem)
+    const field_dims = [_]usize{
+        field.getTimeN(),
+        connect.getElemsNum(),
+        field.getFieldsN(),
+        connect.getNodesPerElem(),
+    };
+    var elem_field_arr = try NDArray(f64).initFlat(outer_alloc, field_dims[0..]);
+    @memset(elem_field_arr.slice, 0.0);
+
+    const dim_time: usize = 0;
+    const dim_elem: usize = 1;
+    const dim_field: usize = 2;
+    const dim_node: usize = 3;
+
+    var set_elem_idxs = [_]usize{ 0, 0, 0, 0 }; // dims=(time,elem,field,node)
+    var get_field_idxs = [_]usize{ 0, 0, 0 }; // dims=(time,coord,field)
+
+    for (0..elem_field_arr.dims[dim_time]) |tt| {
+        get_field_idxs[0] = @min(tt, field.array.dims[0] - 1);
+        set_elem_idxs[dim_time] = tt;
+
+        for (0..elem_field_arr.dims[dim_elem]) |ee| {
+            set_elem_idxs[dim_elem] = ee;
+            const coord_inds: []usize = connect.getElem(ee);
+
+            for (0..elem_field_arr.dims[dim_node]) |nn| {
+                set_elem_idxs[dim_node] = nn;
+                get_field_idxs[1] = coord_inds[nn];
+
+                for (0..elem_field_arr.dims[dim_field]) |ff| {
+                    get_field_idxs[2] = ff;
+                    const field_val: f64 = field.array.get(get_field_idxs[0..]);
+
+                    set_elem_idxs[dim_field] = ff;
+                    elem_field_arr.set(set_elem_idxs[0..], field_val);
+                }
+            }
+        }
+    }
+
+    return elem_field_arr;
+}
+
+pub fn prepareUVs(
+    outer_alloc: std.mem.Allocator,
+    uvs: *const NDArray(f64),
+    connect: *const Connect,
+) !NDArray(f64) {
+    const elems_num = connect.getElemsNum();
+    const nodes_per_elem = connect.getNodesPerElem();
+    var elem_uv_arr = try NDArray(f64).initFlat(
+        outer_alloc,
+        &[_]usize{ elems_num, 2, nodes_per_elem },
+    );
+    @memset(elem_uv_arr.slice, 0.0);
+
+    for (0..elems_num) |ee| {
+        const coord_inds = connect.getElem(ee);
+        for (0..nodes_per_elem) |nn| {
+            for (0..2) |uu| {
+                const val = uvs.get(&[_]usize{ coord_inds[nn], uu });
+                elem_uv_arr.set(&[_]usize{ ee, uu, nn }, val);
+            }
+        }
+    }
+
+    return elem_uv_arr;
+}
+
+fn copyCoordsAlloc(
+    allocator: std.mem.Allocator,
+    coords: *const Coords,
+) !Coords {
+    const coords_copy = try Coords.initAlloc(allocator, coords.mat.rows_num);
+    @memcpy(coords_copy.mem, coords.mem);
+    return coords_copy;
+}
+
+//------------------------------------------------------------------------------------------
+// Geometry Workspace and Chunks: Pipeline workspace and chunking utilities
+//------------------------------------------------------------------------------------------
+
+const MeshFrameContext = struct {
+    frame_workspace: FrameMeshWorkspace,
+    visible_counts_by_chunk: []usize,
+    visible_offsets_by_chunk: []usize,
+    visible_elems_num: usize,
+};
+
 fn initFrameMeshWorkspace(
     allocator: std.mem.Allocator,
     mesh_static: *const MeshStaticPrepared,
@@ -417,6 +622,57 @@ fn initFrameMeshWorkspace(
         .raster_hull = null,
     };
 }
+
+fn getChunkSize(domain_len: usize, workers_num: usize) usize {
+    if (domain_len == 0) {
+        return 1;
+    }
+
+    const chunk_count = @max(@as(usize, 1), workers_num * 4);
+    return @max(@as(usize, 1), (domain_len + chunk_count - 1) / chunk_count);
+}
+
+fn getChunksNum(domain_len: usize, chunk_size: usize) usize {
+    if (domain_len == 0) {
+        return 0;
+    }
+    return (domain_len + chunk_size - 1) / chunk_size;
+}
+
+fn getWorkerCount(geom_pool: ?*geomthread.GeometryWorkerPool) usize {
+    if (geom_pool) |pool| {
+        return pool.workers_num;
+    }
+    return 1;
+}
+
+fn runStageRange(
+    geom_pool: ?*geomthread.GeometryWorkerPool,
+    ctx_ptr: *anyopaque,
+    job_func: geomthread.RangeFn,
+    domain_len: usize,
+    chunk_size: usize,
+) void {
+    if (domain_len == 0) {
+        return;
+    }
+
+    if (geom_pool) |pool| {
+        pool.runRange(ctx_ptr, job_func, domain_len, chunk_size) catch unreachable;
+        return;
+    }
+
+    const chunks_num = getChunksNum(domain_len, chunk_size);
+    for (0..chunks_num) |chunk_idx| {
+        const range_start = chunk_idx * chunk_size;
+        const range_end = @min(domain_len, range_start + chunk_size);
+        job_func(ctx_ptr, chunk_idx, range_start, range_end);
+    }
+}
+
+//------------------------------------------------------------------------------------------
+// Geometry Pipeline Stages: Coords, Transform, Culling and Compaction
+//------------------------------------------------------------------------------------------
 
 fn prepareFrameMeshCoordsRange(
     frame_workspace: *FrameMeshWorkspace,
@@ -556,53 +812,6 @@ fn compactVisibleFieldFrameRange(
                 elem_field.set(&[_]usize{ pp, ff, nn }, field_val);
             }
         }
-    }
-}
-
-fn getChunkSize(domain_len: usize, workers_num: usize) usize {
-    if (domain_len == 0) {
-        return 1;
-    }
-
-    const chunk_count = @max(@as(usize, 1), workers_num * 4);
-    return @max(@as(usize, 1), (domain_len + chunk_count - 1) / chunk_count);
-}
-
-fn getChunksNum(domain_len: usize, chunk_size: usize) usize {
-    if (domain_len == 0) {
-        return 0;
-    }
-    return (domain_len + chunk_size - 1) / chunk_size;
-}
-
-fn getWorkerCount(geom_pool: ?*geomthread.GeometryWorkerPool) usize {
-    if (geom_pool) |pool| {
-        return pool.workers_num;
-    }
-    return 1;
-}
-
-fn runStageRange(
-    geom_pool: ?*geomthread.GeometryWorkerPool,
-    ctx_ptr: *anyopaque,
-    job_func: geomthread.RangeFn,
-    domain_len: usize,
-    chunk_size: usize,
-) void {
-    if (domain_len == 0) {
-        return;
-    }
-
-    if (geom_pool) |pool| {
-        pool.runRange(ctx_ptr, job_func, domain_len, chunk_size) catch unreachable;
-        return;
-    }
-
-    const chunks_num = getChunksNum(domain_len, chunk_size);
-    for (0..chunks_num) |chunk_idx| {
-        const range_start = chunk_idx * chunk_size;
-        const range_end = @min(domain_len, range_start + chunk_size);
-        job_func(ctx_ptr, chunk_idx, range_start, range_end);
     }
 }
 
@@ -815,6 +1024,207 @@ fn runPrepareVisibleHullsStage(
     );
 }
 
+//------------------------------------------------------------------------------------------
+// Normal Generation: Threaded normal calculation stages
+//------------------------------------------------------------------------------------------
+
+fn prepareVisibleNormalsThreaded(
+    allocator: std.mem.Allocator,
+    mesh_type: MeshType,
+    coords_nodes: *const Coords,
+    connect: *const Connect,
+    visible_orig_elem_indices: []const usize,
+    normal_type: shaderops.NormalType,
+    geom_pool: ?*geomthread.GeometryWorkerPool,
+    elem_chunk_size: usize,
+    visible_chunk_size: usize,
+) !MappedNDArray(f64) {
+    return switch (mesh_type) {
+        .tri3 => try prepareVisibleNormalsThreadedN(
+            allocator,
+            mesh_type,
+            coords_nodes,
+            connect,
+            visible_orig_elem_indices,
+            normal_type,
+            geom_pool,
+            elem_chunk_size,
+            visible_chunk_size,
+            3,
+        ),
+        .tri6 => try prepareVisibleNormalsThreadedN(
+            allocator,
+            mesh_type,
+            coords_nodes,
+            connect,
+            visible_orig_elem_indices,
+            normal_type,
+            geom_pool,
+            elem_chunk_size,
+            visible_chunk_size,
+            6,
+        ),
+        .quad4ibi, .quad4newton => try prepareVisibleNormalsThreadedN(
+            allocator,
+            mesh_type,
+            coords_nodes,
+            connect,
+            visible_orig_elem_indices,
+            normal_type,
+            geom_pool,
+            elem_chunk_size,
+            visible_chunk_size,
+            4,
+        ),
+        .quad8 => try prepareVisibleNormalsThreadedN(
+            allocator,
+            mesh_type,
+            coords_nodes,
+            connect,
+            visible_orig_elem_indices,
+            normal_type,
+            geom_pool,
+            elem_chunk_size,
+            visible_chunk_size,
+            8,
+        ),
+        .quad9 => try prepareVisibleNormalsThreadedN(
+            allocator,
+            mesh_type,
+            coords_nodes,
+            connect,
+            visible_orig_elem_indices,
+            normal_type,
+            geom_pool,
+            elem_chunk_size,
+            visible_chunk_size,
+            9,
+        ),
+    };
+}
+
+fn prepareVisibleNormalsThreadedN(
+    allocator: std.mem.Allocator,
+    mesh_type: MeshType,
+    coords_nodes: *const Coords,
+    connect: *const Connect,
+    visible_orig_elem_indices: []const usize,
+    normal_type: shaderops.NormalType,
+    geom_pool: ?*geomthread.GeometryWorkerPool,
+    elem_chunk_size: usize,
+    visible_chunk_size: usize,
+    comptime N: usize,
+) !MappedNDArray(f64) {
+    var prep_normals = try initIdentityMappedNormals(
+        allocator,
+        visible_orig_elem_indices.len,
+        N,
+    );
+
+    switch (normal_type) {
+        .none => unreachable,
+        .exact => {
+            var exact_stage = PrepareVisibleExactNormalsStage{
+                .mesh_type = mesh_type,
+                .coords_nodes = coords_nodes,
+                .connect = connect,
+                .visible_orig_elem_indices = visible_orig_elem_indices,
+                .prep_normals = &prep_normals.array,
+            };
+            runStageRange(
+                geom_pool,
+                &exact_stage,
+                runPrepareVisibleExactNormalsStage,
+                visible_orig_elem_indices.len,
+                visible_chunk_size,
+            );
+        },
+        .averaged => {
+            const nodes_num = getConnectNodesNum(connect);
+            const elem_chunks_num = getChunksNum(connect.getElemsNum(), elem_chunk_size);
+            const node_normals_stride = nodes_num * 3;
+            const chunk_node_normals = try allocator.alloc(
+                f64,
+                elem_chunks_num * node_normals_stride,
+            );
+            defer allocator.free(chunk_node_normals);
+            @memset(chunk_node_normals, 0.0);
+
+            var accum_stage = AccumulateAveragedNormalsStage{
+                .mesh_type = mesh_type,
+                .coords_nodes = coords_nodes,
+                .connect = connect,
+                .chunk_node_normals = chunk_node_normals,
+                .node_normals_stride = node_normals_stride,
+            };
+            runStageRange(
+                geom_pool,
+                &accum_stage,
+                runAccumulateAveragedNormalsStage,
+                connect.getElemsNum(),
+                elem_chunk_size,
+            );
+
+            const node_normals = try allocator.alloc(f64, node_normals_stride);
+            defer allocator.free(node_normals);
+            @memset(node_normals, 0.0);
+
+            for (0..elem_chunks_num) |cc| {
+                const chunk_start = cc * node_normals_stride;
+                const chunk_end = chunk_start + node_normals_stride;
+                for (chunk_start..chunk_end) |ii| {
+                    node_normals[ii - chunk_start] += chunk_node_normals[ii];
+                }
+            }
+
+            var write_stage = WriteVisibleAveragedNormalsStage{
+                .mesh_type = mesh_type,
+                .connect = connect,
+                .visible_orig_elem_indices = visible_orig_elem_indices,
+                .node_normals = node_normals,
+                .prep_normals = &prep_normals.array,
+            };
+            runStageRange(
+                geom_pool,
+                &write_stage,
+                runWriteVisibleAveragedNormalsStage,
+                visible_orig_elem_indices.len,
+                visible_chunk_size,
+            );
+        },
+    }
+
+    return prep_normals;
+}
+
+fn getConnectNodesNum(connect: *const Connect) usize {
+    var max_node_idx: usize = 0;
+    for (connect.table_mem) |node_idx| {
+        max_node_idx = @max(max_node_idx, node_idx);
+    }
+    return max_node_idx + 1;
+}
+
+fn initIdentityMappedNormals(
+    allocator: std.mem.Allocator,
+    prep_count: usize,
+    comptime N: usize,
+) !MappedNDArray(f64) {
+    const prep_normals = try NDArray(f64).initFlat(
+        allocator,
+        &[_]usize{ prep_count, 3, N },
+    );
+    const map = try allocator.alloc(usize, prep_count);
+    for (0..prep_count) |pp| {
+        map[pp] = pp;
+    }
+
+    return .{
+        .array = prep_normals,
+        .map = map,
+    };
+}
+
 const PrepareVisibleExactNormalsStage = struct {
     mesh_type: MeshType,
     coords_nodes: *const Coords,
@@ -896,102 +1306,10 @@ fn runWriteVisibleAveragedNormalsStage(
     );
 }
 
-fn getConnectNodesNum(connect: *const Connect) usize {
-    var max_node_idx: usize = 0;
-    for (connect.table_mem) |node_idx| {
-        max_node_idx = @max(max_node_idx, node_idx);
-    }
-    return max_node_idx + 1;
-}
+//------------------------------------------------------------------------------------------
+// Frame Mesh Pipeline: Implementation of the frame-by-frame geometry pipeline
+//------------------------------------------------------------------------------------------
 
-fn initIdentityMappedNormals(
-    allocator: std.mem.Allocator,
-    prep_count: usize,
-    comptime N: usize,
-) !MappedNDArray(f64) {
-    const prep_normals = try NDArray(f64).initFlat(
-        allocator,
-        &[_]usize{ prep_count, 3, N },
-    );
-    const map = try allocator.alloc(usize, prep_count);
-    for (0..prep_count) |pp| {
-        map[pp] = pp;
-    }
-
-    return .{
-        .array = prep_normals,
-        .map = map,
-    };
-}
-
-pub const FrameGeometryResult = struct {
-    total_elems_num: usize,
-    total_elems_in_image: usize,
-};
-
-//==========================================================================================
-// Main Entry Point to Geometry Pipeline
-pub fn prepareFrameMeshes(
-    arena_alloc: std.mem.Allocator,
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    camera: *const Camera,
-    frame_idx: usize,
-    mesh_static_prepared: []const MeshStaticPrepared,
-    nodal_global_scaling: []const ?imageops.ScalingParams,
-    geom_threads: u16,
-    frame_meshes: []FrameMeshPrepared,
-    prep_meshes: []MeshPrepared,
-    elem_bboxes_by_mesh: [][]ElemBBox,
-    elems_in_image_by_mesh: []usize,
-    raster_hulls: []?NDArray(f64),
-) !FrameGeometryResult {
-    var geom_pool: ?geomthread.GeometryWorkerPool = null;
-    if (geom_threads > 1) {
-        var pool: geomthread.GeometryWorkerPool = undefined;
-        try pool.init(outer_alloc, io, geom_threads);
-        geom_pool = pool;
-    }
-    defer if (geom_pool) |*pool| pool.deinit(outer_alloc);
-
-    var res = FrameGeometryResult{ .total_elems_num = 0, .total_elems_in_image = 0 };
-
-    for (mesh_static_prepared, 0..) |*mesh_static, ii| {
-        var nodal_frame_scaling: ?imageops.ScalingParams = null;
-        switch (mesh_static.shader) {
-            .nodal => |s| {
-                if (s.scale_over == .over_frames) {
-                    nodal_frame_scaling = nodal_global_scaling[ii];
-                } else {
-                    nodal_frame_scaling = imageops.getScalingParamsNDArray(
-                        &s.field.array,
-                        frame_idx,
-                        s.scaling,
-                    );
-                }
-            },
-            else => {},
-        }
-
-        frame_meshes[ii] = try prepareVisibleFrameMesh(
-            arena_alloc,
-            camera,
-            mesh_static,
-            frame_idx,
-            nodal_frame_scaling,
-            if (geom_pool) |*p| p else null,
-        );
-        prep_meshes[ii] = frame_meshes[ii].mesh;
-        elem_bboxes_by_mesh[ii] = frame_meshes[ii].elem_bboxes;
-        elems_in_image_by_mesh[ii] = frame_meshes[ii].elems_in_image;
-        raster_hulls[ii] = frame_meshes[ii].raster_hull;
-        res.total_elems_num += frame_meshes[ii].total_elems_num;
-        res.total_elems_in_image += frame_meshes[ii].elems_in_image;
-    }
-
-    return res;
-}
-//==========================================================================================
 const FrameMeshPipeline = struct {
     allocator: std.mem.Allocator,
     camera: *const Camera,
@@ -1410,373 +1728,75 @@ fn prepareVisibleFrameMesh(
     );
     return try pipeline.run();
 }
+
+//------------------------------------------------------------------------------------------
+// Main Entry Point: Top-level function for preparing all frame meshes
+//------------------------------------------------------------------------------------------
+
+pub const FrameGeometryResult = struct {
+    total_elems_num: usize,
+    total_elems_in_image: usize,
+};
+
 //==========================================================================================
-
-fn prepareVisibleNormalsThreaded(
-    allocator: std.mem.Allocator,
-    mesh_type: MeshType,
-    coords_nodes: *const Coords,
-    connect: *const Connect,
-    visible_orig_elem_indices: []const usize,
-    normal_type: shaderops.NormalType,
-    geom_pool: ?*geomthread.GeometryWorkerPool,
-    elem_chunk_size: usize,
-    visible_chunk_size: usize,
-) !MappedNDArray(f64) {
-    return switch (mesh_type) {
-        .tri3 => try prepareVisibleNormalsThreadedN(
-            allocator,
-            mesh_type,
-            coords_nodes,
-            connect,
-            visible_orig_elem_indices,
-            normal_type,
-            geom_pool,
-            elem_chunk_size,
-            visible_chunk_size,
-            3,
-        ),
-        .tri6 => try prepareVisibleNormalsThreadedN(
-            allocator,
-            mesh_type,
-            coords_nodes,
-            connect,
-            visible_orig_elem_indices,
-            normal_type,
-            geom_pool,
-            elem_chunk_size,
-            visible_chunk_size,
-            6,
-        ),
-        .quad4ibi, .quad4newton => try prepareVisibleNormalsThreadedN(
-            allocator,
-            mesh_type,
-            coords_nodes,
-            connect,
-            visible_orig_elem_indices,
-            normal_type,
-            geom_pool,
-            elem_chunk_size,
-            visible_chunk_size,
-            4,
-        ),
-        .quad8 => try prepareVisibleNormalsThreadedN(
-            allocator,
-            mesh_type,
-            coords_nodes,
-            connect,
-            visible_orig_elem_indices,
-            normal_type,
-            geom_pool,
-            elem_chunk_size,
-            visible_chunk_size,
-            8,
-        ),
-        .quad9 => try prepareVisibleNormalsThreadedN(
-            allocator,
-            mesh_type,
-            coords_nodes,
-            connect,
-            visible_orig_elem_indices,
-            normal_type,
-            geom_pool,
-            elem_chunk_size,
-            visible_chunk_size,
-            9,
-        ),
-    };
-}
-
-fn prepareVisibleNormalsThreadedN(
-    allocator: std.mem.Allocator,
-    mesh_type: MeshType,
-    coords_nodes: *const Coords,
-    connect: *const Connect,
-    visible_orig_elem_indices: []const usize,
-    normal_type: shaderops.NormalType,
-    geom_pool: ?*geomthread.GeometryWorkerPool,
-    elem_chunk_size: usize,
-    visible_chunk_size: usize,
-    comptime N: usize,
-) !MappedNDArray(f64) {
-    var prep_normals = try initIdentityMappedNormals(
-        allocator,
-        visible_orig_elem_indices.len,
-        N,
-    );
-
-    switch (normal_type) {
-        .none => unreachable,
-        .exact => {
-            var exact_stage = PrepareVisibleExactNormalsStage{
-                .mesh_type = mesh_type,
-                .coords_nodes = coords_nodes,
-                .connect = connect,
-                .visible_orig_elem_indices = visible_orig_elem_indices,
-                .prep_normals = &prep_normals.array,
-            };
-            runStageRange(
-                geom_pool,
-                &exact_stage,
-                runPrepareVisibleExactNormalsStage,
-                visible_orig_elem_indices.len,
-                visible_chunk_size,
-            );
-        },
-        .averaged => {
-            const nodes_num = getConnectNodesNum(connect);
-            const elem_chunks_num = getChunksNum(connect.getElemsNum(), elem_chunk_size);
-            const node_normals_stride = nodes_num * 3;
-            const chunk_node_normals = try allocator.alloc(
-                f64,
-                elem_chunks_num * node_normals_stride,
-            );
-            defer allocator.free(chunk_node_normals);
-            @memset(chunk_node_normals, 0.0);
-
-            var accum_stage = AccumulateAveragedNormalsStage{
-                .mesh_type = mesh_type,
-                .coords_nodes = coords_nodes,
-                .connect = connect,
-                .chunk_node_normals = chunk_node_normals,
-                .node_normals_stride = node_normals_stride,
-            };
-            runStageRange(
-                geom_pool,
-                &accum_stage,
-                runAccumulateAveragedNormalsStage,
-                connect.getElemsNum(),
-                elem_chunk_size,
-            );
-
-            const node_normals = try allocator.alloc(f64, node_normals_stride);
-            defer allocator.free(node_normals);
-            @memset(node_normals, 0.0);
-
-            for (0..elem_chunks_num) |cc| {
-                const chunk_start = cc * node_normals_stride;
-                const chunk_end = chunk_start + node_normals_stride;
-                for (chunk_start..chunk_end) |ii| {
-                    node_normals[ii - chunk_start] += chunk_node_normals[ii];
-                }
-            }
-
-            var write_stage = WriteVisibleAveragedNormalsStage{
-                .mesh_type = mesh_type,
-                .connect = connect,
-                .visible_orig_elem_indices = visible_orig_elem_indices,
-                .node_normals = node_normals,
-                .prep_normals = &prep_normals.array,
-            };
-            runStageRange(
-                geom_pool,
-                &write_stage,
-                runWriteVisibleAveragedNormalsStage,
-                visible_orig_elem_indices.len,
-                visible_chunk_size,
-            );
-        },
-    }
-
-    return prep_normals;
-}
-
-pub fn prepareCoords(
-    outer_alloc: std.mem.Allocator,
-    coords: *const Coords,
-    connect: *const Connect,
-) !NDArray(f64) {
-    const coord_dims = [_]usize{ connect.getElemsNum(), 3, connect.getNodesPerElem() };
-    var elem_coord_arr = try NDArray(f64).initFlat(outer_alloc, coord_dims[0..]);
-    @memset(elem_coord_arr.slice, 0.0);
-
-    const dim_elem: usize = 0;
-    const dim_field: usize = 1;
-    const dim_node: usize = 2;
-
-    var elem_idxs = [_]usize{ 0, 0, 0 };
-
-    for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        elem_idxs[dim_elem] = ee;
-        const coord_inds: []usize = connect.getElem(ee);
-
-        for (0..elem_coord_arr.dims[dim_node]) |nn| {
-            elem_idxs[dim_node] = nn;
-
-            const node_idx = coord_inds[nn];
-            const x = coords.x(node_idx);
-            const y = coords.y(node_idx);
-            const z = coords.z(node_idx);
-
-            elem_idxs[dim_field] = 0;
-            elem_coord_arr.set(elem_idxs[0..], x);
-            elem_idxs[dim_field] = 1;
-            elem_coord_arr.set(elem_idxs[0..], y);
-            elem_idxs[dim_field] = 2;
-            elem_coord_arr.set(elem_idxs[0..], z);
-        }
-    }
-
-    return elem_coord_arr;
-}
-
-pub fn prepareField(
-    outer_alloc: std.mem.Allocator,
-    connect: *const Connect,
-    field: *const Field,
-) !NDArray(f64) {
-    // dims=(times_num,elems_num,fields_num,nodes_per_elem)
-    const field_dims = [_]usize{
-        field.getTimeN(),
-        connect.getElemsNum(),
-        field.getFieldsN(),
-        connect.getNodesPerElem(),
-    };
-    var elem_field_arr = try NDArray(f64).initFlat(outer_alloc, field_dims[0..]);
-    @memset(elem_field_arr.slice, 0.0);
-
-    const dim_time: usize = 0;
-    const dim_elem: usize = 1;
-    const dim_field: usize = 2;
-    const dim_node: usize = 3;
-
-    var set_elem_idxs = [_]usize{ 0, 0, 0, 0 }; // dims=(time,elem,field,node)
-    var get_field_idxs = [_]usize{ 0, 0, 0 }; // dims=(time,coord,field)
-
-    for (0..elem_field_arr.dims[dim_time]) |tt| {
-        get_field_idxs[0] = @min(tt, field.array.dims[0] - 1);
-        set_elem_idxs[dim_time] = tt;
-
-        for (0..elem_field_arr.dims[dim_elem]) |ee| {
-            set_elem_idxs[dim_elem] = ee;
-            const coord_inds: []usize = connect.getElem(ee);
-
-            for (0..elem_field_arr.dims[dim_node]) |nn| {
-                set_elem_idxs[dim_node] = nn;
-                get_field_idxs[1] = coord_inds[nn];
-
-                for (0..elem_field_arr.dims[dim_field]) |ff| {
-                    get_field_idxs[2] = ff;
-                    const field_val: f64 = field.array.get(get_field_idxs[0..]);
-
-                    set_elem_idxs[dim_field] = ff;
-                    elem_field_arr.set(set_elem_idxs[0..], field_val);
-                }
-            }
-        }
-    }
-
-    return elem_field_arr;
-}
-
-pub fn prepareUVs(
-    outer_alloc: std.mem.Allocator,
-    uvs: *const NDArray(f64),
-    connect: *const Connect,
-) !NDArray(f64) {
-    const elems_num = connect.getElemsNum();
-    const nodes_per_elem = connect.getNodesPerElem();
-    var elem_uv_arr = try NDArray(f64).initFlat(
-        outer_alloc,
-        &[_]usize{ elems_num, 2, nodes_per_elem },
-    );
-    @memset(elem_uv_arr.slice, 0.0);
-
-    for (0..elems_num) |ee| {
-        const coord_inds = connect.getElem(ee);
-        for (0..nodes_per_elem) |nn| {
-            for (0..2) |uu| {
-                const val = uvs.get(&[_]usize{ coord_inds[nn], uu });
-                elem_uv_arr.set(&[_]usize{ ee, uu, nn }, val);
-            }
-        }
-    }
-
-    return elem_uv_arr;
-}
-
-pub fn meshInputFromSimDataSlice(
+// Main Entry Point to Geometry Pipeline
+pub fn prepareFrameMeshes(
+    arena_alloc: std.mem.Allocator,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    sim_datas: []const meshio.SimData,
-    mesh_types: []const MeshType,
-    shader_mode: enum { nodal, texture },
-    uv_paths: ?[]const []const u8,
-    texture_path: ?[]const u8,
-    uv_file: ?[]const u8,
-) ![]MeshInput {
-    var mesh_inputs = try outer_alloc.alloc(MeshInput, sim_datas.len);
-    var initialized_count: usize = 0;
-    errdefer {
-        for (0..initialized_count) |ii| {
-            switch (mesh_inputs[ii].shader) {
-                .tex => |tex| {
-                    outer_alloc.free(tex.uvs.slice);
-                },
-                .tex_rgb => |tex| {
-                    outer_alloc.free(tex.uvs.slice);
-                },
-                else => {},
-            }
+    camera: *const Camera,
+    frame_idx: usize,
+    mesh_static_prepared: []const MeshStaticPrepared,
+    nodal_global_scaling: []const ?imageops.ScalingParams,
+    geom_threads: u16,
+    frame_meshes: []FrameMeshPrepared,
+    prep_meshes: []MeshPrepared,
+    elem_bboxes_by_mesh: [][]ElemBBox,
+    elems_in_image_by_mesh: []usize,
+    raster_hulls: []?NDArray(f64),
+) !FrameGeometryResult {
+    var geom_pool: ?geomthread.GeometryWorkerPool = null;
+    if (geom_threads > 1) {
+        var pool: geomthread.GeometryWorkerPool = undefined;
+        try pool.init(outer_alloc, io, geom_threads);
+        geom_pool = pool;
+    }
+    defer if (geom_pool) |*pool| pool.deinit(outer_alloc);
+
+    var res = FrameGeometryResult{ .total_elems_num = 0, .total_elems_in_image = 0 };
+
+    for (mesh_static_prepared, 0..) |*mesh_static, ii| {
+        var nodal_frame_scaling: ?imageops.ScalingParams = null;
+        switch (mesh_static.shader) {
+            .nodal => |s| {
+                if (s.scale_over == .over_frames) {
+                    nodal_frame_scaling = nodal_global_scaling[ii];
+                } else {
+                    nodal_frame_scaling = imageops.getScalingParamsNDArray(
+                        &s.field.array,
+                        frame_idx,
+                        s.scaling,
+                    );
+                }
+            },
+            else => {},
         }
-        outer_alloc.free(mesh_inputs);
+
+        frame_meshes[ii] = try prepareVisibleFrameMesh(
+            arena_alloc,
+            camera,
+            mesh_static,
+            frame_idx,
+            nodal_frame_scaling,
+            if (geom_pool) |*p| p else null,
+        );
+        prep_meshes[ii] = frame_meshes[ii].mesh;
+        elem_bboxes_by_mesh[ii] = frame_meshes[ii].elem_bboxes;
+        elems_in_image_by_mesh[ii] = frame_meshes[ii].elems_in_image;
+        raster_hulls[ii] = frame_meshes[ii].raster_hull;
+        res.total_elems_num += frame_meshes[ii].total_elems_num;
+        res.total_elems_in_image += frame_meshes[ii].elems_in_image;
     }
 
-    const uv_file_name = uv_file orelse "uvs.csv";
-
-    for (sim_datas, 0..) |sim_data, ii| {
-        mesh_inputs[ii] = MeshInput{
-            .mesh_type = mesh_types[ii],
-            .coords = sim_data.coords,
-            .connect = sim_data.connect,
-            .disp = sim_data.disp,
-            .shader = undefined,
-        };
-
-        if (shader_mode == .nodal) {
-            if (sim_data.field) |field| {
-                mesh_inputs[ii].shader = .{ .nodal = .{
-                    .field = field,
-                    .bits = 8,
-                    .normal_type = .none,
-                } };
-            } else {
-                return error.MissingFieldData;
-            }
-        } else {
-            const paths = uv_paths orelse return error.MissingUVPaths;
-            const path_uvs = try std.fmt.allocPrint(
-                outer_alloc,
-                "{s}{s}",
-                .{ paths[ii], uv_file_name },
-            );
-            defer outer_alloc.free(path_uvs);
-
-            const uvmap = try uvio.loadUVMap(outer_alloc, io, path_uvs);
-
-            const format: ImageFormat = if (std.mem.endsWith(u8, texture_path.?, ".bmp"))
-                .bmp
-            else
-                .tiff;
-
-            const texture = try imageio.loadImage(
-                u8,
-                1,
-                outer_alloc,
-                io,
-                texture_path.?,
-                format,
-            );
-
-            mesh_inputs[ii].shader = .{ .tex = .{
-                .uvs = uvmap.array,
-                .texture = texture,
-                .sample_config = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
-                .normal_type = .none,
-            } };
-        }
-        initialized_count += 1;
-    }
-    return mesh_inputs;
+    return res;
 }
-
