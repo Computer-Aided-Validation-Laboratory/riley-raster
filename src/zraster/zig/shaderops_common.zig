@@ -9,31 +9,21 @@
 const std = @import("std");
 
 const buildconfig = @import("buildconfig.zig");
-const cfg = buildconfig.config;
-const S = buildconfig.SimdWidth;
-const VecSB = buildconfig.VecSB;
 
 const ndarray = @import("ndarray.zig");
-const NDArray = ndarray.NDArray;
-const MappedNDArray = ndarray.MappedNDArray;
-const MatSlice = @import("matslice.zig").MatSlice;
+const matslice = @import("matslice.zig");
 
 const imageops = @import("imageops.zig");
 const iio = @import("imageio.zig");
-
-const Texture = iio.Texture;
 const texops = @import("textureops.zig");
-const TextureSampleConfig = texops.TextureSampleConfig;
-
 const meshio = @import("meshio.zig");
-const Field = meshio.Field;
 
 pub const ScaleOver = enum { within_frames, over_frames };
 pub const NormalType = enum { none, exact, averaged };
 
 pub fn LocalShaderBuffer(comptime N: usize) type {
     return struct {
-        data: [cfg.max_nodal_fields * N]f64 = undefined,
+        data: [buildconfig.config.max_nodal_fields * N]f64 = undefined,
         normals: [3 * N]f64 = undefined,
         actual_fields: u8 = 0,
         has_normals: bool = false,
@@ -42,11 +32,11 @@ pub fn LocalShaderBuffer(comptime N: usize) type {
 
         pub inline fn load(
             self: *Self,
-            array: NDArray(f64),
+            array: ndarray.NDArray(f64),
             start_idx: usize,
             fields_num: u8,
         ) void {
-            std.debug.assert(fields_num <= cfg.max_nodal_fields);
+            std.debug.assert(fields_num <= buildconfig.config.max_nodal_fields);
             self.actual_fields = fields_num;
             const count = @as(usize, fields_num) * N;
             @memcpy(self.data[0..count], array.slice[start_idx .. start_idx + count]);
@@ -54,7 +44,7 @@ pub fn LocalShaderBuffer(comptime N: usize) type {
 
         pub inline fn loadNormals(
             self: *Self,
-            array: NDArray(f64),
+            array: ndarray.NDArray(f64),
             start_idx: usize,
         ) void {
             self.has_normals = true;
@@ -94,7 +84,7 @@ pub fn LocalShaderBuffer(comptime N: usize) type {
 // Nodal Fields: Node-order [num_frames, total_nodes, num_fields]
 // UVs: Node-order [total_nodes, 2]
 pub const NodalInput = struct {
-    field: Field,
+    field: meshio.Field,
     bits: ?u8 = 8,
     scaling: imageops.ScaleStrategy = .none,
     scale_over: ScaleOver = .over_frames,
@@ -103,9 +93,9 @@ pub const NodalInput = struct {
 
 pub fn TexInput(comptime channels: usize) type {
     return struct {
-        uvs: NDArray(f64),
-        texture: Texture(channels),
-        sample_config: TextureSampleConfig = .{
+        uvs: ndarray.NDArray(f64),
+        texture: iio.Texture(channels),
+        sample_config: texops.TextureSampleConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .lut_lerp,
         },
@@ -125,7 +115,7 @@ pub const ShaderInput = union(enum) {
 // Nodal Fields: Node-order [num_frames, total_nodes, num_fields]
 // UVs: Element-order [total_elems, 2, nodes_per_elem]
 pub const NodalStatic = struct {
-    field: Field,
+    field: meshio.Field,
     bits: ?u8 = 8,
     scaling: imageops.ScaleStrategy = .none,
     scale_over: ScaleOver = .over_frames,
@@ -134,9 +124,9 @@ pub const NodalStatic = struct {
 
 pub fn TexStatic(comptime channels: usize) type {
     return struct {
-        elem_uvs: NDArray(f64),
-        texture: Texture(channels),
-        sample_config: TextureSampleConfig = .{
+        elem_uvs: ndarray.NDArray(f64),
+        texture: iio.Texture(channels),
+        sample_config: texops.TextureSampleConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .lut_lerp,
         },
@@ -153,25 +143,25 @@ pub const ShaderStatic = union(enum) {
 };
 
 // The "Payload": Culled and expanded shader data for a SINGLE frame.
-// Prepared means culled element-order NDArray data ready for the raster loop.
+// Prepared means culled element-order ndarray.NDArray data ready for the raster loop.
 // Nodal Fields: Element-order [visible_elems, num_fields, nodes_per_elem]
 // UVs: Element-order [visible_elems, 2, nodes_per_elem]
 pub const NodalPrepared = struct {
-    elem_field: NDArray(f64),
+    elem_field: ndarray.NDArray(f64),
     bits: ?u8 = 8,
     scaling: imageops.ScaleStrategy = .none,
     scale_over: ScaleOver = .over_frames,
     scale_mul: f64 = 1.0,
     scale_add: f64 = 0.0,
     normal_type: NormalType = .none,
-    elem_normals: ?MappedNDArray(f64) = null,
+    elem_normals: ?ndarray.MappedNDArray(f64) = null,
 };
 
 pub fn TexPrepared(comptime channels: usize) type {
     return struct {
-        elem_uvs: NDArray(f64),
-        texture: Texture(channels),
-        sample_config: TextureSampleConfig = .{
+        elem_uvs: ndarray.NDArray(f64),
+        texture: iio.Texture(channels),
+        sample_config: texops.TextureSampleConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .lut_lerp,
         },
@@ -180,7 +170,7 @@ pub fn TexPrepared(comptime channels: usize) type {
         scale_mul: f64 = 1.0,
         scale_add: f64 = 0.0,
         normal_type: NormalType = .none,
-        elem_normals: ?MappedNDArray(f64) = null,
+        elem_normals: ?ndarray.MappedNDArray(f64) = null,
     };
 }
 
@@ -200,7 +190,7 @@ pub fn ShadeContext(comptime N: usize) type {
         global_subx: usize,
         global_suby: usize,
         shader_buf: *const LocalShaderBuffer(N),
-        v_mask_active: ?VecSB = null,
+        v_mask_active: ?buildconfig.VecSB = null,
     };
 }
 
@@ -217,7 +207,7 @@ pub inline fn fillNodalClip(
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const NodalPrepared,
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *matslice.MatSlice(f64),
 ) void {
     for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
         const value = ctx_shade.shader_buf.interpolate(ff, interp.weights);
@@ -231,7 +221,7 @@ pub inline fn fillNodalPersp(
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const NodalPrepared,
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *matslice.MatSlice(f64),
 ) void {
     for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
         const base = ff * N;
@@ -252,11 +242,11 @@ pub inline fn fillNodalPersp(
 pub inline fn fillTexClip(
     comptime N: usize,
     comptime channels: usize,
-    comptime sample_config: TextureSampleConfig,
+    comptime sample_config: texops.TextureSampleConfig,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const TexPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *matslice.MatSlice(f64),
 ) void {
     var tex_u: f64 = 0.0;
     var tex_v: f64 = 0.0;
@@ -282,11 +272,11 @@ pub inline fn fillTexClip(
 pub inline fn fillTexClipRuntime(
     comptime N: usize,
     comptime channels: usize,
-    sample_config: TextureSampleConfig,
+    sample_config: texops.TextureSampleConfig,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const TexPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *matslice.MatSlice(f64),
 ) void {
     var tex_u: f64 = 0.0;
     var tex_v: f64 = 0.0;
@@ -312,11 +302,11 @@ pub inline fn fillTexClipRuntime(
 pub inline fn fillTexPersp(
     comptime N: usize,
     comptime channels: usize,
-    comptime sample_config: TextureSampleConfig,
+    comptime sample_config: texops.TextureSampleConfig,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const TexPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *matslice.MatSlice(f64),
 ) void {
     var tex_u: f64 = 0.0;
     var tex_v: f64 = 0.0;
@@ -345,11 +335,11 @@ pub inline fn fillTexPersp(
 pub inline fn fillTexPerspRuntime(
     comptime N: usize,
     comptime channels: usize,
-    sample_config: TextureSampleConfig,
+    sample_config: texops.TextureSampleConfig,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const TexPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *matslice.MatSlice(f64),
 ) void {
     var tex_u: f64 = 0.0;
     var tex_v: f64 = 0.0;

@@ -9,30 +9,17 @@
 const std = @import("std");
 const Timestamp = std.Io.Clock.Timestamp;
 
-const MatSlice = @import("matslice.zig").MatSlice;
-const NDArray = @import("ndarray.zig").NDArray;
+const matslice = @import("matslice.zig");
+const ndarray = @import("ndarray.zig");
 
 const sliceops = @import("sliceops.zig");
 
-const CameraInput = @import("camera.zig").CameraInput;
-const CameraPrepared = @import("camera.zig").CameraPrepared;
-
+const cam = @import("camera.zig");
 const rops = @import("rasterops.zig");
-const ElemBBox = rops.ElemBBox;
-const Vec3Slices = rops.Vec3Slices;
-
 const mo = @import("meshops.zig");
-const MeshType = mo.MeshType;
-const MeshInput = mo.MeshInput;
-const MeshPrepared = mo.MeshPrepared;
-const MeshStatic = mo.MeshStatic;
-const MeshFrame = mo.MeshFrame;
 const shaderops = @import("shaderops.zig");
-const ShaderInput = shaderops.ShaderInput;
-const ShaderPrepared = shaderops.ShaderPrepared;
 
 const iio = @import("imageio.zig");
-const ImageFormat = iio.ImageFormat;
 const imageops = @import("imageops.zig");
 const geomthread = @import("geomthread.zig");
 
@@ -41,49 +28,11 @@ const shadekerns = @import("shaderkernels.zig");
 const rasterengine = @import("rasterengine.zig");
 
 const report = @import("report.zig");
-const ReportMode = report.ReportMode;
-const BenchLog = report.BenchLog;
-const EndToEndTimes = report.EndToEndTimes;
-const FullStatsOpts = report.FullStatsOpts;
-
-pub const RasterConfig = struct {
-    render_mode: RenderMode = .in_order,
-    total_threads: u16 = 0,
-    max_frames_in_flight: u16 = 1,
-    max_geom_threads_per_frame: u16 = 0,
-    max_raster_threads_per_frame: u16 = 0,
-    save_strategy: SaveStrategy = .disk,
-    image_save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .none },
-    },
-    tile_size: u16 = 32,
-    report: ReportMode = .bench,
-    full_stats_opts: FullStatsOpts = .{},
-};
-
-pub const SaveStrategy = enum {
-    disk,
-    memory,
-    both,
-    none,
-};
-
-pub const RenderMode = enum {
-    in_order,
-    offline,
-};
-
-const FrameReportStorage = union(ReportMode) {
-    off: report.OffLog,
-    bench: BenchLog,
-    full_stats: report.FullStatsLog,
-};
-
-pub const FrameBenchCapture = struct {
-    camera_idx: usize,
-    frame_idx: usize,
-    bench_log: BenchLog,
-};
+pub const RenderMode = report.RenderMode;
+pub const RasterConfig = report.RasterConfig;
+pub const SaveStrategy = report.SaveStrategy;
+pub const FrameBenchCapture = report.FrameBenchCapture;
+const FrameReportStorage = report.FrameReportStorage;
 
 const FrameJobErrorState = struct {
     mutex: std.atomic.Mutex = .unlocked,
@@ -103,12 +52,12 @@ const FrameJobErrorState = struct {
     }
 };
 
-fn FrameReportPtr(comptime report_mode: ReportMode) type {
+fn FrameReportPtr(comptime report_mode: report.ReportMode) type {
     return *report.LogType(report_mode);
 }
 
 fn getFrameReportPtr(
-    comptime report_mode: ReportMode,
+    comptime report_mode: report.ReportMode,
     ctx: *FrameContext,
 ) FrameReportPtr(report_mode) {
     return switch (report_mode) {
@@ -119,7 +68,7 @@ fn getFrameReportPtr(
 }
 
 fn calcNodesPerElem(
-    meshes: []const MeshPrepared,
+    meshes: []const mo.MeshPrepared,
 ) f64 {
     var nodes_sum: usize = 0;
     for (meshes) |mesh| {
@@ -130,7 +79,7 @@ fn calcNodesPerElem(
 }
 
 fn countFrames(
-    meshes: []const MeshInput,
+    meshes: []const mo.MeshInput,
 ) usize {
     const dim_time_pre: usize = 0;
     var num_time: usize = 1;
@@ -148,7 +97,7 @@ fn countFrames(
 }
 
 fn countOutputFields(
-    meshes: []const MeshInput,
+    meshes: []const mo.MeshInput,
 ) u8 {
     var num_fields: u8 = 0;
     for (meshes) |mesh| {
@@ -164,7 +113,7 @@ fn countOutputFields(
 
 fn initNodalGlobalScaling(
     outer_alloc: std.mem.Allocator,
-    meshes: []const MeshInput,
+    meshes: []const mo.MeshInput,
 ) ![]?imageops.ScalingParams {
     var nodal_global_scaling = try outer_alloc.alloc(?imageops.ScalingParams, meshes.len);
 
@@ -189,9 +138,9 @@ fn initNodalGlobalScaling(
 
 fn initStaticSlice(
     allocator: std.mem.Allocator,
-    meshes: []const MeshInput,
-) ![]MeshStatic {
-    const mesh_static = try allocator.alloc(MeshStatic, meshes.len);
+    meshes: []const mo.MeshInput,
+) ![]mo.MeshStatic {
+    const mesh_static = try allocator.alloc(mo.MeshStatic, meshes.len);
 
     for (meshes, 0..) |mesh, ii| {
         mesh_static[ii] = try mo.initStatic(allocator, &mesh);
@@ -202,11 +151,11 @@ fn initStaticSlice(
 
 fn initImagesArray(
     outer_alloc: std.mem.Allocator,
-    config: RasterConfig,
-    cameras: []const CameraPrepared,
+    config: report.RasterConfig,
+    cameras: []const cam.CameraPrepared,
     num_time: usize,
     num_fields: u8,
-) !?NDArray(f64) {
+) !?ndarray.NDArray(f64) {
     if (config.save_strategy == .memory or config.save_strategy == .both) {
         std.debug.assert(cameras.len > 0);
         var max_pixels_num = cameras[0].pixels_num;
@@ -221,7 +170,7 @@ fn initImagesArray(
             max_pixels_num[1],
             max_pixels_num[0],
         };
-        const images_arr = try NDArray(f64).initFlat(outer_alloc, dims[0..]);
+        const images_arr = try ndarray.NDArray(f64).initFlat(outer_alloc, dims[0..]);
         @memset(images_arr.slice, 0.0);
         return images_arr;
     }
@@ -246,8 +195,8 @@ fn calcPhaseThreadCap(
 }
 
 fn calcFramesInFlight(
-    render_mode: RenderMode,
-    config: RasterConfig,
+    render_mode: report.RenderMode,
+    config: report.RasterConfig,
     cameras_num: usize,
 ) u16 {
     if (config.total_threads == 0) {
@@ -262,9 +211,9 @@ fn calcFramesInFlight(
 
 fn initFrameReportStorage(
     outer_alloc: std.mem.Allocator,
-    camera: *const CameraPrepared,
-    config: RasterConfig,
-) !FrameReportStorage {
+    camera: *const cam.CameraPrepared,
+    config: report.RasterConfig,
+) !report.FrameReportStorage {
     return switch (config.report) {
         .off => .{ .off = .{} },
         .bench => .{ .bench = .{} },
@@ -292,18 +241,18 @@ fn calcBenchCaptureIdx(
 const FrameContext = struct {
     arena: std.heap.ArenaAllocator,
 
-    frame_meshes: []MeshFrame = &.{},
-    prep_meshes: []MeshPrepared = &.{},
-    elem_bboxes_by_mesh: [][]ElemBBox = &.{},
+    frame_meshes: []mo.MeshFrame = &.{},
+    prep_meshes: []mo.MeshPrepared = &.{},
+    elem_bboxes_by_mesh: [][]rops.ElemBBox = &.{},
     elems_in_image_by_mesh: []usize = &.{},
-    raster_hulls: []?NDArray(f64) = &.{},
+    raster_hulls: []?ndarray.NDArray(f64) = &.{},
     tiling: ?rops.TilingOverlaps = null,
     total_elems_num: usize = 0,
     total_elems_in_image: usize = 0,
 
-    frame_arr: NDArray(f64) = undefined,
+    frame_arr: ndarray.NDArray(f64) = undefined,
 
-    report_storage: FrameReportStorage = .{ .off = .{} },
+    report_storage: report.FrameReportStorage = .{ .off = .{} },
     frame_times: report.FrameTimes = .{},
 
     fn init(
@@ -340,26 +289,26 @@ fn prepareFrameContext(
     );
 
     const mesh_n = input.mesh_static.len;
-    ctx.frame_meshes = try arena_alloc.alloc(MeshFrame, mesh_n);
-    ctx.prep_meshes = try arena_alloc.alloc(MeshPrepared, mesh_n);
-    ctx.elem_bboxes_by_mesh = try arena_alloc.alloc([]ElemBBox, mesh_n);
+    ctx.frame_meshes = try arena_alloc.alloc(mo.MeshFrame, mesh_n);
+    ctx.prep_meshes = try arena_alloc.alloc(mo.MeshPrepared, mesh_n);
+    ctx.elem_bboxes_by_mesh = try arena_alloc.alloc([]rops.ElemBBox, mesh_n);
     ctx.elems_in_image_by_mesh = try arena_alloc.alloc(usize, mesh_n);
-    ctx.raster_hulls = try arena_alloc.alloc(?NDArray(f64), mesh_n);
+    ctx.raster_hulls = try arena_alloc.alloc(?ndarray.NDArray(f64), mesh_n);
 
     const dims = [_]usize{
         @as(usize, input.num_fields),
         input.camera.pixels_num[1],
         input.camera.pixels_num[0],
     };
-    ctx.frame_arr = try NDArray(f64).initFlat(arena_alloc, dims[0..]);
+    ctx.frame_arr = try ndarray.NDArray(f64).initFlat(arena_alloc, dims[0..]);
     @memset(ctx.frame_arr.slice, 0.0);
 }
 
 fn copyFrameToImageBatch(
-    images_arr: *NDArray(f64),
+    images_arr: *ndarray.NDArray(f64),
     camera_idx: usize,
     frame_idx: usize,
-    frame_arr: *const NDArray(f64),
+    frame_arr: *const ndarray.NDArray(f64),
 ) void {
     std.debug.assert(images_arr.dims.len == 5);
     std.debug.assert(frame_arr.dims.len == 3);
@@ -380,7 +329,7 @@ fn copyFrameToImageBatch(
 }
 
 fn rasterFrame(
-    comptime report_mode: ReportMode,
+    comptime report_mode: report.ReportMode,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     input: *const FrameInput,
@@ -415,7 +364,7 @@ fn rasterFrame(
     );
 }
 
-fn finaliseFrame(
+fn saveFrame(
     io: std.Io,
     input: *const FrameInput,
     ctx: *FrameContext,
@@ -433,12 +382,6 @@ fn finaliseFrame(
             input.config.image_save_opts,
         );
     }
-}
-
-fn storeFrameImage(
-    input: *const FrameInput,
-    ctx: *FrameContext,
-) void {
     if (input.images_arr) |images_arr| {
         copyFrameToImageBatch(
             images_arr,
@@ -446,57 +389,6 @@ fn storeFrameImage(
             input.frame_idx,
             &ctx.frame_arr,
         );
-    }
-}
-
-fn publishFrameResults(
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    input: *const FrameInput,
-    ctx: *FrameContext,
-) !void {
-    const nodes_per_elem = calcNodesPerElem(ctx.prep_meshes);
-
-    switch (input.config.report) {
-        .off => {},
-        .bench => {
-            ctx.report_storage.bench.frame_times = ctx.frame_times;
-            if (input.bench_capture) |capture| {
-                const capture_idx = calcBenchCaptureIdx(
-                    input.cameras_num,
-                    input.camera_idx,
-                    input.frame_idx,
-                );
-                capture[capture_idx] = .{
-                    .camera_idx = input.camera_idx,
-                    .frame_idx = input.frame_idx,
-                    .bench_log = ctx.report_storage.bench,
-                };
-            }
-            try report.standardReport(
-                io,
-                input.camera,
-                ctx.frame_times,
-                ctx.total_elems_num,
-                ctx.total_elems_in_image,
-                nodes_per_elem,
-                &ctx.report_storage.bench,
-            );
-        },
-        .full_stats => {
-            ctx.report_storage.full_stats.bench.frame_times = ctx.frame_times;
-            try ctx.report_storage.full_stats.saveFrameReport(
-                io,
-                outer_alloc,
-                input.out_dir,
-                input.camera_idx,
-                input.frame_idx,
-                input.camera,
-                input.config.tile_size,
-                input.config.full_stats_opts,
-                nodes_per_elem,
-            );
-        },
     }
 }
 
@@ -568,18 +460,18 @@ fn runFrameRaster(
 //------------------------------------------------------------------------------------------
 // 3. Process: frame jobs for a given camera and frame
 const FrameInput = struct {
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     camera_idx: usize,
     frame_idx: usize,
     num_fields: u8,
-    config: RasterConfig,
+    config: report.RasterConfig,
     out_dir: ?std.Io.Dir,
-    mesh_static: []const MeshStatic,
+    mesh_static: []const mo.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     geom_threads: u16,
     raster_threads: u16,
-    images_arr: ?*NDArray(f64),
-    bench_capture: ?[]FrameBenchCapture,
+    images_arr: ?*ndarray.NDArray(f64),
+    bench_capture: ?[]report.FrameBenchCapture,
     cameras_num: usize,
     err_state: *FrameJobErrorState,
 };
@@ -605,7 +497,7 @@ fn processFrameJobInternal(
     const time_start_geo = Timestamp.now(io, .awake);
     const arena_alloc = ctx.arena.allocator();
 
-    const geo_res = try mo.prepareFrameMeshes(
+    const geo_res = try mo.prepareMeshFrames(
         arena_alloc,
         outer_alloc,
         io,
@@ -645,24 +537,32 @@ fn processFrameJobInternal(
 
     // Stage 5: Finalise frame
     const time_start_save = Timestamp.now(io, .awake);
-    try finaliseFrame(io, &input, &ctx);
+    try saveFrame(io, &input, &ctx);
     const time_end_save = Timestamp.now(io, .awake);
     ctx.frame_times.save_frame = @floatFromInt(
         time_start_save.durationTo(time_end_save).raw.nanoseconds,
     );
-
-    storeFrameImage(&input, &ctx);
 
     const time_end_frame = Timestamp.now(io, .awake);
     ctx.frame_times.total_time = @floatFromInt(
         time_start_frame.durationTo(time_end_frame).raw.nanoseconds,
     );
 
-    try publishFrameResults(
+    try report.publishFrameResults(
         outer_alloc,
         io,
-        &input,
-        &ctx,
+        input.config,
+        input.camera,
+        input.camera_idx,
+        input.frame_idx,
+        input.cameras_num,
+        input.out_dir,
+        input.bench_capture,
+        &ctx.report_storage,
+        ctx.frame_times,
+        ctx.total_elems_num,
+        ctx.total_elems_in_image,
+        ctx.prep_meshes,
     );
 }
 
@@ -691,15 +591,15 @@ fn processFrameJobSerial(
 fn dispatchSerialFrameJobs(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    cameras: []const CameraPrepared,
-    config: RasterConfig,
+    cameras: []const cam.CameraPrepared,
+    config: report.RasterConfig,
     out_dir: ?std.Io.Dir,
     num_time: usize,
     num_fields: u8,
-    mesh_static: []const MeshStatic,
+    mesh_static: []const mo.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
-    images_arr: ?*NDArray(f64),
-    bench_capture: ?[]FrameBenchCapture,
+    images_arr: ?*ndarray.NDArray(f64),
+    bench_capture: ?[]report.FrameBenchCapture,
 ) !void {
     const geom_threads: u16 = 1;
     const raster_threads: u16 = 1;
@@ -733,15 +633,15 @@ fn dispatchSerialFrameJobs(
 fn dispatchOfflineFrameJobs(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    cameras: []const CameraPrepared,
-    config: RasterConfig,
+    cameras: []const cam.CameraPrepared,
+    config: report.RasterConfig,
     out_dir: ?std.Io.Dir,
     num_time: usize,
     num_fields: u8,
-    mesh_static: []const MeshStatic,
+    mesh_static: []const mo.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
-    images_arr: ?*NDArray(f64),
-    bench_capture: ?[]FrameBenchCapture,
+    images_arr: ?*ndarray.NDArray(f64),
+    bench_capture: ?[]report.FrameBenchCapture,
 ) !void {
     const jobs_num = cameras.len * num_time;
     const frames_in_flight = calcFramesInFlight(.offline, config, cameras.len);
@@ -806,15 +706,15 @@ fn dispatchOfflineFrameJobs(
 fn dispatchInOrderFrameJobs(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    cameras: []const CameraPrepared,
-    config: RasterConfig,
+    cameras: []const cam.CameraPrepared,
+    config: report.RasterConfig,
     out_dir: ?std.Io.Dir,
     num_time: usize,
     num_fields: u8,
-    mesh_static: []const MeshStatic,
+    mesh_static: []const mo.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
-    images_arr: ?*NDArray(f64),
-    bench_capture: ?[]FrameBenchCapture,
+    images_arr: ?*ndarray.NDArray(f64),
+    bench_capture: ?[]report.FrameBenchCapture,
 ) !void {
     const geom_threads = calcPhaseThreadCap(
         config.total_threads,
@@ -867,11 +767,11 @@ fn dispatchInOrderFrameJobs(
 
 fn prepareCameras(
     outer_alloc: std.mem.Allocator,
-    camera_inputs: []const CameraInput,
-) ![]CameraPrepared {
-    const cameras = try outer_alloc.alloc(CameraPrepared, camera_inputs.len);
+    camera_inputs: []const cam.CameraInput,
+) ![]cam.CameraPrepared {
+    const cameras = try outer_alloc.alloc(cam.CameraPrepared, camera_inputs.len);
     for (camera_inputs, 0..) |camera_input, cc| {
-        cameras[cc] = CameraPrepared.init(outer_alloc, camera_input) catch |err| {
+        cameras[cc] = cam.CameraPrepared.init(outer_alloc, camera_input) catch |err| {
             for (0..cc) |pp| cameras[pp].deinit(outer_alloc);
             outer_alloc.free(cameras);
             return err;
@@ -886,12 +786,12 @@ fn prepareCameras(
 pub fn rasterAllFrames(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    camera_inputs: []const CameraInput,
-    meshes: []const MeshInput,
-    config: RasterConfig,
+    camera_inputs: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+    config: report.RasterConfig,
     out_dir_path: ?[]const u8,
-    bench_capture: ?[]FrameBenchCapture,
-) !?NDArray(f64) {
+    bench_capture: ?[]report.FrameBenchCapture,
+) !?ndarray.NDArray(f64) {
     const time_start_render = Timestamp.now(io, .awake);
 
     var out_dir: ?std.Io.Dir = null;
@@ -931,7 +831,7 @@ pub fn rasterAllFrames(
     const nodal_global_scaling = try initNodalGlobalScaling(outer_alloc, meshes);
     defer outer_alloc.free(nodal_global_scaling);
 
-    var images_arr_opt: ?NDArray(f64) = try initImagesArray(
+    var images_arr_opt: ?ndarray.NDArray(f64) = try initImagesArray(
         outer_alloc,
         config,
         cameras,
@@ -939,7 +839,7 @@ pub fn rasterAllFrames(
         num_fields,
     );
     const time_end_setup = Timestamp.now(io, .awake);
-    var end_to_end_times = EndToEndTimes{
+    var end_to_end_times = report.EndToEndTimes{
         .setup_time = @floatFromInt(
             time_start_render.durationTo(time_end_setup).raw.nanoseconds,
         ),
@@ -968,7 +868,7 @@ pub fn rasterAllFrames(
         end_to_end_times.total_time = @floatFromInt(
             time_start_render.durationTo(time_end_render).raw.nanoseconds,
         );
-        try printRenderSummary(
+        try report.printRenderSummary(
             io,
             cameras,
             num_time,
@@ -1000,7 +900,7 @@ pub fn rasterAllFrames(
         end_to_end_times.total_time = @floatFromInt(
             time_start_render.durationTo(time_end_render).raw.nanoseconds,
         );
-        try printRenderSummary(
+        try report.printRenderSummary(
             io,
             cameras,
             num_time,
@@ -1031,7 +931,7 @@ pub fn rasterAllFrames(
     end_to_end_times.total_time = @floatFromInt(
         time_start_render.durationTo(time_end_render).raw.nanoseconds,
     );
-    try printRenderSummary(
+    try report.printRenderSummary(
         io,
         cameras,
         num_time,
@@ -1039,53 +939,4 @@ pub fn rasterAllFrames(
         end_to_end_times,
     );
     return images_arr_opt;
-}
-
-fn printRenderSummary(
-    io: std.Io,
-    cameras: []const CameraPrepared,
-    num_time: usize,
-    report_mode: ReportMode,
-    end_to_end_times: EndToEndTimes,
-) !void {
-    if (report_mode == .off) {
-        return;
-    }
-
-    var total_pixels: usize = 0;
-    for (cameras) |camera| {
-        total_pixels += camera.pixels_num[0] * camera.pixels_num[1];
-    }
-    total_pixels *= num_time;
-
-    const total_frames = cameras.len * num_time;
-    const total_render_ms = end_to_end_times.total_time / 1e6;
-    const total_render_sec = end_to_end_times.total_time / 1e9;
-    const setup_ms = end_to_end_times.setup_time / 1e6;
-    const dispatch_ms = end_to_end_times.dispatch_time / 1e6;
-    const avg_frame_ms = total_render_ms / @as(
-        f64,
-        @floatFromInt(total_frames),
-    );
-    const avg_mpx_sec = if (total_render_sec > 0)
-        @as(f64, @floatFromInt(total_pixels)) / (total_render_sec * 1e6)
-    else
-        0.0;
-
-    var buffer: [1024]u8 = undefined;
-    var stdout_writer = std.Io.File.stdout().writer(io, &buffer);
-    const writer = &stdout_writer.interface;
-    const print_break = [_]u8{'='} ** 80;
-
-    try writer.print("\n{s}\nSoftware Raster Render Summary\n{s}\n", .{
-        print_break,
-        print_break,
-    });
-    try writer.print("Total render time       = {d:.3} ms\n", .{total_render_ms});
-    try writer.print("Setup time              = {d:.3} ms\n", .{setup_ms});
-    try writer.print("Dispatch time           = {d:.3} ms\n", .{dispatch_ms});
-    try writer.print("Average frame time      = {d:.3} ms\n", .{avg_frame_ms});
-    try writer.print("Average MPx/s           = {d:.3}\n", .{avg_mpx_sec});
-    try writer.print("{s}\n", .{print_break});
-    try writer.flush();
 }

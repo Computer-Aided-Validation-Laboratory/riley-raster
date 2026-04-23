@@ -8,26 +8,15 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const vecstack = @import("vecstack.zig");
-const Vec3T = vecstack.Vec3T;
 const vsd = @import("vecsimd.zig");
-const Vec3SIMD = vsd.Vec3SIMD;
 const ndarray = @import("ndarray.zig");
-const NDArray = ndarray.NDArray;
-const MappedNDArray = ndarray.MappedNDArray;
 const meshio = @import("meshio.zig");
-const Coords = meshio.Coords;
-const Connect = meshio.Connect;
 const buildconfig = @import("buildconfig.zig");
-const cfg = buildconfig.config;
-const CameraPrepared = @import("camera.zig").CameraPrepared;
+const cam = @import("camera.zig");
 const shapefun = @import("shapefun.zig");
-const S = buildconfig.SimdWidth;
-const VecSF = buildconfig.VecSF;
-const tol = cfg.tolerance;
 const matrix = @import("matstack.zig");
-const Mat44Ops = matrix.Mat44Ops;
 
-const buildAdaptiveHulls = @import("hull.zig").buildAdaptiveHulls;
+const hull = @import("hull.zig");
 const geomkerns = @import("geometrykernels.zig");
 const shaderops = @import("shaderops.zig");
 const report = @import("report.zig");
@@ -52,13 +41,13 @@ pub inline fn edgeFun3SIMD(
     y0: f64,
     x1: f64,
     y1: f64,
-    v_px: VecSF,
-    v_py: VecSF,
-) VecSF {
-    const v_x0: VecSF = @splat(x0);
-    const v_y0: VecSF = @splat(y0);
-    const v_x1: VecSF = @splat(x1);
-    const v_y1: VecSF = @splat(y1);
+    v_px: buildconfig.VecSF,
+    v_py: buildconfig.VecSF,
+) buildconfig.VecSF {
+    const v_x0: buildconfig.VecSF = @splat(x0);
+    const v_y0: buildconfig.VecSF = @splat(y0);
+    const v_x1: buildconfig.VecSF = @splat(x1);
+    const v_y1: buildconfig.VecSF = @splat(y1);
     return (v_px - v_x0) * (v_y1 - v_y0) - (v_py - v_y0) * (v_x1 - v_x0);
 }
 
@@ -112,14 +101,14 @@ pub const TilingOverlaps = struct {
 };
 
 pub const RasterContext = struct {
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     frame_idx: usize,
     tile_size: u16,
 };
 
 pub const MeshInput = struct {
-    coords: *const NDArray(f64),
-    hull: ?*const NDArray(f64),
+    coords: *const ndarray.NDArray(f64),
+    hull: ?*const ndarray.NDArray(f64),
 };
 
 fn AdaptiveHullPoints(comptime N: usize) type {
@@ -145,10 +134,10 @@ fn GatheredElemCoords(comptime N: usize) type {
 }
 
 fn transformWorldNodeToRaster(
-    camera: *const CameraPrepared,
-    coord_world: Vec3T(f64),
-) Vec3T(f64) {
-    var coord_raster = Mat44Ops.mulVec3(f64, camera.world_to_cam_mat, coord_world);
+    camera: *const cam.CameraPrepared,
+    coord_world: vecstack.Vec3T(f64),
+) vecstack.Vec3T(f64) {
+    var coord_raster = matrix.Mat44Ops.mulVec3(f64, camera.world_to_cam_mat, coord_world);
 
     coord_raster.slice[0] = camera.image_dist * coord_raster.slice[0] /
         (-coord_raster.slice[2]);
@@ -168,15 +157,15 @@ fn transformWorldNodeToRaster(
 }
 
 fn transformWorldNodeToClipPx(
-    camera: *const CameraPrepared,
-    coord_world: Vec3T(f64),
-) Vec3T(f64) {
+    camera: *const cam.CameraPrepared,
+    coord_world: vecstack.Vec3T(f64),
+) vecstack.Vec3T(f64) {
     const x_scale = camera.image_dist *
         @as(f64, @floatFromInt(camera.pixels_num[0])) / camera.image_dims[0];
     const y_scale = camera.image_dist *
         @as(f64, @floatFromInt(camera.pixels_num[1])) / camera.image_dims[1];
 
-    var coord_clip = Mat44Ops.mulVec3(f64, camera.world_to_cam_mat, coord_world);
+    var coord_clip = matrix.Mat44Ops.mulVec3(f64, camera.world_to_cam_mat, coord_world);
     coord_clip.slice[0] *= x_scale;
     coord_clip.slice[1] *= -y_scale;
     coord_clip.slice[2] = -coord_clip.slice[2];
@@ -184,15 +173,15 @@ fn transformWorldNodeToClipPx(
 }
 
 pub fn nodesToRasterInPlace(
-    camera: *const CameraPrepared,
-    coords_nodes: *Coords,
+    camera: *const cam.CameraPrepared,
+    coords_nodes: *meshio.Coords,
 ) void {
     nodesToRasterRangeInPlace(camera, coords_nodes, 0, coords_nodes.mat.rows_num);
 }
 
 pub fn nodesToRasterRangeInPlace(
-    camera: *const CameraPrepared,
-    coords_nodes: *Coords,
+    camera: *const cam.CameraPrepared,
+    coords_nodes: *meshio.Coords,
     node_start: usize,
     node_end: usize,
 ) void {
@@ -206,8 +195,8 @@ pub fn nodesToRasterRangeInPlace(
 }
 
 pub fn nodesToClipPxLengInPlace(
-    camera: *const CameraPrepared,
-    coords_nodes: *Coords,
+    camera: *const cam.CameraPrepared,
+    coords_nodes: *meshio.Coords,
 ) void {
     nodesToClipPxLengRangeInPlace(
         camera,
@@ -218,8 +207,8 @@ pub fn nodesToClipPxLengInPlace(
 }
 
 pub fn nodesToClipPxLengRangeInPlace(
-    camera: *const CameraPrepared,
-    coords_nodes: *Coords,
+    camera: *const cam.CameraPrepared,
+    coords_nodes: *meshio.Coords,
     node_start: usize,
     node_end: usize,
 ) void {
@@ -234,8 +223,8 @@ pub fn nodesToClipPxLengRangeInPlace(
 
 fn gatherElemNodeCoords(
     comptime N: usize,
-    coords_nodes: *const Coords,
-    connect: *const Connect,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
     elem_idx: usize,
 ) GatheredElemCoords(N) {
     var coords_elem: GatheredElemCoords(N) = undefined;
@@ -253,7 +242,7 @@ fn gatherElemNodeCoords(
 
 fn buildAdaptiveHullPoints(
     comptime N: usize,
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     coords_elem: GatheredElemCoords(N),
 ) AdaptiveHullPoints(N) {
     const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
@@ -343,7 +332,7 @@ fn buildAdaptiveHullPoints(
 pub fn loadElemVec3Slices(
     comptime N: usize,
     comptime T: type,
-    elem_array: *const NDArray(T),
+    elem_array: *const ndarray.NDArray(T),
     elem_idx: usize,
 ) !Vec3Slices(T) {
     std.debug.assert(elem_array.dims.len == 3);
@@ -367,10 +356,10 @@ pub fn loadElemVec3Slices(
 pub fn worldToRasterSIMD(
     comptime N: usize,
     comptime T: type,
-    coord_world: Vec3SIMD(N, T),
-    camera: *const CameraPrepared,
-) Vec3SIMD(N, T) {
-    var coord_raster: Vec3SIMD(N, T) = vsd.mat44Mul(
+    coord_world: vsd.Vec3SIMD(N, T),
+    camera: *const cam.CameraPrepared,
+) vsd.Vec3SIMD(N, T) {
+    var coord_raster: vsd.Vec3SIMD(N, T) = vsd.mat44Mul(
         N,
         T,
         camera.world_to_cam_mat,
@@ -402,12 +391,12 @@ pub fn worldToRasterSIMD(
 pub fn elemsToRasterSIMD(
     comptime N: usize,
     comptime T: type,
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     dim_elem: usize,
-    elem_coord_arr: *NDArray(T),
+    elem_coord_arr: *ndarray.NDArray(T),
 ) !void {
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
-        const coords_world: Vec3SIMD(N, T) = try vsd.loadElemVec3SIMD(
+        const coords_world: vsd.Vec3SIMD(N, T) = try vsd.loadElemVec3SIMD(
             N,
             T,
             elem_coord_arr,
@@ -421,9 +410,9 @@ pub fn elemsToRasterSIMD(
 pub fn elemsToClipPxLengSIMD(
     comptime N: usize,
     comptime T: type,
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     dim_elem: usize,
-    elem_coord_arr: *NDArray(T),
+    elem_coord_arr: *ndarray.NDArray(T),
 ) !void {
     const x_scale = camera.image_dist *
         @as(f64, @floatFromInt(camera.pixels_num[0])) / camera.image_dims[0];
@@ -450,7 +439,7 @@ pub fn elemsToClipPxLengSIMD(
             f64,
             elem_coord_arr,
             ee,
-            Vec3SIMD(N, f64){
+            vsd.Vec3SIMD(N, f64){
                 .x = coords_raster.x,
                 .y = coords_raster.y,
                 .z = -coords_raster.z,
@@ -462,10 +451,10 @@ pub fn elemsToClipPxLengSIMD(
 pub fn cullElemsCalcBBoxesHighOrd(
     comptime N: usize,
     comptime NH: usize,
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     dim_elem: usize,
-    elem_coord_arr: *const NDArray(f64),
-    raster_hull: ?*const NDArray(f64),
+    elem_coord_arr: *const ndarray.NDArray(f64),
+    raster_hull: ?*const ndarray.NDArray(f64),
     elem_bboxes: []ElemBBox,
 ) !usize {
     var elems_in_image: usize = 0;
@@ -473,7 +462,7 @@ pub fn cullElemsCalcBBoxesHighOrd(
     const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
 
     const nodal_derivs = comptime shapefun.getNodalDerivs(N);
-    const tolerance = tol.culling.higher_order_backface_nz;
+    const tolerance = buildconfig.config.tolerance.culling.higher_order_backface_nz;
 
     const total_elems = elem_coord_arr.dims[dim_elem];
 
@@ -565,13 +554,13 @@ pub fn cullElemsCalcBBoxesHighOrd(
 }
 
 pub fn cullElemsCalcBBoxesTri3(
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     dim_elem: usize,
-    elem_coord_arr: *const NDArray(f64),
+    elem_coord_arr: *const ndarray.NDArray(f64),
     elem_bboxes: []ElemBBox,
 ) !usize {
     const N: usize = 3;
-    const tol_area = tol.culling.tri3_signed_area;
+    const tol_area = buildconfig.config.tolerance.culling.tri3_signed_area;
 
     var elems_in_image: usize = 0;
 
@@ -627,12 +616,12 @@ pub fn cullElemsCalcBBoxesTri3(
 }
 
 fn cullNodesCalcBBoxesTri3(
-    camera: *const CameraPrepared,
-    coords_nodes: *const Coords,
-    connect: *const Connect,
+    camera: *const cam.CameraPrepared,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
     elem_bboxes: []ElemBBox,
 ) usize {
-    const tol_area = tol.culling.tri3_signed_area;
+    const tol_area = buildconfig.config.tolerance.culling.tri3_signed_area;
     var elems_in_image: usize = 0;
 
     for (0..connect.getElemsNum()) |ee| {
@@ -679,14 +668,14 @@ fn cullNodesCalcBBoxesTri3(
 }
 
 fn calcVisibleNodeBBoxTri3(
-    camera: *const CameraPrepared,
-    coords_nodes: *const Coords,
-    connect: *const Connect,
+    camera: *const cam.CameraPrepared,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
     elem_idx: usize,
 ) ?ElemBBox {
     const coords_elem = gatherElemNodeCoords(3, coords_nodes, connect, elem_idx);
     const weight = edgeFun3Slices(0, 1, 2, &coords_elem.x, &coords_elem.y);
-    if (weight <= tol.culling.tri3_signed_area) {
+    if (weight <= buildconfig.config.tolerance.culling.tri3_signed_area) {
         return null;
     }
 
@@ -714,15 +703,15 @@ fn calcVisibleNodeBBoxTri3(
 
 fn cullNodesCalcBBoxesHighOrd(
     comptime N: usize,
-    camera: *const CameraPrepared,
-    coords_nodes: *const Coords,
-    connect: *const Connect,
+    camera: *const cam.CameraPrepared,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
     elem_bboxes: []ElemBBox,
 ) usize {
     const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
     const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
     const nodal_derivs = comptime shapefun.getNodalDerivs(N);
-    const tolerance = tol.culling.higher_order_backface_nz;
+    const tolerance = buildconfig.config.tolerance.culling.higher_order_backface_nz;
     var elems_in_image: usize = 0;
 
     for (0..connect.getElemsNum()) |ee| {
@@ -788,15 +777,15 @@ fn cullNodesCalcBBoxesHighOrd(
 
 fn calcVisibleNodeBBoxHighOrd(
     comptime N: usize,
-    camera: *const CameraPrepared,
-    coords_nodes: *const Coords,
-    connect: *const Connect,
+    camera: *const cam.CameraPrepared,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
     elem_idx: usize,
 ) ?ElemBBox {
     const coords_elem = gatherElemNodeCoords(N, coords_nodes, connect, elem_idx);
     var all_backface = true;
     for (0..N) |nn| {
-        if (coords_elem.z[nn] > tol.culling.higher_order_backface_nz) {
+        if (coords_elem.z[nn] > buildconfig.config.tolerance.culling.higher_order_backface_nz) {
             all_backface = false;
             break;
         }
@@ -829,10 +818,10 @@ fn calcVisibleNodeBBoxHighOrd(
 }
 
 pub fn countVisibleElemsRange(
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     mesh_type: anytype,
-    connect: *const Connect,
-    coords_nodes: *const Coords,
+    connect: *const meshio.Connect,
+    coords_nodes: *const meshio.Coords,
     elem_start: usize,
     elem_end: usize,
 ) usize {
@@ -904,10 +893,10 @@ pub fn countVisibleElemsRange(
 }
 
 pub fn fillVisibleElemsRange(
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     mesh_type: anytype,
-    connect: *const Connect,
-    coords_nodes: *const Coords,
+    connect: *const meshio.Connect,
+    coords_nodes: *const meshio.Coords,
     visible_orig_elem_indices: []usize,
     elem_bboxes: []ElemBBox,
     elem_start: usize,
@@ -991,10 +980,10 @@ pub fn fillVisibleElemsRange(
 
 pub fn prepareVisibleWorkspace(
     allocator: std.mem.Allocator,
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     mesh_type: anytype,
-    connect: *const Connect,
-    coords_nodes: *const Coords,
+    connect: *const meshio.Connect,
+    coords_nodes: *const meshio.Coords,
     visible_orig_elem_indices: *[]usize,
     elem_bboxes: *[]ElemBBox,
     elems_in_image: *usize,
@@ -1084,7 +1073,7 @@ fn normalizeNormal(normal_vec: *[3]f64) void {
     const nz = normal_vec[2];
     const magnitude = @sqrt(nx * nx + ny * ny + nz * nz);
 
-    if (magnitude > tol.normals.normalise_magnitude) {
+    if (magnitude > buildconfig.config.tolerance.normals.normalise_magnitude) {
         normal_vec[0] = nx / magnitude;
         normal_vec[1] = ny / magnitude;
         normal_vec[2] = nz / magnitude;
@@ -1093,13 +1082,13 @@ fn normalizeNormal(normal_vec: *[3]f64) void {
 
 fn initPreparedNormals(
     allocator: std.mem.Allocator,
-    mesh_coords: *const NDArray(f64),
+    mesh_coords: *const ndarray.NDArray(f64),
     elem_bboxes: []const ElemBBox,
     prep_count: usize,
     comptime N: usize,
-) !MappedNDArray(f64) {
+) !ndarray.MappedNDArray(f64) {
     const elems_num = mesh_coords.dims[0];
-    const prep_normals = try NDArray(f64).initFlat(
+    const prep_normals = try ndarray.NDArray(f64).initFlat(
         allocator,
         &[_]usize{ prep_count, 3, N },
     );
@@ -1122,8 +1111,8 @@ fn initIdentityMappedNormals(
     allocator: std.mem.Allocator,
     prep_count: usize,
     comptime N: usize,
-) !MappedNDArray(f64) {
-    const prep_normals = try NDArray(f64).initFlat(
+) !ndarray.MappedNDArray(f64) {
+    const prep_normals = try ndarray.NDArray(f64).initFlat(
         allocator,
         &[_]usize{ prep_count, 3, N },
     );
@@ -1139,10 +1128,10 @@ fn initIdentityMappedNormals(
 }
 
 fn calculateVisibleExactNormals(
-    coords_nodes: *const Coords,
-    connect: *const Connect,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
-    prep_normals: *NDArray(f64),
+    prep_normals: *ndarray.NDArray(f64),
     comptime N: usize,
 ) void {
     const nodal_derivs = comptime shapefun.getNodalDerivs(N);
@@ -1167,10 +1156,10 @@ fn calculateVisibleExactNormals(
 }
 
 fn calculateVisibleExactNormalsRange(
-    coords_nodes: *const Coords,
-    connect: *const Connect,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
-    prep_normals: *NDArray(f64),
+    prep_normals: *ndarray.NDArray(f64),
     visible_start: usize,
     visible_end: usize,
     comptime N: usize,
@@ -1199,10 +1188,10 @@ fn calculateVisibleExactNormalsRange(
 
 fn calculateVisibleAveragedNormals(
     allocator: std.mem.Allocator,
-    coords_nodes: *const Coords,
-    connect: *const Connect,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
-    prep_normals: *NDArray(f64),
+    prep_normals: *ndarray.NDArray(f64),
     comptime N: usize,
 ) !void {
     const nodal_derivs = comptime shapefun.getNodalDerivs(N);
@@ -1256,11 +1245,11 @@ fn calculateVisibleAveragedNormals(
 pub fn prepareVisibleNormals(
     allocator: std.mem.Allocator,
     mesh_type: anytype,
-    coords_nodes: *const Coords,
-    connect: *const Connect,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
     normal_type: shaderops.NormalType,
-) !MappedNDArray(f64) {
+) !ndarray.MappedNDArray(f64) {
     return switch (mesh_type) {
         .tri3 => blk: {
             var prep_normals = try initIdentityMappedNormals(
@@ -1397,10 +1386,10 @@ pub fn prepareVisibleNormals(
 
 pub fn prepareVisibleExactNormalsRange(
     mesh_type: anytype,
-    coords_nodes: *const Coords,
-    connect: *const Connect,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
-    prep_normals: *NDArray(f64),
+    prep_normals: *ndarray.NDArray(f64),
     visible_start: usize,
     visible_end: usize,
 ) void {
@@ -1455,8 +1444,8 @@ pub fn prepareVisibleExactNormalsRange(
 
 fn accumulateAveragedNodeNormalsRangeImpl(
     comptime N: usize,
-    coords_nodes: *const Coords,
-    connect: *const Connect,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
     node_normals: []f64,
     elem_start: usize,
     elem_end: usize,
@@ -1486,8 +1475,8 @@ fn accumulateAveragedNodeNormalsRangeImpl(
 
 pub fn accumulateAveragedNodeNormalsRange(
     mesh_type: anytype,
-    coords_nodes: *const Coords,
-    connect: *const Connect,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
     node_normals: []f64,
     elem_start: usize,
     elem_end: usize,
@@ -1538,10 +1527,10 @@ pub fn accumulateAveragedNodeNormalsRange(
 
 fn writeVisibleAveragedNormalsRangeImpl(
     comptime N: usize,
-    connect: *const Connect,
+    connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
     node_normals: []const f64,
-    prep_normals: *NDArray(f64),
+    prep_normals: *ndarray.NDArray(f64),
     visible_start: usize,
     visible_end: usize,
 ) void {
@@ -1564,10 +1553,10 @@ fn writeVisibleAveragedNormalsRangeImpl(
 
 pub fn writeVisibleAveragedNormalsRange(
     mesh_type: anytype,
-    connect: *const Connect,
+    connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
     node_normals: []const f64,
-    prep_normals: *NDArray(f64),
+    prep_normals: *ndarray.NDArray(f64),
     visible_start: usize,
     visible_end: usize,
 ) void {
@@ -1622,42 +1611,42 @@ pub fn writeVisibleAveragedNormalsRange(
 
 pub fn prepareVisibleRasterHulls(
     allocator: std.mem.Allocator,
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     mesh_type: anytype,
-    elem_coords: *NDArray(f64),
-) !?NDArray(f64) {
+    elem_coords: *ndarray.NDArray(f64),
+) !?ndarray.NDArray(f64) {
     return switch (mesh_type) {
         .tri3 => null,
         .quad4ibi, .quad4newton => blk: {
-            var raster_hull = try NDArray(f64).initFlat(
+            var raster_hull = try ndarray.NDArray(f64).initFlat(
                 allocator,
                 &[_]usize{ elem_coords.dims[0], 2, 4 },
             );
-            try buildAdaptiveHulls(4, camera, 0, elem_coords, &raster_hull);
+            try hull.buildAdaptiveHulls(4, camera, 0, elem_coords, &raster_hull);
             break :blk raster_hull;
         },
         .tri6 => blk: {
-            var raster_hull = try NDArray(f64).initFlat(
+            var raster_hull = try ndarray.NDArray(f64).initFlat(
                 allocator,
                 &[_]usize{ elem_coords.dims[0], 2, 6 },
             );
-            try buildAdaptiveHulls(6, camera, 0, elem_coords, &raster_hull);
+            try hull.buildAdaptiveHulls(6, camera, 0, elem_coords, &raster_hull);
             break :blk raster_hull;
         },
         .quad8 => blk: {
-            var raster_hull = try NDArray(f64).initFlat(
+            var raster_hull = try ndarray.NDArray(f64).initFlat(
                 allocator,
                 &[_]usize{ elem_coords.dims[0], 2, 8 },
             );
-            try buildAdaptiveHulls(8, camera, 0, elem_coords, &raster_hull);
+            try hull.buildAdaptiveHulls(8, camera, 0, elem_coords, &raster_hull);
             break :blk raster_hull;
         },
         .quad9 => blk: {
-            var raster_hull = try NDArray(f64).initFlat(
+            var raster_hull = try ndarray.NDArray(f64).initFlat(
                 allocator,
                 &[_]usize{ elem_coords.dims[0], 2, 8 },
             );
-            try buildAdaptiveHulls(9, camera, 0, elem_coords, &raster_hull);
+            try hull.buildAdaptiveHulls(9, camera, 0, elem_coords, &raster_hull);
             break :blk raster_hull;
         },
     };
@@ -1666,9 +1655,9 @@ pub fn prepareVisibleRasterHulls(
 fn prepareVisibleRasterHullsRangeImpl(
     comptime N: usize,
     comptime NH: usize,
-    camera: *const CameraPrepared,
-    elem_coords: *const NDArray(f64),
-    raster_hull: *NDArray(f64),
+    camera: *const cam.CameraPrepared,
+    elem_coords: *const ndarray.NDArray(f64),
+    raster_hull: *ndarray.NDArray(f64),
     visible_start: usize,
     visible_end: usize,
 ) void {
@@ -1692,10 +1681,10 @@ fn prepareVisibleRasterHullsRangeImpl(
 }
 
 pub fn prepareVisibleRasterHullsRange(
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     mesh_type: anytype,
-    elem_coords: *const NDArray(f64),
-    raster_hull: *NDArray(f64),
+    elem_coords: *const ndarray.NDArray(f64),
+    raster_hull: *ndarray.NDArray(f64),
     visible_start: usize,
     visible_end: usize,
 ) void {

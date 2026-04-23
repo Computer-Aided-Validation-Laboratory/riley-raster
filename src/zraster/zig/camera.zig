@@ -7,25 +7,16 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const testing = std.testing;
-const expectEqual = testing.expectEqual;
-const expectApproxEqAbs = testing.expectApproxEqAbs;
 
-const Coords = @import("meshio.zig").Coords;
+const meshio = @import("meshio.zig");
 const mo = @import("meshops.zig");
-const MeshInput = mo.MeshInput;
 const vector = @import("vecstack.zig");
-const Vec3f = vector.Vec3f;
 const matrix = @import("matstack.zig");
-const Mat33Ops = matrix.Mat33Ops;
-const Mat44f = matrix.Mat44f;
-const Mat44Ops = matrix.Mat44Ops;
-const Rotation = @import("rotation.zig").Rotation;
+const rotation = @import("rotation.zig");
 
-const NDArray = @import("ndarray.zig").NDArray;
+const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
 const cfg = buildconfig.config;
-const tol = cfg.tolerance;
 
 pub const DistortionModel = union(enum) {
     none,
@@ -218,8 +209,8 @@ fn distortionInverseFromModel(
     var y = y_d;
 
     const max_iters = cfg.distortion_newton_iter_max;
-    const tol_resid = tol.distortion.residual;
-    const tol_delta = tol.distortion.delta;
+    const tol_resid = buildconfig.config.tolerance.distortion.residual;
+    const tol_delta = buildconfig.config.tolerance.distortion.delta;
 
     for (0..max_iters) |_| {
         const fwd = distortion.forwardWithJac(x, y);
@@ -236,7 +227,7 @@ fn distortionInverseFromModel(
         const d = fwd.jac[1][1];
 
         const det = a * d - b * c;
-        if (@abs(det) < tol.distortion.determinant) {
+        if (@abs(det) < buildconfig.config.tolerance.distortion.determinant) {
             return error.SingularJacobian;
         }
 
@@ -257,9 +248,9 @@ fn distortionInverseFromModel(
 pub const CameraInput = struct {
     pixels_num: [2]u32,
     pixels_size: [2]f64,
-    pos_world: Vec3f,
-    rot_world: Rotation,
-    roi_cent_world: Vec3f,
+    pos_world: vector.Vec3f,
+    rot_world: rotation.Rotation,
+    roi_cent_world: vector.Vec3f,
     focal_length: f64,
     sub_sample: u8,
     distortion: DistortionModel = .none,
@@ -268,20 +259,20 @@ pub const CameraInput = struct {
 pub const CameraPrepared = struct {
     pixels_num: [2]u32,
     pixels_size: [2]f64,
-    pos_world: Vec3f,
-    rot_world: Rotation,
-    roi_cent_world: Vec3f,
+    pos_world: vector.Vec3f,
+    rot_world: rotation.Rotation,
+    roi_cent_world: vector.Vec3f,
     focal_length: f64,
     sub_sample: u8,
     sensor_size: [2]f64,
     image_dims: [2]f64,
     image_dist: f64,
-    cam_to_world_mat: Mat44f,
-    world_to_cam_mat: Mat44f,
+    cam_to_world_mat: matrix.Mat44f,
+    world_to_cam_mat: matrix.Mat44f,
     distortion: DistortionModel,
     // Prepared ideal pinhole sample target per output pixel center.
     // Conceptual shape: [height, width, 2]
-    ideal_pixel_centers: NDArray(f64),
+    ideal_pixel_centers: ndarray.NDArray(f64),
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -289,17 +280,17 @@ pub const CameraPrepared = struct {
     ) !CameraPrepared {
         const actual_sub_sample = if (input.sub_sample == 0) 2 else input.sub_sample;
         const sensor_size = CameraOps.calcSensorSize(input.pixels_num, input.pixels_size);
-        const image_dist: f64 = @as(Vec3f, input.pos_world).sub(input.roi_cent_world).vecLen();
+        const image_dist: f64 = @as(vector.Vec3f, input.pos_world).sub(input.roi_cent_world).vecLen();
 
         var image_dims: [2]f64 = undefined;
         image_dims[0] = (image_dist / input.focal_length) * sensor_size[0];
         image_dims[1] = (image_dist / input.focal_length) * sensor_size[1];
 
-        var cam_to_world_mat: Mat44f = Mat44f.initIdentity();
+        var cam_to_world_mat: matrix.Mat44f = matrix.Mat44f.initIdentity();
         cam_to_world_mat.insertColVec(3, 0, 3, input.pos_world);
         cam_to_world_mat.insertSubMat(0, 0, 3, 3, input.rot_world.matrix);
 
-        const world_to_cam_mat = Mat44Ops.inv(f64, cam_to_world_mat);
+        const world_to_cam_mat = matrix.Mat44Ops.inv(f64, cam_to_world_mat);
 
         const sub_samp_u: usize = @intCast(actual_sub_sample);
         const dims = [_]usize{
@@ -307,7 +298,7 @@ pub const CameraPrepared = struct {
             input.pixels_num[0] * sub_samp_u,
             2,
         };
-        const ideal_pixel_centers = try NDArray(f64).initFlat(allocator, dims[0..]);
+        const ideal_pixel_centers = try ndarray.NDArray(f64).initFlat(allocator, dims[0..]);
 
         const self = CameraPrepared{
             .pixels_num = input.pixels_num,
@@ -398,8 +389,8 @@ pub const CameraPrepared = struct {
 };
 
 pub const CameraOps = struct {
-    pub fn fovFromCamRot(cam_rot: Rotation, coords_world: *const Coords) [2]f64 {
-        const world_to_cam_mat = Mat33Ops.inv(f64, cam_rot.matrix);
+    pub fn fovFromCamRot(cam_rot: rotation.Rotation, coords_world: *const meshio.Coords) [2]f64 {
+        const world_to_cam_mat = matrix.Mat33Ops.inv(f64, cam_rot.matrix);
 
         // 0=x, 1=y, 2=z
         const bb_min_x = coords_world.mat.minByRow(0);
@@ -409,7 +400,7 @@ pub const CameraOps = struct {
         const bb_max_y = coords_world.mat.maxByRow(1);
         const bb_max_z = coords_world.mat.maxByRow(2);
 
-        var bb_world_vecs: [8]Vec3f = undefined;
+        var bb_world_vecs: [8]vector.Vec3f = undefined;
         bb_world_vecs[0] = vector.initVec3(f64, bb_min_x, bb_min_y, bb_max_z);
         bb_world_vecs[1] = vector.initVec3(f64, bb_max_x, bb_min_y, bb_max_z);
         bb_world_vecs[2] = vector.initVec3(f64, bb_max_x, bb_max_y, bb_max_z);
@@ -419,7 +410,7 @@ pub const CameraOps = struct {
         bb_world_vecs[6] = vector.initVec3(f64, bb_max_x, bb_max_y, bb_min_z);
         bb_world_vecs[7] = vector.initVec3(f64, bb_min_x, bb_max_y, bb_min_z);
 
-        var bb_cam_vec: Vec3f = undefined;
+        var bb_cam_vec: vector.Vec3f = undefined;
         bb_cam_vec = world_to_cam_mat.mulVec(bb_world_vecs[0]);
         var bb_cam_max = [_]f64{ bb_cam_vec.get(0), bb_cam_vec.get(1) };
         var bb_cam_min = [_]f64{ bb_cam_vec.get(0), bb_cam_vec.get(1) };
@@ -446,8 +437,8 @@ pub const CameraOps = struct {
         return fov_leng;
     }
 
-    pub fn fovFromCamRotOverMeshes(cam_rot: Rotation, meshes: []const MeshInput) [2]f64 {
-        const world_to_cam_mat = Mat33Ops.inv(f64, cam_rot.matrix);
+    pub fn fovFromCamRotOverMeshes(cam_rot: rotation.Rotation, meshes: []const mo.MeshInput) [2]f64 {
+        const world_to_cam_mat = matrix.Mat33Ops.inv(f64, cam_rot.matrix);
 
         var bb_min = [3]f64{ std.math.inf(f64), std.math.inf(f64), std.math.inf(f64) };
         var bb_max = [3]f64{ -std.math.inf(f64), -std.math.inf(f64), -std.math.inf(f64) };
@@ -461,7 +452,7 @@ pub const CameraOps = struct {
             }
         }
 
-        var bb_world_vecs: [8]Vec3f = undefined;
+        var bb_world_vecs: [8]vector.Vec3f = undefined;
         bb_world_vecs[0] = vector.initVec3(f64, bb_min[0], bb_min[1], bb_max[2]);
         bb_world_vecs[1] = vector.initVec3(f64, bb_max[0], bb_min[1], bb_max[2]);
         bb_world_vecs[2] = vector.initVec3(f64, bb_max[0], bb_max[1], bb_max[2]);
@@ -471,7 +462,7 @@ pub const CameraOps = struct {
         bb_world_vecs[6] = vector.initVec3(f64, bb_max[0], bb_max[1], bb_min[2]);
         bb_world_vecs[7] = vector.initVec3(f64, bb_min[0], bb_max[1], bb_min[2]);
 
-        var bb_cam_vec: Vec3f = undefined;
+        var bb_cam_vec: vector.Vec3f = undefined;
         bb_cam_vec = world_to_cam_mat.mulVec(bb_world_vecs[0]);
         var bb_cam_max = [_]f64{ bb_cam_vec.get(0), bb_cam_vec.get(1) };
         var bb_cam_min = [_]f64{ bb_cam_vec.get(0), bb_cam_vec.get(1) };
@@ -524,30 +515,30 @@ pub const CameraOps = struct {
         return image_dist;
     }
 
-    pub fn calcCamPos(roi_pos_world: Vec3f, cam_rot: Rotation, image_dist: f64) Vec3f {
+    pub fn calcCamPos(roi_pos_world: vector.Vec3f, cam_rot: rotation.Rotation, image_dist: f64) vector.Vec3f {
         var cam_z_axis_vec = cam_rot.matrix.getColVec(2);
         cam_z_axis_vec = cam_z_axis_vec.mulScalar(image_dist);
         const cam_pos = (&roi_pos_world).add(cam_z_axis_vec);
         return cam_pos;
     }
 
-    pub fn roiCentFromCoords(coords_world: *const Coords) Vec3f {
-        var max_vec: Vec3f = undefined;
+    pub fn roiCentFromCoords(coords_world: *const meshio.Coords) vector.Vec3f {
+        var max_vec: vector.Vec3f = undefined;
         max_vec.slice[0] = coords_world.mat.maxByRow(0);
         max_vec.slice[1] = coords_world.mat.maxByRow(1);
         max_vec.slice[2] = coords_world.mat.maxByRow(2);
 
-        var min_vec: Vec3f = undefined;
+        var min_vec: vector.Vec3f = undefined;
         min_vec.slice[0] = coords_world.mat.minByRow(0);
         min_vec.slice[1] = coords_world.mat.minByRow(1);
         min_vec.slice[2] = coords_world.mat.minByRow(2);
 
-        var roi_cent: Vec3f = (&max_vec).add(min_vec);
+        var roi_cent: vector.Vec3f = (&max_vec).add(min_vec);
         roi_cent = roi_cent.mulScalar(0.5);
         return roi_cent;
     }
 
-    pub fn roiCentOverMeshes(meshes: []const MeshInput) Vec3f {
+    pub fn roiCentOverMeshes(meshes: []const mo.MeshInput) vector.Vec3f {
         var bb_min = [3]f64{ std.math.inf(f64), std.math.inf(f64), std.math.inf(f64) };
         var bb_max = [3]f64{ -std.math.inf(f64), -std.math.inf(f64), -std.math.inf(f64) };
 
@@ -563,19 +554,19 @@ pub const CameraOps = struct {
         const max_vec = vector.initVec3(f64, bb_max[0], bb_max[1], bb_max[2]);
         const min_vec = vector.initVec3(f64, bb_min[0], bb_min[1], bb_min[2]);
 
-        var roi_cent: Vec3f = (&max_vec).add(min_vec);
+        var roi_cent: vector.Vec3f = (&max_vec).add(min_vec);
         roi_cent = roi_cent.mulScalar(0.5);
         return roi_cent;
     }
 
     pub fn posFillFrameFromRot(
-        coords_world: *const Coords,
+        coords_world: *const meshio.Coords,
         pixels_num: [2]u32,
         pixels_size: [2]f64,
         focal_leng: f64,
-        cam_rot: Rotation,
+        cam_rot: rotation.Rotation,
         frame_fill: f64,
-    ) Vec3f {
+    ) vector.Vec3f {
         var fov_leng: [2]f64 = fovFromCamRot(cam_rot, coords_world);
         fov_leng[0] = frame_fill * fov_leng[0];
         fov_leng[1] = frame_fill * fov_leng[1];
@@ -588,21 +579,21 @@ pub const CameraOps = struct {
         );
         const image_dist = @max(image_dists[0], image_dists[1]);
 
-        const roi_pos: Vec3f = roiCentFromCoords(coords_world);
+        const roi_pos: vector.Vec3f = roiCentFromCoords(coords_world);
 
-        const cam_pos: Vec3f = calcCamPos(roi_pos, cam_rot, image_dist);
+        const cam_pos: vector.Vec3f = calcCamPos(roi_pos, cam_rot, image_dist);
 
         return cam_pos;
     }
 
     pub fn posFillFrameFromRotOverMeshes(
-        meshes: []const MeshInput,
+        meshes: []const mo.MeshInput,
         pixels_num: [2]u32,
         pixels_size: [2]f64,
         focal_leng: f64,
-        cam_rot: Rotation,
+        cam_rot: rotation.Rotation,
         frame_fill: f64,
-    ) Vec3f {
+    ) vector.Vec3f {
         var fov_leng: [2]f64 = fovFromCamRotOverMeshes(cam_rot, meshes);
         fov_leng[0] = frame_fill * fov_leng[0];
         fov_leng[1] = frame_fill * fov_leng[1];
@@ -615,9 +606,9 @@ pub const CameraOps = struct {
         );
         const image_dist = @max(image_dists[0], image_dists[1]);
 
-        const roi_pos: Vec3f = roiCentOverMeshes(meshes);
+        const roi_pos: vector.Vec3f = roiCentOverMeshes(meshes);
 
-        const cam_pos: Vec3f = calcCamPos(roi_pos, cam_rot, image_dist);
+        const cam_pos: vector.Vec3f = calcCamPos(roi_pos, cam_rot, image_dist);
 
         return cam_pos;
     }
@@ -627,21 +618,21 @@ const test_tol: f64 = 1e-4;
 const pix_num = [_]u32{ 500, 500 };
 const pix_size = [_]f64{ 5e-3, 5e-3 };
 const foc_leng: f64 = 50.0;
-const rotat_world = Rotation.init(0, 0, std.math.degreesToRadians(-45));
+const rotat_world = rotation.Rotation.init(0, 0, std.math.degreesToRadians(-45));
 const bb: f64 = 20.0;
 const coord_n: usize = 8;
 const coord_x = [_]f64{ -bb, bb, bb, -bb, -bb, bb, bb, -bb };
 const coord_y = [_]f64{ bb, bb, -bb, -bb, bb, bb, -bb, -bb };
 const coord_z = [_]f64{ bb, bb, bb, bb, -bb, -bb, -bb, -bb };
 const roi_world_arr = [_]f64{ 0, 0, 0 };
-const roi_world = Vec3f.initSlice(&roi_world_arr);
+const roi_world = vector.Vec3f.initSlice(&roi_world_arr);
 const sub_samp: u8 = 2;
 
 const fov_exp = [2]f64{ 40.0, 56.56854249 };
 const image_dist_exp = [2]f64{ 800.0, 1131.3708499 };
 const sensor_size_exp = [2]f64{ 2.5, 2.5 };
 const cam_pos_arr = [_]f64{ 0.0, 800.0, 800.0 };
-const cam_pos_exp = Vec3f.initSlice(&cam_pos_arr);
+const cam_pos_exp = vector.Vec3f.initSlice(&cam_pos_arr);
 
 fn expectApproxEqRelAbs(
     expected: f64,
@@ -687,8 +678,8 @@ fn checkDistortionGridInverse(
 }
 
 test "CameraOps.calcCamPos" {
-    var coords = try Coords.initAlloc(testing.allocator, coord_n);
-    defer testing.allocator.free(coords.mem);
+    var coords = try meshio.Coords.initAlloc(std.testing.allocator, coord_n);
+    defer std.testing.allocator.free(coords.mem);
 
     for (0..coord_n) |ii| {
         coords.mat.set(ii, 0, coord_x[ii]);
@@ -701,9 +692,9 @@ test "CameraOps.calcCamPos" {
     const image_dist_max = @max(image_dist[0], image_dist[1]);
     const cam_pos = CameraOps.calcCamPos(roi_world, rotat_world, image_dist_max);
 
-    try expectApproxEqAbs(cam_pos_exp.get(0), cam_pos.get(0), test_tol);
-    try expectApproxEqAbs(cam_pos_exp.get(1), cam_pos.get(1), test_tol);
-    try expectApproxEqAbs(cam_pos_exp.get(2), cam_pos.get(2), test_tol);
+    try std.testing.expectApproxEqAbs(cam_pos_exp.get(0), cam_pos.get(0), test_tol);
+    try std.testing.expectApproxEqAbs(cam_pos_exp.get(1), cam_pos.get(1), test_tol);
+    try std.testing.expectApproxEqAbs(cam_pos_exp.get(2), cam_pos.get(2), test_tol);
 }
 
 test "CameraPrepared.init" {
@@ -717,13 +708,13 @@ test "CameraPrepared.init" {
         .sub_sample = sub_samp,
     };
 
-    const camera = try CameraPrepared.init(testing.allocator, input);
-    defer camera.deinit(testing.allocator);
+    const camera = try CameraPrepared.init(std.testing.allocator, input);
+    defer camera.deinit(std.testing.allocator);
 
-    try expectEqual(pix_num, camera.pixels_num);
-    try expectEqual(pix_size, camera.pixels_size);
-    try expectEqual(foc_leng, camera.focal_length);
-    try expectEqual(sub_samp, camera.sub_sample);
+    try std.testing.expectEqual(pix_num, camera.pixels_num);
+    try std.testing.expectEqual(pix_size, camera.pixels_size);
+    try std.testing.expectEqual(foc_leng, camera.focal_length);
+    try std.testing.expectEqual(sub_samp, camera.sub_sample);
 }
 
 test "BrownConrady.forwardInverse" {
@@ -741,8 +732,8 @@ test "BrownConrady.forwardInverse" {
     const distorted = bc.forward(x_ideal, y_ideal);
     const recovered = try bc.inverse(distorted[0], distorted[1]);
 
-    try expectApproxEqAbs(x_ideal, recovered.x, 1e-10);
-    try expectApproxEqAbs(y_ideal, recovered.y, 1e-10);
+    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, 1e-10);
+    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, 1e-10);
 }
 
 test "BrownConradyExt.forwardInverse" {
@@ -763,8 +754,8 @@ test "BrownConradyExt.forwardInverse" {
     const distorted = bc_ext.forward(x_ideal, y_ideal);
     const recovered = try bc_ext.inverse(distorted[0], distorted[1]);
 
-    try expectApproxEqAbs(x_ideal, recovered.x, 1e-10);
-    try expectApproxEqAbs(y_ideal, recovered.y, 1e-10);
+    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, 1e-10);
+    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, 1e-10);
 }
 
 test "BrownConrady.gridInverseRoundTrip" {
@@ -817,22 +808,22 @@ test "CameraPrepared.distortionNone" {
     const input = CameraInput{
         .pixels_num = .{ 10, 10 },
         .pixels_size = .{ 0.01, 0.01 },
-        .pos_world = Vec3f.initZeros(),
-        .rot_world = Rotation.init(0, 0, 0),
-        .roi_cent_world = Vec3f.initZeros(),
+        .pos_world = vector.Vec3f.initZeros(),
+        .rot_world = rotation.Rotation.init(0, 0, 0),
+        .roi_cent_world = vector.Vec3f.initZeros(),
         .focal_length = 1.0,
         .sub_sample = 1,
         .distortion = .none,
     };
 
-    const camera = try CameraPrepared.init(testing.allocator, input);
-    defer camera.deinit(testing.allocator);
+    const camera = try CameraPrepared.init(std.testing.allocator, input);
+    defer camera.deinit(std.testing.allocator);
 
     // Check pixel center (0, 0)
     // subpx_x_f = 0.5
     const x_px_exp = 0.5;
     const x_ideal = camera.ideal_pixel_centers.get(&[_]usize{ 0, 0, 0 });
-    try expectApproxEqAbs(x_px_exp, x_ideal, 1e-10);
+    try std.testing.expectApproxEqAbs(x_px_exp, x_ideal, 1e-10);
 }
 
 test "CameraPrepared.brownConradyExtDistortionApplied" {
@@ -849,16 +840,16 @@ test "CameraPrepared.brownConradyExtDistortionApplied" {
     const input = CameraInput{
         .pixels_num = .{ 10, 10 },
         .pixels_size = .{ 0.01, 0.01 },
-        .pos_world = Vec3f.initZeros(),
-        .rot_world = Rotation.init(0, 0, 0),
-        .roi_cent_world = Vec3f.initZeros(),
+        .pos_world = vector.Vec3f.initZeros(),
+        .rot_world = rotation.Rotation.init(0, 0, 0),
+        .roi_cent_world = vector.Vec3f.initZeros(),
         .focal_length = 1.0,
         .sub_sample = 1,
         .distortion = .{ .brown_conrady_ext = distortion },
     };
 
-    const camera = try CameraPrepared.init(testing.allocator, input);
-    defer camera.deinit(testing.allocator);
+    const camera = try CameraPrepared.init(std.testing.allocator, input);
+    defer camera.deinit(std.testing.allocator);
 
     const x_off = 0.5 * @as(f64, @floatFromInt(input.pixels_num[0]));
     const y_off = 0.5 * @as(f64, @floatFromInt(input.pixels_num[1]));
@@ -877,5 +868,5 @@ test "CameraPrepared.brownConradyExtDistortionApplied" {
 test "CameraOps.calcSensorSize" {
     const sensor_size = CameraOps.calcSensorSize(pix_num, pix_size);
 
-    try expectEqual(sensor_size_exp, sensor_size);
+    try std.testing.expectEqual(sensor_size_exp, sensor_size);
 }

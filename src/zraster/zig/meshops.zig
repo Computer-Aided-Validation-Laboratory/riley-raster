@@ -8,37 +8,22 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const NDArray = @import("ndarray.zig").NDArray;
-const MappedNDArray = @import("ndarray.zig").MappedNDArray;
-const MatSlice = @import("matslice.zig").MatSlice;
+const ndarray = @import("ndarray.zig");
+const matslice = @import("matslice.zig");
 
 const meshio = @import("meshio.zig");
-const Coords = meshio.Coords;
-const Connect = meshio.Connect;
-const Field = meshio.Field;
 
 const uvio = @import("uvio.zig");
 
 const imageio = @import("imageio.zig");
-const ImageFormat = imageio.ImageFormat;
 
 const imageops = @import("imageops.zig");
-const ScalingParams = imageops.ScalingParams;
-const CameraPrepared = @import("camera.zig").CameraPrepared;
+const cam = @import("camera.zig");
 const geomthread = @import("geomthread.zig");
 const rops = @import("rasterops.zig");
-const ElemBBox = rops.ElemBBox;
 const texops = @import("textureops.zig");
-const TextureSampleConfig = texops.TextureSampleConfig;
 
 const shaderops = @import("shaderops.zig");
-const NodalInput = shaderops.NodalInput;
-const TexInput = shaderops.TexInput;
-const ShaderInput = shaderops.ShaderInput;
-const NodalStatic = shaderops.NodalStatic;
-const TexStatic = shaderops.TexStatic;
-const ShaderStatic = shaderops.ShaderStatic;
-const ShaderPrepared = shaderops.ShaderPrepared;
 
 //------------------------------------------------------------------------------------------
 // External Helper Functions: General geometry and mesh utilities
@@ -64,61 +49,61 @@ pub const MeshType = enum {
 };
 
 // The "Blueprint": Raw user data for all frames.
-// Coords/Fields: Node-order [total_nodes, ...]
-// Connect: Connectivity table links nodes to elements.
+// meshio.Coords/Fields: Node-order [total_nodes, ...]
+// meshio.Connect: Connectivity table links nodes to elements.
 pub const MeshInput = struct {
     mesh_type: MeshType,
-    coords: Coords,
-    connect: Connect,
-    disp: ?Field,
+    coords: meshio.Coords,
+    connect: meshio.Connect,
+    disp: ?meshio.Field,
     shader: shaderops.ShaderInput,
 };
 
 
 // The "Archive": Persistent multi-frame resources in the engine's memory.
-// Coords/Fields: Node-order [total_nodes, ...]
+// meshio.Coords/Fields: Node-order [total_nodes, ...]
 // UVs: Element-order (expanded during static init as they are usually static).
 pub const MeshStatic = struct {
     mesh_type: MeshType,
-    coords_orig: Coords,
-    connect: Connect,
-    disp: ?Field,
-    shader: ShaderStatic,
+    coords_orig: meshio.Coords,
+    connect: meshio.Connect,
+    disp: ?meshio.Field,
+    shader: shaderops.ShaderStatic,
 };
 
 // The "Scratchpad": Temporary node-order working area for the geometry pipeline.
-// Coords: Node-order [total_nodes, 3]. Holds coords for a single frame after displacement.
+// meshio.Coords: Node-order [total_nodes, 3]. Holds coords for a single frame after displacement.
 pub const MeshFrameWorkspace = struct {
-    coords_nodes: Coords,
+    coords_nodes: meshio.Coords,
     visible_orig_elem_indices: []usize,
-    elem_bboxes: []ElemBBox,
+    elem_bboxes: []rops.ElemBBox,
     elems_in_image: usize,
-    raster_hull: ?NDArray(f64),
+    raster_hull: ?ndarray.NDArray(f64),
 };
 
 // The "Package": Wraps the Prepared payload with per-frame spatial metadata.
-// Prepared means culled element-order NDArray data ready for the raster loop.
+// Prepared means culled element-order ndarray.NDArray data ready for the raster loop.
 pub const MeshFrame = struct {
     mesh: MeshPrepared,
-    elem_bboxes: []ElemBBox,
+    elem_bboxes: []rops.ElemBBox,
     elems_in_image: usize,
     total_elems_num: usize,
-    raster_hull: ?NDArray(f64),
+    raster_hull: ?ndarray.NDArray(f64),
 };
 
 // The "Payload": Data culled and expanded for the raster loop for a SINGLE frame.
-// Prepared means culled element-order NDArray data ready for the raster loop.
-// Coords/Fields: Element-order [visible_elems, ..., nodes_per_elem]
+// Prepared means culled element-order ndarray.NDArray data ready for the raster loop.
+// meshio.Coords/Fields: Element-order [visible_elems, ..., nodes_per_elem]
 pub const MeshPrepared = struct {
     mesh_type: MeshType,
-    coords: NDArray(f64),
+    coords: ndarray.NDArray(f64),
     shader: shaderops.ShaderPrepared,
 };
 
 
 
 // External helper function for finding mesh centroids
-pub fn findAlignedCentroid(coords: *const Coords) struct {
+pub fn findAlignedCentroid(coords: *const meshio.Coords) struct {
     centroid: [3]f64,
     extent: [3]f64,
 } {
@@ -281,7 +266,7 @@ pub fn meshInputFromSimDataSlice(
 
             const uvmap = try uvio.loadUVMap(outer_alloc, io, path_uvs);
 
-            const format: ImageFormat = if (std.mem.endsWith(u8, texture_path.?, ".bmp"))
+            const format: imageio.ImageFormat = if (std.mem.endsWith(u8, texture_path.?, ".bmp"))
                 .bmp
             else
                 .tiff;
@@ -318,7 +303,7 @@ pub fn initStatic(
 ) !MeshStatic {
     const coords_orig = try copyCoordsAlloc(allocator, &mesh_input.coords);
 
-    var shader_static: ShaderStatic = undefined;
+    var shader_static: shaderops.ShaderStatic = undefined;
     switch (mesh_input.shader) {
         .nodal => |nodal_in| {
             shader_static = .{ .nodal = .{
@@ -373,13 +358,13 @@ pub fn initStatic(
 
 fn prepareUVs(
     outer_alloc: std.mem.Allocator,
-    uvs: *const NDArray(f64),
-    connect: *const Connect,
-) !NDArray(f64) {
+    uvs: *const ndarray.NDArray(f64),
+    connect: *const meshio.Connect,
+) !ndarray.NDArray(f64) {
 
     const elems_num = connect.getElemsNum();
     const nodes_per_elem = connect.getNodesPerElem();
-    var elem_uv_arr = try NDArray(f64).initFlat(
+    var elem_uv_arr = try ndarray.NDArray(f64).initFlat(
         outer_alloc,
         &[_]usize{ elems_num, 2, nodes_per_elem },
     );
@@ -400,9 +385,9 @@ fn prepareUVs(
 
 fn copyCoordsAlloc(
     allocator: std.mem.Allocator,
-    coords: *const Coords,
-) !Coords {
-    const coords_copy = try Coords.initAlloc(allocator, coords.mat.rows_num);
+    coords: *const meshio.Coords,
+) !meshio.Coords {
+    const coords_copy = try meshio.Coords.initAlloc(allocator, coords.mat.rows_num);
     @memcpy(coords_copy.mem, coords.mem);
     return coords_copy;
 }
@@ -423,7 +408,7 @@ fn initMeshFrameWorkspace(
     mesh_static: *const MeshStatic,
 ) !MeshFrameWorkspace {
     return .{
-        .coords_nodes = try Coords.initAlloc(
+        .coords_nodes = try meshio.Coords.initAlloc(
             allocator,
             mesh_static.coords_orig.mat.rows_num,
         ),
@@ -482,7 +467,7 @@ fn runStageRange(
 }
 
 //------------------------------------------------------------------------------------------
-// Geometry Pipeline Stages: Coords, Transform, Culling and Compaction
+// Geometry Pipeline Stages: meshio.Coords, Transform, Culling and Compaction
 //------------------------------------------------------------------------------------------
 
 fn prepareFrameMeshCoordsRange(
@@ -517,7 +502,7 @@ fn prepareFrameMeshCoordsRange(
 }
 
 fn transformFrameMeshCoordsRange(
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     mesh_type: MeshType,
     frame_workspace: *MeshFrameWorkspace,
     node_start: usize,
@@ -552,7 +537,7 @@ fn transformFrameMeshCoordsRange(
 fn compactVisibleCoordsRange(
     mesh_static: *const MeshStatic,
     frame_workspace: *const MeshFrameWorkspace,
-    elem_coords: *NDArray(f64),
+    elem_coords: *ndarray.NDArray(f64),
     visible_start: usize,
     visible_end: usize,
 ) void {
@@ -580,9 +565,9 @@ fn compactVisibleCoordsRange(
 }
 
 fn compactVisibleUVsRange(
-    elem_uvs_full: NDArray(f64),
+    elem_uvs_full: ndarray.NDArray(f64),
     visible_orig_elem_indices: []const usize,
-    elem_uvs: *NDArray(f64),
+    elem_uvs: *ndarray.NDArray(f64),
     visible_start: usize,
     visible_end: usize,
 ) void {
@@ -600,11 +585,11 @@ fn compactVisibleUVsRange(
 }
 
 fn compactVisibleFieldFrameRange(
-    connect: *const Connect,
-    field: *const Field,
+    connect: *const meshio.Connect,
+    field: *const meshio.Field,
     frame_idx: usize,
     visible_orig_elem_indices: []const usize,
-    elem_field: *NDArray(f64),
+    elem_field: *ndarray.NDArray(f64),
     visible_start: usize,
     visible_end: usize,
 ) void {
@@ -650,7 +635,7 @@ fn runPrepareFrameCoordsStage(
 }
 
 const TransformFrameCoordsStage = struct {
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     mesh_type: MeshType,
     frame_workspace: *MeshFrameWorkspace,
 };
@@ -673,10 +658,10 @@ fn runTransformFrameCoordsStage(
 }
 
 const CullVisibleCountStage = struct {
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     mesh_type: MeshType,
-    connect: *const Connect,
-    coords_nodes: *const Coords,
+    connect: *const meshio.Connect,
+    coords_nodes: *const meshio.Coords,
     visible_counts_by_chunk: []usize,
 };
 
@@ -708,12 +693,12 @@ fn prefixVisibleCounts(mesh_frame: *MeshFrameContext) void {
 }
 
 const CullVisibleFillStage = struct {
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     mesh_type: MeshType,
-    connect: *const Connect,
-    coords_nodes: *const Coords,
+    connect: *const meshio.Connect,
+    coords_nodes: *const meshio.Coords,
     visible_orig_elem_indices: []usize,
-    elem_bboxes: []ElemBBox,
+    elem_bboxes: []rops.ElemBBox,
     visible_offsets_by_chunk: []const usize,
 };
 
@@ -740,7 +725,7 @@ fn runCullVisibleFillStage(
 const CompactVisibleCoordsStage = struct {
     mesh_static: *const MeshStatic,
     frame_workspace: *const MeshFrameWorkspace,
-    elem_coords: *NDArray(f64),
+    elem_coords: *ndarray.NDArray(f64),
 };
 
 fn runCompactVisibleCoordsStage(
@@ -761,11 +746,11 @@ fn runCompactVisibleCoordsStage(
 }
 
 const CompactVisibleFieldStage = struct {
-    connect: *const Connect,
-    field: *const Field,
+    connect: *const meshio.Connect,
+    field: *const meshio.Field,
     frame_idx: usize,
     visible_orig_elem_indices: []const usize,
-    elem_field: *NDArray(f64),
+    elem_field: *ndarray.NDArray(f64),
 };
 
 fn runCompactVisibleFieldStage(
@@ -788,9 +773,9 @@ fn runCompactVisibleFieldStage(
 }
 
 const CompactVisibleUVStage = struct {
-    elem_uvs_full: NDArray(f64),
+    elem_uvs_full: ndarray.NDArray(f64),
     visible_orig_elem_indices: []const usize,
-    elem_uvs: *NDArray(f64),
+    elem_uvs: *ndarray.NDArray(f64),
 };
 
 fn runCompactVisibleUVStage(
@@ -811,10 +796,10 @@ fn runCompactVisibleUVStage(
 }
 
 const PrepareVisibleHullsStage = struct {
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     mesh_type: MeshType,
-    elem_coords: *const NDArray(f64),
-    raster_hull: *NDArray(f64),
+    elem_coords: *const ndarray.NDArray(f64),
+    raster_hull: *ndarray.NDArray(f64),
 };
 
 fn runPrepareVisibleHullsStage(
@@ -842,14 +827,14 @@ fn runPrepareVisibleHullsStage(
 fn prepareVisibleNormalsThreaded(
     allocator: std.mem.Allocator,
     mesh_type: MeshType,
-    coords_nodes: *const Coords,
-    connect: *const Connect,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
     normal_type: shaderops.NormalType,
     geom_pool: ?*geomthread.GeometryWorkerPool,
     elem_chunk_size: usize,
     visible_chunk_size: usize,
-) !MappedNDArray(f64) {
+) !ndarray.MappedNDArray(f64) {
     return switch (mesh_type) {
         .tri3 => try prepareVisibleNormalsThreadedN(
             allocator,
@@ -917,15 +902,15 @@ fn prepareVisibleNormalsThreaded(
 fn prepareVisibleNormalsThreadedN(
     allocator: std.mem.Allocator,
     mesh_type: MeshType,
-    coords_nodes: *const Coords,
-    connect: *const Connect,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
     normal_type: shaderops.NormalType,
     geom_pool: ?*geomthread.GeometryWorkerPool,
     elem_chunk_size: usize,
     visible_chunk_size: usize,
     comptime N: usize,
-) !MappedNDArray(f64) {
+) !ndarray.MappedNDArray(f64) {
     var prep_normals = try initIdentityMappedNormals(
         allocator,
         visible_orig_elem_indices.len,
@@ -1008,7 +993,7 @@ fn prepareVisibleNormalsThreadedN(
     return prep_normals;
 }
 
-fn getConnectNodesNum(connect: *const Connect) usize {
+fn getConnectNodesNum(connect: *const meshio.Connect) usize {
     var max_node_idx: usize = 0;
     for (connect.table_mem) |node_idx| {
         max_node_idx = @max(max_node_idx, node_idx);
@@ -1020,8 +1005,8 @@ fn initIdentityMappedNormals(
     allocator: std.mem.Allocator,
     prep_count: usize,
     comptime N: usize,
-) !MappedNDArray(f64) {
-    const prep_normals = try NDArray(f64).initFlat(
+) !ndarray.MappedNDArray(f64) {
+    const prep_normals = try ndarray.NDArray(f64).initFlat(
         allocator,
         &[_]usize{ prep_count, 3, N },
     );
@@ -1038,10 +1023,10 @@ fn initIdentityMappedNormals(
 
 const PrepareVisibleExactNormalsStage = struct {
     mesh_type: MeshType,
-    coords_nodes: *const Coords,
-    connect: *const Connect,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
-    prep_normals: *NDArray(f64),
+    prep_normals: *ndarray.NDArray(f64),
 };
 
 fn runPrepareVisibleExactNormalsStage(
@@ -1065,8 +1050,8 @@ fn runPrepareVisibleExactNormalsStage(
 
 const AccumulateAveragedNormalsStage = struct {
     mesh_type: MeshType,
-    coords_nodes: *const Coords,
-    connect: *const Connect,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
     chunk_node_normals: []f64,
     node_normals_stride: usize,
 };
@@ -1092,10 +1077,10 @@ fn runAccumulateAveragedNormalsStage(
 
 const WriteVisibleAveragedNormalsStage = struct {
     mesh_type: MeshType,
-    connect: *const Connect,
+    connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
     node_normals: []const f64,
-    prep_normals: *NDArray(f64),
+    prep_normals: *ndarray.NDArray(f64),
 };
 
 fn runWriteVisibleAveragedNormalsStage(
@@ -1123,10 +1108,10 @@ fn runWriteVisibleAveragedNormalsStage(
 
 const FrameMeshPipeline = struct {
     allocator: std.mem.Allocator,
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     mesh_static: *const MeshStatic,
     frame_idx: usize,
-    scaling_params: ?ScalingParams,
+    scaling_params: ?imageops.ScalingParams,
     geom_pool: ?*geomthread.GeometryWorkerPool,
     workers_num: usize,
     nodes_num: usize,
@@ -1139,10 +1124,10 @@ const FrameMeshPipeline = struct {
 
     fn init(
         allocator: std.mem.Allocator,
-        camera: *const CameraPrepared,
+        camera: *const cam.CameraPrepared,
         mesh_static: *const MeshStatic,
         frame_idx: usize,
-        scaling_params: ?ScalingParams,
+        scaling_params: ?imageops.ScalingParams,
         geom_pool: ?*geomthread.GeometryWorkerPool,
     ) !FrameMeshPipeline {
         const workers_num = getWorkerCount(geom_pool);
@@ -1250,7 +1235,7 @@ const FrameMeshPipeline = struct {
         self.mesh_frame.frame_workspace.visible_orig_elem_indices =
             try self.allocator.alloc(usize, self.mesh_frame.visible_elems_num);
         self.mesh_frame.frame_workspace.elem_bboxes = try self.allocator.alloc(
-            ElemBBox,
+            rops.ElemBBox,
             self.mesh_frame.visible_elems_num,
         );
 
@@ -1278,7 +1263,7 @@ const FrameMeshPipeline = struct {
     }
 
     fn compactVisibleMesh(self: *FrameMeshPipeline) !MeshPrepared {
-        var elem_coords = try NDArray(f64).initFlat(
+        var elem_coords = try ndarray.NDArray(f64).initFlat(
             self.allocator,
             &[_]usize{
                 self.mesh_frame.visible_elems_num,
@@ -1308,19 +1293,19 @@ const FrameMeshPipeline = struct {
 
     fn prepareRasterHulls(
         self: *FrameMeshPipeline,
-        elem_coords: *const NDArray(f64),
+        elem_coords: *const ndarray.NDArray(f64),
     ) !void {
         self.mesh_frame.frame_workspace.raster_hull = switch (self.mesh_static.mesh_type) {
             .tri3 => null,
-            .quad4ibi, .quad4newton => try NDArray(f64).initFlat(
+            .quad4ibi, .quad4newton => try ndarray.NDArray(f64).initFlat(
                 self.allocator,
                 &[_]usize{ self.mesh_frame.visible_elems_num, 2, 4 },
             ),
-            .tri6 => try NDArray(f64).initFlat(
+            .tri6 => try ndarray.NDArray(f64).initFlat(
                 self.allocator,
                 &[_]usize{ self.mesh_frame.visible_elems_num, 2, 6 },
             ),
-            .quad8, .quad9 => try NDArray(f64).initFlat(
+            .quad8, .quad9 => try ndarray.NDArray(f64).initFlat(
                 self.allocator,
                 &[_]usize{ self.mesh_frame.visible_elems_num, 2, 8 },
             ),
@@ -1367,9 +1352,9 @@ const FrameMeshPipeline = struct {
 
     fn prepareNodalShader(
         self: *FrameMeshPipeline,
-        nodal_static: NodalStatic,
-    ) !ShaderPrepared {
-        var elem_field = try NDArray(f64).initFlat(
+        nodal_static: shaderops.NodalStatic,
+    ) !shaderops.ShaderPrepared {
+        var elem_field = try ndarray.NDArray(f64).initFlat(
             self.allocator,
             &[_]usize{
                 self.mesh_frame.visible_elems_num,
@@ -1418,8 +1403,8 @@ const FrameMeshPipeline = struct {
     fn prepareTexShaderN(
         comptime channels: usize,
         self: *FrameMeshPipeline,
-        tex_static: TexStatic(channels),
-    ) !ShaderPrepared {
+        tex_static: shaderops.TexStatic(channels),
+    ) !shaderops.ShaderPrepared {
         const params = imageops.getScalingParamsTexture(
             channels,
             &tex_static.texture,
@@ -1430,7 +1415,7 @@ const FrameMeshPipeline = struct {
             tex_static.bits,
             params,
         );
-        var elem_uvs = try NDArray(f64).initFlat(
+        var elem_uvs = try ndarray.NDArray(f64).initFlat(
             self.allocator,
             &[_]usize{
                 self.mesh_frame.visible_elems_num,
@@ -1482,7 +1467,7 @@ const FrameMeshPipeline = struct {
     fn prepareVisibleNormals(
         self: *FrameMeshPipeline,
         normal_type: shaderops.NormalType,
-    ) !?MappedNDArray(f64) {
+    ) !?ndarray.MappedNDArray(f64) {
         if (normal_type == .none) {
             return null;
         }
@@ -1522,10 +1507,10 @@ const FrameMeshPipeline = struct {
 
 pub fn prepareMeshFrame(
     allocator: std.mem.Allocator,
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     mesh_static: *const MeshStatic,
     frame_idx: usize,
-    scaling_params: ?ScalingParams,
+    scaling_params: ?imageops.ScalingParams,
     geom_pool: ?*geomthread.GeometryWorkerPool,
 ) !MeshFrame {
     var pipeline = try FrameMeshPipeline.init(
@@ -1550,20 +1535,20 @@ pub const FrameGeometryResult = struct {
 
 //==========================================================================================
 // Main Entry Point to Geometry Pipeline
-pub fn prepareFrameMeshes(
+pub fn prepareMeshFrames(
     arena_alloc: std.mem.Allocator,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     frame_idx: usize,
-    mesh_static_prepared: []const MeshStatic,
+    static_meshes: []const MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     geom_threads: u16,
     frame_meshes: []MeshFrame,
     prep_meshes: []MeshPrepared,
-    elem_bboxes_by_mesh: [][]ElemBBox,
+    elem_bboxes_by_mesh: [][]rops.ElemBBox,
     elems_in_image_by_mesh: []usize,
-    raster_hulls: []?NDArray(f64),
+    raster_hulls: []?ndarray.NDArray(f64),
 ) !FrameGeometryResult {
     var geom_pool: ?geomthread.GeometryWorkerPool = null;
     if (geom_threads > 1) {
@@ -1575,7 +1560,7 @@ pub fn prepareFrameMeshes(
 
     var res = FrameGeometryResult{ .total_elems_num = 0, .total_elems_in_image = 0 };
 
-    for (mesh_static_prepared, 0..) |*mesh_static, ii| {
+    for (static_meshes, 0..) |*mesh_static, ii| {
         var nodal_frame_scaling: ?imageops.ScalingParams = null;
         switch (mesh_static.shader) {
             .nodal => |s| {

@@ -7,16 +7,43 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const NDArray = @import("ndarray.zig").NDArray;
-const ImageFormat = @import("imageio.zig").ImageFormat;
+const ndarray = @import("ndarray.zig");
 const iio = @import("imageio.zig");
-const MatSlice = @import("matslice.zig").MatSlice;
-const CameraPrepared = @import("camera.zig").CameraPrepared;
+const matslice = @import("matslice.zig");
+const cam = @import("camera.zig");
+const mo = @import("meshops.zig");
 
 pub const ReportMode = enum {
     off,
     bench,
     full_stats,
+};
+
+pub const SaveStrategy = enum {
+    disk,
+    memory,
+    both,
+    none,
+};
+
+pub const RenderMode = enum {
+    in_order,
+    offline,
+};
+
+pub const RasterConfig = struct {
+    render_mode: RenderMode = .in_order,
+    total_threads: u16 = 0,
+    max_frames_in_flight: u16 = 1,
+    max_geom_threads_per_frame: u16 = 0,
+    max_raster_threads_per_frame: u16 = 0,
+    save_strategy: SaveStrategy = .disk,
+    image_save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
+        .{ .format = .bmp, .bits = 8, .scaling = .none },
+    },
+    tile_size: u16 = 32,
+    report: ReportMode = .bench,
+    full_stats_opts: FullStatsOpts = .{},
 };
 
 pub const OffLog = struct {};
@@ -65,6 +92,151 @@ pub const BenchLog = struct {
     max_tile_elements: usize = 0,
 };
 
+pub const FrameBenchCapture = struct {
+    camera_idx: usize,
+    frame_idx: usize,
+    bench_log: BenchLog,
+};
+
+pub const FrameReportStorage = union(ReportMode) {
+    off: OffLog,
+    bench: BenchLog,
+    full_stats: FullStatsLog,
+};
+
+pub fn FrameReportPtr(comptime report_mode: ReportMode) type {
+    return *LogType(report_mode);
+}
+
+pub fn calcNodesPerElem(
+    meshes: []const mo.MeshPrepared,
+) f64 {
+    var nodes_sum: usize = 0;
+    for (meshes) |mesh| {
+        nodes_sum += mesh.mesh_type.getNodesNum();
+    }
+    return @as(f64, @floatFromInt(nodes_sum)) /
+        @as(f64, @floatFromInt(meshes.len));
+}
+
+pub fn calcBenchCaptureIdx(
+    cameras_num: usize,
+    camera_idx: usize,
+    frame_idx: usize,
+) usize {
+    return frame_idx * cameras_num + camera_idx;
+}
+
+pub fn publishFrameResults(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    config: RasterConfig,
+    camera: *const cam.CameraPrepared,
+    camera_idx: usize,
+    frame_idx: usize,
+    cameras_num: usize,
+    out_dir: ?std.Io.Dir,
+    bench_capture: ?[]FrameBenchCapture,
+    report_storage: *FrameReportStorage,
+    frame_times: FrameTimes,
+    total_elems_num: usize,
+    total_elems_in_image: usize,
+    prep_meshes: []const mo.MeshPrepared,
+) !void {
+    const nodes_per_elem = calcNodesPerElem(prep_meshes);
+
+    switch (config.report) {
+        .off => {},
+        .bench => {
+            report_storage.bench.frame_times = frame_times;
+            if (bench_capture) |capture| {
+                const capture_idx = calcBenchCaptureIdx(
+                    cameras_num,
+                    camera_idx,
+                    frame_idx,
+                );
+                capture[capture_idx] = .{
+                    .camera_idx = camera_idx,
+                    .frame_idx = frame_idx,
+                    .bench_log = report_storage.bench,
+                };
+            }
+            try standardReport(
+                io,
+                camera,
+                frame_times,
+                total_elems_num,
+                total_elems_in_image,
+                nodes_per_elem,
+                &report_storage.bench,
+            );
+        },
+        .full_stats => {
+            report_storage.full_stats.bench.frame_times = frame_times;
+            try report_storage.full_stats.saveFrameReport(
+                io,
+                outer_alloc,
+                out_dir,
+                camera_idx,
+                frame_idx,
+                camera,
+                config.tile_size,
+                config.full_stats_opts,
+                nodes_per_elem,
+            );
+        },
+    }
+}
+
+pub fn printRenderSummary(
+    io: std.Io,
+    cameras: []const cam.CameraPrepared,
+    num_time: usize,
+    report_mode: ReportMode,
+    end_to_end_times: EndToEndTimes,
+) !void {
+    if (report_mode == .off) {
+        return;
+    }
+
+    var total_pixels: usize = 0;
+    for (cameras) |camera| {
+        total_pixels += camera.pixels_num[0] * camera.pixels_num[1];
+    }
+    total_pixels *= num_time;
+
+    const total_frames = cameras.len * num_time;
+    const total_render_ms = end_to_end_times.total_time / 1e6;
+    const total_render_sec = end_to_end_times.total_time / 1e9;
+    const setup_ms = end_to_end_times.setup_time / 1e6;
+    const dispatch_ms = end_to_end_times.dispatch_time / 1e6;
+    const avg_frame_ms = total_render_ms / @as(
+        f64,
+        @floatFromInt(total_frames),
+    );
+    const avg_mpx_sec = if (total_render_sec > 0)
+        @as(f64, @floatFromInt(total_pixels)) / (total_render_sec * 1e6)
+    else
+        0.0;
+
+    var buffer: [1024]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(io, &buffer);
+    const writer = &stdout_writer.interface;
+    const print_break = [_]u8{'='} ** 80;
+
+    try writer.print("\n{s}\nSoftware Raster Render Summary\n{s}\n", .{
+        print_break,
+        print_break,
+    });
+    try writer.print("Total render time       = {d:.3} ms\n", .{total_render_ms});
+    try writer.print("Setup time              = {d:.3} ms\n", .{setup_ms});
+    try writer.print("Dispatch time           = {d:.3} ms\n", .{dispatch_ms});
+    try writer.print("Average frame time      = {d:.3} ms\n", .{avg_frame_ms});
+    try writer.print("Average MPx/s           = {d:.3}\n", .{avg_mpx_sec});
+    try writer.print("{s}\n", .{print_break});
+    try writer.flush();
+}
+
 pub fn reduceBenchLog(dst: *BenchLog, src: *const BenchLog) void {
     dst.solver_calls += src.solver_calls;
     dst.total_solver_iters += src.total_solver_iters;
@@ -79,14 +251,14 @@ pub fn reduceBenchLog(dst: *BenchLog, src: *const BenchLog) void {
 
 pub const FullStatsLog = struct {
     bench: BenchLog = .{},
-    iteration_map: ?NDArray(f64) = null,
-    pixel_occupancy_map: ?NDArray(f64) = null,
-    depth_map: ?NDArray(f64) = null,
-    normals_map: ?NDArray(f64) = null,
-    earlyout_map: ?NDArray(f64) = null,
-    tile_timing_map: ?NDArray(f64) = null,
-    tile_density_map: ?NDArray(f64) = null,
-    tile_occupancy_map: ?NDArray(f64) = null,
+    iteration_map: ?ndarray.NDArray(f64) = null,
+    pixel_occupancy_map: ?ndarray.NDArray(f64) = null,
+    depth_map: ?ndarray.NDArray(f64) = null,
+    normals_map: ?ndarray.NDArray(f64) = null,
+    earlyout_map: ?ndarray.NDArray(f64) = null,
+    tile_timing_map: ?ndarray.NDArray(f64) = null,
+    tile_density_map: ?ndarray.NDArray(f64) = null,
+    tile_occupancy_map: ?ndarray.NDArray(f64) = null,
 
     pub fn deinit(self: *FullStatsLog, allocator: std.mem.Allocator) void {
         if (self.iteration_map) |*imap| imap.deinit(allocator);
@@ -103,7 +275,7 @@ pub const FullStatsLog = struct {
         io: std.Io,
         allocator: std.mem.Allocator,
         save_dir: std.Io.Dir,
-        camera: *const CameraPrepared,
+        camera: *const cam.CameraPrepared,
         tile_size: u16,
         tile_data: []const f64,
         name_prefix: []const u8,
@@ -113,7 +285,7 @@ pub const FullStatsLog = struct {
         const px_y = camera.pixels_num[1];
         const tiles_x = try std.math.divCeil(u32, px_x, tile_size);
 
-        var expanded = try NDArray(f64).initFlat(allocator, &[_]usize{ px_y, px_x });
+        var expanded = try ndarray.NDArray(f64).initFlat(allocator, &[_]usize{ px_y, px_x });
         defer expanded.deinit(allocator);
 
         for (0..px_y) |yy| {
@@ -125,7 +297,7 @@ pub const FullStatsLog = struct {
             }
         }
 
-        const mat = MatSlice(f64).init(expanded.slice, px_y, px_x);
+        const mat = matslice.MatSlice(f64).init(expanded.slice, px_y, px_x);
         for (opts.formats) |opt| {
             try iio.saveMatAsImage(io, save_dir, name_prefix, &mat, opt);
         }
@@ -138,7 +310,7 @@ pub const FullStatsLog = struct {
         out_dir: ?std.Io.Dir,
         camera_idx: usize,
         frame_idx: usize,
-        camera: *const CameraPrepared,
+        camera: *const cam.CameraPrepared,
         tile_size: u16,
         opts: FullStatsOpts,
         nodes_per_elem: f64,
@@ -162,7 +334,7 @@ pub const FullStatsLog = struct {
 
         if (self.iteration_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
-            const mat = MatSlice(f64).init(
+            const mat = matslice.MatSlice(f64).init(
                 m.slice,
                 camera.pixels_num[1] * sub_samp,
                 camera.pixels_num[0] * sub_samp,
@@ -178,7 +350,7 @@ pub const FullStatsLog = struct {
         }
 
         if (self.pixel_occupancy_map) |*m| {
-            const mat = MatSlice(f64).init(
+            const mat = matslice.MatSlice(f64).init(
                 m.slice,
                 camera.pixels_num[1],
                 camera.pixels_num[0],
@@ -195,7 +367,7 @@ pub const FullStatsLog = struct {
 
         if (self.depth_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
-            const mat = MatSlice(f64).init(
+            const mat = matslice.MatSlice(f64).init(
                 m.slice,
                 camera.pixels_num[1] * sub_samp,
                 camera.pixels_num[0] * sub_samp,
@@ -225,7 +397,7 @@ pub const FullStatsLog = struct {
 
         if (self.earlyout_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
-            const mat = MatSlice(f64).init(
+            const mat = matslice.MatSlice(f64).init(
                 m.slice,
                 camera.pixels_num[1] * sub_samp,
                 camera.pixels_num[0] * sub_samp,
@@ -299,7 +471,7 @@ pub const FullStatsLog = struct {
         self: *const FullStatsLog,
         io: std.Io,
         frame_idx: usize,
-        camera: *const CameraPrepared,
+        camera: *const cam.CameraPrepared,
         nodes_per_elem: f64,
     ) !void {
         var buffer: [4096]u8 = undefined;
@@ -312,7 +484,7 @@ pub const FullStatsLog = struct {
         self: *const FullStatsLog,
         writer: anytype,
         frame_idx: usize,
-        camera: *const CameraPrepared,
+        camera: *const cam.CameraPrepared,
         nodes_per_elem: f64,
     ) !void {
         const total_ms = self.bench.frame_times.total_time / 1e6;
@@ -536,12 +708,12 @@ pub fn initFullStatsLog(
     const sub_pixels_num = [_]usize{ pixels_num[1] * sub_samp, pixels_num[0] * sub_samp };
 
     if (opts.save_iteration_map) {
-        self.iteration_map = try NDArray(f64).initFlat(allocator, &sub_pixels_num);
+        self.iteration_map = try ndarray.NDArray(f64).initFlat(allocator, &sub_pixels_num);
         @memset(self.iteration_map.?.slice, 0);
     }
 
     if (opts.save_pixel_occupancy_map) {
-        self.pixel_occupancy_map = try NDArray(f64).initFlat(
+        self.pixel_occupancy_map = try ndarray.NDArray(f64).initFlat(
             allocator,
             &[_]usize{ pixels_num[1], pixels_num[0] },
         );
@@ -549,12 +721,12 @@ pub fn initFullStatsLog(
     }
 
     if (opts.save_depth_map) {
-        self.depth_map = try NDArray(f64).initFlat(allocator, &sub_pixels_num);
+        self.depth_map = try ndarray.NDArray(f64).initFlat(allocator, &sub_pixels_num);
         @memset(self.depth_map.?.slice, 0);
     }
 
     if (opts.save_normals_map) {
-        self.normals_map = try NDArray(f64).initFlat(
+        self.normals_map = try ndarray.NDArray(f64).initFlat(
             allocator,
             &[_]usize{ 3, sub_pixels_num[0], sub_pixels_num[1] },
         );
@@ -562,7 +734,7 @@ pub fn initFullStatsLog(
     }
 
     if (opts.save_earlyout_map) {
-        self.earlyout_map = try NDArray(f64).initFlat(allocator, &sub_pixels_num);
+        self.earlyout_map = try ndarray.NDArray(f64).initFlat(allocator, &sub_pixels_num);
         @memset(self.earlyout_map.?.slice, 0);
     }
 
@@ -571,19 +743,19 @@ pub fn initFullStatsLog(
     const tiles_num = tiles_num_x * tiles_num_y;
 
     if (opts.save_tile_timing_map) {
-        self.tile_timing_map = try NDArray(f64).initFlat(
+        self.tile_timing_map = try ndarray.NDArray(f64).initFlat(
             allocator,
             &[_]usize{tiles_num},
         );
     }
     if (opts.save_tile_density_map) {
-        self.tile_density_map = try NDArray(f64).initFlat(
+        self.tile_density_map = try ndarray.NDArray(f64).initFlat(
             allocator,
             &[_]usize{tiles_num},
         );
     }
     if (opts.save_tile_occupancy_map) {
-        self.tile_occupancy_map = try NDArray(f64).initFlat(
+        self.tile_occupancy_map = try ndarray.NDArray(f64).initFlat(
             allocator,
             &[_]usize{tiles_num},
         );
@@ -861,7 +1033,7 @@ pub inline fn recordNormalSIMD(
 
 pub fn standardReport(
     io: std.Io,
-    camera: *const CameraPrepared,
+    camera: *const cam.CameraPrepared,
     frame_times: FrameTimes,
     total_elems: usize,
     visible_elems: usize,

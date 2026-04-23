@@ -8,11 +8,9 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
-const cfg = buildconfig.config;
-const tol = cfg.tolerance;
-const MatSlice = @import("matslice.zig").MatSlice;
-const NDArray = @import("ndarray.zig").NDArray;
-const Texture = @import("textureops.zig").Texture;
+const matslice = @import("matslice.zig");
+const ndarray = @import("ndarray.zig");
+const texops = @import("textureops.zig");
 
 pub const ScaleStrategy = union(enum) {
     none,
@@ -57,7 +55,7 @@ pub fn getScaleFactors(
 
 pub fn getScalingParamsTexture(
     comptime channels: usize,
-    texture: *const Texture(channels),
+    texture: *const texops.Texture(channels),
     strategy: ScaleStrategy,
 ) ScalingParams {
     switch (strategy) {
@@ -69,7 +67,7 @@ pub fn getScalingParamsTexture(
                 if (val < px_min) px_min = val;
                 if (val > px_max) px_max = val;
             }
-            const range = if (@abs(px_max - px_min) < tol.image.auto_scale_range)
+            const range = if (@abs(px_max - px_min) < buildconfig.config.tolerance.image.auto_scale_range)
                 1.0
             else
                 px_max - px_min;
@@ -83,7 +81,7 @@ pub fn getScalingParamsTexture(
 }
 
 pub fn getScalingParams(
-    image: *const MatSlice(f64),
+    image: *const matslice.MatSlice(f64),
     strategy: ScaleStrategy,
 ) ScalingParams {
     switch (strategy) {
@@ -102,7 +100,7 @@ pub fn getScalingParams(
 }
 
 pub fn getScalingParamsNDArray(
-    array: *const NDArray(f64),
+    array: *const ndarray.NDArray(f64),
     frame_idx: ?usize,
     strategy: ScaleStrategy,
 ) ScalingParams {
@@ -160,9 +158,9 @@ pub fn applyClamping(val: f64, bits: ?u8) f64 {
 }
 
 pub fn averageImage(
-    image_subpx: *const MatSlice(f64),
+    image_subpx: *const matslice.MatSlice(f64),
     sub_samp: u8,
-    image_avg: *MatSlice(f64),
+    image_avg: *matslice.MatSlice(f64),
 ) void {
     const num_px_x: usize = (image_subpx.cols_n) / @as(usize, sub_samp);
     const num_px_y: usize = (image_subpx.rows_n) / @as(usize, sub_samp);

@@ -7,23 +7,17 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const assert = std.debug.assert;
-const print = std.debug.print;
 
 const buildconfig = @import("buildconfig.zig");
-const cfg = buildconfig.config;
-const C = cfg.max_image_channels;
 
-const MatSlice = @import("matslice.zig").MatSlice;
-const NDArray = @import("ndarray.zig").NDArray;
+const matslice = @import("matslice.zig");
+const ndarray = @import("ndarray.zig");
 
 const texops = @import("textureops.zig");
-const clibtiff = @import("clibtiff.zig");
 pub const Texture = texops.Texture;
+const clibtiff = @import("clibtiff.zig");
 
 const imageops = @import("imageops.zig");
-pub const ScaleStrategy = imageops.ScaleStrategy;
-pub const ScalingParams = imageops.ScalingParams;
 const csvio = @import("csvio.zig");
 
 const tmp_test_root_dir = "tmp-tests";
@@ -50,13 +44,13 @@ pub const ImageFormat = enum {
 pub const ImageSaveOpts = struct {
     format: ImageFormat,
     bits: ?u8 = 8,
-    scaling: ScaleStrategy = .none,
+    scaling: imageops.ScaleStrategy = .none,
     channels: usize = 1,
 
     pub fn init(
         format: ImageFormat,
         bits: ?u8,
-        scaling: ScaleStrategy,
+        scaling: imageops.ScaleStrategy,
         channels: usize,
     ) ImageSaveOpts {
         return .{
@@ -75,7 +69,7 @@ pub fn loadImage(
     io: std.Io,
     path: []const u8,
     format: ImageFormat,
-) !Texture(channels) {
+) !texops.Texture(channels) {
     return switch (format) {
         .csv => try loadCSV(T, channels, allocator, io, path),
         .fimg => {
@@ -84,7 +78,7 @@ pub fn loadImage(
                 // We might want to handle this more gracefully, but for now:
                 return error.ChannelMismatch;
             }
-            return Texture(channels){
+            return texops.Texture(channels){
                 .array = array,
                 .rows_num = array.dims[1],
                 .cols_num = array.dims[2],
@@ -100,7 +94,7 @@ pub fn saveImage(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name_no_ext: []const u8,
-    image_arr: *const NDArray(f64),
+    image_arr: *const ndarray.NDArray(f64),
     start_field: usize,
     opts: ImageSaveOpts,
 ) !void {
@@ -131,12 +125,12 @@ pub fn saveMatAsImage(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name_no_ext: []const u8,
-    image: *const MatSlice(f64),
+    image: *const matslice.MatSlice(f64),
     opts: ImageSaveOpts,
 ) !void {
     var dims = [_]usize{ 1, image.rows_num, image.cols_num };
     var strides = [_]usize{ image.rows_num * image.cols_num, image.cols_num, 1 };
-    const arr = NDArray(f64){
+    const arr = ndarray.NDArray(f64){
         .slice = image.slice,
         .dims = &dims,
         .strides = &strides,
@@ -151,7 +145,7 @@ pub fn saveImages(
     frame_idx: usize,
     num_fields: u8,
     pixels_num: [2]u32,
-    frame_arr: *const NDArray(f64),
+    frame_arr: *const ndarray.NDArray(f64),
     opts_slice: []const ImageSaveOpts,
 ) !void {
     const save_dir = out_dir orelse return;
@@ -206,7 +200,7 @@ pub fn savePPM(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
-    image_arr: *const NDArray(f64),
+    image_arr: *const ndarray.NDArray(f64),
     start_field: usize,
     opts: ImageSaveOpts,
 ) !void {
@@ -227,12 +221,12 @@ pub fn savePPM(
     try writer.print("P3\n{d} {d}\n{d}\n", .{ cols, rows, max_val });
 
     // We need scaling params per field if we are doing auto scaling
-    var params_array: [C]ScalingParams = undefined;
-    const channels = @min(opts.channels, C);
+    var params_array: [buildconfig.config.max_image_channels]imageops.ScalingParams = undefined;
+    const channels = @min(opts.channels, buildconfig.config.max_image_channels);
     for (0..channels) |ch| {
         const field_idx = start_field + ch;
         const slice = image_arr.getSlice(&[_]usize{ field_idx, 0, 0 }, 0);
-        const mat = MatSlice(f64).init(slice, rows, cols);
+        const mat = matslice.MatSlice(f64).init(slice, rows, cols);
         params_array[ch] = imageops.getScalingParams(&mat, opts.scaling);
     }
 
@@ -263,27 +257,27 @@ pub fn saveCSV(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
-    image_arr: *const NDArray(f64),
+    image_arr: *const ndarray.NDArray(f64),
     start_field: usize,
     opts: ImageSaveOpts,
 ) !void {
     const rows = image_arr.dims[1];
     const cols = image_arr.dims[2];
 
-    var params_array: [C]ScalingParams = undefined;
-    const channels = @min(opts.channels, C);
+    var params_array: [buildconfig.config.max_image_channels]imageops.ScalingParams = undefined;
+    const channels = @min(opts.channels, buildconfig.config.max_image_channels);
     for (0..channels) |ch| {
         const field_idx = start_field + ch;
         const slice = image_arr.getSlice(&[_]usize{ field_idx, 0, 0 }, 0);
-        const mat = MatSlice(f64).init(slice, rows, cols);
+        const mat = matslice.MatSlice(f64).init(slice, rows, cols);
         params_array[ch] = imageops.getScalingParams(&mat, opts.scaling);
     }
 
     const SaveCtx = struct {
-        image_arr: *const NDArray(f64),
+        image_arr: *const ndarray.NDArray(f64),
         start_field: usize,
         opts: ImageSaveOpts,
-        params_array: [C]ScalingParams,
+        params_array: [buildconfig.config.max_image_channels]imageops.ScalingParams,
 
         fn getVal(ctx: @This(), row: usize, col: usize, ch: usize) f64 {
             const field_idx = ctx.start_field + ch;
@@ -324,13 +318,13 @@ pub fn saveFIMG(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
-    image_arr: *const NDArray(f64),
+    image_arr: *const ndarray.NDArray(f64),
     start_field: usize,
     opts: ImageSaveOpts,
 ) !void {
     const rows = image_arr.dims[1];
     const cols = image_arr.dims[2];
-    const channels = @min(opts.channels, C);
+    const channels = @min(opts.channels, buildconfig.config.max_image_channels);
 
     const file = try out_dir.createFile(io, file_name, .{});
     defer file.close(io);
@@ -343,7 +337,7 @@ pub fn saveFIMG(
     try writer.print("FIMG\n{d} {d} {d}\n", .{ cols, rows, channels });
 
     // Payload: Binary f64 Little-Endian
-    // Format is Planar: Channel by Channel (matching our NDArray layout for fields)
+    // Format is Planar: Channel by Channel (matching our ndarray.NDArray layout for fields)
     for (0..channels) |ch| {
         const field_idx = start_field + ch;
         for (0..rows) |rr| {
@@ -362,7 +356,7 @@ pub fn saveBMP(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
-    image_arr: *const NDArray(f64),
+    image_arr: *const ndarray.NDArray(f64),
     start_field: usize,
     opts: ImageSaveOpts,
 ) !void {
@@ -409,12 +403,12 @@ pub fn saveBMP(
     try writer.writeInt(u32, 0, .little);
     try writer.writeInt(u32, 0, .little);
 
-    var params_array: [C]ScalingParams = undefined;
-    const channels = @min(opts.channels, C);
+    var params_array: [buildconfig.config.max_image_channels]imageops.ScalingParams = undefined;
+    const channels = @min(opts.channels, buildconfig.config.max_image_channels);
     for (0..@min(channels, 3)) |ch| {
         const field_idx = start_field + ch;
         const slice = image_arr.getSlice(&[_]usize{ field_idx, 0, 0 }, 0);
-        const mat = MatSlice(f64).init(slice, rows, cols);
+        const mat = matslice.MatSlice(f64).init(slice, rows, cols);
         params_array[ch] = imageops.getScalingParams(&mat, opts.scaling);
     }
 
@@ -450,14 +444,14 @@ pub fn saveTIFF(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
-    image_arr: *const NDArray(f64),
+    image_arr: *const ndarray.NDArray(f64),
     start_field: usize,
     opts: ImageSaveOpts,
 ) !void {
     const rows = image_arr.dims[1];
     const cols = image_arr.dims[2];
     const slice = image_arr.getSlice(&[_]usize{ start_field, 0, 0 }, 0);
-    const image = MatSlice(f64).init(slice, rows, cols);
+    const image = matslice.MatSlice(f64).init(slice, rows, cols);
 
     const file = try out_dir.createFile(io, file_name, .{});
     defer file.close(io);
@@ -543,7 +537,7 @@ pub fn loadPPM(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !Texture(channels) {
+) !texops.Texture(channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -594,7 +588,7 @@ pub fn loadPPM(
     const height = try std.fmt.parseInt(usize, height_str, 10);
     const max_val = try std.fmt.parseInt(u32, max_val_str, 10);
 
-    var texture = try Texture(channels).init(allocator, height, width);
+    var texture = try texops.Texture(channels).init(allocator, height, width);
     errdefer texture.deinit(allocator);
 
     const max_val_f = @as(f64, @floatFromInt(max_val));
@@ -635,7 +629,7 @@ pub fn loadCSV(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !Texture(channels) {
+) !texops.Texture(channels) {
     _ = T;
     const array = if (channels == 1)
         try csvio.loadScalarCsv2D(allocator, io, path)
@@ -649,7 +643,7 @@ pub fn loadCSV(
 
     const rows = array.dims[0];
     const cols = array.dims[1];
-    var texture = try Texture(channels).init(allocator, rows, cols);
+    var texture = try texops.Texture(channels).init(allocator, rows, cols);
     errdefer texture.deinit(allocator);
 
     for (0..rows) |rr| {
@@ -671,7 +665,7 @@ pub fn loadFIMG(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !NDArray(f64) {
+) !ndarray.NDArray(f64) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -724,7 +718,7 @@ pub fn loadFIMG(
     const height = try std.fmt.parseInt(usize, height_str, 10);
     const chans = try std.fmt.parseInt(usize, chan_str, 10);
 
-    var array = try NDArray(f64).initFlat(allocator, &[_]usize{ chans, height, width });
+    var array = try ndarray.NDArray(f64).initFlat(allocator, &[_]usize{ chans, height, width });
     errdefer array.deinit(allocator);
 
     // 2. Read Binary Payload (f64 LE)
@@ -750,7 +744,7 @@ pub fn loadBMP(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !Texture(channels) {
+) !texops.Texture(channels) {
     _ = T;
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
@@ -784,7 +778,7 @@ pub fn loadBMP(
     const abs_height = @as(usize, @intCast(@abs(height)));
     const abs_width = @as(usize, @intCast(@abs(width)));
 
-    var texture = try Texture(channels).init(allocator, abs_height, abs_width);
+    var texture = try texops.Texture(channels).init(allocator, abs_height, abs_width);
     errdefer texture.deinit(allocator);
 
     if (bit_count == 24) {
@@ -863,7 +857,7 @@ pub fn loadTIFF(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !Texture(channels) {
+) !texops.Texture(channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -921,7 +915,7 @@ pub fn loadTIFF(
 
     if (samples_per_pixel != 1) return error.UnsupportedTIFFColorSpace;
 
-    var texture = try Texture(channels).init(allocator, height, width);
+    var texture = try texops.Texture(channels).init(allocator, height, width);
     errdefer texture.deinit(allocator);
 
     try file_reader.seekTo(strip_offsets);
@@ -962,7 +956,7 @@ pub fn CLoadTIFF(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !Texture(channels) {
+) !texops.Texture(channels) {
     _ = T;
     _ = io;
     var libtiff = try clibtiff.LibTiff.init();
@@ -985,7 +979,7 @@ pub fn CLoadTIFF(
 
     if (libtiff.readRGBAImage(tif, w, h, raster.ptr, 0) == 0) return error.ReadFailed;
 
-    var texture = try Texture(channels).init(allocator, h, w);
+    var texture = try texops.Texture(channels).init(allocator, h, w);
     errdefer texture.deinit(allocator);
 
     for (0..h) |row| {
@@ -1066,7 +1060,7 @@ test "Verify hand-written TIFF loader" {
             mat_mem[rr * tex_c.cols_num + cc] = tex_c.getVal(0, rr, cc);
         }
     }
-    const mat = MatSlice(f64).init(mat_mem, tex_c.rows_num, tex_c.cols_num);
+    const mat = matslice.MatSlice(f64).init(mat_mem, tex_c.rows_num, tex_c.cols_num);
 
     try saveMatAsImage(
         io,
@@ -1115,7 +1109,7 @@ test "Save and Load All Formats 8-bit and 16-bit" {
             mat_mem[rr * cols + cc] = @as(f64, @floatFromInt(rr * cols + cc)) * 5.0;
         }
     }
-    const mat = MatSlice(f64).init(mat_mem, rows, cols);
+    const mat = matslice.MatSlice(f64).init(mat_mem, rows, cols);
 
     const formats = [_]ImageFormat{ .csv, .fimg, .ppm, .tiff, .bmp };
     const bit_depths = [_]u8{ 8, 16 };
@@ -1197,7 +1191,7 @@ test "Scaling Strategy: Fractional" {
     mat_mem[1] = 10.0;
     mat_mem[2] = 5.0;
     mat_mem[3] = 2.5;
-    const mat = MatSlice(f64).init(mat_mem, rows, cols);
+    const mat = matslice.MatSlice(f64).init(mat_mem, rows, cols);
 
     // Test 1: Frac [0.4, 0.6], bits = null (CSV) -> should map [0, 10] to [0.4, 0.6]
     const opts1 = ImageSaveOpts{
@@ -1253,7 +1247,7 @@ test "FIMG Save and Load Roundtrip" {
     const height: usize = 3;
     const channels: usize = 2;
 
-    var texture = try Texture(channels).init(allocator, height, width);
+    var texture = try texops.Texture(channels).init(allocator, height, width);
     defer texture.deinit(allocator);
 
     for (0..channels) |ch| {
@@ -1271,7 +1265,7 @@ test "FIMG Save and Load Roundtrip" {
 
     var dims = [_]usize{ channels, height, width };
     var strides = [_]usize{ height * width, width, 1 };
-    const arr = NDArray(f64){
+    const arr = ndarray.NDArray(f64){
         .slice = texture.array.slice,
         .dims = &dims,
         .strides = &strides,
