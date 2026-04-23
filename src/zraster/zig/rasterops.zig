@@ -16,6 +16,7 @@ const cam = @import("camera.zig");
 const shapefun = @import("shapefun.zig");
 const matrix = @import("matstack.zig");
 
+const geomthread = @import("geomthread.zig");
 const hull = @import("hull.zig");
 const geomkerns = @import("geometrykernels.zig");
 const shaderops = @import("shaderops.zig");
@@ -1729,8 +1730,106 @@ pub fn prepareVisibleRasterHullsRange(
     }
 }
 
+const TilingCountStage = struct {
+    tile_elem_counts: []std.atomic.Value(usize),
+    tile_size: u16,
+    tiles_num_x: usize,
+    tiles_num_y: usize,
+    elems_num: usize,
+    ebb_slice: []const ElemBBox,
+};
+
+fn runTilingCountStage(
+    ctx_ptr: *anyopaque,
+    chunk_idx: usize,
+    range_start: usize,
+    range_end: usize,
+) void {
+    _ = chunk_idx;
+    const s: *TilingCountStage = @ptrCast(@alignCast(ctx_ptr));
+
+    for (range_start..range_end) |ee| {
+        const ebb = s.ebb_slice[ee];
+        const tx_start: usize = ebb.x_min / s.tile_size;
+        const tx_end: usize = @min(s.tiles_num_x, @as(usize, (ebb.x_max +
+            s.tile_size - 1) / s.tile_size));
+        const ty_start: usize = ebb.y_min / s.tile_size;
+        const ty_end: usize = @min(s.tiles_num_y, @as(usize, (ebb.y_max +
+            s.tile_size - 1) / s.tile_size));
+
+        for (ty_start..ty_end) |ty| {
+            const row_off = ty * s.tiles_num_x;
+            for (tx_start..tx_end) |tx| {
+                _ = s.tile_elem_counts[row_off + tx].fetchAdd(1, .monotonic);
+            }
+        }
+    }
+}
+
+const TilingFillStage = struct {
+    tile_write_inds: []std.atomic.Value(usize),
+    overlaps: []OverlapBBox,
+    tile_size: u16,
+    tiles_num_x: usize,
+    tiles_num_y: usize,
+    screen_px_x: u16,
+    screen_px_y: u16,
+    mesh_idx: usize,
+    ebb_slice: []const ElemBBox,
+};
+
+fn runTilingFillStage(
+    ctx_ptr: *anyopaque,
+    chunk_idx: usize,
+    range_start: usize,
+    range_end: usize,
+) void {
+    _ = chunk_idx;
+    const s: *TilingFillStage = @ptrCast(@alignCast(ctx_ptr));
+
+    for (range_start..range_end) |ee| {
+        const ebb = s.ebb_slice[ee];
+        const tx_start = ebb.x_min / s.tile_size;
+        const tx_end = @min(
+            s.tiles_num_x,
+            @as(usize, (ebb.x_max + s.tile_size - 1) / s.tile_size),
+        );
+        const ty_start = ebb.y_min / s.tile_size;
+        const ty_end = @min(
+            s.tiles_num_y,
+            @as(usize, (ebb.y_max + s.tile_size - 1) / s.tile_size),
+        );
+
+        for (ty_start..ty_end) |ty| {
+            const tile_px_min_y = @as(u16, @intCast(ty * s.tile_size));
+            const tile_px_max_y = @as(u16, @min(@as(u32, tile_px_min_y) +
+                s.tile_size, s.screen_px_y));
+            const overlap_y_min = @max(ebb.y_min, tile_px_min_y);
+            const overlap_y_max = @min(ebb.y_max, tile_px_max_y);
+
+            for (tx_start..tx_end) |tx| {
+                const tile_px_min_x = @as(u16, @intCast(tx * s.tile_size));
+                const tile_px_max_x = @as(u16, @min(@as(u32, tile_px_min_x) +
+                    s.tile_size, s.screen_px_x));
+
+                const tile_idx = ty * s.tiles_num_x + tx;
+                const write_idx = s.tile_write_inds[tile_idx].fetchAdd(1, .monotonic);
+                s.overlaps[write_idx] = .{
+                    .mesh_idx = s.mesh_idx,
+                    .elem_idx = ebb.elem_idx,
+                    .x_min = @max(ebb.x_min, tile_px_min_x),
+                    .x_max = @min(ebb.x_max, tile_px_max_x),
+                    .y_min = overlap_y_min,
+                    .y_max = overlap_y_max,
+                };
+            }
+        }
+    }
+}
+
 pub fn sceneTileElemOverlap(
     allocator: std.mem.Allocator,
+    geom_pool: ?*geomthread.GeometryWorkerPool,
     tile_size: u16,
     tiles_num_x: usize,
     tiles_num_y: usize,
@@ -1740,33 +1839,40 @@ pub fn sceneTileElemOverlap(
     elem_bboxes_by_mesh: []const []ElemBBox,
 ) !TilingOverlaps {
     const tiles_num = tiles_num_x * tiles_num_y;
-    const tile_elem_counts = try allocator.alloc(usize, tiles_num);
+    const tile_elem_counts = try allocator.alloc(std.atomic.Value(usize), tiles_num);
     defer allocator.free(tile_elem_counts);
-    @memset(tile_elem_counts, 0);
+    for (tile_elem_counts) |*count| count.* = std.atomic.Value(usize).init(0);
 
     for (0..elems_in_image_by_mesh.len) |mesh_idx| {
-        for (0..elems_in_image_by_mesh[mesh_idx]) |ee| {
-            const ebb = elem_bboxes_by_mesh[mesh_idx][ee];
-            const tile_ind_min_x: u16 = ebb.x_min / tile_size;
-            const tile_ind_max_x: u16 = (ebb.x_max + tile_size - 1) / tile_size;
-            const tile_ind_min_y: u16 = ebb.y_min / tile_size;
-            const tile_ind_max_y: u16 = (ebb.y_max + tile_size - 1) / tile_size;
+        const elems_num = elems_in_image_by_mesh[mesh_idx];
+        if (elems_num == 0) continue;
 
-            const tx_end = @min(tiles_num_x, @as(usize, tile_ind_max_x));
-            const ty_end = @min(tiles_num_y, @as(usize, tile_ind_max_y));
+        var count_stage = TilingCountStage{
+            .tile_elem_counts = tile_elem_counts,
+            .tile_size = tile_size,
+            .tiles_num_x = tiles_num_x,
+            .tiles_num_y = tiles_num_y,
+            .elems_num = elems_num,
+            .ebb_slice = elem_bboxes_by_mesh[mesh_idx],
+        };
 
-            for (tile_ind_min_y..ty_end) |ty| {
-                const row_off = ty * tiles_num_x;
-                for (tile_ind_min_x..tx_end) |tx| {
-                    tile_elem_counts[row_off + tx] += 1;
-                }
-            }
+        if (geom_pool) |pool| {
+            const chunk_size = @max(@as(usize, 1), elems_num / (pool.workers_num * 4));
+            try pool.runRange(
+                &count_stage,
+                runTilingCountStage,
+                elems_num,
+                chunk_size,
+            );
+        } else {
+            runTilingCountStage(&count_stage, 0, 0, elems_num);
         }
     }
 
     var overlap_total: usize = 0;
     var num_active_tiles: usize = 0;
-    for (tile_elem_counts) |count| {
+    for (tile_elem_counts) |count_atomic| {
+        const count = count_atomic.load(.monotonic);
         overlap_total += count;
         if (count > 0) num_active_tiles += 1;
     }
@@ -1774,13 +1880,14 @@ pub fn sceneTileElemOverlap(
     const overlaps = try allocator.alloc(OverlapBBox, overlap_total);
     const active_tiles = try allocator.alloc(ActiveTile, num_active_tiles);
 
-    const tile_write_inds = try allocator.alloc(usize, tiles_num);
+    const tile_write_inds = try allocator.alloc(std.atomic.Value(usize), tiles_num);
     defer allocator.free(tile_write_inds);
 
     var current_off: usize = 0;
     var active_idx: usize = 0;
-    for (tile_elem_counts, 0..) |count, ii| {
-        tile_write_inds[ii] = current_off;
+    for (tile_elem_counts, 0..) |count_atomic, ii| {
+        const count = count_atomic.load(.monotonic);
+        tile_write_inds[ii] = std.atomic.Value(usize).init(current_off);
         if (count > 0) {
             const tx = ii % tiles_num_x;
             const ty = ii / tiles_num_x;
@@ -1798,44 +1905,31 @@ pub fn sceneTileElemOverlap(
     }
 
     for (0..elems_in_image_by_mesh.len) |mesh_idx| {
-        for (0..elems_in_image_by_mesh[mesh_idx]) |ee| {
-            const ebb = elem_bboxes_by_mesh[mesh_idx][ee];
-            const tx_start = ebb.x_min / tile_size;
-            const tx_end = @min(
-                tiles_num_x,
-                @as(usize, (ebb.x_max + tile_size - 1) / tile_size),
+        const elems_num = elems_in_image_by_mesh[mesh_idx];
+        if (elems_num == 0) continue;
+
+        var fill_stage = TilingFillStage{
+            .tile_write_inds = tile_write_inds,
+            .overlaps = overlaps,
+            .tile_size = tile_size,
+            .tiles_num_x = tiles_num_x,
+            .tiles_num_y = tiles_num_y,
+            .screen_px_x = screen_px_x,
+            .screen_px_y = screen_px_y,
+            .mesh_idx = mesh_idx,
+            .ebb_slice = elem_bboxes_by_mesh[mesh_idx],
+        };
+
+        if (geom_pool) |pool| {
+            const chunk_size = @max(@as(usize, 1), elems_num / (pool.workers_num * 4));
+            try pool.runRange(
+                &fill_stage,
+                runTilingFillStage,
+                elems_num,
+                chunk_size,
             );
-            const ty_start = ebb.y_min / tile_size;
-            const ty_end = @min(
-                tiles_num_y,
-                @as(usize, (ebb.y_max + tile_size - 1) / tile_size),
-            );
-
-            for (ty_start..ty_end) |ty| {
-                const tile_px_min_y = @as(u16, @intCast(ty * tile_size));
-                const tile_px_max_y = @as(u16, @min(@as(u32, tile_px_min_y) +
-                    tile_size, screen_px_y));
-                const overlap_y_min = @max(ebb.y_min, tile_px_min_y);
-                const overlap_y_max = @min(ebb.y_max, tile_px_max_y);
-
-                for (tx_start..tx_end) |tx| {
-                    const tile_px_min_x = @as(u16, @intCast(tx * tile_size));
-                    const tile_px_max_x = @as(u16, @min(@as(u32, tile_px_min_x) +
-                        tile_size, screen_px_x));
-
-                    const tile_idx = ty * tiles_num_x + tx;
-                    const write_idx = tile_write_inds[tile_idx];
-                    overlaps[write_idx] = .{
-                        .mesh_idx = mesh_idx,
-                        .elem_idx = ebb.elem_idx,
-                        .x_min = @max(ebb.x_min, tile_px_min_x),
-                        .x_max = @min(ebb.x_max, tile_px_max_x),
-                        .y_min = overlap_y_min,
-                        .y_max = overlap_y_max,
-                    };
-                    tile_write_inds[tile_idx] += 1;
-                }
-            }
+        } else {
+            runTilingFillStage(&fill_stage, 0, 0, elems_num);
         }
     }
 

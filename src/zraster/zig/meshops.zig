@@ -1550,19 +1550,11 @@ pub fn prepareMeshFrames(
     frame_idx: usize,
     static_meshes: []const MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
-    geom_threads: u16,
+    geom_pool: ?*geomthread.GeometryWorkerPool,
     frame_meshes: []MeshFrame,
 ) !FrameGeometryResult {
-
-    // Worker pool for geometry parallelisation
-    var geom_pool: ?geomthread.GeometryWorkerPool = null;
-    if (geom_threads > 1) {
-        var pool: geomthread.GeometryWorkerPool = undefined;
-        try pool.init(outer_alloc, io, geom_threads);
-        geom_pool = pool;
-    }
-    defer if (geom_pool) |*pool| pool.deinit(outer_alloc);
-
+    _ = io;
+    _ = outer_alloc;
     var res = FrameGeometryResult{ .total_elems_num = 0, .total_elems_in_image = 0 };
 
     for (static_meshes, 0..) |*mesh_static, ii| {
@@ -1592,7 +1584,7 @@ pub fn prepareMeshFrames(
             mesh_static,
             frame_idx,
             nodal_frame_scaling,
-            if (geom_pool) |*p| p else null,
+            geom_pool,
         );
         res.total_elems_num += frame_meshes[ii].total_elems_num;
         res.total_elems_in_image += frame_meshes[ii].elems_in_image;
