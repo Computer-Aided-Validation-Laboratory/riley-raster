@@ -48,7 +48,7 @@ pub const MeshType = enum {
     }
 };
 
-// The "Blueprint": Raw user data for all frames.
+// Input: Raw user data for all frames.
 // meshio.Coords/Fields: Node-order [total_nodes, ...]
 // meshio.Connect: Connectivity table links nodes to elements.
 pub const MeshInput = struct {
@@ -60,7 +60,7 @@ pub const MeshInput = struct {
 };
 
 
-// The "Archive": Persistent multi-frame resources in the engine's memory.
+// Static: Persistent multi-frame resources in the engine's memory.
 // meshio.Coords/Fields: Node-order [total_nodes, ...]
 // UVs: Element-order (expanded during static init as they are usually static).
 pub const MeshStatic = struct {
@@ -71,7 +71,7 @@ pub const MeshStatic = struct {
     shader: shaderops.ShaderStatic,
 };
 
-// The "Scratchpad": Temporary node-order working area for the geometry pipeline.
+// Workspace: Temporary node-order working area for the geometry pipeline.
 // meshio.Coords: Node-order [total_nodes, 3]. Holds coords for a single frame after displacement.
 pub const MeshFrameWorkspace = struct {
     coords_nodes: meshio.Coords,
@@ -81,7 +81,7 @@ pub const MeshFrameWorkspace = struct {
     raster_hull: ?ndarray.NDArray(f64),
 };
 
-// The "Package": Wraps the Prepared payload with per-frame spatial metadata.
+// Frame: Wraps the Prepared payload with per-frame spatial metadata.
 // Prepared means culled element-order ndarray.NDArray data ready for the raster loop.
 pub const MeshFrame = struct {
     mesh: MeshPrepared,
@@ -91,7 +91,7 @@ pub const MeshFrame = struct {
     raster_hull: ?ndarray.NDArray(f64),
 };
 
-// The "Payload": Data culled and expanded for the raster loop for a SINGLE frame.
+// Prepared: Data culled and expanded for the raster loop for a SINGLE frame.
 // Prepared means culled element-order ndarray.NDArray data ready for the raster loop.
 // meshio.Coords/Fields: Element-order [visible_elems, ..., nodes_per_elem]
 pub const MeshPrepared = struct {
@@ -99,8 +99,6 @@ pub const MeshPrepared = struct {
     coords: ndarray.NDArray(f64),
     shader: shaderops.ShaderPrepared,
 };
-
-
 
 // External helper function for finding mesh centroids
 pub fn findAlignedCentroid(coords: *const meshio.Coords) struct {
@@ -1557,12 +1555,16 @@ pub fn prepareMeshFrames(
     var res = FrameGeometryResult{ .total_elems_num = 0, .total_elems_in_image = 0 };
 
     for (static_meshes, 0..) |*mesh_static, ii| {
+        // Scaling nodal interpolation fields based on user specified bits if needed so 
+        // images of nodal fields are visible in raster images. Setting to .none will just
+        // directly render float fields. Here we take the global scaling over all frames or
+        // just the scaling within frames
         var nodal_frame_scaling: ?imageops.ScalingParams = null;
         switch (mesh_static.shader) {
             .nodal => |s| {
                 if (s.scale_over == .over_frames) {
                     nodal_frame_scaling = nodal_global_scaling[ii];
-                } else {
+                } else { // .within_frames
                     nodal_frame_scaling = imageops.getScalingParamsNDArray(
                         &s.field.array,
                         frame_idx,
@@ -1573,6 +1575,7 @@ pub fn prepareMeshFrames(
             else => {},
         }
 
+        // 
         frame_meshes[ii] = try prepareMeshFrame(
             arena_alloc,
             camera,

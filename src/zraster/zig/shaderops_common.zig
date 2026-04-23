@@ -80,7 +80,7 @@ pub fn LocalShaderBuffer(comptime N: usize) type {
     };
 }
 
-// The "Blueprint": Raw user shader data for all frames.
+// Input: Raw user shader data for all frames.
 // Nodal Fields: Node-order [num_frames, total_nodes, num_fields]
 // UVs: Node-order [total_nodes, 2]
 pub const NodalInput = struct {
@@ -111,7 +111,7 @@ pub const ShaderInput = union(enum) {
     tex_rgb: TexInput(3),
 };
 
-// The "Archive": Persistent multi-frame shader resources in engine memory.
+// Static: Persistent multi-frame shader resources in engine memory.
 // Nodal Fields: Node-order [num_frames, total_nodes, num_fields]
 // UVs: Element-order [total_elems, 2, nodes_per_elem]
 pub const NodalStatic = struct {
@@ -142,7 +142,7 @@ pub const ShaderStatic = union(enum) {
     tex_rgb: TexStatic(3),
 };
 
-// The "Payload": Culled and expanded shader data for a SINGLE frame.
+// Prepared: Culled and expanded shader data for a SINGLE frame.
 // Prepared means culled element-order ndarray.NDArray data ready for the raster loop.
 // Nodal Fields: Element-order [visible_elems, num_fields, nodes_per_elem]
 // UVs: Element-order [visible_elems, 2, nodes_per_elem]
