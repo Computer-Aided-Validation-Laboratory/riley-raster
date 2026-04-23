@@ -127,6 +127,7 @@ pub const ShaderStaticPrepared = union(enum) {
     tex_rgb: TexStaticPrepared(3),
 };
 
+// External helper function for finding mesh centroids
 pub fn findAlignedCentroid(coords: *const Coords) struct {
     centroid: [3]f64,
     extent: [3]f64,
@@ -229,6 +230,8 @@ pub fn arrangeMeshSlice(
     }
 }
 
+// External helper to turn a SimData struct into a MeshInput with associted shader data for 
+// rendering
 pub fn meshInputFromSimDataSlice(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -512,7 +515,7 @@ pub fn prepareCoords(
     return elem_coord_arr;
 }
 
-pub fn prepareField(
+fn prepareField(
     outer_alloc: std.mem.Allocator,
     connect: *const Connect,
     field: *const Field,
@@ -561,7 +564,7 @@ pub fn prepareField(
     return elem_field_arr;
 }
 
-pub fn prepareUVs(
+fn prepareUVs(
     outer_alloc: std.mem.Allocator,
     uvs: *const NDArray(f64),
     connect: *const Connect,

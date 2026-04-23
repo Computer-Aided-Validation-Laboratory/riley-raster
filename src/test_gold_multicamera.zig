@@ -110,6 +110,66 @@ fn expectCamerasDifferent(
     return error.CameraOutputsIdentical;
 }
 
+fn expectCameraMatchesSingleResult(
+    batch_result: *const NDArray(f64),
+    single_result: *const NDArray(f64),
+    camera_idx: usize,
+    frame_idx: usize,
+    channels: usize,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    const rows_num = single_result.dims[3];
+    const cols_num = single_result.dims[4];
+
+    for (0..channels) |cc| {
+        for (0..rows_num) |rr| {
+            for (0..cols_num) |pp| {
+                const batch_val = batch_result.get(
+                    &[_]usize{ camera_idx, frame_idx, cc, rr, pp },
+                );
+                const single_val = single_result.get(
+                    &[_]usize{ 0, frame_idx, cc, rr, pp },
+                );
+                try std.testing.expect(
+                    testcommon.isApproxEqual(
+                        batch_val,
+                        single_val,
+                        rel_tol,
+                        abs_tol,
+                    ),
+                );
+            }
+        }
+    }
+}
+
+fn expectCameraPaddingZero(
+    batch_result: *const NDArray(f64),
+    camera_idx: usize,
+    frame_idx: usize,
+    channels: usize,
+    valid_rows_num: usize,
+    valid_cols_num: usize,
+) !void {
+    const rows_num = batch_result.dims[3];
+    const cols_num = batch_result.dims[4];
+
+    for (0..channels) |cc| {
+        for (0..rows_num) |rr| {
+            for (0..cols_num) |pp| {
+                if (rr < valid_rows_num and pp < valid_cols_num) {
+                    continue;
+                }
+                try std.testing.expectEqual(
+                    @as(f64, 0.0),
+                    batch_result.get(&[_]usize{ camera_idx, frame_idx, cc, rr, pp }),
+                );
+            }
+        }
+    }
+}
+
 test "Multicamera duplicate sphere200 cameras match each other" {
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
@@ -433,4 +493,223 @@ test "Sphere200 multicamera gold tests" {
             };
         }
     }
+}
+
+test "Multicamera mixed sensor sizes return padded batch and save actual size" {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    const io = std.testing.io;
+    const pixel_num_small = [_]u32{ 320, 200 };
+    const pixel_num_large = [_]u32{ 480, 300 };
+    const data_dir = "data-bench/tri3_sphere200";
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const coord_path = try std.fs.path.join(
+        aa,
+        &[_][]const u8{ data_dir, "coords.csv" },
+    );
+    const connect_path = try std.fs.path.join(
+        aa,
+        &[_][]const u8{ data_dir, "connect.csv" },
+    );
+    const field_path = try std.fs.path.join(
+        aa,
+        &[_][]const u8{ data_dir, "field.csv" },
+    );
+
+    const sim_data = try meshio.loadSimData(
+        aa,
+        io,
+        coord_path,
+        connect_path,
+        null,
+        null,
+    );
+    const field_raw = try benchcommon.loadNDArrayFromCSV(
+        aa,
+        io,
+        field_path,
+        1,
+        true,
+    );
+
+    const small_camera = try orch.initCameraForCoords(
+        aa,
+        &sim_data.coords,
+        pixel_num_small,
+        1.0,
+    );
+    defer small_camera.deinit(aa);
+    const large_camera = try orch.initCameraForCoords(
+        aa,
+        &sim_data.coords,
+        pixel_num_large,
+        1.0,
+    );
+    defer large_camera.deinit(aa);
+
+    const mesh_input = mo.MeshInput{
+        .mesh_type = .tri3,
+        .coords = sim_data.coords,
+        .connect = sim_data.connect,
+        .disp = null,
+        .shader = .{
+            .nodal = .{
+                .field = .{
+                    .array = field_raw,
+                    .array_mem = field_raw.slice,
+                },
+                .scaling = .auto,
+            },
+        },
+    };
+
+    const memory_config = zraster.RasterConfig{
+        .render_mode = tcfg.RENDER_MODE,
+        .total_threads = tcfg.TOTAL_THREADS,
+        .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
+        .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
+        .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
+        .save_strategy = .memory,
+        .image_save_opts = &[_]iio.ImageSaveOpts{
+            .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
+        },
+        .report = .off,
+    };
+
+    const small_single = (try zraster.rasterAllFrames(
+        aa,
+        io,
+        &[_]CameraInput{small_camera.toInput()},
+        &[_]mo.MeshInput{mesh_input},
+        memory_config,
+        null,
+        null,
+    )) orelse return error.NoResult;
+    defer aa.free(small_single.slice);
+
+    const large_single = (try zraster.rasterAllFrames(
+        aa,
+        io,
+        &[_]CameraInput{large_camera.toInput()},
+        &[_]mo.MeshInput{mesh_input},
+        memory_config,
+        null,
+        null,
+    )) orelse return error.NoResult;
+    defer aa.free(large_single.slice);
+
+    const out_dir = "tmp-tests/multicamera-mixed-sizes";
+    const batch_config = zraster.RasterConfig{
+        .render_mode = tcfg.RENDER_MODE,
+        .total_threads = tcfg.TOTAL_THREADS,
+        .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
+        .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
+        .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
+        .save_strategy = .both,
+        .image_save_opts = &[_]iio.ImageSaveOpts{
+            .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
+        },
+        .report = .off,
+    };
+    const batch_result = (try zraster.rasterAllFrames(
+        aa,
+        io,
+        &[_]CameraInput{ small_camera.toInput(), large_camera.toInput() },
+        &[_]mo.MeshInput{mesh_input},
+        batch_config,
+        out_dir,
+        null,
+    )) orelse return error.NoResult;
+    defer aa.free(batch_result.slice);
+
+    try std.testing.expectEqual(@as(usize, 2), batch_result.dims[0]);
+    try std.testing.expectEqual(@as(usize, 1), batch_result.dims[1]);
+    try std.testing.expectEqual(@as(usize, 1), batch_result.dims[2]);
+    try std.testing.expectEqual(
+        @as(usize, pixel_num_large[1]),
+        batch_result.dims[3],
+    );
+    try std.testing.expectEqual(
+        @as(usize, pixel_num_large[0]),
+        batch_result.dims[4],
+    );
+
+    try expectCameraMatchesSingleResult(
+        &batch_result,
+        &small_single,
+        0,
+        0,
+        1,
+        duplicate_rel_tol,
+        duplicate_abs_tol,
+    );
+    try expectCameraMatchesSingleResult(
+        &batch_result,
+        &large_single,
+        1,
+        0,
+        1,
+        duplicate_rel_tol,
+        duplicate_abs_tol,
+    );
+    try expectCameraPaddingZero(
+        &batch_result,
+        0,
+        0,
+        1,
+        pixel_num_small[1],
+        pixel_num_small[0],
+    );
+
+    const small_csv = try std.fmt.allocPrint(
+        aa,
+        "{s}/cam0_frame0_field0.csv",
+        .{out_dir},
+    );
+    const large_csv = try std.fmt.allocPrint(
+        aa,
+        "{s}/cam1_frame0_field0.csv",
+        .{out_dir},
+    );
+    const small_image = try iio.loadImage(
+        f64,
+        1,
+        aa,
+        io,
+        small_csv,
+        .csv,
+    );
+    const large_image = try iio.loadImage(
+        f64,
+        1,
+        aa,
+        io,
+        large_csv,
+        .csv,
+    );
+    defer small_image.deinit(aa);
+    defer large_image.deinit(aa);
+
+    try std.testing.expectEqual(
+        @as(usize, pixel_num_small[1]),
+        small_image.rows_num,
+    );
+    try std.testing.expectEqual(
+        @as(usize, pixel_num_small[0]),
+        small_image.cols_num,
+    );
+    try std.testing.expectEqual(
+        @as(usize, pixel_num_large[1]),
+        large_image.rows_num,
+    );
+    try std.testing.expectEqual(
+        @as(usize, pixel_num_large[0]),
+        large_image.cols_num,
+    );
 }

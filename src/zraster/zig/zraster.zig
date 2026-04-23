@@ -209,18 +209,21 @@ fn initImagesArray(
 ) !?NDArray(f64) {
     if (config.save_strategy == .memory or config.save_strategy == .both) {
         std.debug.assert(cameras.len > 0);
-        const camera = &cameras[0];
-        for (cameras[1..]) |camera_check| {
-            std.debug.assert(std.meta.eql(camera_check.pixels_num, camera.pixels_num));
+        var max_pixels_num = cameras[0].pixels_num;
+        for (cameras[1..]) |camera| {
+            max_pixels_num[0] = @max(max_pixels_num[0], camera.pixels_num[0]);
+            max_pixels_num[1] = @max(max_pixels_num[1], camera.pixels_num[1]);
         }
         const dims = [_]usize{
             cameras.len,
             num_time,
             @as(usize, num_fields),
-            camera.pixels_num[1],
-            camera.pixels_num[0],
+            max_pixels_num[1],
+            max_pixels_num[0],
         };
-        return try NDArray(f64).initFlat(outer_alloc, dims[0..]);
+        const images_arr = try NDArray(f64).initFlat(outer_alloc, dims[0..]);
+        @memset(images_arr.slice, 0.0);
+        return images_arr;
     }
 
     return null;
@@ -343,20 +346,37 @@ fn prepareFrameContext(
     ctx.elems_in_image_by_mesh = try arena_alloc.alloc(usize, mesh_n);
     ctx.raster_hulls = try arena_alloc.alloc(?NDArray(f64), mesh_n);
 
-    if (input.images_arr) |images| {
-        const start_idx = input.camera_idx * images.strides[0] +
-            input.frame_idx * images.strides[1];
-        const mem = images.slice[start_idx .. start_idx + images.strides[1]];
-        ctx.frame_arr = try NDArray(f64).init(arena_alloc, mem, images.dims[2..]);
-    } else {
-        const dims = [_]usize{
-            @as(usize, input.num_fields),
-            input.camera.pixels_num[1],
-            input.camera.pixels_num[0],
-        };
-        ctx.frame_arr = try NDArray(f64).initFlat(arena_alloc, dims[0..]);
-    }
+    const dims = [_]usize{
+        @as(usize, input.num_fields),
+        input.camera.pixels_num[1],
+        input.camera.pixels_num[0],
+    };
+    ctx.frame_arr = try NDArray(f64).initFlat(arena_alloc, dims[0..]);
     @memset(ctx.frame_arr.slice, 0.0);
+}
+
+fn copyFrameToImageBatch(
+    images_arr: *NDArray(f64),
+    camera_idx: usize,
+    frame_idx: usize,
+    frame_arr: *const NDArray(f64),
+) void {
+    std.debug.assert(images_arr.dims.len == 5);
+    std.debug.assert(frame_arr.dims.len == 3);
+    std.debug.assert(frame_arr.dims[0] == images_arr.dims[2]);
+    std.debug.assert(frame_arr.dims[1] <= images_arr.dims[3]);
+    std.debug.assert(frame_arr.dims[2] <= images_arr.dims[4]);
+
+    for (0..frame_arr.dims[0]) |ff| {
+        for (0..frame_arr.dims[1]) |rr| {
+            for (0..frame_arr.dims[2]) |cc| {
+                images_arr.set(
+                    &[_]usize{ camera_idx, frame_idx, ff, rr, cc },
+                    frame_arr.get(&[_]usize{ ff, rr, cc }),
+                );
+            }
+        }
+    }
 }
 
 fn rasterFrame(
@@ -411,6 +431,20 @@ fn finaliseFrame(
             input.camera.pixels_num,
             &ctx.frame_arr,
             input.config.image_save_opts,
+        );
+    }
+}
+
+fn storeFrameImage(
+    input: *const FrameInput,
+    ctx: *FrameContext,
+) void {
+    if (input.images_arr) |images_arr| {
+        copyFrameToImageBatch(
+            images_arr,
+            input.camera_idx,
+            input.frame_idx,
+            &ctx.frame_arr,
         );
     }
 }
@@ -616,6 +650,8 @@ fn processFrameJobInternal(
     ctx.frame_times.save_frame = @floatFromInt(
         time_start_save.durationTo(time_end_save).raw.nanoseconds,
     );
+
+    storeFrameImage(&input, &ctx);
 
     const time_end_frame = Timestamp.now(io, .awake);
     ctx.frame_times.total_time = @floatFromInt(
