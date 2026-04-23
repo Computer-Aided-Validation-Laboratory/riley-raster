@@ -507,11 +507,13 @@ fn processFrameJobInternal(
         input.nodal_global_scaling,
         input.geom_threads,
         ctx.frame_meshes,
-        ctx.prep_meshes,
-        ctx.elem_bboxes_by_mesh,
-        ctx.elems_in_image_by_mesh,
-        ctx.raster_hulls,
     );
+    for (ctx.frame_meshes, 0..) |*fm, ii| {
+        ctx.prep_meshes[ii] = fm.mesh;
+        ctx.elem_bboxes_by_mesh[ii] = fm.elem_bboxes;
+        ctx.elems_in_image_by_mesh[ii] = fm.elems_in_image;
+        ctx.raster_hulls[ii] = fm.raster_hull;
+    }
     ctx.total_elems_num = geo_res.total_elems_num;
     ctx.total_elems_in_image = geo_res.total_elems_in_image;
 

@@ -1545,10 +1545,6 @@ pub fn prepareMeshFrames(
     nodal_global_scaling: []const ?imageops.ScalingParams,
     geom_threads: u16,
     frame_meshes: []MeshFrame,
-    prep_meshes: []MeshPrepared,
-    elem_bboxes_by_mesh: [][]rops.ElemBBox,
-    elems_in_image_by_mesh: []usize,
-    raster_hulls: []?ndarray.NDArray(f64),
 ) !FrameGeometryResult {
     var geom_pool: ?geomthread.GeometryWorkerPool = null;
     if (geom_threads > 1) {
@@ -1585,10 +1581,6 @@ pub fn prepareMeshFrames(
             nodal_frame_scaling,
             if (geom_pool) |*p| p else null,
         );
-        prep_meshes[ii] = frame_meshes[ii].mesh;
-        elem_bboxes_by_mesh[ii] = frame_meshes[ii].elem_bboxes;
-        elems_in_image_by_mesh[ii] = frame_meshes[ii].elems_in_image;
-        raster_hulls[ii] = frame_meshes[ii].raster_hull;
         res.total_elems_num += frame_meshes[ii].total_elems_num;
         res.total_elems_in_image += frame_meshes[ii].elems_in_image;
     }
