@@ -25,8 +25,8 @@ const mo = @import("meshops.zig");
 const MeshType = mo.MeshType;
 const MeshInput = mo.MeshInput;
 const MeshPrepared = mo.MeshPrepared;
-const MeshStaticPrepared = mo.MeshStaticPrepared;
-const FrameMeshPrepared = mo.FrameMeshPrepared;
+const MeshStatic = mo.MeshStatic;
+const MeshFrame = mo.MeshFrame;
 const shaderops = @import("shaderops.zig");
 const ShaderInput = shaderops.ShaderInput;
 const ShaderPrepared = shaderops.ShaderPrepared;
@@ -187,17 +187,17 @@ fn initNodalGlobalScaling(
     return nodal_global_scaling;
 }
 
-fn prepareMeshStatics(
+fn initStaticSlice(
     allocator: std.mem.Allocator,
     meshes: []const MeshInput,
-) ![]MeshStaticPrepared {
-    const mesh_static_prepared = try allocator.alloc(MeshStaticPrepared, meshes.len);
+) ![]MeshStatic {
+    const mesh_static = try allocator.alloc(MeshStatic, meshes.len);
 
     for (meshes, 0..) |mesh, ii| {
-        mesh_static_prepared[ii] = try mo.prepareMeshStatic(allocator, &mesh);
+        mesh_static[ii] = try mo.initStatic(allocator, &mesh);
     }
 
-    return mesh_static_prepared;
+    return mesh_static;
 }
 
 fn initImagesArray(
@@ -292,7 +292,7 @@ fn calcBenchCaptureIdx(
 const FrameContext = struct {
     arena: std.heap.ArenaAllocator,
 
-    frame_meshes: []FrameMeshPrepared = &.{},
+    frame_meshes: []MeshFrame = &.{},
     prep_meshes: []MeshPrepared = &.{},
     elem_bboxes_by_mesh: [][]ElemBBox = &.{},
     elems_in_image_by_mesh: []usize = &.{},
@@ -339,8 +339,8 @@ fn prepareFrameContext(
         input.config,
     );
 
-    const mesh_n = input.mesh_static_prepared.len;
-    ctx.frame_meshes = try arena_alloc.alloc(FrameMeshPrepared, mesh_n);
+    const mesh_n = input.mesh_static.len;
+    ctx.frame_meshes = try arena_alloc.alloc(MeshFrame, mesh_n);
     ctx.prep_meshes = try arena_alloc.alloc(MeshPrepared, mesh_n);
     ctx.elem_bboxes_by_mesh = try arena_alloc.alloc([]ElemBBox, mesh_n);
     ctx.elems_in_image_by_mesh = try arena_alloc.alloc(usize, mesh_n);
@@ -574,7 +574,7 @@ const FrameInput = struct {
     num_fields: u8,
     config: RasterConfig,
     out_dir: ?std.Io.Dir,
-    mesh_static_prepared: []const MeshStaticPrepared,
+    mesh_static: []const MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     geom_threads: u16,
     raster_threads: u16,
@@ -611,7 +611,7 @@ fn processFrameJobInternal(
         io,
         input.camera,
         input.frame_idx,
-        input.mesh_static_prepared,
+        input.mesh_static,
         input.nodal_global_scaling,
         input.geom_threads,
         ctx.frame_meshes,
@@ -696,7 +696,7 @@ fn dispatchSerialFrameJobs(
     out_dir: ?std.Io.Dir,
     num_time: usize,
     num_fields: u8,
-    mesh_static_prepared: []const MeshStaticPrepared,
+    mesh_static: []const MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*NDArray(f64),
     bench_capture: ?[]FrameBenchCapture,
@@ -716,7 +716,7 @@ fn dispatchSerialFrameJobs(
                     .num_fields = num_fields,
                     .config = config,
                     .out_dir = out_dir,
-                    .mesh_static_prepared = mesh_static_prepared,
+                    .mesh_static = mesh_static,
                     .nodal_global_scaling = nodal_global_scaling,
                     .geom_threads = geom_threads,
                     .raster_threads = raster_threads,
@@ -738,7 +738,7 @@ fn dispatchOfflineFrameJobs(
     out_dir: ?std.Io.Dir,
     num_time: usize,
     num_fields: u8,
-    mesh_static_prepared: []const MeshStaticPrepared,
+    mesh_static: []const MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*NDArray(f64),
     bench_capture: ?[]FrameBenchCapture,
@@ -783,7 +783,7 @@ fn dispatchOfflineFrameJobs(
                         .num_fields = num_fields,
                         .config = config,
                         .out_dir = out_dir,
-                        .mesh_static_prepared = mesh_static_prepared,
+                        .mesh_static = mesh_static,
                         .nodal_global_scaling = nodal_global_scaling,
                         .geom_threads = geom_threads,
                         .raster_threads = raster_threads,
@@ -811,7 +811,7 @@ fn dispatchInOrderFrameJobs(
     out_dir: ?std.Io.Dir,
     num_time: usize,
     num_fields: u8,
-    mesh_static_prepared: []const MeshStaticPrepared,
+    mesh_static: []const MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     images_arr: ?*NDArray(f64),
     bench_capture: ?[]FrameBenchCapture,
@@ -845,7 +845,7 @@ fn dispatchInOrderFrameJobs(
                         .num_fields = num_fields,
                         .config = config,
                         .out_dir = out_dir,
-                        .mesh_static_prepared = mesh_static_prepared,
+                        .mesh_static = mesh_static,
                         .nodal_global_scaling = nodal_global_scaling,
                         .geom_threads = geom_threads,
                         .raster_threads = raster_threads,
@@ -927,7 +927,7 @@ pub fn rasterAllFrames(
 
     const nodal_global_scaling = try initNodalGlobalScaling(outer_alloc, meshes);
     defer outer_alloc.free(nodal_global_scaling);
-    const mesh_static_prepared = try prepareMeshStatics(static_alloc, meshes);
+    const mesh_static = try initStaticSlice(static_alloc, meshes);
 
     var images_arr_opt: ?NDArray(f64) = try initImagesArray(
         outer_alloc,
@@ -953,7 +953,7 @@ pub fn rasterAllFrames(
             out_dir,
             num_time,
             num_fields,
-            mesh_static_prepared,
+            mesh_static,
             nodal_global_scaling,
             if (images_arr_opt) |*ima| ima else null,
             bench_capture,
@@ -985,7 +985,7 @@ pub fn rasterAllFrames(
             out_dir,
             num_time,
             num_fields,
-            mesh_static_prepared,
+            mesh_static,
             nodal_global_scaling,
             if (images_arr_opt) |*ima| ima else null,
             bench_capture,
@@ -1016,7 +1016,7 @@ pub fn rasterAllFrames(
         out_dir,
         num_time,
         num_fields,
-        mesh_static_prepared,
+        mesh_static,
         nodal_global_scaling,
         if (images_arr_opt) |*ima| ima else null,
         bench_capture,

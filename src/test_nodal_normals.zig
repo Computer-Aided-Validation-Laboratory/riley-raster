@@ -79,6 +79,7 @@ test "Nodal normals are prepared when requested" {
         },
     );
     defer camera.deinit(arena_alloc);
+
     const mesh_input = mo.MeshInput{
         .mesh_type = .tri3,
         .coords = sim_data.coords,
@@ -90,43 +91,21 @@ test "Nodal normals are prepared when requested" {
         } },
     };
 
-    var prep_meshes = [_]mo.MeshPrepared{
-        try mo.prepareMesh(
-            arena_alloc,
-            &mesh_input,
-            &sim_data.coords.mat,
-            null,
-        ),
-    };
+    const mesh_static = try mo.initStatic(arena_alloc, &mesh_input);
 
-    var off_log = report.OffLog{};
-    const ctx_perf = report.ReportContext(.off){
-        .log = &off_log,
-    };
-
-    var raster_hulls = [_]?NDArray(f64){null};
-    const elem_bboxes_by_mesh = try arena_alloc.alloc([]rops.ElemBBox, 1);
-    const elems_in_image_by_mesh = try arena_alloc.alloc(usize, 1);
-    var total_elems_num: usize = 0;
-    var total_elems_in_image: usize = 0;
-
-    try rops.prepareSceneGeometry(
-        .off,
-        ctx_perf,
+    const frame_mesh = try mo.prepareMeshFrame(
         arena_alloc,
         &camera,
-        prep_meshes[0..],
-        raster_hulls[0..],
-        elem_bboxes_by_mesh,
-        elems_in_image_by_mesh,
-        &total_elems_num,
-        &total_elems_in_image,
+        &mesh_static,
+        0,
+        null,
+        null,
     );
 
-    try std.testing.expect(total_elems_num > 0);
-    try std.testing.expect(total_elems_in_image > 0);
+    try std.testing.expect(frame_mesh.total_elems_num > 0);
+    try std.testing.expect(frame_mesh.elems_in_image > 0);
 
-    switch (prep_meshes[0].shader) {
+    switch (frame_mesh.mesh.shader) {
         .nodal => |shader| {
             try std.testing.expectEqual(
                 shaderops.NormalType.averaged,
