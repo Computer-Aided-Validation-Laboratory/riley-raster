@@ -16,7 +16,7 @@ const cam = @import("camera.zig");
 const shapefun = @import("shapefun.zig");
 const matrix = @import("matstack.zig");
 
-const geomthread = @import("geomthread.zig");
+const pce = @import("parachunkexec.zig");
 const hull = @import("hull.zig");
 const geomkerns = @import("geometrykernels.zig");
 const shaderops = @import("shaderops.zig");
@@ -1107,7 +1107,6 @@ fn initPreparedNormals(
     };
 }
 
-
 fn initIdentityMappedNormals(
     allocator: std.mem.Allocator,
     prep_count: usize,
@@ -1829,7 +1828,7 @@ fn runTilingFillStage(
 
 pub fn sceneTileElemOverlap(
     allocator: std.mem.Allocator,
-    geom_pool: ?*geomthread.GeometryWorkerPool,
+    chunk_exec: ?*pce.ParaChunkExecutor,
     tile_size: u16,
     tiles_num_x: usize,
     tiles_num_y: usize,
@@ -1856,17 +1855,17 @@ pub fn sceneTileElemOverlap(
             .ebb_slice = elem_bboxes_by_mesh[mesh_idx],
         };
 
-        if (geom_pool) |pool| {
-            const chunk_size = @max(@as(usize, 1), elems_num / (pool.workers_num * 4));
-            try pool.runRange(
-                &count_stage,
-                runTilingCountStage,
-                elems_num,
-                chunk_size,
-            );
-        } else {
-            runTilingCountStage(&count_stage, 0, 0, elems_num);
-        }
+        const chunk_size = pce.getChunkSize(
+            elems_num,
+            pce.getWorkerCount(chunk_exec),
+        );
+        pce.runStaticRange(
+            chunk_exec,
+            &count_stage,
+            runTilingCountStage,
+            elems_num,
+            chunk_size,
+        );
     }
 
     var overlap_total: usize = 0;
@@ -1920,17 +1919,17 @@ pub fn sceneTileElemOverlap(
             .ebb_slice = elem_bboxes_by_mesh[mesh_idx],
         };
 
-        if (geom_pool) |pool| {
-            const chunk_size = @max(@as(usize, 1), elems_num / (pool.workers_num * 4));
-            try pool.runRange(
-                &fill_stage,
-                runTilingFillStage,
-                elems_num,
-                chunk_size,
-            );
-        } else {
-            runTilingFillStage(&fill_stage, 0, 0, elems_num);
-        }
+        const chunk_size = pce.getChunkSize(
+            elems_num,
+            pce.getWorkerCount(chunk_exec),
+        );
+        pce.runStaticRange(
+            chunk_exec,
+            &fill_stage,
+            runTilingFillStage,
+            elems_num,
+            chunk_size,
+        );
     }
 
     return TilingOverlaps{ .overlaps = overlaps, .active_tiles = active_tiles };

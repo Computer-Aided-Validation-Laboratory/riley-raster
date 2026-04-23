@@ -21,7 +21,7 @@ const shaderops = @import("shaderops.zig");
 
 const iio = @import("imageio.zig");
 const imageops = @import("imageops.zig");
-const geomthread = @import("geomthread.zig");
+const pce = @import("parachunkexec.zig");
 
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
@@ -412,7 +412,7 @@ fn sceneTileOverlapBinning(
     const time_start_overlap = Timestamp.now(io, .awake);
     ctx.tiling = try rops.sceneTileElemOverlap(
         arena_alloc,
-        input.geom_pool,
+        input.chunk_exec,
         input.config.tile_size,
         tiles_num_x,
         tiles_num_y,
@@ -471,7 +471,7 @@ const FrameInput = struct {
     nodal_global_scaling: []const ?imageops.ScalingParams,
     geom_threads: u16,
     raster_threads: u16,
-    geom_pool: ?*geomthread.GeometryWorkerPool,
+    chunk_exec: ?*pce.ParaChunkExecutor,
     images_arr: ?*ndarray.NDArray(f64),
     bench_capture: ?[]report.FrameBenchCapture,
     cameras_num: usize,
@@ -507,7 +507,7 @@ fn processFrameJobInternal(
         input.frame_idx,
         input.mesh_static,
         input.nodal_global_scaling,
-        input.geom_pool,
+        input.chunk_exec,
         ctx.frame_meshes,
     );
     for (ctx.frame_meshes, 0..) |*fm, ii| {
@@ -607,7 +607,7 @@ fn dispatchSerialFrameJobs(
 ) !void {
     const geom_threads: u16 = 1;
     const raster_threads: u16 = 1;
-    const geom_pool: ?*geomthread.GeometryWorkerPool = null;
+    const chunk_exec: ?*pce.ParaChunkExecutor = null;
 
     for (0..num_time) |frame_idx| {
         for (cameras, 0..) |*camera, camera_idx| {
@@ -625,7 +625,7 @@ fn dispatchSerialFrameJobs(
                     .nodal_global_scaling = nodal_global_scaling,
                     .geom_threads = geom_threads,
                     .raster_threads = raster_threads,
-                    .geom_pool = geom_pool,
+                    .chunk_exec = chunk_exec,
                     .images_arr = images_arr,
                     .bench_capture = bench_capture,
                     .cameras_num = cameras.len,
@@ -661,13 +661,12 @@ fn dispatchOfflineFrameJobs(
         config.max_raster_threads_per_frame,
     );
 
-    var pool: geomthread.GeometryWorkerPool = undefined;
-    var geom_pool: ?*geomthread.GeometryWorkerPool = null;
+    var pool: pce.ParaChunkExecutor = undefined;
+    var chunk_exec: ?*pce.ParaChunkExecutor = null;
     if (geom_threads > 1) {
-        try pool.init(outer_alloc, io, geom_threads);
-        geom_pool = &pool;
+        pool.init(io, geom_threads);
+        chunk_exec = &pool;
     }
-    defer if (geom_pool) |p| p.deinit(outer_alloc);
 
     const batch_size = @min(@as(usize, frames_in_flight), jobs_num);
     var batch_start: usize = 0;
@@ -701,7 +700,7 @@ fn dispatchOfflineFrameJobs(
                         .nodal_global_scaling = nodal_global_scaling,
                         .geom_threads = geom_threads,
                         .raster_threads = raster_threads,
-                        .geom_pool = geom_pool,
+                        .chunk_exec = chunk_exec,
                         .images_arr = images_arr,
                         .bench_capture = bench_capture,
                         .cameras_num = cameras.len,
@@ -740,13 +739,12 @@ fn dispatchInOrderFrameJobs(
         config.max_raster_threads_per_frame,
     );
 
-    var pool: geomthread.GeometryWorkerPool = undefined;
-    var geom_pool: ?*geomthread.GeometryWorkerPool = null;
+    var pool: pce.ParaChunkExecutor = undefined;
+    var chunk_exec: ?*pce.ParaChunkExecutor = null;
     if (geom_threads > 1) {
-        try pool.init(outer_alloc, io, geom_threads);
-        geom_pool = &pool;
+        pool.init(io, geom_threads);
+        chunk_exec = &pool;
     }
-    defer if (geom_pool) |p| p.deinit(outer_alloc);
 
     for (0..num_time) |frame_idx| {
         var err_state = FrameJobErrorState{};
@@ -772,7 +770,7 @@ fn dispatchInOrderFrameJobs(
                         .nodal_global_scaling = nodal_global_scaling,
                         .geom_threads = geom_threads,
                         .raster_threads = raster_threads,
-                        .geom_pool = geom_pool,
+                        .chunk_exec = chunk_exec,
                         .images_arr = images_arr,
                         .bench_capture = bench_capture,
                         .cameras_num = cameras.len,

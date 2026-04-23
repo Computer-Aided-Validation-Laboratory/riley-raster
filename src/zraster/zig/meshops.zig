@@ -19,7 +19,7 @@ const imageio = @import("imageio.zig");
 
 const imageops = @import("imageops.zig");
 const cam = @import("camera.zig");
-const geomthread = @import("geomthread.zig");
+const pce = @import("parachunkexec.zig");
 const rops = @import("rasterops.zig");
 const texops = @import("textureops.zig");
 
@@ -58,7 +58,6 @@ pub const MeshInput = struct {
     disp: ?meshio.Field,
     shader: shaderops.ShaderInput,
 };
-
 
 // Static: Persistent multi-frame resources in the engine's memory.
 // meshio.Coords/Fields: Node-order [total_nodes, ...]
@@ -203,7 +202,7 @@ pub fn arrangeMeshSlice(
     }
 }
 
-// External helper to turn a SimData struct into a MeshInput with associted shader data for 
+// External helper to turn a SimData struct into a MeshInput with associted shader data for
 // rendering
 pub fn meshInputFromSimDataSlice(
     outer_alloc: std.mem.Allocator,
@@ -294,7 +293,6 @@ pub fn meshInputFromSimDataSlice(
 // Mesh Initialization: Initial mesh and coordinate preparation
 //------------------------------------------------------------------------------------------
 
-
 pub fn initStatic(
     allocator: std.mem.Allocator,
     mesh_input: *const MeshInput,
@@ -353,13 +351,11 @@ pub fn initStatic(
     };
 }
 
-
 fn prepareUVs(
     outer_alloc: std.mem.Allocator,
     uvs: *const ndarray.NDArray(f64),
     connect: *const meshio.Connect,
 ) !ndarray.NDArray(f64) {
-
     const elems_num = connect.getElemsNum();
     const nodes_per_elem = connect.getNodesPerElem();
     var elem_uv_arr = try ndarray.NDArray(f64).initFlat(
@@ -417,53 +413,6 @@ fn initMeshFrameWorkspace(
     };
 }
 
-fn getChunkSize(domain_len: usize, workers_num: usize) usize {
-    if (domain_len == 0) {
-        return 1;
-    }
-
-    const chunk_count = @max(@as(usize, 1), workers_num * 4);
-    return @max(@as(usize, 1), (domain_len + chunk_count - 1) / chunk_count);
-}
-
-fn getChunksNum(domain_len: usize, chunk_size: usize) usize {
-    if (domain_len == 0) {
-        return 0;
-    }
-    return (domain_len + chunk_size - 1) / chunk_size;
-}
-
-fn getWorkerCount(geom_pool: ?*geomthread.GeometryWorkerPool) usize {
-    if (geom_pool) |pool| {
-        return pool.workers_num;
-    }
-    return 1;
-}
-
-fn runStageRange(
-    geom_pool: ?*geomthread.GeometryWorkerPool,
-    ctx_ptr: *anyopaque,
-    job_func: geomthread.RangeFn,
-    domain_len: usize,
-    chunk_size: usize,
-) void {
-    if (domain_len == 0) {
-        return;
-    }
-
-    if (geom_pool) |pool| {
-        pool.runRange(ctx_ptr, job_func, domain_len, chunk_size) catch unreachable;
-        return;
-    }
-
-    const chunks_num = getChunksNum(domain_len, chunk_size);
-    for (0..chunks_num) |chunk_idx| {
-        const range_start = chunk_idx * chunk_size;
-        const range_end = @min(domain_len, range_start + chunk_size);
-        job_func(ctx_ptr, chunk_idx, range_start, range_end);
-    }
-}
-
 //------------------------------------------------------------------------------------------
 // Geometry Pipeline Stages: meshio.Coords, Transform, Culling and Compaction
 //------------------------------------------------------------------------------------------
@@ -507,6 +456,14 @@ fn runPrepareCoordsStage(
     }
 }
 
+fn runPrepareCoordsDynamicStage(
+    ctx_ptr: *anyopaque,
+    range_start: usize,
+    range_end: usize,
+) void {
+    runPrepareCoordsStage(ctx_ptr, 0, range_start, range_end);
+}
+
 const TransformCoordsStage = struct {
     camera: *const cam.CameraPrepared,
     mesh_type: MeshType,
@@ -545,6 +502,14 @@ fn runTransformCoordsStage(
             range_end,
         ),
     }
+}
+
+fn runTransformCoordsDynamicStage(
+    ctx_ptr: *anyopaque,
+    range_start: usize,
+    range_end: usize,
+) void {
+    runTransformCoordsStage(ctx_ptr, 0, range_start, range_end);
 }
 
 const CullVisibleCountStage = struct {
@@ -649,6 +614,14 @@ fn runCompactVisibleCoordsStage(
     }
 }
 
+fn runCompactVisibleCoordsDynamicStage(
+    ctx_ptr: *anyopaque,
+    range_start: usize,
+    range_end: usize,
+) void {
+    runCompactVisibleCoordsStage(ctx_ptr, 0, range_start, range_end);
+}
+
 const CompactVisibleFieldStage = struct {
     connect: *const meshio.Connect,
     field: *const meshio.Field,
@@ -746,7 +719,7 @@ fn prepareVisibleNormalsThreaded(
     connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
     normal_type: shaderops.NormalType,
-    geom_pool: ?*geomthread.GeometryWorkerPool,
+    chunk_exec: ?*pce.ParaChunkExecutor,
     elem_chunk_size: usize,
     visible_chunk_size: usize,
 ) !ndarray.MappedNDArray(f64) {
@@ -758,7 +731,7 @@ fn prepareVisibleNormalsThreaded(
             connect,
             visible_orig_elem_indices,
             normal_type,
-            geom_pool,
+            chunk_exec,
             elem_chunk_size,
             visible_chunk_size,
             3,
@@ -770,7 +743,7 @@ fn prepareVisibleNormalsThreaded(
             connect,
             visible_orig_elem_indices,
             normal_type,
-            geom_pool,
+            chunk_exec,
             elem_chunk_size,
             visible_chunk_size,
             6,
@@ -782,7 +755,7 @@ fn prepareVisibleNormalsThreaded(
             connect,
             visible_orig_elem_indices,
             normal_type,
-            geom_pool,
+            chunk_exec,
             elem_chunk_size,
             visible_chunk_size,
             4,
@@ -794,7 +767,7 @@ fn prepareVisibleNormalsThreaded(
             connect,
             visible_orig_elem_indices,
             normal_type,
-            geom_pool,
+            chunk_exec,
             elem_chunk_size,
             visible_chunk_size,
             8,
@@ -806,7 +779,7 @@ fn prepareVisibleNormalsThreaded(
             connect,
             visible_orig_elem_indices,
             normal_type,
-            geom_pool,
+            chunk_exec,
             elem_chunk_size,
             visible_chunk_size,
             9,
@@ -821,7 +794,7 @@ fn prepareVisibleNormalsThreadedN(
     connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
     normal_type: shaderops.NormalType,
-    geom_pool: ?*geomthread.GeometryWorkerPool,
+    chunk_exec: ?*pce.ParaChunkExecutor,
     elem_chunk_size: usize,
     visible_chunk_size: usize,
     comptime N: usize,
@@ -842,8 +815,8 @@ fn prepareVisibleNormalsThreadedN(
                 .visible_orig_elem_indices = visible_orig_elem_indices,
                 .prep_normals = &prep_normals.array,
             };
-            runStageRange(
-                geom_pool,
+            pce.runStaticRange(
+                chunk_exec,
                 &exact_stage,
                 runPrepareVisibleExactNormalsStage,
                 visible_orig_elem_indices.len,
@@ -852,7 +825,7 @@ fn prepareVisibleNormalsThreadedN(
         },
         .averaged => {
             const nodes_num = getConnectNodesNum(connect);
-            const elem_chunks_num = getChunksNum(connect.getElemsNum(), elem_chunk_size);
+            const elem_chunks_num = pce.getChunksNum(connect.getElemsNum(), elem_chunk_size);
             const node_normals_stride = nodes_num * 3;
             const chunk_node_normals = try allocator.alloc(
                 f64,
@@ -868,8 +841,8 @@ fn prepareVisibleNormalsThreadedN(
                 .chunk_node_normals = chunk_node_normals,
                 .node_normals_stride = node_normals_stride,
             };
-            runStageRange(
-                geom_pool,
+            pce.runStaticRange(
+                chunk_exec,
                 &accum_stage,
                 runAccumulateAveragedNormalsStage,
                 connect.getElemsNum(),
@@ -895,8 +868,8 @@ fn prepareVisibleNormalsThreadedN(
                 .node_normals = node_normals,
                 .prep_normals = &prep_normals.array,
             };
-            runStageRange(
-                geom_pool,
+            pce.runStaticRange(
+                chunk_exec,
                 &write_stage,
                 runWriteVisibleAveragedNormalsStage,
                 visible_orig_elem_indices.len,
@@ -1027,7 +1000,7 @@ const FrameMeshPipeline = struct {
     mesh_static: *const MeshStatic,
     frame_idx: usize,
     scaling_params: ?imageops.ScalingParams,
-    geom_pool: ?*geomthread.GeometryWorkerPool,
+    chunk_exec: ?*pce.ParaChunkExecutor,
     workers_num: usize,
     nodes_num: usize,
     elems_num: usize,
@@ -1043,13 +1016,13 @@ const FrameMeshPipeline = struct {
         mesh_static: *const MeshStatic,
         frame_idx: usize,
         scaling_params: ?imageops.ScalingParams,
-        geom_pool: ?*geomthread.GeometryWorkerPool,
+        chunk_exec: ?*pce.ParaChunkExecutor,
     ) !FrameMeshPipeline {
-        const workers_num = getWorkerCount(geom_pool);
+        const workers_num = pce.getWorkerCount(chunk_exec);
         const nodes_num = mesh_static.coords_orig.mat.rows_num;
         const elems_num = mesh_static.connect.getElemsNum();
-        const node_chunk_size = getChunkSize(nodes_num, workers_num);
-        const elem_chunk_size = getChunkSize(elems_num, workers_num);
+        const node_chunk_size = pce.getChunkSize(nodes_num, workers_num);
+        const elem_chunk_size = pce.getChunkSize(elems_num, workers_num);
 
         return .{
             .allocator = allocator,
@@ -1057,13 +1030,13 @@ const FrameMeshPipeline = struct {
             .mesh_static = mesh_static,
             .frame_idx = frame_idx,
             .scaling_params = scaling_params,
-            .geom_pool = geom_pool,
+            .chunk_exec = chunk_exec,
             .workers_num = workers_num,
             .nodes_num = nodes_num,
             .elems_num = elems_num,
             .node_chunk_size = node_chunk_size,
             .elem_chunk_size = elem_chunk_size,
-            .elem_chunks_num = getChunksNum(elems_num, elem_chunk_size),
+            .elem_chunks_num = pce.getChunksNum(elems_num, elem_chunk_size),
             .visible_chunk_size = 1,
             .mesh_frame = .{
                 .frame_workspace = try initMeshFrameWorkspace(
@@ -1078,20 +1051,19 @@ const FrameMeshPipeline = struct {
     }
 
     //--------------------------------------------------------------------------------------
-    // 
+    //
     fn run(self: *FrameMeshPipeline) !MeshFrame {
-    
         self.prepareCoords();
         self.transformCoords();
-        
+
         try self.cullVisible();
         var mesh_prep = try self.compactVisibleMesh();
-        
+
         try self.prepareRasterHulls(&mesh_prep.coords);
         try self.prepareShader(&mesh_prep);
-        
+
         self.assignVisibleElemIndices();
-        
+
         return self.finish(mesh_prep);
     }
     //--------------------------------------------------------------------------------------
@@ -1102,10 +1074,10 @@ const FrameMeshPipeline = struct {
             .mesh_static = self.mesh_static,
             .frame_idx = self.frame_idx,
         };
-        runStageRange(
-            self.geom_pool,
+        pce.runDynamicRange(
+            self.chunk_exec,
             &prepare_stage,
-            runPrepareCoordsStage,
+            runPrepareCoordsDynamicStage,
             self.nodes_num,
             self.node_chunk_size,
         );
@@ -1117,10 +1089,10 @@ const FrameMeshPipeline = struct {
             .mesh_type = self.mesh_static.mesh_type,
             .frame_workspace = &self.mesh_frame.frame_workspace,
         };
-        runStageRange(
-            self.geom_pool,
+        pce.runDynamicRange(
+            self.chunk_exec,
             &transform_stage,
-            runTransformCoordsStage,
+            runTransformCoordsDynamicStage,
             self.nodes_num,
             self.node_chunk_size,
         );
@@ -1145,8 +1117,8 @@ const FrameMeshPipeline = struct {
             .coords_nodes = &self.mesh_frame.frame_workspace.coords_nodes,
             .visible_counts_by_chunk = self.mesh_frame.visible_counts_by_chunk,
         };
-        runStageRange(
-            self.geom_pool,
+        pce.runStaticRange(
+            self.chunk_exec,
             &cull_count_stage,
             runCullVisibleCountStage,
             self.elems_num,
@@ -1170,15 +1142,15 @@ const FrameMeshPipeline = struct {
             .elem_bboxes = self.mesh_frame.frame_workspace.elem_bboxes,
             .visible_offsets_by_chunk = self.mesh_frame.visible_offsets_by_chunk,
         };
-        runStageRange(
-            self.geom_pool,
+        pce.runStaticRange(
+            self.chunk_exec,
             &cull_fill_stage,
             runCullVisibleFillStage,
             self.elems_num,
             self.elem_chunk_size,
         );
 
-        self.visible_chunk_size = getChunkSize(
+        self.visible_chunk_size = pce.getChunkSize(
             self.mesh_frame.visible_elems_num,
             self.workers_num,
         );
@@ -1198,10 +1170,10 @@ const FrameMeshPipeline = struct {
             .frame_workspace = &self.mesh_frame.frame_workspace,
             .elem_coords = &elem_coords,
         };
-        runStageRange(
-            self.geom_pool,
+        pce.runDynamicRange(
+            self.chunk_exec,
             &compact_coords_stage,
-            runCompactVisibleCoordsStage,
+            runCompactVisibleCoordsDynamicStage,
             self.mesh_frame.visible_elems_num,
             self.visible_chunk_size,
         );
@@ -1240,8 +1212,8 @@ const FrameMeshPipeline = struct {
                 .elem_coords = elem_coords,
                 .raster_hull = raster_hull,
             };
-            runStageRange(
-                self.geom_pool,
+            pce.runStaticRange(
+                self.chunk_exec,
                 &hulls_stage,
                 runPrepareRasterHullsStage,
                 self.mesh_frame.visible_elems_num,
@@ -1291,8 +1263,8 @@ const FrameMeshPipeline = struct {
             .visible_orig_elem_indices = self.mesh_frame.frame_workspace.visible_orig_elem_indices,
             .elem_field = &elem_field,
         };
-        runStageRange(
-            self.geom_pool,
+        pce.runStaticRange(
+            self.chunk_exec,
             &field_stage,
             runCompactVisibleFieldStage,
             self.mesh_frame.visible_elems_num,
@@ -1350,8 +1322,8 @@ const FrameMeshPipeline = struct {
             .visible_orig_elem_indices = self.mesh_frame.frame_workspace.visible_orig_elem_indices,
             .elem_uvs = &elem_uvs,
         };
-        runStageRange(
-            self.geom_pool,
+        pce.runStaticRange(
+            self.chunk_exec,
             &uv_stage,
             runCompactVisibleUVStage,
             self.mesh_frame.visible_elems_num,
@@ -1401,7 +1373,7 @@ const FrameMeshPipeline = struct {
             &self.mesh_static.connect,
             self.mesh_frame.frame_workspace.visible_orig_elem_indices,
             normal_type,
-            self.geom_pool,
+            self.chunk_exec,
             self.elem_chunk_size,
             self.visible_chunk_size,
         );
@@ -1435,7 +1407,7 @@ pub fn prepareMeshFrame(
     mesh_static: *const MeshStatic,
     frame_idx: usize,
     scaling_params: ?imageops.ScalingParams,
-    geom_pool: ?*geomthread.GeometryWorkerPool,
+    chunk_exec: ?*pce.ParaChunkExecutor,
 ) !MeshFrame {
     var pipeline = try FrameMeshPipeline.init(
         allocator,
@@ -1443,7 +1415,7 @@ pub fn prepareMeshFrame(
         mesh_static,
         frame_idx,
         scaling_params,
-        geom_pool,
+        chunk_exec,
     );
     return try pipeline.run();
 }
@@ -1467,7 +1439,7 @@ pub fn prepareMeshFrames(
     frame_idx: usize,
     static_meshes: []const MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
-    geom_pool: ?*geomthread.GeometryWorkerPool,
+    chunk_exec: ?*pce.ParaChunkExecutor,
     frame_meshes: []MeshFrame,
 ) !FrameGeometryResult {
     _ = io;
@@ -1475,7 +1447,7 @@ pub fn prepareMeshFrames(
     var res = FrameGeometryResult{ .total_elems_num = 0, .total_elems_in_image = 0 };
 
     for (static_meshes, 0..) |*mesh_static, ii| {
-        // Only needed for nodal interpolation shading and only if not .none. If .none we 
+        // Only needed for nodal interpolation shading and only if not .none. If .none we
         // directly render float fields unscaled.
         var nodal_frame_scaling: ?imageops.ScalingParams = null;
         switch (mesh_static.shader) {
@@ -1494,14 +1466,14 @@ pub fn prepareMeshFrames(
         }
 
         // Prepares meshes for each frame including coord transforms to camera space and
-        // data reshaping to element order for a given frame. 
+        // data reshaping to element order for a given frame.
         frame_meshes[ii] = try prepareMeshFrame(
             arena_alloc,
             camera,
             mesh_static,
             frame_idx,
             nodal_frame_scaling,
-            geom_pool,
+            chunk_exec,
         );
         res.total_elems_num += frame_meshes[ii].total_elems_num;
         res.total_elems_in_image += frame_meshes[ii].elems_in_image;
