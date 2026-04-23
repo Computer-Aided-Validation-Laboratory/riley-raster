@@ -925,9 +925,11 @@ pub fn rasterAllFrames(
         std.debug.assert(capture.len == cameras.len * num_time);
     }
 
+    // Init. static data across all frames - here we reshape uv's once if we have them so
+    // we don't need to do this every frames
+    const mesh_static = try initStaticSlice(static_alloc, meshes);
     const nodal_global_scaling = try initNodalGlobalScaling(outer_alloc, meshes);
     defer outer_alloc.free(nodal_global_scaling);
-    const mesh_static = try initStaticSlice(static_alloc, meshes);
 
     var images_arr_opt: ?NDArray(f64) = try initImagesArray(
         outer_alloc,

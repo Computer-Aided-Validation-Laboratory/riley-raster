@@ -60,6 +60,9 @@ pub const MeshType = enum {
     }
 };
 
+// The "Blueprint": Raw user data for all frames.
+// Coords/Fields: Node-order [total_nodes, ...]
+// Connect: Connectivity table links nodes to elements.
 pub const MeshInput = struct {
     mesh_type: MeshType,
     coords: Coords,
@@ -68,6 +71,9 @@ pub const MeshInput = struct {
     shader: shaderops.ShaderInput,
 };
 
+// The "Payload": Data culled and expanded for the raster loop for a SINGLE frame.
+// Prepared means culled element-order NDArray data ready for the raster loop.
+// Coords/Fields: Element-order [visible_elems, ..., nodes_per_elem]
 pub const MeshPrepared = struct {
     mesh_type: MeshType,
     coords: NDArray(f64),
@@ -75,6 +81,9 @@ pub const MeshPrepared = struct {
     shader: shaderops.ShaderPrepared,
 };
 
+// The "Archive": Persistent multi-frame resources in the engine's memory.
+// Coords/Fields: Node-order [total_nodes, ...]
+// UVs: Element-order (expanded during static init as they are usually static).
 pub const MeshStatic = struct {
     mesh_type: MeshType,
     coords_orig: Coords,
@@ -83,7 +92,9 @@ pub const MeshStatic = struct {
     shader: ShaderStatic,
 };
 
-pub const FrameMeshWorkspace = struct {
+// The "Scratchpad": Temporary node-order working area for the geometry pipeline.
+// Coords: Node-order [total_nodes, 3]. Holds coords for a single frame after displacement.
+pub const MeshFrameWorkspace = struct {
     coords_nodes: Coords,
     visible_orig_elem_indices: []usize,
     elem_bboxes: []ElemBBox,
@@ -91,6 +102,8 @@ pub const FrameMeshWorkspace = struct {
     raster_hull: ?NDArray(f64),
 };
 
+// The "Package": Wraps the Prepared payload with per-frame spatial metadata.
+// Prepared means culled element-order NDArray data ready for the raster loop.
 pub const MeshFrame = struct {
     mesh: MeshPrepared,
     elem_bboxes: []ElemBBox,
@@ -422,16 +435,16 @@ fn copyCoordsAlloc(
 //------------------------------------------------------------------------------------------
 
 const MeshFrameContext = struct {
-    frame_workspace: FrameMeshWorkspace,
+    frame_workspace: MeshFrameWorkspace,
     visible_counts_by_chunk: []usize,
     visible_offsets_by_chunk: []usize,
     visible_elems_num: usize,
 };
 
-fn initFrameMeshWorkspace(
+fn initMeshFrameWorkspace(
     allocator: std.mem.Allocator,
     mesh_static: *const MeshStatic,
-) !FrameMeshWorkspace {
+) !MeshFrameWorkspace {
     return .{
         .coords_nodes = try Coords.initAlloc(
             allocator,
@@ -496,7 +509,7 @@ fn runStageRange(
 //------------------------------------------------------------------------------------------
 
 fn prepareFrameMeshCoordsRange(
-    frame_workspace: *FrameMeshWorkspace,
+    frame_workspace: *MeshFrameWorkspace,
     mesh_static: *const MeshStatic,
     frame_idx: usize,
     node_start: usize,
@@ -529,7 +542,7 @@ fn prepareFrameMeshCoordsRange(
 fn transformFrameMeshCoordsRange(
     camera: *const CameraPrepared,
     mesh_type: MeshType,
-    frame_workspace: *FrameMeshWorkspace,
+    frame_workspace: *MeshFrameWorkspace,
     node_start: usize,
     node_end: usize,
 ) void {
@@ -561,7 +574,7 @@ fn transformFrameMeshCoordsRange(
 
 fn compactVisibleCoordsRange(
     mesh_static: *const MeshStatic,
-    frame_workspace: *const FrameMeshWorkspace,
+    frame_workspace: *const MeshFrameWorkspace,
     elem_coords: *NDArray(f64),
     visible_start: usize,
     visible_end: usize,
@@ -637,7 +650,7 @@ fn compactVisibleFieldFrameRange(
 }
 
 const PrepareFrameCoordsStage = struct {
-    frame_workspace: *FrameMeshWorkspace,
+    frame_workspace: *MeshFrameWorkspace,
     mesh_static: *const MeshStatic,
     frame_idx: usize,
 };
@@ -662,7 +675,7 @@ fn runPrepareFrameCoordsStage(
 const TransformFrameCoordsStage = struct {
     camera: *const CameraPrepared,
     mesh_type: MeshType,
-    frame_workspace: *FrameMeshWorkspace,
+    frame_workspace: *MeshFrameWorkspace,
 };
 
 fn runTransformFrameCoordsStage(
@@ -749,7 +762,7 @@ fn runCullVisibleFillStage(
 
 const CompactVisibleCoordsStage = struct {
     mesh_static: *const MeshStatic,
-    frame_workspace: *const FrameMeshWorkspace,
+    frame_workspace: *const MeshFrameWorkspace,
     elem_coords: *NDArray(f64),
 };
 
@@ -1176,7 +1189,7 @@ const FrameMeshPipeline = struct {
             .elem_chunks_num = getChunksNum(elems_num, elem_chunk_size),
             .visible_chunk_size = 1,
             .mesh_frame = .{
-                .frame_workspace = try initFrameMeshWorkspace(
+                .frame_workspace = try initMeshFrameWorkspace(
                     allocator,
                     mesh_static,
                 ),
