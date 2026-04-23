@@ -797,7 +797,7 @@ fn prepareVisibleNormalsThreadedN(
                 .visible_orig_elem_indices = visible_orig_elem_indices,
                 .prep_normals = &prep_normals.array,
             };
-            pce.runStaticRange(
+            pce.runStaticRangeMaybe(
                 chunk_exec,
                 &exact_stage,
                 runPrepareVisibleExactNormals,
@@ -823,7 +823,7 @@ fn prepareVisibleNormalsThreadedN(
                 .chunk_node_normals = chunk_node_normals,
                 .node_normals_stride = node_normals_stride,
             };
-            pce.runStaticRange(
+            pce.runStaticRangeMaybe(
                 chunk_exec,
                 &accum_stage,
                 runAccumulateAveragedNormals,
@@ -850,7 +850,7 @@ fn prepareVisibleNormalsThreadedN(
                 .node_normals = node_normals,
                 .prep_normals = &prep_normals.array,
             };
-            pce.runStaticRange(
+            pce.runStaticRangeMaybe(
                 chunk_exec,
                 &write_stage,
                 runWriteVisibleAveragedNormals,
@@ -1056,7 +1056,7 @@ const FrameMeshPipeline = struct {
             .mesh_static = self.mesh_static,
             .frame_idx = self.frame_idx,
         };
-        pce.runStaticRange(
+        pce.runStaticRangeMaybe(
             self.chunk_exec,
             &prepare_stage,
             runPrepareCoords,
@@ -1071,7 +1071,7 @@ const FrameMeshPipeline = struct {
             .mesh_type = self.mesh_static.mesh_type,
             .frame_workspace = &self.mesh_frame.frame_workspace,
         };
-        pce.runStaticRange(
+        pce.runStaticRangeMaybe(
             self.chunk_exec,
             &transform_stage,
             runTransformCoords,
@@ -1099,7 +1099,7 @@ const FrameMeshPipeline = struct {
             .coords_nodes = &self.mesh_frame.frame_workspace.coords_nodes,
             .visible_counts_by_chunk = self.mesh_frame.visible_counts_by_chunk,
         };
-        pce.runStaticRange(
+        pce.runStaticRangeMaybe(
             self.chunk_exec,
             &cull_count_stage,
             runCullVisibleCount,
@@ -1124,7 +1124,7 @@ const FrameMeshPipeline = struct {
             .elem_bboxes = self.mesh_frame.frame_workspace.elem_bboxes,
             .visible_offsets_by_chunk = self.mesh_frame.visible_offsets_by_chunk,
         };
-        pce.runStaticRange(
+        pce.runStaticRangeMaybe(
             self.chunk_exec,
             &cull_fill_stage,
             runCullVisibleFill,
@@ -1152,7 +1152,7 @@ const FrameMeshPipeline = struct {
             .frame_workspace = &self.mesh_frame.frame_workspace,
             .elem_coords = &elem_coords,
         };
-        pce.runStaticRange(
+        pce.runStaticRangeMaybe(
             self.chunk_exec,
             &compact_coords_stage,
             runCompactVisibleCoords,
@@ -1194,7 +1194,7 @@ const FrameMeshPipeline = struct {
                 .elem_coords = elem_coords,
                 .raster_hull = raster_hull,
             };
-            pce.runStaticRange(
+            pce.runStaticRangeMaybe(
                 self.chunk_exec,
                 &hulls_stage,
                 runPrepareRasterHulls,
@@ -1245,7 +1245,7 @@ const FrameMeshPipeline = struct {
             .visible_orig_elem_indices = self.mesh_frame.frame_workspace.visible_orig_elem_indices,
             .elem_field = &elem_field,
         };
-        pce.runStaticRange(
+        pce.runStaticRangeMaybe(
             self.chunk_exec,
             &field_stage,
             runCompactVisibleField,
@@ -1304,7 +1304,7 @@ const FrameMeshPipeline = struct {
             .visible_orig_elem_indices = self.mesh_frame.frame_workspace.visible_orig_elem_indices,
             .elem_uvs = &elem_uvs,
         };
-        pce.runStaticRange(
+        pce.runStaticRangeMaybe(
             self.chunk_exec,
             &uv_stage,
             runCompactVisibleUV,

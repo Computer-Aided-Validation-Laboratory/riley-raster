@@ -659,10 +659,9 @@ fn dispatchOfflineFrameJobs(
         config.max_raster_threads_per_frame,
     );
 
-    var pool: pce.ParaChunkExecutor = undefined;
+    var pool = pce.ParaChunkExecutor.init(io, geom_threads);
     var chunk_exec: ?*pce.ParaChunkExecutor = null;
     if (geom_threads > 1) {
-        pool.init(io, geom_threads);
         chunk_exec = &pool;
     }
 
@@ -737,10 +736,9 @@ fn dispatchInOrderFrameJobs(
         config.max_raster_threads_per_frame,
     );
 
-    var pool: pce.ParaChunkExecutor = undefined;
+    var pool = pce.ParaChunkExecutor.init(io, geom_threads);
     var chunk_exec: ?*pce.ParaChunkExecutor = null;
     if (geom_threads > 1) {
-        pool.init(io, geom_threads);
         chunk_exec = &pool;
     }
 

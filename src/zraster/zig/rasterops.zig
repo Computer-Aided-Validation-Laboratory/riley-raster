@@ -1859,7 +1859,7 @@ pub fn sceneTileElemOverlap(
             elems_num,
             pce.getWorkerCount(chunk_exec),
         );
-        pce.runStaticRange(
+        pce.runStaticRangeMaybe(
             chunk_exec,
             &count_stage,
             runTilingCount,
@@ -1923,7 +1923,7 @@ pub fn sceneTileElemOverlap(
             elems_num,
             pce.getWorkerCount(chunk_exec),
         );
-        pce.runStaticRange(
+        pce.runStaticRangeMaybe(
             chunk_exec,
             &fill_stage,
             runTilingFill,

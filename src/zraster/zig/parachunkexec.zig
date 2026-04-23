@@ -20,11 +20,10 @@ pub const ParaChunkExecutor = struct {
     workers_num: usize,
 
     pub fn init(
-        self: *ParaChunkExecutor,
         io: std.Io,
         workers_num: u16,
-    ) void {
-        self.* = .{
+    ) ParaChunkExecutor {
+        return .{
             .io = io,
             .workers_num = @intCast(workers_num),
         };
@@ -118,7 +117,7 @@ pub fn getWorkerCount(chunk_exec: ?*ParaChunkExecutor) usize {
     return 1;
 }
 
-pub fn runStaticRange(
+pub fn runStaticRangeMaybe(
     chunk_exec: ?*ParaChunkExecutor,
     ctx_ptr: *anyopaque,
     job_func: RangeFn,
@@ -155,7 +154,7 @@ pub fn runStaticRange(
     );
 }
 
-pub fn runDynamicRange(
+pub fn runDynamicRangeMaybe(
     chunk_exec: ?*ParaChunkExecutor,
     ctx_ptr: *anyopaque,
     job_func: RangeFn,
