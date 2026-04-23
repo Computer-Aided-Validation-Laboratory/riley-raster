@@ -423,7 +423,7 @@ const PrepareCoordsStage = struct {
     frame_idx: usize,
 };
 
-fn runPrepareCoordsStage(
+fn runPrepareCoords(
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
     range_start: usize,
@@ -456,13 +456,7 @@ fn runPrepareCoordsStage(
     }
 }
 
-fn runPrepareCoordsDynamicStage(
-    ctx_ptr: *anyopaque,
-    range_start: usize,
-    range_end: usize,
-) void {
-    runPrepareCoordsStage(ctx_ptr, 0, range_start, range_end);
-}
+
 
 const TransformCoordsStage = struct {
     camera: *const cam.CameraPrepared,
@@ -470,7 +464,7 @@ const TransformCoordsStage = struct {
     frame_workspace: *MeshFrameWorkspace,
 };
 
-fn runTransformCoordsStage(
+fn runTransformCoords(
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
     range_start: usize,
@@ -504,13 +498,7 @@ fn runTransformCoordsStage(
     }
 }
 
-fn runTransformCoordsDynamicStage(
-    ctx_ptr: *anyopaque,
-    range_start: usize,
-    range_end: usize,
-) void {
-    runTransformCoordsStage(ctx_ptr, 0, range_start, range_end);
-}
+
 
 const CullVisibleCountStage = struct {
     camera: *const cam.CameraPrepared,
@@ -520,7 +508,7 @@ const CullVisibleCountStage = struct {
     visible_counts_by_chunk: []usize,
 };
 
-fn runCullVisibleCountStage(
+fn runCullVisibleCount(
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
     range_start: usize,
@@ -557,7 +545,7 @@ const CullVisibleFillStage = struct {
     visible_offsets_by_chunk: []const usize,
 };
 
-fn runCullVisibleFillStage(
+fn runCullVisibleFill(
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
     range_start: usize,
@@ -583,7 +571,7 @@ const CompactVisibleCoordsStage = struct {
     elem_coords: *ndarray.NDArray(f64),
 };
 
-fn runCompactVisibleCoordsStage(
+fn runCompactVisibleCoords(
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
     range_start: usize,
@@ -614,13 +602,7 @@ fn runCompactVisibleCoordsStage(
     }
 }
 
-fn runCompactVisibleCoordsDynamicStage(
-    ctx_ptr: *anyopaque,
-    range_start: usize,
-    range_end: usize,
-) void {
-    runCompactVisibleCoordsStage(ctx_ptr, 0, range_start, range_end);
-}
+
 
 const CompactVisibleFieldStage = struct {
     connect: *const meshio.Connect,
@@ -630,7 +612,7 @@ const CompactVisibleFieldStage = struct {
     elem_field: *ndarray.NDArray(f64),
 };
 
-fn runCompactVisibleFieldStage(
+fn runCompactVisibleField(
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
     range_start: usize,
@@ -662,7 +644,7 @@ const CompactVisibleUVStage = struct {
     elem_uvs: *ndarray.NDArray(f64),
 };
 
-fn runCompactVisibleUVStage(
+fn runCompactVisibleUV(
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
     range_start: usize,
@@ -690,7 +672,7 @@ const PrepareRasterHullsStage = struct {
     raster_hull: *ndarray.NDArray(f64),
 };
 
-fn runPrepareRasterHullsStage(
+fn runPrepareRasterHulls(
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
     range_start: usize,
@@ -818,7 +800,7 @@ fn prepareVisibleNormalsThreadedN(
             pce.runStaticRange(
                 chunk_exec,
                 &exact_stage,
-                runPrepareVisibleExactNormalsStage,
+                runPrepareVisibleExactNormals,
                 visible_orig_elem_indices.len,
                 visible_chunk_size,
             );
@@ -844,7 +826,7 @@ fn prepareVisibleNormalsThreadedN(
             pce.runStaticRange(
                 chunk_exec,
                 &accum_stage,
-                runAccumulateAveragedNormalsStage,
+                runAccumulateAveragedNormals,
                 connect.getElemsNum(),
                 elem_chunk_size,
             );
@@ -871,7 +853,7 @@ fn prepareVisibleNormalsThreadedN(
             pce.runStaticRange(
                 chunk_exec,
                 &write_stage,
-                runWriteVisibleAveragedNormalsStage,
+                runWriteVisibleAveragedNormals,
                 visible_orig_elem_indices.len,
                 visible_chunk_size,
             );
@@ -917,7 +899,7 @@ const PrepareVisibleExactNormalsStage = struct {
     prep_normals: *ndarray.NDArray(f64),
 };
 
-fn runPrepareVisibleExactNormalsStage(
+fn runPrepareVisibleExactNormals(
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
     range_start: usize,
@@ -944,7 +926,7 @@ const AccumulateAveragedNormalsStage = struct {
     node_normals_stride: usize,
 };
 
-fn runAccumulateAveragedNormalsStage(
+fn runAccumulateAveragedNormals(
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
     range_start: usize,
@@ -971,7 +953,7 @@ const WriteVisibleAveragedNormalsStage = struct {
     prep_normals: *ndarray.NDArray(f64),
 };
 
-fn runWriteVisibleAveragedNormalsStage(
+fn runWriteVisibleAveragedNormals(
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
     range_start: usize,
@@ -1074,10 +1056,10 @@ const FrameMeshPipeline = struct {
             .mesh_static = self.mesh_static,
             .frame_idx = self.frame_idx,
         };
-        pce.runDynamicRange(
+        pce.runStaticRange(
             self.chunk_exec,
             &prepare_stage,
-            runPrepareCoordsDynamicStage,
+            runPrepareCoords,
             self.nodes_num,
             self.node_chunk_size,
         );
@@ -1089,10 +1071,10 @@ const FrameMeshPipeline = struct {
             .mesh_type = self.mesh_static.mesh_type,
             .frame_workspace = &self.mesh_frame.frame_workspace,
         };
-        pce.runDynamicRange(
+        pce.runStaticRange(
             self.chunk_exec,
             &transform_stage,
-            runTransformCoordsDynamicStage,
+            runTransformCoords,
             self.nodes_num,
             self.node_chunk_size,
         );
@@ -1120,7 +1102,7 @@ const FrameMeshPipeline = struct {
         pce.runStaticRange(
             self.chunk_exec,
             &cull_count_stage,
-            runCullVisibleCountStage,
+            runCullVisibleCount,
             self.elems_num,
             self.elem_chunk_size,
         );
@@ -1145,7 +1127,7 @@ const FrameMeshPipeline = struct {
         pce.runStaticRange(
             self.chunk_exec,
             &cull_fill_stage,
-            runCullVisibleFillStage,
+            runCullVisibleFill,
             self.elems_num,
             self.elem_chunk_size,
         );
@@ -1170,10 +1152,10 @@ const FrameMeshPipeline = struct {
             .frame_workspace = &self.mesh_frame.frame_workspace,
             .elem_coords = &elem_coords,
         };
-        pce.runDynamicRange(
+        pce.runStaticRange(
             self.chunk_exec,
             &compact_coords_stage,
-            runCompactVisibleCoordsDynamicStage,
+            runCompactVisibleCoords,
             self.mesh_frame.visible_elems_num,
             self.visible_chunk_size,
         );
@@ -1215,7 +1197,7 @@ const FrameMeshPipeline = struct {
             pce.runStaticRange(
                 self.chunk_exec,
                 &hulls_stage,
-                runPrepareRasterHullsStage,
+                runPrepareRasterHulls,
                 self.mesh_frame.visible_elems_num,
                 self.visible_chunk_size,
             );
@@ -1266,7 +1248,7 @@ const FrameMeshPipeline = struct {
         pce.runStaticRange(
             self.chunk_exec,
             &field_stage,
-            runCompactVisibleFieldStage,
+            runCompactVisibleField,
             self.mesh_frame.visible_elems_num,
             self.visible_chunk_size,
         );
@@ -1325,7 +1307,7 @@ const FrameMeshPipeline = struct {
         pce.runStaticRange(
             self.chunk_exec,
             &uv_stage,
-            runCompactVisibleUVStage,
+            runCompactVisibleUV,
             self.mesh_frame.visible_elems_num,
             self.visible_chunk_size,
         );

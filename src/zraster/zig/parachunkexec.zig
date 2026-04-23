@@ -8,15 +8,9 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-pub const StaticRangeFn = *const fn (
+pub const RangeFn = *const fn (
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
-    range_start: usize,
-    range_end: usize,
-) void;
-
-pub const DynamicRangeFn = *const fn (
-    ctx_ptr: *anyopaque,
     range_start: usize,
     range_end: usize,
 ) void;
@@ -39,7 +33,7 @@ pub const ParaChunkExecutor = struct {
     pub fn runStaticRange(
         self: *ParaChunkExecutor,
         ctx_ptr: *anyopaque,
-        job_func: StaticRangeFn,
+        job_func: RangeFn,
         domain_len: usize,
         chunk_size: usize,
     ) !void {
@@ -69,7 +63,7 @@ pub const ParaChunkExecutor = struct {
     pub fn runDynamicRange(
         self: *ParaChunkExecutor,
         ctx_ptr: *anyopaque,
-        job_func: DynamicRangeFn,
+        job_func: RangeFn,
         domain_len: usize,
         grain_size: usize,
     ) !void {
@@ -127,7 +121,7 @@ pub fn getWorkerCount(chunk_exec: ?*ParaChunkExecutor) usize {
 pub fn runStaticRange(
     chunk_exec: ?*ParaChunkExecutor,
     ctx_ptr: *anyopaque,
-    job_func: StaticRangeFn,
+    job_func: RangeFn,
     domain_len: usize,
     chunk_size: usize,
 ) void {
@@ -164,7 +158,7 @@ pub fn runStaticRange(
 pub fn runDynamicRange(
     chunk_exec: ?*ParaChunkExecutor,
     ctx_ptr: *anyopaque,
-    job_func: DynamicRangeFn,
+    job_func: RangeFn,
     domain_len: usize,
     grain_size: usize,
 ) void {
@@ -200,7 +194,7 @@ pub fn runDynamicRange(
 
 fn runStaticRangeSerial(
     ctx_ptr: *anyopaque,
-    job_func: StaticRangeFn,
+    job_func: RangeFn,
     domain_len: usize,
     chunk_size: usize,
 ) void {
@@ -214,20 +208,20 @@ fn runStaticRangeSerial(
 
 fn runDynamicRangeSerial(
     ctx_ptr: *anyopaque,
-    job_func: DynamicRangeFn,
+    job_func: RangeFn,
     domain_len: usize,
     grain_size: usize,
 ) void {
     var range_start: usize = 0;
     while (range_start < domain_len) : (range_start += grain_size) {
         const range_end = @min(domain_len, range_start + grain_size);
-        job_func(ctx_ptr, range_start, range_end);
+        job_func(ctx_ptr, 0, range_start, range_end);
     }
 }
 
 fn runStaticChunkTask(
     ctx_ptr: *anyopaque,
-    job_func: StaticRangeFn,
+    job_func: RangeFn,
     chunk_idx: usize,
     range_start: usize,
     range_end: usize,
@@ -237,7 +231,7 @@ fn runStaticChunkTask(
 
 fn runDynamicChunkTask(
     ctx_ptr: *anyopaque,
-    job_func: DynamicRangeFn,
+    job_func: RangeFn,
     next_start: *std.atomic.Value(usize),
     domain_len: usize,
     grain_size: usize,
@@ -248,6 +242,6 @@ fn runDynamicChunkTask(
             return;
         }
         const range_end = @min(domain_len, range_start + grain_size);
-        job_func(ctx_ptr, range_start, range_end);
+        job_func(ctx_ptr, 0, range_start, range_end);
     }
 }

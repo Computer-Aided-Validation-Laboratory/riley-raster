@@ -1738,7 +1738,7 @@ const TilingCountStage = struct {
     ebb_slice: []const ElemBBox,
 };
 
-fn runTilingCountStage(
+fn runTilingCount(
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
     range_start: usize,
@@ -1777,7 +1777,7 @@ const TilingFillStage = struct {
     ebb_slice: []const ElemBBox,
 };
 
-fn runTilingFillStage(
+fn runTilingFill(
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
     range_start: usize,
@@ -1862,7 +1862,7 @@ pub fn sceneTileElemOverlap(
         pce.runStaticRange(
             chunk_exec,
             &count_stage,
-            runTilingCountStage,
+            runTilingCount,
             elems_num,
             chunk_size,
         );
@@ -1926,7 +1926,7 @@ pub fn sceneTileElemOverlap(
         pce.runStaticRange(
             chunk_exec,
             &fill_stage,
-            runTilingFillStage,
+            runTilingFill,
             elems_num,
             chunk_size,
         );
