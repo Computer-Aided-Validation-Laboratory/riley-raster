@@ -609,20 +609,20 @@ fn compactVisibleFieldFrameRange(
     }
 }
 
-const PrepareFrameCoordsStage = struct {
+const PrepareCoordsStage = struct {
     frame_workspace: *MeshFrameWorkspace,
     mesh_static: *const MeshStatic,
     frame_idx: usize,
 };
 
-fn runPrepareFrameCoordsStage(
+fn runPrepareCoordsStage(
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
     range_start: usize,
     range_end: usize,
 ) void {
     _ = chunk_idx;
-    const stage: *PrepareFrameCoordsStage = @ptrCast(@alignCast(ctx_ptr));
+    const stage: *PrepareCoordsStage = @ptrCast(@alignCast(ctx_ptr));
     prepareFrameMeshCoordsRange(
         stage.frame_workspace,
         stage.mesh_static,
@@ -632,20 +632,20 @@ fn runPrepareFrameCoordsStage(
     );
 }
 
-const TransformFrameCoordsStage = struct {
+const TransformCoordsStage = struct {
     camera: *const cam.CameraPrepared,
     mesh_type: MeshType,
     frame_workspace: *MeshFrameWorkspace,
 };
 
-fn runTransformFrameCoordsStage(
+fn runTransformCoordsStage(
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
     range_start: usize,
     range_end: usize,
 ) void {
     _ = chunk_idx;
-    const stage: *TransformFrameCoordsStage = @ptrCast(@alignCast(ctx_ptr));
+    const stage: *TransformCoordsStage = @ptrCast(@alignCast(ctx_ptr));
     transformFrameMeshCoordsRange(
         stage.camera,
         stage.mesh_type,
@@ -793,21 +793,21 @@ fn runCompactVisibleUVStage(
     );
 }
 
-const PrepareVisibleHullsStage = struct {
+const PrepareRasterHullsStage = struct {
     camera: *const cam.CameraPrepared,
     mesh_type: MeshType,
     elem_coords: *const ndarray.NDArray(f64),
     raster_hull: *ndarray.NDArray(f64),
 };
 
-fn runPrepareVisibleHullsStage(
+fn runPrepareRasterHullsStage(
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
     range_start: usize,
     range_end: usize,
 ) void {
     _ = chunk_idx;
-    const stage: *PrepareVisibleHullsStage = @ptrCast(@alignCast(ctx_ptr));
+    const stage: *PrepareRasterHullsStage = @ptrCast(@alignCast(ctx_ptr));
     rops.prepareVisibleRasterHullsRange(
         stage.camera,
         stage.mesh_type,
@@ -1180,7 +1180,7 @@ const FrameMeshPipeline = struct {
     //--------------------------------------------------------------------------------------
 
     fn prepareCoords(self: *FrameMeshPipeline) void {
-        var prepare_stage = PrepareFrameCoordsStage{
+        var prepare_stage = PrepareCoordsStage{
             .frame_workspace = &self.mesh_frame.frame_workspace,
             .mesh_static = self.mesh_static,
             .frame_idx = self.frame_idx,
@@ -1188,14 +1188,14 @@ const FrameMeshPipeline = struct {
         runStageRange(
             self.geom_pool,
             &prepare_stage,
-            runPrepareFrameCoordsStage,
+            runPrepareCoordsStage,
             self.nodes_num,
             self.node_chunk_size,
         );
     }
 
     fn transformCoords(self: *FrameMeshPipeline) void {
-        var transform_stage = TransformFrameCoordsStage{
+        var transform_stage = TransformCoordsStage{
             .camera = self.camera,
             .mesh_type = self.mesh_static.mesh_type,
             .frame_workspace = &self.mesh_frame.frame_workspace,
@@ -1203,7 +1203,7 @@ const FrameMeshPipeline = struct {
         runStageRange(
             self.geom_pool,
             &transform_stage,
-            runTransformFrameCoordsStage,
+            runTransformCoordsStage,
             self.nodes_num,
             self.node_chunk_size,
         );
@@ -1317,7 +1317,7 @@ const FrameMeshPipeline = struct {
         };
 
         if (self.mesh_frame.frame_workspace.raster_hull) |*raster_hull| {
-            var hulls_stage = PrepareVisibleHullsStage{
+            var hulls_stage = PrepareRasterHullsStage{
                 .camera = self.camera,
                 .mesh_type = self.mesh_static.mesh_type,
                 .elem_coords = elem_coords,
@@ -1326,7 +1326,7 @@ const FrameMeshPipeline = struct {
             runStageRange(
                 self.geom_pool,
                 &hulls_stage,
-                runPrepareVisibleHullsStage,
+                runPrepareRasterHullsStage,
                 self.mesh_frame.visible_elems_num,
                 self.visible_chunk_size,
             );
