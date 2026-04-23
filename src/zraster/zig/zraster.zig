@@ -501,13 +501,11 @@ fn processFrameJobInternal(
 
     const geo_res = try mo.prepareMeshFrames(
         arena_alloc,
-        outer_alloc,
-        io,
+        input.chunk_exec,
         input.camera,
         input.frame_idx,
         input.mesh_static,
         input.nodal_global_scaling,
-        input.chunk_exec,
         ctx.frame_meshes,
     );
     for (ctx.frame_meshes, 0..) |*fm, ii| {

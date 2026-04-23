@@ -1403,11 +1403,11 @@ const FrameMeshPipeline = struct {
 // pipeline with a single mesh.
 pub fn prepareMeshFrame(
     allocator: std.mem.Allocator,
+    chunk_exec: ?*pce.ParaChunkExecutor,
     camera: *const cam.CameraPrepared,
     mesh_static: *const MeshStatic,
     frame_idx: usize,
     scaling_params: ?imageops.ScalingParams,
-    chunk_exec: ?*pce.ParaChunkExecutor,
 ) !MeshFrame {
     var pipeline = try FrameMeshPipeline.init(
         allocator,
@@ -1433,17 +1433,13 @@ pub const FrameGeometryResult = struct {
 // Main Entry Point to Geometry Pipeline
 pub fn prepareMeshFrames(
     arena_alloc: std.mem.Allocator,
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
+    chunk_exec: ?*pce.ParaChunkExecutor,
     camera: *const cam.CameraPrepared,
     frame_idx: usize,
     static_meshes: []const MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
-    chunk_exec: ?*pce.ParaChunkExecutor,
     frame_meshes: []MeshFrame,
 ) !FrameGeometryResult {
-    _ = io;
-    _ = outer_alloc;
     var res = FrameGeometryResult{ .total_elems_num = 0, .total_elems_in_image = 0 };
 
     for (static_meshes, 0..) |*mesh_static, ii| {
@@ -1469,11 +1465,11 @@ pub fn prepareMeshFrames(
         // data reshaping to element order for a given frame.
         frame_meshes[ii] = try prepareMeshFrame(
             arena_alloc,
+            chunk_exec,
             camera,
             mesh_static,
             frame_idx,
             nodal_frame_scaling,
-            chunk_exec,
         );
         res.total_elems_num += frame_meshes[ii].total_elems_num;
         res.total_elems_in_image += frame_meshes[ii].elems_in_image;
