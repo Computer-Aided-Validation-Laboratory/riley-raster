@@ -78,6 +78,8 @@ pub const MeshFrameWorkspace = struct {
     elem_bboxes: []rops.ElemBBox,
     elems_in_image: usize,
     raster_hull: ?ndarray.NDArray(f64),
+    visible_counts_by_chunk: []usize,
+    visible_offsets_by_chunk: []usize,
 };
 
 // Frame: Wraps the Prepared payload with per-frame spatial metadata.
@@ -88,6 +90,7 @@ pub const MeshFrame = struct {
     elems_in_image: usize,
     total_elems_num: usize,
     raster_hull: ?ndarray.NDArray(f64),
+    frame_workspace: MeshFrameWorkspace,
 };
 
 // Prepared: Data culled and expanded for the raster loop for a SINGLE frame.
@@ -386,17 +389,6 @@ fn copyCoordsAlloc(
     return coords_copy;
 }
 
-//------------------------------------------------------------------------------------------
-// Geometry Workspace and Chunks: Pipeline workspace and chunking utilities
-//------------------------------------------------------------------------------------------
-
-const MeshFrameContext = struct {
-    frame_workspace: MeshFrameWorkspace,
-    visible_counts_by_chunk: []usize,
-    visible_offsets_by_chunk: []usize,
-    visible_elems_num: usize,
-};
-
 fn initMeshFrameWorkspace(
     allocator: std.mem.Allocator,
     mesh_static: *const MeshStatic,
@@ -410,6 +402,8 @@ fn initMeshFrameWorkspace(
         .elem_bboxes = &.{},
         .elems_in_image = 0,
         .raster_hull = null,
+        .visible_counts_by_chunk = &.{},
+        .visible_offsets_by_chunk = &.{},
     };
 }
 
@@ -455,8 +449,6 @@ fn runPrepareCoords(
         }
     }
 }
-
-
 
 const TransformCoordsStage = struct {
     camera: *const cam.CameraPrepared,
@@ -525,14 +517,13 @@ fn runCullVisibleCount(
     );
 }
 
-fn prefixVisibleCounts(mesh_frame: *MeshFrameContext) void {
+fn prefixVisibleCounts(mesh_workspace: *MeshFrameWorkspace) void {
     var running_total: usize = 0;
-    for (mesh_frame.visible_counts_by_chunk, 0..) |visible_count, cc| {
-        mesh_frame.visible_offsets_by_chunk[cc] = running_total;
+    for (mesh_workspace.visible_counts_by_chunk, 0..) |visible_count, cc| {
+        mesh_workspace.visible_offsets_by_chunk[cc] = running_total;
         running_total += visible_count;
     }
-    mesh_frame.visible_elems_num = running_total;
-    mesh_frame.frame_workspace.elems_in_image = running_total;
+    mesh_workspace.elems_in_image = running_total;
 }
 
 const CullVisibleFillStage = struct {
@@ -797,7 +788,7 @@ fn prepareVisibleNormalsThreadedN(
                 .visible_orig_elem_indices = visible_orig_elem_indices,
                 .prep_normals = &prep_normals.array,
             };
-            pce.runStaticRangeMaybe(
+            pce.runStaticRange(
                 chunk_exec,
                 &exact_stage,
                 runPrepareVisibleExactNormals,
@@ -823,7 +814,7 @@ fn prepareVisibleNormalsThreadedN(
                 .chunk_node_normals = chunk_node_normals,
                 .node_normals_stride = node_normals_stride,
             };
-            pce.runStaticRangeMaybe(
+            pce.runStaticRange(
                 chunk_exec,
                 &accum_stage,
                 runAccumulateAveragedNormals,
@@ -850,7 +841,7 @@ fn prepareVisibleNormalsThreadedN(
                 .node_normals = node_normals,
                 .prep_normals = &prep_normals.array,
             };
-            pce.runStaticRangeMaybe(
+            pce.runStaticRange(
                 chunk_exec,
                 &write_stage,
                 runWriteVisibleAveragedNormals,
@@ -990,7 +981,7 @@ const FrameMeshPipeline = struct {
     elem_chunk_size: usize,
     elem_chunks_num: usize,
     visible_chunk_size: usize,
-    mesh_frame: MeshFrameContext,
+    mesh_workspace: MeshFrameWorkspace,
 
     fn init(
         allocator: std.mem.Allocator,
@@ -1020,15 +1011,10 @@ const FrameMeshPipeline = struct {
             .elem_chunk_size = elem_chunk_size,
             .elem_chunks_num = pce.getChunksNum(elems_num, elem_chunk_size),
             .visible_chunk_size = 1,
-            .mesh_frame = .{
-                .frame_workspace = try initMeshFrameWorkspace(
-                    allocator,
-                    mesh_static,
-                ),
-                .visible_counts_by_chunk = &.{},
-                .visible_offsets_by_chunk = &.{},
-                .visible_elems_num = 0,
-            },
+            .mesh_workspace = try initMeshFrameWorkspace(
+                allocator,
+                mesh_static,
+            ),
         };
     }
 
@@ -1052,11 +1038,11 @@ const FrameMeshPipeline = struct {
 
     fn prepareCoords(self: *FrameMeshPipeline) void {
         var prepare_stage = PrepareCoordsStage{
-            .frame_workspace = &self.mesh_frame.frame_workspace,
+            .frame_workspace = &self.mesh_workspace,
             .mesh_static = self.mesh_static,
             .frame_idx = self.frame_idx,
         };
-        pce.runStaticRangeMaybe(
+        pce.runStaticRange(
             self.chunk_exec,
             &prepare_stage,
             runPrepareCoords,
@@ -1069,9 +1055,9 @@ const FrameMeshPipeline = struct {
         var transform_stage = TransformCoordsStage{
             .camera = self.camera,
             .mesh_type = self.mesh_static.mesh_type,
-            .frame_workspace = &self.mesh_frame.frame_workspace,
+            .frame_workspace = &self.mesh_workspace,
         };
-        pce.runStaticRangeMaybe(
+        pce.runStaticRange(
             self.chunk_exec,
             &transform_stage,
             runTransformCoords,
@@ -1081,50 +1067,50 @@ const FrameMeshPipeline = struct {
     }
 
     fn cullVisible(self: *FrameMeshPipeline) !void {
-        self.mesh_frame.visible_counts_by_chunk = try self.allocator.alloc(
+        self.mesh_workspace.visible_counts_by_chunk = try self.allocator.alloc(
             usize,
             self.elem_chunks_num,
         );
-        self.mesh_frame.visible_offsets_by_chunk = try self.allocator.alloc(
+        self.mesh_workspace.visible_offsets_by_chunk = try self.allocator.alloc(
             usize,
             self.elem_chunks_num,
         );
-        @memset(self.mesh_frame.visible_counts_by_chunk, 0);
-        @memset(self.mesh_frame.visible_offsets_by_chunk, 0);
+        @memset(self.mesh_workspace.visible_counts_by_chunk, 0);
+        @memset(self.mesh_workspace.visible_offsets_by_chunk, 0);
 
         var cull_count_stage = CullVisibleCountStage{
             .camera = self.camera,
             .mesh_type = self.mesh_static.mesh_type,
             .connect = &self.mesh_static.connect,
-            .coords_nodes = &self.mesh_frame.frame_workspace.coords_nodes,
-            .visible_counts_by_chunk = self.mesh_frame.visible_counts_by_chunk,
+            .coords_nodes = &self.mesh_workspace.coords_nodes,
+            .visible_counts_by_chunk = self.mesh_workspace.visible_counts_by_chunk,
         };
-        pce.runStaticRangeMaybe(
+        pce.runStaticRange(
             self.chunk_exec,
             &cull_count_stage,
             runCullVisibleCount,
             self.elems_num,
             self.elem_chunk_size,
         );
-        prefixVisibleCounts(&self.mesh_frame);
+        prefixVisibleCounts(&self.mesh_workspace);
 
-        self.mesh_frame.frame_workspace.visible_orig_elem_indices =
-            try self.allocator.alloc(usize, self.mesh_frame.visible_elems_num);
-        self.mesh_frame.frame_workspace.elem_bboxes = try self.allocator.alloc(
+        self.mesh_workspace.visible_orig_elem_indices =
+            try self.allocator.alloc(usize, self.mesh_workspace.elems_in_image);
+        self.mesh_workspace.elem_bboxes = try self.allocator.alloc(
             rops.ElemBBox,
-            self.mesh_frame.visible_elems_num,
+            self.mesh_workspace.elems_in_image,
         );
 
         var cull_fill_stage = CullVisibleFillStage{
             .camera = self.camera,
             .mesh_type = self.mesh_static.mesh_type,
             .connect = &self.mesh_static.connect,
-            .coords_nodes = &self.mesh_frame.frame_workspace.coords_nodes,
-            .visible_orig_elem_indices = self.mesh_frame.frame_workspace.visible_orig_elem_indices,
-            .elem_bboxes = self.mesh_frame.frame_workspace.elem_bboxes,
-            .visible_offsets_by_chunk = self.mesh_frame.visible_offsets_by_chunk,
+            .coords_nodes = &self.mesh_workspace.coords_nodes,
+            .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
+            .elem_bboxes = self.mesh_workspace.elem_bboxes,
+            .visible_offsets_by_chunk = self.mesh_workspace.visible_offsets_by_chunk,
         };
-        pce.runStaticRangeMaybe(
+        pce.runStaticRange(
             self.chunk_exec,
             &cull_fill_stage,
             runCullVisibleFill,
@@ -1133,7 +1119,7 @@ const FrameMeshPipeline = struct {
         );
 
         self.visible_chunk_size = pce.getChunkSize(
-            self.mesh_frame.visible_elems_num,
+            self.mesh_workspace.elems_in_image,
             self.workers_num,
         );
     }
@@ -1142,21 +1128,21 @@ const FrameMeshPipeline = struct {
         var elem_coords = try ndarray.NDArray(f64).initFlat(
             self.allocator,
             &[_]usize{
-                self.mesh_frame.visible_elems_num,
+                self.mesh_workspace.elems_in_image,
                 3,
                 self.mesh_static.mesh_type.getNodesNum(),
             },
         );
         var compact_coords_stage = CompactVisibleCoordsStage{
             .mesh_static = self.mesh_static,
-            .frame_workspace = &self.mesh_frame.frame_workspace,
+            .frame_workspace = &self.mesh_workspace,
             .elem_coords = &elem_coords,
         };
-        pce.runStaticRangeMaybe(
+        pce.runStaticRange(
             self.chunk_exec,
             &compact_coords_stage,
             runCompactVisibleCoords,
-            self.mesh_frame.visible_elems_num,
+            self.mesh_workspace.elems_in_image,
             self.visible_chunk_size,
         );
 
@@ -1171,34 +1157,34 @@ const FrameMeshPipeline = struct {
         self: *FrameMeshPipeline,
         elem_coords: *const ndarray.NDArray(f64),
     ) !void {
-        self.mesh_frame.frame_workspace.raster_hull = switch (self.mesh_static.mesh_type) {
+        self.mesh_workspace.raster_hull = switch (self.mesh_static.mesh_type) {
             .tri3 => null,
             .quad4ibi, .quad4newton => try ndarray.NDArray(f64).initFlat(
                 self.allocator,
-                &[_]usize{ self.mesh_frame.visible_elems_num, 2, 4 },
+                &[_]usize{ self.mesh_workspace.elems_in_image, 2, 4 },
             ),
             .tri6 => try ndarray.NDArray(f64).initFlat(
                 self.allocator,
-                &[_]usize{ self.mesh_frame.visible_elems_num, 2, 6 },
+                &[_]usize{ self.mesh_workspace.elems_in_image, 2, 6 },
             ),
             .quad8, .quad9 => try ndarray.NDArray(f64).initFlat(
                 self.allocator,
-                &[_]usize{ self.mesh_frame.visible_elems_num, 2, 8 },
+                &[_]usize{ self.mesh_workspace.elems_in_image, 2, 8 },
             ),
         };
 
-        if (self.mesh_frame.frame_workspace.raster_hull) |*raster_hull| {
+        if (self.mesh_workspace.raster_hull) |*raster_hull| {
             var hulls_stage = PrepareRasterHullsStage{
                 .camera = self.camera,
                 .mesh_type = self.mesh_static.mesh_type,
                 .elem_coords = elem_coords,
                 .raster_hull = raster_hull,
             };
-            pce.runStaticRangeMaybe(
+            pce.runStaticRange(
                 self.chunk_exec,
                 &hulls_stage,
                 runPrepareRasterHulls,
-                self.mesh_frame.visible_elems_num,
+                self.mesh_workspace.elems_in_image,
                 self.visible_chunk_size,
             );
         }
@@ -1233,7 +1219,7 @@ const FrameMeshPipeline = struct {
         var elem_field = try ndarray.NDArray(f64).initFlat(
             self.allocator,
             &[_]usize{
-                self.mesh_frame.visible_elems_num,
+                self.mesh_workspace.elems_in_image,
                 @as(usize, nodal_static.field.getFieldsN()),
                 self.mesh_static.connect.getNodesPerElem(),
             },
@@ -1242,14 +1228,14 @@ const FrameMeshPipeline = struct {
             .connect = &self.mesh_static.connect,
             .field = &nodal_static.field,
             .frame_idx = self.frame_idx,
-            .visible_orig_elem_indices = self.mesh_frame.frame_workspace.visible_orig_elem_indices,
+            .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
             .elem_field = &elem_field,
         };
-        pce.runStaticRangeMaybe(
+        pce.runStaticRange(
             self.chunk_exec,
             &field_stage,
             runCompactVisibleField,
-            self.mesh_frame.visible_elems_num,
+            self.mesh_workspace.elems_in_image,
             self.visible_chunk_size,
         );
 
@@ -1294,21 +1280,21 @@ const FrameMeshPipeline = struct {
         var elem_uvs = try ndarray.NDArray(f64).initFlat(
             self.allocator,
             &[_]usize{
-                self.mesh_frame.visible_elems_num,
+                self.mesh_workspace.elems_in_image,
                 2,
                 tex_static.elem_uvs.dims[2],
             },
         );
         var uv_stage = CompactVisibleUVStage{
             .elem_uvs_full = tex_static.elem_uvs,
-            .visible_orig_elem_indices = self.mesh_frame.frame_workspace.visible_orig_elem_indices,
+            .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
             .elem_uvs = &elem_uvs,
         };
-        pce.runStaticRangeMaybe(
+        pce.runStaticRange(
             self.chunk_exec,
             &uv_stage,
             runCompactVisibleUV,
-            self.mesh_frame.visible_elems_num,
+            self.mesh_workspace.elems_in_image,
             self.visible_chunk_size,
         );
 
@@ -1351,9 +1337,9 @@ const FrameMeshPipeline = struct {
         return try prepareVisibleNormalsThreaded(
             self.allocator,
             self.mesh_static.mesh_type,
-            &self.mesh_frame.frame_workspace.coords_nodes,
+            &self.mesh_workspace.coords_nodes,
             &self.mesh_static.connect,
-            self.mesh_frame.frame_workspace.visible_orig_elem_indices,
+            self.mesh_workspace.visible_orig_elem_indices,
             normal_type,
             self.chunk_exec,
             self.elem_chunk_size,
@@ -1362,7 +1348,7 @@ const FrameMeshPipeline = struct {
     }
 
     fn assignVisibleElemIndices(self: *FrameMeshPipeline) void {
-        for (self.mesh_frame.frame_workspace.elem_bboxes, 0..) |*elem_bbox, pp| {
+        for (self.mesh_workspace.elem_bboxes, 0..) |*elem_bbox, pp| {
             elem_bbox.elem_idx = pp;
         }
     }
@@ -1373,10 +1359,11 @@ const FrameMeshPipeline = struct {
     ) MeshFrame {
         return .{
             .mesh = mesh_prep,
-            .elem_bboxes = self.mesh_frame.frame_workspace.elem_bboxes,
-            .elems_in_image = self.mesh_frame.frame_workspace.elems_in_image,
+            .elem_bboxes = self.mesh_workspace.elem_bboxes,
+            .elems_in_image = self.mesh_workspace.elems_in_image,
             .total_elems_num = self.mesh_static.connect.getElemsNum(),
-            .raster_hull = self.mesh_frame.frame_workspace.raster_hull,
+            .raster_hull = self.mesh_workspace.raster_hull,
+            .frame_workspace = self.mesh_workspace,
         };
     }
 };

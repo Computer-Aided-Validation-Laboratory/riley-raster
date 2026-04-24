@@ -8,6 +8,14 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
+// Parallel Chunk Executioner
+//---------------------------------------------------------------------------
+// Execution helper for "parallel for" type work by breaking the range of the loop into 
+// chunks and executing these chunks on a pool of threads.
+// runStaticRange:  Each thread executes a statically assigned chunk (no work stealing)
+// runDynamicRange: Each thread takes a "grain" of the range and can work steal using an
+//                  atomic counter.
+
 pub const RangeFn = *const fn (
     ctx_ptr: *anyopaque,
     chunk_idx: usize,
@@ -117,7 +125,8 @@ pub fn getWorkerCount(chunk_exec: ?*ParaChunkExecutor) usize {
     return 1;
 }
 
-pub fn runStaticRangeMaybe(
+// Parallelisation over a range in assigned fixed chunks
+pub fn runStaticRange(
     chunk_exec: ?*ParaChunkExecutor,
     ctx_ptr: *anyopaque,
     job_func: RangeFn,
@@ -154,6 +163,7 @@ pub fn runStaticRangeMaybe(
     );
 }
 
+// Parallelisation over a range with work stealing using an atomic counter
 pub fn runDynamicRangeMaybe(
     chunk_exec: ?*ParaChunkExecutor,
     ctx_ptr: *anyopaque,
