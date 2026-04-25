@@ -34,18 +34,10 @@ pub fn AdaptiveHullPoints(comptime N: usize) type {
     };
 }
 
-pub fn GatheredElemCoords(comptime N: usize) type {
-    return struct {
-        x: [N]f64,
-        y: [N]f64,
-        z: [N]f64,
-    };
-}
-
 pub fn buildAdaptiveHullPoints(
     comptime N: usize,
     camera: *const cam.CameraPrepared,
-    coords_elem: GatheredElemCoords(N),
+    coords_elem: rops.GatheredElemCoords(N),
 ) AdaptiveHullPoints(N) {
     const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
     const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
