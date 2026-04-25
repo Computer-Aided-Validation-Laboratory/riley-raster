@@ -395,126 +395,6 @@ fn initMeshFrameWorkspace(
 // Geometry Pipeline Stages: meshio.Coords, Transform, Culling and Compaction
 //------------------------------------------------------------------------------------------
 
-const PrepareCoordsStage = struct {
-    frame_workspace: *MeshFrameWorkspace,
-    mesh_static: *const MeshStatic,
-    frame_idx: usize,
-};
-
-fn runPrepareCoords(
-    ctx_ptr: *anyopaque,
-    chunk_idx: usize,
-    range_start: usize,
-    range_end: usize,
-) void {
-    _ = chunk_idx;
-    const stage: *PrepareCoordsStage = @ptrCast(@alignCast(ctx_ptr));
-
-    const actual_frame_idx = if (stage.mesh_static.disp) |disp|
-        @min(stage.frame_idx, disp.array.dims[0] - 1)
-    else
-        0;
-
-    for (range_start..range_end) |nn| {
-        const coord_off = nn * 3;
-        stage.frame_workspace.coords_nodes.mem[coord_off + 0] =
-            stage.mesh_static.coords_orig.mem[coord_off + 0];
-        stage.frame_workspace.coords_nodes.mem[coord_off + 1] =
-            stage.mesh_static.coords_orig.mem[coord_off + 1];
-        stage.frame_workspace.coords_nodes.mem[coord_off + 2] =
-            stage.mesh_static.coords_orig.mem[coord_off + 2];
-
-        if (stage.mesh_static.disp) |disp| {
-            for (0..3) |cc| {
-                stage.frame_workspace.coords_nodes.mem[coord_off + cc] += disp.array.get(
-                    &[_]usize{ actual_frame_idx, nn, cc },
-                );
-            }
-        }
-    }
-}
-
-const TransformCoordsStage = struct {
-    camera: *const cam.CameraPrepared,
-    mesh_type: MeshType,
-    frame_workspace: *MeshFrameWorkspace,
-};
-
-fn runTransformCoords(
-    ctx_ptr: *anyopaque,
-    chunk_idx: usize,
-    range_start: usize,
-    range_end: usize,
-) void {
-    _ = chunk_idx;
-    const stage: *TransformCoordsStage = @ptrCast(@alignCast(ctx_ptr));
-    switch (stage.mesh_type) {
-        .tri3 => rops.nodesToRasterRangeInPlace(
-            stage.camera,
-            &stage.frame_workspace.coords_nodes,
-            range_start,
-            range_end,
-        ),
-        inline else => rops.nodesToClipPxLengRangeInPlace(
-            stage.camera,
-            &stage.frame_workspace.coords_nodes,
-            range_start,
-            range_end,
-        ),
-    }
-}
-
-
-
-const CullVisibleCountStage = struct {
-    camera: *const cam.CameraPrepared,
-    mesh_type: MeshType,
-    connect: *const meshio.Connect,
-    coords_nodes: *const meshio.Coords,
-    visible_counts_by_chunk: []usize,
-};
-
-fn runCullVisibleCount(
-    ctx_ptr: *anyopaque,
-    chunk_idx: usize,
-    range_start: usize,
-    range_end: usize,
-) void {
-    const stage: *CullVisibleCountStage = @ptrCast(@alignCast(ctx_ptr));
-    var visible_count: usize = 0;
-
-    switch (stage.mesh_type) {
-        .tri3 => {
-            for (range_start..range_end) |ee| {
-                if (rops.calcVisibleNodeBBoxTri3(
-                    stage.camera,
-                    stage.coords_nodes,
-                    stage.connect,
-                    ee,
-                ) != null) {
-                    visible_count += 1;
-                }
-            }
-        },
-        inline else => |mt| {
-            const N = comptime mt.getNodesNum();
-            for (range_start..range_end) |ee| {
-                if (rops.calcVisibleNodeBBoxHighOrd(
-                    N,
-                    stage.camera,
-                    stage.coords_nodes,
-                    stage.connect,
-                    ee,
-                ) != null) {
-                    visible_count += 1;
-                }
-            }
-        },
-    }
-
-    stage.visible_counts_by_chunk[chunk_idx] = visible_count;
-}
-
 fn prefixVisibleCounts(mesh_workspace: *MeshFrameWorkspace) void {
     var running_total: usize = 0;
     for (mesh_workspace.visible_counts_by_chunk, 0..) |visible_count, cc| {
@@ -523,186 +403,6 @@ fn prefixVisibleCounts(mesh_workspace: *MeshFrameWorkspace) void {
     }
     mesh_workspace.elems_in_image = running_total;
 }
-
-const CullVisibleFillStage = struct {
-    camera: *const cam.CameraPrepared,
-    mesh_type: MeshType,
-    connect: *const meshio.Connect,
-    coords_nodes: *const meshio.Coords,
-    visible_orig_elem_indices: []usize,
-    elem_bboxes: []rops.ElemBBox,
-    visible_offsets_by_chunk: []const usize,
-};
-
-fn runCullVisibleFill(
-    ctx_ptr: *anyopaque,
-    chunk_idx: usize,
-    range_start: usize,
-    range_end: usize,
-) void {
-    const stage: *CullVisibleFillStage = @ptrCast(@alignCast(ctx_ptr));
-    var write_idx = stage.visible_offsets_by_chunk[chunk_idx];
-
-    switch (stage.mesh_type) {
-        .tri3 => {
-            for (range_start..range_end) |ee| {
-                if (rops.calcVisibleNodeBBoxTri3(
-                    stage.camera,
-                    stage.coords_nodes,
-                    stage.connect,
-                    ee,
-                )) |bbox| {
-                    stage.visible_orig_elem_indices[write_idx] = ee;
-                    stage.elem_bboxes[write_idx] = bbox;
-                    write_idx += 1;
-                }
-            }
-        },
-        inline else => |mt| {
-            const N = comptime mt.getNodesNum();
-            for (range_start..range_end) |ee| {
-                if (rops.calcVisibleNodeBBoxHighOrd(
-                    N,
-                    stage.camera,
-                    stage.coords_nodes,
-                    stage.connect,
-                    ee,
-                )) |bbox| {
-                    stage.visible_orig_elem_indices[write_idx] = ee;
-                    stage.elem_bboxes[write_idx] = bbox;
-                    write_idx += 1;
-                }
-            }
-        },
-    }
-}
-
-const CompactVisibleCoordsStage = struct {
-    mesh_static: *const MeshStatic,
-    frame_workspace: *const MeshFrameWorkspace,
-    elem_coords: *ndarray.NDArray(f64),
-};
-
-fn runCompactVisibleCoords(
-    ctx_ptr: *anyopaque,
-    chunk_idx: usize,
-    range_start: usize,
-    range_end: usize,
-) void {
-    _ = chunk_idx;
-    const stage: *CompactVisibleCoordsStage = @ptrCast(@alignCast(ctx_ptr));
-    const nodes_num = stage.mesh_static.mesh_type.getNodesNum();
-
-    for (range_start..range_end) |pp| {
-        const orig_ee = stage.frame_workspace.visible_orig_elem_indices[pp];
-        const coord_inds = stage.mesh_static.connect.getElem(orig_ee);
-        for (0..nodes_num) |nn| {
-            const node_idx = coord_inds[nn];
-            stage.elem_coords.set(
-                &[_]usize{ pp, 0, nn },
-                stage.frame_workspace.coords_nodes.x(node_idx),
-            );
-            stage.elem_coords.set(
-                &[_]usize{ pp, 1, nn },
-                stage.frame_workspace.coords_nodes.y(node_idx),
-            );
-            stage.elem_coords.set(
-                &[_]usize{ pp, 2, nn },
-                stage.frame_workspace.coords_nodes.z(node_idx),
-            );
-        }
-    }
-}
-
-const CompactVisibleFieldStage = struct {
-    connect: *const meshio.Connect,
-    field: *const meshio.Field,
-    frame_idx: usize,
-    visible_orig_elem_indices: []const usize,
-    elem_field: *ndarray.NDArray(f64),
-};
-
-fn runCompactVisibleField(
-    ctx_ptr: *anyopaque,
-    chunk_idx: usize,
-    range_start: usize,
-    range_end: usize,
-) void {
-    _ = chunk_idx;
-    const stage: *CompactVisibleFieldStage = @ptrCast(@alignCast(ctx_ptr));
-    const actual_frame_idx = @min(stage.frame_idx, stage.field.array.dims[0] - 1);
-    const fields_num = stage.field.getFieldsN();
-    const nodes_num = stage.connect.getNodesPerElem();
-
-    for (range_start..range_end) |pp| {
-        const orig_ee = stage.visible_orig_elem_indices[pp];
-        const coord_inds = stage.connect.getElem(orig_ee);
-        for (0..nodes_num) |nn| {
-            for (0..@as(usize, fields_num)) |ff| {
-                const field_val = stage.field.array.get(
-                    &[_]usize{ actual_frame_idx, coord_inds[nn], ff },
-                );
-                stage.elem_field.set(&[_]usize{ pp, ff, nn }, field_val);
-            }
-        }
-    }
-}
-
-const CompactVisibleUVStage = struct {
-    elem_uvs_full: ndarray.NDArray(f64),
-    visible_orig_elem_indices: []const usize,
-    elem_uvs: *ndarray.NDArray(f64),
-};
-
-fn runCompactVisibleUV(
-    ctx_ptr: *anyopaque,
-    chunk_idx: usize,
-    range_start: usize,
-    range_end: usize,
-) void {
-    _ = chunk_idx;
-    const stage: *CompactVisibleUVStage = @ptrCast(@alignCast(ctx_ptr));
-    const nodes_num = stage.elem_uvs_full.dims[2];
-
-    for (range_start..range_end) |pp| {
-        const orig_ee = stage.visible_orig_elem_indices[pp];
-        const src_start = stage.elem_uvs_full.getFlatIdx(&[_]usize{ orig_ee, 0, 0 });
-        const dst_start = stage.elem_uvs.getFlatIdx(&[_]usize{ pp, 0, 0 });
-        @memcpy(
-            stage.elem_uvs.slice[dst_start .. dst_start + 2 * nodes_num],
-            stage.elem_uvs_full.slice[src_start .. src_start + 2 * nodes_num],
-        );
-    }
-}
-
-const PrepareRasterHullsStage = struct {
-    camera: *const cam.CameraPrepared,
-    mesh_type: MeshType,
-    elem_coords: *const ndarray.NDArray(f64),
-    raster_hull: *ndarray.NDArray(f64),
-};
-
-fn runPrepareRasterHulls(
-    ctx_ptr: *anyopaque,
-    chunk_idx: usize,
-    range_start: usize,
-    range_end: usize,
-) void {
-    _ = chunk_idx;
-    const stage: *PrepareRasterHullsStage = @ptrCast(@alignCast(ctx_ptr));
-    rops.prepareVisibleRasterHullsRange(
-        stage.camera,
-        stage.mesh_type,
-        stage.elem_coords,
-        stage.raster_hull,
-        range_start,
-        range_end,
-    );
-}
-
-//------------------------------------------------------------------------------------------
-// Normal Generation: Threaded normal calculation stages
-//------------------------------------------------------------------------------------------
 
 fn prepareVisibleNormalsThreaded(
     allocator: std.mem.Allocator,
@@ -938,215 +638,422 @@ fn runWriteVisibleAveragedNormals(
 // Frame Mesh Pipeline: Implementation of the frame-by-frame geometry pipeline
 //------------------------------------------------------------------------------------------
 
-const FrameMeshPipeline = struct {
-    allocator: std.mem.Allocator,
-    camera: *const cam.CameraPrepared,
-    mesh_static: *const MeshStatic,
-    frame_idx: usize,
-    scaling_params: ?imageops.ScalingParams,
-    chunk_exec: ?*pce.ParaChunkExecutor,
-    workers_num: usize,
-    nodes_num: usize,
-    elems_num: usize,
-    node_chunk_size: usize,
-    elem_chunk_size: usize,
-    elem_chunks_num: usize,
-    visible_chunk_size: usize,
-    mesh_workspace: MeshFrameWorkspace,
+fn FrameMeshPipeline(comptime MT: MeshType) type {
+    return struct {
+        const FrameMeshPipelineType = @This();
 
-    fn init(
         allocator: std.mem.Allocator,
         camera: *const cam.CameraPrepared,
         mesh_static: *const MeshStatic,
         frame_idx: usize,
         scaling_params: ?imageops.ScalingParams,
         chunk_exec: ?*pce.ParaChunkExecutor,
-    ) !FrameMeshPipeline {
-        const workers_num = pce.getWorkerCount(chunk_exec);
-        const nodes_num = mesh_static.coords_orig.mat.rows_num;
-        const elems_num = mesh_static.connect.getElemsNum();
-        const node_chunk_size = pce.getChunkSize(nodes_num, workers_num);
-        const elem_chunk_size = pce.getChunkSize(elems_num, workers_num);
+        workers_num: usize,
+        nodes_num: usize,
+        elems_num: usize,
+        node_chunk_size: usize,
+        elem_chunk_size: usize,
+        elem_chunks_num: usize,
+        visible_chunk_size: usize,
+        mesh_workspace: MeshFrameWorkspace,
 
-        return .{
-            .allocator = allocator,
-            .camera = camera,
-            .mesh_static = mesh_static,
-            .frame_idx = frame_idx,
-            .scaling_params = scaling_params,
-            .chunk_exec = chunk_exec,
-            .workers_num = workers_num,
-            .nodes_num = nodes_num,
-            .elems_num = elems_num,
-            .node_chunk_size = node_chunk_size,
-            .elem_chunk_size = elem_chunk_size,
-            .elem_chunks_num = pce.getChunksNum(elems_num, elem_chunk_size),
-            .visible_chunk_size = 1,
-            .mesh_workspace = try initMeshFrameWorkspace(
-                allocator,
-                mesh_static,
-            ),
+        fn init(
+            allocator: std.mem.Allocator,
+            camera: *const cam.CameraPrepared,
+            mesh_static: *const MeshStatic,
+            frame_idx: usize,
+            scaling_params: ?imageops.ScalingParams,
+            chunk_exec: ?*pce.ParaChunkExecutor,
+        ) !FrameMeshPipelineType {
+            const workers_num = pce.getWorkerCount(chunk_exec);
+            const nodes_num = mesh_static.coords_orig.mat.rows_num;
+            const elems_num = mesh_static.connect.getElemsNum();
+            const node_chunk_size = pce.getChunkSize(nodes_num, workers_num);
+            const elem_chunk_size = pce.getChunkSize(elems_num, workers_num);
+
+            return .{
+                .allocator = allocator,
+                .camera = camera,
+                .mesh_static = mesh_static,
+                .frame_idx = frame_idx,
+                .scaling_params = scaling_params,
+                .chunk_exec = chunk_exec,
+                .workers_num = workers_num,
+                .nodes_num = nodes_num,
+                .elems_num = elems_num,
+                .node_chunk_size = node_chunk_size,
+                .elem_chunk_size = elem_chunk_size,
+                .elem_chunks_num = pce.getChunksNum(elems_num, elem_chunk_size),
+                .visible_chunk_size = 1,
+                .mesh_workspace = try initMeshFrameWorkspace(
+                    allocator,
+                    mesh_static,
+                ),
+            };
+        }
+
+        fn run(self: *FrameMeshPipelineType) !MeshFrame {
+            self.prepareCoords();
+            self.transformCoords();
+
+            try self.cullVisible();
+            var mesh_prep = try self.compactVisibleMesh();
+
+            try self.prepareRasterHulls(&mesh_prep.coords);
+            try self.prepareShader(&mesh_prep);
+
+            self.assignVisibleElemIndices();
+
+            return self.finish(mesh_prep);
+        }
+
+        const PrepareCoordsStage = struct {
+            frame_workspace: *MeshFrameWorkspace,
+            mesh_static: *const MeshStatic,
+            frame_idx: usize,
         };
-    }
 
-    //--------------------------------------------------------------------------------------
-    //
-    fn run(self: *FrameMeshPipeline) !MeshFrame {
-        self.prepareCoords();
-        self.transformCoords();
+        fn runPrepareCoords(
+            ctx_ptr: *anyopaque,
+            chunk_idx: usize,
+            range_start: usize,
+            range_end: usize,
+        ) void {
+            _ = chunk_idx;
+            const stage: *PrepareCoordsStage = @ptrCast(@alignCast(ctx_ptr));
 
-        try self.cullVisible();
-        var mesh_prep = try self.compactVisibleMesh();
+            const actual_frame_idx = if (stage.mesh_static.disp) |disp|
+                @min(stage.frame_idx, disp.array.dims[0] - 1)
+            else
+                0;
 
-        try self.prepareRasterHulls(&mesh_prep.coords);
-        try self.prepareShader(&mesh_prep);
+            for (range_start..range_end) |nn| {
+                const coord_off = nn * 3;
+                stage.frame_workspace.coords_nodes.mem[coord_off + 0] =
+                    stage.mesh_static.coords_orig.mem[coord_off + 0];
+                stage.frame_workspace.coords_nodes.mem[coord_off + 1] =
+                    stage.mesh_static.coords_orig.mem[coord_off + 1];
+                stage.frame_workspace.coords_nodes.mem[coord_off + 2] =
+                    stage.mesh_static.coords_orig.mem[coord_off + 2];
 
-        self.assignVisibleElemIndices();
+                if (stage.mesh_static.disp) |disp| {
+                    for (0..3) |cc| {
+                        stage.frame_workspace.coords_nodes.mem[coord_off + cc] +=
+                            disp.array.get(&[_]usize{ actual_frame_idx, nn, cc });
+                    }
+                }
+            }
+        }
 
-        return self.finish(mesh_prep);
-    }
-    //--------------------------------------------------------------------------------------
+        fn prepareCoords(self: *FrameMeshPipelineType) void {
+            var prepare_stage = PrepareCoordsStage{
+                .frame_workspace = &self.mesh_workspace,
+                .mesh_static = self.mesh_static,
+                .frame_idx = self.frame_idx,
+            };
+            pce.runStaticRange(
+                self.chunk_exec,
+                &prepare_stage,
+                runPrepareCoords,
+                self.nodes_num,
+                self.node_chunk_size,
+            );
+        }
 
-    fn prepareCoords(self: *FrameMeshPipeline) void {
-        var prepare_stage = PrepareCoordsStage{
-            .frame_workspace = &self.mesh_workspace,
-            .mesh_static = self.mesh_static,
-            .frame_idx = self.frame_idx,
+        const TransformCoordsStage = struct {
+            camera: *const cam.CameraPrepared,
+            frame_workspace: *MeshFrameWorkspace,
         };
-        pce.runStaticRange(
-            self.chunk_exec,
-            &prepare_stage,
-            runPrepareCoords,
-            self.nodes_num,
-            self.node_chunk_size,
-        );
-    }
 
-    fn transformCoords(self: *FrameMeshPipeline) void {
-        var transform_stage = TransformCoordsStage{
-            .camera = self.camera,
-            .mesh_type = self.mesh_static.mesh_type,
-            .frame_workspace = &self.mesh_workspace,
+        fn runTransformCoords(
+            ctx_ptr: *anyopaque,
+            chunk_idx: usize,
+            range_start: usize,
+            range_end: usize,
+        ) void {
+            _ = chunk_idx;
+            const stage: *TransformCoordsStage = @ptrCast(@alignCast(ctx_ptr));
+            if (MT == .tri3) {
+                rops.nodesToRasterRangeInPlace(
+                    stage.camera,
+                    &stage.frame_workspace.coords_nodes,
+                    range_start,
+                    range_end,
+                );
+            } else {
+                rops.nodesToClipPxLengRangeInPlace(
+                    stage.camera,
+                    &stage.frame_workspace.coords_nodes,
+                    range_start,
+                    range_end,
+                );
+            }
+        }
+
+        fn transformCoords(self: *FrameMeshPipelineType) void {
+            var transform_stage = TransformCoordsStage{
+                .camera = self.camera,
+                .frame_workspace = &self.mesh_workspace,
+            };
+            pce.runStaticRange(
+                self.chunk_exec,
+                &transform_stage,
+                runTransformCoords,
+                self.nodes_num,
+                self.node_chunk_size,
+            );
+        }
+
+        const CullVisibleCountStage = struct {
+            camera: *const cam.CameraPrepared,
+            connect: *const meshio.Connect,
+            coords_nodes: *const meshio.Coords,
+            visible_counts_by_chunk: []usize,
         };
-        pce.runStaticRange(
-            self.chunk_exec,
-            &transform_stage,
-            runTransformCoords,
-            self.nodes_num,
-            self.node_chunk_size,
-        );
-    }
 
-    fn cullVisible(self: *FrameMeshPipeline) !void {
-        self.mesh_workspace.visible_counts_by_chunk = try self.allocator.alloc(
-            usize,
-            self.elem_chunks_num,
-        );
-        self.mesh_workspace.visible_offsets_by_chunk = try self.allocator.alloc(
-            usize,
-            self.elem_chunks_num,
-        );
-        @memset(self.mesh_workspace.visible_counts_by_chunk, 0);
-        @memset(self.mesh_workspace.visible_offsets_by_chunk, 0);
+        fn runCullVisibleCount(
+            ctx_ptr: *anyopaque,
+            chunk_idx: usize,
+            range_start: usize,
+            range_end: usize,
+        ) void {
+            const stage: *CullVisibleCountStage = @ptrCast(@alignCast(ctx_ptr));
+            var visible_count: usize = 0;
 
-        var cull_count_stage = CullVisibleCountStage{
-            .camera = self.camera,
-            .mesh_type = self.mesh_static.mesh_type,
-            .connect = &self.mesh_static.connect,
-            .coords_nodes = &self.mesh_workspace.coords_nodes,
-            .visible_counts_by_chunk = self.mesh_workspace.visible_counts_by_chunk,
-        };
-        pce.runStaticRange(
-            self.chunk_exec,
-            &cull_count_stage,
-            runCullVisibleCount,
-            self.elems_num,
-            self.elem_chunk_size,
-        );
+            const N = comptime MT.getNodesNum();
+            for (range_start..range_end) |ee| {
+                const bbox = if (MT == .tri3)
+                    rops.calcVisibleNodeBBoxTri3(
+                        stage.camera,
+                        stage.coords_nodes,
+                        stage.connect,
+                        ee,
+                    )
+                else
+                    rops.calcVisibleNodeBBoxHighOrd(
+                        N,
+                        stage.camera,
+                        stage.coords_nodes,
+                        stage.connect,
+                        ee,
+                    );
 
-        prefixVisibleCounts(&self.mesh_workspace);
+                if (bbox != null) {
+                    visible_count += 1;
+                }
+            }
+            stage.visible_counts_by_chunk[chunk_idx] = visible_count;
+        }
 
-        self.mesh_workspace.visible_orig_elem_indices =
-            try self.allocator.alloc(usize, self.mesh_workspace.elems_in_image);
-        self.mesh_workspace.elem_bboxes = try self.allocator.alloc(
-            rops.ElemBBox,
-            self.mesh_workspace.elems_in_image,
-        );
+        fn cullVisible(self: *FrameMeshPipelineType) !void {
+            self.mesh_workspace.visible_counts_by_chunk = try self.allocator.alloc(
+                usize,
+                self.elem_chunks_num,
+            );
+            self.mesh_workspace.visible_offsets_by_chunk = try self.allocator.alloc(
+                usize,
+                self.elem_chunks_num,
+            );
+            @memset(self.mesh_workspace.visible_counts_by_chunk, 0);
+            @memset(self.mesh_workspace.visible_offsets_by_chunk, 0);
 
-        var cull_fill_stage = CullVisibleFillStage{
-            .camera = self.camera,
-            .mesh_type = self.mesh_static.mesh_type,
-            .connect = &self.mesh_static.connect,
-            .coords_nodes = &self.mesh_workspace.coords_nodes,
-            .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
-            .elem_bboxes = self.mesh_workspace.elem_bboxes,
-            .visible_offsets_by_chunk = self.mesh_workspace.visible_offsets_by_chunk,
-        };
-        pce.runStaticRange(
-            self.chunk_exec,
-            &cull_fill_stage,
-            runCullVisibleFill,
-            self.elems_num,
-            self.elem_chunk_size,
-        );
+            var cull_count_stage = CullVisibleCountStage{
+                .camera = self.camera,
+                .connect = &self.mesh_static.connect,
+                .coords_nodes = &self.mesh_workspace.coords_nodes,
+                .visible_counts_by_chunk = self.mesh_workspace.visible_counts_by_chunk,
+            };
+            pce.runStaticRange(
+                self.chunk_exec,
+                &cull_count_stage,
+                runCullVisibleCount,
+                self.elems_num,
+                self.elem_chunk_size,
+            );
 
-        self.visible_chunk_size = pce.getChunkSize(
-            self.mesh_workspace.elems_in_image,
-            self.workers_num,
-        );
-    }
+            prefixVisibleCounts(&self.mesh_workspace);
 
-    fn compactVisibleMesh(self: *FrameMeshPipeline) !MeshPrepared {
-        var elem_coords = try ndarray.NDArray(f64).initFlat(
-            self.allocator,
-            &[_]usize{
+            self.mesh_workspace.visible_orig_elem_indices =
+                try self.allocator.alloc(usize, self.mesh_workspace.elems_in_image);
+            self.mesh_workspace.elem_bboxes = try self.allocator.alloc(
+                rops.ElemBBox,
                 self.mesh_workspace.elems_in_image,
-                3,
-                self.mesh_static.mesh_type.getNodesNum(),
-            },
-        );
-        var compact_coords_stage = CompactVisibleCoordsStage{
-            .mesh_static = self.mesh_static,
-            .frame_workspace = &self.mesh_workspace,
-            .elem_coords = &elem_coords,
-        };
-        pce.runStaticRange(
-            self.chunk_exec,
-            &compact_coords_stage,
-            runCompactVisibleCoords,
-            self.mesh_workspace.elems_in_image,
-            self.visible_chunk_size,
-        );
+            );
 
-        return .{
-            .mesh_type = self.mesh_static.mesh_type,
-            .coords = elem_coords,
-            .shader = undefined,
-        };
-    }
+            var cull_fill_stage = CullVisibleFillStage{
+                .camera = self.camera,
+                .connect = &self.mesh_static.connect,
+                .coords_nodes = &self.mesh_workspace.coords_nodes,
+                .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
+                .elem_bboxes = self.mesh_workspace.elem_bboxes,
+                .visible_offsets_by_chunk = self.mesh_workspace.visible_offsets_by_chunk,
+            };
+            pce.runStaticRange(
+                self.chunk_exec,
+                &cull_fill_stage,
+                runCullVisibleFill,
+                self.elems_num,
+                self.elem_chunk_size,
+            );
 
-    fn prepareRasterHulls(
-        self: *FrameMeshPipeline,
-        elem_coords: *const ndarray.NDArray(f64),
-    ) !void {
-        self.mesh_workspace.raster_hull = switch (self.mesh_static.mesh_type) {
-            .tri3 => null,
-            inline else => |mt| try ndarray.NDArray(f64).initFlat(
+            self.visible_chunk_size = pce.getChunkSize(
+                self.mesh_workspace.elems_in_image,
+                self.workers_num,
+            );
+        }
+
+        const CullVisibleFillStage = struct {
+            camera: *const cam.CameraPrepared,
+            connect: *const meshio.Connect,
+            coords_nodes: *const meshio.Coords,
+            visible_orig_elem_indices: []usize,
+            elem_bboxes: []rops.ElemBBox,
+            visible_offsets_by_chunk: []const usize,
+        };
+
+        fn runCullVisibleFill(
+            ctx_ptr: *anyopaque,
+            chunk_idx: usize,
+            range_start: usize,
+            range_end: usize,
+        ) void {
+            const stage: *CullVisibleFillStage = @ptrCast(@alignCast(ctx_ptr));
+            var write_idx = stage.visible_offsets_by_chunk[chunk_idx];
+
+            const N = comptime MT.getNodesNum();
+            for (range_start..range_end) |ee| {
+                const bbox = if (MT == .tri3)
+                    rops.calcVisibleNodeBBoxTri3(
+                        stage.camera,
+                        stage.coords_nodes,
+                        stage.connect,
+                        ee,
+                    )
+                else
+                    rops.calcVisibleNodeBBoxHighOrd(
+                        N,
+                        stage.camera,
+                        stage.coords_nodes,
+                        stage.connect,
+                        ee,
+                    );
+
+                if (bbox) |b| {
+                    stage.visible_orig_elem_indices[write_idx] = ee;
+                    stage.elem_bboxes[write_idx] = b;
+                    write_idx += 1;
+                }
+            }
+        }
+
+        const CompactVisibleCoordsStage = struct {
+            connect: *const meshio.Connect,
+            coords_nodes: *const meshio.Coords,
+            visible_orig_elem_indices: []const usize,
+            elem_coords: *ndarray.NDArray(f64),
+        };
+
+        fn runCompactVisibleCoords(
+            ctx_ptr: *anyopaque,
+            chunk_idx: usize,
+            range_start: usize,
+            range_end: usize,
+        ) void {
+            _ = chunk_idx;
+            const stage: *CompactVisibleCoordsStage = @ptrCast(@alignCast(ctx_ptr));
+            const N = comptime MT.getNodesNum();
+
+            for (range_start..range_end) |pp| {
+                const orig_ee = stage.visible_orig_elem_indices[pp];
+                const coord_inds = stage.connect.getElem(orig_ee);
+                for (0..N) |nn| {
+                    const node_idx = coord_inds[nn];
+                    stage.elem_coords.set(
+                        &[_]usize{ pp, 0, nn },
+                        stage.coords_nodes.x(node_idx),
+                    );
+                    stage.elem_coords.set(
+                        &[_]usize{ pp, 1, nn },
+                        stage.coords_nodes.y(node_idx),
+                    );
+                    stage.elem_coords.set(
+                        &[_]usize{ pp, 2, nn },
+                        stage.coords_nodes.z(node_idx),
+                    );
+                }
+            }
+        }
+
+        fn compactVisibleMesh(self: *FrameMeshPipelineType) !MeshPrepared {
+            const N = comptime MT.getNodesNum();
+            var elem_coords = try ndarray.NDArray(f64).initFlat(
                 self.allocator,
-                &[_]usize{
-                    self.mesh_workspace.elems_in_image,
-                    2,
-                    comptime mt.getNodesNum(),
-                },
-            ),
+                &[_]usize{ self.mesh_workspace.elems_in_image, 3, N },
+            );
+            var compact_coords_stage = CompactVisibleCoordsStage{
+                .connect = &self.mesh_static.connect,
+                .coords_nodes = &self.mesh_workspace.coords_nodes,
+                .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
+                .elem_coords = &elem_coords,
+            };
+            pce.runStaticRange(
+                self.chunk_exec,
+                &compact_coords_stage,
+                runCompactVisibleCoords,
+                self.mesh_workspace.elems_in_image,
+                self.visible_chunk_size,
+            );
+
+            return .{
+                .mesh_type = MT,
+                .coords = elem_coords,
+                .shader = undefined,
+            };
+        }
+
+        const PrepareRasterHullsStage = struct {
+            camera: *const cam.CameraPrepared,
+            elem_coords: *const ndarray.NDArray(f64),
+            raster_hull: *ndarray.NDArray(f64),
         };
 
-        if (self.mesh_workspace.raster_hull) |*raster_hull| {
+        fn runPrepareRasterHulls(
+            ctx_ptr: *anyopaque,
+            chunk_idx: usize,
+            range_start: usize,
+            range_end: usize,
+        ) void {
+            _ = chunk_idx;
+            const stage: *PrepareRasterHullsStage = @ptrCast(@alignCast(ctx_ptr));
+            rops.prepareVisibleRasterHullsRange(
+                stage.camera,
+                MT,
+                stage.elem_coords,
+                stage.raster_hull,
+                range_start,
+                range_end,
+            );
+        }
+
+        fn prepareRasterHulls(
+            self: *FrameMeshPipelineType,
+            elem_coords: *const ndarray.NDArray(f64),
+        ) !void {
+            if (MT == .tri3) {
+                self.mesh_workspace.raster_hull = null;
+                return;
+            }
+
+            const NH = comptime MT.getNumHullPoints();
+            self.mesh_workspace.raster_hull = try ndarray.NDArray(f64).initFlat(
+                self.allocator,
+                &[_]usize{ self.mesh_workspace.elems_in_image, 2, NH },
+            );
+
             var hulls_stage = PrepareRasterHullsStage{
                 .camera = self.camera,
-                .mesh_type = self.mesh_static.mesh_type,
                 .elem_coords = elem_coords,
-                .raster_hull = raster_hull,
+                .raster_hull = &self.mesh_workspace.raster_hull.?,
             };
             pce.runStaticRange(
                 self.chunk_exec,
@@ -1156,119 +1063,179 @@ const FrameMeshPipeline = struct {
                 self.visible_chunk_size,
             );
         }
-    }
 
-    fn prepareShader(self: *FrameMeshPipeline, mesh_prep: *MeshPrepared) !void {
-        switch (self.mesh_static.shader) {
-            .nodal => |nodal_static| {
-                mesh_prep.shader = try self.prepareNodalShader(nodal_static);
-            },
-            .tex => |tex_static| {
-                mesh_prep.shader = try FrameMeshPipeline.prepareTexShaderN(
-                    1,
-                    self,
-                    tex_static,
-                );
-            },
-            .tex_rgb => |tex_static| {
-                mesh_prep.shader = try FrameMeshPipeline.prepareTexShaderN(
-                    3,
-                    self,
-                    tex_static,
-                );
-            },
+        fn prepareShader(self: *FrameMeshPipelineType, mesh_prep: *MeshPrepared) !void {
+            switch (self.mesh_static.shader) {
+                .nodal => |nodal_static| {
+                    mesh_prep.shader = try self.prepareNodalShader(nodal_static);
+                },
+                .tex => |tex_static| {
+                    mesh_prep.shader = try prepareTexShaderN(1, self, tex_static);
+                },
+                .tex_rgb => |tex_static| {
+                    mesh_prep.shader = try prepareTexShaderN(3, self, tex_static);
+                },
+            }
         }
-    }
 
-    fn prepareNodalShader(
-        self: *FrameMeshPipeline,
-        nodal_static: shaderops.NodalStatic,
-    ) !shaderops.ShaderPrepared {
-        var elem_field = try ndarray.NDArray(f64).initFlat(
-            self.allocator,
-            &[_]usize{
-                self.mesh_workspace.elems_in_image,
-                @as(usize, nodal_static.field.getFieldsN()),
-                self.mesh_static.connect.getNodesPerElem(),
-            },
-        );
-        var field_stage = CompactVisibleFieldStage{
-            .connect = &self.mesh_static.connect,
-            .field = &nodal_static.field,
-            .frame_idx = self.frame_idx,
-            .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
-            .elem_field = &elem_field,
+        const CompactVisibleFieldStage = struct {
+            connect: *const meshio.Connect,
+            field: *const meshio.Field,
+            frame_idx: usize,
+            visible_orig_elem_indices: []const usize,
+            elem_field: *ndarray.NDArray(f64),
         };
-        pce.runStaticRange(
-            self.chunk_exec,
-            &field_stage,
-            runCompactVisibleField,
-            self.mesh_workspace.elems_in_image,
-            self.visible_chunk_size,
-        );
 
-        const factors = if (self.scaling_params) |sp|
-            imageops.getScaleFactors(
-                nodal_static.scaling,
-                nodal_static.bits,
-                sp,
-            )
-        else
-            imageops.ScaleFactors{ .mul = 1.0, .add = 0.0 };
+        fn runCompactVisibleField(
+            ctx_ptr: *anyopaque,
+            chunk_idx: usize,
+            range_start: usize,
+            range_end: usize,
+        ) void {
+            _ = chunk_idx;
+            const stage: *CompactVisibleFieldStage = @ptrCast(@alignCast(ctx_ptr));
+            const actual_frame_idx = @min(stage.frame_idx, stage.field.array.dims[0] - 1);
+            const fields_num = stage.field.getFieldsN();
+            const N = comptime MT.getNodesNum();
 
-        return .{ .nodal = .{
-            .elem_field = elem_field,
-            .bits = nodal_static.bits,
-            .scaling = nodal_static.scaling,
-            .scale_over = nodal_static.scale_over,
-            .scale_mul = factors.mul,
-            .scale_add = factors.add,
-            .normal_type = nodal_static.normal_type,
-            .elem_normals = try self.prepareVisibleNormals(
-                nodal_static.normal_type,
-            ),
-        } };
-    }
+            for (range_start..range_end) |pp| {
+                const orig_ee = stage.visible_orig_elem_indices[pp];
+                const coord_inds = stage.connect.getElem(orig_ee);
+                for (0..N) |nn| {
+                    for (0..@as(usize, fields_num)) |ff| {
+                        const field_val = stage.field.array.get(
+                            &[_]usize{ actual_frame_idx, coord_inds[nn], ff },
+                        );
+                        stage.elem_field.set(&[_]usize{ pp, ff, nn }, field_val);
+                    }
+                }
+            }
+        }
 
-    fn prepareTexShaderN(
-        comptime channels: usize,
-        self: *FrameMeshPipeline,
-        tex_static: shaderops.TexStatic(channels),
-    ) !shaderops.ShaderPrepared {
-        const params = imageops.getScalingParamsTexture(
-            channels,
-            &tex_static.texture,
-            tex_static.scaling,
-        );
-        const factors = imageops.getScaleFactors(
-            tex_static.scaling,
-            tex_static.bits,
-            params,
-        );
-        var elem_uvs = try ndarray.NDArray(f64).initFlat(
-            self.allocator,
-            &[_]usize{
+        fn prepareNodalShader(
+            self: *FrameMeshPipelineType,
+            nodal_static: shaderops.NodalStatic,
+        ) !shaderops.ShaderPrepared {
+            const N = comptime MT.getNodesNum();
+            var elem_field = try ndarray.NDArray(f64).initFlat(
+                self.allocator,
+                &[_]usize{
+                    self.mesh_workspace.elems_in_image,
+                    @as(usize, nodal_static.field.getFieldsN()),
+                    N,
+                },
+            );
+            var field_stage = CompactVisibleFieldStage{
+                .connect = &self.mesh_static.connect,
+                .field = &nodal_static.field,
+                .frame_idx = self.frame_idx,
+                .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
+                .elem_field = &elem_field,
+            };
+            pce.runStaticRange(
+                self.chunk_exec,
+                &field_stage,
+                runCompactVisibleField,
                 self.mesh_workspace.elems_in_image,
-                2,
-                tex_static.elem_uvs.dims[2],
-            },
-        );
-        var uv_stage = CompactVisibleUVStage{
-            .elem_uvs_full = tex_static.elem_uvs,
-            .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
-            .elem_uvs = &elem_uvs,
-        };
-        pce.runStaticRange(
-            self.chunk_exec,
-            &uv_stage,
-            runCompactVisibleUV,
-            self.mesh_workspace.elems_in_image,
-            self.visible_chunk_size,
-        );
+                self.visible_chunk_size,
+            );
 
-        const elem_normals = try self.prepareVisibleNormals(tex_static.normal_type);
-        if (channels == 1) {
-            return .{ .tex = .{
+            const factors = if (self.scaling_params) |sp|
+                imageops.getScaleFactors(nodal_static.scaling, nodal_static.bits, sp)
+            else
+                imageops.ScaleFactors{ .mul = 1.0, .add = 0.0 };
+
+            return .{ .nodal = .{
+                .elem_field = elem_field,
+                .bits = nodal_static.bits,
+                .scaling = nodal_static.scaling,
+                .scale_over = nodal_static.scale_over,
+                .scale_mul = factors.mul,
+                .scale_add = factors.add,
+                .normal_type = nodal_static.normal_type,
+                .elem_normals = try self.prepareVisibleNormals(nodal_static.normal_type),
+            } };
+        }
+
+        const CompactVisibleUVStage = struct {
+            elem_uvs_full: ndarray.NDArray(f64),
+            visible_orig_elem_indices: []const usize,
+            elem_uvs: *ndarray.NDArray(f64),
+        };
+
+        fn runCompactVisibleUV(
+            ctx_ptr: *anyopaque,
+            chunk_idx: usize,
+            range_start: usize,
+            range_end: usize,
+        ) void {
+            _ = chunk_idx;
+            const stage: *CompactVisibleUVStage = @ptrCast(@alignCast(ctx_ptr));
+            const nodes_num = stage.elem_uvs_full.dims[2];
+
+            for (range_start..range_end) |pp| {
+                const orig_ee = stage.visible_orig_elem_indices[pp];
+                const src_start = stage.elem_uvs_full.getFlatIdx(&[_]usize{ orig_ee, 0, 0 });
+                const dst_start = stage.elem_uvs.getFlatIdx(&[_]usize{ pp, 0, 0 });
+                @memcpy(
+                    stage.elem_uvs.slice[dst_start .. dst_start + 2 * nodes_num],
+                    stage.elem_uvs_full.slice[src_start .. src_start + 2 * nodes_num],
+                );
+            }
+        }
+
+        fn prepareTexShaderN(
+            comptime channels: usize,
+            self: *FrameMeshPipelineType,
+            tex_static: shaderops.TexStatic(channels),
+        ) !shaderops.ShaderPrepared {
+            const params = imageops.getScalingParamsTexture(
+                channels,
+                &tex_static.texture,
+                tex_static.scaling,
+            );
+            const factors = imageops.getScaleFactors(
+                tex_static.scaling,
+                tex_static.bits,
+                params,
+            );
+            var elem_uvs = try ndarray.NDArray(f64).initFlat(
+                self.allocator,
+                &[_]usize{
+                    self.mesh_workspace.elems_in_image,
+                    2,
+                    tex_static.elem_uvs.dims[2],
+                },
+            );
+            var uv_stage = CompactVisibleUVStage{
+                .elem_uvs_full = tex_static.elem_uvs,
+                .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
+                .elem_uvs = &elem_uvs,
+            };
+            pce.runStaticRange(
+                self.chunk_exec,
+                &uv_stage,
+                runCompactVisibleUV,
+                self.mesh_workspace.elems_in_image,
+                self.visible_chunk_size,
+            );
+
+            const elem_normals = try self.prepareVisibleNormals(tex_static.normal_type);
+            if (channels == 1) {
+                return .{ .tex = .{
+                    .elem_uvs = elem_uvs,
+                    .texture = tex_static.texture,
+                    .sample_config = tex_static.sample_config,
+                    .bits = tex_static.bits,
+                    .scaling = tex_static.scaling,
+                    .scale_mul = factors.mul,
+                    .scale_add = factors.add,
+                    .normal_type = tex_static.normal_type,
+                    .elem_normals = elem_normals,
+                } };
+            }
+
+            return .{ .tex_rgb = .{
                 .elem_uvs = elem_uvs,
                 .texture = tex_static.texture,
                 .sample_config = tex_static.sample_config,
@@ -1281,60 +1248,48 @@ const FrameMeshPipeline = struct {
             } };
         }
 
-        return .{ .tex_rgb = .{
-            .elem_uvs = elem_uvs,
-            .texture = tex_static.texture,
-            .sample_config = tex_static.sample_config,
-            .bits = tex_static.bits,
-            .scaling = tex_static.scaling,
-            .scale_mul = factors.mul,
-            .scale_add = factors.add,
-            .normal_type = tex_static.normal_type,
-            .elem_normals = elem_normals,
-        } };
-    }
+        fn prepareVisibleNormals(
+            self: *FrameMeshPipelineType,
+            normal_type: shaderops.NormalType,
+        ) !?ndarray.MappedNDArray(f64) {
+            if (normal_type == .none) {
+                return null;
+            }
 
-    fn prepareVisibleNormals(
-        self: *FrameMeshPipeline,
-        normal_type: shaderops.NormalType,
-    ) !?ndarray.MappedNDArray(f64) {
-        if (normal_type == .none) {
-            return null;
+            return try prepareVisibleNormalsThreaded(
+                self.allocator,
+                MT,
+                &self.mesh_workspace.coords_nodes,
+                &self.mesh_static.connect,
+                self.mesh_workspace.visible_orig_elem_indices,
+                normal_type,
+                self.chunk_exec,
+                self.elem_chunk_size,
+                self.visible_chunk_size,
+            );
         }
 
-        return try prepareVisibleNormalsThreaded(
-            self.allocator,
-            self.mesh_static.mesh_type,
-            &self.mesh_workspace.coords_nodes,
-            &self.mesh_static.connect,
-            self.mesh_workspace.visible_orig_elem_indices,
-            normal_type,
-            self.chunk_exec,
-            self.elem_chunk_size,
-            self.visible_chunk_size,
-        );
-    }
-
-    fn assignVisibleElemIndices(self: *FrameMeshPipeline) void {
-        for (self.mesh_workspace.elem_bboxes, 0..) |*elem_bbox, pp| {
-            elem_bbox.elem_idx = pp;
+        fn assignVisibleElemIndices(self: *FrameMeshPipelineType) void {
+            for (self.mesh_workspace.elem_bboxes, 0..) |*elem_bbox, pp| {
+                elem_bbox.elem_idx = pp;
+            }
         }
-    }
 
-    fn finish(
-        self: *FrameMeshPipeline,
-        mesh_prep: MeshPrepared,
-    ) MeshFrame {
-        return .{
-            .mesh = mesh_prep,
-            .elem_bboxes = self.mesh_workspace.elem_bboxes,
-            .elems_in_image = self.mesh_workspace.elems_in_image,
-            .total_elems_num = self.mesh_static.connect.getElemsNum(),
-            .raster_hull = self.mesh_workspace.raster_hull,
-            .frame_workspace = self.mesh_workspace,
-        };
-    }
-};
+        fn finish(
+            self: *FrameMeshPipelineType,
+            mesh_prep: MeshPrepared,
+        ) MeshFrame {
+            return .{
+                .mesh = mesh_prep,
+                .elem_bboxes = self.mesh_workspace.elem_bboxes,
+                .elems_in_image = self.mesh_workspace.elems_in_image,
+                .total_elems_num = self.mesh_static.connect.getElemsNum(),
+                .raster_hull = self.mesh_workspace.raster_hull,
+                .frame_workspace = self.mesh_workspace,
+            };
+        }
+    };
+}
 
 // We need this thin wrapper to expose this to tests that want to enter at this part of the
 // pipeline with a single mesh.
@@ -1346,16 +1301,21 @@ pub fn prepareMeshFrame(
     frame_idx: usize,
     scaling_params: ?imageops.ScalingParams,
 ) !MeshFrame {
-    var pipeline = try FrameMeshPipeline.init(
-        allocator,
-        camera,
-        mesh_static,
-        frame_idx,
-        scaling_params,
-        chunk_exec,
-    );
-    return try pipeline.run();
+    return switch (mesh_static.mesh_type) {
+        inline else => |MT| {
+            var pipeline = try FrameMeshPipeline(MT).init(
+                allocator,
+                camera,
+                mesh_static,
+                frame_idx,
+                scaling_params,
+                chunk_exec,
+            );
+            return try pipeline.run();
+        },
+    };
 }
+
 
 //------------------------------------------------------------------------------------------
 // Main Entry Point: Top-level function for preparing all frame meshes
