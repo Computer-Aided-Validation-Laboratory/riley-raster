@@ -12,6 +12,7 @@ const vsd = @import("vecsimd.zig");
 const ndarray = @import("ndarray.zig");
 const meshio = @import("meshio.zig");
 const buildconfig = @import("buildconfig.zig");
+const tol = buildconfig.config.tolerance;
 const cam = @import("camera.zig");
 const shapefun = @import("shapefun.zig");
 const matrix = @import("matstack.zig");
@@ -97,7 +98,7 @@ pub const RasterContext = struct {
     tile_size: u16,
 };
 
-pub const MeshInput = struct {
+pub const MeshRaster = struct {
     coords: *const ndarray.NDArray(f64),
     hull: ?*const ndarray.NDArray(f64),
 };
@@ -282,7 +283,7 @@ pub fn calcVisibleNodeBBoxTri3(
 ) ?ElemBBox {
     const coords_elem = gatherElemNodeCoords(3, coords_nodes, connect, elem_idx);
     const weight = edgeFun3Slices(0, 1, 2, &coords_elem.x, &coords_elem.y);
-    if (weight <= buildconfig.config.tolerance.culling.tri3_signed_area) {
+    if (weight <= tol.culling.tri3_signed_area) {
         return null;
     }
 
@@ -318,7 +319,7 @@ pub fn calcVisibleNodeBBoxHighOrd(
     const coords_elem = gatherElemNodeCoords(N, coords_nodes, connect, elem_idx);
     var all_backface = true;
     for (0..N) |nn| {
-        if (coords_elem.z[nn] > buildconfig.config.tolerance.culling.higher_order_backface_nz) {
+        if (coords_elem.z[nn] > tol.culling.higher_order_backface_nz) {
             all_backface = false;
             break;
         }
@@ -356,7 +357,7 @@ fn cullNodesCalcBBoxesTri3(
     connect: *const meshio.Connect,
     elem_bboxes: []ElemBBox,
 ) usize {
-    const tol_area = buildconfig.config.tolerance.culling.tri3_signed_area;
+    const tol_area = tol.culling.tri3_signed_area;
     var elems_in_image: usize = 0;
 
     for (0..connect.getElemsNum()) |ee| {
@@ -412,7 +413,7 @@ fn cullNodesCalcBBoxesHighOrd(
     const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
     const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
     const nodal_derivs = comptime shapefun.getNodalDerivs(N);
-    const tolerance = buildconfig.config.tolerance.culling.higher_order_backface_nz;
+    const tolerance = tol.culling.higher_order_backface_nz;
     var elems_in_image: usize = 0;
 
     for (0..connect.getElemsNum()) |ee| {

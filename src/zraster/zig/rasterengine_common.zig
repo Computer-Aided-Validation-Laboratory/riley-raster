@@ -99,7 +99,7 @@ pub fn rasterDirectScalarCommon(
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
     targ_overlap: OverlapTarget,
-    mesh_in: rops.MeshInput,
+    mesh_in: rops.MeshRaster,
     subpx_domain: SubpxDomain,
     rast_bounds: RasterBounds,
     fields_num: u8,
@@ -536,7 +536,7 @@ fn rasterTileCommon(
         const targ_overlap = OverlapTarget{ .tile = tile, .overlap = ov };
 
         std.debug.assert(mesh_idx < raster_hulls.len);
-        const mesh_in = rops.MeshInput{
+        const mesh_in = rops.MeshRaster{
             .coords = &mesh_ptr.coords,
             .hull = if (raster_hulls[mesh_idx]) |*h| h else null,
         };

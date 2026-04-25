@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const tol = buildconfig.config.tolerance;
 const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
 const texops = @import("textureops.zig");
@@ -36,8 +37,10 @@ pub fn getScaleFactors(
     params: ScalingParams,
 ) ScaleFactors {
     if (strategy == .none) return .{ .mul = 1.0, .add = 0.0 };
+
     var mul = 1.0 / params.range;
     var add = -params.min / params.range;
+
     switch (strategy) {
         .frac => |f| {
             mul = (f[1] - f[0]) / params.range;
@@ -45,11 +48,13 @@ pub fn getScaleFactors(
         },
         else => {},
     }
+
     if (bits) |b| {
         const m = getScaleMax(b);
         mul *= m;
         add *= m;
     }
+
     return .{ .mul = mul, .add = add };
 }
 
@@ -67,7 +72,7 @@ pub fn getScalingParamsTexture(
                 if (val < px_min) px_min = val;
                 if (val > px_max) px_max = val;
             }
-            const range = if (@abs(px_max - px_min) < buildconfig.config.tolerance.image.auto_scale_range)
+            const range = if (@abs(px_max - px_min) < tol.image.auto_scale_range)
                 1.0
             else
                 px_max - px_min;

@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const tol = buildconfig.config.tolerance;
 const ndarray = @import("ndarray.zig");
 const meshio = @import("meshio.zig");
 const shapefun = @import("shapefun.zig");
@@ -60,7 +61,7 @@ pub fn normalizeNormal(normal_vec: *[3]f64) void {
     const nz = normal_vec[2];
     const magnitude = @sqrt(nx * nx + ny * ny + nz * nz);
 
-    if (magnitude > buildconfig.config.tolerance.normals.normalise_magnitude) {
+    if (magnitude > tol.normals.normalise_magnitude) {
         normal_vec[0] = nx / magnitude;
         normal_vec[1] = ny / magnitude;
         normal_vec[2] = nz / magnitude;

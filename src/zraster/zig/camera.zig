@@ -17,6 +17,7 @@ const rotation = @import("rotation.zig");
 const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
 const cfg = buildconfig.config;
+const tol = cfg.tolerance;
 
 pub const DistortionModel = union(enum) {
     none,
@@ -209,8 +210,8 @@ fn distortionInverseFromModel(
     var y = y_d;
 
     const max_iters = cfg.distortion_newton_iter_max;
-    const tol_resid = buildconfig.config.tolerance.distortion.residual;
-    const tol_delta = buildconfig.config.tolerance.distortion.delta;
+    const tol_resid = tol.distortion.residual;
+    const tol_delta = tol.distortion.delta;
 
     for (0..max_iters) |_| {
         const fwd = distortion.forwardWithJac(x, y);
@@ -227,7 +228,7 @@ fn distortionInverseFromModel(
         const d = fwd.jac[1][1];
 
         const det = a * d - b * c;
-        if (@abs(det) < buildconfig.config.tolerance.distortion.determinant) {
+        if (@abs(det) < tol.distortion.determinant) {
             return error.SingularJacobian;
         }
 

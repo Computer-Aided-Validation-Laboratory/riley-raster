@@ -769,12 +769,14 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
                 self.allocator,
                 &[_]usize{ self.mesh_workspace.elems_in_image, 3, N },
             );
+
             var gather_coords_stage = GatherVisibleCoordsStage{
                 .connect = &self.mesh_static.connect,
                 .coords_nodes = &self.mesh_workspace.coords_nodes,
                 .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
                 .elem_coords = &elem_coords,
             };
+
             pce.runStaticRange(
                 self.chunk_exec,
                 &gather_coords_stage,
@@ -849,10 +851,10 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
                     mesh_prep.shader = try self.prepareNodalShader(nodal_static);
                 },
                 .tex => |tex_static| {
-                    mesh_prep.shader = try prepareTexShaderN(1, self, tex_static);
+                    mesh_prep.shader = try prepareTexShader(1, self, tex_static);
                 },
                 .tex_rgb => |tex_static| {
-                    mesh_prep.shader = try prepareTexShaderN(3, self, tex_static);
+                    mesh_prep.shader = try prepareTexShader(3, self, tex_static);
                 },
             }
         }
@@ -904,6 +906,7 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
                     N,
                 },
             );
+
             var field_stage = GatherVisibleFieldStage{
                 .connect = &self.mesh_static.connect,
                 .field = &nodal_static.field,
@@ -911,6 +914,7 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
                 .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
                 .elem_field = &elem_field,
             };
+
             pce.runStaticRange(
                 self.chunk_exec,
                 &field_stage,
@@ -963,11 +967,12 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
             }
         }
 
-        fn prepareTexShaderN(
+        fn prepareTexShader(
             comptime channels: usize,
             self: *FrameMeshPipelineType,
             tex_static: shaderops.TexStatic(channels),
         ) !shaderops.ShaderPrepared {
+
             const params = imageops.getScalingParamsTexture(
                 channels,
                 &tex_static.texture,
@@ -978,6 +983,7 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
                 tex_static.bits,
                 params,
             );
+
             var elem_uvs = try ndarray.NDArray(f64).initFlat(
                 self.allocator,
                 &[_]usize{
@@ -986,11 +992,13 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
                     tex_static.elem_uvs.dims[2],
                 },
             );
+
             var uv_stage = GatherVisibleUVStage{
                 .elem_uvs_full = tex_static.elem_uvs,
                 .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
                 .elem_uvs = &elem_uvs,
             };
+
             pce.runStaticRange(
                 self.chunk_exec,
                 &uv_stage,
@@ -1000,7 +1008,7 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
             );
 
             const elem_normals = try self.prepareVisibleNormals(tex_static.normal_type);
-            if (channels == 1) {
+            if (comptime channels == 1) {
                 return .{ .tex = .{
                     .elem_uvs = elem_uvs,
                     .texture = tex_static.texture,
@@ -1012,19 +1020,19 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
                     .normal_type = tex_static.normal_type,
                     .elem_normals = elem_normals,
                 } };
+            } else {
+                return .{ .tex_rgb = .{
+                    .elem_uvs = elem_uvs,
+                    .texture = tex_static.texture,
+                    .sample_config = tex_static.sample_config,
+                    .bits = tex_static.bits,
+                    .scaling = tex_static.scaling,
+                    .scale_mul = factors.mul,
+                    .scale_add = factors.add,
+                    .normal_type = tex_static.normal_type,
+                    .elem_normals = elem_normals,
+                } };
             }
-
-            return .{ .tex_rgb = .{
-                .elem_uvs = elem_uvs,
-                .texture = tex_static.texture,
-                .sample_config = tex_static.sample_config,
-                .bits = tex_static.bits,
-                .scaling = tex_static.scaling,
-                .scale_mul = factors.mul,
-                .scale_add = factors.add,
-                .normal_type = tex_static.normal_type,
-                .elem_normals = elem_normals,
-            } };
         }
 
         fn prepareVisibleNormals(
@@ -1070,8 +1078,6 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
     };
 }
 
-// We need this thin wrapper to expose this to tests that want to enter at this part of the
-// pipeline with a single mesh.
 pub fn prepareMeshFrame(
     allocator: std.mem.Allocator,
     chunk_exec: ?*pce.ParaChunkExecutor,
