@@ -733,6 +733,7 @@ fn prepareVisibleNormalsThreaded(
 ) !ndarray.MappedNDArray(f64) {
     return switch (mesh_type) {
         inline else => |mt| try prepareVisibleNormalsThreadedN(
+            comptime mt.getNodesNum(),
             allocator,
             mesh_type,
             coords_nodes,
@@ -742,12 +743,12 @@ fn prepareVisibleNormalsThreaded(
             chunk_exec,
             elem_chunk_size,
             visible_chunk_size,
-            comptime mt.getNodesNum(),
         ),
     };
 }
 
 fn prepareVisibleNormalsThreadedN(
+    comptime N: usize,
     allocator: std.mem.Allocator,
     mesh_type: MeshType,
     coords_nodes: *const meshio.Coords,
@@ -757,12 +758,11 @@ fn prepareVisibleNormalsThreadedN(
     chunk_exec: ?*pce.ParaChunkExecutor,
     elem_chunk_size: usize,
     visible_chunk_size: usize,
-    comptime N: usize,
 ) !ndarray.MappedNDArray(f64) {
     var prep_normals = try initIdentityMappedNormals(
+        N,
         allocator,
         visible_orig_elem_indices.len,
-        N,
     );
 
     switch (normal_type) {
@@ -850,9 +850,9 @@ fn getConnectNodesNum(connect: *const meshio.Connect) usize {
 }
 
 fn initIdentityMappedNormals(
+    comptime N: usize,
     allocator: std.mem.Allocator,
     prep_count: usize,
-    comptime N: usize,
 ) !ndarray.MappedNDArray(f64) {
     const prep_normals = try ndarray.NDArray(f64).initFlat(
         allocator,
