@@ -405,8 +405,8 @@ fn prefixVisibleCounts(mesh_workspace: *MeshFrameWorkspace) void {
 }
 
 fn prepareVisibleNormalsThreaded(
+    comptime MT: MeshType,
     allocator: std.mem.Allocator,
-    mesh_type: MeshType,
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
@@ -415,26 +415,24 @@ fn prepareVisibleNormalsThreaded(
     elem_chunk_size: usize,
     visible_chunk_size: usize,
 ) !ndarray.MappedNDArray(f64) {
-    return switch (mesh_type) {
-        inline else => |mt| try prepareVisibleNormalsThreadedN(
-            comptime mt.getNodesNum(),
-            allocator,
-            mesh_type,
-            coords_nodes,
-            connect,
-            visible_orig_elem_indices,
-            normal_type,
-            chunk_exec,
-            elem_chunk_size,
-            visible_chunk_size,
-        ),
-    };
+    return try prepareVisibleNormalsThreadedN(
+        comptime MT.getNodesNum(),
+        MT,
+        allocator,
+        coords_nodes,
+        connect,
+        visible_orig_elem_indices,
+        normal_type,
+        chunk_exec,
+        elem_chunk_size,
+        visible_chunk_size,
+    );
 }
 
 fn prepareVisibleNormalsThreadedN(
     comptime N: usize,
+    comptime MT: MeshType,
     allocator: std.mem.Allocator,
-    mesh_type: MeshType,
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
@@ -449,11 +447,12 @@ fn prepareVisibleNormalsThreadedN(
         visible_orig_elem_indices.len,
     );
 
+    const Stages = NormalStages(MT);
+
     switch (normal_type) {
         .none => unreachable,
         .exact => {
-            var exact_stage = PrepareVisibleExactNormalsStage{
-                .mesh_type = mesh_type,
+            var exact_stage = Stages.ExactNormalsStage{
                 .coords_nodes = coords_nodes,
                 .connect = connect,
                 .visible_orig_elem_indices = visible_orig_elem_indices,
@@ -462,7 +461,7 @@ fn prepareVisibleNormalsThreadedN(
             pce.runStaticRange(
                 chunk_exec,
                 &exact_stage,
-                runPrepareVisibleExactNormals,
+                Stages.runPrepareVisibleExactNormals,
                 visible_orig_elem_indices.len,
                 visible_chunk_size,
             );
@@ -478,8 +477,7 @@ fn prepareVisibleNormalsThreadedN(
             defer allocator.free(chunk_node_normals);
             @memset(chunk_node_normals, 0.0);
 
-            var accum_stage = AccumulateAveragedNormalsStage{
-                .mesh_type = mesh_type,
+            var accum_stage = Stages.AccumulateAveragedNormalsStage{
                 .coords_nodes = coords_nodes,
                 .connect = connect,
                 .chunk_node_normals = chunk_node_normals,
@@ -488,7 +486,7 @@ fn prepareVisibleNormalsThreadedN(
             pce.runStaticRange(
                 chunk_exec,
                 &accum_stage,
-                runAccumulateAveragedNormals,
+                Stages.runAccumulateAveragedNormals,
                 connect.getElemsNum(),
                 elem_chunk_size,
             );
@@ -505,8 +503,7 @@ fn prepareVisibleNormalsThreadedN(
                 }
             }
 
-            var write_stage = WriteVisibleAveragedNormalsStage{
-                .mesh_type = mesh_type,
+            var write_stage = Stages.WriteVisibleAveragedNormalsStage{
                 .connect = connect,
                 .visible_orig_elem_indices = visible_orig_elem_indices,
                 .node_normals = node_normals,
@@ -515,7 +512,7 @@ fn prepareVisibleNormalsThreadedN(
             pce.runStaticRange(
                 chunk_exec,
                 &write_stage,
-                runWriteVisibleAveragedNormals,
+                Stages.runWriteVisibleAveragedNormals,
                 visible_orig_elem_indices.len,
                 visible_chunk_size,
             );
@@ -553,85 +550,86 @@ fn initIdentityMappedNormals(
     };
 }
 
-const PrepareVisibleExactNormalsStage = struct {
-    mesh_type: MeshType,
-    coords_nodes: *const meshio.Coords,
-    connect: *const meshio.Connect,
-    visible_orig_elem_indices: []const usize,
-    prep_normals: *ndarray.NDArray(f64),
-};
+fn NormalStages(comptime MT: MeshType) type {
+    return struct {
+        const ExactNormalsStage = struct {
+            coords_nodes: *const meshio.Coords,
+            connect: *const meshio.Connect,
+            visible_orig_elem_indices: []const usize,
+            prep_normals: *ndarray.NDArray(f64),
+        };
 
-fn runPrepareVisibleExactNormals(
-    ctx_ptr: *anyopaque,
-    chunk_idx: usize,
-    range_start: usize,
-    range_end: usize,
-) void {
-    _ = chunk_idx;
-    const stage: *PrepareVisibleExactNormalsStage = @ptrCast(@alignCast(ctx_ptr));
-    rops.prepareVisibleExactNormalsRange(
-        stage.mesh_type,
-        stage.coords_nodes,
-        stage.connect,
-        stage.visible_orig_elem_indices,
-        stage.prep_normals,
-        range_start,
-        range_end,
-    );
-}
+        fn runPrepareVisibleExactNormals(
+            ctx_ptr: *anyopaque,
+            chunk_idx: usize,
+            range_start: usize,
+            range_end: usize,
+        ) void {
+            _ = chunk_idx;
+            const stage: *ExactNormalsStage = @ptrCast(@alignCast(ctx_ptr));
+            rops.prepareVisibleExactNormalsRange(
+                MT,
+                stage.coords_nodes,
+                stage.connect,
+                stage.visible_orig_elem_indices,
+                stage.prep_normals,
+                range_start,
+                range_end,
+            );
+        }
 
-const AccumulateAveragedNormalsStage = struct {
-    mesh_type: MeshType,
-    coords_nodes: *const meshio.Coords,
-    connect: *const meshio.Connect,
-    chunk_node_normals: []f64,
-    node_normals_stride: usize,
-};
+        const AccumulateAveragedNormalsStage = struct {
+            coords_nodes: *const meshio.Coords,
+            connect: *const meshio.Connect,
+            chunk_node_normals: []f64,
+            node_normals_stride: usize,
+        };
 
-fn runAccumulateAveragedNormals(
-    ctx_ptr: *anyopaque,
-    chunk_idx: usize,
-    range_start: usize,
-    range_end: usize,
-) void {
-    const stage: *AccumulateAveragedNormalsStage = @ptrCast(@alignCast(ctx_ptr));
-    const accum_start = chunk_idx * stage.node_normals_stride;
-    const accum_end = accum_start + stage.node_normals_stride;
-    rops.accumulateAveragedNodeNormalsRange(
-        stage.mesh_type,
-        stage.coords_nodes,
-        stage.connect,
-        stage.chunk_node_normals[accum_start..accum_end],
-        range_start,
-        range_end,
-    );
-}
+        fn runAccumulateAveragedNormals(
+            ctx_ptr: *anyopaque,
+            chunk_idx: usize,
+            range_start: usize,
+            range_end: usize,
+        ) void {
+            const stage: *AccumulateAveragedNormalsStage = @ptrCast(@alignCast(ctx_ptr));
+            const accum_start = chunk_idx * stage.node_normals_stride;
+            const accum_end = accum_start + stage.node_normals_stride;
+            rops.accumulateAveragedNodeNormalsRange(
+                MT,
+                stage.coords_nodes,
+                stage.connect,
+                stage.chunk_node_normals[accum_start..accum_end],
+                range_start,
+                range_end,
+            );
+        }
 
-const WriteVisibleAveragedNormalsStage = struct {
-    mesh_type: MeshType,
-    connect: *const meshio.Connect,
-    visible_orig_elem_indices: []const usize,
-    node_normals: []const f64,
-    prep_normals: *ndarray.NDArray(f64),
-};
+        const WriteVisibleAveragedNormalsStage = struct {
+            connect: *const meshio.Connect,
+            visible_orig_elem_indices: []const usize,
+            node_normals: []const f64,
+            prep_normals: *ndarray.NDArray(f64),
+        };
 
-fn runWriteVisibleAveragedNormals(
-    ctx_ptr: *anyopaque,
-    chunk_idx: usize,
-    range_start: usize,
-    range_end: usize,
-) void {
-    _ = chunk_idx;
-    const stage: *WriteVisibleAveragedNormalsStage = @ptrCast(@alignCast(ctx_ptr));
-    rops.writeVisibleAveragedNormalsRange(
-        stage.mesh_type,
-        stage.connect,
-        stage.visible_orig_elem_indices,
-        stage.node_normals,
-        stage.prep_normals,
-        range_start,
-        range_end,
-    );
+        fn runWriteVisibleAveragedNormals(
+            ctx_ptr: *anyopaque,
+            chunk_idx: usize,
+            range_start: usize,
+            range_end: usize,
+        ) void {
+            _ = chunk_idx;
+            const stage: *WriteVisibleAveragedNormalsStage = @ptrCast(@alignCast(ctx_ptr));
+            rops.writeVisibleAveragedNormalsRange(
+                MT,
+                stage.connect,
+                stage.visible_orig_elem_indices,
+                stage.node_normals,
+                stage.prep_normals,
+                range_start,
+                range_end,
+            );
+        }
+    };
 }
 
 //------------------------------------------------------------------------------------------
@@ -1026,8 +1024,8 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
             _ = chunk_idx;
             const stage: *PrepareRasterHullsStage = @ptrCast(@alignCast(ctx_ptr));
             rops.prepareVisibleRasterHullsRange(
-                stage.camera,
                 MT,
+                stage.camera,
                 stage.elem_coords,
                 stage.raster_hull,
                 range_start,
@@ -1257,8 +1255,8 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
             }
 
             return try prepareVisibleNormalsThreaded(
-                self.allocator,
                 MT,
+                self.allocator,
                 &self.mesh_workspace.coords_nodes,
                 &self.mesh_static.connect,
                 self.mesh_workspace.visible_orig_elem_indices,

@@ -709,33 +709,33 @@ pub fn calcVisibleNodeBBoxHighOrd(
 }
 
 pub fn prepareVisibleWorkspace(
+    comptime MT: MeshType,
     allocator: std.mem.Allocator,
     camera: *const cam.CameraPrepared,
-    mesh_type: MeshType,
     connect: *const meshio.Connect,
     coords_nodes: *const meshio.Coords,
-    visible_orig_elem_indices: *[]usize,
     elem_bboxes: *[]ElemBBox,
+    visible_orig_elem_indices: *[]usize,
     elems_in_image: *usize,
 ) !void {
     const elems_num = connect.getElemsNum();
     elem_bboxes.* = try allocator.alloc(ElemBBox, elems_num);
 
-    elems_in_image.* = switch (mesh_type) {
-        .tri3 => cullNodesCalcBBoxesTri3(
+    elems_in_image.* = if (MT == .tri3)
+        cullNodesCalcBBoxesTri3(
             camera,
             coords_nodes,
             connect,
             elem_bboxes.*,
-        ),
-        inline else => |mt| cullNodesCalcBBoxesHighOrd(
-            comptime mt.getNodesNum(),
+        )
+    else
+        cullNodesCalcBBoxesHighOrd(
+            comptime MT.getNodesNum(),
             camera,
             coords_nodes,
             connect,
             elem_bboxes.*,
-        ),
-    };
+        );
 
     visible_orig_elem_indices.* = try allocator.alloc(usize, elems_in_image.*);
     for (0..elems_in_image.*) |pp| {
@@ -951,46 +951,42 @@ fn calculateVisibleAveragedNormals(
 }
 
 pub fn prepareVisibleNormals(
+    comptime MT: MeshType,
     allocator: std.mem.Allocator,
-    mesh_type: MeshType,
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
     normal_type: shaderops.NormalType,
 ) !ndarray.MappedNDArray(f64) {
-    return switch (mesh_type) {
-        inline else => |mt| blk: {
-            const N = comptime mt.getNodesNum();
-            var prep_normals = try initIdentityMappedNormals(
-                allocator,
-                visible_orig_elem_indices.len,
-                N,
-            );
-            switch (normal_type) {
-                .none => unreachable,
-                .exact => calculateVisibleExactNormals(
-                    coords_nodes,
-                    connect,
-                    visible_orig_elem_indices,
-                    &prep_normals.array,
-                    N,
-                ),
-                .averaged => try calculateVisibleAveragedNormals(
-                    allocator,
-                    coords_nodes,
-                    connect,
-                    visible_orig_elem_indices,
-                    &prep_normals.array,
-                    N,
-                ),
-            }
-            break :blk prep_normals;
-        },
-    };
+    const N = comptime MT.getNodesNum();
+    var prep_normals = try initIdentityMappedNormals(
+        N,
+        allocator,
+        visible_orig_elem_indices.len,
+    );
+    switch (normal_type) {
+        .none => unreachable,
+        .exact => calculateVisibleExactNormals(
+            coords_nodes,
+            connect,
+            visible_orig_elem_indices,
+            &prep_normals.array,
+            N,
+        ),
+        .averaged => try calculateVisibleAveragedNormals(
+            allocator,
+            coords_nodes,
+            connect,
+            visible_orig_elem_indices,
+            &prep_normals.array,
+            N,
+        ),
+    }
+    return prep_normals;
 }
 
 pub fn prepareVisibleExactNormalsRange(
-    mesh_type: MeshType,
+    comptime MT: MeshType,
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
@@ -998,17 +994,15 @@ pub fn prepareVisibleExactNormalsRange(
     visible_start: usize,
     visible_end: usize,
 ) void {
-    switch (mesh_type) {
-        inline else => |mt| calculateVisibleExactNormalsRange(
-            coords_nodes,
-            connect,
-            visible_orig_elem_indices,
-            prep_normals,
-            visible_start,
-            visible_end,
-            comptime mt.getNodesNum(),
-        ),
-    }
+    calculateVisibleExactNormalsRange(
+        coords_nodes,
+        connect,
+        visible_orig_elem_indices,
+        prep_normals,
+        visible_start,
+        visible_end,
+        comptime MT.getNodesNum(),
+    );
 }
 
 fn accumulateAveragedNodeNormalsRangeImpl(
@@ -1043,23 +1037,21 @@ fn accumulateAveragedNodeNormalsRangeImpl(
 }
 
 pub fn accumulateAveragedNodeNormalsRange(
-    mesh_type: MeshType,
+    comptime MT: MeshType,
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     node_normals: []f64,
     elem_start: usize,
     elem_end: usize,
 ) void {
-    switch (mesh_type) {
-        inline else => |mt| accumulateAveragedNodeNormalsRangeImpl(
-            comptime mt.getNodesNum(),
-            coords_nodes,
-            connect,
-            node_normals,
-            elem_start,
-            elem_end,
-        ),
-    }
+    accumulateAveragedNodeNormalsRangeImpl(
+        comptime MT.getNodesNum(),
+        coords_nodes,
+        connect,
+        node_normals,
+        elem_start,
+        elem_end,
+    );
 }
 
 fn writeVisibleAveragedNormalsRangeImpl(
@@ -1089,7 +1081,7 @@ fn writeVisibleAveragedNormalsRangeImpl(
 }
 
 pub fn writeVisibleAveragedNormalsRange(
-    mesh_type: MeshType,
+    comptime MT: MeshType,
     connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
     node_normals: []const f64,
@@ -1097,37 +1089,32 @@ pub fn writeVisibleAveragedNormalsRange(
     visible_start: usize,
     visible_end: usize,
 ) void {
-    switch (mesh_type) {
-        inline else => |mt| writeVisibleAveragedNormalsRangeImpl(
-            comptime mt.getNodesNum(),
-            connect,
-            visible_orig_elem_indices,
-            node_normals,
-            prep_normals,
-            visible_start,
-            visible_end,
-        ),
-    }
+    writeVisibleAveragedNormalsRangeImpl(
+        comptime MT.getNodesNum(),
+        connect,
+        visible_orig_elem_indices,
+        node_normals,
+        prep_normals,
+        visible_start,
+        visible_end,
+    );
 }
 
 pub fn prepareVisibleRasterHulls(
+    comptime MT: MeshType,
     allocator: std.mem.Allocator,
     camera: *const cam.CameraPrepared,
-    mesh_type: MeshType,
     elem_coords: *ndarray.NDArray(f64),
 ) !?ndarray.NDArray(f64) {
-    return switch (mesh_type) {
-        .tri3 => null,
-        inline else => |mt| blk: {
-            const N = comptime mt.getNodesNum();
-            var raster_hull = try ndarray.NDArray(f64).initFlat(
-                allocator,
-                &[_]usize{ elem_coords.dims[0], 2, N },
-            );
-            try hull.buildAdaptiveHulls(N, camera, 0, elem_coords, &raster_hull);
-            break :blk raster_hull;
-        },
-    };
+    if (MT == .tri3) return null;
+
+    const N = comptime MT.getNodesNum();
+    var raster_hull = try ndarray.NDArray(f64).initFlat(
+        allocator,
+        &[_]usize{ elem_coords.dims[0], 2, N },
+    );
+    try hull.buildAdaptiveHulls(N, camera, 0, elem_coords, &raster_hull);
+    return raster_hull;
 }
 
 fn prepareVisibleRasterHullsRangeImpl(
@@ -1159,27 +1146,24 @@ fn prepareVisibleRasterHullsRangeImpl(
 }
 
 pub fn prepareVisibleRasterHullsRange(
+    comptime MT: MeshType,
     camera: *const cam.CameraPrepared,
-    mesh_type: MeshType,
     elem_coords: *const ndarray.NDArray(f64),
     raster_hull: *ndarray.NDArray(f64),
     visible_start: usize,
     visible_end: usize,
 ) void {
-    switch (mesh_type) {
-        .tri3 => {},
-        inline else => |mt| {
-            prepareVisibleRasterHullsRangeImpl(
-                comptime mt.getNodesNum(),
-                comptime mt.getNumHullPoints(),
-                camera,
-                elem_coords,
-                raster_hull,
-                visible_start,
-                visible_end,
-            );
-        },
-    }
+    if (MT == .tri3) return;
+
+    prepareVisibleRasterHullsRangeImpl(
+        comptime MT.getNodesNum(),
+        comptime MT.getNumHullPoints(),
+        camera,
+        elem_coords,
+        raster_hull,
+        visible_start,
+        visible_end,
+    );
 }
 
 const TilingCountStage = struct {
