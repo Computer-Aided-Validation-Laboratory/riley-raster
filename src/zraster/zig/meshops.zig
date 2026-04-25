@@ -471,17 +471,7 @@ fn runTransformCoords(
             range_start,
             range_end,
         ),
-        .quad4ibi => rops.nodesToClipPxLengRangeInPlace(
-            stage.camera,
-            &stage.frame_workspace.coords_nodes,
-            range_start,
-            range_end,
-        ),
-        .tri6,
-        .quad4newton,
-        .quad8,
-        .quad9,
-        => rops.nodesToClipPxLengRangeInPlace(
+        inline else => rops.nodesToClipPxLengRangeInPlace(
             stage.camera,
             &stage.frame_workspace.coords_nodes,
             range_start,
@@ -522,49 +512,11 @@ fn runCullVisibleCount(
                 }
             }
         },
-        .tri6 => {
+        inline else => |mt| {
+            const N = comptime mt.getNodesNum();
             for (range_start..range_end) |ee| {
                 if (rops.calcVisibleNodeBBoxHighOrd(
-                    6,
-                    stage.camera,
-                    stage.coords_nodes,
-                    stage.connect,
-                    ee,
-                ) != null) {
-                    visible_count += 1;
-                }
-            }
-        },
-        .quad4ibi, .quad4newton => {
-            for (range_start..range_end) |ee| {
-                if (rops.calcVisibleNodeBBoxHighOrd(
-                    4,
-                    stage.camera,
-                    stage.coords_nodes,
-                    stage.connect,
-                    ee,
-                ) != null) {
-                    visible_count += 1;
-                }
-            }
-        },
-        .quad8 => {
-            for (range_start..range_end) |ee| {
-                if (rops.calcVisibleNodeBBoxHighOrd(
-                    8,
-                    stage.camera,
-                    stage.coords_nodes,
-                    stage.connect,
-                    ee,
-                ) != null) {
-                    visible_count += 1;
-                }
-            }
-        },
-        .quad9 => {
-            for (range_start..range_end) |ee| {
-                if (rops.calcVisibleNodeBBoxHighOrd(
-                    9,
+                    N,
                     stage.camera,
                     stage.coords_nodes,
                     stage.connect,
@@ -622,55 +574,11 @@ fn runCullVisibleFill(
                 }
             }
         },
-        .tri6 => {
+        inline else => |mt| {
+            const N = comptime mt.getNodesNum();
             for (range_start..range_end) |ee| {
                 if (rops.calcVisibleNodeBBoxHighOrd(
-                    6,
-                    stage.camera,
-                    stage.coords_nodes,
-                    stage.connect,
-                    ee,
-                )) |bbox| {
-                    stage.visible_orig_elem_indices[write_idx] = ee;
-                    stage.elem_bboxes[write_idx] = bbox;
-                    write_idx += 1;
-                }
-            }
-        },
-        .quad4ibi, .quad4newton => {
-            for (range_start..range_end) |ee| {
-                if (rops.calcVisibleNodeBBoxHighOrd(
-                    4,
-                    stage.camera,
-                    stage.coords_nodes,
-                    stage.connect,
-                    ee,
-                )) |bbox| {
-                    stage.visible_orig_elem_indices[write_idx] = ee;
-                    stage.elem_bboxes[write_idx] = bbox;
-                    write_idx += 1;
-                }
-            }
-        },
-        .quad8 => {
-            for (range_start..range_end) |ee| {
-                if (rops.calcVisibleNodeBBoxHighOrd(
-                    8,
-                    stage.camera,
-                    stage.coords_nodes,
-                    stage.connect,
-                    ee,
-                )) |bbox| {
-                    stage.visible_orig_elem_indices[write_idx] = ee;
-                    stage.elem_bboxes[write_idx] = bbox;
-                    write_idx += 1;
-                }
-            }
-        },
-        .quad9 => {
-            for (range_start..range_end) |ee| {
-                if (rops.calcVisibleNodeBBoxHighOrd(
-                    9,
+                    N,
                     stage.camera,
                     stage.coords_nodes,
                     stage.connect,
@@ -824,7 +732,7 @@ fn prepareVisibleNormalsThreaded(
     visible_chunk_size: usize,
 ) !ndarray.MappedNDArray(f64) {
     return switch (mesh_type) {
-        .tri3 => try prepareVisibleNormalsThreadedN(
+        inline else => |mt| try prepareVisibleNormalsThreadedN(
             allocator,
             mesh_type,
             coords_nodes,
@@ -834,55 +742,7 @@ fn prepareVisibleNormalsThreaded(
             chunk_exec,
             elem_chunk_size,
             visible_chunk_size,
-            3,
-        ),
-        .tri6 => try prepareVisibleNormalsThreadedN(
-            allocator,
-            mesh_type,
-            coords_nodes,
-            connect,
-            visible_orig_elem_indices,
-            normal_type,
-            chunk_exec,
-            elem_chunk_size,
-            visible_chunk_size,
-            6,
-        ),
-        .quad4ibi, .quad4newton => try prepareVisibleNormalsThreadedN(
-            allocator,
-            mesh_type,
-            coords_nodes,
-            connect,
-            visible_orig_elem_indices,
-            normal_type,
-            chunk_exec,
-            elem_chunk_size,
-            visible_chunk_size,
-            4,
-        ),
-        .quad8 => try prepareVisibleNormalsThreadedN(
-            allocator,
-            mesh_type,
-            coords_nodes,
-            connect,
-            visible_orig_elem_indices,
-            normal_type,
-            chunk_exec,
-            elem_chunk_size,
-            visible_chunk_size,
-            8,
-        ),
-        .quad9 => try prepareVisibleNormalsThreadedN(
-            allocator,
-            mesh_type,
-            coords_nodes,
-            connect,
-            visible_orig_elem_indices,
-            normal_type,
-            chunk_exec,
-            elem_chunk_size,
-            visible_chunk_size,
-            9,
+            comptime mt.getNodesNum(),
         ),
     };
 }
@@ -1287,17 +1147,13 @@ const FrameMeshPipeline = struct {
     ) !void {
         self.mesh_workspace.raster_hull = switch (self.mesh_static.mesh_type) {
             .tri3 => null,
-            .quad4ibi, .quad4newton => try ndarray.NDArray(f64).initFlat(
+            inline else => |mt| try ndarray.NDArray(f64).initFlat(
                 self.allocator,
-                &[_]usize{ self.mesh_workspace.elems_in_image, 2, 4 },
-            ),
-            .tri6 => try ndarray.NDArray(f64).initFlat(
-                self.allocator,
-                &[_]usize{ self.mesh_workspace.elems_in_image, 2, 6 },
-            ),
-            .quad8, .quad9 => try ndarray.NDArray(f64).initFlat(
-                self.allocator,
-                &[_]usize{ self.mesh_workspace.elems_in_image, 2, 8 },
+                &[_]usize{
+                    self.mesh_workspace.elems_in_image,
+                    2,
+                    comptime mt.getNodesNum(),
+                },
             ),
         };
 
