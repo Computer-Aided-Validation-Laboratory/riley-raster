@@ -392,7 +392,7 @@ fn initMeshFrameWorkspace(
 }
 
 //------------------------------------------------------------------------------------------
-// Geometry Pipeline Stages: meshio.Coords, Transform, Culling and Compaction
+// Geometry Pipeline Stages: meshio.Coords, Transform, Culling and Gathering
 //------------------------------------------------------------------------------------------
 
 fn prefixVisibleCounts(mesh_workspace: *MeshFrameWorkspace) void {
@@ -695,7 +695,7 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
             self.transformCoords();
 
             try self.cullVisible();
-            var mesh_prep = try self.compactVisibleMesh();
+            var mesh_prep = try self.gatherVisibleCoords();
 
             try self.prepareRasterHulls(&mesh_prep.coords);
             try self.prepareShader(&mesh_prep);
@@ -920,7 +920,7 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
 
             const N = comptime MT.getNodesNum();
             for (range_start..range_end) |ee| {
-                const bbox = if (MT == .tri3)
+                const bbox = if (comptime MT == .tri3)
                     rops.calcVisibleNodeBBoxTri3(
                         stage.camera,
                         stage.coords_nodes,
@@ -944,21 +944,21 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
             }
         }
 
-        const CompactVisibleCoordsStage = struct {
+        const GatherVisibleCoordsStage = struct {
             connect: *const meshio.Connect,
             coords_nodes: *const meshio.Coords,
             visible_orig_elem_indices: []const usize,
             elem_coords: *ndarray.NDArray(f64),
         };
 
-        fn runCompactVisibleCoords(
+        fn runGatherVisibleCoords(
             ctx_ptr: *anyopaque,
             chunk_idx: usize,
             range_start: usize,
             range_end: usize,
         ) void {
             _ = chunk_idx;
-            const stage: *CompactVisibleCoordsStage = @ptrCast(@alignCast(ctx_ptr));
+            const stage: *GatherVisibleCoordsStage = @ptrCast(@alignCast(ctx_ptr));
             const N = comptime MT.getNodesNum();
 
             for (range_start..range_end) |pp| {
@@ -982,13 +982,13 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
             }
         }
 
-        fn compactVisibleMesh(self: *FrameMeshPipelineType) !MeshPrepared {
+        fn gatherVisibleCoords(self: *FrameMeshPipelineType) !MeshPrepared {
             const N = comptime MT.getNodesNum();
             var elem_coords = try ndarray.NDArray(f64).initFlat(
                 self.allocator,
                 &[_]usize{ self.mesh_workspace.elems_in_image, 3, N },
             );
-            var compact_coords_stage = CompactVisibleCoordsStage{
+            var gather_coords_stage = GatherVisibleCoordsStage{
                 .connect = &self.mesh_static.connect,
                 .coords_nodes = &self.mesh_workspace.coords_nodes,
                 .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
@@ -996,8 +996,8 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
             };
             pce.runStaticRange(
                 self.chunk_exec,
-                &compact_coords_stage,
-                runCompactVisibleCoords,
+                &gather_coords_stage,
+                runGatherVisibleCoords,
                 self.mesh_workspace.elems_in_image,
                 self.visible_chunk_size,
             );
@@ -1076,7 +1076,7 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
             }
         }
 
-        const CompactVisibleFieldStage = struct {
+        const GatherVisibleFieldStage = struct {
             connect: *const meshio.Connect,
             field: *const meshio.Field,
             frame_idx: usize,
@@ -1084,14 +1084,14 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
             elem_field: *ndarray.NDArray(f64),
         };
 
-        fn runCompactVisibleField(
+        fn runGatherVisibleField(
             ctx_ptr: *anyopaque,
             chunk_idx: usize,
             range_start: usize,
             range_end: usize,
         ) void {
             _ = chunk_idx;
-            const stage: *CompactVisibleFieldStage = @ptrCast(@alignCast(ctx_ptr));
+            const stage: *GatherVisibleFieldStage = @ptrCast(@alignCast(ctx_ptr));
             const actual_frame_idx = @min(stage.frame_idx, stage.field.array.dims[0] - 1);
             const fields_num = stage.field.getFieldsN();
             const N = comptime MT.getNodesNum();
@@ -1123,7 +1123,7 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
                     N,
                 },
             );
-            var field_stage = CompactVisibleFieldStage{
+            var field_stage = GatherVisibleFieldStage{
                 .connect = &self.mesh_static.connect,
                 .field = &nodal_static.field,
                 .frame_idx = self.frame_idx,
@@ -1133,7 +1133,7 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
             pce.runStaticRange(
                 self.chunk_exec,
                 &field_stage,
-                runCompactVisibleField,
+                runGatherVisibleField,
                 self.mesh_workspace.elems_in_image,
                 self.visible_chunk_size,
             );
@@ -1155,20 +1155,20 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
             } };
         }
 
-        const CompactVisibleUVStage = struct {
+        const GatherVisibleUVStage = struct {
             elem_uvs_full: ndarray.NDArray(f64),
             visible_orig_elem_indices: []const usize,
             elem_uvs: *ndarray.NDArray(f64),
         };
 
-        fn runCompactVisibleUV(
+        fn runGatherVisibleUV(
             ctx_ptr: *anyopaque,
             chunk_idx: usize,
             range_start: usize,
             range_end: usize,
         ) void {
             _ = chunk_idx;
-            const stage: *CompactVisibleUVStage = @ptrCast(@alignCast(ctx_ptr));
+            const stage: *GatherVisibleUVStage = @ptrCast(@alignCast(ctx_ptr));
             const nodes_num = stage.elem_uvs_full.dims[2];
 
             for (range_start..range_end) |pp| {
@@ -1205,7 +1205,7 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
                     tex_static.elem_uvs.dims[2],
                 },
             );
-            var uv_stage = CompactVisibleUVStage{
+            var uv_stage = GatherVisibleUVStage{
                 .elem_uvs_full = tex_static.elem_uvs,
                 .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
                 .elem_uvs = &elem_uvs,
@@ -1213,7 +1213,7 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
             pce.runStaticRange(
                 self.chunk_exec,
                 &uv_stage,
-                runCompactVisibleUV,
+                runGatherVisibleUV,
                 self.mesh_workspace.elems_in_image,
                 self.visible_chunk_size,
             );

@@ -201,7 +201,7 @@ pub fn nodesToClipPxLengRangeInPlace(
     }
 }
 
-fn gatherElemNodeCoords(
+pub fn gatherElemNodeCoords(
     comptime N: usize,
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
