@@ -24,29 +24,13 @@ const rops = @import("rasterops.zig");
 const texops = @import("textureops.zig");
 
 const shaderops = @import("shaderops.zig");
+const geomkerns = @import("geometrykernels.zig");
 
 //------------------------------------------------------------------------------------------
 // External Helper Functions: General geometry and mesh utilities
 //------------------------------------------------------------------------------------------
 
-pub const MeshType = enum {
-    tri3,
-    tri6,
-    quad4ibi,
-    quad4newton,
-    quad8,
-    quad9,
-
-    pub inline fn getNodesNum(self: MeshType) usize {
-        return switch (self) {
-            .tri3 => 3,
-            .tri6 => 6,
-            .quad4ibi, .quad4newton => 4,
-            .quad8 => 8,
-            .quad9 => 9,
-        };
-    }
-};
+pub const MeshType = geomkerns.MeshType;
 
 // Input: Raw user data for all frames.
 // meshio.Coords/Fields: Node-order [total_nodes, ...]

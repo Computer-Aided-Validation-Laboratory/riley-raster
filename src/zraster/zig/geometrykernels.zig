@@ -7,6 +7,35 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+
+pub const MeshType = enum {
+    tri3,
+    tri6,
+    quad4ibi,
+    quad4newton,
+    quad8,
+    quad9,
+
+    pub inline fn getNodesNum(self: MeshType) usize {
+        return switch (self) {
+            .tri3 => 3,
+            .tri6 => 6,
+            .quad4ibi, .quad4newton => 4,
+            .quad8 => 8,
+            .quad9 => 9,
+        };
+    }
+
+    pub inline fn getNumHullPoints(self: MeshType) usize {
+        return switch (self) {
+            .tri3 => 0,
+            .tri6 => 6,
+            .quad4ibi, .quad4newton => 4,
+            .quad8, .quad9 => 8,
+        };
+    }
+};
+
 const buildconfig = @import("buildconfig.zig");
 const cfg = buildconfig.config;
 const S = buildconfig.SimdWidth;

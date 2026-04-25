@@ -17,8 +17,9 @@ const shapefun = @import("shapefun.zig");
 const matrix = @import("matstack.zig");
 
 const pce = @import("parachunkexec.zig");
-const hull = @import("hull.zig");
 const geomkerns = @import("geometrykernels.zig");
+const MeshType = geomkerns.MeshType;
+const hull = @import("hull.zig");
 const shaderops = @import("shaderops.zig");
 const report = @import("report.zig");
 
@@ -710,7 +711,7 @@ pub fn calcVisibleNodeBBoxHighOrd(
 pub fn prepareVisibleWorkspace(
     allocator: std.mem.Allocator,
     camera: *const cam.CameraPrepared,
-    mesh_type: anytype,
+    mesh_type: MeshType,
     connect: *const meshio.Connect,
     coords_nodes: *const meshio.Coords,
     visible_orig_elem_indices: *[]usize,
@@ -951,7 +952,7 @@ fn calculateVisibleAveragedNormals(
 
 pub fn prepareVisibleNormals(
     allocator: std.mem.Allocator,
-    mesh_type: anytype,
+    mesh_type: MeshType,
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
@@ -989,7 +990,7 @@ pub fn prepareVisibleNormals(
 }
 
 pub fn prepareVisibleExactNormalsRange(
-    mesh_type: anytype,
+    mesh_type: MeshType,
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
@@ -1042,7 +1043,7 @@ fn accumulateAveragedNodeNormalsRangeImpl(
 }
 
 pub fn accumulateAveragedNodeNormalsRange(
-    mesh_type: anytype,
+    mesh_type: MeshType,
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     node_normals: []f64,
@@ -1088,7 +1089,7 @@ fn writeVisibleAveragedNormalsRangeImpl(
 }
 
 pub fn writeVisibleAveragedNormalsRange(
-    mesh_type: anytype,
+    mesh_type: MeshType,
     connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
     node_normals: []const f64,
@@ -1112,7 +1113,7 @@ pub fn writeVisibleAveragedNormalsRange(
 pub fn prepareVisibleRasterHulls(
     allocator: std.mem.Allocator,
     camera: *const cam.CameraPrepared,
-    mesh_type: anytype,
+    mesh_type: MeshType,
     elem_coords: *ndarray.NDArray(f64),
 ) !?ndarray.NDArray(f64) {
     return switch (mesh_type) {
@@ -1159,7 +1160,7 @@ fn prepareVisibleRasterHullsRangeImpl(
 
 pub fn prepareVisibleRasterHullsRange(
     camera: *const cam.CameraPrepared,
-    mesh_type: anytype,
+    mesh_type: MeshType,
     elem_coords: *const ndarray.NDArray(f64),
     raster_hull: *ndarray.NDArray(f64),
     visible_start: usize,
@@ -1168,16 +1169,9 @@ pub fn prepareVisibleRasterHullsRange(
     switch (mesh_type) {
         .tri3 => {},
         inline else => |mt| {
-            const N = comptime mt.getNodesNum();
-            const NH = comptime switch (N) {
-                4 => 4,
-                6 => 6,
-                8, 9 => 8,
-                else => 0,
-            };
             prepareVisibleRasterHullsRangeImpl(
-                N,
-                NH,
+                comptime mt.getNodesNum(),
+                comptime mt.getNumHullPoints(),
                 camera,
                 elem_coords,
                 raster_hull,

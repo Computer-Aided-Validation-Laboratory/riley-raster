@@ -7,17 +7,25 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const CameraPrepared = @import("camera.zig").CameraPrepared;
+const std = @import("std");
 const NDArray = @import("ndarray.zig").NDArray;
 const rops = @import("rasterops.zig");
 const Vec3Slices = rops.Vec3Slices;
 const cam = @import("camera.zig");
 
+const geomkerns = @import("geometrykernels.zig");
+const MeshType = geomkerns.MeshType;
+
 pub fn AdaptiveHullPoints(comptime N: usize) type {
-    const NH = comptime switch (N) {
-        4 => 4,
-        6 => 6,
-        8, 9 => 8,
-        else => 0,
+    const NH = blk: {
+        for (std.enums.values(MeshType)) |mt| {
+            if (mt.getNodesNum() == N) {
+                // Special case for tri3 as it doesn't use this path but we need a valid NH
+                if (mt == .tri3) break :blk 0;
+                break :blk mt.getNumHullPoints();
+            }
+        }
+        break :blk 0;
     };
 
     return struct {
