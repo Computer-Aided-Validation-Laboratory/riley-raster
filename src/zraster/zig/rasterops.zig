@@ -727,29 +727,8 @@ pub fn prepareVisibleWorkspace(
             connect,
             elem_bboxes.*,
         ),
-        .tri6 => cullNodesCalcBBoxesHighOrd(
-            6,
-            camera,
-            coords_nodes,
-            connect,
-            elem_bboxes.*,
-        ),
-        .quad4ibi, .quad4newton => cullNodesCalcBBoxesHighOrd(
-            4,
-            camera,
-            coords_nodes,
-            connect,
-            elem_bboxes.*,
-        ),
-        .quad8 => cullNodesCalcBBoxesHighOrd(
-            8,
-            camera,
-            coords_nodes,
-            connect,
-            elem_bboxes.*,
-        ),
-        .quad9 => cullNodesCalcBBoxesHighOrd(
-            9,
+        inline else => |mt| cullNodesCalcBBoxesHighOrd(
+            comptime mt.getNodesNum(),
             camera,
             coords_nodes,
             connect,
@@ -979,11 +958,12 @@ pub fn prepareVisibleNormals(
     normal_type: shaderops.NormalType,
 ) !ndarray.MappedNDArray(f64) {
     return switch (mesh_type) {
-        .tri3 => blk: {
+        inline else => |mt| blk: {
+            const N = comptime mt.getNodesNum();
             var prep_normals = try initIdentityMappedNormals(
                 allocator,
                 visible_orig_elem_indices.len,
-                3,
+                N,
             );
             switch (normal_type) {
                 .none => unreachable,
@@ -992,7 +972,7 @@ pub fn prepareVisibleNormals(
                     connect,
                     visible_orig_elem_indices,
                     &prep_normals.array,
-                    3,
+                    N,
                 ),
                 .averaged => try calculateVisibleAveragedNormals(
                     allocator,
@@ -1000,111 +980,7 @@ pub fn prepareVisibleNormals(
                     connect,
                     visible_orig_elem_indices,
                     &prep_normals.array,
-                    3,
-                ),
-            }
-            break :blk prep_normals;
-        },
-        .tri6 => blk: {
-            var prep_normals = try initIdentityMappedNormals(
-                allocator,
-                visible_orig_elem_indices.len,
-                6,
-            );
-            switch (normal_type) {
-                .none => unreachable,
-                .exact => calculateVisibleExactNormals(
-                    coords_nodes,
-                    connect,
-                    visible_orig_elem_indices,
-                    &prep_normals.array,
-                    6,
-                ),
-                .averaged => try calculateVisibleAveragedNormals(
-                    allocator,
-                    coords_nodes,
-                    connect,
-                    visible_orig_elem_indices,
-                    &prep_normals.array,
-                    6,
-                ),
-            }
-            break :blk prep_normals;
-        },
-        .quad4ibi, .quad4newton => blk: {
-            var prep_normals = try initIdentityMappedNormals(
-                allocator,
-                visible_orig_elem_indices.len,
-                4,
-            );
-            switch (normal_type) {
-                .none => unreachable,
-                .exact => calculateVisibleExactNormals(
-                    coords_nodes,
-                    connect,
-                    visible_orig_elem_indices,
-                    &prep_normals.array,
-                    4,
-                ),
-                .averaged => try calculateVisibleAveragedNormals(
-                    allocator,
-                    coords_nodes,
-                    connect,
-                    visible_orig_elem_indices,
-                    &prep_normals.array,
-                    4,
-                ),
-            }
-            break :blk prep_normals;
-        },
-        .quad8 => blk: {
-            var prep_normals = try initIdentityMappedNormals(
-                allocator,
-                visible_orig_elem_indices.len,
-                8,
-            );
-            switch (normal_type) {
-                .none => unreachable,
-                .exact => calculateVisibleExactNormals(
-                    coords_nodes,
-                    connect,
-                    visible_orig_elem_indices,
-                    &prep_normals.array,
-                    8,
-                ),
-                .averaged => try calculateVisibleAveragedNormals(
-                    allocator,
-                    coords_nodes,
-                    connect,
-                    visible_orig_elem_indices,
-                    &prep_normals.array,
-                    8,
-                ),
-            }
-            break :blk prep_normals;
-        },
-        .quad9 => blk: {
-            var prep_normals = try initIdentityMappedNormals(
-                allocator,
-                visible_orig_elem_indices.len,
-                9,
-            );
-            switch (normal_type) {
-                .none => unreachable,
-                .exact => calculateVisibleExactNormals(
-                    coords_nodes,
-                    connect,
-                    visible_orig_elem_indices,
-                    &prep_normals.array,
-                    9,
-                ),
-                .averaged => try calculateVisibleAveragedNormals(
-                    allocator,
-                    coords_nodes,
-                    connect,
-                    visible_orig_elem_indices,
-                    &prep_normals.array,
-                    9,
+                    N,
                 ),
             }
             break :blk prep_normals;
@@ -1122,50 +998,14 @@ pub fn prepareVisibleExactNormalsRange(
     visible_end: usize,
 ) void {
     switch (mesh_type) {
-        .tri3 => calculateVisibleExactNormalsRange(
+        inline else => |mt| calculateVisibleExactNormalsRange(
             coords_nodes,
             connect,
             visible_orig_elem_indices,
             prep_normals,
             visible_start,
             visible_end,
-            3,
-        ),
-        .tri6 => calculateVisibleExactNormalsRange(
-            coords_nodes,
-            connect,
-            visible_orig_elem_indices,
-            prep_normals,
-            visible_start,
-            visible_end,
-            6,
-        ),
-        .quad4ibi, .quad4newton => calculateVisibleExactNormalsRange(
-            coords_nodes,
-            connect,
-            visible_orig_elem_indices,
-            prep_normals,
-            visible_start,
-            visible_end,
-            4,
-        ),
-        .quad8 => calculateVisibleExactNormalsRange(
-            coords_nodes,
-            connect,
-            visible_orig_elem_indices,
-            prep_normals,
-            visible_start,
-            visible_end,
-            8,
-        ),
-        .quad9 => calculateVisibleExactNormalsRange(
-            coords_nodes,
-            connect,
-            visible_orig_elem_indices,
-            prep_normals,
-            visible_start,
-            visible_end,
-            9,
+            comptime mt.getNodesNum(),
         ),
     }
 }
@@ -1210,40 +1050,8 @@ pub fn accumulateAveragedNodeNormalsRange(
     elem_end: usize,
 ) void {
     switch (mesh_type) {
-        .tri3 => accumulateAveragedNodeNormalsRangeImpl(
-            3,
-            coords_nodes,
-            connect,
-            node_normals,
-            elem_start,
-            elem_end,
-        ),
-        .tri6 => accumulateAveragedNodeNormalsRangeImpl(
-            6,
-            coords_nodes,
-            connect,
-            node_normals,
-            elem_start,
-            elem_end,
-        ),
-        .quad4ibi, .quad4newton => accumulateAveragedNodeNormalsRangeImpl(
-            4,
-            coords_nodes,
-            connect,
-            node_normals,
-            elem_start,
-            elem_end,
-        ),
-        .quad8 => accumulateAveragedNodeNormalsRangeImpl(
-            8,
-            coords_nodes,
-            connect,
-            node_normals,
-            elem_start,
-            elem_end,
-        ),
-        .quad9 => accumulateAveragedNodeNormalsRangeImpl(
-            9,
+        inline else => |mt| accumulateAveragedNodeNormalsRangeImpl(
+            comptime mt.getNodesNum(),
             coords_nodes,
             connect,
             node_normals,
@@ -1289,44 +1097,8 @@ pub fn writeVisibleAveragedNormalsRange(
     visible_end: usize,
 ) void {
     switch (mesh_type) {
-        .tri3 => writeVisibleAveragedNormalsRangeImpl(
-            3,
-            connect,
-            visible_orig_elem_indices,
-            node_normals,
-            prep_normals,
-            visible_start,
-            visible_end,
-        ),
-        .tri6 => writeVisibleAveragedNormalsRangeImpl(
-            6,
-            connect,
-            visible_orig_elem_indices,
-            node_normals,
-            prep_normals,
-            visible_start,
-            visible_end,
-        ),
-        .quad4ibi, .quad4newton => writeVisibleAveragedNormalsRangeImpl(
-            4,
-            connect,
-            visible_orig_elem_indices,
-            node_normals,
-            prep_normals,
-            visible_start,
-            visible_end,
-        ),
-        .quad8 => writeVisibleAveragedNormalsRangeImpl(
-            8,
-            connect,
-            visible_orig_elem_indices,
-            node_normals,
-            prep_normals,
-            visible_start,
-            visible_end,
-        ),
-        .quad9 => writeVisibleAveragedNormalsRangeImpl(
-            9,
+        inline else => |mt| writeVisibleAveragedNormalsRangeImpl(
+            comptime mt.getNodesNum(),
             connect,
             visible_orig_elem_indices,
             node_normals,
@@ -1345,36 +1117,13 @@ pub fn prepareVisibleRasterHulls(
 ) !?ndarray.NDArray(f64) {
     return switch (mesh_type) {
         .tri3 => null,
-        .quad4ibi, .quad4newton => blk: {
+        inline else => |mt| blk: {
+            const N = comptime mt.getNodesNum();
             var raster_hull = try ndarray.NDArray(f64).initFlat(
                 allocator,
-                &[_]usize{ elem_coords.dims[0], 2, 4 },
+                &[_]usize{ elem_coords.dims[0], 2, N },
             );
-            try hull.buildAdaptiveHulls(4, camera, 0, elem_coords, &raster_hull);
-            break :blk raster_hull;
-        },
-        .tri6 => blk: {
-            var raster_hull = try ndarray.NDArray(f64).initFlat(
-                allocator,
-                &[_]usize{ elem_coords.dims[0], 2, 6 },
-            );
-            try hull.buildAdaptiveHulls(6, camera, 0, elem_coords, &raster_hull);
-            break :blk raster_hull;
-        },
-        .quad8 => blk: {
-            var raster_hull = try ndarray.NDArray(f64).initFlat(
-                allocator,
-                &[_]usize{ elem_coords.dims[0], 2, 8 },
-            );
-            try hull.buildAdaptiveHulls(8, camera, 0, elem_coords, &raster_hull);
-            break :blk raster_hull;
-        },
-        .quad9 => blk: {
-            var raster_hull = try ndarray.NDArray(f64).initFlat(
-                allocator,
-                &[_]usize{ elem_coords.dims[0], 2, 8 },
-            );
-            try hull.buildAdaptiveHulls(9, camera, 0, elem_coords, &raster_hull);
+            try hull.buildAdaptiveHulls(N, camera, 0, elem_coords, &raster_hull);
             break :blk raster_hull;
         },
     };
@@ -1418,42 +1167,24 @@ pub fn prepareVisibleRasterHullsRange(
 ) void {
     switch (mesh_type) {
         .tri3 => {},
-        .quad4ibi, .quad4newton => prepareVisibleRasterHullsRangeImpl(
-            4,
-            4,
-            camera,
-            elem_coords,
-            raster_hull,
-            visible_start,
-            visible_end,
-        ),
-        .tri6 => prepareVisibleRasterHullsRangeImpl(
-            6,
-            6,
-            camera,
-            elem_coords,
-            raster_hull,
-            visible_start,
-            visible_end,
-        ),
-        .quad8 => prepareVisibleRasterHullsRangeImpl(
-            8,
-            8,
-            camera,
-            elem_coords,
-            raster_hull,
-            visible_start,
-            visible_end,
-        ),
-        .quad9 => prepareVisibleRasterHullsRangeImpl(
-            9,
-            8,
-            camera,
-            elem_coords,
-            raster_hull,
-            visible_start,
-            visible_end,
-        ),
+        inline else => |mt| {
+            const N = comptime mt.getNodesNum();
+            const NH = comptime switch (N) {
+                4 => 4,
+                6 => 6,
+                8, 9 => 8,
+                else => 0,
+            };
+            prepareVisibleRasterHullsRangeImpl(
+                N,
+                NH,
+                camera,
+                elem_coords,
+                raster_hull,
+                visible_start,
+                visible_end,
+            );
+        },
     }
 }
 
