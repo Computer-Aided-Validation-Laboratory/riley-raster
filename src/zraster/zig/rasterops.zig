@@ -994,25 +994,38 @@ pub fn prepareVisibleExactNormalsRange(
     visible_start: usize,
     visible_end: usize,
 ) void {
-    calculateVisibleExactNormalsRange(
-        coords_nodes,
-        connect,
-        visible_orig_elem_indices,
-        prep_normals,
-        visible_start,
-        visible_end,
-        comptime MT.getNodesNum(),
-    );
+    const N = comptime MT.getNodesNum();
+    const nodal_derivs = comptime shapefun.getNodalDerivs(N);
+
+    for (visible_start..visible_end) |pp| {
+        const orig_ee = visible_orig_elem_indices[pp];
+        const coords_elem = gatherElemNodeCoords(N, coords_nodes, connect, orig_ee);
+        for (0..N) |nn| {
+            var normal_vec = calcElementNodeNormal(
+                N,
+                nodal_derivs,
+                &coords_elem.x,
+                &coords_elem.y,
+                &coords_elem.z,
+                nn,
+            );
+            normalizeNormal(&normal_vec);
+            prep_normals.set(&[_]usize{ pp, 0, nn }, normal_vec[0]);
+            prep_normals.set(&[_]usize{ pp, 1, nn }, normal_vec[1]);
+            prep_normals.set(&[_]usize{ pp, 2, nn }, normal_vec[2]);
+        }
+    }
 }
 
-fn accumulateAveragedNodeNormalsRangeImpl(
-    comptime N: usize,
+pub fn accumulateAveragedNodeNormalsRange(
+    comptime MT: MeshType,
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     node_normals: []f64,
     elem_start: usize,
     elem_end: usize,
 ) void {
+    const N = comptime MT.getNodesNum();
     const nodal_derivs = comptime shapefun.getNodalDerivs(N);
 
     for (elem_start..elem_end) |ee| {
@@ -1036,26 +1049,8 @@ fn accumulateAveragedNodeNormalsRangeImpl(
     }
 }
 
-pub fn accumulateAveragedNodeNormalsRange(
+pub fn writeVisibleAveragedNormalsRange(
     comptime MT: MeshType,
-    coords_nodes: *const meshio.Coords,
-    connect: *const meshio.Connect,
-    node_normals: []f64,
-    elem_start: usize,
-    elem_end: usize,
-) void {
-    accumulateAveragedNodeNormalsRangeImpl(
-        comptime MT.getNodesNum(),
-        coords_nodes,
-        connect,
-        node_normals,
-        elem_start,
-        elem_end,
-    );
-}
-
-fn writeVisibleAveragedNormalsRangeImpl(
-    comptime N: usize,
     connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
     node_normals: []const f64,
@@ -1063,6 +1058,7 @@ fn writeVisibleAveragedNormalsRangeImpl(
     visible_start: usize,
     visible_end: usize,
 ) void {
+    const N = comptime MT.getNodesNum();
     for (visible_start..visible_end) |pp| {
         const coord_inds = connect.getElem(visible_orig_elem_indices[pp]);
         for (0..N) |nn| {
@@ -1078,26 +1074,6 @@ fn writeVisibleAveragedNormalsRangeImpl(
             prep_normals.set(&[_]usize{ pp, 2, nn }, normal_vec[2]);
         }
     }
-}
-
-pub fn writeVisibleAveragedNormalsRange(
-    comptime MT: MeshType,
-    connect: *const meshio.Connect,
-    visible_orig_elem_indices: []const usize,
-    node_normals: []const f64,
-    prep_normals: *ndarray.NDArray(f64),
-    visible_start: usize,
-    visible_end: usize,
-) void {
-    writeVisibleAveragedNormalsRangeImpl(
-        comptime MT.getNodesNum(),
-        connect,
-        visible_orig_elem_indices,
-        node_normals,
-        prep_normals,
-        visible_start,
-        visible_end,
-    );
 }
 
 pub fn prepareVisibleRasterHulls(
@@ -1117,15 +1093,19 @@ pub fn prepareVisibleRasterHulls(
     return raster_hull;
 }
 
-fn prepareVisibleRasterHullsRangeImpl(
-    comptime N: usize,
-    comptime NH: usize,
+pub fn prepareVisibleRasterHullsRange(
+    comptime MT: MeshType,
     camera: *const cam.CameraPrepared,
     elem_coords: *const ndarray.NDArray(f64),
     raster_hull: *ndarray.NDArray(f64),
     visible_start: usize,
     visible_end: usize,
 ) void {
+    if (MT == .tri3) return;
+
+    const N = comptime MT.getNodesNum();
+    const NH = comptime MT.getNumHullPoints();
+
     for (visible_start..visible_end) |pp| {
         var coords_elem: hull.GatheredElemCoords(N) = undefined;
         const sx = elem_coords.getSlice(&[_]usize{ pp, 0, 0 }, 1);
@@ -1143,27 +1123,6 @@ fn prepareVisibleRasterHullsRangeImpl(
             raster_hull.set(&[_]usize{ pp, 1, nn }, hull_points.y[nn]);
         }
     }
-}
-
-pub fn prepareVisibleRasterHullsRange(
-    comptime MT: MeshType,
-    camera: *const cam.CameraPrepared,
-    elem_coords: *const ndarray.NDArray(f64),
-    raster_hull: *ndarray.NDArray(f64),
-    visible_start: usize,
-    visible_end: usize,
-) void {
-    if (MT == .tri3) return;
-
-    prepareVisibleRasterHullsRangeImpl(
-        comptime MT.getNodesNum(),
-        comptime MT.getNumHullPoints(),
-        camera,
-        elem_coords,
-        raster_hull,
-        visible_start,
-        visible_end,
-    );
 }
 
 const TilingCountStage = struct {
