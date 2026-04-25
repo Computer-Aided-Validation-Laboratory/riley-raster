@@ -701,8 +701,8 @@ pub fn saveComparisonArtifactsFromImages(
         diff.deinit(allocator);
     }
 
-    try saveImageArtifacts(allocator, io, out_dir, "frame_0_field_0", actual);
-    try saveImageArtifacts(allocator, io, out_dir, "frame_0_field_0_diff", &diff);
+    try saveImageArtifacts(allocator, io, out_dir, "cam0_frame0_field0", actual);
+    try saveImageArtifacts(allocator, io, out_dir, "cam0_frame0_field0_diff", &diff);
 }
 
 pub const ShaderFilter = enum { nodal, tex, both };

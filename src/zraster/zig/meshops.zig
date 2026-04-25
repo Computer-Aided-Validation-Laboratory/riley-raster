@@ -32,6 +32,7 @@ const geomkerns = @import("geometrykernels.zig");
 //------------------------------------------------------------------------------------------
 
 pub const MeshType = geomkerns.MeshType;
+pub const ShaderInput = shaderops.ShaderInput;
 
 // Input: Raw user data for all frames.
 // meshio.Coords/Fields: Node-order [total_nodes, ...]
@@ -481,7 +482,7 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
             try self.prepareRasterHulls(&mesh_prep.coords);
             try self.prepareShader(&mesh_prep);
 
-            self.assignVisibleElemIndices();
+            self.remapVisibleElemIndices();
 
             return self.finish(mesh_prep);
         }
@@ -1056,7 +1057,7 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
             );
         }
 
-        fn assignVisibleElemIndices(self: *FrameMeshPipelineType) void {
+        fn remapVisibleElemIndices(self: *FrameMeshPipelineType) void {
             for (self.mesh_workspace.elem_bboxes, 0..) |*elem_bbox, pp| {
                 elem_bbox.elem_idx = pp;
             }

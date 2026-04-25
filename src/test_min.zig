@@ -62,115 +62,112 @@ test "MIN Suite: sphere200 and multimesh" {
 
     if (simd_on) {
         std.debug.print("\nRunning MIN Suite sphere200 tests...\n", .{});
-        for (mesh_types) |mt| {
-            for (shader_types) |st| {
-                for (sample_configs) |sc| {
-                    const data_dir = try std.fmt.allocPrint(
-                        allocator,
-                        "data-min/{s}_sphere200",
-                        .{@tagName(mt)},
-                    );
-                    defer allocator.free(data_dir);
+        const fov_scales = [_]f64{ 1.0, 0.8 };
 
-                    // Filter for Min Suite:
-                    const is_rgb = (st == .tex8_rgb or st == .nodal_rgb);
-                    const is_allowed_rgb = (st == .nodal_rgb) or
-                        (st == .tex8_rgb and
-                            sc.sample == .cubic_catmull_rom and
-                            sc.mode == .lut_lerp);
-
-                    if (is_rgb and !is_allowed_rgb) continue;
-
-                    if (common.shouldRun(
-                        .{ .run = .all, .skip_quad4ibi_sphere = true },
-                        mt,
-                        st,
-                        sc,
-                        data_dir,
-                    )) {
-                        var result = try common.runBenchmarkQuiet(
+        for (fov_scales) |fov_scale| {
+            for (mesh_types) |mt| {
+                for (shader_types) |st| {
+                    for (sample_configs) |sc| {
+                        const data_dir = try std.fmt.allocPrint(
                             allocator,
-                            io,
+                            "data-min/{s}_sphere200",
+                            .{@tagName(mt)},
+                        );
+                        defer allocator.free(data_dir);
+
+                        // Filter for Min Suite:
+                        const is_rgb = (st == .tex8_rgb or st == .nodal_rgb);
+                        const is_allowed_rgb = (st == .nodal_rgb) or
+                            (st == .tex8_rgb and
+                                sc.sample == .cubic_catmull_rom and
+                                sc.mode == .lut_lerp);
+
+                        if (is_rgb and !is_allowed_rgb) continue;
+
+                        if (common.shouldRun(
+                            .{ .run = .all, .skip_quad4ibi_sphere = true },
                             mt,
                             st,
                             sc,
                             data_dir,
-                            pixel_num_sphere,
-                            texture_grey,
-                            texture_rgb,
-                            .{
+                        )) {
+                            const options = common.BenchOptions{
                                 .return_image = true,
                                 .save_opts = &[_]iio.ImageSaveOpts{},
-                            },
-                        );
-                        defer result.deinit(allocator);
+                                .fov_scale = fov_scale,
+                            };
 
-                        const case_name = if (st == .tex8_grey or st == .tex8_rgb)
-                            try std.fmt.allocPrint(
-                                allocator,
-                                "{s}_{s}_{s}_{s}",
-                                .{
-                                    @tagName(mt),
-                                    @tagName(st),
-                                    @tagName(sc.sample),
-                                    @tagName(sc.mode),
-                                },
-                            )
-                        else
-                            try std.fmt.allocPrint(
-                                allocator,
-                                "{s}_{s}",
-                                .{ @tagName(mt), @tagName(st) },
-                            );
-                        defer allocator.free(case_name);
-
-                        const gold_case_dir = try std.fs.path.join(
-                            allocator,
-                            &[_][]const u8{ gold_dir, case_name },
-                        );
-                        defer allocator.free(gold_case_dir);
-                        const gold_fname = try tests.findGoldPath(
-                            allocator,
-                            io,
-                            gold_case_dir,
-                            0,
-                            0,
-                            0,
-                            is_rgb,
-                        );
-                        defer allocator.free(gold_fname);
-
-                        const channels: usize = if (is_rgb) 3 else 1;
-                        tests.compareNDArrayToGold(
-                            allocator,
-                            io,
-                            &result.image.?,
-                            0,
-                            0,
-                            0,
-                            channels,
-                            gold_fname,
-                            tcfg.REL_TOL,
-                            tcfg.ABS_TOL,
-                        ) catch |err| {
-                            try tests.saveComparisonArtifactsFromResult(
+                            var result = try common.runBenchmarkQuiet(
                                 allocator,
                                 io,
-                                "fails",
-                                case_name,
+                                mt,
+                                st,
+                                sc,
+                                data_dir,
+                                pixel_num_sphere,
+                                texture_grey,
+                                texture_rgb,
+                                options,
+                            );
+                            defer result.deinit(allocator);
+
+                            const case_name = try common.calcCaseName(
+                                allocator,
+                                mt,
+                                st,
+                                sc,
+                                options,
+                            );
+                            defer allocator.free(case_name);
+
+                            const gold_case_dir = try std.fs.path.join(
+                                allocator,
+                                &[_][]const u8{ gold_dir, case_name },
+                            );
+                            defer allocator.free(gold_case_dir);
+                            const gold_fname = try tests.findGoldPath(
+                                allocator,
+                                io,
+                                gold_case_dir,
+                                0,
+                                0,
+                                0,
+                                is_rgb,
+                            );
+                            defer allocator.free(gold_fname);
+
+                            const channels: usize = if (is_rgb) 3 else 1;
+                            tests.compareNDArrayToGold(
+                                allocator,
+                                io,
                                 &result.image.?,
                                 0,
                                 0,
                                 0,
-                                gold_fname,
                                 channels,
-                            );
-                            if (err == error.PixelMismatch) {
-                                total_fails += 1;
-                                continue;
-                            }
-                            return err;
-                        };
+                                gold_fname,
+                                tcfg.REL_TOL,
+                                tcfg.ABS_TOL,
+                            ) catch |err| {
+                                try tests.saveComparisonArtifactsFromResult(
+                                    allocator,
+                                    io,
+                                    "fails",
+                                    case_name,
+                                    &result.image.?,
+                                    0,
+                                    0,
+                                    0,
+                                    gold_fname,
+                                    channels,
+                                );
+                                if (err == error.PixelMismatch) {
+                                    total_fails += 1;
+                                    continue;
+                                }
+                                return err;
+                            };
+                        }
                     }
                 }
             }

@@ -48,8 +48,8 @@ pub fn main(init: std.process.Init) !void {
     };
     const pixel_num = [_]u32{ 640, 400 };
     const config = zraster.RasterConfig{
-        .save_opt = .disk,
-        .save_opts = &[_]iio.ImageSaveOpts{
+        .save_strategy = .disk,
+        .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .fimg, .bits = null, .scaling = .none },
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
         },

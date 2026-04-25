@@ -46,28 +46,41 @@ test "Unified Benchmark Tests" {
 
     const cases = [_]struct {
         name: []const u8,
+        data_name: []const u8,
         gold_dir: []const u8,
         out_dir: []const u8,
         is_sphere: bool = false,
+        fov_scale: f64 = 1.0,
     }{
         .{
             .name = "fullraster",
+            .data_name = "fullraster",
             .gold_dir = "gold-bench-fullscreen",
             .out_dir = "out-bench-fullraster",
         },
         .{
             .name = "geom",
+            .data_name = "geom",
             .gold_dir = "gold-bench-fullscreen",
             .out_dir = "out-bench-geom",
         },
         .{
             .name = "sphere2000",
-            .gold_dir = if (simd_on)
-                "gold-simd-sphere2000"
-            else
-                "gold-sphere2000",
+            .data_name = "sphere2000",
+            .gold_dir = if (simd_on) "gold-simd-sphere2000" else "gold-sphere2000",
             .out_dir = "out-bench-sphere2000",
             .is_sphere = true,
+        },
+        .{
+            .name = "sphere2000zoom",
+            .data_name = "sphere2000",
+            .gold_dir = if (simd_on)
+                "gold-simd-sphere2000zoom"
+            else
+                "gold-sphere2000zoom",
+            .out_dir = "out-bench-sphere2000zoom",
+            .is_sphere = true,
+            .fov_scale = 0.5,
         },
     };
 
@@ -114,7 +127,7 @@ test "Unified Benchmark Tests" {
                     const data_dir = try std.fmt.allocPrint(
                         aa,
                         "data-bench/{s}_{s}",
-                        .{ @tagName(mt), cc.name },
+                        .{ @tagName(mt), cc.data_name },
                     );
 
                     const run_config = if (cc.is_sphere)
@@ -123,18 +136,20 @@ test "Unified Benchmark Tests" {
                         config;
 
                     if (common.shouldRun(run_config, mt, st, sc, data_dir)) {
-                        const case_name = if (st == .tex8_grey or st == .tex8_rgb)
-                            try std.fmt.allocPrint(
-                                aa,
-                                "{s}_{s}_{s}_{s}",
-                                .{ @tagName(mt), @tagName(st), @tagName(sc.sample), @tagName(sc.mode) },
-                            )
-                        else
-                            try std.fmt.allocPrint(
-                                aa,
-                                "{s}_{s}",
-                                .{ @tagName(mt), @tagName(st) },
-                            );
+                        const options = common.BenchOptions{
+                            .out_dir_base = cc.out_dir,
+                            .return_image = true,
+                            .save_opts = &[_]iio.ImageSaveOpts{},
+                            .fov_scale = cc.fov_scale,
+                        };
+
+                        const case_name = try common.calcCaseName(
+                            aa,
+                            mt,
+                            st,
+                            sc,
+                            options,
+                        );
 
                         std.debug.print("Testing {s}/{s} ... ", .{ cc.name, case_name });
 
@@ -149,11 +164,7 @@ test "Unified Benchmark Tests" {
                             pixel_num,
                             texture_grey,
                             texture_rgb,
-                            .{
-                                .out_dir_base = cc.out_dir,
-                                .return_image = true,
-                                .save_opts = &[_]iio.ImageSaveOpts{},
-                            },
+                            options,
                         );
 
                         // 2. Map filenames

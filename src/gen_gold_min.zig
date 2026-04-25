@@ -60,56 +60,69 @@ pub fn main(init: std.process.Init) !void {
         .save_strategy = .disk,
         .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .fimg, .bits = null, .scaling = .none },
+            .{ .format = .bmp, .bits = 8, .scaling = .auto },
         },
         .report = .off,
     };
 
     std.debug.print("Generating MIN Gold Data (sphere200)...\n", .{});
-    for (mesh_types) |mt| {
-        for (shader_types) |st| {
-            for (sample_configs) |sc| {
-                const data_dir = try std.fmt.allocPrint(
-                    allocator,
-                    "data-min/{s}_sphere200",
-                    .{@tagName(mt)},
-                );
-                defer allocator.free(data_dir);
+    const fov_scales = [_]f64{ 1.0, 0.8 };
 
-                // Filter for Min Suite:
-                // - Greyscale: All cases
-                // - RGB: Only nodal and one texture case
-                const is_rgb = (st == .tex8_rgb or st == .nodal_rgb);
-                const is_allowed_rgb = (st == .nodal_rgb) or
-                    (st == .tex8_rgb and sc.sample == .cubic_catmull_rom and sc.mode == .lut_lerp);
-
-                if (is_rgb and !is_allowed_rgb) continue;
-
-                if (common.shouldRun(
-                    .{ .run = .all, .skip_quad4ibi_sphere = true },
-                    mt,
-                    st,
-                    sc,
-                    data_dir,
-                )) {
-                    const num_ch: u8 = if (is_rgb) 3 else 1;
-                    var result = try common.runBenchmarkQuiet(
+    for (fov_scales) |fov_scale| {
+        for (mesh_types) |mt| {
+            for (shader_types) |st| {
+                for (sample_configs) |sc| {
+                    const data_dir = try std.fmt.allocPrint(
                         allocator,
-                        io,
+                        "data-min/{s}_sphere200",
+                        .{@tagName(mt)},
+                    );
+                    defer allocator.free(data_dir);
+
+                    // Filter for Min Suite:
+                    // - Greyscale: All cases
+                    // - RGB: Only nodal and one texture case
+                    const is_rgb = (st == .tex8_rgb or st == .nodal_rgb);
+                    const is_allowed_rgb = (st == .nodal_rgb) or
+                        (st == .tex8_rgb and
+                        sc.sample == .cubic_catmull_rom and
+                        sc.mode == .lut_lerp);
+
+                    if (is_rgb and !is_allowed_rgb) continue;
+
+                    if (common.shouldRun(
+                        .{ .run = .all, .skip_quad4ibi_sphere = true },
                         mt,
                         st,
                         sc,
                         data_dir,
-                        pixel_num_sphere,
-                        texture_grey,
-                        texture_rgb,
-                        .{
-                            .out_dir_base = out_dir,
-                            .save_opts = &[_]iio.ImageSaveOpts{
-                                .{ .format = .fimg, .bits = null, .scaling = .none, .channels = num_ch },
+                    )) {
+                        const num_ch: u8 = if (is_rgb) 3 else 1;
+                        var opts_with_ch = [_]iio.ImageSaveOpts{
+                            config.image_save_opts[0],
+                            config.image_save_opts[1],
+                        };
+                        opts_with_ch[0].channels = num_ch;
+                        opts_with_ch[1].channels = num_ch;
+
+                        var result = try common.runBenchmarkQuiet(
+                            allocator,
+                            io,
+                            mt,
+                            st,
+                            sc,
+                            data_dir,
+                            pixel_num_sphere,
+                            texture_grey,
+                            texture_rgb,
+                            .{
+                                .out_dir_base = out_dir,
+                                .save_opts = &opts_with_ch,
+                                .fov_scale = fov_scale,
                             },
-                        },
-                    );
-                    result.deinit(allocator);
+                        );
+                        result.deinit(allocator);
+                    }
                 }
             }
         }

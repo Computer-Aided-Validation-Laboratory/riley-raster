@@ -272,6 +272,7 @@ pub const BenchOptions = struct {
     out_dir_base: []const u8 = "",
     save_opts: ?[]const iio.ImageSaveOpts = null,
     return_image: bool = false,
+    fov_scale: f64 = 1.0,
 };
 
 fn calcSaveStrategy(options: BenchOptions) zraster.SaveStrategy {
@@ -287,14 +288,15 @@ fn calcSaveStrategy(options: BenchOptions) zraster.SaveStrategy {
     return .none;
 }
 
-fn calcCaseName(
+pub fn calcCaseName(
     allocator: std.mem.Allocator,
     etype: mo.MeshType,
     shader_type: ShaderType,
     sample_config: TextureSampleConfig,
+    options: BenchOptions,
 ) ![]const u8 {
-    if (shader_type == .tex8_grey or shader_type == .tex8_rgb) {
-        return std.fmt.allocPrint(
+    const name = if (shader_type == .tex8_grey or shader_type == .tex8_rgb)
+        try std.fmt.allocPrint(
             allocator,
             "{s}_{s}_{s}_{s}",
             .{
@@ -303,15 +305,21 @@ fn calcCaseName(
                 @tagName(sample_config.sample),
                 @tagName(sample_config.mode),
             },
+        )
+    else
+        try std.fmt.allocPrint(
+            allocator,
+            "{s}_{s}",
+            .{ @tagName(etype), @tagName(shader_type) },
         );
-    }
+    defer allocator.free(name);
 
-    return std.fmt.allocPrint(
-        allocator,
-        "{s}_{s}",
-        .{ @tagName(etype), @tagName(shader_type) },
-    );
+    if (options.fov_scale < 0.99) {
+        return std.fmt.allocPrint(allocator, "{s}_zoom", .{name});
+    }
+    return allocator.dupe(u8, name);
 }
+
 
 fn extractFirstFrameImage(
     allocator: std.mem.Allocator,
@@ -479,7 +487,7 @@ fn runBenchmarkInternal(
         pixel_size,
         focal_leng,
         rot,
-        1.0,
+        options.fov_scale,
     );
     const camera = try CameraPrepared.init(
         aa,
@@ -538,7 +546,7 @@ fn runBenchmarkInternal(
         ) catch |err| if (err != error.PathAlreadyExists) return err;
     }
 
-    const case_name = try calcCaseName(aa, etype, shader_type, sample_config);
+    const case_name = try calcCaseName(aa, etype, shader_type, sample_config, options);
     const out_path = if (options.out_dir_base.len > 0)
         try std.fs.path.join(
             aa,

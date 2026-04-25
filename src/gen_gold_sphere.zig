@@ -56,10 +56,19 @@ pub fn main(init: std.process.Init) !void {
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
 
-    const cases = [_]struct { ds: []const u8, out: []const u8 }{
+    const cases = [_]struct {
+        ds: []const u8,
+        out: []const u8,
+        fov_scale: f64 = 1.0,
+    }{
         .{
             .ds = "sphere2000",
             .out = if (simd_on) "gold-simd-sphere2000" else "gold-sphere2000",
+        },
+        .{
+            .ds = "sphere2000",
+            .out = if (simd_on) "gold-simd-sphere2000zoom" else "gold-sphere2000zoom",
+            .fov_scale = 0.5,
         },
     };
 
@@ -88,7 +97,12 @@ pub fn main(init: std.process.Init) !void {
                             try std.fmt.allocPrint(
                                 aa,
                                 "{s}_{s}_{s}_{s}",
-                                .{ @tagName(mt), @tagName(st), @tagName(sc.sample), @tagName(sc.mode) },
+                                .{
+                                    @tagName(mt),
+                                    @tagName(st),
+                                    @tagName(sc.sample),
+                                    @tagName(sc.mode),
+                                },
                             )
                         else
                             try std.fmt.allocPrint(
@@ -112,7 +126,7 @@ pub fn main(init: std.process.Init) !void {
                             pixel_num,
                             texture_grey,
                             texture_rgb,
-                            .{ .out_dir_base = case.out },
+                            .{ .out_dir_base = case.out, .fov_scale = case.fov_scale },
                         );
                     }
                 }
