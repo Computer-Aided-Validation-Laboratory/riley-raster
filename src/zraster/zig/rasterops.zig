@@ -112,28 +112,6 @@ pub const MeshInput = struct {
     hull: ?*const ndarray.NDArray(f64),
 };
 
-fn AdaptiveHullPoints(comptime N: usize) type {
-    const NH = comptime switch (N) {
-        4 => 4,
-        6 => 6,
-        8, 9 => 8,
-        else => 0,
-    };
-
-    return struct {
-        x: [NH]f64,
-        y: [NH]f64,
-    };
-}
-
-fn GatheredElemCoords(comptime N: usize) type {
-    return struct {
-        x: [N]f64,
-        y: [N]f64,
-        z: [N]f64,
-    };
-}
-
 fn transformWorldNodeToRaster(
     camera: *const cam.CameraPrepared,
     coord_world: vecstack.Vec3T(f64),
@@ -227,8 +205,8 @@ fn gatherElemNodeCoords(
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     elem_idx: usize,
-) GatheredElemCoords(N) {
-    var coords_elem: GatheredElemCoords(N) = undefined;
+) hull.GatheredElemCoords(N) {
+    var coords_elem: hull.GatheredElemCoords(N) = undefined;
     const coord_inds = connect.getElem(elem_idx);
 
     for (0..N) |nn| {
@@ -239,95 +217,6 @@ fn gatherElemNodeCoords(
     }
 
     return coords_elem;
-}
-
-fn buildAdaptiveHullPoints(
-    comptime N: usize,
-    camera: *const cam.CameraPrepared,
-    coords_elem: GatheredElemCoords(N),
-) AdaptiveHullPoints(N) {
-    const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
-    const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
-
-    var lx: [N]f64 = undefined;
-    var ly: [N]f64 = undefined;
-    for (0..N) |nn| {
-        lx[nn] = coords_elem.x[nn] / coords_elem.z[nn] + x_off;
-        ly[nn] = coords_elem.y[nn] / coords_elem.z[nn] + y_off;
-    }
-
-    var hull_points: AdaptiveHullPoints(N) = undefined;
-    if (N == 4) {
-        inline for (0..4) |nn| {
-            hull_points.x[nn] = lx[nn];
-            hull_points.y[nn] = ly[nn];
-        }
-    } else if (N == 6) {
-        const edges = [3][3]usize{
-            .{ 0, 1, 3 },
-            .{ 1, 2, 4 },
-            .{ 2, 0, 5 },
-        };
-
-        inline for (edges, 0..) |edge, ee| {
-            const p0 = edge[0];
-            const p1 = edge[1];
-            const pm = edge[2];
-            const edge_val = edgeFun3(
-                lx[p0],
-                ly[p0],
-                lx[p1],
-                ly[p1],
-                lx[pm],
-                ly[pm],
-            );
-            hull_points.x[ee * 2] = lx[p0];
-            hull_points.y[ee * 2] = ly[p0];
-            if (edge_val < 0.0) {
-                hull_points.x[ee * 2 + 1] =
-                    2.0 * lx[pm] - 0.5 * (lx[p0] + lx[p1]);
-                hull_points.y[ee * 2 + 1] =
-                    2.0 * ly[pm] - 0.5 * (ly[p0] + ly[p1]);
-            } else {
-                hull_points.x[ee * 2 + 1] = lx[pm];
-                hull_points.y[ee * 2 + 1] = ly[pm];
-            }
-        }
-    } else if (N == 8 or N == 9) {
-        const edges = [4][3]usize{
-            .{ 0, 1, 4 },
-            .{ 1, 2, 5 },
-            .{ 2, 3, 6 },
-            .{ 3, 0, 7 },
-        };
-
-        inline for (edges, 0..) |edge, ee| {
-            const p0 = edge[0];
-            const p1 = edge[1];
-            const pm = edge[2];
-            const edge_val = edgeFun3(
-                lx[p0],
-                ly[p0],
-                lx[p1],
-                ly[p1],
-                lx[pm],
-                ly[pm],
-            );
-            hull_points.x[ee * 2] = lx[p0];
-            hull_points.y[ee * 2] = ly[p0];
-            if (edge_val < 0.0) {
-                hull_points.x[ee * 2 + 1] =
-                    2.0 * lx[pm] - 0.5 * (lx[p0] + lx[p1]);
-                hull_points.y[ee * 2 + 1] =
-                    2.0 * ly[pm] - 0.5 * (ly[p0] + ly[p1]);
-            } else {
-                hull_points.x[ee * 2 + 1] = lx[pm];
-                hull_points.y[ee * 2 + 1] = ly[pm];
-            }
-        }
-    }
-
-    return hull_points;
 }
 
 pub fn loadElemVec3Slices(
@@ -668,40 +557,6 @@ fn cullNodesCalcBBoxesTri3(
     return elems_in_image;
 }
 
-fn calcVisibleNodeBBoxTri3(
-    camera: *const cam.CameraPrepared,
-    coords_nodes: *const meshio.Coords,
-    connect: *const meshio.Connect,
-    elem_idx: usize,
-) ?ElemBBox {
-    const coords_elem = gatherElemNodeCoords(3, coords_nodes, connect, elem_idx);
-    const weight = edgeFun3Slices(0, 1, 2, &coords_elem.x, &coords_elem.y);
-    if (weight <= buildconfig.config.tolerance.culling.tri3_signed_area) {
-        return null;
-    }
-
-    const x_min = std.mem.min(f64, &coords_elem.x);
-    const x_max = std.mem.max(f64, &coords_elem.x);
-    const y_min = std.mem.min(f64, &coords_elem.y);
-    const y_max = std.mem.max(f64, &coords_elem.y);
-
-    if (x_min > @as(f64, @floatFromInt(camera.pixels_num[0] - 1)) or
-        x_max < 0.0 or
-        y_min > @as(f64, @floatFromInt(camera.pixels_num[1] - 1)) or
-        y_max < 0.0)
-    {
-        return null;
-    }
-
-    return .{
-        .elem_idx = elem_idx,
-        .x_min = boundIndMin(u16, x_min),
-        .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
-        .y_min = boundIndMin(u16, y_min),
-        .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
-    };
-}
-
 fn cullNodesCalcBBoxesHighOrd(
     comptime N: usize,
     camera: *const cam.CameraPrepared,
@@ -749,7 +604,7 @@ fn cullNodesCalcBBoxesHighOrd(
             continue;
         }
 
-        const hull_points = buildAdaptiveHullPoints(N, camera, coords_elem);
+        const hull_points = hull.buildAdaptiveHullPoints(N, camera, coords_elem);
         const x_min = std.mem.min(f64, &hull_points.x);
         const x_max = std.mem.max(f64, &hull_points.x);
         const y_min = std.mem.min(f64, &hull_points.y);
@@ -776,7 +631,41 @@ fn cullNodesCalcBBoxesHighOrd(
     return elems_in_image;
 }
 
-fn calcVisibleNodeBBoxHighOrd(
+pub fn calcVisibleNodeBBoxTri3(
+    camera: *const cam.CameraPrepared,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
+    elem_idx: usize,
+) ?ElemBBox {
+    const coords_elem = gatherElemNodeCoords(3, coords_nodes, connect, elem_idx);
+    const weight = edgeFun3Slices(0, 1, 2, &coords_elem.x, &coords_elem.y);
+    if (weight <= buildconfig.config.tolerance.culling.tri3_signed_area) {
+        return null;
+    }
+
+    const x_min = std.mem.min(f64, &coords_elem.x);
+    const x_max = std.mem.max(f64, &coords_elem.x);
+    const y_min = std.mem.min(f64, &coords_elem.y);
+    const y_max = std.mem.max(f64, &coords_elem.y);
+
+    if (x_min > @as(f64, @floatFromInt(camera.pixels_num[0] - 1)) or
+        x_max < 0.0 or
+        y_min > @as(f64, @floatFromInt(camera.pixels_num[1] - 1)) or
+        y_max < 0.0)
+    {
+        return null;
+    }
+
+    return .{
+        .elem_idx = elem_idx,
+        .x_min = boundIndMin(u16, x_min),
+        .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
+        .y_min = boundIndMin(u16, y_min),
+        .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
+    };
+}
+
+pub fn calcVisibleNodeBBoxHighOrd(
     comptime N: usize,
     camera: *const cam.CameraPrepared,
     coords_nodes: *const meshio.Coords,
@@ -795,7 +684,7 @@ fn calcVisibleNodeBBoxHighOrd(
         return null;
     }
 
-    const hull_points = buildAdaptiveHullPoints(N, camera, coords_elem);
+    const hull_points = hull.buildAdaptiveHullPoints(N, camera, coords_elem);
     const x_min = std.mem.min(f64, &hull_points.x);
     const x_max = std.mem.max(f64, &hull_points.x);
     const y_min = std.mem.min(f64, &hull_points.y);
@@ -816,167 +705,6 @@ fn calcVisibleNodeBBoxHighOrd(
         .y_min = boundIndMin(u16, y_min),
         .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
     };
-}
-
-pub fn countVisibleElemsRange(
-    camera: *const cam.CameraPrepared,
-    mesh_type: anytype,
-    connect: *const meshio.Connect,
-    coords_nodes: *const meshio.Coords,
-    elem_start: usize,
-    elem_end: usize,
-) usize {
-    var visible_count: usize = 0;
-
-    switch (mesh_type) {
-        .tri3 => {
-            for (elem_start..elem_end) |ee| {
-                if (calcVisibleNodeBBoxTri3(camera, coords_nodes, connect, ee) != null) {
-                    visible_count += 1;
-                }
-            }
-        },
-        .tri6 => {
-            for (elem_start..elem_end) |ee| {
-                if (calcVisibleNodeBBoxHighOrd(
-                    6,
-                    camera,
-                    coords_nodes,
-                    connect,
-                    ee,
-                ) != null) {
-                    visible_count += 1;
-                }
-            }
-        },
-        .quad4ibi, .quad4newton => {
-            for (elem_start..elem_end) |ee| {
-                if (calcVisibleNodeBBoxHighOrd(
-                    4,
-                    camera,
-                    coords_nodes,
-                    connect,
-                    ee,
-                ) != null) {
-                    visible_count += 1;
-                }
-            }
-        },
-        .quad8 => {
-            for (elem_start..elem_end) |ee| {
-                if (calcVisibleNodeBBoxHighOrd(
-                    8,
-                    camera,
-                    coords_nodes,
-                    connect,
-                    ee,
-                ) != null) {
-                    visible_count += 1;
-                }
-            }
-        },
-        .quad9 => {
-            for (elem_start..elem_end) |ee| {
-                if (calcVisibleNodeBBoxHighOrd(
-                    9,
-                    camera,
-                    coords_nodes,
-                    connect,
-                    ee,
-                ) != null) {
-                    visible_count += 1;
-                }
-            }
-        },
-    }
-
-    return visible_count;
-}
-
-pub fn fillVisibleElemsRange(
-    camera: *const cam.CameraPrepared,
-    mesh_type: anytype,
-    connect: *const meshio.Connect,
-    coords_nodes: *const meshio.Coords,
-    visible_orig_elem_indices: []usize,
-    elem_bboxes: []ElemBBox,
-    elem_start: usize,
-    elem_end: usize,
-    write_start: usize,
-) void {
-    var write_idx = write_start;
-
-    switch (mesh_type) {
-        .tri3 => {
-            for (elem_start..elem_end) |ee| {
-                if (calcVisibleNodeBBoxTri3(camera, coords_nodes, connect, ee)) |bbox| {
-                    visible_orig_elem_indices[write_idx] = ee;
-                    elem_bboxes[write_idx] = bbox;
-                    write_idx += 1;
-                }
-            }
-        },
-        .tri6 => {
-            for (elem_start..elem_end) |ee| {
-                if (calcVisibleNodeBBoxHighOrd(
-                    6,
-                    camera,
-                    coords_nodes,
-                    connect,
-                    ee,
-                )) |bbox| {
-                    visible_orig_elem_indices[write_idx] = ee;
-                    elem_bboxes[write_idx] = bbox;
-                    write_idx += 1;
-                }
-            }
-        },
-        .quad4ibi, .quad4newton => {
-            for (elem_start..elem_end) |ee| {
-                if (calcVisibleNodeBBoxHighOrd(
-                    4,
-                    camera,
-                    coords_nodes,
-                    connect,
-                    ee,
-                )) |bbox| {
-                    visible_orig_elem_indices[write_idx] = ee;
-                    elem_bboxes[write_idx] = bbox;
-                    write_idx += 1;
-                }
-            }
-        },
-        .quad8 => {
-            for (elem_start..elem_end) |ee| {
-                if (calcVisibleNodeBBoxHighOrd(
-                    8,
-                    camera,
-                    coords_nodes,
-                    connect,
-                    ee,
-                )) |bbox| {
-                    visible_orig_elem_indices[write_idx] = ee;
-                    elem_bboxes[write_idx] = bbox;
-                    write_idx += 1;
-                }
-            }
-        },
-        .quad9 => {
-            for (elem_start..elem_end) |ee| {
-                if (calcVisibleNodeBBoxHighOrd(
-                    9,
-                    camera,
-                    coords_nodes,
-                    connect,
-                    ee,
-                )) |bbox| {
-                    visible_orig_elem_indices[write_idx] = ee;
-                    elem_bboxes[write_idx] = bbox;
-                    write_idx += 1;
-                }
-            }
-        },
-    }
 }
 
 pub fn prepareVisibleWorkspace(
@@ -1662,7 +1390,7 @@ fn prepareVisibleRasterHullsRangeImpl(
     visible_end: usize,
 ) void {
     for (visible_start..visible_end) |pp| {
-        var coords_elem: GatheredElemCoords(N) = undefined;
+        var coords_elem: hull.GatheredElemCoords(N) = undefined;
         const sx = elem_coords.getSlice(&[_]usize{ pp, 0, 0 }, 1);
         const sy = elem_coords.getSlice(&[_]usize{ pp, 1, 0 }, 1);
         const sz = elem_coords.getSlice(&[_]usize{ pp, 2, 0 }, 1);
@@ -1672,7 +1400,7 @@ fn prepareVisibleRasterHullsRangeImpl(
             coords_elem.z[nn] = sz[nn];
         }
 
-        const hull_points = buildAdaptiveHullPoints(N, camera, coords_elem);
+        const hull_points = hull.buildAdaptiveHullPoints(N, camera, coords_elem);
         for (0..NH) |nn| {
             raster_hull.set(&[_]usize{ pp, 0, nn }, hull_points.x[nn]);
             raster_hull.set(&[_]usize{ pp, 1, nn }, hull_points.y[nn]);

@@ -37,7 +37,7 @@ pub const MeshType = enum {
     quad8,
     quad9,
 
-    pub fn getNodesNum(self: MeshType) usize {
+    pub inline fn getNodesNum(self: MeshType) usize {
         return switch (self) {
             .tri3 => 3,
             .tri6 => 6,
@@ -507,14 +507,76 @@ fn runCullVisibleCount(
     range_end: usize,
 ) void {
     const stage: *CullVisibleCountStage = @ptrCast(@alignCast(ctx_ptr));
-    stage.visible_counts_by_chunk[chunk_idx] = rops.countVisibleElemsRange(
-        stage.camera,
-        stage.mesh_type,
-        stage.connect,
-        stage.coords_nodes,
-        range_start,
-        range_end,
-    );
+    var visible_count: usize = 0;
+
+    switch (stage.mesh_type) {
+        .tri3 => {
+            for (range_start..range_end) |ee| {
+                if (rops.calcVisibleNodeBBoxTri3(
+                    stage.camera,
+                    stage.coords_nodes,
+                    stage.connect,
+                    ee,
+                ) != null) {
+                    visible_count += 1;
+                }
+            }
+        },
+        .tri6 => {
+            for (range_start..range_end) |ee| {
+                if (rops.calcVisibleNodeBBoxHighOrd(
+                    6,
+                    stage.camera,
+                    stage.coords_nodes,
+                    stage.connect,
+                    ee,
+                ) != null) {
+                    visible_count += 1;
+                }
+            }
+        },
+        .quad4ibi, .quad4newton => {
+            for (range_start..range_end) |ee| {
+                if (rops.calcVisibleNodeBBoxHighOrd(
+                    4,
+                    stage.camera,
+                    stage.coords_nodes,
+                    stage.connect,
+                    ee,
+                ) != null) {
+                    visible_count += 1;
+                }
+            }
+        },
+        .quad8 => {
+            for (range_start..range_end) |ee| {
+                if (rops.calcVisibleNodeBBoxHighOrd(
+                    8,
+                    stage.camera,
+                    stage.coords_nodes,
+                    stage.connect,
+                    ee,
+                ) != null) {
+                    visible_count += 1;
+                }
+            }
+        },
+        .quad9 => {
+            for (range_start..range_end) |ee| {
+                if (rops.calcVisibleNodeBBoxHighOrd(
+                    9,
+                    stage.camera,
+                    stage.coords_nodes,
+                    stage.connect,
+                    ee,
+                ) != null) {
+                    visible_count += 1;
+                }
+            }
+        },
+    }
+
+    stage.visible_counts_by_chunk[chunk_idx] = visible_count;
 }
 
 fn prefixVisibleCounts(mesh_workspace: *MeshFrameWorkspace) void {
@@ -543,17 +605,84 @@ fn runCullVisibleFill(
     range_end: usize,
 ) void {
     const stage: *CullVisibleFillStage = @ptrCast(@alignCast(ctx_ptr));
-    rops.fillVisibleElemsRange(
-        stage.camera,
-        stage.mesh_type,
-        stage.connect,
-        stage.coords_nodes,
-        stage.visible_orig_elem_indices,
-        stage.elem_bboxes,
-        range_start,
-        range_end,
-        stage.visible_offsets_by_chunk[chunk_idx],
-    );
+    var write_idx = stage.visible_offsets_by_chunk[chunk_idx];
+
+    switch (stage.mesh_type) {
+        .tri3 => {
+            for (range_start..range_end) |ee| {
+                if (rops.calcVisibleNodeBBoxTri3(
+                    stage.camera,
+                    stage.coords_nodes,
+                    stage.connect,
+                    ee,
+                )) |bbox| {
+                    stage.visible_orig_elem_indices[write_idx] = ee;
+                    stage.elem_bboxes[write_idx] = bbox;
+                    write_idx += 1;
+                }
+            }
+        },
+        .tri6 => {
+            for (range_start..range_end) |ee| {
+                if (rops.calcVisibleNodeBBoxHighOrd(
+                    6,
+                    stage.camera,
+                    stage.coords_nodes,
+                    stage.connect,
+                    ee,
+                )) |bbox| {
+                    stage.visible_orig_elem_indices[write_idx] = ee;
+                    stage.elem_bboxes[write_idx] = bbox;
+                    write_idx += 1;
+                }
+            }
+        },
+        .quad4ibi, .quad4newton => {
+            for (range_start..range_end) |ee| {
+                if (rops.calcVisibleNodeBBoxHighOrd(
+                    4,
+                    stage.camera,
+                    stage.coords_nodes,
+                    stage.connect,
+                    ee,
+                )) |bbox| {
+                    stage.visible_orig_elem_indices[write_idx] = ee;
+                    stage.elem_bboxes[write_idx] = bbox;
+                    write_idx += 1;
+                }
+            }
+        },
+        .quad8 => {
+            for (range_start..range_end) |ee| {
+                if (rops.calcVisibleNodeBBoxHighOrd(
+                    8,
+                    stage.camera,
+                    stage.coords_nodes,
+                    stage.connect,
+                    ee,
+                )) |bbox| {
+                    stage.visible_orig_elem_indices[write_idx] = ee;
+                    stage.elem_bboxes[write_idx] = bbox;
+                    write_idx += 1;
+                }
+            }
+        },
+        .quad9 => {
+            for (range_start..range_end) |ee| {
+                if (rops.calcVisibleNodeBBoxHighOrd(
+                    9,
+                    stage.camera,
+                    stage.coords_nodes,
+                    stage.connect,
+                    ee,
+                )) |bbox| {
+                    stage.visible_orig_elem_indices[write_idx] = ee;
+                    stage.elem_bboxes[write_idx] = bbox;
+                    write_idx += 1;
+                }
+            }
+        },
+    }
 }
 
 const CompactVisibleCoordsStage = struct {
@@ -592,8 +721,6 @@ fn runCompactVisibleCoords(
         }
     }
 }
-
-
 
 const CompactVisibleFieldStage = struct {
     connect: *const meshio.Connect,
@@ -1092,6 +1219,7 @@ const FrameMeshPipeline = struct {
             self.elems_num,
             self.elem_chunk_size,
         );
+
         prefixVisibleCounts(&self.mesh_workspace);
 
         self.mesh_workspace.visible_orig_elem_indices =

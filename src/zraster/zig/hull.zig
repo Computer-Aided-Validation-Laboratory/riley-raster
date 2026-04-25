@@ -18,3 +18,7 @@ pub const HullResultSIMD = simd_impl.HullResultSIMD;
 pub const Tessellation = impl.Tessellation;
 pub const getTessellation = impl.getTessellation;
 pub const buildAdaptiveHulls = impl.buildAdaptiveHulls;
+
+pub const AdaptiveHullPoints = @import("hull_common.zig").AdaptiveHullPoints;
+pub const GatheredElemCoords = @import("hull_common.zig").GatheredElemCoords;
+pub const buildAdaptiveHullPoints = @import("hull_common.zig").buildAdaptiveHullPoints;
