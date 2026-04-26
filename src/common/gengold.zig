@@ -33,6 +33,9 @@ pub fn renderAndSave(
     add_disp: bool,
     config: RasterConfig,
 ) !void {
+    var out_dir = try orch.openDirEnsured(io, dir);
+    out_dir.close(io);
+
     const mesh_input = MeshInput{
         .mesh_type = mt,
         .coords = coords,
@@ -204,6 +207,8 @@ pub fn runMultimeshGenerationExt(
         defer camera.deinit(aa);
 
         std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
+        var out_dir = try orch.openDirEnsured(io, gold_dir);
+        out_dir.close(io);
         const camera_input = camera.toInput();
         const images = try zraster.rasterAllFrames(
             aa,
@@ -274,6 +279,8 @@ pub fn runMultimeshMixedGenerationExt(
     defer camera.deinit(aa);
 
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
+    var out_dir = try orch.openDirEnsured(io, gold_dir);
+    out_dir.close(io);
     const camera_input = camera.toInput();
     const images = try zraster.rasterAllFrames(
         aa,
@@ -359,6 +366,8 @@ pub fn runMultimeshMixedRGBGenerationExt(
     }
 
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
+    var out_dir = try orch.openDirEnsured(io, gold_dir);
+    out_dir.close(io);
     const camera_input = camera_rgb.toInput();
     _ = try zraster.rasterAllFrames(
         aa,

@@ -22,6 +22,7 @@ const report = @import("../zraster/zig/report.zig");
 const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
 const Timestamp = std.Io.Clock.Timestamp;
 const tcfg = @import("testconfig.zig");
+const orch = @import("orchestration.zig");
 
 pub const CalculatedMetrics = struct {
     mpx_sec: f64,
@@ -48,6 +49,13 @@ pub const BenchResult = struct {
         }
     }
 };
+
+pub fn calcOutputChannels(shader_type: ShaderType) u8 {
+    return switch (shader_type) {
+        .nodal_rgb, .tex8_rgb => 3,
+        else => 1,
+    };
+}
 
 pub const BenchStats = struct {
     name: []const u8,
@@ -320,8 +328,7 @@ pub fn calcCaseName(
     return allocator.dupe(u8, name);
 }
 
-
-fn extractFirstFrameImage(
+pub fn extractFirstFrameImage(
     allocator: std.mem.Allocator,
     image_arr: *const NDArray(f64),
 ) !NDArray(f64) {
@@ -346,6 +353,83 @@ fn extractFirstFrameImage(
     }
 
     return image;
+}
+
+pub fn loadBenchmarkMeshInput(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    etype: mo.MeshType,
+    shader_type: ShaderType,
+    sample_config: TextureSampleConfig,
+    data_dir: []const u8,
+    texture_grey: iio.Texture(1),
+    texture_rgb: iio.Texture(3),
+) !mo.MeshInput {
+    const coord_path = try std.fs.path.join(allocator, &[_][]const u8{
+        data_dir,
+        "coords.csv",
+    });
+    const conn_path = try std.fs.path.join(allocator, &[_][]const u8{
+        data_dir,
+        "connect.csv",
+    });
+    const field_path = try std.fs.path.join(allocator, &[_][]const u8{
+        data_dir,
+        "field.csv",
+    });
+    const uv_path = try std.fs.path.join(allocator, &[_][]const u8{
+        data_dir,
+        "uvs.csv",
+    });
+
+    const sim_data = try meshio.loadSimData(
+        allocator,
+        io,
+        coord_path,
+        conn_path,
+        null,
+        null,
+    );
+    const field_raw = try loadNDArrayFromCSV(
+        allocator,
+        io,
+        field_path,
+        calcOutputChannels(shader_type),
+        true,
+    );
+    const uvs_raw = try loadNDArrayFromCSV(allocator, io, uv_path, 2, false);
+
+    var shader: so.ShaderInput = undefined;
+    switch (shader_type) {
+        .nodal_grey, .nodal_rgb => {
+            shader = .{ .nodal = .{
+                .field = .{ .array = field_raw, .array_mem = field_raw.slice },
+                .scaling = .none,
+            } };
+        },
+        .tex8_grey => {
+            shader = .{ .tex = .{
+                .uvs = uvs_raw,
+                .texture = texture_grey,
+                .sample_config = sample_config,
+            } };
+        },
+        .tex8_rgb => {
+            shader = .{ .tex_rgb = .{
+                .uvs = uvs_raw,
+                .texture = texture_rgb,
+                .sample_config = sample_config,
+            } };
+        },
+    }
+
+    return .{
+        .mesh_type = etype,
+        .coords = sim_data.coords,
+        .connect = sim_data.connect,
+        .disp = null,
+        .shader = shader,
+    };
 }
 
 pub fn runBenchmark(
@@ -419,70 +503,24 @@ fn runBenchmarkInternal(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const coord_path = try std.fs.path.join(aa, &[_][]const u8{ data_dir, "coords.csv" });
-    const conn_path = try std.fs.path.join(aa, &[_][]const u8{ data_dir, "connect.csv" });
-    const field_path = try std.fs.path.join(aa, &[_][]const u8{ data_dir, "field.csv" });
-    const uv_path = try std.fs.path.join(aa, &[_][]const u8{ data_dir, "uvs.csv" });
-
-    const sim_data = try meshio.loadSimData(aa, io, coord_path, conn_path, null, null);
-    const field_raw = try loadNDArrayFromCSV(
+    const mesh_input = try loadBenchmarkMeshInput(
         aa,
         io,
-        field_path,
-        if (shader_type == .nodal_rgb) 3 else 1,
-        true,
+        etype,
+        shader_type,
+        sample_config,
+        data_dir,
+        texture_grey,
+        texture_rgb,
     );
-    const uvs_raw = try loadNDArrayFromCSV(aa, io, uv_path, 2, false);
-
-    var shader: so.ShaderInput = undefined;
-    var num_out_fields: u8 = 1;
-
-    switch (shader_type) {
-        .nodal_grey => {
-            num_out_fields = 1;
-            shader = .{ .nodal = .{
-                .field = .{ .array = field_raw, .array_mem = field_raw.slice },
-                .scaling = .none,
-            } };
-        },
-        .nodal_rgb => {
-            num_out_fields = 3;
-            shader = .{ .nodal = .{
-                .field = .{ .array = field_raw, .array_mem = field_raw.slice },
-                .scaling = .none,
-            } };
-        },
-        .tex8_grey => {
-            shader = .{ .tex = .{
-                .uvs = uvs_raw,
-                .texture = texture_grey,
-                .sample_config = sample_config,
-            } };
-        },
-        .tex8_rgb => {
-            num_out_fields = 3;
-            shader = .{ .tex_rgb = .{
-                .uvs = uvs_raw,
-                .texture = texture_rgb,
-                .sample_config = sample_config,
-            } };
-        },
-    }
-
-    const mesh_input = mo.MeshInput{
-        .mesh_type = etype,
-        .coords = sim_data.coords,
-        .connect = sim_data.connect,
-        .disp = null,
-        .shader = shader,
-    };
+    const num_out_fields = calcOutputChannels(shader_type);
 
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
     const rot = Rotation.init(0, 0, 0);
-    const roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
+    const roi_pos = CameraOps.roiCentFromCoords(&mesh_input.coords);
     const cam_pos = CameraOps.posFillFrameFromRot(
-        &sim_data.coords,
+        &mesh_input.coords,
         pixel_num,
         pixel_size,
         focal_leng,
@@ -538,12 +576,8 @@ fn runBenchmarkInternal(
     };
 
     if (options.out_dir_base.len > 0) {
-        const cwd = std.Io.Dir.cwd();
-        cwd.createDir(
-            io,
-            options.out_dir_base,
-            .default_dir,
-        ) catch |err| if (err != error.PathAlreadyExists) return err;
+        var out_dir = try orch.openDirEnsured(io, options.out_dir_base);
+        out_dir.close(io);
     }
 
     const case_name = try calcCaseName(aa, etype, shader_type, sample_config, options);

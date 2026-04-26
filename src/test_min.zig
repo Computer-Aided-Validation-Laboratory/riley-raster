@@ -9,6 +9,7 @@
 const std = @import("std");
 const buildconfig = @import("zraster/zig/buildconfig.zig");
 const common = @import("common/benchcommon.zig");
+const minsuite = @import("common/minsuite.zig");
 const tests = @import("common/tests.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const iio = @import("zraster/zig/imageio.zig");
@@ -61,113 +62,222 @@ test "MIN Suite: sphere200 and multimesh" {
     var total_fails: usize = 0;
 
     if (simd_on) {
-        std.debug.print("\nRunning MIN Suite sphere200 tests...\n", .{});
-        const fov_scales = [_]f64{ 1.0, 0.8 };
+        std.debug.print("\nRunning MIN Suite sphere200/base tests...\n", .{});
+        for (mesh_types) |mt| {
+            for (shader_types) |st| {
+                for (sample_configs) |sc| {
+                    const data_dir = try std.fmt.allocPrint(
+                        allocator,
+                        "data-min/{s}_sphere200",
+                        .{@tagName(mt)},
+                    );
+                    defer allocator.free(data_dir);
 
-        for (fov_scales) |fov_scale| {
-            for (mesh_types) |mt| {
-                for (shader_types) |st| {
-                    for (sample_configs) |sc| {
-                        const data_dir = try std.fmt.allocPrint(
+                    const is_rgb = (st == .tex8_rgb or st == .nodal_rgb);
+                    const is_allowed_rgb = (st == .nodal_rgb) or
+                        (st == .tex8_rgb and
+                            sc.sample == .cubic_catmull_rom and
+                            sc.mode == .lut_lerp);
+
+                    if (is_rgb and !is_allowed_rgb) continue;
+
+                    if (common.shouldRun(
+                        .{ .run = .all, .skip_quad4ibi_sphere = true },
+                        mt,
+                        st,
+                        sc,
+                        data_dir,
+                    )) {
+                        const options = common.BenchOptions{
+                            .return_image = true,
+                            .save_opts = &[_]iio.ImageSaveOpts{},
+                            .fov_scale = 1.0,
+                        };
+
+                        var result = try common.runBenchmarkQuiet(
                             allocator,
-                            "data-min/{s}_sphere200",
-                            .{@tagName(mt)},
-                        );
-                        defer allocator.free(data_dir);
-
-                        // Filter for Min Suite:
-                        const is_rgb = (st == .tex8_rgb or st == .nodal_rgb);
-                        const is_allowed_rgb = (st == .nodal_rgb) or
-                            (st == .tex8_rgb and
-                                sc.sample == .cubic_catmull_rom and
-                                sc.mode == .lut_lerp);
-
-                        if (is_rgb and !is_allowed_rgb) continue;
-
-                        if (common.shouldRun(
-                            .{ .run = .all, .skip_quad4ibi_sphere = true },
+                            io,
                             mt,
                             st,
                             sc,
                             data_dir,
-                        )) {
-                            const options = common.BenchOptions{
-                                .return_image = true,
-                                .save_opts = &[_]iio.ImageSaveOpts{},
-                                .fov_scale = fov_scale,
-                            };
+                            pixel_num_sphere,
+                            texture_grey,
+                            texture_rgb,
+                            options,
+                        );
+                        defer result.deinit(allocator);
 
-                            var result = try common.runBenchmarkQuiet(
+                        const case_name = try minsuite.calcMinCaseName(
+                            allocator,
+                            mt,
+                            st,
+                            sc,
+                        );
+                        defer allocator.free(case_name);
+
+                        const gold_case_dir = try std.fs.path.join(
+                            allocator,
+                            &[_][]const u8{
+                                gold_dir,
+                                "sphere200",
+                                "base",
+                                case_name,
+                            },
+                        );
+                        defer allocator.free(gold_case_dir);
+                        const gold_fname = try tests.findGoldPath(
+                            allocator,
+                            io,
+                            gold_case_dir,
+                            0,
+                            0,
+                            0,
+                            is_rgb,
+                        );
+                        defer allocator.free(gold_fname);
+
+                        const channels: usize = if (is_rgb) 3 else 1;
+                        tests.compareNDArrayToGold(
+                            allocator,
+                            io,
+                            &result.image.?,
+                            0,
+                            0,
+                            0,
+                            channels,
+                            gold_fname,
+                            tcfg.REL_TOL,
+                            tcfg.ABS_TOL,
+                        ) catch |err| {
+                            try tests.saveComparisonArtifactsFromResult(
                                 allocator,
                                 io,
-                                mt,
-                                st,
-                                sc,
-                                data_dir,
-                                pixel_num_sphere,
-                                texture_grey,
-                                texture_rgb,
-                                options,
-                            );
-                            defer result.deinit(allocator);
-
-                            const case_name = try common.calcCaseName(
-                                allocator,
-                                mt,
-                                st,
-                                sc,
-                                options,
-                            );
-                            defer allocator.free(case_name);
-
-                            const gold_case_dir = try std.fs.path.join(
-                                allocator,
-                                &[_][]const u8{ gold_dir, case_name },
-                            );
-                            defer allocator.free(gold_case_dir);
-                            const gold_fname = try tests.findGoldPath(
-                                allocator,
-                                io,
-                                gold_case_dir,
-                                0,
-                                0,
-                                0,
-                                is_rgb,
-                            );
-                            defer allocator.free(gold_fname);
-
-                            const channels: usize = if (is_rgb) 3 else 1;
-                            tests.compareNDArrayToGold(
-                                allocator,
-                                io,
+                                "fails",
+                                case_name,
                                 &result.image.?,
                                 0,
                                 0,
                                 0,
-                                channels,
                                 gold_fname,
-                                tcfg.REL_TOL,
-                                tcfg.ABS_TOL,
-                            ) catch |err| {
-                                try tests.saveComparisonArtifactsFromResult(
-                                    allocator,
-                                    io,
-                                    "fails",
-                                    case_name,
-                                    &result.image.?,
-                                    0,
-                                    0,
-                                    0,
-                                    gold_fname,
-                                    channels,
-                                );
-                                if (err == error.PixelMismatch) {
-                                    total_fails += 1;
-                                    continue;
-                                }
-                                return err;
-                            };
-                        }
+                                channels,
+                            );
+                            if (err == error.PixelMismatch) {
+                                total_fails += 1;
+                                continue;
+                            }
+                            return err;
+                        };
+                    }
+                }
+            }
+        }
+
+        std.debug.print("Running MIN Suite sphere200multicull tests...\n", .{});
+        for (mesh_types) |mt| {
+            for (shader_types) |st| {
+                for (sample_configs) |sc| {
+                    const data_dir = try std.fmt.allocPrint(
+                        allocator,
+                        "data-min/{s}_sphere200",
+                        .{@tagName(mt)},
+                    );
+                    defer allocator.free(data_dir);
+
+                    const is_rgb = (st == .tex8_rgb or st == .nodal_rgb);
+                    const is_allowed_rgb = (st == .nodal_rgb) or
+                        (st == .tex8_rgb and
+                            sc.sample == .cubic_catmull_rom and
+                            sc.mode == .lut_lerp);
+
+                    if (is_rgb and !is_allowed_rgb) continue;
+
+                    if (common.shouldRun(
+                        .{ .run = .all, .skip_quad4ibi_sphere = true },
+                        mt,
+                        st,
+                        sc,
+                        data_dir,
+                    )) {
+                        const options = common.BenchOptions{
+                            .return_image = true,
+                            .save_opts = &[_]iio.ImageSaveOpts{},
+                            .fov_scale = 0.75,
+                        };
+
+                        var result = try minsuite.runSphere200MultiCullQuiet(
+                            allocator,
+                            io,
+                            mt,
+                            st,
+                            sc,
+                            data_dir,
+                            pixel_num_sphere,
+                            texture_grey,
+                            texture_rgb,
+                            options,
+                        );
+                        defer result.deinit(allocator);
+
+                        const case_name = try minsuite.calcMinCaseName(
+                            allocator,
+                            mt,
+                            st,
+                            sc,
+                        );
+                        defer allocator.free(case_name);
+
+                        const gold_case_dir = try std.fs.path.join(
+                            allocator,
+                            &[_][]const u8{
+                                gold_dir,
+                                "sphere200multicull",
+                                case_name,
+                            },
+                        );
+                        defer allocator.free(gold_case_dir);
+                        const gold_fname = try tests.findGoldPath(
+                            allocator,
+                            io,
+                            gold_case_dir,
+                            0,
+                            0,
+                            0,
+                            is_rgb,
+                        );
+                        defer allocator.free(gold_fname);
+
+                        const channels: usize = if (is_rgb) 3 else 1;
+                        tests.compareNDArrayToGold(
+                            allocator,
+                            io,
+                            &result.image.?,
+                            0,
+                            0,
+                            0,
+                            channels,
+                            gold_fname,
+                            tcfg.REL_TOL,
+                            tcfg.ABS_TOL,
+                        ) catch |err| {
+                            try tests.saveComparisonArtifactsFromResult(
+                                allocator,
+                                io,
+                                "fails",
+                                case_name,
+                                &result.image.?,
+                                0,
+                                0,
+                                0,
+                                gold_fname,
+                                channels,
+                            );
+                            if (err == error.PixelMismatch) {
+                                total_fails += 1;
+                                continue;
+                            }
+                            return err;
+                        };
                     }
                 }
             }
@@ -191,7 +301,7 @@ test "MIN Suite: sphere200 and multimesh" {
     tests.runMultimeshTestExt(
         allocator,
         io,
-        gold_dir,
+        gold_dir ++ "/multimesh/base",
         &multi_dir_paths,
         pixel_num_multi,
         tcfg.REL_TOL,
@@ -205,7 +315,7 @@ test "MIN Suite: sphere200 and multimesh" {
     tests.runMultimeshMixedTestExt(
         allocator,
         io,
-        gold_dir ++ "/allelem_allshade",
+        gold_dir ++ "/multimesh/allelem_allshade",
         &multi_dir_paths,
         pixel_num_multi,
         tcfg.REL_TOL,
@@ -219,7 +329,7 @@ test "MIN Suite: sphere200 and multimesh" {
     tests.runMultimeshMixedRGBTestExt(
         allocator,
         io,
-        gold_dir ++ "/allelem_allshade_rgb",
+        gold_dir ++ "/multimesh/allelem_allshade_rgb",
         &multi_dir_paths,
         pixel_num_multi,
         tcfg.REL_TOL,

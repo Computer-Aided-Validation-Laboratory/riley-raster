@@ -260,7 +260,7 @@ pub fn buildMultimeshInputs(
     return mesh_inputs;
 }
 
-fn copyCoords(
+pub fn copyCoords(
     allocator: std.mem.Allocator,
     coords: meshio.Coords,
 ) !meshio.Coords {

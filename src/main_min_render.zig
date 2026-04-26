@@ -9,6 +9,7 @@
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const gengold = @import("common/gengold.zig");
+const minsuite = @import("common/minsuite.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const iio = @import("zraster/zig/imageio.zig");
@@ -64,7 +65,7 @@ pub fn main(init: std.process.Init) !void {
         .report = .off,
     };
 
-    std.debug.print("Rendering MIN Suite (sphere200) to {s}...\n", .{out_dir});
+    std.debug.print("Rendering MIN Suite (sphere200/base) to {s}...\n", .{out_dir});
     for (mesh_types) |mt| {
         for (shader_types) |st| {
             for (sample_configs) |sc| {
@@ -97,7 +98,53 @@ pub fn main(init: std.process.Init) !void {
                         pixel_num_sphere,
                         texture_grey,
                         texture_rgb,
-                        .{ .out_dir_base = out_dir },
+                        .{
+                            .out_dir_base = out_dir ++ "/sphere200/base",
+                            .fov_scale = 1.0,
+                        },
+                    );
+                }
+            }
+        }
+    }
+
+    std.debug.print("Rendering MIN Suite (sphere200multicull) to {s}...\n", .{out_dir});
+    for (mesh_types) |mt| {
+        for (shader_types) |st| {
+            for (sample_configs) |sc| {
+                const data_dir = try std.fmt.allocPrint(
+                    aa,
+                    "data-min/{s}_sphere200",
+                    .{@tagName(mt)},
+                );
+
+                const is_rgb = (st == .tex8_rgb or st == .nodal_rgb);
+                const is_allowed_rgb = (st == .nodal_rgb) or
+                    (st == .tex8_rgb and sc.sample == .cubic_catmull_rom and sc.mode == .lut_lerp);
+
+                if (is_rgb and !is_allowed_rgb) continue;
+
+                if (common.shouldRun(
+                    .{ .run = .all, .skip_quad4ibi_sphere = true },
+                    mt,
+                    st,
+                    sc,
+                    data_dir,
+                )) {
+                    _ = try minsuite.runSphere200MultiCullQuiet(
+                        aa,
+                        io,
+                        mt,
+                        st,
+                        sc,
+                        data_dir,
+                        pixel_num_sphere,
+                        texture_grey,
+                        texture_rgb,
+                        .{
+                            .out_dir_base = out_dir ++ "/sphere200multicull",
+                            .fov_scale = 0.75,
+                        },
                     );
                 }
             }
@@ -117,7 +164,7 @@ pub fn main(init: std.process.Init) !void {
         aa,
         io,
         config,
-        out_dir,
+        out_dir ++ "/multimesh/base",
         &multi_dir_paths,
         pixel_num_multi,
     );
@@ -125,7 +172,7 @@ pub fn main(init: std.process.Init) !void {
         aa,
         io,
         config,
-        out_dir ++ "/allelem_allshade",
+        out_dir ++ "/multimesh/allelem_allshade",
         &multi_dir_paths,
         pixel_num_multi,
     );
@@ -133,7 +180,7 @@ pub fn main(init: std.process.Init) !void {
         aa,
         io,
         config,
-        out_dir ++ "/allelem_allshade_rgb",
+        out_dir ++ "/multimesh/allelem_allshade_rgb",
         &multi_dir_paths,
         pixel_num_multi,
     );
