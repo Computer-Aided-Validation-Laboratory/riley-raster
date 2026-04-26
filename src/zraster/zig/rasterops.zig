@@ -648,6 +648,9 @@ pub fn sceneTileElemOverlap(
     elem_bboxes_by_mesh: []const []ElemBBox,
 ) !TilingOverlaps {
     const tiles_num = tiles_num_x * tiles_num_y;
+
+    // Stage 1 - Parallel Counting Pass: Determine the number of element-tile
+    // intersections across all meshes.
     const tile_elem_counts = try allocator.alloc(std.atomic.Value(usize), tiles_num);
     defer allocator.free(tile_elem_counts);
     for (tile_elem_counts) |*count| count.* = std.atomic.Value(usize).init(0);
@@ -679,6 +682,8 @@ pub fn sceneTileElemOverlap(
         );
     }
 
+    // Stage 2 - Serial Management Pass: Allocate overlap buffers and calculate
+    // global offsets for each tile.
     var overlap_total: usize = 0;
     var num_active_tiles: usize = 0;
     for (tile_elem_counts) |count_atomic| {
@@ -698,9 +703,11 @@ pub fn sceneTileElemOverlap(
     for (tile_elem_counts, 0..) |count_atomic, ii| {
         const count = count_atomic.load(.monotonic);
         tile_write_inds[ii] = std.atomic.Value(usize).init(current_off);
+
         if (count > 0) {
             const tx = ii % tiles_num_x;
             const ty = ii / tiles_num_x;
+
             active_tiles[active_idx] = .{
                 .overlap_start = current_off,
                 .overlap_count = count,
@@ -709,11 +716,14 @@ pub fn sceneTileElemOverlap(
                 .x_px_max = @min(screen_px_x, @as(u16, @intCast((tx + 1) * tile_size))),
                 .y_px_max = @min(screen_px_y, @as(u16, @intCast((ty + 1) * tile_size))),
             };
+
             active_idx += 1;
         }
         current_off += count;
     }
 
+    // Stage 3 - Parallel Filling Pass: Populate the allocated buffers with
+    // element metadata and clipped bounding boxes.
     for (0..elems_in_image_by_mesh.len) |mesh_idx| {
         const elems_num = elems_in_image_by_mesh[mesh_idx];
         if (elems_num == 0) continue;
@@ -734,6 +744,7 @@ pub fn sceneTileElemOverlap(
             elems_num,
             pce.getWorkerCount(chunk_exec),
         );
+
         pce.runStaticRange(
             chunk_exec,
             &fill_stage,
