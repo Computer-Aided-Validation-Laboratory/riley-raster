@@ -47,7 +47,7 @@ pub const MeshInput = struct {
 
 // Static: Persistent multi-frame resources in the engine's memory.
 // meshio.Coords/Fields: Node-order [total_nodes, ...]
-// UVs: Element-order (expanded during static init as they are usually static).
+// Shader UVs: Element-order (gathered during static init as they are usually static).
 pub const MeshStatic = struct {
     mesh_type: MeshType,
     coords_orig: meshio.Coords,
@@ -57,7 +57,8 @@ pub const MeshStatic = struct {
 };
 
 // Workspace: Temporary node-order working area for the geometry pipeline.
-// meshio.Coords: Node-order [total_nodes, 3]. Holds coords for a single frame after displacement.
+// meshio.Coords: Node-order [total_nodes, 3]. Holds coords for a single frame after 
+// displacement.
 pub const MeshFrameWorkspace = struct {
     coords_nodes: meshio.Coords,
     visible_orig_elem_indices: []usize,
@@ -79,9 +80,9 @@ pub const MeshFrame = struct {
     frame_workspace: MeshFrameWorkspace,
 };
 
-// Prepared: Data culled and expanded for the raster loop for a SINGLE frame.
+// Prepared: Data culled and gathered for the raster loop for a SINGLE frame.
 // Prepared means culled element-order ndarray.NDArray data ready for the raster loop.
-// meshio.Coords/Fields: Element-order [visible_elems, ..., nodes_per_elem]
+// Element-order [visible_elems, field, nodes_per_elem]
 pub const MeshPrepared = struct {
     mesh_type: MeshType,
     coords: ndarray.NDArray(f64),
@@ -252,7 +253,9 @@ pub fn meshInputFromSimDataSlice(
 
             const uvmap = try uvio.loadUVMap(outer_alloc, io, path_uvs);
 
-            const format: imageio.ImageFormat = if (std.mem.endsWith(u8, texture_path.?, ".bmp"))
+            const format: imageio.ImageFormat = if (
+                std.mem.endsWith(u8, texture_path.?, ".bmp")
+            )
                 .bmp
             else
                 .tiff;
@@ -340,6 +343,8 @@ pub fn initStatic(
     };
 }
 
+// Outside of pipeline because these are static - we gather these into an NDarray once 
+// for all frames and cameras
 fn prepareUVs(
     outer_alloc: std.mem.Allocator,
     uvs: *const ndarray.NDArray(f64),
