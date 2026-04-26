@@ -35,8 +35,8 @@ pub const HullTolerance = struct {
 };
 
 pub const CullingTolerance = struct {
-    higher_order_backface_nz: f64 = 1e-8,
-    tri3_signed_area: f64 = 1e-12,
+    higher_order_backface_nz: f64 = 1e-3,
+    tri3_signed_area: f64 = 1e-6,
 };
 
 pub const NormalTolerance = struct {

@@ -24,9 +24,9 @@ const hull = @import("hull.zig");
 const shaderops = @import("shaderops.zig");
 const report = @import("report.zig");
 
-//==========================================================================================
+//------------------------------------------------------------------------------------------
 // Low-Level Math, Bounding & Helpers
-//==========================================================================================
+//------------------------------------------------------------------------------------------
 
 pub fn edgeFun3Slices(
     comptime ind0: usize,
@@ -103,9 +103,86 @@ pub const MeshRaster = struct {
     hull: ?*const ndarray.NDArray(f64),
 };
 
-//==========================================================================================
+fn isElemBehindCamera(
+    comptime N: usize,
+    coords_elem: GatheredElemCoords(N),
+) bool {
+    var behind_camera = true;
+    for (0..N) |nn| {
+        if (coords_elem.z[nn] > tol.culling.higher_order_backface_nz) {
+            behind_camera = false;
+            break;
+        }
+    }
+    return behind_camera;
+}
+
+fn isTri3Backface(coords_elem: GatheredElemCoords(3)) bool {
+    const signed_area = edgeFun3Slices(0, 1, 2, &coords_elem.x, &coords_elem.y);
+    return signed_area <= tol.culling.tri3_signed_area;
+}
+
+fn isHighOrdBackface(
+    comptime N: usize,
+    coords_elem: GatheredElemCoords(N),
+) bool {
+    const nodal_derivs = comptime shapefun.getNodalDerivs(N);
+    const tolerance = tol.culling.higher_order_backface_nz;
+
+    var backface = true;
+    for (0..N) |nn| {
+        var dx_dxi: f64 = 0.0;
+        var dx_deta: f64 = 0.0;
+        var dy_dxi: f64 = 0.0;
+        var dy_deta: f64 = 0.0;
+
+        for (0..N) |mm| {
+            dx_dxi += nodal_derivs.dNu[nn][mm] * coords_elem.x[mm];
+            dx_deta += nodal_derivs.dNv[nn][mm] * coords_elem.x[mm];
+            dy_dxi += nodal_derivs.dNu[nn][mm] * coords_elem.y[mm];
+            dy_deta += nodal_derivs.dNv[nn][mm] * coords_elem.y[mm];
+        }
+
+        const normal_z = dx_dxi * dy_deta - dx_deta * dy_dxi;
+        const front_facing = normal_z < -tolerance;
+        if (front_facing) {
+            backface = false;
+            break;
+        }
+    }
+
+    return backface;
+}
+
+fn calcElemBBoxFromBounds(
+    camera: *const cam.CameraPrepared,
+    elem_idx: usize,
+    x_min: f64,
+    x_max: f64,
+    y_min: f64,
+    y_max: f64,
+) ?ElemBBox {
+    const on_screen =
+        x_min <= @as(f64, @floatFromInt(camera.pixels_num[0] - 1)) and
+        x_max >= 0.0 and
+        y_min <= @as(f64, @floatFromInt(camera.pixels_num[1] - 1)) and
+        y_max >= 0.0;
+    if (!on_screen) {
+        return null;
+    }
+
+    return .{
+        .elem_idx = elem_idx,
+        .x_min = boundIndMin(u16, x_min),
+        .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
+        .y_min = boundIndMin(u16, y_min),
+        .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
+    };
+}
+
+//------------------------------------------------------------------------------------------
 // Coordinate Transformations
-//==========================================================================================
+//------------------------------------------------------------------------------------------
 
 fn transformWorldNodeToRaster(
     camera: *const cam.CameraPrepared,
@@ -271,9 +348,9 @@ pub fn elemsToClipPxLengSIMD(
     }
 }
 
-//==========================================================================================
+//------------------------------------------------------------------------------------------
 // Culling & Visibility
-//==========================================================================================
+//------------------------------------------------------------------------------------------
 
 pub fn calcVisibleNodeBBoxTri3(
     camera: *const cam.CameraPrepared,
@@ -282,8 +359,11 @@ pub fn calcVisibleNodeBBoxTri3(
     elem_idx: usize,
 ) ?ElemBBox {
     const coords_elem = gatherElemNodeCoords(3, coords_nodes, connect, elem_idx);
-    const weight = edgeFun3Slices(0, 1, 2, &coords_elem.x, &coords_elem.y);
-    if (weight <= tol.culling.tri3_signed_area) {
+    if (isElemBehindCamera(3, coords_elem)) {
+        return null;
+    }
+
+    if (isTri3Backface(coords_elem)) {
         return null;
     }
 
@@ -291,22 +371,7 @@ pub fn calcVisibleNodeBBoxTri3(
     const x_max = std.mem.max(f64, &coords_elem.x);
     const y_min = std.mem.min(f64, &coords_elem.y);
     const y_max = std.mem.max(f64, &coords_elem.y);
-
-    if (x_min > @as(f64, @floatFromInt(camera.pixels_num[0] - 1)) or
-        x_max < 0.0 or
-        y_min > @as(f64, @floatFromInt(camera.pixels_num[1] - 1)) or
-        y_max < 0.0)
-    {
-        return null;
-    }
-
-    return .{
-        .elem_idx = elem_idx,
-        .x_min = boundIndMin(u16, x_min),
-        .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
-        .y_min = boundIndMin(u16, y_min),
-        .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
-    };
+    return calcElemBBoxFromBounds(camera, elem_idx, x_min, x_max, y_min, y_max);
 }
 
 pub fn calcVisibleNodeBBoxHighOrd(
@@ -317,14 +382,11 @@ pub fn calcVisibleNodeBBoxHighOrd(
     elem_idx: usize,
 ) ?ElemBBox {
     const coords_elem = gatherElemNodeCoords(N, coords_nodes, connect, elem_idx);
-    var all_backface = true;
-    for (0..N) |nn| {
-        if (coords_elem.z[nn] > tol.culling.higher_order_backface_nz) {
-            all_backface = false;
-            break;
-        }
+    if (isElemBehindCamera(N, coords_elem)) {
+        return null;
     }
-    if (all_backface) {
+
+    if (isHighOrdBackface(N, coords_elem)) {
         return null;
     }
 
@@ -333,183 +395,7 @@ pub fn calcVisibleNodeBBoxHighOrd(
     const x_max = std.mem.max(f64, &hull_points.x);
     const y_min = std.mem.min(f64, &hull_points.y);
     const y_max = std.mem.max(f64, &hull_points.y);
-
-    if (x_min > @as(f64, @floatFromInt(camera.pixels_num[0] - 1)) or
-        x_max < 0.0 or
-        y_min > @as(f64, @floatFromInt(camera.pixels_num[1] - 1)) or
-        y_max < 0.0)
-    {
-        return null;
-    }
-
-    return .{
-        .elem_idx = elem_idx,
-        .x_min = boundIndMin(u16, x_min),
-        .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
-        .y_min = boundIndMin(u16, y_min),
-        .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
-    };
-}
-
-fn cullNodesCalcBBoxesTri3(
-    camera: *const cam.CameraPrepared,
-    coords_nodes: *const meshio.Coords,
-    connect: *const meshio.Connect,
-    elem_bboxes: []ElemBBox,
-) usize {
-    const tol_area = tol.culling.tri3_signed_area;
-    var elems_in_image: usize = 0;
-
-    for (0..connect.getElemsNum()) |ee| {
-        const coords_elem = gatherElemNodeCoords(3, coords_nodes, connect, ee);
-        const x_max = std.mem.max(f64, &coords_elem.x);
-        const x_min = std.mem.min(f64, &coords_elem.x);
-        if (x_min > @as(f64, @floatFromInt(camera.pixels_num[0] - 1)) or
-            x_max < 0.0)
-        {
-            continue;
-        }
-
-        const y_max = std.mem.max(f64, &coords_elem.y);
-        const y_min = std.mem.min(f64, &coords_elem.y);
-        if (y_min > @as(f64, @floatFromInt(camera.pixels_num[1] - 1)) or
-            y_max < 0.0)
-        {
-            continue;
-        }
-
-        const elem_area = edgeFun3(
-            coords_elem.x[0],
-            coords_elem.y[0],
-            coords_elem.x[1],
-            coords_elem.y[1],
-            coords_elem.x[2],
-            coords_elem.y[2],
-        );
-        if (elem_area < tol_area) {
-            continue;
-        }
-
-        elem_bboxes[elems_in_image] = .{
-            .elem_idx = ee,
-            .x_min = boundIndMin(u16, x_min),
-            .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
-            .y_min = boundIndMin(u16, y_min),
-            .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
-        };
-        elems_in_image += 1;
-    }
-
-    return elems_in_image;
-}
-
-fn cullNodesCalcBBoxesHighOrd(
-    comptime N: usize,
-    camera: *const cam.CameraPrepared,
-    coords_nodes: *const meshio.Coords,
-    connect: *const meshio.Connect,
-    elem_bboxes: []ElemBBox,
-) usize {
-    const x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0]));
-    const y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1]));
-    const nodal_derivs = comptime shapefun.getNodalDerivs(N);
-    const tolerance = tol.culling.higher_order_backface_nz;
-    var elems_in_image: usize = 0;
-
-    for (0..connect.getElemsNum()) |ee| {
-        const coords_elem = gatherElemNodeCoords(N, coords_nodes, connect, ee);
-        var sx_nodes: [N]f64 = undefined;
-        var sy_nodes: [N]f64 = undefined;
-
-        for (0..N) |nn| {
-            sx_nodes[nn] = coords_elem.x[nn] / coords_elem.z[nn] + x_off;
-            sy_nodes[nn] = coords_elem.y[nn] / coords_elem.z[nn] + y_off;
-        }
-
-        var all_backface = true;
-        for (0..N) |nn| {
-            var dx_dxi: f64 = 0.0;
-            var dx_deta: f64 = 0.0;
-            var dy_dxi: f64 = 0.0;
-            var dy_deta: f64 = 0.0;
-
-            for (0..N) |mm| {
-                dx_dxi += nodal_derivs.dNu[nn][mm] * sx_nodes[mm];
-                dx_deta += nodal_derivs.dNv[nn][mm] * sx_nodes[mm];
-                dy_dxi += nodal_derivs.dNu[nn][mm] * sy_nodes[mm];
-                dy_deta += nodal_derivs.dNv[nn][mm] * sy_nodes[mm];
-            }
-
-            const nz = dx_dxi * dy_deta - dx_deta * dy_dxi;
-            if (nz <= tolerance) {
-                all_backface = false;
-                break;
-            }
-        }
-        if (all_backface) {
-            continue;
-        }
-
-        const hull_points = hull.buildAdaptiveHullPoints(N, camera, coords_elem);
-        const x_min = std.mem.min(f64, &hull_points.x);
-        const x_max = std.mem.max(f64, &hull_points.x);
-        const y_min = std.mem.min(f64, &hull_points.y);
-        const y_max = std.mem.max(f64, &hull_points.y);
-
-        if (x_min > @as(f64, @floatFromInt(camera.pixels_num[0] - 1)) or
-            x_max < 0.0 or
-            y_min > @as(f64, @floatFromInt(camera.pixels_num[1] - 1)) or
-            y_max < 0.0)
-        {
-            continue;
-        }
-
-        elem_bboxes[elems_in_image] = .{
-            .elem_idx = ee,
-            .x_min = boundIndMin(u16, x_min),
-            .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
-            .y_min = boundIndMin(u16, y_min),
-            .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
-        };
-        elems_in_image += 1;
-    }
-
-    return elems_in_image;
-}
-
-pub fn prepareVisibleWorkspace(
-    comptime MT: MeshType,
-    allocator: std.mem.Allocator,
-    camera: *const cam.CameraPrepared,
-    connect: *const meshio.Connect,
-    coords_nodes: *const meshio.Coords,
-    elem_bboxes: *[]ElemBBox,
-    visible_orig_elem_indices: *[]usize,
-    elems_in_image: *usize,
-) !void {
-    const elems_num = connect.getElemsNum();
-    elem_bboxes.* = try allocator.alloc(ElemBBox, elems_num);
-
-    elems_in_image.* = if (MT == .tri3)
-        cullNodesCalcBBoxesTri3(
-            camera,
-            coords_nodes,
-            connect,
-            elem_bboxes.*,
-        )
-    else
-        cullNodesCalcBBoxesHighOrd(
-            comptime MT.getNodesNum(),
-            camera,
-            coords_nodes,
-            connect,
-            elem_bboxes.*,
-        );
-
-    visible_orig_elem_indices.* = try allocator.alloc(usize, elems_in_image.*);
-    for (0..elems_in_image.*) |pp| {
-        visible_orig_elem_indices.*[pp] = elem_bboxes.*[pp].elem_idx;
-    }
+    return calcElemBBoxFromBounds(camera, elem_idx, x_min, x_max, y_min, y_max);
 }
 
 //==========================================================================================
@@ -843,4 +729,174 @@ pub fn sceneTileElemOverlap(
     }
 
     return TilingOverlaps{ .overlaps = overlaps, .active_tiles = active_tiles };
+}
+
+fn initTestCullCamera(
+    allocator: std.mem.Allocator,
+) !cam.CameraPrepared {
+    const Vec3f = @import("vecstack.zig").Vec3f;
+    const Rotation = @import("rotation.zig").Rotation;
+    return cam.CameraPrepared.init(
+        allocator,
+        .{
+            .pixels_num = .{ 10, 10 },
+            .pixels_size = .{ 0.01, 0.01 },
+            .pos_world = Vec3f.initZeros(),
+            .rot_world = Rotation.init(0, 0, 0),
+            .roi_cent_world = Vec3f.initZeros(),
+            .focal_length = 1.0,
+            .sub_sample = 1,
+            .distortion = .none,
+        },
+    );
+}
+
+fn initSingleElemConnect(
+    comptime N: usize,
+    allocator: std.mem.Allocator,
+) !meshio.Connect {
+    var connect = try meshio.Connect.initAlloc(allocator, 1, N);
+    for (0..N) |nn| {
+        connect.table_mem[nn] = nn;
+    }
+    return connect;
+}
+
+fn initElemCoords(
+    comptime N: usize,
+    allocator: std.mem.Allocator,
+    x_coords: [N]f64,
+    y_coords: [N]f64,
+    z_coords: [N]f64,
+) !meshio.Coords {
+    var coords = try meshio.Coords.initAlloc(allocator, N);
+    for (0..N) |nn| {
+        coords.mat.set(nn, 0, x_coords[nn]);
+        coords.mat.set(nn, 1, y_coords[nn]);
+        coords.mat.set(nn, 2, z_coords[nn]);
+    }
+    return coords;
+}
+
+test "calcVisibleNodeBBoxTri3 on_screen" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(3, allocator);
+    defer connect.deinit(allocator);
+
+    var coords = try initElemCoords(
+        3,
+        allocator,
+        .{ 2.0, 4.0, 6.0 },
+        .{ 2.0, 6.0, 2.0 },
+        .{ 1.0, 1.0, 1.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    const bbox = calcVisibleNodeBBoxTri3(&camera, &coords, &connect, 0);
+    try std.testing.expect(bbox != null);
+}
+
+test "calcVisibleNodeBBoxTri3 backface" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(3, allocator);
+    defer connect.deinit(allocator);
+
+    var coords = try initElemCoords(
+        3,
+        allocator,
+        .{ 2.0, 6.0, 4.0 },
+        .{ 2.0, 2.0, 6.0 },
+        .{ 1.0, 1.0, 1.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    const bbox = calcVisibleNodeBBoxTri3(&camera, &coords, &connect, 0);
+    try std.testing.expect(bbox == null);
+}
+
+test "calcVisibleNodeBBoxTri3 behind_camera" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(3, allocator);
+    defer connect.deinit(allocator);
+
+    var coords = try initElemCoords(
+        3,
+        allocator,
+        .{ 2.0, 4.0, 6.0 },
+        .{ 2.0, 6.0, 2.0 },
+        .{ -1.0, -1.0, -1.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    const bbox = calcVisibleNodeBBoxTri3(&camera, &coords, &connect, 0);
+    try std.testing.expect(bbox == null);
+}
+
+test "calcVisibleNodeBBoxHighOrd on_screen" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(6, allocator);
+    defer connect.deinit(allocator);
+
+    var coords = try initElemCoords(
+        6,
+        allocator,
+        .{ -3.0, -1.0, 1.0, -2.0, 0.0, -1.0 },
+        .{ -3.0, 1.0, -3.0, -1.0, -1.0, -3.0 },
+        .{ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    const bbox = calcVisibleNodeBBoxHighOrd(6, &camera, &coords, &connect, 0);
+    try std.testing.expect(bbox != null);
+}
+
+test "calcVisibleNodeBBoxHighOrd backface" {
+    const allocator = std.testing.allocator;
+    var coords = try initElemCoords(
+        6,
+        allocator,
+        .{ -3.0, 1.0, -1.0, -1.0, 0.0, -2.0 },
+        .{ -3.0, -3.0, 1.0, -3.0, -1.0, -1.0 },
+        .{ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    var connect = try initSingleElemConnect(6, allocator);
+    defer connect.deinit(allocator);
+
+    const coords_elem = gatherElemNodeCoords(6, &coords, &connect, 0);
+    try std.testing.expect(isHighOrdBackface(6, coords_elem));
+}
+
+test "calcVisibleNodeBBoxHighOrd behind_camera" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(6, allocator);
+    defer connect.deinit(allocator);
+
+    var coords = try initElemCoords(
+        6,
+        allocator,
+        .{ -3.0, 1.0, -1.0, -1.0, 0.0, -2.0 },
+        .{ -3.0, -3.0, 1.0, -3.0, -1.0, -1.0 },
+        .{ -1.0, -1.0, -1.0, -1.0, -1.0, -1.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    const bbox = calcVisibleNodeBBoxHighOrd(6, &camera, &coords, &connect, 0);
+    try std.testing.expect(bbox == null);
 }
