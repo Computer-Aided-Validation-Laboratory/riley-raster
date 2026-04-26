@@ -326,30 +326,17 @@ fn isHighOrdBackface(
     return backface;
 }
 
-fn calcElemBBoxFromBounds(
+fn isOnScreen(
     camera: *const cam.CameraPrepared,
-    elem_idx: usize,
     x_min: f64,
     x_max: f64,
     y_min: f64,
     y_max: f64,
-) ?ElemBBox {
-    const on_screen =
-        x_min <= @as(f64, @floatFromInt(camera.pixels_num[0] - 1)) and
+) bool {
+    return x_min <= @as(f64, @floatFromInt(camera.pixels_num[0] - 1)) and
         x_max >= 0.0 and
         y_min <= @as(f64, @floatFromInt(camera.pixels_num[1] - 1)) and
         y_max >= 0.0;
-    if (!on_screen) {
-        return null;
-    }
-
-    return .{
-        .elem_idx = elem_idx,
-        .x_min = boundIndMin(u16, x_min),
-        .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
-        .y_min = boundIndMin(u16, y_min),
-        .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
-    };
 }
 
 pub fn calcVisibleNodeBBoxTri3(
@@ -371,7 +358,18 @@ pub fn calcVisibleNodeBBoxTri3(
     const x_max = std.mem.max(f64, &coords_elem.x);
     const y_min = std.mem.min(f64, &coords_elem.y);
     const y_max = std.mem.max(f64, &coords_elem.y);
-    return calcElemBBoxFromBounds(camera, elem_idx, x_min, x_max, y_min, y_max);
+
+    if (!isOnScreen(camera, x_min, x_max, y_min, y_max)) {
+        return null;
+    }
+
+    return .{
+        .elem_idx = elem_idx,
+        .x_min = boundIndMin(u16, x_min),
+        .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
+        .y_min = boundIndMin(u16, y_min),
+        .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
+    };
 }
 
 pub fn calcVisibleNodeBBoxHighOrd(
@@ -395,7 +393,18 @@ pub fn calcVisibleNodeBBoxHighOrd(
     const x_max = std.mem.max(f64, &hull_points.x);
     const y_min = std.mem.min(f64, &hull_points.y);
     const y_max = std.mem.max(f64, &hull_points.y);
-    return calcElemBBoxFromBounds(camera, elem_idx, x_min, x_max, y_min, y_max);
+
+    if (!isOnScreen(camera, x_min, x_max, y_min, y_max)) {
+        return null;
+    }
+
+    return .{
+        .elem_idx = elem_idx,
+        .x_min = boundIndMin(u16, x_min),
+        .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
+        .y_min = boundIndMin(u16, y_min),
+        .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
+    };
 }
 
 //------------------------------------------------------------------------------------------
