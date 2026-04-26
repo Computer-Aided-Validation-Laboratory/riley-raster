@@ -103,83 +103,6 @@ pub const MeshRaster = struct {
     hull: ?*const ndarray.NDArray(f64),
 };
 
-fn isElemBehindCamera(
-    comptime N: usize,
-    coords_elem: GatheredElemCoords(N),
-) bool {
-    var behind_camera = true;
-    for (0..N) |nn| {
-        if (coords_elem.z[nn] > tol.culling.higher_order_backface_nz) {
-            behind_camera = false;
-            break;
-        }
-    }
-    return behind_camera;
-}
-
-fn isTri3Backface(coords_elem: GatheredElemCoords(3)) bool {
-    const signed_area = edgeFun3Slices(0, 1, 2, &coords_elem.x, &coords_elem.y);
-    return signed_area <= tol.culling.tri3_signed_area;
-}
-
-fn isHighOrdBackface(
-    comptime N: usize,
-    coords_elem: GatheredElemCoords(N),
-) bool {
-    const nodal_derivs = comptime shapefun.getNodalDerivs(N);
-    const tolerance = tol.culling.higher_order_backface_nz;
-
-    var backface = true;
-    for (0..N) |nn| {
-        var dx_dxi: f64 = 0.0;
-        var dx_deta: f64 = 0.0;
-        var dy_dxi: f64 = 0.0;
-        var dy_deta: f64 = 0.0;
-
-        for (0..N) |mm| {
-            dx_dxi += nodal_derivs.dNu[nn][mm] * coords_elem.x[mm];
-            dx_deta += nodal_derivs.dNv[nn][mm] * coords_elem.x[mm];
-            dy_dxi += nodal_derivs.dNu[nn][mm] * coords_elem.y[mm];
-            dy_deta += nodal_derivs.dNv[nn][mm] * coords_elem.y[mm];
-        }
-
-        const normal_z = dx_dxi * dy_deta - dx_deta * dy_dxi;
-        const front_facing = normal_z < -tolerance;
-        if (front_facing) {
-            backface = false;
-            break;
-        }
-    }
-
-    return backface;
-}
-
-fn calcElemBBoxFromBounds(
-    camera: *const cam.CameraPrepared,
-    elem_idx: usize,
-    x_min: f64,
-    x_max: f64,
-    y_min: f64,
-    y_max: f64,
-) ?ElemBBox {
-    const on_screen =
-        x_min <= @as(f64, @floatFromInt(camera.pixels_num[0] - 1)) and
-        x_max >= 0.0 and
-        y_min <= @as(f64, @floatFromInt(camera.pixels_num[1] - 1)) and
-        y_max >= 0.0;
-    if (!on_screen) {
-        return null;
-    }
-
-    return .{
-        .elem_idx = elem_idx,
-        .x_min = boundIndMin(u16, x_min),
-        .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
-        .y_min = boundIndMin(u16, y_min),
-        .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
-    };
-}
-
 //------------------------------------------------------------------------------------------
 // Coordinate Transformations
 //------------------------------------------------------------------------------------------
@@ -352,6 +275,83 @@ pub fn elemsToClipPxLengSIMD(
 // Culling & Visibility
 //------------------------------------------------------------------------------------------
 
+fn isElemBehindCamera(
+    comptime N: usize,
+    coords_elem: GatheredElemCoords(N),
+) bool {
+    var behind_camera = true;
+    for (0..N) |nn| {
+        if (coords_elem.z[nn] > tol.culling.higher_order_backface_nz) {
+            behind_camera = false;
+            break;
+        }
+    }
+    return behind_camera;
+}
+
+fn isTri3Backface(coords_elem: GatheredElemCoords(3)) bool {
+    const signed_area = edgeFun3Slices(0, 1, 2, &coords_elem.x, &coords_elem.y);
+    return signed_area <= tol.culling.tri3_signed_area;
+}
+
+fn isHighOrdBackface(
+    comptime N: usize,
+    coords_elem: GatheredElemCoords(N),
+) bool {
+    const nodal_derivs = comptime shapefun.getNodalDerivs(N);
+    const tolerance = tol.culling.higher_order_backface_nz;
+
+    var backface = true;
+    for (0..N) |nn| {
+        var dx_dxi: f64 = 0.0;
+        var dx_deta: f64 = 0.0;
+        var dy_dxi: f64 = 0.0;
+        var dy_deta: f64 = 0.0;
+
+        for (0..N) |mm| {
+            dx_dxi += nodal_derivs.dNu[nn][mm] * coords_elem.x[mm];
+            dx_deta += nodal_derivs.dNv[nn][mm] * coords_elem.x[mm];
+            dy_dxi += nodal_derivs.dNu[nn][mm] * coords_elem.y[mm];
+            dy_deta += nodal_derivs.dNv[nn][mm] * coords_elem.y[mm];
+        }
+
+        const normal_z = dx_dxi * dy_deta - dx_deta * dy_dxi;
+        const front_facing = normal_z < -tolerance;
+        if (front_facing) {
+            backface = false;
+            break;
+        }
+    }
+
+    return backface;
+}
+
+fn calcElemBBoxFromBounds(
+    camera: *const cam.CameraPrepared,
+    elem_idx: usize,
+    x_min: f64,
+    x_max: f64,
+    y_min: f64,
+    y_max: f64,
+) ?ElemBBox {
+    const on_screen =
+        x_min <= @as(f64, @floatFromInt(camera.pixels_num[0] - 1)) and
+        x_max >= 0.0 and
+        y_min <= @as(f64, @floatFromInt(camera.pixels_num[1] - 1)) and
+        y_max >= 0.0;
+    if (!on_screen) {
+        return null;
+    }
+
+    return .{
+        .elem_idx = elem_idx,
+        .x_min = boundIndMin(u16, x_min),
+        .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
+        .y_min = boundIndMin(u16, y_min),
+        .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
+    };
+}
+
 pub fn calcVisibleNodeBBoxTri3(
     camera: *const cam.CameraPrepared,
     coords_nodes: *const meshio.Coords,
@@ -398,9 +398,9 @@ pub fn calcVisibleNodeBBoxHighOrd(
     return calcElemBBoxFromBounds(camera, elem_idx, x_min, x_max, y_min, y_max);
 }
 
-//==========================================================================================
+//------------------------------------------------------------------------------------------
 // Element Data Gathering
-//==========================================================================================
+//------------------------------------------------------------------------------------------
 
 pub fn gatherElemNodeCoords(
     comptime N: usize,
@@ -445,9 +445,9 @@ pub fn loadElemVec3Slices(
     };
 }
 
-//==========================================================================================
+//------------------------------------------------------------------------------------------
 // Raster Hull Generation
-//==========================================================================================
+//------------------------------------------------------------------------------------------
 
 pub fn prepareVisibleRasterHulls(
     comptime MT: MeshType,
@@ -498,9 +498,9 @@ pub fn prepareVisibleRasterHullsRange(
     }
 }
 
-//==========================================================================================
+//------------------------------------------------------------------------------------------
 // Scene-Tile Binning
-//==========================================================================================
+//------------------------------------------------------------------------------------------
 
 pub const OverlapBBox = struct {
     mesh_idx: usize,
@@ -730,6 +730,10 @@ pub fn sceneTileElemOverlap(
 
     return TilingOverlaps{ .overlaps = overlaps, .active_tiles = active_tiles };
 }
+
+//------------------------------------------------------------------------------------------
+// Tests & Test Helpers
+//------------------------------------------------------------------------------------------
 
 fn initTestCullCamera(
     allocator: std.mem.Allocator,
