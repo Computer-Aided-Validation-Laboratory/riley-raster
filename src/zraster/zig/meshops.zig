@@ -489,7 +489,14 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
 
             self.remapVisibleElemIndices();
 
-            return self.finish(mesh_prep);
+            return .{
+                .mesh = mesh_prep,
+                .elem_bboxes = self.mesh_workspace.elem_bboxes,
+                .elems_in_image = self.mesh_workspace.elems_in_image,
+                .total_elems_num = self.mesh_static.connect.getElemsNum(),
+                .raster_hull = self.mesh_workspace.raster_hull,
+                .frame_workspace = self.mesh_workspace,
+            };
         }
 
         const DisplaceCoordsStage = struct {
@@ -1066,20 +1073,6 @@ fn FrameMeshPipeline(comptime MT: MeshType) type {
             for (self.mesh_workspace.elem_bboxes, 0..) |*elem_bbox, pp| {
                 elem_bbox.elem_idx = pp;
             }
-        }
-
-        fn finish(
-            self: *FrameMeshPipelineType,
-            mesh_prep: MeshPrepared,
-        ) MeshFrame {
-            return .{
-                .mesh = mesh_prep,
-                .elem_bboxes = self.mesh_workspace.elem_bboxes,
-                .elems_in_image = self.mesh_workspace.elems_in_image,
-                .total_elems_num = self.mesh_static.connect.getElemsNum(),
-                .raster_hull = self.mesh_workspace.raster_hull,
-                .frame_workspace = self.mesh_workspace,
-            };
         }
     };
 }

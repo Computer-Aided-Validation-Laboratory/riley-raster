@@ -540,7 +540,7 @@ const TilingCountStage = struct {
     tiles_num_x: usize,
     tiles_num_y: usize,
     elems_num: usize,
-    ebb_slice: []const ElemBBox,
+    elem_bbox_slice: []const ElemBBox,
 };
 
 fn runTilingCount(
@@ -550,21 +550,22 @@ fn runTilingCount(
     range_end: usize,
 ) void {
     _ = chunk_idx;
-    const s: *TilingCountStage = @ptrCast(@alignCast(ctx_ptr));
+    const tiling: *TilingCountStage = @ptrCast(@alignCast(ctx_ptr));
 
     for (range_start..range_end) |ee| {
-        const ebb = s.ebb_slice[ee];
-        const tx_start: usize = ebb.x_min / s.tile_size;
-        const tx_end: usize = @min(s.tiles_num_x, @as(usize, (ebb.x_max +
-            s.tile_size - 1) / s.tile_size));
-        const ty_start: usize = ebb.y_min / s.tile_size;
-        const ty_end: usize = @min(s.tiles_num_y, @as(usize, (ebb.y_max +
-            s.tile_size - 1) / s.tile_size));
+        const elem_bbox = tiling.elem_bbox_slice[ee];
+
+        const tx_start: usize = elem_bbox.x_min / tiling.tile_size;
+        const tx_end: usize = @min(tiling.tiles_num_x, @as(usize, (elem_bbox.x_max +
+                              tiling.tile_size - 1) / tiling.tile_size));
+        const ty_start: usize = elem_bbox.y_min / tiling.tile_size;
+        const ty_end: usize = @min(tiling.tiles_num_y, @as(usize, (elem_bbox.y_max +
+                              tiling.tile_size - 1) / tiling.tile_size));
 
         for (ty_start..ty_end) |ty| {
-            const row_off = ty * s.tiles_num_x;
+            const row_off = ty * tiling.tiles_num_x;
             for (tx_start..tx_end) |tx| {
-                _ = s.tile_elem_counts[row_off + tx].fetchAdd(1, .monotonic);
+                _ = tiling.tile_elem_counts[row_off + tx].fetchAdd(1, .monotonic);
             }
         }
     }
@@ -579,7 +580,7 @@ const TilingFillStage = struct {
     screen_px_x: u16,
     screen_px_y: u16,
     mesh_idx: usize,
-    ebb_slice: []const ElemBBox,
+    elem_bbox_slice: []const ElemBBox,
 };
 
 fn runTilingFill(
@@ -589,40 +590,44 @@ fn runTilingFill(
     range_end: usize,
 ) void {
     _ = chunk_idx;
-    const s: *TilingFillStage = @ptrCast(@alignCast(ctx_ptr));
+    const tiling: *TilingFillStage = @ptrCast(@alignCast(ctx_ptr));
 
     for (range_start..range_end) |ee| {
-        const ebb = s.ebb_slice[ee];
-        const tx_start = ebb.x_min / s.tile_size;
+        const elem_bbox = tiling.elem_bbox_slice[ee];
+
+        const tx_start = elem_bbox.x_min / tiling.tile_size;
         const tx_end = @min(
-            s.tiles_num_x,
-            @as(usize, (ebb.x_max + s.tile_size - 1) / s.tile_size),
+            tiling.tiles_num_x,
+            @as(usize, (elem_bbox.x_max + tiling.tile_size - 1) / tiling.tile_size),
         );
-        const ty_start = ebb.y_min / s.tile_size;
+
+        const ty_start = elem_bbox.y_min / tiling.tile_size;
         const ty_end = @min(
-            s.tiles_num_y,
-            @as(usize, (ebb.y_max + s.tile_size - 1) / s.tile_size),
+            tiling.tiles_num_y,
+            @as(usize, (elem_bbox.y_max + tiling.tile_size - 1) / tiling.tile_size),
         );
 
         for (ty_start..ty_end) |ty| {
-            const tile_px_min_y = @as(u16, @intCast(ty * s.tile_size));
-            const tile_px_max_y = @as(u16, @min(@as(u32, tile_px_min_y) +
-                s.tile_size, s.screen_px_y));
-            const overlap_y_min = @max(ebb.y_min, tile_px_min_y);
-            const overlap_y_max = @min(ebb.y_max, tile_px_max_y);
+            const tile_px_min_y = @as(u16, @intCast(ty * tiling.tile_size));
+            const tile_px_max_y = @as(u16, 
+                @min(@as(u32, tile_px_min_y) + tiling.tile_size, tiling.screen_px_y));
+
+            const overlap_y_min = @max(elem_bbox.y_min, tile_px_min_y);
+            const overlap_y_max = @min(elem_bbox.y_max, tile_px_max_y);
 
             for (tx_start..tx_end) |tx| {
-                const tile_px_min_x = @as(u16, @intCast(tx * s.tile_size));
-                const tile_px_max_x = @as(u16, @min(@as(u32, tile_px_min_x) +
-                    s.tile_size, s.screen_px_x));
+                const tile_px_min_x = @as(u16, @intCast(tx * tiling.tile_size));
+                const tile_px_max_x = @as(u16, 
+                    @min(@as(u32, tile_px_min_x) + tiling.tile_size, tiling.screen_px_x));
 
-                const tile_idx = ty * s.tiles_num_x + tx;
-                const write_idx = s.tile_write_inds[tile_idx].fetchAdd(1, .monotonic);
-                s.overlaps[write_idx] = .{
-                    .mesh_idx = s.mesh_idx,
-                    .elem_idx = ebb.elem_idx,
-                    .x_min = @max(ebb.x_min, tile_px_min_x),
-                    .x_max = @min(ebb.x_max, tile_px_max_x),
+                const tile_idx = ty * tiling.tiles_num_x + tx;
+                const write_idx = tiling.tile_write_inds[tile_idx].fetchAdd(1, .monotonic);
+
+                tiling.overlaps[write_idx] = .{
+                    .mesh_idx = tiling.mesh_idx,
+                    .elem_idx = elem_bbox.elem_idx,
+                    .x_min = @max(elem_bbox.x_min, tile_px_min_x),
+                    .x_max = @min(elem_bbox.x_max, tile_px_max_x),
                     .y_min = overlap_y_min,
                     .y_max = overlap_y_max,
                 };
@@ -657,13 +662,14 @@ pub fn sceneTileElemOverlap(
             .tiles_num_x = tiles_num_x,
             .tiles_num_y = tiles_num_y,
             .elems_num = elems_num,
-            .ebb_slice = elem_bboxes_by_mesh[mesh_idx],
+            .elem_bbox_slice = elem_bboxes_by_mesh[mesh_idx],
         };
 
         const chunk_size = pce.getChunkSize(
             elems_num,
             pce.getWorkerCount(chunk_exec),
         );
+
         pce.runStaticRange(
             chunk_exec,
             &count_stage,
@@ -721,7 +727,7 @@ pub fn sceneTileElemOverlap(
             .screen_px_x = screen_px_x,
             .screen_px_y = screen_px_y,
             .mesh_idx = mesh_idx,
-            .ebb_slice = elem_bboxes_by_mesh[mesh_idx],
+            .elem_bbox_slice = elem_bboxes_by_mesh[mesh_idx],
         };
 
         const chunk_size = pce.getChunkSize(
