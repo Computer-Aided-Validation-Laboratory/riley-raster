@@ -281,6 +281,8 @@ pub const BenchOptions = struct {
     save_opts: ?[]const iio.ImageSaveOpts = null,
     return_image: bool = false,
     fov_scale: f64 = 1.0,
+    threads: ?u16 = null,
+    threads_per_frame: ?u16 = null,
 };
 
 fn calcSaveStrategy(options: BenchOptions) zraster.SaveStrategy {
@@ -551,12 +553,16 @@ fn runBenchmarkInternal(
         .distortion = camera.distortion,
     };
 
+    const total_threads = options.threads orelse tcfg.TOTAL_THREADS;
+    const threads_per_frame = options.threads_per_frame orelse
+        @min(total_threads, tcfg.MAX_RASTER_THREADS_PER_FRAME);
+
     const config = zraster.RasterConfig{
         .render_mode = tcfg.RENDER_MODE,
-        .total_threads = tcfg.TOTAL_THREADS,
+        .total_threads = total_threads,
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
-        .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
-        .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
+        .max_geom_threads_per_frame = threads_per_frame,
+        .max_raster_threads_per_frame = threads_per_frame,
         .save_strategy = calcSaveStrategy(options),
         .image_save_opts = options.save_opts orelse &[_]iio.ImageSaveOpts{
             .{

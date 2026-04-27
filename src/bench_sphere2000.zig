@@ -16,6 +16,13 @@ pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
     const io = init.io;
 
+    const args = init.minimal.args.vector;
+
+    const threads: u16 = if (args.len > 1)
+        try std.fmt.parseInt(u16, std.mem.span(args[1]), 10)
+    else
+        1;
+
     const texture_grey = try iio.loadImage(
         u8,
         1,
@@ -59,8 +66,8 @@ pub fn main(init: std.process.Init) !void {
     var max_name_len: usize = 0;
 
     std.debug.print(
-        "Starting Sphere 2000 Benchmark ({d}x{d}, {d} runs per case)...\n",
-        .{ pixel_num[0], pixel_num[1], runs },
+        "Starting Sphere 2000 Benchmark ({d}x{d}, {d} runs per case, {d} threads)...\n",
+        .{ pixel_num[0], pixel_num[1], runs, threads },
     );
 
     for (mesh_types) |mt| {
@@ -132,7 +139,11 @@ pub fn main(init: std.process.Init) !void {
                         pixel_num,
                         texture_grey,
                         texture_rgb,
-                        .{ .out_dir_base = if (rr == 0) out_dir_base else "" },
+                        .{
+                            .out_dir_base = if (rr == 0) out_dir_base else "",
+                            .threads = threads,
+                            .threads_per_frame = threads,
+                        },
                     );
                     defer res.deinit(outer_alloc);
 

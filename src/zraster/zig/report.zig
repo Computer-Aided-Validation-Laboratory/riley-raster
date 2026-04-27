@@ -149,6 +149,8 @@ pub fn publishFrameResults(
         .off => {},
         .bench => {
             report_storage.bench.frame_times = frame_times;
+            report_storage.bench.total_elements = total_elems_num;
+            report_storage.bench.visible_elements = total_elems_in_image;
             if (bench_capture) |capture| {
                 const capture_idx = calcBenchCaptureIdx(
                     cameras_num,
