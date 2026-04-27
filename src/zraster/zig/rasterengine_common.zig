@@ -62,18 +62,18 @@ fn initThreadReportLog(
 }
 
 fn ThreadState(
-    comptime Backend: type,
+    comptime RasterBackend: type,
     comptime report_mode: ReportMode,
 ) type {
     return struct {
         arena: std.heap.ArenaAllocator,
-        subpx_scratch: Backend.SubpxScratchBuffers,
+        subpx_scratch: RasterBackend.SubpxScratchBuffers,
         log: report.LogType(report_mode),
     };
 }
 
 fn RasterTaskState(
-    comptime Backend: type,
+    comptime RasterBackend: type,
     comptime report_mode: ReportMode,
 ) type {
     return struct {
@@ -85,7 +85,7 @@ fn RasterTaskState(
         image_out_arr: *NDArray(f64),
         tile_idx_start: usize,
         tile_idx_end: usize,
-        subpx_scratch: Backend.SubpxScratchBuffers,
+        subpx_scratch: RasterBackend.SubpxScratchBuffers,
         log: report.LogType(report_mode),
     };
 }
@@ -267,7 +267,7 @@ pub fn rasterDirectScalarCommon(
 }
 
 pub fn rasterSceneCommon(
-    comptime Backend: type,
+    comptime RasterBackend: type,
     comptime report_mode: ReportMode,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -281,7 +281,7 @@ pub fn rasterSceneCommon(
 ) !void {
     if (threads_within_image <= 1 or tiling.active_tiles.len <= 1) {
         try rasterSceneSingleThreadCommon(
-            Backend,
+            RasterBackend,
             report_mode,
             outer_alloc,
             io,
@@ -300,7 +300,7 @@ pub fn rasterSceneCommon(
     }
 
     try rasterSceneThreadedCommon(
-        Backend,
+        RasterBackend,
         report_mode,
         outer_alloc,
         io,
@@ -315,7 +315,7 @@ pub fn rasterSceneCommon(
 }
 
 fn rasterSceneSingleThreadCommon(
-    comptime Backend: type,
+    comptime RasterBackend: type,
     comptime report_mode: ReportMode,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -335,7 +335,7 @@ fn rasterSceneSingleThreadCommon(
 
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     const subpx_tile_size: usize = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp;
-    var subpx_scratch = try Backend.initSubpxScratch(
+    var subpx_scratch = try RasterBackend.initSubpxScratch(
         arena_alloc,
         fields_num,
         subpx_tile_size,
@@ -343,7 +343,7 @@ fn rasterSceneSingleThreadCommon(
 
     for (tiling.active_tiles) |tile| {
         try rasterTileCommon(
-            Backend,
+            RasterBackend,
             report_mode,
             io,
             ctx_rast,
@@ -361,7 +361,7 @@ fn rasterSceneSingleThreadCommon(
 }
 
 fn rasterSceneThreadedCommon(
-    comptime Backend: type,
+    comptime RasterBackend: type,
     comptime report_mode: ReportMode,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -373,7 +373,8 @@ fn rasterSceneThreadedCommon(
     raster_hulls: []const ?NDArray(f64),
     image_out_arr: *NDArray(f64),
 ) !void {
-    const Task = RasterTaskState(Backend, report_mode);
+    const Task = RasterTaskState(RasterBackend, report_mode);
+    
     const TaskWorker = struct {
         fn run(
             io_task: std.Io,
@@ -388,7 +389,7 @@ fn rasterSceneThreadedCommon(
             for (task.tile_idx_start..task.tile_idx_end) |tile_idx| {
                 const tile = task.tiling.active_tiles[tile_idx];
                 try rasterTileCommon(
-                    Backend,
+                    RasterBackend,
                     report_mode,
                     io_task,
                     task.ctx_rast,
@@ -436,7 +437,7 @@ fn rasterSceneThreadedCommon(
         tasks[ii].image_out_arr = image_out_arr;
         tasks[ii].tile_idx_start = ii * tiles_per_task;
         tasks[ii].tile_idx_end = @min(active_tiles_num, (ii + 1) * tiles_per_task);
-        tasks[ii].subpx_scratch = try Backend.initSubpxScratch(
+        tasks[ii].subpx_scratch = try RasterBackend.initSubpxScratch(
             arena_alloc,
             fields_num,
             subpx_tile_size,
@@ -474,7 +475,7 @@ fn rasterSceneThreadedCommon(
 }
 
 fn rasterTileCommon(
-    comptime Backend: type,
+    comptime RasterBackend: type,
     comptime report_mode: ReportMode,
     io: std.Io,
     ctx_rast: rops.RasterContext,
@@ -484,7 +485,7 @@ fn rasterTileCommon(
     meshes: []const MeshPrepared,
     raster_hulls: []const ?NDArray(f64),
     image_out_arr: *NDArray(f64),
-    subpx_scratch: *Backend.SubpxScratchBuffers,
+    subpx_scratch: *RasterBackend.SubpxScratchBuffers,
     fields_num: u8,
     subpx_tile_size: usize,
 ) !void {
@@ -494,9 +495,9 @@ fn rasterTileCommon(
 
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    Backend.resetSubpxScratch(subpx_scratch, subpx_tile_size);
+    RasterBackend.resetSubpxScratch(subpx_scratch, subpx_tile_size);
 
-    // Hoist tile-local ideal pixel centers
+    // Hoist tile-local ideal pinhole pixel centers
     {
         const cam = ctx_rast.camera;
         const stride_y = cam.ideal_pixel_centers.strides[0];
@@ -590,7 +591,7 @@ fn rasterTileCommon(
                             local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
                         }
 
-                        shaded_px += try Backend.RasterPass(
+                        shaded_px += try RasterBackend.RasterPass(
                             GK,
                             SK,
                             NodalPrepared,
@@ -618,7 +619,7 @@ fn rasterTileCommon(
                             local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
                         }
 
-                        shaded_px += try Backend.RasterPass(
+                        shaded_px += try RasterBackend.RasterPass(
                             GK,
                             SK,
                             TexPrepared(1),
@@ -646,7 +647,7 @@ fn rasterTileCommon(
                             local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
                         }
 
-                        shaded_px += try Backend.RasterPass(
+                        shaded_px += try RasterBackend.RasterPass(
                             GK,
                             SK,
                             TexPrepared(3),
@@ -668,7 +669,7 @@ fn rasterTileCommon(
 
     if (sub_samp > 1) {
         averageScratch(
-            Backend.scratch_layout,
+            RasterBackend.scratch_layout,
             tile,
             @intCast(sub_samp),
             subpx_tile_size,
@@ -680,7 +681,7 @@ fn rasterTileCommon(
         );
     } else {
         resolveScratchDirect(
-            Backend.scratch_layout,
+            RasterBackend.scratch_layout,
             tile,
             subpx_tile_size,
             fields_num,

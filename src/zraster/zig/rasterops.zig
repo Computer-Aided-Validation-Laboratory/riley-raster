@@ -76,14 +76,6 @@ pub fn Vec3Slices(comptime T: type) type {
     };
 }
 
-pub fn GatheredElemCoords(comptime N: usize) type {
-    return struct {
-        x: [N]f64,
-        y: [N]f64,
-        z: [N]f64,
-    };
-}
-
 pub const ElemBBox = struct {
     elem_idx: usize,
     x_min: u16,
@@ -346,6 +338,10 @@ pub fn calcVisibleNodeBBoxTri3(
     elem_idx: usize,
 ) ?ElemBBox {
     const coords_elem = gatherElemNodeCoords(3, coords_nodes, connect, elem_idx);
+
+    //TODO - distort coords here!
+    // const coords_distorted = distortCoords();
+    
     if (isElemBehindCamera(3, coords_elem)) {
         return null;
     }
@@ -379,7 +375,13 @@ pub fn calcVisibleNodeBBoxHighOrd(
     connect: *const meshio.Connect,
     elem_idx: usize,
 ) ?ElemBBox {
+
     const coords_elem = gatherElemNodeCoords(N, coords_nodes, connect, elem_idx);
+
+    // TODO - I think we are missing a perspective divide here??
+
+    // TODO - we should be dsitorting coords here as well
+
     if (isElemBehindCamera(N, coords_elem)) {
         return null;
     }
@@ -388,6 +390,7 @@ pub fn calcVisibleNodeBBoxHighOrd(
         return null;
     }
 
+    // Need this to stay in ideal pinhole coords for the raster loop edge checks
     const hull_points = hull.buildAdaptiveHullPoints(N, camera, coords_elem);
     const x_min = std.mem.min(f64, &hull_points.x);
     const x_max = std.mem.max(f64, &hull_points.x);
@@ -410,6 +413,13 @@ pub fn calcVisibleNodeBBoxHighOrd(
 //------------------------------------------------------------------------------------------
 // Element Data Gathering
 //------------------------------------------------------------------------------------------
+pub fn GatheredElemCoords(comptime N: usize) type {
+    return struct {
+        x: [N]f64,
+        y: [N]f64,
+        z: [N]f64,
+    };
+}
 
 pub fn gatherElemNodeCoords(
     comptime N: usize,
