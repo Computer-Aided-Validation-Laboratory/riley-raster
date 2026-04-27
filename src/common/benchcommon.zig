@@ -40,6 +40,7 @@ pub const BenchResult = struct {
     raster_ms: f64,
     fps: f64,
     metrics: CalculatedMetrics,
+    pipeline_times: report.FrameTimes,
     image: ?NDArray(f64) = null,
 
     pub fn deinit(self: *BenchResult, allocator: std.mem.Allocator) void {
@@ -59,6 +60,10 @@ pub fn calcOutputChannels(shader_type: ShaderType) u8 {
 
 pub const BenchStats = struct {
     name: []const u8,
+    mesh_type: mo.MeshType,
+    shader_type: ShaderType,
+    sample_config: ?TextureSampleConfig,
+
     e2e: MedianMAD,
     geom: MedianMAD,
     raster: MedianMAD,
@@ -70,6 +75,11 @@ pub const BenchStats = struct {
     melems: MedianMAD,
     mnodes: MedianMAD,
     mops: MedianMAD,
+
+    geom_prep: MedianMAD,
+    tile_overlap: MedianMAD,
+    raster_loop: MedianMAD,
+    save_frame: MedianMAD,
 };
 
 pub const MedianMAD = struct {
@@ -661,12 +671,18 @@ fn runBenchmarkInternal(
         images_mut.deinit(outer_alloc);
     }
 
+    const pipeline_times = if (report_mode == .bench)
+        bench_capture_storage[0].bench_log.frame_times
+    else
+        report.FrameTimes{};
+
     return .{
         .e2e_ms = e2e_ms,
         .geom_ms = geom_ms,
         .raster_ms = raster_ms,
         .fps = fps,
         .metrics = metrics,
+        .pipeline_times = pipeline_times,
         .image = image_final,
     };
 }
@@ -679,6 +695,82 @@ fn printPaddedSafe(writer: anytype, text: []const u8, width: usize) !void {
     }
 }
 
+pub fn writeBenchmarkCSV(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    out_dir_base: []const u8,
+    stats_list: []const BenchStats,
+) !void {
+    const csv_name = try std.fs.path.join(
+        outer_alloc,
+        &[_][]const u8{ out_dir_base, "benchmark.csv" },
+    );
+    defer outer_alloc.free(csv_name);
+
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDir(
+        io,
+        out_dir_base,
+        .default_dir,
+    ) catch |err| if (err != error.PathAlreadyExists) return err;
+
+    var file = try cwd.createFile(io, csv_name, .{});
+    defer file.close(io);
+
+    var write_buf: [4096]u8 = undefined;
+    var buffered_writer = file.writer(io, &write_buf);
+    const writer = &buffered_writer.interface;
+
+    // Header
+    try writer.writeAll("Case,Element,Shader,Interpolator," ++
+        "E2E_ms,Geom_ms,Raster_ms,FPS," ++
+        "MPx/s,MsubPx/s,MShades/s,MsubShades/s,MElems/s,MNodes/s,MOps/s," ++
+        "GeomPrep_ms,TileOverlap_ms,RasterLoop_ms,SaveFrame_ms\n");
+
+    for (stats_list) |s| {
+        const interp_name = if (s.sample_config) |sc|
+            @tagName(sc.sample)
+        else
+            "nodal";
+
+        try writer.print("{s},{s},{s},{s},", .{
+            s.name,
+            @tagName(s.mesh_type),
+            @tagName(s.shader_type),
+            interp_name,
+        });
+
+        // Main times and FPS
+        try writer.print("{d:.6},{d:.6},{d:.6},{d:.6},", .{
+            s.e2e.median,
+            s.geom.median,
+            s.raster.median,
+            s.fps.median,
+        });
+
+        // Metrics
+        try writer.print("{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},", .{
+            s.mpx.median,
+            s.msubpx.median,
+            s.mshades.median,
+            s.msubshades.median,
+            s.melems.median,
+            s.mnodes.median,
+            s.mops.median,
+        });
+
+        // Pipeline times
+        try writer.print("{d:.6},{d:.6},{d:.6},{d:.6}\n", .{
+            s.geom_prep.median,
+            s.tile_overlap.median,
+            s.raster_loop.median,
+            s.save_frame.median,
+        });
+    }
+
+    try buffered_writer.flush();
+}
+
 pub fn writeBenchmarkReport(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -688,6 +780,8 @@ pub fn writeBenchmarkReport(
     stats_list: []const BenchStats,
     max_name_len: usize,
 ) !void {
+    try writeBenchmarkCSV(outer_alloc, io, out_dir_base, stats_list);
+
     const report_name = try std.fs.path.join(
         outer_alloc,
         &[_][]const u8{ out_dir_base, "benchmark.md" },

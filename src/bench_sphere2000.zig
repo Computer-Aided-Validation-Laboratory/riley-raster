@@ -122,6 +122,15 @@ pub fn main(init: std.process.Init) !void {
                 var mops_vals = try outer_alloc.alloc(f64, runs);
                 defer outer_alloc.free(mops_vals);
 
+                var geom_prep_times = try outer_alloc.alloc(f64, runs);
+                defer outer_alloc.free(geom_prep_times);
+                var tile_overlap_times = try outer_alloc.alloc(f64, runs);
+                defer outer_alloc.free(tile_overlap_times);
+                var raster_loop_times = try outer_alloc.alloc(f64, runs);
+                defer outer_alloc.free(raster_loop_times);
+                var save_frame_times = try outer_alloc.alloc(f64, runs);
+                defer outer_alloc.free(save_frame_times);
+
                 var data_dir_buf: [256]u8 = undefined;
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
@@ -159,10 +168,19 @@ pub fn main(init: std.process.Init) !void {
                     melems_vals[rr] = res.metrics.melems_sec;
                     mnodes_vals[rr] = res.metrics.mnodes_sec;
                     mops_vals[rr] = res.metrics.mops_sec;
+
+                    const conv_ms = 1.0 / 1e6;
+                    geom_prep_times[rr] = res.pipeline_times.geometry_prep * conv_ms;
+                    tile_overlap_times[rr] = res.pipeline_times.tile_overlap * conv_ms;
+                    raster_loop_times[rr] = res.pipeline_times.raster_loop * conv_ms;
+                    save_frame_times[rr] = res.pipeline_times.save_frame * conv_ms;
                 }
 
                 try stats_list.append(outer_alloc, .{
                     .name = try outer_alloc.dupe(u8, case_name),
+                    .mesh_type = mt,
+                    .shader_type = st,
+                    .sample_config = sc,
                     .e2e = try common.calcMedianMAD(outer_alloc, e2e_times),
                     .geom = try common.calcMedianMAD(outer_alloc, geom_times),
                     .raster = try common.calcMedianMAD(outer_alloc, raster_times),
@@ -177,6 +195,10 @@ pub fn main(init: std.process.Init) !void {
                     .melems = try common.calcMedianMAD(outer_alloc, melems_vals),
                     .mnodes = try common.calcMedianMAD(outer_alloc, mnodes_vals),
                     .mops = try common.calcMedianMAD(outer_alloc, mops_vals),
+                    .geom_prep = try common.calcMedianMAD(outer_alloc, geom_prep_times),
+                    .tile_overlap = try common.calcMedianMAD(outer_alloc, tile_overlap_times),
+                    .raster_loop = try common.calcMedianMAD(outer_alloc, raster_loop_times),
+                    .save_frame = try common.calcMedianMAD(outer_alloc, save_frame_times),
                 });
             }
         }
