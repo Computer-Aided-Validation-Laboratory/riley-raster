@@ -202,6 +202,7 @@ pub fn runSphere200MultiCullQuiet(
             .mnodes_sec = 0.0,
             .mops_sec = 0.0,
         },
+        .pipeline_times = .{},
         .image = image_final,
     };
 }

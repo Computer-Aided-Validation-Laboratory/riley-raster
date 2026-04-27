@@ -130,4 +130,4 @@ pub fn getTessellation(
     return tess;
 }
 
-pub const buildAdaptiveHulls = common.buildAdaptiveHulls;
+pub const buildAdaptiveHullsFromClip = common.buildAdaptiveHullsFromClip;

@@ -17,7 +17,8 @@ pub const TessTriangle = impl.TessTriangle;
 pub const HullResultSIMD = simd_impl.HullResultSIMD;
 pub const Tessellation = impl.Tessellation;
 pub const getTessellation = impl.getTessellation;
-pub const buildAdaptiveHulls = impl.buildAdaptiveHulls;
+pub const buildAdaptiveHullsFromClip = impl.buildAdaptiveHullsFromClip;
 
 pub const AdaptiveHullPoints = @import("hull_common.zig").AdaptiveHullPoints;
-pub const buildAdaptiveHullPoints = @import("hull_common.zig").buildAdaptiveHullPoints;
+pub const buildAdaptiveHullPointsFromClip =
+    @import("hull_common.zig").buildAdaptiveHullPointsFromClip;

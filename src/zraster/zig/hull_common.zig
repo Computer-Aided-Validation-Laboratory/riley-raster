@@ -34,7 +34,7 @@ pub fn AdaptiveHullPoints(comptime N: usize) type {
     };
 }
 
-pub fn buildAdaptiveHullPoints(
+pub fn buildAdaptiveHullPointsFromClip(
     comptime N: usize,
     camera: *const cam.CameraPrepared,
     coords_elem: rops.GatheredElemCoords(N),
@@ -119,7 +119,7 @@ pub fn buildAdaptiveHullPoints(
     return hull_points;
 }
 
-pub fn buildAdaptiveHulls(
+pub fn buildAdaptiveHullsFromClip(
     comptime N: usize,
     camera: *const CameraPrepared,
     dim_elem: usize,
