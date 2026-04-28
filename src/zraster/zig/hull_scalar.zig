@@ -11,10 +11,6 @@ const buildconfig = @import("buildconfig.zig");
 const cfg = buildconfig.config;
 const tol = cfg.tolerance;
 const rops = @import("rasterops.zig");
-const common = @import("hull_common.zig");
-const CameraPrepared = @import("camera.zig").CameraPrepared;
-const NDArray = @import("ndarray.zig").NDArray;
-const Vec3Slices = rops.Vec3Slices;
 
 pub const TessTriangle = struct {
     x: [3]f64,
@@ -129,5 +125,3 @@ pub fn getTessellation(
     }
     return tess;
 }
-
-pub const buildAdaptiveHullsFromClip = common.buildAdaptiveHullsFromClip;

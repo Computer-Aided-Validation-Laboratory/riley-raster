@@ -569,29 +569,6 @@ pub fn loadElemVec3Slices(
 // Raster Hull Generation
 //------------------------------------------------------------------------------------------
 
-pub fn prepareVisibleRasterHulls(
-    comptime MT: MeshType,
-    allocator: std.mem.Allocator,
-    camera: *const cam.CameraPrepared,
-    elem_coords: *ndarray.NDArray(f64),
-) !?ndarray.NDArray(f64) {
-    if (MT == .tri3) return null;
-
-    const N = comptime MT.getNodesNum();
-    var raster_hull = try ndarray.NDArray(f64).initFlat(
-        allocator,
-        &[_]usize{ elem_coords.dims[0], 2, N },
-    );
-    try hull.buildAdaptiveHullsFromClip(
-        N,
-        camera,
-        0,
-        elem_coords,
-        &raster_hull,
-    );
-    return raster_hull;
-}
-
 pub fn prepareVisibleRasterHullsRange(
     comptime MT: MeshType,
     camera: *const cam.CameraPrepared,

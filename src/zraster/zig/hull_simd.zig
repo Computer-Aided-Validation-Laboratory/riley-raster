@@ -13,10 +13,6 @@ const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const tol = cfg.tolerance;
 const rops = @import("rasterops.zig");
-const common = @import("hull_common.zig");
-const CameraPrepared = @import("camera.zig").CameraPrepared;
-const NDArray = @import("ndarray.zig").NDArray;
-const Vec3Slices = rops.Vec3Slices;
 const S = cfg.simd_vector_width;
 
 pub const TessTriangle = struct {
@@ -223,5 +219,3 @@ pub fn getTessellation(
 
     return tess;
 }
-
-pub const buildAdaptiveHullsFromClip = common.buildAdaptiveHullsFromClip;
