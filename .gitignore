@@ -28,6 +28,7 @@ plans/
 gold-min/**/*.bmp
 out-min/
 demo*/
+verif*/
 
 # Don't commit large image files to the repo unless we have to
 *.ppm
