@@ -14,6 +14,7 @@ const uvio = @import("../zraster/zig/uvio.zig");
 const csvio = @import("../zraster/zig/csvio.zig");
 const mo = @import("../zraster/zig/meshops.zig");
 const so = @import("../zraster/zig/shaderops.zig");
+const gk = @import("../zraster/zig/geometrykernels.zig"); 
 const CameraPrepared = @import("../zraster/zig/camera.zig").CameraPrepared;
 const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
 const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
@@ -60,7 +61,7 @@ pub fn calcOutputChannels(shader_type: ShaderType) u8 {
 
 pub const BenchStats = struct {
     name: []const u8,
-    mesh_type: mo.MeshType,
+    mesh_type: gk.MeshType,
     shader_type: ShaderType,
     sample_config: ?TextureSampleConfig,
 
@@ -88,7 +89,7 @@ pub const MedianMAD = struct {
 };
 
 pub fn calcMetrics(
-    etype: mo.MeshType,
+    etype: gk.MeshType,
     pixel_num: [2]u32,
     sub_samp: u8,
     frame_times: report.FrameTimes,
@@ -190,7 +191,7 @@ const TextureSampleConfig = @import("../zraster/zig/textureops.zig").TextureSamp
 pub const RunMode = enum { all, element, texture, interpolator };
 pub const BenchConfig = struct {
     run: RunMode = .all,
-    element_type: mo.MeshType = .tri3,
+    element_type: gk.MeshType = .tri3,
     texture_type: ShaderType = .tex8_grey,
     sample_config: TextureSampleConfig = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
     skip_quad4ibi_sphere: bool = false,
@@ -198,7 +199,7 @@ pub const BenchConfig = struct {
 
 pub fn shouldRun(
     config: BenchConfig,
-    mt: mo.MeshType,
+    mt: gk.MeshType,
     st: ShaderType,
     sc: TextureSampleConfig,
     data_dir: []const u8,
@@ -310,7 +311,7 @@ fn calcSaveStrategy(options: BenchOptions) zraster.SaveStrategy {
 
 pub fn calcCaseName(
     allocator: std.mem.Allocator,
-    etype: mo.MeshType,
+    etype: gk.MeshType,
     shader_type: ShaderType,
     sample_config: TextureSampleConfig,
     options: BenchOptions,
@@ -370,7 +371,7 @@ pub fn extractFirstFrameImage(
 pub fn loadBenchmarkMeshInput(
     allocator: std.mem.Allocator,
     io: std.Io,
-    etype: mo.MeshType,
+    etype: gk.MeshType,
     shader_type: ShaderType,
     sample_config: TextureSampleConfig,
     data_dir: []const u8,
@@ -447,7 +448,7 @@ pub fn loadBenchmarkMeshInput(
 pub fn runBenchmark(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    etype: mo.MeshType,
+    etype: gk.MeshType,
     shader_type: ShaderType,
     sample_config: TextureSampleConfig,
     data_dir: []const u8,
@@ -474,7 +475,7 @@ pub fn runBenchmark(
 pub fn runBenchmarkQuiet(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    etype: mo.MeshType,
+    etype: gk.MeshType,
     shader_type: ShaderType,
     sample_config: TextureSampleConfig,
     data_dir: []const u8,
@@ -502,7 +503,7 @@ fn runBenchmarkInternal(
     comptime report_mode: report.ReportMode,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    etype: mo.MeshType,
+    etype: gk.MeshType,
     shader_type: ShaderType,
     sample_config: TextureSampleConfig,
     data_dir: []const u8,

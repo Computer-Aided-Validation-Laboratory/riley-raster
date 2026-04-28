@@ -31,14 +31,12 @@ const geomkerns = @import("geometrykernels.zig");
 // External Helper Functions: General geometry and mesh utilities
 //------------------------------------------------------------------------------------------
 
-pub const MeshType = geomkerns.MeshType;
-pub const ShaderInput = shaderops.ShaderInput;
 
 // Input: Raw user data for all frames.
 // meshio.Coords/Fields: Node-order [total_nodes, ...]
 // meshio.Connect: Connectivity table links nodes to elements.
 pub const MeshInput = struct {
-    mesh_type: MeshType,
+    mesh_type: geomkerns.MeshType,
     coords: meshio.Coords,
     connect: meshio.Connect,
     disp: ?meshio.Field,
@@ -49,7 +47,7 @@ pub const MeshInput = struct {
 // meshio.Coords/Fields: Node-order [total_nodes, ...]
 // Shader UVs: Element-order (gathered during static init as they are usually static).
 pub const MeshStatic = struct {
-    mesh_type: MeshType,
+    mesh_type: geomkerns.MeshType,
     coords_orig: meshio.Coords,
     connect: meshio.Connect,
     disp: ?meshio.Field,
@@ -84,7 +82,7 @@ pub const MeshFrame = struct {
 // Prepared means culled element-order ndarray.NDArray data ready for the raster loop.
 // Element-order [visible_elems, field, nodes_per_elem]
 pub const MeshPrepared = struct {
-    mesh_type: MeshType,
+    mesh_type: geomkerns.MeshType,
     coords: ndarray.NDArray(f64),
     shader: shaderops.ShaderPrepared,
 };
@@ -198,7 +196,7 @@ pub fn meshInputFromSimDataSlice(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     sim_datas: []const meshio.SimData,
-    mesh_types: []const MeshType,
+    mesh_types: []const geomkerns.MeshType,
     shader_mode: enum { nodal, texture },
     uv_paths: ?[]const []const u8,
     texture_path: ?[]const u8,
@@ -423,7 +421,7 @@ fn getConnectNodesNum(connect: *const meshio.Connect) usize {
 // Frame Mesh Pipeline: Implementation of the frame-by-frame geometry pipeline
 //------------------------------------------------------------------------------------------
 
-fn FrameMeshPipeline(comptime MT: MeshType) type {
+fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
     return struct {
         const FrameMeshPipelineType = @This();
 

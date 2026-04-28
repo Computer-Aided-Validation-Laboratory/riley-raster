@@ -343,28 +343,12 @@ fn isOnScreen(
         y_max >= 0.0;
 }
 
-fn calcCameraFocalPx(camera: *const cam.CameraPrepared) struct { fx: f64, fy: f64 } {
-    return .{
-        .fx = camera.focal_length / camera.pixels_size[0],
-        .fy = camera.focal_length / camera.pixels_size[1],
-    };
-}
-
-fn calcCameraRasterOffsets(
-    camera: *const cam.CameraPrepared,
-) struct { x_off: f64, y_off: f64 } {
-    return .{
-        .x_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[0])),
-        .y_off = 0.5 * @as(f64, @floatFromInt(camera.pixels_num[1])),
-    };
-}
-
 fn projectClipToIdealRaster(
     comptime N: usize,
     camera: *const cam.CameraPrepared,
     coords_clip: GatheredElemCoords(N),
 ) RasterCoords2D(N) {
-    const offsets = calcCameraRasterOffsets(camera);
+    const offsets = camera.calcRasterOffsets();
     var coords_ideal: RasterCoords2D(N) = undefined;
     for (0..N) |nn| {
         coords_ideal.x[nn] = coords_clip.x[nn] / coords_clip.z[nn] + offsets.x_off;
@@ -378,8 +362,8 @@ fn distortIdealRasterCoords(
     camera: *const cam.CameraPrepared,
     coords_ideal: RasterCoords2D(N),
 ) RasterCoords2D(N) {
-    const focal_px = calcCameraFocalPx(camera);
-    const offsets = calcCameraRasterOffsets(camera);
+    const focal_px = camera.calcFocalPx();
+    const offsets = camera.calcRasterOffsets();
     var coords_distorted = coords_ideal;
 
     switch (camera.distortion) {
@@ -405,15 +389,6 @@ fn distortIdealRasterCoords(
     }
 
     return coords_distorted;
-}
-
-fn calcAdaptiveHullPointsNum(comptime N: usize) usize {
-    return switch (N) {
-        4 => 4,
-        6 => 6,
-        8, 9 => 8,
-        else => 0,
-    };
 }
 
 fn packHullPointsAsRasterCoords(
@@ -504,13 +479,14 @@ pub fn calcVisibleNodeBBoxHighOrd(
         camera,
         coords_clip,
     );
-    const NH = comptime calcAdaptiveHullPointsNum(N);
+    const NH = comptime MeshType.calcAdaptiveHullPointsNum(N);
     const hull_ideal_raster = packHullPointsAsRasterCoords(NH, hull_points_ideal);
     const hull_distorted = distortIdealRasterCoords(
         NH,
         camera,
         hull_ideal_raster,
     );
+
     return calcBBoxFromRasterCoords(
         NH,
         camera,

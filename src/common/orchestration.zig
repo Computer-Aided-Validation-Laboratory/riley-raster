@@ -13,12 +13,13 @@ const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
 const iio = @import("../zraster/zig/imageio.zig");
 const meshio = @import("../zraster/zig/meshio.zig");
 const mo = @import("../zraster/zig/meshops.zig");
+const gk = @import("../zraster/zig/geometrykernels.zig");
 const uvio = @import("../zraster/zig/uvio.zig");
 const CameraPrepared = @import("../zraster/zig/camera.zig").CameraPrepared;
 const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
 const Rotation = @import("../zraster/zig/rotation.zig").Rotation;
 
-pub const default_multimesh_mesh_types = [_]mo.MeshType{
+pub const default_multimesh_mesh_types = [_]gk.MeshType{
     .tri3,
     .tri6,
     .quad4ibi,
@@ -71,7 +72,7 @@ pub fn loadData(
     );
 }
 
-pub fn meshDataName(mesh_type: mo.MeshType) []const u8 {
+pub fn meshDataName(mesh_type: gk.MeshType) []const u8 {
     return switch (mesh_type) {
         .quad4ibi, .quad4newton => "quad4",
         else => @tagName(mesh_type),
@@ -95,7 +96,7 @@ pub fn prepareSingleMeshCase(
     allocator: std.mem.Allocator,
     io: std.Io,
     test_type: []const u8,
-    mesh_type: mo.MeshType,
+    mesh_type: gk.MeshType,
     pixel_num: [2]u32,
     fov_scale: f64,
     data_dir_root: []const u8,

@@ -13,6 +13,7 @@ const zraster = @import("../zraster/zig/zraster.zig");
 const iio = @import("../zraster/zig/imageio.zig");
 const meshio = @import("../zraster/zig/meshio.zig");
 const mo = @import("../zraster/zig/meshops.zig");
+const gk = @import("../zraster/zig/geometrykernels.zig");
 const texops = @import("../zraster/zig/textureops.zig");
 const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
 const tcfg = @import("testconfig.zig");
@@ -27,7 +28,7 @@ fn translateCoords(coords: *meshio.Coords, translation: [3]f64) void {
 
 pub fn calcMinCaseName(
     allocator: std.mem.Allocator,
-    etype: mo.MeshType,
+    etype: gk.MeshType,
     shader_type: common.ShaderType,
     sample_config: texops.TextureSampleConfig,
 ) ![]const u8 {
@@ -43,7 +44,7 @@ pub fn calcMinCaseName(
 fn buildSphere200MultiCullMeshInputs(
     allocator: std.mem.Allocator,
     io: std.Io,
-    etype: mo.MeshType,
+    etype: gk.MeshType,
     shader_type: common.ShaderType,
     sample_config: texops.TextureSampleConfig,
     data_dir: []const u8,
@@ -81,7 +82,7 @@ fn buildSphere200MultiCullMeshInputs(
 pub fn runSphere200MultiCullQuiet(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    etype: mo.MeshType,
+    etype: gk.MeshType,
     shader_type: common.ShaderType,
     sample_config: texops.TextureSampleConfig,
     data_dir: []const u8,

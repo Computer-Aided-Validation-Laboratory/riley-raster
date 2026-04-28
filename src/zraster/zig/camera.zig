@@ -387,6 +387,22 @@ pub const CameraPrepared = struct {
             .distortion = self.distortion,
         };
     }
+
+    pub fn calcFocalPx(self: *const CameraPrepared) struct { fx: f64, fy: f64 } {
+        return .{
+            .fx = self.focal_length / self.pixels_size[0],
+            .fy = self.focal_length / self.pixels_size[1],
+        };
+    }
+
+    pub fn calcRasterOffsets(
+        self: *const CameraPrepared,
+    ) struct { x_off: f64, y_off: f64 } {
+        return .{
+            .x_off = 0.5 * @as(f64, @floatFromInt(self.pixels_num[0])),
+            .y_off = 0.5 * @as(f64, @floatFromInt(self.pixels_num[1])),
+        };
+    }
 };
 
 pub const CameraOps = struct {

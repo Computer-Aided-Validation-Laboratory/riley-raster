@@ -34,6 +34,15 @@ pub const MeshType = enum {
             .quad8, .quad9 => 8,
         };
     }
+
+    pub fn calcAdaptiveHullPointsNum(comptime N: usize) usize {
+        return switch (N) {
+            4 => 4,
+            6 => 6,
+            8, 9 => 8,
+            else => 0,
+        };
+    }
 };
 
 const buildconfig = @import("buildconfig.zig");

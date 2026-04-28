@@ -9,6 +9,7 @@
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const mo = @import("zraster/zig/meshops.zig");
+const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
 
@@ -40,7 +41,7 @@ pub fn main(init: std.process.Init) !void {
     const runs = 10;
     const fov_scale = 0.5;
 
-    const mesh_types = comptime std.enums.values(mo.MeshType);
+    const mesh_types = comptime std.enums.values(gk.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },

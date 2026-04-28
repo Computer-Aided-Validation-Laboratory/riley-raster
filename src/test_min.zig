@@ -12,6 +12,7 @@ const common = @import("common/benchcommon.zig");
 const minsuite = @import("common/minsuite.zig");
 const tests = @import("common/tests.zig");
 const mo = @import("zraster/zig/meshops.zig");
+const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
 const tcfg = @import("common/testconfig.zig");
@@ -46,7 +47,7 @@ test "MIN Suite: sphere200 and multimesh" {
     const pixel_num_sphere = [_]u32{ 160, 100 };
     const pixel_num_multi = [_]u32{ 640, 400 };
 
-    const mesh_types = comptime std.enums.values(mo.MeshType);
+    const mesh_types = comptime std.enums.values(gk.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },

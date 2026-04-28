@@ -10,6 +10,7 @@ const std = @import("std");
 const common = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
 const mo = @import("zraster/zig/meshops.zig");
+const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
 
@@ -34,7 +35,7 @@ test "Gold Edge Suite" {
     };
     defer texture.deinit(allocator);
 
-    const mesh_types = [_]mo.MeshType{ .tri6, .quad8, .quad9 };
+    const mesh_types = [_]gk.MeshType{ .tri6, .quad8, .quad9 };
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },

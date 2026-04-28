@@ -15,6 +15,7 @@ const cfg = buildconfig.config;
 const CameraPrepared = @import("zraster/zig/camera.zig").CameraPrepared;
 const iio = @import("zraster/zig/imageio.zig");
 const mo = @import("zraster/zig/meshops.zig");
+const gk = @import("zraster/zig/geometrykernels.zig");
 const meshio = @import("zraster/zig/meshio.zig");
 const texops = @import("zraster/zig/textureops.zig");
 const uvio = @import("zraster/zig/uvio.zig");
@@ -25,7 +26,7 @@ const simd_on = cfg.simd == .on;
 const RenderCase = struct {
     case_name: []const u8,
     data_dir: []const u8,
-    mesh_type: mo.MeshType,
+    mesh_type: gk.MeshType,
     channels: usize,
     shader: union(enum) {
         nodal_grey,
