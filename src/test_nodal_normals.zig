@@ -96,6 +96,7 @@ test "Nodal normals are prepared when requested" {
     const frame_mesh = try mo.prepareMeshFrame(
         arena_alloc,
         null,
+        1,
         &camera,
         &mesh_static,
         0,

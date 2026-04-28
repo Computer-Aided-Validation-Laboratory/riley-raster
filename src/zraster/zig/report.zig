@@ -41,7 +41,7 @@ pub const RasterConfig = struct {
     image_save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
-    tile_size: u16 = 32,
+    tile_size_max: u16 = 32,
     report: ReportMode = .bench,
     full_stats_opts: FullStatsOpts = .{},
 };
@@ -131,6 +131,7 @@ pub fn publishFrameResults(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     config: RasterConfig,
+    actual_tile_size: u16,
     camera: *const cam.CameraPrepared,
     camera_idx: usize,
     frame_idx: usize,
@@ -182,7 +183,7 @@ pub fn publishFrameResults(
                 camera_idx,
                 frame_idx,
                 camera,
-                config.tile_size,
+                actual_tile_size,
                 config.full_stats_opts,
                 nodes_per_elem,
             );

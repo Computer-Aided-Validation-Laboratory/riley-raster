@@ -20,6 +20,7 @@ const imageio = @import("imageio.zig");
 const imageops = @import("imageops.zig");
 const cam = @import("camera.zig");
 const pce = @import("parachunkexec.zig");
+const scalingpolicy = @import("scalingpolicy.zig");
 const rops = @import("rasterops.zig");
 const texops = @import("textureops.zig");
 
@@ -30,7 +31,6 @@ const geomkerns = @import("geometrykernels.zig");
 //------------------------------------------------------------------------------------------
 // External Helper Functions: General geometry and mesh utilities
 //------------------------------------------------------------------------------------------
-
 
 // Input: Raw user data for all frames.
 // meshio.Coords/Fields: Node-order [total_nodes, ...]
@@ -55,7 +55,7 @@ pub const MeshStatic = struct {
 };
 
 // Workspace: Temporary node-order working area for the geometry pipeline.
-// meshio.Coords: Node-order [total_nodes, 3]. Holds coords for a single frame after 
+// meshio.Coords: Node-order [total_nodes, 3]. Holds coords for a single frame after
 // displacement.
 pub const MeshFrameWorkspace = struct {
     coords_nodes: meshio.Coords,
@@ -251,9 +251,7 @@ pub fn meshInputFromSimDataSlice(
 
             const uvmap = try uvio.loadUVMap(outer_alloc, io, path_uvs);
 
-            const format: imageio.ImageFormat = if (
-                std.mem.endsWith(u8, texture_path.?, ".bmp")
-            )
+            const format: imageio.ImageFormat = if (std.mem.endsWith(u8, texture_path.?, ".bmp"))
                 .bmp
             else
                 .tiff;
@@ -341,7 +339,7 @@ pub fn initStatic(
     };
 }
 
-// Outside of pipeline because these are static - we gather these into an NDarray once 
+// Outside of pipeline because these are static - we gather these into an NDarray once
 // for all frames and cameras
 fn prepareUVs(
     outer_alloc: std.mem.Allocator,
@@ -447,12 +445,18 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             frame_idx: usize,
             scaling_params: ?imageops.ScalingParams,
             chunk_exec: ?*pce.ParaChunkExecutor,
+            workers_num: usize,
         ) !FrameMeshPipelineType {
-            const workers_num = pce.getWorkerCount(chunk_exec);
             const nodes_num = mesh_static.coords_orig.mat.rows_num;
             const elems_num = mesh_static.connect.getElemsNum();
-            const node_chunk_size = pce.getChunkSize(nodes_num, workers_num);
-            const elem_chunk_size = pce.getChunkSize(elems_num, workers_num);
+            const node_chunk_size = scalingpolicy.geometryNodeChunkSize(
+                nodes_num,
+                workers_num,
+            );
+            const elem_chunk_size = scalingpolicy.geometryElemChunkSize(
+                elems_num,
+                workers_num,
+            );
 
             return .{
                 .allocator = allocator,
@@ -686,7 +690,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 self.elem_chunk_size,
             );
 
-            self.visible_chunk_size = pce.getChunkSize(
+            self.visible_chunk_size = scalingpolicy.geometryVisibleChunkSize(
                 self.mesh_workspace.elems_in_image,
                 self.workers_num,
             );
@@ -983,7 +987,6 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             self: *FrameMeshPipelineType,
             tex_static: shaderops.TexStatic(channels),
         ) !shaderops.ShaderPrepared {
-
             const params = imageops.getScalingParamsTexture(
                 channels,
                 &tex_static.texture,
@@ -1078,6 +1081,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 pub fn prepareMeshFrame(
     allocator: std.mem.Allocator,
     chunk_exec: ?*pce.ParaChunkExecutor,
+    workers_num: usize,
     camera: *const cam.CameraPrepared,
     mesh_static: *const MeshStatic,
     frame_idx: usize,
@@ -1092,12 +1096,12 @@ pub fn prepareMeshFrame(
                 frame_idx,
                 scaling_params,
                 chunk_exec,
+                workers_num,
             );
             return try pipeline.run();
         },
     };
 }
-
 
 //------------------------------------------------------------------------------------------
 // Main Entry Point: Top-level function for preparing all frame meshes
@@ -1113,6 +1117,7 @@ pub const FrameGeometryResult = struct {
 pub fn prepareMeshFrames(
     arena_alloc: std.mem.Allocator,
     chunk_exec: ?*pce.ParaChunkExecutor,
+    workers_num: usize,
     camera: *const cam.CameraPrepared,
     frame_idx: usize,
     static_meshes: []const MeshStatic,
@@ -1145,6 +1150,7 @@ pub fn prepareMeshFrames(
         frame_meshes[ii] = try prepareMeshFrame(
             arena_alloc,
             chunk_exec,
+            workers_num,
             camera,
             mesh_static,
             frame_idx,

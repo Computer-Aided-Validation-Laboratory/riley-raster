@@ -73,6 +73,10 @@ const ScratchLayout = common.ScratchLayout;
 
 pub const scratch_layout = ScratchLayout.field_major;
 
+//------------------------------------------------------------------------------------------
+// Scratch Buffer Helpers
+//------------------------------------------------------------------------------------------
+
 pub fn initSubpxScratch(
     arena_alloc: std.mem.Allocator,
     fields_num: u8,
@@ -155,35 +159,8 @@ pub fn resetSubpxScratch(
 }
 
 //------------------------------------------------------------------------------------------
-// Entry point to the SIMD implementation raster loop
+// Raster Pass Implementation
 //------------------------------------------------------------------------------------------
-pub fn rasterScene(
-    comptime report_mode: ReportMode,
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    ctx_rast: rops.RasterContext,
-    ctx_report: report.ReportContext(report_mode),
-    threads_within_image: u16,
-    tiling: rops.TilingOverlaps,
-    meshes: []const MeshPrepared,
-    raster_hulls: []const ?NDArray(f64),
-    image_out_arr: *NDArray(f64),
-) !void {
-    try common.rasterSceneCommon(
-        @This(), // Link up the functions in this file to rasterScene
-        report_mode,
-        outer_alloc,
-        io,
-        ctx_rast,
-        ctx_report,
-        threads_within_image,
-        tiling,
-        meshes,
-        raster_hulls,
-        image_out_arr,
-    );
-}
-
 pub fn RasterPass(
     comptime Geometry: type,
     comptime ShaderKernel: type,
@@ -329,9 +306,9 @@ pub fn RasterPass(
                     var v_ideal_x_px: VecSF = undefined;
                     var v_ideal_y_px: VecSF = undefined;
                     inline for (0..S) |ll| {
-                        v_ideal_x_px[ll] = 
+                        v_ideal_x_px[ll] =
                             subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 0];
-                        v_ideal_y_px[ll] = 
+                        v_ideal_y_px[ll] =
                             subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 1];
                     }
 
@@ -525,9 +502,9 @@ pub fn RasterPass(
                     var v_ideal_x_px: VecSF = undefined;
                     var v_ideal_y_px: VecSF = undefined;
                     inline for (0..S) |ll| {
-                        v_ideal_x_px[ll] = 
+                        v_ideal_x_px[ll] =
                             subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 0];
-                        v_ideal_y_px[ll] = 
+                        v_ideal_y_px[ll] =
                             subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 1];
                     }
 
@@ -929,4 +906,35 @@ pub fn RasterPass(
             );
         }
     };
+}
+
+//------------------------------------------------------------------------------------------
+// External API
+//------------------------------------------------------------------------------------------
+
+pub fn rasterScene(
+    comptime report_mode: ReportMode,
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    ctx_rast: rops.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
+    threads_within_image: u16,
+    tiling: rops.TilingOverlaps,
+    meshes: []const MeshPrepared,
+    raster_hulls: []const ?NDArray(f64),
+    image_out_arr: *NDArray(f64),
+) !void {
+    try common.rasterSceneCommon(
+        @This(),
+        report_mode,
+        outer_alloc,
+        io,
+        ctx_rast,
+        ctx_report,
+        threads_within_image,
+        tiling,
+        meshes,
+        raster_hulls,
+        image_out_arr,
+    );
 }

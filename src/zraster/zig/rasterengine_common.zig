@@ -17,6 +17,7 @@ const ReportMode = report.ReportMode;
 const Timestamp = std.Io.Clock.Timestamp;
 const rops = @import("rasterops.zig");
 const pce = @import("parachunkexec.zig");
+const scalingpolicy = @import("scalingpolicy.zig");
 const mo = @import("meshops.zig");
 const MeshPrepared = mo.MeshPrepared;
 const shaderops = @import("shaderops.zig");
@@ -52,26 +53,9 @@ pub const ScratchLayout = enum {
     field_major,
 };
 
-fn initThreadReportLog(
-    comptime report_mode: ReportMode,
-) report.LogType(report_mode) {
-    return switch (report_mode) {
-        .off => .{},
-        .bench => .{},
-        .full_stats => unreachable,
-    };
-}
-
-fn ThreadState(
-    comptime RasterBackend: type,
-    comptime report_mode: ReportMode,
-) type {
-    return struct {
-        arena: std.heap.ArenaAllocator,
-        subpx_scratch: RasterBackend.SubpxScratchBuffers,
-        log: report.LogType(report_mode),
-    };
-}
+//------------------------------------------------------------------------------------------
+// Direct Raster Helper
+//------------------------------------------------------------------------------------------
 
 pub fn rasterDirectScalarCommon(
     comptime Geometry: type,
@@ -251,231 +235,9 @@ pub fn rasterDirectScalarCommon(
     return shaded_px;
 }
 
-pub fn rasterSceneCommon(
-    comptime RasterBackend: type,
-    comptime report_mode: ReportMode,
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    ctx_rast: rops.RasterContext,
-    ctx_report: report.ReportContext(report_mode),
-    threads_within_image: u16,
-    tiling: rops.TilingOverlaps,
-    meshes: []const MeshPrepared,
-    raster_hulls: []const ?NDArray(f64),
-    image_out_arr: *NDArray(f64),
-) !void {
-    if (threads_within_image <= 1 or tiling.active_tiles.len <= 1) {
-        try rasterSceneSingleThreadCommon(
-            RasterBackend,
-            report_mode,
-            outer_alloc,
-            io,
-            ctx_rast,
-            ctx_report,
-            tiling,
-            meshes,
-            raster_hulls,
-            image_out_arr,
-        );
-        return;
-    }
-
-    if (comptime report_mode == .full_stats) {
-        return error.ThreadedFullStatsUnsupported;
-    }
-
-    try rasterSceneThreadedCommon(
-        RasterBackend,
-        report_mode,
-        outer_alloc,
-        io,
-        ctx_rast,
-        ctx_report,
-        threads_within_image,
-        tiling,
-        meshes,
-        raster_hulls,
-        image_out_arr,
-    );
-}
-
-fn rasterSceneSingleThreadCommon(
-    comptime RasterBackend: type,
-    comptime report_mode: ReportMode,
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    ctx_rast: rops.RasterContext,
-    ctx_report: report.ReportContext(report_mode),
-    tiling: rops.TilingOverlaps,
-    meshes: []const MeshPrepared,
-    raster_hulls: []const ?NDArray(f64),
-    image_out_arr: *NDArray(f64),
-) !void {
-    var arena = std.heap.ArenaAllocator.init(outer_alloc);
-    defer arena.deinit();
-    const arena_alloc = arena.allocator();
-
-    std.debug.assert(image_out_arr.dims[0] <= std.math.maxInt(u8));
-    const fields_num: u8 = @intCast(image_out_arr.dims[0]);
-
-    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const subpx_tile_size: usize = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp;
-    var subpx_scratch = try RasterBackend.initSubpxScratch(
-        arena_alloc,
-        fields_num,
-        subpx_tile_size,
-    );
-
-    for (tiling.active_tiles) |tile| {
-        try rasterTileCommon(
-            RasterBackend,
-            report_mode,
-            io,
-            ctx_rast,
-            ctx_report,
-            tile,
-            tiling.overlaps,
-            meshes,
-            raster_hulls,
-            image_out_arr,
-            &subpx_scratch,
-            fields_num,
-            subpx_tile_size,
-        );
-    }
-}
-
-
-
-fn rasterSceneThreadedCommon(
-    comptime RasterBackend: type,
-    comptime report_mode: ReportMode,
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    ctx_rast: rops.RasterContext,
-    ctx_report: report.ReportContext(report_mode),
-    threads_within_image: u16,
-    tiling: rops.TilingOverlaps,
-    meshes: []const MeshPrepared,
-    raster_hulls: []const ?NDArray(f64),
-    image_out_arr: *NDArray(f64),
-) !void {
-    const WorkerState = comptime ThreadState(RasterBackend, report_mode);
-
-    const DispatchState = struct {
-        io: std.Io,
-        ctx_rast: rops.RasterContext,
-        tiling: rops.TilingOverlaps,
-        meshes: []const MeshPrepared,
-        raster_hulls: []const ?NDArray(f64),
-        image_out_arr: *NDArray(f64),
-        worker_states: []WorkerState,
-        fields_num: u8,
-        subpx_tile_size: usize,
-    };
-        
-    // Hook function for work range on our ParaChunkExecutor
-    const TileRangeWorker = struct {
-        fn run(
-            ctx_ptr: *anyopaque,
-            worker_idx: usize,
-            range_start: usize,
-            range_end: usize,
-        ) anyerror!void {
-            const dispatch_state: *DispatchState =
-                @ptrCast(@alignCast(ctx_ptr));
-            const worker_state = &dispatch_state.worker_states[worker_idx];
-            const ctx_report_task = report.ReportContext(report_mode){
-                .log = &worker_state.log,
-            };
-    
-            for (range_start..range_end) |tile_idx| {
-                const tile = dispatch_state.tiling.active_tiles[tile_idx];
-                try rasterTileCommon(
-                    RasterBackend,
-                    report_mode,
-                    dispatch_state.io,
-                    dispatch_state.ctx_rast,
-                    ctx_report_task,
-                    tile,
-                    dispatch_state.tiling.overlaps,
-                    dispatch_state.meshes,
-                    dispatch_state.raster_hulls,
-                    dispatch_state.image_out_arr,
-                    &worker_state.subpx_scratch,
-                    dispatch_state.fields_num,
-                    dispatch_state.subpx_tile_size,
-                );
-            }
-        }
-    };
-
-    std.debug.assert(image_out_arr.dims[0] <= std.math.maxInt(u8));
-    const fields_num: u8 = @intCast(image_out_arr.dims[0]);
-    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const subpx_tile_size: usize = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp;
-    const active_tiles_num = tiling.active_tiles.len;
-
-    const worker_count_u16 = @min(
-        threads_within_image,
-        @as(u16, @intCast(active_tiles_num)),
-    );
-    const worker_count: usize = @intCast(@max(@as(u16, 1), worker_count_u16));
-    const grain_size = pce.getChunkSize(active_tiles_num, worker_count);
-
-    var worker_states = try outer_alloc.alloc(WorkerState, worker_count);
-    defer {
-        for (worker_states) |*worker_state| {
-            worker_state.arena.deinit();
-        }
-        outer_alloc.free(worker_states);
-    }
-
-    for (0..worker_count) |ii| {
-        worker_states[ii].arena = std.heap.ArenaAllocator.init(outer_alloc);
-        const arena_alloc = worker_states[ii].arena.allocator();
-        worker_states[ii].subpx_scratch = try RasterBackend.initSubpxScratch(
-            arena_alloc,
-            fields_num,
-            subpx_tile_size,
-        );
-        worker_states[ii].log = initThreadReportLog(report_mode);
-    }
-
-    var dispatch_state = DispatchState{
-        .io = io,
-        .ctx_rast = ctx_rast,
-        .tiling = tiling,
-        .meshes = meshes,
-        .raster_hulls = raster_hulls,
-        .image_out_arr = image_out_arr,
-        .worker_states = worker_states,
-        .fields_num = fields_num,
-        .subpx_tile_size = subpx_tile_size,
-    };
-    var chunk_exec = pce.ParaChunkExecutor.init(
-        io,
-        @intCast(worker_count),
-    );
-
-    try pce.runDynamicRangeWithWorkerErrorMaybe(
-        &chunk_exec,
-        &dispatch_state,
-        TileRangeWorker.run,
-        active_tiles_num,
-        grain_size,
-    );
-
-    if (report.getBenchLog(report_mode, ctx_report.log)) |bench_log| {
-        for (worker_states) |*worker_state| {
-            const worker_bench = report.getBenchLog(
-                report_mode,
-                &worker_state.log,
-            ).?;
-            report.reduceBenchLog(bench_log, worker_bench);
-        }
-    }
-}
+//------------------------------------------------------------------------------------------
+// Tile Raster Helpers
+//------------------------------------------------------------------------------------------
 
 fn rasterTileCommon(
     comptime RasterBackend: type,
@@ -712,9 +474,6 @@ fn rasterTileCommon(
     );
 }
 
-//------------------------------------------------------------------------------------------
-// Averaging for sub-sample anti-aliasing & write to image out buffer
-//------------------------------------------------------------------------------------------
 pub inline fn getScratchField(
     comptime scratch_layout: ScratchLayout,
     spx_image_scratch: *const MatSlice(f64),
@@ -946,4 +705,268 @@ pub fn averageScratch(
             }
         }
     }
+}
+
+//------------------------------------------------------------------------------------------
+// Scene Raster Execution Helpers
+//------------------------------------------------------------------------------------------
+
+fn initThreadReportLog(
+    comptime report_mode: ReportMode,
+) report.LogType(report_mode) {
+    return switch (report_mode) {
+        .off => .{},
+        .bench => .{},
+        .full_stats => unreachable,
+    };
+}
+
+fn ThreadState(
+    comptime RasterBackend: type,
+    comptime report_mode: ReportMode,
+) type {
+    return struct {
+        arena: std.heap.ArenaAllocator,
+        subpx_scratch: RasterBackend.SubpxScratchBuffers,
+        log: report.LogType(report_mode),
+    };
+}
+
+fn TileRangeContext(
+    comptime RasterBackend: type,
+    comptime report_mode: ReportMode,
+) type {
+    const WorkerState = ThreadState(RasterBackend, report_mode);
+
+    return struct {
+        io: std.Io,
+        ctx_rast: rops.RasterContext,
+        tiling: rops.TilingOverlaps,
+        meshes: []const MeshPrepared,
+        raster_hulls: []const ?NDArray(f64),
+        image_out_arr: *NDArray(f64),
+        worker_states: []WorkerState,
+        fields_num: u8,
+        subpx_tile_size: usize,
+    };
+}
+
+fn rasterSceneSingleThreadCommon(
+    comptime RasterBackend: type,
+    comptime report_mode: ReportMode,
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    ctx_rast: rops.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
+    tiling: rops.TilingOverlaps,
+    meshes: []const MeshPrepared,
+    raster_hulls: []const ?NDArray(f64),
+    image_out_arr: *NDArray(f64),
+) !void {
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+
+    std.debug.assert(image_out_arr.dims[0] <= std.math.maxInt(u8));
+    const fields_num: u8 = @intCast(image_out_arr.dims[0]);
+
+    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+    const subpx_tile_size: usize = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp;
+    var subpx_scratch = try RasterBackend.initSubpxScratch(
+        arena_alloc,
+        fields_num,
+        subpx_tile_size,
+    );
+
+    for (tiling.active_tiles) |tile| {
+        try rasterTileCommon(
+            RasterBackend,
+            report_mode,
+            io,
+            ctx_rast,
+            ctx_report,
+            tile,
+            tiling.overlaps,
+            meshes,
+            raster_hulls,
+            image_out_arr,
+            &subpx_scratch,
+            fields_num,
+            subpx_tile_size,
+        );
+    }
+}
+
+fn rasterSceneThreadedCommon(
+    comptime RasterBackend: type,
+    comptime report_mode: ReportMode,
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    ctx_rast: rops.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
+    threads_within_image: u16,
+    tiling: rops.TilingOverlaps,
+    meshes: []const MeshPrepared,
+    raster_hulls: []const ?NDArray(f64),
+    image_out_arr: *NDArray(f64),
+) !void {
+    const WorkerState = comptime ThreadState(RasterBackend, report_mode);
+    const TileRangeCtx = TileRangeContext(RasterBackend, report_mode);
+    // ParaChunkExec expects a plain function pointer, so this adapter binds our
+    // comptime RasterBackend and report_mode parameters into a concrete callback.
+    const TileRangeWorkerAdapter = struct {
+        fn run(
+            ctx_ptr: *anyopaque,
+            worker_idx: usize,
+            range_start: usize,
+            range_end: usize,
+        ) anyerror!void {
+            const tile_rng_ctx: *TileRangeCtx = @ptrCast(@alignCast(ctx_ptr));
+            const worker_state = &tile_rng_ctx.worker_states[worker_idx];
+            const ctx_report_task = report.ReportContext(report_mode){
+                .log = &worker_state.log,
+            };
+
+            for (range_start..range_end) |tile_idx| {
+                const tile = tile_rng_ctx.tiling.active_tiles[tile_idx];
+                try rasterTileCommon(
+                    RasterBackend,
+                    report_mode,
+                    tile_rng_ctx.io,
+                    tile_rng_ctx.ctx_rast,
+                    ctx_report_task,
+                    tile,
+                    tile_rng_ctx.tiling.overlaps,
+                    tile_rng_ctx.meshes,
+                    tile_rng_ctx.raster_hulls,
+                    tile_rng_ctx.image_out_arr,
+                    &worker_state.subpx_scratch,
+                    tile_rng_ctx.fields_num,
+                    tile_rng_ctx.subpx_tile_size,
+                );
+            }
+        }
+    };
+
+    std.debug.assert(image_out_arr.dims[0] <= std.math.maxInt(u8));
+    const fields_num: u8 = @intCast(image_out_arr.dims[0]);
+    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+    const subpx_tile_size: usize = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp;
+    const active_tiles_num = tiling.active_tiles.len;
+
+    const worker_count = scalingpolicy.rasterWorkers(
+        threads_within_image,
+        active_tiles_num,
+    );
+    const grain_size = scalingpolicy.rasterGrainSize(
+        active_tiles_num,
+        worker_count,
+    );
+
+    var worker_states = try outer_alloc.alloc(WorkerState, worker_count);
+    defer {
+        for (worker_states) |*worker_state| {
+            worker_state.arena.deinit();
+        }
+        outer_alloc.free(worker_states);
+    }
+    for (0..worker_count) |ii| {
+        worker_states[ii].arena = std.heap.ArenaAllocator.init(outer_alloc);
+        const arena_alloc = worker_states[ii].arena.allocator();
+        worker_states[ii].subpx_scratch = try RasterBackend.initSubpxScratch(
+            arena_alloc,
+            fields_num,
+            subpx_tile_size,
+        );
+        worker_states[ii].log = initThreadReportLog(report_mode);
+    }
+
+    var tile_rng_ctx = TileRangeCtx{
+        .io = io,
+        .ctx_rast = ctx_rast,
+        .tiling = tiling,
+        .meshes = meshes,
+        .raster_hulls = raster_hulls,
+        .image_out_arr = image_out_arr,
+        .worker_states = worker_states,
+        .fields_num = fields_num,
+        .subpx_tile_size = subpx_tile_size,
+    };
+
+    var chunk_exec = pce.ParaChunkExecutor.init(io, @intCast(worker_count));
+
+    try pce.runDynamicRangeWithWorkerErrorMaybe(
+        &chunk_exec,
+        &tile_rng_ctx,
+        TileRangeWorkerAdapter.run,
+        active_tiles_num,
+        grain_size,
+    );
+
+    if (report.getBenchLog(report_mode, ctx_report.log)) |bench_log| {
+        for (worker_states) |*worker_state| {
+            const worker_bench = report.getBenchLog(
+                report_mode,
+                &worker_state.log,
+            ).?;
+            report.reduceBenchLog(bench_log, worker_bench);
+        }
+    }
+}
+
+//------------------------------------------------------------------------------------------
+// External API
+//------------------------------------------------------------------------------------------
+
+pub fn rasterSceneCommon(
+    comptime RasterBackend: type,
+    comptime report_mode: ReportMode,
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    ctx_rast: rops.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
+    threads_within_image: u16,
+    tiling: rops.TilingOverlaps,
+    meshes: []const MeshPrepared,
+    raster_hulls: []const ?NDArray(f64),
+    image_out_arr: *NDArray(f64),
+) !void {
+    const worker_count = scalingpolicy.rasterWorkers(
+        threads_within_image,
+        tiling.active_tiles.len,
+    );
+
+    if (worker_count == 1) {
+        try rasterSceneSingleThreadCommon(
+            RasterBackend,
+            report_mode,
+            outer_alloc,
+            io,
+            ctx_rast,
+            ctx_report,
+            tiling,
+            meshes,
+            raster_hulls,
+            image_out_arr,
+        );
+        return;
+    }
+
+    if (comptime report_mode == .full_stats) {
+        return error.ThreadedFullStatsUnsupported;
+    }
+
+    try rasterSceneThreadedCommon(
+        RasterBackend,
+        report_mode,
+        outer_alloc,
+        io,
+        ctx_rast,
+        ctx_report,
+        threads_within_image,
+        tiling,
+        meshes,
+        raster_hulls,
+        image_out_arr,
+    );
 }

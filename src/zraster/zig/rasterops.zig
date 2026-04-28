@@ -18,6 +18,7 @@ const shapefun = @import("shapefun.zig");
 const matrix = @import("matstack.zig");
 
 const pce = @import("parachunkexec.zig");
+const scalingpolicy = @import("scalingpolicy.zig");
 const geomkerns = @import("geometrykernels.zig");
 const MeshType = geomkerns.MeshType;
 const hull = @import("hull.zig");
@@ -742,6 +743,7 @@ fn runTilingFill(
 pub fn sceneTileElemOverlap(
     allocator: std.mem.Allocator,
     chunk_exec: ?*pce.ParaChunkExecutor,
+    workers_num: usize,
     tile_size: u16,
     tiles_num_x: usize,
     tiles_num_y: usize,
@@ -771,9 +773,9 @@ pub fn sceneTileElemOverlap(
             .elem_bbox_slice = elem_bboxes_by_mesh[mesh_idx],
         };
 
-        const chunk_size = pce.getChunkSize(
+        const chunk_size = scalingpolicy.tilingChunkSize(
             elems_num,
-            pce.getWorkerCount(chunk_exec),
+            workers_num,
         );
 
         pce.runStaticRange(
@@ -843,9 +845,9 @@ pub fn sceneTileElemOverlap(
             .elem_bbox_slice = elem_bboxes_by_mesh[mesh_idx],
         };
 
-        const chunk_size = pce.getChunkSize(
+        const chunk_size = scalingpolicy.tilingChunkSize(
             elems_num,
-            pce.getWorkerCount(chunk_exec),
+            workers_num,
         );
 
         pce.runStaticRange(

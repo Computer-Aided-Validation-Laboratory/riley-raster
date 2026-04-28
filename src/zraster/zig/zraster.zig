@@ -22,6 +22,7 @@ const shaderops = @import("shaderops.zig");
 const iio = @import("imageio.zig");
 const imageops = @import("imageops.zig");
 const pce = @import("parachunkexec.zig");
+const scalingpolicy = @import("scalingpolicy.zig");
 
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
@@ -178,40 +179,10 @@ fn initImagesArray(
     return null;
 }
 
-fn calcPhaseThreadCap(
-    total_threads: u16,
-    phase_cap: u16,
-) u16 {
-    if (total_threads == 0) {
-        return 1;
-    }
-
-    var norm_cap: u16 = 1;
-    if (phase_cap > 1) {
-        norm_cap = phase_cap;
-    }
-
-    return @min(total_threads, norm_cap);
-}
-
-fn calcFramesInFlight(
-    render_mode: report.RenderMode,
-    config: report.RasterConfig,
-    cameras_num: usize,
-) u16 {
-    if (config.total_threads == 0) {
-        return 1;
-    }
-    const requested_frames = if (render_mode == .in_order)
-        @as(u16, 1)
-    else
-        @max(@as(u16, 1), config.max_frames_in_flight);
-    return @min(requested_frames, @as(u16, @intCast(@max(@as(usize, 1), cameras_num))));
-}
-
 fn initFrameReportStorage(
     outer_alloc: std.mem.Allocator,
     camera: *const cam.CameraPrepared,
+    actual_tile_size: u16,
     config: report.RasterConfig,
 ) !report.FrameReportStorage {
     return switch (config.report) {
@@ -220,7 +191,7 @@ fn initFrameReportStorage(
         .full_stats => .{ .full_stats = try report.initFullStatsLog(
             outer_alloc,
             camera.pixels_num,
-            config.tile_size,
+            actual_tile_size,
             camera.sub_sample,
             config.full_stats_opts,
         ) },
@@ -249,6 +220,7 @@ const FrameContext = struct {
     tiling: ?rops.TilingOverlaps = null,
     total_elems_num: usize = 0,
     total_elems_in_image: usize = 0,
+    actual_tile_size: u16 = 1,
 
     frame_arr: ndarray.NDArray(f64) = undefined,
 
@@ -281,10 +253,16 @@ fn prepareFrameContext(
     input: *const FrameInput,
 ) !void {
     const arena_alloc = ctx.arena.allocator();
+    ctx.actual_tile_size = scalingpolicy.tileSize(
+        input.config.tile_size_max,
+        input.camera.pixels_num,
+        input.camera.sub_sample,
+    );
 
     ctx.report_storage = try initFrameReportStorage(
         outer_alloc,
         input.camera,
+        ctx.actual_tile_size,
         input.config,
     );
 
@@ -342,7 +320,7 @@ fn rasterFrame(
     const ctx_rast = rops.RasterContext{
         .camera = input.camera,
         .frame_idx = input.frame_idx,
-        .tile_size = input.config.tile_size,
+        .tile_size = ctx.actual_tile_size,
     };
 
     try rasterengine.rasterScene(
@@ -432,19 +410,20 @@ fn sceneTileOverlapBinning(
     const tiles_num_x: usize = try std.math.divCeil(
         usize,
         input.camera.pixels_num[0],
-        input.config.tile_size,
+        ctx.actual_tile_size,
     );
     const tiles_num_y: usize = try std.math.divCeil(
         usize,
         input.camera.pixels_num[1],
-        input.config.tile_size,
+        ctx.actual_tile_size,
     );
 
     const time_start_overlap = Timestamp.now(io, .awake);
     ctx.tiling = try rops.sceneTileElemOverlap(
         arena_alloc,
         input.chunk_exec,
-        input.config.tile_size,
+        scalingpolicy.geometryWorkers(input.geom_threads),
+        ctx.actual_tile_size,
         tiles_num_x,
         tiles_num_y,
         @intCast(input.camera.pixels_num[0]),
@@ -457,8 +436,6 @@ fn sceneTileOverlapBinning(
         time_start_overlap.durationTo(time_end_overlap).raw.nanoseconds,
     );
 }
-
-
 
 //------------------------------------------------------------------------------------------
 // 3. Process: frame jobs for a given camera and frame
@@ -504,6 +481,7 @@ fn processFrameJobInternal(
     const geo_res = try mo.prepareMeshFrames(
         arena_alloc,
         input.chunk_exec,
+        scalingpolicy.geometryWorkers(input.geom_threads),
         input.camera,
         input.frame_idx,
         input.mesh_static,
@@ -556,6 +534,7 @@ fn processFrameJobInternal(
         outer_alloc,
         io,
         input.config,
+        ctx.actual_tile_size,
         input.camera,
         input.camera_idx,
         input.frame_idx,
@@ -605,8 +584,11 @@ fn dispatchSerialFrameJobs(
     images_arr: ?*ndarray.NDArray(f64),
     bench_capture: ?[]report.FrameBenchCapture,
 ) !void {
-    const geom_threads: u16 = 1;
-    const raster_threads: u16 = 1;
+    const dispatch_scale = scalingpolicy.dispatchScaling(
+        .in_order,
+        config,
+        cameras.len,
+    );
     const chunk_exec: ?*pce.ParaChunkExecutor = null;
 
     for (0..num_time) |frame_idx| {
@@ -623,8 +605,8 @@ fn dispatchSerialFrameJobs(
                     .out_dir = out_dir,
                     .mesh_static = mesh_static,
                     .nodal_global_scaling = nodal_global_scaling,
-                    .geom_threads = geom_threads,
-                    .raster_threads = raster_threads,
+                    .geom_threads = dispatch_scale.geom_threads,
+                    .raster_threads = dispatch_scale.raster_threads,
                     .chunk_exec = chunk_exec,
                     .images_arr = images_arr,
                     .bench_capture = bench_capture,
@@ -650,24 +632,22 @@ fn dispatchOfflineFrameJobs(
     bench_capture: ?[]report.FrameBenchCapture,
 ) !void {
     const jobs_num = cameras.len * num_time;
-    const frames_in_flight = calcFramesInFlight(.offline, config, cameras.len);
-
-    const geom_threads = calcPhaseThreadCap(
-        config.total_threads,
-        config.max_geom_threads_per_frame,
-    );
-    const raster_threads = calcPhaseThreadCap(
-        config.total_threads,
-        config.max_raster_threads_per_frame,
+    const dispatch_scale = scalingpolicy.dispatchScaling(
+        .offline,
+        config,
+        cameras.len,
     );
 
-    var pool = pce.ParaChunkExecutor.init(io, geom_threads);
+    var pool = pce.ParaChunkExecutor.init(io, dispatch_scale.geom_threads);
     var chunk_exec: ?*pce.ParaChunkExecutor = null;
-    if (geom_threads > 1) {
+    if (dispatch_scale.geom_threads > 1) {
         chunk_exec = &pool;
     }
 
-    const batch_size = @min(@as(usize, frames_in_flight), jobs_num);
+    const batch_size = scalingpolicy.frameBatchSize(
+        dispatch_scale.frames_in_flight,
+        jobs_num,
+    );
     var batch_start: usize = 0;
     while (batch_start < jobs_num) : (batch_start += batch_size) {
         var err_state = FrameJobErrorState{};
@@ -697,8 +677,8 @@ fn dispatchOfflineFrameJobs(
                         .out_dir = out_dir,
                         .mesh_static = mesh_static,
                         .nodal_global_scaling = nodal_global_scaling,
-                        .geom_threads = geom_threads,
-                        .raster_threads = raster_threads,
+                        .geom_threads = dispatch_scale.geom_threads,
+                        .raster_threads = dispatch_scale.raster_threads,
                         .chunk_exec = chunk_exec,
                         .images_arr = images_arr,
                         .bench_capture = bench_capture,
@@ -729,18 +709,15 @@ fn dispatchInOrderFrameJobs(
     images_arr: ?*ndarray.NDArray(f64),
     bench_capture: ?[]report.FrameBenchCapture,
 ) !void {
-    const geom_threads = calcPhaseThreadCap(
-        config.total_threads,
-        config.max_geom_threads_per_frame,
-    );
-    const raster_threads = calcPhaseThreadCap(
-        config.total_threads,
-        config.max_raster_threads_per_frame,
+    const dispatch_scale = scalingpolicy.dispatchScaling(
+        .in_order,
+        config,
+        cameras.len,
     );
 
-    var pool = pce.ParaChunkExecutor.init(io, geom_threads);
+    var pool = pce.ParaChunkExecutor.init(io, dispatch_scale.geom_threads);
     var chunk_exec: ?*pce.ParaChunkExecutor = null;
-    if (geom_threads > 1) {
+    if (dispatch_scale.geom_threads > 1) {
         chunk_exec = &pool;
     }
 
@@ -766,8 +743,8 @@ fn dispatchInOrderFrameJobs(
                         .out_dir = out_dir,
                         .mesh_static = mesh_static,
                         .nodal_global_scaling = nodal_global_scaling,
-                        .geom_threads = geom_threads,
-                        .raster_threads = raster_threads,
+                        .geom_threads = dispatch_scale.geom_threads,
+                        .raster_threads = dispatch_scale.raster_threads,
                         .chunk_exec = chunk_exec,
                         .images_arr = images_arr,
                         .bench_capture = bench_capture,

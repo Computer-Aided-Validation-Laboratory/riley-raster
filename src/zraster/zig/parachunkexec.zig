@@ -179,15 +179,6 @@ pub const ParaChunkExecutor = struct {
 // Work chunking helpers
 //------------------------------------------------------------------------------------------
 
-pub fn getChunkSize(domain_len: usize, workers_num: usize) usize {
-    if (domain_len == 0) {
-        return 1;
-    }
-
-    const chunk_count = @max(@as(usize, 1), workers_num * 4);
-    return @max(@as(usize, 1), (domain_len + chunk_count - 1) / chunk_count);
-}
-
 pub fn getChunksNum(domain_len: usize, chunk_size: usize) usize {
     if (domain_len == 0) {
         return 0;
@@ -195,130 +186,12 @@ pub fn getChunksNum(domain_len: usize, chunk_size: usize) usize {
     return (domain_len + chunk_size - 1) / chunk_size;
 }
 
-pub fn getWorkerCount(chunk_exec: ?*ParaChunkExecutor) usize {
-    if (chunk_exec) |executor| {
-        return executor.workers_num;
-    }
-    return 1;
-}
-
 //------------------------------------------------------------------------------------------
-// External API for running the chunk executor
+// Internal helpers for running the chunk executor
 //------------------------------------------------------------------------------------------
-// Static  = fixed static allocation of chunks to a worker 
+// Static  = fixed static allocation of chunks to a worker
 // Dynamic = dynamic allocation of grains allowing work stealing
-
-pub fn runStaticRange(
-    chunk_exec: ?*ParaChunkExecutor,
-    ctx_ptr: *anyopaque,
-    job_func: RangeFn,
-    domain_len: usize,
-    chunk_size: usize,
-) void {
-    if (domain_len == 0) {
-        return;
-    }
-
-    if (chunk_exec) |executor| {
-        executor.runStaticRange(
-            ctx_ptr,
-            job_func,
-            domain_len,
-            chunk_size,
-        ) catch |err| switch (err) {
-            error.ConcurrencyUnavailable => runStaticRangeSerial(
-                ctx_ptr,
-                job_func,
-                domain_len,
-                chunk_size,
-            ),
-            else => unreachable,
-        };
-        return;
-    }
-
-    runStaticRangeSerial(
-        ctx_ptr,
-        job_func,
-        domain_len,
-        chunk_size,
-    );
-}
-
-// Parallelisation over a range with work stealing using an atomic counter
-pub fn runDynamicRangeMaybe(
-    chunk_exec: ?*ParaChunkExecutor,
-    ctx_ptr: *anyopaque,
-    job_func: RangeFn,
-    domain_len: usize,
-    grain_size: usize,
-) void {
-    if (domain_len == 0) {
-        return;
-    }
-
-    if (chunk_exec) |executor| {
-        executor.runDynamicRange(
-            ctx_ptr,
-            job_func,
-            domain_len,
-            grain_size,
-        ) catch |err| switch (err) {
-            error.ConcurrencyUnavailable => runDynamicRangeSerial(
-                ctx_ptr,
-                job_func,
-                domain_len,
-                grain_size,
-            ),
-            else => unreachable,
-        };
-        return;
-    }
-
-    runDynamicRangeSerial(
-        ctx_ptr,
-        job_func,
-        domain_len,
-        grain_size,
-    );
-}
-
-pub fn runDynamicRangeWithWorkerErrorMaybe(
-    chunk_exec: ?*ParaChunkExecutor,
-    ctx_ptr: *anyopaque,
-    job_func: RangeWorkerFnError,
-    domain_len: usize,
-    grain_size: usize,
-) !void {
-    if (domain_len == 0) {
-        return;
-    }
-
-    if (chunk_exec) |executor| {
-        executor.runDynamicRangeWithWorkerError(
-            ctx_ptr,
-            job_func,
-            domain_len,
-            grain_size,
-        ) catch |err| switch (err) {
-            error.ConcurrencyUnavailable => try runDynamicRangeWithWorkerErrorSerial(
-                ctx_ptr,
-                job_func,
-                domain_len,
-                grain_size,
-            ),
-            else => return err,
-        };
-        return;
-    }
-
-    try runDynamicRangeWithWorkerErrorSerial(
-        ctx_ptr,
-        job_func,
-        domain_len,
-        grain_size,
-    );
-}
+// WithWorker = access per worker state that is initialised once like buffers and allocators
 
 fn runStaticRangeSerial(
     ctx_ptr: *anyopaque,
@@ -412,4 +285,121 @@ fn runDynamicChunkTaskWithWorkerError(
             return;
         };
     }
+}
+
+//------------------------------------------------------------------------------------------
+// External API for running the chunk executor
+//------------------------------------------------------------------------------------------
+// Static  = fixed static allocation of chunks to a worker
+// Dynamic = dynamic allocation of grains allowing work stealing
+
+pub fn runStaticRange(
+    chunk_exec: ?*ParaChunkExecutor,
+    ctx_ptr: *anyopaque,
+    job_func: RangeFn,
+    domain_len: usize,
+    chunk_size: usize,
+) void {
+    if (domain_len == 0) {
+        return;
+    }
+
+    if (chunk_exec) |executor| {
+        executor.runStaticRange(
+            ctx_ptr,
+            job_func,
+            domain_len,
+            chunk_size,
+        ) catch |err| switch (err) {
+            error.ConcurrencyUnavailable => runStaticRangeSerial(
+                ctx_ptr,
+                job_func,
+                domain_len,
+                chunk_size,
+            ),
+            else => unreachable,
+        };
+        return;
+    }
+
+    runStaticRangeSerial(
+        ctx_ptr,
+        job_func,
+        domain_len,
+        chunk_size,
+    );
+}
+
+pub fn runDynamicRangeMaybe(
+    chunk_exec: ?*ParaChunkExecutor,
+    ctx_ptr: *anyopaque,
+    job_func: RangeFn,
+    domain_len: usize,
+    grain_size: usize,
+) void {
+    if (domain_len == 0) {
+        return;
+    }
+
+    if (chunk_exec) |executor| {
+        executor.runDynamicRange(
+            ctx_ptr,
+            job_func,
+            domain_len,
+            grain_size,
+        ) catch |err| switch (err) {
+            error.ConcurrencyUnavailable => runDynamicRangeSerial(
+                ctx_ptr,
+                job_func,
+                domain_len,
+                grain_size,
+            ),
+            else => unreachable,
+        };
+        return;
+    }
+
+    runDynamicRangeSerial(
+        ctx_ptr,
+        job_func,
+        domain_len,
+        grain_size,
+    );
+}
+
+pub fn runDynamicRangeWithWorkerErrorMaybe(
+    chunk_exec: ?*ParaChunkExecutor,
+    ctx_ptr: *anyopaque,
+    job_func: RangeWorkerFnError,
+    domain_len: usize,
+    grain_size: usize,
+) !void {
+    if (domain_len == 0) {
+        return;
+    }
+
+    if (chunk_exec) |executor| {
+        executor.runDynamicRangeWithWorkerError(
+            ctx_ptr,
+            job_func,
+            domain_len,
+            grain_size,
+        ) catch |err| switch (err) {
+            error.ConcurrencyUnavailable => try runDynamicRangeWithWorkerErrorSerial(
+                ctx_ptr,
+                job_func,
+                domain_len,
+                grain_size,
+            ),
+            else => return err,
+        };
+        return;
+    }
+
+    try runDynamicRangeWithWorkerErrorSerial(
+        ctx_ptr,
+        job_func,
+        domain_len,
+        grain_size,
+    );
 }

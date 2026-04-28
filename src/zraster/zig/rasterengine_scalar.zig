@@ -46,6 +46,10 @@ const ScratchLayout = common.ScratchLayout;
 
 pub const scratch_layout = ScratchLayout.field_major;
 
+//------------------------------------------------------------------------------------------
+// Scratch Buffer Helpers
+//------------------------------------------------------------------------------------------
+
 pub fn initSubpxScratch(
     arena_alloc: std.mem.Allocator,
     fields_num: u8,
@@ -84,32 +88,9 @@ pub fn resetSubpxScratch(
     @memset(subpx_scratch.touched_max_x, 0);
 }
 
-pub fn rasterScene(
-    comptime report_mode: ReportMode,
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    ctx_rast: rops.RasterContext,
-    ctx_report: report.ReportContext(report_mode),
-    threads_within_image: u16,
-    tiling: rops.TilingOverlaps,
-    meshes: []const MeshPrepared,
-    raster_hulls: []const ?NDArray(f64),
-    image_out_arr: *NDArray(f64),
-) !void {
-    try common.rasterSceneCommon(
-        @This(),
-        report_mode,
-        outer_alloc,
-        io,
-        ctx_rast,
-        ctx_report,
-        threads_within_image,
-        tiling,
-        meshes,
-        raster_hulls,
-        image_out_arr,
-    );
-}
+//------------------------------------------------------------------------------------------
+// Raster Pass Implementation
+//------------------------------------------------------------------------------------------
 
 pub fn RasterPass(
     comptime Geometry: type,
@@ -438,4 +419,35 @@ pub fn RasterPass(
             return shaded_px;
         }
     };
+}
+
+//------------------------------------------------------------------------------------------
+// External API
+//------------------------------------------------------------------------------------------
+
+pub fn rasterScene(
+    comptime report_mode: ReportMode,
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    ctx_rast: rops.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
+    threads_within_image: u16,
+    tiling: rops.TilingOverlaps,
+    meshes: []const MeshPrepared,
+    raster_hulls: []const ?NDArray(f64),
+    image_out_arr: *NDArray(f64),
+) !void {
+    try common.rasterSceneCommon(
+        @This(),
+        report_mode,
+        outer_alloc,
+        io,
+        ctx_rast,
+        ctx_report,
+        threads_within_image,
+        tiling,
+        meshes,
+        raster_hulls,
+        image_out_arr,
+    );
 }
