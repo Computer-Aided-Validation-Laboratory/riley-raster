@@ -16,6 +16,7 @@ const report = @import("report.zig");
 const ReportMode = report.ReportMode;
 const Timestamp = std.Io.Clock.Timestamp;
 const rops = @import("rasterops.zig");
+const pce = @import("parachunkexec.zig");
 const mo = @import("meshops.zig");
 const MeshPrepared = mo.MeshPrepared;
 const shaderops = @import("shaderops.zig");
@@ -67,24 +68,6 @@ fn ThreadState(
 ) type {
     return struct {
         arena: std.heap.ArenaAllocator,
-        subpx_scratch: RasterBackend.SubpxScratchBuffers,
-        log: report.LogType(report_mode),
-    };
-}
-
-fn RasterTaskState(
-    comptime RasterBackend: type,
-    comptime report_mode: ReportMode,
-) type {
-    return struct {
-        arena: std.heap.ArenaAllocator,
-        ctx_rast: rops.RasterContext,
-        tiling: rops.TilingOverlaps,
-        meshes: []const MeshPrepared,
-        raster_hulls: []const ?NDArray(f64),
-        image_out_arr: *NDArray(f64),
-        tile_idx_start: usize,
-        tile_idx_end: usize,
         subpx_scratch: RasterBackend.SubpxScratchBuffers,
         log: report.LogType(report_mode),
     };
@@ -373,35 +356,49 @@ fn rasterSceneThreadedCommon(
     raster_hulls: []const ?NDArray(f64),
     image_out_arr: *NDArray(f64),
 ) !void {
-    const Task = RasterTaskState(RasterBackend, report_mode);
-    
-    const TaskWorker = struct {
+    const WorkerState = ThreadState(RasterBackend, report_mode);
+    const DispatchState = struct {
+        io: std.Io,
+        ctx_rast: rops.RasterContext,
+        tiling: rops.TilingOverlaps,
+        meshes: []const MeshPrepared,
+        raster_hulls: []const ?NDArray(f64),
+        image_out_arr: *NDArray(f64),
+        worker_states: []WorkerState,
+        fields_num: u8,
+        subpx_tile_size: usize,
+    };
+
+    const TileRangeWorker = struct {
         fn run(
-            io_task: std.Io,
-            task: *Task,
-            fields_num: u8,
-            subpx_tile_size: usize,
-        ) std.Io.Cancelable!void {
+            ctx_ptr: *anyopaque,
+            worker_idx: usize,
+            range_start: usize,
+            range_end: usize,
+        ) anyerror!void {
+            const dispatch_state: *DispatchState =
+                @ptrCast(@alignCast(ctx_ptr));
+            const worker_state = &dispatch_state.worker_states[worker_idx];
             const ctx_report_task = report.ReportContext(report_mode){
-                .log = &task.log,
+                .log = &worker_state.log,
             };
 
-            for (task.tile_idx_start..task.tile_idx_end) |tile_idx| {
-                const tile = task.tiling.active_tiles[tile_idx];
+            for (range_start..range_end) |tile_idx| {
+                const tile = dispatch_state.tiling.active_tiles[tile_idx];
                 try rasterTileCommon(
                     RasterBackend,
                     report_mode,
-                    io_task,
-                    task.ctx_rast,
+                    dispatch_state.io,
+                    dispatch_state.ctx_rast,
                     ctx_report_task,
                     tile,
-                    task.tiling.overlaps,
-                    task.meshes,
-                    task.raster_hulls,
-                    task.image_out_arr,
-                    &task.subpx_scratch,
-                    fields_num,
-                    subpx_tile_size,
+                    dispatch_state.tiling.overlaps,
+                    dispatch_state.meshes,
+                    dispatch_state.raster_hulls,
+                    dispatch_state.image_out_arr,
+                    &worker_state.subpx_scratch,
+                    dispatch_state.fields_num,
+                    dispatch_state.subpx_tile_size,
                 );
             }
         }
@@ -417,58 +414,57 @@ fn rasterSceneThreadedCommon(
         @as(u16, @intCast(active_tiles_num)),
     );
     const worker_count: usize = @intCast(@max(@as(u16, 1), worker_count_u16));
-    const tiles_per_task = @divFloor(active_tiles_num + worker_count - 1, worker_count);
+    const grain_size = pce.getChunkSize(active_tiles_num, worker_count);
 
-    var tasks = try outer_alloc.alloc(Task, worker_count);
+    var worker_states = try outer_alloc.alloc(WorkerState, worker_count);
     defer {
-        for (tasks) |*task| {
-            task.arena.deinit();
+        for (worker_states) |*worker_state| {
+            worker_state.arena.deinit();
         }
-        outer_alloc.free(tasks);
+        outer_alloc.free(worker_states);
     }
 
     for (0..worker_count) |ii| {
-        tasks[ii].arena = std.heap.ArenaAllocator.init(outer_alloc);
-        const arena_alloc = tasks[ii].arena.allocator();
-        tasks[ii].ctx_rast = ctx_rast;
-        tasks[ii].tiling = tiling;
-        tasks[ii].meshes = meshes;
-        tasks[ii].raster_hulls = raster_hulls;
-        tasks[ii].image_out_arr = image_out_arr;
-        tasks[ii].tile_idx_start = ii * tiles_per_task;
-        tasks[ii].tile_idx_end = @min(active_tiles_num, (ii + 1) * tiles_per_task);
-        tasks[ii].subpx_scratch = try RasterBackend.initSubpxScratch(
+        worker_states[ii].arena = std.heap.ArenaAllocator.init(outer_alloc);
+        const arena_alloc = worker_states[ii].arena.allocator();
+        worker_states[ii].subpx_scratch = try RasterBackend.initSubpxScratch(
             arena_alloc,
             fields_num,
             subpx_tile_size,
         );
-        tasks[ii].log = initThreadReportLog(report_mode);
+        worker_states[ii].log = initThreadReportLog(report_mode);
     }
 
-    var group: std.Io.Group = .init;
-    errdefer group.cancel(io);
+    var dispatch_state = DispatchState{
+        .io = io,
+        .ctx_rast = ctx_rast,
+        .tiling = tiling,
+        .meshes = meshes,
+        .raster_hulls = raster_hulls,
+        .image_out_arr = image_out_arr,
+        .worker_states = worker_states,
+        .fields_num = fields_num,
+        .subpx_tile_size = subpx_tile_size,
+    };
+    var chunk_exec = pce.ParaChunkExecutor.init(
+        io,
+        @intCast(worker_count),
+    );
 
-    for (0..worker_count) |ii| {
-        if (tasks[ii].tile_idx_start >= tasks[ii].tile_idx_end) {
-            continue;
-        }
-        group.async(
-            io,
-            TaskWorker.run,
-            .{
-                io,
-                &tasks[ii],
-                fields_num,
-                subpx_tile_size,
-            },
-        );
-    }
-
-    try group.await(io);
+    try pce.runDynamicRangeWithWorkerErrorMaybe(
+        &chunk_exec,
+        &dispatch_state,
+        TileRangeWorker.run,
+        active_tiles_num,
+        grain_size,
+    );
 
     if (report.getBenchLog(report_mode, ctx_report.log)) |bench_log| {
-        for (tasks) |*task| {
-            const worker_bench = report.getBenchLog(report_mode, &task.log).?;
+        for (worker_states) |*worker_state| {
+            const worker_bench = report.getBenchLog(
+                report_mode,
+                &worker_state.log,
+            ).?;
             report.reduceBenchLog(bench_log, worker_bench);
         }
     }

@@ -9,7 +9,7 @@
 const std = @import("std");
 const common = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
-const mo = @import("zraster/zig/meshops.zig");
+const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
 
@@ -34,7 +34,7 @@ test "Gold Simple Suite" {
     };
     defer texture.deinit(allocator);
 
-    const mesh_types = [_]mo.MeshType{
+    const mesh_types = [_]gk.MeshType{
         .tri3,
         .tri6,
         .quad4ibi,

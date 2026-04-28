@@ -17,6 +17,7 @@ const buildconfig = @import("zraster/zig/buildconfig.zig");
 const cfg = buildconfig.config;
 const camera_mod = @import("zraster/zig/camera.zig");
 const CameraPrepared = camera_mod.CameraPrepared;
+const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const meshio = @import("zraster/zig/meshio.zig");
@@ -34,7 +35,7 @@ const fails_root = "fails";
 const RenderCase = struct {
     case_name: []const u8,
     data_dir: []const u8,
-    mesh_type: mo.MeshType,
+    mesh_type: gk.MeshType,
     channels: usize,
     shader: union(enum) {
         nodal_grey,
@@ -274,6 +275,14 @@ test "Multicamera duplicate sphere200 cameras match each other" {
 }
 
 test "Sphere200 multicamera gold tests" {
+    if (!simd_on) {
+        std.debug.print(
+            "Skipping scalar multicamera sphere gold tests.\n",
+            .{},
+        );
+        return;
+    }
+
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();

@@ -10,6 +10,7 @@ const std = @import("std");
 const gengold = @import("common/gengold.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 const mo = @import("zraster/zig/meshops.zig");
+const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
 
@@ -28,7 +29,7 @@ pub fn main(init: std.process.Init) !void {
         .tiff,
     );
 
-    const mesh_types = [_]mo.MeshType{ .tri6, .quad8, .quad9 };
+    const mesh_types = [_]gk.MeshType{ .tri6, .quad8, .quad9 };
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
     };

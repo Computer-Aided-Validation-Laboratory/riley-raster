@@ -9,9 +9,10 @@
 const std = @import("std");
 
 const orch = @import("orchestration.zig");
+const gk = @import("../zraster/zig/geometrykernels.zig");
 const meshio = @import("../zraster/zig/meshio.zig");
 const mo = @import("../zraster/zig/meshops.zig");
-const MeshType = mo.MeshType;
+const MeshType = gk.MeshType;
 const MeshInput = mo.MeshInput;
 const CameraPrepared = @import("../zraster/zig/camera.zig").CameraPrepared;
 const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;

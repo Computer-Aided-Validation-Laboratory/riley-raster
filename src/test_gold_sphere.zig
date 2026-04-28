@@ -12,7 +12,7 @@ const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("zraster/zig/buildconfig.zig");
 const cfg = buildconfig.config;
-const mo = @import("zraster/zig/meshops.zig");
+const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
 
@@ -58,7 +58,7 @@ test "Sphere Gold Tests" {
 
     const pixel_num = [_]u32{ 800, 500 };
 
-    const mesh_types = comptime std.enums.values(mo.MeshType);
+    const mesh_types = comptime std.enums.values(gk.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },
