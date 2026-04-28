@@ -614,10 +614,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             const stage: *CullVisibleCountStage = @ptrCast(@alignCast(ctx_ptr));
             var visible_count: usize = 0;
 
-            const N = comptime MT.getNodesNum();
             for (range_start..range_end) |ee| {
                 const bbox = if (MT == .tri3)
                     rops.calcVisibleNodeBBoxTri3(
+                        MT,
                         stage.camera,
                         stage.coords_nodes,
                         stage.connect,
@@ -625,7 +625,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     )
                 else
                     rops.calcVisibleNodeBBoxHighOrd(
-                        N,
+                        MT,
                         stage.camera,
                         stage.coords_nodes,
                         stage.connect,
@@ -714,10 +714,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             const stage: *CullVisibleFillStage = @ptrCast(@alignCast(ctx_ptr));
             var write_idx = stage.visible_offsets_by_chunk[chunk_idx];
 
-            const N = comptime MT.getNodesNum();
             for (range_start..range_end) |ee| {
                 const bbox = if (comptime MT == .tri3)
                     rops.calcVisibleNodeBBoxTri3(
+                        MT,
                         stage.camera,
                         stage.coords_nodes,
                         stage.connect,
@@ -725,7 +725,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     )
                 else
                     rops.calcVisibleNodeBBoxHighOrd(
-                        N,
+                        MT,
                         stage.camera,
                         stage.coords_nodes,
                         stage.connect,

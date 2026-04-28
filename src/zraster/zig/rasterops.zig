@@ -429,18 +429,26 @@ fn calcBBoxFromRasterCoords(
 }
 
 pub fn calcVisibleNodeBBoxTri3(
+    comptime MT: MeshType,
     camera: *const cam.CameraPrepared,
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     elem_idx: usize,
 ) ?ElemBBox {
-    const coords_ideal = gatherElemNodeCoords(3, coords_nodes, connect, elem_idx);
+    comptime {
+        if (MT != .tri3) {
+            @compileError("calcVisibleNodeBBoxTri3 only supports .tri3");
+        }
+    }
 
-    if (isElemBehindCamera(3, coords_ideal)) {
+    const N = comptime MT.getNodesNum();
+    const coords_ideal = gatherElemNodeCoords(N, coords_nodes, connect, elem_idx);
+
+    if (isElemBehindCamera(N, coords_ideal)) {
         return null;
     }
 
-    const coords_ideal_raster = RasterCoords2D(3){
+    const coords_ideal_raster = RasterCoords2D(N){
         .x = coords_ideal.x,
         .y = coords_ideal.y,
     };
@@ -450,20 +458,28 @@ pub fn calcVisibleNodeBBoxTri3(
     }
 
     const coords_distorted = distortIdealRasterCoords(
-        3,
+        N,
         camera,
         coords_ideal_raster,
     );
-    return calcBBoxFromRasterCoords(3, camera, elem_idx, coords_distorted);
+    return calcBBoxFromRasterCoords(N, camera, elem_idx, coords_distorted);
 }
 
 pub fn calcVisibleNodeBBoxHighOrd(
-    comptime N: usize,
+    comptime MT: MeshType,
     camera: *const cam.CameraPrepared,
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     elem_idx: usize,
 ) ?ElemBBox {
+    comptime {
+        if (MT == .tri3) {
+            @compileError("calcVisibleNodeBBoxHighOrd does not support .tri3");
+        }
+    }
+
+    const N = comptime MT.getNodesNum();
+    const NH = comptime MT.getNumHullPoints();
     const coords_clip = gatherElemNodeCoords(N, coords_nodes, connect, elem_idx);
 
     if (isElemBehindCamera(N, coords_clip)) {
@@ -480,7 +496,6 @@ pub fn calcVisibleNodeBBoxHighOrd(
         camera,
         coords_clip,
     );
-    const NH = comptime MeshType.calcAdaptiveHullPointsNum(N);
     const hull_ideal_raster = packHullPointsAsRasterCoords(NH, hull_points_ideal);
     const hull_distorted = distortIdealRasterCoords(
         NH,
@@ -971,7 +986,7 @@ test "calcVisibleNodeBBoxTri3 on_screen" {
     );
     defer allocator.free(coords.mem);
 
-    const bbox = calcVisibleNodeBBoxTri3(&camera, &coords, &connect, 0);
+    const bbox = calcVisibleNodeBBoxTri3(.tri3, &camera, &coords, &connect, 0);
     try std.testing.expect(bbox != null);
 }
 
@@ -992,7 +1007,7 @@ test "calcVisibleNodeBBoxTri3 backface" {
     );
     defer allocator.free(coords.mem);
 
-    const bbox = calcVisibleNodeBBoxTri3(&camera, &coords, &connect, 0);
+    const bbox = calcVisibleNodeBBoxTri3(.tri3, &camera, &coords, &connect, 0);
     try std.testing.expect(bbox == null);
 }
 
@@ -1013,7 +1028,7 @@ test "calcVisibleNodeBBoxTri3 behind_camera" {
     );
     defer allocator.free(coords.mem);
 
-    const bbox = calcVisibleNodeBBoxTri3(&camera, &coords, &connect, 0);
+    const bbox = calcVisibleNodeBBoxTri3(.tri3, &camera, &coords, &connect, 0);
     try std.testing.expect(bbox == null);
 }
 
@@ -1034,7 +1049,7 @@ test "calcVisibleNodeBBoxHighOrd on_screen" {
     );
     defer allocator.free(coords.mem);
 
-    const bbox = calcVisibleNodeBBoxHighOrd(6, &camera, &coords, &connect, 0);
+    const bbox = calcVisibleNodeBBoxHighOrd(.tri6, &camera, &coords, &connect, 0);
     try std.testing.expect(bbox != null);
 }
 
@@ -1077,7 +1092,7 @@ test "calcVisibleNodeBBoxHighOrd behind_camera" {
     );
     defer allocator.free(coords.mem);
 
-    const bbox = calcVisibleNodeBBoxHighOrd(6, &camera, &coords, &connect, 0);
+    const bbox = calcVisibleNodeBBoxHighOrd(.tri6, &camera, &coords, &connect, 0);
     try std.testing.expect(bbox == null);
 }
 
@@ -1108,9 +1123,9 @@ test "calcVisibleNodeBBoxTri3 distorted_on_screen_shift" {
     );
     defer allocator.free(coords.mem);
 
-    const bbox_none = calcVisibleNodeBBoxTri3(&camera, &coords, &connect, 0).?;
+    const bbox_none = calcVisibleNodeBBoxTri3(.tri3, &camera, &coords, &connect, 0).?;
     camera.distortion = distortion;
-    const bbox_distorted = calcVisibleNodeBBoxTri3(&camera, &coords, &connect, 0).?;
+    const bbox_distorted = calcVisibleNodeBBoxTri3(.tri3, &camera, &coords, &connect, 0).?;
 
     try std.testing.expect(
         bbox_distorted.x_min != bbox_none.x_min or
@@ -1148,9 +1163,21 @@ test "calcVisibleNodeBBoxTri3 distorted_off_screen_shift" {
     );
     defer allocator.free(coords.mem);
 
-    const bbox_none = calcVisibleNodeBBoxTri3(&camera_none, &coords, &connect, 0);
+    const bbox_none = calcVisibleNodeBBoxTri3(
+        .tri3,
+        &camera_none,
+        &coords,
+        &connect,
+        0,
+    );
     try std.testing.expect(bbox_none != null);
-    const bbox_distorted = calcVisibleNodeBBoxTri3(&camera_distorted, &coords, &connect, 0);
+    const bbox_distorted = calcVisibleNodeBBoxTri3(
+        .tri3,
+        &camera_distorted,
+        &coords,
+        &connect,
+        0,
+    );
     try std.testing.expect(bbox_distorted == null);
 }
 
@@ -1216,7 +1243,13 @@ test "calcVisibleNodeBBoxHighOrd distorted_off_screen_shift" {
     );
     defer allocator.free(coords.mem);
 
-    const bbox = calcVisibleNodeBBoxHighOrd(6, &camera_distorted, &coords, &connect, 0);
+    const bbox = calcVisibleNodeBBoxHighOrd(
+        .tri6,
+        &camera_distorted,
+        &coords,
+        &connect,
+        0,
+    );
     try std.testing.expect(bbox == null);
 }
 
@@ -1248,6 +1281,6 @@ test "calcVisibleNodeBBoxHighOrd backface_uses_ideal_pinhole" {
     );
     defer allocator.free(coords.mem);
 
-    const bbox = calcVisibleNodeBBoxHighOrd(6, &camera, &coords, &connect, 0);
+    const bbox = calcVisibleNodeBBoxHighOrd(.tri6, &camera, &coords, &connect, 0);
     try std.testing.expect(bbox != null);
 }

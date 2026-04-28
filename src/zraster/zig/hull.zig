@@ -20,5 +20,5 @@ pub const getTessellation = impl.getTessellation;
 pub const buildAdaptiveHullsFromClip = impl.buildAdaptiveHullsFromClip;
 
 pub const AdaptiveHullPoints = @import("hull_common.zig").AdaptiveHullPoints;
-pub const buildAdaptiveHullPointsFromClip =
+pub const buildAdaptiveHullPointsFromClip =     
     @import("hull_common.zig").buildAdaptiveHullPointsFromClip;

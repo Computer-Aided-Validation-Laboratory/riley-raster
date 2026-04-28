@@ -7,6 +7,21 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
+const cfg = buildconfig.config;
+const S = buildconfig.SimdWidth;
+const VecSB = buildconfig.VecSB;
+const VecSF = buildconfig.VecSF;
+const VecSU8 = buildconfig.VecSU8;
+const tol = cfg.tolerance;
+
+const rops = @import("rasterops.zig");
+const newton = @import("newton.zig");
+const NewtonSeed = newton.NewtonSeed;
+const NewtonSeedSIMD = newton.NewtonSeedSIMD;
+const shapefun = @import("shapefun.zig");
+const NDArray = @import("ndarray.zig").NDArray;
+const Vec3Slices = rops.Vec3Slices;
 
 pub const MeshType = enum {
     tri3,
@@ -34,30 +49,7 @@ pub const MeshType = enum {
             .quad8, .quad9 => 8,
         };
     }
-
-    pub fn calcAdaptiveHullPointsNum(comptime N: usize) usize {
-        return switch (N) {
-            4 => 4,
-            6 => 6,
-            8, 9 => 8,
-            else => 0,
-        };
-    }
 };
-
-const buildconfig = @import("buildconfig.zig");
-const cfg = buildconfig.config;
-const S = buildconfig.SimdWidth;
-const VecSB = buildconfig.VecSB;
-const VecSF = buildconfig.VecSF;
-const VecSU8 = buildconfig.VecSU8;
-const tol = cfg.tolerance;
-
-const rops = @import("rasterops.zig");
-const newton = @import("newton.zig");
-const shapefun = @import("shapefun.zig");
-const NDArray = @import("ndarray.zig").NDArray;
-const Vec3Slices = rops.Vec3Slices;
 
 pub const SolverKind = enum {
     hyperb,
@@ -121,9 +113,6 @@ pub const NewtonParams = struct {
     w_v_coeff: f64,
     w_const: f64,
 };
-
-pub const NewtonSeed = newton.NewtonSeed;
-pub const NewtonSeedSIMD = newton.NewtonSeedSIMD;
 
 pub fn Tri3Kernel() type {
     return struct {
