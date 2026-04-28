@@ -406,7 +406,10 @@ pub const CameraPrepared = struct {
 };
 
 pub const CameraOps = struct {
-    pub fn fovFromCamRot(cam_rot: rotation.Rotation, coords_world: *const meshio.Coords) [2]f64 {
+    pub fn fovFromCamRot(
+        cam_rot: rotation.Rotation,
+        coords_world: *const meshio.Coords,
+    ) [2]f64 {
         const world_to_cam_mat = matrix.Mat33Ops.inv(f64, cam_rot.matrix);
 
         // 0=x, 1=y, 2=z
@@ -454,7 +457,10 @@ pub const CameraOps = struct {
         return fov_leng;
     }
 
-    pub fn fovFromCamRotOverMeshes(cam_rot: rotation.Rotation, meshes: []const mo.MeshInput) [2]f64 {
+    pub fn fovFromCamRotOverMeshes(
+        cam_rot: rotation.Rotation,
+        meshes: []const mo.MeshInput,
+    ) [2]f64 {
         const world_to_cam_mat = matrix.Mat33Ops.inv(f64, cam_rot.matrix);
 
         var bb_min = [3]f64{ std.math.inf(f64), std.math.inf(f64), std.math.inf(f64) };
@@ -532,7 +538,11 @@ pub const CameraOps = struct {
         return image_dist;
     }
 
-    pub fn calcCamPos(roi_pos_world: vector.Vec3f, cam_rot: rotation.Rotation, image_dist: f64) vector.Vec3f {
+    pub fn calcCamPos(
+        roi_pos_world: vector.Vec3f,
+        cam_rot: rotation.Rotation,
+        image_dist: f64,
+    ) vector.Vec3f {
         var cam_z_axis_vec = cam_rot.matrix.getColVec(2);
         cam_z_axis_vec = cam_z_axis_vec.mulScalar(image_dist);
         const cam_pos = (&roi_pos_world).add(cam_z_axis_vec);
