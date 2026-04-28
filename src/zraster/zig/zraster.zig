@@ -364,6 +364,37 @@ fn rasterFrame(
     );
 }
 
+fn runFrameRaster(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    input: *const FrameInput,
+    ctx: *FrameContext,
+) !void {
+    switch (input.config.report) {
+        .off => try rasterFrame(
+            .off,
+            outer_alloc,
+            io,
+            input,
+            ctx,
+        ),
+        .bench => try rasterFrame(
+            .bench,
+            outer_alloc,
+            io,
+            input,
+            ctx,
+        ),
+        .full_stats => try rasterFrame(
+            .full_stats,
+            outer_alloc,
+            io,
+            input,
+            ctx,
+        ),
+    }
+}
+
 fn saveFrame(
     io: std.Io,
     input: *const FrameInput,
@@ -427,36 +458,7 @@ fn sceneTileOverlapBinning(
     );
 }
 
-fn runFrameRaster(
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    input: *const FrameInput,
-    ctx: *FrameContext,
-) !void {
-    switch (input.config.report) {
-        .off => try rasterFrame(
-            .off,
-            outer_alloc,
-            io,
-            input,
-            ctx,
-        ),
-        .bench => try rasterFrame(
-            .bench,
-            outer_alloc,
-            io,
-            input,
-            ctx,
-        ),
-        .full_stats => try rasterFrame(
-            .full_stats,
-            outer_alloc,
-            io,
-            input,
-            ctx,
-        ),
-    }
-}
+
 
 //------------------------------------------------------------------------------------------
 // 3. Process: frame jobs for a given camera and frame

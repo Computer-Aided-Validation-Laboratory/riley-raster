@@ -189,6 +189,8 @@ pub fn rasterDirectScalarCommon(
 
             ctx_report.recordSolverIters(result.iters);
 
+            // If weights are not null we are inside the element and we need to check the
+            // depth buffer
             if (result.weights) |weights| {
                 const inv_z = Geometry.calcInvZ(nodes_coords, weights);
 
@@ -343,6 +345,8 @@ fn rasterSceneSingleThreadCommon(
     }
 }
 
+
+
 fn rasterSceneThreadedCommon(
     comptime RasterBackend: type,
     comptime report_mode: ReportMode,
@@ -356,7 +360,8 @@ fn rasterSceneThreadedCommon(
     raster_hulls: []const ?NDArray(f64),
     image_out_arr: *NDArray(f64),
 ) !void {
-    const WorkerState = ThreadState(RasterBackend, report_mode);
+    const WorkerState = comptime ThreadState(RasterBackend, report_mode);
+
     const DispatchState = struct {
         io: std.Io,
         ctx_rast: rops.RasterContext,
@@ -368,7 +373,8 @@ fn rasterSceneThreadedCommon(
         fields_num: u8,
         subpx_tile_size: usize,
     };
-
+        
+    // Hook function for work range on our ParaChunkExecutor
     const TileRangeWorker = struct {
         fn run(
             ctx_ptr: *anyopaque,
@@ -382,7 +388,7 @@ fn rasterSceneThreadedCommon(
             const ctx_report_task = report.ReportContext(report_mode){
                 .log = &worker_state.log,
             };
-
+    
             for (range_start..range_end) |tile_idx| {
                 const tile = dispatch_state.tiling.active_tiles[tile_idx];
                 try rasterTileCommon(
@@ -409,6 +415,7 @@ fn rasterSceneThreadedCommon(
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     const subpx_tile_size: usize = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp;
     const active_tiles_num = tiling.active_tiles.len;
+
     const worker_count_u16 = @min(
         threads_within_image,
         @as(u16, @intCast(active_tiles_num)),
@@ -705,6 +712,9 @@ fn rasterTileCommon(
     );
 }
 
+//------------------------------------------------------------------------------------------
+// Averaging for sub-sample anti-aliasing & write to image out buffer
+//------------------------------------------------------------------------------------------
 pub inline fn getScratchField(
     comptime scratch_layout: ScratchLayout,
     spx_image_scratch: *const MatSlice(f64),

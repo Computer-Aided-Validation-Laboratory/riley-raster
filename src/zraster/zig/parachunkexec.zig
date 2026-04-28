@@ -175,6 +175,10 @@ pub const ParaChunkExecutor = struct {
     }
 };
 
+//------------------------------------------------------------------------------------------
+// Work chunking helpers
+//------------------------------------------------------------------------------------------
+
 pub fn getChunkSize(domain_len: usize, workers_num: usize) usize {
     if (domain_len == 0) {
         return 1;
@@ -198,7 +202,12 @@ pub fn getWorkerCount(chunk_exec: ?*ParaChunkExecutor) usize {
     return 1;
 }
 
-// Parallelisation over a range in assigned fixed chunks
+//------------------------------------------------------------------------------------------
+// External API for running the chunk executor
+//------------------------------------------------------------------------------------------
+// Static  = fixed static allocation of chunks to a worker 
+// Dynamic = dynamic allocation of grains allowing work stealing
+
 pub fn runStaticRange(
     chunk_exec: ?*ParaChunkExecutor,
     ctx_ptr: *anyopaque,

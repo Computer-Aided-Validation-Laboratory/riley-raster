@@ -154,6 +154,9 @@ pub fn resetSubpxScratch(
     @memset(subpx_scratch.touched_max_x, 0);
 }
 
+//------------------------------------------------------------------------------------------
+// Entry point to the SIMD implementation raster loop
+//------------------------------------------------------------------------------------------
 pub fn rasterScene(
     comptime report_mode: ReportMode,
     outer_alloc: std.mem.Allocator,
@@ -326,8 +329,10 @@ pub fn RasterPass(
                     var v_ideal_x_px: VecSF = undefined;
                     var v_ideal_y_px: VecSF = undefined;
                     inline for (0..S) |ll| {
-                        v_ideal_x_px[ll] = subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 0];
-                        v_ideal_y_px[ll] = subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 1];
+                        v_ideal_x_px[ll] = 
+                            subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 0];
+                        v_ideal_y_px[ll] = 
+                            subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 1];
                     }
 
                     ctx_report.recordSolverCalls(S);
@@ -520,8 +525,10 @@ pub fn RasterPass(
                     var v_ideal_x_px: VecSF = undefined;
                     var v_ideal_y_px: VecSF = undefined;
                     inline for (0..S) |ll| {
-                        v_ideal_x_px[ll] = subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 0];
-                        v_ideal_y_px[ll] = subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 1];
+                        v_ideal_x_px[ll] = 
+                            subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 0];
+                        v_ideal_y_px[ll] = 
+                            subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 1];
                     }
 
                     const v_hull_res: HullResultSIMD = element_tess.isInSIMD(
