@@ -16,6 +16,7 @@ const tcfg = @import("common/testconfig.zig");
 const CameraInput = @import("zraster/zig/camera.zig").CameraInput;
 const buildconfig = @import("zraster/zig/buildconfig.zig");
 const cfg = buildconfig.config;
+const rastcfg = @import("zraster/zig/rasterconfig.zig");
 const camera_mod = @import("zraster/zig/camera.zig");
 const CameraPrepared = camera_mod.CameraPrepared;
 const gk = @import("zraster/zig/geometrykernels.zig");
@@ -240,7 +241,7 @@ test "Multicamera duplicate sphere200 cameras match each other" {
         },
     };
 
-    const config = zraster.RasterConfig{
+    const config = rastcfg.RasterConfig{
         .render_mode = tcfg.RENDER_MODE,
         .total_threads = tcfg.TOTAL_THREADS,
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
@@ -419,7 +420,7 @@ test "Sphere200 multicamera gold tests" {
             },
         };
 
-        const config = zraster.RasterConfig{
+        const config = rastcfg.RasterConfig{
             .render_mode = tcfg.RENDER_MODE,
             .total_threads = tcfg.TOTAL_THREADS,
             .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
@@ -593,7 +594,7 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
         },
     };
 
-    const memory_config = zraster.RasterConfig{
+    const memory_config = rastcfg.RasterConfig{
         .render_mode = tcfg.RENDER_MODE,
         .total_threads = tcfg.TOTAL_THREADS,
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
@@ -629,7 +630,7 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
     defer aa.free(large_single.slice);
 
     const out_dir = "tmp-tests/multicamera-mixed-sizes";
-    const batch_config = zraster.RasterConfig{
+    const batch_config = rastcfg.RasterConfig{
         .render_mode = tcfg.RENDER_MODE,
         .total_threads = tcfg.TOTAL_THREADS,
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,

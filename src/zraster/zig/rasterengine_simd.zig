@@ -16,6 +16,8 @@ const VecSF = buildconfig.VecSF;
 const VecSU = buildconfig.VecSU;
 const VecSU8 = buildconfig.VecSU8;
 
+const rastcfg = @import("rasterconfig.zig");
+const ReportMode = rastcfg.ReportMode;
 const tol = cfg.tolerance;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
@@ -28,7 +30,6 @@ const OverlapBBox = rops.OverlapBBox;
 const ActiveTile = rops.ActiveTile;
 const Vec3Slices = rops.Vec3Slices;
 const report = @import("report.zig");
-const ReportMode = report.ReportMode;
 const Timestamp = std.Io.Clock.Timestamp;
 const common = @import("rasterengine_common.zig");
 const simdops = @import("simdops.zig");

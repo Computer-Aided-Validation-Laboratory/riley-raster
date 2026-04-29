@@ -28,11 +28,14 @@ const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
 const rasterengine = @import("rasterengine.zig");
 
+const rastcfg = @import("rasterconfig.zig");
+const RasterConfig = rastcfg.RasterConfig;
+const SaveStrategy = rastcfg.SaveStrategy;
+const RenderMode = rastcfg.RenderMode;
+const ReportMode = rastcfg.ReportMode;
+const FullStatsOpts = rastcfg.FullStatsOpts;
+
 const report = @import("report.zig");
-pub const RenderMode = report.RenderMode;
-pub const RasterConfig = report.RasterConfig;
-pub const SaveStrategy = report.SaveStrategy;
-pub const FrameBenchCapture = report.FrameBenchCapture;
 const FrameReportStorage = report.FrameReportStorage;
 
 const FrameJobErrorState = struct {
@@ -53,12 +56,12 @@ const FrameJobErrorState = struct {
     }
 };
 
-fn FrameReportPtr(comptime report_mode: report.ReportMode) type {
+fn FrameReportPtr(comptime report_mode: ReportMode) type {
     return *report.LogType(report_mode);
 }
 
 fn getFrameReportPtr(
-    comptime report_mode: report.ReportMode,
+    comptime report_mode: ReportMode,
     ctx: *FrameContext,
 ) FrameReportPtr(report_mode) {
     return switch (report_mode) {
@@ -154,7 +157,7 @@ fn initStaticSlice(
 
 fn initImagesArray(
     outer_alloc: std.mem.Allocator,
-    config: report.RasterConfig,
+    config: RasterConfig,
     cameras: []const cam.CameraPrepared,
     num_time: usize,
     num_fields: u8,
@@ -185,7 +188,7 @@ fn initFrameReportStorage(
     outer_alloc: std.mem.Allocator,
     camera: *const cam.CameraPrepared,
     actual_tile_size: u16,
-    config: report.RasterConfig,
+    config: RasterConfig,
 ) !report.FrameReportStorage {
     return switch (config.report) {
         .off => .{ .off = .{} },
@@ -309,7 +312,7 @@ fn copyFrameToImageBatch(
 }
 
 fn rasterFrame(
-    comptime report_mode: report.ReportMode,
+    comptime report_mode: ReportMode,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     input: *const FrameInput,
@@ -446,7 +449,7 @@ const FrameInput = struct {
     camera_idx: usize,
     frame_idx: usize,
     num_fields: u8,
-    config: report.RasterConfig,
+    config: RasterConfig,
     out_dir: ?std.Io.Dir,
     mesh_static: []const mo.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
@@ -578,7 +581,7 @@ fn dispatchSerialFrameJobs(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     cameras: []const cam.CameraPrepared,
-    config: report.RasterConfig,
+    config: RasterConfig,
     out_dir: ?std.Io.Dir,
     num_time: usize,
     num_fields: u8,
@@ -625,7 +628,7 @@ fn dispatchOfflineFrameJobs(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     cameras: []const cam.CameraPrepared,
-    config: report.RasterConfig,
+    config: RasterConfig,
     out_dir: ?std.Io.Dir,
     num_time: usize,
     num_fields: u8,
@@ -703,7 +706,7 @@ fn dispatchInOrderFrameJobs(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     cameras: []const cam.CameraPrepared,
-    config: report.RasterConfig,
+    config: RasterConfig,
     out_dir: ?std.Io.Dir,
     num_time: usize,
     num_fields: u8,
@@ -788,7 +791,7 @@ pub fn rasterAllFrames(
     io: std.Io,
     camera_inputs: []const cam.CameraInput,
     meshes: []const mo.MeshInput,
-    config: report.RasterConfig,
+    config: RasterConfig,
     out_dir_path: ?[]const u8,
     bench_capture: ?[]report.FrameBenchCapture,
 ) !?ndarray.NDArray(f64) {

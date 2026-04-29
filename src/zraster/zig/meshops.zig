@@ -17,6 +17,7 @@ const uvio = @import("uvio.zig");
 
 const imageio = @import("imageio.zig");
 
+const rastcfg = @import("rasterconfig.zig");
 const imageops = @import("imageops.zig");
 const cam = @import("camera.zig");
 const pce = @import("parachunkexec.zig");
@@ -1213,7 +1214,7 @@ pub fn prepareMeshFrame(
     chunk_exec: ?*pce.ParaChunkExecutor,
     workers_num: usize,
     camera: *const cam.CameraPrepared,
-    config: report.RasterConfig,
+    config: rastcfg.RasterConfig,
     mesh_static: *const MeshStatic,
     frame_idx: usize,
     scaling_params: ?imageops.ScalingParams,
@@ -1252,7 +1253,7 @@ pub fn prepareMeshFrames(
     chunk_exec: ?*pce.ParaChunkExecutor,
     workers_num: usize,
     camera: *const cam.CameraPrepared,
-    config: report.RasterConfig,
+    config: rastcfg.RasterConfig,
     frame_idx: usize,
     static_meshes: []const MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,

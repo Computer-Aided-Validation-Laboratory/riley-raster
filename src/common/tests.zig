@@ -23,7 +23,8 @@ const MeshType = gk.MeshType;
 const MeshInput = mo.MeshInput;
 
 const zraster = @import("../zraster/zig/zraster.zig");
-const RasterConfig = zraster.RasterConfig;
+const rastcfg = @import("../zraster/zig/rasterconfig.zig");
+const RasterConfig = rastcfg.RasterConfig;
 
 const iio = @import("../zraster/zig/imageio.zig");
 const texops = @import("../zraster/zig/textureops.zig");

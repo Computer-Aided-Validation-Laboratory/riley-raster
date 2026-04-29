@@ -7,6 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const rastcfg = @import("rasterconfig.zig");
 const report = @import("report.zig");
 
 pub const DispatchScaling = struct {
@@ -21,8 +22,8 @@ const target_subpx_per_tile: usize = 32*32*2*2;
 const default_chunk_count_per_worker: usize = 4;
 
 pub fn dispatchScaling(
-    render_mode: report.RenderMode,
-    config: report.RasterConfig,
+    render_mode: rastcfg.RenderMode,
+    config: rastcfg.RasterConfig,
     cameras_num: usize,
 ) DispatchScaling {
     return .{
@@ -57,7 +58,7 @@ pub fn phaseThreads(
 }
 
 pub fn framesInFlight(
-    render_mode: report.RenderMode,
+    render_mode: rastcfg.RenderMode,
     total_threads: u16,
     max_frames_in_flight: u16,
     cameras_num: usize,

@@ -10,6 +10,7 @@ const std = @import("std");
 const common = @import("benchcommon.zig");
 const orch = @import("orchestration.zig");
 const zraster = @import("../zraster/zig/zraster.zig");
+const rastcfg = @import("../zraster/zig/rasterconfig.zig");
 const iio = @import("../zraster/zig/imageio.zig");
 const meshio = @import("../zraster/zig/meshio.zig");
 const mo = @import("../zraster/zig/meshops.zig");
@@ -114,7 +115,7 @@ pub fn runSphere200MultiCullQuiet(
     defer camera.deinit(aa);
 
     const num_out_fields = common.calcOutputChannels(shader_type);
-    const config = zraster.RasterConfig{
+    const config = rastcfg.RasterConfig{
         .render_mode = tcfg.RENDER_MODE,
         .total_threads = tcfg.TOTAL_THREADS,
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,

@@ -11,6 +11,7 @@ const common = @import("common/tests.zig");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("zraster/zig/buildconfig.zig");
+const rastcfg = @import("zraster/zig/rasterconfig.zig");
 const meshio = @import("zraster/zig/meshio.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
@@ -86,7 +87,7 @@ fn runDistortMidsideTexFuncTest(
         },
     };
 
-    const config = zraster.RasterConfig{
+    const config = rastcfg.RasterConfig{
         .render_mode = tcfg.RENDER_MODE,
         .total_threads = tcfg.TOTAL_THREADS,
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
@@ -221,7 +222,7 @@ fn runDistortMidsideNodalUvTest(
         },
     };
 
-    const config = zraster.RasterConfig{
+    const config = rastcfg.RasterConfig{
         .render_mode = tcfg.RENDER_MODE,
         .total_threads = tcfg.TOTAL_THREADS,
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
@@ -342,7 +343,7 @@ fn runDistortMidsideTexShaderTest(
         },
     };
 
-    const config = zraster.RasterConfig{
+    const config = rastcfg.RasterConfig{
         .render_mode = tcfg.RENDER_MODE,
         .total_threads = tcfg.TOTAL_THREADS,
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,

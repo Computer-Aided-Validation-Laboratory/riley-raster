@@ -20,6 +20,7 @@ const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
 const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
 const Rotation = @import("../zraster/zig/rotation.zig").Rotation;
 const report = @import("../zraster/zig/report.zig");
+const rastcfg = @import("../zraster/zig/rasterconfig.zig");
 const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
 const Timestamp = std.Io.Clock.Timestamp;
 const tcfg = @import("testconfig.zig");
@@ -297,7 +298,7 @@ pub const BenchOptions = struct {
     hull_convex_fallback: bool = false,
 };
 
-fn calcSaveStrategy(options: BenchOptions) zraster.SaveStrategy {
+fn calcSaveStrategy(options: BenchOptions) rastcfg.SaveStrategy {
     if (options.out_dir_base.len > 0 and options.return_image) {
         return .both;
     }
@@ -501,7 +502,7 @@ pub fn runBenchmarkQuiet(
 }
 
 fn runBenchmarkInternal(
-    comptime report_mode: report.ReportMode,
+    comptime report_mode: rastcfg.ReportMode,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     etype: gk.MeshType,
@@ -569,7 +570,7 @@ fn runBenchmarkInternal(
     const threads_per_frame = options.threads_per_frame orelse
         @min(total_threads, tcfg.MAX_RASTER_THREADS_PER_FRAME);
 
-    const config = zraster.RasterConfig{
+    const config = rastcfg.RasterConfig{
         .render_mode = tcfg.RENDER_MODE,
         .total_threads = total_threads,
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
@@ -608,7 +609,7 @@ fn runBenchmarkInternal(
     else
         null;
 
-    var bench_capture_storage: [1]zraster.FrameBenchCapture = undefined;
+    var bench_capture_storage: [1]report.FrameBenchCapture = undefined;
     const bench_capture = if (report_mode == .bench)
         bench_capture_storage[0..]
     else

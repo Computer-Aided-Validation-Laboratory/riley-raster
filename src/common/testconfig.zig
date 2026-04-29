@@ -6,7 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
-const RenderMode = @import("../zraster/zig/zraster.zig").RenderMode;
+const RenderMode = @import("../zraster/zig/rasterconfig.zig").RenderMode;
 
 pub const REL_TOL: f64 = 1e-6;
 pub const ABS_TOL: f64 = 1e-6;

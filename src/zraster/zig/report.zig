@@ -12,58 +12,10 @@ const iio = @import("imageio.zig");
 const matslice = @import("matslice.zig");
 const cam = @import("camera.zig");
 const mo = @import("meshops.zig");
-
-pub const ReportMode = enum {
-    off,
-    bench,
-    full_stats,
-};
-
-pub const SaveStrategy = enum {
-    disk,
-    memory,
-    both,
-    none,
-};
-
-pub const RenderMode = enum {
-    in_order,
-    offline,
-};
-
-pub const RasterConfig = struct {
-    render_mode: RenderMode = .in_order,
-    total_threads: u16 = 0,
-    max_frames_in_flight: u16 = 1,
-    max_geom_threads_per_frame: u16 = 0,
-    max_raster_threads_per_frame: u16 = 0,
-    save_strategy: SaveStrategy = .disk,
-    image_save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .none },
-    },
-    tile_size_max: u16 = 32,
-    hull_early_out_on: bool = true,
-    hull_convex_fallback: bool = false,
-    report: ReportMode = .bench,
-    full_stats_opts: FullStatsOpts = .{},
-};
+const rastcfg = @import("rasterconfig.zig");
+const ReportMode = rastcfg.ReportMode;
 
 pub const OffLog = struct {};
-
-pub const FullStatsOpts = struct {
-    formats: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
-        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-        .{ .format = .csv, .bits = null, .scaling = .none },
-    },
-    save_iteration_map: bool = true,
-    save_tile_timing_map: bool = true,
-    save_tile_density_map: bool = true,
-    save_tile_occupancy_map: bool = true,
-    save_depth_map: bool = true,
-    save_earlyout_map: bool = true,
-    save_pixel_occupancy_map: bool = true,
-    save_normals_map: bool = false,
-};
 
 pub const FrameTimes = struct {
     geometry_prep: f64 = 0,
@@ -132,7 +84,7 @@ pub fn calcBenchCaptureIdx(
 pub fn publishFrameResults(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    config: RasterConfig,
+    config: rastcfg.RasterConfig,
     actual_tile_size: u16,
     camera: *const cam.CameraPrepared,
     camera_idx: usize,
@@ -284,7 +236,7 @@ pub const FullStatsLog = struct {
         tile_size: u16,
         tile_data: []const f64,
         name_prefix: []const u8,
-        opts: FullStatsOpts,
+        opts: rastcfg.FullStatsOpts,
     ) !void {
         const px_x = camera.pixels_num[0];
         const px_y = camera.pixels_num[1];
@@ -317,7 +269,7 @@ pub const FullStatsLog = struct {
         frame_idx: usize,
         camera: *const cam.CameraPrepared,
         tile_size: u16,
-        opts: FullStatsOpts,
+        opts: rastcfg.FullStatsOpts,
         nodes_per_elem: f64,
     ) !void {
         const save_dir = out_dir orelse return;
@@ -706,7 +658,7 @@ pub fn initFullStatsLog(
     pixels_num: [2]u32,
     tile_size: u16,
     sub_sample: u8,
-    opts: FullStatsOpts,
+    opts: rastcfg.FullStatsOpts,
 ) !FullStatsLog {
     var self = FullStatsLog{};
     const sub_samp: usize = @intCast(sub_sample);

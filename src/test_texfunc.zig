@@ -20,6 +20,7 @@ const CameraInput = @import("zraster/zig/camera.zig").CameraInput;
 const iio = @import("zraster/zig/imageio.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 const buildconfig = @import("zraster/zig/buildconfig.zig");
+const rastcfg = @import("zraster/zig/rasterconfig.zig");
 
 const gold_root = "gold-texfunc";
 const data_root = "data-min";
@@ -152,7 +153,7 @@ fn runTexFuncCase(
 
     std.debug.print("Testing {s} ... ", .{case_dir_name});
 
-    const config = zraster.RasterConfig{
+    const config = rastcfg.RasterConfig{
         .render_mode = tcfg.RENDER_MODE,
         .total_threads = tcfg.TOTAL_THREADS,
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
