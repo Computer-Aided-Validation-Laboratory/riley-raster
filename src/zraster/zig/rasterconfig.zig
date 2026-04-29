@@ -8,6 +8,12 @@
 // --------------------------------------------------------------------------
 const iio = @import("imageio.zig");
 
+pub const HullMode = enum {
+    off,
+    on_no_fallback,
+    on_convex_fallback,
+};
+
 pub const RasterConfig = struct {
     render_mode: RenderMode = .in_order,
     total_threads: u16 = 0,
@@ -19,8 +25,7 @@ pub const RasterConfig = struct {
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
     tile_size_max: u16 = 32,
-    hull_early_out_on: bool = true,
-    hull_convex_fallback: bool = true,
+    hull_mode: HullMode = .on_convex_fallback,
     report: ReportMode = .bench,
     full_stats_opts: FullStatsOpts = .{},
 };
@@ -57,4 +62,3 @@ pub const FullStatsOpts = struct {
     save_pixel_occupancy_map: bool = true,
     save_normals_map: bool = false,
 };
-

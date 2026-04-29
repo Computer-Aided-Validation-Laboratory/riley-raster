@@ -141,7 +141,7 @@ pub fn runSphere200MultiCullQuiet(
                 .channels = num_out_fields,
             },
         },
-        .hull_convex_fallback = options.hull_convex_fallback,
+        .hull_mode = options.hull_mode,
         .report = .off,
     };
 

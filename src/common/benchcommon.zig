@@ -22,8 +22,8 @@ const Rotation = @import("../zraster/zig/rotation.zig").Rotation;
 const report = @import("../zraster/zig/report.zig");
 const rastcfg = @import("../zraster/zig/rasterconfig.zig");
 const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
-const Timestamp = std.Io.Clock.Timestamp;
 const tcfg = @import("testconfig.zig");
+const Timestamp = std.Io.Clock.Timestamp;
 const orch = @import("orchestration.zig");
 
 pub const CalculatedMetrics = struct {
@@ -295,7 +295,7 @@ pub const BenchOptions = struct {
     fov_scale: f64 = 1.0,
     threads: ?u16 = null,
     threads_per_frame: ?u16 = null,
-    hull_convex_fallback: bool = false,
+    hull_mode: rastcfg.HullMode = tcfg.HULL_MODE,
 };
 
 fn calcSaveStrategy(options: BenchOptions) rastcfg.SaveStrategy {
@@ -591,7 +591,7 @@ fn runBenchmarkInternal(
                 .channels = num_out_fields,
             },
         },
-        .hull_convex_fallback = options.hull_convex_fallback,
+        .hull_mode = options.hull_mode,
         .report = report_mode,
     };
 

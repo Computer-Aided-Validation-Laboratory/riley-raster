@@ -778,6 +778,7 @@ pub fn runTestInternal(
                 .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
                 .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
                 .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
+                .hull_mode = tcfg.HULL_MODE,
                 .save_strategy = .memory,
                 .image_save_opts = &[_]iio.ImageSaveOpts{
                     .{ .format = .csv, .bits = null, .scaling = .none },
@@ -804,6 +805,7 @@ pub fn runTestInternal(
             const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
             const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
+            var first_err: ?anyerror = null;
             for (0..frames_num) |f| {
                 const fname = try findGoldPath(aa, io, nodal_dir, 0, f, 0, false);
 
@@ -819,10 +821,13 @@ pub fn runTestInternal(
                     rel_tol,
                     abs_tol,
                 ) catch |err| {
-                    if (err == error.PixelMismatch) {
-                        std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
-                    } else {
-                        std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                    if (first_err == null) {
+                        if (err == error.PixelMismatch) {
+                            std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                        } else {
+                            std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                        }
+                        first_err = err;
                     }
                     const fail_dir_name = try std.fmt.allocPrint(
                         aa,
@@ -841,9 +846,9 @@ pub fn runTestInternal(
                         fname,
                         1,
                     );
-                    return err;
                 };
             }
+            if (first_err) |err| return err;
             std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
         }
 
@@ -883,8 +888,8 @@ pub fn runTestInternal(
                     .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
                     .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
                     .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-                    .save_strategy = .memory,
-                    .image_save_opts = &[_]iio.ImageSaveOpts{
+                    .hull_mode = tcfg.HULL_MODE,
+                    .save_strategy = .memory,                    .image_save_opts = &[_]iio.ImageSaveOpts{
                         .{ .format = .csv, .bits = null, .scaling = .none },
                     },
                     .report = if (report_perf) .full_stats else .off,
@@ -912,6 +917,7 @@ pub fn runTestInternal(
                     result.dims[1]
                 else
                     result.dims[0];
+                var first_err: ?anyerror = null;
                 for (0..frames_num) |f| {
                     const fname = try findGoldPath(aa, io, tex_dir, 0, f, 0, false);
 
@@ -927,10 +933,13 @@ pub fn runTestInternal(
                         rel_tol,
                         abs_tol,
                     ) catch |err| {
-                        if (err == error.PixelMismatch) {
-                            std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
-                        } else {
-                            std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                        if (first_err == null) {
+                            if (err == error.PixelMismatch) {
+                                std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                            } else {
+                                std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                            }
+                            first_err = err;
                         }
                         const fail_dir_name = try std.fmt.allocPrint(
                             aa,
@@ -949,9 +958,9 @@ pub fn runTestInternal(
                             fname,
                             1,
                         );
-                        return err;
                     };
                 }
+                if (first_err) |err| return err;
                 std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
             }
         }
@@ -1014,8 +1023,8 @@ pub fn runMultimeshTestExt(
             .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
             .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
             .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-            .save_strategy = .memory,
-            .image_save_opts = &[_]iio.ImageSaveOpts{
+            .hull_mode = tcfg.HULL_MODE,
+            .save_strategy = .memory,            .image_save_opts = &[_]iio.ImageSaveOpts{
                 .{ .format = .csv, .bits = null, .scaling = .none },
             },
             .report = .off,
@@ -1151,8 +1160,8 @@ pub fn runMultimeshMixedTestExt(
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
         .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
         .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-        .save_strategy = .memory,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
+        .hull_mode = tcfg.HULL_MODE,
+        .save_strategy = .memory,        .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
         .report = .off,
@@ -1270,8 +1279,8 @@ pub fn runMultimeshMixedRGBTestExt(
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
         .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
         .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-        .save_strategy = .memory,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
+        .hull_mode = tcfg.HULL_MODE,
+        .save_strategy = .memory,        .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
         },
         .report = .off,

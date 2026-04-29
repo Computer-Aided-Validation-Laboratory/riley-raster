@@ -93,6 +93,7 @@ fn runDistortMidsideTexFuncTest(
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
         .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
         .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
+        .hull_mode = tcfg.HULL_MODE,
         .save_strategy = .memory,
         .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
@@ -120,6 +121,7 @@ fn runDistortMidsideTexFuncTest(
     ) / 1e6;
 
     const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
+    var first_err: ?anyerror = null;
     for (0..frames_num) |frame_idx| {
         const gold_path = try common.findGoldPath(
             aa,
@@ -143,11 +145,15 @@ fn runDistortMidsideTexFuncTest(
             tcfg.REL_TOL,
             tcfg.ABS_TOL,
         ) catch |err| {
-            if (err == error.PixelMismatch) {
-                std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
-            } else {
-                std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+            if (first_err == null) {
+                if (err == error.PixelMismatch) {
+                    std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                } else {
+                    std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                }
+                first_err = err;
             }
+
             const fail_dir_name = try std.fmt.allocPrint(
                 aa,
                 "all_{s}_{s}",
@@ -168,9 +174,9 @@ fn runDistortMidsideTexFuncTest(
                 gold_path,
                 1,
             );
-            return err;
         };
     }
+    if (first_err) |err| return err;
     std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
 }
 
@@ -228,6 +234,7 @@ fn runDistortMidsideNodalUvTest(
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
         .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
         .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
+        .hull_mode = tcfg.HULL_MODE,
         .save_strategy = .memory,
         .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
@@ -255,6 +262,7 @@ fn runDistortMidsideNodalUvTest(
     ) / 1e6;
 
     const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
+    var first_err: ?anyerror = null;
     for (0..frames_num) |frame_idx| {
         for (0..2) |field_idx| {
             const gold_path = try common.findGoldPath(
@@ -279,15 +287,39 @@ fn runDistortMidsideNodalUvTest(
                 tcfg.REL_TOL,
                 tcfg.ABS_TOL,
             ) catch |err| {
-                if (err == error.PixelMismatch) {
-                    std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
-                } else {
-                    std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                if (first_err == null) {
+                    if (err == error.PixelMismatch) {
+                        std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                    } else {
+                        std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                    }
+                    first_err = err;
                 }
-                return err;
+
+                const fail_dir_name = try std.fmt.allocPrint(
+                    aa,
+                    "all_{s}_{s}",
+                    .{
+                        case_dir_name,
+                        if (buildconfig.config.simd == .on) "simd" else "scalar",
+                    },
+                );
+                try common.saveComparisonArtifactsFromResult(
+                    aa,
+                    io,
+                    "fails",
+                    fail_dir_name,
+                    &result,
+                    0,
+                    frame_idx,
+                    field_idx,
+                    gold_path,
+                    1,
+                );
             };
         }
     }
+    if (first_err) |err| return err;
     std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
 }
 
@@ -349,6 +381,7 @@ fn runDistortMidsideTexShaderTest(
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
         .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
         .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
+        .hull_mode = tcfg.HULL_MODE,
         .save_strategy = .memory,
         .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
@@ -376,6 +409,7 @@ fn runDistortMidsideTexShaderTest(
     ) / 1e6;
 
     const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
+    var first_err: ?anyerror = null;
     for (0..frames_num) |frame_idx| {
         const gold_path = try common.findGoldPath(
             aa,
@@ -399,14 +433,38 @@ fn runDistortMidsideTexShaderTest(
             tcfg.REL_TOL,
             tcfg.ABS_TOL,
         ) catch |err| {
-            if (err == error.PixelMismatch) {
-                std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
-            } else {
-                std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+            if (first_err == null) {
+                if (err == error.PixelMismatch) {
+                    std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                } else {
+                    std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                }
+                first_err = err;
             }
-            return err;
+
+            const fail_dir_name = try std.fmt.allocPrint(
+                aa,
+                "all_{s}_{s}",
+                .{
+                    case_dir_name,
+                    if (buildconfig.config.simd == .on) "simd" else "scalar",
+                },
+            );
+            try common.saveComparisonArtifactsFromResult(
+                aa,
+                io,
+                "fails",
+                fail_dir_name,
+                &result,
+                0,
+                frame_idx,
+                0,
+                gold_path,
+                1,
+            );
         };
     }
+    if (first_err) |err| return err;
     std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
 }
 

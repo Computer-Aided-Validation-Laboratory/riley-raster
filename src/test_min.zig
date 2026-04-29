@@ -94,7 +94,7 @@ test "MIN Suite: sphere200 and multimesh" {
                             .return_image = true,
                             .save_opts = &[_]iio.ImageSaveOpts{},
                             .fov_scale = 1.0,
-                            .hull_convex_fallback = true,
+                            .hull_mode = .on_convex_fallback,
                         };
 
                         const case_name = try minsuite.calcMinCaseName(
@@ -212,7 +212,7 @@ test "MIN Suite: sphere200 and multimesh" {
                             .return_image = true,
                             .save_opts = &[_]iio.ImageSaveOpts{},
                             .fov_scale = 0.75,
-                            .hull_convex_fallback = true,
+                            .hull_mode = .on_convex_fallback,
                         };
 
                         const case_name = try minsuite.calcMinCaseName(

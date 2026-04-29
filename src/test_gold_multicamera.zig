@@ -247,6 +247,7 @@ test "Multicamera duplicate sphere200 cameras match each other" {
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
         .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
         .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
+        .hull_mode = tcfg.HULL_MODE,
         .save_strategy = .memory,
         .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
@@ -426,6 +427,7 @@ test "Sphere200 multicamera gold tests" {
             .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
             .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
             .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
+            .hull_mode = tcfg.HULL_MODE,
             .save_strategy = .memory,
             .image_save_opts = &[_]iio.ImageSaveOpts{
                 .{
@@ -600,6 +602,7 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
         .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
         .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
+        .hull_mode = tcfg.HULL_MODE,
         .save_strategy = .memory,
         .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
@@ -636,6 +639,7 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
         .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
         .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
+        .hull_mode = tcfg.HULL_MODE,
         .save_strategy = .both,
         .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },

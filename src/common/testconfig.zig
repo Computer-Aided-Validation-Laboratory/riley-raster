@@ -6,11 +6,14 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
-const RenderMode = @import("../zraster/zig/rasterconfig.zig").RenderMode;
+const rastcfg = @import("../zraster/zig/rasterconfig.zig");
+const RenderMode = rastcfg.RenderMode;
+const HullMode = rastcfg.HullMode;
 
 pub const REL_TOL: f64 = 1e-6;
 pub const ABS_TOL: f64 = 1e-6;
 pub const RENDER_MODE: RenderMode = .in_order;
+pub const HULL_MODE: HullMode = .on_no_fallback;
 pub const TOTAL_THREADS: u16 = 2;
 pub const MAX_FRAMES_IN_FLIGHT: u16 = 1;
 pub const MAX_GEOM_THREADS_PER_FRAME: u16 = 2;

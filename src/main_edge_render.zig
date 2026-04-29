@@ -9,6 +9,7 @@
 const std = @import("std");
 const gengold = @import("common/gengold.zig");
 const zraster = @import("zraster/zig/zraster.zig");
+const rastcfg = @import("zraster/zig/rasterconfig.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
@@ -39,13 +40,14 @@ pub fn main(init: std.process.Init) !void {
     const out_dir_root = "out-bench-edge";
     const data_dir = "data-edge";
 
-    const config = zraster.RasterConfig{
-        .save_opt = .disk,
-        .save_opts = &[_]iio.ImageSaveOpts{
+    const config = rastcfg.RasterConfig{
+        .save_strategy = .disk,
+        .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
         .report = .full_stats,
+        .hull_mode = .on_convex_fallback,
         .full_stats_opts = .{
             .formats = &[_]iio.ImageSaveOpts{
                 .{ .format = .bmp, .bits = 8, .scaling = .auto },

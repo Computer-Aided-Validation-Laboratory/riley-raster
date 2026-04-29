@@ -469,8 +469,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         camera: *const cam.CameraPrepared,
         mesh_static: *const MeshStatic,
         frame_idx: usize,
-        hull_early_out_on: bool,
-        hull_convex_fallback_on: bool,
+        hull_mode: rastcfg.HullMode,
         scaling_params: ?imageops.ScalingParams,
         chunk_exec: ?*pce.ParaChunkExecutor,
         workers_num: usize,
@@ -487,8 +486,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             camera: *const cam.CameraPrepared,
             mesh_static: *const MeshStatic,
             frame_idx: usize,
-            hull_early_out_on: bool,
-            hull_convex_fallback_on: bool,
+            hull_mode: rastcfg.HullMode,
             scaling_params: ?imageops.ScalingParams,
             chunk_exec: ?*pce.ParaChunkExecutor,
             workers_num: usize,
@@ -509,8 +507,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .camera = camera,
                 .mesh_static = mesh_static,
                 .frame_idx = frame_idx,
-                .hull_early_out_on = hull_early_out_on,
-                .hull_convex_fallback_on = hull_convex_fallback_on,
+                .hull_mode = hull_mode,
                 .scaling_params = scaling_params,
                 .chunk_exec = chunk_exec,
                 .workers_num = workers_num,
@@ -651,7 +648,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             connect: *const meshio.Connect,
             coords_nodes: *const meshio.Coords,
             visible_counts_by_chunk: []usize,
-            hull_convex_fallback_on: bool,
+            hull_mode: rastcfg.HullMode,
         };
 
         fn runCullVisibleCount(
@@ -661,6 +658,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             range_end: usize,
         ) void {
             const stage: *CullVisibleCountStage = @ptrCast(@alignCast(ctx_ptr));
+            const hull_convex_fallback_on = stage.hull_mode == .on_convex_fallback;
             var visible_count: usize = 0;
 
             for (range_start..range_end) |ee| {
@@ -679,7 +677,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         stage.coords_nodes,
                         stage.connect,
                         ee,
-                        stage.hull_convex_fallback_on,
+                        hull_convex_fallback_on,
                     );
 
                 if (bbox != null) {
@@ -706,7 +704,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .connect = &self.mesh_static.connect,
                 .coords_nodes = &self.mesh_workspace.coords_nodes,
                 .visible_counts_by_chunk = self.mesh_workspace.visible_counts_by_chunk,
-                .hull_convex_fallback_on = self.hull_convex_fallback_on,
+                .hull_mode = self.hull_mode,
             };
             pce.runStaticRange(
                 self.chunk_exec,
@@ -732,7 +730,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
                 .elem_bboxes = self.mesh_workspace.elem_bboxes,
                 .visible_offsets_by_chunk = self.mesh_workspace.visible_offsets_by_chunk,
-                .hull_convex_fallback_on = self.hull_convex_fallback_on,
+                .hull_mode = self.hull_mode,
             };
             pce.runStaticRange(
                 self.chunk_exec,
@@ -755,7 +753,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             visible_orig_elem_indices: []usize,
             elem_bboxes: []rops.ElemBBox,
             visible_offsets_by_chunk: []const usize,
-            hull_convex_fallback_on: bool,
+            hull_mode: rastcfg.HullMode,
         };
 
         fn runCullVisibleFill(
@@ -765,6 +763,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             range_end: usize,
         ) void {
             const stage: *CullVisibleFillStage = @ptrCast(@alignCast(ctx_ptr));
+            const hull_convex_fallback_on = stage.hull_mode == .on_convex_fallback;
             var write_idx = stage.visible_offsets_by_chunk[chunk_idx];
 
             for (range_start..range_end) |ee| {
@@ -783,7 +782,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         stage.coords_nodes,
                         stage.connect,
                         ee,
-                        stage.hull_convex_fallback_on,
+                        hull_convex_fallback_on,
                     );
 
                 if (bbox) |b| {
@@ -865,7 +864,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             camera: *const cam.CameraPrepared,
             elem_coords: *const ndarray.NDArray(f64),
             raster_hull: *ndarray.NDArray(f64),
-            hull_convex_fallback_on: bool,
+            hull_mode: rastcfg.HullMode,
         };
 
         fn runPrepareRasterHulls(
@@ -876,12 +875,13 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         ) void {
             _ = chunk_idx;
             const stage: *PrepareRasterHullsStage = @ptrCast(@alignCast(ctx_ptr));
+            const hull_convex_fallback_on = stage.hull_mode == .on_convex_fallback;
             rops.prepareVisibleRasterHullsRange(
                 MT,
                 stage.camera,
                 stage.elem_coords,
                 stage.raster_hull,
-                stage.hull_convex_fallback_on,
+                hull_convex_fallback_on,
                 range_start,
                 range_end,
             );
@@ -896,7 +896,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 return;
             }
 
-            if (!self.hull_early_out_on) {
+            if (self.hull_mode == .off) {
                 self.mesh_workspace.raster_hull = null;
                 return;
             }
@@ -911,7 +911,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .camera = self.camera,
                 .elem_coords = elem_coords,
                 .raster_hull = &self.mesh_workspace.raster_hull.?,
-                .hull_convex_fallback_on = self.hull_convex_fallback_on,
+                .hull_mode = self.hull_mode,
             };
             pce.runStaticRange(
                 self.chunk_exec,
@@ -1226,8 +1226,7 @@ pub fn prepareMeshFrame(
                 camera,
                 mesh_static,
                 frame_idx,
-                config.hull_early_out_on,
-                config.hull_convex_fallback,
+                config.hull_mode,
                 scaling_params,
                 chunk_exec,
                 workers_num,
