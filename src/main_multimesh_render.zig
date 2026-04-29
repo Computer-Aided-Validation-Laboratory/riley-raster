@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const gengold = @import("common/gengold.zig");
+const tcfg = @import("common/testconfig.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 const iio = @import("zraster/zig/imageio.zig");
 
@@ -15,20 +16,19 @@ pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
     const io = init.io;
 
-    const config = zraster.RasterConfig{
-        .save_opt = .disk,
-        .save_opts = &[_]iio.ImageSaveOpts{
+    var config = tcfg.rasterConfig(.preview);
+    config.save_strategy = .disk;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .bmp, .bits = 8, .scaling = .auto },
+        .{ .format = .csv, .bits = null, .scaling = .none },
+    };
+    config.report = .full_stats;
+    config.full_stats_opts = .{
+        .formats = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
-            .{ .format = .csv, .bits = null, .scaling = .none },
         },
-        .report = .full_stats,
-        .full_stats_opts = .{
-            .formats = &[_]iio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = .auto },
-            },
-            .save_iteration_map = true,
-            .save_depth_map = true,
-        },
+        .save_iteration_map = true,
+        .save_depth_map = true,
     };
     const dir_paths = [_][]const u8{
         "data-simple/tri3_twoelems/",

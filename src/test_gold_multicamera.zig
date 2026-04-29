@@ -16,7 +16,6 @@ const tcfg = @import("common/testconfig.zig");
 const CameraInput = @import("zraster/zig/camera.zig").CameraInput;
 const buildconfig = @import("zraster/zig/buildconfig.zig");
 const cfg = buildconfig.config;
-const rastcfg = @import("zraster/zig/rasterconfig.zig");
 const camera_mod = @import("zraster/zig/camera.zig");
 const CameraPrepared = camera_mod.CameraPrepared;
 const gk = @import("zraster/zig/geometrykernels.zig");
@@ -241,18 +240,10 @@ test "Multicamera duplicate sphere200 cameras match each other" {
         },
     };
 
-    const config = rastcfg.RasterConfig{
-        .render_mode = tcfg.RENDER_MODE,
-        .total_threads = tcfg.TOTAL_THREADS,
-        .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
-        .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
-        .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-        .hull_mode = tcfg.HULL_MODE,
-        .save_strategy = .memory,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .csv, .bits = null, .scaling = .none },
-        },
-        .report = .off,
+    var config = tcfg.rasterConfig(.testing);
+    config.save_strategy = .memory;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .csv, .bits = null, .scaling = .none },
     };
 
     const result = (try zraster.rasterAllFrames(
@@ -421,26 +412,20 @@ test "Sphere200 multicamera gold tests" {
             },
         };
 
-        const config = rastcfg.RasterConfig{
-            .render_mode = tcfg.RENDER_MODE,
-            .total_threads = tcfg.TOTAL_THREADS,
-            .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
-            .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
-            .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-            .hull_mode = tcfg.HULL_MODE,
-            .save_strategy = .memory,
-            .image_save_opts = &[_]iio.ImageSaveOpts{
-                .{
-                    .format = .csv,
-                    .bits = null,
-                    .scaling = .none,
-                    .channels = render_case.channels,
-                },
+        var config = tcfg.rasterConfig(.testing);
+        config.save_strategy = .memory;
+        config.image_save_opts = &[_]iio.ImageSaveOpts{
+            .{
+                .format = .csv,
+                .bits = null,
+                .scaling = .none,
+                .channels = render_case.channels,
             },
-            .report = .off,
         };
 
-        std.debug.print("Testing {s} ... ", .{render_case.case_name});
+        if (tcfg.TEST_CASE_VERBOSE) {
+            std.debug.print("Testing {s} ... ", .{render_case.case_name});
+        }
         const time_start = Timestamp.now(io, .awake);
         const result = (try zraster.rasterAllFrames(
             aa,
@@ -494,9 +479,13 @@ test "Sphere200 multicamera gold tests" {
                 duplicate_abs_tol,
             ) catch |err| {
                 if (err == error.PixelMismatch) {
-                    std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                    if (tcfg.TEST_CASE_VERBOSE) {
+                        std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                    }
                 } else {
-                    std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                    if (tcfg.TEST_CASE_VERBOSE) {
+                        std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                    }
                 }
                 const fail_dir_name = try std.fmt.allocPrint(
                     aa,
@@ -518,7 +507,9 @@ test "Sphere200 multicamera gold tests" {
                 return err;
             };
         }
-        std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+        if (tcfg.TEST_CASE_VERBOSE) {
+            std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+        }
     }
 }
 
@@ -596,18 +587,10 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
         },
     };
 
-    const memory_config = rastcfg.RasterConfig{
-        .render_mode = tcfg.RENDER_MODE,
-        .total_threads = tcfg.TOTAL_THREADS,
-        .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
-        .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
-        .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-        .hull_mode = tcfg.HULL_MODE,
-        .save_strategy = .memory,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
-        },
-        .report = .off,
+    var memory_config = tcfg.rasterConfig(.testing);
+    memory_config.save_strategy = .memory;
+    memory_config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
     };
 
     const small_single = (try zraster.rasterAllFrames(
@@ -633,18 +616,10 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
     defer aa.free(large_single.slice);
 
     const out_dir = "tmp-tests/multicamera-mixed-sizes";
-    const batch_config = rastcfg.RasterConfig{
-        .render_mode = tcfg.RENDER_MODE,
-        .total_threads = tcfg.TOTAL_THREADS,
-        .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
-        .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
-        .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-        .hull_mode = tcfg.HULL_MODE,
-        .save_strategy = .both,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
-        },
-        .report = .off,
+    var batch_config = tcfg.rasterConfig(.testing);
+    batch_config.save_strategy = .both;
+    batch_config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
     };
     const batch_result = (try zraster.rasterAllFrames(
         aa,

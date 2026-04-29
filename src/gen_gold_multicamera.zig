@@ -10,6 +10,7 @@ const std = @import("std");
 
 const benchcommon = @import("common/benchcommon.zig");
 const orch = @import("common/orchestration.zig");
+const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("zraster/zig/buildconfig.zig");
 const cfg = buildconfig.config;
 const CameraPrepared = @import("zraster/zig/camera.zig").CameraPrepared;
@@ -164,17 +165,15 @@ pub fn main(init: std.process.Init) !void {
             },
         };
 
-        const config = zraster.RasterConfig{
-            .save_strategy = .disk,
-            .image_save_opts = &[_]iio.ImageSaveOpts{
-                .{
-                    .format = .fimg,
-                    .bits = null,
-                    .scaling = .none,
-                    .channels = render_case.channels,
-                },
+        var config = tcfg.rasterConfig(.gold);
+        config.save_strategy = .disk;
+        config.image_save_opts = &[_]iio.ImageSaveOpts{
+            .{
+                .format = .fimg,
+                .bits = null,
+                .scaling = .none,
+                .channels = render_case.channels,
             },
-            .report = .off,
         };
 
         const out_dir_path = try std.fs.path.join(

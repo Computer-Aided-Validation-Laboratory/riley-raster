@@ -7,7 +7,6 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const Timestamp = std.Io.Clock.Timestamp;
 const common = @import("common/benchcommon.zig");
 const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
@@ -121,10 +120,7 @@ test "Sphere Gold Tests" {
                             );
                         defer allocator.free(gold_case_name);
 
-                        std.debug.print("Testing {s}/{s} ... ", .{ c.ds, case_name });
-
                         // 1. Run benchmark
-                        const time_start = Timestamp.now(io, .awake);
                         var result = try common.runBenchmarkQuiet(
                             allocator,
                             io,
@@ -138,8 +134,6 @@ test "Sphere Gold Tests" {
                             .{ .out_dir_base = c.out },
                         );
                         result.deinit(allocator);
-                        const time_end = Timestamp.now(io, .awake);
-                        const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
                         // 2. Map filenames
                         const is_rgb = (st == .nodal_rgb or st == .tex8_rgb);
@@ -206,13 +200,7 @@ test "Sphere Gold Tests" {
                                         diff_count += 1;
                                 }
 
-                                if (diff_count == 0) {
-                                    std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
-                                } else {
-                                    std.debug.print(
-                                        "MISMATCH! ({d} px) ({d:.2} ms)\n",
-                                        .{ diff_count, duration_ms },
-                                    );
+                                if (diff_count != 0) {
                                     total_fails += 1;
 
                                     const fail_dir_name = try std.fmt.allocPrint(

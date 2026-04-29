@@ -17,8 +17,9 @@ const MeshType = gk.MeshType;
 const MeshInput = mo.MeshInput;
 const CameraPrepared = @import("../zraster/zig/camera.zig").CameraPrepared;
 const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
+const rastcfg = @import("../zraster/zig/rasterconfig.zig");
 const zraster = @import("../zraster/zig/zraster.zig");
-const RasterConfig = zraster.RasterConfig;
+const RasterConfig = rastcfg.RasterConfig;
 const iio = @import("../zraster/zig/imageio.zig");
 const texops = @import("../zraster/zig/textureops.zig");
 
@@ -384,7 +385,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
 
 fn buildUvField(
     allocator: std.mem.Allocator,
-    uvs: @import("zraster/zig/ndarray.zig").NDArray(f64),
+    uvs: @import("../zraster/zig/ndarray.zig").NDArray(f64),
     time_steps: usize,
 ) !meshio.Field {
     const node_num = uvs.dims[0];
@@ -407,7 +408,7 @@ pub fn generateDistortMidsideGold(
     data_dir_root: []const u8,
     pixel_num: [2]u32,
     texture: iio.Texture(1),
-    config: zraster.RasterConfig,
+    config: RasterConfig,
 ) !void {
     const mesh_types = [_]gk.MeshType{ .tri6, .quad8, .quad9 };
     const tex_sample_config = texops.TextureSampleConfig{

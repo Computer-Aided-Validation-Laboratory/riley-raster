@@ -20,7 +20,6 @@ const CameraInput = @import("zraster/zig/camera.zig").CameraInput;
 const iio = @import("zraster/zig/imageio.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 const buildconfig = @import("zraster/zig/buildconfig.zig");
-const rastcfg = @import("zraster/zig/rasterconfig.zig");
 
 const gold_root = "gold-texfunc";
 const data_root = "data-min";
@@ -151,20 +150,14 @@ fn runTexFuncCase(
             },
     };
 
-    std.debug.print("Testing {s} ... ", .{case_dir_name});
+    if (tcfg.TEST_CASE_VERBOSE) {
+        std.debug.print("Testing {s} ... ", .{case_dir_name});
+    }
 
-    const config = rastcfg.RasterConfig{
-        .render_mode = tcfg.RENDER_MODE,
-        .total_threads = tcfg.TOTAL_THREADS,
-        .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
-        .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
-        .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-        .hull_mode = tcfg.HULL_MODE,
-        .save_strategy = .memory,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .csv, .bits = null, .scaling = .none },
-        },
-        .report = .off,
+    var config = tcfg.rasterConfig(.testing);
+    config.save_strategy = .memory;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .csv, .bits = null, .scaling = .none },
     };
 
     const camera_input: CameraInput = prepared.camera_input;
@@ -234,7 +227,9 @@ fn runTexFuncCase(
             );
         }
     }
-    std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+    if (tcfg.TEST_CASE_VERBOSE) {
+        std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+    }
 }
 
 test "TexFunc Suite" {

@@ -295,7 +295,6 @@ pub const BenchOptions = struct {
     fov_scale: f64 = 1.0,
     threads: ?u16 = null,
     threads_per_frame: ?u16 = null,
-    hull_mode: rastcfg.HullMode = tcfg.HULL_MODE,
 };
 
 fn calcSaveStrategy(options: BenchOptions) rastcfg.SaveStrategy {
@@ -570,30 +569,26 @@ fn runBenchmarkInternal(
     const threads_per_frame = options.threads_per_frame orelse
         @min(total_threads, tcfg.MAX_RASTER_THREADS_PER_FRAME);
 
-    const config = rastcfg.RasterConfig{
-        .render_mode = tcfg.RENDER_MODE,
-        .total_threads = total_threads,
-        .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
-        .max_geom_threads_per_frame = threads_per_frame,
-        .max_raster_threads_per_frame = threads_per_frame,
-        .save_strategy = calcSaveStrategy(options),
-        .image_save_opts = options.save_opts orelse &[_]iio.ImageSaveOpts{
-            .{
-                .format = .bmp,
-                .bits = 8,
-                .scaling = .auto,
-                .channels = num_out_fields,
-            },
-            .{
-                .format = .fimg,
-                .bits = null,
-                .scaling = .none,
-                .channels = num_out_fields,
-            },
+    var config = tcfg.rasterConfig(.bench);
+    config.total_threads = total_threads;
+    config.max_geom_threads_per_frame = threads_per_frame;
+    config.max_raster_threads_per_frame = threads_per_frame;
+    config.save_strategy = calcSaveStrategy(options);
+    config.image_save_opts = options.save_opts orelse &[_]iio.ImageSaveOpts{
+        .{
+            .format = .bmp,
+            .bits = 8,
+            .scaling = .auto,
+            .channels = num_out_fields,
         },
-        .hull_mode = options.hull_mode,
-        .report = report_mode,
+        .{
+            .format = .fimg,
+            .bits = null,
+            .scaling = .none,
+            .channels = num_out_fields,
+        },
     };
+    config.report = report_mode;
 
     if (options.out_dir_base.len > 0) {
         var out_dir = try orch.openDirEnsured(io, options.out_dir_base);

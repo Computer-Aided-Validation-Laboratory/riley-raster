@@ -8,12 +8,14 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const orch = @import("common/orchestration.zig");
+const tcfg = @import("common/testconfig.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
 const meshio = @import("zraster/zig/meshio.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const uvio = @import("zraster/zig/uvio.zig");
 const CameraInput = @import("zraster/zig/camera.zig").CameraInput;
 const iio = @import("zraster/zig/imageio.zig");
+const rastcfg = @import("zraster/zig/rasterconfig.zig");
 const shaderops = @import("zraster/zig/shaderops.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 
@@ -81,7 +83,7 @@ fn renderCase(
     mesh_input: mo.MeshInput,
     camera_input: CameraInput,
     out_dir_path: []const u8,
-    config: zraster.RasterConfig,
+    config: rastcfg.RasterConfig,
 ) !void {
     var out_dir = try orch.openDirEnsured(io, out_dir_path);
     out_dir.close(io);
@@ -131,13 +133,11 @@ pub fn mainWithOutputRoot(
         .lambertian_normal_z,
     };
     const coord_modes = [_]CoordMode{ .uv, .param };
-    const config = zraster.RasterConfig{
-        .save_strategy = .disk,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .fimg, .bits = null, .scaling = .none },
-            .{ .format = .bmp, .bits = 8, .scaling = .auto },
-        },
-        .report = .off,
+    var config = tcfg.rasterConfig(.gold);
+    config.save_strategy = .disk;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .fimg, .bits = null, .scaling = .none },
+        .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
 
     for (mesh_types) |mesh_type| {

@@ -10,6 +10,7 @@ const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const gengold = @import("common/gengold.zig");
 const minsuite = @import("common/minsuite.zig");
+const tcfg = @import("common/testconfig.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
@@ -57,13 +58,11 @@ pub fn main(init: std.process.Init) !void {
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
 
-    const config = zraster.RasterConfig{
-        .save_opt = .disk,
-        .save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .fimg, .bits = null, .scaling = .none },
-            .{ .format = .bmp, .bits = 8, .scaling = .auto },
-        },
-        .report = .off,
+    var config = tcfg.rasterConfig(.preview);
+    config.save_strategy = .disk;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .fimg, .bits = null, .scaling = .none },
+        .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
 
     std.debug.print("Rendering MIN Suite (sphere200/base) to {s}...\n", .{out_dir});

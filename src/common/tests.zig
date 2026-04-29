@@ -23,9 +23,6 @@ const MeshType = gk.MeshType;
 const MeshInput = mo.MeshInput;
 
 const zraster = @import("../zraster/zig/zraster.zig");
-const rastcfg = @import("../zraster/zig/rasterconfig.zig");
-const RasterConfig = rastcfg.RasterConfig;
-
 const iio = @import("../zraster/zig/imageio.zig");
 const texops = @import("../zraster/zig/textureops.zig");
 const buildconfig = @import("../zraster/zig/buildconfig.zig");
@@ -772,23 +769,18 @@ pub fn runTestInternal(
                 },
             };
 
-            const config = RasterConfig{
-                .render_mode = tcfg.RENDER_MODE,
-                .total_threads = tcfg.TOTAL_THREADS,
-                .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
-                .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
-                .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-                .hull_mode = tcfg.HULL_MODE,
-                .save_strategy = .memory,
-                .image_save_opts = &[_]iio.ImageSaveOpts{
-                    .{ .format = .csv, .bits = null, .scaling = .none },
-                },
-                .report = if (report_perf) .full_stats else .off,
+            var config = tcfg.rasterConfig(.testing);
+            config.save_strategy = .memory;
+            config.image_save_opts = &[_]iio.ImageSaveOpts{
+                .{ .format = .csv, .bits = null, .scaling = .none },
             };
+            config.report = if (report_perf) .full_stats else .off;
 
             const prepared_camera_input = prepared.camera.toInput();
-            
-            std.debug.print("Testing {s} ... ", .{case_dir_name});
+
+            if (tcfg.TEST_CASE_VERBOSE) {
+                std.debug.print("Testing {s} ... ", .{case_dir_name});
+            }
             const time_start = Timestamp.now(io, .awake);
             const result = (try zraster.rasterAllFrames(
                 aa,
@@ -823,9 +815,13 @@ pub fn runTestInternal(
                 ) catch |err| {
                     if (first_err == null) {
                         if (err == error.PixelMismatch) {
-                            std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                            if (tcfg.TEST_CASE_VERBOSE) {
+                                std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                            }
                         } else {
-                            std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                            if (tcfg.TEST_CASE_VERBOSE) {
+                                std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                            }
                         }
                         first_err = err;
                     }
@@ -849,7 +845,9 @@ pub fn runTestInternal(
                 };
             }
             if (first_err) |err| return err;
-            std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+            if (tcfg.TEST_CASE_VERBOSE) {
+                std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+            }
         }
 
         // --- Tex ShaderInput ---
@@ -882,22 +880,18 @@ pub fn runTestInternal(
                     },
                 };
 
-                const config = RasterConfig{
-                    .render_mode = tcfg.RENDER_MODE,
-                    .total_threads = tcfg.TOTAL_THREADS,
-                    .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
-                    .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
-                    .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-                    .hull_mode = tcfg.HULL_MODE,
-                    .save_strategy = .memory,                    .image_save_opts = &[_]iio.ImageSaveOpts{
-                        .{ .format = .csv, .bits = null, .scaling = .none },
-                    },
-                    .report = if (report_perf) .full_stats else .off,
+                var config = tcfg.rasterConfig(.testing);
+                config.save_strategy = .memory;
+                config.image_save_opts = &[_]iio.ImageSaveOpts{
+                    .{ .format = .csv, .bits = null, .scaling = .none },
                 };
+                config.report = if (report_perf) .full_stats else .off;
 
                 const prepared_camera_input = prepared.camera.toInput();
 
-                std.debug.print("Testing {s} ... ", .{case_dir_name});
+                if (tcfg.TEST_CASE_VERBOSE) {
+                    std.debug.print("Testing {s} ... ", .{case_dir_name});
+                }
                 const time_start = Timestamp.now(io, .awake);
                 const result = (try zraster.rasterAllFrames(
                     aa,
@@ -935,9 +929,13 @@ pub fn runTestInternal(
                     ) catch |err| {
                         if (first_err == null) {
                             if (err == error.PixelMismatch) {
-                                std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                                if (tcfg.TEST_CASE_VERBOSE) {
+                                    std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                                }
                             } else {
-                                std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                                if (tcfg.TEST_CASE_VERBOSE) {
+                                    std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                                }
                             }
                             first_err = err;
                         }
@@ -961,7 +959,9 @@ pub fn runTestInternal(
                     };
                 }
                 if (first_err) |err| return err;
-                std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+                if (tcfg.TEST_CASE_VERBOSE) {
+                    std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+                }
             }
         }
     }
@@ -1017,17 +1017,10 @@ pub fn runMultimeshTestExt(
         );
         defer camera.deinit(aa);
 
-        const config = RasterConfig{
-            .render_mode = tcfg.RENDER_MODE,
-            .total_threads = tcfg.TOTAL_THREADS,
-            .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
-            .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
-            .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-            .hull_mode = tcfg.HULL_MODE,
-            .save_strategy = .memory,            .image_save_opts = &[_]iio.ImageSaveOpts{
-                .{ .format = .csv, .bits = null, .scaling = .none },
-            },
-            .report = .off,
+        var config = tcfg.rasterConfig(.testing);
+        config.save_strategy = .memory;
+        config.image_save_opts = &[_]iio.ImageSaveOpts{
+            .{ .format = .csv, .bits = null, .scaling = .none },
         };
 
         const camera_input = camera.toInput();
@@ -1035,7 +1028,9 @@ pub fn runMultimeshTestExt(
             "multimesh_allelem_nodal"
         else
             "multimesh_allelem_tex";
-        std.debug.print("Testing {s} ... ", .{case_name});
+        if (tcfg.TEST_CASE_VERBOSE) {
+            std.debug.print("Testing {s} ... ", .{case_name});
+        }
 
         const time_start = Timestamp.now(io, .awake);
         const result = (try zraster.rasterAllFrames(
@@ -1071,9 +1066,13 @@ pub fn runMultimeshTestExt(
                 abs_tol,
             ) catch |err| {
                 if (err == error.PixelMismatch) {
-                    std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                    if (tcfg.TEST_CASE_VERBOSE) {
+                        std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                    }
                 } else {
-                    std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                    if (tcfg.TEST_CASE_VERBOSE) {
+                        std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                    }
                 }
                 const fail_dir_name = try std.fmt.allocPrint(
                     aa,
@@ -1095,7 +1094,9 @@ pub fn runMultimeshTestExt(
                 return err;
             };
         }
-        std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+        if (tcfg.TEST_CASE_VERBOSE) {
+            std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+        }
     }
 }
 
@@ -1154,20 +1155,13 @@ pub fn runMultimeshMixedTestExt(
     );
     defer camera.deinit(aa);
 
-    const config = RasterConfig{
-        .render_mode = tcfg.RENDER_MODE,
-        .total_threads = tcfg.TOTAL_THREADS,
-        .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
-        .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
-        .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-        .hull_mode = tcfg.HULL_MODE,
-        .save_strategy = .memory,        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .csv, .bits = null, .scaling = .none },
-        },
-        .report = .off,
+    var config = tcfg.rasterConfig(.testing);
+    config.save_strategy = .memory;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .csv, .bits = null, .scaling = .none },
     };
     const camera_input = camera.toInput();
-    
+
     const time_start = Timestamp.now(io, .awake);
     const result = (try zraster.rasterAllFrames(
         aa,
@@ -1197,9 +1191,13 @@ pub fn runMultimeshMixedTestExt(
             abs_tol,
         ) catch |err| {
             if (err == error.PixelMismatch) {
-                std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                if (tcfg.TEST_CASE_VERBOSE) {
+                    std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                }
             } else {
-                std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                if (tcfg.TEST_CASE_VERBOSE) {
+                    std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                }
             }
             try saveComparisonArtifactsFromResult(
                 aa,
@@ -1273,21 +1271,14 @@ pub fn runMultimeshMixedRGBTestExt(
     );
     defer camera.deinit(aa);
 
-    const config_rgb = RasterConfig{
-        .render_mode = tcfg.RENDER_MODE,
-        .total_threads = tcfg.TOTAL_THREADS,
-        .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
-        .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
-        .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-        .hull_mode = tcfg.HULL_MODE,
-        .save_strategy = .memory,        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
-        },
-        .report = .off,
+    var config_rgb = tcfg.rasterConfig(.testing);
+    config_rgb.save_strategy = .memory;
+    config_rgb.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
     };
 
     const camera_input = camera.toInput();
-    
+
     const time_start = Timestamp.now(io, .awake);
     const result = (try zraster.rasterAllFrames(
         aa,
@@ -1317,9 +1308,13 @@ pub fn runMultimeshMixedRGBTestExt(
             abs_tol,
         ) catch |err| {
             if (err == error.PixelMismatch) {
-                std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                if (tcfg.TEST_CASE_VERBOSE) {
+                    std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                }
             } else {
-                std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                if (tcfg.TEST_CASE_VERBOSE) {
+                    std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                }
             }
             try saveComparisonArtifactsFromResult(
                 aa,
@@ -1336,5 +1331,7 @@ pub fn runMultimeshMixedRGBTestExt(
             return err;
         };
     }
-    std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+    if (tcfg.TEST_CASE_VERBOSE) {
+        std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+    }
 }

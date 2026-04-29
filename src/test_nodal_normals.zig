@@ -15,7 +15,6 @@ const shaderops = @import("zraster/zig/shaderops.zig");
 const CameraPrepared = @import("zraster/zig/camera.zig").CameraPrepared;
 const Rotation = @import("zraster/zig/rotation.zig").Rotation;
 const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
-const rastcfg = @import("zraster/zig/rasterconfig.zig");
 const tcfg = @import("common/testconfig.zig");
 
 fn loadData(
@@ -95,9 +94,7 @@ test "Nodal normals are prepared when requested" {
 
     const mesh_static = try mo.initStatic(arena_alloc, &mesh_input);
 
-    const rast_cfg = rastcfg.RasterConfig{
-        .hull_mode = tcfg.HULL_MODE,
-    }; 
+    const rast_cfg = tcfg.rasterConfig(.testing);
     const frame_mesh = try mo.prepareMeshFrame(
         arena_alloc,
         null,

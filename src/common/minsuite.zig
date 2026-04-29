@@ -10,7 +10,6 @@ const std = @import("std");
 const common = @import("benchcommon.zig");
 const orch = @import("orchestration.zig");
 const zraster = @import("../zraster/zig/zraster.zig");
-const rastcfg = @import("../zraster/zig/rasterconfig.zig");
 const iio = @import("../zraster/zig/imageio.zig");
 const meshio = @import("../zraster/zig/meshio.zig");
 const mo = @import("../zraster/zig/meshops.zig");
@@ -115,34 +114,26 @@ pub fn runSphere200MultiCullQuiet(
     defer camera.deinit(aa);
 
     const num_out_fields = common.calcOutputChannels(shader_type);
-    const config = rastcfg.RasterConfig{
-        .render_mode = tcfg.RENDER_MODE,
-        .total_threads = tcfg.TOTAL_THREADS,
-        .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
-        .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
-        .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-        .save_strategy = if (options.out_dir_base.len > 0)
-            .disk
-        else if (options.return_image)
-            .memory
-        else
-            .none,
-        .image_save_opts = options.save_opts orelse &[_]iio.ImageSaveOpts{
-            .{
-                .format = .bmp,
-                .bits = 8,
-                .scaling = .auto,
-                .channels = num_out_fields,
-            },
-            .{
-                .format = .fimg,
-                .bits = null,
-                .scaling = .none,
-                .channels = num_out_fields,
-            },
+    var config = tcfg.rasterConfig(.testing);
+    config.save_strategy = if (options.out_dir_base.len > 0)
+        .disk
+    else if (options.return_image)
+        .memory
+    else
+        .none;
+    config.image_save_opts = options.save_opts orelse &[_]iio.ImageSaveOpts{
+        .{
+            .format = .bmp,
+            .bits = 8,
+            .scaling = .auto,
+            .channels = num_out_fields,
         },
-        .hull_mode = options.hull_mode,
-        .report = .off,
+        .{
+            .format = .fimg,
+            .bits = null,
+            .scaling = .none,
+            .channels = num_out_fields,
+        },
     };
 
     if (options.out_dir_base.len > 0) {

@@ -18,3 +18,42 @@ pub const TOTAL_THREADS: u16 = 2;
 pub const MAX_FRAMES_IN_FLIGHT: u16 = 1;
 pub const MAX_GEOM_THREADS_PER_FRAME: u16 = 2;
 pub const MAX_RASTER_THREADS_PER_FRAME: u16 = 2;
+pub const TEST_CASE_VERBOSE: bool = false;
+
+pub const RasterConfigMode = enum {
+    gold,
+    preview,
+    testing,
+    bench,
+};
+
+pub fn rasterConfig(mode: RasterConfigMode) rastcfg.RasterConfig {
+    var config = rastcfg.RasterConfig{
+        .render_mode = RENDER_MODE,
+        .max_frames_in_flight = MAX_FRAMES_IN_FLIGHT,
+        .hull_mode = HULL_MODE,
+    };
+
+    switch (mode) {
+        .gold, .preview => {
+            config.total_threads = 0;
+            config.max_geom_threads_per_frame = 0;
+            config.max_raster_threads_per_frame = 0;
+            config.report = .off;
+        },
+        .testing => {
+            config.total_threads = TOTAL_THREADS;
+            config.max_geom_threads_per_frame = MAX_GEOM_THREADS_PER_FRAME;
+            config.max_raster_threads_per_frame = MAX_RASTER_THREADS_PER_FRAME;
+            config.report = .off;
+        },
+        .bench => {
+            config.total_threads = TOTAL_THREADS;
+            config.max_geom_threads_per_frame = MAX_GEOM_THREADS_PER_FRAME;
+            config.max_raster_threads_per_frame = MAX_RASTER_THREADS_PER_FRAME;
+            config.report = .bench;
+        },
+    }
+
+    return config;
+}

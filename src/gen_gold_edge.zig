@@ -11,7 +11,6 @@ const gengold = @import("common/gengold.zig");
 const tcfg = @import("common/testconfig.zig");
 const orch = @import("common/orchestration.zig");
 const zraster = @import("zraster/zig/zraster.zig");
-const rastcfg = @import("zraster/zig/rasterconfig.zig");
 const meshio = @import("zraster/zig/meshio.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
@@ -50,14 +49,12 @@ pub fn main(init: std.process.Init) !void {
     };
     const pixel_num = [_]u32{ 320, 200 };
     const pixel_num_distort_midside = [_]u32{ 800, 500 };
-    
-    const config = rastcfg.RasterConfig{
-        .save_strategy = .disk,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .fimg, .bits = null, .scaling = .none },
-            .{ .format = .bmp, .bits = 8, .scaling = .auto },
-        },
-        .report = .off,
+
+    var config = tcfg.rasterConfig(.gold);
+    config.save_strategy = .disk;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .fimg, .bits = null, .scaling = .none },
+        .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
 
     std.debug.print("Generating Edge Cases to gold-edge/...\n", .{});

@@ -11,7 +11,6 @@ const common = @import("common/tests.zig");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("zraster/zig/buildconfig.zig");
-const rastcfg = @import("zraster/zig/rasterconfig.zig");
 const meshio = @import("zraster/zig/meshio.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
@@ -87,22 +86,16 @@ fn runDistortMidsideTexFuncTest(
         },
     };
 
-    const config = rastcfg.RasterConfig{
-        .render_mode = tcfg.RENDER_MODE,
-        .total_threads = tcfg.TOTAL_THREADS,
-        .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
-        .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
-        .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-        .hull_mode = tcfg.HULL_MODE,
-        .save_strategy = .memory,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .csv, .bits = null, .scaling = .none },
-        },
-        .report = .off,
+    var config = tcfg.rasterConfig(.testing);
+    config.save_strategy = .memory;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .csv, .bits = null, .scaling = .none },
     };
 
     const prepared_camera_input = prepared.camera.toInput();
-    std.debug.print("Testing {s} ... ", .{case_dir_name});
+    if (tcfg.TEST_CASE_VERBOSE) {
+        std.debug.print("Testing {s} ... ", .{case_dir_name});
+    }
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
     const result = (try zraster.rasterAllFrames(
         aa,
@@ -147,9 +140,13 @@ fn runDistortMidsideTexFuncTest(
         ) catch |err| {
             if (first_err == null) {
                 if (err == error.PixelMismatch) {
-                    std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                    if (tcfg.TEST_CASE_VERBOSE) {
+                        std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                    }
                 } else {
-                    std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                    if (tcfg.TEST_CASE_VERBOSE) {
+                        std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                    }
                 }
                 first_err = err;
             }
@@ -177,7 +174,9 @@ fn runDistortMidsideTexFuncTest(
         };
     }
     if (first_err) |err| return err;
-    std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+    if (tcfg.TEST_CASE_VERBOSE) {
+        std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+    }
 }
 
 fn runDistortMidsideNodalUvTest(
@@ -228,22 +227,16 @@ fn runDistortMidsideNodalUvTest(
         },
     };
 
-    const config = rastcfg.RasterConfig{
-        .render_mode = tcfg.RENDER_MODE,
-        .total_threads = tcfg.TOTAL_THREADS,
-        .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
-        .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
-        .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-        .hull_mode = tcfg.HULL_MODE,
-        .save_strategy = .memory,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .csv, .bits = null, .scaling = .none },
-        },
-        .report = .off,
+    var config = tcfg.rasterConfig(.testing);
+    config.save_strategy = .memory;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .csv, .bits = null, .scaling = .none },
     };
 
     const prepared_camera_input = prepared.camera.toInput();
-    std.debug.print("Testing {s} ... ", .{case_dir_name});
+    if (tcfg.TEST_CASE_VERBOSE) {
+        std.debug.print("Testing {s} ... ", .{case_dir_name});
+    }
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
     const result = (try zraster.rasterAllFrames(
         aa,
@@ -289,9 +282,13 @@ fn runDistortMidsideNodalUvTest(
             ) catch |err| {
                 if (first_err == null) {
                     if (err == error.PixelMismatch) {
-                        std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                        if (tcfg.TEST_CASE_VERBOSE) {
+                            std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                        }
                     } else {
-                        std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                        if (tcfg.TEST_CASE_VERBOSE) {
+                            std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                        }
                     }
                     first_err = err;
                 }
@@ -320,7 +317,9 @@ fn runDistortMidsideNodalUvTest(
         }
     }
     if (first_err) |err| return err;
-    std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+    if (tcfg.TEST_CASE_VERBOSE) {
+        std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+    }
 }
 
 fn runDistortMidsideTexShaderTest(
@@ -375,22 +374,16 @@ fn runDistortMidsideTexShaderTest(
         },
     };
 
-    const config = rastcfg.RasterConfig{
-        .render_mode = tcfg.RENDER_MODE,
-        .total_threads = tcfg.TOTAL_THREADS,
-        .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
-        .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
-        .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
-        .hull_mode = tcfg.HULL_MODE,
-        .save_strategy = .memory,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .csv, .bits = null, .scaling = .none },
-        },
-        .report = .off,
+    var config = tcfg.rasterConfig(.testing);
+    config.save_strategy = .memory;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .csv, .bits = null, .scaling = .none },
     };
 
     const prepared_camera_input = prepared.camera.toInput();
-    std.debug.print("Testing {s} ... ", .{case_dir_name});
+    if (tcfg.TEST_CASE_VERBOSE) {
+        std.debug.print("Testing {s} ... ", .{case_dir_name});
+    }
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
     const result = (try zraster.rasterAllFrames(
         aa,
@@ -435,9 +428,13 @@ fn runDistortMidsideTexShaderTest(
         ) catch |err| {
             if (first_err == null) {
                 if (err == error.PixelMismatch) {
-                    std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                    if (tcfg.TEST_CASE_VERBOSE) {
+                        std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                    }
                 } else {
-                    std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                    if (tcfg.TEST_CASE_VERBOSE) {
+                        std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                    }
                 }
                 first_err = err;
             }
@@ -465,7 +462,9 @@ fn runDistortMidsideTexShaderTest(
         };
     }
     if (first_err) |err| return err;
-    std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+    if (tcfg.TEST_CASE_VERBOSE) {
+        std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+    }
 }
 
 test "Gold Edge Suite" {

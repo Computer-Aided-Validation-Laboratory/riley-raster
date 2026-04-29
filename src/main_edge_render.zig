@@ -8,8 +8,8 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const gengold = @import("common/gengold.zig");
+const tcfg = @import("common/testconfig.zig");
 const zraster = @import("zraster/zig/zraster.zig");
-const rastcfg = @import("zraster/zig/rasterconfig.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
@@ -40,27 +40,25 @@ pub fn main(init: std.process.Init) !void {
     const out_dir_root = "out-bench-edge";
     const data_dir = "data-edge";
 
-    const config = rastcfg.RasterConfig{
-        .save_strategy = .disk,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
+    var config = tcfg.rasterConfig(.preview);
+    config.save_strategy = .disk;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .bmp, .bits = 8, .scaling = .auto },
+        .{ .format = .csv, .bits = null, .scaling = .none },
+    };
+    config.report = .full_stats;
+    config.full_stats_opts = .{
+        .formats = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
-        .report = .full_stats,
-        .hull_mode = .on_convex_fallback,
-        .full_stats_opts = .{
-            .formats = &[_]iio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = .auto },
-                .{ .format = .csv, .bits = null, .scaling = .none },
-            },
-            .save_iteration_map = true,
-            .save_tile_timing_map = true,
-            .save_tile_density_map = true,
-            .save_tile_occupancy_map = true,
-            .save_depth_map = true,
-            .save_earlyout_map = true,
-            .save_pixel_occupancy_map = true,
-        },
+        .save_iteration_map = true,
+        .save_tile_timing_map = true,
+        .save_tile_density_map = true,
+        .save_tile_occupancy_map = true,
+        .save_depth_map = true,
+        .save_earlyout_map = true,
+        .save_pixel_occupancy_map = true,
     };
 
     std.debug.print("Rendering Edge Data to {s}/...\n", .{out_dir_root});
