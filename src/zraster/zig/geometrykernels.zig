@@ -23,6 +23,23 @@ const shapefun = @import("shapefun.zig");
 const NDArray = @import("ndarray.zig").NDArray;
 const Vec3Slices = rops.Vec3Slices;
 
+pub const NEWTON_SEED_MODE: NewtonSeedMode = .centroid;
+pub const NEWTON_SEED_REUSE: NewtonSeedReuse = .off;
+pub const TRI_CENTROID_XI: f64 = 1.0 / 3.0;
+pub const TRI_CENTROID_ETA: f64 = 1.0 / 3.0;
+pub const QUAD_CENTROID_XI: f64 = 0.0;
+pub const QUAD_CENTROID_ETA: f64 = 0.0;
+
+pub const NewtonSeedMode = enum {
+    centroid,
+    hull,
+};
+
+pub const NewtonSeedReuse = enum {
+    off,
+    last_converged,
+};
+
 pub const MeshType = enum {
     tri3,
     tri6,
@@ -57,15 +74,6 @@ pub const SolverKind = enum {
     inv_bi,
 };
 
-pub const NewtonSeedMode = enum {
-    centroid,
-    hull,
-};
-
-pub const NewtonSeedReuse = enum {
-    off,
-    last_converged,
-};
 
 pub const CoordSpace = enum {
     raster,
@@ -294,8 +302,8 @@ pub fn Tri6Kernel() type {
         pub const tess_triangles_num = 6;
         pub const coord_space = .clip_px_leng;
         pub const solver_kind = .newton;
-        pub const seed_mode = .centroid;
-        pub const seed_reuse = .last_converged;
+        pub const seed_mode = NEWTON_SEED_MODE;
+        pub const seed_reuse = NEWTON_SEED_REUSE;
 
         pub inline fn initSeed(hull_seed: ?NewtonSeed) NewtonSeed {
             if (comptime @This().seed_mode == .hull) {
@@ -303,7 +311,7 @@ pub fn Tri6Kernel() type {
                     return seed;
                 }
             }
-            return .{ .xi = 1.0 / 3.0, .eta = 1.0 / 3.0 };
+            return .{ .xi = TRI_CENTROID_XI, .eta = TRI_CENTROID_ETA };
         }
 
         pub inline fn initSeedSIMD(hull_seed: ?NewtonSeedSIMD) NewtonSeedSIMD {
@@ -313,8 +321,8 @@ pub fn Tri6Kernel() type {
                 }
             }
             return .{
-                .v_xi = @splat(1.0 / 3.0),
-                .v_eta = @splat(1.0 / 3.0),
+                .v_xi = @splat(TRI_CENTROID_XI),
+                .v_eta = @splat(TRI_CENTROID_ETA),
             };
         }
 
@@ -875,8 +883,8 @@ pub fn Quad4NewtonKernel() type {
         pub const tess_triangles_num = 2;
         pub const coord_space = .clip_px_leng;
         pub const solver_kind = .newton;
-        pub const seed_mode = .centroid;
-        pub const seed_reuse = .last_converged;
+        pub const seed_mode = NEWTON_SEED_MODE;
+        pub const seed_reuse = NEWTON_SEED_REUSE;
 
         pub inline fn initSeed(hull_seed: ?NewtonSeed) NewtonSeed {
             if (comptime @This().seed_mode == .hull) {
@@ -884,7 +892,7 @@ pub fn Quad4NewtonKernel() type {
                     return seed;
                 }
             }
-            return .{ .xi = 0.5, .eta = 0.5 };
+            return .{ .xi = QUAD_CENTROID_XI, .eta = QUAD_CENTROID_ETA };
         }
 
         pub inline fn initSeedSIMD(hull_seed: ?NewtonSeedSIMD) NewtonSeedSIMD {
@@ -894,8 +902,8 @@ pub fn Quad4NewtonKernel() type {
                 }
             }
             return .{
-                .v_xi = @splat(0.5),
-                .v_eta = @splat(0.5),
+                .v_xi = @splat(QUAD_CENTROID_XI),
+                .v_eta = @splat(QUAD_CENTROID_ETA),
             };
         }
 
@@ -1008,8 +1016,8 @@ pub fn Quad89Kernel(comptime N: usize) type {
         pub const tess_triangles_num = 8;
         pub const coord_space = .clip_px_leng;
         pub const solver_kind = .newton;
-        pub const seed_mode = .centroid;
-        pub const seed_reuse = .last_converged;
+        pub const seed_mode = NEWTON_SEED_MODE;
+        pub const seed_reuse = NEWTON_SEED_REUSE;
 
         pub inline fn initSeed(hull_seed: ?NewtonSeed) NewtonSeed {
             if (comptime @This().seed_mode == .hull) {
@@ -1017,7 +1025,7 @@ pub fn Quad89Kernel(comptime N: usize) type {
                     return seed;
                 }
             }
-            return .{ .xi = 0.5, .eta = 0.5 };
+            return .{ .xi = QUAD_CENTROID_XI, .eta = QUAD_CENTROID_ETA };
         }
 
         pub inline fn initSeedSIMD(hull_seed: ?NewtonSeedSIMD) NewtonSeedSIMD {
@@ -1027,8 +1035,8 @@ pub fn Quad89Kernel(comptime N: usize) type {
                 }
             }
             return .{
-                .v_xi = @splat(0.5),
-                .v_eta = @splat(0.5),
+                .v_xi = @splat(QUAD_CENTROID_XI),
+                .v_eta = @splat(QUAD_CENTROID_ETA),
             };
         }
 

@@ -36,8 +36,9 @@ pub fn main(init: std.process.Init) !void {
     };
 
     const pixel_num = [_]u32{ 320, 200 };
+    const pixel_num_distort_midside = [_]u32{ 800, 500 };
 
-    const out_dir_root = "out-bench-edge";
+    const out_dir_root = "out-edge";
     const data_dir = "data-edge";
 
     var config = tcfg.rasterConfig(.preview);
@@ -46,20 +47,20 @@ pub fn main(init: std.process.Init) !void {
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
-    config.report = .full_stats;
-    config.full_stats_opts = .{
-        .formats = &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .auto },
-            .{ .format = .csv, .bits = null, .scaling = .none },
-        },
-        .save_iteration_map = true,
-        .save_tile_timing_map = true,
-        .save_tile_density_map = true,
-        .save_tile_occupancy_map = true,
-        .save_depth_map = true,
-        .save_earlyout_map = true,
-        .save_pixel_occupancy_map = true,
-    };
+    // config.report = .full_stats;
+    // config.full_stats_opts = .{
+    //     .formats = &[_]iio.ImageSaveOpts{
+    //         .{ .format = .bmp, .bits = 8, .scaling = .auto },
+    //         .{ .format = .csv, .bits = null, .scaling = .none },
+    //     },
+    //     .save_iteration_map = true,
+    //     .save_tile_timing_map = true,
+    //     .save_tile_density_map = true,
+    //     .save_tile_occupancy_map = true,
+    //     .save_depth_map = true,
+    //     .save_earlyout_map = true,
+    //     .save_pixel_occupancy_map = true,
+    // };
 
     std.debug.print("Rendering Edge Data to {s}/...\n", .{out_dir_root});
 
@@ -102,6 +103,16 @@ pub fn main(init: std.process.Init) !void {
         &sample_configs,
         out_dir_root,
         data_dir,
+        config,
+    );
+
+    try gengold.generateDistortMidsideGold(
+        aa,
+        io,
+        out_dir_root,
+        data_dir,
+        pixel_num_distort_midside,
+        texture,
         config,
     );
 

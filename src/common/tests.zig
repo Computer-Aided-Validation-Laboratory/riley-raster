@@ -1335,3 +1335,440 @@ pub fn runMultimeshMixedRGBTestExt(
         std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
     }
 }
+
+pub fn buildUvField(
+    allocator: std.mem.Allocator,
+    uvs: NDArray(f64),
+    time_steps: usize,
+) !meshio.Field {
+    const node_num = uvs.dims[0];
+    var field = try meshio.Field.initAlloc(allocator, time_steps, node_num, 2);
+
+    for (0..time_steps) |tt| {
+        for (0..node_num) |nn| {
+            field.array.set(&[_]usize{ tt, nn, 0 }, uvs.get(&[_]usize{ nn, 0 }));
+            field.array.set(&[_]usize{ tt, nn, 1 }, uvs.get(&[_]usize{ nn, 1 }));
+        }
+    }
+
+    return field;
+}
+
+pub fn runDistortMidsideTexFuncTest(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    mesh_type: gk.MeshType,
+    gold_dir_root: []const u8,
+    data_dir_root: []const u8,
+    pixel_num: [2]u32,
+) !void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const prepared = try orch.prepareSingleMeshCase(
+        aa,
+        io,
+        "distort-midside",
+        mesh_type,
+        pixel_num,
+        1.1,
+        data_dir_root,
+    );
+
+    const case_dir_name = try std.fmt.allocPrint(
+        aa,
+        "distort-midside_{s}_texfunc_constant",
+        .{@tagName(mesh_type)},
+    );
+    const gold_dir = try std.fmt.allocPrint(
+        aa,
+        "{s}/{s}",
+        .{ gold_dir_root, case_dir_name },
+    );
+
+    const mesh_input = MeshInput{
+        .mesh_type = mesh_type,
+        .coords = prepared.sim_data.coords,
+        .connect = prepared.sim_data.connect,
+        .disp = prepared.sim_data.field,
+        .shader = .{
+            .tex_func = .{
+                .uvs = null,
+                .builtin = .constant,
+                .normal_type = .none,
+            },
+        },
+    };
+
+    var config = tcfg.rasterConfig(.testing);
+    config.save_strategy = .memory;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .csv, .bits = null, .scaling = .none },
+    };
+
+    const prepared_camera_input = prepared.camera.toInput();
+    if (tcfg.TEST_CASE_VERBOSE) {
+        std.debug.print("Testing {s} ... ", .{case_dir_name});
+    }
+    const start_time = Timestamp.now(io, .awake);
+    const result = (try zraster.rasterAllFrames(
+        aa,
+        io,
+        &[_]CameraInput{prepared_camera_input},
+        &[_]MeshInput{mesh_input},
+        config,
+        null,
+        null,
+    )) orelse return error.NoResult;
+    defer aa.free(result.slice);
+    const end_time = Timestamp.now(io, .awake);
+    const duration_ms = @as(
+        f64,
+        @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds),
+    ) / 1e6;
+
+    const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
+    var first_err: ?anyerror = null;
+    for (0..frames_num) |frame_idx| {
+        const gold_path = try findGoldPath(
+            aa,
+            io,
+            gold_dir,
+            0,
+            frame_idx,
+            0,
+            false,
+        );
+
+        compareNDArrayToGold(
+            aa,
+            io,
+            &result,
+            0,
+            frame_idx,
+            0,
+            1,
+            gold_path,
+            tcfg.REL_TOL,
+            tcfg.ABS_TOL,
+        ) catch |err| {
+            if (first_err == null) {
+                if (err == error.PixelMismatch) {
+                    if (tcfg.TEST_CASE_VERBOSE) {
+                        std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                    }
+                } else {
+                    if (tcfg.TEST_CASE_VERBOSE) {
+                        std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                    }
+                }
+                first_err = err;
+            }
+
+            const fail_dir_name = try std.fmt.allocPrint(
+                aa,
+                "all_{s}{s}",
+                .{ case_dir_name, impl_suffix },
+            );
+            try saveComparisonArtifactsFromResult(
+                aa,
+                io,
+                default_fails_root,
+                fail_dir_name,
+                &result,
+                0,
+                frame_idx,
+                0,
+                gold_path,
+                1,
+            );
+        };
+    }
+    if (first_err) |err| return err;
+    if (tcfg.TEST_CASE_VERBOSE) {
+        std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+    }
+}
+
+pub fn runDistortMidsideNodalUvTest(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    mesh_type: gk.MeshType,
+    gold_dir_root: []const u8,
+    data_dir_root: []const u8,
+    pixel_num: [2]u32,
+) !void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const prepared = try orch.prepareSingleMeshCase(
+        aa,
+        io,
+        "distort-midside",
+        mesh_type,
+        pixel_num,
+        1.1,
+        data_dir_root,
+    );
+    const uv_field = try buildUvField(
+        aa,
+        prepared.uvs.array,
+        prepared.sim_data.field.?.getTimeN(),
+    );
+
+    const case_dir_name = try std.fmt.allocPrint(
+        aa,
+        "distort-midside_{s}_nodal_uv",
+        .{@tagName(mesh_type)},
+    );
+    const gold_dir = try std.fmt.allocPrint(aa, "{s}/{s}", .{ gold_dir_root, case_dir_name });
+
+    const mesh_input = MeshInput{
+        .mesh_type = mesh_type,
+        .coords = prepared.sim_data.coords,
+        .connect = prepared.sim_data.connect,
+        .disp = prepared.sim_data.field,
+        .shader = .{
+            .nodal = .{
+                .field = uv_field,
+                .bits = null,
+                .scaling = .none,
+            },
+        },
+    };
+
+    var config = tcfg.rasterConfig(.testing);
+    config.save_strategy = .memory;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .csv, .bits = null, .scaling = .none },
+    };
+
+    const prepared_camera_input = prepared.camera.toInput();
+    if (tcfg.TEST_CASE_VERBOSE) {
+        std.debug.print("Testing {s} ... ", .{case_dir_name});
+    }
+    const start_time = Timestamp.now(io, .awake);
+    const result = (try zraster.rasterAllFrames(
+        aa,
+        io,
+        &[_]CameraInput{prepared_camera_input},
+        &[_]MeshInput{mesh_input},
+        config,
+        null,
+        null,
+    )) orelse return error.NoResult;
+    defer aa.free(result.slice);
+    const end_time = Timestamp.now(io, .awake);
+    const duration_ms = @as(
+        f64,
+        @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds),
+    ) / 1e6;
+
+    const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
+    var first_err: ?anyerror = null;
+    for (0..frames_num) |frame_idx| {
+        for (0..2) |field_idx| {
+            const gold_path = try findGoldPath(
+                aa,
+                io,
+                gold_dir,
+                0,
+                frame_idx,
+                field_idx,
+                false,
+            );
+
+            compareNDArrayToGold(
+                aa,
+                io,
+                &result,
+                0,
+                frame_idx,
+                field_idx,
+                1,
+                gold_path,
+                tcfg.REL_TOL,
+                tcfg.ABS_TOL,
+            ) catch |err| {
+                if (first_err == null) {
+                    if (err == error.PixelMismatch) {
+                        if (tcfg.TEST_CASE_VERBOSE) {
+                            std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                        }
+                    } else {
+                        if (tcfg.TEST_CASE_VERBOSE) {
+                            std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                        }
+                    }
+                    first_err = err;
+                }
+
+                const fail_dir_name = try std.fmt.allocPrint(
+                    aa,
+                    "all_{s}{s}",
+                    .{ case_dir_name, impl_suffix },
+                );
+                try saveComparisonArtifactsFromResult(
+                    aa,
+                    io,
+                    default_fails_root,
+                    fail_dir_name,
+                    &result,
+                    0,
+                    frame_idx,
+                    field_idx,
+                    gold_path,
+                    1,
+                );
+            };
+        }
+    }
+    if (first_err) |err| return err;
+    if (tcfg.TEST_CASE_VERBOSE) {
+        std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+    }
+}
+
+pub fn runDistortMidsideTexShaderTest(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    mesh_type: gk.MeshType,
+    gold_dir_root: []const u8,
+    data_dir_root: []const u8,
+    pixel_num: [2]u32,
+    texture: iio.Texture(1),
+) !void {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const prepared = try orch.prepareSingleMeshCase(
+        aa,
+        io,
+        "distort-midside",
+        mesh_type,
+        pixel_num,
+        1.1,
+        data_dir_root,
+    );
+    const sample_config = texops.TextureSampleConfig{
+        .sample = .cubic_catmull_rom,
+        .mode = .lut_lerp,
+    };
+
+    const case_dir_name = try std.fmt.allocPrint(
+        aa,
+        "distort-midside_{s}_tex_{s}_{s}",
+        .{
+            @tagName(mesh_type),
+            @tagName(sample_config.sample),
+            @tagName(sample_config.mode),
+        },
+    );
+    const gold_dir = try std.fmt.allocPrint(aa, "{s}/{s}", .{ gold_dir_root, case_dir_name });
+
+    const mesh_input = MeshInput{
+        .mesh_type = mesh_type,
+        .coords = prepared.sim_data.coords,
+        .connect = prepared.sim_data.connect,
+        .disp = prepared.sim_data.field,
+        .shader = .{
+            .tex = .{
+                .uvs = prepared.uvs.array,
+                .texture = texture,
+                .sample_config = sample_config,
+            },
+        },
+    };
+
+    var config = tcfg.rasterConfig(.testing);
+    config.save_strategy = .memory;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .csv, .bits = null, .scaling = .none },
+    };
+
+    const prepared_camera_input = prepared.camera.toInput();
+    if (tcfg.TEST_CASE_VERBOSE) {
+        std.debug.print("Testing {s} ... ", .{case_dir_name});
+    }
+    const start_time = Timestamp.now(io, .awake);
+    const result = (try zraster.rasterAllFrames(
+        aa,
+        io,
+        &[_]CameraInput{prepared_camera_input},
+        &[_]MeshInput{mesh_input},
+        config,
+        null,
+        null,
+    )) orelse return error.NoResult;
+    defer aa.free(result.slice);
+    const end_time = Timestamp.now(io, .awake);
+    const duration_ms = @as(
+        f64,
+        @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds),
+    ) / 1e6;
+
+    const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
+    var first_err: ?anyerror = null;
+    for (0..frames_num) |frame_idx| {
+        const gold_path = try findGoldPath(
+            aa,
+            io,
+            gold_dir,
+            0,
+            frame_idx,
+            0,
+            false,
+        );
+
+        compareNDArrayToGold(
+            aa,
+            io,
+            &result,
+            0,
+            frame_idx,
+            0,
+            1,
+            gold_path,
+            tcfg.REL_TOL,
+            tcfg.ABS_TOL,
+        ) catch |err| {
+            if (first_err == null) {
+                if (err == error.PixelMismatch) {
+                    if (tcfg.TEST_CASE_VERBOSE) {
+                        std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                    }
+                } else {
+                    if (tcfg.TEST_CASE_VERBOSE) {
+                        std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                    }
+                }
+                first_err = err;
+            }
+
+            const fail_dir_name = try std.fmt.allocPrint(
+                aa,
+                "all_{s}{s}",
+                .{ case_dir_name, impl_suffix },
+            );
+            try saveComparisonArtifactsFromResult(
+                aa,
+                io,
+                default_fails_root,
+                fail_dir_name,
+                &result,
+                0,
+                frame_idx,
+                0,
+                gold_path,
+                1,
+            );
+        };
+    }
+    if (first_err) |err| return err;
+    if (tcfg.TEST_CASE_VERBOSE) {
+        std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+    }
+}
