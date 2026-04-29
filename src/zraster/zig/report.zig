@@ -42,6 +42,8 @@ pub const RasterConfig = struct {
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
     tile_size_max: u16 = 32,
+    hull_early_out_on: bool = true,
+    hull_convex_fallback: bool = false,
     report: ReportMode = .bench,
     full_stats_opts: FullStatsOpts = .{},
 };

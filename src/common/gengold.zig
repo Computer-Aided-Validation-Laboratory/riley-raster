@@ -12,6 +12,7 @@ const orch = @import("orchestration.zig");
 const gk = @import("../zraster/zig/geometrykernels.zig");
 const meshio = @import("../zraster/zig/meshio.zig");
 const mo = @import("../zraster/zig/meshops.zig");
+const shaderops = @import("../zraster/zig/shaderops.zig");
 const MeshType = gk.MeshType;
 const MeshInput = mo.MeshInput;
 const CameraPrepared = @import("../zraster/zig/camera.zig").CameraPrepared;
@@ -29,7 +30,7 @@ pub fn renderAndSave(
     coords: meshio.Coords,
     connect: meshio.Connect,
     disp: ?meshio.Field,
-    sh: mo.ShaderInput,
+    sh: shaderops.ShaderInput,
     dir: []const u8,
     add_disp: bool,
     config: RasterConfig,

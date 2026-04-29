@@ -14,7 +14,7 @@ const uvio = @import("../zraster/zig/uvio.zig");
 const csvio = @import("../zraster/zig/csvio.zig");
 const mo = @import("../zraster/zig/meshops.zig");
 const so = @import("../zraster/zig/shaderops.zig");
-const gk = @import("../zraster/zig/geometrykernels.zig"); 
+const gk = @import("../zraster/zig/geometrykernels.zig");
 const CameraPrepared = @import("../zraster/zig/camera.zig").CameraPrepared;
 const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
 const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
@@ -294,6 +294,7 @@ pub const BenchOptions = struct {
     fov_scale: f64 = 1.0,
     threads: ?u16 = null,
     threads_per_frame: ?u16 = null,
+    hull_convex_fallback: bool = false,
 };
 
 fn calcSaveStrategy(options: BenchOptions) zraster.SaveStrategy {
@@ -589,6 +590,7 @@ fn runBenchmarkInternal(
                 .channels = num_out_fields,
             },
         },
+        .hull_convex_fallback = options.hull_convex_fallback,
         .report = report_mode,
     };
 

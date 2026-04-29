@@ -400,6 +400,8 @@ pub fn RasterPass(
                                 .weights = weights,
                                 .nodes_inv_z = nodes_inv_z,
                                 .sub_pixel_z = subpx_z,
+                                .xi = result.xi_out,
+                                .eta = result.eta_out,
                             };
 
                             ShaderKernel.shade(

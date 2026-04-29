@@ -14,6 +14,7 @@ pub const edge = @import("test_gold_edge.zig");
 pub const multimesh = @import("test_gold_multimesh.zig");
 pub const multicamera = @import("test_gold_multicamera.zig");
 pub const nodal_normals = @import("test_nodal_normals.zig");
+pub const texfunc = @import("test_texfunc.zig");
 
 pub fn main(init: std.process.Init) !void {
     _ = init;

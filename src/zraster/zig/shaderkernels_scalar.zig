@@ -60,3 +60,30 @@ pub fn TexKernel(
         }
     };
 }
+
+pub fn TexFuncKernel(
+    comptime N: usize,
+    comptime channels: usize,
+) type {
+    return struct {
+        pub inline fn shade(
+            comptime coord_space: CoordSpace,
+            ctx_shade: shaderops.ShadeContext(N),
+            interp: shaderops.InterpData(N),
+            shader: *const shaderops.TexFuncPrepared(channels),
+            ctx_report: anytype,
+            spx_image_scratch: *MatSlice(f64),
+        ) void {
+            common.shadeTexFuncScalarCommon(
+                N,
+                channels,
+                coord_space,
+                ctx_shade,
+                interp,
+                shader,
+                ctx_report,
+                spx_image_scratch,
+            );
+        }
+    };
+}

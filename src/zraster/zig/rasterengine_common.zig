@@ -23,6 +23,7 @@ const MeshPrepared = mo.MeshPrepared;
 const shaderops = @import("shaderops.zig");
 const NodalPrepared = shaderops.NodalPrepared;
 const TexPrepared = shaderops.TexPrepared;
+const TexFuncPrepared = shaderops.TexFuncPrepared;
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
 
@@ -52,6 +53,32 @@ pub const ScratchLayout = enum {
     subpx_major,
     field_major,
 };
+
+fn calcTri3PerspectiveParamCoords(
+    inv_z: f64,
+    nodes_inv_z: [3]f64,
+    weights: [3]f64,
+) struct { xi: f64, eta: f64 } {
+    return .{
+        .xi = weights[1] * nodes_inv_z[1] / inv_z,
+        .eta = weights[2] * nodes_inv_z[2] / inv_z,
+    };
+}
+
+fn calcInterpParamCoords(
+    comptime Geometry: type,
+    nodes_inv_z: [Geometry.nodes_num]f64,
+    weights: [Geometry.nodes_num]f64,
+    inv_z: f64,
+    xi_out: f64,
+    eta_out: f64,
+) struct { xi: f64, eta: f64 } {
+    if (comptime Geometry.solver_kind == .hyperb) {
+        return calcTri3PerspectiveParamCoords(inv_z, nodes_inv_z, weights);
+    }
+
+    return .{ .xi = xi_out, .eta = eta_out };
+}
 
 //------------------------------------------------------------------------------------------
 // Direct Raster Helper
@@ -201,6 +228,14 @@ pub fn rasterDirectScalarCommon(
                         );
                     }
 
+                    const param_coords = calcInterpParamCoords(
+                        Geometry,
+                        nodes_inv_z,
+                        weights,
+                        inv_z,
+                        result.xi_out,
+                        result.eta_out,
+                    );
                     const ctx_shade = shaderops.ShadeContext(N){
                         .frame_idx = ctx_rast.frame_idx,
                         .elem_idx = targ_overlap.overlap.elem_idx,
@@ -215,6 +250,8 @@ pub fn rasterDirectScalarCommon(
                         .weights = weights,
                         .nodes_inv_z = nodes_inv_z,
                         .sub_pixel_z = subpx_z,
+                        .xi = param_coords.xi,
+                        .eta = param_coords.eta,
                     };
 
                     ShaderKernel.shade(
@@ -326,6 +363,8 @@ fn rasterTileCommon(
                         @intCast(s.elem_field.dims[2]),
                     .tex => 1,
                     .tex_rgb => 3,
+                    .tex_func => 1,
+                    .tex_func_rgb => 3,
                 };
 
                 switch (mesh_ptr.shader) {
@@ -416,6 +455,66 @@ fn rasterTileCommon(
                             GK,
                             SK,
                             TexPrepared(3),
+                        ).render(
+                            report_mode,
+                            ctx_rast,
+                            ctx_report,
+                            targ_overlap,
+                            mesh_in,
+                            shader,
+                            &local_shader_buf,
+                            subpx_scratch,
+                        );
+                    },
+                    .tex_func => |*shader| {
+                        const SK = shadekerns.TexFuncKernel(N, 1);
+                        var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
+                        if (shader.elem_uvs != null) {
+                            local_shader_buf.load(
+                                shader.elem_uvs.?,
+                                targ_overlap.overlap.elem_idx * 2 * N,
+                                2,
+                            );
+                        }
+                        if (shader.elem_normals) |en| {
+                            const prep_idx = en.map[targ_overlap.overlap.elem_idx];
+                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
+                        }
+
+                        shaded_px += try RasterBackend.RasterPass(
+                            GK,
+                            SK,
+                            TexFuncPrepared(1),
+                        ).render(
+                            report_mode,
+                            ctx_rast,
+                            ctx_report,
+                            targ_overlap,
+                            mesh_in,
+                            shader,
+                            &local_shader_buf,
+                            subpx_scratch,
+                        );
+                    },
+                    .tex_func_rgb => |*shader| {
+                        const SK = shadekerns.TexFuncKernel(N, 3);
+                        var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
+                        if (shader.elem_uvs != null) {
+                            local_shader_buf.load(
+                                shader.elem_uvs.?,
+                                targ_overlap.overlap.elem_idx * 2 * N,
+                                2,
+                            );
+                        }
+                        if (shader.elem_normals) |en| {
+                            const prep_idx = en.map[targ_overlap.overlap.elem_idx];
+                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
+                        }
+
+                        shaded_px += try RasterBackend.RasterPass(
+                            GK,
+                            SK,
+                            TexFuncPrepared(3),
                         ).render(
                             report_mode,
                             ctx_rast,

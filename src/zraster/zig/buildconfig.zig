@@ -32,6 +32,8 @@ pub const EdgeTolerance = struct {
 pub const HullTolerance = struct {
     scalar_inclusion: f64 = 1.0e-6,
     simd_inclusion: f64 = 1.0e-6,
+    corner_midside_ang_lower_deg: f64 = 0.0,
+    corner_midside_ang_upper_deg: f64 = 180.0,
 };
 
 pub const CullingTolerance = struct {

@@ -20,6 +20,14 @@ const meshio = @import("meshio.zig");
 
 pub const ScaleOver = enum { within_frames, over_frames };
 pub const NormalType = enum { none, exact, averaged };
+pub const TexFuncBuiltin = enum {
+    constant,
+    linear,
+    quadratic,
+    sinusoidal,
+    checker_smooth,
+    lambertian_normal_z,
+};
 
 pub fn LocalShaderBuffer(comptime N: usize) type {
     return struct {
@@ -105,10 +113,23 @@ pub fn TexInput(comptime channels: usize) type {
     };
 }
 
+pub fn TexFuncInput(comptime channels: usize) type {
+    _ = channels;
+    return struct {
+        uvs: ?ndarray.NDArray(f64) = null,
+        builtin: TexFuncBuiltin,
+        bits: ?u8 = 8,
+        scaling: imageops.ScaleStrategy = .none,
+        normal_type: NormalType = .none,
+    };
+}
+
 pub const ShaderInput = union(enum) {
     nodal: NodalInput,
     tex: TexInput(1),
     tex_rgb: TexInput(3),
+    tex_func: TexFuncInput(1),
+    tex_func_rgb: TexFuncInput(3),
 };
 
 // Static: Persistent multi-frame shader resources in engine memory.
@@ -136,10 +157,23 @@ pub fn TexStatic(comptime channels: usize) type {
     };
 }
 
+pub fn TexFuncStatic(comptime channels: usize) type {
+    _ = channels;
+    return struct {
+        elem_uvs: ?ndarray.NDArray(f64),
+        builtin: TexFuncBuiltin,
+        bits: ?u8 = 8,
+        scaling: imageops.ScaleStrategy = .none,
+        normal_type: NormalType = .none,
+    };
+}
+
 pub const ShaderStatic = union(enum) {
     nodal: NodalStatic,
     tex: TexStatic(1),
     tex_rgb: TexStatic(3),
+    tex_func: TexFuncStatic(1),
+    tex_func_rgb: TexFuncStatic(3),
 };
 
 // Prepared: Culled and expanded shader data for a SINGLE frame.
@@ -174,10 +208,26 @@ pub fn TexPrepared(comptime channels: usize) type {
     };
 }
 
+pub fn TexFuncPrepared(comptime channels: usize) type {
+    _ = channels;
+    return struct {
+        elem_uvs: ?ndarray.NDArray(f64),
+        builtin: TexFuncBuiltin,
+        bits: ?u8 = 8,
+        scaling: imageops.ScaleStrategy = .none,
+        scale_mul: f64 = 1.0,
+        scale_add: f64 = 0.0,
+        normal_type: NormalType = .none,
+        elem_normals: ?ndarray.MappedNDArray(f64) = null,
+    };
+}
+
 pub const ShaderPrepared = union(enum) {
     nodal: NodalPrepared,
     tex: TexPrepared(1),
     tex_rgb: TexPrepared(3),
+    tex_func: TexFuncPrepared(1),
+    tex_func_rgb: TexFuncPrepared(3),
 };
 
 pub fn ShadeContext(comptime N: usize) type {
@@ -199,7 +249,123 @@ pub fn InterpData(comptime N: usize) type {
         weights: [N]f64,
         nodes_inv_z: [N]f64,
         sub_pixel_z: f64,
+        xi: f64,
+        eta: f64,
     };
+}
+
+pub const TexFuncCoord = struct {
+    coord_0: f64,
+    coord_1: f64,
+    normal_x: f64,
+    normal_y: f64,
+    normal_z: f64,
+};
+
+inline fn cubicSmoothStep(val: f64) f64 {
+    const clamped = @max(0.0, @min(1.0, val));
+    return clamped * clamped * (3.0 - 2.0 * clamped);
+}
+
+pub inline fn evalTexFuncBuiltinScalar(
+    builtin: TexFuncBuiltin,
+    coord: TexFuncCoord,
+) f64 {
+    return switch (builtin) {
+        .constant => 0.5,
+        .linear => 0.5 + 0.25 * coord.coord_0 + 0.2 * coord.coord_1,
+        .quadratic => 0.35 +
+            0.2 * coord.coord_0 +
+            0.15 * coord.coord_1 +
+            0.1 * coord.coord_0 * coord.coord_0 -
+            0.08 * coord.coord_0 * coord.coord_1 +
+            0.06 * coord.coord_1 * coord.coord_1,
+        .sinusoidal => 0.5 +
+            0.25 * @sin(6.0 * coord.coord_0) +
+            0.2 * @cos(5.0 * coord.coord_1),
+        .checker_smooth => blk: {
+            const phase_x = 0.5 + 0.5 * @sin(8.0 * std.math.pi * coord.coord_0);
+            const phase_y = 0.5 + 0.5 * @sin(8.0 * std.math.pi * coord.coord_1);
+            const prod = phase_x * phase_y;
+            break :blk cubicSmoothStep(prod);
+        },
+        .lambertian_normal_z => 0.5 + 0.5 * coord.normal_z,
+    };
+}
+
+pub inline fn evalTexFuncBuiltinRgb(
+    builtin: TexFuncBuiltin,
+    coord: TexFuncCoord,
+) [3]f64 {
+    return switch (builtin) {
+        .constant => .{ 0.2, 0.5, 0.8 },
+        .linear => .{
+            0.5 + 0.25 * coord.coord_0,
+            0.5 + 0.25 * coord.coord_1,
+            0.5 + 0.15 * coord.coord_0 - 0.15 * coord.coord_1,
+        },
+        .quadratic => .{
+            0.3 + 0.2 * coord.coord_0 * coord.coord_0,
+            0.3 + 0.2 * coord.coord_1 * coord.coord_1,
+            0.3 + 0.12 * coord.coord_0 * coord.coord_1,
+        },
+        .sinusoidal => .{
+            0.5 + 0.25 * @sin(6.0 * coord.coord_0),
+            0.5 + 0.25 * @cos(6.0 * coord.coord_1),
+            0.5 + 0.2 * @sin(4.0 * (coord.coord_0 + coord.coord_1)),
+        },
+        .checker_smooth => blk: {
+            const base = evalTexFuncBuiltinScalar(.checker_smooth, coord);
+            break :blk .{
+                base,
+                cubicSmoothStep(1.0 - base),
+                0.5 + 0.5 * @sin(2.0 * std.math.pi * base),
+            };
+        },
+        .lambertian_normal_z => blk: {
+            const lambert = 0.5 + 0.5 * coord.normal_z;
+            break :blk .{
+                lambert,
+                0.75 * lambert,
+                0.5 * lambert,
+            };
+        },
+    };
+}
+
+inline fn getTexFuncCoord(
+    comptime N: usize,
+    ctx_shade: ShadeContext(N),
+    interp: InterpData(N),
+    elem_normals: ?ndarray.MappedNDArray(f64),
+) TexFuncCoord {
+    if (elem_normals != null) {
+        const normal = ctx_shade.shader_buf.interpolateNormal(interp.weights);
+        return .{
+            .coord_0 = 0.0,
+            .coord_1 = 0.0,
+            .normal_x = normal[0],
+            .normal_y = normal[1],
+            .normal_z = normal[2],
+        };
+    }
+
+    return .{
+        .coord_0 = 0.0,
+        .coord_1 = 0.0,
+        .normal_x = 0.0,
+        .normal_y = 0.0,
+        .normal_z = 1.0,
+    };
+}
+
+inline fn setCoordValues(
+    coord: *TexFuncCoord,
+    coord_0: f64,
+    coord_1: f64,
+) void {
+    coord.coord_0 = coord_0;
+    coord.coord_1 = coord_1;
 }
 
 pub inline fn fillNodalClip(
@@ -362,5 +528,78 @@ pub inline fn fillTexPerspRuntime(
     inline for (0..channels) |ch| {
         spx_image_scratch.slice[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
             sampled[ch] * sh.scale_mul + sh.scale_add;
+    }
+}
+
+pub inline fn fillTexFuncClip(
+    comptime N: usize,
+    comptime channels: usize,
+    ctx_shade: ShadeContext(N),
+    interp: InterpData(N),
+    sh: *const TexFuncPrepared(channels),
+    spx_image_scratch: *matslice.MatSlice(f64),
+) void {
+    var coord = getTexFuncCoord(N, ctx_shade, interp, sh.elem_normals);
+
+    if (sh.elem_uvs != null) {
+        var tex_u: f64 = 0.0;
+        var tex_v: f64 = 0.0;
+        inline for (0..N) |nn| {
+            tex_u += interp.weights[nn] * ctx_shade.shader_buf.data[nn];
+            tex_v += interp.weights[nn] * ctx_shade.shader_buf.data[N + nn];
+        }
+        setCoordValues(&coord, tex_u, tex_v);
+    } else {
+        setCoordValues(&coord, interp.xi, interp.eta);
+    }
+
+    if (comptime channels == 1) {
+        const value = evalTexFuncBuiltinScalar(sh.builtin, coord);
+        spx_image_scratch.slice[ctx_shade.scratch_idx] =
+            value * sh.scale_mul + sh.scale_add;
+    } else {
+        const values = evalTexFuncBuiltinRgb(sh.builtin, coord);
+        inline for (0..channels) |ch| {
+            spx_image_scratch.slice[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
+                values[ch] * sh.scale_mul + sh.scale_add;
+        }
+    }
+}
+
+pub inline fn fillTexFuncPersp(
+    comptime N: usize,
+    comptime channels: usize,
+    ctx_shade: ShadeContext(N),
+    interp: InterpData(N),
+    sh: *const TexFuncPrepared(channels),
+    spx_image_scratch: *matslice.MatSlice(f64),
+) void {
+    var coord = getTexFuncCoord(N, ctx_shade, interp, sh.elem_normals);
+
+    if (sh.elem_uvs != null) {
+        var tex_u: f64 = 0.0;
+        var tex_v: f64 = 0.0;
+        inline for (0..N) |nn| {
+            const inv_z = interp.nodes_inv_z[nn];
+            tex_u += interp.weights[nn] * ctx_shade.shader_buf.data[nn] * inv_z;
+            tex_v += interp.weights[nn] *
+                ctx_shade.shader_buf.data[N + nn] *
+                inv_z;
+        }
+        setCoordValues(&coord, tex_u * interp.sub_pixel_z, tex_v * interp.sub_pixel_z);
+    } else {
+        setCoordValues(&coord, interp.xi, interp.eta);
+    }
+
+    if (comptime channels == 1) {
+        const value = evalTexFuncBuiltinScalar(sh.builtin, coord);
+        spx_image_scratch.slice[ctx_shade.scratch_idx] =
+            value * sh.scale_mul + sh.scale_add;
+    } else {
+        const values = evalTexFuncBuiltinRgb(sh.builtin, coord);
+        inline for (0..channels) |ch| {
+            spx_image_scratch.slice[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
+                values[ch] * sh.scale_mul + sh.scale_add;
+        }
     }
 }

@@ -14,3 +14,5 @@ pub const fillTexClip = common.fillTexClip;
 pub const fillTexPersp = common.fillTexPersp;
 pub const fillTexClipRuntime = common.fillTexClipRuntime;
 pub const fillTexPerspRuntime = common.fillTexPerspRuntime;
+pub const fillTexFuncClip = common.fillTexFuncClip;
+pub const fillTexFuncPersp = common.fillTexFuncPersp;

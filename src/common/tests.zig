@@ -7,6 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const Timestamp = std.Io.Clock.Timestamp;
 
 const orch = @import("orchestration.zig");
 const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
@@ -784,6 +785,9 @@ pub fn runTestInternal(
             };
 
             const prepared_camera_input = prepared.camera.toInput();
+            
+            std.debug.print("Testing {s} ... ", .{case_dir_name});
+            const time_start = Timestamp.now(io, .awake);
             const result = (try zraster.rasterAllFrames(
                 aa,
                 io,
@@ -795,6 +799,8 @@ pub fn runTestInternal(
             )) orelse return error.NoResult;
 
             defer aa.free(result.slice);
+            const time_end = Timestamp.now(io, .awake);
+            const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
             const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
             for (0..frames_num) |f| {
@@ -812,6 +818,11 @@ pub fn runTestInternal(
                     rel_tol,
                     abs_tol,
                 ) catch |err| {
+                    if (err == error.PixelMismatch) {
+                        std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                    } else {
+                        std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                    }
                     const fail_dir_name = try std.fmt.allocPrint(
                         aa,
                         "all_{s}{s}",
@@ -832,6 +843,7 @@ pub fn runTestInternal(
                     return err;
                 };
             }
+            std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
         }
 
         // --- Tex ShaderInput ---
@@ -878,6 +890,9 @@ pub fn runTestInternal(
                 };
 
                 const prepared_camera_input = prepared.camera.toInput();
+
+                std.debug.print("Testing {s} ... ", .{case_dir_name});
+                const time_start = Timestamp.now(io, .awake);
                 const result = (try zraster.rasterAllFrames(
                     aa,
                     io,
@@ -889,6 +904,8 @@ pub fn runTestInternal(
                 )) orelse return error.NoResult;
 
                 defer aa.free(result.slice);
+                const time_end = Timestamp.now(io, .awake);
+                const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
                 const frames_num = if (result.dims.len == 5)
                     result.dims[1]
@@ -909,6 +926,11 @@ pub fn runTestInternal(
                         rel_tol,
                         abs_tol,
                     ) catch |err| {
+                        if (err == error.PixelMismatch) {
+                            std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                        } else {
+                            std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                        }
                         const fail_dir_name = try std.fmt.allocPrint(
                             aa,
                             "all_{s}{s}",
@@ -929,6 +951,7 @@ pub fn runTestInternal(
                         return err;
                     };
                 }
+                std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
             }
         }
     }
@@ -998,6 +1021,13 @@ pub fn runMultimeshTestExt(
         };
 
         const camera_input = camera.toInput();
+        const case_name = if (mode == .nodal)
+            "multimesh_allelem_nodal"
+        else
+            "multimesh_allelem_tex";
+        std.debug.print("Testing {s} ... ", .{case_name});
+
+        const time_start = Timestamp.now(io, .awake);
         const result = (try zraster.rasterAllFrames(
             aa,
             io,
@@ -1007,6 +1037,8 @@ pub fn runMultimeshTestExt(
             null,
             null,
         )) orelse return error.NoResult;
+        const time_end = Timestamp.now(io, .awake);
+        const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
         const gold_dir = if (mode == .nodal)
             try std.fmt.allocPrint(aa, "{s}/allelem_nodal", .{gold_dir_root})
@@ -1028,10 +1060,11 @@ pub fn runMultimeshTestExt(
                 rel_tol,
                 abs_tol,
             ) catch |err| {
-                const case_name = if (mode == .nodal)
-                    "multimesh_allelem_nodal"
-                else
-                    "multimesh_allelem_tex";
+                if (err == error.PixelMismatch) {
+                    std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                } else {
+                    std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                }
                 const fail_dir_name = try std.fmt.allocPrint(
                     aa,
                     "all_{s}{s}",
@@ -1052,6 +1085,7 @@ pub fn runMultimeshTestExt(
                 return err;
             };
         }
+        std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
     }
 }
 
@@ -1123,6 +1157,8 @@ pub fn runMultimeshMixedTestExt(
         .report = .off,
     };
     const camera_input = camera.toInput();
+    
+    const time_start = Timestamp.now(io, .awake);
     const result = (try zraster.rasterAllFrames(
         aa,
         io,
@@ -1132,6 +1168,8 @@ pub fn runMultimeshMixedTestExt(
         null,
         null,
     )) orelse return error.NoResult;
+    const time_end = Timestamp.now(io, .awake);
+    const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
     const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
     for (0..frames_num) |f| {
@@ -1148,6 +1186,11 @@ pub fn runMultimeshMixedTestExt(
             rel_tol,
             abs_tol,
         ) catch |err| {
+            if (err == error.PixelMismatch) {
+                std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+            } else {
+                std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+            }
             try saveComparisonArtifactsFromResult(
                 aa,
                 io,
@@ -1234,6 +1277,8 @@ pub fn runMultimeshMixedRGBTestExt(
     };
 
     const camera_input = camera.toInput();
+    
+    const time_start = Timestamp.now(io, .awake);
     const result = (try zraster.rasterAllFrames(
         aa,
         io,
@@ -1243,6 +1288,8 @@ pub fn runMultimeshMixedRGBTestExt(
         null,
         null,
     )) orelse return error.NoResult;
+    const time_end = Timestamp.now(io, .awake);
+    const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
     const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
     for (0..frames_num) |f| {
@@ -1259,6 +1306,11 @@ pub fn runMultimeshMixedRGBTestExt(
             rel_tol,
             abs_tol,
         ) catch |err| {
+            if (err == error.PixelMismatch) {
+                std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+            } else {
+                std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+            }
             try saveComparisonArtifactsFromResult(
                 aa,
                 io,
@@ -1274,4 +1326,5 @@ pub fn runMultimeshMixedRGBTestExt(
             return err;
         };
     }
+    std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
 }

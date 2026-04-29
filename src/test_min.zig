@@ -7,6 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const Timestamp = std.Io.Clock.Timestamp;
 const buildconfig = @import("zraster/zig/buildconfig.zig");
 const common = @import("common/benchcommon.zig");
 const minsuite = @import("common/minsuite.zig");
@@ -93,8 +94,19 @@ test "MIN Suite: sphere200 and multimesh" {
                             .return_image = true,
                             .save_opts = &[_]iio.ImageSaveOpts{},
                             .fov_scale = 1.0,
+                            .hull_convex_fallback = true,
                         };
 
+                        const case_name = try minsuite.calcMinCaseName(
+                            allocator,
+                            mt,
+                            st,
+                            sc,
+                        );
+                        defer allocator.free(case_name);
+                        std.debug.print("Testing sphere200/base/{s} ... ", .{case_name});
+
+                        const time_start = Timestamp.now(io, .awake);
                         var result = try common.runBenchmarkQuiet(
                             allocator,
                             io,
@@ -108,14 +120,8 @@ test "MIN Suite: sphere200 and multimesh" {
                             options,
                         );
                         defer result.deinit(allocator);
-
-                        const case_name = try minsuite.calcMinCaseName(
-                            allocator,
-                            mt,
-                            st,
-                            sc,
-                        );
-                        defer allocator.free(case_name);
+                        const time_end = Timestamp.now(io, .awake);
+                        const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
                         const gold_case_dir = try std.fs.path.join(
                             allocator,
@@ -164,11 +170,13 @@ test "MIN Suite: sphere200 and multimesh" {
                                 channels,
                             );
                             if (err == error.PixelMismatch) {
+                                std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
                                 total_fails += 1;
                                 continue;
                             }
                             return err;
                         };
+                        std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
                     }
                 }
             }
@@ -204,8 +212,19 @@ test "MIN Suite: sphere200 and multimesh" {
                             .return_image = true,
                             .save_opts = &[_]iio.ImageSaveOpts{},
                             .fov_scale = 0.75,
+                            .hull_convex_fallback = true,
                         };
 
+                        const case_name = try minsuite.calcMinCaseName(
+                            allocator,
+                            mt,
+                            st,
+                            sc,
+                        );
+                        defer allocator.free(case_name);
+                        std.debug.print("Testing sphere200/multicull/{s} ... ", .{case_name});
+
+                        const time_start = Timestamp.now(io, .awake);
                         var result = try minsuite.runSphere200MultiCullQuiet(
                             allocator,
                             io,
@@ -219,14 +238,8 @@ test "MIN Suite: sphere200 and multimesh" {
                             options,
                         );
                         defer result.deinit(allocator);
-
-                        const case_name = try minsuite.calcMinCaseName(
-                            allocator,
-                            mt,
-                            st,
-                            sc,
-                        );
-                        defer allocator.free(case_name);
+                        const time_end = Timestamp.now(io, .awake);
+                        const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
                         const gold_case_dir = try std.fs.path.join(
                             allocator,
@@ -274,11 +287,13 @@ test "MIN Suite: sphere200 and multimesh" {
                                 channels,
                             );
                             if (err == error.PixelMismatch) {
+                                std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
                                 total_fails += 1;
                                 continue;
                             }
                             return err;
                         };
+                        std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
                     }
                 }
             }
@@ -299,48 +314,92 @@ test "MIN Suite: sphere200 and multimesh" {
         "data-min/quad9_twoelems/",
     };
 
-    tests.runMultimeshTestExt(
-        allocator,
-        io,
-        gold_dir ++ "/multimesh/base",
-        &multi_dir_paths,
-        pixel_num_multi,
-        tcfg.REL_TOL,
-        tcfg.ABS_TOL,
-    ) catch |err| {
-        total_fails += 1;
-        if (err != error.PixelMismatch) {
-            return err;
-        }
-    };
-    tests.runMultimeshMixedTestExt(
-        allocator,
-        io,
-        gold_dir ++ "/multimesh/allelem_allshade",
-        &multi_dir_paths,
-        pixel_num_multi,
-        tcfg.REL_TOL,
-        tcfg.ABS_TOL,
-    ) catch |err| {
-        total_fails += 1;
-        if (err != error.PixelMismatch) {
-            return err;
-        }
-    };
-    tests.runMultimeshMixedRGBTestExt(
-        allocator,
-        io,
-        gold_dir ++ "/multimesh/allelem_allshade_rgb",
-        &multi_dir_paths,
-        pixel_num_multi,
-        tcfg.REL_TOL,
-        tcfg.ABS_TOL,
-    ) catch |err| {
-        total_fails += 1;
-        if (err != error.PixelMismatch) {
-            return err;
-        }
-    };
+    {
+        std.debug.print("Testing multimesh/base ... ", .{});
+        const time_start = Timestamp.now(io, .awake);
+        tests.runMultimeshTestExt(
+            allocator,
+            io,
+            gold_dir ++ "/multimesh/base",
+            &multi_dir_paths,
+            pixel_num_multi,
+            tcfg.REL_TOL,
+            tcfg.ABS_TOL,
+        ) catch |err| {
+            const time_end = Timestamp.now(io, .awake);
+            const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
+            if (err == error.PixelMismatch) {
+                std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+            } else {
+                std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+            }
+            total_fails += 1;
+            if (err != error.PixelMismatch) {
+                return err;
+            }
+        };
+        const time_end = Timestamp.now(io, .awake);
+        const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
+        std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+    }
+
+    {
+        std.debug.print("Testing multimesh/allelem_allshade ... ", .{});
+        const time_start = Timestamp.now(io, .awake);
+        tests.runMultimeshMixedTestExt(
+            allocator,
+            io,
+            gold_dir ++ "/multimesh/allelem_allshade",
+            &multi_dir_paths,
+            pixel_num_multi,
+            tcfg.REL_TOL,
+            tcfg.ABS_TOL,
+        ) catch |err| {
+            const time_end = Timestamp.now(io, .awake);
+            const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
+            if (err == error.PixelMismatch) {
+                std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+            } else {
+                std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+            }
+            total_fails += 1;
+            if (err != error.PixelMismatch) {
+                return err;
+            }
+        };
+        const time_end = Timestamp.now(io, .awake);
+        const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
+        std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+    }
+
+    {
+        std.debug.print("Testing multimesh/allelem_allshade_rgb ... ", .{});
+        const time_start = Timestamp.now(io, .awake);
+        tests.runMultimeshMixedRGBTestExt(
+            allocator,
+            io,
+            gold_dir ++ "/multimesh/allelem_allshade_rgb",
+            &multi_dir_paths,
+            pixel_num_multi,
+            tcfg.REL_TOL,
+            tcfg.ABS_TOL,
+        ) catch |err| {
+            const time_end = Timestamp.now(io, .awake);
+            const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
+            if (err == error.PixelMismatch) {
+                std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+            } else {
+                std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+            }
+            total_fails += 1;
+            if (err != error.PixelMismatch) {
+                return err;
+            }
+        };
+        const time_end = Timestamp.now(io, .awake);
+        const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
+        std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
+    }
 
     if (total_fails != 0) {
         std.debug.print(

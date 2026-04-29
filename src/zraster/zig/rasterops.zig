@@ -471,6 +471,7 @@ pub fn calcVisibleNodeBBoxHighOrd(
     coords_nodes: *const meshio.Coords,
     connect: *const meshio.Connect,
     elem_idx: usize,
+    hull_convex_fallback_on: bool,
 ) ?ElemBBox {
     comptime {
         if (MT == .tri3) {
@@ -495,6 +496,7 @@ pub fn calcVisibleNodeBBoxHighOrd(
         N,
         camera,
         coords_clip,
+        hull_convex_fallback_on,
     );
     const hull_ideal_raster = packHullPointsAsRasterCoords(NH, hull_points_ideal);
     const hull_distorted = distortIdealRasterCoords(
@@ -574,6 +576,7 @@ pub fn prepareVisibleRasterHullsRange(
     camera: *const cam.CameraPrepared,
     elem_coords: *const ndarray.NDArray(f64),
     raster_hull: *ndarray.NDArray(f64),
+    hull_convex_fallback_on: bool,
     visible_start: usize,
     visible_end: usize,
 ) void {
@@ -597,6 +600,7 @@ pub fn prepareVisibleRasterHullsRange(
             N,
             camera,
             coords_elem,
+            hull_convex_fallback_on,
         );
         for (0..NH) |nn| {
             raster_hull.set(&[_]usize{ pp, 0, nn }, hull_points.x[nn]);
@@ -1026,7 +1030,14 @@ test "calcVisibleNodeBBoxHighOrd on_screen" {
     );
     defer allocator.free(coords.mem);
 
-    const bbox = calcVisibleNodeBBoxHighOrd(.tri6, &camera, &coords, &connect, 0);
+    const bbox = calcVisibleNodeBBoxHighOrd(
+        .tri6,
+        &camera,
+        &coords,
+        &connect,
+        0,
+        false,
+    );
     try std.testing.expect(bbox != null);
 }
 
@@ -1069,7 +1080,14 @@ test "calcVisibleNodeBBoxHighOrd behind_camera" {
     );
     defer allocator.free(coords.mem);
 
-    const bbox = calcVisibleNodeBBoxHighOrd(.tri6, &camera, &coords, &connect, 0);
+    const bbox = calcVisibleNodeBBoxHighOrd(
+        .tri6,
+        &camera,
+        &coords,
+        &connect,
+        0,
+        false,
+    );
     try std.testing.expect(bbox == null);
 }
 
@@ -1177,7 +1195,12 @@ test "high_order_distorted_hull_shift" {
         .z = .{ 1.0, 1.0, 1.0, 1.0, 1.0, 1.0 },
     };
 
-    const hull_points_ideal = hull.buildAdaptiveHullPointsFromClip(6, &camera, coords_clip);
+    const hull_points_ideal = hull.buildAdaptiveHullPointsFromClip(
+        6,
+        &camera,
+        coords_clip,
+        false,
+    );
     const hull_ideal_raster = packHullPointsAsRasterCoords(6, hull_points_ideal);
     camera.distortion = distortion;
     const hull_distorted = distortIdealRasterCoords(6, &camera, hull_ideal_raster);
@@ -1226,6 +1249,7 @@ test "calcVisibleNodeBBoxHighOrd distorted_off_screen_shift" {
         &coords,
         &connect,
         0,
+        false,
     );
     try std.testing.expect(bbox == null);
 }
@@ -1258,6 +1282,13 @@ test "calcVisibleNodeBBoxHighOrd backface_uses_ideal_pinhole" {
     );
     defer allocator.free(coords.mem);
 
-    const bbox = calcVisibleNodeBBoxHighOrd(.tri6, &camera, &coords, &connect, 0);
+    const bbox = calcVisibleNodeBBoxHighOrd(
+        .tri6,
+        &camera,
+        &coords,
+        &connect,
+        0,
+        false,
+    );
     try std.testing.expect(bbox != null);
 }

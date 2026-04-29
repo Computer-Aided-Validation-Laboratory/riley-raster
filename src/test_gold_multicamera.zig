@@ -7,6 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const Timestamp = std.Io.Clock.Timestamp;
 
 const benchcommon = @import("common/benchcommon.zig");
 const orch = @import("common/orchestration.zig");
@@ -283,6 +284,10 @@ test "Sphere200 multicamera gold tests" {
         return;
     }
 
+    std.debug.print("Running Multicamera Gold Tests with .simd = .{s}...\n", .{
+        if (simd_on) "on" else "off",
+    });
+
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
@@ -432,6 +437,8 @@ test "Sphere200 multicamera gold tests" {
             .report = .off,
         };
 
+        std.debug.print("Testing {s} ... ", .{render_case.case_name});
+        const time_start = Timestamp.now(io, .awake);
         const result = (try zraster.rasterAllFrames(
             aa,
             io,
@@ -442,6 +449,8 @@ test "Sphere200 multicamera gold tests" {
             null,
         )) orelse return error.NoResult;
         defer aa.free(result.slice);
+        const time_end = Timestamp.now(io, .awake);
+        const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
         try std.testing.expectEqual(@as(usize, 2), result.dims[0]);
         try expectCamerasDifferent(
@@ -481,6 +490,11 @@ test "Sphere200 multicamera gold tests" {
                 duplicate_rel_tol,
                 duplicate_abs_tol,
             ) catch |err| {
+                if (err == error.PixelMismatch) {
+                    std.debug.print("MISMATCH! ({d:.2} ms)\n", .{duration_ms});
+                } else {
+                    std.debug.print("ERROR! ({d:.2} ms)\n", .{duration_ms});
+                }
                 const fail_dir_name = try std.fmt.allocPrint(
                     aa,
                     "multicam_{s}_cam{d}",
@@ -501,6 +515,7 @@ test "Sphere200 multicamera gold tests" {
                 return err;
             };
         }
+        std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
     }
 }
 

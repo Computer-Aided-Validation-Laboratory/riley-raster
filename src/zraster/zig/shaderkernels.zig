@@ -14,3 +14,4 @@ else
 
 pub const NodalKernel = impl.NodalKernel;
 pub const TexKernel = impl.TexKernel;
+pub const TexFuncKernel = impl.TexFuncKernel;

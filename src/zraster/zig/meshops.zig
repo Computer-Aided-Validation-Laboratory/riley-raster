@@ -22,6 +22,7 @@ const cam = @import("camera.zig");
 const pce = @import("parachunkexec.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
 const rops = @import("rasterops.zig");
+const report = @import("report.zig");
 const texops = @import("textureops.zig");
 
 const shaderops = @import("shaderops.zig");
@@ -213,6 +214,12 @@ pub fn meshInputFromSimDataSlice(
                 .tex_rgb => |tex| {
                     outer_alloc.free(tex.uvs.slice);
                 },
+                .tex_func => |tex_func| {
+                    if (tex_func.uvs) |uvs| outer_alloc.free(uvs.slice);
+                },
+                .tex_func_rgb => |tex_func| {
+                    if (tex_func.uvs) |uvs| outer_alloc.free(uvs.slice);
+                },
                 else => {},
             }
         }
@@ -328,6 +335,40 @@ pub fn initStatic(
                 .normal_type = tex_in.normal_type,
             } };
         },
+        .tex_func => |tex_func_in| {
+            const elem_uvs = if (tex_func_in.uvs) |uvs|
+                try prepareUVs(
+                    allocator,
+                    &uvs,
+                    &mesh_input.connect,
+                )
+            else
+                null;
+            shader_static = .{ .tex_func = .{
+                .elem_uvs = elem_uvs,
+                .builtin = tex_func_in.builtin,
+                .bits = tex_func_in.bits,
+                .scaling = tex_func_in.scaling,
+                .normal_type = tex_func_in.normal_type,
+            } };
+        },
+        .tex_func_rgb => |tex_func_in| {
+            const elem_uvs = if (tex_func_in.uvs) |uvs|
+                try prepareUVs(
+                    allocator,
+                    &uvs,
+                    &mesh_input.connect,
+                )
+            else
+                null;
+            shader_static = .{ .tex_func_rgb = .{
+                .elem_uvs = elem_uvs,
+                .builtin = tex_func_in.builtin,
+                .bits = tex_func_in.bits,
+                .scaling = tex_func_in.scaling,
+                .normal_type = tex_func_in.normal_type,
+            } };
+        },
     }
 
     return .{
@@ -427,6 +468,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         camera: *const cam.CameraPrepared,
         mesh_static: *const MeshStatic,
         frame_idx: usize,
+        hull_early_out_on: bool,
+        hull_convex_fallback_on: bool,
         scaling_params: ?imageops.ScalingParams,
         chunk_exec: ?*pce.ParaChunkExecutor,
         workers_num: usize,
@@ -443,6 +486,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             camera: *const cam.CameraPrepared,
             mesh_static: *const MeshStatic,
             frame_idx: usize,
+            hull_early_out_on: bool,
+            hull_convex_fallback_on: bool,
             scaling_params: ?imageops.ScalingParams,
             chunk_exec: ?*pce.ParaChunkExecutor,
             workers_num: usize,
@@ -463,6 +508,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .camera = camera,
                 .mesh_static = mesh_static,
                 .frame_idx = frame_idx,
+                .hull_early_out_on = hull_early_out_on,
+                .hull_convex_fallback_on = hull_convex_fallback_on,
                 .scaling_params = scaling_params,
                 .chunk_exec = chunk_exec,
                 .workers_num = workers_num,
@@ -603,6 +650,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             connect: *const meshio.Connect,
             coords_nodes: *const meshio.Coords,
             visible_counts_by_chunk: []usize,
+            hull_convex_fallback_on: bool,
         };
 
         fn runCullVisibleCount(
@@ -630,6 +678,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         stage.coords_nodes,
                         stage.connect,
                         ee,
+                        stage.hull_convex_fallback_on,
                     );
 
                 if (bbox != null) {
@@ -656,6 +705,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .connect = &self.mesh_static.connect,
                 .coords_nodes = &self.mesh_workspace.coords_nodes,
                 .visible_counts_by_chunk = self.mesh_workspace.visible_counts_by_chunk,
+                .hull_convex_fallback_on = self.hull_convex_fallback_on,
             };
             pce.runStaticRange(
                 self.chunk_exec,
@@ -681,6 +731,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
                 .elem_bboxes = self.mesh_workspace.elem_bboxes,
                 .visible_offsets_by_chunk = self.mesh_workspace.visible_offsets_by_chunk,
+                .hull_convex_fallback_on = self.hull_convex_fallback_on,
             };
             pce.runStaticRange(
                 self.chunk_exec,
@@ -703,6 +754,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             visible_orig_elem_indices: []usize,
             elem_bboxes: []rops.ElemBBox,
             visible_offsets_by_chunk: []const usize,
+            hull_convex_fallback_on: bool,
         };
 
         fn runCullVisibleFill(
@@ -730,6 +782,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         stage.coords_nodes,
                         stage.connect,
                         ee,
+                        stage.hull_convex_fallback_on,
                     );
 
                 if (bbox) |b| {
@@ -811,6 +864,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             camera: *const cam.CameraPrepared,
             elem_coords: *const ndarray.NDArray(f64),
             raster_hull: *ndarray.NDArray(f64),
+            hull_convex_fallback_on: bool,
         };
 
         fn runPrepareRasterHulls(
@@ -826,6 +880,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 stage.camera,
                 stage.elem_coords,
                 stage.raster_hull,
+                stage.hull_convex_fallback_on,
                 range_start,
                 range_end,
             );
@@ -840,6 +895,11 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 return;
             }
 
+            if (!self.hull_early_out_on) {
+                self.mesh_workspace.raster_hull = null;
+                return;
+            }
+
             const NH = comptime MT.getNumHullPoints();
             self.mesh_workspace.raster_hull = try ndarray.NDArray(f64).initFlat(
                 self.allocator,
@@ -850,6 +910,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .camera = self.camera,
                 .elem_coords = elem_coords,
                 .raster_hull = &self.mesh_workspace.raster_hull.?,
+                .hull_convex_fallback_on = self.hull_convex_fallback_on,
             };
             pce.runStaticRange(
                 self.chunk_exec,
@@ -870,6 +931,12 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 },
                 .tex_rgb => |tex_static| {
                     mesh_prep.shader = try prepareTexShader(3, self, tex_static);
+                },
+                .tex_func => |tex_func_static| {
+                    mesh_prep.shader = try prepareTexFuncShader(1, self, tex_func_static);
+                },
+                .tex_func_rgb => |tex_func_static| {
+                    mesh_prep.shader = try prepareTexFuncShader(3, self, tex_func_static);
                 },
             }
         }
@@ -1049,6 +1116,69 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
         }
 
+        fn prepareTexFuncShader(
+            comptime channels: usize,
+            self: *FrameMeshPipelineType,
+            tex_func_static: shaderops.TexFuncStatic(channels),
+        ) !shaderops.ShaderPrepared {
+            const factors = imageops.getScaleFactors(
+                tex_func_static.scaling,
+                tex_func_static.bits,
+                .{ .min = 0.0, .range = 1.0 },
+            );
+
+            const elem_uvs = if (tex_func_static.elem_uvs) |elem_uvs_full| blk: {
+                var elem_uvs = try ndarray.NDArray(f64).initFlat(
+                    self.allocator,
+                    &[_]usize{
+                        self.mesh_workspace.elems_in_image,
+                        2,
+                        elem_uvs_full.dims[2],
+                    },
+                );
+
+                var uv_stage = GatherVisibleUVStage{
+                    .elem_uvs_full = elem_uvs_full,
+                    .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
+                    .elem_uvs = &elem_uvs,
+                };
+
+                pce.runStaticRange(
+                    self.chunk_exec,
+                    &uv_stage,
+                    runGatherVisibleUV,
+                    self.mesh_workspace.elems_in_image,
+                    self.visible_chunk_size,
+                );
+                break :blk elem_uvs;
+            } else null;
+
+            const elem_normals = try self.prepareVisibleNormals(tex_func_static.normal_type);
+            if (comptime channels == 1) {
+                return .{ .tex_func = .{
+                    .elem_uvs = elem_uvs,
+                    .builtin = tex_func_static.builtin,
+                    .bits = tex_func_static.bits,
+                    .scaling = tex_func_static.scaling,
+                    .scale_mul = factors.mul,
+                    .scale_add = factors.add,
+                    .normal_type = tex_func_static.normal_type,
+                    .elem_normals = elem_normals,
+                } };
+            } else {
+                return .{ .tex_func_rgb = .{
+                    .elem_uvs = elem_uvs,
+                    .builtin = tex_func_static.builtin,
+                    .bits = tex_func_static.bits,
+                    .scaling = tex_func_static.scaling,
+                    .scale_mul = factors.mul,
+                    .scale_add = factors.add,
+                    .normal_type = tex_func_static.normal_type,
+                    .elem_normals = elem_normals,
+                } };
+            }
+        }
+
         fn prepareVisibleNormals(
             self: *FrameMeshPipelineType,
             normal_type: shaderops.NormalType,
@@ -1083,6 +1213,7 @@ pub fn prepareMeshFrame(
     chunk_exec: ?*pce.ParaChunkExecutor,
     workers_num: usize,
     camera: *const cam.CameraPrepared,
+    config: report.RasterConfig,
     mesh_static: *const MeshStatic,
     frame_idx: usize,
     scaling_params: ?imageops.ScalingParams,
@@ -1094,6 +1225,8 @@ pub fn prepareMeshFrame(
                 camera,
                 mesh_static,
                 frame_idx,
+                config.hull_early_out_on,
+                config.hull_convex_fallback,
                 scaling_params,
                 chunk_exec,
                 workers_num,
@@ -1119,6 +1252,7 @@ pub fn prepareMeshFrames(
     chunk_exec: ?*pce.ParaChunkExecutor,
     workers_num: usize,
     camera: *const cam.CameraPrepared,
+    config: report.RasterConfig,
     frame_idx: usize,
     static_meshes: []const MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
@@ -1152,6 +1286,7 @@ pub fn prepareMeshFrames(
             chunk_exec,
             workers_num,
             camera,
+            config,
             mesh_static,
             frame_idx,
             nodal_frame_scaling,

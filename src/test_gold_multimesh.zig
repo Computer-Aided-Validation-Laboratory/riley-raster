@@ -19,6 +19,11 @@ test "Gold Multimesh Suite" {
 
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
 
+    const simd_on = @import("zraster/zig/buildconfig.zig").config.simd == .on;
+    std.debug.print("Running Gold Multimesh Tests with .simd = .{s}...\n", .{
+        if (simd_on) "on" else "off",
+    });
+
     try common.runMultimeshTest(allocator, io, tcfg.REL_TOL, tcfg.ABS_TOL);
     try common.runMultimeshMixedTest(allocator, io, tcfg.REL_TOL, tcfg.ABS_TOL);
     try common.runMultimeshMixedRGBTest(allocator, io, tcfg.REL_TOL, tcfg.ABS_TOL);

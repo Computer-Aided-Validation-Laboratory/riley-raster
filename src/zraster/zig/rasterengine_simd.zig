@@ -346,6 +346,8 @@ pub fn RasterPass(
                                 v_new_inv_z,
                             );
                             const v_subpx_z: VecSF = @as(VecSF, @splat(1.0)) / v_inv_z;
+                            const v_xi = res.v_weights[1] * v_nodes_inv_z[1] / v_inv_z;
+                            const v_eta = res.v_weights[2] * v_nodes_inv_z[2] / v_inv_z;
 
                             const v_depth_mask_arr: [S]bool = v_depth_mask;
                             inline for (0..S) |ll| {
@@ -397,6 +399,8 @@ pub fn RasterPass(
                                 ctx_report,
                                 v_depth_mask,
                                 res.v_weights,
+                                v_xi,
+                                v_eta,
                                 v_nodes_inv_z,
                                 v_subpx_z,
                                 shader,
@@ -442,25 +446,7 @@ pub fn RasterPass(
                 v_nodes_inv_z[nn] = @splat(nodes_inv_z[nn]);
             }
 
-            // Use our hull to get the triangular tessellation we will use for our coarse
-            // in/out check to avoid the Newton solver where possible.
-            const raster_hull = mesh_in.hull orelse
-                @panic("rasterNewtonSIMD requires mesh hull data");
-            const hx = raster_hull.getSlice(
-                &[_]usize{ targ_overlap.overlap.elem_idx, 0, 0 },
-                1,
-            );
-            const hy = raster_hull.getSlice(
-                &[_]usize{ targ_overlap.overlap.elem_idx, 1, 0 },
-                1,
-            );
-            const element_tess = hull.getTessellation(
-                N,
-                Geometry.hull_nodes_num,
-                Geometry.tess_triangles_num,
-                hx,
-                hy,
-            );
+            const maybe_raster_hull = mesh_in.hull;
 
             // Mask off our buffer based on the tile/elem overlap bounds to avoid needless
             // processing
@@ -508,35 +494,65 @@ pub fn RasterPass(
                             subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 1];
                     }
 
-                    const v_hull_res: HullResultSIMD = element_tess.isInSIMD(
-                        v_ideal_x_px,
-                        v_ideal_y_px,
-                    );
+                    var v_mask_active = v_x_mask;
+                    var xi_arr = [_]f64{0.0} ** S;
+                    var eta_arr = [_]f64{0.0} ** S;
 
-                    // Report: count passes of the tessellation check
-                    const v_mask_one_u8: VecSU8 = @splat(1);
-                    const v_mask_zero_u8: VecSU8 = @splat(0);
-                    const v_tess_check_u8 = @select(
-                        u8,
-                        v_x_mask,
-                        v_mask_one_u8,
-                        v_mask_zero_u8,
-                    );
-                    const tess_check_num: u64 = @intCast(@reduce(.Add, v_tess_check_u8));
-                    ctx_report.recordTessChecks(tess_check_num);
+                    if (maybe_raster_hull) |raster_hull| {
+                        const hx = raster_hull.getSlice(
+                            &[_]usize{ targ_overlap.overlap.elem_idx, 0, 0 },
+                            1,
+                        );
+                        const hy = raster_hull.getSlice(
+                            &[_]usize{ targ_overlap.overlap.elem_idx, 1, 0 },
+                            1,
+                        );
+                        const element_tess = hull.getTessellation(
+                            N,
+                            Geometry.hull_nodes_num,
+                            Geometry.tess_triangles_num,
+                            hx,
+                            hy,
+                        );
+                        const v_hull_res: HullResultSIMD = element_tess.isInSIMD(
+                            v_ideal_x_px,
+                            v_ideal_y_px,
+                        );
+                        const init_seed = Geometry.initSeedSIMD(.{
+                            .v_xi = v_hull_res.v_seed_xi,
+                            .v_eta = v_hull_res.v_seed_eta,
+                        });
+                        xi_arr = init_seed.v_xi;
+                        eta_arr = init_seed.v_eta;
 
-                    const v_mask_active = v_x_mask & v_hull_res.v_is_in;
+                        const v_mask_one_u8: VecSU8 = @splat(1);
+                        const v_mask_zero_u8: VecSU8 = @splat(0);
+                        const v_tess_check_u8 = @select(
+                            u8,
+                            v_x_mask,
+                            v_mask_one_u8,
+                            v_mask_zero_u8,
+                        );
+                        const tess_check_num: u64 =
+                            @intCast(@reduce(.Add, v_tess_check_u8));
+                        ctx_report.recordTessChecks(tess_check_num);
 
-                    // Report: count of masked passes of the tessellation for reporting
-                    const v_tess_pass_u8 = @select(
-                        u8,
-                        v_mask_active,
-                        v_mask_one_u8,
-                        v_mask_zero_u8,
-                    );
-                    const tess_pass_num: u64 =
-                        @intCast(@reduce(.Add, v_tess_pass_u8));
-                    ctx_report.recordTessPasses(tess_pass_num);
+                        v_mask_active = v_x_mask & v_hull_res.v_is_in;
+
+                        const v_tess_pass_u8 = @select(
+                            u8,
+                            v_mask_active,
+                            v_mask_one_u8,
+                            v_mask_zero_u8,
+                        );
+                        const tess_pass_num: u64 =
+                            @intCast(@reduce(.Add, v_tess_pass_u8));
+                        ctx_report.recordTessPasses(tess_pass_num);
+                    } else {
+                        const init_seed = Geometry.initSeed(null);
+                        @memset(&xi_arr, init_seed.xi);
+                        @memset(&eta_arr, init_seed.eta);
+                    }
 
                     // We only take sub-pixels that pass the tessellation check to run the
                     // Newton solver in the next pass
@@ -544,16 +560,6 @@ pub fn RasterPass(
                         const mask_arr: [S]bool = v_mask_active;
                         const x_arr_f: [S]f64 = v_ideal_x_px;
                         const y_arr_f: [S]f64 = v_ideal_y_px;
-
-                        // Initial seed can be the centroid in parametric coords or it
-                        // can be estimated from the hull check, testing showed
-                        // centroid is more robust.
-                        const init_seed = Geometry.initSeedSIMD(.{
-                            .v_xi = v_hull_res.v_seed_xi,
-                            .v_eta = v_hull_res.v_seed_eta,
-                        });
-                        const xi_arr: [S]f64 = init_seed.v_xi;
-                        const eta_arr: [S]f64 = init_seed.v_eta;
 
                         for (0..S) |ss| {
                             if (mask_arr[ss]) {
@@ -856,6 +862,8 @@ pub fn RasterPass(
                                 ctx_report,
                                 v_depth_mask,
                                 v_weights,
+                                v_xi,
+                                v_eta,
                                 v_nodes_inv_z,
                                 v_subpx_z,
                                 shader,

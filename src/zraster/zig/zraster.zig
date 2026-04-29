@@ -106,6 +106,8 @@ fn countOutputFields(
             .nodal => |s| s.field.getFieldsN(),
             .tex => 1,
             .tex_rgb => 3,
+            .tex_func => 1,
+            .tex_func_rgb => 3,
         };
         num_fields = @max(num_fields, mesh_fields);
     }
@@ -483,6 +485,7 @@ fn processFrameJobInternal(
         input.chunk_exec,
         scalingpolicy.geometryWorkers(input.geom_threads),
         input.camera,
+        input.config,
         input.frame_idx,
         input.mesh_static,
         input.nodal_global_scaling,

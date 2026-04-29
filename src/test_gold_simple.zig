@@ -9,6 +9,7 @@
 const std = @import("std");
 const common = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
+const buildconfig = @import("zraster/zig/buildconfig.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
@@ -54,6 +55,11 @@ test "Gold Simple Suite" {
     const pixel_num = [_]u32{ 640, 400 };
 
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
+
+    const simd_on = buildconfig.config.simd == .on;
+    std.debug.print("Running Gold Simple Tests with .simd = .{s}...\n", .{
+        if (simd_on) "on" else "off",
+    });
 
     for (mesh_types) |mt| {
         try common.runTestInternal(
