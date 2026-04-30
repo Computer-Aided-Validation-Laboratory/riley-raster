@@ -22,23 +22,12 @@ const NewtonSeedSIMD = newton.NewtonSeedSIMD;
 const shapefun = @import("shapefun.zig");
 const NDArray = @import("ndarray.zig").NDArray;
 const Vec3Slices = rops.Vec3Slices;
+const rastcfg = @import("rasterconfig.zig");
 
-pub const NEWTON_SEED_MODE: NewtonSeedMode = .centroid;
-pub const NEWTON_SEED_REUSE: NewtonSeedReuse = .off;
 pub const TRI_CENTROID_XI: f64 = 1.0 / 3.0;
 pub const TRI_CENTROID_ETA: f64 = 1.0 / 3.0;
 pub const QUAD_CENTROID_XI: f64 = 0.0;
 pub const QUAD_CENTROID_ETA: f64 = 0.0;
-
-pub const NewtonSeedMode = enum {
-    centroid,
-    hull,
-};
-
-pub const NewtonSeedReuse = enum {
-    off,
-    last_converged,
-};
 
 pub const MeshType = enum {
     tri3,
@@ -302,11 +291,9 @@ pub fn Tri6Kernel() type {
         pub const tess_triangles_num = 6;
         pub const coord_space = .clip_px_leng;
         pub const solver_kind = .newton;
-        pub const seed_mode = NEWTON_SEED_MODE;
-        pub const seed_reuse = NEWTON_SEED_REUSE;
 
-        pub inline fn initSeed(hull_seed: ?NewtonSeed) NewtonSeed {
-            if (comptime @This().seed_mode == .hull) {
+        pub inline fn initSeed(seed_mode: rastcfg.NewtonSeedMode, hull_seed: ?NewtonSeed) NewtonSeed {
+            if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
                 }
@@ -314,8 +301,11 @@ pub fn Tri6Kernel() type {
             return .{ .xi = TRI_CENTROID_XI, .eta = TRI_CENTROID_ETA };
         }
 
-        pub inline fn initSeedSIMD(hull_seed: ?NewtonSeedSIMD) NewtonSeedSIMD {
-            if (comptime @This().seed_mode == .hull) {
+        pub inline fn initSeedSIMD(
+            seed_mode: rastcfg.NewtonSeedMode,
+            hull_seed: ?NewtonSeedSIMD,
+        ) NewtonSeedSIMD {
+            if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
                 }
@@ -883,11 +873,9 @@ pub fn Quad4NewtonKernel() type {
         pub const tess_triangles_num = 2;
         pub const coord_space = .clip_px_leng;
         pub const solver_kind = .newton;
-        pub const seed_mode = NEWTON_SEED_MODE;
-        pub const seed_reuse = NEWTON_SEED_REUSE;
 
-        pub inline fn initSeed(hull_seed: ?NewtonSeed) NewtonSeed {
-            if (comptime @This().seed_mode == .hull) {
+        pub inline fn initSeed(seed_mode: rastcfg.NewtonSeedMode, hull_seed: ?NewtonSeed) NewtonSeed {
+            if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
                 }
@@ -895,8 +883,11 @@ pub fn Quad4NewtonKernel() type {
             return .{ .xi = QUAD_CENTROID_XI, .eta = QUAD_CENTROID_ETA };
         }
 
-        pub inline fn initSeedSIMD(hull_seed: ?NewtonSeedSIMD) NewtonSeedSIMD {
-            if (comptime @This().seed_mode == .hull) {
+        pub inline fn initSeedSIMD(
+            seed_mode: rastcfg.NewtonSeedMode,
+            hull_seed: ?NewtonSeedSIMD,
+        ) NewtonSeedSIMD {
+            if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
                 }
@@ -1016,11 +1007,9 @@ pub fn Quad89Kernel(comptime N: usize) type {
         pub const tess_triangles_num = 8;
         pub const coord_space = .clip_px_leng;
         pub const solver_kind = .newton;
-        pub const seed_mode = NEWTON_SEED_MODE;
-        pub const seed_reuse = NEWTON_SEED_REUSE;
 
-        pub inline fn initSeed(hull_seed: ?NewtonSeed) NewtonSeed {
-            if (comptime @This().seed_mode == .hull) {
+        pub inline fn initSeed(seed_mode: rastcfg.NewtonSeedMode, hull_seed: ?NewtonSeed) NewtonSeed {
+            if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
                 }
@@ -1028,8 +1017,11 @@ pub fn Quad89Kernel(comptime N: usize) type {
             return .{ .xi = QUAD_CENTROID_XI, .eta = QUAD_CENTROID_ETA };
         }
 
-        pub inline fn initSeedSIMD(hull_seed: ?NewtonSeedSIMD) NewtonSeedSIMD {
-            if (comptime @This().seed_mode == .hull) {
+        pub inline fn initSeedSIMD(
+            seed_mode: rastcfg.NewtonSeedMode,
+            hull_seed: ?NewtonSeedSIMD,
+        ) NewtonSeedSIMD {
+            if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
                 }

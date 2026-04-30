@@ -112,7 +112,6 @@ pub fn main(init: std.process.Init) !void {
         out_dir_root,
         data_dir,
         pixel_num_distort_midside,
-        texture,
         config,
     );
 

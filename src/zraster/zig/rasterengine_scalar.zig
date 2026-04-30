@@ -314,7 +314,7 @@ pub fn RasterPass(
 
                     ctx_report.recordSolverCalls(1);
                     const result = blk: {
-                        if (comptime Geometry.seed_mode == .hull) {
+                        if (ctx_rast.config.newton_seed_mode == .hull) {
                             if (hull_seed) |seed| {
                                 const seed_quality = newton.evaluateSeedQuality(
                                     Geometry.nodes_num,
@@ -331,9 +331,12 @@ pub fn RasterPass(
                                 }
                             }
                         }
-                        const base_seed = Geometry.initSeed(hull_seed);
+                        const base_seed = Geometry.initSeed(
+                            ctx_rast.config.newton_seed_mode,
+                            hull_seed,
+                        );
                         const selected_seed = newton.selectSeed(
-                            Geometry.seed_reuse,
+                            ctx_rast.config.newton_seed_reuse,
                             base_seed,
                             seed_state,
                         );
@@ -350,7 +353,7 @@ pub fn RasterPass(
 
                     ctx_report.recordSolverIters(result.iters);
 
-                    if (comptime Geometry.seed_reuse == .last_converged) {
+                    if (ctx_rast.config.newton_seed_reuse == .last_converged) {
                         if (result.weights != null) {
                             newton.updateSeedState(
                                 &seed_state,

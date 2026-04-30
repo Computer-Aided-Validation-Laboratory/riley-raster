@@ -407,106 +407,50 @@ pub fn generateDistortMidsideGold(
     gold_dir_root: []const u8,
     data_dir_root: []const u8,
     pixel_num: [2]u32,
-    texture: iio.Texture(1),
     config: RasterConfig,
 ) !void {
     const mesh_types = [_]gk.MeshType{ .tri6, .quad8, .quad9 };
-    const tex_sample_config = texops.TextureSampleConfig{
-        .sample = .cubic_catmull_rom,
-        .mode = .lut_lerp,
+    const distortion_cases = [_][]const u8{
+        "distort_bulge",
+        "distort_tan",
     };
 
-    for (mesh_types) |mesh_type| {
-        const prepared = try orch.prepareSingleMeshCase(
-            allocator,
-            io,
-            "distort-midside",
-            mesh_type,
-            pixel_num,
-            1.1,
-            data_dir_root,
-        );
-        const time_steps = prepared.sim_data.field.?.getTimeN();
-        const uv_field = try buildUvField(allocator, prepared.uvs.array, time_steps);
+    for (distortion_cases) |distortion_case| {
+        for (mesh_types) |mesh_type| {
+            const prepared = try orch.prepareSingleMeshCase(
+                allocator,
+                io,
+                distortion_case,
+                mesh_type,
+                pixel_num,
+                1.1,
+                data_dir_root,
+            );
 
-        const gold_dir = try std.fmt.allocPrint(
-            allocator,
-            "{s}/distort-midside_{s}_texfunc_constant",
-            .{ gold_dir_root, @tagName(mesh_type) },
-        );
-        try renderAndSave(
-            allocator,
-            io,
-            &prepared.camera,
-            mesh_type,
-            prepared.sim_data.coords,
-            prepared.sim_data.connect,
-            prepared.sim_data.field,
-            .{
-                .tex_func = .{
-                    .uvs = null,
-                    .builtin = .constant,
-                    .normal_type = .none,
+            const gold_dir = try std.fmt.allocPrint(
+                allocator,
+                "{s}/{s}_{s}_texfunc_constant",
+                .{ gold_dir_root, distortion_case, @tagName(mesh_type) },
+            );
+            try renderAndSave(
+                allocator,
+                io,
+                &prepared.camera,
+                mesh_type,
+                prepared.sim_data.coords,
+                prepared.sim_data.connect,
+                prepared.sim_data.field,
+                .{
+                    .tex_func = .{
+                        .uvs = null,
+                        .builtin = .constant,
+                        .normal_type = .none,
+                    },
                 },
-            },
-            gold_dir,
-            true,
-            config,
-        );
-
-        const nodal_uv_dir = try std.fmt.allocPrint(
-            allocator,
-            "{s}/distort-midside_{s}_nodal_uv",
-            .{ gold_dir_root, @tagName(mesh_type) },
-        );
-        try renderAndSave(
-            allocator,
-            io,
-            &prepared.camera,
-            mesh_type,
-            prepared.sim_data.coords,
-            prepared.sim_data.connect,
-            prepared.sim_data.field,
-            .{
-                .nodal = .{
-                    .field = uv_field,
-                    .bits = null,
-                    .scaling = .none,
-                },
-            },
-            nodal_uv_dir,
-            true,
-            config,
-        );
-
-        const tex_dir = try std.fmt.allocPrint(
-            allocator,
-            "{s}/distort-midside_{s}_tex_{s}_{s}",
-            .{
-                gold_dir_root,
-                @tagName(mesh_type),
-                @tagName(tex_sample_config.sample),
-                @tagName(tex_sample_config.mode),
-            },
-        );
-        try renderAndSave(
-            allocator,
-            io,
-            &prepared.camera,
-            mesh_type,
-            prepared.sim_data.coords,
-            prepared.sim_data.connect,
-            prepared.sim_data.field,
-            .{
-                .tex = .{
-                    .uvs = prepared.uvs.array,
-                    .texture = texture,
-                    .sample_config = tex_sample_config,
-                },
-            },
-            tex_dir,
-            true,
-            config,
-        );
+                gold_dir,
+                true,
+                config,
+            );
+        }
     }
 }

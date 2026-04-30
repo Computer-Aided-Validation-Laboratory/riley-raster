@@ -8,11 +8,6 @@
 // --------------------------------------------------------------------------
 const iio = @import("imageio.zig");
 
-pub const HullMode = enum {
-    off,
-    on_no_fallback,
-    on_convex_fallback,
-};
 
 pub const RasterConfig = struct {
     render_mode: RenderMode = .in_order,
@@ -26,8 +21,15 @@ pub const RasterConfig = struct {
     },
     tile_size_max: u16 = 32,
     hull_mode: HullMode = .on_no_fallback,
+    newton_seed_mode: NewtonSeedMode = .centroid,
+    newton_seed_reuse: NewtonSeedReuse = .off,
     report: ReportMode = .bench,
     full_stats_opts: FullStatsOpts = .{},
+};
+
+pub const RenderMode = enum {
+    in_order,
+    offline,
 };
 
 pub const SaveStrategy = enum {
@@ -37,16 +39,28 @@ pub const SaveStrategy = enum {
     none,
 };
 
-pub const RenderMode = enum {
-    in_order,
-    offline,
-};
-
 pub const ReportMode = enum {
     off,
     bench,
     full_stats,
 };
+
+pub const HullMode = enum {
+    off,
+    on_no_fallback,
+    on_convex_fallback,
+};
+
+pub const NewtonSeedMode = enum {
+    centroid,
+    hull,
+};
+
+pub const NewtonSeedReuse = enum {
+    off,
+    last_converged,
+};
+
 
 pub const FullStatsOpts = struct {
     formats: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{

@@ -15,6 +15,7 @@ const matrix = @import("../zraster/zig/matstack.zig");
 const ndarray = @import("../zraster/zig/ndarray.zig");
 const newton = @import("../zraster/zig/newton.zig");
 const rops = @import("../zraster/zig/rasterops.zig");
+const rastcfg = @import("../zraster/zig/rasterconfig.zig");
 const shapefun = @import("../zraster/zig/shapefun.zig");
 const vecstack = @import("../zraster/zig/vecstack.zig");
 
@@ -367,7 +368,7 @@ pub fn solveParentFromIdealRaster(
         },
         .tri6 => blk: {
             const GK = gk.Tri6Kernel();
-            const seed = GK.initSeed(null);
+            const seed = GK.initSeed(.centroid, null);
             const result = GK.solveWeightsNewton(
                 nodes,
                 ideal_x,
@@ -403,7 +404,7 @@ pub fn solveParentFromIdealRaster(
         },
         .quad4newton => blk: {
             const GK = gk.Quad4NewtonKernel();
-            const seed = GK.initSeed(null);
+            const seed = GK.initSeed(.centroid, null);
             const result = GK.solveWeightsNewton(
                 nodes,
                 ideal_x,
@@ -422,7 +423,7 @@ pub fn solveParentFromIdealRaster(
         },
         .quad8 => blk: {
             const GK = gk.Quad89Kernel(8);
-            const seed = GK.initSeed(null);
+            const seed = GK.initSeed(.centroid, null);
             const result = GK.solveWeightsNewton(
                 nodes,
                 ideal_x,
@@ -441,7 +442,7 @@ pub fn solveParentFromIdealRaster(
         },
         .quad9 => blk: {
             const GK = gk.Quad89Kernel(9);
-            const seed = GK.initSeed(null);
+            const seed = GK.initSeed(.centroid, null);
             const result = GK.solveWeightsNewton(
                 nodes,
                 ideal_x,

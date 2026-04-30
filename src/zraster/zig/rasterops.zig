@@ -16,6 +16,7 @@ const tol = buildconfig.config.tolerance;
 const cam = @import("camera.zig");
 const shapefun = @import("shapefun.zig");
 const matrix = @import("matstack.zig");
+const rastcfg = @import("rasterconfig.zig");
 
 const pce = @import("parachunkexec.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
@@ -94,6 +95,7 @@ pub const ElemBBox = struct {
 
 pub const RasterContext = struct {
     camera: *const cam.CameraPrepared,
+    config: rastcfg.RasterConfig,
     frame_idx: usize,
     tile_size: u16,
 };

@@ -10,6 +10,7 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const cfg = buildconfig.config;
 const shapefun = @import("shapefun.zig");
+const rastcfg = @import("rasterconfig.zig");
 
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
@@ -58,11 +59,11 @@ pub const NewtonResultSIMD = struct {
 };
 
 pub inline fn selectSeed(
-    comptime seed_reuse: anytype,
+    seed_reuse: rastcfg.NewtonSeedReuse,
     base_seed: NewtonSeed,
     seed_state: NewtonSeedState,
 ) NewtonSeed {
-    if (comptime seed_reuse == .last_converged) {
+    if (seed_reuse == .last_converged) {
         if (seed_state.is_valid) {
             return .{
                 .xi = seed_state.xi,

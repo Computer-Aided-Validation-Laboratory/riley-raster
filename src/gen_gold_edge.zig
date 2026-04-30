@@ -104,7 +104,6 @@ pub fn main(init: std.process.Init) !void {
         "gold-edge",
         "data-edge",
         pixel_num_distort_midside,
-        texture,
         config,
     );
 

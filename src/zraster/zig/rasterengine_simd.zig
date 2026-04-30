@@ -519,10 +519,13 @@ pub fn RasterPass(
                             v_ideal_x_px,
                             v_ideal_y_px,
                         );
-                        const init_seed = Geometry.initSeedSIMD(.{
-                            .v_xi = v_hull_res.v_seed_xi,
-                            .v_eta = v_hull_res.v_seed_eta,
-                        });
+                        const init_seed = Geometry.initSeedSIMD(
+                            ctx_rast.config.newton_seed_mode,
+                            .{
+                                .v_xi = v_hull_res.v_seed_xi,
+                                .v_eta = v_hull_res.v_seed_eta,
+                            },
+                        );
                         xi_arr = init_seed.v_xi;
                         eta_arr = init_seed.v_eta;
 
@@ -550,7 +553,10 @@ pub fn RasterPass(
                             @intCast(@reduce(.Add, v_tess_pass_u8));
                         ctx_report.recordTessPasses(tess_pass_num);
                     } else {
-                        const init_seed = Geometry.initSeed(null);
+                        const init_seed = Geometry.initSeed(
+                            ctx_rast.config.newton_seed_mode,
+                            null,
+                        );
                         @memset(&xi_arr, init_seed.xi);
                         @memset(&eta_arr, init_seed.eta);
                     }
@@ -567,7 +573,7 @@ pub fn RasterPass(
                                 var seed_xi = xi_arr[ss];
                                 var seed_eta = eta_arr[ss];
 
-                                if (comptime Geometry.seed_mode == .hull) {
+                                if (ctx_rast.config.newton_seed_mode == .hull) {
                                     const hull_seed = newton.NewtonSeed{
                                         .xi = seed_xi,
                                         .eta = seed_eta,
@@ -583,7 +589,10 @@ pub fn RasterPass(
                                         hull_seed,
                                     );
                                     if (!seed_quality.is_usable) {
-                                        const centroid_seed = Geometry.initSeed(null);
+                                        const centroid_seed = Geometry.initSeed(
+                                            ctx_rast.config.newton_seed_mode,
+                                            null,
+                                        );
                                         seed_xi = centroid_seed.xi;
                                         seed_eta = centroid_seed.eta;
                                     }
@@ -641,7 +650,7 @@ pub fn RasterPass(
 
                 // If we have a good seed from the last run and we have set the mode to
                 // reuse it we write it into our vector in place
-                if (comptime Geometry.seed_reuse == .last_converged) {
+                if (ctx_rast.config.newton_seed_reuse == .last_converged) {
                     newton.applySeedReuseInPlace(
                         subpx_simd_chunk.count,
                         seed_state,
@@ -715,7 +724,7 @@ pub fn RasterPass(
 
                     // If we are reusing seeds for the solver we store the best one to
                     // splat it as our seed for the next batch
-                    if (comptime Geometry.seed_reuse == .last_converged) {
+                    if (ctx_rast.config.newton_seed_reuse == .last_converged) {
                         newton.updateSeedStateFromSIMDResult(
                             &seed_state,
                             v_chunk_mask,

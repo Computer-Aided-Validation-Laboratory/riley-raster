@@ -324,6 +324,7 @@ fn rasterFrame(
 
     const ctx_rast = rops.RasterContext{
         .camera = input.camera,
+        .config = input.config,
         .frame_idx = input.frame_idx,
         .tile_size = ctx.actual_tile_size,
     };

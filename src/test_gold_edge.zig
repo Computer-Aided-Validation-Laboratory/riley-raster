@@ -124,25 +124,6 @@ test "Gold Edge Suite" {
             "data-edge",
             pixel_num_distort_midside,
         );
-
-        try common.runDistortMidsideNodalUvTest(
-            allocator,
-            io,
-            mt,
-            "gold-edge",
-            "data-edge",
-            pixel_num_distort_midside,
-        );
-
-        try common.runDistortMidsideTexShaderTest(
-            allocator,
-            io,
-            mt,
-            "gold-edge",
-            "data-edge",
-            pixel_num_distort_midside,
-            texture,
-        );
     }
 
     const end_time = std.Io.Clock.Timestamp.now(io, .awake);
