@@ -32,8 +32,8 @@ pub const EdgeTolerance = struct {
 pub const HullTolerance = struct {
     scalar_inclusion: f64 = 1.0e-6,
     simd_inclusion: f64 = 1.0e-6,
-    corner_midside_ang_lower_deg: f64 = 10.0,
-    corner_midside_ang_upper_deg: f64 = 270.0,
+    corner_midside_ang_lower_deg: f64 = 20.0,
+    corner_midside_ang_upper_deg: f64 = 180.0,
 };
 
 pub const CullingTolerance = struct {
@@ -103,26 +103,14 @@ pub const Config = struct {
     simd_vector_width: comptime_int = 8,
     max_nodal_fields: comptime_int = 8,
     max_image_channels: comptime_int = 8,
-    raster_newton_iter_max: comptime_int = 15,
+    raster_newton_iter_max: comptime_int = 10,
     distortion_newton_iter_max: comptime_int = 15,
     interp_lut_size: comptime_int = 1024,
     precision: type = f64,
     tolerance: Tolerance = .{},
 };
 
-pub const config = Config{
-    .simd = .on,
-    .simd_texture_interp = .inner,
-    .texture_dispatch_policy = .runtime_comptime,
-    .simd_vector_width = 8,
-    .max_nodal_fields = 8,
-    .max_image_channels = 8,
-    .raster_newton_iter_max = 15,
-    .distortion_newton_iter_max = 15,
-    .interp_lut_size = 1024,
-    .precision = f64,
-    .tolerance = .{},
-};
+pub const config = Config{};
 
 pub const SimdWidth = config.simd_vector_width;
 

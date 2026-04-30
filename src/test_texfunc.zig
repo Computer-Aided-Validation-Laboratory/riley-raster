@@ -175,7 +175,11 @@ fn runTexFuncCase(
     const time_end = Timestamp.now(io, .awake);
     const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
-    const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
+    const frames_num = if (result.dims.len == 5)
+        result.dims[1]
+    else
+        result.dims[0];
+    var first_err: ?anyerror = null;
     for (0..frames_num) |frame_idx| {
         if (is_rgb) {
             for (0..3) |channel_idx| {
@@ -189,7 +193,7 @@ fn runTexFuncCase(
                     false,
                 );
 
-                try common.compareNDArrayToGold(
+                common.compareNDArrayToGold(
                     aa,
                     io,
                     &result,
@@ -200,7 +204,26 @@ fn runTexFuncCase(
                     gold_path,
                     tcfg.REL_TOL,
                     tcfg.ABS_TOL,
-                );
+                ) catch |err| {
+                    if (first_err == null) first_err = err;
+                    const fail_dir_name = try std.fmt.allocPrint(
+                        aa,
+                        "all_{s}{s}",
+                        .{ case_dir_name, common.impl_suffix },
+                    );
+                    try common.saveComparisonArtifactsFromResult(
+                        aa,
+                        io,
+                        common.default_fails_root,
+                        fail_dir_name,
+                        &result,
+                        0,
+                        frame_idx,
+                        channel_idx,
+                        gold_path,
+                        1,
+                    );
+                };
             }
         } else {
             const gold_path = try common.findGoldPath(
@@ -213,7 +236,7 @@ fn runTexFuncCase(
                 false,
             );
 
-            try common.compareNDArrayToGold(
+            common.compareNDArrayToGold(
                 aa,
                 io,
                 &result,
@@ -224,9 +247,31 @@ fn runTexFuncCase(
                 gold_path,
                 tcfg.REL_TOL,
                 tcfg.ABS_TOL,
-            );
+            ) catch |err| {
+                if (first_err == null) first_err = err;
+                const fail_dir_name = try std.fmt.allocPrint(
+                    aa,
+                    "all_{s}{s}",
+                    .{ case_dir_name, common.impl_suffix },
+                );
+                try common.saveComparisonArtifactsFromResult(
+                    aa,
+                    io,
+                    common.default_fails_root,
+                    fail_dir_name,
+                    &result,
+                    0,
+                    frame_idx,
+                    0,
+                    gold_path,
+                    1,
+                );
+            };
         }
     }
+
+    if (first_err) |err| return err;
+
     if (tcfg.TEST_CASE_VERBOSE) {
         std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
     }

@@ -25,7 +25,7 @@ pub const RasterConfig = struct {
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
     tile_size_max: u16 = 32,
-    hull_mode: HullMode = .on_convex_fallback,
+    hull_mode: HullMode = .on_no_fallback,
     report: ReportMode = .bench,
     full_stats_opts: FullStatsOpts = .{},
 };

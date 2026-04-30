@@ -30,8 +30,8 @@ const cfg = buildconfig.config;
 const csvio = @import("../zraster/zig/csvio.zig");
 const tcfg = @import("testconfig.zig");
 
-const default_fails_root = "fails";
-const impl_suffix = if (cfg.simd == .on) "_simd" else "_scalar";
+pub const default_fails_root = "fails";
+pub const impl_suffix = if (cfg.simd == .on) "_simd" else "_scalar";
 
 // Default tolerances: for scientific accuracy and DIC
 // f64: rel= 1e-11, abs= 1e-11
