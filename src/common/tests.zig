@@ -1354,7 +1354,21 @@ pub fn buildUvField(
     return field;
 }
 
-pub fn runDistortMidsideTexFuncTest(
+fn supportsMidsideDistortMesh(mesh_type: gk.MeshType) bool {
+    return switch (mesh_type) {
+        .tri6, .quad8, .quad9 => true,
+        else => false,
+    };
+}
+
+fn supportsAnyDistortMesh(mesh_type: gk.MeshType) bool {
+    return switch (mesh_type) {
+        .tri3, .tri6, .quad4ibi, .quad8, .quad9 => true,
+        else => false,
+    };
+}
+
+pub fn runDistortEdgeTexFuncTest(
     allocator: std.mem.Allocator,
     io: std.Io,
     mesh_type: gk.MeshType,
@@ -1365,16 +1379,23 @@ pub fn runDistortMidsideTexFuncTest(
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
     const aa = arena.allocator();
-    const distortion_cases = [_][]const u8{
-        "distort_bulge",
-        "distort_tan",
+    const distortion_cases = [_]struct {
+        name: []const u8,
+        supports: *const fn (gk.MeshType) bool,
+    }{
+        .{ .name = "distort_bulge", .supports = supportsMidsideDistortMesh },
+        .{ .name = "distort_tan", .supports = supportsMidsideDistortMesh },
+        .{ .name = "distort_stretch", .supports = supportsAnyDistortMesh },
+        .{ .name = "distort_shear", .supports = supportsAnyDistortMesh },
     };
 
     for (distortion_cases) |distortion_case| {
+        if (!distortion_case.supports(mesh_type)) continue;
+
         const prepared = try orch.prepareSingleMeshCase(
             aa,
             io,
-            distortion_case,
+            distortion_case.name,
             mesh_type,
             pixel_num,
             1.1,
@@ -1384,7 +1405,7 @@ pub fn runDistortMidsideTexFuncTest(
         const case_dir_name = try std.fmt.allocPrint(
             aa,
             "{s}_{s}_texfunc_constant",
-            .{ distortion_case, @tagName(mesh_type) },
+            .{ distortion_case.name, @tagName(mesh_type) },
         );
         const gold_dir = try std.fmt.allocPrint(
             aa,

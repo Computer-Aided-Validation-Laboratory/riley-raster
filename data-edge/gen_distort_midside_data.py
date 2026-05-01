@@ -3,11 +3,17 @@ from pathlib import Path
 import numpy as np
 
 
+EDGE_LENG = 10.0
+
 BULGE_TIME_STEPS = 13
 BULGE_MIDSIDE_OFFSET_FACTOR = 0.3
 
 TAN_TIME_STEPS = 13
 TAN_OFFSET_FACTOR = 0.3
+
+STRETCH = 11.0
+SHEAR = 11.0
+STEPS = 13
 
 
 def save_case(
@@ -58,15 +64,6 @@ def compute_uvs(coords, u_range=(0.4, 0.6), v_range=(0.4, 0.6)):
     )
 
 
-def get_midside_direction(v1, v2, centroid):
-    midpoint = 0.5 * (v1 + v2)
-    direction = midpoint - centroid
-    direction_norm = np.linalg.norm(direction)
-    if direction_norm < 1e-12:
-        return np.array([0.0, 0.0, 0.0])
-    return direction / direction_norm
-
-
 def build_disp_fields_bulge(coords, midside_info, time_steps, max_offset):
     node_num = coords.shape[0]
     disp_x = np.zeros((node_num, time_steps))
@@ -75,7 +72,7 @@ def build_disp_fields_bulge(coords, midside_info, time_steps, max_offset):
 
     for tt in range(time_steps):
         alpha = tt / (time_steps - 1)
-        beta = -2.0 * alpha  # 0 (starts at outward) to -2 (ends at inward)
+        beta = -2.0 * alpha
         for midside_ind, direction in midside_info:
             delta = beta * max_offset * direction
             disp_x[midside_ind, tt] = delta[0]
@@ -109,12 +106,273 @@ def build_disp_fields_tan(coords, midside_info, time_steps, edge_length, tan_off
     return disp_x, disp_y, disp_z
 
 
+def build_disp_fields_to_target(coords_initial, coords_final, time_steps):
+    node_num = coords_initial.shape[0]
+    disp_x = np.zeros((node_num, time_steps))
+    disp_y = np.zeros((node_num, time_steps))
+    disp_z = np.zeros((node_num, time_steps))
+
+    delta = coords_final - coords_initial
+    for tt in range(time_steps):
+        alpha = tt / (time_steps - 1)
+        disp_x[:, tt] = alpha * delta[:, 0]
+        disp_y[:, tt] = alpha * delta[:, 1]
+        disp_z[:, tt] = alpha * delta[:, 2]
+
+    return disp_x, disp_y, disp_z
+
+
+def get_midside_direction(v1, v2, centroid):
+    midpoint = 0.5 * (v1 + v2)
+    direction = midpoint - centroid
+    direction_norm = np.linalg.norm(direction)
+    if direction_norm < 1e-12:
+        return np.array([0.0, 0.0, 0.0])
+    return direction / direction_norm
+
+
 def get_edge_tangent(v1, v2):
     tangent = v2 - v1
     tangent_norm = np.linalg.norm(tangent)
     if tangent_norm < 1e-12:
         return np.array([0.0, 0.0, 0.0])
     return tangent / tangent_norm
+
+
+def build_edge_midpoints(vertices, edge_pairs):
+    return np.array([0.5 * (vertices[i0] + vertices[i1]) for i0, i1 in edge_pairs])
+
+
+def generate_case(base_dir, name, coords_initial, coords_final, connect):
+    disp_x, disp_y, disp_z = build_disp_fields_to_target(
+        coords_initial,
+        coords_final,
+        STEPS,
+    )
+    save_case(
+        base_dir,
+        name,
+        coords_initial,
+        connect,
+        disp_x,
+        disp_y,
+        disp_z,
+        compute_uvs(coords_initial),
+    )
+
+
+def tri_stretch_vertices_final(edge_length):
+    half_edge = 0.5 * edge_length
+    tri_tip_x = np.sqrt(3.0) * edge_length / 2.0
+    return np.array(
+        [
+            [0.0, -half_edge, 0.0],
+            [tri_tip_x, 0.0, 0.0],
+            [0.0, half_edge, 0.0],
+        ]
+    )
+
+
+def tri_stretch_vertices_initial(edge_length, stretch_ratio):
+    vertices = tri_stretch_vertices_final(edge_length).copy()
+    vertices[1, 0] += edge_length * stretch_ratio
+    return vertices
+
+
+def tri_shear_vertices_final(edge_length):
+    height = np.sqrt(3.0) * edge_length / 2.0
+    return np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [edge_length, 0.0, 0.0],
+            [0.5 * edge_length, height, 0.0],
+        ]
+    )
+
+
+def tri_shear_vertices_initial(edge_length, shear_ratio):
+    vertices = tri_shear_vertices_final(edge_length).copy()
+    vertices[2, 0] += edge_length * shear_ratio
+    return vertices
+
+
+def quad_vertices_final(edge_length):
+    return np.array(
+        [
+            [0.0, 0.0, 0.0],
+            [edge_length, 0.0, 0.0],
+            [edge_length, edge_length, 0.0],
+            [0.0, edge_length, 0.0],
+        ]
+    )
+
+
+def quad_stretch_vertices_initial(edge_length, stretch_ratio):
+    vertices = quad_vertices_final(edge_length).copy()
+    vertices[1, 0] += edge_length * stretch_ratio
+    vertices[2, 0] += edge_length * stretch_ratio
+    return vertices
+
+
+def quad_shear_vertices_initial(edge_length, shear_ratio):
+    vertices = quad_vertices_final(edge_length).copy()
+    vertices[2, 0] += edge_length * shear_ratio
+    vertices[3, 0] += edge_length * shear_ratio
+    return vertices
+
+
+def generate_tri3_stretch(base_dir, edge_length, stretch_ratio):
+    coords_final = tri_stretch_vertices_final(edge_length)
+    coords_initial = tri_stretch_vertices_initial(edge_length, stretch_ratio)
+    generate_case(
+        base_dir,
+        "tri3_distort_stretch",
+        coords_initial,
+        coords_final,
+        np.array([[0, 1, 2]]),
+    )
+
+
+def generate_tri6_stretch(base_dir, edge_length, stretch_ratio):
+    coords_vertices_final = tri_stretch_vertices_final(edge_length)
+    coords_vertices_initial = tri_stretch_vertices_initial(edge_length, stretch_ratio)
+    edge_pairs = [(0, 1), (1, 2), (2, 0)]
+    midsides_initial = build_edge_midpoints(coords_vertices_initial, edge_pairs)
+    midsides_final = build_edge_midpoints(coords_vertices_final, edge_pairs)
+    coords_initial = np.vstack([coords_vertices_initial, midsides_initial])
+    coords_final = np.vstack([coords_vertices_final, midsides_final])
+    generate_case(
+        base_dir,
+        "tri6_distort_stretch",
+        coords_initial,
+        coords_final,
+        np.array([[0, 1, 2, 3, 4, 5]]),
+    )
+
+
+def generate_quad4_stretch(base_dir, edge_length, stretch_ratio):
+    coords_final = quad_vertices_final(edge_length)
+    coords_initial = quad_stretch_vertices_initial(edge_length, stretch_ratio)
+    generate_case(
+        base_dir,
+        "quad4_distort_stretch",
+        coords_initial,
+        coords_final,
+        np.array([[0, 1, 2, 3]]),
+    )
+
+
+def generate_quad8_stretch(base_dir, edge_length, stretch_ratio):
+    coords_vertices_final = quad_vertices_final(edge_length)
+    coords_vertices_initial = quad_stretch_vertices_initial(edge_length, stretch_ratio)
+    edge_pairs = [(0, 1), (1, 2), (2, 3), (3, 0)]
+    midsides_initial = build_edge_midpoints(coords_vertices_initial, edge_pairs)
+    midsides_final = build_edge_midpoints(coords_vertices_final, edge_pairs)
+    coords_initial = np.vstack([coords_vertices_initial, midsides_initial])
+    coords_final = np.vstack([coords_vertices_final, midsides_final])
+    generate_case(
+        base_dir,
+        "quad8_distort_stretch",
+        coords_initial,
+        coords_final,
+        np.array([[0, 1, 2, 3, 4, 5, 6, 7]]),
+    )
+
+
+def generate_quad9_stretch(base_dir, edge_length, stretch_ratio):
+    coords_vertices_final = quad_vertices_final(edge_length)
+    coords_vertices_initial = quad_stretch_vertices_initial(edge_length, stretch_ratio)
+    edge_pairs = [(0, 1), (1, 2), (2, 3), (3, 0)]
+    midsides_initial = build_edge_midpoints(coords_vertices_initial, edge_pairs)
+    midsides_final = build_edge_midpoints(coords_vertices_final, edge_pairs)
+    center_initial = np.mean(coords_vertices_initial, axis=0, keepdims=True)
+    center_final = np.mean(coords_vertices_final, axis=0, keepdims=True)
+    coords_initial = np.vstack([coords_vertices_initial, midsides_initial, center_initial])
+    coords_final = np.vstack([coords_vertices_final, midsides_final, center_final])
+    generate_case(
+        base_dir,
+        "quad9_distort_stretch",
+        coords_initial,
+        coords_final,
+        np.array([[0, 1, 2, 3, 4, 5, 6, 7, 8]]),
+    )
+
+
+def generate_tri3_shear(base_dir, edge_length, shear_ratio):
+    coords_final = tri_shear_vertices_final(edge_length)
+    coords_initial = tri_shear_vertices_initial(edge_length, shear_ratio)
+    generate_case(
+        base_dir,
+        "tri3_distort_shear",
+        coords_initial,
+        coords_final,
+        np.array([[0, 1, 2]]),
+    )
+
+
+def generate_tri6_shear(base_dir, edge_length, shear_ratio):
+    coords_vertices_final = tri_shear_vertices_final(edge_length)
+    coords_vertices_initial = tri_shear_vertices_initial(edge_length, shear_ratio)
+    edge_pairs = [(0, 1), (1, 2), (2, 0)]
+    midsides_initial = build_edge_midpoints(coords_vertices_initial, edge_pairs)
+    midsides_final = build_edge_midpoints(coords_vertices_final, edge_pairs)
+    coords_initial = np.vstack([coords_vertices_initial, midsides_initial])
+    coords_final = np.vstack([coords_vertices_final, midsides_final])
+    generate_case(
+        base_dir,
+        "tri6_distort_shear",
+        coords_initial,
+        coords_final,
+        np.array([[0, 1, 2, 3, 4, 5]]),
+    )
+
+
+def generate_quad4_shear(base_dir, edge_length, shear_ratio):
+    coords_final = quad_vertices_final(edge_length)
+    coords_initial = quad_shear_vertices_initial(edge_length, shear_ratio)
+    generate_case(
+        base_dir,
+        "quad4_distort_shear",
+        coords_initial,
+        coords_final,
+        np.array([[0, 1, 2, 3]]),
+    )
+
+
+def generate_quad8_shear(base_dir, edge_length, shear_ratio):
+    coords_vertices_final = quad_vertices_final(edge_length)
+    coords_vertices_initial = quad_shear_vertices_initial(edge_length, shear_ratio)
+    edge_pairs = [(0, 1), (1, 2), (2, 3), (3, 0)]
+    midsides_initial = build_edge_midpoints(coords_vertices_initial, edge_pairs)
+    midsides_final = build_edge_midpoints(coords_vertices_final, edge_pairs)
+    coords_initial = np.vstack([coords_vertices_initial, midsides_initial])
+    coords_final = np.vstack([coords_vertices_final, midsides_final])
+    generate_case(
+        base_dir,
+        "quad8_distort_shear",
+        coords_initial,
+        coords_final,
+        np.array([[0, 1, 2, 3, 4, 5, 6, 7]]),
+    )
+
+
+def generate_quad9_shear(base_dir, edge_length, shear_ratio):
+    coords_vertices_final = quad_vertices_final(edge_length)
+    coords_vertices_initial = quad_shear_vertices_initial(edge_length, shear_ratio)
+    edge_pairs = [(0, 1), (1, 2), (2, 3), (3, 0)]
+    midsides_initial = build_edge_midpoints(coords_vertices_initial, edge_pairs)
+    midsides_final = build_edge_midpoints(coords_vertices_final, edge_pairs)
+    center_initial = np.mean(coords_vertices_initial, axis=0, keepdims=True)
+    center_final = np.mean(coords_vertices_final, axis=0, keepdims=True)
+    coords_initial = np.vstack([coords_vertices_initial, midsides_initial, center_initial])
+    coords_final = np.vstack([coords_vertices_final, midsides_final, center_final])
+    generate_case(
+        base_dir,
+        "quad9_distort_shear",
+        coords_initial,
+        coords_final,
+        np.array([[0, 1, 2, 3, 4, 5, 6, 7, 8]]),
+    )
 
 
 def generate_tri6_bulge(base_dir, edge_length, time_steps):
@@ -218,14 +476,7 @@ def generate_tri6_tan(base_dir, edge_length, time_steps, tan_offset_factor):
 
 
 def generate_quad_bulge(base_dir, edge_length, time_steps, include_center):
-    vertices = np.array(
-        [
-            [0.0, 0.0, 0.0],
-            [edge_length, 0.0, 0.0],
-            [edge_length, edge_length, 0.0],
-            [0.0, edge_length, 0.0],
-        ]
-    )
+    vertices = quad_vertices_final(edge_length)
     centroid = np.array([0.5 * edge_length, 0.5 * edge_length, 0.0])
     max_offset = BULGE_MIDSIDE_OFFSET_FACTOR * edge_length
 
@@ -279,14 +530,7 @@ def generate_quad_bulge(base_dir, edge_length, time_steps, include_center):
 
 
 def generate_quad_tan(base_dir, edge_length, time_steps, tan_offset_factor, include_center):
-    vertices = np.array(
-        [
-            [0.0, 0.0, 0.0],
-            [edge_length, 0.0, 0.0],
-            [edge_length, edge_length, 0.0],
-            [0.0, edge_length, 0.0],
-        ]
-    )
+    vertices = quad_vertices_final(edge_length)
     centroid = np.array([0.5 * edge_length, 0.5 * edge_length, 0.0])
 
     midside_tangents = [
@@ -345,22 +589,37 @@ def main():
         print("Warning: BULGE_TIME_STEPS should be odd to include the square case.")
     if TAN_TIME_STEPS % 2 == 0:
         print("Warning: TAN_TIME_STEPS should be odd to include the exact midpoint case.")
+    if STEPS < 2:
+        raise ValueError("STEPS must be at least 2")
 
     base_dir = "data-edge"
-    edge_length = 10.0
 
-    generate_tri6_bulge(base_dir, edge_length, BULGE_TIME_STEPS)
-    generate_quad_bulge(base_dir, edge_length, BULGE_TIME_STEPS, False)
-    generate_quad_bulge(base_dir, edge_length, BULGE_TIME_STEPS, True)
+    generate_tri6_bulge(base_dir, EDGE_LENG, BULGE_TIME_STEPS)
+    generate_quad_bulge(base_dir, EDGE_LENG, BULGE_TIME_STEPS, False)
+    generate_quad_bulge(base_dir, EDGE_LENG, BULGE_TIME_STEPS, True)
 
-    generate_tri6_tan(base_dir, edge_length, TAN_TIME_STEPS, TAN_OFFSET_FACTOR)
-    generate_quad_tan(base_dir, edge_length, TAN_TIME_STEPS, TAN_OFFSET_FACTOR, False)
-    generate_quad_tan(base_dir, edge_length, TAN_TIME_STEPS, TAN_OFFSET_FACTOR, True)
+    generate_tri6_tan(base_dir, EDGE_LENG, TAN_TIME_STEPS, TAN_OFFSET_FACTOR)
+    generate_quad_tan(base_dir, EDGE_LENG, TAN_TIME_STEPS, TAN_OFFSET_FACTOR, False)
+    generate_quad_tan(base_dir, EDGE_LENG, TAN_TIME_STEPS, TAN_OFFSET_FACTOR, True)
+
+    generate_tri3_stretch(base_dir, EDGE_LENG, STRETCH)
+    generate_tri6_stretch(base_dir, EDGE_LENG, STRETCH)
+    generate_quad4_stretch(base_dir, EDGE_LENG, STRETCH)
+    generate_quad8_stretch(base_dir, EDGE_LENG, STRETCH)
+    generate_quad9_stretch(base_dir, EDGE_LENG, STRETCH)
+
+    generate_tri3_shear(base_dir, EDGE_LENG, SHEAR)
+    generate_tri6_shear(base_dir, EDGE_LENG, SHEAR)
+    generate_quad4_shear(base_dir, EDGE_LENG, SHEAR)
+    generate_quad8_shear(base_dir, EDGE_LENG, SHEAR)
+    generate_quad9_shear(base_dir, EDGE_LENG, SHEAR)
 
     print(
         "Generated distortion edge data: "
         f"distort_bulge ({BULGE_TIME_STEPS} steps), "
-        f"distort_tan ({TAN_TIME_STEPS} steps)."
+        f"distort_tan ({TAN_TIME_STEPS} steps), "
+        f"distort_stretch ({STEPS} steps), "
+        f"distort_shear ({STEPS} steps)."
     )
 
 

@@ -45,6 +45,7 @@ test "Gold Edge Suite" {
     defer texture.deinit(allocator);
 
     const mesh_types = [_]gk.MeshType{ .tri6, .quad8, .quad9 };
+    const distort_mesh_types = [_]gk.MeshType{ .tri3, .tri6, .quad4ibi, .quad8, .quad9 };
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
@@ -115,8 +116,10 @@ test "Gold Edge Suite" {
             SHADER_FILTER,
             false,
         );
+    }
 
-        try common.runDistortMidsideTexFuncTest(
+    for (distort_mesh_types) |mt| {
+        try common.runDistortEdgeTexFuncTest(
             allocator,
             io,
             mt,

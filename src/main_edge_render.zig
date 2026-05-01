@@ -106,7 +106,7 @@ pub fn main(init: std.process.Init) !void {
         config,
     );
 
-    try gengold.generateDistortMidsideGold(
+    try gengold.generateDistortEdgeGold(
         aa,
         io,
         out_dir_root,

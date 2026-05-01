@@ -98,7 +98,7 @@ pub fn main(init: std.process.Init) !void {
         "data-edge",
         config,
     );
-    try gengold.generateDistortMidsideGold(
+    try gengold.generateDistortEdgeGold(
         aa,
         io,
         "gold-edge",

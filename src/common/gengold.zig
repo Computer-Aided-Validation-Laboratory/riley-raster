@@ -401,7 +401,7 @@ fn buildUvField(
     return field;
 }
 
-pub fn generateDistortMidsideGold(
+pub fn generateDistortEdgeGold(
     allocator: std.mem.Allocator,
     io: std.Io,
     gold_dir_root: []const u8,
@@ -409,18 +409,24 @@ pub fn generateDistortMidsideGold(
     pixel_num: [2]u32,
     config: RasterConfig,
 ) !void {
-    const mesh_types = [_]gk.MeshType{ .tri6, .quad8, .quad9 };
-    const distortion_cases = [_][]const u8{
-        "distort_bulge",
-        "distort_tan",
+    const midside_mesh_types = [_]gk.MeshType{ .tri6, .quad8, .quad9 };
+    const full_mesh_types = [_]gk.MeshType{ .tri3, .tri6, .quad4ibi, .quad8, .quad9 };
+    const distortion_cases = [_]struct {
+        name: []const u8,
+        mesh_types: []const gk.MeshType,
+    }{
+        .{ .name = "distort_bulge", .mesh_types = &midside_mesh_types },
+        .{ .name = "distort_tan", .mesh_types = &midside_mesh_types },
+        .{ .name = "distort_stretch", .mesh_types = &full_mesh_types },
+        .{ .name = "distort_shear", .mesh_types = &full_mesh_types },
     };
 
     for (distortion_cases) |distortion_case| {
-        for (mesh_types) |mesh_type| {
+        for (distortion_case.mesh_types) |mesh_type| {
             const prepared = try orch.prepareSingleMeshCase(
                 allocator,
                 io,
-                distortion_case,
+                distortion_case.name,
                 mesh_type,
                 pixel_num,
                 1.1,
@@ -430,7 +436,7 @@ pub fn generateDistortMidsideGold(
             const gold_dir = try std.fmt.allocPrint(
                 allocator,
                 "{s}/{s}_{s}_texfunc_constant",
-                .{ gold_dir_root, distortion_case, @tagName(mesh_type) },
+                .{ gold_dir_root, distortion_case.name, @tagName(mesh_type) },
             );
             try renderAndSave(
                 allocator,
