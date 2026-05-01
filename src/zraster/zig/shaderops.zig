@@ -17,6 +17,7 @@ const simd_impl = @import("shaderops_simd.zig");
 pub const ScaleOver = common.ScaleOver;
 pub const NormalType = common.NormalType;
 pub const TexFuncBuiltin = common.TexFuncBuiltin;
+pub const TexFuncParams = common.TexFuncParams;
 pub const LocalShaderBuffer = common.LocalShaderBuffer;
 pub const NodalInput = common.NodalInput;
 pub const NodalPrepared = common.NodalPrepared;

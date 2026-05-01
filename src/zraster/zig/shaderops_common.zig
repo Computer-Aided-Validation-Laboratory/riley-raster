@@ -29,6 +29,16 @@ pub const TexFuncBuiltin = enum {
     lambertian_normal_z,
 };
 
+pub const TexFuncParams = struct {
+    coord_scale: [2]f64 = .{ 1.0, 1.0 },
+    coord_offset: [2]f64 = .{ 0.0, 0.0 },
+    output_scale: f64 = 1.0,
+    output_offset: f64 = 0.0,
+    wave_num_scalar: [2]f64 = .{ 6.0, 5.0 },
+    wave_num_rgb: [3]f64 = .{ 6.0, 6.0, 4.0 },
+    extra: [4]f64 = .{ 0.0, 0.0, 0.0, 0.0 },
+};
+
 pub fn LocalShaderBuffer(comptime N: usize) type {
     return struct {
         data: [buildconfig.config.max_nodal_fields * N]f64 = undefined,
@@ -118,6 +128,7 @@ pub fn TexFuncInput(comptime channels: usize) type {
     return struct {
         uvs: ?ndarray.NDArray(f64) = null,
         builtin: TexFuncBuiltin,
+        params: TexFuncParams = .{},
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
         normal_type: NormalType = .none,
@@ -162,6 +173,7 @@ pub fn TexFuncStatic(comptime channels: usize) type {
     return struct {
         elem_uvs: ?ndarray.NDArray(f64),
         builtin: TexFuncBuiltin,
+        params: TexFuncParams = .{},
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
         normal_type: NormalType = .none,
@@ -213,6 +225,7 @@ pub fn TexFuncPrepared(comptime channels: usize) type {
     return struct {
         elem_uvs: ?ndarray.NDArray(f64),
         builtin: TexFuncBuiltin,
+        params: TexFuncParams = .{},
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
         scale_mul: f64 = 1.0,
@@ -267,55 +280,76 @@ inline fn cubicSmoothStep(val: f64) f64 {
     return clamped * clamped * (3.0 - 2.0 * clamped);
 }
 
+inline fn applyTexFuncCoordParams(
+    coord: TexFuncCoord,
+    params: TexFuncParams,
+) TexFuncCoord {
+    var out = coord;
+    out.coord_0 = params.coord_scale[0] * coord.coord_0 + params.coord_offset[0];
+    out.coord_1 = params.coord_scale[1] * coord.coord_1 + params.coord_offset[1];
+    return out;
+}
+
+inline fn applyTexFuncOutputParams(value: f64, params: TexFuncParams) f64 {
+    return value * params.output_scale + params.output_offset;
+}
+
 pub inline fn evalTexFuncBuiltinScalar(
     builtin: TexFuncBuiltin,
     coord: TexFuncCoord,
+    params: TexFuncParams,
 ) f64 {
-    return switch (builtin) {
+    const eval_coord = applyTexFuncCoordParams(coord, params);
+    const value = switch (builtin) {
         .constant => 0.5,
-        .linear => 0.5 + 0.25 * coord.coord_0 + 0.2 * coord.coord_1,
+        .linear => 0.5 + 0.25 * eval_coord.coord_0 + 0.2 * eval_coord.coord_1,
         .quadratic => 0.35 +
-            0.2 * coord.coord_0 +
-            0.15 * coord.coord_1 +
-            0.1 * coord.coord_0 * coord.coord_0 -
-            0.08 * coord.coord_0 * coord.coord_1 +
-            0.06 * coord.coord_1 * coord.coord_1,
+            0.2 * eval_coord.coord_0 +
+            0.15 * eval_coord.coord_1 +
+            0.1 * eval_coord.coord_0 * eval_coord.coord_0 -
+            0.08 * eval_coord.coord_0 * eval_coord.coord_1 +
+            0.06 * eval_coord.coord_1 * eval_coord.coord_1,
         .sinusoidal => 0.5 +
-            0.25 * @sin(6.0 * coord.coord_0) +
-            0.2 * @cos(5.0 * coord.coord_1),
+            0.25 * @sin(params.wave_num_scalar[0] * eval_coord.coord_0) +
+            0.2 * @cos(params.wave_num_scalar[1] * eval_coord.coord_1),
         .checker_smooth => blk: {
-            const phase_x = 0.5 + 0.5 * @sin(8.0 * std.math.pi * coord.coord_0);
-            const phase_y = 0.5 + 0.5 * @sin(8.0 * std.math.pi * coord.coord_1);
+            const phase_x = 0.5 + 0.5 * @sin(8.0 * std.math.pi * eval_coord.coord_0);
+            const phase_y = 0.5 + 0.5 * @sin(8.0 * std.math.pi * eval_coord.coord_1);
             const prod = phase_x * phase_y;
             break :blk cubicSmoothStep(prod);
         },
-        .lambertian_normal_z => 0.5 + 0.5 * coord.normal_z,
+        .lambertian_normal_z => 0.5 + 0.5 * eval_coord.normal_z,
     };
+    return applyTexFuncOutputParams(value, params);
 }
 
 pub inline fn evalTexFuncBuiltinRgb(
     builtin: TexFuncBuiltin,
     coord: TexFuncCoord,
+    params: TexFuncParams,
 ) [3]f64 {
-    return switch (builtin) {
+    const eval_coord = applyTexFuncCoordParams(coord, params);
+    const values = switch (builtin) {
         .constant => .{ 0.2, 0.5, 0.8 },
         .linear => .{
-            0.5 + 0.25 * coord.coord_0,
-            0.5 + 0.25 * coord.coord_1,
-            0.5 + 0.15 * coord.coord_0 - 0.15 * coord.coord_1,
+            0.5 + 0.25 * eval_coord.coord_0,
+            0.5 + 0.25 * eval_coord.coord_1,
+            0.5 + 0.15 * eval_coord.coord_0 - 0.15 * eval_coord.coord_1,
         },
         .quadratic => .{
-            0.3 + 0.2 * coord.coord_0 * coord.coord_0,
-            0.3 + 0.2 * coord.coord_1 * coord.coord_1,
-            0.3 + 0.12 * coord.coord_0 * coord.coord_1,
+            0.3 + 0.2 * eval_coord.coord_0 * eval_coord.coord_0,
+            0.3 + 0.2 * eval_coord.coord_1 * eval_coord.coord_1,
+            0.3 + 0.12 * eval_coord.coord_0 * eval_coord.coord_1,
         },
         .sinusoidal => .{
-            0.5 + 0.25 * @sin(6.0 * coord.coord_0),
-            0.5 + 0.25 * @cos(6.0 * coord.coord_1),
-            0.5 + 0.2 * @sin(4.0 * (coord.coord_0 + coord.coord_1)),
+            0.5 + 0.25 * @sin(params.wave_num_rgb[0] * eval_coord.coord_0),
+            0.5 + 0.25 * @cos(params.wave_num_rgb[1] * eval_coord.coord_1),
+            0.5 + 0.2 * @sin(params.wave_num_rgb[2] * (eval_coord.coord_0 + eval_coord.coord_1)),
         },
         .checker_smooth => blk: {
-            const base = evalTexFuncBuiltinScalar(.checker_smooth, coord);
+            const phase_x = 0.5 + 0.5 * @sin(8.0 * std.math.pi * eval_coord.coord_0);
+            const phase_y = 0.5 + 0.5 * @sin(8.0 * std.math.pi * eval_coord.coord_1);
+            const base = cubicSmoothStep(phase_x * phase_y);
             break :blk .{
                 base,
                 cubicSmoothStep(1.0 - base),
@@ -323,13 +357,18 @@ pub inline fn evalTexFuncBuiltinRgb(
             };
         },
         .lambertian_normal_z => blk: {
-            const lambert = 0.5 + 0.5 * coord.normal_z;
+            const lambert = 0.5 + 0.5 * eval_coord.normal_z;
             break :blk .{
                 lambert,
                 0.75 * lambert,
                 0.5 * lambert,
             };
         },
+    };
+    return .{
+        applyTexFuncOutputParams(values[0], params),
+        applyTexFuncOutputParams(values[1], params),
+        applyTexFuncOutputParams(values[2], params),
     };
 }
 
@@ -554,11 +593,11 @@ pub inline fn fillTexFuncClip(
     }
 
     if (comptime channels == 1) {
-        const value = evalTexFuncBuiltinScalar(sh.builtin, coord);
+        const value = evalTexFuncBuiltinScalar(sh.builtin, coord, sh.params);
         spx_image_scratch.slice[ctx_shade.scratch_idx] =
             value * sh.scale_mul + sh.scale_add;
     } else {
-        const values = evalTexFuncBuiltinRgb(sh.builtin, coord);
+        const values = evalTexFuncBuiltinRgb(sh.builtin, coord, sh.params);
         inline for (0..channels) |ch| {
             spx_image_scratch.slice[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
                 values[ch] * sh.scale_mul + sh.scale_add;
@@ -592,14 +631,48 @@ pub inline fn fillTexFuncPersp(
     }
 
     if (comptime channels == 1) {
-        const value = evalTexFuncBuiltinScalar(sh.builtin, coord);
+        const value = evalTexFuncBuiltinScalar(sh.builtin, coord, sh.params);
         spx_image_scratch.slice[ctx_shade.scratch_idx] =
             value * sh.scale_mul + sh.scale_add;
     } else {
-        const values = evalTexFuncBuiltinRgb(sh.builtin, coord);
+        const values = evalTexFuncBuiltinRgb(sh.builtin, coord, sh.params);
         inline for (0..channels) |ch| {
             spx_image_scratch.slice[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
                 values[ch] * sh.scale_mul + sh.scale_add;
         }
     }
+}
+
+const testing = std.testing;
+
+test "TexFuncParams defaults preserve constant shader" {
+    const coord = TexFuncCoord{
+        .coord_0 = 0.25,
+        .coord_1 = -0.5,
+        .normal_x = 0.0,
+        .normal_y = 0.0,
+        .normal_z = 1.0,
+    };
+    const value = evalTexFuncBuiltinScalar(.constant, coord, .{});
+    try testing.expectApproxEqAbs(@as(f64, 0.5), value, 1e-12);
+}
+
+test "TexFuncParams control sinusoidal frequency and output scaling" {
+    const coord = TexFuncCoord{
+        .coord_0 = 0.25,
+        .coord_1 = 0.0,
+        .normal_x = 0.0,
+        .normal_y = 0.0,
+        .normal_z = 1.0,
+    };
+    const base = evalTexFuncBuiltinScalar(.sinusoidal, coord, .{});
+    const shifted = evalTexFuncBuiltinScalar(.sinusoidal, coord, .{
+        .coord_scale = .{ 2.0, 1.0 },
+        .output_scale = 2.0,
+        .output_offset = -0.25,
+    });
+    const expected_base = 0.5 + 0.25 * @sin(6.0 * 0.25) + 0.2 * @cos(0.0);
+    const expected_shifted = (0.5 + 0.25 * @sin(6.0 * 0.5) + 0.2 * @cos(0.0)) * 2.0 - 0.25;
+    try testing.expectApproxEqAbs(expected_base, base, 1e-12);
+    try testing.expectApproxEqAbs(expected_shifted, shifted, 1e-12);
 }

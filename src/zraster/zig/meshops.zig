@@ -348,6 +348,7 @@ pub fn initStatic(
             shader_static = .{ .tex_func = .{
                 .elem_uvs = elem_uvs,
                 .builtin = tex_func_in.builtin,
+                .params = tex_func_in.params,
                 .bits = tex_func_in.bits,
                 .scaling = tex_func_in.scaling,
                 .normal_type = tex_func_in.normal_type,
@@ -365,6 +366,7 @@ pub fn initStatic(
             shader_static = .{ .tex_func_rgb = .{
                 .elem_uvs = elem_uvs,
                 .builtin = tex_func_in.builtin,
+                .params = tex_func_in.params,
                 .bits = tex_func_in.bits,
                 .scaling = tex_func_in.scaling,
                 .normal_type = tex_func_in.normal_type,
@@ -1159,6 +1161,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 return .{ .tex_func = .{
                     .elem_uvs = elem_uvs,
                     .builtin = tex_func_static.builtin,
+                    .params = tex_func_static.params,
                     .bits = tex_func_static.bits,
                     .scaling = tex_func_static.scaling,
                     .scale_mul = factors.mul,
@@ -1170,6 +1173,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 return .{ .tex_func_rgb = .{
                     .elem_uvs = elem_uvs,
                     .builtin = tex_func_static.builtin,
+                    .params = tex_func_static.params,
                     .bits = tex_func_static.bits,
                     .scaling = tex_func_static.scaling,
                     .scale_mul = factors.mul,

@@ -434,10 +434,10 @@ pub inline fn fillTexFuncClipSIMD(
                 .normal_z = normal_arrs[2][ll],
             };
             if (comptime channels == 1) {
-                vals_arr[ll] = common.evalTexFuncBuiltinScalar(sh.builtin, coord) *
+                vals_arr[ll] = common.evalTexFuncBuiltinScalar(sh.builtin, coord, sh.params) *
                     sh.scale_mul + sh.scale_add;
             } else {
-                vals_arr[ll] = common.evalTexFuncBuiltinRgb(sh.builtin, coord)[ch] *
+                vals_arr[ll] = common.evalTexFuncBuiltinRgb(sh.builtin, coord, sh.params)[ch] *
                     sh.scale_mul + sh.scale_add;
             }
         }
@@ -504,10 +504,10 @@ pub inline fn fillTexFuncPerspSIMD(
                 .normal_z = normal_arrs[2][ll],
             };
             if (comptime channels == 1) {
-                vals_arr[ll] = common.evalTexFuncBuiltinScalar(sh.builtin, coord) *
+                vals_arr[ll] = common.evalTexFuncBuiltinScalar(sh.builtin, coord, sh.params) *
                     sh.scale_mul + sh.scale_add;
             } else {
-                vals_arr[ll] = common.evalTexFuncBuiltinRgb(sh.builtin, coord)[ch] *
+                vals_arr[ll] = common.evalTexFuncBuiltinRgb(sh.builtin, coord, sh.params)[ch] *
                     sh.scale_mul + sh.scale_add;
             }
         }
