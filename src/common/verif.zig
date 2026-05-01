@@ -25,17 +25,9 @@ pub const Vec3 = struct {
     z: f64,
 };
 
-pub const SampleKind = enum {
-    structured,
-    random,
-    boundary,
-    corner,
-};
-
 pub const invalid_grid_idx = std.math.maxInt(usize);
 
 pub const SamplePoint = struct {
-    sample_kind: SampleKind,
     xi_true: f64,
     eta_true: f64,
     row_idx: usize = invalid_grid_idx,
@@ -43,11 +35,12 @@ pub const SamplePoint = struct {
 };
 
 pub const SampleRecord = struct {
-    sample_kind: SampleKind,
     xi_true: f64,
     eta_true: f64,
     xi_rec: f64,
     eta_rec: f64,
+    xi_reproj: f64,
+    eta_reproj: f64,
     err_xi: f64,
     err_eta: f64,
     err_param: f64,
@@ -500,7 +493,6 @@ pub fn appendStructuredSamples(
                     @as(f64, @floatFromInt(grid_num - 1));
                 if (xi + eta <= 1.0) {
                     try list.append(allocator, .{
-                        .sample_kind = .structured,
                         .xi_true = xi,
                         .eta_true = eta,
                         .row_idx = rr,
@@ -523,7 +515,6 @@ pub fn appendStructuredSamples(
                     (@as(f64, @floatFromInt(cc)) /
                         @as(f64, @floatFromInt(grid_num - 1))) * (xi_max - xi_min);
                 try list.append(allocator, .{
-                    .sample_kind = .structured,
                     .xi_true = xi,
                     .eta_true = eta,
                     .row_idx = rr,
@@ -534,165 +525,6 @@ pub fn appendStructuredSamples(
     }
 
     return .{ .rows_num = grid_num, .cols_num = grid_num };
-}
-
-pub fn appendRandomSamples(
-    comptime mesh_type: gk.MeshType,
-    allocator: std.mem.Allocator,
-    list: *std.ArrayList(SamplePoint),
-    rng: *std.Random,
-    samples_num: usize,
-) !void {
-    if (mesh_type == .tri3 or mesh_type == .tri6) {
-        for (0..samples_num) |_| {
-            var xi = rng.float(f64);
-            var eta = rng.float(f64);
-            if (xi + eta > 1.0) {
-                xi = 1.0 - xi;
-                eta = 1.0 - eta;
-            }
-            try list.append(allocator, .{
-                .sample_kind = .random,
-                .xi_true = xi,
-                .eta_true = eta,
-            });
-        }
-    } else {
-        const xi_min = if (mesh_type == .quad4ibi) 0.0 else -1.0;
-        const eta_min = if (mesh_type == .quad4ibi) 0.0 else -1.0;
-        const span = if (mesh_type == .quad4ibi) 1.0 else 2.0;
-
-        for (0..samples_num) |_| {
-            try list.append(allocator, .{
-                .sample_kind = .random,
-                .xi_true = xi_min + rng.float(f64) * span,
-                .eta_true = eta_min + rng.float(f64) * span,
-            });
-        }
-    }
-}
-
-pub fn appendBoundarySamples(
-    comptime mesh_type: gk.MeshType,
-    allocator: std.mem.Allocator,
-    list: *std.ArrayList(SamplePoint),
-    samples_num: usize,
-) !void {
-    const boundary_eps = 1.0e-4;
-
-    if (mesh_type == .tri3 or mesh_type == .tri6) {
-        const per_edge = @max(@as(usize, 1), samples_num / 3);
-        for (0..per_edge) |nn| {
-            const tt = @as(f64, @floatFromInt(nn)) /
-                @as(f64, @floatFromInt(@max(@as(usize, 1), per_edge - 1)));
-            try list.append(allocator, .{
-                .sample_kind = .boundary,
-                .xi_true = tt * (1.0 - boundary_eps),
-                .eta_true = boundary_eps,
-            });
-            try list.append(allocator, .{
-                .sample_kind = .boundary,
-                .xi_true = boundary_eps,
-                .eta_true = tt * (1.0 - boundary_eps),
-            });
-            try list.append(allocator, .{
-                .sample_kind = .boundary,
-                .xi_true = tt * (1.0 - boundary_eps),
-                .eta_true = 1.0 - boundary_eps - tt * (1.0 - boundary_eps),
-            });
-        }
-    } else {
-        const per_edge = @max(@as(usize, 1), samples_num / 4);
-        const min_val = if (mesh_type == .quad4ibi) 0.0 else -1.0;
-        const max_val = 1.0;
-        const edge_lo = min_val + boundary_eps;
-        const edge_hi = max_val - boundary_eps;
-        for (0..per_edge) |nn| {
-            const tt = @as(f64, @floatFromInt(nn)) /
-                @as(f64, @floatFromInt(@max(@as(usize, 1), per_edge - 1)));
-            const xi = min_val + tt * (max_val - min_val);
-            const eta = min_val + tt * (max_val - min_val);
-            try list.append(allocator, .{
-                .sample_kind = .boundary,
-                .xi_true = xi,
-                .eta_true = edge_lo,
-            });
-            try list.append(allocator, .{
-                .sample_kind = .boundary,
-                .xi_true = xi,
-                .eta_true = edge_hi,
-            });
-            try list.append(allocator, .{
-                .sample_kind = .boundary,
-                .xi_true = edge_lo,
-                .eta_true = eta,
-            });
-            try list.append(allocator, .{
-                .sample_kind = .boundary,
-                .xi_true = edge_hi,
-                .eta_true = eta,
-            });
-        }
-    }
-}
-
-pub fn appendCornerSamples(
-    comptime mesh_type: gk.MeshType,
-    allocator: std.mem.Allocator,
-    list: *std.ArrayList(SamplePoint),
-    samples_num: usize,
-) !void {
-    const corner_eps = 5.0e-5;
-    const per_corner = @max(@as(usize, 1), samples_num / 4);
-
-    if (mesh_type == .tri3 or mesh_type == .tri6) {
-        for (0..per_corner) |nn| {
-            const scale = 1.0 + @as(f64, @floatFromInt(nn));
-            const eps = corner_eps * scale;
-            try list.append(allocator, .{
-                .sample_kind = .corner,
-                .xi_true = eps,
-                .eta_true = eps,
-            });
-            try list.append(allocator, .{
-                .sample_kind = .corner,
-                .xi_true = 1.0 - 2.0 * eps,
-                .eta_true = eps,
-            });
-            try list.append(allocator, .{
-                .sample_kind = .corner,
-                .xi_true = eps,
-                .eta_true = 1.0 - 2.0 * eps,
-            });
-        }
-    } else {
-        const min_val = if (mesh_type == .quad4ibi) 0.0 else -1.0;
-        const max_val = 1.0;
-        for (0..per_corner) |nn| {
-            const scale = 1.0 + @as(f64, @floatFromInt(nn));
-            const eps = corner_eps * scale;
-            try list.append(allocator, .{
-                .sample_kind = .corner,
-                .xi_true = min_val + eps,
-                .eta_true = min_val + eps,
-            });
-            try list.append(allocator, .{
-                .sample_kind = .corner,
-                .xi_true = max_val - eps,
-                .eta_true = min_val + eps,
-            });
-            try list.append(allocator, .{
-                .sample_kind = .corner,
-                .xi_true = max_val - eps,
-                .eta_true = max_val - eps,
-            });
-            try list.append(allocator, .{
-                .sample_kind = .corner,
-                .xi_true = min_val + eps,
-                .eta_true = max_val - eps,
-            });
-        }
-    }
 }
 
 fn quantileFromSorted(sorted_vals: []const f64, q: f64) f64 {
@@ -754,16 +586,7 @@ pub fn openOutputDir(io: std.Io, dir_name: []const u8) !std.Io.Dir {
     return try cwd.openDir(io, dir_name, .{});
 }
 
-fn sampleKindName(sample_kind: SampleKind) []const u8 {
-    return switch (sample_kind) {
-        .structured => "structured",
-        .random => "random",
-        .boundary => "boundary",
-        .corner => "corner",
-    };
-}
-
-pub fn writeSampleRecordsCsv(
+pub fn writeSolverStatsCsv(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
@@ -777,22 +600,24 @@ pub fn writeSampleRecordsCsv(
     const writer = &file_writer.interface;
 
     try writer.writeAll(
-        "sample_kind,xi_true,eta_true,xi_rec,eta_rec,err_xi,err_eta," ++
-            "err_param,ideal_target_x,ideal_target_y,observed_target_x," ++
-            "observed_target_y,observed_reproj_x,observed_reproj_y,reproj_err," ++
-            "iters,converged,in_domain,row_idx,col_idx\n",
+        "ideal_xi,ideal_eta,solved_xi,solved_eta,reproj_xi,reproj_eta," ++
+            "err_xi,err_eta,err_param,ideal_target_x,ideal_target_y," ++
+            "observed_target_x,observed_target_y,observed_reproj_x," ++
+            "observed_reproj_y,reproj_err,iters,converged,in_domain," ++
+            "row_idx,col_idx\n",
     );
 
     for (records) |record| {
         try writer.print(
-            "{s},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d}," ++
-                "{d},{d},{d},{d},{d}\n",
+            "{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d}," ++
+                "{d},{d},{d},{d},{d},{d}\n",
             .{
-                sampleKindName(record.sample_kind),
                 record.xi_true,
                 record.eta_true,
                 record.xi_rec,
                 record.eta_rec,
+                record.xi_reproj,
+                record.eta_reproj,
                 record.err_xi,
                 record.err_eta,
                 record.err_param,
