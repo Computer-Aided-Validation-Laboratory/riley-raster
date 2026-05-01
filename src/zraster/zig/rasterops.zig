@@ -922,6 +922,7 @@ fn initTestCullCameraManual(distortion: cam.DistortionModel) cam.CameraPrepared 
         .world_to_cam_mat = Mat44f.initIdentity(),
         .distortion = distortion,
         .ideal_pixel_centers = undefined,
+        .pixel_center_jac = undefined,
     };
 }
 

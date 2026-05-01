@@ -772,10 +772,15 @@ fn dispatchInOrderFrameJobs(
 fn prepareCameras(
     outer_alloc: std.mem.Allocator,
     camera_inputs: []const cam.CameraInput,
+    config: RasterConfig,
 ) ![]cam.CameraPrepared {
     const cameras = try outer_alloc.alloc(cam.CameraPrepared, camera_inputs.len);
     for (camera_inputs, 0..) |camera_input, cc| {
-        cameras[cc] = cam.CameraPrepared.init(outer_alloc, camera_input) catch |err| {
+        cameras[cc] = cam.CameraPrepared.initForSubPixelCenterMap(
+            outer_alloc,
+            camera_input,
+            config.subpixel_center_map,
+        ) catch |err| {
             for (0..cc) |pp| cameras[pp].deinit(outer_alloc);
             outer_alloc.free(cameras);
             return err;
@@ -812,7 +817,7 @@ pub fn rasterAllFrames(
     defer static_arena.deinit();
     const static_alloc = static_arena.allocator();
 
-    const cameras = try prepareCameras(outer_alloc, camera_inputs);
+    const cameras = try prepareCameras(outer_alloc, camera_inputs, config);
     defer {
         for (cameras) |camera| camera.deinit(outer_alloc);
         outer_alloc.free(cameras);

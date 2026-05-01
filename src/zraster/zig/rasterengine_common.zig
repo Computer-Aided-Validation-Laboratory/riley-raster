@@ -55,6 +55,117 @@ pub const ScratchLayout = enum {
     field_major,
 };
 
+fn fillTileIdealCentersFullInMem(
+    ctx_rast: rops.RasterContext,
+    tile: rops.ActiveTile,
+    subpx_scratch: anytype,
+    subpx_tile_size: usize,
+) void {
+    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+    const cam = ctx_rast.camera;
+    const stride_y = cam.ideal_pixel_centers.strides[0];
+    const stride_x = cam.ideal_pixel_centers.strides[1];
+    const slice = cam.ideal_pixel_centers.slice;
+
+    const start_x = @as(usize, @intCast(tile.x_px_min)) * sub_samp;
+    const start_y = @as(usize, @intCast(tile.y_px_min)) * sub_samp;
+    const tile_w = @as(usize, tile.x_px_max - tile.x_px_min) * sub_samp;
+    const tile_h = @as(usize, tile.y_px_max - tile.y_px_min) * sub_samp;
+
+    for (0..tile_h) |jj| {
+        const global_y = start_y + jj;
+        const row_off = global_y * stride_y;
+        const scratch_row_off = jj * subpx_tile_size;
+
+        for (0..tile_w) |ii| {
+            const global_x = start_x + ii;
+            const col_off = global_x * stride_x;
+            const scratch_idx = scratch_row_off + ii;
+
+            subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 0] =
+                slice[row_off + col_off + 0];
+            subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 1] =
+                slice[row_off + col_off + 1];
+        }
+    }
+}
+
+fn fillTileIdealCentersPerTile(
+    ctx_rast: rops.RasterContext,
+    tile: rops.ActiveTile,
+    subpx_scratch: anytype,
+    subpx_tile_size: usize,
+) !void {
+    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+    const sub_samp_f = @as(f64, @floatFromInt(ctx_rast.camera.sub_sample));
+    const subpx_step = 1.0 / sub_samp_f;
+    const subpx_off = 0.5 / sub_samp_f;
+    const start_x = @as(usize, @intCast(tile.x_px_min)) * sub_samp;
+    const start_y = @as(usize, @intCast(tile.y_px_min)) * sub_samp;
+    const tile_w = @as(usize, tile.x_px_max - tile.x_px_min) * sub_samp;
+    const tile_h = @as(usize, tile.y_px_max - tile.y_px_min) * sub_samp;
+
+    for (0..tile_h) |jj| {
+        const global_y = start_y + jj;
+        const observed_y = @as(f64, @floatFromInt(global_y)) * subpx_step + subpx_off;
+        const scratch_row_off = jj * subpx_tile_size;
+
+        for (0..tile_w) |ii| {
+            const global_x = start_x + ii;
+            const observed_x = @as(f64, @floatFromInt(global_x)) * subpx_step + subpx_off;
+            const ideal = try ctx_rast.camera.calcIdealObservedRasterPoint(observed_x, observed_y);
+            const scratch_idx = scratch_row_off + ii;
+            subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 0] = ideal[0];
+            subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 1] = ideal[1];
+        }
+    }
+}
+
+fn fillTileIdealCentersAffineJac(
+    ctx_rast: rops.RasterContext,
+    tile: rops.ActiveTile,
+    subpx_scratch: anytype,
+    subpx_tile_size: usize,
+) void {
+    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+    const sub_samp_f = @as(f64, @floatFromInt(ctx_rast.camera.sub_sample));
+    const subpx_step = 1.0 / sub_samp_f;
+    const subpx_off = 0.5 / sub_samp_f;
+    const jac = &ctx_rast.camera.pixel_center_jac;
+    const start_x = @as(usize, @intCast(tile.x_px_min)) * sub_samp;
+    const start_y = @as(usize, @intCast(tile.y_px_min)) * sub_samp;
+    const tile_w = @as(usize, tile.x_px_max - tile.x_px_min) * sub_samp;
+    const tile_h = @as(usize, tile.y_px_max - tile.y_px_min) * sub_samp;
+
+    for (0..tile_h) |jj| {
+        const global_suby = start_y + jj;
+        const pixel_y = global_suby / sub_samp;
+        const observed_y = @as(f64, @floatFromInt(global_suby)) * subpx_step + subpx_off;
+        const center_y = @as(f64, @floatFromInt(pixel_y)) + 0.5;
+        const delta_y = observed_y - center_y;
+        const scratch_row_off = jj * subpx_tile_size;
+
+        for (0..tile_w) |ii| {
+            const global_subx = start_x + ii;
+            const pixel_x = global_subx / sub_samp;
+            const observed_x = @as(f64, @floatFromInt(global_subx)) * subpx_step + subpx_off;
+            const center_x = @as(f64, @floatFromInt(pixel_x)) + 0.5;
+            const delta_x = observed_x - center_x;
+            const ideal_x = jac.get(&[_]usize{ pixel_y, pixel_x, 0 });
+            const ideal_y = jac.get(&[_]usize{ pixel_y, pixel_x, 1 });
+            const j11 = jac.get(&[_]usize{ pixel_y, pixel_x, 2 });
+            const j12 = jac.get(&[_]usize{ pixel_y, pixel_x, 3 });
+            const j21 = jac.get(&[_]usize{ pixel_y, pixel_x, 4 });
+            const j22 = jac.get(&[_]usize{ pixel_y, pixel_x, 5 });
+            const scratch_idx = scratch_row_off + ii;
+            subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 0] =
+                ideal_x + j11 * delta_x + j12 * delta_y;
+            subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 1] =
+                ideal_y + j21 * delta_x + j22 * delta_y;
+        }
+    }
+}
+
 fn calcTri3PerspectiveParamCoords(
     inv_z: f64,
     nodes_inv_z: [3]f64,
@@ -300,34 +411,25 @@ fn rasterTileCommon(
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     RasterBackend.resetSubpxScratch(subpx_scratch, subpx_tile_size);
 
-    // Hoist tile-local ideal pinhole pixel centers
-    {
-        const cam = ctx_rast.camera;
-        const stride_y = cam.ideal_pixel_centers.strides[0];
-        const stride_x = cam.ideal_pixel_centers.strides[1];
-        const slice = cam.ideal_pixel_centers.slice;
-
-        const start_x = @as(usize, @intCast(tile.x_px_min)) * sub_samp;
-        const start_y = @as(usize, @intCast(tile.y_px_min)) * sub_samp;
-        const tile_w = @as(usize, tile.x_px_max - tile.x_px_min) * sub_samp;
-        const tile_h = @as(usize, tile.y_px_max - tile.y_px_min) * sub_samp;
-
-        for (0..tile_h) |jj| {
-            const global_y = start_y + jj;
-            const row_off = global_y * stride_y;
-            const scratch_row_off = jj * subpx_tile_size;
-
-            for (0..tile_w) |ii| {
-                const global_x = start_x + ii;
-                const col_off = global_x * stride_x;
-                const scratch_idx = scratch_row_off + ii;
-
-                subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 0] =
-                    slice[row_off + col_off + 0];
-                subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 1] =
-                    slice[row_off + col_off + 1];
-            }
-        }
+    switch (ctx_rast.config.subpixel_center_map) {
+        .full_in_mem => fillTileIdealCentersFullInMem(
+            ctx_rast,
+            tile,
+            subpx_scratch,
+            subpx_tile_size,
+        ),
+        .per_tile => try fillTileIdealCentersPerTile(
+            ctx_rast,
+            tile,
+            subpx_scratch,
+            subpx_tile_size,
+        ),
+        .affine_jac => fillTileIdealCentersAffineJac(
+            ctx_rast,
+            tile,
+            subpx_scratch,
+            subpx_tile_size,
+        ),
     }
 
     const overlap_start = tile.overlap_start;

@@ -16,6 +16,7 @@ const rotation = @import("rotation.zig");
 
 const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
+const rastcfg = @import("rasterconfig.zig");
 const cfg = buildconfig.config;
 const tol = cfg.tolerance;
 
@@ -274,10 +275,24 @@ pub const CameraPrepared = struct {
     // Prepared ideal pinhole sample target per output pixel center.
     // Conceptual shape: [height, width, 2]
     ideal_pixel_centers: ndarray.NDArray(f64),
+    // [height, width, 6] = [ideal_x, ideal_y, J11, J12, J21, J22]
+    pixel_center_jac: ndarray.NDArray(f64),
 
     pub fn init(
         allocator: std.mem.Allocator,
         input: CameraInput,
+    ) !CameraPrepared {
+        return try initForSubPixelCenterMap(
+            allocator,
+            input,
+            .full_in_mem,
+        );
+    }
+
+    pub fn initForSubPixelCenterMap(
+        allocator: std.mem.Allocator,
+        input: CameraInput,
+        subpixel_center_map: rastcfg.SubPixelCenterMap,
     ) !CameraPrepared {
         const actual_sub_sample = if (input.sub_sample == 0) 2 else input.sub_sample;
         const sensor_size = CameraOps.calcSensorSize(input.pixels_num, input.pixels_size);
@@ -293,15 +308,33 @@ pub const CameraPrepared = struct {
 
         const world_to_cam_mat = matrix.Mat44Ops.inv(f64, cam_to_world_mat);
 
-        const sub_samp_u: usize = @intCast(actual_sub_sample);
-        const dims = [_]usize{
-            input.pixels_num[1] * sub_samp_u,
-            input.pixels_num[0] * sub_samp_u,
-            2,
+        const ideal_pixel_centers = switch (subpixel_center_map) {
+            .full_in_mem => blk: {
+                const sub_samp_u: usize = @intCast(actual_sub_sample);
+                const dims = [_]usize{
+                    input.pixels_num[1] * sub_samp_u,
+                    input.pixels_num[0] * sub_samp_u,
+                    2,
+                };
+                break :blk try ndarray.NDArray(f64).initFlat(allocator, dims[0..]);
+            },
+            else => blk: {
+                const dims = [_]usize{ 0, 0, 2 };
+                break :blk try ndarray.NDArray(f64).initFlat(allocator, dims[0..]);
+            },
         };
-        const ideal_pixel_centers = try ndarray.NDArray(f64).initFlat(allocator, dims[0..]);
+        const pixel_center_jac = switch (subpixel_center_map) {
+            .affine_jac => blk: {
+                const dims = [_]usize{ input.pixels_num[1], input.pixels_num[0], 6 };
+                break :blk try ndarray.NDArray(f64).initFlat(allocator, dims[0..]);
+            },
+            else => blk: {
+                const dims = [_]usize{ 0, 0, 6 };
+                break :blk try ndarray.NDArray(f64).initFlat(allocator, dims[0..]);
+            },
+        };
 
-        const self = CameraPrepared{
+        var self = CameraPrepared{
             .pixels_num = input.pixels_num,
             .pixels_size = input.pixels_size,
             .pos_world = input.pos_world,
@@ -316,55 +349,13 @@ pub const CameraPrepared = struct {
             .world_to_cam_mat = world_to_cam_mat,
             .distortion = input.distortion,
             .ideal_pixel_centers = ideal_pixel_centers,
+            .pixel_center_jac = pixel_center_jac,
         };
 
-        const sub_samp_f = @as(f64, @floatFromInt(actual_sub_sample));
-        const subpx_step = 1.0 / sub_samp_f;
-        const subpx_off = 0.5 / sub_samp_f;
-
-        const x_off = 0.5 * @as(f64, @floatFromInt(input.pixels_num[0]));
-        const y_off = 0.5 * @as(f64, @floatFromInt(input.pixels_num[1]));
-
-        const fx = input.focal_length / input.pixels_size[0];
-        const fy = input.focal_length / input.pixels_size[1];
-
-        const slice = self.ideal_pixel_centers.slice;
-        const stride_y = self.ideal_pixel_centers.strides[0];
-        const stride_x = self.ideal_pixel_centers.strides[1];
-
-        for (0..input.pixels_num[1] * sub_samp_u) |jj| {
-            const subpx_y_f = @as(f64, @floatFromInt(jj)) * subpx_step + subpx_off;
-            const y_d = (subpx_y_f - y_off) / fy;
-            const row_off = jj * stride_y;
-
-            for (0..input.pixels_num[0] * sub_samp_u) |ii| {
-                const subpx_x_f = @as(f64, @floatFromInt(ii)) * subpx_step + subpx_off;
-                const x_d = (subpx_x_f - x_off) / fx;
-
-                var ideal_x: f64 = undefined;
-                var ideal_y: f64 = undefined;
-
-                switch (input.distortion) {
-                    .none => {
-                        ideal_x = x_d;
-                        ideal_y = y_d;
-                    },
-                    .brown_conrady => |bc| {
-                        const solved = try bc.inverse(x_d, y_d);
-                        ideal_x = solved.x;
-                        ideal_y = solved.y;
-                    },
-                    .brown_conrady_ext => |bc_ext| {
-                        const solved = try bc_ext.inverse(x_d, y_d);
-                        ideal_x = solved.x;
-                        ideal_y = solved.y;
-                    },
-                }
-
-                const col_off = ii * stride_x;
-                slice[row_off + col_off + 0] = ideal_x * fx + x_off;
-                slice[row_off + col_off + 1] = ideal_y * fy + y_off;
-            }
+        switch (subpixel_center_map) {
+            .full_in_mem => try self.initFullIdealPixelCenters(),
+            .affine_jac => try self.initPixelCenterJac(),
+            .per_tile => {},
         }
 
         return self;
@@ -373,6 +364,83 @@ pub const CameraPrepared = struct {
     pub fn deinit(self: *const CameraPrepared, allocator: std.mem.Allocator) void {
         allocator.free(self.ideal_pixel_centers.slice);
         self.ideal_pixel_centers.deinit(allocator);
+        allocator.free(self.pixel_center_jac.slice);
+        self.pixel_center_jac.deinit(allocator);
+    }
+
+    pub fn calcIdealObservedRasterPoint(
+        self: *const CameraPrepared,
+        observed_x_px: f64,
+        observed_y_px: f64,
+    ) ![2]f64 {
+        const focal_px = self.calcFocalPx();
+        const offsets = self.calcRasterOffsets();
+        const x_dist = (observed_x_px - offsets.x_off) / focal_px.fx;
+        const y_dist = (observed_y_px - offsets.y_off) / focal_px.fy;
+
+        return switch (self.distortion) {
+            .none => .{ observed_x_px, observed_y_px },
+            .brown_conrady => |bc| blk: {
+                const solved = try bc.inverse(x_dist, y_dist);
+                break :blk .{
+                    solved.x * focal_px.fx + offsets.x_off,
+                    solved.y * focal_px.fy + offsets.y_off,
+                };
+            },
+            .brown_conrady_ext => |bc_ext| blk: {
+                const solved = try bc_ext.inverse(x_dist, y_dist);
+                break :blk .{
+                    solved.x * focal_px.fx + offsets.x_off,
+                    solved.y * focal_px.fy + offsets.y_off,
+                };
+            },
+        };
+    }
+
+    fn initFullIdealPixelCenters(self: *CameraPrepared) !void {
+        const sub_samp_u: usize = @intCast(self.sub_sample);
+        const sub_samp_f = @as(f64, @floatFromInt(self.sub_sample));
+        const subpx_step = 1.0 / sub_samp_f;
+        const subpx_off = 0.5 / sub_samp_f;
+
+        const slice = self.ideal_pixel_centers.slice;
+        const stride_y = self.ideal_pixel_centers.strides[0];
+        const stride_x = self.ideal_pixel_centers.strides[1];
+
+        for (0..self.pixels_num[1] * sub_samp_u) |jj| {
+            const subpx_y_f = @as(f64, @floatFromInt(jj)) * subpx_step + subpx_off;
+            const row_off = jj * stride_y;
+
+            for (0..self.pixels_num[0] * sub_samp_u) |ii| {
+                const subpx_x_f = @as(f64, @floatFromInt(ii)) * subpx_step + subpx_off;
+                const ideal = try self.calcIdealObservedRasterPoint(subpx_x_f, subpx_y_f);
+                const col_off = ii * stride_x;
+                slice[row_off + col_off + 0] = ideal[0];
+                slice[row_off + col_off + 1] = ideal[1];
+            }
+        }
+    }
+
+    fn initPixelCenterJac(self: *CameraPrepared) !void {
+        const eps: f64 = 0.25;
+        for (0..self.pixels_num[1]) |jj| {
+            for (0..self.pixels_num[0]) |ii| {
+                const x_c = @as(f64, @floatFromInt(ii)) + 0.5;
+                const y_c = @as(f64, @floatFromInt(jj)) + 0.5;
+                const center = try self.calcIdealObservedRasterPoint(x_c, y_c);
+                const x_p = try self.calcIdealObservedRasterPoint(x_c + eps, y_c);
+                const x_m = try self.calcIdealObservedRasterPoint(x_c - eps, y_c);
+                const y_p = try self.calcIdealObservedRasterPoint(x_c, y_c + eps);
+                const y_m = try self.calcIdealObservedRasterPoint(x_c, y_c - eps);
+                const inv_two_eps = 0.5 / eps;
+                self.pixel_center_jac.set(&[_]usize{ jj, ii, 0 }, center[0]);
+                self.pixel_center_jac.set(&[_]usize{ jj, ii, 1 }, center[1]);
+                self.pixel_center_jac.set(&[_]usize{ jj, ii, 2 }, (x_p[0] - x_m[0]) * inv_two_eps);
+                self.pixel_center_jac.set(&[_]usize{ jj, ii, 3 }, (y_p[0] - y_m[0]) * inv_two_eps);
+                self.pixel_center_jac.set(&[_]usize{ jj, ii, 4 }, (x_p[1] - x_m[1]) * inv_two_eps);
+                self.pixel_center_jac.set(&[_]usize{ jj, ii, 5 }, (y_p[1] - y_m[1]) * inv_two_eps);
+            }
+        }
     }
 
     pub fn toInput(self: *const CameraPrepared) CameraInput {

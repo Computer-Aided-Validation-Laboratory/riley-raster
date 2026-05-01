@@ -8,7 +8,6 @@
 // --------------------------------------------------------------------------
 const iio = @import("imageio.zig");
 
-
 pub const RasterConfig = struct {
     render_mode: RenderMode = .in_order,
     total_threads: u16 = 0,
@@ -25,6 +24,13 @@ pub const RasterConfig = struct {
     newton_seed_reuse: NewtonSeedReuse = .off,
     report: ReportMode = .bench,
     full_stats_opts: FullStatsOpts = .{},
+    subpixel_center_map: SubPixelCenterMap = .full_in_mem,
+};
+
+pub const SubPixelCenterMap = enum {
+    full_in_mem,
+    per_tile,
+    affine_jac,
 };
 
 pub const RenderMode = enum {
@@ -60,7 +66,6 @@ pub const NewtonSeedReuse = enum {
     off,
     last_converged,
 };
-
 
 pub const FullStatsOpts = struct {
     formats: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
