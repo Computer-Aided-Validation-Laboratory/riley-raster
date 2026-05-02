@@ -85,6 +85,19 @@ pub fn getDistortionModel(distortion_case: DistortionCase) cam.DistortionModel {
     };
 }
 
+pub fn goldSubpixelCenterMap(
+    distortion_case: DistortionCase,
+    subpixel_center_map: @import("../zraster/zig/rasterconfig.zig").SubPixelCenterMap,
+) @import("../zraster/zig/rasterconfig.zig").SubPixelCenterMap {
+    return switch (subpixel_center_map) {
+        .affine_jac => switch (distortion_case) {
+            .brown, .brownext => .affine_jac,
+            .none => .full_in_mem,
+        },
+        else => .full_in_mem,
+    };
+}
+
 pub fn buildSphere200MultiCullMeshInputs(
     allocator: std.mem.Allocator,
     io: std.Io,

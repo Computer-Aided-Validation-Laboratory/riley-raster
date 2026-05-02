@@ -39,15 +39,22 @@ test "Gold SSAA Suite" {
                     ssaa,
                     distortion_case,
                 );
-                const gold_dir = try std.fmt.allocPrint(
-                    aa,
-                    "{s}/{s}",
-                    .{ suite.gold_root, case_name },
-                );
                 for (strategies) |strategy| {
                     const strategy_name = @tagName(strategy);
-                    const expect_match = strategy == .per_tile or
-                        (strategy == .affine_jac and distortion_case == .none);
+                    const gold_map = suite.goldSubpixelCenterMap(distortion_case, strategy);
+                    const gold_case_name = if (gold_map == .full_in_mem)
+                        case_name
+                    else
+                        try std.fmt.allocPrint(
+                            aa,
+                            "{s}_{s}",
+                            .{ case_name, @tagName(gold_map) },
+                        );
+                    const gold_dir = try std.fmt.allocPrint(
+                        aa,
+                        "{s}/{s}",
+                        .{ suite.gold_root, gold_case_name },
+                    );
                     if (tcfg.TEST_CASE_VERBOSE) {
                         std.debug.print("Testing {s} {s} ... ", .{ case_name, strategy_name });
                     }
@@ -106,12 +113,7 @@ test "Gold SSAA Suite" {
                     ) / 1e6;
 
                     if (cmp_res) |_| {
-                        if (!expect_match) {
-                            std.debug.print(
-                                "Unexpected pass for {s} {s} in {d:.3} ms\n",
-                                .{ case_name, strategy_name, duration_ms },
-                            );
-                        } else if (tcfg.TEST_CASE_VERBOSE) {
+                        if (tcfg.TEST_CASE_VERBOSE) {
                             std.debug.print("OK ({d:.3} ms)\n", .{duration_ms});
                         }
                     } else |err| {

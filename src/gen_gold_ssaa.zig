@@ -21,42 +21,58 @@ pub fn main(init: std.process.Init) !void {
     for (suite.mesh_types) |mesh_type| {
         for (suite.ssaa_values) |ssaa| {
             for (suite.distortion_cases) |distortion_case| {
-                const case_name = try suite.caseName(
+                const case_name_base = try suite.caseName(
                     allocator,
                     mesh_type,
                     ssaa,
                     distortion_case,
                 );
-                const out_dir_path = try std.fmt.allocPrint(
-                    allocator,
-                    "{s}/{s}",
-                    .{ suite.gold_root, case_name },
-                );
-                var out_dir = try orch.openDirEnsured(io, out_dir_path);
-                defer out_dir.close(io);
-
-                const image = try suite.renderCase(
-                    allocator,
-                    io,
-                    mesh_type,
-                    ssaa,
-                    distortion_case,
+                const gold_maps = [_]@import("zraster/zig/rasterconfig.zig").SubPixelCenterMap{
                     .full_in_mem,
-                );
-                defer {
-                    allocator.free(image.slice);
-                    var image_mut = image;
-                    image_mut.deinit(allocator);
-                }
+                    .affine_jac,
+                };
+                for (gold_maps) |gold_map| {
+                    if (gold_map == .affine_jac and distortion_case == .none) continue;
 
-                try iio.saveImage(
-                    io,
-                    out_dir,
-                    "cam0_frame0_field0",
-                    &image,
-                    0,
-                    .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
-                );
+                    const case_name = if (gold_map == .full_in_mem)
+                        case_name_base
+                    else
+                        try std.fmt.allocPrint(
+                            allocator,
+                            "{s}_{s}",
+                            .{ case_name_base, @tagName(gold_map) },
+                        );
+                    const out_dir_path = try std.fmt.allocPrint(
+                        allocator,
+                        "{s}/{s}",
+                        .{ suite.gold_root, case_name },
+                    );
+                    var out_dir = try orch.openDirEnsured(io, out_dir_path);
+                    defer out_dir.close(io);
+
+                    const image = try suite.renderCase(
+                        allocator,
+                        io,
+                        mesh_type,
+                        ssaa,
+                        distortion_case,
+                        gold_map,
+                    );
+                    defer {
+                        allocator.free(image.slice);
+                        var image_mut = image;
+                        image_mut.deinit(allocator);
+                    }
+
+                    try iio.saveImage(
+                        io,
+                        out_dir,
+                        "cam0_frame0_field0",
+                        &image,
+                        0,
+                        .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
+                    );
+                }
             }
         }
     }
