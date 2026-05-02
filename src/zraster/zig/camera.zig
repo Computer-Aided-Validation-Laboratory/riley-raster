@@ -17,8 +17,11 @@ const rotation = @import("rotation.zig");
 const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
 const rastcfg = @import("rasterconfig.zig");
+const camera_scalar = @import("camera_scalar.zig");
+const camera_simd = @import("camera_simd.zig");
 const cfg = buildconfig.config;
 const tol = cfg.tolerance;
+const camera_impl = if (cfg.simd == .on) camera_simd else camera_scalar;
 
 pub const DistortionModel = union(enum) {
     none,
@@ -354,7 +357,7 @@ pub const CameraPrepared = struct {
 
         switch (subpixel_center_map) {
             .full_in_mem => try self.initFullIdealPixelCenters(),
-            .affine_jac => try self.initPixelCenterJac(),
+            .affine_jac => try camera_impl.initPixelCenterJac(&self),
             .per_tile => {},
         }
 
@@ -421,28 +424,6 @@ pub const CameraPrepared = struct {
         }
     }
 
-    fn initPixelCenterJac(self: *CameraPrepared) !void {
-        const eps: f64 = 0.25;
-        for (0..self.pixels_num[1]) |jj| {
-            for (0..self.pixels_num[0]) |ii| {
-                const x_c = @as(f64, @floatFromInt(ii)) + 0.5;
-                const y_c = @as(f64, @floatFromInt(jj)) + 0.5;
-                const center = try self.calcIdealObservedRasterPoint(x_c, y_c);
-                const x_p = try self.calcIdealObservedRasterPoint(x_c + eps, y_c);
-                const x_m = try self.calcIdealObservedRasterPoint(x_c - eps, y_c);
-                const y_p = try self.calcIdealObservedRasterPoint(x_c, y_c + eps);
-                const y_m = try self.calcIdealObservedRasterPoint(x_c, y_c - eps);
-                const inv_two_eps = 0.5 / eps;
-                self.pixel_center_jac.set(&[_]usize{ jj, ii, 0 }, center[0]);
-                self.pixel_center_jac.set(&[_]usize{ jj, ii, 1 }, center[1]);
-                self.pixel_center_jac.set(&[_]usize{ jj, ii, 2 }, (x_p[0] - x_m[0]) * inv_two_eps);
-                self.pixel_center_jac.set(&[_]usize{ jj, ii, 3 }, (y_p[0] - y_m[0]) * inv_two_eps);
-                self.pixel_center_jac.set(&[_]usize{ jj, ii, 4 }, (x_p[1] - x_m[1]) * inv_two_eps);
-                self.pixel_center_jac.set(&[_]usize{ jj, ii, 5 }, (y_p[1] - y_m[1]) * inv_two_eps);
-            }
-        }
-    }
-
     pub fn toInput(self: *const CameraPrepared) CameraInput {
         return .{
             .pixels_num = self.pixels_num,
@@ -472,6 +453,34 @@ pub const CameraPrepared = struct {
         };
     }
 };
+
+pub fn fillTileIdealCentersPerTile(
+    ctx_rast: anytype,
+    tile: anytype,
+    subpx_scratch: anytype,
+    subpx_tile_size: usize,
+) !void {
+    return camera_impl.fillTileIdealCentersPerTile(
+        ctx_rast,
+        tile,
+        subpx_scratch,
+        subpx_tile_size,
+    );
+}
+
+pub fn fillTileIdealCentersAffineJac(
+    ctx_rast: anytype,
+    tile: anytype,
+    subpx_scratch: anytype,
+    subpx_tile_size: usize,
+) void {
+    camera_impl.fillTileIdealCentersAffineJac(
+        ctx_rast,
+        tile,
+        subpx_scratch,
+        subpx_tile_size,
+    );
+}
 
 pub const CameraOps = struct {
     pub fn fovFromCamRot(

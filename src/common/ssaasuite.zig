@@ -24,11 +24,26 @@ pub const pixel_num = [_]u32{ 640, 400 };
 pub const fov_scale: f64 = 0.75;
 pub const ssaa_values = [_]u8{ 2, 4 };
 pub const mesh_types = [_]gk.MeshType{ .tri3, .tri6, .quad4ibi, .quad8, .quad9 };
+pub const DistortionCase = enum {
+    none,
+    brown,
+    brownext,
+};
+pub const distortion_cases = [_]DistortionCase{ .none, .brown, .brownext };
 pub const sample_config: texops.TextureSampleConfig = .{
     .sample = .cubic_catmull_rom,
     .mode = .lut_lerp,
 };
-pub const distortion = cam.DistortionModel{
+pub const distortion_brown = cam.DistortionModel{
+    .brown_conrady = .{
+        .k1 = -0.18,
+        .k2 = 0.02,
+        .k3 = -0.004,
+        .p1 = 0.0012,
+        .p2 = -0.0018,
+    },
+};
+pub const distortion_brownext = cam.DistortionModel{
     .brown_conrady_ext = .{
         .k1 = -0.18,
         .k2 = 0.02,
@@ -53,12 +68,21 @@ pub fn caseName(
     allocator: std.mem.Allocator,
     mesh_type: gk.MeshType,
     ssaa: u8,
+    distortion_case: DistortionCase,
 ) ![]const u8 {
     return std.fmt.allocPrint(
         allocator,
-        "sphere200multicull_{s}_ssaa{d}",
-        .{ @tagName(mesh_type), ssaa },
+        "sphere200multicull_{s}_ssaa{d}_{s}",
+        .{ @tagName(mesh_type), ssaa, @tagName(distortion_case) },
     );
+}
+
+pub fn getDistortionModel(distortion_case: DistortionCase) cam.DistortionModel {
+    return switch (distortion_case) {
+        .none => .none,
+        .brown => distortion_brown,
+        .brownext => distortion_brownext,
+    };
 }
 
 pub fn buildSphere200MultiCullMeshInputs(
@@ -106,6 +130,7 @@ pub fn renderCase(
     io: std.Io,
     mesh_type: gk.MeshType,
     ssaa: u8,
+    distortion_case: DistortionCase,
     subpixel_center_map: @import("../zraster/zig/rasterconfig.zig").SubPixelCenterMap,
 ) !NDArray(f64) {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
@@ -145,7 +170,7 @@ pub fn renderCase(
 
     var camera_input = camera.toInput();
     camera_input.sub_sample = ssaa;
-    camera_input.distortion = distortion;
+    camera_input.distortion = getDistortionModel(distortion_case);
 
     var config = tcfg.rasterConfig(.gold);
     config.save_strategy = .memory;

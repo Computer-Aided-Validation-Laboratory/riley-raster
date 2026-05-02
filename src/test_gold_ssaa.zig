@@ -24,107 +24,118 @@ test "Gold SSAA Suite" {
 
     var first_err: ?anyerror = null;
 
-    const strategies = [_]struct {
-        map: @import("zraster/zig/rasterconfig.zig").SubPixelCenterMap,
-        expect_match: bool,
-    }{
-        .{ .map = .per_tile, .expect_match = true },
-        .{ .map = .affine_jac, .expect_match = false },
+    const strategies = [_]@import("zraster/zig/rasterconfig.zig").SubPixelCenterMap{
+        .per_tile,
+        .affine_jac,
     };
 
     for (suite.mesh_types) |mesh_type| {
         for (suite.ssaa_values) |ssaa| {
-            _ = arena.reset(.retain_capacity);
-            const case_name = try suite.caseName(aa, mesh_type, ssaa);
-            const gold_dir = try std.fmt.allocPrint(aa, "{s}/{s}", .{ suite.gold_root, case_name });
-            for (strategies) |strategy| {
-                const strategy_name = @tagName(strategy.map);
-                if (tcfg.TEST_CASE_VERBOSE) {
-                    std.debug.print("Testing {s} {s} ... ", .{ case_name, strategy_name });
-                }
-                const start_time = Timestamp.now(io, .awake);
-                const image = try suite.renderCase(
-                    allocator,
-                    io,
+            for (suite.distortion_cases) |distortion_case| {
+                _ = arena.reset(.retain_capacity);
+                const case_name = try suite.caseName(
+                    aa,
                     mesh_type,
                     ssaa,
-                    strategy.map,
+                    distortion_case,
                 );
-                defer {
-                    allocator.free(image.slice);
-                    var image_mut = image;
-                    image_mut.deinit(allocator);
-                }
-                var result = try @import("zraster/zig/ndarray.zig").NDArray(f64).initFlat(
-                    allocator,
-                    &[_]usize{ 1, 1, 1, image.dims[1], image.dims[2] },
-                );
-                defer {
-                    allocator.free(result.slice);
-                    result.deinit(allocator);
-                }
-                for (0..image.dims[1]) |rr| {
-                    for (0..image.dims[2]) |cc| {
-                        result.set(&[_]usize{ 0, 0, 0, rr, cc }, image.get(&[_]usize{ 0, rr, cc }));
-                    }
-                }
-                const gold_path = try common.findGoldPath(
+                const gold_dir = try std.fmt.allocPrint(
                     aa,
-                    io,
-                    gold_dir,
-                    0,
-                    0,
-                    0,
-                    false,
+                    "{s}/{s}",
+                    .{ suite.gold_root, case_name },
                 );
-                const cmp_res = common.compareNDArrayToGold(
-                    allocator,
-                    io,
-                    &result,
-                    0,
-                    0,
-                    0,
-                    1,
-                    gold_path,
-                    tcfg.REL_TOL,
-                    tcfg.ABS_TOL,
-                );
-                const end_time = Timestamp.now(io, .awake);
-                const duration_ms = @as(
-                    f64,
-                    @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds),
-                ) / 1e6;
-
-                if (cmp_res) |_| {
-                    if (!strategy.expect_match) {
-                        std.debug.print(
-                            "Unexpected pass for {s} {s} in {d:.3} ms\n",
-                            .{ case_name, strategy_name, duration_ms },
-                        );
-                    } else if (tcfg.TEST_CASE_VERBOSE) {
-                        std.debug.print("OK ({d:.3} ms)\n", .{duration_ms});
+                for (strategies) |strategy| {
+                    const strategy_name = @tagName(strategy);
+                    const expect_match = strategy == .per_tile or
+                        (strategy == .affine_jac and distortion_case == .none);
+                    if (tcfg.TEST_CASE_VERBOSE) {
+                        std.debug.print("Testing {s} {s} ... ", .{ case_name, strategy_name });
                     }
-                } else |err| {
-                    if (first_err == null) first_err = err;
-                    const fail_dir_name = try std.fmt.allocPrint(
-                        aa,
-                        "{s}_{s}{s}",
-                        .{ case_name, strategy_name, common.impl_suffix },
-                    );
-                    try common.saveComparisonArtifactsFromResult(
+                    const start_time = Timestamp.now(io, .awake);
+                    const image = try suite.renderCase(
                         allocator,
                         io,
-                        common.default_fails_root,
-                        fail_dir_name,
+                        mesh_type,
+                        ssaa,
+                        distortion_case,
+                        strategy,
+                    );
+                    defer {
+                        allocator.free(image.slice);
+                        var image_mut = image;
+                        image_mut.deinit(allocator);
+                    }
+                    var result = try @import("zraster/zig/ndarray.zig").NDArray(f64).initFlat(
+                        allocator,
+                        &[_]usize{ 1, 1, 1, image.dims[1], image.dims[2] },
+                    );
+                    defer {
+                        allocator.free(result.slice);
+                        result.deinit(allocator);
+                    }
+                    for (0..image.dims[1]) |rr| {
+                        for (0..image.dims[2]) |cc| {
+                            result.set(&[_]usize{ 0, 0, 0, rr, cc }, image.get(&[_]usize{ 0, rr, cc }));
+                        }
+                    }
+                    const gold_path = try common.findGoldPath(
+                        aa,
+                        io,
+                        gold_dir,
+                        0,
+                        0,
+                        0,
+                        false,
+                    );
+                    const cmp_res = common.compareNDArrayToGold(
+                        allocator,
+                        io,
                         &result,
                         0,
                         0,
                         0,
-                        gold_path,
                         1,
+                        gold_path,
+                        tcfg.REL_TOL,
+                        tcfg.ABS_TOL,
                     );
-                    if (tcfg.TEST_CASE_VERBOSE) {
-                        std.debug.print("FAIL ({d:.3} ms)\n", .{duration_ms});
+                    const end_time = Timestamp.now(io, .awake);
+                    const duration_ms = @as(
+                        f64,
+                        @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds),
+                    ) / 1e6;
+
+                    if (cmp_res) |_| {
+                        if (!expect_match) {
+                            std.debug.print(
+                                "Unexpected pass for {s} {s} in {d:.3} ms\n",
+                                .{ case_name, strategy_name, duration_ms },
+                            );
+                        } else if (tcfg.TEST_CASE_VERBOSE) {
+                            std.debug.print("OK ({d:.3} ms)\n", .{duration_ms});
+                        }
+                    } else |err| {
+                        if (first_err == null) first_err = err;
+                        const fail_dir_name = try std.fmt.allocPrint(
+                            aa,
+                            "{s}_{s}{s}",
+                            .{ case_name, strategy_name, common.impl_suffix },
+                        );
+                        try common.saveComparisonArtifactsFromResult(
+                            allocator,
+                            io,
+                            common.default_fails_root,
+                            fail_dir_name,
+                            &result,
+                            0,
+                            0,
+                            0,
+                            gold_path,
+                            1,
+                        );
+                        if (tcfg.TEST_CASE_VERBOSE) {
+                            std.debug.print("FAIL ({d:.3} ms)\n", .{duration_ms});
+                        }
                     }
                 }
             }
