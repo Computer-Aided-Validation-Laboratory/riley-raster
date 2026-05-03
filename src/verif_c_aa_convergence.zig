@@ -53,7 +53,7 @@ const rabbit_dir_paths = [_][]const u8{
 };
 
 // const ssaa_levels = [_]u8{ 64, 32, 16, 4, 2 };
-const ssaa_levels = [_]u8{ 16, 4, 2 };
+const ssaa_levels = [_]u8{ 32, 16, 4, 2 };
 
 const shader_names = [_][]const u8{ "funcsin", "tex" };
 
@@ -130,8 +130,8 @@ pub fn main(init: std.process.Init) !void {
                         .builtin = .sinusoidal,
                         .params = .{
                             .wave_num_scalar = .{
-                                8.0 * std.math.pi,
-                                8.0 * std.math.pi,
+                                2.0*8.0 * std.math.pi,
+                                2.0*8.0 * std.math.pi,
                             },
                         },
                         .bits = 8,
@@ -182,6 +182,7 @@ pub fn main(init: std.process.Init) !void {
                 const config = rastcfg.RasterConfig{
                     .save_strategy = .memory,
                     .report = .off,
+                    .subpixel_center_map= .per_tile,
                 };
 
                 const images = try zraster.rasterAllFrames(

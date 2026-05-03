@@ -30,7 +30,7 @@ pub const BEHIND_FACT: f64 = 2.0;
 
 const pixel_num = [_]u32{ 640, 400 };
 const fov_scale: f64 = 1.02;
-const out_root = "verif-out";
+const out_root = "out-verif";
 
 const mesh_types = [_]gk.MeshType{
     .tri3,
@@ -167,7 +167,8 @@ fn buildCaseSpec(
     case_name: []const u8,
     mesh_type: gk.MeshType,
 ) !DataCase {
-    if (std.mem.eql(u8, case_name, "rabbit")) {
+    const is_rabbit = std.mem.eql(u8, case_name, "rabbit");
+    if (is_rabbit) {
         return .{
             .case_name = case_name,
             .mesh_type = mesh_type,
@@ -181,13 +182,15 @@ fn buildCaseSpec(
         };
     }
 
+    // Sphere case - need to handle quad4 variants differently than rabbit/simple
+    const data_name = if (mesh_type == .quad4ibi) "quad4ibi" else orch.meshDataName(mesh_type);
     return .{
         .case_name = case_name,
         .mesh_type = mesh_type,
         .data_dir = try std.fmt.allocPrint(
             std.heap.page_allocator,
             "data-bench/{s}_sphere200",
-            .{orch.meshDataName(mesh_type)},
+            .{data_name},
         ),
         .connect_name = "connect.csv",
         .rot = Rotation.init(0.0, 0.0, 0.0),

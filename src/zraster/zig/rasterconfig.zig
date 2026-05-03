@@ -24,7 +24,7 @@ pub const RasterConfig = struct {
     newton_seed_reuse: NewtonSeedReuse = .off,
     report: ReportMode = .bench,
     full_stats_opts: FullStatsOpts = .{},
-    subpixel_center_map: SubPixelCenterMap = .full_in_mem,
+    subpixel_center_map: SubPixelCenterMap = .per_tile,
 };
 
 pub const SubPixelCenterMap = enum {
