@@ -31,14 +31,14 @@ pub fn main(init: std.process.Init) !void {
         .save_depth_map = true,
     };
     const dir_paths = [_][]const u8{
-        "data-simple/tri3_twoelems/",
-        "data-simple/tri6_twoelems/",
-        "data-simple/quad4_twoelems/",
-        "data-simple/quad8_twoelems/",
-        "data-simple/quad9_twoelems/",
+        "data/simple/tri3_twoelems/",
+        "data/simple/tri6_twoelems/",
+        "data/simple/quad4_twoelems/",
+        "data/simple/quad8_twoelems/",
+        "data/simple/quad9_twoelems/",
     };
 
-    const out_dir_root = "out-bench-multimesh";
+    const out_dir_root = "out/multimesh";
     std.debug.print("Rendering Multimesh Data to {s}/...\n", .{out_dir_root});
 
     try gengold.runMultimeshGenerationExt(

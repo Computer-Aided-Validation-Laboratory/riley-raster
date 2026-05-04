@@ -41,7 +41,7 @@ pub fn main(init: std.process.Init) !void {
     );
     defer texture_rgb.deinit(allocator);
 
-    const out_dir = "gold-min";
+    const out_dir = "gold/min";
     const pixel_num_sphere = [_]u32{ 160, 100 };
     const pixel_num_multi = [_]u32{ 640, 400 };
 
@@ -72,7 +72,7 @@ pub fn main(init: std.process.Init) !void {
             for (sample_configs) |sc| {
                 const data_dir = try std.fmt.allocPrint(
                     allocator,
-                    "data-min/{s}_sphere200",
+                    "data/min/{s}_sphere200",
                     .{@tagName(mt)},
                 );
                 defer allocator.free(data_dir);
@@ -128,7 +128,7 @@ pub fn main(init: std.process.Init) !void {
             for (sample_configs) |sc| {
                 const data_dir = try std.fmt.allocPrint(
                     allocator,
-                    "data-min/{s}_sphere200",
+                    "data/min/{s}_sphere200",
                     .{@tagName(mt)},
                 );
                 defer allocator.free(data_dir);
@@ -180,11 +180,11 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("Generating MIN Gold Data (multimesh)...\n", .{});
     const multi_dir_paths = [_][]const u8{
-        "data-min/tri3_twoelems/",
-        "data-min/tri6_twoelems/",
-        "data-min/quad4_twoelems/",
-        "data-min/quad8_twoelems/",
-        "data-min/quad9_twoelems/",
+        "data/min/tri3_twoelems/",
+        "data/min/tri6_twoelems/",
+        "data/min/quad4_twoelems/",
+        "data/min/quad8_twoelems/",
+        "data/min/quad9_twoelems/",
     };
 
     try gengold.runMultimeshGenerationExt(

@@ -442,11 +442,11 @@ test "loadMultiSimData twoelems" {
     const io = std.testing.io;
 
     const dir_paths = [_][]const u8{
-        "data-simple/tri3_twoelems/",
-        "data-simple/tri6_twoelems/",
-        "data-simple/quad4_twoelems/",
-        "data-simple/quad8_twoelems/",
-        "data-simple/quad9_twoelems/",
+        "data/simple/tri3_twoelems/",
+        "data/simple/tri6_twoelems/",
+        "data/simple/quad4_twoelems/",
+        "data/simple/quad8_twoelems/",
+        "data/simple/quad9_twoelems/",
     };
 
     const sim_datas = try loadMultiSimData(allocator, io, &dir_paths, .{});

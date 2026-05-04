@@ -38,8 +38,8 @@ pub fn main(init: std.process.Init) !void {
     const pixel_num = [_]u32{ 320, 200 };
     const pixel_num_distort_midside = [_]u32{ 800, 500 };
 
-    const out_dir_root = "out-edge";
-    const data_dir = "data-edge";
+    const out_dir_root = "out/edge";
+    const data_dir = "data/edge";
 
     var config = tcfg.rasterConfig(.preview);
     config.save_strategy = .disk;

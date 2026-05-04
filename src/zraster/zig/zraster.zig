@@ -29,11 +29,11 @@ const shadekerns = @import("shaderkernels.zig");
 const rasterengine = @import("rasterengine.zig");
 
 const rastcfg = @import("rasterconfig.zig");
-const RasterConfig = rastcfg.RasterConfig;
-const SaveStrategy = rastcfg.SaveStrategy;
-const RenderMode = rastcfg.RenderMode;
-const ReportMode = rastcfg.ReportMode;
-const FullStatsOpts = rastcfg.FullStatsOpts;
+pub const RasterConfig = rastcfg.RasterConfig;
+pub const SaveStrategy = rastcfg.SaveStrategy;
+pub const RenderMode = rastcfg.RenderMode;
+pub const ReportMode = rastcfg.ReportMode;
+pub const FullStatsOpts = rastcfg.FullStatsOpts;
 
 const report = @import("report.zig");
 const FrameReportStorage = report.FrameReportStorage;

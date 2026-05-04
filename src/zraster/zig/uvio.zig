@@ -90,7 +90,7 @@ test "Load UVMap from tri3_fullscreen/uvs.csv" {
     const allocator = testing.allocator;
     const io = std.testing.io;
 
-    const path = "data-simple/tri3_fullscreen/uvs.csv";
+    const path = "data/simple/tri3_fullscreen/uvs.csv";
     var uv_map = try loadUVMap(allocator, io, path);
     defer uv_map.deinit(allocator);
 
@@ -113,7 +113,7 @@ test "Load UVMap from tri6_fullscreen/uvs.csv" {
     const allocator = testing.allocator;
     const io = std.testing.io;
 
-    const path = "data-simple/tri6_fullscreen/uvs.csv";
+    const path = "data/simple/tri6_fullscreen/uvs.csv";
     var uv_map = try loadUVMap(allocator, io, path);
     defer uv_map.deinit(allocator);
 
@@ -124,7 +124,7 @@ test "Load UVMap from tri3_single/uvs.csv" {
     const allocator = testing.allocator;
     const io = std.testing.io;
 
-    const path = "data-simple/tri3_single/uvs.csv";
+    const path = "data/simple/tri3_single/uvs.csv";
     var uv_map = try loadUVMap(allocator, io, path);
     defer uv_map.deinit(allocator);
 
@@ -135,7 +135,7 @@ test "Load UVMap from tri6_single/uvs.csv" {
     const allocator = testing.allocator;
     const io = std.testing.io;
 
-    const path = "data-simple/tri6_single/uvs.csv";
+    const path = "data/simple/tri6_single/uvs.csv";
     var uv_map = try loadUVMap(allocator, io, path);
     defer uv_map.deinit(allocator);
 

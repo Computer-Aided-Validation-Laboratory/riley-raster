@@ -976,7 +976,7 @@ pub fn runMultimeshTest(
     try runMultimeshTestExt(
         outer_alloc,
         io,
-        "gold-multimesh",
+        "gold/multimesh",
         &orch.default_multimesh_dir_paths,
         .{ 1200, 800 },
         rel_tol,
@@ -1109,7 +1109,7 @@ pub fn runMultimeshMixedTest(
     try runMultimeshMixedTestExt(
         outer_alloc,
         io,
-        "gold-multimesh/allelem_allshade",
+        "gold/multimesh/allelem_allshade",
         &orch.default_multimesh_dir_paths,
         .{ 1600, 800 },
         rel_tol,
@@ -1225,7 +1225,7 @@ pub fn runMultimeshMixedRGBTest(
     try runMultimeshMixedRGBTestExt(
         outer_alloc,
         io,
-        "gold-multimesh/allelem_allshade_rgb",
+        "gold/multimesh/allelem_allshade_rgb",
         &orch.default_multimesh_dir_paths,
         .{ 1200, 800 },
         rel_tol,

@@ -43,7 +43,7 @@ pub fn main(init: std.process.Init) !void {
     );
     defer texture_rgb.deinit(outer_alloc);
 
-    const out_dir_base = "out-bench-sphere2000";
+    const out_dir_base = "out/sphere2000";
     const pixel_num = [_]u32{ 800, 500 };
     const runs = 10;
 
@@ -135,7 +135,7 @@ pub fn main(init: std.process.Init) !void {
                 var data_dir_buf: [256]u8 = undefined;
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
-                    "data-bench/{s}_sphere2000",
+                    "data/bench/{s}_sphere2000",
                     .{@tagName(mt)},
                 );
                 for (0..runs) |rr| {

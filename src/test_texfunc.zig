@@ -21,8 +21,8 @@ const iio = @import("zraster/zig/imageio.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 const buildconfig = @import("zraster/zig/buildconfig.zig");
 
-const gold_root = "gold-texfunc";
-const data_root = "data-min";
+const gold_root = "gold/texfunc";
+const data_root = "data/min";
 const test_type = "sphere200";
 const CoordMode = enum { uv, param };
 

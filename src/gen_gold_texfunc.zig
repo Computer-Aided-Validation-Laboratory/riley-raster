@@ -19,7 +19,7 @@ const rastcfg = @import("zraster/zig/rasterconfig.zig");
 const shaderops = @import("zraster/zig/shaderops.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 
-const data_root = "data-min";
+const data_root = "data/min";
 const test_type = "sphere200";
 const CoordMode = enum { uv, param };
 
@@ -104,7 +104,7 @@ fn renderCase(
 }
 
 pub fn main(init: std.process.Init) !void {
-    try mainWithOutputRoot(init, "gold-texfunc");
+    try mainWithOutputRoot(init, "gold/texfunc");
 }
 
 pub fn mainWithOutputRoot(

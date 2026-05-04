@@ -66,8 +66,8 @@ pub fn main(init: std.process.Init) !void {
         texture,
         pixel_num,
         &sample_configs,
-        "gold-simple",
-        "data-simple",
+        "gold/simple",
+        "data/simple",
         config,
     );
 

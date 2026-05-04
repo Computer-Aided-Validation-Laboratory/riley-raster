@@ -32,11 +32,11 @@ const rabbit_mesh_types = [_]gk.MeshType{
 };
 
 const rabbit_dir_paths = [_][]const u8{
-    "data-rabbits/rabbit_tri3/",
-    "data-rabbits/rabbit_tri6/",
-    "data-rabbits/rabbit_quad4/",
-    "data-rabbits/rabbit_quad8/",
-    "data-rabbits/rabbit_quad9/",
+    "data/rabbits/rabbit_tri3/",
+    "data/rabbits/rabbit_tri6/",
+    "data/rabbits/rabbit_quad4/",
+    "data/rabbits/rabbit_quad8/",
+    "data/rabbits/rabbit_quad9/",
 };
 
 fn buildUvGreyField(
@@ -63,7 +63,7 @@ pub fn main(init: std.process.Init) !void {
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const out_dir_root = "out-rabbits";
+    const out_dir_root = "out/rabbits";
     const pixel_num = [_]u32{ 3000, 1500 };
     const fov_scale: f64 = 1.01;
 

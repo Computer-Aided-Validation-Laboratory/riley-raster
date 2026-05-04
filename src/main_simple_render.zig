@@ -44,8 +44,8 @@ pub fn main(init: std.process.Init) !void {
 
     const pixel_num = [_]u32{ 800, 500 };
 
-    const out_dir_root = "out-bench-simple";
-    const data_dir = "data-simple";
+    const out_dir_root = "out/simple";
+    const data_dir = "data/simple";
 
     var config = tcfg.rasterConfig(.preview);
     config.save_strategy = .disk;

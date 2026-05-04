@@ -5,7 +5,7 @@
 #-------------------------------------------------------------------------
 #_* MOOSEHERDER VARIABLES - START
 
-endTime = 10
+endTime = 8
 timeStep = 1
 
 # Mechanical Loads/BCs
@@ -24,7 +24,7 @@ ss316LPRatio = 0.3      # -
 
 [Mesh]
     type = FileMesh
-    file = 'case22.msh'
+    file = 'case23.msh'
 []
 
 [Modules/TensorMechanics/Master]

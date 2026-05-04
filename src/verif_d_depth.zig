@@ -30,7 +30,7 @@ pub const BEHIND_FACT: f64 = 2.0;
 
 const pixel_num = [_]u32{ 640, 400 };
 const fov_scale: f64 = 1.02;
-const out_root = "out-verif";
+const out_root = "verif";
 
 const mesh_types = [_]gk.MeshType{
     .tri3,
@@ -174,7 +174,7 @@ fn buildCaseSpec(
             .mesh_type = mesh_type,
             .data_dir = try std.fmt.allocPrint(
                 std.heap.page_allocator,
-                "data-rabbits/rabbit_{s}",
+                "data/rabbits/rabbit_{s}",
                 .{orch.meshDataName(mesh_type)},
             ),
             .connect_name = "connectivity.csv",
@@ -189,7 +189,7 @@ fn buildCaseSpec(
         .mesh_type = mesh_type,
         .data_dir = try std.fmt.allocPrint(
             std.heap.page_allocator,
-            "data-bench/{s}_sphere200",
+            "data/bench/{s}_sphere200",
             .{data_name},
         ),
         .connect_name = "connect.csv",

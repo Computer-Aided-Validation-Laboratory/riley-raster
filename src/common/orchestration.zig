@@ -28,11 +28,11 @@ pub const default_multimesh_mesh_types = [_]gk.MeshType{
 };
 
 pub const default_multimesh_dir_paths = [_][]const u8{
-    "data-simple/tri3_twoelems/",
-    "data-simple/tri6_twoelems/",
-    "data-simple/quad4_twoelems/",
-    "data-simple/quad8_twoelems/",
-    "data-simple/quad9_twoelems/",
+    "data/simple/tri3_twoelems/",
+    "data/simple/tri6_twoelems/",
+    "data/simple/quad4_twoelems/",
+    "data/simple/quad8_twoelems/",
+    "data/simple/quad9_twoelems/",
 };
 
 pub const default_pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };

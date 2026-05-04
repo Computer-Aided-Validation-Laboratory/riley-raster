@@ -64,11 +64,11 @@ pub fn main(init: std.process.Init) !void {
     }{
         .{
             .ds = "sphere2000",
-            .out = if (simd_on) "gold-simd-sphere2000" else "gold-sphere2000",
+            .out = if (simd_on) "gold/sphere2000-simd" else "gold/sphere2000",
         },
         .{
             .ds = "sphere2000",
-            .out = if (simd_on) "gold-simd-sphere2000zoom" else "gold-sphere2000zoom",
+            .out = if (simd_on) "gold/sphere2000zoom-simd" else "gold/sphere2000zoom",
             .fov_scale = 0.5,
         },
     };
@@ -83,7 +83,7 @@ pub fn main(init: std.process.Init) !void {
                 inline for (sample_configs) |sc| {
                     const data_dir = try std.fmt.allocPrint(
                         aa,
-                        "data-bench/{s}_{s}",
+                        "data/bench/{s}_{s}",
                         .{ @tagName(mt), case.ds },
                     );
 

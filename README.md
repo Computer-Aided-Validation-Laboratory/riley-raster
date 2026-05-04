@@ -12,10 +12,10 @@ The min test suite contains two cases a render of the "multimesh" case which is 
 
 Once the min test suite passes the additional gold regression data can be generated for two suites the first is the "all" suite and the second is the "bench" suite. The "bench" suite is based on the benchmarks described in the "Benchmarks" section below. Before we can render the gold images we first need to generate the larger meshes for the "bench" cases using a python script that has numpy as a dependency, run this from the project root:
 ```shell
-python ./data-bench/gen_bench_data.py
+python ./data/bench/gen_bench_data.py
 ```
 
-You should see a range of directories generated in the data-bench directory with different element types and case tags. Once that is done we can render the required gold output with:
+You should see a range of directories generated in the data/bench directory with different element types and case tags. Once that is done we can render the required gold output with:
 ```shell
 zig run -lc -O ReleaseSafe ./src/gen_gold_all.zig
 ```
@@ -50,7 +50,7 @@ zig run -lc -O ReleaseFast ./src/bench_fullraster.zig
 zig run -lc -O ReleaseFast ./src/bench_geom.zig
 zig run -lc -O ReleaseFast ./src/bench_sphere2000.zig
 ``` 
-You will find the rendered output for these benchmarks in ./out-bench-X where X is fullraster,geom,sphere2000. There will also be a 'benchmark.md' file summarising the measured performance metrics in the ./out-bench-X directory.
+You will find the rendered output for these benchmarks in ./out/X where X is fullraster,geom,sphere2000. There will also be a 'benchmark.md' file summarising the measured performance metrics in the ./out/X directory.
 
 ## Navigating the Codebase
 The main entry point for the `zraster` rendering pipeline is the `rasterAllFrames` function in ./src/zraster/zig/zraster.zig. 

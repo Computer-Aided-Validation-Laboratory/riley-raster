@@ -45,7 +45,7 @@ pub fn main(init: std.process.Init) !void {
     );
     defer texture_rgb.deinit(outer_alloc);
 
-    const out_dir_base = "out-bench-geom";
+    const out_dir_base = "out/geom";
     const pixel_num = [_]u32{ 800, 500 };
     const runs = 10;
 
@@ -81,7 +81,7 @@ pub fn main(init: std.process.Init) !void {
                 var data_dir_buf: [256]u8 = undefined;
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
-                    "data-bench/{s}_geom",
+                    "data/bench/{s}_geom",
                     .{@tagName(mt)},
                 );
 

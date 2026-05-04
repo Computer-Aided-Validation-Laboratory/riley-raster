@@ -51,7 +51,7 @@ test "Sphere Gold Tests" {
     const cases = [_]struct { ds: []const u8, gold: []const u8, out: []const u8 }{
         .{
             .ds = "sphere2000",
-            .gold = if (simd_on) "gold-simd-sphere2000" else "gold-sphere2000",
+            .gold = if (simd_on) "gold/sphere2000-simd" else "gold/sphere2000",
             .out = "out-sphere2000",
         },
     };
@@ -82,7 +82,7 @@ test "Sphere Gold Tests" {
                 inline for (sample_configs) |sc| {
                     const data_dir = try std.fmt.allocPrint(
                         allocator,
-                        "data-bench/{s}_{s}",
+                        "data/bench/{s}_{s}",
                         .{ @tagName(mt), c.ds },
                     );
                     defer allocator.free(data_dir);

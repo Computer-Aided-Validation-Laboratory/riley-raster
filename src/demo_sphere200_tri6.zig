@@ -40,8 +40,8 @@ pub fn main(init: std.process.Init) !void {
         .report = .bench,
     };
 
-    const data_dir = "data-bench/tri6_sphere200/";
-    const out_dir_root = "demo-sphere200";
+    const data_dir = "data/bench/tri6_sphere200/";
+    const out_dir_root = "out/demo-sphere200";
     const pixel_num = [_]u32{ 800, 500 };
 
     // 2. Load Simulation Data

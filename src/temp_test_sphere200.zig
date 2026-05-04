@@ -24,7 +24,7 @@ const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
 
 const simd_on = buildconfig.config.simd == .on;
 const impl_suffix = if (simd_on) "_simd" else "_scalar";
-const gold_dir = if (simd_on) "gold-simd-sphere2000" else "gold-sphere2000";
+const gold_dir = if (simd_on) "gold/sphere2000-simd" else "gold/sphere2000";
 
 const ShaderType = enum {
     nodal_grey,
@@ -137,7 +137,7 @@ fn runSphereCase(
     const pixel_num = [_]u32{ 800, 500 };
     const data_dir = try std.fmt.allocPrint(
         allocator,
-        "data-bench/{s}_sphere2000",
+        "data/bench/{s}_sphere2000",
         .{@tagName(mesh_type)},
     );
     defer allocator.free(data_dir);

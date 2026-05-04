@@ -40,7 +40,7 @@ pub fn main(init: std.process.Init) !void {
         .bmp,
     );
 
-    const out_dir = "out-min";
+    const out_dir = "out/min";
     const pixel_num_sphere = [_]u32{ 160, 100 };
     const pixel_num_multi = [_]u32{ 640, 400 };
 
@@ -71,7 +71,7 @@ pub fn main(init: std.process.Init) !void {
             for (sample_configs) |sc| {
                 const data_dir = try std.fmt.allocPrint(
                     aa,
-                    "data-min/{s}_sphere200",
+                    "data/min/{s}_sphere200",
                     .{@tagName(mt)},
                 );
 
@@ -114,7 +114,7 @@ pub fn main(init: std.process.Init) !void {
             for (sample_configs) |sc| {
                 const data_dir = try std.fmt.allocPrint(
                     aa,
-                    "data-min/{s}_sphere200",
+                    "data/min/{s}_sphere200",
                     .{@tagName(mt)},
                 );
 
@@ -153,11 +153,11 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("Rendering MIN Suite (multimesh) to {s}...\n", .{out_dir});
     const multi_dir_paths = [_][]const u8{
-        "data-min/tri3_twoelems/",
-        "data-min/tri6_twoelems/",
-        "data-min/quad4_twoelems/",
-        "data-min/quad8_twoelems/",
-        "data-min/quad9_twoelems/",
+        "data/min/tri3_twoelems/",
+        "data/min/tri6_twoelems/",
+        "data/min/quad4_twoelems/",
+        "data/min/quad8_twoelems/",
+        "data/min/quad9_twoelems/",
     };
 
     try gengold.runMultimeshGenerationExt(

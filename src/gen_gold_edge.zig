@@ -57,7 +57,7 @@ pub fn main(init: std.process.Init) !void {
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
 
-    std.debug.print("Generating Edge Cases to gold-edge/...\n", .{});
+    std.debug.print("Generating Edge Cases to gold/edge/...\n", .{});
 
     try gengold.runGenerationExt(
         aa,
@@ -68,8 +68,8 @@ pub fn main(init: std.process.Init) !void {
         texture,
         pixel_num,
         &sample_configs,
-        "gold-edge",
-        "data-edge",
+        "gold/edge",
+        "data/edge",
         config,
     );
     try gengold.runGenerationExt(
@@ -81,8 +81,8 @@ pub fn main(init: std.process.Init) !void {
         texture,
         pixel_num,
         &sample_configs,
-        "gold-edge",
-        "data-edge",
+        "gold/edge",
+        "data/edge",
         config,
     );
     try gengold.runGenerationExt(
@@ -94,15 +94,15 @@ pub fn main(init: std.process.Init) !void {
         texture,
         pixel_num,
         &sample_configs,
-        "gold-edge",
-        "data-edge",
+        "gold/edge",
+        "data/edge",
         config,
     );
     try gengold.generateDistortEdgeGold(
         aa,
         io,
-        "gold-edge",
-        "data-edge",
+        "gold/edge",
+        "data/edge",
         pixel_num_distort_midside,
         config,
     );

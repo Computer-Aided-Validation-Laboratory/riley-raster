@@ -36,7 +36,7 @@ pub fn main(init: std.process.Init) !void {
         .bmp,
     );
 
-    const out_dir_base = "gold-bench-fullscreen";
+    const out_dir_base = "gold/bench-fullscreen";
     const pixel_num = [_]u32{ 800, 500 };
 
     const mesh_types = comptime std.enums.values(gk.MeshType);
@@ -61,7 +61,7 @@ pub fn main(init: std.process.Init) !void {
     inline for (mesh_types) |mt| {
         inline for (shader_types) |st| {
             inline for (sample_configs) |sc| {
-                const data_dir = comptime "data-bench/" ++ @tagName(mt) ++ "_fullraster";
+                const data_dir = comptime "data/bench/" ++ @tagName(mt) ++ "_fullraster";
                 if (common.shouldRun(.{ .run = .all }, mt, st, sc, data_dir)) {
                     const case_name = if (st == .tex8_grey or st == .tex8_rgb)
                         try std.fmt.allocPrint(

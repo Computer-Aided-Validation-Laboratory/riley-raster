@@ -43,8 +43,8 @@ pub fn main(init: std.process.Init) !void {
 
     const pixel_num = [_]u32{ 160, 100 };
 
-    const out_dir_root = "out-bench-small";
-    const data_dir = "data-small";
+    const out_dir_root = "out/small";
+    const data_dir = "data/small";
 
     var config = tcfg.rasterConfig(.preview);
     config.save_strategy = .disk;

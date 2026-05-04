@@ -19,7 +19,7 @@ const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
 const texops = @import("../zraster/zig/textureops.zig");
 const zraster = @import("../zraster/zig/zraster.zig");
 
-pub const gold_root = "gold-ssaa";
+pub const gold_root = "gold/ssaa";
 pub const pixel_num = [_]u32{ 640, 400 };
 pub const fov_scale: f64 = 0.75;
 pub const ssaa_values = [_]u8{ 2, 4 };
@@ -107,7 +107,7 @@ pub fn buildSphere200MultiCullMeshInputs(
 ) ![]mo.MeshInput {
     const data_dir = try std.fmt.allocPrint(
         allocator,
-        "data-min/{s}_sphere200",
+        "data/min/{s}_sphere200",
         .{@tagName(mesh_type)},
     );
     const base_mesh_input = try benchcommon.loadBenchmarkMeshInput(

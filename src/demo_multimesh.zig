@@ -45,14 +45,14 @@ pub fn main(init: std.process.Init) !void {
     // 2. Define Data Paths
     // These paths contain CSV files for coordinates, connectivity, and fields
     const dir_paths = [_][]const u8{
-        "data-simple/tri3_twoelems/",
-        "data-simple/tri6_twoelems/",
-        "data-simple/quad4_twoelems/",
-        "data-simple/quad8_twoelems/",
-        "data-simple/quad9_twoelems/",
+        "data/simple/tri3_twoelems/",
+        "data/simple/tri6_twoelems/",
+        "data/simple/quad4_twoelems/",
+        "data/simple/quad8_twoelems/",
+        "data/simple/quad9_twoelems/",
     };
 
-    const out_dir_root = "demo-multimesh";
+    const out_dir_root = "out/demo-multimesh";
     const pixel_num = [_]u32{ 1600, 800 };
 
     const mesh_types = [_]MeshType{

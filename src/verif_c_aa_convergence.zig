@@ -45,11 +45,11 @@ const rabbit_names = [_][]const u8{
 };
 
 const rabbit_dir_paths = [_][]const u8{
-    "data-rabbits/rabbit_tri3/",
-    "data-rabbits/rabbit_tri6/",
-    "data-rabbits/rabbit_quad4/",
-    "data-rabbits/rabbit_quad8/",
-    "data-rabbits/rabbit_quad9/",
+    "data/rabbits/rabbit_tri3/",
+    "data/rabbits/rabbit_tri6/",
+    "data/rabbits/rabbit_quad4/",
+    "data/rabbits/rabbit_quad8/",
+    "data/rabbits/rabbit_quad9/",
 };
 
 // const ssaa_levels = [_]u8{ 64, 32, 16, 4, 2 };
@@ -63,7 +63,7 @@ pub fn main(init: std.process.Init) !void {
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const out_verif_root = "out-verif";
+    const out_verif_root = "verif";
     const pixel_num = [_]u32{ 640, 400 };
     const fov_scale: f64 = 1.01;
 

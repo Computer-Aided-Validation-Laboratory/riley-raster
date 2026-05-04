@@ -56,30 +56,30 @@ test "Unified Benchmark Tests" {
         .{
             .name = "fullraster",
             .data_name = "fullraster",
-            .gold_dir = "gold-bench-fullscreen",
-            .out_dir = "out-bench-fullraster",
+            .gold_dir = "gold/bench-fullscreen",
+            .out_dir = "out/fullraster",
         },
         .{
             .name = "geom",
             .data_name = "geom",
-            .gold_dir = "gold-bench-fullscreen",
-            .out_dir = "out-bench-geom",
+            .gold_dir = "gold/bench-fullscreen",
+            .out_dir = "out/geom",
         },
         .{
             .name = "sphere2000",
             .data_name = "sphere2000",
-            .gold_dir = if (simd_on) "gold-simd-sphere2000" else "gold-sphere2000",
-            .out_dir = "out-bench-sphere2000",
+            .gold_dir = if (simd_on) "gold/sphere2000-simd" else "gold/sphere2000",
+            .out_dir = "out/sphere2000",
             .is_sphere = true,
         },
         .{
             .name = "sphere2000zoom",
             .data_name = "sphere2000",
             .gold_dir = if (simd_on)
-                "gold-simd-sphere2000zoom"
+                "gold/sphere2000zoom-simd"
             else
-                "gold-sphere2000zoom",
-            .out_dir = "out-bench-sphere2000zoom",
+                "gold/sphere2000zoom",
+            .out_dir = "out/sphere2000zoom",
             .is_sphere = true,
             .fov_scale = 0.5,
         },
@@ -127,7 +127,7 @@ test "Unified Benchmark Tests" {
 
                     const data_dir = try std.fmt.allocPrint(
                         aa,
-                        "data-bench/{s}_{s}",
+                        "data/bench/{s}_{s}",
                         .{ @tagName(mt), cc.data_name },
                     );
 

@@ -73,8 +73,8 @@ pub fn main(init: std.process.Init) !void {
         texture,
         pixel_num,
         &sample_configs,
-        "gold-small",
-        "data-small",
+        "gold/small",
+        "data/small",
         config,
     );
 
@@ -88,8 +88,8 @@ pub fn main(init: std.process.Init) !void {
         texture,
         pixel_num,
         &sample_configs,
-        "gold-small",
-        "data-small",
+        "gold/small",
+        "data/small",
         config,
     );
 

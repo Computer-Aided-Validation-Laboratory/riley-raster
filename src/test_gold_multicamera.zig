@@ -181,7 +181,7 @@ test "Multicamera duplicate sphere200 cameras match each other" {
     const pixel_num = [_]u32{ 800, 500 };
     const render_case = RenderCase{
         .case_name = "tri3_nodal_grey",
-        .data_dir = "data-bench/tri3_sphere200",
+        .data_dir = "data/bench/tri3_sphere200",
         .mesh_type = .tri3,
         .channels = 1,
         .shader = .nodal_grey,
@@ -287,9 +287,9 @@ test "Sphere200 multicamera gold tests" {
 
     const io = std.testing.io;
     const gold_root = if (simd_on)
-        "gold-simd-sphere200multicam"
+        "gold/sphere200multicam-simd"
     else
-        "gold-sphere200multicam";
+        "gold/sphere200multicam";
     const pixel_num = [_]u32{ 800, 500 };
 
     const texture_rgb = try iio.loadImage(
@@ -305,14 +305,14 @@ test "Sphere200 multicamera gold tests" {
     const render_cases = [_]RenderCase{
         .{
             .case_name = "tri3_nodal_grey",
-            .data_dir = "data-bench/tri3_sphere200",
+            .data_dir = "data/bench/tri3_sphere200",
             .mesh_type = .tri3,
             .channels = 1,
             .shader = .nodal_grey,
         },
         .{
             .case_name = "tri6_tex8_rgb_cubic_catmull_rom_lut_lerp",
-            .data_dir = "data-bench/tri6_sphere200",
+            .data_dir = "data/bench/tri6_sphere200",
             .mesh_type = .tri6,
             .channels = 3,
             .shader = .{
@@ -521,7 +521,7 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
     const io = std.testing.io;
     const pixel_num_small = [_]u32{ 320, 200 };
     const pixel_num_large = [_]u32{ 480, 300 };
-    const data_dir = "data-bench/tri3_sphere200";
+    const data_dir = "data/bench/tri3_sphere200";
 
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();

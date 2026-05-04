@@ -166,7 +166,7 @@ pub fn runMultimeshGeneration(
         outer_alloc,
         io,
         config,
-        "gold-multimesh",
+        "gold/multimesh",
         &orch.default_multimesh_dir_paths,
         .{ 1200, 800 },
     );
@@ -238,7 +238,7 @@ pub fn runMultimeshMixedGeneration(
         allocator,
         io,
         config,
-        "gold-multimesh/allelem_allshade",
+        "gold/multimesh/allelem_allshade",
         &orch.default_multimesh_dir_paths,
         .{ 1600, 800 },
     );
@@ -309,7 +309,7 @@ pub fn runMultimeshMixedRGBGeneration(
         allocator,
         io,
         config,
-        "gold-multimesh/allelem_allshade_rgb",
+        "gold/multimesh/allelem_allshade_rgb",
         &orch.default_multimesh_dir_paths,
         .{ 1200, 800 },
     );

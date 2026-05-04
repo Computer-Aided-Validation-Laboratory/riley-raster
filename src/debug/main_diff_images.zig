@@ -51,7 +51,7 @@ pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
     const io = init.io;
 
-    const out_dir_root = "out-diff";
+    const out_dir_root = "out/diff";
     const cwd = std.Io.Dir.cwd();
     cwd.createDir(io, out_dir_root, .default_dir) catch |err| {
         if (err != error.PathAlreadyExists) return err;
@@ -64,11 +64,11 @@ pub fn main(init: std.process.Init) !void {
     const aa = arena.allocator();
 
     const dir_paths = [_][]const u8{
-        "data-simple/tri3_twoelems/",
-        "data-simple/tri6_twoelems/",
-        "data-simple/quad4_twoelems/",
-        "data-simple/quad8_twoelems/",
-        "data-simple/quad9_twoelems/",
+        "data/simple/tri3_twoelems/",
+        "data/simple/tri6_twoelems/",
+        "data/simple/quad4_twoelems/",
+        "data/simple/quad8_twoelems/",
+        "data/simple/quad9_twoelems/",
     };
 
     const mesh_types = [_]mo.MeshType{
@@ -238,7 +238,7 @@ pub fn main(init: std.process.Init) !void {
         null,
     )) orelse return error.NoResult;
 
-    const gold_dir = "gold-multimesh/allelem_allshade_rgb";
+    const gold_dir = "gold/multimesh/allelem_allshade_rgb";
 
     for (0..result.dims[0]) |f| {
         const fname = try std.fmt.allocPrint(
