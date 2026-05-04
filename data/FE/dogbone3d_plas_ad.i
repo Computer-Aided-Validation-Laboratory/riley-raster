@@ -182,4 +182,5 @@ ss316LHardMod = 5000e6     # Pa
 
 [Outputs]
     exodus = true
+    csv = true
 []

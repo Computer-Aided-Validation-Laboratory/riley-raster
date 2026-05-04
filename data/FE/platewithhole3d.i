@@ -5,15 +5,18 @@
 #-------------------------------------------------------------------------
 #_* MOOSEHERDER VARIABLES - START
 
-endTime = 8
+endTime = 99
 timeStep = 1
 
 # Mechanical Loads/BCs
-topDispRate = ${fparse 1e-3 / endTime}  # m/s
+maxDisp = 0.05e-3
+topDispRate = ${fparse maxDisp / endTime}  # m/s
 
 # Mechanical Props: SS316L @ 20degC
 ss316LEMod = 200e9       # Pa
 ss316LPRatio = 0.3      # -
+
+meshRatio = 8
 
 #** MOOSEHERDER VARIABLES - END
 #-------------------------------------------------------------------------
@@ -24,17 +27,17 @@ ss316LPRatio = 0.3      # -
 
 [Mesh]
     type = FileMesh
-    file = 'case23.msh'
+    file = 'platewithhole3d_${meshRatio}.msh'
 []
 
-[Modules/TensorMechanics/Master]
+[Physics/SolidMechanics/QuasiStatic]
     [all]
         strain = SMALL
         incremental = true
         add_variables = true
         material_output_family = MONOMIAL   # MONOMIAL, LAGRANGE
-        material_output_order = FIRST       # CONSTANT, FIRST, SECOND,
-        generate_output = 'vonmises_stress strain_xx strain_xy strain_xz strain_yx strain_yy strain_yz strain_zx strain_zy strain_zz stress_xx stress_xy stress_xz stress_yx stress_yy stress_yz stress_zx stress_zy stress_zz max_principal_strain mid_principal_strain min_principal_strain'
+        material_output_order = CONSTANT       # CONSTANT, FIRST, SECOND,
+        generate_output = 'vonmises_stress strain_xx strain_xy strain_xz strain_yy strain_yz strain_zx strain_zz'
     []
 []
 
@@ -99,11 +102,27 @@ ss316LPRatio = 0.3      # -
 
 [Executioner]
     type = Transient
-    solve_type = 'PJFNK'
-    petsc_options_iname = '-pc_type -pc_hypre_type'
-    petsc_options_value = 'hypre boomeramg'
+
+    # Best solver options for low element count large deformation plasticity
+    solve_type = 'NEWTON'
+    petsc_options = '-snes_converged_reason'
+    petsc_options_iname = '-pc_type -ksp_type -ksp_gmres_restart'
+    petsc_options_value = ' lu       gmres     200'
+
+    l_max_its = 100
+    l_tol = 1e-6
+
+    nl_max_its = 50
+    nl_rel_tol = 1e-6
+    nl_abs_tol = 1e-6
+
     end_time= ${endTime}
     dt = ${timeStep}
+
+    [Predictor]
+        type = SimplePredictor
+        scale = 1
+    []
 []
 
 
@@ -120,7 +139,6 @@ ss316LPRatio = 0.3      # -
         stress_tensor = stress
         boundary = 'bc-top-disp'
     []
-
     [disp_y_max]
         type = NodalExtremeValue
         variable = disp_y
@@ -133,8 +151,14 @@ ss316LPRatio = 0.3      # -
         type = NodalExtremeValue
         variable = disp_x
     []
+    [stress_vm_max]
+        type = ElementExtremeValue
+        variable = vonmises_stress
+    []
 []
 
 [Outputs]
     exodus = true
+    csv = true
+    file_base = 'platewithhole3d_${meshRatio}' 
 []
