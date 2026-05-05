@@ -5,18 +5,22 @@
 #-------------------------------------------------------------------------
 #_* MOOSEHERDER VARIABLES - START
 
-endTime = 99
 timeStep = 1
 
+# endTime = 99
+# maxDisp = 0.01e-3
+
+endTime = 2
+maxDisp = 1e-3
+
 # Mechanical Loads/BCs
-maxDisp = 0.05e-3
 topDispRate = ${fparse maxDisp / endTime}  # m/s
 
 # Mechanical Props: SS316L @ 20degC
 ss316LEMod = 200e9       # Pa
 ss316LPRatio = 0.3      # -
 
-meshRatio = 8
+meshRatio = 6
 
 #** MOOSEHERDER VARIABLES - END
 #-------------------------------------------------------------------------
@@ -27,7 +31,7 @@ meshRatio = 8
 
 [Mesh]
     type = FileMesh
-    file = 'platewithhole3d_${meshRatio}.msh'
+    file = 'platehole3d_${meshRatio}.msh'
 []
 
 [Physics/SolidMechanics/QuasiStatic]
@@ -160,5 +164,5 @@ meshRatio = 8
 [Outputs]
     exodus = true
     csv = true
-    file_base = 'platewithhole3d_${meshRatio}' 
+    file_base = 'platehole3d_${meshRatio}mr_${endTime}f' 
 []

@@ -29,8 +29,8 @@ hole_loc_y = plate_height/2;
 hole_circ = 2*Pi*hole_rad;
 
 // Mesh variables
-MR = 10;
-file_name = Sprintf("platewithhole3d_%g.msh", MR);
+MR = 1;
+file_name = Sprintf("platehole3d_%g.msh", MR);
 
 elem_order = 2;
 second_ord_incomp = 1;

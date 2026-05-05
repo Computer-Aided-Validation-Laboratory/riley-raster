@@ -284,7 +284,7 @@ fn prepareFrameContext(
         input.camera.pixels_num[0],
     };
     ctx.frame_arr = try ndarray.NDArray(f64).initFlat(arena_alloc, dims[0..]);
-    @memset(ctx.frame_arr.slice, 0.0);
+    @memset(ctx.frame_arr.slice, input.config.background_value);
 }
 
 fn copyFrameToImageBatch(

@@ -334,7 +334,11 @@ fn rasterTileCommon(
 
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    RasterBackend.resetSubpxScratch(subpx_scratch, subpx_tile_size);
+    RasterBackend.resetSubpxScratch(
+        subpx_scratch,
+        subpx_tile_size,
+        ctx_rast.config.background_value,
+    );
 
     switch (ctx_rast.config.subpixel_center_map) {
         .full_in_mem => fillTileIdealCentersFullInMem(

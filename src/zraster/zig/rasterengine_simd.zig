@@ -152,9 +152,10 @@ pub fn initSubpxScratch(
 pub fn resetSubpxScratch(
     subpx_scratch: *SubpxScratchBuffers,
     subpx_tile_size: usize,
+    background_value: f64,
 ) void {
     @memset(subpx_scratch.inv_z, -std.math.inf(f64));
-    @memset(subpx_scratch.image.slice, 0.0);
+    @memset(subpx_scratch.image.slice, background_value);
     @memset(subpx_scratch.touched_min_x, subpx_tile_size);
     @memset(subpx_scratch.touched_max_x, 0);
 }

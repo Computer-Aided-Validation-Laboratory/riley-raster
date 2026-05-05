@@ -8,10 +8,11 @@ def main() -> None:
     # NOTE: exodus connectivity starts at 1 - need to subtract 1!
     #---------------------------------------------------------------------------
 
-    num_meshes = 8
+    num_meshes = 7
+    num_frames = 2
     for mm in range(1,num_meshes):
         mesh_num = mm
-        sim_name = f"platewithhole3d_{mesh_num}"
+        sim_name = f"platehole3d_{mesh_num}mr_{num_frames}f"
 
         sim_path = Path.cwd()
         sim_file = sim_path / (f"{sim_name}.e")
@@ -35,17 +36,28 @@ def main() -> None:
         dy_mesh = y_max - y_min
         mesh_AR = dx_mesh / dy_mesh
 
-        (u_min,u_max) = (0.1,0.9)
-        d_u = u_max - u_min
-
+        uv_span_max = 0.8
         # Texture AR (Width/Height)
         tex_AR = 2464.0 / 2056.0 
 
-        # To maintain square pixels:
-        # (d_u / d_v) = mesh_AR * tex_AR
-        d_v = d_u / (mesh_AR * tex_AR)
+        # To maintain square pixels: (d_u / d_v) = mesh_AR / tex_AR
+        # Let R be the ratio of aspect ratios
+        R = mesh_AR / tex_AR
 
-        v_min = (1 - d_v)/2
+        if R > 1:
+            # Mesh is wider than texture relative to its height
+            # U is the constraining dimension
+            d_u = uv_span_max
+            d_v = d_u / R
+        else:
+            # Mesh is taller than texture relative to its width
+            # V is the constraining dimension
+            d_v = uv_span_max
+            d_u = d_v * R
+
+        u_min = (1 - d_u) / 2
+        u_max = 1 - u_min
+        v_min = (1 - d_v) / 2
         v_max = 1 - v_min
 
         u_slope = (u_max - u_min) / (x_max - x_min)
@@ -56,7 +68,6 @@ def main() -> None:
 
         uvs[:,0] = u_slope*mesh_world.coords[:,0] + u_int
         uvs[:,1] = v_slope*mesh_world.coords[:,1] + v_int
-
 
         # Correct for exodus 1 indexed connectivity
         connect = mesh_world.connect['connect1'].T - 1

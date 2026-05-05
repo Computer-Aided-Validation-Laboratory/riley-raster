@@ -38,6 +38,7 @@ pub fn main(init: std.process.Init) !void {
         .max_frames_in_flight = 1,
         .max_geom_threads_per_frame = 1,
         .max_raster_threads_per_frame = 4,
+        .background_value = 128.0,
         .save_strategy = .disk,
         .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
@@ -45,7 +46,7 @@ pub fn main(init: std.process.Init) !void {
         .report = .bench,
     };
 
-    const data_dir = "data/FE/platewithhole3d_1/";
+    const data_dir = "data/FE/platehole3d_4mr_2f/";
     const out_dir_root = "out/demo-dicuq";
     
     // 2. Load Simulation Data
@@ -60,7 +61,12 @@ pub fn main(init: std.process.Init) !void {
     };
 
     // For this demo, we don't need the field data as we are using texture shading
-    const sim_data = try meshio.loadSimData(aa, io, coord_path, conn_path, field_files, field_files,);
+    const sim_data = try meshio.loadSimData(aa, 
+                                            io, 
+                                            coord_path, 
+                                            conn_path, 
+                                            null, 
+                                            field_files,);
 
     // 3. Load UV map for the texture
     std.debug.print("Loading UV map...\n", .{});
@@ -80,38 +86,22 @@ pub fn main(init: std.process.Init) !void {
 
     // 5. Prepare Mesh Input
     std.debug.print("Preparing mesh input...\n", .{});
-    const use_tex: bool = true;
-    var mesh_input: MeshInput = undefined;
-
-    if (use_tex){
-        mesh_input = MeshInput{
-            .mesh_type = .quad8,
-            .coords = sim_data.coords,
-            .connect = sim_data.connect,
-            .disp = null,
-            .shader = .{ .tex = .{
-                .uvs = uvs.array,
-                .texture = texture,
-                .sample_config = .{
-                    .sample = .cubic_catmull_rom,
-                    .mode = .lut_lerp,
-                },
-                .bits = 8,
-                .scaling = .none,
-            } },
-        };
-    } else {
-        mesh_input = MeshInput{
-            .mesh_type = .quad8,
-            .coords = sim_data.coords,
-            .connect = sim_data.connect,
-            .disp = null,
-            .shader = .{ .tex_func = .{
-                .uvs = null,
-                .builtin = .checker_smooth,
-            } },
-        };
-    }
+    const mesh_input = MeshInput{
+        .mesh_type = .quad8,
+        .coords = sim_data.coords,
+        .connect = sim_data.connect,
+        .disp = sim_data.disp,
+        .shader = .{ .tex = .{
+            .uvs = uvs.array,
+            .texture = texture,
+            .sample_config = .{
+                .sample = .cubic_catmull_rom,
+                .mode = .lut_lerp,
+            },
+            .bits = 8,
+            .scaling = .none,
+        } },
+    };
 
     // 6. Setup Camera
     // Position camera to frame the sphere

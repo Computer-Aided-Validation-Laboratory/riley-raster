@@ -19,6 +19,7 @@ pub const RasterConfig = struct {
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
     tile_size_max: u16 = 32,
+    background_value: f64 = 0.0,
     hull_mode: HullMode = .on_no_fallback,
     newton_seed_mode: NewtonSeedMode = .centroid,
     newton_seed_reuse: NewtonSeedReuse = .off,
