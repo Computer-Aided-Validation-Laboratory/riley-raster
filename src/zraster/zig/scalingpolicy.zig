@@ -67,12 +67,18 @@ pub fn framesInFlight(
         return 1;
     }
 
-    const requested_frames = if (render_mode == .in_order)
-        @as(u16, 1)
-    else
-        @max(@as(u16, 1), max_frames_in_flight);
-    const camera_cap = @max(@as(usize, 1), cameras_num);
-    return @min(requested_frames, @as(u16, @intCast(camera_cap)));
+    const requested_frames = @max(@as(u16, 1), max_frames_in_flight);
+
+    if (render_mode == .in_order) {
+        // In order processing is constrained to one time step at a time
+        // but can process multiple cameras for that time step in parallel.
+        const camera_cap = @max(@as(usize, 1), cameras_num);
+        return @min(requested_frames, @as(u16, @intCast(camera_cap)));
+    } else {
+        // Offline processing can process multiple time steps and cameras
+        // in parallel in any order.
+        return requested_frames;
+    }
 }
 
 pub fn frameBatchSize(

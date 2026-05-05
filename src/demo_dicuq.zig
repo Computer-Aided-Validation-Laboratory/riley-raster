@@ -166,8 +166,6 @@ pub fn main(init: std.process.Init) !void {
         .focal_length = focal_leng,
         .sub_sample = sub_samp,     
     };
-
-    
         
     // 7. Run the Rasteriser
     std.debug.print("Rendering simulation to {s}/...\n", .{out_dir_root});
@@ -193,7 +191,7 @@ pub fn main(init: std.process.Init) !void {
     const print_break = [_]u8{'='} ** 80;
     print("\n{s}\n",.{print_break});
 
-    print("ROI center:",.{});
+    print("ROI center:\n",.{});
     roi_pos.vecPrint();
     
     print("Camera 0:\n",.{});

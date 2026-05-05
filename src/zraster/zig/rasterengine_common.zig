@@ -91,11 +91,13 @@ fn fillTileIdealCentersFullInMem(
     }
 }
 
+const ParamCoords = struct { xi: f64, eta: f64 };
+
 fn calcTri3PerspectiveParamCoords(
     inv_z: f64,
     nodes_inv_z: [3]f64,
     weights: [3]f64,
-) struct { xi: f64, eta: f64 } {
+) ParamCoords {
     return .{
         .xi = weights[1] * nodes_inv_z[1] / inv_z,
         .eta = weights[2] * nodes_inv_z[2] / inv_z,
@@ -109,7 +111,7 @@ fn calcInterpParamCoords(
     inv_z: f64,
     xi_out: f64,
     eta_out: f64,
-) struct { xi: f64, eta: f64 } {
+) ParamCoords {
     if (comptime Geometry.solver_kind == .hyperb) {
         return calcTri3PerspectiveParamCoords(inv_z, nodes_inv_z, weights);
     }

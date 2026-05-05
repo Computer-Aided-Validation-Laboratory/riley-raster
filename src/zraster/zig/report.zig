@@ -13,7 +13,7 @@ const matslice = @import("matslice.zig");
 const cam = @import("camera.zig");
 const mo = @import("meshops.zig");
 const rastcfg = @import("rasterconfig.zig");
-const ReportMode = rastcfg.ReportMode;
+pub const ReportMode = rastcfg.ReportMode;
 
 pub const OffLog = struct {};
 
