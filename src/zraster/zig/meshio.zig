@@ -437,6 +437,9 @@ pub fn loadMultiSimData(
     return sim_data_slice;
 }
 
+//------------------------------------------------------------------------------------------
+// Tests
+
 test "loadMultiSimData twoelems" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;

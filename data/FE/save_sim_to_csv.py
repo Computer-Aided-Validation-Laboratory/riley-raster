@@ -4,6 +4,10 @@ import pyvale.sensorsim as sens
 import pyvale.mooseherder as mh
 
 def main() -> None:
+    #---------------------------------------------------------------------------
+    # NOTE: exodus connectivity starts at 1 - need to subtract 1!
+    #---------------------------------------------------------------------------
+
     num_meshes = 8
     for mm in range(1,num_meshes):
         mesh_num = mm
@@ -22,26 +26,40 @@ def main() -> None:
         (num_coords,_) = mesh_world.coords.shape
         uvs = np.zeros((num_coords,2),dtype=np.float64)
 
-        (u_min,u_max) = (0.1,0.9)
-        d_u = u_max - u_min
-        AR = 2462.0/2056.0 # X/Y
-        v_min = (1 - d_u / AR)/2
-        v_max = 1 - v_min
-        d_v = v_max - v_min
-
         x_max = np.max(mesh_world.coords[:,0])
         x_min = np.min(mesh_world.coords[:,0])
+        y_max = np.max(mesh_world.coords[:,1])
+        y_min = np.min(mesh_world.coords[:,1])
+
+        dx_mesh = x_max - x_min
+        dy_mesh = y_max - y_min
+        mesh_AR = dx_mesh / dy_mesh
+
+        (u_min,u_max) = (0.1,0.9)
+        d_u = u_max - u_min
+
+        # Texture AR (Width/Height)
+        tex_AR = 2464.0 / 2056.0 
+
+        # To maintain square pixels:
+        # (d_u / d_v) = mesh_AR * tex_AR
+        d_v = d_u / (mesh_AR * tex_AR)
+
+        v_min = (1 - d_v)/2
+        v_max = 1 - v_min
+
         u_slope = (u_max - u_min) / (x_max - x_min)
         u_int = u_min - u_slope*x_min
 
-        y_max = np.max(mesh_world.coords[:,1])
-        y_min = np.min(mesh_world.coords[:,1])
         v_slope = (v_max - v_min) / (y_max - y_min)
         v_int = v_min - v_slope*y_min
 
         uvs[:,0] = u_slope*mesh_world.coords[:,0] + u_int
-        uvs[:,1] = v_slope*mesh_world.coords[:,0] + v_int
+        uvs[:,1] = v_slope*mesh_world.coords[:,1] + v_int
 
+
+        # Correct for exodus 1 indexed connectivity
+        connect = mesh_world.connect['connect1'].T - 1
 
         print(80*"-")
         print(f"MESH: {sim_name}") 
@@ -52,6 +70,8 @@ def main() -> None:
         print(f"{mesh_world.coords.shape=}")
         print(f"{mesh_world.connect['connect1'].T.shape=}")
         print(f"{mesh_world.node_vars['disp_x'].shape=}")
+        print()
+        print(f"{np.max(connect)=},{np.min(connect)=}")
         print()
         print(f"{np.min(mesh_world.coords,axis=0)=}")
         print(f"{np.max(mesh_world.coords,axis=0)=}")
@@ -65,7 +85,7 @@ def main() -> None:
 
         np.savetxt(save_path/'coords.csv',mesh_world.coords, delimiter=',')
         np.savetxt(save_path/'connect.csv',
-                    mesh_world.connect['connect1'].T, delimiter=',')
+                    connect, delimiter=',')
         np.savetxt(save_path/'field_disp_x.csv',
                     mesh_world.node_vars['disp_x'], delimiter=',')
         np.savetxt(save_path/'field_disp_y.csv',
