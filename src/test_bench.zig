@@ -146,6 +146,7 @@ test "Unified Benchmark Tests" {
                             mt,
                             st,
                             sc,
+                            null,
                             cc.fov_scale,
                         );
 
@@ -158,6 +159,7 @@ test "Unified Benchmark Tests" {
                             mt,
                             st,
                             sc,
+                            null,
                             data_dir,
                             pixel_num,
                             2,

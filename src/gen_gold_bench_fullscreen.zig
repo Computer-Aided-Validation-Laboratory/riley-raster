@@ -87,6 +87,7 @@ pub fn main(init: std.process.Init) !void {
                         mt,
                         st,
                         sc,
+                        null,
                         data_dir,
                         pixel_num,
                         2,

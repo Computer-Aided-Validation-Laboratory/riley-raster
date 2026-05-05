@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const benchargs = @import("common/benchargs.zig");
+const benchstats = @import("common/benchstats.zig");
 const common = @import("common/benchcommon.zig");
 const tcfg = @import("common/testconfig.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
@@ -19,8 +20,11 @@ const config = common.BenchConfig{ .run = .all };
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
     const io = init.io;
+    const base_raster_config = tcfg.getRasterConfig(.bench);
     const bench_args = try benchargs.parseArgs(
         init.minimal.args.vector,
+        "out/geom",
+        base_raster_config,
     );
 
     const texture_grey = try iio.loadImage(
@@ -42,10 +46,17 @@ pub fn main(init: std.process.Init) !void {
     );
     defer texture_rgb.deinit(outer_alloc);
 
-    const out_dir_base = "out/geom";
-
     const mesh_types = comptime std.enums.values(gk.MeshType);
-    const shader_types = comptime std.enums.values(common.ShaderType);
+    const shader_types = [_]common.ShaderType{
+        .nodal_grey,
+        .nodal_rgb,
+        .tex8_grey,
+        .tex8_rgb,
+    };
+    const tex_func_shader_types = [_]common.ShaderType{
+        .texfunc_grey,
+        .texfunc_rgb,
+    };
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
@@ -56,14 +67,15 @@ pub fn main(init: std.process.Init) !void {
         .{ .sample = .quintic_bspline, .mode = .direct },
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
+    const tex_func_cases = [_]common.TexFuncCase{
+        .{ .builtin = .constant, .coord_mode = .param },
+        .{ .builtin = .constant, .coord_mode = .uv },
+        .{ .builtin = .sinusoidal, .coord_mode = .param },
+        .{ .builtin = .sinusoidal, .coord_mode = .uv },
+    };
 
-    var stats_list: std.ArrayList(common.BenchStats) = .empty;
-    defer {
-        for (stats_list.items) |s| outer_alloc.free(s.name);
-        stats_list.deinit(outer_alloc);
-    }
-
-    var max_name_len: usize = 0;
+    var stats = benchstats.BenchStatsCollector{};
+    defer stats.deinit(outer_alloc);
 
     std.debug.print(
         "Starting Geom Raster Benchmark ({d}x{d}, {d} run per case, {d} threads)...\n",
@@ -73,6 +85,29 @@ pub fn main(init: std.process.Init) !void {
             bench_args.runs,
             bench_args.total_threads,
         },
+    );
+
+    const bench_raster_config = benchargs.applyRasterConfig(
+        base_raster_config,
+        bench_args,
+    );
+    const actual_tile_size = common.calcActualTileSize(
+        bench_raster_config,
+        bench_args.pixels_num,
+        bench_args.sub_sample,
+    );
+    try common.writeBenchmarkConfig(
+        outer_alloc,
+        io,
+        bench_args.out_dir,
+        "bench_geom.zig",
+        init.minimal.args.vector,
+        bench_raster_config,
+        bench_args.pixels_num,
+        bench_args.sub_sample,
+        bench_args.runs,
+        1.0,
+        actual_tile_size,
     );
 
     for (mesh_types) |mt| {
@@ -86,113 +121,34 @@ pub fn main(init: std.process.Init) !void {
                 );
 
                 if (common.shouldRun(config, mt, st, sc, data_dir)) {
-                    var case_name_buf: [256]u8 = undefined;
-                    const case_name = if (st == .tex8_grey or st == .tex8_rgb)
-                        try std.fmt.bufPrint(
-                            &case_name_buf,
-                            "{s}_{s}_{s}_{s}",
-                            .{ @tagName(mt), @tagName(st), @tagName(sc.sample), @tagName(sc.mode) },
-                        )
-                    else
-                        try std.fmt.bufPrint(
-                            &case_name_buf,
-                            "{s}_{s}",
-                            .{ @tagName(mt), @tagName(st) },
-                        );
+                    const sample_config = if (st == .tex8_grey or st == .tex8_rgb) sc else null;
+                    const case_name = try common.calcCaseName(
+                        outer_alloc,
+                        mt,
+                        st,
+                        sample_config,
+                        null,
+                        1.0,
+                    );
+                    defer outer_alloc.free(case_name);
 
                     std.debug.print("Case: {s}\n", .{case_name});
 
-                    if (case_name.len > max_name_len) {
-                        max_name_len = case_name.len;
-                    }
-
-                    var e2e_times = try outer_alloc.alloc(
-                        f64,
+                    var case_samples = try benchstats.CaseSamples.init(
+                        outer_alloc,
                         bench_args.runs,
                     );
-                    defer outer_alloc.free(e2e_times);
-                    var geom_times = try outer_alloc.alloc(
-                        f64,
-                        bench_args.runs,
-                    );
-                    defer outer_alloc.free(geom_times);
-                    var raster_times = try outer_alloc.alloc(
-                        f64,
-                        bench_args.runs,
-                    );
-                    defer outer_alloc.free(raster_times);
-                    var fps_vals = try outer_alloc.alloc(
-                        f64,
-                        bench_args.runs,
-                    );
-                    defer outer_alloc.free(fps_vals);
-
-                    var mpx_vals = try outer_alloc.alloc(
-                        f64,
-                        bench_args.runs,
-                    );
-                    defer outer_alloc.free(mpx_vals);
-                    var msubpx_vals = try outer_alloc.alloc(
-                        f64,
-                        bench_args.runs,
-                    );
-                    defer outer_alloc.free(msubpx_vals);
-                    var mshades_vals = try outer_alloc.alloc(
-                        f64,
-                        bench_args.runs,
-                    );
-                    defer outer_alloc.free(mshades_vals);
-                    var msubshades_vals = try outer_alloc.alloc(
-                        f64,
-                        bench_args.runs,
-                    );
-                    defer outer_alloc.free(msubshades_vals);
-                    var melems_vals = try outer_alloc.alloc(
-                        f64,
-                        bench_args.runs,
-                    );
-                    defer outer_alloc.free(melems_vals);
-                    var mnodes_vals = try outer_alloc.alloc(
-                        f64,
-                        bench_args.runs,
-                    );
-                    defer outer_alloc.free(mnodes_vals);
-                    var mops_vals = try outer_alloc.alloc(
-                        f64,
-                        bench_args.runs,
-                    );
-                    defer outer_alloc.free(mops_vals);
-
-                    var geom_prep_times = try outer_alloc.alloc(
-                        f64,
-                        bench_args.runs,
-                    );
-                    defer outer_alloc.free(geom_prep_times);
-                    var tile_overlap_times = try outer_alloc.alloc(
-                        f64,
-                        bench_args.runs,
-                    );
-                    defer outer_alloc.free(tile_overlap_times);
-                    var raster_loop_times = try outer_alloc.alloc(
-                        f64,
-                        bench_args.runs,
-                    );
-                    defer outer_alloc.free(raster_loop_times);
-                    var save_frame_times = try outer_alloc.alloc(
-                        f64,
-                        bench_args.runs,
-                    );
-                    defer outer_alloc.free(save_frame_times);
+                    defer case_samples.deinit(outer_alloc);
 
                     for (0..bench_args.runs) |rr| {
                         const run_out_dir_base =
                             switch (bench_args.save_strategy) {
-                                .disk, .both => out_dir_base,
+                                .disk, .both => bench_args.out_dir,
                                 .memory, .none => "",
                             };
                         const raster_config =
                             benchargs.applyRasterConfig(
-                                tcfg.getRasterConfig(.bench),
+                                base_raster_config,
                                 bench_args,
                             );
 
@@ -201,7 +157,8 @@ pub fn main(init: std.process.Init) !void {
                             io,
                             mt,
                             st,
-                            sc,
+                            sample_config,
+                            null,
                             data_dir,
                             bench_args.pixels_num,
                             bench_args.sub_sample,
@@ -213,67 +170,91 @@ pub fn main(init: std.process.Init) !void {
                         );
                         defer res.deinit(outer_alloc);
 
-                        e2e_times[rr] = res.e2e_ms;
-                        geom_times[rr] = res.geom_ms;
-                        raster_times[rr] = res.raster_ms;
-                        fps_vals[rr] = res.fps;
-
-                        mpx_vals[rr] = res.metrics.mpx_sec;
-                        msubpx_vals[rr] = res.metrics.msubpx_sec;
-                        mshades_vals[rr] = res.metrics.mshades_sec;
-                        msubshades_vals[rr] = res.metrics.msubshades_sec;
-                        melems_vals[rr] = res.metrics.melems_sec;
-                        mnodes_vals[rr] = res.metrics.mnodes_sec;
-                        mops_vals[rr] = res.metrics.mops_sec;
-
-                        const conv_ms = 1.0 / 1e6;
-                        geom_prep_times[rr] =
-                            res.pipeline_times.geometry_prep * conv_ms;
-                        tile_overlap_times[rr] =
-                            res.pipeline_times.tile_overlap * conv_ms;
-                        raster_loop_times[rr] =
-                            res.pipeline_times.raster_loop * conv_ms;
-                        save_frame_times[rr] =
-                            res.pipeline_times.save_frame * conv_ms;
+                        case_samples.record(rr, res);
                     }
 
-                    try stats_list.append(outer_alloc, .{
-                        .name = try outer_alloc.dupe(u8, case_name),
-                        .mesh_type = mt,
-                        .shader_type = st,
-                        .sample_config = sc,
-                        .e2e = try common.calcMedianMAD(outer_alloc, e2e_times),
-                        .geom = try common.calcMedianMAD(outer_alloc, geom_times),
-                        .raster = try common.calcMedianMAD(outer_alloc, raster_times),
-                        .fps = try common.calcMedianMAD(outer_alloc, fps_vals),
-                        .mpx = try common.calcMedianMAD(outer_alloc, mpx_vals),
-                        .msubpx = try common.calcMedianMAD(outer_alloc, msubpx_vals),
-                        .mshades = try common.calcMedianMAD(outer_alloc, mshades_vals),
-                        .msubshades = try common.calcMedianMAD(
-                            outer_alloc,
-                            msubshades_vals,
-                        ),
-                        .melems = try common.calcMedianMAD(outer_alloc, melems_vals),
-                        .mnodes = try common.calcMedianMAD(outer_alloc, mnodes_vals),
-                        .mops = try common.calcMedianMAD(outer_alloc, mops_vals),
-                        .geom_prep = try common.calcMedianMAD(
-                            outer_alloc,
-                            geom_prep_times,
-                        ),
-                        .tile_overlap = try common.calcMedianMAD(
-                            outer_alloc,
-                            tile_overlap_times,
-                        ),
-                        .raster_loop = try common.calcMedianMAD(
-                            outer_alloc,
-                            raster_loop_times,
-                        ),
-                        .save_frame = try common.calcMedianMAD(
-                            outer_alloc,
-                            save_frame_times,
-                        ),
-                    });
+                    try stats.appendCaseStats(
+                        outer_alloc,
+                        case_name,
+                        mt,
+                        st,
+                        sample_config,
+                        null,
+                        &case_samples,
+                    );
                 }
+            }
+        }
+
+        for (tex_func_shader_types) |st| {
+            for (tex_func_cases) |tex_func_case| {
+                var data_dir_buf: [256]u8 = undefined;
+                const data_dir = try std.fmt.bufPrint(
+                    &data_dir_buf,
+                    "data/bench/{s}_geom",
+                    .{@tagName(mt)},
+                );
+
+                const case_name = try common.calcCaseName(
+                    outer_alloc,
+                    mt,
+                    st,
+                    null,
+                    tex_func_case,
+                    1.0,
+                );
+                defer outer_alloc.free(case_name);
+
+                std.debug.print("Case: {s}\n", .{case_name});
+
+                var case_samples = try benchstats.CaseSamples.init(
+                    outer_alloc,
+                    bench_args.runs,
+                );
+                defer case_samples.deinit(outer_alloc);
+
+                for (0..bench_args.runs) |rr| {
+                    const run_out_dir_base =
+                        switch (bench_args.save_strategy) {
+                            .disk, .both => bench_args.out_dir,
+                            .memory, .none => "",
+                        };
+                    const raster_config =
+                        benchargs.applyRasterConfig(
+                            base_raster_config,
+                            bench_args,
+                        );
+
+                    var res = try common.runBenchmark(
+                        outer_alloc,
+                        io,
+                        mt,
+                        st,
+                        null,
+                        tex_func_case,
+                        data_dir,
+                        bench_args.pixels_num,
+                        bench_args.sub_sample,
+                        texture_grey,
+                        texture_rgb,
+                        raster_config,
+                        run_out_dir_base,
+                        1.0,
+                    );
+                    defer res.deinit(outer_alloc);
+
+                    case_samples.record(rr, res);
+                }
+
+                try stats.appendCaseStats(
+                    outer_alloc,
+                    case_name,
+                    mt,
+                    st,
+                    null,
+                    tex_func_case,
+                    &case_samples,
+                );
             }
         }
     }
@@ -282,9 +263,9 @@ pub fn main(init: std.process.Init) !void {
         outer_alloc,
         io,
         "Geom Raster Benchmark Results",
-        out_dir_base,
+        bench_args.out_dir,
         bench_args.pixels_num,
-        stats_list.items,
-        max_name_len,
+        stats.stats_list.items,
+        stats.max_name_len,
     );
 }

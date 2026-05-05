@@ -106,6 +106,7 @@ test "MIN Suite: sphere200 and multimesh" {
                             mt,
                             st,
                             sc,
+                            null,
                             data_dir,
                             pixel_num_sphere,
                             2,

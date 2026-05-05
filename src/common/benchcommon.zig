@@ -14,6 +14,7 @@ const uvio = @import("../zraster/zig/uvio.zig");
 const csvio = @import("../zraster/zig/csvio.zig");
 const mo = @import("../zraster/zig/meshops.zig");
 const so = @import("../zraster/zig/shaderops.zig");
+const imageops = @import("../zraster/zig/imageops.zig");
 const gk = @import("../zraster/zig/geometrykernels.zig");
 const CameraPrepared = @import("../zraster/zig/camera.zig").CameraPrepared;
 const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
@@ -21,6 +22,8 @@ const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
 const Rotation = @import("../zraster/zig/rotation.zig").Rotation;
 const report = @import("../zraster/zig/report.zig");
 const rastcfg = @import("../zraster/zig/rasterconfig.zig");
+const buildconfig = @import("../zraster/zig/buildconfig.zig");
+const scalingpolicy = @import("../zraster/zig/scalingpolicy.zig");
 const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
 const tcfg = @import("testconfig.zig");
 const Timestamp = std.Io.Clock.Timestamp;
@@ -55,7 +58,7 @@ pub const BenchResult = struct {
 
 pub fn calcOutputChannels(shader_type: ShaderType) u8 {
     return switch (shader_type) {
-        .nodal_rgb, .tex8_rgb => 3,
+        .nodal_rgb, .tex8_rgb, .texfunc_rgb => 3,
         else => 1,
     };
 }
@@ -65,6 +68,7 @@ pub const BenchStats = struct {
     mesh_type: gk.MeshType,
     shader_type: ShaderType,
     sample_config: ?TextureSampleConfig,
+    tex_func_case: ?TexFuncCase,
 
     e2e: MedianMAD,
     geom: MedianMAD,
@@ -186,8 +190,137 @@ pub fn getDateString() ![]const u8 {
     return "17-03-2026";
 }
 
-pub const ShaderType = enum { nodal_grey, nodal_rgb, tex8_grey, tex8_rgb };
+pub fn calcActualTileSize(
+    config: rastcfg.RasterConfig,
+    pixel_num: [2]u32,
+    sub_sample: u8,
+) u16 {
+    return scalingpolicy.tileSize(
+        config.tile_size_min,
+        config.tile_size_max,
+        pixel_num,
+        sub_sample,
+    );
+}
+
+pub fn writeBenchmarkConfig(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    out_dir_base: []const u8,
+    benchmark_name: []const u8,
+    argv: anytype,
+    config: rastcfg.RasterConfig,
+    pixel_num: [2]u32,
+    sub_sample: u8,
+    runs: usize,
+    fov_scale: f64,
+    actual_tile_size: u16,
+) !void {
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDir(
+        io,
+        out_dir_base,
+        .default_dir,
+    ) catch |err| if (err != error.PathAlreadyExists) return err;
+
+    const config_path = try std.fs.path.join(
+        outer_alloc,
+        &[_][]const u8{ out_dir_base, "config.txt" },
+    );
+    defer outer_alloc.free(config_path);
+
+    var file = try cwd.createFile(io, config_path, .{});
+    defer file.close(io);
+
+    var write_buf: [4096]u8 = undefined;
+    var buffered_writer = file.writer(io, &write_buf);
+    const writer = &buffered_writer.interface;
+
+    try writer.print("benchmark={s}\n", .{benchmark_name});
+    try writer.print("out_dir={s}\n", .{out_dir_base});
+    try writer.print("render_mode={s}\n", .{@tagName(config.render_mode)});
+    try writer.print("total_threads={d}\n", .{config.total_threads});
+    try writer.print(
+        "max_geom_threads_per_frame={d}\n",
+        .{config.max_geom_threads_per_frame},
+    );
+    try writer.print(
+        "max_raster_threads_per_frame={d}\n",
+        .{config.max_raster_threads_per_frame},
+    );
+    try writer.print(
+        "max_frames_in_flight={d}\n",
+        .{config.max_frames_in_flight},
+    );
+    try writer.print("hull_mode={s}\n", .{@tagName(config.hull_mode)});
+    try writer.print(
+        "subpixel_center_map={s}\n",
+        .{@tagName(config.subpixel_center_map)},
+    );
+    try writer.print("save_strategy={s}\n", .{@tagName(config.save_strategy)});
+    try writer.print("pixels_x={d}\n", .{pixel_num[0]});
+    try writer.print("pixels_y={d}\n", .{pixel_num[1]});
+    try writer.print("sub_sample={d}\n", .{sub_sample});
+    try writer.print("runs={d}\n", .{runs});
+    try writer.print("fov_scale={d:.6}\n", .{fov_scale});
+    try writer.print("tile_size_min={d}\n", .{config.tile_size_min});
+    try writer.print("tile_size_max={d}\n", .{config.tile_size_max});
+    try writer.print("actual_tile_size={d}\n", .{actual_tile_size});
+    try writer.print("build_simd={s}\n", .{
+        @tagName(buildconfig.config.simd),
+    });
+    try writer.print("build_simd_texture_interp={s}\n", .{
+        @tagName(buildconfig.config.simd_texture_interp),
+    });
+    try writer.print("build_texture_dispatch_policy={s}\n", .{
+        @tagName(buildconfig.config.texture_dispatch_policy),
+    });
+    try writer.print("build_simd_vector_width={d}\n", .{
+        buildconfig.config.simd_vector_width,
+    });
+    try writer.print("build_max_nodal_fields={d}\n", .{
+        buildconfig.config.max_nodal_fields,
+    });
+    try writer.print("build_max_image_channels={d}\n", .{
+        buildconfig.config.max_image_channels,
+    });
+    try writer.print("build_raster_newton_iter_max={d}\n", .{
+        buildconfig.config.raster_newton_iter_max,
+    });
+    try writer.print("build_distortion_newton_iter_max={d}\n", .{
+        buildconfig.config.distortion_newton_iter_max,
+    });
+    try writer.print("build_interp_lut_size={d}\n", .{
+        buildconfig.config.interp_lut_size,
+    });
+    try writer.print("build_precision={s}\n", .{
+        @typeName(buildconfig.config.precision),
+    });
+    try writer.writeAll("argv_begin\n");
+    for (argv, 0..) |arg, aa| {
+        try writer.print(
+            "argv_{d}={s}\n",
+            .{ aa, argToSlice(arg) },
+        );
+    }
+    try writer.writeAll("argv_end\n");
+    try buffered_writer.flush();
+}
+
+pub const ShaderType = enum {
+    nodal_grey,
+    nodal_rgb,
+    tex8_grey,
+    tex8_rgb,
+    texfunc_grey,
+    texfunc_rgb,
+};
 const TextureSampleConfig = @import("../zraster/zig/textureops.zig").TextureSampleConfig;
+pub const TexFuncCoordMode = enum { uv, param };
+pub const TexFuncCase = struct {
+    builtin: so.TexFuncBuiltin,
+    coord_mode: TexFuncCoordMode,
+};
 
 pub const RunMode = enum { all, element, texture, interpolator };
 pub const BenchConfig = struct {
@@ -292,7 +425,8 @@ pub fn calcCaseName(
     allocator: std.mem.Allocator,
     etype: gk.MeshType,
     shader_type: ShaderType,
-    sample_config: TextureSampleConfig,
+    sample_config: ?TextureSampleConfig,
+    tex_func_case: ?TexFuncCase,
     fov_scale: f64,
 ) ![]const u8 {
     const name = if (shader_type == .tex8_grey or shader_type == .tex8_rgb)
@@ -302,8 +436,19 @@ pub fn calcCaseName(
             .{
                 @tagName(etype),
                 @tagName(shader_type),
-                @tagName(sample_config.sample),
-                @tagName(sample_config.mode),
+                @tagName(sample_config.?.sample),
+                @tagName(sample_config.?.mode),
+            },
+        )
+    else if (shader_type == .texfunc_grey or shader_type == .texfunc_rgb)
+        try std.fmt.allocPrint(
+            allocator,
+            "{s}_{s}_{s}_{s}",
+            .{
+                @tagName(etype),
+                @tagName(shader_type),
+                @tagName(tex_func_case.?.coord_mode),
+                @tagName(tex_func_case.?.builtin),
             },
         )
     else
@@ -352,7 +497,8 @@ pub fn loadBenchmarkMeshInput(
     io: std.Io,
     etype: gk.MeshType,
     shader_type: ShaderType,
-    sample_config: TextureSampleConfig,
+    sample_config: ?TextureSampleConfig,
+    tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     texture_grey: iio.Texture(1),
     texture_rgb: iio.Texture(3),
@@ -382,35 +528,90 @@ pub fn loadBenchmarkMeshInput(
         null,
         null,
     );
-    const field_raw = try loadNDArrayFromCSV(
-        allocator,
-        io,
-        field_path,
-        calcOutputChannels(shader_type),
-        true,
-    );
-    const uvs_raw = try loadNDArrayFromCSV(allocator, io, uv_path, 2, false);
-
     var shader: so.ShaderInput = undefined;
     switch (shader_type) {
         .nodal_grey, .nodal_rgb => {
+            const field_raw = try loadNDArrayFromCSV(
+                allocator,
+                io,
+                field_path,
+                calcOutputChannels(shader_type),
+                true,
+            );
             shader = .{ .nodal = .{
                 .field = .{ .array = field_raw, .array_mem = field_raw.slice },
-                .scaling = .none,
+                .scaling = .auto,
+                .scale_over = .within_frames,
             } };
         },
         .tex8_grey => {
+            const uvs_raw = try loadNDArrayFromCSV(
+                allocator,
+                io,
+                uv_path,
+                2,
+                false,
+            );
             shader = .{ .tex = .{
                 .uvs = uvs_raw,
                 .texture = texture_grey,
-                .sample_config = sample_config,
+                .sample_config = sample_config.?,
             } };
         },
         .tex8_rgb => {
+            const uvs_raw = try loadNDArrayFromCSV(
+                allocator,
+                io,
+                uv_path,
+                2,
+                false,
+            );
             shader = .{ .tex_rgb = .{
                 .uvs = uvs_raw,
                 .texture = texture_rgb,
-                .sample_config = sample_config,
+                .sample_config = sample_config.?,
+            } };
+        },
+        .texfunc_grey => {
+            const tex_case = tex_func_case.?;
+            const tex_func_uvs = if (tex_case.coord_mode == .uv)
+                try loadNDArrayFromCSV(
+                    allocator,
+                    io,
+                    uv_path,
+                    2,
+                    false,
+                )
+            else
+                null;
+            shader = .{ .tex_func = .{
+                .uvs = tex_func_uvs,
+                .builtin = tex_case.builtin,
+                .params = calcTexFuncParams(tex_case),
+                .bits = 8,
+                .scaling = .none,
+                .normal_type = .none,
+            } };
+        },
+        .texfunc_rgb => {
+            const tex_case = tex_func_case.?;
+            const tex_func_uvs = if (tex_case.coord_mode == .uv)
+                try loadNDArrayFromCSV(
+                    allocator,
+                    io,
+                    uv_path,
+                    2,
+                    false,
+                )
+            else
+                null;
+            shader = .{ .tex_func_rgb = .{
+                .uvs = tex_func_uvs,
+                .builtin = tex_case.builtin,
+                .params = calcTexFuncParams(tex_case),
+                .bits = 8,
+                .scaling = .none,
+                .normal_type = .none,
             } };
         },
     }
@@ -429,7 +630,8 @@ pub fn runBenchmark(
     io: std.Io,
     etype: gk.MeshType,
     shader_type: ShaderType,
-    sample_config: TextureSampleConfig,
+    sample_config: ?TextureSampleConfig,
+    tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     pixel_num: [2]u32,
     sub_sample: u8,
@@ -446,6 +648,7 @@ pub fn runBenchmark(
         etype,
         shader_type,
         sample_config,
+        tex_func_case,
         data_dir,
         pixel_num,
         sub_sample,
@@ -462,7 +665,8 @@ pub fn runBenchmarkQuiet(
     io: std.Io,
     etype: gk.MeshType,
     shader_type: ShaderType,
-    sample_config: TextureSampleConfig,
+    sample_config: ?TextureSampleConfig,
+    tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     pixel_num: [2]u32,
     sub_sample: u8,
@@ -479,6 +683,7 @@ pub fn runBenchmarkQuiet(
         etype,
         shader_type,
         sample_config,
+        tex_func_case,
         data_dir,
         pixel_num,
         sub_sample,
@@ -496,7 +701,8 @@ fn runBenchmarkInternal(
     io: std.Io,
     etype: gk.MeshType,
     shader_type: ShaderType,
-    sample_config: TextureSampleConfig,
+    sample_config: ?TextureSampleConfig,
+    tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     pixel_num: [2]u32,
     sub_sample: u8,
@@ -516,6 +722,7 @@ fn runBenchmarkInternal(
         etype,
         shader_type,
         sample_config,
+        tex_func_case,
         data_dir,
         texture_grey,
         texture_rgb,
@@ -566,7 +773,14 @@ fn runBenchmarkInternal(
         out_dir.close(io);
     }
 
-    const case_name = try calcCaseName(aa, etype, shader_type, sample_config, fov_scale);
+    const case_name = try calcCaseName(
+        aa,
+        etype,
+        shader_type,
+        sample_config,
+        tex_func_case,
+        fov_scale,
+    );
     const out_path = if (out_dir_base.len > 0)
         try std.fs.path.join(
             aa,
@@ -661,12 +875,51 @@ fn runBenchmarkInternal(
     };
 }
 
+fn argToSlice(arg: anytype) []const u8 {
+    return switch (@typeInfo(@TypeOf(arg))) {
+        .pointer => |pointer_info| switch (pointer_info.size) {
+            .slice => arg,
+            else => std.mem.span(arg),
+        },
+        .array => arg[0..],
+        else => @compileError("Unsupported command line argument type."),
+    };
+}
+
 fn printPaddedSafe(writer: anytype, text: []const u8, width: usize) !void {
     try writer.writeAll(text);
-    var ii: usize = text.len;
-    while (ii < width) : (ii += 1) {
+    for (text.len..width) |_| {
         try writer.writeByte(' ');
     }
+}
+
+fn calcTexFuncParams(tex_func_case: TexFuncCase) so.TexFuncParams {
+    const pi: f64 = std.math.pi;
+    const oscillations: f64 = if (tex_func_case.coord_mode == .param)
+        2.0
+    else
+        6.0;
+    const wave_num = 2.0 * pi * oscillations;
+
+    return switch (tex_func_case.builtin) {
+        .sinusoidal => .{
+            .wave_num_scalar = .{ wave_num, wave_num },
+            .wave_num_rgb = .{ wave_num, wave_num, wave_num },
+        },
+        else => .{},
+    };
+}
+
+fn calcVariantName(
+    stats: BenchStats,
+) []const u8 {
+    if (stats.sample_config) |sample_config| {
+        return @tagName(sample_config.sample);
+    }
+    if (stats.tex_func_case) |tex_func_case| {
+        return @tagName(tex_func_case.builtin);
+    }
+    return "nodal";
 }
 
 pub fn writeBenchmarkCSV(
@@ -702,16 +955,11 @@ pub fn writeBenchmarkCSV(
         "GeomPrep_ms,TileOverlap_ms,RasterLoop_ms,SaveFrame_ms\n");
 
     for (stats_list) |s| {
-        const interp_name = if (s.sample_config) |sc|
-            @tagName(sc.sample)
-        else
-            "nodal";
-
         try writer.print("{s},{s},{s},{s},", .{
             s.name,
             @tagName(s.mesh_type),
             @tagName(s.shader_type),
-            interp_name,
+            calcVariantName(s),
         });
 
         // Main times and FPS

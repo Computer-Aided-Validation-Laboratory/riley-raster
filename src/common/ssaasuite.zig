@@ -116,6 +116,7 @@ pub fn buildSphere200MultiCullMeshInputs(
         mesh_type,
         .tex8_grey,
         sample_config,
+        null,
         data_dir,
         texture_grey,
         texture_rgb,

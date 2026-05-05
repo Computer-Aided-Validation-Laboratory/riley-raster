@@ -7,10 +7,11 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const tcfg = @import("testconfig.zig");
 const rastcfg = @import("../zraster/zig/rasterconfig.zig");
+const texops = @import("../zraster/zig/textureops.zig");
 
 pub const BenchArgs = struct {
+    out_dir: []const u8,
     render_mode: rastcfg.RenderMode,
     total_threads: u16,
     max_geom_threads_per_frame: u16,
@@ -19,14 +20,19 @@ pub const BenchArgs = struct {
     hull_mode: rastcfg.HullMode,
     subpixel_center_map: rastcfg.SubPixelCenterMap,
     save_strategy: rastcfg.SaveStrategy,
+    sample: ?texops.TextureSample,
+    sample_mode: ?texops.TextureSampleMode,
     pixels_num: [2]u32,
     sub_sample: u8,
     runs: usize,
 };
 
-pub fn defaultBenchArgs() BenchArgs {
-    const raster_config = tcfg.getRasterConfig(.bench);
+pub fn defaultBenchArgs(
+    default_out_dir: []const u8,
+    raster_config: rastcfg.RasterConfig,
+) BenchArgs {
     return .{
+        .out_dir = default_out_dir,
         .render_mode = raster_config.render_mode,
         .total_threads = raster_config.total_threads,
         .max_geom_threads_per_frame = raster_config.max_geom_threads_per_frame,
@@ -34,15 +40,24 @@ pub fn defaultBenchArgs() BenchArgs {
         .max_frames_in_flight = raster_config.max_frames_in_flight,
         .hull_mode = raster_config.hull_mode,
         .subpixel_center_map = raster_config.subpixel_center_map,
-        .save_strategy = .none,
+        .save_strategy = raster_config.save_strategy,
+        .sample = null,
+        .sample_mode = null,
         .pixels_num = .{ 800, 500 },
         .sub_sample = 2,
         .runs = 10,
     };
 }
 
-pub fn parseArgs(args: anytype) !BenchArgs {
-    var bench_args = defaultBenchArgs();
+pub fn parseArgs(
+    args: anytype,
+    default_out_dir: []const u8,
+    raster_config: rastcfg.RasterConfig,
+) !BenchArgs {
+    var bench_args = defaultBenchArgs(
+        default_out_dir,
+        raster_config,
+    );
     var total_threads_overridden = false;
     var max_geom_threads_overridden = false;
     var max_raster_threads_overridden = false;
@@ -97,6 +112,14 @@ pub fn parseArgs(args: anytype) !BenchArgs {
             } else if (std.mem.eql(u8, arg, "--save-strategy")) {
                 bench_args.save_strategy =
                     try parseEnum(rastcfg.SaveStrategy, value);
+            } else if (std.mem.eql(u8, arg, "--sample")) {
+                bench_args.sample =
+                    try parseEnum(texops.TextureSample, value);
+            } else if (std.mem.eql(u8, arg, "--sample-mode")) {
+                bench_args.sample_mode =
+                    try parseEnum(texops.TextureSampleMode, value);
+            } else if (std.mem.eql(u8, arg, "--out-dir")) {
+                bench_args.out_dir = value;
             } else if (std.mem.eql(u8, arg, "--pixels-x")) {
                 bench_args.pixels_num[0] = try parseInt(u32, value);
             } else if (std.mem.eql(u8, arg, "--pixels-y")) {
@@ -180,9 +203,25 @@ fn argToSlice(arg: anytype) []const u8 {
 
 test "parse bench args defaults" {
     const args = [_][]const u8{"bench_geom"};
-    const bench_args = try parseArgs(args[0..]);
+    const raster_config = rastcfg.RasterConfig{
+        .render_mode = .offline,
+        .total_threads = 3,
+        .max_frames_in_flight = 2,
+        .max_geom_threads_per_frame = 2,
+        .max_raster_threads_per_frame = 3,
+        .hull_mode = .on_convex_fallback,
+        .subpixel_center_map = .affine_jac,
+    };
+    const bench_args = try parseArgs(
+        args[0..],
+        "out/geom",
+        raster_config,
+    );
 
-    try std.testing.expectEqual(defaultBenchArgs(), bench_args);
+    try std.testing.expectEqual(
+        defaultBenchArgs("out/geom", raster_config),
+        bench_args,
+    );
 }
 
 test "parse bench args named options" {
@@ -204,6 +243,12 @@ test "parse bench args named options" {
         "affine_jac",
         "--save-strategy",
         "memory",
+        "--sample",
+        "linear",
+        "--sample-mode",
+        "direct",
+        "--out-dir",
+        "out/custom",
         "--pixels-x",
         "1024",
         "--pixels-y",
@@ -213,7 +258,11 @@ test "parse bench args named options" {
         "--runs",
         "7",
     };
-    const bench_args = try parseArgs(args[0..]);
+    const bench_args = try parseArgs(
+        args[0..],
+        "out/geom",
+        rastcfg.RasterConfig{},
+    );
 
     try std.testing.expectEqual(rastcfg.RenderMode.offline, bench_args.render_mode);
     try std.testing.expectEqual(@as(u16, 8), bench_args.total_threads);
@@ -238,6 +287,15 @@ test "parse bench args named options" {
         rastcfg.SaveStrategy.memory,
         bench_args.save_strategy,
     );
+    try std.testing.expectEqual(
+        texops.TextureSample.linear,
+        bench_args.sample.?,
+    );
+    try std.testing.expectEqual(
+        texops.TextureSampleMode.direct,
+        bench_args.sample_mode.?,
+    );
+    try std.testing.expectEqualStrings("out/custom", bench_args.out_dir);
     try std.testing.expectEqual([2]u32{ 1024, 768 }, bench_args.pixels_num);
     try std.testing.expectEqual(@as(u8, 4), bench_args.sub_sample);
     try std.testing.expectEqual(@as(usize, 7), bench_args.runs);
@@ -245,7 +303,11 @@ test "parse bench args named options" {
 
 test "parse bench args legacy thread positional" {
     const args = [_][]const u8{ "bench_geom", "6" };
-    const bench_args = try parseArgs(args[0..]);
+    const bench_args = try parseArgs(
+        args[0..],
+        "out/geom",
+        rastcfg.RasterConfig{},
+    );
 
     try std.testing.expectEqual(@as(u16, 6), bench_args.total_threads);
     try std.testing.expectEqual(

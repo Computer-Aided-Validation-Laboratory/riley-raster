@@ -130,6 +130,7 @@ test "Sphere Gold Tests" {
                             mt,
                             st,
                             sc,
+                            null,
                             data_dir,
                             pixel_num,
                             2,

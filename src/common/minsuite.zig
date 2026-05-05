@@ -38,6 +38,7 @@ pub fn calcMinCaseName(
         etype,
         shader_type,
         sample_config,
+        null,
         1.0,
     );
 }
@@ -58,6 +59,7 @@ fn buildSphere200MultiCullMeshInputs(
         etype,
         shader_type,
         sample_config,
+        null,
         data_dir,
         texture_grey,
         texture_rgb,
