@@ -139,7 +139,7 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
         pub fn vecPrint(self: *const Self) void {
             print("[", .{});
             for (0..elem_n) |ii| {
-                print("{e:.3},", .{self.slice[ii]});
+                print("{e:.6},", .{self.slice[ii]});
             }
             print("]\n", .{});
         }
