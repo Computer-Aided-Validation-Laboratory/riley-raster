@@ -288,34 +288,12 @@ pub fn loadNDArrayFromCSV(
     return csvio.loadScalarCsv2DFromLines(outer_alloc, lines.items);
 }
 
-pub const BenchOptions = struct {
-    out_dir_base: []const u8 = "",
-    save_opts: ?[]const iio.ImageSaveOpts = null,
-    return_image: bool = false,
-    fov_scale: f64 = 1.0,
-    threads: ?u16 = null,
-    threads_per_frame: ?u16 = null,
-};
-
-fn calcSaveStrategy(options: BenchOptions) rastcfg.SaveStrategy {
-    if (options.out_dir_base.len > 0 and options.return_image) {
-        return .both;
-    }
-    if (options.out_dir_base.len > 0) {
-        return .disk;
-    }
-    if (options.return_image) {
-        return .memory;
-    }
-    return .none;
-}
-
 pub fn calcCaseName(
     allocator: std.mem.Allocator,
     etype: gk.MeshType,
     shader_type: ShaderType,
     sample_config: TextureSampleConfig,
-    options: BenchOptions,
+    fov_scale: f64,
 ) ![]const u8 {
     const name = if (shader_type == .tex8_grey or shader_type == .tex8_rgb)
         try std.fmt.allocPrint(
@@ -336,7 +314,7 @@ pub fn calcCaseName(
         );
     defer allocator.free(name);
 
-    if (options.fov_scale < 0.99) {
+    if (fov_scale < 0.99) {
         return std.fmt.allocPrint(allocator, "{s}_zoom", .{name});
     }
     return allocator.dupe(u8, name);
@@ -454,9 +432,12 @@ pub fn runBenchmark(
     sample_config: TextureSampleConfig,
     data_dir: []const u8,
     pixel_num: [2]u32,
+    sub_sample: u8,
     texture_grey: iio.Texture(1),
     texture_rgb: iio.Texture(3),
-    options: BenchOptions,
+    config: rastcfg.RasterConfig,
+    out_dir_base: []const u8,
+    fov_scale: f64,
 ) !BenchResult {
     return runBenchmarkInternal(
         .bench,
@@ -467,9 +448,12 @@ pub fn runBenchmark(
         sample_config,
         data_dir,
         pixel_num,
+        sub_sample,
         texture_grey,
         texture_rgb,
-        options,
+        config,
+        out_dir_base,
+        fov_scale,
     );
 }
 
@@ -481,9 +465,12 @@ pub fn runBenchmarkQuiet(
     sample_config: TextureSampleConfig,
     data_dir: []const u8,
     pixel_num: [2]u32,
+    sub_sample: u8,
     texture_grey: iio.Texture(1),
     texture_rgb: iio.Texture(3),
-    options: BenchOptions,
+    config: rastcfg.RasterConfig,
+    out_dir_base: []const u8,
+    fov_scale: f64,
 ) !BenchResult {
     return runBenchmarkInternal(
         .off,
@@ -494,9 +481,12 @@ pub fn runBenchmarkQuiet(
         sample_config,
         data_dir,
         pixel_num,
+        sub_sample,
         texture_grey,
         texture_rgb,
-        options,
+        config,
+        out_dir_base,
+        fov_scale,
     );
 }
 
@@ -509,9 +499,12 @@ fn runBenchmarkInternal(
     sample_config: TextureSampleConfig,
     data_dir: []const u8,
     pixel_num: [2]u32,
+    sub_sample: u8,
     texture_grey: iio.Texture(1),
     texture_rgb: iio.Texture(3),
-    options: BenchOptions,
+    config: rastcfg.RasterConfig,
+    out_dir_base: []const u8,
+    fov_scale: f64,
 ) !BenchResult {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -527,7 +520,7 @@ fn runBenchmarkInternal(
         texture_grey,
         texture_rgb,
     );
-    const num_out_fields = calcOutputChannels(shader_type);
+    _ = calcOutputChannels(shader_type);
 
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
     const focal_leng: f64 = 50.0e-3;
@@ -539,7 +532,7 @@ fn runBenchmarkInternal(
         pixel_size,
         focal_leng,
         rot,
-        options.fov_scale,
+        fov_scale,
     );
     const camera = try CameraPrepared.init(
         aa,
@@ -550,7 +543,7 @@ fn runBenchmarkInternal(
             .rot_world = rot,
             .roi_cent_world = roi_pos,
             .focal_length = focal_leng,
-            .sub_sample = 2,
+            .sub_sample = sub_sample,
         },
     );
     defer camera.deinit(aa);
@@ -565,41 +558,19 @@ fn runBenchmarkInternal(
         .distortion = camera.distortion,
     };
 
-    const total_threads = options.threads orelse tcfg.TOTAL_THREADS;
-    const threads_per_frame = options.threads_per_frame orelse
-        @min(total_threads, tcfg.MAX_RASTER_THREADS_PER_FRAME);
+    var config_run = config;
+    config_run.report = report_mode;
 
-    var config = tcfg.rasterConfig(.bench);
-    config.total_threads = total_threads;
-    config.max_geom_threads_per_frame = threads_per_frame;
-    config.max_raster_threads_per_frame = threads_per_frame;
-    config.save_strategy = calcSaveStrategy(options);
-    config.image_save_opts = options.save_opts orelse &[_]iio.ImageSaveOpts{
-        .{
-            .format = .bmp,
-            .bits = 8,
-            .scaling = .auto,
-            .channels = num_out_fields,
-        },
-        .{
-            .format = .fimg,
-            .bits = null,
-            .scaling = .none,
-            .channels = num_out_fields,
-        },
-    };
-    config.report = report_mode;
-
-    if (options.out_dir_base.len > 0) {
-        var out_dir = try orch.openDirEnsured(io, options.out_dir_base);
+    if (out_dir_base.len > 0) {
+        var out_dir = try orch.openDirEnsured(io, out_dir_base);
         out_dir.close(io);
     }
 
-    const case_name = try calcCaseName(aa, etype, shader_type, sample_config, options);
-    const out_path = if (options.out_dir_base.len > 0)
+    const case_name = try calcCaseName(aa, etype, shader_type, sample_config, fov_scale);
+    const out_path = if (out_dir_base.len > 0)
         try std.fs.path.join(
             aa,
-            &[_][]const u8{ options.out_dir_base, case_name },
+            &[_][]const u8{ out_dir_base, case_name },
         )
     else
         null;
@@ -616,7 +587,7 @@ fn runBenchmarkInternal(
         io,
         &[_]CameraInput{camera_input},
         &[_]mo.MeshInput{mesh_input},
-        config,
+        config_run,
         out_path,
         bench_capture,
     );
@@ -654,7 +625,11 @@ fn runBenchmarkInternal(
             .mnodes_sec = 0.0,
             .mops_sec = 0.0,
         };
-    const image_final = if (options.return_image) blk: {
+
+    const return_image = (config.save_strategy == .memory or
+        config.save_strategy == .both);
+
+    const image_final = if (return_image) blk: {
         var images = image_arr orelse return error.NoResult;
         image_arr = null;
         defer {

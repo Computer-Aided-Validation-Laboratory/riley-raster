@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
+const tcfg = @import("common/testconfig.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
@@ -117,6 +118,8 @@ pub fn main(init: std.process.Init) !void {
                             .{ case.out, case_name },
                         );
 
+                        var r_config = tcfg.getRasterConfig(.bench);
+                        r_config.save_strategy = .disk;
                         _ = try common.runBenchmarkQuiet(
                             aa,
                             io,
@@ -125,9 +128,12 @@ pub fn main(init: std.process.Init) !void {
                             sc,
                             data_dir,
                             pixel_num,
+                            2,
                             texture_grey,
                             texture_rgb,
-                            .{ .out_dir_base = case.out, .fov_scale = case.fov_scale },
+                            r_config,
+                            case.out,
+                            case.fov_scale,
                         );
                     }
                 }

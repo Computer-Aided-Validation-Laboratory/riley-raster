@@ -41,7 +41,7 @@ pub fn main(init: std.process.Init) !void {
     const out_dir_root = "out/edge";
     const data_dir = "data/edge";
 
-    var config = tcfg.rasterConfig(.preview);
+    var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .disk;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .auto },

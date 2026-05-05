@@ -121,6 +121,9 @@ test "Sphere Gold Tests" {
                         defer allocator.free(gold_case_name);
 
                         // 1. Run benchmark
+                        var r_config = tcfg.getRasterConfig(.bench);
+                        r_config.save_strategy = if (c.out.len > 0) .both else .memory;
+
                         var result = try common.runBenchmarkQuiet(
                             allocator,
                             io,
@@ -129,9 +132,12 @@ test "Sphere Gold Tests" {
                             sc,
                             data_dir,
                             pixel_num,
+                            2,
                             texture_grey,
                             texture_rgb,
-                            .{ .out_dir_base = c.out },
+                            r_config,
+                            c.out,
+                            1.0,
                         );
                         result.deinit(allocator);
 

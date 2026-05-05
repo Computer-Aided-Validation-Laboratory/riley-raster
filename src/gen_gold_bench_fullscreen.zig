@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
+const tcfg = @import("common/testconfig.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
@@ -78,6 +79,8 @@ pub fn main(init: std.process.Init) !void {
                     std.debug.print("Rendering reference: {s}\n", .{case_name});
 
                     // We generate gold from the minimal 'fullraster' dataset
+                    var r_config = tcfg.getRasterConfig(.bench);
+                    r_config.save_strategy = .disk;
                     _ = try common.runBenchmarkQuiet(
                         aa,
                         io,
@@ -86,9 +89,12 @@ pub fn main(init: std.process.Init) !void {
                         sc,
                         data_dir,
                         pixel_num,
+                        2,
                         texture_grey,
                         texture_rgb,
-                        .{ .out_dir_base = out_dir_base },
+                        r_config,
+                        out_dir_base,
+                        1.0,
                     );
                 }
             }

@@ -121,6 +121,7 @@ pub fn publishFrameResults(
             try standardReport(
                 io,
                 camera,
+                actual_tile_size,
                 frame_times,
                 total_elems_num,
                 total_elems_in_image,
@@ -148,6 +149,7 @@ pub fn publishFrameResults(
 pub fn printRenderSummary(
     io: std.Io,
     cameras: []const cam.CameraPrepared,
+    actual_tile_size: u16,
     num_time: usize,
     report_mode: ReportMode,
     end_to_end_times: EndToEndTimes,
@@ -184,6 +186,10 @@ pub fn printRenderSummary(
     try writer.print("\n{s}\nSoftware Raster Render Summary\n{s}\n", .{
         print_break,
         print_break,
+    });
+    try writer.print("Actual Tile Size        = {d}x{d}\n", .{
+        actual_tile_size,
+        actual_tile_size,
     });
     try writer.print("Total render time       = {d:.3} ms\n", .{total_render_ms});
     try writer.print("Setup time              = {d:.3} ms\n", .{setup_ms});
@@ -991,6 +997,7 @@ pub inline fn recordNormalSIMD(
 pub fn standardReport(
     io: std.Io,
     camera: *const cam.CameraPrepared,
+    actual_tile_size: u16,
     frame_times: FrameTimes,
     total_elems: usize,
     visible_elems: usize,
@@ -1029,6 +1036,10 @@ pub fn standardReport(
     try writer.print("\n{s}\nSoftware Raster Times\n{s}\n", .{
         print_break,
         print_break,
+    });
+    try writer.print("Actual Tile Size        = {d}x{d}\n", .{
+        actual_tile_size,
+        actual_tile_size,
     });
     try writer.print("Geometry Preparation    = {d:.6} ms\n", .{
         frame_times.geometry_prep * conv_units,

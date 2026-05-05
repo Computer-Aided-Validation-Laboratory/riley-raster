@@ -59,7 +59,7 @@ pub fn main(init: std.process.Init) !void {
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
 
-    var config = tcfg.rasterConfig(.gold);
+    var config = tcfg.getRasterConfig(.gold);
     config.save_strategy = .disk;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .fimg, .bits = null, .scaling = .none },
@@ -100,6 +100,10 @@ pub fn main(init: std.process.Init) !void {
                     opts_with_ch[0].channels = num_ch;
                     opts_with_ch[1].channels = num_ch;
 
+                    var r_config = tcfg.getRasterConfig(.bench);
+                    r_config.save_strategy = .disk;
+                    r_config.image_save_opts = &opts_with_ch;
+
                     var result = try common.runBenchmarkQuiet(
                         allocator,
                         io,
@@ -108,13 +112,12 @@ pub fn main(init: std.process.Init) !void {
                         sc,
                         data_dir,
                         pixel_num_sphere,
+                        2,
                         texture_grey,
                         texture_rgb,
-                        .{
-                            .out_dir_base = out_dir ++ "/sphere200/base",
-                            .save_opts = &opts_with_ch,
-                            .fov_scale = 1.0,
-                        },
+                        r_config,
+                        out_dir ++ "/sphere200/base",
+                        1.0,
                     );
                     result.deinit(allocator);
                 }
@@ -167,10 +170,11 @@ pub fn main(init: std.process.Init) !void {
                         texture_grey,
                         texture_rgb,
                         .{
-                            .out_dir_base = out_dir ++ "/sphere200multicull",
-                            .save_opts = &opts_with_ch,
-                            .fov_scale = 0.75,
+                            .save_strategy = .disk,
+                            .image_save_opts = &opts_with_ch,
                         },
+                        out_dir ++ "/sphere200multicull",
+                        0.75,
                     );
                     result.deinit(allocator);
                 }

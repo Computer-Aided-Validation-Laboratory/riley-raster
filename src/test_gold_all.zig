@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
+// NOTE: pub const needed here for refAllDecls to work!
 pub const small = @import("test_gold_small.zig");
 pub const simple = @import("test_gold_simple.zig");
 pub const edge = @import("test_gold_edge.zig");

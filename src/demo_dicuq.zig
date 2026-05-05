@@ -36,11 +36,13 @@ pub fn main(init: std.process.Init) !void {
     const config = RasterConfig{
         .render_mode = .in_order,
         .total_threads = 4,
-        .max_frames_in_flight = 1,
+        .max_frames_in_flight = 2,
         .max_geom_threads_per_frame = 1,
         .max_raster_threads_per_frame = 4,
-        .background_value = 128.0,
         .save_strategy = .disk,
+        .tile_size_min = 8,
+        .tile_size_max = 128,
+        .background_value = 128.0,
         .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
         },

@@ -259,6 +259,7 @@ fn prepareFrameContext(
 ) !void {
     const arena_alloc = ctx.arena.allocator();
     ctx.actual_tile_size = scalingpolicy.tileSize(
+        input.config.tile_size_min,
         input.config.tile_size_max,
         input.camera.pixels_num,
         input.camera.sub_sample,
@@ -877,9 +878,16 @@ pub fn rasterAllFrames(
         end_to_end_times.total_time = @floatFromInt(
             time_start_render.durationTo(time_end_render).raw.nanoseconds,
         );
+        const actual_tile_size = scalingpolicy.tileSize(
+            config.tile_size_min,
+            config.tile_size_max,
+            cameras[0].pixels_num,
+            cameras[0].sub_sample,
+        );
         try report.printRenderSummary(
             io,
             cameras,
+            actual_tile_size,
             num_time,
             config.report,
             end_to_end_times,
@@ -909,9 +917,17 @@ pub fn rasterAllFrames(
         end_to_end_times.total_time = @floatFromInt(
             time_start_render.durationTo(time_end_render).raw.nanoseconds,
         );
+
+        const actual_tile_size = scalingpolicy.tileSize(
+            config.tile_size_min,
+            config.tile_size_max,
+            cameras[0].pixels_num,
+            cameras[0].sub_sample,
+        );
         try report.printRenderSummary(
             io,
             cameras,
+            actual_tile_size,
             num_time,
             config.report,
             end_to_end_times,
@@ -940,9 +956,17 @@ pub fn rasterAllFrames(
     end_to_end_times.total_time = @floatFromInt(
         time_start_render.durationTo(time_end_render).raw.nanoseconds,
     );
+
+    const actual_tile_size = scalingpolicy.tileSize(
+        config.tile_size_min,
+        config.tile_size_max,
+        cameras[0].pixels_num,
+        cameras[0].sub_sample,
+    );
     try report.printRenderSummary(
         io,
         cameras,
+        actual_tile_size,
         num_time,
         config.report,
         end_to_end_times,

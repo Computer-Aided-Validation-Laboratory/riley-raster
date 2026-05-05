@@ -27,7 +27,8 @@ pub const RasterConfigMode = enum {
     bench,
 };
 
-pub fn rasterConfig(mode: RasterConfigMode) rastcfg.RasterConfig {
+// What is going on here?
+pub fn getRasterConfig(mode: RasterConfigMode) rastcfg.RasterConfig {
     var config = rastcfg.RasterConfig{
         .render_mode = RENDER_MODE,
         .max_frames_in_flight = MAX_FRAMES_IN_FLIGHT,

@@ -185,7 +185,7 @@ pub fn renderCase(
     camera_input.sub_sample = ssaa;
     camera_input.distortion = getDistortionModel(distortion_case);
 
-    var config = tcfg.rasterConfig(.gold);
+    var config = tcfg.getRasterConfig(.gold);
     config.save_strategy = .memory;
     config.subpixel_center_map = subpixel_center_map;
     config.image_save_opts = &[_]iio.ImageSaveOpts{

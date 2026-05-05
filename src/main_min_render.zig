@@ -58,7 +58,7 @@ pub fn main(init: std.process.Init) !void {
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
 
-    var config = tcfg.rasterConfig(.preview);
+    var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .disk;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .fimg, .bits = null, .scaling = .none },
@@ -88,6 +88,8 @@ pub fn main(init: std.process.Init) !void {
                     sc,
                     data_dir,
                 )) {
+                    var r_config = tcfg.getRasterConfig(.bench);
+                    r_config.save_strategy = .disk;
                     _ = try common.runBenchmarkQuiet(
                         aa,
                         io,
@@ -96,12 +98,12 @@ pub fn main(init: std.process.Init) !void {
                         sc,
                         data_dir,
                         pixel_num_sphere,
+                        2,
                         texture_grey,
                         texture_rgb,
-                        .{
-                            .out_dir_base = out_dir ++ "/sphere200/base",
-                            .fov_scale = 1.0,
-                        },
+                        r_config,
+                        out_dir ++ "/sphere200/base",
+                        1.0,
                     );
                 }
             }
@@ -131,6 +133,8 @@ pub fn main(init: std.process.Init) !void {
                     sc,
                     data_dir,
                 )) {
+                    var r_config = tcfg.getRasterConfig(.bench);
+                    r_config.save_strategy = .disk;
                     _ = try minsuite.runSphere200MultiCullQuiet(
                         aa,
                         io,
@@ -141,10 +145,9 @@ pub fn main(init: std.process.Init) !void {
                         pixel_num_sphere,
                         texture_grey,
                         texture_rgb,
-                        .{
-                            .out_dir_base = out_dir ++ "/sphere200multicull",
-                            .fov_scale = 0.75,
-                        },
+                        r_config,
+                        out_dir ++ "/sphere200multicull",
+                        0.75,
                     );
                 }
             }

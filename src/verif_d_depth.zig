@@ -139,7 +139,7 @@ fn renderSingle(
     camera_input: cammod.CameraInput,
     meshes: []const MeshInput,
 ) !NDArray(f64) {
-    var config = tcfg.rasterConfig(.preview);
+    var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .memory;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },

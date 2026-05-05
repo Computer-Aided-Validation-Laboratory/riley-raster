@@ -154,7 +154,7 @@ fn runTexFuncCase(
         std.debug.print("Testing {s} ... ", .{case_dir_name});
     }
 
-    var config = tcfg.rasterConfig(.testing);
+    var config = tcfg.getRasterConfig(.testing);
     config.save_strategy = .memory;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },

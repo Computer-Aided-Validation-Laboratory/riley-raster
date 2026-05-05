@@ -176,7 +176,7 @@ fn renderScalarMap(
     connect: meshio.Connect,
     frame_coords: meshio.Coords,
     camera_input: cam.CameraInput,
-    config: @TypeOf(tcfg.rasterConfig(.preview)),
+    config: @TypeOf(tcfg.getRasterConfig(.preview)),
 ) !ScalarMap {
     const mesh_input = mo.MeshInput{
         .mesh_type = case_spec.mesh_type,
@@ -238,7 +238,7 @@ fn runDistortCase(
     var out_dir = try orch.openDirEnsured(io, out_dir_path);
     defer out_dir.close(io);
 
-    var config = tcfg.rasterConfig(.preview);
+    var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .memory;
 
     for (0..time_steps) |frame_idx| {

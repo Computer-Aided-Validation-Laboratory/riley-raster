@@ -12,6 +12,7 @@ out/
 gold/
 verif/
 demo*/
+bin/
 
 # Remove temp files and temporary test fail renders
 archive/

@@ -54,7 +54,7 @@ pub fn main(init: std.process.Init) !void {
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
     const pixel_num = [_]u32{ 160, 100 };
-    var config = tcfg.rasterConfig(.gold);
+    var config = tcfg.getRasterConfig(.gold);
     config.save_strategy = .disk;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .fimg, .bits = null, .scaling = .none },

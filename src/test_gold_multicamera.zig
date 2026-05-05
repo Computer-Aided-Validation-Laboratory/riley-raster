@@ -240,7 +240,7 @@ test "Multicamera duplicate sphere200 cameras match each other" {
         },
     };
 
-    var config = tcfg.rasterConfig(.testing);
+    var config = tcfg.getRasterConfig(.testing);
     config.save_strategy = .memory;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
@@ -412,7 +412,7 @@ test "Sphere200 multicamera gold tests" {
             },
         };
 
-        var config = tcfg.rasterConfig(.testing);
+        var config = tcfg.getRasterConfig(.testing);
         config.save_strategy = .memory;
         config.image_save_opts = &[_]iio.ImageSaveOpts{
             .{
@@ -587,7 +587,7 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
         },
     };
 
-    var memory_config = tcfg.rasterConfig(.testing);
+    var memory_config = tcfg.getRasterConfig(.testing);
     memory_config.save_strategy = .memory;
     memory_config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
@@ -616,7 +616,7 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
     defer aa.free(large_single.slice);
 
     const out_dir = "tmp-tests/multicamera-mixed-sizes";
-    var batch_config = tcfg.rasterConfig(.testing);
+    var batch_config = tcfg.getRasterConfig(.testing);
     batch_config.save_strategy = .both;
     batch_config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },

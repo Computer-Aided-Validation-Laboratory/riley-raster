@@ -17,6 +17,7 @@ const gk = @import("../zraster/zig/geometrykernels.zig");
 const texops = @import("../zraster/zig/textureops.zig");
 const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
 const tcfg = @import("testconfig.zig");
+const rastcfg = @import("../zraster/zig/rasterconfig.zig");
 
 fn translateCoords(coords: *meshio.Coords, translation: [3]f64) void {
     for (0..coords.mat.rows_num) |nn| {
@@ -37,7 +38,7 @@ pub fn calcMinCaseName(
         etype,
         shader_type,
         sample_config,
-        .{ .fov_scale = 1.0 },
+        1.0,
     );
 }
 
@@ -89,7 +90,9 @@ pub fn runSphere200MultiCullQuiet(
     pixel_num: [2]u32,
     texture_grey: iio.Texture(1),
     texture_rgb: iio.Texture(3),
-    options: common.BenchOptions,
+    config: rastcfg.RasterConfig,
+    out_dir_base: []const u8,
+    fov_scale: f64,
 ) !common.BenchResult {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -109,35 +112,15 @@ pub fn runSphere200MultiCullQuiet(
         aa,
         mesh_inputs,
         pixel_num,
-        options.fov_scale,
+        fov_scale,
     );
     defer camera.deinit(aa);
 
-    const num_out_fields = common.calcOutputChannels(shader_type);
-    var config = tcfg.rasterConfig(.testing);
-    config.save_strategy = if (options.out_dir_base.len > 0)
-        .disk
-    else if (options.return_image)
-        .memory
-    else
-        .none;
-    config.image_save_opts = options.save_opts orelse &[_]iio.ImageSaveOpts{
-        .{
-            .format = .bmp,
-            .bits = 8,
-            .scaling = .auto,
-            .channels = num_out_fields,
-        },
-        .{
-            .format = .fimg,
-            .bits = null,
-            .scaling = .none,
-            .channels = num_out_fields,
-        },
-    };
+    var config_run = config;
+    config_run.report = .off;
 
-    if (options.out_dir_base.len > 0) {
-        var out_dir = try orch.openDirEnsured(io, options.out_dir_base);
+    if (out_dir_base.len > 0) {
+        var out_dir = try orch.openDirEnsured(io, out_dir_base);
         out_dir.close(io);
     }
 
@@ -147,26 +130,36 @@ pub fn runSphere200MultiCullQuiet(
         shader_type,
         sample_config,
     );
-    const out_path = if (options.out_dir_base.len > 0)
+    const out_path = if (out_dir_base.len > 0)
         try std.fs.path.join(aa, &[_][]const u8{
-            options.out_dir_base,
+            out_dir_base,
             case_name,
         })
     else
         null;
 
+    const e2e_start = std.Io.Clock.Timestamp.now(io, .awake);
     const camera_input = camera.toInput();
     var image_arr = try zraster.rasterAllFrames(
         outer_alloc,
         io,
         &[_]CameraInput{camera_input},
         mesh_inputs,
-        config,
+        config_run,
         out_path,
         null,
     );
+    const e2e_end = std.Io.Clock.Timestamp.now(io, .awake);
 
-    const image_final = if (options.return_image) blk: {
+    const e2e_ms = @as(f64, @floatFromInt(
+        e2e_start.durationTo(e2e_end).raw.nanoseconds,
+    )) / 1e6;
+    const fps = 1000.0 / e2e_ms;
+
+    const return_image = (config.save_strategy == .memory or
+        config.save_strategy == .both);
+
+    const image_final = if (return_image) blk: {
         var images = image_arr orelse return error.NoResult;
         image_arr = null;
         defer {
@@ -183,10 +176,10 @@ pub fn runSphere200MultiCullQuiet(
     }
 
     return .{
-        .e2e_ms = 0.0,
+        .e2e_ms = e2e_ms,
         .geom_ms = 0.0,
         .raster_ms = 0.0,
-        .fps = 0.0,
+        .fps = fps,
         .metrics = .{
             .mpx_sec = 0.0,
             .msubpx_sec = 0.0,

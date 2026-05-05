@@ -46,7 +46,7 @@ pub fn main(init: std.process.Init) !void {
     const out_dir_root = "out/small";
     const data_dir = "data/small";
 
-    var config = tcfg.rasterConfig(.preview);
+    var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .disk;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .auto },

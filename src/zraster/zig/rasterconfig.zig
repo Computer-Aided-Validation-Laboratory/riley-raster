@@ -18,14 +18,15 @@ pub const RasterConfig = struct {
     image_save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
-    tile_size_max: u16 = 32,
+    tile_size_min: u16 = 8,
+    tile_size_max: u16 = 256,
     background_value: f64 = 0.0,
     hull_mode: HullMode = .on_no_fallback,
     newton_seed_mode: NewtonSeedMode = .centroid,
     newton_seed_reuse: NewtonSeedReuse = .off,
+    subpixel_center_map: SubPixelCenterMap = .per_tile,
     report: ReportMode = .bench,
     full_stats_opts: FullStatsOpts = .{},
-    subpixel_center_map: SubPixelCenterMap = .per_tile,
 };
 
 pub const SubPixelCenterMap = enum {

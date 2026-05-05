@@ -137,19 +137,16 @@ test "Unified Benchmark Tests" {
                         config;
 
                     if (common.shouldRun(run_config, mt, st, sc, data_dir)) {
-                        const options = common.BenchOptions{
-                            .out_dir_base = cc.out_dir,
-                            .return_image = true,
-                            .save_opts = &[_]iio.ImageSaveOpts{},
-                            .fov_scale = cc.fov_scale,
-                        };
+                        var r_config = tcfg.getRasterConfig(.bench);
+                        r_config.save_strategy = if (cc.out_dir.len > 0) .both else .memory;
+                        r_config.image_save_opts = &[_]iio.ImageSaveOpts{};
 
                         const case_name = try common.calcCaseName(
                             aa,
                             mt,
                             st,
                             sc,
-                            options,
+                            cc.fov_scale,
                         );
 
                         std.debug.print("Testing {s}/{s} ... ", .{ cc.name, case_name });
@@ -163,9 +160,12 @@ test "Unified Benchmark Tests" {
                             sc,
                             data_dir,
                             pixel_num,
+                            2,
                             texture_grey,
                             texture_rgb,
-                            options,
+                            r_config,
+                            cc.out_dir,
+                            cc.fov_scale,
                         );
 
                         // 2. Map filenames

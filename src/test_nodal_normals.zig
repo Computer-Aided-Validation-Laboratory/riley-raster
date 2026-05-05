@@ -94,7 +94,7 @@ test "Nodal normals are prepared when requested" {
 
     const mesh_static = try mo.initStatic(arena_alloc, &mesh_input);
 
-    const rast_cfg = tcfg.rasterConfig(.testing);
+    const rast_cfg = tcfg.getRasterConfig(.testing);
     const frame_mesh = try mo.prepareMeshFrame(
         arena_alloc,
         null,

@@ -10,12 +10,12 @@ const std = @import("std");
 const buildconfig = @import("zraster/zig/buildconfig.zig");
 const common = @import("common/benchcommon.zig");
 const minsuite = @import("common/minsuite.zig");
+const tcfg = @import("common/testconfig.zig");
 const tests = @import("common/tests.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
-const tcfg = @import("common/testconfig.zig");
 
 const simd_on = buildconfig.config.simd == .on;
 
@@ -89,11 +89,9 @@ test "MIN Suite: sphere200 and multimesh" {
                         sc,
                         data_dir,
                     )) {
-                        const options = common.BenchOptions{
-                            .return_image = true,
-                            .save_opts = &[_]iio.ImageSaveOpts{},
-                            .fov_scale = 1.0,
-                        };
+                        var r_config = tcfg.getRasterConfig(.bench);
+                        r_config.save_strategy = .memory;
+                        r_config.image_save_opts = &[_]iio.ImageSaveOpts{};
 
                         const case_name = try minsuite.calcMinCaseName(
                             allocator,
@@ -110,9 +108,12 @@ test "MIN Suite: sphere200 and multimesh" {
                             sc,
                             data_dir,
                             pixel_num_sphere,
+                            2,
                             texture_grey,
                             texture_rgb,
-                            options,
+                            r_config,
+                            "",
+                            1.0,
                         );
                         defer result.deinit(allocator);
 
@@ -199,11 +200,9 @@ test "MIN Suite: sphere200 and multimesh" {
                         sc,
                         data_dir,
                     )) {
-                        const options = common.BenchOptions{
-                            .return_image = true,
-                            .save_opts = &[_]iio.ImageSaveOpts{},
-                            .fov_scale = 0.75,
-                        };
+                        var r_config = tcfg.getRasterConfig(.bench);
+                        r_config.save_strategy = .memory;
+                        r_config.image_save_opts = &[_]iio.ImageSaveOpts{};
 
                         const case_name = try minsuite.calcMinCaseName(
                             allocator,
@@ -222,7 +221,9 @@ test "MIN Suite: sphere200 and multimesh" {
                             pixel_num_sphere,
                             texture_grey,
                             texture_rgb,
-                            options,
+                            r_config,
+                            "",
+                            0.75,
                         );
                         defer result.deinit(allocator);
 

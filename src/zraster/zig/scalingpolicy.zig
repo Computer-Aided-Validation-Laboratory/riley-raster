@@ -17,8 +17,12 @@ pub const DispatchScaling = struct {
     raster_threads: u16,
 };
 
-const min_tile_size: u16 = 8;
-const target_subpx_per_tile: usize = 32*32*2*2;
+const l2_cache_size_bytes = 1024 * 1024;
+const l2_safety_margin = 0.75;
+const bytes_per_subpixel = 154; // Based on F=8, S=8, precision=f64
+const target_subpx_per_tile: usize = @intFromFloat(
+    @as(f64, l2_cache_size_bytes) * l2_safety_margin / bytes_per_subpixel
+);
 const default_chunk_count_per_worker: usize = 4;
 
 pub fn dispatchScaling(
@@ -89,6 +93,7 @@ pub fn frameBatchSize(
 }
 
 pub fn tileSize(
+    tile_size_min: u16,
     tile_size_max: u16,
     pixels_num: [2]u32,
     sub_sample: u8,
@@ -107,6 +112,9 @@ pub fn tileSize(
         @as(usize, 1),
         @as(usize, @intCast(sub_sample)),
     );
+
+    const min_tile_size = @max(@as(u16, 1), tile_size_min);
+
     while (tile_size > min_tile_size) {
         const tile_size_u: usize = @intCast(tile_size);
         const subpx_per_tile = tile_size_u * tile_size_u * sub_samp * sub_samp;
