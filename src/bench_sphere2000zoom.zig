@@ -18,7 +18,10 @@ const texops = @import("zraster/zig/textureops.zig");
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
     const io = init.io;
+
     const base_raster_config = tcfg.getRasterConfig(.bench);
+    //base_raster_config.save_strategy = .disk;
+
     const bench_args = try benchargs.parseArgs(
         init.minimal.args.vector,
         "out/sphere2000zoom",

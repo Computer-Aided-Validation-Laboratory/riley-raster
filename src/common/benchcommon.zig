@@ -1047,9 +1047,8 @@ pub fn writeBenchmarkReport(
 
         // Separator
         try writer.writeByte('|');
-        {
-            var ii: usize = 0;
-            while (ii < col_w + 2) : (ii += 1) try writer.writeByte('-');
+        for (0..col_w + 2) |_| {
+            try writer.writeByte('-');
         }
         try writer.print(
             "| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n",
