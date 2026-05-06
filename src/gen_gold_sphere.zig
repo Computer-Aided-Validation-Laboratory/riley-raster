@@ -45,7 +45,12 @@ pub fn main(init: std.process.Init) !void {
     const pixel_num = [_]u32{ 800, 500 };
 
     const mesh_types = comptime std.enums.values(gk.MeshType);
-    const shader_types = comptime std.enums.values(common.ShaderType);
+    const shader_types = [_]common.ShaderType{
+        .nodal_grey,
+        .nodal_rgb,
+        .tex8_grey,
+        .tex8_rgb,
+    };
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },

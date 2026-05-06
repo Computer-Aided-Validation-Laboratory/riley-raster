@@ -14,7 +14,6 @@ const uvio = @import("../zraster/zig/uvio.zig");
 const csvio = @import("../zraster/zig/csvio.zig");
 const mo = @import("../zraster/zig/meshops.zig");
 const so = @import("../zraster/zig/shaderops.zig");
-const imageops = @import("../zraster/zig/imageops.zig");
 const gk = @import("../zraster/zig/geometrykernels.zig");
 const CameraPrepared = @import("../zraster/zig/camera.zig").CameraPrepared;
 const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
@@ -540,8 +539,7 @@ pub fn loadBenchmarkMeshInput(
             );
             shader = .{ .nodal = .{
                 .field = .{ .array = field_raw, .array_mem = field_raw.slice },
-                .scaling = .auto,
-                .scale_over = .within_frames,
+                .scaling = .none,
             } };
         },
         .tex8_grey => {

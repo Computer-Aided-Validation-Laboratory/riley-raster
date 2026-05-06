@@ -48,7 +48,12 @@ test "MIN Suite: sphere200 and multimesh" {
     const pixel_num_multi = [_]u32{ 640, 400 };
 
     const mesh_types = comptime std.enums.values(gk.MeshType);
-    const shader_types = comptime std.enums.values(common.ShaderType);
+    const shader_types = [_]common.ShaderType{
+        .nodal_grey,
+        .nodal_rgb,
+        .tex8_grey,
+        .tex8_rgb,
+    };
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },

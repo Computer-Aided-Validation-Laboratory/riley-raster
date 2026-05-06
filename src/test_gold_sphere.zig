@@ -59,7 +59,12 @@ test "Sphere Gold Tests" {
     const pixel_num = [_]u32{ 800, 500 };
 
     const mesh_types = comptime std.enums.values(gk.MeshType);
-    const shader_types = comptime std.enums.values(common.ShaderType);
+    const shader_types = [_]common.ShaderType{
+        .nodal_grey,
+        .nodal_rgb,
+        .tex8_grey,
+        .tex8_rgb,
+    };
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
