@@ -787,6 +787,11 @@ fn runBenchmarkInternal(
     else
         null;
 
+    if (out_path) |case_out_path| {
+        var case_out_dir = try orch.openDirEnsured(io, case_out_path);
+        case_out_dir.close(io);
+    }
+
     var bench_capture_storage: [1]report.FrameBenchCapture = undefined;
     const bench_capture = if (report_mode == .bench)
         bench_capture_storage[0..]

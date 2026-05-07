@@ -142,14 +142,14 @@ fn initNodalGlobalScaling(
     return nodal_global_scaling;
 }
 
-fn initStaticSlice(
+fn initMeshStaticSlice(
     allocator: std.mem.Allocator,
     meshes: []const mo.MeshInput,
 ) ![]mo.MeshStatic {
     const mesh_static = try allocator.alloc(mo.MeshStatic, meshes.len);
 
     for (meshes, 0..) |mesh, ii| {
-        mesh_static[ii] = try mo.initStatic(allocator, &mesh);
+        mesh_static[ii] = try mo.initMeshStatic(allocator, &mesh);
     }
 
     return mesh_static;
@@ -349,7 +349,7 @@ fn rasterFrame(
     );
 }
 
-fn runFrameRaster(
+fn runRasterFrame(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     input: *const FrameInput,
@@ -518,7 +518,7 @@ fn processFrameJobInternal(
     );
 
     // Stage 4: Render the frame by rasterisation
-    try runFrameRaster(
+    try runRasterFrame(
         outer_alloc,
         io,
         &input,
@@ -579,7 +579,7 @@ fn processFrameJobSerial(
 
 //------------------------------------------------------------------------------------------
 // 2. Dispatch: Frame jobs over cameras and frames frames to render
-fn dispatchSerialFrameJobs(
+fn dispatchFrameJobsSerial(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     cameras: []const cam.CameraPrepared,
@@ -626,7 +626,7 @@ fn dispatchSerialFrameJobs(
     }
 }
 
-fn dispatchOfflineFrameJobs(
+fn dispatchFrameJobsOffline(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     cameras: []const cam.CameraPrepared,
@@ -704,7 +704,7 @@ fn dispatchOfflineFrameJobs(
     }
 }
 
-fn dispatchInOrderFrameJobs(
+fn dispatchFrameJobsInOrder(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     cameras: []const cam.CameraPrepared,
@@ -837,7 +837,7 @@ pub fn rasterAllFrames(
 
     // Init. static data across all frames - here we reshape uv's once if we have them so
     // we don't need to do this every frames
-    const mesh_static = try initStaticSlice(static_alloc, meshes);
+    const mesh_static = try initMeshStaticSlice(static_alloc, meshes);
     const nodal_global_scaling = try initNodalGlobalScaling(outer_alloc, meshes);
     defer outer_alloc.free(nodal_global_scaling);
 
@@ -857,7 +857,7 @@ pub fn rasterAllFrames(
     const time_start_dispatch = Timestamp.now(io, .awake);
 
     if (config.total_threads == 0) {
-        try dispatchSerialFrameJobs(
+        try dispatchFrameJobsSerial(
             outer_alloc,
             io,
             cameras,
@@ -896,7 +896,7 @@ pub fn rasterAllFrames(
     }
 
     if (config.render_mode == .in_order) {
-        try dispatchInOrderFrameJobs(
+        try dispatchFrameJobsInOrder(
             outer_alloc,
             io,
             cameras,
@@ -935,7 +935,7 @@ pub fn rasterAllFrames(
         return images_arr_opt;
     }
 
-    try dispatchOfflineFrameJobs(
+    try dispatchFrameJobsOffline(
         outer_alloc,
         io,
         cameras,

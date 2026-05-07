@@ -15,6 +15,6 @@ const simd_impl = @import("rasterengine_simd.zig");
 
 pub const ScratchBuffers = simd_impl.ScratchBuffers;
 pub const rasterScene = impl.rasterScene;
-pub const RasterPass = impl.RasterPass;
+pub const RasterEngine = impl.RasterEngine;
 pub const resolveScratchDirect = simd_impl.resolveScratchDirect;
 pub const averageScratch = impl.averageScratch;

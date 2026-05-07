@@ -289,7 +289,7 @@ pub fn meshInputFromSimDataSlice(
 // Mesh Initialization: Initial mesh and coordinate preparation
 //------------------------------------------------------------------------------------------
 
-pub fn initStatic(
+pub fn initMeshStatic(
     allocator: std.mem.Allocator,
     mesh_input: *const MeshInput,
 ) !MeshStatic {

@@ -169,10 +169,10 @@ def run_benchmark_matrix(benchmark_name: str) -> int:
     if not args.dry_run:
         run_root.mkdir(parents=True, exist_ok=True)
 
-    for case in cases:
+    for cc in cases:
         run_case(
             benchmark_name,
-            case,
+            cc,
             run_root,
             args.runs,
             args.dry_run,

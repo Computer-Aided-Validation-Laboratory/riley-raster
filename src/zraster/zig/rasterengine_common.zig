@@ -429,7 +429,7 @@ fn rasterTileCommon(
                             local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
                         }
 
-                        shaded_px += try RasterBackend.RasterPass(
+                        shaded_px += try RasterBackend.RasterEngine(
                             GK,
                             SK,
                             NodalPrepared,
@@ -457,7 +457,7 @@ fn rasterTileCommon(
                             local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
                         }
 
-                        shaded_px += try RasterBackend.RasterPass(
+                        shaded_px += try RasterBackend.RasterEngine(
                             GK,
                             SK,
                             TexPrepared(1),
@@ -485,7 +485,7 @@ fn rasterTileCommon(
                             local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
                         }
 
-                        shaded_px += try RasterBackend.RasterPass(
+                        shaded_px += try RasterBackend.RasterEngine(
                             GK,
                             SK,
                             TexPrepared(3),
@@ -515,7 +515,7 @@ fn rasterTileCommon(
                             local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
                         }
 
-                        shaded_px += try RasterBackend.RasterPass(
+                        shaded_px += try RasterBackend.RasterEngine(
                             GK,
                             SK,
                             TexFuncPrepared(1),
@@ -545,7 +545,7 @@ fn rasterTileCommon(
                             local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
                         }
 
-                        shaded_px += try RasterBackend.RasterPass(
+                        shaded_px += try RasterBackend.RasterEngine(
                             GK,
                             SK,
                             TexFuncPrepared(3),

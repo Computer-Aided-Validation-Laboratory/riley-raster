@@ -93,7 +93,7 @@ pub fn resetSubpxScratch(
 // Raster Pass Implementation
 //------------------------------------------------------------------------------------------
 
-pub fn RasterPass(
+pub fn RasterEngine(
     comptime Geometry: type,
     comptime ShaderKernel: type,
     comptime ShaderData: type,
