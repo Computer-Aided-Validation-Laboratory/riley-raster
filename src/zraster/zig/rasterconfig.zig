@@ -12,8 +12,8 @@ pub const RasterConfig = struct {
     render_mode: RenderMode = .in_order,
     total_threads: u16 = 0,
     max_frames_in_flight: u16 = 1,
-    max_geom_threads_per_frame: u16 = 0,
-    max_raster_threads_per_frame: u16 = 0,
+    max_geom_workers_per_frame: u16 = 1,
+    max_raster_workers_per_frame: u16 = 1,
     save_strategy: SaveStrategy = .disk,
     image_save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .none },

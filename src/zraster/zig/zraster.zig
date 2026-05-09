@@ -155,7 +155,7 @@ fn initMeshStaticSlice(
     return mesh_static;
 }
 
-fn initImagesArray(
+fn initAllFramesBuffer(
     outer_alloc: std.mem.Allocator,
     config: RasterConfig,
     cameras: []const cam.CameraPrepared,
@@ -336,7 +336,7 @@ fn rasterFrame(
         io,
         ctx_rast,
         ctx_report,
-        input.raster_threads,
+        input.raster_workers,
         ctx.tiling.?,
         ctx.prep_meshes,
         ctx.raster_hulls,
@@ -429,7 +429,7 @@ fn sceneTileOverlapBinning(
     ctx.tiling = try rops.sceneTileElemOverlap(
         arena_alloc,
         input.chunk_exec,
-        scalingpolicy.geometryWorkers(input.geom_threads),
+        scalingpolicy.geometryWorkers(input.geom_workers),
         ctx.actual_tile_size,
         tiles_num_x,
         tiles_num_y,
@@ -455,8 +455,8 @@ const FrameInput = struct {
     out_dir: ?std.Io.Dir,
     mesh_static: []const mo.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
-    geom_threads: u16,
-    raster_threads: u16,
+    geom_workers: u16,
+    raster_workers: u16,
     chunk_exec: ?*pce.ParaChunkExecutor,
     images_arr: ?*ndarray.NDArray(f64),
     bench_capture: ?[]report.FrameBenchCapture,
@@ -488,7 +488,7 @@ fn processFrameJobInternal(
     const geo_res = try mo.prepareMeshFrames(
         arena_alloc,
         input.chunk_exec,
-        scalingpolicy.geometryWorkers(input.geom_threads),
+        scalingpolicy.geometryWorkers(input.geom_workers),
         input.camera,
         input.config,
         input.frame_idx,
@@ -597,6 +597,7 @@ fn dispatchFrameJobsSerial(
         config,
         cameras.len,
     );
+
     const chunk_exec: ?*pce.ParaChunkExecutor = null;
 
     for (0..num_time) |frame_idx| {
@@ -613,8 +614,8 @@ fn dispatchFrameJobsSerial(
                     .out_dir = out_dir,
                     .mesh_static = mesh_static,
                     .nodal_global_scaling = nodal_global_scaling,
-                    .geom_threads = dispatch_scale.geom_threads,
-                    .raster_threads = dispatch_scale.raster_threads,
+                    .geom_workers = dispatch_scale.geom_workers,
+                    .raster_workers = dispatch_scale.raster_workers,
                     .chunk_exec = chunk_exec,
                     .images_arr = images_arr,
                     .bench_capture = bench_capture,
@@ -646,9 +647,9 @@ fn dispatchFrameJobsOffline(
         cameras.len,
     );
 
-    var pool = pce.ParaChunkExecutor.init(io, dispatch_scale.geom_threads);
+    var pool = pce.ParaChunkExecutor.init(io, dispatch_scale.geom_workers);
     var chunk_exec: ?*pce.ParaChunkExecutor = null;
-    if (dispatch_scale.geom_threads > 1) {
+    if (dispatch_scale.geom_workers > 1) {
         chunk_exec = &pool;
     }
 
@@ -685,8 +686,8 @@ fn dispatchFrameJobsOffline(
                         .out_dir = out_dir,
                         .mesh_static = mesh_static,
                         .nodal_global_scaling = nodal_global_scaling,
-                        .geom_threads = dispatch_scale.geom_threads,
-                        .raster_threads = dispatch_scale.raster_threads,
+                        .geom_workers = dispatch_scale.geom_workers,
+                        .raster_workers = dispatch_scale.raster_workers,
                         .chunk_exec = chunk_exec,
                         .images_arr = images_arr,
                         .bench_capture = bench_capture,
@@ -723,9 +724,9 @@ fn dispatchFrameJobsInOrder(
         cameras.len,
     );
 
-    var pool = pce.ParaChunkExecutor.init(io, dispatch_scale.geom_threads);
+    var pool = pce.ParaChunkExecutor.init(io, dispatch_scale.geom_workers);
     var chunk_exec: ?*pce.ParaChunkExecutor = null;
-    if (dispatch_scale.geom_threads > 1) {
+    if (dispatch_scale.geom_workers > 1) {
         chunk_exec = &pool;
     }
 
@@ -751,8 +752,8 @@ fn dispatchFrameJobsInOrder(
                         .out_dir = out_dir,
                         .mesh_static = mesh_static,
                         .nodal_global_scaling = nodal_global_scaling,
-                        .geom_threads = dispatch_scale.geom_threads,
-                        .raster_threads = dispatch_scale.raster_threads,
+                        .geom_workers = dispatch_scale.geom_workers,
+                        .raster_workers = dispatch_scale.raster_workers,
                         .chunk_exec = chunk_exec,
                         .images_arr = images_arr,
                         .bench_capture = bench_capture,
@@ -841,7 +842,7 @@ pub fn rasterAllFrames(
     const nodal_global_scaling = try initNodalGlobalScaling(outer_alloc, meshes);
     defer outer_alloc.free(nodal_global_scaling);
 
-    var images_arr_opt: ?ndarray.NDArray(f64) = try initImagesArray(
+    var images_arr_opt: ?ndarray.NDArray(f64) = try initAllFramesBuffer(
         outer_alloc,
         config,
         cameras,

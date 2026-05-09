@@ -164,9 +164,9 @@ pub fn resetSubpxScratch(
 // Raster Pass Implementation
 //------------------------------------------------------------------------------------------
 pub fn RasterEngine(
-    comptime Geometry: type,
-    comptime ShaderKernel: type,
-    comptime ShaderData: type,
+    comptime GeometryKernel: type,  // geometrykernels.zig
+    comptime ShaderKernel: type,    // shaderkernels.zig
+    comptime ShaderData: type,      // shaderops_common.zig, ShaderPrepared
 ) type {
     return struct {
         pub fn render(
@@ -176,7 +176,7 @@ pub fn RasterEngine(
             targ_overlap: common.OverlapTarget,
             mesh_in: rops.MeshRaster,
             shader: *const ShaderData,
-            shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
+            shader_buf: *const shaderops.LocalShaderBuffer(GeometryKernel.nodes_num),
             subpx_scratch: *SubpxScratchBuffers,
         ) !u64 {
             const sub_samp_u: usize = @intCast(ctx_rast.camera.sub_sample);
@@ -209,13 +209,13 @@ pub fn RasterEngine(
             };
 
             const nodes_coords = try rops.loadElemVec3Slices(
-                Geometry.nodes_num,
+                GeometryKernel.nodes_num,
                 f64,
                 mesh_in.coords,
                 targ_overlap.overlap.elem_idx,
             );
 
-            const shaded_px = if (Geometry.solver_kind == .hyperb)
+            const shaded_px = if (GeometryKernel.solver_kind == .hyperb)
                 try rasterDirectSIMD(
                     report_mode,
                     ctx_rast,
@@ -229,7 +229,7 @@ pub fn RasterEngine(
                     shader_buf,
                     subpx_scratch,
                 )
-            else if (Geometry.solver_kind == .inv_bi)
+            else if (GeometryKernel.solver_kind == .inv_bi)
                 // NOTE: SIMD is very inefficient for highly branched inverse bilinear
                 // solve fallback to scalar
                 try rasterDirect(
@@ -245,7 +245,7 @@ pub fn RasterEngine(
                     shader_buf,
                     subpx_scratch,
                 )
-            else if (Geometry.solver_kind == .newton)
+            else if (GeometryKernel.solver_kind == .newton)
                 try rasterNewtonSIMD(
                     report_mode,
                     ctx_rast,
@@ -276,18 +276,18 @@ pub fn RasterEngine(
             orig_start_x_u: usize,
             nodes_coords: Vec3Slices(f64),
             shader: anytype,
-            shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
+            shader_buf: *const shaderops.LocalShaderBuffer(GeometryKernel.nodes_num),
             subpx_scratch: *SubpxScratchBuffers,
         ) !u64 {
-            const N = Geometry.nodes_num;
+            const N = GeometryKernel.nodes_num;
             var shaded_px: u64 = 0;
             const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
             std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
             const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
 
-            const inv_area = Geometry.getInvElemArea(nodes_coords);
+            const inv_area = GeometryKernel.getInvElemArea(nodes_coords);
             const v_inv_area: VecSF = @splat(inv_area);
-            const v_nodes_inv_z = Geometry.getSIMDInvZ(nodes_coords);
+            const v_nodes_inv_z = GeometryKernel.getSIMDInvZ(nodes_coords);
 
             const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
             const v_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
@@ -315,7 +315,7 @@ pub fn RasterEngine(
                     }
 
                     ctx_report.recordSolverCalls(S);
-                    const res = Geometry.solveWeightsHyperbSIMD(
+                    const res = GeometryKernel.solveWeightsHyperbSIMD(
                         nodes_coords,
                         v_ideal_x_px,
                         v_ideal_y_px,
@@ -325,7 +325,7 @@ pub fn RasterEngine(
                     const v_mask_active = v_x_mask & res.v_mask;
 
                     if (@reduce(.Or, v_mask_active)) {
-                        const v_inv_z = Geometry.calcInvZSIMD(
+                        const v_inv_z = GeometryKernel.calcInvZSIMD(
                             v_nodes_inv_z,
                             res.v_weights,
                         );
@@ -396,7 +396,7 @@ pub fn RasterEngine(
                             };
 
                             ShaderKernel.shadeSIMD(
-                                Geometry.coord_space,
+                                GeometryKernel.coord_space,
                                 ctx_shade,
                                 ctx_report,
                                 v_depth_mask,
@@ -429,10 +429,10 @@ pub fn RasterEngine(
             orig_start_x_u: usize,
             nodes_coords: Vec3Slices(f64),
             shader: anytype,
-            shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
+            shader_buf: *const shaderops.LocalShaderBuffer(GeometryKernel.nodes_num),
             subpx_scratch: *SubpxScratchBuffers,
         ) !u64 {
-            const N = Geometry.nodes_num;
+            const N = GeometryKernel.nodes_num;
             var shaded_px: u64 = 0;
             const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
             std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
@@ -511,8 +511,8 @@ pub fn RasterEngine(
                         );
                         const element_tess = hull.getTessellation(
                             N,
-                            Geometry.hull_nodes_num,
-                            Geometry.tess_triangles_num,
+                            GeometryKernel.hull_nodes_num,
+                            GeometryKernel.tess_triangles_num,
                             hx,
                             hy,
                         );
@@ -520,7 +520,7 @@ pub fn RasterEngine(
                             v_ideal_x_px,
                             v_ideal_y_px,
                         );
-                        const init_seed = Geometry.initSeedSIMD(
+                        const init_seed = GeometryKernel.initSeedSIMD(
                             ctx_rast.config.newton_seed_mode,
                             .{
                                 .v_xi = v_hull_res.v_seed_xi,
@@ -554,7 +554,7 @@ pub fn RasterEngine(
                             @intCast(@reduce(.Add, v_tess_pass_u8));
                         ctx_report.recordTessPasses(tess_pass_num);
                     } else {
-                        const init_seed = Geometry.initSeed(
+                        const init_seed = GeometryKernel.initSeed(
                             ctx_rast.config.newton_seed_mode,
                             null,
                         );
@@ -580,8 +580,8 @@ pub fn RasterEngine(
                                         .eta = seed_eta,
                                     };
                                     const seed_quality = newton.evaluateSeedQuality(
-                                        Geometry.nodes_num,
-                                        Geometry.domainViolation,
+                                        GeometryKernel.nodes_num,
+                                        GeometryKernel.domainViolation,
                                         x_arr_f[ss] - subpx_domain.x_off,
                                         y_arr_f[ss] - subpx_domain.y_off,
                                         nodes_coords.x,
@@ -590,7 +590,7 @@ pub fn RasterEngine(
                                         hull_seed,
                                     );
                                     if (!seed_quality.is_usable) {
-                                        const centroid_seed = Geometry.initSeed(
+                                        const centroid_seed = GeometryKernel.initSeed(
                                             ctx_rast.config.newton_seed_mode,
                                             null,
                                         );
@@ -671,7 +671,7 @@ pub fn RasterEngine(
                     v_lane_idx < @as(VecSU, @splat(subpx_simd_chunk.count));
 
                 // Actual Newton solver call S wide
-                const result = Geometry.solveWeightsNewtonSIMD(
+                const result = GeometryKernel.solveWeightsNewtonSIMD(
                     nodes_coords,
                     v_target_x_f,
                     v_target_y_f,
@@ -868,7 +868,7 @@ pub fn RasterEngine(
                             };
 
                             ShaderKernel.shadeSIMD(
-                                Geometry.coord_space,
+                                GeometryKernel.coord_space,
                                 ctx_shade,
                                 ctx_report,
                                 v_depth_mask,
@@ -900,13 +900,13 @@ pub fn RasterEngine(
             rast_bounds: RasterBounds,
             nodes_coords: Vec3Slices(f64),
             shader: *const ShaderData,
-            shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
+            shader_buf: *const shaderops.LocalShaderBuffer(GeometryKernel.nodes_num),
             subpx_scratch: *SubpxScratchBuffers,
         ) !u64 {
             std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
             const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
             return common.rasterDirectScalarCommon(
-                Geometry,
+                GeometryKernel,
                 ShaderKernel,
                 ShaderData,
                 report_mode,
@@ -937,7 +937,7 @@ pub fn rasterScene(
     io: std.Io,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    threads_within_image: u16,
+    requested_workers: u16,
     tiling: rops.TilingOverlaps,
     meshes: []const MeshPrepared,
     raster_hulls: []const ?NDArray(f64),
@@ -950,7 +950,7 @@ pub fn rasterScene(
         io,
         ctx_rast,
         ctx_report,
-        threads_within_image,
+        requested_workers,
         tiling,
         meshes,
         raster_hulls,

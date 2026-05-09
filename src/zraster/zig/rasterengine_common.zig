@@ -937,7 +937,7 @@ fn rasterSceneThreadedCommon(
     io: std.Io,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    threads_within_image: u16,
+    requested_workers: u16,
     tiling: rops.TilingOverlaps,
     meshes: []const MeshPrepared,
     raster_hulls: []const ?NDArray(f64),
@@ -988,7 +988,7 @@ fn rasterSceneThreadedCommon(
     const active_tiles_num = tiling.active_tiles.len;
 
     const worker_count = scalingpolicy.rasterWorkers(
-        threads_within_image,
+        requested_workers,
         active_tiles_num,
     );
     const grain_size = scalingpolicy.rasterGrainSize(
@@ -1058,14 +1058,14 @@ pub fn rasterSceneCommon(
     io: std.Io,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    threads_within_image: u16,
+    requested_workers: u16,
     tiling: rops.TilingOverlaps,
     meshes: []const MeshPrepared,
     raster_hulls: []const ?NDArray(f64),
     image_out_arr: *NDArray(f64),
 ) !void {
     const worker_count = scalingpolicy.rasterWorkers(
-        threads_within_image,
+        requested_workers,
         tiling.active_tiles.len,
     );
 
@@ -1096,7 +1096,7 @@ pub fn rasterSceneCommon(
         io,
         ctx_rast,
         ctx_report,
-        threads_within_image,
+        requested_workers,
         tiling,
         meshes,
         raster_hulls,

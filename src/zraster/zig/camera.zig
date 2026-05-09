@@ -626,6 +626,20 @@ pub const CameraOps = struct {
         return cam_pos;
     }
 
+    pub fn centFromCoordsMean(coords_world: *const meshio.Coords) vector.Vec3f {
+        var cent_world = vector.Vec3f.initZeros();
+        const coords_num = coords_world.mat.rows_num;
+
+        for (0..coords_num) |nn| {
+            cent_world.slice[0] += coords_world.mat.get(nn, 0);
+            cent_world.slice[1] += coords_world.mat.get(nn, 1);
+            cent_world.slice[2] += coords_world.mat.get(nn, 2);
+        }
+
+        const inv_coords_num = 1.0 / @as(f64, @floatFromInt(coords_num));
+        return cent_world.mulScalar(inv_coords_num);
+    }
+
     pub fn roiCentFromCoords(coords_world: *const meshio.Coords) vector.Vec3f {
         var max_vec: vector.Vec3f = undefined;
         max_vec.slice[0] = coords_world.mat.maxByRow(0);
@@ -640,6 +654,30 @@ pub const CameraOps = struct {
         var roi_cent: vector.Vec3f = (&max_vec).add(min_vec);
         roi_cent = roi_cent.mulScalar(0.5);
         return roi_cent;
+    }
+
+    pub fn lookAtPoint(
+        pos_world: vector.Vec3f,
+        target_world: vector.Vec3f,
+    ) rotation.Rotation {
+        const cam_z_axis = (&pos_world).sub(target_world);
+        const cam_z_leng = cam_z_axis.vecLen();
+
+        if (cam_z_leng == 0.0) {
+            return rotation.Rotation.init(0, 0, 0);
+        }
+
+        const cam_z_unit = cam_z_axis.mulScalar(1.0 / cam_z_leng);
+        const alpha_z = std.math.atan2(cam_z_unit.get(1), cam_z_unit.get(0));
+        const beta_y = std.math.atan2(
+            @sqrt(
+                cam_z_unit.get(0) * cam_z_unit.get(0) +
+                    cam_z_unit.get(1) * cam_z_unit.get(1),
+            ),
+            cam_z_unit.get(2),
+        );
+
+        return rotation.Rotation.init(alpha_z, beta_y, 0.0);
     }
 
     pub fn roiCentOverMeshes(meshes: []const mo.MeshInput) vector.Vec3f {
@@ -663,6 +701,27 @@ pub const CameraOps = struct {
         return roi_cent;
     }
 
+    pub fn imageDistFillFrameFromRot(
+        coords_world: *const meshio.Coords,
+        pixels_num: [2]u32,
+        pixels_size: [2]f64,
+        focal_leng: f64,
+        cam_rot: rotation.Rotation,
+        frame_fill: f64,
+    ) f64 {
+        var fov_leng: [2]f64 = fovFromCamRot(cam_rot, coords_world);
+        fov_leng[0] = frame_fill * fov_leng[0];
+        fov_leng[1] = frame_fill * fov_leng[1];
+
+        const image_dists = imageDistFromFov(
+            pixels_num,
+            pixels_size,
+            focal_leng,
+            fov_leng,
+        );
+        return @max(image_dists[0], image_dists[1]);
+    }
+
     pub fn posFillFrameFromRot(
         coords_world: *const meshio.Coords,
         pixels_num: [2]u32,
@@ -671,23 +730,37 @@ pub const CameraOps = struct {
         cam_rot: rotation.Rotation,
         frame_fill: f64,
     ) vector.Vec3f {
-        var fov_leng: [2]f64 = fovFromCamRot(cam_rot, coords_world);
-        fov_leng[0] = frame_fill * fov_leng[0];
-        fov_leng[1] = frame_fill * fov_leng[1];
-
-        const image_dists: [2]f64 = imageDistFromFov(
+        const image_dist = imageDistFillFrameFromRot(
+            coords_world,
             pixels_num,
             pixels_size,
             focal_leng,
-            fov_leng,
+            cam_rot,
+            frame_fill,
         );
-        const image_dist = @max(image_dists[0], image_dists[1]);
-
         const roi_pos: vector.Vec3f = roiCentFromCoords(coords_world);
-
         const cam_pos: vector.Vec3f = calcCamPos(roi_pos, cam_rot, image_dist);
-
         return cam_pos;
+    }
+
+    pub fn posFillFrameFromRotAndTarget(
+        coords_world: *const meshio.Coords,
+        target_world: vector.Vec3f,
+        pixels_num: [2]u32,
+        pixels_size: [2]f64,
+        focal_leng: f64,
+        cam_rot: rotation.Rotation,
+        frame_fill: f64,
+    ) vector.Vec3f {
+        const image_dist = imageDistFillFrameFromRot(
+            coords_world,
+            pixels_num,
+            pixels_size,
+            focal_leng,
+            cam_rot,
+            frame_fill,
+        );
+        return calcCamPos(target_world, cam_rot, image_dist);
     }
 
     pub fn posFillFrameFromRotOverMeshes(

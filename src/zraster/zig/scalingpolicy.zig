@@ -13,8 +13,8 @@ const report = @import("report.zig");
 pub const DispatchScaling = struct {
     dispatch_threads: u16,
     frames_in_flight: u16,
-    geom_threads: u16,
-    raster_threads: u16,
+    geom_workers: u16,
+    raster_workers: u16,
 };
 
 const l2_cache_size_bytes = 1024 * 1024;
@@ -38,27 +38,32 @@ pub fn dispatchScaling(
             config.max_frames_in_flight,
             cameras_num,
         ),
-        .geom_threads = phaseThreads(
+        .geom_workers = phaseWorkers(
             config.total_threads,
-            config.max_geom_threads_per_frame,
+            config.max_geom_workers_per_frame,
         ),
-        .raster_threads = phaseThreads(
+        .raster_workers = phaseWorkers(
             config.total_threads,
-            config.max_raster_threads_per_frame,
+            config.max_raster_workers_per_frame,
         ),
     };
 }
 
-pub fn phaseThreads(
+pub fn phaseWorkers(
     total_threads: u16,
-    phase_threads_max: u16,
+    phase_workers_requested: u16,
 ) u16 {
     if (total_threads == 0) {
         return 1;
     }
 
-    const phase_threads = @max(@as(u16, 1), phase_threads_max);
-    return @min(total_threads, phase_threads);
+    // A value of 0 means use everything (Auto)
+    if (phase_workers_requested == 0) {
+        return total_threads;
+    }
+
+    // Otherwise cap at the total threads available
+    return @min(total_threads, phase_workers_requested);
 }
 
 pub fn framesInFlight(
@@ -128,9 +133,9 @@ pub fn tileSize(
 }
 
 pub fn geometryWorkers(
-    geom_threads: u16,
+    geom_workers: u16,
 ) usize {
-    return @as(usize, @max(@as(u16, 1), geom_threads));
+    return @as(usize, @max(@as(u16, 1), geom_workers));
 }
 
 pub fn geometryNodeChunkSize(
@@ -166,19 +171,19 @@ pub fn tilingChunkSize(
 }
 
 pub fn rasterWorkers(
-    requested_threads: u16,
+    requested_workers: u16,
     active_tiles_num: usize,
 ) usize {
     if (active_tiles_num == 0) {
         return 1;
     }
 
-    const requested_workers = @max(@as(u16, 1), requested_threads);
+    const requested_workers_u16 = @max(@as(u16, 1), requested_workers);
     const tile_cap = @as(
         u16,
         @intCast(@min(active_tiles_num, std.math.maxInt(u16))),
     );
-    return @as(usize, @min(requested_workers, tile_cap));
+    return @as(usize, @min(requested_workers_u16, tile_cap));
 }
 
 pub fn rasterGrainSize(
