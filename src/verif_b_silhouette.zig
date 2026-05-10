@@ -9,12 +9,14 @@
 const std = @import("std");
 const cam = @import("zraster/zig/camera.zig");
 const iio = @import("zraster/zig/imageio.zig");
+const matrix = @import("zraster/zig/matstack.zig");
 const meshio = @import("zraster/zig/meshio.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
 const vconst = @import("common/verifconstants.zig");
 const verif = @import("common/verif.zig");
+const vector = @import("zraster/zig/vecstack.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 
 const pixel_num = [_]u32{ 512, 512 };
@@ -131,6 +133,10 @@ fn writeStatsCsv(
     out_dir: std.Io.Dir,
     file_name: []const u8,
     stats: CentroidStats,
+    centroid_world: vector.Vec3f,
+    scaling: cam.FOVScaling,
+    camera_prepared: *const cam.CameraPrepared,
+    frame_coords: *const meshio.Coords,
 ) !void {
     const file = try out_dir.createFile(io, file_name, .{});
     defer file.close(io);
@@ -139,20 +145,74 @@ fn writeStatsCsv(
     var writer_buf = file.writer(io, &write_buf);
     const writer = &writer_buf.interface;
 
-    try writer.writeAll("cent_ideal_x,cent_ideal_y,cent_calc_x,cent_calc_y,diff_x,diff_y,dist\n");
+    try writer.writeAll("key,unit,value\n");
+    try writer.print("cent_ideal_x,px,{d:.17}\n", .{stats.ideal_x});
+    try writer.print("cent_ideal_y,px,{d:.17}\n", .{stats.ideal_y});
+    try writer.print("cent_calc_x,px,{d:.17}\n", .{stats.calc_x});
+    try writer.print("cent_calc_y,px,{d:.17}\n", .{stats.calc_y});
+    try writer.print("diff_x,px,{d:.17}\n", .{stats.diff_x});
+    try writer.print("diff_y,px,{d:.17}\n", .{stats.diff_y});
+    try writer.print("dist,px,{d:.17}\n", .{stats.dist});
+    try writer.print("centroid_x,length,{d:.17}\n", .{centroid_world.get(0)});
+    try writer.print("centroid_y,length,{d:.17}\n", .{centroid_world.get(1)});
+    try writer.print("centroid_z,length,{d:.17}\n", .{centroid_world.get(2)});
+    try writer.print("plane_dist,length,{d:.17}\n", .{scaling.plane_dist});
+    try writer.print("plane_size_x,length,{d:.17}\n", .{scaling.plane_size[0]});
+    try writer.print("plane_size_y,length,{d:.17}\n", .{scaling.plane_size[1]});
     try writer.print(
-        "{d:.17},{d:.17},{d:.17},{d:.17},{d:.17},{d:.17},{d:.17}\n",
-        .{
-            stats.ideal_x,
-            stats.ideal_y,
-            stats.calc_x,
-            stats.calc_y,
-            stats.diff_x,
-            stats.diff_y,
-            stats.dist,
-        },
+        "leng_per_pixel_x,length/px,{d:.17}\n",
+        .{scaling.leng_per_pixel[0]},
     );
+    try writer.print(
+        "leng_per_pixel_y,length/px,{d:.17}\n",
+        .{scaling.leng_per_pixel[1]},
+    );
+    try writer.print(
+        "pixel_per_leng_x,px/length,{d:.17}\n",
+        .{scaling.pixel_per_leng[0]},
+    );
+    try writer.print(
+        "pixel_per_leng_y,px/length,{d:.17}\n",
+        .{scaling.pixel_per_leng[1]},
+    );
+
+    for (0..frame_coords.mat.rows_num) |nn| {
+        const coord_raster = projectWorldNodeToRaster(
+            camera_prepared,
+            frame_coords.getVec3(nn),
+        );
+        try writer.print("N{d}_x,px,{d:.17}\n", .{ nn, coord_raster.get(0) });
+        try writer.print("N{d}_y,px,{d:.17}\n", .{ nn, coord_raster.get(1) });
+    }
     try writer.flush();
+}
+
+fn projectWorldNodeToRaster(
+    camera_prepared: *const cam.CameraPrepared,
+    coord_world: vector.Vec3f,
+) vector.Vec3f {
+    var coord_raster = matrix.Mat44Ops.mulVec3(
+        f64,
+        camera_prepared.world_to_cam_mat,
+        coord_world,
+    );
+
+    coord_raster.slice[0] = camera_prepared.image_dist * coord_raster.slice[0] /
+        (-coord_raster.slice[2]);
+    coord_raster.slice[1] = camera_prepared.image_dist * coord_raster.slice[1] /
+        (-coord_raster.slice[2]);
+
+    coord_raster.slice[0] = 2.0 * coord_raster.slice[0] /
+        camera_prepared.image_dims[0];
+    coord_raster.slice[1] = 2.0 * coord_raster.slice[1] /
+        camera_prepared.image_dims[1];
+
+    coord_raster.slice[0] = (coord_raster.slice[0] + 1.0) * 0.5 *
+        @as(f64, @floatFromInt(camera_prepared.pixels_num[0]));
+    coord_raster.slice[1] = (1.0 - coord_raster.slice[1]) * 0.5 *
+        @as(f64, @floatFromInt(camera_prepared.pixels_num[1]));
+    coord_raster.slice[2] = -coord_raster.slice[2];
+    return coord_raster;
 }
 
 fn renderScalarMap(
@@ -194,23 +254,14 @@ fn renderScalarMap(
 
 fn buildCentroidCameraInput(ref_coords: *const meshio.Coords) cam.CameraInput {
     const initial_rot = orch.defaultRotation();
-    const initial_pos = cam.CameraOps.posFillFrameFromRot(
-        ref_coords,
-        pixel_num,
-        orch.default_pixel_size,
-        orch.default_focal_length,
-        initial_rot,
-        fov_scale,
-    );
     const roi_cent_world = cam.CameraOps.centFromCoordsMean(ref_coords);
-    const rot_world = cam.CameraOps.lookAtPoint(initial_pos, roi_cent_world);
     const pos_world = cam.CameraOps.posFillFrameFromRotAndTarget(
         ref_coords,
         roi_cent_world,
         pixel_num,
         orch.default_pixel_size,
         orch.default_focal_length,
-        rot_world,
+        initial_rot,
         fov_scale,
     );
 
@@ -218,7 +269,7 @@ fn buildCentroidCameraInput(ref_coords: *const meshio.Coords) cam.CameraInput {
         .pixels_num = pixel_num,
         .pixels_size = orch.default_pixel_size,
         .pos_world = pos_world,
-        .rot_world = rot_world,
+        .rot_world = initial_rot,
         .roi_cent_world = roi_cent_world,
         .focal_length = orch.default_focal_length,
         .sub_sample = 1,
@@ -239,6 +290,7 @@ fn runDistortCase(
     const time_steps = if (sim_data.field) |field| field.getTimeN() else 1;
     const ref_coords = try buildFrameCoords(aa, &sim_data, 0);
     const base_camera_input = buildCentroidCameraInput(&ref_coords);
+    const base_camera_prepared = try cam.CameraPrepared.init(aa, base_camera_input);
 
     const out_dir_path = try std.fmt.allocPrint(
         aa,
@@ -261,6 +313,11 @@ fn runDistortCase(
         const fa = frame_arena.allocator();
 
         const frame_coords = try buildFrameCoords(fa, &sim_data, frame_idx);
+        const frame_cent_world = cam.CameraOps.centFromCoordsMean(&frame_coords);
+        const fov_scaling = cam.CameraOps.calcFOVScaling(
+            base_camera_input,
+            frame_cent_world,
+        );
         const scalar_map = try renderScalarMap(
             fa,
             allocator,
@@ -315,7 +372,16 @@ fn runDistortCase(
             .dist = std.math.nan(f64),
         };
         const stats_name = try std.fmt.allocPrint(aa, "{s}_stats.csv", .{base_name});
-        try writeStatsCsv(io, out_dir, stats_name, stats);
+        try writeStatsCsv(
+            io,
+            out_dir,
+            stats_name,
+            stats,
+            frame_cent_world,
+            fov_scaling,
+            &base_camera_prepared,
+            &frame_coords,
+        );
 
         std.debug.print(
             "b_{s}_{s} frame {d}: centroid dist={e:.6}\n",

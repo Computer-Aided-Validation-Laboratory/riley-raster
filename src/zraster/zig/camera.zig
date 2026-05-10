@@ -482,38 +482,25 @@ pub fn fillTileIdealCentersAffineJac(
     );
 }
 
+pub const FOVScaling = struct {
+    plane_dist: f64,
+    plane_size: [2]f64,
+    leng_per_pixel: [2]f64,
+    pixel_per_leng: [2]f64,
+};
+
 pub const CameraOps = struct {
     pub fn fovFromCamRot(
         cam_rot: rotation.Rotation,
         coords_world: *const meshio.Coords,
     ) [2]f64 {
         const world_to_cam_mat = matrix.Mat33Ops.inv(f64, cam_rot.matrix);
-
-        // 0=x, 1=y, 2=z
-        const bb_min_x = coords_world.mat.minByRow(0);
-        const bb_min_y = coords_world.mat.minByRow(1);
-        const bb_min_z = coords_world.mat.minByRow(2);
-        const bb_max_x = coords_world.mat.maxByRow(0);
-        const bb_max_y = coords_world.mat.maxByRow(1);
-        const bb_max_z = coords_world.mat.maxByRow(2);
-
-        var bb_world_vecs: [8]vector.Vec3f = undefined;
-        bb_world_vecs[0] = vector.initVec3(f64, bb_min_x, bb_min_y, bb_max_z);
-        bb_world_vecs[1] = vector.initVec3(f64, bb_max_x, bb_min_y, bb_max_z);
-        bb_world_vecs[2] = vector.initVec3(f64, bb_max_x, bb_max_y, bb_max_z);
-        bb_world_vecs[3] = vector.initVec3(f64, bb_min_x, bb_max_y, bb_max_z);
-        bb_world_vecs[4] = vector.initVec3(f64, bb_min_x, bb_min_y, bb_min_z);
-        bb_world_vecs[5] = vector.initVec3(f64, bb_max_x, bb_min_y, bb_min_z);
-        bb_world_vecs[6] = vector.initVec3(f64, bb_max_x, bb_max_y, bb_min_z);
-        bb_world_vecs[7] = vector.initVec3(f64, bb_min_x, bb_max_y, bb_min_z);
-
-        var bb_cam_vec: vector.Vec3f = undefined;
-        bb_cam_vec = world_to_cam_mat.mulVec(bb_world_vecs[0]);
+        var bb_cam_vec = world_to_cam_mat.mulVec(coords_world.getVec3(0));
         var bb_cam_max = [_]f64{ bb_cam_vec.get(0), bb_cam_vec.get(1) };
         var bb_cam_min = [_]f64{ bb_cam_vec.get(0), bb_cam_vec.get(1) };
 
-        for (bb_world_vecs[1..]) |vec| {
-            bb_cam_vec = world_to_cam_mat.mulVec(vec);
+        for (1..coords_world.mat.rows_num) |nn| {
+            bb_cam_vec = world_to_cam_mat.mulVec(coords_world.getVec3(nn));
 
             if (bb_cam_vec.get(0) > bb_cam_max[0]) {
                 bb_cam_max[0] = bb_cam_vec.get(0);
@@ -539,47 +526,33 @@ pub const CameraOps = struct {
         meshes: []const mo.MeshInput,
     ) [2]f64 {
         const world_to_cam_mat = matrix.Mat33Ops.inv(f64, cam_rot.matrix);
-
-        var bb_min = [3]f64{ std.math.inf(f64), std.math.inf(f64), std.math.inf(f64) };
-        var bb_max = [3]f64{ -std.math.inf(f64), -std.math.inf(f64), -std.math.inf(f64) };
+        var first_coord: ?vector.Vec3f = null;
+        var bb_cam_max: [2]f64 = undefined;
+        var bb_cam_min: [2]f64 = undefined;
 
         for (meshes) |mesh| {
-            for (0..3) |ii| {
-                const mesh_min = mesh.coords.mat.minByRow(ii);
-                const mesh_max = mesh.coords.mat.maxByRow(ii);
-                if (mesh_min < bb_min[ii]) bb_min[ii] = mesh_min;
-                if (mesh_max > bb_max[ii]) bb_max[ii] = mesh_max;
-            }
-        }
+            for (0..mesh.coords.mat.rows_num) |nn| {
+                const coord = mesh.coords.getVec3(nn);
+                const bb_cam_vec = world_to_cam_mat.mulVec(coord);
 
-        var bb_world_vecs: [8]vector.Vec3f = undefined;
-        bb_world_vecs[0] = vector.initVec3(f64, bb_min[0], bb_min[1], bb_max[2]);
-        bb_world_vecs[1] = vector.initVec3(f64, bb_max[0], bb_min[1], bb_max[2]);
-        bb_world_vecs[2] = vector.initVec3(f64, bb_max[0], bb_max[1], bb_max[2]);
-        bb_world_vecs[3] = vector.initVec3(f64, bb_min[0], bb_max[1], bb_max[2]);
-        bb_world_vecs[4] = vector.initVec3(f64, bb_min[0], bb_min[1], bb_min[2]);
-        bb_world_vecs[5] = vector.initVec3(f64, bb_max[0], bb_min[1], bb_min[2]);
-        bb_world_vecs[6] = vector.initVec3(f64, bb_max[0], bb_max[1], bb_min[2]);
-        bb_world_vecs[7] = vector.initVec3(f64, bb_min[0], bb_max[1], bb_min[2]);
+                if (first_coord == null) {
+                    first_coord = coord;
+                    bb_cam_max = .{ bb_cam_vec.get(0), bb_cam_vec.get(1) };
+                    bb_cam_min = .{ bb_cam_vec.get(0), bb_cam_vec.get(1) };
+                    continue;
+                }
 
-        var bb_cam_vec: vector.Vec3f = undefined;
-        bb_cam_vec = world_to_cam_mat.mulVec(bb_world_vecs[0]);
-        var bb_cam_max = [_]f64{ bb_cam_vec.get(0), bb_cam_vec.get(1) };
-        var bb_cam_min = [_]f64{ bb_cam_vec.get(0), bb_cam_vec.get(1) };
+                if (bb_cam_vec.get(0) > bb_cam_max[0]) {
+                    bb_cam_max[0] = bb_cam_vec.get(0);
+                } else if (bb_cam_vec.get(0) < bb_cam_min[0]) {
+                    bb_cam_min[0] = bb_cam_vec.get(0);
+                }
 
-        for (bb_world_vecs[1..]) |vec| {
-            bb_cam_vec = world_to_cam_mat.mulVec(vec);
-
-            if (bb_cam_vec.get(0) > bb_cam_max[0]) {
-                bb_cam_max[0] = bb_cam_vec.get(0);
-            } else if (bb_cam_vec.get(0) < bb_cam_min[0]) {
-                bb_cam_min[0] = bb_cam_vec.get(0);
-            }
-
-            if (bb_cam_vec.get(1) > bb_cam_max[1]) {
-                bb_cam_max[1] = bb_cam_vec.get(1);
-            } else if (bb_cam_vec.get(1) < bb_cam_min[1]) {
-                bb_cam_min[1] = bb_cam_vec.get(1);
+                if (bb_cam_vec.get(1) > bb_cam_max[1]) {
+                    bb_cam_max[1] = bb_cam_vec.get(1);
+                } else if (bb_cam_vec.get(1) < bb_cam_min[1]) {
+                    bb_cam_min[1] = bb_cam_vec.get(1);
+                }
             }
         }
 
@@ -613,6 +586,40 @@ pub const CameraOps = struct {
         image_dist[1] = fov_leng[1] / (2 * std.math.tan(fov_angle[1] / 2));
 
         return image_dist;
+    }
+
+    pub fn calcFOVScaling(
+        camera_input: CameraInput,
+        plane_cent_world: vector.Vec3f,
+    ) FOVScaling {
+        const cam_z_axis = camera_input.rot_world.matrix.getColVec(2);
+        const plane_vec = (&camera_input.pos_world).sub(plane_cent_world);
+        const plane_dist = @abs(plane_vec.dot(cam_z_axis));
+        const sensor_size = calcSensorSize(
+            camera_input.pixels_num,
+            camera_input.pixels_size,
+        );
+
+        var plane_size: [2]f64 = undefined;
+        plane_size[0] = (plane_dist / camera_input.focal_length) * sensor_size[0];
+        plane_size[1] = (plane_dist / camera_input.focal_length) * sensor_size[1];
+
+        var leng_per_pixel: [2]f64 = undefined;
+        leng_per_pixel[0] = plane_size[0] /
+            @as(f64, @floatFromInt(camera_input.pixels_num[0]));
+        leng_per_pixel[1] = plane_size[1] /
+            @as(f64, @floatFromInt(camera_input.pixels_num[1]));
+
+        var pixel_per_leng: [2]f64 = undefined;
+        pixel_per_leng[0] = 1.0 / leng_per_pixel[0];
+        pixel_per_leng[1] = 1.0 / leng_per_pixel[1];
+
+        return .{
+            .plane_dist = plane_dist,
+            .plane_size = plane_size,
+            .leng_per_pixel = leng_per_pixel,
+            .pixel_per_leng = pixel_per_leng,
+        };
     }
 
     pub fn calcCamPos(
@@ -722,6 +729,39 @@ pub const CameraOps = struct {
         return @max(image_dists[0], image_dists[1]);
     }
 
+    fn imageDistFillFrameFromRotAndTarget(
+        coords_world: *const meshio.Coords,
+        target_world: vector.Vec3f,
+        pixels_num: [2]u32,
+        pixels_size: [2]f64,
+        focal_leng: f64,
+        cam_rot: rotation.Rotation,
+        frame_fill: f64,
+    ) f64 {
+        const world_to_cam_mat = matrix.Mat33Ops.inv(f64, cam_rot.matrix);
+        var coord_cam = world_to_cam_mat.mulVec(coords_world.getVec3(0).sub(target_world));
+        var max_abs_x = @abs(coord_cam.get(0));
+        var max_abs_y = @abs(coord_cam.get(1));
+
+        for (1..coords_world.mat.rows_num) |nn| {
+            coord_cam = world_to_cam_mat.mulVec(coords_world.getVec3(nn).sub(target_world));
+            max_abs_x = @max(max_abs_x, @abs(coord_cam.get(0)));
+            max_abs_y = @max(max_abs_y, @abs(coord_cam.get(1)));
+        }
+
+        const fov_leng = [2]f64{
+            2.0 * frame_fill * max_abs_x,
+            2.0 * frame_fill * max_abs_y,
+        };
+        const image_dists = imageDistFromFov(
+            pixels_num,
+            pixels_size,
+            focal_leng,
+            fov_leng,
+        );
+        return @max(image_dists[0], image_dists[1]);
+    }
+
     pub fn posFillFrameFromRot(
         coords_world: *const meshio.Coords,
         pixels_num: [2]u32,
@@ -752,8 +792,9 @@ pub const CameraOps = struct {
         cam_rot: rotation.Rotation,
         frame_fill: f64,
     ) vector.Vec3f {
-        const image_dist = imageDistFillFrameFromRot(
+        const image_dist = imageDistFillFrameFromRotAndTarget(
             coords_world,
+            target_world,
             pixels_num,
             pixels_size,
             focal_leng,
@@ -1046,4 +1087,36 @@ test "CameraOps.calcSensorSize" {
     const sensor_size = CameraOps.calcSensorSize(pix_num, pix_size);
 
     try std.testing.expectEqual(sensor_size_exp, sensor_size);
+}
+
+test "CameraOps.calcFOVScaling" {
+    const input = CameraInput{
+        .pixels_num = pix_num,
+        .pixels_size = pix_size,
+        .pos_world = cam_pos_exp,
+        .rot_world = rotat_world,
+        .roi_cent_world = roi_world,
+        .focal_length = foc_leng,
+        .sub_sample = sub_samp,
+    };
+
+    const scaling = CameraOps.calcFOVScaling(input, roi_world);
+    const plane_size_exp = [_]f64{
+        image_dist_exp[1] / foc_leng * sensor_size_exp[0],
+        image_dist_exp[1] / foc_leng * sensor_size_exp[1],
+    };
+
+    try std.testing.expectApproxEqAbs(image_dist_exp[1], scaling.plane_dist, test_tol);
+    try std.testing.expectApproxEqAbs(plane_size_exp[0], scaling.plane_size[0], test_tol);
+    try std.testing.expectApproxEqAbs(plane_size_exp[1], scaling.plane_size[1], test_tol);
+    try std.testing.expectApproxEqAbs(
+        plane_size_exp[0] / @as(f64, @floatFromInt(pix_num[0])),
+        scaling.leng_per_pixel[0],
+        test_tol,
+    );
+    try std.testing.expectApproxEqAbs(
+        plane_size_exp[1] / @as(f64, @floatFromInt(pix_num[1])),
+        scaling.leng_per_pixel[1],
+        test_tol,
+    );
 }

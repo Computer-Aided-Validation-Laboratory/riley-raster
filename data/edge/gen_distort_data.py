@@ -11,8 +11,8 @@ BULGE_MIDSIDE_OFFSET_FACTOR = 0.3
 TAN_TIME_STEPS = 13
 TAN_OFFSET_FACTOR = 0.3
 
-STRETCH = 11.0
-SHEAR = 11.0
+STRETCH = 5.0
+SHEAR = 5.0
 STEPS = 13
 
 
@@ -175,7 +175,10 @@ def tri_stretch_vertices_final(edge_length):
 
 def tri_stretch_vertices_initial(edge_length, stretch_ratio):
     vertices = tri_stretch_vertices_final(edge_length).copy()
-    vertices[1, 0] += edge_length * stretch_ratio
+    stretch_disp = edge_length * stretch_ratio
+    vertices[0, 0] -= 0.5 * stretch_disp
+    vertices[1, 0] += stretch_disp
+    vertices[2, 0] -= 0.5 * stretch_disp
     return vertices
 
 
@@ -192,7 +195,10 @@ def tri_shear_vertices_final(edge_length):
 
 def tri_shear_vertices_initial(edge_length, shear_ratio):
     vertices = tri_shear_vertices_final(edge_length).copy()
-    vertices[2, 0] += edge_length * shear_ratio
+    shear_disp = edge_length * shear_ratio
+    vertices[0, 0] -= 0.5 * shear_disp
+    vertices[1, 0] -= 0.5 * shear_disp
+    vertices[2, 0] += shear_disp
     return vertices
 
 
@@ -209,15 +215,21 @@ def quad_vertices_final(edge_length):
 
 def quad_stretch_vertices_initial(edge_length, stretch_ratio):
     vertices = quad_vertices_final(edge_length).copy()
-    vertices[1, 0] += edge_length * stretch_ratio
-    vertices[2, 0] += edge_length * stretch_ratio
+    stretch_disp = edge_length * stretch_ratio
+    vertices[0, 0] -= stretch_disp
+    vertices[3, 0] -= stretch_disp
+    vertices[1, 0] += stretch_disp
+    vertices[2, 0] += stretch_disp
     return vertices
 
 
 def quad_shear_vertices_initial(edge_length, shear_ratio):
     vertices = quad_vertices_final(edge_length).copy()
-    vertices[2, 0] += edge_length * shear_ratio
-    vertices[3, 0] += edge_length * shear_ratio
+    shear_disp = edge_length * shear_ratio
+    vertices[0, 0] -= shear_disp
+    vertices[1, 0] -= shear_disp
+    vertices[2, 0] += shear_disp
+    vertices[3, 0] += shear_disp
     return vertices
 
 
