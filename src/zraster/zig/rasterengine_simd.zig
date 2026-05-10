@@ -164,9 +164,9 @@ pub fn resetSubpxScratch(
 // Raster Pass Implementation
 //------------------------------------------------------------------------------------------
 pub fn RasterEngine(
-    comptime GeometryKernel: type,  // geometrykernels.zig
-    comptime ShaderKernel: type,    // shaderkernels.zig
-    comptime ShaderData: type,      // shaderops_common.zig, ShaderPrepared
+    comptime GeometryKernel: type, // geometrykernels.zig
+    comptime ShaderKernel: type, // shaderkernels.zig
+    comptime ShaderData: type, // shaderops_common.zig, ShaderPrepared
 ) type {
     return struct {
         pub fn render(
@@ -287,6 +287,10 @@ pub fn RasterEngine(
 
             const inv_area = GeometryKernel.getInvElemArea(nodes_coords);
             const v_inv_area: VecSF = @splat(inv_area);
+            var nodes_inv_z: [N]f64 = undefined;
+            inline for (0..N) |nn| {
+                nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
+            }
             const v_nodes_inv_z = GeometryKernel.getSIMDInvZ(nodes_coords);
 
             const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
@@ -323,6 +327,91 @@ pub fn RasterEngine(
                     );
 
                     const v_mask_active = v_x_mask & res.v_mask;
+
+                    if (comptime report_mode == .full_stats) {
+                        const lane_x_mask: [S]bool = v_x_mask;
+                        const lane_active_mask: [S]bool = v_mask_active;
+                        const lane_weights_0: [S]f64 = res.v_weights[0];
+                        const lane_weights_1: [S]f64 = res.v_weights[1];
+                        const lane_weights_2: [S]f64 = res.v_weights[2];
+                        const lane_inv_z: [S]f64 = GeometryKernel.calcInvZSIMD(
+                            v_nodes_inv_z,
+                            res.v_weights,
+                        );
+                        for (0..S) |ll| {
+                            if (lane_x_mask[ll]) {
+                                const global_subx =
+                                    @as(usize, @intCast(targ_overlap.tile.x_px_min)) *
+                                    sub_samp + scratch_x_u + ll;
+                                const global_suby =
+                                    @as(usize, @intCast(targ_overlap.tile.y_px_min)) *
+                                    sub_samp + scratch_y_u;
+                                if (lane_active_mask[ll]) {
+                                    const weights = [3]f64{
+                                        lane_weights_0[ll],
+                                        lane_weights_1[ll],
+                                        lane_weights_2[ll],
+                                    };
+                                    const inv_z = lane_inv_z[ll];
+                                    const interp = common.calcInterpParamCoords(
+                                        GeometryKernel,
+                                        nodes_inv_z,
+                                        weights,
+                                        inv_z,
+                                        0.0,
+                                        0.0,
+                                    );
+                                    ctx_report.recordPixelConverged(
+                                        global_subx,
+                                        global_suby,
+                                        true,
+                                    );
+                                    ctx_report.recordPixelXi(
+                                        global_subx,
+                                        global_suby,
+                                        interp.xi,
+                                    );
+                                    ctx_report.recordPixelEta(
+                                        global_subx,
+                                        global_suby,
+                                        interp.eta,
+                                    );
+                                    ctx_report.recordPixelJacobianDet(
+                                        global_subx,
+                                        global_suby,
+                                        newton.calcJacobianDet2D(
+                                            N,
+                                            interp.xi,
+                                            interp.eta,
+                                            nodes_coords.x,
+                                            nodes_coords.y,
+                                        ),
+                                    );
+                                } else {
+                                    ctx_report.recordPixelConverged(
+                                        global_subx,
+                                        global_suby,
+                                        false,
+                                    );
+                                    ctx_report.recordPixelXi(
+                                        global_subx,
+                                        global_suby,
+                                        std.math.nan(f64),
+                                    );
+                                    ctx_report.recordPixelEta(
+                                        global_subx,
+                                        global_suby,
+                                        std.math.nan(f64),
+                                    );
+                                    ctx_report.recordPixelJacobianDet(
+                                        global_subx,
+                                        global_suby,
+                                        std.math.nan(f64),
+                                    );
+                                }
+                            }
+                        }
+                    }
 
                     if (@reduce(.Or, v_mask_active)) {
                         const v_inv_z = GeometryKernel.calcInvZSIMD(
@@ -691,6 +780,76 @@ pub fn RasterEngine(
                 const solver_iters: u64 = @intCast(@reduce(.Add, v_solver_iters));
                 ctx_report.recordSolverIters(solver_iters);
                 ctx_report.recordSolverCalls(subpx_simd_chunk.count);
+
+                if (comptime report_mode == .full_stats) {
+                    const chunk_mask_arr: [S]bool = v_chunk_mask;
+                    const conv_mask_arr: [S]bool = result.v_mask;
+                    const xi_out_arr: [S]f64 = result.v_xi_out;
+                    const eta_out_arr: [S]f64 = result.v_eta_out;
+                    for (0..S) |jj| {
+                        if (chunk_mask_arr[jj]) {
+                            const global_subx = @as(
+                                usize,
+                                subpx_simd_chunk.scratch_x_u[jj],
+                            ) + @as(usize, @intCast(targ_overlap.tile.x_px_min)) *
+                                sub_samp;
+                            const global_suby = @as(
+                                usize,
+                                subpx_simd_chunk.scratch_y_u[jj],
+                            ) + @as(usize, @intCast(targ_overlap.tile.y_px_min)) *
+                                sub_samp;
+                            if (conv_mask_arr[jj]) {
+                                ctx_report.recordPixelConverged(
+                                    global_subx,
+                                    global_suby,
+                                    true,
+                                );
+                                ctx_report.recordPixelXi(
+                                    global_subx,
+                                    global_suby,
+                                    xi_out_arr[jj],
+                                );
+                                ctx_report.recordPixelEta(
+                                    global_subx,
+                                    global_suby,
+                                    eta_out_arr[jj],
+                                );
+                                ctx_report.recordPixelJacobianDet(
+                                    global_subx,
+                                    global_suby,
+                                    newton.calcJacobianDet2D(
+                                        N,
+                                        xi_out_arr[jj],
+                                        eta_out_arr[jj],
+                                        nodes_coords.x,
+                                        nodes_coords.y,
+                                    ),
+                                );
+                            } else {
+                                ctx_report.recordPixelConverged(
+                                    global_subx,
+                                    global_suby,
+                                    false,
+                                );
+                                ctx_report.recordPixelXi(
+                                    global_subx,
+                                    global_suby,
+                                    std.math.nan(f64),
+                                );
+                                ctx_report.recordPixelEta(
+                                    global_subx,
+                                    global_suby,
+                                    std.math.nan(f64),
+                                );
+                                ctx_report.recordPixelJacobianDet(
+                                    global_subx,
+                                    global_suby,
+                                    std.math.nan(f64),
+                                );
+                            }
+                        }
+                    }
+                }
 
                 // We store anything that converged with parametric coords inside the
                 // element

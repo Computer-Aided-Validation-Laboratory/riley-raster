@@ -215,6 +215,10 @@ pub fn reduceBenchLog(dst: *BenchLog, src: *const BenchLog) void {
 pub const FullStatsLog = struct {
     bench: BenchLog = .{},
     iteration_map: ?ndarray.NDArray(f64) = null,
+    xi_map: ?ndarray.NDArray(f64) = null,
+    eta_map: ?ndarray.NDArray(f64) = null,
+    converged_map: ?ndarray.NDArray(f64) = null,
+    jacobian_det_map: ?ndarray.NDArray(f64) = null,
     pixel_occupancy_map: ?ndarray.NDArray(f64) = null,
     depth_map: ?ndarray.NDArray(f64) = null,
     normals_map: ?ndarray.NDArray(f64) = null,
@@ -225,6 +229,10 @@ pub const FullStatsLog = struct {
 
     pub fn deinit(self: *FullStatsLog, allocator: std.mem.Allocator) void {
         if (self.iteration_map) |*imap| imap.deinit(allocator);
+        if (self.xi_map) |*xmap| xmap.deinit(allocator);
+        if (self.eta_map) |*emap| emap.deinit(allocator);
+        if (self.converged_map) |*cmap| cmap.deinit(allocator);
+        if (self.jacobian_det_map) |*jmap| jmap.deinit(allocator);
         if (self.pixel_occupancy_map) |*pomap| pomap.deinit(allocator);
         if (self.depth_map) |*dmap| dmap.deinit(allocator);
         if (self.normals_map) |*nmap| nmap.deinit(allocator);
@@ -305,6 +313,74 @@ pub const FullStatsLog = struct {
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
                 "diag_cam{d}_frame{d}_iters",
+                .{ camera_idx, frame_idx },
+            );
+            for (opts.formats) |opt| {
+                try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
+            }
+        }
+
+        if (self.xi_map) |*m| {
+            const sub_samp: usize = @intCast(camera.sub_sample);
+            const mat = matslice.MatSlice(f64).init(
+                m.slice,
+                camera.pixels_num[1] * sub_samp,
+                camera.pixels_num[0] * sub_samp,
+            );
+            const name = try std.fmt.bufPrint(
+                name_buff[0..],
+                "diag_cam{d}_frame{d}_xi",
+                .{ camera_idx, frame_idx },
+            );
+            for (opts.formats) |opt| {
+                try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
+            }
+        }
+
+        if (self.eta_map) |*m| {
+            const sub_samp: usize = @intCast(camera.sub_sample);
+            const mat = matslice.MatSlice(f64).init(
+                m.slice,
+                camera.pixels_num[1] * sub_samp,
+                camera.pixels_num[0] * sub_samp,
+            );
+            const name = try std.fmt.bufPrint(
+                name_buff[0..],
+                "diag_cam{d}_frame{d}_eta",
+                .{ camera_idx, frame_idx },
+            );
+            for (opts.formats) |opt| {
+                try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
+            }
+        }
+
+        if (self.converged_map) |*m| {
+            const sub_samp: usize = @intCast(camera.sub_sample);
+            const mat = matslice.MatSlice(f64).init(
+                m.slice,
+                camera.pixels_num[1] * sub_samp,
+                camera.pixels_num[0] * sub_samp,
+            );
+            const name = try std.fmt.bufPrint(
+                name_buff[0..],
+                "diag_cam{d}_frame{d}_converged",
+                .{ camera_idx, frame_idx },
+            );
+            for (opts.formats) |opt| {
+                try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
+            }
+        }
+
+        if (self.jacobian_det_map) |*m| {
+            const sub_samp: usize = @intCast(camera.sub_sample);
+            const mat = matslice.MatSlice(f64).init(
+                m.slice,
+                camera.pixels_num[1] * sub_samp,
+                camera.pixels_num[0] * sub_samp,
+            );
+            const name = try std.fmt.bufPrint(
+                name_buff[0..],
+                "diag_cam{d}_frame{d}_Jdet",
                 .{ camera_idx, frame_idx },
             );
             for (opts.formats) |opt| {
@@ -675,6 +751,32 @@ pub fn initFullStatsLog(
         @memset(self.iteration_map.?.slice, 0);
     }
 
+    if (opts.save_xi_map) {
+        self.xi_map = try ndarray.NDArray(f64).initFlat(allocator, &sub_pixels_num);
+        @memset(self.xi_map.?.slice, std.math.nan(f64));
+    }
+
+    if (opts.save_eta_map) {
+        self.eta_map = try ndarray.NDArray(f64).initFlat(allocator, &sub_pixels_num);
+        @memset(self.eta_map.?.slice, std.math.nan(f64));
+    }
+
+    if (opts.save_converged_map) {
+        self.converged_map = try ndarray.NDArray(f64).initFlat(
+            allocator,
+            &sub_pixels_num,
+        );
+        @memset(self.converged_map.?.slice, 0);
+    }
+
+    if (opts.save_jacobian_det_map) {
+        self.jacobian_det_map = try ndarray.NDArray(f64).initFlat(
+            allocator,
+            &sub_pixels_num,
+        );
+        @memset(self.jacobian_det_map.?.slice, std.math.nan(f64));
+    }
+
     if (opts.save_pixel_occupancy_map) {
         self.pixel_occupancy_map = try ndarray.NDArray(f64).initFlat(
             allocator,
@@ -878,6 +980,64 @@ pub fn ReportContext(comptime mode: ReportMode) type {
                     const row_stride = imap.strides[0];
                     imap.slice[global_suby * row_stride + global_subx] =
                         @floatFromInt(iters);
+                }
+            }
+        }
+
+        pub inline fn recordPixelXi(
+            self: @This(),
+            global_subx: usize,
+            global_suby: usize,
+            xi: f64,
+        ) void {
+            if (mode == .full_stats) {
+                if (self.log.xi_map) |*xmap| {
+                    const row_stride = xmap.strides[0];
+                    xmap.slice[global_suby * row_stride + global_subx] = xi;
+                }
+            }
+        }
+
+        pub inline fn recordPixelEta(
+            self: @This(),
+            global_subx: usize,
+            global_suby: usize,
+            eta: f64,
+        ) void {
+            if (mode == .full_stats) {
+                if (self.log.eta_map) |*emap| {
+                    const row_stride = emap.strides[0];
+                    emap.slice[global_suby * row_stride + global_subx] = eta;
+                }
+            }
+        }
+
+        pub inline fn recordPixelConverged(
+            self: @This(),
+            global_subx: usize,
+            global_suby: usize,
+            converged: bool,
+        ) void {
+            if (mode == .full_stats) {
+                if (self.log.converged_map) |*cmap| {
+                    const row_stride = cmap.strides[0];
+                    cmap.slice[global_suby * row_stride + global_subx] =
+                        if (converged) 1.0 else 0.0;
+                }
+            }
+        }
+
+        pub inline fn recordPixelJacobianDet(
+            self: @This(),
+            global_subx: usize,
+            global_suby: usize,
+            jacobian_det: f64,
+        ) void {
+            if (mode == .full_stats) {
+                if (self.log.jacobian_det_map) |*jmap| {
+                    const row_stride = jmap.strides[0];
+                    jmap.slice[global_suby * row_stride + global_subx] =
+                        jacobian_det;
                 }
             }
         }

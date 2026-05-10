@@ -338,6 +338,40 @@ pub fn solveInverse(
     };
 }
 
+pub fn calcJacobianDet2D(
+    comptime N: usize,
+    xi: f64,
+    eta: f64,
+    node_x: []const f64,
+    node_y: []const f64,
+) f64 {
+    var node_values: [N]f64 = undefined;
+    var deriv_n_xi: [N]f64 = undefined;
+    var deriv_n_eta: [N]f64 = undefined;
+    shapefun.shapeFunctions(
+        N,
+        xi,
+        eta,
+        &node_values,
+        &deriv_n_xi,
+        &deriv_n_eta,
+    );
+
+    var dx_dxi: f64 = 0.0;
+    var dx_deta: f64 = 0.0;
+    var dy_dxi: f64 = 0.0;
+    var dy_deta: f64 = 0.0;
+
+    for (0..N) |nn| {
+        dx_dxi += deriv_n_xi[nn] * node_x[nn];
+        dx_deta += deriv_n_eta[nn] * node_x[nn];
+        dy_dxi += deriv_n_xi[nn] * node_y[nn];
+        dy_deta += deriv_n_eta[nn] * node_y[nn];
+    }
+
+    return dx_dxi * dy_deta - dx_deta * dy_dxi;
+}
+
 pub fn solveInverseSIMD(
     comptime N: usize,
     v_target_x: VecSF,
@@ -463,4 +497,18 @@ pub fn solveInverseSIMD(
         .v_residual_x = v_residual_x_final,
         .v_residual_y = v_residual_y_final,
     };
+}
+
+test "calcJacobianDet2D regular elements" {
+    const testing = std.testing;
+
+    const tri_x = [_]f64{ 0.0, 10.0, 5.0 };
+    const tri_y = [_]f64{ 0.0, 0.0, 8.660254037844386 };
+    const tri_det = calcJacobianDet2D(3, 0.2, 0.3, &tri_x, &tri_y);
+    try testing.expectApproxEqAbs(86.60254037844386, tri_det, 1e-9);
+
+    const quad_x = [_]f64{ 0.0, 10.0, 10.0, 0.0 };
+    const quad_y = [_]f64{ 0.0, 0.0, 10.0, 10.0 };
+    const quad_det = calcJacobianDet2D(4, 0.0, 0.0, &quad_x, &quad_y);
+    try testing.expectApproxEqAbs(25.0, quad_det, 1e-12);
 }

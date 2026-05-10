@@ -18,6 +18,7 @@ const hull = @import("hull.zig");
 const report = @import("report.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 const rops = @import("rasterops.zig");
+const newton = @import("newton.zig");
 const pce = @import("parachunkexec.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
 const mo = @import("meshops.zig");
@@ -104,7 +105,7 @@ fn calcTri3PerspectiveParamCoords(
     };
 }
 
-fn calcInterpParamCoords(
+pub fn calcInterpParamCoords(
     comptime Geometry: type,
     nodes_inv_z: [Geometry.nodes_num]f64,
     weights: [Geometry.nodes_num]f64,
@@ -238,6 +239,67 @@ pub fn rasterDirectScalarCommon(
                 );
 
             ctx_report.recordSolverIters(result.iters);
+
+            if (comptime report_mode == .full_stats) {
+                if (result.weights) |weights| {
+                    const inv_z = Geometry.calcInvZ(nodes_coords, weights);
+                    const interp = calcInterpParamCoords(
+                        Geometry,
+                        nodes_inv_z,
+                        weights,
+                        inv_z,
+                        0.0,
+                        0.0,
+                    );
+                    ctx_report.recordPixelConverged(
+                        global_subx,
+                        global_suby,
+                        true,
+                    );
+                    ctx_report.recordPixelXi(
+                        global_subx,
+                        global_suby,
+                        interp.xi,
+                    );
+                    ctx_report.recordPixelEta(
+                        global_subx,
+                        global_suby,
+                        interp.eta,
+                    );
+                    ctx_report.recordPixelJacobianDet(
+                        global_subx,
+                        global_suby,
+                        newton.calcJacobianDet2D(
+                            N,
+                            interp.xi,
+                            interp.eta,
+                            nodes_coords.x,
+                            nodes_coords.y,
+                        ),
+                    );
+                } else {
+                    ctx_report.recordPixelConverged(
+                        global_subx,
+                        global_suby,
+                        false,
+                    );
+                    ctx_report.recordPixelXi(
+                        global_subx,
+                        global_suby,
+                        std.math.nan(f64),
+                    );
+                    ctx_report.recordPixelEta(
+                        global_subx,
+                        global_suby,
+                        std.math.nan(f64),
+                    );
+                    ctx_report.recordPixelJacobianDet(
+                        global_subx,
+                        global_suby,
+                        std.math.nan(f64),
+                    );
+                }
+            }
 
             // If weights are not null we are inside the element and we need to check the
             // depth buffer

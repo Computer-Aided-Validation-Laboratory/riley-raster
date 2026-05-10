@@ -13,6 +13,7 @@ const matrix = @import("zraster/zig/matstack.zig");
 const meshio = @import("zraster/zig/meshio.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const orch = @import("common/orchestration.zig");
+const rastcfg = @import("zraster/zig/rasterconfig.zig");
 const tcfg = @import("common/testconfig.zig");
 const vconst = @import("common/verifconstants.zig");
 const verif = @import("common/verif.zig");
@@ -37,6 +38,74 @@ const ScalarMap = struct {
     cols_num: usize,
     vals: []f64,
 };
+
+fn imageFormatExt(format: iio.ImageFormat) []const u8 {
+    return switch (format) {
+        .csv => ".csv",
+        .fimg => ".fimg",
+        .ppm => ".ppm",
+        .bmp => ".bmp",
+        .tiff => ".tiff",
+    };
+}
+
+fn renameFullStatsOutputs(
+    io: std.Io,
+    out_dir: std.Io.Dir,
+    frame_idx: usize,
+    full_stats_opts: rastcfg.FullStatsOpts,
+) !void {
+    const diag_names = [_][]const u8{
+        "iters",
+        "xi",
+        "eta",
+        "converged",
+        "Jdet",
+        "occupancy",
+        "depth",
+        "earlyout",
+        "tile_timing",
+        "tile_density",
+        "tile_occupancy",
+        "normals",
+    };
+
+    var old_name_buf: [256]u8 = undefined;
+    var new_name_buf: [256]u8 = undefined;
+
+    const old_stats_name = try std.fmt.bufPrint(
+        &old_name_buf,
+        "report_stats_cam0_frame0.txt",
+        .{},
+    );
+    const new_stats_name = try std.fmt.bufPrint(
+        &new_name_buf,
+        "report_stats_cam0_frame{d}.txt",
+        .{frame_idx},
+    );
+    out_dir.rename(old_stats_name, out_dir, new_stats_name, io) catch |err| {
+        if (err != error.FileNotFound) return err;
+    };
+
+    for (diag_names) |diag_name| {
+        for (full_stats_opts.formats) |save_opt| {
+            const ext = imageFormatExt(save_opt.format);
+            const old_diag_name = try std.fmt.bufPrint(
+                &old_name_buf,
+                "diag_cam0_frame0_{s}{s}",
+                .{ diag_name, ext },
+            );
+            const new_diag_name = try std.fmt.bufPrint(
+                &new_name_buf,
+                "diag_cam0_frame{d}_{s}{s}",
+                .{ frame_idx, diag_name, ext },
+            );
+            out_dir.rename(old_diag_name, out_dir, new_diag_name, io) catch |err| {
+                if (err != error.FileNotFound) return err;
+            };
+        }
+    }
+}
 
 fn buildFrameCoords(
     allocator: std.mem.Allocator,
@@ -224,6 +293,7 @@ fn renderScalarMap(
     frame_coords: meshio.Coords,
     camera_input: cam.CameraInput,
     config: @TypeOf(tcfg.getRasterConfig(.preview)),
+    out_dir_path: []const u8,
 ) !ScalarMap {
     const mesh_input = mo.MeshInput{
         .mesh_type = case_spec.mesh_type,
@@ -245,7 +315,7 @@ fn renderScalarMap(
         &[_]cam.CameraInput{camera_input},
         &[_]mo.MeshInput{mesh_input},
         config,
-        null,
+        out_dir_path,
         null,
     )) orelse return error.NoResult;
 
@@ -362,6 +432,7 @@ fn runDistortCase(
 
     var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .memory;
+    config.report = .full_stats;
 
     for (0..time_steps) |frame_idx| {
         var frame_arena = std.heap.ArenaAllocator.init(allocator);
@@ -383,8 +454,15 @@ fn runDistortCase(
             frame_coords,
             base_camera_input,
             config,
+            out_dir_path,
         );
         defer allocator.free(scalar_map.vals);
+        try renameFullStatsOutputs(
+            io,
+            out_dir,
+            frame_idx,
+            config.full_stats_opts,
+        );
 
         var base_name_buf: [128]u8 = undefined;
         const base_name = try iio.formatFrameFieldBaseName(

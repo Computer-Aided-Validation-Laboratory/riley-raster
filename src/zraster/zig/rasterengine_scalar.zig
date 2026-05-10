@@ -354,6 +354,58 @@ pub fn RasterEngine(
 
                     ctx_report.recordSolverIters(result.iters);
 
+                    if (comptime report_mode == .full_stats) {
+                        if (result.weights != null) {
+                            ctx_report.recordPixelConverged(
+                                global_subx,
+                                global_suby,
+                                true,
+                            );
+                            ctx_report.recordPixelXi(
+                                global_subx,
+                                global_suby,
+                                result.xi_out,
+                            );
+                            ctx_report.recordPixelEta(
+                                global_subx,
+                                global_suby,
+                                result.eta_out,
+                            );
+                            ctx_report.recordPixelJacobianDet(
+                                global_subx,
+                                global_suby,
+                                newton.calcJacobianDet2D(
+                                    N,
+                                    result.xi_out,
+                                    result.eta_out,
+                                    nodes_coords.x,
+                                    nodes_coords.y,
+                                ),
+                            );
+                        } else {
+                            ctx_report.recordPixelConverged(
+                                global_subx,
+                                global_suby,
+                                false,
+                            );
+                            ctx_report.recordPixelXi(
+                                global_subx,
+                                global_suby,
+                                std.math.nan(f64),
+                            );
+                            ctx_report.recordPixelEta(
+                                global_subx,
+                                global_suby,
+                                std.math.nan(f64),
+                            );
+                            ctx_report.recordPixelJacobianDet(
+                                global_subx,
+                                global_suby,
+                                std.math.nan(f64),
+                            );
+                        }
+                    }
+
                     if (ctx_rast.config.newton_seed_reuse == .last_converged) {
                         if (result.weights != null) {
                             newton.updateSeedState(
