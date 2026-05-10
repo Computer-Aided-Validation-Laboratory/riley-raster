@@ -180,4 +180,49 @@ pub const distort_cases = [_]DistortCase{
             .{ 60.0, 5.0, 0.0 },
         ),
     },
+    .{
+        .case_name = "rot",
+        .mesh_type = .tri3,
+        .data_dir = "data/edge/tri3_distort_rot",
+        .camera_input = edgeCameraInput(
+            .{ 5.0, 2.886751345948129, 144.92861657761585 },
+            .{ 5.0, 2.886751345948129, 0.0 },
+        ),
+    },
+    .{
+        .case_name = "rot",
+        .mesh_type = .tri6,
+        .data_dir = "data/edge/tri6_distort_rot",
+        .camera_input = edgeCameraInput(
+            .{ 5.0, 2.886751345948129, 144.92861657761585 },
+            .{ 5.0, 2.886751345948129, 0.0 },
+        ),
+    },
+    .{
+        .case_name = "rot",
+        .mesh_type = .quad4ibi,
+        .data_dir = "data/edge/quad4_distort_rot",
+        .camera_input = edgeCameraInput(
+            .{ 5.0, 5.0, 167.27358490566039 },
+            .{ 5.0, 5.0, 0.0 },
+        ),
+    },
+    .{
+        .case_name = "rot",
+        .mesh_type = .quad8,
+        .data_dir = "data/edge/quad8_distort_rot",
+        .camera_input = edgeCameraInput(
+            .{ 5.0, 5.0, 167.27358490566039 },
+            .{ 5.0, 5.0, 0.0 },
+        ),
+    },
+    .{
+        .case_name = "rot",
+        .mesh_type = .quad9,
+        .data_dir = "data/edge/quad9_distort_rot",
+        .camera_input = edgeCameraInput(
+            .{ 5.0, 5.0, 167.27358490566039 },
+            .{ 5.0, 5.0, 0.0 },
+        ),
+    },
 };

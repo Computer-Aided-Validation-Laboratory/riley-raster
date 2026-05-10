@@ -419,6 +419,7 @@ pub fn generateDistortEdgeGold(
         .{ .name = "distort_tan", .mesh_types = &midside_mesh_types },
         .{ .name = "distort_stretch", .mesh_types = &full_mesh_types },
         .{ .name = "distort_shear", .mesh_types = &full_mesh_types },
+        .{ .name = "distort_rot", .mesh_types = &full_mesh_types },
     };
 
     for (distortion_cases) |distortion_case| {

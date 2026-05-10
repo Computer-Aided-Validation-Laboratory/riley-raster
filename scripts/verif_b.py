@@ -350,6 +350,7 @@ def keep_row(row: dict[str, object], subset: str) -> bool:
         "tan",
         "stretch",
         "shear",
+        "rot",
     }
 
 

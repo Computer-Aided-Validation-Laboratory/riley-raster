@@ -804,6 +804,49 @@ pub const CameraOps = struct {
         return calcCamPos(target_world, cam_rot, image_dist);
     }
 
+    fn imageDistFillFrameFromRotOverMeshesAndTarget(
+        meshes: []const mo.MeshInput,
+        target_world: vector.Vec3f,
+        pixels_num: [2]u32,
+        pixels_size: [2]f64,
+        focal_leng: f64,
+        cam_rot: rotation.Rotation,
+        frame_fill: f64,
+    ) f64 {
+        const world_to_cam_mat = matrix.Mat33Ops.inv(f64, cam_rot.matrix);
+        var max_abs_x: f64 = 0.0;
+        var max_abs_y: f64 = 0.0;
+        var is_first = true;
+
+        for (meshes) |mesh| {
+            for (0..mesh.coords.mat.rows_num) |nn| {
+                const coord_cam = world_to_cam_mat.mulVec(
+                    mesh.coords.getVec3(nn).sub(target_world),
+                );
+                if (is_first) {
+                    max_abs_x = @abs(coord_cam.get(0));
+                    max_abs_y = @abs(coord_cam.get(1));
+                    is_first = false;
+                } else {
+                    max_abs_x = @max(max_abs_x, @abs(coord_cam.get(0)));
+                    max_abs_y = @max(max_abs_y, @abs(coord_cam.get(1)));
+                }
+            }
+        }
+
+        const fov_leng = [2]f64{
+            2.0 * frame_fill * max_abs_x,
+            2.0 * frame_fill * max_abs_y,
+        };
+        const image_dists = imageDistFromFov(
+            pixels_num,
+            pixels_size,
+            focal_leng,
+            fov_leng,
+        );
+        return @max(image_dists[0], image_dists[1]);
+    }
+
     pub fn posFillFrameFromRotOverMeshes(
         meshes: []const mo.MeshInput,
         pixels_num: [2]u32,
@@ -829,6 +872,27 @@ pub const CameraOps = struct {
         const cam_pos: vector.Vec3f = calcCamPos(roi_pos, cam_rot, image_dist);
 
         return cam_pos;
+    }
+
+    pub fn posFillFrameFromRotOverMeshesAndTarget(
+        meshes: []const mo.MeshInput,
+        target_world: vector.Vec3f,
+        pixels_num: [2]u32,
+        pixels_size: [2]f64,
+        focal_leng: f64,
+        cam_rot: rotation.Rotation,
+        frame_fill: f64,
+    ) vector.Vec3f {
+        const image_dist = imageDistFillFrameFromRotOverMeshesAndTarget(
+            meshes,
+            target_world,
+            pixels_num,
+            pixels_size,
+            focal_leng,
+            cam_rot,
+            frame_fill,
+        );
+        return calcCamPos(target_world, cam_rot, image_dist);
     }
 };
 

@@ -1387,6 +1387,7 @@ pub fn runDistortEdgeTexFuncTest(
         .{ .name = "distort_tan", .supports = supportsMidsideDistortMesh },
         .{ .name = "distort_stretch", .supports = supportsAnyDistortMesh },
         .{ .name = "distort_shear", .supports = supportsAnyDistortMesh },
+        .{ .name = "distort_rot", .supports = supportsAnyDistortMesh },
     };
 
     for (distortion_cases) |distortion_case| {

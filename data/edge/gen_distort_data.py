@@ -11,9 +11,10 @@ BULGE_MIDSIDE_OFFSET_FACTOR = 0.3
 TAN_TIME_STEPS = 13
 TAN_OFFSET_FACTOR = 0.3
 
-STRETCH = 5.0
-SHEAR = 5.0
+STRETCH = 2.0
+SHEAR = 2.0
 STEPS = 13
+ROT_TIME_STEPS = 13
 
 
 def save_case(
@@ -122,6 +123,22 @@ def build_disp_fields_to_target(coords_initial, coords_final, time_steps):
     return disp_x, disp_y, disp_z
 
 
+def build_disp_fields_from_frame_coords(coords_initial, coords_frames):
+    node_num = coords_initial.shape[0]
+    time_steps = len(coords_frames)
+    disp_x = np.zeros((node_num, time_steps))
+    disp_y = np.zeros((node_num, time_steps))
+    disp_z = np.zeros((node_num, time_steps))
+
+    for tt, coords_frame in enumerate(coords_frames):
+        delta = coords_frame - coords_initial
+        disp_x[:, tt] = delta[:, 0]
+        disp_y[:, tt] = delta[:, 1]
+        disp_z[:, tt] = delta[:, 2]
+
+    return disp_x, disp_y, disp_z
+
+
 def get_midside_direction(v1, v2, centroid):
     midpoint = 0.5 * (v1 + v2)
     direction = midpoint - centroid
@@ -141,6 +158,20 @@ def get_edge_tangent(v1, v2):
 
 def build_edge_midpoints(vertices, edge_pairs):
     return np.array([0.5 * (vertices[i0] + vertices[i1]) for i0, i1 in edge_pairs])
+
+
+def rotate_points(points, angle_deg, center):
+    angle_rad = np.radians(angle_deg)
+    cos_a = np.cos(angle_rad)
+    sin_a = np.sin(angle_rad)
+    rot_mat = np.array(
+        [
+            [cos_a, -sin_a, 0.0],
+            [sin_a, cos_a, 0.0],
+            [0.0, 0.0, 1.0],
+        ]
+    )
+    return np.array([rot_mat @ (pp - center) + center for pp in points])
 
 
 def generate_case(base_dir, name, coords_initial, coords_final, connect):
@@ -596,6 +627,90 @@ def generate_quad_tan(base_dir, edge_length, time_steps, tan_offset_factor, incl
     )
 
 
+def generate_tri3_rot(base_dir, edge_length, time_steps):
+    coords = tri_shear_vertices_final(edge_length)
+    centroid = np.mean(coords, axis=0)
+    angles_deg = np.linspace(0.0, 360.0, time_steps)
+    coords_frames = [rotate_points(coords, angle_deg, centroid) for angle_deg in angles_deg]
+    disp_x, disp_y, disp_z = build_disp_fields_from_frame_coords(coords, coords_frames)
+    save_case(
+        base_dir,
+        "tri3_distort_rot",
+        coords,
+        np.array([[0, 1, 2]]),
+        disp_x,
+        disp_y,
+        disp_z,
+        compute_uvs(coords),
+    )
+
+
+def generate_tri6_rot(base_dir, edge_length, time_steps):
+    coords_vertices = tri_shear_vertices_final(edge_length)
+    edge_pairs = [(0, 1), (1, 2), (2, 0)]
+    midsides = build_edge_midpoints(coords_vertices, edge_pairs)
+    coords = np.vstack([coords_vertices, midsides])
+    centroid = np.mean(coords_vertices, axis=0)
+    angles_deg = np.linspace(0.0, 360.0, time_steps)
+    coords_frames = [rotate_points(coords, angle_deg, centroid) for angle_deg in angles_deg]
+    disp_x, disp_y, disp_z = build_disp_fields_from_frame_coords(coords, coords_frames)
+    save_case(
+        base_dir,
+        "tri6_distort_rot",
+        coords,
+        np.array([[0, 1, 2, 3, 4, 5]]),
+        disp_x,
+        disp_y,
+        disp_z,
+        compute_uvs(coords),
+    )
+
+
+def generate_quad_rot(base_dir, edge_length, time_steps, include_center):
+    coords_vertices = quad_vertices_final(edge_length)
+    edge_pairs = [(0, 1), (1, 2), (2, 3), (3, 0)]
+    midsides = build_edge_midpoints(coords_vertices, edge_pairs)
+    node_list = [coords_vertices[0], coords_vertices[1], coords_vertices[2], coords_vertices[3]]
+    node_list.extend([midsides[0], midsides[1], midsides[2], midsides[3]])
+    if include_center:
+        node_list.append(np.mean(coords_vertices, axis=0))
+    coords = np.array(node_list)
+    centroid = np.mean(coords_vertices, axis=0)
+    angles_deg = np.linspace(0.0, 360.0, time_steps)
+    coords_frames = [rotate_points(coords, angle_deg, centroid) for angle_deg in angles_deg]
+    disp_x, disp_y, disp_z = build_disp_fields_from_frame_coords(coords, coords_frames)
+    mesh_name = "quad9_distort_rot" if include_center else "quad8_distort_rot"
+    connect = np.array([list(range(9 if include_center else 8))])
+    save_case(
+        base_dir,
+        mesh_name,
+        coords,
+        connect,
+        disp_x,
+        disp_y,
+        disp_z,
+        compute_uvs(coords),
+    )
+
+
+def generate_quad4_rot(base_dir, edge_length, time_steps):
+    coords = quad_vertices_final(edge_length)
+    centroid = np.mean(coords, axis=0)
+    angles_deg = np.linspace(0.0, 360.0, time_steps)
+    coords_frames = [rotate_points(coords, angle_deg, centroid) for angle_deg in angles_deg]
+    disp_x, disp_y, disp_z = build_disp_fields_from_frame_coords(coords, coords_frames)
+    save_case(
+        base_dir,
+        "quad4_distort_rot",
+        coords,
+        np.array([[0, 1, 2, 3]]),
+        disp_x,
+        disp_y,
+        disp_z,
+        compute_uvs(coords),
+    )
+
+
 def main():
     if BULGE_TIME_STEPS % 2 == 0:
         print("Warning: BULGE_TIME_STEPS should be odd to include the square case.")
@@ -626,12 +741,19 @@ def main():
     generate_quad8_shear(base_dir, EDGE_LENG, SHEAR)
     generate_quad9_shear(base_dir, EDGE_LENG, SHEAR)
 
+    generate_tri3_rot(base_dir, EDGE_LENG, ROT_TIME_STEPS)
+    generate_tri6_rot(base_dir, EDGE_LENG, ROT_TIME_STEPS)
+    generate_quad4_rot(base_dir, EDGE_LENG, ROT_TIME_STEPS)
+    generate_quad_rot(base_dir, EDGE_LENG, ROT_TIME_STEPS, False)
+    generate_quad_rot(base_dir, EDGE_LENG, ROT_TIME_STEPS, True)
+
     print(
         "Generated distortion edge data: "
         f"distort_bulge ({BULGE_TIME_STEPS} steps), "
         f"distort_tan ({TAN_TIME_STEPS} steps), "
         f"distort_stretch ({STEPS} steps), "
-        f"distort_shear ({STEPS} steps)."
+        f"distort_shear ({STEPS} steps), "
+        f"distort_rot ({ROT_TIME_STEPS} steps)."
     )
 
 

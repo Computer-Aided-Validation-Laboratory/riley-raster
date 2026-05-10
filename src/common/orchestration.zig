@@ -92,6 +92,70 @@ pub const SingleMeshPrepared = struct {
     camera: CameraPrepared,
 };
 
+fn initCameraForSimDataAllFrames(
+    allocator: std.mem.Allocator,
+    sim_data: *const meshio.SimData,
+    mesh_type: gk.MeshType,
+    pixel_num: [2]u32,
+    fov_scale: f64,
+) !CameraPrepared {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const time_steps = if (sim_data.field) |field| field.getTimeN() else 1;
+    var mesh_inputs = try aa.alloc(mo.MeshInput, time_steps);
+
+    for (0..time_steps) |tt| {
+        var frame_coords = try meshio.Coords.initAlloc(aa, sim_data.coords.mat.rows_num);
+
+        for (0..sim_data.coords.mat.rows_num) |nn| {
+            frame_coords.mat.set(nn, 0, sim_data.coords.x(nn));
+            frame_coords.mat.set(nn, 1, sim_data.coords.y(nn));
+            frame_coords.mat.set(nn, 2, sim_data.coords.z(nn));
+
+            if (sim_data.field) |field| {
+                frame_coords.mat.set(
+                    nn,
+                    0,
+                    frame_coords.x(nn) + field.array.get(&[_]usize{ tt, nn, 0 }),
+                );
+                frame_coords.mat.set(
+                    nn,
+                    1,
+                    frame_coords.y(nn) + field.array.get(&[_]usize{ tt, nn, 1 }),
+                );
+                frame_coords.mat.set(
+                    nn,
+                    2,
+                    frame_coords.z(nn) + field.array.get(&[_]usize{ tt, nn, 2 }),
+                );
+            }
+        }
+
+        mesh_inputs[tt] = .{
+            .mesh_type = mesh_type,
+            .coords = frame_coords,
+            .connect = sim_data.connect,
+            .disp = null,
+            .shader = .{
+                .tex_func = .{
+                    .uvs = null,
+                    .builtin = .constant,
+                    .normal_type = .none,
+                },
+            },
+        };
+    }
+
+    return try initCameraForMeshes(
+        allocator,
+        mesh_inputs,
+        pixel_num,
+        fov_scale,
+    );
+}
+
 pub fn prepareSingleMeshCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -117,7 +181,21 @@ pub fn prepareSingleMeshCase(
     const sim_data = try loadData(allocator, io, data_path);
     const uv_path = try std.fmt.allocPrint(allocator, "{s}/uvs.csv", .{data_path});
     const uvs = try uvio.loadUVMap(allocator, io, uv_path);
-    const camera = try initCameraForCoords(allocator, &sim_data.coords, pixel_num, fov_scale);
+    const camera = if (std.mem.startsWith(u8, test_type, "distort_"))
+        try initCameraForSimDataAllFrames(
+            allocator,
+            &sim_data,
+            mesh_type,
+            pixel_num,
+            fov_scale,
+        )
+    else
+        try initCameraForCoords(
+            allocator,
+            &sim_data.coords,
+            pixel_num,
+            fov_scale,
+        );
 
     return .{
         .sim_data = sim_data,

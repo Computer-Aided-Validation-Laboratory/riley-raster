@@ -19,8 +19,8 @@ const verif = @import("common/verif.zig");
 const vector = @import("zraster/zig/vecstack.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 
-const pixel_num = [_]u32{ 512, 512 };
-const fov_scale: f64 = 1.01;
+const pixel_num = [_]u32{ 1024, 1024 };
+const fov_scale: f64 = 1.024;
 
 const CentroidStats = struct {
     ideal_x: f64,
@@ -277,6 +277,59 @@ fn buildCentroidCameraInput(ref_coords: *const meshio.Coords) cam.CameraInput {
     };
 }
 
+fn buildCentroidCameraInputOverFrames(
+    allocator: std.mem.Allocator,
+    sim_data: *const meshio.SimData,
+    mesh_type: @TypeOf(vconst.distort_cases[0].mesh_type),
+) !cam.CameraInput {
+    const initial_rot = orch.defaultRotation();
+    const roi_cent_world = cam.CameraOps.centFromCoordsMean(&sim_data.coords);
+    const time_steps = if (sim_data.field) |field| field.getTimeN() else 1;
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const frame_meshes = try aa.alloc(mo.MeshInput, time_steps);
+    for (0..time_steps) |frame_idx| {
+        const frame_coords = try buildFrameCoords(aa, sim_data, frame_idx);
+        frame_meshes[frame_idx] = .{
+            .mesh_type = mesh_type,
+            .coords = frame_coords,
+            .connect = sim_data.connect,
+            .disp = null,
+            .shader = .{
+                .tex_func = .{
+                    .uvs = null,
+                    .builtin = .constant,
+                    .normal_type = .none,
+                },
+            },
+        };
+    }
+
+    const pos_world = cam.CameraOps.posFillFrameFromRotOverMeshesAndTarget(
+        frame_meshes,
+        roi_cent_world,
+        pixel_num,
+        orch.default_pixel_size,
+        orch.default_focal_length,
+        initial_rot,
+        fov_scale,
+    );
+
+    return .{
+        .pixels_num = pixel_num,
+        .pixels_size = orch.default_pixel_size,
+        .pos_world = pos_world,
+        .rot_world = initial_rot,
+        .roi_cent_world = roi_cent_world,
+        .focal_length = orch.default_focal_length,
+        .sub_sample = 1,
+        .distortion = .none,
+    };
+}
+
 fn runDistortCase(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -289,7 +342,10 @@ fn runDistortCase(
     const sim_data = try orch.loadData(aa, io, case_spec.data_dir);
     const time_steps = if (sim_data.field) |field| field.getTimeN() else 1;
     const ref_coords = try buildFrameCoords(aa, &sim_data, 0);
-    const base_camera_input = buildCentroidCameraInput(&ref_coords);
+    const base_camera_input = if (std.mem.eql(u8, case_spec.case_name, "rot"))
+        try buildCentroidCameraInputOverFrames(allocator, &sim_data, case_spec.mesh_type)
+    else
+        buildCentroidCameraInput(&ref_coords);
     const base_camera_prepared = try cam.CameraPrepared.init(aa, base_camera_input);
 
     const out_dir_path = try std.fmt.allocPrint(
