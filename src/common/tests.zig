@@ -1363,8 +1363,7 @@ fn supportsMidsideDistortMesh(mesh_type: gk.MeshType) bool {
 
 fn supportsAnyDistortMesh(mesh_type: gk.MeshType) bool {
     return switch (mesh_type) {
-        .tri3, .tri6, .quad4ibi, .quad8, .quad9 => true,
-        else => false,
+        .tri3, .tri6, .quad4ibi, .quad4newton, .quad8, .quad9 => true,
     };
 }
 

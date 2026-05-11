@@ -25,11 +25,12 @@ const CameraPrepared = cammod.CameraPrepared;
 const CameraOps = cammod.CameraOps;
 const MeshInput = mo.MeshInput;
 
-const OVERLAP: f64 = 0.5;
-pub const BEHIND_FACT: f64 = 2.0;
+const OVERLAP_X: f64 = 0.6;
+const OVERLAP_Y: f64 = 0.85;
+pub const BEHIND_FACT: f64 = 1.25;
 
-const pixel_num = [_]u32{ 640, 400 };
-const fov_scale: f64 = 1.02;
+const pixel_num = [_]u32{ 1200, 600 };
+const fov_scale: f64 = 1.01;
 const out_root = "verif";
 
 const mesh_types = [_]gk.MeshType{
@@ -222,12 +223,20 @@ fn runCase(
 
     const bounds = mo.findAlignedCentroid(&front_coords);
     const width = bounds.extent[0];
-    const x_sep = width * (1.0 - OVERLAP);
+    const height = bounds.extent[1];
+    const x_sep = width * (1.0 - OVERLAP_X);
+    const y_sep = height * (1.0 - OVERLAP_Y);
 
     var front_coords_mut = front_coords;
     var back_coords_mut = back_coords;
-    translateCoords(&front_coords_mut, .{ -0.5 * x_sep, 0.0, 0.0 });
-    translateCoords(&back_coords_mut, .{ 0.5 * x_sep, 0.0, 0.0 });
+    translateCoords(
+        &front_coords_mut,
+        .{ 0.5 * x_sep, -0.5 * y_sep, 0.0 },
+    );
+    translateCoords(
+        &back_coords_mut,
+        .{ -0.5 * x_sep, 0.5 * y_sep, 0.0 },
+    );
 
     var front_mesh = MeshInput{
         .mesh_type = case_spec.mesh_type,
@@ -275,7 +284,7 @@ fn runCase(
             .rot_world = case_spec.rot,
             .roi_cent_world = roi_pos,
             .focal_length = orch.default_focal_length,
-            .sub_sample = 2,
+            .sub_sample = 1,
         },
     );
     defer camera.deinit(aa);

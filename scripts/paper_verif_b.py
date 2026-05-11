@@ -7,24 +7,22 @@ import pathlib
 import subprocess
 
 from PIL import Image
-
-
-SHEAR_REGULAR = 10
-SHEAR_SHEAR = 0
-
-BULGE_OUT = 4
-BULGE_REGULAR = 6
-BULGE_IN = 8
+from paper_verif_const import (
+    BULGE_IN,
+    BULGE_OUT,
+    BULGE_OUT_LIMIT,
+    BULGE_REGULAR,
+    PAPER_DIR,
+    SHEAR_REGULAR,
+    SHEAR_SHEAR,
+    bulge_in_limit_frame,
+    repo_root,
+)
 
 SUMMARY_PATH = pathlib.Path("verif/verif_b_summary.csv")
 OUT_PATH = pathlib.Path("verif/verif_b_tables.tex")
 FIGS_TEX_PATH = pathlib.Path("verif/verif_b_figs.tex")
-PAPER_DIR = pathlib.Path("~/paper-zraster").expanduser()
 SCI_THRESHOLD = 1.0e-12
-
-
-def repo_root() -> pathlib.Path:
-    return pathlib.Path(__file__).resolve().parent.parent
 
 
 def load_summary(summary_path: pathlib.Path) -> list[dict[str, str]]:
@@ -117,8 +115,6 @@ def get_row_metric_vals(row: dict[str, str]) -> tuple[float, float, float, float
 
 
 def fmt_sci(value: float) -> str:
-    if value == 0.0:
-        return "$0$"
     if abs(value) < SCI_THRESHOLD:
         return "$< 1.00 \\times 10^{-12}$"
     exponent = int(math.floor(math.log10(abs(value))))
@@ -246,7 +242,7 @@ def subfigure_block(
     label: str,
 ) -> str:
     return (
-        f"\\begin{{subfigure}}[t]{{{width_str}}}\n"
+        f"\\begin{{subfigure}}[c]{{{width_str}}}\n"
         "\\centering\n"
         f"\\includegraphics[width=\\linewidth]{{{file_name}}}\n"
         "\\caption{}\n"
@@ -309,15 +305,12 @@ def build_bulge_fig_tex(rows: list[dict[str, str]]) -> str:
     row_blocks: list[str] = []
     label_idx = 0
     for mesh_name in mesh_names:
-        bulge_in_limit = BULGE_IN + 1
-        if mesh_name in {"quad8", "quad9"}:
-            bulge_in_limit = BULGE_IN + 2
         frame_cases = [
-            ("bulge_out_limit", 0, "out limit"),
+            ("bulge_out_limit", BULGE_OUT_LIMIT, "out limit"),
             ("bulge_out", BULGE_OUT, "outward bulge"),
             ("bulge_regular", BULGE_REGULAR, "regular"),
             ("bulge_in", BULGE_IN, "inward bulge"),
-            ("bulge_in_limit", bulge_in_limit, "in limit"),
+            ("bulge_in_limit", bulge_in_limit_frame(mesh_name), "in limit"),
         ]
         subfig_blocks: list[str] = []
         for suffix, frame_idx, caption_name in frame_cases:

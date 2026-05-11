@@ -246,9 +246,9 @@ fn saveIdealMapsDynamic(
         .tri3 => try saveIdealMaps(.tri3, allocator, io, sample_list, rows_num, cols_num),
         .tri6 => try saveIdealMaps(.tri6, allocator, io, sample_list, rows_num, cols_num),
         .quad4ibi => try saveIdealMaps(.quad4ibi, allocator, io, sample_list, rows_num, cols_num),
+        .quad4newton => try saveIdealMaps(.quad4newton, allocator, io, sample_list, rows_num, cols_num),
         .quad8 => try saveIdealMaps(.quad8, allocator, io, sample_list, rows_num, cols_num),
         .quad9 => try saveIdealMaps(.quad9, allocator, io, sample_list, rows_num, cols_num),
-        else => unreachable,
     };
 }
 
@@ -425,9 +425,9 @@ pub fn main(init: std.process.Init) !void {
             .tri3 => try runDistortCase(.tri3, case_spec, allocator, io, &global_reproj_errs),
             .tri6 => try runDistortCase(.tri6, case_spec, allocator, io, &global_reproj_errs),
             .quad4ibi => try runDistortCase(.quad4ibi, case_spec, allocator, io, &global_reproj_errs),
+            .quad4newton => try runDistortCase(.quad4newton, case_spec, allocator, io, &global_reproj_errs),
             .quad8 => try runDistortCase(.quad8, case_spec, allocator, io, &global_reproj_errs),
             .quad9 => try runDistortCase(.quad9, case_spec, allocator, io, &global_reproj_errs),
-            else => unreachable,
         }
     }
 
