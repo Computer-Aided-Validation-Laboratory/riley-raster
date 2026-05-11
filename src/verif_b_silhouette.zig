@@ -21,7 +21,7 @@ const vector = @import("zraster/zig/vecstack.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 
 const pixel_num = [_]u32{ 1024, 1024 };
-const fov_scale: f64 = 1.024;
+const fov_scale: f64 = 1.05;
 
 const CentroidStats = struct {
     ideal_x: f64,
@@ -222,6 +222,12 @@ fn writeStatsCsv(
     try writer.print("diff_x,px,{d:.17}\n", .{stats.diff_x});
     try writer.print("diff_y,px,{d:.17}\n", .{stats.diff_y});
     try writer.print("dist,px,{d:.17}\n", .{stats.dist});
+    try writer.print("sensor_pixels_x,px,{d}\n", .{
+        camera_prepared.pixels_num[0],
+    });
+    try writer.print("sensor_pixels_y,px,{d}\n", .{
+        camera_prepared.pixels_num[1],
+    });
     try writer.print("centroid_x,length,{d:.17}\n", .{centroid_world.get(0)});
     try writer.print("centroid_y,length,{d:.17}\n", .{centroid_world.get(1)});
     try writer.print("centroid_z,length,{d:.17}\n", .{centroid_world.get(2)});

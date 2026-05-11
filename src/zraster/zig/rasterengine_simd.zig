@@ -784,6 +784,7 @@ pub fn RasterEngine(
                 if (comptime report_mode == .full_stats) {
                     const chunk_mask_arr: [S]bool = v_chunk_mask;
                     const conv_mask_arr: [S]bool = result.v_mask;
+                    const iters_arr: [S]u8 = result.v_iters;
                     const xi_out_arr: [S]f64 = result.v_xi_out;
                     const eta_out_arr: [S]f64 = result.v_eta_out;
                     for (0..S) |jj| {
@@ -798,6 +799,11 @@ pub fn RasterEngine(
                                 subpx_simd_chunk.scratch_y_u[jj],
                             ) + @as(usize, @intCast(targ_overlap.tile.y_px_min)) *
                                 sub_samp;
+                            ctx_report.recordPixelIters(
+                                global_subx,
+                                global_suby,
+                                iters_arr[jj],
+                            );
                             if (conv_mask_arr[jj]) {
                                 ctx_report.recordPixelConverged(
                                     global_subx,

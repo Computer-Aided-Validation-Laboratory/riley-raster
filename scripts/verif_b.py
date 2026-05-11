@@ -43,7 +43,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--subset",
         choices=("high_order_all", "high_order_bulge_tan", "all"),
-        default="high_order_all",
+        default="all",
+    )
+    parser.add_argument(
+        "--edge-segments",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--edge-segments-sensor-mult",
+        type=int,
+        default=1,
     )
     return parser.parse_args()
 
@@ -229,6 +239,182 @@ def calc_reference_area_px2(
     return abs(signed_area)
 
 
+def sample_edge_points(
+    edge_kind: str,
+    edge_nodes: tuple[tuple[float, float], ...],
+    points_num: int,
+) -> list[tuple[float, float]]:
+    samples: list[tuple[float, float]] = []
+    for nn in range(points_num + 1):
+        ss = -1.0 + 2.0 * float(nn) / float(points_num)
+        if edge_kind == "linear":
+            xx, yy, _, _ = linear_edge_nodes(
+                edge_nodes[0],
+                edge_nodes[1],
+                ss,
+            )
+        else:
+            xx, yy, _, _ = quadratic_edge_nodes(
+                edge_nodes[0],
+                edge_nodes[1],
+                edge_nodes[2],
+                ss,
+            )
+        samples.append((xx, yy))
+    return samples
+
+
+def build_boundary_polyline(
+    mesh_name: str,
+    node_coords: list[tuple[float, float]],
+    edge_segments: int,
+) -> list[tuple[float, float]]:
+    polyline: list[tuple[float, float]] = []
+    for edge_idx, edge in enumerate(iter_edges(mesh_name, node_coords)):
+        edge_points = sample_edge_points(edge[0], edge[1:], edge_segments)
+        if edge_idx > 0:
+            edge_points = edge_points[1:]
+        polyline.extend(edge_points)
+    return polyline
+
+
+def calc_edge_segments(
+    sensor_x: int,
+    sensor_y: int,
+    edge_segments: int | None,
+    edge_segments_sensor_mult: int,
+) -> int:
+    if edge_segments is not None:
+        return edge_segments
+    sensor_edge_max = max(sensor_x, sensor_y)
+    return max(1024, edge_segments_sensor_mult * sensor_edge_max)
+
+
+def build_reference_mask(
+    mesh_name: str,
+    node_coords: list[tuple[float, float]],
+    sensor_x: int,
+    sensor_y: int,
+    edge_segments: int,
+    eps: float = 1.0e-12,
+) -> np.ndarray:
+    polyline = build_boundary_polyline(mesh_name, node_coords, edge_segments)
+    if len(polyline) < 2:
+        raise ValueError("reference polyline must have at least 2 points")
+
+    xx_centers = np.arange(sensor_x, dtype=float) + 0.5
+    mask = np.zeros((sensor_y, sensor_x), dtype=float)
+
+    seg_x0 = np.array([point[0] for point in polyline], dtype=float)
+    seg_y0 = np.array([point[1] for point in polyline], dtype=float)
+    seg_x1 = np.roll(seg_x0, -1)
+    seg_y1 = np.roll(seg_y0, -1)
+
+    for rr in range(sensor_y):
+        yy = float(rr) + 0.5
+        seg_dy = seg_y1 - seg_y0
+        non_horizontal_mask = np.abs(seg_dy) > eps
+        upward_mask = (
+            (seg_y0 <= yy + eps) &
+            (yy < seg_y1 - eps) &
+            non_horizontal_mask
+        )
+        downward_mask = (
+            (seg_y1 <= yy + eps) &
+            (yy < seg_y0 - eps) &
+            non_horizontal_mask
+        )
+        crossing_mask = upward_mask | downward_mask
+
+        row_mask = np.zeros(sensor_x, dtype=bool)
+        if np.any(crossing_mask):
+            event_x_arr = seg_x0[crossing_mask] + (
+                (yy - seg_y0[crossing_mask]) *
+                (seg_x1[crossing_mask] - seg_x0[crossing_mask]) /
+                seg_dy[crossing_mask]
+            )
+            event_winding_arr = np.where(
+                upward_mask[crossing_mask],
+                1,
+                -1,
+            ).astype(int)
+            order = np.argsort(event_x_arr)
+            event_x_arr = event_x_arr[order]
+            event_winding_arr = event_winding_arr[order]
+            winding_prefix = np.cumsum(event_winding_arr, dtype=int)
+            event_idx = np.searchsorted(
+                event_x_arr,
+                xx_centers,
+                side="right",
+            ) - 1
+
+            inside_mask = event_idx >= 0
+            row_winding = np.zeros(sensor_x, dtype=int)
+            row_winding[inside_mask] = winding_prefix[event_idx[inside_mask]]
+            row_mask = row_winding != 0
+
+        # Treat pixel centers that lie exactly on the discretized boundary
+        # as inside so the reference mask matches the rasterizer's boundary
+        # inclusion convention on sensor-aligned cases.
+        horizontal_on_row_mask = (
+            (np.abs(seg_y0 - yy) <= eps) &
+            (np.abs(seg_y1 - yy) <= eps)
+        )
+        if np.any(horizontal_on_row_mask):
+            x_min_arr = np.minimum(
+                seg_x0[horizontal_on_row_mask],
+                seg_x1[horizontal_on_row_mask],
+            )
+            x_max_arr = np.maximum(
+                seg_x0[horizontal_on_row_mask],
+                seg_x1[horizontal_on_row_mask],
+            )
+            for x_min, x_max in zip(x_min_arr, x_max_arr, strict=True):
+                row_mask |= (
+                    (xx_centers >= x_min - eps) &
+                    (xx_centers <= x_max + eps)
+                )
+
+        touching_row_mask = (
+            (yy >= np.minimum(seg_y0, seg_y1) - eps) &
+            (yy <= np.maximum(seg_y0, seg_y1) + eps) &
+            non_horizontal_mask
+        )
+        if np.any(touching_row_mask):
+            x_on_seg_arr = seg_x0[touching_row_mask] + (
+                (yy - seg_y0[touching_row_mask]) *
+                (seg_x1[touching_row_mask] - seg_x0[touching_row_mask]) /
+                seg_dy[touching_row_mask]
+            )
+            for x_on_seg in x_on_seg_arr:
+                xx_idx = int(round(x_on_seg - 0.5))
+                if 0 <= xx_idx < sensor_x:
+                    xx_center = xx_centers[xx_idx]
+                    if abs(xx_center - x_on_seg) <= eps:
+                        row_mask[xx_idx] = True
+
+        mask[rr, row_mask] = 1.0
+
+    return mask
+
+
+def normalize_render_mask(
+    image_vals: np.ndarray,
+) -> np.ndarray:
+    fill_value = float(np.max(image_vals))
+    if fill_value <= 0.0:
+        return np.zeros_like(image_vals)
+    return image_vals / fill_value
+
+
+def calc_mask_diff_pct(
+    mask_ref: np.ndarray,
+    mask_render: np.ndarray,
+) -> float:
+    abs_diff = np.abs(mask_ref - mask_render)
+    return 100.0 * float(np.mean(abs_diff))
+
+
 def run_self_test() -> None:
     side_leng = 10.0
     tri_height = 0.5 * math.sqrt(3.0) * side_leng
@@ -256,7 +442,11 @@ def run_self_test() -> None:
         raise RuntimeError("tri6 area self-test failed")
 
 
-def analyse_stats_file(stats_path: pathlib.Path) -> dict[str, object]:
+def analyse_stats_file(
+    stats_path: pathlib.Path,
+    edge_segments: int | None,
+    edge_segments_sensor_mult: int,
+) -> dict[str, object]:
     stats = parse_stats_csv(stats_path)
     image_path = stats_path.with_name(stats_path.name.replace("_stats.csv", ".csv"))
     image_vals = load_scalar_csv(image_path)
@@ -268,6 +458,31 @@ def analyse_stats_file(stats_path: pathlib.Path) -> dict[str, object]:
 
     node_coords = get_node_coords(stats)
     area_ref_px2 = calc_reference_area_px2(mesh_name, node_coords)
+    if "sensor_pixels_x" in stats and "sensor_pixels_y" in stats:
+        sensor_x = int(round(stats["sensor_pixels_x"]))
+        sensor_y = int(round(stats["sensor_pixels_y"]))
+    else:
+        sensor_y, sensor_x = image_vals.shape
+    edge_segments_num = calc_edge_segments(
+        sensor_x,
+        sensor_y,
+        edge_segments,
+        edge_segments_sensor_mult,
+    )
+    mask_ref = build_reference_mask(
+        mesh_name,
+        node_coords,
+        sensor_x,
+        sensor_y,
+        edge_segments_num,
+    )
+    mask_render = normalize_render_mask(image_vals)
+    if mask_render.shape != mask_ref.shape:
+        raise ValueError(
+            f"mask shape mismatch for {stats_path}: "
+            f"{mask_ref.shape} vs {mask_render.shape}",
+        )
+    mask_diff_pct = calc_mask_diff_pct(mask_ref, mask_render)
 
     centroid_ref_x = stats["cent_ideal_x"]
     centroid_ref_y = stats["cent_ideal_y"]
@@ -277,6 +492,7 @@ def analyse_stats_file(stats_path: pathlib.Path) -> dict[str, object]:
 
     area_diff_px2 = area_num_px2 - area_ref_px2
     area_rel_diff = area_diff_px2 / area_ref_px2 if area_ref_px2 != 0.0 else math.nan
+    area_err_pct = 100.0 * area_rel_diff
 
     return {
         "case_name": case_name,
@@ -296,6 +512,11 @@ def analyse_stats_file(stats_path: pathlib.Path) -> dict[str, object]:
         "area_num_px2": area_num_px2,
         "area_diff_px2": area_diff_px2,
         "area_rel_diff": area_rel_diff,
+        "area_err_pct": area_err_pct,
+        "sensor_x_px": sensor_x,
+        "sensor_y_px": sensor_y,
+        "edge_segments": edge_segments_num,
+        "mask_diff_pct": mask_diff_pct,
         "stats_path": str(stats_path.relative_to(repo_root())),
         "image_path": str(image_path.relative_to(repo_root())),
     }
@@ -324,6 +545,11 @@ def write_summary_csv(
         "area_num_px2",
         "area_diff_px2",
         "area_rel_diff",
+        "area_err_pct",
+        "sensor_x_px",
+        "sensor_y_px",
+        "edge_segments",
+        "mask_diff_pct",
         "stats_path",
         "image_path",
     ]
@@ -339,6 +565,13 @@ def keep_row(row: dict[str, object], subset: str) -> bool:
 
     mesh_name = str(row["mesh_name"])
     distort_name = str(row["distort_name"])
+    return keep_case_info(mesh_name, distort_name, subset)
+
+
+def keep_case_info(mesh_name: str, distort_name: str, subset: str) -> bool:
+    if subset == "all":
+        return True
+
     if subset == "high_order_bulge_tan":
         return mesh_name in {"tri6", "quad8", "quad9"} and distort_name in {
             "bulge",
@@ -356,23 +589,48 @@ def keep_row(row: dict[str, object], subset: str) -> bool:
 
 def main() -> int:
     args = parse_args()
+    print("Running verif_b self-test...")
     run_self_test()
+    print("Self-test passed.")
 
-    stats_files = sorted(args.verif_root.glob("b_*/*_stats.csv"))
+    stats_files_all = sorted(args.verif_root.glob("b_*/*_stats.csv"))
+    print(f"Found {len(stats_files_all)} total verif_b stats files.")
+    stats_files = []
+    for stats_path in stats_files_all:
+        _, mesh_name, distort_name, _ = parse_case_info(stats_path)
+        if keep_case_info(mesh_name, distort_name, args.subset):
+            stats_files.append(stats_path)
     if not stats_files:
         raise FileNotFoundError(f"no stats files found under {args.verif_root}")
+    print(
+        f"Selected {len(stats_files)} stats files for subset "
+        f"'{args.subset}'.",
+    )
 
-    rows = [analyse_stats_file(stats_path) for stats_path in stats_files]
-    rows = [row for row in rows if keep_row(row, args.subset)]
+    rows = []
+    for file_idx, stats_path in enumerate(stats_files, start=1):
+        if file_idx == 1 or file_idx % 10 == 0 or file_idx == len(stats_files):
+            print(
+                f"Analysing file {file_idx}/{len(stats_files)}: "
+                f"{stats_path.parent.name}/{stats_path.name}",
+            )
+        rows.append(analyse_stats_file(
+            stats_path,
+            args.edge_segments,
+            args.edge_segments_sensor_mult,
+        ))
     rows.sort(key=lambda row: (str(row["case_name"]), int(row["frame_idx"])))
+    print(f"Writing summary CSV to {args.out_csv}...")
     write_summary_csv(args.out_csv, rows)
 
     max_centroid = max(abs(float(row["centroid_dist_px"])) for row in rows)
     max_area_rel = max(abs(float(row["area_rel_diff"])) for row in rows)
+    max_mask_diff = max(abs(float(row["mask_diff_pct"])) for row in rows)
     print(f"Processed {len(rows)} verif_b frames")
     print(f"Wrote summary to {args.out_csv}")
     print(f"Max centroid error: {max_centroid:.6f} px")
     print(f"Max area rel error: {max_area_rel:.6e}")
+    print(f"Max mask diff: {max_mask_diff:.6f} %")
     return 0
 
 

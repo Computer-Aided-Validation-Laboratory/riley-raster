@@ -4,6 +4,7 @@ import numpy as np
 
 
 EDGE_LENG = 10.0
+ELEM_ROT = 20.0
 
 BULGE_TIME_STEPS = 13
 BULGE_MIDSIDE_OFFSET_FACTOR = 0.3
@@ -11,11 +12,11 @@ BULGE_MIDSIDE_OFFSET_FACTOR = 0.3
 TAN_TIME_STEPS = 13
 TAN_OFFSET_FACTOR = 0.3
 
-STRETCH = 2.0
-SHEAR = 2.0
-STEPS = 13
-ROT_TIME_STEPS = 13
+STRETCH = 1.0
+SHEAR = 0.5
+STEPS = 11
 
+ROT_TIME_STEPS = 13
 
 def save_case(
     base_dir,
@@ -29,6 +30,13 @@ def save_case(
 ):
     out_dir = Path(base_dir) / name
     out_dir.mkdir(parents=True, exist_ok=True)
+    coords, disp_x, disp_y, disp_z = rotate_case_fields(
+        coords,
+        disp_x,
+        disp_y,
+        disp_z,
+        ELEM_ROT,
+    )
     np.savetxt(out_dir / "coords.csv", coords, delimiter=",")
     np.savetxt(
         out_dir / "connect.csv",
@@ -137,6 +145,35 @@ def build_disp_fields_from_frame_coords(coords_initial, coords_frames):
         disp_z[:, tt] = delta[:, 2]
 
     return disp_x, disp_y, disp_z
+
+
+def rotate_case_fields(coords, disp_x, disp_y, disp_z, angle_deg):
+    if abs(angle_deg) < 1.0e-12:
+        return coords, disp_x, disp_y, disp_z
+
+    coords_initial = coords
+    coords_frames = []
+    time_steps = disp_x.shape[1]
+
+    for tt in range(time_steps):
+        coords_frame = coords_initial.copy()
+        coords_frame[:, 0] += disp_x[:, tt]
+        coords_frame[:, 1] += disp_y[:, tt]
+        coords_frame[:, 2] += disp_z[:, tt]
+        coords_frames.append(coords_frame)
+
+    center = np.mean(coords_initial, axis=0)
+    coords_rot = rotate_points(coords_initial, angle_deg, center)
+    coords_frames_rot = [
+        rotate_points(coords_frame, angle_deg, center)
+        for coords_frame in coords_frames
+    ]
+
+    disp_x_rot, disp_y_rot, disp_z_rot = build_disp_fields_from_frame_coords(
+        coords_rot,
+        coords_frames_rot,
+    )
+    return coords_rot, disp_x_rot, disp_y_rot, disp_z_rot
 
 
 def get_midside_direction(v1, v2, centroid):
@@ -753,7 +790,8 @@ def main():
         f"distort_tan ({TAN_TIME_STEPS} steps), "
         f"distort_stretch ({STEPS} steps), "
         f"distort_shear ({STEPS} steps), "
-        f"distort_rot ({ROT_TIME_STEPS} steps)."
+        f"distort_rot ({ROT_TIME_STEPS} steps), "
+        f"ELEM_ROT ({ELEM_ROT} deg)."
     )
 
 
