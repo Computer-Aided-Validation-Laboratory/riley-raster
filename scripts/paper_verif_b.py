@@ -8,20 +8,20 @@ import subprocess
 
 from PIL import Image
 from paper_verif_const import (
-    BULGE_IN,
-    BULGE_OUT,
-    BULGE_OUT_LIMIT,
-    BULGE_REGULAR,
     PAPER_DIR,
     SHEAR_REGULAR,
     SHEAR_SHEAR,
+    bulge_in_frame,
     bulge_in_limit_frame,
+    bulge_out_frame,
+    bulge_out_limit_frame,
+    bulge_regular_frame,
     repo_root,
 )
 
 SUMMARY_PATH = pathlib.Path("verif/verif_b_summary.csv")
-OUT_PATH = pathlib.Path("verif/verif_b_tables.tex")
-FIGS_TEX_PATH = pathlib.Path("verif/verif_b_figs.tex")
+OUT_TABS_TEX_PATH = pathlib.Path("verif/verif_b_tabs.tex")
+OUT_FIGS_TEX_PATH = pathlib.Path("verif/verif_b_figs.tex")
 SCI_THRESHOLD = 1.0e-12
 
 
@@ -184,9 +184,24 @@ def build_bulge_table(rows: list[dict[str, str]]) -> str:
     mesh_names = ["tri6", "quad8", "quad9"]
     body_rows: list[str] = []
     for mesh_name in mesh_names:
-        row_inward = find_row(rows, mesh_name, "bulge", BULGE_IN)
-        row_regular = find_row(rows, mesh_name, "bulge", BULGE_REGULAR)
-        row_outward = find_row(rows, mesh_name, "bulge", BULGE_OUT)
+        row_inward = find_row(
+            rows,
+            mesh_name,
+            "bulge",
+            bulge_in_frame(mesh_name),
+        )
+        row_regular = find_row(
+            rows,
+            mesh_name,
+            "bulge",
+            bulge_regular_frame(mesh_name),
+        )
+        row_outward = find_row(
+            rows,
+            mesh_name,
+            "bulge",
+            bulge_out_frame(mesh_name),
+        )
         body_rows.append(make_table_row(mesh_name, "inward bulge", row_inward))
         body_rows.append(make_table_row(mesh_name, "regular", row_regular))
         body_rows.append(make_table_row(mesh_name, "outward bulge", row_outward))
@@ -306,10 +321,14 @@ def build_bulge_fig_tex(rows: list[dict[str, str]]) -> str:
     label_idx = 0
     for mesh_name in mesh_names:
         frame_cases = [
-            ("bulge_out_limit", BULGE_OUT_LIMIT, "out limit"),
-            ("bulge_out", BULGE_OUT, "outward bulge"),
-            ("bulge_regular", BULGE_REGULAR, "regular"),
-            ("bulge_in", BULGE_IN, "inward bulge"),
+            (
+                "bulge_out_limit",
+                bulge_out_limit_frame(mesh_name),
+                "out limit",
+            ),
+            ("bulge_out", bulge_out_frame(mesh_name), "outward bulge"),
+            ("bulge_regular", bulge_regular_frame(mesh_name), "regular"),
+            ("bulge_in", bulge_in_frame(mesh_name), "inward bulge"),
             ("bulge_in_limit", bulge_in_limit_frame(mesh_name), "in limit"),
         ]
         subfig_blocks: list[str] = []
@@ -353,13 +372,33 @@ def build_bulge_fig_tex(rows: list[dict[str, str]]) -> str:
     )
 
 
+def write_tex_outputs(
+    tabs_tex: str,
+    figs_tex: str,
+) -> None:
+    out_tabs_path = repo_root() / OUT_TABS_TEX_PATH
+    out_figs_path = repo_root() / OUT_FIGS_TEX_PATH
+    paper_tabs_path = PAPER_DIR / OUT_TABS_TEX_PATH.name
+    paper_figs_path = PAPER_DIR / OUT_FIGS_TEX_PATH.name
+
+    out_tabs_path.parent.mkdir(parents=True, exist_ok=True)
+    PAPER_DIR.mkdir(parents=True, exist_ok=True)
+
+    out_tabs_path.write_text(tabs_tex)
+    out_figs_path.write_text(figs_tex)
+    paper_tabs_path.write_text(tabs_tex)
+    paper_figs_path.write_text(figs_tex)
+
+    print(f"Wrote {out_tabs_path}")
+    print(f"Wrote {out_figs_path}")
+    print(f"Wrote {paper_tabs_path}")
+    print(f"Wrote {paper_figs_path}")
+
+
 def main() -> int:
     print("Loading verif_b summary...")
     rows = ensure_summary_rows()
     print(f"Loaded {len(rows)} summary rows.")
-    out_path = repo_root() / OUT_PATH
-    figs_tex_path = repo_root() / FIGS_TEX_PATH
-    out_path.parent.mkdir(parents=True, exist_ok=True)
 
     print("Building LaTeX tables...")
     tables_tex = (
@@ -373,12 +412,7 @@ def main() -> int:
         "\n" +
         build_bulge_fig_tex(rows)
     )
-    print(f"Writing tables to {out_path}...")
-    out_path.write_text(tables_tex)
-    print(f"Writing figure TeX to {figs_tex_path}...")
-    figs_tex_path.write_text(figs_tex)
-    print(f"Wrote {out_path}")
-    print(f"Wrote {figs_tex_path}")
+    write_tex_outputs(tables_tex, figs_tex)
     print(f"Saved png figures to {PAPER_DIR}")
     return 0
 

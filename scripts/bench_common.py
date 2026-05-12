@@ -24,10 +24,19 @@ def build_run_root(
     out_root: pathlib.Path | None,
 ) -> pathlib.Path:
     root_dir = out_root or (
-        repo_root() / "out" / "benchmark_runs" / benchmark_name
+        pathlib.Path("out") / "benchmark_runs" / benchmark_name
     )
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     return root_dir / timestamp
+
+
+def command_path(path: pathlib.Path) -> str:
+    path_abs = path.resolve()
+    root_abs = repo_root().resolve()
+    try:
+        return str(path_abs.relative_to(root_abs))
+    except ValueError:
+        return str(path_abs)
 
 
 def experiment_1_cases(benchmark_name: str) -> list[dict[str, object]]:
@@ -100,7 +109,7 @@ def run_case(
     command = [
         str(executable_path),
         "--out-dir",
-        str(output_dir),
+        command_path(output_dir),
         "--pixels-x",
         str(DEFAULT_PIXELS_X),
         "--pixels-y",

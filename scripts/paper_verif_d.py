@@ -10,7 +10,7 @@ from paper_verif_const import PAPER_DIR, repo_root
 
 
 OUT_STATS_PATH = pathlib.Path("verif/verif_d_stats.csv")
-OUT_FIGS_TEX_PATH = pathlib.Path("verif/verif_d_figures.tex")
+OUT_FIGS_TEX_PATH = pathlib.Path("verif/verif_d_figs.tex")
 RABBIT_MESH_NAMES = ["tri3", "quad4", "tri6", "quad8", "quad9"]
 COUNT_TOL = 1.0e-6
 
@@ -122,6 +122,20 @@ def build_figs_tex() -> str:
     )
 
 
+def write_figs_tex(figs_tex: str) -> None:
+    out_figs_path = repo_root() / OUT_FIGS_TEX_PATH
+    paper_figs_path = PAPER_DIR / OUT_FIGS_TEX_PATH.name
+
+    out_figs_path.parent.mkdir(parents=True, exist_ok=True)
+    PAPER_DIR.mkdir(parents=True, exist_ok=True)
+
+    out_figs_path.write_text(figs_tex)
+    paper_figs_path.write_text(figs_tex)
+
+    print(f"Wrote {out_figs_path}")
+    print(f"Wrote {paper_figs_path}")
+
+
 def main() -> int:
     print("Writing verif_d stats CSV...")
     write_stats_csv()
@@ -129,11 +143,8 @@ def main() -> int:
     export_tri6_figures()
     print("Writing verif_d figure TeX...")
     figs_tex = build_figs_tex()
-    out_figs_tex_path = repo_root() / OUT_FIGS_TEX_PATH
-    out_figs_tex_path.parent.mkdir(parents=True, exist_ok=True)
-    out_figs_tex_path.write_text(figs_tex)
+    write_figs_tex(figs_tex)
     print(f"Wrote {repo_root() / OUT_STATS_PATH}")
-    print(f"Wrote {out_figs_tex_path}")
     print(f"Saved figure assets to {PAPER_DIR}")
     return 0
 

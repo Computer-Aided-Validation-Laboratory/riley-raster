@@ -16,7 +16,7 @@ from PIL import Image
 from paper_verif_const import PAPER_DIR, repo_root
 
 
-OUT_FIGS_TEX_PATH = pathlib.Path("verif/verif_c_figures.tex")
+OUT_FIGS_TEX_PATH = pathlib.Path("verif/verif_c_figs.tex")
 LOWRES_TAG = "lowres"
 HIGHRES_TAG = "highres"
 LOWRES_MESH = "tri6"
@@ -342,6 +342,20 @@ def build_rmse_figure_tex() -> str:
     )
 
 
+def write_figs_tex(figs_tex: str) -> None:
+    out_figs_path = repo_root() / OUT_FIGS_TEX_PATH
+    paper_figs_path = PAPER_DIR / OUT_FIGS_TEX_PATH.name
+
+    out_figs_path.parent.mkdir(parents=True, exist_ok=True)
+    PAPER_DIR.mkdir(parents=True, exist_ok=True)
+
+    out_figs_path.write_text(figs_tex)
+    paper_figs_path.write_text(figs_tex)
+
+    print(f"Wrote {out_figs_path}")
+    print(f"Wrote {paper_figs_path}")
+
+
 def main() -> int:
     print("Checking verif_c outputs...")
     run_verif_c_if_needed()
@@ -363,10 +377,7 @@ def main() -> int:
         "\n" +
         build_rmse_figure_tex()
     )
-    out_figs_tex_path = repo_root() / OUT_FIGS_TEX_PATH
-    out_figs_tex_path.parent.mkdir(parents=True, exist_ok=True)
-    out_figs_tex_path.write_text(figs_tex)
-    print(f"Wrote {out_figs_tex_path}")
+    write_figs_tex(figs_tex)
     print(f"Saved figure assets to {PAPER_DIR}")
     return 0
 

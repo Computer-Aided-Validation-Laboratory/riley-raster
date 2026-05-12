@@ -7,10 +7,17 @@ import pathlib
 SHEAR_REGULAR = 10
 SHEAR_SHEAR = 0
 
-BULGE_OUT = 4
-BULGE_REGULAR = 6
-BULGE_IN = 8
-BULGE_OUT_LIMIT = 0
+TRI6_BULGE_OUT_LIMIT = 0
+TRI6_BULGE_OUT = 1
+TRI6_BULGE_REGULAR = 6
+TRI6_BULGE_IN = 8
+TRI6_BULGE_IN_LIMIT = 9
+
+QUAD89_BULGE_OUT_LIMIT = 1
+QUAD89_BULGE_OUT = 2
+QUAD89_BULGE_REGULAR = 6
+QUAD89_BULGE_IN = 9
+QUAD89_BULGE_IN_LIMIT = 10
 
 PAPER_DIR = pathlib.Path("~/paper-zraster").expanduser()
 
@@ -19,7 +26,35 @@ def repo_root() -> pathlib.Path:
     return pathlib.Path(__file__).resolve().parent.parent
 
 
+def is_quad89(mesh_name: str) -> bool:
+    return mesh_name in {"quad8", "quad9"}
+
+
+def bulge_out_limit_frame(mesh_name: str) -> int:
+    if is_quad89(mesh_name):
+        return QUAD89_BULGE_OUT_LIMIT
+    return TRI6_BULGE_OUT_LIMIT
+
+
+def bulge_out_frame(mesh_name: str) -> int:
+    if is_quad89(mesh_name):
+        return QUAD89_BULGE_OUT
+    return TRI6_BULGE_OUT
+
+
+def bulge_regular_frame(mesh_name: str) -> int:
+    if is_quad89(mesh_name):
+        return QUAD89_BULGE_REGULAR
+    return TRI6_BULGE_REGULAR
+
+
+def bulge_in_frame(mesh_name: str) -> int:
+    if is_quad89(mesh_name):
+        return QUAD89_BULGE_IN
+    return TRI6_BULGE_IN
+
+
 def bulge_in_limit_frame(mesh_name: str) -> int:
-    if mesh_name in {"quad8", "quad9"}:
-        return BULGE_IN + 2
-    return BULGE_IN + 1
+    if is_quad89(mesh_name):
+        return QUAD89_BULGE_IN_LIMIT
+    return TRI6_BULGE_IN_LIMIT

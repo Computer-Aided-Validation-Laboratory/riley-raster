@@ -66,7 +66,10 @@ pub fn main(init: std.process.Init) !void {
     const case_name = try benchdicuq.calcCaseName(outer_alloc, sample_config);
     defer outer_alloc.free(case_name);
 
-    var stats = benchstats.BenchStatsCollector{};
+    var stats = try benchstats.BenchStatsCollector.init(
+        outer_alloc,
+        bench_args.runs,
+    );
     defer stats.deinit(outer_alloc);
 
     std.debug.print(
@@ -100,6 +103,16 @@ pub fn main(init: std.process.Init) !void {
             out_dir_path,
         );
         defer result.deinit(outer_alloc);
+        try stats.appendRunResult(
+            outer_alloc,
+            rr,
+            case_name,
+            .quad8,
+            .tex8_grey,
+            sample_config,
+            null,
+            result,
+        );
         case_samples.record(rr, result);
     }
 
@@ -113,6 +126,7 @@ pub fn main(init: std.process.Init) !void {
         &case_samples,
     );
 
+    try stats.writeRunCSVs(outer_alloc, io, bench_args.out_dir);
     try common.writeBenchmarkReport(
         outer_alloc,
         io,
@@ -120,6 +134,6 @@ pub fn main(init: std.process.Init) !void {
         bench_args.out_dir,
         bench_args.pixels_num,
         stats.stats_list.items,
-        stats.max_name_len,
+        0,
     );
 }

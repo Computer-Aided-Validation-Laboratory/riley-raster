@@ -79,7 +79,10 @@ pub fn main(init: std.process.Init) !void {
         .{ .builtin = .sinusoidal, .coord_mode = .uv },
     };
 
-    var stats = benchstats.BenchStatsCollector{};
+    var stats = try benchstats.BenchStatsCollector.init(
+        outer_alloc,
+        bench_args.runs,
+    );
     defer stats.deinit(outer_alloc);
 
     std.debug.print(
@@ -175,6 +178,16 @@ pub fn main(init: std.process.Init) !void {
                         );
                         defer res.deinit(outer_alloc);
 
+                        try stats.appendRunResult(
+                            outer_alloc,
+                            rr,
+                            case_name,
+                            mt,
+                            st,
+                            sample_config,
+                            null,
+                            res,
+                        );
                         case_samples.record(rr, res);
                     }
 
@@ -248,6 +261,16 @@ pub fn main(init: std.process.Init) !void {
                     );
                     defer res.deinit(outer_alloc);
 
+                    try stats.appendRunResult(
+                        outer_alloc,
+                        rr,
+                        case_name,
+                        mt,
+                        st,
+                        null,
+                        tex_func_case,
+                        res,
+                    );
                     case_samples.record(rr, res);
                 }
 
@@ -264,6 +287,7 @@ pub fn main(init: std.process.Init) !void {
         }
     }
 
+    try stats.writeRunCSVs(outer_alloc, io, bench_args.out_dir);
     try common.writeBenchmarkReport(
         outer_alloc,
         io,
@@ -271,6 +295,6 @@ pub fn main(init: std.process.Init) !void {
         bench_args.out_dir,
         bench_args.pixels_num,
         stats.stats_list.items,
-        stats.max_name_len,
+        0,
     );
 }

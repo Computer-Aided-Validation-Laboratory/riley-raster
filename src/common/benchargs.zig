@@ -35,8 +35,8 @@ pub fn defaultBenchArgs(
         .out_dir = default_out_dir,
         .render_mode = raster_config.render_mode,
         .total_threads = raster_config.total_threads,
-        .max_geom_threads_per_frame = raster_config.max_geom_threads_per_frame,
-        .max_raster_threads_per_frame = raster_config.max_raster_threads_per_frame,
+        .max_geom_threads_per_frame = raster_config.max_geom_workers_per_frame,
+        .max_raster_threads_per_frame = raster_config.max_raster_workers_per_frame,
         .max_frames_in_flight = raster_config.max_frames_in_flight,
         .hull_mode = raster_config.hull_mode,
         .subpixel_center_map = raster_config.subpixel_center_map,
@@ -169,9 +169,9 @@ pub fn applyRasterConfig(
     var raster_config = base_config;
     raster_config.render_mode = bench_args.render_mode;
     raster_config.total_threads = bench_args.total_threads;
-    raster_config.max_geom_threads_per_frame =
+    raster_config.max_geom_workers_per_frame =
         bench_args.max_geom_threads_per_frame;
-    raster_config.max_raster_threads_per_frame =
+    raster_config.max_raster_workers_per_frame =
         bench_args.max_raster_threads_per_frame;
     raster_config.max_frames_in_flight =
         bench_args.max_frames_in_flight;

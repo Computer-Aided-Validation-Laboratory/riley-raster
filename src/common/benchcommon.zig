@@ -90,6 +90,8 @@ pub const BenchStats = struct {
 pub const MedianMAD = struct {
     median: f64,
     mad: f64,
+    min: f64,
+    max: f64,
 };
 
 pub fn calcMetrics(
@@ -156,7 +158,14 @@ pub fn calcMetrics(
 }
 
 pub fn calcMedianMAD(outer_alloc: std.mem.Allocator, data: []f64) !MedianMAD {
-    if (data.len == 0) return .{ .median = 0, .mad = 0 };
+    if (data.len == 0) {
+        return .{
+            .median = 0,
+            .mad = 0,
+            .min = 0,
+            .max = 0,
+        };
+    }
     const data_copy = try outer_alloc.dupe(f64, data);
     defer outer_alloc.free(data_copy);
     std.mem.sort(f64, data_copy, {}, std.sort.asc(f64));
@@ -178,7 +187,12 @@ pub fn calcMedianMAD(outer_alloc: std.mem.Allocator, data: []f64) !MedianMAD {
     else
         abs_devs[mid];
 
-    return .{ .median = median, .mad = mad };
+    return .{
+        .median = median,
+        .mad = mad,
+        .min = data_copy[0],
+        .max = data_copy[data_copy.len - 1],
+    };
 }
 
 pub fn getCPUModel(outer_alloc: std.mem.Allocator) []const u8 {
@@ -241,11 +255,11 @@ pub fn writeBenchmarkConfig(
     try writer.print("total_threads={d}\n", .{config.total_threads});
     try writer.print(
         "max_geom_threads_per_frame={d}\n",
-        .{config.max_geom_threads_per_frame},
+        .{config.max_geom_workers_per_frame},
     );
     try writer.print(
         "max_raster_threads_per_frame={d}\n",
-        .{config.max_raster_threads_per_frame},
+        .{config.max_raster_workers_per_frame},
     );
     try writer.print(
         "max_frames_in_flight={d}\n",
@@ -925,15 +939,162 @@ fn calcVariantName(
     return "nodal";
 }
 
-pub fn writeBenchmarkCSV(
+pub const BenchmarkCSVKind = enum {
+    median,
+    min,
+    max,
+    mad,
+    cov,
+};
+
+pub const BenchmarkCSVValues = struct {
+    e2e: f64,
+    geom: f64,
+    raster: f64,
+    fps: f64,
+    mpx: f64,
+    msubpx: f64,
+    mshades: f64,
+    msubshades: f64,
+    melems: f64,
+    mnodes: f64,
+    mops: f64,
+    geom_prep: f64,
+    tile_overlap: f64,
+    raster_loop: f64,
+    save_frame: f64,
+};
+
+pub fn benchmarkCSVHeader() []const u8 {
+    return "Case,Element,Shader,Interpolator," ++
+        "E2E_ms,Geom_ms,Raster_ms,FPS," ++
+        "MPx/s,MsubPx/s,MShades/s,MsubShades/s,MElems/s,MNodes/s,MOps/s," ++
+        "GeomPrep_ms,TileOverlap_ms,RasterLoop_ms,SaveFrame_ms\n";
+}
+
+fn calcCoVPercent(stats: MedianMAD) f64 {
+    if (stats.median == 0.0) {
+        return 0.0;
+    }
+    return stats.mad / stats.median * 100.0;
+}
+
+fn selectStatValue(
+    stats: MedianMAD,
+    kind: BenchmarkCSVKind,
+) f64 {
+    return switch (kind) {
+        .median => stats.median,
+        .min => stats.min,
+        .max => stats.max,
+        .mad => stats.mad,
+        .cov => calcCoVPercent(stats),
+    };
+}
+
+pub fn calcBenchmarkCSVValuesFromStats(
+    stats: BenchStats,
+    kind: BenchmarkCSVKind,
+) BenchmarkCSVValues {
+    return .{
+        .e2e = selectStatValue(stats.e2e, kind),
+        .geom = selectStatValue(stats.geom, kind),
+        .raster = selectStatValue(stats.raster, kind),
+        .fps = selectStatValue(stats.fps, kind),
+        .mpx = selectStatValue(stats.mpx, kind),
+        .msubpx = selectStatValue(stats.msubpx, kind),
+        .mshades = selectStatValue(stats.mshades, kind),
+        .msubshades = selectStatValue(stats.msubshades, kind),
+        .melems = selectStatValue(stats.melems, kind),
+        .mnodes = selectStatValue(stats.mnodes, kind),
+        .mops = selectStatValue(stats.mops, kind),
+        .geom_prep = selectStatValue(stats.geom_prep, kind),
+        .tile_overlap = selectStatValue(stats.tile_overlap, kind),
+        .raster_loop = selectStatValue(stats.raster_loop, kind),
+        .save_frame = selectStatValue(stats.save_frame, kind),
+    };
+}
+
+pub fn calcBenchmarkCSVValuesFromResult(
+    result: BenchResult,
+) BenchmarkCSVValues {
+    const conv_ms = 1.0 / 1e6;
+    return .{
+        .e2e = result.e2e_ms,
+        .geom = result.geom_ms,
+        .raster = result.raster_ms,
+        .fps = result.fps,
+        .mpx = result.metrics.mpx_sec,
+        .msubpx = result.metrics.msubpx_sec,
+        .mshades = result.metrics.mshades_sec,
+        .msubshades = result.metrics.msubshades_sec,
+        .melems = result.metrics.melems_sec,
+        .mnodes = result.metrics.mnodes_sec,
+        .mops = result.metrics.mops_sec,
+        .geom_prep = result.pipeline_times.geometry_prep * conv_ms,
+        .tile_overlap = result.pipeline_times.tile_overlap * conv_ms,
+        .raster_loop = result.pipeline_times.raster_loop * conv_ms,
+        .save_frame = result.pipeline_times.save_frame * conv_ms,
+    };
+}
+
+pub fn formatBenchmarkCSVRow(
+    allocator: std.mem.Allocator,
+    case_name: []const u8,
+    mesh_type: gk.MeshType,
+    shader_type: ShaderType,
+    sample_config: ?TextureSampleConfig,
+    tex_func_case: ?TexFuncCase,
+    values: BenchmarkCSVValues,
+) ![]u8 {
+    const variant_name = if (sample_config) |sc|
+        @tagName(sc.sample)
+    else if (tex_func_case) |tf|
+        @tagName(tf.builtin)
+    else
+        "nodal";
+
+    return std.fmt.allocPrint(
+        allocator,
+        "{s},{s},{s},{s}," ++
+            "{d:.6},{d:.6},{d:.6},{d:.6}," ++
+            "{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6}," ++
+            "{d:.6},{d:.6},{d:.6},{d:.6}\n",
+        .{
+            case_name,
+            @tagName(mesh_type),
+            @tagName(shader_type),
+            variant_name,
+            values.e2e,
+            values.geom,
+            values.raster,
+            values.fps,
+            values.mpx,
+            values.msubpx,
+            values.mshades,
+            values.msubshades,
+            values.melems,
+            values.mnodes,
+            values.mops,
+            values.geom_prep,
+            values.tile_overlap,
+            values.raster_loop,
+            values.save_frame,
+        },
+    );
+}
+
+fn writeBenchmarkStatsCSV(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     out_dir_base: []const u8,
     stats_list: []const BenchStats,
+    kind: BenchmarkCSVKind,
+    file_name: []const u8,
 ) !void {
     const csv_name = try std.fs.path.join(
         outer_alloc,
-        &[_][]const u8{ out_dir_base, "benchmark.csv" },
+        &[_][]const u8{ out_dir_base, file_name },
     );
     defer outer_alloc.free(csv_name);
 
@@ -951,46 +1112,20 @@ pub fn writeBenchmarkCSV(
     var buffered_writer = file.writer(io, &write_buf);
     const writer = &buffered_writer.interface;
 
-    // Header
-    try writer.writeAll("Case,Element,Shader,Interpolator," ++
-        "E2E_ms,Geom_ms,Raster_ms,FPS," ++
-        "MPx/s,MsubPx/s,MShades/s,MsubShades/s,MElems/s,MNodes/s,MOps/s," ++
-        "GeomPrep_ms,TileOverlap_ms,RasterLoop_ms,SaveFrame_ms\n");
+    try writer.writeAll(benchmarkCSVHeader());
 
     for (stats_list) |s| {
-        try writer.print("{s},{s},{s},{s},", .{
+        const row = try formatBenchmarkCSVRow(
+            outer_alloc,
             s.name,
-            @tagName(s.mesh_type),
-            @tagName(s.shader_type),
-            calcVariantName(s),
-        });
-
-        // Main times and FPS
-        try writer.print("{d:.6},{d:.6},{d:.6},{d:.6},", .{
-            s.e2e.median,
-            s.geom.median,
-            s.raster.median,
-            s.fps.median,
-        });
-
-        // Metrics
-        try writer.print("{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},", .{
-            s.mpx.median,
-            s.msubpx.median,
-            s.mshades.median,
-            s.msubshades.median,
-            s.melems.median,
-            s.mnodes.median,
-            s.mops.median,
-        });
-
-        // Pipeline times
-        try writer.print("{d:.6},{d:.6},{d:.6},{d:.6}\n", .{
-            s.geom_prep.median,
-            s.tile_overlap.median,
-            s.raster_loop.median,
-            s.save_frame.median,
-        });
+            s.mesh_type,
+            s.shader_type,
+            s.sample_config,
+            s.tex_func_case,
+            calcBenchmarkCSVValuesFromStats(s, kind),
+        );
+        defer outer_alloc.free(row);
+        try writer.writeAll(row);
     }
 
     try buffered_writer.flush();
@@ -1005,81 +1140,48 @@ pub fn writeBenchmarkReport(
     stats_list: []const BenchStats,
     max_name_len: usize,
 ) !void {
-    try writeBenchmarkCSV(outer_alloc, io, out_dir_base, stats_list);
+    _ = title;
+    _ = pixel_num;
+    _ = max_name_len;
 
-    const report_name = try std.fs.path.join(
+    try writeBenchmarkStatsCSV(
         outer_alloc,
-        &[_][]const u8{ out_dir_base, "benchmark.md" },
-    );
-    defer outer_alloc.free(report_name);
-
-    const cwd = std.Io.Dir.cwd();
-    cwd.createDir(
         io,
         out_dir_base,
-        .default_dir,
-    ) catch |err| if (err != error.PathAlreadyExists) return err;
-    const file = try cwd.createFile(io, report_name, .{});
-    defer file.close(io);
-
-    var write_buf: [4096]u8 = undefined;
-    var file_writer = file.writer(io, &write_buf);
-    const writer = &file_writer.interface;
-
-    const date = try getDateString();
-    try writer.print("# {s}\n", .{title});
-    try writer.print("Date: {s} | Res: {d}x{d}\n\n", .{
-        date,
-        pixel_num[0],
-        pixel_num[1],
-    });
-
-    const col_w = @max(max_name_len, 16);
-    const shader_types = comptime std.enums.values(ShaderType);
-
-    inline for (shader_types) |st| {
-        try writer.print("## Shader Type: {s}\n\n", .{@tagName(st)});
-
-        // Header
-        try writer.writeAll("| ");
-        try printPaddedSafe(writer, "Case", col_w);
-        try writer.print(
-            " | E2E Med | Geom | Raster | MPx/s | MsubPx/s | MShades/s | MsubShades/s | MElems/s | FPS | MOps/s |\n",
-            .{},
-        );
-
-        // Separator
-        try writer.writeByte('|');
-        for (0..col_w + 2) |_| {
-            try writer.writeByte('-');
-        }
-        try writer.print(
-            "| :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |\n",
-            .{},
-        );
-
-        for (stats_list) |s| {
-            if (std.mem.indexOf(u8, s.name, @tagName(st)) != null) {
-                try writer.writeAll("| ");
-                try printPaddedSafe(writer, s.name, col_w);
-                try writer.print(
-                    " | {d:^7.2} | {d:^4.2} | {d:^6.2} | {d:^5.2} | {d:^8.2} | {d:^9.2} | {d:^12.2} | {d:^8.2} | {d:^3.2} | {d:^6.2} |\n",
-                    .{
-                        s.e2e.median,
-                        s.geom.median,
-                        s.raster.median,
-                        s.mpx.median,
-                        s.msubpx.median,
-                        s.mshades.median,
-                        s.msubshades.median,
-                        s.melems.median,
-                        s.fps.median,
-                        s.mops.median,
-                    },
-                );
-            }
-        }
-        try writer.print("\n", .{});
-    }
-    try writer.flush();
+        stats_list,
+        .median,
+        "bench_stats_median.csv",
+    );
+    try writeBenchmarkStatsCSV(
+        outer_alloc,
+        io,
+        out_dir_base,
+        stats_list,
+        .min,
+        "bench_stats_min.csv",
+    );
+    try writeBenchmarkStatsCSV(
+        outer_alloc,
+        io,
+        out_dir_base,
+        stats_list,
+        .max,
+        "bench_stats_max.csv",
+    );
+    try writeBenchmarkStatsCSV(
+        outer_alloc,
+        io,
+        out_dir_base,
+        stats_list,
+        .mad,
+        "bench_stats_mad.csv",
+    );
+    try writeBenchmarkStatsCSV(
+        outer_alloc,
+        io,
+        out_dir_base,
+        stats_list,
+        .cov,
+        "bench_stats_cov.csv",
+    );
 }

@@ -155,7 +155,24 @@ pub const CaseSamples = struct {
 
 pub const BenchStatsCollector = struct {
     stats_list: std.ArrayList(common.BenchStats) = .empty,
-    max_name_len: usize = 0,
+    run_csv_rows: []std.ArrayList(u8) = &.{},
+
+    pub fn init(
+        allocator: std.mem.Allocator,
+        runs: usize,
+    ) !BenchStatsCollector {
+        const run_csv_rows = try allocator.alloc(std.ArrayList(u8), runs);
+        for (0..runs) |rr| {
+            run_csv_rows[rr] = .empty;
+            try run_csv_rows[rr].appendSlice(
+                allocator,
+                common.benchmarkCSVHeader(),
+            );
+        }
+        return .{
+            .run_csv_rows = run_csv_rows,
+        };
+    }
 
     pub fn deinit(
         self: *BenchStatsCollector,
@@ -165,6 +182,36 @@ pub const BenchStatsCollector = struct {
             allocator.free(stats.name);
         }
         self.stats_list.deinit(allocator);
+        for (self.run_csv_rows) |*rows| {
+            rows.deinit(allocator);
+        }
+        if (self.run_csv_rows.len > 0) {
+            allocator.free(self.run_csv_rows);
+        }
+    }
+
+    pub fn appendRunResult(
+        self: *BenchStatsCollector,
+        allocator: std.mem.Allocator,
+        run_idx: usize,
+        case_name: []const u8,
+        mesh_type: gk.MeshType,
+        shader_type: common.ShaderType,
+        sample_config: ?texops.TextureSampleConfig,
+        tex_func_case: ?common.TexFuncCase,
+        result: common.BenchResult,
+    ) !void {
+        const row = try common.formatBenchmarkCSVRow(
+            allocator,
+            case_name,
+            mesh_type,
+            shader_type,
+            sample_config,
+            tex_func_case,
+            common.calcBenchmarkCSVValuesFromResult(result),
+        );
+        defer allocator.free(row);
+        try self.run_csv_rows[run_idx].appendSlice(allocator, row);
     }
 
     pub fn appendCaseStats(
@@ -177,7 +224,6 @@ pub const BenchStatsCollector = struct {
         tex_func_case: ?common.TexFuncCase,
         case_samples: *const CaseSamples,
     ) !void {
-        self.max_name_len = @max(self.max_name_len, case_name.len);
         try self.stats_list.append(
             allocator,
             try case_samples.toBenchStats(
@@ -189,5 +235,42 @@ pub const BenchStatsCollector = struct {
                 tex_func_case,
             ),
         );
+    }
+
+    pub fn writeRunCSVs(
+        self: *const BenchStatsCollector,
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        out_dir_base: []const u8,
+    ) !void {
+        const cwd = std.Io.Dir.cwd();
+        cwd.createDir(
+            io,
+            out_dir_base,
+            .default_dir,
+        ) catch |err| if (err != error.PathAlreadyExists) return err;
+
+        for (self.run_csv_rows, 0..) |rows, rr| {
+            const file_name = try std.fmt.allocPrint(
+                allocator,
+                "bench_run{d}.csv",
+                .{rr},
+            );
+            defer allocator.free(file_name);
+
+            const csv_path = try std.fs.path.join(
+                allocator,
+                &[_][]const u8{ out_dir_base, file_name },
+            );
+            defer allocator.free(csv_path);
+
+            var file = try cwd.createFile(io, csv_path, .{});
+            defer file.close(io);
+
+            var write_buf: [4096]u8 = undefined;
+            var buffered_writer = file.writer(io, &write_buf);
+            try buffered_writer.interface.writeAll(rows.items);
+            try buffered_writer.interface.flush();
+        }
     }
 };

@@ -7,6 +7,7 @@ import shlex
 import subprocess
 
 from bench_common import build_run_root
+from bench_common import command_path
 from bench_common import repo_root
 from bench_common import write_command_file
 
@@ -191,7 +192,7 @@ def run_case(
     command = [
         str(executable_path),
         "--out-dir",
-        str(output_dir),
+        command_path(output_dir),
     ]
     if runs is not None:
         command.extend(["--runs", str(runs)])

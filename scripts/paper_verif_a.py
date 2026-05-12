@@ -14,20 +14,20 @@ import numpy as np
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from paper_verif_const import (
-    BULGE_IN,
-    BULGE_OUT,
-    BULGE_OUT_LIMIT,
-    BULGE_REGULAR,
     PAPER_DIR,
     SHEAR_REGULAR,
     SHEAR_SHEAR,
+    bulge_in_frame,
     bulge_in_limit_frame,
+    bulge_out_frame,
+    bulge_out_limit_frame,
+    bulge_regular_frame,
     repo_root,
 )
 
 
-OUT_TABLES_PATH = pathlib.Path("verif/verif_a_tables.tex")
-OUT_FIGS_TEX_PATH = pathlib.Path("verif/verif_a_figures.tex")
+OUT_TABS_TEX_PATH = pathlib.Path("verif/verif_a_tabs.tex")
+OUT_FIGS_TEX_PATH = pathlib.Path("verif/verif_a_figs.tex")
 SCI_THRESHOLD = 1.0e-12
 VERIF_A_MAP_WIDTH = "0.19\\textwidth"
 
@@ -203,16 +203,28 @@ def build_case_rows_for_table() -> list[tuple[str, str, str, int, str]]:
         ("quad4", "quad4newton", "shear", SHEAR_SHEAR, "shear"),
         ("tri6", "tri6", "shear", SHEAR_REGULAR, "regular"),
         ("tri6", "tri6", "shear", SHEAR_SHEAR, "shear"),
-        ("tri6", "tri6", "bulge", BULGE_IN, "bulge inward"),
-        ("tri6", "tri6", "bulge", BULGE_OUT, "bulge outward"),
+        ("tri6", "tri6", "bulge", bulge_in_frame("tri6"), "bulge inward"),
+        ("tri6", "tri6", "bulge", bulge_out_frame("tri6"), "bulge outward"),
         ("quad8", "quad8", "shear", SHEAR_REGULAR, "regular"),
         ("quad8", "quad8", "shear", SHEAR_SHEAR, "shear"),
-        ("quad8", "quad8", "bulge", BULGE_IN, "bulge inward"),
-        ("quad8", "quad8", "bulge", BULGE_OUT, "bulge outward"),
+        ("quad8", "quad8", "bulge", bulge_in_frame("quad8"), "bulge inward"),
+        (
+            "quad8",
+            "quad8",
+            "bulge",
+            bulge_out_frame("quad8"),
+            "bulge outward",
+        ),
         ("quad9", "quad9", "shear", SHEAR_REGULAR, "regular"),
         ("quad9", "quad9", "shear", SHEAR_SHEAR, "shear"),
-        ("quad9", "quad9", "bulge", BULGE_IN, "bulge inward"),
-        ("quad9", "quad9", "bulge", BULGE_OUT, "bulge outward"),
+        ("quad9", "quad9", "bulge", bulge_in_frame("quad9"), "bulge inward"),
+        (
+            "quad9",
+            "quad9",
+            "bulge",
+            bulge_out_frame("quad9"),
+            "bulge outward",
+        ),
     ]
 
 
@@ -434,10 +446,10 @@ def generate_all_figures(style: PlotStyle) -> None:
     print("Generating bulge RMSE figures...")
     for mesh_name in ["tri6", "quad8", "quad9"]:
         frame_cases = [
-            ("bulge_out_limit", BULGE_OUT_LIMIT),
-            ("bulge_out", BULGE_OUT),
-            ("bulge_regular", BULGE_REGULAR),
-            ("bulge_in", BULGE_IN),
+            ("bulge_out_limit", bulge_out_limit_frame(mesh_name)),
+            ("bulge_out", bulge_out_frame(mesh_name)),
+            ("bulge_regular", bulge_regular_frame(mesh_name)),
+            ("bulge_in", bulge_in_frame(mesh_name)),
             ("bulge_in_limit", bulge_in_limit_frame(mesh_name)),
         ]
         for suffix, frame_idx in frame_cases:
@@ -474,6 +486,29 @@ def generate_all_figures(style: PlotStyle) -> None:
             )
 
 
+def write_tex_outputs(
+    tabs_tex: str,
+    figs_tex: str,
+) -> None:
+    out_tabs_path = repo_root() / OUT_TABS_TEX_PATH
+    out_figs_path = repo_root() / OUT_FIGS_TEX_PATH
+    paper_tabs_path = PAPER_DIR / OUT_TABS_TEX_PATH.name
+    paper_figs_path = PAPER_DIR / OUT_FIGS_TEX_PATH.name
+
+    out_tabs_path.parent.mkdir(parents=True, exist_ok=True)
+    PAPER_DIR.mkdir(parents=True, exist_ok=True)
+
+    out_tabs_path.write_text(tabs_tex)
+    out_figs_path.write_text(figs_tex)
+    paper_tabs_path.write_text(tabs_tex)
+    paper_figs_path.write_text(figs_tex)
+
+    print(f"Wrote {out_tabs_path}")
+    print(f"Wrote {out_figs_path}")
+    print(f"Wrote {paper_tabs_path}")
+    print(f"Wrote {paper_figs_path}")
+
+
 def main() -> int:
     print("Loading pyvale-style plot options...")
     style = load_plot_style()
@@ -483,14 +518,7 @@ def main() -> int:
     generate_all_figures(style)
     print("Building verif_a figure TeX...")
     figs_tex = build_shear_fig_tex(style) + "\n" + build_bulge_fig_tex(style)
-
-    out_tables_path = repo_root() / OUT_TABLES_PATH
-    out_figs_tex_path = repo_root() / OUT_FIGS_TEX_PATH
-    out_tables_path.parent.mkdir(parents=True, exist_ok=True)
-    out_tables_path.write_text(tables_tex)
-    out_figs_tex_path.write_text(figs_tex)
-    print(f"Wrote {out_tables_path}")
-    print(f"Wrote {out_figs_tex_path}")
+    write_tex_outputs(tables_tex, figs_tex)
     print(f"Saved PNG figures to {PAPER_DIR}")
     return 0
 

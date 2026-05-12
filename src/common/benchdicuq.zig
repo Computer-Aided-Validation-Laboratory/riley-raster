@@ -36,8 +36,8 @@ pub fn getBaseRasterConfig() zraster.RasterConfig {
     var base_raster_config = tcfg.getRasterConfig(.bench);
     base_raster_config.total_threads = 4;
     base_raster_config.max_frames_in_flight = 2;
-    base_raster_config.max_geom_threads_per_frame = 1;
-    base_raster_config.max_raster_threads_per_frame = 4;
+    base_raster_config.max_geom_workers_per_frame = 1;
+    base_raster_config.max_raster_workers_per_frame = 4;
     base_raster_config.save_strategy = .disk;
     base_raster_config.tile_size_min = 8;
     base_raster_config.tile_size_max = 128;
