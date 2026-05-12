@@ -13,6 +13,9 @@ DEFAULT_PIXELS_X = 1600
 DEFAULT_PIXELS_Y = 1000
 DEFAULT_SUB_SAMPLE = 1
 DEFAULT_TOTAL_THREADS = 1
+SAVE_STRATEGIES = ("memory",)
+SIMD_LABELS = ("scalar", "simd")
+HULL_MODES = ("off", "on_no_fallback")
 
 
 def repo_root() -> pathlib.Path:
@@ -41,48 +44,27 @@ def command_path(path: pathlib.Path) -> str:
 
 def experiment_1_cases(benchmark_name: str) -> list[dict[str, object]]:
     cases: list[dict[str, object]] = []
-    for simd_label in ("scalar", "simd"):
-        for save_strategy in ("disk", "memory"):
-            case_name = (
-                f"{benchmark_name}_simd-{simd_label}"
-                f"_save-{save_strategy}"
-            )
-            cases.append(
-                {
-                    "experiment": "experiment_1",
-                    "case_name": case_name,
-                    "executable": f"{benchmark_name}_{simd_label}",
-                    "args": [
-                        "--save-strategy",
-                        save_strategy,
-                    ],
-                }
-            )
-    return cases
-
-
-def experiment_2_cases(benchmark_name: str) -> list[dict[str, object]]:
-    cases: list[dict[str, object]] = []
-    for hull_mode in ("on_no_fallback", "off"):
-        for save_strategy in ("disk", "memory"):
-            case_name = (
-                f"{benchmark_name}_simd-simd"
-                f"_hull-{hull_mode}"
-                f"_save-{save_strategy}"
-            )
-            cases.append(
-                {
-                    "experiment": "experiment_2",
-                    "case_name": case_name,
-                    "executable": f"{benchmark_name}_simd",
-                    "args": [
-                        "--hull-mode",
-                        hull_mode,
-                        "--save-strategy",
-                        save_strategy,
-                    ],
-                }
-            )
+    for simd_label in SIMD_LABELS:
+        for hull_mode in HULL_MODES:
+            for save_strategy in SAVE_STRATEGIES:
+                case_name = (
+                    f"{benchmark_name}_simd-{simd_label}"
+                    f"_hull-{hull_mode}"
+                    f"_save-{save_strategy}"
+                )
+                cases.append(
+                    {
+                        "experiment": "experiment_1",
+                        "case_name": case_name,
+                        "executable": f"{benchmark_name}_{simd_label}",
+                        "args": [
+                            "--hull-mode",
+                            hull_mode,
+                            "--save-strategy",
+                            save_strategy,
+                        ],
+                    }
+                )
     return cases
 
 
@@ -159,7 +141,7 @@ def run_benchmark_matrix(benchmark_name: str) -> int:
     )
     parser.add_argument(
         "--experiment",
-        choices=("all", "1", "2"),
+        choices=("all", "1"),
         default="all",
     )
     parser.add_argument(
@@ -172,8 +154,6 @@ def run_benchmark_matrix(benchmark_name: str) -> int:
     cases: list[dict[str, object]] = []
     if args.experiment in ("all", "1"):
         cases.extend(experiment_1_cases(benchmark_name))
-    if args.experiment in ("all", "2"):
-        cases.extend(experiment_2_cases(benchmark_name))
 
     if not args.dry_run:
         run_root.mkdir(parents=True, exist_ok=True)

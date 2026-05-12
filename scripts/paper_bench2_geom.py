@@ -2,18 +2,23 @@
 from __future__ import annotations
 
 import csv
+import pathlib
+from paper_bench_common import combined_case_dir_name
 from paper_bench_common import fmt_triplet
 from paper_bench_common import calc_median_mad
-from paper_bench_common import load_case_map
-from paper_bench_common import load_run_case_rows
-from paper_bench_common import stats_dir
+from paper_bench_common import legacy_hull_case_dir_name
+from paper_bench_common import legacy_simd_case_dir_name
+from paper_bench_common import load_case_map_from_dir
+from paper_bench_common import load_run_case_rows_from_dir
+from paper_bench_common import latest_stats_dir_with_candidates
 from paper_bench_common import write_tabs_tex
 from paper_verif_const import repo_root
 
 
 BENCH_NAME = "bench_geom"
-EXPERIMENT_DIR = "experiment_1"
-TEST_CASE_DIR = "bench_geom_simd-simd_save-memory"
+SIMD_LABEL = "simd"
+HULL_MODE = "on_no_fallback"
+SAVE_STRATEGY = "memory"
 GEOM_SHADER_LABEL = "nodal interp."
 GEOM_SHADER_CASE_SUFFIX = "nodal_grey"
 GEOM_CASES = [
@@ -24,6 +29,47 @@ GEOM_CASES = [
     ("quad9", "quad9", "quad9"),
 ]
 OUT_TABS_NAME = "bench2_tabs.tex"
+
+
+def stats_path() -> pathlib.Path:
+    candidates: list[tuple[str, str]] = [
+        (
+            "experiment_1",
+            combined_case_dir_name(
+                BENCH_NAME,
+                SIMD_LABEL,
+                HULL_MODE,
+                SAVE_STRATEGY,
+            ),
+        ),
+    ]
+    if HULL_MODE == "off":
+        candidates.append(
+            (
+                "experiment_1",
+                legacy_simd_case_dir_name(
+                    BENCH_NAME,
+                    SIMD_LABEL,
+                    SAVE_STRATEGY,
+                ),
+            ),
+        )
+    else:
+        candidates.append(
+            (
+                "experiment_2",
+                legacy_hull_case_dir_name(
+                    BENCH_NAME,
+                    SIMD_LABEL,
+                    HULL_MODE,
+                    SAVE_STRATEGY,
+                ),
+            ),
+        )
+    return latest_stats_dir_with_candidates(
+        BENCH_NAME,
+        candidates,
+    )
 
 
 def count_elements(mesh_dir_name: str) -> int:
@@ -66,22 +112,17 @@ def fmt_float_pair(
 
 
 def build_table_tex() -> str:
-    median_map = load_case_map(
-        BENCH_NAME,
-        EXPERIMENT_DIR,
-        TEST_CASE_DIR,
+    bench_stats_dir = stats_path()
+    median_map = load_case_map_from_dir(
+        bench_stats_dir,
         "bench_stats_median.csv",
     )
-    mad_map = load_case_map(
-        BENCH_NAME,
-        EXPERIMENT_DIR,
-        TEST_CASE_DIR,
+    mad_map = load_case_map_from_dir(
+        bench_stats_dir,
         "bench_stats_mad.csv",
     )
-    run_case_maps = load_run_case_rows(
-        BENCH_NAME,
-        EXPERIMENT_DIR,
-        TEST_CASE_DIR,
+    run_case_maps = load_run_case_rows_from_dir(
+        bench_stats_dir,
     )
 
     body_rows: list[str] = []
@@ -166,8 +207,8 @@ def build_table_tex() -> str:
         "\\end{table}\n"
     )
 def main() -> int:
-    stats_path = stats_dir(BENCH_NAME, EXPERIMENT_DIR, TEST_CASE_DIR)
-    print(f"Using benchmark stats from {stats_path}...")
+    bench_stats_dir = stats_path()
+    print(f"Using benchmark stats from {bench_stats_dir}...")
     print(f"Using shader selection: {GEOM_SHADER_LABEL}")
     tabs_tex = build_table_tex()
     write_tabs_tex(OUT_TABS_NAME, tabs_tex)

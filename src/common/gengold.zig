@@ -468,3 +468,80 @@ pub fn generateDistortEdgeGold(
         }
     }
 }
+
+pub fn generateDistortEdgeGoldForHullMode(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    gold_dir_root: []const u8,
+    data_dir_root: []const u8,
+    pixel_num: [2]u32,
+    base_config: RasterConfig,
+    hull_mode: rastcfg.HullMode,
+) !void {
+    var config = base_config;
+    config.hull_mode = hull_mode;
+
+    const midside_mesh_types = [_]gk.MeshType{ .tri6, .quad8, .quad9 };
+    const full_mesh_types = [_]gk.MeshType{
+        .tri3,
+        .tri6,
+        .quad4ibi,
+        .quad4newton,
+        .quad8,
+        .quad9,
+    };
+    const distortion_cases = [_]struct {
+        name: []const u8,
+        mesh_types: []const gk.MeshType,
+    }{
+        .{ .name = "distort_bulge", .mesh_types = &midside_mesh_types },
+        .{ .name = "distort_tan", .mesh_types = &midside_mesh_types },
+        .{ .name = "distort_stretch", .mesh_types = &full_mesh_types },
+        .{ .name = "distort_shear", .mesh_types = &full_mesh_types },
+        .{ .name = "distort_rot", .mesh_types = &full_mesh_types },
+    };
+
+    for (distortion_cases) |distortion_case| {
+        for (distortion_case.mesh_types) |mesh_type| {
+            const prepared = try orch.prepareSingleMeshCase(
+                allocator,
+                io,
+                distortion_case.name,
+                mesh_type,
+                pixel_num,
+                1.1,
+                data_dir_root,
+            );
+
+            const gold_dir = try std.fmt.allocPrint(
+                allocator,
+                "{s}/{s}_{s}_texfunc_constant_{s}",
+                .{
+                    gold_dir_root,
+                    distortion_case.name,
+                    @tagName(mesh_type),
+                    @tagName(hull_mode),
+                },
+            );
+            try renderAndSave(
+                allocator,
+                io,
+                &prepared.camera,
+                mesh_type,
+                prepared.sim_data.coords,
+                prepared.sim_data.connect,
+                prepared.sim_data.field,
+                .{
+                    .tex_func = .{
+                        .uvs = null,
+                        .builtin = .constant,
+                        .normal_type = .none,
+                    },
+                },
+                gold_dir,
+                true,
+                config,
+            );
+        }
+    }
+}

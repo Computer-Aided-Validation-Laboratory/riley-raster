@@ -15,7 +15,8 @@ from bench_common import write_command_file
 THREAD_COUNTS = [1, 2, 4, 8]
 FRAMES_IN_FLIGHT = [1, 2, 4]
 RENDER_MODES = ["offline", "in_order"]
-SAVE_STRATEGIES = ["disk", "memory"]
+#SAVE_STRATEGIES = ["disk", "memory"]
+SAVE_STRATEGIES = ["memory"]
 SAMPLE = "cubic_catmull_rom"
 SAMPLE_MODE = "lut_lerp"
 

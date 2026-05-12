@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import pathlib
 import statistics
+from collections import Counter
 
 from paper_verif_const import PAPER_DIR, repo_root
 
@@ -16,6 +17,100 @@ def latest_run_dir(bench_name: str) -> pathlib.Path:
     if not run_dirs:
         raise FileNotFoundError(f"no benchmark runs found in {root_dir}")
     return run_dirs[-1]
+
+
+def latest_run_dir_with_paths(
+    bench_name: str,
+    required_rel_paths: list[str],
+) -> pathlib.Path:
+    root_dir = repo_root() / "out" / "benchmark_runs" / bench_name
+    run_dirs = sorted(
+        path for path in root_dir.iterdir() if path.is_dir()
+    )
+    for run_dir in reversed(run_dirs):
+        if all((run_dir / rel_path).exists() for rel_path in required_rel_paths):
+            return run_dir
+    raise FileNotFoundError(
+        f"no benchmark run in {root_dir} contains required paths: "
+        f"{required_rel_paths}"
+    )
+
+
+def combined_case_dir_name(
+    bench_name: str,
+    simd_label: str,
+    hull_mode: str,
+    save_strategy: str,
+) -> str:
+    return (
+        f"{bench_name}_simd-{simd_label}"
+        f"_hull-{hull_mode}"
+        f"_save-{save_strategy}"
+    )
+
+
+def legacy_simd_case_dir_name(
+    bench_name: str,
+    simd_label: str,
+    save_strategy: str,
+) -> str:
+    return f"{bench_name}_simd-{simd_label}_save-{save_strategy}"
+
+
+def legacy_hull_case_dir_name(
+    bench_name: str,
+    simd_label: str,
+    hull_mode: str,
+    save_strategy: str,
+) -> str:
+    return (
+        f"{bench_name}_simd-{simd_label}"
+        f"_hull-{hull_mode}"
+        f"_save-{save_strategy}"
+    )
+
+
+def latest_stats_dir_with_candidates(
+    bench_name: str,
+    candidates: list[tuple[str, str]],
+    required_file_names: list[str] | None = None,
+) -> pathlib.Path:
+    required_file_names = required_file_names or ["bench_stats_median.csv"]
+    root_dir = repo_root() / "out" / "benchmark_runs" / bench_name
+    run_dirs = sorted(path for path in root_dir.iterdir() if path.is_dir())
+    for run_dir in reversed(run_dirs):
+        for experiment_dir, test_case_dir in candidates:
+            required_rel_paths = [
+                f"{experiment_dir}/{test_case_dir}/{file_name}"
+                for file_name in required_file_names
+            ]
+            if all((run_dir / rel_path).exists() for rel_path in required_rel_paths):
+                return run_dir / experiment_dir / test_case_dir
+    raise FileNotFoundError(
+        f"no benchmark stats found in {root_dir} for candidates: {candidates}"
+    )
+
+
+def load_case_map_from_dir(
+    stats_path: pathlib.Path,
+    file_name: str,
+) -> dict[str, dict[str, str]]:
+    csv_path = stats_path / file_name
+    with csv_path.open(newline="") as csv_file:
+        rows = list(csv.DictReader(csv_file))
+    return {row["Case"]: row for row in rows}
+
+
+def load_run_case_rows_from_dir(
+    stats_path: pathlib.Path,
+) -> list[dict[str, dict[str, str]]]:
+    run_paths = sorted(stats_path.glob("bench_run*.csv"))
+    case_maps: list[dict[str, dict[str, str]]] = []
+    for run_path in run_paths:
+        with run_path.open(newline="") as csv_file:
+            rows = list(csv.DictReader(csv_file))
+        case_maps.append({row["Case"]: row for row in rows})
+    return case_maps
 
 
 def stats_dir(
@@ -65,6 +160,36 @@ def load_run_case_rows(
             rows = list(csv.DictReader(csv_file))
         case_maps.append({row["Case"]: row for row in rows})
     return case_maps
+
+
+def add_stable_case_keys(
+    rows: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    case_counts = Counter(row["Case"] for row in rows)
+    seen_counts: dict[str, int] = {}
+    keyed_rows: list[dict[str, str]] = []
+
+    for row in rows:
+        case_name = row["Case"]
+        seen_counts[case_name] = seen_counts.get(case_name, 0) + 1
+        case_occ = seen_counts[case_name]
+        stable_key = case_name
+        if case_counts[case_name] > 1:
+            stable_key = f"{case_name}__{case_occ}"
+
+        keyed_row = dict(row)
+        keyed_row["CaseStableKey"] = stable_key
+        keyed_row["CaseOccurrence"] = str(case_occ)
+        keyed_rows.append(keyed_row)
+
+    return keyed_rows
+
+
+def load_stable_row_map(csv_path: pathlib.Path) -> dict[str, dict[str, str]]:
+    with csv_path.open(newline="") as csv_file:
+        rows = list(csv.DictReader(csv_file))
+    keyed_rows = add_stable_case_keys(rows)
+    return {row["CaseStableKey"]: row for row in keyed_rows}
 
 
 def calc_median_mad(values: list[float]) -> tuple[float, float]:

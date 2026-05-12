@@ -672,6 +672,14 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         stage.connect,
                         ee,
                     )
+                else if (stage.hull_mode == .off)
+                    rops.calcVisibleNodeBBoxHighOrdNoHull(
+                        MT,
+                        stage.camera,
+                        stage.coords_nodes,
+                        stage.connect,
+                        ee,
+                    )
                 else
                     rops.calcVisibleNodeBBoxHighOrd(
                         MT,
@@ -771,6 +779,14 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             for (range_start..range_end) |ee| {
                 const bbox = if (comptime MT == .tri3)
                     rops.calcVisibleNodeBBoxTri3(
+                        MT,
+                        stage.camera,
+                        stage.coords_nodes,
+                        stage.connect,
+                        ee,
+                    )
+                else if (stage.hull_mode == .off)
+                    rops.calcVisibleNodeBBoxHighOrdNoHull(
                         MT,
                         stage.camera,
                         stage.coords_nodes,

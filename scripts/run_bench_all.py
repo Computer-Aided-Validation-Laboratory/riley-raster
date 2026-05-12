@@ -10,7 +10,7 @@ RUN_FULLRASTER = True
 RUN_GEOM = True
 RUN_SPHERE2000 = True
 RUN_SPHERE2000ZOOM = True
-RUN_DICUQ = False
+RUN_DICUQ = True
 
 
 def repo_root() -> pathlib.Path:

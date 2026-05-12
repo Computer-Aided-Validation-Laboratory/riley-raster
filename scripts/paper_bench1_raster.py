@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import pathlib
+
+from paper_bench_common import combined_case_dir_name
 from paper_bench_common import fmt_triplet
-from paper_bench_common import load_case_map
-from paper_bench_common import stats_dir
+from paper_bench_common import legacy_hull_case_dir_name
+from paper_bench_common import legacy_simd_case_dir_name
+from paper_bench_common import load_case_map_from_dir
+from paper_bench_common import latest_stats_dir_with_candidates
 from paper_bench_common import write_tabs_tex
 
 
 BENCH_NAME = "bench_fullraster"
-EXPERIMENT_DIR = "experiment_1"
-TEST_CASE_DIR = "bench_fullraster_simd-simd_save-memory"
+SIMD_LABEL = "simd"
+HULL_MODE = "on_no_fallback"
+SAVE_STRATEGY = "memory"
 
 ELEMENT_CASES = [
     (
@@ -92,17 +98,55 @@ ELEMENT_CASES = [
 OUT_TABS_NAME = "bench1_tabs.tex"
 
 
-def build_table_tex() -> str:
-    median_map = load_case_map(
+def stats_path() -> pathlib.Path:
+    candidates: list[tuple[str, str]] = [
+        (
+            "experiment_1",
+            combined_case_dir_name(
+                BENCH_NAME,
+                SIMD_LABEL,
+                HULL_MODE,
+                SAVE_STRATEGY,
+            ),
+        ),
+    ]
+    if HULL_MODE == "off":
+        candidates.append(
+            (
+                "experiment_1",
+                legacy_simd_case_dir_name(
+                    BENCH_NAME,
+                    SIMD_LABEL,
+                    SAVE_STRATEGY,
+                ),
+            ),
+        )
+    else:
+        candidates.append(
+            (
+                "experiment_2",
+                legacy_hull_case_dir_name(
+                    BENCH_NAME,
+                    SIMD_LABEL,
+                    HULL_MODE,
+                    SAVE_STRATEGY,
+                ),
+            ),
+        )
+    return latest_stats_dir_with_candidates(
         BENCH_NAME,
-        EXPERIMENT_DIR,
-        TEST_CASE_DIR,
+        candidates,
+    )
+
+
+def build_table_tex() -> str:
+    bench_stats_dir = stats_path()
+    median_map = load_case_map_from_dir(
+        bench_stats_dir,
         "bench_stats_median.csv",
     )
-    mad_map = load_case_map(
-        BENCH_NAME,
-        EXPERIMENT_DIR,
-        TEST_CASE_DIR,
+    mad_map = load_case_map_from_dir(
+        bench_stats_dir,
         "bench_stats_mad.csv",
     )
 
@@ -160,8 +204,8 @@ def build_table_tex() -> str:
         "\\end{table}\n"
     )
 def main() -> int:
-    stats_path = stats_dir(BENCH_NAME, EXPERIMENT_DIR, TEST_CASE_DIR)
-    print(f"Using benchmark stats from {stats_path}...")
+    bench_stats_dir = stats_path()
+    print(f"Using benchmark stats from {bench_stats_dir}...")
     tabs_tex = build_table_tex()
     write_tabs_tex(OUT_TABS_NAME, tabs_tex)
     return 0

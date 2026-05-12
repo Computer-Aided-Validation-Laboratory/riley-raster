@@ -430,6 +430,49 @@ fn calcBBoxFromRasterCoords(
     };
 }
 
+fn calcBBoxFromRasterCoordsPadded(
+    comptime N: usize,
+    camera: *const cam.CameraPrepared,
+    elem_idx: usize,
+    coords_raster: RasterCoords2D(N),
+    rel_pad: f64,
+) ?ElemBBox {
+    const x_min = std.mem.min(f64, &coords_raster.x);
+    const x_max = std.mem.max(f64, &coords_raster.x);
+    const y_min = std.mem.min(f64, &coords_raster.y);
+    const y_max = std.mem.max(f64, &coords_raster.y);
+
+    const dx = x_max - x_min;
+    const dy = y_max - y_min;
+    const pad = rel_pad * @max(dx, dy);
+
+    if (!isOnScreen(
+        camera,
+        x_min - pad,
+        x_max + pad,
+        y_min - pad,
+        y_max + pad,
+    )) {
+        return null;
+    }
+
+    return .{
+        .elem_idx = elem_idx,
+        .x_min = boundIndMin(u16, x_min - pad),
+        .x_max = boundIndMax(
+            u16,
+            x_max + pad,
+            @intCast(camera.pixels_num[0]),
+        ),
+        .y_min = boundIndMin(u16, y_min - pad),
+        .y_max = boundIndMax(
+            u16,
+            y_max + pad,
+            @intCast(camera.pixels_num[1]),
+        ),
+    };
+}
+
 pub fn calcVisibleNodeBBoxTri3(
     comptime MT: MeshType,
     camera: *const cam.CameraPrepared,
@@ -512,6 +555,45 @@ pub fn calcVisibleNodeBBoxHighOrd(
         camera,
         elem_idx,
         hull_distorted,
+    );
+}
+
+pub fn calcVisibleNodeBBoxHighOrdNoHull(
+    comptime MT: MeshType,
+    camera: *const cam.CameraPrepared,
+    coords_nodes: *const meshio.Coords,
+    connect: *const meshio.Connect,
+    elem_idx: usize,
+) ?ElemBBox {
+    comptime {
+        if (MT == .tri3) {
+            @compileError("calcVisibleNodeBBoxHighOrdNoHull does not support .tri3");
+        }
+    }
+
+    const N = comptime MT.getNodesNum();
+    const coords_clip = gatherElemNodeCoords(N, coords_nodes, connect, elem_idx);
+
+    if (isElemBehindCamera(N, coords_clip)) {
+        return null;
+    }
+
+    const coords_ideal_raster = projectClipToIdealRaster(N, camera, coords_clip);
+    if (isHighOrdBackface(N, coords_ideal_raster)) {
+        return null;
+    }
+
+    const coords_distorted = distortIdealRasterCoords(
+        N,
+        camera,
+        coords_ideal_raster,
+    );
+    return calcBBoxFromRasterCoordsPadded(
+        N,
+        camera,
+        elem_idx,
+        coords_distorted,
+        tol.hull.no_hull_bbox_rel_pad,
     );
 }
 

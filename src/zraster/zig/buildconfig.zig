@@ -34,6 +34,11 @@ pub const HullTolerance = struct {
     simd_inclusion: f64 = 1.0e-6,
     corner_midside_ang_lower_deg: f64 = 20.0,
     corner_midside_ang_upper_deg: f64 = 180.0,
+    // Node-only front-end AABB pad used when RasterConfig.hull_mode == .off.
+    // Set from a hull-suite ablation study against the 0.3 baseline:
+    // 0.25/0.20/0.15/0.10 passed and 0.05 failed, so we keep 0.15 as a
+    // conservative default with margin.
+    no_hull_bbox_rel_pad: f64 = 0.15,
 };
 
 pub const CullingTolerance = struct {
