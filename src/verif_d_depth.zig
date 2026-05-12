@@ -16,7 +16,6 @@ const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const meshio = @import("zraster/zig/meshio.zig");
-const uvio = @import("zraster/zig/uvio.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 const Rotation = @import("zraster/zig/rotation.zig").Rotation;
 const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
@@ -55,19 +54,6 @@ fn translateCoords(coords: *meshio.Coords, translation: [3]f64) void {
         coords.mat.set(nn, 1, coords.mat.get(nn, 1) + translation[1]);
         coords.mat.set(nn, 2, coords.mat.get(nn, 2) + translation[2]);
     }
-}
-
-fn makeConstantUvMap(
-    allocator: std.mem.Allocator,
-    nodes_num: usize,
-    u: f64,
-    v: f64,
-) !uvio.UVMap {
-    var uv_map = try uvio.UVMap.init(allocator, nodes_num);
-    for (0..nodes_num) |nn| {
-        uv_map.setUV(nn, u, v);
-    }
-    return uv_map;
 }
 
 fn loadStaticMesh(
@@ -116,7 +102,7 @@ fn saveImageArtifacts(
         .{
             .format = .bmp,
             .bits = 8,
-            .scaling = .auto,
+            .scaling = .{ .fixed = .{ 0.0, 1.0 } },
             .channels = image.dims[0],
         },
     );
@@ -214,10 +200,6 @@ fn runCase(
         case_spec.connect_name,
     );
 
-    const nodes_num = sim_data.coords.mat.rows_num;
-    const front_uvs = try makeConstantUvMap(aa, nodes_num, 2.0, 0.0);
-    const back_uvs = try makeConstantUvMap(aa, nodes_num, 0.0, 0.0);
-
     const front_coords = try orch.copyCoords(aa, sim_data.coords);
     const back_coords = try orch.copyCoords(aa, sim_data.coords);
 
@@ -244,8 +226,12 @@ fn runCase(
         .connect = sim_data.connect,
         .disp = null,
         .shader = .{ .tex_func = .{
-            .uvs = front_uvs.array,
-            .builtin = .linear,
+            .uvs = null,
+            .builtin = .constant,
+            .params = .{
+                .output_scale = 0.0,
+                .output_offset = 1.0,
+            },
             .bits = 8,
             .scaling = .none,
             .normal_type = .none,
@@ -257,8 +243,12 @@ fn runCase(
         .connect = sim_data.connect,
         .disp = null,
         .shader = .{ .tex_func = .{
-            .uvs = back_uvs.array,
-            .builtin = .linear,
+            .uvs = null,
+            .builtin = .constant,
+            .params = .{
+                .output_scale = 0.0,
+                .output_offset = 0.5,
+            },
             .bits = 8,
             .scaling = .none,
             .normal_type = .none,
