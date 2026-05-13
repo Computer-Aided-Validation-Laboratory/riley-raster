@@ -10,7 +10,7 @@ const iio = @import("imageio.zig");
 
 pub const RasterConfig = struct {
     render_mode: RenderMode = .in_order,
-    total_threads: u16 = 0,
+    total_threads: u16 = 1,
     max_frames_in_flight: u16 = 1,
     max_geom_workers_per_frame: u16 = 1,
     max_raster_workers_per_frame: u16 = 1,

@@ -14,6 +14,7 @@ const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
 const buildconfig = @import("zraster/zig/buildconfig.zig");
+const Rotation = @import("zraster/zig/rotation.zig").Rotation;
 
 const cfg = buildconfig.config;
 
@@ -43,6 +44,14 @@ pub fn main(init: std.process.Init) !void {
     );
 
     const pixel_num = [_]u32{ 800, 500 };
+    const render_defaults_base = common.BenchRenderDefaults{
+        .pixels_num = pixel_num,
+        .sub_sample = 2,
+        .focal_leng = 50.0e-3,
+        .pixels_size = .{ 5.3e-6, 5.3e-6 },
+        .fov_scale = 1.0,
+        .rot = Rotation.init(0, 0, 0),
+    };
 
     const mesh_types = comptime std.enums.values(gk.MeshType);
     const shader_types = [_]common.ShaderType{
@@ -133,13 +142,18 @@ pub fn main(init: std.process.Init) !void {
                             sc,
                             null,
                             data_dir,
-                            pixel_num,
-                            2,
+                            .{
+                                .pixels_num = render_defaults_base.pixels_num,
+                                .sub_sample = render_defaults_base.sub_sample,
+                                .focal_leng = render_defaults_base.focal_leng,
+                                .pixels_size = render_defaults_base.pixels_size,
+                                .fov_scale = case.fov_scale,
+                                .rot = render_defaults_base.rot,
+                            },
                             texture_grey,
                             texture_rgb,
                             r_config,
                             case.out,
-                            case.fov_scale,
                         );
                     }
                 }

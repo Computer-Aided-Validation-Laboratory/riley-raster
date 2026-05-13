@@ -7,11 +7,11 @@
 
 timeStep = 1
 
-# endTime = 99
-# maxDisp = 0.01e-3
+endTime = 63
+maxDisp = 0.01e-3
 
-endTime = 2
-maxDisp = 1e-3
+#endTime = 2
+#maxDisp = 1e-3
 
 # Mechanical Loads/BCs
 topDispRate = ${fparse maxDisp / endTime}  # m/s
@@ -40,8 +40,8 @@ meshRatio = 6
         incremental = true
         add_variables = true
         material_output_family = MONOMIAL   # MONOMIAL, LAGRANGE
-        material_output_order = CONSTANT       # CONSTANT, FIRST, SECOND,
-        generate_output = 'vonmises_stress strain_xx strain_xy strain_xz strain_yy strain_yz strain_zx strain_zz'
+        material_output_order = FIRST       # CONSTANT, FIRST, SECOND,
+        generate_output = 'vonmises_stress stress_yy'
     []
 []
 
@@ -158,6 +158,10 @@ meshRatio = 6
     [stress_vm_max]
         type = ElementExtremeValue
         variable = vonmises_stress
+    []
+    [stress_yy_max]
+        type = ElementExtremeValue
+        variable = stress_yy
     []
 []
 

@@ -16,6 +16,7 @@ const mo = @import("zraster/zig/meshops.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
+const Rotation = @import("zraster/zig/rotation.zig").Rotation;
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
@@ -44,6 +45,14 @@ pub fn main(init: std.process.Init) !void {
     const out_dir = "gold/min";
     const pixel_num_sphere = [_]u32{ 160, 100 };
     const pixel_num_multi = [_]u32{ 640, 400 };
+    const render_defaults_sphere = common.BenchRenderDefaults{
+        .pixels_num = pixel_num_sphere,
+        .sub_sample = 2,
+        .focal_leng = 50.0e-3,
+        .pixels_size = .{ 5.3e-6, 5.3e-6 },
+        .fov_scale = 1.0,
+        .rot = Rotation.init(0, 0, 0),
+    };
 
     const mesh_types = comptime std.enums.values(gk.MeshType);
     const shader_types = [_]common.ShaderType{
@@ -117,13 +126,11 @@ pub fn main(init: std.process.Init) !void {
                         sc,
                         null,
                         data_dir,
-                        pixel_num_sphere,
-                        2,
+                        render_defaults_sphere,
                         texture_grey,
                         texture_rgb,
                         r_config,
                         out_dir ++ "/sphere200/base",
-                        1.0,
                     );
                     result.deinit(allocator);
                 }

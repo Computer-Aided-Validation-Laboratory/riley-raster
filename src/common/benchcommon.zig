@@ -335,6 +335,15 @@ pub const TexFuncCase = struct {
     coord_mode: TexFuncCoordMode,
 };
 
+pub const BenchRenderDefaults = struct {
+    pixels_num: [2]u32,
+    sub_sample: u8,
+    focal_leng: f64,
+    pixels_size: [2]f64,
+    fov_scale: f64,
+    rot: Rotation,
+};
+
 pub const RunMode = enum { all, element, texture, interpolator };
 pub const BenchConfig = struct {
     run: RunMode = .all,
@@ -645,13 +654,11 @@ pub fn runBenchmark(
     sample_config: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
-    pixel_num: [2]u32,
-    sub_sample: u8,
+    render_defaults: BenchRenderDefaults,
     texture_grey: iio.Texture(1),
     texture_rgb: iio.Texture(3),
     config: rastcfg.RasterConfig,
     out_dir_base: []const u8,
-    fov_scale: f64,
 ) !BenchResult {
     return runBenchmarkInternal(
         .bench,
@@ -662,13 +669,11 @@ pub fn runBenchmark(
         sample_config,
         tex_func_case,
         data_dir,
-        pixel_num,
-        sub_sample,
+        render_defaults,
         texture_grey,
         texture_rgb,
         config,
         out_dir_base,
-        fov_scale,
     );
 }
 
@@ -680,13 +685,11 @@ pub fn runBenchmarkQuiet(
     sample_config: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
-    pixel_num: [2]u32,
-    sub_sample: u8,
+    render_defaults: BenchRenderDefaults,
     texture_grey: iio.Texture(1),
     texture_rgb: iio.Texture(3),
     config: rastcfg.RasterConfig,
     out_dir_base: []const u8,
-    fov_scale: f64,
 ) !BenchResult {
     return runBenchmarkInternal(
         .off,
@@ -697,13 +700,11 @@ pub fn runBenchmarkQuiet(
         sample_config,
         tex_func_case,
         data_dir,
-        pixel_num,
-        sub_sample,
+        render_defaults,
         texture_grey,
         texture_rgb,
         config,
         out_dir_base,
-        fov_scale,
     );
 }
 
@@ -716,13 +717,11 @@ fn runBenchmarkInternal(
     sample_config: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
-    pixel_num: [2]u32,
-    sub_sample: u8,
+    render_defaults: BenchRenderDefaults,
     texture_grey: iio.Texture(1),
     texture_rgb: iio.Texture(3),
     config: rastcfg.RasterConfig,
     out_dir_base: []const u8,
-    fov_scale: f64,
 ) !BenchResult {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -741,28 +740,25 @@ fn runBenchmarkInternal(
     );
     _ = calcOutputChannels(shader_type);
 
-    const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
-    const focal_leng: f64 = 50.0e-3;
-    const rot = Rotation.init(0, 0, 0);
     const roi_pos = CameraOps.roiCentFromCoords(&mesh_input.coords);
     const cam_pos = CameraOps.posFillFrameFromRot(
         &mesh_input.coords,
-        pixel_num,
-        pixel_size,
-        focal_leng,
-        rot,
-        fov_scale,
+        render_defaults.pixels_num,
+        render_defaults.pixels_size,
+        render_defaults.focal_leng,
+        render_defaults.rot,
+        render_defaults.fov_scale,
     );
     const camera = try CameraPrepared.init(
         aa,
         .{
-            .pixels_num = pixel_num,
-            .pixels_size = pixel_size,
+            .pixels_num = render_defaults.pixels_num,
+            .pixels_size = render_defaults.pixels_size,
             .pos_world = cam_pos,
-            .rot_world = rot,
+            .rot_world = render_defaults.rot,
             .roi_cent_world = roi_pos,
-            .focal_length = focal_leng,
-            .sub_sample = sub_sample,
+            .focal_length = render_defaults.focal_leng,
+            .sub_sample = render_defaults.sub_sample,
         },
     );
     defer camera.deinit(aa);
@@ -791,7 +787,7 @@ fn runBenchmarkInternal(
         shader_type,
         sample_config,
         tex_func_case,
-        fov_scale,
+        render_defaults.fov_scale,
     );
     const out_path = if (out_dir_base.len > 0)
         try std.fs.path.join(
@@ -841,7 +837,7 @@ fn runBenchmarkInternal(
     const metrics = if (report_mode == .bench)
         calcMetrics(
             etype,
-            pixel_num,
+            camera.pixels_num,
             camera.sub_sample,
             bench_capture_storage[0].bench_log.frame_times,
             bench_capture_storage[0].bench_log,

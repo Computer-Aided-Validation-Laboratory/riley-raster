@@ -11,6 +11,7 @@ RUN_GEOM = True
 RUN_SPHERE2000 = True
 RUN_SPHERE2000ZOOM = True
 RUN_DICUQ = True
+RUNS = 25
 
 
 def repo_root() -> pathlib.Path:
@@ -27,8 +28,11 @@ def python_path() -> pathlib.Path:
 def run_script(script_name: str) -> None:
     script_path = repo_root() / "scripts" / script_name
     print(f"Running {script_name}...")
+    command = [str(python_path()), str(script_path)]
+    if RUNS > 0:
+        command.extend(["--runs", str(RUNS)])
     subprocess.run(
-        [str(python_path()), str(script_path)],
+        command,
         cwd=repo_root(),
         check=True,
     )

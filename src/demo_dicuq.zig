@@ -26,7 +26,6 @@ const MatSlice = @import("zraster/zig/matslice.zig").MatSlice;
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
-    const io = init.io;
 
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -37,8 +36,8 @@ pub fn main(init: std.process.Init) !void {
         .render_mode = .in_order,
         .total_threads = 4,
         .max_frames_in_flight = 2,
-        .max_geom_threads_per_frame = 1,
-        .max_raster_threads_per_frame = 4,
+        .max_geom_workers_per_frame = 1,
+        .max_raster_workers_per_frame = 4,
         .save_strategy = .disk,
         .tile_size_min = 8,
         .tile_size_max = 128,
@@ -48,6 +47,13 @@ pub fn main(init: std.process.Init) !void {
         },
         .report = .bench,
     };
+    var threaded_io = zraster.getThreadedIo(
+        outer_alloc,
+        init.minimal,
+        config.total_threads,
+    );
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
 
     const data_dir = "data/FE/platehole3d_4mr_2f/";
     const out_dir_root = "out/demo-dicuq";

@@ -11,31 +11,70 @@ const std = @import("std");
 const benchargs = @import("common/benchargs.zig");
 const benchdicuq = @import("common/benchdicuq.zig");
 const common = @import("common/benchcommon.zig");
+const zraster = @import("zraster/zig/zraster.zig");
+
+const DEFAULT_DATA_DIR = "data/FE/platehole3d_6mr_63f/";
+const DEFAULT_PIXELS_NUM = [2]u32{ 2464, 2056 };
+const DEFAULT_SUB_SAMPLE: u8 = 2;
+const DEFAULT_FOCAL_LENG: f64 = 50.0e-3;
+const DEFAULT_PIXELS_SIZE = [2]f64{ 3.45e-6, 3.45e-6 };
+const DEFAULT_FOV_SCALE: f64 = 0.9;
+const DEFAULT_STEREO_ANG: f64 = 20.0;
+const DEFAULT_TEX_PATH = "texture/speckle.bmp";
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
-    const io = init.io;
 
     const base_raster_config = benchdicuq.getBaseRasterConfig();
-
-    const bench_args = try benchargs.parseArgs(
-        init.minimal.args.vector,
+    
+    var default_bench_args = benchargs.defaultBenchArgs(
         "out/dicuq",
         base_raster_config,
     );
+    default_bench_args.pixels_num = DEFAULT_PIXELS_NUM;
+    default_bench_args.sub_sample = DEFAULT_SUB_SAMPLE;
 
+    // Change .save_strategy here to write to disk!
+    const bench_args = try benchargs.parseArgsWithDefaults(
+        init.minimal.args.vector,
+        default_bench_args,
+    );
+
+    // Experiments to check number of active threas
+    // bench_args.total_threads = 1;
+    // bench_args.max_frames_in_flight = 16;
+    // bench_args.render_mode = .offline;
+    // Experiments to check disk write
+    // bench_args.save_strategy = .disk;
+        
+    var threaded_io = zraster.getThreadedIo(
+        outer_alloc,
+        init.minimal,
+        bench_args.total_threads,
+    );
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+        
     const sample_config = try benchdicuq.makeSampleConfig(bench_args);
-    //base_raster_config.save_strategy = .disk;
     
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
+    const dicuq_defaults = benchdicuq.DicuqDefaults{
+        .data_dir = DEFAULT_DATA_DIR,
+        .pixels_num = bench_args.pixels_num,
+        .sub_sample = bench_args.sub_sample,
+        .focal_leng = DEFAULT_FOCAL_LENG,
+        .pixels_size = DEFAULT_PIXELS_SIZE,
+        .fov_scale = DEFAULT_FOV_SCALE,
+        .stereo_ang = DEFAULT_STEREO_ANG,
+        .tex_path = DEFAULT_TEX_PATH,
+    };
 
     const prepared_benchmark = try benchdicuq.prepareBenchmark(
         aa,
         io,
-        bench_args.pixels_num,
-        bench_args.sub_sample,
+        dicuq_defaults,
         sample_config,
     );
 

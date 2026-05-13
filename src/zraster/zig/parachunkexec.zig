@@ -90,7 +90,7 @@ pub const ParaChunkExecutor = struct {
         for (0..chunks_num) |chunk_idx| {
             const range_start = chunk_idx * chunk_size;
             const range_end = @min(domain_len, range_start + chunk_size);
-            try group.concurrent(
+            group.async(
                 self.io,
                 runStaticChunkTask,
                 .{ ctx_ptr, job_func, chunk_idx, range_start, range_end },
@@ -118,7 +118,7 @@ pub const ParaChunkExecutor = struct {
         errdefer group.cancel(self.io);
 
         for (0..self.workers_num) |_| {
-            try group.concurrent(
+            group.async(
                 self.io,
                 runDynamicChunkTask,
                 .{
@@ -153,7 +153,7 @@ pub const ParaChunkExecutor = struct {
         errdefer group.cancel(self.io);
 
         for (0..self.workers_num) |worker_idx| {
-            try group.concurrent(
+            group.async(
                 self.io,
                 runDynamicChunkTaskWithWorkerError,
                 .{
@@ -310,15 +310,7 @@ pub fn runStaticRange(
             job_func,
             domain_len,
             chunk_size,
-        ) catch |err| switch (err) {
-            error.ConcurrencyUnavailable => runStaticRangeSerial(
-                ctx_ptr,
-                job_func,
-                domain_len,
-                chunk_size,
-            ),
-            else => unreachable,
-        };
+        ) catch unreachable;
         return;
     }
 
@@ -347,15 +339,7 @@ pub fn runDynamicRangeMaybe(
             job_func,
             domain_len,
             grain_size,
-        ) catch |err| switch (err) {
-            error.ConcurrencyUnavailable => runDynamicRangeSerial(
-                ctx_ptr,
-                job_func,
-                domain_len,
-                grain_size,
-            ),
-            else => unreachable,
-        };
+        ) catch unreachable;
         return;
     }
 
@@ -379,20 +363,12 @@ pub fn runDynamicRangeWithWorkerErrorMaybe(
     }
 
     if (chunk_exec) |executor| {
-        executor.runDynamicRangeWithWorkerError(
+        try executor.runDynamicRangeWithWorkerError(
             ctx_ptr,
             job_func,
             domain_len,
             grain_size,
-        ) catch |err| switch (err) {
-            error.ConcurrencyUnavailable => try runDynamicRangeWithWorkerErrorSerial(
-                ctx_ptr,
-                job_func,
-                domain_len,
-                grain_size,
-            ),
-            else => return err,
-        };
+        );
         return;
     }
 

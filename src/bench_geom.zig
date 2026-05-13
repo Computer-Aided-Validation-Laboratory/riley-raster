@@ -11,33 +11,65 @@ const benchargs = @import("common/benchargs.zig");
 const benchstats = @import("common/benchstats.zig");
 const common = @import("common/benchcommon.zig");
 const tcfg = @import("common/testconfig.zig");
+const zraster = @import("zraster/zig/zraster.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
+const Rotation = @import("zraster/zig/rotation.zig").Rotation;
 
 const config = common.BenchConfig{ .run = .all };
 
+const DEFAULT_OUT_DIR = "out/geom";
+const DEFAULT_DATA_DIR_SUFFIX = "geom";
+const DEFAULT_PIXELS_NUM = [2]u32{ 1600, 1000 };
+const DEFAULT_SUB_SAMPLE: u8 = 1;
+const DEFAULT_FOCAL_LENG: f64 = 50.0e-3;
+const DEFAULT_PIXELS_SIZE = [2]f64{ 5.3e-6, 5.3e-6 };
+const DEFAULT_FOV_SCALE: f64 = 1.0;
+const DEFAULT_TEX_GREY_PATH = "texture/speckle.bmp";
+const DEFAULT_TEX_RGB_PATH = "texture/speckle_rgb.bmp";
+const DEFAULT_ROT = Rotation.init(0, 0, 0);
+
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
-    const io = init.io;
 
     var base_raster_config = tcfg.getRasterConfig(.bench);
     base_raster_config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
-
-    const bench_args = try benchargs.parseArgs(
-        init.minimal.args.vector,
-        "out/geom",
+    var default_bench_args = benchargs.defaultBenchArgs(
+        DEFAULT_OUT_DIR,
         base_raster_config,
     );
+    default_bench_args.pixels_num = DEFAULT_PIXELS_NUM;
+    default_bench_args.sub_sample = DEFAULT_SUB_SAMPLE;
+
+    const bench_args = try benchargs.parseArgsWithDefaults(
+        init.minimal.args.vector,
+        default_bench_args,
+    );
+    var threaded_io = zraster.getThreadedIo(
+        outer_alloc,
+        init.minimal,
+        bench_args.total_threads,
+    );
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const render_defaults = common.BenchRenderDefaults{
+        .pixels_num = bench_args.pixels_num,
+        .sub_sample = bench_args.sub_sample,
+        .focal_leng = DEFAULT_FOCAL_LENG,
+        .pixels_size = DEFAULT_PIXELS_SIZE,
+        .fov_scale = DEFAULT_FOV_SCALE,
+        .rot = DEFAULT_ROT,
+    };
 
     const texture_grey = try iio.loadImage(
         u8,
         1,
         outer_alloc,
         io,
-        "texture/speckle.bmp",
+        DEFAULT_TEX_GREY_PATH,
         .bmp,
     );
     defer texture_grey.deinit(outer_alloc);
@@ -46,7 +78,7 @@ pub fn main(init: std.process.Init) !void {
         3,
         outer_alloc,
         io,
-        "texture/speckle_rgb.bmp",
+        DEFAULT_TEX_RGB_PATH,
         .bmp,
     );
     defer texture_rgb.deinit(outer_alloc);
@@ -114,7 +146,7 @@ pub fn main(init: std.process.Init) !void {
         bench_args.pixels_num,
         bench_args.sub_sample,
         bench_args.runs,
-        1.0,
+        DEFAULT_FOV_SCALE,
         actual_tile_size,
     );
 
@@ -124,8 +156,8 @@ pub fn main(init: std.process.Init) !void {
                 var data_dir_buf: [256]u8 = undefined;
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
-                    "data/bench/{s}_geom",
-                    .{@tagName(mt)},
+                    "data/bench/{s}_{s}",
+                    .{ @tagName(mt), DEFAULT_DATA_DIR_SUFFIX },
                 );
 
                 if (common.shouldRun(config, mt, st, sc, data_dir)) {
@@ -168,13 +200,11 @@ pub fn main(init: std.process.Init) !void {
                             sample_config,
                             null,
                             data_dir,
-                            bench_args.pixels_num,
-                            bench_args.sub_sample,
+                            render_defaults,
                             texture_grey,
                             texture_rgb,
                             raster_config,
                             run_out_dir_base,
-                            1.0,
                         );
                         defer res.deinit(outer_alloc);
 
@@ -209,8 +239,8 @@ pub fn main(init: std.process.Init) !void {
                 var data_dir_buf: [256]u8 = undefined;
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
-                    "data/bench/{s}_geom",
-                    .{@tagName(mt)},
+                    "data/bench/{s}_{s}",
+                    .{ @tagName(mt), DEFAULT_DATA_DIR_SUFFIX },
                 );
 
                 const case_name = try common.calcCaseName(
@@ -251,13 +281,11 @@ pub fn main(init: std.process.Init) !void {
                         null,
                         tex_func_case,
                         data_dir,
-                        bench_args.pixels_num,
-                        bench_args.sub_sample,
+                        render_defaults,
                         texture_grey,
                         texture_rgb,
                         raster_config,
                         run_out_dir_base,
-                        1.0,
                     );
                     defer res.deinit(outer_alloc);
 

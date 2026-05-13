@@ -37,7 +37,7 @@ pub fn getRasterConfig(mode: RasterConfigMode) rastcfg.RasterConfig {
 
     switch (mode) {
         .gold, .preview => {
-            config.total_threads = 0;
+            config.total_threads = 1;
             config.max_geom_workers_per_frame = 1;
             config.max_raster_workers_per_frame = 1;
             config.report = .off;

@@ -13,7 +13,7 @@ from bench_common import write_command_file
 
 
 THREAD_COUNTS = [1, 2, 4, 8]
-FRAMES_IN_FLIGHT = [1, 2, 4]
+FRAMES_IN_FLIGHT = [1, 2, 4, 8]
 RENDER_MODES = ["offline", "in_order"]
 #SAVE_STRATEGIES = ["disk", "memory"]
 SAVE_STRATEGIES = ["memory"]
@@ -182,6 +182,48 @@ def experiment_4_cases() -> list[dict[str, object]]:
     return cases
 
 
+def experiment_5_cases() -> list[dict[str, object]]:
+    cases: list[dict[str, object]] = []
+    for total_threads in THREAD_COUNTS:
+        for max_frames_in_flight in FRAMES_IN_FLIGHT:
+            for render_mode in RENDER_MODES:
+                for save_strategy in SAVE_STRATEGIES:
+                    case_name = (
+                        "bench_dicuq"
+                        f"_threads-{total_threads}"
+                        f"_geom-{total_threads}"
+                        f"_raster-{total_threads}"
+                        f"_frames-{max_frames_in_flight}"
+                        f"_render-{render_mode}"
+                        f"_save-{save_strategy}"
+                    )
+                    cases.append(
+                        {
+                            "experiment": "experiment_5_complete_matrix",
+                            "case_name": case_name,
+                            "args": [
+                                "--render-mode",
+                                render_mode,
+                                "--max-frames-in-flight",
+                                str(max_frames_in_flight),
+                                "--save-strategy",
+                                save_strategy,
+                                "--total-threads",
+                                str(total_threads),
+                                "--max-geom-threads-per-frame",
+                                str(total_threads),
+                                "--max-raster-threads-per-frame",
+                                str(total_threads),
+                                "--sample",
+                                SAMPLE,
+                                "--sample-mode",
+                                SAMPLE_MODE,
+                            ],
+                        }
+                    )
+    return cases
+
+
 def run_case(
     case: dict[str, object],
     run_root: pathlib.Path,
@@ -235,7 +277,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--experiment",
-        choices=("all", "1", "2", "3", "4"),
+        choices=("all", "1", "2", "3", "4", "5"),
         default="all",
     )
     parser.add_argument(
@@ -254,6 +296,8 @@ def main() -> int:
         cases.extend(experiment_3_cases())
     if args.experiment in ("all", "4"):
         cases.extend(experiment_4_cases())
+    if args.experiment in ("all", "5"):
+        cases.extend(experiment_5_cases())
 
     if not args.dry_run:
         run_root.mkdir(parents=True, exist_ok=True)

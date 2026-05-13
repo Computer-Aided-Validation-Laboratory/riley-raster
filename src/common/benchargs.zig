@@ -54,10 +54,20 @@ pub fn parseArgs(
     default_out_dir: []const u8,
     raster_config: rastcfg.RasterConfig,
 ) !BenchArgs {
-    var bench_args = defaultBenchArgs(
-        default_out_dir,
-        raster_config,
+    return parseArgsWithDefaults(
+        args,
+        defaultBenchArgs(
+            default_out_dir,
+            raster_config,
+        ),
     );
+}
+
+pub fn parseArgsWithDefaults(
+    args: anytype,
+    defaults: BenchArgs,
+) !BenchArgs {
+    var bench_args = defaults;
     var total_threads_overridden = false;
     var max_geom_threads_overridden = false;
     var max_raster_threads_overridden = false;

@@ -25,7 +25,6 @@ const MatSlice = @import("zraster/zig/matslice.zig").MatSlice;
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
-    const io = init.io;
 
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -39,6 +38,13 @@ pub fn main(init: std.process.Init) !void {
         },
         .report = .bench,
     };
+    var threaded_io = zraster.getThreadedIo(
+        outer_alloc,
+        init.minimal,
+        config.total_threads,
+    );
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
 
     const data_dir = "data/bench/tri6_sphere200/";
     const out_dir_root = "out/demo-sphere200";

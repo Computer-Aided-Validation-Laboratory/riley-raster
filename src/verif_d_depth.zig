@@ -42,11 +42,24 @@ const mesh_types = [_]gk.MeshType{
 
 const DataCase = struct {
     case_name: []const u8,
-    mesh_type: gk.MeshType,
-    data_dir: []const u8,
-    connect_name: []const u8,
+    front_mesh_type: gk.MeshType,
+    back_mesh_type: gk.MeshType,
+    front_data_dir: []const u8,
+    back_data_dir: []const u8,
+    front_connect_name: []const u8,
+    back_connect_name: []const u8,
     rot: Rotation,
 };
+
+fn pairedBackMeshType(front_mesh_type: gk.MeshType) gk.MeshType {
+    return switch (front_mesh_type) {
+        .tri3 => .tri6,
+        .tri6 => .tri3,
+        .quad4ibi => .quad8,
+        .quad4newton => .quad8,
+        .quad8, .quad9 => .quad4ibi,
+    };
+}
 
 fn translateCoords(coords: *meshio.Coords, translation: [3]f64) void {
     for (0..coords.mat.rows_num) |nn| {
@@ -155,31 +168,53 @@ fn buildCaseSpec(
     mesh_type: gk.MeshType,
 ) !DataCase {
     const is_rabbit = std.mem.eql(u8, case_name, "rabbit");
+    const back_mesh_type = pairedBackMeshType(mesh_type);
     if (is_rabbit) {
         return .{
             .case_name = case_name,
-            .mesh_type = mesh_type,
-            .data_dir = try std.fmt.allocPrint(
+            .front_mesh_type = mesh_type,
+            .back_mesh_type = back_mesh_type,
+            .front_data_dir = try std.fmt.allocPrint(
                 std.heap.page_allocator,
                 "data/rabbits/rabbit_{s}",
                 .{orch.meshDataName(mesh_type)},
             ),
-            .connect_name = "connectivity.csv",
+            .back_data_dir = try std.fmt.allocPrint(
+                std.heap.page_allocator,
+                "data/rabbits/rabbit_{s}",
+                .{orch.meshDataName(back_mesh_type)},
+            ),
+            .front_connect_name = "connectivity.csv",
+            .back_connect_name = "connectivity.csv",
             .rot = Rotation.init(0.0, std.math.pi, 0.0),
         };
     }
 
     // Sphere case - need to handle quad4 variants differently than rabbit/simple
-    const data_name = if (mesh_type == .quad4ibi) "quad4ibi" else orch.meshDataName(mesh_type);
+    const front_data_name = if (mesh_type == .quad4ibi)
+        "quad4ibi"
+    else
+        orch.meshDataName(mesh_type);
+    const back_data_name = if (back_mesh_type == .quad4ibi)
+        "quad4ibi"
+    else
+        orch.meshDataName(back_mesh_type);
     return .{
         .case_name = case_name,
-        .mesh_type = mesh_type,
-        .data_dir = try std.fmt.allocPrint(
+        .front_mesh_type = mesh_type,
+        .back_mesh_type = back_mesh_type,
+        .front_data_dir = try std.fmt.allocPrint(
             std.heap.page_allocator,
             "data/bench/{s}_sphere200",
-            .{data_name},
+            .{front_data_name},
         ),
-        .connect_name = "connect.csv",
+        .back_data_dir = try std.fmt.allocPrint(
+            std.heap.page_allocator,
+            "data/bench/{s}_sphere200",
+            .{back_data_name},
+        ),
+        .front_connect_name = "connect.csv",
+        .back_connect_name = "connect.csv",
         .rot = Rotation.init(0.0, 0.0, 0.0),
     };
 }
@@ -193,15 +228,21 @@ fn runCase(
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const sim_data = try loadStaticMesh(
+    const front_sim_data = try loadStaticMesh(
         aa,
         io,
-        case_spec.data_dir,
-        case_spec.connect_name,
+        case_spec.front_data_dir,
+        case_spec.front_connect_name,
+    );
+    const back_sim_data = try loadStaticMesh(
+        aa,
+        io,
+        case_spec.back_data_dir,
+        case_spec.back_connect_name,
     );
 
-    const front_coords = try orch.copyCoords(aa, sim_data.coords);
-    const back_coords = try orch.copyCoords(aa, sim_data.coords);
+    const front_coords = try orch.copyCoords(aa, front_sim_data.coords);
+    const back_coords = try orch.copyCoords(aa, back_sim_data.coords);
 
     const bounds = mo.findAlignedCentroid(&front_coords);
     const width = bounds.extent[0];
@@ -221,9 +262,9 @@ fn runCase(
     );
 
     var front_mesh = MeshInput{
-        .mesh_type = case_spec.mesh_type,
+        .mesh_type = case_spec.front_mesh_type,
         .coords = front_coords_mut,
-        .connect = sim_data.connect,
+        .connect = front_sim_data.connect,
         .disp = null,
         .shader = .{ .tex_func = .{
             .uvs = null,
@@ -238,9 +279,9 @@ fn runCase(
         } },
     };
     var back_mesh = MeshInput{
-        .mesh_type = case_spec.mesh_type,
+        .mesh_type = case_spec.back_mesh_type,
         .coords = back_coords_mut,
-        .connect = sim_data.connect,
+        .connect = back_sim_data.connect,
         .disp = null,
         .shader = .{ .tex_func = .{
             .uvs = null,
@@ -340,7 +381,7 @@ fn runCase(
         "{s}/d_{s}_{s}",
         .{
             out_root,
-            orch.meshDataName(case_spec.mesh_type),
+            orch.meshDataName(case_spec.front_mesh_type),
             case_spec.case_name,
         },
     );
@@ -353,7 +394,7 @@ fn runCase(
 
     std.debug.print(
         "Rendered d_{s}_{s}\n",
-        .{ orch.meshDataName(case_spec.mesh_type), case_spec.case_name },
+        .{ orch.meshDataName(case_spec.front_mesh_type), case_spec.case_name },
     );
 }
 

@@ -13,6 +13,7 @@ const mo = @import("zraster/zig/meshops.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
+const Rotation = @import("zraster/zig/rotation.zig").Rotation;
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -39,6 +40,14 @@ pub fn main(init: std.process.Init) !void {
 
     const out_dir_base = "gold/bench-fullscreen";
     const pixel_num = [_]u32{ 800, 500 };
+    const render_defaults = common.BenchRenderDefaults{
+        .pixels_num = pixel_num,
+        .sub_sample = 2,
+        .focal_leng = 50.0e-3,
+        .pixels_size = .{ 5.3e-6, 5.3e-6 },
+        .fov_scale = 1.0,
+        .rot = Rotation.init(0, 0, 0),
+    };
 
     const mesh_types = comptime std.enums.values(gk.MeshType);
     const shader_types = comptime std.enums.values(common.ShaderType);
@@ -89,13 +98,11 @@ pub fn main(init: std.process.Init) !void {
                         sc,
                         null,
                         data_dir,
-                        pixel_num,
-                        2,
+                        render_defaults,
                         texture_grey,
                         texture_rgb,
                         r_config,
                         out_dir_base,
-                        1.0,
                     );
                 }
             }

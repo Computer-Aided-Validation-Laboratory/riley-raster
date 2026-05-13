@@ -32,6 +32,17 @@ pub const PreparedDicuqBenchmark = struct {
     fov_scale: f64,
 };
 
+pub const DicuqDefaults = struct {
+    data_dir: []const u8,
+    pixels_num: [2]u32,
+    sub_sample: u8,
+    focal_leng: f64,
+    pixels_size: [2]f64,
+    fov_scale: f64,
+    stereo_ang: f64,
+    tex_path: []const u8,
+};
+
 pub const DicuqFrameRow = struct {
     run_idx: usize,
     camera_idx: usize,
@@ -144,19 +155,45 @@ pub fn makeSampleConfig(
 pub fn prepareBenchmark(
     allocator: std.mem.Allocator,
     io: std.Io,
-    pixel_num: [2]u32,
-    sub_sample: u8,
+    defaults: DicuqDefaults,
     sample_config: texops.TextureSampleConfig,
 ) !PreparedDicuqBenchmark {
-    const data_dir = "data/FE/platehole3d_4mr_2f/";
-    const coord_path = data_dir ++ "coords.csv";
-    const conn_path = data_dir ++ "connect.csv";
+    const data_dir = defaults.data_dir;
+    const coord_path = try std.fmt.allocPrint(
+        allocator,
+        "{s}coords.csv",
+        .{data_dir},
+    );
+    const conn_path = try std.fmt.allocPrint(
+        allocator,
+        "{s}connect.csv",
+        .{data_dir},
+    );
+    const field_disp_x_path = try std.fmt.allocPrint(
+        allocator,
+        "{s}field_disp_x.csv",
+        .{data_dir},
+    );
+    const field_disp_y_path = try std.fmt.allocPrint(
+        allocator,
+        "{s}field_disp_y.csv",
+        .{data_dir},
+    );
+    const field_disp_z_path = try std.fmt.allocPrint(
+        allocator,
+        "{s}field_disp_z.csv",
+        .{data_dir},
+    );
     const field_files = &[_][]const u8{
-        data_dir ++ "field_disp_x.csv",
-        data_dir ++ "field_disp_y.csv",
-        data_dir ++ "field_disp_z.csv",
+        field_disp_x_path,
+        field_disp_y_path,
+        field_disp_z_path,
     };
-    const uv_path = data_dir ++ "uvs.csv";
+    const uv_path = try std.fmt.allocPrint(
+        allocator,
+        "{s}uvs.csv",
+        .{data_dir},
+    );
 
     const sim_data = try meshio.loadSimData(
         allocator,
@@ -172,7 +209,7 @@ pub fn prepareBenchmark(
         1,
         allocator,
         io,
-        "texture/speckle.bmp",
+        defaults.tex_path,
         .bmp,
     );
 
@@ -190,9 +227,9 @@ pub fn prepareBenchmark(
         } },
     };
 
-    const pixel_size = [_]f64{ 3.45e-6, 3.45e-6 };
-    const focal_length: f64 = 50.0e-3;
-    const fov_scale: f64 = 0.9;
+    const pixel_size = defaults.pixels_size;
+    const focal_length = defaults.focal_leng;
+    const fov_scale = defaults.fov_scale;
     const roi_pos = camera_mod.CameraOps.roiCentFromCoords(
         &sim_data.coords,
     );
@@ -204,7 +241,7 @@ pub fn prepareBenchmark(
     );
     const cam0_pos = camera_mod.CameraOps.posFillFrameFromRot(
         &sim_data.coords,
-        pixel_num,
+        defaults.pixels_num,
         pixel_size,
         focal_length,
         cam0_rot,
@@ -212,12 +249,12 @@ pub fn prepareBenchmark(
     );
     const cam1_rot = Rotation.init(
         std.math.degreesToRadians(0.0),
-        std.math.degreesToRadians(20.0),
+        std.math.degreesToRadians(defaults.stereo_ang),
         std.math.degreesToRadians(0.0),
     );
     const cam1_pos = camera_mod.CameraOps.posFillFrameFromRot(
         &sim_data.coords,
-        pixel_num,
+        defaults.pixels_num,
         pixel_size,
         focal_length,
         cam1_rot,
@@ -228,22 +265,22 @@ pub fn prepareBenchmark(
         .mesh_input = mesh_input,
         .camera_inputs = .{
             .{
-                .pixels_num = pixel_num,
+                .pixels_num = defaults.pixels_num,
                 .pixels_size = pixel_size,
                 .pos_world = cam0_pos,
                 .rot_world = cam0_rot,
                 .roi_cent_world = roi_pos,
                 .focal_length = focal_length,
-                .sub_sample = sub_sample,
+                .sub_sample = defaults.sub_sample,
             },
             .{
-                .pixels_num = pixel_num,
+                .pixels_num = defaults.pixels_num,
                 .pixels_size = pixel_size,
                 .pos_world = cam1_pos,
                 .rot_world = cam1_rot,
                 .roi_cent_world = roi_pos,
                 .focal_length = focal_length,
-                .sub_sample = sub_sample,
+                .sub_sample = defaults.sub_sample,
             },
         },
         .sample_config = sample_config,
