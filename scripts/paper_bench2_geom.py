@@ -12,7 +12,9 @@ from paper_bench_common import load_case_map_from_dir
 from paper_bench_common import load_run_case_rows_from_dir
 from paper_bench_common import latest_stats_dir_with_candidates
 from paper_bench_common import write_tabs_tex
-from paper_verif_const import repo_root
+from paper_const import repo_root
+from paper_const import TABLE_MAD_DECIMAL_PLACES
+from paper_const import TABLE_MEDIAN_DECIMAL_PLACES
 
 
 BENCH_NAME = "bench_geom"
@@ -108,7 +110,10 @@ def fmt_float_pair(
     median_val: float,
     mad_val: float,
 ) -> str:
-    return f"${median_val:.1f} \\pm {mad_val:.1f}$"
+    return (
+        f"${median_val:.{TABLE_MEDIAN_DECIMAL_PLACES}f} "
+        f"\\pm {mad_val:.{TABLE_MAD_DECIMAL_PLACES}f}$"
+    )
 
 
 def build_table_tex() -> str:

@@ -32,6 +32,86 @@ pub const PreparedDicuqBenchmark = struct {
     fov_scale: f64,
 };
 
+pub const DicuqFrameRow = struct {
+    run_idx: usize,
+    camera_idx: usize,
+    frame_idx: usize,
+    geom_ms: f64,
+    raster_ms: f64,
+    save_frame_ms: f64,
+    frame_total_ms: f64,
+    total_elems: usize,
+    vis_elems: usize,
+    shaded_px: u64,
+    throughput_mpx_s: f64,
+    throughput_melem_s: f64,
+};
+
+pub const DicuqE2ERow = struct {
+    run_idx: usize,
+    camera_idx: ?usize,
+    e2e_ms: ?f64,
+    geom_ms: f64,
+    raster_ms: f64,
+    save_frame_ms: f64,
+    frame_total_ms: f64,
+    total_elems: usize,
+    vis_elems: usize,
+    shaded_px: u64,
+    throughput_mpx_s: f64,
+    throughput_melem_s: f64,
+};
+
+pub const DicuqRunResult = struct {
+    bench_result: common.BenchResult,
+    frame_rows: []DicuqFrameRow,
+    e2e_rows: []DicuqE2ERow,
+
+    pub fn deinit(
+        self: *DicuqRunResult,
+        allocator: std.mem.Allocator,
+    ) void {
+        self.bench_result.deinit(allocator);
+        allocator.free(self.frame_rows);
+        allocator.free(self.e2e_rows);
+    }
+};
+
+const DicuqStatsKind = enum {
+    median,
+    mad,
+    min,
+    max,
+};
+
+const DicuqFrameStatsRow = struct {
+    run_idx: usize,
+    camera_idx: ?usize,
+    geom_ms: f64,
+    raster_ms: f64,
+    save_frame_ms: f64,
+    frame_total_ms: f64,
+    total_elems: f64,
+    vis_elems: f64,
+    shaded_px: f64,
+    throughput_mpx_s: f64,
+    throughput_melem_s: f64,
+};
+
+const DicuqE2EStatsRow = struct {
+    camera_idx: ?usize,
+    e2e_ms: ?f64,
+    geom_ms: f64,
+    raster_ms: f64,
+    save_frame_ms: f64,
+    frame_total_ms: f64,
+    total_elems: f64,
+    vis_elems: f64,
+    shaded_px: f64,
+    throughput_mpx_s: f64,
+    throughput_melem_s: f64,
+};
+
 pub fn getBaseRasterConfig() zraster.RasterConfig {
     var base_raster_config = tcfg.getRasterConfig(.bench);
     base_raster_config.total_threads = 4;
@@ -192,7 +272,7 @@ pub fn runBenchmark(
     mesh_input: MeshInput,
     config: zraster.RasterConfig,
     out_dir_path: ?[]const u8,
-) !common.BenchResult {
+) !DicuqRunResult {
     const frame_count = if (mesh_input.disp) |disp|
         disp.getTimeN() * camera_inputs.len
     else
@@ -228,26 +308,41 @@ pub fn runBenchmark(
         @floatFromInt(start.durationTo(end).raw.nanoseconds),
     ) / 1e6;
     const frame_count_f = @as(f64, @floatFromInt(frame_count));
+    const frame_rows = try buildFrameRows(
+        outer_alloc,
+        camera_inputs,
+        bench_capture,
+    );
+    const e2e_rows = try buildE2ERows(
+        outer_alloc,
+        camera_inputs,
+        frame_rows,
+        e2e_ms,
+    );
 
     return .{
-        .e2e_ms = e2e_ms,
-        .geom_ms = (frame_times.geometry_prep + frame_times.tile_overlap) /
-            1e6,
-        .raster_ms = frame_times.raster_loop / 1e6,
-        .fps = if (e2e_ms > 0)
-            (frame_count_f * 1000.0 / e2e_ms)
-        else
-            0.0,
-        .metrics = calcDicuqMetrics(
-            mesh_input.mesh_type,
-            camera_inputs[0].pixels_num,
-            camera_inputs[0].sub_sample,
-            frame_count,
-            frame_times,
-            bench_log,
-        ),
-        .pipeline_times = frame_times,
-        .image = null,
+        .bench_result = .{
+            .e2e_ms = e2e_ms,
+            .geom_ms = (frame_times.geometry_prep + frame_times.tile_overlap) /
+                1e6,
+            .raster_ms = frame_times.raster_loop / 1e6,
+            .fps = if (e2e_ms > 0)
+                (frame_count_f * 1000.0 / e2e_ms)
+            else
+                0.0,
+            .metrics = calcDicuqMetrics(
+                mesh_input.mesh_type,
+                camera_inputs[0].pixels_num,
+                camera_inputs[0].sub_sample,
+                frame_count,
+                frame_times,
+                bench_log,
+            ),
+            .pipeline_times = frame_times,
+            .image = null,
+        },
+        .frame_rows = frame_rows,
+        .e2e_rows = e2e_rows,
     };
 }
 
@@ -349,4 +444,732 @@ fn calcDicuqMetrics(
         else
             0,
     };
+}
+
+fn calcFrameMPxPerSec(
+    camera_input: CameraInput,
+    raster_time_ns: f64,
+) f64 {
+    if (raster_time_ns <= 0.0) {
+        return 0.0;
+    }
+    const pixels_x = @as(f64, @floatFromInt(camera_input.pixels_num[0]));
+    const pixels_y = @as(f64, @floatFromInt(camera_input.pixels_num[1]));
+    const sub_sample = @as(f64, @floatFromInt(camera_input.sub_sample));
+    const total_px = pixels_x * pixels_y;
+    const total_subpx = total_px * sub_sample * sub_sample;
+    _ = total_subpx;
+    const raster_sec = raster_time_ns / 1e9;
+    return total_px / (raster_sec * 1e6);
+}
+
+fn calcFrameMElemPerSec(
+    total_elems: usize,
+    geom_time_ns: f64,
+) f64 {
+    if (geom_time_ns <= 0.0) {
+        return 0.0;
+    }
+    const geom_sec = geom_time_ns / 1e9;
+    return @as(f64, @floatFromInt(total_elems)) / (geom_sec * 1e6);
+}
+
+fn buildFrameRows(
+    allocator: std.mem.Allocator,
+    camera_inputs: []const CameraInput,
+    bench_capture: []const report.FrameBenchCapture,
+) ![]DicuqFrameRow {
+    var frame_rows = try allocator.alloc(
+        DicuqFrameRow,
+        bench_capture.len,
+    );
+
+    for (bench_capture, 0..) |capture, ii| {
+        const geom_time_ns =
+            capture.bench_log.frame_times.geometry_prep +
+            capture.bench_log.frame_times.tile_overlap;
+        frame_rows[ii] = .{
+            .run_idx = 0,
+            .camera_idx = capture.camera_idx,
+            .frame_idx = capture.frame_idx,
+            .geom_ms = geom_time_ns / 1e6,
+            .raster_ms = capture.bench_log.frame_times.raster_loop / 1e6,
+            .save_frame_ms = capture.bench_log.frame_times.save_frame / 1e6,
+            .frame_total_ms = capture.bench_log.frame_times.total_time / 1e6,
+            .total_elems = capture.bench_log.total_elements,
+            .vis_elems = capture.bench_log.visible_elements,
+            .shaded_px = capture.bench_log.total_shaded_pixels,
+            .throughput_mpx_s = calcFrameMPxPerSec(
+                camera_inputs[capture.camera_idx],
+                capture.bench_log.frame_times.raster_loop,
+            ),
+            .throughput_melem_s = calcFrameMElemPerSec(
+                capture.bench_log.total_elements,
+                geom_time_ns,
+            ),
+        };
+    }
+
+    return frame_rows;
+}
+
+fn buildE2ESummaryRow(
+    frame_rows: []const DicuqFrameRow,
+    camera_inputs: []const CameraInput,
+    run_idx: usize,
+    camera_idx: ?usize,
+    e2e_ms: ?f64,
+) DicuqE2ERow {
+    var geom_ms: f64 = 0.0;
+    var raster_ms: f64 = 0.0;
+    var save_frame_ms: f64 = 0.0;
+    var frame_total_ms: f64 = 0.0;
+    var total_elems: usize = 0;
+    var vis_elems: usize = 0;
+    var shaded_px: u64 = 0;
+    var frame_count: usize = 0;
+
+    for (frame_rows) |frame_row| {
+        if (camera_idx) |cc| {
+            if (frame_row.camera_idx != cc) {
+                continue;
+            }
+        }
+        geom_ms += frame_row.geom_ms;
+        raster_ms += frame_row.raster_ms;
+        save_frame_ms += frame_row.save_frame_ms;
+        frame_total_ms += frame_row.frame_total_ms;
+        total_elems += frame_row.total_elems;
+        vis_elems += frame_row.vis_elems;
+        shaded_px += frame_row.shaded_px;
+        frame_count += 1;
+    }
+
+    const camera_ref = if (camera_idx) |cc|
+        camera_inputs[cc]
+    else
+        camera_inputs[0];
+    const total_px = @as(f64, @floatFromInt(camera_ref.pixels_num[0])) *
+        @as(f64, @floatFromInt(camera_ref.pixels_num[1])) *
+        @as(f64, @floatFromInt(frame_count));
+    const throughput_mpx_s = if (raster_ms > 0.0)
+        total_px / ((raster_ms / 1e3) * 1e6)
+    else
+        0.0;
+    const throughput_melem_s = if (geom_ms > 0.0)
+        @as(f64, @floatFromInt(total_elems)) / ((geom_ms / 1e3) * 1e6)
+    else
+        0.0;
+
+    return .{
+        .run_idx = run_idx,
+        .camera_idx = camera_idx,
+        .e2e_ms = e2e_ms,
+        .geom_ms = geom_ms,
+        .raster_ms = raster_ms,
+        .save_frame_ms = save_frame_ms,
+        .frame_total_ms = frame_total_ms,
+        .total_elems = total_elems,
+        .vis_elems = vis_elems,
+        .shaded_px = shaded_px,
+        .throughput_mpx_s = throughput_mpx_s,
+        .throughput_melem_s = throughput_melem_s,
+    };
+}
+
+fn buildE2ERows(
+    allocator: std.mem.Allocator,
+    camera_inputs: []const CameraInput,
+    frame_rows: []const DicuqFrameRow,
+    e2e_ms: f64,
+) ![]DicuqE2ERow {
+    const row_count = camera_inputs.len + 1;
+    var e2e_rows = try allocator.alloc(DicuqE2ERow, row_count);
+
+    for (camera_inputs, 0..) |_, cc| {
+        e2e_rows[cc] = buildE2ESummaryRow(
+            frame_rows,
+            camera_inputs,
+            0,
+            cc,
+            null,
+        );
+    }
+    e2e_rows[camera_inputs.len] = buildE2ESummaryRow(
+        frame_rows,
+        camera_inputs,
+        0,
+        null,
+        e2e_ms,
+    );
+
+    return e2e_rows;
+}
+
+fn cameraLabel(
+    allocator: std.mem.Allocator,
+    camera_idx: ?usize,
+) ![]u8 {
+    if (camera_idx) |cc| {
+        return std.fmt.allocPrint(allocator, "{d}", .{cc});
+    }
+    return allocator.dupe(u8, "all");
+}
+
+fn writeDicuqFile(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    out_dir_base: []const u8,
+    file_name: []const u8,
+    contents: []const u8,
+) !void {
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDir(
+        io,
+        out_dir_base,
+        .default_dir,
+    ) catch |err| if (err != error.PathAlreadyExists) return err;
+
+    const csv_path = try std.fs.path.join(
+        allocator,
+        &[_][]const u8{ out_dir_base, file_name },
+    );
+    defer allocator.free(csv_path);
+
+    var file = try cwd.createFile(io, csv_path, .{});
+    defer file.close(io);
+
+    var write_buf: [4096]u8 = undefined;
+    var buffered_writer = file.writer(io, &write_buf);
+    try buffered_writer.interface.writeAll(contents);
+    try buffered_writer.interface.flush();
+}
+
+fn appendFrameRowsCSV(
+    allocator: std.mem.Allocator,
+    rows_buf: *std.ArrayList(u8),
+    case_name: []const u8,
+    frame_rows: []const DicuqFrameRow,
+) !void {
+    try rows_buf.appendSlice(
+        allocator,
+        "Run,Case,Camera,Frame,Geom_ms,Raster_ms,SaveFrame_ms,FrameTotal_ms," ++
+            "Total_Elems,Vis_Elems,Shaded_Px,Throughput_MPx/s," ++
+            "Throughput_MElem/s\n",
+    );
+
+    for (frame_rows) |frame_row| {
+        const row = try std.fmt.allocPrint(
+            allocator,
+            "{d},{s},{d},{d},{d:.6},{d:.6},{d:.6},{d:.6},{d},{d},{d}," ++
+                "{d:.6},{d:.6}\n",
+            .{
+                frame_row.run_idx,
+                case_name,
+                frame_row.camera_idx,
+                frame_row.frame_idx,
+                frame_row.geom_ms,
+                frame_row.raster_ms,
+                frame_row.save_frame_ms,
+                frame_row.frame_total_ms,
+                frame_row.total_elems,
+                frame_row.vis_elems,
+                frame_row.shaded_px,
+                frame_row.throughput_mpx_s,
+                frame_row.throughput_melem_s,
+            },
+        );
+        defer allocator.free(row);
+        try rows_buf.appendSlice(allocator, row);
+    }
+}
+
+fn appendE2ERowsCSV(
+    allocator: std.mem.Allocator,
+    rows_buf: *std.ArrayList(u8),
+    case_name: []const u8,
+    e2e_rows: []const DicuqE2ERow,
+) !void {
+    try rows_buf.appendSlice(
+        allocator,
+        "Run,Case,Camera,E2E_ms,Geom_ms,Raster_ms,SaveFrame_ms,FrameTotal_ms," ++
+            "Total_Elems,Vis_Elems,Shaded_Px,Throughput_MPx/s," ++
+            "Throughput_MElem/s\n",
+    );
+
+    for (e2e_rows) |e2e_row| {
+        const camera_text = try cameraLabel(allocator, e2e_row.camera_idx);
+        defer allocator.free(camera_text);
+        const e2e_text = if (e2e_row.e2e_ms) |val|
+            try std.fmt.allocPrint(allocator, "{d:.6}", .{val})
+        else
+            try allocator.dupe(u8, "");
+        defer allocator.free(e2e_text);
+
+        const row = try std.fmt.allocPrint(
+            allocator,
+            "{d},{s},{s},{s},{d:.6},{d:.6},{d:.6},{d:.6},{d},{d},{d}," ++
+                "{d:.6},{d:.6}\n",
+            .{
+                e2e_row.run_idx,
+                case_name,
+                camera_text,
+                e2e_text,
+                e2e_row.geom_ms,
+                e2e_row.raster_ms,
+                e2e_row.save_frame_ms,
+                e2e_row.frame_total_ms,
+                e2e_row.total_elems,
+                e2e_row.vis_elems,
+                e2e_row.shaded_px,
+                e2e_row.throughput_mpx_s,
+                e2e_row.throughput_melem_s,
+            },
+        );
+        defer allocator.free(row);
+        try rows_buf.appendSlice(allocator, row);
+    }
+}
+
+fn calcFieldStats(
+    allocator: std.mem.Allocator,
+    values: []const f64,
+) !common.MedianMAD {
+    const copy_vals = try allocator.dupe(f64, values);
+    defer allocator.free(copy_vals);
+    return common.calcMedianMAD(allocator, copy_vals);
+}
+
+fn selectDicuqStat(
+    stats: common.MedianMAD,
+    kind: DicuqStatsKind,
+) f64 {
+    return switch (kind) {
+        .median => stats.median,
+        .mad => stats.mad,
+        .min => stats.min,
+        .max => stats.max,
+    };
+}
+
+fn calcFrameStatsRow(
+    allocator: std.mem.Allocator,
+    run_idx: usize,
+    camera_idx: ?usize,
+    frame_rows: []const DicuqFrameRow,
+    kind: DicuqStatsKind,
+) !DicuqFrameStatsRow {
+    var count: usize = 0;
+    for (frame_rows) |frame_row| {
+        if (camera_idx) |cc| {
+            if (frame_row.camera_idx != cc) {
+                continue;
+            }
+        }
+        count += 1;
+    }
+
+    var geom_vals = try allocator.alloc(f64, count);
+    defer allocator.free(geom_vals);
+    var raster_vals = try allocator.alloc(f64, count);
+    defer allocator.free(raster_vals);
+    var save_vals = try allocator.alloc(f64, count);
+    defer allocator.free(save_vals);
+    var total_vals = try allocator.alloc(f64, count);
+    defer allocator.free(total_vals);
+    var elems_vals = try allocator.alloc(f64, count);
+    defer allocator.free(elems_vals);
+    var vis_vals = try allocator.alloc(f64, count);
+    defer allocator.free(vis_vals);
+    var shaded_vals = try allocator.alloc(f64, count);
+    defer allocator.free(shaded_vals);
+    var mpx_vals = try allocator.alloc(f64, count);
+    defer allocator.free(mpx_vals);
+    var melem_vals = try allocator.alloc(f64, count);
+    defer allocator.free(melem_vals);
+
+    var ii: usize = 0;
+    for (frame_rows) |frame_row| {
+        if (camera_idx) |cc| {
+            if (frame_row.camera_idx != cc) {
+                continue;
+            }
+        }
+        geom_vals[ii] = frame_row.geom_ms;
+        raster_vals[ii] = frame_row.raster_ms;
+        save_vals[ii] = frame_row.save_frame_ms;
+        total_vals[ii] = frame_row.frame_total_ms;
+        elems_vals[ii] = @floatFromInt(frame_row.total_elems);
+        vis_vals[ii] = @floatFromInt(frame_row.vis_elems);
+        shaded_vals[ii] = @floatFromInt(frame_row.shaded_px);
+        mpx_vals[ii] = frame_row.throughput_mpx_s;
+        melem_vals[ii] = frame_row.throughput_melem_s;
+        ii += 1;
+    }
+
+    return .{
+        .run_idx = run_idx,
+        .camera_idx = camera_idx,
+        .geom_ms = selectDicuqStat(
+            try calcFieldStats(allocator, geom_vals),
+            kind,
+        ),
+        .raster_ms = selectDicuqStat(
+            try calcFieldStats(allocator, raster_vals),
+            kind,
+        ),
+        .save_frame_ms = selectDicuqStat(
+            try calcFieldStats(allocator, save_vals),
+            kind,
+        ),
+        .frame_total_ms = selectDicuqStat(
+            try calcFieldStats(allocator, total_vals),
+            kind,
+        ),
+        .total_elems = selectDicuqStat(
+            try calcFieldStats(allocator, elems_vals),
+            kind,
+        ),
+        .vis_elems = selectDicuqStat(
+            try calcFieldStats(allocator, vis_vals),
+            kind,
+        ),
+        .shaded_px = selectDicuqStat(
+            try calcFieldStats(allocator, shaded_vals),
+            kind,
+        ),
+        .throughput_mpx_s = selectDicuqStat(
+            try calcFieldStats(allocator, mpx_vals),
+            kind,
+        ),
+        .throughput_melem_s = selectDicuqStat(
+            try calcFieldStats(allocator, melem_vals),
+            kind,
+        ),
+    };
+}
+
+fn calcE2EStatsRow(
+    allocator: std.mem.Allocator,
+    camera_idx: ?usize,
+    e2e_rows_by_run: []const []const DicuqE2ERow,
+    kind: DicuqStatsKind,
+) !DicuqE2EStatsRow {
+    const count: usize = e2e_rows_by_run.len;
+
+    var e2e_vals = try allocator.alloc(f64, count);
+    defer allocator.free(e2e_vals);
+    var geom_vals = try allocator.alloc(f64, count);
+    defer allocator.free(geom_vals);
+    var raster_vals = try allocator.alloc(f64, count);
+    defer allocator.free(raster_vals);
+    var save_vals = try allocator.alloc(f64, count);
+    defer allocator.free(save_vals);
+    var total_vals = try allocator.alloc(f64, count);
+    defer allocator.free(total_vals);
+    var elems_vals = try allocator.alloc(f64, count);
+    defer allocator.free(elems_vals);
+    var vis_vals = try allocator.alloc(f64, count);
+    defer allocator.free(vis_vals);
+    var shaded_vals = try allocator.alloc(f64, count);
+    defer allocator.free(shaded_vals);
+    var mpx_vals = try allocator.alloc(f64, count);
+    defer allocator.free(mpx_vals);
+    var melem_vals = try allocator.alloc(f64, count);
+    defer allocator.free(melem_vals);
+
+    var have_e2e = true;
+    for (e2e_rows_by_run, 0..) |rows, rr| {
+        var matched = false;
+        for (rows) |row| {
+            if (row.camera_idx != camera_idx) {
+                continue;
+            }
+            matched = true;
+            if (row.e2e_ms) |val| {
+                e2e_vals[rr] = val;
+            } else {
+                have_e2e = false;
+                e2e_vals[rr] = 0.0;
+            }
+            geom_vals[rr] = row.geom_ms;
+            raster_vals[rr] = row.raster_ms;
+            save_vals[rr] = row.save_frame_ms;
+            total_vals[rr] = row.frame_total_ms;
+            elems_vals[rr] = @floatFromInt(row.total_elems);
+            vis_vals[rr] = @floatFromInt(row.vis_elems);
+            shaded_vals[rr] = @floatFromInt(row.shaded_px);
+            mpx_vals[rr] = row.throughput_mpx_s;
+            melem_vals[rr] = row.throughput_melem_s;
+            break;
+        }
+        if (!matched) {
+            return error.MissingE2ERowForCamera;
+        }
+    }
+
+    return .{
+        .camera_idx = camera_idx,
+        .e2e_ms = if (have_e2e)
+            selectDicuqStat(try calcFieldStats(allocator, e2e_vals), kind)
+        else
+            null,
+        .geom_ms = selectDicuqStat(
+            try calcFieldStats(allocator, geom_vals),
+            kind,
+        ),
+        .raster_ms = selectDicuqStat(
+            try calcFieldStats(allocator, raster_vals),
+            kind,
+        ),
+        .save_frame_ms = selectDicuqStat(
+            try calcFieldStats(allocator, save_vals),
+            kind,
+        ),
+        .frame_total_ms = selectDicuqStat(
+            try calcFieldStats(allocator, total_vals),
+            kind,
+        ),
+        .total_elems = selectDicuqStat(
+            try calcFieldStats(allocator, elems_vals),
+            kind,
+        ),
+        .vis_elems = selectDicuqStat(
+            try calcFieldStats(allocator, vis_vals),
+            kind,
+        ),
+        .shaded_px = selectDicuqStat(
+            try calcFieldStats(allocator, shaded_vals),
+            kind,
+        ),
+        .throughput_mpx_s = selectDicuqStat(
+            try calcFieldStats(allocator, mpx_vals),
+            kind,
+        ),
+        .throughput_melem_s = selectDicuqStat(
+            try calcFieldStats(allocator, melem_vals),
+            kind,
+        ),
+    };
+}
+
+fn appendFrameStatsRowsCSV(
+    allocator: std.mem.Allocator,
+    rows_buf: *std.ArrayList(u8),
+    case_name: []const u8,
+    run_idx: usize,
+    camera_count: usize,
+    frame_rows: []const DicuqFrameRow,
+    kind: DicuqStatsKind,
+) !void {
+    try rows_buf.appendSlice(
+        allocator,
+        "Run,Case,Camera,Geom_ms,Raster_ms,SaveFrame_ms,FrameTotal_ms," ++
+            "Total_Elems,Vis_Elems,Shaded_Px,Throughput_MPx/s," ++
+            "Throughput_MElem/s\n",
+    );
+
+    for (0..camera_count + 1) |cc| {
+        const camera_idx_opt: ?usize = if (cc < camera_count) cc else null;
+        const stats_row = try calcFrameStatsRow(
+            allocator,
+            run_idx,
+            camera_idx_opt,
+            frame_rows,
+            kind,
+        );
+        const camera_text = try cameraLabel(allocator, camera_idx_opt);
+        defer allocator.free(camera_text);
+        const row = try std.fmt.allocPrint(
+            allocator,
+            "{d},{s},{s},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6}," ++
+                "{d:.6},{d:.6}\n",
+            .{
+                stats_row.run_idx,
+                case_name,
+                camera_text,
+                stats_row.geom_ms,
+                stats_row.raster_ms,
+                stats_row.save_frame_ms,
+                stats_row.frame_total_ms,
+                stats_row.total_elems,
+                stats_row.vis_elems,
+                stats_row.shaded_px,
+                stats_row.throughput_mpx_s,
+                stats_row.throughput_melem_s,
+            },
+        );
+        defer allocator.free(row);
+        try rows_buf.appendSlice(allocator, row);
+    }
+}
+
+fn appendE2EStatsRowsCSV(
+    allocator: std.mem.Allocator,
+    rows_buf: *std.ArrayList(u8),
+    case_name: []const u8,
+    camera_count: usize,
+    e2e_rows_by_run: []const []const DicuqE2ERow,
+    kind: DicuqStatsKind,
+) !void {
+    try rows_buf.appendSlice(
+        allocator,
+        "Case,Camera,E2E_ms,Geom_ms,Raster_ms,SaveFrame_ms,FrameTotal_ms," ++
+            "Total_Elems,Vis_Elems,Shaded_Px,Throughput_MPx/s," ++
+            "Throughput_MElem/s\n",
+    );
+
+    for (0..camera_count + 1) |cc| {
+        const camera_idx_opt: ?usize = if (cc < camera_count) cc else null;
+        const stats_row = try calcE2EStatsRow(
+            allocator,
+            camera_idx_opt,
+            e2e_rows_by_run,
+            kind,
+        );
+        const camera_text = try cameraLabel(allocator, camera_idx_opt);
+        defer allocator.free(camera_text);
+        const e2e_text = if (stats_row.e2e_ms) |val|
+            try std.fmt.allocPrint(allocator, "{d:.6}", .{val})
+        else
+            try allocator.dupe(u8, "");
+        defer allocator.free(e2e_text);
+        const row = try std.fmt.allocPrint(
+            allocator,
+            "{s},{s},{s},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6}," ++
+                "{d:.6},{d:.6}\n",
+            .{
+                case_name,
+                camera_text,
+                e2e_text,
+                stats_row.geom_ms,
+                stats_row.raster_ms,
+                stats_row.save_frame_ms,
+                stats_row.frame_total_ms,
+                stats_row.total_elems,
+                stats_row.vis_elems,
+                stats_row.shaded_px,
+                stats_row.throughput_mpx_s,
+                stats_row.throughput_melem_s,
+            },
+        );
+        defer allocator.free(row);
+        try rows_buf.appendSlice(allocator, row);
+    }
+}
+
+pub fn writeRunCSVs(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    out_dir_base: []const u8,
+    case_name: []const u8,
+    run_idx: usize,
+    camera_count: usize,
+    run_result: DicuqRunResult,
+) !void {
+    var byframe_buf: std.ArrayList(u8) = .empty;
+    defer byframe_buf.deinit(allocator);
+    try appendFrameRowsCSV(
+        allocator,
+        &byframe_buf,
+        case_name,
+        run_result.frame_rows,
+    );
+    const byframe_name = try std.fmt.allocPrint(
+        allocator,
+        "bench_run{d}_byframe.csv",
+        .{run_idx},
+    );
+    defer allocator.free(byframe_name);
+    try writeDicuqFile(
+        allocator,
+        io,
+        out_dir_base,
+        byframe_name,
+        byframe_buf.items,
+    );
+
+    var e2e_buf: std.ArrayList(u8) = .empty;
+    defer e2e_buf.deinit(allocator);
+    try appendE2ERowsCSV(
+        allocator,
+        &e2e_buf,
+        case_name,
+        run_result.e2e_rows,
+    );
+    const e2e_name = try std.fmt.allocPrint(
+        allocator,
+        "bench_run{d}_e2e.csv",
+        .{run_idx},
+    );
+    defer allocator.free(e2e_name);
+    try writeDicuqFile(
+        allocator,
+        io,
+        out_dir_base,
+        e2e_name,
+        e2e_buf.items,
+    );
+
+    inline for (.{ .median, .mad, .min, .max }) |kind| {
+        var stats_buf: std.ArrayList(u8) = .empty;
+        defer stats_buf.deinit(allocator);
+        try appendFrameStatsRowsCSV(
+            allocator,
+            &stats_buf,
+            case_name,
+            run_idx,
+            camera_count,
+            run_result.frame_rows,
+            kind,
+        );
+        const file_name = try std.fmt.allocPrint(
+            allocator,
+            "bench_run{d}_overframes_{s}.csv",
+            .{ run_idx, @tagName(kind) },
+        );
+        defer allocator.free(file_name);
+        try writeDicuqFile(
+            allocator,
+            io,
+            out_dir_base,
+            file_name,
+            stats_buf.items,
+        );
+    }
+}
+
+pub fn writeE2EOverRunsCSVs(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    out_dir_base: []const u8,
+    case_name: []const u8,
+    camera_count: usize,
+    e2e_rows_by_run: []const []const DicuqE2ERow,
+) !void {
+    inline for (.{ .median, .mad, .min, .max }) |kind| {
+        var stats_buf: std.ArrayList(u8) = .empty;
+        defer stats_buf.deinit(allocator);
+        try appendE2EStatsRowsCSV(
+            allocator,
+            &stats_buf,
+            case_name,
+            camera_count,
+            e2e_rows_by_run,
+            kind,
+        );
+        const file_name = try std.fmt.allocPrint(
+            allocator,
+            "bench_e2e_overruns_{s}.csv",
+            .{@tagName(kind)},
+        );
+        defer allocator.free(file_name);
+        try writeDicuqFile(
+            allocator,
+            io,
+            out_dir_base,
+            file_name,
+            stats_buf.items,
+        );
+    }
 }

@@ -6,7 +6,9 @@ import pathlib
 import statistics
 from collections import Counter
 
-from paper_verif_const import PAPER_DIR, repo_root
+from paper_const import PAPER_DIR, repo_root
+from paper_const import TABLE_MAD_DECIMAL_PLACES
+from paper_const import TABLE_MEDIAN_DECIMAL_PLACES
 
 
 def latest_run_dir(bench_name: str) -> pathlib.Path:
@@ -144,7 +146,10 @@ def fmt_triplet(
 ) -> str:
     median_val = float(median_row[col_name])
     mad_val = float(mad_row[col_name])
-    return f"${median_val:.1f} \\pm {mad_val:.1f}$"
+    return (
+        f"${median_val:.{TABLE_MEDIAN_DECIMAL_PLACES}f} "
+        f"\\pm {mad_val:.{TABLE_MAD_DECIMAL_PLACES}f}$"
+    )
 
 
 def load_run_case_rows(

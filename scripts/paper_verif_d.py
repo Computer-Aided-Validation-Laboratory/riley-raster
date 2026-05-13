@@ -6,7 +6,7 @@ import pathlib
 
 from PIL import Image
 
-from paper_verif_const import PAPER_DIR, repo_root
+from paper_const import PAPER_DIR, repo_root
 
 
 OUT_STATS_PATH = pathlib.Path("verif/verif_d_stats.csv")

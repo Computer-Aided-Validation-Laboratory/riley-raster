@@ -7,7 +7,7 @@ import pathlib
 import subprocess
 
 from PIL import Image
-from paper_verif_const import (
+from paper_const import (
     PAPER_DIR,
     SHEAR_REGULAR,
     SHEAR_SHEAR,

@@ -10,7 +10,6 @@ const std = @import("std");
 
 const benchargs = @import("common/benchargs.zig");
 const benchdicuq = @import("common/benchdicuq.zig");
-const benchstats = @import("common/benchstats.zig");
 const common = @import("common/benchcommon.zig");
 
 pub fn main(init: std.process.Init) !void {
@@ -66,12 +65,6 @@ pub fn main(init: std.process.Init) !void {
     const case_name = try benchdicuq.calcCaseName(outer_alloc, sample_config);
     defer outer_alloc.free(case_name);
 
-    var stats = try benchstats.BenchStatsCollector.init(
-        outer_alloc,
-        bench_args.runs,
-    );
-    defer stats.deinit(outer_alloc);
-
     std.debug.print(
         "Starting DIC UQ Benchmark ({d}x{d}, {d} runs, {d} threads)...\n",
         .{
@@ -83,18 +76,24 @@ pub fn main(init: std.process.Init) !void {
     );
     std.debug.print("Case: {s}\n", .{case_name});
 
-    var case_samples = try benchstats.CaseSamples.init(
-        outer_alloc,
+    var e2e_rows_by_run = try outer_alloc.alloc(
+        []benchdicuq.DicuqE2ERow,
         bench_args.runs,
     );
-    defer case_samples.deinit(outer_alloc);
+    var e2e_rows_filled: usize = 0;
+    defer {
+        for (0..e2e_rows_filled) |rr| {
+            outer_alloc.free(e2e_rows_by_run[rr]);
+        }
+        outer_alloc.free(e2e_rows_by_run);
+    }
 
     for (0..bench_args.runs) |rr| {
         const out_dir_path = switch (bench_args.save_strategy) {
             .disk, .both => bench_args.out_dir,
             .memory, .none => null,
         };
-        var result = try benchdicuq.runBenchmark(
+        var run_result = try benchdicuq.runBenchmark(
             outer_alloc,
             io,
             &prepared_benchmark.camera_inputs,
@@ -102,38 +101,37 @@ pub fn main(init: std.process.Init) !void {
             raster_config,
             out_dir_path,
         );
-        defer result.deinit(outer_alloc);
-        try stats.appendRunResult(
+        defer run_result.deinit(outer_alloc);
+
+        for (run_result.frame_rows) |*frame_row| {
+            frame_row.run_idx = rr;
+        }
+        for (run_result.e2e_rows) |*e2e_row| {
+            e2e_row.run_idx = rr;
+        }
+
+        try benchdicuq.writeRunCSVs(
             outer_alloc,
-            rr,
+            io,
+            bench_args.out_dir,
             case_name,
-            .quad8,
-            .tex8_grey,
-            sample_config,
-            null,
-            result,
+            rr,
+            prepared_benchmark.camera_inputs.len,
+            run_result,
         );
-        case_samples.record(rr, result);
+        e2e_rows_by_run[rr] = try outer_alloc.dupe(
+            benchdicuq.DicuqE2ERow,
+            run_result.e2e_rows,
+        );
+        e2e_rows_filled += 1;
     }
 
-    try stats.appendCaseStats(
-        outer_alloc,
-        case_name,
-        .quad8,
-        .tex8_grey,
-        sample_config,
-        null,
-        &case_samples,
-    );
-
-    try stats.writeRunCSVs(outer_alloc, io, bench_args.out_dir);
-    try common.writeBenchmarkReport(
+    try benchdicuq.writeE2EOverRunsCSVs(
         outer_alloc,
         io,
-        "DIC UQ Benchmark Results",
         bench_args.out_dir,
-        bench_args.pixels_num,
-        stats.stats_list.items,
-        0,
+        case_name,
+        prepared_benchmark.camera_inputs.len,
+        e2e_rows_by_run,
     );
 }

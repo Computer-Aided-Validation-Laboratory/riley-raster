@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
 
-from paper_verif_const import PAPER_DIR, repo_root
+from paper_const import PAPER_DIR, repo_root
 
 
 OUT_FIGS_TEX_PATH = pathlib.Path("verif/verif_c_figs.tex")

@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-from paper_verif_const import (
+from paper_const import (
     PAPER_DIR,
     SHEAR_REGULAR,
     SHEAR_SHEAR,

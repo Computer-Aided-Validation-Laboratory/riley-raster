@@ -6,28 +6,27 @@ import pathlib
 import statistics
 
 from paper_bench_common import combined_case_dir_name
-from paper_bench_common import legacy_hull_case_dir_name
-from paper_bench_common import legacy_simd_case_dir_name
 from paper_bench_common import load_stable_row_map
-from paper_verif_const import repo_root
+from paper_bench_common import latest_run_dir_with_paths
+from paper_const import repo_root
 
 
 SAVE_STRATEGY = "memory"
+EXPERIMENT_DIR = "experiment_1"
 
 ANALYSE_RASTER = True
 ANALYSE_GEOM = True
 ANALYSE_SPHERE2000 = True
 ANALYSE_SPHERE2000ZOOM = True
 
-SIMD_BASE_SIMD = "scalar"
-SIMD_BASE_HULL = "off"
-SIMD_VARIANT_SIMD = "simd"
-SIMD_VARIANT_HULL = "off"
-HULL_BASE_SIMD = "scalar"
-HULL_BASE_HULL = "off"
-HULL_VARIANT_SIMD = "scalar"
-HULL_VARIANT_HULL = "on_no_fallback"
+BASE_SIMD_LABEL = "scalar"
+BASE_HULL_MODE = "off"
 
+ABLATION_VARIANTS = {
+    "simdon": ("simd", "off"),
+    "hullson": ("scalar", "on_no_fallback"),
+    "simdon_hullson": ("simd", "on_no_fallback"),
+}
 
 BENCH_SPECS = {
     "bench_fullraster": {
@@ -60,31 +59,7 @@ BENCH_ENABLED = {
 }
 
 
-def legacy_simd_test_case_dir(
-    bench_name: str,
-    simd_label: str,
-) -> str:
-    return legacy_simd_case_dir_name(
-        bench_name,
-        simd_label,
-        SAVE_STRATEGY,
-    )
-
-
-def legacy_hull_test_case_dir(
-    bench_name: str,
-    simd_label: str,
-    hull_mode: str,
-) -> str:
-    return legacy_hull_case_dir_name(
-        bench_name,
-        simd_label,
-        hull_mode,
-        SAVE_STRATEGY,
-    )
-
-
-def combined_test_case_dir(
+def case_dir_name(
     bench_name: str,
     simd_label: str,
     hull_mode: str,
@@ -97,112 +72,62 @@ def combined_test_case_dir(
     )
 
 
-def required_paths_for_case_pair(
-    experiment_dir: str,
-    base_case_dir: str,
-    variant_case_dir: str,
+def required_paths_for_variant(
+    bench_name: str,
+    variant_name: str,
 ) -> list[str]:
+    base_case_dir = case_dir_name(
+        bench_name,
+        BASE_SIMD_LABEL,
+        BASE_HULL_MODE,
+    )
+    variant_simd_label, variant_hull_mode = ABLATION_VARIANTS[variant_name]
+    variant_case_dir = case_dir_name(
+        bench_name,
+        variant_simd_label,
+        variant_hull_mode,
+    )
+
     required_rel_paths: list[str] = []
     for case_dir in (base_case_dir, variant_case_dir):
         for stat_name in ("median", "mad", "min", "max"):
             required_rel_paths.append(
-                f"{experiment_dir}/{case_dir}/bench_stats_{stat_name}.csv"
+                f"{EXPERIMENT_DIR}/{case_dir}/bench_stats_{stat_name}.csv"
             )
     return required_rel_paths
 
 
-def resolve_ablation_layout(
+def resolve_variant_run_dir(
     bench_name: str,
-    ablation_name: str,
-) -> tuple[pathlib.Path, str, str, str]:
-    if ablation_name == "simd":
-        candidates = [
-            (
-                "experiment_1",
-                combined_test_case_dir(
-                    bench_name,
-                    SIMD_BASE_SIMD,
-                    SIMD_BASE_HULL,
-                ),
-                combined_test_case_dir(
-                    bench_name,
-                    SIMD_VARIANT_SIMD,
-                    SIMD_VARIANT_HULL,
-                ),
-                "combined",
-            ),
-            (
-                "experiment_1",
-                legacy_simd_test_case_dir(
-                    bench_name,
-                    SIMD_BASE_SIMD,
-                ),
-                legacy_simd_test_case_dir(
-                    bench_name,
-                    SIMD_VARIANT_SIMD,
-                ),
-                "legacy",
-            ),
-        ]
-    elif ablation_name == "hull":
-        candidates = [
-            (
-                "experiment_1",
-                combined_test_case_dir(
-                    bench_name,
-                    HULL_BASE_SIMD,
-                    HULL_BASE_HULL,
-                ),
-                combined_test_case_dir(
-                    bench_name,
-                    HULL_VARIANT_SIMD,
-                    HULL_VARIANT_HULL,
-                ),
-                "combined",
-            ),
-            (
-                "experiment_2",
-                legacy_hull_test_case_dir(
-                    bench_name,
-                    "simd",
-                    "off",
-                ),
-                legacy_hull_test_case_dir(
-                    bench_name,
-                    "simd",
-                    "on_no_fallback",
-                ),
-                "legacy",
-            ),
-        ]
-    else:
-        raise ValueError(f"unsupported ablation name: {ablation_name}")
-
-    root_dir = repo_root() / "out" / "benchmark_runs" / bench_name
-    run_dirs = sorted(path for path in root_dir.iterdir() if path.is_dir())
-    for run_dir in reversed(run_dirs):
-        for experiment_dir, base_case_dir, variant_case_dir, _layout_name in candidates:
-            required_rel_paths = required_paths_for_case_pair(
-                experiment_dir,
-                base_case_dir,
-                variant_case_dir,
-            )
-            if all((run_dir / rel_path).exists() for rel_path in required_rel_paths):
-                return run_dir, experiment_dir, base_case_dir, variant_case_dir
-    raise FileNotFoundError(
-        f"no benchmark run in {root_dir} contains a complete {ablation_name} "
-        "ablation layout"
+    variant_name: str,
+) -> tuple[pathlib.Path, str, str]:
+    run_dir = latest_run_dir_with_paths(
+        bench_name,
+        required_paths_for_variant(bench_name, variant_name),
     )
+    base_case_dir = case_dir_name(
+        bench_name,
+        BASE_SIMD_LABEL,
+        BASE_HULL_MODE,
+    )
+    variant_simd_label, variant_hull_mode = ABLATION_VARIANTS[variant_name]
+    variant_case_dir = case_dir_name(
+        bench_name,
+        variant_simd_label,
+        variant_hull_mode,
+    )
+    return run_dir, base_case_dir, variant_case_dir
 
 
 def load_stats_bundle(
     run_dir: pathlib.Path,
-    experiment_dir: str,
-    test_case_dir: str,
+    case_dir: str,
 ) -> dict[str, dict[str, dict[str, str]]]:
-    case_dir = run_dir / experiment_dir / test_case_dir
+    stats_dir = run_dir / EXPERIMENT_DIR / case_dir
     return {
-        stat_name: load_stable_row_map(case_dir / f"bench_stats_{stat_name}.csv")
+        stat_name: load_stable_row_map(
+            stats_dir / f"bench_stats_{stat_name}.csv"
+        )
         for stat_name in ("median", "mad", "min", "max")
     }
 
@@ -225,14 +150,13 @@ def calc_speedup(
 
 def build_ablation_rows(
     run_dir: pathlib.Path,
-    experiment_dir: str,
     base_case_dir: str,
     variant_case_dir: str,
     metrics: list[str],
     speed_metrics: list[str],
 ) -> list[dict[str, str]]:
-    base_stats = load_stats_bundle(run_dir, experiment_dir, base_case_dir)
-    variant_stats = load_stats_bundle(run_dir, experiment_dir, variant_case_dir)
+    base_stats = load_stats_bundle(run_dir, base_case_dir)
+    variant_stats = load_stats_bundle(run_dir, variant_case_dir)
 
     stable_keys = [
         key
@@ -243,7 +167,6 @@ def build_ablation_rows(
     rows: list[dict[str, str]] = []
     for stable_key in stable_keys:
         base_meta = base_stats["median"][stable_key]
-        variant_meta = variant_stats["median"][stable_key]
         out_row = {
             "CaseStableKey": stable_key,
             "Case": base_meta["Case"],
@@ -303,106 +226,69 @@ def summarize_speedups(
     return min(speedups), statistics.median(speedups), max(speedups)
 
 
-def analyse_bench(
+def analyse_bench_variant(
     bench_name: str,
     prefix: str,
+    variant_name: str,
     metrics: list[str],
     speed_metrics: list[str],
-) -> tuple[pathlib.Path, pathlib.Path, list[dict[str, str]], list[dict[str, str]]]:
-    simd_run_dir, simd_experiment_dir, simd_base_case_dir, simd_variant_case_dir = (
-        resolve_ablation_layout(bench_name, "simd")
-    )
-    hull_run_dir, hull_experiment_dir, hull_base_case_dir, hull_variant_case_dir = (
-        resolve_ablation_layout(bench_name, "hull")
-    )
-
-    print(
-        f"{bench_name}: SIMD run dir = {simd_run_dir} "
-        f"({simd_experiment_dir}, {simd_base_case_dir} -> "
-        f"{simd_variant_case_dir})"
+) -> tuple[pathlib.Path, list[dict[str, str]]]:
+    run_dir, base_case_dir, variant_case_dir = resolve_variant_run_dir(
+        bench_name,
+        variant_name,
     )
     print(
-        f"{bench_name}: Hull run dir = {hull_run_dir} "
-        f"({hull_experiment_dir}, {hull_base_case_dir} -> "
-        f"{hull_variant_case_dir})"
+        f"{bench_name}: {variant_name} run dir = {run_dir} "
+        f"({base_case_dir} -> {variant_case_dir})"
     )
-
-    simd_rows = build_ablation_rows(
-        simd_run_dir,
-        simd_experiment_dir,
-        simd_base_case_dir,
-        simd_variant_case_dir,
+    rows = build_ablation_rows(
+        run_dir,
+        base_case_dir,
+        variant_case_dir,
         metrics,
         speed_metrics,
     )
-    hull_rows = build_ablation_rows(
-        hull_run_dir,
-        hull_experiment_dir,
-        hull_base_case_dir,
-        hull_variant_case_dir,
-        metrics,
-        speed_metrics,
+    csv_path = write_csv(
+        f"{prefix}_{variant_name}_ablation.csv",
+        rows,
     )
-
-    simd_csv = write_csv(f"{prefix}_simd_ablation.csv", simd_rows)
-    hull_csv = write_csv(f"{prefix}_hull_ablation.csv", hull_rows)
-    return simd_csv, hull_csv, simd_rows, hull_rows
+    return csv_path, rows
 
 
 def print_raster_overview(
-    simd_rows: list[dict[str, str]],
-    hull_rows: list[dict[str, str]],
+    variant_rows: dict[str, list[dict[str, str]]],
 ) -> None:
-    simd_min, simd_med, simd_max = summarize_speedups(simd_rows, "MPx/s")
-    hull_min, hull_med, hull_max = summarize_speedups(hull_rows, "MPx/s")
-
-    e2e_simd = [
-        float(row["E2E_ms_median_base"]) / float(row["E2E_ms_median_variant"])
-        for row in simd_rows
-        if float(row["E2E_ms_median_variant"]) != 0.0
-    ]
-    e2e_hull = [
-        float(row["E2E_ms_median_base"]) / float(row["E2E_ms_median_variant"])
-        for row in hull_rows
-        if float(row["E2E_ms_median_variant"]) != 0.0
-    ]
-
     print("\nRaster overview")
-    print(
-        "SIMD ablation MPx/s speedup "
-        f"min/median/max = {simd_min:.3f} / {simd_med:.3f} / {simd_max:.3f}"
-    )
-    print(
-        "SIMD ablation E2E speedup "
-        f"median = {statistics.median(e2e_simd):.3f}"
-    )
-    print(
-        "Hull ablation MPx/s speedup "
-        f"min/median/max = {hull_min:.3f} / {hull_med:.3f} / {hull_max:.3f}"
-    )
-    print(
-        "Hull ablation E2E speedup "
-        f"median = {statistics.median(e2e_hull):.3f}"
-    )
+    for variant_name in ("simdon", "hullson", "simdon_hullson"):
+        rows = variant_rows[variant_name]
+        spd_min, spd_med, spd_max = summarize_speedups(rows, "MPx/s")
+        print(
+            f"{variant_name} MPx/s speedup min/median/max = "
+            f"{spd_min:.3f} / {spd_med:.3f} / {spd_max:.3f}"
+        )
 
 
 def main() -> int:
-    all_results: dict[str, tuple[pathlib.Path, pathlib.Path, list[dict[str, str]], list[dict[str, str]]]] = {}
+    raster_rows_by_variant: dict[str, list[dict[str, str]]] = {}
 
     for bench_name, spec in BENCH_SPECS.items():
         if not BENCH_ENABLED[bench_name]:
             print(f"{bench_name}: skipped by top-level selection constant")
             continue
-        all_results[bench_name] = analyse_bench(
-            bench_name,
-            spec["prefix"],
-            spec["metrics"],
-            spec["speed_metrics"],
-        )
 
-    if "bench_fullraster" in all_results:
-        _, _, raster_simd_rows, raster_hull_rows = all_results["bench_fullraster"]
-        print_raster_overview(raster_simd_rows, raster_hull_rows)
+        for variant_name in ("simdon", "hullson", "simdon_hullson"):
+            _, rows = analyse_bench_variant(
+                bench_name,
+                spec["prefix"],
+                variant_name,
+                spec["metrics"],
+                spec["speed_metrics"],
+            )
+            if bench_name == "bench_fullraster":
+                raster_rows_by_variant[variant_name] = rows
+
+    if raster_rows_by_variant:
+        print_raster_overview(raster_rows_by_variant)
     return 0
 
 
