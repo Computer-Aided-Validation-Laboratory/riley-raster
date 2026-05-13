@@ -9,10 +9,6 @@ import subprocess
 import sys
 
 
-DEFAULT_PIXELS_X = 1600
-DEFAULT_PIXELS_Y = 1000
-DEFAULT_SUB_SAMPLE = 1
-DEFAULT_TOTAL_THREADS = 1
 SAVE_STRATEGIES = ("memory",)
 SIMD_LABELS = ("scalar", "simd")
 HULL_MODES = ("off", "on_no_fallback")
@@ -92,14 +88,6 @@ def run_case(
         str(executable_path),
         "--out-dir",
         command_path(output_dir),
-        "--pixels-x",
-        str(DEFAULT_PIXELS_X),
-        "--pixels-y",
-        str(DEFAULT_PIXELS_Y),
-        "--sub-sample",
-        str(DEFAULT_SUB_SAMPLE),
-        "--total-threads",
-        str(DEFAULT_TOTAL_THREADS),
     ]
     if runs is not None:
         command.extend(["--runs", str(runs)])
