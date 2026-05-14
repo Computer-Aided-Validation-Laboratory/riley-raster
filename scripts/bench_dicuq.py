@@ -20,6 +20,12 @@ SAVE_STRATEGIES = ["memory"]
 SAMPLE = "cubic_catmull_rom"
 SAMPLE_MODE = "lut_lerp"
 
+RUN_EXPERIMENT_1 = False
+RUN_EXPERIMENT_2 = False
+RUN_EXPERIMENT_3 = False
+RUN_EXPERIMENT_4 = False
+RUN_EXPERIMENT_5 = True
+
 
 def experiment_1_cases() -> list[dict[str, object]]:
     cases: list[dict[str, object]] = []
@@ -263,6 +269,16 @@ def run_case(
         )
 
 
+def experiment_enabled(experiment_id: str) -> bool:
+    return {
+        "1": RUN_EXPERIMENT_1,
+        "2": RUN_EXPERIMENT_2,
+        "3": RUN_EXPERIMENT_3,
+        "4": RUN_EXPERIMENT_4,
+        "5": RUN_EXPERIMENT_5,
+    }[experiment_id]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -288,16 +304,22 @@ def main() -> int:
 
     run_root = build_run_root("bench_dicuq", args.out_root)
     cases: list[dict[str, object]] = []
-    if args.experiment in ("all", "1"):
+    if args.experiment in ("all", "1") and experiment_enabled("1"):
         cases.extend(experiment_1_cases())
-    if args.experiment in ("all", "2"):
+    if args.experiment in ("all", "2") and experiment_enabled("2"):
         cases.extend(experiment_2_cases())
-    if args.experiment in ("all", "3"):
+    if args.experiment in ("all", "3") and experiment_enabled("3"):
         cases.extend(experiment_3_cases())
-    if args.experiment in ("all", "4"):
+    if args.experiment in ("all", "4") and experiment_enabled("4"):
         cases.extend(experiment_4_cases())
-    if args.experiment in ("all", "5"):
+    if args.experiment in ("all", "5") and experiment_enabled("5"):
         cases.extend(experiment_5_cases())
+
+    if args.experiment != "all" and not experiment_enabled(args.experiment):
+        print(
+            f"Experiment {args.experiment} is disabled by top-of-file constants."
+        )
+        return 0
 
     if not args.dry_run:
         run_root.mkdir(parents=True, exist_ok=True)
