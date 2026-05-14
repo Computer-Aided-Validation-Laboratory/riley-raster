@@ -12,6 +12,7 @@ const gen_simple = @import("gen_gold_simple.zig");
 const gen_edge = @import("gen_gold_edge.zig");
 const gen_multimesh = @import("gen_gold_multimesh.zig");
 const gen_multicamera = @import("gen_gold_multicamera.zig");
+const gen_hull = @import("gen_gold_hull.zig");
 const gen_fullscreen = @import("gen_gold_bench_fullscreen.zig");
 const gen_sphere = @import("gen_gold_sphere.zig");
 const gen_texfunc = @import("gen_gold_texfunc.zig");
@@ -39,6 +40,9 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("\n--- Multicamera ---\n", .{});
     try gen_multicamera.main(init);
+
+    std.debug.print("\n--- Hull ---\n", .{});
+    try gen_hull.main(init);
 
     std.debug.print("\n--- Fullscreen ---\n", .{});
     try gen_fullscreen.main(init);

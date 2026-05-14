@@ -9,7 +9,7 @@ def main() -> None:
     #---------------------------------------------------------------------------
 
     num_meshes = 7
-    num_frames = 63
+    num_frames = 1
     for mm in range(1,num_meshes):
         mesh_num = mm
         sim_name = f"platehole3d_{mesh_num}mr_{num_frames}f"

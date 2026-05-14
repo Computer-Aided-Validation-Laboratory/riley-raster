@@ -423,73 +423,54 @@ pub fn findGoldPath(
     field: usize,
     is_rgb: bool,
 ) ![]const u8 {
-    const base_name_new = if (is_rgb)
-        try std.fmt.allocPrint(
-            allocator,
-            "{s}/cam{d}_frame{d}_field{d}_rgb",
-            .{ dir, camera_idx, frame, field },
-        )
-    else
+    const cwd = std.Io.Dir.cwd();
+
+    const base_names = [_][]const u8{
         try std.fmt.allocPrint(
             allocator,
             "{s}/cam{d}_frame{d}_field{d}",
             .{ dir, camera_idx, frame, field },
-        );
-    defer allocator.free(base_name_new);
-
-    const fimg_path_new = try std.fmt.allocPrint(
-        allocator,
-        "{s}.fimg",
-        .{base_name_new},
-    );
-    errdefer allocator.free(fimg_path_new);
-
-    const cwd = std.Io.Dir.cwd();
-    if (cwd.access(io, fimg_path_new, .{})) |_| {
-        return fimg_path_new;
-    } else |_| {
-        allocator.free(fimg_path_new);
-    }
-
-    const csv_path_new = try std.fmt.allocPrint(
-        allocator,
-        "{s}.csv",
-        .{base_name_new},
-    );
-    errdefer allocator.free(csv_path_new);
-    if (cwd.access(io, csv_path_new, .{})) |_| {
-        return csv_path_new;
-    } else |_| {
-        allocator.free(csv_path_new);
-    }
-
-    const base_name_old = if (is_rgb)
+        ),
         try std.fmt.allocPrint(
             allocator,
-            "{s}/frame_{d}_field_{d}_rgb",
-            .{ dir, frame, field },
-        )
-    else
+            "{s}/cam{d}_frame{d}_field{d}_rgb",
+            .{ dir, camera_idx, frame, field },
+        ),
         try std.fmt.allocPrint(
             allocator,
             "{s}/frame_{d}_field_{d}",
             .{ dir, frame, field },
-        );
-    defer allocator.free(base_name_old);
+        ),
+        try std.fmt.allocPrint(
+            allocator,
+            "{s}/frame_{d}_field_{d}_rgb",
+            .{ dir, frame, field },
+        ),
+    };
+    defer for (base_names) |base_name| allocator.free(base_name);
 
-    const fimg_path_old = try std.fmt.allocPrint(
-        allocator,
-        "{s}.fimg",
-        .{base_name_old},
-    );
-    errdefer allocator.free(fimg_path_old);
-    if (cwd.access(io, fimg_path_old, .{})) |_| {
-        return fimg_path_old;
-    } else |_| {
-        allocator.free(fimg_path_old);
+    const start_idx: usize = if (is_rgb) 0 else 0;
+    _ = start_idx;
+
+    for (base_names) |base_name| {
+        const fimg_path = try std.fmt.allocPrint(allocator, "{s}.fimg", .{base_name});
+        errdefer allocator.free(fimg_path);
+        if (cwd.access(io, fimg_path, .{})) |_| {
+            return fimg_path;
+        } else |_| {
+            allocator.free(fimg_path);
+        }
+
+        const csv_path = try std.fmt.allocPrint(allocator, "{s}.csv", .{base_name});
+        errdefer allocator.free(csv_path);
+        if (cwd.access(io, csv_path, .{})) |_| {
+            return csv_path;
+        } else |_| {
+            allocator.free(csv_path);
+        }
     }
 
-    return try std.fmt.allocPrint(allocator, "{s}.csv", .{base_name_old});
+    return error.FileNotFound;
 }
 
 fn loadNDArrayFromGold(
