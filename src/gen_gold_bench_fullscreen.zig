@@ -95,10 +95,17 @@ pub fn main(init: std.process.Init) !void {
                     // We generate gold from the minimal 'fullraster' dataset
                     var r_config = tcfg.getRasterConfig(.bench);
                     r_config.save_strategy = .disk;
-                    r_config.image_save_opts = &[_]iio.ImageSaveOpts{
-                        .{ .format = .fimg, .bits = null, .scaling = .none },
-                        .{ .format = .bmp, .bits = 8, .scaling = .auto },
-                    };
+                    const is_rgb = (st == .nodal_rgb or st == .tex8_rgb);
+                    r_config.image_save_opts = if (is_rgb)
+                        &[_]iio.ImageSaveOpts{
+                            .{ .format = .fimg, .bits = null, .scaling = .none, .channels = 3 },
+                            .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = 3 },
+                        }
+                    else
+                        &[_]iio.ImageSaveOpts{
+                            .{ .format = .fimg, .bits = null, .scaling = .none },
+                            .{ .format = .bmp, .bits = 8, .scaling = .auto },
+                        };
                     _ = try common.runBenchmarkQuiet(
                         aa,
                         io,

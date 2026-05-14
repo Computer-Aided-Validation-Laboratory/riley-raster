@@ -151,7 +151,9 @@ test "Unified Benchmark Tests" {
 
                     if (common.shouldRun(run_config, mt, st, sc, data_dir)) {
                         var r_config = tcfg.getRasterConfig(.bench);
-                        r_config.save_strategy = if (cc.out_dir.len > 0) .both else .memory;
+                        // Bench tests compare the returned in-memory image directly
+                        // against gold, so avoid the disk-save path here.
+                        r_config.save_strategy = .memory;
                         r_config.image_save_opts = &[_]iio.ImageSaveOpts{};
 
                         const case_name = try common.calcCaseName(

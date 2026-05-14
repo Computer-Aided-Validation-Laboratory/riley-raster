@@ -425,32 +425,53 @@ pub fn findGoldPath(
 ) ![]const u8 {
     const cwd = std.Io.Dir.cwd();
 
-    const base_names = [_][]const u8{
-        try std.fmt.allocPrint(
-            allocator,
-            "{s}/cam{d}_frame{d}_field{d}",
-            .{ dir, camera_idx, frame, field },
-        ),
-        try std.fmt.allocPrint(
-            allocator,
-            "{s}/cam{d}_frame{d}_field{d}_rgb",
-            .{ dir, camera_idx, frame, field },
-        ),
-        try std.fmt.allocPrint(
-            allocator,
-            "{s}/frame_{d}_field_{d}",
-            .{ dir, frame, field },
-        ),
-        try std.fmt.allocPrint(
-            allocator,
-            "{s}/frame_{d}_field_{d}_rgb",
-            .{ dir, frame, field },
-        ),
-    };
+    const base_names = if (is_rgb)
+        [_][]const u8{
+            try std.fmt.allocPrint(
+                allocator,
+                "{s}/cam{d}_frame{d}_field{d}_rgb",
+                .{ dir, camera_idx, frame, field },
+            ),
+            try std.fmt.allocPrint(
+                allocator,
+                "{s}/cam{d}_frame{d}_field{d}",
+                .{ dir, camera_idx, frame, field },
+            ),
+            try std.fmt.allocPrint(
+                allocator,
+                "{s}/frame_{d}_field_{d}_rgb",
+                .{ dir, frame, field },
+            ),
+            try std.fmt.allocPrint(
+                allocator,
+                "{s}/frame_{d}_field_{d}",
+                .{ dir, frame, field },
+            ),
+        }
+    else
+        [_][]const u8{
+            try std.fmt.allocPrint(
+                allocator,
+                "{s}/cam{d}_frame{d}_field{d}",
+                .{ dir, camera_idx, frame, field },
+            ),
+            try std.fmt.allocPrint(
+                allocator,
+                "{s}/cam{d}_frame{d}_field{d}_rgb",
+                .{ dir, camera_idx, frame, field },
+            ),
+            try std.fmt.allocPrint(
+                allocator,
+                "{s}/frame_{d}_field_{d}",
+                .{ dir, frame, field },
+            ),
+            try std.fmt.allocPrint(
+                allocator,
+                "{s}/frame_{d}_field_{d}_rgb",
+                .{ dir, frame, field },
+            ),
+        };
     defer for (base_names) |base_name| allocator.free(base_name);
-
-    const start_idx: usize = if (is_rgb) 0 else 0;
-    _ = start_idx;
 
     for (base_names) |base_name| {
         const fimg_path = try std.fmt.allocPrint(allocator, "{s}.fimg", .{base_name});
