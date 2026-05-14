@@ -41,6 +41,12 @@ fails*/
 !gold/min/**/*.bmp
 !gold/min/**/*.csv
 
+# Keep our other test suite data committed to the repo
+!data/small/**/*.csv
+!data/simple/**/*.csv
+!data/edge/**/*.csv
+
+
 # Other mesh data to keep
 !data/rabbits/**/*.csv
 

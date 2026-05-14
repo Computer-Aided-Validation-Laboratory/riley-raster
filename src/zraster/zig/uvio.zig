@@ -86,58 +86,58 @@ pub fn loadUVMap(outer_alloc: std.mem.Allocator, io: std.Io, path: []const u8) !
 
 const testing = std.testing;
 
-test "Load UVMap from tri3_fullscreen/uvs.csv" {
+test "Load UVMap from committed tri3 sphere fixture" {
     const allocator = testing.allocator;
     const io = std.testing.io;
 
-    const path = "data/simple/tri3_fullscreen/uvs.csv";
+    const path = "data/min/tri3_sphere200/uvs.csv";
     var uv_map = try loadUVMap(allocator, io, path);
     defer uv_map.deinit(allocator);
 
-    try testing.expectEqual(@as(usize, 4), uv_map.array.dims[0]);
+    try testing.expectEqual(@as(usize, 256), uv_map.array.dims[0]);
 
     // First row: 0.4, 0.4
     try testing.expectApproxEqAbs(@as(f64, 0.4), uv_map.getU(0), 1e-8);
     try testing.expectApproxEqAbs(@as(f64, 0.4), uv_map.getV(0), 1e-8);
 
-    // Last row: 0.4, 0.6
-    try testing.expectApproxEqAbs(@as(f64, 0.4), uv_map.getU(3), 1e-8);
-    try testing.expectApproxEqAbs(@as(f64, 0.6), uv_map.getV(3), 1e-8);
+    // Last row: 0.6, 0.6
+    try testing.expectApproxEqAbs(@as(f64, 0.6), uv_map.getU(255), 1e-8);
+    try testing.expectApproxEqAbs(@as(f64, 0.6), uv_map.getV(255), 1e-8);
 
     const uv = uv_map.getUV(0);
     try testing.expectApproxEqAbs(@as(f64, 0.4), uv[0], 1e-8);
     try testing.expectApproxEqAbs(@as(f64, 0.4), uv[1], 1e-8);
 }
 
-test "Load UVMap from tri6_fullscreen/uvs.csv" {
+test "Load UVMap from committed tri6 sphere fixture" {
     const allocator = testing.allocator;
     const io = std.testing.io;
 
-    const path = "data/simple/tri6_fullscreen/uvs.csv";
+    const path = "data/min/tri6_sphere200/uvs.csv";
     var uv_map = try loadUVMap(allocator, io, path);
     defer uv_map.deinit(allocator);
 
-    try testing.expectEqual(@as(usize, 9), uv_map.array.dims[0]);
+    try testing.expectEqual(@as(usize, 961), uv_map.array.dims[0]);
 }
 
-test "Load UVMap from tri3_single/uvs.csv" {
+test "Load UVMap from committed tri3 twoelems fixture" {
     const allocator = testing.allocator;
     const io = std.testing.io;
 
-    const path = "data/simple/tri3_single/uvs.csv";
+    const path = "data/min/tri3_twoelems/uvs.csv";
     var uv_map = try loadUVMap(allocator, io, path);
     defer uv_map.deinit(allocator);
 
-    try testing.expectEqual(@as(usize, 3), uv_map.array.dims[0]);
+    try testing.expectEqual(@as(usize, 4), uv_map.array.dims[0]);
 }
 
-test "Load UVMap from tri6_single/uvs.csv" {
+test "Load UVMap from committed tri6 twoelems fixture" {
     const allocator = testing.allocator;
     const io = std.testing.io;
 
-    const path = "data/simple/tri6_single/uvs.csv";
+    const path = "data/min/tri6_twoelems/uvs.csv";
     var uv_map = try loadUVMap(allocator, io, path);
     defer uv_map.deinit(allocator);
 
-    try testing.expectEqual(@as(usize, 6), uv_map.array.dims[0]);
+    try testing.expectEqual(@as(usize, 10), uv_map.array.dims[0]);
 }
