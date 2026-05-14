@@ -14,6 +14,11 @@ OUT_FIGS_TEX_PATH = pathlib.Path("verif/verif_d_figs.tex")
 RABBIT_MESH_NAMES = ["tri3", "quad4", "tri6", "quad8", "quad9"]
 COUNT_TOL = 1.0e-6
 
+FIG_CAPTION = (
+    "Verification case D for the \\texttt{tri6} rabbit: (a) both "
+    "rabbits, (b) front rabbit only, and (c) the difference image."
+)
+
 
 def verif_case_dir(mesh_name: str) -> pathlib.Path:
     return repo_root() / "verif" / f"d_{mesh_name}_rabbit"
@@ -114,9 +119,7 @@ def build_figs_tex() -> str:
             "fig:verifd_diff",
         )
         + "\n"
-        + "\\caption{Verification case D for the \\texttt{tri6} rabbit: "
-        "(a) both rabbits, (b) front rabbit only, and (c) the difference "
-        "image.}\n"
+        + f"\\caption{{{FIG_CAPTION}}}\n"
         + "\\label{fig:verification_case_d_tri6}\n"
         + "\\end{figure}\n"
     )

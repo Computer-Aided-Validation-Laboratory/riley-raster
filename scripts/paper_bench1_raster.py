@@ -97,6 +97,15 @@ ELEMENT_CASES = [
 
 OUT_TABS_NAME = "bench1_tabs.tex"
 
+TABLE_CAPTION = (
+    "Raster-stage benchmark results for representative rendering cases. The "
+    "image size is fixed at $1600 \\times 1000$ pixels, SSAA is fixed at "
+    "$1 \\times 1$, and all runs are single threaded. Timings and "
+    "throughputs are reported as median $\\pm$ MAD over 10 runs. "
+    "Wall-clock timings are reported in $10^{-3}$ seconds. The raster "
+    "throughput is reported in MPx/s."
+)
+
 
 def stats_path() -> pathlib.Path:
     candidates: list[tuple[str, str]] = [
@@ -183,12 +192,7 @@ def build_table_tex() -> str:
     return (
         "\\begin{table}[htbp]\n"
         "\\centering\n"
-        "\\caption{Raster-stage benchmark results for representative "
-        "rendering cases. The image size is fixed at $1600 \\times 1000$ "
-        "pixels, SSAA is fixed at $1 \\times 1$, and all runs are single "
-        "threaded. Timings and throughputs are reported as median $\\pm$ MAD "
-        "over 10 runs. Wall-clock timings are reported in $10^{-3}$ "
-        "seconds. The raster throughput is reported in MPx/s.}\n"
+        f"\\caption{{{TABLE_CAPTION}}}\n"
         "\\label{tab:performance_raster_benchmark}\n"
         "\\begin{tabular}{llrlll}\n"
         "\\hline\n"
@@ -203,6 +207,8 @@ def build_table_tex() -> str:
         "\\end{tabular}\n"
         "\\end{table}\n"
     )
+
+
 def main() -> int:
     bench_stats_dir = stats_path()
     print(f"Using benchmark stats from {bench_stats_dir}...")

@@ -38,6 +38,26 @@ SPEEDUP_ROWS = [
 
 OUT_TABS_NAME = "bench3_tabs.tex"
 
+TABLE_RAW_CAPTION = (
+    "Ablation benchmark timings for adaptive hulls and SIMD execution. The "
+    "padded-BB configuration uses a simple node-limit bounding box with "
+    "padding during geometry preprocessing and disables the adaptive hull "
+    "rejection path. All rows produce images matching the adaptive-hull "
+    "reference images. Timings and throughputs are reported as median "
+    "$\\pm$ median absolute deviation over 10 runs. Wall-clock timings "
+    "are reported in $10^{-3}$ seconds."
+)
+
+TABLE_SPEEDUP_CAPTION = (
+    "Ablation speedup matrix for adaptive hulls and SIMD execution. "
+    "Speedups are computed relative to the padded-BB scalar baseline for "
+    "each element type. Values greater than one indicate faster "
+    "execution. The combined adaptive-hull and SIMD configuration is "
+    "expected to show coupled, rather than fully multiplicative, "
+    "behaviour because the two optimisations reduce overlapping parts "
+    "of the raster workload."
+)
+
 
 def stats_path(simd_label: str, hull_mode: str) -> pathlib.Path:
     return latest_stats_dir_with_candidates(
@@ -100,14 +120,7 @@ def build_raw_table_tex() -> str:
     return (
         "\\begin{table}[htbp]\n"
         "\\centering\n"
-        "\\caption{Ablation benchmark timings for adaptive hulls and SIMD "
-        "execution. The padded-BB configuration uses a simple node-limit "
-        "bounding box with padding during geometry preprocessing and "
-        "disables the adaptive hull rejection path. All rows produce images "
-        "matching the adaptive-hull reference images. Timings and "
-        "throughputs are reported as median $\\pm$ median absolute "
-        "deviation over 10 runs. Wall-clock timings are reported in "
-        "$10^{-3}$ seconds.}\n"
+        f"\\caption{{{TABLE_RAW_CAPTION}}}\n"
         "\\label{tab:performance_ablation_raw}\n"
         "\\begin{tabular}{lllrrrr}\n"
         "\\hline\n"
@@ -170,13 +183,7 @@ def build_speedup_table_tex() -> str:
     return (
         "\\begin{table}[htbp]\n"
         "\\centering\n"
-        "\\caption{Ablation speedup matrix for adaptive hulls and SIMD "
-        "execution. Speedups are computed relative to the padded-BB scalar "
-        "baseline for each element type. Values greater than one indicate "
-        "faster execution. The combined adaptive-hull and SIMD "
-        "configuration is expected to show coupled, rather than fully "
-        "multiplicative, behaviour because the two optimisations reduce "
-        "overlapping parts of the raster workload.}\n"
+        f"\\caption{{{TABLE_SPEEDUP_CAPTION}}}\n"
         "\\label{tab:performance_ablation_speedup}\n"
         "\\begin{tabular}{llrr}\n"
         "\\hline\n"

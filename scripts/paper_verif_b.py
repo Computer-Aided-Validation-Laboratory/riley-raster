@@ -24,6 +24,32 @@ OUT_TABS_TEX_PATH = pathlib.Path("verif/verif_b_tabs.tex")
 OUT_FIGS_TEX_PATH = pathlib.Path("verif/verif_b_figs.tex")
 SCI_THRESHOLD = 1.0e-12
 
+SHEAR_TABLE_CAPTION = (
+    "Silhouette verification for the affine deformation case using one "
+    "sensor point per pixel. TODO"
+)
+
+BULGE_TABLE_CAPTION = (
+    "Silhouette verification for the nonlinear edge-bulge cases using "
+    "one sensor point per pixel. These cases are only applied to the "
+    "higher-order elements because the linear \\texttt{tri3} and "
+    "\\texttt{quad4} elements do not have midside nodes that can define "
+    "a curved boundary."
+)
+
+SHEAR_FIG_CAPTION = (
+    "Silhouette verification images for the affine shear cases. Each row "
+    "corresponds to one element type and compares the regular and "
+    "sheared states."
+)
+
+BULGE_FIG_CAPTION = (
+    "Silhouette verification images for the nonlinear bulge cases. Each "
+    "row corresponds to one higher-order element type and shows the "
+    "outward limit, outward bulge, regular, inward bulge, and inward "
+    "limit states."
+)
+
 
 def load_summary(summary_path: pathlib.Path) -> list[dict[str, str]]:
     with summary_path.open(newline="") as summary_file:
@@ -162,8 +188,7 @@ def build_shear_table(rows: list[dict[str, str]]) -> str:
     return (
         "\\begin{table}[htbp]\n"
         "\\centering\n"
-        "\\caption{Silhouette verification for the affine deformation case "
-        "using one sensor point per pixel. TODO}\n"
+        f"\\caption{{{SHEAR_TABLE_CAPTION}}}\n"
         "\\label{tab:verification_silhouette_affine}\n"
         "\\begin{tabular}{llrrrrrr}\n"
         "\\hline\n"
@@ -210,11 +235,7 @@ def build_bulge_table(rows: list[dict[str, str]]) -> str:
     return (
         "\\begin{table}[htbp]\n"
         "\\centering\n"
-        "\\caption{Silhouette verification for the nonlinear edge-bulge "
-        "cases using one sensor point per pixel. These cases are only "
-        "applied to the higher-order elements because the linear "
-        "\\texttt{tri3} and \\texttt{quad4} elements do not have midside "
-        "nodes that can define a curved boundary.}\n"
+        f"\\caption{{{BULGE_TABLE_CAPTION}}}\n"
         "\\label{tab:verification_silhouette_bulge}\n"
         "\\begin{tabular}{llrrrrrr}\n"
         "\\hline\n"
@@ -307,9 +328,7 @@ def build_shear_fig_tex(rows: list[dict[str, str]]) -> str:
         f"{rows_tex}\n"
         "\\end{tabular}\n"
         "}\n"
-        "\\caption{Silhouette verification images for the affine shear cases. "
-        "Each row corresponds to one element type and compares the regular "
-        "and sheared states.}\n"
+        f"\\caption{{{SHEAR_FIG_CAPTION}}}\n"
         "\\label{fig:verification_silhouette_shear}\n"
         "\\end{figure}\n"
     )
@@ -363,10 +382,7 @@ def build_bulge_fig_tex(rows: list[dict[str, str]]) -> str:
         f"{rows_tex}\n"
         "\\end{tabular}\n"
         "}\n"
-        "\\caption{Silhouette verification images for the nonlinear bulge "
-        "cases. Each row corresponds to one higher-order element type and "
-        "shows the outward limit, outward bulge, regular, inward bulge, and "
-        "inward limit states.}\n"
+        f"\\caption{{{BULGE_FIG_CAPTION}}}\n"
         "\\label{fig:verification_silhouette_bulge}\n"
         "\\end{figure*}\n"
     )

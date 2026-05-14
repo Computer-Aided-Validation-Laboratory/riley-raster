@@ -31,6 +31,26 @@ OUT_FIGS_TEX_PATH = pathlib.Path("verif/verif_a_figs.tex")
 SCI_THRESHOLD = 1.0e-12
 VERIF_A_MAP_WIDTH = "0.19\\textwidth"
 
+TABLE_CAPTION = (
+    "Verification case A: inverse-solver reprojection accuracy for stable "
+    "element geometries. Errors are reported in pixels for accepted sensor "
+    "points. The bulge inward and bulge outward cases correspond to the "
+    "largest stable bulge magnitudes identified before the onset of "
+    "non-admissible inverse mappings."
+)
+
+BULGE_FIG_CAPTION = (
+    "Verification case A reprojection-error maps for the bulge cases. "
+    "Columns correspond to element type and rows correspond to the "
+    "selected deformation states."
+)
+
+SHEAR_FIG_CAPTION = (
+    "Verification case A reprojection-error maps for the shear cases. "
+    "Columns correspond to element type and rows correspond to the "
+    "regular and sheared states."
+)
+
 
 @dataclass(slots=True)
 class PlotStyle:
@@ -121,7 +141,7 @@ def get_iters_array(rows: list[dict[str, str]]) -> np.ndarray:
     return np.asarray([float(row["iters"]) for row in rows], dtype=float)
 
 
-def calc_case_stats(rows: list[dict[str, str]]) -> tuple[float, float, float, float]:
+def calc_case_stats(rows: list[dict[str, str]]) -> tuple[float, float, float]:
     accepted = accepted_mask(rows)
     reproj_err = get_reproj_err_array(rows)
     iters = get_iters_array(rows)
@@ -129,13 +149,12 @@ def calc_case_stats(rows: list[dict[str, str]]) -> tuple[float, float, float, fl
     reproj_acc = reproj_err[accepted]
     iters_acc = iters[accepted]
     if reproj_acc.size == 0:
-        return math.nan, math.nan, math.nan, math.nan
+        return math.nan, math.nan, math.nan
 
     rms = float(np.sqrt(np.mean(reproj_acc * reproj_acc)))
-    p99 = float(np.quantile(reproj_acc, 0.99))
     max_err = float(np.max(reproj_acc))
     mean_iters = float(np.mean(iters_acc))
-    return rms, p99, max_err, mean_iters
+    return rms, max_err, mean_iters
 
 
 def build_reproj_map(
@@ -189,10 +208,10 @@ def make_table_row(
     case_name: str,
     rows: list[dict[str, str]],
 ) -> str:
-    rms, p99, max_err, mean_iters = calc_case_stats(rows)
+    rms, max_err, mean_iters = calc_case_stats(rows)
     return (
         f"\\texttt{{{element_name}}} & {case_name} & "
-        f"{fmt_sci(rms)} & {fmt_sci(p99)} & {fmt_sci(max_err)} & "
+        f"{fmt_sci(rms)} & {fmt_sci(max_err)} & "
         f"{fmt_iters(mean_iters)} \\\\"
     )
 
@@ -239,16 +258,12 @@ def build_table_tex() -> str:
     return (
         "\\begin{table}[htbp]\n"
         "\\centering\n"
-        "\\caption{Verification case A: inverse-solver reprojection accuracy "
-        "for stable element geometries. Errors are reported in pixels for "
-        "accepted sensor points. The bulge inward and bulge outward cases "
-        "correspond to the largest stable bulge magnitudes identified before "
-        "the onset of non-admissible inverse mappings.}\n"
+        f"\\caption{{{TABLE_CAPTION}}}\n"
         "\\label{tab:verification_case_a_reprojection}\n"
-        "\\begin{tabular}{llrrrr}\n"
+        "\\begin{tabular}{llrrr}\n"
         "\\hline\n"
-        "Element & Case & RMS $e_r$ [px] & $P_{99}(e_r)$ [px] & "
-        "Max $e_r$ [px] & Mean iters. \\\\\n"
+        "Element & Case & RMS $\\epsilon_{rp}$ [px] & "
+        "Max $\\epsilon_{rp}$ [px] & Mean iters. \\\\\n"
         "\\hline\n"
         f"{body}\n"
         "\\hline\n"
@@ -304,13 +319,13 @@ def save_png_figure(
     ax.set_yticks(tick_vals, tick_labels)
     if scale_exp == 0:
         ax.set_title(
-            "RMSE\n" + r"$e_r$ [px]",
+            r"$\epsilon_{rp}$ [px]",
             fontsize=24.0,
             pad=16.0,
         )
     else:
         ax.set_title(
-            "RMSE\n" + rf"$e_r$ [px] $(\times 10^{{{scale_exp}}})$",
+            rf"$\epsilon_{{rp}}$ [px] $(\times 10^{{{scale_exp}}})$",
             fontsize=24.0,
             pad=16.0,
         )
@@ -383,9 +398,7 @@ def build_bulge_fig_tex(style: PlotStyle) -> str:
         "\\makecell[c]{\\texttt{quad9}}\\\\\n"
         f"{rows_tex}\n"
         "\\end{tabular}\n"
-        "\\caption{Verification case A reprojection-error maps for the bulge "
-        "cases. Columns correspond to element type and rows correspond to "
-        "the selected deformation states.}\n"
+        f"\\caption{{{BULGE_FIG_CAPTION}}}\n"
         "\\label{fig:verification_case_a_bulge}\n"
         "\\end{figure}\n"
     )
@@ -421,9 +434,7 @@ def build_shear_fig_tex(style: PlotStyle) -> str:
         "\\makecell[c]{\\texttt{quad9}}\\\\\n"
         f"{rows_tex}\n"
         "\\end{tabular}\n"
-        "\\caption{Verification case A reprojection-error maps for the shear "
-        "cases. Columns correspond to element type and rows correspond to "
-        "the regular and sheared states.}\n"
+        f"\\caption{{{SHEAR_FIG_CAPTION}}}\n"
         "\\label{fig:verification_case_a_shear}\n"
         "\\end{figure}\n"
     )
