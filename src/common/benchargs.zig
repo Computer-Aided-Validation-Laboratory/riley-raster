@@ -9,10 +9,12 @@
 const std = @import("std");
 const rastcfg = @import("../zraster/zig/rasterconfig.zig");
 const texops = @import("../zraster/zig/textureops.zig");
+const zraster = @import("../zraster/zig/zraster.zig");
 
 pub const BenchArgs = struct {
     out_dir: []const u8,
     render_mode: rastcfg.RenderMode,
+    io_mode: zraster.IoMode,
     total_threads: u16,
     max_geom_threads_per_frame: u16,
     max_raster_threads_per_frame: u16,
@@ -34,6 +36,7 @@ pub fn defaultBenchArgs(
     return .{
         .out_dir = default_out_dir,
         .render_mode = raster_config.render_mode,
+        .io_mode = .threaded,
         .total_threads = raster_config.total_threads,
         .max_geom_threads_per_frame = raster_config.max_geom_workers_per_frame,
         .max_raster_threads_per_frame = raster_config.max_raster_workers_per_frame,
@@ -92,6 +95,9 @@ pub fn parseArgsWithDefaults(
             if (std.mem.eql(u8, arg, "--render-mode")) {
                 bench_args.render_mode =
                     try parseEnum(rastcfg.RenderMode, value);
+            } else if (std.mem.eql(u8, arg, "--io-mode")) {
+                bench_args.io_mode =
+                    try parseEnum(zraster.IoMode, value);
             } else if (std.mem.eql(u8, arg, "--total-threads")) {
                 bench_args.total_threads = try parseInt(u16, value);
                 total_threads_overridden = true;
@@ -239,6 +245,8 @@ test "parse bench args named options" {
         "bench_geom",
         "--render-mode",
         "offline",
+        "--io-mode",
+        "async_single",
         "--total-threads",
         "8",
         "--max-geom-threads-per-frame",
@@ -275,6 +283,7 @@ test "parse bench args named options" {
     );
 
     try std.testing.expectEqual(rastcfg.RenderMode.offline, bench_args.render_mode);
+    try std.testing.expectEqual(zraster.IoMode.async_single, bench_args.io_mode);
     try std.testing.expectEqual(@as(u16, 8), bench_args.total_threads);
     try std.testing.expectEqual(
         @as(u16, 3),
@@ -320,6 +329,7 @@ test "parse bench args legacy thread positional" {
     );
 
     try std.testing.expectEqual(@as(u16, 6), bench_args.total_threads);
+    try std.testing.expectEqual(zraster.IoMode.threaded, bench_args.io_mode);
     try std.testing.expectEqual(
         @as(u16, 6),
         bench_args.max_geom_threads_per_frame,

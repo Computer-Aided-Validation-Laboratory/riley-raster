@@ -517,7 +517,11 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .elems_num = elems_num,
                 .node_chunk_size = node_chunk_size,
                 .elem_chunk_size = elem_chunk_size,
-                .elem_chunks_num = pce.getChunksNum(elems_num, elem_chunk_size),
+                .elem_chunks_num = pce.getStaticPartitionsNum(
+                    chunk_exec,
+                    elems_num,
+                    elem_chunk_size,
+                ),
                 .visible_chunk_size = 1,
                 .mesh_workspace = try initMeshFrameWorkspace(
                     allocator,

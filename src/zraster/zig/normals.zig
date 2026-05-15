@@ -436,7 +436,11 @@ pub fn prepareVisibleNormalsThreadedN(
         },
         .averaged => {
             const nodes_num = getConnectNodesNum(connect);
-            const elem_chunks_num = pce.getChunksNum(connect.getElemsNum(), elem_chunk_size);
+            const elem_chunks_num = pce.getStaticPartitionsNum(
+                chunk_exec,
+                connect.getElemsNum(),
+                elem_chunk_size,
+            );
             const node_normals_stride = nodes_num * 3;
             const chunk_node_normals = try allocator.alloc(
                 f64,

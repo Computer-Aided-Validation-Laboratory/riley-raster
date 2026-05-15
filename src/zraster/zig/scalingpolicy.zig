@@ -18,12 +18,13 @@ pub const DispatchScaling = struct {
 };
 
 const l2_cache_size_bytes = 1024 * 1024;
-const l2_safety_margin = 0.75;
+const l2_safety_margin = 0.8;
 const bytes_per_subpixel = 154; // Based on F=8, S=8, precision=f64
 const target_subpx_per_tile: usize = @intFromFloat(
     @as(f64, l2_cache_size_bytes) * l2_safety_margin / bytes_per_subpixel
 );
-const default_chunk_count_per_worker: usize = 4;
+pub const GEOMETRY_CHUNKS_PER_WORKER: usize = 1;
+pub const RASTER_CHUNKS_PER_WORKER: usize = 4;
 
 pub fn dispatchScaling(
     render_mode: rastcfg.RenderMode,
@@ -142,14 +143,14 @@ pub fn geometryNodeChunkSize(
     nodes_num: usize,
     workers_num: usize,
 ) usize {
-    return chunkSize(nodes_num, workers_num, default_chunk_count_per_worker);
+    return chunkSize(nodes_num, workers_num, GEOMETRY_CHUNKS_PER_WORKER);
 }
 
 pub fn geometryElemChunkSize(
     elems_num: usize,
     workers_num: usize,
 ) usize {
-    return chunkSize(elems_num, workers_num, default_chunk_count_per_worker);
+    return chunkSize(elems_num, workers_num, GEOMETRY_CHUNKS_PER_WORKER);
 }
 
 pub fn geometryVisibleChunkSize(
@@ -159,7 +160,7 @@ pub fn geometryVisibleChunkSize(
     return chunkSize(
         elems_in_image,
         workers_num,
-        default_chunk_count_per_worker,
+        GEOMETRY_CHUNKS_PER_WORKER,
     );
 }
 
@@ -167,7 +168,7 @@ pub fn tilingChunkSize(
     elems_num: usize,
     workers_num: usize,
 ) usize {
-    return chunkSize(elems_num, workers_num, default_chunk_count_per_worker);
+    return chunkSize(elems_num, workers_num, GEOMETRY_CHUNKS_PER_WORKER);
 }
 
 pub fn rasterWorkers(
@@ -193,7 +194,7 @@ pub fn rasterGrainSize(
     return chunkSize(
         active_tiles_num,
         workers_num,
-        default_chunk_count_per_worker,
+        RASTER_CHUNKS_PER_WORKER,
     );
 }
 

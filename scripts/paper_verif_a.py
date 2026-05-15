@@ -15,6 +15,12 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 from paper_const import (
     PAPER_DIR,
+    PLOT_AXIS_FONT_SIZE,
+    PLOT_LEGEND_FONT_SIZE,
+    PLOT_RESOLUTION_DPI,
+    PLOT_SQUARE_FIG_SIZE_IN,
+    PLOT_TICK_FONT_SIZE,
+    PLOT_TITLE_FONT_SIZE,
     SHEAR_REGULAR,
     SHEAR_SHEAR,
     bulge_in_frame,
@@ -88,12 +94,12 @@ def load_plot_style() -> PlotStyle:
 
     return PlotStyle(
         cmap_seq="viridis",
-        resolution=300.0,
-        single_fig_size_square=(3.625, 3.625),
-        font_ax_size=8.0,
-        font_tick_size=8.0,
-        font_head_size=9.0,
-        font_leg_size=8.0,
+        resolution=PLOT_RESOLUTION_DPI,
+        single_fig_size_square=PLOT_SQUARE_FIG_SIZE_IN,
+        font_ax_size=PLOT_AXIS_FONT_SIZE,
+        font_tick_size=PLOT_TICK_FONT_SIZE,
+        font_head_size=PLOT_TITLE_FONT_SIZE,
+        font_leg_size=PLOT_LEGEND_FONT_SIZE,
     )
 
 
@@ -306,9 +312,9 @@ def save_png_figure(
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="4.5%", pad=0.04)
     cbar = fig.colorbar(im, cax=cax)
-    ax.set_xlabel(r"$\xi$", fontsize=24.0)
-    ax.set_ylabel(r"$\eta$", fontsize=24.0)
-    ax.tick_params(labelsize=23.0)
+    ax.set_xlabel(r"$\xi$", fontsize=PLOT_AXIS_FONT_SIZE)
+    ax.set_ylabel(r"$\eta$", fontsize=PLOT_AXIS_FONT_SIZE)
+    ax.tick_params(labelsize=PLOT_TICK_FONT_SIZE)
     if mesh_name in {"quad4newton", "quad8", "quad9"}:
         tick_vals = [-1.0, 0.0, 1.0]
         tick_labels = ["-1.0", "0.0", "1.0"]
@@ -320,16 +326,16 @@ def save_png_figure(
     if scale_exp == 0:
         ax.set_title(
             r"$\epsilon_{rp}$ [px]",
-            fontsize=24.0,
+            fontsize=PLOT_TITLE_FONT_SIZE,
             pad=16.0,
         )
     else:
         ax.set_title(
             rf"$\epsilon_{{rp}}$ [px] $(\times 10^{{{scale_exp}}})$",
-            fontsize=24.0,
+            fontsize=PLOT_TITLE_FONT_SIZE,
             pad=16.0,
         )
-    cbar.ax.tick_params(labelsize=23.0)
+    cbar.ax.tick_params(labelsize=PLOT_TICK_FONT_SIZE)
     fig.subplots_adjust(
         left=0.16,
         right=0.86,

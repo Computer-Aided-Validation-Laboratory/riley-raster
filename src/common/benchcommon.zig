@@ -223,6 +223,7 @@ pub fn writeBenchmarkConfig(
     benchmark_name: []const u8,
     argv: anytype,
     config: rastcfg.RasterConfig,
+    io_mode: zraster.IoMode,
     pixel_num: [2]u32,
     sub_sample: u8,
     runs: usize,
@@ -252,6 +253,7 @@ pub fn writeBenchmarkConfig(
     try writer.print("benchmark={s}\n", .{benchmark_name});
     try writer.print("out_dir={s}\n", .{out_dir_base});
     try writer.print("render_mode={s}\n", .{@tagName(config.render_mode)});
+    try writer.print("io_mode={s}\n", .{@tagName(io_mode)});
     try writer.print("total_threads={d}\n", .{config.total_threads});
     try writer.print(
         "max_geom_threads_per_frame={d}\n",

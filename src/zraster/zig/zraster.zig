@@ -35,42 +35,62 @@ pub const RenderMode = rastcfg.RenderMode;
 pub const ReportMode = rastcfg.ReportMode;
 pub const FullStatsOpts = rastcfg.FullStatsOpts;
 
-pub const ThreadedIo = struct {
+pub const IoMode = enum {
+    direct,
+    async_single,
+    threaded,
+};
+
+pub const ManagedIo = union(enum) {
+    direct: std.Io,
     threaded: std.Io.Threaded,
 
-    pub fn io(self: *ThreadedIo) std.Io {
-        return self.threaded.io();
+    pub fn io(self: *ManagedIo) std.Io {
+        return switch (self.*) {
+            .direct => |direct_io| direct_io,
+            .threaded => |*threaded| threaded.io(),
+        };
     }
 
-    pub fn deinit(self: *ThreadedIo) void {
-        self.threaded.deinit();
+    pub fn deinit(self: *ManagedIo) void {
+        switch (self.*) {
+            .direct => {},
+            .threaded => |*threaded| threaded.deinit(),
+        }
     }
 };
 
 pub fn getThreadedIo(
     gpa: std.mem.Allocator,
+    default_io: std.Io,
     minimal: std.process.Init.Minimal,
     num_threads: u16,
-) ThreadedIo {
+    io_mode: IoMode,
+) ManagedIo {
+    if (io_mode == .direct) {
+        return .{ .direct = default_io };
+    }
+
     // std.Io.Threaded limits count worker threads in addition to the caller.
     // Our raster/bench configs use total execution-thread semantics, so:
     //   1 => caller only
     //   2 => caller + 1 worker
     // and clamp 0/1 to single-threaded execution.
-    const io_workers: u16 = if (num_threads <= 1) 0 else num_threads - 1;
-    const limit: std.Io.Limit = if (io_workers == 0)
-        .nothing
-    else
-        .limited(io_workers);
+    const limit: std.Io.Limit = switch (io_mode) {
+        .direct => unreachable,
+        .async_single => .nothing,
+        .threaded => blk: {
+            const io_workers: u16 = if (num_threads <= 1) 0 else num_threads - 1;
+            break :blk if (io_workers == 0) .nothing else .limited(io_workers);
+        },
+    };
 
-    return .{
-        .threaded = std.Io.Threaded.init(gpa, .{
+    return .{ .threaded = std.Io.Threaded.init(gpa, .{
             .argv0 = .init(minimal.args),
             .environ = minimal.environ,
             .async_limit = limit,
             .concurrent_limit = limit,
-        }),
-    };
+        }) };
 }
 
 const report = @import("report.zig");

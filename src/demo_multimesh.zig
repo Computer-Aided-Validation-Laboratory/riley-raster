@@ -42,8 +42,10 @@ pub fn main(init: std.process.Init) !void {
     };
     var threaded_io = zraster.getThreadedIo(
         outer_alloc,
+        init.io,
         init.minimal,
         config.total_threads,
+        .threaded,
     );
     defer threaded_io.deinit();
     const io = threaded_io.io();

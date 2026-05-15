@@ -48,8 +48,10 @@ pub fn main(init: std.process.Init) !void {
     );
     var threaded_io = zraster.getThreadedIo(
         outer_alloc,
+        init.io,
         init.minimal,
         bench_args.total_threads,
+        bench_args.io_mode,
     );
     defer threaded_io.deinit();
     const io = threaded_io.io();
@@ -139,6 +141,7 @@ pub fn main(init: std.process.Init) !void {
         "bench_sphere2000.zig",
         init.minimal.args.vector,
         bench_raster_config,
+        bench_args.io_mode,
         bench_args.pixels_num,
         bench_args.sub_sample,
         bench_args.runs,
