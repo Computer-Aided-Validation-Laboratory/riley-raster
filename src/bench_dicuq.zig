@@ -35,17 +35,17 @@ pub fn main(init: std.process.Init) !void {
     default_bench_args.sub_sample = DEFAULT_SUB_SAMPLE;
 
     // Change .save_strategy here to write to disk!
-    const bench_args = try benchargs.parseArgsWithDefaults(
+    var bench_args = try benchargs.parseArgsWithDefaults(
         init.minimal.args.vector,
         default_bench_args,
     );
 
-    // Experiments to check number of active threas
-    // bench_args.total_threads = 1;
-    // bench_args.max_geom_threads_per_frame = 1;
-    // bench_args.max_raster_threads_per_frame = bench_args.total_threads; 
-    // bench_args.max_frames_in_flight = 1;
-    // bench_args.render_mode = .in_order;
+    // Experiments to check number of active threads
+    bench_args.total_threads = 0;
+    bench_args.max_geom_threads_per_frame = 0;
+    bench_args.max_raster_threads_per_frame = bench_args.total_threads; 
+    bench_args.max_frames_in_flight = 1;
+    bench_args.render_mode = .in_order;
     // Experiments to check disk write
     // bench_args.save_strategy = .disk;
         

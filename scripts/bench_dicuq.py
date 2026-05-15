@@ -17,8 +17,8 @@ FRAMES_IN_FLIGHT = [1, 2, 4]
 RENDER_MODES = ["offline", "in_order"]
 SAVE_STRATEGIES = ["memory"]
 GEOM_THREAD_COUNTS = [1, 2, 4]
-BASELINE_IO_MODES = ["serial", "async_single"]
-EXPERIMENT_8_SINGLE_THREADED_IO_MODES = ["serial", "async_single", "async_multi"]
+BASELINE_IO_MODES = ["serial"]
+EXPERIMENT_8_SINGLE_THREADED_IO_MODES = ["serial", "async_multi"]
 
 SAMPLE = "cubic_catmull_rom"
 SAMPLE_MODE = "lut_lerp"
@@ -28,9 +28,9 @@ RUN_EXPERIMENT_2 = False  # Offline, FiF=1, async_multi only, geom_threads = 1, 
 RUN_EXPERIMENT_3 = False  # Offline FiF sweep, async_multi only, total_threads/raster_threads fixed, geom_threads = 1
 RUN_EXPERIMENT_4 = False  # Render-mode sweep, async_multi only, total_threads/raster_threads fixed, geom_threads = 1
 RUN_EXPERIMENT_5 = False  # Full matrix with async_multi io, geom_threads = 1
-RUN_EXPERIMENT_6 = False  # As 5 but with serial and async_single baselines
+RUN_EXPERIMENT_6 = False  # As 5 but with a serial baseline
 RUN_EXPERIMENT_7 = True  # As 6 but with geom_threads <= raster_threads
-RUN_EXPERIMENT_8 = False  # serial + async_single + async_multi1 only, FiF=1
+RUN_EXPERIMENT_8 = False  # serial + async_multi1 only, FiF=1
 
 EXPERIMENT_1_THREAD_COUNTS = THREAD_COUNTS
 EXPERIMENT_1_SAVE_STRATEGIES = SAVE_STRATEGIES
@@ -88,8 +88,6 @@ def case_io_label(io_mode: str, total_threads: int) -> str:
 def single_thread_case_config(io_mode: str) -> tuple[int, int, int]:
     if io_mode == "serial":
         return (0, 0, 0)
-    if io_mode == "async_single":
-        return (1, 1, 1)
     if io_mode == "async_multi":
         # async_multi1 means "caller only" under the zraster convention that
         # thread counts include the main thread.

@@ -246,7 +246,7 @@ test "parse bench args named options" {
         "--render-mode",
         "offline",
         "--io-mode",
-        "async_single",
+        "serial",
         "--total-threads",
         "8",
         "--max-geom-threads-per-frame",
@@ -283,7 +283,7 @@ test "parse bench args named options" {
     );
 
     try std.testing.expectEqual(rastcfg.RenderMode.offline, bench_args.render_mode);
-    try std.testing.expectEqual(zraster.IoMode.async_single, bench_args.io_mode);
+    try std.testing.expectEqual(zraster.IoMode.serial, bench_args.io_mode);
     try std.testing.expectEqual(@as(u16, 8), bench_args.total_threads);
     try std.testing.expectEqual(
         @as(u16, 3),
