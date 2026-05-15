@@ -38,12 +38,12 @@ pub fn main(init: std.process.Init) !void {
         },
         .report = .bench,
     };
-    var threaded_io = zraster.getThreadedIo(
+    var threaded_io = zraster.getManagedIo(
         outer_alloc,
         init.io,
         init.minimal,
         config.total_threads,
-        .threaded,
+        .async_multi,
     );
     defer threaded_io.deinit();
     const io = threaded_io.io();

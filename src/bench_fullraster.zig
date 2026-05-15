@@ -50,7 +50,7 @@ pub fn main(init: std.process.Init) !void {
         init.minimal.args.vector,
         default_bench_args,
     );
-    var threaded_io = zraster.getThreadedIo(
+    var threaded_io = zraster.getManagedIo(
         outer_alloc,
         init.io,
         init.minimal,

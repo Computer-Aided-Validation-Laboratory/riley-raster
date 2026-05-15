@@ -47,7 +47,7 @@ pub fn main(init: std.process.Init) !void {
     // Experiments to check disk write
     // bench_args.save_strategy = .disk;
         
-    var threaded_io = zraster.getThreadedIo(
+    var threaded_io = zraster.getManagedIo(
         outer_alloc,
         init.io,
         init.minimal,

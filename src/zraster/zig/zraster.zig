@@ -36,61 +36,52 @@ pub const ReportMode = rastcfg.ReportMode;
 pub const FullStatsOpts = rastcfg.FullStatsOpts;
 
 pub const IoMode = enum {
-    direct,
+    serial,
     async_single,
-    threaded,
+    async_multi,
 };
 
 pub const ManagedIo = union(enum) {
-    direct: std.Io,
+    passthrough: std.Io,
     threaded: std.Io.Threaded,
 
     pub fn io(self: *ManagedIo) std.Io {
         return switch (self.*) {
-            .direct => |direct_io| direct_io,
+            .passthrough => |io_value| io_value,
             .threaded => |*threaded| threaded.io(),
         };
     }
 
     pub fn deinit(self: *ManagedIo) void {
         switch (self.*) {
-            .direct => {},
+            .passthrough => {},
             .threaded => |*threaded| threaded.deinit(),
         }
     }
 };
 
-pub fn getThreadedIo(
+pub fn getManagedIo(
     gpa: std.mem.Allocator,
     default_io: std.Io,
     minimal: std.process.Init.Minimal,
     num_threads: u16,
     io_mode: IoMode,
 ) ManagedIo {
-    if (io_mode == .direct) {
-        return .{ .direct = default_io };
+    if (io_mode == .serial) {
+        return .{ .passthrough = default_io };
     }
-
-    // std.Io.Threaded limits count worker threads in addition to the caller.
-    // Our raster/bench configs use total execution-thread semantics, so:
-    //   1 => caller only
-    //   2 => caller + 1 worker
-    // and clamp 0/1 to single-threaded execution.
     const limit: std.Io.Limit = switch (io_mode) {
-        .direct => unreachable,
+        .serial => unreachable,
         .async_single => .nothing,
-        .threaded => blk: {
-            const io_workers: u16 = if (num_threads <= 1) 0 else num_threads - 1;
-            break :blk if (io_workers == 0) .nothing else .limited(io_workers);
-        },
+        .async_multi => if (num_threads == 0) .nothing else .limited(num_threads),
     };
 
     return .{ .threaded = std.Io.Threaded.init(gpa, .{
-            .argv0 = .init(minimal.args),
-            .environ = minimal.environ,
-            .async_limit = limit,
-            .concurrent_limit = limit,
-        }) };
+        .argv0 = .init(minimal.args),
+        .environ = minimal.environ,
+        .async_limit = limit,
+        .concurrent_limit = limit,
+    }) };
 }
 
 const report = @import("report.zig");

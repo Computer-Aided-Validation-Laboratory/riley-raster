@@ -12,12 +12,14 @@ from bench_common import repo_root
 from bench_common import write_command_file
 
 
-THREAD_COUNTS = [1, 2, 4, 8]
-FRAMES_IN_FLIGHT = [1, 2, 4, 8]
+THREAD_COUNTS = [1, 2, 3, 4]
+FRAMES_IN_FLIGHT = [1, 2, 4]
 RENDER_MODES = ["offline", "in_order"]
 SAVE_STRATEGIES = ["memory"]
-GEOM_THREAD_COUNTS = [1, 2, 4, 8]
-BASELINE_IO_MODES = ["direct", "async_single"]
+GEOM_THREAD_COUNTS = [1, 2, 3, 4]
+BASELINE_IO_MODES = ["serial", "async_single"]
+EXPERIMENT_8_SINGLE_THREADED_IO_MODES = ["serial", "async_single", "async_multi"]
+
 SAMPLE = "cubic_catmull_rom"
 SAMPLE_MODE = "lut_lerp"
 
@@ -25,9 +27,10 @@ RUN_EXPERIMENT_1 = False
 RUN_EXPERIMENT_2 = False
 RUN_EXPERIMENT_3 = False
 RUN_EXPERIMENT_4 = False
-RUN_EXPERIMENT_5 = True
-RUN_EXPERIMENT_6 = False
-RUN_EXPERIMENT_7 = False
+RUN_EXPERIMENT_5 = False  # Full matrix with async_multi io, geom_threads = 1
+RUN_EXPERIMENT_6 = False  # As 5 but with serial and async_single baselines
+RUN_EXPERIMENT_7 = True  # As 6 but with geom_threads <= raster_threads
+RUN_EXPERIMENT_8 = False  # serial + async_single + async_multi1 only, FiF=1
 
 EXPERIMENT_1_THREAD_COUNTS = THREAD_COUNTS
 EXPERIMENT_1_SAVE_STRATEGIES = SAVE_STRATEGIES
@@ -66,6 +69,31 @@ EXPERIMENT_7_RENDER_MODES = RENDER_MODES
 EXPERIMENT_7_SAVE_STRATEGIES = SAVE_STRATEGIES
 EXPERIMENT_7_BASELINE_IO_MODES = BASELINE_IO_MODES
 
+EXPERIMENT_8_RENDER_MODES = RENDER_MODES
+EXPERIMENT_8_SAVE_STRATEGIES = SAVE_STRATEGIES
+EXPERIMENT_8_BASELINE_IO_MODES = EXPERIMENT_8_SINGLE_THREADED_IO_MODES
+EXPERIMENT_8_FRAMES_IN_FLIGHT = [1]
+
+
+def reverse_frames_in_flight(values: list[int]) -> list[int]:
+    return sorted(values, reverse=True)
+
+
+def case_io_label(io_mode: str, total_threads: int) -> str:
+    if io_mode == "async_multi":
+        return f"async_multi{total_threads}"
+    return io_mode
+
+
+def single_thread_case_config(io_mode: str) -> tuple[int, int, int]:
+    if io_mode == "serial":
+        return (0, 0, 0)
+    if io_mode == "async_single":
+        return (1, 1, 1)
+    if io_mode == "async_multi":
+        return (1, 1, 1)
+    raise ValueError(f"Unsupported single-thread io mode: {io_mode}")
+
 
 def make_case(
     *,
@@ -78,9 +106,10 @@ def make_case(
     render_mode: str,
     save_strategy: str,
 ) -> dict[str, object]:
+    io_label = case_io_label(io_mode, total_threads)
     case_name = (
         "bench_dicuq"
-        f"_io-{io_mode}"
+        f"_io-{io_label}"
         f"_threads-{total_threads}"
         f"_geom-{geom_threads}"
         f"_raster-{raster_threads}"
@@ -125,15 +154,18 @@ def make_baseline_cases(
     cases: list[dict[str, object]] = []
     for io_mode in io_modes:
         for render_mode in render_modes:
-            for max_frames_in_flight in frames_in_flight:
+            total_threads, geom_threads, raster_threads = single_thread_case_config(
+                io_mode
+            )
+            for max_frames_in_flight in reverse_frames_in_flight(frames_in_flight):
                 for save_strategy in save_strategies:
                     cases.append(
                         make_case(
                             experiment=experiment,
                             io_mode=io_mode,
-                            total_threads=1,
-                            geom_threads=1,
-                            raster_threads=1,
+                            total_threads=total_threads,
+                            geom_threads=geom_threads,
+                            raster_threads=raster_threads,
                             max_frames_in_flight=max_frames_in_flight,
                             render_mode=render_mode,
                             save_strategy=save_strategy,
@@ -149,7 +181,7 @@ def experiment_1_cases() -> list[dict[str, object]]:
             cases.append(
                 make_case(
                     experiment="experiment_1_all_threads",
-                    io_mode="threaded",
+                    io_mode="async_multi",
                     total_threads=total_threads,
                     geom_threads=total_threads,
                     raster_threads=total_threads,
@@ -168,7 +200,7 @@ def experiment_2_cases() -> list[dict[str, object]]:
             cases.append(
                 make_case(
                     experiment="experiment_2_geom_threads_1",
-                    io_mode="threaded",
+                    io_mode="async_multi",
                     total_threads=total_threads,
                     geom_threads=1,
                     raster_threads=total_threads,
@@ -182,12 +214,14 @@ def experiment_2_cases() -> list[dict[str, object]]:
 
 def experiment_3_cases() -> list[dict[str, object]]:
     cases: list[dict[str, object]] = []
-    for max_frames_in_flight in EXPERIMENT_3_FRAMES_IN_FLIGHT:
+    for max_frames_in_flight in reverse_frames_in_flight(
+        EXPERIMENT_3_FRAMES_IN_FLIGHT
+    ):
         for save_strategy in EXPERIMENT_3_SAVE_STRATEGIES:
             cases.append(
                 make_case(
                     experiment="experiment_3_frames_in_flight",
-                    io_mode="threaded",
+                    io_mode="async_multi",
                     total_threads=EXPERIMENT_3_TOTAL_THREADS,
                     geom_threads=EXPERIMENT_3_GEOM_THREADS,
                     raster_threads=EXPERIMENT_3_RASTER_THREADS,
@@ -202,12 +236,14 @@ def experiment_3_cases() -> list[dict[str, object]]:
 def experiment_4_cases() -> list[dict[str, object]]:
     cases: list[dict[str, object]] = []
     for render_mode in EXPERIMENT_4_RENDER_MODES:
-        for max_frames_in_flight in EXPERIMENT_4_FRAMES_IN_FLIGHT:
+        for max_frames_in_flight in reverse_frames_in_flight(
+            EXPERIMENT_4_FRAMES_IN_FLIGHT
+        ):
             for save_strategy in EXPERIMENT_4_SAVE_STRATEGIES:
                 cases.append(
                     make_case(
                         experiment="experiment_4_render_mode",
-                        io_mode="threaded",
+                        io_mode="async_multi",
                         total_threads=EXPERIMENT_4_TOTAL_THREADS,
                         geom_threads=EXPERIMENT_4_GEOM_THREADS,
                         raster_threads=EXPERIMENT_4_RASTER_THREADS,
@@ -222,15 +258,17 @@ def experiment_4_cases() -> list[dict[str, object]]:
 def experiment_5_cases() -> list[dict[str, object]]:
     cases: list[dict[str, object]] = []
     for total_threads in EXPERIMENT_5_THREAD_COUNTS:
-        for max_frames_in_flight in EXPERIMENT_5_FRAMES_IN_FLIGHT:
+        for max_frames_in_flight in reverse_frames_in_flight(
+            EXPERIMENT_5_FRAMES_IN_FLIGHT
+        ):
             for render_mode in EXPERIMENT_5_RENDER_MODES:
                 for save_strategy in EXPERIMENT_5_SAVE_STRATEGIES:
                     cases.append(
                         make_case(
                             experiment="experiment_5_complete_matrix",
-                            io_mode="threaded",
+                            io_mode="async_multi",
                             total_threads=total_threads,
-                            geom_threads=total_threads,
+                            geom_threads=1,
                             raster_threads=total_threads,
                             max_frames_in_flight=max_frames_in_flight,
                             render_mode=render_mode,
@@ -249,15 +287,17 @@ def experiment_6_cases() -> list[dict[str, object]]:
         save_strategies=EXPERIMENT_6_SAVE_STRATEGIES,
     )
     for total_threads in EXPERIMENT_6_THREAD_COUNTS:
-        for max_frames_in_flight in EXPERIMENT_6_FRAMES_IN_FLIGHT:
+        for max_frames_in_flight in reverse_frames_in_flight(
+            EXPERIMENT_6_FRAMES_IN_FLIGHT
+        ):
             for render_mode in EXPERIMENT_6_RENDER_MODES:
                 for save_strategy in EXPERIMENT_6_SAVE_STRATEGIES:
                     cases.append(
                         make_case(
                             experiment="experiment_6_io_matrix",
-                            io_mode="threaded",
+                            io_mode="async_multi",
                             total_threads=total_threads,
-                            geom_threads=total_threads,
+                            geom_threads=1,
                             raster_threads=total_threads,
                             max_frames_in_flight=max_frames_in_flight,
                             render_mode=render_mode,
@@ -280,13 +320,15 @@ def experiment_7_cases() -> list[dict[str, object]]:
         for geom_threads in EXPERIMENT_7_GEOM_THREAD_COUNTS:
             if geom_threads > raster_threads:
                 continue
-            for max_frames_in_flight in EXPERIMENT_7_FRAMES_IN_FLIGHT:
+            for max_frames_in_flight in reverse_frames_in_flight(
+                EXPERIMENT_7_FRAMES_IN_FLIGHT
+            ):
                 for render_mode in EXPERIMENT_7_RENDER_MODES:
                     for save_strategy in EXPERIMENT_7_SAVE_STRATEGIES:
                         cases.append(
                             make_case(
                                 experiment="experiment_7_geom_sweep",
-                                io_mode="threaded",
+                                io_mode="async_multi",
                                 total_threads=total_threads,
                                 geom_threads=geom_threads,
                                 raster_threads=raster_threads,
@@ -296,6 +338,16 @@ def experiment_7_cases() -> list[dict[str, object]]:
                             )
                         )
     return cases
+
+
+def experiment_8_cases() -> list[dict[str, object]]:
+    return make_baseline_cases(
+        experiment="experiment_8_single_threaded_matrix",
+        io_modes=EXPERIMENT_8_BASELINE_IO_MODES,
+        render_modes=EXPERIMENT_8_RENDER_MODES,
+        frames_in_flight=EXPERIMENT_8_FRAMES_IN_FLIGHT,
+        save_strategies=EXPERIMENT_8_SAVE_STRATEGIES,
+    )
 
 
 def run_case(
@@ -346,6 +398,7 @@ def experiment_enabled(experiment_id: str) -> bool:
         "5": RUN_EXPERIMENT_5,
         "6": RUN_EXPERIMENT_6,
         "7": RUN_EXPERIMENT_7,
+        "8": RUN_EXPERIMENT_8,
     }[experiment_id]
 
 
@@ -363,7 +416,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--experiment",
-        choices=("all", "1", "2", "3", "4", "5", "6", "7"),
+        choices=("all", "1", "2", "3", "4", "5", "6", "7", "8"),
         default="all",
     )
     parser.add_argument(
@@ -388,6 +441,8 @@ def main() -> int:
         cases.extend(experiment_6_cases())
     if args.experiment in ("all", "7") and experiment_enabled("7"):
         cases.extend(experiment_7_cases())
+    if args.experiment in ("all", "8") and experiment_enabled("8"):
+        cases.extend(experiment_8_cases())
 
     if args.experiment != "all" and not experiment_enabled(args.experiment):
         print(

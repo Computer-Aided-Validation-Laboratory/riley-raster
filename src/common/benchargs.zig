@@ -36,7 +36,7 @@ pub fn defaultBenchArgs(
     return .{
         .out_dir = default_out_dir,
         .render_mode = raster_config.render_mode,
-        .io_mode = .threaded,
+        .io_mode = .async_multi,
         .total_threads = raster_config.total_threads,
         .max_geom_threads_per_frame = raster_config.max_geom_workers_per_frame,
         .max_raster_threads_per_frame = raster_config.max_raster_workers_per_frame,
@@ -329,7 +329,7 @@ test "parse bench args legacy thread positional" {
     );
 
     try std.testing.expectEqual(@as(u16, 6), bench_args.total_threads);
-    try std.testing.expectEqual(zraster.IoMode.threaded, bench_args.io_mode);
+    try std.testing.expectEqual(zraster.IoMode.async_multi, bench_args.io_mode);
     try std.testing.expectEqual(
         @as(u16, 6),
         bench_args.max_geom_threads_per_frame,
