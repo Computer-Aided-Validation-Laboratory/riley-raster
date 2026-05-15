@@ -70,10 +70,17 @@ pub fn getManagedIo(
     if (io_mode == .serial) {
         return .{ .passthrough = default_io };
     }
+
+    // User-facing thread counts in zraster always include the caller thread.
+    // Zig's std.Io.Threaded limits count only spawned worker threads, excluding
+    // the caller. Translate here so:
+    //   async_single  -> caller only
+    //   async_multi1  -> caller only
+    //   async_multiN  -> caller + (N - 1) worker threads
     const limit: std.Io.Limit = switch (io_mode) {
         .serial => unreachable,
         .async_single => .nothing,
-        .async_multi => if (num_threads == 0) .nothing else .limited(num_threads),
+        .async_multi => if (num_threads <= 1) .nothing else .limited(num_threads - 1),
     };
 
     return .{ .threaded = std.Io.Threaded.init(gpa, .{
@@ -714,8 +721,9 @@ fn dispatchFrameJobsOffline(
         errdefer group.cancel(io);
 
         const batch_end = @min(jobs_num, batch_start + batch_size);
+        const caller_job_idx = batch_end - 1;
 
-        for (batch_start..batch_end) |job_idx| {
+        for (batch_start..caller_job_idx) |job_idx| {
             const frame_idx = @divFloor(job_idx, cameras.len);
             const camera_idx = @mod(job_idx, cameras.len);
             const camera = &cameras[camera_idx];
@@ -743,6 +751,34 @@ fn dispatchFrameJobsOffline(
                         .cameras_num = cameras.len,
                         .err_state = &err_state,
                     },
+                },
+            );
+        }
+
+        {
+            const frame_idx = @divFloor(caller_job_idx, cameras.len);
+            const camera_idx = @mod(caller_job_idx, cameras.len);
+            const camera = &cameras[camera_idx];
+
+            try processFrameJobAsync(
+                outer_alloc,
+                io,
+                FrameInput{
+                    .camera = camera,
+                    .camera_idx = camera_idx,
+                    .frame_idx = frame_idx,
+                    .num_fields = num_fields,
+                    .config = config,
+                    .out_dir = out_dir,
+                    .mesh_static = mesh_static,
+                    .nodal_global_scaling = nodal_global_scaling,
+                    .geom_workers = dispatch_scale.geom_workers,
+                    .raster_workers = dispatch_scale.raster_workers,
+                    .chunk_exec = chunk_exec,
+                    .images_arr = images_arr,
+                    .bench_capture = bench_capture,
+                    .cameras_num = cameras.len,
+                    .err_state = &err_state,
                 },
             );
         }
@@ -779,43 +815,77 @@ fn dispatchFrameJobsInOrder(
         chunk_exec = &pool;
     }
 
+    const camera_batch_size = scalingpolicy.frameBatchSize(
+        dispatch_scale.frames_in_flight,
+        cameras.len,
+    );
+
     for (0..num_time) |frame_idx| {
-        var err_state = FrameJobErrorState{};
+        var batch_start: usize = 0;
+        while (batch_start < cameras.len) : (batch_start += camera_batch_size) {
+            var err_state = FrameJobErrorState{};
 
-        var group: std.Io.Group = .init;
-        errdefer group.cancel(io);
+            var group: std.Io.Group = .init;
+            errdefer group.cancel(io);
 
-        for (cameras, 0..) |*camera, camera_idx| {
-            group.async(
-                io,
-                processFrameJobAsync,
-                .{
-                    outer_alloc,
+            const batch_end = @min(cameras.len, batch_start + camera_batch_size);
+            const caller_camera_idx = batch_end - 1;
+
+            for (batch_start..caller_camera_idx) |camera_idx| {
+                const camera = &cameras[camera_idx];
+                group.async(
                     io,
-                    FrameInput{
-                        .camera = camera,
-                        .camera_idx = camera_idx,
-                        .frame_idx = frame_idx,
-                        .num_fields = num_fields,
-                        .config = config,
-                        .out_dir = out_dir,
-                        .mesh_static = mesh_static,
-                        .nodal_global_scaling = nodal_global_scaling,
-                        .geom_workers = dispatch_scale.geom_workers,
-                        .raster_workers = dispatch_scale.raster_workers,
-                        .chunk_exec = chunk_exec,
-                        .images_arr = images_arr,
-                        .bench_capture = bench_capture,
-                        .cameras_num = cameras.len,
-                        .err_state = &err_state,
+                    processFrameJobAsync,
+                    .{
+                        outer_alloc,
+                        io,
+                        FrameInput{
+                            .camera = camera,
+                            .camera_idx = camera_idx,
+                            .frame_idx = frame_idx,
+                            .num_fields = num_fields,
+                            .config = config,
+                            .out_dir = out_dir,
+                            .mesh_static = mesh_static,
+                            .nodal_global_scaling = nodal_global_scaling,
+                            .geom_workers = dispatch_scale.geom_workers,
+                            .raster_workers = dispatch_scale.raster_workers,
+                            .chunk_exec = chunk_exec,
+                            .images_arr = images_arr,
+                            .bench_capture = bench_capture,
+                            .cameras_num = cameras.len,
+                            .err_state = &err_state,
+                        },
                     },
+                );
+            }
+
+            try processFrameJobAsync(
+                outer_alloc,
+                io,
+                FrameInput{
+                    .camera = &cameras[caller_camera_idx],
+                    .camera_idx = caller_camera_idx,
+                    .frame_idx = frame_idx,
+                    .num_fields = num_fields,
+                    .config = config,
+                    .out_dir = out_dir,
+                    .mesh_static = mesh_static,
+                    .nodal_global_scaling = nodal_global_scaling,
+                    .geom_workers = dispatch_scale.geom_workers,
+                    .raster_workers = dispatch_scale.raster_workers,
+                    .chunk_exec = chunk_exec,
+                    .images_arr = images_arr,
+                    .bench_capture = bench_capture,
+                    .cameras_num = cameras.len,
+                    .err_state = &err_state,
                 },
             );
-        }
 
-        try group.await(io);
-        if (err_state.first_err) |err| {
-            return err;
+            try group.await(io);
+            if (err_state.first_err) |err| {
+                return err;
+            }
         }
     }
 }

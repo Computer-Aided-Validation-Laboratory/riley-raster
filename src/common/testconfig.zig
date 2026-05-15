@@ -14,6 +14,7 @@ pub const REL_TOL: f64 = 1e-6;
 pub const ABS_TOL: f64 = 1e-6;
 pub const RENDER_MODE: RenderMode = .in_order;
 pub const HULL_MODE: HullMode = .on_no_fallback;
+// Includes the caller thread. TOTAL_THREADS = 2 means caller + 1 helper.
 pub const TOTAL_THREADS: u16 = 2;
 pub const MAX_FRAMES_IN_FLIGHT: u16 = 1;
 pub const MAX_GEOM_WORKERS_PER_FRAME: u16 = 2;

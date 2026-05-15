@@ -10,6 +10,8 @@ const iio = @import("imageio.zig");
 
 pub const RasterConfig = struct {
     render_mode: RenderMode = .in_order,
+    // User-facing thread counts always include the caller thread. A value of 0
+    // forces the serial scalar path.
     total_threads: u16 = 1,
     max_frames_in_flight: u16 = 1,
     max_geom_workers_per_frame: u16 = 1,

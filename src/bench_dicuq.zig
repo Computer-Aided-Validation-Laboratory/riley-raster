@@ -42,8 +42,10 @@ pub fn main(init: std.process.Init) !void {
 
     // Experiments to check number of active threas
     // bench_args.total_threads = 1;
-    // bench_args.max_frames_in_flight = 16;
-    // bench_args.render_mode = .offline;
+    // bench_args.max_geom_threads_per_frame = 1;
+    // bench_args.max_raster_threads_per_frame = bench_args.total_threads; 
+    // bench_args.max_frames_in_flight = 1;
+    // bench_args.render_mode = .in_order;
     // Experiments to check disk write
     // bench_args.save_strategy = .disk;
         
