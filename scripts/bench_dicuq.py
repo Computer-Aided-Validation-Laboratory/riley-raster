@@ -12,24 +12,30 @@ from bench_common import repo_root
 from bench_common import write_command_file
 
 
-THREAD_COUNTS = [1, 2, 4]  # Includes the main thread/caller.
+THREAD_COUNTS = [1, 2, 4, 8]  # Includes the main thread/caller.
 FRAMES_IN_FLIGHT = [1, 2, 4]
 RENDER_MODES = ["offline", "in_order"]
-SAVE_STRATEGIES = ["memory"]
-GEOM_THREAD_COUNTS = [1, 2, 4]
+SAVE_STRATEGIES = ["memory", "disk"]
+GEOM_THREAD_COUNTS = [1, 2, 4, 8]
 BASELINE_IO_MODES = ["serial"]
 EXPERIMENT_8_SINGLE_THREADED_IO_MODES = ["serial", "async_multi"]
 
 SAMPLE = "cubic_catmull_rom"
 SAMPLE_MODE = "lut_lerp"
 
-RUN_EXPERIMENT_1 = False  # Offline, FiF=1, async_multi only, geom_threads = raster_threads = total_threads
-RUN_EXPERIMENT_2 = False  # Offline, FiF=1, async_multi only, geom_threads = 1, raster_threads = total_threads
-RUN_EXPERIMENT_3 = False  # Offline FiF sweep, async_multi only, total_threads/raster_threads fixed, geom_threads = 1
-RUN_EXPERIMENT_4 = False  # Render-mode sweep, async_multi only, total_threads/raster_threads fixed, geom_threads = 1
+# NOTE: used experiment 2 for the paper because frames in flight scaling and 
+# geometry scaling are poor
+RUN_EXPERIMENT_1 = False  # Offline, FiF=1, async_multi only, geom_threads = 
+# raster_threads = total_threads
+RUN_EXPERIMENT_2 = True  # Offline, FiF=1, async_multi only, geom_threads = 1, 
+# raster_threads = total_threads
+RUN_EXPERIMENT_3 = False  # Offline FiF sweep, async_multi only, 
+# total_threads/raster_threads fixed, geom_threads = 1
+RUN_EXPERIMENT_4 = False  # Render-mode sweep, async_multi only, 
+# total_threads/raster_threads fixed, geom_threads = 1
 RUN_EXPERIMENT_5 = False  # Full matrix with async_multi io, geom_threads = 1
 RUN_EXPERIMENT_6 = False  # As 5 but with a serial baseline
-RUN_EXPERIMENT_7 = True  # As 6 but with geom_threads <= raster_threads
+RUN_EXPERIMENT_7 = False  # As 6 but with geom_threads <= raster_threads
 RUN_EXPERIMENT_8 = False  # serial + async_multi1 only, FiF=1
 
 EXPERIMENT_1_THREAD_COUNTS = THREAD_COUNTS
