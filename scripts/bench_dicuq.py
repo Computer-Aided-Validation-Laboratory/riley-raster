@@ -408,6 +408,10 @@ def experiment_enabled(experiment_id: str) -> bool:
     }[experiment_id]
 
 
+def experiment_header(experiment_id: str, when: str) -> str:
+    return f"========== Experiment {experiment_id} {when} =========="
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -432,24 +436,6 @@ def main() -> int:
     args = parser.parse_args()
 
     run_root = build_run_root("bench_dicuq", args.out_root)
-    cases: list[dict[str, object]] = []
-    if args.experiment in ("all", "1") and experiment_enabled("1"):
-        cases.extend(experiment_1_cases())
-    if args.experiment in ("all", "2") and experiment_enabled("2"):
-        cases.extend(experiment_2_cases())
-    if args.experiment in ("all", "3") and experiment_enabled("3"):
-        cases.extend(experiment_3_cases())
-    if args.experiment in ("all", "4") and experiment_enabled("4"):
-        cases.extend(experiment_4_cases())
-    if args.experiment in ("all", "5") and experiment_enabled("5"):
-        cases.extend(experiment_5_cases())
-    if args.experiment in ("all", "6") and experiment_enabled("6"):
-        cases.extend(experiment_6_cases())
-    if args.experiment in ("all", "7") and experiment_enabled("7"):
-        cases.extend(experiment_7_cases())
-    if args.experiment in ("all", "8") and experiment_enabled("8"):
-        cases.extend(experiment_8_cases())
-
     if args.experiment != "all" and not experiment_enabled(args.experiment):
         print(
             f"Experiment {args.experiment} is disabled by top-of-file constants."
@@ -459,13 +445,35 @@ def main() -> int:
     if not args.dry_run:
         run_root.mkdir(parents=True, exist_ok=True)
 
-    for case in cases:
-        run_case(
-            case,
-            run_root,
-            args.runs,
-            args.dry_run,
-        )
+    selected_experiments: list[tuple[str, callable]] = []
+    if args.experiment in ("all", "1") and experiment_enabled("1"):
+        selected_experiments.append(("1", experiment_1_cases))
+    if args.experiment in ("all", "2") and experiment_enabled("2"):
+        selected_experiments.append(("2", experiment_2_cases))
+    if args.experiment in ("all", "3") and experiment_enabled("3"):
+        selected_experiments.append(("3", experiment_3_cases))
+    if args.experiment in ("all", "4") and experiment_enabled("4"):
+        selected_experiments.append(("4", experiment_4_cases))
+    if args.experiment in ("all", "5") and experiment_enabled("5"):
+        selected_experiments.append(("5", experiment_5_cases))
+    if args.experiment in ("all", "6") and experiment_enabled("6"):
+        selected_experiments.append(("6", experiment_6_cases))
+    if args.experiment in ("all", "7") and experiment_enabled("7"):
+        selected_experiments.append(("7", experiment_7_cases))
+    if args.experiment in ("all", "8") and experiment_enabled("8"):
+        selected_experiments.append(("8", experiment_8_cases))
+
+    for experiment_id, case_builder in selected_experiments:
+        print(experiment_header(experiment_id, "START"))
+        cases = case_builder()
+        for case in cases:
+            run_case(
+                case,
+                run_root,
+                args.runs,
+                args.dry_run,
+            )
+        print(experiment_header(experiment_id, "END"))
 
     if not args.dry_run:
         print(f"Results written under {run_root}")
