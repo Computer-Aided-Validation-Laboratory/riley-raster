@@ -18,7 +18,7 @@ TOTAL_ACTIVE_THREADS = [1, 2, 4, 8]
 RENDER_GROUP_COUNT_CHOICES = [1, 2, 4, 8]
 RENDER_MODES = ["offline", "in_order"]
 GEOM_SCHEDULING_MODES = ["spread", "pack"]
-SAVE_STRATEGIES = ["memory", "disk"]
+SAVE_STRATEGIES = ["memory"] # "disk"
 
 SAMPLE = "cubic_catmull_rom"
 SAMPLE_MODE = "lut_lerp"
@@ -35,6 +35,10 @@ RUN_EXPERIMENT_3 = True
 # Experiment 4: full factorial sweep over render mode, render-group partition,
 # geometry scheduling mode, and grouped scheduler knobs.
 RUN_EXPERIMENT_4 = True
+# Experiment 5: offline sweet-spot sweep. Geometry stays single-threaded per
+# job while we sweep render-group partitioning and geometry lookahead over the
+# cases that should plausibly scale well.
+RUN_EXPERIMENT_5 = False
 
 # Experiment 1: idealized offline design.
 # Single render group, geometry spread, one worker per geometry job, one raster
@@ -69,6 +73,16 @@ EXPERIMENT_4_GEOM_JOBS_IN_FLIGHT_VALUES = ["1", "max"]
 EXPERIMENT_4_GEOM_WORKERS_PER_JOB_VALUES = ["1", "max"]
 EXPERIMENT_4_SAVE_STRATEGIES = SAVE_STRATEGIES
 
+# Experiment 5: offline sweet-spot sweep.
+# Partition total threads across render groups, keep geometry single-threaded
+# per job, and sweep only the batch/lookahead knobs that should matter.
+EXPERIMENT_5_TOTAL_ACTIVE_THREADS = TOTAL_ACTIVE_THREADS
+EXPERIMENT_5_RENDER_GROUP_COUNTS = RENDER_GROUP_COUNT_CHOICES
+EXPERIMENT_5_FRAME_BATCH_SIZE_VALUES = ["1", "max", "double"]
+EXPERIMENT_5_GEOM_JOBS_IN_FLIGHT_VALUES = ["1", "max"]
+EXPERIMENT_5_SAVE_STRATEGIES = SAVE_STRATEGIES
+
+
 
 def divisors_from_choices(total_threads: int, choices: Iterable[int]) -> list[int]:
     return [
@@ -83,6 +97,8 @@ def resolve_group_value(value: str, workers_per_group: int) -> int:
         return 1
     if value == "max":
         return workers_per_group
+    if value == "double":
+        return max(1, 2 * workers_per_group)
     raise ValueError(f"Unsupported grouped value token: {value}")
 
 
@@ -96,6 +112,50 @@ def workers_per_group(total_threads: int, render_group_count: int) -> int:
             "total_threads must be evenly divisible by render_group_count"
         )
     return total_threads // render_group_count
+
+
+def max_active_geom_workers(
+    *,
+    workers_per_group: int,
+    frame_batch_size_per_group: int,
+    max_geom_jobs_in_flight_per_group: int,
+    max_geom_workers_per_job: int,
+    geom_scheduling_mode: str,
+) -> int:
+    jobs_available = min(
+        frame_batch_size_per_group,
+        max_geom_jobs_in_flight_per_group,
+    )
+    if geom_scheduling_mode == "spread":
+        return min(
+            workers_per_group,
+            jobs_available * max_geom_workers_per_job,
+        )
+    if geom_scheduling_mode == "pack":
+        return min(workers_per_group, max_geom_workers_per_job)
+    raise ValueError(f"Unsupported geometry scheduling mode: {geom_scheduling_mode}")
+
+
+def is_dominated_case(
+    *,
+    workers_per_group: int,
+    frame_batch_size_per_group: int,
+    max_geom_jobs_in_flight_per_group: int,
+    max_geom_workers_per_job: int,
+    geom_scheduling_mode: str,
+    max_raster_workers_per_job: int,
+) -> bool:
+    if workers_per_group <= 1:
+        return False
+    geom_workers_max = max_active_geom_workers(
+        workers_per_group=workers_per_group,
+        frame_batch_size_per_group=frame_batch_size_per_group,
+        max_geom_jobs_in_flight_per_group=max_geom_jobs_in_flight_per_group,
+        max_geom_workers_per_job=max_geom_workers_per_job,
+        geom_scheduling_mode=geom_scheduling_mode,
+    )
+    raster_workers_max = min(workers_per_group, max_raster_workers_per_job)
+    return max(geom_workers_max, raster_workers_max) < workers_per_group
 
 
 def make_case(
@@ -155,6 +215,18 @@ def make_case(
     }
 
 
+def unique_cases(cases: list[dict[str, object]]) -> list[dict[str, object]]:
+    unique: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for case in cases:
+        case_name = str(case["case_name"])
+        if case_name in seen:
+            continue
+        seen.add(case_name)
+        unique.append(case)
+    return unique
+
+
 def experiment_1_cases() -> list[dict[str, object]]:
     cases: list[dict[str, object]] = []
     for total_threads in EXPERIMENT_1_TOTAL_ACTIVE_THREADS:
@@ -175,7 +247,7 @@ def experiment_1_cases() -> list[dict[str, object]]:
                     save_strategy=save_strategy,
                 )
             )
-    return cases
+    return unique_cases(cases)
 
 
 def experiment_2_cases() -> list[dict[str, object]]:
@@ -190,27 +262,42 @@ def experiment_2_cases() -> list[dict[str, object]]:
                         EXPERIMENT_2_GEOM_WORKERS_PER_JOB_VALUES
                     ):
                         for save_strategy in EXPERIMENT_2_SAVE_STRATEGIES:
+                            frame_batch_size = resolve_group_value(
+                                batch_value,
+                                group_workers,
+                            )
+                            max_geom_jobs = resolve_group_value(
+                                geom_jobs_value,
+                                group_workers,
+                            )
+                            max_geom_workers = resolve_group_value(
+                                geom_workers_value,
+                                group_workers,
+                            )
+                            if is_dominated_case(
+                                workers_per_group=group_workers,
+                                frame_batch_size_per_group=frame_batch_size,
+                                max_geom_jobs_in_flight_per_group=max_geom_jobs,
+                                max_geom_workers_per_job=max_geom_workers,
+                                geom_scheduling_mode=geom_mode,
+                                max_raster_workers_per_job=1,
+                            ):
+                                continue
                             cases.append(
                                 make_case(
                                     experiment="experiment_2_geometry_isolation",
                                     total_threads=total_threads,
                                     render_group_count=render_group_count,
                                     render_mode="offline",
-                                    frame_batch_size_per_group=resolve_group_value(
-                                        batch_value, group_workers
-                                    ),
-                                    max_geom_jobs_in_flight_per_group=resolve_group_value(
-                                        geom_jobs_value, group_workers
-                                    ),
-                                    max_geom_workers_per_job=resolve_group_value(
-                                        geom_workers_value, group_workers
-                                    ),
+                                    frame_batch_size_per_group=frame_batch_size,
+                                    max_geom_jobs_in_flight_per_group=max_geom_jobs,
+                                    max_geom_workers_per_job=max_geom_workers,
                                     geom_scheduling_mode=geom_mode,
                                     max_raster_workers_per_job=1,
                                     save_strategy=save_strategy,
                                 )
                             )
-    return cases
+    return unique_cases(cases)
 
 
 def experiment_3_cases() -> list[dict[str, object]]:
@@ -235,7 +322,7 @@ def experiment_3_cases() -> list[dict[str, object]]:
                         save_strategy=save_strategy,
                     )
                 )
-    return cases
+    return unique_cases(cases)
 
 
 def experiment_4_cases() -> list[dict[str, object]]:
@@ -255,27 +342,79 @@ def experiment_4_cases() -> list[dict[str, object]]:
                                 EXPERIMENT_4_GEOM_WORKERS_PER_JOB_VALUES
                             ):
                                 for save_strategy in EXPERIMENT_4_SAVE_STRATEGIES:
+                                    frame_batch_size = resolve_group_value(
+                                        batch_value,
+                                        group_workers,
+                                    )
+                                    max_geom_jobs = resolve_group_value(
+                                        geom_jobs_value,
+                                        group_workers,
+                                    )
+                                    max_geom_workers = resolve_group_value(
+                                        geom_workers_value,
+                                        group_workers,
+                                    )
+                                    if is_dominated_case(
+                                        workers_per_group=group_workers,
+                                        frame_batch_size_per_group=frame_batch_size,
+                                        max_geom_jobs_in_flight_per_group=max_geom_jobs,
+                                        max_geom_workers_per_job=max_geom_workers,
+                                        geom_scheduling_mode=geom_mode,
+                                        max_raster_workers_per_job=group_workers,
+                                    ):
+                                        continue
                                     cases.append(
                                         make_case(
                                             experiment="experiment_4_full_factorial",
                                             total_threads=total_threads,
                                             render_group_count=render_group_count,
                                             render_mode=render_mode,
-                                            frame_batch_size_per_group=resolve_group_value(
-                                                batch_value, group_workers
-                                            ),
-                                            max_geom_jobs_in_flight_per_group=resolve_group_value(
-                                                geom_jobs_value, group_workers
-                                            ),
-                                            max_geom_workers_per_job=resolve_group_value(
-                                                geom_workers_value, group_workers
-                                            ),
+                                            frame_batch_size_per_group=frame_batch_size,
+                                            max_geom_jobs_in_flight_per_group=max_geom_jobs,
+                                            max_geom_workers_per_job=max_geom_workers,
                                             geom_scheduling_mode=geom_mode,
                                             max_raster_workers_per_job=group_workers,
                                             save_strategy=save_strategy,
                                         )
                                     )
-    return cases
+    return unique_cases(cases)
+
+
+def experiment_5_cases() -> list[dict[str, object]]:
+    cases: list[dict[str, object]] = []
+    for total_threads in EXPERIMENT_5_TOTAL_ACTIVE_THREADS:
+        for render_group_count in divisors_from_choices(
+            total_threads, EXPERIMENT_5_RENDER_GROUP_COUNTS
+        ):
+            group_workers = workers_per_group(total_threads, render_group_count)
+            for batch_value in EXPERIMENT_5_FRAME_BATCH_SIZE_VALUES:
+                for geom_jobs_value in (
+                    EXPERIMENT_5_GEOM_JOBS_IN_FLIGHT_VALUES
+                ):
+                    for save_strategy in EXPERIMENT_5_SAVE_STRATEGIES:
+                        frame_batch_size = resolve_group_value(
+                            batch_value,
+                            group_workers,
+                        )
+                        max_geom_jobs = resolve_group_value(
+                            geom_jobs_value,
+                            group_workers,
+                        )
+                        cases.append(
+                            make_case(
+                                experiment="experiment_5_offline_sweet_spot",
+                                total_threads=total_threads,
+                                render_group_count=render_group_count,
+                                render_mode="offline",
+                                frame_batch_size_per_group=frame_batch_size,
+                                max_geom_jobs_in_flight_per_group=max_geom_jobs,
+                                max_geom_workers_per_job=1,
+                                geom_scheduling_mode="spread",
+                                max_raster_workers_per_job=group_workers,
+                                save_strategy=save_strategy,
+                            )
+                        )
+    return unique_cases(cases)
 
 
 def run_case(
@@ -323,6 +462,7 @@ def experiment_enabled(experiment_id: str) -> bool:
         "2": RUN_EXPERIMENT_2,
         "3": RUN_EXPERIMENT_3,
         "4": RUN_EXPERIMENT_4,
+        "5": RUN_EXPERIMENT_5,
     }[experiment_id]
 
 
@@ -344,7 +484,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--experiment",
-        choices=("all", "1", "2", "3", "4"),
+        choices=("all", "1", "2", "3", "4", "5"),
         default="all",
     )
     parser.add_argument(
@@ -372,6 +512,8 @@ def main() -> int:
         selected_experiments.append(("3", experiment_3_cases))
     if args.experiment in ("all", "4") and experiment_enabled("4"):
         selected_experiments.append(("4", experiment_4_cases))
+    if args.experiment in ("all", "5") and experiment_enabled("5"):
+        selected_experiments.append(("5", experiment_5_cases))
 
     for experiment_id, case_builder in selected_experiments:
         print(experiment_header(experiment_id, "START"))
