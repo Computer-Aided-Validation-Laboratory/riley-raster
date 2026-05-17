@@ -379,7 +379,7 @@ pub fn prepareVisibleNormalsThreaded(
     connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
     normal_type: shaderops.NormalType,
-    chunk_exec: ?*pce.ParaChunkExecutor,
+    chunk_exec: *pce.ParaChunkExecutor,
     elem_chunk_size: usize,
     visible_chunk_size: usize,
 ) !ndarray.MappedNDArray(f64) {
@@ -405,7 +405,7 @@ pub fn prepareVisibleNormalsThreadedN(
     connect: *const meshio.Connect,
     visible_orig_elem_indices: []const usize,
     normal_type: shaderops.NormalType,
-    chunk_exec: ?*pce.ParaChunkExecutor,
+    chunk_exec: *pce.ParaChunkExecutor,
     elem_chunk_size: usize,
     visible_chunk_size: usize,
 ) !ndarray.MappedNDArray(f64) {

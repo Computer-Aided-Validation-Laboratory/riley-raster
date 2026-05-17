@@ -230,17 +230,15 @@ pub fn getChunksNum(domain_len: usize, chunk_size: usize) usize {
 }
 
 pub fn getStaticPartitionsNum(
-    chunk_exec: ?*ParaChunkExecutor,
+    chunk_exec: *ParaChunkExecutor,
     domain_len: usize,
     chunk_size: usize,
 ) usize {
+    _ = chunk_size;
     if (domain_len == 0) {
         return 0;
     }
-    if (chunk_exec) |executor| {
-        return executor.workers_num;
-    }
-    return getChunksNum(domain_len, chunk_size);
+    return chunk_exec.workers_num;
 }
 
 //------------------------------------------------------------------------------------------
@@ -249,48 +247,6 @@ pub fn getStaticPartitionsNum(
 // Static  = fixed static allocation of chunks to a worker
 // Dynamic = dynamic allocation of grains allowing work stealing
 // WithWorker = access per worker state that is initialised once like buffers and allocators
-
-fn runStaticRangeSerial(
-    ctx_ptr: *anyopaque,
-    job_func: RangeFn,
-    domain_len: usize,
-    chunk_size: usize,
-) void {
-    const chunks_num = getChunksNum(domain_len, chunk_size);
-    for (0..chunks_num) |chunk_idx| {
-        const range_start = chunk_idx * chunk_size;
-        const range_end = @min(domain_len, range_start + chunk_size);
-        job_func(ctx_ptr, chunk_idx, range_start, range_end);
-    }
-}
-
-fn runDynamicRangeSerial(
-    ctx_ptr: *anyopaque,
-    job_func: RangeFn,
-    domain_len: usize,
-    grain_size: usize,
-) void {
-    const grains_num = getChunksNum(domain_len, grain_size);
-    for (0..grains_num) |grain_idx| {
-        const range_start = grain_idx * grain_size;
-        const range_end = @min(domain_len, range_start + grain_size);
-        job_func(ctx_ptr, 0, range_start, range_end);
-    }
-}
-
-fn runDynamicRangeWithWorkerErrorSerial(
-    ctx_ptr: *anyopaque,
-    job_func: RangeWorkerFnError,
-    domain_len: usize,
-    grain_size: usize,
-) !void {
-    const grains_num = getChunksNum(domain_len, grain_size);
-    for (0..grains_num) |grain_idx| {
-        const range_start = grain_idx * grain_size;
-        const range_end = @min(domain_len, range_start + grain_size);
-        try job_func(ctx_ptr, 0, range_start, range_end);
-    }
-}
 
 fn runStaticChunkTask(
     ctx_ptr: *anyopaque,
@@ -366,7 +322,7 @@ fn runDynamicChunkTaskWithWorkerError(
 // Dynamic = dynamic allocation of grains allowing work stealing
 
 pub fn runStaticRange(
-    chunk_exec: ?*ParaChunkExecutor,
+    chunk_exec: *ParaChunkExecutor,
     ctx_ptr: *anyopaque,
     job_func: RangeFn,
     domain_len: usize,
@@ -376,26 +332,16 @@ pub fn runStaticRange(
         return;
     }
 
-    if (chunk_exec) |executor| {
-        executor.runStaticRange(
-            ctx_ptr,
-            job_func,
-            domain_len,
-            chunk_size,
-        ) catch unreachable;
-        return;
-    }
-
-    runStaticRangeSerial(
+    chunk_exec.runStaticRange(
         ctx_ptr,
         job_func,
         domain_len,
         chunk_size,
-    );
+    ) catch unreachable;
 }
 
-pub fn runDynamicRangeMaybe(
-    chunk_exec: ?*ParaChunkExecutor,
+pub fn runDynamicRange(
+    chunk_exec: *ParaChunkExecutor,
     ctx_ptr: *anyopaque,
     job_func: RangeFn,
     domain_len: usize,
@@ -405,26 +351,16 @@ pub fn runDynamicRangeMaybe(
         return;
     }
 
-    if (chunk_exec) |executor| {
-        executor.runDynamicRange(
-            ctx_ptr,
-            job_func,
-            domain_len,
-            grain_size,
-        ) catch unreachable;
-        return;
-    }
-
-    runDynamicRangeSerial(
+    chunk_exec.runDynamicRange(
         ctx_ptr,
         job_func,
         domain_len,
         grain_size,
-    );
+    ) catch unreachable;
 }
 
-pub fn runDynamicRangeWithWorkerErrorMaybe(
-    chunk_exec: ?*ParaChunkExecutor,
+pub fn runDynamicRangeWithWorkerError(
+    chunk_exec: *ParaChunkExecutor,
     ctx_ptr: *anyopaque,
     job_func: RangeWorkerFnError,
     domain_len: usize,
@@ -434,17 +370,7 @@ pub fn runDynamicRangeWithWorkerErrorMaybe(
         return;
     }
 
-    if (chunk_exec) |executor| {
-        try executor.runDynamicRangeWithWorkerError(
-            ctx_ptr,
-            job_func,
-            domain_len,
-            grain_size,
-        );
-        return;
-    }
-
-    try runDynamicRangeWithWorkerErrorSerial(
+    try chunk_exec.runDynamicRangeWithWorkerError(
         ctx_ptr,
         job_func,
         domain_len,

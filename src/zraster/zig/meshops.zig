@@ -473,7 +473,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         frame_idx: usize,
         hull_mode: rastcfg.HullMode,
         scaling_params: ?imageops.ScalingParams,
-        chunk_exec: ?*pce.ParaChunkExecutor,
+        chunk_exec: *pce.ParaChunkExecutor,
         workers_num: usize,
         nodes_num: usize,
         elems_num: usize,
@@ -490,7 +490,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             frame_idx: usize,
             hull_mode: rastcfg.HullMode,
             scaling_params: ?imageops.ScalingParams,
-            chunk_exec: ?*pce.ParaChunkExecutor,
+            chunk_exec: *pce.ParaChunkExecutor,
             workers_num: usize,
         ) !FrameMeshPipelineType {
             const nodes_num = mesh_static.coords_orig.mat.rows_num;
@@ -1235,7 +1235,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
 pub fn prepareMeshFrame(
     allocator: std.mem.Allocator,
-    chunk_exec: ?*pce.ParaChunkExecutor,
+    chunk_exec: *pce.ParaChunkExecutor,
     workers_num: usize,
     camera: *const cam.CameraPrepared,
     config: rastcfg.RasterConfig,
@@ -1273,7 +1273,7 @@ pub const FrameGeometryResult = struct {
 // Main Entry Point to Geometry Pipeline
 pub fn prepareMeshFrames(
     arena_alloc: std.mem.Allocator,
-    chunk_exec: ?*pce.ParaChunkExecutor,
+    chunk_exec: *pce.ParaChunkExecutor,
     workers_num: usize,
     camera: *const cam.CameraPrepared,
     config: rastcfg.RasterConfig,

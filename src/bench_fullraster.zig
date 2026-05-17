@@ -52,7 +52,6 @@ pub fn main(init: std.process.Init) !void {
     );
     var threaded_io = zraster.getManagedIo(
         outer_alloc,
-        init.io,
         init.minimal,
         bench_args.total_threads,
         bench_args.io_mode,

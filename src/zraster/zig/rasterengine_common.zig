@@ -946,52 +946,6 @@ fn TileRangeContext(
     };
 }
 
-fn rasterSceneSingleThreadCommon(
-    comptime RasterBackend: type,
-    comptime report_mode: ReportMode,
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    ctx_rast: rops.RasterContext,
-    ctx_report: report.ReportContext(report_mode),
-    tiling: rops.TilingOverlaps,
-    meshes: []const MeshPrepared,
-    raster_hulls: []const ?NDArray(f64),
-    image_out_arr: *NDArray(f64),
-) !void {
-    var arena = std.heap.ArenaAllocator.init(outer_alloc);
-    defer arena.deinit();
-    const arena_alloc = arena.allocator();
-
-    std.debug.assert(image_out_arr.dims[0] <= std.math.maxInt(u8));
-    const fields_num: u8 = @intCast(image_out_arr.dims[0]);
-
-    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const subpx_tile_size: usize = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp;
-    var subpx_scratch = try RasterBackend.initSubpxScratch(
-        arena_alloc,
-        fields_num,
-        subpx_tile_size,
-    );
-
-    for (tiling.active_tiles) |tile| {
-        try rasterTileCommon(
-            RasterBackend,
-            report_mode,
-            io,
-            ctx_rast,
-            ctx_report,
-            tile,
-            tiling.overlaps,
-            meshes,
-            raster_hulls,
-            image_out_arr,
-            &subpx_scratch,
-            fields_num,
-            subpx_tile_size,
-        );
-    }
-}
-
 fn rasterSceneThreadedCommon(
     comptime RasterBackend: type,
     comptime report_mode: ReportMode,
@@ -1090,7 +1044,7 @@ fn rasterSceneThreadedCommon(
 
     var chunk_exec = pce.ParaChunkExecutor.init(io, @intCast(worker_count));
 
-    try pce.runDynamicRangeWithWorkerErrorMaybe(
+    try pce.runDynamicRangeWithWorkerError(
         &chunk_exec,
         &tile_rng_ctx,
         TileRangeWorkerAdapter.run,
@@ -1131,26 +1085,6 @@ pub fn rasterSceneCommon(
         tiling.active_tiles.len,
     );
 
-    if (worker_count == 1) {
-        try rasterSceneSingleThreadCommon(
-            RasterBackend,
-            report_mode,
-            outer_alloc,
-            io,
-            ctx_rast,
-            ctx_report,
-            tiling,
-            meshes,
-            raster_hulls,
-            image_out_arr,
-        );
-        return;
-    }
-
-    if (comptime report_mode == .full_stats) {
-        return error.ThreadedFullStatsUnsupported;
-    }
-
     try rasterSceneThreadedCommon(
         RasterBackend,
         report_mode,
@@ -1158,7 +1092,7 @@ pub fn rasterSceneCommon(
         io,
         ctx_rast,
         ctx_report,
-        requested_workers,
+        @intCast(worker_count),
         tiling,
         meshes,
         raster_hulls,

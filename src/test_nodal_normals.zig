@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const mo = @import("zraster/zig/meshops.zig");
+const pce = @import("zraster/zig/parachunkexec.zig");
 const meshio = @import("zraster/zig/meshio.zig");
 const report = @import("zraster/zig/report.zig");
 const rops = @import("zraster/zig/rasterops.zig");
@@ -95,9 +96,10 @@ test "Nodal normals are prepared when requested" {
     const mesh_static = try mo.initMeshStatic(arena_alloc, &mesh_input);
 
     const rast_cfg = tcfg.getRasterConfig(.testing);
+    var pool = pce.ParaChunkExecutor.init(std.testing.io, 1);
     const frame_mesh = try mo.prepareMeshFrame(
         arena_alloc,
-        null,
+        &pool,
         1,
         &camera,
         rast_cfg,

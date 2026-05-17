@@ -54,17 +54,15 @@ pub fn phaseWorkers(
     total_threads: u16,
     phase_workers_requested: u16,
 ) u16 {
-    if (total_threads == 0) {
-        return 1;
-    }
+    const total_thr = @max(@as(u16, 1), total_threads);
 
     // A value of 0 means use everything (Auto)
     if (phase_workers_requested == 0) {
-        return total_threads;
+        return total_thr;
     }
 
     // Otherwise cap at the total threads available
-    return @min(total_threads, phase_workers_requested);
+    return @min(total_thr, phase_workers_requested);
 }
 
 pub fn framesInFlight(
@@ -73,10 +71,7 @@ pub fn framesInFlight(
     max_frames_in_flight: u16,
     cameras_num: usize,
 ) u16 {
-    if (total_threads == 0) {
-        return 1;
-    }
-
+    _ = total_threads;
     const requested_frames = @max(@as(u16, 1), max_frames_in_flight);
 
     if (render_mode == .in_order) {

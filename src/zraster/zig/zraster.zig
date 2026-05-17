@@ -36,7 +36,6 @@ pub const ReportMode = rastcfg.ReportMode;
 pub const FullStatsOpts = rastcfg.FullStatsOpts;
 
 pub const IoMode = enum {
-    serial,
     async_single,
     async_multi,
 };
@@ -62,15 +61,10 @@ pub const ManagedIo = union(enum) {
 
 pub fn getManagedIo(
     gpa: std.mem.Allocator,
-    default_io: std.Io,
     minimal: std.process.Init.Minimal,
     num_threads: u16,
     io_mode: IoMode,
 ) ManagedIo {
-    if (io_mode == .serial) {
-        return .{ .passthrough = default_io };
-    }
-
     // User-facing thread counts in zraster always include the caller thread.
     // Zig's std.Io.Threaded limits count only spawned worker threads, excluding
     // the caller. Translate here so:
@@ -78,7 +72,6 @@ pub fn getManagedIo(
     //   async_multi1  -> caller only
     //   async_multiN  -> caller + (N - 1) worker threads
     const limit: std.Io.Limit = switch (io_mode) {
-        .serial => unreachable,
         .async_single => .nothing,
         .async_multi => if (num_threads <= 1) .nothing else .limited(num_threads - 1),
     };
@@ -513,7 +506,7 @@ const FrameInput = struct {
     nodal_global_scaling: []const ?imageops.ScalingParams,
     geom_workers: u16,
     raster_workers: u16,
-    chunk_exec: ?*pce.ParaChunkExecutor,
+    chunk_exec: *pce.ParaChunkExecutor,
     images_arr: ?*ndarray.NDArray(f64),
     bench_capture: ?[]report.FrameBenchCapture,
     cameras_num: usize,
@@ -624,65 +617,8 @@ fn processFrameJobAsync(
     };
 }
 
-// Serial processing function
-fn processFrameJobSerial(
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    input: FrameInput,
-) !void {
-    try processFrameJobInternal(outer_alloc, io, input);
-}
-
 //------------------------------------------------------------------------------------------
 // 2. Dispatch: Frame jobs over cameras and frames frames to render
-fn dispatchFrameJobsSerial(
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    cameras: []const cam.CameraPrepared,
-    config: RasterConfig,
-    out_dir: ?std.Io.Dir,
-    num_time: usize,
-    num_fields: u8,
-    mesh_static: []const mo.MeshStatic,
-    nodal_global_scaling: []const ?imageops.ScalingParams,
-    images_arr: ?*ndarray.NDArray(f64),
-    bench_capture: ?[]report.FrameBenchCapture,
-) !void {
-    const dispatch_scale = scalingpolicy.dispatchScaling(
-        .in_order,
-        config,
-        cameras.len,
-    );
-
-    const chunk_exec: ?*pce.ParaChunkExecutor = null;
-
-    for (0..num_time) |frame_idx| {
-        for (cameras, 0..) |*camera, camera_idx| {
-            try processFrameJobSerial(
-                outer_alloc,
-                io,
-                FrameInput{
-                    .camera = camera,
-                    .camera_idx = camera_idx,
-                    .frame_idx = frame_idx,
-                    .num_fields = num_fields,
-                    .config = config,
-                    .out_dir = out_dir,
-                    .mesh_static = mesh_static,
-                    .nodal_global_scaling = nodal_global_scaling,
-                    .geom_workers = dispatch_scale.geom_workers,
-                    .raster_workers = dispatch_scale.raster_workers,
-                    .chunk_exec = chunk_exec,
-                    .images_arr = images_arr,
-                    .bench_capture = bench_capture,
-                    .cameras_num = cameras.len,
-                    .err_state = undefined,
-                },
-            );
-        }
-    }
-}
-
 fn dispatchFrameJobsOffline(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -704,10 +640,6 @@ fn dispatchFrameJobsOffline(
     );
 
     var pool = pce.ParaChunkExecutor.init(io, dispatch_scale.geom_workers);
-    var chunk_exec: ?*pce.ParaChunkExecutor = null;
-    if (dispatch_scale.geom_workers > 1) {
-        chunk_exec = &pool;
-    }
 
     const batch_size = scalingpolicy.frameBatchSize(
         dispatch_scale.frames_in_flight,
@@ -745,7 +677,7 @@ fn dispatchFrameJobsOffline(
                         .nodal_global_scaling = nodal_global_scaling,
                         .geom_workers = dispatch_scale.geom_workers,
                         .raster_workers = dispatch_scale.raster_workers,
-                        .chunk_exec = chunk_exec,
+                        .chunk_exec = &pool,
                         .images_arr = images_arr,
                         .bench_capture = bench_capture,
                         .cameras_num = cameras.len,
@@ -774,7 +706,7 @@ fn dispatchFrameJobsOffline(
                     .nodal_global_scaling = nodal_global_scaling,
                     .geom_workers = dispatch_scale.geom_workers,
                     .raster_workers = dispatch_scale.raster_workers,
-                    .chunk_exec = chunk_exec,
+                    .chunk_exec = &pool,
                     .images_arr = images_arr,
                     .bench_capture = bench_capture,
                     .cameras_num = cameras.len,
@@ -810,10 +742,6 @@ fn dispatchFrameJobsInOrder(
     );
 
     var pool = pce.ParaChunkExecutor.init(io, dispatch_scale.geom_workers);
-    var chunk_exec: ?*pce.ParaChunkExecutor = null;
-    if (dispatch_scale.geom_workers > 1) {
-        chunk_exec = &pool;
-    }
 
     const camera_batch_size = scalingpolicy.frameBatchSize(
         dispatch_scale.frames_in_flight,
@@ -850,7 +778,7 @@ fn dispatchFrameJobsInOrder(
                             .nodal_global_scaling = nodal_global_scaling,
                             .geom_workers = dispatch_scale.geom_workers,
                             .raster_workers = dispatch_scale.raster_workers,
-                            .chunk_exec = chunk_exec,
+                            .chunk_exec = &pool,
                             .images_arr = images_arr,
                             .bench_capture = bench_capture,
                             .cameras_num = cameras.len,
@@ -874,7 +802,7 @@ fn dispatchFrameJobsInOrder(
                     .nodal_global_scaling = nodal_global_scaling,
                     .geom_workers = dispatch_scale.geom_workers,
                     .raster_workers = dispatch_scale.raster_workers,
-                    .chunk_exec = chunk_exec,
+                    .chunk_exec = &pool,
                     .images_arr = images_arr,
                     .bench_capture = bench_capture,
                     .cameras_num = cameras.len,
@@ -976,45 +904,6 @@ pub fn rasterAllFrames(
     };
     const time_start_dispatch = Timestamp.now(io, .awake);
 
-    if (config.total_threads == 0) {
-        try dispatchFrameJobsSerial(
-            outer_alloc,
-            io,
-            cameras,
-            config,
-            out_dir,
-            num_time,
-            num_fields,
-            mesh_static,
-            nodal_global_scaling,
-            if (images_arr_opt) |*ima| ima else null,
-            bench_capture,
-        );
-
-        const time_end_render = Timestamp.now(io, .awake);
-        end_to_end_times.dispatch_time = @floatFromInt(
-            time_start_dispatch.durationTo(time_end_render).raw.nanoseconds,
-        );
-        end_to_end_times.total_time = @floatFromInt(
-            time_start_render.durationTo(time_end_render).raw.nanoseconds,
-        );
-        const actual_tile_size = scalingpolicy.tileSize(
-            config.tile_size_min,
-            config.tile_size_max,
-            cameras[0].pixels_num,
-            cameras[0].sub_sample,
-        );
-        try report.printRenderSummary(
-            io,
-            cameras,
-            actual_tile_size,
-            num_time,
-            config.report,
-            end_to_end_times,
-        );
-        return images_arr_opt;
-    }
-
     if (config.render_mode == .in_order) {
         try dispatchFrameJobsInOrder(
             outer_alloc,
@@ -1029,45 +918,21 @@ pub fn rasterAllFrames(
             if (images_arr_opt) |*ima| ima else null,
             bench_capture,
         );
-
-        const time_end_render = Timestamp.now(io, .awake);
-        end_to_end_times.dispatch_time = @floatFromInt(
-            time_start_dispatch.durationTo(time_end_render).raw.nanoseconds,
-        );
-        end_to_end_times.total_time = @floatFromInt(
-            time_start_render.durationTo(time_end_render).raw.nanoseconds,
-        );
-
-        const actual_tile_size = scalingpolicy.tileSize(
-            config.tile_size_min,
-            config.tile_size_max,
-            cameras[0].pixels_num,
-            cameras[0].sub_sample,
-        );
-        try report.printRenderSummary(
+    } else {
+        try dispatchFrameJobsOffline(
+            outer_alloc,
             io,
             cameras,
-            actual_tile_size,
+            config,
+            out_dir,
             num_time,
-            config.report,
-            end_to_end_times,
+            num_fields,
+            mesh_static,
+            nodal_global_scaling,
+            if (images_arr_opt) |*ima| ima else null,
+            bench_capture,
         );
-        return images_arr_opt;
     }
-
-    try dispatchFrameJobsOffline(
-        outer_alloc,
-        io,
-        cameras,
-        config,
-        out_dir,
-        num_time,
-        num_fields,
-        mesh_static,
-        nodal_global_scaling,
-        if (images_arr_opt) |*ima| ima else null,
-        bench_capture,
-    );
 
     const time_end_render = Timestamp.now(io, .awake);
     end_to_end_times.dispatch_time = @floatFromInt(

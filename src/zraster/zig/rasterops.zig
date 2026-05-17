@@ -822,7 +822,7 @@ fn runTilingFill(
 
 pub fn sceneTileElemOverlap(
     allocator: std.mem.Allocator,
-    chunk_exec: ?*pce.ParaChunkExecutor,
+    chunk_exec: *pce.ParaChunkExecutor,
     workers_num: usize,
     tile_size: u16,
     tiles_num_x: usize,
