@@ -32,6 +32,7 @@ def main() -> int:
         "paper_bench1_raster.py",
         "paper_bench2_geom.py",
         "paper_bench3_ablation.py",
+        "paper_bench4_threading.py",
     ]
 
     print("Running paper benchmark scripts...")
