@@ -54,7 +54,6 @@ pub fn main(init: std.process.Init) !void {
         outer_alloc,
         init.minimal,
         bench_args.total_threads,
-        bench_args.io_mode,
     );
     defer threaded_io.deinit();
     const io = threaded_io.io();
@@ -139,6 +138,7 @@ pub fn main(init: std.process.Init) !void {
         bench_args.pixels_num,
         bench_args.sub_sample,
     );
+    const render_group_workers = [_]u16{bench_args.total_threads};
     try common.writeBenchmarkConfig(
         outer_alloc,
         io,
@@ -146,7 +146,7 @@ pub fn main(init: std.process.Init) !void {
         "bench_fullraster.zig",
         init.minimal.args.vector,
         bench_raster_config,
-        bench_args.io_mode,
+        render_group_workers[0..],
         bench_args.pixels_num,
         bench_args.sub_sample,
         bench_args.runs,

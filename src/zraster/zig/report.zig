@@ -153,6 +153,7 @@ pub fn printRenderSummary(
     num_time: usize,
     report_mode: ReportMode,
     end_to_end_times: EndToEndTimes,
+    bench_capture: ?[]const FrameBenchCapture,
 ) !void {
     if (report_mode == .off) {
         return;
@@ -173,8 +174,19 @@ pub fn printRenderSummary(
         f64,
         @floatFromInt(total_frames),
     );
-    const avg_mpx_sec = if (total_render_sec > 0)
+    const avg_frame_mpx_sec = if (total_render_sec > 0)
         @as(f64, @floatFromInt(total_pixels)) / (total_render_sec * 1e6)
+    else
+        0.0;
+    var total_raster_ns: f64 = 0.0;
+    if (bench_capture) |capture| {
+        for (capture) |frame_capture| {
+            total_raster_ns += frame_capture.bench_log.frame_times.raster_loop;
+        }
+    }
+    const total_raster_sec = total_raster_ns / 1e9;
+    const avg_raster_mpx_sec = if (total_raster_sec > 0)
+        @as(f64, @floatFromInt(total_pixels)) / (total_raster_sec * 1e6)
     else
         0.0;
 
@@ -195,7 +207,23 @@ pub fn printRenderSummary(
     try writer.print("Setup time              = {d:.3} ms\n", .{setup_ms});
     try writer.print("Dispatch time           = {d:.3} ms\n", .{dispatch_ms});
     try writer.print("Average frame time      = {d:.3} ms\n", .{avg_frame_ms});
-    try writer.print("Average MPx/s           = {d:.3}\n", .{avg_mpx_sec});
+    if (report_mode == .bench or report_mode == .full_stats) {
+        if (bench_capture != null) {
+            try writer.print(
+                "Avg. Raster Throughput [MPx/s] = {d:.3}\n",
+                .{avg_raster_mpx_sec},
+            );
+        } else {
+            try writer.print(
+                "Avg. Raster Throughput [MPx/s] = unavailable\n",
+                .{},
+            );
+        }
+    }
+    try writer.print(
+        "Avg. Frame Throughput [MPx/s]  = {d:.3}\n",
+        .{avg_frame_mpx_sec},
+    );
     try writer.print("{s}\n", .{print_break});
     try writer.flush();
 }

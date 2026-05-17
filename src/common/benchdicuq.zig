@@ -130,6 +130,15 @@ pub fn getBaseRasterConfig() zraster.RasterConfig {
     base_raster_config.max_frames_in_flight = 2;
     base_raster_config.max_geom_workers_per_frame = 1;
     base_raster_config.max_raster_workers_per_frame = 4;
+    base_raster_config.frame_batch_size_per_group =
+        base_raster_config.max_frames_in_flight;
+    base_raster_config.max_geom_jobs_in_flight_per_group =
+        base_raster_config.max_frames_in_flight;
+    base_raster_config.max_geom_workers_per_job =
+        base_raster_config.max_geom_workers_per_frame;
+    base_raster_config.max_raster_workers_per_job =
+        base_raster_config.max_raster_workers_per_frame;
+    base_raster_config.geom_scheduling_mode = .auto;
     base_raster_config.save_strategy = .disk;
     base_raster_config.tile_size_min = 8;
     base_raster_config.tile_size_max = 128;
@@ -306,6 +315,7 @@ pub fn calcCaseName(
 pub fn runBenchmark(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
+    render_groups: []const zraster.RenderGroupSpec,
     camera_inputs: []const CameraInput,
     mesh_input: MeshInput,
     config: zraster.RasterConfig,
@@ -322,9 +332,9 @@ pub fn runBenchmark(
     defer outer_alloc.free(bench_capture);
 
     const start = std.Io.Clock.Timestamp.now(io, .awake);
-    const image_arr = try zraster.rasterAllFrames(
+    const image_arr = try zraster.rasterAllFramesGrouped(
         outer_alloc,
-        io,
+        render_groups,
         camera_inputs,
         &[_]MeshInput{mesh_input},
         config,

@@ -9,6 +9,7 @@
 const std = @import("std");
 const rastcfg = @import("rasterconfig.zig");
 const report = @import("report.zig");
+const GeometrySchedulingMode = rastcfg.GeometrySchedulingMode;
 
 pub const DispatchScaling = struct {
     dispatch_threads: u16,
@@ -25,6 +26,7 @@ const target_subpx_per_tile: usize = @intFromFloat(
 );
 pub const GEOMETRY_CHUNKS_PER_WORKER: usize = 1;
 pub const RASTER_CHUNKS_PER_WORKER: usize = 4;
+pub const AUTO_GEOMETRY_SPREAD_ELEMS_THRESHOLD: usize = 100_000;
 
 pub fn dispatchScaling(
     render_mode: rastcfg.RenderMode,
@@ -63,6 +65,19 @@ pub fn phaseWorkers(
 
     // Otherwise cap at the total threads available
     return @min(total_thr, phase_workers_requested);
+}
+
+pub fn resolveGeometrySchedulingMode(
+    requested_mode: GeometrySchedulingMode,
+    total_scene_elems: usize,
+) GeometrySchedulingMode {
+    return switch (requested_mode) {
+        .spread, .pack => requested_mode,
+        .auto => if (total_scene_elems < AUTO_GEOMETRY_SPREAD_ELEMS_THRESHOLD)
+            .spread
+        else
+            .pack,
+    };
 }
 
 pub fn framesInFlight(
@@ -208,4 +223,35 @@ fn chunkSize(
         actual_workers * chunks_per_worker,
     );
     return @max(@as(usize, 1), (domain_len + chunk_count - 1) / chunk_count);
+}
+
+test "resolveGeometrySchedulingMode uses explicit modes unchanged" {
+    try std.testing.expectEqual(
+        GeometrySchedulingMode.spread,
+        resolveGeometrySchedulingMode(.spread, 1),
+    );
+    try std.testing.expectEqual(
+        GeometrySchedulingMode.pack,
+        resolveGeometrySchedulingMode(.pack, 1),
+    );
+}
+
+test "resolveGeometrySchedulingMode auto prefers spread for smaller scenes" {
+    try std.testing.expectEqual(
+        GeometrySchedulingMode.spread,
+        resolveGeometrySchedulingMode(
+            .auto,
+            AUTO_GEOMETRY_SPREAD_ELEMS_THRESHOLD - 1,
+        ),
+    );
+}
+
+test "resolveGeometrySchedulingMode auto prefers pack for larger scenes" {
+    try std.testing.expectEqual(
+        GeometrySchedulingMode.pack,
+        resolveGeometrySchedulingMode(
+            .auto,
+            AUTO_GEOMETRY_SPREAD_ELEMS_THRESHOLD,
+        ),
+    );
 }

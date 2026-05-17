@@ -26,6 +26,8 @@ const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
 const texops = @import("zraster/zig/textureops.zig");
 const uvio = @import("zraster/zig/uvio.zig");
 const zraster = @import("zraster/zig/zraster.zig");
+const GeometrySchedulingMode =
+    @import("zraster/zig/rasterconfig.zig").GeometrySchedulingMode;
 
 const simd_on = cfg.simd == .on;
 
@@ -266,6 +268,170 @@ test "Multicamera duplicate sphere200 cameras match each other" {
         duplicate_rel_tol,
         duplicate_abs_tol,
     );
+}
+
+test "Multicamera grouped render groups match reference across scheduler modes" {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    const io = std.testing.io;
+    const pixel_num = [_]u32{ 320, 200 };
+    const data_dir = "data/bench/tri3_sphere200";
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const coord_path = try std.fs.path.join(
+        aa,
+        &[_][]const u8{ data_dir, "coords.csv" },
+    );
+    const connect_path = try std.fs.path.join(
+        aa,
+        &[_][]const u8{ data_dir, "connect.csv" },
+    );
+    const field_path = try std.fs.path.join(
+        aa,
+        &[_][]const u8{ data_dir, "field.csv" },
+    );
+
+    const sim_data = try meshio.loadSimData(
+        aa,
+        io,
+        coord_path,
+        connect_path,
+        null,
+        null,
+    );
+    const field_raw = try benchcommon.loadNDArrayFromCSV(
+        aa,
+        io,
+        field_path,
+        1,
+        true,
+    );
+
+    const camera_a = try orch.initCameraForCoords(
+        aa,
+        &sim_data.coords,
+        pixel_num,
+        1.0,
+    );
+    defer camera_a.deinit(aa);
+    const camera_b = try orch.initCameraForCoords(
+        aa,
+        &sim_data.coords,
+        pixel_num,
+        1.0,
+    );
+    defer camera_b.deinit(aa);
+
+    const mesh_input = mo.MeshInput{
+        .mesh_type = .tri3,
+        .coords = sim_data.coords,
+        .connect = sim_data.connect,
+        .disp = null,
+        .shader = .{
+            .nodal = .{
+                .field = .{
+                    .array = field_raw,
+                    .array_mem = field_raw.slice,
+                },
+                .scaling = .auto,
+            },
+        },
+    };
+
+    var ref_config = tcfg.getRasterConfig(.testing);
+    ref_config.save_strategy = .memory;
+    ref_config.report = .off;
+    ref_config.total_threads = 2;
+    ref_config.max_geom_workers_per_frame = 1;
+    ref_config.max_raster_workers_per_frame = 2;
+    ref_config.frame_batch_size_per_group = 2;
+    ref_config.max_geom_jobs_in_flight_per_group = 2;
+    ref_config.max_geom_workers_per_job = 1;
+    ref_config.max_raster_workers_per_job = 2;
+
+    const reference = (try zraster.rasterAllFrames(
+        aa,
+        io,
+        &[_]CameraInput{ camera_a.toInput(), camera_b.toInput() },
+        &[_]mo.MeshInput{mesh_input},
+        ref_config,
+        null,
+        null,
+    )) orelse return error.NoResult;
+    defer aa.free(reference.slice);
+
+    const grouped_cases = [_]struct {
+        mode: GeometrySchedulingMode,
+        render_groups: [2]zraster.RenderGroupSpec,
+    }{
+        .{
+            .mode = .spread,
+            .render_groups = .{
+                .{ .io = io, .workers = 2 },
+                .{ .io = io, .workers = 2 },
+            },
+        },
+        .{
+            .mode = .pack,
+            .render_groups = .{
+                .{ .io = io, .workers = 2 },
+                .{ .io = io, .workers = 2 },
+            },
+        },
+    };
+
+    for (grouped_cases) |case| {
+        var grouped_config = ref_config;
+        grouped_config.geom_scheduling_mode = case.mode;
+
+        const grouped = (try zraster.rasterAllFramesGrouped(
+            aa,
+            case.render_groups[0..],
+            &[_]CameraInput{ camera_a.toInput(), camera_b.toInput() },
+            &[_]mo.MeshInput{mesh_input},
+            grouped_config,
+            null,
+            null,
+        )) orelse return error.NoResult;
+        defer aa.free(grouped.slice);
+
+        try std.testing.expectEqualSlices(usize, reference.dims, grouped.dims);
+        for (0..reference.dims[0]) |camera_idx| {
+            for (0..reference.dims[1]) |frame_idx| {
+                for (0..reference.dims[3]) |rr| {
+                    for (0..reference.dims[4]) |cc| {
+                        const ref_val = reference.get(&[_]usize{
+                            camera_idx,
+                            frame_idx,
+                            0,
+                            rr,
+                            cc,
+                        });
+                        const grouped_val = grouped.get(&[_]usize{
+                            camera_idx,
+                            frame_idx,
+                            0,
+                            rr,
+                            cc,
+                        });
+                        try std.testing.expect(
+                            testcommon.isApproxEqual(
+                                ref_val,
+                                grouped_val,
+                                duplicate_rel_tol,
+                                duplicate_abs_tol,
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 test "Sphere200 multicamera gold tests" {

@@ -42,7 +42,6 @@ pub fn main(init: std.process.Init) !void {
         init.gpa,
         init.minimal,
         config.total_threads,
-        .async_multi,
     );
     defer threaded_io.deinit();
     const io = threaded_io.io();

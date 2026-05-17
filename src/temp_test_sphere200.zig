@@ -215,8 +215,14 @@ fn runSphereCase(
         .render_mode = tcfg.RENDER_MODE,
         .total_threads = tcfg.TOTAL_THREADS,
         .max_frames_in_flight = tcfg.MAX_FRAMES_IN_FLIGHT,
-        .max_geom_threads_per_frame = tcfg.MAX_GEOM_THREADS_PER_FRAME,
-        .max_raster_threads_per_frame = tcfg.MAX_RASTER_THREADS_PER_FRAME,
+        .max_geom_workers_per_frame = tcfg.MAX_GEOM_WORKERS_PER_FRAME,
+        .max_raster_workers_per_frame = tcfg.MAX_RASTER_WORKERS_PER_FRAME,
+        .frame_batch_size_per_group = tcfg.FRAME_BATCH_SIZE_PER_GROUP,
+        .max_geom_jobs_in_flight_per_group =
+            tcfg.MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP,
+        .max_geom_workers_per_job = tcfg.MAX_GEOM_WORKERS_PER_JOB,
+        .geom_scheduling_mode = tcfg.GEOM_SCHEDULING_MODE,
+        .max_raster_workers_per_job = tcfg.MAX_RASTER_WORKERS_PER_JOB,
         .save_strategy = .memory,
         .report = .off,
     };

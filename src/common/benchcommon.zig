@@ -216,6 +216,54 @@ pub fn calcActualTileSize(
     );
 }
 
+fn calcActiveThreadsTotal(
+    render_group_workers: []const u16,
+) u32 {
+    var total: u32 = 0;
+    for (render_group_workers) |workers| {
+        total += workers;
+    }
+    return total;
+}
+
+fn calcActiveThreadsRaster(
+    render_group_workers: []const u16,
+    max_raster_workers_per_job: u16,
+) u32 {
+    var total: u32 = 0;
+    const per_job_cap = @max(@as(u16, 1), max_raster_workers_per_job);
+    for (render_group_workers) |workers| {
+        total += @min(workers, per_job_cap);
+    }
+    return total;
+}
+
+fn calcActiveThreadsGeomSpread(
+    render_group_workers: []const u16,
+    max_geom_jobs_in_flight_per_group: u16,
+    max_geom_workers_per_job: u16,
+) u32 {
+    var total: u32 = 0;
+    const jobs_cap = @max(@as(u16, 1), max_geom_jobs_in_flight_per_group);
+    const workers_cap = @max(@as(u16, 1), max_geom_workers_per_job);
+    for (render_group_workers) |workers| {
+        total += @min(workers, jobs_cap * workers_cap);
+    }
+    return total;
+}
+
+fn calcActiveThreadsGeomPack(
+    render_group_workers: []const u16,
+    max_geom_workers_per_job: u16,
+) u32 {
+    var total: u32 = 0;
+    const workers_cap = @max(@as(u16, 1), max_geom_workers_per_job);
+    for (render_group_workers) |workers| {
+        total += @min(workers, workers_cap);
+    }
+    return total;
+}
+
 pub fn writeBenchmarkConfig(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -223,7 +271,7 @@ pub fn writeBenchmarkConfig(
     benchmark_name: []const u8,
     argv: anytype,
     config: rastcfg.RasterConfig,
-    io_mode: zraster.IoMode,
+    render_group_workers: []const u16,
     pixel_num: [2]u32,
     sub_sample: u8,
     runs: usize,
@@ -253,8 +301,55 @@ pub fn writeBenchmarkConfig(
     try writer.print("benchmark={s}\n", .{benchmark_name});
     try writer.print("out_dir={s}\n", .{out_dir_base});
     try writer.print("render_mode={s}\n", .{@tagName(config.render_mode)});
-    try writer.print("io_mode={s}\n", .{@tagName(io_mode)});
+    try writer.print("render_group_count={d}\n", .{render_group_workers.len});
+    for (render_group_workers, 0..) |workers, ii| {
+        try writer.print(
+            "render_group_{d}_workers={d}\n",
+            .{ ii, workers },
+        );
+    }
+    const active_threads_total = calcActiveThreadsTotal(
+        render_group_workers,
+    );
+    const active_threads_raster = calcActiveThreadsRaster(
+        render_group_workers,
+        config.max_raster_workers_per_job,
+    );
+    const active_threads_geom_spread = calcActiveThreadsGeomSpread(
+        render_group_workers,
+        config.max_geom_jobs_in_flight_per_group,
+        config.max_geom_workers_per_job,
+    );
+    const active_threads_geom_pack = calcActiveThreadsGeomPack(
+        render_group_workers,
+        config.max_geom_workers_per_job,
+    );
+    const active_threads_geom_effective = switch (config.geom_scheduling_mode) {
+        .spread => active_threads_geom_spread,
+        .pack => active_threads_geom_pack,
+        .auto => 0,
+    };
     try writer.print("total_threads={d}\n", .{config.total_threads});
+    try writer.print(
+        "active_threads_total_max={d}\n",
+        .{active_threads_total},
+    );
+    try writer.print(
+        "active_threads_raster_max={d}\n",
+        .{active_threads_raster},
+    );
+    try writer.print(
+        "active_threads_geom_spread_max={d}\n",
+        .{active_threads_geom_spread},
+    );
+    try writer.print(
+        "active_threads_geom_pack_max={d}\n",
+        .{active_threads_geom_pack},
+    );
+    try writer.print(
+        "active_threads_geom_effective_max={d}\n",
+        .{active_threads_geom_effective},
+    );
     try writer.print(
         "max_geom_threads_per_frame={d}\n",
         .{config.max_geom_workers_per_frame},
@@ -266,6 +361,31 @@ pub fn writeBenchmarkConfig(
     try writer.print(
         "max_frames_in_flight={d}\n",
         .{config.max_frames_in_flight},
+    );
+    try writer.print(
+        "frame_batch_size_per_group={d}\n",
+        .{config.frame_batch_size_per_group},
+    );
+    try writer.print(
+        "max_geom_jobs_in_flight_per_group={d}\n",
+        .{config.max_geom_jobs_in_flight_per_group},
+    );
+    try writer.print(
+        "max_geom_workers_per_job={d}\n",
+        .{config.max_geom_workers_per_job},
+    );
+    try writer.print(
+        "geom_scheduling_mode={s}\n",
+        .{@tagName(config.geom_scheduling_mode)},
+    );
+    if (config.geom_scheduling_mode == .auto) {
+        try writer.writeAll(
+            "geom_scheduling_mode_auto_note=spread if total_scene_elems < 100000 else pack\n",
+        );
+    }
+    try writer.print(
+        "max_raster_workers_per_job={d}\n",
+        .{config.max_raster_workers_per_job},
     );
     try writer.print("hull_mode={s}\n", .{@tagName(config.hull_mode)});
     try writer.print(

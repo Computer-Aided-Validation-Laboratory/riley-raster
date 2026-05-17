@@ -9,16 +9,20 @@
 const std = @import("std");
 const rastcfg = @import("../zraster/zig/rasterconfig.zig");
 const texops = @import("../zraster/zig/textureops.zig");
-const zraster = @import("../zraster/zig/zraster.zig");
 
 pub const BenchArgs = struct {
     out_dir: []const u8,
     render_mode: rastcfg.RenderMode,
-    io_mode: zraster.IoMode,
+    render_group_count: u16,
     total_threads: u16,
     max_geom_threads_per_frame: u16,
     max_raster_threads_per_frame: u16,
     max_frames_in_flight: u16,
+    frame_batch_size_per_group: u16,
+    max_geom_jobs_in_flight_per_group: u16,
+    max_geom_workers_per_job: u16,
+    geom_scheduling_mode: rastcfg.GeometrySchedulingMode,
+    max_raster_workers_per_job: u16,
     hull_mode: rastcfg.HullMode,
     subpixel_center_map: rastcfg.SubPixelCenterMap,
     save_strategy: rastcfg.SaveStrategy,
@@ -36,11 +40,16 @@ pub fn defaultBenchArgs(
     return .{
         .out_dir = default_out_dir,
         .render_mode = raster_config.render_mode,
-        .io_mode = .async_multi,
+        .render_group_count = 1,
         .total_threads = raster_config.total_threads,
         .max_geom_threads_per_frame = raster_config.max_geom_workers_per_frame,
         .max_raster_threads_per_frame = raster_config.max_raster_workers_per_frame,
         .max_frames_in_flight = raster_config.max_frames_in_flight,
+        .frame_batch_size_per_group = raster_config.frame_batch_size_per_group,
+        .max_geom_jobs_in_flight_per_group = raster_config.max_geom_jobs_in_flight_per_group,
+        .max_geom_workers_per_job = raster_config.max_geom_workers_per_job,
+        .geom_scheduling_mode = raster_config.geom_scheduling_mode,
+        .max_raster_workers_per_job = raster_config.max_raster_workers_per_job,
         .hull_mode = raster_config.hull_mode,
         .subpixel_center_map = raster_config.subpixel_center_map,
         .save_strategy = .memory,
@@ -74,6 +83,11 @@ pub fn parseArgsWithDefaults(
     var total_threads_overridden = false;
     var max_geom_threads_overridden = false;
     var max_raster_threads_overridden = false;
+    var max_frames_overridden = false;
+    var frame_batch_overridden = false;
+    var max_geom_jobs_overridden = false;
+    var max_geom_workers_per_job_overridden = false;
+    var max_raster_workers_per_job_overridden = false;
     var skip_next = false;
     var positional_arg_count: usize = 0;
 
@@ -95,9 +109,8 @@ pub fn parseArgsWithDefaults(
             if (std.mem.eql(u8, arg, "--render-mode")) {
                 bench_args.render_mode =
                     try parseEnum(rastcfg.RenderMode, value);
-            } else if (std.mem.eql(u8, arg, "--io-mode")) {
-                bench_args.io_mode =
-                    try parseEnum(zraster.IoMode, value);
+            } else if (std.mem.eql(u8, arg, "--render-group-count")) {
+                bench_args.render_group_count = try parseInt(u16, value);
             } else if (std.mem.eql(u8, arg, "--total-threads")) {
                 bench_args.total_threads = try parseInt(u16, value);
                 total_threads_overridden = true;
@@ -119,6 +132,22 @@ pub fn parseArgsWithDefaults(
                 max_raster_threads_overridden = true;
             } else if (std.mem.eql(u8, arg, "--max-frames-in-flight")) {
                 bench_args.max_frames_in_flight = try parseInt(u16, value);
+                max_frames_overridden = true;
+            } else if (std.mem.eql(u8, arg, "--frame-batch-size-per-group")) {
+                bench_args.frame_batch_size_per_group = try parseInt(u16, value);
+                frame_batch_overridden = true;
+            } else if (std.mem.eql(u8, arg, "--max-geom-jobs-in-flight-per-group")) {
+                bench_args.max_geom_jobs_in_flight_per_group = try parseInt(u16, value);
+                max_geom_jobs_overridden = true;
+            } else if (std.mem.eql(u8, arg, "--max-geom-workers-per-job")) {
+                bench_args.max_geom_workers_per_job = try parseInt(u16, value);
+                max_geom_workers_per_job_overridden = true;
+            } else if (std.mem.eql(u8, arg, "--geom-scheduling-mode")) {
+                bench_args.geom_scheduling_mode =
+                    try parseEnum(rastcfg.GeometrySchedulingMode, value);
+            } else if (std.mem.eql(u8, arg, "--max-raster-workers-per-job")) {
+                bench_args.max_raster_workers_per_job = try parseInt(u16, value);
+                max_raster_workers_per_job_overridden = true;
             } else if (std.mem.eql(u8, arg, "--hull-mode")) {
                 bench_args.hull_mode =
                     try parseEnum(rastcfg.HullMode, value);
@@ -160,6 +189,9 @@ pub fn parseArgsWithDefaults(
     if (bench_args.pixels_num[0] == 0 or bench_args.pixels_num[1] == 0) {
         return error.InvalidPixelsNum;
     }
+    if (bench_args.render_group_count == 0) {
+        return error.InvalidRenderGroupCount;
+    }
     if (bench_args.sub_sample == 0) {
         return error.InvalidSubSample;
     }
@@ -173,6 +205,30 @@ pub fn parseArgsWithDefaults(
     if (total_threads_overridden and !max_raster_threads_overridden) {
         bench_args.max_raster_threads_per_frame =
             bench_args.total_threads;
+    }
+    if (max_frames_overridden and !frame_batch_overridden) {
+        bench_args.frame_batch_size_per_group =
+            bench_args.max_frames_in_flight;
+    }
+    if (max_frames_overridden and !max_geom_jobs_overridden) {
+        bench_args.max_geom_jobs_in_flight_per_group =
+            bench_args.max_frames_in_flight;
+    }
+    if (max_geom_threads_overridden and !max_geom_workers_per_job_overridden) {
+        bench_args.max_geom_workers_per_job =
+            bench_args.max_geom_threads_per_frame;
+    }
+    if (max_raster_threads_overridden and !max_raster_workers_per_job_overridden) {
+        bench_args.max_raster_workers_per_job =
+            bench_args.max_raster_threads_per_frame;
+    }
+    if (total_threads_overridden and !max_geom_workers_per_job_overridden) {
+        bench_args.max_geom_workers_per_job =
+            bench_args.max_geom_threads_per_frame;
+    }
+    if (total_threads_overridden and !max_raster_workers_per_job_overridden) {
+        bench_args.max_raster_workers_per_job =
+            bench_args.max_raster_threads_per_frame;
     }
 
     return bench_args;
@@ -191,6 +247,16 @@ pub fn applyRasterConfig(
         bench_args.max_raster_threads_per_frame;
     raster_config.max_frames_in_flight =
         bench_args.max_frames_in_flight;
+    raster_config.frame_batch_size_per_group =
+        bench_args.frame_batch_size_per_group;
+    raster_config.max_geom_jobs_in_flight_per_group =
+        bench_args.max_geom_jobs_in_flight_per_group;
+    raster_config.max_geom_workers_per_job =
+        bench_args.max_geom_workers_per_job;
+    raster_config.geom_scheduling_mode =
+        bench_args.geom_scheduling_mode;
+    raster_config.max_raster_workers_per_job =
+        bench_args.max_raster_workers_per_job;
     raster_config.hull_mode = bench_args.hull_mode;
     raster_config.subpixel_center_map =
         bench_args.subpixel_center_map;
@@ -245,8 +311,8 @@ test "parse bench args named options" {
         "bench_geom",
         "--render-mode",
         "offline",
-        "--io-mode",
-        "serial",
+        "--render-group-count",
+        "2",
         "--total-threads",
         "8",
         "--max-geom-threads-per-frame",
@@ -255,6 +321,16 @@ test "parse bench args named options" {
         "5",
         "--max-frames-in-flight",
         "2",
+        "--frame-batch-size-per-group",
+        "4",
+        "--max-geom-jobs-in-flight-per-group",
+        "6",
+        "--max-geom-workers-per-job",
+        "2",
+        "--geom-scheduling-mode",
+        "pack",
+        "--max-raster-workers-per-job",
+        "7",
         "--hull-mode",
         "off",
         "--subpixel-center-map",
@@ -283,7 +359,7 @@ test "parse bench args named options" {
     );
 
     try std.testing.expectEqual(rastcfg.RenderMode.offline, bench_args.render_mode);
-    try std.testing.expectEqual(zraster.IoMode.serial, bench_args.io_mode);
+    try std.testing.expectEqual(@as(u16, 2), bench_args.render_group_count);
     try std.testing.expectEqual(@as(u16, 8), bench_args.total_threads);
     try std.testing.expectEqual(
         @as(u16, 3),
@@ -296,6 +372,26 @@ test "parse bench args named options" {
     try std.testing.expectEqual(
         @as(u16, 2),
         bench_args.max_frames_in_flight,
+    );
+    try std.testing.expectEqual(
+        @as(u16, 4),
+        bench_args.frame_batch_size_per_group,
+    );
+    try std.testing.expectEqual(
+        @as(u16, 6),
+        bench_args.max_geom_jobs_in_flight_per_group,
+    );
+    try std.testing.expectEqual(
+        @as(u16, 2),
+        bench_args.max_geom_workers_per_job,
+    );
+    try std.testing.expectEqual(
+        rastcfg.GeometrySchedulingMode.pack,
+        bench_args.geom_scheduling_mode,
+    );
+    try std.testing.expectEqual(
+        @as(u16, 7),
+        bench_args.max_raster_workers_per_job,
     );
     try std.testing.expectEqual(rastcfg.HullMode.off, bench_args.hull_mode);
     try std.testing.expectEqual(
@@ -329,7 +425,6 @@ test "parse bench args legacy thread positional" {
     );
 
     try std.testing.expectEqual(@as(u16, 6), bench_args.total_threads);
-    try std.testing.expectEqual(zraster.IoMode.async_multi, bench_args.io_mode);
     try std.testing.expectEqual(
         @as(u16, 6),
         bench_args.max_geom_threads_per_frame,

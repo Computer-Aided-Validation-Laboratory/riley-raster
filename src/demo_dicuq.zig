@@ -38,6 +38,11 @@ pub fn main(init: std.process.Init) !void {
         .max_frames_in_flight = 2,
         .max_geom_workers_per_frame = 1,
         .max_raster_workers_per_frame = 4,
+        .frame_batch_size_per_group = 2,
+        .max_geom_jobs_in_flight_per_group = 2,
+        .max_geom_workers_per_job = 1,
+        .geom_scheduling_mode = .auto,
+        .max_raster_workers_per_job = 4,
         .save_strategy = .disk,
         .tile_size_min = 8,
         .tile_size_max = 128,
@@ -51,7 +56,6 @@ pub fn main(init: std.process.Init) !void {
         init.gpa,
         init.minimal,
         config.total_threads,
-        .async_multi,
     );
     defer threaded_io.deinit();
     const io = threaded_io.io();

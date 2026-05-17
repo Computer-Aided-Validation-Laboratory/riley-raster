@@ -8,14 +8,51 @@
 // --------------------------------------------------------------------------
 const iio = @import("imageio.zig");
 
+// Parallelism convention:
+// Let each render group g have W_g work-capable threads, including the caller.
+// The configured global active-thread budget is:
+//   T_total_max = sum_g W_g
+// The configured raster active-thread budget is:
+//   T_raster_max = sum_g min(W_g, max_raster_workers_per_job)
+// The configured geometry active-thread budget depends on scheduling mode:
+//   spread: T_geom_max = sum_g min(
+//       W_g,
+//       max_geom_jobs_in_flight_per_group * max_geom_workers_per_job,
+//   )
+//   pack:   T_geom_max = sum_g min(W_g, max_geom_workers_per_job)
+// For `.auto`, the mode resolves at runtime from the scene size in
+// `scalingpolicy.resolveGeometrySchedulingMode(...)`.
+// Compatibility note:
+// - `total_threads` below is only the single-render-group wrapper budget
+// - render-group topology itself lives outside RasterConfig
+// - so for the wrapper path, W_0 = total_threads and T_total_max = total_threads
+
 pub const RasterConfig = struct {
+    // Outer scheduling mode for frame-camera jobs.
     render_mode: RenderMode = .in_order,
-    // User-facing thread counts always include the caller thread. A value of 0
-    // defaults to 1 thread using the single-threaded async path.
+    // Single-render-group compatibility budget. User-facing thread counts
+    // always include the caller thread.
     total_threads: u16 = 1,
+    // Legacy single-render-group compatibility knob. In the grouped scheduler
+    // this is superseded by frame_batch_size_per_group.
     max_frames_in_flight: u16 = 1,
+    // Legacy single-render-group compatibility knob. In the grouped scheduler
+    // this is superseded by max_geom_workers_per_job.
     max_geom_workers_per_frame: u16 = 1,
+    // Legacy single-render-group compatibility knob. In the grouped scheduler
+    // this is superseded by max_raster_workers_per_job.
     max_raster_workers_per_frame: u16 = 1,
+    // Maximum number of frame-camera jobs assigned to one render group batch.
+    frame_batch_size_per_group: u16 = 1,
+    // Maximum number of geometry jobs a render group may have active at once.
+    max_geom_jobs_in_flight_per_group: u16 = 1,
+    // Maximum number of workers a single geometry job may use internally.
+    max_geom_workers_per_job: u16 = 1,
+    // Policy for distributing render-group workers across geometry jobs.
+    geom_scheduling_mode: GeometrySchedulingMode = .auto,
+    // Maximum number of workers the single active raster job in a render group
+    // may use.
+    max_raster_workers_per_job: u16 = 1,
     save_strategy: SaveStrategy = .disk,
     image_save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .none },
@@ -38,8 +75,26 @@ pub const SubPixelCenterMap = enum {
 };
 
 pub const RenderMode = enum {
+    // Preserve timestep order. Geometry/raster work may run in parallel across
+    // cameras, but later timesteps do not advance until the current timestep
+    // has fully completed.
     in_order,
+    // Permit batches of frame-camera jobs to be scheduled without timestep
+    // ordering constraints. This is the throughput-oriented mode used by the
+    // grouped outer scheduler.
     offline,
+};
+
+pub const GeometrySchedulingMode = enum {
+    // Prefer many geometry jobs in flight, spreading the render-group workers
+    // across jobs before increasing per-job worker count.
+    spread,
+    // Prefer fewer geometry jobs in flight, packing workers into one job
+    // before starting additional geometry jobs.
+    pack,
+    // Resolve at runtime from the scene size in scalingpolicy.zig:
+    // smaller scenes default to spread, larger scenes default to pack.
+    auto,
 };
 
 pub const SaveStrategy = enum {

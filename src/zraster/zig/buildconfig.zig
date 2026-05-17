@@ -102,7 +102,7 @@ pub const Tolerance = struct {
 };
 
 pub const Config = struct {
-    simd: SimdMode = .on,
+    simd: SimdMode = .off,
     simd_texture_interp: SimdTextureInterpMode = .inner,
     texture_dispatch_policy: TextureDispatchPolicy = .runtime_comptime,
     simd_vector_width: comptime_int = 8,
