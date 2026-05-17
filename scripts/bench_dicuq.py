@@ -34,7 +34,7 @@ RUN_EXPERIMENT_2 = True
 RUN_EXPERIMENT_3 = True
 # Experiment 4: full factorial sweep over render mode, render-group partition,
 # geometry scheduling mode, and grouped scheduler knobs.
-RUN_EXPERIMENT_4 = False
+RUN_EXPERIMENT_4 = True
 
 # Experiment 1: idealized offline design.
 # Single render group, geometry spread, one worker per geometry job, one raster
