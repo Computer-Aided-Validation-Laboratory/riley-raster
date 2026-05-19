@@ -17,7 +17,8 @@ const iio = @import("zraster/zig/imageio.zig");
 const texops = @import("zraster/zig/textureops.zig");
 const Rotation = @import("zraster/zig/rotation.zig").Rotation;
 
-const DEFAULT_OUT_DIR = "out/sphere2000";
+const DEFAULT_OUT_DIR = "out/bench_stats_sphere2000";
+const DEFAULT_IMAGE_OUT_DIR = "out/bench_images_sphere2000";
 const DEFAULT_DATA_DIR_SUFFIX = "sphere2000";
 const DEFAULT_PIXELS_NUM = [2]u32{ 1600, 1000 };
 const DEFAULT_SUB_SAMPLE: u8 = 1;
@@ -39,6 +40,7 @@ pub fn main(init: std.process.Init) !void {
         DEFAULT_OUT_DIR,
         base_raster_config,
     );
+    default_bench_args.image_out_dir = DEFAULT_IMAGE_OUT_DIR;
     default_bench_args.pixels_num = DEFAULT_PIXELS_NUM;
     default_bench_args.sub_sample = DEFAULT_SUB_SAMPLE;
 
@@ -137,6 +139,7 @@ pub fn main(init: std.process.Init) !void {
         outer_alloc,
         io,
         bench_args.out_dir,
+        bench_args.image_out_dir,
         "bench_sphere2000.zig",
         init.minimal.args.vector,
         bench_raster_config,
@@ -187,7 +190,7 @@ pub fn main(init: std.process.Init) !void {
                             bench_args,
                         );
 
-                    var res = try common.runBenchmark(
+                    var res = try common.runBenchmarkWithImageOut(
                         outer_alloc,
                         io,
                         mt,
@@ -200,6 +203,7 @@ pub fn main(init: std.process.Init) !void {
                         texture_rgb,
                         raster_config,
                         run_out_dir_base,
+                        bench_args.image_out_dir,
                     );
                     defer res.deinit(outer_alloc);
 
@@ -265,7 +269,7 @@ pub fn main(init: std.process.Init) !void {
                             bench_args,
                         );
 
-                    var res = try common.runBenchmark(
+                    var res = try common.runBenchmarkWithImageOut(
                         outer_alloc,
                         io,
                         mt,
@@ -278,6 +282,7 @@ pub fn main(init: std.process.Init) !void {
                         texture_rgb,
                         raster_config,
                         run_out_dir_base,
+                        bench_args.image_out_dir,
                     );
                     defer res.deinit(outer_alloc);
 

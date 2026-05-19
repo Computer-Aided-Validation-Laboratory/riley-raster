@@ -2,16 +2,22 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import datetime as dt
 import pathlib
 import shlex
 import subprocess
 import sys
+import time
 
 
 SAVE_STRATEGIES = ("memory",)
 SIMD_LABELS = ("scalar", "simd")
 HULL_MODES = ("off", "on_no_fallback")
+
+
+def benchmark_tag(benchmark_name: str) -> str:
+    return benchmark_name.removeprefix("bench_")
 
 
 def repo_root() -> pathlib.Path:
@@ -23,10 +29,18 @@ def build_run_root(
     out_root: pathlib.Path | None,
 ) -> pathlib.Path:
     root_dir = out_root or (
-        pathlib.Path("out") / "benchmark_runs" / benchmark_name
+        pathlib.Path("out") / f"bench_stats_{benchmark_tag(benchmark_name)}"
     )
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     return root_dir / timestamp
+
+
+def default_image_out_dir(benchmark_name: str) -> pathlib.Path:
+    return pathlib.Path("out") / f"bench_images_{benchmark_tag(benchmark_name)}"
+
+
+def timestamp_string() -> str:
+    return dt.datetime.now().strftime("%Y%m%d_%H%M%S")
 
 
 def command_path(path: pathlib.Path) -> str:
@@ -74,6 +88,38 @@ def write_command_file(
     )
 
 
+def format_duration(seconds: float) -> str:
+    if seconds >= 3600.0:
+        return f"{seconds / 3600.0:.2f} h"
+    if seconds >= 60.0:
+        return f"{seconds / 60.0:.2f} min"
+    return f"{seconds:.2f} s"
+
+
+def write_timing_csv(
+    benchmark_name: str,
+    rows: list[dict[str, object]],
+    timestamp: str,
+) -> pathlib.Path:
+    out_dir = repo_root() / "out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = out_dir / f"time_{benchmark_name}_{timestamp}.csv"
+    with csv_path.open("w", newline="") as csv_file:
+        writer = csv.DictWriter(
+            csv_file,
+            fieldnames=[
+                "benchmark",
+                "kind",
+                "name",
+                "seconds",
+            ],
+        )
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+    return csv_path
+
+
 def run_case(
     benchmark_name: str,
     case: dict[str, object],
@@ -88,6 +134,8 @@ def run_case(
         str(executable_path),
         "--out-dir",
         command_path(output_dir),
+        "--image-out-dir",
+        command_path(default_image_out_dir(benchmark_name)),
     ]
     if runs is not None:
         command.extend(["--runs", str(runs)])
@@ -138,6 +186,7 @@ def run_benchmark_matrix(benchmark_name: str) -> int:
     )
     args = parser.parse_args()
 
+    timing_timestamp = timestamp_string()
     run_root = build_run_root(benchmark_name, args.out_root)
     cases: list[dict[str, object]] = []
     if args.experiment in ("all", "1"):
@@ -146,16 +195,45 @@ def run_benchmark_matrix(benchmark_name: str) -> int:
     if not args.dry_run:
         run_root.mkdir(parents=True, exist_ok=True)
 
-    for cc in cases:
-        run_case(
-            benchmark_name,
-            cc,
-            run_root,
-            args.runs,
-            args.dry_run,
+    script_start = time.perf_counter()
+    timing_rows: list[dict[str, object]] = []
+
+    if args.experiment in ("all", "1"):
+        exp_start = time.perf_counter()
+        for cc in cases:
+            run_case(
+                benchmark_name,
+                cc,
+                run_root,
+                args.runs,
+                args.dry_run,
+            )
+        exp_seconds = time.perf_counter() - exp_start
+        print(
+            f"[{benchmark_name}] Experiment 1 summary: {format_duration(exp_seconds)}"
+        )
+        timing_rows.append(
+            {
+                "benchmark": benchmark_name,
+                "kind": "experiment",
+                "name": "experiment_1",
+                "seconds": f"{exp_seconds:.6f}",
+            }
         )
 
+    total_seconds = time.perf_counter() - script_start
+    print(f"[{benchmark_name}] Total summary: {format_duration(total_seconds)}")
+    timing_rows.append(
+        {
+            "benchmark": benchmark_name,
+            "kind": "total",
+            "name": "all",
+            "seconds": f"{total_seconds:.6f}",
+        }
+    )
     if not args.dry_run:
+        timing_csv = write_timing_csv(benchmark_name, timing_rows, timing_timestamp)
+        print(f"[{benchmark_name}] Timing written to {timing_csv}")
         print(f"Results written under {run_root}")
     return 0
 

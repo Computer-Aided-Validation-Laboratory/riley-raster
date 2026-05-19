@@ -267,7 +267,8 @@ fn calcActiveThreadsGeomPack(
 pub fn writeBenchmarkConfig(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    out_dir_base: []const u8,
+    stats_out_dir_base: []const u8,
+    image_out_dir_base: []const u8,
     benchmark_name: []const u8,
     argv: anytype,
     config: rastcfg.RasterConfig,
@@ -281,13 +282,13 @@ pub fn writeBenchmarkConfig(
     const cwd = std.Io.Dir.cwd();
     cwd.createDir(
         io,
-        out_dir_base,
+        stats_out_dir_base,
         .default_dir,
     ) catch |err| if (err != error.PathAlreadyExists) return err;
 
     const config_path = try std.fs.path.join(
         outer_alloc,
-        &[_][]const u8{ out_dir_base, "config.txt" },
+        &[_][]const u8{ stats_out_dir_base, "config.txt" },
     );
     defer outer_alloc.free(config_path);
 
@@ -299,7 +300,8 @@ pub fn writeBenchmarkConfig(
     const writer = &buffered_writer.interface;
 
     try writer.print("benchmark={s}\n", .{benchmark_name});
-    try writer.print("out_dir={s}\n", .{out_dir_base});
+    try writer.print("stats_out_dir={s}\n", .{stats_out_dir_base});
+    try writer.print("image_out_dir={s}\n", .{image_out_dir_base});
     try writer.print("render_mode={s}\n", .{@tagName(config.render_mode)});
     try writer.print("render_group_count={d}\n", .{render_group_workers.len});
     for (render_group_workers, 0..) |workers, ii| {
@@ -782,6 +784,38 @@ pub fn runBenchmark(
     config: rastcfg.RasterConfig,
     out_dir_base: []const u8,
 ) !BenchResult {
+    return runBenchmarkWithImageOut(
+        outer_alloc,
+        io,
+        etype,
+        shader_type,
+        sample_config,
+        tex_func_case,
+        data_dir,
+        render_defaults,
+        texture_grey,
+        texture_rgb,
+        config,
+        out_dir_base,
+        "",
+    );
+}
+
+pub fn runBenchmarkWithImageOut(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    etype: gk.MeshType,
+    shader_type: ShaderType,
+    sample_config: ?TextureSampleConfig,
+    tex_func_case: ?TexFuncCase,
+    data_dir: []const u8,
+    render_defaults: BenchRenderDefaults,
+    texture_grey: iio.Texture(1),
+    texture_rgb: iio.Texture(3),
+    config: rastcfg.RasterConfig,
+    stats_out_dir_base: []const u8,
+    image_out_dir_base: []const u8,
+) !BenchResult {
     return runBenchmarkInternal(
         .bench,
         outer_alloc,
@@ -795,7 +829,8 @@ pub fn runBenchmark(
         texture_grey,
         texture_rgb,
         config,
-        out_dir_base,
+        stats_out_dir_base,
+        image_out_dir_base,
     );
 }
 
@@ -813,6 +848,38 @@ pub fn runBenchmarkQuiet(
     config: rastcfg.RasterConfig,
     out_dir_base: []const u8,
 ) !BenchResult {
+    return runBenchmarkQuietWithImageOut(
+        outer_alloc,
+        io,
+        etype,
+        shader_type,
+        sample_config,
+        tex_func_case,
+        data_dir,
+        render_defaults,
+        texture_grey,
+        texture_rgb,
+        config,
+        out_dir_base,
+        "",
+    );
+}
+
+pub fn runBenchmarkQuietWithImageOut(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    etype: gk.MeshType,
+    shader_type: ShaderType,
+    sample_config: ?TextureSampleConfig,
+    tex_func_case: ?TexFuncCase,
+    data_dir: []const u8,
+    render_defaults: BenchRenderDefaults,
+    texture_grey: iio.Texture(1),
+    texture_rgb: iio.Texture(3),
+    config: rastcfg.RasterConfig,
+    stats_out_dir_base: []const u8,
+    image_out_dir_base: []const u8,
+) !BenchResult {
     return runBenchmarkInternal(
         .off,
         outer_alloc,
@@ -826,7 +893,8 @@ pub fn runBenchmarkQuiet(
         texture_grey,
         texture_rgb,
         config,
-        out_dir_base,
+        stats_out_dir_base,
+        image_out_dir_base,
     );
 }
 
@@ -843,7 +911,8 @@ fn runBenchmarkInternal(
     texture_grey: iio.Texture(1),
     texture_rgb: iio.Texture(3),
     config: rastcfg.RasterConfig,
-    out_dir_base: []const u8,
+    stats_out_dir_base: []const u8,
+    image_out_dir_base: []const u8,
 ) !BenchResult {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -898,8 +967,8 @@ fn runBenchmarkInternal(
     var config_run = config;
     config_run.report = report_mode;
 
-    if (out_dir_base.len > 0) {
-        var out_dir = try orch.openDirEnsured(io, out_dir_base);
+    if (stats_out_dir_base.len > 0) {
+        var out_dir = try orch.openDirEnsured(io, stats_out_dir_base);
         out_dir.close(io);
     }
 
@@ -911,10 +980,12 @@ fn runBenchmarkInternal(
         tex_func_case,
         render_defaults.fov_scale,
     );
-    const out_path = if (out_dir_base.len > 0)
+    const out_path = if (image_out_dir_base.len > 0)
+        image_out_dir_base
+    else if (stats_out_dir_base.len > 0)
         try std.fs.path.join(
             aa,
-            &[_][]const u8{ out_dir_base, case_name },
+            &[_][]const u8{ stats_out_dir_base, case_name },
         )
     else
         null;

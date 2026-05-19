@@ -12,6 +12,7 @@ const texops = @import("../zraster/zig/textureops.zig");
 
 pub const BenchArgs = struct {
     out_dir: []const u8,
+    image_out_dir: []const u8,
     render_mode: rastcfg.RenderMode,
     render_group_count: u16,
     total_threads: u16,
@@ -39,6 +40,7 @@ pub fn defaultBenchArgs(
 ) BenchArgs {
     return .{
         .out_dir = default_out_dir,
+        .image_out_dir = "",
         .render_mode = raster_config.render_mode,
         .render_group_count = 1,
         .total_threads = raster_config.total_threads,
@@ -157,6 +159,8 @@ pub fn parseArgsWithDefaults(
             } else if (std.mem.eql(u8, arg, "--save-strategy")) {
                 bench_args.save_strategy =
                     try parseEnum(rastcfg.SaveStrategy, value);
+            } else if (std.mem.eql(u8, arg, "--image-out-dir")) {
+                bench_args.image_out_dir = value;
             } else if (std.mem.eql(u8, arg, "--sample")) {
                 bench_args.sample =
                     try parseEnum(texops.TextureSample, value);

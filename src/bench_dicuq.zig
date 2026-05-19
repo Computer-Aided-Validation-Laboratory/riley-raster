@@ -14,7 +14,8 @@ const common = @import("common/benchcommon.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 const rastcfg = @import("zraster/zig/rasterconfig.zig");
 
-const DEFAULT_OUT_DIR = "out/dicuq";
+const DEFAULT_OUT_DIR = "out/bench_stats_dicuq";
+const DEFAULT_IMAGE_OUT_DIR = "out/bench_images_dicuq";
 const DEFAULT_DATA_DIR = "data/FE/platehole3d_6mr_63f/";
 const DEFAULT_PIXELS_NUM = [2]u32{ 2464, 2056 };
 const DEFAULT_SUB_SAMPLE: u8 = 2;
@@ -43,6 +44,7 @@ pub fn main(init: std.process.Init) !void {
         DEFAULT_OUT_DIR,
         base_raster_config,
     );
+    default_bench_args.image_out_dir = DEFAULT_IMAGE_OUT_DIR;
     default_bench_args.render_mode = DEFAULT_RENDER_MODE;
     default_bench_args.save_strategy = DEFAULT_SAVE_STRATEGY;
     default_bench_args.runs = DEFAULT_RUNS;
@@ -164,6 +166,7 @@ pub fn main(init: std.process.Init) !void {
         outer_alloc,
         io,
         bench_args.out_dir,
+        bench_args.image_out_dir,
         "bench_dicuq.zig",
         init.minimal.args.vector,
         raster_config,
@@ -205,7 +208,10 @@ pub fn main(init: std.process.Init) !void {
 
     for (0..bench_args.runs) |rr| {
         const out_dir_path = switch (bench_args.save_strategy) {
-            .disk, .both => bench_args.out_dir,
+            .disk, .both => if (bench_args.image_out_dir.len > 0)
+                bench_args.image_out_dir
+            else
+                bench_args.out_dir,
             .memory, .none => null,
         };
         var run_result = try benchdicuq.runBenchmark(

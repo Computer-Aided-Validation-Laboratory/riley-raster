@@ -5,12 +5,17 @@ import argparse
 import pathlib
 import shlex
 import subprocess
+import time
 from typing import Iterable
 
 from bench_common import build_run_root
 from bench_common import command_path
+from bench_common import default_image_out_dir
+from bench_common import format_duration
 from bench_common import repo_root
+from bench_common import timestamp_string
 from bench_common import write_command_file
+from bench_common import write_timing_csv
 
 
 # Laptop target: 8 cores / 8 active work-capable threads.
@@ -25,16 +30,16 @@ SAMPLE_MODE = "lut_lerp"
 
 # Experiment 1: idealized offline design with one render group and spread
 # geometry, intended to approximate the scheduler behavior we want.
-RUN_EXPERIMENT_1 = True
+RUN_EXPERIMENT_1 = False
 # Experiment 2: geometry isolation with raster constrained to one worker so we
 # can study geometry scheduling behavior directly.
-RUN_EXPERIMENT_2 = True
+RUN_EXPERIMENT_2 = False
 # Experiment 3: showdown between one large render group and many smaller render
 # groups at the same total active-thread budget.
 RUN_EXPERIMENT_3 = True
 # Experiment 4: full factorial sweep over render mode, render-group partition,
 # geometry scheduling mode, and grouped scheduler knobs.
-RUN_EXPERIMENT_4 = True
+RUN_EXPERIMENT_4 = False
 # Experiment 5: offline sweet-spot sweep. Geometry stays single-threaded per
 # job while we sweep render-group partitioning and geometry lookahead over the
 # cases that should plausibly scale well.
@@ -422,6 +427,8 @@ def run_case(
     run_root: pathlib.Path,
     runs: int | None,
     dry_run: bool,
+    case_idx: int,
+    total_cases: int,
 ) -> None:
     output_dir = run_root / str(case["experiment"]) / str(case["case_name"])
     executable_path = repo_root() / "bin" / "bench_dicuq_simd"
@@ -429,13 +436,18 @@ def run_case(
         str(executable_path),
         "--out-dir",
         command_path(output_dir),
+        "--image-out-dir",
+        command_path(default_image_out_dir("bench_dicuq")),
     ]
     if runs is not None:
         command.extend(["--runs", str(runs)])
     command.extend(str(arg) for arg in case["args"])
 
-    print(f"[bench_dicuq] {case['case_name']}")
     if dry_run:
+        print(
+            f"[bench_dicuq] EXP: {case['experiment']}, "
+            f"CASE: {case_idx}/{total_cases} {case['case_name']}"
+        )
         print("  dry-run:", " ".join(shlex.quote(part) for part in command))
         return
 
@@ -444,6 +456,10 @@ def run_case(
 
     stdout_path = output_dir / "stdout.txt"
     stderr_path = output_dir / "stderr.txt"
+    print(
+        f"[bench_dicuq] EXP: {case['experiment']}, "
+        f"CASE: {case_idx}/{total_cases} {case['case_name']}"
+    )
     with stdout_path.open("w") as stdout_file, stderr_path.open(
         "w"
     ) as stderr_file:
@@ -494,6 +510,7 @@ def main() -> int:
     args = parser.parse_args()
 
     run_root = build_run_root("bench_dicuq", args.out_root)
+    timing_timestamp = timestamp_string()
     if args.experiment != "all" and not experiment_enabled(args.experiment):
         print(
             f"Experiment {args.experiment} is disabled by top-of-file constants."
@@ -515,19 +532,57 @@ def main() -> int:
     if args.experiment in ("all", "5") and experiment_enabled("5"):
         selected_experiments.append(("5", experiment_5_cases))
 
+    all_cases: list[dict[str, object]] = []
+    for _, case_builder in selected_experiments:
+        all_cases.extend(case_builder())
+    total_cases = len(all_cases)
+
+    script_start = time.perf_counter()
+    timing_rows: list[dict[str, object]] = []
+    case_idx = 0
     for experiment_id, case_builder in selected_experiments:
         print(experiment_header(experiment_id, "START"))
+        exp_start = time.perf_counter()
         cases = case_builder()
         for case in cases:
+            case_idx += 1
             run_case(
                 case,
                 run_root,
                 args.runs,
                 args.dry_run,
+                case_idx,
+                total_cases,
             )
+        exp_seconds = time.perf_counter() - exp_start
+        experiment_name = cases[0]["experiment"] if cases else f"experiment_{experiment_id}"
+        print(
+            f"[bench_dicuq] Experiment {experiment_id} summary: "
+            f"{format_duration(exp_seconds)}"
+        )
+        timing_rows.append(
+            {
+                "benchmark": "bench_dicuq",
+                "kind": "experiment",
+                "name": str(experiment_name),
+                "seconds": f"{exp_seconds:.6f}",
+            }
+        )
         print(experiment_header(experiment_id, "END"))
 
+    total_seconds = time.perf_counter() - script_start
+    print(f"[bench_dicuq] Total summary: {format_duration(total_seconds)}")
+    timing_rows.append(
+        {
+            "benchmark": "bench_dicuq",
+            "kind": "total",
+            "name": "all",
+            "seconds": f"{total_seconds:.6f}",
+        }
+    )
     if not args.dry_run:
+        timing_csv = write_timing_csv("bench_dicuq", timing_rows, timing_timestamp)
+        print(f"[bench_dicuq] Timing written to {timing_csv}")
         print(f"Results written under {run_root}")
     return 0
 
