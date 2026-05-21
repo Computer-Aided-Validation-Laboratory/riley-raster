@@ -210,18 +210,18 @@ pub fn printRenderSummary(
     if (report_mode == .bench or report_mode == .full_stats) {
         if (bench_capture != null) {
             try writer.print(
-                "Avg. Raster Throughput [MPx/s] = {d:.3}\n",
+                "Avg. Raster Throughput = {d:.3} MPx/s\n",
                 .{avg_raster_mpx_sec},
             );
         } else {
             try writer.print(
-                "Avg. Raster Throughput [MPx/s] = unavailable\n",
+                "Avg. Raster Throughput = unavailable\n",
                 .{},
             );
         }
     }
     try writer.print(
-        "Avg. Frame Throughput [MPx/s]  = {d:.3}\n",
+        "Avg. Frame Throughput  = {d:.3} MPx/s\n",
         .{avg_frame_mpx_sec},
     );
     try writer.print("{s}\n", .{print_break});
@@ -1213,10 +1213,8 @@ pub fn standardReport(
         0;
     const mpx_sec = if (raster_sec > 0) (total_px / (raster_sec * 1e6)) else 0;
     const msubpx_sec = if (raster_sec > 0) (total_subpx / (raster_sec * 1e6)) else 0;
-    const mops_sec = if (total_sec > 0)
-        (nodes_per_elem * total_subpx / (total_sec * 1e6))
-    else
-        0;
+    _ = nodes_per_elem;
+    const frame_mpx_sec = if (total_sec > 0) (total_px / (total_sec * 1e6)) else 0;
 
     const conv_units: f64 = 1.0 / 1.0e6;
     const print_break = [_]u8{'='} ** 80;
@@ -1265,10 +1263,10 @@ pub fn standardReport(
     try writer.print("Shaded %      = {d:.2}%\n", .{shaded_pct});
     try writer.print("{s}\n", .{print_break});
 
-    try writer.print("MElem/second  = {d:.2}\n", .{melems_sec});
-    try writer.print("MPx/second    = {d:.2}\n", .{mpx_sec});
-    try writer.print("MsubPx/second = {d:.2}\n", .{msubpx_sec});
-    try writer.print("MOps/second   = {d:.2}\n", .{mops_sec});
+    try writer.print("Geometry Throughput      = {d:.2} MElem/s\n", .{melems_sec});
+    try writer.print("Subpx Raster Throughput  = {d:.2} MsubPx/s\n", .{msubpx_sec});
+    try writer.print("Raster Throughput        = {d:.2} MPx/s\n", .{mpx_sec});
+    try writer.print("Frame Throughput         = {d:.2} MPx/s\n", .{frame_mpx_sec});
     try writer.print("{s}\n", .{print_break});
     try writer.flush();
 }
