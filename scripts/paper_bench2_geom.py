@@ -38,8 +38,8 @@ TABLE_CAPTION = (
     "is fixed at $1 \\times 1$, and all runs are single threaded. "
     "Timings and throughputs are reported as median $\\pm$ MAD over 10 "
     "runs. Wall-clock timings are reported in $10^{-3}$ seconds. The "
-    "geometry throughput is reported in both MElem/s and MNodes/s, "
-    "computed from the exact input element and node counts and the "
+    "geometry throughput is reported in both MNodes/s and MElem/s, "
+    "computed from the exact input node and element counts and the "
     "geometry preprocessing time."
 )
 
@@ -102,19 +102,35 @@ def count_elements(mesh_dir_name: str) -> int:
 
 
 def count_nodes(mesh_dir_name: str) -> int:
-    coords_path = (
+    mesh_dir = (
         repo_root() /
         "data" /
         "bench" /
-        f"{mesh_dir_name}_geom" /
-        "coords.csv"
+        f"{mesh_dir_name}_geom"
     )
+    coords_path = mesh_dir / "coords.csv"
+    connect_path = mesh_dir / "connect.csv"
     with coords_path.open(newline="") as csv_file:
-        rows = [
+        coords_rows = [
             row for row in csv.reader(csv_file)
             if any(cell.strip() for cell in row)
         ]
-    return len(rows)
+    coords_count = len(coords_rows)
+    used_nodes: set[int] = set()
+    with connect_path.open(newline="") as csv_file:
+        for row in csv.reader(csv_file):
+            if not any(cell.strip() for cell in row):
+                continue
+            for cell in row:
+                cell = cell.strip()
+                if cell:
+                    used_nodes.add(int(cell))
+    if used_nodes and max(used_nodes) >= coords_count:
+        raise ValueError(
+            f"Connectivity in {mesh_dir_name}_geom references node index "
+            f"{max(used_nodes)} but coords.csv only has {coords_count} rows."
+        )
+    return len(used_nodes)
 
 
 def fmt_float_pair(
@@ -186,12 +202,12 @@ def build_table_tex() -> str:
         )
         body_rows.append(
             "\\texttt{" + element_label + "} & " +
-            str(elems_num) + " & " +
             str(nodes_num) + " & " +
+            str(elems_num) + " & " +
             e2e_text + " & " +
             geom_text + " & " +
-            elem_throughput_text + " & " +
-            node_throughput_text + " \\\\"
+            node_throughput_text + " & " +
+            elem_throughput_text + " \\\\"
         )
 
     body = "\n".join(body_rows)
@@ -204,18 +220,18 @@ def build_table_tex() -> str:
         "all runs are single threaded. Timings and throughputs are reported "
         "as median $\\pm$ MAD over 10 runs. Wall-clock timings are reported "
         "in $10^{-3}$ seconds. The geometry throughput is reported in both "
-        "MElem/s and MNodes/s, computed from the exact input element and node "
+        "MNodes/s and MElem/s, computed from the exact input node and element "
         "counts and the geometry preprocessing time.}\n"
         "\\label{tab:performance_geometry_benchmark}\n"
         "\\begin{tabular}{lrrllll}\n"
         "\\hline\n"
         "\\makecell[c]{Element\\\\ Type} & "
-        "\\makecell[c]{Element\\\\ Count} & "
         "\\makecell[c]{Node\\\\ Count} & "
+        "\\makecell[c]{Element\\\\ Count} & "
         "\\makecell[c]{End-to-end\\\\ {[$10^{-3}$ s]}} & "
         "\\makecell[c]{Geometry\\\\ {[$10^{-3}$ s]}} & "
-        "\\makecell[c]{Throughput\\\\ {[MElem/s]}} & "
-        "\\makecell[c]{Throughput\\\\ {[MNodes/s]}} \\\\\n"
+        "\\makecell[c]{Throughput\\\\ {[MNodes/s]}} & "
+        "\\makecell[c]{Throughput\\\\ {[MElem/s]}} \\\\\n"
         "\\hline\n"
         f"{body}\n"
         "\\hline\n"

@@ -213,7 +213,7 @@ pub fn main(init: std.process.Init) !void {
 
                     const camera_input = camera.toInput();
                     const config = rastcfg.RasterConfig{
-                        .save_strategy = .memory,
+                        .save_strategy = .memory_direct_write,
                         .report = .off,
                         .subpixel_center_map = .per_tile,
                     };

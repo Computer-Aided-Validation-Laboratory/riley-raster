@@ -163,6 +163,28 @@ pub fn NDArray(comptime T: type) type {
             return self.slice[start..];
         }
 
+        pub fn fixedPrefixView(
+            self: *const Self,
+            allocator: std.mem.Allocator,
+            fixed_prefix: []const usize,
+        ) !Self {
+            assert(fixed_prefix.len < self.dims.len);
+
+            var start: usize = 0;
+            for (fixed_prefix, 0..) |idx, dim| {
+                assert(idx < self.dims[dim]);
+                start += idx * self.strides[dim];
+            }
+
+            const prefix_last_dim = fixed_prefix.len - 1;
+            const view_len = self.strides[prefix_last_dim];
+            return try Self.init(
+                allocator,
+                self.slice[start .. start + view_len],
+                self.dims[fixed_prefix.len..],
+            );
+        }
+
         pub fn dupe(self: *const Self, allocator: std.mem.Allocator) !Self {
             const new_slice = try allocator.dupe(T, self.slice);
             errdefer allocator.free(new_slice);
@@ -344,4 +366,23 @@ test "getSlice" {
 
     try expectEqual(ext_slice0.len, 4);
     try expectEqual(ext_slice0[0], 7);
+}
+
+test "fixedPrefixView" {
+    var dims0 = [_]usize{ 2, 3, 2, 2 };
+    const slice0 = try talloc.alloc(f64, 24);
+    defer talloc.free(slice0);
+    for (0..slice0.len) |ii| slice0[ii] = @floatFromInt(ii);
+    var arr0 = try NDArray(f64).init(talloc, slice0, dims0[0..]);
+    defer arr0.deinit(talloc);
+
+    const fixed = [_]usize{ 1, 2 };
+    var view = try arr0.fixedPrefixView(talloc, fixed[0..]);
+    defer view.deinit(talloc);
+
+    try expectEqual(@as(usize, 2), view.dims.len);
+    try expectEqual(@as(usize, 2), view.dims[0]);
+    try expectEqual(@as(usize, 2), view.dims[1]);
+    try expectEqual(arr0.get(&[_]usize{ 1, 2, 0, 0 }), view.get(&[_]usize{ 0, 0 }));
+    try expectEqual(arr0.get(&[_]usize{ 1, 2, 1, 1 }), view.get(&[_]usize{ 1, 1 }));
 }

@@ -140,7 +140,7 @@ fn renderSingle(
     meshes: []const MeshInput,
 ) !NDArray(f64) {
     var config = tcfg.getRasterConfig(.preview);
-    config.save_strategy = .memory;
+    config.save_strategy = .memory_direct_write;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };

@@ -54,7 +54,7 @@ pub fn defaultBenchArgs(
         .max_raster_workers_per_job = raster_config.max_raster_workers_per_job,
         .hull_mode = raster_config.hull_mode,
         .subpixel_center_map = raster_config.subpixel_center_map,
-        .save_strategy = .memory,
+        .save_strategy = .memory_direct_write,
         .sample = null,
         .sample_mode = null,
         .pixels_num = .{ 800, 500 },
@@ -158,7 +158,7 @@ pub fn parseArgsWithDefaults(
                     try parseEnum(rastcfg.SubPixelCenterMap, value);
             } else if (std.mem.eql(u8, arg, "--save-strategy")) {
                 bench_args.save_strategy =
-                    try parseEnum(rastcfg.SaveStrategy, value);
+                    try parseSaveStrategy(value);
             } else if (std.mem.eql(u8, arg, "--image-out-dir")) {
                 bench_args.image_out_dir = value;
             } else if (std.mem.eql(u8, arg, "--sample")) {
@@ -276,6 +276,12 @@ fn parseEnum(comptime T: type, value: []const u8) !T {
     return std.meta.stringToEnum(T, value) orelse error.InvalidEnumValue;
 }
 
+fn parseSaveStrategy(value: []const u8) !rastcfg.SaveStrategy {
+    if (std.mem.eql(u8, value, "memory")) return .memory_per_frame_copy;
+    if (std.mem.eql(u8, value, "both")) return .both_per_frame_copy;
+    return parseEnum(rastcfg.SaveStrategy, value);
+}
+
 fn argToSlice(arg: anytype) []const u8 {
     return switch (@typeInfo(@TypeOf(arg))) {
         .pointer => |pointer_info| switch (pointer_info.size) {
@@ -340,7 +346,7 @@ test "parse bench args named options" {
         "--subpixel-center-map",
         "affine_jac",
         "--save-strategy",
-        "memory",
+        "memory_direct_write",
         "--sample",
         "linear",
         "--sample-mode",
@@ -403,7 +409,7 @@ test "parse bench args named options" {
         bench_args.subpixel_center_map,
     );
     try std.testing.expectEqual(
-        rastcfg.SaveStrategy.memory,
+        rastcfg.SaveStrategy.memory_direct_write,
         bench_args.save_strategy,
     );
     try std.testing.expectEqual(

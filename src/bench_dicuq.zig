@@ -25,7 +25,7 @@ const DEFAULT_FOV_SCALE: f64 = 0.9;
 const DEFAULT_STEREO_ANG: f64 = 20.0;
 const DEFAULT_TEX_PATH = "texture/speckle.bmp";
 const DEFAULT_RENDER_MODE = rastcfg.RenderMode.in_order;
-const DEFAULT_SAVE_STRATEGY = rastcfg.SaveStrategy.memory;
+const DEFAULT_SAVE_STRATEGY = rastcfg.SaveStrategy.memory_direct_write;
 const DEFAULT_RUNS: usize = 10;
 const DEFAULT_RENDER_GROUP_COUNT: u16 = 1;
 const DEFAULT_TOTAL_THREADS: u16 = 1;
@@ -207,13 +207,13 @@ pub fn main(init: std.process.Init) !void {
     }
 
     for (0..bench_args.runs) |rr| {
-        const out_dir_path = switch (bench_args.save_strategy) {
-            .disk, .both => if (bench_args.image_out_dir.len > 0)
+        const out_dir_path = if (rastcfg.saveStrategyWritesDisk(bench_args.save_strategy))
+            if (bench_args.image_out_dir.len > 0)
                 bench_args.image_out_dir
             else
-                bench_args.out_dir,
-            .memory, .none => null,
-        };
+                bench_args.out_dir
+        else
+            null;
         var run_result = try benchdicuq.runBenchmark(
             outer_alloc,
             io,

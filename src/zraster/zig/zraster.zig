@@ -35,6 +35,11 @@ pub const RenderMode = rastcfg.RenderMode;
 pub const ReportMode = rastcfg.ReportMode;
 pub const FullStatsOpts = rastcfg.FullStatsOpts;
 
+const saveStrategyReturnsImages = rastcfg.saveStrategyReturnsImages;
+const saveStrategyWritesDisk = rastcfg.saveStrategyWritesDisk;
+const saveStrategyUsesDirectWrite = rastcfg.saveStrategyUsesDirectWrite;
+const saveStrategyUsesPerFrameCopy = rastcfg.saveStrategyUsesPerFrameCopy;
+
 pub const ManagedIo = struct {
     threaded: std.Io.Threaded,
 
@@ -195,7 +200,7 @@ fn initAllFramesBuffer(
     num_time: usize,
     num_fields: u8,
 ) !?ndarray.NDArray(f64) {
-    if (config.save_strategy == .memory or config.save_strategy == .both) {
+    if (saveStrategyReturnsImages(config.save_strategy)) {
         std.debug.assert(cameras.len > 0);
         var max_pixels_num = cameras[0].pixels_num;
         for (cameras[1..]) |camera| {
@@ -215,6 +220,25 @@ fn initAllFramesBuffer(
     }
 
     return null;
+}
+
+fn getFrameImageView(
+    allocator: std.mem.Allocator,
+    images_arr: *ndarray.NDArray(f64),
+    camera_idx: usize,
+    frame_idx: usize,
+    camera_pixels_num: [2]u32,
+) !ndarray.NDArray(f64) {
+    std.debug.assert(images_arr.dims.len == 5);
+    if (images_arr.dims[3] != camera_pixels_num[1] or
+        images_arr.dims[4] != camera_pixels_num[0])
+    {
+        return error.DirectWriteRequiresUniformCameraPixels;
+    }
+    return try images_arr.fixedPrefixView(
+        allocator,
+        &[_]usize{ camera_idx, frame_idx },
+    );
 }
 
 fn initFrameReportStorage(
@@ -317,7 +341,20 @@ fn prepareFrameContext(
         input.camera.pixels_num[1],
         input.camera.pixels_num[0],
     };
-    ctx.frame_arr = try ndarray.NDArray(f64).initFlat(arena_alloc, dims[0..]);
+    if (saveStrategyUsesDirectWrite(input.config.save_strategy)) {
+        const images_arr = input.images_arr orelse return error.NoResult;
+        ctx.frame_arr = try getFrameImageView(
+            arena_alloc,
+            images_arr,
+            input.camera_idx,
+            input.frame_idx,
+            input.camera.pixels_num,
+        );
+    } else {
+        ctx.frame_arr = try ndarray.NDArray(f64).initFlat(arena_alloc, dims[0..]);
+    }
+    std.debug.assert(ctx.frame_arr.dims.len == dims.len);
+    for (dims, 0..) |dim, ii| std.debug.assert(ctx.frame_arr.dims[ii] == dim);
     @memset(ctx.frame_arr.slice, input.config.background_value);
 }
 
@@ -333,14 +370,23 @@ fn copyFrameToImageBatch(
     std.debug.assert(frame_arr.dims[1] <= images_arr.dims[3]);
     std.debug.assert(frame_arr.dims[2] <= images_arr.dims[4]);
 
+    const dst_base = camera_idx * images_arr.strides[0] + frame_idx * images_arr.strides[1];
+    const dst_field_stride = images_arr.strides[2];
+    const dst_row_stride = images_arr.strides[3];
+    const src_field_stride = frame_arr.strides[0];
+    const src_row_stride = frame_arr.strides[1];
+    const row_len = frame_arr.dims[2];
+
     for (0..frame_arr.dims[0]) |ff| {
+        const dst_field_base = dst_base + ff * dst_field_stride;
+        const src_field_base = ff * src_field_stride;
         for (0..frame_arr.dims[1]) |rr| {
-            for (0..frame_arr.dims[2]) |cc| {
-                images_arr.set(
-                    &[_]usize{ camera_idx, frame_idx, ff, rr, cc },
-                    frame_arr.get(&[_]usize{ ff, rr, cc }),
-                );
-            }
+            const dst_row_base = dst_field_base + rr * dst_row_stride;
+            const src_row_base = src_field_base + rr * src_row_stride;
+            @memcpy(
+                images_arr.slice[dst_row_base .. dst_row_base + row_len],
+                frame_arr.slice[src_row_base .. src_row_base + row_len],
+            );
         }
     }
 }
@@ -423,7 +469,7 @@ fn saveFrame(
     input: *const FrameJobDesc,
     ctx: *FrameContext,
 ) !void {
-    if (input.config.save_strategy == .disk or input.config.save_strategy == .both) {
+    if (saveStrategyWritesDisk(input.config.save_strategy)) {
         std.debug.assert(ctx.frame_arr.dims[0] <= std.math.maxInt(u8));
         try iio.saveImages(
             io,
@@ -436,7 +482,8 @@ fn saveFrame(
             input.config.image_save_opts,
         );
     }
-    if (input.images_arr) |images_arr| {
+    if (saveStrategyUsesPerFrameCopy(input.config.save_strategy)) {
+        const images_arr = input.images_arr orelse return error.NoResult;
         copyFrameToImageBatch(
             images_arr,
             input.camera_idx,

@@ -22,6 +22,7 @@ const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const meshio = @import("zraster/zig/meshio.zig");
+const ndarray = @import("zraster/zig/ndarray.zig");
 const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
 const texops = @import("zraster/zig/textureops.zig");
 const uvio = @import("zraster/zig/uvio.zig");
@@ -243,7 +244,7 @@ test "Multicamera duplicate sphere200 cameras match each other" {
     };
 
     var config = tcfg.getRasterConfig(.testing);
-    config.save_strategy = .memory;
+    config.save_strategy = .memory_direct_write;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
@@ -344,7 +345,7 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
     };
 
     var ref_config = tcfg.getRasterConfig(.testing);
-    ref_config.save_strategy = .memory;
+    ref_config.save_strategy = .memory_direct_write;
     ref_config.report = .off;
     ref_config.total_threads = 2;
     ref_config.max_geom_workers_per_frame = 1;
@@ -431,6 +432,103 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
                 }
             }
         }
+    }
+}
+
+test "Multicamera memory direct write matches per-frame copy" {
+    var gpa: std.heap.DebugAllocator(.{}) = .init;
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    const io = std.testing.io;
+    const pixel_num = [_]u32{ 320, 200 };
+    const data_dir = "data/bench/tri3_sphere200";
+
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const coord_path = try std.fs.path.join(
+        aa,
+        &[_][]const u8{ data_dir, "coords.csv" },
+    );
+    const connect_path = try std.fs.path.join(
+        aa,
+        &[_][]const u8{ data_dir, "connect.csv" },
+    );
+    const field_path = try std.fs.path.join(
+        aa,
+        &[_][]const u8{ data_dir, "field.csv" },
+    );
+
+    const sim_data = try meshio.loadSimData(
+        aa,
+        io,
+        coord_path,
+        connect_path,
+        null,
+        null,
+    );
+    const field_raw = try benchcommon.loadNDArrayFromCSV(
+        aa,
+        io,
+        field_path,
+        1,
+        true,
+    );
+    const camera_a = try orch.initCameraForCoords(aa, &sim_data.coords, pixel_num, 1.0);
+    defer camera_a.deinit(aa);
+    const camera_b = try orch.initCameraForCoords(aa, &sim_data.coords, pixel_num, 1.0);
+    defer camera_b.deinit(aa);
+
+    const mesh_input = mo.MeshInput{
+        .mesh_type = .tri3,
+        .coords = sim_data.coords,
+        .connect = sim_data.connect,
+        .disp = null,
+        .shader = .{
+            .nodal = .{
+                .field = .{
+                    .array = field_raw,
+                    .array_mem = field_raw.slice,
+                },
+                .scaling = .auto,
+            },
+        },
+    };
+
+    var direct_config = tcfg.getRasterConfig(.testing);
+    direct_config.save_strategy = .memory_direct_write;
+    direct_config.report = .off;
+
+    var copy_config = direct_config;
+    copy_config.save_strategy = .memory_per_frame_copy;
+
+    const direct = (try zraster.rasterAllFrames(
+        aa,
+        io,
+        &[_]CameraInput{ camera_a.toInput(), camera_b.toInput() },
+        &[_]mo.MeshInput{mesh_input},
+        direct_config,
+        null,
+        null,
+    )) orelse return error.NoResult;
+    defer aa.free(direct.slice);
+
+    const copy = (try zraster.rasterAllFrames(
+        aa,
+        io,
+        &[_]CameraInput{ camera_a.toInput(), camera_b.toInput() },
+        &[_]mo.MeshInput{mesh_input},
+        copy_config,
+        null,
+        null,
+    )) orelse return error.NoResult;
+    defer aa.free(copy.slice);
+
+    try std.testing.expect(ndarray.matchArrayDims(f64, &direct, &copy));
+    for (0..direct.slice.len) |ii| {
+        try std.testing.expectApproxEqAbs(direct.slice[ii], copy.slice[ii], duplicate_abs_tol);
     }
 }
 
@@ -579,7 +677,7 @@ test "Sphere200 multicamera gold tests" {
         };
 
         var config = tcfg.getRasterConfig(.testing);
-        config.save_strategy = .memory;
+        config.save_strategy = .memory_direct_write;
         config.image_save_opts = &[_]iio.ImageSaveOpts{
             .{
                 .format = .csv,
@@ -754,7 +852,7 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
     };
 
     var memory_config = tcfg.getRasterConfig(.testing);
-    memory_config.save_strategy = .memory;
+    memory_config.save_strategy = .memory_direct_write;
     memory_config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
     };
@@ -783,7 +881,7 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
 
     const out_dir = "tmp-tests/multicamera-mixed-sizes";
     var batch_config = tcfg.getRasterConfig(.testing);
-    batch_config.save_strategy = .both;
+    batch_config.save_strategy = .both_per_frame_copy;
     batch_config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
     };
@@ -835,6 +933,21 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
         1,
         pixel_num_small[1],
         pixel_num_small[0],
+    );
+
+    var direct_batch_config = tcfg.getRasterConfig(.testing);
+    direct_batch_config.save_strategy = .both_direct_write;
+    try std.testing.expectError(
+        error.DirectWriteRequiresUniformCameraPixels,
+        zraster.rasterAllFrames(
+            aa,
+            io,
+            &[_]CameraInput{ small_camera.toInput(), large_camera.toInput() },
+            &[_]mo.MeshInput{mesh_input},
+            direct_batch_config,
+            out_dir,
+            null,
+        ),
     );
 
     const small_csv = try std.fmt.allocPrint(

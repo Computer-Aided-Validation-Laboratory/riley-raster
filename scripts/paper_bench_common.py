@@ -11,8 +11,21 @@ from paper_const import TABLE_MAD_DECIMAL_PLACES
 from paper_const import TABLE_MEDIAN_DECIMAL_PLACES
 
 
+def bench_tag(bench_name: str) -> str:
+    return bench_name.removeprefix("bench_")
+
+
+def benchmark_root_dir(bench_name: str) -> pathlib.Path:
+    repo = repo_root()
+    preferred = repo / "out" / f"bench_stats_{bench_tag(bench_name)}"
+    if preferred.exists():
+        return preferred
+    legacy = repo / "out" / "benchmark_runs" / bench_name
+    return legacy
+
+
 def latest_run_dir(bench_name: str) -> pathlib.Path:
-    root_dir = repo_root() / "out" / "benchmark_runs" / bench_name
+    root_dir = benchmark_root_dir(bench_name)
     run_dirs = sorted(
         path for path in root_dir.iterdir() if path.is_dir()
     )
@@ -25,7 +38,7 @@ def latest_run_dir_with_paths(
     bench_name: str,
     required_rel_paths: list[str],
 ) -> pathlib.Path:
-    root_dir = repo_root() / "out" / "benchmark_runs" / bench_name
+    root_dir = benchmark_root_dir(bench_name)
     run_dirs = sorted(
         path for path in root_dir.iterdir() if path.is_dir()
     )
@@ -78,7 +91,7 @@ def latest_stats_dir_with_candidates(
     required_file_names: list[str] | None = None,
 ) -> pathlib.Path:
     required_file_names = required_file_names or ["bench_stats_median.csv"]
-    root_dir = repo_root() / "out" / "benchmark_runs" / bench_name
+    root_dir = benchmark_root_dir(bench_name)
     run_dirs = sorted(path for path in root_dir.iterdir() if path.is_dir())
     for run_dir in reversed(run_dirs):
         for experiment_dir, test_case_dir in candidates:

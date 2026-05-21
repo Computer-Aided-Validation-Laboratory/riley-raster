@@ -11,7 +11,10 @@ import sys
 import time
 
 
-SAVE_STRATEGIES = ("memory",)
+SAVE_STRATEGIES = (
+    "memory_per_frame_copy",
+    "memory_direct_write",
+)
 SIMD_LABELS = ("scalar", "simd")
 HULL_MODES = ("off", "on_no_fallback")
 

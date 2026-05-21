@@ -11,6 +11,7 @@ const benchargs = @import("common/benchargs.zig");
 const benchstats = @import("common/benchstats.zig");
 const common = @import("common/benchcommon.zig");
 const tcfg = @import("common/testconfig.zig");
+const rastcfg = @import("zraster/zig/rasterconfig.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
@@ -179,11 +180,10 @@ pub fn main(init: std.process.Init) !void {
                     .{ @tagName(mt), DEFAULT_DATA_DIR_SUFFIX },
                 );
                 for (0..bench_args.runs) |rr| {
-                    const run_out_dir_base =
-                        switch (bench_args.save_strategy) {
-                            .disk, .both => bench_args.out_dir,
-                            .memory, .none => "",
-                        };
+                    const run_out_dir_base = if (rastcfg.saveStrategyWritesDisk(bench_args.save_strategy))
+                        bench_args.out_dir
+                    else
+                        "";
                     const raster_config =
                         benchargs.applyRasterConfig(
                             base_raster_config,
@@ -258,11 +258,10 @@ pub fn main(init: std.process.Init) !void {
                     .{ @tagName(mt), DEFAULT_DATA_DIR_SUFFIX },
                 );
                 for (0..bench_args.runs) |rr| {
-                    const run_out_dir_base =
-                        switch (bench_args.save_strategy) {
-                            .disk, .both => bench_args.out_dir,
-                            .memory, .none => "",
-                        };
+                    const run_out_dir_base = if (rastcfg.saveStrategyWritesDisk(bench_args.save_strategy))
+                        bench_args.out_dir
+                    else
+                        "";
                     const raster_config =
                         benchargs.applyRasterConfig(
                             base_raster_config,

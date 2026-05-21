@@ -99,10 +99,44 @@ pub const GeometrySchedulingMode = enum {
 
 pub const SaveStrategy = enum {
     disk,
-    memory,
-    both,
+    memory_per_frame_copy,
+    memory_direct_write,
+    both_per_frame_copy,
+    both_direct_write,
     none,
 };
+
+pub fn saveStrategyReturnsImages(save_strategy: SaveStrategy) bool {
+    return switch (save_strategy) {
+        .memory_per_frame_copy,
+        .memory_direct_write,
+        .both_per_frame_copy,
+        .both_direct_write,
+        => true,
+        .disk, .none => false,
+    };
+}
+
+pub fn saveStrategyWritesDisk(save_strategy: SaveStrategy) bool {
+    return switch (save_strategy) {
+        .disk, .both_per_frame_copy, .both_direct_write => true,
+        .memory_per_frame_copy, .memory_direct_write, .none => false,
+    };
+}
+
+pub fn saveStrategyUsesDirectWrite(save_strategy: SaveStrategy) bool {
+    return switch (save_strategy) {
+        .memory_direct_write, .both_direct_write => true,
+        .disk, .memory_per_frame_copy, .both_per_frame_copy, .none => false,
+    };
+}
+
+pub fn saveStrategyUsesPerFrameCopy(save_strategy: SaveStrategy) bool {
+    return switch (save_strategy) {
+        .memory_per_frame_copy, .both_per_frame_copy => true,
+        .disk, .memory_direct_write, .both_direct_write, .none => false,
+    };
+}
 
 pub const ReportMode = enum {
     off,

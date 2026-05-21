@@ -223,7 +223,7 @@ fn runSphereCase(
         .max_geom_workers_per_job = tcfg.MAX_GEOM_WORKERS_PER_JOB,
         .geom_scheduling_mode = tcfg.GEOM_SCHEDULING_MODE,
         .max_raster_workers_per_job = tcfg.MAX_RASTER_WORKERS_PER_JOB,
-        .save_strategy = .memory,
+        .save_strategy = .memory_direct_write,
         .report = .off,
     };
 

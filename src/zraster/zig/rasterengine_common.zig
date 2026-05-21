@@ -681,6 +681,28 @@ pub inline fn getScratchField(
     };
 }
 
+const FrameImageWriter = struct {
+    slice: []f64,
+    field_stride: usize,
+    row_stride: usize,
+
+    inline fn init(image_out_arr: *NDArray(f64)) FrameImageWriter {
+        return .{
+            .slice = image_out_arr.slice,
+            .field_stride = image_out_arr.strides[0],
+            .row_stride = image_out_arr.strides[1],
+        };
+    }
+
+    inline fn set(self: *const FrameImageWriter, field_idx: usize, row_idx: usize, col_idx: usize, val: f64) void {
+        self.slice[field_idx * self.field_stride + row_idx * self.row_stride + col_idx] = val;
+    }
+
+    inline fn pixelBase(self: *const FrameImageWriter, row_idx: usize, col_idx: usize) usize {
+        return row_idx * self.row_stride + col_idx;
+    }
+};
+
 pub fn resolveScratchDirect(
     comptime scratch_layout: ScratchLayout,
     tile: rops.ActiveTile,
@@ -691,6 +713,7 @@ pub fn resolveScratchDirect(
 ) void {
     const curr_tile_size_x: usize = tile.x_px_max - tile.x_px_min;
     const curr_tile_size_y: usize = tile.y_px_max - tile.y_px_min;
+    const writer = FrameImageWriter.init(image_out_arr);
 
     for (0..curr_tile_size_y) |ty| {
         const image_px_y: usize = tile.y_px_min + ty;
@@ -699,55 +722,41 @@ pub fn resolveScratchDirect(
         for (0..curr_tile_size_x) |tx| {
             const image_px_x: usize = tile.x_px_min + tx;
             const scratch_flat_idx = scratch_row_offset + tx;
+            const image_px_base = writer.pixelBase(image_px_y, image_px_x);
 
             if (fields_num == 1) {
-                image_out_arr.set(
-                    &[_]usize{ 0, image_px_y, image_px_x },
-                    getScratchField(
-                        scratch_layout,
-                        spx_image_scratch,
-                        scratch_flat_idx,
-                        0,
-                    ),
+                writer.slice[image_px_base] = getScratchField(
+                    scratch_layout,
+                    spx_image_scratch,
+                    scratch_flat_idx,
+                    0,
                 );
             } else if (fields_num == 3) {
-                image_out_arr.set(
-                    &[_]usize{ 0, image_px_y, image_px_x },
-                    getScratchField(
-                        scratch_layout,
-                        spx_image_scratch,
-                        scratch_flat_idx,
-                        0,
-                    ),
+                writer.slice[image_px_base] = getScratchField(
+                    scratch_layout,
+                    spx_image_scratch,
+                    scratch_flat_idx,
+                    0,
                 );
-                image_out_arr.set(
-                    &[_]usize{ 1, image_px_y, image_px_x },
-                    getScratchField(
-                        scratch_layout,
-                        spx_image_scratch,
-                        scratch_flat_idx,
-                        1,
-                    ),
+                writer.slice[writer.field_stride + image_px_base] = getScratchField(
+                    scratch_layout,
+                    spx_image_scratch,
+                    scratch_flat_idx,
+                    1,
                 );
-                image_out_arr.set(
-                    &[_]usize{ 2, image_px_y, image_px_x },
-                    getScratchField(
-                        scratch_layout,
-                        spx_image_scratch,
-                        scratch_flat_idx,
-                        2,
-                    ),
+                writer.slice[2 * writer.field_stride + image_px_base] = getScratchField(
+                    scratch_layout,
+                    spx_image_scratch,
+                    scratch_flat_idx,
+                    2,
                 );
             } else {
                 for (0..@as(usize, fields_num)) |ff| {
-                    image_out_arr.set(
-                        &[_]usize{ ff, image_px_y, image_px_x },
-                        getScratchField(
-                            scratch_layout,
-                            spx_image_scratch,
-                            scratch_flat_idx,
-                            ff,
-                        ),
+                    writer.slice[ff * writer.field_stride + image_px_base] = getScratchField(
+                        scratch_layout,
+                        spx_image_scratch,
+                        scratch_flat_idx,
+                        ff,
                     );
                 }
             }
@@ -772,6 +781,7 @@ pub fn averageScratch(
     const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
     var field_avg_buff = [_]f64{0.0} ** cfg.max_nodal_fields;
     const spx_field_avg = field_avg_buff[0..@as(usize, fields_num)];
+    const writer = FrameImageWriter.init(image_out_arr);
 
     for (0..curr_tile_size_y) |ty| {
         const image_px_y: usize = tile.y_px_min + ty;
@@ -803,6 +813,7 @@ pub fn averageScratch(
         for (touched_min_px_x..@min(curr_tile_size_x, touched_max_px_x + 1)) |tx| {
             const image_px_x: usize = tile.x_px_min + tx;
             const spx_start_x: usize = sub_samp * tx;
+            const image_px_base = writer.pixelBase(image_px_y, image_px_x);
 
             if (fields_num == 1) {
                 var field_sum_0: f64 = 0.0;
@@ -822,10 +833,7 @@ pub fn averageScratch(
                     }
                 }
 
-                image_out_arr.set(
-                    &[_]usize{ 0, image_px_y, image_px_x },
-                    field_sum_0 * inv_sub_samp_sq,
-                );
+                writer.slice[image_px_base] = field_sum_0 * inv_sub_samp_sq;
             } else if (fields_num == 3) {
                 var field_sum_0: f64 = 0.0;
                 var field_sum_1: f64 = 0.0;
@@ -858,18 +866,11 @@ pub fn averageScratch(
                     }
                 }
 
-                image_out_arr.set(
-                    &[_]usize{ 0, image_px_y, image_px_x },
-                    field_sum_0 * inv_sub_samp_sq,
-                );
-                image_out_arr.set(
-                    &[_]usize{ 1, image_px_y, image_px_x },
-                    field_sum_1 * inv_sub_samp_sq,
-                );
-                image_out_arr.set(
-                    &[_]usize{ 2, image_px_y, image_px_x },
-                    field_sum_2 * inv_sub_samp_sq,
-                );
+                writer.slice[image_px_base] = field_sum_0 * inv_sub_samp_sq;
+                writer.slice[writer.field_stride + image_px_base] =
+                    field_sum_1 * inv_sub_samp_sq;
+                writer.slice[2 * writer.field_stride + image_px_base] =
+                    field_sum_2 * inv_sub_samp_sq;
             } else {
                 @memset(spx_field_avg, 0.0);
 
@@ -892,10 +893,8 @@ pub fn averageScratch(
                 }
 
                 for (0..@as(usize, fields_num)) |ff| {
-                    image_out_arr.set(
-                        &[_]usize{ ff, image_px_y, image_px_x },
-                        spx_field_avg[ff] * inv_sub_samp_sq,
-                    );
+                    writer.slice[ff * writer.field_stride + image_px_base] =
+                        spx_field_avg[ff] * inv_sub_samp_sq;
                 }
             }
         }

@@ -12,6 +12,7 @@ const benchargs = @import("common/benchargs.zig");
 const benchstats = @import("common/benchstats.zig");
 const tcfg = @import("common/testconfig.zig");
 const common = @import("common/benchcommon.zig");
+const rastcfg = @import("zraster/zig/rasterconfig.zig");
 const zraster = @import("zraster/zig/zraster.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
 const iio = @import("zraster/zig/imageio.zig");
@@ -39,7 +40,7 @@ pub fn main(init: std.process.Init) !void {
     base_raster_config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
-    base_raster_config.save_strategy = .memory;
+    base_raster_config.save_strategy = .memory_direct_write;
     var default_bench_args = benchargs.defaultBenchArgs(
         DEFAULT_OUT_DIR,
         base_raster_config,
@@ -188,11 +189,10 @@ pub fn main(init: std.process.Init) !void {
                     defer case_samples.deinit(outer_alloc);
 
                     for (0..bench_args.runs) |rr| {
-                        const run_out_dir_base =
-                            switch (bench_args.save_strategy) {
-                                .disk, .both => bench_args.out_dir,
-                                .memory, .none => "",
-                            };
+                        const run_out_dir_base = if (rastcfg.saveStrategyWritesDisk(bench_args.save_strategy))
+                            bench_args.out_dir
+                        else
+                            "";
                         const raster_config =
                             benchargs.applyRasterConfig(
                                 base_raster_config,
@@ -270,11 +270,10 @@ pub fn main(init: std.process.Init) !void {
                 defer case_samples.deinit(outer_alloc);
 
                 for (0..bench_args.runs) |rr| {
-                    const run_out_dir_base =
-                        switch (bench_args.save_strategy) {
-                            .disk, .both => bench_args.out_dir,
-                            .memory, .none => "",
-                        };
+                    const run_out_dir_base = if (rastcfg.saveStrategyWritesDisk(bench_args.save_strategy))
+                        bench_args.out_dir
+                    else
+                        "";
                     const raster_config =
                         benchargs.applyRasterConfig(
                             base_raster_config,

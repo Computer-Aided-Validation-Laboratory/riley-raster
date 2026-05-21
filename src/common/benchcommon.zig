@@ -1046,8 +1046,7 @@ fn runBenchmarkInternal(
             .mops_sec = 0.0,
         };
 
-    const return_image = (config.save_strategy == .memory or
-        config.save_strategy == .both);
+    const return_image = rastcfg.saveStrategyReturnsImages(config.save_strategy);
 
     const image_final = if (return_image) blk: {
         var images = image_arr orelse return error.NoResult;

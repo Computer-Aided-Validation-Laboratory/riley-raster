@@ -187,7 +187,7 @@ pub fn renderCase(
     camera_input.distortion = getDistortionModel(distortion_case);
 
     var config = tcfg.getRasterConfig(.gold);
-    config.save_strategy = .memory;
+    config.save_strategy = .memory_direct_write;
     config.subpixel_center_map = subpixel_center_map;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },

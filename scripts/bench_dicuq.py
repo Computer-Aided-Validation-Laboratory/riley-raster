@@ -23,7 +23,11 @@ TOTAL_ACTIVE_THREADS = [1, 2, 4, 8]
 RENDER_GROUP_COUNT_CHOICES = [1, 2, 4, 8]
 RENDER_MODES = ["offline", "in_order"]
 GEOM_SCHEDULING_MODES = ["spread", "pack"]
-SAVE_STRATEGIES = ["memory"] # "disk"
+SAVE_STRATEGIES = [
+    "disk",
+    "memory_per_frame_copy",
+    "memory_direct_write",
+]
 
 SAMPLE = "cubic_catmull_rom"
 SAMPLE_MODE = "lut_lerp"

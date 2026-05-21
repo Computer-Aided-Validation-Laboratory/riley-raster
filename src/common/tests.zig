@@ -773,7 +773,7 @@ pub fn runTestInternal(
             };
 
             var config = tcfg.getRasterConfig(.testing);
-            config.save_strategy = .memory;
+            config.save_strategy = .memory_direct_write;
             config.image_save_opts = &[_]iio.ImageSaveOpts{
                 .{ .format = .csv, .bits = null, .scaling = .none },
             };
@@ -884,7 +884,7 @@ pub fn runTestInternal(
                 };
 
                 var config = tcfg.getRasterConfig(.testing);
-                config.save_strategy = .memory;
+                config.save_strategy = .memory_direct_write;
                 config.image_save_opts = &[_]iio.ImageSaveOpts{
                     .{ .format = .csv, .bits = null, .scaling = .none },
                 };
@@ -1021,7 +1021,7 @@ pub fn runMultimeshTestExt(
         defer camera.deinit(aa);
 
         var config = tcfg.getRasterConfig(.testing);
-        config.save_strategy = .memory;
+        config.save_strategy = .memory_direct_write;
         config.image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
         };
@@ -1159,7 +1159,7 @@ pub fn runMultimeshMixedTestExt(
     defer camera.deinit(aa);
 
     var config = tcfg.getRasterConfig(.testing);
-    config.save_strategy = .memory;
+    config.save_strategy = .memory_direct_write;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
@@ -1275,7 +1275,7 @@ pub fn runMultimeshMixedRGBTestExt(
     defer camera.deinit(aa);
 
     var config_rgb = tcfg.getRasterConfig(.testing);
-    config_rgb.save_strategy = .memory;
+    config_rgb.save_strategy = .memory_direct_write;
     config_rgb.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
     };
@@ -1431,7 +1431,7 @@ pub fn runDistortEdgeTexFuncTest(
         };
 
         var config = tcfg.getRasterConfig(.testing);
-        config.save_strategy = .memory;
+        config.save_strategy = .memory_direct_write;
         config.image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
         };
@@ -1610,7 +1610,7 @@ pub fn runEdgeTexFuncConstantCaseForHullMode(
 
     var config = tcfg.getRasterConfig(.testing);
     config.hull_mode = hull_mode;
-    config.save_strategy = .memory;
+    config.save_strategy = .memory_direct_write;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
@@ -1748,7 +1748,7 @@ pub fn runDistortMidsideNodalUvTest(
     };
 
     var config = tcfg.getRasterConfig(.testing);
-    config.save_strategy = .memory;
+    config.save_strategy = .memory_direct_write;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
@@ -1892,7 +1892,7 @@ pub fn runDistortMidsideTexShaderTest(
     };
 
     var config = tcfg.getRasterConfig(.testing);
-    config.save_strategy = .memory;
+    config.save_strategy = .memory_direct_write;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };

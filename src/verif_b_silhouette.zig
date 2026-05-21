@@ -437,7 +437,7 @@ fn runDistortCase(
     defer out_dir.close(io);
 
     var config = tcfg.getRasterConfig(.preview);
-    config.save_strategy = .memory;
+    config.save_strategy = .memory_direct_write;
     config.report = .full_stats;
 
     for (0..time_steps) |frame_idx| {
