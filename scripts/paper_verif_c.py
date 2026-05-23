@@ -32,19 +32,19 @@ DIFF_FIG_SIZE = (3.2, 2.0)
 DIFF_CBAR_TICK_SIZE = 18.0
 
 LOWRES_FIG_CAPTION = (
-    "Verification case C anti-aliasing convergence for the \\texttt{tri6} "
-    "rabbit with the constant shader at low resolution. SS denotes "
+    "Anti-aliasing convergence for the \\texttt{tri6} "
+    "rabbit with a constant analytic function shader at low resolution for "
+    "verification case 3. $SS$ denotes "
     "sub-sample. The reference render is shown at the top, followed by the "
-    "difference images in descending SS order, and the lowest-SS render "
+    "difference maps in descending $SS$ order, and the lowest-SS render "
     "at the bottom. The difference images are plotted with a "
     "zero-centred diverging colour scale in 8-bit grey levels (GL)."
 )
 
 RMSE_FIG_CAPTION = (
-    "Verification case C RMSE convergence for the low-resolution (a) and "
-    "high-resolution (b) difference images using the constant rabbit "
-    "shader. SS denotes sub-sample and GL denotes 8-bit grey levels. "
-    "Each line shows one element type."
+    "Convergence of the root mean square error (RMSE) for the low-resolution "
+    "(a) and high-resolution (b) difference images for verification case 3. "
+    "$SS$ denotes pixel sub-sample and GL denotes 8-bit grey levels."
 )
 
 

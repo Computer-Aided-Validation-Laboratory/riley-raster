@@ -25,29 +25,23 @@ OUT_FIGS_TEX_PATH = pathlib.Path("verif/verif_b_figs.tex")
 SCI_THRESHOLD = 1.0e-12
 
 SHEAR_TABLE_CAPTION = (
-    "Silhouette verification for the affine deformation case using one "
-    "sensor point per pixel. TODO"
+    "Silhouette test result for affine deformation using "
+    "pixel sub-sampling $SS=1$ for verification case 2."
 )
 
 BULGE_TABLE_CAPTION = (
-    "Silhouette verification for the nonlinear edge-bulge cases using "
-    "one sensor point per pixel. These cases are only applied to the "
-    "higher-order elements because the linear \\texttt{tri3} and "
-    "\\texttt{quad4} elements do not have midside nodes that can define "
-    "a curved boundary."
+    "Silhouette verification for the midside node bulge deformation using "
+    "pixel sub-sampling $SS=1$ for verification case 2."
 )
 
 SHEAR_FIG_CAPTION = (
-    "Silhouette verification images for the affine shear cases. Each row "
-    "corresponds to one element type and compares the regular and "
-    "sheared states."
+    "Silhouette verification images for the affine shear cases in "
+    "verification case 2."
 )
 
 BULGE_FIG_CAPTION = (
-    "Silhouette verification images for the nonlinear bulge cases. Each "
-    "row corresponds to one higher-order element type and shows the "
-    "outward limit, outward bulge, regular, inward bulge, and inward "
-    "limit states."
+    "Silhouette verification images for the nonlinear bulge cases in "
+    "verification case 2."
 )
 
 

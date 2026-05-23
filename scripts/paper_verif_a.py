@@ -38,23 +38,18 @@ SCI_THRESHOLD = 1.0e-12
 VERIF_A_MAP_WIDTH = "0.19\\textwidth"
 
 TABLE_CAPTION = (
-    "Verification case A: inverse-solver reprojection accuracy for stable "
-    "element geometries. Errors are reported in pixels for accepted sensor "
-    "points. The bulge inward and bulge outward cases correspond to the "
-    "largest stable bulge magnitudes identified before the onset of "
-    "non-admissible inverse mappings."
+    "Newton inverse solver reprojection accuracy for stable "
+    "element geometries in verification case 1."
 )
 
 BULGE_FIG_CAPTION = (
-    "Verification case A reprojection-error maps for the bulge cases. "
-    "Columns correspond to element type and rows correspond to the "
-    "selected deformation states."
+    "Newton inverse solver reprojection error maps for the bulge tests in "
+    "verification case 1."
 )
 
 SHEAR_FIG_CAPTION = (
-    "Verification case A reprojection-error maps for the shear cases. "
-    "Columns correspond to element type and rows correspond to the "
-    "regular and sheared states."
+    "Newton inverse solver reprojection error maps for the shear test in "
+    "verification case 1."
 )
 
 
