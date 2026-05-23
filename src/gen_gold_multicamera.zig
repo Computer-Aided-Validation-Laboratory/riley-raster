@@ -186,6 +186,7 @@ pub fn main(init: std.process.Init) !void {
         );
 
         _ = try zraster.rasterAllFrames(
+            f64,
             aa,
             io,
             &camera_inputs,

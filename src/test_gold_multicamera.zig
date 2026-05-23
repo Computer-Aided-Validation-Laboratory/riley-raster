@@ -244,12 +244,13 @@ test "Multicamera duplicate sphere200 cameras match each other" {
     };
 
     var config = tcfg.getRasterConfig(.testing);
-    config.save_strategy = .memory_direct_write;
+    config.save_strategy = .memory;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
 
     const result = (try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &cameras,
@@ -345,7 +346,7 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
     };
 
     var ref_config = tcfg.getRasterConfig(.testing);
-    ref_config.save_strategy = .memory_direct_write;
+    ref_config.save_strategy = .memory;
     ref_config.report = .off;
     ref_config.total_threads = 2;
     ref_config.max_geom_workers_per_frame = 1;
@@ -356,6 +357,7 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
     ref_config.max_raster_workers_per_job = 2;
 
     const reference = (try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &[_]CameraInput{ camera_a.toInput(), camera_b.toInput() },
@@ -391,6 +393,7 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
         grouped_config.geom_scheduling_mode = case.mode;
 
         const grouped = (try zraster.rasterAllFramesGrouped(
+            f64,
             aa,
             case.render_groups[0..],
             &[_]CameraInput{ camera_a.toInput(), camera_b.toInput() },
@@ -435,7 +438,7 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
     }
 }
 
-test "Multicamera memory direct write matches per-frame copy" {
+test "Multicamera memory matches both" {
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
@@ -497,38 +500,44 @@ test "Multicamera memory direct write matches per-frame copy" {
         },
     };
 
-    var direct_config = tcfg.getRasterConfig(.testing);
-    direct_config.save_strategy = .memory_direct_write;
-    direct_config.report = .off;
+    var memory_config = tcfg.getRasterConfig(.testing);
+    memory_config.save_strategy = .memory;
+    memory_config.report = .off;
 
-    var copy_config = direct_config;
-    copy_config.save_strategy = .memory_per_frame_copy;
+    var both_config = memory_config;
+    both_config.save_strategy = .both;
 
-    const direct = (try zraster.rasterAllFrames(
+    const memory = (try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &[_]CameraInput{ camera_a.toInput(), camera_b.toInput() },
         &[_]mo.MeshInput{mesh_input},
-        direct_config,
+        memory_config,
         null,
         null,
     )) orelse return error.NoResult;
-    defer aa.free(direct.slice);
+    defer aa.free(memory.slice);
 
-    const copy = (try zraster.rasterAllFrames(
+    const both = (try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &[_]CameraInput{ camera_a.toInput(), camera_b.toInput() },
         &[_]mo.MeshInput{mesh_input},
-        copy_config,
+        both_config,
         null,
         null,
     )) orelse return error.NoResult;
-    defer aa.free(copy.slice);
+    defer aa.free(both.slice);
 
-    try std.testing.expect(ndarray.matchArrayDims(f64, &direct, &copy));
-    for (0..direct.slice.len) |ii| {
-        try std.testing.expectApproxEqAbs(direct.slice[ii], copy.slice[ii], duplicate_abs_tol);
+    try std.testing.expect(ndarray.matchArrayDims(f64, &memory, &both));
+    for (0..memory.slice.len) |ii| {
+        try std.testing.expectApproxEqAbs(
+            memory.slice[ii],
+            both.slice[ii],
+            duplicate_abs_tol,
+        );
     }
 }
 
@@ -677,7 +686,7 @@ test "Sphere200 multicamera gold tests" {
         };
 
         var config = tcfg.getRasterConfig(.testing);
-        config.save_strategy = .memory_direct_write;
+        config.save_strategy = .memory;
         config.image_save_opts = &[_]iio.ImageSaveOpts{
             .{
                 .format = .csv,
@@ -692,6 +701,7 @@ test "Sphere200 multicamera gold tests" {
         }
         const time_start = Timestamp.now(io, .awake);
         const result = (try zraster.rasterAllFrames(
+            f64,
             aa,
             io,
             &camera_inputs,
@@ -852,12 +862,13 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
     };
 
     var memory_config = tcfg.getRasterConfig(.testing);
-    memory_config.save_strategy = .memory_direct_write;
+    memory_config.save_strategy = .memory;
     memory_config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
     };
 
     const small_single = (try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &[_]CameraInput{small_camera.toInput()},
@@ -869,6 +880,7 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
     defer aa.free(small_single.slice);
 
     const large_single = (try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &[_]CameraInput{large_camera.toInput()},
@@ -881,11 +893,12 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
 
     const out_dir = "tmp-tests/multicamera-mixed-sizes";
     var batch_config = tcfg.getRasterConfig(.testing);
-    batch_config.save_strategy = .both_per_frame_copy;
+    batch_config.save_strategy = .both;
     batch_config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
     };
     const batch_result = (try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &[_]CameraInput{ small_camera.toInput(), large_camera.toInput() },
@@ -933,21 +946,6 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
         1,
         pixel_num_small[1],
         pixel_num_small[0],
-    );
-
-    var direct_batch_config = tcfg.getRasterConfig(.testing);
-    direct_batch_config.save_strategy = .both_direct_write;
-    try std.testing.expectError(
-        error.DirectWriteRequiresUniformCameraPixels,
-        zraster.rasterAllFrames(
-            aa,
-            io,
-            &[_]CameraInput{ small_camera.toInput(), large_camera.toInput() },
-            &[_]mo.MeshInput{mesh_input},
-            direct_batch_config,
-            out_dir,
-            null,
-        ),
     );
 
     const small_csv = try std.fmt.allocPrint(

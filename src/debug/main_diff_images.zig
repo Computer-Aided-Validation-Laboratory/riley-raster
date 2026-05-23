@@ -229,6 +229,7 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Rendering Mixed RGB Data for Difference analysis...\n", .{});
     const camera_input = camera.toInput();
     const result = (try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &[_]@TypeOf(camera_input){camera_input},

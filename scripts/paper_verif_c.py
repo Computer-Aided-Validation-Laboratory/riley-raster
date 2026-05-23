@@ -33,7 +33,7 @@ DIFF_CBAR_TICK_SIZE = 18.0
 
 LOWRES_FIG_CAPTION = (
     "Anti-aliasing convergence for the \\texttt{tri6} "
-    "rabbit with a constant analytic function shader at low resolution for "
+    "Riley mesh with a constant analytic function shader at low resolution for "
     "verification case 3. $SS$ denotes "
     "sub-sample. The reference render is shown at the top, followed by the "
     "difference maps in descending $SS$ order, and the lowest-SS render "

@@ -190,6 +190,7 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Rendering rabbits to {s}/...\n", .{out_dir_root});
     const camera_input = camera.toInput();
     const images = try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &[_]@TypeOf(camera_input){camera_input},

@@ -54,7 +54,7 @@ pub fn defaultBenchArgs(
         .max_raster_workers_per_job = raster_config.max_raster_workers_per_job,
         .hull_mode = raster_config.hull_mode,
         .subpixel_center_map = raster_config.subpixel_center_map,
-        .save_strategy = .memory_direct_write,
+        .save_strategy = .memory,
         .sample = null,
         .sample_mode = null,
         .pixels_num = .{ 800, 500 },
@@ -277,8 +277,12 @@ fn parseEnum(comptime T: type, value: []const u8) !T {
 }
 
 fn parseSaveStrategy(value: []const u8) !rastcfg.SaveStrategy {
-    if (std.mem.eql(u8, value, "memory")) return .memory_per_frame_copy;
-    if (std.mem.eql(u8, value, "both")) return .both_per_frame_copy;
+    if (std.mem.eql(u8, value, "memory_direct_write")) return .memory;
+    if (std.mem.eql(u8, value, "memory_per_frame_copy")) return .memory;
+    if (std.mem.eql(u8, value, "memory")) return .memory;
+    if (std.mem.eql(u8, value, "both_direct_write")) return .both;
+    if (std.mem.eql(u8, value, "both_per_frame_copy")) return .both;
+    if (std.mem.eql(u8, value, "both")) return .both;
     return parseEnum(rastcfg.SaveStrategy, value);
 }
 
@@ -346,7 +350,7 @@ test "parse bench args named options" {
         "--subpixel-center-map",
         "affine_jac",
         "--save-strategy",
-        "memory_direct_write",
+        "memory",
         "--sample",
         "linear",
         "--sample-mode",
@@ -409,7 +413,7 @@ test "parse bench args named options" {
         bench_args.subpixel_center_map,
     );
     try std.testing.expectEqual(
-        rastcfg.SaveStrategy.memory_direct_write,
+        rastcfg.SaveStrategy.memory,
         bench_args.save_strategy,
     );
     try std.testing.expectEqual(

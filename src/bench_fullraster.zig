@@ -40,7 +40,7 @@ pub fn main(init: std.process.Init) !void {
     base_raster_config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
-    base_raster_config.save_strategy = .memory_direct_write;
+    base_raster_config.save_strategy = .memory;
     var default_bench_args = benchargs.defaultBenchArgs(
         DEFAULT_OUT_DIR,
         base_raster_config,

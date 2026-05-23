@@ -25,8 +25,7 @@ RENDER_MODES = ["offline", "in_order"]
 GEOM_SCHEDULING_MODES = ["spread", "pack"]
 SAVE_STRATEGIES = [
     "disk",
-    "memory_per_frame_copy",
-    "memory_direct_write",
+    "memory",
 ]
 
 SAMPLE = "cubic_catmull_rom"

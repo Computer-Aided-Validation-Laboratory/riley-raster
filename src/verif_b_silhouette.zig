@@ -316,6 +316,7 @@ fn renderScalarMap(
     };
 
     const result = (try zraster.rasterAllFrames(
+        f64,
         render_allocator,
         io,
         &[_]cam.CameraInput{camera_input},
@@ -437,7 +438,7 @@ fn runDistortCase(
     defer out_dir.close(io);
 
     var config = tcfg.getRasterConfig(.preview);
-    config.save_strategy = .memory_direct_write;
+    config.save_strategy = .memory;
     config.report = .full_stats;
 
     for (0..time_steps) |frame_idx| {

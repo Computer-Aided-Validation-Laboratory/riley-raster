@@ -50,6 +50,7 @@ pub fn renderAndSave(
     const meshes = &[_]MeshInput{mesh_input};
     const camera_input = camera.toInput();
     const images = try zraster.rasterAllFrames(
+        f64,
         outer_alloc,
         io,
         &[_]CameraInput{camera_input},
@@ -214,6 +215,7 @@ pub fn runMultimeshGenerationExt(
         out_dir.close(io);
         const camera_input = camera.toInput();
         const images = try zraster.rasterAllFrames(
+            f64,
             aa,
             io,
             &[_]CameraInput{camera_input},
@@ -286,6 +288,7 @@ pub fn runMultimeshMixedGenerationExt(
     out_dir.close(io);
     const camera_input = camera.toInput();
     const images = try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &[_]CameraInput{camera_input},
@@ -373,6 +376,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
     out_dir.close(io);
     const camera_input = camera_rgb.toInput();
     _ = try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &[_]CameraInput{camera_input},

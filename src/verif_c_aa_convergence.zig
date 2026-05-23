@@ -28,7 +28,7 @@ const CameraOps = camera_mod.CameraOps;
 const NDArrayOps = ndarray.NDArrayOps(f64);
 const MatSlice = matslice.MatSlice(f64);
 
-const rabbit_mesh_types = [_]gk.MeshType{
+const bunny_mesh_types = [_]gk.MeshType{
     .tri3,
     .tri6,
     .quad4ibi,
@@ -36,7 +36,7 @@ const rabbit_mesh_types = [_]gk.MeshType{
     .quad9,
 };
 
-const rabbit_names = [_][]const u8{
+const bunny_names = [_][]const u8{
     "tri3",
     "tri6",
     "quad4",
@@ -44,12 +44,12 @@ const rabbit_names = [_][]const u8{
     "quad9",
 };
 
-const rabbit_dir_paths = [_][]const u8{
-    "data/rabbits/rabbit_tri3/",
-    "data/rabbits/rabbit_tri6/",
-    "data/rabbits/rabbit_quad4/",
-    "data/rabbits/rabbit_quad8/",
-    "data/rabbits/rabbit_quad9/",
+const bunny_dir_paths = [_][]const u8{
+    "data/rabbits/riley_tri3/",
+    "data/rabbits/riley_tri6/",
+    "data/rabbits/riley_quad4/",
+    "data/rabbits/riley_quad8/",
+    "data/rabbits/riley_quad9/",
 };
 
 const ssaa_levels_lowres = [_]u8{ 32, 16, 8, 4, 2, 1 };
@@ -81,7 +81,7 @@ pub fn main(init: std.process.Init) !void {
     const aa = arena.allocator();
 
     const out_verif_root = "verif";
-    const fov_scale: f64 = 1.01;
+    const fov_scale: f64 = 1.02;
 
     std.debug.print("Loading speckle texture...\n", .{});
     const texture = try iio.loadImage(
@@ -93,11 +93,11 @@ pub fn main(init: std.process.Init) !void {
         .tiff,
     );
 
-    for (rabbit_mesh_types, 0..) |mesh_type, ii| {
-        const rabbit_name = rabbit_names[ii];
-        const dir_path = rabbit_dir_paths[ii];
+    for (bunny_mesh_types, 0..) |mesh_type, ii| {
+        const bunny_name = bunny_names[ii];
+        const dir_path = bunny_dir_paths[ii];
 
-        std.debug.print("Processing rabbit: {s}\n", .{rabbit_name});
+        std.debug.print("Processing Riley mesh: {s}\n", .{bunny_name});
 
         const sim_datas = try meshio.loadMultiSimData(
             aa,
@@ -121,7 +121,7 @@ pub fn main(init: std.process.Init) !void {
                     "{s}/c_{s}_{s}_{s}",
                     .{
                         out_verif_root,
-                        rabbit_name,
+                        bunny_name,
                         shader_name,
                         resolution_case.tag,
                     },
@@ -213,12 +213,13 @@ pub fn main(init: std.process.Init) !void {
 
                     const camera_input = camera.toInput();
                     const config = rastcfg.RasterConfig{
-                        .save_strategy = .memory_direct_write,
+                        .save_strategy = .memory,
                         .report = .off,
                         .subpixel_center_map = .per_tile,
                     };
 
                     const images = try zraster.rasterAllFrames(
+                        f64,
                         ra,
                         io,
                         &[_]@TypeOf(camera_input){camera_input},

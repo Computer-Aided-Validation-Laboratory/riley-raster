@@ -143,6 +143,7 @@ pub fn runSphere200MultiCullQuiet(
     const e2e_start = std.Io.Clock.Timestamp.now(io, .awake);
     const camera_input = camera.toInput();
     var image_arr = try zraster.rasterAllFrames(
+        f64,
         outer_alloc,
         io,
         &[_]CameraInput{camera_input},

@@ -39,7 +39,7 @@ pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
     const base_raster_config = benchdicuq.getBaseRasterConfig();
-    
+
     var default_bench_args = benchargs.defaultBenchArgs(
         DEFAULT_OUT_DIR,
         base_raster_config,
@@ -129,9 +129,9 @@ pub fn main(init: std.process.Init) !void {
         render_group_workers[ii] = workers_per_group;
     }
     const io = render_groups[0].io;
-        
+
     const sample_config = try benchdicuq.makeSampleConfig(bench_args);
-    
+
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();

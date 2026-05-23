@@ -162,6 +162,125 @@ pub fn compareNDArrayToGold(
     }
 }
 
+fn getActualValAsF64(
+    comptime T: type,
+    array: *const NDArray(T),
+    camera_idx: usize,
+    frame: usize,
+    field_start: usize,
+    channel_idx: usize,
+    row_idx: usize,
+    col_idx: usize,
+) f64 {
+    const actual_val = switch (array.dims.len) {
+        5 => array.get(&[_]usize{
+            camera_idx,
+            frame,
+            field_start + channel_idx,
+            row_idx,
+            col_idx,
+        }),
+        4 => array.get(&[_]usize{
+            frame,
+            field_start + channel_idx,
+            row_idx,
+            col_idx,
+        }),
+        else => array.get(&[_]usize{
+            field_start + channel_idx,
+            row_idx,
+            col_idx,
+        }),
+    };
+
+    if (T == f64) {
+        return actual_val;
+    }
+    return @as(f64, @floatFromInt(actual_val));
+}
+
+pub fn compareNDArrayToGoldTyped(
+    comptime T: type,
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    array: *const NDArray(T),
+    camera_idx: usize,
+    frame: usize,
+    field_start: usize,
+    channels: usize,
+    path: []const u8,
+    rel_tol: f64,
+    abs_tol: f64,
+) !void {
+    var gold = if (std.mem.endsWith(u8, path, ".fimg")) blk: {
+        const gold_array = try iio.loadFIMG(allocator, io, path);
+        break :blk gold_array;
+    } else if (channels == 1)
+        try csvio.loadScalarCsv2D(allocator, io, path)
+    else
+        try csvio.loadPackedCsv2D(allocator, io, path, channels);
+
+    defer {
+        allocator.free(gold.slice);
+        gold.deinit(allocator);
+    }
+
+    const gold_rows = if (gold.dims.len == 3 and
+        std.mem.endsWith(u8, path, ".fimg"))
+        gold.dims[1]
+    else
+        gold.dims[0];
+    const gold_cols = if (gold.dims.len == 3 and
+        std.mem.endsWith(u8, path, ".fimg"))
+        gold.dims[2]
+    else
+        gold.dims[1];
+
+    const rows = switch (array.dims.len) {
+        5 => array.dims[3],
+        4 => array.dims[2],
+        else => array.dims[1],
+    };
+    const cols = switch (array.dims.len) {
+        5 => array.dims[4],
+        4 => array.dims[3],
+        else => array.dims[2],
+    };
+
+    if (gold_rows != rows) {
+        return error.GoldRowsMismatch;
+    }
+    if (gold_cols != cols) {
+        return error.GoldColsMismatch;
+    }
+
+    for (0..rows) |rr| {
+        for (0..cols) |cc| {
+            for (0..channels) |ch| {
+                const gold_val = if (std.mem.endsWith(u8, path, ".fimg"))
+                    gold.get(&[_]usize{ ch, rr, cc })
+                else if (channels == 1)
+                    gold.get(&[_]usize{ rr, cc })
+                else
+                    gold.get(&[_]usize{ rr, cc, ch });
+                const actual_val = getActualValAsF64(
+                    T,
+                    array,
+                    camera_idx,
+                    frame,
+                    field_start,
+                    ch,
+                    rr,
+                    cc,
+                );
+                if (!isApproxEqual(gold_val, actual_val, rel_tol, abs_tol)) {
+                    return error.PixelMismatch;
+                }
+            }
+        }
+    }
+}
+
 pub fn compareNDArrayToCSV(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -773,7 +892,7 @@ pub fn runTestInternal(
             };
 
             var config = tcfg.getRasterConfig(.testing);
-            config.save_strategy = .memory_direct_write;
+            config.save_strategy = .memory;
             config.image_save_opts = &[_]iio.ImageSaveOpts{
                 .{ .format = .csv, .bits = null, .scaling = .none },
             };
@@ -786,6 +905,7 @@ pub fn runTestInternal(
             }
             const time_start = Timestamp.now(io, .awake);
             const result = (try zraster.rasterAllFrames(
+                f64,
                 aa,
                 io,
                 &[_]CameraInput{prepared_camera_input},
@@ -884,7 +1004,7 @@ pub fn runTestInternal(
                 };
 
                 var config = tcfg.getRasterConfig(.testing);
-                config.save_strategy = .memory_direct_write;
+                config.save_strategy = .memory;
                 config.image_save_opts = &[_]iio.ImageSaveOpts{
                     .{ .format = .csv, .bits = null, .scaling = .none },
                 };
@@ -897,6 +1017,7 @@ pub fn runTestInternal(
                 }
                 const time_start = Timestamp.now(io, .awake);
                 const result = (try zraster.rasterAllFrames(
+                    f64,
                     aa,
                     io,
                     &[_]CameraInput{prepared_camera_input},
@@ -1021,7 +1142,7 @@ pub fn runMultimeshTestExt(
         defer camera.deinit(aa);
 
         var config = tcfg.getRasterConfig(.testing);
-        config.save_strategy = .memory_direct_write;
+        config.save_strategy = .memory;
         config.image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
         };
@@ -1037,6 +1158,7 @@ pub fn runMultimeshTestExt(
 
         const time_start = Timestamp.now(io, .awake);
         const result = (try zraster.rasterAllFrames(
+            f64,
             aa,
             io,
             &[_]CameraInput{camera_input},
@@ -1159,7 +1281,7 @@ pub fn runMultimeshMixedTestExt(
     defer camera.deinit(aa);
 
     var config = tcfg.getRasterConfig(.testing);
-    config.save_strategy = .memory_direct_write;
+    config.save_strategy = .memory;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
@@ -1167,6 +1289,7 @@ pub fn runMultimeshMixedTestExt(
 
     const time_start = Timestamp.now(io, .awake);
     const result = (try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &[_]CameraInput{camera_input},
@@ -1275,7 +1398,7 @@ pub fn runMultimeshMixedRGBTestExt(
     defer camera.deinit(aa);
 
     var config_rgb = tcfg.getRasterConfig(.testing);
-    config_rgb.save_strategy = .memory_direct_write;
+    config_rgb.save_strategy = .memory;
     config_rgb.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
     };
@@ -1284,6 +1407,7 @@ pub fn runMultimeshMixedRGBTestExt(
 
     const time_start = Timestamp.now(io, .awake);
     const result = (try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &[_]CameraInput{camera_input},
@@ -1431,7 +1555,7 @@ pub fn runDistortEdgeTexFuncTest(
         };
 
         var config = tcfg.getRasterConfig(.testing);
-        config.save_strategy = .memory_direct_write;
+        config.save_strategy = .memory;
         config.image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none },
         };
@@ -1442,6 +1566,7 @@ pub fn runDistortEdgeTexFuncTest(
         }
         const start_time = Timestamp.now(io, .awake);
         const result = (try zraster.rasterAllFrames(
+            f64,
             aa,
             io,
             &[_]CameraInput{prepared_camera_input},
@@ -1610,7 +1735,7 @@ pub fn runEdgeTexFuncConstantCaseForHullMode(
 
     var config = tcfg.getRasterConfig(.testing);
     config.hull_mode = hull_mode;
-    config.save_strategy = .memory_direct_write;
+    config.save_strategy = .memory;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
@@ -1621,6 +1746,7 @@ pub fn runEdgeTexFuncConstantCaseForHullMode(
     }
     const start_time = Timestamp.now(io, .awake);
     const result = (try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &[_]CameraInput{prepared_camera_input},
@@ -1748,7 +1874,7 @@ pub fn runDistortMidsideNodalUvTest(
     };
 
     var config = tcfg.getRasterConfig(.testing);
-    config.save_strategy = .memory_direct_write;
+    config.save_strategy = .memory;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
@@ -1759,6 +1885,7 @@ pub fn runDistortMidsideNodalUvTest(
     }
     const start_time = Timestamp.now(io, .awake);
     const result = (try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &[_]CameraInput{prepared_camera_input},
@@ -1892,7 +2019,7 @@ pub fn runDistortMidsideTexShaderTest(
     };
 
     var config = tcfg.getRasterConfig(.testing);
-    config.save_strategy = .memory_direct_write;
+    config.save_strategy = .memory;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
@@ -1903,6 +2030,7 @@ pub fn runDistortMidsideTexShaderTest(
     }
     const start_time = Timestamp.now(io, .awake);
     const result = (try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &[_]CameraInput{prepared_camera_input},

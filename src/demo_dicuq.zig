@@ -60,14 +60,14 @@ pub fn main(init: std.process.Init) !void {
     defer threaded_io.deinit();
     const io = threaded_io.io();
 
-    const data_dir = "data/FE/platehole3d_4mr_2f/";
+    const data_dir = "data/FE/platehole3d_4mr_1f/";
     const out_dir_root = "out/demo-dicuq";
-    
+
     // 2. Load Simulation Data
     std.debug.print("Loading simulation data from {s}...\n", .{data_dir});
     const coord_path = data_dir ++ "coords.csv";
     const conn_path = data_dir ++ "connect.csv";
-    
+
     const field_files = &[_][]const u8{
         data_dir ++ "field_disp_x.csv",
         data_dir ++ "field_disp_y.csv",
@@ -75,12 +75,14 @@ pub fn main(init: std.process.Init) !void {
     };
 
     // For this demo, we don't need the field data as we are using texture shading
-    const sim_data = try meshio.loadSimData(aa, 
-                                            io, 
-                                            coord_path, 
-                                            conn_path, 
-                                            null, 
-                                            field_files,);
+    const sim_data = try meshio.loadSimData(
+        aa,
+        io,
+        coord_path,
+        conn_path,
+        null,
+        field_files,
+    );
 
     // 3. Load UV map for the texture
     std.debug.print("Loading UV map...\n", .{});
@@ -119,22 +121,22 @@ pub fn main(init: std.process.Init) !void {
 
     // 6. Setup Camera
     std.debug.print("Setting up camera...\n", .{});
-    // Common camera parameters: typical 5MPx 
+    // Common camera parameters: typical 5MPx
     const pixel_num = [_]u32{ 2464, 2056 };
     const pixel_size = [_]f64{ 3.45e-6, 3.45e-6 };
     const focal_leng: f64 = 50.0e-3;
     const fov_scale_factor: f64 = 0.9;
-    const sub_samp: u8 = 2; 
+    const sub_samp: u8 = 2;
 
     const roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
-        
+
     // Camera 0: face on
     const cam0_rot = Rotation.init(
         std.math.degreesToRadians(0.0), //alpha_z_deg
-        std.math.degreesToRadians(0.0),  //beta_y_deg - stereo axis
+        std.math.degreesToRadians(0.0), //beta_y_deg - stereo axis
         std.math.degreesToRadians(0.0), //gamma_x_deg
     );
-    
+
     const cam0_pos = CameraOps.posFillFrameFromRot(
         &sim_data.coords,
         pixel_num,
@@ -151,16 +153,16 @@ pub fn main(init: std.process.Init) !void {
         .rot_world = cam0_rot,
         .roi_cent_world = roi_pos,
         .focal_length = focal_leng,
-        .sub_sample = sub_samp,     
+        .sub_sample = sub_samp,
     };
 
     // Camera 1: stereo angle
     const cam1_rot = Rotation.init(
         std.math.degreesToRadians(0.0), //alpha_z_deg
-        std.math.degreesToRadians(20.0),  //beta_y_deg - stereo axis
+        std.math.degreesToRadians(20.0), //beta_y_deg - stereo axis
         std.math.degreesToRadians(0.0), //gamma_x_deg
     );
-    
+
     const cam1_pos = CameraOps.posFillFrameFromRot(
         &sim_data.coords,
         pixel_num,
@@ -177,14 +179,15 @@ pub fn main(init: std.process.Init) !void {
         .rot_world = cam1_rot,
         .roi_cent_world = roi_pos,
         .focal_length = focal_leng,
-        .sub_sample = sub_samp,     
+        .sub_sample = sub_samp,
     };
-        
+
     // 7. Run the Rasteriser
     std.debug.print("Rendering simulation to {s}/...\n", .{out_dir_root});
     const meshes = [_]MeshInput{mesh_input};
-    const cams_in = [_]CameraInput{cam0_in,cam1_in};
+    const cams_in = [_]CameraInput{ cam0_in, cam1_in };
     const images = try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &cams_in,
@@ -202,17 +205,16 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Demo complete. Images saved to {s}/\n", .{out_dir_root});
 
     const print_break = [_]u8{'='} ** 80;
-    print("\n{s}\n",.{print_break});
+    print("\n{s}\n", .{print_break});
 
-    print("ROI center:\n",.{});
+    print("ROI center:\n", .{});
     roi_pos.vecPrint();
-    
-    print("Camera 0:\n",.{});
+
+    print("Camera 0:\n", .{});
     cam0_pos.vecPrint();
 
-    print("Camera 1:\n",.{});
+    print("Camera 1:\n", .{});
     cam1_pos.vecPrint();
 
-    print("{s}\n",.{print_break});
-
+    print("{s}\n", .{print_break});
 }

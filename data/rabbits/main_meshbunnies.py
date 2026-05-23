@@ -13,9 +13,12 @@ from svgpathtools import svg2paths
 TARGET_LENGTH = 1.0
 FEEBS_SCALE = 0.85
 EDGE_FRACTION = 0.07
-MIN_SEGMENT_LENGTH = 0.001
-STEPS_ON_PATH = 400
+MIN_SEGMENT_LENGTH = 0.005
+STEPS_ON_PATH = 500
 TRI_FACT = 0.6
+QUAD_FACT = 0.5
+QUAD_ALGORITHM = 8
+QUAD_HIGH_ORDER_OPTIMIZE = 2
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 OUTLINE_DIR = os.path.join(SCRIPT_DIR, "outline")
@@ -61,7 +64,9 @@ def build_simplified_points(path, target_length):
     scale = target_length / (max_x - min_x)
 
     def transform(point):
-        return (point.real - min_x) * scale, -(point.imag - min_y) * scale
+        x_coord = (point.real - min_x) * scale
+        y_coord = -(point.imag - min_y) * scale
+        return x_coord, y_coord
 
     simplified_points = []
     last_point = None
@@ -84,7 +89,20 @@ def build_simplified_points(path, target_length):
             simplified_points.append(transformed_point)
             last_point = transformed_point
 
-    return simplified_points
+    return flip_points_horizontal(simplified_points)
+
+
+def flip_points_horizontal(points):
+    x_coords = [point[0] for point in points]
+    min_x = min(x_coords)
+    max_x = max(x_coords)
+
+    flipped_points = []
+    for x_coord, y_coord in points:
+        flipped_x_coord = max_x + min_x - x_coord
+        flipped_points.append((flipped_x_coord, y_coord))
+
+    return flipped_points
 
 
 def get_target_length_by_bunny():
@@ -98,6 +116,8 @@ def get_mesh_size(target_length, edge_fraction, elem_type):
     mesh_size = target_length * edge_fraction
     if elem_type in [ElemType.TRI3, ElemType.TRI6]:
         return mesh_size * TRI_FACT
+    if elem_type in [ElemType.QUAD4, ElemType.QUAD8, ElemType.QUAD9]:
+        return mesh_size * QUAD_FACT
     return mesh_size
 
 
@@ -135,9 +155,8 @@ def mesh_bunny(
 
     if "quad" in elem_type.value:
         gmsh.model.mesh.setRecombine(2, surface_tag)
-        gmsh.option.setNumber("Mesh.Algorithm", 1)
+        gmsh.option.setNumber("Mesh.Algorithm", QUAD_ALGORITHM)
         gmsh.option.setNumber("Mesh.RecombineAll", 1)
-        gmsh.option.setNumber("Mesh.SubdivisionAlgorithm", 1)
     else:
         gmsh.option.setNumber("Mesh.Algorithm", 1)
 
@@ -147,7 +166,18 @@ def mesh_bunny(
         gmsh.option.setNumber("Mesh.SecondOrderIncomplete", 0)
 
     gmsh.model.mesh.generate(2)
-    gmsh.model.mesh.setOrder(get_element_order(elem_type))
+
+    if "quad" in elem_type.value:
+        gmsh.model.mesh.optimize("Relocate2D")
+
+    order = get_element_order(elem_type)
+    gmsh.model.mesh.setOrder(order)
+    if "quad" in elem_type.value and order == 2:
+        gmsh.option.setNumber(
+            "Mesh.HighOrderOptimize",
+            QUAD_HIGH_ORDER_OPTIMIZE,
+        )
+        gmsh.model.mesh.optimize("HighOrder")
 
     out_dir = os.path.join(SCRIPT_DIR, f"{bunny_name.value}_{elem_type.value}")
     os.makedirs(out_dir, exist_ok=True)
@@ -260,7 +290,10 @@ def build_polygons(coords, connectivity, elem_type):
     corner_indices = set()
 
     for element_nodes in connectivity:
-        polygon_nodes = [coords[node_index][:2] for node_index in element_nodes[:num_corners]]
+        polygon_nodes = [
+            coords[node_index][:2]
+            for node_index in element_nodes[:num_corners]
+        ]
         polygons.append(polygon_nodes)
         for node_index in element_nodes[:num_corners]:
             corner_indices.add(node_index)

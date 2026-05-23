@@ -218,17 +218,17 @@ fn runSphereCase(
         .max_geom_workers_per_frame = tcfg.MAX_GEOM_WORKERS_PER_FRAME,
         .max_raster_workers_per_frame = tcfg.MAX_RASTER_WORKERS_PER_FRAME,
         .frame_batch_size_per_group = tcfg.FRAME_BATCH_SIZE_PER_GROUP,
-        .max_geom_jobs_in_flight_per_group =
-            tcfg.MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP,
+        .max_geom_jobs_in_flight_per_group = tcfg.MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP,
         .max_geom_workers_per_job = tcfg.MAX_GEOM_WORKERS_PER_JOB,
         .geom_scheduling_mode = tcfg.GEOM_SCHEDULING_MODE,
         .max_raster_workers_per_job = tcfg.MAX_RASTER_WORKERS_PER_JOB,
-        .save_strategy = .memory_direct_write,
+        .save_strategy = .memory,
         .report = .off,
     };
 
     const camera_input = camera.toInput();
     const result = (try zraster.rasterAllFrames(
+        f64,
         allocator,
         io,
         &[_]@TypeOf(camera_input){camera_input},

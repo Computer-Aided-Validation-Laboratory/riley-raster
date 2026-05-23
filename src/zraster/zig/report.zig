@@ -101,7 +101,24 @@ pub fn publishFrameResults(
     const nodes_per_elem = calcNodesPerElem(prep_meshes);
 
     switch (config.report) {
-        .off => {},
+        .off => {
+            if (bench_capture) |capture| {
+                const capture_idx = calcBenchCaptureIdx(
+                    cameras_num,
+                    camera_idx,
+                    frame_idx,
+                );
+                capture[capture_idx] = .{
+                    .camera_idx = camera_idx,
+                    .frame_idx = frame_idx,
+                    .bench_log = .{
+                        .frame_times = frame_times,
+                        .total_elements = total_elems_num,
+                        .visible_elements = total_elems_in_image,
+                    },
+                };
+            }
+        },
         .bench => {
             report_storage.bench.frame_times = frame_times;
             report_storage.bench.total_elements = total_elems_num;
@@ -131,6 +148,20 @@ pub fn publishFrameResults(
         },
         .full_stats => {
             report_storage.full_stats.bench.frame_times = frame_times;
+            report_storage.full_stats.bench.total_elements = total_elems_num;
+            report_storage.full_stats.bench.visible_elements = total_elems_in_image;
+            if (bench_capture) |capture| {
+                const capture_idx = calcBenchCaptureIdx(
+                    cameras_num,
+                    camera_idx,
+                    frame_idx,
+                );
+                capture[capture_idx] = .{
+                    .camera_idx = camera_idx,
+                    .frame_idx = frame_idx,
+                    .bench_log = report_storage.full_stats.bench,
+                };
+            }
             try report_storage.full_stats.saveFrameReport(
                 io,
                 outer_alloc,

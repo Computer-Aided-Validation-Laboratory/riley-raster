@@ -128,6 +128,7 @@ pub fn main(init: std.process.Init) !void {
     const meshes = [_]MeshInput{mesh_input};
     const camera_input = camera.toInput();
     const images = try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &[_]@TypeOf(camera_input){camera_input},

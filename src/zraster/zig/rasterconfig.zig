@@ -7,6 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const iio = @import("imageio.zig");
+const imageops = @import("imageops.zig");
 
 // Parallelism convention:
 // Let each render group g have W_g work-capable threads, including the caller.
@@ -53,7 +54,8 @@ pub const RasterConfig = struct {
     // Maximum number of workers the single active raster job in a render group
     // may use.
     max_raster_workers_per_job: u16 = 1,
-    save_strategy: SaveStrategy = .disk,
+    save_strategy: SaveStrategy = .memory,
+    memory_image_scaling: imageops.ScaleStrategy = .auto,
     image_save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
@@ -99,42 +101,22 @@ pub const GeometrySchedulingMode = enum {
 
 pub const SaveStrategy = enum {
     disk,
-    memory_per_frame_copy,
-    memory_direct_write,
-    both_per_frame_copy,
-    both_direct_write,
+    memory,
+    both,
     none,
 };
 
 pub fn saveStrategyReturnsImages(save_strategy: SaveStrategy) bool {
     return switch (save_strategy) {
-        .memory_per_frame_copy,
-        .memory_direct_write,
-        .both_per_frame_copy,
-        .both_direct_write,
-        => true,
+        .memory, .both => true,
         .disk, .none => false,
     };
 }
 
 pub fn saveStrategyWritesDisk(save_strategy: SaveStrategy) bool {
     return switch (save_strategy) {
-        .disk, .both_per_frame_copy, .both_direct_write => true,
-        .memory_per_frame_copy, .memory_direct_write, .none => false,
-    };
-}
-
-pub fn saveStrategyUsesDirectWrite(save_strategy: SaveStrategy) bool {
-    return switch (save_strategy) {
-        .memory_direct_write, .both_direct_write => true,
-        .disk, .memory_per_frame_copy, .both_per_frame_copy, .none => false,
-    };
-}
-
-pub fn saveStrategyUsesPerFrameCopy(save_strategy: SaveStrategy) bool {
-    return switch (save_strategy) {
-        .memory_per_frame_copy, .both_per_frame_copy => true,
-        .disk, .memory_direct_write, .both_direct_write, .none => false,
+        .disk, .both => true,
+        .memory, .none => false,
     };
 }
 

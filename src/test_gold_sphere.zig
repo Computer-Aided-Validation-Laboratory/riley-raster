@@ -136,7 +136,7 @@ test "Sphere Gold Tests" {
 
                         // 1. Run benchmark
                         var r_config = tcfg.getRasterConfig(.bench);
-                        r_config.save_strategy = if (c.out.len > 0) .both_direct_write else .memory_direct_write;
+                        r_config.save_strategy = if (c.out.len > 0) .both else .memory;
 
                         var result = try common.runBenchmarkQuiet(
                             allocator,

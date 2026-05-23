@@ -153,7 +153,7 @@ test "Unified Benchmark Tests" {
                         var r_config = tcfg.getRasterConfig(.bench);
                         // Bench tests compare the returned in-memory image directly
                         // against gold, so avoid the disk-save path here.
-                        r_config.save_strategy = .memory_direct_write;
+                        r_config.save_strategy = .memory;
                         r_config.image_save_opts = &[_]iio.ImageSaveOpts{};
 
                         const case_name = try common.calcCaseName(

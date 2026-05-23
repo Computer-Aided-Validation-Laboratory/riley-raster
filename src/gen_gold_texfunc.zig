@@ -89,6 +89,7 @@ fn renderCase(
     out_dir.close(io);
 
     const images = try zraster.rasterAllFrames(
+        f64,
         allocator,
         io,
         &[_]CameraInput{camera_input},

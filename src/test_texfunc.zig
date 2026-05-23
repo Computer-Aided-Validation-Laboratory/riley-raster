@@ -155,7 +155,7 @@ fn runTexFuncCase(
     }
 
     var config = tcfg.getRasterConfig(.testing);
-    config.save_strategy = .memory_direct_write;
+    config.save_strategy = .memory;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
@@ -163,6 +163,7 @@ fn runTexFuncCase(
     const camera_input: CameraInput = prepared.camera_input;
     const time_start = Timestamp.now(io, .awake);
     const result = (try zraster.rasterAllFrames(
+        f64,
         aa,
         io,
         &[_]CameraInput{camera_input},

@@ -48,6 +48,26 @@ CASE_DIR_RE = re.compile(
 
 BATCH_MODE_ORDER = ["1", "W", "2W"]
 GEOMJOBS_MODE_ORDER = ["1", "W"]
+SAVE_MODE_ORDER = [
+    "disk",
+    "memory",
+]
+SAVE_MODE_LABELS = {
+    "disk": "Disk",
+    "memory": "Memory",
+}
+SAVE_MODE_COLORS = {
+    "disk": "tab:orange",
+    "memory": "tab:blue",
+}
+REFERENCE_SAVE_MODE = "memory"
+
+LEGACY_SAVE_MODE_MAP = {
+    "memory_direct_write": "memory",
+    "memory_per_frame_copy": "memory",
+    "both_direct_write": "both",
+    "both_per_frame_copy": "both",
+}
 
 
 @dataclass(slots=True)
@@ -114,6 +134,10 @@ def load_config_map(config_path: pathlib.Path) -> dict[str, str]:
     return result
 
 
+def normalize_save_mode(save_mode: str) -> str:
+    return LEGACY_SAVE_MODE_MAP.get(save_mode, save_mode)
+
+
 def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
     match = CASE_DIR_RE.match(case_dir.name)
     if match is None:
@@ -148,7 +172,7 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
         geom_mode=match.group("geommode"),
         raster_workers=int(match.group("rasterw")),
         render_mode=match.group("render"),
-        save_mode=match.group("save"),
+        save_mode=normalize_save_mode(match.group("save")),
         e2e_median_ms=e2e_median_ms,
         e2e_min_ms=e2e_min_ms,
         e2e_max_ms=e2e_max_ms,
@@ -186,6 +210,10 @@ def collect_case_stats() -> list[CaseStats]:
         raise ValueError(f"expected one benchmark case in {experiment_root}, found {case_names}")
 
     return stats
+
+
+def save_mode_label(save_mode: str) -> str:
+    return SAVE_MODE_LABELS.get(save_mode, save_mode.replace("_", " ").title())
 
 
 def batch_mode(case: CaseStats) -> str:
@@ -301,16 +329,15 @@ def _add_ideal_runtime_line(
     )
 
 
-def plot_best_throughput(stats: list[CaseStats], stem: str) -> None:
+def plot_best_e2e_throughput(stats: list[CaseStats], stem: str) -> None:
     best_map = best_case_by_threads_and_save(stats)
-    colors = {"memory": "tab:blue", "disk": "tab:orange"}
 
     fig, ax = plt.subplots(figsize=PLOT_LINE_FIG_SIZE_IN)
     right_ax = ax.twinx()
     legend_handles = []
     legend_labels = []
 
-    for save_mode in ("memory", "disk"):
+    for save_mode in SAVE_MODE_ORDER:
         line_cases = sorted(
             [case for key, case in best_map.items() if key[1] == save_mode],
             key=lambda case: case.threads,
@@ -337,30 +364,103 @@ def plot_best_throughput(stats: list[CaseStats], stem: str) -> None:
             linewidth=1.8,
             markersize=5,
             capsize=3,
-            color=colors[save_mode],
-            label=save_mode.capitalize(),
+            color=SAVE_MODE_COLORS[save_mode],
+            label=save_mode_label(save_mode),
         )
         _add_ideal_throughput_line(
             ax,
             x_vals,
             baseline.e2e_throughput_median_mpx_s,
-            colors[save_mode],
-            f"{save_mode.capitalize()} ideal",
+            SAVE_MODE_COLORS[save_mode],
+            f"{save_mode_label(save_mode)} ideal",
         )
         legend_handles.append(err.lines[0])
-        legend_labels.append(save_mode.capitalize())
+        legend_labels.append(save_mode_label(save_mode))
         legend_handles.append(ax.lines[-1])
-        legend_labels.append(f"{save_mode.capitalize()} ideal")
+        legend_labels.append(f"{save_mode_label(save_mode)} ideal")
 
-    memory_baseline = best_map[(1, "memory")].e2e_throughput_median_mpx_s
+    memory_baseline = best_map[(1, REFERENCE_SAVE_MODE)].e2e_throughput_median_mpx_s
     _style_axes(
         ax,
         "Total Threads",
         "End-to-End Throughput\n[MPx/s]",
-        "Best End-to-End Throughput",
+        "Best End-to-End Throughput by Save Mode",
     )
     right_ax.set_ylabel(
-        "Speedup vs. 1-thread memory",
+        "E2E Speedup vs. 1-thread memory baseline",
+        fontsize=PLOT_LINE_SECONDARY_AXIS_FONT_SIZE,
+    )
+    right_ax.tick_params(labelsize=PLOT_LINE_TICK_FONT_SIZE)
+    left_min, left_max = ax.get_ylim()
+    right_ax.set_ylim(left_min / memory_baseline, left_max / memory_baseline)
+    ax.legend(
+        legend_handles,
+        legend_labels,
+        fontsize=PLOT_LINE_LEGEND_FONT_SIZE,
+        ncol=1,
+    )
+    _save_plot(fig, stem)
+
+
+def plot_best_raster_throughput(stats: list[CaseStats], stem: str) -> None:
+    best_map = best_case_by_threads_and_save(stats)
+
+    fig, ax = plt.subplots(figsize=PLOT_LINE_FIG_SIZE_IN)
+    right_ax = ax.twinx()
+    legend_handles = []
+    legend_labels = []
+
+    for save_mode in SAVE_MODE_ORDER:
+        line_cases = sorted(
+            [case for key, case in best_map.items() if key[1] == save_mode],
+            key=lambda case: case.threads,
+        )
+        if not line_cases:
+            continue
+        x_vals = [case.threads for case in line_cases]
+        y_vals = [case.raster_throughput_median_mpx_s for case in line_cases]
+        yerr_low = [
+            case.raster_throughput_median_mpx_s - case.raster_throughput_min_mpx_s
+            for case in line_cases
+        ]
+        yerr_high = [
+            case.raster_throughput_max_mpx_s - case.raster_throughput_median_mpx_s
+            for case in line_cases
+        ]
+        baseline = line_cases[0]
+
+        err = ax.errorbar(
+            x_vals,
+            y_vals,
+            yerr=[yerr_low, yerr_high],
+            fmt="o-",
+            linewidth=1.8,
+            markersize=5,
+            capsize=3,
+            color=SAVE_MODE_COLORS[save_mode],
+            label=save_mode_label(save_mode),
+        )
+        _add_ideal_throughput_line(
+            ax,
+            x_vals,
+            baseline.raster_throughput_median_mpx_s,
+            SAVE_MODE_COLORS[save_mode],
+            f"{save_mode_label(save_mode)} ideal",
+        )
+        legend_handles.append(err.lines[0])
+        legend_labels.append(save_mode_label(save_mode))
+        legend_handles.append(ax.lines[-1])
+        legend_labels.append(f"{save_mode_label(save_mode)} ideal")
+
+    memory_baseline = best_map[(1, REFERENCE_SAVE_MODE)].raster_throughput_median_mpx_s
+    _style_axes(
+        ax,
+        "Total Threads",
+        "Raster Throughput\n[MPx/s]",
+        "Best Raster Throughput by Save Mode",
+    )
+    right_ax.set_ylabel(
+        "Raster Speedup vs. 1-thread memory baseline",
         fontsize=PLOT_LINE_SECONDARY_AXIS_FONT_SIZE,
     )
     right_ax.tick_params(labelsize=PLOT_LINE_TICK_FONT_SIZE)
@@ -424,7 +524,7 @@ def build_partition_series(
 def build_raster_series(stats: list[CaseStats]) -> list[SeriesPoint]:
     grouped: dict[int, CaseStats] = {}
     for case in stats:
-        if case.save_mode != "memory":
+        if case.save_mode != REFERENCE_SAVE_MODE:
             continue
         if case.groups != 1:
             continue
@@ -489,12 +589,12 @@ def plot_raster_scaling(stats: list[CaseStats], stem: str) -> None:
         ax_left,
         "Total Threads",
         "Raster Throughput\n[MPx/s]",
-        "Raster Loop Scaling",
+        "Raster Loop Scaling (Memory Reference Path)",
     )
     ax_left.set_xticks(x_vals, [str(x) for x in x_vals])
     left_min, left_max = ax_left.get_ylim()
     ax_right.set_ylabel(
-        "Speedup vs. 1 thread",
+        "Raster Speedup vs. 1 thread",
         fontsize=PLOT_LINE_SECONDARY_AXIS_FONT_SIZE,
     )
     ax_right.tick_params(labelsize=PLOT_LINE_TICK_FONT_SIZE)
@@ -508,13 +608,12 @@ def plot_raster_scaling(stats: list[CaseStats], stem: str) -> None:
 
 def plot_best_runtime(stats: list[CaseStats], stem: str) -> None:
     best_map = best_case_by_threads_and_save(stats)
-    colors = {"memory": "tab:blue", "disk": "tab:orange"}
 
     fig, ax = plt.subplots(figsize=PLOT_LINE_FIG_SIZE_IN)
     legend_handles = []
     legend_labels = []
 
-    for save_mode in ("memory", "disk"):
+    for save_mode in SAVE_MODE_ORDER:
         line_cases = sorted(
             [case for key, case in best_map.items() if key[1] == save_mode],
             key=lambda case: case.threads,
@@ -535,20 +634,20 @@ def plot_best_runtime(stats: list[CaseStats], stem: str) -> None:
             linewidth=1.8,
             markersize=5,
             capsize=3,
-            color=colors[save_mode],
-            label=save_mode.capitalize(),
+            color=SAVE_MODE_COLORS[save_mode],
+            label=save_mode_label(save_mode),
         )
         _add_ideal_runtime_line(
             ax,
             x_vals,
             baseline.e2e_median_ms,
-            colors[save_mode],
-            f"{save_mode.capitalize()} ideal",
+            SAVE_MODE_COLORS[save_mode],
+            f"{save_mode_label(save_mode)} ideal",
         )
         legend_handles.append(err.lines[0])
-        legend_labels.append(save_mode.capitalize())
+        legend_labels.append(save_mode_label(save_mode))
         legend_handles.append(ax.lines[-1])
-        legend_labels.append(f"{save_mode.capitalize()} ideal")
+        legend_labels.append(f"{save_mode_label(save_mode)} ideal")
 
     _style_axes(
         ax,
@@ -643,14 +742,15 @@ def plot_partition_heatmap(
 
     render_heatmap(
         build_matrix(False),
-        f"Partition Throughput Heatmap ({save_mode.capitalize()})",
+        f"Partition End-to-End Throughput Heatmap ({save_mode_label(save_mode)})",
         "End-to-End Throughput [MPx/s]",
         stem_absolute,
     )
     render_heatmap(
         build_matrix(True),
-        f"Partition Relative Heatmap ({save_mode.capitalize()})",
-        "Throughput / best at same thread count",
+        f"Partition Relative End-to-End Throughput Heatmap "
+        f"({save_mode_label(save_mode)})",
+        "E2E throughput / best at same thread count",
         stem_relative,
     )
 
@@ -745,22 +845,24 @@ def plot_tuning_heatmap(
             location="right",
         )
         cbar.set_label(
-            "Median throughput / best at same thread count",
+            "Median E2E throughput / best at same thread count",
             fontsize=PLOT_LINE_SECONDARY_AXIS_FONT_SIZE,
         )
         cbar.ax.tick_params(labelsize=PLOT_LINE_TICK_FONT_SIZE)
 
     fig.suptitle(
-        f"Tuning Heatmap ({save_mode.capitalize()})",
+        f"End-to-End Throughput Tuning Heatmap ({save_mode_label(save_mode)})",
         fontsize=PLOT_LINE_TITLE_FONT_SIZE,
     )
     _save_plot(fig, stem)
 
 
 def plot_memory_disk_crossover_heatmaps(stats: list[CaseStats]) -> None:
-    memory_cases: dict[tuple[int, int, int, int, int], CaseStats] = {}
-    disk_cases: dict[tuple[int, int, int, int, int], CaseStats] = {}
-    workers_values: set[int] = set()
+    save_cases: dict[str, dict[tuple[int, int, int, int, int], CaseStats]] = {
+        save_mode: {}
+        for save_mode in SAVE_MODE_ORDER
+    }
+    workers_values = sorted({case.workers_per_group for case in stats})
 
     for case in stats:
         key = (
@@ -770,49 +872,48 @@ def plot_memory_disk_crossover_heatmaps(stats: list[CaseStats]) -> None:
             case.batch,
             case.geom_jobs,
         )
-        workers_values.add(case.workers_per_group)
-        if case.save_mode == "memory":
-            memory_cases[key] = case
-        elif case.save_mode == "disk":
-            disk_cases[key] = case
+        save_cases[case.save_mode][key] = case
 
-    matched_keys = sorted(set(memory_cases) & set(disk_cases))
-    if not matched_keys:
-        return
+    def build_value_maps(
+        lhs_mode: str,
+        rhs_mode: str,
+    ) -> tuple[dict[tuple[int, str, str], list[float]], dict[tuple[int, str, str], list[float]]]:
+        lhs_cases = save_cases[lhs_mode]
+        rhs_cases = save_cases[rhs_mode]
+        matched_keys = sorted(set(lhs_cases) & set(rhs_cases))
+        ratio_values: dict[tuple[int, str, str], list[float]] = {}
+        delta_values: dict[tuple[int, str, str], list[float]] = {}
 
-    ratio_values: dict[tuple[int, str, str], list[float]] = {}
-    delta_values: dict[tuple[int, str, str], list[float]] = {}
+        for key in matched_keys:
+            lhs_case = lhs_cases[key]
+            rhs_case = rhs_cases[key]
+            bucket = (
+                lhs_case.workers_per_group,
+                batch_mode(lhs_case),
+                geomjobs_mode(lhs_case),
+            )
+            ratio_values.setdefault(bucket, []).append(
+                lhs_case.e2e_median_ms / rhs_case.e2e_median_ms
+            )
+            delta_values.setdefault(bucket, []).append(
+                lhs_case.e2e_median_ms - rhs_case.e2e_median_ms
+            )
 
-    for key in matched_keys:
-        memory_case = memory_cases[key]
-        disk_case = disk_cases[key]
-        bucket = (
-            memory_case.workers_per_group,
-            batch_mode(memory_case),
-            geomjobs_mode(memory_case),
-        )
-        ratio_values.setdefault(bucket, []).append(
-            disk_case.e2e_median_ms / memory_case.e2e_median_ms
-        )
-        delta_values.setdefault(bucket, []).append(
-            disk_case.e2e_median_ms - memory_case.e2e_median_ms
-        )
-
-    sorted_workers = sorted(workers_values)
+        return ratio_values, delta_values
 
     def build_matrix(
         source: dict[tuple[int, str, str], list[float]],
     ) -> dict[str, np.ndarray]:
-        out: dict[str, np.ndarray] = {}
+        matrices: dict[str, np.ndarray] = {}
         for geom_mode_label in GEOMJOBS_MODE_ORDER:
-            matrix = np.full((len(sorted_workers), len(BATCH_MODE_ORDER)), np.nan)
-            for row_idx, workers in enumerate(sorted_workers):
+            matrix = np.full((len(workers_values), len(BATCH_MODE_ORDER)), np.nan)
+            for row_idx, workers in enumerate(workers_values):
                 for col_idx, batch_label in enumerate(BATCH_MODE_ORDER):
                     values = source.get((workers, batch_label, geom_mode_label))
                     if values:
                         matrix[row_idx, col_idx] = statistics.median(values)
-            out[geom_mode_label] = matrix
-        return out
+            matrices[geom_mode_label] = matrix
+        return matrices
 
     def render_panel_heatmap(
         matrices: dict[str, np.ndarray],
@@ -862,8 +963,11 @@ def plot_memory_disk_crossover_heatmaps(stats: list[CaseStats]) -> None:
             im = ax.imshow(matrix, **kwargs)
             ax.set_xticks(range(len(BATCH_MODE_ORDER)))
             ax.set_xticklabels(BATCH_MODE_ORDER, fontsize=PLOT_LINE_TICK_FONT_SIZE)
-            ax.set_yticks(range(len(sorted_workers)))
-            ax.set_yticklabels([str(v) for v in sorted_workers], fontsize=PLOT_LINE_TICK_FONT_SIZE)
+            ax.set_yticks(range(len(workers_values)))
+            ax.set_yticklabels(
+                [str(v) for v in workers_values],
+                fontsize=PLOT_LINE_TICK_FONT_SIZE,
+            )
             ax.set_xlabel("Batch Size Mode", fontsize=PLOT_LINE_AXIS_FONT_SIZE)
             if idx == 0:
                 ax.set_ylabel("Workers per Group", fontsize=PLOT_LINE_AXIS_FONT_SIZE)
@@ -902,35 +1006,44 @@ def plot_memory_disk_crossover_heatmaps(stats: list[CaseStats]) -> None:
         fig.suptitle(title, fontsize=PLOT_LINE_TITLE_FONT_SIZE)
         _save_plot(fig, stem)
 
-    render_panel_heatmap(
-        build_matrix(ratio_values),
-        "fig_bench4_memory_disk_runtime_ratio",
-        "Disk / Memory Runtime Ratio",
-        "Median disk runtime / memory runtime",
-        lambda val: f"{val:.2f}",
-        "coolwarm",
-        center=1.0,
-    )
-    render_panel_heatmap(
-        build_matrix(delta_values),
-        "fig_bench4_memory_disk_runtime_delta_ms",
-        "Disk - Memory Runtime Difference",
-        "Median disk runtime - memory runtime [ms]",
-        lambda val: f"{val:.0f}",
-        "coolwarm",
-        center=0.0,
-    )
+    comparison_pairs = [
+        ("disk", "memory"),
+    ]
+    for lhs_mode, rhs_mode in comparison_pairs:
+        ratio_values, delta_values = build_value_maps(lhs_mode, rhs_mode)
+        if not ratio_values:
+            continue
+        lhs_label = save_mode_label(lhs_mode)
+        rhs_label = save_mode_label(rhs_mode)
+        stem_suffix = f"{lhs_mode}_vs_{rhs_mode}"
+        render_panel_heatmap(
+            build_matrix(ratio_values),
+            f"fig_bench4_runtime_ratio_{stem_suffix}",
+            f"{lhs_label} / {rhs_label} Runtime Ratio",
+            f"Median {lhs_mode} runtime / {rhs_mode} runtime",
+            lambda val: f"{val:.2f}",
+            "coolwarm",
+            center=1.0,
+        )
+        render_panel_heatmap(
+            build_matrix(delta_values),
+            f"fig_bench4_runtime_delta_ms_{stem_suffix}",
+            f"{lhs_label} - {rhs_label} Runtime Difference",
+            f"Median {lhs_mode} runtime - {rhs_mode} runtime [ms]",
+            lambda val: f"{val:.0f}",
+            "coolwarm",
+            center=0.0,
+        )
 
 
 def write_amdahl_csv(stats: list[CaseStats]) -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     series_map: dict[str, list[SeriesPoint]] = {
-        "best_memory_e2e": build_best_series(stats, "memory"),
-        "best_disk_e2e": build_best_series(stats, "disk"),
         "raster_single_group_memory": build_raster_series(stats),
     }
-    for save_mode in ("memory", "disk"):
+    for save_mode in SAVE_MODE_ORDER:
+        series_map[f"best_{save_mode}_e2e"] = build_best_series(stats, save_mode)
         for label, series in build_partition_series(stats, save_mode).items():
             series_map[f"partition_{label}_{save_mode}"] = series
 
@@ -1030,8 +1143,8 @@ def write_amdahl_csv(stats: list[CaseStats]) -> None:
 def print_best_config_summary(stats: list[CaseStats]) -> None:
     best_map = best_case_by_threads_and_save(stats)
     print("\nBest configurations by total threads:")
-    for save_mode in ("memory", "disk"):
-        print(f"  {save_mode}:")
+    for save_mode in SAVE_MODE_ORDER:
+        print(f"  {save_mode_label(save_mode)}:")
         for threads in sorted({case.threads for case in stats if case.save_mode == save_mode}):
             case = best_map[(threads, save_mode)]
             print(
@@ -1041,7 +1154,8 @@ def print_best_config_summary(stats: list[CaseStats]) -> None:
                 f"workerspg={case.workers_per_group:>2} "
                 f"batch={case.batch:>3} "
                 f"geomjobs={case.geom_jobs:>2} "
-                f"throughput={case.e2e_throughput_median_mpx_s:>8.3f} MPx/s "
+                f"e2e={case.e2e_throughput_median_mpx_s:>8.3f} MPx/s "
+                f"raster={case.raster_throughput_median_mpx_s:>8.3f} MPx/s "
                 f"runtime={case.e2e_median_ms:>9.3f} ms"
             )
 
@@ -1051,22 +1165,22 @@ def main() -> int:
     print_best_config_summary(stats)
 
     plot_raster_scaling(stats, "fig_bench4_raster_scaling")
-    plot_best_throughput(stats, "fig_bench4_best_throughput")
+    plot_best_e2e_throughput(stats, "fig_bench4_best_e2e_throughput")
+    plot_best_e2e_throughput(stats, "fig_bench4_best_throughput")
+    plot_best_raster_throughput(stats, "fig_bench4_best_raster_throughput")
     plot_best_runtime(stats, "fig_bench4_best_runtime")
-    plot_partition_heatmap(
-        stats,
-        "memory",
-        "fig_bench4_partition_heatmap_memory",
-        "fig_bench4_partition_heatmap_memory_relative",
-    )
-    plot_partition_heatmap(
-        stats,
-        "disk",
-        "fig_bench4_partition_heatmap_disk",
-        "fig_bench4_partition_heatmap_disk_relative",
-    )
-    plot_tuning_heatmap(stats, "memory", "fig_bench4_tuning_heatmap_memory")
-    plot_tuning_heatmap(stats, "disk", "fig_bench4_tuning_heatmap_disk")
+    for save_mode in SAVE_MODE_ORDER:
+        plot_partition_heatmap(
+            stats,
+            save_mode,
+            f"fig_bench4_partition_heatmap_{save_mode}",
+            f"fig_bench4_partition_heatmap_{save_mode}_relative",
+        )
+        plot_tuning_heatmap(
+            stats,
+            save_mode,
+            f"fig_bench4_tuning_heatmap_{save_mode}",
+        )
     plot_memory_disk_crossover_heatmaps(stats)
     write_amdahl_csv(stats)
     return 0

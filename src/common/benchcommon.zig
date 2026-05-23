@@ -1003,6 +1003,7 @@ fn runBenchmarkInternal(
 
     const e2e_start = Timestamp.now(io, .awake);
     var image_arr = try zraster.rasterAllFrames(
+        f64,
         outer_alloc,
         io,
         &[_]CameraInput{camera_input},

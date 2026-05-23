@@ -24,9 +24,9 @@ const CameraPrepared = cammod.CameraPrepared;
 const CameraOps = cammod.CameraOps;
 const MeshInput = mo.MeshInput;
 
-const OVERLAP_X: f64 = 0.6;
-const OVERLAP_Y: f64 = 0.85;
-pub const BEHIND_FACT: f64 = 1.25;
+const OVERLAP_X: f64 = 0.85;
+const OVERLAP_Y: f64 = 0.8;
+pub const BEHIND_FACT: f64 = 1.05;
 
 const pixel_num = [_]u32{ 1200, 600 };
 const fov_scale: f64 = 1.01;
@@ -75,8 +75,16 @@ fn loadStaticMesh(
     data_dir: []const u8,
     connect_name: []const u8,
 ) !meshio.SimData {
-    const coords_path = try std.fmt.allocPrint(allocator, "{s}/coords.csv", .{data_dir});
-    const connect_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ data_dir, connect_name });
+    const coords_path = try std.fmt.allocPrint(
+        allocator,
+        "{s}/coords.csv",
+        .{data_dir},
+    );
+    const connect_path = try std.fmt.allocPrint(
+        allocator,
+        "{s}/{s}",
+        .{ data_dir, connect_name },
+    );
     return try meshio.loadSimData(
         allocator,
         io,
@@ -140,12 +148,13 @@ fn renderSingle(
     meshes: []const MeshInput,
 ) !NDArray(f64) {
     var config = tcfg.getRasterConfig(.preview);
-    config.save_strategy = .memory_direct_write;
+    config.save_strategy = .memory;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
 
     const result = (try zraster.rasterAllFrames(
+        f64,
         allocator,
         io,
         &[_]cammod.CameraInput{camera_input},
@@ -173,16 +182,16 @@ fn buildCaseSpec(
         return .{
             .case_name = case_name,
             .front_mesh_type = mesh_type,
-            .back_mesh_type = back_mesh_type,
+            .back_mesh_type = mesh_type,
             .front_data_dir = try std.fmt.allocPrint(
                 std.heap.page_allocator,
-                "data/rabbits/rabbit_{s}",
+                "data/rabbits/riley_{s}",
                 .{orch.meshDataName(mesh_type)},
             ),
             .back_data_dir = try std.fmt.allocPrint(
                 std.heap.page_allocator,
-                "data/rabbits/rabbit_{s}",
-                .{orch.meshDataName(back_mesh_type)},
+                "data/rabbits/feebs_{s}",
+                .{orch.meshDataName(mesh_type)},
             ),
             .front_connect_name = "connectivity.csv",
             .back_connect_name = "connectivity.csv",
@@ -337,9 +346,13 @@ fn runCase(
         cam_axis[1] / cam_axis_norm,
         cam_axis[2] / cam_axis_norm,
     };
-    const front_dist = (camera_input.pos_world.slice[0] - front_centroid[0]) * cam_axis_unit[0] +
-        (camera_input.pos_world.slice[1] - front_centroid[1]) * cam_axis_unit[1] +
-        (camera_input.pos_world.slice[2] - front_centroid[2]) * cam_axis_unit[2];
+    const front_dist =
+        (camera_input.pos_world.slice[0] - front_centroid[0]) *
+        cam_axis_unit[0] +
+        (camera_input.pos_world.slice[1] - front_centroid[1]) *
+            cam_axis_unit[1] +
+        (camera_input.pos_world.slice[2] - front_centroid[2]) *
+            cam_axis_unit[2];
     const behind_extra = (BEHIND_FACT - 1.0) * front_dist;
     translateCoords(&back_mesh.coords, .{
         -cam_axis_unit[0] * behind_extra,

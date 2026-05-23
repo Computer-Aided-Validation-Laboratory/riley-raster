@@ -333,6 +333,7 @@ pub fn runBenchmark(
 
     const start = std.Io.Clock.Timestamp.now(io, .awake);
     const image_arr = try zraster.rasterAllFramesGrouped(
+        f64,
         outer_alloc,
         render_groups,
         camera_inputs,
@@ -741,8 +742,7 @@ fn appendE2ERowsCSV(
     try rows_buf.appendSlice(
         allocator,
         "Run,Case,Camera,E2E_ms,Geom_ms,Raster_ms,SaveFrame_ms,FrameTotal_ms," ++
-            "Total_Elems,Vis_Elems,Shaded_Px,Throughput_MPx/s," ++
-            "Throughput_MElem/s\n",
+            "Total_Elems,Vis_Elems,Shaded_Px,Throughput_MPx/s,Throughput_MElem/s\n",
     );
 
     for (e2e_rows) |e2e_row| {
@@ -756,8 +756,8 @@ fn appendE2ERowsCSV(
 
         const row = try std.fmt.allocPrint(
             allocator,
-            "{d},{s},{s},{s},{d:.6},{d:.6},{d:.6},{d:.6},{d},{d},{d}," ++
-                "{d:.6},{d:.6}\n",
+            "{d},{s},{s},{s},{d:.6},{d:.6},{d:.6},{d:.6},{d},{d},{d},{d:.6}," ++
+                "{d:.6}\n",
             .{
                 e2e_row.run_idx,
                 case_name,
@@ -1063,8 +1063,7 @@ fn appendE2EStatsRowsCSV(
     try rows_buf.appendSlice(
         allocator,
         "Case,Camera,E2E_ms,Geom_ms,Raster_ms,SaveFrame_ms,FrameTotal_ms," ++
-            "Total_Elems,Vis_Elems,Shaded_Px,Throughput_MPx/s," ++
-            "Throughput_MElem/s\n",
+            "Total_Elems,Vis_Elems,Shaded_Px,Throughput_MPx/s,Throughput_MElem/s\n",
     );
 
     for (0..camera_count + 1) |cc| {
