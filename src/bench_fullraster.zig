@@ -193,7 +193,7 @@ pub fn main(init: std.process.Init) !void {
                             bench_args.save_strategy == .both)
                             bench_args.out_dir
                         else
-                            null;
+                            "";
                         const raster_config =
                             benchargs.applyRasterConfig(
                                 base_raster_config,
@@ -275,7 +275,7 @@ pub fn main(init: std.process.Init) !void {
                         bench_args.save_strategy == .both)
                         bench_args.out_dir
                     else
-                        null;
+                        "";
                     const raster_config =
                         benchargs.applyRasterConfig(
                             base_raster_config,

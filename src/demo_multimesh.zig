@@ -19,8 +19,9 @@ const MeshInput = mo.MeshInput;
 const gk = @import("zraster/zig/geometrykernels.zig");
 const MeshType = gk.MeshType;
 const camera_mod = @import("zraster/zig/camera.zig");
-const Rotation = @import("zraster/zig/rotation.zig").Rotation;
+const CameraInput = camera_mod.CameraInput;
 const CameraPrepared = camera_mod.CameraPrepared;
+const Rotation = @import("zraster/zig/rotation.zig").Rotation;
 const CameraOps = camera_mod.CameraOps;
 const MatSlice = @import("zraster/zig/matslice.zig").MatSlice;
 
