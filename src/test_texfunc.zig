@@ -76,7 +76,16 @@ fn loadSphereCase(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .uvs = uvs,
-        .camera_input = camera.toInput(),
+        .camera_input = CameraInput{
+            .pixels_num = camera.pixels_num,
+            .pixels_size = camera.pixels_size,
+            .pos_world = camera.pos_world,
+            .rot_world = camera.rot_world,
+            .roi_cent_world = camera.roi_cent_world,
+            .focal_length = camera.focal_length,
+            .sub_sample = camera.sub_sample,
+            .distortion = camera.distortion,
+        },
     };
 }
 
@@ -162,14 +171,16 @@ fn runTexFuncCase(
 
     const camera_input: CameraInput = prepared.camera_input;
     const time_start = Timestamp.now(io, .awake);
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
     const result = (try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
+        &render_groups,
         &[_]CameraInput{camera_input},
         &[_]mo.MeshInput{mesh_input},
         config,
-        null,
         null,
     )) orelse return error.NoResult;
     defer aa.free(result.slice);

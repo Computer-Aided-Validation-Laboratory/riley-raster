@@ -38,8 +38,8 @@ pub fn main(init: std.process.Init) !void {
         },
         .report = .bench,
     };
-    var threaded_io = zraster.getManagedIo(
-        init.gpa,
+    var threaded_io = zraster.getThreadedIo(
+        aa,
         init.minimal,
         config.total_threads,
     );
@@ -126,16 +126,27 @@ pub fn main(init: std.process.Init) !void {
     // 7. Run the Rasteriser
     std.debug.print("Rendering sphere to {s}/...\n", .{out_dir_root});
     const meshes = [_]MeshInput{mesh_input};
-    const camera_input = camera.toInput();
+    const camera_input = CameraInput{
+        .pixels_num = camera.pixels_num,
+        .pixels_size = camera.pixels_size,
+        .pos_world = camera.pos_world,
+        .rot_world = camera.rot_world,
+        .roi_cent_world = camera.roi_cent_world,
+        .focal_length = camera.focal_length,
+        .sub_sample = camera.sub_sample,
+        .distortion = camera.distortion,
+    };
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
     const images = try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
+        &render_groups,
         &[_]@TypeOf(camera_input){camera_input},
         &meshes,
         config,
         out_dir_root,
-        null,
     );
 
     if (images) |img| {

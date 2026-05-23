@@ -182,7 +182,16 @@ pub fn renderCase(
     );
     defer camera.deinit(aa);
 
-    var camera_input = camera.toInput();
+    var camera_input = cam.CameraInput{
+        .pixels_num = camera.pixels_num,
+        .pixels_size = camera.pixels_size,
+        .pos_world = camera.pos_world,
+        .rot_world = camera.rot_world,
+        .roi_cent_world = camera.roi_cent_world,
+        .focal_length = camera.focal_length,
+        .sub_sample = camera.sub_sample,
+        .distortion = camera.distortion,
+    };
     camera_input.sub_sample = ssaa;
     camera_input.distortion = getDistortionModel(distortion_case);
 
@@ -193,14 +202,16 @@ pub fn renderCase(
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
 
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
     const result = (try zraster.rasterAllFrames(
         f64,
         outer_alloc,
-        io,
+        &render_groups,
         &[_]cam.CameraInput{camera_input},
         mesh_inputs,
         config,
-        null,
         null,
     )) orelse return error.NoResult;
     defer {

@@ -315,15 +315,17 @@ fn renderScalarMap(
         },
     };
 
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
     const result = (try zraster.rasterAllFrames(
         f64,
         render_allocator,
-        io,
+        &render_groups,
         &[_]cam.CameraInput{camera_input},
         &[_]mo.MeshInput{mesh_input},
         config,
         out_dir_path,
-        null,
     )) orelse return error.NoResult;
 
     return try extractScalarMap(out_allocator, &result);

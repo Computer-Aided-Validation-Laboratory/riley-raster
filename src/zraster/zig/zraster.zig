@@ -35,26 +35,11 @@ pub const RenderMode = rastcfg.RenderMode;
 pub const ReportMode = rastcfg.ReportMode;
 pub const FullStatsOpts = rastcfg.FullStatsOpts;
 
-const saveStrategyReturnsImages = rastcfg.saveStrategyReturnsImages;
-const saveStrategyWritesDisk = rastcfg.saveStrategyWritesDisk;
-
-pub const ManagedIo = struct {
-    threaded: std.Io.Threaded,
-
-    pub fn io(self: *ManagedIo) std.Io {
-        return self.threaded.io();
-    }
-
-    pub fn deinit(self: *ManagedIo) void {
-        self.threaded.deinit();
-    }
-};
-
-pub fn getManagedIo(
+pub fn getThreadedIo(
     gpa: std.mem.Allocator,
     minimal: std.process.Init.Minimal,
     num_threads: u16,
-) ManagedIo {
+) std.Io.Threaded {
     // User-facing thread counts in zraster always include the caller thread.
     // Zig's std.Io.Threaded limits count only spawned worker threads, excluding
     // the caller. Translate here so:
@@ -63,12 +48,12 @@ pub fn getManagedIo(
     const limit: std.Io.Limit =
         if (num_threads <= 1) .nothing else .limited(num_threads - 1);
 
-    return .{ .threaded = std.Io.Threaded.init(gpa, .{
+    return std.Io.Threaded.init(gpa, .{
         .argv0 = .init(minimal.args),
         .environ = minimal.environ,
         .async_limit = limit,
         .concurrent_limit = limit,
-    }) };
+    });
 }
 
 const report = @import("report.zig");
@@ -264,7 +249,7 @@ fn initAllFramesBuffer(
     num_time: usize,
     num_fields: u8,
 ) !?ndarray.NDArray(T) {
-    if (saveStrategyReturnsImages(config.save_strategy)) {
+    if (config.save_strategy == .memory or config.save_strategy == .both) {
         std.debug.assert(cameras.len > 0);
         var max_pixels_num = cameras[0].pixels_num;
         for (cameras[1..]) |camera| {
@@ -586,7 +571,7 @@ fn saveFrame(
     input: *const FrameJobDesc(T),
     ctx: *FrameContext,
 ) !void {
-    if (saveStrategyWritesDisk(input.config.save_strategy)) {
+    if (input.config.save_strategy == .disk or input.config.save_strategy == .both) {
         std.debug.assert(ctx.frame_arr.dims[0] <= std.math.maxInt(u8));
         try iio.saveImages(
             io,
@@ -599,8 +584,8 @@ fn saveFrame(
             input.config.image_save_opts,
         );
     }
-    if (saveStrategyReturnsImages(input.config.save_strategy) and
-        !input.can_write_result_direct)
+    if ((input.config.save_strategy == .memory or input.config.save_strategy == .both)
+        and !input.can_write_result_direct)
     {
         const images_arr = input.images_arr orelse return error.NoResult;
         copyFrameToImageBatch(
@@ -1339,7 +1324,28 @@ fn prepareCameras(
     return cameras;
 }
 
-pub fn rasterAllFramesGrouped(
+pub fn rasterAllFrames(
+    comptime T: type,
+    outer_alloc: std.mem.Allocator,
+    render_groups: []const RenderGroupSpec,
+    camera_inputs: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+    config: RasterConfig,
+    out_dir_path: ?[]const u8,
+) !?ndarray.NDArray(T) {
+    return rasterAllFramesReport(
+        T,
+        outer_alloc,
+        render_groups,
+        camera_inputs,
+        meshes,
+        config,
+        out_dir_path,
+        null,
+    );
+}
+
+pub fn rasterAllFramesReport(
     comptime T: type,
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
@@ -1461,32 +1467,4 @@ pub fn rasterAllFramesGrouped(
         if (bench_capture) |capture| capture else null,
     );
     return images_arr_opt;
-}
-
-//==========================================================================================
-// 1. Compatibility wrapper using a single render group
-pub fn rasterAllFrames(
-    comptime T: type,
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    camera_inputs: []const cam.CameraInput,
-    meshes: []const mo.MeshInput,
-    config: RasterConfig,
-    out_dir_path: ?[]const u8,
-    bench_capture: ?[]report.FrameBenchCapture,
-) !?ndarray.NDArray(T) {
-    const total_workers = @max(@as(u16, 1), config.total_threads);
-    const render_groups = [_]RenderGroupSpec{
-        .{ .io = io, .workers = total_workers },
-    };
-    return rasterAllFramesGrouped(
-        T,
-        outer_alloc,
-        render_groups[0..],
-        camera_inputs,
-        meshes,
-        config,
-        out_dir_path,
-        bench_capture,
-    );
 }

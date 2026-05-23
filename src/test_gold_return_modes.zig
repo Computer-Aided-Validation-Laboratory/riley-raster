@@ -8,6 +8,7 @@ const buildconfig = @import("zraster/zig/buildconfig.zig");
 const meshio = @import("zraster/zig/meshio.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const zraster = @import("zraster/zig/zraster.zig");
+const CameraInput = @import("zraster/zig/camera.zig").CameraInput;
 
 const simd_on = buildconfig.config.simd == .on;
 const gold_root = if (simd_on)
@@ -84,14 +85,25 @@ fn runCase(
     config.report = .off;
     config.memory_image_scaling = .auto;
 
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
     const result = (try zraster.rasterAllFrames(
         T,
         aa,
-        io,
-        &[_]@TypeOf(camera.toInput()){camera.toInput()},
+        &render_groups,
+        &[_]CameraInput{CameraInput{
+            .pixels_num = camera.pixels_num,
+            .pixels_size = camera.pixels_size,
+            .pos_world = camera.pos_world,
+            .rot_world = camera.rot_world,
+            .roi_cent_world = camera.roi_cent_world,
+            .focal_length = camera.focal_length,
+            .sub_sample = camera.sub_sample,
+            .distortion = camera.distortion,
+        }},
         &[_]mo.MeshInput{mesh_input},
         config,
-        null,
         null,
     )) orelse return error.NoResult;
     defer {

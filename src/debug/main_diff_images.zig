@@ -228,15 +228,17 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("Rendering Mixed RGB Data for Difference analysis...\n", .{});
     const camera_input = camera.toInput();
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config_rgb.total_threads) },
+    };
     const result = (try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
+        &render_groups,
         &[_]@TypeOf(camera_input){camera_input},
         mesh_inputs,
         config_rgb,
         out_dir,
-        null,
     )) orelse return error.NoResult;
 
     const gold_dir = "gold/multimesh/allelem_allshade_rgb";

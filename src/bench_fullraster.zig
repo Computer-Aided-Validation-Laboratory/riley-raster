@@ -53,7 +53,7 @@ pub fn main(init: std.process.Init) !void {
         init.minimal.args.vector,
         default_bench_args,
     );
-    var threaded_io = zraster.getManagedIo(
+    var threaded_io = zraster.getThreadedIo(
         outer_alloc,
         init.minimal,
         bench_args.total_threads,
@@ -189,10 +189,11 @@ pub fn main(init: std.process.Init) !void {
                     defer case_samples.deinit(outer_alloc);
 
                     for (0..bench_args.runs) |rr| {
-                        const run_out_dir_base = if (rastcfg.saveStrategyWritesDisk(bench_args.save_strategy))
+                        const run_out_dir_base = if (bench_args.save_strategy == .disk or
+                            bench_args.save_strategy == .both)
                             bench_args.out_dir
                         else
-                            "";
+                            null;
                         const raster_config =
                             benchargs.applyRasterConfig(
                                 base_raster_config,
@@ -270,10 +271,11 @@ pub fn main(init: std.process.Init) !void {
                 defer case_samples.deinit(outer_alloc);
 
                 for (0..bench_args.runs) |rr| {
-                    const run_out_dir_base = if (rastcfg.saveStrategyWritesDisk(bench_args.save_strategy))
+                    const run_out_dir_base = if (bench_args.save_strategy == .disk or
+                        bench_args.save_strategy == .both)
                         bench_args.out_dir
                     else
-                        "";
+                        null;
                     const raster_config =
                         benchargs.applyRasterConfig(
                             base_raster_config,

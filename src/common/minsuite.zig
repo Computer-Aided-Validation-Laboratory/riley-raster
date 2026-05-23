@@ -141,16 +141,27 @@ pub fn runSphere200MultiCullQuiet(
         null;
 
     const e2e_start = std.Io.Clock.Timestamp.now(io, .awake);
-    const camera_input = camera.toInput();
+    const camera_input = CameraInput{
+        .pixels_num = camera.pixels_num,
+        .pixels_size = camera.pixels_size,
+        .pos_world = camera.pos_world,
+        .rot_world = camera.rot_world,
+        .roi_cent_world = camera.roi_cent_world,
+        .focal_length = camera.focal_length,
+        .sub_sample = camera.sub_sample,
+        .distortion = camera.distortion,
+    };
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config_run.total_threads) },
+    };
     var image_arr = try zraster.rasterAllFrames(
         f64,
         outer_alloc,
-        io,
+        &render_groups,
         &[_]CameraInput{camera_input},
         mesh_inputs,
         config_run,
         out_path,
-        null,
     );
     const e2e_end = std.Io.Clock.Timestamp.now(io, .awake);
 
@@ -159,7 +170,7 @@ pub fn runSphere200MultiCullQuiet(
     )) / 1e6;
     const fps = 1000.0 / e2e_ms;
 
-    const return_image = rastcfg.saveStrategyReturnsImages(config.save_strategy);
+    const return_image = (config.save_strategy == .memory or config.save_strategy == .both);
 
     const image_final = if (return_image) blk: {
         var images = image_arr orelse return error.NoResult;

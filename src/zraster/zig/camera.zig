@@ -424,19 +424,6 @@ pub const CameraPrepared = struct {
         }
     }
 
-    pub fn toInput(self: *const CameraPrepared) CameraInput {
-        return .{
-            .pixels_num = self.pixels_num,
-            .pixels_size = self.pixels_size,
-            .pos_world = self.pos_world,
-            .rot_world = self.rot_world,
-            .roi_cent_world = self.roi_cent_world,
-            .focal_length = self.focal_length,
-            .sub_sample = self.sub_sample,
-            .distortion = self.distortion,
-        };
-    }
-
     pub fn calcFocalPx(self: *const CameraPrepared) struct { fx: f64, fy: f64 } {
         return .{
             .fx = self.focal_length / self.pixels_size[0],

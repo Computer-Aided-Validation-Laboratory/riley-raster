@@ -226,15 +226,26 @@ fn runSphereCase(
         .report = .off,
     };
 
-    const camera_input = camera.toInput();
+    const camera_input = CameraInput{
+        .pixels_num = camera.pixels_num,
+        .pixels_size = camera.pixels_size,
+        .pos_world = camera.pos_world,
+        .rot_world = camera.rot_world,
+        .roi_cent_world = camera.roi_cent_world,
+        .focal_length = camera.focal_length,
+        .sub_sample = camera.sub_sample,
+        .distortion = camera.distortion,
+    };
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
     const result = (try zraster.rasterAllFrames(
         f64,
         allocator,
-        io,
+        &render_groups,
         &[_]@TypeOf(camera_input){camera_input},
         &[_]mo.MeshInput{mesh_input},
         config,
-        null,
         null,
     )) orelse return error.NoResult;
     defer {

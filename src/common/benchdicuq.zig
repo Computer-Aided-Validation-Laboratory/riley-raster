@@ -332,7 +332,7 @@ pub fn runBenchmark(
     defer outer_alloc.free(bench_capture);
 
     const start = std.Io.Clock.Timestamp.now(io, .awake);
-    const image_arr = try zraster.rasterAllFramesGrouped(
+    const image_arr = try zraster.rasterAllFramesReport(
         f64,
         outer_alloc,
         render_groups,

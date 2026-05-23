@@ -121,9 +121,27 @@ pub fn main(init: std.process.Init) !void {
             10.0,
         );
         defer for (cameras) |cam| cam.deinit(aa);
-        const camera_inputs = [_]@TypeOf(cameras[0].toInput()){
-            cameras[0].toInput(),
-            cameras[1].toInput(),
+        const camera_inputs = [_]cam.CameraInput{
+            cam.CameraInput{
+                .pixels_num = cameras[0].pixels_num,
+                .pixels_size = cameras[0].pixels_size,
+                .pos_world = cameras[0].pos_world,
+                .rot_world = cameras[0].rot_world,
+                .roi_cent_world = cameras[0].roi_cent_world,
+                .focal_length = cameras[0].focal_length,
+                .sub_sample = cameras[0].sub_sample,
+                .distortion = cameras[0].distortion,
+            },
+            cam.CameraInput{
+                .pixels_num = cameras[1].pixels_num,
+                .pixels_size = cameras[1].pixels_size,
+                .pos_world = cameras[1].pos_world,
+                .rot_world = cameras[1].rot_world,
+                .roi_cent_world = cameras[1].roi_cent_world,
+                .focal_length = cameras[1].focal_length,
+                .sub_sample = cameras[1].sub_sample,
+                .distortion = cameras[1].distortion,
+            },
         };
 
         const mesh_input = switch (render_case.shader) {
@@ -185,15 +203,17 @@ pub fn main(init: std.process.Init) !void {
             .{ out_root, render_case.case_name },
         );
 
+        const render_groups = [_]zraster.RenderGroupSpec{
+            .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+        };
         _ = try zraster.rasterAllFrames(
             f64,
             aa,
-            io,
+            &render_groups,
             &camera_inputs,
             &[_]mo.MeshInput{mesh_input},
             config,
             out_dir_path,
-            null,
         );
     }
 

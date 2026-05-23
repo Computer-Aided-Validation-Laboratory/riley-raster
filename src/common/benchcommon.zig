@@ -1002,10 +1002,13 @@ fn runBenchmarkInternal(
         null;
 
     const e2e_start = Timestamp.now(io, .awake);
-    var image_arr = try zraster.rasterAllFrames(
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config_run.total_threads) },
+    };
+    var image_arr = try zraster.rasterAllFramesReport(
         f64,
         outer_alloc,
-        io,
+        &render_groups,
         &[_]CameraInput{camera_input},
         &[_]mo.MeshInput{mesh_input},
         config_run,
@@ -1047,7 +1050,7 @@ fn runBenchmarkInternal(
             .mops_sec = 0.0,
         };
 
-    const return_image = rastcfg.saveStrategyReturnsImages(config.save_strategy);
+    const return_image = (config.save_strategy == .memory or config.save_strategy == .both);
 
     const image_final = if (return_image) blk: {
         var images = image_arr orelse return error.NoResult;

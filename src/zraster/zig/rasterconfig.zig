@@ -106,20 +106,6 @@ pub const SaveStrategy = enum {
     none,
 };
 
-pub fn saveStrategyReturnsImages(save_strategy: SaveStrategy) bool {
-    return switch (save_strategy) {
-        .memory, .both => true,
-        .disk, .none => false,
-    };
-}
-
-pub fn saveStrategyWritesDisk(save_strategy: SaveStrategy) bool {
-    return switch (save_strategy) {
-        .disk, .both => true,
-        .memory, .none => false,
-    };
-}
-
 pub const ReportMode = enum {
     off,
     bench,

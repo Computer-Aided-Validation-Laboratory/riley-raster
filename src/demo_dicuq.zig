@@ -52,8 +52,8 @@ pub fn main(init: std.process.Init) !void {
         },
         .report = .bench,
     };
-    var threaded_io = zraster.getManagedIo(
-        init.gpa,
+    var threaded_io = zraster.getThreadedIo(
+        aa,
         init.minimal,
         config.total_threads,
     );
@@ -186,15 +186,17 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Rendering simulation to {s}/...\n", .{out_dir_root});
     const meshes = [_]MeshInput{mesh_input};
     const cams_in = [_]CameraInput{ cam0_in, cam1_in };
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
     const images = try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
+        &render_groups,
         &cams_in,
         &meshes,
         config,
         out_dir_root,
-        null,
     );
 
     if (images) |img| {

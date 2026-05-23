@@ -64,7 +64,7 @@ fn runCase(
     defer allocator.free(bench_capture);
 
     const start = std.Io.Clock.Timestamp.now(io, .awake);
-    const images = try zraster.rasterAllFramesGrouped(
+    const images = try zraster.rasterAllFramesReport(
         T,
         allocator,
         render_groups,
@@ -116,7 +116,7 @@ pub fn main(init: std.process.Init) !void {
         defaults,
     );
 
-    var threaded_io = zraster.getManagedIo(
+    var threaded_io = zraster.getThreadedIo(
         allocator,
         init.minimal,
         bench_args.total_threads,

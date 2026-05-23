@@ -96,7 +96,7 @@ pub fn main(init: std.process.Init) !void {
     }
 
     const managed_ios = try outer_alloc.alloc(
-        zraster.ManagedIo,
+        std.Io.Threaded,
         bench_args.render_group_count,
     );
     defer {
@@ -117,7 +117,7 @@ pub fn main(init: std.process.Init) !void {
     defer outer_alloc.free(render_group_workers);
 
     for (0..bench_args.render_group_count) |ii| {
-        managed_ios[ii] = zraster.getManagedIo(
+        managed_ios[ii] = zraster.getThreadedIo(
             outer_alloc,
             init.minimal,
             workers_per_group,
@@ -207,7 +207,8 @@ pub fn main(init: std.process.Init) !void {
     }
 
     for (0..bench_args.runs) |rr| {
-        const out_dir_path = if (rastcfg.saveStrategyWritesDisk(bench_args.save_strategy))
+        const out_dir_path = if (bench_args.save_strategy == .disk or
+            bench_args.save_strategy == .both)
             if (bench_args.image_out_dir.len > 0)
                 bench_args.image_out_dir
             else

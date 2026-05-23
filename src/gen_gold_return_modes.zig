@@ -71,14 +71,16 @@ fn renderAndSave(
     file_name_no_ext: []const u8,
     config: zraster.RasterConfig,
 ) !void {
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
     const result = (try zraster.rasterAllFrames(
         T,
         allocator,
-        io,
+        &render_groups,
         &[_]@TypeOf(camera_input){camera_input},
         &[_]mo.MeshInput{mesh_input},
         config,
-        null,
         null,
     )) orelse return error.NoResult;
     defer {
@@ -94,7 +96,7 @@ fn renderAndSave(
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
-    var managed_io = zraster.getManagedIo(allocator, init.minimal, 1);
+    var managed_io = zraster.getThreadedIo(allocator, init.minimal, 1);
     defer managed_io.deinit();
     const io = managed_io.io();
 
@@ -164,7 +166,16 @@ pub fn main(init: std.process.Init) !void {
         f64,
         aa,
         io,
-        camera.toInput(),
+        @import("zraster/zig/camera.zig").CameraInput{
+            .pixels_num = camera.pixels_num,
+            .pixels_size = camera.pixels_size,
+            .pos_world = camera.pos_world,
+            .rot_world = camera.rot_world,
+            .roi_cent_world = camera.roi_cent_world,
+            .focal_length = camera.focal_length,
+            .sub_sample = camera.sub_sample,
+            .distortion = camera.distortion,
+        },
         mesh_input,
         "tri3_sphere200_f64",
         config,
@@ -173,7 +184,16 @@ pub fn main(init: std.process.Init) !void {
         u8,
         aa,
         io,
-        camera.toInput(),
+        @import("zraster/zig/camera.zig").CameraInput{
+            .pixels_num = camera.pixels_num,
+            .pixels_size = camera.pixels_size,
+            .pos_world = camera.pos_world,
+            .rot_world = camera.rot_world,
+            .roi_cent_world = camera.roi_cent_world,
+            .focal_length = camera.focal_length,
+            .sub_sample = camera.sub_sample,
+            .distortion = camera.distortion,
+        },
         mesh_input,
         "tri3_sphere200_u8",
         config,
@@ -182,7 +202,16 @@ pub fn main(init: std.process.Init) !void {
         u16,
         aa,
         io,
-        camera.toInput(),
+        @import("zraster/zig/camera.zig").CameraInput{
+            .pixels_num = camera.pixels_num,
+            .pixels_size = camera.pixels_size,
+            .pos_world = camera.pos_world,
+            .rot_world = camera.rot_world,
+            .roi_cent_world = camera.roi_cent_world,
+            .focal_length = camera.focal_length,
+            .sub_sample = camera.sub_sample,
+            .distortion = camera.distortion,
+        },
         mesh_input,
         "tri3_sphere200_u16",
         config,

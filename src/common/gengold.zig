@@ -48,16 +48,27 @@ pub fn renderAndSave(
     };
 
     const meshes = &[_]MeshInput{mesh_input};
-    const camera_input = camera.toInput();
+    const camera_input = CameraInput{
+        .pixels_num = camera.pixels_num,
+        .pixels_size = camera.pixels_size,
+        .pos_world = camera.pos_world,
+        .rot_world = camera.rot_world,
+        .roi_cent_world = camera.roi_cent_world,
+        .focal_length = camera.focal_length,
+        .sub_sample = camera.sub_sample,
+        .distortion = camera.distortion,
+    };
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
     const images = try zraster.rasterAllFrames(
         f64,
         outer_alloc,
-        io,
+        &render_groups,
         &[_]CameraInput{camera_input},
         meshes,
         config,
         dir,
-        null,
     );
     if (images) |img| {
         outer_alloc.free(img.slice);
@@ -213,16 +224,27 @@ pub fn runMultimeshGenerationExt(
         std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
         var out_dir = try orch.openDirEnsured(io, gold_dir);
         out_dir.close(io);
-        const camera_input = camera.toInput();
+        const camera_input = CameraInput{
+        .pixels_num = camera.pixels_num,
+        .pixels_size = camera.pixels_size,
+        .pos_world = camera.pos_world,
+        .rot_world = camera.rot_world,
+        .roi_cent_world = camera.roi_cent_world,
+        .focal_length = camera.focal_length,
+        .sub_sample = camera.sub_sample,
+        .distortion = camera.distortion,
+    };
+        const render_groups = [_]zraster.RenderGroupSpec{
+            .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+        };
         const images = try zraster.rasterAllFrames(
             f64,
             aa,
-            io,
+            &render_groups,
             &[_]CameraInput{camera_input},
             mesh_inputs,
             config,
             gold_dir,
-            null,
         );
         if (images) |img| {
             aa.free(img.slice);
@@ -286,16 +308,27 @@ pub fn runMultimeshMixedGenerationExt(
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
     var out_dir = try orch.openDirEnsured(io, gold_dir);
     out_dir.close(io);
-    const camera_input = camera.toInput();
+    const camera_input = CameraInput{
+        .pixels_num = camera.pixels_num,
+        .pixels_size = camera.pixels_size,
+        .pos_world = camera.pos_world,
+        .rot_world = camera.rot_world,
+        .roi_cent_world = camera.roi_cent_world,
+        .focal_length = camera.focal_length,
+        .sub_sample = camera.sub_sample,
+        .distortion = camera.distortion,
+    };
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
     const images = try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
+        &render_groups,
         &[_]CameraInput{camera_input},
         mesh_inputs,
         config,
         gold_dir,
-        null,
     );
     if (images) |img| {
         aa.free(img.slice);
@@ -374,16 +407,27 @@ pub fn runMultimeshMixedRGBGenerationExt(
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
     var out_dir = try orch.openDirEnsured(io, gold_dir);
     out_dir.close(io);
-    const camera_input = camera_rgb.toInput();
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config_rgb.total_threads) },
+    };
+    const camera_input = CameraInput{
+        .pixels_num = camera_rgb.pixels_num,
+        .pixels_size = camera_rgb.pixels_size,
+        .pos_world = camera_rgb.pos_world,
+        .rot_world = camera_rgb.rot_world,
+        .roi_cent_world = camera_rgb.roi_cent_world,
+        .focal_length = camera_rgb.focal_length,
+        .sub_sample = camera_rgb.sub_sample,
+        .distortion = camera_rgb.distortion,
+    };
     _ = try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
+        &render_groups,
         &[_]CameraInput{camera_input},
         mesh_inputs,
         config_rgb,
         gold_dir,
-        null,
     );
 }
 

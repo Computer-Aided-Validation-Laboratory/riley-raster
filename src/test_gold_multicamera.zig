@@ -224,7 +224,16 @@ test "Multicamera duplicate sphere200 cameras match each other" {
     );
     const camera = try orch.initCameraForCoords(aa, &sim_data.coords, pixel_num, 1.0);
     defer camera.deinit(aa);
-    const camera_input = camera.toInput();
+    const camera_input = CameraInput{
+        .pixels_num = camera.pixels_num,
+        .pixels_size = camera.pixels_size,
+        .pos_world = camera.pos_world,
+        .rot_world = camera.rot_world,
+        .roi_cent_world = camera.roi_cent_world,
+        .focal_length = camera.focal_length,
+        .sub_sample = camera.sub_sample,
+        .distortion = camera.distortion,
+    };
     const cameras = [_]CameraInput{ camera_input, camera_input };
 
     const mesh_input = mo.MeshInput{
@@ -249,14 +258,16 @@ test "Multicamera duplicate sphere200 cameras match each other" {
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
 
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
     const result = (try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
+        &render_groups,
         &cameras,
         &[_]mo.MeshInput{mesh_input},
         config,
-        null,
         null,
     )) orelse return error.NoResult;
     defer aa.free(result.slice);
@@ -356,14 +367,37 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
     ref_config.max_geom_workers_per_job = 1;
     ref_config.max_raster_workers_per_job = 2;
 
+    const ref_render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), ref_config.total_threads) },
+    };
     const reference = (try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
-        &[_]CameraInput{ camera_a.toInput(), camera_b.toInput() },
+        &ref_render_groups,
+        &[_]CameraInput{
+            CameraInput{
+                .pixels_num = camera_a.pixels_num,
+                .pixels_size = camera_a.pixels_size,
+                .pos_world = camera_a.pos_world,
+                .rot_world = camera_a.rot_world,
+                .roi_cent_world = camera_a.roi_cent_world,
+                .focal_length = camera_a.focal_length,
+                .sub_sample = camera_a.sub_sample,
+                .distortion = camera_a.distortion,
+            },
+            CameraInput{
+                .pixels_num = camera_b.pixels_num,
+                .pixels_size = camera_b.pixels_size,
+                .pos_world = camera_b.pos_world,
+                .rot_world = camera_b.rot_world,
+                .roi_cent_world = camera_b.roi_cent_world,
+                .focal_length = camera_b.focal_length,
+                .sub_sample = camera_b.sub_sample,
+                .distortion = camera_b.distortion,
+            },
+        },
         &[_]mo.MeshInput{mesh_input},
         ref_config,
-        null,
         null,
     )) orelse return error.NoResult;
     defer aa.free(reference.slice);
@@ -392,14 +426,34 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
         var grouped_config = ref_config;
         grouped_config.geom_scheduling_mode = case.mode;
 
-        const grouped = (try zraster.rasterAllFramesGrouped(
+        const grouped = (try zraster.rasterAllFrames(
             f64,
             aa,
             case.render_groups[0..],
-            &[_]CameraInput{ camera_a.toInput(), camera_b.toInput() },
+            &[_]CameraInput{
+            CameraInput{
+                .pixels_num = camera_a.pixels_num,
+                .pixels_size = camera_a.pixels_size,
+                .pos_world = camera_a.pos_world,
+                .rot_world = camera_a.rot_world,
+                .roi_cent_world = camera_a.roi_cent_world,
+                .focal_length = camera_a.focal_length,
+                .sub_sample = camera_a.sub_sample,
+                .distortion = camera_a.distortion,
+            },
+            CameraInput{
+                .pixels_num = camera_b.pixels_num,
+                .pixels_size = camera_b.pixels_size,
+                .pos_world = camera_b.pos_world,
+                .rot_world = camera_b.rot_world,
+                .roi_cent_world = camera_b.roi_cent_world,
+                .focal_length = camera_b.focal_length,
+                .sub_sample = camera_b.sub_sample,
+                .distortion = camera_b.distortion,
+            },
+        },
             &[_]mo.MeshInput{mesh_input},
             grouped_config,
-            null,
             null,
         )) orelse return error.NoResult;
         defer aa.free(grouped.slice);
@@ -507,26 +561,72 @@ test "Multicamera memory matches both" {
     var both_config = memory_config;
     both_config.save_strategy = .both;
 
+    const memory_render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), memory_config.total_threads) },
+    };
     const memory = (try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
-        &[_]CameraInput{ camera_a.toInput(), camera_b.toInput() },
+        &memory_render_groups,
+        &[_]CameraInput{
+            CameraInput{
+                .pixels_num = camera_a.pixels_num,
+                .pixels_size = camera_a.pixels_size,
+                .pos_world = camera_a.pos_world,
+                .rot_world = camera_a.rot_world,
+                .roi_cent_world = camera_a.roi_cent_world,
+                .focal_length = camera_a.focal_length,
+                .sub_sample = camera_a.sub_sample,
+                .distortion = camera_a.distortion,
+            },
+            CameraInput{
+                .pixels_num = camera_b.pixels_num,
+                .pixels_size = camera_b.pixels_size,
+                .pos_world = camera_b.pos_world,
+                .rot_world = camera_b.rot_world,
+                .roi_cent_world = camera_b.roi_cent_world,
+                .focal_length = camera_b.focal_length,
+                .sub_sample = camera_b.sub_sample,
+                .distortion = camera_b.distortion,
+            },
+        },
         &[_]mo.MeshInput{mesh_input},
         memory_config,
-        null,
         null,
     )) orelse return error.NoResult;
     defer aa.free(memory.slice);
 
+    const both_render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), both_config.total_threads) },
+    };
     const both = (try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
-        &[_]CameraInput{ camera_a.toInput(), camera_b.toInput() },
+        &both_render_groups,
+        &[_]CameraInput{
+            CameraInput{
+                .pixels_num = camera_a.pixels_num,
+                .pixels_size = camera_a.pixels_size,
+                .pos_world = camera_a.pos_world,
+                .rot_world = camera_a.rot_world,
+                .roi_cent_world = camera_a.roi_cent_world,
+                .focal_length = camera_a.focal_length,
+                .sub_sample = camera_a.sub_sample,
+                .distortion = camera_a.distortion,
+            },
+            CameraInput{
+                .pixels_num = camera_b.pixels_num,
+                .pixels_size = camera_b.pixels_size,
+                .pos_world = camera_b.pos_world,
+                .rot_world = camera_b.rot_world,
+                .roi_cent_world = camera_b.roi_cent_world,
+                .focal_length = camera_b.focal_length,
+                .sub_sample = camera_b.sub_sample,
+                .distortion = camera_b.distortion,
+            },
+        },
         &[_]mo.MeshInput{mesh_input},
         both_config,
-        null,
         null,
     )) orelse return error.NoResult;
     defer aa.free(both.slice);
@@ -638,8 +738,26 @@ test "Sphere200 multicamera gold tests" {
         );
         defer for (cameras) |cam| cam.deinit(aa);
         const camera_inputs = [_]CameraInput{
-            cameras[0].toInput(),
-            cameras[1].toInput(),
+            CameraInput{
+                .pixels_num = cameras[0].pixels_num,
+                .pixels_size = cameras[0].pixels_size,
+                .pos_world = cameras[0].pos_world,
+                .rot_world = cameras[0].rot_world,
+                .roi_cent_world = cameras[0].roi_cent_world,
+                .focal_length = cameras[0].focal_length,
+                .sub_sample = cameras[0].sub_sample,
+                .distortion = cameras[0].distortion,
+            },
+            CameraInput{
+                .pixels_num = cameras[1].pixels_num,
+                .pixels_size = cameras[1].pixels_size,
+                .pos_world = cameras[1].pos_world,
+                .rot_world = cameras[1].rot_world,
+                .roi_cent_world = cameras[1].roi_cent_world,
+                .focal_length = cameras[1].focal_length,
+                .sub_sample = cameras[1].sub_sample,
+                .distortion = cameras[1].distortion,
+            },
         };
 
         const mesh_input = switch (render_case.shader) {
@@ -700,14 +818,16 @@ test "Sphere200 multicamera gold tests" {
             std.debug.print("Testing {s} ... ", .{render_case.case_name});
         }
         const time_start = Timestamp.now(io, .awake);
+        const render_groups = [_]zraster.RenderGroupSpec{
+            .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+        };
         const result = (try zraster.rasterAllFrames(
             f64,
             aa,
-            io,
+            &render_groups,
             &camera_inputs,
             &[_]mo.MeshInput{mesh_input},
             config,
-            null,
             null,
         )) orelse return error.NoResult;
         defer aa.free(result.slice);
@@ -867,26 +987,48 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
         .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
     };
 
+    const small_render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), memory_config.total_threads) },
+    };
     const small_single = (try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
-        &[_]CameraInput{small_camera.toInput()},
+        &small_render_groups,
+        &[_]CameraInput{CameraInput{
+            .pixels_num = small_camera.pixels_num,
+            .pixels_size = small_camera.pixels_size,
+            .pos_world = small_camera.pos_world,
+            .rot_world = small_camera.rot_world,
+            .roi_cent_world = small_camera.roi_cent_world,
+            .focal_length = small_camera.focal_length,
+            .sub_sample = small_camera.sub_sample,
+            .distortion = small_camera.distortion,
+        }},
         &[_]mo.MeshInput{mesh_input},
         memory_config,
-        null,
         null,
     )) orelse return error.NoResult;
     defer aa.free(small_single.slice);
 
+    const large_render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), memory_config.total_threads) },
+    };
     const large_single = (try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
-        &[_]CameraInput{large_camera.toInput()},
+        &large_render_groups,
+        &[_]CameraInput{CameraInput{
+            .pixels_num = large_camera.pixels_num,
+            .pixels_size = large_camera.pixels_size,
+            .pos_world = large_camera.pos_world,
+            .rot_world = large_camera.rot_world,
+            .roi_cent_world = large_camera.roi_cent_world,
+            .focal_length = large_camera.focal_length,
+            .sub_sample = large_camera.sub_sample,
+            .distortion = large_camera.distortion,
+        }},
         &[_]mo.MeshInput{mesh_input},
         memory_config,
-        null,
         null,
     )) orelse return error.NoResult;
     defer aa.free(large_single.slice);
@@ -897,15 +1039,38 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
     batch_config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
     };
+    const batch_render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), batch_config.total_threads) },
+    };
     const batch_result = (try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
-        &[_]CameraInput{ small_camera.toInput(), large_camera.toInput() },
+        &batch_render_groups,
+        &[_]CameraInput{
+            CameraInput{
+                .pixels_num = small_camera.pixels_num,
+                .pixels_size = small_camera.pixels_size,
+                .pos_world = small_camera.pos_world,
+                .rot_world = small_camera.rot_world,
+                .roi_cent_world = small_camera.roi_cent_world,
+                .focal_length = small_camera.focal_length,
+                .sub_sample = small_camera.sub_sample,
+                .distortion = small_camera.distortion,
+            },
+            CameraInput{
+                .pixels_num = large_camera.pixels_num,
+                .pixels_size = large_camera.pixels_size,
+                .pos_world = large_camera.pos_world,
+                .rot_world = large_camera.rot_world,
+                .roi_cent_world = large_camera.roi_cent_world,
+                .focal_length = large_camera.focal_length,
+                .sub_sample = large_camera.sub_sample,
+                .distortion = large_camera.distortion,
+            },
+        },
         &[_]mo.MeshInput{mesh_input},
         batch_config,
         out_dir,
-        null,
     )) orelse return error.NoResult;
     defer aa.free(batch_result.slice);
 

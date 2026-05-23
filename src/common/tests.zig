@@ -898,20 +898,31 @@ pub fn runTestInternal(
             };
             config.report = if (report_perf) .full_stats else .off;
 
-            const prepared_camera_input = prepared.camera.toInput();
+            const prepared_camera_input = CameraInput{
+                .pixels_num = prepared.camera.pixels_num,
+                .pixels_size = prepared.camera.pixels_size,
+                .pos_world = prepared.camera.pos_world,
+                .rot_world = prepared.camera.rot_world,
+                .roi_cent_world = prepared.camera.roi_cent_world,
+                .focal_length = prepared.camera.focal_length,
+                .sub_sample = prepared.camera.sub_sample,
+                .distortion = prepared.camera.distortion,
+            };
 
             if (tcfg.TEST_CASE_VERBOSE) {
                 std.debug.print("Testing {s} ... ", .{case_dir_name});
             }
             const time_start = Timestamp.now(io, .awake);
+            const render_groups = [_]zraster.RenderGroupSpec{
+                .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+            };
             const result = (try zraster.rasterAllFrames(
                 f64,
                 aa,
-                io,
+                &render_groups,
                 &[_]CameraInput{prepared_camera_input},
                 &[_]MeshInput{mesh_input},
                 config,
-                null,
                 null,
             )) orelse return error.NoResult;
 
@@ -1010,20 +1021,31 @@ pub fn runTestInternal(
                 };
                 config.report = if (report_perf) .full_stats else .off;
 
-                const prepared_camera_input = prepared.camera.toInput();
+                const prepared_camera_input = CameraInput{
+                .pixels_num = prepared.camera.pixels_num,
+                .pixels_size = prepared.camera.pixels_size,
+                .pos_world = prepared.camera.pos_world,
+                .rot_world = prepared.camera.rot_world,
+                .roi_cent_world = prepared.camera.roi_cent_world,
+                .focal_length = prepared.camera.focal_length,
+                .sub_sample = prepared.camera.sub_sample,
+                .distortion = prepared.camera.distortion,
+            };
 
                 if (tcfg.TEST_CASE_VERBOSE) {
                     std.debug.print("Testing {s} ... ", .{case_dir_name});
                 }
                 const time_start = Timestamp.now(io, .awake);
+                const render_groups = [_]zraster.RenderGroupSpec{
+                    .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+                };
                 const result = (try zraster.rasterAllFrames(
                     f64,
                     aa,
-                    io,
+                    &render_groups,
                     &[_]CameraInput{prepared_camera_input},
                     &[_]MeshInput{mesh_input},
                     config,
-                    null,
                     null,
                 )) orelse return error.NoResult;
 
@@ -1147,7 +1169,16 @@ pub fn runMultimeshTestExt(
             .{ .format = .csv, .bits = null, .scaling = .none },
         };
 
-        const camera_input = camera.toInput();
+        const camera_input = CameraInput{
+            .pixels_num = camera.pixels_num,
+            .pixels_size = camera.pixels_size,
+            .pos_world = camera.pos_world,
+            .rot_world = camera.rot_world,
+            .roi_cent_world = camera.roi_cent_world,
+            .focal_length = camera.focal_length,
+            .sub_sample = camera.sub_sample,
+            .distortion = camera.distortion,
+        };
         const case_name = if (mode == .nodal)
             "multimesh_allelem_nodal"
         else
@@ -1157,18 +1188,19 @@ pub fn runMultimeshTestExt(
         }
 
         const time_start = Timestamp.now(io, .awake);
+        const render_groups = [_]zraster.RenderGroupSpec{
+            .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+        };
         const result = (try zraster.rasterAllFrames(
             f64,
             aa,
-            io,
+            &render_groups,
             &[_]CameraInput{camera_input},
             mesh_inputs,
             config,
             null,
-            null,
         )) orelse return error.NoResult;
-        const time_end = Timestamp.now(io, .awake);
-        const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
+        const time_end = Timestamp.now(io, .awake);        const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
         const gold_dir = if (mode == .nodal)
             try std.fmt.allocPrint(aa, "{s}/allelem_nodal", .{gold_dir_root})
@@ -1285,20 +1317,30 @@ pub fn runMultimeshMixedTestExt(
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
-    const camera_input = camera.toInput();
+    const camera_input = CameraInput{
+        .pixels_num = camera.pixels_num,
+        .pixels_size = camera.pixels_size,
+        .pos_world = camera.pos_world,
+        .rot_world = camera.rot_world,
+        .roi_cent_world = camera.roi_cent_world,
+        .focal_length = camera.focal_length,
+        .sub_sample = camera.sub_sample,
+        .distortion = camera.distortion,
+    };
 
     const time_start = Timestamp.now(io, .awake);
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
     const result = (try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
+        &render_groups,
         &[_]CameraInput{camera_input},
         mesh_inputs,
         config,
         null,
-        null,
-    )) orelse return error.NoResult;
-    const time_end = Timestamp.now(io, .awake);
+    )) orelse return error.NoResult;    const time_end = Timestamp.now(io, .awake);
     const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
     const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
@@ -1403,20 +1445,30 @@ pub fn runMultimeshMixedRGBTestExt(
         .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
     };
 
-    const camera_input = camera.toInput();
+    const camera_input = CameraInput{
+        .pixels_num = camera.pixels_num,
+        .pixels_size = camera.pixels_size,
+        .pos_world = camera.pos_world,
+        .rot_world = camera.rot_world,
+        .roi_cent_world = camera.roi_cent_world,
+        .focal_length = camera.focal_length,
+        .sub_sample = camera.sub_sample,
+        .distortion = camera.distortion,
+    };
 
     const time_start = Timestamp.now(io, .awake);
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config_rgb.total_threads) },
+    };
     const result = (try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
+        &render_groups,
         &[_]CameraInput{camera_input},
         mesh_inputs,
         config_rgb,
         null,
-        null,
-    )) orelse return error.NoResult;
-    const time_end = Timestamp.now(io, .awake);
+    )) orelse return error.NoResult;    const time_end = Timestamp.now(io, .awake);
     const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
     const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
@@ -1560,19 +1612,30 @@ pub fn runDistortEdgeTexFuncTest(
             .{ .format = .csv, .bits = null, .scaling = .none },
         };
 
-        const prepared_camera_input = prepared.camera.toInput();
+        const prepared_camera_input = CameraInput{
+        .pixels_num = prepared.camera.pixels_num,
+        .pixels_size = prepared.camera.pixels_size,
+        .pos_world = prepared.camera.pos_world,
+        .rot_world = prepared.camera.rot_world,
+        .roi_cent_world = prepared.camera.roi_cent_world,
+        .focal_length = prepared.camera.focal_length,
+        .sub_sample = prepared.camera.sub_sample,
+        .distortion = prepared.camera.distortion,
+    };
         if (tcfg.TEST_CASE_VERBOSE) {
             std.debug.print("Testing {s} ... ", .{case_dir_name});
         }
         const start_time = Timestamp.now(io, .awake);
+        const render_groups = [_]zraster.RenderGroupSpec{
+            .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+        };
         const result = (try zraster.rasterAllFrames(
             f64,
             aa,
-            io,
+            &render_groups,
             &[_]CameraInput{prepared_camera_input},
             &[_]MeshInput{mesh_input},
             config,
-            null,
             null,
         )) orelse return error.NoResult;
         defer aa.free(result.slice);
@@ -1740,19 +1803,30 @@ pub fn runEdgeTexFuncConstantCaseForHullMode(
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
 
-    const prepared_camera_input = prepared.camera.toInput();
+    const prepared_camera_input = CameraInput{
+        .pixels_num = prepared.camera.pixels_num,
+        .pixels_size = prepared.camera.pixels_size,
+        .pos_world = prepared.camera.pos_world,
+        .rot_world = prepared.camera.rot_world,
+        .roi_cent_world = prepared.camera.roi_cent_world,
+        .focal_length = prepared.camera.focal_length,
+        .sub_sample = prepared.camera.sub_sample,
+        .distortion = prepared.camera.distortion,
+    };
     if (tcfg.TEST_CASE_VERBOSE) {
         std.debug.print("Testing {s} ... ", .{case_dir_name});
     }
     const start_time = Timestamp.now(io, .awake);
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
     const result = (try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
+        &render_groups,
         &[_]CameraInput{prepared_camera_input},
         &[_]MeshInput{mesh_input},
         config,
-        null,
         null,
     )) orelse return error.NoResult;
     defer aa.free(result.slice);
@@ -1879,19 +1953,30 @@ pub fn runDistortMidsideNodalUvTest(
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
 
-    const prepared_camera_input = prepared.camera.toInput();
+    const prepared_camera_input = CameraInput{
+        .pixels_num = prepared.camera.pixels_num,
+        .pixels_size = prepared.camera.pixels_size,
+        .pos_world = prepared.camera.pos_world,
+        .rot_world = prepared.camera.rot_world,
+        .roi_cent_world = prepared.camera.roi_cent_world,
+        .focal_length = prepared.camera.focal_length,
+        .sub_sample = prepared.camera.sub_sample,
+        .distortion = prepared.camera.distortion,
+    };
     if (tcfg.TEST_CASE_VERBOSE) {
         std.debug.print("Testing {s} ... ", .{case_dir_name});
     }
     const start_time = Timestamp.now(io, .awake);
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
     const result = (try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
+        &render_groups,
         &[_]CameraInput{prepared_camera_input},
         &[_]MeshInput{mesh_input},
         config,
-        null,
         null,
     )) orelse return error.NoResult;
     defer aa.free(result.slice);
@@ -2024,19 +2109,30 @@ pub fn runDistortMidsideTexShaderTest(
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
 
-    const prepared_camera_input = prepared.camera.toInput();
+    const prepared_camera_input = CameraInput{
+        .pixels_num = prepared.camera.pixels_num,
+        .pixels_size = prepared.camera.pixels_size,
+        .pos_world = prepared.camera.pos_world,
+        .rot_world = prepared.camera.rot_world,
+        .roi_cent_world = prepared.camera.roi_cent_world,
+        .focal_length = prepared.camera.focal_length,
+        .sub_sample = prepared.camera.sub_sample,
+        .distortion = prepared.camera.distortion,
+    };
     if (tcfg.TEST_CASE_VERBOSE) {
         std.debug.print("Testing {s} ... ", .{case_dir_name});
     }
     const start_time = Timestamp.now(io, .awake);
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
     const result = (try zraster.rasterAllFrames(
         f64,
         aa,
-        io,
+        &render_groups,
         &[_]CameraInput{prepared_camera_input},
         &[_]MeshInput{mesh_input},
         config,
-        null,
         null,
     )) orelse return error.NoResult;
     defer aa.free(result.slice);

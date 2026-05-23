@@ -73,7 +73,16 @@ fn loadSphereCase(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .uvs = uvs,
-        .camera_input = camera.toInput(),
+        .camera_input = CameraInput{
+            .pixels_num = camera.pixels_num,
+            .pixels_size = camera.pixels_size,
+            .pos_world = camera.pos_world,
+            .rot_world = camera.rot_world,
+            .roi_cent_world = camera.roi_cent_world,
+            .focal_length = camera.focal_length,
+            .sub_sample = camera.sub_sample,
+            .distortion = camera.distortion,
+        },
     };
 }
 
@@ -88,15 +97,17 @@ fn renderCase(
     var out_dir = try orch.openDirEnsured(io, out_dir_path);
     out_dir.close(io);
 
+    const render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
     const images = try zraster.rasterAllFrames(
         f64,
         allocator,
-        io,
+        &render_groups,
         &[_]CameraInput{camera_input},
         &[_]mo.MeshInput{mesh_input},
         config,
         out_dir_path,
-        null,
     );
     if (images) |img| {
         allocator.free(img.slice);
