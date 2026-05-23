@@ -356,6 +356,29 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
         },
     };
 
+    const camera_inputs = [_]CameraInput{
+        .{
+            .pixels_num = camera_a.pixels_num,
+            .pixels_size = camera_a.pixels_size,
+            .pos_world = camera_a.pos_world,
+            .rot_world = camera_a.rot_world,
+            .roi_cent_world = camera_a.roi_cent_world,
+            .focal_length = camera_a.focal_length,
+            .sub_sample = camera_a.sub_sample,
+            .distortion = camera_a.distortion,
+        },
+        .{
+            .pixels_num = camera_b.pixels_num,
+            .pixels_size = camera_b.pixels_size,
+            .pos_world = camera_b.pos_world,
+            .rot_world = camera_b.rot_world,
+            .roi_cent_world = camera_b.roi_cent_world,
+            .focal_length = camera_b.focal_length,
+            .sub_sample = camera_b.sub_sample,
+            .distortion = camera_b.distortion,
+        },
+    };
+
     var ref_config = tcfg.getRasterConfig(.testing);
     ref_config.save_strategy = .memory;
     ref_config.report = .off;
@@ -374,35 +397,14 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
         f64,
         aa,
         &ref_render_groups,
-        &[_]CameraInput{
-            CameraInput{
-                .pixels_num = camera_a.pixels_num,
-                .pixels_size = camera_a.pixels_size,
-                .pos_world = camera_a.pos_world,
-                .rot_world = camera_a.rot_world,
-                .roi_cent_world = camera_a.roi_cent_world,
-                .focal_length = camera_a.focal_length,
-                .sub_sample = camera_a.sub_sample,
-                .distortion = camera_a.distortion,
-            },
-            CameraInput{
-                .pixels_num = camera_b.pixels_num,
-                .pixels_size = camera_b.pixels_size,
-                .pos_world = camera_b.pos_world,
-                .rot_world = camera_b.rot_world,
-                .roi_cent_world = camera_b.roi_cent_world,
-                .focal_length = camera_b.focal_length,
-                .sub_sample = camera_b.sub_sample,
-                .distortion = camera_b.distortion,
-            },
-        },
+        &camera_inputs,
         &[_]mo.MeshInput{mesh_input},
         ref_config,
         null,
     )) orelse return error.NoResult;
     defer aa.free(reference.slice);
 
-    const grouped_cases = [_]struct {
+    const shared_io_grouped_cases = [_]struct {
         mode: GeometrySchedulingMode,
         render_groups: [2]zraster.RenderGroupSpec,
     }{
@@ -422,7 +424,7 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
         },
     };
 
-    for (grouped_cases) |case| {
+    for (shared_io_grouped_cases) |case| {
         var grouped_config = ref_config;
         grouped_config.geom_scheduling_mode = case.mode;
 
@@ -430,28 +432,7 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
             f64,
             aa,
             case.render_groups[0..],
-            &[_]CameraInput{
-            CameraInput{
-                .pixels_num = camera_a.pixels_num,
-                .pixels_size = camera_a.pixels_size,
-                .pos_world = camera_a.pos_world,
-                .rot_world = camera_a.rot_world,
-                .roi_cent_world = camera_a.roi_cent_world,
-                .focal_length = camera_a.focal_length,
-                .sub_sample = camera_a.sub_sample,
-                .distortion = camera_a.distortion,
-            },
-            CameraInput{
-                .pixels_num = camera_b.pixels_num,
-                .pixels_size = camera_b.pixels_size,
-                .pos_world = camera_b.pos_world,
-                .rot_world = camera_b.rot_world,
-                .roi_cent_world = camera_b.roi_cent_world,
-                .focal_length = camera_b.focal_length,
-                .sub_sample = camera_b.sub_sample,
-                .distortion = camera_b.distortion,
-            },
-        },
+            &camera_inputs,
             &[_]mo.MeshInput{mesh_input},
             grouped_config,
             null,
@@ -484,6 +465,78 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
                                 duplicate_rel_tol,
                                 duplicate_abs_tol,
                             ),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    var managed_ios = [_]std.Io.Threaded{
+        std.Io.Threaded.init(allocator, .{
+            .argv0 = .empty,
+            .environ = .empty,
+            .async_limit = .limited(1),
+            .concurrent_limit = .limited(1),
+        }),
+        std.Io.Threaded.init(allocator, .{
+            .argv0 = .empty,
+            .environ = .empty,
+            .async_limit = .limited(1),
+            .concurrent_limit = .limited(1),
+        }),
+    };
+    defer for (&managed_ios) |*managed_io| managed_io.deinit();
+
+    const independent_io_grouped_cases = [_]struct {
+        mode: GeometrySchedulingMode,
+    }{
+        .{ .mode = .spread },
+        .{ .mode = .pack },
+    };
+
+    for (independent_io_grouped_cases) |case| {
+        var grouped_config = ref_config;
+        grouped_config.geom_scheduling_mode = case.mode;
+
+        const render_groups = [_]zraster.RenderGroupSpec{
+            .{ .io = managed_ios[0].io(), .workers = 2 },
+            .{ .io = managed_ios[1].io(), .workers = 2 },
+        };
+        const grouped = (try zraster.rasterAllFrames(
+            f64,
+            aa,
+            &render_groups,
+            &camera_inputs,
+            &[_]mo.MeshInput{mesh_input},
+            grouped_config,
+            null,
+        )) orelse return error.NoResult;
+        defer aa.free(grouped.slice);
+
+        try std.testing.expectEqualSlices(usize, reference.dims, grouped.dims);
+        for (0..reference.dims[0]) |camera_idx| {
+            for (0..reference.dims[1]) |frame_idx| {
+                for (0..reference.dims[3]) |rr| {
+                    for (0..reference.dims[4]) |cc| {
+                        const ref_val = reference.get(&[_]usize{
+                            camera_idx,
+                            frame_idx,
+                            0,
+                            rr,
+                            cc,
+                        });
+                        const got_val = grouped.get(&[_]usize{
+                            camera_idx,
+                            frame_idx,
+                            0,
+                            rr,
+                            cc,
+                        });
+                        try std.testing.expectApproxEqAbs(
+                            ref_val,
+                            got_val,
+                            duplicate_abs_tol,
                         );
                     }
                 }

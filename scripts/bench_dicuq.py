@@ -39,14 +39,14 @@ RUN_EXPERIMENT_1 = False
 RUN_EXPERIMENT_2 = False
 # Experiment 3: showdown between one large render group and many smaller render
 # groups at the same total active-thread budget.
-RUN_EXPERIMENT_3 = True
+RUN_EXPERIMENT_3 = False
 # Experiment 4: full factorial sweep over render mode, render-group partition,
 # geometry scheduling mode, and grouped scheduler knobs.
 RUN_EXPERIMENT_4 = False
 # Experiment 5: offline sweet-spot sweep. Geometry stays single-threaded per
 # job while we sweep render-group partitioning and geometry lookahead over the
 # cases that should plausibly scale well.
-RUN_EXPERIMENT_5 = False
+RUN_EXPERIMENT_5 = True
 
 # Experiment 1: idealized offline design.
 # Single render group, geometry spread, one worker per geometry job, one raster
