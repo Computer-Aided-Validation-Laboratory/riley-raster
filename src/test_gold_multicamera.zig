@@ -379,16 +379,57 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
         },
     };
 
+    const compareFrameStacks = struct {
+        fn run(
+            reference: anytype,
+            grouped: anytype,
+            duplicate_rel_tol_local: f64,
+            duplicate_abs_tol_local: f64,
+        ) !void {
+            try std.testing.expectEqualSlices(usize, reference.dims, grouped.dims);
+            for (0..reference.dims[0]) |camera_idx| {
+                for (0..reference.dims[1]) |frame_idx| {
+                    for (0..reference.dims[3]) |rr| {
+                        for (0..reference.dims[4]) |cc| {
+                            const ref_val = reference.get(&[_]usize{
+                                camera_idx,
+                                frame_idx,
+                                0,
+                                rr,
+                                cc,
+                            });
+                            const grouped_val = grouped.get(&[_]usize{
+                                camera_idx,
+                                frame_idx,
+                                0,
+                                rr,
+                                cc,
+                            });
+                            try std.testing.expect(
+                                testcommon.isApproxEqual(
+                                    ref_val,
+                                    grouped_val,
+                                    duplicate_rel_tol_local,
+                                    duplicate_abs_tol_local,
+                                ),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    };
+
     var ref_config = tcfg.getRasterConfig(.testing);
     ref_config.save_strategy = .memory;
     ref_config.report = .off;
-    ref_config.total_threads = 2;
+    ref_config.total_threads = 4;
     ref_config.max_geom_workers_per_frame = 1;
-    ref_config.max_raster_workers_per_frame = 2;
+    ref_config.max_raster_workers_per_frame = 4;
     ref_config.frame_batch_size_per_group = 2;
     ref_config.max_geom_jobs_in_flight_per_group = 2;
     ref_config.max_geom_workers_per_job = 1;
-    ref_config.max_raster_workers_per_job = 2;
+    ref_config.max_raster_workers_per_job = 4;
 
     const ref_render_groups = [_]zraster.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), ref_config.total_threads) },
@@ -439,40 +480,27 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
         )) orelse return error.NoResult;
         defer aa.free(grouped.slice);
 
-        try std.testing.expectEqualSlices(usize, reference.dims, grouped.dims);
-        for (0..reference.dims[0]) |camera_idx| {
-            for (0..reference.dims[1]) |frame_idx| {
-                for (0..reference.dims[3]) |rr| {
-                    for (0..reference.dims[4]) |cc| {
-                        const ref_val = reference.get(&[_]usize{
-                            camera_idx,
-                            frame_idx,
-                            0,
-                            rr,
-                            cc,
-                        });
-                        const grouped_val = grouped.get(&[_]usize{
-                            camera_idx,
-                            frame_idx,
-                            0,
-                            rr,
-                            cc,
-                        });
-                        try std.testing.expect(
-                            testcommon.isApproxEqual(
-                                ref_val,
-                                grouped_val,
-                                duplicate_rel_tol,
-                                duplicate_abs_tol,
-                            ),
-                        );
-                    }
-                }
-            }
-        }
+        try compareFrameStacks.run(
+            reference,
+            grouped,
+            duplicate_rel_tol,
+            duplicate_abs_tol,
+        );
     }
 
     var managed_ios = [_]std.Io.Threaded{
+        std.Io.Threaded.init(allocator, .{
+            .argv0 = .empty,
+            .environ = .empty,
+            .async_limit = .limited(1),
+            .concurrent_limit = .limited(1),
+        }),
+        std.Io.Threaded.init(allocator, .{
+            .argv0 = .empty,
+            .environ = .empty,
+            .async_limit = .limited(1),
+            .concurrent_limit = .limited(1),
+        }),
         std.Io.Threaded.init(allocator, .{
             .argv0 = .empty,
             .environ = .empty,
@@ -514,35 +542,37 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
         )) orelse return error.NoResult;
         defer aa.free(grouped.slice);
 
-        try std.testing.expectEqualSlices(usize, reference.dims, grouped.dims);
-        for (0..reference.dims[0]) |camera_idx| {
-            for (0..reference.dims[1]) |frame_idx| {
-                for (0..reference.dims[3]) |rr| {
-                    for (0..reference.dims[4]) |cc| {
-                        const ref_val = reference.get(&[_]usize{
-                            camera_idx,
-                            frame_idx,
-                            0,
-                            rr,
-                            cc,
-                        });
-                        const got_val = grouped.get(&[_]usize{
-                            camera_idx,
-                            frame_idx,
-                            0,
-                            rr,
-                            cc,
-                        });
-                        try std.testing.expectApproxEqAbs(
-                            ref_val,
-                            got_val,
-                            duplicate_abs_tol,
-                        );
-                    }
-                }
-            }
-        }
+        try compareFrameStacks.run(
+            reference,
+            grouped,
+            duplicate_rel_tol,
+            duplicate_abs_tol,
+        );
     }
+
+    const four_group_render_groups = [_]zraster.RenderGroupSpec{
+        .{ .io = managed_ios[0].io(), .workers = 1 },
+        .{ .io = managed_ios[1].io(), .workers = 1 },
+        .{ .io = managed_ios[2].io(), .workers = 1 },
+        .{ .io = managed_ios[3].io(), .workers = 1 },
+    };
+    const four_group = (try zraster.rasterAllFrames(
+        f64,
+        aa,
+        &four_group_render_groups,
+        &camera_inputs,
+        &[_]mo.MeshInput{mesh_input},
+        ref_config,
+        null,
+    )) orelse return error.NoResult;
+    defer aa.free(four_group.slice);
+
+    try compareFrameStacks.run(
+        reference,
+        four_group,
+        duplicate_rel_tol,
+        duplicate_abs_tol,
+    );
 }
 
 test "Multicamera memory matches both" {

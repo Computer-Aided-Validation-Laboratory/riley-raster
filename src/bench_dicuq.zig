@@ -26,14 +26,14 @@ const DEFAULT_STEREO_ANG: f64 = 20.0;
 const DEFAULT_TEX_PATH = "texture/speckle.bmp";
 const DEFAULT_RENDER_MODE = rastcfg.RenderMode.offline;
 const DEFAULT_SAVE_STRATEGY = rastcfg.SaveStrategy.disk;
-const DEFAULT_RUNS: usize = 10;
-const DEFAULT_RENDER_GROUP_COUNT: u16 = 1;
-const DEFAULT_TOTAL_THREADS: u16 = 1;
-const DEFAULT_FRAME_BATCH_SIZE_PER_GROUP: u16 = 1;
-const DEFAULT_MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP: u16 = 1;
+const DEFAULT_RUNS: usize = 1;
+const DEFAULT_RENDER_GROUP_COUNT: u16 = 8;
+const DEFAULT_TOTAL_THREADS: u16 = 8;
+const DEFAULT_FRAME_BATCH_SIZE_PER_GROUP: u16 = 8;
+const DEFAULT_MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP: u16 = 8;
 const DEFAULT_MAX_GEOM_WORKERS_PER_JOB: u16 = 1;
 const DEFAULT_GEOM_SCHEDULING_MODE = rastcfg.GeometrySchedulingMode.spread;
-const DEFAULT_MAX_RASTER_WORKERS_PER_JOB: u16 = 1;
+const DEFAULT_MAX_RASTER_WORKERS_PER_JOB: u16 = 8;
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;

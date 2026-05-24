@@ -641,56 +641,6 @@ pub const RenderGroupSpec = struct {
     workers: u16,
 };
 
-const RenderGroupTaskFn = *const fn (
-    render_group: RenderGroupSpec,
-    ctx_ptr: *anyopaque,
-) void;
-
-fn runRenderGroupTaskAsync(
-    render_group: RenderGroupSpec,
-    ctx_ptr: *anyopaque,
-    task_fn: RenderGroupTaskFn,
-) void {
-    task_fn(render_group, ctx_ptr);
-}
-
-fn launchHelperRenderGroupsAsync(
-    outer_alloc: std.mem.Allocator,
-    render_groups: []const RenderGroupSpec,
-    ctx_ptr: *anyopaque,
-    task_fn: RenderGroupTaskFn,
-) ![]std.Io.Future(void) {
-    const helper_groups = render_groups[1..];
-    const futures = try outer_alloc.alloc(
-        std.Io.Future(void),
-        helper_groups.len,
-    );
-    errdefer outer_alloc.free(futures);
-
-    for (helper_groups, 0..) |render_group, ii| {
-        futures[ii] = std.Io.async(
-            render_group.io,
-            runRenderGroupTaskAsync,
-            .{
-                render_group,
-                ctx_ptr,
-                task_fn,
-            },
-        );
-    }
-
-    return futures;
-}
-
-fn awaitHelperRenderGroups(
-    futures: []std.Io.Future(void),
-    render_groups: []const RenderGroupSpec,
-) void {
-    for (futures, 0..) |*future, ii| {
-        future.await(render_groups[ii + 1].io);
-    }
-}
-
 fn FrameJobDesc(comptime T: type) type {
     return struct {
         camera: *const cam.CameraPrepared,
@@ -1180,6 +1130,16 @@ fn processOfflineRenderGroupLoop(
     }
 }
 
+fn processOfflineRenderGroupThread(
+    comptime T: type,
+    render_group: RenderGroupSpec,
+    shared: *OfflineDispatchShared(T),
+) void {
+    processOfflineRenderGroupLoop(T, render_group, shared) catch |err| {
+        shared.err_state.setFirst(err);
+    };
+}
+
 fn dispatchFrameJobsOffline(
     comptime T: type,
     outer_alloc: std.mem.Allocator,
@@ -1194,23 +1154,6 @@ fn dispatchFrameJobsOffline(
     images_arr: ?*ndarray.NDArray(T),
     bench_capture: ?[]report.FrameBenchCapture,
 ) !void {
-    const AsyncOfflineRenderGroup = struct {
-        fn run(
-            render_group: RenderGroupSpec,
-            ctx_ptr: *anyopaque,
-        ) void {
-            const shared: *OfflineDispatchShared(T) =
-                @ptrCast(@alignCast(ctx_ptr));
-            processOfflineRenderGroupLoop(
-                T,
-                render_group,
-                shared,
-            ) catch |err| {
-                shared.err_state.setFirst(err);
-            };
-        }
-    };
-
     var err_state = RenderGroupErrorState{};
     var shared = OfflineDispatchShared(T){
         .outer_alloc = outer_alloc,
@@ -1228,18 +1171,23 @@ fn dispatchFrameJobsOffline(
         .err_state = &err_state,
     };
 
-    const futures = try launchHelperRenderGroupsAsync(
-        outer_alloc,
-        render_groups,
-        @ptrCast(&shared),
-        AsyncOfflineRenderGroup.run,
-    );
-    defer outer_alloc.free(futures);
+    var threads = try outer_alloc.alloc(std.Thread, render_groups.len -| 1);
+    defer outer_alloc.free(threads);
+
+    for (render_groups[1..], 0..) |render_group, ii| {
+        threads[ii] = try std.Thread.spawn(
+            .{},
+            processOfflineRenderGroupThread,
+            .{ T, render_group, &shared },
+        );
+    }
 
     processOfflineRenderGroupLoop(T, render_groups[0], &shared) catch |err| {
         err_state.setFirst(err);
     };
-    awaitHelperRenderGroups(futures, render_groups);
+    for (threads) |thread| {
+        thread.join();
+    }
     if (err_state.first_err) |err| return err;
 }
 
@@ -1294,6 +1242,16 @@ fn processInOrderRenderGroupLoop(
     }
 }
 
+fn processInOrderRenderGroupThread(
+    comptime T: type,
+    render_group: RenderGroupSpec,
+    shared: *InOrderDispatchShared(T),
+) void {
+    processInOrderRenderGroupLoop(T, render_group, shared) catch |err| {
+        shared.err_state.setFirst(err);
+    };
+}
+
 fn dispatchFrameJobsInOrder(
     comptime T: type,
     outer_alloc: std.mem.Allocator,
@@ -1312,23 +1270,6 @@ fn dispatchFrameJobsInOrder(
     const batch_size = @max(@as(usize, 1), config.frame_batch_size_per_group);
 
     for (0..num_time) |frame_idx| {
-        const AsyncInOrderRenderGroup = struct {
-            fn run(
-                render_group: RenderGroupSpec,
-                ctx_ptr: *anyopaque,
-            ) void {
-                const shared: *InOrderDispatchShared(T) =
-                    @ptrCast(@alignCast(ctx_ptr));
-                processInOrderRenderGroupLoop(
-                    T,
-                    render_group,
-                    shared,
-                ) catch |err| {
-                    shared.err_state.setFirst(err);
-                };
-            }
-        };
-
         var err_state = RenderGroupErrorState{};
         var shared = InOrderDispatchShared(T){
             .outer_alloc = outer_alloc,
@@ -1346,18 +1287,26 @@ fn dispatchFrameJobsInOrder(
             .err_state = &err_state,
         };
 
-        const futures = try launchHelperRenderGroupsAsync(
-            outer_alloc,
-            render_groups,
-            @ptrCast(&shared),
-            AsyncInOrderRenderGroup.run,
+        var threads = try outer_alloc.alloc(
+            std.Thread,
+            render_groups.len -| 1,
         );
-        defer outer_alloc.free(futures);
+        defer outer_alloc.free(threads);
+
+        for (render_groups[1..], 0..) |render_group, ii| {
+            threads[ii] = try std.Thread.spawn(
+                .{},
+                processInOrderRenderGroupThread,
+                .{ T, render_group, &shared },
+            );
+        }
 
         processInOrderRenderGroupLoop(T, render_groups[0], &shared) catch |err| {
             err_state.setFirst(err);
         };
-        awaitHelperRenderGroups(futures, render_groups);
+        for (threads) |thread| {
+            thread.join();
+        }
         if (err_state.first_err) |err| return err;
     }
 }
