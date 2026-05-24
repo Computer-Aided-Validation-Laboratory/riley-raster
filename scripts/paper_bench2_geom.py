@@ -5,6 +5,7 @@ import csv
 import pathlib
 from paper_bench_common import combined_case_dir_name
 from paper_bench_common import fmt_triplet
+from paper_bench_common import fmt_triplet_any
 from paper_bench_common import calc_median_mad
 from paper_bench_common import legacy_hull_case_dir_name
 from paper_bench_common import legacy_simd_case_dir_name
@@ -12,6 +13,7 @@ from paper_bench_common import load_case_map_from_dir
 from paper_bench_common import load_run_case_rows_from_dir
 from paper_bench_common import latest_stats_dir_with_candidates
 from paper_bench_common import write_tabs_tex
+from paper_bench_common import row_float
 from paper_const import repo_root
 from paper_const import TABLE_MAD_DECIMAL_PLACES
 from paper_const import TABLE_MEDIAN_DECIMAL_PLACES
@@ -164,20 +166,22 @@ def build_table_tex() -> str:
         mad_row = mad_map[case_name]
         elems_num = count_elements(mesh_dir_name)
         nodes_num = count_nodes(mesh_dir_name)
-        e2e_text = fmt_triplet(
+        e2e_text = fmt_triplet_any(
             median_row,
             mad_row,
+            "E2E Time [ms]",
             "E2E_ms",
         )
-        geom_text = fmt_triplet(
+        geom_text = fmt_triplet_any(
             median_row,
             mad_row,
+            "Geom Time [ms]",
             "Geom_ms",
         )
         throughput_vals: list[float] = []
         for case_map in run_case_maps:
             run_row = case_map[case_name]
-            geom_ms = float(run_row["Geom_ms"])
+            geom_ms = row_float(run_row, "Geom Time [ms]", "Geom_ms")
             if geom_ms > 0.0:
                 throughput_vals.append(nodes_num / geom_ms / 1.0e3)
         throughput_median, throughput_mad = calc_median_mad(
@@ -186,7 +190,7 @@ def build_table_tex() -> str:
         elem_throughput_vals: list[float] = []
         for case_map in run_case_maps:
             run_row = case_map[case_name]
-            geom_ms = float(run_row["Geom_ms"])
+            geom_ms = row_float(run_row, "Geom Time [ms]", "Geom_ms")
             if geom_ms > 0.0:
                 elem_throughput_vals.append(elems_num / geom_ms / 1.0e3)
         elem_throughput_median, elem_throughput_mad = calc_median_mad(

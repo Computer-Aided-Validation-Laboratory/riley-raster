@@ -13,7 +13,12 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from paper_bench_common import PAPER_DIR, latest_run_dir_with_paths, repo_root
+from paper_bench_common import (
+    PAPER_DIR,
+    latest_run_dir_with_paths,
+    repo_root,
+    row_float,
+)
 from paper_const import (
     PLOT_LINE_AXIS_FONT_SIZE,
     PLOT_LINE_FIG_SIZE_IN,
@@ -109,6 +114,14 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
     if match is None:
         return None
 
+    required_paths = [
+        case_dir / "bench_e2e_overruns_median.csv",
+        case_dir / "bench_e2e_overruns_min.csv",
+        case_dir / "bench_e2e_overruns_max.csv",
+    ]
+    if not all(path.exists() for path in required_paths):
+        return None
+
     median_row = find_camera_all_row(case_dir / "bench_e2e_overruns_median.csv")
     min_row = find_camera_all_row(case_dir / "bench_e2e_overruns_min.csv")
     max_row = find_camera_all_row(case_dir / "bench_e2e_overruns_max.csv")
@@ -127,15 +140,27 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
         render_mode=match.group("render"),
         save_strategy=match.group("save"),
         case_name=median_row["Case"],
-        e2e_median_ms=float(median_row["E2E_ms"]),
-        e2e_min_ms=float(min_row["E2E_ms"]),
-        e2e_max_ms=float(max_row["E2E_ms"]),
-        raster_median_ms=float(median_row["Raster_ms"]),
-        raster_min_ms=float(min_row["Raster_ms"]),
-        raster_max_ms=float(max_row["Raster_ms"]),
-        raster_throughput_median_mpx_s=float(median_row["Throughput_MPx/s"]),
-        raster_throughput_min_mpx_s=float(min_row["Throughput_MPx/s"]),
-        raster_throughput_max_mpx_s=float(max_row["Throughput_MPx/s"]),
+        e2e_median_ms=row_float(median_row, "E2E Time [ms]", "E2E_ms"),
+        e2e_min_ms=row_float(min_row, "E2E Time [ms]", "E2E_ms"),
+        e2e_max_ms=row_float(max_row, "E2E Time [ms]", "E2E_ms"),
+        raster_median_ms=row_float(median_row, "Raster Time [ms]", "Raster_ms"),
+        raster_min_ms=row_float(min_row, "Raster Time [ms]", "Raster_ms"),
+        raster_max_ms=row_float(max_row, "Raster Time [ms]", "Raster_ms"),
+        raster_throughput_median_mpx_s=row_float(
+            median_row,
+            "Raster TP [MPx/s]",
+            "Throughput_MPx/s",
+        ),
+        raster_throughput_min_mpx_s=row_float(
+            min_row,
+            "Raster TP [MPx/s]",
+            "Throughput_MPx/s",
+        ),
+        raster_throughput_max_mpx_s=row_float(
+            max_row,
+            "Raster TP [MPx/s]",
+            "Throughput_MPx/s",
+        ),
     )
 
 

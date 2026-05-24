@@ -12,42 +12,38 @@ const gk = @import("../zraster/zig/geometrykernels.zig");
 const texops = @import("../zraster/zig/textureops.zig");
 
 pub const CaseSamples = struct {
+    total_elems_vals: []f64,
+    vis_elems_vals: []f64,
+    total_px_vals: []f64,
+    shaded_px_vals: []f64,
     e2e_times: []f64,
     geom_times: []f64,
     raster_times: []f64,
-    fps_vals: []f64,
-    mpx_vals: []f64,
-    msubpx_vals: []f64,
-    mshades_vals: []f64,
-    msubshades_vals: []f64,
-    melems_vals: []f64,
-    mnodes_vals: []f64,
-    mops_vals: []f64,
-    geom_prep_times: []f64,
-    tile_overlap_times: []f64,
-    raster_loop_times: []f64,
     save_frame_times: []f64,
+    frame_times: []f64,
+    geom_tpx_vals: []f64,
+    raster_tpx_vals: []f64,
+    frame_tpx_vals: []f64,
+    e2e_tpx_vals: []f64,
 
     pub fn init(
         allocator: std.mem.Allocator,
         runs: usize,
     ) !CaseSamples {
         return .{
+            .total_elems_vals = try allocator.alloc(f64, runs),
+            .vis_elems_vals = try allocator.alloc(f64, runs),
+            .total_px_vals = try allocator.alloc(f64, runs),
+            .shaded_px_vals = try allocator.alloc(f64, runs),
             .e2e_times = try allocator.alloc(f64, runs),
             .geom_times = try allocator.alloc(f64, runs),
             .raster_times = try allocator.alloc(f64, runs),
-            .fps_vals = try allocator.alloc(f64, runs),
-            .mpx_vals = try allocator.alloc(f64, runs),
-            .msubpx_vals = try allocator.alloc(f64, runs),
-            .mshades_vals = try allocator.alloc(f64, runs),
-            .msubshades_vals = try allocator.alloc(f64, runs),
-            .melems_vals = try allocator.alloc(f64, runs),
-            .mnodes_vals = try allocator.alloc(f64, runs),
-            .mops_vals = try allocator.alloc(f64, runs),
-            .geom_prep_times = try allocator.alloc(f64, runs),
-            .tile_overlap_times = try allocator.alloc(f64, runs),
-            .raster_loop_times = try allocator.alloc(f64, runs),
             .save_frame_times = try allocator.alloc(f64, runs),
+            .frame_times = try allocator.alloc(f64, runs),
+            .geom_tpx_vals = try allocator.alloc(f64, runs),
+            .raster_tpx_vals = try allocator.alloc(f64, runs),
+            .frame_tpx_vals = try allocator.alloc(f64, runs),
+            .e2e_tpx_vals = try allocator.alloc(f64, runs),
         };
     }
 
@@ -56,20 +52,18 @@ pub const CaseSamples = struct {
         allocator: std.mem.Allocator,
     ) void {
         allocator.free(self.e2e_times);
+        allocator.free(self.total_elems_vals);
+        allocator.free(self.vis_elems_vals);
+        allocator.free(self.total_px_vals);
+        allocator.free(self.shaded_px_vals);
         allocator.free(self.geom_times);
         allocator.free(self.raster_times);
-        allocator.free(self.fps_vals);
-        allocator.free(self.mpx_vals);
-        allocator.free(self.msubpx_vals);
-        allocator.free(self.mshades_vals);
-        allocator.free(self.msubshades_vals);
-        allocator.free(self.melems_vals);
-        allocator.free(self.mnodes_vals);
-        allocator.free(self.mops_vals);
-        allocator.free(self.geom_prep_times);
-        allocator.free(self.tile_overlap_times);
-        allocator.free(self.raster_loop_times);
         allocator.free(self.save_frame_times);
+        allocator.free(self.frame_times);
+        allocator.free(self.geom_tpx_vals);
+        allocator.free(self.raster_tpx_vals);
+        allocator.free(self.frame_tpx_vals);
+        allocator.free(self.e2e_tpx_vals);
     }
 
     pub fn record(
@@ -77,28 +71,19 @@ pub const CaseSamples = struct {
         rr: usize,
         result: common.BenchResult,
     ) void {
+        self.total_elems_vals[rr] = @floatFromInt(result.total_elems);
+        self.vis_elems_vals[rr] = @floatFromInt(result.vis_elems);
+        self.total_px_vals[rr] = @floatFromInt(result.total_px);
+        self.shaded_px_vals[rr] = @floatFromInt(result.shaded_px);
         self.e2e_times[rr] = result.e2e_ms;
         self.geom_times[rr] = result.geom_ms;
         self.raster_times[rr] = result.raster_ms;
-        self.fps_vals[rr] = result.fps;
-
-        self.mpx_vals[rr] = result.metrics.mpx_sec;
-        self.msubpx_vals[rr] = result.metrics.msubpx_sec;
-        self.mshades_vals[rr] = result.metrics.mshades_sec;
-        self.msubshades_vals[rr] = result.metrics.msubshades_sec;
-        self.melems_vals[rr] = result.metrics.melems_sec;
-        self.mnodes_vals[rr] = result.metrics.mnodes_sec;
-        self.mops_vals[rr] = result.metrics.mops_sec;
-
-        const conv_ms = 1.0 / 1e6;
-        self.geom_prep_times[rr] =
-            result.pipeline_times.geometry_prep * conv_ms;
-        self.tile_overlap_times[rr] =
-            result.pipeline_times.tile_overlap * conv_ms;
-        self.raster_loop_times[rr] =
-            result.pipeline_times.raster_loop * conv_ms;
-        self.save_frame_times[rr] =
-            result.pipeline_times.save_frame * conv_ms;
+        self.save_frame_times[rr] = result.pipeline_times.save_frame / 1e6;
+        self.frame_times[rr] = result.pipeline_times.total_time / 1e6;
+        self.geom_tpx_vals[rr] = result.metrics.melems_sec;
+        self.raster_tpx_vals[rr] = result.metrics.raster_tpx_mpx_s;
+        self.frame_tpx_vals[rr] = result.metrics.frame_tpx_mpx_s;
+        self.e2e_tpx_vals[rr] = result.metrics.e2e_tpx_mpx_s;
     }
 
     pub fn toBenchStats(
@@ -116,39 +101,47 @@ pub const CaseSamples = struct {
             .shader_type = shader_type,
             .sample_config = sample_config,
             .tex_func_case = tex_func_case,
+            .total_elems = try common.calcMedianMAD(
+                allocator,
+                self.total_elems_vals,
+            ),
+            .vis_elems = try common.calcMedianMAD(
+                allocator,
+                self.vis_elems_vals,
+            ),
+            .total_px = try common.calcMedianMAD(
+                allocator,
+                self.total_px_vals,
+            ),
+            .shaded_px = try common.calcMedianMAD(
+                allocator,
+                self.shaded_px_vals,
+            ),
             .e2e = try common.calcMedianMAD(allocator, self.e2e_times),
             .geom = try common.calcMedianMAD(allocator, self.geom_times),
             .raster = try common.calcMedianMAD(allocator, self.raster_times),
-            .fps = try common.calcMedianMAD(allocator, self.fps_vals),
-            .mpx = try common.calcMedianMAD(allocator, self.mpx_vals),
-            .msubpx = try common.calcMedianMAD(allocator, self.msubpx_vals),
-            .mshades = try common.calcMedianMAD(
+            .save = try common.calcMedianMAD(allocator, self.save_frame_times),
+            .frame = try common.calcMedianMAD(allocator, self.frame_times),
+            .geom_tpx = try common.calcMedianMAD(allocator, self.geom_tpx_vals),
+            .raster_tpx = try common.calcMedianMAD(
                 allocator,
-                self.mshades_vals,
+                self.raster_tpx_vals,
             ),
-            .msubshades = try common.calcMedianMAD(
+            .frame_tpx = try common.calcMedianMAD(
                 allocator,
-                self.msubshades_vals,
+                self.frame_tpx_vals,
             ),
-            .melems = try common.calcMedianMAD(allocator, self.melems_vals),
-            .mnodes = try common.calcMedianMAD(allocator, self.mnodes_vals),
-            .mops = try common.calcMedianMAD(allocator, self.mops_vals),
-            .geom_prep = try common.calcMedianMAD(
-                allocator,
-                self.geom_prep_times,
-            ),
-            .tile_overlap = try common.calcMedianMAD(
-                allocator,
-                self.tile_overlap_times,
-            ),
-            .raster_loop = try common.calcMedianMAD(
-                allocator,
-                self.raster_loop_times,
-            ),
-            .save_frame = try common.calcMedianMAD(
-                allocator,
-                self.save_frame_times,
-            ),
+            .e2e_tpx = try common.calcMedianMAD(allocator, self.e2e_tpx_vals),
+            .msubpx = undefined,
+            .mshades = undefined,
+            .msubshades = undefined,
+            .melems = undefined,
+            .mnodes = undefined,
+            .mops = undefined,
+            .geom_prep = undefined,
+            .tile_overlap = undefined,
+            .raster_loop = undefined,
+            .save_frame = undefined,
         };
     }
 };

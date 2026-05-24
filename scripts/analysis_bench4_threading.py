@@ -14,7 +14,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 
-from paper_bench_common import latest_run_dir_with_paths
+from paper_bench_common import latest_run_dir_with_paths, row_float
 from paper_const import (
     PLOT_LINE_AXIS_FONT_SIZE,
     PLOT_LINE_FIG_SIZE_IN,
@@ -143,6 +143,16 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
     if match is None:
         return None
 
+    required_paths = [
+        case_dir / "bench_e2e_overruns_median.csv",
+        case_dir / "bench_e2e_overruns_min.csv",
+        case_dir / "bench_e2e_overruns_max.csv",
+        case_dir / "config.txt",
+        case_dir / "bench_run0_byframe.csv",
+    ]
+    if not all(path.exists() for path in required_paths):
+        return None
+
     median_row = find_camera_all_row(case_dir / "bench_e2e_overruns_median.csv")
     min_row = find_camera_all_row(case_dir / "bench_e2e_overruns_min.csv")
     max_row = find_camera_all_row(case_dir / "bench_e2e_overruns_max.csv")
@@ -153,12 +163,21 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
     frame_count = len(frame_rows)
     total_mpx = (pixels_x * pixels_y * frame_count) / 1.0e6
 
-    e2e_median_ms = float(median_row["E2E_ms"])
-    e2e_min_ms = float(min_row["E2E_ms"])
-    e2e_max_ms = float(max_row["E2E_ms"])
-    e2e_throughput_median = total_mpx * 1000.0 / e2e_median_ms
-    e2e_throughput_min = total_mpx * 1000.0 / e2e_max_ms
-    e2e_throughput_max = total_mpx * 1000.0 / e2e_min_ms
+    e2e_median_ms = row_float(median_row, "E2E Time [ms]", "E2E_ms")
+    e2e_min_ms = row_float(min_row, "E2E Time [ms]", "E2E_ms")
+    e2e_max_ms = row_float(max_row, "E2E Time [ms]", "E2E_ms")
+    e2e_throughput_median = row_float(
+        median_row,
+        "E2E TP [MPx/s]",
+    ) if "E2E TP [MPx/s]" in median_row else total_mpx * 1000.0 / e2e_median_ms
+    e2e_throughput_min = row_float(
+        min_row,
+        "E2E TP [MPx/s]",
+    ) if "E2E TP [MPx/s]" in min_row else total_mpx * 1000.0 / e2e_max_ms
+    e2e_throughput_max = row_float(
+        max_row,
+        "E2E TP [MPx/s]",
+    ) if "E2E TP [MPx/s]" in max_row else total_mpx * 1000.0 / e2e_min_ms
 
     return CaseStats(
         case_dir=case_dir,
@@ -176,15 +195,27 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
         e2e_median_ms=e2e_median_ms,
         e2e_min_ms=e2e_min_ms,
         e2e_max_ms=e2e_max_ms,
-        raster_median_ms=float(median_row["Raster_ms"]),
-        raster_min_ms=float(min_row["Raster_ms"]),
-        raster_max_ms=float(max_row["Raster_ms"]),
+        raster_median_ms=row_float(median_row, "Raster Time [ms]", "Raster_ms"),
+        raster_min_ms=row_float(min_row, "Raster Time [ms]", "Raster_ms"),
+        raster_max_ms=row_float(max_row, "Raster Time [ms]", "Raster_ms"),
         e2e_throughput_median_mpx_s=e2e_throughput_median,
         e2e_throughput_min_mpx_s=e2e_throughput_min,
         e2e_throughput_max_mpx_s=e2e_throughput_max,
-        raster_throughput_median_mpx_s=float(median_row["Throughput_MPx/s"]),
-        raster_throughput_min_mpx_s=float(min_row["Throughput_MPx/s"]),
-        raster_throughput_max_mpx_s=float(max_row["Throughput_MPx/s"]),
+        raster_throughput_median_mpx_s=row_float(
+            median_row,
+            "Raster TP [MPx/s]",
+            "Throughput_MPx/s",
+        ),
+        raster_throughput_min_mpx_s=row_float(
+            min_row,
+            "Raster TP [MPx/s]",
+            "Throughput_MPx/s",
+        ),
+        raster_throughput_max_mpx_s=row_float(
+            max_row,
+            "Raster TP [MPx/s]",
+            "Throughput_MPx/s",
+        ),
     )
 
 

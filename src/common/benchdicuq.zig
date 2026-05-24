@@ -47,30 +47,37 @@ pub const DicuqFrameRow = struct {
     run_idx: usize,
     camera_idx: usize,
     frame_idx: usize,
-    geom_ms: f64,
-    raster_ms: f64,
-    save_frame_ms: f64,
-    frame_total_ms: f64,
     total_elems: usize,
     vis_elems: usize,
+    total_px: u64,
     shaded_px: u64,
-    throughput_mpx_s: f64,
-    throughput_melem_s: f64,
+    geom_time_ms: f64,
+    raster_time_ms: f64,
+    save_time_ms: f64,
+    frame_time_ms: f64,
+    e2e_time_ms: ?f64,
+    geom_tpx_melem_s: f64,
+    raster_tpx_mpx_s: f64,
+    frame_tpx_mpx_s: f64,
+    e2e_tpx_mpx_s: ?f64,
 };
 
 pub const DicuqE2ERow = struct {
     run_idx: usize,
     camera_idx: ?usize,
-    e2e_ms: ?f64,
-    geom_ms: f64,
-    raster_ms: f64,
-    save_frame_ms: f64,
-    frame_total_ms: f64,
     total_elems: usize,
     vis_elems: usize,
+    total_px: u64,
     shaded_px: u64,
-    throughput_mpx_s: f64,
-    throughput_melem_s: f64,
+    geom_time_ms: f64,
+    raster_time_ms: f64,
+    save_time_ms: f64,
+    frame_time_ms: f64,
+    e2e_time_ms: ?f64,
+    geom_tpx_melem_s: f64,
+    raster_tpx_mpx_s: f64,
+    frame_tpx_mpx_s: f64,
+    e2e_tpx_mpx_s: ?f64,
 };
 
 pub const DicuqRunResult = struct {
@@ -98,29 +105,36 @@ const DicuqStatsKind = enum {
 const DicuqFrameStatsRow = struct {
     run_idx: usize,
     camera_idx: ?usize,
-    geom_ms: f64,
-    raster_ms: f64,
-    save_frame_ms: f64,
-    frame_total_ms: f64,
     total_elems: f64,
     vis_elems: f64,
+    total_px: f64,
     shaded_px: f64,
-    throughput_mpx_s: f64,
-    throughput_melem_s: f64,
+    geom_time_ms: f64,
+    raster_time_ms: f64,
+    save_time_ms: f64,
+    frame_time_ms: f64,
+    e2e_time_ms: ?f64,
+    geom_tpx_melem_s: f64,
+    raster_tpx_mpx_s: f64,
+    frame_tpx_mpx_s: f64,
+    e2e_tpx_mpx_s: ?f64,
 };
 
 const DicuqE2EStatsRow = struct {
     camera_idx: ?usize,
-    e2e_ms: ?f64,
-    geom_ms: f64,
-    raster_ms: f64,
-    save_frame_ms: f64,
-    frame_total_ms: f64,
     total_elems: f64,
     vis_elems: f64,
+    total_px: f64,
     shaded_px: f64,
-    throughput_mpx_s: f64,
-    throughput_melem_s: f64,
+    geom_time_ms: f64,
+    raster_time_ms: f64,
+    save_time_ms: f64,
+    frame_time_ms: f64,
+    e2e_time_ms: ?f64,
+    geom_tpx_melem_s: f64,
+    raster_tpx_mpx_s: f64,
+    frame_tpx_mpx_s: f64,
+    e2e_tpx_mpx_s: ?f64,
 };
 
 pub fn getBaseRasterConfig() zraster.RasterConfig {
@@ -384,11 +398,18 @@ pub fn runBenchmark(
                 camera_inputs[0].pixels_num,
                 camera_inputs[0].sub_sample,
                 frame_count,
+                e2e_ms,
                 frame_times,
                 bench_log,
             ),
             .pipeline_times = frame_times,
             .image = null,
+            .total_elems = bench_log.total_elements,
+            .vis_elems = bench_log.visible_elements,
+            .total_px = @as(u64, camera_inputs[0].pixels_num[0]) *
+                @as(u64, camera_inputs[0].pixels_num[1]) *
+                @as(u64, frame_count),
+            .shaded_px = bench_log.total_shaded_pixels,
         },
         .frame_rows = frame_rows,
         .e2e_rows = e2e_rows,
@@ -436,6 +457,7 @@ fn calcDicuqMetrics(
     pixel_num: [2]u32,
     sub_sample: u8,
     frame_count: usize,
+    e2e_ms: f64,
     frame_times: report.FrameTimes,
     bench_log: report.BenchLog,
 ) common.CalculatedMetrics {
@@ -464,8 +486,16 @@ fn calcDicuqMetrics(
     );
 
     return .{
-        .mpx_sec = if (raster_sec > 0)
+        .raster_tpx_mpx_s = if (raster_sec > 0)
             (total_px / (raster_sec * 1e6))
+        else
+            0,
+        .frame_tpx_mpx_s = if (total_sec > 0)
+            (total_px / (total_sec * 1e6))
+        else
+            0,
+        .e2e_tpx_mpx_s = if (e2e_ms > 0.0)
+            total_px / ((e2e_ms / 1e3) * 1e6)
         else
             0,
         .msubpx_sec = if (raster_sec > 0)
@@ -512,6 +542,19 @@ fn calcFrameMPxPerSec(
     return total_px / (raster_sec * 1e6);
 }
 
+fn calcFrameTotalMPxPerSec(
+    camera_input: CameraInput,
+    frame_total_time_ns: f64,
+) f64 {
+    if (frame_total_time_ns <= 0.0) {
+        return 0.0;
+    }
+    const total_px = @as(f64, @floatFromInt(camera_input.pixels_num[0])) *
+        @as(f64, @floatFromInt(camera_input.pixels_num[1]));
+    const frame_total_sec = frame_total_time_ns / 1e9;
+    return total_px / (frame_total_sec * 1e6);
+}
+
 fn calcFrameMElemPerSec(
     total_elems: usize,
     geom_time_ns: f64,
@@ -541,21 +584,29 @@ fn buildFrameRows(
             .run_idx = 0,
             .camera_idx = capture.camera_idx,
             .frame_idx = capture.frame_idx,
-            .geom_ms = geom_time_ns / 1e6,
-            .raster_ms = capture.bench_log.frame_times.raster_loop / 1e6,
-            .save_frame_ms = capture.bench_log.frame_times.save_frame / 1e6,
-            .frame_total_ms = capture.bench_log.frame_times.total_time / 1e6,
             .total_elems = capture.bench_log.total_elements,
             .vis_elems = capture.bench_log.visible_elements,
+            .total_px = @as(u64, camera_inputs[capture.camera_idx].pixels_num[0]) *
+                @as(u64, camera_inputs[capture.camera_idx].pixels_num[1]),
             .shaded_px = capture.bench_log.total_shaded_pixels,
-            .throughput_mpx_s = calcFrameMPxPerSec(
-                camera_inputs[capture.camera_idx],
-                capture.bench_log.frame_times.raster_loop,
-            ),
-            .throughput_melem_s = calcFrameMElemPerSec(
+            .geom_time_ms = geom_time_ns / 1e6,
+            .raster_time_ms = capture.bench_log.frame_times.raster_loop / 1e6,
+            .save_time_ms = capture.bench_log.frame_times.save_frame / 1e6,
+            .frame_time_ms = capture.bench_log.frame_times.total_time / 1e6,
+            .e2e_time_ms = null,
+            .geom_tpx_melem_s = calcFrameMElemPerSec(
                 capture.bench_log.total_elements,
                 geom_time_ns,
             ),
+            .raster_tpx_mpx_s = calcFrameMPxPerSec(
+                camera_inputs[capture.camera_idx],
+                capture.bench_log.frame_times.raster_loop,
+            ),
+            .frame_tpx_mpx_s = calcFrameTotalMPxPerSec(
+                camera_inputs[capture.camera_idx],
+                capture.bench_log.frame_times.total_time,
+            ),
+            .e2e_tpx_mpx_s = null,
         };
     }
 
@@ -569,12 +620,13 @@ fn buildE2ESummaryRow(
     camera_idx: ?usize,
     e2e_ms: ?f64,
 ) DicuqE2ERow {
-    var geom_ms: f64 = 0.0;
-    var raster_ms: f64 = 0.0;
-    var save_frame_ms: f64 = 0.0;
-    var frame_total_ms: f64 = 0.0;
+    var geom_time_ms: f64 = 0.0;
+    var raster_time_ms: f64 = 0.0;
+    var save_time_ms: f64 = 0.0;
+    var frame_time_ms: f64 = 0.0;
     var total_elems: usize = 0;
     var vis_elems: usize = 0;
+    var total_px: u64 = 0;
     var shaded_px: u64 = 0;
     var frame_count: usize = 0;
 
@@ -584,12 +636,13 @@ fn buildE2ESummaryRow(
                 continue;
             }
         }
-        geom_ms += frame_row.geom_ms;
-        raster_ms += frame_row.raster_ms;
-        save_frame_ms += frame_row.save_frame_ms;
-        frame_total_ms += frame_row.frame_total_ms;
+        geom_time_ms += frame_row.geom_time_ms;
+        raster_time_ms += frame_row.raster_time_ms;
+        save_time_ms += frame_row.save_time_ms;
+        frame_time_ms += frame_row.frame_time_ms;
         total_elems += frame_row.total_elems;
         vis_elems += frame_row.vis_elems;
+        total_px += frame_row.total_px;
         shaded_px += frame_row.shaded_px;
         frame_count += 1;
     }
@@ -598,31 +651,45 @@ fn buildE2ESummaryRow(
         camera_inputs[cc]
     else
         camera_inputs[0];
-    const total_px = @as(f64, @floatFromInt(camera_ref.pixels_num[0])) *
+    const total_px_f = @as(f64, @floatFromInt(camera_ref.pixels_num[0])) *
         @as(f64, @floatFromInt(camera_ref.pixels_num[1])) *
         @as(f64, @floatFromInt(frame_count));
-    const throughput_mpx_s = if (raster_ms > 0.0)
-        total_px / ((raster_ms / 1e3) * 1e6)
+    const geom_tpx_melem_s = if (geom_time_ms > 0.0)
+        @as(f64, @floatFromInt(total_elems)) / ((geom_time_ms / 1e3) * 1e6)
     else
         0.0;
-    const throughput_melem_s = if (geom_ms > 0.0)
-        @as(f64, @floatFromInt(total_elems)) / ((geom_ms / 1e3) * 1e6)
+    const raster_tpx_mpx_s = if (raster_time_ms > 0.0)
+        total_px_f / ((raster_time_ms / 1e3) * 1e6)
     else
         0.0;
+    const frame_tpx_mpx_s = if (frame_time_ms > 0.0)
+        total_px_f / ((frame_time_ms / 1e3) * 1e6)
+    else
+        0.0;
+    const e2e_tpx_mpx_s = if (e2e_ms) |e2e_time_ms|
+        if (e2e_time_ms > 0.0)
+            total_px_f / ((e2e_time_ms / 1e3) * 1e6)
+        else
+            0.0
+    else
+        null;
 
     return .{
         .run_idx = run_idx,
         .camera_idx = camera_idx,
-        .e2e_ms = e2e_ms,
-        .geom_ms = geom_ms,
-        .raster_ms = raster_ms,
-        .save_frame_ms = save_frame_ms,
-        .frame_total_ms = frame_total_ms,
         .total_elems = total_elems,
         .vis_elems = vis_elems,
+        .total_px = total_px,
         .shaded_px = shaded_px,
-        .throughput_mpx_s = throughput_mpx_s,
-        .throughput_melem_s = throughput_melem_s,
+        .geom_time_ms = geom_time_ms,
+        .raster_time_ms = raster_time_ms,
+        .save_time_ms = save_time_ms,
+        .frame_time_ms = frame_time_ms,
+        .e2e_time_ms = e2e_ms,
+        .geom_tpx_melem_s = geom_tpx_melem_s,
+        .raster_tpx_mpx_s = raster_tpx_mpx_s,
+        .frame_tpx_mpx_s = frame_tpx_mpx_s,
+        .e2e_tpx_mpx_s = e2e_tpx_mpx_s,
     };
 }
 
@@ -702,30 +769,36 @@ fn appendFrameRowsCSV(
 ) !void {
     try rows_buf.appendSlice(
         allocator,
-        "Run,Case,Camera,Frame,Geom_ms,Raster_ms,SaveFrame_ms,FrameTotal_ms," ++
-            "Total_Elems,Vis_Elems,Shaded_Px,Throughput_MPx/s," ++
-            "Throughput_MElem/s\n",
+        "Run,Case,Camera,Frame,Total Elems,Vis Elems,Total Px,Shaded Px," ++
+            "Geom Time [ms],Raster Time [ms],Save Time [ms],Frame Time [ms]," ++
+            "E2E Time [ms],Geom TP [MElem/s],Raster TP [MPx/s]," ++
+            "Frame TP [MPx/s]," ++
+            "E2E TP [MPx/s]\n",
     );
 
     for (frame_rows) |frame_row| {
         const row = try std.fmt.allocPrint(
             allocator,
-            "{d},{s},{d},{d},{d:.6},{d:.6},{d:.6},{d:.6},{d},{d},{d}," ++
-                "{d:.6},{d:.6}\n",
+            "{d},{s},{d},{d},{d},{d},{d},{d},{d:.6},{d:.6},{d:.6},{d:.6}," ++
+                "{s},{d:.6},{d:.6},{d:.6},{s}\n",
             .{
                 frame_row.run_idx,
                 case_name,
                 frame_row.camera_idx,
                 frame_row.frame_idx,
-                frame_row.geom_ms,
-                frame_row.raster_ms,
-                frame_row.save_frame_ms,
-                frame_row.frame_total_ms,
                 frame_row.total_elems,
                 frame_row.vis_elems,
+                frame_row.total_px,
                 frame_row.shaded_px,
-                frame_row.throughput_mpx_s,
-                frame_row.throughput_melem_s,
+                frame_row.geom_time_ms,
+                frame_row.raster_time_ms,
+                frame_row.save_time_ms,
+                frame_row.frame_time_ms,
+                "",
+                frame_row.geom_tpx_melem_s,
+                frame_row.raster_tpx_mpx_s,
+                frame_row.frame_tpx_mpx_s,
+                "",
             },
         );
         defer allocator.free(row);
@@ -741,37 +814,47 @@ fn appendE2ERowsCSV(
 ) !void {
     try rows_buf.appendSlice(
         allocator,
-        "Run,Case,Camera,E2E_ms,Geom_ms,Raster_ms,SaveFrame_ms,FrameTotal_ms," ++
-            "Total_Elems,Vis_Elems,Shaded_Px,Throughput_MPx/s,Throughput_MElem/s\n",
+        "Run,Case,Camera,Total Elems,Vis Elems,Total Px,Shaded Px," ++
+            "Geom Time [ms],Raster Time [ms],Save Time [ms],Frame Time [ms]," ++
+            "E2E Time [ms],Geom TP [MElem/s],Raster TP [MPx/s]," ++
+            "Frame TP [MPx/s],E2E TP [MPx/s]\n",
     );
 
     for (e2e_rows) |e2e_row| {
         const camera_text = try cameraLabel(allocator, e2e_row.camera_idx);
         defer allocator.free(camera_text);
-        const e2e_text = if (e2e_row.e2e_ms) |val|
+        const e2e_time_text = if (e2e_row.e2e_time_ms) |val|
             try std.fmt.allocPrint(allocator, "{d:.6}", .{val})
         else
             try allocator.dupe(u8, "");
-        defer allocator.free(e2e_text);
+        defer allocator.free(e2e_time_text);
+        const e2e_tp_text = if (e2e_row.e2e_tpx_mpx_s) |val|
+            try std.fmt.allocPrint(allocator, "{d:.6}", .{val})
+        else
+            try allocator.dupe(u8, "");
+        defer allocator.free(e2e_tp_text);
 
         const row = try std.fmt.allocPrint(
             allocator,
-            "{d},{s},{s},{s},{d:.6},{d:.6},{d:.6},{d:.6},{d},{d},{d},{d:.6}," ++
-                "{d:.6}\n",
+            "{d},{s},{s},{d},{d},{d},{d},{d:.6},{d:.6},{d:.6},{d:.6},{s}," ++
+                "{d:.6},{d:.6},{d:.6},{s}\n",
             .{
                 e2e_row.run_idx,
                 case_name,
                 camera_text,
-                e2e_text,
-                e2e_row.geom_ms,
-                e2e_row.raster_ms,
-                e2e_row.save_frame_ms,
-                e2e_row.frame_total_ms,
                 e2e_row.total_elems,
                 e2e_row.vis_elems,
+                e2e_row.total_px,
                 e2e_row.shaded_px,
-                e2e_row.throughput_mpx_s,
-                e2e_row.throughput_melem_s,
+                e2e_row.geom_time_ms,
+                e2e_row.raster_time_ms,
+                e2e_row.save_time_ms,
+                e2e_row.frame_time_ms,
+                e2e_time_text,
+                e2e_row.geom_tpx_melem_s,
+                e2e_row.raster_tpx_mpx_s,
+                e2e_row.frame_tpx_mpx_s,
+                e2e_tp_text,
             },
         );
         defer allocator.free(row);
@@ -817,24 +900,32 @@ fn calcFrameStatsRow(
         count += 1;
     }
 
+    var elems_vals = try allocator.alloc(f64, count);
+    defer allocator.free(elems_vals);
+    var total_px_vals = try allocator.alloc(f64, count);
+    defer allocator.free(total_px_vals);
     var geom_vals = try allocator.alloc(f64, count);
     defer allocator.free(geom_vals);
     var raster_vals = try allocator.alloc(f64, count);
     defer allocator.free(raster_vals);
     var save_vals = try allocator.alloc(f64, count);
     defer allocator.free(save_vals);
-    var total_vals = try allocator.alloc(f64, count);
-    defer allocator.free(total_vals);
-    var elems_vals = try allocator.alloc(f64, count);
-    defer allocator.free(elems_vals);
+    var frame_vals = try allocator.alloc(f64, count);
+    defer allocator.free(frame_vals);
+    var e2e_vals = try allocator.alloc(f64, count);
+    defer allocator.free(e2e_vals);
     var vis_vals = try allocator.alloc(f64, count);
     defer allocator.free(vis_vals);
     var shaded_vals = try allocator.alloc(f64, count);
     defer allocator.free(shaded_vals);
-    var mpx_vals = try allocator.alloc(f64, count);
-    defer allocator.free(mpx_vals);
-    var melem_vals = try allocator.alloc(f64, count);
-    defer allocator.free(melem_vals);
+    var geom_tpx_vals = try allocator.alloc(f64, count);
+    defer allocator.free(geom_tpx_vals);
+    var raster_tpx_vals = try allocator.alloc(f64, count);
+    defer allocator.free(raster_tpx_vals);
+    var frame_tpx_vals = try allocator.alloc(f64, count);
+    defer allocator.free(frame_tpx_vals);
+    var e2e_tpx_vals = try allocator.alloc(f64, count);
+    defer allocator.free(e2e_tpx_vals);
 
     var ii: usize = 0;
     for (frame_rows) |frame_row| {
@@ -843,37 +934,26 @@ fn calcFrameStatsRow(
                 continue;
             }
         }
-        geom_vals[ii] = frame_row.geom_ms;
-        raster_vals[ii] = frame_row.raster_ms;
-        save_vals[ii] = frame_row.save_frame_ms;
-        total_vals[ii] = frame_row.frame_total_ms;
+        elems_vals[ii] = @floatFromInt(frame_row.total_elems);
+        total_px_vals[ii] = @floatFromInt(frame_row.total_px);
+        geom_vals[ii] = frame_row.geom_time_ms;
+        raster_vals[ii] = frame_row.raster_time_ms;
+        save_vals[ii] = frame_row.save_time_ms;
+        frame_vals[ii] = frame_row.frame_time_ms;
+        e2e_vals[ii] = if (frame_row.e2e_time_ms) |val| val else 0.0;
         elems_vals[ii] = @floatFromInt(frame_row.total_elems);
         vis_vals[ii] = @floatFromInt(frame_row.vis_elems);
         shaded_vals[ii] = @floatFromInt(frame_row.shaded_px);
-        mpx_vals[ii] = frame_row.throughput_mpx_s;
-        melem_vals[ii] = frame_row.throughput_melem_s;
+        geom_tpx_vals[ii] = frame_row.geom_tpx_melem_s;
+        raster_tpx_vals[ii] = frame_row.raster_tpx_mpx_s;
+        frame_tpx_vals[ii] = frame_row.frame_tpx_mpx_s;
+        e2e_tpx_vals[ii] = if (frame_row.e2e_tpx_mpx_s) |val| val else 0.0;
         ii += 1;
     }
 
     return .{
         .run_idx = run_idx,
         .camera_idx = camera_idx,
-        .geom_ms = selectDicuqStat(
-            try calcFieldStats(allocator, geom_vals),
-            kind,
-        ),
-        .raster_ms = selectDicuqStat(
-            try calcFieldStats(allocator, raster_vals),
-            kind,
-        ),
-        .save_frame_ms = selectDicuqStat(
-            try calcFieldStats(allocator, save_vals),
-            kind,
-        ),
-        .frame_total_ms = selectDicuqStat(
-            try calcFieldStats(allocator, total_vals),
-            kind,
-        ),
         .total_elems = selectDicuqStat(
             try calcFieldStats(allocator, elems_vals),
             kind,
@@ -882,19 +962,66 @@ fn calcFrameStatsRow(
             try calcFieldStats(allocator, vis_vals),
             kind,
         ),
+        .total_px = selectDicuqStat(
+            try calcFieldStats(allocator, total_px_vals),
+            kind,
+        ),
         .shaded_px = selectDicuqStat(
             try calcFieldStats(allocator, shaded_vals),
             kind,
         ),
-        .throughput_mpx_s = selectDicuqStat(
-            try calcFieldStats(allocator, mpx_vals),
+        .geom_time_ms = selectDicuqStat(
+            try calcFieldStats(allocator, geom_vals),
             kind,
         ),
-        .throughput_melem_s = selectDicuqStat(
-            try calcFieldStats(allocator, melem_vals),
+        .raster_time_ms = selectDicuqStat(
+            try calcFieldStats(allocator, raster_vals),
             kind,
         ),
+        .save_time_ms = selectDicuqStat(
+            try calcFieldStats(allocator, save_vals),
+            kind,
+        ),
+        .frame_time_ms = selectDicuqStat(
+            try calcFieldStats(allocator, frame_vals),
+            kind,
+        ),
+        .e2e_time_ms = null,
+        .geom_tpx_melem_s = selectDicuqStat(
+            try calcFieldStats(allocator, geom_tpx_vals),
+            kind,
+        ),
+        .raster_tpx_mpx_s = selectDicuqStat(
+            try calcFieldStats(allocator, raster_tpx_vals),
+            kind,
+        ),
+        .frame_tpx_mpx_s = selectDicuqStat(
+            try calcFieldStats(allocator, frame_tpx_vals),
+            kind,
+        ),
+        .e2e_tpx_mpx_s = null,
     };
+}
+
+fn selectOptionalDicuqStat(
+    allocator: std.mem.Allocator,
+    values: []const f64,
+    kind: DicuqStatsKind,
+) !?f64 {
+    var any_nonzero = false;
+    for (values) |val| {
+        if (val != 0.0) {
+            any_nonzero = true;
+            break;
+        }
+    }
+    if (!any_nonzero) {
+        return null;
+    }
+    return selectDicuqStat(
+        try calcFieldStats(allocator, values),
+        kind,
+    );
 }
 
 fn calcE2EStatsRow(
@@ -905,26 +1032,32 @@ fn calcE2EStatsRow(
 ) !DicuqE2EStatsRow {
     const count: usize = e2e_rows_by_run.len;
 
-    var e2e_vals = try allocator.alloc(f64, count);
-    defer allocator.free(e2e_vals);
+    var elems_vals = try allocator.alloc(f64, count);
+    defer allocator.free(elems_vals);
+    var vis_vals = try allocator.alloc(f64, count);
+    defer allocator.free(vis_vals);
+    var total_px_vals = try allocator.alloc(f64, count);
+    defer allocator.free(total_px_vals);
+    var shaded_vals = try allocator.alloc(f64, count);
+    defer allocator.free(shaded_vals);
     var geom_vals = try allocator.alloc(f64, count);
     defer allocator.free(geom_vals);
     var raster_vals = try allocator.alloc(f64, count);
     defer allocator.free(raster_vals);
     var save_vals = try allocator.alloc(f64, count);
     defer allocator.free(save_vals);
-    var total_vals = try allocator.alloc(f64, count);
-    defer allocator.free(total_vals);
-    var elems_vals = try allocator.alloc(f64, count);
-    defer allocator.free(elems_vals);
-    var vis_vals = try allocator.alloc(f64, count);
-    defer allocator.free(vis_vals);
-    var shaded_vals = try allocator.alloc(f64, count);
-    defer allocator.free(shaded_vals);
-    var mpx_vals = try allocator.alloc(f64, count);
-    defer allocator.free(mpx_vals);
-    var melem_vals = try allocator.alloc(f64, count);
-    defer allocator.free(melem_vals);
+    var frame_vals = try allocator.alloc(f64, count);
+    defer allocator.free(frame_vals);
+    var e2e_vals = try allocator.alloc(f64, count);
+    defer allocator.free(e2e_vals);
+    var geom_tpx_vals = try allocator.alloc(f64, count);
+    defer allocator.free(geom_tpx_vals);
+    var raster_tpx_vals = try allocator.alloc(f64, count);
+    defer allocator.free(raster_tpx_vals);
+    var frame_tpx_vals = try allocator.alloc(f64, count);
+    defer allocator.free(frame_tpx_vals);
+    var e2e_tpx_vals = try allocator.alloc(f64, count);
+    defer allocator.free(e2e_tpx_vals);
 
     var have_e2e = true;
     for (e2e_rows_by_run, 0..) |rows, rr| {
@@ -934,21 +1067,24 @@ fn calcE2EStatsRow(
                 continue;
             }
             matched = true;
-            if (row.e2e_ms) |val| {
+            elems_vals[rr] = @floatFromInt(row.total_elems);
+            vis_vals[rr] = @floatFromInt(row.vis_elems);
+            total_px_vals[rr] = @floatFromInt(row.total_px);
+            shaded_vals[rr] = @floatFromInt(row.shaded_px);
+            geom_vals[rr] = row.geom_time_ms;
+            raster_vals[rr] = row.raster_time_ms;
+            save_vals[rr] = row.save_time_ms;
+            frame_vals[rr] = row.frame_time_ms;
+            if (row.e2e_time_ms) |val| {
                 e2e_vals[rr] = val;
             } else {
                 have_e2e = false;
                 e2e_vals[rr] = 0.0;
             }
-            geom_vals[rr] = row.geom_ms;
-            raster_vals[rr] = row.raster_ms;
-            save_vals[rr] = row.save_frame_ms;
-            total_vals[rr] = row.frame_total_ms;
-            elems_vals[rr] = @floatFromInt(row.total_elems);
-            vis_vals[rr] = @floatFromInt(row.vis_elems);
-            shaded_vals[rr] = @floatFromInt(row.shaded_px);
-            mpx_vals[rr] = row.throughput_mpx_s;
-            melem_vals[rr] = row.throughput_melem_s;
+            geom_tpx_vals[rr] = row.geom_tpx_melem_s;
+            raster_tpx_vals[rr] = row.raster_tpx_mpx_s;
+            frame_tpx_vals[rr] = row.frame_tpx_mpx_s;
+            e2e_tpx_vals[rr] = if (row.e2e_tpx_mpx_s) |val| val else 0.0;
             break;
         }
         if (!matched) {
@@ -958,26 +1094,6 @@ fn calcE2EStatsRow(
 
     return .{
         .camera_idx = camera_idx,
-        .e2e_ms = if (have_e2e)
-            selectDicuqStat(try calcFieldStats(allocator, e2e_vals), kind)
-        else
-            null,
-        .geom_ms = selectDicuqStat(
-            try calcFieldStats(allocator, geom_vals),
-            kind,
-        ),
-        .raster_ms = selectDicuqStat(
-            try calcFieldStats(allocator, raster_vals),
-            kind,
-        ),
-        .save_frame_ms = selectDicuqStat(
-            try calcFieldStats(allocator, save_vals),
-            kind,
-        ),
-        .frame_total_ms = selectDicuqStat(
-            try calcFieldStats(allocator, total_vals),
-            kind,
-        ),
         .total_elems = selectDicuqStat(
             try calcFieldStats(allocator, elems_vals),
             kind,
@@ -986,18 +1102,50 @@ fn calcE2EStatsRow(
             try calcFieldStats(allocator, vis_vals),
             kind,
         ),
+        .total_px = selectDicuqStat(
+            try calcFieldStats(allocator, total_px_vals),
+            kind,
+        ),
         .shaded_px = selectDicuqStat(
             try calcFieldStats(allocator, shaded_vals),
             kind,
         ),
-        .throughput_mpx_s = selectDicuqStat(
-            try calcFieldStats(allocator, mpx_vals),
+        .geom_time_ms = selectDicuqStat(
+            try calcFieldStats(allocator, geom_vals),
             kind,
         ),
-        .throughput_melem_s = selectDicuqStat(
-            try calcFieldStats(allocator, melem_vals),
+        .raster_time_ms = selectDicuqStat(
+            try calcFieldStats(allocator, raster_vals),
             kind,
         ),
+        .save_time_ms = selectDicuqStat(
+            try calcFieldStats(allocator, save_vals),
+            kind,
+        ),
+        .frame_time_ms = selectDicuqStat(
+            try calcFieldStats(allocator, frame_vals),
+            kind,
+        ),
+        .e2e_time_ms = if (have_e2e)
+            selectDicuqStat(try calcFieldStats(allocator, e2e_vals), kind)
+        else
+            null,
+        .geom_tpx_melem_s = selectDicuqStat(
+            try calcFieldStats(allocator, geom_tpx_vals),
+            kind,
+        ),
+        .raster_tpx_mpx_s = selectDicuqStat(
+            try calcFieldStats(allocator, raster_tpx_vals),
+            kind,
+        ),
+        .frame_tpx_mpx_s = selectDicuqStat(
+            try calcFieldStats(allocator, frame_tpx_vals),
+            kind,
+        ),
+        .e2e_tpx_mpx_s = if (have_e2e)
+            try selectOptionalDicuqStat(allocator, e2e_tpx_vals, kind)
+        else
+            null,
     };
 }
 
@@ -1012,9 +1160,10 @@ fn appendFrameStatsRowsCSV(
 ) !void {
     try rows_buf.appendSlice(
         allocator,
-        "Run,Case,Camera,Geom_ms,Raster_ms,SaveFrame_ms,FrameTotal_ms," ++
-            "Total_Elems,Vis_Elems,Shaded_Px,Throughput_MPx/s," ++
-            "Throughput_MElem/s\n",
+        "Run,Case,Camera,Total Elems,Vis Elems,Total Px,Shaded Px," ++
+            "Geom Time [ms],Raster Time [ms],Save Time [ms],Frame Time [ms]," ++
+            "E2E Time [ms],Geom TP [MElem/s],Raster TP [MPx/s]," ++
+            "Frame TP [MPx/s],E2E TP [MPx/s]\n",
     );
 
     for (0..camera_count + 1) |cc| {
@@ -1028,23 +1177,37 @@ fn appendFrameStatsRowsCSV(
         );
         const camera_text = try cameraLabel(allocator, camera_idx_opt);
         defer allocator.free(camera_text);
+        const e2e_time_text = if (stats_row.e2e_time_ms) |val|
+            try std.fmt.allocPrint(allocator, "{d:.6}", .{val})
+        else
+            try allocator.dupe(u8, "");
+        defer allocator.free(e2e_time_text);
+        const e2e_tp_text = if (stats_row.e2e_tpx_mpx_s) |val|
+            try std.fmt.allocPrint(allocator, "{d:.6}", .{val})
+        else
+            try allocator.dupe(u8, "");
+        defer allocator.free(e2e_tp_text);
         const row = try std.fmt.allocPrint(
             allocator,
             "{d},{s},{s},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6}," ++
-                "{d:.6},{d:.6}\n",
+                "{d:.6},{s},{d:.6},{d:.6},{d:.6},{s}\n",
             .{
                 stats_row.run_idx,
                 case_name,
                 camera_text,
-                stats_row.geom_ms,
-                stats_row.raster_ms,
-                stats_row.save_frame_ms,
-                stats_row.frame_total_ms,
                 stats_row.total_elems,
                 stats_row.vis_elems,
+                stats_row.total_px,
                 stats_row.shaded_px,
-                stats_row.throughput_mpx_s,
-                stats_row.throughput_melem_s,
+                stats_row.geom_time_ms,
+                stats_row.raster_time_ms,
+                stats_row.save_time_ms,
+                stats_row.frame_time_ms,
+                e2e_time_text,
+                stats_row.geom_tpx_melem_s,
+                stats_row.raster_tpx_mpx_s,
+                stats_row.frame_tpx_mpx_s,
+                e2e_tp_text,
             },
         );
         defer allocator.free(row);
@@ -1062,8 +1225,10 @@ fn appendE2EStatsRowsCSV(
 ) !void {
     try rows_buf.appendSlice(
         allocator,
-        "Case,Camera,E2E_ms,Geom_ms,Raster_ms,SaveFrame_ms,FrameTotal_ms," ++
-            "Total_Elems,Vis_Elems,Shaded_Px,Throughput_MPx/s,Throughput_MElem/s\n",
+        "Case,Camera,Total Elems,Vis Elems,Total Px,Shaded Px," ++
+            "Geom Time [ms],Raster Time [ms],Save Time [ms],Frame Time [ms]," ++
+            "E2E Time [ms],Geom TP [MElem/s],Raster TP [MPx/s]," ++
+            "Frame TP [MPx/s],E2E TP [MPx/s]\n",
     );
 
     for (0..camera_count + 1) |cc| {
@@ -1076,28 +1241,36 @@ fn appendE2EStatsRowsCSV(
         );
         const camera_text = try cameraLabel(allocator, camera_idx_opt);
         defer allocator.free(camera_text);
-        const e2e_text = if (stats_row.e2e_ms) |val|
+        const e2e_time_text = if (stats_row.e2e_time_ms) |val|
             try std.fmt.allocPrint(allocator, "{d:.6}", .{val})
         else
             try allocator.dupe(u8, "");
-        defer allocator.free(e2e_text);
+        defer allocator.free(e2e_time_text);
+        const e2e_tp_text = if (stats_row.e2e_tpx_mpx_s) |val|
+            try std.fmt.allocPrint(allocator, "{d:.6}", .{val})
+        else
+            try allocator.dupe(u8, "");
+        defer allocator.free(e2e_tp_text);
         const row = try std.fmt.allocPrint(
             allocator,
-            "{s},{s},{s},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6}," ++
-                "{d:.6},{d:.6}\n",
+            "{s},{s},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6}," ++
+                "{d:.6},{s},{d:.6},{d:.6},{d:.6},{s}\n",
             .{
                 case_name,
                 camera_text,
-                e2e_text,
-                stats_row.geom_ms,
-                stats_row.raster_ms,
-                stats_row.save_frame_ms,
-                stats_row.frame_total_ms,
                 stats_row.total_elems,
                 stats_row.vis_elems,
+                stats_row.total_px,
                 stats_row.shaded_px,
-                stats_row.throughput_mpx_s,
-                stats_row.throughput_melem_s,
+                stats_row.geom_time_ms,
+                stats_row.raster_time_ms,
+                stats_row.save_time_ms,
+                stats_row.frame_time_ms,
+                e2e_time_text,
+                stats_row.geom_tpx_melem_s,
+                stats_row.raster_tpx_mpx_s,
+                stats_row.frame_tpx_mpx_s,
+                e2e_tp_text,
             },
         );
         defer allocator.free(row);

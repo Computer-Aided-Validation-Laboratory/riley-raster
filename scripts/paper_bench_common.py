@@ -165,6 +165,36 @@ def fmt_triplet(
     )
 
 
+def row_value(
+    row: dict[str, str],
+    *col_names: str,
+) -> str:
+    for col_name in col_names:
+        if col_name in row and row[col_name] != "":
+            return row[col_name]
+    raise KeyError(f"missing columns {col_names} in row")
+
+
+def row_float(
+    row: dict[str, str],
+    *col_names: str,
+) -> float:
+    return float(row_value(row, *col_names))
+
+
+def fmt_triplet_any(
+    median_row: dict[str, str],
+    mad_row: dict[str, str],
+    *col_names: str,
+) -> str:
+    median_val = row_float(median_row, *col_names)
+    mad_val = row_float(mad_row, *col_names)
+    return (
+        f"${median_val:.{TABLE_MEDIAN_DECIMAL_PLACES}f} "
+        f"\\pm {mad_val:.{TABLE_MAD_DECIMAL_PLACES}f}$"
+    )
+
+
 def load_run_case_rows(
     bench_name: str,
     experiment_dir: str,

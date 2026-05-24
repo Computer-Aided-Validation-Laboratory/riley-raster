@@ -29,7 +29,9 @@ const Timestamp = std.Io.Clock.Timestamp;
 const orch = @import("orchestration.zig");
 
 pub const CalculatedMetrics = struct {
-    mpx_sec: f64,
+    raster_tpx_mpx_s: f64,
+    frame_tpx_mpx_s: f64,
+    e2e_tpx_mpx_s: f64,
     msubpx_sec: f64,
     mshades_sec: f64,
     msubshades_sec: f64,
@@ -43,6 +45,10 @@ pub const BenchResult = struct {
     geom_ms: f64,
     raster_ms: f64,
     fps: f64,
+    total_elems: usize,
+    vis_elems: usize,
+    total_px: u64,
+    shaded_px: u64,
     metrics: CalculatedMetrics,
     pipeline_times: report.FrameTimes,
     image: ?NDArray(f64) = null,
@@ -69,11 +75,19 @@ pub const BenchStats = struct {
     sample_config: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
 
+    total_elems: MedianMAD,
+    vis_elems: MedianMAD,
+    total_px: MedianMAD,
+    shaded_px: MedianMAD,
     e2e: MedianMAD,
     geom: MedianMAD,
     raster: MedianMAD,
-    fps: MedianMAD,
-    mpx: MedianMAD,
+    save: MedianMAD,
+    frame: MedianMAD,
+    geom_tpx: MedianMAD,
+    raster_tpx: MedianMAD,
+    frame_tpx: MedianMAD,
+    e2e_tpx: MedianMAD,
     msubpx: MedianMAD,
     mshades: MedianMAD,
     msubshades: MedianMAD,
@@ -98,6 +112,7 @@ pub fn calcMetrics(
     etype: gk.MeshType,
     pixel_num: [2]u32,
     sub_samp: u8,
+    e2e_ms: f64,
     frame_times: report.FrameTimes,
     bench_log: report.BenchLog,
 ) CalculatedMetrics {
@@ -114,7 +129,20 @@ pub fn calcMetrics(
     const total_subpx = total_px * sub_samp_f * sub_samp_f;
 
     // 1. MPx/s
-    const mpx_sec = if (raster_sec > 0) (total_px / (raster_sec * 1e6)) else 0;
+    const raster_tpx_mpx_s = if (raster_sec > 0)
+        (total_px / (raster_sec * 1e6))
+    else
+        0;
+
+    const frame_tpx_mpx_s = if (total_sec > 0)
+        (total_px / (total_sec * 1e6))
+    else
+        0;
+
+    const e2e_tpx_mpx_s = if (e2e_ms > 0.0)
+        total_px / ((e2e_ms / 1e3) * 1e6)
+    else
+        0;
 
     // 2. MsubPx/s
     const msubpx_sec = if (raster_sec > 0) (total_subpx / (raster_sec * 1e6)) else 0;
@@ -147,7 +175,9 @@ pub fn calcMetrics(
         0;
 
     return .{
-        .mpx_sec = mpx_sec,
+        .raster_tpx_mpx_s = raster_tpx_mpx_s,
+        .frame_tpx_mpx_s = frame_tpx_mpx_s,
+        .e2e_tpx_mpx_s = e2e_tpx_mpx_s,
         .msubpx_sec = msubpx_sec,
         .mshades_sec = mshades_sec,
         .msubshades_sec = msubshades_sec,
@@ -1029,19 +1059,20 @@ fn runBenchmarkInternal(
         bench_capture_storage[0].bench_log.frame_times.raster_loop / 1e6
     else
         0.0;
-    const fps = 1000.0 / e2e_ms;
-
     const metrics = if (report_mode == .bench)
         calcMetrics(
             etype,
             camera.pixels_num,
             camera.sub_sample,
+            e2e_ms,
             bench_capture_storage[0].bench_log.frame_times,
             bench_capture_storage[0].bench_log,
         )
     else
         CalculatedMetrics{
-            .mpx_sec = 0.0,
+            .raster_tpx_mpx_s = 0.0,
+            .frame_tpx_mpx_s = 0.0,
+            .e2e_tpx_mpx_s = 0.0,
             .msubpx_sec = 0.0,
             .mshades_sec = 0.0,
             .msubshades_sec = 0.0,
@@ -1077,7 +1108,21 @@ fn runBenchmarkInternal(
         .e2e_ms = e2e_ms,
         .geom_ms = geom_ms,
         .raster_ms = raster_ms,
-        .fps = fps,
+        .fps = if (e2e_ms > 0.0) 1000.0 / e2e_ms else 0.0,
+        .total_elems = if (report_mode == .bench)
+            bench_capture_storage[0].bench_log.total_elements
+        else
+            0,
+        .vis_elems = if (report_mode == .bench)
+            bench_capture_storage[0].bench_log.visible_elements
+        else
+            0,
+        .total_px = @as(u64, camera.pixels_num[0]) *
+            @as(u64, camera.pixels_num[1]),
+        .shaded_px = if (report_mode == .bench)
+            bench_capture_storage[0].bench_log.total_shaded_pixels
+        else
+            0,
         .metrics = metrics,
         .pipeline_times = pipeline_times,
         .image = image_final,
@@ -1140,28 +1185,27 @@ pub const BenchmarkCSVKind = enum {
 };
 
 pub const BenchmarkCSVValues = struct {
-    e2e: f64,
+    total_elems: f64,
+    vis_elems: f64,
+    total_px: f64,
+    shaded_px: f64,
     geom: f64,
     raster: f64,
-    fps: f64,
-    mpx: f64,
-    msubpx: f64,
-    mshades: f64,
-    msubshades: f64,
-    melems: f64,
-    mnodes: f64,
-    mops: f64,
-    geom_prep: f64,
-    tile_overlap: f64,
-    raster_loop: f64,
     save_frame: f64,
+    frame: f64,
+    e2e: f64,
+    geom_tpx: f64,
+    raster_tpx: f64,
+    frame_tpx: f64,
+    e2e_tpx: f64,
 };
 
 pub fn benchmarkCSVHeader() []const u8 {
     return "Case,Element,Shader,Interpolator," ++
-        "E2E_ms,Geom_ms,Raster_ms,FPS," ++
-        "MPx/s,MsubPx/s,MShades/s,MsubShades/s,MElems/s,MNodes/s,MOps/s," ++
-        "GeomPrep_ms,TileOverlap_ms,RasterLoop_ms,SaveFrame_ms\n";
+        "Total Elems,Vis Elems,Total Px,Shaded Px," ++
+        "Geom Time [ms],Raster Time [ms],Save Time [ms],Frame Time [ms]," ++
+        "E2E Time [ms],Geom TP [MElem/s],Raster TP [MPx/s],Frame TP [MPx/s]," ++
+        "E2E TP [MPx/s]\n";
 }
 
 fn calcCoVPercent(stats: MedianMAD) f64 {
@@ -1189,21 +1233,19 @@ pub fn calcBenchmarkCSVValuesFromStats(
     kind: BenchmarkCSVKind,
 ) BenchmarkCSVValues {
     return .{
-        .e2e = selectStatValue(stats.e2e, kind),
+        .total_elems = selectStatValue(stats.total_elems, kind),
+        .vis_elems = selectStatValue(stats.vis_elems, kind),
+        .total_px = selectStatValue(stats.total_px, kind),
+        .shaded_px = selectStatValue(stats.shaded_px, kind),
         .geom = selectStatValue(stats.geom, kind),
         .raster = selectStatValue(stats.raster, kind),
-        .fps = selectStatValue(stats.fps, kind),
-        .mpx = selectStatValue(stats.mpx, kind),
-        .msubpx = selectStatValue(stats.msubpx, kind),
-        .mshades = selectStatValue(stats.mshades, kind),
-        .msubshades = selectStatValue(stats.msubshades, kind),
-        .melems = selectStatValue(stats.melems, kind),
-        .mnodes = selectStatValue(stats.mnodes, kind),
-        .mops = selectStatValue(stats.mops, kind),
-        .geom_prep = selectStatValue(stats.geom_prep, kind),
-        .tile_overlap = selectStatValue(stats.tile_overlap, kind),
-        .raster_loop = selectStatValue(stats.raster_loop, kind),
-        .save_frame = selectStatValue(stats.save_frame, kind),
+        .save_frame = selectStatValue(stats.save, kind),
+        .frame = selectStatValue(stats.frame, kind),
+        .e2e = selectStatValue(stats.e2e, kind),
+        .geom_tpx = selectStatValue(stats.geom_tpx, kind),
+        .raster_tpx = selectStatValue(stats.raster_tpx, kind),
+        .frame_tpx = selectStatValue(stats.frame_tpx, kind),
+        .e2e_tpx = selectStatValue(stats.e2e_tpx, kind),
     };
 }
 
@@ -1212,21 +1254,19 @@ pub fn calcBenchmarkCSVValuesFromResult(
 ) BenchmarkCSVValues {
     const conv_ms = 1.0 / 1e6;
     return .{
-        .e2e = result.e2e_ms,
+        .total_elems = @floatFromInt(result.total_elems),
+        .vis_elems = @floatFromInt(result.vis_elems),
+        .total_px = @floatFromInt(result.total_px),
+        .shaded_px = @floatFromInt(result.shaded_px),
         .geom = result.geom_ms,
         .raster = result.raster_ms,
-        .fps = result.fps,
-        .mpx = result.metrics.mpx_sec,
-        .msubpx = result.metrics.msubpx_sec,
-        .mshades = result.metrics.mshades_sec,
-        .msubshades = result.metrics.msubshades_sec,
-        .melems = result.metrics.melems_sec,
-        .mnodes = result.metrics.mnodes_sec,
-        .mops = result.metrics.mops_sec,
-        .geom_prep = result.pipeline_times.geometry_prep * conv_ms,
-        .tile_overlap = result.pipeline_times.tile_overlap * conv_ms,
-        .raster_loop = result.pipeline_times.raster_loop * conv_ms,
         .save_frame = result.pipeline_times.save_frame * conv_ms,
+        .frame = result.pipeline_times.total_time * conv_ms,
+        .e2e = result.e2e_ms,
+        .geom_tpx = result.metrics.melems_sec,
+        .raster_tpx = result.metrics.raster_tpx_mpx_s,
+        .frame_tpx = result.metrics.frame_tpx_mpx_s,
+        .e2e_tpx = result.metrics.e2e_tpx_mpx_s,
     };
 }
 
@@ -1250,28 +1290,26 @@ pub fn formatBenchmarkCSVRow(
         allocator,
         "{s},{s},{s},{s}," ++
             "{d:.6},{d:.6},{d:.6},{d:.6}," ++
-            "{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6},{d:.6}," ++
+            "{d:.6},{d:.6},{d:.6},{d:.6},{d:.6}," ++
             "{d:.6},{d:.6},{d:.6},{d:.6}\n",
         .{
             case_name,
             @tagName(mesh_type),
             @tagName(shader_type),
             variant_name,
-            values.e2e,
+            values.total_elems,
+            values.vis_elems,
+            values.total_px,
+            values.shaded_px,
             values.geom,
             values.raster,
-            values.fps,
-            values.mpx,
-            values.msubpx,
-            values.mshades,
-            values.msubshades,
-            values.melems,
-            values.mnodes,
-            values.mops,
-            values.geom_prep,
-            values.tile_overlap,
-            values.raster_loop,
             values.save_frame,
+            values.frame,
+            values.e2e,
+            values.geom_tpx,
+            values.raster_tpx,
+            values.frame_tpx,
+            values.e2e_tpx,
         },
     );
 }

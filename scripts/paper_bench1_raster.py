@@ -4,7 +4,7 @@ from __future__ import annotations
 import pathlib
 
 from paper_bench_common import combined_case_dir_name
-from paper_bench_common import fmt_triplet
+from paper_bench_common import fmt_triplet_any
 from paper_bench_common import legacy_hull_case_dir_name
 from paper_bench_common import legacy_simd_case_dir_name
 from paper_bench_common import load_case_map_from_dir
@@ -164,19 +164,22 @@ def build_table_tex() -> str:
         for shader_label, case_name in shader_cases:
             median_row = median_map[case_name]
             mad_row = mad_map[case_name]
-            e2e_text = fmt_triplet(
+            e2e_text = fmt_triplet_any(
                 median_row,
                 mad_row,
+                "E2E Time [ms]",
                 "E2E_ms",
             )
-            raster_text = fmt_triplet(
+            raster_text = fmt_triplet_any(
                 median_row,
                 mad_row,
+                "Raster Time [ms]",
                 "Raster_ms",
             )
-            throughput_text = fmt_triplet(
+            throughput_text = fmt_triplet_any(
                 median_row,
                 mad_row,
+                "Raster TP [MPx/s]",
                 "MPx/s",
             )
             body_rows.append(

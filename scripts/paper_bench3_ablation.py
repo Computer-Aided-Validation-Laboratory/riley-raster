@@ -4,9 +4,10 @@ from __future__ import annotations
 import pathlib
 
 from paper_bench_common import combined_case_dir_name
-from paper_bench_common import fmt_triplet
+from paper_bench_common import fmt_triplet_any
 from paper_bench_common import load_case_map_from_dir
 from paper_bench_common import latest_stats_dir_with_candidates
+from paper_bench_common import row_float
 from paper_bench_common import write_tabs_tex
 
 
@@ -110,10 +111,30 @@ def build_raw_table_tex() -> str:
                 "\\texttt{" + element_label + "} & " +
                 bounds_label + " & " +
                 kernel_label + " & " +
-                fmt_triplet(median_row, mad_row, "E2E_ms") + " & " +
-                fmt_triplet(median_row, mad_row, "Geom_ms") + " & " +
-                fmt_triplet(median_row, mad_row, "Raster_ms") + " & " +
-                fmt_triplet(median_row, mad_row, "MPx/s") + " \\\\"
+                fmt_triplet_any(
+                    median_row,
+                    mad_row,
+                    "E2E Time [ms]",
+                    "E2E_ms",
+                ) + " & " +
+                fmt_triplet_any(
+                    median_row,
+                    mad_row,
+                    "Geom Time [ms]",
+                    "Geom_ms",
+                ) + " & " +
+                fmt_triplet_any(
+                    median_row,
+                    mad_row,
+                    "Raster Time [ms]",
+                    "Raster_ms",
+                ) + " & " +
+                fmt_triplet_any(
+                    median_row,
+                    mad_row,
+                    "Raster TP [MPx/s]",
+                    "MPx/s",
+                ) + " \\\\"
             )
 
     body = "\n".join(body_rows)
@@ -161,13 +182,29 @@ def build_speedup_table_tex() -> str:
     for element_label, case_prefix in ELEMENT_CASES:
         case_name = f"{case_prefix}_{REPRESENTATIVE_CASE_SUFFIX}"
         baseline_row = baseline_median_map[case_name]
-        baseline_e2e = float(baseline_row["E2E_ms"])
-        baseline_raster = float(baseline_row["Raster_ms"])
+        baseline_e2e = row_float(
+            baseline_row,
+            "E2E Time [ms]",
+            "E2E_ms",
+        )
+        baseline_raster = row_float(
+            baseline_row,
+            "Raster Time [ms]",
+            "Raster_ms",
+        )
 
         for config_label, simd_label, hull_mode in SPEEDUP_ROWS:
             variant_row = variant_maps[(simd_label, hull_mode)][case_name]
-            variant_e2e = float(variant_row["E2E_ms"])
-            variant_raster = float(variant_row["Raster_ms"])
+            variant_e2e = row_float(
+                variant_row,
+                "E2E Time [ms]",
+                "E2E_ms",
+            )
+            variant_raster = row_float(
+                variant_row,
+                "Raster Time [ms]",
+                "Raster_ms",
+            )
             e2e_speedup = 0.0 if variant_e2e == 0.0 else baseline_e2e / variant_e2e
             raster_speedup = (
                 0.0 if variant_raster == 0.0 else baseline_raster / variant_raster

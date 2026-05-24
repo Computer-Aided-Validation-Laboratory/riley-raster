@@ -31,23 +31,48 @@ ABLATION_VARIANTS = {
 BENCH_SPECS = {
     "bench_fullraster": {
         "prefix": "raster",
-        "metrics": ["E2E_ms", "Geom_ms", "Raster_ms", "MPx/s"],
-        "speed_metrics": ["MPx/s"],
+        "metrics": [
+            "E2E TP [MPx/s]",
+            "E2E Time [ms]",
+            "Geom Time [ms]",
+            "Raster Time [ms]",
+            "Raster TP [MPx/s]",
+        ],
+        "speed_metrics": ["E2E TP [MPx/s]", "Raster TP [MPx/s]"],
     },
     "bench_geom": {
         "prefix": "geom",
-        "metrics": ["E2E_ms", "Geom_ms", "MElems/s"],
-        "speed_metrics": ["MElems/s"],
+        "metrics": [
+            "E2E TP [MPx/s]",
+            "E2E Time [ms]",
+            "Geom Time [ms]",
+            "Geom TP [MElem/s]",
+        ],
+        "speed_metrics": ["Geom TP [MElem/s]"],
     },
     "bench_sphere2000": {
         "prefix": "sphere2000",
-        "metrics": ["E2E_ms", "Geom_ms", "Raster_ms", "MElems/s", "MPx/s"],
-        "speed_metrics": ["MElems/s", "MPx/s"],
+        "metrics": [
+            "E2E TP [MPx/s]",
+            "E2E Time [ms]",
+            "Geom Time [ms]",
+            "Raster Time [ms]",
+            "Geom TP [MElem/s]",
+            "Raster TP [MPx/s]",
+        ],
+        "speed_metrics": ["Geom TP [MElem/s]", "Raster TP [MPx/s]"],
     },
     "bench_sphere2000zoom": {
         "prefix": "sphere2000zoom",
-        "metrics": ["E2E_ms", "Geom_ms", "Raster_ms", "MElems/s", "MPx/s"],
-        "speed_metrics": ["MElems/s", "MPx/s"],
+        "metrics": [
+            "E2E TP [MPx/s]",
+            "E2E Time [ms]",
+            "Geom Time [ms]",
+            "Raster Time [ms]",
+            "Geom TP [MElem/s]",
+            "Raster TP [MPx/s]",
+        ],
+        "speed_metrics": ["Geom TP [MElem/s]", "Raster TP [MPx/s]"],
     },
 }
 
@@ -261,9 +286,12 @@ def print_raster_overview(
     print("\nRaster overview")
     for variant_name in ("simdon", "hullson", "simdon_hullson"):
         rows = variant_rows[variant_name]
-        spd_min, spd_med, spd_max = summarize_speedups(rows, "MPx/s")
+        spd_min, spd_med, spd_max = summarize_speedups(
+            rows,
+            "Raster TP [MPx/s]",
+        )
         print(
-            f"{variant_name} MPx/s speedup min/median/max = "
+            f"{variant_name} Raster TP [MPx/s] speedup min/median/max = "
             f"{spd_min:.3f} / {spd_med:.3f} / {spd_max:.3f}"
         )
 

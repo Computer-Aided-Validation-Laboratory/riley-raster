@@ -193,8 +193,15 @@ pub fn runSphere200MultiCullQuiet(
         .geom_ms = 0.0,
         .raster_ms = 0.0,
         .fps = fps,
+        .total_elems = 0,
+        .vis_elems = 0,
+        .total_px = @as(u64, camera_input.pixels_num[0]) *
+            @as(u64, camera_input.pixels_num[1]),
+        .shaded_px = 0,
         .metrics = .{
-            .mpx_sec = 0.0,
+            .raster_tpx_mpx_s = 0.0,
+            .frame_tpx_mpx_s = 0.0,
+            .e2e_tpx_mpx_s = 0.0,
             .msubpx_sec = 0.0,
             .mshades_sec = 0.0,
             .msubshades_sec = 0.0,
