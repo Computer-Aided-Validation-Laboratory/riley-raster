@@ -22,11 +22,14 @@ pub const FrameTimes = struct {
     tile_overlap: f64 = 0,
     raster_loop: f64 = 0,
     save_frame: f64 = 0,
-    total_time: f64 = 0,
+    active_time: f64 = 0,
+    latency_time: f64 = 0,
 };
 
 pub const EndToEndTimes = struct {
     setup_time: f64 = 0,
+    setup_other_time: f64 = 0,
+    setup_frame_buffer_time: f64 = 0,
     dispatch_time: f64 = 0,
     total_time: f64 = 0,
 };
@@ -200,6 +203,9 @@ pub fn printRenderSummary(
     const total_render_ms = end_to_end_times.total_time / 1e6;
     const total_render_sec = end_to_end_times.total_time / 1e9;
     const setup_ms = end_to_end_times.setup_time / 1e6;
+    const setup_other_ms = end_to_end_times.setup_other_time / 1e6;
+    const setup_frame_buffer_ms =
+        end_to_end_times.setup_frame_buffer_time / 1e6;
     const dispatch_ms = end_to_end_times.dispatch_time / 1e6;
     const avg_frame_ms = total_render_ms / @as(
         f64,
@@ -236,6 +242,12 @@ pub fn printRenderSummary(
     });
     try writer.print("Total render time       = {d:.3} ms\n", .{total_render_ms});
     try writer.print("Setup time              = {d:.3} ms\n", .{setup_ms});
+    try writer.print("Setup other             = {d:.3} ms\n", .{
+        setup_other_ms,
+    });
+    try writer.print("Setup frame buffer      = {d:.3} ms\n", .{
+        setup_frame_buffer_ms,
+    });
     try writer.print("Dispatch time           = {d:.3} ms\n", .{dispatch_ms});
     try writer.print("Average frame time      = {d:.3} ms\n", .{avg_frame_ms});
     if (report_mode == .bench or report_mode == .full_stats) {
@@ -585,8 +597,9 @@ pub const FullStatsLog = struct {
         camera: *const cam.CameraPrepared,
         nodes_per_elem: f64,
     ) !void {
-        const total_ms = self.bench.frame_times.total_time / 1e6;
-        const total_sec = self.bench.frame_times.total_time / 1e9;
+        const active_ms = self.bench.frame_times.active_time / 1e6;
+        const active_sec = self.bench.frame_times.active_time / 1e9;
+        const latency_ms = self.bench.frame_times.latency_time / 1e6;
         const raster_sec = self.bench.frame_times.raster_loop / 1e9;
         const geom_tiling_sec =
             (self.bench.frame_times.geometry_prep + self.bench.frame_times.tile_overlap) /
@@ -746,7 +759,10 @@ pub const FullStatsLog = struct {
             self.bench.frame_times.save_frame * conv,
         });
         try writer.print("{s}", .{line});
-        try writer.print("TOTAL FRAME TIME        = {d:.3} ms\n", .{total_ms});
+        try writer.print("ACTIVE FRAME TIME       = {d:.3} ms\n", .{active_ms});
+        try writer.print("FRAME LATENCY           = {d:.3} ms\n", .{
+            latency_ms,
+        });
         try writer.print("{s}", .{line});
 
         const melems_sec = if (geom_tiling_sec > 0)
@@ -755,8 +771,8 @@ pub const FullStatsLog = struct {
             0;
         const mpx_sec = if (raster_sec > 0) (total_px / (raster_sec * 1e6)) else 0;
         const msubpx_sec = if (raster_sec > 0) (total_subpx / (raster_sec * 1e6)) else 0;
-        const mops_sec = if (total_sec > 0)
-            (nodes_per_elem * total_subpx / (total_sec * 1e6))
+        const mops_sec = if (active_sec > 0)
+            (nodes_per_elem * total_subpx / (active_sec * 1e6))
         else
             0;
 
@@ -1235,7 +1251,8 @@ pub fn standardReport(
     const total_px = px_x * px_y;
 
     const raster_sec = frame_times.raster_loop / 1e9;
-    const total_sec = frame_times.total_time / 1e9;
+    const active_sec = frame_times.active_time / 1e9;
+    const latency_sec = frame_times.latency_time / 1e9;
     const geom_tiling_sec = (frame_times.geometry_prep + frame_times.tile_overlap) / 1e9;
 
     const melems_sec = if (geom_tiling_sec > 0)
@@ -1245,7 +1262,14 @@ pub fn standardReport(
     const mpx_sec = if (raster_sec > 0) (total_px / (raster_sec * 1e6)) else 0;
     const msubpx_sec = if (raster_sec > 0) (total_subpx / (raster_sec * 1e6)) else 0;
     _ = nodes_per_elem;
-    const frame_mpx_sec = if (total_sec > 0) (total_px / (total_sec * 1e6)) else 0;
+    const frame_mpx_sec = if (active_sec > 0)
+        (total_px / (active_sec * 1e6))
+    else
+        0;
+    const latency_mpx_sec = if (latency_sec > 0)
+        (total_px / (latency_sec * 1e6))
+    else
+        0;
 
     const conv_units: f64 = 1.0 / 1.0e6;
     const print_break = [_]u8{'='} ** 80;
@@ -1271,9 +1295,12 @@ pub fn standardReport(
         frame_times.save_frame * conv_units,
     });
 
-    try writer.print("{s}\nTOTAL FRAME TIME   = {d:.3} ms\n", .{
+    try writer.print("{s}\nACTIVE FRAME TIME  = {d:.3} ms\n", .{
         print_break,
-        frame_times.total_time * conv_units,
+        frame_times.active_time * conv_units,
+    });
+    try writer.print("FRAME LATENCY      = {d:.3} ms\n", .{
+        frame_times.latency_time * conv_units,
     });
     try writer.print("{s}\n", .{print_break});
 
@@ -1297,7 +1324,10 @@ pub fn standardReport(
     try writer.print("Geometry Throughput      = {d:.2} MElem/s\n", .{melems_sec});
     try writer.print("Subpx Raster Throughput  = {d:.2} MsubPx/s\n", .{msubpx_sec});
     try writer.print("Raster Throughput        = {d:.2} MPx/s\n", .{mpx_sec});
-    try writer.print("Frame Throughput         = {d:.2} MPx/s\n", .{frame_mpx_sec});
+    try writer.print("Active Frame Throughput  = {d:.2} MPx/s\n", .{frame_mpx_sec});
+    try writer.print("Frame Latency Throughput = {d:.2} MPx/s\n", .{
+        latency_mpx_sec,
+    });
     try writer.print("{s}\n", .{print_break});
     try writer.flush();
 }

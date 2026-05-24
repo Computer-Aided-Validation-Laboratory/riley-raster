@@ -37,7 +37,7 @@ fn sumFrameTimes(
         sums.geom_ms += frame_capture.bench_log.frame_times.geometry_prep / 1e6;
         sums.raster_ms += frame_capture.bench_log.frame_times.raster_loop / 1e6;
         sums.save_ms += frame_capture.bench_log.frame_times.save_frame / 1e6;
-        sums.frame_ms += frame_capture.bench_log.frame_times.total_time / 1e6;
+        sums.frame_ms += frame_capture.bench_log.frame_times.active_time / 1e6;
     }
     return sums;
 }

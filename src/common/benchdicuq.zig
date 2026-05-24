@@ -430,8 +430,10 @@ fn aggregateFrameTimes(
             capture.bench_log.frame_times.raster_loop;
         frame_times.save_frame +=
             capture.bench_log.frame_times.save_frame;
-        frame_times.total_time +=
-            capture.bench_log.frame_times.total_time;
+        frame_times.active_time +=
+            capture.bench_log.frame_times.active_time;
+        frame_times.latency_time +=
+            capture.bench_log.frame_times.latency_time;
     }
 
     return frame_times;
@@ -464,7 +466,7 @@ fn calcDicuqMetrics(
     const raster_sec = frame_times.raster_loop / 1e9;
     const geom_tiling_sec =
         (frame_times.geometry_prep + frame_times.tile_overlap) / 1e9;
-    const total_sec = frame_times.total_time / 1e9;
+    const active_sec = frame_times.active_time / 1e9;
 
     const nodes_per_elem = @as(f64, @floatFromInt(mesh_type.getNodesNum()));
     const pixels_x = @as(f64, @floatFromInt(pixel_num[0]));
@@ -490,8 +492,8 @@ fn calcDicuqMetrics(
             (total_px / (raster_sec * 1e6))
         else
             0,
-        .frame_tpx_mpx_s = if (total_sec > 0)
-            (total_px / (total_sec * 1e6))
+        .frame_tpx_mpx_s = if (active_sec > 0)
+            (total_px / (active_sec * 1e6))
         else
             0,
         .e2e_tpx_mpx_s = if (e2e_ms > 0.0)
@@ -518,8 +520,8 @@ fn calcDicuqMetrics(
             (total_elems * nodes_per_elem / (geom_tiling_sec * 1e6))
         else
             0,
-        .mops_sec = if (total_sec > 0)
-            (nodes_per_elem * total_subpx / (total_sec * 1e6))
+        .mops_sec = if (active_sec > 0)
+            (nodes_per_elem * total_subpx / (active_sec * 1e6))
         else
             0,
     };
@@ -542,17 +544,17 @@ fn calcFrameMPxPerSec(
     return total_px / (raster_sec * 1e6);
 }
 
-fn calcFrameTotalMPxPerSec(
+fn calcFrameActiveMPxPerSec(
     camera_input: CameraInput,
-    frame_total_time_ns: f64,
+    frame_active_time_ns: f64,
 ) f64 {
-    if (frame_total_time_ns <= 0.0) {
+    if (frame_active_time_ns <= 0.0) {
         return 0.0;
     }
     const total_px = @as(f64, @floatFromInt(camera_input.pixels_num[0])) *
         @as(f64, @floatFromInt(camera_input.pixels_num[1]));
-    const frame_total_sec = frame_total_time_ns / 1e9;
-    return total_px / (frame_total_sec * 1e6);
+    const frame_active_sec = frame_active_time_ns / 1e9;
+    return total_px / (frame_active_sec * 1e6);
 }
 
 fn calcFrameMElemPerSec(
@@ -592,7 +594,7 @@ fn buildFrameRows(
             .geom_time_ms = geom_time_ns / 1e6,
             .raster_time_ms = capture.bench_log.frame_times.raster_loop / 1e6,
             .save_time_ms = capture.bench_log.frame_times.save_frame / 1e6,
-            .frame_time_ms = capture.bench_log.frame_times.total_time / 1e6,
+            .frame_time_ms = capture.bench_log.frame_times.active_time / 1e6,
             .e2e_time_ms = null,
             .geom_tpx_melem_s = calcFrameMElemPerSec(
                 capture.bench_log.total_elements,
@@ -602,9 +604,9 @@ fn buildFrameRows(
                 camera_inputs[capture.camera_idx],
                 capture.bench_log.frame_times.raster_loop,
             ),
-            .frame_tpx_mpx_s = calcFrameTotalMPxPerSec(
+            .frame_tpx_mpx_s = calcFrameActiveMPxPerSec(
                 camera_inputs[capture.camera_idx],
-                capture.bench_log.frame_times.total_time,
+                capture.bench_log.frame_times.active_time,
             ),
             .e2e_tpx_mpx_s = null,
         };

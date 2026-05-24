@@ -118,7 +118,7 @@ pub fn calcMetrics(
 ) CalculatedMetrics {
     const raster_sec = frame_times.raster_loop / 1e9;
     const geom_tiling_sec = (frame_times.geometry_prep + frame_times.tile_overlap) / 1e9;
-    const total_sec = frame_times.total_time / 1e9;
+    const active_sec = frame_times.active_time / 1e9;
 
     const nodes_per_elem = @as(f64, @floatFromInt(etype.getNodesNum()));
     const pixels_x = @as(f64, @floatFromInt(pixel_num[0]));
@@ -134,8 +134,8 @@ pub fn calcMetrics(
     else
         0;
 
-    const frame_tpx_mpx_s = if (total_sec > 0)
-        (total_px / (total_sec * 1e6))
+    const frame_tpx_mpx_s = if (active_sec > 0)
+        (total_px / (active_sec * 1e6))
     else
         0;
 
@@ -169,8 +169,8 @@ pub fn calcMetrics(
         0;
 
     // 7. MOps/s
-    const mops_sec = if (total_sec > 0)
-        (nodes_per_elem * total_subpx / (total_sec * 1e6))
+    const mops_sec = if (active_sec > 0)
+        (nodes_per_elem * total_subpx / (active_sec * 1e6))
     else
         0;
 
@@ -1261,7 +1261,7 @@ pub fn calcBenchmarkCSVValuesFromResult(
         .geom = result.geom_ms,
         .raster = result.raster_ms,
         .save_frame = result.pipeline_times.save_frame * conv_ms,
-        .frame = result.pipeline_times.total_time * conv_ms,
+        .frame = result.pipeline_times.active_time * conv_ms,
         .e2e = result.e2e_ms,
         .geom_tpx = result.metrics.melems_sec,
         .raster_tpx = result.metrics.raster_tpx_mpx_s,

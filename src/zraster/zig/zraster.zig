@@ -697,6 +697,7 @@ fn runGeometryStage(
         job.time_start_frame = Timestamp.now(io, .awake);
     }
 
+    const time_start_geo = Timestamp.now(io, .awake);
     try prepareFrameContext(
         T,
         group_alloc,
@@ -705,8 +706,6 @@ fn runGeometryStage(
     );
 
     var chunk_exec = pce.ParaChunkExecutor.init(io, geom_workers);
-
-    const time_start_geo = Timestamp.now(io, .awake);
     const arena_alloc = job.ctx.arena.allocator();
 
     const geo_res = try mo.prepareMeshFrames(
@@ -766,9 +765,14 @@ fn runRasterAndFinalizeStage(
     job.ctx.frame_times.save_frame = @floatFromInt(
         time_start_save.durationTo(time_end_save).raw.nanoseconds,
     );
+    job.ctx.frame_times.active_time =
+        job.ctx.frame_times.geometry_prep +
+        job.ctx.frame_times.tile_overlap +
+        job.ctx.frame_times.raster_loop +
+        job.ctx.frame_times.save_frame;
 
     const time_end_frame = Timestamp.now(io, .awake);
-    job.ctx.frame_times.total_time = @floatFromInt(
+    job.ctx.frame_times.latency_time = @floatFromInt(
         job.time_start_frame.?.durationTo(time_end_frame).raw.nanoseconds,
     );
 
@@ -1404,6 +1408,7 @@ pub fn rasterAllFramesReport(
     const nodal_global_scaling = try initNodalGlobalScaling(outer_alloc, meshes);
     defer outer_alloc.free(nodal_global_scaling);
 
+    const time_start_frame_buffer = Timestamp.now(summary_io, .awake);
     var images_arr_opt = try initAllFramesBuffer(
         T,
         outer_alloc,
@@ -1416,6 +1421,16 @@ pub fn rasterAllFramesReport(
     var end_to_end_times = report.EndToEndTimes{
         .setup_time = @floatFromInt(
             time_start_render.durationTo(time_end_setup).raw.nanoseconds,
+        ),
+        .setup_other_time = @floatFromInt(
+            time_start_render.durationTo(
+                time_start_frame_buffer,
+            ).raw.nanoseconds,
+        ),
+        .setup_frame_buffer_time = @floatFromInt(
+            time_start_frame_buffer.durationTo(
+                time_end_setup,
+            ).raw.nanoseconds,
         ),
     };
     const time_start_dispatch = Timestamp.now(summary_io, .awake);

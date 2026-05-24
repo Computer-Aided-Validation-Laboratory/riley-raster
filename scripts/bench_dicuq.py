@@ -47,6 +47,9 @@ RUN_EXPERIMENT_4 = False
 # job while we sweep render-group partitioning and geometry lookahead over the
 # cases that should plausibly scale well.
 RUN_EXPERIMENT_5 = True
+# Experiment 6: max-thread partition check. Compare only one large render group
+# against one-thread-per-group at the maximum thread count.
+RUN_EXPERIMENT_6 = True
 
 # Experiment 1: idealized offline design.
 # Single render group, geometry spread, one worker per geometry job, one raster
@@ -89,6 +92,11 @@ EXPERIMENT_5_RENDER_GROUP_COUNTS = RENDER_GROUP_COUNT_CHOICES
 EXPERIMENT_5_FRAME_BATCH_SIZE_VALUES = ["1", "max", "double"]
 EXPERIMENT_5_GEOM_JOBS_IN_FLIGHT_VALUES = ["1", "max"]
 EXPERIMENT_5_SAVE_STRATEGIES = SAVE_STRATEGIES
+
+# Experiment 6: max-thread partition check.
+EXPERIMENT_6_TOTAL_THREADS = max(TOTAL_ACTIVE_THREADS)
+EXPERIMENT_6_RENDER_GROUP_COUNTS = [1, EXPERIMENT_6_TOTAL_THREADS]
+EXPERIMENT_6_SAVE_STRATEGIES = SAVE_STRATEGIES
 
 
 
@@ -425,6 +433,29 @@ def experiment_5_cases() -> list[dict[str, object]]:
     return unique_cases(cases)
 
 
+def experiment_6_cases() -> list[dict[str, object]]:
+    cases: list[dict[str, object]] = []
+    total_threads = EXPERIMENT_6_TOTAL_THREADS
+    for render_group_count in EXPERIMENT_6_RENDER_GROUP_COUNTS:
+        group_workers = workers_per_group(total_threads, render_group_count)
+        for save_strategy in EXPERIMENT_6_SAVE_STRATEGIES:
+            cases.append(
+                make_case(
+                    experiment="experiment_6_max_thread_partition_check",
+                    total_threads=total_threads,
+                    render_group_count=render_group_count,
+                    render_mode="offline",
+                    frame_batch_size_per_group=group_workers,
+                    max_geom_jobs_in_flight_per_group=group_workers,
+                    max_geom_workers_per_job=1,
+                    geom_scheduling_mode="spread",
+                    max_raster_workers_per_job=group_workers,
+                    save_strategy=save_strategy,
+                )
+            )
+    return unique_cases(cases)
+
+
 def run_case(
     case: dict[str, object],
     run_root: pathlib.Path,
@@ -482,6 +513,7 @@ def experiment_enabled(experiment_id: str) -> bool:
         "3": RUN_EXPERIMENT_3,
         "4": RUN_EXPERIMENT_4,
         "5": RUN_EXPERIMENT_5,
+        "6": RUN_EXPERIMENT_6,
     }[experiment_id]
 
 
@@ -503,7 +535,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--experiment",
-        choices=("all", "1", "2", "3", "4", "5"),
+        choices=("all", "1", "2", "3", "4", "5", "6"),
         default="all",
     )
     parser.add_argument(
@@ -534,6 +566,8 @@ def main() -> int:
         selected_experiments.append(("4", experiment_4_cases))
     if args.experiment in ("all", "5") and experiment_enabled("5"):
         selected_experiments.append(("5", experiment_5_cases))
+    if args.experiment in ("all", "6") and experiment_enabled("6"):
+        selected_experiments.append(("6", experiment_6_cases))
 
     all_cases: list[dict[str, object]] = []
     for _, case_builder in selected_experiments:
