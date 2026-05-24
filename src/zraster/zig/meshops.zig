@@ -89,6 +89,65 @@ pub const MeshPrepared = struct {
     shader: shaderops.ShaderPrepared,
 };
 
+pub fn calcNodesPerElem(
+    meshes: []const MeshPrepared,
+) f64 {
+    var nodes_sum: usize = 0;
+    for (meshes) |mesh| {
+        nodes_sum += mesh.mesh_type.getNodesNum();
+    }
+    return @as(f64, @floatFromInt(nodes_sum)) /
+        @as(f64, @floatFromInt(meshes.len));
+}
+
+pub fn countFrames(
+    meshes: []const MeshInput,
+) usize {
+    const dim_time_pre: usize = 0;
+    var num_time: usize = 1;
+    for (meshes) |mesh| {
+        if (mesh.disp) |field| {
+            num_time = @max(num_time, field.array.dims[dim_time_pre]);
+        } else switch (mesh.shader) {
+            .nodal => |shader| {
+                num_time = @max(
+                    num_time,
+                    shader.field.array.dims[dim_time_pre],
+                );
+            },
+            else => {},
+        }
+    }
+    return num_time;
+}
+
+pub fn countOutputFields(
+    meshes: []const MeshInput,
+) u8 {
+    var num_fields: u8 = 0;
+    for (meshes) |mesh| {
+        const mesh_fields: u8 = switch (mesh.shader) {
+            .nodal => |shader| shader.field.getFieldsN(),
+            .tex => 1,
+            .tex_rgb => 3,
+            .tex_func => 1,
+            .tex_func_rgb => 3,
+        };
+        num_fields = @max(num_fields, mesh_fields);
+    }
+    return num_fields;
+}
+
+pub fn countStaticMeshElements(
+    mesh_static: []const MeshStatic,
+) usize {
+    var total: usize = 0;
+    for (mesh_static) |mesh| {
+        total += mesh.connect.table.rows_num;
+    }
+    return total;
+}
+
 // External helper function for finding mesh centroids
 pub fn findAlignedCentroid(coords: *const meshio.Coords) struct {
     centroid: [3]f64,

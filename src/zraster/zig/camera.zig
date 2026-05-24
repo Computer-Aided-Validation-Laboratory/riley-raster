@@ -23,6 +23,22 @@ const cfg = buildconfig.config;
 const tol = cfg.tolerance;
 const camera_impl = if (cfg.simd == .on) camera_simd else camera_scalar;
 
+pub fn allCamerasSharePixels(
+    cameras: []const CameraPrepared,
+) bool {
+    if (cameras.len == 0) {
+        return true;
+    }
+
+    const pixels_num = cameras[0].pixels_num;
+    for (cameras[1..]) |camera| {
+        if (!std.meta.eql(camera.pixels_num, pixels_num)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 pub const DistortionModel = union(enum) {
     none,
     brown_conrady: BrownConrady,

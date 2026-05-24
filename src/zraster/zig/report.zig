@@ -65,17 +65,6 @@ pub fn FrameReportPtr(comptime report_mode: ReportMode) type {
     return *LogType(report_mode);
 }
 
-pub fn calcNodesPerElem(
-    meshes: []const mo.MeshPrepared,
-) f64 {
-    var nodes_sum: usize = 0;
-    for (meshes) |mesh| {
-        nodes_sum += mesh.mesh_type.getNodesNum();
-    }
-    return @as(f64, @floatFromInt(nodes_sum)) /
-        @as(f64, @floatFromInt(meshes.len));
-}
-
 pub fn calcBenchCaptureIdx(
     cameras_num: usize,
     camera_idx: usize,
@@ -101,7 +90,7 @@ pub fn publishFrameResults(
     total_elems_in_image: usize,
     prep_meshes: []const mo.MeshPrepared,
 ) !void {
-    const nodes_per_elem = calcNodesPerElem(prep_meshes);
+    const nodes_per_elem = mo.calcNodesPerElem(prep_meshes);
 
     switch (config.report) {
         .off => {

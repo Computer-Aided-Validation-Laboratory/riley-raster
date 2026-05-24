@@ -162,6 +162,50 @@ pub fn applyClamping(val: f64, bits: ?u8) f64 {
     return val;
 }
 
+pub fn outputBits(
+    comptime T: type,
+) ?u8 {
+    if (T == f64) {
+        return null;
+    }
+    if (T == u8) {
+        return 8;
+    }
+    if (T == u16) {
+        return 16;
+    }
+    @compileError("Unsupported raster output type");
+}
+
+pub fn castOutputValue(
+    comptime T: type,
+    val: f64,
+) T {
+    if (T == f64) {
+        return val;
+    }
+    if (T == u8 or T == u16) {
+        return @as(T, @intFromFloat(val));
+    }
+    @compileError("Unsupported raster output type");
+}
+
+pub fn convertOutputValue(
+    comptime T: type,
+    val: f64,
+    scaling: ScaleStrategy,
+    scaling_params: ?ScalingParams,
+) T {
+    if (T == f64) {
+        return val;
+    }
+
+    const bits = comptime outputBits(T).?;
+    const scaled = applyScaling(val, scaling, bits, scaling_params.?);
+    const clamped = applyClamping(scaled, bits);
+    return castOutputValue(T, clamped);
+}
+
 pub fn averageImage(
     image_subpx: *const matslice.MatSlice(f64),
     sub_samp: u8,
