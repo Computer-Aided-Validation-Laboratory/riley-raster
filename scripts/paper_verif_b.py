@@ -334,27 +334,20 @@ def build_bulge_fig_tex(rows: list[dict[str, str]]) -> str:
     label_idx = 0
     for mesh_name in mesh_names:
         frame_cases = [
-            (
-                "bulge_out_limit",
-                bulge_out_limit_frame(mesh_name),
-                "out limit",
-            ),
             ("bulge_out", bulge_out_frame(mesh_name), "outward bulge"),
             ("bulge_regular", bulge_regular_frame(mesh_name), "regular"),
             ("bulge_in", bulge_in_frame(mesh_name), "inward bulge"),
-            ("bulge_in_limit", bulge_in_limit_frame(mesh_name), "in limit"),
         ]
         subfig_blocks: list[str] = []
-        for suffix, frame_idx, caption_name in frame_cases:
+        for suffix, frame_idx, _caption_name in frame_cases:
             row = find_row(rows, mesh_name, "bulge", frame_idx)
             file_name = f"fig_verifb_{mesh_name}_{suffix}.png"
             save_frame_png(row, file_name)
-            sub_label = chr(ord("a") + label_idx)
             label_idx += 1
             subfig_blocks.append(
                 subfigure_block(
                     file_name,
-                    "0.135\\textwidth",
+                    "0.18\\textwidth",
                     f"fig:verifb_{mesh_name}_{suffix}",
                 )
             )
@@ -368,11 +361,10 @@ def build_bulge_fig_tex(rows: list[dict[str, str]]) -> str:
     return (
         "\\begin{figure*}[htbp]\n"
         "\\centering\n"
-        "\\resizebox{\\textwidth}{!}{%\n"
-        "\\begin{tabular}{cccccc}\n"
-        "\\makecell[c]{Element} & \\makecell[c]{Out limit} & "
-        "\\makecell[c]{Outward} & \\makecell[c]{Regular} & "
-        "\\makecell[c]{Inward} & \\makecell[c]{In limit}\\\\\n"
+        "\\resizebox{0.72\\textwidth}{!}{%\n"
+        "\\begin{tabular}{cccc}\n"
+        "\\makecell[c]{Element} & \\makecell[c]{Outward} & "
+        "\\makecell[c]{Regular} & \\makecell[c]{Inward}\\\\\n"
         f"{rows_tex}\n"
         "\\end{tabular}\n"
         "}\n"

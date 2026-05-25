@@ -945,7 +945,7 @@ fn TileRangeContext(
     };
 }
 
-fn rasterSceneThreadedCommon(
+pub fn rasterSceneCommon(
     comptime RasterBackend: type,
     comptime report_mode: ReportMode,
     outer_alloc: std.mem.Allocator,
@@ -1060,41 +1060,4 @@ fn rasterSceneThreadedCommon(
             report.reduceBenchLog(bench_log, worker_bench);
         }
     }
-}
-
-//------------------------------------------------------------------------------------------
-// External API
-//------------------------------------------------------------------------------------------
-
-pub fn rasterSceneCommon(
-    comptime RasterBackend: type,
-    comptime report_mode: ReportMode,
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    ctx_rast: rops.RasterContext,
-    ctx_report: report.ReportContext(report_mode),
-    requested_workers: u16,
-    tiling: rops.TilingOverlaps,
-    meshes: []const MeshPrepared,
-    raster_hulls: []const ?NDArray(f64),
-    image_out_arr: *NDArray(f64),
-) !void {
-    const worker_count = scalingpolicy.rasterWorkers(
-        requested_workers,
-        tiling.active_tiles.len,
-    );
-
-    try rasterSceneThreadedCommon(
-        RasterBackend,
-        report_mode,
-        outer_alloc,
-        io,
-        ctx_rast,
-        ctx_report,
-        @intCast(worker_count),
-        tiling,
-        meshes,
-        raster_hulls,
-        image_out_arr,
-    );
 }

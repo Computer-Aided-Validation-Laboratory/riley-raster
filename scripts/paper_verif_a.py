@@ -365,17 +365,15 @@ def subfigure_block(
 def build_bulge_fig_tex(style: PlotStyle) -> str:
     del style
     mesh_names = ["tri6", "quad8", "quad9"]
-    row_specs = [
-        ("Out limit", "bulge_out_limit"),
+    col_specs = [
         ("Outward", "bulge_out"),
         ("Regular", "bulge_regular"),
         ("Inward", "bulge_in"),
-        ("In limit", "bulge_in_limit"),
     ]
     row_blocks: list[str] = []
-    for row_label, suffix in row_specs:
+    for mesh_name in mesh_names:
         subfig_blocks: list[str] = []
-        for mesh_name in mesh_names:
+        for _, suffix in col_specs:
             file_name = f"fig_verifa_{mesh_name}_{suffix}.png"
             subfig_blocks.append(
                 subfigure_block(
@@ -385,7 +383,7 @@ def build_bulge_fig_tex(style: PlotStyle) -> str:
                 )
             )
         row_blocks.append(
-            "\\makecell[c]{" + row_label + "} & " +
+            "\\makecell[c]{\\texttt{" + mesh_name + "}} & " +
             " & ".join(subfig_blocks) + " \\\\"
         )
 
@@ -394,9 +392,9 @@ def build_bulge_fig_tex(style: PlotStyle) -> str:
         "\\begin{figure}[htbp]\n"
         "\\centering\n"
         "\\begin{tabular}{cccc}\n"
-        "\\makecell[c]{Case} & \\makecell[c]{\\texttt{tri6}} & "
-        "\\makecell[c]{\\texttt{quad8}} & "
-        "\\makecell[c]{\\texttt{quad9}}\\\\\n"
+        "\\makecell[c]{Element} & \\makecell[c]{Outward} & "
+        "\\makecell[c]{Regular} & "
+        "\\makecell[c]{Inward}\\\\\n"
         f"{rows_tex}\n"
         "\\end{tabular}\n"
         f"\\caption{{{BULGE_FIG_CAPTION}}}\n"
@@ -408,20 +406,20 @@ def build_bulge_fig_tex(style: PlotStyle) -> str:
 def build_shear_fig_tex(style: PlotStyle) -> str:
     del style
     mesh_specs = ["quad4", "tri6", "quad8", "quad9"]
-    row_specs = [("Regular", "regular"), ("Shear", "shear")]
+    col_specs = [("Regular", "regular"), ("Shear", "shear")]
     row_blocks: list[str] = []
-    for row_label, suffix in row_specs:
+    for mesh_name in mesh_specs:
         subfig_blocks: list[str] = []
-        for elem_label in mesh_specs:
+        for _, suffix in col_specs:
             subfig_blocks.append(
                 subfigure_block(
-                    f"fig_verifa_{elem_label}_{suffix}.png",
+                    f"fig_verifa_{mesh_name}_{suffix}.png",
                     VERIF_A_MAP_WIDTH,
-                    f"fig:verifa_{elem_label}_{suffix}",
+                    f"fig:verifa_{mesh_name}_{suffix}",
                 )
             )
         row_blocks.append(
-            "\\makecell[c]{" + row_label + "} & " +
+            "\\makecell[c]{\\texttt{" + mesh_name + "}} & " +
             " & ".join(subfig_blocks) + " \\\\"
         )
 
@@ -429,10 +427,9 @@ def build_shear_fig_tex(style: PlotStyle) -> str:
     return (
         "\\begin{figure}[htbp]\n"
         "\\centering\n"
-        "\\begin{tabular}{ccccc}\n"
-        "\\makecell[c]{Case} & \\makecell[c]{\\texttt{quad4}} & "
-        "\\makecell[c]{\\texttt{tri6}} & \\makecell[c]{\\texttt{quad8}} & "
-        "\\makecell[c]{\\texttt{quad9}}\\\\\n"
+        "\\begin{tabular}{ccc}\n"
+        "\\makecell[c]{Element} & \\makecell[c]{Regular} & "
+        "\\makecell[c]{Shear}\\\\\n"
         f"{rows_tex}\n"
         "\\end{tabular}\n"
         f"\\caption{{{SHEAR_FIG_CAPTION}}}\n"

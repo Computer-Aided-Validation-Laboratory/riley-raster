@@ -15,9 +15,9 @@ RABBIT_MESH_NAMES = ["tri3", "quad4", "tri6", "quad8", "quad9"]
 COUNT_TOL = 1.0e-6
 
 FIG_CAPTION = (
-    "Visibility test images for the \\texttt{tri6} bunny meshes in "
-    "verification case 4 with Riley in front and Feebs behind: "
-    "(a) both meshes, (b) front mesh only, and (c) the difference image."
+    "Visibility test images for the \\texttt{tri6} rabbit meshes in "
+    "verification case 4: (a) both meshes, (b) front mesh only, and (c) the "
+    "difference image."
 )
 
 

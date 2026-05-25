@@ -415,45 +415,6 @@ fn rasterFrame(
     );
 }
 
-fn runRasterFrame(
-    comptime T: type,
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    input: *const FrameJobDesc(T),
-    raster_workers: u16,
-    ctx: *FrameContext,
-) !void {
-    switch (input.config.report) {
-        .off => try rasterFrame(
-            .off,
-            T,
-            outer_alloc,
-            io,
-            input,
-            raster_workers,
-            ctx,
-        ),
-        .bench => try rasterFrame(
-            .bench,
-            T,
-            outer_alloc,
-            io,
-            input,
-            raster_workers,
-            ctx,
-        ),
-        .full_stats => try rasterFrame(
-            .full_stats,
-            T,
-            outer_alloc,
-            io,
-            input,
-            raster_workers,
-            ctx,
-        ),
-    }
-}
-
 fn saveFrame(
     comptime T: type,
     io: std.Io,
@@ -630,25 +591,47 @@ fn runGeometryStage(
     );
 }
 
-fn runRasterAndFinalizeStage(
+fn runRasterAndSaveFrame(
     comptime T: type,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     job: *PreparedFrameJob(T),
     raster_workers: u16,
 ) !void {
-    try runRasterFrame(
-        T,
-        outer_alloc,
-        io,
-        &job.desc,
-        raster_workers,
-        &job.ctx,
-    );
+    switch (job.desc.config.report) {
+        .off => try rasterFrame(
+            .off,
+            T,
+            outer_alloc,
+            io,
+            &job.desc,
+            raster_workers,
+            &job.ctx,
+        ),
+        .bench => try rasterFrame(
+            .bench,
+            T,
+            outer_alloc,
+            io,
+            &job.desc,
+            raster_workers,
+            &job.ctx,
+        ),
+        .full_stats => try rasterFrame(
+            .full_stats,
+            T,
+            outer_alloc,
+            io,
+            &job.desc,
+            raster_workers,
+            &job.ctx,
+        ),
+    }
 
     const time_start_save = Timestamp.now(io, .awake);
     try saveFrame(T, io, &job.desc, &job.ctx);
     const time_end_save = Timestamp.now(io, .awake);
+
     job.ctx.frame_times.save_frame = @floatFromInt(
         time_start_save.durationTo(time_end_save).raw.nanoseconds,
     );
@@ -659,6 +642,7 @@ fn runRasterAndFinalizeStage(
         job.ctx.frame_times.save_frame;
 
     const time_end_frame = Timestamp.now(io, .awake);
+
     job.ctx.frame_times.latency_time = @floatFromInt(
         job.time_start_frame.?.durationTo(time_end_frame).raw.nanoseconds,
     );
@@ -680,19 +664,6 @@ fn runRasterAndFinalizeStage(
         job.ctx.total_elems_in_image,
         job.ctx.prep_meshes,
     );
-}
-
-fn runGeometryJobAsync(
-    comptime T: type,
-    group_alloc: std.mem.Allocator,
-    io: std.Io,
-    job: *PreparedFrameJob(T),
-    geom_workers: u16,
-    err_state: *FrameJobErrorState,
-) std.Io.Cancelable!void {
-    runGeometryStage(T, group_alloc, io, job, geom_workers) catch |err| {
-        err_state.setFirst(err);
-    };
 }
 
 fn prepareJobBatch(
@@ -846,15 +817,19 @@ fn processGeometryBatch(
         total_scene_elems,
     );
     var wave_start: usize = 0;
+
     while (wave_start < jobs.len) {
         const jobs_remaining = jobs.len - wave_start;
+
         const wave_jobs = switch (geom_mode) {
             .spread => geometryJobsPerWave(config, group_workers, jobs_remaining),
             .pack => @min(@as(usize, 1), jobs_remaining),
             .auto => unreachable,
         };
+
         const wave_end = wave_start + wave_jobs;
         const wave = jobs[wave_start..wave_end];
+
         const workers_per_job = switch (geom_mode) {
             .spread => try assignSpreadGeometryWorkers(
                 group_alloc,
@@ -873,7 +848,9 @@ fn processGeometryBatch(
             .auto => unreachable,
         };
         defer group_alloc.free(workers_per_job);
+
         try processGeometryWave(T, group_alloc, io, wave, workers_per_job);
+
         wave_start = wave_end;
     }
 }
@@ -893,7 +870,7 @@ fn processRasterBatch(
     );
     for (jobs) |*job| {
         defer job.deinit(group_alloc);
-        try runRasterAndFinalizeStage(
+        try runRasterAndSaveFrame(
             T,
             outer_alloc,
             group_io,

@@ -17,6 +17,12 @@ SIMD_LABEL = "simd"
 HULL_MODE = "on_no_fallback"
 SAVE_STRATEGY = "memory"
 
+TABLE_CAPTION = (
+    "Raster stage performance results for the full sensor rendering cases in "
+    "benchmark 1. Timings and throughputs are reported as median $\\pm$ median "
+    "absolute deviation (MAD)."
+)
+
 ELEMENT_CASES = [
     (
         "tri3",
@@ -97,14 +103,7 @@ ELEMENT_CASES = [
 
 OUT_TABS_NAME = "bench1_tabs.tex"
 
-TABLE_CAPTION = (
-    "Raster-stage benchmark results for representative rendering cases. The "
-    "image size is fixed at $1600 \\times 1000$ pixels, SSAA is fixed at "
-    "$1 \\times 1$, and all runs are single threaded. Timings and "
-    "throughputs are reported as median $\\pm$ MAD over 10 runs. "
-    "Wall-clock timings are reported in $10^{-3}$ seconds. The raster "
-    "throughput is reported in MPx/s."
-)
+
 
 
 def stats_path() -> pathlib.Path:

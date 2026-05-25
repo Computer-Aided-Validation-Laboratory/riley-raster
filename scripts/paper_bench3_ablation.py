@@ -10,6 +10,18 @@ from paper_bench_common import latest_stats_dir_with_candidates
 from paper_bench_common import row_float
 from paper_bench_common import write_tabs_tex
 
+TABLE_RAW_CAPTION = (
+    "Optimisation ablation timings for adaptive hulls and SIMD execution in "
+    "benchmark case 3. Timings and throughputs are reported as "
+    "median $\\pm$ median absolute deviation (MAD)." 
+)
+
+TABLE_SPEEDUP_CAPTION = (
+    "Optimisation speedup matrix for adaptive hulls and SIMD execution in "
+    "benchmark case 3. Speedup multipliers are computed relative to the "
+    "padded-BB scalar baseline for each element type. Values greater than one "
+    "indicate faster execution."
+)
 
 BENCH_NAME = "bench_sphere2000"
 EXPERIMENT_DIR = "experiment_1"
@@ -39,25 +51,7 @@ SPEEDUP_ROWS = [
 
 OUT_TABS_NAME = "bench3_tabs.tex"
 
-TABLE_RAW_CAPTION = (
-    "Ablation benchmark timings for adaptive hulls and SIMD execution. The "
-    "padded-BB configuration uses a simple node-limit bounding box with "
-    "padding during geometry preprocessing and disables the adaptive hull "
-    "rejection path. All rows produce images matching the adaptive-hull "
-    "reference images. Timings and throughputs are reported as median "
-    "$\\pm$ median absolute deviation over 10 runs. Wall-clock timings "
-    "are reported in $10^{-3}$ seconds."
-)
 
-TABLE_SPEEDUP_CAPTION = (
-    "Ablation speedup matrix for adaptive hulls and SIMD execution. "
-    "Speedups are computed relative to the padded-BB scalar baseline for "
-    "each element type. Values greater than one indicate faster "
-    "execution. The combined adaptive-hull and SIMD configuration is "
-    "expected to show coupled, rather than fully multiplicative, "
-    "behaviour because the two optimisations reduce overlapping parts "
-    "of the raster workload."
-)
 
 
 def stats_path(simd_label: str, hull_mode: str) -> pathlib.Path:

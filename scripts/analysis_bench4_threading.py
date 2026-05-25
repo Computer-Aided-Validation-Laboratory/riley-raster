@@ -275,6 +275,22 @@ def best_case_by_threads_and_save(stats: list[CaseStats]) -> dict[tuple[int, str
     return best
 
 
+def best_raster_case_by_threads_and_save(
+    stats: list[CaseStats],
+) -> dict[tuple[int, str], CaseStats]:
+    best: dict[tuple[int, str], CaseStats] = {}
+    for case in stats:
+        key = (case.threads, case.save_mode)
+        current = best.get(key)
+        if (
+            current is None
+            or case.raster_throughput_median_mpx_s >
+            current.raster_throughput_median_mpx_s
+        ):
+            best[key] = case
+    return best
+
+
 def best_case_by_partition(
     stats: list[CaseStats],
 ) -> dict[tuple[int, str, int, int], CaseStats]:
@@ -434,7 +450,7 @@ def plot_best_e2e_throughput(stats: list[CaseStats], stem: str) -> None:
 
 
 def plot_best_raster_throughput(stats: list[CaseStats], stem: str) -> None:
-    best_map = best_case_by_threads_and_save(stats)
+    best_map = best_raster_case_by_threads_and_save(stats)
 
     fig, ax = plt.subplots(figsize=PLOT_LINE_FIG_SIZE_IN)
     right_ax = ax.twinx()
@@ -773,14 +789,17 @@ def plot_partition_heatmap(
 
     render_heatmap(
         build_matrix(False),
-        f"Partition End-to-End Throughput Heatmap ({save_mode_label(save_mode)})",
+        "Partition End-to-End Throughput Heatmap "
+        f"({save_mode_label(save_mode)})\n"
+        "Partition = Group x Workers",
         "End-to-End Throughput [MPx/s]",
         stem_absolute,
     )
     render_heatmap(
         build_matrix(True),
         f"Partition Relative End-to-End Throughput Heatmap "
-        f"({save_mode_label(save_mode)})",
+        f"({save_mode_label(save_mode)})\n"
+        "Partition = Group x Workers",
         "E2E throughput / best at same thread count",
         stem_relative,
     )

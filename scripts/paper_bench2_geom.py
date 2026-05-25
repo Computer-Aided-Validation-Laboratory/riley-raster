@@ -35,14 +35,9 @@ GEOM_CASES = [
 OUT_TABS_NAME = "bench2_tabs.tex"
 
 TABLE_CAPTION = (
-    "Geometry-preprocessing benchmark results for representative element "
-    "types. The image size is fixed at $1600 \\times 1000$ pixels, SSAA "
-    "is fixed at $1 \\times 1$, and all runs are single threaded. "
-    "Timings and throughputs are reported as median $\\pm$ MAD over 10 "
-    "runs. Wall-clock timings are reported in $10^{-3}$ seconds. The "
-    "geometry throughput is reported in both MNodes/s and MElem/s, "
-    "computed from the exact input node and element counts and the "
-    "geometry preprocessing time."
+    "Geometry preprocessing performance results for all element types in "
+    "benchmark 2. Timings and throughputs are reported as median $\\pm$ median "
+    "absolute deviation (MAD)."
 )
 
 
