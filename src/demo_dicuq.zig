@@ -31,7 +31,7 @@ const OUT_DIR_ROOT = "./out/demo-dicuq";
 const PIXELS_NUM = [2]u32{ 2464, 2056 };
 const PIXELS_SIZE = [2]f64{ 3.45e-6, 3.45e-6 };
 const FOCAL_LENGTH: f64 = 50.0e-3;
-const FOV_SCALE_FACTOR: f64 = 1.1;
+const FOV_SCALE_FACTOR: f64 = 0.65;
 const SUB_SAMPLE: u8 = 2;
 const STEREO_ANGLE_DEG: f64 = 20.0;
 

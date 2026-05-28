@@ -15,10 +15,8 @@ const uvio = @import("zraster/zig/uvio.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const MeshInput = mo.MeshInput;
-const Vec3f = @import("zraster/zig/vecstack.zig").Vec3f;
 const camera_mod = @import("zraster/zig/camera.zig");
 const Rotation = @import("zraster/zig/rotation.zig").Rotation;
-const CameraInput = camera_mod.CameraInput;
 const CameraOps = camera_mod.CameraOps;
 const DistortionModel = camera_mod.DistortionModel;
 const BrownConrady = camera_mod.BrownConrady;
@@ -30,13 +28,10 @@ const OUT_DIR_ROOT = "./out/demo-stereocal";
 const PIXELS_NUM = [2]u32{ 2464, 2056 };
 const PIXELS_SIZE = [2]f64{ 3.45e-6, 3.45e-6 };
 const FOCAL_LENGTH: f64 = 50.0e-3;
-const FOV_SCALE_FACTOR: f64 = 1.1;
+const FOV_SCALE_FACTOR: f64 = 1.0;
 const STEREO_ANGLE_DEG: f64 = 20.0;
 const SUB_SAMPLE: u8 = 2;
-const DICUQ_MATCHED_ROI = [3]f64{ 0.0125, 0.0175, 0.0005 };
-const DICUQ_MATCHED_CAM0_POS = [3]f64{ 0.0125, 0.0175, 0.160864856482 };
-const DICUQ_MATCHED_CAM1_POS = [3]f64{ 0.125895077483, 0.0175, 0.113895077483 };
-const DICUQ_MATCHED_CAM1_BETA_DEG: f64 = 20.0;
+const DICUQ_CAMERA_DIR = "./out/demo-dicuq";
 
 const TOTAL_THREADS: u16 = 8;
 const RENDER_GROUP_COUNT: u16 = 8;
@@ -45,10 +40,10 @@ const DISTORTION = false;
 
 const CameraPlacementMode = enum {
     auto_fov,
-    manual_match_dicuq,
+    load_stereo_pair,
 };
 
-const CAMERA_PLACEMENT_MODE: CameraPlacementMode = .manual_match_dicuq;
+const CAMERA_PLACEMENT_MODE: CameraPlacementMode = .load_stereo_pair;
 
 fn getDistortionModel() DistortionModel {
     if (!DISTORTION) {
@@ -222,37 +217,14 @@ pub fn main(init: std.process.Init) !void {
                 },
             };
         },
-        .manual_match_dicuq => blk: {
-            var sp: StereoPairInput = undefined;
-            sp.cameras[0] = .{
-                .pixels_num = PIXELS_NUM,
-                .pixels_size = PIXELS_SIZE,
-                .pos_world = Vec3f{ .slice = DICUQ_MATCHED_CAM0_POS },
-                .rot_world = Rotation.init(0.0, 0.0, 0.0),
-                .roi_cent_world = Vec3f{ .slice = DICUQ_MATCHED_ROI },
-                .focal_length = FOCAL_LENGTH,
-                .sub_sample = SUB_SAMPLE,
-                .distortion = distortion,
-            };
-            sp.cameras[1] = .{
-                .pixels_num = PIXELS_NUM,
-                .pixels_size = PIXELS_SIZE,
-                .pos_world = Vec3f{ .slice = DICUQ_MATCHED_CAM1_POS },
-                .rot_world = Rotation.init(
-                    0.0,
-                    std.math.degreesToRadians(DICUQ_MATCHED_CAM1_BETA_DEG),
-                    0.0,
-                ),
-                .roi_cent_world = Vec3f{ .slice = DICUQ_MATCHED_ROI },
-                .focal_length = FOCAL_LENGTH,
-                .sub_sample = SUB_SAMPLE,
-                .distortion = distortion,
-            };
-            break :blk sp;
+        .load_stereo_pair => blk: {
+            var stereo_in_dir = try cwd.openDir(io, DICUQ_CAMERA_DIR, .{});
+            defer stereo_in_dir.close(io);
+            break :blk try CameraOps.loadStereoPair(aa, io, stereo_in_dir);
         },
     };
 
-    if (CAMERA_PLACEMENT_MODE == .manual_match_dicuq) {
+    if (CAMERA_PLACEMENT_MODE == .load_stereo_pair) {
         const target_roi = stereo_pair.cameras[0].roi_cent_world;
         const roi_shift = target_roi.sub(roi_pos);
         for (0..sim_data.coords.mat.rows_num) |nn| {
