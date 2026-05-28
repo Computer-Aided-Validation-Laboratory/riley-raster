@@ -1,7 +1,7 @@
 # zaster
-`zraster` is a performant software rasteriser written in Zig specifically designed for digital image correlation (DIC) uncertainty quantification (UQ). `zraster` performs off-line rendering of deformed speckle pattern images from an input finite element simulation. `zraster` supports accurate rendering of higher order finite elements including tri3, tri6, quad4, quad8 and quad9 surface elements. Texture shading with higher order texture sampling is also supported for accurate speckle pattern rendering including: cubic sampling (Catmull-Rom, Mitchell-Netravali, BSpline), quintic sampling (BSpline) and Lancsoz (lancsoz3). Rendering multiple meshes with different element types and shading strategies in the same scene is supported.
+`zraster` is a performant software rasteriser written in Zig specifically designed for digital image correlation (DIC) uncertainty quantification (UQ). `zraster` performs off-line rendering of deformed speckle pattern images from an input finite element simulation. `zraster` supports accurate rendering of higher order finite elements including `tri3`, `tri6`, `quad4`, `quad8` and `quad9` surface elements. Texture shading with higher order texture sampling is also supported for accurate speckle pattern rendering including: cubic sampling (Catmull-Rom, Mitchell-Netravali, BSpline), quintic sampling (BSpline) and Lancsoz (lancsoz3). Rendering multiple meshes with different element types and shading strategies in the same scene is supported.
 
-We specifically chose to implement `zraster` in Zig as it is a compiled language with manual memory management. It also allows for compile time code generation and has excellent support for SIMD vector types. We have used `comptime` to generate speciliased kernels for geometry and shader types removing run time dispatch overhead. We have also leveraged Zig's `io` interface to implement hierarchical parallelisation...
+We specifically chose to implement `zraster` in Zig as it is a compiled language with manual memory management. It also allows for compile time code generation and has excellent support for SIMD vector types. We have used `comptime` to generate speciliased kernels for geometry and shader types removing run time dispatch overhead. We have also leveraged Zig's `io` interface to implement hierarchical parallelisation allowing for inter and intra frame parallelisation for offline rendering.
 
 ## Getting Started
 `zraster` uses the Zig 0.16.0 compiler release which can be downloaded from [here](https://ziglang.org/download/). The `zraster` repository contains a minimal set of regression tests (called the "min" test suite) which should be run before generating a wider set gold regression data and running performance benchmark suites. The min test suite can be run from the project root directory using:
@@ -34,6 +34,9 @@ zig run -lc -O ReleaseFast ./src/demo_CASE.zig
 where CASE is the name of the demonstration case you want to run. The output renders will be saved to ./out/demo-CASE/.
 
 ### Speckle Sphere
+For this demonstration we import a mesh of sphere and apply a speckle pattern texture shader to render a speckle pattern on the sphere. This is a simple single mesh and single shader case that would be typical for a DIC UQ workflow. A representative render of the sphere is shown below:
+
+![fig_sphere](/images/demo_sphere200.bmp)
 
 ### Rendering Rabbits
 In this demonstration we render a series of rabbit meshes that are composed of all supported element types: `tri3`, `tri6`, `quad4`, `quad8` and `quad9`. We also demonstrate the usage of all support shader types in the same scene rotating between a texture shader with cubic LUT-lerp sampling, a nodal interpolation shader interpolating the uv coordinates and an analytic function shader producing a sin wave pattern across the rabbit mesh based on the input uvs. The output render is shown below, the top row are the triangular meshes and the bottom row are the quadrilateral meshes:
@@ -49,7 +52,7 @@ For this case we demonstrate a representative DIC UQ rendering using an input fi
 
 
 ### Stereo Calibration
-We now use the camera setup from the previous DIC UQ demo, import it and then render a series of stereo calibration target images with the same camera setup. A representative render is shown below:
+We now use the camera setup from the previous DIC UQ demo, import it and then render a series of stereo calibration target images with the same camera setup. The input meshes for this case can be found in the /data/calplate/ directory. In this directory there is a python script which can be used to scale the size of the calibration target mesh and to generate different combinations of rigid body translation and rotation within user specified bound. A representative render is shown below:
 
 | Camera 0 | Camera 1 |
 |:---:|:---:|
@@ -72,5 +75,5 @@ The main entry point for the `zraster` rendering pipeline is the `rasterAllFrame
 
 ## Contributors
 - Lloyd Fletcher ([ScepticalRabbit](https://github.com/ScepticalRabbit)), UK Atomic Energy Authority
-- Joel Hirst ([]()), UK Atomic Energy Authority
-- Wiera Bielajewa ([]()), UK Atomic Energy Authority
+- Joel Hirst ([JoelPhys](https://github.com/JoelPhys)), UK Atomic Energy Authority
+- Wiera Bielajewa ([WieraB](https://github.com/WieraB)), UK Atomic Energy Authority
