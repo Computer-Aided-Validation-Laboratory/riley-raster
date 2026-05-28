@@ -13,7 +13,7 @@ const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("zraster/zig/buildconfig.zig");
 const cfg = buildconfig.config;
-const CameraPrepared = @import("zraster/zig/camera.zig").CameraPrepared;
+const cam = @import("zraster/zig/camera.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const gk = @import("zraster/zig/geometrykernels.zig");
@@ -120,7 +120,7 @@ pub fn main(init: std.process.Init) !void {
             1.0,
             10.0,
         );
-        defer for (cameras) |cam| cam.deinit(aa);
+        defer for (cameras) |camera| camera.deinit(aa);
         const camera_inputs = [_]cam.CameraInput{
             cam.CameraInput{
                 .pixels_num = cameras[0].pixels_num,
