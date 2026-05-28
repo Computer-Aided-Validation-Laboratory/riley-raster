@@ -27,6 +27,7 @@ pub const BenchArgs = struct {
     hull_mode: rastcfg.HullMode,
     subpixel_center_map: rastcfg.SubPixelCenterMap,
     save_strategy: rastcfg.SaveStrategy,
+    disk_save_overlap: bool,
     sample: ?texops.TextureSample,
     sample_mode: ?texops.TextureSampleMode,
     pixels_num: [2]u32,
@@ -55,6 +56,7 @@ pub fn defaultBenchArgs(
         .hull_mode = raster_config.hull_mode,
         .subpixel_center_map = raster_config.subpixel_center_map,
         .save_strategy = .memory,
+        .disk_save_overlap = raster_config.disk_save_overlap,
         .sample = null,
         .sample_mode = null,
         .pixels_num = .{ 800, 500 },
@@ -159,6 +161,8 @@ pub fn parseArgsWithDefaults(
             } else if (std.mem.eql(u8, arg, "--save-strategy")) {
                 bench_args.save_strategy =
                     try parseSaveStrategy(value);
+            } else if (std.mem.eql(u8, arg, "--disk-save-overlap")) {
+                bench_args.disk_save_overlap = try parseBool(value);
             } else if (std.mem.eql(u8, arg, "--image-out-dir")) {
                 bench_args.image_out_dir = value;
             } else if (std.mem.eql(u8, arg, "--sample")) {
@@ -265,6 +269,7 @@ pub fn applyRasterConfig(
     raster_config.subpixel_center_map =
         bench_args.subpixel_center_map;
     raster_config.save_strategy = bench_args.save_strategy;
+    raster_config.disk_save_overlap = bench_args.disk_save_overlap;
     return raster_config;
 }
 
@@ -274,6 +279,12 @@ fn parseInt(comptime T: type, value: []const u8) !T {
 
 fn parseEnum(comptime T: type, value: []const u8) !T {
     return std.meta.stringToEnum(T, value) orelse error.InvalidEnumValue;
+}
+
+fn parseBool(value: []const u8) !bool {
+    if (std.mem.eql(u8, value, "true")) return true;
+    if (std.mem.eql(u8, value, "false")) return false;
+    return error.InvalidBoolValue;
 }
 
 fn parseSaveStrategy(value: []const u8) !rastcfg.SaveStrategy {

@@ -50,6 +50,9 @@ RUN_EXPERIMENT_5 = False
 # Experiment 6: max-thread partition check. Compare only one large render group
 # against one-thread-per-group at the maximum thread count.
 RUN_EXPERIMENT_6 = True
+# Experiment 7: same sweep as experiment 5, but only `.disk` with overlapping
+# frame saves enabled.
+RUN_EXPERIMENT_7 = False
 
 # Experiment 1: idealized offline design.
 # Single render group, geometry spread, one worker per geometry job, one raster
@@ -64,7 +67,7 @@ EXPERIMENT_2_TOTAL_ACTIVE_THREADS = TOTAL_ACTIVE_THREADS
 EXPERIMENT_2_GEOM_SCHEDULING_MODES = GEOM_SCHEDULING_MODES
 EXPERIMENT_2_FRAME_BATCH_SIZE_VALUES = ["1", "max"]
 EXPERIMENT_2_GEOM_JOBS_IN_FLIGHT_VALUES = ["1", "max"]
-EXPERIMENT_2_GEOM_WORKER S_PER_JOB_VALUES = ["1", "max"]
+EXPERIMENT_2_GEOM_WORKERS_PER_JOB_VALUES = ["1", "max"]
 EXPERIMENT_2_SAVE_STRATEGIES = SAVE_STRATEGIES
 
 # Experiment 3: showdown.
@@ -97,6 +100,12 @@ EXPERIMENT_5_SAVE_STRATEGIES = SAVE_STRATEGIES
 EXPERIMENT_6_TOTAL_THREADS = max(TOTAL_ACTIVE_THREADS)
 EXPERIMENT_6_RENDER_GROUP_COUNTS = [1, EXPERIMENT_6_TOTAL_THREADS]
 EXPERIMENT_6_SAVE_STRATEGIES = SAVE_STRATEGIES
+
+# Experiment 7: offline sweet-spot sweep with overlapping disk saves.
+EXPERIMENT_7_TOTAL_ACTIVE_THREADS = EXPERIMENT_5_TOTAL_ACTIVE_THREADS
+EXPERIMENT_7_RENDER_GROUP_COUNTS = EXPERIMENT_5_RENDER_GROUP_COUNTS
+EXPERIMENT_7_FRAME_BATCH_SIZE_VALUES = EXPERIMENT_5_FRAME_BATCH_SIZE_VALUES
+EXPERIMENT_7_GEOM_JOBS_IN_FLIGHT_VALUES = EXPERIMENT_5_GEOM_JOBS_IN_FLIGHT_VALUES
 
 
 
@@ -186,6 +195,7 @@ def make_case(
     geom_scheduling_mode: str,
     max_raster_workers_per_job: int,
     save_strategy: str,
+    disk_save_overlap: bool = False,
 ) -> dict[str, object]:
     workers_group = workers_per_group(total_threads, render_group_count)
     case_name = (
@@ -200,34 +210,38 @@ def make_case(
         f"_rasterw-{max_raster_workers_per_job}"
         f"_render-{render_mode}"
         f"_save-{save_strategy}"
+        f"_overlap-{str(disk_save_overlap).lower()}"
     )
+    args = [
+        "--render-group-count",
+        str(render_group_count),
+        "--total-threads",
+        str(total_threads),
+        "--render-mode",
+        render_mode,
+        "--frame-batch-size-per-group",
+        str(frame_batch_size_per_group),
+        "--max-geom-jobs-in-flight-per-group",
+        str(max_geom_jobs_in_flight_per_group),
+        "--max-geom-workers-per-job",
+        str(max_geom_workers_per_job),
+        "--geom-scheduling-mode",
+        geom_scheduling_mode,
+        "--max-raster-workers-per-job",
+        str(max_raster_workers_per_job),
+        "--save-strategy",
+        save_strategy,
+        "--disk-save-overlap",
+        str(disk_save_overlap).lower(),
+        "--sample",
+        SAMPLE,
+        "--sample-mode",
+        SAMPLE_MODE,
+    ]
     return {
         "experiment": experiment,
         "case_name": case_name,
-        "args": [
-            "--render-group-count",
-            str(render_group_count),
-            "--total-threads",
-            str(total_threads),
-            "--render-mode",
-            render_mode,
-            "--frame-batch-size-per-group",
-            str(frame_batch_size_per_group),
-            "--max-geom-jobs-in-flight-per-group",
-            str(max_geom_jobs_in_flight_per_group),
-            "--max-geom-workers-per-job",
-            str(max_geom_workers_per_job),
-            "--geom-scheduling-mode",
-            geom_scheduling_mode,
-            "--max-raster-workers-per-job",
-            str(max_raster_workers_per_job),
-            "--save-strategy",
-            save_strategy,
-            "--sample",
-            SAMPLE,
-            "--sample-mode",
-            SAMPLE_MODE,
-        ],
+        "args": args,
     }
 
 
@@ -456,6 +470,41 @@ def experiment_6_cases() -> list[dict[str, object]]:
     return unique_cases(cases)
 
 
+def experiment_7_cases() -> list[dict[str, object]]:
+    cases: list[dict[str, object]] = []
+    for total_threads in EXPERIMENT_7_TOTAL_ACTIVE_THREADS:
+        for render_group_count in divisors_from_choices(
+            total_threads, EXPERIMENT_7_RENDER_GROUP_COUNTS
+        ):
+            group_workers = workers_per_group(total_threads, render_group_count)
+            for batch_value in EXPERIMENT_7_FRAME_BATCH_SIZE_VALUES:
+                for geom_jobs_value in EXPERIMENT_7_GEOM_JOBS_IN_FLIGHT_VALUES:
+                    frame_batch_size = resolve_group_value(
+                        batch_value,
+                        group_workers,
+                    )
+                    max_geom_jobs = resolve_group_value(
+                        geom_jobs_value,
+                        group_workers,
+                    )
+                    cases.append(
+                        make_case(
+                            experiment="experiment_7_offline_sweet_spot_disk_overlap",
+                            total_threads=total_threads,
+                            render_group_count=render_group_count,
+                            render_mode="offline",
+                            frame_batch_size_per_group=frame_batch_size,
+                            max_geom_jobs_in_flight_per_group=max_geom_jobs,
+                            max_geom_workers_per_job=1,
+                            geom_scheduling_mode="spread",
+                            max_raster_workers_per_job=group_workers,
+                            save_strategy="disk",
+                            disk_save_overlap=True,
+                        )
+                    )
+    return unique_cases(cases)
+
+
 def run_case(
     case: dict[str, object],
     run_root: pathlib.Path,
@@ -514,6 +563,7 @@ def experiment_enabled(experiment_id: str) -> bool:
         "4": RUN_EXPERIMENT_4,
         "5": RUN_EXPERIMENT_5,
         "6": RUN_EXPERIMENT_6,
+        "7": RUN_EXPERIMENT_7,
     }[experiment_id]
 
 
@@ -535,7 +585,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--experiment",
-        choices=("all", "1", "2", "3", "4", "5", "6"),
+        choices=("all", "1", "2", "3", "4", "5", "6", "7"),
         default="all",
     )
     parser.add_argument(
@@ -568,6 +618,8 @@ def main() -> int:
         selected_experiments.append(("5", experiment_5_cases))
     if args.experiment in ("all", "6") and experiment_enabled("6"):
         selected_experiments.append(("6", experiment_6_cases))
+    if args.experiment in ("all", "7") and experiment_enabled("7"):
+        selected_experiments.append(("7", experiment_7_cases))
 
     all_cases: list[dict[str, object]] = []
     for _, case_builder in selected_experiments:
