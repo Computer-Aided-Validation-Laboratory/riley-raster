@@ -306,7 +306,8 @@ def best_case_by_partition(
 def _style_axes(ax: plt.Axes, x_label: str, y_label: str, title: str) -> None:
     ax.set_xlabel(x_label, fontsize=PLOT_LINE_AXIS_FONT_SIZE)
     ax.set_ylabel(y_label, fontsize=PLOT_LINE_AXIS_FONT_SIZE)
-    ax.set_title(title, fontsize=PLOT_LINE_TITLE_FONT_SIZE)
+    if title:
+        ax.set_title(title, fontsize=PLOT_LINE_TITLE_FONT_SIZE)
     ax.tick_params(labelsize=PLOT_LINE_TICK_FONT_SIZE)
     ax.grid(True, linestyle=":", linewidth=0.8, alpha=0.7)
 
@@ -314,9 +315,12 @@ def _style_axes(ax: plt.Axes, x_label: str, y_label: str, title: str) -> None:
 def _save_plot(fig: plt.Figure, stem: str) -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     png_path = OUT_DIR / f"{stem}.png"
+    svg_path = OUT_DIR / f"{stem}.svg"
     fig.savefig(png_path, dpi=PLOT_RESOLUTION_DPI, bbox_inches="tight")
+    fig.savefig(svg_path, bbox_inches="tight")
     plt.close(fig)
     print(f"Wrote {png_path}")
+    print(f"Wrote {svg_path}")
 
 
 def fit_amdahl_serial_fraction(threads: list[int], speedups: list[float]) -> float:
@@ -383,6 +387,8 @@ def plot_best_e2e_throughput(stats: list[CaseStats], stem: str) -> None:
     right_ax = ax.twinx()
     legend_handles = []
     legend_labels = []
+    all_x_vals: list[int] = []
+    memory_baseline = best_map[(1, REFERENCE_SAVE_MODE)].e2e_throughput_median_mpx_s
 
     for save_mode in SAVE_MODE_ORDER:
         line_cases = sorted(
@@ -401,7 +407,7 @@ def plot_best_e2e_throughput(stats: list[CaseStats], stem: str) -> None:
             case.e2e_throughput_max_mpx_s - case.e2e_throughput_median_mpx_s
             for case in line_cases
         ]
-        baseline = line_cases[0]
+        all_x_vals.extend(x_vals)
 
         err = ax.errorbar(
             x_vals,
@@ -414,27 +420,26 @@ def plot_best_e2e_throughput(stats: list[CaseStats], stem: str) -> None:
             color=SAVE_MODE_COLORS[save_mode],
             label=save_mode_label(save_mode),
         )
-        _add_ideal_throughput_line(
-            ax,
-            x_vals,
-            baseline.e2e_throughput_median_mpx_s,
-            SAVE_MODE_COLORS[save_mode],
-            f"{save_mode_label(save_mode)} ideal",
-        )
         legend_handles.append(err.lines[0])
         legend_labels.append(save_mode_label(save_mode))
-        legend_handles.append(ax.lines[-1])
-        legend_labels.append(f"{save_mode_label(save_mode)} ideal")
 
-    memory_baseline = best_map[(1, REFERENCE_SAVE_MODE)].e2e_throughput_median_mpx_s
+    _add_ideal_throughput_line(
+        ax,
+        all_x_vals,
+        memory_baseline,
+        "black",
+        "Ideal",
+    )
+    legend_handles.append(ax.lines[-1])
+    legend_labels.append("Ideal")
     _style_axes(
         ax,
         "Total Threads",
         "End-to-End Throughput\n[MPx/s]",
-        "Best End-to-End Throughput by Save Mode",
+        "",
     )
     right_ax.set_ylabel(
-        "E2E Speedup vs. 1-thread memory baseline",
+        "Speedup vs. 1-thread",
         fontsize=PLOT_LINE_SECONDARY_AXIS_FONT_SIZE,
     )
     right_ax.tick_params(labelsize=PLOT_LINE_TICK_FONT_SIZE)
@@ -456,6 +461,8 @@ def plot_best_raster_throughput(stats: list[CaseStats], stem: str) -> None:
     right_ax = ax.twinx()
     legend_handles = []
     legend_labels = []
+    all_x_vals: list[int] = []
+    memory_baseline = best_map[(1, REFERENCE_SAVE_MODE)].raster_throughput_median_mpx_s
 
     for save_mode in SAVE_MODE_ORDER:
         line_cases = sorted(
@@ -474,7 +481,7 @@ def plot_best_raster_throughput(stats: list[CaseStats], stem: str) -> None:
             case.raster_throughput_max_mpx_s - case.raster_throughput_median_mpx_s
             for case in line_cases
         ]
-        baseline = line_cases[0]
+        all_x_vals.extend(x_vals)
 
         err = ax.errorbar(
             x_vals,
@@ -487,27 +494,26 @@ def plot_best_raster_throughput(stats: list[CaseStats], stem: str) -> None:
             color=SAVE_MODE_COLORS[save_mode],
             label=save_mode_label(save_mode),
         )
-        _add_ideal_throughput_line(
-            ax,
-            x_vals,
-            baseline.raster_throughput_median_mpx_s,
-            SAVE_MODE_COLORS[save_mode],
-            f"{save_mode_label(save_mode)} ideal",
-        )
         legend_handles.append(err.lines[0])
         legend_labels.append(save_mode_label(save_mode))
-        legend_handles.append(ax.lines[-1])
-        legend_labels.append(f"{save_mode_label(save_mode)} ideal")
 
-    memory_baseline = best_map[(1, REFERENCE_SAVE_MODE)].raster_throughput_median_mpx_s
+    _add_ideal_throughput_line(
+        ax,
+        all_x_vals,
+        memory_baseline,
+        "black",
+        "Ideal",
+    )
+    legend_handles.append(ax.lines[-1])
+    legend_labels.append("Ideal")
     _style_axes(
         ax,
         "Total Threads",
         "Raster Throughput\n[MPx/s]",
-        "Best Raster Throughput by Save Mode",
+        "",
     )
     right_ax.set_ylabel(
-        "Raster Speedup vs. 1-thread memory baseline",
+        "Speedup vs. 1-thread",
         fontsize=PLOT_LINE_SECONDARY_AXIS_FONT_SIZE,
     )
     right_ax.tick_params(labelsize=PLOT_LINE_TICK_FONT_SIZE)
@@ -636,12 +642,12 @@ def plot_raster_scaling(stats: list[CaseStats], stem: str) -> None:
         ax_left,
         "Total Threads",
         "Raster Throughput\n[MPx/s]",
-        "Raster Loop Scaling (Memory Reference Path)",
+        "",
     )
     ax_left.set_xticks(x_vals, [str(x) for x in x_vals])
     left_min, left_max = ax_left.get_ylim()
     ax_right.set_ylabel(
-        "Raster Speedup vs. 1 thread",
+        "Speedup vs. 1-thread",
         fontsize=PLOT_LINE_SECONDARY_AXIS_FONT_SIZE,
     )
     ax_right.tick_params(labelsize=PLOT_LINE_TICK_FONT_SIZE)
@@ -1092,10 +1098,17 @@ def write_amdahl_csv(stats: list[CaseStats]) -> None:
     series_map: dict[str, list[SeriesPoint]] = {
         "raster_single_group_memory": build_raster_series(stats),
     }
+    baseline_map: dict[str, SeriesPoint] = {
+        "raster_single_group_memory": build_raster_series(stats)[0],
+    }
     for save_mode in SAVE_MODE_ORDER:
-        series_map[f"best_{save_mode}_e2e"] = build_best_series(stats, save_mode)
+        best_series = build_best_series(stats, save_mode)
+        series_map[f"best_{save_mode}_e2e"] = best_series
+        baseline_map[f"best_{save_mode}_e2e"] = best_series[0]
         for label, series in build_partition_series(stats, save_mode).items():
-            series_map[f"partition_{label}_{save_mode}"] = series
+            series_name = f"partition_{label}_{save_mode}"
+            series_map[series_name] = series
+            baseline_map[series_name] = best_series[0]
 
     with BENCH4_AMDAHL_CSV.open("w", newline="") as csv_file:
         writer = csv.writer(csv_file)
@@ -1128,7 +1141,7 @@ def write_amdahl_csv(stats: list[CaseStats]) -> None:
         for series_name, points in sorted(series_map.items()):
             if not points:
                 continue
-            baseline = points[0]
+            baseline = baseline_map[series_name]
             threads = [point.threads for point in points]
             speedups = [
                 point.throughput_median_mpx_s / baseline.throughput_median_mpx_s

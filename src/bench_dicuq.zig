@@ -99,7 +99,15 @@ pub fn main(init: std.process.Init) !void {
         std.Io.Threaded,
         bench_args.render_group_count,
     );
+    const managed_save_ios = try outer_alloc.alloc(
+        std.Io.Threaded,
+        bench_args.render_group_count,
+    );
     defer {
+        for (managed_save_ios) |*managed_io| {
+            managed_io.deinit();
+        }
+        outer_alloc.free(managed_save_ios);
         for (managed_ios) |*managed_io| {
             managed_io.deinit();
         }
@@ -122,8 +130,14 @@ pub fn main(init: std.process.Init) !void {
             init.minimal,
             workers_per_group,
         );
+        managed_save_ios[ii] = zraster.getThreadedIo(
+            outer_alloc,
+            init.minimal,
+            1,
+        );
         render_groups[ii] = .{
             .io = managed_ios[ii].io(),
+            .save_frame_io = managed_save_ios[ii].io(),
             .workers = workers_per_group,
         };
         render_group_workers[ii] = workers_per_group;

@@ -347,7 +347,6 @@ pub fn runBenchmark(
 
     const start = std.Io.Clock.Timestamp.now(io, .awake);
     const image_arr = try zraster.rasterAllFramesReport(
-        f64,
         outer_alloc,
         render_groups,
         camera_inputs,

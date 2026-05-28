@@ -6,6 +6,9 @@ import math
 import pathlib
 import subprocess
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from PIL import Image
 from paper_const import (
     PAPER_DIR,
@@ -263,6 +266,16 @@ def save_frame_png(
             optimize=True,
             dpi=(300, 300),
         )
+        fig, ax = plt.subplots(figsize=(4.0, 4.0), constrained_layout=False)
+        ax.imshow(img)
+        ax.set_axis_off()
+        fig.subplots_adjust(left=0.0, right=1.0, bottom=0.0, top=1.0)
+        fig.savefig(
+            dst_path.with_suffix(".svg"),
+            bbox_inches="tight",
+            pad_inches=0.0,
+        )
+        plt.close(fig)
     return dst_path
 
 

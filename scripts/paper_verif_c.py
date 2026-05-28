@@ -101,6 +101,16 @@ def save_png_from_bmp(src_path: pathlib.Path, dst_name: str) -> pathlib.Path:
             optimize=True,
             dpi=(300, 300),
         )
+        fig, ax = plt.subplots(figsize=DIFF_FIG_SIZE, constrained_layout=False)
+        ax.imshow(image, cmap="gray")
+        ax.set_axis_off()
+        fig.subplots_adjust(left=0.0, right=1.0, bottom=0.0, top=1.0)
+        fig.savefig(
+            dst_path.with_suffix(".svg"),
+            bbox_inches="tight",
+            pad_inches=0.0,
+        )
+        plt.close(fig)
     return dst_path
 
 
@@ -131,6 +141,11 @@ def save_diff_png_from_csv(src_path: pathlib.Path, dst_name: str) -> pathlib.Pat
     fig.savefig(
         dst_path,
         dpi=PLOT_DPI,
+        bbox_inches="tight",
+        pad_inches=0.01,
+    )
+    fig.savefig(
+        dst_path.with_suffix(".svg"),
         bbox_inches="tight",
         pad_inches=0.01,
     )

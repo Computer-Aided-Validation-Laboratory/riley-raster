@@ -175,7 +175,6 @@ fn runTexFuncCase(
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
     const result = (try zraster.rasterAllFrames(
-        f64,
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},

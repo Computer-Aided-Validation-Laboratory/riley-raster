@@ -262,7 +262,6 @@ test "Multicamera duplicate sphere200 cameras match each other" {
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
     const result = (try zraster.rasterAllFrames(
-        f64,
         aa,
         &render_groups,
         &cameras,
@@ -435,7 +434,6 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
         .{ .io = io, .workers = @max(@as(u16, 1), ref_config.total_threads) },
     };
     const reference = (try zraster.rasterAllFrames(
-        f64,
         aa,
         &ref_render_groups,
         &camera_inputs,
@@ -470,7 +468,6 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
         grouped_config.geom_scheduling_mode = case.mode;
 
         const grouped = (try zraster.rasterAllFrames(
-            f64,
             aa,
             case.render_groups[0..],
             &camera_inputs,
@@ -532,7 +529,6 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
             .{ .io = managed_ios[1].io(), .workers = 2 },
         };
         const grouped = (try zraster.rasterAllFrames(
-            f64,
             aa,
             &render_groups,
             &camera_inputs,
@@ -557,7 +553,6 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
         .{ .io = managed_ios[3].io(), .workers = 1 },
     };
     const four_group = (try zraster.rasterAllFrames(
-        f64,
         aa,
         &four_group_render_groups,
         &camera_inputs,
@@ -648,7 +643,6 @@ test "Multicamera memory matches both" {
         .{ .io = io, .workers = @max(@as(u16, 1), memory_config.total_threads) },
     };
     const memory = (try zraster.rasterAllFrames(
-        f64,
         aa,
         &memory_render_groups,
         &[_]CameraInput{
@@ -683,7 +677,6 @@ test "Multicamera memory matches both" {
         .{ .io = io, .workers = @max(@as(u16, 1), both_config.total_threads) },
     };
     const both = (try zraster.rasterAllFrames(
-        f64,
         aa,
         &both_render_groups,
         &[_]CameraInput{
@@ -905,7 +898,6 @@ test "Sphere200 multicamera gold tests" {
             .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
         };
         const result = (try zraster.rasterAllFrames(
-            f64,
             aa,
             &render_groups,
             &camera_inputs,
@@ -1074,7 +1066,6 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
         .{ .io = io, .workers = @max(@as(u16, 1), memory_config.total_threads) },
     };
     const small_single = (try zraster.rasterAllFrames(
-        f64,
         aa,
         &small_render_groups,
         &[_]CameraInput{CameraInput{
@@ -1097,7 +1088,6 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
         .{ .io = io, .workers = @max(@as(u16, 1), memory_config.total_threads) },
     };
     const large_single = (try zraster.rasterAllFrames(
-        f64,
         aa,
         &large_render_groups,
         &[_]CameraInput{CameraInput{
@@ -1126,7 +1116,6 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
         .{ .io = io, .workers = @max(@as(u16, 1), batch_config.total_threads) },
     };
     const batch_result = (try zraster.rasterAllFrames(
-        f64,
         aa,
         &batch_render_groups,
         &[_]CameraInput{

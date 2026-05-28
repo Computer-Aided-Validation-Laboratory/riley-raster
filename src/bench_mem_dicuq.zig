@@ -43,7 +43,6 @@ fn sumFrameTimes(
 }
 
 fn runCase(
-    comptime T: type,
     allocator: std.mem.Allocator,
     io: std.Io,
     render_groups: []const zraster.RenderGroupSpec,
@@ -65,7 +64,6 @@ fn runCase(
 
     const start = std.Io.Clock.Timestamp.now(io, .awake);
     const images = try zraster.rasterAllFramesReport(
-        T,
         allocator,
         render_groups,
         camera_inputs,
@@ -160,7 +158,6 @@ pub fn main(init: std.process.Init) !void {
         disk_config.save_strategy = .disk;
         disk_config.report = .off;
         try runCase(
-            f64,
             allocator,
             io,
             render_groups[0..],
@@ -173,9 +170,7 @@ pub fn main(init: std.process.Init) !void {
 
         var memory_f64_config = disk_config;
         memory_f64_config.save_strategy = .memory;
-        memory_f64_config.memory_image_scaling = .none;
         try runCase(
-            f64,
             allocator,
             io,
             render_groups[0..],
@@ -184,36 +179,6 @@ pub fn main(init: std.process.Init) !void {
             memory_f64_config,
             null,
             "memory_f64",
-        );
-
-        var memory_u8_config = disk_config;
-        memory_u8_config.save_strategy = .memory;
-        memory_u8_config.memory_image_scaling = .auto;
-        try runCase(
-            u8,
-            allocator,
-            io,
-            render_groups[0..],
-            &prepared.camera_inputs,
-            prepared.mesh_input,
-            memory_u8_config,
-            null,
-            "memory_u8",
-        );
-
-        var memory_u16_config = disk_config;
-        memory_u16_config.save_strategy = .memory;
-        memory_u16_config.memory_image_scaling = .auto;
-        try runCase(
-            u16,
-            allocator,
-            io,
-            render_groups[0..],
-            &prepared.camera_inputs,
-            prepared.mesh_input,
-            memory_u16_config,
-            null,
-            "memory_u16",
         );
     }
 }

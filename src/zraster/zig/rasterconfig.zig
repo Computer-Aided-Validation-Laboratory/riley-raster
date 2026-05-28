@@ -7,7 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const iio = @import("imageio.zig");
-const imageops = @import("imageops.zig");
+const buildconfig = @import("buildconfig.zig");
 
 // Parallelism convention:
 // Let each render group g have W_g work-capable threads, including the caller.
@@ -55,7 +55,7 @@ pub const RasterConfig = struct {
     // may use.
     max_raster_workers_per_job: u16 = 1,
     save_strategy: SaveStrategy = .memory,
-    memory_image_scaling: imageops.ScaleStrategy = .auto,
+    disk_save_overlap: bool = false,
     image_save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
@@ -68,6 +68,7 @@ pub const RasterConfig = struct {
     subpixel_center_map: SubPixelCenterMap = .per_tile,
     report: ReportMode = .bench,
     full_stats_opts: FullStatsOpts = .{},
+    save_frame_buffer_count: usize = buildconfig.SaveFrameBufferCount,
 };
 
 pub const SubPixelCenterMap = enum {

@@ -62,7 +62,6 @@ pub fn renderAndSave(
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
     const images = try zraster.rasterAllFrames(
-        f64,
         outer_alloc,
         &render_groups,
         &[_]CameraInput{camera_input},
@@ -225,20 +224,19 @@ pub fn runMultimeshGenerationExt(
         var out_dir = try orch.openDirEnsured(io, gold_dir);
         out_dir.close(io);
         const camera_input = CameraInput{
-        .pixels_num = camera.pixels_num,
-        .pixels_size = camera.pixels_size,
-        .pos_world = camera.pos_world,
-        .rot_world = camera.rot_world,
-        .roi_cent_world = camera.roi_cent_world,
-        .focal_length = camera.focal_length,
-        .sub_sample = camera.sub_sample,
-        .distortion = camera.distortion,
-    };
+            .pixels_num = camera.pixels_num,
+            .pixels_size = camera.pixels_size,
+            .pos_world = camera.pos_world,
+            .rot_world = camera.rot_world,
+            .roi_cent_world = camera.roi_cent_world,
+            .focal_length = camera.focal_length,
+            .sub_sample = camera.sub_sample,
+            .distortion = camera.distortion,
+        };
         const render_groups = [_]zraster.RenderGroupSpec{
             .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
         };
         const images = try zraster.rasterAllFrames(
-            f64,
             aa,
             &render_groups,
             &[_]CameraInput{camera_input},
@@ -322,7 +320,6 @@ pub fn runMultimeshMixedGenerationExt(
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
     const images = try zraster.rasterAllFrames(
-        f64,
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},
@@ -421,7 +418,6 @@ pub fn runMultimeshMixedRGBGenerationExt(
         .distortion = camera_rgb.distortion,
     };
     _ = try zraster.rasterAllFrames(
-        f64,
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},

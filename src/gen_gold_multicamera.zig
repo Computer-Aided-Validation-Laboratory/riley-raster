@@ -207,7 +207,6 @@ pub fn main(init: std.process.Init) !void {
             .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
         };
         _ = try zraster.rasterAllFrames(
-            f64,
             aa,
             &render_groups,
             &camera_inputs,

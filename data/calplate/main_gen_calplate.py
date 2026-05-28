@@ -15,10 +15,16 @@ TEXTURE_PIXELS_X = 2660
 TEXTURE_PIXELS_Y = 1774
 ASPECT_RATIO = TEXTURE_PIXELS_X / TEXTURE_PIXELS_Y
 
-L = 100e-3
+# Target sizes:
+# Target, 150x100,   dot spacing = 10 mm
+# Target, 75x50,     dot spacing = 5 mm
+# Target, 37.5x25,   dot spacing = 2.5 mm
+# Target, 18.75x12.5 dot spacing = 1.25 mm
+
+L = 18.75e-3
 SHORT_DIM = L / ASPECT_RATIO
 
-CAL_MODE = "RANDOM"
+CAL_MODE = "STRAT" # RANDOM, STRAT, FULL
 CAL_RANDOM_IMAGES = 100
 CAL_STRAT_IMAGES = 100
 CAL_RANDOM_SEED = 7

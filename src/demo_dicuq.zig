@@ -24,6 +24,24 @@ const CameraInput = camera_mod.CameraInput;
 const CameraOps = camera_mod.CameraOps;
 const MatSlice = @import("zraster/zig/matslice.zig").MatSlice;
 
+const DATA_DIR = "data/FE/platehole3d_6mr_63f/";
+const TEXTURE_PATH = "texture/speckle.bmp";
+const OUT_DIR_ROOT = "./out/demo-dicuq";
+
+const PIXELS_NUM = [2]u32{ 2464, 2056 };
+const PIXELS_SIZE = [2]f64{ 3.45e-6, 3.45e-6 };
+const FOCAL_LENGTH: f64 = 50.0e-3;
+const FOV_SCALE_FACTOR: f64 = 1.1;
+const SUB_SAMPLE: u8 = 2;
+const STEREO_ANGLE_DEG: f64 = 45.0;
+
+const TOTAL_THREADS: u16 = 8;
+const MAX_FRAMES_IN_FLIGHT: u16 = 8;
+const FRAME_BATCH_SIZE_PER_GROUP: u16 = 8;
+const MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP: u16 = 8;
+const RENDER_GROUP_COUNT: usize = 8;
+const WORKERS_PER_GROUP: u16 = 1;
+
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
@@ -33,16 +51,16 @@ pub fn main(init: std.process.Init) !void {
 
     // 1. Setup Rasteriser Configuration
     const config = RasterConfig{
-        .render_mode = .in_order,
-        .total_threads = 4,
-        .max_frames_in_flight = 2,
+        .render_mode = .offline,
+        .total_threads = TOTAL_THREADS,
+        .max_frames_in_flight = MAX_FRAMES_IN_FLIGHT,
         .max_geom_workers_per_frame = 1,
-        .max_raster_workers_per_frame = 4,
-        .frame_batch_size_per_group = 2,
-        .max_geom_jobs_in_flight_per_group = 2,
+        .max_raster_workers_per_frame = 1,
+        .frame_batch_size_per_group = FRAME_BATCH_SIZE_PER_GROUP,
+        .max_geom_jobs_in_flight_per_group = MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP,
         .max_geom_workers_per_job = 1,
-        .geom_scheduling_mode = .auto,
-        .max_raster_workers_per_job = 4,
+        .geom_scheduling_mode = .spread,
+        .max_raster_workers_per_job = 1,
         .save_strategy = .disk,
         .tile_size_min = 8,
         .tile_size_max = 128,
@@ -52,26 +70,37 @@ pub fn main(init: std.process.Init) !void {
         },
         .report = .bench,
     };
-    var threaded_io = zraster.getThreadedIo(
-        aa,
-        init.minimal,
-        config.total_threads,
-    );
-    defer threaded_io.deinit();
-    const io = threaded_io.io();
-
-    const data_dir = "data/FE/platehole3d_4mr_1f/";
-    const out_dir_root = "out/demo-dicuq";
+    const managed_ios = try outer_alloc.alloc(std.Io.Threaded, RENDER_GROUP_COUNT);
+    defer {
+        for (managed_ios) |*managed_io| {
+            managed_io.deinit();
+        }
+        outer_alloc.free(managed_ios);
+    }
+    const render_groups = try outer_alloc.alloc(zraster.RenderGroupSpec, RENDER_GROUP_COUNT);
+    defer outer_alloc.free(render_groups);
+    for (0..RENDER_GROUP_COUNT) |gg| {
+        managed_ios[gg] = zraster.getThreadedIo(
+            aa,
+            init.minimal,
+            WORKERS_PER_GROUP,
+        );
+        render_groups[gg] = .{
+            .io = managed_ios[gg].io(),
+            .workers = WORKERS_PER_GROUP,
+        };
+    }
+    const io = render_groups[0].io;
 
     // 2. Load Simulation Data
-    std.debug.print("Loading simulation data from {s}...\n", .{data_dir});
-    const coord_path = data_dir ++ "coords.csv";
-    const conn_path = data_dir ++ "connect.csv";
+    std.debug.print("Loading simulation data from {s}...\n", .{DATA_DIR});
+    const coord_path = DATA_DIR ++ "coords.csv";
+    const conn_path = DATA_DIR ++ "connect.csv";
 
     const field_files = &[_][]const u8{
-        data_dir ++ "field_disp_x.csv",
-        data_dir ++ "field_disp_y.csv",
-        data_dir ++ "field_disp_z.csv",
+        DATA_DIR ++ "field_disp_x.csv",
+        DATA_DIR ++ "field_disp_y.csv",
+        DATA_DIR ++ "field_disp_z.csv",
     };
 
     // For this demo, we don't need the field data as we are using texture shading
@@ -86,7 +115,7 @@ pub fn main(init: std.process.Init) !void {
 
     // 3. Load UV map for the texture
     std.debug.print("Loading UV map...\n", .{});
-    const uv_path = data_dir ++ "uvs.csv";
+    const uv_path = DATA_DIR ++ "uvs.csv";
     const uvs = try uvio.loadUVMap(aa, io, uv_path);
 
     // 4. Load Texture for shading
@@ -96,7 +125,7 @@ pub fn main(init: std.process.Init) !void {
         1,
         aa,
         io,
-        "texture/speckle.bmp",
+        TEXTURE_PATH,
         .bmp,
     );
 
@@ -121,13 +150,6 @@ pub fn main(init: std.process.Init) !void {
 
     // 6. Setup Camera
     std.debug.print("Setting up camera...\n", .{});
-    // Common camera parameters: typical 5MPx
-    const pixel_num = [_]u32{ 2464, 2056 };
-    const pixel_size = [_]f64{ 3.45e-6, 3.45e-6 };
-    const focal_leng: f64 = 50.0e-3;
-    const fov_scale_factor: f64 = 0.9;
-    const sub_samp: u8 = 2;
-
     const roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
 
     // Camera 0: face on
@@ -139,64 +161,60 @@ pub fn main(init: std.process.Init) !void {
 
     const cam0_pos = CameraOps.posFillFrameFromRot(
         &sim_data.coords,
-        pixel_num,
-        pixel_size,
-        focal_leng,
+        PIXELS_NUM,
+        PIXELS_SIZE,
+        FOCAL_LENGTH,
         cam0_rot,
-        fov_scale_factor,
+        FOV_SCALE_FACTOR,
     );
 
     const cam0_in = CameraInput{
-        .pixels_num = pixel_num,
-        .pixels_size = pixel_size,
+        .pixels_num = PIXELS_NUM,
+        .pixels_size = PIXELS_SIZE,
         .pos_world = cam0_pos,
         .rot_world = cam0_rot,
         .roi_cent_world = roi_pos,
-        .focal_length = focal_leng,
-        .sub_sample = sub_samp,
+        .focal_length = FOCAL_LENGTH,
+        .sub_sample = SUB_SAMPLE,
     };
 
     // Camera 1: stereo angle
     const cam1_rot = Rotation.init(
         std.math.degreesToRadians(0.0), //alpha_z_deg
-        std.math.degreesToRadians(20.0), //beta_y_deg - stereo axis
+        std.math.degreesToRadians(STEREO_ANGLE_DEG), //beta_y_deg - stereo axis
         std.math.degreesToRadians(0.0), //gamma_x_deg
     );
 
     const cam1_pos = CameraOps.posFillFrameFromRot(
         &sim_data.coords,
-        pixel_num,
-        pixel_size,
-        focal_leng,
+        PIXELS_NUM,
+        PIXELS_SIZE,
+        FOCAL_LENGTH,
         cam1_rot,
-        fov_scale_factor,
+        FOV_SCALE_FACTOR,
     );
 
     const cam1_in = CameraInput{
-        .pixels_num = pixel_num,
-        .pixels_size = pixel_size,
+        .pixels_num = PIXELS_NUM,
+        .pixels_size = PIXELS_SIZE,
         .pos_world = cam1_pos,
         .rot_world = cam1_rot,
         .roi_cent_world = roi_pos,
-        .focal_length = focal_leng,
-        .sub_sample = sub_samp,
+        .focal_length = FOCAL_LENGTH,
+        .sub_sample = SUB_SAMPLE,
     };
 
     // 7. Run the Rasteriser
-    std.debug.print("Rendering simulation to {s}/...\n", .{out_dir_root});
+    std.debug.print("Rendering simulation to {s}/...\n", .{OUT_DIR_ROOT});
     const meshes = [_]MeshInput{mesh_input};
     const cams_in = [_]CameraInput{ cam0_in, cam1_in };
-    const render_groups = [_]zraster.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
-    };
     const images = try zraster.rasterAllFrames(
-        f64,
         aa,
-        &render_groups,
+        render_groups,
         &cams_in,
         &meshes,
         config,
-        out_dir_root,
+        OUT_DIR_ROOT,
     );
 
     if (images) |img| {
@@ -204,7 +222,7 @@ pub fn main(init: std.process.Init) !void {
         img.deinit(aa);
     }
 
-    std.debug.print("Demo complete. Images saved to {s}/\n", .{out_dir_root});
+    std.debug.print("Demo complete. Images saved to {s}/\n", .{OUT_DIR_ROOT});
 
     const print_break = [_]u8{'='} ** 80;
     print("\n{s}\n", .{print_break});
@@ -217,6 +235,16 @@ pub fn main(init: std.process.Init) !void {
 
     print("Camera 1:\n", .{});
     cam1_pos.vecPrint();
+
+    var out_dir = try std.Io.Dir.cwd().openDir(io, OUT_DIR_ROOT, .{});
+    defer out_dir.close(io);
+    try CameraOps.saveStereoPair(
+        io,
+        out_dir,
+        .{
+            .cameras = .{ cam0_in, cam1_in },
+        },
+    );
 
     print("{s}\n", .{print_break});
 }

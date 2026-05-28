@@ -101,7 +101,6 @@ fn renderCase(
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
     const images = try zraster.rasterAllFrames(
-        f64,
         allocator,
         &render_groups,
         &[_]CameraInput{camera_input},

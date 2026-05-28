@@ -111,6 +111,7 @@ pub const Config = struct {
     raster_newton_iter_max: comptime_int = 10,
     distortion_newton_iter_max: comptime_int = 15,
     interp_lut_size: comptime_int = 1024,
+    save_frame_buffer_count: comptime_int = 3,
     precision: type = f64,
     tolerance: Tolerance = .{},
 };
@@ -118,6 +119,7 @@ pub const Config = struct {
 pub const config = Config{};
 
 pub const SimdWidth = config.simd_vector_width;
+pub const SaveFrameBufferCount = config.save_frame_buffer_count;
 
 pub const VecSF = @Vector(SimdWidth, f64);
 pub const VecSU = @Vector(SimdWidth, usize);

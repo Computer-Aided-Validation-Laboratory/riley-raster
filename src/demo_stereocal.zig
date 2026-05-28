@@ -15,28 +15,40 @@ const uvio = @import("zraster/zig/uvio.zig");
 const iio = @import("zraster/zig/imageio.zig");
 const mo = @import("zraster/zig/meshops.zig");
 const MeshInput = mo.MeshInput;
+const Vec3f = @import("zraster/zig/vecstack.zig").Vec3f;
 const camera_mod = @import("zraster/zig/camera.zig");
 const Rotation = @import("zraster/zig/rotation.zig").Rotation;
 const CameraInput = camera_mod.CameraInput;
 const CameraOps = camera_mod.CameraOps;
 const DistortionModel = camera_mod.DistortionModel;
 const BrownConrady = camera_mod.BrownConrady;
+const StereoPairInput = camera_mod.StereoPairInput;
 
-const DATA_DIR = "data/calplate/tri3_calplate/";
+const DATA_DIR = "data/calplate/tri3_calplate3d/";
 const TEXTURE_PATH = "texture/cal_target-simple.tiff";
-const OUT_DIR_ROOT = "out/calibration";
-
+const OUT_DIR_ROOT = "./out/demo-stereocal";
 const PIXELS_NUM = [2]u32{ 2464, 2056 };
 const PIXELS_SIZE = [2]f64{ 3.45e-6, 3.45e-6 };
 const FOCAL_LENGTH: f64 = 50.0e-3;
-const FOV_SCALE_FACTOR: f64 = 1.2;
-const STEREO_ANGLE_DEG: f64 = 20.0;
+const FOV_SCALE_FACTOR: f64 = 1.1;
+const STEREO_ANGLE_DEG: f64 = 45.0;
 const SUB_SAMPLE: u8 = 2;
+const DICUQ_MATCHED_ROI = [3]f64{ 0.0125, 0.0175, 0.0005 };
+const DICUQ_MATCHED_CAM0_POS = [3]f64{ 0.0125, 0.0175, 0.160864856482 };
+const DICUQ_MATCHED_CAM1_POS = [3]f64{ 0.125895077483, 0.0175, 0.113895077483 };
+const DICUQ_MATCHED_CAM1_BETA_DEG: f64 = 45.0;
 
 const TOTAL_THREADS: u16 = 8;
 const RENDER_GROUP_COUNT: u16 = 8;
 const WORKERS_PER_GROUP: u16 = 1;
 const DISTORTION = false;
+
+const CameraPlacementMode = enum {
+    auto_fov,
+    manual_match_dicuq,
+};
+
+const CAMERA_PLACEMENT_MODE: CameraPlacementMode = .manual_match_dicuq;
 
 fn getDistortionModel() DistortionModel {
     if (!DISTORTION) {
@@ -50,315 +62,6 @@ fn getDistortionModel() DistortionModel {
         .p1 = 0.0004,
         .p2 = -0.0007,
     } };
-}
-
-fn writeCsvRow(
-    writer: *std.Io.Writer,
-    entity: []const u8,
-    camera_idx: ?usize,
-    key: []const u8,
-    unit: []const u8,
-    value: f64,
-) !void {
-    if (camera_idx) |idx| {
-        try writer.print("{s},{d},{s},{s},{d:.10}\n", .{
-            entity,
-            idx,
-            key,
-            unit,
-            value,
-        });
-    } else {
-        try writer.print("{s},,{s},{s},{d:.10}\n", .{
-            entity,
-            key,
-            unit,
-            value,
-        });
-    }
-}
-
-fn writeCameraDataCsv(
-    io: std.Io,
-    out_dir: std.Io.Dir,
-    cameras: []const CameraInput,
-    target_coords: *const meshio.Coords,
-    distortion: DistortionModel,
-) !void {
-    const file_name = "cameradata.csv";
-    const csv_file = try out_dir.createFile(io, file_name, .{});
-    defer csv_file.close(io);
-
-    var write_buf: [4096]u8 = undefined;
-    var file_writer = csv_file.writer(io, &write_buf);
-    const writer = &file_writer.interface;
-
-    try writer.writeAll("entity,camera_idx,key,unit,value\n");
-
-    const sensor_size = CameraOps.calcSensorSize(PIXELS_NUM, PIXELS_SIZE);
-    const roi_cent_world = CameraOps.roiCentFromCoords(target_coords);
-
-    try writeCsvRow(writer, "target", null, "roi_cent_x", "m", roi_cent_world.get(0));
-    try writeCsvRow(writer, "target", null, "roi_cent_y", "m", roi_cent_world.get(1));
-    try writeCsvRow(writer, "target", null, "roi_cent_z", "m", roi_cent_world.get(2));
-
-    try writeCsvRow(
-        writer,
-        "target",
-        null,
-        "bbox_min_x",
-        "m",
-        target_coords.mat.minByRow(0),
-    );
-    try writeCsvRow(
-        writer,
-        "target",
-        null,
-        "bbox_min_y",
-        "m",
-        target_coords.mat.minByRow(1),
-    );
-    try writeCsvRow(
-        writer,
-        "target",
-        null,
-        "bbox_min_z",
-        "m",
-        target_coords.mat.minByRow(2),
-    );
-    try writeCsvRow(
-        writer,
-        "target",
-        null,
-        "bbox_max_x",
-        "m",
-        target_coords.mat.maxByRow(0),
-    );
-    try writeCsvRow(
-        writer,
-        "target",
-        null,
-        "bbox_max_y",
-        "m",
-        target_coords.mat.maxByRow(1),
-    );
-    try writeCsvRow(
-        writer,
-        "target",
-        null,
-        "bbox_max_z",
-        "m",
-        target_coords.mat.maxByRow(2),
-    );
-    try writeCsvRow(
-        writer,
-        "target",
-        null,
-        "normal_x",
-        "-",
-        0.0,
-    );
-    try writeCsvRow(
-        writer,
-        "target",
-        null,
-        "normal_y",
-        "-",
-        0.0,
-    );
-    try writeCsvRow(
-        writer,
-        "target",
-        null,
-        "normal_z",
-        "-",
-        1.0,
-    );
-
-    try writeCsvRow(
-        writer,
-        "render",
-        null,
-        "pixels_x",
-        "px",
-        @floatFromInt(PIXELS_NUM[0]),
-    );
-    try writeCsvRow(
-        writer,
-        "render",
-        null,
-        "pixels_y",
-        "px",
-        @floatFromInt(PIXELS_NUM[1]),
-    );
-    try writeCsvRow(
-        writer,
-        "render",
-        null,
-        "pixel_size_x",
-        "m",
-        PIXELS_SIZE[0],
-    );
-    try writeCsvRow(
-        writer,
-        "render",
-        null,
-        "pixel_size_y",
-        "m",
-        PIXELS_SIZE[1],
-    );
-    try writeCsvRow(
-        writer,
-        "render",
-        null,
-        "sub_sample",
-        "-",
-        @floatFromInt(SUB_SAMPLE),
-    );
-
-    for (cameras, 0..) |camera, cc| {
-        try writeCsvRow(writer, "camera", cc, "pos_x", "m", camera.pos_world.get(0));
-        try writeCsvRow(writer, "camera", cc, "pos_y", "m", camera.pos_world.get(1));
-        try writeCsvRow(writer, "camera", cc, "pos_z", "m", camera.pos_world.get(2));
-
-        try writeCsvRow(
-            writer,
-            "camera",
-            cc,
-            "rot_alpha_z_deg",
-            "deg",
-            std.math.radiansToDegrees(camera.rot_world.alpha_z),
-        );
-        try writeCsvRow(
-            writer,
-            "camera",
-            cc,
-            "rot_beta_y_deg",
-            "deg",
-            std.math.radiansToDegrees(camera.rot_world.beta_y),
-        );
-        try writeCsvRow(
-            writer,
-            "camera",
-            cc,
-            "rot_gamma_x_deg",
-            "deg",
-            std.math.radiansToDegrees(camera.rot_world.gamma_x),
-        );
-
-        try writeCsvRow(
-            writer,
-            "camera",
-            cc,
-            "focal_length",
-            "m",
-            camera.focal_length,
-        );
-        try writeCsvRow(
-            writer,
-            "camera",
-            cc,
-            "sensor_size_x",
-            "m",
-            sensor_size[0],
-        );
-        try writeCsvRow(
-            writer,
-            "camera",
-            cc,
-            "sensor_size_y",
-            "m",
-            sensor_size[1],
-        );
-        try writeCsvRow(
-            writer,
-            "camera",
-            cc,
-            "roi_cent_x",
-            "m",
-            camera.roi_cent_world.get(0),
-        );
-        try writeCsvRow(
-            writer,
-            "camera",
-            cc,
-            "roi_cent_y",
-            "m",
-            camera.roi_cent_world.get(1),
-        );
-        try writeCsvRow(
-            writer,
-            "camera",
-            cc,
-            "roi_cent_z",
-            "m",
-            camera.roi_cent_world.get(2),
-        );
-    }
-
-    switch (distortion) {
-        .none => {
-            try writeCsvRow(
-                writer,
-                "distortion",
-                null,
-                "enabled",
-                "-",
-                0.0,
-            );
-        },
-        .brown_conrady => |model| {
-            try writeCsvRow(
-                writer,
-                "distortion",
-                null,
-                "enabled",
-                "-",
-                1.0,
-            );
-            try writeCsvRow(
-                writer,
-                "distortion",
-                null,
-                "model_brown_conrady",
-                "-",
-                1.0,
-            );
-            try writeCsvRow(writer, "distortion", null, "k1", "-", model.k1);
-            try writeCsvRow(writer, "distortion", null, "k2", "-", model.k2);
-            try writeCsvRow(writer, "distortion", null, "k3", "-", model.k3);
-            try writeCsvRow(writer, "distortion", null, "p1", "-", model.p1);
-            try writeCsvRow(writer, "distortion", null, "p2", "-", model.p2);
-        },
-        .brown_conrady_ext => |model| {
-            try writeCsvRow(
-                writer,
-                "distortion",
-                null,
-                "enabled",
-                "-",
-                1.0,
-            );
-            try writeCsvRow(
-                writer,
-                "distortion",
-                null,
-                "model_brown_conrady_ext",
-                "-",
-                1.0,
-            );
-            try writeCsvRow(writer, "distortion", null, "k1", "-", model.k1);
-            try writeCsvRow(writer, "distortion", null, "k2", "-", model.k2);
-            try writeCsvRow(writer, "distortion", null, "k3", "-", model.k3);
-            try writeCsvRow(writer, "distortion", null, "k4", "-", model.k4);
-            try writeCsvRow(writer, "distortion", null, "k5", "-", model.k5);
-            try writeCsvRow(writer, "distortion", null, "k6", "-", model.k6);
-            try writeCsvRow(writer, "distortion", null, "p1", "-", model.p1);
-            try writeCsvRow(writer, "distortion", null, "p2", "-", model.p2);
-        },
-    }
-
-    try file_writer.flush();
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -435,6 +138,9 @@ pub fn main(init: std.process.Init) !void {
     };
     var out_dir = try cwd.openDir(io, OUT_DIR_ROOT, .{});
     defer out_dir.close(io);
+    out_dir.deleteFile(io, "cameradata.csv") catch |err| {
+        if (err != error.FileNotFound) return err;
+    };
 
     var sim_data = try meshio.loadSimData(
         aa,
@@ -459,6 +165,121 @@ pub fn main(init: std.process.Init) !void {
     );
     defer texture.deinit(aa);
 
+    var roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
+
+    var stereo_pair = switch (CAMERA_PLACEMENT_MODE) {
+        .auto_fov => blk: {
+            const cam0_rot = Rotation.init(
+                std.math.degreesToRadians(0.0),
+                std.math.degreesToRadians(0.0),
+                std.math.degreesToRadians(0.0),
+            );
+            const cam1_rot = Rotation.init(
+                std.math.degreesToRadians(0.0),
+                std.math.degreesToRadians(STEREO_ANGLE_DEG),
+                std.math.degreesToRadians(0.0),
+            );
+
+            const cam0_pos = CameraOps.posFillFrameFromRot(
+                &sim_data.coords,
+                PIXELS_NUM,
+                PIXELS_SIZE,
+                FOCAL_LENGTH,
+                cam0_rot,
+                FOV_SCALE_FACTOR,
+            );
+            const cam1_pos = CameraOps.posFillFrameFromRot(
+                &sim_data.coords,
+                PIXELS_NUM,
+                PIXELS_SIZE,
+                FOCAL_LENGTH,
+                cam1_rot,
+                FOV_SCALE_FACTOR,
+            );
+
+            break :blk StereoPairInput{
+                .cameras = .{
+                    .{
+                        .pixels_num = PIXELS_NUM,
+                        .pixels_size = PIXELS_SIZE,
+                        .pos_world = cam0_pos,
+                        .rot_world = cam0_rot,
+                        .roi_cent_world = roi_pos,
+                        .focal_length = FOCAL_LENGTH,
+                        .sub_sample = SUB_SAMPLE,
+                        .distortion = distortion,
+                    },
+                    .{
+                        .pixels_num = PIXELS_NUM,
+                        .pixels_size = PIXELS_SIZE,
+                        .pos_world = cam1_pos,
+                        .rot_world = cam1_rot,
+                        .roi_cent_world = roi_pos,
+                        .focal_length = FOCAL_LENGTH,
+                        .sub_sample = SUB_SAMPLE,
+                        .distortion = distortion,
+                    },
+                },
+            };
+        },
+        .manual_match_dicuq => blk: {
+            var sp: StereoPairInput = undefined;
+            sp.cameras[0] = .{
+                .pixels_num = PIXELS_NUM,
+                .pixels_size = PIXELS_SIZE,
+                .pos_world = Vec3f{ .slice = DICUQ_MATCHED_CAM0_POS },
+                .rot_world = Rotation.init(0.0, 0.0, 0.0),
+                .roi_cent_world = Vec3f{ .slice = DICUQ_MATCHED_ROI },
+                .focal_length = FOCAL_LENGTH,
+                .sub_sample = SUB_SAMPLE,
+                .distortion = distortion,
+            };
+            sp.cameras[1] = .{
+                .pixels_num = PIXELS_NUM,
+                .pixels_size = PIXELS_SIZE,
+                .pos_world = Vec3f{ .slice = DICUQ_MATCHED_CAM1_POS },
+                .rot_world = Rotation.init(
+                    0.0,
+                    std.math.degreesToRadians(DICUQ_MATCHED_CAM1_BETA_DEG),
+                    0.0,
+                ),
+                .roi_cent_world = Vec3f{ .slice = DICUQ_MATCHED_ROI },
+                .focal_length = FOCAL_LENGTH,
+                .sub_sample = SUB_SAMPLE,
+                .distortion = distortion,
+            };
+            break :blk sp;
+        },
+    };
+
+    if (CAMERA_PLACEMENT_MODE == .manual_match_dicuq) {
+        const target_roi = stereo_pair.cameras[0].roi_cent_world;
+        const roi_shift = target_roi.sub(roi_pos);
+        for (0..sim_data.coords.mat.rows_num) |nn| {
+            sim_data.coords.mat.set(
+                nn,
+                0,
+                sim_data.coords.mat.get(nn, 0) + roi_shift.get(0),
+            );
+            sim_data.coords.mat.set(
+                nn,
+                1,
+                sim_data.coords.mat.get(nn, 1) + roi_shift.get(1),
+            );
+            sim_data.coords.mat.set(
+                nn,
+                2,
+                sim_data.coords.mat.get(nn, 2) + roi_shift.get(2),
+            );
+        }
+        roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
+        stereo_pair.cameras[0].distortion = distortion;
+        stereo_pair.cameras[0].roi_cent_world = roi_pos;
+        stereo_pair.cameras[1].distortion = distortion;
+        stereo_pair.cameras[1].roi_cent_world = roi_pos;
+    }
+    try CameraOps.saveStereoPair(io, out_dir, stereo_pair);
+
     const mesh_input = MeshInput{
         .mesh_type = .tri3,
         .coords = sim_data.coords,
@@ -476,72 +297,11 @@ pub fn main(init: std.process.Init) !void {
         } },
     };
 
-    const roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
-
-    const cam0_rot = Rotation.init(
-        std.math.degreesToRadians(0.0),
-        std.math.degreesToRadians(0.0),
-        std.math.degreesToRadians(0.0),
-    );
-    const cam1_rot = Rotation.init(
-        std.math.degreesToRadians(0.0),
-        std.math.degreesToRadians(STEREO_ANGLE_DEG),
-        std.math.degreesToRadians(0.0),
-    );
-
-    const cam0_pos = CameraOps.posFillFrameFromRot(
-        &sim_data.coords,
-        PIXELS_NUM,
-        PIXELS_SIZE,
-        FOCAL_LENGTH,
-        cam0_rot,
-        FOV_SCALE_FACTOR,
-    );
-    const cam1_pos = CameraOps.posFillFrameFromRot(
-        &sim_data.coords,
-        PIXELS_NUM,
-        PIXELS_SIZE,
-        FOCAL_LENGTH,
-        cam1_rot,
-        FOV_SCALE_FACTOR,
-    );
-
-    const cam0_in = CameraInput{
-        .pixels_num = PIXELS_NUM,
-        .pixels_size = PIXELS_SIZE,
-        .pos_world = cam0_pos,
-        .rot_world = cam0_rot,
-        .roi_cent_world = roi_pos,
-        .focal_length = FOCAL_LENGTH,
-        .sub_sample = SUB_SAMPLE,
-        .distortion = distortion,
-    };
-    const cam1_in = CameraInput{
-        .pixels_num = PIXELS_NUM,
-        .pixels_size = PIXELS_SIZE,
-        .pos_world = cam1_pos,
-        .rot_world = cam1_rot,
-        .roi_cent_world = roi_pos,
-        .focal_length = FOCAL_LENGTH,
-        .sub_sample = SUB_SAMPLE,
-        .distortion = distortion,
-    };
-
-    const cameras = [_]CameraInput{ cam0_in, cam1_in };
-    try writeCameraDataCsv(
-        io,
-        out_dir,
-        &cameras,
-        &sim_data.coords,
-        distortion,
-    );
-
     const meshes = [_]MeshInput{mesh_input};
     const images = try zraster.rasterAllFrames(
-        f64,
         aa,
         render_groups,
-        &cameras,
+        &stereo_pair.cameras,
         &meshes,
         config,
         OUT_DIR_ROOT,

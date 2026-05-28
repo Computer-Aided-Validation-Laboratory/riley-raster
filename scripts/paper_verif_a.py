@@ -282,6 +282,7 @@ def save_png_figure(
 ) -> pathlib.Path:
     PAPER_DIR.mkdir(parents=True, exist_ok=True)
     out_path = PAPER_DIR / out_name
+    svg_path = out_path.with_suffix(".svg")
     finite_vals = err_map[np.isfinite(err_map)]
     scale_exp = 0
     if finite_vals.size > 0:
@@ -340,6 +341,11 @@ def save_png_figure(
     fig.savefig(
         out_path,
         dpi=style.resolution,
+        bbox_inches="tight",
+        pad_inches=0.02,
+    )
+    fig.savefig(
+        svg_path,
         bbox_inches="tight",
         pad_inches=0.02,
     )

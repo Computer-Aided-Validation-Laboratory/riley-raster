@@ -61,6 +61,17 @@ pub const FrameReportStorage = union(ReportMode) {
     full_stats: FullStatsLog,
 };
 
+pub fn deinitFrameReportStorage(
+    outer_alloc: std.mem.Allocator,
+    config: rastcfg.RasterConfig,
+    report_storage: *FrameReportStorage,
+) void {
+    if (config.report == .full_stats) {
+        report_storage.full_stats.deinit(outer_alloc);
+    }
+    report_storage.* = .{ .off = .{} };
+}
+
 pub fn FrameReportPtr(comptime report_mode: ReportMode) type {
     return *LogType(report_mode);
 }
@@ -91,7 +102,42 @@ pub fn publishFrameResults(
     prep_meshes: []const mo.MeshPrepared,
 ) !void {
     const nodes_per_elem = mo.calcNodesPerElem(prep_meshes);
+    try publishFrameResultsWithNodesPerElem(
+        outer_alloc,
+        io,
+        config,
+        actual_tile_size,
+        camera,
+        camera_idx,
+        frame_idx,
+        cameras_num,
+        out_dir,
+        bench_capture,
+        report_storage,
+        frame_times,
+        total_elems_num,
+        total_elems_in_image,
+        nodes_per_elem,
+    );
+}
 
+pub fn publishFrameResultsWithNodesPerElem(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    config: rastcfg.RasterConfig,
+    actual_tile_size: u16,
+    camera: *const cam.CameraPrepared,
+    camera_idx: usize,
+    frame_idx: usize,
+    cameras_num: usize,
+    out_dir: ?std.Io.Dir,
+    bench_capture: ?[]FrameBenchCapture,
+    report_storage: *FrameReportStorage,
+    frame_times: FrameTimes,
+    total_elems_num: usize,
+    total_elems_in_image: usize,
+    nodes_per_elem: f64,
+) !void {
     switch (config.report) {
         .off => {
             if (bench_capture) |capture| {

@@ -4,6 +4,9 @@ from __future__ import annotations
 import csv
 import pathlib
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from PIL import Image
 
 from paper_const import PAPER_DIR, repo_root
@@ -77,6 +80,16 @@ def save_png_from_bmp(src_path: pathlib.Path, dst_name: str) -> pathlib.Path:
             optimize=True,
             dpi=(300, 300),
         )
+        fig, ax = plt.subplots(figsize=(4.0, 4.0), constrained_layout=False)
+        ax.imshow(image, cmap="gray")
+        ax.set_axis_off()
+        fig.subplots_adjust(left=0.0, right=1.0, bottom=0.0, top=1.0)
+        fig.savefig(
+            dst_path.with_suffix(".svg"),
+            bbox_inches="tight",
+            pad_inches=0.0,
+        )
+        plt.close(fig)
     return dst_path
 
 

@@ -162,125 +162,6 @@ pub fn compareNDArrayToGold(
     }
 }
 
-fn getActualValAsF64(
-    comptime T: type,
-    array: *const NDArray(T),
-    camera_idx: usize,
-    frame: usize,
-    field_start: usize,
-    channel_idx: usize,
-    row_idx: usize,
-    col_idx: usize,
-) f64 {
-    const actual_val = switch (array.dims.len) {
-        5 => array.get(&[_]usize{
-            camera_idx,
-            frame,
-            field_start + channel_idx,
-            row_idx,
-            col_idx,
-        }),
-        4 => array.get(&[_]usize{
-            frame,
-            field_start + channel_idx,
-            row_idx,
-            col_idx,
-        }),
-        else => array.get(&[_]usize{
-            field_start + channel_idx,
-            row_idx,
-            col_idx,
-        }),
-    };
-
-    if (T == f64) {
-        return actual_val;
-    }
-    return @as(f64, @floatFromInt(actual_val));
-}
-
-pub fn compareNDArrayToGoldTyped(
-    comptime T: type,
-    allocator: std.mem.Allocator,
-    io: std.Io,
-    array: *const NDArray(T),
-    camera_idx: usize,
-    frame: usize,
-    field_start: usize,
-    channels: usize,
-    path: []const u8,
-    rel_tol: f64,
-    abs_tol: f64,
-) !void {
-    var gold = if (std.mem.endsWith(u8, path, ".fimg")) blk: {
-        const gold_array = try iio.loadFIMG(allocator, io, path);
-        break :blk gold_array;
-    } else if (channels == 1)
-        try csvio.loadScalarCsv2D(allocator, io, path)
-    else
-        try csvio.loadPackedCsv2D(allocator, io, path, channels);
-
-    defer {
-        allocator.free(gold.slice);
-        gold.deinit(allocator);
-    }
-
-    const gold_rows = if (gold.dims.len == 3 and
-        std.mem.endsWith(u8, path, ".fimg"))
-        gold.dims[1]
-    else
-        gold.dims[0];
-    const gold_cols = if (gold.dims.len == 3 and
-        std.mem.endsWith(u8, path, ".fimg"))
-        gold.dims[2]
-    else
-        gold.dims[1];
-
-    const rows = switch (array.dims.len) {
-        5 => array.dims[3],
-        4 => array.dims[2],
-        else => array.dims[1],
-    };
-    const cols = switch (array.dims.len) {
-        5 => array.dims[4],
-        4 => array.dims[3],
-        else => array.dims[2],
-    };
-
-    if (gold_rows != rows) {
-        return error.GoldRowsMismatch;
-    }
-    if (gold_cols != cols) {
-        return error.GoldColsMismatch;
-    }
-
-    for (0..rows) |rr| {
-        for (0..cols) |cc| {
-            for (0..channels) |ch| {
-                const gold_val = if (std.mem.endsWith(u8, path, ".fimg"))
-                    gold.get(&[_]usize{ ch, rr, cc })
-                else if (channels == 1)
-                    gold.get(&[_]usize{ rr, cc })
-                else
-                    gold.get(&[_]usize{ rr, cc, ch });
-                const actual_val = getActualValAsF64(
-                    T,
-                    array,
-                    camera_idx,
-                    frame,
-                    field_start,
-                    ch,
-                    rr,
-                    cc,
-                );
-                if (!isApproxEqual(gold_val, actual_val, rel_tol, abs_tol)) {
-                    return error.PixelMismatch;
-                }
-            }
-        }
-    }
-}
-
 pub fn compareNDArrayToCSV(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -917,7 +798,6 @@ pub fn runTestInternal(
                 .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
             };
             const result = (try zraster.rasterAllFrames(
-                f64,
                 aa,
                 &render_groups,
                 &[_]CameraInput{prepared_camera_input},
@@ -1022,15 +902,15 @@ pub fn runTestInternal(
                 config.report = if (report_perf) .full_stats else .off;
 
                 const prepared_camera_input = CameraInput{
-                .pixels_num = prepared.camera.pixels_num,
-                .pixels_size = prepared.camera.pixels_size,
-                .pos_world = prepared.camera.pos_world,
-                .rot_world = prepared.camera.rot_world,
-                .roi_cent_world = prepared.camera.roi_cent_world,
-                .focal_length = prepared.camera.focal_length,
-                .sub_sample = prepared.camera.sub_sample,
-                .distortion = prepared.camera.distortion,
-            };
+                    .pixels_num = prepared.camera.pixels_num,
+                    .pixels_size = prepared.camera.pixels_size,
+                    .pos_world = prepared.camera.pos_world,
+                    .rot_world = prepared.camera.rot_world,
+                    .roi_cent_world = prepared.camera.roi_cent_world,
+                    .focal_length = prepared.camera.focal_length,
+                    .sub_sample = prepared.camera.sub_sample,
+                    .distortion = prepared.camera.distortion,
+                };
 
                 if (tcfg.TEST_CASE_VERBOSE) {
                     std.debug.print("Testing {s} ... ", .{case_dir_name});
@@ -1040,7 +920,6 @@ pub fn runTestInternal(
                     .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
                 };
                 const result = (try zraster.rasterAllFrames(
-                    f64,
                     aa,
                     &render_groups,
                     &[_]CameraInput{prepared_camera_input},
@@ -1192,7 +1071,6 @@ pub fn runMultimeshTestExt(
             .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
         };
         const result = (try zraster.rasterAllFrames(
-            f64,
             aa,
             &render_groups,
             &[_]CameraInput{camera_input},
@@ -1200,7 +1078,8 @@ pub fn runMultimeshTestExt(
             config,
             null,
         )) orelse return error.NoResult;
-        const time_end = Timestamp.now(io, .awake);        const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
+        const time_end = Timestamp.now(io, .awake);
+        const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
         const gold_dir = if (mode == .nodal)
             try std.fmt.allocPrint(aa, "{s}/allelem_nodal", .{gold_dir_root})
@@ -1333,14 +1212,14 @@ pub fn runMultimeshMixedTestExt(
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
     const result = (try zraster.rasterAllFrames(
-        f64,
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},
         mesh_inputs,
         config,
         null,
-    )) orelse return error.NoResult;    const time_end = Timestamp.now(io, .awake);
+    )) orelse return error.NoResult;
+    const time_end = Timestamp.now(io, .awake);
     const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
     const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
@@ -1461,14 +1340,14 @@ pub fn runMultimeshMixedRGBTestExt(
         .{ .io = io, .workers = @max(@as(u16, 1), config_rgb.total_threads) },
     };
     const result = (try zraster.rasterAllFrames(
-        f64,
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},
         mesh_inputs,
         config_rgb,
         null,
-    )) orelse return error.NoResult;    const time_end = Timestamp.now(io, .awake);
+    )) orelse return error.NoResult;
+    const time_end = Timestamp.now(io, .awake);
     const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
     const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
@@ -1613,15 +1492,15 @@ pub fn runDistortEdgeTexFuncTest(
         };
 
         const prepared_camera_input = CameraInput{
-        .pixels_num = prepared.camera.pixels_num,
-        .pixels_size = prepared.camera.pixels_size,
-        .pos_world = prepared.camera.pos_world,
-        .rot_world = prepared.camera.rot_world,
-        .roi_cent_world = prepared.camera.roi_cent_world,
-        .focal_length = prepared.camera.focal_length,
-        .sub_sample = prepared.camera.sub_sample,
-        .distortion = prepared.camera.distortion,
-    };
+            .pixels_num = prepared.camera.pixels_num,
+            .pixels_size = prepared.camera.pixels_size,
+            .pos_world = prepared.camera.pos_world,
+            .rot_world = prepared.camera.rot_world,
+            .roi_cent_world = prepared.camera.roi_cent_world,
+            .focal_length = prepared.camera.focal_length,
+            .sub_sample = prepared.camera.sub_sample,
+            .distortion = prepared.camera.distortion,
+        };
         if (tcfg.TEST_CASE_VERBOSE) {
             std.debug.print("Testing {s} ... ", .{case_dir_name});
         }
@@ -1630,7 +1509,6 @@ pub fn runDistortEdgeTexFuncTest(
             .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
         };
         const result = (try zraster.rasterAllFrames(
-            f64,
             aa,
             &render_groups,
             &[_]CameraInput{prepared_camera_input},
@@ -1821,7 +1699,6 @@ pub fn runEdgeTexFuncConstantCaseForHullMode(
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
     const result = (try zraster.rasterAllFrames(
-        f64,
         aa,
         &render_groups,
         &[_]CameraInput{prepared_camera_input},
@@ -1971,7 +1848,6 @@ pub fn runDistortMidsideNodalUvTest(
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
     const result = (try zraster.rasterAllFrames(
-        f64,
         aa,
         &render_groups,
         &[_]CameraInput{prepared_camera_input},
@@ -2127,7 +2003,6 @@ pub fn runDistortMidsideTexShaderTest(
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
     const result = (try zraster.rasterAllFrames(
-        f64,
         aa,
         &render_groups,
         &[_]CameraInput{prepared_camera_input},

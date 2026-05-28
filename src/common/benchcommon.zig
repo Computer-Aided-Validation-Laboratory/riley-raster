@@ -1036,7 +1036,6 @@ fn runBenchmarkInternal(
         .{ .io = io, .workers = @max(@as(u16, 1), config_run.total_threads) },
     };
     var image_arr = try zraster.rasterAllFramesReport(
-        f64,
         outer_alloc,
         &render_groups,
         &[_]CameraInput{camera_input},

@@ -319,7 +319,6 @@ fn renderScalarMap(
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
     const result = (try zraster.rasterAllFrames(
-        f64,
         render_allocator,
         &render_groups,
         &[_]cam.CameraInput{camera_input},

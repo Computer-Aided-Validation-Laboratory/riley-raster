@@ -17,7 +17,6 @@ const gen_fullscreen = @import("gen_gold_bench_fullscreen.zig");
 const gen_sphere = @import("gen_gold_sphere.zig");
 const gen_texfunc = @import("gen_gold_texfunc.zig");
 const gen_ssaa = @import("gen_gold_ssaa.zig");
-const gen_return_modes = @import("gen_gold_return_modes.zig");
 
 pub fn main(init: std.process.Init) !void {
     var arena = std.heap.ArenaAllocator.init(init.gpa);
@@ -56,9 +55,6 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("\n--- SSAA ---\n", .{});
     try gen_ssaa.main(init);
-
-    std.debug.print("\n--- Return Modes ---\n", .{});
-    try gen_return_modes.main(init);
 
     std.debug.print("\nALL SIMD Gold Data generation complete.\n", .{});
 }
