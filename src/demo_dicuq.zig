@@ -33,7 +33,7 @@ const PIXELS_SIZE = [2]f64{ 3.45e-6, 3.45e-6 };
 const FOCAL_LENGTH: f64 = 50.0e-3;
 const FOV_SCALE_FACTOR: f64 = 1.1;
 const SUB_SAMPLE: u8 = 2;
-const STEREO_ANGLE_DEG: f64 = 45.0;
+const STEREO_ANGLE_DEG: f64 = 20.0;
 
 const TOTAL_THREADS: u16 = 8;
 const MAX_FRAMES_IN_FLIGHT: u16 = 8;
