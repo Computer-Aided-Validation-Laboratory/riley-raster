@@ -26,7 +26,7 @@ const DistortionModel = camera_mod.DistortionModel;
 const BrownConrady = camera_mod.BrownConrady;
 const MatSlice = @import("zraster/zig/matslice.zig").MatSlice;
 
-const DATA_DIR = "data/FE/platehole3d_6mr_63f/";
+const DATA_DIR = "data/FE/platehole3d_2mr_63f/";
 const TEXTURE_PATH = "texture/speckle.bmp";
 const OUT_DIR_ROOT = "./out/demo-dicuq";
 
