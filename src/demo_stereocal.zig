@@ -36,7 +36,8 @@ const DICUQ_CAMERA_DIR = "./out/demo-dicuq";
 const TOTAL_THREADS: u16 = 8;
 const RENDER_GROUP_COUNT: u16 = 8;
 const WORKERS_PER_GROUP: u16 = 1;
-const DISTORTION = false;
+
+const DISTORTION = true;
 
 const CameraPlacementMode = enum {
     auto_fov,
@@ -45,20 +46,6 @@ const CameraPlacementMode = enum {
 
 const CAMERA_PLACEMENT_MODE: CameraPlacementMode = .load_stereo_pair;
 
-fn getDistortionModel() DistortionModel {
-    if (!DISTORTION) {
-        return .none;
-    }
-
-    return .{ .brown_conrady = BrownConrady{
-        .k1 = -0.08,
-        .k2 = 0.01,
-        .k3 = 0.0,
-        .p1 = 0.0004,
-        .p2 = -0.0007,
-    } };
-}
-
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
 
@@ -66,7 +53,6 @@ pub fn main(init: std.process.Init) !void {
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const distortion = getDistortionModel();
     const config = RasterConfig{
         .render_mode = .offline,
         .total_threads = TOTAL_THREADS,
@@ -160,6 +146,17 @@ pub fn main(init: std.process.Init) !void {
     );
     defer texture.deinit(aa);
 
+    const distortion: DistortionModel = if (!DISTORTION)
+        .none
+    else
+        .{ .brown_conrady = BrownConrady{
+            .k1 = -0.19,
+            .k2 = -1.17,
+            .k3 = 25.0,
+            .p1 = 0.0004,
+            .p2 = -0.0007,
+        } };
+    
     var roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
 
     var stereo_pair = switch (CAMERA_PLACEMENT_MODE) {

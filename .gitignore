@@ -7,7 +7,6 @@ file-out/
 .zig-cache/
 zig-out/
 
-.antigravitycli/
 
 # Do not keep any large output directories with images or other output in them
 out/
@@ -51,6 +50,7 @@ fails*/
 
 # Other mesh data to keep
 !data/rabbits/**/*.csv
+!data/FE/platehole3d_2mr_63f/*.csv
 
 # We need to keep the textures for the tests
 !texture/*.bmp
@@ -65,6 +65,7 @@ fails*/
 test_output.txt
 .vscode/
 .venv/
+.antigravitycli/
 
 # Cython
 *.html

@@ -22,6 +22,8 @@ const camera_mod = @import("zraster/zig/camera.zig");
 const Rotation = @import("zraster/zig/rotation.zig").Rotation;
 const CameraInput = camera_mod.CameraInput;
 const CameraOps = camera_mod.CameraOps;
+const DistortionModel = camera_mod.DistortionModel;
+const BrownConrady = camera_mod.BrownConrady;
 const MatSlice = @import("zraster/zig/matslice.zig").MatSlice;
 
 const DATA_DIR = "data/FE/platehole3d_6mr_63f/";
@@ -36,11 +38,14 @@ const SUB_SAMPLE: u8 = 2;
 const STEREO_ANGLE_DEG: f64 = 20.0;
 
 const TOTAL_THREADS: u16 = 8;
-const MAX_FRAMES_IN_FLIGHT: u16 = 8;
-const FRAME_BATCH_SIZE_PER_GROUP: u16 = 8;
-const MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP: u16 = 8;
+const MAX_FRAMES_IN_FLIGHT: u16 = 1;
+const FRAME_BATCH_SIZE_PER_GROUP: u16 = 1;
+const MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP: u16 = 1;
 const RENDER_GROUP_COUNT: usize = 8;
 const WORKERS_PER_GROUP: u16 = 1;
+
+const DISTORTION = true; 
+
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
@@ -152,6 +157,17 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Setting up camera...\n", .{});
     const roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
 
+    const distortion: DistortionModel = if (!DISTORTION)
+        .none
+    else
+        .{ .brown_conrady = BrownConrady{
+            .k1 = -0.19,
+            .k2 = -1.17,
+            .k3 = 25.0,
+            .p1 = 0.0004,
+            .p2 = -0.0007,
+        } };
+
     // Camera 0: face on
     const cam0_rot = Rotation.init(
         std.math.degreesToRadians(0.0), //alpha_z_deg
@@ -176,6 +192,7 @@ pub fn main(init: std.process.Init) !void {
         .roi_cent_world = roi_pos,
         .focal_length = FOCAL_LENGTH,
         .sub_sample = SUB_SAMPLE,
+        .distortion = distortion,
     };
 
     // Camera 1: stereo angle
@@ -202,6 +219,7 @@ pub fn main(init: std.process.Init) !void {
         .roi_cent_world = roi_pos,
         .focal_length = FOCAL_LENGTH,
         .sub_sample = SUB_SAMPLE,
+        .distortion = distortion,
     };
 
     // 7. Run the Rasteriser
