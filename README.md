@@ -17,7 +17,7 @@ python ./data/bench/gen_bench_data.py
 
 You should see a range of directories generated in the data/bench directory with different element types and case tags. Once that is done we can render the required gold output with:
 ```shell
-zig run -lc -O ReleaseSafe ./src/gen_gold_all.
+zig run -lc -O ReleaseSafe ./src/gen_gold_all.zig
 ```
 
 Now we can run the remaining "all" and "bench" test suites:
