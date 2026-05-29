@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -11,8 +11,8 @@ const std = @import("std");
 const benchargs = @import("common/benchargs.zig");
 const benchdicuq = @import("common/benchdicuq.zig");
 const common = @import("common/benchcommon.zig");
-const zraster = @import("zraster/zig/zraster.zig");
-const rastcfg = @import("zraster/zig/rasterconfig.zig");
+const riley = @import("riley/zig/riley.zig");
+const rastcfg = @import("riley/zig/rasterconfig.zig");
 
 const DEFAULT_OUT_DIR = "out/bench_stats_dicuq";
 const DEFAULT_IMAGE_OUT_DIR = "out/bench_images_dicuq";
@@ -114,7 +114,7 @@ pub fn main(init: std.process.Init) !void {
         outer_alloc.free(managed_ios);
     }
     const render_groups = try outer_alloc.alloc(
-        zraster.RenderGroupSpec,
+        riley.RenderGroupSpec,
         bench_args.render_group_count,
     );
     defer outer_alloc.free(render_groups);
@@ -125,12 +125,12 @@ pub fn main(init: std.process.Init) !void {
     defer outer_alloc.free(render_group_workers);
 
     for (0..bench_args.render_group_count) |ii| {
-        managed_ios[ii] = zraster.getThreadedIo(
+        managed_ios[ii] = riley.getThreadedIo(
             outer_alloc,
             init.minimal,
             workers_per_group,
         );
-        managed_save_ios[ii] = zraster.getThreadedIo(
+        managed_save_ios[ii] = riley.getThreadedIo(
             outer_alloc,
             init.minimal,
             1,

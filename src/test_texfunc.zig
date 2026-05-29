@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -11,15 +11,15 @@ const Timestamp = std.Io.Clock.Timestamp;
 const common = @import("common/tests.zig");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
-const gk = @import("zraster/zig/geometrykernels.zig");
-const meshio = @import("zraster/zig/meshio.zig");
-const mo = @import("zraster/zig/meshops.zig");
-const shaderops = @import("zraster/zig/shaderops.zig");
-const uvio = @import("zraster/zig/uvio.zig");
-const CameraInput = @import("zraster/zig/camera.zig").CameraInput;
-const iio = @import("zraster/zig/imageio.zig");
-const zraster = @import("zraster/zig/zraster.zig");
-const buildconfig = @import("zraster/zig/buildconfig.zig");
+const gk = @import("riley/zig/geometrykernels.zig");
+const meshio = @import("riley/zig/meshio.zig");
+const mo = @import("riley/zig/meshops.zig");
+const shaderops = @import("riley/zig/shaderops.zig");
+const uvio = @import("riley/zig/uvio.zig");
+const CameraInput = @import("riley/zig/camera.zig").CameraInput;
+const iio = @import("riley/zig/imageio.zig");
+const riley = @import("riley/zig/riley.zig");
+const buildconfig = @import("riley/zig/buildconfig.zig");
 
 const gold_root = "gold/texfunc";
 const data_root = "data/min";
@@ -171,10 +171,10 @@ fn runTexFuncCase(
 
     const camera_input: CameraInput = prepared.camera_input;
     const time_start = Timestamp.now(io, .awake);
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try zraster.rasterAllFrames(
+    const result = (try riley.rasterAllFrames(
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},

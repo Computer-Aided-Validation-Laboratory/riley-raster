@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -7,8 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const rastcfg = @import("../zraster/zig/rasterconfig.zig");
-const texops = @import("../zraster/zig/textureops.zig");
+const rastcfg = @import("../riley/zig/rasterconfig.zig");
+const texops = @import("../riley/zig/textureops.zig");
 
 pub const BenchArgs = struct {
     out_dir: []const u8,

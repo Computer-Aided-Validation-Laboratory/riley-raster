@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -9,15 +9,15 @@
 const std = @import("std");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
-const gk = @import("zraster/zig/geometrykernels.zig");
-const meshio = @import("zraster/zig/meshio.zig");
-const mo = @import("zraster/zig/meshops.zig");
-const uvio = @import("zraster/zig/uvio.zig");
-const CameraInput = @import("zraster/zig/camera.zig").CameraInput;
-const iio = @import("zraster/zig/imageio.zig");
-const rastcfg = @import("zraster/zig/rasterconfig.zig");
-const shaderops = @import("zraster/zig/shaderops.zig");
-const zraster = @import("zraster/zig/zraster.zig");
+const gk = @import("riley/zig/geometrykernels.zig");
+const meshio = @import("riley/zig/meshio.zig");
+const mo = @import("riley/zig/meshops.zig");
+const uvio = @import("riley/zig/uvio.zig");
+const CameraInput = @import("riley/zig/camera.zig").CameraInput;
+const iio = @import("riley/zig/imageio.zig");
+const rastcfg = @import("riley/zig/rasterconfig.zig");
+const shaderops = @import("riley/zig/shaderops.zig");
+const riley = @import("riley/zig/riley.zig");
 
 const data_root = "data/min";
 const test_type = "sphere200";
@@ -97,10 +97,10 @@ fn renderCase(
     var out_dir = try orch.openDirEnsured(io, out_dir_path);
     out_dir.close(io);
 
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const images = try zraster.rasterAllFrames(
+    const images = try riley.rasterAllFrames(
         allocator,
         &render_groups,
         &[_]CameraInput{camera_input},

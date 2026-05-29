@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.urls]
-"Repository" = "https://github.com/ScepticalRabbit/zigraster"
+"Repository" = "https://github.com/ScepticalRabbit/riley"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -13,22 +13,22 @@ const benchcommon = @import("common/benchcommon.zig");
 const orch = @import("common/orchestration.zig");
 const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
-const CameraInput = @import("zraster/zig/camera.zig").CameraInput;
-const buildconfig = @import("zraster/zig/buildconfig.zig");
+const CameraInput = @import("riley/zig/camera.zig").CameraInput;
+const buildconfig = @import("riley/zig/buildconfig.zig");
 const cfg = buildconfig.config;
-const camera_mod = @import("zraster/zig/camera.zig");
+const camera_mod = @import("riley/zig/camera.zig");
 const CameraPrepared = camera_mod.CameraPrepared;
-const gk = @import("zraster/zig/geometrykernels.zig");
-const iio = @import("zraster/zig/imageio.zig");
-const mo = @import("zraster/zig/meshops.zig");
-const meshio = @import("zraster/zig/meshio.zig");
-const ndarray = @import("zraster/zig/ndarray.zig");
-const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
-const texops = @import("zraster/zig/textureops.zig");
-const uvio = @import("zraster/zig/uvio.zig");
-const zraster = @import("zraster/zig/zraster.zig");
+const gk = @import("riley/zig/geometrykernels.zig");
+const iio = @import("riley/zig/imageio.zig");
+const mo = @import("riley/zig/meshops.zig");
+const meshio = @import("riley/zig/meshio.zig");
+const ndarray = @import("riley/zig/ndarray.zig");
+const NDArray = @import("riley/zig/ndarray.zig").NDArray;
+const texops = @import("riley/zig/textureops.zig");
+const uvio = @import("riley/zig/uvio.zig");
+const riley = @import("riley/zig/riley.zig");
 const GeometrySchedulingMode =
-    @import("zraster/zig/rasterconfig.zig").GeometrySchedulingMode;
+    @import("riley/zig/rasterconfig.zig").GeometrySchedulingMode;
 
 const simd_on = cfg.simd == .on;
 
@@ -258,10 +258,10 @@ test "Multicamera duplicate sphere200 cameras match each other" {
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
 
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try zraster.rasterAllFrames(
+    const result = (try riley.rasterAllFrames(
         aa,
         &render_groups,
         &cameras,
@@ -430,10 +430,10 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
     ref_config.max_geom_workers_per_job = 1;
     ref_config.max_raster_workers_per_job = 4;
 
-    const ref_render_groups = [_]zraster.RenderGroupSpec{
+    const ref_render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), ref_config.total_threads) },
     };
-    const reference = (try zraster.rasterAllFrames(
+    const reference = (try riley.rasterAllFrames(
         aa,
         &ref_render_groups,
         &camera_inputs,
@@ -445,7 +445,7 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
 
     const shared_io_grouped_cases = [_]struct {
         mode: GeometrySchedulingMode,
-        render_groups: [2]zraster.RenderGroupSpec,
+        render_groups: [2]riley.RenderGroupSpec,
     }{
         .{
             .mode = .spread,
@@ -467,7 +467,7 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
         var grouped_config = ref_config;
         grouped_config.geom_scheduling_mode = case.mode;
 
-        const grouped = (try zraster.rasterAllFrames(
+        const grouped = (try riley.rasterAllFrames(
             aa,
             case.render_groups[0..],
             &camera_inputs,
@@ -524,11 +524,11 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
         var grouped_config = ref_config;
         grouped_config.geom_scheduling_mode = case.mode;
 
-        const render_groups = [_]zraster.RenderGroupSpec{
+        const render_groups = [_]riley.RenderGroupSpec{
             .{ .io = managed_ios[0].io(), .workers = 2 },
             .{ .io = managed_ios[1].io(), .workers = 2 },
         };
-        const grouped = (try zraster.rasterAllFrames(
+        const grouped = (try riley.rasterAllFrames(
             aa,
             &render_groups,
             &camera_inputs,
@@ -546,13 +546,13 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
         );
     }
 
-    const four_group_render_groups = [_]zraster.RenderGroupSpec{
+    const four_group_render_groups = [_]riley.RenderGroupSpec{
         .{ .io = managed_ios[0].io(), .workers = 1 },
         .{ .io = managed_ios[1].io(), .workers = 1 },
         .{ .io = managed_ios[2].io(), .workers = 1 },
         .{ .io = managed_ios[3].io(), .workers = 1 },
     };
-    const four_group = (try zraster.rasterAllFrames(
+    const four_group = (try riley.rasterAllFrames(
         aa,
         &four_group_render_groups,
         &camera_inputs,
@@ -639,10 +639,10 @@ test "Multicamera memory matches both" {
     var both_config = memory_config;
     both_config.save_strategy = .both;
 
-    const memory_render_groups = [_]zraster.RenderGroupSpec{
+    const memory_render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), memory_config.total_threads) },
     };
-    const memory = (try zraster.rasterAllFrames(
+    const memory = (try riley.rasterAllFrames(
         aa,
         &memory_render_groups,
         &[_]CameraInput{
@@ -673,10 +673,10 @@ test "Multicamera memory matches both" {
     )) orelse return error.NoResult;
     defer aa.free(memory.slice);
 
-    const both_render_groups = [_]zraster.RenderGroupSpec{
+    const both_render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), both_config.total_threads) },
     };
-    const both = (try zraster.rasterAllFrames(
+    const both = (try riley.rasterAllFrames(
         aa,
         &both_render_groups,
         &[_]CameraInput{
@@ -894,10 +894,10 @@ test "Sphere200 multicamera gold tests" {
             std.debug.print("Testing {s} ... ", .{render_case.case_name});
         }
         const time_start = Timestamp.now(io, .awake);
-        const render_groups = [_]zraster.RenderGroupSpec{
+        const render_groups = [_]riley.RenderGroupSpec{
             .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
         };
-        const result = (try zraster.rasterAllFrames(
+        const result = (try riley.rasterAllFrames(
             aa,
             &render_groups,
             &camera_inputs,
@@ -1062,10 +1062,10 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
         .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
     };
 
-    const small_render_groups = [_]zraster.RenderGroupSpec{
+    const small_render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), memory_config.total_threads) },
     };
-    const small_single = (try zraster.rasterAllFrames(
+    const small_single = (try riley.rasterAllFrames(
         aa,
         &small_render_groups,
         &[_]CameraInput{CameraInput{
@@ -1084,10 +1084,10 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
     )) orelse return error.NoResult;
     defer aa.free(small_single.slice);
 
-    const large_render_groups = [_]zraster.RenderGroupSpec{
+    const large_render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), memory_config.total_threads) },
     };
-    const large_single = (try zraster.rasterAllFrames(
+    const large_single = (try riley.rasterAllFrames(
         aa,
         &large_render_groups,
         &[_]CameraInput{CameraInput{
@@ -1112,10 +1112,10 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
     batch_config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
     };
-    const batch_render_groups = [_]zraster.RenderGroupSpec{
+    const batch_render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), batch_config.total_threads) },
     };
-    const batch_result = (try zraster.rasterAllFrames(
+    const batch_result = (try riley.rasterAllFrames(
         aa,
         &batch_render_groups,
         &[_]CameraInput{

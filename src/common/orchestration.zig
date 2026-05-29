@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -8,16 +8,16 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
-const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
-const iio = @import("../zraster/zig/imageio.zig");
-const meshio = @import("../zraster/zig/meshio.zig");
-const mo = @import("../zraster/zig/meshops.zig");
-const gk = @import("../zraster/zig/geometrykernels.zig");
-const uvio = @import("../zraster/zig/uvio.zig");
-const CameraPrepared = @import("../zraster/zig/camera.zig").CameraPrepared;
-const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
-const Rotation = @import("../zraster/zig/rotation.zig").Rotation;
+const MatSlice = @import("../riley/zig/matslice.zig").MatSlice;
+const NDArray = @import("../riley/zig/ndarray.zig").NDArray;
+const iio = @import("../riley/zig/imageio.zig");
+const meshio = @import("../riley/zig/meshio.zig");
+const mo = @import("../riley/zig/meshops.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const uvio = @import("../riley/zig/uvio.zig");
+const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
+const CameraOps = @import("../riley/zig/camera.zig").CameraOps;
+const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 
 pub const default_multimesh_mesh_types = [_]gk.MeshType{
     .tri3,

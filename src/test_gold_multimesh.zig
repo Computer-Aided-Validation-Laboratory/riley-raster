@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -19,7 +19,7 @@ test "Gold Multimesh Suite" {
 
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
 
-    const simd_on = @import("zraster/zig/buildconfig.zig").config.simd == .on;
+    const simd_on = @import("riley/zig/buildconfig.zig").config.simd == .on;
     std.debug.print("Running Gold Multimesh Tests with .simd = .{s}...\n", .{
         if (simd_on) "on" else "off",
     });

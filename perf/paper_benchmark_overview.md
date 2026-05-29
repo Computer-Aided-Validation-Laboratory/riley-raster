@@ -23,6 +23,6 @@ The **`bench_dicuq`** (`scripts/bench_dicuq.py` and `src/bench_dicuq.zig`) bench
 *   **Experiment 4 (Render Mode)**: Compares `offline` (batch) rendering against `in_order` (sequential) rendering.
 
 ## 3. Supporting Infrastructure
-*   **`scripts/compile_benchmarks.sh`**: A utility script that builds both `scalar` and `simd` versions of all benchmarks by temporarily modifying `src/zraster/zig/buildconfig.zig`.
+*   **`scripts/compile_benchmarks.sh`**: A utility script that builds both `scalar` and `simd` versions of all benchmarks by temporarily modifying `src/riley/zig/buildconfig.zig`.
 *   **`src/common/benchcommon.zig`**: The shared Zig library that handles the benchmark loop, data loading, case name generation, and result reporting.
 *   **`scripts/bench_common.py`**: The Python module containing the logic for the general experiment matrix and subprocess management.

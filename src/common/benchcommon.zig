@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -7,23 +7,23 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const zraster = @import("../zraster/zig/zraster.zig");
-const meshio = @import("../zraster/zig/meshio.zig");
-const iio = @import("../zraster/zig/imageio.zig");
-const uvio = @import("../zraster/zig/uvio.zig");
-const csvio = @import("../zraster/zig/csvio.zig");
-const mo = @import("../zraster/zig/meshops.zig");
-const so = @import("../zraster/zig/shaderops.zig");
-const gk = @import("../zraster/zig/geometrykernels.zig");
-const CameraPrepared = @import("../zraster/zig/camera.zig").CameraPrepared;
-const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
-const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
-const Rotation = @import("../zraster/zig/rotation.zig").Rotation;
-const report = @import("../zraster/zig/report.zig");
-const rastcfg = @import("../zraster/zig/rasterconfig.zig");
-const buildconfig = @import("../zraster/zig/buildconfig.zig");
-const scalingpolicy = @import("../zraster/zig/scalingpolicy.zig");
-const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
+const riley = @import("../riley/zig/riley.zig");
+const meshio = @import("../riley/zig/meshio.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const uvio = @import("../riley/zig/uvio.zig");
+const csvio = @import("../riley/zig/csvio.zig");
+const mo = @import("../riley/zig/meshops.zig");
+const so = @import("../riley/zig/shaderops.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
+const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
+const CameraOps = @import("../riley/zig/camera.zig").CameraOps;
+const Rotation = @import("../riley/zig/rotation.zig").Rotation;
+const report = @import("../riley/zig/report.zig");
+const rastcfg = @import("../riley/zig/rasterconfig.zig");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
+const scalingpolicy = @import("../riley/zig/scalingpolicy.zig");
+const NDArray = @import("../riley/zig/ndarray.zig").NDArray;
 const tcfg = @import("testconfig.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 const orch = @import("orchestration.zig");
@@ -482,7 +482,7 @@ pub const ShaderType = enum {
     texfunc_grey,
     texfunc_rgb,
 };
-const TextureSampleConfig = @import("../zraster/zig/textureops.zig").TextureSampleConfig;
+const TextureSampleConfig = @import("../riley/zig/textureops.zig").TextureSampleConfig;
 pub const TexFuncCoordMode = enum { uv, param };
 pub const TexFuncCase = struct {
     builtin: so.TexFuncBuiltin,
@@ -1032,10 +1032,10 @@ fn runBenchmarkInternal(
         null;
 
     const e2e_start = Timestamp.now(io, .awake);
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config_run.total_threads) },
     };
-    var image_arr = try zraster.rasterAllFramesReport(
+    var image_arr = try riley.rasterAllFramesReport(
         outer_alloc,
         &render_groups,
         &[_]CameraInput{camera_input},

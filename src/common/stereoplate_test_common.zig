@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -9,15 +9,15 @@
 const std = @import("std");
 
 const orch = @import("orchestration.zig");
-const zraster = @import("../zraster/zig/zraster.zig");
-const rastcfg = @import("../zraster/zig/rasterconfig.zig");
-const meshio = @import("../zraster/zig/meshio.zig");
-const iio = @import("../zraster/zig/imageio.zig");
-const csvio = @import("../zraster/zig/csvio.zig");
-const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
-const MeshInput = @import("../zraster/zig/meshops.zig").MeshInput;
-const cammod = @import("../zraster/zig/camera.zig");
-const Rotation = @import("../zraster/zig/rotation.zig").Rotation;
+const riley = @import("../riley/zig/riley.zig");
+const rastcfg = @import("../riley/zig/rasterconfig.zig");
+const meshio = @import("../riley/zig/meshio.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const csvio = @import("../riley/zig/csvio.zig");
+const NDArray = @import("../riley/zig/ndarray.zig").NDArray;
+const MeshInput = @import("../riley/zig/meshops.zig").MeshInput;
+const cammod = @import("../riley/zig/camera.zig");
+const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 
 pub const CameraInput = cammod.CameraInput;
 pub const CameraOps = cammod.CameraOps;
@@ -158,10 +158,10 @@ pub fn renderStereoPlate(
         },
         .report = .bench,
     };
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = 1 },
     };
-    _ = try zraster.rasterAllFrames(
+    _ = try riley.rasterAllFrames(
         aa,
         &render_groups,
         &stereo_pair.cameras,

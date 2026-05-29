@@ -1,14 +1,14 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
-const cam = @import("../zraster/zig/camera.zig");
-const gk = @import("../zraster/zig/geometrykernels.zig");
-const rotation = @import("../zraster/zig/rotation.zig");
+const cam = @import("../riley/zig/camera.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const rotation = @import("../riley/zig/rotation.zig");
 
 pub const output_dir_name = "verif";
 

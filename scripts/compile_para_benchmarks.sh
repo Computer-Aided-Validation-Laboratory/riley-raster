@@ -4,7 +4,7 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 
-buildconfig_path="${repo_root}/src/zraster/zig/buildconfig.zig"
+buildconfig_path="${repo_root}/src/riley/zig/buildconfig.zig"
 buildconfig_backup="$(mktemp)"
 bench_names=(
     "bench_dicuq"

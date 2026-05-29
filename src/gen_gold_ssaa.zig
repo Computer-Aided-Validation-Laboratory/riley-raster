@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -7,7 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const iio = @import("zraster/zig/imageio.zig");
+const iio = @import("riley/zig/imageio.zig");
 const suite = @import("common/ssaasuite.zig");
 const orch = @import("common/orchestration.zig");
 
@@ -27,7 +27,7 @@ pub fn main(init: std.process.Init) !void {
                     ssaa,
                     distortion_case,
                 );
-                const gold_maps = [_]@import("zraster/zig/rasterconfig.zig").SubPixelCenterMap{
+                const gold_maps = [_]@import("riley/zig/rasterconfig.zig").SubPixelCenterMap{
                     .full_in_mem,
                     .affine_jac,
                 };

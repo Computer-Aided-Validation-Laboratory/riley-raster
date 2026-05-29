@@ -1,10 +1,10 @@
-# zaster
-`zraster` is a performant software rasteriser written in Zig specifically designed for digital image correlation (DIC) uncertainty quantification (UQ). `zraster` performs off-line rendering of deformed speckle pattern images from an input finite element simulation. `zraster` supports accurate rendering of higher order finite elements including `tri3`, `tri6`, `quad4`, `quad8` and `quad9` surface elements. Texture shading with higher order texture sampling is also supported for accurate speckle pattern rendering including: cubic sampling (Catmull-Rom, Mitchell-Netravali, BSpline), quintic sampling (BSpline) and Lancsoz (lancsoz3). Rendering multiple meshes with different element types and shading strategies in the same scene is supported.
+# Riley
+`Riley` is a performant software rasteriser written in Zig specifically designed for digital image correlation (DIC) uncertainty quantification (UQ). `Riley` performs off-line rendering of deformed speckle pattern images from an input finite element simulation. `Riley` supports accurate rendering of higher order finite elements including `tri3`, `tri6`, `quad4`, `quad8` and `quad9` surface elements. Texture shading with higher order texture sampling is also supported for accurate speckle pattern rendering including: cubic sampling (Catmull-Rom, Mitchell-Netravali, BSpline), quintic sampling (BSpline) and Lancsoz (lancsoz3). Rendering multiple meshes with different element types and shading strategies in the same scene is supported.
 
-We specifically chose to implement `zraster` in Zig as it is a compiled language with manual memory management. It also allows for compile time code generation and has excellent support for SIMD vector types. We have used `comptime` to generate speciliased kernels for geometry and shader types removing run time dispatch overhead. We have also leveraged Zig's `io` interface to implement hierarchical parallelisation allowing for inter and intra frame parallelisation for offline rendering.
+We specifically chose to implement `Riley` in Zig as it is a compiled language with manual memory management. It also allows for compile time code generation and has excellent support for SIMD vector types. We have used `comptime` to generate speciliased kernels for geometry and shader types removing run time dispatch overhead. We have also leveraged Zig's `io` interface to implement hierarchical parallelisation allowing for inter and intra frame parallelisation for offline rendering.
 
 ## Getting Started
-`zraster` uses the Zig 0.16.0 compiler release which can be downloaded from [here](https://ziglang.org/download/). The `zraster` repository contains a minimal set of regression tests (called the "min" test suite) which should be run before generating a wider set gold regression data and running performance benchmark suites. The min test suite can be run from the project root directory using:
+`Riley` uses the Zig 0.16.0 compiler release which can be downloaded from [here](https://ziglang.org/download/). The `Riley` repository contains a minimal set of regression tests (called the "min" test suite) which should be run before generating a wider set gold regression data and running performance benchmark suites. The min test suite can be run from the project root directory using:
 ```shell
 zig test -lc -O ReleaseSafe ./src/test_min.zig
 ```
@@ -27,7 +27,7 @@ zig test -lc -O ReleaseSafe ./src/test_bench.zig
 ```
 
 ## Capability Demonstration
-We have included a series of capability demonstrations scripts in the /src/ directory.... These can be run using
+We have included a series of capability demonstrations scripts in the /src/ directory. These can be run using
 ```shell
 zig run -lc -O ReleaseFast ./src/demo_CASE.zig
 ```
@@ -60,7 +60,7 @@ We now use the camera setup from the previous DIC UQ demo, import it and then re
 
 
 ## Performance Benchmarks
-We used four cases to analyse the performance of `zraster`: 1) Minimum elements filling the screen (2 triangles or 1 quadrilateral), called "fullraster", 2) 1e5 elements filling screen, called "geom", 3) A sphere in the centre of the screen with 2000 elements, called sphere2000. Case 1 is intended to test the throughput of the raster hot loop. Case 2 is intended to test the throughput of the geometry pre-processing. Case 3 is a more realistic case with a balance of element orientations. Case 4 tests thread scaling on the same case as the DIC UQ demonstration. These benchmark suites can be run using:
+We used four cases to analyse the performance of `Riley`: 1) Minimum elements filling the screen (2 triangles or 1 quadrilateral), called "fullraster", 2) 1e5 elements filling screen, called "geom", 3) A sphere in the centre of the screen with 2000 elements, called sphere2000. Case 1 is intended to test the throughput of the raster hot loop. Case 2 is intended to test the throughput of the geometry pre-processing. Case 3 is a more realistic case with a balance of element orientations. Case 4 tests thread scaling on the same case as the DIC UQ demonstration. These benchmark suites can be run using:
 
 ```shell
 zig run -lc -O ReleaseFast ./src/bench_fullraster.zig
@@ -71,9 +71,13 @@ zig run -lc -O ReleaseFast ./src/bench_dicuq.zig
 You will find the rendered output for these benchmarks in ./out/bench-CASE where CASE is fullraster, geom, sphere2000 or dicuq.
 
 ## Navigating the Codebase
-The main entry point for the `zraster` rendering pipeline is the `rasterAllFrames` function in ./src/zraster/zig/zraster.zig.
+The main entry point for the `Riley` rendering pipeline is the `rasterAllFrames` function in ./src/riley/zig/riley.zig.
 
 ## Contributors
 - Lloyd Fletcher ([ScepticalRabbit](https://github.com/ScepticalRabbit)), UK Atomic Energy Authority
 - Joel Hirst ([JoelPhys](https://github.com/JoelPhys)), UK Atomic Energy Authority
 - Wiera Bielajewa ([WieraB](https://github.com/WieraB)), UK Atomic Energy Authority
+
+## Dedication
+
+Named in memory of Riley, and for Feebee, her sister and bondmate. Without your love and support, this project would never have happened.

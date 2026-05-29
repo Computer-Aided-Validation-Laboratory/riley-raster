@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -9,19 +9,19 @@
 const std = @import("std");
 
 const orch = @import("orchestration.zig");
-const gk = @import("../zraster/zig/geometrykernels.zig");
-const meshio = @import("../zraster/zig/meshio.zig");
-const mo = @import("../zraster/zig/meshops.zig");
-const shaderops = @import("../zraster/zig/shaderops.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const meshio = @import("../riley/zig/meshio.zig");
+const mo = @import("../riley/zig/meshops.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
 const MeshType = gk.MeshType;
 const MeshInput = mo.MeshInput;
-const CameraPrepared = @import("../zraster/zig/camera.zig").CameraPrepared;
-const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
-const rastcfg = @import("../zraster/zig/rasterconfig.zig");
-const zraster = @import("../zraster/zig/zraster.zig");
+const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
+const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
+const rastcfg = @import("../riley/zig/rasterconfig.zig");
+const riley = @import("../riley/zig/riley.zig");
 const RasterConfig = rastcfg.RasterConfig;
-const iio = @import("../zraster/zig/imageio.zig");
-const texops = @import("../zraster/zig/textureops.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const texops = @import("../riley/zig/textureops.zig");
 
 pub fn renderAndSave(
     outer_alloc: std.mem.Allocator,
@@ -58,10 +58,10 @@ pub fn renderAndSave(
         .sub_sample = camera.sub_sample,
         .distortion = camera.distortion,
     };
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const images = try zraster.rasterAllFrames(
+    const images = try riley.rasterAllFrames(
         outer_alloc,
         &render_groups,
         &[_]CameraInput{camera_input},
@@ -233,10 +233,10 @@ pub fn runMultimeshGenerationExt(
             .sub_sample = camera.sub_sample,
             .distortion = camera.distortion,
         };
-        const render_groups = [_]zraster.RenderGroupSpec{
+        const render_groups = [_]riley.RenderGroupSpec{
             .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
         };
-        const images = try zraster.rasterAllFrames(
+        const images = try riley.rasterAllFrames(
             aa,
             &render_groups,
             &[_]CameraInput{camera_input},
@@ -316,10 +316,10 @@ pub fn runMultimeshMixedGenerationExt(
         .sub_sample = camera.sub_sample,
         .distortion = camera.distortion,
     };
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const images = try zraster.rasterAllFrames(
+    const images = try riley.rasterAllFrames(
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},
@@ -404,7 +404,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
     var out_dir = try orch.openDirEnsured(io, gold_dir);
     out_dir.close(io);
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config_rgb.total_threads) },
     };
     const camera_input = CameraInput{
@@ -417,7 +417,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
         .sub_sample = camera_rgb.sub_sample,
         .distortion = camera_rgb.distortion,
     };
-    _ = try zraster.rasterAllFrames(
+    _ = try riley.rasterAllFrames(
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},
@@ -429,7 +429,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
 
 fn buildUvField(
     allocator: std.mem.Allocator,
-    uvs: @import("../zraster/zig/ndarray.zig").NDArray(f64),
+    uvs: @import("../riley/zig/ndarray.zig").NDArray(f64),
     time_steps: usize,
 ) !meshio.Field {
     const node_num = uvs.dims[0];

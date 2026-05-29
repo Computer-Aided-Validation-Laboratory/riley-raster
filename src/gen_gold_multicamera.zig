@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -11,16 +11,16 @@ const std = @import("std");
 const benchcommon = @import("common/benchcommon.zig");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
-const buildconfig = @import("zraster/zig/buildconfig.zig");
+const buildconfig = @import("riley/zig/buildconfig.zig");
 const cfg = buildconfig.config;
-const cam = @import("zraster/zig/camera.zig");
-const iio = @import("zraster/zig/imageio.zig");
-const mo = @import("zraster/zig/meshops.zig");
-const gk = @import("zraster/zig/geometrykernels.zig");
-const meshio = @import("zraster/zig/meshio.zig");
-const texops = @import("zraster/zig/textureops.zig");
-const uvio = @import("zraster/zig/uvio.zig");
-const zraster = @import("zraster/zig/zraster.zig");
+const cam = @import("riley/zig/camera.zig");
+const iio = @import("riley/zig/imageio.zig");
+const mo = @import("riley/zig/meshops.zig");
+const gk = @import("riley/zig/geometrykernels.zig");
+const meshio = @import("riley/zig/meshio.zig");
+const texops = @import("riley/zig/textureops.zig");
+const uvio = @import("riley/zig/uvio.zig");
+const riley = @import("riley/zig/riley.zig");
 
 const simd_on = cfg.simd == .on;
 
@@ -203,10 +203,10 @@ pub fn main(init: std.process.Init) !void {
             .{ out_root, render_case.case_name },
         );
 
-        const render_groups = [_]zraster.RenderGroupSpec{
+        const render_groups = [_]riley.RenderGroupSpec{
             .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
         };
-        _ = try zraster.rasterAllFrames(
+        _ = try riley.rasterAllFrames(
             aa,
             &render_groups,
             &camera_inputs,

@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -10,9 +10,9 @@ const std = @import("std");
 const gengold = @import("common/gengold.zig");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
-const gk = @import("zraster/zig/geometrykernels.zig");
-const rastcfg = @import("zraster/zig/rasterconfig.zig");
-const iio = @import("zraster/zig/imageio.zig");
+const gk = @import("riley/zig/geometrykernels.zig");
+const rastcfg = @import("riley/zig/rasterconfig.zig");
+const iio = @import("riley/zig/imageio.zig");
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;

@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -7,17 +7,17 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const cam = @import("../zraster/zig/camera.zig");
-const csvio = @import("../zraster/zig/csvio.zig");
-const gk = @import("../zraster/zig/geometrykernels.zig");
-const iio = @import("../zraster/zig/imageio.zig");
-const matrix = @import("../zraster/zig/matstack.zig");
-const ndarray = @import("../zraster/zig/ndarray.zig");
-const newton = @import("../zraster/zig/newton.zig");
-const rops = @import("../zraster/zig/rasterops.zig");
-const rastcfg = @import("../zraster/zig/rasterconfig.zig");
-const shapefun = @import("../zraster/zig/shapefun.zig");
-const vecstack = @import("../zraster/zig/vecstack.zig");
+const cam = @import("../riley/zig/camera.zig");
+const csvio = @import("../riley/zig/csvio.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const matrix = @import("../riley/zig/matstack.zig");
+const ndarray = @import("../riley/zig/ndarray.zig");
+const newton = @import("../riley/zig/newton.zig");
+const rops = @import("../riley/zig/rasterops.zig");
+const rastcfg = @import("../riley/zig/rasterconfig.zig");
+const shapefun = @import("../riley/zig/shapefun.zig");
+const vecstack = @import("../riley/zig/vecstack.zig");
 
 pub const Vec3 = struct {
     x: f64,

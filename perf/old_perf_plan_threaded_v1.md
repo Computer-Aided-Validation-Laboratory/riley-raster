@@ -1,4 +1,4 @@
-# Scaling and Performance Experiments: ZRaster
+# Scaling and Performance Experiments: Riley
 
 1) Single thread: sensor size scaling
 2) Single thread: subpixel tile size scaling

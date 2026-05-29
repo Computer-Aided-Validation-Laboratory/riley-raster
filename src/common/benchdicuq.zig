@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -10,16 +10,16 @@ const std = @import("std");
 
 const benchargs = @import("benchargs.zig");
 const common = @import("benchcommon.zig");
-const zraster = @import("../zraster/zig/zraster.zig");
-const meshio = @import("../zraster/zig/meshio.zig");
-const uvio = @import("../zraster/zig/uvio.zig");
-const iio = @import("../zraster/zig/imageio.zig");
-const mo = @import("../zraster/zig/meshops.zig");
-const gk = @import("../zraster/zig/geometrykernels.zig");
-const texops = @import("../zraster/zig/textureops.zig");
-const camera_mod = @import("../zraster/zig/camera.zig");
-const Rotation = @import("../zraster/zig/rotation.zig").Rotation;
-const report = @import("../zraster/zig/report.zig");
+const riley = @import("../riley/zig/riley.zig");
+const meshio = @import("../riley/zig/meshio.zig");
+const uvio = @import("../riley/zig/uvio.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const mo = @import("../riley/zig/meshops.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const texops = @import("../riley/zig/textureops.zig");
+const camera_mod = @import("../riley/zig/camera.zig");
+const Rotation = @import("../riley/zig/rotation.zig").Rotation;
+const report = @import("../riley/zig/report.zig");
 const tcfg = @import("testconfig.zig");
 
 const CameraInput = camera_mod.CameraInput;
@@ -137,7 +137,7 @@ const DicuqE2EStatsRow = struct {
     e2e_tpx_mpx_s: ?f64,
 };
 
-pub fn getBaseRasterConfig() zraster.RasterConfig {
+pub fn getBaseRasterConfig() riley.RasterConfig {
     var base_raster_config = tcfg.getRasterConfig(.bench);
     // Thread counts include the caller thread.
     base_raster_config.total_threads = 4;
@@ -329,10 +329,10 @@ pub fn calcCaseName(
 pub fn runBenchmark(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    render_groups: []const zraster.RenderGroupSpec,
+    render_groups: []const riley.RenderGroupSpec,
     camera_inputs: []const CameraInput,
     mesh_input: MeshInput,
-    config: zraster.RasterConfig,
+    config: riley.RasterConfig,
     out_dir_path: ?[]const u8,
 ) !DicuqRunResult {
     const frame_count = if (mesh_input.disp) |disp|
@@ -346,7 +346,7 @@ pub fn runBenchmark(
     defer outer_alloc.free(bench_capture);
 
     const start = std.Io.Clock.Timestamp.now(io, .awake);
-    const image_arr = try zraster.rasterAllFramesReport(
+    const image_arr = try riley.rasterAllFramesReport(
         outer_alloc,
         render_groups,
         camera_inputs,

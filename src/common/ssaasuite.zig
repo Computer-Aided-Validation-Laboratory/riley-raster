@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -10,14 +10,14 @@ const std = @import("std");
 const benchcommon = @import("benchcommon.zig");
 const orch = @import("orchestration.zig");
 const tcfg = @import("testconfig.zig");
-const cam = @import("../zraster/zig/camera.zig");
-const gk = @import("../zraster/zig/geometrykernels.zig");
-const iio = @import("../zraster/zig/imageio.zig");
-const mo = @import("../zraster/zig/meshops.zig");
-const meshio = @import("../zraster/zig/meshio.zig");
-const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
-const texops = @import("../zraster/zig/textureops.zig");
-const zraster = @import("../zraster/zig/zraster.zig");
+const cam = @import("../riley/zig/camera.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const mo = @import("../riley/zig/meshops.zig");
+const meshio = @import("../riley/zig/meshio.zig");
+const NDArray = @import("../riley/zig/ndarray.zig").NDArray;
+const texops = @import("../riley/zig/textureops.zig");
+const riley = @import("../riley/zig/riley.zig");
 
 pub const gold_root = "gold/ssaa";
 pub const pixel_num = [_]u32{ 640, 400 };
@@ -87,8 +87,8 @@ pub fn getDistortionModel(distortion_case: DistortionCase) cam.DistortionModel {
 
 pub fn goldSubpixelCenterMap(
     distortion_case: DistortionCase,
-    subpixel_center_map: @import("../zraster/zig/rasterconfig.zig").SubPixelCenterMap,
-) @import("../zraster/zig/rasterconfig.zig").SubPixelCenterMap {
+    subpixel_center_map: @import("../riley/zig/rasterconfig.zig").SubPixelCenterMap,
+) @import("../riley/zig/rasterconfig.zig").SubPixelCenterMap {
     return switch (subpixel_center_map) {
         .affine_jac => switch (distortion_case) {
             .brown, .brownext => .affine_jac,
@@ -145,7 +145,7 @@ pub fn renderCase(
     mesh_type: gk.MeshType,
     ssaa: u8,
     distortion_case: DistortionCase,
-    subpixel_center_map: @import("../zraster/zig/rasterconfig.zig").SubPixelCenterMap,
+    subpixel_center_map: @import("../riley/zig/rasterconfig.zig").SubPixelCenterMap,
 ) !NDArray(f64) {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -202,10 +202,10 @@ pub fn renderCase(
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
 
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try zraster.rasterAllFrames(
+    const result = (try riley.rasterAllFrames(
         outer_alloc,
         &render_groups,
         &[_]cam.CameraInput{camera_input},

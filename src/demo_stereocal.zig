@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -8,15 +8,15 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const zraster = @import("zraster/zig/zraster.zig");
-const RasterConfig = zraster.RasterConfig;
-const meshio = @import("zraster/zig/meshio.zig");
-const uvio = @import("zraster/zig/uvio.zig");
-const iio = @import("zraster/zig/imageio.zig");
-const mo = @import("zraster/zig/meshops.zig");
+const riley = @import("riley/zig/riley.zig");
+const RasterConfig = riley.RasterConfig;
+const meshio = @import("riley/zig/meshio.zig");
+const uvio = @import("riley/zig/uvio.zig");
+const iio = @import("riley/zig/imageio.zig");
+const mo = @import("riley/zig/meshops.zig");
 const MeshInput = mo.MeshInput;
-const camera_mod = @import("zraster/zig/camera.zig");
-const Rotation = @import("zraster/zig/rotation.zig").Rotation;
+const camera_mod = @import("riley/zig/camera.zig");
+const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const CameraOps = camera_mod.CameraOps;
 const DistortionModel = camera_mod.DistortionModel;
 const BrownConrady = camera_mod.BrownConrady;
@@ -92,13 +92,13 @@ pub fn main(init: std.process.Init) !void {
     }
 
     const render_groups = try outer_alloc.alloc(
-        zraster.RenderGroupSpec,
+        riley.RenderGroupSpec,
         RENDER_GROUP_COUNT,
     );
     defer outer_alloc.free(render_groups);
 
     for (0..RENDER_GROUP_COUNT) |gg| {
-        managed_ios[gg] = zraster.getThreadedIo(
+        managed_ios[gg] = riley.getThreadedIo(
             outer_alloc,
             init.minimal,
             WORKERS_PER_GROUP,
@@ -267,7 +267,7 @@ pub fn main(init: std.process.Init) !void {
     };
 
     const meshes = [_]MeshInput{mesh_input};
-    const images = try zraster.rasterAllFrames(
+    const images = try riley.rasterAllFrames(
         aa,
         render_groups,
         &stereo_pair.cameras,

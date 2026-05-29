@@ -6,10 +6,10 @@ The large `memory` setup cost is not related to the outer render-group
 scheduler. It occurs before any call into `dispatchFrameJobsOffline` or
 `dispatchFrameJobsInOrder`.
 
-The exact `Setup time` measurement in `zraster.zig` spans:
+The exact `Setup time` measurement in `riley.zig` spans:
 
-- start: [src/zraster/zig/zraster.zig:1368](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1368)
-- end: [src/zraster/zig/zraster.zig:1415](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1415)
+- start: [src/riley/zig/riley.zig:1368](/home/lloydf/riley/src/riley/zig/riley.zig:1368)
+- end: [src/riley/zig/riley.zig:1415](/home/lloydf/riley/src/riley/zig/riley.zig:1415)
 
 The code between those hooks is the only code contributing to the reported
 `Setup time`.
@@ -18,7 +18,7 @@ The code between those hooks is the only code contributing to the reported
 
 The setup timer begins at:
 
-- [src/zraster/zig/zraster.zig:1368](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1368)
+- [src/riley/zig/riley.zig:1368](/home/lloydf/riley/src/riley/zig/riley.zig:1368)
 
 ```zig
 const time_start_render = Timestamp.now(summary_io, .awake);
@@ -26,7 +26,7 @@ const time_start_render = Timestamp.now(summary_io, .awake);
 
 The setup timer ends at:
 
-- [src/zraster/zig/zraster.zig:1415](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1415)
+- [src/riley/zig/riley.zig:1415](/home/lloydf/riley/src/riley/zig/riley.zig:1415)
 
 ```zig
 const time_end_setup = Timestamp.now(summary_io, .awake);
@@ -34,34 +34,34 @@ const time_end_setup = Timestamp.now(summary_io, .awake);
 
 The measured setup duration is then stored at:
 
-- [src/zraster/zig/zraster.zig:1416](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1416)
-  to [src/zraster/zig/zraster.zig:1420](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1420)
+- [src/riley/zig/riley.zig:1416](/home/lloydf/riley/src/riley/zig/riley.zig:1416)
+  to [src/riley/zig/riley.zig:1420](/home/lloydf/riley/src/riley/zig/riley.zig:1420)
 
 The printed `Setup time` label comes from:
 
-- [src/zraster/zig/report.zig:238](/home/lloydf/zigraster/src/zraster/zig/report.zig:238)
+- [src/riley/zig/report.zig:238](/home/lloydf/riley/src/riley/zig/report.zig:238)
 
 ## What Happens Between The Hooks
 
 Between `time_start_render` and `time_end_setup`, the code does:
 
 1. Optional output directory create/open
-   - [src/zraster/zig/zraster.zig:1370](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1370)
-     to [src/zraster/zig/zraster.zig:1378](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1378)
+   - [src/riley/zig/riley.zig:1370](/home/lloydf/riley/src/riley/zig/riley.zig:1370)
+     to [src/riley/zig/riley.zig:1378](/home/lloydf/riley/src/riley/zig/riley.zig:1378)
 2. Static arena setup
-   - [src/zraster/zig/zraster.zig:1380](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1380)
-     to [src/zraster/zig/zraster.zig:1382](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1382)
+   - [src/riley/zig/riley.zig:1380](/home/lloydf/riley/src/riley/zig/riley.zig:1380)
+     to [src/riley/zig/riley.zig:1382](/home/lloydf/riley/src/riley/zig/riley.zig:1382)
 3. Camera preparation
-   - [src/zraster/zig/zraster.zig:1384](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1384)
+   - [src/riley/zig/riley.zig:1384](/home/lloydf/riley/src/riley/zig/riley.zig:1384)
 4. Frame and field counting
-   - [src/zraster/zig/zraster.zig:1390](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1390)
-     to [src/zraster/zig/zraster.zig:1391](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1391)
+   - [src/riley/zig/riley.zig:1390](/home/lloydf/riley/src/riley/zig/riley.zig:1390)
+     to [src/riley/zig/riley.zig:1391](/home/lloydf/riley/src/riley/zig/riley.zig:1391)
 5. Mesh static setup and nodal global scaling
-   - [src/zraster/zig/zraster.zig:1403](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1403)
-     to [src/zraster/zig/zraster.zig:1405](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1405)
+   - [src/riley/zig/riley.zig:1403](/home/lloydf/riley/src/riley/zig/riley.zig:1403)
+     to [src/riley/zig/riley.zig:1405](/home/lloydf/riley/src/riley/zig/riley.zig:1405)
 6. All-frames output buffer initialization
-   - [src/zraster/zig/zraster.zig:1407](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1407)
-     to [src/zraster/zig/zraster.zig:1414](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1414)
+   - [src/riley/zig/riley.zig:1407](/home/lloydf/riley/src/riley/zig/riley.zig:1407)
+     to [src/riley/zig/riley.zig:1414](/home/lloydf/riley/src/riley/zig/riley.zig:1414)
 
 ## Position Relative To Dispatch
 
@@ -70,13 +70,13 @@ Between `time_start_render` and `time_end_setup`, the code does:
 The dispatch phase starts only after setup is finished:
 
 - dispatch timer starts:
-  [src/zraster/zig/zraster.zig:1421](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1421)
+  [src/riley/zig/riley.zig:1421](/home/lloydf/riley/src/riley/zig/riley.zig:1421)
 - in-order dispatch call:
-  [src/zraster/zig/zraster.zig:1423](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1423)
-  to [src/zraster/zig/zraster.zig:1437](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1437)
+  [src/riley/zig/riley.zig:1423](/home/lloydf/riley/src/riley/zig/riley.zig:1423)
+  to [src/riley/zig/riley.zig:1437](/home/lloydf/riley/src/riley/zig/riley.zig:1437)
 - offline dispatch call:
-  [src/zraster/zig/zraster.zig:1439](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1439)
-  to [src/zraster/zig/zraster.zig:1452](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1452)
+  [src/riley/zig/riley.zig:1439](/home/lloydf/riley/src/riley/zig/riley.zig:1439)
+  to [src/riley/zig/riley.zig:1452](/home/lloydf/riley/src/riley/zig/riley.zig:1452)
 
 This means:
 
@@ -94,13 +94,13 @@ region.
 In `bench_dicuq`, `disk` and `both` pass a non-null `out_dir_path`, while
 `memory` passes `null`:
 
-- [src/bench_dicuq.zig:210](/home/lloydf/zigraster/src/bench_dicuq.zig:210)
-  to [src/bench_dicuq.zig:217](/home/lloydf/zigraster/src/bench_dicuq.zig:217)
+- [src/bench_dicuq.zig:210](/home/lloydf/riley/src/bench_dicuq.zig:210)
+  to [src/bench_dicuq.zig:217](/home/lloydf/riley/src/bench_dicuq.zig:217)
 
 That means only `disk` does:
 
-- [src/zraster/zig/zraster.zig:1371](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1371)
-  to [src/zraster/zig/zraster.zig:1376](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:1376)
+- [src/riley/zig/riley.zig:1371](/home/lloydf/riley/src/riley/zig/riley.zig:1371)
+  to [src/riley/zig/riley.zig:1376](/home/lloydf/riley/src/riley/zig/riley.zig:1376)
 
 This is small and goes in the opposite direction. It makes `disk` do slightly
 more setup work, not less.
@@ -109,8 +109,8 @@ more setup work, not less.
 
 This is the only meaningful mode-dependent branch:
 
-- [src/zraster/zig/zraster.zig:244](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:244)
-  to [src/zraster/zig/zraster.zig:273](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:273)
+- [src/riley/zig/riley.zig:244](/home/lloydf/riley/src/riley/zig/riley.zig:244)
+  to [src/riley/zig/riley.zig:273](/home/lloydf/riley/src/riley/zig/riley.zig:273)
 
 Behavior:
 
@@ -123,7 +123,7 @@ Behavior:
 
 The key condition is:
 
-- [src/zraster/zig/zraster.zig:252](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:252)
+- [src/riley/zig/riley.zig:252](/home/lloydf/riley/src/riley/zig/riley.zig:252)
 
 ```zig
 if (config.save_strategy == .memory or config.save_strategy == .both) {
@@ -131,8 +131,8 @@ if (config.save_strategy == .memory or config.save_strategy == .both) {
 
 The allocation itself is:
 
-- [src/zraster/zig/zraster.zig:266](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:266)
-  to [src/zraster/zig/zraster.zig:269](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:269)
+- [src/riley/zig/riley.zig:266](/home/lloydf/riley/src/riley/zig/riley.zig:266)
+  to [src/riley/zig/riley.zig:269](/home/lloydf/riley/src/riley/zig/riley.zig:269)
 
 ```zig
 return try ndarray.NDArray(T).initFlat(
@@ -143,7 +143,7 @@ return try ndarray.NDArray(T).initFlat(
 
 For `disk`, the function returns:
 
-- [src/zraster/zig/zraster.zig:272](/home/lloydf/zigraster/src/zraster/zig/zraster.zig:272)
+- [src/riley/zig/riley.zig:272](/home/lloydf/riley/src/riley/zig/riley.zig:272)
 
 ```zig
 return null;
@@ -153,17 +153,17 @@ return null;
 
 The full-stack memory path goes through:
 
-- [src/zraster/zig/ndarray.zig:54](/home/lloydf/zigraster/src/zraster/zig/ndarray.zig:54)
-  to [src/zraster/zig/ndarray.zig:63](/home/lloydf/zigraster/src/zraster/zig/ndarray.zig:63)
+- [src/riley/zig/ndarray.zig:54](/home/lloydf/riley/src/riley/zig/ndarray.zig:54)
+  to [src/riley/zig/ndarray.zig:63](/home/lloydf/riley/src/riley/zig/ndarray.zig:63)
 
 `initFlat` does:
 
 1. compute total element count
 2. allocate the full backing slice
-   - [src/zraster/zig/ndarray.zig:60](/home/lloydf/zigraster/src/zraster/zig/ndarray.zig:60)
+   - [src/riley/zig/ndarray.zig:60](/home/lloydf/riley/src/riley/zig/ndarray.zig:60)
 3. allocate and populate dims/strides metadata
-   - [src/zraster/zig/ndarray.zig:30](/home/lloydf/zigraster/src/zraster/zig/ndarray.zig:30)
-     to [src/zraster/zig/ndarray.zig:48](/home/lloydf/zigraster/src/zraster/zig/ndarray.zig:48)
+   - [src/riley/zig/ndarray.zig:30](/home/lloydf/riley/src/riley/zig/ndarray.zig:30)
+     to [src/riley/zig/ndarray.zig:48](/home/lloydf/riley/src/riley/zig/ndarray.zig:48)
 
 ## Important Negative Finding
 
@@ -171,7 +171,7 @@ There is no explicit full-image-buffer `@memset` in the setup region in the
 current code.
 
 The earlier redundant global clear was removed and has not been reintroduced.
-The setup-time code path no longer contains a whole-stack clear in `zraster`.
+The setup-time code path no longer contains a whole-stack clear in `riley`.
 
 ## Conclusion
 

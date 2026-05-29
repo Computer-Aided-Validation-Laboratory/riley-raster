@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -24,7 +24,7 @@ test "Gold SSAA Suite" {
 
     var first_err: ?anyerror = null;
 
-    const strategies = [_]@import("zraster/zig/rasterconfig.zig").SubPixelCenterMap{
+    const strategies = [_]@import("riley/zig/rasterconfig.zig").SubPixelCenterMap{
         .per_tile,
         .affine_jac,
     };
@@ -72,7 +72,7 @@ test "Gold SSAA Suite" {
                         var image_mut = image;
                         image_mut.deinit(allocator);
                     }
-                    var result = try @import("zraster/zig/ndarray.zig").NDArray(f64).initFlat(
+                    var result = try @import("riley/zig/ndarray.zig").NDArray(f64).initFlat(
                         allocator,
                         &[_]usize{ 1, 1, 1, image.dims[1], image.dims[2] },
                     );

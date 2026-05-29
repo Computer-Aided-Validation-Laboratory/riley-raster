@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -8,21 +8,21 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const zraster = @import("zraster/zig/zraster.zig");
-const RasterConfig = zraster.RasterConfig;
-const meshio = @import("zraster/zig/meshio.zig");
-const uvio = @import("zraster/zig/uvio.zig");
-const iio = @import("zraster/zig/imageio.zig");
-const mo = @import("zraster/zig/meshops.zig");
+const riley = @import("riley/zig/riley.zig");
+const RasterConfig = riley.RasterConfig;
+const meshio = @import("riley/zig/meshio.zig");
+const uvio = @import("riley/zig/uvio.zig");
+const iio = @import("riley/zig/imageio.zig");
+const mo = @import("riley/zig/meshops.zig");
 const MeshInput = mo.MeshInput;
-const gk = @import("zraster/zig/geometrykernels.zig");
+const gk = @import("riley/zig/geometrykernels.zig");
 const MeshType = gk.MeshType;
-const camera_mod = @import("zraster/zig/camera.zig");
+const camera_mod = @import("riley/zig/camera.zig");
 const CameraInput = camera_mod.CameraInput;
-const Rotation = @import("zraster/zig/rotation.zig").Rotation;
+const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const CameraPrepared = camera_mod.CameraPrepared;
 const CameraOps = camera_mod.CameraOps;
-const MatSlice = @import("zraster/zig/matslice.zig").MatSlice;
+const MatSlice = @import("riley/zig/matslice.zig").MatSlice;
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
@@ -39,7 +39,7 @@ pub fn main(init: std.process.Init) !void {
         },
         .report = .bench,
     };
-    var threaded_io = zraster.getThreadedIo(
+    var threaded_io = riley.getThreadedIo(
         aa,
         init.minimal,
         config.total_threads,
@@ -137,10 +137,10 @@ pub fn main(init: std.process.Init) !void {
         .sub_sample = camera.sub_sample,
         .distortion = camera.distortion,
     };
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const images = try zraster.rasterAllFrames(
+    const images = try riley.rasterAllFrames(
         aa,
         &render_groups,
         &[_]@TypeOf(camera_input){camera_input},

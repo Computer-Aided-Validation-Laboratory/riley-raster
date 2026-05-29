@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -10,25 +10,25 @@ const std = @import("std");
 const Timestamp = std.Io.Clock.Timestamp;
 
 const orch = @import("orchestration.zig");
-const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
-const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
+const NDArray = @import("../riley/zig/ndarray.zig").NDArray;
+const MatSlice = @import("../riley/zig/matslice.zig").MatSlice;
 
-const meshio = @import("../zraster/zig/meshio.zig");
-const CameraPrepared = @import("../zraster/zig/camera.zig").CameraPrepared;
-const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
+const meshio = @import("../riley/zig/meshio.zig");
+const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
+const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
 
-const gk = @import("../zraster/zig/geometrykernels.zig");
-const mo = @import("../zraster/zig/meshops.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const mo = @import("../riley/zig/meshops.zig");
 const MeshType = gk.MeshType;
 const MeshInput = mo.MeshInput;
 
-const zraster = @import("../zraster/zig/zraster.zig");
-const iio = @import("../zraster/zig/imageio.zig");
-const texops = @import("../zraster/zig/textureops.zig");
-const buildconfig = @import("../zraster/zig/buildconfig.zig");
-const rastcfg = @import("../zraster/zig/rasterconfig.zig");
+const riley = @import("../riley/zig/riley.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const texops = @import("../riley/zig/textureops.zig");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
+const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const cfg = buildconfig.config;
-const csvio = @import("../zraster/zig/csvio.zig");
+const csvio = @import("../riley/zig/csvio.zig");
 const tcfg = @import("testconfig.zig");
 
 pub const default_fails_root = "fails";
@@ -794,10 +794,10 @@ pub fn runTestInternal(
                 std.debug.print("Testing {s} ... ", .{case_dir_name});
             }
             const time_start = Timestamp.now(io, .awake);
-            const render_groups = [_]zraster.RenderGroupSpec{
+            const render_groups = [_]riley.RenderGroupSpec{
                 .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
             };
-            const result = (try zraster.rasterAllFrames(
+            const result = (try riley.rasterAllFrames(
                 aa,
                 &render_groups,
                 &[_]CameraInput{prepared_camera_input},
@@ -916,10 +916,10 @@ pub fn runTestInternal(
                     std.debug.print("Testing {s} ... ", .{case_dir_name});
                 }
                 const time_start = Timestamp.now(io, .awake);
-                const render_groups = [_]zraster.RenderGroupSpec{
+                const render_groups = [_]riley.RenderGroupSpec{
                     .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
                 };
-                const result = (try zraster.rasterAllFrames(
+                const result = (try riley.rasterAllFrames(
                     aa,
                     &render_groups,
                     &[_]CameraInput{prepared_camera_input},
@@ -1067,10 +1067,10 @@ pub fn runMultimeshTestExt(
         }
 
         const time_start = Timestamp.now(io, .awake);
-        const render_groups = [_]zraster.RenderGroupSpec{
+        const render_groups = [_]riley.RenderGroupSpec{
             .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
         };
-        const result = (try zraster.rasterAllFrames(
+        const result = (try riley.rasterAllFrames(
             aa,
             &render_groups,
             &[_]CameraInput{camera_input},
@@ -1208,10 +1208,10 @@ pub fn runMultimeshMixedTestExt(
     };
 
     const time_start = Timestamp.now(io, .awake);
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try zraster.rasterAllFrames(
+    const result = (try riley.rasterAllFrames(
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},
@@ -1336,10 +1336,10 @@ pub fn runMultimeshMixedRGBTestExt(
     };
 
     const time_start = Timestamp.now(io, .awake);
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config_rgb.total_threads) },
     };
-    const result = (try zraster.rasterAllFrames(
+    const result = (try riley.rasterAllFrames(
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},
@@ -1505,10 +1505,10 @@ pub fn runDistortEdgeTexFuncTest(
             std.debug.print("Testing {s} ... ", .{case_dir_name});
         }
         const start_time = Timestamp.now(io, .awake);
-        const render_groups = [_]zraster.RenderGroupSpec{
+        const render_groups = [_]riley.RenderGroupSpec{
             .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
         };
-        const result = (try zraster.rasterAllFrames(
+        const result = (try riley.rasterAllFrames(
             aa,
             &render_groups,
             &[_]CameraInput{prepared_camera_input},
@@ -1695,10 +1695,10 @@ pub fn runEdgeTexFuncConstantCaseForHullMode(
         std.debug.print("Testing {s} ... ", .{case_dir_name});
     }
     const start_time = Timestamp.now(io, .awake);
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try zraster.rasterAllFrames(
+    const result = (try riley.rasterAllFrames(
         aa,
         &render_groups,
         &[_]CameraInput{prepared_camera_input},
@@ -1844,10 +1844,10 @@ pub fn runDistortMidsideNodalUvTest(
         std.debug.print("Testing {s} ... ", .{case_dir_name});
     }
     const start_time = Timestamp.now(io, .awake);
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try zraster.rasterAllFrames(
+    const result = (try riley.rasterAllFrames(
         aa,
         &render_groups,
         &[_]CameraInput{prepared_camera_input},
@@ -1999,10 +1999,10 @@ pub fn runDistortMidsideTexShaderTest(
         std.debug.print("Testing {s} ... ", .{case_dir_name});
     }
     const start_time = Timestamp.now(io, .awake);
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try zraster.rasterAllFrames(
+    const result = (try riley.rasterAllFrames(
         aa,
         &render_groups,
         &[_]CameraInput{prepared_camera_input},

@@ -2,8 +2,8 @@ const std = @import("std");
 
 const benchargs = @import("common/benchargs.zig");
 const benchdicuq = @import("common/benchdicuq.zig");
-const zraster = @import("zraster/zig/zraster.zig");
-const report = @import("zraster/zig/report.zig");
+const riley = @import("riley/zig/riley.zig");
+const report = @import("riley/zig/report.zig");
 
 const DEFAULT_OUT_DIR = "out/bench_stats_mem_dicuq";
 const DEFAULT_DATA_DIR = "data/FE/platehole3d_6mr_63f/";
@@ -45,10 +45,10 @@ fn sumFrameTimes(
 fn runCase(
     allocator: std.mem.Allocator,
     io: std.Io,
-    render_groups: []const zraster.RenderGroupSpec,
-    camera_inputs: []const @import("zraster/zig/camera.zig").CameraInput,
-    mesh_input: @import("zraster/zig/meshops.zig").MeshInput,
-    config: zraster.RasterConfig,
+    render_groups: []const riley.RenderGroupSpec,
+    camera_inputs: []const @import("riley/zig/camera.zig").CameraInput,
+    mesh_input: @import("riley/zig/meshops.zig").MeshInput,
+    config: riley.RasterConfig,
     out_dir_path: ?[]const u8,
     case_name: []const u8,
 ) !void {
@@ -63,7 +63,7 @@ fn runCase(
     defer allocator.free(bench_capture);
 
     const start = std.Io.Clock.Timestamp.now(io, .awake);
-    const images = try zraster.rasterAllFramesReport(
+    const images = try riley.rasterAllFramesReport(
         allocator,
         render_groups,
         camera_inputs,
@@ -114,7 +114,7 @@ pub fn main(init: std.process.Init) !void {
         defaults,
     );
 
-    var threaded_io = zraster.getThreadedIo(
+    var threaded_io = riley.getThreadedIo(
         allocator,
         init.minimal,
         bench_args.total_threads,
@@ -144,7 +144,7 @@ pub fn main(init: std.process.Init) !void {
         sample_config,
     );
 
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{
             .io = io,
             .workers = bench_args.total_threads,

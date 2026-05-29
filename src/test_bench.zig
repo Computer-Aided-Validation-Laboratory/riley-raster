@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -10,12 +10,12 @@ const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
-const buildconfig = @import("zraster/zig/buildconfig.zig");
+const buildconfig = @import("riley/zig/buildconfig.zig");
 const cfg = buildconfig.config;
-const gk = @import("zraster/zig/geometrykernels.zig");
-const mo = @import("zraster/zig/meshops.zig");
-const iio = @import("zraster/zig/imageio.zig");
-const texops = @import("zraster/zig/textureops.zig");
+const gk = @import("riley/zig/geometrykernels.zig");
+const mo = @import("riley/zig/meshops.zig");
+const iio = @import("riley/zig/imageio.zig");
+const texops = @import("riley/zig/textureops.zig");
 
 const config = common.BenchConfig{ .run = .all };
 const simd_on = cfg.simd == .on;
@@ -92,7 +92,7 @@ test "Unified Benchmark Tests" {
         .focal_leng = 50.0e-3,
         .pixels_size = .{ 5.3e-6, 5.3e-6 },
         .fov_scale = 1.0,
-        .rot = @import("zraster/zig/rotation.zig").Rotation.init(0, 0, 0),
+        .rot = @import("riley/zig/rotation.zig").Rotation.init(0, 0, 0),
     };
 
     const mesh_types = std.enums.values(gk.MeshType);

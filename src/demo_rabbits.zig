@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -9,16 +9,16 @@
 const std = @import("std");
 
 const orch = @import("common/orchestration.zig");
-const zraster = @import("zraster/zig/zraster.zig");
-const rastcfg = @import("zraster/zig/rasterconfig.zig");
-const meshio = @import("zraster/zig/meshio.zig");
-const uvio = @import("zraster/zig/uvio.zig");
-const mo = @import("zraster/zig/meshops.zig");
-const gk = @import("zraster/zig/geometrykernels.zig");
-const iio = @import("zraster/zig/imageio.zig");
-const so = @import("zraster/zig/shaderops_common.zig");
-const cammod = @import("zraster/zig/camera.zig");
-const Rotation = @import("zraster/zig/rotation.zig").Rotation;
+const riley = @import("riley/zig/riley.zig");
+const rastcfg = @import("riley/zig/rasterconfig.zig");
+const meshio = @import("riley/zig/meshio.zig");
+const uvio = @import("riley/zig/uvio.zig");
+const mo = @import("riley/zig/meshops.zig");
+const gk = @import("riley/zig/geometrykernels.zig");
+const iio = @import("riley/zig/imageio.zig");
+const so = @import("riley/zig/shaderops_common.zig");
+const cammod = @import("riley/zig/camera.zig");
+const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
 const CameraInput = cammod.CameraInput;
 const CameraPrepared = cammod.CameraPrepared;
@@ -454,12 +454,12 @@ pub fn main(init: std.process.Init) !void {
         .sub_sample = camera.sub_sample,
         .distortion = camera.distortion,
     };
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
 
     std.debug.print("Rendering rabbits to {s}/...\n", .{out_dir_root});
-    const images = try zraster.rasterAllFrames(
+    const images = try riley.rasterAllFrames(
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},

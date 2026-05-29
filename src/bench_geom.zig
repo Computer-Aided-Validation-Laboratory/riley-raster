@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -11,12 +11,12 @@ const benchargs = @import("common/benchargs.zig");
 const benchstats = @import("common/benchstats.zig");
 const common = @import("common/benchcommon.zig");
 const tcfg = @import("common/testconfig.zig");
-const rastcfg = @import("zraster/zig/rasterconfig.zig");
-const zraster = @import("zraster/zig/zraster.zig");
-const gk = @import("zraster/zig/geometrykernels.zig");
-const iio = @import("zraster/zig/imageio.zig");
-const texops = @import("zraster/zig/textureops.zig");
-const Rotation = @import("zraster/zig/rotation.zig").Rotation;
+const rastcfg = @import("riley/zig/rasterconfig.zig");
+const riley = @import("riley/zig/riley.zig");
+const gk = @import("riley/zig/geometrykernels.zig");
+const iio = @import("riley/zig/imageio.zig");
+const texops = @import("riley/zig/textureops.zig");
+const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
 const config = common.BenchConfig{ .run = .all };
 
@@ -51,7 +51,7 @@ pub fn main(init: std.process.Init) !void {
         init.minimal.args.vector,
         default_bench_args,
     );
-    var threaded_io = zraster.getThreadedIo(
+    var threaded_io = riley.getThreadedIo(
         outer_alloc,
         init.minimal,
         bench_args.total_threads,

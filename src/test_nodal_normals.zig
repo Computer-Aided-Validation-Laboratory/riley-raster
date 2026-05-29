@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -7,15 +7,15 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const mo = @import("zraster/zig/meshops.zig");
-const pce = @import("zraster/zig/parachunkexec.zig");
-const meshio = @import("zraster/zig/meshio.zig");
-const report = @import("zraster/zig/report.zig");
-const rops = @import("zraster/zig/rasterops.zig");
-const shaderops = @import("zraster/zig/shaderops.zig");
-const CameraPrepared = @import("zraster/zig/camera.zig").CameraPrepared;
-const Rotation = @import("zraster/zig/rotation.zig").Rotation;
-const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
+const mo = @import("riley/zig/meshops.zig");
+const pce = @import("riley/zig/parachunkexec.zig");
+const meshio = @import("riley/zig/meshio.zig");
+const report = @import("riley/zig/report.zig");
+const rops = @import("riley/zig/rasterops.zig");
+const shaderops = @import("riley/zig/shaderops.zig");
+const CameraPrepared = @import("riley/zig/camera.zig").CameraPrepared;
+const Rotation = @import("riley/zig/rotation.zig").Rotation;
+const NDArray = @import("riley/zig/ndarray.zig").NDArray;
 const tcfg = @import("common/testconfig.zig");
 
 fn loadData(
@@ -56,7 +56,7 @@ test "Nodal normals are prepared when requested" {
     const pixel_size = [_]f64{ 0.00625, 0.00625 };
     const focal_leng = 2.0;
     const rot = Rotation.init(0, 0, 0);
-    const cam_pos = @import("zraster/zig/camera.zig").CameraOps.posFillFrameFromRot(
+    const cam_pos = @import("riley/zig/camera.zig").CameraOps.posFillFrameFromRot(
         &sim_data.coords,
         pixel_num,
         pixel_size,
@@ -64,7 +64,7 @@ test "Nodal normals are prepared when requested" {
         rot,
         1.0,
     );
-    const roi_cent = @import("zraster/zig/camera.zig").CameraOps.roiCentFromCoords(
+    const roi_cent = @import("riley/zig/camera.zig").CameraOps.roiCentFromCoords(
         &sim_data.coords,
     );
 

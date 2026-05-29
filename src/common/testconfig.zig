@@ -1,12 +1,12 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
-const rastcfg = @import("../zraster/zig/rasterconfig.zig");
+const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const RenderMode = rastcfg.RenderMode;
 const HullMode = rastcfg.HullMode;
 

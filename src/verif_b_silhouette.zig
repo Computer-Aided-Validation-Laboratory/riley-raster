@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -7,18 +7,18 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const cam = @import("zraster/zig/camera.zig");
-const iio = @import("zraster/zig/imageio.zig");
-const matrix = @import("zraster/zig/matstack.zig");
-const meshio = @import("zraster/zig/meshio.zig");
-const mo = @import("zraster/zig/meshops.zig");
+const cam = @import("riley/zig/camera.zig");
+const iio = @import("riley/zig/imageio.zig");
+const matrix = @import("riley/zig/matstack.zig");
+const meshio = @import("riley/zig/meshio.zig");
+const mo = @import("riley/zig/meshops.zig");
 const orch = @import("common/orchestration.zig");
-const rastcfg = @import("zraster/zig/rasterconfig.zig");
+const rastcfg = @import("riley/zig/rasterconfig.zig");
 const tcfg = @import("common/testconfig.zig");
 const vconst = @import("common/verifconstants.zig");
 const verif = @import("common/verif.zig");
-const vector = @import("zraster/zig/vecstack.zig");
-const zraster = @import("zraster/zig/zraster.zig");
+const vector = @import("riley/zig/vecstack.zig");
+const riley = @import("riley/zig/riley.zig");
 
 const pixel_num = [_]u32{ 1024, 1024 };
 const fov_scale: f64 = 1.05;
@@ -131,7 +131,7 @@ fn buildFrameCoords(
 
 fn extractScalarMap(
     allocator: std.mem.Allocator,
-    image_arr: *const @import("zraster/zig/ndarray.zig").NDArray(f64),
+    image_arr: *const @import("riley/zig/ndarray.zig").NDArray(f64),
 ) !ScalarMap {
     const rows_num = if (image_arr.dims.len == 5) image_arr.dims[3] else image_arr.dims[2];
     const cols_num = if (image_arr.dims.len == 5) image_arr.dims[4] else image_arr.dims[3];
@@ -315,10 +315,10 @@ fn renderScalarMap(
         },
     };
 
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try zraster.rasterAllFrames(
+    const result = (try riley.rasterAllFrames(
         render_allocator,
         &render_groups,
         &[_]cam.CameraInput{camera_input},

@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -9,15 +9,15 @@
 const std = @import("std");
 const common = @import("benchcommon.zig");
 const orch = @import("orchestration.zig");
-const zraster = @import("../zraster/zig/zraster.zig");
-const iio = @import("../zraster/zig/imageio.zig");
-const meshio = @import("../zraster/zig/meshio.zig");
-const mo = @import("../zraster/zig/meshops.zig");
-const gk = @import("../zraster/zig/geometrykernels.zig");
-const texops = @import("../zraster/zig/textureops.zig");
-const CameraInput = @import("../zraster/zig/camera.zig").CameraInput;
+const riley = @import("../riley/zig/riley.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const meshio = @import("../riley/zig/meshio.zig");
+const mo = @import("../riley/zig/meshops.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const texops = @import("../riley/zig/textureops.zig");
+const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
 const tcfg = @import("testconfig.zig");
-const rastcfg = @import("../zraster/zig/rasterconfig.zig");
+const rastcfg = @import("../riley/zig/rasterconfig.zig");
 
 fn translateCoords(coords: *meshio.Coords, translation: [3]f64) void {
     for (0..coords.mat.rows_num) |nn| {
@@ -151,10 +151,10 @@ pub fn runSphere200MultiCullQuiet(
         .sub_sample = camera.sub_sample,
         .distortion = camera.distortion,
     };
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config_run.total_threads) },
     };
-    var image_arr = try zraster.rasterAllFrames(
+    var image_arr = try riley.rasterAllFrames(
         outer_alloc,
         &render_groups,
         &[_]CameraInput{camera_input},

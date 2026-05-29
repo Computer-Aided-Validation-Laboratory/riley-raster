@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -7,18 +7,18 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const zraster = @import("zraster/zig/zraster.zig");
-const meshio = @import("zraster/zig/meshio.zig");
-const iio = @import("zraster/zig/imageio.zig");
-const uvio = @import("zraster/zig/uvio.zig");
-const CameraPrepared = @import("zraster/zig/camera.zig").CameraPrepared;
-const CameraOps = @import("zraster/zig/camera.zig").CameraOps;
-const Rotation = @import("zraster/zig/camera.zig").Rotation;
-const MeshInput = @import("zraster/zig/meshops.zig").MeshInput;
-const mo = @import("zraster/zig/meshops.zig");
-const MatSlice = @import("zraster/zig/matslice.zig").MatSlice;
-const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
-const csvio = @import("zraster/zig/csvio.zig");
+const riley = @import("riley/zig/riley.zig");
+const meshio = @import("riley/zig/meshio.zig");
+const iio = @import("riley/zig/imageio.zig");
+const uvio = @import("riley/zig/uvio.zig");
+const CameraPrepared = @import("riley/zig/camera.zig").CameraPrepared;
+const CameraOps = @import("riley/zig/camera.zig").CameraOps;
+const Rotation = @import("riley/zig/camera.zig").Rotation;
+const MeshInput = @import("riley/zig/meshops.zig").MeshInput;
+const mo = @import("riley/zig/meshops.zig");
+const MatSlice = @import("riley/zig/matslice.zig").MatSlice;
+const NDArray = @import("riley/zig/ndarray.zig").NDArray;
+const csvio = @import("riley/zig/csvio.zig");
 
 pub fn loadNDArrayFromCSVRGB(
     allocator: std.mem.Allocator,
@@ -124,7 +124,7 @@ pub fn main(init: std.process.Init) !void {
     for (0..5) |ii| {
         const field = sim_datas[ii].field.?;
         const num_coords = sim_datas[ii].coords.mat.rows_num;
-        var rgb_field_arr = try zraster.NDArray(f64).initFlat(
+        var rgb_field_arr = try riley.NDArray(f64).initFlat(
             aa,
             &[_]usize{ field.array.dims[0], num_coords, 3 },
         );
@@ -218,7 +218,7 @@ pub fn main(init: std.process.Init) !void {
     );
     defer camera.deinit(aa);
 
-    const config_rgb = zraster.RasterConfig{
+    const config_rgb = riley.RasterConfig{
         .save_opt = .memory,
         .save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .csv, .bits = null, .scaling = .none, .channels = 3 },
@@ -228,10 +228,10 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("Rendering Mixed RGB Data for Difference analysis...\n", .{});
     const camera_input = camera.toInput();
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config_rgb.total_threads) },
     };
-    const result = (try zraster.rasterAllFrames(
+    const result = (try riley.rasterAllFrames(
         aa,
         &render_groups,
         &[_]@TypeOf(camera_input){camera_input},

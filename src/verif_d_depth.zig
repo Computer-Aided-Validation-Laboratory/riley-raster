@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -11,14 +11,14 @@ const std = @import("std");
 const benchcommon = @import("common/benchcommon.zig");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
-const cammod = @import("zraster/zig/camera.zig");
-const gk = @import("zraster/zig/geometrykernels.zig");
-const iio = @import("zraster/zig/imageio.zig");
-const mo = @import("zraster/zig/meshops.zig");
-const meshio = @import("zraster/zig/meshio.zig");
-const zraster = @import("zraster/zig/zraster.zig");
-const Rotation = @import("zraster/zig/rotation.zig").Rotation;
-const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
+const cammod = @import("riley/zig/camera.zig");
+const gk = @import("riley/zig/geometrykernels.zig");
+const iio = @import("riley/zig/imageio.zig");
+const mo = @import("riley/zig/meshops.zig");
+const meshio = @import("riley/zig/meshio.zig");
+const riley = @import("riley/zig/riley.zig");
+const Rotation = @import("riley/zig/rotation.zig").Rotation;
+const NDArray = @import("riley/zig/ndarray.zig").NDArray;
 
 const CameraPrepared = cammod.CameraPrepared;
 const CameraOps = cammod.CameraOps;
@@ -153,10 +153,10 @@ fn renderSingle(
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
 
-    const render_groups = [_]zraster.RenderGroupSpec{
+    const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try zraster.rasterAllFrames(
+    const result = (try riley.rasterAllFrames(
         allocator,
         &render_groups,
         &[_]cammod.CameraInput{camera_input},
