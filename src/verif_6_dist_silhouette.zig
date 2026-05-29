@@ -13,7 +13,6 @@ const matrix = @import("riley/zig/matstack.zig");
 const meshio = @import("riley/zig/meshio.zig");
 const mo = @import("riley/zig/meshops.zig");
 const orch = @import("common/orchestration.zig");
-const rastcfg = @import("riley/zig/rasterconfig.zig");
 const tcfg = @import("common/testconfig.zig");
 const vconst = @import("common/verifconstants.zig");
 const verif = @import("common/verif.zig");
@@ -22,6 +21,7 @@ const riley = @import("riley/zig/riley.zig");
 
 const pixel_num = [_]u32{ 1024, 1024 };
 const fov_scale: f64 = 1.05;
+const verif_subdir_name = "verif_6";
 
 const CentroidStats = struct {
     ideal_x: f64,
@@ -39,80 +39,15 @@ const ScalarMap = struct {
     vals: []f64,
 };
 
-fn imageFormatExt(format: iio.ImageFormat) []const u8 {
-    return switch (format) {
-        .csv => ".csv",
-        .fimg => ".fimg",
-        .ppm => ".ppm",
-        .bmp => ".bmp",
-        .tiff => ".tiff",
-    };
-}
-
-fn renameFullStatsOutputs(
-    io: std.Io,
-    out_dir: std.Io.Dir,
-    frame_idx: usize,
-    full_stats_opts: rastcfg.FullStatsOpts,
-) !void {
-    const diag_names = [_][]const u8{
-        "iters",
-        "xi",
-        "eta",
-        "converged",
-        "Jdet",
-        "occupancy",
-        "depth",
-        "earlyout",
-        "tile_timing",
-        "tile_density",
-        "tile_occupancy",
-        "normals",
-    };
-
-    var old_name_buf: [256]u8 = undefined;
-    var new_name_buf: [256]u8 = undefined;
-
-    const old_stats_name = try std.fmt.bufPrint(
-        &old_name_buf,
-        "report_stats_cam0_frame0.txt",
-        .{},
-    );
-    const new_stats_name = try std.fmt.bufPrint(
-        &new_name_buf,
-        "report_stats_cam0_frame{d}.txt",
-        .{frame_idx},
-    );
-    out_dir.rename(old_stats_name, out_dir, new_stats_name, io) catch |err| {
-        if (err != error.FileNotFound) return err;
-    };
-
-    for (diag_names) |diag_name| {
-        for (full_stats_opts.formats) |save_opt| {
-            const ext = imageFormatExt(save_opt.format);
-            const old_diag_name = try std.fmt.bufPrint(
-                &old_name_buf,
-                "diag_cam0_frame0_{s}{s}",
-                .{ diag_name, ext },
-            );
-            const new_diag_name = try std.fmt.bufPrint(
-                &new_name_buf,
-                "diag_cam0_frame{d}_{s}{s}",
-                .{ frame_idx, diag_name, ext },
-            );
-            out_dir.rename(old_diag_name, out_dir, new_diag_name, io) catch |err| {
-                if (err != error.FileNotFound) return err;
-            };
-        }
-    }
-}
-
 fn buildFrameCoords(
     allocator: std.mem.Allocator,
     sim_data: *const meshio.SimData,
     frame_idx: usize,
 ) !meshio.Coords {
-    var coords = try meshio.Coords.initAlloc(allocator, sim_data.coords.mat.rows_num);
+    var coords = try meshio.Coords.initAlloc(
+        allocator,
+        sim_data.coords.mat.rows_num,
+    );
 
     for (0..sim_data.coords.mat.rows_num) |nn| {
         coords.mat.set(nn, 0, sim_data.coords.x(nn));
@@ -120,9 +55,24 @@ fn buildFrameCoords(
         coords.mat.set(nn, 2, sim_data.coords.z(nn));
 
         if (sim_data.field) |field| {
-            coords.mat.set(nn, 0, coords.mat.get(nn, 0) + field.array.get(&[_]usize{ frame_idx, nn, 0 }));
-            coords.mat.set(nn, 1, coords.mat.get(nn, 1) + field.array.get(&[_]usize{ frame_idx, nn, 1 }));
-            coords.mat.set(nn, 2, coords.mat.get(nn, 2) + field.array.get(&[_]usize{ frame_idx, nn, 2 }));
+            coords.mat.set(
+                nn,
+                0,
+                coords.mat.get(nn, 0) +
+                    field.array.get(&[_]usize{ frame_idx, nn, 0 }),
+            );
+            coords.mat.set(
+                nn,
+                1,
+                coords.mat.get(nn, 1) +
+                    field.array.get(&[_]usize{ frame_idx, nn, 1 }),
+            );
+            coords.mat.set(
+                nn,
+                2,
+                coords.mat.get(nn, 2) +
+                    field.array.get(&[_]usize{ frame_idx, nn, 2 }),
+            );
         }
     }
 
@@ -133,8 +83,14 @@ fn extractScalarMap(
     allocator: std.mem.Allocator,
     image_arr: *const @import("riley/zig/ndarray.zig").NDArray(f64),
 ) !ScalarMap {
-    const rows_num = if (image_arr.dims.len == 5) image_arr.dims[3] else image_arr.dims[2];
-    const cols_num = if (image_arr.dims.len == 5) image_arr.dims[4] else image_arr.dims[3];
+    const rows_num = if (image_arr.dims.len == 5)
+        image_arr.dims[3]
+    else
+        image_arr.dims[2];
+    const cols_num = if (image_arr.dims.len == 5)
+        image_arr.dims[4]
+    else
+        image_arr.dims[3];
 
     const vals = try allocator.alloc(f64, rows_num * cols_num);
     for (0..rows_num) |rr| {
@@ -171,11 +127,11 @@ fn calcCentroidStats(
             const weight = vals[rr * cols_num + cc];
             if (!(weight > 0.0)) continue;
 
-            const x = @as(f64, @floatFromInt(cc)) + 0.5;
-            const y = @as(f64, @floatFromInt(rr)) + 0.5;
+            const xx = @as(f64, @floatFromInt(cc)) + 0.5;
+            const yy = @as(f64, @floatFromInt(rr)) + 0.5;
             sum_w += weight;
-            sum_x += x * weight;
-            sum_y += y * weight;
+            sum_x += xx * weight;
+            sum_y += yy * weight;
         }
     }
 
@@ -197,20 +153,86 @@ fn calcCentroidStats(
     };
 }
 
+fn writeDistortionRows(
+    writer: *std.Io.Writer,
+    distortion_case: vconst.CameraDistortionCase,
+    camera_prepared: *const cam.CameraPrepared,
+) !void {
+    const focal_px = camera_prepared.calcFocalPx();
+    const offsets = camera_prepared.calcRasterOffsets();
+
+    try writer.print("distortion_case,name,{s}\n", .{
+        distortion_case.case_name,
+    });
+    try writer.print("focal_px_x,px,{d:.17}\n", .{focal_px.fx});
+    try writer.print("focal_px_y,px,{d:.17}\n", .{focal_px.fy});
+    try writer.print("offset_x,px,{d:.17}\n", .{offsets.x_off});
+    try writer.print("offset_y,px,{d:.17}\n", .{offsets.y_off});
+
+    switch (camera_prepared.distortion) {
+        .none => {
+            try writer.writeAll("distortion_model,name,none\n");
+            try writer.writeAll("distortion_k1,unitless,0.0\n");
+            try writer.writeAll("distortion_k2,unitless,0.0\n");
+            try writer.writeAll("distortion_k3,unitless,0.0\n");
+            try writer.writeAll("distortion_p1,unitless,0.0\n");
+            try writer.writeAll("distortion_p2,unitless,0.0\n");
+        },
+        .brown_conrady => |distortion| {
+            try writer.writeAll("distortion_model,name,brown_conrady\n");
+            try writer.print("distortion_k1,unitless,{d:.17}\n", .{
+                distortion.k1,
+            });
+            try writer.print("distortion_k2,unitless,{d:.17}\n", .{
+                distortion.k2,
+            });
+            try writer.print("distortion_k3,unitless,{d:.17}\n", .{
+                distortion.k3,
+            });
+            try writer.print("distortion_p1,unitless,{d:.17}\n", .{
+                distortion.p1,
+            });
+            try writer.print("distortion_p2,unitless,{d:.17}\n", .{
+                distortion.p2,
+            });
+        },
+        .brown_conrady_ext => |distortion| {
+            try writer.writeAll("distortion_model,name,brown_conrady_ext\n");
+            try writer.print("distortion_k1,unitless,{d:.17}\n", .{
+                distortion.k1,
+            });
+            try writer.print("distortion_k2,unitless,{d:.17}\n", .{
+                distortion.k2,
+            });
+            try writer.print("distortion_k3,unitless,{d:.17}\n", .{
+                distortion.k3,
+            });
+            try writer.print("distortion_p1,unitless,{d:.17}\n", .{
+                distortion.p1,
+            });
+            try writer.print("distortion_p2,unitless,{d:.17}\n", .{
+                distortion.p2,
+            });
+        },
+    }
+}
+
 fn writeStatsCsv(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
+    distortion_case: vconst.CameraDistortionCase,
     stats: CentroidStats,
     centroid_world: vector.Vec3f,
     scaling: cam.FOVScaling,
-    camera_prepared: *const cam.CameraPrepared,
+    pinhole_camera: *const cam.CameraPrepared,
+    distorted_camera: *const cam.CameraPrepared,
     frame_coords: *const meshio.Coords,
 ) !void {
     const file = try out_dir.createFile(io, file_name, .{});
     defer file.close(io);
 
-    var write_buf: [1024]u8 = undefined;
+    var write_buf: [2048]u8 = undefined;
     var writer_buf = file.writer(io, &write_buf);
     const writer = &writer_buf.interface;
 
@@ -223,42 +245,44 @@ fn writeStatsCsv(
     try writer.print("diff_y,px,{d:.17}\n", .{stats.diff_y});
     try writer.print("dist,px,{d:.17}\n", .{stats.dist});
     try writer.print("sensor_pixels_x,px,{d}\n", .{
-        camera_prepared.pixels_num[0],
+        distorted_camera.pixels_num[0],
     });
     try writer.print("sensor_pixels_y,px,{d}\n", .{
-        camera_prepared.pixels_num[1],
+        distorted_camera.pixels_num[1],
     });
     try writer.print("centroid_x,length,{d:.17}\n", .{centroid_world.get(0)});
     try writer.print("centroid_y,length,{d:.17}\n", .{centroid_world.get(1)});
     try writer.print("centroid_z,length,{d:.17}\n", .{centroid_world.get(2)});
     try writer.print("plane_dist,length,{d:.17}\n", .{scaling.plane_dist});
-    try writer.print("plane_size_x,length,{d:.17}\n", .{scaling.plane_size[0]});
-    try writer.print("plane_size_y,length,{d:.17}\n", .{scaling.plane_size[1]});
-    try writer.print(
-        "leng_per_pixel_x,length/px,{d:.17}\n",
-        .{scaling.leng_per_pixel[0]},
-    );
-    try writer.print(
-        "leng_per_pixel_y,length/px,{d:.17}\n",
-        .{scaling.leng_per_pixel[1]},
-    );
-    try writer.print(
-        "pixel_per_leng_x,px/length,{d:.17}\n",
-        .{scaling.pixel_per_leng[0]},
-    );
-    try writer.print(
-        "pixel_per_leng_y,px/length,{d:.17}\n",
-        .{scaling.pixel_per_leng[1]},
-    );
+    try writer.print("plane_size_x,length,{d:.17}\n", .{
+        scaling.plane_size[0],
+    });
+    try writer.print("plane_size_y,length,{d:.17}\n", .{
+        scaling.plane_size[1],
+    });
+    try writer.print("leng_per_pixel_x,length/px,{d:.17}\n", .{
+        scaling.leng_per_pixel[0],
+    });
+    try writer.print("leng_per_pixel_y,length/px,{d:.17}\n", .{
+        scaling.leng_per_pixel[1],
+    });
+    try writer.print("pixel_per_leng_x,px/length,{d:.17}\n", .{
+        scaling.pixel_per_leng[0],
+    });
+    try writer.print("pixel_per_leng_y,px/length,{d:.17}\n", .{
+        scaling.pixel_per_leng[1],
+    });
+    try writeDistortionRows(writer, distortion_case, distorted_camera);
 
     for (0..frame_coords.mat.rows_num) |nn| {
         const coord_raster = projectWorldNodeToRaster(
-            camera_prepared,
+            pinhole_camera,
             frame_coords.getVec3(nn),
         );
         try writer.print("N{d}_x,px,{d:.17}\n", .{ nn, coord_raster.get(0) });
         try writer.print("N{d}_y,px,{d:.17}\n", .{ nn, coord_raster.get(1) });
     }
+
     try writer.flush();
 }
 
@@ -412,6 +436,7 @@ fn runDistortCase(
     allocator: std.mem.Allocator,
     io: std.Io,
     case_spec: vconst.DistortCase,
+    distortion_case: vconst.CameraDistortionCase,
 ) !void {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -421,18 +446,32 @@ fn runDistortCase(
     const time_steps = if (sim_data.field) |field| field.getTimeN() else 1;
     const ref_coords = try buildFrameCoords(aa, &sim_data, 0);
     const base_camera_input = if (std.mem.eql(u8, case_spec.case_name, "rot"))
-        try buildCentroidCameraInputOverFrames(allocator, &sim_data, case_spec.mesh_type)
+        try buildCentroidCameraInputOverFrames(
+            allocator,
+            &sim_data,
+            case_spec.mesh_type,
+        )
     else
         buildCentroidCameraInput(&ref_coords);
-    const base_camera_prepared = try cam.CameraPrepared.init(aa, base_camera_input);
+    const pinhole_camera = try cam.CameraPrepared.init(aa, base_camera_input);
+    const distorted_camera_input = vconst.cameraInputWithDistortion(
+        base_camera_input,
+        distortion_case,
+    );
+    const distorted_camera = try cam.CameraPrepared.init(
+        aa,
+        distorted_camera_input,
+    );
 
     const out_dir_path = try std.fmt.allocPrint(
         aa,
-        "{s}/b_{s}_{s}",
+        "{s}/{s}/verif_6_{s}_{s}_{s}",
         .{
             vconst.output_dir_name,
+            verif_subdir_name,
             orch.meshDataName(case_spec.mesh_type),
             case_spec.case_name,
+            distortion_case.case_name,
         },
     );
     var out_dir = try orch.openDirEnsured(io, out_dir_path);
@@ -440,7 +479,7 @@ fn runDistortCase(
 
     var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .memory;
-    config.report = .full_stats;
+    config.report = .off;
 
     for (0..time_steps) |frame_idx| {
         var frame_arena = std.heap.ArenaAllocator.init(allocator);
@@ -460,17 +499,11 @@ fn runDistortCase(
             case_spec,
             sim_data.connect,
             frame_coords,
-            base_camera_input,
+            distorted_camera_input,
             config,
             out_dir_path,
         );
         defer allocator.free(scalar_map.vals);
-        try renameFullStatsOutputs(
-            io,
-            out_dir,
-            frame_idx,
-            config.full_stats_opts,
-        );
 
         var base_name_buf: [128]u8 = undefined;
         const base_name = try iio.formatFrameFieldBaseName(
@@ -499,37 +532,51 @@ fn runDistortCase(
             scalar_map.cols_num,
             scalar_map.vals,
         );
+
         const stats = calcCentroidStats(
-            base_camera_input,
+            distorted_camera_input,
             scalar_map.rows_num,
             scalar_map.cols_num,
             scalar_map.vals,
         ) catch CentroidStats{
-            .ideal_x = 0.5 * @as(f64, @floatFromInt(base_camera_input.pixels_num[0])),
-            .ideal_y = 0.5 * @as(f64, @floatFromInt(base_camera_input.pixels_num[1])),
+            .ideal_x = 0.5 * @as(
+                f64,
+                @floatFromInt(distorted_camera_input.pixels_num[0]),
+            ),
+            .ideal_y = 0.5 * @as(
+                f64,
+                @floatFromInt(distorted_camera_input.pixels_num[1]),
+            ),
             .calc_x = std.math.nan(f64),
             .calc_y = std.math.nan(f64),
             .diff_x = std.math.nan(f64),
             .diff_y = std.math.nan(f64),
             .dist = std.math.nan(f64),
         };
-        const stats_name = try std.fmt.allocPrint(aa, "{s}_stats.csv", .{base_name});
+        const stats_name = try std.fmt.allocPrint(
+            aa,
+            "{s}_stats.csv",
+            .{base_name},
+        );
         try writeStatsCsv(
             io,
             out_dir,
             stats_name,
+            distortion_case,
             stats,
             frame_cent_world,
             fov_scaling,
-            &base_camera_prepared,
+            &pinhole_camera,
+            &distorted_camera,
             &frame_coords,
         );
 
         std.debug.print(
-            "b_{s}_{s} frame {d}: centroid dist={e:.6}\n",
+            "verif_6_{s}_{s}_{s} frame {d}: centroid dist={e:.6}\n",
             .{
                 orch.meshDataName(case_spec.mesh_type),
                 case_spec.case_name,
+                distortion_case.case_name,
                 frame_idx,
                 stats.dist,
             },
@@ -541,11 +588,23 @@ pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
     const io = init.io;
 
-    var root_dir = try orch.openDirEnsured(io, vconst.output_dir_name);
+    const root_dir_path = try std.fmt.allocPrint(
+        allocator,
+        "{s}/{s}",
+        .{ vconst.output_dir_name, verif_subdir_name },
+    );
+    var root_dir = try orch.openDirEnsured(io, root_dir_path);
     defer root_dir.close(io);
 
     for (vconst.distort_cases) |case_spec| {
-        try runDistortCase(allocator, io, case_spec);
+        for (vconst.camera_distortion_cases) |distortion_case| {
+            try runDistortCase(
+                allocator,
+                io,
+                case_spec,
+                distortion_case,
+            );
+        }
     }
 
     std.debug.print("Done.\n", .{});

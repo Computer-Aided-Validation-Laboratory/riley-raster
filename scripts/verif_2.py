@@ -33,12 +33,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--verif-root",
         type=pathlib.Path,
-        default=repo_root() / "verif",
+        default=repo_root() / "verif" / "verif_2",
     )
     parser.add_argument(
         "--out-csv",
         type=pathlib.Path,
-        default=repo_root() / "verif" / "verif_b_summary.csv",
+        default=repo_root() / "verif" / "verif_2" / "verif_2_summary.csv",
     )
     parser.add_argument(
         "--subset",
@@ -591,12 +591,12 @@ def keep_case_info(mesh_name: str, distort_name: str, subset: str) -> bool:
 
 def main() -> int:
     args = parse_args()
-    print("Running verif_b self-test...")
+    print("Running verif_2 self-test...")
     run_self_test()
     print("Self-test passed.")
 
     stats_files_all = sorted(args.verif_root.glob("b_*/*_stats.csv"))
-    print(f"Found {len(stats_files_all)} total verif_b stats files.")
+    print(f"Found {len(stats_files_all)} total verif_2 stats files.")
     stats_files = []
     for stats_path in stats_files_all:
         _, mesh_name, distort_name, _ = parse_case_info(stats_path)
@@ -628,7 +628,7 @@ def main() -> int:
     max_centroid = max(abs(float(row["centroid_dist_px"])) for row in rows)
     max_area_rel = max(abs(float(row["area_rel_diff"])) for row in rows)
     max_mask_diff = max(abs(float(row["mask_diff_pct"])) for row in rows)
-    print(f"Processed {len(rows)} verif_b frames")
+    print(f"Processed {len(rows)} verif_2 frames")
     print(f"Wrote summary to {args.out_csv}")
     print(f"Max centroid error: {max_centroid:.6f} px")
     print(f"Max area rel error: {max_area_rel:.6e}")

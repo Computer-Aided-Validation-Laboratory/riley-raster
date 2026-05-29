@@ -12,6 +12,11 @@ const rotation = @import("../riley/zig/rotation.zig");
 
 pub const output_dir_name = "verif";
 
+pub const CameraDistortionCase = struct {
+    case_name: []const u8,
+    distortion: cam.DistortionModel,
+};
+
 pub const DistortCase = struct {
     case_name: []const u8,
     mesh_type: gk.MeshType,
@@ -33,6 +38,80 @@ fn edgeCameraInput(
         .sub_sample = 1,
         .distortion = .none,
     };
+}
+
+fn brownConradyDistortion(
+    k1: f64,
+    k2: f64,
+    k3: f64,
+    p1: f64,
+    p2: f64,
+) cam.DistortionModel {
+    return .{
+        .brown_conrady = .{
+            .k1 = k1,
+            .k2 = k2,
+            .k3 = k3,
+            .p1 = p1,
+            .p2 = p2,
+        },
+    };
+}
+
+pub const camera_distortion_cases = [_]CameraDistortionCase{
+    .{
+        .case_name = "none",
+        .distortion = .none,
+    },
+    .{
+        .case_name = "mild_barrel",
+        .distortion = brownConradyDistortion(
+            -5.0e-2,
+            1.0e-2,
+            0.0,
+            0.0,
+            0.0,
+        ),
+    },
+    .{
+        .case_name = "mild_pincushion",
+        .distortion = brownConradyDistortion(
+            5.0e-2,
+            -1.0e-2,
+            0.0,
+            0.0,
+            0.0,
+        ),
+    },
+    .{
+        .case_name = "strong_barrel",
+        .distortion = brownConradyDistortion(
+            -1.5e-1,
+            3.0e-2,
+            0.0,
+            0.0,
+            0.0,
+        ),
+    },
+    .{
+        .case_name = "mixed_asymmetric",
+        .distortion = brownConradyDistortion(
+            -8.0e-2,
+            1.5e-2,
+            0.0,
+            1.0e-3,
+            -1.0e-3,
+        ),
+    },
+};
+
+pub fn cameraInputWithDistortion(
+    camera_input: cam.CameraInput,
+    distortion_case: CameraDistortionCase,
+) cam.CameraInput {
+    var distorted_camera_input = camera_input;
+    distorted_camera_input.distortion = distortion_case.distortion;
+    return distorted_camera_input;
 }
 
 pub const distort_cases = [_]DistortCase{

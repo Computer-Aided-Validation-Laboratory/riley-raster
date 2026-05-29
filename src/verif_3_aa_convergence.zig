@@ -24,6 +24,7 @@ const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
 const MeshInput = mo.MeshInput;
 const CameraPrepared = camera_mod.CameraPrepared;
+const CameraInput = camera_mod.CameraInput;
 const CameraOps = camera_mod.CameraOps;
 const NDArrayOps = ndarray.NDArrayOps(f64);
 const MatSlice = matslice.MatSlice(f64);
@@ -80,7 +81,7 @@ pub fn main(init: std.process.Init) !void {
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const out_verif_root = "verif";
+    const out_verif_root = "verif/verif_3";
     const fov_scale: f64 = 1.02;
 
     std.debug.print("Loading speckle texture...\n", .{});
@@ -211,7 +212,7 @@ pub fn main(init: std.process.Init) !void {
                         },
                     );
 
-                    const camera_input = cam.CameraInput{
+                    const camera_input = CameraInput{
                         .pixels_num = camera.pixels_num,
                         .pixels_size = camera.pixels_size,
                         .pos_world = camera.pos_world,

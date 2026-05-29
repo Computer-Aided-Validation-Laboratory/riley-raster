@@ -30,7 +30,7 @@ pub const BEHIND_FACT: f64 = 1.05;
 
 const pixel_num = [_]u32{ 1200, 600 };
 const fov_scale: f64 = 1.01;
-const out_root = "verif";
+const out_root = "verif/verif_4";
 
 const mesh_types = [_]gk.MeshType{
     .tri3,

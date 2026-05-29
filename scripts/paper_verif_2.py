@@ -22,9 +22,10 @@ from paper_const import (
     repo_root,
 )
 
-SUMMARY_PATH = pathlib.Path("verif/verif_b_summary.csv")
-OUT_TABS_TEX_PATH = pathlib.Path("verif/verif_b_tabs.tex")
-OUT_FIGS_TEX_PATH = pathlib.Path("verif/verif_b_figs.tex")
+VERIF_DIR = pathlib.Path("verif/verif_2")
+SUMMARY_PATH = VERIF_DIR / "verif_2_summary.csv"
+OUT_TABS_TEX_PATH = VERIF_DIR / "verif_2_tabs.tex"
+OUT_FIGS_TEX_PATH = VERIF_DIR / "verif_2_figs.tex"
 SCI_THRESHOLD = 1.0e-12
 
 SHEAR_TABLE_CAPTION = (
@@ -62,9 +63,9 @@ def find_bmp_path(row: dict[str, str]) -> pathlib.Path:
 def ensure_summary_rows() -> list[dict[str, str]]:
     summary_path = repo_root() / SUMMARY_PATH
     if not summary_path.exists():
-        print("Missing verif_b summary, generating it with scripts/verif_b.py...")
+        print("Missing verif_2 summary, generating it with scripts/verif_2.py...")
         subprocess.run(
-            [".venv/bin/python", "scripts/verif_b.py"],
+            [".venv/bin/python", "scripts/verif_2.py"],
             cwd=repo_root(),
             check=True,
         )
@@ -87,11 +88,11 @@ def ensure_summary_rows() -> list[dict[str, str]]:
     missing_pairs = sorted(needed_pairs - present_pairs)
     if missing_pairs:
         print(
-            "verif_b summary is missing required rows; regenerating with "
-            "scripts/verif_b.py...",
+            "verif_2 summary is missing required rows; regenerating with "
+            "scripts/verif_2.py...",
         )
         subprocess.run(
-            [".venv/bin/python", "scripts/verif_b.py", "--subset", "all"],
+            [".venv/bin/python", "scripts/verif_2.py", "--subset", "all"],
             cwd=repo_root(),
             check=True,
         )
@@ -103,7 +104,7 @@ def ensure_summary_rows() -> list[dict[str, str]]:
         missing_pairs = sorted(needed_pairs - present_pairs)
         if missing_pairs:
             raise RuntimeError(
-                "verif_b summary is still missing required rows after "
+                "verif_2 summary is still missing required rows after "
                 "regeneration",
             )
     return rows
@@ -411,7 +412,7 @@ def write_tex_outputs(
 
 
 def main() -> int:
-    print("Loading verif_b summary...")
+    print("Loading verif_2 summary...")
     rows = ensure_summary_rows()
     print(f"Loaded {len(rows)} summary rows.")
 

@@ -17,6 +17,7 @@ const vconst = @import("common/verifconstants.zig");
 
 const structured_grid_quad_num: usize = 250;
 const structured_grid_tri_num: usize = 250;
+const verif_subdir_name = "verif_1";
 
 const SampleGrid = struct {
     list: std.ArrayList(verif.SamplePoint),
@@ -105,7 +106,10 @@ fn evalSample(
         const dy_obs = observed_reproj[1] - observed_target[1];
         reproj_err = @sqrt(dx_obs * dx_obs + dy_obs * dy_obs);
 
-        const reproj_ideal_target = try verif.observedToIdealRaster(camera, observed_reproj);
+        const reproj_ideal_target = try verif.observedToIdealRaster(
+            camera,
+            observed_reproj,
+        );
         const reproj_result = verif.solveParentFromIdealRaster(
             mesh_type,
             camera,
@@ -182,14 +186,52 @@ fn saveFieldMaps(
     var field1_csv_buf: [128]u8 = undefined;
 
     const field0_stem = try frameFileStem(&field0_stem_buf, frame_idx, 0);
-    const field0_csv = try std.fmt.bufPrint(&field0_csv_buf, "{s}.csv", .{field0_stem});
-    try verif.writeScalarMapCsv(io, out_dir, field0_csv, rows_num, cols_num, field0);
-    try verif.writeScalarMapBmp(allocator, io, out_dir, field0_stem, rows_num, cols_num, field0);
+    const field0_csv = try std.fmt.bufPrint(
+        &field0_csv_buf,
+        "{s}.csv",
+        .{field0_stem},
+    );
+    try verif.writeScalarMapCsv(
+        io,
+        out_dir,
+        field0_csv,
+        rows_num,
+        cols_num,
+        field0,
+    );
+    try verif.writeScalarMapBmp(
+        allocator,
+        io,
+        out_dir,
+        field0_stem,
+        rows_num,
+        cols_num,
+        field0,
+    );
 
     const field1_stem = try frameFileStem(&field1_stem_buf, frame_idx, 1);
-    const field1_csv = try std.fmt.bufPrint(&field1_csv_buf, "{s}.csv", .{field1_stem});
-    try verif.writeScalarMapCsv(io, out_dir, field1_csv, rows_num, cols_num, field1);
-    try verif.writeScalarMapBmp(allocator, io, out_dir, field1_stem, rows_num, cols_num, field1);
+    const field1_csv = try std.fmt.bufPrint(
+        &field1_csv_buf,
+        "{s}.csv",
+        .{field1_stem},
+    );
+    try verif.writeScalarMapCsv(
+        io,
+        out_dir,
+        field1_csv,
+        rows_num,
+        cols_num,
+        field1,
+    );
+    try verif.writeScalarMapBmp(
+        allocator,
+        io,
+        out_dir,
+        field1_stem,
+        rows_num,
+        cols_num,
+        field1,
+    );
 }
 
 fn saveIdealMaps(
@@ -202,8 +244,12 @@ fn saveIdealMaps(
 ) !void {
     const ideal_dir_path = try std.fmt.allocPrint(
         allocator,
-        "{s}/a_ideal/{s}",
-        .{ vconst.output_dir_name, @tagName(mesh_type) },
+        "{s}/{s}/a_ideal/{s}",
+        .{
+            vconst.output_dir_name,
+            verif_subdir_name,
+            @tagName(mesh_type),
+        },
     );
     var ideal_dir = try orch.openDirEnsured(io, ideal_dir_path);
     defer ideal_dir.close(io);
@@ -243,12 +289,54 @@ fn saveIdealMapsDynamic(
     cols_num: usize,
 ) !void {
     return switch (mesh_type) {
-        .tri3 => try saveIdealMaps(.tri3, allocator, io, sample_list, rows_num, cols_num),
-        .tri6 => try saveIdealMaps(.tri6, allocator, io, sample_list, rows_num, cols_num),
-        .quad4ibi => try saveIdealMaps(.quad4ibi, allocator, io, sample_list, rows_num, cols_num),
-        .quad4newton => try saveIdealMaps(.quad4newton, allocator, io, sample_list, rows_num, cols_num),
-        .quad8 => try saveIdealMaps(.quad8, allocator, io, sample_list, rows_num, cols_num),
-        .quad9 => try saveIdealMaps(.quad9, allocator, io, sample_list, rows_num, cols_num),
+        .tri3 => try saveIdealMaps(
+            .tri3,
+            allocator,
+            io,
+            sample_list,
+            rows_num,
+            cols_num,
+        ),
+        .tri6 => try saveIdealMaps(
+            .tri6,
+            allocator,
+            io,
+            sample_list,
+            rows_num,
+            cols_num,
+        ),
+        .quad4ibi => try saveIdealMaps(
+            .quad4ibi,
+            allocator,
+            io,
+            sample_list,
+            rows_num,
+            cols_num,
+        ),
+        .quad4newton => try saveIdealMaps(
+            .quad4newton,
+            allocator,
+            io,
+            sample_list,
+            rows_num,
+            cols_num,
+        ),
+        .quad8 => try saveIdealMaps(
+            .quad8,
+            allocator,
+            io,
+            sample_list,
+            rows_num,
+            cols_num,
+        ),
+        .quad9 => try saveIdealMaps(
+            .quad9,
+            allocator,
+            io,
+            sample_list,
+            rows_num,
+            cols_num,
+        ),
     };
 }
 
@@ -304,8 +392,13 @@ fn runDistortCase(
 
     const out_dir_path = try std.fmt.allocPrint(
         aa,
-        "{s}/a_distort_{s}_{s}",
-        .{ vconst.output_dir_name, case_spec.case_name, @tagName(mesh_type) },
+        "{s}/{s}/a_distort_{s}_{s}",
+        .{
+            vconst.output_dir_name,
+            verif_subdir_name,
+            case_spec.case_name,
+            @tagName(mesh_type),
+        },
     );
     var out_dir = try orch.openDirEnsured(io, out_dir_path);
     defer out_dir.close(io);
@@ -414,7 +507,12 @@ pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
     const io = init.io;
 
-    var root_dir = try orch.openDirEnsured(io, vconst.output_dir_name);
+    const root_dir_path = try std.fmt.allocPrint(
+        allocator,
+        "{s}/{s}",
+        .{ vconst.output_dir_name, verif_subdir_name },
+    );
+    var root_dir = try orch.openDirEnsured(io, root_dir_path);
     defer root_dir.close(io);
 
     var global_reproj_errs: std.ArrayList(f64) = .empty;
@@ -422,12 +520,48 @@ pub fn main(init: std.process.Init) !void {
 
     for (vconst.distort_cases) |case_spec| {
         switch (case_spec.mesh_type) {
-            .tri3 => try runDistortCase(.tri3, case_spec, allocator, io, &global_reproj_errs),
-            .tri6 => try runDistortCase(.tri6, case_spec, allocator, io, &global_reproj_errs),
-            .quad4ibi => try runDistortCase(.quad4ibi, case_spec, allocator, io, &global_reproj_errs),
-            .quad4newton => try runDistortCase(.quad4newton, case_spec, allocator, io, &global_reproj_errs),
-            .quad8 => try runDistortCase(.quad8, case_spec, allocator, io, &global_reproj_errs),
-            .quad9 => try runDistortCase(.quad9, case_spec, allocator, io, &global_reproj_errs),
+            .tri3 => try runDistortCase(
+                .tri3,
+                case_spec,
+                allocator,
+                io,
+                &global_reproj_errs,
+            ),
+            .tri6 => try runDistortCase(
+                .tri6,
+                case_spec,
+                allocator,
+                io,
+                &global_reproj_errs,
+            ),
+            .quad4ibi => try runDistortCase(
+                .quad4ibi,
+                case_spec,
+                allocator,
+                io,
+                &global_reproj_errs,
+            ),
+            .quad4newton => try runDistortCase(
+                .quad4newton,
+                case_spec,
+                allocator,
+                io,
+                &global_reproj_errs,
+            ),
+            .quad8 => try runDistortCase(
+                .quad8,
+                case_spec,
+                allocator,
+                io,
+                &global_reproj_errs,
+            ),
+            .quad9 => try runDistortCase(
+                .quad9,
+                case_spec,
+                allocator,
+                io,
+                &global_reproj_errs,
+            ),
         }
     }
 

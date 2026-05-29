@@ -32,8 +32,9 @@ from paper_const import (
 )
 
 
-OUT_TABS_TEX_PATH = pathlib.Path("verif/verif_a_tabs.tex")
-OUT_FIGS_TEX_PATH = pathlib.Path("verif/verif_a_figs.tex")
+VERIF_DIR = pathlib.Path("verif/verif_1")
+OUT_TABS_TEX_PATH = VERIF_DIR / "verif_1_tabs.tex"
+OUT_FIGS_TEX_PATH = VERIF_DIR / "verif_1_figs.tex"
 SCI_THRESHOLD = 1.0e-12
 VERIF_A_MAP_WIDTH = "0.19\\textwidth"
 
@@ -109,12 +110,15 @@ def mesh_label(mesh_name: str) -> str:
     return mesh_name
 
 
-def verif_a_dir(mesh_name: str, distort_name: str) -> pathlib.Path:
-    return repo_root() / "verif" / f"a_distort_{distort_name}_{mesh_name}"
+def verif_1_dir(mesh_name: str, distort_name: str) -> pathlib.Path:
+    return repo_root() / VERIF_DIR / f"a_distort_{distort_name}_{mesh_name}"
 
 
 def solver_stats_path(mesh_name: str, distort_name: str, frame_idx: int) -> pathlib.Path:
-    return verif_a_dir(mesh_name, distort_name) / f"solver_stats_frame{frame_idx}.csv"
+    return (
+        verif_1_dir(mesh_name, distort_name) /
+        f"solver_stats_frame{frame_idx}.csv"
+    )
 
 
 def ensure_solver_stats_exists(mesh_name: str, distort_name: str, frame_idx: int) -> pathlib.Path:
@@ -527,11 +531,11 @@ def write_tex_outputs(
 def main() -> int:
     print("Loading pyvale-style plot options...")
     style = load_plot_style()
-    print("Building verif_a LaTeX table...")
+    print("Building verif_1 LaTeX table...")
     tables_tex = build_table_tex()
-    print("Generating verif_a figures...")
+    print("Generating verif_1 figures...")
     generate_all_figures(style)
-    print("Building verif_a figure TeX...")
+    print("Building verif_1 figure TeX...")
     figs_tex = build_shear_fig_tex(style) + "\n" + build_bulge_fig_tex(style)
     write_tex_outputs(tables_tex, figs_tex)
     print(f"Saved PNG figures to {PAPER_DIR}")

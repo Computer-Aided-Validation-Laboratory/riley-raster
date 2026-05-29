@@ -29,13 +29,16 @@ def run_script(script_name: str) -> None:
 
 def main() -> int:
     verif_scripts = [
-        "verif_b.py",
+        "verif_2.py",
+        "verif_6.py",
     ]
     paper_scripts = [
-        "paper_verif_a.py",
-        "paper_verif_b.py",
-        "paper_verif_c.py",
-        "paper_verif_d.py",
+        "paper_verif_1.py",
+        "paper_verif_2.py",
+        "paper_verif_3.py",
+        "paper_verif_4.py",
+        "paper_verif_5.py",
+        "paper_verif_6.py",
     ]
 
     print("Running verification analysis scripts...")

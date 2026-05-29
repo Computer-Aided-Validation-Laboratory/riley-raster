@@ -16,7 +16,8 @@ from PIL import Image
 from paper_const import PAPER_DIR, repo_root
 
 
-OUT_FIGS_TEX_PATH = pathlib.Path("verif/verif_c_figs.tex")
+VERIF_DIR = pathlib.Path("verif/verif_3")
+OUT_FIGS_TEX_PATH = VERIF_DIR / "verif_3_figs.tex"
 LOWRES_TAG = "lowres"
 HIGHRES_TAG = "highres"
 LOWRES_MESH = "tri6"
@@ -48,15 +49,15 @@ RMSE_FIG_CAPTION = (
 
 
 def verif_root() -> pathlib.Path:
-    return repo_root() / "verif"
+    return repo_root() / VERIF_DIR
 
 
 def run_verif_c_if_needed() -> None:
     if list(verif_root().glob("c_*_*res")):
         return
-    print("Missing verif_c tagged outputs, running ./bin/verif_c_aa_convergence...")
+    print("Missing verif_3 tagged outputs, running ./bin/verif_3_aa_convergence...")
     subprocess.run(
-        ["./bin/verif_c_aa_convergence"],
+        ["./bin/verif_3_aa_convergence"],
         cwd=repo_root(),
         check=True,
     )
@@ -71,7 +72,7 @@ def constant_shader_dir(mesh_name: str, res_tag: str) -> pathlib.Path:
         if dir_path.exists():
             return dir_path
     raise FileNotFoundError(
-        f"missing constant shader verif_c directory for {mesh_name} {res_tag}",
+        f"missing constant shader verif_3 directory for {mesh_name} {res_tag}",
     )
 
 
@@ -154,7 +155,7 @@ def save_diff_png_from_csv(src_path: pathlib.Path, dst_name: str) -> pathlib.Pat
 
 
 def save_lowres_figures() -> list[int]:
-    print("Preparing lowres verif_c figures from tri6 constant shader...")
+    print("Preparing lowres verif_3 figures from tri6 constant shader...")
     dir_path = constant_shader_dir(LOWRES_MESH, LOWRES_TAG)
     ssaa_levels = collect_ssaa_levels(dir_path)
     if not ssaa_levels:
@@ -218,7 +219,7 @@ def save_rmse_plot(
     rmse_data: dict[str, list[tuple[int, float]]],
     out_name: str,
 ) -> None:
-    print(f"Saving verif_c RMSE line plot: {out_name}...")
+    print(f"Saving verif_3 RMSE line plot: {out_name}...")
     PAPER_DIR.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=PLOT_SIZE, constrained_layout=False)
 
@@ -378,7 +379,7 @@ def write_figs_tex(figs_tex: str) -> None:
 
 
 def main() -> int:
-    print("Checking verif_c outputs...")
+    print("Checking verif_3 outputs...")
     run_verif_c_if_needed()
 
     print("Exporting lowres BMP figures to PNG...")
@@ -392,7 +393,7 @@ def main() -> int:
     highres_rmse_data = build_rmse_data(HIGHRES_TAG)
     save_rmse_plot(highres_rmse_data, "fig_verifc_rmse_line_plot_highres")
 
-    print("Writing verif_c figure TeX...")
+    print("Writing verif_3 figure TeX...")
     figs_tex = (
         build_lowres_figure_tex(ssaa_levels) +
         "\n" +

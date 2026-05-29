@@ -12,8 +12,9 @@ from PIL import Image
 from paper_const import PAPER_DIR, repo_root
 
 
-OUT_STATS_PATH = pathlib.Path("verif/verif_d_stats.csv")
-OUT_FIGS_TEX_PATH = pathlib.Path("verif/verif_d_figs.tex")
+VERIF_DIR = pathlib.Path("verif/verif_4")
+OUT_STATS_PATH = VERIF_DIR / "verif_4_stats.csv"
+OUT_FIGS_TEX_PATH = VERIF_DIR / "verif_4_figs.tex"
 RABBIT_MESH_NAMES = ["tri3", "quad4", "tri6", "quad8", "quad9"]
 COUNT_TOL = 1.0e-6
 
@@ -25,7 +26,7 @@ FIG_CAPTION = (
 
 
 def verif_case_dir(mesh_name: str) -> pathlib.Path:
-    return repo_root() / "verif" / f"d_{mesh_name}_rabbit"
+    return repo_root() / VERIF_DIR / f"d_{mesh_name}_rabbit"
 
 
 def load_csv_matrix(csv_path: pathlib.Path) -> list[list[float]]:
@@ -154,11 +155,11 @@ def write_figs_tex(figs_tex: str) -> None:
 
 
 def main() -> int:
-    print("Writing verif_d stats CSV...")
+    print("Writing verif_4 stats CSV...")
     write_stats_csv()
     print("Exporting tri6 rabbit BMPs to PNG...")
     export_tri6_figures()
-    print("Writing verif_d figure TeX...")
+    print("Writing verif_4 figure TeX...")
     figs_tex = build_figs_tex()
     write_figs_tex(figs_tex)
     print(f"Wrote {repo_root() / OUT_STATS_PATH}")
