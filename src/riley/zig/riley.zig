@@ -1549,8 +1549,10 @@ pub fn rasterAllFramesReport(
     var out_dir: ?std.Io.Dir = null;
     if (out_dir_path) |path| {
         const cwd = std.Io.Dir.cwd();
-        cwd.createDir(summary_io, path, .default_dir) catch |err| {
-            if (err != error.PathAlreadyExists) return err;
+        cwd.createDirPath(summary_io, path) catch |err| {
+            if (err != error.PathAlreadyExists) {
+                return err;
+            }
         };
         out_dir = try cwd.openDir(summary_io, path, .{});
     }
