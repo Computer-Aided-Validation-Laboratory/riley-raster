@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -8,20 +8,20 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const gengold = @import("common/gengold.zig");
-const zraster = @import("zraster/zig/zraster.zig");
-const mr = @import("zraster/zig/meshraster.zig");
-const iio = @import("zraster/zig/imageio.zig");
-const texops = @import("zraster/zig/textureops.zig");
+const tcfg = @import("common/testconfig.zig");
+const orch = @import("common/orchestration.zig");
+const riley = @import("riley/zig/riley.zig");
+const meshio = @import("riley/zig/meshio.zig");
+const mo = @import("riley/zig/meshops.zig");
+const gk = @import("riley/zig/geometrykernels.zig");
+const iio = @import("riley/zig/imageio.zig");
+const texops = @import("riley/zig/textureops.zig");
 
-pub fn main() !void {
-    var gpa: std.heap.DebugAllocator(.{}) = .init;
-    defer _ = gpa.deinit();
-    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    var arena = std.heap.ArenaAllocator.init(init.gpa);
     defer arena.deinit();
     const aa = arena.allocator();
-
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
 
     const texture = try iio.loadImage(
         u8,
@@ -32,7 +32,7 @@ pub fn main() !void {
         .tiff,
     );
 
-    const mesh_types = [_]mr.MeshType{
+    const mesh_types = [_]gk.MeshType{
         .tri6,
         .quad8,
         .quad9,
@@ -48,16 +48,16 @@ pub fn main() !void {
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
     const pixel_num = [_]u32{ 320, 200 };
-    const config = zraster.RasterConfig{
-        .save_opt = .disk,
-        .save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .fimg, .bits = null, .scaling = .none },
-            .{ .format = .bmp, .bits = 8, .scaling = .auto },
-        },
-        .report = .off,
+    const pixel_num_distort_midside = [_]u32{ 800, 500 };
+
+    var config = tcfg.getRasterConfig(.gold);
+    config.save_strategy = .disk;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .fimg, .bits = null, .scaling = .none },
+        .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
 
-    std.debug.print("Generating Edge Cases to gold-edge/...\n", .{});
+    std.debug.print("Generating Edge Cases to gold/edge/...\n", .{});
 
     try gengold.runGenerationExt(
         aa,
@@ -68,8 +68,8 @@ pub fn main() !void {
         texture,
         pixel_num,
         &sample_configs,
-        "gold-edge",
-        "data-edge",
+        "gold/edge",
+        "data/edge",
         config,
     );
     try gengold.runGenerationExt(
@@ -81,8 +81,8 @@ pub fn main() !void {
         texture,
         pixel_num,
         &sample_configs,
-        "gold-edge",
-        "data-edge",
+        "gold/edge",
+        "data/edge",
         config,
     );
     try gengold.runGenerationExt(
@@ -94,8 +94,16 @@ pub fn main() !void {
         texture,
         pixel_num,
         &sample_configs,
-        "gold-edge",
-        "data-edge",
+        "gold/edge",
+        "data/edge",
+        config,
+    );
+    try gengold.generateDistortEdgeGold(
+        aa,
+        io,
+        "gold/edge",
+        "data/edge",
+        pixel_num_distort_midside,
         config,
     );
 

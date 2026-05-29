@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -9,17 +9,18 @@
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const gengold = @import("common/gengold.zig");
-const zraster = @import("zraster/zig/zraster.zig");
-const mr = @import("zraster/zig/meshraster.zig");
-const iio = @import("zraster/zig/imageio.zig");
+const minsuite = @import("common/minsuite.zig");
+const tcfg = @import("common/testconfig.zig");
+const riley = @import("riley/zig/riley.zig");
+const mo = @import("riley/zig/meshops.zig");
+const gk = @import("riley/zig/geometrykernels.zig");
+const iio = @import("riley/zig/imageio.zig");
+const texops = @import("riley/zig/textureops.zig");
+const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
-pub fn main() !void {
-    var gpa: std.heap.DebugAllocator(.{}) = .init;
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
+    const io = init.io;
 
     const texture_grey = try iio.loadImage(
         u8,
@@ -41,12 +42,25 @@ pub fn main() !void {
     );
     defer texture_rgb.deinit(allocator);
 
-    const out_dir = "gold-min";
+    const out_dir = "gold/min";
     const pixel_num_sphere = [_]u32{ 160, 100 };
     const pixel_num_multi = [_]u32{ 640, 400 };
+    const render_defaults_sphere = common.BenchRenderDefaults{
+        .pixels_num = pixel_num_sphere,
+        .sub_sample = 2,
+        .focal_leng = 50.0e-3,
+        .pixels_size = .{ 5.3e-6, 5.3e-6 },
+        .fov_scale = 1.0,
+        .rot = Rotation.init(0, 0, 0),
+    };
 
-    const mesh_types = comptime std.enums.values(mr.MeshType);
-    const shader_types = comptime std.enums.values(common.ShaderType);
+    const mesh_types = comptime std.enums.values(gk.MeshType);
+    const shader_types = [_]common.ShaderType{
+        .nodal_grey,
+        .nodal_rgb,
+        .tex8_grey,
+        .tex8_rgb,
+    };
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
@@ -59,31 +73,29 @@ pub fn main() !void {
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
 
-    const config = zraster.RasterConfig{
-        .save_opt = .disk,
-        .save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .fimg, .bits = null, .scaling = .none },
-        },
-        .report = .off,
+    var config = tcfg.getRasterConfig(.gold);
+    config.save_strategy = .disk;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .fimg, .bits = null, .scaling = .none },
+        .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
 
-    std.debug.print("Generating MIN Gold Data (sphere200)...\n", .{});
+    std.debug.print("Generating MIN Gold Data (sphere200/base)...\n", .{});
     for (mesh_types) |mt| {
         for (shader_types) |st| {
             for (sample_configs) |sc| {
                 const data_dir = try std.fmt.allocPrint(
                     allocator,
-                    "data-min/{s}_sphere200",
+                    "data/min/{s}_sphere200",
                     .{@tagName(mt)},
                 );
                 defer allocator.free(data_dir);
 
-                // Filter for Min Suite:
-                // - Greyscale: All cases
-                // - RGB: Only nodal and one texture case
                 const is_rgb = (st == .tex8_rgb or st == .nodal_rgb);
                 const is_allowed_rgb = (st == .nodal_rgb) or
-                    (st == .tex8_rgb and sc.sample == .cubic_catmull_rom and sc.mode == .lut_lerp);
+                    (st == .tex8_rgb and
+                        sc.sample == .cubic_catmull_rom and
+                        sc.mode == .lut_lerp);
 
                 if (is_rgb and !is_allowed_rgb) continue;
 
@@ -95,7 +107,72 @@ pub fn main() !void {
                     data_dir,
                 )) {
                     const num_ch: u8 = if (is_rgb) 3 else 1;
+                    var opts_with_ch = [_]iio.ImageSaveOpts{
+                        config.image_save_opts[0],
+                        config.image_save_opts[1],
+                    };
+                    opts_with_ch[0].channels = num_ch;
+                    opts_with_ch[1].channels = num_ch;
+
+                    var r_config = tcfg.getRasterConfig(.bench);
+                    r_config.save_strategy = .disk;
+                    r_config.image_save_opts = &opts_with_ch;
+
                     var result = try common.runBenchmarkQuiet(
+                        allocator,
+                        io,
+                        mt,
+                        st,
+                        sc,
+                        null,
+                        data_dir,
+                        render_defaults_sphere,
+                        texture_grey,
+                        texture_rgb,
+                        r_config,
+                        out_dir ++ "/sphere200/base",
+                    );
+                    result.deinit(allocator);
+                }
+            }
+        }
+    }
+
+    std.debug.print("Generating MIN Gold Data (sphere200multicull)...\n", .{});
+    for (mesh_types) |mt| {
+        for (shader_types) |st| {
+            for (sample_configs) |sc| {
+                const data_dir = try std.fmt.allocPrint(
+                    allocator,
+                    "data/min/{s}_sphere200",
+                    .{@tagName(mt)},
+                );
+                defer allocator.free(data_dir);
+
+                const is_rgb = (st == .tex8_rgb or st == .nodal_rgb);
+                const is_allowed_rgb = (st == .nodal_rgb) or
+                    (st == .tex8_rgb and
+                        sc.sample == .cubic_catmull_rom and
+                        sc.mode == .lut_lerp);
+
+                if (is_rgb and !is_allowed_rgb) continue;
+
+                if (common.shouldRun(
+                    .{ .run = .all, .skip_quad4ibi_sphere = true },
+                    mt,
+                    st,
+                    sc,
+                    data_dir,
+                )) {
+                    const num_ch: u8 = if (is_rgb) 3 else 1;
+                    var opts_with_ch = [_]iio.ImageSaveOpts{
+                        config.image_save_opts[0],
+                        config.image_save_opts[1],
+                    };
+                    opts_with_ch[0].channels = num_ch;
+                    opts_with_ch[1].channels = num_ch;
+
+                    var result = try minsuite.runSphere200MultiCullQuiet(
                         allocator,
                         io,
                         mt,
@@ -106,11 +183,11 @@ pub fn main() !void {
                         texture_grey,
                         texture_rgb,
                         .{
-                            .out_dir_base = out_dir,
-                            .save_opts = &[_]iio.ImageSaveOpts{
-                                .{ .format = .fimg, .bits = null, .scaling = .none, .channels = num_ch },
-                            },
+                            .save_strategy = .disk,
+                            .image_save_opts = &opts_with_ch,
                         },
+                        out_dir ++ "/sphere200multicull",
+                        0.75,
                     );
                     result.deinit(allocator);
                 }
@@ -120,18 +197,18 @@ pub fn main() !void {
 
     std.debug.print("Generating MIN Gold Data (multimesh)...\n", .{});
     const multi_dir_paths = [_][]const u8{
-        "data-min/tri3_twoelems/",
-        "data-min/tri6_twoelems/",
-        "data-min/quad4_twoelems/",
-        "data-min/quad8_twoelems/",
-        "data-min/quad9_twoelems/",
+        "data/min/tri3_twoelems/",
+        "data/min/tri6_twoelems/",
+        "data/min/quad4_twoelems/",
+        "data/min/quad8_twoelems/",
+        "data/min/quad9_twoelems/",
     };
 
     try gengold.runMultimeshGenerationExt(
         allocator,
         io,
         config,
-        out_dir,
+        out_dir ++ "/multimesh/base",
         &multi_dir_paths,
         pixel_num_multi,
     );
@@ -139,7 +216,7 @@ pub fn main() !void {
         allocator,
         io,
         config,
-        out_dir ++ "/allelem_allshade",
+        out_dir ++ "/multimesh/allelem_allshade",
         &multi_dir_paths,
         pixel_num_multi,
     );
@@ -147,7 +224,7 @@ pub fn main() !void {
         allocator,
         io,
         config,
-        out_dir ++ "/allelem_allshade_rgb",
+        out_dir ++ "/multimesh/allelem_allshade_rgb",
         &multi_dir_paths,
         pixel_num_multi,
     );

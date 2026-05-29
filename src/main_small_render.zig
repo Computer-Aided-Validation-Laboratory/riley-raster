@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -8,18 +8,18 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const gengold = @import("common/gengold.zig");
-const zraster = @import("zraster/zig/zraster.zig");
-const mr = @import("zraster/zig/meshraster.zig");
-const iio = @import("zraster/zig/imageio.zig");
-const texops = @import("zraster/zig/textureops.zig");
+const tcfg = @import("common/testconfig.zig");
+const riley = @import("riley/zig/riley.zig");
+const mo = @import("riley/zig/meshops.zig");
+const gk = @import("riley/zig/geometrykernels.zig");
+const iio = @import("riley/zig/imageio.zig");
+const texops = @import("riley/zig/textureops.zig");
 
-pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+pub fn main(init: std.process.Init) !void {
+    const io = init.io;
+    var arena = std.heap.ArenaAllocator.init(init.gpa);
     defer arena.deinit();
     const aa = arena.allocator();
-
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
 
     const texture = try iio.loadImage(
         u8,
@@ -30,7 +30,7 @@ pub fn main() !void {
         .tiff,
     );
 
-    const mesh_types = [_]mr.MeshType{ .tri3, .tri6, .quad4ibi, .quad8, .quad9 };
+    const mesh_types = [_]gk.MeshType{ .tri3, .tri6, .quad4ibi, .quad8, .quad9 };
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
@@ -43,29 +43,28 @@ pub fn main() !void {
 
     const pixel_num = [_]u32{ 160, 100 };
 
-    const out_dir_root = "out-bench-small";
-    const data_dir = "data-small";
+    const out_dir_root = "out/small";
+    const data_dir = "data/small";
 
-    const config = zraster.RasterConfig{
-        .save_opt = .disk,
-        .save_opts = &[_]iio.ImageSaveOpts{
+    var config = tcfg.getRasterConfig(.preview);
+    config.save_strategy = .disk;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .bmp, .bits = 8, .scaling = .auto },
+        .{ .format = .csv, .bits = null, .scaling = .none },
+    };
+    config.report = .full_stats;
+    config.full_stats_opts = .{
+        .formats = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
-        .report = .full_stats,
-        .full_stats_opts = .{
-            .formats = &[_]iio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = .auto },
-                .{ .format = .csv, .bits = null, .scaling = .none },
-            },
-            .save_iteration_map = true,
-            .save_tile_timing_map = true,
-            .save_tile_density_map = true,
-            .save_tile_occupancy_map = true,
-            .save_depth_map = true,
-            .save_earlyout_map = true,
-            .save_pixel_occupancy_map = true,
-        },
+        .save_iteration_map = true,
+        .save_tile_timing_map = true,
+        .save_tile_density_map = true,
+        .save_tile_occupancy_map = true,
+        .save_depth_map = true,
+        .save_earlyout_map = true,
+        .save_pixel_occupancy_map = true,
     };
 
     std.debug.print("Rendering Small Data to {s}/...\n", .{out_dir_root});

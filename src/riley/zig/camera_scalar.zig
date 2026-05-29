@@ -1,0 +1,192 @@
+// --------------------------------------------------------------------------
+// Riley: A High Performance Rasteriser for DIC UQ
+//
+// Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+// Licensed under the MIT License (see LICENSE file for details)
+//
+// Authors: scepticalrabbit (Lloyd Fletcher)
+// --------------------------------------------------------------------------
+const common = @import("camera_common.zig");
+
+pub fn fillTileIdealCentersPerTile(
+    ctx_rast: anytype,
+    tile: anytype,
+    subpx_scratch: anytype,
+    subpx_tile_size: usize,
+) !void {
+    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+    const start_x = @as(usize, @intCast(tile.x_px_min)) * sub_samp;
+    const start_y = @as(usize, @intCast(tile.y_px_min)) * sub_samp;
+    const tile_w = @as(usize, tile.x_px_max - tile.x_px_min) * sub_samp;
+    const tile_h = @as(usize, tile.y_px_max - tile.y_px_min) * sub_samp;
+
+    if (common.isNoDistortion(ctx_rast.camera.distortion)) {
+        for (0..tile_h) |jj| {
+            const global_y = start_y + jj;
+            const observed_y = common.calcObservedSubpixelCoord(
+                global_y,
+                ctx_rast.camera.sub_sample,
+            );
+            const scratch_row_off = jj * subpx_tile_size;
+
+            for (0..tile_w) |ii| {
+                const global_x = start_x + ii;
+                const observed_x = common.calcObservedSubpixelCoord(
+                    global_x,
+                    ctx_rast.camera.sub_sample,
+                );
+                common.storeIdealPairScratch(
+                    subpx_scratch.ideal_pixel_centers,
+                    scratch_row_off + ii,
+                    observed_x,
+                    observed_y,
+                );
+            }
+        }
+        return;
+    }
+
+    for (0..tile_h) |jj| {
+        const global_y = start_y + jj;
+        const observed_y = common.calcObservedSubpixelCoord(
+            global_y,
+            ctx_rast.camera.sub_sample,
+        );
+        const scratch_row_off = jj * subpx_tile_size;
+
+        for (0..tile_w) |ii| {
+            const global_x = start_x + ii;
+            const observed_x = common.calcObservedSubpixelCoord(
+                global_x,
+                ctx_rast.camera.sub_sample,
+            );
+            const ideal = try ctx_rast.camera.calcIdealObservedRasterPoint(
+                observed_x,
+                observed_y,
+            );
+            common.storeIdealPairScratch(
+                subpx_scratch.ideal_pixel_centers,
+                scratch_row_off + ii,
+                ideal[0],
+                ideal[1],
+            );
+        }
+    }
+}
+
+pub fn fillTileIdealCentersAffineJac(
+    ctx_rast: anytype,
+    tile: anytype,
+    subpx_scratch: anytype,
+    subpx_tile_size: usize,
+) void {
+    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+    const jac = &ctx_rast.camera.pixel_center_jac;
+    const start_x = @as(usize, @intCast(tile.x_px_min)) * sub_samp;
+    const start_y = @as(usize, @intCast(tile.y_px_min)) * sub_samp;
+    const tile_w = @as(usize, tile.x_px_max - tile.x_px_min) * sub_samp;
+    const tile_h = @as(usize, tile.y_px_max - tile.y_px_min) * sub_samp;
+
+    if (common.isNoDistortion(ctx_rast.camera.distortion)) {
+        for (0..tile_h) |jj| {
+            const global_y = start_y + jj;
+            const observed_y = common.calcObservedSubpixelCoord(
+                global_y,
+                ctx_rast.camera.sub_sample,
+            );
+            const scratch_row_off = jj * subpx_tile_size;
+
+            for (0..tile_w) |ii| {
+                const global_x = start_x + ii;
+                const observed_x = common.calcObservedSubpixelCoord(
+                    global_x,
+                    ctx_rast.camera.sub_sample,
+                );
+                common.storeIdealPairScratch(
+                    subpx_scratch.ideal_pixel_centers,
+                    scratch_row_off + ii,
+                    observed_x,
+                    observed_y,
+                );
+            }
+        }
+        return;
+    }
+
+    for (0..tile_h) |jj| {
+        const global_suby = start_y + jj;
+        const pixel_y = global_suby / sub_samp;
+        const observed_y = common.calcObservedSubpixelCoord(
+            global_suby,
+            ctx_rast.camera.sub_sample,
+        );
+        const center_y = common.calcPixelCenterCoord(pixel_y);
+        const delta_y = observed_y - center_y;
+        const scratch_row_off = jj * subpx_tile_size;
+
+        for (0..tile_w) |ii| {
+            const global_subx = start_x + ii;
+            const pixel_x = global_subx / sub_samp;
+            const observed_x = common.calcObservedSubpixelCoord(
+                global_subx,
+                ctx_rast.camera.sub_sample,
+            );
+            const center_x = common.calcPixelCenterCoord(pixel_x);
+            const delta_x = observed_x - center_x;
+            const ideal_x = jac.get(&[_]usize{ pixel_y, pixel_x, 0 });
+            const ideal_y = jac.get(&[_]usize{ pixel_y, pixel_x, 1 });
+            const j11 = jac.get(&[_]usize{ pixel_y, pixel_x, 2 });
+            const j12 = jac.get(&[_]usize{ pixel_y, pixel_x, 3 });
+            const j21 = jac.get(&[_]usize{ pixel_y, pixel_x, 4 });
+            const j22 = jac.get(&[_]usize{ pixel_y, pixel_x, 5 });
+            common.storeIdealPairScratch(
+                subpx_scratch.ideal_pixel_centers,
+                scratch_row_off + ii,
+                ideal_x + j11 * delta_x + j12 * delta_y,
+                ideal_y + j21 * delta_x + j22 * delta_y,
+            );
+        }
+    }
+}
+
+pub fn initPixelCenterJac(camera: anytype) !void {
+    if (common.isNoDistortion(camera.distortion)) {
+        for (0..camera.pixels_num[1]) |jj| {
+            for (0..camera.pixels_num[0]) |ii| {
+                camera.pixel_center_jac.set(
+                    &[_]usize{ jj, ii, 0 },
+                    common.calcPixelCenterCoord(ii),
+                );
+                camera.pixel_center_jac.set(
+                    &[_]usize{ jj, ii, 1 },
+                    common.calcPixelCenterCoord(jj),
+                );
+                camera.pixel_center_jac.set(&[_]usize{ jj, ii, 2 }, 1.0);
+                camera.pixel_center_jac.set(&[_]usize{ jj, ii, 3 }, 0.0);
+                camera.pixel_center_jac.set(&[_]usize{ jj, ii, 4 }, 0.0);
+                camera.pixel_center_jac.set(&[_]usize{ jj, ii, 5 }, 1.0);
+            }
+        }
+        return;
+    }
+
+    const eps: f64 = 0.25;
+    for (0..camera.pixels_num[1]) |jj| {
+        for (0..camera.pixels_num[0]) |ii| {
+            const x_c = common.calcPixelCenterCoord(ii);
+            const y_c = common.calcPixelCenterCoord(jj);
+            const center = try camera.calcIdealObservedRasterPoint(x_c, y_c);
+            const x_p = try camera.calcIdealObservedRasterPoint(x_c + eps, y_c);
+            const x_m = try camera.calcIdealObservedRasterPoint(x_c - eps, y_c);
+            const y_p = try camera.calcIdealObservedRasterPoint(x_c, y_c + eps);
+            const y_m = try camera.calcIdealObservedRasterPoint(x_c, y_c - eps);
+            const inv_two_eps = 0.5 / eps;
+            camera.pixel_center_jac.set(&[_]usize{ jj, ii, 0 }, center[0]);
+            camera.pixel_center_jac.set(&[_]usize{ jj, ii, 1 }, center[1]);
+            camera.pixel_center_jac.set(&[_]usize{ jj, ii, 2 }, (x_p[0] - x_m[0]) * inv_two_eps);
+            camera.pixel_center_jac.set(&[_]usize{ jj, ii, 3 }, (y_p[0] - y_m[0]) * inv_two_eps);
+            camera.pixel_center_jac.set(&[_]usize{ jj, ii, 4 }, (x_p[1] - x_m[1]) * inv_two_eps);
+            camera.pixel_center_jac.set(&[_]usize{ jj, ii, 5 }, (y_p[1] - y_m[1]) * inv_two_eps);
+        }
+    }
+}

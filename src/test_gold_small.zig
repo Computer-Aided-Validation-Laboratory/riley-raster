@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -9,9 +9,10 @@
 const std = @import("std");
 const common = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
-const mr = @import("zraster/zig/meshraster.zig");
-const iio = @import("zraster/zig/imageio.zig");
-const texops = @import("zraster/zig/textureops.zig");
+const buildconfig = @import("riley/zig/buildconfig.zig");
+const gk = @import("riley/zig/geometrykernels.zig");
+const iio = @import("riley/zig/imageio.zig");
+const texops = @import("riley/zig/textureops.zig");
 
 const SHADER_FILTER: common.ShaderFilter = .both; // .nodal, .tex, or .both
 
@@ -20,8 +21,7 @@ test "Gold Small Suite" {
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
 
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
 
     // Load original using C loader once, then save as simple TIFF
     // and reload using our simple loader to ensure compatibility.
@@ -37,7 +37,7 @@ test "Gold Small Suite" {
     };
     defer texture.deinit(allocator);
 
-    const mesh_types = [_]mr.MeshType{
+    const mesh_types = [_]gk.MeshType{
         .tri3,
         .tri6,
         .quad4ibi,
@@ -62,6 +62,11 @@ test "Gold Small Suite" {
 
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
 
+    const simd_on = buildconfig.config.simd == .on;
+    std.debug.print("Running Gold Small Tests with .simd = .{s}...\n", .{
+        if (simd_on) "on" else "off",
+    });
+
     for (mesh_types) |mt| {
         try common.runTestInternal(
             allocator,
@@ -72,8 +77,8 @@ test "Gold Small Suite" {
             texture,
             pixel_num,
             &sample_configs,
-            "gold-small",
-            "data-small",
+            "gold/small",
+            "data/small",
             tcfg.REL_TOL,
             tcfg.ABS_TOL,
             SHADER_FILTER,
@@ -89,8 +94,8 @@ test "Gold Small Suite" {
             texture,
             pixel_num,
             &sample_configs,
-            "gold-small",
-            "data-small",
+            "gold/small",
+            "data/small",
             tcfg.REL_TOL,
             tcfg.ABS_TOL,
             SHADER_FILTER,

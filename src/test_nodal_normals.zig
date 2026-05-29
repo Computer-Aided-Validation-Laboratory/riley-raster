@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -7,14 +7,16 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const meshraster = @import("zraster/zig/meshraster.zig");
-const meshio = @import("zraster/zig/meshio.zig");
-const report = @import("zraster/zig/report.zig");
-const rops = @import("zraster/zig/rasterops.zig");
-const shaderops = @import("zraster/zig/shaderops.zig");
-const Camera = @import("zraster/zig/camera.zig").Camera;
-const Rotation = @import("zraster/zig/rotation.zig").Rotation;
-const NDArray = @import("zraster/zig/ndarray.zig").NDArray;
+const mo = @import("riley/zig/meshops.zig");
+const pce = @import("riley/zig/parachunkexec.zig");
+const meshio = @import("riley/zig/meshio.zig");
+const report = @import("riley/zig/report.zig");
+const rops = @import("riley/zig/rasterops.zig");
+const shaderops = @import("riley/zig/shaderops.zig");
+const CameraPrepared = @import("riley/zig/camera.zig").CameraPrepared;
+const Rotation = @import("riley/zig/rotation.zig").Rotation;
+const NDArray = @import("riley/zig/ndarray.zig").NDArray;
+const tcfg = @import("common/testconfig.zig");
 
 fn loadData(
     allocator: std.mem.Allocator,
@@ -46,16 +48,15 @@ test "Nodal normals are prepared when requested" {
     defer arena.deinit();
     const arena_alloc = arena.allocator();
 
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
 
-    var sim_data = try loadData(arena_alloc, io, "data-bench/tri3_sphere200");
+    var sim_data = try loadData(arena_alloc, io, "data/bench/tri3_sphere200");
 
     const pixel_num = [_]u32{ 320, 320 };
     const pixel_size = [_]f64{ 0.00625, 0.00625 };
     const focal_leng = 2.0;
     const rot = Rotation.init(0, 0, 0);
-    const cam_pos = @import("zraster/zig/camera.zig").CameraOps.posFillFrameFromRot(
+    const cam_pos = @import("riley/zig/camera.zig").CameraOps.posFillFrameFromRot(
         &sim_data.coords,
         pixel_num,
         pixel_size,
@@ -63,21 +64,25 @@ test "Nodal normals are prepared when requested" {
         rot,
         1.0,
     );
-    const roi_cent = @import("zraster/zig/camera.zig").CameraOps.roiCentFromCoords(
+    const roi_cent = @import("riley/zig/camera.zig").CameraOps.roiCentFromCoords(
         &sim_data.coords,
     );
 
-    const camera = Camera.init(
-        pixel_num,
-        pixel_size,
-        cam_pos,
-        rot,
-        roi_cent,
-        focal_leng,
-        2,
+    const camera = try CameraPrepared.init(
+        arena_alloc,
+        .{
+            .pixels_num = pixel_num,
+            .pixels_size = pixel_size,
+            .pos_world = cam_pos,
+            .rot_world = rot,
+            .roi_cent_world = roi_cent,
+            .focal_length = focal_leng,
+            .sub_sample = 2,
+        },
     );
+    defer camera.deinit(arena_alloc);
 
-    const mesh_input = meshraster.MeshInput{
+    const mesh_input = mo.MeshInput{
         .mesh_type = .tri3,
         .coords = sim_data.coords,
         .connect = sim_data.connect,
@@ -88,43 +93,25 @@ test "Nodal normals are prepared when requested" {
         } },
     };
 
-    var prep_meshes = [_]meshraster.MeshPrepared{
-        try meshraster.prepareMesh(
-            arena_alloc,
-            &mesh_input,
-            &sim_data.coords.mat,
-            null,
-        ),
-    };
+    const mesh_static = try mo.initMeshStatic(arena_alloc, &mesh_input);
 
-    var off_log = report.OffLog{};
-    const ctx_perf = report.ReportContext(.off){
-        .log = &off_log,
-    };
-
-    var raster_hulls = [_]?NDArray(f64){null};
-    const elem_bboxes_by_mesh = try arena_alloc.alloc([]rops.ElemBBox, 1);
-    const elems_in_image_by_mesh = try arena_alloc.alloc(usize, 1);
-    var total_elems_num: usize = 0;
-    var total_elems_in_image: usize = 0;
-
-    try rops.prepareSceneGeometry(
-        .off,
-        ctx_perf,
+    const rast_cfg = tcfg.getRasterConfig(.testing);
+    var pool = pce.ParaChunkExecutor.init(std.testing.io, 1);
+    const frame_mesh = try mo.prepareMeshFrame(
         arena_alloc,
+        &pool,
+        1,
         &camera,
-        prep_meshes[0..],
-        raster_hulls[0..],
-        elem_bboxes_by_mesh,
-        elems_in_image_by_mesh,
-        &total_elems_num,
-        &total_elems_in_image,
+        rast_cfg,
+        &mesh_static,
+        0,
+        null,
     );
 
-    try std.testing.expect(total_elems_num > 0);
-    try std.testing.expect(total_elems_in_image > 0);
+    try std.testing.expect(frame_mesh.total_elems_num > 0);
+    try std.testing.expect(frame_mesh.elems_in_image > 0);
 
-    switch (prep_meshes[0].shader) {
+    switch (frame_mesh.mesh.shader) {
         .nodal => |shader| {
             try std.testing.expectEqual(
                 shaderops.NormalType.averaged,

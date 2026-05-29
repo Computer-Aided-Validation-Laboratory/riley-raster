@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -8,39 +8,37 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const gengold = @import("common/gengold.zig");
-const zraster = @import("zraster/zig/zraster.zig");
-const iio = @import("zraster/zig/imageio.zig");
+const tcfg = @import("common/testconfig.zig");
+const riley = @import("riley/zig/riley.zig");
+const iio = @import("riley/zig/imageio.zig");
 
-pub fn main() !void {
-    const outer_alloc = std.heap.page_allocator;
+pub fn main(init: std.process.Init) !void {
+    const outer_alloc = init.gpa;
+    const io = init.io;
 
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
-
-    const config = zraster.RasterConfig{
-        .save_opt = .disk,
-        .save_opts = &[_]iio.ImageSaveOpts{
+    var config = tcfg.getRasterConfig(.preview);
+    config.save_strategy = .disk;
+    config.image_save_opts = &[_]iio.ImageSaveOpts{
+        .{ .format = .bmp, .bits = 8, .scaling = .auto },
+        .{ .format = .csv, .bits = null, .scaling = .none },
+    };
+    config.report = .full_stats;
+    config.full_stats_opts = .{
+        .formats = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
-            .{ .format = .csv, .bits = null, .scaling = .none },
         },
-        .report = .full_stats,
-        .full_stats_opts = .{
-            .formats = &[_]iio.ImageSaveOpts{
-                .{ .format = .bmp, .bits = 8, .scaling = .auto },
-            },
-            .save_iteration_map = true,
-            .save_depth_map = true,
-        },
+        .save_iteration_map = true,
+        .save_depth_map = true,
     };
     const dir_paths = [_][]const u8{
-        "data-simple/tri3_twoelems/",
-        "data-simple/tri6_twoelems/",
-        "data-simple/quad4_twoelems/",
-        "data-simple/quad8_twoelems/",
-        "data-simple/quad9_twoelems/",
+        "data/simple/tri3_twoelems/",
+        "data/simple/tri6_twoelems/",
+        "data/simple/quad4_twoelems/",
+        "data/simple/quad8_twoelems/",
+        "data/simple/quad9_twoelems/",
     };
 
-    const out_dir_root = "out-bench-multimesh";
+    const out_dir_root = "out/multimesh";
     std.debug.print("Rendering Multimesh Data to {s}/...\n", .{out_dir_root});
 
     try gengold.runMultimeshGenerationExt(

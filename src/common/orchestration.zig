@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -8,17 +8,18 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const MatSlice = @import("../zraster/zig/matslice.zig").MatSlice;
-const NDArray = @import("../zraster/zig/ndarray.zig").NDArray;
-const iio = @import("../zraster/zig/imageio.zig");
-const meshio = @import("../zraster/zig/meshio.zig");
-const mr = @import("../zraster/zig/meshraster.zig");
-const uvio = @import("../zraster/zig/uvio.zig");
-const Camera = @import("../zraster/zig/camera.zig").Camera;
-const CameraOps = @import("../zraster/zig/camera.zig").CameraOps;
-const Rotation = @import("../zraster/zig/camera.zig").Rotation;
+const MatSlice = @import("../riley/zig/matslice.zig").MatSlice;
+const NDArray = @import("../riley/zig/ndarray.zig").NDArray;
+const iio = @import("../riley/zig/imageio.zig");
+const meshio = @import("../riley/zig/meshio.zig");
+const mo = @import("../riley/zig/meshops.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const uvio = @import("../riley/zig/uvio.zig");
+const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
+const CameraOps = @import("../riley/zig/camera.zig").CameraOps;
+const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 
-pub const default_multimesh_mesh_types = [_]mr.MeshType{
+pub const default_multimesh_mesh_types = [_]gk.MeshType{
     .tri3,
     .tri6,
     .quad4ibi,
@@ -27,11 +28,11 @@ pub const default_multimesh_mesh_types = [_]mr.MeshType{
 };
 
 pub const default_multimesh_dir_paths = [_][]const u8{
-    "data-simple/tri3_twoelems/",
-    "data-simple/tri6_twoelems/",
-    "data-simple/quad4_twoelems/",
-    "data-simple/quad8_twoelems/",
-    "data-simple/quad9_twoelems/",
+    "data/simple/tri3_twoelems/",
+    "data/simple/tri6_twoelems/",
+    "data/simple/quad4_twoelems/",
+    "data/simple/quad8_twoelems/",
+    "data/simple/quad9_twoelems/",
 };
 
 pub const default_pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
@@ -71,7 +72,7 @@ pub fn loadData(
     );
 }
 
-pub fn meshDataName(mesh_type: mr.MeshType) []const u8 {
+pub fn meshDataName(mesh_type: gk.MeshType) []const u8 {
     return switch (mesh_type) {
         .quad4ibi, .quad4newton => "quad4",
         else => @tagName(mesh_type),
@@ -88,14 +89,78 @@ pub fn testTypeSuffix(test_type: []const u8) []const u8 {
 pub const SingleMeshPrepared = struct {
     sim_data: meshio.SimData,
     uvs: uvio.UVMap,
-    camera: Camera,
+    camera: CameraPrepared,
 };
+
+fn initCameraForSimDataAllFrames(
+    allocator: std.mem.Allocator,
+    sim_data: *const meshio.SimData,
+    mesh_type: gk.MeshType,
+    pixel_num: [2]u32,
+    fov_scale: f64,
+) !CameraPrepared {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const time_steps = if (sim_data.field) |field| field.getTimeN() else 1;
+    var mesh_inputs = try aa.alloc(mo.MeshInput, time_steps);
+
+    for (0..time_steps) |tt| {
+        var frame_coords = try meshio.Coords.initAlloc(aa, sim_data.coords.mat.rows_num);
+
+        for (0..sim_data.coords.mat.rows_num) |nn| {
+            frame_coords.mat.set(nn, 0, sim_data.coords.x(nn));
+            frame_coords.mat.set(nn, 1, sim_data.coords.y(nn));
+            frame_coords.mat.set(nn, 2, sim_data.coords.z(nn));
+
+            if (sim_data.field) |field| {
+                frame_coords.mat.set(
+                    nn,
+                    0,
+                    frame_coords.x(nn) + field.array.get(&[_]usize{ tt, nn, 0 }),
+                );
+                frame_coords.mat.set(
+                    nn,
+                    1,
+                    frame_coords.y(nn) + field.array.get(&[_]usize{ tt, nn, 1 }),
+                );
+                frame_coords.mat.set(
+                    nn,
+                    2,
+                    frame_coords.z(nn) + field.array.get(&[_]usize{ tt, nn, 2 }),
+                );
+            }
+        }
+
+        mesh_inputs[tt] = .{
+            .mesh_type = mesh_type,
+            .coords = frame_coords,
+            .connect = sim_data.connect,
+            .disp = null,
+            .shader = .{
+                .tex_func = .{
+                    .uvs = null,
+                    .builtin = .constant,
+                    .normal_type = .none,
+                },
+            },
+        };
+    }
+
+    return try initCameraForMeshes(
+        allocator,
+        mesh_inputs,
+        pixel_num,
+        fov_scale,
+    );
+}
 
 pub fn prepareSingleMeshCase(
     allocator: std.mem.Allocator,
     io: std.Io,
     test_type: []const u8,
-    mesh_type: mr.MeshType,
+    mesh_type: gk.MeshType,
     pixel_num: [2]u32,
     fov_scale: f64,
     data_dir_root: []const u8,
@@ -116,7 +181,21 @@ pub fn prepareSingleMeshCase(
     const sim_data = try loadData(allocator, io, data_path);
     const uv_path = try std.fmt.allocPrint(allocator, "{s}/uvs.csv", .{data_path});
     const uvs = try uvio.loadUVMap(allocator, io, uv_path);
-    const camera = initCameraForCoords(&sim_data.coords, pixel_num, fov_scale);
+    const camera = if (std.mem.startsWith(u8, test_type, "distort_"))
+        try initCameraForSimDataAllFrames(
+            allocator,
+            &sim_data,
+            mesh_type,
+            pixel_num,
+            fov_scale,
+        )
+    else
+        try initCameraForCoords(
+            allocator,
+            &sim_data.coords,
+            pixel_num,
+            fov_scale,
+        );
 
     return .{
         .sim_data = sim_data,
@@ -126,11 +205,27 @@ pub fn prepareSingleMeshCase(
 }
 
 pub fn initCameraForCoords(
+    allocator: std.mem.Allocator,
     coords: *const meshio.Coords,
     pixel_num: [2]u32,
     fov_scale: f64,
-) Camera {
-    const rot = defaultRotation();
+) !CameraPrepared {
+    return try initCameraForCoordsWithRotation(
+        allocator,
+        coords,
+        pixel_num,
+        fov_scale,
+        defaultRotation(),
+    );
+}
+
+pub fn initCameraForCoordsWithRotation(
+    allocator: std.mem.Allocator,
+    coords: *const meshio.Coords,
+    pixel_num: [2]u32,
+    fov_scale: f64,
+    rot: Rotation,
+) !CameraPrepared {
     const cam_pos = CameraOps.posFillFrameFromRot(
         coords,
         pixel_num,
@@ -139,22 +234,52 @@ pub fn initCameraForCoords(
         rot,
         fov_scale,
     );
-    return Camera.init(
-        pixel_num,
-        default_pixel_size,
-        cam_pos,
-        rot,
-        CameraOps.roiCentFromCoords(coords),
-        default_focal_length,
-        2,
+    return try CameraPrepared.init(
+        allocator,
+        .{
+            .pixels_num = pixel_num,
+            .pixels_size = default_pixel_size,
+            .pos_world = cam_pos,
+            .rot_world = rot,
+            .roi_cent_world = CameraOps.roiCentFromCoords(coords),
+            .focal_length = default_focal_length,
+            .sub_sample = 2,
+        },
     );
 }
 
-pub fn initCameraForMeshes(
-    mesh_inputs: []mr.MeshInput,
+pub fn initStereoCamerasForCoords(
+    allocator: std.mem.Allocator,
+    coords: *const meshio.Coords,
     pixel_num: [2]u32,
     fov_scale: f64,
-) Camera {
+    half_angle_deg: f64,
+) ![2]CameraPrepared {
+    const half_angle_rad = half_angle_deg * std.math.pi / 180.0;
+    return .{
+        try initCameraForCoordsWithRotation(
+            allocator,
+            coords,
+            pixel_num,
+            fov_scale,
+            Rotation.init(0.0, -half_angle_rad, 0.0),
+        ),
+        try initCameraForCoordsWithRotation(
+            allocator,
+            coords,
+            pixel_num,
+            fov_scale,
+            Rotation.init(0.0, half_angle_rad, 0.0),
+        ),
+    };
+}
+
+pub fn initCameraForMeshes(
+    allocator: std.mem.Allocator,
+    mesh_inputs: []mo.MeshInput,
+    pixel_num: [2]u32,
+    fov_scale: f64,
+) !CameraPrepared {
     const rot = defaultRotation();
     const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
     const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
@@ -165,14 +290,17 @@ pub fn initCameraForMeshes(
         rot,
         fov_scale,
     );
-    return Camera.init(
-        pixel_num,
-        default_pixel_size,
-        cam_pos,
-        rot,
-        roi_pos,
-        default_focal_length,
-        2,
+    return try CameraPrepared.init(
+        allocator,
+        .{
+            .pixels_num = pixel_num,
+            .pixels_size = default_pixel_size,
+            .pos_world = cam_pos,
+            .rot_world = rot,
+            .roi_cent_world = roi_pos,
+            .focal_length = default_focal_length,
+            .sub_sample = 2,
+        },
     );
 }
 
@@ -183,10 +311,10 @@ pub fn buildMultimeshInputs(
     io: std.Io,
     dir_paths: []const []const u8,
     shader_mode: MultimeshShaderMode,
-) ![]mr.MeshInput {
+) ![]mo.MeshInput {
     const sim_datas = try meshio.loadMultiSimData(allocator, io, dir_paths, .{});
     const mesh_inputs = switch (shader_mode) {
-        .nodal => try mr.meshInputFromSimDataSlice(
+        .nodal => try mo.meshInputFromSimDataSlice(
             allocator,
             io,
             sim_datas,
@@ -196,7 +324,7 @@ pub fn buildMultimeshInputs(
             null,
             null,
         ),
-        .texture => try mr.meshInputFromSimDataSlice(
+        .texture => try mo.meshInputFromSimDataSlice(
             allocator,
             io,
             sim_datas,
@@ -207,11 +335,11 @@ pub fn buildMultimeshInputs(
             null,
         ),
     };
-    mr.arrangeMeshSlice(mesh_inputs, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
+    mo.arrangeMeshSlice(mesh_inputs, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
     return mesh_inputs;
 }
 
-fn copyCoords(
+pub fn copyCoords(
     allocator: std.mem.Allocator,
     coords: meshio.Coords,
 ) !meshio.Coords {
@@ -280,9 +408,9 @@ pub fn buildMixedMeshInputs(
     io: std.Io,
     dir_paths: []const []const u8,
     texture: iio.Texture(1),
-) ![]mr.MeshInput {
+) ![]mo.MeshInput {
     const sim_datas = try meshio.loadMultiSimData(allocator, io, dir_paths, .{});
-    var mesh_inputs = try allocator.alloc(mr.MeshInput, 10);
+    var mesh_inputs = try allocator.alloc(mo.MeshInput, 10);
 
     for (0..default_multimesh_mesh_types.len) |ii| {
         mesh_inputs[ii] = .{
@@ -325,7 +453,7 @@ pub fn buildMixedMeshInputs(
         };
     }
 
-    mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+    mo.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
     return mesh_inputs;
 }
 
@@ -334,9 +462,9 @@ pub fn buildMixedRgbMeshInputs(
     io: std.Io,
     dir_paths: []const []const u8,
     texture: iio.Texture(3),
-) ![]mr.MeshInput {
+) ![]mo.MeshInput {
     const sim_datas = try meshio.loadMultiSimData(allocator, io, dir_paths, .{});
-    var mesh_inputs = try allocator.alloc(mr.MeshInput, 10);
+    var mesh_inputs = try allocator.alloc(mo.MeshInput, 10);
 
     for (0..default_multimesh_mesh_types.len) |ii| {
         const uv_path = try std.fmt.allocPrint(
@@ -385,7 +513,7 @@ pub fn buildMixedRgbMeshInputs(
         };
     }
 
-    mr.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+    mo.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
     return mesh_inputs;
 }
 

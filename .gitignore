@@ -7,38 +7,51 @@ file-out/
 .zig-cache/
 zig-out/
 
+
 # Do not keep any large output directories with images or other output in them
-raster-out/
-raster-test/
-out*/
-gold*/
-fails/
-fails*/
-tmp-tests/
+out/
+gold/
+verif/
+demo*/
+bin/
+
+# Remove temp files and temporary test fail renders
 archive/
-example/
-example*/
-examples*/
-scripts/hull-diags/
 temp-*/
 temp/
-data-bench/**/*.csv
-out-bench-*
+tmp-tests/
 plans/
-gold-min/**/*.bmp
-out-min/
-demo*/
+fails/
+fails*/
+debug/
 
-# Don't commit large image files to the repo unless we have to
+# Don't commit large mesh, simulation or image files to the repo unless we have to
 *.ppm
 *.bmp
 *.tiff
+*.fimg
+*.csv
+*.msh
+*.e
 
-# Keep the min test suite
-!data-min/
-!data-min/**/*.csv
-!gold-min/
-!gold-min/**/*.fimg
+# Keep the min test suite to ship with the repo
+!data/min/
+!data/min/**/*.csv
+!gold/
+!gold/min/
+!gold/min/**/*.fimg
+!gold/min/**/*.bmp
+!gold/min/**/*.csv
+
+# Keep our other test suite data committed to the repo
+!data/small/**/*.csv
+!data/simple/**/*.csv
+!data/edge/**/*.csv
+
+# Other mesh data to keep
+!data/rabbits/**/*.csv
+!data/FE/platehole3d_2mr_63f/*.csv
+!data/calplate/**/*.csv
 
 # We need to keep the textures for the tests
 !texture/*.bmp
@@ -53,6 +66,7 @@ demo*/
 test_output.txt
 .vscode/
 .venv/
+.antigravitycli/
 
 # Cython
 *.html

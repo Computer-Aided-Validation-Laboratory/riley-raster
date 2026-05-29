@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -9,31 +9,35 @@
 const std = @import("std");
 
 const orch = @import("orchestration.zig");
-const meshio = @import("../zraster/zig/meshio.zig");
-const mr = @import("../zraster/zig/meshraster.zig");
-const MeshType = mr.MeshType;
-const MeshInput = mr.MeshInput;
-const Camera = @import("../zraster/zig/camera.zig").Camera;
-const zraster = @import("../zraster/zig/zraster.zig");
-const RasterConfig = zraster.RasterConfig;
-const iio = @import("../zraster/zig/imageio.zig");
-const texops = @import("../zraster/zig/textureops.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const meshio = @import("../riley/zig/meshio.zig");
+const mo = @import("../riley/zig/meshops.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
+const MeshType = gk.MeshType;
+const MeshInput = mo.MeshInput;
+const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
+const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
+const rastcfg = @import("../riley/zig/rasterconfig.zig");
+const riley = @import("../riley/zig/riley.zig");
+const RasterConfig = rastcfg.RasterConfig;
+const iio = @import("../riley/zig/imageio.zig");
+const texops = @import("../riley/zig/textureops.zig");
 
 pub fn renderAndSave(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    camera: *const Camera,
+    camera: *const CameraPrepared,
     mt: MeshType,
     coords: meshio.Coords,
     connect: meshio.Connect,
     disp: ?meshio.Field,
-    sh: mr.ShaderInput,
+    sh: shaderops.ShaderInput,
     dir: []const u8,
     add_disp: bool,
     config: RasterConfig,
 ) !void {
     var out_dir = try orch.openDirEnsured(io, dir);
-    defer out_dir.close(io);
+    out_dir.close(io);
 
     const mesh_input = MeshInput{
         .mesh_type = mt,
@@ -44,7 +48,27 @@ pub fn renderAndSave(
     };
 
     const meshes = &[_]MeshInput{mesh_input};
-    const images = try zraster.rasterAllFrames(outer_alloc, io, camera, meshes, config, out_dir);
+    const camera_input = CameraInput{
+        .pixels_num = camera.pixels_num,
+        .pixels_size = camera.pixels_size,
+        .pos_world = camera.pos_world,
+        .rot_world = camera.rot_world,
+        .roi_cent_world = camera.roi_cent_world,
+        .focal_length = camera.focal_length,
+        .sub_sample = camera.sub_sample,
+        .distortion = camera.distortion,
+    };
+    const render_groups = [_]riley.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
+    const images = try riley.rasterAllFrames(
+        outer_alloc,
+        &render_groups,
+        &[_]CameraInput{camera_input},
+        meshes,
+        config,
+        dir,
+    );
     if (images) |img| {
         outer_alloc.free(img.slice);
         img.deinit(outer_alloc);
@@ -153,7 +177,7 @@ pub fn runMultimeshGeneration(
         outer_alloc,
         io,
         config,
-        "gold-multimesh",
+        "gold/multimesh",
         &orch.default_multimesh_dir_paths,
         .{ 1200, 800 },
     );
@@ -188,17 +212,38 @@ pub fn runMultimeshGenerationExt(
         );
 
         const fov_scale_factor: f64 = 1.1;
-        const camera = orch.initCameraForMeshes(
+        const camera = try orch.initCameraForMeshes(
+            aa,
             mesh_inputs,
             pixel_num,
             fov_scale_factor,
         );
-
-        var out_dir = try orch.openDirEnsured(io, gold_dir);
-        defer out_dir.close(io);
+        defer camera.deinit(aa);
 
         std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
-        const images = try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, out_dir);
+        var out_dir = try orch.openDirEnsured(io, gold_dir);
+        out_dir.close(io);
+        const camera_input = CameraInput{
+            .pixels_num = camera.pixels_num,
+            .pixels_size = camera.pixels_size,
+            .pos_world = camera.pos_world,
+            .rot_world = camera.rot_world,
+            .roi_cent_world = camera.roi_cent_world,
+            .focal_length = camera.focal_length,
+            .sub_sample = camera.sub_sample,
+            .distortion = camera.distortion,
+        };
+        const render_groups = [_]riley.RenderGroupSpec{
+            .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+        };
+        const images = try riley.rasterAllFrames(
+            aa,
+            &render_groups,
+            &[_]CameraInput{camera_input},
+            mesh_inputs,
+            config,
+            gold_dir,
+        );
         if (images) |img| {
             aa.free(img.slice);
             img.deinit(aa);
@@ -215,7 +260,7 @@ pub fn runMultimeshMixedGeneration(
         allocator,
         io,
         config,
-        "gold-multimesh/allelem_allshade",
+        "gold/multimesh/allelem_allshade",
         &orch.default_multimesh_dir_paths,
         .{ 1600, 800 },
     );
@@ -250,16 +295,38 @@ pub fn runMultimeshMixedGenerationExt(
     );
 
     const fov_scale_factor: f64 = 1.2;
-    const camera = orch.initCameraForMeshes(
+    const camera = try orch.initCameraForMeshes(
+        aa,
         mesh_inputs,
         pixel_num,
         fov_scale_factor,
     );
-    var out_dir = try orch.openDirEnsured(io, gold_dir);
-    defer out_dir.close(io);
+    defer camera.deinit(aa);
 
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
-    const images = try zraster.rasterAllFrames(aa, io, &camera, mesh_inputs, config, out_dir);
+    var out_dir = try orch.openDirEnsured(io, gold_dir);
+    out_dir.close(io);
+    const camera_input = CameraInput{
+        .pixels_num = camera.pixels_num,
+        .pixels_size = camera.pixels_size,
+        .pos_world = camera.pos_world,
+        .rot_world = camera.rot_world,
+        .roi_cent_world = camera.roi_cent_world,
+        .focal_length = camera.focal_length,
+        .sub_sample = camera.sub_sample,
+        .distortion = camera.distortion,
+    };
+    const render_groups = [_]riley.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
+    };
+    const images = try riley.rasterAllFrames(
+        aa,
+        &render_groups,
+        &[_]CameraInput{camera_input},
+        mesh_inputs,
+        config,
+        gold_dir,
+    );
     if (images) |img| {
         aa.free(img.slice);
         img.deinit(aa);
@@ -275,7 +342,7 @@ pub fn runMultimeshMixedRGBGeneration(
         allocator,
         io,
         config,
-        "gold-multimesh/allelem_allshade_rgb",
+        "gold/multimesh/allelem_allshade_rgb",
         &orch.default_multimesh_dir_paths,
         .{ 1200, 800 },
     );
@@ -310,38 +377,215 @@ pub fn runMultimeshMixedRGBGenerationExt(
     );
 
     const fov_scale_factor: f64 = 1.1;
-    const camera_rgb = orch.initCameraForMeshes(
+    const camera_rgb = try orch.initCameraForMeshes(
+        aa,
         mesh_inputs,
         pixel_num,
         fov_scale_factor,
     );
+    defer camera_rgb.deinit(aa);
 
     var config_rgb = config;
-    if (config_rgb.save_opts.len == 0) {
-        config_rgb.save_opts = &[_]iio.ImageSaveOpts{
+    if (config_rgb.image_save_opts.len == 0) {
+        config_rgb.image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = 3 },
             .{ .format = .fimg, .bits = null, .scaling = .none, .channels = 3 },
         };
     } else {
         // If save_opts are provided, ensure they use 3 channels for RGB
-        const opts_rgb = try aa.alloc(iio.ImageSaveOpts, config_rgb.save_opts.len);
-        for (config_rgb.save_opts, 0..) |opt, ii| {
+        const opts_rgb = try aa.alloc(iio.ImageSaveOpts, config_rgb.image_save_opts.len);
+        for (config_rgb.image_save_opts, 0..) |opt, ii| {
             opts_rgb[ii] = opt;
             opts_rgb[ii].channels = 3;
         }
-        config_rgb.save_opts = opts_rgb;
+        config_rgb.image_save_opts = opts_rgb;
     }
 
-    var out_dir = try orch.openDirEnsured(io, gold_dir);
-    defer out_dir.close(io);
-
     std.debug.print("Generating Multimesh Gold Data for {s}...\n", .{gold_dir});
-    _ = try zraster.rasterAllFrames(
+    var out_dir = try orch.openDirEnsured(io, gold_dir);
+    out_dir.close(io);
+    const render_groups = [_]riley.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), config_rgb.total_threads) },
+    };
+    const camera_input = CameraInput{
+        .pixels_num = camera_rgb.pixels_num,
+        .pixels_size = camera_rgb.pixels_size,
+        .pos_world = camera_rgb.pos_world,
+        .rot_world = camera_rgb.rot_world,
+        .roi_cent_world = camera_rgb.roi_cent_world,
+        .focal_length = camera_rgb.focal_length,
+        .sub_sample = camera_rgb.sub_sample,
+        .distortion = camera_rgb.distortion,
+    };
+    _ = try riley.rasterAllFrames(
         aa,
-        io,
-        &camera_rgb,
+        &render_groups,
+        &[_]CameraInput{camera_input},
         mesh_inputs,
         config_rgb,
-        out_dir,
+        gold_dir,
     );
+}
+
+fn buildUvField(
+    allocator: std.mem.Allocator,
+    uvs: @import("../riley/zig/ndarray.zig").NDArray(f64),
+    time_steps: usize,
+) !meshio.Field {
+    const node_num = uvs.dims[0];
+    var field = try meshio.Field.initAlloc(allocator, time_steps, node_num, 2);
+
+    for (0..time_steps) |tt| {
+        for (0..node_num) |nn| {
+            field.array.set(&[_]usize{ tt, nn, 0 }, uvs.get(&[_]usize{ nn, 0 }));
+            field.array.set(&[_]usize{ tt, nn, 1 }, uvs.get(&[_]usize{ nn, 1 }));
+        }
+    }
+
+    return field;
+}
+
+pub fn generateDistortEdgeGold(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    gold_dir_root: []const u8,
+    data_dir_root: []const u8,
+    pixel_num: [2]u32,
+    config: RasterConfig,
+) !void {
+    const midside_mesh_types = [_]gk.MeshType{ .tri6, .quad8, .quad9 };
+    const full_mesh_types = [_]gk.MeshType{
+        .tri3,
+        .tri6,
+        .quad4ibi,
+        .quad4newton,
+        .quad8,
+        .quad9,
+    };
+    const distortion_cases = [_]struct {
+        name: []const u8,
+        mesh_types: []const gk.MeshType,
+    }{
+        .{ .name = "distort_bulge", .mesh_types = &midside_mesh_types },
+        .{ .name = "distort_tan", .mesh_types = &midside_mesh_types },
+        .{ .name = "distort_stretch", .mesh_types = &full_mesh_types },
+        .{ .name = "distort_shear", .mesh_types = &full_mesh_types },
+        .{ .name = "distort_rot", .mesh_types = &full_mesh_types },
+    };
+
+    for (distortion_cases) |distortion_case| {
+        for (distortion_case.mesh_types) |mesh_type| {
+            const prepared = try orch.prepareSingleMeshCase(
+                allocator,
+                io,
+                distortion_case.name,
+                mesh_type,
+                pixel_num,
+                1.1,
+                data_dir_root,
+            );
+
+            const gold_dir = try std.fmt.allocPrint(
+                allocator,
+                "{s}/{s}_{s}_texfunc_constant",
+                .{ gold_dir_root, distortion_case.name, @tagName(mesh_type) },
+            );
+            try renderAndSave(
+                allocator,
+                io,
+                &prepared.camera,
+                mesh_type,
+                prepared.sim_data.coords,
+                prepared.sim_data.connect,
+                prepared.sim_data.field,
+                .{
+                    .tex_func = .{
+                        .uvs = null,
+                        .builtin = .constant,
+                        .normal_type = .none,
+                    },
+                },
+                gold_dir,
+                true,
+                config,
+            );
+        }
+    }
+}
+
+pub fn generateDistortEdgeGoldForHullMode(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    gold_dir_root: []const u8,
+    data_dir_root: []const u8,
+    pixel_num: [2]u32,
+    base_config: RasterConfig,
+    hull_mode: rastcfg.HullMode,
+) !void {
+    var config = base_config;
+    config.hull_mode = hull_mode;
+
+    const midside_mesh_types = [_]gk.MeshType{ .tri6, .quad8, .quad9 };
+    const full_mesh_types = [_]gk.MeshType{
+        .tri3,
+        .tri6,
+        .quad4ibi,
+        .quad4newton,
+        .quad8,
+        .quad9,
+    };
+    const distortion_cases = [_]struct {
+        name: []const u8,
+        mesh_types: []const gk.MeshType,
+    }{
+        .{ .name = "distort_bulge", .mesh_types = &midside_mesh_types },
+        .{ .name = "distort_tan", .mesh_types = &midside_mesh_types },
+        .{ .name = "distort_stretch", .mesh_types = &full_mesh_types },
+        .{ .name = "distort_shear", .mesh_types = &full_mesh_types },
+        .{ .name = "distort_rot", .mesh_types = &full_mesh_types },
+    };
+
+    for (distortion_cases) |distortion_case| {
+        for (distortion_case.mesh_types) |mesh_type| {
+            const prepared = try orch.prepareSingleMeshCase(
+                allocator,
+                io,
+                distortion_case.name,
+                mesh_type,
+                pixel_num,
+                1.1,
+                data_dir_root,
+            );
+
+            const gold_dir = try std.fmt.allocPrint(
+                allocator,
+                "{s}/{s}_{s}_texfunc_constant_{s}",
+                .{
+                    gold_dir_root,
+                    distortion_case.name,
+                    @tagName(mesh_type),
+                    @tagName(hull_mode),
+                },
+            );
+            try renderAndSave(
+                allocator,
+                io,
+                &prepared.camera,
+                mesh_type,
+                prepared.sim_data.coords,
+                prepared.sim_data.connect,
+                prepared.sim_data.field,
+                .{
+                    .tex_func = .{
+                        .uvs = null,
+                        .builtin = .constant,
+                        .normal_type = .none,
+                    },
+                },
+                gold_dir,
+                true,
+                config,
+            );
+        }
+    }
 }

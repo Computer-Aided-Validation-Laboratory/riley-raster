@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -10,11 +10,12 @@ const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
-const buildconfig = @import("zraster/zig/buildconfig.zig");
+const buildconfig = @import("riley/zig/buildconfig.zig");
 const cfg = buildconfig.config;
-const mr = @import("zraster/zig/meshraster.zig");
-const iio = @import("zraster/zig/imageio.zig");
-const texops = @import("zraster/zig/textureops.zig");
+const gk = @import("riley/zig/geometrykernels.zig");
+const mo = @import("riley/zig/meshops.zig");
+const iio = @import("riley/zig/imageio.zig");
+const texops = @import("riley/zig/textureops.zig");
 
 const config = common.BenchConfig{ .run = .all };
 const simd_on = cfg.simd == .on;
@@ -23,8 +24,7 @@ const impl_suffix = if (simd_on) "_simd" else "_scalar";
 test "Unified Benchmark Tests" {
     const outer_alloc = std.heap.page_allocator;
 
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
 
     const texture_grey = try iio.loadImage(
         u8,
@@ -47,35 +47,61 @@ test "Unified Benchmark Tests" {
 
     const cases = [_]struct {
         name: []const u8,
+        data_name: []const u8,
         gold_dir: []const u8,
         out_dir: []const u8,
         is_sphere: bool = false,
+        fov_scale: f64 = 1.0,
     }{
         .{
             .name = "fullraster",
-            .gold_dir = "gold-bench-fullscreen",
-            .out_dir = "out-bench-fullraster",
+            .data_name = "fullraster",
+            .gold_dir = "gold/bench-fullscreen",
+            .out_dir = "out/fullraster",
         },
         .{
             .name = "geom",
-            .gold_dir = "gold-bench-fullscreen",
-            .out_dir = "out-bench-geom",
+            .data_name = "geom",
+            .gold_dir = "gold/bench-fullscreen",
+            .out_dir = "out/geom",
         },
         .{
             .name = "sphere2000",
-            .gold_dir = if (simd_on)
-                "gold-simd-sphere2000"
-            else
-                "gold-sphere2000",
-            .out_dir = "out-bench-sphere2000",
+            .data_name = "sphere2000",
+            .gold_dir = if (simd_on) "gold/sphere2000-simd" else "gold/sphere2000",
+            .out_dir = "out/sphere2000",
             .is_sphere = true,
+        },
+        .{
+            .name = "sphere2000zoom",
+            .data_name = "sphere2000",
+            .gold_dir = if (simd_on)
+                "gold/sphere2000zoom-simd"
+            else
+                "gold/sphere2000zoom",
+            .out_dir = "out/sphere2000zoom",
+            .is_sphere = true,
+            .fov_scale = 0.5,
         },
     };
 
     const pixel_num = [_]u32{ 800, 500 };
+    const render_defaults_base = common.BenchRenderDefaults{
+        .pixels_num = pixel_num,
+        .sub_sample = 2,
+        .focal_leng = 50.0e-3,
+        .pixels_size = .{ 5.3e-6, 5.3e-6 },
+        .fov_scale = 1.0,
+        .rot = @import("riley/zig/rotation.zig").Rotation.init(0, 0, 0),
+    };
 
-    const mesh_types = std.enums.values(mr.MeshType);
-    const shader_types = std.enums.values(common.ShaderType);
+    const mesh_types = std.enums.values(gk.MeshType);
+    const shader_types = [_]common.ShaderType{
+        .nodal_grey,
+        .nodal_rgb,
+        .tex8_grey,
+        .tex8_rgb,
+    };
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
@@ -114,8 +140,8 @@ test "Unified Benchmark Tests" {
 
                     const data_dir = try std.fmt.allocPrint(
                         aa,
-                        "data-bench/{s}_{s}",
-                        .{ @tagName(mt), cc.name },
+                        "data/bench/{s}_{s}",
+                        .{ @tagName(mt), cc.data_name },
                     );
 
                     const run_config = if (cc.is_sphere)
@@ -124,18 +150,20 @@ test "Unified Benchmark Tests" {
                         config;
 
                     if (common.shouldRun(run_config, mt, st, sc, data_dir)) {
-                        const case_name = if (st == .tex8_grey or st == .tex8_rgb)
-                            try std.fmt.allocPrint(
-                                aa,
-                                "{s}_{s}_{s}_{s}",
-                                .{ @tagName(mt), @tagName(st), @tagName(sc.sample), @tagName(sc.mode) },
-                            )
-                        else
-                            try std.fmt.allocPrint(
-                                aa,
-                                "{s}_{s}",
-                                .{ @tagName(mt), @tagName(st) },
-                            );
+                        var r_config = tcfg.getRasterConfig(.bench);
+                        // Bench tests compare the returned in-memory image directly
+                        // against gold, so avoid the disk-save path here.
+                        r_config.save_strategy = .memory;
+                        r_config.image_save_opts = &[_]iio.ImageSaveOpts{};
+
+                        const case_name = try common.calcCaseName(
+                            aa,
+                            mt,
+                            st,
+                            sc,
+                            null,
+                            cc.fov_scale,
+                        );
 
                         std.debug.print("Testing {s}/{s} ... ", .{ cc.name, case_name });
 
@@ -146,95 +174,79 @@ test "Unified Benchmark Tests" {
                             mt,
                             st,
                             sc,
+                            null,
                             data_dir,
-                            pixel_num,
+                            .{
+                                .pixels_num = render_defaults_base.pixels_num,
+                                .sub_sample = render_defaults_base.sub_sample,
+                                .focal_leng = render_defaults_base.focal_leng,
+                                .pixels_size = render_defaults_base.pixels_size,
+                                .fov_scale = cc.fov_scale,
+                                .rot = render_defaults_base.rot,
+                            },
                             texture_grey,
                             texture_rgb,
-                            .{ .out_dir_base = cc.out_dir },
+                            r_config,
+                            cc.out_dir,
                         );
-                        result.deinit(outer_alloc);
 
                         // 2. Map filenames
                         const is_rgb = (st == .nodal_rgb or st == .tex8_rgb);
                         const channels: usize = if (is_rgb) 3 else 1;
 
-                        const test_dir_case = try std.fs.path.join(aa, &[_][]const u8{ cc.out_dir, case_name });
-                        const test_path = try testcommon.findGoldPath(aa, io, test_dir_case, 0, 0, is_rgb);
                         const gold_dir_case = try std.fs.path.join(aa, &[_][]const u8{ cc.gold_dir, case_name });
-                        const gold_path = try testcommon.findGoldPath(aa, io, gold_dir_case, 0, 0, is_rgb);
+                        const gold_path = try testcommon.findGoldPath(
+                            aa,
+                            io,
+                            gold_dir_case,
+                            0,
+                            0,
+                            0,
+                            is_rgb,
+                        );
 
-                        // 3. Load and Compare
-                        const t_arr_res = common.loadNDArray(
+                        // 3. Compare in-memory result to gold
+                        testcommon.compareNDArrayToGold(
                             outer_alloc,
                             io,
-                            test_path,
+                            &result.image.?,
+                            0,
+                            0,
+                            0,
                             channels,
-                            false,
-                        );
-                        if (t_arr_res) |t_arr| {
-                            var t_mut = t_arr;
-                            defer {
-                                outer_alloc.free(t_mut.slice);
-                                t_mut.deinit(outer_alloc);
-                            }
-
-                            const g_arr_res = common.loadNDArray(
-                                outer_alloc,
-                                io,
-                                gold_path,
-                                channels,
-                                false,
-                            );
-                            if (g_arr_res) |g_arr| {
-                                var g_mut = g_arr;
-                                defer {
-                                    outer_alloc.free(g_mut.slice);
-                                    g_mut.deinit(outer_alloc);
-                                }
-
-                                var diff_count: usize = 0;
-                                for (t_mut.slice, 0..) |v_t, ii| {
-                                    if (@abs(v_t - g_mut.slice[ii]) > tcfg.REL_TOL) {
-                                        diff_count += 1;
-                                    }
-                                }
-
-                                if (diff_count == 0) {
-                                    std.debug.print("MATCHED\n", .{});
-                                } else {
-                                    std.debug.print(
-                                        "MISMATCH! ({d} px)\n",
-                                        .{diff_count},
-                                    );
-                                    const fail_dir_name = try std.fmt.allocPrint(
-                                        aa,
-                                        "bench_{s}_{s}{s}",
-                                        .{ cc.name, case_name, impl_suffix },
-                                    );
-                                    try testcommon.saveComparisonArtifactsFromImages(
-                                        aa,
-                                        io,
-                                        "fails",
-                                        fail_dir_name,
-                                        &t_mut,
-                                        &g_mut,
-                                    );
-                                    total_fails += 1;
-                                }
-                            } else |err| {
-                                std.debug.print(
-                                    "GOLD LOAD ERROR: {s} ({s})\n",
-                                    .{ gold_path, @errorName(err) },
+                            gold_path,
+                            tcfg.REL_TOL,
+                            tcfg.ABS_TOL,
+                        ) catch |err| {
+                            if (err == error.PixelMismatch) {
+                                std.debug.print("MISMATCH!\n", .{});
+                                const fail_dir_name = try std.fmt.allocPrint(
+                                    aa,
+                                    "bench_{s}_{s}{s}",
+                                    .{ cc.name, case_name, impl_suffix },
+                                );
+                                try testcommon.saveComparisonArtifactsFromResult(
+                                    aa,
+                                    io,
+                                    "fails",
+                                    fail_dir_name,
+                                    &result.image.?,
+                                    0,
+                                    0,
+                                    0,
+                                    gold_path,
+                                    channels,
                                 );
                                 total_fails += 1;
+                                result.deinit(outer_alloc);
+                                continue;
                             }
-                        } else |err| {
-                            std.debug.print(
-                                "TEST LOAD ERROR: {s} ({s})\n",
-                                .{ test_path, @errorName(err) },
-                            );
-                            total_fails += 1;
-                        }
+                            result.deinit(outer_alloc);
+                            return err;
+                        };
+
+                        std.debug.print("MATCHED\n", .{});
+                        result.deinit(outer_alloc);
                     }
                 }
             }

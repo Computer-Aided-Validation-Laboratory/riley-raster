@@ -1,5 +1,5 @@
 // --------------------------------------------------------------------------
-// zraster: A High Performance Rasteriser for DIC UQ
+// Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
@@ -10,11 +10,12 @@ const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
-const buildconfig = @import("zraster/zig/buildconfig.zig");
+const buildconfig = @import("riley/zig/buildconfig.zig");
 const cfg = buildconfig.config;
-const mr = @import("zraster/zig/meshraster.zig");
-const iio = @import("zraster/zig/imageio.zig");
-const texops = @import("zraster/zig/textureops.zig");
+const gk = @import("riley/zig/geometrykernels.zig");
+const iio = @import("riley/zig/imageio.zig");
+const texops = @import("riley/zig/textureops.zig");
+const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
 const config = common.BenchConfig{ .run = .all };
 const simd_on = cfg.simd == .on;
@@ -24,8 +25,7 @@ test "Sphere Gold Tests" {
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
 
-    var io_threaded = std.Io.Threaded.init_single_threaded;
-    const io = io_threaded.io();
+    const io = std.testing.io;
 
     const texture_grey = try iio.loadImage(
         u8,
@@ -52,15 +52,28 @@ test "Sphere Gold Tests" {
     const cases = [_]struct { ds: []const u8, gold: []const u8, out: []const u8 }{
         .{
             .ds = "sphere2000",
-            .gold = if (simd_on) "gold-simd-sphere2000" else "gold-sphere2000",
+            .gold = if (simd_on) "gold/sphere2000-simd" else "gold/sphere2000",
             .out = "out-sphere2000",
         },
     };
 
     const pixel_num = [_]u32{ 800, 500 };
+    const render_defaults = common.BenchRenderDefaults{
+        .pixels_num = pixel_num,
+        .sub_sample = 2,
+        .focal_leng = 50.0e-3,
+        .pixels_size = .{ 5.3e-6, 5.3e-6 },
+        .fov_scale = 1.0,
+        .rot = Rotation.init(0, 0, 0),
+    };
 
-    const mesh_types = comptime std.enums.values(mr.MeshType);
-    const shader_types = comptime std.enums.values(common.ShaderType);
+    const mesh_types = comptime std.enums.values(gk.MeshType);
+    const shader_types = [_]common.ShaderType{
+        .nodal_grey,
+        .nodal_rgb,
+        .tex8_grey,
+        .tex8_rgb,
+    };
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
@@ -83,7 +96,7 @@ test "Sphere Gold Tests" {
                 inline for (sample_configs) |sc| {
                     const data_dir = try std.fmt.allocPrint(
                         allocator,
-                        "data-bench/{s}_{s}",
+                        "data/bench/{s}_{s}",
                         .{ @tagName(mt), c.ds },
                     );
                     defer allocator.free(data_dir);
@@ -121,20 +134,23 @@ test "Sphere Gold Tests" {
                             );
                         defer allocator.free(gold_case_name);
 
-                        std.debug.print("Testing {s}/{s} ... ", .{ c.ds, case_name });
-
                         // 1. Run benchmark
+                        var r_config = tcfg.getRasterConfig(.bench);
+                        r_config.save_strategy = if (c.out.len > 0) .both else .memory;
+
                         var result = try common.runBenchmarkQuiet(
                             allocator,
                             io,
                             mt,
                             st,
                             sc,
+                            null,
                             data_dir,
-                            pixel_num,
+                            render_defaults,
                             texture_grey,
                             texture_rgb,
-                            .{ .out_dir_base = c.out },
+                            r_config,
+                            c.out,
                         );
                         result.deinit(allocator);
 
@@ -144,12 +160,28 @@ test "Sphere Gold Tests" {
 
                         const test_dir_case = try std.fs.path.join(allocator, &[_][]const u8{ c.out, case_name });
                         defer allocator.free(test_dir_case);
-                        const test_path = try testcommon.findGoldPath(allocator, io, test_dir_case, 0, 0, is_rgb);
+                        const test_path = try testcommon.findGoldPath(
+                            allocator,
+                            io,
+                            test_dir_case,
+                            0,
+                            0,
+                            0,
+                            is_rgb,
+                        );
                         defer allocator.free(test_path);
 
                         const gold_dir_case = try std.fs.path.join(allocator, &[_][]const u8{ c.gold, gold_case_name });
                         defer allocator.free(gold_dir_case);
-                        const gold_path = try testcommon.findGoldPath(allocator, io, gold_dir_case, 0, 0, is_rgb);
+                        const gold_path = try testcommon.findGoldPath(
+                            allocator,
+                            io,
+                            gold_dir_case,
+                            0,
+                            0,
+                            0,
+                            is_rgb,
+                        );
                         defer allocator.free(gold_path);
 
                         // 3. Load and Compare
@@ -187,13 +219,7 @@ test "Sphere Gold Tests" {
                                         diff_count += 1;
                                 }
 
-                                if (diff_count == 0) {
-                                    std.debug.print("MATCHED\n", .{});
-                                } else {
-                                    std.debug.print(
-                                        "MISMATCH! ({d} px)\n",
-                                        .{diff_count},
-                                    );
+                                if (diff_count != 0) {
                                     total_fails += 1;
 
                                     const fail_dir_name = try std.fmt.allocPrint(
