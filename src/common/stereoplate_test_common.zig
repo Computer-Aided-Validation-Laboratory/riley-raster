@@ -137,7 +137,7 @@ pub fn renderStereoPlate(
     const mesh_input = buildConstantMeshInput(sim_data);
     var out_dir = try orch.openDirEnsured(io, out_dir_root);
     defer out_dir.close(io);
-    try CameraOps.saveStereoPair(io, out_dir, stereo_pair);
+    try CameraOps.saveStereoPair(io, out_dir, "stereo_data.csv", stereo_pair);
 
     const config = rastcfg.RasterConfig{
         .render_mode = .offline,

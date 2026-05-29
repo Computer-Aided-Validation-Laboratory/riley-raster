@@ -18,6 +18,7 @@ pub fn main(init: std.process.Init) !void {
         init.gpa,
         init.io,
         out_dir,
+        "stereo_data.csv",
     );
     std.debug.print("Rendering stereoplate test1 to {s}/...\n", .{common.out_dir_test1});
     try common.renderStereoPlate(init.gpa, init.io, stereo_pair, common.out_dir_test1);

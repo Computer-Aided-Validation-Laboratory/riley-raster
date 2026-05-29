@@ -53,6 +53,18 @@ pub fn main(init: std.process.Init) !void {
     defer arena.deinit();
     const aa = arena.allocator();
 
+    var coord_sys = camera_mod.CameraCoordSys.opengl;
+    if (init.minimal.args.vector.len > 1) {
+        const arg = std.mem.span(init.minimal.args.vector[1]);
+        if (std.mem.eql(u8, arg, "opencv")) {
+            coord_sys = .opencv;
+        }
+    }
+    const stereo_file_name = if (coord_sys == .opencv)
+        "stereo_data_opencv.csv"
+    else
+        "stereo_data_opengl.csv";
+
     const config = RasterConfig{
         .render_mode = .offline,
         .total_threads = TOTAL_THREADS,
@@ -217,7 +229,12 @@ pub fn main(init: std.process.Init) !void {
         .load_stereo_pair => blk: {
             var stereo_in_dir = try cwd.openDir(io, DICUQ_CAMERA_DIR, .{});
             defer stereo_in_dir.close(io);
-            break :blk try CameraOps.loadStereoPair(aa, io, stereo_in_dir);
+            break :blk try CameraOps.loadStereoPair(
+                aa,
+                io,
+                stereo_in_dir,
+                stereo_file_name,
+            );
         },
     };
 
@@ -247,7 +264,7 @@ pub fn main(init: std.process.Init) !void {
         stereo_pair.cameras[1].distortion = distortion;
         stereo_pair.cameras[1].roi_cent_world = roi_pos;
     }
-    try CameraOps.saveStereoPair(io, out_dir, stereo_pair);
+    try CameraOps.saveStereoPair(io, out_dir, stereo_file_name, stereo_pair);
 
     const mesh_input = MeshInput{
         .mesh_type = .tri3,

@@ -256,12 +256,27 @@ pub fn main(init: std.process.Init) !void {
 
     var out_dir = try std.Io.Dir.cwd().openDir(io, OUT_DIR_ROOT, .{});
     defer out_dir.close(io);
+
+    var cam0_opengl = cam0_in;
+    cam0_opengl.coord_sys = .opengl;
+    var cam1_opengl = cam1_in;
+    cam1_opengl.coord_sys = .opengl;
     try CameraOps.saveStereoPair(
         io,
         out_dir,
-        .{
-            .cameras = .{ cam0_in, cam1_in },
-        },
+        "stereo_data_opengl.csv",
+        .{ .cameras = .{ cam0_opengl, cam1_opengl } },
+    );
+
+    var cam0_opencv = cam0_in;
+    cam0_opencv.coord_sys = .opencv;
+    var cam1_opencv = cam1_in;
+    cam1_opencv.coord_sys = .opencv;
+    try CameraOps.saveStereoPair(
+        io,
+        out_dir,
+        "stereo_data_opencv.csv",
+        .{ .cameras = .{ cam0_opencv, cam1_opencv } },
     );
 
     print("{s}\n", .{print_break});

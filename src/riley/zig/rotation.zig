@@ -58,6 +58,29 @@ pub const Rotation = struct {
     pub fn matPrint(self: *const Rotation) void {
         self.matrix.matPrint();
     }
+
+    pub fn fromMat33(mat: Mat33f) Rotation {
+        const r20 = mat.slice[6];
+        const r21 = mat.slice[7];
+        const r22 = mat.slice[8];
+        const r10 = mat.slice[3];
+        const r00 = mat.slice[0];
+
+        const beta = std.math.asin(-r20);
+        const cos_beta = @cos(beta);
+
+        var alpha: f64 = 0.0;
+        var gamma: f64 = 0.0;
+
+        if (@abs(cos_beta) > 1e-6) {
+            alpha = std.math.atan2(r10, r00);
+            gamma = std.math.atan2(r21, r22);
+        } else {
+            gamma = std.math.atan2(-mat.slice[1], mat.slice[4]);
+        }
+
+        return Rotation.init(alpha, beta, gamma);
+    }
 };
 
 // NOTE: Check this

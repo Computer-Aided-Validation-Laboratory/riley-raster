@@ -1003,6 +1003,7 @@ fn initTestCullCameraManual(distortion: cam.DistortionModel) cam.CameraPrepared 
         .cam_to_world_mat = Mat44f.initIdentity(),
         .world_to_cam_mat = Mat44f.initIdentity(),
         .distortion = distortion,
+        .coord_sys = .opengl,
         .ideal_pixel_centers = undefined,
         .pixel_center_jac = undefined,
     };

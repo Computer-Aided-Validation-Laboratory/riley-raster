@@ -267,6 +267,11 @@ fn distortionInverseFromModel(
     return error.DistortionInverseFailed;
 }
 
+pub const CameraCoordSys = enum {
+    opengl,
+    opencv,
+};
+
 pub const CameraInput = struct {
     pixels_num: [2]u32,
     pixels_size: [2]f64,
@@ -276,6 +281,7 @@ pub const CameraInput = struct {
     focal_length: f64,
     sub_sample: u8,
     distortion: DistortionModel = .none,
+    coord_sys: CameraCoordSys = .opengl,
 };
 
 pub const StereoPairInput = struct {
@@ -296,6 +302,7 @@ pub const CameraPrepared = struct {
     cam_to_world_mat: matrix.Mat44f,
     world_to_cam_mat: matrix.Mat44f,
     distortion: DistortionModel,
+    coord_sys: CameraCoordSys,
     // Prepared ideal pinhole sample target per output pixel center.
     // Conceptual shape: [height, width, 2]
     ideal_pixel_centers: ndarray.NDArray(f64),
@@ -320,15 +327,19 @@ pub const CameraPrepared = struct {
     ) !CameraPrepared {
         const actual_sub_sample = if (input.sub_sample == 0) 2 else input.sub_sample;
         const sensor_size = CameraOps.calcSensorSize(input.pixels_num, input.pixels_size);
-        const image_dist: f64 = @as(vector.Vec3f, input.pos_world).sub(input.roi_cent_world).vecLen();
+
+        const pos_w = input.pos_world;
+        const rot_matrix = input.rot_world.matrix;
+
+        const image_dist: f64 = @as(vector.Vec3f, pos_w).sub(input.roi_cent_world).vecLen();
 
         var image_dims: [2]f64 = undefined;
         image_dims[0] = (image_dist / input.focal_length) * sensor_size[0];
         image_dims[1] = (image_dist / input.focal_length) * sensor_size[1];
 
         var cam_to_world_mat: matrix.Mat44f = matrix.Mat44f.initIdentity();
-        cam_to_world_mat.insertColVec(3, 0, 3, input.pos_world);
-        cam_to_world_mat.insertSubMat(0, 0, 3, 3, input.rot_world.matrix);
+        cam_to_world_mat.insertColVec(3, 0, 3, pos_w);
+        cam_to_world_mat.insertSubMat(0, 0, 3, 3, rot_matrix);
 
         const world_to_cam_mat = matrix.Mat44Ops.inv(f64, cam_to_world_mat);
 
@@ -372,6 +383,7 @@ pub const CameraPrepared = struct {
             .cam_to_world_mat = cam_to_world_mat,
             .world_to_cam_mat = world_to_cam_mat,
             .distortion = input.distortion,
+            .coord_sys = input.coord_sys,
             .ideal_pixel_centers = ideal_pixel_centers,
             .pixel_center_jac = pixel_center_jac,
         };
@@ -594,21 +606,46 @@ pub const CameraOps = struct {
         return std.fmt.parseInt(u8, try requireValue(kv, key), 10);
     }
 
+    pub fn toOpenGLInput(input: CameraInput) CameraInput {
+        if (input.coord_sys == .opengl) return input;
+        var opengl_input = input;
+        const r_opencv = input.rot_world.matrix;
+        const r_opencv_t = r_opencv.transpose();
+        const neg_t = vector.initVec3(
+            f64,
+            -input.pos_world.get(0),
+            -input.pos_world.get(1),
+            -input.pos_world.get(2),
+        );
+        opengl_input.pos_world = r_opencv_t.mulVec(neg_t);
+        var r_riley = r_opencv_t;
+        r_riley.slice[1] = -r_riley.slice[1];
+        r_riley.slice[2] = -r_riley.slice[2];
+        r_riley.slice[4] = -r_riley.slice[4];
+        r_riley.slice[5] = -r_riley.slice[5];
+        r_riley.slice[7] = -r_riley.slice[7];
+        r_riley.slice[8] = -r_riley.slice[8];
+        opengl_input.rot_world = rotation.Rotation.fromMat33(r_riley);
+        opengl_input.coord_sys = .opengl;
+        return opengl_input;
+    }
+
     fn calcPlaneMetrics(
         camera_input: CameraInput,
     ) CameraPlaneMetrics {
+        const opengl_input = toOpenGLInput(camera_input);
         const scaling = calcFOVScaling(
-            camera_input,
-            camera_input.roi_cent_world,
+            opengl_input,
+            opengl_input.roi_cent_world,
         );
         const sensor_size = calcSensorSize(
-            camera_input.pixels_num,
-            camera_input.pixels_size,
+            opengl_input.pixels_num,
+            opengl_input.pixels_size,
         );
-        const focal_px_x = camera_input.focal_length / camera_input.pixels_size[0];
-        const focal_px_y = camera_input.focal_length / camera_input.pixels_size[1];
-        const principal_x = 0.5 * @as(f64, @floatFromInt(camera_input.pixels_num[0]));
-        const principal_y = 0.5 * @as(f64, @floatFromInt(camera_input.pixels_num[1]));
+        const focal_px_x = opengl_input.focal_length / opengl_input.pixels_size[0];
+        const focal_px_y = opengl_input.focal_length / opengl_input.pixels_size[1];
+        const principal_x = 0.5 * @as(f64, @floatFromInt(opengl_input.pixels_num[0]));
+        const principal_y = 0.5 * @as(f64, @floatFromInt(opengl_input.pixels_num[1]));
         return .{
             .sensor_size = sensor_size,
             .focal_px = .{ focal_px_x, focal_px_y },
@@ -719,15 +756,10 @@ pub const CameraOps = struct {
     pub fn saveCamera(
         io: std.Io,
         out_dir: std.Io.Dir,
+        file_name: []const u8,
         camera_idx: usize,
         camera_input: CameraInput,
     ) !void {
-        var name_buf: [64]u8 = undefined;
-        const file_name = try std.fmt.bufPrint(
-            name_buf[0..],
-            "cam{d}_data.csv",
-            .{camera_idx},
-        );
         const metrics = calcPlaneMetrics(camera_input);
 
         const csv_file = try out_dir.createFile(io, file_name, .{});
@@ -738,29 +770,55 @@ pub const CameraOps = struct {
 
         try writer.writeAll("key,value\n");
         try writeKeyValueInt(writer, "camera_idx", camera_idx);
+        const coord_sys_str = if (camera_input.coord_sys == .opencv) "opencv" else "opengl";
+        try writeKeyValueRow(writer, "coord_sys", coord_sys_str);
         try writeKeyValueInt(writer, "pixels_x", camera_input.pixels_num[0]);
         try writeKeyValueInt(writer, "pixels_y", camera_input.pixels_num[1]);
         try writeKeyValueF64(writer, "pixel_size_x_m", camera_input.pixels_size[0]);
         try writeKeyValueF64(writer, "pixel_size_y_m", camera_input.pixels_size[1]);
         try writeKeyValueF64(writer, "focal_length_m", camera_input.focal_length);
         try writeKeyValueInt(writer, "sub_sample", camera_input.sub_sample);
-        try writeKeyValueF64(writer, "pos_x_m", camera_input.pos_world.get(0));
-        try writeKeyValueF64(writer, "pos_y_m", camera_input.pos_world.get(1));
-        try writeKeyValueF64(writer, "pos_z_m", camera_input.pos_world.get(2));
+        var pos_val = camera_input.pos_world;
+        var rot_val = camera_input.rot_world;
+
+        if (camera_input.coord_sys == .opencv) {
+            const r_riley = camera_input.rot_world.matrix;
+            const r_riley_t = r_riley.transpose();
+            var r_opencv = r_riley_t;
+            r_opencv.slice[3] = -r_opencv.slice[3];
+            r_opencv.slice[4] = -r_opencv.slice[4];
+            r_opencv.slice[5] = -r_opencv.slice[5];
+            r_opencv.slice[6] = -r_opencv.slice[6];
+            r_opencv.slice[7] = -r_opencv.slice[7];
+            r_opencv.slice[8] = -r_opencv.slice[8];
+
+            const r_opencv_c = r_opencv.mulVec(camera_input.pos_world);
+            pos_val = vector.initVec3(
+                f64,
+                -r_opencv_c.get(0),
+                -r_opencv_c.get(1),
+                -r_opencv_c.get(2),
+            );
+            rot_val = rotation.Rotation.fromMat33(r_opencv);
+        }
+
+        try writeKeyValueF64(writer, "pos_x_m", pos_val.get(0));
+        try writeKeyValueF64(writer, "pos_y_m", pos_val.get(1));
+        try writeKeyValueF64(writer, "pos_z_m", pos_val.get(2));
         try writeKeyValueF64(
             writer,
             "rot_alpha_z_deg",
-            std.math.radiansToDegrees(camera_input.rot_world.alpha_z),
+            std.math.radiansToDegrees(rot_val.alpha_z),
         );
         try writeKeyValueF64(
             writer,
             "rot_beta_y_deg",
-            std.math.radiansToDegrees(camera_input.rot_world.beta_y),
+            std.math.radiansToDegrees(rot_val.beta_y),
         );
         try writeKeyValueF64(
             writer,
             "rot_gamma_x_deg",
-            std.math.radiansToDegrees(camera_input.rot_world.gamma_x),
+            std.math.radiansToDegrees(rot_val.gamma_x),
         );
         try writeKeyValueF64(
             writer,
@@ -809,7 +867,16 @@ pub const CameraOps = struct {
         var kv = try parseKeyValueCsv(allocator, io, dir, file_name);
         defer deinitKeyValueCsv(allocator, &kv);
 
-        return .{
+        const coord_sys = blk: {
+            if (kv.get("coord_sys")) |sys_str| {
+                if (std.mem.eql(u8, sys_str, "opencv")) {
+                    break :blk CameraCoordSys.opencv;
+                }
+            }
+            break :blk CameraCoordSys.opengl;
+        };
+
+        var camera_input = CameraInput{
             .pixels_num = .{
                 try parseU32Value(&kv, "pixels_x"),
                 try parseU32Value(&kv, "pixels_y"),
@@ -844,34 +911,67 @@ pub const CameraOps = struct {
             .focal_length = try parseF64Value(&kv, "focal_length_m"),
             .sub_sample = try parseU8Value(&kv, "sub_sample"),
             .distortion = try loadDistortion(&kv),
+            .coord_sys = coord_sys,
         };
+
+        if (coord_sys == .opencv) {
+            camera_input = CameraOps.toOpenGLInput(camera_input);
+            camera_input.coord_sys = .opencv;
+        }
+
+        return camera_input;
     }
 
     pub fn saveStereoPair(
         io: std.Io,
         out_dir: std.Io.Dir,
+        stereo_file_name: []const u8,
         stereo_pair: StereoPairInput,
     ) !void {
-        for (stereo_pair.cameras, 0..) |camera_input, cc| {
-            try saveCamera(io, out_dir, cc, camera_input);
+        var suffix: []const u8 = "";
+        if (stereo_file_name.len > 11 and std.mem.eql(
+            u8,
+            stereo_file_name[0..11],
+            "stereo_data",
+        )) {
+            suffix = stereo_file_name[11 .. stereo_file_name.len - 4];
         }
+
+        var cam0_name_buf: [64]u8 = undefined;
+        const cam0_name = try std.fmt.bufPrint(
+            &cam0_name_buf,
+            "cam0_data{s}.csv",
+            .{suffix},
+        );
+
+        var cam1_name_buf: [64]u8 = undefined;
+        const cam1_name = try std.fmt.bufPrint(
+            &cam1_name_buf,
+            "cam1_data{s}.csv",
+            .{suffix},
+        );
+
+        try saveCamera(io, out_dir, cam0_name, 0, stereo_pair.cameras[0]);
+        try saveCamera(io, out_dir, cam1_name, 1, stereo_pair.cameras[1]);
 
         const cam0 = stereo_pair.cameras[0];
         const cam1 = stereo_pair.cameras[1];
-        const baseline = cam1.pos_world.sub(cam0.pos_world);
+        const cam0_opengl = toOpenGLInput(cam0);
+        const cam1_opengl = toOpenGLInput(cam1);
+        const baseline = cam1_opengl.pos_world.sub(cam0_opengl.pos_world);
         const baseline_len = baseline.vecLen();
         const cam0_metrics = calcPlaneMetrics(cam0);
         const cam1_metrics = calcPlaneMetrics(cam1);
 
-        const csv_file = try out_dir.createFile(io, "stereo_data.csv", .{});
+        const csv_file = try out_dir.createFile(io, stereo_file_name, .{});
         defer csv_file.close(io);
         var write_buf: [4096]u8 = undefined;
         var file_writer = csv_file.writer(io, &write_buf);
         const writer = &file_writer.interface;
 
         try writer.writeAll("key,value\n");
-        try writeKeyValueRow(writer, "cam0_file", "cam0_data.csv");
-        try writeKeyValueRow(writer, "cam1_file", "cam1_data.csv");
+        try writeKeyValueRow(writer, "cam0_file", cam0_name);
+        try writeKeyValueRow(writer, "cam1_file", cam1_name);
         try writeKeyValueF64(writer, "roi_cent_x_m", cam0.roi_cent_world.get(0));
         try writeKeyValueF64(writer, "roi_cent_y_m", cam0.roi_cent_world.get(1));
         try writeKeyValueF64(writer, "roi_cent_z_m", cam0.roi_cent_world.get(2));
@@ -883,21 +983,21 @@ pub const CameraOps = struct {
             writer,
             "rel_rot_alpha_z_deg",
             std.math.radiansToDegrees(
-                cam1.rot_world.alpha_z - cam0.rot_world.alpha_z,
+                cam1_opengl.rot_world.alpha_z - cam0_opengl.rot_world.alpha_z,
             ),
         );
         try writeKeyValueF64(
             writer,
             "rel_rot_beta_y_deg",
             std.math.radiansToDegrees(
-                cam1.rot_world.beta_y - cam0.rot_world.beta_y,
+                cam1_opengl.rot_world.beta_y - cam0_opengl.rot_world.beta_y,
             ),
         );
         try writeKeyValueF64(
             writer,
             "rel_rot_gamma_x_deg",
             std.math.radiansToDegrees(
-                cam1.rot_world.gamma_x - cam0.rot_world.gamma_x,
+                cam1_opengl.rot_world.gamma_x - cam0_opengl.rot_world.gamma_x,
             ),
         );
         try writeKeyValueF64(writer, "cam0_fx_px", cam0_metrics.focal_px[0]);
@@ -941,8 +1041,9 @@ pub const CameraOps = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         dir: std.Io.Dir,
+        stereo_file_name: []const u8,
     ) !StereoPairInput {
-        var kv = try parseKeyValueCsv(allocator, io, dir, "stereo_data.csv");
+        var kv = try parseKeyValueCsv(allocator, io, dir, stereo_file_name);
         defer deinitKeyValueCsv(allocator, &kv);
 
         const cam0_file = try requireValue(&kv, "cam0_file");
@@ -1649,4 +1750,73 @@ test "CameraOps.calcFOVScaling" {
         scaling.leng_per_pixel[1],
         test_tol,
     );
+}
+
+test "CameraOps.coordinatesRoundTrip" {
+    const Vec3f = vector.Vec3f;
+    const Rotation = rotation.Rotation;
+
+    const pos_orig = vector.initVec3(f64, 12.3, -45.6, 78.9);
+    const rot_orig = Rotation.init(
+        std.math.degreesToRadians(15.0),
+        std.math.degreesToRadians(-25.0),
+        std.math.degreesToRadians(45.0),
+    );
+
+    const r_riley_t = rot_orig.matrix.transpose();
+    var r_opencv = r_riley_t;
+    r_opencv.slice[3] = -r_opencv.slice[3];
+    r_opencv.slice[4] = -r_opencv.slice[4];
+    r_opencv.slice[5] = -r_opencv.slice[5];
+    r_opencv.slice[6] = -r_opencv.slice[6];
+    r_opencv.slice[7] = -r_opencv.slice[7];
+    r_opencv.slice[8] = -r_opencv.slice[8];
+
+    const r_opencv_c = r_opencv.mulVec(pos_orig);
+    const pos_opencv = vector.initVec3(
+        f64,
+        -r_opencv_c.get(0),
+        -r_opencv_c.get(1),
+        -r_opencv_c.get(2),
+    );
+    const rot_opencv = Rotation.fromMat33(r_opencv);
+
+    const input_opencv = CameraInput{
+        .pixels_num = .{ 1024, 768 },
+        .pixels_size = .{ 3.45e-6, 3.45e-6 },
+        .pos_world = pos_opencv,
+        .rot_world = rot_opencv,
+        .roi_cent_world = Vec3f.initZeros(),
+        .focal_length = 50.0e-3,
+        .sub_sample = 2,
+        .coord_sys = .opencv,
+    };
+
+    const input_converted = CameraOps.toOpenGLInput(input_opencv);
+
+    const eps_coord = 1e-12;
+    try std.testing.expectApproxEqAbs(
+        pos_orig.get(0),
+        input_converted.pos_world.get(0),
+        eps_coord,
+    );
+    try std.testing.expectApproxEqAbs(
+        pos_orig.get(1),
+        input_converted.pos_world.get(1),
+        eps_coord,
+    );
+    try std.testing.expectApproxEqAbs(
+        pos_orig.get(2),
+        input_converted.pos_world.get(2),
+        eps_coord,
+    );
+
+    var ii: usize = 0;
+    while (ii < 9) : (ii += 1) {
+        try std.testing.expectApproxEqAbs(
+            rot_orig.matrix.slice[ii],
+            input_converted.rot_world.matrix.slice[ii],
+            eps_coord,
+        );
+    }
 }
