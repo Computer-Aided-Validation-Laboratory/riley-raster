@@ -8,7 +8,7 @@ from setuptools.command.build_ext import build_ext
 from Cython.Build import cythonize
 import numpy
 
-PACKAGE_NAME = "riley"
+DIST_NAME = "riley-raster"
 
 #-------------------------------------------------------------------------------
 # Platform-specific utilities
@@ -345,7 +345,7 @@ ext_modules = [ext_zig] + cythonize(ext_cython,annotate=True)
 # Setup
 
 setup(
-    name="riley",
+    name=DIST_NAME,
     ext_modules=ext_modules,
     cmdclass={"build_ext": MultiBuildExt},
     zip_safe=False,
