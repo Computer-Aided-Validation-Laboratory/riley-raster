@@ -148,18 +148,12 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
         return None
 
     required_paths = [
-        case_dir / "bench_e2e_overruns_median.csv",
-        case_dir / "bench_e2e_overruns_min.csv",
-        case_dir / "bench_e2e_overruns_max.csv",
         case_dir / "config.txt",
         case_dir / "bench_run0_byframe.csv",
     ]
     if not all(path.exists() for path in required_paths):
         return None
 
-    median_row = find_camera_all_row(case_dir / "bench_e2e_overruns_median.csv")
-    min_row = find_camera_all_row(case_dir / "bench_e2e_overruns_min.csv")
-    max_row = find_camera_all_row(case_dir / "bench_e2e_overruns_max.csv")
     config_map = load_config_map(case_dir / "config.txt")
     frame_rows = load_csv_rows(case_dir / "bench_run0_byframe.csv")
     pixels_x = int(config_map["pixels_x"])
@@ -167,21 +161,96 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
     frame_count = len(frame_rows)
     total_mpx = (pixels_x * pixels_y * frame_count) / 1.0e6
 
-    e2e_median_ms = row_float(median_row, "E2E Time [ms]", "E2E_ms")
-    e2e_min_ms = row_float(min_row, "E2E Time [ms]", "E2E_ms")
-    e2e_max_ms = row_float(max_row, "E2E Time [ms]", "E2E_ms")
-    e2e_throughput_median = row_float(
-        median_row,
-        "E2E TP [MPx/s]",
-    ) if "E2E TP [MPx/s]" in median_row else total_mpx * 1000.0 / e2e_median_ms
-    e2e_throughput_min = row_float(
-        min_row,
-        "E2E TP [MPx/s]",
-    ) if "E2E TP [MPx/s]" in min_row else total_mpx * 1000.0 / e2e_max_ms
-    e2e_throughput_max = row_float(
-        max_row,
-        "E2E TP [MPx/s]",
-    ) if "E2E TP [MPx/s]" in max_row else total_mpx * 1000.0 / e2e_min_ms
+    run_paths = sorted(case_dir.glob("bench_run*_e2e.csv"))
+    # Discard run0
+    run_paths = [p for p in run_paths if p.name != "bench_run0_e2e.csv"]
+
+    if not run_paths:
+        # Fallback to loading precomputed summary files if run files are missing
+        required_summary_paths = [
+            case_dir / "bench_e2e_overruns_median.csv",
+            case_dir / "bench_e2e_overruns_min.csv",
+            case_dir / "bench_e2e_overruns_max.csv",
+        ]
+        if not all(path.exists() for path in required_summary_paths):
+            return None
+        median_row = find_camera_all_row(
+            case_dir / "bench_e2e_overruns_median.csv"
+        )
+        min_row = find_camera_all_row(
+            case_dir / "bench_e2e_overruns_min.csv"
+        )
+        max_row = find_camera_all_row(
+            case_dir / "bench_e2e_overruns_max.csv"
+        )
+        case_name = median_row["Case"]
+        e2e_median_ms = row_float(median_row, "E2E Time [ms]", "E2E_ms")
+        e2e_min_ms = row_float(min_row, "E2E Time [ms]", "E2E_ms")
+        e2e_max_ms = row_float(max_row, "E2E Time [ms]", "E2E_ms")
+        e2e_throughput_median = row_float(
+            median_row, "E2E TP [MPx/s]"
+        ) if "E2E TP [MPx/s]" in median_row else total_mpx * 1000.0 / e2e_median_ms
+        e2e_throughput_min = row_float(
+            min_row, "E2E TP [MPx/s]"
+        ) if "E2E TP [MPx/s]" in min_row else total_mpx * 1000.0 / e2e_max_ms
+        e2e_throughput_max = row_float(
+            max_row, "E2E TP [MPx/s]"
+        ) if "E2E TP [MPx/s]" in max_row else total_mpx * 1000.0 / e2e_min_ms
+        raster_median_ms = row_float(
+            median_row, "Raster Time [ms]", "Raster_ms"
+        )
+        raster_min_ms = row_float(min_row, "Raster Time [ms]", "Raster_ms")
+        raster_max_ms = row_float(max_row, "Raster Time [ms]", "Raster_ms")
+        raster_throughput_median = row_float(
+            median_row, "Raster TP [MPx/s]", "Throughput_MPx/s"
+        )
+        raster_throughput_min = row_float(
+            min_row, "Raster TP [MPx/s]", "Throughput_MPx/s"
+        )
+        raster_throughput_max = row_float(
+            max_row, "Raster TP [MPx/s]", "Throughput_MPx/s"
+        )
+    else:
+        e2e_times = []
+        raster_times = []
+        e2e_tps = []
+        raster_tps = []
+        case_name = ""
+
+        for run_path in run_paths:
+            with run_path.open(newline="") as csv_file:
+                reader = csv.DictReader(csv_file)
+                for row in reader:
+                    if row.get("Camera") == "all":
+                        case_name = row["Case"]
+                        e2e_ms = row_float(row, "E2E Time [ms]", "E2E_ms")
+                        e2e_times.append(e2e_ms)
+                        raster_ms = row_float(
+                            row, "Raster Time [ms]", "Raster_ms"
+                        )
+                        raster_times.append(raster_ms)
+                        e2e_tp = row_float(
+                            row, "E2E TP [MPx/s]"
+                        ) if "E2E TP [MPx/s]" in row else total_mpx * 1000.0 / e2e_ms
+                        e2e_tps.append(e2e_tp)
+                        raster_tp = row_float(
+                            row, "Raster TP [MPx/s]", "Throughput_MPx/s"
+                        )
+                        raster_tps.append(raster_tp)
+                        break
+
+        e2e_median_ms = statistics.median(e2e_times)
+        e2e_min_ms = min(e2e_times)
+        e2e_max_ms = max(e2e_times)
+        raster_median_ms = statistics.median(raster_times)
+        raster_min_ms = min(raster_times)
+        raster_max_ms = max(raster_times)
+        e2e_throughput_median = statistics.median(e2e_tps)
+        e2e_throughput_min = min(e2e_tps)
+        e2e_throughput_max = max(e2e_tps)
+        raster_throughput_median = statistics.median(raster_tps)
+        raster_throughput_min = min(raster_tps)
+        raster_throughput_max = max(raster_tps)
 
     save_mode = normalize_save_mode(match.group("save"))
     overlap = match.groupdict().get("overlap")
@@ -190,7 +259,7 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
 
     return CaseStats(
         case_dir=case_dir,
-        case_name=median_row["Case"],
+        case_name=case_name,
         threads=int(match.group("threads")),
         groups=int(match.group("groups")),
         workers_per_group=int(match.group("workerspg")),
@@ -204,27 +273,15 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
         e2e_median_ms=e2e_median_ms,
         e2e_min_ms=e2e_min_ms,
         e2e_max_ms=e2e_max_ms,
-        raster_median_ms=row_float(median_row, "Raster Time [ms]", "Raster_ms"),
-        raster_min_ms=row_float(min_row, "Raster Time [ms]", "Raster_ms"),
-        raster_max_ms=row_float(max_row, "Raster Time [ms]", "Raster_ms"),
+        raster_median_ms=raster_median_ms,
+        raster_min_ms=raster_min_ms,
+        raster_max_ms=raster_max_ms,
         e2e_throughput_median_mpx_s=e2e_throughput_median,
         e2e_throughput_min_mpx_s=e2e_throughput_min,
         e2e_throughput_max_mpx_s=e2e_throughput_max,
-        raster_throughput_median_mpx_s=row_float(
-            median_row,
-            "Raster TP [MPx/s]",
-            "Throughput_MPx/s",
-        ),
-        raster_throughput_min_mpx_s=row_float(
-            min_row,
-            "Raster TP [MPx/s]",
-            "Throughput_MPx/s",
-        ),
-        raster_throughput_max_mpx_s=row_float(
-            max_row,
-            "Raster TP [MPx/s]",
-            "Throughput_MPx/s",
-        ),
+        raster_throughput_median_mpx_s=raster_throughput_median,
+        raster_throughput_min_mpx_s=raster_throughput_min,
+        raster_throughput_max_mpx_s=raster_throughput_max,
     )
 
 
@@ -1099,6 +1156,8 @@ def plot_memory_disk_crossover_heatmaps(stats: list[CaseStats]) -> None:
         ("disk_overlap", "memory"),
     ]
     for lhs_mode, rhs_mode in comparison_pairs:
+        if lhs_mode not in SAVE_MODE_ORDER or rhs_mode not in SAVE_MODE_ORDER:
+            continue
         ratio_values, delta_values = build_value_maps(lhs_mode, rhs_mode)
         if not ratio_values:
             continue
@@ -1256,7 +1315,11 @@ def print_best_config_summary(stats: list[CaseStats]) -> None:
             )
 
 
-def main() -> int:
+def main(include_disk_overlap: bool = True) -> int:
+    global SAVE_MODE_ORDER
+    if not include_disk_overlap:
+        SAVE_MODE_ORDER = [m for m in SAVE_MODE_ORDER if m != "disk_overlap"]
+
     stats = collect_case_stats()
     print_best_config_summary(stats)
 

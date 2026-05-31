@@ -61,6 +61,13 @@ pub const CArray2DUsize = extern struct {
     cols_num: usize,
 };
 
+pub const CArray3DF64 = extern struct {
+    elems: [*c]const f64,
+    dim0: usize,
+    dim1: usize,
+    dim2: usize,
+};
+
 pub const CDims5Usize = extern struct {
     dim0: usize,
     dim1: usize,
@@ -105,6 +112,45 @@ pub const CMeshInputTex = extern struct {
     scaling_max: f64,
 };
 
+pub const CTexFuncParams = extern struct {
+    coord_scale_0: f64,
+    coord_scale_1: f64,
+    coord_offset_0: f64,
+    coord_offset_1: f64,
+    output_scale: f64,
+    output_offset: f64,
+    wave_num_scalar_0: f64,
+    wave_num_scalar_1: f64,
+    wave_num_rgb_0: f64,
+    wave_num_rgb_1: f64,
+    wave_num_rgb_2: f64,
+    extra_0: f64,
+    extra_1: f64,
+    extra_2: f64,
+    extra_3: f64,
+};
+
+pub const CMeshInput = extern struct {
+    mesh_type: u32,
+    coords: CArray2DF64,
+    connect: CArray2DUsize,
+    disp: CArray3DF64,
+    shader_tag: u32,
+    uvs: CArray2DF64,
+    texture: CArray2DF64,
+    sample: u32,
+    sample_mode: u32,
+    bits: c_int,
+    scaling_tag: u32,
+    scaling_min: f64,
+    scaling_max: f64,
+    nodal_field: CArray3DF64,
+    scale_over: u32,
+    tex_func_builtin: u32,
+    tex_func_params: CTexFuncParams,
+    normal_type: u32,
+};
+
 pub const CRasterConfig = extern struct {
     render_mode: u32,
     total_threads: u16,
@@ -117,14 +163,26 @@ pub const CRasterConfig = extern struct {
     disk_save_overlap: u8,
 };
 
-const MeshInputTexBuilt = struct {
+const MeshInputBuilt = struct {
     mesh_input: mo.MeshInput,
-    uvs_array: ndarray.NDArray(f64),
-    texture_array: ndarray.NDArray(f64),
+    disp_array: ?ndarray.NDArray(f64) = null,
+    uvs_array: ?ndarray.NDArray(f64) = null,
+    texture_array: ?ndarray.NDArray(f64) = null,
+    nodal_field_array: ?ndarray.NDArray(f64) = null,
 
-    fn deinit(self: *MeshInputTexBuilt, allocator: std.mem.Allocator) void {
-        self.uvs_array.deinit(allocator);
-        self.texture_array.deinit(allocator);
+    fn deinit(self: *MeshInputBuilt, allocator: std.mem.Allocator) void {
+        if (self.disp_array) |*disp_array| {
+            disp_array.deinit(allocator);
+        }
+        if (self.uvs_array) |*uvs_array| {
+            uvs_array.deinit(allocator);
+        }
+        if (self.texture_array) |*texture_array| {
+            texture_array.deinit(allocator);
+        }
+        if (self.nodal_field_array) |*nodal_field_array| {
+            nodal_field_array.deinit(allocator);
+        }
     }
 };
 
@@ -201,6 +259,14 @@ fn dimsFromArray(in_dims: [5]usize) CDims5Usize {
         .dim2 = in_dims[2],
         .dim3 = in_dims[3],
         .dim4 = in_dims[4],
+    };
+}
+
+fn array3ToDims(in_array: CArray3DF64) [3]usize {
+    return .{
+        in_array.dim0,
+        in_array.dim1,
+        in_array.dim2,
     };
 }
 
@@ -322,6 +388,69 @@ fn textureSampleModeFromC(
     };
 }
 
+fn scaleOverFromC(scale_over: u32) !shaderops.ScaleOver {
+    return switch (scale_over) {
+        @intFromEnum(shaderops.ScaleOver.within_frames) => .within_frames,
+        @intFromEnum(shaderops.ScaleOver.over_frames) => .over_frames,
+        else => error.InvalidScaleOver,
+    };
+}
+
+fn texFuncBuiltinFromC(
+    tex_func_builtin: u32,
+) !shaderops.TexFuncBuiltin {
+    return switch (tex_func_builtin) {
+        @intFromEnum(shaderops.TexFuncBuiltin.constant) => .constant,
+        @intFromEnum(shaderops.TexFuncBuiltin.linear) => .linear,
+        @intFromEnum(shaderops.TexFuncBuiltin.quadratic) => .quadratic,
+        @intFromEnum(shaderops.TexFuncBuiltin.sinusoidal) => .sinusoidal,
+        @intFromEnum(shaderops.TexFuncBuiltin.checker_smooth) => .checker_smooth,
+        @intFromEnum(shaderops.TexFuncBuiltin.lambertian_normal_z) => .lambertian_normal_z,
+        else => error.InvalidTexFuncBuiltin,
+    };
+}
+
+fn normalTypeFromC(normal_type: u32) !shaderops.NormalType {
+    return switch (normal_type) {
+        @intFromEnum(shaderops.NormalType.none) => .none,
+        @intFromEnum(shaderops.NormalType.exact) => .exact,
+        @intFromEnum(shaderops.NormalType.averaged) => .averaged,
+        else => error.InvalidNormalType,
+    };
+}
+
+fn texFuncParamsFromC(
+    in_params: CTexFuncParams,
+) shaderops.TexFuncParams {
+    return .{
+        .coord_scale = .{
+            in_params.coord_scale_0,
+            in_params.coord_scale_1,
+        },
+        .coord_offset = .{
+            in_params.coord_offset_0,
+            in_params.coord_offset_1,
+        },
+        .output_scale = in_params.output_scale,
+        .output_offset = in_params.output_offset,
+        .wave_num_scalar = .{
+            in_params.wave_num_scalar_0,
+            in_params.wave_num_scalar_1,
+        },
+        .wave_num_rgb = .{
+            in_params.wave_num_rgb_0,
+            in_params.wave_num_rgb_1,
+            in_params.wave_num_rgb_2,
+        },
+        .extra = .{
+            in_params.extra_0,
+            in_params.extra_1,
+            in_params.extra_2,
+            in_params.extra_3,
+        },
+    };
+}
+
 fn bitsFromC(bits: c_int) !?u8 {
     if (bits < 0) {
         return null;
@@ -361,6 +490,90 @@ fn buildCoordsFromC(in_coords: *const CArray2DF64) !meshio.Coords {
     );
 }
 
+fn buildConnectFromC(
+    in_connect: *const CArray2DUsize,
+) !meshio.Connect {
+    const connect_slice = try cConstSlice(
+        usize,
+        in_connect.elems,
+        in_connect.rows_num * in_connect.cols_num,
+    );
+    return meshio.Connect.init(
+        @constCast(connect_slice),
+        in_connect.rows_num,
+        in_connect.cols_num,
+    );
+}
+
+fn buildArray2DF64(
+    allocator: std.mem.Allocator,
+    in_array: *const CArray2DF64,
+    cols_num_expected: ?usize,
+) !ndarray.NDArray(f64) {
+    if (cols_num_expected) |expected_cols_num| {
+        if (in_array.cols_num != expected_cols_num) {
+            return error.InvalidArray2DShape;
+        }
+    }
+    const slice_in = try cConstSlice(
+        f64,
+        in_array.elems,
+        in_array.rows_num * in_array.cols_num,
+    );
+    var dims = [_]usize{
+        in_array.rows_num,
+        in_array.cols_num,
+    };
+    return try ndarray.NDArray(f64).init(
+        allocator,
+        @constCast(slice_in),
+        dims[0..],
+    );
+}
+
+fn buildArray3DF64(
+    allocator: std.mem.Allocator,
+    in_array: *const CArray3DF64,
+) !ndarray.NDArray(f64) {
+    const dims = array3ToDims(in_array.*);
+    const elems_num = dims[0] * dims[1] * dims[2];
+    const slice_in = try cConstSlice(
+        f64,
+        in_array.elems,
+        elems_num,
+    );
+    var dims_mut = dims;
+    return try ndarray.NDArray(f64).init(
+        allocator,
+        @constCast(slice_in),
+        dims_mut[0..],
+    );
+}
+
+fn buildOptionalFieldFromC(
+    allocator: std.mem.Allocator,
+    in_array: *const CArray3DF64,
+) !struct {
+    field: ?meshio.Field,
+    array: ?ndarray.NDArray(f64),
+} {
+    const dims = array3ToDims(in_array.*);
+    if (dims[0] == 0 or dims[1] == 0 or dims[2] == 0) {
+        return .{
+            .field = null,
+            .array = null,
+        };
+    }
+    const array = try buildArray3DF64(allocator, in_array);
+    return .{
+        .field = .{
+            .array = array,
+            .array_mem = array.slice,
+        },
+        .array = array,
+    };
+}
+
 fn buildCameraInput(
     in_camera: *const CCameraInput,
 ) !cam.CameraInput {
@@ -390,7 +603,7 @@ fn buildCameraInput(
 fn buildMeshInputTex(
     allocator: std.mem.Allocator,
     in_mesh: *const CMeshInputTex,
-) !MeshInputTexBuilt {
+) !MeshInputBuilt {
     const mesh_type = try meshTypeFromC(in_mesh.mesh_type);
     const nodes_per_elem = mesh_type.getNodesNum();
 
@@ -406,43 +619,24 @@ fn buildMeshInputTex(
         in_mesh.coords.elems,
         in_mesh.coords.rows_num * in_mesh.coords.cols_num,
     );
-    const connect_slice = try cConstSlice(
-        usize,
-        in_mesh.connect.elems,
-        in_mesh.connect.rows_num * in_mesh.connect.cols_num,
+    const coords = meshio.Coords.init(
+        @constCast(coords_slice),
+        in_mesh.coords.rows_num,
     );
-    const uvs_slice = try cConstSlice(
-        f64,
-        in_mesh.uvs.elems,
-        in_mesh.uvs.rows_num * in_mesh.uvs.cols_num,
+    const connect = try buildConnectFromC(&in_mesh.connect);
+
+    var uvs_array = try buildArray2DF64(
+        allocator,
+        &in_mesh.uvs,
+        2,
     );
+    errdefer uvs_array.deinit(allocator);
+
     const texture_slice = try cConstSlice(
         f64,
         in_mesh.texture.elems,
         in_mesh.texture.rows_num * in_mesh.texture.cols_num,
     );
-
-    const coords = meshio.Coords.init(
-        @constCast(coords_slice),
-        in_mesh.coords.rows_num,
-    );
-    const connect = meshio.Connect.init(
-        @constCast(connect_slice),
-        in_mesh.connect.rows_num,
-        in_mesh.connect.cols_num,
-    );
-
-    var uvs_dims = [_]usize{
-        in_mesh.uvs.rows_num,
-        in_mesh.uvs.cols_num,
-    };
-    var uvs_array = try ndarray.NDArray(f64).init(
-        allocator,
-        @constCast(uvs_slice),
-        uvs_dims[0..],
-    );
-    errdefer uvs_array.deinit(allocator);
-
     var texture_dims = [_]usize{
         1,
         in_mesh.texture.rows_num,
@@ -490,6 +684,209 @@ fn buildMeshInputTex(
         .uvs_array = uvs_array,
         .texture_array = texture_array,
     };
+}
+
+fn buildMeshInput(
+    allocator: std.mem.Allocator,
+    in_mesh: *const CMeshInput,
+) !MeshInputBuilt {
+    const mesh_type = try meshTypeFromC(in_mesh.mesh_type);
+    const nodes_per_elem = mesh_type.getNodesNum();
+
+    if (in_mesh.coords.cols_num != 3) {
+        return error.InvalidCoordsShape;
+    }
+    if (in_mesh.connect.cols_num != nodes_per_elem) {
+        return error.InvalidConnectShape;
+    }
+
+    const coords = try buildCoordsFromC(&in_mesh.coords);
+    const connect = try buildConnectFromC(&in_mesh.connect);
+
+    var built = MeshInputBuilt{
+        .mesh_input = .{
+            .mesh_type = mesh_type,
+            .coords = coords,
+            .connect = connect,
+            .disp = null,
+            .shader = undefined,
+        },
+    };
+
+    const disp_built = try buildOptionalFieldFromC(
+        allocator,
+        &in_mesh.disp,
+    );
+    built.mesh_input.disp = disp_built.field;
+    built.disp_array = disp_built.array;
+
+    const bits = try bitsFromC(in_mesh.bits);
+    const scaling = try scaleStrategyFromC(
+        in_mesh.scaling_tag,
+        in_mesh.scaling_min,
+        in_mesh.scaling_max,
+    );
+    const normal_type = try normalTypeFromC(in_mesh.normal_type);
+
+    switch (in_mesh.shader_tag) {
+        0 => {
+            if (in_mesh.uvs.cols_num != 2) {
+                return error.InvalidUVShape;
+            }
+
+            var uvs_array = try buildArray2DF64(
+                allocator,
+                &in_mesh.uvs,
+                2,
+            );
+            errdefer uvs_array.deinit(allocator);
+
+            const texture_slice = try cConstSlice(
+                f64,
+                in_mesh.texture.elems,
+                in_mesh.texture.rows_num * in_mesh.texture.cols_num,
+            );
+            var texture_dims = [_]usize{
+                1,
+                in_mesh.texture.rows_num,
+                in_mesh.texture.cols_num,
+            };
+            var texture_array = try ndarray.NDArray(f64).init(
+                allocator,
+                @constCast(texture_slice),
+                texture_dims[0..],
+            );
+            errdefer texture_array.deinit(allocator);
+
+            const sample_config = texops.TextureSampleConfig{
+                .sample = try textureSampleFromC(in_mesh.sample),
+                .mode = try textureSampleModeFromC(in_mesh.sample_mode),
+            };
+            if (!sample_config.isValid()) {
+                return error.InvalidTextureSampleConfig;
+            }
+
+            built.mesh_input.shader = .{ .tex = .{
+                .uvs = uvs_array,
+                .texture = texops.Texture(1){
+                    .array = texture_array,
+                    .rows_num = in_mesh.texture.rows_num,
+                    .cols_num = in_mesh.texture.cols_num,
+                },
+                .sample_config = sample_config,
+                .bits = bits,
+                .scaling = scaling,
+                .normal_type = normal_type,
+            } };
+            built.uvs_array = uvs_array;
+            built.texture_array = texture_array;
+        },
+        1 => {
+            const nodal_built = try buildOptionalFieldFromC(
+                allocator,
+                &in_mesh.nodal_field,
+            );
+            if (nodal_built.field == null or nodal_built.array == null) {
+                return error.MissingNodalField;
+            }
+            built.mesh_input.shader = .{ .nodal = .{
+                .field = nodal_built.field.?,
+                .bits = bits,
+                .scaling = scaling,
+                .scale_over = try scaleOverFromC(in_mesh.scale_over),
+                .normal_type = normal_type,
+            } };
+            built.nodal_field_array = nodal_built.array;
+        },
+        2 => {
+            var uvs_array_opt: ?ndarray.NDArray(f64) = null;
+            if (in_mesh.uvs.rows_num > 0 and in_mesh.uvs.cols_num > 0) {
+                uvs_array_opt = try buildArray2DF64(
+                    allocator,
+                    &in_mesh.uvs,
+                    2,
+                );
+            }
+            errdefer if (uvs_array_opt) |*uvs_array| {
+                uvs_array.deinit(allocator);
+            };
+
+            built.mesh_input.shader = .{ .tex_func = .{
+                .uvs = uvs_array_opt,
+                .builtin = try texFuncBuiltinFromC(in_mesh.tex_func_builtin),
+                .params = texFuncParamsFromC(in_mesh.tex_func_params),
+                .bits = bits,
+                .scaling = scaling,
+                .normal_type = normal_type,
+            } };
+            built.uvs_array = uvs_array_opt;
+        },
+        else => return error.InvalidShaderTag,
+    }
+
+    return built;
+}
+
+fn buildCameraInputSlice(
+    allocator: std.mem.Allocator,
+    in_cameras: [*c]const CCameraInput,
+    cameras_len: usize,
+) ![]cam.CameraInput {
+    const cameras_slice = try cConstSlice(
+        CCameraInput,
+        in_cameras,
+        cameras_len,
+    );
+    const cameras_out = try allocator.alloc(cam.CameraInput, cameras_len);
+    for (cameras_slice, 0..) |camera_in, nn| {
+        cameras_out[nn] = try buildCameraInput(&camera_in);
+    }
+    return cameras_out;
+}
+
+fn buildMeshInputSlice(
+    allocator: std.mem.Allocator,
+    in_meshes: [*c]const CMeshInput,
+    meshes_len: usize,
+) ![]MeshInputBuilt {
+    const meshes_in = try cConstSlice(
+        CMeshInput,
+        in_meshes,
+        meshes_len,
+    );
+    const meshes_out = try allocator.alloc(MeshInputBuilt, meshes_len);
+    errdefer allocator.free(meshes_out);
+
+    for (meshes_in, 0..) |mesh_in, nn| {
+        meshes_out[nn] = buildMeshInput(allocator, &mesh_in) catch |err| {
+            for (0..nn) |mm| {
+                meshes_out[mm].deinit(allocator);
+            }
+            return err;
+        };
+    }
+    return meshes_out;
+}
+
+fn extractMeshInputs(
+    allocator: std.mem.Allocator,
+    built_meshes: []const MeshInputBuilt,
+) ![]mo.MeshInput {
+    const mesh_inputs = try allocator.alloc(mo.MeshInput, built_meshes.len);
+    for (built_meshes, 0..) |built_mesh, nn| {
+        mesh_inputs[nn] = built_mesh.mesh_input;
+    }
+    return mesh_inputs;
+}
+
+fn deinitMeshInputSlice(
+    allocator: std.mem.Allocator,
+    built_meshes: []MeshInputBuilt,
+) void {
+    for (built_meshes) |*built_mesh| {
+        built_mesh.deinit(allocator);
+    }
+    allocator.free(built_meshes);
 }
 
 fn buildRasterConfig(
@@ -556,6 +953,115 @@ fn initThreadedIo(
     });
 }
 
+fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
+    var out_camera = CCameraInput{
+        .pixels_num = .{
+            .x = in_camera.pixels_num[0],
+            .y = in_camera.pixels_num[1],
+        },
+        .pixels_size = .{
+            .x = in_camera.pixels_size[0],
+            .y = in_camera.pixels_size[1],
+        },
+        .pos_world = vec3ToCVec3(in_camera.pos_world),
+        .rot_world = .{
+            .x = in_camera.rot_world.alpha_z,
+            .y = in_camera.rot_world.beta_y,
+            .z = in_camera.rot_world.gamma_x,
+        },
+        .roi_cent_world = vec3ToCVec3(in_camera.roi_cent_world),
+        .focal_length = in_camera.focal_length,
+        .sub_sample = in_camera.sub_sample,
+        .distortion_model = 0,
+        .distortion_k1 = 0.0,
+        .distortion_k2 = 0.0,
+        .distortion_k3 = 0.0,
+        .distortion_p1 = 0.0,
+        .distortion_p2 = 0.0,
+        .coord_sys = @intFromEnum(in_camera.coord_sys),
+    };
+
+    switch (in_camera.distortion) {
+        .none => {},
+        .brown_conrady => |model| {
+            out_camera.distortion_model = 1;
+            out_camera.distortion_k1 = model.k1;
+            out_camera.distortion_k2 = model.k2;
+            out_camera.distortion_k3 = model.k3;
+            out_camera.distortion_p1 = model.p1;
+            out_camera.distortion_p2 = model.p2;
+        },
+        else => {},
+    }
+    return out_camera;
+}
+
+fn rasterSceneInternal(
+    allocator: std.mem.Allocator,
+    in_meshes: [*c]const CMeshInput,
+    meshes_len: usize,
+    in_cameras: [*c]const CCameraInput,
+    cameras_len: usize,
+    in_config: *const CRasterConfig,
+    out_dir_path: ?[*:0]const u8,
+    out_image: ?*CImageBufferF64,
+) !void {
+    const built_meshes = try buildMeshInputSlice(
+        allocator,
+        in_meshes,
+        meshes_len,
+    );
+    defer deinitMeshInputSlice(allocator, built_meshes);
+
+    const mesh_inputs = try extractMeshInputs(allocator, built_meshes);
+    defer allocator.free(mesh_inputs);
+
+    const camera_inputs = try buildCameraInputSlice(
+        allocator,
+        in_cameras,
+        cameras_len,
+    );
+    defer allocator.free(camera_inputs);
+
+    const raster_config = try buildRasterConfig(in_config);
+
+    var image_arr_opt: ?ndarray.NDArray(f64) = null;
+    if (out_image) |image_buffer| {
+        image_arr_opt = try buildImageBuffer(allocator, image_buffer);
+    }
+    defer if (image_arr_opt) |*image_arr| {
+        image_arr.deinit(allocator);
+    };
+
+    var threaded_io = initThreadedIo(
+        std.heap.smp_allocator,
+        raster_config.total_threads,
+    );
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+
+    const render_groups = [_]riley.RenderGroupSpec{
+        .{
+            .io = io,
+            .workers = @max(@as(u16, 1), raster_config.total_threads),
+        },
+    };
+    const out_dir_path_slice = if (out_dir_path) |path|
+        std.mem.span(path)
+    else
+        null;
+
+    try riley.rasterAllFramesInto(
+        std.heap.smp_allocator,
+        &render_groups,
+        camera_inputs,
+        mesh_inputs,
+        raster_config,
+        out_dir_path_slice,
+        if (image_arr_opt) |*image_arr| image_arr else null,
+    );
+}
+
 pub export fn rileyRoiCentFromCoords(
     in_coords: *const CArray2DF64,
     out_cent: *CVec3F64,
@@ -600,6 +1106,256 @@ pub export fn rileyPosFillFrameFromRot(
         frame_fill,
     );
     out_pos.* = vec3ToCVec3(cam_pos);
+    return 0;
+}
+
+pub export fn rileyRoiCentOverMeshes(
+    in_meshes: [*c]const CMeshInput,
+    meshes_len: usize,
+    out_cent: *CVec3F64,
+) c_int {
+    clearLastError();
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const built_meshes = buildMeshInputSlice(
+        aa,
+        in_meshes,
+        meshes_len,
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    defer deinitMeshInputSlice(aa, built_meshes);
+
+    const mesh_inputs = extractMeshInputs(aa, built_meshes) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+
+    const roi_cent = cam.CameraOps.roiCentOverMeshes(mesh_inputs);
+    out_cent.* = vec3ToCVec3(roi_cent);
+    return 0;
+}
+
+pub export fn rileyPosFillFrameFromRotOverMeshes(
+    in_meshes: [*c]const CMeshInput,
+    meshes_len: usize,
+    pixels_num: CVec2U32,
+    pixels_size: CVec2F64,
+    focal_length: f64,
+    rot_world: CVec3F64,
+    frame_fill: f64,
+    out_pos: *CVec3F64,
+) c_int {
+    clearLastError();
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const built_meshes = buildMeshInputSlice(
+        aa,
+        in_meshes,
+        meshes_len,
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    defer deinitMeshInputSlice(aa, built_meshes);
+
+    const mesh_inputs = extractMeshInputs(aa, built_meshes) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+
+    const rot = rotation.Rotation.init(
+        rot_world.x,
+        rot_world.y,
+        rot_world.z,
+    );
+    const cam_pos = cam.CameraOps.posFillFrameFromRotOverMeshes(
+        mesh_inputs,
+        .{ pixels_num.x, pixels_num.y },
+        .{ pixels_size.x, pixels_size.y },
+        focal_length,
+        rot,
+        frame_fill,
+    );
+    out_pos.* = vec3ToCVec3(cam_pos);
+    return 0;
+}
+
+pub export fn rileyCalcOutputDimsScene(
+    in_meshes: [*c]const CMeshInput,
+    meshes_len: usize,
+    in_cameras: [*c]const CCameraInput,
+    cameras_len: usize,
+    out_dims: *CDims5Usize,
+) c_int {
+    clearLastError();
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const built_meshes = buildMeshInputSlice(
+        aa,
+        in_meshes,
+        meshes_len,
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    defer deinitMeshInputSlice(aa, built_meshes);
+
+    const mesh_inputs = extractMeshInputs(aa, built_meshes) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    const camera_inputs = buildCameraInputSlice(
+        aa,
+        in_cameras,
+        cameras_len,
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+
+    const dims = riley.calcAllFramesImageDims(
+        camera_inputs,
+        mesh_inputs,
+    );
+    out_dims.* = dimsFromArray(dims);
+    return 0;
+}
+
+pub export fn rileyRasterScene(
+    in_meshes: [*c]const CMeshInput,
+    meshes_len: usize,
+    in_cameras: [*c]const CCameraInput,
+    cameras_len: usize,
+    in_config: *const CRasterConfig,
+    out_dir_path: ?[*:0]const u8,
+    out_image: ?*CImageBufferF64,
+) c_int {
+    clearLastError();
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
+    defer arena.deinit();
+
+    rasterSceneInternal(
+        arena.allocator(),
+        in_meshes,
+        meshes_len,
+        in_cameras,
+        cameras_len,
+        in_config,
+        out_dir_path,
+        out_image,
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+
+    return 0;
+}
+
+pub export fn rileySaveStereoPair(
+    out_dir_path: [*:0]const u8,
+    stereo_file_name: [*:0]const u8,
+    cam0_in: *const CCameraInput,
+    cam1_in: *const CCameraInput,
+) c_int {
+    clearLastError();
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    const cam0 = buildCameraInput(cam0_in) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    const cam1 = buildCameraInput(cam1_in) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+
+    var threaded_io = initThreadedIo(std.heap.smp_allocator, 1);
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDir(io, std.mem.span(out_dir_path), .default_dir) catch |err| {
+        if (err != error.PathAlreadyExists) {
+            setLastError(err);
+            return 1;
+        }
+    };
+
+    var out_dir = cwd.openDir(
+        io,
+        std.mem.span(out_dir_path),
+        .{},
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    defer out_dir.close(io);
+
+    cam.CameraOps.saveStereoPair(
+        io,
+        out_dir,
+        std.mem.span(stereo_file_name),
+        .{ .cameras = .{ cam0, cam1 } },
+    ) catch |err| {
+        _ = aa;
+        setLastError(err);
+        return 1;
+    };
+    return 0;
+}
+
+pub export fn rileyLoadStereoPair(
+    dir_path: [*:0]const u8,
+    stereo_file_name: [*:0]const u8,
+    cam0_out: *CCameraInput,
+    cam1_out: *CCameraInput,
+) c_int {
+    clearLastError();
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
+    defer arena.deinit();
+    const aa = arena.allocator();
+
+    var threaded_io = initThreadedIo(std.heap.smp_allocator, 1);
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const cwd = std.Io.Dir.cwd();
+
+    var dir = cwd.openDir(
+        io,
+        std.mem.span(dir_path),
+        .{},
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    defer dir.close(io);
+
+    const stereo_pair = cam.CameraOps.loadStereoPair(
+        aa,
+        io,
+        dir,
+        std.mem.span(stereo_file_name),
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    cam0_out.* = cameraInputToC(stereo_pair.cameras[0]);
+    cam1_out.* = cameraInputToC(stereo_pair.cameras[1]);
     return 0;
 }
 

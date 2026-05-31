@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import argparse
-import shutil
 from pathlib import Path
 
-import numpy as np
-from PIL import Image
-
 import riley
+
+from demo_common import (
+    ensure_clean_dir,
+    load_csv_f64,
+    load_csv_uintp,
+    load_texture_grey_f64,
+)
 
 
 DATA_DIR = Path("data/bench/tri6_sphere200")
@@ -20,28 +23,13 @@ ROT_WORLD = (0.0, 0.0, 0.0)
 FRAME_FILL = 1.0
 
 
-def load_csv_f64(path_in: Path) -> np.ndarray:
-    return np.loadtxt(path_in, delimiter=",", dtype=np.float64)
-
-
-def load_csv_uintp(path_in: Path) -> np.ndarray:
-    return np.loadtxt(path_in, delimiter=",", dtype=np.uintp)
-
-
-def load_texture_f64(path_in: Path) -> np.ndarray:
-    with Image.open(path_in) as image_in:
-        image_grey = image_in.convert("L")
-        texture_u8 = np.asarray(image_grey, dtype=np.uint8)
-    return np.ascontiguousarray(texture_u8, dtype=np.float64)
-
-
 def build_demo_inputs(
     save_strategy: riley.SaveStrategy,
 ) -> tuple[riley.MeshInputTex, riley.CameraInput, riley.RasterConfig]:
     coords = load_csv_f64(DATA_DIR / "coords.csv")
     connect = load_csv_uintp(DATA_DIR / "connect.csv")
     uvs = load_csv_f64(DATA_DIR / "uvs.csv")
-    texture = load_texture_f64(TEXTURE_PATH)
+    texture = load_texture_grey_f64(TEXTURE_PATH)
 
     roi_cent_world = tuple(riley.roi_cent_from_coords(coords))
     pos_world = tuple(
@@ -78,7 +66,7 @@ def build_demo_inputs(
     )
     config = riley.RasterConfig(
         save_strategy=save_strategy,
-        report=riley.ReportMode.bench,
+        report=riley.ReportMode.off,
     )
 
     return mesh, camera, config
@@ -90,8 +78,9 @@ def run_demo(
     clean_out_dir: bool = True,
 ) -> np.ndarray | None:
     if clean_out_dir:
-        shutil.rmtree(out_dir, ignore_errors=True)
-    out_dir.mkdir(parents=True, exist_ok=True)
+        ensure_clean_dir(out_dir)
+    else:
+        out_dir.mkdir(parents=True, exist_ok=True)
 
     mesh, camera, config = build_demo_inputs(save_strategy)
     return riley.raster(

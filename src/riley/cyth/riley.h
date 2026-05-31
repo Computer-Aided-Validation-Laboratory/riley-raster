@@ -32,6 +32,13 @@ typedef struct c_array_2d_usize {
     size_t cols_num;
 } CArray2DUsize;
 
+typedef struct c_array_3d_f64 {
+    const double* elems;
+    size_t dim0;
+    size_t dim1;
+    size_t dim2;
+} CArray3DF64;
+
 typedef struct c_dims_5_usize {
     size_t dim0;
     size_t dim1;
@@ -76,6 +83,45 @@ typedef struct c_mesh_input_tex {
     double scaling_max;
 } CMeshInputTex;
 
+typedef struct c_tex_func_params {
+    double coord_scale_0;
+    double coord_scale_1;
+    double coord_offset_0;
+    double coord_offset_1;
+    double output_scale;
+    double output_offset;
+    double wave_num_scalar_0;
+    double wave_num_scalar_1;
+    double wave_num_rgb_0;
+    double wave_num_rgb_1;
+    double wave_num_rgb_2;
+    double extra_0;
+    double extra_1;
+    double extra_2;
+    double extra_3;
+} CTexFuncParams;
+
+typedef struct c_mesh_input {
+    uint32_t mesh_type;
+    CArray2DF64 coords;
+    CArray2DUsize connect;
+    CArray3DF64 disp;
+    uint32_t shader_tag;
+    CArray2DF64 uvs;
+    CArray2DF64 texture;
+    uint32_t sample;
+    uint32_t sample_mode;
+    int bits;
+    uint32_t scaling_tag;
+    double scaling_min;
+    double scaling_max;
+    CArray3DF64 nodal_field;
+    uint32_t scale_over;
+    uint32_t tex_func_builtin;
+    CTexFuncParams tex_func_params;
+    uint32_t normal_type;
+} CMeshInput;
+
 typedef struct c_raster_config {
     uint32_t render_mode;
     uint16_t total_threads;
@@ -103,6 +149,55 @@ int rileyPosFillFrameFromRot(
     CVec3F64 rot_world,
     double frame_fill,
     CVec3F64* out_pos
+);
+
+int rileyRoiCentOverMeshes(
+    const CMeshInput* in_meshes,
+    size_t meshes_len,
+    CVec3F64* out_cent
+);
+
+int rileyPosFillFrameFromRotOverMeshes(
+    const CMeshInput* in_meshes,
+    size_t meshes_len,
+    CVec2U32 pixels_num,
+    CVec2F64 pixels_size,
+    double focal_length,
+    CVec3F64 rot_world,
+    double frame_fill,
+    CVec3F64* out_pos
+);
+
+int rileyCalcOutputDimsScene(
+    const CMeshInput* in_meshes,
+    size_t meshes_len,
+    const CCameraInput* in_cameras,
+    size_t cameras_len,
+    CDims5Usize* out_dims
+);
+
+int rileyRasterScene(
+    const CMeshInput* in_meshes,
+    size_t meshes_len,
+    const CCameraInput* in_cameras,
+    size_t cameras_len,
+    const CRasterConfig* in_config,
+    const char* out_dir_path,
+    CImageBufferF64* out_image
+);
+
+int rileySaveStereoPair(
+    const char* out_dir_path,
+    const char* stereo_file_name,
+    const CCameraInput* cam0_in,
+    const CCameraInput* cam1_in
+);
+
+int rileyLoadStereoPair(
+    const char* dir_path,
+    const char* stereo_file_name,
+    CCameraInput* cam0_out,
+    CCameraInput* cam1_out
 );
 
 int rileyCalcOutputDimsTex(

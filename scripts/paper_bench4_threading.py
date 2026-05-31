@@ -92,7 +92,7 @@ def copy_required_assets() -> None:
 
 
 def main() -> int:
-    analysis.main()
+    analysis.main(include_disk_overlap=False)
     copy_required_assets()
     write_tabs_tex(FIGS_TEX_NAME, build_figs_tex())
     return 0

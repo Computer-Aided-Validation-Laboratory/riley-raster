@@ -9,8 +9,6 @@ import numpy as np
 from PIL import Image
 
 
-ZIG_OUT_DIR = Path("out/demo-sphere200")
-PY_OUT_DIR = Path("pyout/demo-sphere200")
 PYTHON_EXE = Path(".venv/bin/python")
 ZIG_CMD = [
     "zig",
@@ -18,13 +16,19 @@ ZIG_CMD = [
     "-lc",
     "-O",
     "ReleaseFast",
-    "./src/demo_sphere200.zig",
+    "./src/run_all_demos.zig",
 ]
-PY_CMD = [
-    str(PYTHON_EXE),
-    "./pyscripts/demo_sphere200.py",
-    "--save-strategy",
-    "disk",
+PY_CMDS = [
+    [str(PYTHON_EXE), "./pyscripts/demo_sphere200.py", "--save-strategy", "disk"],
+    [str(PYTHON_EXE), "./pyscripts/demo_rabbits.py"],
+    [str(PYTHON_EXE), "./pyscripts/demo_dicuq.py"],
+    [str(PYTHON_EXE), "./pyscripts/demo_stereocal.py"],
+]
+COMPARE_DIRS = [
+    ("out/demo-sphere200", "pyout/demo-sphere200"),
+    ("out/demo-rabbits", "pyout/demo-rabbits"),
+    ("out/demo-dicuq", "pyout/demo-dicuq"),
+    ("out/demo-stereocal", "pyout/demo-stereocal"),
 ]
 
 
@@ -53,26 +57,36 @@ def compare_file_bytes(path_a: Path, path_b: Path) -> None:
 
 
 def compare_render_dirs(dir_a: Path, dir_b: Path) -> None:
-    files_a = sorted(path_a.name for path_a in dir_a.glob("*.bmp"))
-    files_b = sorted(path_b.name for path_b in dir_b.glob("*.bmp"))
+    files_a = sorted(
+        path_a.relative_to(dir_a)
+        for path_a in dir_a.rglob("*.bmp")
+    )
+    files_b = sorted(
+        path_b.relative_to(dir_b)
+        for path_b in dir_b.rglob("*.bmp")
+    )
     if files_a != files_b:
         raise AssertionError(
             f"output file mismatch: zig={files_a}, python={files_b}"
         )
 
-    for file_name in files_a:
-        compare_file_bytes(dir_a / file_name, dir_b / file_name)
+    for rel_path in files_a:
+        compare_file_bytes(dir_a / rel_path, dir_b / rel_path)
 
 
 def main() -> None:
-    shutil.rmtree(ZIG_OUT_DIR, ignore_errors=True)
-    shutil.rmtree(PY_OUT_DIR, ignore_errors=True)
+    for zig_dir, py_dir in COMPARE_DIRS:
+        shutil.rmtree(zig_dir, ignore_errors=True)
+        shutil.rmtree(py_dir, ignore_errors=True)
 
     subprocess.run(ZIG_CMD, check=True)
-    subprocess.run(PY_CMD, check=True)
+    for cmd in PY_CMDS:
+        subprocess.run(cmd, check=True)
 
-    compare_render_dirs(ZIG_OUT_DIR, PY_OUT_DIR)
-    print("python wrapper render matches zig demo exactly")
+    for zig_dir, py_dir in COMPARE_DIRS:
+        compare_render_dirs(Path(zig_dir), Path(py_dir))
+
+    print("python wrapper renders match zig demos exactly")
 
 
 if __name__ == "__main__":
