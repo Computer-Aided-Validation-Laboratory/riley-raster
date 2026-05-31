@@ -24,6 +24,7 @@ const CameraInput = camera_mod.CameraInput;
 const CameraOps = camera_mod.CameraOps;
 const DistortionModel = camera_mod.DistortionModel;
 const BrownConrady = camera_mod.BrownConrady;
+const BrownConradyExt = camera_mod.BrownConradyExt;
 const MatSlice = @import("riley/zig/matslice.zig").MatSlice;
 
 const DATA_DIR = "data/FE/platehole3d_2mr_63f/";
@@ -44,8 +45,36 @@ const MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP: u16 = 1;
 const RENDER_GROUP_COUNT: usize = 8;
 const WORKERS_PER_GROUP: u16 = 1;
 
-const DISTORTION = true; 
+const DistortionCase = enum {
+    none,
+    brown_conrady,
+    brown_conrady_ext,
+};
 
+const DISTORTION_CASE: DistortionCase = .brown_conrady_ext;
+
+fn buildDistortion() DistortionModel {
+    return switch (DISTORTION_CASE) {
+        .none => .none,
+        .brown_conrady => .{ .brown_conrady = BrownConrady{
+            .k1 = -0.19,
+            .k2 = -1.17,
+            .k3 = 25.0,
+            .p1 = 0.0004,
+            .p2 = -0.0007,
+        } },
+        .brown_conrady_ext => .{ .brown_conrady_ext = BrownConradyExt{
+            .k1 = -0.19,
+            .k2 = -1.17,
+            .k3 = 25.0,
+            .k4 = -0.04,
+            .k5 = 0.18,
+            .k6 = -0.02,
+            .p1 = 0.0004,
+            .p2 = -0.0007,
+        } },
+    };
+}
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
@@ -157,16 +186,7 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Setting up camera...\n", .{});
     const roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
 
-    const distortion: DistortionModel = if (!DISTORTION)
-        .none
-    else
-        .{ .brown_conrady = BrownConrady{
-            .k1 = -0.19,
-            .k2 = -1.17,
-            .k3 = 25.0,
-            .p1 = 0.0004,
-            .p2 = -0.0007,
-        } };
+    const distortion = buildDistortion();
 
     // Camera 0: face on
     const cam0_rot = Rotation.init(

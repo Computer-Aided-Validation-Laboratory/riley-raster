@@ -2,17 +2,12 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+import shutil
 
 import numpy as np
+from PIL import Image
 
 import riley
-
-from demo_common import (
-    ensure_clean_dir,
-    load_csv_f64,
-    load_csv_uintp,
-    load_texture_grey_f64,
-)
 
 
 DATA_DIR = Path("data/FE/platehole3d_2mr_63f")
@@ -25,67 +20,62 @@ FOV_SCALE_FACTOR = 0.65
 SUB_SAMPLE = 2
 STEREO_ANGLE_DEG = 20.0
 TOTAL_THREADS = 8
-DISTORTION = True
+DISTORTION_KWARGS = {
+    "distortion_model": 2,
+    "distortion_k1": -0.19,
+    "distortion_k2": -1.17,
+    "distortion_k3": 25.0,
+    "distortion_k4": -0.04,
+    "distortion_k5": 0.18,
+    "distortion_k6": -0.02,
+    "distortion_p1": 0.0004,
+    "distortion_p2": -0.0007,
+}
 
 
-def load_disp_field() -> np.ndarray:
-    disp_x = load_csv_f64(DATA_DIR / "field_disp_x.csv")
-    disp_y = load_csv_f64(DATA_DIR / "field_disp_y.csv")
-    disp_z = load_csv_f64(DATA_DIR / "field_disp_z.csv")
-    field = np.empty((disp_x.shape[1], disp_x.shape[0], 3), dtype=np.float64)
-    field[:, :, 0] = disp_x.T
-    field[:, :, 1] = disp_y.T
-    field[:, :, 2] = disp_z.T
-    return field
+def main() -> None:
+    shutil.rmtree(OUT_DIR, ignore_errors=True)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-
-def build_distortion() -> dict[str, float]:
-    if not DISTORTION:
-        return {}
-    return {
-        "distortion_model": 1,
-        "distortion_k1": -0.19,
-        "distortion_k2": -1.17,
-        "distortion_k3": 25.0,
-        "distortion_p1": 0.0004,
-        "distortion_p2": -0.0007,
-    }
-
-
-def build_camera(
-    roi_pos: tuple[float, float, float],
-    rot_world: tuple[float, float, float],
-    coords: np.ndarray,
-) -> riley.CameraInput:
-    pos_world = tuple(
-        riley.pos_fill_frame_from_rot(
-            coords,
-            PIXELS_NUM,
-            PIXELS_SIZE,
-            FOCAL_LENGTH,
-            rot_world,
-            FOV_SCALE_FACTOR,
-        ),
+    coords = np.loadtxt(
+        DATA_DIR / "coords.csv",
+        delimiter=",",
+        dtype=np.float64,
     )
-    return riley.CameraInput(
-        pixels_num=PIXELS_NUM,
-        pixels_size=PIXELS_SIZE,
-        pos_world=pos_world,
-        rot_world=rot_world,
-        roi_cent_world=roi_pos,
-        focal_length=FOCAL_LENGTH,
-        sub_sample=SUB_SAMPLE,
-        **build_distortion(),
+    connect_float = np.loadtxt(
+        DATA_DIR / "connect.csv",
+        delimiter=",",
+        dtype=np.float64,
     )
-
-
-def run_demo(out_dir: Path = OUT_DIR) -> np.ndarray | None:
-    ensure_clean_dir(out_dir)
-    coords = load_csv_f64(DATA_DIR / "coords.csv")
-    connect = load_csv_uintp(DATA_DIR / "connect.csv")
-    uvs = load_csv_f64(DATA_DIR / "uvs.csv")
-    disp = load_disp_field()
-    texture = load_texture_grey_f64(TEXTURE_PATH)
+    connect = np.ascontiguousarray(connect_float, dtype=np.uintp)
+    uvs = np.loadtxt(
+        DATA_DIR / "uvs.csv",
+        delimiter=",",
+        dtype=np.float64,
+    )
+    disp_x = np.loadtxt(
+        DATA_DIR / "field_disp_x.csv",
+        delimiter=",",
+        dtype=np.float64,
+    )
+    disp_y = np.loadtxt(
+        DATA_DIR / "field_disp_y.csv",
+        delimiter=",",
+        dtype=np.float64,
+    )
+    disp_z = np.loadtxt(
+        DATA_DIR / "field_disp_z.csv",
+        delimiter=",",
+        dtype=np.float64,
+    )
+    disp = np.empty((disp_x.shape[1], disp_x.shape[0], 3), dtype=np.float64)
+    disp[:, :, 0] = disp_x.T
+    disp[:, :, 1] = disp_y.T
+    disp[:, :, 2] = disp_z.T
+    with Image.open(TEXTURE_PATH) as image_in:
+        image_grey = image_in.convert("L")
+        image_u8 = np.asarray(image_grey, dtype=np.uint8)
+    texture = np.ascontiguousarray(image_u8, dtype=np.float64)
 
     mesh = riley.MeshInput(
         mesh_type=riley.MeshType.quad8,
@@ -102,11 +92,46 @@ def run_demo(out_dir: Path = OUT_DIR) -> np.ndarray | None:
     )
 
     roi_pos = tuple(riley.roi_cent_from_coords(coords))
-    camera_0 = build_camera(roi_pos, (0.0, 0.0, 0.0), coords)
-    camera_1 = build_camera(
-        roi_pos,
-        (0.0, np.deg2rad(STEREO_ANGLE_DEG), 0.0),
-        coords,
+    camera_0_pos = tuple(
+        riley.pos_fill_frame_from_rot(
+            coords,
+            PIXELS_NUM,
+            PIXELS_SIZE,
+            FOCAL_LENGTH,
+            (0.0, 0.0, 0.0),
+            FOV_SCALE_FACTOR,
+        ),
+    )
+    camera_0 = riley.CameraInput(
+        pixels_num=PIXELS_NUM,
+        pixels_size=PIXELS_SIZE,
+        pos_world=camera_0_pos,
+        rot_world=(0.0, 0.0, 0.0),
+        roi_cent_world=roi_pos,
+        focal_length=FOCAL_LENGTH,
+        sub_sample=SUB_SAMPLE,
+        **DISTORTION_KWARGS,
+    )
+    camera_1_rot = (0.0, np.deg2rad(STEREO_ANGLE_DEG), 0.0)
+    camera_1_pos = tuple(
+        riley.pos_fill_frame_from_rot(
+            coords,
+            PIXELS_NUM,
+            PIXELS_SIZE,
+            FOCAL_LENGTH,
+            camera_1_rot,
+            FOV_SCALE_FACTOR,
+        ),
+    )
+    camera_1 = riley.CameraInput(
+        pixels_num=PIXELS_NUM,
+        pixels_size=PIXELS_SIZE,
+        pos_world=camera_1_pos,
+        rot_world=camera_1_rot,
+        roi_cent_world=roi_pos,
+        focal_length=FOCAL_LENGTH,
+        sub_sample=SUB_SAMPLE,
+        **DISTORTION_KWARGS,
     )
 
     config = riley.RasterConfig(
@@ -119,30 +144,25 @@ def run_demo(out_dir: Path = OUT_DIR) -> np.ndarray | None:
         report=riley.ReportMode.off,
     )
 
-    image_array = riley.raster(
+    riley.raster(
         [mesh],
         [camera_0, camera_1],
         config,
-        out_dir=str(out_dir),
+        out_dir=str(OUT_DIR),
     )
 
     riley.save_stereo_pair(
-        str(out_dir),
+        str(OUT_DIR),
         "stereo_data_opengl.csv",
         camera_0,
         camera_1,
     )
     riley.save_stereo_pair(
-        str(out_dir),
+        str(OUT_DIR),
         "stereo_data_opencv.csv",
         replace(camera_0, coord_sys=riley.CameraCoordSys.opencv),
         replace(camera_1, coord_sys=riley.CameraCoordSys.opencv),
     )
-    return image_array
-
-
-def main() -> None:
-    run_demo()
     print(f"rendered dicuq to {OUT_DIR}")
 
 

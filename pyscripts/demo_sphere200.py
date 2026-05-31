@@ -1,17 +1,11 @@
 from __future__ import annotations
 
-import argparse
 from pathlib import Path
+import shutil
 
+import numpy as np
+from PIL import Image
 import riley
-
-from demo_common import (
-    ensure_clean_dir,
-    load_csv_f64,
-    load_csv_uintp,
-    load_texture_grey_f64,
-)
-
 
 DATA_DIR = Path("data/bench/tri6_sphere200")
 TEXTURE_PATH = Path("texture/speckle.bmp")
@@ -21,15 +15,37 @@ PIXELS_SIZE = (5.3e-6, 5.3e-6)
 FOCAL_LENGTH = 50.0e-3
 ROT_WORLD = (0.0, 0.0, 0.0)
 FRAME_FILL = 1.0
+SAVE_STRATEGY = riley.SaveStrategy.disk
+CLEAN_OUT_DIR = True
 
 
-def build_demo_inputs(
-    save_strategy: riley.SaveStrategy,
-) -> tuple[riley.MeshInputTex, riley.CameraInput, riley.RasterConfig]:
-    coords = load_csv_f64(DATA_DIR / "coords.csv")
-    connect = load_csv_uintp(DATA_DIR / "connect.csv")
-    uvs = load_csv_f64(DATA_DIR / "uvs.csv")
-    texture = load_texture_grey_f64(TEXTURE_PATH)
+def main() -> None:
+    if CLEAN_OUT_DIR:
+        shutil.rmtree(PYOUT_DIR, ignore_errors=True)
+        PYOUT_DIR.mkdir(parents=True, exist_ok=True)
+    else:
+        PYOUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    coords = np.loadtxt(
+        DATA_DIR / "coords.csv",
+        delimiter=",",
+        dtype=np.float64,
+    )
+    connect_float = np.loadtxt(
+        DATA_DIR / "connect.csv",
+        delimiter=",",
+        dtype=np.float64,
+    )
+    connect = np.ascontiguousarray(connect_float, dtype=np.uintp)
+    uvs = np.loadtxt(
+        DATA_DIR / "uvs.csv",
+        delimiter=",",
+        dtype=np.float64,
+    )
+    with Image.open(TEXTURE_PATH) as image_in:
+        image_grey = image_in.convert("L")
+        image_u8 = np.asarray(image_grey, dtype=np.uint8)
+    texture = np.ascontiguousarray(image_u8, dtype=np.float64)
 
     roi_cent_world = tuple(riley.roi_cent_from_coords(coords))
     pos_world = tuple(
@@ -65,63 +81,23 @@ def build_demo_inputs(
         coord_sys=riley.CameraCoordSys.opengl,
     )
     config = riley.RasterConfig(
-        save_strategy=save_strategy,
+        save_strategy=SAVE_STRATEGY,
         report=riley.ReportMode.off,
     )
-
-    return mesh, camera, config
-
-
-def run_demo(
-    save_strategy: riley.SaveStrategy = riley.SaveStrategy.disk,
-    out_dir: Path = PYOUT_DIR,
-    clean_out_dir: bool = True,
-) -> np.ndarray | None:
-    if clean_out_dir:
-        ensure_clean_dir(out_dir)
-    else:
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-    mesh, camera, config = build_demo_inputs(save_strategy)
-    return riley.raster(
+    image_array = riley.raster(
         mesh,
         camera,
         config,
-        out_dir=str(out_dir),
+        out_dir=str(PYOUT_DIR),
     )
 
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--save-strategy",
-        choices=["disk", "memory", "both", "none"],
-        default="disk",
-    )
-    parser.add_argument(
-        "--out-dir",
-        default=str(PYOUT_DIR),
-    )
-    parser.add_argument(
-        "--keep-out-dir",
-        action="store_true",
-    )
-    return parser.parse_args()
-
-
-def main() -> None:
-    args = parse_args()
-    save_strategy = getattr(riley.SaveStrategy, args.save_strategy)
-    out_dir = Path(args.out_dir)
-    image_array = run_demo(
-        save_strategy=save_strategy,
-        out_dir=out_dir,
-        clean_out_dir=not args.keep_out_dir,
-    )
     if image_array is None:
-        print(f"rendered disk output to {out_dir}")
+        print(f"rendered disk output to {PYOUT_DIR}")
     else:
-        print(f"rendered image array with shape {image_array.shape} to {out_dir}")
+        print(
+            f"rendered image array with shape {image_array.shape} "
+            f"to {PYOUT_DIR}",
+        )
 
 
 if __name__ == "__main__":

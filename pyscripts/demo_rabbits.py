@@ -1,20 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
 
 import numpy as np
+from PIL import Image
 
 import riley
-
-from demo_common import (
-    copy_coords,
-    ensure_clean_dir,
-    find_aligned_centroid,
-    load_csv_f64,
-    load_csv_uintp,
-    load_texture_grey_f64,
-    translate_coords,
-)
 
 
 OVERLAP_X = 0.85
@@ -50,13 +42,26 @@ def build_rabbit_dir(rabbit_name: str, mesh_type: riley.MeshType) -> Path:
 
 
 def load_static_mesh(data_dir: Path) -> tuple[np.ndarray, np.ndarray]:
-    coords = load_csv_f64(data_dir / "coords.csv")
-    connect = load_csv_uintp(data_dir / "connectivity.csv")
+    coords = np.loadtxt(
+        data_dir / "coords.csv",
+        delimiter=",",
+        dtype=np.float64,
+    )
+    connect_float = np.loadtxt(
+        data_dir / "connectivity.csv",
+        delimiter=",",
+        dtype=np.float64,
+    )
+    connect = np.ascontiguousarray(connect_float, dtype=np.uintp)
     return coords, connect
 
 
 def load_uvs(data_dir: Path) -> np.ndarray:
-    return load_csv_f64(data_dir / "uvs.csv")
+    return np.loadtxt(
+        data_dir / "uvs.csv",
+        delimiter=",",
+        dtype=np.float64,
+    )
 
 
 def build_uv_scalar_field(uvs: np.ndarray) -> np.ndarray:
@@ -78,9 +83,10 @@ def make_mesh_input(
     connect: np.ndarray,
     uvs: np.ndarray,
     texture: np.ndarray,
+    texture_rgb: np.ndarray,
     shader_index: int,
 ) -> riley.MeshInput:
-    shader_mode = shader_index % 3
+    shader_mode = shader_index % 5
     if shader_mode == 0:
         return riley.MeshInput(
             mesh_type=mesh_type,
@@ -100,6 +106,20 @@ def make_mesh_input(
             mesh_type=mesh_type,
             coords=coords,
             connect=connect,
+            shader_tag=riley.ShaderType.tex_rgb,
+            uvs=uvs,
+            texture=texture_rgb,
+            sample=riley.TextureSample.cubic_catmull_rom,
+            sample_mode=riley.TextureSampleMode.lut_lerp,
+            bits=8,
+            scaling_tag=riley.ScaleStrategy.none,
+            normal_type=riley.NormalType.none,
+        )
+    if shader_mode == 2:
+        return riley.MeshInput(
+            mesh_type=mesh_type,
+            coords=coords,
+            connect=connect,
             shader_tag=riley.ShaderType.nodal,
             nodal_field=build_uv_scalar_field(uvs),
             bits=8,
@@ -107,11 +127,24 @@ def make_mesh_input(
             scale_over=riley.ScaleOver.over_frames,
             normal_type=riley.NormalType.none,
         )
+    if shader_mode == 3:
+        return riley.MeshInput(
+            mesh_type=mesh_type,
+            coords=coords,
+            connect=connect,
+            shader_tag=riley.ShaderType.tex_func,
+            uvs=uvs,
+            tex_func_builtin=riley.TexFuncBuiltin.sinusoidal,
+            tex_func_params=sinusoidal_uv_params(),
+            bits=8,
+            scaling_tag=riley.ScaleStrategy.auto,
+            normal_type=riley.NormalType.none,
+        )
     return riley.MeshInput(
         mesh_type=mesh_type,
         coords=coords,
         connect=connect,
-        shader_tag=riley.ShaderType.tex_func,
+        shader_tag=riley.ShaderType.tex_func_rgb,
         uvs=uvs,
         tex_func_builtin=riley.TexFuncBuiltin.sinusoidal,
         tex_func_params=sinusoidal_uv_params(),
@@ -132,10 +165,19 @@ def bounds_for_coords(
     return min_x, max_x, min_y, max_y
 
 
-def run_demo(out_dir: Path = OUT_DIR) -> np.ndarray | None:
-    ensure_clean_dir(out_dir)
-    texture = load_texture_grey_f64(TEXTURE_PATH)
-
+def main() -> None:
+    shutil.rmtree(OUT_DIR, ignore_errors=True)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    with Image.open(TEXTURE_PATH) as image_in:
+        image_grey = image_in.convert("L")
+        image_u8 = np.asarray(image_grey, dtype=np.uint8)
+        image_rgb = image_in.convert("RGB")
+        image_rgb_u8 = np.asarray(image_rgb, dtype=np.uint8)
+    texture = np.ascontiguousarray(image_u8, dtype=np.float64)
+    texture_rgb = np.ascontiguousarray(
+        np.transpose(image_rgb_u8, (2, 0, 1)),
+        dtype=np.float64,
+    )
     mesh_inputs: list[riley.MeshInput] = []
     pair_widths = np.zeros((len(RABBIT_MESH_TYPES),), dtype=np.float64)
     pair_heights = np.zeros((len(RABBIT_MESH_TYPES),), dtype=np.float64)
@@ -153,10 +195,18 @@ def run_demo(out_dir: Path = OUT_DIR) -> np.ndarray | None:
         riley_uvs = load_uvs(riley_dir)
         feebs_uvs = load_uvs(feebs_dir)
 
-        riley_coords = copy_coords(riley_coords)
-        feebs_coords = copy_coords(feebs_coords)
+        riley_coords = np.ascontiguousarray(
+            np.array(riley_coords, copy=True),
+            dtype=np.float64,
+        )
+        feebs_coords = np.ascontiguousarray(
+            np.array(feebs_coords, copy=True),
+            dtype=np.float64,
+        )
 
-        _, base_extent = find_aligned_centroid(riley_coords)
+        coords_min = np.min(riley_coords, axis=0)
+        coords_max = np.max(riley_coords, axis=0)
+        base_extent = coords_max - coords_min
         x_sep = float(base_extent[0]) * (1.0 - OVERLAP_X)
         y_sep = float(base_extent[1]) * (1.0 - OVERLAP_Y)
         feebs_front_riley_shift = (
@@ -176,6 +226,7 @@ def run_demo(out_dir: Path = OUT_DIR) -> np.ndarray | None:
                 riley_connect,
                 riley_uvs,
                 texture,
+                texture_rgb,
                 front_idx,
             )
             back_mesh = make_mesh_input(
@@ -184,6 +235,7 @@ def run_demo(out_dir: Path = OUT_DIR) -> np.ndarray | None:
                 feebs_connect,
                 feebs_uvs,
                 texture,
+                texture_rgb,
                 back_idx,
             )
         else:
@@ -193,6 +245,7 @@ def run_demo(out_dir: Path = OUT_DIR) -> np.ndarray | None:
                 feebs_connect,
                 feebs_uvs,
                 texture,
+                texture_rgb,
                 front_idx,
             )
             back_mesh = make_mesh_input(
@@ -201,13 +254,18 @@ def run_demo(out_dir: Path = OUT_DIR) -> np.ndarray | None:
                 riley_connect,
                 riley_uvs,
                 texture,
+                texture_rgb,
                 back_idx,
             )
 
-        translate_coords(front_mesh.coords, (0.5 * x_sep, -0.5 * y_sep, 0.0))
-        translate_coords(back_mesh.coords, (-0.5 * x_sep, 0.5 * y_sep, 0.0))
+        front_mesh.coords[:, 0] += 0.5 * x_sep
+        front_mesh.coords[:, 1] -= 0.5 * y_sep
+        back_mesh.coords[:, 0] -= 0.5 * x_sep
+        back_mesh.coords[:, 1] += 0.5 * y_sep
         if not riley_front:
-            translate_coords(back_mesh.coords, feebs_front_riley_shift)
+            back_mesh.coords[:, 0] += feebs_front_riley_shift[0]
+            back_mesh.coords[:, 1] += feebs_front_riley_shift[1]
+            back_mesh.coords[:, 2] += feebs_front_riley_shift[2]
 
         temp_meshes = [front_mesh, back_mesh]
         roi_pos = riley.roi_cent_over_meshes(temp_meshes)
@@ -220,7 +278,9 @@ def run_demo(out_dir: Path = OUT_DIR) -> np.ndarray | None:
             FOV_SCALE,
         )
 
-        front_centroid, _ = find_aligned_centroid(front_mesh.coords)
+        front_min = np.min(front_mesh.coords, axis=0)
+        front_max = np.max(front_mesh.coords, axis=0)
+        front_centroid = 0.5 * (front_min + front_max)
         cam_axis = np.asarray(cam_pos, dtype=np.float64) - np.asarray(
             roi_pos,
             dtype=np.float64,
@@ -233,7 +293,9 @@ def run_demo(out_dir: Path = OUT_DIR) -> np.ndarray | None:
             ),
         )
         behind_extra = (BEHIND_FACT - 1.0) * front_dist
-        translate_coords(back_mesh.coords, tuple(-cam_axis_unit * behind_extra))
+        back_mesh.coords[:, 0] -= cam_axis_unit[0] * behind_extra
+        back_mesh.coords[:, 1] -= cam_axis_unit[1] * behind_extra
+        back_mesh.coords[:, 2] -= cam_axis_unit[2] * behind_extra
 
         min_x, max_x, min_y, max_y = bounds_for_coords(
             front_mesh.coords,
@@ -262,11 +324,10 @@ def run_demo(out_dir: Path = OUT_DIR) -> np.ndarray | None:
         desired_center_x = top_cursor + 0.5 * float(pair_widths[ii])
         delta_x = desired_center_x - float(pair_center_xs[ii])
         delta_y = top_row_center_y - float(pair_center_ys[ii])
-        translate_coords(mesh_inputs[ii * 2].coords, (delta_x, delta_y, 0.0))
-        translate_coords(
-            mesh_inputs[ii * 2 + 1].coords,
-            (delta_x, delta_y, 0.0),
-        )
+        mesh_inputs[ii * 2].coords[:, 0] += delta_x
+        mesh_inputs[ii * 2].coords[:, 1] += delta_y
+        mesh_inputs[ii * 2 + 1].coords[:, 0] += delta_x
+        mesh_inputs[ii * 2 + 1].coords[:, 1] += delta_y
         top_cursor += float(pair_widths[ii]) + pair_gap_x
 
     bottom_cursor = -0.5 * bottom_row_total_width
@@ -274,11 +335,10 @@ def run_demo(out_dir: Path = OUT_DIR) -> np.ndarray | None:
         desired_center_x = bottom_cursor + 0.5 * float(pair_widths[ii])
         delta_x = desired_center_x - float(pair_center_xs[ii])
         delta_y = bottom_row_center_y - float(pair_center_ys[ii])
-        translate_coords(mesh_inputs[ii * 2].coords, (delta_x, delta_y, 0.0))
-        translate_coords(
-            mesh_inputs[ii * 2 + 1].coords,
-            (delta_x, delta_y, 0.0),
-        )
+        mesh_inputs[ii * 2].coords[:, 0] += delta_x
+        mesh_inputs[ii * 2].coords[:, 1] += delta_y
+        mesh_inputs[ii * 2 + 1].coords[:, 0] += delta_x
+        mesh_inputs[ii * 2 + 1].coords[:, 1] += delta_y
         bottom_cursor += float(pair_widths[ii]) + pair_gap_x
 
     roi_pos = tuple(riley.roi_cent_over_meshes(mesh_inputs))
@@ -306,11 +366,7 @@ def run_demo(out_dir: Path = OUT_DIR) -> np.ndarray | None:
         background_value=0.0,
         report=riley.ReportMode.off,
     )
-    return riley.raster(mesh_inputs, [camera], config, out_dir=str(out_dir))
-
-
-def main() -> None:
-    run_demo()
+    riley.raster(mesh_inputs, [camera], config, out_dir=str(OUT_DIR))
     print(f"rendered rabbits to {OUT_DIR}")
 
 

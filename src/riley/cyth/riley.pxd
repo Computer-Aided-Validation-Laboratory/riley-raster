@@ -55,6 +55,9 @@ cdef extern from "riley.h":
         double distortion_k1
         double distortion_k2
         double distortion_k3
+        double distortion_k4
+        double distortion_k5
+        double distortion_k6
         double distortion_p1
         double distortion_p2
         uint32_t coord_sys
@@ -96,7 +99,7 @@ cdef extern from "riley.h":
         CArray3DF64 disp
         uint32_t shader_tag
         CArray2DF64 uvs
-        CArray2DF64 texture
+        CArray3DF64 texture
         uint32_t sample
         uint32_t sample_mode
         int bits

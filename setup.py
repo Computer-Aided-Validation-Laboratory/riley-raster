@@ -329,7 +329,7 @@ ext_zig = Extension(
 # cython extension linking zig
 ext_cython = Extension(
         name="riley.cyth.riley",
-        sources=["src/riley/cyth/riley.pyx",],
+        sources=["src/riley/cyth/riley.py",],
         include_dirs=H_DIRS,
         libraries=["c_riley"],
         library_dirs=[],            # populated by run() above

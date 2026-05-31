@@ -93,6 +93,9 @@ pub const CCameraInput = extern struct {
     distortion_k1: f64,
     distortion_k2: f64,
     distortion_k3: f64,
+    distortion_k4: f64,
+    distortion_k5: f64,
+    distortion_k6: f64,
     distortion_p1: f64,
     distortion_p2: f64,
     coord_sys: u32,
@@ -137,7 +140,7 @@ pub const CMeshInput = extern struct {
     disp: CArray3DF64,
     shader_tag: u32,
     uvs: CArray2DF64,
-    texture: CArray2DF64,
+    texture: CArray3DF64,
     sample: u32,
     sample_mode: u32,
     bits: c_int,
@@ -360,6 +363,16 @@ fn distortionFromC(in_camera: *const CCameraInput) !cam.DistortionModel {
             .p1 = in_camera.distortion_p1,
             .p2 = in_camera.distortion_p2,
         } },
+        2 => .{ .brown_conrady_ext = .{
+            .k1 = in_camera.distortion_k1,
+            .k2 = in_camera.distortion_k2,
+            .k3 = in_camera.distortion_k3,
+            .k4 = in_camera.distortion_k4,
+            .k5 = in_camera.distortion_k5,
+            .k6 = in_camera.distortion_k6,
+            .p1 = in_camera.distortion_p1,
+            .p2 = in_camera.distortion_p2,
+        } },
         else => error.InvalidDistortionModel,
     };
 }
@@ -548,6 +561,18 @@ fn buildArray3DF64(
         @constCast(slice_in),
         dims_mut[0..],
     );
+}
+
+fn buildTextureArray(
+    allocator: std.mem.Allocator,
+    in_array: *const CArray3DF64,
+    channels_num: usize,
+) !ndarray.NDArray(f64) {
+    const dims = array3ToDims(in_array.*);
+    if (dims[0] != channels_num or dims[1] == 0 or dims[2] == 0) {
+        return error.InvalidTextureShape;
+    }
+    return try buildArray3DF64(allocator, in_array);
 }
 
 fn buildOptionalFieldFromC(
@@ -741,20 +766,10 @@ fn buildMeshInput(
             );
             errdefer uvs_array.deinit(allocator);
 
-            const texture_slice = try cConstSlice(
-                f64,
-                in_mesh.texture.elems,
-                in_mesh.texture.rows_num * in_mesh.texture.cols_num,
-            );
-            var texture_dims = [_]usize{
-                1,
-                in_mesh.texture.rows_num,
-                in_mesh.texture.cols_num,
-            };
-            var texture_array = try ndarray.NDArray(f64).init(
+            var texture_array = try buildTextureArray(
                 allocator,
-                @constCast(texture_slice),
-                texture_dims[0..],
+                &in_mesh.texture,
+                1,
             );
             errdefer texture_array.deinit(allocator);
 
@@ -770,8 +785,8 @@ fn buildMeshInput(
                 .uvs = uvs_array,
                 .texture = texops.Texture(1){
                     .array = texture_array,
-                    .rows_num = in_mesh.texture.rows_num,
-                    .cols_num = in_mesh.texture.cols_num,
+                    .rows_num = in_mesh.texture.dim1,
+                    .cols_num = in_mesh.texture.dim2,
                 },
                 .sample_config = sample_config,
                 .bits = bits,
@@ -782,6 +797,48 @@ fn buildMeshInput(
             built.texture_array = texture_array;
         },
         1 => {
+            if (in_mesh.uvs.cols_num != 2) {
+                return error.InvalidUVShape;
+            }
+
+            var uvs_array = try buildArray2DF64(
+                allocator,
+                &in_mesh.uvs,
+                2,
+            );
+            errdefer uvs_array.deinit(allocator);
+
+            var texture_array = try buildTextureArray(
+                allocator,
+                &in_mesh.texture,
+                3,
+            );
+            errdefer texture_array.deinit(allocator);
+
+            const sample_config = texops.TextureSampleConfig{
+                .sample = try textureSampleFromC(in_mesh.sample),
+                .mode = try textureSampleModeFromC(in_mesh.sample_mode),
+            };
+            if (!sample_config.isValid()) {
+                return error.InvalidTextureSampleConfig;
+            }
+
+            built.mesh_input.shader = .{ .tex_rgb = .{
+                .uvs = uvs_array,
+                .texture = texops.Texture(3){
+                    .array = texture_array,
+                    .rows_num = in_mesh.texture.dim1,
+                    .cols_num = in_mesh.texture.dim2,
+                },
+                .sample_config = sample_config,
+                .bits = bits,
+                .scaling = scaling,
+                .normal_type = normal_type,
+            } };
+            built.uvs_array = uvs_array;
+            built.texture_array = texture_array;
+        },
+        2 => {
             const nodal_built = try buildOptionalFieldFromC(
                 allocator,
                 &in_mesh.nodal_field,
@@ -798,7 +855,7 @@ fn buildMeshInput(
             } };
             built.nodal_field_array = nodal_built.array;
         },
-        2 => {
+        3 => {
             var uvs_array_opt: ?ndarray.NDArray(f64) = null;
             if (in_mesh.uvs.rows_num > 0 and in_mesh.uvs.cols_num > 0) {
                 uvs_array_opt = try buildArray2DF64(
@@ -812,6 +869,29 @@ fn buildMeshInput(
             };
 
             built.mesh_input.shader = .{ .tex_func = .{
+                .uvs = uvs_array_opt,
+                .builtin = try texFuncBuiltinFromC(in_mesh.tex_func_builtin),
+                .params = texFuncParamsFromC(in_mesh.tex_func_params),
+                .bits = bits,
+                .scaling = scaling,
+                .normal_type = normal_type,
+            } };
+            built.uvs_array = uvs_array_opt;
+        },
+        4 => {
+            var uvs_array_opt: ?ndarray.NDArray(f64) = null;
+            if (in_mesh.uvs.rows_num > 0 and in_mesh.uvs.cols_num > 0) {
+                uvs_array_opt = try buildArray2DF64(
+                    allocator,
+                    &in_mesh.uvs,
+                    2,
+                );
+            }
+            errdefer if (uvs_array_opt) |*uvs_array| {
+                uvs_array.deinit(allocator);
+            };
+
+            built.mesh_input.shader = .{ .tex_func_rgb = .{
                 .uvs = uvs_array_opt,
                 .builtin = try texFuncBuiltinFromC(in_mesh.tex_func_builtin),
                 .params = texFuncParamsFromC(in_mesh.tex_func_params),
@@ -976,6 +1056,9 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
         .distortion_k1 = 0.0,
         .distortion_k2 = 0.0,
         .distortion_k3 = 0.0,
+        .distortion_k4 = 0.0,
+        .distortion_k5 = 0.0,
+        .distortion_k6 = 0.0,
         .distortion_p1 = 0.0,
         .distortion_p2 = 0.0,
         .coord_sys = @intFromEnum(in_camera.coord_sys),
@@ -991,7 +1074,17 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
             out_camera.distortion_p1 = model.p1;
             out_camera.distortion_p2 = model.p2;
         },
-        else => {},
+        .brown_conrady_ext => |model| {
+            out_camera.distortion_model = 2;
+            out_camera.distortion_k1 = model.k1;
+            out_camera.distortion_k2 = model.k2;
+            out_camera.distortion_k3 = model.k3;
+            out_camera.distortion_k4 = model.k4;
+            out_camera.distortion_k5 = model.k5;
+            out_camera.distortion_k6 = model.k6;
+            out_camera.distortion_p1 = model.p1;
+            out_camera.distortion_p2 = model.p2;
+        },
     }
     return out_camera;
 }

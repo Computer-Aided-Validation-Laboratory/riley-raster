@@ -1009,6 +1009,8 @@ def plot_memory_disk_crossover_heatmaps(stats: list[CaseStats]) -> None:
     workers_values = sorted({case.workers_per_group for case in stats})
 
     for case in stats:
+        if case.save_mode not in SAVE_MODE_ORDER:
+            continue
         key = (
             case.threads,
             case.groups,

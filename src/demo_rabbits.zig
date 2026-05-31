@@ -24,6 +24,7 @@ const CameraInput = cammod.CameraInput;
 const CameraPrepared = cammod.CameraPrepared;
 const CameraOps = cammod.CameraOps;
 const MeshInput = mo.MeshInput;
+const TexFuncBuiltin = so.TexFuncBuiltin;
 
 const OVERLAP_X: f64 = 0.85;
 const OVERLAP_Y: f64 = 0.8;
@@ -160,9 +161,10 @@ fn makeMeshInput(
     coords: meshio.Coords,
     uvs: uvio.UVMap,
     texture: iio.Texture(1),
+    texture_rgb: iio.Texture(3),
     shader_index: usize,
 ) !MeshInput {
-    return switch (shader_index % 3) {
+    return switch (shader_index % 5) {
         0 => .{
             .mesh_type = mesh_type,
             .coords = coords,
@@ -185,6 +187,23 @@ fn makeMeshInput(
             .coords = coords,
             .connect = sim_data.connect,
             .disp = null,
+            .shader = .{ .tex_rgb = .{
+                .uvs = uvs.array,
+                .texture = texture_rgb,
+                .sample_config = .{
+                    .sample = .cubic_catmull_rom,
+                    .mode = .lut_lerp,
+                },
+                .bits = 8,
+                .scaling = .none,
+                .normal_type = .none,
+            } },
+        },
+        2 => .{
+            .mesh_type = mesh_type,
+            .coords = coords,
+            .connect = sim_data.connect,
+            .disp = null,
             .shader = .{ .nodal = .{
                 .field = try buildUvScalarField(allocator, uvs),
                 .bits = 8,
@@ -193,7 +212,7 @@ fn makeMeshInput(
                 .normal_type = .none,
             } },
         },
-        else => .{
+        3 => .{
             .mesh_type = mesh_type,
             .coords = coords,
             .connect = sim_data.connect,
@@ -201,6 +220,20 @@ fn makeMeshInput(
             .shader = .{ .tex_func = .{
                 .uvs = uvs.array,
                 .builtin = .sinusoidal,
+                .params = sinusoidalUvParams(),
+                .bits = 8,
+                .scaling = .auto,
+                .normal_type = .none,
+            } },
+        },
+        else => .{
+            .mesh_type = mesh_type,
+            .coords = coords,
+            .connect = sim_data.connect,
+            .disp = null,
+            .shader = .{ .tex_func_rgb = .{
+                .uvs = uvs.array,
+                .builtin = TexFuncBuiltin.sinusoidal,
                 .params = sinusoidalUvParams(),
                 .bits = 8,
                 .scaling = .auto,
@@ -222,6 +255,14 @@ pub fn main(init: std.process.Init) !void {
     const texture = try iio.loadImage(
         u8,
         1,
+        aa,
+        io,
+        "texture/speckle.bmp",
+        .bmp,
+    );
+    const texture_rgb = try iio.loadImage(
+        u8,
+        3,
         aa,
         io,
         "texture/speckle.bmp",
@@ -273,6 +314,7 @@ pub fn main(init: std.process.Init) !void {
                 riley_coords,
                 riley_uvs,
                 texture,
+                texture_rgb,
                 front_idx,
             )
         else
@@ -283,6 +325,7 @@ pub fn main(init: std.process.Init) !void {
                 feebs_coords,
                 feebs_uvs,
                 texture,
+                texture_rgb,
                 front_idx,
             );
 
@@ -294,6 +337,7 @@ pub fn main(init: std.process.Init) !void {
                 feebs_coords,
                 feebs_uvs,
                 texture,
+                texture_rgb,
                 back_idx,
             )
         else
@@ -304,6 +348,7 @@ pub fn main(init: std.process.Init) !void {
                 riley_coords,
                 riley_uvs,
                 texture,
+                texture_rgb,
                 back_idx,
             );
 

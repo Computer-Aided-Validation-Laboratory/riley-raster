@@ -2,17 +2,12 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+import shutil
 
 import numpy as np
+from PIL import Image
 
 import riley
-
-from demo_common import (
-    ensure_clean_dir,
-    load_csv_f64,
-    load_csv_uintp,
-    load_texture_grey_f64,
-)
 
 
 DATA_DIR = Path("data/calplate/tri3_calplate3d")
@@ -22,30 +17,52 @@ DICUQ_CAMERA_DIR = Path("pyout/demo-dicuq")
 TOTAL_THREADS = 8
 
 
-def load_disp_field() -> np.ndarray:
-    disp_x = load_csv_f64(DATA_DIR / "field_disp_x.csv")
-    disp_y = load_csv_f64(DATA_DIR / "field_disp_y.csv")
-    disp_z = load_csv_f64(DATA_DIR / "field_disp_z.csv")
-    field = np.empty((disp_x.shape[1], disp_x.shape[0], 3), dtype=np.float64)
-    field[:, :, 0] = disp_x.T
-    field[:, :, 1] = disp_y.T
-    field[:, :, 2] = disp_z.T
-    return field
+def main() -> None:
+    shutil.rmtree(OUT_DIR, ignore_errors=True)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-
-def run_demo(
-    out_dir: Path = OUT_DIR,
-    camera_dir: Path = DICUQ_CAMERA_DIR,
-) -> np.ndarray | None:
-    ensure_clean_dir(out_dir)
-    coords = load_csv_f64(DATA_DIR / "coords.csv")
-    connect = load_csv_uintp(DATA_DIR / "connect.csv")
-    uvs = load_csv_f64(DATA_DIR / "uvs.csv")
-    disp = load_disp_field()
-    texture = load_texture_grey_f64(TEXTURE_PATH)
+    coords = np.loadtxt(
+        DATA_DIR / "coords.csv",
+        delimiter=",",
+        dtype=np.float64,
+    )
+    connect_float = np.loadtxt(
+        DATA_DIR / "connect.csv",
+        delimiter=",",
+        dtype=np.float64,
+    )
+    connect = np.ascontiguousarray(connect_float, dtype=np.uintp)
+    uvs = np.loadtxt(
+        DATA_DIR / "uvs.csv",
+        delimiter=",",
+        dtype=np.float64,
+    )
+    disp_x = np.loadtxt(
+        DATA_DIR / "field_disp_x.csv",
+        delimiter=",",
+        dtype=np.float64,
+    )
+    disp_y = np.loadtxt(
+        DATA_DIR / "field_disp_y.csv",
+        delimiter=",",
+        dtype=np.float64,
+    )
+    disp_z = np.loadtxt(
+        DATA_DIR / "field_disp_z.csv",
+        delimiter=",",
+        dtype=np.float64,
+    )
+    disp = np.empty((disp_x.shape[1], disp_x.shape[0], 3), dtype=np.float64)
+    disp[:, :, 0] = disp_x.T
+    disp[:, :, 1] = disp_y.T
+    disp[:, :, 2] = disp_z.T
+    with Image.open(TEXTURE_PATH) as image_in:
+        image_grey = image_in.convert("L")
+        image_u8 = np.asarray(image_grey, dtype=np.uint8)
+    texture = np.ascontiguousarray(image_u8, dtype=np.float64)
 
     camera_0, camera_1 = riley.load_stereo_pair(
-        str(camera_dir),
+        str(DICUQ_CAMERA_DIR),
         "stereo_data_opengl.csv",
     )
     roi_pos = np.asarray(riley.roi_cent_from_coords(coords), dtype=np.float64)
@@ -78,16 +95,12 @@ def run_demo(
         background_value=128.0,
         report=riley.ReportMode.off,
     )
-    return riley.raster(
+    riley.raster(
         [mesh],
         [camera_0, camera_1],
         config,
-        out_dir=str(out_dir),
+        out_dir=str(OUT_DIR),
     )
-
-
-def main() -> None:
-    run_demo()
     print(f"rendered stereocal to {OUT_DIR}")
 
 
