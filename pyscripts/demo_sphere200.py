@@ -8,6 +8,7 @@
 # --------------------------------------------------------------------------
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import shutil
 from time import perf_counter
@@ -26,6 +27,7 @@ ROT_WORLD = (0.0, 0.0, 0.0)
 FRAME_FILL = 1.0
 SAVE_STRATEGY = riley.SaveStrategy.disk
 CLEAN_OUT_DIR = True
+SILENT_RENDER = os.environ.get("RILEY_DEMO_SILENT") == "1"
 
 
 def main() -> None:
@@ -91,7 +93,11 @@ def main() -> None:
     )
     config = riley.RasterConfig(
         save_strategy=SAVE_STRATEGY,
-        report=riley.ReportMode.bench,
+        report=(
+            riley.ReportMode.off
+            if SILENT_RENDER
+            else riley.ReportMode.bench
+        ),
     )
     start_time = perf_counter()
     image_array = riley.raster(
@@ -101,15 +107,18 @@ def main() -> None:
         out_dir=str(PYOUT_DIR),
     )
     elapsed_time = perf_counter() - start_time
-    print(f"render time: {elapsed_time:.6f} s")
+    if not SILENT_RENDER:
+        print(f"render time: {elapsed_time:.6f} s")
 
     if image_array is None:
-        print(f"rendered disk output to {PYOUT_DIR}")
+        if not SILENT_RENDER:
+            print(f"rendered disk output to {PYOUT_DIR}")
     else:
-        print(
-            f"rendered image array with shape {image_array.shape} "
-            f"to {PYOUT_DIR}",
-        )
+        if not SILENT_RENDER:
+            print(
+                f"rendered image array with shape {image_array.shape} "
+                f"to {PYOUT_DIR}",
+            )
 
 
 if __name__ == "__main__":

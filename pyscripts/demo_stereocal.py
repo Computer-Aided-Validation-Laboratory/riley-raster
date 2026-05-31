@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import os
 from pathlib import Path
 import shutil
 from time import perf_counter
@@ -24,6 +25,7 @@ TEXTURE_PATH = Path("texture/cal_target-simple.tiff")
 OUT_DIR = Path("pyout/demo-stereocal")
 DICUQ_CAMERA_DIR = Path("pyout/demo-dicuq")
 TOTAL_THREADS = 8
+SILENT_RENDER = os.environ.get("RILEY_DEMO_SILENT") == "1"
 
 
 def main() -> None:
@@ -102,7 +104,11 @@ def main() -> None:
         tile_size_min=8,
         tile_size_max=128,
         background_value=128.0,
-        report=riley.ReportMode.bench,
+        report=(
+            riley.ReportMode.off
+            if SILENT_RENDER
+            else riley.ReportMode.bench
+        ),
     )
     start_time = perf_counter()
     riley.raster(
@@ -112,8 +118,9 @@ def main() -> None:
         out_dir=str(OUT_DIR),
     )
     elapsed_time = perf_counter() - start_time
-    print(f"render time: {elapsed_time:.6f} s")
-    print(f"rendered stereocal to {OUT_DIR}")
+    if not SILENT_RENDER:
+        print(f"render time: {elapsed_time:.6f} s")
+        print(f"rendered stereocal to {OUT_DIR}")
 
 
 if __name__ == "__main__":

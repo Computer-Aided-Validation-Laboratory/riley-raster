@@ -8,6 +8,7 @@
 # --------------------------------------------------------------------------
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import shutil
 from time import perf_counter
@@ -38,6 +39,7 @@ RABBIT_MESH_TYPES = [
     riley.MeshType.quad8,
     riley.MeshType.quad9,
 ]
+SILENT_RENDER = os.environ.get("RILEY_DEMO_SILENT") == "1"
 
 
 def mesh_data_name(mesh_type: riley.MeshType) -> str:
@@ -373,13 +375,18 @@ def main() -> None:
     config = riley.RasterConfig(
         save_strategy=riley.SaveStrategy.disk,
         background_value=0.0,
-        report=riley.ReportMode.bench,
+        report=(
+            riley.ReportMode.off
+            if SILENT_RENDER
+            else riley.ReportMode.bench
+        ),
     )
     start_time = perf_counter()
     riley.raster(mesh_inputs, [camera], config, out_dir=str(OUT_DIR))
     elapsed_time = perf_counter() - start_time
-    print(f"render time: {elapsed_time:.6f} s")
-    print(f"rendered rabbits to {OUT_DIR}")
+    if not SILENT_RENDER:
+        print(f"render time: {elapsed_time:.6f} s")
+        print(f"rendered rabbits to {OUT_DIR}")
 
 
 if __name__ == "__main__":

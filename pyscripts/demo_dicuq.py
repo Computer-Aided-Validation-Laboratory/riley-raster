@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import os
 from pathlib import Path
 import shutil
 from time import perf_counter
@@ -40,6 +41,7 @@ DISTORTION_KWARGS = {
     "distortion_p1": 0.0004,
     "distortion_p2": -0.0007,
 }
+SILENT_RENDER = os.environ.get("RILEY_DEMO_SILENT") == "1"
 
 
 def main() -> None:
@@ -150,7 +152,11 @@ def main() -> None:
         tile_size_min=8,
         tile_size_max=128,
         background_value=128.0,
-        report=riley.ReportMode.bench,
+        report=(
+            riley.ReportMode.off
+            if SILENT_RENDER
+            else riley.ReportMode.bench
+        ),
     )
 
     start_time = perf_counter()
@@ -161,7 +167,8 @@ def main() -> None:
         out_dir=str(OUT_DIR),
     )
     elapsed_time = perf_counter() - start_time
-    print(f"render time: {elapsed_time:.6f} s")
+    if not SILENT_RENDER:
+        print(f"render time: {elapsed_time:.6f} s")
 
     riley.save_stereo_pair(
         str(OUT_DIR),
@@ -175,7 +182,8 @@ def main() -> None:
         replace(camera_0, coord_sys=riley.CameraCoordSys.opencv),
         replace(camera_1, coord_sys=riley.CameraCoordSys.opencv),
     )
-    print(f"rendered dicuq to {OUT_DIR}")
+    if not SILENT_RENDER:
+        print(f"rendered dicuq to {OUT_DIR}")
 
 
 if __name__ == "__main__":

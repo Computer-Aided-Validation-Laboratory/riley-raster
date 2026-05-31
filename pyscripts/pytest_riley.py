@@ -8,6 +8,7 @@
 # --------------------------------------------------------------------------
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -27,7 +28,7 @@ ZIG_CMD = [
     "./src/run_all_demos.zig",
 ]
 PY_CMDS = [
-    [str(PYTHON_EXE), "./pyscripts/demo_sphere200.py", "--save-strategy", "disk"],
+    [str(PYTHON_EXE), "./pyscripts/demo_sphere200.py"],
     [str(PYTHON_EXE), "./pyscripts/demo_rabbits.py"],
     [str(PYTHON_EXE), "./pyscripts/demo_dicuq.py"],
     [str(PYTHON_EXE), "./pyscripts/demo_stereocal.py"],
@@ -83,13 +84,27 @@ def compare_render_dirs(dir_a: Path, dir_b: Path) -> None:
 
 
 def main() -> None:
+    silent_env = dict(os.environ)
+    silent_env["RILEY_DEMO_SILENT"] = "1"
     for zig_dir, py_dir in COMPARE_DIRS:
         shutil.rmtree(zig_dir, ignore_errors=True)
         shutil.rmtree(py_dir, ignore_errors=True)
 
-    subprocess.run(ZIG_CMD, check=True)
+    subprocess.run(
+        ZIG_CMD,
+        check=True,
+        env=silent_env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.STDOUT,
+    )
     for cmd in PY_CMDS:
-        subprocess.run(cmd, check=True)
+        subprocess.run(
+            cmd,
+            check=True,
+            env=silent_env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.STDOUT,
+        )
 
     for zig_dir, py_dir in COMPARE_DIRS:
         compare_render_dirs(Path(zig_dir), Path(py_dir))
