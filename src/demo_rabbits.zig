@@ -131,17 +131,19 @@ fn loadStaticMesh(
     );
 }
 
-fn buildUvScalarField(
+fn buildUvRgbField(
     allocator: std.mem.Allocator,
     uvs: uvio.UVMap,
 ) !meshio.Field {
     const node_num = uvs.array.dims[0];
-    var field = try meshio.Field.initAlloc(allocator, 1, node_num, 1);
+    var field = try meshio.Field.initAlloc(allocator, 1, node_num, 3);
 
     for (0..node_num) |nn| {
         const uu = uvs.array.get(&[_]usize{ nn, 0 });
         const vv = uvs.array.get(&[_]usize{ nn, 1 });
-        field.array.set(&[_]usize{ 0, nn, 0 }, 0.5 * (uu + vv));
+        field.array.set(&[_]usize{ 0, nn, 0 }, uu);
+        field.array.set(&[_]usize{ 0, nn, 1 }, vv);
+        field.array.set(&[_]usize{ 0, nn, 2 }, 0.5 * (uu + vv));
     }
 
     return field;
@@ -205,7 +207,7 @@ fn makeMeshInput(
             .connect = sim_data.connect,
             .disp = null,
             .shader = .{ .nodal = .{
-                .field = try buildUvScalarField(allocator, uvs),
+                .field = try buildUvRgbField(allocator, uvs),
                 .bits = 8,
                 .scaling = .auto,
                 .scale_over = .over_frames,
@@ -481,14 +483,6 @@ pub fn main(init: std.process.Init) !void {
     );
     defer camera.deinit(aa);
 
-    const config = rastcfg.RasterConfig{
-        .save_strategy = .disk,
-        .background_value = 0.0,
-        .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .auto },
-        },
-    };
-
     const camera_input = CameraInput{
         .pixels_num = camera.pixels_num,
         .pixels_size = camera.pixels_size,
@@ -499,23 +493,45 @@ pub fn main(init: std.process.Init) !void {
         .sub_sample = camera.sub_sample,
         .distortion = camera.distortion,
     };
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
-    };
 
     std.debug.print("Rendering rabbits to {s}/...\n", .{out_dir_root});
-    const images = try riley.rasterAllFrames(
-        aa,
-        &render_groups,
-        &[_]CameraInput{camera_input},
-        mesh_inputs,
-        config,
-        out_dir_root,
-    );
-
-    if (images) |img| {
-        aa.free(img.slice);
-        img.deinit(aa);
+    const image_modes = [_]rastcfg.ImageMode{
+        .multifield,
+        .grey,
+        .rgb,
+    };
+    for (image_modes) |image_mode| {
+        const mode_out_dir = try std.fmt.allocPrint(
+            aa,
+            "{s}/{s}",
+            .{ out_dir_root, @tagName(image_mode) },
+        );
+        const config = rastcfg.RasterConfig{
+            .save_strategy = .disk,
+            .image_mode = image_mode,
+            .background_value = 0.0,
+            .image_save_opts = &[_]iio.ImageSaveOpts{
+                .{ .format = .bmp, .bits = 8, .scaling = .auto },
+            },
+        };
+        const render_groups_mode = [_]riley.RenderGroupSpec{
+            .{
+                .io = io,
+                .workers = @max(@as(u16, 1), config.total_threads),
+            },
+        };
+        const images = try riley.rasterAllFrames(
+            aa,
+            &render_groups_mode,
+            &[_]CameraInput{camera_input},
+            mesh_inputs,
+            config,
+            mode_out_dir,
+        );
+        if (images) |img| {
+            aa.free(img.slice);
+            img.deinit(aa);
+        }
     }
 
     std.debug.print("Done.\n", .{});

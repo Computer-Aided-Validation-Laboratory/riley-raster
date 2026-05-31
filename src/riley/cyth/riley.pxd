@@ -132,6 +132,7 @@ cdef extern from "riley.h":
         uint32_t geom_scheduling_mode
         uint16_t max_raster_workers_per_job
         uint32_t save_strategy
+        uint32_t image_mode
         uint32_t subpixel_center_map
         uint32_t report
         uint16_t tile_size_min
@@ -193,6 +194,7 @@ cdef extern from "riley.h":
         size_t meshes_len,
         const CCameraInput* in_cameras,
         size_t cameras_len,
+        const CRasterConfig* in_config,
         CDims5Usize* out_dims,
     )
 
@@ -224,6 +226,7 @@ cdef extern from "riley.h":
     int rileyCalcOutputDimsTex(
         const CMeshInputTex* in_mesh,
         const CCameraInput* in_camera,
+        const CRasterConfig* in_config,
         CDims5Usize* out_dims,
     )
 

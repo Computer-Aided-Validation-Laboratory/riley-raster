@@ -56,6 +56,7 @@ pub const RasterConfig = struct {
     max_raster_workers_per_job: u16 = 1,
     save_strategy: SaveStrategy = .memory,
     disk_save_overlap: bool = false,
+    image_mode: ImageMode = .multifield,
     image_save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
@@ -105,6 +106,12 @@ pub const SaveStrategy = enum {
     memory,
     both,
     none,
+};
+
+pub const ImageMode = enum {
+    grey,
+    rgb,
+    multifield,
 };
 
 pub const ReportMode = enum {

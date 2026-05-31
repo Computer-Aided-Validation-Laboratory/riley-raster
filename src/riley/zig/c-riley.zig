@@ -166,6 +166,7 @@ pub const CRasterConfig = extern struct {
     geom_scheduling_mode: u32,
     max_raster_workers_per_job: u16,
     save_strategy: u32,
+    image_mode: u32,
     subpixel_center_map: u32,
     report: u32,
     tile_size_min: u16,
@@ -357,6 +358,15 @@ fn saveStrategyFromC(save_strategy: u32) !riley.SaveStrategy {
         @intFromEnum(riley.SaveStrategy.both) => .both,
         @intFromEnum(riley.SaveStrategy.none) => .none,
         else => error.InvalidSaveStrategy,
+    };
+}
+
+fn imageModeFromC(image_mode: u32) !riley.ImageMode {
+    return switch (image_mode) {
+        @intFromEnum(riley.ImageMode.grey) => .grey,
+        @intFromEnum(riley.ImageMode.rgb) => .rgb,
+        @intFromEnum(riley.ImageMode.multifield) => .multifield,
+        else => error.InvalidImageMode,
     };
 }
 
@@ -890,6 +900,26 @@ fn buildMeshInput(
             } };
             built.nodal_field_array = nodal_built.array;
         },
+        5 => {
+            const nodal_built = try buildOptionalFieldFromC(
+                allocator,
+                &in_mesh.nodal_field,
+            );
+            if (nodal_built.field == null or nodal_built.array == null) {
+                return error.MissingNodalField;
+            }
+            if (nodal_built.field.?.getFieldsN() != 3) {
+                return error.InvalidNodalRgbFieldCount;
+            }
+            built.mesh_input.shader = .{ .nodal = .{
+                .field = nodal_built.field.?,
+                .bits = bits,
+                .scaling = scaling,
+                .scale_over = try scaleOverFromC(in_mesh.scale_over),
+                .normal_type = normal_type,
+            } };
+            built.nodal_field_array = nodal_built.array;
+        },
         3 => {
             var uvs_array_opt: ?ndarray.NDArray(f64) = null;
             if (in_mesh.uvs.rows_num > 0 and in_mesh.uvs.cols_num > 0) {
@@ -1027,6 +1057,7 @@ fn buildRasterConfig(
     config.max_raster_workers_per_job =
         @max(@as(u16, 1), in_config.max_raster_workers_per_job);
     config.save_strategy = try saveStrategyFromC(in_config.save_strategy);
+    config.image_mode = try imageModeFromC(in_config.image_mode);
     config.subpixel_center_map = try subPixelCenterMapFromC(
         in_config.subpixel_center_map,
     );
@@ -1439,6 +1470,7 @@ pub export fn rileyCalcOutputDimsScene(
     meshes_len: usize,
     in_cameras: [*c]const CCameraInput,
     cameras_len: usize,
+    in_config: *const CRasterConfig,
     out_dims: *CDims5Usize,
 ) c_int {
     clearLastError();
@@ -1470,10 +1502,17 @@ pub export fn rileyCalcOutputDimsScene(
         return 1;
     };
 
-    const dims = riley.calcAllFramesImageDims(
+    const dims = riley.calcAllFramesImageDimsForConfig(
         camera_inputs,
         mesh_inputs,
-    );
+        buildRasterConfig(in_config) catch |err| {
+            setLastError(err);
+            return 1;
+        },
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
     out_dims.* = dimsFromArray(dims);
     return 0;
 }
@@ -1610,6 +1649,7 @@ pub export fn rileyLoadStereoPair(
 pub export fn rileyCalcOutputDimsTex(
     in_mesh: *const CMeshInputTex,
     in_camera: *const CCameraInput,
+    in_config: *const CRasterConfig,
     out_dims: *CDims5Usize,
 ) c_int {
     clearLastError();
@@ -1628,10 +1668,17 @@ pub export fn rileyCalcOutputDimsTex(
         setLastError(err);
         return 1;
     };
-    const dims = riley.calcAllFramesImageDims(
+    const dims = riley.calcAllFramesImageDimsForConfig(
         &[_]cam.CameraInput{camera_input},
         &[_]mo.MeshInput{built_mesh.mesh_input},
-    );
+        buildRasterConfig(in_config) catch |err| {
+            setLastError(err);
+            return 1;
+        },
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
     out_dims.* = dimsFromArray(dims);
     return 0;
 }

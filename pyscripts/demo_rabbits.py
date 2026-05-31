@@ -39,6 +39,11 @@ RABBIT_MESH_TYPES = [
     riley.MeshType.quad8,
     riley.MeshType.quad9,
 ]
+IMAGE_MODES = [
+    riley.ImageMode.multifield,
+    riley.ImageMode.grey,
+    riley.ImageMode.rgb,
+]
 SILENT_RENDER = os.environ.get("RILEY_DEMO_SILENT") == "1"
 
 
@@ -75,9 +80,11 @@ def load_uvs(data_dir: Path) -> np.ndarray:
     )
 
 
-def build_uv_scalar_field(uvs: np.ndarray) -> np.ndarray:
-    field = np.empty((1, uvs.shape[0], 1), dtype=np.float64)
-    field[0, :, 0] = 0.5 * (uvs[:, 0] + uvs[:, 1])
+def build_uv_rgb_field(uvs: np.ndarray) -> np.ndarray:
+    field = np.empty((1, uvs.shape[0], 3), dtype=np.float64)
+    field[0, :, 0] = uvs[:, 0]
+    field[0, :, 1] = uvs[:, 1]
+    field[0, :, 2] = 0.5 * (uvs[:, 0] + uvs[:, 1])
     return field
 
 
@@ -131,8 +138,8 @@ def make_mesh_input(
             mesh_type=mesh_type,
             coords=coords,
             connect=connect,
-            shader_tag=riley.ShaderType.nodal,
-            nodal_field=build_uv_scalar_field(uvs),
+            shader_tag=riley.ShaderType.nodal_rgb,
+            nodal_field=build_uv_rgb_field(uvs),
             bits=8,
             scaling_tag=riley.ScaleStrategy.auto,
             scale_over=riley.ScaleOver.over_frames,
@@ -372,20 +379,27 @@ def main() -> None:
         focal_length=DEFAULT_FOCAL_LENGTH,
         sub_sample=2,
     )
-    config = riley.RasterConfig(
-        save_strategy=riley.SaveStrategy.disk,
-        background_value=0.0,
-        report=(
-            riley.ReportMode.off
-            if SILENT_RENDER
-            else riley.ReportMode.bench
-        ),
-    )
-    start_time = perf_counter()
-    riley.raster(mesh_inputs, [camera], config, out_dir=str(OUT_DIR))
-    elapsed_time = perf_counter() - start_time
+    for image_mode in IMAGE_MODES:
+        mode_out_dir = OUT_DIR / image_mode.name
+        mode_out_dir.mkdir(parents=True, exist_ok=True)
+        config = riley.RasterConfig(
+            save_strategy=riley.SaveStrategy.disk,
+            image_mode=image_mode,
+            background_value=0.0,
+            report=(
+                riley.ReportMode.off
+                if SILENT_RENDER
+                else riley.ReportMode.bench
+            ),
+        )
+        start_time = perf_counter()
+        riley.raster(mesh_inputs, [camera], config, out_dir=str(mode_out_dir))
+        elapsed_time = perf_counter() - start_time
+        if not SILENT_RENDER:
+            print(
+                f"{image_mode.name} render time: {elapsed_time:.6f} s",
+            )
     if not SILENT_RENDER:
-        print(f"render time: {elapsed_time:.6f} s")
         print(f"rendered rabbits to {OUT_DIR}")
 
 

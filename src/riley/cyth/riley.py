@@ -91,6 +91,7 @@ class RasterConfig:
     geom_scheduling_mode: int = 2
     max_raster_workers_per_job: int = 1
     save_strategy: int = 1
+    image_mode: int = 2
     subpixel_center_map: int = 1
     report: int = 1
     tile_size_min: int = 8
@@ -130,6 +131,7 @@ class ShaderType(IntEnum):
     nodal = 2
     tex_func = 3
     tex_func_rgb = 4
+    nodal_rgb = 5
 
 
 class RenderMode(IntEnum):
@@ -148,6 +150,12 @@ class SaveStrategy(IntEnum):
     memory = 1
     both = 2
     none = 3
+
+
+class ImageMode(IntEnum):
+    grey = 0
+    rgb = 1
+    multifield = 2
 
 
 class ReportMode(IntEnum):
@@ -310,6 +318,7 @@ def _make_raster_config(config: Any) -> cr.CRasterConfig:
         config.max_raster_workers_per_job,
     )
     config_out.save_strategy = int(config.save_strategy)
+    config_out.image_mode = int(config.image_mode)
     config_out.subpixel_center_map = int(config.subpixel_center_map)
     config_out.report = int(config.report)
     config_out.tile_size_min = int(config.tile_size_min)
@@ -737,6 +746,13 @@ def _fill_mesh_array(
         else:
             nodal_field_np = _contig_f64_3d(mesh.nodal_field, "nodal_field")
             nodal_shape = _as_shape_3d(nodal_field_np)
+            if (
+                shader_tag == int(ShaderType.nodal_rgb)
+                and nodal_shape[2] != 3
+            ):
+                raise ValueError(
+                    "nodal_rgb field must have shape (time, nodes, 3)",
+                )
             nodal_view: cython.double[:, :, ::1] = nodal_field_np
             mesh_array[nn].nodal_field = _make_array_3d_f64(
                 nodal_view,
@@ -916,6 +932,7 @@ def raster(
                 meshes_len,
                 camera_array,
                 cameras_len,
+                cython.address(config_c),
                 cython.address(dims_c),
             ) != 0:
                 _raise_last_error()
@@ -961,6 +978,7 @@ __all__ = [
     "MeshType",
     "NormalType",
     "GeometrySchedulingMode",
+    "ImageMode",
     "ParallelConfig",
     "RasterConfig",
     "RenderMode",
