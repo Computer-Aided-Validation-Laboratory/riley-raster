@@ -7,21 +7,18 @@ name = "riley"
 version = "2026.5.0"
 description = "A python->Zig CPU rasteriser."
 authors = [
-  { name = "scepticalrabbit et al.", email = "thescepticalrabbit@gmail.com" },
+  { name = "scepticalrabbit (Lloyd Fletcher)", email = "thescepticalrabbit@gmail.com" },
 ]
 license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.11.0"
 dependencies = [
   "numpy>=1.26.0,<2.0.0",
-  "Cython>=3.0.0",
-  "ziglang>=0.16.0",
   "Pillow>=10.0.0",
-  "pyvale>=2025.5.3",
 ]
 
 [project.urls]
-"Repository" = "https://github.com/ScepticalRabbit/riley"
+"Repository" = "https://github.com/Computer-Aided-Validation-Laboratory/riley-raster"
 
 [tool.setuptools.packages.find]
 where = ["src"]

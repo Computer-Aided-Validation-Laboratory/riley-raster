@@ -1,8 +1,17 @@
+# --------------------------------------------------------------------------
+# Riley: A High Performance Rasteriser for DIC UQ
+#
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+# Licensed under the MIT License (see LICENSE file for details)
+#
+# Authors: scepticalrabbit (Lloyd Fletcher)
+# --------------------------------------------------------------------------
 from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
 import shutil
+from time import perf_counter
 
 import numpy as np
 from PIL import Image
@@ -93,14 +102,17 @@ def main() -> None:
         tile_size_min=8,
         tile_size_max=128,
         background_value=128.0,
-        report=riley.ReportMode.off,
+        report=riley.ReportMode.bench,
     )
+    start_time = perf_counter()
     riley.raster(
         [mesh],
         [camera_0, camera_1],
         config,
         out_dir=str(OUT_DIR),
     )
+    elapsed_time = perf_counter() - start_time
+    print(f"render time: {elapsed_time:.6f} s")
     print(f"rendered stereocal to {OUT_DIR}")
 
 

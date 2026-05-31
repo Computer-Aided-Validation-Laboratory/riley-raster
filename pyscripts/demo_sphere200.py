@@ -1,7 +1,16 @@
+# --------------------------------------------------------------------------
+# Riley: A High Performance Rasteriser for DIC UQ
+#
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+# Licensed under the MIT License (see LICENSE file for details)
+#
+# Authors: scepticalrabbit (Lloyd Fletcher)
+# --------------------------------------------------------------------------
 from __future__ import annotations
 
 from pathlib import Path
 import shutil
+from time import perf_counter
 
 import numpy as np
 from PIL import Image
@@ -82,14 +91,17 @@ def main() -> None:
     )
     config = riley.RasterConfig(
         save_strategy=SAVE_STRATEGY,
-        report=riley.ReportMode.off,
+        report=riley.ReportMode.bench,
     )
+    start_time = perf_counter()
     image_array = riley.raster(
         mesh,
         camera,
         config,
         out_dir=str(PYOUT_DIR),
     )
+    elapsed_time = perf_counter() - start_time
+    print(f"render time: {elapsed_time:.6f} s")
 
     if image_array is None:
         print(f"rendered disk output to {PYOUT_DIR}")

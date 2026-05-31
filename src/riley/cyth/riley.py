@@ -1,3 +1,11 @@
+# --------------------------------------------------------------------------
+# Riley: A High Performance Rasteriser for DIC UQ
+#
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+# Licensed under the MIT License (see LICENSE file for details)
+#
+# Authors: scepticalrabbit (Lloyd Fletcher)
+# --------------------------------------------------------------------------
 import cython
 from dataclasses import dataclass, field
 from enum import IntEnum
@@ -74,6 +82,14 @@ MeshInputTex = MeshInput
 class RasterConfig:
     render_mode: int = 0
     total_threads: int = 1
+    max_frames_in_flight: int = 1
+    max_geom_workers_per_frame: int = 1
+    max_raster_workers_per_frame: int = 1
+    frame_batch_size_per_group: int = 1
+    max_geom_jobs_in_flight_per_group: int = 1
+    max_geom_workers_per_job: int = 1
+    geom_scheduling_mode: int = 2
+    max_raster_workers_per_job: int = 1
     save_strategy: int = 1
     subpixel_center_map: int = 1
     report: int = 1
@@ -81,6 +97,22 @@ class RasterConfig:
     tile_size_max: int = 256
     background_value: float = 0.0
     disk_save_overlap: bool = False
+
+
+@dataclass(slots=True)
+class ParallelConfig:
+    render_mode: int = 1
+    total_threads: int = 1
+    render_group_count: int = 1
+    workers_per_group: int | list[int] = 1
+    max_frames_in_flight: int = 1
+    max_geom_workers_per_frame: int = 1
+    max_raster_workers_per_frame: int = 1
+    frame_batch_size_per_group: int = 1
+    max_geom_jobs_in_flight_per_group: int = 1
+    max_geom_workers_per_job: int = 1
+    geom_scheduling_mode: int = 0
+    max_raster_workers_per_job: int = 1
 
 
 class MeshType(IntEnum):
@@ -103,6 +135,12 @@ class ShaderType(IntEnum):
 class RenderMode(IntEnum):
     in_order = 0
     offline = 1
+
+
+class GeometrySchedulingMode(IntEnum):
+    spread = 0
+    pack = 1
+    auto = 2
 
 
 class SaveStrategy(IntEnum):
@@ -253,6 +291,24 @@ def _make_raster_config(config: Any) -> cr.CRasterConfig:
     config_out: cr.CRasterConfig
     config_out.render_mode = int(config.render_mode)
     config_out.total_threads = int(config.total_threads)
+    config_out.max_frames_in_flight = int(config.max_frames_in_flight)
+    config_out.max_geom_workers_per_frame = int(
+        config.max_geom_workers_per_frame,
+    )
+    config_out.max_raster_workers_per_frame = int(
+        config.max_raster_workers_per_frame,
+    )
+    config_out.frame_batch_size_per_group = int(
+        config.frame_batch_size_per_group,
+    )
+    config_out.max_geom_jobs_in_flight_per_group = int(
+        config.max_geom_jobs_in_flight_per_group,
+    )
+    config_out.max_geom_workers_per_job = int(config.max_geom_workers_per_job)
+    config_out.geom_scheduling_mode = int(config.geom_scheduling_mode)
+    config_out.max_raster_workers_per_job = int(
+        config.max_raster_workers_per_job,
+    )
     config_out.save_strategy = int(config.save_strategy)
     config_out.subpixel_center_map = int(config.subpixel_center_map)
     config_out.report = int(config.report)
@@ -261,6 +317,124 @@ def _make_raster_config(config: Any) -> cr.CRasterConfig:
     config_out.background_value = float(config.background_value)
     config_out.disk_save_overlap = 1 if config.disk_save_overlap else 0
     return config_out
+
+
+def _build_default_parallel_config(config: RasterConfig) -> ParallelConfig:
+    total_threads = max(1, int(config.total_threads))
+    return ParallelConfig(
+        render_mode=int(RenderMode.offline),
+        total_threads=total_threads,
+        render_group_count=total_threads,
+        workers_per_group=1,
+        max_frames_in_flight=max(1, int(config.max_frames_in_flight)),
+        max_geom_workers_per_frame=max(
+            1,
+            int(config.max_geom_workers_per_frame),
+        ),
+        max_raster_workers_per_frame=max(
+            1,
+            int(config.max_raster_workers_per_frame),
+        ),
+        frame_batch_size_per_group=max(
+            1,
+            int(config.frame_batch_size_per_group),
+        ),
+        max_geom_jobs_in_flight_per_group=max(
+            1,
+            int(config.max_geom_jobs_in_flight_per_group),
+        ),
+        max_geom_workers_per_job=max(
+            1,
+            int(config.max_geom_workers_per_job),
+        ),
+        geom_scheduling_mode=int(GeometrySchedulingMode.spread),
+        max_raster_workers_per_job=max(
+            1,
+            int(config.max_raster_workers_per_job),
+        ),
+    )
+
+
+def _normalize_workers_per_group(
+    workers_per_group: int | list[int],
+    render_group_count: int,
+) -> np.ndarray:
+    if isinstance(workers_per_group, int):
+        return np.full(
+            (render_group_count,),
+            max(1, int(workers_per_group)),
+            dtype=np.uint16,
+        )
+
+    workers_array = np.ascontiguousarray(
+        np.asarray(workers_per_group, dtype=np.uint16),
+    )
+    if workers_array.ndim != 1:
+        raise ValueError("workers_per_group must be a 1D list or an int")
+    if workers_array.shape[0] != render_group_count:
+        raise ValueError(
+            "workers_per_group list length must match render_group_count",
+        )
+    return np.ascontiguousarray(
+        np.maximum(workers_array, np.uint16(1)),
+        dtype=np.uint16,
+    )
+
+
+@cython.cfunc
+def _fill_parallel_config(
+    config_out: cython.pointer[cr.CParallelConfig],
+    parallel_config: ParallelConfig,
+) -> list[Any]:
+    keepalive: list[Any] = []
+    render_group_count = max(1, int(parallel_config.render_group_count))
+    workers_array = _normalize_workers_per_group(
+        parallel_config.workers_per_group,
+        render_group_count,
+    )
+    workers_view: cython.ushort[::1] = workers_array
+    keepalive.append(workers_array)
+
+    config_out[0].render_mode = int(parallel_config.render_mode)
+    config_out[0].total_threads = max(1, int(parallel_config.total_threads))
+    config_out[0].render_group_count = render_group_count
+    config_out[0].workers_per_group_len = workers_array.shape[0]
+    config_out[0].workers_per_group = cython.cast(
+        cython.pointer[cython.ushort],
+        cython.address(workers_view[0]),
+    )
+    config_out[0].max_frames_in_flight = max(
+        1,
+        int(parallel_config.max_frames_in_flight),
+    )
+    config_out[0].max_geom_workers_per_frame = max(
+        1,
+        int(parallel_config.max_geom_workers_per_frame),
+    )
+    config_out[0].max_raster_workers_per_frame = max(
+        1,
+        int(parallel_config.max_raster_workers_per_frame),
+    )
+    config_out[0].frame_batch_size_per_group = max(
+        1,
+        int(parallel_config.frame_batch_size_per_group),
+    )
+    config_out[0].max_geom_jobs_in_flight_per_group = max(
+        1,
+        int(parallel_config.max_geom_jobs_in_flight_per_group),
+    )
+    config_out[0].max_geom_workers_per_job = max(
+        1,
+        int(parallel_config.max_geom_workers_per_job),
+    )
+    config_out[0].geom_scheduling_mode = int(
+        parallel_config.geom_scheduling_mode,
+    )
+    config_out[0].max_raster_workers_per_job = max(
+        1,
+        int(parallel_config.max_raster_workers_per_job),
+    )
+    return keepalive
 
 
 @cython.cfunc
@@ -683,6 +857,7 @@ def raster(
     meshes: Any,
     cameras: Any,
     config: RasterConfig,
+    parallel_config: ParallelConfig | None = None,
     out_dir: str | None = None,
 ) -> np.ndarray | None:
     mesh_list = _normalize_meshes(meshes)
@@ -698,6 +873,13 @@ def raster(
         malloc(cameras_len * cython.sizeof(cr.CCameraInput)),
     )
     config_c: cr.CRasterConfig = _make_raster_config(config)
+    if parallel_config is None:
+        parallel_config = _build_default_parallel_config(config)
+    parallel_config_c: cr.CParallelConfig
+    parallel_keepalive = _fill_parallel_config(
+        cython.address(parallel_config_c),
+        parallel_config,
+    )
     image_np: np.ndarray | None = None
     image_ptr: cython.pointer[cr.CImageBufferF64] = cython.cast(
         cython.pointer[cr.CImageBufferF64],
@@ -705,6 +887,7 @@ def raster(
     )
     image_c: cr.CImageBufferF64
     keepalive: list[Any] = []
+    keepalive.extend(parallel_keepalive)
 
     if mesh_array == cython.NULL or camera_array == cython.NULL:
         if mesh_array != cython.NULL:
@@ -758,6 +941,7 @@ def raster(
             camera_array,
             cameras_len,
             cython.address(config_c),
+            cython.address(parallel_config_c),
             out_dir_ptr,
             image_ptr,
         ) != 0:
@@ -776,6 +960,8 @@ __all__ = [
     "MeshInputTex",
     "MeshType",
     "NormalType",
+    "GeometrySchedulingMode",
+    "ParallelConfig",
     "RasterConfig",
     "RenderMode",
     "ReportMode",

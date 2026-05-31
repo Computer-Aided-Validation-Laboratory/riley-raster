@@ -1,10 +1,20 @@
+# --------------------------------------------------------------------------
+# Riley: A High Performance Rasteriser for DIC UQ
+#
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+# Licensed under the MIT License (see LICENSE file for details)
+#
+# Authors: scepticalrabbit (Lloyd Fletcher)
+# --------------------------------------------------------------------------
 from riley.cyth.riley import (
     CameraCoordSys,
     CameraInput,
     MeshInput,
     MeshInputTex,
     MeshType,
+    GeometrySchedulingMode,
     NormalType,
+    ParallelConfig,
     RasterConfig,
     RenderMode,
     ReportMode,
@@ -32,7 +42,9 @@ __all__ = [
     "MeshInput",
     "MeshInputTex",
     "MeshType",
+    "GeometrySchedulingMode",
     "NormalType",
+    "ParallelConfig",
     "RasterConfig",
     "RenderMode",
     "ReportMode",

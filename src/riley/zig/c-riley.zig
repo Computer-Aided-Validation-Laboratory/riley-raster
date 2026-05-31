@@ -157,6 +157,14 @@ pub const CMeshInput = extern struct {
 pub const CRasterConfig = extern struct {
     render_mode: u32,
     total_threads: u16,
+    max_frames_in_flight: u16,
+    max_geom_workers_per_frame: u16,
+    max_raster_workers_per_frame: u16,
+    frame_batch_size_per_group: u16,
+    max_geom_jobs_in_flight_per_group: u16,
+    max_geom_workers_per_job: u16,
+    geom_scheduling_mode: u32,
+    max_raster_workers_per_job: u16,
     save_strategy: u32,
     subpixel_center_map: u32,
     report: u32,
@@ -164,6 +172,22 @@ pub const CRasterConfig = extern struct {
     tile_size_max: u16,
     background_value: f64,
     disk_save_overlap: u8,
+};
+
+pub const CParallelConfig = extern struct {
+    render_mode: u32,
+    total_threads: u16,
+    render_group_count: u16,
+    workers_per_group_len: usize,
+    workers_per_group: [*c]const u16,
+    max_frames_in_flight: u16,
+    max_geom_workers_per_frame: u16,
+    max_raster_workers_per_frame: u16,
+    frame_batch_size_per_group: u16,
+    max_geom_jobs_in_flight_per_group: u16,
+    max_geom_workers_per_job: u16,
+    geom_scheduling_mode: u32,
+    max_raster_workers_per_job: u16,
 };
 
 const MeshInputBuilt = struct {
@@ -312,6 +336,17 @@ fn renderModeFromC(render_mode: u32) !riley.RenderMode {
         @intFromEnum(riley.RenderMode.in_order) => .in_order,
         @intFromEnum(riley.RenderMode.offline) => .offline,
         else => error.InvalidRenderMode,
+    };
+}
+
+fn geometrySchedulingModeFromC(
+    geom_scheduling_mode: u32,
+) !rastcfg.GeometrySchedulingMode {
+    return switch (geom_scheduling_mode) {
+        @intFromEnum(rastcfg.GeometrySchedulingMode.spread) => .spread,
+        @intFromEnum(rastcfg.GeometrySchedulingMode.pack) => .pack,
+        @intFromEnum(rastcfg.GeometrySchedulingMode.auto) => .auto,
+        else => error.InvalidGeometrySchedulingMode,
     };
 }
 
@@ -975,6 +1010,22 @@ fn buildRasterConfig(
     var config = riley.RasterConfig{};
     config.render_mode = try renderModeFromC(in_config.render_mode);
     config.total_threads = @max(@as(u16, 1), in_config.total_threads);
+    config.max_frames_in_flight = @max(@as(u16, 1), in_config.max_frames_in_flight);
+    config.max_geom_workers_per_frame =
+        @max(@as(u16, 1), in_config.max_geom_workers_per_frame);
+    config.max_raster_workers_per_frame =
+        @max(@as(u16, 1), in_config.max_raster_workers_per_frame);
+    config.frame_batch_size_per_group =
+        @max(@as(u16, 1), in_config.frame_batch_size_per_group);
+    config.max_geom_jobs_in_flight_per_group =
+        @max(@as(u16, 1), in_config.max_geom_jobs_in_flight_per_group);
+    config.max_geom_workers_per_job =
+        @max(@as(u16, 1), in_config.max_geom_workers_per_job);
+    config.geom_scheduling_mode = try geometrySchedulingModeFromC(
+        in_config.geom_scheduling_mode,
+    );
+    config.max_raster_workers_per_job =
+        @max(@as(u16, 1), in_config.max_raster_workers_per_job);
     config.save_strategy = try saveStrategyFromC(in_config.save_strategy);
     config.subpixel_center_map = try subPixelCenterMapFromC(
         in_config.subpixel_center_map,
@@ -992,6 +1043,94 @@ fn buildRasterConfig(
     config.disk_save_overlap = in_config.disk_save_overlap != 0;
     config.image_save_opts = &default_image_save_opts;
     return config;
+}
+
+fn applyParallelConfig(
+    config: *riley.RasterConfig,
+    in_parallel_config: *const CParallelConfig,
+) !void {
+    config.render_mode = try renderModeFromC(in_parallel_config.render_mode);
+    config.total_threads = @max(@as(u16, 1), in_parallel_config.total_threads);
+    config.max_frames_in_flight = @max(@as(u16, 1), in_parallel_config.max_frames_in_flight);
+    config.max_geom_workers_per_frame =
+        @max(@as(u16, 1), in_parallel_config.max_geom_workers_per_frame);
+    config.max_raster_workers_per_frame =
+        @max(@as(u16, 1), in_parallel_config.max_raster_workers_per_frame);
+    config.frame_batch_size_per_group =
+        @max(@as(u16, 1), in_parallel_config.frame_batch_size_per_group);
+    config.max_geom_jobs_in_flight_per_group =
+        @max(@as(u16, 1), in_parallel_config.max_geom_jobs_in_flight_per_group);
+    config.max_geom_workers_per_job =
+        @max(@as(u16, 1), in_parallel_config.max_geom_workers_per_job);
+    config.geom_scheduling_mode = try geometrySchedulingModeFromC(
+        in_parallel_config.geom_scheduling_mode,
+    );
+    config.max_raster_workers_per_job =
+        @max(@as(u16, 1), in_parallel_config.max_raster_workers_per_job);
+}
+
+const RenderGroupRuntime = struct {
+    managed_ios: []std.Io.Threaded,
+    render_groups: []riley.RenderGroupSpec,
+
+    fn deinit(
+        self: *RenderGroupRuntime,
+        allocator: std.mem.Allocator,
+    ) void {
+        for (self.managed_ios) |*managed_io| {
+            managed_io.deinit();
+        }
+        allocator.free(self.managed_ios);
+        allocator.free(self.render_groups);
+    }
+};
+
+fn initRenderGroups(
+    allocator: std.mem.Allocator,
+    in_parallel_config: *const CParallelConfig,
+) !RenderGroupRuntime {
+    const render_group_count = @max(@as(u16, 1), in_parallel_config.render_group_count);
+    const workers_per_group = try cConstSlice(
+        u16,
+        in_parallel_config.workers_per_group,
+        in_parallel_config.workers_per_group_len,
+    );
+    if (workers_per_group.len != 0 and workers_per_group.len != render_group_count) {
+        return error.InvalidWorkersPerGroupLen;
+    }
+
+    const managed_ios = try allocator.alloc(std.Io.Threaded, render_group_count);
+    errdefer allocator.free(managed_ios);
+    const render_groups = try allocator.alloc(riley.RenderGroupSpec, render_group_count);
+    errdefer allocator.free(render_groups);
+
+    var total_threads: u32 = 0;
+    for (0..render_group_count) |gg| {
+        const workers = if (workers_per_group.len == 0)
+            1
+        else
+            @max(@as(u16, 1), workers_per_group[gg]);
+        total_threads += workers;
+        managed_ios[gg] = initThreadedIo(
+            allocator,
+            workers,
+        );
+        render_groups[gg] = .{
+            .io = managed_ios[gg].io(),
+            .workers = workers,
+        };
+    }
+
+    if (in_parallel_config.total_threads != 0 and
+        total_threads != in_parallel_config.total_threads)
+    {
+        return error.InvalidTotalThreads;
+    }
+
+    return .{
+        .managed_ios = managed_ios,
+        .render_groups = render_groups,
+    };
 }
 
 fn buildImageBuffer(
@@ -1096,6 +1235,7 @@ fn rasterSceneInternal(
     in_cameras: [*c]const CCameraInput,
     cameras_len: usize,
     in_config: *const CRasterConfig,
+    in_parallel_config: ?*const CParallelConfig,
     out_dir_path: ?[*:0]const u8,
     out_image: ?*CImageBufferF64,
 ) !void {
@@ -1116,7 +1256,10 @@ fn rasterSceneInternal(
     );
     defer allocator.free(camera_inputs);
 
-    const raster_config = try buildRasterConfig(in_config);
+    var raster_config = try buildRasterConfig(in_config);
+    if (in_parallel_config) |parallel_config| {
+        try applyParallelConfig(&raster_config, parallel_config);
+    }
 
     var image_arr_opt: ?ndarray.NDArray(f64) = null;
     if (out_image) |image_buffer| {
@@ -1126,19 +1269,29 @@ fn rasterSceneInternal(
         image_arr.deinit(allocator);
     };
 
-    var threaded_io = initThreadedIo(
-        std.heap.smp_allocator,
-        raster_config.total_threads,
-    );
-    defer threaded_io.deinit();
-    const io = threaded_io.io();
-
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{
-            .io = io,
+    var render_group_runtime = if (in_parallel_config) |parallel_config|
+        try initRenderGroups(std.heap.smp_allocator, parallel_config)
+    else blk: {
+        const threaded_io = initThreadedIo(
+            std.heap.smp_allocator,
+            raster_config.total_threads,
+        );
+        const managed_ios = try std.heap.smp_allocator.alloc(std.Io.Threaded, 1);
+        errdefer std.heap.smp_allocator.free(managed_ios);
+        managed_ios[0] = threaded_io;
+        const render_groups = try std.heap.smp_allocator.alloc(riley.RenderGroupSpec, 1);
+        errdefer std.heap.smp_allocator.free(render_groups);
+        render_groups[0] = .{
+            .io = managed_ios[0].io(),
             .workers = @max(@as(u16, 1), raster_config.total_threads),
-        },
+        };
+        break :blk RenderGroupRuntime{
+            .managed_ios = managed_ios,
+            .render_groups = render_groups,
+        };
     };
+    defer render_group_runtime.deinit(std.heap.smp_allocator);
+
     const out_dir_path_slice = if (out_dir_path) |path|
         std.mem.span(path)
     else
@@ -1146,7 +1299,7 @@ fn rasterSceneInternal(
 
     try riley.rasterAllFramesInto(
         std.heap.smp_allocator,
-        &render_groups,
+        render_group_runtime.render_groups,
         camera_inputs,
         mesh_inputs,
         raster_config,
@@ -1331,6 +1484,7 @@ pub export fn rileyRasterScene(
     in_cameras: [*c]const CCameraInput,
     cameras_len: usize,
     in_config: *const CRasterConfig,
+    in_parallel_config: ?*const CParallelConfig,
     out_dir_path: ?[*:0]const u8,
     out_image: ?*CImageBufferF64,
 ) c_int {
@@ -1346,6 +1500,7 @@ pub export fn rileyRasterScene(
         in_cameras,
         cameras_len,
         in_config,
+        in_parallel_config,
         out_dir_path,
         out_image,
     ) catch |err| {

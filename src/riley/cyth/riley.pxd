@@ -1,3 +1,11 @@
+# --------------------------------------------------------------------------
+# Riley: A High Performance Rasteriser for DIC UQ
+#
+# Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
+# Licensed under the MIT License (see LICENSE file for details)
+#
+# Authors: scepticalrabbit (Lloyd Fletcher)
+# --------------------------------------------------------------------------
 from libc.stddef cimport size_t
 from libc.stdint cimport uint8_t, uint16_t, uint32_t
 
@@ -115,6 +123,14 @@ cdef extern from "riley.h":
     ctypedef struct CRasterConfig:
         uint32_t render_mode
         uint16_t total_threads
+        uint16_t max_frames_in_flight
+        uint16_t max_geom_workers_per_frame
+        uint16_t max_raster_workers_per_frame
+        uint16_t frame_batch_size_per_group
+        uint16_t max_geom_jobs_in_flight_per_group
+        uint16_t max_geom_workers_per_job
+        uint32_t geom_scheduling_mode
+        uint16_t max_raster_workers_per_job
         uint32_t save_strategy
         uint32_t subpixel_center_map
         uint32_t report
@@ -122,6 +138,21 @@ cdef extern from "riley.h":
         uint16_t tile_size_max
         double background_value
         uint8_t disk_save_overlap
+
+    ctypedef struct CParallelConfig:
+        uint32_t render_mode
+        uint16_t total_threads
+        uint16_t render_group_count
+        size_t workers_per_group_len
+        const uint16_t* workers_per_group
+        uint16_t max_frames_in_flight
+        uint16_t max_geom_workers_per_frame
+        uint16_t max_raster_workers_per_frame
+        uint16_t frame_batch_size_per_group
+        uint16_t max_geom_jobs_in_flight_per_group
+        uint16_t max_geom_workers_per_job
+        uint32_t geom_scheduling_mode
+        uint16_t max_raster_workers_per_job
 
     size_t rileyGetLastError(uint8_t* out_buf, size_t out_buf_len)
 
@@ -171,6 +202,7 @@ cdef extern from "riley.h":
         const CCameraInput* in_cameras,
         size_t cameras_len,
         const CRasterConfig* in_config,
+        const CParallelConfig* in_parallel_config,
         const char* out_dir_path,
         CImageBufferF64* out_image,
     )
