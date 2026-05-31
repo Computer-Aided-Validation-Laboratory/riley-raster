@@ -43,21 +43,25 @@ CASE_DIR_RE = re.compile(
     r"_geommode-(?P<geommode>[a-z_]+)"
     r"_rasterw-(?P<rasterw>\d+)"
     r"_render-(?P<render>[a-z_]+)"
-    r"_save-(?P<save>[a-z_]+)$"
+    r"_save-(?P<save>[a-z_]+?)"
+    r"(?:_overlap-(?P<overlap>[a-z]+))?$"
 )
 
 BATCH_MODE_ORDER = ["1", "W", "2W"]
 GEOMJOBS_MODE_ORDER = ["1", "W"]
 SAVE_MODE_ORDER = [
     "disk",
+    "disk_overlap",
     "memory",
 ]
 SAVE_MODE_LABELS = {
     "disk": "Disk",
+    "disk_overlap": "Disk Overlap",
     "memory": "Memory",
 }
 SAVE_MODE_COLORS = {
     "disk": "tab:orange",
+    "disk_overlap": "tab:green",
     "memory": "tab:blue",
 }
 REFERENCE_SAVE_MODE = "memory"
@@ -179,6 +183,11 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
         "E2E TP [MPx/s]",
     ) if "E2E TP [MPx/s]" in max_row else total_mpx * 1000.0 / e2e_min_ms
 
+    save_mode = normalize_save_mode(match.group("save"))
+    overlap = match.groupdict().get("overlap")
+    if save_mode == "disk" and overlap == "true":
+        save_mode = "disk_overlap"
+
     return CaseStats(
         case_dir=case_dir,
         case_name=median_row["Case"],
@@ -191,7 +200,7 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
         geom_mode=match.group("geommode"),
         raster_workers=int(match.group("rasterw")),
         render_mode=match.group("render"),
-        save_mode=normalize_save_mode(match.group("save")),
+        save_mode=save_mode,
         e2e_median_ms=e2e_median_ms,
         e2e_min_ms=e2e_min_ms,
         e2e_max_ms=e2e_max_ms,
@@ -222,23 +231,45 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
 def collect_case_stats() -> list[CaseStats]:
     latest_run = latest_run_dir_with_paths(
         BENCH_NAME,
-        [EXPERIMENT_DIR],
+        [
+            "experiment_5_offline_sweet_spot",
+            "experiment_7_offline_sweet_spot_disk_overlap",
+        ],
     )
-    experiment_root = latest_run / EXPERIMENT_DIR
-    print(f"Using benchmark run: {experiment_root}")
 
     stats: list[CaseStats] = []
-    for case_dir in sorted(path for path in experiment_root.iterdir() if path.is_dir()):
+
+    exp5_dir = latest_run / "experiment_5_offline_sweet_spot"
+    print(f"Using benchmark run: {exp5_dir}")
+    for case_dir in sorted(
+        path for path in exp5_dir.iterdir() if path.is_dir()
+    ):
+        case_stats = parse_case_stats(case_dir)
+        if case_stats is not None:
+            stats.append(case_stats)
+
+    exp7_dir = latest_run / (
+        "experiment_7_offline_sweet_spot_disk_overlap"
+    )
+    print(f"Using benchmark run: {exp7_dir}")
+    for case_dir in sorted(
+        path for path in exp7_dir.iterdir() if path.is_dir()
+    ):
         case_stats = parse_case_stats(case_dir)
         if case_stats is not None:
             stats.append(case_stats)
 
     if not stats:
-        raise FileNotFoundError(f"no case directories found in {experiment_root}")
+        raise FileNotFoundError(
+            f"no case directories found in {latest_run}"
+        )
 
     case_names = sorted({case.case_name for case in stats})
     if len(case_names) != 1:
-        raise ValueError(f"expected one benchmark case in {experiment_root}, found {case_names}")
+        raise ValueError(
+            f"expected one benchmark case in {latest_run}, "
+            f"found {case_names}"
+        )
 
     return stats
 
@@ -1064,6 +1095,8 @@ def plot_memory_disk_crossover_heatmaps(stats: list[CaseStats]) -> None:
 
     comparison_pairs = [
         ("disk", "memory"),
+        ("disk_overlap", "disk"),
+        ("disk_overlap", "memory"),
     ]
     for lhs_mode, rhs_mode in comparison_pairs:
         ratio_values, delta_values = build_value_maps(lhs_mode, rhs_mode)

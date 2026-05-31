@@ -8,7 +8,6 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const Timestamp = std.Io.Clock.Timestamp;
-
 const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
 
@@ -139,32 +138,72 @@ fn initMeshStaticSlice(
 
 fn initAllFramesBuffer(
     outer_alloc: std.mem.Allocator,
-    config: RasterConfig,
-    cameras: []const cam.CameraPrepared,
+    dims: [5]usize,
+) !ndarray.NDArray(f64) {
+    return try ndarray.NDArray(f64).initFlat(
+        outer_alloc,
+        dims[0..],
+    );
+}
+
+fn calcAllFramesDimsFromPixels(
+    camera_pixels_num: []const [2]u32,
     num_time: usize,
     num_fields: u8,
-) !?ndarray.NDArray(f64) {
-    if (config.save_strategy == .memory or config.save_strategy == .both) {
-        std.debug.assert(cameras.len > 0);
-        var max_pixels_num = cameras[0].pixels_num;
-        for (cameras[1..]) |camera| {
-            max_pixels_num[0] = @max(max_pixels_num[0], camera.pixels_num[0]);
-            max_pixels_num[1] = @max(max_pixels_num[1], camera.pixels_num[1]);
-        }
-        const dims = [_]usize{
-            cameras.len,
-            num_time,
-            @as(usize, num_fields),
-            max_pixels_num[1],
-            max_pixels_num[0],
-        };
-        return try ndarray.NDArray(f64).initFlat(
-            outer_alloc,
-            dims[0..],
-        );
+) [5]usize {
+    std.debug.assert(camera_pixels_num.len > 0);
+
+    var max_pixels_num = camera_pixels_num[0];
+    for (camera_pixels_num[1..]) |pixels_num| {
+        max_pixels_num[0] = @max(max_pixels_num[0], pixels_num[0]);
+        max_pixels_num[1] = @max(max_pixels_num[1], pixels_num[1]);
     }
 
-    return null;
+    return .{
+        camera_pixels_num.len,
+        num_time,
+        @as(usize, num_fields),
+        max_pixels_num[1],
+        max_pixels_num[0],
+    };
+}
+
+fn validateAllFramesBuffer(
+    images_arr: *const ndarray.NDArray(f64),
+    expected_dims: [5]usize,
+) !void {
+    if (images_arr.dims.len != expected_dims.len) {
+        return error.InvalidOutputBuffer;
+    }
+    for (expected_dims, 0..) |expected_dim, dd| {
+        if (images_arr.dims[dd] != expected_dim) {
+            return error.InvalidOutputBuffer;
+        }
+    }
+}
+
+pub fn calcAllFramesImageDims(
+    camera_inputs: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+) [5]usize {
+    std.debug.assert(camera_inputs.len > 0);
+    std.debug.assert(meshes.len > 0);
+
+    const num_time = mo.countFrames(meshes);
+    const num_fields = mo.countOutputFields(meshes);
+    var max_pixels_num = camera_inputs[0].pixels_num;
+    for (camera_inputs[1..]) |camera_input| {
+        max_pixels_num[0] = @max(max_pixels_num[0], camera_input.pixels_num[0]);
+        max_pixels_num[1] = @max(max_pixels_num[1], camera_input.pixels_num[1]);
+    }
+
+    return .{
+        camera_inputs.len,
+        num_time,
+        @as(usize, num_fields),
+        max_pixels_num[1],
+        max_pixels_num[0],
+    };
 }
 
 fn getFrameImageView(
@@ -1533,6 +1572,27 @@ pub fn rasterAllFrames(
     );
 }
 
+pub fn rasterAllFramesInto(
+    outer_alloc: std.mem.Allocator,
+    render_groups: []const RenderGroupSpec,
+    camera_inputs: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+    config: RasterConfig,
+    out_dir_path: ?[]const u8,
+    images_arr: ?*ndarray.NDArray(f64),
+) !void {
+    try rasterAllFramesReportInto(
+        outer_alloc,
+        render_groups,
+        camera_inputs,
+        meshes,
+        config,
+        out_dir_path,
+        images_arr,
+        null,
+    );
+}
+
 pub fn rasterAllFramesReport(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
@@ -1542,6 +1602,44 @@ pub fn rasterAllFramesReport(
     out_dir_path: ?[]const u8,
     bench_capture: ?[]report.FrameBenchCapture,
 ) !?ndarray.NDArray(f64) {
+    const needs_images_arr = config.save_strategy == .memory or
+        config.save_strategy == .both;
+    var images_arr_opt: ?ndarray.NDArray(f64) = null;
+    if (needs_images_arr) {
+        const dims = calcAllFramesImageDims(camera_inputs, meshes);
+        images_arr_opt = try initAllFramesBuffer(
+            outer_alloc,
+            dims,
+        );
+    }
+    errdefer if (images_arr_opt) |*images_arr| {
+        outer_alloc.free(images_arr.slice);
+        images_arr.deinit(outer_alloc);
+    };
+
+    try rasterAllFramesReportInto(
+        outer_alloc,
+        render_groups,
+        camera_inputs,
+        meshes,
+        config,
+        out_dir_path,
+        if (images_arr_opt) |*images_arr| images_arr else null,
+        bench_capture,
+    );
+    return images_arr_opt;
+}
+
+pub fn rasterAllFramesReportInto(
+    outer_alloc: std.mem.Allocator,
+    render_groups: []const RenderGroupSpec,
+    camera_inputs: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+    config: RasterConfig,
+    out_dir_path: ?[]const u8,
+    images_arr: ?*ndarray.NDArray(f64),
+    bench_capture: ?[]report.FrameBenchCapture,
+) !void {
     std.debug.assert(render_groups.len > 0);
     const summary_io = render_groups[0].io;
     const time_start_render = Timestamp.now(summary_io, .awake);
@@ -1586,13 +1684,13 @@ pub fn rasterAllFramesReport(
     defer outer_alloc.free(nodal_global_scaling);
 
     const time_start_frame_buffer = Timestamp.now(summary_io, .awake);
-    var images_arr_opt = try initAllFramesBuffer(
-        outer_alloc,
-        config,
-        cameras,
-        num_time,
-        num_fields,
-    );
+    if (config.save_strategy == .memory or config.save_strategy == .both) {
+        const expected_image_dims = calcAllFramesImageDims(camera_inputs, meshes);
+        const images_arr_req = images_arr orelse return error.InvalidOutputBuffer;
+        try validateAllFramesBuffer(images_arr_req, expected_image_dims);
+    } else if (images_arr != null) {
+        return error.InvalidOutputBuffer;
+    }
     const time_end_setup = Timestamp.now(summary_io, .awake);
     var end_to_end_times = report.EndToEndTimes{
         .setup_time = @floatFromInt(
@@ -1622,7 +1720,7 @@ pub fn rasterAllFramesReport(
             num_fields,
             mesh_static,
             nodal_global_scaling,
-            if (images_arr_opt) |*ima| ima else null,
+            images_arr,
             bench_capture,
         );
     } else {
@@ -1636,7 +1734,7 @@ pub fn rasterAllFramesReport(
             num_fields,
             mesh_static,
             nodal_global_scaling,
-            if (images_arr_opt) |*ima| ima else null,
+            images_arr,
             bench_capture,
         );
     }
@@ -1663,5 +1761,4 @@ pub fn rasterAllFramesReport(
         end_to_end_times,
         if (bench_capture) |capture| capture else null,
     );
-    return images_arr_opt;
 }

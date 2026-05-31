@@ -24,6 +24,8 @@ plans/
 fails/
 fails*/
 debug/
+examples/
+pyout/
 
 # Don't commit large mesh, simulation or image files to the repo unless we have to
 *.ppm
