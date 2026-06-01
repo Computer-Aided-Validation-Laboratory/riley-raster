@@ -9,6 +9,7 @@ from Cython.Build import cythonize
 import numpy
 
 DIST_NAME = "riley-raster"
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 #-------------------------------------------------------------------------------
 # Platform-specific utilities
@@ -314,16 +315,21 @@ class MultiBuildExt(build_ext):
 #-------------------------------------------------------------------------------
 # Extensions
 
-H_DIRS = [numpy.get_include(),
-          str(Path.cwd()/"src"),
-          str(Path.cwd()/"src"/"riley"/"cyth"),
-          str(Path.cwd()/"src"/"riley"/"zig"),]
+H_DIRS = [
+    numpy.get_include(),
+    str(PROJECT_ROOT / "src"),
+    str(PROJECT_ROOT / "src" / "riley" / "cyth"),
+    str(PROJECT_ROOT / "src" / "riley" / "zig"),
+]
 
 # zig extension
 ext_zig = Extension(
     name="riley.zig.c_riley",
     sources=["src/riley/zig/c-riley.zig",],
-    extra_compile_args=["-fincremental",],
+    extra_compile_args=[
+        "-fincremental",
+        "-mcpu=native",
+    ],
 )
 
 # cython extension linking zig

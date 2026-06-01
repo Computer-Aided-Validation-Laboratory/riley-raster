@@ -18,7 +18,7 @@ import numpy as np
 from PIL import Image
 
 
-PYTHON_EXE = Path(".venv/bin/python")
+PYTHON_EXE = Path(sys.executable)
 ZIG_CMD = [
     "zig",
     "run",

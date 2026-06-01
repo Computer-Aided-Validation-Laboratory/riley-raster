@@ -12,7 +12,7 @@
         ],
         "include_dirs": [
             "src/riley/cyth",
-            "/home/lloydf/.cache/uv/builds-v0/.tmpt2NSzV/lib/python3.13/site-packages/numpy/_core/include",
+            "/tmp/build-env-gqxssm0v/lib/python3.13/site-packages/numpy/_core/include",
             "/home/lloydf/riley-raster/src",
             "/home/lloydf/riley-raster/src/riley/cyth",
             "/home/lloydf/riley-raster/src/riley/zig"
