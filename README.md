@@ -56,8 +56,7 @@ where CASE is the name of the demonstration script you want to run. The output r
 
 ### Speckle Sphere
 For this demonstration we import a mesh of sphere and apply a speckle pattern texture shader to render a speckle pattern on the sphere. This is a simple single mesh and single shader case that would be typical for a DIC UQ workflow. A representative render of the sphere is shown below:
-
-![fig_sphere](/images/demo_sphere200.bmp)
+![fig_sphere](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/demo_sphere200.bmp)
 
 ### Rendering Rabbits
 In this demonstration we render a series of rabbit meshes that are composed of all supported element types: `tri3`, `tri6`, `quad4`, `quad8` and `quad9`. We also demonstrate the usage of all support shader types in the same scene rotating between a texture shader with cubic LUT-lerp sampling, a nodal interpolation shader interpolating the uv coordinates and an analytic function shader producing a sin wave pattern across the rabbit mesh based on the input uvs. The output render is shown below, the top row are the triangular meshes and the bottom row are the quadrilateral meshes:
@@ -69,7 +68,7 @@ For this case we demonstrate a representative DIC UQ rendering using an input fi
 
 | Camera 0 | Camera 1 |
 |:---:|:---:|
-| ![DIC Camera 0](./images/dicuq_cam0_frame0_field0.bmp) | ![DIC Camera 1](./images/dicuq_cam1_frame0_field0.bmp) |
+| ![DIC Camera 0](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/dicuq_cam0_frame0_field0.bmp) | ![DIC Camera 1](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/dicuq_cam1_frame0_field0.bmp) |
 
 
 ### Stereo Calibration
@@ -77,7 +76,7 @@ We now use the camera setup from the previous DIC UQ demo, import it and then re
 
 | Camera 0 | Camera 1 |
 |:---:|:---:|
-| ![Cal Camera 0](./images/cal_cam0_frame0_field0.bmp) | ![ Cal Camera 1](./images/cal_cam1_frame0_field0.bmp) |
+| ![Cal Camera 0](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/cal_cam0_frame0_field0.bmp) | ![Cal Camera 1](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/cal_cam1_frame0_field0.bmp) |
 
 
 ## Performance Benchmarks
@@ -107,4 +106,4 @@ The main entry point for the `Riley` rendering pipeline is the `rasterAllFrames`
 
 Named in memory of Riley, and for Feebee, her sister and bondmate. Without your love and support, this project would never have happened.
 
-![Riley](images/RileyHelping.jpg)
+![Riley](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/RileyHelping.jpg)
