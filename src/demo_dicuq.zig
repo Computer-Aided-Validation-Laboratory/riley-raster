@@ -51,27 +51,27 @@ const DistortionCase = enum {
     brown_conrady_ext,
 };
 
-const DISTORTION_CASE: DistortionCase = .brown_conrady_ext;
+const DISTORTION_CASE: DistortionCase = .brown_conrady;
 
 fn buildDistortion() DistortionModel {
     return switch (DISTORTION_CASE) {
         .none => .none,
         .brown_conrady => .{ .brown_conrady = BrownConrady{
-            .k1 = -0.19,
-            .k2 = -1.17,
-            .k3 = 25.0,
-            .p1 = 0.0004,
-            .p2 = -0.0007,
+            .k1 = -0.2,
+            .k2 = 0.1,
+            .k3 = 0.0,
+            .p1 = 0.0001,
+            .p2 = -0.0001,
         } },
         .brown_conrady_ext => .{ .brown_conrady_ext = BrownConradyExt{
-            .k1 = -0.19,
-            .k2 = -1.17,
-            .k3 = 25.0,
+            .k1 = -0.2,
+            .k2 =  0.1,
+            .k3 = -0.01,
             .k4 = -0.04,
             .k5 = 0.18,
-            .k6 = -0.02,
-            .p1 = 0.0004,
-            .p2 = -0.0007,
+            .k6 =  -0.02,
+            .p1 =  0.0001,
+            .p2 = -0.0001,
         } },
     };
 }

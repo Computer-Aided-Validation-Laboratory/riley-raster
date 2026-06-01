@@ -549,6 +549,9 @@ def write_summary_csv(
         "edge_segments",
         "mask_diff_pct",
         "distortion_model",
+        "mesh_name",
+        "geom_name",
+        "camera_case",
     ]
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("w", newline="") as out_file:
@@ -594,7 +597,24 @@ def main() -> int:
     print("Running verif_6 self-test...")
     print("Self-test passed.")
 
-    stats_files_all = sorted(args.verif_root.glob("verif_6_*/*_stats.csv"))
+    def sort_key(p: pathlib.Path) -> tuple[str, int, int, int]:
+        m = re.match(
+            r"cam(\d+)_frame(\d+)_field(\d+)_stats\.csv$",
+            p.name,
+        )
+        if m:
+            return (
+                p.parent.name,
+                int(m.group(1)),
+                int(m.group(2)),
+                int(m.group(3)),
+            )
+        return (p.parent.name, 0, 0, 0)
+
+    stats_files_all = sorted(
+        args.verif_root.glob("verif_6_*/*_stats.csv"),
+        key=sort_key,
+    )
     print(f"Found {len(stats_files_all)} total verif_6 stats files.")
     if not stats_files_all:
         raise FileNotFoundError(f"no stats files found under {args.verif_root}")
