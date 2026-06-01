@@ -3,7 +3,7 @@
 
 We specifically chose to implement `Riley` in Zig as it is a compiled language with manual memory management. It also allows for compile time code generation and has excellent support for SIMD vector types. We have used `comptime` to generate speciliased kernels for geometry and shader types removing run time dispatch overhead. We have also leveraged Zig's `io` interface to implement hierarchical parallelisation allowing for inter and intra frame parallelisation for offline rendering.
 
-## Getting Started
+## Getting Started: Zig
 `Riley` uses the Zig 0.16.0 compiler release which can be downloaded from [here](https://ziglang.org/download/). The `Riley` repository contains a minimal set of regression tests (called the "min" test suite) which should be run before generating a wider set gold regression data and running performance benchmark suites. The min test suite can be run from the project root directory using:
 ```shell
 zig test -lc -O ReleaseSafe ./src/test_min.zig
@@ -26,12 +26,33 @@ zig test -lc -O ReleaseSafe ./src/test_gold_all.zig
 zig test -lc -O ReleaseSafe ./src/test_bench.zig
 ```
 
+## Getting Started: Python
+We provide python bindings for the `Riley` dynamic library through cython. We also provide a `riley-raster` python package on pypi which builds `Riley` from zig source using the `ziglang` python package. You can install `Riley` into a python virtual environment using:
+
+```shell
+pip install riley-raster
+```
+
+Note that as this builds `Riley` from source on your local machine the install will take approximately 1 minute or more depending on your hardware. For all demonstration zig scripts described below we provide python equivalents in the ./pyscripts/ directory in the project root. You can also create an editable install by directly building from source on your local machine. Clone the `Riley` repo, create a python virtual environment of your choice and then with your environment active run the following from the project root:
+
+```shell
+pip install -e .
+```
+
 ## Capability Demonstration
-We have included a series of capability demonstrations scripts in the /src/ directory. These can be run using
+We have included a series of capability demonstrations scripts in the /src/ directory (or in the /pyscripts/ directory for python versions). In Zig, these can be run using
 ```shell
 zig run -lc -O ReleaseFast ./src/demo_CASE.zig
 ```
-where CASE is the name of the demonstration case you want to run. The output renders will be saved to ./out/demo-CASE/.
+where CASE is the name of the demonstration script you want to run (CASE = sphere200, rabbits, dicuq, stereocal). The output renders will be saved to /out/demo-CASE/.
+
+In python you should activate your virtual environment with `Riley` installed then you can run the examples using:
+
+```shell
+python ./pyscripts/demo_CASE.py
+```
+
+where CASE is the name of the demonstration script you want to run. The output renders will be saved to /pyout/demo-CASE/.
 
 ### Speckle Sphere
 For this demonstration we import a mesh of sphere and apply a speckle pattern texture shader to render a speckle pattern on the sphere. This is a simple single mesh and single shader case that would be typical for a DIC UQ workflow. A representative render of the sphere is shown below:
@@ -71,7 +92,11 @@ zig run -lc -O ReleaseFast ./src/bench_dicuq.zig
 You will find the rendered output for these benchmarks in ./out/bench-CASE where CASE is fullraster, geom, sphere2000 or dicuq.
 
 ## Navigating the Codebase
-The main entry point for the `Riley` rendering pipeline is the `rasterAllFrames` function in ./src/riley/zig/riley.zig.
+The main entry point for the `Riley` rendering pipeline is the `rasterAllFrames` function in /src/riley/zig/riley.zig.
+
+### C Interface
+
+`Riley` provides a small C-compatible API for use from other languages. The Python bindings use this interface through Cython, but it can also be called from C or from languages with C FFI support. The extern types and functions for this interface can be found in /src/riley/zig/c-riley.zig. 
 
 ## Contributors
 - Lloyd Fletcher ([ScepticalRabbit](https://github.com/ScepticalRabbit)), UK Atomic Energy Authority
@@ -81,3 +106,5 @@ The main entry point for the `Riley` rendering pipeline is the `rasterAllFrames`
 ## Dedication
 
 Named in memory of Riley, and for Feebee, her sister and bondmate. Without your love and support, this project would never have happened.
+
+![Riley](images/RileyHelping.jpg)

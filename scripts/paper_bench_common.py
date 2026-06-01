@@ -106,13 +106,92 @@ def latest_stats_dir_with_candidates(
     )
 
 
+def compute_dynamic_stats(
+    stats_path: pathlib.Path,
+    stat_name: str,
+) -> list[dict[str, str]]:
+    run_paths = sorted(stats_path.glob("bench_run*.csv"))
+    # Filter only bench_run{idx}.csv files and discard run0
+    run_paths = [
+        p for p in run_paths
+        if p.name != "bench_run0.csv" and p.name[9:].count("_") == 0
+    ]
+
+    if not run_paths:
+        return []
+
+    case_metrics = {}
+    case_meta = {}
+    case_order = []
+
+    for run_path in run_paths:
+        with run_path.open(newline="") as csv_file:
+            reader = csv.DictReader(csv_file)
+            for row in reader:
+                case_name = row["Case"]
+                if case_name not in case_metrics:
+                    case_metrics[case_name] = {
+                        k: [] for k in row.keys()
+                        if k not in (
+                            "Case", "Element", "Shader", "Interpolator"
+                        )
+                    }
+                    case_meta[case_name] = {
+                        "Case": case_name,
+                        "Element": row.get("Element", ""),
+                        "Shader": row.get("Shader", ""),
+                        "Interpolator": row.get("Interpolator", "")
+                    }
+                    case_order.append(case_name)
+
+                for k, v in row.items():
+                    if k not in (
+                        "Case", "Element", "Shader", "Interpolator"
+                    ):
+                        try:
+                            case_metrics[case_name][k].append(float(v))
+                        except ValueError:
+                            case_metrics[case_name][k].append(0.0)
+
+    result_rows = []
+    for case_name in case_order:
+        out_row = dict(case_meta[case_name])
+        for k, vals in case_metrics[case_name].items():
+            if not vals:
+                out_row[k] = "0.0"
+                continue
+            if stat_name == "median":
+                val = statistics.median(vals)
+            elif stat_name == "mad":
+                median_val = statistics.median(vals)
+                abs_devs = [abs(v - median_val) for v in vals]
+                val = statistics.median(abs_devs)
+            elif stat_name == "min":
+                val = min(vals)
+            elif stat_name == "max":
+                val = max(vals)
+            else:
+                val = 0.0
+            out_row[k] = f"{val:.6f}"
+        result_rows.append(out_row)
+
+    return result_rows
+
+
 def load_case_map_from_dir(
     stats_path: pathlib.Path,
     file_name: str,
 ) -> dict[str, dict[str, str]]:
-    csv_path = stats_path / file_name
-    with csv_path.open(newline="") as csv_file:
-        rows = list(csv.DictReader(csv_file))
+    stat_name = (
+        file_name
+        .replace("bench_stats_", "")
+        .replace(".csv", "")
+    )
+    rows = compute_dynamic_stats(stats_path, stat_name)
+    if not rows:
+        csv_path = stats_path / file_name
+        with csv_path.open(newline="") as csv_file:
+            rows = list(csv.DictReader(csv_file))
     return {row["Case"]: row for row in rows}
 
 
@@ -120,6 +199,12 @@ def load_run_case_rows_from_dir(
     stats_path: pathlib.Path,
 ) -> list[dict[str, dict[str, str]]]:
     run_paths = sorted(stats_path.glob("bench_run*.csv"))
+    # Discard run0 and only keep raw run files (not stats/e2e/byframe
+    # summary files)
+    run_paths = [
+        p for p in run_paths
+        if p.name != "bench_run0.csv" and p.name[9:].count("_") == 0
+    ]
     case_maps: list[dict[str, dict[str, str]]] = []
     for run_path in run_paths:
         with run_path.open(newline="") as csv_file:
@@ -234,8 +319,15 @@ def add_stable_case_keys(
 
 
 def load_stable_row_map(csv_path: pathlib.Path) -> dict[str, dict[str, str]]:
-    with csv_path.open(newline="") as csv_file:
-        rows = list(csv.DictReader(csv_file))
+    stat_name = (
+        csv_path.name
+        .replace("bench_stats_", "")
+        .replace(".csv", "")
+    )
+    rows = compute_dynamic_stats(csv_path.parent, stat_name)
+    if not rows:
+        with csv_path.open(newline="") as csv_file:
+            rows = list(csv.DictReader(csv_file))
     keyed_rows = add_stable_case_keys(rows)
     return {row["CaseStableKey"]: row for row in keyed_rows}
 

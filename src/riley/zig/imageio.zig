@@ -146,6 +146,7 @@ pub fn saveImages(
     num_fields: u8,
     pixels_num: [2]u32,
     frame_arr: *const ndarray.NDArray(f64),
+    channels_override: ?usize,
     opts_slice: []const ImageSaveOpts,
 ) !void {
     const save_dir = out_dir orelse return;
@@ -153,18 +154,21 @@ pub fn saveImages(
     _ = pixels_num;
 
     for (opts_slice) |opts| {
+        const channels = channels_override orelse opts.channels;
+        var save_opts = opts;
+        save_opts.channels = channels;
         var ff: usize = 0;
-        while (ff + opts.channels <= @as(usize, num_fields)) {
+        while (ff + channels <= @as(usize, num_fields)) {
             const file_name = try formatFrameFieldBaseName(
                 name_buff[0..],
                 camera_idx,
                 frame_idx,
                 ff,
-                opts.channels,
+                channels,
             );
 
-            try saveImage(io, save_dir, file_name, frame_arr, ff, opts);
-            ff += opts.channels;
+            try saveImage(io, save_dir, file_name, frame_arr, ff, save_opts);
+            ff += channels;
         }
     }
 }

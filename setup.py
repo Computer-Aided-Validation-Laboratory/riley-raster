@@ -8,7 +8,8 @@ from setuptools.command.build_ext import build_ext
 from Cython.Build import cythonize
 import numpy
 
-PACKAGE_NAME = "riley"
+DIST_NAME = "riley-raster"
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 #-------------------------------------------------------------------------------
 # Platform-specific utilities
@@ -45,6 +46,21 @@ def lib_base_name(ext_full_name: str) -> str:
 def lib_link_name(ext_name: str) -> str:
     lib_name = lib_base_name(ext_name)
     return f"{PLATFORM_INFO['lib_prefix']}{lib_name}{PLATFORM_INFO['lib_ext']}"
+
+
+def lib_link_aliases(
+    ext_name: str,
+    source_path: Path | None = None,
+) -> list[str]:
+    lib_names = {lib_link_name(ext_name)}
+    if source_path is not None and source_path.suffix == ".zig":
+        source_lib = (
+            f"{PLATFORM_INFO['lib_prefix']}"
+            f"{source_path.stem}"
+            f"{PLATFORM_INFO['lib_ext']}"
+        )
+        lib_names.add(source_lib)
+    return sorted(lib_names)
 
 #-------------------------------------------------------------------------------
 # Custom Multi-Build
@@ -128,15 +144,17 @@ class MultiBuildExt(build_ext):
             # Here we need to copy zig libraries to the src directory in-place
             for ee in self.extensions:
                 if Path(ee.sources[0]).suffix == ".zig":
-                    zig_lib_name = lib_link_name(ee.name)
-
-                    zig_lib_path = (Path(self.build_lib).resolve()
-                                    / self.get_ext_filename(ee.name))
-                    zig_lib_path = zig_lib_path.parent / zig_lib_name
-
                     zig_src_path = Path(self.get_ext_fullpath(ee.name)).resolve()
-                    zig_src_path = zig_src_path.parent / zig_lib_name
-                    shutil.copy2(zig_lib_path,zig_src_path)
+                    zig_build_dir = (Path(self.build_lib).resolve()
+                                     / self.get_ext_filename(ee.name))
+                    zig_build_dir = zig_build_dir.parent
+                    for zig_lib_name in lib_link_aliases(
+                        ee.name,
+                        Path(ee.sources[0]),
+                    ):
+                        zig_lib_path = zig_build_dir / zig_lib_name
+                        zig_src_lib_path = zig_src_path.parent / zig_lib_name
+                        shutil.copy2(zig_lib_path,zig_src_lib_path)
 
         # Make sure linked libraries are in the same folder:
         # 1) loop through all extensions - do they have libraries?
@@ -154,24 +172,29 @@ class MultiBuildExt(build_ext):
                             print("Found extension library cross link:")
                             print(4*" "+ f"{ext_with_lib.name} -> {ext_link_lib.name}")
 
-                            lib_name = lib_link_name(ext_link_lib.name)
+                            orig_dir = Path(
+                                self.get_ext_fullpath(ext_link_lib.name)
+                            ).resolve().parent
+                            run_dir = Path(
+                                self.get_ext_fullpath(ext_with_lib.name)
+                            ).resolve().parent
+                            for lib_name in lib_link_aliases(
+                                ext_link_lib.name,
+                                Path(ext_link_lib.sources[0]),
+                            ):
+                                run_lib_path = run_dir / lib_name
+                                orig_lib_path = orig_dir / lib_name
 
-                            run_lib_path = Path(self.get_ext_fullpath(ext_with_lib.name))
-                            run_lib_path = run_lib_path.resolve().parent / lib_name
+                                print("Copying linked extension library:")
+                                print(4*" " + f"From: {str(orig_lib_path)}")
+                                print(4*" " + f"To  : {str(run_lib_path)}")
+                                print()
 
-                            orig_lib_path = Path(self.get_ext_fullpath(ext_link_lib.name))
-                            orig_lib_path = orig_lib_path.resolve().parent / lib_name
-
-                            print("Copying linked extension library:")
-                            print(4*" " + f"From: {str(orig_lib_path)}")
-                            print(4*" " + f"To  : {str(run_lib_path)}")
-                            print()
-
-                            # Need to make sure linked library is in the same
-                            # directory as the library looking for it - rpath
-                            # is added for linux/mac and windows also looks in
-                            # the same directory.
-                            shutil.copy2(orig_lib_path,run_lib_path)
+                                # Need to make sure linked library is in the same
+                                # directory as the library looking for it - rpath
+                                # is added for linux/mac and windows also looks in
+                                # the same directory.
+                                shutil.copy2(orig_lib_path,run_lib_path)
 
 
     def build_extension(self, ext):
@@ -225,10 +248,13 @@ class MultiBuildExt(build_ext):
             print(f"Building with root file:\n    {first_source_path}")
 
             zig_python_output = self.get_ext_fullpath(ext.name)
-            zig_lib_name = lib_link_name(ext.name)
-            zig_lib_output = output_ext_dir / zig_lib_name
+            zig_lib_outputs = [
+                output_ext_dir / zig_lib_name
+                for zig_lib_name in lib_link_aliases(ext.name, first_source_path)
+            ]
 
-            print(f"Output zig library to:\n    {zig_lib_output}")
+            print(f"Output zig libraries to:")
+            [print(f"    {zig_lib_output}") for zig_lib_output in zig_lib_outputs]
             print(f"Output python extension to:\n    {zig_python_output}")
             print()
 
@@ -257,8 +283,9 @@ class MultiBuildExt(build_ext):
                 print("Zig build successful\n")
 
                 # Copy python extension name to linkable library name
-                shutil.copy2(zig_python_output,zig_lib_output)
-                print(f"Copied python extension to:\n    {Path(zig_lib_output)}")
+                for zig_lib_output in zig_lib_outputs:
+                    shutil.copy2(zig_python_output,zig_lib_output)
+                    print(f"Copied python extension to:\n    {Path(zig_lib_output)}")
 
             except subprocess.CalledProcessError as e:
                 print(f"{ext.name}: Zig build failed: {e}")
@@ -288,16 +315,21 @@ class MultiBuildExt(build_ext):
 #-------------------------------------------------------------------------------
 # Extensions
 
-H_DIRS = [numpy.get_include(),
-          str(Path.cwd()/"src"),
-          str(Path.cwd()/"src"/"riley"/"cyth"),
-          str(Path.cwd()/"src"/"riley"/"zig"),]
+H_DIRS = [
+    numpy.get_include(),
+    str(PROJECT_ROOT / "src"),
+    str(PROJECT_ROOT / "src" / "riley" / "cyth"),
+    str(PROJECT_ROOT / "src" / "riley" / "zig"),
+]
 
 # zig extension
 ext_zig = Extension(
-    name="riley.zig.cabi-riley",
-    sources=["src/riley/zig/cabi-riley.zig",],
-    extra_compile_args=["-fincremental",],
+    name="riley.zig.c_riley",
+    sources=["src/riley/zig/c-riley.zig",],
+    extra_compile_args=[
+        "-fincremental",
+        "-mcpu=native",
+    ],
 )
 
 # cython extension linking zig
@@ -305,7 +337,7 @@ ext_cython = Extension(
         name="riley.cyth.riley",
         sources=["src/riley/cyth/riley.py",],
         include_dirs=H_DIRS,
-        libraries=["cabi-riley",],  # without the lib and so extension - e.g. libzigarray.so - zig
+        libraries=["c_riley"],
         library_dirs=[],            # populated by run() above
         runtime_library_dirs=[PLATFORM_INFO["runtime_lib_dir"],],
         extra_compile_args=["-ffast-math",
@@ -319,13 +351,13 @@ ext_modules = [ext_zig] + cythonize(ext_cython,annotate=True)
 # Setup
 
 setup(
-    name="riley",
+    name=DIST_NAME,
     ext_modules=ext_modules,
     cmdclass={"build_ext": MultiBuildExt},
     zip_safe=False,
     package_data={
         "riley": [f"*{PLATFORM_INFO['lib_ext']}"],
-        "riley.cython": [f"*{PLATFORM_INFO['lib_ext']}"],
+        "riley.cyth": [f"*{PLATFORM_INFO['lib_ext']}"],
         "riley.zig": [f"*{PLATFORM_INFO['lib_ext']}"],
         "": [f"*{PLATFORM_INFO['lib_ext']}"],
     },
