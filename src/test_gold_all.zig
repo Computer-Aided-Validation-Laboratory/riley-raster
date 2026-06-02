@@ -24,7 +24,7 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Running ALL Gold Test Suites...\n", .{});
 
     std.debug.print(
-        "Please use 'zig test -lc -O ReleaseSafe src/test_gold_all.zig' " ++
+        "Please use 'zig test -O ReleaseSafe src/test_gold_all.zig' " ++
             "to run all tests.\n",
         .{},
     );

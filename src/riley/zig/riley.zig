@@ -21,6 +21,7 @@ const shaderops = @import("shaderops.zig");
 const iio = @import("imageio.zig");
 const imageops = @import("imageops.zig");
 const pce = @import("parachunkexec.zig");
+const saveoverlap = @import("saveoverlap.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
 
 const geomkerns = @import("geometrykernels.zig");
@@ -38,6 +39,9 @@ pub const FullStatsOpts = rastcfg.FullStatsOpts;
 const report = @import("report.zig");
 const FrameReportStorage = report.FrameReportStorage;
 
+// --------------------------------------------------------------------------
+// 1. Threaded IO and Tiny Shared Helpers
+// --------------------------------------------------------------------------
 pub fn getThreadedIo(
     gpa: std.mem.Allocator,
     minimal: std.process.Init.Minimal,
@@ -59,31 +63,6 @@ pub fn getThreadedIo(
     });
 }
 
-const FrameJobErrorState = struct {
-    mutex: std.atomic.Mutex = .unlocked,
-    first_err: ?anyerror = null,
-
-    fn setFirst(
-        self: *FrameJobErrorState,
-        err: anyerror,
-    ) void {
-        while (!self.mutex.tryLock()) {
-            std.atomic.spinLoopHint();
-        }
-        defer self.mutex.unlock();
-        if (self.first_err == null) {
-            self.first_err = err;
-        }
-    }
-};
-
-const SaveSlotState = enum {
-    free,
-    rendering,
-    ready_to_save,
-    saving,
-};
-
 fn FrameReportPtr(comptime report_mode: ReportMode) type {
     return *report.LogType(report_mode);
 }
@@ -99,6 +78,9 @@ fn getFrameReportPtr(
     };
 }
 
+// --------------------------------------------------------------------------
+// 2. Output and Image Buffer Helpers
+// --------------------------------------------------------------------------
 fn initNodalGlobalScaling(
     outer_alloc: std.mem.Allocator,
     meshes: []const mo.MeshInput,
@@ -135,16 +117,6 @@ fn initMeshStaticSlice(
     }
 
     return mesh_static;
-}
-
-fn initAllFramesBuffer(
-    outer_alloc: std.mem.Allocator,
-    dims: [5]usize,
-) !ndarray.NDArray(f64) {
-    return try ndarray.NDArray(f64).initFlat(
-        outer_alloc,
-        dims[0..],
-    );
 }
 
 fn calcAllFramesDimsFromPixels(
@@ -194,14 +166,6 @@ fn needsOutputTransform(
         .multifield => false,
         .grey => raw_num_fields != 1,
         .rgb => raw_num_fields != 3,
-    };
-}
-
-fn imageSaveChannelsOverride(image_mode: ImageMode) ?usize {
-    return switch (image_mode) {
-        .grey => 1,
-        .rgb => 3,
-        .multifield => null,
     };
 }
 
@@ -291,16 +255,24 @@ fn initFrameReportStorage(
     };
 }
 
-fn calcBenchCaptureIdx(
-    cameras_num: usize,
+// --------------------------------------------------------------------------
+// 4. Frame Assembly and Output Helpers
+// --------------------------------------------------------------------------
+const FrameJobDesc = struct {
+    camera: *const cam.CameraPrepared,
     camera_idx: usize,
     frame_idx: usize,
-) usize {
-    return frame_idx * cameras_num + camera_idx;
-}
-
-//------------------------------------------------------------------------------------------
-// 4. Pipeline Stages
+    num_fields: u8,
+    config: RasterConfig,
+    out_dir: ?std.Io.Dir,
+    mesh_static: []const mo.MeshStatic,
+    nodal_global_scaling: []const ?imageops.ScalingParams,
+    images_arr: ?*ndarray.NDArray(f64),
+    bench_capture: ?[]report.FrameBenchCapture,
+    cameras_num: usize,
+    can_write_result_direct: bool,
+    save_slot: ?*saveoverlap.SaveSlot = null,
+};
 
 const FrameContext = struct {
     arena: std.heap.ArenaAllocator,
@@ -340,67 +312,6 @@ const FrameContext = struct {
         );
         self.arena.deinit();
     }
-};
-
-const SaveSlot = struct {
-    state: SaveSlotState = .free,
-    frame_arr: ndarray.NDArray(f64),
-    camera: ?*const cam.CameraPrepared = null,
-    camera_idx: usize = 0,
-    frame_idx: usize = 0,
-    cameras_num: usize = 0,
-    num_fields: u8 = 0,
-    pixels_num: [2]u32 = .{ 0, 0 },
-    out_dir: ?std.Io.Dir = null,
-    bench_capture: ?[]report.FrameBenchCapture = null,
-    report_storage: FrameReportStorage = .{ .off = .{} },
-    frame_times: report.FrameTimes = .{},
-    total_elems_num: usize = 0,
-    total_elems_in_image: usize = 0,
-    nodes_per_elem: f64 = 0.0,
-    actual_tile_size: u16 = 1,
-    time_start_frame: ?Timestamp = null,
-
-    fn resetReportStorage(
-        self: *SaveSlot,
-        outer_alloc: std.mem.Allocator,
-        config: RasterConfig,
-    ) void {
-        report.deinitFrameReportStorage(
-            outer_alloc,
-            config,
-            &self.report_storage,
-        );
-    }
-};
-
-const SaveCoordinator = struct {
-    mutex: std.Io.Mutex = .init,
-    ready_cond: std.Io.Condition = .init,
-    free_cond: std.Io.Condition = .init,
-    done_submitting: bool = false,
-    first_err: ?anyerror = null,
-    slots: []SaveSlot,
-
-    fn setFirstError(
-        self: *SaveCoordinator,
-        io: std.Io,
-        err: anyerror,
-    ) void {
-        self.mutex.lockUncancelable(io);
-        defer self.mutex.unlock(io);
-        if (self.first_err == null) {
-            self.first_err = err;
-        }
-        self.done_submitting = true;
-        self.ready_cond.broadcast(io);
-        self.free_cond.broadcast(io);
-    }
-};
-
-const SaveSlotBuffer = struct {
-    slots: []SaveSlot,
-    frame_pool: ndarray.NDArray(f64),
 };
 
 fn prepareFrameContext(
@@ -544,76 +455,13 @@ fn rasterFrame(
     );
 }
 
-fn rgbFieldsToGrey(
-    red_val: f64,
-    green_val: f64,
-    blue_val: f64,
-) f64 {
-    return 0.299 * red_val + 0.587 * green_val + 0.114 * blue_val;
-}
-
-fn buildOutputFrameView(
-    allocator: std.mem.Allocator,
-    config: RasterConfig,
-    raw_frame_arr: *const ndarray.NDArray(f64),
-) !ndarray.NDArray(f64) {
-    std.debug.assert(raw_frame_arr.dims.len == 3);
-    const raw_num_fields: u8 = @intCast(raw_frame_arr.dims[0]);
-    if (!needsOutputTransform(config.image_mode, raw_num_fields)) {
-        return raw_frame_arr.*;
-    }
-
-    const out_num_fields = try outputFieldsForImageMode(
-        config.image_mode,
-        raw_num_fields,
-    );
-    var output_frame_arr = try ndarray.NDArray(f64).initFlat(
-        allocator,
-        &[_]usize{
-            @as(usize, out_num_fields),
-            raw_frame_arr.dims[1],
-            raw_frame_arr.dims[2],
-        },
-    );
-
-    switch (config.image_mode) {
-        .multifield => unreachable,
-        .grey => {
-            std.debug.assert(raw_num_fields == 3);
-            for (0..raw_frame_arr.dims[1]) |rr| {
-                for (0..raw_frame_arr.dims[2]) |cc| {
-                    const grey_val = rgbFieldsToGrey(
-                        raw_frame_arr.get(&[_]usize{ 0, rr, cc }),
-                        raw_frame_arr.get(&[_]usize{ 1, rr, cc }),
-                        raw_frame_arr.get(&[_]usize{ 2, rr, cc }),
-                    );
-                    output_frame_arr.set(&[_]usize{ 0, rr, cc }, grey_val);
-                }
-            }
-        },
-        .rgb => {
-            std.debug.assert(raw_num_fields == 1);
-            for (0..raw_frame_arr.dims[1]) |rr| {
-                for (0..raw_frame_arr.dims[2]) |cc| {
-                    const grey_val = raw_frame_arr.get(&[_]usize{ 0, rr, cc });
-                    for (0..3) |ff| {
-                        output_frame_arr.set(&[_]usize{ ff, rr, cc }, grey_val);
-                    }
-                }
-            }
-        },
-    }
-
-    return output_frame_arr;
-}
-
 fn saveFrame(
     io: std.Io,
     input: *const FrameJobDesc,
     ctx: *FrameContext,
 ) !void {
     const arena_alloc = ctx.arena.allocator();
-    const output_frame_arr = try buildOutputFrameView(
+    const output_frame_arr = try saveoverlap.buildOutputFrameView(
         arena_alloc,
         input.config,
         &ctx.frame_arr,
@@ -628,7 +476,7 @@ fn saveFrame(
             @intCast(output_frame_arr.dims[0]),
             input.camera.pixels_num,
             &output_frame_arr,
-            imageSaveChannelsOverride(input.config.image_mode),
+            saveoverlap.imageSaveChannelsOverride(input.config.image_mode),
             input.config.image_save_opts,
         );
     }
@@ -644,6 +492,15 @@ fn saveFrame(
     }
 }
 
+// --------------------------------------------------------------------------
+// 5. Raster Support and Save-Overlap Plumbing
+// --------------------------------------------------------------------------
+pub const RenderGroupSpec = struct {
+    io: std.Io,
+    save_frame_io: ?std.Io = null,
+    workers: u16,
+};
+
 fn sceneTileOverlapBinning(
     io: std.Io,
     job: *const FrameJobDesc,
@@ -652,6 +509,7 @@ fn sceneTileOverlapBinning(
     ctx: *FrameContext,
 ) !void {
     const arena_alloc = ctx.arena.allocator();
+
     const tiles_num_x: usize = try std.math.divCeil(
         usize,
         job.camera.pixels_num[0],
@@ -682,12 +540,6 @@ fn sceneTileOverlapBinning(
     );
 }
 
-pub const RenderGroupSpec = struct {
-    io: std.Io,
-    save_frame_io: ?std.Io = null,
-    workers: u16,
-};
-
 fn renderGroupSaveIo(render_group: RenderGroupSpec) std.Io {
     return render_group.save_frame_io orelse render_group.io;
 }
@@ -696,190 +548,9 @@ fn saveOverlapEnabled(config: RasterConfig) bool {
     return config.save_strategy == .disk and config.disk_save_overlap;
 }
 
-fn initSaveSlots(
-    save_alloc: std.mem.Allocator,
-    cameras: []const cam.CameraPrepared,
-    num_fields: u8,
-    slot_count: usize,
-) !SaveSlotBuffer {
-    std.debug.assert(cameras.len > 0);
-    var max_pixels_num = cameras[0].pixels_num;
-    for (cameras[1..]) |camera| {
-        max_pixels_num[0] = @max(max_pixels_num[0], camera.pixels_num[0]);
-        max_pixels_num[1] = @max(max_pixels_num[1], camera.pixels_num[1]);
-    }
-    const frame_pool = try ndarray.NDArray(f64).initFlat(
-        save_alloc,
-        &[_]usize{
-            slot_count,
-            @as(usize, num_fields),
-            max_pixels_num[1],
-            max_pixels_num[0],
-        },
-    );
-    const slots = try save_alloc.alloc(SaveSlot, slot_count);
-    for (0..slot_count) |ss| {
-        slots[ss] = .{
-            .frame_arr = try frame_pool.fixedPrefixView(
-                save_alloc,
-                &[_]usize{ss},
-            ),
-        };
-    }
-    return SaveSlotBuffer{
-        .slots = slots,
-        .frame_pool = frame_pool,
-    };
-}
-
-fn acquireSaveSlot(
-    io: std.Io,
-    coordinator: *SaveCoordinator,
-) !usize {
-    try coordinator.mutex.lock(io);
-    defer coordinator.mutex.unlock(io);
-
-    while (true) {
-        if (coordinator.first_err) |err| return err;
-        for (coordinator.slots, 0..) |*slot, ss| {
-            if (slot.state == .free) {
-                slot.state = .rendering;
-                return ss;
-            }
-        }
-        try coordinator.free_cond.wait(io, &coordinator.mutex);
-    }
-}
-
-fn completeSaveSlot(
-    outer_alloc: std.mem.Allocator,
-    save_io: std.Io,
-    coordinator: *SaveCoordinator,
-    slot_idx: usize,
-    config: RasterConfig,
-) !void {
-    var slot = &coordinator.slots[slot_idx];
-    const time_start_save = Timestamp.now(save_io, .awake);
-    std.debug.assert(slot.camera != null);
-    std.debug.assert(slot.pixels_num[0] > 0);
-    std.debug.assert(slot.pixels_num[1] > 0);
-    var save_arena = std.heap.ArenaAllocator.init(outer_alloc);
-    defer save_arena.deinit();
-    const output_frame_arr = try buildOutputFrameView(
-        save_arena.allocator(),
-        config,
-        &slot.frame_arr,
-    );
-    try iio.saveImages(
-        save_io,
-        slot.out_dir,
-        slot.camera_idx,
-        slot.frame_idx,
-        @intCast(output_frame_arr.dims[0]),
-        slot.pixels_num,
-        &output_frame_arr,
-        imageSaveChannelsOverride(config.image_mode),
-        config.image_save_opts,
-    );
-    const time_end_save = Timestamp.now(save_io, .awake);
-
-    slot.frame_times.save_frame = @floatFromInt(
-        time_start_save.durationTo(time_end_save).raw.nanoseconds,
-    );
-    slot.frame_times.active_time =
-        slot.frame_times.geometry_prep +
-        slot.frame_times.tile_overlap +
-        slot.frame_times.raster_loop +
-        slot.frame_times.save_frame;
-    slot.frame_times.latency_time = @floatFromInt(
-        slot.time_start_frame.?.durationTo(time_end_save).raw.nanoseconds,
-    );
-
-    try report.publishFrameResultsWithNodesPerElem(
-        outer_alloc,
-        save_io,
-        config,
-        slot.actual_tile_size,
-        slot.camera.?,
-        slot.camera_idx,
-        slot.frame_idx,
-        slot.cameras_num,
-        slot.out_dir,
-        slot.bench_capture,
-        &slot.report_storage,
-        slot.frame_times,
-        slot.total_elems_num,
-        slot.total_elems_in_image,
-        slot.nodes_per_elem,
-    );
-
-    try coordinator.mutex.lock(save_io);
-    defer coordinator.mutex.unlock(save_io);
-    slot.resetReportStorage(outer_alloc, config);
-    slot.state = .free;
-    coordinator.free_cond.signal(save_io);
-}
-
-fn saveWorkerLoop(
-    outer_alloc: std.mem.Allocator,
-    save_io: std.Io,
-    coordinator: *SaveCoordinator,
-    config: RasterConfig,
-) void {
-    while (true) {
-        coordinator.mutex.lockUncancelable(save_io);
-        while (true) {
-            if (coordinator.first_err != null) {
-                coordinator.mutex.unlock(save_io);
-                return;
-            }
-            var ready_idx: ?usize = null;
-            for (coordinator.slots, 0..) |slot, ss| {
-                if (slot.state == .ready_to_save) {
-                    ready_idx = ss;
-                    break;
-                }
-            }
-            if (ready_idx) |slot_idx| {
-                coordinator.slots[slot_idx].state = .saving;
-                coordinator.mutex.unlock(save_io);
-                completeSaveSlot(
-                    outer_alloc,
-                    save_io,
-                    coordinator,
-                    slot_idx,
-                    config,
-                ) catch |err| {
-                    coordinator.setFirstError(save_io, err);
-                    return;
-                };
-                break;
-            }
-            if (coordinator.done_submitting) {
-                coordinator.mutex.unlock(save_io);
-                return;
-            }
-            coordinator.ready_cond.waitUncancelable(save_io, &coordinator.mutex);
-        }
-    }
-}
-
-const FrameJobDesc = struct {
-    camera: *const cam.CameraPrepared,
-    camera_idx: usize,
-    frame_idx: usize,
-    num_fields: u8,
-    config: RasterConfig,
-    out_dir: ?std.Io.Dir,
-    mesh_static: []const mo.MeshStatic,
-    nodal_global_scaling: []const ?imageops.ScalingParams,
-    images_arr: ?*ndarray.NDArray(f64),
-    bench_capture: ?[]report.FrameBenchCapture,
-    cameras_num: usize,
-    can_write_result_direct: bool,
-    save_slot: ?*SaveSlot = null,
-};
-
+// --------------------------------------------------------------------------
+// 6. Stage Runners
+// --------------------------------------------------------------------------
 const PreparedFrameJob = struct {
     desc: FrameJobDesc,
     ctx: FrameContext,
@@ -1004,6 +675,7 @@ fn runRasterAndSaveFrame(
         job,
         raster_workers,
     );
+
     const time_start_save = Timestamp.now(io, .awake);
     try saveFrame(io, &job.desc, &job.ctx);
     const time_end_save = Timestamp.now(io, .awake);
@@ -1042,6 +714,9 @@ fn runRasterAndSaveFrame(
     );
 }
 
+// --------------------------------------------------------------------------
+// 7. Batch Preparation and Wave Scheduling
+// --------------------------------------------------------------------------
 fn prepareJobBatch(
     group_alloc: std.mem.Allocator,
     cameras: []const cam.CameraPrepared,
@@ -1055,9 +730,11 @@ fn prepareJobBatch(
     job_indices: []const usize,
 ) ![]PreparedFrameJob {
     const jobs = try group_alloc.alloc(PreparedFrameJob, job_indices.len);
+
     const can_write_result_direct = images_arr != null and
         cam.allCamerasSharePixels(cameras) and
         !needsOutputTransform(config.image_mode, num_fields);
+
     for (job_indices, 0..) |job_idx, ii| {
         const frame_idx = @divFloor(job_idx, cameras.len);
         const camera_idx = @mod(job_idx, cameras.len);
@@ -1079,6 +756,7 @@ fn prepareJobBatch(
             },
         );
     }
+
     return jobs;
 }
 
@@ -1129,6 +807,24 @@ fn geometryJobsPerWave(
     );
 }
 
+const FrameJobErrorState = struct {
+    mutex: std.atomic.Mutex = .unlocked,
+    first_err: ?anyerror = null,
+
+    fn setFirst(
+        self: *FrameJobErrorState,
+        err: anyerror,
+    ) void {
+        while (!self.mutex.tryLock()) {
+            std.atomic.spinLoopHint();
+        }
+        defer self.mutex.unlock();
+        if (self.first_err == null) {
+            self.first_err = err;
+        }
+    }
+};
+
 fn processGeometryWave(
     group_alloc: std.mem.Allocator,
     io: std.Io,
@@ -1166,6 +862,7 @@ fn processGeometryWave(
             .{ group_alloc, io, job, geom_workers, &err_state },
         );
     }
+
     try runGeometryStage(
         group_alloc,
         io,
@@ -1233,7 +930,7 @@ fn processRasterBatch(
     group_alloc: std.mem.Allocator,
     group_workers: u16,
     config: RasterConfig,
-    save_coordinator: ?*SaveCoordinator,
+    save_overlap: ?*saveoverlap.SaveOverlap,
     jobs: []PreparedFrameJob,
 ) !void {
     const raster_workers = @min(
@@ -1242,40 +939,14 @@ fn processRasterBatch(
     );
     for (jobs) |*job| {
         defer job.deinit(group_alloc);
-        if (save_coordinator) |coordinator| {
-            const slot_idx = try acquireSaveSlot(group_io, coordinator);
-            const slot = &coordinator.slots[slot_idx];
-            job.desc.save_slot = slot;
-            try runRasterStage(
+        if (save_overlap) |so| {
+            try so.runRasterStageAndQueue(
                 outer_alloc,
                 group_io,
                 job,
                 raster_workers,
+                runRasterStage,
             );
-            slot.camera = job.desc.camera;
-            slot.camera_idx = job.desc.camera_idx;
-            slot.frame_idx = job.desc.frame_idx;
-            slot.cameras_num = job.desc.cameras_num;
-            slot.num_fields = @intCast(job.ctx.frame_arr.dims[0]);
-            slot.pixels_num = .{
-                job.desc.camera.pixels_num[0],
-                job.desc.camera.pixels_num[1],
-            };
-            slot.out_dir = job.desc.out_dir;
-            slot.bench_capture = job.desc.bench_capture;
-            slot.report_storage = job.ctx.report_storage;
-            job.ctx.report_storage = .{ .off = .{} };
-            slot.frame_times = job.ctx.frame_times;
-            slot.total_elems_num = job.ctx.total_elems_num;
-            slot.total_elems_in_image = job.ctx.total_elems_in_image;
-            slot.nodes_per_elem = mo.calcNodesPerElem(job.ctx.prep_meshes);
-            slot.actual_tile_size = job.ctx.actual_tile_size;
-            slot.time_start_frame = job.time_start_frame;
-
-            try coordinator.mutex.lock(group_io);
-            slot.state = .ready_to_save;
-            coordinator.ready_cond.signal(group_io);
-            coordinator.mutex.unlock(group_io);
             continue;
         }
         try runRasterAndSaveFrame(
@@ -1287,6 +958,9 @@ fn processRasterBatch(
     }
 }
 
+// --------------------------------------------------------------------------
+// 8. Offline Dispatch Path
+// --------------------------------------------------------------------------
 const OfflineDispatchShared = struct {
     outer_alloc: std.mem.Allocator,
     cameras: []const cam.CameraPrepared,
@@ -1305,24 +979,6 @@ const OfflineDispatchShared = struct {
     err_state: *FrameJobErrorState,
 };
 
-const InOrderDispatchShared = struct {
-    outer_alloc: std.mem.Allocator,
-    cameras: []const cam.CameraPrepared,
-    config: RasterConfig,
-    out_dir: ?std.Io.Dir,
-    frame_idx: usize,
-    num_fields: u8,
-    mesh_static: []const mo.MeshStatic,
-    nodal_global_scaling: []const ?imageops.ScalingParams,
-    images_arr: ?*ndarray.NDArray(f64),
-    bench_capture: ?[]report.FrameBenchCapture,
-    total_scene_elems: usize,
-    batch_size: usize,
-    next_camera: std.atomic.Value(usize) =
-        std.atomic.Value(usize).init(0),
-    err_state: *FrameJobErrorState,
-};
-
 fn processOfflineRenderGroupLoop(
     render_group: RenderGroupSpec,
     shared: *OfflineDispatchShared,
@@ -1331,59 +987,28 @@ fn processOfflineRenderGroupLoop(
     defer group_arena.deinit();
     const group_alloc = group_arena.allocator();
     const jobs_num = shared.cameras.len * shared.num_time;
-    const overlap_save = saveOverlapEnabled(shared.config);
-    var save_frame_arena = std.heap.ArenaAllocator.init(shared.outer_alloc);
-    defer save_frame_arena.deinit();
-    const save_frame_alloc = save_frame_arena.allocator();
-    var save_slots_buf: ?SaveSlotBuffer = null;
-    var save_coordinator: ?SaveCoordinator = null;
-    var save_thread: ?std.Thread = null;
-    if (overlap_save) {
-        save_slots_buf = try initSaveSlots(
-            save_frame_alloc,
-            shared.cameras,
-            shared.num_fields,
-            @max(@as(usize, 1), shared.config.save_frame_buffer_count),
-        );
-        save_coordinator = .{ .slots = save_slots_buf.?.slots };
-        save_thread = try std.Thread.spawn(
-            .{},
-            saveWorkerLoop,
-            .{
-                shared.outer_alloc,
-                renderGroupSaveIo(render_group),
-                &save_coordinator.?,
-                shared.config,
-            },
-        );
-    }
-    defer {
-        if (save_coordinator) |*coordinator| {
-            coordinator.mutex.lockUncancelable(renderGroupSaveIo(render_group));
-            coordinator.done_submitting = true;
-            coordinator.ready_cond.broadcast(renderGroupSaveIo(render_group));
-            coordinator.free_cond.broadcast(renderGroupSaveIo(render_group));
-            coordinator.mutex.unlock(renderGroupSaveIo(render_group));
-        }
-        if (save_thread) |thread| {
-            thread.join();
-        }
-        if (save_coordinator) |*coordinator| {
-            for (coordinator.slots) |*slot| {
-                slot.resetReportStorage(shared.outer_alloc, shared.config);
-            }
-        }
-    }
+
+    var save_overlap = try saveoverlap.SaveOverlap.initMaybe(
+        shared.outer_alloc,
+        renderGroupSaveIo(render_group),
+        shared.cameras,
+        shared.num_fields,
+        shared.config,
+        saveOverlapEnabled(shared.config),
+    );
+    defer save_overlap.deinit();
 
     while (true) {
         const batch_start = shared.next_job.fetchAdd(shared.batch_size, .monotonic);
         if (batch_start >= jobs_num) break;
+
         const batch_end = @min(jobs_num, batch_start + shared.batch_size);
         const batch_len = batch_end - batch_start;
         const job_indices = try group_alloc.alloc(usize, batch_len);
         for (0..batch_len) |ii| {
             job_indices[ii] = batch_start + ii;
         }
+
         const jobs = try prepareJobBatch(
             group_alloc,
             shared.cameras,
@@ -1396,6 +1021,7 @@ fn processOfflineRenderGroupLoop(
             shared.bench_capture,
             job_indices,
         );
+
         try processGeometryBatch(
             group_alloc,
             render_group.io,
@@ -1404,34 +1030,27 @@ fn processOfflineRenderGroupLoop(
             shared.total_scene_elems,
             jobs,
         );
+
         try processRasterBatch(
             shared.outer_alloc,
             render_group.io,
             group_alloc,
             render_group.workers,
             shared.config,
-            if (save_coordinator) |*coordinator| coordinator else null,
+            if (save_overlap.enabled()) &save_overlap else null,
             jobs,
         );
         _ = group_arena.reset(.retain_capacity);
     }
 
-    if (save_coordinator) |*coordinator| {
-        try coordinator.mutex.lock(render_group.io);
-        coordinator.done_submitting = true;
-        coordinator.ready_cond.broadcast(render_group.io);
-        coordinator.free_cond.broadcast(render_group.io);
-        coordinator.mutex.unlock(render_group.io);
-    }
-    if (save_coordinator) |*coordinator| {
-        if (coordinator.first_err) |err| return err;
-    }
+    try save_overlap.checkError();
 }
 
 fn processOfflineRenderGroupThread(
     render_group: RenderGroupSpec,
     shared: *OfflineDispatchShared,
 ) void {
+    // Required for threads to submit error to the mutex
     processOfflineRenderGroupLoop(render_group, shared) catch |err| {
         shared.err_state.setFirst(err);
     };
@@ -1470,6 +1089,7 @@ fn dispatchFrameJobsOffline(
     var threads = try outer_alloc.alloc(std.Thread, render_groups.len -| 1);
     defer outer_alloc.free(threads);
 
+    // Submit to worker threads but not the main thread
     for (render_groups[1..], 0..) |render_group, ii| {
         threads[ii] = try std.Thread.spawn(
             .{},
@@ -1478,14 +1098,37 @@ fn dispatchFrameJobsOffline(
         );
     }
 
+    // Submit to the main thread
     processOfflineRenderGroupLoop(render_groups[0], &shared) catch |err| {
         err_state.setFirst(err);
     };
+
     for (threads) |thread| {
         thread.join();
     }
     if (err_state.first_err) |err| return err;
 }
+
+// --------------------------------------------------------------------------
+// 9. In-Order Dispatch Path
+// --------------------------------------------------------------------------
+const InOrderDispatchShared = struct {
+    outer_alloc: std.mem.Allocator,
+    cameras: []const cam.CameraPrepared,
+    config: RasterConfig,
+    out_dir: ?std.Io.Dir,
+    frame_idx: usize,
+    num_fields: u8,
+    mesh_static: []const mo.MeshStatic,
+    nodal_global_scaling: []const ?imageops.ScalingParams,
+    images_arr: ?*ndarray.NDArray(f64),
+    bench_capture: ?[]report.FrameBenchCapture,
+    total_scene_elems: usize,
+    batch_size: usize,
+    next_camera: std.atomic.Value(usize) =
+        std.atomic.Value(usize).init(0),
+    err_state: *FrameJobErrorState,
+};
 
 fn processInOrderRenderGroupLoop(
     render_group: RenderGroupSpec,
@@ -1494,49 +1137,16 @@ fn processInOrderRenderGroupLoop(
     var group_arena = std.heap.ArenaAllocator.init(shared.outer_alloc);
     defer group_arena.deinit();
     const group_alloc = group_arena.allocator();
-    const overlap_save = saveOverlapEnabled(shared.config);
-    var save_frame_arena = std.heap.ArenaAllocator.init(shared.outer_alloc);
-    defer save_frame_arena.deinit();
-    const save_frame_alloc = save_frame_arena.allocator();
-    var save_slots_buf: ?SaveSlotBuffer = null;
-    var save_coordinator: ?SaveCoordinator = null;
-    var save_thread: ?std.Thread = null;
-    if (overlap_save) {
-        save_slots_buf = try initSaveSlots(
-            save_frame_alloc,
-            shared.cameras,
-            shared.num_fields,
-            @max(@as(usize, 1), shared.config.save_frame_buffer_count),
-        );
-        save_coordinator = .{ .slots = save_slots_buf.?.slots };
-        save_thread = try std.Thread.spawn(
-            .{},
-            saveWorkerLoop,
-            .{
-                shared.outer_alloc,
-                renderGroupSaveIo(render_group),
-                &save_coordinator.?,
-                shared.config,
-            },
-        );
-    }
-    defer {
-        if (save_coordinator) |*coordinator| {
-            coordinator.mutex.lockUncancelable(renderGroupSaveIo(render_group));
-            coordinator.done_submitting = true;
-            coordinator.ready_cond.broadcast(renderGroupSaveIo(render_group));
-            coordinator.free_cond.broadcast(renderGroupSaveIo(render_group));
-            coordinator.mutex.unlock(renderGroupSaveIo(render_group));
-        }
-        if (save_thread) |thread| {
-            thread.join();
-        }
-        if (save_coordinator) |*coordinator| {
-            for (coordinator.slots) |*slot| {
-                slot.resetReportStorage(shared.outer_alloc, shared.config);
-            }
-        }
-    }
+
+    var save_overlap = try saveoverlap.SaveOverlap.initMaybe(
+        shared.outer_alloc,
+        renderGroupSaveIo(render_group),
+        shared.cameras,
+        shared.num_fields,
+        shared.config,
+        saveOverlapEnabled(shared.config),
+    );
+    defer save_overlap.deinit();
 
     while (true) {
         const batch_start_camera = shared.next_camera.fetchAdd(
@@ -1544,16 +1154,19 @@ fn processInOrderRenderGroupLoop(
             .monotonic,
         );
         if (batch_start_camera >= shared.cameras.len) break;
+
         const batch_end_camera = @min(
             shared.cameras.len,
             batch_start_camera + shared.batch_size,
         );
+
         const batch_len = batch_end_camera - batch_start_camera;
         const job_indices = try group_alloc.alloc(usize, batch_len);
         for (0..batch_len) |ii| {
             job_indices[ii] =
                 shared.frame_idx * shared.cameras.len + batch_start_camera + ii;
         }
+
         const jobs = try prepareJobBatch(
             group_alloc,
             shared.cameras,
@@ -1566,6 +1179,7 @@ fn processInOrderRenderGroupLoop(
             shared.bench_capture,
             job_indices,
         );
+
         try processGeometryBatch(
             group_alloc,
             render_group.io,
@@ -1574,34 +1188,27 @@ fn processInOrderRenderGroupLoop(
             shared.total_scene_elems,
             jobs,
         );
+
         try processRasterBatch(
             shared.outer_alloc,
             render_group.io,
             group_alloc,
             render_group.workers,
             shared.config,
-            if (save_coordinator) |*coordinator| coordinator else null,
+            if (save_overlap.enabled()) &save_overlap else null,
             jobs,
         );
+
         _ = group_arena.reset(.retain_capacity);
     }
-
-    if (save_coordinator) |*coordinator| {
-        try coordinator.mutex.lock(render_group.io);
-        coordinator.done_submitting = true;
-        coordinator.ready_cond.broadcast(render_group.io);
-        coordinator.free_cond.broadcast(render_group.io);
-        coordinator.mutex.unlock(render_group.io);
-    }
-    if (save_coordinator) |*coordinator| {
-        if (coordinator.first_err) |err| return err;
-    }
+    try save_overlap.checkError();
 }
 
 fn processInOrderRenderGroupThread(
     render_group: RenderGroupSpec,
     shared: *InOrderDispatchShared,
 ) void {
+    // Required to submit the error from thread through a mutex
     processInOrderRenderGroupLoop(render_group, shared) catch |err| {
         shared.err_state.setFirst(err);
     };
@@ -1647,6 +1254,7 @@ fn dispatchFrameJobsInOrder(
         );
         defer outer_alloc.free(threads);
 
+        // Submit to all worker threads but not the main thread
         for (render_groups[1..], 0..) |render_group, ii| {
             threads[ii] = try std.Thread.spawn(
                 .{},
@@ -1655,9 +1263,11 @@ fn dispatchFrameJobsInOrder(
             );
         }
 
+        // Submit to the main thread
         processInOrderRenderGroupLoop(render_groups[0], &shared) catch |err| {
             err_state.setFirst(err);
         };
+
         for (threads) |thread| {
             thread.join();
         }
@@ -1665,27 +1275,9 @@ fn dispatchFrameJobsInOrder(
     }
 }
 
-fn prepareCameras(
-    outer_alloc: std.mem.Allocator,
-    camera_inputs: []const cam.CameraInput,
-    config: RasterConfig,
-) ![]cam.CameraPrepared {
-    const cameras = try outer_alloc.alloc(cam.CameraPrepared, camera_inputs.len);
-    for (camera_inputs, 0..) |camera_input, cc| {
-        cameras[cc] = cam.CameraPrepared.initForSubPixelCenterMap(
-            outer_alloc,
-            camera_input,
-            config.subpixel_center_map,
-        ) catch |err| {
-            for (0..cc) |pp| cameras[pp].deinit(outer_alloc);
-            outer_alloc.free(cameras);
-            return err;
-        };
-    }
-
-    return cameras;
-}
-
+// --------------------------------------------------------------------------
+// 10. Camera Preparation and Public API
+// --------------------------------------------------------------------------
 pub fn rasterAllFrames(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
@@ -1744,9 +1336,9 @@ pub fn rasterAllFramesReport(
             meshes,
             config,
         );
-        images_arr_opt = try initAllFramesBuffer(
+        images_arr_opt = try ndarray.NDArray(f64).initFlat(
             outer_alloc,
-            dims,
+            dims[0..],
         );
     }
     errdefer if (images_arr_opt) |*images_arr| {
@@ -1797,7 +1389,11 @@ pub fn rasterAllFramesReportInto(
     defer static_arena.deinit();
     const static_alloc = static_arena.allocator();
 
-    const cameras = try prepareCameras(outer_alloc, camera_inputs, config);
+    const cameras = try cam.CameraOps.prepareSlice(
+        outer_alloc,
+        camera_inputs,
+        config.subpixel_center_map,
+    );
     defer {
         for (cameras) |camera| camera.deinit(outer_alloc);
         outer_alloc.free(cameras);

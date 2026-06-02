@@ -1050,21 +1050,22 @@ const testing = std.testing;
 test "Verify hand-written TIFF loader" {
     const allocator = testing.allocator;
     const io = std.testing.io;
-    var tex_c = try CLoadTIFF(u8, 1, allocator, io, "texture/speckle.tiff");
-    defer tex_c.deinit(allocator);
-
     const cwd = std.Io.Dir.cwd();
     try ensureTmpTestDir(io);
     const out_dir = cwd;
-    const mat_size = tex_c.rows_num * tex_c.cols_num;
+    const rows_num = 19;
+    const cols_num = 23;
+    const mat_size = rows_num * cols_num;
     const mat_mem = try allocator.alloc(f64, mat_size);
     defer allocator.free(mat_mem);
-    for (0..tex_c.rows_num) |rr| {
-        for (0..tex_c.cols_num) |cc| {
-            mat_mem[rr * tex_c.cols_num + cc] = tex_c.getVal(0, rr, cc);
+
+    for (0..rows_num) |rr| {
+        for (0..cols_num) |cc| {
+            // Exercise a spread of 8-bit grayscale values without requiring libtiff.
+            mat_mem[rr * cols_num + cc] = @floatFromInt((rr * 17 + cc * 29) % 256);
         }
     }
-    const mat = matslice.MatSlice(f64).init(mat_mem, tex_c.rows_num, tex_c.cols_num);
+    const mat = matslice.MatSlice(f64).init(mat_mem, rows_num, cols_num);
 
     try saveMatAsImage(
         io,
@@ -1084,14 +1085,14 @@ test "Verify hand-written TIFF loader" {
     );
     defer tex_zig.deinit(allocator);
 
-    try testing.expectEqual(tex_c.rows_num, tex_zig.rows_num);
-    try testing.expectEqual(tex_c.cols_num, tex_zig.cols_num);
+    try testing.expectEqual(rows_num, tex_zig.rows_num);
+    try testing.expectEqual(cols_num, tex_zig.cols_num);
 
-    for (0..tex_c.rows_num) |rr| {
-        for (0..tex_c.cols_num) |cc| {
-            const p1 = tex_c.getVal(0, rr, cc);
-            const p2 = tex_zig.getVal(0, rr, cc);
-            try testing.expectApproxEqAbs(p1, p2, 1.0);
+    for (0..rows_num) |rr| {
+        for (0..cols_num) |cc| {
+            const expected = mat_mem[rr * cols_num + cc];
+            const actual = tex_zig.getVal(0, rr, cc);
+            try testing.expectEqual(expected, actual);
         }
     }
 }
