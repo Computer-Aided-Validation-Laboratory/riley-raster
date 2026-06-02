@@ -520,6 +520,27 @@ pub const CameraOps = struct {
         avg_pixel_per_leng: f64,
     };
 
+    pub fn prepareSlice(
+        allocator: std.mem.Allocator,
+        camera_inputs: []const CameraInput,
+        subpixel_center_map: rastcfg.SubPixelCenterMap,
+    ) ![]CameraPrepared {
+        const cameras = try allocator.alloc(CameraPrepared, camera_inputs.len);
+        for (camera_inputs, 0..) |camera_input, cc| {
+            cameras[cc] = CameraPrepared.initForSubPixelCenterMap(
+                allocator,
+                camera_input,
+                subpixel_center_map,
+            ) catch |err| {
+                for (0..cc) |pp| cameras[pp].deinit(allocator);
+                allocator.free(cameras);
+                return err;
+            };
+        }
+
+        return cameras;
+    }
+
     fn parseKeyValueCsv(
         allocator: std.mem.Allocator,
         io: std.Io,

@@ -119,16 +119,6 @@ fn initMeshStaticSlice(
     return mesh_static;
 }
 
-fn initAllFramesBuffer(
-    outer_alloc: std.mem.Allocator,
-    dims: [5]usize,
-) !ndarray.NDArray(f64) {
-    return try ndarray.NDArray(f64).initFlat(
-        outer_alloc,
-        dims[0..],
-    );
-}
-
 fn calcAllFramesDimsFromPixels(
     camera_pixels_num: []const [2]u32,
     num_time: usize,
@@ -263,14 +253,6 @@ fn initFrameReportStorage(
             config.full_stats_opts,
         ) },
     };
-}
-
-fn calcBenchCaptureIdx(
-    cameras_num: usize,
-    camera_idx: usize,
-    frame_idx: usize,
-) usize {
-    return frame_idx * cameras_num + camera_idx;
 }
 
 // --------------------------------------------------------------------------
@@ -527,6 +509,7 @@ fn sceneTileOverlapBinning(
     ctx: *FrameContext,
 ) !void {
     const arena_alloc = ctx.arena.allocator();
+
     const tiles_num_x: usize = try std.math.divCeil(
         usize,
         job.camera.pixels_num[0],
@@ -692,6 +675,7 @@ fn runRasterAndSaveFrame(
         job,
         raster_workers,
     );
+
     const time_start_save = Timestamp.now(io, .awake);
     try saveFrame(io, &job.desc, &job.ctx);
     const time_end_save = Timestamp.now(io, .awake);
@@ -746,9 +730,11 @@ fn prepareJobBatch(
     job_indices: []const usize,
 ) ![]PreparedFrameJob {
     const jobs = try group_alloc.alloc(PreparedFrameJob, job_indices.len);
+
     const can_write_result_direct = images_arr != null and
         cam.allCamerasSharePixels(cameras) and
         !needsOutputTransform(config.image_mode, num_fields);
+
     for (job_indices, 0..) |job_idx, ii| {
         const frame_idx = @divFloor(job_idx, cameras.len);
         const camera_idx = @mod(job_idx, cameras.len);
@@ -770,6 +756,7 @@ fn prepareJobBatch(
             },
         );
     }
+
     return jobs;
 }
 
@@ -875,6 +862,7 @@ fn processGeometryWave(
             .{ group_alloc, io, job, geom_workers, &err_state },
         );
     }
+
     try runGeometryStage(
         group_alloc,
         io,
@@ -1290,27 +1278,6 @@ fn dispatchFrameJobsInOrder(
 // --------------------------------------------------------------------------
 // 10. Camera Preparation and Public API
 // --------------------------------------------------------------------------
-fn prepareCameras(
-    outer_alloc: std.mem.Allocator,
-    camera_inputs: []const cam.CameraInput,
-    config: RasterConfig,
-) ![]cam.CameraPrepared {
-    const cameras = try outer_alloc.alloc(cam.CameraPrepared, camera_inputs.len);
-    for (camera_inputs, 0..) |camera_input, cc| {
-        cameras[cc] = cam.CameraPrepared.initForSubPixelCenterMap(
-            outer_alloc,
-            camera_input,
-            config.subpixel_center_map,
-        ) catch |err| {
-            for (0..cc) |pp| cameras[pp].deinit(outer_alloc);
-            outer_alloc.free(cameras);
-            return err;
-        };
-    }
-
-    return cameras;
-}
-
 pub fn rasterAllFrames(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
@@ -1369,9 +1336,9 @@ pub fn rasterAllFramesReport(
             meshes,
             config,
         );
-        images_arr_opt = try initAllFramesBuffer(
+        images_arr_opt = try ndarray.NDArray(f64).initFlat(
             outer_alloc,
-            dims,
+            dims[0..],
         );
     }
     errdefer if (images_arr_opt) |*images_arr| {
@@ -1422,7 +1389,11 @@ pub fn rasterAllFramesReportInto(
     defer static_arena.deinit();
     const static_alloc = static_arena.allocator();
 
-    const cameras = try prepareCameras(outer_alloc, camera_inputs, config);
+    const cameras = try cam.CameraOps.prepareSlice(
+        outer_alloc,
+        camera_inputs,
+        config.subpixel_center_map,
+    );
     defer {
         for (cameras) |camera| camera.deinit(outer_alloc);
         outer_alloc.free(cameras);
