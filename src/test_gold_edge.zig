@@ -19,7 +19,7 @@ const SHADER_FILTER: common.ShaderFilter = .both;
 
 pub fn main() !void {
     std.debug.print(
-        "Please use 'zig test -lc -O ReleaseSafe src/test_gold_edge.zig' " ++
+        "Please use 'zig test -O ReleaseSafe src/test_gold_edge.zig' " ++
             "to run this test suite.\n",
         .{},
     );

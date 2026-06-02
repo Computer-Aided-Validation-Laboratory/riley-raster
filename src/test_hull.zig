@@ -14,7 +14,7 @@ const rastcfg = @import("riley/zig/rasterconfig.zig");
 
 pub fn main() !void {
     std.debug.print(
-        "Please use 'zig test -lc -O ReleaseSafe src/test_hull.zig' " ++
+        "Please use 'zig test -O ReleaseSafe src/test_hull.zig' " ++
             "to run this test suite.\n",
         .{},
     );

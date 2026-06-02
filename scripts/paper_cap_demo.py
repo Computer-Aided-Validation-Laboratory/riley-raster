@@ -20,8 +20,8 @@ from paper_const import PAPER_DIR, PLOT_RESOLUTION_DPI, repo_root
 
 VERIF_DIR = Path("verif")
 OUT_FIGS_TEX_PATH = VERIF_DIR / "cap_demo_figs.tex"
-SUBFIGURE_WIDTH = "0.235\\textwidth"
-SUBFIGURE_GAP = "0.02\\textwidth"
+SUBFIGURE_WIDTH = "0.245\\textwidth"
+SUBFIGURE_GAP = "0.01\\textwidth"
 PNG_DPI = int(PLOT_RESOLUTION_DPI)
 PANEL_COLORBAR_LABEL_SIZE = 30
 PANEL_COLORBAR_TICK_SIZE = 24
@@ -58,14 +58,12 @@ DIC_UX_PNG = "fig_cap_demo_dic_ux.png"
 DIC_UY_PNG = "fig_cap_demo_dic_uy.png"
 
 FIG_CAPTION = (
-    "Capability demonstration for the stereo DIC-UQ workflow. Top row: "
+    "Capability demonstration for the \\texttt{Riley} stereo DIC-UQ workflow. Top row: "
     "synthetic stereo calibration target images for cameras 0 and 1. Second "
     "row: synthetic reference images of the perforated plate specimen for "
     "cameras 0 and 1. Third row: finite-element displacement fields on the "
-    "specimen front face at the final frame, shown in millimetres. Bottom "
-    "row: stereo-DIC displacements reconstructed from the change in "
-    "$x$- and $y$-coordinates between the first and final stereo solutions, "
-    "using the same colour scales as the finite-element fields."
+    "specimen front face at the final frame. Bottom "
+    "row: stereo-DIC displacements from the field of view at the final frame."
 )
 
 
@@ -152,10 +150,38 @@ def scaled_panel_label(base_label: str, exponent: int) -> str:
     return f"{base_label} [$\\times 10^{{{exponent}}}$ mm]"
 
 
-def make_panel_figure() -> tuple[plt.Figure, plt.Axes, plt.Axes]:
-    fig = plt.figure(figsize=PANEL_IMAGE_FIGSIZE, facecolor=PANEL_FACE_COLOR)
-    ax = fig.add_axes(PANEL_AX_RECT)
-    cax = fig.add_axes(PANEL_CBAR_RECT)
+def make_panel_figure(
+    aspect_ratio: float,
+) -> tuple[plt.Figure, plt.Axes, plt.Axes]:
+    h_fig = 5.5
+    h_ax = 5.0
+    h_bottom = 0.25
+
+    w_left = 0.15
+    w_ax = h_ax * aspect_ratio
+    w_gap = 0.25
+    w_cbar = 0.25
+    w_text = 1.3
+
+    w_fig = w_left + w_ax + w_gap + w_cbar + w_text
+
+    ax_rect = [
+        w_left / w_fig,
+        h_bottom / h_fig,
+        w_ax / w_fig,
+        h_ax / h_fig,
+    ]
+
+    cax_rect = [
+        (w_left + w_ax + w_gap) / w_fig,
+        0.5 / h_fig,
+        w_cbar / w_fig,
+        4.5 / h_fig,
+    ]
+
+    fig = plt.figure(figsize=(w_fig, h_fig), facecolor=PANEL_FACE_COLOR)
+    ax = fig.add_axes(ax_rect)
+    cax = fig.add_axes(cax_rect)
     return fig, ax, cax
 
 
@@ -164,9 +190,10 @@ def save_panel_image_with_colorbar(
     clim: tuple[float, float],
     scalar_title: str,
     out_name: str,
+    aspect_ratio: float,
 ) -> None:
     scale, exponent = calc_panel_scale(clim)
-    fig, ax, cax = make_panel_figure()
+    fig, ax, cax = make_panel_figure(aspect_ratio)
     ax.imshow(image)
     ax.axis("off")
 
@@ -232,6 +259,21 @@ def load_fe_front_face() -> pv.PolyData:
     return front_face.extract_cells(np.arange(len(unique_faces))).clean()
 
 
+def crop_to_content(image: np.ndarray) -> np.ndarray:
+    non_white = np.any(image < 255, axis=-1)
+    rows = np.any(non_white, axis=1)
+    cols = np.any(non_white, axis=0)
+    if not np.any(rows) or not np.any(cols):
+        return image
+    rmin, rmax = np.where(rows)[0][[0, -1]]
+    cmin, cmax = np.where(cols)[0][[0, -1]]
+    rmin = max(0, rmin - 2)
+    rmax = min(image.shape[0] - 1, rmax + 2)
+    cmin = max(0, cmin - 2)
+    cmax = min(image.shape[1] - 1, cmax + 2)
+    return image[rmin : rmax + 1, cmin : cmax + 1]
+
+
 def render_fe_panel(
     front_face: pv.PolyData,
     scalar_name: str,
@@ -256,7 +298,16 @@ def render_fe_panel(
     plotter.camera.tight(view="xy", padding=0.015)
     screenshot = plotter.screenshot(return_img=True)
     plotter.close()
-    save_panel_image_with_colorbar(screenshot, clim, scalar_title, out_name)
+
+    cropped = crop_to_content(screenshot)
+    fe_aspect_ratio = 25.0 / 35.0
+    save_panel_image_with_colorbar(
+        cropped,
+        clim,
+        scalar_title,
+        out_name,
+        fe_aspect_ratio,
+    )
 
 
 def build_dic_sample_mesh(
@@ -343,7 +394,8 @@ def render_dic_panel(
     )
 
     scale, exponent = calc_panel_scale(clim)
-    fig, ax, cax = make_panel_figure()
+    aspect_ratio = (extent[1] - extent[0]) / (extent[3] - extent[2])
+    fig, ax, cax = make_panel_figure(aspect_ratio)
     image = ax.imshow(
         sampled_vals / scale,
         origin="lower",

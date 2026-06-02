@@ -6,7 +6,7 @@ We specifically chose to implement `Riley` in Zig as it is a compiled language w
 ## Getting Started: Zig
 `Riley` uses the Zig 0.16.0 compiler release which can be downloaded from [here](https://ziglang.org/download/). The `Riley` repository contains a minimal set of regression tests (called the "min" test suite) which should be run before generating a wider set gold regression data and running performance benchmark suites. The min test suite can be run from the project root directory using:
 ```shell
-zig test -lc -O ReleaseSafe ./src/test_min.zig
+zig test -O ReleaseSafe ./src/test_min.zig
 ```
 The min test suite contains two cases a render of the "multimesh" case which is two elements of each type in a single scene that are rendered with nodal interpolation shading or texture shading. The min test suite also contains a rendering of the "sphere200" case which is a sphere with 200 elements of a single type with every possible combination of nodal or texture shading. the sphere200 case is particularly sensitive to breaking changes due to the range of element orientations.
 
@@ -17,13 +17,13 @@ python ./data/bench/gen_bench_data.py
 
 You should see a range of directories generated in the data/bench directory with different element types and case tags. Once that is done we can render the required gold output with:
 ```shell
-zig run -lc -O ReleaseSafe ./src/gen_gold_all.zig
+zig run -O ReleaseSafe ./src/gen_gold_all.zig
 ```
 
 Now we can run the remaining "all" and "bench" test suites:
 ```shell
-zig test -lc -O ReleaseSafe ./src/test_gold_all.zig
-zig test -lc -O ReleaseSafe ./src/test_bench.zig
+zig test -O ReleaseSafe ./src/test_gold_all.zig
+zig test -O ReleaseSafe ./src/test_bench.zig
 ```
 
 ## Getting Started: Python
@@ -42,7 +42,7 @@ pip install -e .
 ## Capability Demonstration
 We have included a series of capability demonstrations scripts in the /src/ directory (or in the /pyscripts/ directory for python versions). In Zig, these can be run using
 ```shell
-zig run -lc -O ReleaseFast ./src/demo_CASE.zig
+zig run -O ReleaseFast ./src/demo_CASE.zig
 ```
 where CASE is the name of the demonstration script you want to run (CASE = sphere200, rabbits, dicuq, stereocal). The output renders will be saved to /out/demo-CASE/.
 
@@ -83,10 +83,10 @@ We now use the camera setup from the previous DIC UQ demo, import it and then re
 We used four cases to analyse the performance of `Riley`: 1) Minimum elements filling the screen (2 triangles or 1 quadrilateral), called "fullraster", 2) 1e5 elements filling screen, called "geom", 3) A sphere in the centre of the screen with 2000 elements, called sphere2000. Case 1 is intended to test the throughput of the raster hot loop. Case 2 is intended to test the throughput of the geometry pre-processing. Case 3 is a more realistic case with a balance of element orientations. Case 4 tests thread scaling on the same case as the DIC UQ demonstration. These benchmark suites can be run using:
 
 ```shell
-zig run -lc -O ReleaseFast ./src/bench_fullraster.zig
-zig run -lc -O ReleaseFast ./src/bench_geom.zig
-zig run -lc -O ReleaseFast ./src/bench_sphere2000.zig
-zig run -lc -O ReleaseFast ./src/bench_dicuq.zig
+zig run -O ReleaseFast ./src/bench_fullraster.zig
+zig run -O ReleaseFast ./src/bench_geom.zig
+zig run -O ReleaseFast ./src/bench_sphere2000.zig
+zig run -O ReleaseFast ./src/bench_dicuq.zig
 ```
 You will find the rendered output for these benchmarks in ./out/bench-CASE where CASE is fullraster, geom, sphere2000 or dicuq.
 

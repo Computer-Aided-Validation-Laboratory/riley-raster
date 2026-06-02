@@ -65,7 +65,6 @@ fn addMinTestRunStep(
             .root_source_file = b.path("src/test_min.zig"),
             .target = target,
             .optimize = optimize,
-            .link_libc = true,
         }),
     });
     return b.addRunArtifact(test_min);
