@@ -25,6 +25,7 @@ const CameraInput = camera_mod.CameraInput;
 const CameraOps = camera_mod.CameraOps;
 const DistortionModel = camera_mod.DistortionModel;
 const BrownConrady = camera_mod.BrownConrady;
+const PointSpreadFunc = camera_mod.PointSpreadFunc;
 const TexFuncBuiltin = shaderops.TexFuncBuiltin;
 const TexFuncParams = shaderops.TexFuncParams;
 
@@ -36,10 +37,27 @@ const FOV_SCALE: f64 = 1.0;
 const SUB_SAMPLE: u8 = 2;
 const RENDER_THREADS: u16 = 4;
 const CAMERA_ROT = Rotation.init(0.0, 0.0, 0.0);
-const SHADER_BUILTIN = TexFuncBuiltin.checker_smooth;
+const SHADER_BUILTIN = TexFuncBuiltin.checker;
 const SHADER_PARAMS = TexFuncParams{
-    .coord_scale = .{ 30.0, 30.0 },
+    .coord_scale = .{ 36.0, 36.0 },
     .coord_offset = .{ 0.0, 0.0 },
+};
+const PSF_CASES = [_]struct {
+    name: []const u8,
+    psf: PointSpreadFunc,
+}{
+    .{
+        .name = "pixel_box",
+        .psf = .{ .pixel_box = .{} },
+    },
+    .{
+        .name = "gaussian_heavy",
+        .psf = .{ .gaussian = .{
+            .sigma_px = 0.8,
+            .support_rad_px = 2.5,
+            .separable = .yes,
+        } },
+    },
 };
 
 const DISTORTION_CASES = [_]struct {
@@ -92,7 +110,11 @@ fn ensureDir(io: std.Io, dir_path: []const u8) !void {
     }
 }
 
-fn makeCameraInput(coords: *const meshio.Coords, distortion: DistortionModel) CameraInput {
+fn makeCameraInput(
+    coords: *const meshio.Coords,
+    distortion: DistortionModel,
+    psf: PointSpreadFunc,
+) CameraInput {
     const roi_pos = CameraOps.roiCentFromCoords(coords);
     const cam_pos = CameraOps.posFillFrameFromRot(
         coords,
@@ -111,6 +133,7 @@ fn makeCameraInput(coords: *const meshio.Coords, distortion: DistortionModel) Ca
         .focal_length = FOCAL_LENGTH,
         .sub_sample = SUB_SAMPLE,
         .distortion = distortion,
+        .psf = psf,
     };
 }
 
@@ -121,6 +144,7 @@ fn renderCase(
     mesh_type: MeshType,
     mesh_name: []const u8,
     distortion_case: @TypeOf(DISTORTION_CASES[0]),
+    psf_case: @TypeOf(PSF_CASES[0]),
     sim_data: meshio.SimData,
     uvs: uvio.UVMap,
     config: rastcfg.RasterConfig,
@@ -128,8 +152,8 @@ fn renderCase(
     var out_dir_buf: [256]u8 = undefined;
     const out_dir = try std.fmt.bufPrint(
         &out_dir_buf,
-        "{s}/{s}_{s}",
-        .{ OUT_DIR_ROOT, mesh_name, distortion_case.name },
+        "{s}/{s}_{s}_{s}",
+        .{ OUT_DIR_ROOT, mesh_name, distortion_case.name, psf_case.name },
     );
     try ensureDir(io, out_dir);
 
@@ -147,12 +171,19 @@ fn renderCase(
             .normal_type = .none,
         } },
     };
-    const camera_input = makeCameraInput(&sim_data.coords, distortion_case.model);
+    const camera_input = makeCameraInput(
+        &sim_data.coords,
+        distortion_case.model,
+        psf_case.psf,
+    );
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = threaded_io_io, .workers = RENDER_THREADS },
     };
 
-    std.debug.print("Rendering {s} -> {s}\n", .{ mesh_name, out_dir });
+    std.debug.print(
+        "Rendering {s} {s} {s} -> {s}\n",
+        .{ mesh_name, distortion_case.name, psf_case.name, out_dir },
+    );
     const images = try riley.rasterAllFrames(
         allocator,
         &render_groups,
@@ -226,17 +257,20 @@ pub fn main(init: std.process.Init) !void {
         defer uvs.deinit(aa);
 
         for (DISTORTION_CASES) |dist_case| {
-            try renderCase(
-                aa,
-                io,
-                threaded_io.io(),
-                mesh_type,
-                mesh_name,
-                dist_case,
-                sim_data,
-                uvs,
-                config,
-            );
+            for (PSF_CASES) |psf_case| {
+                try renderCase(
+                    aa,
+                    io,
+                    threaded_io.io(),
+                    mesh_type,
+                    mesh_name,
+                    dist_case,
+                    psf_case,
+                    sim_data,
+                    uvs,
+                    config,
+                );
+            }
         }
     }
 

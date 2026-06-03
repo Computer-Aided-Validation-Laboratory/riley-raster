@@ -321,10 +321,12 @@ fn prepareFrameContext(
 ) !void {
     const arena_alloc = ctx.arena.allocator();
     ctx.actual_tile_size = scalingpolicy.tileSize(
+        input.config.tile_size_override,
         input.config.tile_size_min,
         input.config.tile_size_max,
         input.camera.pixels_num,
         input.camera.sub_sample,
+        input.camera.prepared_psf.halo_px,
     );
 
     ctx.report_storage = try initFrameReportStorage(
@@ -531,6 +533,7 @@ fn sceneTileOverlapBinning(
         tiles_num_y,
         @intCast(job.camera.pixels_num[0]),
         @intCast(job.camera.pixels_num[1]),
+        job.camera.prepared_psf.halo_px,
         ctx.elems_in_image_by_mesh,
         ctx.elem_bboxes_by_mesh,
     );
@@ -606,6 +609,7 @@ fn runGeometryStage(
         job.desc.nodal_global_scaling,
         job.ctx.frame_meshes,
     );
+
     for (job.ctx.frame_meshes, 0..) |*fm, ii| {
         job.ctx.prep_meshes[ii] = fm.mesh;
         job.ctx.elem_bboxes_by_mesh[ii] = fm.elem_bboxes;
@@ -974,8 +978,7 @@ const OfflineDispatchShared = struct {
     bench_capture: ?[]report.FrameBenchCapture,
     total_scene_elems: usize,
     batch_size: usize,
-    next_job: std.atomic.Value(usize) =
-        std.atomic.Value(usize).init(0),
+    next_job: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
     err_state: *FrameJobErrorState,
 };
 
@@ -1484,10 +1487,12 @@ pub fn rasterAllFramesReportInto(
         time_start_render.durationTo(time_end_render).raw.nanoseconds,
     );
     const actual_tile_size = scalingpolicy.tileSize(
+        config.tile_size_override,
         config.tile_size_min,
         config.tile_size_max,
         cameras[0].pixels_num,
         cameras[0].sub_sample,
+        cameras[0].prepared_psf.halo_px,
     );
     try report.printRenderSummary(
         summary_io,

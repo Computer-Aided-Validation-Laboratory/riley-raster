@@ -237,12 +237,15 @@ pub fn calcActualTileSize(
     config: rastcfg.RasterConfig,
     pixel_num: [2]u32,
     sub_sample: u8,
+    halo_px: u16,
 ) u16 {
     return scalingpolicy.tileSize(
+        config.tile_size_override,
         config.tile_size_min,
         config.tile_size_max,
         pixel_num,
         sub_sample,
+        halo_px,
     );
 }
 

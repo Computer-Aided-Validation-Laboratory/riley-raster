@@ -203,8 +203,9 @@ class TexFuncBuiltin(IntEnum):
     linear = 1
     quadratic = 2
     sinusoidal = 3
-    checker_smooth = 4
-    lambertian_normal_z = 5
+    checker = 4
+    checker_smooth = 5
+    lambertian_normal_z = 6
 
 
 class NormalType(IntEnum):

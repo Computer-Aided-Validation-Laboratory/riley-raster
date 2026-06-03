@@ -57,8 +57,10 @@ const SubpxSimdChunk = struct {
 };
 
 pub const SubpxScratchBuffers = struct {
+    stride_subpx: usize,
     inv_z: []align(64) f64,
     image: MatSlice(f64),
+    filter_tmp: MatSlice(f64),
     simd_chunks: []SubpxSimdChunk,
     mask: []align(64) bool,
     xi: []align(64) f64,
@@ -122,6 +124,16 @@ pub fn initSubpxScratch(
         @as(usize, fields_num),
         subpx_tile_total_padded + S,
     );
+    const filter_tmp_mem = try arena_alloc.alignedAlloc(
+        f64,
+        alignment,
+        (subpx_tile_total_padded + S) * @as(usize, fields_num),
+    );
+    const filter_tmp = MatSlice(f64).init(
+        filter_tmp_mem,
+        @as(usize, fields_num),
+        subpx_tile_total_padded + S,
+    );
 
     const subpx_simd_chunk_count =
         @divFloor(subpx_tile_total_padded + (S - 1), S) + 1;
@@ -137,8 +149,10 @@ pub fn initSubpxScratch(
     );
 
     return .{
+        .stride_subpx = subpx_tile_size,
         .inv_z = subpx_inv_z_scratch,
         .image = subpx_image_scratch,
+        .filter_tmp = filter_tmp,
         .simd_chunks = subpx_simd_chunks,
         .mask = subpx_mask_scratch,
         .xi = subpx_xi_scratch,
@@ -156,6 +170,7 @@ pub fn resetSubpxScratch(
 ) void {
     @memset(subpx_scratch.inv_z, -std.math.inf(f64));
     @memset(subpx_scratch.image.slice, background_value);
+    @memset(subpx_scratch.filter_tmp.slice, background_value);
     @memset(subpx_scratch.touched_min_x, subpx_tile_size);
     @memset(subpx_scratch.touched_max_x, 0);
 }
@@ -185,19 +200,19 @@ pub fn RasterEngine(
             const subpx_domain = SubpxDomain{
                 .step = 1.0 / sub_samp_f,
                 .offset = 1.0 / (2.0 * sub_samp_f),
-                .tile_size = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp_u,
+                .tile_size = subpx_scratch.stride_subpx,
                 .x_off = 0.5 * @as(f64, @floatFromInt(ctx_rast.camera.pixels_num[0])),
                 .y_off = 0.5 * @as(f64, @floatFromInt(ctx_rast.camera.pixels_num[1])),
             };
 
             const scratch_start_x_u = sub_samp_u *
-                (@as(usize, targ_overlap.overlap.x_min) - targ_overlap.tile.x_px_min);
+                (@as(usize, targ_overlap.overlap.x_min) - targ_overlap.tile.scratch_x_px_min);
             const scratch_end_x_u = sub_samp_u *
-                (@as(usize, targ_overlap.overlap.x_max) - targ_overlap.tile.x_px_min);
+                (@as(usize, targ_overlap.overlap.x_max) - targ_overlap.tile.scratch_x_px_min);
             const scratch_start_y_u = sub_samp_u *
-                (@as(usize, targ_overlap.overlap.y_min) - targ_overlap.tile.y_px_min);
+                (@as(usize, targ_overlap.overlap.y_min) - targ_overlap.tile.scratch_y_px_min);
             const scratch_end_y_u = sub_samp_u *
-                (@as(usize, targ_overlap.overlap.y_max) - targ_overlap.tile.y_px_min);
+                (@as(usize, targ_overlap.overlap.y_max) - targ_overlap.tile.scratch_y_px_min);
 
             const rast_bounds = RasterBounds{
                 .start_x_u = scratch_start_x_u,
@@ -341,10 +356,10 @@ pub fn RasterEngine(
                         for (0..S) |ll| {
                             if (lane_x_mask[ll]) {
                                 const global_subx =
-                                    @as(usize, @intCast(targ_overlap.tile.x_px_min)) *
+                                    @as(usize, @intCast(targ_overlap.tile.scratch_x_px_min)) *
                                     sub_samp + scratch_x_u + ll;
                                 const global_suby =
-                                    @as(usize, @intCast(targ_overlap.tile.y_px_min)) *
+                                    @as(usize, @intCast(targ_overlap.tile.scratch_y_px_min)) *
                                     sub_samp + scratch_y_u;
                                 if (lane_active_mask[ll]) {
                                     const weights = [3]f64{
@@ -476,9 +491,9 @@ pub fn RasterEngine(
                                 .fields_num = fields_num,
                                 .actual_fields = fields_num,
                                 .scratch_idx = scratch_idx,
-                                .global_subx = targ_overlap.tile.x_px_min * sub_samp +
+                                .global_subx = targ_overlap.tile.scratch_x_px_min * sub_samp +
                                     scratch_x_u,
-                                .global_suby = targ_overlap.tile.y_px_min * sub_samp +
+                                .global_suby = targ_overlap.tile.scratch_y_px_min * sub_samp +
                                     scratch_y_u,
                                 .shader_buf = shader_buf,
                                 .v_mask_active = v_depth_mask,
@@ -792,12 +807,12 @@ pub fn RasterEngine(
                             const global_subx = @as(
                                 usize,
                                 subpx_simd_chunk.scratch_x_u[jj],
-                            ) + @as(usize, @intCast(targ_overlap.tile.x_px_min)) *
+                            ) + @as(usize, @intCast(targ_overlap.tile.scratch_x_px_min)) *
                                 sub_samp;
                             const global_suby = @as(
                                 usize,
                                 subpx_simd_chunk.scratch_y_u[jj],
-                            ) + @as(usize, @intCast(targ_overlap.tile.y_px_min)) *
+                            ) + @as(usize, @intCast(targ_overlap.tile.scratch_y_px_min)) *
                                 sub_samp;
                             ctx_report.recordPixelIters(
                                 global_subx,
@@ -1024,9 +1039,9 @@ pub fn RasterEngine(
                                 .fields_num = fields_num,
                                 .actual_fields = fields_num,
                                 .scratch_idx = scratch_idx,
-                                .global_subx = targ_overlap.tile.x_px_min * sub_samp +
+                                .global_subx = targ_overlap.tile.scratch_x_px_min * sub_samp +
                                     scratch_x_u,
-                                .global_suby = targ_overlap.tile.y_px_min * sub_samp +
+                                .global_suby = targ_overlap.tile.scratch_y_px_min * sub_samp +
                                     scratch_y_u,
                                 .shader_buf = shader_buf,
                                 .v_mask_active = v_depth_mask,

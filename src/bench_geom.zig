@@ -138,6 +138,7 @@ pub fn main(init: std.process.Init) !void {
         bench_raster_config,
         bench_args.pixels_num,
         bench_args.sub_sample,
+        0,
     );
     const render_group_workers = [_]u16{bench_args.total_threads};
     try common.writeBenchmarkConfig(

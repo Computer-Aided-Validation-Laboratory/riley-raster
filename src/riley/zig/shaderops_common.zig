@@ -25,6 +25,7 @@ pub const TexFuncBuiltin = enum {
     linear,
     quadratic,
     sinusoidal,
+    checker,
     checker_smooth,
     lambertian_normal_z,
 };
@@ -312,6 +313,14 @@ pub inline fn evalTexFuncBuiltinScalar(
         .sinusoidal => 0.5 +
             0.25 * @sin(params.wave_num_scalar[0] * eval_coord.coord_0) +
             0.2 * @cos(params.wave_num_scalar[1] * eval_coord.coord_1),
+        .checker => blk: {
+            const cell_x: i64 = @intFromFloat(@floor(eval_coord.coord_0));
+            const cell_y: i64 = @intFromFloat(@floor(eval_coord.coord_1));
+            break :blk if (@mod(cell_x + cell_y, 2) == 0)
+                @as(f64, 0.0)
+            else
+                @as(f64, 1.0);
+        },
         .checker_smooth => blk: {
             const phase_x = 0.5 + 0.5 * @sin(8.0 * std.math.pi * eval_coord.coord_0);
             const phase_y = 0.5 + 0.5 * @sin(8.0 * std.math.pi * eval_coord.coord_1);
@@ -345,6 +354,15 @@ pub inline fn evalTexFuncBuiltinRgb(
             0.5 + 0.25 * @sin(params.wave_num_rgb[0] * eval_coord.coord_0),
             0.5 + 0.25 * @cos(params.wave_num_rgb[1] * eval_coord.coord_1),
             0.5 + 0.2 * @sin(params.wave_num_rgb[2] * (eval_coord.coord_0 + eval_coord.coord_1)),
+        },
+        .checker => blk: {
+            const cell_x: i64 = @intFromFloat(@floor(eval_coord.coord_0));
+            const cell_y: i64 = @intFromFloat(@floor(eval_coord.coord_1));
+            const value = if (@mod(cell_x + cell_y, 2) == 0)
+                @as(f64, 0.0)
+            else
+                @as(f64, 1.0);
+            break :blk .{ value, value, value };
         },
         .checker_smooth => blk: {
             const phase_x = 0.5 + 0.5 * @sin(8.0 * std.math.pi * eval_coord.coord_0);
@@ -675,4 +693,30 @@ test "TexFuncParams control sinusoidal frequency and output scaling" {
     const expected_shifted = (0.5 + 0.25 * @sin(6.0 * 0.5) + 0.2 * @cos(0.0)) * 2.0 - 0.25;
     try testing.expectApproxEqAbs(expected_base, base, 1e-12);
     try testing.expectApproxEqAbs(expected_shifted, shifted, 1e-12);
+}
+
+test "checker texfunc creates hard black white cells from coord scale" {
+    const coord_black = TexFuncCoord{
+        .coord_0 = 0.01,
+        .coord_1 = 0.01,
+        .normal_x = 0.0,
+        .normal_y = 0.0,
+        .normal_z = 1.0,
+    };
+    const coord_white = TexFuncCoord{
+        .coord_0 = 0.05,
+        .coord_1 = 0.01,
+        .normal_x = 0.0,
+        .normal_y = 0.0,
+        .normal_z = 1.0,
+    };
+    const params = TexFuncParams{
+        .coord_scale = .{ 36.0, 36.0 },
+    };
+
+    const value_black = evalTexFuncBuiltinScalar(.checker, coord_black, params);
+    const value_white = evalTexFuncBuiltinScalar(.checker, coord_white, params);
+
+    try testing.expectEqual(@as(f64, 0.0), value_black);
+    try testing.expectEqual(@as(f64, 1.0), value_white);
 }

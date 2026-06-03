@@ -175,6 +175,7 @@ pub fn main(init: std.process.Init) !void {
         raster_config,
         bench_args.pixels_num,
         bench_args.sub_sample,
+        0,
     );
     try common.writeBenchmarkConfig(
         outer_alloc,

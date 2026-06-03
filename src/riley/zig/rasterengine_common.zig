@@ -52,6 +52,34 @@ pub const RasterBounds = struct {
     y_min_f: f64,
 };
 
+pub const ScratchTileGeometry = struct {
+    core_w_px: usize,
+    core_h_px: usize,
+    scratch_w_px: usize,
+    scratch_h_px: usize,
+    scratch_w_subpx: usize,
+    scratch_h_subpx: usize,
+    core_start_x_subpx: usize,
+    core_start_y_subpx: usize,
+
+    pub fn init(tile: rops.ActiveTile, sub_sample: usize) ScratchTileGeometry {
+        const core_w_px = @as(usize, tile.x_px_max - tile.x_px_min);
+        const core_h_px = @as(usize, tile.y_px_max - tile.y_px_min);
+        const scratch_w_px = @as(usize, tile.scratch_x_px_max - tile.scratch_x_px_min);
+        const scratch_h_px = @as(usize, tile.scratch_y_px_max - tile.scratch_y_px_min);
+        return .{
+            .core_w_px = core_w_px,
+            .core_h_px = core_h_px,
+            .scratch_w_px = scratch_w_px,
+            .scratch_h_px = scratch_h_px,
+            .scratch_w_subpx = scratch_w_px * sub_sample,
+            .scratch_h_subpx = scratch_h_px * sub_sample,
+            .core_start_x_subpx = (@as(usize, tile.x_px_min - tile.scratch_x_px_min)) * sub_sample,
+            .core_start_y_subpx = (@as(usize, tile.y_px_min - tile.scratch_y_px_min)) * sub_sample,
+        };
+    }
+};
+
 pub const ScratchLayout = enum {
     subpx_major,
     field_major,
@@ -69,10 +97,10 @@ fn fillTileIdealCentersFullInMem(
     const stride_x = camera_prepared.ideal_pixel_centers.strides[1];
     const slice = camera_prepared.ideal_pixel_centers.slice;
 
-    const start_x = @as(usize, @intCast(tile.x_px_min)) * sub_samp;
-    const start_y = @as(usize, @intCast(tile.y_px_min)) * sub_samp;
-    const tile_w = @as(usize, tile.x_px_max - tile.x_px_min) * sub_samp;
-    const tile_h = @as(usize, tile.y_px_max - tile.y_px_min) * sub_samp;
+    const start_x = @as(usize, @intCast(tile.scratch_x_px_min)) * sub_samp;
+    const start_y = @as(usize, @intCast(tile.scratch_y_px_min)) * sub_samp;
+    const tile_w = @as(usize, tile.scratch_x_px_max - tile.scratch_x_px_min) * sub_samp;
+    const tile_h = @as(usize, tile.scratch_y_px_max - tile.scratch_y_px_min) * sub_samp;
 
     for (0..tile_h) |jj| {
         const global_y = start_y + jj;
@@ -194,8 +222,8 @@ pub fn rasterDirectScalarCommon(
             const ideal_x_px = subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 0];
             const ideal_y_px = subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 1];
 
-            const tile_subx: usize = @intCast(targ_overlap.tile.x_px_min);
-            const tile_suby: usize = @intCast(targ_overlap.tile.y_px_min);
+            const tile_subx: usize = @intCast(targ_overlap.tile.scratch_x_px_min);
+            const tile_suby: usize = @intCast(targ_overlap.tile.scratch_y_px_min);
             const tile_subx_off: usize = tile_subx * sub_samp;
             const tile_suby_off: usize = tile_suby * sub_samp;
             const global_subx: usize = tile_subx_off +% scratch_x_u;
@@ -324,8 +352,8 @@ pub fn rasterDirectScalarCommon(
                             result.iters,
                         );
                         ctx_report.recordPixelOccupancy(
-                            targ_overlap.tile.x_px_min + scratch_x_u / sub_samp,
-                            targ_overlap.tile.y_px_min + scratch_y_u / sub_samp,
+                            targ_overlap.tile.scratch_x_px_min + scratch_x_u / sub_samp,
+                            targ_overlap.tile.scratch_y_px_min + scratch_y_u / sub_samp,
                         );
                     }
 
@@ -398,6 +426,7 @@ fn rasterTileCommon(
 
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+    const scratch_geom = ScratchTileGeometry.init(tile, sub_samp);
     RasterBackend.resetSubpxScratch(
         subpx_scratch,
         subpx_tile_size,
@@ -627,7 +656,21 @@ fn rasterTileCommon(
         }
     }
 
-    if (sub_samp > 1) {
+    if (ctx_rast.camera.prepared_psf.hasFilter()) {
+        resolveTileWithPSF(
+            RasterBackend.scratch_layout,
+            tile,
+            sub_samp,
+            subpx_tile_size,
+            fields_num,
+            ctx_rast.config.background_value,
+            ctx_rast.camera.prepared_psf,
+            scratch_geom,
+            &subpx_scratch.image,
+            &subpx_scratch.filter_tmp,
+            image_out_arr,
+        );
+    } else if (sub_samp > 1) {
         averageScratch(
             RasterBackend.scratch_layout,
             tile,
@@ -679,6 +722,19 @@ pub inline fn getScratchField(
         .subpx_major => spx_image_scratch.get(scratch_flat_idx, field_idx),
         .field_major => spx_image_scratch.get(field_idx, scratch_flat_idx),
     };
+}
+
+pub inline fn setScratchField(
+    comptime scratch_layout: ScratchLayout,
+    spx_image_scratch: *MatSlice(f64),
+    scratch_flat_idx: usize,
+    field_idx: usize,
+    val: f64,
+) void {
+    switch (scratch_layout) {
+        .subpx_major => spx_image_scratch.set(scratch_flat_idx, field_idx, val),
+        .field_major => spx_image_scratch.set(field_idx, scratch_flat_idx, val),
+    }
 }
 
 const FrameImageWriter = struct {
@@ -759,6 +815,39 @@ pub fn resolveScratchDirect(
                         ff,
                     );
                 }
+            }
+        }
+    }
+}
+
+fn resolveScratchDirectCore(
+    comptime scratch_layout: ScratchLayout,
+    tile: rops.ActiveTile,
+    scratch_geom: ScratchTileGeometry,
+    spx_stride: usize,
+    fields_num: u8,
+    spx_image_scratch: *const MatSlice(f64),
+    image_out_arr: *NDArray(f64),
+) void {
+    const writer = FrameImageWriter.init(image_out_arr);
+
+    for (0..scratch_geom.core_h_px) |ty| {
+        const image_px_y: usize = tile.y_px_min + ty;
+        const scratch_row_offset =
+            (scratch_geom.core_start_y_subpx + ty) * spx_stride;
+
+        for (0..scratch_geom.core_w_px) |tx| {
+            const image_px_x: usize = tile.x_px_min + tx;
+            const scratch_flat_idx = scratch_row_offset + scratch_geom.core_start_x_subpx + tx;
+            const image_px_base = writer.pixelBase(image_px_y, image_px_x);
+
+            for (0..@as(usize, fields_num)) |ff| {
+                writer.slice[ff * writer.field_stride + image_px_base] = getScratchField(
+                    scratch_layout,
+                    spx_image_scratch,
+                    scratch_flat_idx,
+                    ff,
+                );
             }
         }
     }
@@ -901,6 +990,281 @@ pub fn averageScratch(
     }
 }
 
+fn averageScratchCore(
+    comptime scratch_layout: ScratchLayout,
+    tile: rops.ActiveTile,
+    scratch_geom: ScratchTileGeometry,
+    sub_samp: usize,
+    spx_stride: usize,
+    fields_num: u8,
+    spx_image_scratch: *const MatSlice(f64),
+    image_out_arr: *NDArray(f64),
+) void {
+    const sub_samp_f = @as(f64, @floatFromInt(sub_samp));
+    const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
+    var field_avg_buff = [_]f64{0.0} ** cfg.max_nodal_fields;
+    const spx_field_avg = field_avg_buff[0..@as(usize, fields_num)];
+    const writer = FrameImageWriter.init(image_out_arr);
+
+    for (0..scratch_geom.core_h_px) |ty| {
+        const image_px_y: usize = tile.y_px_min + ty;
+        const spx_start_y: usize = scratch_geom.core_start_y_subpx + sub_samp * ty;
+
+        for (0..scratch_geom.core_w_px) |tx| {
+            const image_px_x: usize = tile.x_px_min + tx;
+            const spx_start_x: usize = scratch_geom.core_start_x_subpx + sub_samp * tx;
+            const image_px_base = writer.pixelBase(image_px_y, image_px_x);
+            @memset(spx_field_avg, 0.0);
+
+            for (0..sub_samp) |sy| {
+                const scratch_row_offset: usize = (spx_start_y + sy) * spx_stride;
+                for (0..sub_samp) |sx| {
+                    const scratch_flat_idx: usize = scratch_row_offset + spx_start_x + sx;
+                    for (0..@as(usize, fields_num)) |ff| {
+                        spx_field_avg[ff] += getScratchField(
+                            scratch_layout,
+                            spx_image_scratch,
+                            scratch_flat_idx,
+                            ff,
+                        );
+                    }
+                }
+            }
+
+            for (0..@as(usize, fields_num)) |ff| {
+                writer.slice[ff * writer.field_stride + image_px_base] =
+                    spx_field_avg[ff] * inv_sub_samp_sq;
+            }
+        }
+    }
+}
+
+fn sampleScratchOrBackground(
+    comptime scratch_layout: ScratchLayout,
+    src: *const MatSlice(f64),
+    x: isize,
+    y: isize,
+    scratch_geom: ScratchTileGeometry,
+    spx_stride: usize,
+    field_idx: usize,
+    background_value: f64,
+) f64 {
+    if (x < 0 or y < 0 or
+        x >= @as(isize, @intCast(scratch_geom.scratch_w_subpx)) or
+        y >= @as(isize, @intCast(scratch_geom.scratch_h_subpx)))
+    {
+        return background_value;
+    }
+    const flat_idx = @as(usize, @intCast(y)) * spx_stride + @as(usize, @intCast(x));
+    return getScratchField(scratch_layout, src, flat_idx, field_idx);
+}
+
+fn filterScratchSeparable(
+    comptime scratch_layout: ScratchLayout,
+    fields_num: u8,
+    background_value: f64,
+    psf: cam.PreparedPSF,
+    scratch_geom: ScratchTileGeometry,
+    spx_stride: usize,
+    src: *const MatSlice(f64),
+    tmp: *MatSlice(f64),
+    dst: *MatSlice(f64),
+) void {
+    for (0..scratch_geom.scratch_h_subpx) |yy| {
+        for (0..scratch_geom.scratch_w_subpx) |xx| {
+            const dst_idx = yy * spx_stride + xx;
+            for (0..@as(usize, fields_num)) |ff| {
+                var sum_h: f64 = 0.0;
+                for (0..psf.weights_x.len) |kk| {
+                    const x_off = @as(isize, @intCast(kk)) - @as(isize, @intCast(psf.radius_x_subpx));
+                    sum_h += psf.weights_x[kk] * sampleScratchOrBackground(
+                        scratch_layout,
+                        src,
+                        @as(isize, @intCast(xx)) + x_off,
+                        @as(isize, @intCast(yy)),
+                        scratch_geom,
+                        spx_stride,
+                        ff,
+                        background_value,
+                    );
+                }
+                setScratchField(scratch_layout, tmp, dst_idx, ff, sum_h);
+            }
+        }
+    }
+
+    for (0..scratch_geom.scratch_h_subpx) |yy| {
+        for (0..scratch_geom.scratch_w_subpx) |xx| {
+            const dst_idx = yy * spx_stride + xx;
+            for (0..@as(usize, fields_num)) |ff| {
+                var sum_v: f64 = 0.0;
+                for (0..psf.weights_y.len) |kk| {
+                    const y_off = @as(isize, @intCast(kk)) - @as(isize, @intCast(psf.radius_y_subpx));
+                    sum_v += psf.weights_y[kk] * sampleScratchOrBackground(
+                        scratch_layout,
+                        tmp,
+                        @as(isize, @intCast(xx)),
+                        @as(isize, @intCast(yy)) + y_off,
+                        scratch_geom,
+                        spx_stride,
+                        ff,
+                        background_value,
+                    );
+                }
+                setScratchField(scratch_layout, dst, dst_idx, ff, sum_v);
+            }
+        }
+    }
+}
+
+fn filterScratchNonSeparable(
+    comptime scratch_layout: ScratchLayout,
+    fields_num: u8,
+    background_value: f64,
+    psf: cam.PreparedPSF,
+    scratch_geom: ScratchTileGeometry,
+    spx_stride: usize,
+    src: *const MatSlice(f64),
+    dst: *MatSlice(f64),
+) void {
+    const kernel_w = 2 * psf.radius_x_subpx + 1;
+    for (0..scratch_geom.scratch_h_subpx) |yy| {
+        for (0..scratch_geom.scratch_w_subpx) |xx| {
+            const dst_idx = yy * spx_stride + xx;
+            for (0..@as(usize, fields_num)) |ff| {
+                var sum: f64 = 0.0;
+                for (0..psf.weights_2d.len) |kk| {
+                    const ky = kk / kernel_w;
+                    const kx = kk % kernel_w;
+                    const x_off = @as(isize, @intCast(kx)) - @as(isize, @intCast(psf.radius_x_subpx));
+                    const y_off = @as(isize, @intCast(ky)) - @as(isize, @intCast(psf.radius_y_subpx));
+                    sum += psf.weights_2d[kk] * sampleScratchOrBackground(
+                        scratch_layout,
+                        src,
+                        @as(isize, @intCast(xx)) + x_off,
+                        @as(isize, @intCast(yy)) + y_off,
+                        scratch_geom,
+                        spx_stride,
+                        ff,
+                        background_value,
+                    );
+                }
+                setScratchField(scratch_layout, dst, dst_idx, ff, sum);
+            }
+        }
+    }
+}
+
+fn resolveTileWithPSF(
+    comptime scratch_layout: ScratchLayout,
+    tile: rops.ActiveTile,
+    sub_samp: usize,
+    spx_stride: usize,
+    fields_num: u8,
+    background_value: f64,
+    prepared_psf: cam.PreparedPSF,
+    scratch_geom: ScratchTileGeometry,
+    spx_image_scratch: *MatSlice(f64),
+    filter_tmp: *MatSlice(f64),
+    image_out_arr: *NDArray(f64),
+) void {
+    switch (prepared_psf.mode) {
+        .identity_fast => {
+            if (sub_samp > 1) {
+                averageScratchCore(
+                    scratch_layout,
+                    tile,
+                    scratch_geom,
+                    sub_samp,
+                    spx_stride,
+                    fields_num,
+                    spx_image_scratch,
+                    image_out_arr,
+                );
+            } else {
+                resolveScratchDirectCore(
+                    scratch_layout,
+                    tile,
+                    scratch_geom,
+                    spx_stride,
+                    fields_num,
+                    spx_image_scratch,
+                    image_out_arr,
+                );
+            }
+        },
+        .separable => {
+            filterScratchSeparable(
+                scratch_layout,
+                fields_num,
+                background_value,
+                prepared_psf,
+                scratch_geom,
+                spx_stride,
+                spx_image_scratch,
+                filter_tmp,
+                spx_image_scratch,
+            );
+            if (sub_samp > 1) {
+                averageScratchCore(
+                    scratch_layout,
+                    tile,
+                    scratch_geom,
+                    sub_samp,
+                    spx_stride,
+                    fields_num,
+                    spx_image_scratch,
+                    image_out_arr,
+                );
+            } else {
+                resolveScratchDirectCore(
+                    scratch_layout,
+                    tile,
+                    scratch_geom,
+                    spx_stride,
+                    fields_num,
+                    spx_image_scratch,
+                    image_out_arr,
+                );
+            }
+        },
+        .nonseparable => {
+            filterScratchNonSeparable(
+                scratch_layout,
+                fields_num,
+                background_value,
+                prepared_psf,
+                scratch_geom,
+                spx_stride,
+                spx_image_scratch,
+                filter_tmp,
+            );
+            if (sub_samp > 1) {
+                averageScratchCore(
+                    scratch_layout,
+                    tile,
+                    scratch_geom,
+                    sub_samp,
+                    spx_stride,
+                    fields_num,
+                    filter_tmp,
+                    image_out_arr,
+                );
+            } else {
+                resolveScratchDirectCore(
+                    scratch_layout,
+                    tile,
+                    scratch_geom,
+                    spx_stride,
+                    fields_num,
+                    filter_tmp,
+                    image_out_arr,
+                );
+            }
+        },
+    }
+}
+
 //------------------------------------------------------------------------------------------
 // Scene Raster Execution Helpers
 //------------------------------------------------------------------------------------------
@@ -999,7 +1363,9 @@ pub fn rasterSceneCommon(
     std.debug.assert(image_out_arr.dims[0] <= std.math.maxInt(u8));
     const fields_num: u8 = @intCast(image_out_arr.dims[0]);
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const subpx_tile_size: usize = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp;
+    const scratch_tile_px: usize = @as(usize, @intCast(ctx_rast.tile_size)) +
+        2 * @as(usize, ctx_rast.camera.prepared_psf.halo_px);
+    const subpx_tile_size: usize = scratch_tile_px * sub_samp;
     const active_tiles_num = tiling.active_tiles.len;
 
     const worker_count = scalingpolicy.rasterWorkers(

@@ -272,6 +272,266 @@ pub const CameraCoordSys = enum {
     opencv,
 };
 
+pub const PsfSeparable = enum {
+    no,
+    yes,
+};
+
+pub const PixelBoxPSF = struct {
+    support_rad_px: f64 = 0.5,
+};
+
+pub const GaussianPSF = struct {
+    sigma_px: f64,
+    support_rad_px: f64,
+    separable: PsfSeparable = .yes,
+};
+
+pub const AnisotropicGaussianPSF = struct {
+    sigma_x_px: f64,
+    sigma_y_px: f64,
+    theta_rad: f64 = 0.0,
+    support_rad_px: f64,
+    separable: PsfSeparable = .no,
+};
+
+pub const PointSpreadFunc = union(enum) {
+    pixel_box: PixelBoxPSF,
+    gaussian: GaussianPSF,
+    anisotropic_gaussian: AnisotropicGaussianPSF,
+};
+
+pub const PreparedPSFMode = enum {
+    identity_fast,
+    separable,
+    nonseparable,
+};
+
+pub const PreparedPSF = struct {
+    mode: PreparedPSFMode = .identity_fast,
+    halo_px: u16 = 0,
+    halo_subpx: u16 = 0,
+    radius_x_subpx: usize = 0,
+    radius_y_subpx: usize = 0,
+    weights_x: []f64 = &.{},
+    weights_y: []f64 = &.{},
+    weights_2d: []f64 = &.{},
+
+    pub fn deinit(self: *PreparedPSF, allocator: std.mem.Allocator) void {
+        if (self.weights_x.len > 0) allocator.free(self.weights_x);
+        if (self.weights_y.len > 0) allocator.free(self.weights_y);
+        if (self.weights_2d.len > 0) allocator.free(self.weights_2d);
+        self.* = .{};
+    }
+
+    pub fn hasFilter(self: PreparedPSF) bool {
+        return self.mode != .identity_fast;
+    }
+};
+
+fn psfKernelValue1D(psf: PointSpreadFunc, dist_px: f64) f64 {
+    const abs_dist = @abs(dist_px);
+    return switch (psf) {
+        .pixel_box => |box| if (abs_dist <= box.support_rad_px + 1e-12) 1.0 else 0.0,
+        .gaussian => |gauss| if (abs_dist <= gauss.support_rad_px + 1e-12)
+            @exp(-0.5 * (dist_px * dist_px) / (gauss.sigma_px * gauss.sigma_px))
+        else
+            0.0,
+        .anisotropic_gaussian => unreachable,
+    };
+}
+
+fn psfKernelValue2D(psf: PointSpreadFunc, dx_px: f64, dy_px: f64) f64 {
+    return switch (psf) {
+        .pixel_box => |box| if (@abs(dx_px) <= box.support_rad_px + 1e-12 and
+            @abs(dy_px) <= box.support_rad_px + 1e-12)
+            1.0
+        else
+            0.0,
+        .gaussian => |gauss| if (@abs(dx_px) <= gauss.support_rad_px + 1e-12 and
+            @abs(dy_px) <= gauss.support_rad_px + 1e-12)
+            @exp(-0.5 * (dx_px * dx_px + dy_px * dy_px) /
+                (gauss.sigma_px * gauss.sigma_px))
+        else
+            0.0,
+        .anisotropic_gaussian => |gauss| blk: {
+            if (@abs(dx_px) > gauss.support_rad_px + 1e-12 or
+                @abs(dy_px) > gauss.support_rad_px + 1e-12)
+            {
+                break :blk 0.0;
+            }
+            const c = @cos(gauss.theta_rad);
+            const s = @sin(gauss.theta_rad);
+            const xr = c * dx_px + s * dy_px;
+            const yr = -s * dx_px + c * dy_px;
+            break :blk @exp(-0.5 * ((xr * xr) / (gauss.sigma_x_px * gauss.sigma_x_px) +
+                (yr * yr) / (gauss.sigma_y_px * gauss.sigma_y_px)));
+        },
+    };
+}
+
+fn normalizeKernel(weights: []f64) void {
+    var sum: f64 = 0.0;
+    for (weights) |weight| sum += weight;
+    if (sum == 0.0) return;
+    for (weights) |*weight| weight.* /= sum;
+}
+
+fn buildKernel1D(
+    allocator: std.mem.Allocator,
+    psf: PointSpreadFunc,
+    radius_subpx: usize,
+    sub_sample: u8,
+) ![]f64 {
+    const size = 2 * radius_subpx + 1;
+    const weights = try allocator.alloc(f64, size);
+    const sub_samp_f = @as(f64, @floatFromInt(sub_sample));
+    for (0..size) |ii| {
+        const offset = @as(isize, @intCast(ii)) - @as(isize, @intCast(radius_subpx));
+        const dist_px = @as(f64, @floatFromInt(offset)) / sub_samp_f;
+        weights[ii] = psfKernelValue1D(psf, dist_px);
+    }
+    normalizeKernel(weights);
+    return weights;
+}
+
+fn buildKernel2D(
+    allocator: std.mem.Allocator,
+    psf: PointSpreadFunc,
+    radius_x_subpx: usize,
+    radius_y_subpx: usize,
+    sub_sample: u8,
+) ![]f64 {
+    const width = 2 * radius_x_subpx + 1;
+    const height = 2 * radius_y_subpx + 1;
+    const weights = try allocator.alloc(f64, width * height);
+    const sub_samp_f = @as(f64, @floatFromInt(sub_sample));
+    for (0..height) |yy| {
+        const y_off = @as(isize, @intCast(yy)) - @as(isize, @intCast(radius_y_subpx));
+        const dy_px = @as(f64, @floatFromInt(y_off)) / sub_samp_f;
+        for (0..width) |xx| {
+            const x_off = @as(isize, @intCast(xx)) - @as(isize, @intCast(radius_x_subpx));
+            const dx_px = @as(f64, @floatFromInt(x_off)) / sub_samp_f;
+            weights[yy * width + xx] = psfKernelValue2D(psf, dx_px, dy_px);
+        }
+    }
+    normalizeKernel(weights);
+    return weights;
+}
+
+fn preparePSF(
+    allocator: std.mem.Allocator,
+    psf: PointSpreadFunc,
+    sub_sample: u8,
+) !PreparedPSF {
+    switch (psf) {
+        .pixel_box => |box| {
+            if (box.support_rad_px <= 0.5 + 1e-12) {
+                return .{};
+            }
+            const halo_px: u16 = @intCast(@max(
+                @as(usize, 0),
+                @as(usize, @intFromFloat(@ceil(box.support_rad_px))),
+            ));
+            const radius_subpx: usize = @intFromFloat(
+                @ceil(box.support_rad_px * @as(f64, @floatFromInt(sub_sample))),
+            );
+            return .{
+                .mode = .separable,
+                .halo_px = halo_px,
+                .halo_subpx = halo_px * sub_sample,
+                .radius_x_subpx = radius_subpx,
+                .radius_y_subpx = radius_subpx,
+                .weights_x = try buildKernel1D(allocator, psf, radius_subpx, sub_sample),
+                .weights_y = try buildKernel1D(allocator, psf, radius_subpx, sub_sample),
+            };
+        },
+        .gaussian => |gauss| {
+            const halo_px: u16 = @intCast(@max(
+                @as(usize, 0),
+                @as(usize, @intFromFloat(@ceil(gauss.support_rad_px))),
+            ));
+            const radius_subpx: usize = @intFromFloat(
+                @ceil(gauss.support_rad_px * @as(f64, @floatFromInt(sub_sample))),
+            );
+            if (gauss.separable == .yes) {
+                return .{
+                    .mode = .separable,
+                    .halo_px = halo_px,
+                    .halo_subpx = halo_px * sub_sample,
+                    .radius_x_subpx = radius_subpx,
+                    .radius_y_subpx = radius_subpx,
+                    .weights_x = try buildKernel1D(allocator, psf, radius_subpx, sub_sample),
+                    .weights_y = try buildKernel1D(allocator, psf, radius_subpx, sub_sample),
+                };
+            }
+            return .{
+                .mode = .nonseparable,
+                .halo_px = halo_px,
+                .halo_subpx = halo_px * sub_sample,
+                .radius_x_subpx = radius_subpx,
+                .radius_y_subpx = radius_subpx,
+                .weights_2d = try buildKernel2D(
+                    allocator,
+                    psf,
+                    radius_subpx,
+                    radius_subpx,
+                    sub_sample,
+                ),
+            };
+        },
+        .anisotropic_gaussian => |gauss| {
+            const halo_px: u16 = @intCast(@max(
+                @as(usize, 0),
+                @as(usize, @intFromFloat(@ceil(gauss.support_rad_px))),
+            ));
+            const radius_subpx: usize = @intFromFloat(
+                @ceil(gauss.support_rad_px * @as(f64, @floatFromInt(sub_sample))),
+            );
+            const axis_aligned = @abs(@sin(gauss.theta_rad)) < 1e-12;
+            if (gauss.separable == .yes and axis_aligned) {
+                const psf_x = PointSpreadFunc{
+                    .gaussian = .{
+                        .sigma_px = gauss.sigma_x_px,
+                        .support_rad_px = gauss.support_rad_px,
+                        .separable = .yes,
+                    },
+                };
+                const psf_y = PointSpreadFunc{
+                    .gaussian = .{
+                        .sigma_px = gauss.sigma_y_px,
+                        .support_rad_px = gauss.support_rad_px,
+                        .separable = .yes,
+                    },
+                };
+                return .{
+                    .mode = .separable,
+                    .halo_px = halo_px,
+                    .halo_subpx = halo_px * sub_sample,
+                    .radius_x_subpx = radius_subpx,
+                    .radius_y_subpx = radius_subpx,
+                    .weights_x = try buildKernel1D(allocator, psf_x, radius_subpx, sub_sample),
+                    .weights_y = try buildKernel1D(allocator, psf_y, radius_subpx, sub_sample),
+                };
+            }
+            return .{
+                .mode = .nonseparable,
+                .halo_px = halo_px,
+                .halo_subpx = halo_px * sub_sample,
+                .radius_x_subpx = radius_subpx,
+                .radius_y_subpx = radius_subpx,
+                .weights_2d = try buildKernel2D(
+                    allocator,
+                    psf,
+                    radius_subpx,
+                    radius_subpx,
+                    sub_sample,
+                ),
+            };
+        },
+    }
+}
+
 pub const CameraInput = struct {
     pixels_num: [2]u32,
     pixels_size: [2]f64,
@@ -281,6 +541,7 @@ pub const CameraInput = struct {
     focal_length: f64,
     sub_sample: u8,
     distortion: DistortionModel = .none,
+    psf: PointSpreadFunc = .{ .pixel_box = .{} },
     coord_sys: CameraCoordSys = .opengl,
 };
 
@@ -302,6 +563,8 @@ pub const CameraPrepared = struct {
     cam_to_world_mat: matrix.Mat44f,
     world_to_cam_mat: matrix.Mat44f,
     distortion: DistortionModel,
+    psf: PointSpreadFunc,
+    prepared_psf: PreparedPSF,
     coord_sys: CameraCoordSys,
     // Prepared ideal pinhole sample target per output pixel center.
     // Conceptual shape: [height, width, 2]
@@ -383,6 +646,8 @@ pub const CameraPrepared = struct {
             .cam_to_world_mat = cam_to_world_mat,
             .world_to_cam_mat = world_to_cam_mat,
             .distortion = input.distortion,
+            .psf = input.psf,
+            .prepared_psf = try preparePSF(allocator, input.psf, actual_sub_sample),
             .coord_sys = input.coord_sys,
             .ideal_pixel_centers = ideal_pixel_centers,
             .pixel_center_jac = pixel_center_jac,
@@ -398,6 +663,8 @@ pub const CameraPrepared = struct {
     }
 
     pub fn deinit(self: *const CameraPrepared, allocator: std.mem.Allocator) void {
+        var prepared_psf = self.prepared_psf;
+        prepared_psf.deinit(allocator);
         allocator.free(self.ideal_pixel_centers.slice);
         self.ideal_pixel_centers.deinit(allocator);
         allocator.free(self.pixel_center_jac.slice);
@@ -1838,6 +2105,64 @@ test "CameraOps.coordinatesRoundTrip" {
             rot_orig.matrix.slice[ii],
             input_converted.rot_world.matrix.slice[ii],
             eps_coord,
+        );
+    }
+}
+
+test "PreparedPSF gaussian kernels normalize" {
+    var prepared = try preparePSF(
+        std.testing.allocator,
+        .{ .gaussian = .{
+            .sigma_px = 0.35,
+            .support_rad_px = 1.25,
+            .separable = .yes,
+        } },
+        2,
+    );
+    defer prepared.deinit(std.testing.allocator);
+
+    var sum_x: f64 = 0.0;
+    var sum_y: f64 = 0.0;
+    for (prepared.weights_x) |weight| sum_x += weight;
+    for (prepared.weights_y) |weight| sum_y += weight;
+
+    try std.testing.expectApproxEqAbs(1.0, sum_x, 1e-12);
+    try std.testing.expectApproxEqAbs(1.0, sum_y, 1e-12);
+    try std.testing.expectEqual(@as(u16, 2), prepared.halo_px);
+}
+
+test "PreparedPSF isotropic gaussian separable matches non-separable outer product" {
+    var prepared_sep = try preparePSF(
+        std.testing.allocator,
+        .{ .gaussian = .{
+            .sigma_px = 0.35,
+            .support_rad_px = 1.25,
+            .separable = .yes,
+        } },
+        2,
+    );
+    defer prepared_sep.deinit(std.testing.allocator);
+
+    var prepared_nonsep = try preparePSF(
+        std.testing.allocator,
+        .{ .gaussian = .{
+            .sigma_px = 0.35,
+            .support_rad_px = 1.25,
+            .separable = .no,
+        } },
+        2,
+    );
+    defer prepared_nonsep.deinit(std.testing.allocator);
+
+    const width = 2 * prepared_sep.radius_x_subpx + 1;
+    for (0..prepared_nonsep.weights_2d.len) |ii| {
+        const yy = ii / width;
+        const xx = ii % width;
+        const expected = prepared_sep.weights_y[yy] * prepared_sep.weights_x[xx];
+        try std.testing.expectApproxEqAbs(
+            expected,
+            prepared_nonsep.weights_2d[ii],
+            1e-12,
         );
     }
 }

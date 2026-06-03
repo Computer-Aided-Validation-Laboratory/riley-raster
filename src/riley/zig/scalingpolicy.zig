@@ -21,9 +21,7 @@ pub const DispatchScaling = struct {
 const l2_cache_size_bytes = 1024 * 1024;
 const l2_safety_margin = 0.8;
 const bytes_per_subpixel = 154; // Based on F=8, S=8, precision=f64
-const target_subpx_per_tile: usize = @intFromFloat(
-    @as(f64, l2_cache_size_bytes) * l2_safety_margin / bytes_per_subpixel
-);
+const target_subpx_per_tile: usize = @intFromFloat(@as(f64, l2_cache_size_bytes) * l2_safety_margin / bytes_per_subpixel);
 pub const GEOMETRY_CHUNKS_PER_WORKER: usize = 1;
 pub const RASTER_CHUNKS_PER_WORKER: usize = 4;
 pub const AUTO_GEOMETRY_SPREAD_ELEMS_THRESHOLD: usize = 100_000;
@@ -109,11 +107,17 @@ pub fn frameBatchSize(
 }
 
 pub fn tileSize(
+    tile_size_override: u16,
     tile_size_min: u16,
     tile_size_max: u16,
     pixels_num: [2]u32,
     sub_sample: u8,
+    halo_px: u16,
 ) u16 {
+    if (tile_size_override > 0) {
+        return tile_size_override;
+    }
+
     const min_sensor_dim = @max(
         @as(u32, 1),
         @min(pixels_num[0], pixels_num[1]),
@@ -133,7 +137,8 @@ pub fn tileSize(
 
     while (tile_size > min_tile_size) {
         const tile_size_u: usize = @intCast(tile_size);
-        const subpx_per_tile = tile_size_u * tile_size_u * sub_samp * sub_samp;
+        const eff_tile_size_u = tile_size_u + 2 * @as(usize, halo_px);
+        const subpx_per_tile = eff_tile_size_u * eff_tile_size_u * sub_samp * sub_samp;
         if (subpx_per_tile <= target_subpx_per_tile) {
             break;
         }

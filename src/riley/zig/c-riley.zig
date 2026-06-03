@@ -462,6 +462,7 @@ fn texFuncBuiltinFromC(
         @intFromEnum(shaderops.TexFuncBuiltin.linear) => .linear,
         @intFromEnum(shaderops.TexFuncBuiltin.quadratic) => .quadratic,
         @intFromEnum(shaderops.TexFuncBuiltin.sinusoidal) => .sinusoidal,
+        @intFromEnum(shaderops.TexFuncBuiltin.checker) => .checker,
         @intFromEnum(shaderops.TexFuncBuiltin.checker_smooth) => .checker_smooth,
         @intFromEnum(shaderops.TexFuncBuiltin.lambertian_normal_z) => .lambertian_normal_z,
         else => error.InvalidTexFuncBuiltin,

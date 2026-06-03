@@ -251,10 +251,10 @@ pub fn fillTileIdealCentersPerTile(
     subpx_tile_size: usize,
 ) !void {
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const start_x = @as(usize, @intCast(tile.x_px_min)) * sub_samp;
-    const start_y = @as(usize, @intCast(tile.y_px_min)) * sub_samp;
-    const tile_w = @as(usize, tile.x_px_max - tile.x_px_min) * sub_samp;
-    const tile_h = @as(usize, tile.y_px_max - tile.y_px_min) * sub_samp;
+    const start_x = @as(usize, @intCast(tile.scratch_x_px_min)) * sub_samp;
+    const start_y = @as(usize, @intCast(tile.scratch_y_px_min)) * sub_samp;
+    const tile_w = @as(usize, tile.scratch_x_px_max - tile.scratch_x_px_min) * sub_samp;
+    const tile_h = @as(usize, tile.scratch_y_px_max - tile.scratch_y_px_min) * sub_samp;
 
     for (0..tile_h) |jj| {
         const global_y = start_y + jj;
@@ -310,10 +310,10 @@ pub fn fillTileIdealCentersAffineJac(
 ) void {
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     const jac = &ctx_rast.camera.pixel_center_jac;
-    const start_x = @as(usize, @intCast(tile.x_px_min)) * sub_samp;
-    const start_y = @as(usize, @intCast(tile.y_px_min)) * sub_samp;
-    const tile_w = @as(usize, tile.x_px_max - tile.x_px_min) * sub_samp;
-    const tile_h = @as(usize, tile.y_px_max - tile.y_px_min) * sub_samp;
+    const start_x = @as(usize, @intCast(tile.scratch_x_px_min)) * sub_samp;
+    const start_y = @as(usize, @intCast(tile.scratch_y_px_min)) * sub_samp;
+    const tile_w = @as(usize, tile.scratch_x_px_max - tile.scratch_x_px_min) * sub_samp;
+    const tile_h = @as(usize, tile.scratch_y_px_max - tile.scratch_y_px_min) * sub_samp;
 
     for (0..tile_h) |jj| {
         const global_suby = start_y + jj;

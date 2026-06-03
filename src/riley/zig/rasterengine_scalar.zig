@@ -33,8 +33,10 @@ const newton = @import("newton.zig");
 const shadekerns = @import("shaderkernels.zig");
 
 pub const SubpxScratchBuffers = struct {
+    stride_subpx: usize,
     inv_z: []f64,
     image: MatSlice(f64),
+    filter_tmp: MatSlice(f64),
     touched_min_x: []usize,
     touched_max_x: []usize,
     ideal_pixel_centers: []f64,
@@ -66,12 +68,23 @@ pub fn initSubpxScratch(
         @as(usize, fields_num),
         subpx_tile_total,
     );
+    const filter_tmp_mem = try arena_alloc.alloc(
+        f64,
+        subpx_tile_total * @as(usize, fields_num),
+    );
+    const filter_tmp = MatSlice(f64).init(
+        filter_tmp_mem,
+        @as(usize, fields_num),
+        subpx_tile_total,
+    );
 
     const ideal_pixel_centers = try arena_alloc.alloc(f64, subpx_tile_total * 2);
 
     return .{
+        .stride_subpx = subpx_tile_size,
         .inv_z = subpx_inv_z_scratch,
         .image = subpx_image_scratch,
+        .filter_tmp = filter_tmp,
         .touched_min_x = try arena_alloc.alloc(usize, subpx_tile_size),
         .touched_max_x = try arena_alloc.alloc(usize, subpx_tile_size),
         .ideal_pixel_centers = ideal_pixel_centers,
@@ -85,6 +98,7 @@ pub fn resetSubpxScratch(
 ) void {
     @memset(subpx_scratch.inv_z, -std.math.inf(f64));
     @memset(subpx_scratch.image.slice, background_value);
+    @memset(subpx_scratch.filter_tmp.slice, background_value);
     @memset(subpx_scratch.touched_min_x, subpx_tile_size);
     @memset(subpx_scratch.touched_max_x, 0);
 }
@@ -115,19 +129,19 @@ pub fn RasterEngine(
             const subpx_domain = SubpxDomain{
                 .step = 1.0 / sub_samp_f,
                 .offset = 1.0 / (2.0 * sub_samp_f),
-                .tile_size = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp_u,
+                .tile_size = subpx_scratch.stride_subpx,
                 .x_off = 0.5 * @as(f64, @floatFromInt(ctx_rast.camera.pixels_num[0])),
                 .y_off = 0.5 * @as(f64, @floatFromInt(ctx_rast.camera.pixels_num[1])),
             };
 
             const scratch_start_x_u = sub_samp_u *
-                (@as(usize, targ_overlap.overlap.x_min) - targ_overlap.tile.x_px_min);
+                (@as(usize, targ_overlap.overlap.x_min) - targ_overlap.tile.scratch_x_px_min);
             const scratch_end_x_u = sub_samp_u *
-                (@as(usize, targ_overlap.overlap.x_max) - targ_overlap.tile.x_px_min);
+                (@as(usize, targ_overlap.overlap.x_max) - targ_overlap.tile.scratch_x_px_min);
             const scratch_start_y_u = sub_samp_u *
-                (@as(usize, targ_overlap.overlap.y_min) - targ_overlap.tile.y_px_min);
+                (@as(usize, targ_overlap.overlap.y_min) - targ_overlap.tile.scratch_y_px_min);
             const scratch_end_y_u = sub_samp_u *
-                (@as(usize, targ_overlap.overlap.y_max) - targ_overlap.tile.y_px_min);
+                (@as(usize, targ_overlap.overlap.y_max) - targ_overlap.tile.scratch_y_px_min);
 
             const rast_bounds = RasterBounds{
                 .start_x_u = scratch_start_x_u,
@@ -278,9 +292,9 @@ pub fn RasterEngine(
                     const ideal_x_px = subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 0];
                     const ideal_y_px = subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 1];
 
-                    const global_subx = targ_overlap.tile.x_px_min * sub_samp +
+                    const global_subx = targ_overlap.tile.scratch_x_px_min * sub_samp +
                         scratch_x;
-                    const global_suby = targ_overlap.tile.y_px_min * sub_samp +
+                    const global_suby = targ_overlap.tile.scratch_y_px_min * sub_samp +
                         scratch_y;
 
                     var hull_seed: ?newton.NewtonSeed = null;
@@ -437,8 +451,8 @@ pub fn RasterEngine(
                                     result.iters,
                                 );
                                 ctx_report.recordPixelOccupancy(
-                                    targ_overlap.tile.x_px_min + scratch_x / sub_samp,
-                                    targ_overlap.tile.y_px_min + scratch_y / sub_samp,
+                                    targ_overlap.tile.scratch_x_px_min + scratch_x / sub_samp,
+                                    targ_overlap.tile.scratch_y_px_min + scratch_y / sub_samp,
                                 );
                             }
 
