@@ -7,8 +7,6 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const buildconfig = @import("buildconfig.zig");
-const cfg = buildconfig.config;
 const shaderops = @import("shaderops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const texops = @import("textureops.zig");
@@ -74,6 +72,28 @@ pub inline fn shadeTexScalarCommon(
     ctx_report: anytype,
     spx_image_scratch: *MatSlice(f64),
 ) void {
+    shadeTexScalarCommonImpl(
+        N,
+        channels,
+        coord_space,
+        ctx_shade,
+        interp,
+        shader,
+        ctx_report,
+        spx_image_scratch,
+    );
+}
+
+fn shadeTexScalarCommonImpl(
+    comptime N: usize,
+    comptime channels: usize,
+    comptime coord_space: CoordSpace,
+    ctx_shade: shaderops.ShadeContext(N),
+    interp: shaderops.InterpData(N),
+    shader: *const shaderops.TexPrepared(channels),
+    ctx_report: anytype,
+    spx_image_scratch: *MatSlice(f64),
+) void {
     if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
         ctx_report.recordDepth(
             ctx_shade.global_subx,
@@ -95,74 +115,103 @@ pub inline fn shadeTexScalarCommon(
         }
     }
 
-    const config = shader.sample_config;
-    if (comptime cfg.texture_dispatch_policy != .runtime_runtime) {
-        inline for (.{
-            .nearest,
-            .linear,
-            .cubic_catmull_rom,
-            .cubic_mitchell_netravali,
-            .lanczos3,
-            .cubic_bspline,
-            .quintic_bspline,
-        }) |sample_type| {
-            if (config.sample == sample_type) {
-                inline for (.{ .direct, .lut, .lut_lerp }) |mode_type| {
-                    if (config.mode == mode_type) {
-                        const comptime_config = texops.TextureSampleConfig{
-                            .sample = sample_type,
-                            .mode = mode_type,
-                        };
-                        if (comptime comptime_config.isValid()) {
-                            if (comptime coord_space == CoordSpace.clip_px_leng) {
-                                shaderops.fillTexClip(
-                                    N,
-                                    channels,
-                                    comptime_config,
-                                    ctx_shade,
-                                    interp,
-                                    shader,
-                                    spx_image_scratch,
-                                );
-                            } else {
-                                shaderops.fillTexPersp(
-                                    N,
-                                    channels,
-                                    comptime_config,
-                                    ctx_shade,
-                                    interp,
-                                    shader,
-                                    spx_image_scratch,
-                                );
-                            }
-                            return;
-                        }
-                    }
-                }
-            }
-        }
+    shadeTexScalarDispatchImpl(
+        N,
+        channels,
+        coord_space,
+        shader.sample_config,
+        ctx_shade,
+        interp,
+        shader,
+        spx_image_scratch,
+    );
+}
+
+fn shadeTexScalarDispatchImpl(
+    comptime N: usize,
+    comptime channels: usize,
+    comptime coord_space: CoordSpace,
+    config: TextureSampleConfig,
+    ctx_shade: shaderops.ShadeContext(N),
+    interp: shaderops.InterpData(N),
+    shader: *const shaderops.TexPrepared(channels),
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    switch (config.sample) {
+        inline else => |sample_type| shadeTexScalarDispatchModeImpl(
+            N,
+            channels,
+            coord_space,
+            sample_type,
+            config.mode,
+            ctx_shade,
+            interp,
+            shader,
+            spx_image_scratch,
+        ),
+    }
+}
+
+fn shadeTexScalarDispatchModeImpl(
+    comptime N: usize,
+    comptime channels: usize,
+    comptime coord_space: CoordSpace,
+    comptime sample_type: texops.TextureSample,
+    mode: texops.TextureSampleMode,
+    ctx_shade: shaderops.ShadeContext(N),
+    interp: shaderops.InterpData(N),
+    shader: *const shaderops.TexPrepared(channels),
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    switch (mode) {
+        inline else => |mode_type| shadeTexScalarDispatchConfigImpl(
+            N,
+            channels,
+            coord_space,
+            .{
+                .sample = sample_type,
+                .mode = mode_type,
+            },
+            ctx_shade,
+            interp,
+            shader,
+            spx_image_scratch,
+        ),
+    }
+}
+
+fn shadeTexScalarDispatchConfigImpl(
+    comptime N: usize,
+    comptime channels: usize,
+    comptime coord_space: CoordSpace,
+    comptime comptime_config: TextureSampleConfig,
+    ctx_shade: shaderops.ShadeContext(N),
+    interp: shaderops.InterpData(N),
+    shader: *const shaderops.TexPrepared(channels),
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    if (!comptime comptime_config.isValid()) return;
+
+    if (comptime coord_space == CoordSpace.clip_px_leng) {
+        shaderops.fillTexClip(
+            N,
+            channels,
+            comptime_config,
+            ctx_shade,
+            interp,
+            shader,
+            spx_image_scratch,
+        );
     } else {
-        if (comptime coord_space == CoordSpace.clip_px_leng) {
-            shaderops.fillTexClipRuntime(
-                N,
-                channels,
-                config,
-                ctx_shade,
-                interp,
-                shader,
-                spx_image_scratch,
-            );
-        } else {
-            shaderops.fillTexPerspRuntime(
-                N,
-                channels,
-                config,
-                ctx_shade,
-                interp,
-                shader,
-                spx_image_scratch,
-            );
-        }
+        shaderops.fillTexPersp(
+            N,
+            channels,
+            comptime_config,
+            ctx_shade,
+            interp,
+            shader,
+            spx_image_scratch,
+        );
     }
 }
 

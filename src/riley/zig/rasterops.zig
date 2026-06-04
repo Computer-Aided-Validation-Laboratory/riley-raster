@@ -291,6 +291,18 @@ fn isElemBehindCamera(
     return behind_camera;
 }
 
+fn isNodeZInvertible(
+    comptime N: usize,
+    coords_elem: GatheredElemCoords(N),
+) bool {
+    for (0..N) |nn| {
+        if (coords_elem.z[nn] <= tol.culling.projective_z_min) {
+            return false;
+        }
+    }
+    return true;
+}
+
 fn isTri3Backface(coords_elem: GatheredElemCoords(3)) bool {
     const signed_area = edgeFun3Slices(0, 1, 2, &coords_elem.x, &coords_elem.y);
     return signed_area <= tol.culling.tri3_signed_area;
@@ -501,6 +513,9 @@ pub fn calcVisibleNodeBBoxTri3(
     if (isTri3BackfaceRaster(coords_ideal_raster)) {
         return null;
     }
+    if (!isNodeZInvertible(N, coords_ideal)) {
+        return null;
+    }
 
     const coords_distorted = distortIdealRasterCoords(
         N,
@@ -529,6 +544,9 @@ pub fn calcVisibleNodeBBoxHighOrd(
     const coords_clip = gatherElemNodeCoords(N, coords_nodes, connect, elem_idx);
 
     if (isElemBehindCamera(N, coords_clip)) {
+        return null;
+    }
+    if (!isNodeZInvertible(N, coords_clip)) {
         return null;
     }
 
@@ -575,6 +593,9 @@ pub fn calcVisibleNodeBBoxHighOrdNoHull(
     const coords_clip = gatherElemNodeCoords(N, coords_nodes, connect, elem_idx);
 
     if (isElemBehindCamera(N, coords_clip)) {
+        return null;
+    }
+    if (!isNodeZInvertible(N, coords_clip)) {
         return null;
     }
 
@@ -1152,6 +1173,27 @@ test "calcVisibleNodeBBoxTri3 behind_camera" {
     try std.testing.expect(bbox == null);
 }
 
+test "calcVisibleNodeBBoxTri3 noninvertible_z" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(3, allocator);
+    defer connect.deinit(allocator);
+
+    var coords = try initElemCoords(
+        3,
+        allocator,
+        .{ 100.0, 200.0, 100.0 },
+        .{ 100.0, 100.0, 200.0 },
+        .{ tol.culling.projective_z_min, 10.0, 10.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    const bbox = calcVisibleNodeBBoxTri3(.tri3, &camera, &coords, &connect, 0);
+    try std.testing.expect(bbox == null);
+}
+
 test "calcVisibleNodeBBoxHighOrd on_screen" {
     const allocator = std.testing.allocator;
     const camera = try initTestCullCamera(allocator);
@@ -1216,6 +1258,34 @@ test "calcVisibleNodeBBoxHighOrd behind_camera" {
         .{ -3.0, 1.0, -1.0, -1.0, 0.0, -2.0 },
         .{ -3.0, -3.0, 1.0, -3.0, -1.0, -1.0 },
         .{ -1.0, -1.0, -1.0, -1.0, -1.0, -1.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    const bbox = calcVisibleNodeBBoxHighOrd(
+        .tri6,
+        &camera,
+        &coords,
+        &connect,
+        0,
+        false,
+    );
+    try std.testing.expect(bbox == null);
+}
+
+test "calcVisibleNodeBBoxHighOrd noninvertible_z" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(6, allocator);
+    defer connect.deinit(allocator);
+
+    var coords = try initElemCoords(
+        6,
+        allocator,
+        .{ -0.5, 0.5, 0.0, 0.0, 0.25, -0.25 },
+        .{ -0.5, -0.5, 0.5, -0.5, 0.0, 0.0 },
+        .{ tol.culling.projective_z_min, 5.0, 5.0, 5.0, 5.0, 5.0 },
     );
     defer allocator.free(coords.mem);
 

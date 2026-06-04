@@ -492,36 +492,6 @@ pub inline fn fillTexClip(
     }
 }
 
-pub inline fn fillTexClipRuntime(
-    comptime N: usize,
-    comptime channels: usize,
-    sample_config: texops.TextureSampleConfig,
-    ctx_shade: ShadeContext(N),
-    interp: InterpData(N),
-    sh: *const TexPrepared(channels),
-    spx_image_scratch: *matslice.MatSlice(f64),
-) void {
-    var tex_u: f64 = 0.0;
-    var tex_v: f64 = 0.0;
-    inline for (0..N) |nn| {
-        tex_u += interp.weights[nn] * ctx_shade.shader_buf.data[nn];
-        tex_v += interp.weights[nn] * ctx_shade.shader_buf.data[N + nn];
-    }
-
-    const sampled = texops.sampleScalarRuntime(
-        channels,
-        sample_config,
-        sh.texture,
-        tex_u,
-        tex_v,
-    );
-
-    inline for (0..channels) |ch| {
-        spx_image_scratch.slice[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
-            sampled[ch] * sh.scale_mul + sh.scale_add;
-    }
-}
-
 pub inline fn fillTexPersp(
     comptime N: usize,
     comptime channels: usize,
@@ -541,40 +511,7 @@ pub inline fn fillTexPersp(
             inv_z;
     }
 
-    const sampled = texops.sampleScalarRuntime(
-        channels,
-        sample_config,
-        sh.texture,
-        tex_u * interp.sub_pixel_z,
-        tex_v * interp.sub_pixel_z,
-    );
-
-    inline for (0..channels) |ch| {
-        spx_image_scratch.slice[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
-            sampled[ch] * sh.scale_mul + sh.scale_add;
-    }
-}
-
-pub inline fn fillTexPerspRuntime(
-    comptime N: usize,
-    comptime channels: usize,
-    sample_config: texops.TextureSampleConfig,
-    ctx_shade: ShadeContext(N),
-    interp: InterpData(N),
-    sh: *const TexPrepared(channels),
-    spx_image_scratch: *matslice.MatSlice(f64),
-) void {
-    var tex_u: f64 = 0.0;
-    var tex_v: f64 = 0.0;
-    inline for (0..N) |nn| {
-        const inv_z = interp.nodes_inv_z[nn];
-        tex_u += interp.weights[nn] * ctx_shade.shader_buf.data[nn] * inv_z;
-        tex_v += interp.weights[nn] *
-            ctx_shade.shader_buf.data[N + nn] *
-            inv_z;
-    }
-
-    const sampled = texops.sampleScalarRuntime(
+    const sampled = texops.sampleScalar(
         channels,
         sample_config,
         sh.texture,

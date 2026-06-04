@@ -442,9 +442,6 @@ pub fn writeBenchmarkConfig(
     try writer.print("build_simd_texture_interp={s}\n", .{
         @tagName(buildconfig.config.simd_texture_interp),
     });
-    try writer.print("build_texture_dispatch_policy={s}\n", .{
-        @tagName(buildconfig.config.texture_dispatch_policy),
-    });
     try writer.print("build_simd_vector_width={d}\n", .{
         buildconfig.config.simd_vector_width,
     });

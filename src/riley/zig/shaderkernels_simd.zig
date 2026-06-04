@@ -9,7 +9,6 @@
 const std = @import("std");
 
 const buildconfig = @import("buildconfig.zig");
-const cfg = buildconfig.config;
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
@@ -133,108 +132,177 @@ pub fn TexKernel(
             shader: *const shaderops.TexPrepared(channels),
             spx_image_scratch: *MatSlice(f64),
         ) void {
-            _ = v_xi;
-            _ = v_eta;
-            if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
-                if (shader.elem_normals != null) {
-                    report.recordNormalSIMD(
-                        N,
-                        S,
-                        ctx_report,
-                        ctx_shade,
-                        v_mask_active,
-                        v_weights,
-                    );
-                }
-            }
-
-            const config = shader.sample_config;
-            if (comptime cfg.texture_dispatch_policy == .comptime_comptime) {
-                inline for (.{
-                    .nearest,
-                    .linear,
-                    .cubic_catmull_rom,
-                    .cubic_mitchell_netravali,
-                    .lanczos3,
-                    .cubic_bspline,
-                    .quintic_bspline,
-                }) |sample_type| {
-                    if (config.sample == sample_type) {
-                        inline for (.{ .direct, .lut, .lut_lerp }) |mode_type| {
-                            if (config.mode == mode_type) {
-                                const comptime_config = texops.TextureSampleConfig{
-                                    .sample = sample_type,
-                                    .mode = mode_type,
-                                };
-                                if (comptime comptime_config.isValid()) {
-                                    if (comptime coord_space == CoordSpace.raster) {
-                                        shaderops.fillTexPerspSIMD(
-                                            N,
-                                            channels,
-                                            comptime_config,
-                                            ctx_shade,
-                                            v_mask_active,
-                                            v_weights,
-                                            v_nodes_inv_z,
-                                            v_subpx_z,
-                                            shader,
-                                            spx_image_scratch,
-                                        );
-                                    } else if (comptime coord_space ==
-                                        CoordSpace.clip_px_leng)
-                                    {
-                                        shaderops.fillTexClipSIMD(
-                                            N,
-                                            channels,
-                                            comptime_config,
-                                            ctx_shade,
-                                            v_mask_active,
-                                            v_weights,
-                                            shader,
-                                            spx_image_scratch,
-                                        );
-                                    } else {
-                                        @panic(
-                                            "shadeSIMD not implemented for this coord_space",
-                                        );
-                                    }
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                }
-            } else {
-                if (comptime coord_space == CoordSpace.raster) {
-                    shaderops.fillTexPerspSIMDRuntime(
-                        N,
-                        channels,
-                        config,
-                        ctx_shade,
-                        v_mask_active,
-                        v_weights,
-                        v_nodes_inv_z,
-                        v_subpx_z,
-                        shader,
-                        spx_image_scratch,
-                    );
-                } else if (comptime coord_space == CoordSpace.clip_px_leng) {
-                    shaderops.fillTexClipSIMDRuntime(
-                        N,
-                        channels,
-                        config,
-                        ctx_shade,
-                        v_mask_active,
-                        v_weights,
-                        shader,
-                        spx_image_scratch,
-                    );
-                } else {
-                    @panic("shadeSIMD not implemented for this coord_space");
-                }
-            }
+            shadeTexSIMDImpl(
+                N,
+                channels,
+                coord_space,
+                ctx_shade,
+                ctx_report,
+                v_mask_active,
+                v_weights,
+                v_xi,
+                v_eta,
+                v_nodes_inv_z,
+                v_subpx_z,
+                shader,
+                spx_image_scratch,
+            );
         }
     };
+}
+
+fn shadeTexSIMDImpl(
+    comptime N: usize,
+    comptime channels: usize,
+    comptime coord_space: CoordSpace,
+    ctx_shade: shaderops.ShadeContext(N),
+    ctx_report: anytype,
+    v_mask_active: VecSB,
+    v_weights: [N]VecSF,
+    v_xi: VecSF,
+    v_eta: VecSF,
+    v_nodes_inv_z: [N]VecSF,
+    v_subpx_z: VecSF,
+    shader: *const shaderops.TexPrepared(channels),
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    _ = v_xi;
+    _ = v_eta;
+    if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
+        if (shader.elem_normals != null) {
+            report.recordNormalSIMD(
+                N,
+                S,
+                ctx_report,
+                ctx_shade,
+                v_mask_active,
+                v_weights,
+            );
+        }
+    }
+
+    shadeTexSIMDDispatchImpl(
+        N,
+        channels,
+        coord_space,
+        shader.sample_config,
+        ctx_shade,
+        v_mask_active,
+        v_weights,
+        v_nodes_inv_z,
+        v_subpx_z,
+        shader,
+        spx_image_scratch,
+    );
+}
+
+fn shadeTexSIMDDispatchImpl(
+    comptime N: usize,
+    comptime channels: usize,
+    comptime coord_space: CoordSpace,
+    config: texops.TextureSampleConfig,
+    ctx_shade: shaderops.ShadeContext(N),
+    v_mask_active: VecSB,
+    v_weights: [N]VecSF,
+    v_nodes_inv_z: [N]VecSF,
+    v_subpx_z: VecSF,
+    shader: *const shaderops.TexPrepared(channels),
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    switch (config.sample) {
+        inline else => |sample_type| shadeTexSIMDDispatchModeImpl(
+            N,
+            channels,
+            coord_space,
+            sample_type,
+            config.mode,
+            ctx_shade,
+            v_mask_active,
+            v_weights,
+            v_nodes_inv_z,
+            v_subpx_z,
+            shader,
+            spx_image_scratch,
+        ),
+    }
+}
+
+fn shadeTexSIMDDispatchModeImpl(
+    comptime N: usize,
+    comptime channels: usize,
+    comptime coord_space: CoordSpace,
+    comptime sample_type: texops.TextureSample,
+    mode: texops.TextureSampleMode,
+    ctx_shade: shaderops.ShadeContext(N),
+    v_mask_active: VecSB,
+    v_weights: [N]VecSF,
+    v_nodes_inv_z: [N]VecSF,
+    v_subpx_z: VecSF,
+    shader: *const shaderops.TexPrepared(channels),
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    switch (mode) {
+        inline else => |mode_type| shadeTexSIMDDispatchConfigImpl(
+            N,
+            channels,
+            coord_space,
+            .{
+                .sample = sample_type,
+                .mode = mode_type,
+            },
+            ctx_shade,
+            v_mask_active,
+            v_weights,
+            v_nodes_inv_z,
+            v_subpx_z,
+            shader,
+            spx_image_scratch,
+        ),
+    }
+}
+
+fn shadeTexSIMDDispatchConfigImpl(
+    comptime N: usize,
+    comptime channels: usize,
+    comptime coord_space: CoordSpace,
+    comptime comptime_config: texops.TextureSampleConfig,
+    ctx_shade: shaderops.ShadeContext(N),
+    v_mask_active: VecSB,
+    v_weights: [N]VecSF,
+    v_nodes_inv_z: [N]VecSF,
+    v_subpx_z: VecSF,
+    shader: *const shaderops.TexPrepared(channels),
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    if (!comptime comptime_config.isValid()) return;
+
+    if (comptime coord_space == CoordSpace.raster) {
+        shaderops.fillTexPerspSIMD(
+            N,
+            channels,
+            comptime_config,
+            ctx_shade,
+            v_mask_active,
+            v_weights,
+            v_nodes_inv_z,
+            v_subpx_z,
+            shader,
+            spx_image_scratch,
+        );
+    } else if (comptime coord_space == CoordSpace.clip_px_leng) {
+        shaderops.fillTexClipSIMD(
+            N,
+            channels,
+            comptime_config,
+            ctx_shade,
+            v_mask_active,
+            v_weights,
+            shader,
+            spx_image_scratch,
+        );
+    } else {
+        @panic("shadeSIMD not implemented for this coord_space");
+    }
 }
 
 pub fn TexFuncKernel(

@@ -405,6 +405,7 @@ fn rasterDirectSIMDImpl(
     const inv_area = GeometryKernel.getInvElemArea(nodes_coords);
     const v_inv_area: VecSF = @splat(inv_area);
     var nodes_inv_z: [N]f64 = undefined;
+
     inline for (0..N) |nn| nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
     const v_nodes_inv_z = GeometryKernel.getSIMDInvZ(nodes_coords);
 
@@ -516,7 +517,10 @@ fn rasterDirectSIMDImpl(
                 subpx_scratch.inv_z,
                 scratch_idx,
             );
-            const v_depth_mask = v_mask_active & (v_inv_z >= v_old_inv_z);
+            const v_depth_tol: VecSF =
+                @splat(tol.geometry.depth_buffer_inv_z_cmp);
+            const v_depth_mask =
+                v_mask_active & (v_inv_z + v_depth_tol >= v_old_inv_z);
             if (!@reduce(.Or, v_depth_mask)) continue;
 
             const v_new_inv_z = @select(
@@ -934,7 +938,10 @@ fn rasterNewtonSIMDImpl(
                 subpx_scratch.inv_z,
                 scratch_idx,
             );
-            const v_depth_mask = v_mask_active & (v_inv_z >= v_old_inv_z);
+            const v_depth_tol: VecSF =
+                @splat(tol.geometry.depth_buffer_inv_z_cmp);
+            const v_depth_mask =
+                v_mask_active & (v_inv_z + v_depth_tol >= v_old_inv_z);
             if (!@reduce(.Or, v_depth_mask)) continue;
 
             const v_new_inv_z = @select(

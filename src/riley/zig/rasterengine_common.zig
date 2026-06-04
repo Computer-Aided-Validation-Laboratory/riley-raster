@@ -317,7 +317,8 @@ pub fn rasterDirectScalarCommon(
                 ),
             );
 
-            if (inv_z < subpx_scratch.inv_z[scratch_idx]) continue;
+            if (inv_z + cfg.tolerance.geometry.depth_buffer_inv_z_cmp <
+                subpx_scratch.inv_z[scratch_idx]) continue;
 
             subpx_scratch.inv_z[scratch_idx] = inv_z;
             if (scratch_x_u < subpx_scratch.touched_min_x[scratch_y_u]) {

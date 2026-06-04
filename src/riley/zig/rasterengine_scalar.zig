@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
+const tol = buildconfig.config.tolerance;
 const CameraPrepared = @import("camera.zig").CameraPrepared;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
@@ -478,7 +480,8 @@ fn rasterNewtonImpl(
 
             const weights = result.weights.?;
             const inv_z = Geometry.calcInvZ(nodes_coords, weights);
-            if (inv_z < subpx_scratch.inv_z[scratch_idx]) continue;
+            if (inv_z + tol.geometry.depth_buffer_inv_z_cmp <
+                subpx_scratch.inv_z[scratch_idx]) continue;
 
             subpx_scratch.inv_z[scratch_idx] = inv_z;
             if (scratch_x < subpx_scratch.touched_min_x[scratch_y]) {
