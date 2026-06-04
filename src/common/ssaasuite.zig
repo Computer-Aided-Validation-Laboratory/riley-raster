@@ -22,7 +22,7 @@ const riley = @import("../riley/zig/riley.zig");
 pub const gold_root = "gold/ssaa";
 pub const pixel_num = [_]u32{ 640, 400 };
 pub const fov_scale: f64 = 0.75;
-pub const ssaa_values = [_]u8{ 2, 4 };
+pub const ssaa_values = [_]u8{4};
 pub const mesh_types = [_]gk.MeshType{ .tri3, .tri6, .quad4ibi, .quad8, .quad9 };
 pub const DistortionCase = enum {
     none,

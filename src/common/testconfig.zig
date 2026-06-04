@@ -39,8 +39,7 @@ pub fn getRasterConfig(mode: RasterConfigMode) rastcfg.RasterConfig {
         .render_mode = RENDER_MODE,
         .max_frames_in_flight = MAX_FRAMES_IN_FLIGHT,
         .frame_batch_size_per_group = FRAME_BATCH_SIZE_PER_GROUP,
-        .max_geom_jobs_in_flight_per_group =
-            MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP,
+        .max_geom_jobs_in_flight_per_group = MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP,
         .max_geom_workers_per_job = MAX_GEOM_WORKERS_PER_JOB,
         .geom_scheduling_mode = GEOM_SCHEDULING_MODE,
         .max_raster_workers_per_job = MAX_RASTER_WORKERS_PER_JOB,
@@ -49,11 +48,11 @@ pub fn getRasterConfig(mode: RasterConfigMode) rastcfg.RasterConfig {
 
     switch (mode) {
         .gold, .preview => {
-            config.total_threads = 1;
+            config.total_threads = 4;
             config.max_geom_workers_per_frame = 1;
-            config.max_raster_workers_per_frame = 1;
+            config.max_raster_workers_per_frame = 4;
             config.max_geom_workers_per_job = 1;
-            config.max_raster_workers_per_job = 1;
+            config.max_raster_workers_per_job = 4;
             config.max_geom_jobs_in_flight_per_group = 1;
             config.frame_batch_size_per_group = 1;
             config.report = .off;

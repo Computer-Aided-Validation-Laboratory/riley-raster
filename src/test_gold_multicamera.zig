@@ -729,6 +729,7 @@ test "Sphere200 multicamera gold tests" {
     std.debug.print("Running Multicamera Gold Tests with .simd = .{s}...\n", .{
         if (simd_on) "on" else "off",
     });
+    const suite_start = Timestamp.now(std.testing.io, .awake);
 
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
@@ -980,6 +981,16 @@ test "Sphere200 multicamera gold tests" {
             std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
         }
     }
+
+    const suite_end = Timestamp.now(io, .awake);
+    const suite_ms = @as(
+        f64,
+        @floatFromInt(suite_start.durationTo(suite_end).raw.nanoseconds),
+    ) / 1e6;
+    std.debug.print(
+        "Multicamera Gold Test Suite took {d:.3} ms\n",
+        .{suite_ms},
+    );
 }
 
 test "Multicamera mixed sensor sizes return padded batch and save actual size" {

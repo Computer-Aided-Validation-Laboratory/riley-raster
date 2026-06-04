@@ -297,6 +297,7 @@ test "TexFunc Suite" {
     std.debug.print("Running TexFunc Gold Tests with .simd = .{s}...\n", .{
         if (simd_on) "on" else "off",
     });
+    const suite_start = Timestamp.now(std.testing.io, .awake);
 
     const io = std.testing.io;
     const mesh_types = [_]gk.MeshType{
@@ -334,4 +335,11 @@ test "TexFunc Suite" {
             }
         }
     }
+
+    const suite_end = Timestamp.now(io, .awake);
+    const suite_ms = @as(
+        f64,
+        @floatFromInt(suite_start.durationTo(suite_end).raw.nanoseconds),
+    ) / 1e6;
+    std.debug.print("TexFunc Gold Test Suite took {d:.3} ms\n", .{suite_ms});
 }

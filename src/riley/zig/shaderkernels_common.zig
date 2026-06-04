@@ -138,45 +138,21 @@ fn shadeTexScalarDispatchImpl(
     spx_image_scratch: *MatSlice(f64),
 ) void {
     switch (config.sample) {
-        inline else => |sample_type| shadeTexScalarDispatchModeImpl(
-            N,
-            channels,
-            coord_space,
-            sample_type,
-            config.mode,
-            ctx_shade,
-            interp,
-            shader,
-            spx_image_scratch,
-        ),
-    }
-}
-
-fn shadeTexScalarDispatchModeImpl(
-    comptime N: usize,
-    comptime channels: usize,
-    comptime coord_space: CoordSpace,
-    comptime sample_type: texops.TextureSample,
-    mode: texops.TextureSampleMode,
-    ctx_shade: shaderops.ShadeContext(N),
-    interp: shaderops.InterpData(N),
-    shader: *const shaderops.TexPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
-) void {
-    switch (mode) {
-        inline else => |mode_type| shadeTexScalarDispatchConfigImpl(
-            N,
-            channels,
-            coord_space,
-            .{
-                .sample = sample_type,
-                .mode = mode_type,
-            },
-            ctx_shade,
-            interp,
-            shader,
-            spx_image_scratch,
-        ),
+        inline else => |sample_type| switch (config.mode) {
+            inline else => |mode_type| shadeTexScalarDispatchConfigImpl(
+                N,
+                channels,
+                coord_space,
+                .{
+                    .sample = sample_type,
+                    .mode = mode_type,
+                },
+                ctx_shade,
+                interp,
+                shader,
+                spx_image_scratch,
+            ),
+        },
     }
 }
 
