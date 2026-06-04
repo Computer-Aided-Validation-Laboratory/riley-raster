@@ -274,33 +274,7 @@ pub fn rasterDirectScalarCommon(
 
             ctx_report.recordSolverIters(result.iters);
 
-            if (result.weights) |weights| {
-                const inv_z = Geometry.calcInvZ(nodes_coords, weights);
-                const interp = calcInterpParamCoords(
-                    Geometry,
-                    nodes_inv_z,
-                    weights,
-                    inv_z,
-                    0.0,
-                    0.0,
-                );
-                rasterreport.recordPixelConvergedStats(
-                    report_mode,
-                    ctx_report,
-                    global_subx,
-                    global_suby,
-                    true,
-                    interp.xi,
-                    interp.eta,
-                    newton.calcJacobianDet2D(
-                        N,
-                        interp.xi,
-                        interp.eta,
-                        nodes_coords.x,
-                        nodes_coords.y,
-                    ),
-                );
-            } else {
+            if (result.weights == null) {
                 const nan = std.math.nan(f64);
                 rasterreport.recordPixelConvergedStats(
                     report_mode,
@@ -312,71 +286,93 @@ pub fn rasterDirectScalarCommon(
                     nan,
                     nan,
                 );
-            }
-
-            // If weights are not null we are inside the element and we need to check the
-            // depth buffer
-            if (result.weights) |weights| {
-                const inv_z = Geometry.calcInvZ(nodes_coords, weights);
-                if (inv_z >= subpx_scratch.inv_z[scratch_idx]) {
-                    subpx_scratch.inv_z[scratch_idx] = inv_z;
-                    if (scratch_x_u < subpx_scratch.touched_min_x[scratch_y_u]) {
-                        subpx_scratch.touched_min_x[scratch_y_u] = scratch_x_u;
-                    }
-                    if (scratch_x_u > subpx_scratch.touched_max_x[scratch_y_u]) {
-                        subpx_scratch.touched_max_x[scratch_y_u] = scratch_x_u;
-                    }
-                    const subpx_z = 1.0 / inv_z;
-                    shaded_px += 1;
-
-                    rasterreport.recordPixelIterAndOccupancy(
-                        report_mode,
-                        ctx_report,
-                        global_subx,
-                        global_suby,
-                        result.iters,
-                        targ_overlap.tile.scratch_x_px_min + scratch_x_u / sub_samp,
-                        targ_overlap.tile.scratch_y_px_min + scratch_y_u / sub_samp,
-                    );
-
-                    const param_coords = calcInterpParamCoords(
-                        Geometry,
-                        nodes_inv_z,
-                        weights,
-                        inv_z,
-                        result.xi_out,
-                        result.eta_out,
-                    );
-                    const ctx_shade = shaderops.ShadeContext(N){
-                        .frame_idx = ctx_rast.frame_idx,
-                        .elem_idx = targ_overlap.overlap.elem_idx,
-                        .fields_num = fields_num,
-                        .actual_fields = fields_num,
-                        .scratch_idx = scratch_idx,
-                        .global_subx = global_subx,
-                        .global_suby = global_suby,
-                        .shader_buf = shader_buf,
-                    };
-                    const interp_data = shaderops.InterpData(N){
-                        .weights = weights,
-                        .nodes_inv_z = nodes_inv_z,
-                        .sub_pixel_z = subpx_z,
-                        .xi = param_coords.xi,
-                        .eta = param_coords.eta,
-                    };
-
-                    ShaderKernel.shade(
-                        Geometry.coord_space,
-                        ctx_shade,
-                        interp_data,
-                        shader,
-                        ctx_report,
-                        &subpx_scratch.image,
-                    );
-                }
-            } else {
                 if (result.iters > 0) ctx_report.recordSolverDiverged();
+                continue;
             }
+
+            const weights = result.weights.?;
+            const inv_z = Geometry.calcInvZ(nodes_coords, weights);
+            const interp = calcInterpParamCoords(
+                Geometry,
+                nodes_inv_z,
+                weights,
+                inv_z,
+                0.0,
+                0.0,
+            );
+            rasterreport.recordPixelConvergedStats(
+                report_mode,
+                ctx_report,
+                global_subx,
+                global_suby,
+                true,
+                interp.xi,
+                interp.eta,
+                newton.calcJacobianDet2D(
+                    N,
+                    interp.xi,
+                    interp.eta,
+                    nodes_coords.x,
+                    nodes_coords.y,
+                ),
+            );
+
+            if (inv_z < subpx_scratch.inv_z[scratch_idx]) continue;
+
+            subpx_scratch.inv_z[scratch_idx] = inv_z;
+            if (scratch_x_u < subpx_scratch.touched_min_x[scratch_y_u]) {
+                subpx_scratch.touched_min_x[scratch_y_u] = scratch_x_u;
+            }
+            if (scratch_x_u > subpx_scratch.touched_max_x[scratch_y_u]) {
+                subpx_scratch.touched_max_x[scratch_y_u] = scratch_x_u;
+            }
+            const subpx_z = 1.0 / inv_z;
+            shaded_px += 1;
+
+            rasterreport.recordPixelIterAndOccupancy(
+                report_mode,
+                ctx_report,
+                global_subx,
+                global_suby,
+                result.iters,
+                targ_overlap.tile.scratch_x_px_min + scratch_x_u / sub_samp,
+                targ_overlap.tile.scratch_y_px_min + scratch_y_u / sub_samp,
+            );
+
+            const param_coords = calcInterpParamCoords(
+                Geometry,
+                nodes_inv_z,
+                weights,
+                inv_z,
+                result.xi_out,
+                result.eta_out,
+            );
+            const ctx_shade = shaderops.ShadeContext(N){
+                .frame_idx = ctx_rast.frame_idx,
+                .elem_idx = targ_overlap.overlap.elem_idx,
+                .fields_num = fields_num,
+                .actual_fields = fields_num,
+                .scratch_idx = scratch_idx,
+                .global_subx = global_subx,
+                .global_suby = global_suby,
+                .shader_buf = shader_buf,
+            };
+            const interp_data = shaderops.InterpData(N){
+                .weights = weights,
+                .nodes_inv_z = nodes_inv_z,
+                .sub_pixel_z = subpx_z,
+                .xi = param_coords.xi,
+                .eta = param_coords.eta,
+            };
+
+            ShaderKernel.shade(
+                Geometry.coord_space,
+                ctx_shade,
+                interp_data,
+                shader,
+                ctx_report,
+                &subpx_scratch.image,
+            );
         }
     }
 
