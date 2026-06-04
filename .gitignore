@@ -26,6 +26,7 @@ fails*/
 debug/
 examples/
 pyout/
+refs/
 
 # Don't commit large mesh, simulation or image files to the repo unless we have to
 *.ppm
