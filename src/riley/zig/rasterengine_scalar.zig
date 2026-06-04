@@ -20,6 +20,7 @@ const report = @import("report.zig");
 const ReportMode = report.ReportMode;
 const Timestamp = std.Io.Clock.Timestamp;
 const common = @import("rasterengine_common.zig");
+const rasterreport = @import("rasterreport.zig");
 
 const mo = @import("meshops.zig");
 const MeshPrepared = mo.MeshPrepared;
@@ -309,18 +310,20 @@ pub fn RasterEngine(
                                 .eta = tess_res.seed_eta,
                             };
                         }
-                        if (comptime report_mode == .full_stats) {
-                            ctx_report.recordEarlyOut(
-                                global_subx,
-                                global_suby,
-                                tess_res.is_in,
-                            );
-                        }
+                        rasterreport.recordEarlyOut(
+                            report_mode,
+                            ctx_report,
+                            global_subx,
+                            global_suby,
+                            tess_res.is_in,
+                        );
                         if (!tess_res.is_in) {
                             continue;
                         }
-                    } else if (comptime report_mode == .full_stats) {
-                        ctx_report.recordEarlyOut(
+                    } else {
+                        rasterreport.recordEarlyOut(
+                            report_mode,
+                            ctx_report,
                             global_subx,
                             global_suby,
                             true,
@@ -368,56 +371,35 @@ pub fn RasterEngine(
 
                     ctx_report.recordSolverIters(result.iters);
 
-                    if (comptime report_mode == .full_stats) {
-                        if (result.weights != null) {
-                            ctx_report.recordPixelConverged(
-                                global_subx,
-                                global_suby,
-                                true,
-                            );
-                            ctx_report.recordPixelXi(
-                                global_subx,
-                                global_suby,
+                    if (result.weights != null) {
+                        rasterreport.recordPixelConvergedStats(
+                            report_mode,
+                            ctx_report,
+                            global_subx,
+                            global_suby,
+                            true,
+                            result.xi_out,
+                            result.eta_out,
+                            newton.calcJacobianDet2D(
+                                N,
                                 result.xi_out,
-                            );
-                            ctx_report.recordPixelEta(
-                                global_subx,
-                                global_suby,
                                 result.eta_out,
-                            );
-                            ctx_report.recordPixelJacobianDet(
-                                global_subx,
-                                global_suby,
-                                newton.calcJacobianDet2D(
-                                    N,
-                                    result.xi_out,
-                                    result.eta_out,
-                                    nodes_coords.x,
-                                    nodes_coords.y,
-                                ),
-                            );
-                        } else {
-                            ctx_report.recordPixelConverged(
-                                global_subx,
-                                global_suby,
-                                false,
-                            );
-                            ctx_report.recordPixelXi(
-                                global_subx,
-                                global_suby,
-                                std.math.nan(f64),
-                            );
-                            ctx_report.recordPixelEta(
-                                global_subx,
-                                global_suby,
-                                std.math.nan(f64),
-                            );
-                            ctx_report.recordPixelJacobianDet(
-                                global_subx,
-                                global_suby,
-                                std.math.nan(f64),
-                            );
-                        }
+                                nodes_coords.x,
+                                nodes_coords.y,
+                            ),
+                        );
+                    } else {
+                        const nan = std.math.nan(f64);
+                        rasterreport.recordPixelConvergedStats(
+                            report_mode,
+                            ctx_report,
+                            global_subx,
+                            global_suby,
+                            false,
+                            nan,
+                            nan,
+                            nan,
+                        );
                     }
 
                     if (ctx_rast.config.newton_seed_reuse == .last_converged) {
@@ -444,17 +426,15 @@ pub fn RasterEngine(
                             const subpx_z = 1.0 / inv_z;
                             shaded_px += 1;
 
-                            if (comptime report_mode == .full_stats) {
-                                ctx_report.recordPixelIters(
-                                    global_subx,
-                                    global_suby,
-                                    result.iters,
-                                );
-                                ctx_report.recordPixelOccupancy(
-                                    targ_overlap.tile.scratch_x_px_min + scratch_x / sub_samp,
-                                    targ_overlap.tile.scratch_y_px_min + scratch_y / sub_samp,
-                                );
-                            }
+                            rasterreport.recordPixelIterAndOccupancy(
+                                report_mode,
+                                ctx_report,
+                                global_subx,
+                                global_suby,
+                                result.iters,
+                                targ_overlap.tile.scratch_x_px_min + scratch_x / sub_samp,
+                                targ_overlap.tile.scratch_y_px_min + scratch_y / sub_samp,
+                            );
 
                             const ctx_shade = shaderops.ShadeContext(N){
                                 .frame_idx = ctx_rast.frame_idx,

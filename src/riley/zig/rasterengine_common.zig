@@ -16,7 +16,7 @@ const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const hull = @import("hull.zig");
 const report = @import("report.zig");
-const Timestamp = std.Io.Clock.Timestamp;
+const rasterreport = @import("rasterreport.zig");
 const rops = @import("rasterops.zig");
 const newton = @import("newton.zig");
 const pce = @import("parachunkexec.zig");
@@ -235,18 +235,24 @@ pub fn rasterDirectScalarCommon(
                 if (tess_res.is_in) {
                     ctx_report.recordTessPasses(1);
                 }
-                if (comptime report_mode == .full_stats) {
-                    ctx_report.recordEarlyOut(
-                        global_subx,
-                        global_suby,
-                        tess_res.is_in,
-                    );
-                }
+                rasterreport.recordEarlyOut(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    tess_res.is_in,
+                );
                 if (!tess_res.is_in) {
                     continue;
                 }
-            } else if (comptime report_mode == .full_stats) {
-                ctx_report.recordEarlyOut(global_subx, global_suby, true);
+            } else {
+                rasterreport.recordEarlyOut(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    true,
+                );
             }
 
             ctx_report.recordSolverCalls(1);
@@ -268,72 +274,50 @@ pub fn rasterDirectScalarCommon(
 
             ctx_report.recordSolverIters(result.iters);
 
-            if (comptime report_mode == .full_stats) {
-                if (result.weights) |weights| {
-                    const inv_z = Geometry.calcInvZ(nodes_coords, weights);
-                    const interp = calcInterpParamCoords(
-                        Geometry,
-                        nodes_inv_z,
-                        weights,
-                        inv_z,
-                        0.0,
-                        0.0,
-                    );
-                    ctx_report.recordPixelConverged(
-                        global_subx,
-                        global_suby,
-                        true,
-                    );
-                    ctx_report.recordPixelXi(
-                        global_subx,
-                        global_suby,
+            if (result.weights) |weights| {
+                const inv_z = Geometry.calcInvZ(nodes_coords, weights);
+                const interp = calcInterpParamCoords(
+                    Geometry,
+                    nodes_inv_z,
+                    weights,
+                    inv_z,
+                    0.0,
+                    0.0,
+                );
+                rasterreport.recordPixelConvergedStats(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    true,
+                    interp.xi,
+                    interp.eta,
+                    newton.calcJacobianDet2D(
+                        N,
                         interp.xi,
-                    );
-                    ctx_report.recordPixelEta(
-                        global_subx,
-                        global_suby,
                         interp.eta,
-                    );
-                    ctx_report.recordPixelJacobianDet(
-                        global_subx,
-                        global_suby,
-                        newton.calcJacobianDet2D(
-                            N,
-                            interp.xi,
-                            interp.eta,
-                            nodes_coords.x,
-                            nodes_coords.y,
-                        ),
-                    );
-                } else {
-                    ctx_report.recordPixelConverged(
-                        global_subx,
-                        global_suby,
-                        false,
-                    );
-                    ctx_report.recordPixelXi(
-                        global_subx,
-                        global_suby,
-                        std.math.nan(f64),
-                    );
-                    ctx_report.recordPixelEta(
-                        global_subx,
-                        global_suby,
-                        std.math.nan(f64),
-                    );
-                    ctx_report.recordPixelJacobianDet(
-                        global_subx,
-                        global_suby,
-                        std.math.nan(f64),
-                    );
-                }
+                        nodes_coords.x,
+                        nodes_coords.y,
+                    ),
+                );
+            } else {
+                const nan = std.math.nan(f64);
+                rasterreport.recordPixelConvergedStats(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    false,
+                    nan,
+                    nan,
+                    nan,
+                );
             }
 
             // If weights are not null we are inside the element and we need to check the
             // depth buffer
             if (result.weights) |weights| {
                 const inv_z = Geometry.calcInvZ(nodes_coords, weights);
-
                 if (inv_z >= subpx_scratch.inv_z[scratch_idx]) {
                     subpx_scratch.inv_z[scratch_idx] = inv_z;
                     if (scratch_x_u < subpx_scratch.touched_min_x[scratch_y_u]) {
@@ -345,17 +329,15 @@ pub fn rasterDirectScalarCommon(
                     const subpx_z = 1.0 / inv_z;
                     shaded_px += 1;
 
-                    if (comptime report_mode == .full_stats) {
-                        ctx_report.recordPixelIters(
-                            global_subx,
-                            global_suby,
-                            result.iters,
-                        );
-                        ctx_report.recordPixelOccupancy(
-                            targ_overlap.tile.scratch_x_px_min + scratch_x_u / sub_samp,
-                            targ_overlap.tile.scratch_y_px_min + scratch_y_u / sub_samp,
-                        );
-                    }
+                    rasterreport.recordPixelIterAndOccupancy(
+                        report_mode,
+                        ctx_report,
+                        global_subx,
+                        global_suby,
+                        result.iters,
+                        targ_overlap.tile.scratch_x_px_min + scratch_x_u / sub_samp,
+                        targ_overlap.tile.scratch_y_px_min + scratch_y_u / sub_samp,
+                    );
 
                     const param_coords = calcInterpParamCoords(
                         Geometry,
@@ -420,9 +402,7 @@ fn rasterTileCommon(
     fields_num: u8,
     subpx_tile_size: usize,
 ) !void {
-    const tile_start = if (comptime report_mode == .full_stats)
-        Timestamp.now(io, .awake)
-    else {};
+    const tile_scope = rasterreport.beginTile(report_mode, io);
 
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
@@ -693,20 +673,13 @@ fn rasterTileCommon(
         );
     }
 
-    const tile_end = if (comptime report_mode == .full_stats)
-        Timestamp.now(io, .awake)
-    else {};
-    const tile_duration_ns = if (comptime report_mode == .full_stats)
-        tile_start.durationTo(tile_end).raw.nanoseconds
-    else
-        0;
-    const screen_px_x = @as(u16, @intCast(ctx_rast.camera.pixels_num[0]));
-    const tiles_x = (screen_px_x + ctx_rast.tile_size - 1) / ctx_rast.tile_size;
-    const spatial_idx = (tile.y_px_min / ctx_rast.tile_size) * tiles_x +
-        (tile.x_px_min / ctx_rast.tile_size);
-    ctx_report.recordTile(
-        spatial_idx,
-        @intCast(tile_duration_ns),
+    rasterreport.finishTile(
+        report_mode,
+        io,
+        ctx_report,
+        ctx_rast,
+        tile,
+        tile_scope,
         shaded_px,
         overlaps.len,
     );
