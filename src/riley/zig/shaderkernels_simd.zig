@@ -210,24 +210,54 @@ fn shadeTexSIMDDispatchImpl(
     spx_image_scratch: *MatSlice(f64),
 ) void {
     switch (config.sample) {
-        inline else => |sample_type| switch (config.mode) {
-            inline else => |mode_type| shadeTexSIMDDispatchConfigImpl(
-                N,
-                channels,
-                coord_space,
-                .{
-                    .sample = sample_type,
-                    .mode = mode_type,
-                },
-                ctx_shade,
-                v_mask_active,
-                v_weights,
-                v_nodes_inv_z,
-                v_subpx_z,
-                shader,
-                spx_image_scratch,
-            ),
-        },
+        inline else => |sample_type| shadeTexSIMDDispatchModeImpl(
+            N,
+            channels,
+            coord_space,
+            sample_type,
+            config.mode,
+            ctx_shade,
+            v_mask_active,
+            v_weights,
+            v_nodes_inv_z,
+            v_subpx_z,
+            shader,
+            spx_image_scratch,
+        ),
+    }
+}
+
+fn shadeTexSIMDDispatchModeImpl(
+    comptime N: usize,
+    comptime channels: usize,
+    comptime coord_space: CoordSpace,
+    comptime sample_type: texops.TextureSample,
+    mode: texops.TextureSampleMode,
+    ctx_shade: shaderops.ShadeContext(N),
+    v_mask_active: VecSB,
+    v_weights: [N]VecSF,
+    v_nodes_inv_z: [N]VecSF,
+    v_subpx_z: VecSF,
+    shader: *const shaderops.TexPrepared(channels),
+    spx_image_scratch: *MatSlice(f64),
+) void {
+    switch (mode) {
+        inline else => |mode_type| shadeTexSIMDDispatchConfigImpl(
+            N,
+            channels,
+            coord_space,
+            .{
+                .sample = sample_type,
+                .mode = mode_type,
+            },
+            ctx_shade,
+            v_mask_active,
+            v_weights,
+            v_nodes_inv_z,
+            v_subpx_z,
+            shader,
+            spx_image_scratch,
+        ),
     }
 }
 

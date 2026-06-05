@@ -7,11 +7,11 @@ import sys
 
 
 RUN_FULLRASTER = True
-RUN_GEOM = True
-RUN_SPHERE2000 = True
+RUN_GEOM = False
+RUN_SPHERE2000 = False
 RUN_SPHERE2000ZOOM = False
-RUN_DICUQ = True
-RUNS = 10
+RUN_DICUQ = False
+RUNS = 30
 
 
 def repo_root() -> pathlib.Path:
