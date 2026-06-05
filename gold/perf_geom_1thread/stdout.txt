@@ -3,14 +3,14 @@
 Software Raster Render Summary
 ================================================================================
 Actual Tile Size        = 64x64
-Total render time       = 202.804 ms
-Setup time              = 10.946 ms
-Setup other             = 10.946 ms
+Total render time       = 190.257 ms
+Setup time              = 10.399 ms
+Setup other             = 10.399 ms
 Setup frame buffer      = 0.000 ms
-Dispatch time           = 191.858 ms
-Average frame time      = 202.804 ms
-Avg. Raster Throughput = 12.831 MPx/s
-Avg. Frame Throughput  = 7.889 MPx/s
+Dispatch time           = 179.857 ms
+Average frame time      = 190.257 ms
+Avg. Raster Throughput = 13.562 MPx/s
+Avg. Frame Throughput  = 8.410 MPx/s
 ================================================================================
 sible Elems = 102400
 Total Elems   = 102400
@@ -19,11 +19,11 @@ Total SubPx   = 1600000
 Shaded SubPx  = 1664000
 Shaded %      = 104.00%
 ================================================================================
-Geometry Throughput      = 1.63 MElem/s
-Subpx Raster Throughput  = 12.83 MsubPx/s
-Raster Throughput        = 12.83 MPx/s
-Active Frame Throughput  = 8.53 MPx/s
-Frame Latency Throughput = 8.53 MPx/s
+Geometry Throughput      = 1.76 MElem/s
+Subpx Raster Throughput  = 13.56 MsubPx/s
+Raster Throughput        = 13.56 MPx/s
+Active Frame Throughput  = 9.08 MPx/s
+Frame Latency Throughput = 9.08 MPx/s
 ================================================================================
 
 

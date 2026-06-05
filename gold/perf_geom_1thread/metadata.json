@@ -1,16 +1,16 @@
 {
   "case": "geom",
-  "profile": "single_threaded",
+  "profile": "1thread",
   "benchmark_name": "bench_geom",
   "binary_name": "bench_geom_simd",
   "runs": 25,
-  "generated_at": "2026-06-05T15:23:03.362185+00:00",
+  "generated_at": "2026-06-05T17:05:24.774382+00:00",
   "command": [
     "/home/lloydf/riley-raster/bin/bench_geom_simd",
     "--out-dir",
-    "out/perf_gold_stage/geom/single_threaded/20260605_160646",
+    "out/perf_gold_stage/geom_1thread/20260605_174956",
     "--image-out-dir",
-    "out/perf_images/geom/single_threaded",
+    "out/perf_test_images/geom_1thread",
     "--runs",
     "25",
     "--render-group-count",
@@ -35,7 +35,7 @@
     "memory"
   ],
   "profile_config": {
-    "name": "single_threaded",
+    "name": "1thread",
     "total_threads": 1,
     "max_geom_threads_per_frame": 1,
     "max_raster_threads_per_frame": 1,

@@ -4,19 +4,22 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import json
+import os
 import pathlib
 import re
 import shutil
 import subprocess
 import sys
+import textwrap
 from dataclasses import asdict, dataclass
 from typing import Final
 
 
-DEFAULT_GOLD_RUNS: Final[int] = 25
-DEFAULT_TEST_RUNS: Final[int] = 10
+DEFAULT_GOLD_RUNS: Final[int] = 100
+DEFAULT_TEST_RUNS: Final[int] = 25
 DEFAULT_PROFILE: Final[str] = "1thread"
 ALL_PROFILES: Final[tuple[str, ...]] = ("1thread", "4thread")
+ALL_PROFILE_CHOICES: Final[tuple[str, ...]] = (*ALL_PROFILES, "all")
 E2E_KEY: Final[str] = "E2E Time [ms]"
 RASTER_KEY: Final[str] = "Raster Time [ms]"
 GEOM_KEY: Final[str] = "Geom Time [ms]"
@@ -24,18 +27,21 @@ TOP_N: Final[int] = 10
 STATUS_GREEN: Final[str] = "green"
 STATUS_AMBER: Final[str] = "amber"
 STATUS_RED: Final[str] = "red"
+STATUS_BRONZE: Final[str] = "bronze"
+STATUS_SILVER: Final[str] = "silver"
+STATUS_GOLD: Final[str] = "gold"
 MEDIAN_GREEN_PCT: Final[float] = 5.0
 MEDIAN_RED_PCT: Final[float] = 12.0
 MEDIAN_COMBINED_RED_PCT: Final[float] = 8.0
 MEDIAN_ABS_DELTA_FLOOR_MS: Final[float] = 0.2
-COV_GREEN_RATIO: Final[float] = 1.75
+IMPROVEMENT_BRONZE_PCT: Final[float] = 5.0
+IMPROVEMENT_SILVER_PCT: Final[float] = 8.0
+IMPROVEMENT_GOLD_PCT: Final[float] = 12.0
+IMPROVEMENT_SCATTER_MAX_RATIO: Final[float] = 1.25
+COV_GREEN_RATIO: Final[float] = 5.0
 COV_RED_RATIO: Final[float] = 3.0
 COV_COMBINED_RED_RATIO: Final[float] = 2.0
 MAD_ABS_DELTA_FLOOR_MS: Final[float] = 0.05
-RANGE_GREEN_RATIO: Final[float] = 1.75
-RANGE_RED_RATIO: Final[float] = 2.5
-RANGE_COMBINED_RED_RATIO: Final[float] = 2.0
-RANGE_ABS_DELTA_FLOOR_MS: Final[float] = 0.1
 
 
 @dataclass(frozen=True)
@@ -67,10 +73,6 @@ class PerfDelta:
     gold_mad_ms: float
     current_median_ms: float
     current_mad_ms: float
-    gold_min_ms: float
-    gold_max_ms: float
-    current_min_ms: float
-    current_max_ms: float
     gold_raster_ms: float
     current_raster_ms: float
     gold_geom_ms: float
@@ -82,12 +84,10 @@ class PerfDelta:
     gold_cov_mad_pct: float
     current_cov_mad_pct: float
     cov_mad_ratio: float
-    gold_range_ms: float
-    current_range_ms: float
-    range_abs_delta_ms: float
-    range_ratio: float
     status: str
     reasons: list[str]
+    median_flagged: bool
+    scatter_flagged: bool
 
 
 PERF_CASES: Final[dict[str, PerfCase]] = {
@@ -239,6 +239,18 @@ def profile_or_die(case_name: str, profile_name: str) -> PerfProfile:
         ) from exc
 
 
+def expand_profile_names(profile_name: str) -> tuple[str, ...]:
+    if profile_name == "all":
+        return ALL_PROFILES
+    if profile_name in ALL_PROFILES:
+        return (profile_name,)
+    expected = ", ".join(ALL_PROFILE_CHOICES)
+    raise SystemExit(
+        f"Unsupported perf profile '{profile_name}'. "
+        f"Expected one of: {expected}.",
+    )
+
+
 def binary_path(case: PerfCase) -> pathlib.Path:
     path = repo_root() / "bin" / case.binary_name
     if not path.exists():
@@ -250,6 +262,9 @@ def binary_path(case: PerfCase) -> pathlib.Path:
 
 
 def gold_dir(case: PerfCase, profile: PerfProfile) -> pathlib.Path:
+    gold_root_env = os.environ.get("RILEY_PERF_GOLD_ROOT")
+    if gold_root_env:
+        return pathlib.Path(gold_root_env) / f"perf_{case.name}_{profile.name}"
     return repo_root() / "gold" / f"perf_{case.name}_{profile.name}"
 
 
@@ -390,57 +405,38 @@ def classify_perf_delta(
     delta_ms: float,
     mad_abs_delta_ms: float,
     cov_mad_ratio: float,
-    range_abs_delta_ms: float,
-    range_ratio: float,
-) -> tuple[str, list[str]]:
+) -> tuple[str, list[str], bool, bool]:
     reasons: list[str] = []
     median_active = (
         delta_pct > 0.0 and delta_ms > MEDIAN_ABS_DELTA_FLOOR_MS
     )
-    cov_active = (
-        cov_mad_ratio > 1.0 and mad_abs_delta_ms > MAD_ABS_DELTA_FLOOR_MS
-    )
-    range_active = (
-        range_ratio > 1.0 and range_abs_delta_ms > RANGE_ABS_DELTA_FLOOR_MS
+    improvement_active = (
+        delta_pct < 0.0 and (-delta_ms) > MEDIAN_ABS_DELTA_FLOOR_MS
     )
 
     if median_active and delta_pct > MEDIAN_RED_PCT:
         reasons.append(f"median +{delta_pct:.2f}%")
-    if cov_active and cov_mad_ratio > COV_RED_RATIO:
-        reasons.append(f"cov_mad x{cov_mad_ratio:.2f}")
-    if range_active and range_ratio > RANGE_RED_RATIO:
-        reasons.append(f"range x{range_ratio:.2f}")
-    if (
-        median_active
-        and delta_pct > MEDIAN_COMBINED_RED_PCT
-        and cov_active
-        and cov_mad_ratio > COV_COMBINED_RED_RATIO
-    ):
-        reasons.append(
-            f"median+cov combined (+{delta_pct:.2f}%, x{cov_mad_ratio:.2f})",
-        )
-    if (
-        median_active
-        and delta_pct > MEDIAN_COMBINED_RED_PCT
-        and range_active
-        and range_ratio > RANGE_COMBINED_RED_RATIO
-    ):
-        reasons.append(
-            f"median+range combined (+{delta_pct:.2f}%, x{range_ratio:.2f})",
-        )
     if reasons:
-        return STATUS_RED, reasons
+        return STATUS_RED, reasons, True, False
 
     if median_active and delta_pct > MEDIAN_GREEN_PCT:
         reasons.append(f"median +{delta_pct:.2f}%")
-    if cov_active and cov_mad_ratio > COV_GREEN_RATIO:
-        reasons.append(f"cov_mad x{cov_mad_ratio:.2f}")
-    if range_active and range_ratio > RANGE_GREEN_RATIO:
-        reasons.append(f"range x{range_ratio:.2f}")
     if reasons:
-        return STATUS_AMBER, reasons
+        return STATUS_AMBER, reasons, True, False
 
-    return STATUS_GREEN, ["within thresholds"]
+    if (
+        improvement_active
+        and cov_mad_ratio <= IMPROVEMENT_SCATTER_MAX_RATIO
+    ):
+        improvement_pct = -delta_pct
+        if improvement_pct >= IMPROVEMENT_GOLD_PCT:
+            return STATUS_GOLD, [f"median {delta_pct:.2f}%"], False, False
+        if improvement_pct >= IMPROVEMENT_SILVER_PCT:
+            return STATUS_SILVER, [f"median {delta_pct:.2f}%"], False, False
+        if improvement_pct >= IMPROVEMENT_BRONZE_PCT:
+            return STATUS_BRONZE, [f"median {delta_pct:.2f}%"], False, False
+
+    return STATUS_GREEN, ["within thresholds"], False, False
 
 
 def compare_case_maps(
@@ -449,12 +445,8 @@ def compare_case_maps(
 ) -> list[PerfDelta]:
     gold_median = load_summary_map(gold_root, "median")
     gold_mad = load_summary_map(gold_root, "mad")
-    gold_min = load_summary_map(gold_root, "min")
-    gold_max = load_summary_map(gold_root, "max")
     current_median = load_summary_map(current_root, "median")
     current_mad = load_summary_map(current_root, "mad")
-    current_min = load_summary_map(current_root, "min")
-    current_max = load_summary_map(current_root, "max")
 
     gold_cases = set(gold_median.keys())
     current_cases = set(current_median.keys())
@@ -470,21 +462,13 @@ def compare_case_maps(
     for case_name in sorted(gold_cases):
         gold_med_row = gold_median[case_name]
         gold_mad_row = gold_mad[case_name]
-        gold_min_row = gold_min[case_name]
-        gold_max_row = gold_max[case_name]
         cur_med_row = current_median[case_name]
         cur_mad_row = current_mad[case_name]
-        cur_min_row = current_min[case_name]
-        cur_max_row = current_max[case_name]
 
         gold_median_ms = parse_float(gold_med_row, E2E_KEY)
         current_median_ms = parse_float(cur_med_row, E2E_KEY)
         gold_mad_ms = parse_float(gold_mad_row, E2E_KEY)
         current_mad_ms = parse_float(cur_mad_row, E2E_KEY)
-        gold_min_ms = parse_float(gold_min_row, E2E_KEY)
-        gold_max_ms = parse_float(gold_max_row, E2E_KEY)
-        current_min_ms = parse_float(cur_min_row, E2E_KEY)
-        current_max_ms = parse_float(cur_max_row, E2E_KEY)
         delta_ms = current_median_ms - gold_median_ms
         delta_pct = (
             0.0
@@ -499,17 +483,11 @@ def compare_case_maps(
             current_median_ms,
         )
         cov_mad_ratio = safe_ratio(current_cov_mad_pct, gold_cov_mad_pct)
-        gold_range_ms = gold_max_ms - gold_min_ms
-        current_range_ms = current_max_ms - current_min_ms
-        range_abs_delta_ms = current_range_ms - gold_range_ms
-        range_ratio = safe_ratio(current_range_ms, gold_range_ms)
-        status, reasons = classify_perf_delta(
+        status, reasons, median_flagged, scatter_flagged = classify_perf_delta(
             delta_pct,
             delta_ms,
             mad_abs_delta_ms,
             cov_mad_ratio,
-            range_abs_delta_ms,
-            range_ratio,
         )
 
         deltas.append(
@@ -519,10 +497,6 @@ def compare_case_maps(
                 gold_mad_ms=gold_mad_ms,
                 current_median_ms=current_median_ms,
                 current_mad_ms=current_mad_ms,
-                gold_min_ms=gold_min_ms,
-                gold_max_ms=gold_max_ms,
-                current_min_ms=current_min_ms,
-                current_max_ms=current_max_ms,
                 gold_raster_ms=parse_float(gold_med_row, RASTER_KEY),
                 current_raster_ms=parse_float(cur_med_row, RASTER_KEY),
                 gold_geom_ms=parse_float(gold_med_row, GEOM_KEY),
@@ -534,12 +508,10 @@ def compare_case_maps(
                 gold_cov_mad_pct=gold_cov_mad_pct,
                 current_cov_mad_pct=current_cov_mad_pct,
                 cov_mad_ratio=cov_mad_ratio,
-                gold_range_ms=gold_range_ms,
-                current_range_ms=current_range_ms,
-                range_abs_delta_ms=range_abs_delta_ms,
-                range_ratio=range_ratio,
                 status=status,
                 reasons=reasons,
+                median_flagged=median_flagged,
+                scatter_flagged=scatter_flagged,
             ),
         )
 
@@ -641,14 +613,8 @@ def write_case_report_csv(
         "gold_cov_mad_pct",
         "current_cov_mad_pct",
         "cov_mad_ratio",
-        "gold_min_ms",
-        "gold_max_ms",
-        "current_min_ms",
-        "current_max_ms",
-        "gold_range_ms",
-        "current_range_ms",
-        "range_abs_delta_ms",
-        "range_ratio",
+        "median_flagged",
+        "scatter_flagged",
         "case_name_end",
         "status_end",
         "reasons_end",
@@ -692,14 +658,8 @@ def write_case_report_csv(
                 "gold_cov_mad_pct": f"{delta.gold_cov_mad_pct:.6f}",
                 "current_cov_mad_pct": f"{delta.current_cov_mad_pct:.6f}",
                 "cov_mad_ratio": f"{delta.cov_mad_ratio:.6f}",
-                "gold_min_ms": f"{delta.gold_min_ms:.6f}",
-                "gold_max_ms": f"{delta.gold_max_ms:.6f}",
-                "current_min_ms": f"{delta.current_min_ms:.6f}",
-                "current_max_ms": f"{delta.current_max_ms:.6f}",
-                "gold_range_ms": f"{delta.gold_range_ms:.6f}",
-                "current_range_ms": f"{delta.current_range_ms:.6f}",
-                "range_abs_delta_ms": f"{delta.range_abs_delta_ms:.6f}",
-                "range_ratio": f"{delta.range_ratio:.6f}",
+                "median_flagged": str(delta.median_flagged),
+                "scatter_flagged": str(delta.scatter_flagged),
                 "case_name_end": delta.case_name,
                 "status_end": delta.status,
                 "reasons_end": reasons,
@@ -731,6 +691,9 @@ def write_summary_report(
         STATUS_GREEN: sum(1 for delta in deltas if delta.status == STATUS_GREEN),
         STATUS_AMBER: sum(1 for delta in deltas if delta.status == STATUS_AMBER),
         STATUS_RED: sum(1 for delta in deltas if delta.status == STATUS_RED),
+        STATUS_BRONZE: sum(1 for delta in deltas if delta.status == STATUS_BRONZE),
+        STATUS_SILVER: sum(1 for delta in deltas if delta.status == STATUS_SILVER),
+        STATUS_GOLD: sum(1 for delta in deltas if delta.status == STATUS_GOLD),
     }
     overall_status = STATUS_RED
     if status_counts[STATUS_RED] == 0:
@@ -751,11 +714,13 @@ def write_summary_report(
         key=lambda item: item.cov_mad_ratio,
         reverse=True,
     )[:TOP_N]
-    worst_by_range = sorted(
-        deltas,
-        key=lambda item: item.range_ratio,
-        reverse=True,
-    )[:TOP_N]
+    median_regressions = [delta for delta in deltas if delta.median_flagged]
+    diagnostic_cov_shifts = [
+        delta
+        for delta in deltas
+        if delta.cov_mad_ratio > 1.0
+        and delta.mad_abs_delta_ms > MAD_ABS_DELTA_FLOOR_MS
+    ]
 
     lines = [
         f"perf report: {case.name}/{profile.name}",
@@ -766,7 +731,15 @@ def write_summary_report(
             "counts="
             f"green:{status_counts[STATUS_GREEN]},"
             f"amber:{status_counts[STATUS_AMBER]},"
-            f"red:{status_counts[STATUS_RED]}"
+            f"red:{status_counts[STATUS_RED]},"
+            f"bronze:{status_counts[STATUS_BRONZE]},"
+            f"silver:{status_counts[STATUS_SILVER]},"
+            f"gold:{status_counts[STATUS_GOLD]}"
+        ),
+        (
+            "regression_counts="
+            f"median:{len(median_regressions)}/{len(deltas)},"
+            f"diagnostic_cov:{len(diagnostic_cov_shifts)}/{len(deltas)}"
         ),
         "",
         "thresholds:",
@@ -776,14 +749,15 @@ def write_summary_report(
             f", abs_floor> {MEDIAN_ABS_DELTA_FLOOR_MS:.2f} ms"
         ),
         (
-            f"  cov_mad green<= x{COV_GREEN_RATIO:.2f}"
-            f", red> x{COV_RED_RATIO:.2f}"
-            f", abs_floor> {MAD_ABS_DELTA_FLOOR_MS:.2f} ms"
+            "  cov_mad is diagnostic only for regressions"
+            f" (improvements still require <= x{IMPROVEMENT_SCATTER_MAX_RATIO:.2f})"
         ),
         (
-            f"  range green<= x{RANGE_GREEN_RATIO:.2f}"
-            f", red> x{RANGE_RED_RATIO:.2f}"
-            f", abs_floor> {RANGE_ABS_DELTA_FLOOR_MS:.2f} ms"
+            "  improvement flags: "
+            f"bronze<= -{IMPROVEMENT_BRONZE_PCT:.2f}%"
+            f", silver<= -{IMPROVEMENT_SILVER_PCT:.2f}%"
+            f", gold<= -{IMPROVEMENT_GOLD_PCT:.2f}%"
+            f", scatter<= x{IMPROVEMENT_SCATTER_MAX_RATIO:.2f}"
         ),
         "",
         "worst_median_regressions:",
@@ -800,23 +774,13 @@ def write_summary_report(
             f"reasons: {', '.join(delta.reasons)}"
         )
 
-    lines.extend(["", "worst_cov_mad_regressions:"])
+    lines.extend(["", "largest_cov_mad_shifts_diagnostic_only:"])
     for delta in worst_by_cov:
         lines.append(
             "  "
             f"{delta.case_name}: {delta.status} "
             f"COV(MAD) {delta.current_cov_mad_pct:.3f}% vs "
             f"{delta.gold_cov_mad_pct:.3f}% (x{delta.cov_mad_ratio:.2f}) "
-            f"reasons: {', '.join(delta.reasons)}"
-        )
-
-    lines.extend(["", "worst_range_regressions:"])
-    for delta in worst_by_range:
-        lines.append(
-            "  "
-            f"{delta.case_name}: {delta.status} "
-            f"range {delta.current_range_ms:.3f} vs {delta.gold_range_ms:.3f} ms "
-            f"(x{delta.range_ratio:.2f}) "
             f"reasons: {', '.join(delta.reasons)}"
         )
 
@@ -829,6 +793,34 @@ def report_deltas(
     deltas: list[PerfDelta],
     label: str,
 ) -> int:
+    def print_case_line(delta: PerfDelta) -> None:
+        line_1 = (
+            f"  {delta.case_name}: {delta.status} "
+            f"{delta.current_median_ms:.3f} vs "
+            f"{delta.gold_median_ms:.3f} ms"
+        )
+        print(
+            textwrap.fill(
+                line_1,
+                width=80,
+                initial_indent="",
+                subsequent_indent="    ",
+            ),
+        )
+        line_2 = (
+            f"d={delta.delta_ms:+.3f} ms ({delta.delta_pct:+.2f}%), "
+            f"cov x{delta.cov_mad_ratio:.2f}, "
+            f"reasons: {', '.join(delta.reasons)}"
+        )
+        print(
+            textwrap.fill(
+                line_2,
+                width=80,
+                initial_indent="    ",
+                subsequent_indent="    ",
+            ),
+        )
+
     regressions = sorted(
         [delta for delta in deltas if delta.delta_ms > 0.0],
         key=lambda item: (
@@ -842,10 +834,12 @@ def report_deltas(
     improvements = sorted(
         [delta for delta in deltas if delta.delta_ms < 0.0],
         key=lambda item: (
-            item.status == STATUS_RED,
-            item.status == STATUS_AMBER,
-            item.delta_ms,
+            item.status == STATUS_GOLD,
+            item.status == STATUS_SILVER,
+            item.status == STATUS_BRONZE,
+            -item.delta_ms,
         ),
+        reverse=True,
     )
 
     red_regressions = [
@@ -854,56 +848,71 @@ def report_deltas(
     amber_regressions = [
         delta for delta in regressions if delta.status == STATUS_AMBER
     ]
-    amber_or_red_improvements = [
-        delta for delta in improvements if delta.status != STATUS_GREEN
+    flagged_improvements = [
+        delta
+        for delta in improvements
+        if delta.status in (STATUS_BRONZE, STATUS_SILVER, STATUS_GOLD)
     ]
+    flagged_regressions = red_regressions + amber_regressions
+    total_cases = len(deltas)
+    status_counts = {
+        STATUS_GREEN: sum(1 for delta in deltas if delta.status == STATUS_GREEN),
+        STATUS_AMBER: sum(1 for delta in deltas if delta.status == STATUS_AMBER),
+        STATUS_RED: sum(1 for delta in deltas if delta.status == STATUS_RED),
+        STATUS_BRONZE: sum(
+            1 for delta in deltas if delta.status == STATUS_BRONZE
+        ),
+        STATUS_SILVER: sum(
+            1 for delta in deltas if delta.status == STATUS_SILVER
+        ),
+        STATUS_GOLD: sum(1 for delta in deltas if delta.status == STATUS_GOLD),
+    }
 
     prefix = f"[perf:{case.name}:{profile.name}]"
     print(f"{prefix} Top regressions vs {label} (E2E median):")
     for delta in regressions[:TOP_N]:
-        sig = delta.status
-        print(
-            "  "
-            f"{delta.case_name}: "
-            f"{delta.current_median_ms:.6f} ms vs {delta.gold_median_ms:.6f} ms "
-            f"({delta.delta_ms:+.6f} ms, {delta.delta_pct:+.2f}%, "
-            f"cov x{delta.cov_mad_ratio:.2f}, "
-            f"range x{delta.range_ratio:.2f}, {sig})",
-        )
+        print_case_line(delta)
 
     print(f"{prefix} Top improvements vs {label} (E2E median):")
     for delta in improvements[:TOP_N]:
-        sig = delta.status
-        print(
-            "  "
-            f"{delta.case_name}: "
-            f"{delta.current_median_ms:.6f} ms vs {delta.gold_median_ms:.6f} ms "
-            f"({delta.delta_ms:+.6f} ms, {delta.delta_pct:+.2f}%, "
-            f"cov x{delta.cov_mad_ratio:.2f}, "
-            f"range x{delta.range_ratio:.2f}, {sig})",
-        )
+        print_case_line(delta)
 
-    if not red_regressions and not amber_regressions and not amber_or_red_improvements:
+    print(
+        f"{prefix} Summary: improvements "
+        f"{len(flagged_improvements)}/{total_cases}, "
+        f"regressions {len(flagged_regressions)}/{total_cases}",
+    )
+    print(
+        "    classifications "
+        f"green={status_counts[STATUS_GREEN]}, "
+        f"amber={status_counts[STATUS_AMBER]}, "
+        f"red={status_counts[STATUS_RED]}, "
+        f"bronze={status_counts[STATUS_BRONZE]}, "
+        f"silver={status_counts[STATUS_SILVER]}, "
+        f"gold={status_counts[STATUS_GOLD]}",
+    )
+
+    if not red_regressions and not amber_regressions and not flagged_improvements:
         print(f"{prefix} No significant performance difference detected.")
         return 0
 
     if red_regressions:
         print(
             f"{prefix} RED regressions detected: "
-            f"{len(red_regressions)} case(s).",
+            f"{len(red_regressions)}/{total_cases}.",
         )
         return 1
 
     if amber_regressions:
         print(
             f"{prefix} AMBER regressions detected: "
-            f"{len(amber_regressions)} case(s).",
+            f"{len(amber_regressions)}/{total_cases}.",
         )
         return 0
 
     print(
-        f"{prefix} Non-green improvements detected: "
-        f"{len(amber_or_red_improvements)} case(s).",
+        f"{prefix} Flagged improvements detected: "
+        f"{len(flagged_improvements)}/{total_cases}.",
     )
     return 0
 
@@ -951,7 +960,7 @@ def test_perf(
     write_metadata(out_dir, case, profile, runs, command)
     deltas = compare_case_maps(baseline_dir, out_dir)
     write_comparison_json(out_dir, deltas, baseline_dir)
-    write_case_report_csv(out_dir, deltas)
+    write_case_report_csv(out_dir, case, deltas)
     write_summary_report(out_dir, case, profile, "gold", deltas)
     return report_deltas(case, profile, deltas, "gold")
 
@@ -960,12 +969,13 @@ def run_case_script(
     script_name: str,
     profile_name: str,
     runs: int | None = None,
-) -> None:
+) -> int:
     command = [str(python_path()), str(repo_root() / "scripts" / script_name)]
     command.extend(["--profile", profile_name])
     if runs is not None:
         command.extend(["--runs", str(runs)])
-    subprocess.run(command, cwd=repo_root(), check=True)
+    result = subprocess.run(command, cwd=repo_root(), check=False)
+    return result.returncode
 
 
 def update_buildconfig_simd(simd_mode: str) -> None:

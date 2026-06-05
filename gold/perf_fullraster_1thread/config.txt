@@ -1,6 +1,6 @@
 benchmark=bench_fullraster.zig
-stats_out_dir=out/perf_gold_stage/fullraster/single_threaded/20260605_160048
-image_out_dir=out/perf_images/fullraster/single_threaded
+stats_out_dir=out/perf_gold_stage/fullraster_1thread/20260605_174417
+image_out_dir=out/perf_test_images/fullraster_1thread
 render_mode=in_order
 render_group_count=1
 render_group_0_workers=1
@@ -42,9 +42,9 @@ build_precision=f64
 argv_begin
 argv_0=/home/lloydf/riley-raster/bin/bench_fullraster_simd
 argv_1=--out-dir
-argv_2=out/perf_gold_stage/fullraster/single_threaded/20260605_160048
+argv_2=out/perf_gold_stage/fullraster_1thread/20260605_174417
 argv_3=--image-out-dir
-argv_4=out/perf_images/fullraster/single_threaded
+argv_4=out/perf_test_images/fullraster_1thread
 argv_5=--runs
 argv_6=25
 argv_7=--render-group-count

@@ -3,7 +3,13 @@ from __future__ import annotations
 
 import argparse
 
-from perf_common import ALL_PROFILES, DEFAULT_GOLD_RUNS, DEFAULT_PROFILE, run_case_script
+from perf_common import (
+    ALL_PROFILE_CHOICES,
+    DEFAULT_GOLD_RUNS,
+    DEFAULT_PROFILE,
+    expand_profile_names,
+    run_case_script,
+)
 
 
 SCRIPT_NAMES = [
@@ -19,14 +25,17 @@ def main() -> int:
     parser.add_argument("--runs", type=int, default=DEFAULT_GOLD_RUNS)
     parser.add_argument(
         "--profile",
-        choices=ALL_PROFILES,
+        choices=ALL_PROFILE_CHOICES,
         default=DEFAULT_PROFILE,
     )
     args = parser.parse_args()
 
-    for script_name in SCRIPT_NAMES:
-        print(f"Running {script_name}...")
-        run_case_script(script_name, args.profile, args.runs)
+    for profile_name in expand_profile_names(args.profile):
+        for script_name in SCRIPT_NAMES:
+            print(f"Running {script_name} [{profile_name}]...")
+            exit_code = run_case_script(script_name, profile_name, args.runs)
+            if exit_code != 0:
+                return exit_code
 
     print("Completed perf gold generation for all configured cases.")
     return 0

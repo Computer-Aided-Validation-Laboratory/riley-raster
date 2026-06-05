@@ -1,16 +1,16 @@
 {
   "case": "sphere2000zoom",
-  "profile": "single_threaded",
+  "profile": "1thread",
   "benchmark_name": "bench_sphere2000zoom",
   "binary_name": "bench_sphere2000zoom_simd",
   "runs": 25,
-  "generated_at": "2026-06-05T15:37:58.247747+00:00",
+  "generated_at": "2026-06-05T17:20:19.001738+00:00",
   "command": [
     "/home/lloydf/riley-raster/bin/bench_sphere2000zoom_simd",
     "--out-dir",
-    "out/perf_gold_stage/sphere2000zoom/single_threaded/20260605_162911",
+    "out/perf_gold_stage/sphere2000zoom_1thread/20260605_181138",
     "--image-out-dir",
-    "out/perf_images/sphere2000zoom/single_threaded",
+    "out/perf_test_images/sphere2000zoom_1thread",
     "--runs",
     "25",
     "--render-group-count",
@@ -35,7 +35,7 @@
     "memory"
   ],
   "profile_config": {
-    "name": "single_threaded",
+    "name": "1thread",
     "total_threads": 1,
     "max_geom_threads_per_frame": 1,
     "max_raster_threads_per_frame": 1,

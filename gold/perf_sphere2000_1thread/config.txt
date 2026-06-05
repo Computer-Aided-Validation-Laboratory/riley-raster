@@ -1,6 +1,6 @@
 benchmark=bench_sphere2000.zig
-stats_out_dir=out/perf_gold_stage/sphere2000/single_threaded/20260605_162303
-image_out_dir=out/perf_images/sphere2000/single_threaded
+stats_out_dir=out/perf_gold_stage/sphere2000_1thread/20260605_180524
+image_out_dir=out/perf_test_images/sphere2000_1thread
 render_mode=in_order
 render_group_count=1
 render_group_0_workers=1
@@ -42,9 +42,9 @@ build_precision=f64
 argv_begin
 argv_0=/home/lloydf/riley-raster/bin/bench_sphere2000_simd
 argv_1=--out-dir
-argv_2=out/perf_gold_stage/sphere2000/single_threaded/20260605_162303
+argv_2=out/perf_gold_stage/sphere2000_1thread/20260605_180524
 argv_3=--image-out-dir
-argv_4=out/perf_images/sphere2000/single_threaded
+argv_4=out/perf_test_images/sphere2000_1thread
 argv_5=--runs
 argv_6=25
 argv_7=--render-group-count
