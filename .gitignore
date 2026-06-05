@@ -10,7 +10,7 @@ zig-out/
 
 # Do not keep any large output directories with images or other output in them
 out/
-gold/
+gold/*
 verif/
 demo*/
 bin/
@@ -41,11 +41,12 @@ perf/
 # Keep the min test suite to ship with the repo
 !data/min/
 !data/min/**/*.csv
-!gold/
 !gold/min/
 !gold/min/**/*.fimg
 !gold/min/**/*.bmp
 !gold/min/**/*.csv
+!gold/perf_*/
+!gold/perf_*/*.csv
 
 # Keep our other test suite data committed to the repo
 !data/small/**/*.csv

@@ -14,8 +14,8 @@ import time
 SAVE_STRATEGIES = (
     "memory",
 )
-SIMD_LABELS = ("simd",)#("scalar", "simd")
-HULL_MODES = ("on_no_fallback",)#("off", "on_no_fallback")
+SIMD_LABELS = ("scalar", "simd")
+HULL_MODES = ("off", "on_no_fallback")
 
 
 def benchmark_tag(benchmark_name: str) -> str:

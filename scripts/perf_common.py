@@ -15,12 +15,27 @@ from typing import Final
 
 DEFAULT_GOLD_RUNS: Final[int] = 25
 DEFAULT_TEST_RUNS: Final[int] = 10
-DEFAULT_PROFILE: Final[str] = "single_threaded"
-ALL_PROFILES: Final[tuple[str, ...]] = ("single_threaded", "four_threaded")
+DEFAULT_PROFILE: Final[str] = "1thread"
+ALL_PROFILES: Final[tuple[str, ...]] = ("1thread", "4thread")
 E2E_KEY: Final[str] = "E2E Time [ms]"
 RASTER_KEY: Final[str] = "Raster Time [ms]"
 GEOM_KEY: Final[str] = "Geom Time [ms]"
 TOP_N: Final[int] = 10
+STATUS_GREEN: Final[str] = "green"
+STATUS_AMBER: Final[str] = "amber"
+STATUS_RED: Final[str] = "red"
+MEDIAN_GREEN_PCT: Final[float] = 5.0
+MEDIAN_RED_PCT: Final[float] = 12.0
+MEDIAN_COMBINED_RED_PCT: Final[float] = 8.0
+MEDIAN_ABS_DELTA_FLOOR_MS: Final[float] = 0.2
+COV_GREEN_RATIO: Final[float] = 1.75
+COV_RED_RATIO: Final[float] = 3.0
+COV_COMBINED_RED_RATIO: Final[float] = 2.0
+MAD_ABS_DELTA_FLOOR_MS: Final[float] = 0.05
+RANGE_GREEN_RATIO: Final[float] = 1.75
+RANGE_RED_RATIO: Final[float] = 2.5
+RANGE_COMBINED_RED_RATIO: Final[float] = 2.0
+RANGE_ABS_DELTA_FLOOR_MS: Final[float] = 0.1
 
 
 @dataclass(frozen=True)
@@ -52,14 +67,27 @@ class PerfDelta:
     gold_mad_ms: float
     current_median_ms: float
     current_mad_ms: float
+    gold_min_ms: float
+    gold_max_ms: float
+    current_min_ms: float
+    current_max_ms: float
     gold_raster_ms: float
     current_raster_ms: float
     gold_geom_ms: float
     current_geom_ms: float
     delta_ms: float
     delta_pct: float
+    mad_abs_delta_ms: float
     mad_units: float
-    significant: bool
+    gold_cov_mad_pct: float
+    current_cov_mad_pct: float
+    cov_mad_ratio: float
+    gold_range_ms: float
+    current_range_ms: float
+    range_abs_delta_ms: float
+    range_ratio: float
+    status: str
+    reasons: list[str]
 
 
 PERF_CASES: Final[dict[str, PerfCase]] = {
@@ -88,16 +116,16 @@ PERF_CASES: Final[dict[str, PerfCase]] = {
 
 PROFILE_MAP: Final[dict[str, dict[str, PerfProfile]]] = {
     "fullraster": {
-        "single_threaded": PerfProfile(
-            name="single_threaded",
+        "1thread": PerfProfile(
+            name="1thread",
             total_threads=1,
             max_geom_threads_per_frame=1,
             max_raster_threads_per_frame=1,
             max_geom_workers_per_job=1,
             max_raster_workers_per_job=1,
         ),
-        "four_threaded": PerfProfile(
-            name="four_threaded",
+        "4thread": PerfProfile(
+            name="4thread",
             total_threads=4,
             max_geom_threads_per_frame=4,
             max_raster_threads_per_frame=4,
@@ -106,16 +134,16 @@ PROFILE_MAP: Final[dict[str, dict[str, PerfProfile]]] = {
         ),
     },
     "geom": {
-        "single_threaded": PerfProfile(
-            name="single_threaded",
+        "1thread": PerfProfile(
+            name="1thread",
             total_threads=1,
             max_geom_threads_per_frame=1,
             max_raster_threads_per_frame=1,
             max_geom_workers_per_job=1,
             max_raster_workers_per_job=1,
         ),
-        "four_threaded": PerfProfile(
-            name="four_threaded",
+        "4thread": PerfProfile(
+            name="4thread",
             total_threads=4,
             max_geom_threads_per_frame=4,
             max_raster_threads_per_frame=4,
@@ -124,16 +152,16 @@ PROFILE_MAP: Final[dict[str, dict[str, PerfProfile]]] = {
         ),
     },
     "sphere2000": {
-        "single_threaded": PerfProfile(
-            name="single_threaded",
+        "1thread": PerfProfile(
+            name="1thread",
             total_threads=1,
             max_geom_threads_per_frame=1,
             max_raster_threads_per_frame=1,
             max_geom_workers_per_job=1,
             max_raster_workers_per_job=1,
         ),
-        "four_threaded": PerfProfile(
-            name="four_threaded",
+        "4thread": PerfProfile(
+            name="4thread",
             total_threads=4,
             max_geom_threads_per_frame=4,
             max_raster_threads_per_frame=4,
@@ -142,16 +170,16 @@ PROFILE_MAP: Final[dict[str, dict[str, PerfProfile]]] = {
         ),
     },
     "sphere2000zoom": {
-        "single_threaded": PerfProfile(
-            name="single_threaded",
+        "1thread": PerfProfile(
+            name="1thread",
             total_threads=1,
             max_geom_threads_per_frame=1,
             max_raster_threads_per_frame=1,
             max_geom_workers_per_job=1,
             max_raster_workers_per_job=1,
         ),
-        "four_threaded": PerfProfile(
-            name="four_threaded",
+        "4thread": PerfProfile(
+            name="4thread",
             total_threads=4,
             max_geom_threads_per_frame=4,
             max_raster_threads_per_frame=4,
@@ -163,8 +191,8 @@ PROFILE_MAP: Final[dict[str, dict[str, PerfProfile]]] = {
 
 
 REFERENCE_ROOTS: Final[dict[str, pathlib.Path]] = {
-    "single_threaded": pathlib.Path("perf/dev_single_threaded"),
-    "four_threaded": pathlib.Path("perf/dev_4_threaded"),
+    "1thread": pathlib.Path("perf/dev_single_threaded"),
+    "4thread": pathlib.Path("perf/dev_4_threaded"),
 }
 
 
@@ -222,16 +250,15 @@ def binary_path(case: PerfCase) -> pathlib.Path:
 
 
 def gold_dir(case: PerfCase, profile: PerfProfile) -> pathlib.Path:
-    return repo_root() / "gold" / "perf" / case.name / profile.name
+    return repo_root() / "gold" / f"perf_{case.name}_{profile.name}"
 
 
 def test_run_dir(case: PerfCase, profile: PerfProfile) -> pathlib.Path:
     return (
         repo_root()
         / "out"
-        / "perf_test"
-        / case.name
-        / profile.name
+        / "perf_test_stats"
+        / f"{case.name}_{profile.name}"
         / timestamp_string()
     )
 
@@ -241,14 +268,18 @@ def gold_stage_dir(case: PerfCase, profile: PerfProfile) -> pathlib.Path:
         repo_root()
         / "out"
         / "perf_gold_stage"
-        / case.name
-        / profile.name
+        / f"{case.name}_{profile.name}"
         / timestamp_string()
     )
 
 
 def image_out_dir(case: PerfCase, profile: PerfProfile) -> pathlib.Path:
-    return repo_root() / "out" / "perf_images" / case.name / profile.name
+    return (
+        repo_root()
+        / "out"
+        / "perf_test_images"
+        / f"{case.name}_{profile.name}"
+    )
 
 
 def reference_dir(case: PerfCase, profile: PerfProfile) -> pathlib.Path | None:
@@ -350,16 +381,66 @@ def parse_float(row: dict[str, str], key: str) -> float:
     return float(row[key])
 
 
-def delta_significance_threshold_ms(
-    gold_median_ms: float,
-    gold_mad_ms: float,
-    current_mad_ms: float,
-) -> float:
-    return max(
-        3.0 * max(gold_mad_ms, current_mad_ms),
-        0.02 * gold_median_ms,
-        0.05,
+def safe_ratio(numerator: float, denominator: float, eps: float = 1e-9) -> float:
+    return numerator / max(denominator, eps)
+
+
+def classify_perf_delta(
+    delta_pct: float,
+    delta_ms: float,
+    mad_abs_delta_ms: float,
+    cov_mad_ratio: float,
+    range_abs_delta_ms: float,
+    range_ratio: float,
+) -> tuple[str, list[str]]:
+    reasons: list[str] = []
+    median_active = (
+        delta_pct > 0.0 and delta_ms > MEDIAN_ABS_DELTA_FLOOR_MS
     )
+    cov_active = (
+        cov_mad_ratio > 1.0 and mad_abs_delta_ms > MAD_ABS_DELTA_FLOOR_MS
+    )
+    range_active = (
+        range_ratio > 1.0 and range_abs_delta_ms > RANGE_ABS_DELTA_FLOOR_MS
+    )
+
+    if median_active and delta_pct > MEDIAN_RED_PCT:
+        reasons.append(f"median +{delta_pct:.2f}%")
+    if cov_active and cov_mad_ratio > COV_RED_RATIO:
+        reasons.append(f"cov_mad x{cov_mad_ratio:.2f}")
+    if range_active and range_ratio > RANGE_RED_RATIO:
+        reasons.append(f"range x{range_ratio:.2f}")
+    if (
+        median_active
+        and delta_pct > MEDIAN_COMBINED_RED_PCT
+        and cov_active
+        and cov_mad_ratio > COV_COMBINED_RED_RATIO
+    ):
+        reasons.append(
+            f"median+cov combined (+{delta_pct:.2f}%, x{cov_mad_ratio:.2f})",
+        )
+    if (
+        median_active
+        and delta_pct > MEDIAN_COMBINED_RED_PCT
+        and range_active
+        and range_ratio > RANGE_COMBINED_RED_RATIO
+    ):
+        reasons.append(
+            f"median+range combined (+{delta_pct:.2f}%, x{range_ratio:.2f})",
+        )
+    if reasons:
+        return STATUS_RED, reasons
+
+    if median_active and delta_pct > MEDIAN_GREEN_PCT:
+        reasons.append(f"median +{delta_pct:.2f}%")
+    if cov_active and cov_mad_ratio > COV_GREEN_RATIO:
+        reasons.append(f"cov_mad x{cov_mad_ratio:.2f}")
+    if range_active and range_ratio > RANGE_GREEN_RATIO:
+        reasons.append(f"range x{range_ratio:.2f}")
+    if reasons:
+        return STATUS_AMBER, reasons
+
+    return STATUS_GREEN, ["within thresholds"]
 
 
 def compare_case_maps(
@@ -368,8 +449,12 @@ def compare_case_maps(
 ) -> list[PerfDelta]:
     gold_median = load_summary_map(gold_root, "median")
     gold_mad = load_summary_map(gold_root, "mad")
+    gold_min = load_summary_map(gold_root, "min")
+    gold_max = load_summary_map(gold_root, "max")
     current_median = load_summary_map(current_root, "median")
     current_mad = load_summary_map(current_root, "mad")
+    current_min = load_summary_map(current_root, "min")
+    current_max = load_summary_map(current_root, "max")
 
     gold_cases = set(gold_median.keys())
     current_cases = set(current_median.keys())
@@ -385,24 +470,46 @@ def compare_case_maps(
     for case_name in sorted(gold_cases):
         gold_med_row = gold_median[case_name]
         gold_mad_row = gold_mad[case_name]
+        gold_min_row = gold_min[case_name]
+        gold_max_row = gold_max[case_name]
         cur_med_row = current_median[case_name]
         cur_mad_row = current_mad[case_name]
+        cur_min_row = current_min[case_name]
+        cur_max_row = current_max[case_name]
 
         gold_median_ms = parse_float(gold_med_row, E2E_KEY)
         current_median_ms = parse_float(cur_med_row, E2E_KEY)
         gold_mad_ms = parse_float(gold_mad_row, E2E_KEY)
         current_mad_ms = parse_float(cur_mad_row, E2E_KEY)
+        gold_min_ms = parse_float(gold_min_row, E2E_KEY)
+        gold_max_ms = parse_float(gold_max_row, E2E_KEY)
+        current_min_ms = parse_float(cur_min_row, E2E_KEY)
+        current_max_ms = parse_float(cur_max_row, E2E_KEY)
         delta_ms = current_median_ms - gold_median_ms
         delta_pct = (
             0.0
             if gold_median_ms == 0.0
             else delta_ms / gold_median_ms * 100.0
         )
+        mad_abs_delta_ms = current_mad_ms - gold_mad_ms
         mad_units = delta_ms / max(gold_mad_ms, current_mad_ms, 1e-9)
-        significant = abs(delta_ms) >= delta_significance_threshold_ms(
-            gold_median_ms,
-            gold_mad_ms,
+        gold_cov_mad_pct = 100.0 * safe_ratio(gold_mad_ms, gold_median_ms)
+        current_cov_mad_pct = 100.0 * safe_ratio(
             current_mad_ms,
+            current_median_ms,
+        )
+        cov_mad_ratio = safe_ratio(current_cov_mad_pct, gold_cov_mad_pct)
+        gold_range_ms = gold_max_ms - gold_min_ms
+        current_range_ms = current_max_ms - current_min_ms
+        range_abs_delta_ms = current_range_ms - gold_range_ms
+        range_ratio = safe_ratio(current_range_ms, gold_range_ms)
+        status, reasons = classify_perf_delta(
+            delta_pct,
+            delta_ms,
+            mad_abs_delta_ms,
+            cov_mad_ratio,
+            range_abs_delta_ms,
+            range_ratio,
         )
 
         deltas.append(
@@ -412,14 +519,27 @@ def compare_case_maps(
                 gold_mad_ms=gold_mad_ms,
                 current_median_ms=current_median_ms,
                 current_mad_ms=current_mad_ms,
+                gold_min_ms=gold_min_ms,
+                gold_max_ms=gold_max_ms,
+                current_min_ms=current_min_ms,
+                current_max_ms=current_max_ms,
                 gold_raster_ms=parse_float(gold_med_row, RASTER_KEY),
                 current_raster_ms=parse_float(cur_med_row, RASTER_KEY),
                 gold_geom_ms=parse_float(gold_med_row, GEOM_KEY),
                 current_geom_ms=parse_float(cur_med_row, GEOM_KEY),
                 delta_ms=delta_ms,
                 delta_pct=delta_pct,
+                mad_abs_delta_ms=mad_abs_delta_ms,
                 mad_units=mad_units,
-                significant=significant,
+                gold_cov_mad_pct=gold_cov_mad_pct,
+                current_cov_mad_pct=current_cov_mad_pct,
+                cov_mad_ratio=cov_mad_ratio,
+                gold_range_ms=gold_range_ms,
+                current_range_ms=current_range_ms,
+                range_abs_delta_ms=range_abs_delta_ms,
+                range_ratio=range_ratio,
+                status=status,
+                reasons=reasons,
             ),
         )
 
@@ -488,6 +608,221 @@ def write_comparison_json(
     (out_dir / "comparison.json").write_text(json.dumps(payload, indent=2) + "\n")
 
 
+def report_file_prefix(case: PerfCase) -> str:
+    return case.name
+
+
+def write_case_report_csv(
+    out_dir: pathlib.Path,
+    case: PerfCase,
+    deltas: list[PerfDelta],
+) -> None:
+    timestamp = timestamp_string()
+    fieldnames = [
+        "case_name",
+        "status",
+        "reasons",
+        "gold_geom_ms",
+        "current_geom_ms",
+        "geom_delta_ms",
+        "geom_delta_pct",
+        "gold_raster_ms",
+        "current_raster_ms",
+        "raster_delta_ms",
+        "raster_delta_pct",
+        "gold_median_ms",
+        "current_median_ms",
+        "delta_ms",
+        "delta_pct",
+        "gold_mad_ms",
+        "current_mad_ms",
+        "mad_abs_delta_ms",
+        "mad_units",
+        "gold_cov_mad_pct",
+        "current_cov_mad_pct",
+        "cov_mad_ratio",
+        "gold_min_ms",
+        "gold_max_ms",
+        "current_min_ms",
+        "current_max_ms",
+        "gold_range_ms",
+        "current_range_ms",
+        "range_abs_delta_ms",
+        "range_ratio",
+        "case_name_end",
+        "status_end",
+        "reasons_end",
+    ]
+    rows: list[dict[str, str]] = []
+    for delta in deltas:
+        geom_delta_ms = delta.current_geom_ms - delta.gold_geom_ms
+        geom_delta_pct = (
+            0.0
+            if delta.gold_geom_ms == 0.0
+            else geom_delta_ms / delta.gold_geom_ms * 100.0
+        )
+        raster_delta_ms = delta.current_raster_ms - delta.gold_raster_ms
+        raster_delta_pct = (
+            0.0
+            if delta.gold_raster_ms == 0.0
+            else raster_delta_ms / delta.gold_raster_ms * 100.0
+        )
+        reasons = "; ".join(delta.reasons)
+        rows.append(
+            {
+                "case_name": delta.case_name,
+                "status": delta.status,
+                "reasons": reasons,
+                "gold_geom_ms": f"{delta.gold_geom_ms:.6f}",
+                "current_geom_ms": f"{delta.current_geom_ms:.6f}",
+                "geom_delta_ms": f"{geom_delta_ms:.6f}",
+                "geom_delta_pct": f"{geom_delta_pct:.6f}",
+                "gold_raster_ms": f"{delta.gold_raster_ms:.6f}",
+                "current_raster_ms": f"{delta.current_raster_ms:.6f}",
+                "raster_delta_ms": f"{raster_delta_ms:.6f}",
+                "raster_delta_pct": f"{raster_delta_pct:.6f}",
+                "gold_median_ms": f"{delta.gold_median_ms:.6f}",
+                "current_median_ms": f"{delta.current_median_ms:.6f}",
+                "delta_ms": f"{delta.delta_ms:.6f}",
+                "delta_pct": f"{delta.delta_pct:.6f}",
+                "gold_mad_ms": f"{delta.gold_mad_ms:.6f}",
+                "current_mad_ms": f"{delta.current_mad_ms:.6f}",
+                "mad_abs_delta_ms": f"{delta.mad_abs_delta_ms:.6f}",
+                "mad_units": f"{delta.mad_units:.6f}",
+                "gold_cov_mad_pct": f"{delta.gold_cov_mad_pct:.6f}",
+                "current_cov_mad_pct": f"{delta.current_cov_mad_pct:.6f}",
+                "cov_mad_ratio": f"{delta.cov_mad_ratio:.6f}",
+                "gold_min_ms": f"{delta.gold_min_ms:.6f}",
+                "gold_max_ms": f"{delta.gold_max_ms:.6f}",
+                "current_min_ms": f"{delta.current_min_ms:.6f}",
+                "current_max_ms": f"{delta.current_max_ms:.6f}",
+                "gold_range_ms": f"{delta.gold_range_ms:.6f}",
+                "current_range_ms": f"{delta.current_range_ms:.6f}",
+                "range_abs_delta_ms": f"{delta.range_abs_delta_ms:.6f}",
+                "range_ratio": f"{delta.range_ratio:.6f}",
+                "case_name_end": delta.case_name,
+                "status_end": delta.status,
+                "reasons_end": reasons,
+            },
+        )
+
+    report_sets = {
+        "overall": rows,
+        "amber": [row for row in rows if row["status"] == STATUS_AMBER],
+        "red": [row for row in rows if row["status"] == STATUS_RED],
+    }
+    prefix = report_file_prefix(case)
+    for label, report_rows in report_sets.items():
+        report_path = out_dir / f"{prefix}_{label}_{timestamp}.csv"
+        with report_path.open("w", newline="") as csv_file:
+            writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(report_rows)
+
+
+def write_summary_report(
+    out_dir: pathlib.Path,
+    case: PerfCase,
+    profile: PerfProfile,
+    label: str,
+    deltas: list[PerfDelta],
+) -> None:
+    status_counts = {
+        STATUS_GREEN: sum(1 for delta in deltas if delta.status == STATUS_GREEN),
+        STATUS_AMBER: sum(1 for delta in deltas if delta.status == STATUS_AMBER),
+        STATUS_RED: sum(1 for delta in deltas if delta.status == STATUS_RED),
+    }
+    overall_status = STATUS_RED
+    if status_counts[STATUS_RED] == 0:
+        overall_status = STATUS_AMBER
+    if (
+        status_counts[STATUS_RED] == 0
+        and status_counts[STATUS_AMBER] == 0
+    ):
+        overall_status = STATUS_GREEN
+
+    worst_by_median = sorted(
+        deltas,
+        key=lambda item: item.delta_pct,
+        reverse=True,
+    )[:TOP_N]
+    worst_by_cov = sorted(
+        deltas,
+        key=lambda item: item.cov_mad_ratio,
+        reverse=True,
+    )[:TOP_N]
+    worst_by_range = sorted(
+        deltas,
+        key=lambda item: item.range_ratio,
+        reverse=True,
+    )[:TOP_N]
+
+    lines = [
+        f"perf report: {case.name}/{profile.name}",
+        f"generated_at_utc={dt.datetime.now(dt.timezone.utc).isoformat()}",
+        f"comparison_label={label}",
+        f"overall_status={overall_status}",
+        (
+            "counts="
+            f"green:{status_counts[STATUS_GREEN]},"
+            f"amber:{status_counts[STATUS_AMBER]},"
+            f"red:{status_counts[STATUS_RED]}"
+        ),
+        "",
+        "thresholds:",
+        (
+            f"  median green<= {MEDIAN_GREEN_PCT:.2f}%"
+            f", red> {MEDIAN_RED_PCT:.2f}%"
+            f", abs_floor> {MEDIAN_ABS_DELTA_FLOOR_MS:.2f} ms"
+        ),
+        (
+            f"  cov_mad green<= x{COV_GREEN_RATIO:.2f}"
+            f", red> x{COV_RED_RATIO:.2f}"
+            f", abs_floor> {MAD_ABS_DELTA_FLOOR_MS:.2f} ms"
+        ),
+        (
+            f"  range green<= x{RANGE_GREEN_RATIO:.2f}"
+            f", red> x{RANGE_RED_RATIO:.2f}"
+            f", abs_floor> {RANGE_ABS_DELTA_FLOOR_MS:.2f} ms"
+        ),
+        "",
+        "worst_median_regressions:",
+    ]
+
+    for delta in worst_by_median:
+        lines.append(
+            "  "
+            f"{delta.case_name}: {delta.status} "
+            f"median {delta.current_median_ms:.3f} vs {delta.gold_median_ms:.3f} ms "
+            f"({delta.delta_ms:+.3f} ms, {delta.delta_pct:+.2f}%) "
+            f"geom {delta.current_geom_ms:.3f}/{delta.gold_geom_ms:.3f} "
+            f"raster {delta.current_raster_ms:.3f}/{delta.gold_raster_ms:.3f} "
+            f"reasons: {', '.join(delta.reasons)}"
+        )
+
+    lines.extend(["", "worst_cov_mad_regressions:"])
+    for delta in worst_by_cov:
+        lines.append(
+            "  "
+            f"{delta.case_name}: {delta.status} "
+            f"COV(MAD) {delta.current_cov_mad_pct:.3f}% vs "
+            f"{delta.gold_cov_mad_pct:.3f}% (x{delta.cov_mad_ratio:.2f}) "
+            f"reasons: {', '.join(delta.reasons)}"
+        )
+
+    lines.extend(["", "worst_range_regressions:"])
+    for delta in worst_by_range:
+        lines.append(
+            "  "
+            f"{delta.case_name}: {delta.status} "
+            f"range {delta.current_range_ms:.3f} vs {delta.gold_range_ms:.3f} ms "
+            f"(x{delta.range_ratio:.2f}) "
+            f"reasons: {', '.join(delta.reasons)}"
+        )
+
+    (out_dir / "comparison_report.txt").write_text("\n".join(lines) + "\n")
+
+
 def report_deltas(
     case: PerfCase,
     profile: PerfProfile,
@@ -496,58 +831,79 @@ def report_deltas(
 ) -> int:
     regressions = sorted(
         [delta for delta in deltas if delta.delta_ms > 0.0],
-        key=lambda item: (item.significant, item.delta_ms, item.delta_pct),
+        key=lambda item: (
+            item.status == STATUS_RED,
+            item.status == STATUS_AMBER,
+            item.delta_ms,
+            item.delta_pct,
+        ),
         reverse=True,
     )
     improvements = sorted(
         [delta for delta in deltas if delta.delta_ms < 0.0],
-        key=lambda item: (item.significant, item.delta_ms),
+        key=lambda item: (
+            item.status == STATUS_RED,
+            item.status == STATUS_AMBER,
+            item.delta_ms,
+        ),
     )
 
-    significant_regressions = [
-        delta for delta in regressions if delta.significant
+    red_regressions = [
+        delta for delta in regressions if delta.status == STATUS_RED
     ]
-    significant_improvements = [
-        delta for delta in improvements if delta.significant
+    amber_regressions = [
+        delta for delta in regressions if delta.status == STATUS_AMBER
+    ]
+    amber_or_red_improvements = [
+        delta for delta in improvements if delta.status != STATUS_GREEN
     ]
 
     prefix = f"[perf:{case.name}:{profile.name}]"
     print(f"{prefix} Top regressions vs {label} (E2E median):")
     for delta in regressions[:TOP_N]:
-        sig = "SIGNIFICANT" if delta.significant else "noise"
+        sig = delta.status
         print(
             "  "
             f"{delta.case_name}: "
             f"{delta.current_median_ms:.6f} ms vs {delta.gold_median_ms:.6f} ms "
             f"({delta.delta_ms:+.6f} ms, {delta.delta_pct:+.2f}%, "
-            f"{delta.mad_units:+.2f} MAD, {sig})",
+            f"cov x{delta.cov_mad_ratio:.2f}, "
+            f"range x{delta.range_ratio:.2f}, {sig})",
         )
 
     print(f"{prefix} Top improvements vs {label} (E2E median):")
     for delta in improvements[:TOP_N]:
-        sig = "SIGNIFICANT" if delta.significant else "noise"
+        sig = delta.status
         print(
             "  "
             f"{delta.case_name}: "
             f"{delta.current_median_ms:.6f} ms vs {delta.gold_median_ms:.6f} ms "
             f"({delta.delta_ms:+.6f} ms, {delta.delta_pct:+.2f}%, "
-            f"{delta.mad_units:+.2f} MAD, {sig})",
+            f"cov x{delta.cov_mad_ratio:.2f}, "
+            f"range x{delta.range_ratio:.2f}, {sig})",
         )
 
-    if not significant_regressions and not significant_improvements:
+    if not red_regressions and not amber_regressions and not amber_or_red_improvements:
         print(f"{prefix} No significant performance difference detected.")
         return 0
 
-    if significant_regressions:
+    if red_regressions:
         print(
-            f"{prefix} Significant regressions detected: "
-            f"{len(significant_regressions)} case(s).",
+            f"{prefix} RED regressions detected: "
+            f"{len(red_regressions)} case(s).",
         )
         return 1
 
+    if amber_regressions:
+        print(
+            f"{prefix} AMBER regressions detected: "
+            f"{len(amber_regressions)} case(s).",
+        )
+        return 0
+
     print(
-        f"{prefix} Significant improvements detected: "
-        f"{len(significant_improvements)} case(s).",
+        f"{prefix} Non-green improvements detected: "
+        f"{len(amber_or_red_improvements)} case(s).",
     )
     return 0
 
@@ -595,6 +951,8 @@ def test_perf(
     write_metadata(out_dir, case, profile, runs, command)
     deltas = compare_case_maps(baseline_dir, out_dir)
     write_comparison_json(out_dir, deltas, baseline_dir)
+    write_case_report_csv(out_dir, deltas)
+    write_summary_report(out_dir, case, profile, "gold", deltas)
     return report_deltas(case, profile, deltas, "gold")
 
 
