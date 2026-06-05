@@ -196,7 +196,7 @@ fn shadeTexSIMDImpl(
     );
 }
 
-fn shadeTexSIMDDispatchImpl(
+inline fn shadeTexSIMDDispatchImpl(
     comptime N: usize,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
@@ -209,6 +209,7 @@ fn shadeTexSIMDDispatchImpl(
     shader: *const shaderops.TexPrepared(channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
+    @setEvalBranchQuota(40000);
     switch (config.sample) {
         inline else => |sample_type| shadeTexSIMDDispatchModeImpl(
             N,
@@ -227,7 +228,7 @@ fn shadeTexSIMDDispatchImpl(
     }
 }
 
-fn shadeTexSIMDDispatchModeImpl(
+inline fn shadeTexSIMDDispatchModeImpl(
     comptime N: usize,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
@@ -261,7 +262,7 @@ fn shadeTexSIMDDispatchModeImpl(
     }
 }
 
-fn shadeTexSIMDDispatchConfigImpl(
+inline fn shadeTexSIMDDispatchConfigImpl(
     comptime N: usize,
     comptime channels: usize,
     comptime coord_space: CoordSpace,

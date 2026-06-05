@@ -127,7 +127,7 @@ fn shadeTexScalarCommonImpl(
     );
 }
 
-fn shadeTexScalarDispatchImpl(
+inline fn shadeTexScalarDispatchImpl(
     comptime N: usize,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
@@ -137,6 +137,7 @@ fn shadeTexScalarDispatchImpl(
     shader: *const shaderops.TexPrepared(channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
+    @setEvalBranchQuota(40000);
     switch (config.sample) {
         inline else => |sample_type| shadeTexScalarDispatchModeImpl(
             N,
@@ -152,7 +153,7 @@ fn shadeTexScalarDispatchImpl(
     }
 }
 
-fn shadeTexScalarDispatchModeImpl(
+inline fn shadeTexScalarDispatchModeImpl(
     comptime N: usize,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
@@ -180,7 +181,7 @@ fn shadeTexScalarDispatchModeImpl(
     }
 }
 
-fn shadeTexScalarDispatchConfigImpl(
+inline fn shadeTexScalarDispatchConfigImpl(
     comptime N: usize,
     comptime channels: usize,
     comptime coord_space: CoordSpace,

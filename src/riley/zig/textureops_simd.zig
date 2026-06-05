@@ -117,7 +117,7 @@ fn getPxWide(
     return samp_res;
 }
 
-pub fn sampleLinearWide(
+pub inline fn sampleLinearWide(
     comptime CH: usize,
     texture: anytype,
     v_tex_x_i: VecSI,
@@ -157,7 +157,7 @@ pub fn sampleLinearWide(
     return samp_res;
 }
 
-pub fn sampleLinearOneLane(
+pub inline fn sampleLinearOneLane(
     comptime CH: usize,
     texture: anytype,
     tex_x_i: isize,
@@ -178,7 +178,7 @@ pub fn sampleLinearOneLane(
     );
 }
 
-fn sampleConvOneLane(
+inline fn sampleConvOneLane(
     comptime CH: usize,
     comptime TAP: usize,
     texture: anytype,
@@ -187,6 +187,7 @@ fn sampleConvOneLane(
     samp_coeff_x: [TAP]f64,
     samp_coeff_y: [TAP]f64,
 ) [CH]f64 {
+    @setEvalBranchQuota(40000);
     const tap_offset = @as(isize, @intCast(TAP)) / 2 - 1;
     const tex_start_x = tex_x_i - tap_offset;
     const tex_start_y = tex_y_i - tap_offset;
@@ -253,7 +254,7 @@ fn sampleConvOneLane(
     return samp_res;
 }
 
-fn sampleConvWide(
+inline fn sampleConvWide(
     comptime CH: usize,
     comptime TAP: usize,
     texture: anytype,
@@ -264,6 +265,7 @@ fn sampleConvWide(
     v_samp_coeff_y: [TAP]VecSF,
     v_samp_coeff_sum: VecSF,
 ) [CH]VecSF {
+    @setEvalBranchQuota(40000);
     var samp_res: [CH]VecSF = [_]VecSF{@splat(0.0)} ** CH;
     var v_tap_samp_coeff_planes: [TAP * TAP]VecSF = undefined;
 
@@ -431,7 +433,7 @@ fn quinticBSplineCoeffSIMD(v_x: VecSF) VecSF {
 // Scalar Sampler (Helper)
 // --------------------------------------------------------------------------
 
-pub fn sampleOneLane(
+pub inline fn sampleOneLane(
     comptime CH: usize,
     comptime config: TextureSampleConfig,
     texture: anytype,
@@ -614,7 +616,7 @@ pub fn sampleOneLane(
 // Sampling Strategies
 // --------------------------------------------------------------------------
 
-pub fn sampleLanes(
+pub inline fn sampleLanes(
     comptime CH: usize,
     comptime config: TextureSampleConfig,
     v_mask_active: VecSB,
@@ -622,6 +624,7 @@ pub fn sampleLanes(
     v_u: VecSF,
     v_v: VecSF,
 ) [CH]VecSF {
+    @setEvalBranchQuota(40000);
     var samp_res_arr: [CH][S]f64 = [_][S]f64{[_]f64{0.0} ** S} ** CH;
     const mask_arr: [S]bool = v_mask_active;
     const u_arr: [S]f64 = v_u;
@@ -650,7 +653,7 @@ pub fn sampleLanes(
     return samp_res;
 }
 
-pub fn sampleLanesTri3(
+pub inline fn sampleLanesTri3(
     comptime CH: usize,
     comptime config: TextureSampleConfig,
     v_mask_active: VecSB,
@@ -658,6 +661,7 @@ pub fn sampleLanesTri3(
     v_u: VecSF,
     v_v: VecSF,
 ) [CH]VecSF {
+    @setEvalBranchQuota(40000);
     var samp_res_arr: [CH][S]f64 = [_][S]f64{[_]f64{0.0} ** S} ** CH;
     const mask_arr: [S]bool = v_mask_active;
     const u_arr: [S]f64 = v_u;
@@ -738,13 +742,14 @@ pub fn sampleLanesTri3(
     return samp_res;
 }
 
-pub fn sampleWide(
+pub inline fn sampleWide(
     comptime CH: usize,
     comptime config: TextureSampleConfig,
     texture: anytype,
     v_u: VecSF,
     v_v: VecSF,
 ) [CH]VecSF {
+    @setEvalBranchQuota(40000);
     std.debug.assert(config.isValid());
     const tex_cols_minus_1_f = @as(
         f64,
