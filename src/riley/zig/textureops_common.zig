@@ -360,7 +360,7 @@ pub fn sampleConv(
     return samp_res;
 }
 
-pub inline fn getLerpSampCoeffs(
+pub fn getLerpSampCoeffs(
     comptime TAP: usize,
     comptime table: [lut_size][TAP]f64,
     t: f64,
@@ -368,16 +368,15 @@ pub inline fn getLerpSampCoeffs(
     const scaled = t * (lut_size - 1);
     const idx = @as(usize, @intFromFloat(@floor(scaled)));
     const frac = scaled - @as(f64, @floatFromInt(idx));
+    var lerp_res: [TAP]f64 = undefined;
 
-    const lut0 = &table[idx];
-    const lut1 = &table[@min(idx + 1, lut_size - 1)];
+    const lut0 = table[idx];
+    const lut1 = table[@min(idx + 1, lut_size - 1)];
 
-    const v_lut0: @Vector(TAP, f64) = lut0.*;
-    const v_lut1: @Vector(TAP, f64) = lut1.*;
-    const v_res = v_lut0 * @as(@Vector(TAP, f64), @splat(1.0 - frac)) +
-        v_lut1 * @as(@Vector(TAP, f64), @splat(frac));
-
-    return v_res;
+    inline for (0..TAP) |ii| {
+        lerp_res[ii] = lut0[ii] * (1.0 - frac) + lut1[ii] * frac;
+    }
+    return lerp_res;
 }
 
 pub fn getLerpSampCoeffsRuntime(
