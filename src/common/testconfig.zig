@@ -69,14 +69,13 @@ pub fn getRasterConfig(mode: RasterConfigMode) rastcfg.RasterConfig {
             config.report = .off;
         },
         .bench => {
-            config.total_threads = TOTAL_THREADS;
-            config.max_geom_workers_per_frame = MAX_GEOM_WORKERS_PER_FRAME;
-            config.max_raster_workers_per_frame = MAX_RASTER_WORKERS_PER_FRAME;
-            config.max_geom_workers_per_job = MAX_GEOM_WORKERS_PER_JOB;
-            config.max_raster_workers_per_job = MAX_RASTER_WORKERS_PER_JOB;
-            config.max_geom_jobs_in_flight_per_group =
-                MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP;
-            config.frame_batch_size_per_group = FRAME_BATCH_SIZE_PER_GROUP;
+            config.total_threads = 1;
+            config.max_geom_workers_per_frame = 1;
+            config.max_raster_workers_per_frame = 1;
+            config.max_geom_workers_per_job = 1;
+            config.max_raster_workers_per_job = 1;
+            config.max_geom_jobs_in_flight_per_group = 1;
+            config.frame_batch_size_per_group = 1;
             config.report = .bench;
         },
     }
