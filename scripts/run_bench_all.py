@@ -11,7 +11,7 @@ RUN_GEOM = False
 RUN_SPHERE2000 = False
 RUN_SPHERE2000ZOOM = False
 RUN_DICUQ = False
-RUNS = 30
+RUNS = 20
 
 
 def repo_root() -> pathlib.Path:
