@@ -3,14 +3,19 @@ from __future__ import annotations
 
 import argparse
 
-from perf_common import DEFAULT_GOLD_RUNS, generate_gold
+from perf_common import ALL_PROFILES, DEFAULT_GOLD_RUNS, DEFAULT_PROFILE, generate_gold
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs", type=int, default=DEFAULT_GOLD_RUNS)
+    parser.add_argument(
+        "--profile",
+        choices=ALL_PROFILES,
+        default=DEFAULT_PROFILE,
+    )
     args = parser.parse_args()
-    return generate_gold("sphere2000", args.runs)
+    return generate_gold("sphere2000", args.profile, args.runs)
 
 
 if __name__ == "__main__":
