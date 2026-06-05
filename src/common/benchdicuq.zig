@@ -140,10 +140,10 @@ const DicuqE2EStatsRow = struct {
 pub fn getBaseRasterConfig() riley.RasterConfig {
     var base_raster_config = tcfg.getRasterConfig(.bench);
     // Thread counts include the caller thread.
-    base_raster_config.total_threads = 4;
-    base_raster_config.max_frames_in_flight = 2;
+    base_raster_config.total_threads = 1;
+    base_raster_config.max_frames_in_flight = 1;
     base_raster_config.max_geom_workers_per_frame = 1;
-    base_raster_config.max_raster_workers_per_frame = 4;
+    base_raster_config.max_raster_workers_per_frame = 1;
     base_raster_config.frame_batch_size_per_group =
         base_raster_config.max_frames_in_flight;
     base_raster_config.max_geom_jobs_in_flight_per_group =

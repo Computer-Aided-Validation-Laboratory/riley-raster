@@ -14,8 +14,8 @@ const DEFAULT_PIXELS_SIZE = [2]f64{ 3.45e-6, 3.45e-6 };
 const DEFAULT_FOV_SCALE: f64 = 0.65;
 const DEFAULT_STEREO_ANG: f64 = 20.0;
 const DEFAULT_TEX_PATH = "texture/speckle.bmp";
-const DEFAULT_TOTAL_THREADS: u16 = 16;
-const DEFAULT_RUNS: usize = 3;
+const DEFAULT_TOTAL_THREADS: u16 = 1;
+const DEFAULT_RUNS: usize = 1;
 
 const TimeSums = struct {
     geom_ms: f64,
