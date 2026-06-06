@@ -18,6 +18,7 @@ from typing import Final
 DEFAULT_GOLD_RUNS: Final[int] = 100
 DEFAULT_TEST_RUNS: Final[int] = 25
 DEFAULT_PROFILE: Final[str] = "1thread"
+DEFAULT_CLI_PROFILE: Final[str] = "all"
 ALL_PROFILES: Final[tuple[str, ...]] = ("1thread", "4thread")
 ALL_PROFILE_CHOICES: Final[tuple[str, ...]] = (*ALL_PROFILES, "all")
 E2E_KEY: Final[str] = "E2E Time [ms]"
@@ -268,11 +269,30 @@ def gold_dir(case: PerfCase, profile: PerfProfile) -> pathlib.Path:
     return repo_root() / "gold" / f"perf_{case.name}_{profile.name}"
 
 
+def ref_gold_dir(case: PerfCase, profile: PerfProfile) -> pathlib.Path:
+    return (
+        repo_root()
+        / "gold"
+        / "perf_stats_ref"
+        / f"perf_{case.name}_{profile.name}"
+    )
+
+
 def test_run_dir(case: PerfCase, profile: PerfProfile) -> pathlib.Path:
     return (
         repo_root()
         / "out"
         / "perf_test_stats"
+        / f"{case.name}_{profile.name}"
+        / timestamp_string()
+    )
+
+
+def ref_compare_dir(case: PerfCase, profile: PerfProfile) -> pathlib.Path:
+    return (
+        repo_root()
+        / "out"
+        / "perf_ref_compare"
         / f"{case.name}_{profile.name}"
         / timestamp_string()
     )
@@ -965,6 +985,50 @@ def test_perf(
     write_case_report_csv(out_dir, case, deltas)
     write_summary_report(out_dir, case, profile, "gold", deltas)
     return report_deltas(case, profile, deltas, "gold")
+
+
+def compare_ref_to_gold(
+    case_name: str,
+    profile_name: str = DEFAULT_PROFILE,
+) -> int:
+    case = case_or_die(case_name)
+    profile = profile_or_die(case_name, profile_name)
+    local_gold_dir = gold_dir(case, profile)
+    if not local_gold_dir.exists():
+        raise SystemExit(
+            f"Missing local perf gold for {case.name}/{profile.name} at "
+            f"{local_gold_dir}. Generate local gold first.",
+        )
+    ref_dir = ref_gold_dir(case, profile)
+    if not ref_dir.exists():
+        raise SystemExit(
+            f"Missing reference perf stats for {case.name}/{profile.name} at "
+            f"{ref_dir}.",
+        )
+
+    print(
+        f"[perf-ref:{case.name}:{profile.name}] Comparing local gold "
+        f"against committed reference...",
+    )
+    out_dir = ref_compare_dir(case, profile)
+    out_dir.parent.mkdir(parents=True, exist_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    write_metadata(
+        out_dir,
+        case,
+        profile,
+        runs=0,
+        command=["compare_ref_to_gold"],
+    )
+    deltas = compare_case_maps(ref_dir, local_gold_dir)
+    write_comparison_json(out_dir, deltas, ref_dir)
+    write_case_report_csv(out_dir, case, deltas)
+    write_summary_report(out_dir, case, profile, "ref", deltas)
+    report_deltas(case, profile, deltas, "ref")
+    print(
+        f"[perf-ref:{case.name}:{profile.name}] Report written to {out_dir}",
+    )
+    return 0
 
 
 def run_case_script(

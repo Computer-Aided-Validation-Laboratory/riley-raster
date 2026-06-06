@@ -5,7 +5,7 @@ import argparse
 
 from perf_common import (
     ALL_PROFILE_CHOICES,
-    DEFAULT_PROFILE,
+    DEFAULT_CLI_PROFILE,
     DEFAULT_TEST_RUNS,
     expand_profile_names,
     run_case_script,
@@ -26,7 +26,7 @@ def main() -> int:
     parser.add_argument(
         "--profile",
         choices=ALL_PROFILE_CHOICES,
-        default=DEFAULT_PROFILE,
+        default=DEFAULT_CLI_PROFILE,
     )
     args = parser.parse_args()
 
