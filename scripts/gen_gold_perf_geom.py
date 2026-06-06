@@ -3,7 +3,13 @@ from __future__ import annotations
 
 import argparse
 
-from perf_common import ALL_PROFILES, DEFAULT_GOLD_RUNS, DEFAULT_PROFILE, generate_gold
+from perf_common import (
+    ALL_PROFILE_CHOICES,
+    DEFAULT_CLI_PROFILE,
+    DEFAULT_GOLD_RUNS,
+    expand_profile_names,
+    generate_gold,
+)
 
 
 def main() -> int:
@@ -11,11 +17,15 @@ def main() -> int:
     parser.add_argument("--runs", type=int, default=DEFAULT_GOLD_RUNS)
     parser.add_argument(
         "--profile",
-        choices=ALL_PROFILES,
-        default=DEFAULT_PROFILE,
+        choices=ALL_PROFILE_CHOICES,
+        default=DEFAULT_CLI_PROFILE,
     )
     args = parser.parse_args()
-    return generate_gold("geom", args.profile, args.runs)
+    for profile_name in expand_profile_names(args.profile):
+        exit_code = generate_gold("geom", profile_name, args.runs)
+        if exit_code != 0:
+            return exit_code
+    return 0
 
 
 if __name__ == "__main__":
