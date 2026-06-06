@@ -45,8 +45,12 @@ perf/
 !gold/min/**/*.fimg
 !gold/min/**/*.bmp
 !gold/min/**/*.csv
-!gold/perf_*/
-!gold/perf_*/*.csv
+!gold/perf_stats_ref/
+!gold/perf_stats_ref/**/
+!gold/perf_stats_ref/**/*.csv
+!gold/perf_stats_ref/**/*.json
+!gold/perf_stats_ref/**/*.txt
+!gold/perf_stats_ref/**/*.md
 
 # Keep our other test suite data committed to the repo
 !data/small/**/*.csv

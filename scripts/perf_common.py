@@ -877,6 +877,7 @@ def report_deltas(
     for delta in improvements[:TOP_N]:
         print_case_line(delta)
 
+    print("=" * 80)
     print(
         f"{prefix} Summary: improvements "
         f"{len(flagged_improvements)}/{total_cases}, "
@@ -891,6 +892,7 @@ def report_deltas(
         f"silver={status_counts[STATUS_SILVER]}, "
         f"gold={status_counts[STATUS_GOLD]}",
     )
+    print("=" * 80)
 
     if not red_regressions and not amber_regressions and not flagged_improvements:
         print(f"{prefix} No significant performance difference detected.")
