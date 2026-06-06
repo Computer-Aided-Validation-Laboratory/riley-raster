@@ -14,7 +14,7 @@ pub fn main(init: std.process.Init) !void {
     var out_dir = try std.Io.Dir.cwd().openDir(init.io, common.out_dir_test0, .{});
     defer out_dir.close(init.io);
 
-    const stereo_pair = try common.CameraOps.loadStereoPair(
+    const stereo_pair = try common.cameraio.loadStereoPair(
         init.gpa,
         init.io,
         out_dir,

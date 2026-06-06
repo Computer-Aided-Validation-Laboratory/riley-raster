@@ -18,6 +18,7 @@ const mo = @import("../riley/zig/meshops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const texops = @import("../riley/zig/textureops.zig");
 const camera_mod = @import("../riley/zig/camera.zig");
+const cameraops = @import("../riley/zig/cameraops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const report = @import("../riley/zig/report.zig");
 const tcfg = @import("testconfig.zig");
@@ -254,7 +255,7 @@ pub fn prepareBenchmark(
     const pixel_size = defaults.pixels_size;
     const focal_length = defaults.focal_leng;
     const fov_scale = defaults.fov_scale;
-    const roi_pos = camera_mod.CameraOps.roiCentFromCoords(
+    const roi_pos = cameraops.roiCentFromCoords(
         &sim_data.coords,
     );
 
@@ -263,7 +264,7 @@ pub fn prepareBenchmark(
         std.math.degreesToRadians(0.0),
         std.math.degreesToRadians(0.0),
     );
-    const cam0_pos = camera_mod.CameraOps.posFillFrameFromRot(
+    const cam0_pos = cameraops.posFillFrameFromRot(
         &sim_data.coords,
         defaults.pixels_num,
         pixel_size,
@@ -276,7 +277,7 @@ pub fn prepareBenchmark(
         std.math.degreesToRadians(defaults.stereo_ang),
         std.math.degreesToRadians(0.0),
     );
-    const cam1_pos = camera_mod.CameraOps.posFillFrameFromRot(
+    const cam1_pos = cameraops.posFillFrameFromRot(
         &sim_data.coords,
         defaults.pixels_num,
         pixel_size,

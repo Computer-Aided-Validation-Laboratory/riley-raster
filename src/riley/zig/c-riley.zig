@@ -9,6 +9,8 @@
 const std = @import("std");
 
 const cam = @import("camera.zig");
+const cameraio = @import("cameraio.zig");
+const cameraops = @import("cameraops.zig");
 const gk = @import("geometrykernels.zig");
 const iio = @import("imageio.zig");
 const imageops = @import("imageops.zig");
@@ -934,7 +936,7 @@ fn buildMeshInput(
                 uvs_array.deinit(allocator);
             };
 
-            built.mesh_input.shader = .{ .tex_func = .{
+            built.mesh_input.shader = .{ .func = .{
                 .uvs = uvs_array_opt,
                 .builtin = try texFuncBuiltinFromC(in_mesh.tex_func_builtin),
                 .params = texFuncParamsFromC(in_mesh.tex_func_params),
@@ -957,7 +959,7 @@ fn buildMeshInput(
                 uvs_array.deinit(allocator);
             };
 
-            built.mesh_input.shader = .{ .tex_func_rgb = .{
+            built.mesh_input.shader = .{ .func_rgb = .{
                 .uvs = uvs_array_opt,
                 .builtin = try texFuncBuiltinFromC(in_mesh.tex_func_builtin),
                 .params = texFuncParamsFromC(in_mesh.tex_func_params),
@@ -1350,7 +1352,7 @@ pub export fn rileyRoiCentFromCoords(
         setLastError(err);
         return 1;
     };
-    const roi_cent = cam.CameraOps.roiCentFromCoords(&coords);
+    const roi_cent = cameraops.roiCentFromCoords(&coords);
     out_cent.* = vec3ToCVec3(roi_cent);
     return 0;
 }
@@ -1375,7 +1377,7 @@ pub export fn rileyPosFillFrameFromRot(
         rot_world.y,
         rot_world.z,
     );
-    const cam_pos = cam.CameraOps.posFillFrameFromRot(
+    const cam_pos = cameraops.posFillFrameFromRot(
         &coords,
         .{ pixels_num.x, pixels_num.y },
         .{ pixels_size.x, pixels_size.y },
@@ -1413,7 +1415,7 @@ pub export fn rileyRoiCentOverMeshes(
         return 1;
     };
 
-    const roi_cent = cam.CameraOps.roiCentOverMeshes(mesh_inputs);
+    const roi_cent = cameraops.roiCentOverMeshes(mesh_inputs);
     out_cent.* = vec3ToCVec3(roi_cent);
     return 0;
 }
@@ -1454,7 +1456,7 @@ pub export fn rileyPosFillFrameFromRotOverMeshes(
         rot_world.y,
         rot_world.z,
     );
-    const cam_pos = cam.CameraOps.posFillFrameFromRotOverMeshes(
+    const cam_pos = cameraops.posFillFrameFromRotOverMeshes(
         mesh_inputs,
         .{ pixels_num.x, pixels_num.y },
         .{ pixels_size.x, pixels_size.y },
@@ -1593,7 +1595,7 @@ pub export fn rileySaveStereoPair(
     };
     defer out_dir.close(io);
 
-    cam.CameraOps.saveStereoPair(
+    cameraio.saveStereoPair(
         io,
         out_dir,
         std.mem.span(stereo_file_name),
@@ -1633,7 +1635,7 @@ pub export fn rileyLoadStereoPair(
     };
     defer dir.close(io);
 
-    const stereo_pair = cam.CameraOps.loadStereoPair(
+    const stereo_pair = cameraio.loadStereoPair(
         aa,
         io,
         dir,

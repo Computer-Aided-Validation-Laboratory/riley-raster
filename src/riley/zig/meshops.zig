@@ -130,8 +130,8 @@ pub fn countOutputFields(
             .nodal => |shader| shader.field.getFieldsN(),
             .tex => 1,
             .tex_rgb => 3,
-            .tex_func => 1,
-            .tex_func_rgb => 3,
+            .func => 1,
+            .func_rgb => 3,
         };
         num_fields = @max(num_fields, mesh_fields);
     }
@@ -274,10 +274,10 @@ pub fn meshInputFromSimDataSlice(
                 .tex_rgb => |tex| {
                     outer_alloc.free(tex.uvs.slice);
                 },
-                .tex_func => |tex_func| {
+                .func => |tex_func| {
                     if (tex_func.uvs) |uvs| outer_alloc.free(uvs.slice);
                 },
-                .tex_func_rgb => |tex_func| {
+                .func_rgb => |tex_func| {
                     if (tex_func.uvs) |uvs| outer_alloc.free(uvs.slice);
                 },
                 else => {},
@@ -395,7 +395,7 @@ pub fn initMeshStatic(
                 .normal_type = tex_in.normal_type,
             } };
         },
-        .tex_func => |tex_func_in| {
+        .func => |tex_func_in| {
             const elem_uvs = if (tex_func_in.uvs) |uvs|
                 try prepareUVs(
                     allocator,
@@ -404,7 +404,7 @@ pub fn initMeshStatic(
                 )
             else
                 null;
-            shader_static = .{ .tex_func = .{
+            shader_static = .{ .func = .{
                 .elem_uvs = elem_uvs,
                 .builtin = tex_func_in.builtin,
                 .params = tex_func_in.params,
@@ -413,7 +413,7 @@ pub fn initMeshStatic(
                 .normal_type = tex_func_in.normal_type,
             } };
         },
-        .tex_func_rgb => |tex_func_in| {
+        .func_rgb => |tex_func_in| {
             const elem_uvs = if (tex_func_in.uvs) |uvs|
                 try prepareUVs(
                     allocator,
@@ -422,7 +422,7 @@ pub fn initMeshStatic(
                 )
             else
                 null;
-            shader_static = .{ .tex_func_rgb = .{
+            shader_static = .{ .func_rgb = .{
                 .elem_uvs = elem_uvs,
                 .builtin = tex_func_in.builtin,
                 .params = tex_func_in.params,
@@ -1014,11 +1014,11 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .tex_rgb => |tex_static| {
                     mesh_prep.shader = try prepareTexShader(3, self, tex_static);
                 },
-                .tex_func => |tex_func_static| {
-                    mesh_prep.shader = try prepareTexFuncShader(1, self, tex_func_static);
+                .func => |func_static| {
+                    mesh_prep.shader = try prepareFuncShader(1, self, func_static);
                 },
-                .tex_func_rgb => |tex_func_static| {
-                    mesh_prep.shader = try prepareTexFuncShader(3, self, tex_func_static);
+                .func_rgb => |func_static| {
+                    mesh_prep.shader = try prepareFuncShader(3, self, func_static);
                 },
             }
         }
@@ -1198,18 +1198,18 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
         }
 
-        fn prepareTexFuncShader(
+        fn prepareFuncShader(
             comptime channels: usize,
             self: *FrameMeshPipelineType,
-            tex_func_static: shaderops.TexFuncStatic(channels),
+            func_static: shaderops.FuncStatic(channels),
         ) !shaderops.ShaderPrepared {
             const factors = imageops.getScaleFactors(
-                tex_func_static.scaling,
-                tex_func_static.bits,
+                func_static.scaling,
+                func_static.bits,
                 .{ .min = 0.0, .range = 1.0 },
             );
 
-            const elem_uvs = if (tex_func_static.elem_uvs) |elem_uvs_full| blk: {
+            const elem_uvs = if (func_static.elem_uvs) |elem_uvs_full| blk: {
                 var elem_uvs = try ndarray.NDArray(f64).initFlat(
                     self.allocator,
                     &[_]usize{
@@ -1235,29 +1235,29 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 break :blk elem_uvs;
             } else null;
 
-            const elem_normals = try self.prepareVisibleNormals(tex_func_static.normal_type);
+            const elem_normals = try self.prepareVisibleNormals(func_static.normal_type);
             if (comptime channels == 1) {
-                return .{ .tex_func = .{
+                return .{ .func = .{
                     .elem_uvs = elem_uvs,
-                    .builtin = tex_func_static.builtin,
-                    .params = tex_func_static.params,
-                    .bits = tex_func_static.bits,
-                    .scaling = tex_func_static.scaling,
+                    .builtin = func_static.builtin,
+                    .params = func_static.params,
+                    .bits = func_static.bits,
+                    .scaling = func_static.scaling,
                     .scale_mul = factors.mul,
                     .scale_add = factors.add,
-                    .normal_type = tex_func_static.normal_type,
+                    .normal_type = func_static.normal_type,
                     .elem_normals = elem_normals,
                 } };
             } else {
-                return .{ .tex_func_rgb = .{
+                return .{ .func_rgb = .{
                     .elem_uvs = elem_uvs,
-                    .builtin = tex_func_static.builtin,
-                    .params = tex_func_static.params,
-                    .bits = tex_func_static.bits,
-                    .scaling = tex_func_static.scaling,
+                    .builtin = func_static.builtin,
+                    .params = func_static.params,
+                    .bits = func_static.bits,
+                    .scaling = func_static.scaling,
                     .scale_mul = factors.mul,
                     .scale_add = factors.add,
-                    .normal_type = tex_func_static.normal_type,
+                    .normal_type = func_static.normal_type,
                     .elem_normals = elem_normals,
                 } };
             }

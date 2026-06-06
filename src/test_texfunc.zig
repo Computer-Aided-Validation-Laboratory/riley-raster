@@ -143,7 +143,7 @@ fn runTexFuncCase(
         .disp = null,
         .shader = if (is_rgb)
             .{
-                .tex_func_rgb = .{
+                .func_rgb = .{
                     .uvs = uvs,
                     .builtin = builtin,
                     .normal_type = normal_type,
@@ -151,7 +151,7 @@ fn runTexFuncCase(
             }
         else
             .{
-                .tex_func = .{
+                .func = .{
                     .uvs = uvs,
                     .builtin = builtin,
                     .normal_type = normal_type,

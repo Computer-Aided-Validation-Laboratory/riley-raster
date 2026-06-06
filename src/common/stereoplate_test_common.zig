@@ -17,10 +17,13 @@ const csvio = @import("../riley/zig/csvio.zig");
 const NDArray = @import("../riley/zig/ndarray.zig").NDArray;
 const MeshInput = @import("../riley/zig/meshops.zig").MeshInput;
 const cammod = @import("../riley/zig/camera.zig");
+const cameraio_mod = @import("../riley/zig/cameraio.zig");
+const cameraops_mod = @import("../riley/zig/cameraops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 
 pub const CameraInput = cammod.CameraInput;
-pub const CameraOps = cammod.CameraOps;
+pub const cameraio = cameraio_mod;
+pub const cameraops = cameraops_mod;
 pub const StereoPairInput = cammod.StereoPairInput;
 
 pub const data_dir = "data/calplate/tri3_calplate/";
@@ -57,7 +60,7 @@ pub fn buildConstantMeshInput(sim_data: meshio.SimData) MeshInput {
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shader = .{ .tex_func = .{
+        .shader = .{ .func = .{
             .uvs = null,
             .builtin = .constant,
             .params = .{
@@ -72,7 +75,7 @@ pub fn buildConstantMeshInput(sim_data: meshio.SimData) MeshInput {
 }
 
 pub fn buildAutoStereoPair(coords: *const meshio.Coords) StereoPairInput {
-    const roi_pos = CameraOps.roiCentFromCoords(coords);
+    const roi_pos = cameraops.roiCentFromCoords(coords);
     const cam0_rot = Rotation.init(0.0, 0.0, 0.0);
     const cam1_rot = Rotation.init(
         0.0,
@@ -80,7 +83,7 @@ pub fn buildAutoStereoPair(coords: *const meshio.Coords) StereoPairInput {
         0.0,
     );
 
-    const cam0_pos = CameraOps.posFillFrameFromRot(
+    const cam0_pos = cameraops.posFillFrameFromRot(
         coords,
         pixel_num,
         pixel_size,
@@ -88,7 +91,7 @@ pub fn buildAutoStereoPair(coords: *const meshio.Coords) StereoPairInput {
         cam0_rot,
         fov_scale,
     );
-    const cam1_pos = CameraOps.posFillFrameFromRot(
+    const cam1_pos = cameraops.posFillFrameFromRot(
         coords,
         pixel_num,
         pixel_size,
@@ -137,7 +140,7 @@ pub fn renderStereoPlate(
     const mesh_input = buildConstantMeshInput(sim_data);
     var out_dir = try orch.openDirEnsured(io, out_dir_root);
     defer out_dir.close(io);
-    try CameraOps.saveStereoPair(io, out_dir, "stereo_data.csv", stereo_pair);
+    try cameraio.saveStereoPair(io, out_dir, "stereo_data.csv", stereo_pair);
 
     const config = rastcfg.RasterConfig{
         .render_mode = .offline,

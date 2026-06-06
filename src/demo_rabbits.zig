@@ -18,11 +18,11 @@ const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const so = @import("riley/zig/shaderops_common.zig");
 const cammod = @import("riley/zig/camera.zig");
+const cameraops = @import("riley/zig/cameraops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
 const CameraInput = cammod.CameraInput;
 const CameraPrepared = cammod.CameraPrepared;
-const CameraOps = cammod.CameraOps;
 const MeshInput = mo.MeshInput;
 const TexFuncBuiltin = so.TexFuncBuiltin;
 
@@ -219,7 +219,7 @@ fn makeMeshInput(
             .coords = coords,
             .connect = sim_data.connect,
             .disp = null,
-            .shader = .{ .tex_func = .{
+            .shader = .{ .func = .{
                 .uvs = uvs.array,
                 .builtin = .sinusoidal,
                 .params = sinusoidalUvParams(),
@@ -233,7 +233,7 @@ fn makeMeshInput(
             .coords = coords,
             .connect = sim_data.connect,
             .disp = null,
-            .shader = .{ .tex_func_rgb = .{
+            .shader = .{ .func_rgb = .{
                 .uvs = uvs.array,
                 .builtin = TexFuncBuiltin.sinusoidal,
                 .params = sinusoidalUvParams(),
@@ -361,8 +361,8 @@ pub fn main(init: std.process.Init) !void {
         }
 
         const temp_meshes = [_]MeshInput{ front_mesh, back_mesh };
-        const roi_pos = CameraOps.roiCentOverMeshes(&temp_meshes);
-        const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
+        const roi_pos = cameraops.roiCentOverMeshes(&temp_meshes);
+        const cam_pos = cameraops.posFillFrameFromRotOverMeshes(
             &temp_meshes,
             pixel_num,
             orch.default_pixel_size,
@@ -460,8 +460,8 @@ pub fn main(init: std.process.Init) !void {
     }
 
     std.debug.print("Setting up camera...\n", .{});
-    const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
-    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
+    const roi_pos = cameraops.roiCentOverMeshes(mesh_inputs);
+    const cam_pos = cameraops.posFillFrameFromRotOverMeshes(
         mesh_inputs,
         pixel_num,
         orch.default_pixel_size,

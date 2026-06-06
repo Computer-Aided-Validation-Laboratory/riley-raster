@@ -129,8 +129,8 @@ class ShaderType(IntEnum):
     tex = 0
     tex_rgb = 1
     nodal = 2
-    tex_func = 3
-    tex_func_rgb = 4
+    func = 3
+    func_rgb = 4
     nodal_rgb = 5
 
 

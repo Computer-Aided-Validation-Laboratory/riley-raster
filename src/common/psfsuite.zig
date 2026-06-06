@@ -150,7 +150,7 @@ fn buildMeshInput(
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
         .shader = .{
-            .tex_func = .{
+            .func = .{
                 .uvs = if (render_case.shader_case.use_uvs)
                     prepared.uvs.array
                 else

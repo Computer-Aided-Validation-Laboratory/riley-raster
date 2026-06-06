@@ -110,8 +110,8 @@ pub inline fn fillNodalPerspSIMD(
 
 pub const fillTexClip = common.fillTexClip;
 pub const fillTexPersp = common.fillTexPersp;
-pub const fillTexFuncClip = common.fillTexFuncClip;
-pub const fillTexFuncPersp = common.fillTexFuncPersp;
+pub const fillFuncClip = common.fillFuncClip;
+pub const fillFuncPersp = common.fillFuncPersp;
 
 fn calcNormalLaneArrs(
     comptime N: usize,
@@ -266,7 +266,7 @@ pub inline fn fillTexPerspSIMD(
     }
 }
 
-pub inline fn fillTexFuncClipSIMD(
+pub inline fn fillFuncClipSIMD(
     comptime N: usize,
     comptime channels: usize,
     ctx_shade: common.ShadeContext(N),
@@ -274,7 +274,7 @@ pub inline fn fillTexFuncClipSIMD(
     v_weights: [N]VecSF,
     v_xi: VecSF,
     v_eta: VecSF,
-    sh: *const common.TexFuncPrepared(channels),
+    sh: *const common.FuncPrepared(channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
     var v_coord_0: VecSF = v_xi;
@@ -331,7 +331,7 @@ pub inline fn fillTexFuncClipSIMD(
     }
 }
 
-pub inline fn fillTexFuncPerspSIMD(
+pub inline fn fillFuncPerspSIMD(
     comptime N: usize,
     comptime channels: usize,
     ctx_shade: common.ShadeContext(N),
@@ -341,7 +341,7 @@ pub inline fn fillTexFuncPerspSIMD(
     v_eta: VecSF,
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
-    sh: *const common.TexFuncPrepared(channels),
+    sh: *const common.FuncPrepared(channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
     var v_coord_0: VecSF = v_xi;

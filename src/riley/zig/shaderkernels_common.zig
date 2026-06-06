@@ -216,13 +216,13 @@ inline fn shadeTexScalarDispatchConfigImpl(
     }
 }
 
-pub inline fn shadeTexFuncScalarCommon(
+pub inline fn shadeFuncScalarCommon(
     comptime N: usize,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
     ctx_shade: shaderops.ShadeContext(N),
     interp: shaderops.InterpData(N),
-    shader: *const shaderops.TexFuncPrepared(channels),
+    shader: *const shaderops.FuncPrepared(channels),
     ctx_report: anytype,
     spx_image_scratch: *MatSlice(f64),
 ) void {
@@ -248,7 +248,7 @@ pub inline fn shadeTexFuncScalarCommon(
     }
 
     if (comptime coord_space == CoordSpace.clip_px_leng) {
-        shaderops.fillTexFuncClip(
+        shaderops.fillFuncClip(
             N,
             channels,
             ctx_shade,
@@ -257,7 +257,7 @@ pub inline fn shadeTexFuncScalarCommon(
             spx_image_scratch,
         );
     } else {
-        shaderops.fillTexFuncPersp(
+        shaderops.fillFuncPersp(
             N,
             channels,
             ctx_shade,

@@ -124,7 +124,7 @@ pub fn TexInput(comptime channels: usize) type {
     };
 }
 
-pub fn TexFuncInput(comptime channels: usize) type {
+pub fn FuncInput(comptime channels: usize) type {
     _ = channels;
     return struct {
         uvs: ?ndarray.NDArray(f64) = null,
@@ -140,8 +140,8 @@ pub const ShaderInput = union(enum) {
     nodal: NodalInput,
     tex: TexInput(1),
     tex_rgb: TexInput(3),
-    tex_func: TexFuncInput(1),
-    tex_func_rgb: TexFuncInput(3),
+    func: FuncInput(1),
+    func_rgb: FuncInput(3),
 };
 
 // Static: Persistent multi-frame shader resources in engine memory.
@@ -169,7 +169,7 @@ pub fn TexStatic(comptime channels: usize) type {
     };
 }
 
-pub fn TexFuncStatic(comptime channels: usize) type {
+pub fn FuncStatic(comptime channels: usize) type {
     _ = channels;
     return struct {
         elem_uvs: ?ndarray.NDArray(f64),
@@ -185,8 +185,8 @@ pub const ShaderStatic = union(enum) {
     nodal: NodalStatic,
     tex: TexStatic(1),
     tex_rgb: TexStatic(3),
-    tex_func: TexFuncStatic(1),
-    tex_func_rgb: TexFuncStatic(3),
+    func: FuncStatic(1),
+    func_rgb: FuncStatic(3),
 };
 
 // Prepared: Culled and expanded shader data for a SINGLE frame.
@@ -221,7 +221,7 @@ pub fn TexPrepared(comptime channels: usize) type {
     };
 }
 
-pub fn TexFuncPrepared(comptime channels: usize) type {
+pub fn FuncPrepared(comptime channels: usize) type {
     _ = channels;
     return struct {
         elem_uvs: ?ndarray.NDArray(f64),
@@ -240,8 +240,8 @@ pub const ShaderPrepared = union(enum) {
     nodal: NodalPrepared,
     tex: TexPrepared(1),
     tex_rgb: TexPrepared(3),
-    tex_func: TexFuncPrepared(1),
-    tex_func_rgb: TexFuncPrepared(3),
+    func: FuncPrepared(1),
+    func_rgb: FuncPrepared(3),
 };
 
 pub fn ShadeContext(comptime N: usize) type {
@@ -525,12 +525,12 @@ pub inline fn fillTexPersp(
     }
 }
 
-pub inline fn fillTexFuncClip(
+pub inline fn fillFuncClip(
     comptime N: usize,
     comptime channels: usize,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
-    sh: *const TexFuncPrepared(channels),
+    sh: *const FuncPrepared(channels),
     spx_image_scratch: *matslice.MatSlice(f64),
 ) void {
     var coord = getTexFuncCoord(N, ctx_shade, interp, sh.elem_normals);
@@ -560,12 +560,12 @@ pub inline fn fillTexFuncClip(
     }
 }
 
-pub inline fn fillTexFuncPersp(
+pub inline fn fillFuncPersp(
     comptime N: usize,
     comptime channels: usize,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
-    sh: *const TexFuncPrepared(channels),
+    sh: *const FuncPrepared(channels),
     spx_image_scratch: *matslice.MatSlice(f64),
 ) void {
     var coord = getTexFuncCoord(N, ctx_shade, interp, sh.elem_normals);

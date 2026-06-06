@@ -306,7 +306,7 @@ inline fn shadeTexSIMDDispatchConfigImpl(
     }
 }
 
-pub fn TexFuncKernel(
+pub fn FuncKernel(
     comptime N: usize,
     comptime channels: usize,
 ) type {
@@ -315,11 +315,11 @@ pub fn TexFuncKernel(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext(N),
             interp: shaderops.InterpData(N),
-            shader: *const shaderops.TexFuncPrepared(channels),
+            shader: *const shaderops.FuncPrepared(channels),
             ctx_report: anytype,
             spx_image_scratch: *MatSlice(f64),
         ) void {
-            common.shadeTexFuncScalarCommon(
+            common.shadeFuncScalarCommon(
                 N,
                 channels,
                 coord_space,
@@ -341,7 +341,7 @@ pub fn TexFuncKernel(
             v_eta: VecSF,
             v_nodes_inv_z: [N]VecSF,
             v_subpx_z: VecSF,
-            shader: *const shaderops.TexFuncPrepared(channels),
+            shader: *const shaderops.FuncPrepared(channels),
             spx_image_scratch: *MatSlice(f64),
         ) void {
             if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
@@ -358,7 +358,7 @@ pub fn TexFuncKernel(
             }
 
             if (comptime coord_space == CoordSpace.raster) {
-                shaderops.fillTexFuncPerspSIMD(
+                shaderops.fillFuncPerspSIMD(
                     N,
                     channels,
                     ctx_shade,
@@ -372,7 +372,7 @@ pub fn TexFuncKernel(
                     spx_image_scratch,
                 );
             } else if (comptime coord_space == CoordSpace.clip_px_leng) {
-                shaderops.fillTexFuncClipSIMD(
+                shaderops.fillFuncClipSIMD(
                     N,
                     channels,
                     ctx_shade,

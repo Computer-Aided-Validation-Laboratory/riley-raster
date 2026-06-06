@@ -94,8 +94,8 @@ pub fn main(init: std.process.Init) !void {
         .tex8_rgb,
     };
     const tex_func_shader_types = [_]common.ShaderType{
-        .texfunc_grey,
-        .texfunc_rgb,
+        .func,
+        .func_rgb,
     };
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },

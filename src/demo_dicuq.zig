@@ -19,9 +19,10 @@ const MeshInput = mo.MeshInput;
 const gk = @import("riley/zig/geometrykernels.zig");
 const MeshType = gk.MeshType;
 const camera_mod = @import("riley/zig/camera.zig");
+const cameraio = @import("riley/zig/cameraio.zig");
+const cameraops = @import("riley/zig/cameraops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const CameraInput = camera_mod.CameraInput;
-const CameraOps = camera_mod.CameraOps;
 const DistortionModel = camera_mod.DistortionModel;
 const BrownConrady = camera_mod.BrownConrady;
 const BrownConradyExt = camera_mod.BrownConradyExt;
@@ -65,12 +66,12 @@ fn buildDistortion() DistortionModel {
         } },
         .brown_conrady_ext => .{ .brown_conrady_ext = BrownConradyExt{
             .k1 = -0.2,
-            .k2 =  0.1,
+            .k2 = 0.1,
             .k3 = -0.01,
             .k4 = -0.04,
             .k5 = 0.18,
-            .k6 =  -0.02,
-            .p1 =  0.0001,
+            .k6 = -0.02,
+            .p1 = 0.0001,
             .p2 = -0.0001,
         } },
     };
@@ -184,7 +185,7 @@ pub fn main(init: std.process.Init) !void {
 
     // 6. Setup Camera
     std.debug.print("Setting up camera...\n", .{});
-    const roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
+    const roi_pos = cameraops.roiCentFromCoords(&sim_data.coords);
 
     const distortion = buildDistortion();
 
@@ -195,7 +196,7 @@ pub fn main(init: std.process.Init) !void {
         std.math.degreesToRadians(0.0), //gamma_x_deg
     );
 
-    const cam0_pos = CameraOps.posFillFrameFromRot(
+    const cam0_pos = cameraops.posFillFrameFromRot(
         &sim_data.coords,
         PIXELS_NUM,
         PIXELS_SIZE,
@@ -222,7 +223,7 @@ pub fn main(init: std.process.Init) !void {
         std.math.degreesToRadians(0.0), //gamma_x_deg
     );
 
-    const cam1_pos = CameraOps.posFillFrameFromRot(
+    const cam1_pos = cameraops.posFillFrameFromRot(
         &sim_data.coords,
         PIXELS_NUM,
         PIXELS_SIZE,
@@ -281,7 +282,7 @@ pub fn main(init: std.process.Init) !void {
     cam0_opengl.coord_sys = .opengl;
     var cam1_opengl = cam1_in;
     cam1_opengl.coord_sys = .opengl;
-    try CameraOps.saveStereoPair(
+    try cameraio.saveStereoPair(
         io,
         out_dir,
         "stereo_data_opengl.csv",
@@ -292,7 +293,7 @@ pub fn main(init: std.process.Init) !void {
     cam0_opencv.coord_sys = .opencv;
     var cam1_opencv = cam1_in;
     cam1_opencv.coord_sys = .opencv;
-    try CameraOps.saveStereoPair(
+    try cameraio.saveStereoPair(
         io,
         out_dir,
         "stereo_data_opencv.csv",

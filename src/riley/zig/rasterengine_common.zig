@@ -26,7 +26,7 @@ const MeshPrepared = mo.MeshPrepared;
 const shaderops = @import("shaderops.zig");
 const NodalPrepared = shaderops.NodalPrepared;
 const TexPrepared = shaderops.TexPrepared;
-const TexFuncPrepared = shaderops.TexFuncPrepared;
+const FuncPrepared = shaderops.FuncPrepared;
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
 
@@ -465,8 +465,8 @@ fn rasterTileCommon(
                         @intCast(s.elem_field.dims[2]),
                     .tex => 1,
                     .tex_rgb => 3,
-                    .tex_func => 1,
-                    .tex_func_rgb => 3,
+                    .func => 1,
+                    .func_rgb => 3,
                 };
 
                 switch (mesh_ptr.shader) {
@@ -568,8 +568,8 @@ fn rasterTileCommon(
                             subpx_scratch,
                         );
                     },
-                    .tex_func => |*shader| {
-                        const SK = shadekerns.TexFuncKernel(N, 1);
+                    .func => |*shader| {
+                        const SK = shadekerns.FuncKernel(N, 1);
                         var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
                         if (shader.elem_uvs != null) {
                             local_shader_buf.load(
@@ -586,7 +586,7 @@ fn rasterTileCommon(
                         shaded_px += try RasterBackend.RasterEngine(
                             GK,
                             SK,
-                            TexFuncPrepared(1),
+                            FuncPrepared(1),
                         ).render(
                             report_mode,
                             ctx_rast,
@@ -598,8 +598,8 @@ fn rasterTileCommon(
                             subpx_scratch,
                         );
                     },
-                    .tex_func_rgb => |*shader| {
-                        const SK = shadekerns.TexFuncKernel(N, 3);
+                    .func_rgb => |*shader| {
+                        const SK = shadekerns.FuncKernel(N, 3);
                         var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
                         if (shader.elem_uvs != null) {
                             local_shader_buf.load(
@@ -616,7 +616,7 @@ fn rasterTileCommon(
                         shaded_px += try RasterBackend.RasterEngine(
                             GK,
                             SK,
-                            TexFuncPrepared(3),
+                            FuncPrepared(3),
                         ).render(
                             report_mode,
                             ctx_rast,

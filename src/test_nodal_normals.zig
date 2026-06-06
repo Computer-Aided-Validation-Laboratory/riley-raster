@@ -56,7 +56,7 @@ test "Nodal normals are prepared when requested" {
     const pixel_size = [_]f64{ 0.00625, 0.00625 };
     const focal_leng = 2.0;
     const rot = Rotation.init(0, 0, 0);
-    const cam_pos = @import("riley/zig/camera.zig").CameraOps.posFillFrameFromRot(
+    const cam_pos = @import("riley/zig/cameraops.zig").posFillFrameFromRot(
         &sim_data.coords,
         pixel_num,
         pixel_size,
@@ -64,7 +64,7 @@ test "Nodal normals are prepared when requested" {
         rot,
         1.0,
     );
-    const roi_cent = @import("riley/zig/camera.zig").CameraOps.roiCentFromCoords(
+    const roi_cent = @import("riley/zig/cameraops.zig").roiCentFromCoords(
         &sim_data.coords,
     );
 

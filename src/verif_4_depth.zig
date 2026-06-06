@@ -12,6 +12,7 @@ const benchcommon = @import("common/benchcommon.zig");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
 const cammod = @import("riley/zig/camera.zig");
+const cameraops = @import("riley/zig/cameraops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const mo = @import("riley/zig/meshops.zig");
@@ -21,7 +22,6 @@ const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const NDArray = @import("riley/zig/ndarray.zig").NDArray;
 
 const CameraPrepared = cammod.CameraPrepared;
-const CameraOps = cammod.CameraOps;
 const MeshInput = mo.MeshInput;
 
 const OVERLAP_X: f64 = 0.85;
@@ -276,7 +276,7 @@ fn runCase(
         .coords = front_coords_mut,
         .connect = front_sim_data.connect,
         .disp = null,
-        .shader = .{ .tex_func = .{
+        .shader = .{ .func = .{
             .uvs = null,
             .builtin = .constant,
             .params = .{
@@ -293,7 +293,7 @@ fn runCase(
         .coords = back_coords_mut,
         .connect = back_sim_data.connect,
         .disp = null,
-        .shader = .{ .tex_func = .{
+        .shader = .{ .func = .{
             .uvs = null,
             .builtin = .constant,
             .params = .{
@@ -307,8 +307,8 @@ fn runCase(
     };
 
     const temp_meshes = [_]MeshInput{ front_mesh, back_mesh };
-    const roi_pos = CameraOps.roiCentOverMeshes(&temp_meshes);
-    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
+    const roi_pos = cameraops.roiCentOverMeshes(&temp_meshes);
+    const cam_pos = cameraops.posFillFrameFromRotOverMeshes(
         &temp_meshes,
         pixel_num,
         orch.default_pixel_size,

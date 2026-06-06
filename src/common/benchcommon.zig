@@ -17,7 +17,7 @@ const so = @import("../riley/zig/shaderops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
 const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
-const CameraOps = @import("../riley/zig/camera.zig").CameraOps;
+const cameraops = @import("../riley/zig/cameraops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const report = @import("../riley/zig/report.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
@@ -63,7 +63,7 @@ pub const BenchResult = struct {
 
 pub fn calcOutputChannels(shader_type: ShaderType) u8 {
     return switch (shader_type) {
-        .nodal_rgb, .tex8_rgb, .texfunc_rgb => 3,
+        .nodal_rgb, .tex8_rgb, .func_rgb => 3,
         else => 1,
     };
 }
@@ -479,8 +479,8 @@ pub const ShaderType = enum {
     nodal_rgb,
     tex8_grey,
     tex8_rgb,
-    texfunc_grey,
-    texfunc_rgb,
+    func,
+    func_rgb,
 };
 const TextureSampleConfig = @import("../riley/zig/textureops.zig").TextureSampleConfig;
 pub const TexFuncCoordMode = enum { uv, param };
@@ -616,7 +616,7 @@ pub fn calcCaseName(
                 @tagName(sample_config.?.mode),
             },
         )
-    else if (shader_type == .texfunc_grey or shader_type == .texfunc_rgb)
+    else if (shader_type == .func or shader_type == .func_rgb)
         try std.fmt.allocPrint(
             allocator,
             "{s}_{s}_{s}_{s}",
@@ -747,7 +747,7 @@ pub fn loadBenchmarkMeshInput(
                 .sample_config = sample_config.?,
             } };
         },
-        .texfunc_grey => {
+        .func => {
             const tex_case = tex_func_case.?;
             const tex_func_uvs = if (tex_case.coord_mode == .uv)
                 try loadNDArrayFromCSV(
@@ -759,7 +759,7 @@ pub fn loadBenchmarkMeshInput(
                 )
             else
                 null;
-            shader = .{ .tex_func = .{
+            shader = .{ .func = .{
                 .uvs = tex_func_uvs,
                 .builtin = tex_case.builtin,
                 .params = calcTexFuncParams(tex_case),
@@ -768,7 +768,7 @@ pub fn loadBenchmarkMeshInput(
                 .normal_type = .none,
             } };
         },
-        .texfunc_rgb => {
+        .func_rgb => {
             const tex_case = tex_func_case.?;
             const tex_func_uvs = if (tex_case.coord_mode == .uv)
                 try loadNDArrayFromCSV(
@@ -780,7 +780,7 @@ pub fn loadBenchmarkMeshInput(
                 )
             else
                 null;
-            shader = .{ .tex_func_rgb = .{
+            shader = .{ .func_rgb = .{
                 .uvs = tex_func_uvs,
                 .builtin = tex_case.builtin,
                 .params = calcTexFuncParams(tex_case),
@@ -961,8 +961,8 @@ fn runBenchmarkInternal(
     );
     _ = calcOutputChannels(shader_type);
 
-    const roi_pos = CameraOps.roiCentFromCoords(&mesh_input.coords);
-    const cam_pos = CameraOps.posFillFrameFromRot(
+    const roi_pos = cameraops.roiCentFromCoords(&mesh_input.coords);
+    const cam_pos = cameraops.posFillFrameFromRot(
         &mesh_input.coords,
         render_defaults.pixels_num,
         render_defaults.pixels_size,

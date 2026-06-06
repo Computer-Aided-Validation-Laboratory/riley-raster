@@ -17,12 +17,12 @@ const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
 const camera_mod = @import("riley/zig/camera.zig");
+const cameraops = @import("riley/zig/cameraops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
 const MeshInput = mo.MeshInput;
 const MeshType = gk.MeshType;
 const CameraInput = camera_mod.CameraInput;
-const CameraOps = camera_mod.CameraOps;
 const DistortionModel = camera_mod.DistortionModel;
 const BrownConrady = camera_mod.BrownConrady;
 const PointSpreadFunc = camera_mod.PointSpreadFunc;
@@ -115,8 +115,8 @@ fn makeCameraInput(
     distortion: DistortionModel,
     psf: PointSpreadFunc,
 ) CameraInput {
-    const roi_pos = CameraOps.roiCentFromCoords(coords);
-    const cam_pos = CameraOps.posFillFrameFromRot(
+    const roi_pos = cameraops.roiCentFromCoords(coords);
+    const cam_pos = cameraops.posFillFrameFromRot(
         coords,
         PIXELS_NUM,
         PIXELS_SIZE,
@@ -162,7 +162,7 @@ fn renderCase(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shader = .{ .tex_func = .{
+        .shader = .{ .func = .{
             .uvs = uvs.array,
             .builtin = SHADER_BUILTIN,
             .params = SHADER_PARAMS,

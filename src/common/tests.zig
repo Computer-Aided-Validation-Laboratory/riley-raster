@@ -1477,7 +1477,7 @@ pub fn runDistortEdgeTexFuncTest(
             .connect = prepared.sim_data.connect,
             .disp = prepared.sim_data.field,
             .shader = .{
-                .tex_func = .{
+                .func = .{
                     .uvs = null,
                     .builtin = .constant,
                     .normal_type = .none,
@@ -1666,7 +1666,7 @@ pub fn runEdgeTexFuncConstantCaseForHullMode(
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
         .shader = .{
-            .tex_func = .{
+            .func = .{
                 .uvs = null,
                 .builtin = .constant,
                 .normal_type = .none,

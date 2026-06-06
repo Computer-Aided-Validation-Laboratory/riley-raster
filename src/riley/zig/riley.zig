@@ -14,6 +14,7 @@ const ndarray = @import("ndarray.zig");
 const sliceops = @import("sliceops.zig");
 
 const cam = @import("camera.zig");
+const cameraops = @import("cameraops.zig");
 const rops = @import("rasterops.zig");
 const mo = @import("meshops.zig");
 const shaderops = @import("shaderops.zig");
@@ -1392,7 +1393,7 @@ pub fn rasterAllFramesReportInto(
     defer static_arena.deinit();
     const static_alloc = static_arena.allocator();
 
-    const cameras = try cam.CameraOps.prepareSlice(
+    const cameras = try cameraops.prepareSlice(
         outer_alloc,
         camera_inputs,
         config.subpixel_center_map,

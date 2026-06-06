@@ -18,10 +18,10 @@ const MeshInput = mo.MeshInput;
 const gk = @import("riley/zig/geometrykernels.zig");
 const MeshType = gk.MeshType;
 const camera_mod = @import("riley/zig/camera.zig");
+const cameraops = @import("riley/zig/cameraops.zig");
 const CameraInput = camera_mod.CameraInput;
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const CameraPrepared = camera_mod.CameraPrepared;
-const CameraOps = camera_mod.CameraOps;
 const MatSlice = @import("riley/zig/matslice.zig").MatSlice;
 
 pub fn main(init: std.process.Init) !void {
@@ -101,8 +101,8 @@ pub fn main(init: std.process.Init) !void {
     const rot = Rotation.init(0, 0, 0);
     const fov_scale_factor: f64 = 1.0;
 
-    const roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
-    const cam_pos = CameraOps.posFillFrameFromRot(
+    const roi_pos = cameraops.roiCentFromCoords(&sim_data.coords);
+    const cam_pos = cameraops.posFillFrameFromRot(
         &sim_data.coords,
         pixel_num,
         pixel_size,
