@@ -1393,7 +1393,7 @@ pub fn rasterAllFramesReportInto(
     defer static_arena.deinit();
     const static_alloc = static_arena.allocator();
 
-    const cameras = try cameraops.prepareSlice(
+    const cameras = try cameraops.prepareCameraSlice(
         outer_alloc,
         camera_inputs,
         config.subpixel_center_map,

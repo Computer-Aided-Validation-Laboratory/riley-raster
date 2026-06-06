@@ -26,7 +26,7 @@ const CameraPlaneMetrics = struct {
     avg_pixel_per_leng: f64,
 };
 
-pub fn prepareSlice(
+pub fn prepareCameraSlice(
     allocator: std.mem.Allocator,
     camera_inputs: []const cam.CameraInput,
     subpixel_center_map: rastcfg.SubPixelCenterMap,

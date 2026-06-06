@@ -264,29 +264,41 @@ pub const CameraPrepared = struct {
 };
 
 pub fn fillTileIdealCentersPerTile(
-    ctx_rast: anytype,
-    tile: anytype,
-    subpx_scratch: anytype,
+    camera: *const CameraPrepared,
+    scratch_x_px_min: usize,
+    scratch_x_px_max: usize,
+    scratch_y_px_min: usize,
+    scratch_y_px_max: usize,
+    ideal_pixel_centers: []f64,
     subpx_tile_size: usize,
 ) !void {
     return camera_impl.fillTileIdealCentersPerTile(
-        ctx_rast,
-        tile,
-        subpx_scratch,
+        camera,
+        scratch_x_px_min,
+        scratch_x_px_max,
+        scratch_y_px_min,
+        scratch_y_px_max,
+        ideal_pixel_centers,
         subpx_tile_size,
     );
 }
 
 pub fn fillTileIdealCentersAffineJac(
-    ctx_rast: anytype,
-    tile: anytype,
-    subpx_scratch: anytype,
+    camera: *const CameraPrepared,
+    scratch_x_px_min: usize,
+    scratch_x_px_max: usize,
+    scratch_y_px_min: usize,
+    scratch_y_px_max: usize,
+    ideal_pixel_centers: []f64,
     subpx_tile_size: usize,
 ) void {
     camera_impl.fillTileIdealCentersAffineJac(
-        ctx_rast,
-        tile,
-        subpx_scratch,
+        camera,
+        scratch_x_px_min,
+        scratch_x_px_max,
+        scratch_y_px_min,
+        scratch_y_px_max,
+        ideal_pixel_centers,
         subpx_tile_size,
     );
 }
