@@ -148,6 +148,7 @@ pub fn main(init: std.process.Init) !void {
         bench_args.image_out_dir,
         "bench_geom.zig",
         init.minimal.args.vector,
+        bench_args.subpixel_center_map,
         bench_raster_config,
         render_group_workers[0..],
         bench_args.pixels_num,

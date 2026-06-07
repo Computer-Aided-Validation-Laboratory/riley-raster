@@ -177,6 +177,7 @@ pub fn main(init: std.process.Init) !void {
         bench_args.image_out_dir,
         "bench_dicuq.zig",
         init.minimal.args.vector,
+        bench_args.subpixel_center_map,
         raster_config,
         render_group_workers,
         bench_args.pixels_num,

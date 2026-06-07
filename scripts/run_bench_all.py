@@ -7,6 +7,7 @@ import sys
 
 
 RUN_FULLRASTER = True
+RUN_CAM = False
 RUN_GEOM = False
 RUN_SPHERE2000 = False
 RUN_SPHERE2000ZOOM = False
@@ -43,6 +44,8 @@ def main() -> int:
 
     if RUN_FULLRASTER:
         script_names.append("bench_fullraster.py")
+    if RUN_CAM:
+        script_names.append("bench_cam.py")
     if RUN_GEOM:
         script_names.append("bench_geom.py")
     if RUN_SPHERE2000:

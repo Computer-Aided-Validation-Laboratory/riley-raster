@@ -304,6 +304,7 @@ pub fn writeBenchmarkConfig(
     image_out_dir_base: []const u8,
     benchmark_name: []const u8,
     argv: anytype,
+    subpixel_center_map: @import("../riley/zig/camera.zig").SubPixelCenterMap,
     config: rastcfg.RasterConfig,
     render_group_workers: []const u16,
     pixel_num: [2]u32,
@@ -413,7 +414,7 @@ pub fn writeBenchmarkConfig(
     try writer.print("hull_mode={s}\n", .{@tagName(config.hull_mode)});
     try writer.print(
         "subpixel_center_map={s}\n",
-        .{@tagName(argv.subpixel_center_map)},
+        .{@tagName(subpixel_center_map)},
     );
     try writer.print("save_strategy={s}\n", .{@tagName(config.save_strategy)});
     try writer.print("pixels_x={d}\n", .{pixel_num[0]});
@@ -429,6 +430,9 @@ pub fn writeBenchmarkConfig(
     });
     try writer.print("build_simd_texture_interp={s}\n", .{
         @tagName(buildconfig.config.simd_texture_interp),
+    });
+    try writer.print("build_resolve_scratch_simd={s}\n", .{
+        @tagName(buildconfig.config.resolve_scratch_simd),
     });
     try writer.print("build_simd_vector_width={d}\n", .{
         buildconfig.config.simd_vector_width,

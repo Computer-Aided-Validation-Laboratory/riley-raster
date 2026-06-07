@@ -10,6 +10,7 @@ from perf_common import repo_root, update_buildconfig_simd
 
 
 BENCH_NAMES = [
+    "bench_cam",
     "bench_dicuq",
     "bench_fullraster",
     "bench_geom",
