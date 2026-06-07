@@ -13,7 +13,6 @@ const matrix = @import("matstack.zig");
 const rotation = @import("rotation.zig");
 const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
-const rastcfg = @import("rasterconfig.zig");
 const cameramodels = @import("cameramodels.zig");
 const camera_scalar = @import("camera_scalar.zig");
 const camera_simd = @import("camera_simd.zig");
@@ -45,7 +44,7 @@ pub const CameraInput = struct {
     distortion: DistortionModel = .none,
     psf: PointSpreadFunc = .{ .pixel_box = .{} },
     coord_sys: CameraCoordSys = .opengl,
-    subpixel_center_map: rastcfg.SubPixelCenterMap = .per_tile,
+    subpixel_center_map: SubPixelCenterMap = .per_tile,
 };
 
 pub const StereoPairInput = struct {
@@ -55,6 +54,12 @@ pub const StereoPairInput = struct {
 pub const CameraCoordSys = enum {
     opengl,
     opencv,
+};
+
+pub const SubPixelCenterMap = enum {
+    full_in_mem,
+    per_tile,
+    affine_jac,
 };
 
 pub const FOVScaling = struct {
@@ -87,7 +92,7 @@ pub inline fn storeIdealPairScratch(
     ideal_pixel_centers[scratch_idx * 2 + 1] = ideal_y;
 }
 
-pub fn calcIdealObservedRasterPointScalar(
+pub fn calcPinholeRasterPointScalar(
     camera: anytype,
     observed_x_px: f64,
     observed_y_px: f64,
@@ -157,7 +162,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         coord_sys: CameraCoordSys,
         ideal_pixel_centers: ndarray.NDArray(f64),
         pixel_center_jac: ndarray.NDArray(f64),
-        subpixel_center_map: rastcfg.SubPixelCenterMap,
+        subpixel_center_map: SubPixelCenterMap,
 
         pub fn init(
             allocator: std.mem.Allocator,
@@ -277,25 +282,25 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
             self.pixel_center_jac.deinit(allocator);
         }
 
-        pub inline fn calcIdealObservedRasterPoint(
+        pub inline fn calcPinholeRasterPoint(
             self: *const Self,
             observed_x_px: f64,
             observed_y_px: f64,
         ) ![2]f64 {
-            return CameraBackend.calcIdealObservedRasterPoint(
+            return CameraBackend.calcPinholeRasterPoint(
                 self,
                 observed_x_px,
                 observed_y_px,
             );
         }
 
-        pub inline fn calcIdealObservedRasterPointSIMD(
+        pub inline fn calcPinholeRasterPointSIMD(
             self: *const Self,
             v_observed_x_px: buildconfig.VecSF,
             v_observed_y_px: buildconfig.VecSF,
             v_lane_active: buildconfig.VecSB,
         ) !struct { x: buildconfig.VecSF, y: buildconfig.VecSF } {
-            return CameraBackend.calcIdealObservedRasterPointSIMD(
+            return CameraBackend.calcPinholeRasterPointSIMD(
                 self,
                 v_observed_x_px,
                 v_observed_y_px,
@@ -321,7 +326,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
                 for (0..self.pixels_num[0] * sub_samp_u) |ii| {
                     const subpx_x_f = @as(f64, @floatFromInt(ii)) *
                         subpx_step + subpx_off;
-                    const ideal = try self.calcIdealObservedRasterPoint(
+                    const ideal = try self.calcPinholeRasterPoint(
                         subpx_x_f,
                         subpx_y_f,
                     );

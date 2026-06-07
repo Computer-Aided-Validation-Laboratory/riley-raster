@@ -53,7 +53,7 @@ fn calcObservedXVector(
         @as(VecSF, @splat(off));
 }
 
-pub fn calcIdealObservedRasterPointSIMD(
+pub fn calcPinholeRasterPointSIMD(
     camera: *const CameraPrepared,
     v_observed_x_px: VecSF,
     v_observed_y_px: VecSF,
@@ -139,7 +139,7 @@ pub fn fillTileIdealCentersPerTile(
                     v_observed_y,
                 );
             } else {
-                const ideal = try calcIdealObservedRasterPointSIMD(
+                const ideal = try calcPinholeRasterPointSIMD(
                     camera,
                     v_observed_x,
                     v_observed_y,
@@ -293,31 +293,31 @@ pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
                 continue;
             }
 
-            const center = try calcIdealObservedRasterPointSIMD(
+            const center = try calcPinholeRasterPointSIMD(
                 camera,
                 v_center_x,
                 v_center_y,
                 v_active,
             );
-            const x_p = try calcIdealObservedRasterPointSIMD(
+            const x_p = try calcPinholeRasterPointSIMD(
                 camera,
                 v_x_plus,
                 v_center_y,
                 v_active,
             );
-            const x_m = try calcIdealObservedRasterPointSIMD(
+            const x_m = try calcPinholeRasterPointSIMD(
                 camera,
                 v_x_minus,
                 v_center_y,
                 v_active,
             );
-            const y_p = try calcIdealObservedRasterPointSIMD(
+            const y_p = try calcPinholeRasterPointSIMD(
                 camera,
                 v_center_x,
                 v_y_plus,
                 v_active,
             );
-            const y_m = try calcIdealObservedRasterPointSIMD(
+            const y_m = try calcPinholeRasterPointSIMD(
                 camera,
                 v_center_x,
                 v_y_minus,
@@ -344,12 +344,12 @@ pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
     }
 }
 
-pub fn calcIdealObservedRasterPoint(
+pub fn calcPinholeRasterPoint(
     camera: *const CameraPrepared,
     observed_x_px: f64,
     observed_y_px: f64,
 ) ![2]f64 {
-    return common.calcIdealObservedRasterPointScalar(
+    return common.calcPinholeRasterPointScalar(
         camera,
         observed_x_px,
         observed_y_px,

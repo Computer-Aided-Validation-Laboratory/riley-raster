@@ -1630,7 +1630,7 @@ pub fn rasterAllFramesReport(
         images_arr.deinit(outer_alloc);
     };
 
-    try rasterAllFramesReportIntoImpl(
+    try rasterAllFramesReportInto(
         outer_alloc,
         render_groups,
         camera_inputs,
@@ -1662,38 +1662,7 @@ pub fn rasterAllFramesReportInto(
         bench_capture,
         true,
     );
-    checkRenderConsistencyAssert(
-        render_groups,
-        camera_inputs,
-        meshes,
-        config,
-        images_arr,
-        bench_capture,
-        true,
-    );
 
-    try rasterAllFramesReportIntoImpl(
-        outer_alloc,
-        render_groups,
-        camera_inputs,
-        meshes,
-        config,
-        out_dir_path,
-        images_arr,
-        bench_capture,
-    );
-}
-
-fn rasterAllFramesReportIntoImpl(
-    outer_alloc: std.mem.Allocator,
-    render_groups: []const RenderGroupSpec,
-    camera_inputs: []const cam.CameraInput,
-    meshes: []const mo.MeshInput,
-    config: RasterConfig,
-    out_dir_path: ?[]const u8,
-    images_arr: ?*ndarray.NDArray(f64),
-    bench_capture: ?[]report.FrameBenchCapture,
-) !void {
     const summary_io = render_groups[0].io;
     const time_start_render = Timestamp.now(summary_io, .awake);
 

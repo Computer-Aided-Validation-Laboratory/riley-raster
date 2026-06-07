@@ -28,7 +28,7 @@ pub fn main(init: std.process.Init) !void {
                     distortion_case,
                 );
                 defer allocator.free(case_name_base);
-                const gold_maps = [_]@import("riley/zig/rasterconfig.zig").SubPixelCenterMap{
+                const gold_maps = [_]@import("riley/zig/camera.zig").SubPixelCenterMap{
                     .full_in_mem,
                     .affine_jac,
                 };

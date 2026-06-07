@@ -87,8 +87,8 @@ pub fn getDistortionModel(distortion_case: DistortionCase) cam.DistortionModel {
 
 pub fn goldSubpixelCenterMap(
     distortion_case: DistortionCase,
-    subpixel_center_map: @import("../riley/zig/rasterconfig.zig").SubPixelCenterMap,
-) @import("../riley/zig/rasterconfig.zig").SubPixelCenterMap {
+    subpixel_center_map: @import("../riley/zig/camera.zig").SubPixelCenterMap,
+) @import("../riley/zig/camera.zig").SubPixelCenterMap {
     return switch (subpixel_center_map) {
         .affine_jac => switch (distortion_case) {
             .brown, .brownext => .affine_jac,
@@ -145,7 +145,7 @@ pub fn renderCase(
     mesh_type: gk.MeshType,
     ssaa: u8,
     distortion_case: DistortionCase,
-    subpixel_center_map: @import("../riley/zig/rasterconfig.zig").SubPixelCenterMap,
+    subpixel_center_map: @import("../riley/zig/camera.zig").SubPixelCenterMap,
 ) !NDArray(f64) {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();

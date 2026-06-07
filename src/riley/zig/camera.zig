@@ -28,6 +28,7 @@ pub const PreparedPSFMode = common.PreparedPSFMode;
 pub const PreparedPSF = common.PreparedPSF;
 
 pub const CameraCoordSys = common.CameraCoordSys;
+pub const SubPixelCenterMap = common.SubPixelCenterMap;
 pub const CameraInput = common.CameraInput;
 pub const StereoPairInput = common.StereoPairInput;
 pub const FOVScaling = common.FOVScaling;

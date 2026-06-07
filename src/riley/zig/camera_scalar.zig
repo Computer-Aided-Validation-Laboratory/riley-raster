@@ -58,7 +58,7 @@ pub fn fillTileIdealCentersPerTile(
             const global_x = start_x + ii;
             const observed_x = @as(f64, @floatFromInt(global_x)) *
                 step + off;
-            const ideal = try camera.calcIdealObservedRasterPoint(
+            const ideal = try camera.calcPinholeRasterPoint(
                 observed_x,
                 observed_y,
             );
@@ -169,11 +169,11 @@ pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
         for (0..camera.pixels_num[0]) |ii| {
             const x_c = common.calcPixelCenterCoord(ii);
             const y_c = common.calcPixelCenterCoord(jj);
-            const center = try camera.calcIdealObservedRasterPoint(x_c, y_c);
-            const x_p = try camera.calcIdealObservedRasterPoint(x_c + eps, y_c);
-            const x_m = try camera.calcIdealObservedRasterPoint(x_c - eps, y_c);
-            const y_p = try camera.calcIdealObservedRasterPoint(x_c, y_c + eps);
-            const y_m = try camera.calcIdealObservedRasterPoint(x_c, y_c - eps);
+            const center = try camera.calcPinholeRasterPoint(x_c, y_c);
+            const x_p = try camera.calcPinholeRasterPoint(x_c + eps, y_c);
+            const x_m = try camera.calcPinholeRasterPoint(x_c - eps, y_c);
+            const y_p = try camera.calcPinholeRasterPoint(x_c, y_c + eps);
+            const y_m = try camera.calcPinholeRasterPoint(x_c, y_c - eps);
             const inv_two_eps = 0.5 / eps;
             camera.pixel_center_jac.set(&[_]usize{ jj, ii, 0 }, center[0]);
             camera.pixel_center_jac.set(&[_]usize{ jj, ii, 1 }, center[1]);
@@ -197,12 +197,12 @@ pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
     }
 }
 
-pub fn calcIdealObservedRasterPoint(
+pub fn calcPinholeRasterPoint(
     camera: *const CameraPrepared,
     observed_x_px: f64,
     observed_y_px: f64,
 ) ![2]f64 {
-    return common.calcIdealObservedRasterPointScalar(
+    return common.calcPinholeRasterPointScalar(
         camera,
         observed_x_px,
         observed_y_px,

@@ -7,6 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const cam = @import("../riley/zig/camera.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const texops = @import("../riley/zig/textureops.zig");
 
@@ -22,7 +23,7 @@ pub const BenchArgs = struct {
     geom_scheduling_mode: rastcfg.GeometrySchedulingMode,
     max_raster_workers_per_job: u16,
     hull_mode: rastcfg.HullMode,
-    subpixel_center_map: rastcfg.SubPixelCenterMap,
+    subpixel_center_map: cam.SubPixelCenterMap,
     save_strategy: rastcfg.SaveStrategy,
     disk_save_overlap: bool,
     sample: ?texops.TextureSample,
@@ -129,7 +130,7 @@ pub fn parseArgsWithDefaults(
                     try parseEnum(rastcfg.HullMode, value);
             } else if (std.mem.eql(u8, arg, "--subpixel-center-map")) {
                 bench_args.subpixel_center_map =
-                    try parseEnum(rastcfg.SubPixelCenterMap, value);
+                    try parseEnum(cam.SubPixelCenterMap, value);
             } else if (std.mem.eql(u8, arg, "--save-strategy")) {
                 bench_args.save_strategy =
                     try parseSaveStrategy(value);
@@ -342,7 +343,7 @@ test "parse bench args named options" {
     );
     try std.testing.expectEqual(rastcfg.HullMode.off, bench_args.hull_mode);
     try std.testing.expectEqual(
-        rastcfg.SubPixelCenterMap.affine_jac,
+        cam.SubPixelCenterMap.affine_jac,
         bench_args.subpixel_center_map,
     );
     try std.testing.expectEqual(

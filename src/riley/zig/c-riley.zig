@@ -377,11 +377,11 @@ fn reportModeFromC(report_mode: u32) !riley.ReportMode {
 
 fn subPixelCenterMapFromC(
     subpx_map: u32,
-) !rastcfg.SubPixelCenterMap {
+) !cam.SubPixelCenterMap {
     return switch (subpx_map) {
-        @intFromEnum(rastcfg.SubPixelCenterMap.full_in_mem) => .full_in_mem,
-        @intFromEnum(rastcfg.SubPixelCenterMap.per_tile) => .per_tile,
-        @intFromEnum(rastcfg.SubPixelCenterMap.affine_jac) => .affine_jac,
+        @intFromEnum(cam.SubPixelCenterMap.full_in_mem) => .full_in_mem,
+        @intFromEnum(cam.SubPixelCenterMap.per_tile) => .per_tile,
+        @intFromEnum(cam.SubPixelCenterMap.affine_jac) => .affine_jac,
         else => error.InvalidSubPixelCenterMap,
     };
 }

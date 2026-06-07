@@ -63,12 +63,6 @@ pub const RasterConfig = struct {
     save_frame_buffer_count: usize = buildconfig.SaveFrameBufferCount,
 };
 
-pub const SubPixelCenterMap = enum {
-    full_in_mem,
-    per_tile,
-    affine_jac,
-};
-
 pub const RenderMode = enum {
     // Preserve timestep order. Geometry/raster work may run in parallel across
     // cameras, but later timesteps do not advance until the current timestep
