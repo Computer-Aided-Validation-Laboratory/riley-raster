@@ -423,8 +423,8 @@ fn rasterTileCommon(
             @intCast(tile.scratch_x_px_max),
             @intCast(tile.scratch_y_px_min),
             @intCast(tile.scratch_y_px_max),
-            subpx_scratch.ideal_pixel_centers,
             subpx_tile_size,
+            subpx_scratch.ideal_pixel_centers,
         ),
         .affine_jac => cam.fillTileIdealCentersAffineJac(
             ctx_rast.camera,
@@ -432,8 +432,8 @@ fn rasterTileCommon(
             @intCast(tile.scratch_x_px_max),
             @intCast(tile.scratch_y_px_min),
             @intCast(tile.scratch_y_px_max),
-            subpx_scratch.ideal_pixel_centers,
             subpx_tile_size,
+            subpx_scratch.ideal_pixel_centers,
         ),
     }
 
