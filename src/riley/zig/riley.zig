@@ -1396,7 +1396,6 @@ pub fn rasterAllFramesReportInto(
     const cameras = try cameraops.prepareCameraSlice(
         outer_alloc,
         camera_inputs,
-        config.subpixel_center_map,
     );
     defer {
         for (cameras) |camera| camera.deinit(outer_alloc);

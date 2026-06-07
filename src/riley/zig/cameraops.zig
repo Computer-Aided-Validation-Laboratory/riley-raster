@@ -29,14 +29,12 @@ const CameraPlaneMetrics = struct {
 pub fn prepareCameraSlice(
     allocator: std.mem.Allocator,
     camera_inputs: []const cam.CameraInput,
-    subpixel_center_map: rastcfg.SubPixelCenterMap,
 ) ![]cam.CameraPrepared {
     const cameras = try allocator.alloc(cam.CameraPrepared, camera_inputs.len);
     for (camera_inputs, 0..) |camera_input, cc| {
-        cameras[cc] = cam.CameraPrepared.initForSubPixelCenterMap(
+        cameras[cc] = cam.CameraPrepared.init(
             allocator,
             camera_input,
-            subpixel_center_map,
         ) catch |err| {
             for (0..cc) |pp| cameras[pp].deinit(allocator);
             allocator.free(cameras);

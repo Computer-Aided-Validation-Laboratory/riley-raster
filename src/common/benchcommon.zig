@@ -425,7 +425,7 @@ pub fn writeBenchmarkConfig(
     try writer.print("hull_mode={s}\n", .{@tagName(config.hull_mode)});
     try writer.print(
         "subpixel_center_map={s}\n",
-        .{@tagName(config.subpixel_center_map)},
+        .{@tagName(argv.subpixel_center_map)},
     );
     try writer.print("save_strategy={s}\n", .{@tagName(config.save_strategy)});
     try writer.print("pixels_x={d}\n", .{pixel_num[0]});

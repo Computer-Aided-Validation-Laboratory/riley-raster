@@ -67,7 +67,6 @@ pub const RasterConfig = struct {
     hull_mode: HullMode = .on_no_fallback,
     newton_seed_mode: NewtonSeedMode = .centroid,
     newton_seed_reuse: NewtonSeedReuse = .off,
-    subpixel_center_map: SubPixelCenterMap = .per_tile,
     report: ReportMode = .bench,
     full_stats_opts: FullStatsOpts = .{},
     save_frame_buffer_count: usize = buildconfig.SaveFrameBufferCount,

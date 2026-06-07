@@ -34,11 +34,6 @@ pub const PointSpreadFunc = cameramodels.PointSpreadFunc;
 pub const PreparedPSFMode = cameramodels.PreparedPSFMode;
 pub const PreparedPSF = cameramodels.PreparedPSF;
 
-pub const CameraCoordSys = enum {
-    opengl,
-    opencv,
-};
-
 pub const CameraInput = struct {
     pixels_num: [2]u32,
     pixels_size: [2]f64,
@@ -50,10 +45,16 @@ pub const CameraInput = struct {
     distortion: DistortionModel = .none,
     psf: PointSpreadFunc = .{ .pixel_box = .{} },
     coord_sys: CameraCoordSys = .opengl,
+    subpixel_center_map: rastcfg.SubPixelCenterMap = .per_tile,
 };
 
 pub const StereoPairInput = struct {
     cameras: [2]CameraInput,
+};
+
+pub const CameraCoordSys = enum {
+    opengl,
+    opencv,
 };
 
 pub const FOVScaling = struct {
@@ -123,9 +124,7 @@ fn calcSensorSize(pixels_num: [2]u32, pixels_size: [2]f64) [2]f64 {
 }
 
 pub fn allCamerasSharePixels(cameras: []const CameraPrepared) bool {
-    if (cameras.len == 0) {
-        return true;
-    }
+    std.debug.assert(cameras.len != 0);
 
     const pixels_num = cameras[0].pixels_num;
     for (cameras[1..]) |camera| {
@@ -158,23 +157,13 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         coord_sys: CameraCoordSys,
         ideal_pixel_centers: ndarray.NDArray(f64),
         pixel_center_jac: ndarray.NDArray(f64),
+        subpixel_center_map: rastcfg.SubPixelCenterMap,
 
         pub fn init(
             allocator: std.mem.Allocator,
             input: CameraInput,
         ) !Self {
-            return try initForSubPixelCenterMap(
-                allocator,
-                input,
-                .full_in_mem,
-            );
-        }
-
-        pub fn initForSubPixelCenterMap(
-            allocator: std.mem.Allocator,
-            input: CameraInput,
-            subpixel_center_map: rastcfg.SubPixelCenterMap,
-        ) !Self {
+            const subpixel_center_map = input.subpixel_center_map;
             const actual_sub_sample = if (input.sub_sample == 0)
                 @as(u8, 2)
             else
@@ -264,6 +253,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
                 .coord_sys = input.coord_sys,
                 .ideal_pixel_centers = ideal_pixel_centers,
                 .pixel_center_jac = pixel_center_jac,
+                .subpixel_center_map = subpixel_center_map,
             };
 
             switch (subpixel_center_map) {
@@ -435,6 +425,7 @@ test "CameraPrepared.init" {
         .roi_cent_world = roi_world,
         .focal_length = foc_leng,
         .sub_sample = sub_samp,
+        .subpixel_center_map = .full_in_mem,
     };
 
     const camera = try CameraPrepared.init(std.testing.allocator, input);
@@ -553,6 +544,7 @@ test "CameraPrepared.distortionNone" {
         .focal_length = 1.0,
         .sub_sample = 1,
         .distortion = .none,
+        .subpixel_center_map = .full_in_mem,
     };
 
     const camera = try CameraPrepared.init(std.testing.allocator, input);
@@ -582,6 +574,7 @@ test "CameraPrepared.brownConradyExtDistortionApplied" {
         .focal_length = 1.0,
         .sub_sample = 1,
         .distortion = .{ .brown_conrady_ext = distortion },
+        .subpixel_center_map = .full_in_mem,
     };
 
     const camera = try CameraPrepared.init(std.testing.allocator, input);

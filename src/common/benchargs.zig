@@ -54,7 +54,7 @@ pub fn defaultBenchArgs(
         .geom_scheduling_mode = raster_config.geom_scheduling_mode,
         .max_raster_workers_per_job = raster_config.max_raster_workers_per_job,
         .hull_mode = raster_config.hull_mode,
-        .subpixel_center_map = raster_config.subpixel_center_map,
+        .subpixel_center_map = .per_tile,
         .save_strategy = .memory,
         .disk_save_overlap = raster_config.disk_save_overlap,
         .sample = null,
@@ -266,8 +266,6 @@ pub fn applyRasterConfig(
     raster_config.max_raster_workers_per_job =
         bench_args.max_raster_workers_per_job;
     raster_config.hull_mode = bench_args.hull_mode;
-    raster_config.subpixel_center_map =
-        bench_args.subpixel_center_map;
     raster_config.save_strategy = bench_args.save_strategy;
     raster_config.disk_save_overlap = bench_args.disk_save_overlap;
     return raster_config;

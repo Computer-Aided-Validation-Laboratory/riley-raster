@@ -1080,6 +1080,7 @@ fn initTestCullCameraManual(distortion: cam.DistortionModel) cam.CameraPrepared 
         .coord_sys = .opengl,
         .ideal_pixel_centers = undefined,
         .pixel_center_jac = undefined,
+        .subpixel_center_map = .full_in_mem,
     };
 }
 

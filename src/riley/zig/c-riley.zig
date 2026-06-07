@@ -1061,9 +1061,6 @@ fn buildRasterConfig(
         @max(@as(u16, 1), in_config.max_raster_workers_per_job);
     config.save_strategy = try saveStrategyFromC(in_config.save_strategy);
     config.image_mode = try imageModeFromC(in_config.image_mode);
-    config.subpixel_center_map = try subPixelCenterMapFromC(
-        in_config.subpixel_center_map,
-    );
     config.report = try reportModeFromC(in_config.report);
     config.tile_size_min = if (in_config.tile_size_min == 0)
         config.tile_size_min

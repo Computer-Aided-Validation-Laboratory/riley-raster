@@ -410,7 +410,7 @@ fn rasterTileCommon(
         ctx_rast.config.background_value,
     );
 
-    switch (ctx_rast.config.subpixel_center_map) {
+    switch (ctx_rast.camera.subpixel_center_map) {
         .full_in_mem => fillTileIdealCentersFullInMem(
             ctx_rast,
             tile,
