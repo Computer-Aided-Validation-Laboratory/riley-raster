@@ -15,7 +15,7 @@ pub const BrownConradyExt = common.BrownConradyExt;
 pub const DistortionInverseResult = common.DistortionInverseResult;
 pub const DistortionForwardJacResult = common.DistortionForwardJacResult;
 
-pub const PsfSeparable = common.PsfSeparable;
+pub const SeparablePSF = common.SeparablePSF;
 pub const PixelBoxPSF = common.PixelBoxPSF;
 pub const GaussianPSF = common.GaussianPSF;
 pub const AnisotropicGaussianPSF = common.AnisotropicGaussianPSF;

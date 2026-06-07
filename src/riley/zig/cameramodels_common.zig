@@ -241,7 +241,7 @@ fn distortionInverseFromModel(
     return error.DistortionInverseFailed;
 }
 
-pub const PsfSeparable = enum {
+pub const SeparablePSF = enum {
     no,
     yes,
 };
@@ -253,7 +253,7 @@ pub const PixelBoxPSF = struct {
 pub const GaussianPSF = struct {
     sigma_px: f64,
     support_rad_px: f64,
-    separable: PsfSeparable = .yes,
+    separable: SeparablePSF = .yes,
 };
 
 pub const AnisotropicGaussianPSF = struct {
@@ -261,7 +261,7 @@ pub const AnisotropicGaussianPSF = struct {
     sigma_y_px: f64,
     theta_rad: f64 = 0.0,
     support_rad_px: f64,
-    separable: PsfSeparable = .no,
+    separable: SeparablePSF = .no,
 };
 
 pub const PointSpreadFunc = union(enum) {
