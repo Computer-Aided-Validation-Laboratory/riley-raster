@@ -99,9 +99,6 @@ pub fn main(init: std.process.Init) !void {
     const config = RasterConfig{
         .render_mode = .offline,
         .total_threads = TOTAL_THREADS,
-        .max_frames_in_flight = RENDER_GROUP_COUNT,
-        .max_geom_workers_per_frame = 1,
-        .max_raster_workers_per_frame = 1,
         .frame_batch_size_per_group = 8,
         .max_geom_jobs_in_flight_per_group = 8,
         .max_geom_workers_per_job = 1,

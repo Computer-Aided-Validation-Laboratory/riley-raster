@@ -423,8 +423,6 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
     ref_config.save_strategy = .memory;
     ref_config.report = .off;
     ref_config.total_threads = 4;
-    ref_config.max_geom_workers_per_frame = 1;
-    ref_config.max_raster_workers_per_frame = 4;
     ref_config.frame_batch_size_per_group = 2;
     ref_config.max_geom_jobs_in_flight_per_group = 2;
     ref_config.max_geom_workers_per_job = 1;

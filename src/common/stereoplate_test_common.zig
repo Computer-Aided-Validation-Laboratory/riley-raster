@@ -145,9 +145,6 @@ pub fn renderStereoPlate(
     const config = rastcfg.RasterConfig{
         .render_mode = .offline,
         .total_threads = 1,
-        .max_frames_in_flight = 1,
-        .max_geom_workers_per_frame = 1,
-        .max_raster_workers_per_frame = 1,
         .frame_batch_size_per_group = 1,
         .max_geom_jobs_in_flight_per_group = 1,
         .max_geom_workers_per_job = 1,

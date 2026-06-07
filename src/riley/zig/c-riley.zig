@@ -159,9 +159,6 @@ pub const CMeshInput = extern struct {
 pub const CRasterConfig = extern struct {
     render_mode: u32,
     total_threads: u16,
-    max_frames_in_flight: u16,
-    max_geom_workers_per_frame: u16,
-    max_raster_workers_per_frame: u16,
     frame_batch_size_per_group: u16,
     max_geom_jobs_in_flight_per_group: u16,
     max_geom_workers_per_job: u16,
@@ -183,9 +180,6 @@ pub const CParallelConfig = extern struct {
     render_group_count: u16,
     workers_per_group_len: usize,
     workers_per_group: [*c]const u16,
-    max_frames_in_flight: u16,
-    max_geom_workers_per_frame: u16,
-    max_raster_workers_per_frame: u16,
     frame_batch_size_per_group: u16,
     max_geom_jobs_in_flight_per_group: u16,
     max_geom_workers_per_job: u16,
@@ -1043,11 +1037,6 @@ fn buildRasterConfig(
     var config = riley.RasterConfig{};
     config.render_mode = try renderModeFromC(in_config.render_mode);
     config.total_threads = @max(@as(u16, 1), in_config.total_threads);
-    config.max_frames_in_flight = @max(@as(u16, 1), in_config.max_frames_in_flight);
-    config.max_geom_workers_per_frame =
-        @max(@as(u16, 1), in_config.max_geom_workers_per_frame);
-    config.max_raster_workers_per_frame =
-        @max(@as(u16, 1), in_config.max_raster_workers_per_frame);
     config.frame_batch_size_per_group =
         @max(@as(u16, 1), in_config.frame_batch_size_per_group);
     config.max_geom_jobs_in_flight_per_group =
@@ -1082,11 +1071,6 @@ fn applyParallelConfig(
 ) !void {
     config.render_mode = try renderModeFromC(in_parallel_config.render_mode);
     config.total_threads = @max(@as(u16, 1), in_parallel_config.total_threads);
-    config.max_frames_in_flight = @max(@as(u16, 1), in_parallel_config.max_frames_in_flight);
-    config.max_geom_workers_per_frame =
-        @max(@as(u16, 1), in_parallel_config.max_geom_workers_per_frame);
-    config.max_raster_workers_per_frame =
-        @max(@as(u16, 1), in_parallel_config.max_raster_workers_per_frame);
     config.frame_batch_size_per_group =
         @max(@as(u16, 1), in_parallel_config.frame_batch_size_per_group);
     config.max_geom_jobs_in_flight_per_group =

@@ -214,8 +214,6 @@ pub fn main(init: std.process.Init) !void {
         },
         .report = .off,
         .total_threads = RENDER_THREADS,
-        .max_geom_workers_per_frame = RENDER_THREADS,
-        .max_raster_workers_per_frame = RENDER_THREADS,
         .frame_batch_size_per_group = 1,
         .max_geom_jobs_in_flight_per_group = 1,
         .max_geom_workers_per_job = RENDER_THREADS,

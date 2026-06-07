@@ -60,14 +60,7 @@ pub fn main(init: std.process.Init) !void {
         DEFAULT_GEOM_SCHEDULING_MODE;
     default_bench_args.max_raster_workers_per_job =
         DEFAULT_MAX_RASTER_WORKERS_PER_JOB;
-    // Keep the legacy compatibility knobs aligned with the grouped defaults so
-    // quick zig-run probes behave consistently with the Python harness.
-    default_bench_args.max_frames_in_flight =
-        DEFAULT_FRAME_BATCH_SIZE_PER_GROUP;
-    default_bench_args.max_geom_threads_per_frame =
-        DEFAULT_MAX_GEOM_WORKERS_PER_JOB;
-    default_bench_args.max_raster_threads_per_frame =
-        DEFAULT_MAX_RASTER_WORKERS_PER_JOB;
+
     default_bench_args.pixels_num = DEFAULT_PIXELS_NUM;
     default_bench_args.sub_sample = DEFAULT_SUB_SAMPLE;
 

@@ -31,15 +31,12 @@ SUB_SAMPLE = 2
 STEREO_ANGLE_DEG = 20.0
 TOTAL_THREADS = 8
 DISTORTION_KWARGS = {
-    "distortion_model": 2,
-    "distortion_k1": -0.19,
-    "distortion_k2": -1.17,
-    "distortion_k3": 25.0,
-    "distortion_k4": -0.04,
-    "distortion_k5": 0.18,
-    "distortion_k6": -0.02,
-    "distortion_p1": 0.0004,
-    "distortion_p2": -0.0007,
+    "distortion_model": 1,
+    "distortion_k1": -0.2,
+    "distortion_k2": 0.1,
+    "distortion_k3": 0.0,
+    "distortion_p1": 0.0001,
+    "distortion_p2": -0.0001,
 }
 SILENT_RENDER = os.environ.get("RILEY_DEMO_SILENT") == "1"
 

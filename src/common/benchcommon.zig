@@ -386,18 +386,6 @@ pub fn writeBenchmarkConfig(
         .{active_threads_geom_effective},
     );
     try writer.print(
-        "max_geom_threads_per_frame={d}\n",
-        .{config.max_geom_workers_per_frame},
-    );
-    try writer.print(
-        "max_raster_threads_per_frame={d}\n",
-        .{config.max_raster_workers_per_frame},
-    );
-    try writer.print(
-        "max_frames_in_flight={d}\n",
-        .{config.max_frames_in_flight},
-    );
-    try writer.print(
         "frame_batch_size_per_group={d}\n",
         .{config.frame_batch_size_per_group},
     );

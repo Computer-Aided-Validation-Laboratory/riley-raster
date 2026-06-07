@@ -40,7 +40,6 @@ const SUB_SAMPLE: u8 = 2;
 const STEREO_ANGLE_DEG: f64 = 20.0;
 
 const TOTAL_THREADS: u16 = 8;
-const MAX_FRAMES_IN_FLIGHT: u16 = 1;
 const FRAME_BATCH_SIZE_PER_GROUP: u16 = 1;
 const MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP: u16 = 1;
 const RENDER_GROUP_COUNT: usize = 8;
@@ -88,9 +87,6 @@ pub fn main(init: std.process.Init) !void {
     const config = RasterConfig{
         .render_mode = .offline,
         .total_threads = TOTAL_THREADS,
-        .max_frames_in_flight = MAX_FRAMES_IN_FLIGHT,
-        .max_geom_workers_per_frame = 1,
-        .max_raster_workers_per_frame = 1,
         .frame_batch_size_per_group = FRAME_BATCH_SIZE_PER_GROUP,
         .max_geom_jobs_in_flight_per_group = MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP,
         .max_geom_workers_per_job = 1,

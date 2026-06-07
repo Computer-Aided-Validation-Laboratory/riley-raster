@@ -34,15 +34,6 @@ pub const RasterConfig = struct {
     // Single-render-group compatibility budget. User-facing thread counts
     // always include the caller thread.
     total_threads: u16 = 1,
-    // Legacy single-render-group compatibility knob. In the grouped scheduler
-    // this is superseded by frame_batch_size_per_group.
-    max_frames_in_flight: u16 = 1,
-    // Legacy single-render-group compatibility knob. In the grouped scheduler
-    // this is superseded by max_geom_workers_per_job.
-    max_geom_workers_per_frame: u16 = 1,
-    // Legacy single-render-group compatibility knob. In the grouped scheduler
-    // this is superseded by max_raster_workers_per_job.
-    max_raster_workers_per_frame: u16 = 1,
     // Maximum number of frame-camera jobs assigned to one render group batch.
     frame_batch_size_per_group: u16 = 1,
     // Maximum number of geometry jobs a render group may have active at once.
@@ -61,7 +52,7 @@ pub const RasterConfig = struct {
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
     tile_size_override: u16 = 0,
-    tile_size_min: u16 = 8,
+    tile_size_min: u16 = 4,
     tile_size_max: u16 = 256,
     background_value: f64 = 0.0,
     hull_mode: HullMode = .on_no_fallback,

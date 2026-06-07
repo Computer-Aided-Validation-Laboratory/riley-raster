@@ -128,9 +128,6 @@ typedef struct c_mesh_input {
 typedef struct c_raster_config {
     uint32_t render_mode;
     uint16_t total_threads;
-    uint16_t max_frames_in_flight;
-    uint16_t max_geom_workers_per_frame;
-    uint16_t max_raster_workers_per_frame;
     uint16_t frame_batch_size_per_group;
     uint16_t max_geom_jobs_in_flight_per_group;
     uint16_t max_geom_workers_per_job;
@@ -152,9 +149,6 @@ typedef struct c_parallel_config {
     uint16_t render_group_count;
     size_t workers_per_group_len;
     const uint16_t* workers_per_group;
-    uint16_t max_frames_in_flight;
-    uint16_t max_geom_workers_per_frame;
-    uint16_t max_raster_workers_per_frame;
     uint16_t frame_batch_size_per_group;
     uint16_t max_geom_jobs_in_flight_per_group;
     uint16_t max_geom_workers_per_job;

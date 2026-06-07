@@ -82,9 +82,6 @@ MeshInputTex = MeshInput
 class RasterConfig:
     render_mode: int = 0
     total_threads: int = 1
-    max_frames_in_flight: int = 1
-    max_geom_workers_per_frame: int = 1
-    max_raster_workers_per_frame: int = 1
     frame_batch_size_per_group: int = 1
     max_geom_jobs_in_flight_per_group: int = 1
     max_geom_workers_per_job: int = 1
@@ -106,9 +103,6 @@ class ParallelConfig:
     total_threads: int = 1
     render_group_count: int = 1
     workers_per_group: int | list[int] = 1
-    max_frames_in_flight: int = 1
-    max_geom_workers_per_frame: int = 1
-    max_raster_workers_per_frame: int = 1
     frame_batch_size_per_group: int = 1
     max_geom_jobs_in_flight_per_group: int = 1
     max_geom_workers_per_job: int = 1
@@ -300,13 +294,6 @@ def _make_raster_config(config: Any) -> cr.CRasterConfig:
     config_out: cr.CRasterConfig
     config_out.render_mode = int(config.render_mode)
     config_out.total_threads = int(config.total_threads)
-    config_out.max_frames_in_flight = int(config.max_frames_in_flight)
-    config_out.max_geom_workers_per_frame = int(
-        config.max_geom_workers_per_frame,
-    )
-    config_out.max_raster_workers_per_frame = int(
-        config.max_raster_workers_per_frame,
-    )
     config_out.frame_batch_size_per_group = int(
         config.frame_batch_size_per_group,
     )
@@ -336,15 +323,6 @@ def _build_default_parallel_config(config: RasterConfig) -> ParallelConfig:
         total_threads=total_threads,
         render_group_count=total_threads,
         workers_per_group=1,
-        max_frames_in_flight=max(1, int(config.max_frames_in_flight)),
-        max_geom_workers_per_frame=max(
-            1,
-            int(config.max_geom_workers_per_frame),
-        ),
-        max_raster_workers_per_frame=max(
-            1,
-            int(config.max_raster_workers_per_frame),
-        ),
         frame_batch_size_per_group=max(
             1,
             int(config.frame_batch_size_per_group),
@@ -412,18 +390,6 @@ def _fill_parallel_config(
     config_out[0].workers_per_group = cython.cast(
         cython.pointer[cython.ushort],
         cython.address(workers_view[0]),
-    )
-    config_out[0].max_frames_in_flight = max(
-        1,
-        int(parallel_config.max_frames_in_flight),
-    )
-    config_out[0].max_geom_workers_per_frame = max(
-        1,
-        int(parallel_config.max_geom_workers_per_frame),
-    )
-    config_out[0].max_raster_workers_per_frame = max(
-        1,
-        int(parallel_config.max_raster_workers_per_frame),
     )
     config_out[0].frame_batch_size_per_group = max(
         1,

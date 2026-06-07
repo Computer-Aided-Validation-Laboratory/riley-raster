@@ -56,12 +56,9 @@ class PerfCase:
 class PerfProfile:
     name: str
     total_threads: int
-    max_geom_threads_per_frame: int
-    max_raster_threads_per_frame: int
     max_geom_workers_per_job: int
     max_raster_workers_per_job: int
     render_group_count: int = 1
-    max_frames_in_flight: int = 1
     frame_batch_size_per_group: int = 1
     max_geom_jobs_in_flight_per_group: int = 1
     save_strategy: str = "memory"
@@ -120,16 +117,12 @@ PROFILE_MAP: Final[dict[str, dict[str, PerfProfile]]] = {
         "1thread": PerfProfile(
             name="1thread",
             total_threads=1,
-            max_geom_threads_per_frame=1,
-            max_raster_threads_per_frame=1,
             max_geom_workers_per_job=1,
             max_raster_workers_per_job=1,
         ),
         "4thread": PerfProfile(
             name="4thread",
             total_threads=4,
-            max_geom_threads_per_frame=4,
-            max_raster_threads_per_frame=4,
             max_geom_workers_per_job=1,
             max_raster_workers_per_job=4,
         ),
@@ -138,16 +131,12 @@ PROFILE_MAP: Final[dict[str, dict[str, PerfProfile]]] = {
         "1thread": PerfProfile(
             name="1thread",
             total_threads=1,
-            max_geom_threads_per_frame=1,
-            max_raster_threads_per_frame=1,
             max_geom_workers_per_job=1,
             max_raster_workers_per_job=1,
         ),
         "4thread": PerfProfile(
             name="4thread",
             total_threads=4,
-            max_geom_threads_per_frame=4,
-            max_raster_threads_per_frame=4,
             max_geom_workers_per_job=4,
             max_raster_workers_per_job=4,
         ),
@@ -156,16 +145,12 @@ PROFILE_MAP: Final[dict[str, dict[str, PerfProfile]]] = {
         "1thread": PerfProfile(
             name="1thread",
             total_threads=1,
-            max_geom_threads_per_frame=1,
-            max_raster_threads_per_frame=1,
             max_geom_workers_per_job=1,
             max_raster_workers_per_job=1,
         ),
         "4thread": PerfProfile(
             name="4thread",
             total_threads=4,
-            max_geom_threads_per_frame=4,
-            max_raster_threads_per_frame=4,
             max_geom_workers_per_job=1,
             max_raster_workers_per_job=4,
         ),
@@ -174,16 +159,12 @@ PROFILE_MAP: Final[dict[str, dict[str, PerfProfile]]] = {
         "1thread": PerfProfile(
             name="1thread",
             total_threads=1,
-            max_geom_threads_per_frame=1,
-            max_raster_threads_per_frame=1,
             max_geom_workers_per_job=1,
             max_raster_workers_per_job=1,
         ),
         "4thread": PerfProfile(
             name="4thread",
             total_threads=4,
-            max_geom_threads_per_frame=4,
-            max_raster_threads_per_frame=4,
             max_geom_workers_per_job=1,
             max_raster_workers_per_job=4,
         ),
@@ -344,12 +325,6 @@ def profile_args(profile: PerfProfile) -> list[str]:
         str(profile.render_group_count),
         "--total-threads",
         str(profile.total_threads),
-        "--max-geom-threads-per-frame",
-        str(profile.max_geom_threads_per_frame),
-        "--max-raster-threads-per-frame",
-        str(profile.max_raster_threads_per_frame),
-        "--max-frames-in-flight",
-        str(profile.max_frames_in_flight),
         "--frame-batch-size-per-group",
         str(profile.frame_batch_size_per_group),
         "--max-geom-jobs-in-flight-per-group",
