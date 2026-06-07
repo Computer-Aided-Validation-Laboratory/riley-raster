@@ -76,6 +76,7 @@ test_output.txt
 .vscode/
 .venv/
 .antigravitycli/
+uv.lock
 
 # Cython
 *.html
