@@ -1,7 +1,7 @@
 # Riley
 `Riley` is a performant software rasteriser written in Zig specifically designed for digital image correlation (DIC) uncertainty quantification (UQ). `Riley` performs off-line rendering of deformed speckle pattern images from an input finite element simulation. `Riley` supports accurate rendering of higher order finite elements including `tri3`, `tri6`, `quad4`, `quad8` and `quad9` surface elements. Texture shading with higher order texture sampling is also supported for accurate speckle pattern rendering including: cubic sampling (Catmull-Rom, Mitchell-Netravali, BSpline), quintic sampling (BSpline) and Lancsoz (lancsoz3). Rendering multiple meshes with different element types and shading strategies in the same scene is supported.
 
-We specifically chose to implement `Riley` in Zig as it is a compiled language with manual memory management. It also allows for compile time code generation and has excellent support for SIMD vector types. We have used `comptime` to generate speciliased kernels for geometry and shader types removing run time dispatch overhead. We have also leveraged Zig's `io` interface to implement hierarchical parallelisation allowing for inter and intra frame parallelisation for offline rendering.
+We chose to implement `Riley` in Zig as it is a performant, compiled language with manual memory management. Zig also allows for compile time code generation and has excellent support for SIMD vector types. We have used `comptime` to generate speciliased kernels for geometry and shader types removing run time dispatch overhead. We have also leveraged Zig's `io` interface to implement hierarchical parallelisation allowing for inter and intra frame parallelisation for offline rendering.
 
 ## Getting Started: Zig
 `Riley` uses the Zig 0.16.0 compiler release which can be downloaded from [here](https://ziglang.org/download/). The `Riley` repository contains a minimal set of regression tests (called the "min" test suite) which should be run before generating a wider set gold regression data and running performance benchmark suites. The min test suite can be run from the project root directory using:
@@ -84,7 +84,7 @@ zig test -O ReleaseSafe ./src/test_bench.zig
 If all correctness regression tests pass you will need to generate gold for single threaded performance regressions on you machine. You will first need to compile the binaries for each performance case using the following:
 
 ```shell
-bash ./scripts/compile_para_simd_benchmarks.sh
+python ./scripts/compile_para_simd_benchmarks.py
 ```
 
 Once that is complete you can generate gold performance statistics for your local machine using:
@@ -119,7 +119,7 @@ zig run -O ReleaseFast ./src/bench_dicuq.zig
 You will find the rendered output for these benchmarks in ./out/bench_images_CASE and the statistics for the runs in ./out/bench_stats_CASE where CASE is fullraster, geom, sphere2000 or dicuq.
 
 ### Navigating the Codebase
-The main entry point for the `Riley` rendering pipeline is the `rasterAllFrames` function in /src/riley/zig/riley.zig.
+The main entry point for the `Riley` rendering pipeline is the `rasterAllFrames(...)` functions in /src/riley/zig/riley.zig.
 
 ### C Interface
 `Riley` provides a small C-compatible API for use from other languages. The Python bindings use this interface through Cython, but it can also be called from C or from languages with C FFI support. The extern types and functions for this interface can be found in /src/riley/zig/c-riley.zig.
