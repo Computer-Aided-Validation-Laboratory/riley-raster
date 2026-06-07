@@ -42,15 +42,15 @@ pub fn frameBatchSize(
 }
 
 pub fn tileSize(
-    tile_size_override: u16,
+    tile_size_override: ?u16,
     tile_size_min: u16,
     tile_size_max: u16,
     pixels_num: [2]u32,
     sub_sample: u8,
     halo_px: u16,
 ) u16 {
-    if (tile_size_override > 0) {
-        return tile_size_override;
+    if (tile_size_override) |tile_size| {
+        return tile_size;
     }
 
     const min_sensor_dim = @max(

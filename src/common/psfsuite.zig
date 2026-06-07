@@ -182,7 +182,7 @@ fn buildCameraInput(
 }
 
 fn baseRasterConfig(
-    tile_size_override: u16,
+    tile_size_override: ?u16,
     save_strategy: rastcfg.SaveStrategy,
     image_save_opts: []const iio.ImageSaveOpts,
     background_value: f64,
@@ -199,7 +199,7 @@ pub fn renderCase(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     render_case: RenderCase,
-    tile_size_override: u16,
+    tile_size_override: ?u16,
 ) !NDArray(f64) {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -263,7 +263,7 @@ pub fn saveGoldCase(
     const gold_dir = try std.fmt.allocPrint(aa, "{s}/{s}", .{ gold_root, case_dir_name });
 
     const config = baseRasterConfig(
-        0,
+        null,
         .disk,
         &[_]iio.ImageSaveOpts{
             .{ .format = .fimg, .bits = null, .scaling = .none },

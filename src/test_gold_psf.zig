@@ -46,7 +46,7 @@ test "Gold PSF Suite" {
                         "{s}/{s}",
                         .{ suite.gold_root, case_dir_name },
                     );
-                    const result = try suite.renderCase(allocator, io, render_case, 0);
+                    const result = try suite.renderCase(allocator, io, render_case, null);
                     defer {
                         allocator.free(result.slice);
                         var result_mut = result;
@@ -144,13 +144,13 @@ test "PSF isotropic gaussian separable and non-separable agree" {
         },
     };
 
-    const result_sep = try suite.renderCase(allocator, io, sep_case, 0);
+    const result_sep = try suite.renderCase(allocator, io, sep_case, null);
     defer {
         allocator.free(result_sep.slice);
         var result_sep_mut = result_sep;
         result_sep_mut.deinit(allocator);
     }
-    const result_nonsep = try suite.renderCase(allocator, io, nonsep_case, 0);
+    const result_nonsep = try suite.renderCase(allocator, io, nonsep_case, null);
     defer {
         allocator.free(result_nonsep.slice);
         var result_nonsep_mut = result_nonsep;
