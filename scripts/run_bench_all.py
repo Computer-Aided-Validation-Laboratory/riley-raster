@@ -10,9 +10,9 @@ RUN_FULLRASTER = True
 RUN_CAM = True
 RUN_GEOM = True
 RUN_SPHERE2000 = True
-RUN_SPHERE2000ZOOM = False
+RUN_SPHERE2000ZOOM = True
 RUN_DICUQ = True
-RUNS = 1
+RUNS = 25
 
 
 def repo_root() -> pathlib.Path:

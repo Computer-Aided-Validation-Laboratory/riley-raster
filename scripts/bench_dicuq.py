@@ -19,8 +19,8 @@ from bench_common import write_timing_csv
 
 
 # Laptop target: 8 cores / 8 active work-capable threads.
-TOTAL_ACTIVE_THREADS = [4, 8]
-RENDER_GROUP_COUNT_CHOICES = [4, 8]
+TOTAL_ACTIVE_THREADS = [1, 2, 4, 8, 16, 32, 64]
+RENDER_GROUP_COUNT_CHOICES = [1, 2, 4, 8, 16, 32, 64]
 RENDER_MODES = ["offline", "in_order"]
 GEOM_SCHEDULING_MODES = ["spread", "pack"]
 SAVE_STRATEGIES = [
