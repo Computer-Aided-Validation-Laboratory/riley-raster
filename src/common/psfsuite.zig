@@ -43,8 +43,8 @@ pub const DistortionCase = struct {
 
 pub const ShaderCase = struct {
     tag: []const u8,
-    builtin: shaderops.TexFuncBuiltin,
-    params: shaderops.TexFuncParams = .{},
+    builtin: shaderops.FuncShaderBuiltin,
+    params: shaderops.FuncShaderParams = .{},
     use_uvs: bool = true,
     background_value: f64 = grey_background_value,
 };

@@ -304,7 +304,7 @@ pub inline fn fillFuncClipSIMD(
             vals_arr[ll] = 0.0;
             if (!lane_mask_arr[ll]) continue;
 
-            const coord = common.TexFuncCoord{
+            const coord = common.FuncCoord{
                 .coord_0 = coord_0_arr[ll],
                 .coord_1 = coord_1_arr[ll],
                 .normal_x = normal_arrs[0][ll],
@@ -312,11 +312,17 @@ pub inline fn fillFuncClipSIMD(
                 .normal_z = normal_arrs[2][ll],
             };
             if (comptime channels == 1) {
-                vals_arr[ll] = common.evalTexFuncBuiltinScalar(sh.builtin, coord, sh.params) *
-                    sh.scale_mul + sh.scale_add;
+                vals_arr[ll] = common.evalFuncShaderBuiltinScalar(
+                    sh.builtin,
+                    coord,
+                    sh.params,
+                ) * sh.scale_mul + sh.scale_add;
             } else {
-                vals_arr[ll] = common.evalTexFuncBuiltinRgb(sh.builtin, coord, sh.params)[ch] *
-                    sh.scale_mul + sh.scale_add;
+                vals_arr[ll] = common.evalFuncShaderBuiltinRgb(
+                    sh.builtin,
+                    coord,
+                    sh.params,
+                )[ch] * sh.scale_mul + sh.scale_add;
             }
         }
 
@@ -374,7 +380,7 @@ pub inline fn fillFuncPerspSIMD(
             vals_arr[ll] = 0.0;
             if (!lane_mask_arr[ll]) continue;
 
-            const coord = common.TexFuncCoord{
+            const coord = common.FuncCoord{
                 .coord_0 = coord_0_arr[ll],
                 .coord_1 = coord_1_arr[ll],
                 .normal_x = normal_arrs[0][ll],
@@ -382,14 +388,14 @@ pub inline fn fillFuncPerspSIMD(
                 .normal_z = normal_arrs[2][ll],
             };
             if (comptime channels == 1) {
-                vals_arr[ll] = common.evalTexFuncBuiltinScalar(
+                vals_arr[ll] = common.evalFuncShaderBuiltinScalar(
                     sh.builtin,
                     coord,
                     sh.params,
                 ) *
                     sh.scale_mul + sh.scale_add;
             } else {
-                vals_arr[ll] = common.evalTexFuncBuiltinRgb(
+                vals_arr[ll] = common.evalFuncShaderBuiltinRgb(
                     sh.builtin,
                     coord,
                     sh.params,

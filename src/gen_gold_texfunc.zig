@@ -135,7 +135,7 @@ pub fn mainWithOutputRoot(
         .quad8,
         .quad9,
     };
-    const builtins = [_]shaderops.TexFuncBuiltin{
+    const builtins = [_]shaderops.FuncShaderBuiltin{
         .constant,
         .linear,
         .quadratic,

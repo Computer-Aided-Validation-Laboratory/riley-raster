@@ -26,8 +26,8 @@ const CameraInput = camera_mod.CameraInput;
 const DistortionModel = camera_mod.DistortionModel;
 const BrownConrady = camera_mod.BrownConrady;
 const PointSpreadFunc = camera_mod.PointSpreadFunc;
-const TexFuncBuiltin = shaderops.TexFuncBuiltin;
-const TexFuncParams = shaderops.TexFuncParams;
+const FuncShaderBuiltin = shaderops.FuncShaderBuiltin;
+const FuncShaderParams = shaderops.FuncShaderParams;
 
 const OUT_DIR_ROOT = "./out/distortion";
 const PIXELS_NUM = [2]u32{ 1600, 1000 };
@@ -37,8 +37,8 @@ const FOV_SCALE: f64 = 1.0;
 const SUB_SAMPLE: u8 = 2;
 const RENDER_THREADS: u16 = 4;
 const CAMERA_ROT = Rotation.init(0.0, 0.0, 0.0);
-const SHADER_BUILTIN = TexFuncBuiltin.checker;
-const SHADER_PARAMS = TexFuncParams{
+const SHADER_BUILTIN = FuncShaderBuiltin.checker;
+const SHADER_PARAMS = FuncShaderParams{
     .coord_scale = .{ 36.0, 36.0 },
     .coord_offset = .{ 0.0, 0.0 },
 };

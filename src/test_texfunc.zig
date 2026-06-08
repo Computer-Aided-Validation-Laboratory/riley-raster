@@ -93,7 +93,7 @@ fn runTexFuncCase(
     allocator: std.mem.Allocator,
     io: std.Io,
     mesh_type: gk.MeshType,
-    builtin: shaderops.TexFuncBuiltin,
+    builtin: shaderops.FuncShaderBuiltin,
     coord_mode: CoordMode,
     is_rgb: bool,
 ) !void {
@@ -308,7 +308,7 @@ test "TexFunc Suite" {
         .quad8,
         .quad9,
     };
-    const builtins = [_]shaderops.TexFuncBuiltin{
+    const builtins = [_]shaderops.FuncShaderBuiltin{
         .constant,
         .linear,
         .quadratic,

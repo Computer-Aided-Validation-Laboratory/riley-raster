@@ -125,7 +125,7 @@ const tex_func_case = common.TexFuncCase{
     .coord_mode = .uv,
 };
 
-const checker_params = so.TexFuncParams{
+const checker_params = so.FuncShaderParams{
     .coord_scale = .{
         CHECKER_SQUARES_PER_AXIS,
         CHECKER_SQUARES_PER_AXIS,

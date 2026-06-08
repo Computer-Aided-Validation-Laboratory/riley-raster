@@ -9,15 +9,17 @@
 import cython
 from dataclasses import dataclass, field
 from enum import IntEnum
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 from cython.cimports.libc.stdlib import free, malloc
 from cython.cimports.riley.cyth import riley as cr
+from riley.python.helpers import load_sim_from_csv, load_texture
 
 
 @dataclass(slots=True)
-class CameraInput:
+class Camera:
     pixels_num: tuple[int, int]
     pixels_size: tuple[float, float]
     pos_world: tuple[float, float, float]
@@ -37,8 +39,11 @@ class CameraInput:
     coord_sys: int = 0
 
 
+CameraInput = Camera
+
+
 @dataclass(slots=True)
-class TexFuncParams:
+class FuncShaderParams:
     coord_scale: tuple[float, float] = (1.0, 1.0)
     coord_offset: tuple[float, float] = (0.0, 0.0)
     output_scale: float = 1.0
@@ -53,29 +58,33 @@ class TexFuncParams:
     )
 
 
+
+
 @dataclass(slots=True)
-class MeshInput:
+class Mesh:
     mesh_type: int
     coords: np.ndarray
     connect: np.ndarray
     disp: np.ndarray | None = None
-    shader_tag: int = 0
+    shader_type: int = 0
     uvs: np.ndarray | None = None
     texture: np.ndarray | None = None
     sample: int = 2
     sample_mode: int = 2
     bits: int = 8
-    scaling_tag: int = 0
+    scaling_type: int = 0
     scaling_min: float = 0.0
     scaling_max: float = 0.0
     nodal_field: np.ndarray | None = None
     scale_over: int = 1
-    tex_func_builtin: int = 0
-    tex_func_params: TexFuncParams = field(default_factory=TexFuncParams)
+    func_shader_builtin: int = 0
+    func_shader_params: FuncShaderParams = field(
+        default_factory=FuncShaderParams,
+    )
     normal_type: int = 0
 
 
-MeshInputTex = MeshInput
+MeshInput = Mesh
 
 
 @dataclass(slots=True)
@@ -192,7 +201,7 @@ class ScaleOver(IntEnum):
     over_frames = 1
 
 
-class TexFuncBuiltin(IntEnum):
+class FuncShaderBuiltin(IntEnum):
     constant = 0
     linear = 1
     quadratic = 2
@@ -200,6 +209,8 @@ class TexFuncBuiltin(IntEnum):
     checker = 4
     checker_smooth = 5
     lambertian_normal_z = 6
+
+
 
 
 class NormalType(IntEnum):
@@ -255,8 +266,8 @@ def _make_camera_input(camera: Any) -> cr.CCameraInput:
     return camera_out
 
 
-def _camera_input_from_c(camera_in: cr.CCameraInput) -> CameraInput:
-    return CameraInput(
+def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
+    return Camera(
         pixels_num=(camera_in.pixels_num.x, camera_in.pixels_num.y),
         pixels_size=(camera_in.pixels_size.x, camera_in.pixels_size.y),
         pos_world=(
@@ -414,8 +425,8 @@ def _fill_parallel_config(
 
 
 @cython.cfunc
-def _make_tex_func_params(params_in: Any) -> cr.CTexFuncParams:
-    return cr.CTexFuncParams(
+def _make_func_params(params_in: Any) -> cr.CFuncShaderParams:
+    return cr.CFuncShaderParams(
         float(params_in.coord_scale[0]),
         float(params_in.coord_scale[1]),
         float(params_in.coord_offset[0]),
@@ -568,7 +579,7 @@ def _contig_texture(texture_in: Any, channels_num: int) -> np.ndarray:
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def roi_cent_from_coords(coords_in: Any) -> np.ndarray:
+def roi_cent_from_coords(coords_in: Any) -> tuple[float, float, float]:
     coords_np = _contig_f64_2d(coords_in, "coords")
     rows_num, cols_num = _as_shape_2d(coords_np)
     if cols_num != 3:
@@ -578,10 +589,13 @@ def roi_cent_from_coords(coords_in: Any) -> np.ndarray:
     coords_c = _make_array_2d_f64(coords_view, rows_num, cols_num)
     out_cent: cr.CVec3F64
 
-    if cr.rileyRoiCentFromCoords(cython.address(coords_c), cython.address(out_cent)) != 0:
+    if cr.rileyRoiCentFromCoords(
+        cython.address(coords_c),
+        cython.address(out_cent),
+    ) != 0:
         _raise_last_error()
 
-    return np.array([out_cent.x, out_cent.y, out_cent.z], dtype=np.float64)
+    return (out_cent.x, out_cent.y, out_cent.z)
 
 
 @cython.boundscheck(False)
@@ -593,7 +607,7 @@ def pos_fill_frame_from_rot(
     focal_length: float,
     rot_world: tuple[float, float, float],
     frame_fill: float = 1.0,
-) -> np.ndarray:
+) -> tuple[float, float, float]:
     coords_np = _contig_f64_2d(coords_in, "coords")
     rows_num, cols_num = _as_shape_2d(coords_np)
     if cols_num != 3:
@@ -614,7 +628,7 @@ def pos_fill_frame_from_rot(
     ) != 0:
         _raise_last_error()
 
-    return np.array([out_pos.x, out_pos.y, out_pos.z], dtype=np.float64)
+    return (out_pos.x, out_pos.y, out_pos.z)
 
 
 @cython.cfunc
@@ -660,17 +674,19 @@ def _fill_mesh_array(
             )
             keepalive.append(disp_np)
 
-        shader_tag = int(mesh.shader_tag)
+        shader_tag = int(mesh.shader_type)
         mesh_array[nn].shader_tag = shader_tag
         mesh_array[nn].sample = int(mesh.sample)
         mesh_array[nn].sample_mode = int(mesh.sample_mode)
         mesh_array[nn].bits = int(mesh.bits)
-        mesh_array[nn].scaling_tag = int(mesh.scaling_tag)
+        mesh_array[nn].scaling_tag = int(mesh.scaling_type)
         mesh_array[nn].scaling_min = float(mesh.scaling_min)
         mesh_array[nn].scaling_max = float(mesh.scaling_max)
         mesh_array[nn].scale_over = int(mesh.scale_over)
-        mesh_array[nn].tex_func_builtin = int(mesh.tex_func_builtin)
-        mesh_array[nn].tex_func_params = _make_tex_func_params(mesh.tex_func_params)
+        mesh_array[nn].func_shader_builtin = int(mesh.func_shader_builtin)
+        mesh_array[nn].func_shader_params = _make_func_params(
+            mesh.func_shader_params,
+        )
         mesh_array[nn].normal_type = int(mesh.normal_type)
 
         if mesh.uvs is None:
@@ -735,7 +751,7 @@ def _fill_mesh_array(
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
-def roi_cent_over_meshes(meshes: Any) -> np.ndarray:
+def roi_cent_over_meshes(meshes: Any) -> tuple[float, float, float]:
     mesh_list = _normalize_meshes(meshes)
     meshes_len: cython.size_t = len(mesh_list)
     mesh_array = cython.cast(
@@ -749,11 +765,15 @@ def roi_cent_over_meshes(meshes: Any) -> np.ndarray:
         raise MemoryError()
     try:
         _fill_mesh_array(mesh_list, mesh_array, keepalive)
-        if cr.rileyRoiCentOverMeshes(mesh_array, meshes_len, cython.address(out_cent)) != 0:
+        if cr.rileyRoiCentOverMeshes(
+            mesh_array,
+            meshes_len,
+            cython.address(out_cent),
+        ) != 0:
             _raise_last_error()
     finally:
         free(mesh_array)
-    return np.array([out_cent.x, out_cent.y, out_cent.z], dtype=np.float64)
+    return (out_cent.x, out_cent.y, out_cent.z)
 
 
 @cython.boundscheck(False)
@@ -765,7 +785,7 @@ def pos_fill_frame_from_rot_over_meshes(
     focal_length: float,
     rot_world: tuple[float, float, float],
     frame_fill: float = 1.0,
-) -> np.ndarray:
+) -> tuple[float, float, float]:
     mesh_list = _normalize_meshes(meshes)
     meshes_len: cython.size_t = len(mesh_list)
     mesh_array = cython.cast(
@@ -791,14 +811,14 @@ def pos_fill_frame_from_rot_over_meshes(
             _raise_last_error()
     finally:
         free(mesh_array)
-    return np.array([out_pos.x, out_pos.y, out_pos.z], dtype=np.float64)
+    return (out_pos.x, out_pos.y, out_pos.z)
 
 
 def save_stereo_pair(
     out_dir: str,
     stereo_file_name: str,
-    camera_0: CameraInput,
-    camera_1: CameraInput,
+    camera_0: Camera,
+    camera_1: Camera,
 ) -> None:
     cam0_c = _make_camera_input(camera_0)
     cam1_c = _make_camera_input(camera_1)
@@ -816,7 +836,7 @@ def save_stereo_pair(
 def load_stereo_pair(
     dir_path: str,
     stereo_file_name: str,
-) -> tuple[CameraInput, CameraInput]:
+) -> tuple[Camera, Camera]:
     dir_bytes = dir_path.encode("utf-8")
     file_bytes = stereo_file_name.encode("utf-8")
     cam0_c: cr.CCameraInput
@@ -937,11 +957,15 @@ def raster(
     return image_np
 
 
+
+
+
 __all__ = [
-    "CameraCoordSys",
+    "Camera",
     "CameraInput",
+    "CameraCoordSys",
+    "Mesh",
     "MeshInput",
-    "MeshInputTex",
     "MeshType",
     "NormalType",
     "GeometrySchedulingMode",
@@ -955,10 +979,12 @@ __all__ = [
     "ScaleStrategy",
     "ShaderType",
     "SubPixelCenterMap",
-    "TexFuncBuiltin",
-    "TexFuncParams",
+    "FuncShaderBuiltin",
+    "FuncShaderParams",
     "TextureSample",
     "TextureSampleMode",
+    "load_sim_from_csv",
+    "load_texture",
     "load_stereo_pair",
     "pos_fill_frame_from_rot",
     "pos_fill_frame_from_rot_over_meshes",

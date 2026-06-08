@@ -479,7 +479,7 @@ pub const ShaderType = enum {
 const TextureSampleConfig = @import("../riley/zig/textureops.zig").TextureSampleConfig;
 pub const TexFuncCoordMode = enum { uv, param };
 pub const TexFuncCase = struct {
-    builtin: so.TexFuncBuiltin,
+    builtin: so.FuncShaderBuiltin,
     coord_mode: TexFuncCoordMode,
 };
 
@@ -1148,7 +1148,7 @@ fn printPaddedSafe(writer: anytype, text: []const u8, width: usize) !void {
     }
 }
 
-fn calcTexFuncParams(tex_func_case: TexFuncCase) so.TexFuncParams {
+fn calcTexFuncParams(tex_func_case: TexFuncCase) so.FuncShaderParams {
     const pi: f64 = std.math.pi;
     const oscillations: f64 = if (tex_func_case.coord_mode == .param)
         2.0

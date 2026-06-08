@@ -86,7 +86,7 @@ typedef struct c_mesh_input_tex {
     double scaling_max;
 } CMeshInputTex;
 
-typedef struct c_tex_func_params {
+typedef struct c_func_shader_params {
     double coord_scale_0;
     double coord_scale_1;
     double coord_offset_0;
@@ -102,7 +102,8 @@ typedef struct c_tex_func_params {
     double extra_1;
     double extra_2;
     double extra_3;
-} CTexFuncParams;
+} CFuncShaderParams;
+
 
 typedef struct c_mesh_input {
     uint32_t mesh_type;
@@ -120,8 +121,8 @@ typedef struct c_mesh_input {
     double scaling_max;
     CArray3DF64 nodal_field;
     uint32_t scale_over;
-    uint32_t tex_func_builtin;
-    CTexFuncParams tex_func_params;
+    uint32_t func_shader_builtin;
+    CFuncShaderParams func_shader_params;
     uint32_t normal_type;
 } CMeshInput;
 

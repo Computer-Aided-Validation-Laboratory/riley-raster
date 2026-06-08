@@ -24,7 +24,7 @@ const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const CameraInput = cammod.CameraInput;
 const CameraPrepared = cammod.CameraPrepared;
 const MeshInput = mo.MeshInput;
-const TexFuncBuiltin = so.TexFuncBuiltin;
+const FuncShaderBuiltin = so.FuncShaderBuiltin;
 
 const OVERLAP_X: f64 = 0.85;
 const OVERLAP_Y: f64 = 0.8;
@@ -149,7 +149,7 @@ fn buildUvRgbField(
     return field;
 }
 
-fn sinusoidalUvParams() so.TexFuncParams {
+fn sinusoidalUvParams() so.FuncShaderParams {
     const wave_num = 2.0 * std.math.pi * 6.0;
     return .{
         .wave_num_scalar = .{ wave_num, wave_num },
@@ -235,7 +235,7 @@ fn makeMeshInput(
             .disp = null,
             .shader = .{ .func_rgb = .{
                 .uvs = uvs.array,
-                .builtin = TexFuncBuiltin.sinusoidal,
+                .builtin = FuncShaderBuiltin.sinusoidal,
                 .params = sinusoidalUvParams(),
                 .bits = 8,
                 .scaling = .auto,

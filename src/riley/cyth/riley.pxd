@@ -83,7 +83,7 @@ cdef extern from "riley.h":
         double scaling_min
         double scaling_max
 
-    ctypedef struct CTexFuncParams:
+    ctypedef struct CFuncShaderParams:
         double coord_scale_0
         double coord_scale_1
         double coord_offset_0
@@ -99,6 +99,7 @@ cdef extern from "riley.h":
         double extra_1
         double extra_2
         double extra_3
+
 
     ctypedef struct CMeshInput:
         uint32_t mesh_type
@@ -116,8 +117,8 @@ cdef extern from "riley.h":
         double scaling_max
         CArray3DF64 nodal_field
         uint32_t scale_over
-        uint32_t tex_func_builtin
-        CTexFuncParams tex_func_params
+        uint32_t func_shader_builtin
+        CFuncShaderParams func_shader_params
         uint32_t normal_type
 
     ctypedef struct CRasterConfig:

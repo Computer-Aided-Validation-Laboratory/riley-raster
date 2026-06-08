@@ -117,7 +117,7 @@ pub const CMeshInputTex = extern struct {
     scaling_max: f64,
 };
 
-pub const CTexFuncParams = extern struct {
+pub const CFuncShaderParams = extern struct {
     coord_scale_0: f64,
     coord_scale_1: f64,
     coord_offset_0: f64,
@@ -135,6 +135,7 @@ pub const CTexFuncParams = extern struct {
     extra_3: f64,
 };
 
+
 pub const CMeshInput = extern struct {
     mesh_type: u32,
     coords: CArray2DF64,
@@ -151,8 +152,8 @@ pub const CMeshInput = extern struct {
     scaling_max: f64,
     nodal_field: CArray3DF64,
     scale_over: u32,
-    tex_func_builtin: u32,
-    tex_func_params: CTexFuncParams,
+    func_shader_builtin: u32,
+    func_shader_params: CFuncShaderParams,
     normal_type: u32,
 };
 
@@ -450,20 +451,21 @@ fn scaleOverFromC(scale_over: u32) !shaderops.ScaleOver {
     };
 }
 
-fn texFuncBuiltinFromC(
-    tex_func_builtin: u32,
-) !shaderops.TexFuncBuiltin {
-    return switch (tex_func_builtin) {
-        @intFromEnum(shaderops.TexFuncBuiltin.constant) => .constant,
-        @intFromEnum(shaderops.TexFuncBuiltin.linear) => .linear,
-        @intFromEnum(shaderops.TexFuncBuiltin.quadratic) => .quadratic,
-        @intFromEnum(shaderops.TexFuncBuiltin.sinusoidal) => .sinusoidal,
-        @intFromEnum(shaderops.TexFuncBuiltin.checker) => .checker,
-        @intFromEnum(shaderops.TexFuncBuiltin.checker_smooth) => .checker_smooth,
-        @intFromEnum(shaderops.TexFuncBuiltin.lambertian_normal_z) => .lambertian_normal_z,
-        else => error.InvalidTexFuncBuiltin,
+fn funcShaderBuiltinFromC(
+    func_shader_builtin: u32,
+) !shaderops.FuncShaderBuiltin {
+    return switch (func_shader_builtin) {
+        @intFromEnum(shaderops.FuncShaderBuiltin.constant) => .constant,
+        @intFromEnum(shaderops.FuncShaderBuiltin.linear) => .linear,
+        @intFromEnum(shaderops.FuncShaderBuiltin.quadratic) => .quadratic,
+        @intFromEnum(shaderops.FuncShaderBuiltin.sinusoidal) => .sinusoidal,
+        @intFromEnum(shaderops.FuncShaderBuiltin.checker) => .checker,
+        @intFromEnum(shaderops.FuncShaderBuiltin.checker_smooth) => .checker_smooth,
+        @intFromEnum(shaderops.FuncShaderBuiltin.lambertian_normal_z) => .lambertian_normal_z,
+        else => error.InvalidFuncShaderBuiltin,
     };
 }
+
 
 fn normalTypeFromC(normal_type: u32) !shaderops.NormalType {
     return switch (normal_type) {
@@ -474,9 +476,9 @@ fn normalTypeFromC(normal_type: u32) !shaderops.NormalType {
     };
 }
 
-fn texFuncParamsFromC(
-    in_params: CTexFuncParams,
-) shaderops.TexFuncParams {
+fn funcShaderParamsFromC(
+    in_params: CFuncShaderParams,
+) shaderops.FuncShaderParams {
     return .{
         .coord_scale = .{
             in_params.coord_scale_0,
@@ -505,6 +507,7 @@ fn texFuncParamsFromC(
         },
     };
 }
+
 
 fn bitsFromC(bits: c_int) !?u8 {
     if (bits < 0) {
@@ -932,8 +935,8 @@ fn buildMeshInput(
 
             built.mesh_input.shader = .{ .func = .{
                 .uvs = uvs_array_opt,
-                .builtin = try texFuncBuiltinFromC(in_mesh.tex_func_builtin),
-                .params = texFuncParamsFromC(in_mesh.tex_func_params),
+                .builtin = try funcShaderBuiltinFromC(in_mesh.func_shader_builtin),
+                .params = funcShaderParamsFromC(in_mesh.func_shader_params),
                 .bits = bits,
                 .scaling = scaling,
                 .normal_type = normal_type,
@@ -955,8 +958,8 @@ fn buildMeshInput(
 
             built.mesh_input.shader = .{ .func_rgb = .{
                 .uvs = uvs_array_opt,
-                .builtin = try texFuncBuiltinFromC(in_mesh.tex_func_builtin),
-                .params = texFuncParamsFromC(in_mesh.tex_func_params),
+                .builtin = try funcShaderBuiltinFromC(in_mesh.func_shader_builtin),
+                .params = funcShaderParamsFromC(in_mesh.func_shader_params),
                 .bits = bits,
                 .scaling = scaling,
                 .normal_type = normal_type,

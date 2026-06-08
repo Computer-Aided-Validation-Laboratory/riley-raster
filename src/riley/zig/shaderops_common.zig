@@ -20,7 +20,8 @@ const meshio = @import("meshio.zig");
 
 pub const ScaleOver = enum { within_frames, over_frames };
 pub const NormalType = enum { none, exact, averaged };
-pub const TexFuncBuiltin = enum {
+
+pub const FuncShaderBuiltin = enum {
     constant,
     linear,
     quadratic,
@@ -30,7 +31,7 @@ pub const TexFuncBuiltin = enum {
     lambertian_normal_z,
 };
 
-pub const TexFuncParams = struct {
+pub const FuncShaderParams = struct {
     coord_scale: [2]f64 = .{ 1.0, 1.0 },
     coord_offset: [2]f64 = .{ 0.0, 0.0 },
     output_scale: f64 = 1.0,
@@ -39,6 +40,7 @@ pub const TexFuncParams = struct {
     wave_num_rgb: [3]f64 = .{ 6.0, 6.0, 4.0 },
     extra: [4]f64 = .{ 0.0, 0.0, 0.0, 0.0 },
 };
+
 
 pub fn LocalShaderBuffer(comptime N: usize) type {
     return struct {
@@ -128,8 +130,8 @@ pub fn FuncInput(comptime channels: usize) type {
     _ = channels;
     return struct {
         uvs: ?ndarray.NDArray(f64) = null,
-        builtin: TexFuncBuiltin,
-        params: TexFuncParams = .{},
+        builtin: FuncShaderBuiltin,
+        params: FuncShaderParams = .{},
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
         normal_type: NormalType = .none,
@@ -173,8 +175,8 @@ pub fn FuncStatic(comptime channels: usize) type {
     _ = channels;
     return struct {
         elem_uvs: ?ndarray.NDArray(f64),
-        builtin: TexFuncBuiltin,
-        params: TexFuncParams = .{},
+        builtin: FuncShaderBuiltin,
+        params: FuncShaderParams = .{},
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
         normal_type: NormalType = .none,
@@ -225,8 +227,8 @@ pub fn FuncPrepared(comptime channels: usize) type {
     _ = channels;
     return struct {
         elem_uvs: ?ndarray.NDArray(f64),
-        builtin: TexFuncBuiltin,
-        params: TexFuncParams = .{},
+        builtin: FuncShaderBuiltin,
+        params: FuncShaderParams = .{},
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
         scale_mul: f64 = 1.0,
@@ -268,7 +270,7 @@ pub fn InterpData(comptime N: usize) type {
     };
 }
 
-pub const TexFuncCoord = struct {
+pub const FuncCoord = struct {
     coord_0: f64,
     coord_1: f64,
     normal_x: f64,
@@ -276,31 +278,32 @@ pub const TexFuncCoord = struct {
     normal_z: f64,
 };
 
+
 inline fn cubicSmoothStep(val: f64) f64 {
     const clamped = @max(0.0, @min(1.0, val));
     return clamped * clamped * (3.0 - 2.0 * clamped);
 }
 
-inline fn applyTexFuncCoordParams(
-    coord: TexFuncCoord,
-    params: TexFuncParams,
-) TexFuncCoord {
+inline fn applyFuncShaderCoordParams(
+    coord: FuncCoord,
+    params: FuncShaderParams,
+) FuncCoord {
     var out = coord;
     out.coord_0 = params.coord_scale[0] * coord.coord_0 + params.coord_offset[0];
     out.coord_1 = params.coord_scale[1] * coord.coord_1 + params.coord_offset[1];
     return out;
 }
 
-inline fn applyTexFuncOutputParams(value: f64, params: TexFuncParams) f64 {
+inline fn applyFuncShaderOutputParams(value: f64, params: FuncShaderParams) f64 {
     return value * params.output_scale + params.output_offset;
 }
 
-pub inline fn evalTexFuncBuiltinScalar(
-    builtin: TexFuncBuiltin,
-    coord: TexFuncCoord,
-    params: TexFuncParams,
+pub inline fn evalFuncShaderBuiltinScalar(
+    builtin: FuncShaderBuiltin,
+    coord: FuncCoord,
+    params: FuncShaderParams,
 ) f64 {
-    const eval_coord = applyTexFuncCoordParams(coord, params);
+    const eval_coord = applyFuncShaderCoordParams(coord, params);
     const value = switch (builtin) {
         .constant => 0.5,
         .linear => 0.5 + 0.25 * eval_coord.coord_0 + 0.2 * eval_coord.coord_1,
@@ -329,15 +332,15 @@ pub inline fn evalTexFuncBuiltinScalar(
         },
         .lambertian_normal_z => 0.5 + 0.5 * eval_coord.normal_z,
     };
-    return applyTexFuncOutputParams(value, params);
+    return applyFuncShaderOutputParams(value, params);
 }
 
-pub inline fn evalTexFuncBuiltinRgb(
-    builtin: TexFuncBuiltin,
-    coord: TexFuncCoord,
-    params: TexFuncParams,
+pub inline fn evalFuncShaderBuiltinRgb(
+    builtin: FuncShaderBuiltin,
+    coord: FuncCoord,
+    params: FuncShaderParams,
 ) [3]f64 {
-    const eval_coord = applyTexFuncCoordParams(coord, params);
+    const eval_coord = applyFuncShaderCoordParams(coord, params);
     const values = switch (builtin) {
         .constant => .{ 0.2, 0.5, 0.8 },
         .linear => .{
@@ -384,18 +387,18 @@ pub inline fn evalTexFuncBuiltinRgb(
         },
     };
     return .{
-        applyTexFuncOutputParams(values[0], params),
-        applyTexFuncOutputParams(values[1], params),
-        applyTexFuncOutputParams(values[2], params),
+        applyFuncShaderOutputParams(values[0], params),
+        applyFuncShaderOutputParams(values[1], params),
+        applyFuncShaderOutputParams(values[2], params),
     };
 }
 
-inline fn getTexFuncCoord(
+inline fn getFuncCoord(
     comptime N: usize,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     elem_normals: ?ndarray.MappedNDArray(f64),
-) TexFuncCoord {
+) FuncCoord {
     if (elem_normals != null) {
         const normal = ctx_shade.shader_buf.interpolateNormal(interp.weights);
         return .{
@@ -417,7 +420,7 @@ inline fn getTexFuncCoord(
 }
 
 inline fn setCoordValues(
-    coord: *TexFuncCoord,
+    coord: *FuncCoord,
     coord_0: f64,
     coord_1: f64,
 ) void {
@@ -533,7 +536,7 @@ pub inline fn fillFuncClip(
     sh: *const FuncPrepared(channels),
     spx_image_scratch: *matslice.MatSlice(f64),
 ) void {
-    var coord = getTexFuncCoord(N, ctx_shade, interp, sh.elem_normals);
+    var coord = getFuncCoord(N, ctx_shade, interp, sh.elem_normals);
 
     if (sh.elem_uvs != null) {
         var tex_u: f64 = 0.0;
@@ -548,11 +551,11 @@ pub inline fn fillFuncClip(
     }
 
     if (comptime channels == 1) {
-        const value = evalTexFuncBuiltinScalar(sh.builtin, coord, sh.params);
+        const value = evalFuncShaderBuiltinScalar(sh.builtin, coord, sh.params);
         spx_image_scratch.slice[ctx_shade.scratch_idx] =
             value * sh.scale_mul + sh.scale_add;
     } else {
-        const values = evalTexFuncBuiltinRgb(sh.builtin, coord, sh.params);
+        const values = evalFuncShaderBuiltinRgb(sh.builtin, coord, sh.params);
         inline for (0..channels) |ch| {
             spx_image_scratch.slice[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
                 values[ch] * sh.scale_mul + sh.scale_add;
@@ -568,7 +571,7 @@ pub inline fn fillFuncPersp(
     sh: *const FuncPrepared(channels),
     spx_image_scratch: *matslice.MatSlice(f64),
 ) void {
-    var coord = getTexFuncCoord(N, ctx_shade, interp, sh.elem_normals);
+    var coord = getFuncCoord(N, ctx_shade, interp, sh.elem_normals);
 
     if (sh.elem_uvs != null) {
         var tex_u: f64 = 0.0;
@@ -586,11 +589,11 @@ pub inline fn fillFuncPersp(
     }
 
     if (comptime channels == 1) {
-        const value = evalTexFuncBuiltinScalar(sh.builtin, coord, sh.params);
+        const value = evalFuncShaderBuiltinScalar(sh.builtin, coord, sh.params);
         spx_image_scratch.slice[ctx_shade.scratch_idx] =
             value * sh.scale_mul + sh.scale_add;
     } else {
-        const values = evalTexFuncBuiltinRgb(sh.builtin, coord, sh.params);
+        const values = evalFuncShaderBuiltinRgb(sh.builtin, coord, sh.params);
         inline for (0..channels) |ch| {
             spx_image_scratch.slice[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
                 values[ch] * sh.scale_mul + sh.scale_add;
@@ -600,28 +603,28 @@ pub inline fn fillFuncPersp(
 
 const testing = std.testing;
 
-test "TexFuncParams defaults preserve constant shader" {
-    const coord = TexFuncCoord{
+test "FuncShaderParams defaults preserve constant shader" {
+    const coord = FuncCoord{
         .coord_0 = 0.25,
         .coord_1 = -0.5,
         .normal_x = 0.0,
         .normal_y = 0.0,
         .normal_z = 1.0,
     };
-    const value = evalTexFuncBuiltinScalar(.constant, coord, .{});
+    const value = evalFuncShaderBuiltinScalar(.constant, coord, .{});
     try testing.expectApproxEqAbs(@as(f64, 0.5), value, 1e-12);
 }
 
-test "TexFuncParams control sinusoidal frequency and output scaling" {
-    const coord = TexFuncCoord{
+test "FuncShaderParams control sinusoidal frequency and output scaling" {
+    const coord = FuncCoord{
         .coord_0 = 0.25,
         .coord_1 = 0.0,
         .normal_x = 0.0,
         .normal_y = 0.0,
         .normal_z = 1.0,
     };
-    const base = evalTexFuncBuiltinScalar(.sinusoidal, coord, .{});
-    const shifted = evalTexFuncBuiltinScalar(.sinusoidal, coord, .{
+    const base = evalFuncShaderBuiltinScalar(.sinusoidal, coord, .{});
+    const shifted = evalFuncShaderBuiltinScalar(.sinusoidal, coord, .{
         .coord_scale = .{ 2.0, 1.0 },
         .output_scale = 2.0,
         .output_offset = -0.25,
@@ -633,26 +636,26 @@ test "TexFuncParams control sinusoidal frequency and output scaling" {
 }
 
 test "checker texfunc creates hard black white cells from coord scale" {
-    const coord_black = TexFuncCoord{
+    const coord_black = FuncCoord{
         .coord_0 = 0.01,
         .coord_1 = 0.01,
         .normal_x = 0.0,
         .normal_y = 0.0,
         .normal_z = 1.0,
     };
-    const coord_white = TexFuncCoord{
+    const coord_white = FuncCoord{
         .coord_0 = 0.05,
         .coord_1 = 0.01,
         .normal_x = 0.0,
         .normal_y = 0.0,
         .normal_z = 1.0,
     };
-    const params = TexFuncParams{
+    const params = FuncShaderParams{
         .coord_scale = .{ 36.0, 36.0 },
     };
 
-    const value_black = evalTexFuncBuiltinScalar(.checker, coord_black, params);
-    const value_white = evalTexFuncBuiltinScalar(.checker, coord_white, params);
+    const value_black = evalFuncShaderBuiltinScalar(.checker, coord_black, params);
+    const value_white = evalFuncShaderBuiltinScalar(.checker, coord_white, params);
 
     try testing.expectEqual(@as(f64, 0.0), value_black);
     try testing.expectEqual(@as(f64, 1.0), value_white);
