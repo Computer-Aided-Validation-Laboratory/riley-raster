@@ -227,6 +227,12 @@ pub fn main(init: std.process.Init) !void {
                             null,
                             res,
                         );
+                        try stats.writeRunCSV(
+                            outer_alloc,
+                            io,
+                            bench_args.out_dir,
+                            rr,
+                        );
                         case_samples.record(rr, res);
                     }
 
@@ -308,6 +314,12 @@ pub fn main(init: std.process.Init) !void {
                         null,
                         tex_func_case,
                         res,
+                    );
+                    try stats.writeRunCSV(
+                        outer_alloc,
+                        io,
+                        bench_args.out_dir,
+                        rr,
                     );
                     case_samples.record(rr, res);
                 }

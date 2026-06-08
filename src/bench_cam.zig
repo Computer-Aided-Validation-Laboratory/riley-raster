@@ -133,6 +133,15 @@ const checker_params = so.TexFuncParams{
     .coord_offset = .{ 0.0, 0.0 },
 };
 
+const CamCaseMeta = struct {
+    case_name: []const u8,
+    mesh_type: gk.MeshType,
+    shader_type: common.ShaderType,
+    coord_mode: common.TexFuncCoordMode,
+    distortion_tag: []const u8,
+    psf_tag: []const u8,
+};
+
 fn calcCaseName(
     allocator: std.mem.Allocator,
     mesh_type: gk.MeshType,
@@ -150,6 +159,158 @@ fn calcCaseName(
             distortion_case.tag,
             psf_case.tag,
         },
+    );
+}
+
+fn benchCamCSVHeader() []const u8 {
+    return "Case,Element,Shader,CoordMode,DistortionModel,PSF,Interpolator," ++
+        "Total Elems,Vis Elems,Total Px,Shaded Px," ++
+        "Geom Time [ms],Raster Time [ms],Save Time [ms],Frame Time [ms]," ++
+        "E2E Time [ms],Geom TP [MElem/s],Raster TP [MPx/s],Frame TP [MPx/s]," ++
+        "E2E TP [MPx/s]," ++
+        "Case_end,Element_end,Shader_end,CoordMode_end,DistortionModel_end,PSF_end\n";
+}
+
+fn formatBenchCamCSVRow(
+    allocator: std.mem.Allocator,
+    meta: CamCaseMeta,
+    values: common.BenchmarkCSVValues,
+) ![]u8 {
+    return std.fmt.allocPrint(
+        allocator,
+        "{s},{s},{s},{s},{s},{s},{s}," ++
+            "{d:.6},{d:.6},{d:.6},{d:.6}," ++
+            "{d:.6},{d:.6},{d:.6},{d:.6},{d:.6}," ++
+            "{d:.6},{d:.6},{d:.6},{d:.6}," ++
+            "{s},{s},{s},{s},{s},{s}\n",
+        .{
+            meta.case_name,
+            @tagName(meta.mesh_type),
+            @tagName(meta.shader_type),
+            @tagName(meta.coord_mode),
+            meta.distortion_tag,
+            meta.psf_tag,
+            @tagName(tex_func_case.builtin),
+            values.total_elems,
+            values.vis_elems,
+            values.total_px,
+            values.shaded_px,
+            values.geom,
+            values.raster,
+            values.save_frame,
+            values.frame,
+            values.e2e,
+            values.geom_tpx,
+            values.raster_tpx,
+            values.frame_tpx,
+            values.e2e_tpx,
+            meta.case_name,
+            @tagName(meta.mesh_type),
+            @tagName(meta.shader_type),
+            @tagName(meta.coord_mode),
+            meta.distortion_tag,
+            meta.psf_tag,
+        },
+    );
+}
+
+fn writeBenchCamStatsCSV(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    out_dir_base: []const u8,
+    stats_list: []const common.BenchStats,
+    metas: []const CamCaseMeta,
+    kind: common.BenchmarkCSVKind,
+    file_name: []const u8,
+) !void {
+    std.debug.assert(stats_list.len == metas.len);
+
+    const csv_path = try std.fs.path.join(
+        allocator,
+        &[_][]const u8{ out_dir_base, file_name },
+    );
+    defer allocator.free(csv_path);
+
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDir(
+        io,
+        out_dir_base,
+        .default_dir,
+    ) catch |err| if (err != error.PathAlreadyExists) return err;
+
+    var file = try cwd.createFile(io, csv_path, .{});
+    defer file.close(io);
+
+    var write_buf: [4096]u8 = undefined;
+    var buffered_writer = file.writer(io, &write_buf);
+    const writer = &buffered_writer.interface;
+
+    try writer.writeAll(benchCamCSVHeader());
+
+    for (stats_list, metas) |stats, meta| {
+        const row = try formatBenchCamCSVRow(
+            allocator,
+            meta,
+            common.calcBenchmarkCSVValuesFromStats(stats, kind),
+        );
+        defer allocator.free(row);
+        try writer.writeAll(row);
+    }
+
+    try buffered_writer.flush();
+}
+
+fn writeBenchCamReport(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    out_dir_base: []const u8,
+    stats_list: []const common.BenchStats,
+    metas: []const CamCaseMeta,
+) !void {
+    try writeBenchCamStatsCSV(
+        allocator,
+        io,
+        out_dir_base,
+        stats_list,
+        metas,
+        .median,
+        "bench_stats_median.csv",
+    );
+    try writeBenchCamStatsCSV(
+        allocator,
+        io,
+        out_dir_base,
+        stats_list,
+        metas,
+        .min,
+        "bench_stats_min.csv",
+    );
+    try writeBenchCamStatsCSV(
+        allocator,
+        io,
+        out_dir_base,
+        stats_list,
+        metas,
+        .max,
+        "bench_stats_max.csv",
+    );
+    try writeBenchCamStatsCSV(
+        allocator,
+        io,
+        out_dir_base,
+        stats_list,
+        metas,
+        .mad,
+        "bench_stats_mad.csv",
+    );
+    try writeBenchCamStatsCSV(
+        allocator,
+        io,
+        out_dir_base,
+        stats_list,
+        metas,
+        .cov,
+        "bench_stats_cov.csv",
     );
 }
 
@@ -350,14 +511,22 @@ fn runCameraBenchmarkWithImageOut(
         .e2e_ms = e2e_ms,
         .geom_ms = geom_ms,
         .raster_ms = raster_ms,
+        .cam_ms = bench_capture_storage[0]
+            .bench_log.frame_times.cam_invert / 1e6,
+        .resolve_ms = bench_capture_storage[0]
+            .bench_log.frame_times.scratch_resolve / 1e6,
         .fps = if (e2e_ms > 0.0) 1000.0 / e2e_ms else 0.0,
-        .total_elems = bench_capture_storage[0].bench_log.total_elements,
-        .vis_elems = bench_capture_storage[0].bench_log.visible_elements,
+        .total_elems =
+            bench_capture_storage[0].bench_log.total_elements,
+        .vis_elems =
+            bench_capture_storage[0].bench_log.visible_elements,
         .total_px = @as(u64, camera_input.pixels_num[0]) *
             @as(u64, camera_input.pixels_num[1]),
-        .shaded_px = bench_capture_storage[0].bench_log.total_shaded_pixels,
+        .shaded_px =
+            bench_capture_storage[0].bench_log.total_shaded_pixels,
         .metrics = metrics,
-        .pipeline_times = bench_capture_storage[0].bench_log.frame_times,
+        .pipeline_times =
+            bench_capture_storage[0].bench_log.frame_times,
         .image = null,
     };
 }
@@ -403,6 +572,13 @@ pub fn main(init: std.process.Init) !void {
         bench_args.runs,
     );
     defer stats.deinit(outer_alloc);
+    var case_metas = std.ArrayList(CamCaseMeta).empty;
+    defer {
+        for (case_metas.items) |meta| {
+            outer_alloc.free(meta.case_name);
+        }
+        case_metas.deinit(outer_alloc);
+    }
 
     std.debug.print(
         "Starting Camera Benchmark ({d}x{d}, {d} runs per case, {d} threads)...\n",
@@ -505,6 +681,12 @@ pub fn main(init: std.process.Init) !void {
                             tex_func_case,
                             res,
                         );
+                        try stats.writeRunCSV(
+                            outer_alloc,
+                            io,
+                            bench_args.out_dir,
+                            rr,
+                        );
                         case_samples.record(rr, res);
                     }
 
@@ -517,19 +699,28 @@ pub fn main(init: std.process.Init) !void {
                         tex_func_case,
                         &case_samples,
                     );
+                    try case_metas.append(
+                        outer_alloc,
+                        .{
+                            .case_name = try outer_alloc.dupe(u8, case_name),
+                            .mesh_type = mesh_type,
+                            .shader_type = shader_type,
+                            .coord_mode = tex_func_case.coord_mode,
+                            .distortion_tag = distortion_case.tag,
+                            .psf_tag = psf_case.tag,
+                        },
+                    );
                 }
             }
         }
     }
 
     try stats.writeRunCSVs(outer_alloc, io, bench_args.out_dir);
-    try common.writeBenchmarkReport(
+    try writeBenchCamReport(
         outer_alloc,
         io,
-        "Camera Benchmark Results",
         bench_args.out_dir,
-        bench_args.pixels_num,
         stats.stats_list.items,
-        0,
+        case_metas.items,
     );
 }

@@ -34,25 +34,31 @@ pub fn forwardWithJacSIMD(
     const r2 = x * x + y * y;
     const r4 = r2 * r2;
     const r6 = r4 * r2;
+
     const radial_and_deriv = if (@hasField(DistortionType, "k4")) blk: {
         const numerator = @as(VecSF, @splat(1.0)) +
             @as(VecSF, @splat(distortion.k1)) * r2 +
             @as(VecSF, @splat(distortion.k2)) * r4 +
             @as(VecSF, @splat(distortion.k3)) * r6;
+
         const denominator = @as(VecSF, @splat(1.0)) +
             @as(VecSF, @splat(distortion.k4)) * r2 +
             @as(VecSF, @splat(distortion.k5)) * r4 +
             @as(VecSF, @splat(distortion.k6)) * r6;
+
         const dnum_dr2 = @as(VecSF, @splat(distortion.k1)) +
             @as(VecSF, @splat(2.0 * distortion.k2)) * r2 +
             @as(VecSF, @splat(3.0 * distortion.k3)) * r4;
+
         const dden_dr2 = @as(VecSF, @splat(distortion.k4)) +
             @as(VecSF, @splat(2.0 * distortion.k5)) * r2 +
             @as(VecSF, @splat(3.0 * distortion.k6)) * r4;
+
         const radial_scale = numerator / denominator;
         const dradial_dr2 =
             (dnum_dr2 * denominator - numerator * dden_dr2) /
             (denominator * denominator);
+
         break :blk .{
             .radial_scale = radial_scale,
             .dradial_dr2 = dradial_dr2,
@@ -62,9 +68,11 @@ pub fn forwardWithJacSIMD(
             @as(VecSF, @splat(distortion.k1)) * r2 +
             @as(VecSF, @splat(distortion.k2)) * r4 +
             @as(VecSF, @splat(distortion.k3)) * r6;
+
         const dradial_dr2 = @as(VecSF, @splat(distortion.k1)) +
             @as(VecSF, @splat(2.0 * distortion.k2)) * r2 +
             @as(VecSF, @splat(3.0 * distortion.k3)) * r4;
+
         break :blk .{
             .radial_scale = radial_scale,
             .dradial_dr2 = dradial_dr2,

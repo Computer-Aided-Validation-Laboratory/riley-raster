@@ -19,6 +19,8 @@ pub const CaseSamples = struct {
     e2e_times: []f64,
     geom_times: []f64,
     raster_times: []f64,
+    cam_times: []f64,
+    resolve_times: []f64,
     save_frame_times: []f64,
     frame_times: []f64,
     geom_tpx_vals: []f64,
@@ -38,6 +40,8 @@ pub const CaseSamples = struct {
             .e2e_times = try allocator.alloc(f64, runs),
             .geom_times = try allocator.alloc(f64, runs),
             .raster_times = try allocator.alloc(f64, runs),
+            .cam_times = try allocator.alloc(f64, runs),
+            .resolve_times = try allocator.alloc(f64, runs),
             .save_frame_times = try allocator.alloc(f64, runs),
             .frame_times = try allocator.alloc(f64, runs),
             .geom_tpx_vals = try allocator.alloc(f64, runs),
@@ -58,6 +62,8 @@ pub const CaseSamples = struct {
         allocator.free(self.shaded_px_vals);
         allocator.free(self.geom_times);
         allocator.free(self.raster_times);
+        allocator.free(self.cam_times);
+        allocator.free(self.resolve_times);
         allocator.free(self.save_frame_times);
         allocator.free(self.frame_times);
         allocator.free(self.geom_tpx_vals);
@@ -78,12 +84,19 @@ pub const CaseSamples = struct {
         self.e2e_times[rr] = result.e2e_ms;
         self.geom_times[rr] = result.geom_ms;
         self.raster_times[rr] = result.raster_ms;
-        self.save_frame_times[rr] = result.pipeline_times.save_frame / 1e6;
-        self.frame_times[rr] = result.pipeline_times.active_time / 1e6;
+        self.cam_times[rr] = result.cam_ms;
+        self.resolve_times[rr] = result.resolve_ms;
+        self.save_frame_times[rr] =
+            result.pipeline_times.save_frame / 1e6;
+        self.frame_times[rr] =
+            result.pipeline_times.active_time / 1e6;
         self.geom_tpx_vals[rr] = result.metrics.melems_sec;
-        self.raster_tpx_vals[rr] = result.metrics.raster_tpx_mpx_s;
-        self.frame_tpx_vals[rr] = result.metrics.frame_tpx_mpx_s;
-        self.e2e_tpx_vals[rr] = result.metrics.e2e_tpx_mpx_s;
+        self.raster_tpx_vals[rr] =
+            result.metrics.raster_tpx_mpx_s;
+        self.frame_tpx_vals[rr] =
+            result.metrics.frame_tpx_mpx_s;
+        self.e2e_tpx_vals[rr] =
+            result.metrics.e2e_tpx_mpx_s;
     }
 
     pub fn toBenchStats(
@@ -95,6 +108,26 @@ pub const CaseSamples = struct {
         sample_config: ?texops.TextureSampleConfig,
         tex_func_case: ?common.TexFuncCase,
     ) !common.BenchStats {
+        const cam_median = (try common.calcMedianMAD(
+            allocator,
+            self.cam_times,
+        )).median;
+        const resolve_median = (try common.calcMedianMAD(
+            allocator,
+            self.resolve_times,
+        )).median;
+        const raster_median = (try common.calcMedianMAD(
+            allocator,
+            self.raster_times,
+        )).median;
+        const elem_loop_median =
+            raster_median - cam_median - resolve_median;
+        const elem_loop_zero: common.MedianMAD = .{
+            .median = elem_loop_median,
+            .mad = 0,
+            .min = elem_loop_median,
+            .max = elem_loop_median,
+        };
         return .{
             .name = try allocator.dupe(u8, case_name),
             .mesh_type = mesh_type,
@@ -117,12 +150,39 @@ pub const CaseSamples = struct {
                 allocator,
                 self.shaded_px_vals,
             ),
-            .e2e = try common.calcMedianMAD(allocator, self.e2e_times),
-            .geom = try common.calcMedianMAD(allocator, self.geom_times),
-            .raster = try common.calcMedianMAD(allocator, self.raster_times),
-            .save = try common.calcMedianMAD(allocator, self.save_frame_times),
-            .frame = try common.calcMedianMAD(allocator, self.frame_times),
-            .geom_tpx = try common.calcMedianMAD(allocator, self.geom_tpx_vals),
+            .e2e = try common.calcMedianMAD(
+                allocator,
+                self.e2e_times,
+            ),
+            .geom = try common.calcMedianMAD(
+                allocator,
+                self.geom_times,
+            ),
+            .raster = try common.calcMedianMAD(
+                allocator,
+                self.raster_times,
+            ),
+            .cam_invert = try common.calcMedianMAD(
+                allocator,
+                self.cam_times,
+            ),
+            .elem_loop = elem_loop_zero,
+            .scratch_resolve = try common.calcMedianMAD(
+                allocator,
+                self.resolve_times,
+            ),
+            .save = try common.calcMedianMAD(
+                allocator,
+                self.save_frame_times,
+            ),
+            .frame = try common.calcMedianMAD(
+                allocator,
+                self.frame_times,
+            ),
+            .geom_tpx = try common.calcMedianMAD(
+                allocator,
+                self.geom_tpx_vals,
+            ),
             .raster_tpx = try common.calcMedianMAD(
                 allocator,
                 self.raster_tpx_vals,
@@ -131,7 +191,10 @@ pub const CaseSamples = struct {
                 allocator,
                 self.frame_tpx_vals,
             ),
-            .e2e_tpx = try common.calcMedianMAD(allocator, self.e2e_tpx_vals),
+            .e2e_tpx = try common.calcMedianMAD(
+                allocator,
+                self.e2e_tpx_vals,
+            ),
             .msubpx = undefined,
             .mshades = undefined,
             .msubshades = undefined,
@@ -236,6 +299,23 @@ pub const BenchStatsCollector = struct {
         io: std.Io,
         out_dir_base: []const u8,
     ) !void {
+        for (self.run_csv_rows, 0..) |_, rr| {
+            try self.writeRunCSV(
+                allocator,
+                io,
+                out_dir_base,
+                rr,
+            );
+        }
+    }
+
+    pub fn writeRunCSV(
+        self: *const BenchStatsCollector,
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        out_dir_base: []const u8,
+        run_idx: usize,
+    ) !void {
         const cwd = std.Io.Dir.cwd();
         cwd.createDir(
             io,
@@ -243,27 +323,27 @@ pub const BenchStatsCollector = struct {
             .default_dir,
         ) catch |err| if (err != error.PathAlreadyExists) return err;
 
-        for (self.run_csv_rows, 0..) |rows, rr| {
-            const file_name = try std.fmt.allocPrint(
-                allocator,
-                "bench_run{d}.csv",
-                .{rr},
-            );
-            defer allocator.free(file_name);
+        const file_name = try std.fmt.allocPrint(
+            allocator,
+            "bench_run{d}.csv",
+            .{run_idx},
+        );
+        defer allocator.free(file_name);
 
-            const csv_path = try std.fs.path.join(
-                allocator,
-                &[_][]const u8{ out_dir_base, file_name },
-            );
-            defer allocator.free(csv_path);
+        const csv_path = try std.fs.path.join(
+            allocator,
+            &[_][]const u8{ out_dir_base, file_name },
+        );
+        defer allocator.free(csv_path);
 
-            var file = try cwd.createFile(io, csv_path, .{});
-            defer file.close(io);
+        var file = try cwd.createFile(io, csv_path, .{});
+        defer file.close(io);
 
-            var write_buf: [4096]u8 = undefined;
-            var buffered_writer = file.writer(io, &write_buf);
-            try buffered_writer.interface.writeAll(rows.items);
-            try buffered_writer.interface.flush();
-        }
+        var write_buf: [4096]u8 = undefined;
+        var buffered_writer = file.writer(io, &write_buf);
+        try buffered_writer.interface.writeAll(
+            self.run_csv_rows[run_idx].items,
+        );
+        try buffered_writer.interface.flush();
     }
 };

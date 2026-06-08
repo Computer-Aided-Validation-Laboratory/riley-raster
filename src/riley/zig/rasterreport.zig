@@ -38,14 +38,27 @@ pub inline fn finishTile(
     scope: TileScope,
     shaded_px: u64,
     elem_count: usize,
+    cam_duration_ns: u64,
+    resolve_duration_ns: u64,
 ) void {
-    const tile_duration_ns: u64 = if (comptime report_mode == .full_stats)
-        @intCast(scope.start.?.durationTo(Timestamp.now(io, .awake)).raw.nanoseconds)
-    else
-        0;
-    const screen_px_x = @as(u16, @intCast(ctx_rast.camera.pixels_num[0]));
-    const tiles_x = (screen_px_x + ctx_rast.tile_size - 1) / ctx_rast.tile_size;
-    const spatial_idx = (tile.y_px_min / ctx_rast.tile_size) * tiles_x +
+    const tile_duration_ns: u64 =
+        if (comptime report_mode == .full_stats)
+            @intCast(
+                scope.start.?.durationTo(
+                    Timestamp.now(io, .awake),
+                ).raw.nanoseconds,
+            )
+        else
+            0;
+    const screen_px_x = @as(
+        u16,
+        @intCast(ctx_rast.camera.pixels_num[0]),
+    );
+    const tiles_x =
+        (screen_px_x + ctx_rast.tile_size - 1) /
+        ctx_rast.tile_size;
+    const spatial_idx =
+        (tile.y_px_min / ctx_rast.tile_size) * tiles_x +
         (tile.x_px_min / ctx_rast.tile_size);
     ctx_report.recordTile(
         spatial_idx,
@@ -53,6 +66,8 @@ pub inline fn finishTile(
         shaded_px,
         elem_count,
     );
+    ctx_report.recordCamTime(cam_duration_ns);
+    ctx_report.recordResolveTime(resolve_duration_ns);
 }
 
 pub inline fn recordEarlyOut(

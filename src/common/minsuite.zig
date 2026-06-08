@@ -191,6 +191,8 @@ pub fn runSphere200MultiCullQuiet(
         .e2e_ms = e2e_ms,
         .geom_ms = 0.0,
         .raster_ms = 0.0,
+        .cam_ms = 0.0,
+        .resolve_ms = 0.0,
         .fps = fps,
         .total_elems = 0,
         .vis_elems = 0,

@@ -31,6 +31,8 @@ const TexPrepared = shaderops.TexPrepared;
 const FuncPrepared = shaderops.FuncPrepared;
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
+const Timestamp = std.Io.Clock.Timestamp;
+
 
 pub const OverlapTarget = struct {
     tile: rops.ActiveTile,
@@ -383,6 +385,12 @@ fn rasterTileCommon(
         ctx_rast.config.background_value,
     );
 
+    const time_cam_start: ?Timestamp =
+        if (comptime report_mode != .off)
+            Timestamp.now(io, .awake)
+        else
+            null;
+
     switch (ctx_rast.camera.subpixel_center_map) {
         .full_in_mem => fillTileIdealCentersFullInMem(
             ctx_rast,
@@ -409,6 +417,16 @@ fn rasterTileCommon(
             subpx_scratch.ideal_pixel_centers,
         ),
     }
+
+    const cam_duration_ns: u64 =
+        if (comptime report_mode != .off)
+            @intCast(
+                time_cam_start.?.durationTo(
+                    Timestamp.now(io, .awake),
+                ).raw.nanoseconds,
+            )
+        else
+            0;
 
     const overlap_start = tile.overlap_start;
     const overlap_end = overlap_start + tile.overlap_count;
@@ -612,6 +630,12 @@ fn rasterTileCommon(
         }
     }
 
+    const time_resolve_start: ?Timestamp =
+        if (comptime report_mode != .off)
+            Timestamp.now(io, .awake)
+        else
+            null;
+
     if (ctx_rast.camera.prepared_psf.hasFilter()) {
         scratchfilter.resolveTileWithPSF(
             RasterBackend.scratch_layout,
@@ -653,6 +677,16 @@ fn rasterTileCommon(
         );
     }
 
+    const resolve_duration_ns: u64 =
+        if (comptime report_mode != .off)
+            @intCast(
+                time_resolve_start.?.durationTo(
+                    Timestamp.now(io, .awake),
+                ).raw.nanoseconds,
+            )
+        else
+            0;
+
     rasterreport.finishTile(
         report_mode,
         io,
@@ -662,10 +696,10 @@ fn rasterTileCommon(
         tile_scope,
         shaded_px,
         overlaps.len,
+        cam_duration_ns,
+        resolve_duration_ns,
     );
 }
-
-
 
 //------------------------------------------------------------------------------------------
 // Scene Raster Execution Helpers

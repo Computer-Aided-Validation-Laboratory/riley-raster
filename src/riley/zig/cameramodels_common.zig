@@ -355,11 +355,13 @@ fn buildKernel1D(
     const size = 2 * radius_subpx + 1;
     const weights = try allocator.alloc(f64, size);
     const sub_samp_f = @as(f64, @floatFromInt(sub_sample));
+
     for (0..size) |ii| {
         const offset = @as(isize, @intCast(ii)) - @as(isize, @intCast(radius_subpx));
         const dist_px = @as(f64, @floatFromInt(offset)) / sub_samp_f;
         weights[ii] = psfKernelValue1D(psf, dist_px);
     }
+
     normalizeKernel(weights);
     return weights;
 }
@@ -375,15 +377,18 @@ fn buildKernel2D(
     const height = 2 * radius_y_subpx + 1;
     const weights = try allocator.alloc(f64, width * height);
     const sub_samp_f = @as(f64, @floatFromInt(sub_sample));
+
     for (0..height) |yy| {
         const y_off = @as(isize, @intCast(yy)) - @as(isize, @intCast(radius_y_subpx));
         const dy_px = @as(f64, @floatFromInt(y_off)) / sub_samp_f;
         for (0..width) |xx| {
             const x_off = @as(isize, @intCast(xx)) - @as(isize, @intCast(radius_x_subpx));
             const dx_px = @as(f64, @floatFromInt(x_off)) / sub_samp_f;
+            
             weights[yy * width + xx] = psfKernelValue2D(psf, dx_px, dy_px);
         }
     }
+
     normalizeKernel(weights);
     return weights;
 }

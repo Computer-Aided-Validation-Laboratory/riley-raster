@@ -1034,3 +1034,20 @@ def update_buildconfig_simd(simd_mode: str) -> None:
     if replace_count != 1:
         raise SystemExit("Failed to update buildconfig simd mode.")
     buildconfig_path.write_text(text_updated)
+
+
+def update_buildconfig_resolve_scratch_simd(resolve_mode: str) -> None:
+    buildconfig_path = repo_root() / "src" / "riley" / "zig" / "buildconfig.zig"
+    text = buildconfig_path.read_text()
+    pattern = re.compile(
+        r"(^\s*resolve_scratch_simd:\s*ResolveScratchSimdMode\s*=\s*)\.(on|off)(,\s*$)",
+        re.MULTILINE,
+    )
+    text_updated, replace_count = pattern.subn(
+        r"\1." + resolve_mode + r"\3",
+        text,
+        count=1,
+    )
+    if replace_count != 1:
+        raise SystemExit("Failed to update buildconfig resolve_scratch_simd mode.")
+    buildconfig_path.write_text(text_updated)

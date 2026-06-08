@@ -726,6 +726,10 @@ fn rasterFrame(
     ctx.frame_times.raster_loop = @floatFromInt(
         time_start_loop.durationTo(time_end_loop).raw.nanoseconds,
     );
+    if (report.getBenchLog(report_mode, report_ptr)) |bench_log| {
+        ctx.frame_times.cam_invert = bench_log.cam_time_ns;
+        ctx.frame_times.scratch_resolve = bench_log.resolve_time_ns;
+    }
 }
 
 fn saveFrame(

@@ -21,6 +21,8 @@ pub const FrameTimes = struct {
     geometry_prep: f64 = 0,
     tile_overlap: f64 = 0,
     raster_loop: f64 = 0,
+    cam_invert: f64 = 0,
+    scratch_resolve: f64 = 0,
     save_frame: f64 = 0,
     active_time: f64 = 0,
     latency_time: f64 = 0,
@@ -47,6 +49,8 @@ pub const BenchLog = struct {
     total_depth_tests: u64 = 0,
     depth_tests_failed: u64 = 0,
     max_tile_elements: usize = 0,
+    cam_time_ns: f64 = 0,
+    resolve_time_ns: f64 = 0,
 };
 
 pub const FrameBenchCapture = struct {
@@ -315,7 +319,12 @@ pub fn reduceBenchLog(dst: *BenchLog, src: *const BenchLog) void {
     dst.total_shaded_pixels += src.total_shaded_pixels;
     dst.total_depth_tests += src.total_depth_tests;
     dst.depth_tests_failed += src.depth_tests_failed;
-    dst.max_tile_elements = @max(dst.max_tile_elements, src.max_tile_elements);
+    dst.max_tile_elements = @max(
+        dst.max_tile_elements,
+        src.max_tile_elements,
+    );
+    dst.cam_time_ns += src.cam_time_ns;
+    dst.resolve_time_ns += src.resolve_time_ns;
 }
 
 pub const FullStatsLog = struct {
@@ -787,6 +796,22 @@ pub const FullStatsLog = struct {
         try writer.print("Elem/Tile Overlap       = {d:.6} ms\n", .{
             self.bench.frame_times.tile_overlap * conv,
         });
+        const cam_inv_ms =
+            self.bench.frame_times.cam_invert * conv;
+        const resolve_ms =
+            self.bench.frame_times.scratch_resolve * conv;
+        const elem_loop_ms =
+            self.bench.frame_times.raster_loop * conv -
+            cam_inv_ms - resolve_ms;
+        try writer.print("Cam Invert Time         = {d:.6} ms\n", .{
+            cam_inv_ms,
+        });
+        try writer.print("Elem Loop Time          = {d:.6} ms\n", .{
+            elem_loop_ms,
+        });
+        try writer.print("Scratch Resolve Time    = {d:.6} ms\n", .{
+            resolve_ms,
+        });
         try writer.print("Raster loop time        = {d:.6} ms\n", .{
             self.bench.frame_times.raster_loop * conv,
         });
@@ -1229,6 +1254,26 @@ pub fn ReportContext(comptime mode: ReportMode) type {
                 bench_log.solver_diverged += 1;
             }
         }
+
+        pub inline fn recordCamTime(
+            self: @This(),
+            cam_duration_ns: u64,
+        ) void {
+            if (self.bench()) |bench_log| {
+                bench_log.cam_time_ns +=
+                    @floatFromInt(cam_duration_ns);
+            }
+        }
+
+        pub inline fn recordResolveTime(
+            self: @This(),
+            resolve_duration_ns: u64,
+        ) void {
+            if (self.bench()) |bench_log| {
+                bench_log.resolve_time_ns +=
+                    @floatFromInt(resolve_duration_ns);
+            }
+        }
     };
 }
 
@@ -1322,6 +1367,22 @@ pub fn standardReport(
     });
     try writer.print("Elem/Tile Overlap       = {d:.6} ms\n", .{
         frame_times.tile_overlap * conv_units,
+    });
+    const cam_inv_print_ms =
+        frame_times.cam_invert * conv_units;
+    const resolve_print_ms =
+        frame_times.scratch_resolve * conv_units;
+    const elem_loop_print_ms =
+        frame_times.raster_loop * conv_units -
+        cam_inv_print_ms - resolve_print_ms;
+    try writer.print("Cam Invert Time         = {d:.6} ms\n", .{
+        cam_inv_print_ms,
+    });
+    try writer.print("Elem Loop Time          = {d:.6} ms\n", .{
+        elem_loop_print_ms,
+    });
+    try writer.print("Scratch Resolve Time    = {d:.6} ms\n", .{
+        resolve_print_ms,
     });
     try writer.print("Raster loop time        = {d:.6} ms\n", .{
         frame_times.raster_loop * conv_units,

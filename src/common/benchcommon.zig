@@ -44,6 +44,8 @@ pub const BenchResult = struct {
     e2e_ms: f64,
     geom_ms: f64,
     raster_ms: f64,
+    cam_ms: f64,
+    resolve_ms: f64,
     fps: f64,
     total_elems: usize,
     vis_elems: usize,
@@ -82,6 +84,9 @@ pub const BenchStats = struct {
     e2e: MedianMAD,
     geom: MedianMAD,
     raster: MedianMAD,
+    cam_invert: MedianMAD,
+    elem_loop: MedianMAD,
+    scratch_resolve: MedianMAD,
     save: MedianMAD,
     frame: MedianMAD,
     geom_tpx: MedianMAD,
@@ -1099,6 +1104,14 @@ fn runBenchmarkInternal(
         .e2e_ms = e2e_ms,
         .geom_ms = geom_ms,
         .raster_ms = raster_ms,
+        .cam_ms = if (report_mode == .bench)
+            pipeline_times.cam_invert / 1e6
+        else
+            0.0,
+        .resolve_ms = if (report_mode == .bench)
+            pipeline_times.scratch_resolve / 1e6
+        else
+            0.0,
         .fps = if (e2e_ms > 0.0) 1000.0 / e2e_ms else 0.0,
         .total_elems = if (report_mode == .bench)
             bench_capture_storage[0].bench_log.total_elements
@@ -1181,6 +1194,9 @@ pub const BenchmarkCSVValues = struct {
     total_px: f64,
     shaded_px: f64,
     geom: f64,
+    cam_invert: f64,
+    elem_loop: f64,
+    scratch_resolve: f64,
     raster: f64,
     save_frame: f64,
     frame: f64,
@@ -1194,9 +1210,12 @@ pub const BenchmarkCSVValues = struct {
 pub fn benchmarkCSVHeader() []const u8 {
     return "Case,Element,Shader,Interpolator," ++
         "Total Elems,Vis Elems,Total Px,Shaded Px," ++
-        "Geom Time [ms],Raster Time [ms],Save Time [ms],Frame Time [ms]," ++
-        "E2E Time [ms],Geom TP [MElem/s],Raster TP [MPx/s],Frame TP [MPx/s]," ++
-        "E2E TP [MPx/s]\n";
+        "Geom Time [ms]," ++
+        "Cam Inv Time [ms],Elem Loop Time [ms]," ++
+        "Resolve Time [ms],Raster Time [ms]," ++
+        "Save Time [ms],Frame Time [ms]," ++
+        "E2E Time [ms],Geom TP [MElem/s],Raster TP [MPx/s]," ++
+        "Frame TP [MPx/s],E2E TP [MPx/s]\n";
 }
 
 fn calcCoVPercent(stats: MedianMAD) f64 {
@@ -1229,12 +1248,21 @@ pub fn calcBenchmarkCSVValuesFromStats(
         .total_px = selectStatValue(stats.total_px, kind),
         .shaded_px = selectStatValue(stats.shaded_px, kind),
         .geom = selectStatValue(stats.geom, kind),
+        .cam_invert = selectStatValue(stats.cam_invert, kind),
+        .elem_loop = selectStatValue(stats.elem_loop, kind),
+        .scratch_resolve = selectStatValue(
+            stats.scratch_resolve,
+            kind,
+        ),
         .raster = selectStatValue(stats.raster, kind),
         .save_frame = selectStatValue(stats.save, kind),
         .frame = selectStatValue(stats.frame, kind),
         .e2e = selectStatValue(stats.e2e, kind),
         .geom_tpx = selectStatValue(stats.geom_tpx, kind),
-        .raster_tpx = selectStatValue(stats.raster_tpx, kind),
+        .raster_tpx = selectStatValue(
+            stats.raster_tpx,
+            kind,
+        ),
         .frame_tpx = selectStatValue(stats.frame_tpx, kind),
         .e2e_tpx = selectStatValue(stats.e2e_tpx, kind),
     };
@@ -1244,12 +1272,18 @@ pub fn calcBenchmarkCSVValuesFromResult(
     result: BenchResult,
 ) BenchmarkCSVValues {
     const conv_ms = 1.0 / 1e6;
+    const cam_inv_ms = result.cam_ms;
+    const resolve_ms = result.resolve_ms;
+    const elem_loop_ms = result.raster_ms - cam_inv_ms - resolve_ms;
     return .{
         .total_elems = @floatFromInt(result.total_elems),
         .vis_elems = @floatFromInt(result.vis_elems),
         .total_px = @floatFromInt(result.total_px),
         .shaded_px = @floatFromInt(result.shaded_px),
         .geom = result.geom_ms,
+        .cam_invert = cam_inv_ms,
+        .elem_loop = elem_loop_ms,
+        .scratch_resolve = resolve_ms,
         .raster = result.raster_ms,
         .save_frame = result.pipeline_times.save_frame * conv_ms,
         .frame = result.pipeline_times.active_time * conv_ms,
@@ -1281,8 +1315,9 @@ pub fn formatBenchmarkCSVRow(
         allocator,
         "{s},{s},{s},{s}," ++
             "{d:.6},{d:.6},{d:.6},{d:.6}," ++
-            "{d:.6},{d:.6},{d:.6},{d:.6},{d:.6}," ++
-            "{d:.6},{d:.6},{d:.6},{d:.6}\n",
+            "{d:.6},{d:.6},{d:.6},{d:.6}," ++
+            "{d:.6},{d:.6},{d:.6}," ++
+            "{d:.6},{d:.6},{d:.6},{d:.6},{d:.6}\n",
         .{
             case_name,
             @tagName(mesh_type),
@@ -1293,6 +1328,9 @@ pub fn formatBenchmarkCSVRow(
             values.total_px,
             values.shaded_px,
             values.geom,
+            values.cam_invert,
+            values.elem_loop,
+            values.scratch_resolve,
             values.raster,
             values.save_frame,
             values.frame,
