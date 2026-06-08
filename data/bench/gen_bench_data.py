@@ -217,6 +217,18 @@ if __name__ == "__main__":
         print(f"Generating data for {et}...")
         generate_fullscreen(et, f"data/bench/{et}_fullraster")
         generate_grid(et, f"data/bench/{et}_geom", N=320)
+        for size_str, target_elems in [
+            ("1e3", 1000),
+            ("1e4", 10000),
+            ("1e5", 100000),
+            ("1e6", 1000000),
+        ]:
+            if "tri" in et:
+                N = int(round(np.sqrt(target_elems / 2)))
+            else:
+                N = int(round(np.sqrt(target_elems)))
+            generate_grid(et, f"data/bench/{et}_geom_{size_str}", N=N)
+
         if et != "quad4ibi":
             generate_sphere(et, f"data/bench/{et}_sphere200", 200)
             generate_sphere(et, f"data/bench/{et}_sphere2000", 2000)
