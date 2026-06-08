@@ -134,7 +134,7 @@ pub fn averageScratchCore(
     radius_y: usize,
     image_out_arr: *NDArray(f64),
 ) void {
-    if (cfg.resolve_scratch_simd == .on and scratch_layout == .field_major) {
+    if (cfg.simd == .on and scratch_layout == .field_major) {
         simd.averageScratchCoreSIMD(
             scratch_layout,
             tile,
@@ -181,7 +181,7 @@ pub fn filterScratchSeparable(
     touched_min_x: []const usize,
     touched_max_x: []const usize,
 ) void {
-    if (cfg.resolve_scratch_simd == .on and scratch_layout == .field_major) {
+    if (cfg.simd == .on and scratch_layout == .field_major) {
         simd.filterScratchSeparableSIMD(
             scratch_layout,
             fields_num,
@@ -227,7 +227,7 @@ pub fn filterScratchNonSeparable(
     touched_min_x: []const usize,
     touched_max_x: []const usize,
 ) void {
-    if (cfg.resolve_scratch_simd == .on and scratch_layout == .field_major) {
+    if (cfg.simd == .on and scratch_layout == .field_major) {
         simd.filterScratchNonSeparableSIMD(
             scratch_layout,
             fields_num,

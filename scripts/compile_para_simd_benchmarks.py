@@ -5,7 +5,7 @@ import pathlib
 import subprocess
 import re
 
-from perf_common import repo_root, update_buildconfig_resolve_scratch_simd
+from perf_common import repo_root
 
 
 BENCH_NAMES = [
@@ -50,26 +50,7 @@ def compile_mode_parallel(suffix: str) -> None:
         )
 
 
-def compile_cam_resolve_variants() -> None:
-    root = repo_root()
-    for resolve_mode, suffix in (
-        ("off", "mainsimd_on_resolvesimd_off"),
-        ("on", "mainsimd_on_resolvesimd_on"),
-    ):
-        print(f"Compiling bench_cam_{suffix}...")
-        update_buildconfig_resolve_scratch_simd(resolve_mode)
-        subprocess.run(
-            [
-                "zig",
-                "build-exe",
-                "-O",
-                "ReleaseFast",
-                str(root / "src" / "bench_cam.zig"),
-                f"-femit-bin={root / 'bin' / f'bench_cam_{suffix}'}",
-            ],
-            cwd=root,
-            check=True,
-        )
+
 
 
 def main() -> int:
@@ -90,9 +71,7 @@ def main() -> int:
             "compile_para_simd_benchmarks.py requires buildconfig simd to be .on.",
         )
 
-    update_buildconfig_resolve_scratch_simd("on")
     compile_mode_parallel("simd")
-    compile_cam_resolve_variants()
 
     print(f"SIMD benchmark executables written to {root / 'bin'}")
     return 0

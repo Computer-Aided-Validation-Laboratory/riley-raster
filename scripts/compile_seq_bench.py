@@ -8,7 +8,6 @@ import tempfile
 
 from perf_common import (
     repo_root,
-    update_buildconfig_resolve_scratch_simd,
     update_buildconfig_simd,
 )
 
@@ -41,27 +40,6 @@ def compile_mode(simd_mode: str, suffix: str) -> None:
         )
 
 
-def compile_cam_resolve_variants() -> None:
-    root = repo_root()
-    for resolve_mode, suffix in (
-        ("off", "mainsimd_on_resolvesimd_off"),
-        ("on", "mainsimd_on_resolvesimd_on"),
-    ):
-        print(f"Compiling bench_cam_{suffix}...")
-        update_buildconfig_resolve_scratch_simd(resolve_mode)
-        subprocess.run(
-            [
-                "zig",
-                "build-exe",
-                "-O",
-                "ReleaseFast",
-                str(root / "src" / "bench_cam.zig"),
-                f"-femit-bin={root / 'bin' / f'bench_cam_{suffix}'}",
-            ],
-            cwd=root,
-            check=True,
-        )
-
 
 def main() -> int:
     root = repo_root()
@@ -75,9 +53,7 @@ def main() -> int:
         update_buildconfig_simd("off")
         compile_mode("off", "scalar")
         update_buildconfig_simd("on")
-        update_buildconfig_resolve_scratch_simd("on")
         compile_mode("on", "simd")
-        compile_cam_resolve_variants()
     finally:
         shutil.copy2(backup_path, buildconfig_path)
         shutil.rmtree(backup_dir)

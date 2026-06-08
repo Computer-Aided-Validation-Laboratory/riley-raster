@@ -13,10 +13,6 @@ pub const SimdMode = enum {
     on,
 };
 
-pub const ResolveScratchSimdMode = enum {
-    off,
-    on,
-};
 
 pub const SimdTextureInterpMode = enum {
     inner,
@@ -104,7 +100,6 @@ pub const Tolerance = struct {
 
 pub const Config = struct {
     simd: SimdMode = .on,
-    resolve_scratch_simd: ResolveScratchSimdMode = .on,
     simd_texture_interp: SimdTextureInterpMode = .inner,
     simd_vector_width: comptime_int = 8,
     max_nodal_fields: comptime_int = 8,
