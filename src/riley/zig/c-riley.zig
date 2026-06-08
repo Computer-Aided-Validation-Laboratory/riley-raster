@@ -101,6 +101,12 @@ pub const CCameraInput = extern struct {
     distortion_p1: f64,
     distortion_p2: f64,
     coord_sys: u32,
+    psf_type: u32,
+    psf_sigma_x: f64,
+    psf_sigma_y: f64,
+    psf_theta: f64,
+    psf_support_rad: f64,
+    psf_separable: u32,
 };
 
 pub const CMeshInputTex = extern struct {
@@ -173,6 +179,12 @@ pub const CRasterConfig = extern struct {
     tile_size_max: u16,
     background_value: f64,
     disk_save_overlap: u8,
+    tile_size_override: u16,
+    save_format: u32,
+    save_bits: u32,
+    save_scaling: u32,
+    save_scaling_min: f64,
+    save_scaling_max: f64,
 };
 
 pub const CParallelConfig = extern struct {
@@ -376,7 +388,7 @@ fn reportModeFromC(report_mode: u32) !riley.ReportMode {
     };
 }
 
-fn subPixelCenterMapFromC(
+fn subpxCenterMapFromC(
     subpx_map: u32,
 ) !cam.SubPixelCenterMap {
     return switch (subpx_map) {
@@ -392,6 +404,44 @@ fn coordSysFromC(coord_sys: u32) !cam.CameraCoordSys {
         @intFromEnum(cam.CameraCoordSys.opengl) => .opengl,
         @intFromEnum(cam.CameraCoordSys.opencv) => .opencv,
         else => error.InvalidCoordSys,
+    };
+}
+
+fn imageFormatFromC(format_tag: u32) !iio.ImageFormat {
+    return switch (format_tag) {
+        0 => .csv,
+        1 => .fimg,
+        2 => .ppm,
+        3 => .bmp,
+        4 => .tiff,
+        else => error.InvalidImageFormat,
+    };
+}
+
+fn psfSeparableFromC(sep_tag: u32) !cam.SeparablePSF {
+    return switch (sep_tag) {
+        0 => .no,
+        1 => .yes,
+        else => error.InvalidSeparablePSF,
+    };
+}
+
+fn psfFromC(in_camera: *const CCameraInput) !cam.PointSpreadFunc {
+    return switch (in_camera.psf_type) {
+        0 => .{ .pixel_box = .{} },
+        1 => .{ .gaussian = .{
+            .sigma_px = in_camera.psf_sigma_x,
+            .support_rad_px = in_camera.psf_support_rad,
+            .separable = try psfSeparableFromC(in_camera.psf_separable),
+        } },
+        2 => .{ .anisotropic_gaussian = .{
+            .sigma_x_px = in_camera.psf_sigma_x,
+            .sigma_y_px = in_camera.psf_sigma_y,
+            .theta_rad = in_camera.psf_theta,
+            .support_rad_px = in_camera.psf_support_rad,
+            .separable = try psfSeparableFromC(in_camera.psf_separable),
+        } },
+        else => error.InvalidPsfType,
     };
 }
 
@@ -666,6 +716,7 @@ fn buildCameraInput(
         .focal_length = in_camera.focal_length,
         .sub_sample = in_camera.sub_sample,
         .distortion = try distortionFromC(in_camera),
+        .psf = try psfFromC(in_camera),
         .coord_sys = try coordSysFromC(in_camera.coord_sys),
     };
 }
@@ -1035,6 +1086,7 @@ fn deinitMeshInputSlice(
 }
 
 fn buildRasterConfig(
+    allocator: std.mem.Allocator,
     in_config: *const CRasterConfig,
 ) !riley.RasterConfig {
     var config = riley.RasterConfig{};
@@ -1064,7 +1116,26 @@ fn buildRasterConfig(
         in_config.tile_size_max;
     config.background_value = in_config.background_value;
     config.disk_save_overlap = in_config.disk_save_overlap != 0;
-    config.image_save_opts = &default_image_save_opts;
+    config.tile_size_override = if (in_config.tile_size_override == 0)
+        null
+    else
+        in_config.tile_size_override;
+
+    const save_opts = try allocator.alloc(iio.ImageSaveOpts, 1);
+    save_opts[0] = .{
+        .format = try imageFormatFromC(in_config.save_format),
+        .bits = if (in_config.save_bits == 0)
+            null
+        else
+            @as(u8, @intCast(in_config.save_bits)),
+        .scaling = try scaleStrategyFromC(
+            in_config.save_scaling,
+            in_config.save_scaling_min,
+            in_config.save_scaling_max,
+        ),
+    };
+    config.image_save_opts = save_opts;
+
     return config;
 }
 
@@ -1219,6 +1290,12 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
         .distortion_p1 = 0.0,
         .distortion_p2 = 0.0,
         .coord_sys = @intFromEnum(in_camera.coord_sys),
+        .psf_type = 0,
+        .psf_sigma_x = 0.0,
+        .psf_sigma_y = 0.0,
+        .psf_theta = 0.0,
+        .psf_support_rad = 0.0,
+        .psf_separable = 1,
     };
 
     switch (in_camera.distortion) {
@@ -1241,6 +1318,33 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
             out_camera.distortion_k6 = model.k6;
             out_camera.distortion_p1 = model.p1;
             out_camera.distortion_p2 = model.p2;
+        },
+    }
+
+    switch (in_camera.psf) {
+        .pixel_box => {
+            out_camera.psf_type = 0;
+            out_camera.psf_separable = 1;
+        },
+        .gaussian => |g| {
+            out_camera.psf_type = 1;
+            out_camera.psf_sigma_x = g.sigma_px;
+            out_camera.psf_support_rad = g.support_rad_px;
+            out_camera.psf_separable = if (g.separable == .yes)
+                @as(u32, 1)
+            else
+                @as(u32, 0);
+        },
+        .anisotropic_gaussian => |ag| {
+            out_camera.psf_type = 2;
+            out_camera.psf_sigma_x = ag.sigma_x_px;
+            out_camera.psf_sigma_y = ag.sigma_y_px;
+            out_camera.psf_theta = ag.theta_rad;
+            out_camera.psf_support_rad = ag.support_rad_px;
+            out_camera.psf_separable = if (ag.separable == .yes)
+                @as(u32, 1)
+            else
+                @as(u32, 0);
         },
     }
     return out_camera;
@@ -1274,9 +1378,14 @@ fn rasterSceneInternal(
     );
     defer allocator.free(camera_inputs);
 
-    var raster_config = try buildRasterConfig(in_config);
+    var raster_config = try buildRasterConfig(allocator, in_config);
     if (in_parallel_config) |parallel_config| {
         try applyParallelConfig(&raster_config, parallel_config);
+    }
+
+    const spx_map = try subpxCenterMapFromC(in_config.subpixel_center_map);
+    for (camera_inputs) |*cam_in| {
+        cam_in.subpixel_center_map = spx_map;
     }
 
     var image_arr_opt: ?ndarray.NDArray(f64) = null;
@@ -1488,14 +1597,23 @@ pub export fn rileyCalcOutputDimsScene(
         setLastError(err);
         return 1;
     };
+    const spx_map = subpxCenterMapFromC(in_config.subpixel_center_map) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    for (camera_inputs) |*cam_in| {
+        cam_in.subpixel_center_map = spx_map;
+    }
+
+    const raster_config = buildRasterConfig(aa, in_config) catch |err| {
+        setLastError(err);
+        return 1;
+    };
 
     const dims = riley.calcAllFramesImageDimsForConfig(
         camera_inputs,
         mesh_inputs,
-        buildRasterConfig(in_config) catch |err| {
-            setLastError(err);
-            return 1;
-        },
+        raster_config,
     ) catch |err| {
         setLastError(err);
         return 1;
@@ -1651,17 +1769,24 @@ pub export fn rileyCalcOutputDimsTex(
     };
     defer built_mesh.deinit(aa);
 
-    const camera_input = buildCameraInput(in_camera) catch |err| {
+    var camera_input = buildCameraInput(in_camera) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    camera_input.subpixel_center_map = subpxCenterMapFromC(
+        in_config.subpixel_center_map,
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    const raster_config = buildRasterConfig(aa, in_config) catch |err| {
         setLastError(err);
         return 1;
     };
     const dims = riley.calcAllFramesImageDimsForConfig(
         &[_]cam.CameraInput{camera_input},
         &[_]mo.MeshInput{built_mesh.mesh_input},
-        buildRasterConfig(in_config) catch |err| {
-            setLastError(err);
-            return 1;
-        },
+        raster_config,
     ) catch |err| {
         setLastError(err);
         return 1;
@@ -1689,11 +1814,17 @@ pub export fn rileyRasterTex(
     };
     defer built_mesh.deinit(aa);
 
-    const camera_input = buildCameraInput(in_camera) catch |err| {
+    var camera_input = buildCameraInput(in_camera) catch |err| {
         setLastError(err);
         return 1;
     };
-    const raster_config = buildRasterConfig(in_config) catch |err| {
+    camera_input.subpixel_center_map = subpxCenterMapFromC(
+        in_config.subpixel_center_map,
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    const raster_config = buildRasterConfig(aa, in_config) catch |err| {
         setLastError(err);
         return 1;
     };

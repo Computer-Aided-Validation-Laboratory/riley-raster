@@ -69,6 +69,12 @@ cdef extern from "riley.h":
         double distortion_p1
         double distortion_p2
         uint32_t coord_sys
+        uint32_t psf_type
+        double psf_sigma_x
+        double psf_sigma_y
+        double psf_theta
+        double psf_support_rad
+        uint32_t psf_separable
 
     ctypedef struct CMeshInputTex:
         uint32_t mesh_type
@@ -137,6 +143,12 @@ cdef extern from "riley.h":
         uint16_t tile_size_max
         double background_value
         uint8_t disk_save_overlap
+        uint16_t tile_size_override
+        uint32_t save_format
+        uint32_t save_bits
+        uint32_t save_scaling
+        double save_scaling_min
+        double save_scaling_max
 
     ctypedef struct CParallelConfig:
         uint32_t render_mode

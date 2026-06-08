@@ -8,6 +8,7 @@
 # --------------------------------------------------------------------------
 from __future__ import annotations
 
+import shutil
 from dataclasses import replace
 from pathlib import Path
 from time import perf_counter
@@ -36,7 +37,7 @@ def main() -> None:
         "distortion_p2": -0.0001,
     }
 
-    import shutil
+    
     shutil.rmtree(out_dir, ignore_errors=True)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -96,15 +97,13 @@ def main() -> None:
         **distortion_kwargs,
     )
 
-    config = riley.RasterConfig(
-        render_mode=riley.RenderMode.offline,
+    config = riley.build_config(
+        num_frames=2,
         total_threads=total_threads,
         save_strategy=riley.SaveStrategy.disk,
-        tile_size_min=8,
-        tile_size_max=128,
-        background_value=128.0,
-        report=riley.ReportMode.bench,
     )
+    config.background_value = 128.0
+    config.tile_size_max = 128
 
     start_time = perf_counter()
     riley.raster(

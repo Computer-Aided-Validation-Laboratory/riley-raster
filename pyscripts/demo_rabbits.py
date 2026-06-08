@@ -84,9 +84,9 @@ def main() -> None:
         field[0, :, 2] = 0.5 * (uvs[:, 0] + uvs[:, 1])
         return field
 
-    def sinusoidal_uv_params() -> riley.FuncParams:
+    def sinusoidal_uv_params() -> riley.FuncShaderParams:
         wave_num = 2.0 * np.pi * 6.0
-        return riley.FuncParams(
+        return riley.FuncShaderParams(
             wave_num_scalar=(wave_num, wave_num),
         )
 
@@ -147,8 +147,8 @@ def main() -> None:
                 connect=connect,
                 shader_type=riley.ShaderType.func,
                 uvs=uvs,
-                func_builtin=riley.FuncBuiltin.sinusoidal,
-                func_params=sinusoidal_uv_params(),
+                func_shader_builtin=riley.FuncShaderBuiltin.sinusoidal,
+                func_shader_params=sinusoidal_uv_params(),
                 bits=8,
                 scaling_type=riley.ScaleStrategy.auto,
                 normal_type=riley.NormalType.none,
@@ -159,8 +159,8 @@ def main() -> None:
             connect=connect,
             shader_type=riley.ShaderType.func_rgb,
             uvs=uvs,
-            func_builtin=riley.FuncBuiltin.sinusoidal,
-            func_params=sinusoidal_uv_params(),
+            func_shader_builtin=riley.FuncShaderBuiltin.sinusoidal,
+            func_shader_params=sinusoidal_uv_params(),
             bits=8,
             scaling_type=riley.ScaleStrategy.auto,
             normal_type=riley.NormalType.none,
@@ -382,12 +382,12 @@ def main() -> None:
     for image_mode in image_modes:
         mode_out_dir = out_dir / image_mode.name
         mode_out_dir.mkdir(parents=True, exist_ok=True)
-        config = riley.RasterConfig(
+        config = riley.build_config(
+            num_frames=1,
+            total_threads=1,
             save_strategy=riley.SaveStrategy.disk,
-            image_mode=image_mode,
-            background_value=0.0,
-            report=riley.ReportMode.bench,
         )
+        config.image_mode = image_mode
         start_time = perf_counter()
         riley.raster(
             mesh_inputs,

@@ -83,9 +83,10 @@ def main() -> None:
         sub_sample=2,
         coord_sys=riley.CameraCoordSys.opengl,
     )
-    config = riley.RasterConfig(
+    config = riley.build_config(
+        num_frames=1,
+        total_threads=1,
         save_strategy=save_strategy,
-        report=riley.ReportMode.bench,
     )
     start_time = perf_counter()
     image_array = riley.raster(

@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 from cython.cimports.libc.stdlib import free, malloc
 from cython.cimports.riley.cyth import riley as cr
-from riley.python.helpers import load_sim_from_csv, load_texture
+from riley.python.helpers import build_config, load_sim_from_csv, load_texture
 
 
 @dataclass(slots=True)
@@ -37,6 +37,12 @@ class Camera:
     distortion_p1: float = 0.0
     distortion_p2: float = 0.0
     coord_sys: int = 0
+    psf_type: int = 0
+    psf_sigma_x: float = 0.0
+    psf_sigma_y: float = 0.0
+    psf_theta: float = 0.0
+    psf_support_rad: float = 0.0
+    psf_separable: int = 1
 
 
 CameraInput = Camera
@@ -104,19 +110,15 @@ class RasterConfig:
     tile_size_max: int = 256
     background_value: float = 0.0
     disk_save_overlap: bool = False
+    tile_size_override: int = 0
+    save_format: int = 3
+    save_bits: int = 8
+    save_scaling: int = 1
+    save_scaling_min: float = 0.0
+    save_scaling_max: float = 0.0
 
 
-@dataclass(slots=True)
-class ParallelConfig:
-    render_mode: int = 1
-    total_threads: int = 1
-    render_group_count: int = 1
-    workers_per_group: int | list[int] = 1
-    frame_batch_size_per_group: int = 1
-    max_geom_jobs_in_flight_per_group: int = 1
-    max_geom_workers_per_job: int = 1
-    geom_scheduling_mode: int = 0
-    max_raster_workers_per_job: int = 1
+
 
 
 class MeshType(IntEnum):
@@ -224,6 +226,20 @@ class CameraCoordSys(IntEnum):
     opencv = 1
 
 
+class PsfType(IntEnum):
+    pixel_box = 0
+    gaussian = 1
+    anisotropic_gaussian = 2
+
+
+class ImageFormat(IntEnum):
+    csv = 0
+    fimg = 1
+    ppm = 2
+    bmp = 3
+    tiff = 4
+
+
 @cython.cfunc
 def _make_cvec3(vec_in: tuple[float, float, float]) -> cr.CVec3F64:
     return cr.CVec3F64(
@@ -263,6 +279,12 @@ def _make_camera_input(camera: Any) -> cr.CCameraInput:
     camera_out.distortion_p1 = float(camera.distortion_p1)
     camera_out.distortion_p2 = float(camera.distortion_p2)
     camera_out.coord_sys = int(camera.coord_sys)
+    camera_out.psf_type = int(camera.psf_type)
+    camera_out.psf_sigma_x = float(camera.psf_sigma_x)
+    camera_out.psf_sigma_y = float(camera.psf_sigma_y)
+    camera_out.psf_theta = float(camera.psf_theta)
+    camera_out.psf_support_rad = float(camera.psf_support_rad)
+    camera_out.psf_separable = int(camera.psf_separable)
     return camera_out
 
 
@@ -297,6 +319,12 @@ def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
         distortion_p1=camera_in.distortion_p1,
         distortion_p2=camera_in.distortion_p2,
         coord_sys=camera_in.coord_sys,
+        psf_type=camera_in.psf_type,
+        psf_sigma_x=camera_in.psf_sigma_x,
+        psf_sigma_y=camera_in.psf_sigma_y,
+        psf_theta=camera_in.psf_theta,
+        psf_support_rad=camera_in.psf_support_rad,
+        psf_separable=camera_in.psf_separable,
     )
 
 
@@ -324,102 +352,69 @@ def _make_raster_config(config: Any) -> cr.CRasterConfig:
     config_out.tile_size_max = int(config.tile_size_max)
     config_out.background_value = float(config.background_value)
     config_out.disk_save_overlap = 1 if config.disk_save_overlap else 0
+    config_out.tile_size_override = int(config.tile_size_override)
+    config_out.save_format = int(config.save_format)
+    config_out.save_bits = int(config.save_bits)
+    config_out.save_scaling = int(config.save_scaling)
+    config_out.save_scaling_min = float(config.save_scaling_min)
+    config_out.save_scaling_max = float(config.save_scaling_max)
     return config_out
-
-
-def _build_default_parallel_config(config: RasterConfig) -> ParallelConfig:
-    total_threads = max(1, int(config.total_threads))
-    return ParallelConfig(
-        render_mode=int(RenderMode.offline),
-        total_threads=total_threads,
-        render_group_count=total_threads,
-        workers_per_group=1,
-        frame_batch_size_per_group=max(
-            1,
-            int(config.frame_batch_size_per_group),
-        ),
-        max_geom_jobs_in_flight_per_group=max(
-            1,
-            int(config.max_geom_jobs_in_flight_per_group),
-        ),
-        max_geom_workers_per_job=max(
-            1,
-            int(config.max_geom_workers_per_job),
-        ),
-        geom_scheduling_mode=int(GeometrySchedulingMode.spread),
-        max_raster_workers_per_job=max(
-            1,
-            int(config.max_raster_workers_per_job),
-        ),
-    )
-
-
-def _normalize_workers_per_group(
-    workers_per_group: int | list[int],
-    render_group_count: int,
-) -> np.ndarray:
-    if isinstance(workers_per_group, int):
-        return np.full(
-            (render_group_count,),
-            max(1, int(workers_per_group)),
-            dtype=np.uint16,
-        )
-
-    workers_array = np.ascontiguousarray(
-        np.asarray(workers_per_group, dtype=np.uint16),
-    )
-    if workers_array.ndim != 1:
-        raise ValueError("workers_per_group must be a 1D list or an int")
-    if workers_array.shape[0] != render_group_count:
-        raise ValueError(
-            "workers_per_group list length must match render_group_count",
-        )
-    return np.ascontiguousarray(
-        np.maximum(workers_array, np.uint16(1)),
-        dtype=np.uint16,
-    )
 
 
 @cython.cfunc
 def _fill_parallel_config(
     config_out: cython.pointer[cr.CParallelConfig],
-    parallel_config: ParallelConfig,
+    config: RasterConfig,
+    num_frames: int,
 ) -> list[Any]:
     keepalive: list[Any] = []
-    render_group_count = max(1, int(parallel_config.render_group_count))
-    workers_array = _normalize_workers_per_group(
-        parallel_config.workers_per_group,
-        render_group_count,
+
+    total_threads = max(1, int(config.total_threads))
+    if total_threads < num_frames:
+        render_group_count = total_threads
+        workers_per_group_val = 1
+    else:
+        G = 1
+        for g in range(1, num_frames + 1):
+            if total_threads % g == 0:
+                G = g
+        render_group_count = G
+        workers_per_group_val = total_threads // G
+
+    workers_array = np.full(
+        (render_group_count,),
+        workers_per_group_val,
+        dtype=np.uint16,
     )
     workers_view: cython.ushort[::1] = workers_array
     keepalive.append(workers_array)
 
-    config_out[0].render_mode = int(parallel_config.render_mode)
-    config_out[0].total_threads = max(1, int(parallel_config.total_threads))
+    config_out[0].render_mode = int(config.render_mode)
+    config_out[0].total_threads = total_threads
     config_out[0].render_group_count = render_group_count
-    config_out[0].workers_per_group_len = workers_array.shape[0]
+    config_out[0].workers_per_group_len = render_group_count
     config_out[0].workers_per_group = cython.cast(
         cython.pointer[cython.ushort],
         cython.address(workers_view[0]),
     )
     config_out[0].frame_batch_size_per_group = max(
         1,
-        int(parallel_config.frame_batch_size_per_group),
+        int(config.frame_batch_size_per_group),
     )
     config_out[0].max_geom_jobs_in_flight_per_group = max(
         1,
-        int(parallel_config.max_geom_jobs_in_flight_per_group),
+        int(config.max_geom_jobs_in_flight_per_group),
     )
     config_out[0].max_geom_workers_per_job = max(
         1,
-        int(parallel_config.max_geom_workers_per_job),
+        int(config.max_geom_workers_per_job),
     )
     config_out[0].geom_scheduling_mode = int(
-        parallel_config.geom_scheduling_mode,
+        config.geom_scheduling_mode,
     )
     config_out[0].max_raster_workers_per_job = max(
         1,
-        int(parallel_config.max_raster_workers_per_job),
+        workers_per_group_val,
     )
     return keepalive
 
@@ -860,7 +855,6 @@ def raster(
     meshes: Any,
     cameras: Any,
     config: RasterConfig,
-    parallel_config: ParallelConfig | None = None,
     out_dir: str | None = None,
 ) -> np.ndarray | None:
     mesh_list = _normalize_meshes(meshes)
@@ -876,12 +870,11 @@ def raster(
         malloc(cameras_len * cython.sizeof(cr.CCameraInput)),
     )
     config_c: cr.CRasterConfig = _make_raster_config(config)
-    if parallel_config is None:
-        parallel_config = _build_default_parallel_config(config)
     parallel_config_c: cr.CParallelConfig
     parallel_keepalive = _fill_parallel_config(
         cython.address(parallel_config_c),
-        parallel_config,
+        config,
+        cameras_len,
     )
     image_np: np.ndarray | None = None
     image_ptr: cython.pointer[cr.CImageBufferF64] = cython.cast(
@@ -970,7 +963,7 @@ __all__ = [
     "NormalType",
     "GeometrySchedulingMode",
     "ImageMode",
-    "ParallelConfig",
+    "build_config",
     "RasterConfig",
     "RenderMode",
     "ReportMode",
@@ -983,6 +976,8 @@ __all__ = [
     "FuncShaderParams",
     "TextureSample",
     "TextureSampleMode",
+    "PsfType",
+    "ImageFormat",
     "load_sim_from_csv",
     "load_texture",
     "load_stereo_pair",

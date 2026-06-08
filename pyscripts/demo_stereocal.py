@@ -55,15 +55,13 @@ def main() -> None:
         bits=8,
         scaling_type=riley.ScaleStrategy.none,
     )
-    config = riley.RasterConfig(
-        render_mode=riley.RenderMode.offline,
+    config = riley.build_config(
+        num_frames=2,
         total_threads=total_threads,
         save_strategy=riley.SaveStrategy.disk,
-        tile_size_min=8,
-        tile_size_max=128,
-        background_value=128.0,
-        report=riley.ReportMode.bench,
     )
+    config.background_value = 128.0
+    config.tile_size_max = 128
     start_time = perf_counter()
     riley.raster(
         [mesh],

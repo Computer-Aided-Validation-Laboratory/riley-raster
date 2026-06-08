@@ -58,3 +58,21 @@ def load_texture(texture_path: str | Path) -> np.ndarray:
         image_grey = image_in.convert("L")
         image_u8 = np.asarray(image_grey, dtype=np.uint8)
     return np.ascontiguousarray(image_u8, dtype=np.float64)
+
+
+def build_config(
+    num_frames: int,
+    total_threads: int = 1,
+    save_strategy: int = 2,  # both
+) -> "RasterConfig":
+    from riley.cyth.riley import RasterConfig
+
+    return RasterConfig(
+        render_mode=1,  # offline
+        total_threads=total_threads,
+        geom_scheduling_mode=0,  # spread
+        save_strategy=save_strategy,
+        image_mode=0,  # grey
+        subpixel_center_map=1,  # per_tile
+        report=1,  # bench
+    )
