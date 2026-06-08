@@ -164,19 +164,17 @@ def build_table_tex() -> str:
         e2e_text = fmt_triplet_any(
             median_row,
             mad_row,
-            "E2E Time [ms]",
-            "E2E_ms",
+            "E2E Time",
         )
         geom_text = fmt_triplet_any(
             median_row,
             mad_row,
-            "Geom Time [ms]",
-            "Geom_ms",
+            "Geom Time",
         )
         throughput_vals: list[float] = []
         for case_map in run_case_maps:
             run_row = case_map[case_name]
-            geom_ms = row_float(run_row, "Geom Time [ms]", "Geom_ms")
+            geom_ms = row_float(run_row, "Geom Time")
             if geom_ms > 0.0:
                 throughput_vals.append(nodes_num / geom_ms / 1.0e3)
         throughput_median, throughput_mad = calc_median_mad(
@@ -185,7 +183,7 @@ def build_table_tex() -> str:
         elem_throughput_vals: list[float] = []
         for case_map in run_case_maps:
             run_row = case_map[case_name]
-            geom_ms = row_float(run_row, "Geom Time [ms]", "Geom_ms")
+            geom_ms = row_float(run_row, "Geom Time")
             if geom_ms > 0.0:
                 elem_throughput_vals.append(elems_num / geom_ms / 1.0e3)
         elem_throughput_median, elem_throughput_mad = calc_median_mad(

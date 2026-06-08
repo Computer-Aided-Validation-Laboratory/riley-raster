@@ -19,8 +19,8 @@ from bench_common import write_timing_csv
 
 
 # Laptop target: 8 cores / 8 active work-capable threads.
-TOTAL_ACTIVE_THREADS = [1, 2, 4, 8]
-RENDER_GROUP_COUNT_CHOICES = [1, 2, 4, 8]
+TOTAL_ACTIVE_THREADS = [1, 2]
+RENDER_GROUP_COUNT_CHOICES = [1, 2]
 RENDER_MODES = ["offline", "in_order"]
 GEOM_SCHEDULING_MODES = ["spread", "pack"]
 SAVE_STRATEGIES = [
@@ -29,7 +29,7 @@ SAVE_STRATEGIES = [
 ]
 
 SAMPLE = "cubic_catmull_rom"
-SAMPLE_MODE = "lut_lerp"
+SAMPLE_MODE = "direct" #"lut_lerp"
 
 # Experiment 1: idealized offline design with one render group and spread
 # geometry, intended to approximate the scheduler behavior we want.

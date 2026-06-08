@@ -166,20 +166,17 @@ def build_table_tex() -> str:
             e2e_text = fmt_triplet_any(
                 median_row,
                 mad_row,
-                "E2E Time [ms]",
-                "E2E_ms",
+                "E2E Time",
             )
             raster_text = fmt_triplet_any(
                 median_row,
                 mad_row,
-                "Raster Time [ms]",
-                "Raster_ms",
+                "Raster Time",
             )
             throughput_text = fmt_triplet_any(
                 median_row,
                 mad_row,
-                "Raster TP [MPx/s]",
-                "MPx/s",
+                "Raster TP",
             )
             body_rows.append(
                 "\\texttt{" + element_name + "} & " +

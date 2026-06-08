@@ -184,31 +184,31 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
             case_dir / "bench_e2e_overruns_max.csv"
         )
         case_name = median_row["Case"]
-        e2e_median_ms = row_float(median_row, "E2E Time [ms]", "E2E_ms")
-        e2e_min_ms = row_float(min_row, "E2E Time [ms]", "E2E_ms")
-        e2e_max_ms = row_float(max_row, "E2E Time [ms]", "E2E_ms")
+        e2e_median_ms = row_float(median_row, "E2E Time")
+        e2e_min_ms = row_float(min_row, "E2E Time")
+        e2e_max_ms = row_float(max_row, "E2E Time")
         e2e_throughput_median = row_float(
-            median_row, "E2E TP [MPx/s]"
-        ) if "E2E TP [MPx/s]" in median_row else total_mpx * 1000.0 / e2e_median_ms
-        e2e_throughput_min = row_float(
-            min_row, "E2E TP [MPx/s]"
-        ) if "E2E TP [MPx/s]" in min_row else total_mpx * 1000.0 / e2e_max_ms
-        e2e_throughput_max = row_float(
-            max_row, "E2E TP [MPx/s]"
-        ) if "E2E TP [MPx/s]" in max_row else total_mpx * 1000.0 / e2e_min_ms
-        raster_median_ms = row_float(
-            median_row, "Raster Time [ms]", "Raster_ms"
+            median_row, "E2E TP"
         )
-        raster_min_ms = row_float(min_row, "Raster Time [ms]", "Raster_ms")
-        raster_max_ms = row_float(max_row, "Raster Time [ms]", "Raster_ms")
+        e2e_throughput_min = row_float(
+            min_row, "E2E TP"
+        )
+        e2e_throughput_max = row_float(
+            max_row, "E2E TP"
+        )
+        raster_median_ms = row_float(
+            median_row, "Raster Time"
+        )
+        raster_min_ms = row_float(min_row, "Raster Time")
+        raster_max_ms = row_float(max_row, "Raster Time")
         raster_throughput_median = row_float(
-            median_row, "Raster TP [MPx/s]", "Throughput_MPx/s"
+            median_row, "Raster TP"
         )
         raster_throughput_min = row_float(
-            min_row, "Raster TP [MPx/s]", "Throughput_MPx/s"
+            min_row, "Raster TP"
         )
         raster_throughput_max = row_float(
-            max_row, "Raster TP [MPx/s]", "Throughput_MPx/s"
+            max_row, "Raster TP"
         )
     else:
         e2e_times = []
@@ -223,18 +223,18 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
                 for row in reader:
                     if row.get("Camera") == "all":
                         case_name = row["Case"]
-                        e2e_ms = row_float(row, "E2E Time [ms]", "E2E_ms")
+                        e2e_ms = row_float(row, "E2E Time")
                         e2e_times.append(e2e_ms)
                         raster_ms = row_float(
-                            row, "Raster Time [ms]", "Raster_ms"
+                            row, "Raster Time"
                         )
                         raster_times.append(raster_ms)
                         e2e_tp = row_float(
-                            row, "E2E TP [MPx/s]"
-                        ) if "E2E TP [MPx/s]" in row else total_mpx * 1000.0 / e2e_ms
+                            row, "E2E TP"
+                        )
                         e2e_tps.append(e2e_tp)
                         raster_tp = row_float(
-                            row, "Raster TP [MPx/s]", "Throughput_MPx/s"
+                            row, "Raster TP"
                         )
                         raster_tps.append(raster_tp)
                         break
