@@ -78,20 +78,6 @@ typedef struct c_camera_input {
     uint32_t psf_separable;
 } CCameraInput;
 
-typedef struct c_mesh_input_tex {
-    uint32_t mesh_type;
-    CArray2DF64 coords;
-    CArray2DUsize connect;
-    CArray2DF64 uvs;
-    CArray2DF64 texture;
-    uint32_t sample;
-    uint32_t sample_mode;
-    int bits;
-    uint32_t scaling_tag;
-    double scaling_min;
-    double scaling_max;
-} CMeshInputTex;
-
 typedef struct c_func_shader_params {
     double coord_scale_0;
     double coord_scale_1;
@@ -237,19 +223,5 @@ int rileyLoadStereoPair(
     CCameraInput* cam1_out
 );
 
-int rileyCalcOutputDimsTex(
-    const CMeshInputTex* in_mesh,
-    const CCameraInput* in_camera,
-    const CRasterConfig* in_config,
-    CDims5Usize* out_dims
-);
-
-int rileyRasterTex(
-    const CMeshInputTex* in_mesh,
-    const CCameraInput* in_camera,
-    const CRasterConfig* in_config,
-    const char* out_dir_path,
-    CImageBufferF64* out_image
-);
 
 #endif
