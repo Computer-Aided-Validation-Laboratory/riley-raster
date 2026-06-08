@@ -23,7 +23,11 @@ pub const PointSpreadFunc = common.PointSpreadFunc;
 pub const PreparedPSFMode = common.PreparedPSFMode;
 pub const PreparedPSF = common.PreparedPSF;
 pub const preparePSF = common.preparePSF;
+pub const forwardDistortionScalar = common.forwardDistortionScalar;
+pub const forwardDistortionWithJacScalar = common.forwardDistortionWithJacScalar;
+pub const inverseDistortionScalar = common.inverseDistortionScalar;
 
 pub const DistortionForwardJacSIMDResult = simd.DistortionForwardJacSIMDResult;
-pub const forwardWithJacSIMD = simd.forwardWithJacSIMD;
+pub const forwardDistortionSIMD = simd.forwardDistortionSIMD;
+pub const forwardDistortionWithJacSIMD = simd.forwardDistortionWithJacSIMD;
 pub const inverseDistortionSIMD = simd.inverseDistortionSIMD;

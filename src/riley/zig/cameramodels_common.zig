@@ -24,48 +24,6 @@ pub const BrownConrady = struct {
     k3: f64 = 0,
     p1: f64 = 0,
     p2: f64 = 0,
-
-    pub fn forward(self: BrownConrady, x: f64, y: f64) [2]f64 {
-        const r2 = x * x + y * y;
-        const r4 = r2 * r2;
-        const r6 = r4 * r2;
-        const radial_scale = 1.0 + self.k1 * r2 + self.k2 * r4 + self.k3 * r6;
-        return distortionForwardFromRadialScale(
-            x,
-            y,
-            radial_scale,
-            self.p1,
-            self.p2,
-        );
-    }
-
-    pub fn forwardWithJac(
-        self: BrownConrady,
-        x: f64,
-        y: f64,
-    ) DistortionForwardJacResult {
-        const r2 = x * x + y * y;
-        const r4 = r2 * r2;
-        const r6 = r4 * r2;
-        const radial_scale = 1.0 + self.k1 * r2 + self.k2 * r4 + self.k3 * r6;
-        const dradial_dr2 = self.k1 + 2.0 * self.k2 * r2 + 3.0 * self.k3 * r4;
-        return distortionForwardWithJacFromRadialScale(
-            x,
-            y,
-            radial_scale,
-            dradial_dr2,
-            self.p1,
-            self.p2,
-        );
-    }
-
-    pub fn inverse(
-        self: BrownConrady,
-        x_d: f64,
-        y_d: f64,
-    ) !DistortionInverseResult {
-        return try distortionInverseFromModel(BrownConrady, self, x_d, y_d);
-    }
 };
 
 pub const BrownConradyExt = struct {
@@ -77,41 +35,6 @@ pub const BrownConradyExt = struct {
     k6: f64 = 0,
     p1: f64 = 0,
     p2: f64 = 0,
-
-    pub fn forward(self: BrownConradyExt, x: f64, y: f64) [2]f64 {
-        const radial = self.calcRadialScaleAndDerivative(x, y);
-        return distortionForwardFromRadialScale(
-            x,
-            y,
-            radial.radial_scale,
-            self.p1,
-            self.p2,
-        );
-    }
-
-    pub fn forwardWithJac(
-        self: BrownConradyExt,
-        x: f64,
-        y: f64,
-    ) DistortionForwardJacResult {
-        const radial = self.calcRadialScaleAndDerivative(x, y);
-        return distortionForwardWithJacFromRadialScale(
-            x,
-            y,
-            radial.radial_scale,
-            radial.dradial_dr2,
-            self.p1,
-            self.p2,
-        );
-    }
-
-    pub fn inverse(
-        self: BrownConradyExt,
-        x_d: f64,
-        y_d: f64,
-    ) !DistortionInverseResult {
-        return try distortionInverseFromModel(BrownConradyExt, self, x_d, y_d);
-    }
 
     fn calcRadialScaleAndDerivative(
         self: BrownConradyExt,
@@ -146,6 +69,81 @@ pub const DistortionForwardJacResult = struct {
     y_d: f64,
     jac: [2][2]f64,
 };
+
+pub fn forwardDistortionScalar(
+    comptime DistortionType: type,
+    distortion: DistortionType,
+    x: f64,
+    y: f64,
+) [2]f64 {
+    if (@hasField(DistortionType, "k4")) {
+        const radial = distortion.calcRadialScaleAndDerivative(x, y);
+        return distortionForwardFromRadialScale(
+            x,
+            y,
+            radial.radial_scale,
+            distortion.p1,
+            distortion.p2,
+        );
+    }
+
+    const r2 = x * x + y * y;
+    const r4 = r2 * r2;
+    const r6 = r4 * r2;
+    const radial_scale =
+        1.0 + distortion.k1 * r2 + distortion.k2 * r4 + distortion.k3 * r6;
+    return distortionForwardFromRadialScale(
+        x,
+        y,
+        radial_scale,
+        distortion.p1,
+        distortion.p2,
+    );
+}
+
+pub fn forwardDistortionWithJacScalar(
+    comptime DistortionType: type,
+    distortion: DistortionType,
+    x: f64,
+    y: f64,
+) DistortionForwardJacResult {
+    if (@hasField(DistortionType, "k4")) {
+        const radial = distortion.calcRadialScaleAndDerivative(x, y);
+        return distortionForwardWithJacFromRadialScale(
+            x,
+            y,
+            radial.radial_scale,
+            radial.dradial_dr2,
+            distortion.p1,
+            distortion.p2,
+        );
+    }
+
+    const r2 = x * x + y * y;
+    const r4 = r2 * r2;
+    const r6 = r4 * r2;
+    const radial_scale =
+        1.0 + distortion.k1 * r2 + distortion.k2 * r4 + distortion.k3 * r6;
+    const dradial_dr2 =
+        distortion.k1 + 2.0 * distortion.k2 * r2 + 3.0 * distortion.k3 * r4;
+    return distortionForwardWithJacFromRadialScale(
+        x,
+        y,
+        radial_scale,
+        dradial_dr2,
+        distortion.p1,
+        distortion.p2,
+    );
+}
+
+pub fn inverseDistortionScalar(
+    comptime DistortionType: type,
+    distortion: DistortionType,
+    x_d: f64,
+    y_d: f64,
+) !DistortionInverseResult {
+    return try distortionInverseFromModel(DistortionType, distortion, x_d, y_d);
+}
 
 fn distortionForwardFromRadialScale(
     x: f64,
@@ -209,7 +207,7 @@ fn distortionInverseFromModel(
     const tol_delta = tol.distortion.delta;
 
     for (0..max_iters) |_| {
-        const fwd = distortion.forwardWithJac(x, y);
+        const fwd = forwardDistortionWithJacScalar(DistortionType, distortion, x, y);
         const f0 = fwd.x_d - x_d;
         const f1 = fwd.y_d - y_d;
 
@@ -384,7 +382,7 @@ fn buildKernel2D(
         for (0..width) |xx| {
             const x_off = @as(isize, @intCast(xx)) - @as(isize, @intCast(radius_x_subpx));
             const dx_px = @as(f64, @floatFromInt(x_off)) / sub_samp_f;
-            
+
             weights[yy * width + xx] = psfKernelValue2D(psf, dx_px, dy_px);
         }
     }

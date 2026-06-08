@@ -25,6 +25,12 @@ pub const BrownConrady = cameramodels.BrownConrady;
 pub const BrownConradyExt = cameramodels.BrownConradyExt;
 pub const DistortionInverseResult = cameramodels.DistortionInverseResult;
 pub const DistortionForwardJacResult = cameramodels.DistortionForwardJacResult;
+pub const forwardDistortionScalar = cameramodels.forwardDistortionScalar;
+pub const forwardDistortionWithJacScalar = cameramodels.forwardDistortionWithJacScalar;
+pub const inverseDistortionScalar = cameramodels.inverseDistortionScalar;
+pub const forwardDistortionSIMD = cameramodels.forwardDistortionSIMD;
+pub const forwardDistortionWithJacSIMD = cameramodels.forwardDistortionWithJacSIMD;
+pub const inverseDistortionSIMD = cameramodels.inverseDistortionSIMD;
 pub const SeparablePSF = cameramodels.SeparablePSF;
 pub const PixelBoxPSF = cameramodels.PixelBoxPSF;
 pub const GaussianPSF = cameramodels.GaussianPSF;
@@ -105,14 +111,24 @@ pub fn calcPinholeRasterPointScalar(
     return switch (camera.distortion) {
         .none => .{ observed_x_px, observed_y_px },
         .brown_conrady => |bc| blk: {
-            const solved = try bc.inverse(x_dist, y_dist);
+            const solved = try cameramodels.inverseDistortionScalar(
+                @TypeOf(bc),
+                bc,
+                x_dist,
+                y_dist,
+            );
             break :blk .{
                 solved.x * focal_px.fx + offsets.x_off,
                 solved.y * focal_px.fy + offsets.y_off,
             };
         },
         .brown_conrady_ext => |bc_ext| blk: {
-            const solved = try bc_ext.inverse(x_dist, y_dist);
+            const solved = try cameramodels.inverseDistortionScalar(
+                @TypeOf(bc_ext),
+                bc_ext,
+                x_dist,
+                y_dist,
+            );
             break :blk .{
                 solved.x * focal_px.fx + offsets.x_off,
                 solved.y * focal_px.fy + offsets.y_off,
@@ -410,8 +426,15 @@ fn checkDistortionGridInverse(
         const y = min_coord + @as(f64, @floatFromInt(jj)) * coord_step;
         for (0..grid_num) |ii| {
             const x = min_coord + @as(f64, @floatFromInt(ii)) * coord_step;
-            const distorted = distortion.forward(x, y);
-            const recovered = try distortion.inverse(
+            const distorted = cameramodels.forwardDistortionScalar(
+                DistortionType,
+                distortion,
+                x,
+                y,
+            );
+            const recovered = try cameramodels.inverseDistortionScalar(
+                DistortionType,
+                distortion,
                 distorted[0],
                 distorted[1],
             );
@@ -454,8 +477,18 @@ test "BrownConrady.forwardInverse" {
     const x_ideal = 0.1;
     const y_ideal = -0.15;
 
-    const distorted = bc.forward(x_ideal, y_ideal);
-    const recovered = try bc.inverse(distorted[0], distorted[1]);
+    const distorted = cameramodels.forwardDistortionScalar(
+        BrownConrady,
+        bc,
+        x_ideal,
+        y_ideal,
+    );
+    const recovered = try cameramodels.inverseDistortionScalar(
+        BrownConrady,
+        bc,
+        distorted[0],
+        distorted[1],
+    );
 
     try std.testing.expectApproxEqAbs(x_ideal, recovered.x, 1e-10);
     try std.testing.expectApproxEqAbs(y_ideal, recovered.y, 1e-10);
@@ -476,8 +509,18 @@ test "BrownConradyExt.forwardInverse" {
     const x_ideal = -0.12;
     const y_ideal = 0.18;
 
-    const distorted = bc_ext.forward(x_ideal, y_ideal);
-    const recovered = try bc_ext.inverse(distorted[0], distorted[1]);
+    const distorted = cameramodels.forwardDistortionScalar(
+        BrownConradyExt,
+        bc_ext,
+        x_ideal,
+        y_ideal,
+    );
+    const recovered = try cameramodels.inverseDistortionScalar(
+        BrownConradyExt,
+        bc_ext,
+        distorted[0],
+        distorted[1],
+    );
 
     try std.testing.expectApproxEqAbs(x_ideal, recovered.x, 1e-10);
     try std.testing.expectApproxEqAbs(y_ideal, recovered.y, 1e-10);
@@ -591,7 +634,12 @@ test "CameraPrepared.brownConradyExtDistortionApplied" {
     const fy = input.focal_length / input.pixels_size[1];
     const x_d = (0.5 - x_off) / fx;
     const y_d = (0.5 - y_off) / fy;
-    const solved = try distortion.inverse(x_d, y_d);
+    const solved = try cameramodels.inverseDistortionScalar(
+        BrownConradyExt,
+        distortion,
+        x_d,
+        y_d,
+    );
 
     const x_ideal = camera.ideal_pixel_centers.get(&[_]usize{ 0, 0, 0 });
     const y_ideal = camera.ideal_pixel_centers.get(&[_]usize{ 0, 0, 1 });

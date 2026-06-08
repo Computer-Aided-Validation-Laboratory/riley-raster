@@ -25,7 +25,25 @@ pub const DistortionForwardJacSIMDResult = struct {
     j22: VecSF,
 };
 
-pub fn forwardWithJacSIMD(
+pub fn forwardDistortionSIMD(
+    comptime DistortionType: type,
+    distortion: DistortionType,
+    x: VecSF,
+    y: VecSF,
+) struct { x_d: VecSF, y_d: VecSF } {
+    const fwd = forwardDistortionWithJacSIMD(
+        DistortionType,
+        distortion,
+        x,
+        y,
+    );
+    return .{
+        .x_d = fwd.x_d,
+        .y_d = fwd.y_d,
+    };
+}
+
+pub fn forwardDistortionWithJacSIMD(
     comptime DistortionType: type,
     distortion: DistortionType,
     x: VecSF,
@@ -134,7 +152,12 @@ pub fn inverseDistortionSIMD(
             return .{ .x = v_x, .y = v_y };
         }
 
-        const fwd = forwardWithJacSIMD(DistortionType, distortion, v_x, v_y);
+        const fwd = forwardDistortionWithJacSIMD(
+            DistortionType,
+            distortion,
+            v_x,
+            v_y,
+        );
         const f0 = fwd.x_d - v_x_d;
         const f1 = fwd.y_d - v_y_d;
 

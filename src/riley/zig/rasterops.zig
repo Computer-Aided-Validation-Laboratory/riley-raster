@@ -387,7 +387,12 @@ fn distortIdealRasterCoords(
             for (0..N) |nn| {
                 const x_ideal = (coords_ideal.x[nn] - offsets.x_off) / focal_px.fx;
                 const y_ideal = (coords_ideal.y[nn] - offsets.y_off) / focal_px.fy;
-                const distorted = bc.forward(x_ideal, y_ideal);
+                const distorted = cam.forwardDistortionScalar(
+                    @TypeOf(bc),
+                    bc,
+                    x_ideal,
+                    y_ideal,
+                );
                 coords_distorted.x[nn] = distorted[0] * focal_px.fx + offsets.x_off;
                 coords_distorted.y[nn] = distorted[1] * focal_px.fy + offsets.y_off;
             }
@@ -396,7 +401,12 @@ fn distortIdealRasterCoords(
             for (0..N) |nn| {
                 const x_ideal = (coords_ideal.x[nn] - offsets.x_off) / focal_px.fx;
                 const y_ideal = (coords_ideal.y[nn] - offsets.y_off) / focal_px.fy;
-                const distorted = bc_ext.forward(x_ideal, y_ideal);
+                const distorted = cam.forwardDistortionScalar(
+                    @TypeOf(bc_ext),
+                    bc_ext,
+                    x_ideal,
+                    y_ideal,
+                );
                 coords_distorted.x[nn] = distorted[0] * focal_px.fx + offsets.x_off;
                 coords_distorted.y[nn] = distorted[1] * focal_px.fy + offsets.y_off;
             }
