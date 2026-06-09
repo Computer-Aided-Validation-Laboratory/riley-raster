@@ -33,7 +33,7 @@ const rabbit_mesh_types = [_]gk.MeshType{
     .quad9,
 };
 
-const out_dir_root = "./out/demo-rabbits";
+const out_dir_root = "./out/demo-rabbits-fields";
 const pixel_num = [_]u32{ 1600, 800 };
 const fov_scale: f64 = 1.01;
 const overlap_frac_xy = [2]f64{ 0.85, 0.8 };
@@ -88,12 +88,29 @@ fn loadRabbitUvMap(
     return try uvio.loadUVMap(allocator, io, uv_path);
 }
 
-fn makeGreyMeshInput(
+fn buildUvRgbField(
+    allocator: std.mem.Allocator,
+    uvs: uvio.UVMap,
+) !meshio.Field {
+    const node_num = uvs.array.dims[0];
+    var field = try meshio.Field.initAlloc(allocator, 1, node_num, 3);
+
+    for (0..node_num) |nn| {
+        const uu = uvs.array.get(&[_]usize{ nn, 0 });
+        const vv = uvs.array.get(&[_]usize{ nn, 1 });
+        field.array.set(&[_]usize{ 0, nn, 0 }, uu);
+        field.array.set(&[_]usize{ 0, nn, 1 }, vv);
+        field.array.set(&[_]usize{ 0, nn, 2 }, 0.5 * (uu + vv));
+    }
+
+    return field;
+}
+
+fn makeFieldMeshInput(
     allocator: std.mem.Allocator,
     io: std.Io,
     rabbit_name: []const u8,
     mesh_type: gk.MeshType,
-    texture: iio.Texture(1),
 ) !MeshInput {
     const data_dir = try buildRabbitDir(allocator, rabbit_name, mesh_type);
     const sim_data = try loadStaticMesh(allocator, io, data_dir);
@@ -104,15 +121,11 @@ fn makeGreyMeshInput(
         .coords = try sceneops.duplicateCoords(allocator, sim_data.coords),
         .connect = sim_data.connect,
         .disp = null,
-        .shader = .{ .tex = .{
-            .uvs = uvs.array,
-            .texture = texture,
-            .sample_config = .{
-                .sample = .cubic_catmull_rom,
-                .mode = .lut_lerp,
-            },
+        .shader = .{ .nodal = .{
+            .field = try buildUvRgbField(allocator, uvs),
             .bits = 8,
-            .scaling = .none,
+            .scaling = .auto,
+            .scale_over = .over_frames,
             .normal_type = .none,
         } },
     };
@@ -121,26 +134,23 @@ fn makeGreyMeshInput(
 fn buildRabbitPairScene(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture: iio.Texture(1),
 ) ![]MeshInput {
     var mesh_list = std.ArrayList(MeshInput).empty;
     var group_list = std.ArrayList(sceneops.MeshGroup).empty;
 
     for (rabbit_mesh_types) |mesh_type| {
         const pair_start = mesh_list.items.len;
-        try mesh_list.append(allocator, try makeGreyMeshInput(
+        try mesh_list.append(allocator, try makeFieldMeshInput(
             allocator,
             io,
             "riley",
             mesh_type,
-            texture,
         ));
-        try mesh_list.append(allocator, try makeGreyMeshInput(
+        try mesh_list.append(allocator, try makeFieldMeshInput(
             allocator,
             io,
             "feebs",
             mesh_type,
-            texture,
         ));
 
         const front_group = sceneops.meshGroupSingle(pair_start);
@@ -180,16 +190,7 @@ pub fn main(init: std.process.Init) !void {
     defer arena.deinit();
     const aa = arena.allocator();
 
-    const texture = try iio.loadImage(
-        u8,
-        1,
-        aa,
-        io,
-        "texture/speckle.bmp",
-        .bmp,
-    );
-
-    const mesh_inputs = try buildRabbitPairScene(aa, io, texture);
+    const mesh_inputs = try buildRabbitPairScene(aa, io);
     const rot = Rotation.init(0.0, std.math.pi, 0.0);
     const roi_pos = cameraops.roiCentOverMeshes(mesh_inputs);
     const cam_pos = cameraops.posFillFrameFromRotOverMeshes(
@@ -226,7 +227,7 @@ pub fn main(init: std.process.Init) !void {
     };
     const config = rastcfg.RasterConfig{
         .save_strategy = .disk,
-        .image_mode = .grey,
+        .image_mode = .multifield,
         .background_value = 0.0,
         .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto },

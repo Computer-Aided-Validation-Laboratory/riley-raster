@@ -8,11 +8,11 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const MatSlice = @import("../riley/zig/matslice.zig").MatSlice;
 const NDArray = @import("../riley/zig/ndarray.zig").NDArray;
 const iio = @import("../riley/zig/imageio.zig");
 const meshio = @import("../riley/zig/meshio.zig");
 const mo = @import("../riley/zig/meshops.zig");
+const sceneops = @import("../riley/zig/sceneops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const uvio = @import("../riley/zig/uvio.zig");
 const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
@@ -335,7 +335,10 @@ pub fn buildMultimeshInputs(
             null,
         ),
     };
-    mo.arrangeMeshSlice(mesh_inputs, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
+    sceneops.arrangeMeshesGrid(mesh_inputs, .{
+        .gap = .{ 0.1, 0.1, 0.0 },
+        .max_divs = .{ 3, 2, 1 },
+    });
     return mesh_inputs;
 }
 
@@ -343,13 +346,7 @@ pub fn copyCoords(
     allocator: std.mem.Allocator,
     coords: meshio.Coords,
 ) !meshio.Coords {
-    const coords_dup = try MatSlice(f64).initAlloc(
-        allocator,
-        coords.mat.rows_num,
-        coords.mat.cols_num,
-    );
-    @memcpy(coords_dup.slice, coords.mat.slice);
-    return meshio.Coords.init(coords_dup.slice, coords_dup.rows_num);
+    return sceneops.duplicateCoords(allocator, coords);
 }
 
 fn buildGradientRgbField(
@@ -453,7 +450,10 @@ pub fn buildMixedMeshInputs(
         };
     }
 
-    mo.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+    sceneops.arrangeMeshesGrid(mesh_inputs, .{
+        .gap = .{ 0.15, 0.15, 0.0 },
+        .max_divs = .{ 5, 2, 1 },
+    });
     return mesh_inputs;
 }
 
@@ -513,7 +513,10 @@ pub fn buildMixedRgbMeshInputs(
         };
     }
 
-    mo.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+    sceneops.arrangeMeshesGrid(mesh_inputs, .{
+        .gap = .{ 0.15, 0.15, 0.0 },
+        .max_divs = .{ 5, 2, 1 },
+    });
     return mesh_inputs;
 }
 

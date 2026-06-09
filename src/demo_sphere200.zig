@@ -142,6 +142,7 @@ pub fn main(init: std.process.Init) !void {
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
+    
     const images = try riley.raster(
         aa,
         &render_groups,

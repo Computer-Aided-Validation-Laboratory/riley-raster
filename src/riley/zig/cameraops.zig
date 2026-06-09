@@ -11,6 +11,7 @@ const std = @import("std");
 const cam = @import("camera.zig");
 const meshio = @import("meshio.zig");
 const mo = @import("meshops.zig");
+const sceneops = @import("sceneops.zig");
 const vector = @import("vecstack.zig");
 const matrix = @import("matstack.zig");
 const rotation = @import("rotation.zig");
@@ -98,72 +99,14 @@ pub fn fovFromCamRot(
     cam_rot: rotation.Rotation,
     coords_world: *const meshio.Coords,
 ) [2]f64 {
-    const world_to_cam_mat = matrix.Mat33Ops.inv(f64, cam_rot.matrix);
-    var bb_cam_vec = world_to_cam_mat.mulVec(coords_world.getVec3(0));
-    var bb_cam_max = [_]f64{ bb_cam_vec.get(0), bb_cam_vec.get(1) };
-    var bb_cam_min = [_]f64{ bb_cam_vec.get(0), bb_cam_vec.get(1) };
-
-    for (1..coords_world.mat.rows_num) |nn| {
-        bb_cam_vec = world_to_cam_mat.mulVec(coords_world.getVec3(nn));
-
-        if (bb_cam_vec.get(0) > bb_cam_max[0]) {
-            bb_cam_max[0] = bb_cam_vec.get(0);
-        } else if (bb_cam_vec.get(0) < bb_cam_min[0]) {
-            bb_cam_min[0] = bb_cam_vec.get(0);
-        }
-
-        if (bb_cam_vec.get(1) > bb_cam_max[1]) {
-            bb_cam_max[1] = bb_cam_vec.get(1);
-        } else if (bb_cam_vec.get(1) < bb_cam_min[1]) {
-            bb_cam_min[1] = bb_cam_vec.get(1);
-        }
-    }
-
-    return .{
-        bb_cam_max[0] - bb_cam_min[0],
-        bb_cam_max[1] - bb_cam_min[1],
-    };
+    return sceneops.extentInRotatedFrame(cam_rot, coords_world);
 }
 
 pub fn fovFromCamRotOverMeshes(
     cam_rot: rotation.Rotation,
     meshes: []const mo.MeshInput,
 ) [2]f64 {
-    const world_to_cam_mat = matrix.Mat33Ops.inv(f64, cam_rot.matrix);
-    var first_coord: ?vector.Vec3f = null;
-    var bb_cam_max: [2]f64 = undefined;
-    var bb_cam_min: [2]f64 = undefined;
-
-    for (meshes) |mesh| {
-        for (0..mesh.coords.mat.rows_num) |nn| {
-            const coord = mesh.coords.getVec3(nn);
-            const bb_cam_vec = world_to_cam_mat.mulVec(coord);
-
-            if (first_coord == null) {
-                first_coord = coord;
-                bb_cam_max = .{ bb_cam_vec.get(0), bb_cam_vec.get(1) };
-                bb_cam_min = .{ bb_cam_vec.get(0), bb_cam_vec.get(1) };
-                continue;
-            }
-
-            if (bb_cam_vec.get(0) > bb_cam_max[0]) {
-                bb_cam_max[0] = bb_cam_vec.get(0);
-            } else if (bb_cam_vec.get(0) < bb_cam_min[0]) {
-                bb_cam_min[0] = bb_cam_vec.get(0);
-            }
-
-            if (bb_cam_vec.get(1) > bb_cam_max[1]) {
-                bb_cam_max[1] = bb_cam_vec.get(1);
-            } else if (bb_cam_vec.get(1) < bb_cam_min[1]) {
-                bb_cam_min[1] = bb_cam_vec.get(1);
-            }
-        }
-    }
-
-    return .{
-        bb_cam_max[0] - bb_cam_min[0],
-        bb_cam_max[1] - bb_cam_min[1],
-    };
+    return sceneops.extentInRotatedFrameOverMeshes(cam_rot, meshes);
 }
 
 pub fn calcSensorSize(pixels_num: [2]u32, pixels_size: [2]f64) [2]f64 {
@@ -235,35 +178,11 @@ pub fn calcCamPos(
 }
 
 pub fn centFromCoordsMean(coords_world: *const meshio.Coords) vector.Vec3f {
-    var cent_world = vector.Vec3f.initZeros();
-    const coords_num = coords_world.mat.rows_num;
-
-    for (0..coords_num) |nn| {
-        cent_world.slice[0] += coords_world.mat.get(nn, 0);
-        cent_world.slice[1] += coords_world.mat.get(nn, 1);
-        cent_world.slice[2] += coords_world.mat.get(nn, 2);
-    }
-
-    return cent_world.mulScalar(1.0 / @as(f64, @floatFromInt(coords_num)));
+    return sceneops.meanCenter(coords_world);
 }
 
 pub fn roiCentFromCoords(coords_world: *const meshio.Coords) vector.Vec3f {
-    const max_vec = vector.initVec3(
-        f64,
-        coords_world.mat.maxByRow(0),
-        coords_world.mat.maxByRow(1),
-        coords_world.mat.maxByRow(2),
-    );
-    const min_vec = vector.initVec3(
-        f64,
-        coords_world.mat.minByRow(0),
-        coords_world.mat.minByRow(1),
-        coords_world.mat.minByRow(2),
-    );
-
-    var roi_cent: vector.Vec3f = (&max_vec).add(min_vec);
-    roi_cent = roi_cent.mulScalar(0.5);
-    return roi_cent;
+    return sceneops.boundsCenter(coords_world);
 }
 
 pub fn lookAtPoint(
@@ -291,24 +210,7 @@ pub fn lookAtPoint(
 }
 
 pub fn roiCentOverMeshes(meshes: []const mo.MeshInput) vector.Vec3f {
-    var bb_min = [3]f64{ std.math.inf(f64), std.math.inf(f64), std.math.inf(f64) };
-    var bb_max = [3]f64{ -std.math.inf(f64), -std.math.inf(f64), -std.math.inf(f64) };
-
-    for (meshes) |mesh| {
-        for (0..3) |ii| {
-            const mesh_min = mesh.coords.mat.minByRow(ii);
-            const mesh_max = mesh.coords.mat.maxByRow(ii);
-            if (mesh_min < bb_min[ii]) bb_min[ii] = mesh_min;
-            if (mesh_max > bb_max[ii]) bb_max[ii] = mesh_max;
-        }
-    }
-
-    const max_vec = vector.initVec3(f64, bb_max[0], bb_max[1], bb_max[2]);
-    const min_vec = vector.initVec3(f64, bb_min[0], bb_min[1], bb_min[2]);
-
-    var roi_cent: vector.Vec3f = (&max_vec).add(min_vec);
-    roi_cent = roi_cent.mulScalar(0.5);
-    return roi_cent;
+    return sceneops.boundsCenterOverMeshes(meshes);
 }
 
 pub fn imageDistFillFrameFromRot(
