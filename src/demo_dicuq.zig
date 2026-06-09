@@ -97,10 +97,11 @@ pub fn main(init: std.process.Init) !void {
         .tile_size_max = 128,
         .background_value = 128.0,
         .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .auto },
+            .{ .format = .bmp, .bits = 8, .scaling = .none },
         },
         .report = .bench,
     };
+
     const managed_ios = try outer_alloc.alloc(std.Io.Threaded, RENDER_GROUP_COUNT);
     defer {
         for (managed_ios) |*managed_io| {
@@ -108,8 +109,10 @@ pub fn main(init: std.process.Init) !void {
         }
         outer_alloc.free(managed_ios);
     }
+
     const render_groups = try outer_alloc.alloc(riley.RenderGroupSpec, RENDER_GROUP_COUNT);
     defer outer_alloc.free(render_groups);
+
     for (0..RENDER_GROUP_COUNT) |gg| {
         managed_ios[gg] = riley.getThreadedIo(
             aa,
@@ -243,7 +246,8 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Rendering simulation to {s}/...\n", .{OUT_DIR_ROOT});
     const meshes = [_]MeshInput{mesh_input};
     const cams_in = [_]CameraInput{ cam0_in, cam1_in };
-    const images = try riley.rasterAllFrames(
+
+    const images = try riley.raster(
         aa,
         render_groups,
         &cams_in,
@@ -257,19 +261,6 @@ pub fn main(init: std.process.Init) !void {
         img.deinit(aa);
     }
 
-    std.debug.print("Demo complete. Images saved to {s}/\n", .{OUT_DIR_ROOT});
-
-    const print_break = [_]u8{'='} ** 80;
-    print("\n{s}\n", .{print_break});
-
-    print("ROI center:\n", .{});
-    roi_pos.vecPrint();
-
-    print("Camera 0:\n", .{});
-    cam0_pos.vecPrint();
-
-    print("Camera 1:\n", .{});
-    cam1_pos.vecPrint();
 
     var out_dir = try std.Io.Dir.cwd().openDir(io, OUT_DIR_ROOT, .{});
     defer out_dir.close(io);
@@ -296,5 +287,5 @@ pub fn main(init: std.process.Init) !void {
         .{ .cameras = .{ cam0_opencv, cam1_opencv } },
     );
 
-    print("{s}\n", .{print_break});
+    std.debug.print("Demo complete. Images saved to {s}/\n", .{OUT_DIR_ROOT});
 }

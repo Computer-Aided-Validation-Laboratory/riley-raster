@@ -148,6 +148,16 @@ pub fn countStaticMeshElements(
     return total;
 }
 
+pub fn countStaticMeshNodes(
+    mesh_static: []const MeshStatic,
+) usize {
+    var total: usize = 0;
+    for (mesh_static) |mesh| {
+        total += mesh.coords_orig.mat.rows_num;
+    }
+    return total;
+}
+
 // External helper function for finding mesh centroids
 pub fn findAlignedCentroid(coords: *const meshio.Coords) struct {
     centroid: [3]f64,

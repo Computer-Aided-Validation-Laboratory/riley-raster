@@ -472,7 +472,7 @@ fn runCameraBenchmarkWithImageOut(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config_run.total_threads) },
     };
-    var image_arr = try riley.rasterAllFramesReport(
+    var image_arr = try riley.rasterReport(
         outer_alloc,
         &render_groups,
         &[_]cam.CameraInput{camera_input},
@@ -516,17 +516,13 @@ fn runCameraBenchmarkWithImageOut(
         .resolve_ms = bench_capture_storage[0]
             .bench_log.frame_times.scratch_resolve / 1e6,
         .fps = if (e2e_ms > 0.0) 1000.0 / e2e_ms else 0.0,
-        .total_elems =
-            bench_capture_storage[0].bench_log.total_elements,
-        .vis_elems =
-            bench_capture_storage[0].bench_log.visible_elements,
+        .total_elems = bench_capture_storage[0].bench_log.total_elements,
+        .vis_elems = bench_capture_storage[0].bench_log.visible_elements,
         .total_px = @as(u64, camera_input.pixels_num[0]) *
             @as(u64, camera_input.pixels_num[1]),
-        .shaded_px =
-            bench_capture_storage[0].bench_log.total_shaded_pixels,
+        .shaded_px = bench_capture_storage[0].bench_log.total_shaded_pixels,
         .metrics = metrics,
-        .pipeline_times =
-            bench_capture_storage[0].bench_log.frame_times,
+        .pipeline_times = bench_capture_storage[0].bench_log.frame_times,
         .image = null,
     };
 }

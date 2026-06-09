@@ -1029,7 +1029,7 @@ fn runBenchmarkInternal(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config_run.total_threads) },
     };
-    var image_arr = try riley.rasterAllFramesReport(
+    var image_arr = try riley.rasterReport(
         outer_alloc,
         &render_groups,
         &[_]CameraInput{camera_input},

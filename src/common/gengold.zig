@@ -61,7 +61,7 @@ pub fn renderAndSave(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const images = try riley.rasterAllFrames(
+    const images = try riley.raster(
         outer_alloc,
         &render_groups,
         &[_]CameraInput{camera_input},
@@ -236,7 +236,7 @@ pub fn runMultimeshGenerationExt(
         const render_groups = [_]riley.RenderGroupSpec{
             .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
         };
-        const images = try riley.rasterAllFrames(
+        const images = try riley.raster(
             aa,
             &render_groups,
             &[_]CameraInput{camera_input},
@@ -319,7 +319,7 @@ pub fn runMultimeshMixedGenerationExt(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const images = try riley.rasterAllFrames(
+    const images = try riley.raster(
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},
@@ -417,7 +417,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
         .sub_sample = camera_rgb.sub_sample,
         .distortion = camera_rgb.distortion,
     };
-    _ = try riley.rasterAllFrames(
+    _ = try riley.raster(
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},

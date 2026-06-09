@@ -40,6 +40,7 @@ pub const SaveSlot = struct {
     bench_capture: ?[]report.FrameBenchCapture = null,
     report_storage: FrameReportStorage = .{ .off = .{} },
     frame_times: report.FrameTimes = .{},
+    total_nodes_num: usize = 0,
     total_elems_num: usize = 0,
     total_elems_in_image: usize = 0,
     nodes_per_elem: f64 = 0.0,
@@ -227,6 +228,7 @@ pub const SaveOverlap = struct {
                 .out_dir = job.desc.out_dir,
                 .bench_capture = job.desc.bench_capture,
                 .frame_times = job.ctx.frame_times,
+                .total_nodes_num = job.ctx.total_nodes_num,
                 .total_elems_num = job.ctx.total_elems_num,
                 .total_elems_in_image = job.ctx.total_elems_in_image,
                 .actual_tile_size = job.ctx.actual_tile_size,
@@ -247,6 +249,7 @@ pub const RenderedFrameMeta = struct {
     out_dir: ?std.Io.Dir,
     bench_capture: ?[]report.FrameBenchCapture,
     frame_times: report.FrameTimes,
+    total_nodes_num: usize,
     total_elems_num: usize,
     total_elems_in_image: usize,
     actual_tile_size: u16,
@@ -426,6 +429,7 @@ pub fn publishRenderedSlot(
     slot.report_storage = report_storage.*;
     report_storage.* = .{ .off = .{} };
     slot.frame_times = meta.frame_times;
+    slot.total_nodes_num = meta.total_nodes_num;
     slot.total_elems_num = meta.total_elems_num;
     slot.total_elems_in_image = meta.total_elems_in_image;
     slot.nodes_per_elem = mo.calcNodesPerElem(prep_meshes);
@@ -495,6 +499,7 @@ pub fn completeSaveSlot(
         slot.bench_capture,
         &slot.report_storage,
         slot.frame_times,
+        slot.total_nodes_num,
         slot.total_elems_num,
         slot.total_elems_in_image,
         slot.nodes_per_elem,

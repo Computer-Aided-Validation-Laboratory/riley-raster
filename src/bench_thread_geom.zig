@@ -237,7 +237,7 @@ fn runAndRecord(
 
     const e2e_start = Timestamp.now(io, .awake);
 
-    var image_arr = try riley.rasterAllFramesReport(
+    var image_arr = try riley.rasterReport(
         ra,
         &render_groups,
         camera_inputs[0..1],

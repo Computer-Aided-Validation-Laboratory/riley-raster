@@ -137,18 +137,6 @@ cdef extern from "riley.h":
         double save_scaling_min
         double save_scaling_max
 
-    ctypedef struct CParallelConfig:
-        uint32_t render_mode
-        uint16_t total_threads
-        uint16_t render_group_count
-        size_t workers_per_group_len
-        const uint16_t* workers_per_group
-        uint16_t frame_batch_size_per_group
-        uint16_t max_geom_jobs_in_flight_per_group
-        uint16_t max_geom_workers_per_job
-        uint32_t geom_scheduling_mode
-        uint16_t max_raster_workers_per_job
-
     size_t rileyGetLastError(uint8_t* out_buf, size_t out_buf_len)
 
     int rileyRoiCentFromCoords(
@@ -192,15 +180,17 @@ cdef extern from "riley.h":
         CDims5Usize* out_dims,
     )
 
-    int rileyRasterScene(
-        const CMeshInput* in_meshes,
-        size_t meshes_len,
-        const CCameraInput* in_cameras,
-        size_t cameras_len,
-        const CRasterConfig* in_config,
-        const CParallelConfig* in_parallel_config,
+    int rileySaveCamera(
         const char* out_dir_path,
-        CImageBufferF64* out_image,
+        const char* file_name,
+        size_t camera_idx,
+        const CCameraInput* camera_in,
+    )
+
+    int rileyLoadCamera(
+        const char* dir_path,
+        const char* file_name,
+        CCameraInput* camera_out,
     )
 
     int rileySaveStereoPair(
@@ -217,3 +207,12 @@ cdef extern from "riley.h":
         CCameraInput* cam1_out,
     )
 
+    int rileyRaster(
+        const CMeshInput* in_meshes,
+        size_t meshes_len,
+        const CCameraInput* in_cameras,
+        size_t cameras_len,
+        const CRasterConfig* in_config,
+        const char* out_dir_path,
+        CImageBufferF64* out_image,
+    )

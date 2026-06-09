@@ -161,7 +161,7 @@ pub fn renderStereoPlate(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = 1 },
     };
-    _ = try riley.rasterAllFrames(
+    _ = try riley.raster(
         aa,
         &render_groups,
         &stereo_pair.cameras,

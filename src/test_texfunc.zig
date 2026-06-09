@@ -174,7 +174,7 @@ fn runTexFuncCase(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try riley.rasterAllFrames(
+    const result = (try riley.raster(
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},

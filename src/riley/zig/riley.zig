@@ -554,6 +554,7 @@ const FrameContext = struct {
     elems_in_image_by_mesh: []usize = &.{},
     raster_hulls: []?ndarray.NDArray(f64) = &.{},
     tiling: ?rops.TilingOverlaps = null,
+    total_nodes_num: usize = 0,
     total_elems_num: usize = 0,
     total_elems_in_image: usize = 0,
     actual_tile_size: u16 = 1,
@@ -893,6 +894,7 @@ fn runGeometryStage(
     }
     job.ctx.total_elems_num = geo_res.total_elems_num;
     job.ctx.total_elems_in_image = geo_res.total_elems_in_image;
+    job.ctx.total_nodes_num = mo.countStaticMeshNodes(job.desc.mesh_static);
 
     const time_end_geo = Timestamp.now(io, .awake);
     job.ctx.frame_times.geometry_prep = @floatFromInt(
@@ -987,6 +989,7 @@ fn runRasterAndSaveFrame(
         job.desc.bench_capture,
         &job.ctx.report_storage,
         job.ctx.frame_times,
+        job.ctx.total_nodes_num,
         job.ctx.total_elems_num,
         job.ctx.total_elems_in_image,
         job.ctx.prep_meshes,
@@ -1554,9 +1557,9 @@ fn dispatchFrameJobsInOrder(
 }
 
 // --------------------------------------------------------------------------
-// 10. Camera Preparation and Public API
+// 10. Public API
 // --------------------------------------------------------------------------
-pub fn rasterAllFrames(
+pub fn raster(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
     camera_inputs: []const cam.CameraInput,
@@ -1564,7 +1567,7 @@ pub fn rasterAllFrames(
     config: RasterConfig,
     out_dir_path: ?[]const u8,
 ) !?ndarray.NDArray(f64) {
-    return rasterAllFramesReport(
+    return rasterReport(
         outer_alloc,
         render_groups,
         camera_inputs,
@@ -1575,7 +1578,7 @@ pub fn rasterAllFrames(
     );
 }
 
-pub fn rasterAllFramesInto(
+pub fn rasterInto(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
     camera_inputs: []const cam.CameraInput,
@@ -1584,7 +1587,7 @@ pub fn rasterAllFramesInto(
     out_dir_path: ?[]const u8,
     images_arr: ?*ndarray.NDArray(f64),
 ) !void {
-    try rasterAllFramesReportInto(
+    try rasterReportInto(
         outer_alloc,
         render_groups,
         camera_inputs,
@@ -1596,7 +1599,7 @@ pub fn rasterAllFramesInto(
     );
 }
 
-pub fn rasterAllFramesReport(
+pub fn rasterReport(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
     camera_inputs: []const cam.CameraInput,
@@ -1634,7 +1637,7 @@ pub fn rasterAllFramesReport(
         images_arr.deinit(outer_alloc);
     };
 
-    try rasterAllFramesReportInto(
+    try rasterReportInto(
         outer_alloc,
         render_groups,
         camera_inputs,
@@ -1647,7 +1650,7 @@ pub fn rasterAllFramesReport(
     return images_arr_opt;
 }
 
-pub fn rasterAllFramesReportInto(
+pub fn rasterReportInto(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
     camera_inputs: []const cam.CameraInput,

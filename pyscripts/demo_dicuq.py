@@ -28,7 +28,7 @@ def main() -> None:
     sub_sample = 2
     stereo_angle_deg = 20.0
     total_threads = 8
-    distortion_kwargs = {
+    distortion_model = {
         "distortion_model": 1,
         "distortion_k1": -0.2,
         "distortion_k2": 0.1,
@@ -75,7 +75,7 @@ def main() -> None:
         roi_cent_world=roi_pos,
         focal_length=focal_length,
         sub_sample=sub_sample,
-        **distortion_kwargs,
+        **distortion_model,
     )
     camera_1_rot = (0.0, np.deg2rad(stereo_angle_deg), 0.0)
     camera_1_pos = riley.pos_fill_frame_from_rot(
@@ -94,7 +94,7 @@ def main() -> None:
         roi_cent_world=roi_pos,
         focal_length=focal_length,
         sub_sample=sub_sample,
-        **distortion_kwargs,
+        **distortion_model,
     )
 
     config = riley.build_config(

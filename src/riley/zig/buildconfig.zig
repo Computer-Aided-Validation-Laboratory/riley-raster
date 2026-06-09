@@ -13,7 +13,6 @@ pub const SimdMode = enum {
     on,
 };
 
-
 pub const SimdTextureInterpMode = enum {
     inner,
     over_pixels,

@@ -348,7 +348,7 @@ pub fn runBenchmark(
     defer outer_alloc.free(bench_capture);
 
     const start = std.Io.Clock.Timestamp.now(io, .awake);
-    const image_arr = try riley.rasterAllFramesReport(
+    const image_arr = try riley.rasterReport(
         outer_alloc,
         render_groups,
         camera_inputs,
@@ -595,27 +595,21 @@ fn buildFrameRows(
             .frame_idx = capture.frame_idx,
             .total_elems = capture.bench_log.total_elements,
             .vis_elems = capture.bench_log.visible_elements,
-            .total_px =
-                @as(
-                    u64,
-                    camera_inputs[capture.camera_idx].pixels_num[0],
-                ) *
+            .total_px = @as(
+                u64,
+                camera_inputs[capture.camera_idx].pixels_num[0],
+            ) *
                 @as(
                     u64,
                     camera_inputs[capture.camera_idx].pixels_num[1],
                 ),
             .shaded_px = capture.bench_log.total_shaded_pixels,
             .geom_time_ms = geom_time_ns / 1e6,
-            .cam_time_ms =
-                capture.bench_log.frame_times.cam_invert / 1e6,
-            .resolve_time_ms =
-                capture.bench_log.frame_times.scratch_resolve / 1e6,
-            .raster_time_ms =
-                capture.bench_log.frame_times.raster_loop / 1e6,
-            .save_time_ms =
-                capture.bench_log.frame_times.save_frame / 1e6,
-            .frame_time_ms =
-                capture.bench_log.frame_times.active_time / 1e6,
+            .cam_time_ms = capture.bench_log.frame_times.cam_invert / 1e6,
+            .resolve_time_ms = capture.bench_log.frame_times.scratch_resolve / 1e6,
+            .raster_time_ms = capture.bench_log.frame_times.raster_loop / 1e6,
+            .save_time_ms = capture.bench_log.frame_times.save_frame / 1e6,
+            .frame_time_ms = capture.bench_log.frame_times.active_time / 1e6,
             .e2e_time_ms = null,
             .geom_tpx_melem_s = calcFrameMElemPerSec(
                 capture.bench_log.total_elements,

@@ -41,7 +41,6 @@ pub const FuncShaderParams = struct {
     extra: [4]f64 = .{ 0.0, 0.0, 0.0, 0.0 },
 };
 
-
 pub fn LocalShaderBuffer(comptime N: usize) type {
     return struct {
         data: [buildconfig.config.max_nodal_fields * N]f64 = undefined,
@@ -277,7 +276,6 @@ pub const FuncCoord = struct {
     normal_y: f64,
     normal_z: f64,
 };
-
 
 inline fn cubicSmoothStep(val: f64) f64 {
     const clamped = @max(0.0, @min(1.0, val));

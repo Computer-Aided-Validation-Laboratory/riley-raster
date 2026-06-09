@@ -34,6 +34,8 @@ pub fn main(init: std.process.Init) !void {
     // 1. Setup Rasteriser Configuration
     const config = RasterConfig{
         .save_strategy = .disk,
+        .total_threads = 4,
+        .max_raster_workers_per_job = 4,
         .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
         },
@@ -140,7 +142,7 @@ pub fn main(init: std.process.Init) !void {
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const images = try riley.rasterAllFrames(
+    const images = try riley.raster(
         aa,
         &render_groups,
         &[_]@TypeOf(camera_input){camera_input},

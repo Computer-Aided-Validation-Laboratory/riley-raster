@@ -156,7 +156,7 @@ fn renderSingle(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try riley.rasterAllFrames(
+    const result = (try riley.raster(
         allocator,
         &render_groups,
         &[_]cammod.CameraInput{camera_input},

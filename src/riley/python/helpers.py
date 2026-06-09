@@ -11,10 +11,11 @@ from pathlib import Path
 from PIL import Image
 
 
-def load_sim_from_csv(
+def load_sim_csvs(
     data_dir: str | Path,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     data_path = Path(data_dir)
+
     coords = np.loadtxt(
         data_path / "coords.csv",
         delimiter=",",
@@ -26,30 +27,55 @@ def load_sim_from_csv(
         dtype=np.float64,
     )
     connect = np.ascontiguousarray(connect_float, dtype=np.uintp)
-    uvs = np.loadtxt(
-        data_path / "uvs.csv",
-        delimiter=",",
-        dtype=np.float64,
-    )
-    disp_x = np.loadtxt(
-        data_path / "field_disp_x.csv",
-        delimiter=",",
-        dtype=np.float64,
-    )
-    disp_y = np.loadtxt(
-        data_path / "field_disp_y.csv",
-        delimiter=",",
-        dtype=np.float64,
-    )
-    disp_z = np.loadtxt(
-        data_path / "field_disp_z.csv",
-        delimiter=",",
-        dtype=np.float64,
-    )
-    disp = np.empty((disp_x.shape[1], disp_x.shape[0], 3), dtype=np.float64)
-    disp[:, :, 0] = disp_x.T
-    disp[:, :, 1] = disp_y.T
-    disp[:, :, 2] = disp_z.T
+
+    uvs = None
+    if (data_path / "uvs.csv").is_file():
+        uvs = np.loadtxt(
+            data_path / "uvs.csv",
+            delimiter=",",
+            dtype=np.float64,
+        )
+
+    disp_shape = None
+
+    disp_x = None
+    if (data_path / "field_disp_x.csv").is_file():
+        disp_x = np.loadtxt(
+            data_path / "field_disp_x.csv",
+            delimiter=",",
+            dtype=np.float64,
+        )
+        disp_shape = disp_x.shape
+
+    disp_y = None
+    if (data_path / "field_disp_y.csv").is_file():
+        disp_y = np.loadtxt(
+            data_path / "field_disp_y.csv",
+            delimiter=",",
+            dtype=np.float64,
+        )
+        disp_shape = disp_y.shape
+
+    disp_z = None
+    if (data_path / "field_disp_z.csv").is_file():
+        disp_z = np.loadtxt(
+            data_path / "field_disp_z.csv",
+            delimiter=",",
+            dtype=np.float64,
+        )
+        disp_shape = disp_z.shape
+
+    disp = None
+    if disp_shape is not None:    
+        disp = np.zeros((disp_shape[1], disp_shape[0], 3), 
+            dtype=np.float64)
+        if disp_x is not None:
+            disp[:, :, 0] = disp_x.T
+        if disp_y is not None:
+            disp[:, :, 1] = disp_y.T
+        if disp_z is not None:
+            disp[:, :, 2] = disp_z.T
+
     return coords, connect, uvs, disp
 
 
@@ -67,10 +93,22 @@ def build_config(
 ) -> "RasterConfig":
     from riley.cyth.riley import RasterConfig
 
+    total_threads = max(1, int(total_threads))
+    frames_available = max(1, int(num_frames))
+    if total_threads < frames_available:
+        render_group_count = total_threads
+    else:
+        render_group_count = 1
+        for group_count in range(1, frames_available + 1):
+            if total_threads % group_count == 0:
+                render_group_count = group_count
+    workers_per_group = total_threads // render_group_count
+
     return RasterConfig(
         render_mode=1,  # offline
         total_threads=total_threads,
         geom_scheduling_mode=0,  # spread
+        max_raster_workers_per_job=workers_per_group,
         save_strategy=save_strategy,
         image_mode=0,  # grey
         subpixel_center_map=1,  # per_tile

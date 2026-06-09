@@ -520,7 +520,7 @@ pub fn main(init: std.process.Init) !void {
                 .workers = @max(@as(u16, 1), config.total_threads),
             },
         };
-        const images = try riley.rasterAllFrames(
+        const images = try riley.raster(
             aa,
             &render_groups_mode,
             &[_]CameraInput{camera_input},

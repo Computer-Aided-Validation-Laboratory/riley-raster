@@ -8,6 +8,7 @@
 # --------------------------------------------------------------------------
 from __future__ import annotations
 
+import shutil
 from dataclasses import replace
 from pathlib import Path
 from time import perf_counter
@@ -15,15 +16,16 @@ from time import perf_counter
 import numpy as np
 import riley
 
-
 def main() -> None:
-    data_dir = Path("data/calplate/tri3_calplate3d")
-    texture_path = Path("texture/cal_target-simple.tiff")
+    root_dir = Path(__file__).resolve().parent.parent
+    
+    data_dir = root_dir /"data"/"calplate"/"tri3_calplate3d"
+    texture_path = root_dir / Path("texture/cal_target-simple.tiff")
     out_dir = Path("pyout/demo-stereocal")
     dicuq_camera_dir = Path("pyout/demo-dicuq")
+
     total_threads = 8
 
-    import shutil
     shutil.rmtree(out_dir, ignore_errors=True)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -34,6 +36,7 @@ def main() -> None:
         str(dicuq_camera_dir),
         "stereo_data_opengl.csv",
     )
+
     roi_pos = np.asarray(riley.roi_cent_from_coords(coords), dtype=np.float64)
     target_roi = np.asarray(camera_0.roi_cent_world, dtype=np.float64)
     roi_shift = target_roi - roi_pos
@@ -55,13 +58,14 @@ def main() -> None:
         bits=8,
         scaling_type=riley.ScaleStrategy.none,
     )
+    
     config = riley.build_config(
         num_frames=2,
         total_threads=total_threads,
         save_strategy=riley.SaveStrategy.disk,
     )
     config.background_value = 128.0
-    config.tile_size_max = 128
+
     start_time = perf_counter()
     riley.raster(
         [mesh],
@@ -70,7 +74,7 @@ def main() -> None:
         out_dir=str(out_dir),
     )
     elapsed_time = perf_counter() - start_time
-    print(f"render time: {elapsed_time:.6f} s")
+    print(f"Riley render time: {elapsed_time:.6f} s")
     print(f"rendered stereocal to {out_dir}")
 
 

@@ -343,7 +343,7 @@ fn renderScalarMap(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try riley.rasterAllFrames(
+    const result = (try riley.raster(
         render_allocator,
         &render_groups,
         &[_]cam.CameraInput{camera_input},

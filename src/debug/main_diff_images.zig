@@ -231,7 +231,7 @@ pub fn main(init: std.process.Init) !void {
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config_rgb.total_threads) },
     };
-    const result = (try riley.rasterAllFrames(
+    const result = (try riley.raster(
         aa,
         &render_groups,
         &[_]@TypeOf(camera_input){camera_input},

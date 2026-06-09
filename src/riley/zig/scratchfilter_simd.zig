@@ -41,7 +41,7 @@ pub inline fn loadScratchRowSIMD(
 
     const chunk_in_bounds = (x >= 0 and
         x + @as(isize, @intCast(SimdWidth)) <=
-        @as(isize, @intCast(scratch_geom.scratch_w_subpx)));
+            @as(isize, @intCast(scratch_geom.scratch_w_subpx)));
 
     if (chunk_in_bounds) {
         const ux = @as(usize, @intCast(x));

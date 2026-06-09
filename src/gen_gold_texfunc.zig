@@ -100,7 +100,7 @@ fn renderCase(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const images = try riley.rasterAllFrames(
+    const images = try riley.raster(
         allocator,
         &render_groups,
         &[_]CameraInput{camera_input},

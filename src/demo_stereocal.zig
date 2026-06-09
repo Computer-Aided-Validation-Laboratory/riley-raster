@@ -301,7 +301,7 @@ pub fn main(init: std.process.Init) !void {
     };
 
     const meshes = [_]MeshInput{mesh_input};
-    const images = try riley.rasterAllFrames(
+    const images = try riley.raster(
         aa,
         render_groups,
         &stereo_pair.cameras,

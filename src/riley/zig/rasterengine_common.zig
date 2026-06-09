@@ -33,7 +33,6 @@ const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 
-
 pub const OverlapTarget = struct {
     tile: rops.ActiveTile,
     overlap: rops.OverlapBBox,

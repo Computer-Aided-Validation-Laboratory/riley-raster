@@ -184,7 +184,7 @@ fn renderCase(
         "Rendering {s} {s} {s} -> {s}\n",
         .{ mesh_name, distortion_case.name, psf_case.name, out_dir },
     );
-    const images = try riley.rasterAllFrames(
+    const images = try riley.raster(
         allocator,
         &render_groups,
         &[_]CameraInput{camera_input},

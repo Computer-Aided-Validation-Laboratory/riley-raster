@@ -119,7 +119,7 @@ zig run -O ReleaseFast ./src/bench_dicuq.zig
 You will find the rendered output for these benchmarks in ./out/bench_images_CASE and the statistics for the runs in ./out/bench_stats_CASE where CASE is fullraster, geom, sphere2000 or dicuq.
 
 ### Navigating the Codebase
-The main entry point for the `Riley` rendering pipeline is the `rasterAllFrames(...)` functions in /src/riley/zig/riley.zig.
+The main entry point for the `Riley` rendering pipeline is the `raster(...)` functions in /src/riley/zig/riley.zig.
 
 ### C Interface
 `Riley` provides a small C-compatible API for use from other languages. The Python bindings use this interface through Cython, but it can also be called from C or from languages with C FFI support. The extern types and functions for this interface can be found in /src/riley/zig/c-riley.zig.

@@ -229,7 +229,7 @@ pub fn renderCase(
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
 
-    return (try riley.rasterAllFrames(
+    return (try riley.raster(
         outer_alloc,
         &render_groups,
         &[_]cam.CameraInput{camera_input},
@@ -275,7 +275,7 @@ pub fn saveGoldCase(
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
 
-    if (try riley.rasterAllFrames(
+    if (try riley.raster(
         outer_alloc,
         &render_groups,
         &[_]cam.CameraInput{camera_input},

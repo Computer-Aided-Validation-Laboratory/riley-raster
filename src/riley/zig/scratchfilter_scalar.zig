@@ -114,28 +114,28 @@ pub fn resolveScratchDirectCore(
                 );
                 writer.slice[writer.field_stride + image_px_base] =
                     getScratchField(
-                    scratch_layout,
-                    spx_image_scratch,
-                    scratch_flat_idx,
-                    1,
-                );
+                        scratch_layout,
+                        spx_image_scratch,
+                        scratch_flat_idx,
+                        1,
+                    );
                 writer.slice[2 * writer.field_stride + image_px_base] =
                     getScratchField(
-                    scratch_layout,
-                    spx_image_scratch,
-                    scratch_flat_idx,
-                    2,
-                );
+                        scratch_layout,
+                        spx_image_scratch,
+                        scratch_flat_idx,
+                        2,
+                    );
             } else {
                 var ff: usize = 0;
                 while (ff < @as(usize, fields_num)) : (ff += 1) {
                     writer.slice[ff * writer.field_stride + image_px_base] =
                         getScratchField(
-                        scratch_layout,
-                        spx_image_scratch,
-                        scratch_flat_idx,
-                        ff,
-                    );
+                            scratch_layout,
+                            spx_image_scratch,
+                            scratch_flat_idx,
+                            ff,
+                        );
                 }
             }
         }

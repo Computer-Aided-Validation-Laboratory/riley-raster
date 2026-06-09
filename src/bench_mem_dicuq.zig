@@ -63,7 +63,7 @@ fn runCase(
     defer allocator.free(bench_capture);
 
     const start = std.Io.Clock.Timestamp.now(io, .awake);
-    const images = try riley.rasterAllFramesReport(
+    const images = try riley.rasterReport(
         allocator,
         render_groups,
         camera_inputs,

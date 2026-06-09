@@ -15,7 +15,11 @@ from typing import Any
 import numpy as np
 from cython.cimports.libc.stdlib import free, malloc
 from cython.cimports.riley.cyth import riley as cr
-from riley.python.helpers import build_config, load_sim_from_csv, load_texture
+from riley.python.helpers import (
+    build_config,
+    load_sim_csvs,
+    load_texture,
+)
 
 
 @dataclass(slots=True)
@@ -62,8 +66,6 @@ class FuncShaderParams:
         0.0,
         0.0,
     )
-
-
 
 
 @dataclass(slots=True)
@@ -116,9 +118,6 @@ class RasterConfig:
     save_scaling: int = 1
     save_scaling_min: float = 0.0
     save_scaling_max: float = 0.0
-
-
-
 
 
 class MeshType(IntEnum):
@@ -211,8 +210,6 @@ class FuncShaderBuiltin(IntEnum):
     checker = 4
     checker_smooth = 5
     lambertian_normal_z = 6
-
-
 
 
 class NormalType(IntEnum):
@@ -359,64 +356,6 @@ def _make_raster_config(config: Any) -> cr.CRasterConfig:
     config_out.save_scaling_min = float(config.save_scaling_min)
     config_out.save_scaling_max = float(config.save_scaling_max)
     return config_out
-
-
-@cython.cfunc
-def _fill_parallel_config(
-    config_out: cython.pointer[cr.CParallelConfig],
-    config: RasterConfig,
-    num_frames: int,
-) -> list[Any]:
-    keepalive: list[Any] = []
-
-    total_threads = max(1, int(config.total_threads))
-    if total_threads < num_frames:
-        render_group_count = total_threads
-        workers_per_group_val = 1
-    else:
-        G = 1
-        for g in range(1, num_frames + 1):
-            if total_threads % g == 0:
-                G = g
-        render_group_count = G
-        workers_per_group_val = total_threads // G
-
-    workers_array = np.full(
-        (render_group_count,),
-        workers_per_group_val,
-        dtype=np.uint16,
-    )
-    workers_view: cython.ushort[::1] = workers_array
-    keepalive.append(workers_array)
-
-    config_out[0].render_mode = int(config.render_mode)
-    config_out[0].total_threads = total_threads
-    config_out[0].render_group_count = render_group_count
-    config_out[0].workers_per_group_len = render_group_count
-    config_out[0].workers_per_group = cython.cast(
-        cython.pointer[cython.ushort],
-        cython.address(workers_view[0]),
-    )
-    config_out[0].frame_batch_size_per_group = max(
-        1,
-        int(config.frame_batch_size_per_group),
-    )
-    config_out[0].max_geom_jobs_in_flight_per_group = max(
-        1,
-        int(config.max_geom_jobs_in_flight_per_group),
-    )
-    config_out[0].max_geom_workers_per_job = max(
-        1,
-        int(config.max_geom_workers_per_job),
-    )
-    config_out[0].geom_scheduling_mode = int(
-        config.geom_scheduling_mode,
-    )
-    config_out[0].max_raster_workers_per_job = max(
-        1,
-        workers_per_group_val,
-    )
-    return keepalive
 
 
 @cython.cfunc
@@ -828,6 +767,40 @@ def save_stereo_pair(
         _raise_last_error()
 
 
+def save_camera(
+    out_dir: str,
+    file_name: str,
+    camera_idx: int,
+    camera: Camera,
+) -> None:
+    camera_c = _make_camera_input(camera)
+    out_dir_bytes = out_dir.encode("utf-8")
+    file_name_bytes = file_name.encode("utf-8")
+    if cr.rileySaveCamera(
+        out_dir_bytes,
+        file_name_bytes,
+        camera_idx,
+        cython.address(camera_c),
+    ) != 0:
+        _raise_last_error()
+
+
+def load_camera(
+    dir_path: str,
+    file_name: str,
+) -> Camera:
+    dir_bytes = dir_path.encode("utf-8")
+    file_name_bytes = file_name.encode("utf-8")
+    camera_c: cr.CCameraInput
+    if cr.rileyLoadCamera(
+        dir_bytes,
+        file_name_bytes,
+        cython.address(camera_c),
+    ) != 0:
+        _raise_last_error()
+    return _camera_input_from_c(camera_c)
+
+
 def load_stereo_pair(
     dir_path: str,
     stereo_file_name: str,
@@ -870,12 +843,6 @@ def raster(
         malloc(cameras_len * cython.sizeof(cr.CCameraInput)),
     )
     config_c: cr.CRasterConfig = _make_raster_config(config)
-    parallel_config_c: cr.CParallelConfig
-    parallel_keepalive = _fill_parallel_config(
-        cython.address(parallel_config_c),
-        config,
-        cameras_len,
-    )
     image_np: np.ndarray | None = None
     image_ptr: cython.pointer[cr.CImageBufferF64] = cython.cast(
         cython.pointer[cr.CImageBufferF64],
@@ -883,7 +850,6 @@ def raster(
     )
     image_c: cr.CImageBufferF64
     keepalive: list[Any] = []
-    keepalive.extend(parallel_keepalive)
 
     if mesh_array == cython.NULL or camera_array == cython.NULL:
         if mesh_array != cython.NULL:
@@ -932,13 +898,12 @@ def raster(
             image_c.dims = dims_c
             image_ptr = cython.address(image_c)
 
-        if cr.rileyRasterScene(
+        if cr.rileyRaster(
             mesh_array,
             meshes_len,
             camera_array,
             cameras_len,
             cython.address(config_c),
-            cython.address(parallel_config_c),
             out_dir_ptr,
             image_ptr,
         ) != 0:
@@ -978,13 +943,15 @@ __all__ = [
     "TextureSampleMode",
     "PsfType",
     "ImageFormat",
-    "load_sim_from_csv",
+    "load_sim_csvs",
     "load_texture",
+    "load_camera",
     "load_stereo_pair",
     "pos_fill_frame_from_rot",
     "pos_fill_frame_from_rot_over_meshes",
     "raster",
     "roi_cent_from_coords",
     "roi_cent_over_meshes",
+    "save_camera",
     "save_stereo_pair",
 ]

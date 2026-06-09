@@ -127,7 +127,6 @@ pub const CFuncShaderParams = extern struct {
     extra_3: f64,
 };
 
-
 pub const CMeshInput = extern struct {
     mesh_type: u32,
     coords: CArray2DF64,
@@ -171,19 +170,6 @@ pub const CRasterConfig = extern struct {
     save_scaling: u32,
     save_scaling_min: f64,
     save_scaling_max: f64,
-};
-
-pub const CParallelConfig = extern struct {
-    render_mode: u32,
-    total_threads: u16,
-    render_group_count: u16,
-    workers_per_group_len: usize,
-    workers_per_group: [*c]const u16,
-    frame_batch_size_per_group: u16,
-    max_geom_jobs_in_flight_per_group: u16,
-    max_geom_workers_per_job: u16,
-    geom_scheduling_mode: u32,
-    max_raster_workers_per_job: u16,
 };
 
 const MeshInputBuilt = struct {
@@ -456,11 +442,12 @@ fn distortionFromC(in_camera: *const CCameraInput) !cam.DistortionModel {
 }
 
 fn textureSampleFromC(sample: u32) !texops.TextureSample {
+    const mitchell = texops.TextureSample.cubic_mitchell_netravali;
     return switch (sample) {
         @intFromEnum(texops.TextureSample.nearest) => .nearest,
         @intFromEnum(texops.TextureSample.linear) => .linear,
         @intFromEnum(texops.TextureSample.cubic_catmull_rom) => .cubic_catmull_rom,
-        @intFromEnum(texops.TextureSample.cubic_mitchell_netravali) => .cubic_mitchell_netravali,
+        @intFromEnum(mitchell) => .cubic_mitchell_netravali,
         @intFromEnum(texops.TextureSample.lanczos3) => .lanczos3,
         @intFromEnum(texops.TextureSample.cubic_bspline) => .cubic_bspline,
         @intFromEnum(texops.TextureSample.quintic_bspline) => .quintic_bspline,
@@ -490,6 +477,7 @@ fn scaleOverFromC(scale_over: u32) !shaderops.ScaleOver {
 fn funcShaderBuiltinFromC(
     func_shader_builtin: u32,
 ) !shaderops.FuncShaderBuiltin {
+    const lambertian = shaderops.FuncShaderBuiltin.lambertian_normal_z;
     return switch (func_shader_builtin) {
         @intFromEnum(shaderops.FuncShaderBuiltin.constant) => .constant,
         @intFromEnum(shaderops.FuncShaderBuiltin.linear) => .linear,
@@ -497,11 +485,10 @@ fn funcShaderBuiltinFromC(
         @intFromEnum(shaderops.FuncShaderBuiltin.sinusoidal) => .sinusoidal,
         @intFromEnum(shaderops.FuncShaderBuiltin.checker) => .checker,
         @intFromEnum(shaderops.FuncShaderBuiltin.checker_smooth) => .checker_smooth,
-        @intFromEnum(shaderops.FuncShaderBuiltin.lambertian_normal_z) => .lambertian_normal_z,
+        @intFromEnum(lambertian) => .lambertian_normal_z,
         else => error.InvalidFuncShaderBuiltin,
     };
 }
-
 
 fn normalTypeFromC(normal_type: u32) !shaderops.NormalType {
     return switch (normal_type) {
@@ -543,7 +530,6 @@ fn funcShaderParamsFromC(
         },
     };
 }
-
 
 fn bitsFromC(bits: c_int) !?u8 {
     if (bits < 0) {
@@ -1039,25 +1025,6 @@ fn buildRasterConfig(
     return config;
 }
 
-fn applyParallelConfig(
-    config: *riley.RasterConfig,
-    in_parallel_config: *const CParallelConfig,
-) !void {
-    config.render_mode = try renderModeFromC(in_parallel_config.render_mode);
-    config.total_threads = @max(@as(u16, 1), in_parallel_config.total_threads);
-    config.frame_batch_size_per_group =
-        @max(@as(u16, 1), in_parallel_config.frame_batch_size_per_group);
-    config.max_geom_jobs_in_flight_per_group =
-        @max(@as(u16, 1), in_parallel_config.max_geom_jobs_in_flight_per_group);
-    config.max_geom_workers_per_job =
-        @max(@as(u16, 1), in_parallel_config.max_geom_workers_per_job);
-    config.geom_scheduling_mode = try geometrySchedulingModeFromC(
-        in_parallel_config.geom_scheduling_mode,
-    );
-    config.max_raster_workers_per_job =
-        @max(@as(u16, 1), in_parallel_config.max_raster_workers_per_job);
-}
-
 const RenderGroupRuntime = struct {
     managed_ios: []std.Io.Threaded,
     render_groups: []riley.RenderGroupSpec,
@@ -1076,44 +1043,40 @@ const RenderGroupRuntime = struct {
 
 fn initRenderGroups(
     allocator: std.mem.Allocator,
-    in_parallel_config: *const CParallelConfig,
+    total_threads_in: u16,
+    num_frames: usize,
 ) !RenderGroupRuntime {
-    const render_group_count = @max(@as(u16, 1), in_parallel_config.render_group_count);
-    const workers_per_group = try cConstSlice(
-        u16,
-        in_parallel_config.workers_per_group,
-        in_parallel_config.workers_per_group_len,
-    );
-    if (workers_per_group.len != 0 and workers_per_group.len != render_group_count) {
-        return error.InvalidWorkersPerGroupLen;
+    const total_threads = @max(@as(u16, 1), total_threads_in);
+    const frames_available = @max(@as(usize, 1), num_frames);
+    var render_group_count: u16 = 1;
+    if (total_threads < frames_available) {
+        render_group_count = total_threads;
+    } else {
+        for (1..frames_available + 1) |group_count| {
+            if (@as(usize, total_threads) % group_count == 0) {
+                render_group_count = @intCast(group_count);
+            }
+        }
     }
+    const workers_per_group = total_threads / render_group_count;
 
     const managed_ios = try allocator.alloc(std.Io.Threaded, render_group_count);
     errdefer allocator.free(managed_ios);
-    const render_groups = try allocator.alloc(riley.RenderGroupSpec, render_group_count);
+    const render_groups = try allocator.alloc(
+        riley.RenderGroupSpec,
+        render_group_count,
+    );
     errdefer allocator.free(render_groups);
 
-    var total_threads: u32 = 0;
     for (0..render_group_count) |gg| {
-        const workers = if (workers_per_group.len == 0)
-            1
-        else
-            @max(@as(u16, 1), workers_per_group[gg]);
-        total_threads += workers;
         managed_ios[gg] = initThreadedIo(
             allocator,
-            workers,
+            workers_per_group,
         );
         render_groups[gg] = .{
             .io = managed_ios[gg].io(),
-            .workers = workers,
+            .workers = workers_per_group,
         };
-    }
-
-    if (in_parallel_config.total_threads != 0 and
-        total_threads != in_parallel_config.total_threads)
-    {
-        return error.InvalidTotalThreads;
     }
 
     return .{
@@ -1257,7 +1220,6 @@ fn rasterSceneInternal(
     in_cameras: [*c]const CCameraInput,
     cameras_len: usize,
     in_config: *const CRasterConfig,
-    in_parallel_config: ?*const CParallelConfig,
     out_dir_path: ?[*:0]const u8,
     out_image: ?*CImageBufferF64,
 ) !void {
@@ -1278,10 +1240,7 @@ fn rasterSceneInternal(
     );
     defer allocator.free(camera_inputs);
 
-    var raster_config = try buildRasterConfig(allocator, in_config);
-    if (in_parallel_config) |parallel_config| {
-        try applyParallelConfig(&raster_config, parallel_config);
-    }
+    const raster_config = try buildRasterConfig(allocator, in_config);
 
     const spx_map = try subpxCenterMapFromC(in_config.subpixel_center_map);
     for (camera_inputs) |*cam_in| {
@@ -1296,27 +1255,11 @@ fn rasterSceneInternal(
         image_arr.deinit(allocator);
     };
 
-    var render_group_runtime = if (in_parallel_config) |parallel_config|
-        try initRenderGroups(std.heap.smp_allocator, parallel_config)
-    else blk: {
-        const threaded_io = initThreadedIo(
-            std.heap.smp_allocator,
-            raster_config.total_threads,
-        );
-        const managed_ios = try std.heap.smp_allocator.alloc(std.Io.Threaded, 1);
-        errdefer std.heap.smp_allocator.free(managed_ios);
-        managed_ios[0] = threaded_io;
-        const render_groups = try std.heap.smp_allocator.alloc(riley.RenderGroupSpec, 1);
-        errdefer std.heap.smp_allocator.free(render_groups);
-        render_groups[0] = .{
-            .io = managed_ios[0].io(),
-            .workers = @max(@as(u16, 1), raster_config.total_threads),
-        };
-        break :blk RenderGroupRuntime{
-            .managed_ios = managed_ios,
-            .render_groups = render_groups,
-        };
-    };
+    var render_group_runtime = try initRenderGroups(
+        std.heap.smp_allocator,
+        raster_config.total_threads,
+        cameras_len,
+    );
     defer render_group_runtime.deinit(std.heap.smp_allocator);
 
     const out_dir_path_slice = if (out_dir_path) |path|
@@ -1324,7 +1267,7 @@ fn rasterSceneInternal(
     else
         null;
 
-    try riley.rasterAllFramesInto(
+    try riley.rasterInto(
         std.heap.smp_allocator,
         render_group_runtime.render_groups,
         camera_inputs,
@@ -1522,36 +1465,88 @@ pub export fn rileyCalcOutputDimsScene(
     return 0;
 }
 
-pub export fn rileyRasterScene(
-    in_meshes: [*c]const CMeshInput,
-    meshes_len: usize,
-    in_cameras: [*c]const CCameraInput,
-    cameras_len: usize,
-    in_config: *const CRasterConfig,
-    in_parallel_config: ?*const CParallelConfig,
-    out_dir_path: ?[*:0]const u8,
-    out_image: ?*CImageBufferF64,
+pub export fn rileySaveCamera(
+    out_dir_path: [*:0]const u8,
+    file_name: [*:0]const u8,
+    camera_idx: usize,
+    camera_in: *const CCameraInput,
+) c_int {
+    clearLastError();
+
+    const camera = buildCameraInput(camera_in) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+
+    var threaded_io = initThreadedIo(std.heap.smp_allocator, 1);
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDir(io, std.mem.span(out_dir_path), .default_dir) catch |err| {
+        if (err != error.PathAlreadyExists) {
+            setLastError(err);
+            return 1;
+        }
+    };
+
+    var out_dir = cwd.openDir(
+        io,
+        std.mem.span(out_dir_path),
+        .{},
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    defer out_dir.close(io);
+
+    cameraio.saveCamera(
+        io,
+        out_dir,
+        std.mem.span(file_name),
+        camera_idx,
+        camera,
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    return 0;
+}
+
+pub export fn rileyLoadCamera(
+    dir_path: [*:0]const u8,
+    file_name: [*:0]const u8,
+    camera_out: *CCameraInput,
 ) c_int {
     clearLastError();
 
     var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
     defer arena.deinit();
 
-    rasterSceneInternal(
-        arena.allocator(),
-        in_meshes,
-        meshes_len,
-        in_cameras,
-        cameras_len,
-        in_config,
-        in_parallel_config,
-        out_dir_path,
-        out_image,
+    var threaded_io = initThreadedIo(std.heap.smp_allocator, 1);
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const cwd = std.Io.Dir.cwd();
+
+    var dir = cwd.openDir(
+        io,
+        std.mem.span(dir_path),
+        .{},
     ) catch |err| {
         setLastError(err);
         return 1;
     };
+    defer dir.close(io);
 
+    const camera = cameraio.loadCamera(
+        arena.allocator(),
+        io,
+        dir,
+        std.mem.span(file_name),
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    camera_out.* = cameraInputToC(camera);
     return 0;
 }
 
@@ -1651,3 +1646,33 @@ pub export fn rileyLoadStereoPair(
     return 0;
 }
 
+pub export fn rileyRaster(
+    in_meshes: [*c]const CMeshInput,
+    meshes_len: usize,
+    in_cameras: [*c]const CCameraInput,
+    cameras_len: usize,
+    in_config: *const CRasterConfig,
+    out_dir_path: ?[*:0]const u8,
+    out_image: ?*CImageBufferF64,
+) c_int {
+    clearLastError();
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
+    defer arena.deinit();
+
+    rasterSceneInternal(
+        arena.allocator(),
+        in_meshes,
+        meshes_len,
+        in_cameras,
+        cameras_len,
+        in_config,
+        out_dir_path,
+        out_image,
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+
+    return 0;
+}
