@@ -285,13 +285,16 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
     )
 
 
-def collect_case_stats() -> list[CaseStats]:
+def collect_case_stats(include_disk_overlap: bool = True) -> list[CaseStats]:
+    required_paths = ["experiment_5_offline_sweet_spot"]
+    if include_disk_overlap:
+        required_paths.append(
+            "experiment_7_offline_sweet_spot_disk_overlap"
+        )
+
     latest_run = latest_run_dir_with_paths(
         BENCH_NAME,
-        [
-            "experiment_5_offline_sweet_spot",
-            "experiment_7_offline_sweet_spot_disk_overlap",
-        ],
+        required_paths,
     )
 
     stats: list[CaseStats] = []
@@ -305,16 +308,17 @@ def collect_case_stats() -> list[CaseStats]:
         if case_stats is not None:
             stats.append(case_stats)
 
-    exp7_dir = latest_run / (
-        "experiment_7_offline_sweet_spot_disk_overlap"
-    )
-    print(f"Using benchmark run: {exp7_dir}")
-    for case_dir in sorted(
-        path for path in exp7_dir.iterdir() if path.is_dir()
-    ):
-        case_stats = parse_case_stats(case_dir)
-        if case_stats is not None:
-            stats.append(case_stats)
+    if include_disk_overlap:
+        exp7_dir = latest_run / (
+            "experiment_7_offline_sweet_spot_disk_overlap"
+        )
+        print(f"Using benchmark run: {exp7_dir}")
+        for case_dir in sorted(
+            path for path in exp7_dir.iterdir() if path.is_dir()
+        ):
+            case_stats = parse_case_stats(case_dir)
+            if case_stats is not None:
+                stats.append(case_stats)
 
     if not stats:
         raise FileNotFoundError(
@@ -1322,7 +1326,7 @@ def main(include_disk_overlap: bool = True) -> int:
     if not include_disk_overlap:
         SAVE_MODE_ORDER = [m for m in SAVE_MODE_ORDER if m != "disk_overlap"]
 
-    stats = collect_case_stats()
+    stats = collect_case_stats(include_disk_overlap=include_disk_overlap)
     print_best_config_summary(stats)
 
     plot_raster_scaling(stats, "fig_bench4_raster_scaling")

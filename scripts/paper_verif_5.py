@@ -21,8 +21,8 @@ from paper_const import (
 
 
 VERIF_DIR = pathlib.Path("verif/verif_5")
-OUT_TABS_TEX_PATH = VERIF_DIR / "verif_5_tabs.tex"
-OUT_FIGS_TEX_PATH = VERIF_DIR / "verif_5_figs.tex"
+OUT_TABS_TEX_PATH = VERIF_DIR / "tabs_verif_5.tex"
+OUT_FIGS_TEX_PATH = VERIF_DIR / "figs_verif_5.tex"
 OUT_DIR = repo_root() / VERIF_DIR
 CASE_RE = re.compile(
     r"^verif_5_(?P<mesh_name>[^_]+)_(?P<geom_name>[^_]+)_(?P<camera_case>.+)$",

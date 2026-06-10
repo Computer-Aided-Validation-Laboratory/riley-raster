@@ -32,7 +32,7 @@ GEOM_CASES = [
     ("quad8", "quad8", "quad8"),
     ("quad9", "quad9", "quad9"),
 ]
-OUT_TABS_NAME = "bench2_tabs.tex"
+OUT_TABS_NAME = "tabs_bench2.tex"
 
 TABLE_CAPTION = (
     "Geometry preprocessing performance results for all element types in "

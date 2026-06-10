@@ -49,7 +49,7 @@ SPEEDUP_ROWS = [
     ("adaptive hull + SIMD", "simd", "on_no_fallback"),
 ]
 
-OUT_TABS_NAME = "bench3_tabs.tex"
+OUT_TABS_NAME = "tabs_bench3.tex"
 
 
 

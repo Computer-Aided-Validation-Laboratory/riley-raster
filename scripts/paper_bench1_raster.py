@@ -101,7 +101,7 @@ ELEMENT_CASES = [
     ),
 ]
 
-OUT_TABS_NAME = "bench1_tabs.tex"
+OUT_TABS_NAME = "tabs_bench1.tex"
 
 
 

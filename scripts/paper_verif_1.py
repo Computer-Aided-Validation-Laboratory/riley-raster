@@ -33,8 +33,8 @@ from paper_const import (
 
 
 VERIF_DIR = pathlib.Path("verif/verif_1")
-OUT_TABS_TEX_PATH = VERIF_DIR / "verif_1_tabs.tex"
-OUT_FIGS_TEX_PATH = VERIF_DIR / "verif_1_figs.tex"
+OUT_TABS_TEX_PATH = VERIF_DIR / "tabs_verif_1.tex"
+OUT_FIGS_TEX_PATH = VERIF_DIR / "figs_verif_1.tex"
 SCI_THRESHOLD = 1.0e-12
 VERIF_A_MAP_WIDTH = "0.19\\textwidth"
 

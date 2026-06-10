@@ -16,8 +16,8 @@ from paper_const import SHEAR_SHEAR, bulge_in_frame, repo_root
 
 VERIF_DIR = pathlib.Path("verif/verif_6")
 SUMMARY_PATH = VERIF_DIR / "verif_6_summary.csv"
-OUT_TABS_TEX_PATH = VERIF_DIR / "verif_6_tabs.tex"
-OUT_FIGS_TEX_PATH = VERIF_DIR / "verif_6_figs.tex"
+OUT_TABS_TEX_PATH = VERIF_DIR / "tabs_verif_6.tex"
+OUT_FIGS_TEX_PATH = VERIF_DIR / "figs_verif_6.tex"
 OUT_DIR = repo_root() / VERIF_DIR
 CAMERA_CASE_ORDER = [
     "none",

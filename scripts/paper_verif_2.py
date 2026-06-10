@@ -24,8 +24,8 @@ from paper_const import (
 
 VERIF_DIR = pathlib.Path("verif/verif_2")
 SUMMARY_PATH = VERIF_DIR / "verif_2_summary.csv"
-OUT_TABS_TEX_PATH = VERIF_DIR / "verif_2_tabs.tex"
-OUT_FIGS_TEX_PATH = VERIF_DIR / "verif_2_figs.tex"
+OUT_TABS_TEX_PATH = VERIF_DIR / "tabs_verif_2.tex"
+OUT_FIGS_TEX_PATH = VERIF_DIR / "figs_verif_2.tex"
 SCI_THRESHOLD = 1.0e-12
 
 SHEAR_TABLE_CAPTION = (

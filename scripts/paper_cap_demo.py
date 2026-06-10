@@ -19,7 +19,7 @@ from paper_const import PAPER_DIR, PLOT_RESOLUTION_DPI, repo_root
 
 
 VERIF_DIR = Path("verif")
-OUT_FIGS_TEX_PATH = VERIF_DIR / "cap_demo_figs.tex"
+OUT_FIGS_TEX_PATH = VERIF_DIR / "figs_cap_demo.tex"
 SUBFIGURE_WIDTH = "0.245\\textwidth"
 SUBFIGURE_GAP = "0.01\\textwidth"
 PNG_DPI = int(PLOT_RESOLUTION_DPI)
