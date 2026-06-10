@@ -1,5 +1,4 @@
-from riley.python.helpers import (load_sim_csvs, 
-                                  load_texture,
-                                  build_config,)
+from riley.python import sceneops
+from riley.python.helpers import build_config, load_sim_csvs, load_texture
 
-__all__ = ["load_sim_csvs", "load_texture", "build_config"]
+__all__ = ["build_config", "load_sim_csvs", "load_texture", "sceneops"]

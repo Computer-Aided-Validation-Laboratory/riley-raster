@@ -33,7 +33,7 @@ const rabbit_mesh_types = [_]gk.MeshType{
     .quad9,
 };
 
-const out_dir_root = "./out/demo-rabbits-fields";
+const out_dir_root = "./out/demo-rabbits-multifield";
 const pixel_num = [_]u32{ 1600, 800 };
 const fov_scale: f64 = 1.01;
 const overlap_frac_xy = [2]f64{ 0.85, 0.8 };
