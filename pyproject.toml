@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "riley-raster"
-version = "2026.5.0"
+version = "2026.6.0"
 description = "A python->Zig CPU rasteriser."
 authors = [
   { name = "scepticalrabbit (Lloyd Fletcher)", email = "thescepticalrabbit@gmail.com" },
@@ -19,6 +19,14 @@ dependencies = [
 
 [project.urls]
 "Repository" = "https://github.com/Computer-Aided-Validation-Laboratory/riley-raster"
+
+[dependency-groups]
+dev = [
+  "build",
+  "twine",
+  "ziglang",
+  "cython",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

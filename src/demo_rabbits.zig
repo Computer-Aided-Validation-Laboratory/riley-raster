@@ -19,11 +19,14 @@ const rastcfg = @import("riley/zig/rasterconfig.zig");
 const riley = @import("riley/zig/riley.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const sceneops = @import("riley/zig/sceneops.zig");
+const shaderops = @import("riley/zig/shaderops_common.zig");
 const uvio = @import("riley/zig/uvio.zig");
 
 const CameraInput = cammod.CameraInput;
 const CameraPrepared = cammod.CameraPrepared;
 const MeshInput = mo.MeshInput;
+const FuncShaderBuiltin = shaderops.FuncShaderBuiltin;
+const FuncShaderParams = shaderops.FuncShaderParams;
 
 const rabbit_mesh_types = [_]gk.MeshType{
     .tri3,
@@ -37,6 +40,22 @@ const out_dir_root = "./out/demo-rabbits";
 const pixel_num = [_]u32{ 1600, 800 };
 const fov_scale: f64 = 1.01;
 const overlap_frac_xy = [2]f64{ 0.85, 0.8 };
+const checker_squares_per_axis: f64 = 36.0;
+const background_value: f64 = 0.5 * @as(f64, std.math.maxInt(u8));
+
+const ShaderMode = enum {
+    tex,
+    nodal,
+    func,
+};
+
+fn shaderModeForMeshIndex(mesh_idx: usize) ShaderMode {
+    return switch (@mod(mesh_idx, 3)) {
+        0 => .tex,
+        1 => .nodal,
+        else => .func,
+    };
+}
 
 fn buildRabbitDir(
     allocator: std.mem.Allocator,
@@ -88,23 +107,36 @@ fn loadRabbitUvMap(
     return try uvio.loadUVMap(allocator, io, uv_path);
 }
 
+fn buildUvGreyField(
+    allocator: std.mem.Allocator,
+    uvs: uvio.UVMap,
+) !meshio.Field {
+    const node_num = uvs.array.dims[0];
+    var field = try meshio.Field.initAlloc(allocator, 1, node_num, 1);
+
+    for (0..node_num) |nn| {
+        const uu = uvs.array.get(&[_]usize{ nn, 0 });
+        const vv = uvs.array.get(&[_]usize{ nn, 1 });
+        field.array.set(&[_]usize{ 0, nn, 0 }, 0.5 * (uu + vv));
+    }
+
+    return field;
+}
+
 fn makeGreyMeshInput(
     allocator: std.mem.Allocator,
     io: std.Io,
     rabbit_name: []const u8,
     mesh_type: gk.MeshType,
+    shader_mode: ShaderMode,
     texture: iio.Texture(1),
 ) !MeshInput {
     const data_dir = try buildRabbitDir(allocator, rabbit_name, mesh_type);
     const sim_data = try loadStaticMesh(allocator, io, data_dir);
     const uvs = try loadRabbitUvMap(allocator, io, data_dir);
 
-    return .{
-        .mesh_type = mesh_type,
-        .coords = try sceneops.duplicateCoords(allocator, sim_data.coords),
-        .connect = sim_data.connect,
-        .disp = null,
-        .shader = .{ .tex = .{
+    const shader: shaderops.ShaderInput = switch (shader_mode) {
+        .tex => .{ .tex = .{
             .uvs = uvs.array,
             .texture = texture,
             .sample_config = .{
@@ -115,6 +147,34 @@ fn makeGreyMeshInput(
             .scaling = .none,
             .normal_type = .none,
         } },
+        .nodal => .{ .nodal = .{
+            .field = try buildUvGreyField(allocator, uvs),
+            .bits = 8,
+            .scaling = .auto,
+            .scale_over = .over_frames,
+            .normal_type = .none,
+        } },
+        .func => .{ .func = .{
+            .uvs = uvs.array,
+            .builtin = FuncShaderBuiltin.checker,
+            .params = FuncShaderParams{
+                .coord_scale = .{
+                    checker_squares_per_axis,
+                    checker_squares_per_axis,
+                },
+            },
+            .bits = 8,
+            .scaling = .auto,
+            .normal_type = .none,
+        } },
+    };
+
+    return .{
+        .mesh_type = mesh_type,
+        .coords = try sceneops.duplicateCoords(allocator, sim_data.coords),
+        .connect = sim_data.connect,
+        .disp = null,
+        .shader = shader,
     };
 }
 
@@ -128,11 +188,14 @@ fn buildRabbitPairScene(
 
     for (rabbit_mesh_types) |mesh_type| {
         const pair_start = mesh_list.items.len;
+        const front_mode = shaderModeForMeshIndex(pair_start);
+        const back_mode = shaderModeForMeshIndex(pair_start + 1);
         try mesh_list.append(allocator, try makeGreyMeshInput(
             allocator,
             io,
             "riley",
             mesh_type,
+            front_mode,
             texture,
         ));
         try mesh_list.append(allocator, try makeGreyMeshInput(
@@ -140,6 +203,7 @@ fn buildRabbitPairScene(
             io,
             "feebs",
             mesh_type,
+            back_mode,
             texture,
         ));
 
@@ -227,9 +291,9 @@ pub fn main(init: std.process.Init) !void {
     const config = rastcfg.RasterConfig{
         .save_strategy = .disk,
         .image_mode = .grey,
-        .background_value = 0.0,
+        .background_value = background_value,
         .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .auto },
+            .{ .format = .bmp, .bits = 8, .scaling = .none },
         },
     };
     const render_groups = [_]riley.RenderGroupSpec{
