@@ -14,6 +14,14 @@ from time import perf_counter
 import numpy as np
 import riley
 
+CHECKER_SQUARES_PER_AXIS = 36.0
+BACKGROUND_VALUE = 127.5
+
+
+def build_uv_grey_field(uvs: np.ndarray) -> np.ndarray:
+    uv_scalar = 0.5 * (uvs[:, 0] + uvs[:, 1])
+    return np.ascontiguousarray(uv_scalar.reshape(1, -1, 1), dtype=np.float64)
+
 
 def main() -> None:
     pixels_num = (1600, 800)
@@ -68,23 +76,56 @@ def main() -> None:
 
     def make_grey_mesh_input(
         mesh_type: riley.MeshType,
+        mesh_idx: int,
         coords: np.ndarray,
         connect: np.ndarray,
         uvs: np.ndarray,
         texture: np.ndarray,
     ) -> riley.Mesh:
+        shader_idx = mesh_idx % 3
+        mesh_kwargs = {
+            "mesh_type": mesh_type,
+            "coords": np.ascontiguousarray(
+                np.array(coords, copy=True),
+                dtype=np.float64,
+            ),
+            "connect": connect,
+            "bits": 8,
+            "normal_type": riley.NormalType.none,
+        }
+
+        if shader_idx == 0:
+            return riley.Mesh(
+                shader_type=riley.ShaderType.tex,
+                uvs=uvs,
+                texture=texture,
+                sample=riley.TextureSample.cubic_catmull_rom,
+                sample_mode=riley.TextureSampleMode.lut_lerp,
+                scaling_type=riley.ScaleStrategy.none,
+                **mesh_kwargs,
+            )
+
+        if shader_idx == 1:
+            return riley.Mesh(
+                shader_type=riley.ShaderType.nodal,
+                nodal_field=build_uv_grey_field(uvs),
+                scaling_type=riley.ScaleStrategy.auto,
+                scale_over=riley.ScaleOver.over_frames,
+                **mesh_kwargs,
+            )
+
         return riley.Mesh(
-            mesh_type=mesh_type,
-            coords=np.ascontiguousarray(np.array(coords, copy=True), dtype=np.float64),
-            connect=connect,
-            shader_type=riley.ShaderType.tex,
+            shader_type=riley.ShaderType.func,
             uvs=uvs,
-            texture=texture,
-            sample=riley.TextureSample.cubic_catmull_rom,
-            sample_mode=riley.TextureSampleMode.lut_lerp,
-            bits=8,
-            scaling_type=riley.ScaleStrategy.none,
-            normal_type=riley.NormalType.none,
+            func_shader_builtin=riley.FuncShaderBuiltin.checker,
+            func_shader_params=riley.FuncShaderParams(
+                coord_scale=(
+                    CHECKER_SQUARES_PER_AXIS,
+                    CHECKER_SQUARES_PER_AXIS,
+                ),
+            ),
+            scaling_type=riley.ScaleStrategy.auto,
+            **mesh_kwargs,
         )
 
     texture = riley.load_texture(texture_path)
@@ -104,6 +145,7 @@ def main() -> None:
         mesh_inputs.append(
             make_grey_mesh_input(
                 mesh_type,
+                pair_start,
                 riley_coords,
                 riley_connect,
                 riley_uvs,
@@ -113,6 +155,7 @@ def main() -> None:
         mesh_inputs.append(
             make_grey_mesh_input(
                 mesh_type,
+                pair_start + 1,
                 feebs_coords,
                 feebs_connect,
                 feebs_uvs,
@@ -170,6 +213,8 @@ def main() -> None:
         save_strategy=riley.SaveStrategy.disk,
     )
     config.image_mode = riley.ImageMode.grey
+    config.background_value = BACKGROUND_VALUE
+    config.save_scaling = riley.ScaleStrategy.none
 
     start_time = perf_counter()
     riley.raster(
