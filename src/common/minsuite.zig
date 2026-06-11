@@ -154,7 +154,7 @@ pub fn runSphere200MultiCullQuiet(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config_run.total_threads) },
     };
-    var image_arr = try riley.rasterAllFrames(
+    var image_arr = try riley.raster(
         outer_alloc,
         &render_groups,
         &[_]CameraInput{camera_input},
@@ -191,6 +191,8 @@ pub fn runSphere200MultiCullQuiet(
         .e2e_ms = e2e_ms,
         .geom_ms = 0.0,
         .raster_ms = 0.0,
+        .cam_ms = 0.0,
+        .resolve_ms = 0.0,
         .fps = fps,
         .total_elems = 0,
         .vis_elems = 0,

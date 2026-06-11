@@ -19,8 +19,8 @@ from bench_common import write_timing_csv
 
 
 # Laptop target: 8 cores / 8 active work-capable threads.
-TOTAL_ACTIVE_THREADS = [1, 2, 4, 8]
-RENDER_GROUP_COUNT_CHOICES = [1, 2, 4, 8]
+TOTAL_ACTIVE_THREADS = [1, 2, 4, 8, 16, 32, 64]
+RENDER_GROUP_COUNT_CHOICES = [1, 2, 4, 8, 16, 32, 64]
 RENDER_MODES = ["offline", "in_order"]
 GEOM_SCHEDULING_MODES = ["spread", "pack"]
 SAVE_STRATEGIES = [
@@ -29,7 +29,7 @@ SAVE_STRATEGIES = [
 ]
 
 SAMPLE = "cubic_catmull_rom"
-SAMPLE_MODE = "lut_lerp"
+SAMPLE_MODE = "direct" #"lut_lerp"
 
 # Experiment 1: idealized offline design with one render group and spread
 # geometry, intended to approximate the scheduler behavior we want.
@@ -46,10 +46,10 @@ RUN_EXPERIMENT_4 = False
 # Experiment 5: offline sweet-spot sweep. Geometry stays single-threaded per
 # job while we sweep render-group partitioning and geometry lookahead over the
 # cases that should plausibly scale well.
-RUN_EXPERIMENT_5 = False
+RUN_EXPERIMENT_5 = True
 # Experiment 6: max-thread partition check. Compare only one large render group
 # against one-thread-per-group at the maximum thread count.
-RUN_EXPERIMENT_6 = True
+RUN_EXPERIMENT_6 = False
 # Experiment 7: same sweep as experiment 5, but only `.disk` with overlapping
 # frame saves enabled.
 RUN_EXPERIMENT_7 = False

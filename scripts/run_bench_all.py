@@ -7,11 +7,12 @@ import sys
 
 
 RUN_FULLRASTER = True
+RUN_CAM = True
 RUN_GEOM = True
 RUN_SPHERE2000 = True
-RUN_SPHERE2000ZOOM = False
+RUN_SPHERE2000ZOOM = True
 RUN_DICUQ = True
-RUNS = 10
+RUNS = 25
 
 
 def repo_root() -> pathlib.Path:
@@ -43,6 +44,8 @@ def main() -> int:
 
     if RUN_FULLRASTER:
         script_names.append("bench_fullraster.py")
+    if RUN_CAM:
+        script_names.append("bench_cam.py")
     if RUN_GEOM:
         script_names.append("bench_geom.py")
     if RUN_SPHERE2000:

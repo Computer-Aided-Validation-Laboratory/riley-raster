@@ -17,7 +17,7 @@ const so = @import("../riley/zig/shaderops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
 const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
-const CameraOps = @import("../riley/zig/camera.zig").CameraOps;
+const cameraops = @import("../riley/zig/cameraops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const report = @import("../riley/zig/report.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
@@ -44,6 +44,8 @@ pub const BenchResult = struct {
     e2e_ms: f64,
     geom_ms: f64,
     raster_ms: f64,
+    cam_ms: f64,
+    resolve_ms: f64,
     fps: f64,
     total_elems: usize,
     vis_elems: usize,
@@ -63,7 +65,7 @@ pub const BenchResult = struct {
 
 pub fn calcOutputChannels(shader_type: ShaderType) u8 {
     return switch (shader_type) {
-        .nodal_rgb, .tex8_rgb, .texfunc_rgb => 3,
+        .nodal_rgb, .tex8_rgb, .func_rgb => 3,
         else => 1,
     };
 }
@@ -82,6 +84,9 @@ pub const BenchStats = struct {
     e2e: MedianMAD,
     geom: MedianMAD,
     raster: MedianMAD,
+    cam_invert: MedianMAD,
+    elem_loop: MedianMAD,
+    scratch_resolve: MedianMAD,
     save: MedianMAD,
     frame: MedianMAD,
     geom_tpx: MedianMAD,
@@ -237,12 +242,15 @@ pub fn calcActualTileSize(
     config: rastcfg.RasterConfig,
     pixel_num: [2]u32,
     sub_sample: u8,
+    halo_px: u16,
 ) u16 {
     return scalingpolicy.tileSize(
+        config.tile_size_override,
         config.tile_size_min,
         config.tile_size_max,
         pixel_num,
         sub_sample,
+        halo_px,
     );
 }
 
@@ -301,6 +309,7 @@ pub fn writeBenchmarkConfig(
     image_out_dir_base: []const u8,
     benchmark_name: []const u8,
     argv: anytype,
+    subpixel_center_map: @import("../riley/zig/camera.zig").SubPixelCenterMap,
     config: rastcfg.RasterConfig,
     render_group_workers: []const u16,
     pixel_num: [2]u32,
@@ -383,18 +392,6 @@ pub fn writeBenchmarkConfig(
         .{active_threads_geom_effective},
     );
     try writer.print(
-        "max_geom_threads_per_frame={d}\n",
-        .{config.max_geom_workers_per_frame},
-    );
-    try writer.print(
-        "max_raster_threads_per_frame={d}\n",
-        .{config.max_raster_workers_per_frame},
-    );
-    try writer.print(
-        "max_frames_in_flight={d}\n",
-        .{config.max_frames_in_flight},
-    );
-    try writer.print(
         "frame_batch_size_per_group={d}\n",
         .{config.frame_batch_size_per_group},
     );
@@ -422,7 +419,7 @@ pub fn writeBenchmarkConfig(
     try writer.print("hull_mode={s}\n", .{@tagName(config.hull_mode)});
     try writer.print(
         "subpixel_center_map={s}\n",
-        .{@tagName(config.subpixel_center_map)},
+        .{@tagName(subpixel_center_map)},
     );
     try writer.print("save_strategy={s}\n", .{@tagName(config.save_strategy)});
     try writer.print("pixels_x={d}\n", .{pixel_num[0]});
@@ -438,9 +435,6 @@ pub fn writeBenchmarkConfig(
     });
     try writer.print("build_simd_texture_interp={s}\n", .{
         @tagName(buildconfig.config.simd_texture_interp),
-    });
-    try writer.print("build_texture_dispatch_policy={s}\n", .{
-        @tagName(buildconfig.config.texture_dispatch_policy),
     });
     try writer.print("build_simd_vector_width={d}\n", .{
         buildconfig.config.simd_vector_width,
@@ -479,13 +473,13 @@ pub const ShaderType = enum {
     nodal_rgb,
     tex8_grey,
     tex8_rgb,
-    texfunc_grey,
-    texfunc_rgb,
+    func,
+    func_rgb,
 };
 const TextureSampleConfig = @import("../riley/zig/textureops.zig").TextureSampleConfig;
 pub const TexFuncCoordMode = enum { uv, param };
 pub const TexFuncCase = struct {
-    builtin: so.TexFuncBuiltin,
+    builtin: so.FuncShaderBuiltin,
     coord_mode: TexFuncCoordMode,
 };
 
@@ -616,7 +610,7 @@ pub fn calcCaseName(
                 @tagName(sample_config.?.mode),
             },
         )
-    else if (shader_type == .texfunc_grey or shader_type == .texfunc_rgb)
+    else if (shader_type == .func or shader_type == .func_rgb)
         try std.fmt.allocPrint(
             allocator,
             "{s}_{s}_{s}_{s}",
@@ -747,7 +741,7 @@ pub fn loadBenchmarkMeshInput(
                 .sample_config = sample_config.?,
             } };
         },
-        .texfunc_grey => {
+        .func => {
             const tex_case = tex_func_case.?;
             const tex_func_uvs = if (tex_case.coord_mode == .uv)
                 try loadNDArrayFromCSV(
@@ -759,7 +753,7 @@ pub fn loadBenchmarkMeshInput(
                 )
             else
                 null;
-            shader = .{ .tex_func = .{
+            shader = .{ .func = .{
                 .uvs = tex_func_uvs,
                 .builtin = tex_case.builtin,
                 .params = calcTexFuncParams(tex_case),
@@ -768,7 +762,7 @@ pub fn loadBenchmarkMeshInput(
                 .normal_type = .none,
             } };
         },
-        .texfunc_rgb => {
+        .func_rgb => {
             const tex_case = tex_func_case.?;
             const tex_func_uvs = if (tex_case.coord_mode == .uv)
                 try loadNDArrayFromCSV(
@@ -780,7 +774,7 @@ pub fn loadBenchmarkMeshInput(
                 )
             else
                 null;
-            shader = .{ .tex_func_rgb = .{
+            shader = .{ .func_rgb = .{
                 .uvs = tex_func_uvs,
                 .builtin = tex_case.builtin,
                 .params = calcTexFuncParams(tex_case),
@@ -961,8 +955,8 @@ fn runBenchmarkInternal(
     );
     _ = calcOutputChannels(shader_type);
 
-    const roi_pos = CameraOps.roiCentFromCoords(&mesh_input.coords);
-    const cam_pos = CameraOps.posFillFrameFromRot(
+    const roi_pos = cameraops.roiCentFromCoords(&mesh_input.coords);
+    const cam_pos = cameraops.posFillFrameFromRot(
         &mesh_input.coords,
         render_defaults.pixels_num,
         render_defaults.pixels_size,
@@ -1035,7 +1029,7 @@ fn runBenchmarkInternal(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config_run.total_threads) },
     };
-    var image_arr = try riley.rasterAllFramesReport(
+    var image_arr = try riley.rasterReport(
         outer_alloc,
         &render_groups,
         &[_]CameraInput{camera_input},
@@ -1107,6 +1101,14 @@ fn runBenchmarkInternal(
         .e2e_ms = e2e_ms,
         .geom_ms = geom_ms,
         .raster_ms = raster_ms,
+        .cam_ms = if (report_mode == .bench)
+            pipeline_times.cam_invert / 1e6
+        else
+            0.0,
+        .resolve_ms = if (report_mode == .bench)
+            pipeline_times.scratch_resolve / 1e6
+        else
+            0.0,
         .fps = if (e2e_ms > 0.0) 1000.0 / e2e_ms else 0.0,
         .total_elems = if (report_mode == .bench)
             bench_capture_storage[0].bench_log.total_elements
@@ -1146,7 +1148,7 @@ fn printPaddedSafe(writer: anytype, text: []const u8, width: usize) !void {
     }
 }
 
-fn calcTexFuncParams(tex_func_case: TexFuncCase) so.TexFuncParams {
+fn calcTexFuncParams(tex_func_case: TexFuncCase) so.FuncShaderParams {
     const pi: f64 = std.math.pi;
     const oscillations: f64 = if (tex_func_case.coord_mode == .param)
         2.0
@@ -1189,6 +1191,9 @@ pub const BenchmarkCSVValues = struct {
     total_px: f64,
     shaded_px: f64,
     geom: f64,
+    cam_invert: f64,
+    elem_loop: f64,
+    scratch_resolve: f64,
     raster: f64,
     save_frame: f64,
     frame: f64,
@@ -1202,9 +1207,12 @@ pub const BenchmarkCSVValues = struct {
 pub fn benchmarkCSVHeader() []const u8 {
     return "Case,Element,Shader,Interpolator," ++
         "Total Elems,Vis Elems,Total Px,Shaded Px," ++
-        "Geom Time [ms],Raster Time [ms],Save Time [ms],Frame Time [ms]," ++
-        "E2E Time [ms],Geom TP [MElem/s],Raster TP [MPx/s],Frame TP [MPx/s]," ++
-        "E2E TP [MPx/s]\n";
+        "Geom Time [ms]," ++
+        "Cam Inv Time [ms],Elem Loop Time [ms]," ++
+        "Resolve Time [ms],Raster Time [ms]," ++
+        "Save Time [ms],Frame Time [ms]," ++
+        "E2E Time [ms],Geom TP [MElem/s],Raster TP [MPx/s]," ++
+        "Frame TP [MPx/s],E2E TP [MPx/s]\n";
 }
 
 fn calcCoVPercent(stats: MedianMAD) f64 {
@@ -1237,12 +1245,21 @@ pub fn calcBenchmarkCSVValuesFromStats(
         .total_px = selectStatValue(stats.total_px, kind),
         .shaded_px = selectStatValue(stats.shaded_px, kind),
         .geom = selectStatValue(stats.geom, kind),
+        .cam_invert = selectStatValue(stats.cam_invert, kind),
+        .elem_loop = selectStatValue(stats.elem_loop, kind),
+        .scratch_resolve = selectStatValue(
+            stats.scratch_resolve,
+            kind,
+        ),
         .raster = selectStatValue(stats.raster, kind),
         .save_frame = selectStatValue(stats.save, kind),
         .frame = selectStatValue(stats.frame, kind),
         .e2e = selectStatValue(stats.e2e, kind),
         .geom_tpx = selectStatValue(stats.geom_tpx, kind),
-        .raster_tpx = selectStatValue(stats.raster_tpx, kind),
+        .raster_tpx = selectStatValue(
+            stats.raster_tpx,
+            kind,
+        ),
         .frame_tpx = selectStatValue(stats.frame_tpx, kind),
         .e2e_tpx = selectStatValue(stats.e2e_tpx, kind),
     };
@@ -1252,12 +1269,18 @@ pub fn calcBenchmarkCSVValuesFromResult(
     result: BenchResult,
 ) BenchmarkCSVValues {
     const conv_ms = 1.0 / 1e6;
+    const cam_inv_ms = result.cam_ms;
+    const resolve_ms = result.resolve_ms;
+    const elem_loop_ms = result.raster_ms - cam_inv_ms - resolve_ms;
     return .{
         .total_elems = @floatFromInt(result.total_elems),
         .vis_elems = @floatFromInt(result.vis_elems),
         .total_px = @floatFromInt(result.total_px),
         .shaded_px = @floatFromInt(result.shaded_px),
         .geom = result.geom_ms,
+        .cam_invert = cam_inv_ms,
+        .elem_loop = elem_loop_ms,
+        .scratch_resolve = resolve_ms,
         .raster = result.raster_ms,
         .save_frame = result.pipeline_times.save_frame * conv_ms,
         .frame = result.pipeline_times.active_time * conv_ms,
@@ -1289,8 +1312,9 @@ pub fn formatBenchmarkCSVRow(
         allocator,
         "{s},{s},{s},{s}," ++
             "{d:.6},{d:.6},{d:.6},{d:.6}," ++
-            "{d:.6},{d:.6},{d:.6},{d:.6},{d:.6}," ++
-            "{d:.6},{d:.6},{d:.6},{d:.6}\n",
+            "{d:.6},{d:.6},{d:.6},{d:.6}," ++
+            "{d:.6},{d:.6},{d:.6}," ++
+            "{d:.6},{d:.6},{d:.6},{d:.6},{d:.6}\n",
         .{
             case_name,
             @tagName(mesh_type),
@@ -1301,6 +1325,9 @@ pub fn formatBenchmarkCSVRow(
             values.total_px,
             values.shaded_px,
             values.geom,
+            values.cam_invert,
+            values.elem_loop,
+            values.scratch_resolve,
             values.raster,
             values.save_frame,
             values.frame,

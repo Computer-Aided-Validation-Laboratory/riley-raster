@@ -34,15 +34,6 @@ pub const RasterConfig = struct {
     // Single-render-group compatibility budget. User-facing thread counts
     // always include the caller thread.
     total_threads: u16 = 1,
-    // Legacy single-render-group compatibility knob. In the grouped scheduler
-    // this is superseded by frame_batch_size_per_group.
-    max_frames_in_flight: u16 = 1,
-    // Legacy single-render-group compatibility knob. In the grouped scheduler
-    // this is superseded by max_geom_workers_per_job.
-    max_geom_workers_per_frame: u16 = 1,
-    // Legacy single-render-group compatibility knob. In the grouped scheduler
-    // this is superseded by max_raster_workers_per_job.
-    max_raster_workers_per_frame: u16 = 1,
     // Maximum number of frame-camera jobs assigned to one render group batch.
     frame_batch_size_per_group: u16 = 1,
     // Maximum number of geometry jobs a render group may have active at once.
@@ -60,22 +51,16 @@ pub const RasterConfig = struct {
     image_save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
-    tile_size_min: u16 = 8,
+    tile_size_override: ?u16 = null,
+    tile_size_min: u16 = 4,
     tile_size_max: u16 = 256,
     background_value: f64 = 0.0,
     hull_mode: HullMode = .on_no_fallback,
     newton_seed_mode: NewtonSeedMode = .centroid,
     newton_seed_reuse: NewtonSeedReuse = .off,
-    subpixel_center_map: SubPixelCenterMap = .per_tile,
     report: ReportMode = .bench,
     full_stats_opts: FullStatsOpts = .{},
     save_frame_buffer_count: usize = buildconfig.SaveFrameBufferCount,
-};
-
-pub const SubPixelCenterMap = enum {
-    full_in_mem,
-    per_tile,
-    affine_jac,
 };
 
 pub const RenderMode = enum {

@@ -797,7 +797,7 @@ pub fn runTestInternal(
             const render_groups = [_]riley.RenderGroupSpec{
                 .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
             };
-            const result = (try riley.rasterAllFrames(
+            const result = (try riley.raster(
                 aa,
                 &render_groups,
                 &[_]CameraInput{prepared_camera_input},
@@ -919,7 +919,7 @@ pub fn runTestInternal(
                 const render_groups = [_]riley.RenderGroupSpec{
                     .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
                 };
-                const result = (try riley.rasterAllFrames(
+                const result = (try riley.raster(
                     aa,
                     &render_groups,
                     &[_]CameraInput{prepared_camera_input},
@@ -1070,7 +1070,7 @@ pub fn runMultimeshTestExt(
         const render_groups = [_]riley.RenderGroupSpec{
             .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
         };
-        const result = (try riley.rasterAllFrames(
+        const result = (try riley.raster(
             aa,
             &render_groups,
             &[_]CameraInput{camera_input},
@@ -1211,7 +1211,7 @@ pub fn runMultimeshMixedTestExt(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try riley.rasterAllFrames(
+    const result = (try riley.raster(
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},
@@ -1339,7 +1339,7 @@ pub fn runMultimeshMixedRGBTestExt(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config_rgb.total_threads) },
     };
-    const result = (try riley.rasterAllFrames(
+    const result = (try riley.raster(
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},
@@ -1477,7 +1477,7 @@ pub fn runDistortEdgeTexFuncTest(
             .connect = prepared.sim_data.connect,
             .disp = prepared.sim_data.field,
             .shader = .{
-                .tex_func = .{
+                .func = .{
                     .uvs = null,
                     .builtin = .constant,
                     .normal_type = .none,
@@ -1508,7 +1508,7 @@ pub fn runDistortEdgeTexFuncTest(
         const render_groups = [_]riley.RenderGroupSpec{
             .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
         };
-        const result = (try riley.rasterAllFrames(
+        const result = (try riley.raster(
             aa,
             &render_groups,
             &[_]CameraInput{prepared_camera_input},
@@ -1666,7 +1666,7 @@ pub fn runEdgeTexFuncConstantCaseForHullMode(
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
         .shader = .{
-            .tex_func = .{
+            .func = .{
                 .uvs = null,
                 .builtin = .constant,
                 .normal_type = .none,
@@ -1698,7 +1698,7 @@ pub fn runEdgeTexFuncConstantCaseForHullMode(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try riley.rasterAllFrames(
+    const result = (try riley.raster(
         aa,
         &render_groups,
         &[_]CameraInput{prepared_camera_input},
@@ -1847,7 +1847,7 @@ pub fn runDistortMidsideNodalUvTest(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try riley.rasterAllFrames(
+    const result = (try riley.raster(
         aa,
         &render_groups,
         &[_]CameraInput{prepared_camera_input},
@@ -2002,7 +2002,7 @@ pub fn runDistortMidsideTexShaderTest(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try riley.rasterAllFrames(
+    const result = (try riley.raster(
         aa,
         &render_groups,
         &[_]CameraInput{prepared_camera_input},

@@ -21,6 +21,8 @@ pub const FrameTimes = struct {
     geometry_prep: f64 = 0,
     tile_overlap: f64 = 0,
     raster_loop: f64 = 0,
+    cam_invert: f64 = 0,
+    scratch_resolve: f64 = 0,
     save_frame: f64 = 0,
     active_time: f64 = 0,
     latency_time: f64 = 0,
@@ -36,6 +38,7 @@ pub const EndToEndTimes = struct {
 
 pub const BenchLog = struct {
     frame_times: FrameTimes = .{},
+    total_nodes: usize = 0,
     total_elements: usize = 0,
     visible_elements: usize = 0,
     solver_calls: u64 = 0,
@@ -47,6 +50,8 @@ pub const BenchLog = struct {
     total_depth_tests: u64 = 0,
     depth_tests_failed: u64 = 0,
     max_tile_elements: usize = 0,
+    cam_time_ns: f64 = 0,
+    resolve_time_ns: f64 = 0,
 };
 
 pub const FrameBenchCapture = struct {
@@ -97,6 +102,7 @@ pub fn publishFrameResults(
     bench_capture: ?[]FrameBenchCapture,
     report_storage: *FrameReportStorage,
     frame_times: FrameTimes,
+    total_nodes_num: usize,
     total_elems_num: usize,
     total_elems_in_image: usize,
     prep_meshes: []const mo.MeshPrepared,
@@ -115,6 +121,7 @@ pub fn publishFrameResults(
         bench_capture,
         report_storage,
         frame_times,
+        total_nodes_num,
         total_elems_num,
         total_elems_in_image,
         nodes_per_elem,
@@ -134,6 +141,7 @@ pub fn publishFrameResultsWithNodesPerElem(
     bench_capture: ?[]FrameBenchCapture,
     report_storage: *FrameReportStorage,
     frame_times: FrameTimes,
+    total_nodes_num: usize,
     total_elems_num: usize,
     total_elems_in_image: usize,
     nodes_per_elem: f64,
@@ -151,6 +159,7 @@ pub fn publishFrameResultsWithNodesPerElem(
                     .frame_idx = frame_idx,
                     .bench_log = .{
                         .frame_times = frame_times,
+                        .total_nodes = total_nodes_num,
                         .total_elements = total_elems_num,
                         .visible_elements = total_elems_in_image,
                     },
@@ -159,6 +168,7 @@ pub fn publishFrameResultsWithNodesPerElem(
         },
         .bench => {
             report_storage.bench.frame_times = frame_times;
+            report_storage.bench.total_nodes = total_nodes_num;
             report_storage.bench.total_elements = total_elems_num;
             report_storage.bench.visible_elements = total_elems_in_image;
             if (bench_capture) |capture| {
@@ -177,6 +187,8 @@ pub fn publishFrameResultsWithNodesPerElem(
                 io,
                 camera,
                 actual_tile_size,
+                frame_idx,
+                camera_idx,
                 frame_times,
                 total_elems_num,
                 total_elems_in_image,
@@ -186,6 +198,7 @@ pub fn publishFrameResultsWithNodesPerElem(
         },
         .full_stats => {
             report_storage.full_stats.bench.frame_times = frame_times;
+            report_storage.full_stats.bench.total_nodes = total_nodes_num;
             report_storage.full_stats.bench.total_elements = total_elems_num;
             report_storage.full_stats.bench.visible_elements = total_elems_in_image;
             if (bench_capture) |capture| {
@@ -215,98 +228,8 @@ pub fn publishFrameResultsWithNodesPerElem(
     }
 }
 
-pub fn printRenderSummary(
-    io: std.Io,
-    cameras: []const cam.CameraPrepared,
-    actual_tile_size: u16,
-    num_time: usize,
-    report_mode: ReportMode,
-    end_to_end_times: EndToEndTimes,
-    bench_capture: ?[]const FrameBenchCapture,
-) !void {
-    if (report_mode == .off) {
-        return;
-    }
-
-    var total_pixels: usize = 0;
-    for (cameras) |camera| {
-        total_pixels += camera.pixels_num[0] * camera.pixels_num[1];
-    }
-    total_pixels *= num_time;
-
-    const total_frames = cameras.len * num_time;
-    const total_render_ms = end_to_end_times.total_time / 1e6;
-    const total_render_sec = end_to_end_times.total_time / 1e9;
-    const setup_ms = end_to_end_times.setup_time / 1e6;
-    const setup_other_ms = end_to_end_times.setup_other_time / 1e6;
-    const setup_frame_buffer_ms =
-        end_to_end_times.setup_frame_buffer_time / 1e6;
-    const dispatch_ms = end_to_end_times.dispatch_time / 1e6;
-    const avg_frame_ms = total_render_ms / @as(
-        f64,
-        @floatFromInt(total_frames),
-    );
-    const avg_frame_mpx_sec = if (total_render_sec > 0)
-        @as(f64, @floatFromInt(total_pixels)) / (total_render_sec * 1e6)
-    else
-        0.0;
-    var total_raster_ns: f64 = 0.0;
-    if (bench_capture) |capture| {
-        for (capture) |frame_capture| {
-            total_raster_ns += frame_capture.bench_log.frame_times.raster_loop;
-        }
-    }
-    const total_raster_sec = total_raster_ns / 1e9;
-    const avg_raster_mpx_sec = if (total_raster_sec > 0)
-        @as(f64, @floatFromInt(total_pixels)) / (total_raster_sec * 1e6)
-    else
-        0.0;
-
-    var buffer: [1024]u8 = undefined;
-    var stdout_writer = std.Io.File.stdout().writer(io, &buffer);
-    const writer = &stdout_writer.interface;
-    const print_break = [_]u8{'='} ** 80;
-
-    try writer.print("\n{s}\nSoftware Raster Render Summary\n{s}\n", .{
-        print_break,
-        print_break,
-    });
-    try writer.print("Actual Tile Size        = {d}x{d}\n", .{
-        actual_tile_size,
-        actual_tile_size,
-    });
-    try writer.print("Total render time       = {d:.3} ms\n", .{total_render_ms});
-    try writer.print("Setup time              = {d:.3} ms\n", .{setup_ms});
-    try writer.print("Setup other             = {d:.3} ms\n", .{
-        setup_other_ms,
-    });
-    try writer.print("Setup frame buffer      = {d:.3} ms\n", .{
-        setup_frame_buffer_ms,
-    });
-    try writer.print("Dispatch time           = {d:.3} ms\n", .{dispatch_ms});
-    try writer.print("Average frame time      = {d:.3} ms\n", .{avg_frame_ms});
-    if (report_mode == .bench or report_mode == .full_stats) {
-        if (bench_capture != null) {
-            try writer.print(
-                "Avg. Raster Throughput = {d:.3} MPx/s\n",
-                .{avg_raster_mpx_sec},
-            );
-        } else {
-            try writer.print(
-                "Avg. Raster Throughput = unavailable\n",
-                .{},
-            );
-        }
-    }
-    try writer.print(
-        "Avg. Frame Throughput  = {d:.3} MPx/s\n",
-        .{avg_frame_mpx_sec},
-    );
-    try writer.print("{s}\n", .{print_break});
-    try writer.flush();
-}
-
 pub fn reduceBenchLog(dst: *BenchLog, src: *const BenchLog) void {
+    dst.total_nodes += src.total_nodes;
     dst.solver_calls += src.solver_calls;
     dst.total_solver_iters += src.total_solver_iters;
     dst.solver_diverged += src.solver_diverged;
@@ -315,7 +238,12 @@ pub fn reduceBenchLog(dst: *BenchLog, src: *const BenchLog) void {
     dst.total_shaded_pixels += src.total_shaded_pixels;
     dst.total_depth_tests += src.total_depth_tests;
     dst.depth_tests_failed += src.depth_tests_failed;
-    dst.max_tile_elements = @max(dst.max_tile_elements, src.max_tile_elements);
+    dst.max_tile_elements = @max(
+        dst.max_tile_elements,
+        src.max_tile_elements,
+    );
+    dst.cam_time_ns += src.cam_time_ns;
+    dst.resolve_time_ns += src.resolve_time_ns;
 }
 
 pub const FullStatsLog = struct {
@@ -362,7 +290,10 @@ pub const FullStatsLog = struct {
         const px_y = camera.pixels_num[1];
         const tiles_x = try std.math.divCeil(u32, px_x, tile_size);
 
-        var expanded = try ndarray.NDArray(f64).initFlat(allocator, &[_]usize{ px_y, px_x });
+        var expanded = try ndarray.NDArray(f64).initFlat(
+            allocator,
+            &[_]usize{ px_y, px_x },
+        );
         defer expanded.deinit(allocator);
 
         for (0..px_y) |yy| {
@@ -787,6 +718,22 @@ pub const FullStatsLog = struct {
         try writer.print("Elem/Tile Overlap       = {d:.6} ms\n", .{
             self.bench.frame_times.tile_overlap * conv,
         });
+        const cam_inv_ms =
+            self.bench.frame_times.cam_invert * conv;
+        const resolve_ms =
+            self.bench.frame_times.scratch_resolve * conv;
+        const elem_loop_ms =
+            self.bench.frame_times.raster_loop * conv -
+            cam_inv_ms - resolve_ms;
+        try writer.print("Cam Invert Time         = {d:.6} ms\n", .{
+            cam_inv_ms,
+        });
+        try writer.print("Elem Loop Time          = {d:.6} ms\n", .{
+            elem_loop_ms,
+        });
+        try writer.print("Scratch Resolve Time    = {d:.6} ms\n", .{
+            resolve_ms,
+        });
         try writer.print("Raster loop time        = {d:.6} ms\n", .{
             self.bench.frame_times.raster_loop * conv,
         });
@@ -857,7 +804,10 @@ pub fn initFullStatsLog(
     const sub_pixels_num = [_]usize{ pixels_num[1] * sub_samp, pixels_num[0] * sub_samp };
 
     if (opts.save_iteration_map) {
-        self.iteration_map = try ndarray.NDArray(f64).initFlat(allocator, &sub_pixels_num);
+        self.iteration_map = try ndarray.NDArray(f64).initFlat(
+            allocator,
+            &sub_pixels_num,
+        );
         @memset(self.iteration_map.?.slice, 0);
     }
 
@@ -1229,6 +1179,26 @@ pub fn ReportContext(comptime mode: ReportMode) type {
                 bench_log.solver_diverged += 1;
             }
         }
+
+        pub inline fn recordCamTime(
+            self: @This(),
+            cam_duration_ns: u64,
+        ) void {
+            if (self.bench()) |bench_log| {
+                bench_log.cam_time_ns +=
+                    @floatFromInt(cam_duration_ns);
+            }
+        }
+
+        pub inline fn recordResolveTime(
+            self: @This(),
+            resolve_duration_ns: u64,
+        ) void {
+            if (self.bench()) |bench_log| {
+                bench_log.resolve_time_ns +=
+                    @floatFromInt(resolve_duration_ns);
+            }
+        }
     };
 }
 
@@ -1268,6 +1238,8 @@ pub fn standardReport(
     io: std.Io,
     camera: *const cam.CameraPrepared,
     actual_tile_size: u16,
+    frame_idx: usize,
+    camera_idx: usize,
     frame_times: FrameTimes,
     total_elems: usize,
     visible_elems: usize,
@@ -1287,11 +1259,15 @@ pub fn standardReport(
 
     const raster_sec = frame_times.raster_loop / 1e9;
     const active_sec = frame_times.active_time / 1e9;
-    const latency_sec = frame_times.latency_time / 1e9;
     const geom_tiling_sec = (frame_times.geometry_prep + frame_times.tile_overlap) / 1e9;
 
     const melems_sec = if (geom_tiling_sec > 0)
         (@as(f64, @floatFromInt(total_elems)) / (geom_tiling_sec * 1e6))
+    else
+        0;
+    const mnodes_sec = if (geom_tiling_sec > 0)
+        (@as(f64, @floatFromInt(bench_log.total_nodes)) /
+            (geom_tiling_sec * 1e6))
     else
         0;
     const mpx_sec = if (raster_sec > 0) (total_px / (raster_sec * 1e6)) else 0;
@@ -1301,43 +1277,17 @@ pub fn standardReport(
         (total_px / (active_sec * 1e6))
     else
         0;
-    const latency_mpx_sec = if (latency_sec > 0)
-        (total_px / (latency_sec * 1e6))
-    else
-        0;
 
     const conv_units: f64 = 1.0 / 1.0e6;
     const print_break = [_]u8{'='} ** 80;
+    const print_break_inner = [_]u8{'-'} ** 80;
 
-    try writer.print("\n{s}\nSoftware Raster Times\n{s}\n", .{
+    try writer.print("\n{s}\nRaster Frame Times: Frame {d}, Camera {d}\n{s}\n", .{
         print_break,
+        frame_idx,
+        camera_idx,
         print_break,
     });
-    try writer.print("Actual Tile Size        = {d}x{d}\n", .{
-        actual_tile_size,
-        actual_tile_size,
-    });
-    try writer.print("Geometry Preparation    = {d:.6} ms\n", .{
-        frame_times.geometry_prep * conv_units,
-    });
-    try writer.print("Elem/Tile Overlap       = {d:.6} ms\n", .{
-        frame_times.tile_overlap * conv_units,
-    });
-    try writer.print("Raster loop time        = {d:.6} ms\n", .{
-        frame_times.raster_loop * conv_units,
-    });
-    try writer.print("Save Time               = {d:.6} ms\n", .{
-        frame_times.save_frame * conv_units,
-    });
-
-    try writer.print("{s}\nACTIVE FRAME TIME  = {d:.3} ms\n", .{
-        print_break,
-        frame_times.active_time * conv_units,
-    });
-    try writer.print("FRAME LATENCY      = {d:.3} ms\n", .{
-        frame_times.latency_time * conv_units,
-    });
-    try writer.print("{s}\n", .{print_break});
 
     const shaded_subpx = @as(f64, @floatFromInt(bench_log.total_shaded_pixels));
     const shaded_pct = if (total_subpx > 0)
@@ -1354,15 +1304,142 @@ pub fn standardReport(
     try writer.print("Total SubPx   = {d:.0}\n", .{total_subpx});
     try writer.print("Shaded SubPx  = {d:.0}\n", .{shaded_subpx});
     try writer.print("Shaded %      = {d:.2}%\n", .{shaded_pct});
-    try writer.print("{s}\n", .{print_break});
+    try writer.print("{s}\n", .{print_break_inner});
 
-    try writer.print("Geometry Throughput      = {d:.2} MElem/s\n", .{melems_sec});
-    try writer.print("Subpx Raster Throughput  = {d:.2} MsubPx/s\n", .{msubpx_sec});
+    try writer.print("Actual Tile Size        = {d}x{d}\n", .{
+        actual_tile_size,
+        actual_tile_size,
+    });
+    try writer.print("Geometry Preparation    = {d:.6} ms\n", .{
+        frame_times.geometry_prep * conv_units,
+    });
+    try writer.print("Elem/Tile Overlap       = {d:.6} ms\n", .{
+        frame_times.tile_overlap * conv_units,
+    });
+    const cam_inv_print_ms =
+        frame_times.cam_invert * conv_units;
+    const resolve_print_ms =
+        frame_times.scratch_resolve * conv_units;
+    const elem_loop_print_ms =
+        frame_times.raster_loop * conv_units -
+        cam_inv_print_ms - resolve_print_ms;
+    try writer.print("Cam Invert Time         = {d:.6} ms\n", .{
+        cam_inv_print_ms,
+    });
+    try writer.print("Elem Loop Time          = {d:.6} ms\n", .{
+        elem_loop_print_ms,
+    });
+    try writer.print("Scratch Resolve Time    = {d:.6} ms\n", .{
+        resolve_print_ms,
+    });
+    try writer.print("Raster loop time        = {d:.6} ms\n", .{
+        frame_times.raster_loop * conv_units,
+    });
+    try writer.print("Save Time               = {d:.6} ms\n", .{
+        frame_times.save_frame * conv_units,
+    });
+
+    try writer.print("{s}\n", .{print_break_inner});
+    try writer.print("ACTIVE FRAME TIME  = {d:.3} ms\n", .{
+        frame_times.active_time * conv_units,
+    });
+    try writer.print("FRAME LATENCY      = {d:.3} ms\n", .{
+        frame_times.latency_time * conv_units,
+    });
+    try writer.print("{s}\n", .{print_break_inner});
+
+    try writer.print("Geom. Node Throughput  = {d:.2} MNodes/s\n", .{mnodes_sec});
+    try writer.print("Geom. Elem. Throughput = {d:.2} MElem/s\n", .{melems_sec});
+    try writer.print("Subpx Raster Throughput  = {d:.2} MSubPx/s\n", .{msubpx_sec});
     try writer.print("Raster Throughput        = {d:.2} MPx/s\n", .{mpx_sec});
     try writer.print("Active Frame Throughput  = {d:.2} MPx/s\n", .{frame_mpx_sec});
-    try writer.print("Frame Latency Throughput = {d:.2} MPx/s\n", .{
-        latency_mpx_sec,
+
+    try writer.print("{s}\n", .{print_break});
+    try writer.flush();
+}
+
+pub fn printRenderSummary(
+    io: std.Io,
+    cameras: []const cam.CameraPrepared,
+    actual_tile_size: u16,
+    num_time: usize,
+    report_mode: ReportMode,
+    end_to_end_times: EndToEndTimes,
+    bench_capture: ?[]const FrameBenchCapture,
+) !void {
+    if (report_mode == .off) {
+        return;
+    }
+
+    var total_pixels: usize = 0;
+    for (cameras) |camera| {
+        total_pixels += camera.pixels_num[0] * camera.pixels_num[1];
+    }
+    total_pixels *= num_time;
+
+    const total_frames = cameras.len * num_time;
+    const total_render_ms = end_to_end_times.total_time / 1e6;
+    const total_render_sec = end_to_end_times.total_time / 1e9;
+    const setup_ms = end_to_end_times.setup_time / 1e6;
+    // const setup_other_ms = end_to_end_times.setup_other_time / 1e6;
+    // const setup_frame_buffer_ms =
+    //     end_to_end_times.setup_frame_buffer_time / 1e6;
+    const dispatch_ms = end_to_end_times.dispatch_time / 1e6;
+    const avg_frame_ms = total_render_ms / @as(
+        f64,
+        @floatFromInt(total_frames),
+    );
+    const avg_frame_mpx_sec = if (total_render_sec > 0)
+        @as(f64, @floatFromInt(total_pixels)) / (total_render_sec * 1e6)
+    else
+        0.0;
+    var total_raster_ns: f64 = 0.0;
+    if (bench_capture) |capture| {
+        for (capture) |frame_capture| {
+            total_raster_ns += frame_capture.bench_log.frame_times.raster_loop;
+        }
+    }
+    const total_raster_sec = total_raster_ns / 1e9;
+    const avg_raster_mpx_sec = if (total_raster_sec > 0)
+        @as(f64, @floatFromInt(total_pixels)) / (total_raster_sec * 1e6)
+    else
+        0.0;
+
+    var buffer: [1024]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(io, &buffer);
+    const writer = &stdout_writer.interface;
+    const print_break = [_]u8{'='} ** 80;
+
+    try writer.print("\n{s}\nRiley Raster Render Summary\n{s}\n", .{
+        print_break,
+        print_break,
     });
+    try writer.print("Actual Tile Size        = {d}x{d}\n", .{
+        actual_tile_size,
+        actual_tile_size,
+    });
+    try writer.print("Setup Time              = {d:.3} ms\n", .{setup_ms});
+    // try writer.print("Setup other             = {d:.3} ms\n", .{
+    //     setup_other_ms,
+    // });
+    // try writer.print("Setup frame buffer      = {d:.3} ms\n", .{
+    //     setup_frame_buffer_ms,
+    // });
+    try writer.print("Dispatch Time           = {d:.3} ms\n", .{dispatch_ms});
+    try writer.print("Total Render Time       = {d:.3} ms\n", .{total_render_ms});
+    try writer.print("Avg. Frame Time         = {d:.3} ms\n", .{avg_frame_ms});
+    if ((report_mode == .bench or report_mode == .full_stats) and
+        bench_capture != null)
+    {
+        try writer.print(
+            "Avg. Raster Throughput = {d:.3} MPx/s\n",
+            .{avg_raster_mpx_sec},
+        );
+    }
+    try writer.print(
+        "Avg. Frame Throughput   = {d:.3} MPx/s\n",
+        .{avg_frame_mpx_sec},
+    );
     try writer.print("{s}\n", .{print_break});
     try writer.flush();
 }

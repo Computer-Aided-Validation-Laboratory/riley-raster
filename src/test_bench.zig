@@ -56,13 +56,13 @@ test "Unified Benchmark Tests" {
         .{
             .name = "fullraster",
             .data_name = "fullraster",
-            .gold_dir = "gold/bench-fullscreen",
+            .gold_dir = "gold/fullscreen",
             .out_dir = "out/fullraster",
         },
         .{
             .name = "geom",
             .data_name = "geom",
-            .gold_dir = "gold/bench-fullscreen",
+            .gold_dir = "gold/fullscreen",
             .out_dir = "out/geom",
         },
         .{

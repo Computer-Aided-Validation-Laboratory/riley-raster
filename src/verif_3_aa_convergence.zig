@@ -20,12 +20,12 @@ const imageops = @import("riley/zig/imageops.zig");
 const matslice = @import("riley/zig/matslice.zig");
 const ndarray = @import("riley/zig/ndarray.zig");
 const camera_mod = @import("riley/zig/camera.zig");
+const cameraops = @import("riley/zig/cameraops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
 const MeshInput = mo.MeshInput;
 const CameraPrepared = camera_mod.CameraPrepared;
 const CameraInput = camera_mod.CameraInput;
-const CameraOps = camera_mod.CameraOps;
 const NDArrayOps = ndarray.NDArrayOps(f64);
 const MatSlice = matslice.MatSlice(f64);
 
@@ -161,7 +161,7 @@ pub fn main(init: std.process.Init) !void {
                     };
 
                     if (std.mem.eql(u8, shader_name, "funcconst")) {
-                        mesh_input.shader = .{ .tex_func = .{
+                        mesh_input.shader = .{ .func = .{
                             .uvs = uv_map.array,
                             .builtin = .constant,
                             .params = .{},
@@ -184,8 +184,8 @@ pub fn main(init: std.process.Init) !void {
                     }
 
                     const mesh_inputs = &[_]MeshInput{mesh_input};
-                    const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
-                    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
+                    const roi_pos = cameraops.roiCentOverMeshes(mesh_inputs);
+                    const cam_pos = cameraops.posFillFrameFromRotOverMeshes(
                         mesh_inputs,
                         pixel_num,
                         orch.default_pixel_size,
@@ -231,7 +231,7 @@ pub fn main(init: std.process.Init) !void {
                     const render_groups = [_]riley.RenderGroupSpec{
                         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
                     };
-                    const images = try riley.rasterAllFrames(
+                    const images = try riley.raster(
                         ra,
                         &render_groups,
                         &[_]@TypeOf(camera_input){camera_input},

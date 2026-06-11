@@ -27,7 +27,8 @@ pub fn main(init: std.process.Init) !void {
                     ssaa,
                     distortion_case,
                 );
-                const gold_maps = [_]@import("riley/zig/rasterconfig.zig").SubPixelCenterMap{
+                defer allocator.free(case_name_base);
+                const gold_maps = [_]@import("riley/zig/camera.zig").SubPixelCenterMap{
                     .full_in_mem,
                     .affine_jac,
                 };
@@ -42,11 +43,13 @@ pub fn main(init: std.process.Init) !void {
                             "{s}_{s}",
                             .{ case_name_base, @tagName(gold_map) },
                         );
+                    defer if (gold_map != .full_in_mem) allocator.free(case_name);
                     const out_dir_path = try std.fmt.allocPrint(
                         allocator,
                         "{s}/{s}",
                         .{ suite.gold_root, case_name },
                     );
+                    defer allocator.free(out_dir_path);
                     var out_dir = try orch.openDirEnsured(io, out_dir_path);
                     defer out_dir.close(io);
 
@@ -70,7 +73,12 @@ pub fn main(init: std.process.Init) !void {
                         "cam0_frame0_field0",
                         &image,
                         0,
-                        .{ .format = .csv, .bits = null, .scaling = .none, .channels = 1 },
+                        .{
+                            .format = .fimg,
+                            .bits = null,
+                            .scaling = .none,
+                            .channels = 1,
+                        },
                     );
                 }
             }

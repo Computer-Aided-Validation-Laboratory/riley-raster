@@ -13,12 +13,6 @@ pub const SimdMode = enum {
     on,
 };
 
-pub const TextureDispatchPolicy = enum {
-    runtime_runtime,
-    runtime_comptime,
-    comptime_comptime,
-};
-
 pub const SimdTextureInterpMode = enum {
     inner,
     over_pixels,
@@ -44,6 +38,7 @@ pub const HullTolerance = struct {
 pub const CullingTolerance = struct {
     higher_order_backface_nz: f64 = 1e-3,
     tri3_signed_area: f64 = 1e-6,
+    projective_z_min: f64 = 1e-12,
 };
 
 pub const NormalTolerance = struct {
@@ -72,6 +67,7 @@ pub const GeometryTolerance = struct {
     bilinear_parametric_domain: f64 = 1e-8,
     bilinear_denom: f64 = 1e-12,
     quadratic_area: f64 = 1e-12,
+    depth_buffer_inv_z_cmp: f64 = 1e-12,
 };
 
 pub const TextureTolerance = struct {
@@ -104,7 +100,6 @@ pub const Tolerance = struct {
 pub const Config = struct {
     simd: SimdMode = .on,
     simd_texture_interp: SimdTextureInterpMode = .inner,
-    texture_dispatch_policy: TextureDispatchPolicy = .runtime_comptime,
     simd_vector_width: comptime_int = 8,
     max_nodal_fields: comptime_int = 8,
     max_image_channels: comptime_int = 8,

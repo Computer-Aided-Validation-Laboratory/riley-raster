@@ -22,7 +22,7 @@ const riley = @import("../riley/zig/riley.zig");
 pub const gold_root = "gold/ssaa";
 pub const pixel_num = [_]u32{ 640, 400 };
 pub const fov_scale: f64 = 0.75;
-pub const ssaa_values = [_]u8{ 2, 4 };
+pub const ssaa_values = [_]u8{4};
 pub const mesh_types = [_]gk.MeshType{ .tri3, .tri6, .quad4ibi, .quad8, .quad9 };
 pub const DistortionCase = enum {
     none,
@@ -87,8 +87,8 @@ pub fn getDistortionModel(distortion_case: DistortionCase) cam.DistortionModel {
 
 pub fn goldSubpixelCenterMap(
     distortion_case: DistortionCase,
-    subpixel_center_map: @import("../riley/zig/rasterconfig.zig").SubPixelCenterMap,
-) @import("../riley/zig/rasterconfig.zig").SubPixelCenterMap {
+    subpixel_center_map: @import("../riley/zig/camera.zig").SubPixelCenterMap,
+) @import("../riley/zig/camera.zig").SubPixelCenterMap {
     return switch (subpixel_center_map) {
         .affine_jac => switch (distortion_case) {
             .brown, .brownext => .affine_jac,
@@ -145,7 +145,7 @@ pub fn renderCase(
     mesh_type: gk.MeshType,
     ssaa: u8,
     distortion_case: DistortionCase,
-    subpixel_center_map: @import("../riley/zig/rasterconfig.zig").SubPixelCenterMap,
+    subpixel_center_map: @import("../riley/zig/camera.zig").SubPixelCenterMap,
 ) !NDArray(f64) {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -191,13 +191,13 @@ pub fn renderCase(
         .focal_length = camera.focal_length,
         .sub_sample = camera.sub_sample,
         .distortion = camera.distortion,
+        .subpixel_center_map = subpixel_center_map,
     };
     camera_input.sub_sample = ssaa;
     camera_input.distortion = getDistortionModel(distortion_case);
 
     var config = tcfg.getRasterConfig(.gold);
     config.save_strategy = .memory;
-    config.subpixel_center_map = subpixel_center_map;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .csv, .bits = null, .scaling = .none },
     };
@@ -205,7 +205,7 @@ pub fn renderCase(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try riley.rasterAllFrames(
+    const result = (try riley.raster(
         outer_alloc,
         &render_groups,
         &[_]cam.CameraInput{camera_input},

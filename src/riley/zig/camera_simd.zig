@@ -8,22 +8,15 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const cameramodels = @import("cameramodels.zig");
 const cfg = buildconfig.config;
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const VecSU = buildconfig.VecSU;
-const tol = cfg.tolerance;
 const common = @import("camera_common.zig");
 
-const DistortionForwardJacSIMDResult = struct {
-    x_d: VecSF,
-    y_d: VecSF,
-    j11: VecSF,
-    j12: VecSF,
-    j21: VecSF,
-    j22: VecSF,
-};
+pub const CameraPrepared = common.CameraPreparedType(@This());
 
 fn calcActiveMask(lane_count: usize) VecSB {
     const v_lane_idx: VecSU = std.simd.iota(usize, S);
@@ -51,159 +44,17 @@ fn storeIdealPairs(
 
 fn calcObservedXVector(
     global_subx_start: usize,
-    sub_sample: u8,
+    step: f64,
+    off: f64,
 ) VecSF {
-    const step = common.calcSubpixelStep(sub_sample);
-    const off = common.calcSubpixelOffset(sub_sample);
     const v_start: VecSF = @splat(@as(f64, @floatFromInt(global_subx_start)));
     const v_lane: VecSF = @floatFromInt(std.simd.iota(usize, S));
-    return (v_start + v_lane) * @as(VecSF, @splat(step)) + @as(VecSF, @splat(off));
+    return (v_start + v_lane) * @as(VecSF, @splat(step)) +
+        @as(VecSF, @splat(off));
 }
 
-fn forwardWithJacSIMD(
-    comptime DistortionType: type,
-    distortion: DistortionType,
-    x: VecSF,
-    y: VecSF,
-) DistortionForwardJacSIMDResult {
-    const r2 = x * x + y * y;
-    const r4 = r2 * r2;
-    const r6 = r4 * r2;
-    const radial_and_deriv = if (@hasField(DistortionType, "k4")) blk: {
-        const numerator = @as(VecSF, @splat(1.0)) +
-            @as(VecSF, @splat(distortion.k1)) * r2 +
-            @as(VecSF, @splat(distortion.k2)) * r4 +
-            @as(VecSF, @splat(distortion.k3)) * r6;
-        const denominator = @as(VecSF, @splat(1.0)) +
-            @as(VecSF, @splat(distortion.k4)) * r2 +
-            @as(VecSF, @splat(distortion.k5)) * r4 +
-            @as(VecSF, @splat(distortion.k6)) * r6;
-        const dnum_dr2 = @as(VecSF, @splat(distortion.k1)) +
-            @as(VecSF, @splat(2.0 * distortion.k2)) * r2 +
-            @as(VecSF, @splat(3.0 * distortion.k3)) * r4;
-        const dden_dr2 = @as(VecSF, @splat(distortion.k4)) +
-            @as(VecSF, @splat(2.0 * distortion.k5)) * r2 +
-            @as(VecSF, @splat(3.0 * distortion.k6)) * r4;
-        const radial_scale = numerator / denominator;
-        const dradial_dr2 =
-            (dnum_dr2 * denominator - numerator * dden_dr2) /
-            (denominator * denominator);
-        break :blk .{
-            .radial_scale = radial_scale,
-            .dradial_dr2 = dradial_dr2,
-        };
-    } else blk: {
-        const radial_scale = @as(VecSF, @splat(1.0)) +
-            @as(VecSF, @splat(distortion.k1)) * r2 +
-            @as(VecSF, @splat(distortion.k2)) * r4 +
-            @as(VecSF, @splat(distortion.k3)) * r6;
-        const dradial_dr2 = @as(VecSF, @splat(distortion.k1)) +
-            @as(VecSF, @splat(2.0 * distortion.k2)) * r2 +
-            @as(VecSF, @splat(3.0 * distortion.k3)) * r4;
-        break :blk .{
-            .radial_scale = radial_scale,
-            .dradial_dr2 = dradial_dr2,
-        };
-    };
-
-    const radial_scale = radial_and_deriv.radial_scale;
-    const dradial_dr2 = radial_and_deriv.dradial_dr2;
-    const dradial_dx = dradial_dr2 * @as(VecSF, @splat(2.0)) * x;
-    const dradial_dy = dradial_dr2 * @as(VecSF, @splat(2.0)) * y;
-    const p1: VecSF = @splat(distortion.p1);
-    const p2: VecSF = @splat(distortion.p2);
-
-    const x_d = x * radial_scale + @as(VecSF, @splat(2.0)) * p1 * x * y +
-        p2 * (r2 + @as(VecSF, @splat(2.0)) * x * x);
-    const y_d = y * radial_scale + p1 * (r2 + @as(VecSF, @splat(2.0)) * y * y) +
-        @as(VecSF, @splat(2.0)) * p2 * x * y;
-
-    const j11 = radial_scale + x * dradial_dx +
-        @as(VecSF, @splat(2.0)) * p1 * y +
-        @as(VecSF, @splat(6.0)) * p2 * x;
-    const j12 = x * dradial_dy +
-        @as(VecSF, @splat(2.0)) * p1 * x +
-        @as(VecSF, @splat(2.0)) * p2 * y;
-    const j21 = y * dradial_dx +
-        @as(VecSF, @splat(2.0)) * p1 * x +
-        @as(VecSF, @splat(2.0)) * p2 * y;
-    const j22 = radial_scale + y * dradial_dy +
-        @as(VecSF, @splat(6.0)) * p1 * y +
-        @as(VecSF, @splat(2.0)) * p2 * x;
-
-    return .{
-        .x_d = x_d,
-        .y_d = y_d,
-        .j11 = j11,
-        .j12 = j12,
-        .j21 = j21,
-        .j22 = j22,
-    };
-}
-
-fn inverseDistortionSIMD(
-    comptime DistortionType: type,
-    distortion: DistortionType,
-    v_x_d: VecSF,
-    v_y_d: VecSF,
-    v_lane_active_init: VecSB,
-) !struct { x: VecSF, y: VecSF } {
-    const v_resid_tol: VecSF = @splat(tol.distortion.residual);
-    const v_delta_tol: VecSF = @splat(tol.distortion.delta);
-    const v_det_tol: VecSF = @splat(tol.distortion.determinant);
-
-    var v_x = v_x_d;
-    var v_y = v_y_d;
-    var v_active = v_lane_active_init;
-
-    for (0..cfg.distortion_newton_iter_max) |_| {
-        if (!@reduce(.Or, v_active)) {
-            return .{ .x = v_x, .y = v_y };
-        }
-
-        const fwd = forwardWithJacSIMD(DistortionType, distortion, v_x, v_y);
-        const f0 = fwd.x_d - v_x_d;
-        const f1 = fwd.y_d - v_y_d;
-
-        const v_met_resid = (@abs(f0) < v_resid_tol) & (@abs(f1) < v_resid_tol);
-        v_active = v_active & !v_met_resid;
-        if (!@reduce(.Or, v_active)) {
-            return .{ .x = v_x, .y = v_y };
-        }
-
-        const v_det = fwd.j11 * fwd.j22 - fwd.j12 * fwd.j21;
-        const v_bad_det = @abs(v_det) < v_det_tol;
-        if (@reduce(.Or, v_active & v_bad_det)) {
-            return error.SingularJacobian;
-        }
-
-        const v_safe_det = @select(
-            f64,
-            v_active,
-            v_det,
-            @as(VecSF, @splat(1.0)),
-        );
-        const v_delta_x =
-            (-f0 * fwd.j22 + fwd.j12 * f1) / v_safe_det;
-        const v_delta_y =
-            (fwd.j21 * f0 - fwd.j11 * f1) / v_safe_det;
-
-        v_x += @select(f64, v_active, v_delta_x, @as(VecSF, @splat(0.0)));
-        v_y += @select(f64, v_active, v_delta_y, @as(VecSF, @splat(0.0)));
-
-        const v_met_delta =
-            (@abs(v_delta_x) < v_delta_tol) & (@abs(v_delta_y) < v_delta_tol);
-        v_active = v_active & !v_met_delta;
-    }
-
-    if (@reduce(.Or, v_active)) {
-        return error.DistortionInverseFailed;
-    }
-    return .{ .x = v_x, .y = v_y };
-}
-
-fn calcIdealObservedRasterPointSIMD(
-    camera: anytype,
+pub fn calcPinholeRasterPointSIMD(
+    camera: *const CameraPrepared,
     v_observed_x_px: VecSF,
     v_observed_y_px: VecSF,
     v_lane_active: VecSB,
@@ -220,14 +71,14 @@ fn calcIdealObservedRasterPointSIMD(
         @as(VecSF, @splat(focal_px.fy));
 
     const solved = switch (camera.distortion) {
-        .brown_conrady => |bc| try inverseDistortionSIMD(
+        .brown_conrady => |bc| try cameramodels.inverseDistortionSIMD(
             @TypeOf(bc),
             bc,
             v_x_dist,
             v_y_dist,
             v_lane_active,
         ),
-        .brown_conrady_ext => |bc_ext| try inverseDistortionSIMD(
+        .brown_conrady_ext => |bc_ext| try cameramodels.inverseDistortionSIMD(
             @TypeOf(bc_ext),
             bc_ext,
             v_x_dist,
@@ -245,23 +96,26 @@ fn calcIdealObservedRasterPointSIMD(
 }
 
 pub fn fillTileIdealCentersPerTile(
-    ctx_rast: anytype,
-    tile: anytype,
-    subpx_scratch: anytype,
+    camera: *const CameraPrepared,
+    scratch_x_px_min: usize,
+    scratch_x_px_max: usize,
+    scratch_y_px_min: usize,
+    scratch_y_px_max: usize,
     subpx_tile_size: usize,
+    ideal_pixel_centers: []f64,
 ) !void {
-    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const start_x = @as(usize, @intCast(tile.x_px_min)) * sub_samp;
-    const start_y = @as(usize, @intCast(tile.y_px_min)) * sub_samp;
-    const tile_w = @as(usize, tile.x_px_max - tile.x_px_min) * sub_samp;
-    const tile_h = @as(usize, tile.y_px_max - tile.y_px_min) * sub_samp;
+    const sub_samp: usize = @intCast(camera.sub_sample);
+    const start_x = scratch_x_px_min * sub_samp;
+    const start_y = scratch_y_px_min * sub_samp;
+    const tile_w = (scratch_x_px_max - scratch_x_px_min) * sub_samp;
+    const tile_h = (scratch_y_px_max - scratch_y_px_min) * sub_samp;
+
+    const step = 1.0 / @as(f64, @floatFromInt(camera.sub_sample));
+    const off = 0.5 / @as(f64, @floatFromInt(camera.sub_sample));
 
     for (0..tile_h) |jj| {
         const global_y = start_y + jj;
-        const observed_y = common.calcObservedSubpixelCoord(
-            global_y,
-            ctx_rast.camera.sub_sample,
-        );
+        const observed_y = @as(f64, @floatFromInt(global_y)) * step + off;
         const v_observed_y: VecSF = @splat(observed_y);
         const scratch_row_off = jj * subpx_tile_size;
 
@@ -272,26 +126,27 @@ pub fn fillTileIdealCentersPerTile(
             const global_x_start = start_x + ii;
             const v_observed_x = calcObservedXVector(
                 global_x_start,
-                ctx_rast.camera.sub_sample,
+                step,
+                off,
             );
 
-            if (common.isNoDistortion(ctx_rast.camera.distortion)) {
+            if (common.isNoDistortion(camera.distortion)) {
                 storeIdealPairs(
-                    subpx_scratch.ideal_pixel_centers,
+                    ideal_pixel_centers,
                     scratch_row_off + ii,
                     lane_count,
                     v_observed_x,
                     v_observed_y,
                 );
             } else {
-                const ideal = try calcIdealObservedRasterPointSIMD(
-                    ctx_rast.camera,
+                const ideal = try calcPinholeRasterPointSIMD(
+                    camera,
                     v_observed_x,
                     v_observed_y,
                     v_active,
                 );
                 storeIdealPairs(
-                    subpx_scratch.ideal_pixel_centers,
+                    ideal_pixel_centers,
                     scratch_row_off + ii,
                     lane_count,
                     ideal.x,
@@ -303,25 +158,28 @@ pub fn fillTileIdealCentersPerTile(
 }
 
 pub fn fillTileIdealCentersAffineJac(
-    ctx_rast: anytype,
-    tile: anytype,
-    subpx_scratch: anytype,
+    camera: *const CameraPrepared,
+    scratch_x_px_min: usize,
+    scratch_x_px_max: usize,
+    scratch_y_px_min: usize,
+    scratch_y_px_max: usize,
     subpx_tile_size: usize,
+    ideal_pixel_centers: []f64,
 ) void {
-    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const jac = &ctx_rast.camera.pixel_center_jac;
-    const start_x = @as(usize, @intCast(tile.x_px_min)) * sub_samp;
-    const start_y = @as(usize, @intCast(tile.y_px_min)) * sub_samp;
-    const tile_w = @as(usize, tile.x_px_max - tile.x_px_min) * sub_samp;
-    const tile_h = @as(usize, tile.y_px_max - tile.y_px_min) * sub_samp;
+    const sub_samp: usize = @intCast(camera.sub_sample);
+    const jac = &camera.pixel_center_jac;
+    const start_x = scratch_x_px_min * sub_samp;
+    const start_y = scratch_y_px_min * sub_samp;
+    const tile_w = (scratch_x_px_max - scratch_x_px_min) * sub_samp;
+    const tile_h = (scratch_y_px_max - scratch_y_px_min) * sub_samp;
+
+    const step = 1.0 / @as(f64, @floatFromInt(camera.sub_sample));
+    const off = 0.5 / @as(f64, @floatFromInt(camera.sub_sample));
 
     for (0..tile_h) |jj| {
         const global_suby = start_y + jj;
         const pixel_y = global_suby / sub_samp;
-        const observed_y = common.calcObservedSubpixelCoord(
-            global_suby,
-            ctx_rast.camera.sub_sample,
-        );
+        const observed_y = @as(f64, @floatFromInt(global_suby)) * step + off;
         const v_observed_y: VecSF = @splat(observed_y);
         const center_y = common.calcPixelCenterCoord(pixel_y);
         const scratch_row_off = jj * subpx_tile_size;
@@ -332,12 +190,13 @@ pub fn fillTileIdealCentersAffineJac(
             const global_x_start = start_x + ii;
             const v_observed_x = calcObservedXVector(
                 global_x_start,
-                ctx_rast.camera.sub_sample,
+                step,
+                off,
             );
 
-            if (common.isNoDistortion(ctx_rast.camera.distortion)) {
+            if (common.isNoDistortion(camera.distortion)) {
                 storeIdealPairs(
-                    subpx_scratch.ideal_pixel_centers,
+                    ideal_pixel_centers,
                     scratch_row_off + ii,
                     lane_count,
                     v_observed_x,
@@ -357,10 +216,8 @@ pub fn fillTileIdealCentersAffineJac(
             for (0..lane_count) |ll| {
                 const global_subx = global_x_start + ll;
                 const pixel_x = global_subx / sub_samp;
-                const observed_x = common.calcObservedSubpixelCoord(
-                    global_subx,
-                    ctx_rast.camera.sub_sample,
-                );
+                const observed_x = @as(f64, @floatFromInt(global_subx)) *
+                    step + off;
                 const center_x = common.calcPixelCenterCoord(pixel_x);
                 ideal_x_arr[ll] = jac.get(&[_]usize{ pixel_y, pixel_x, 0 });
                 ideal_y_arr[ll] = jac.get(&[_]usize{ pixel_y, pixel_x, 1 });
@@ -390,7 +247,7 @@ pub fn fillTileIdealCentersAffineJac(
             const v_j22: VecSF = j22_arr;
 
             storeIdealPairs(
-                subpx_scratch.ideal_pixel_centers,
+                ideal_pixel_centers,
                 scratch_row_off + ii,
                 lane_count,
                 v_ideal_x + v_j11 * v_delta_x + v_j12 * v_delta_y,
@@ -400,7 +257,7 @@ pub fn fillTileIdealCentersAffineJac(
     }
 }
 
-pub fn initPixelCenterJac(camera: anytype) !void {
+pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
     const eps: f64 = 0.25;
     for (0..camera.pixels_num[1]) |jj| {
         const y_c = common.calcPixelCenterCoord(jj);
@@ -436,31 +293,31 @@ pub fn initPixelCenterJac(camera: anytype) !void {
                 continue;
             }
 
-            const center = try calcIdealObservedRasterPointSIMD(
+            const center = try calcPinholeRasterPointSIMD(
                 camera,
                 v_center_x,
                 v_center_y,
                 v_active,
             );
-            const x_p = try calcIdealObservedRasterPointSIMD(
+            const x_p = try calcPinholeRasterPointSIMD(
                 camera,
                 v_x_plus,
                 v_center_y,
                 v_active,
             );
-            const x_m = try calcIdealObservedRasterPointSIMD(
+            const x_m = try calcPinholeRasterPointSIMD(
                 camera,
                 v_x_minus,
                 v_center_y,
                 v_active,
             );
-            const y_p = try calcIdealObservedRasterPointSIMD(
+            const y_p = try calcPinholeRasterPointSIMD(
                 camera,
                 v_center_x,
                 v_y_plus,
                 v_active,
             );
-            const y_m = try calcIdealObservedRasterPointSIMD(
+            const y_m = try calcPinholeRasterPointSIMD(
                 camera,
                 v_center_x,
                 v_y_minus,
@@ -485,4 +342,16 @@ pub fn initPixelCenterJac(camera: anytype) !void {
             }
         }
     }
+}
+
+pub fn calcPinholeRasterPoint(
+    camera: *const CameraPrepared,
+    observed_x_px: f64,
+    observed_y_px: f64,
+) ![2]f64 {
+    return common.calcPinholeRasterPointScalar(
+        camera,
+        observed_x_px,
+        observed_y_px,
+    );
 }

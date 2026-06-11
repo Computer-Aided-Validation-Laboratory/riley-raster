@@ -91,8 +91,8 @@ pub fn main(init: std.process.Init) !void {
         .tex8_rgb,
     };
     const tex_func_shader_types = [_]common.ShaderType{
-        .texfunc_grey,
-        .texfunc_rgb,
+        .func,
+        .func_rgb,
     };
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },
@@ -133,6 +133,7 @@ pub fn main(init: std.process.Init) !void {
         bench_raster_config,
         bench_args.pixels_num,
         bench_args.sub_sample,
+        0,
     );
     const render_group_workers = [_]u16{bench_args.total_threads};
     try common.writeBenchmarkConfig(
@@ -142,6 +143,7 @@ pub fn main(init: std.process.Init) !void {
         bench_args.image_out_dir,
         "bench_sphere2000zoom.zig",
         init.minimal.args.vector,
+        bench_args.subpixel_center_map,
         bench_raster_config,
         render_group_workers[0..],
         bench_args.pixels_num,
@@ -217,6 +219,12 @@ pub fn main(init: std.process.Init) !void {
                         sample_config,
                         null,
                         res,
+                    );
+                    try stats.writeRunCSV(
+                        outer_alloc,
+                        io,
+                        bench_args.out_dir,
+                        rr,
                     );
                     case_samples.record(rr, res);
                 }
@@ -297,6 +305,12 @@ pub fn main(init: std.process.Init) !void {
                         null,
                         tex_func_case,
                         res,
+                    );
+                    try stats.writeRunCSV(
+                        outer_alloc,
+                        io,
+                        bench_args.out_dir,
+                        rr,
                     );
                     case_samples.record(rr, res);
                 }

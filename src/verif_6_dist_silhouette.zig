@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const cam = @import("riley/zig/camera.zig");
+const cameraops = @import("riley/zig/cameraops.zig");
 const iio = @import("riley/zig/imageio.zig");
 const matrix = @import("riley/zig/matstack.zig");
 const meshio = @import("riley/zig/meshio.zig");
@@ -331,7 +332,7 @@ fn renderScalarMap(
         .connect = connect,
         .disp = null,
         .shader = .{
-            .tex_func = .{
+            .func = .{
                 .uvs = null,
                 .builtin = .constant,
                 .normal_type = .none,
@@ -342,7 +343,7 @@ fn renderScalarMap(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try riley.rasterAllFrames(
+    const result = (try riley.raster(
         render_allocator,
         &render_groups,
         &[_]cam.CameraInput{camera_input},
@@ -356,8 +357,8 @@ fn renderScalarMap(
 
 fn buildCentroidCameraInput(ref_coords: *const meshio.Coords) cam.CameraInput {
     const initial_rot = orch.defaultRotation();
-    const roi_cent_world = cam.CameraOps.centFromCoordsMean(ref_coords);
-    const pos_world = cam.CameraOps.posFillFrameFromRotAndTarget(
+    const roi_cent_world = cameraops.centFromCoordsMean(ref_coords);
+    const pos_world = cameraops.posFillFrameFromRotAndTarget(
         ref_coords,
         roi_cent_world,
         pixel_num,
@@ -385,7 +386,7 @@ fn buildCentroidCameraInputOverFrames(
     mesh_type: @TypeOf(vconst.distort_cases[0].mesh_type),
 ) !cam.CameraInput {
     const initial_rot = orch.defaultRotation();
-    const roi_cent_world = cam.CameraOps.centFromCoordsMean(&sim_data.coords);
+    const roi_cent_world = cameraops.centFromCoordsMean(&sim_data.coords);
     const time_steps = if (sim_data.field) |field| field.getTimeN() else 1;
 
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -401,7 +402,7 @@ fn buildCentroidCameraInputOverFrames(
             .connect = sim_data.connect,
             .disp = null,
             .shader = .{
-                .tex_func = .{
+                .func = .{
                     .uvs = null,
                     .builtin = .constant,
                     .normal_type = .none,
@@ -410,7 +411,7 @@ fn buildCentroidCameraInputOverFrames(
         };
     }
 
-    const pos_world = cam.CameraOps.posFillFrameFromRotOverMeshesAndTarget(
+    const pos_world = cameraops.posFillFrameFromRotOverMeshesAndTarget(
         frame_meshes,
         roi_cent_world,
         pixel_num,
@@ -487,8 +488,8 @@ fn runDistortCase(
         const fa = frame_arena.allocator();
 
         const frame_coords = try buildFrameCoords(fa, &sim_data, frame_idx);
-        const frame_cent_world = cam.CameraOps.centFromCoordsMean(&frame_coords);
-        const fov_scaling = cam.CameraOps.calcFOVScaling(
+        const frame_cent_world = cameraops.centFromCoordsMean(&frame_coords);
+        const fov_scaling = cameraops.calcFOVScaling(
             base_camera_input,
             frame_cent_world,
         );

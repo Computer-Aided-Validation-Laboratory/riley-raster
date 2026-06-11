@@ -74,7 +74,12 @@ fn inverseDistortionWithIters(
     var y_guess = y_dist;
 
     for (0..max_iters) |ii| {
-        const fwd = distortion.forwardWithJac(x_guess, y_guess);
+        const fwd = cam.forwardDistortionWithJacScalar(
+            DistortionType,
+            distortion,
+            x_guess,
+            y_guess,
+        );
         const resid_x = fwd.x_d - x_dist;
         const resid_y = fwd.y_d - y_dist;
 

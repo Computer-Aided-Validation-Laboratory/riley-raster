@@ -100,7 +100,7 @@ fn renderCase(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const images = try riley.rasterAllFrames(
+    const images = try riley.raster(
         allocator,
         &render_groups,
         &[_]CameraInput{camera_input},
@@ -135,7 +135,7 @@ pub fn mainWithOutputRoot(
         .quad8,
         .quad9,
     };
-    const builtins = [_]shaderops.TexFuncBuiltin{
+    const builtins = [_]shaderops.FuncShaderBuiltin{
         .constant,
         .linear,
         .quadratic,
@@ -187,7 +187,7 @@ pub fn mainWithOutputRoot(
                         .connect = prepared.connect,
                         .disp = null,
                         .shader = .{
-                            .tex_func = .{
+                            .func = .{
                                 .uvs = uvs,
                                 .builtin = builtin,
                                 .normal_type = normal_type,
@@ -219,7 +219,7 @@ pub fn mainWithOutputRoot(
                         .connect = prepared.connect,
                         .disp = null,
                         .shader = .{
-                            .tex_func_rgb = .{
+                            .func_rgb = .{
                                 .uvs = uvs,
                                 .builtin = builtin,
                                 .normal_type = normal_type,

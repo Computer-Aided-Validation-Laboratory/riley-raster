@@ -13,8 +13,9 @@ else
     @import("rasterengine_scalar.zig");
 const simd_impl = @import("rasterengine_simd.zig");
 
+const scratchfilter = @import("scratchfilter.zig");
 pub const ScratchBuffers = simd_impl.ScratchBuffers;
 pub const rasterScene = impl.rasterScene;
 pub const RasterEngine = impl.RasterEngine;
-pub const resolveScratchDirect = simd_impl.resolveScratchDirect;
-pub const averageScratch = impl.averageScratch;
+pub const resolveScratchDirect = scratchfilter.resolveScratchDirect;
+pub const averageScratch = scratchfilter.averageScratch;

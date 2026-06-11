@@ -222,14 +222,24 @@ pub fn idealToObservedRaster(
     return switch (camera.distortion) {
         .none => ideal_xy,
         .brown_conrady => |distortion| blk: {
-            const distorted = distortion.forward(x_norm, y_norm);
+            const distorted = cam.forwardDistortionScalar(
+                @TypeOf(distortion),
+                distortion,
+                x_norm,
+                y_norm,
+            );
             break :blk .{
                 distorted[0] * focal_px.fx + offsets.x_off,
                 distorted[1] * focal_px.fy + offsets.y_off,
             };
         },
         .brown_conrady_ext => |distortion| blk: {
-            const distorted = distortion.forward(x_norm, y_norm);
+            const distorted = cam.forwardDistortionScalar(
+                @TypeOf(distortion),
+                distortion,
+                x_norm,
+                y_norm,
+            );
             break :blk .{
                 distorted[0] * focal_px.fx + offsets.x_off,
                 distorted[1] * focal_px.fy + offsets.y_off,
@@ -250,14 +260,24 @@ pub fn observedToIdealRaster(
     return switch (camera.distortion) {
         .none => observed_xy,
         .brown_conrady => |distortion| blk: {
-            const solved = try distortion.inverse(x_dist, y_dist);
+            const solved = try cam.inverseDistortionScalar(
+                @TypeOf(distortion),
+                distortion,
+                x_dist,
+                y_dist,
+            );
             break :blk .{
                 solved.x * focal_px.fx + offsets.x_off,
                 solved.y * focal_px.fy + offsets.y_off,
             };
         },
         .brown_conrady_ext => |distortion| blk: {
-            const solved = try distortion.inverse(x_dist, y_dist);
+            const solved = try cam.inverseDistortionScalar(
+                @TypeOf(distortion),
+                distortion,
+                x_dist,
+                y_dist,
+            );
             break :blk .{
                 solved.x * focal_px.fx + offsets.x_off,
                 solved.y * focal_px.fy + offsets.y_off,

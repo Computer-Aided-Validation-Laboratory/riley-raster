@@ -14,7 +14,7 @@ OUT_DIR = repo_root() / "verif"
 
 RASTER_FIG_STEM = "fig_bench4_best_raster_throughput"
 E2E_FIG_STEM = "fig_bench4_best_e2e_throughput"
-FIGS_TEX_NAME = "bench4_figs.tex"
+FIGS_TEX_NAME = "figs_bench4.tex"
 AMDAHL_SOURCE_NAME = "bench4_amdahl.csv"
 AMDAHL_TABLE_NAME = "bench4_amdahl_table.csv"
 

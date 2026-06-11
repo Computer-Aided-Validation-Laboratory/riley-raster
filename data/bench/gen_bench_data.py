@@ -7,8 +7,12 @@ def save_csv(path, data):
 
 def get_nodes_for_elem(etype):
     return {
-        "tri3": 3, "tri3opt": 3, "tri6": 6,
-        "quad4ibi": 4, "quad4newton": 4, "quad8": 8, "quad9": 9
+        "tri3": 3,
+        "tri6": 6,
+        "quad4ibi": 4,
+        "quad4newton": 4,
+        "quad8": 8,
+        "quad9": 9,
     }[etype]
 
 WIDTH = 16.0
@@ -79,9 +83,13 @@ def generate_grid(etype, out_dir, N=320):
     conn = []
     for jj in range(0, yn, step):
         for ii in range(0, xn, step):
-            i0, i1, i2, i3 = jj*(xn+1)+ii, jj*(xn+1)+ii+step, (jj+step)*(xn+1)+ii+step, (jj+step)*(xn+1)+ii
-            if etype in ["tri3", "tri3opt"]:
-                conn.append([i0, i1, i2]); conn.append([i0, i2, i3])
+            i0 = jj * (xn + 1) + ii
+            i1 = jj * (xn + 1) + ii + step
+            i2 = (jj + step) * (xn + 1) + ii + step
+            i3 = (jj + step) * (xn + 1) + ii
+            if etype == "tri3":
+                conn.append([i0, i1, i2])
+                conn.append([i0, i2, i3])
             elif "quad" in etype and not is_higher:
                 conn.append([i0, i1, i2, i3])
             elif etype == "tri6":
@@ -147,7 +155,7 @@ def generate_sphere(etype, out_dir, N_target):
             i2 = (r + step) * cols + (c + step)
             i3 = (r + step) * cols + c
             
-            if etype in ["tri3", "tri3opt"]:
+            if etype == "tri3":
                 conn.append([i0, i3, i2])
                 conn.append([i0, i2, i1])
             elif etype in ["quad4ibi", "quad4newton"]:
@@ -197,10 +205,30 @@ def generate_sphere(etype, out_dir, N_target):
     save_csv(f"{out_dir}/field.csv", fields)
 
 if __name__ == "__main__":
-    for et in ["tri3", "tri3opt", "tri6", "quad4ibi", "quad4newton", "quad8", "quad9"]:
+    elements = [
+        "tri3",
+        "tri6",
+        "quad4ibi",
+        "quad4newton",
+        "quad8",
+        "quad9",
+    ]
+    for et in elements:
         print(f"Generating data for {et}...")
         generate_fullscreen(et, f"data/bench/{et}_fullraster")
         generate_grid(et, f"data/bench/{et}_geom", N=320)
-        generate_grid(et, f"data/bench/{et}_bal", N=8)
-        generate_sphere(et, f"data/bench/{et}_sphere200", 200)
-        generate_sphere(et, f"data/bench/{et}_sphere2000", 2000)
+        for size_str, target_elems in [
+            ("1e3", 1000),
+            ("1e4", 10000),
+            ("1e5", 100000),
+            ("1e6", 1000000),
+        ]:
+            if "tri" in et:
+                N = int(round(np.sqrt(target_elems / 2)))
+            else:
+                N = int(round(np.sqrt(target_elems)))
+            generate_grid(et, f"data/bench/{et}_geom_{size_str}", N=N)
+
+        if et != "quad4ibi":
+            generate_sphere(et, f"data/bench/{et}_sphere200", 200)
+            generate_sphere(et, f"data/bench/{et}_sphere2000", 2000)

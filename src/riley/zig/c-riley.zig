@@ -9,6 +9,8 @@
 const std = @import("std");
 
 const cam = @import("camera.zig");
+const cameraio = @import("cameraio.zig");
+const cameraops = @import("cameraops.zig");
 const gk = @import("geometrykernels.zig");
 const iio = @import("imageio.zig");
 const imageops = @import("imageops.zig");
@@ -99,23 +101,15 @@ pub const CCameraInput = extern struct {
     distortion_p1: f64,
     distortion_p2: f64,
     coord_sys: u32,
+    psf_type: u32,
+    psf_sigma_x: f64,
+    psf_sigma_y: f64,
+    psf_theta: f64,
+    psf_support_rad: f64,
+    psf_separable: u32,
 };
 
-pub const CMeshInputTex = extern struct {
-    mesh_type: u32,
-    coords: CArray2DF64,
-    connect: CArray2DUsize,
-    uvs: CArray2DF64,
-    texture: CArray2DF64,
-    sample: u32,
-    sample_mode: u32,
-    bits: c_int,
-    scaling_tag: u32,
-    scaling_min: f64,
-    scaling_max: f64,
-};
-
-pub const CTexFuncParams = extern struct {
+pub const CFuncShaderParams = extern struct {
     coord_scale_0: f64,
     coord_scale_1: f64,
     coord_offset_0: f64,
@@ -149,17 +143,14 @@ pub const CMeshInput = extern struct {
     scaling_max: f64,
     nodal_field: CArray3DF64,
     scale_over: u32,
-    tex_func_builtin: u32,
-    tex_func_params: CTexFuncParams,
+    func_shader_builtin: u32,
+    func_shader_params: CFuncShaderParams,
     normal_type: u32,
 };
 
 pub const CRasterConfig = extern struct {
     render_mode: u32,
     total_threads: u16,
-    max_frames_in_flight: u16,
-    max_geom_workers_per_frame: u16,
-    max_raster_workers_per_frame: u16,
     frame_batch_size_per_group: u16,
     max_geom_jobs_in_flight_per_group: u16,
     max_geom_workers_per_job: u16,
@@ -173,22 +164,12 @@ pub const CRasterConfig = extern struct {
     tile_size_max: u16,
     background_value: f64,
     disk_save_overlap: u8,
-};
-
-pub const CParallelConfig = extern struct {
-    render_mode: u32,
-    total_threads: u16,
-    render_group_count: u16,
-    workers_per_group_len: usize,
-    workers_per_group: [*c]const u16,
-    max_frames_in_flight: u16,
-    max_geom_workers_per_frame: u16,
-    max_raster_workers_per_frame: u16,
-    frame_batch_size_per_group: u16,
-    max_geom_jobs_in_flight_per_group: u16,
-    max_geom_workers_per_job: u16,
-    geom_scheduling_mode: u32,
-    max_raster_workers_per_job: u16,
+    tile_size_override: u16,
+    save_format: u32,
+    save_bits: u32,
+    save_scaling: u32,
+    save_scaling_min: f64,
+    save_scaling_max: f64,
 };
 
 const MeshInputBuilt = struct {
@@ -379,13 +360,13 @@ fn reportModeFromC(report_mode: u32) !riley.ReportMode {
     };
 }
 
-fn subPixelCenterMapFromC(
+fn subpxCenterMapFromC(
     subpx_map: u32,
-) !rastcfg.SubPixelCenterMap {
+) !cam.SubPixelCenterMap {
     return switch (subpx_map) {
-        @intFromEnum(rastcfg.SubPixelCenterMap.full_in_mem) => .full_in_mem,
-        @intFromEnum(rastcfg.SubPixelCenterMap.per_tile) => .per_tile,
-        @intFromEnum(rastcfg.SubPixelCenterMap.affine_jac) => .affine_jac,
+        @intFromEnum(cam.SubPixelCenterMap.full_in_mem) => .full_in_mem,
+        @intFromEnum(cam.SubPixelCenterMap.per_tile) => .per_tile,
+        @intFromEnum(cam.SubPixelCenterMap.affine_jac) => .affine_jac,
         else => error.InvalidSubPixelCenterMap,
     };
 }
@@ -395,6 +376,44 @@ fn coordSysFromC(coord_sys: u32) !cam.CameraCoordSys {
         @intFromEnum(cam.CameraCoordSys.opengl) => .opengl,
         @intFromEnum(cam.CameraCoordSys.opencv) => .opencv,
         else => error.InvalidCoordSys,
+    };
+}
+
+fn imageFormatFromC(format_tag: u32) !iio.ImageFormat {
+    return switch (format_tag) {
+        0 => .csv,
+        1 => .fimg,
+        2 => .ppm,
+        3 => .bmp,
+        4 => .tiff,
+        else => error.InvalidImageFormat,
+    };
+}
+
+fn psfSeparableFromC(sep_tag: u32) !cam.SeparablePSF {
+    return switch (sep_tag) {
+        0 => .no,
+        1 => .yes,
+        else => error.InvalidSeparablePSF,
+    };
+}
+
+fn psfFromC(in_camera: *const CCameraInput) !cam.PointSpreadFunc {
+    return switch (in_camera.psf_type) {
+        0 => .{ .pixel_box = .{} },
+        1 => .{ .gaussian = .{
+            .sigma_px = in_camera.psf_sigma_x,
+            .support_rad_px = in_camera.psf_support_rad,
+            .separable = try psfSeparableFromC(in_camera.psf_separable),
+        } },
+        2 => .{ .anisotropic_gaussian = .{
+            .sigma_x_px = in_camera.psf_sigma_x,
+            .sigma_y_px = in_camera.psf_sigma_y,
+            .theta_rad = in_camera.psf_theta,
+            .support_rad_px = in_camera.psf_support_rad,
+            .separable = try psfSeparableFromC(in_camera.psf_separable),
+        } },
+        else => error.InvalidPsfType,
     };
 }
 
@@ -423,11 +442,12 @@ fn distortionFromC(in_camera: *const CCameraInput) !cam.DistortionModel {
 }
 
 fn textureSampleFromC(sample: u32) !texops.TextureSample {
+    const mitchell = texops.TextureSample.cubic_mitchell_netravali;
     return switch (sample) {
         @intFromEnum(texops.TextureSample.nearest) => .nearest,
         @intFromEnum(texops.TextureSample.linear) => .linear,
         @intFromEnum(texops.TextureSample.cubic_catmull_rom) => .cubic_catmull_rom,
-        @intFromEnum(texops.TextureSample.cubic_mitchell_netravali) => .cubic_mitchell_netravali,
+        @intFromEnum(mitchell) => .cubic_mitchell_netravali,
         @intFromEnum(texops.TextureSample.lanczos3) => .lanczos3,
         @intFromEnum(texops.TextureSample.cubic_bspline) => .cubic_bspline,
         @intFromEnum(texops.TextureSample.quintic_bspline) => .quintic_bspline,
@@ -454,17 +474,19 @@ fn scaleOverFromC(scale_over: u32) !shaderops.ScaleOver {
     };
 }
 
-fn texFuncBuiltinFromC(
-    tex_func_builtin: u32,
-) !shaderops.TexFuncBuiltin {
-    return switch (tex_func_builtin) {
-        @intFromEnum(shaderops.TexFuncBuiltin.constant) => .constant,
-        @intFromEnum(shaderops.TexFuncBuiltin.linear) => .linear,
-        @intFromEnum(shaderops.TexFuncBuiltin.quadratic) => .quadratic,
-        @intFromEnum(shaderops.TexFuncBuiltin.sinusoidal) => .sinusoidal,
-        @intFromEnum(shaderops.TexFuncBuiltin.checker_smooth) => .checker_smooth,
-        @intFromEnum(shaderops.TexFuncBuiltin.lambertian_normal_z) => .lambertian_normal_z,
-        else => error.InvalidTexFuncBuiltin,
+fn funcShaderBuiltinFromC(
+    func_shader_builtin: u32,
+) !shaderops.FuncShaderBuiltin {
+    const lambertian = shaderops.FuncShaderBuiltin.lambertian_normal_z;
+    return switch (func_shader_builtin) {
+        @intFromEnum(shaderops.FuncShaderBuiltin.constant) => .constant,
+        @intFromEnum(shaderops.FuncShaderBuiltin.linear) => .linear,
+        @intFromEnum(shaderops.FuncShaderBuiltin.quadratic) => .quadratic,
+        @intFromEnum(shaderops.FuncShaderBuiltin.sinusoidal) => .sinusoidal,
+        @intFromEnum(shaderops.FuncShaderBuiltin.checker) => .checker,
+        @intFromEnum(shaderops.FuncShaderBuiltin.checker_smooth) => .checker_smooth,
+        @intFromEnum(lambertian) => .lambertian_normal_z,
+        else => error.InvalidFuncShaderBuiltin,
     };
 }
 
@@ -477,9 +499,9 @@ fn normalTypeFromC(normal_type: u32) !shaderops.NormalType {
     };
 }
 
-fn texFuncParamsFromC(
-    in_params: CTexFuncParams,
-) shaderops.TexFuncParams {
+fn funcShaderParamsFromC(
+    in_params: CFuncShaderParams,
+) shaderops.FuncShaderParams {
     return .{
         .coord_scale = .{
             in_params.coord_scale_0,
@@ -666,93 +688,8 @@ fn buildCameraInput(
         .focal_length = in_camera.focal_length,
         .sub_sample = in_camera.sub_sample,
         .distortion = try distortionFromC(in_camera),
+        .psf = try psfFromC(in_camera),
         .coord_sys = try coordSysFromC(in_camera.coord_sys),
-    };
-}
-
-fn buildMeshInputTex(
-    allocator: std.mem.Allocator,
-    in_mesh: *const CMeshInputTex,
-) !MeshInputBuilt {
-    const mesh_type = try meshTypeFromC(in_mesh.mesh_type);
-    const nodes_per_elem = mesh_type.getNodesNum();
-
-    if (in_mesh.connect.cols_num != nodes_per_elem) {
-        return error.InvalidConnectShape;
-    }
-    if (in_mesh.uvs.cols_num != 2) {
-        return error.InvalidUVShape;
-    }
-
-    const coords_slice = try cConstSlice(
-        f64,
-        in_mesh.coords.elems,
-        in_mesh.coords.rows_num * in_mesh.coords.cols_num,
-    );
-    const coords = meshio.Coords.init(
-        @constCast(coords_slice),
-        in_mesh.coords.rows_num,
-    );
-    const connect = try buildConnectFromC(&in_mesh.connect);
-
-    var uvs_array = try buildArray2DF64(
-        allocator,
-        &in_mesh.uvs,
-        2,
-    );
-    errdefer uvs_array.deinit(allocator);
-
-    const texture_slice = try cConstSlice(
-        f64,
-        in_mesh.texture.elems,
-        in_mesh.texture.rows_num * in_mesh.texture.cols_num,
-    );
-    var texture_dims = [_]usize{
-        1,
-        in_mesh.texture.rows_num,
-        in_mesh.texture.cols_num,
-    };
-    var texture_array = try ndarray.NDArray(f64).init(
-        allocator,
-        @constCast(texture_slice),
-        texture_dims[0..],
-    );
-    errdefer texture_array.deinit(allocator);
-
-    const texture = texops.Texture(1){
-        .array = texture_array,
-        .rows_num = in_mesh.texture.rows_num,
-        .cols_num = in_mesh.texture.cols_num,
-    };
-    const sample_config = texops.TextureSampleConfig{
-        .sample = try textureSampleFromC(in_mesh.sample),
-        .mode = try textureSampleModeFromC(in_mesh.sample_mode),
-    };
-    if (!sample_config.isValid()) {
-        return error.InvalidTextureSampleConfig;
-    }
-
-    return .{
-        .mesh_input = .{
-            .mesh_type = mesh_type,
-            .coords = coords,
-            .connect = connect,
-            .disp = null,
-            .shader = .{ .tex = .{
-                .uvs = uvs_array,
-                .texture = texture,
-                .sample_config = sample_config,
-                .bits = try bitsFromC(in_mesh.bits),
-                .scaling = try scaleStrategyFromC(
-                    in_mesh.scaling_tag,
-                    in_mesh.scaling_min,
-                    in_mesh.scaling_max,
-                ),
-                .normal_type = .none,
-            } },
-        },
-        .uvs_array = uvs_array,
-        .texture_array = texture_array,
     };
 }
 
@@ -933,10 +870,10 @@ fn buildMeshInput(
                 uvs_array.deinit(allocator);
             };
 
-            built.mesh_input.shader = .{ .tex_func = .{
+            built.mesh_input.shader = .{ .func = .{
                 .uvs = uvs_array_opt,
-                .builtin = try texFuncBuiltinFromC(in_mesh.tex_func_builtin),
-                .params = texFuncParamsFromC(in_mesh.tex_func_params),
+                .builtin = try funcShaderBuiltinFromC(in_mesh.func_shader_builtin),
+                .params = funcShaderParamsFromC(in_mesh.func_shader_params),
                 .bits = bits,
                 .scaling = scaling,
                 .normal_type = normal_type,
@@ -956,10 +893,10 @@ fn buildMeshInput(
                 uvs_array.deinit(allocator);
             };
 
-            built.mesh_input.shader = .{ .tex_func_rgb = .{
+            built.mesh_input.shader = .{ .func_rgb = .{
                 .uvs = uvs_array_opt,
-                .builtin = try texFuncBuiltinFromC(in_mesh.tex_func_builtin),
-                .params = texFuncParamsFromC(in_mesh.tex_func_params),
+                .builtin = try funcShaderBuiltinFromC(in_mesh.func_shader_builtin),
+                .params = funcShaderParamsFromC(in_mesh.func_shader_params),
                 .bits = bits,
                 .scaling = scaling,
                 .normal_type = normal_type,
@@ -1035,16 +972,12 @@ fn deinitMeshInputSlice(
 }
 
 fn buildRasterConfig(
+    allocator: std.mem.Allocator,
     in_config: *const CRasterConfig,
 ) !riley.RasterConfig {
     var config = riley.RasterConfig{};
     config.render_mode = try renderModeFromC(in_config.render_mode);
     config.total_threads = @max(@as(u16, 1), in_config.total_threads);
-    config.max_frames_in_flight = @max(@as(u16, 1), in_config.max_frames_in_flight);
-    config.max_geom_workers_per_frame =
-        @max(@as(u16, 1), in_config.max_geom_workers_per_frame);
-    config.max_raster_workers_per_frame =
-        @max(@as(u16, 1), in_config.max_raster_workers_per_frame);
     config.frame_batch_size_per_group =
         @max(@as(u16, 1), in_config.frame_batch_size_per_group);
     config.max_geom_jobs_in_flight_per_group =
@@ -1058,9 +991,6 @@ fn buildRasterConfig(
         @max(@as(u16, 1), in_config.max_raster_workers_per_job);
     config.save_strategy = try saveStrategyFromC(in_config.save_strategy);
     config.image_mode = try imageModeFromC(in_config.image_mode);
-    config.subpixel_center_map = try subPixelCenterMapFromC(
-        in_config.subpixel_center_map,
-    );
     config.report = try reportModeFromC(in_config.report);
     config.tile_size_min = if (in_config.tile_size_min == 0)
         config.tile_size_min
@@ -1072,32 +1002,27 @@ fn buildRasterConfig(
         in_config.tile_size_max;
     config.background_value = in_config.background_value;
     config.disk_save_overlap = in_config.disk_save_overlap != 0;
-    config.image_save_opts = &default_image_save_opts;
-    return config;
-}
+    config.tile_size_override = if (in_config.tile_size_override == 0)
+        null
+    else
+        in_config.tile_size_override;
 
-fn applyParallelConfig(
-    config: *riley.RasterConfig,
-    in_parallel_config: *const CParallelConfig,
-) !void {
-    config.render_mode = try renderModeFromC(in_parallel_config.render_mode);
-    config.total_threads = @max(@as(u16, 1), in_parallel_config.total_threads);
-    config.max_frames_in_flight = @max(@as(u16, 1), in_parallel_config.max_frames_in_flight);
-    config.max_geom_workers_per_frame =
-        @max(@as(u16, 1), in_parallel_config.max_geom_workers_per_frame);
-    config.max_raster_workers_per_frame =
-        @max(@as(u16, 1), in_parallel_config.max_raster_workers_per_frame);
-    config.frame_batch_size_per_group =
-        @max(@as(u16, 1), in_parallel_config.frame_batch_size_per_group);
-    config.max_geom_jobs_in_flight_per_group =
-        @max(@as(u16, 1), in_parallel_config.max_geom_jobs_in_flight_per_group);
-    config.max_geom_workers_per_job =
-        @max(@as(u16, 1), in_parallel_config.max_geom_workers_per_job);
-    config.geom_scheduling_mode = try geometrySchedulingModeFromC(
-        in_parallel_config.geom_scheduling_mode,
-    );
-    config.max_raster_workers_per_job =
-        @max(@as(u16, 1), in_parallel_config.max_raster_workers_per_job);
+    const save_opts = try allocator.alloc(iio.ImageSaveOpts, 1);
+    save_opts[0] = .{
+        .format = try imageFormatFromC(in_config.save_format),
+        .bits = if (in_config.save_bits == 0)
+            null
+        else
+            @as(u8, @intCast(in_config.save_bits)),
+        .scaling = try scaleStrategyFromC(
+            in_config.save_scaling,
+            in_config.save_scaling_min,
+            in_config.save_scaling_max,
+        ),
+    };
+    config.image_save_opts = save_opts;
+
+    return config;
 }
 
 const RenderGroupRuntime = struct {
@@ -1118,44 +1043,40 @@ const RenderGroupRuntime = struct {
 
 fn initRenderGroups(
     allocator: std.mem.Allocator,
-    in_parallel_config: *const CParallelConfig,
+    total_threads_in: u16,
+    num_frames: usize,
 ) !RenderGroupRuntime {
-    const render_group_count = @max(@as(u16, 1), in_parallel_config.render_group_count);
-    const workers_per_group = try cConstSlice(
-        u16,
-        in_parallel_config.workers_per_group,
-        in_parallel_config.workers_per_group_len,
-    );
-    if (workers_per_group.len != 0 and workers_per_group.len != render_group_count) {
-        return error.InvalidWorkersPerGroupLen;
+    const total_threads = @max(@as(u16, 1), total_threads_in);
+    const frames_available = @max(@as(usize, 1), num_frames);
+    var render_group_count: u16 = 1;
+    if (total_threads < frames_available) {
+        render_group_count = total_threads;
+    } else {
+        for (1..frames_available + 1) |group_count| {
+            if (@as(usize, total_threads) % group_count == 0) {
+                render_group_count = @intCast(group_count);
+            }
+        }
     }
+    const workers_per_group = total_threads / render_group_count;
 
     const managed_ios = try allocator.alloc(std.Io.Threaded, render_group_count);
     errdefer allocator.free(managed_ios);
-    const render_groups = try allocator.alloc(riley.RenderGroupSpec, render_group_count);
+    const render_groups = try allocator.alloc(
+        riley.RenderGroupSpec,
+        render_group_count,
+    );
     errdefer allocator.free(render_groups);
 
-    var total_threads: u32 = 0;
     for (0..render_group_count) |gg| {
-        const workers = if (workers_per_group.len == 0)
-            1
-        else
-            @max(@as(u16, 1), workers_per_group[gg]);
-        total_threads += workers;
         managed_ios[gg] = initThreadedIo(
             allocator,
-            workers,
+            workers_per_group,
         );
         render_groups[gg] = .{
             .io = managed_ios[gg].io(),
-            .workers = workers,
+            .workers = workers_per_group,
         };
-    }
-
-    if (in_parallel_config.total_threads != 0 and
-        total_threads != in_parallel_config.total_threads)
-    {
-        return error.InvalidTotalThreads;
     }
 
     return .{
@@ -1232,6 +1153,12 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
         .distortion_p1 = 0.0,
         .distortion_p2 = 0.0,
         .coord_sys = @intFromEnum(in_camera.coord_sys),
+        .psf_type = 0,
+        .psf_sigma_x = 0.0,
+        .psf_sigma_y = 0.0,
+        .psf_theta = 0.0,
+        .psf_support_rad = 0.0,
+        .psf_separable = 1,
     };
 
     switch (in_camera.distortion) {
@@ -1256,6 +1183,33 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
             out_camera.distortion_p2 = model.p2;
         },
     }
+
+    switch (in_camera.psf) {
+        .pixel_box => {
+            out_camera.psf_type = 0;
+            out_camera.psf_separable = 1;
+        },
+        .gaussian => |g| {
+            out_camera.psf_type = 1;
+            out_camera.psf_sigma_x = g.sigma_px;
+            out_camera.psf_support_rad = g.support_rad_px;
+            out_camera.psf_separable = if (g.separable == .yes)
+                @as(u32, 1)
+            else
+                @as(u32, 0);
+        },
+        .anisotropic_gaussian => |ag| {
+            out_camera.psf_type = 2;
+            out_camera.psf_sigma_x = ag.sigma_x_px;
+            out_camera.psf_sigma_y = ag.sigma_y_px;
+            out_camera.psf_theta = ag.theta_rad;
+            out_camera.psf_support_rad = ag.support_rad_px;
+            out_camera.psf_separable = if (ag.separable == .yes)
+                @as(u32, 1)
+            else
+                @as(u32, 0);
+        },
+    }
     return out_camera;
 }
 
@@ -1266,7 +1220,6 @@ fn rasterSceneInternal(
     in_cameras: [*c]const CCameraInput,
     cameras_len: usize,
     in_config: *const CRasterConfig,
-    in_parallel_config: ?*const CParallelConfig,
     out_dir_path: ?[*:0]const u8,
     out_image: ?*CImageBufferF64,
 ) !void {
@@ -1287,9 +1240,11 @@ fn rasterSceneInternal(
     );
     defer allocator.free(camera_inputs);
 
-    var raster_config = try buildRasterConfig(in_config);
-    if (in_parallel_config) |parallel_config| {
-        try applyParallelConfig(&raster_config, parallel_config);
+    const raster_config = try buildRasterConfig(allocator, in_config);
+
+    const spx_map = try subpxCenterMapFromC(in_config.subpixel_center_map);
+    for (camera_inputs) |*cam_in| {
+        cam_in.subpixel_center_map = spx_map;
     }
 
     var image_arr_opt: ?ndarray.NDArray(f64) = null;
@@ -1300,27 +1255,11 @@ fn rasterSceneInternal(
         image_arr.deinit(allocator);
     };
 
-    var render_group_runtime = if (in_parallel_config) |parallel_config|
-        try initRenderGroups(std.heap.smp_allocator, parallel_config)
-    else blk: {
-        const threaded_io = initThreadedIo(
-            std.heap.smp_allocator,
-            raster_config.total_threads,
-        );
-        const managed_ios = try std.heap.smp_allocator.alloc(std.Io.Threaded, 1);
-        errdefer std.heap.smp_allocator.free(managed_ios);
-        managed_ios[0] = threaded_io;
-        const render_groups = try std.heap.smp_allocator.alloc(riley.RenderGroupSpec, 1);
-        errdefer std.heap.smp_allocator.free(render_groups);
-        render_groups[0] = .{
-            .io = managed_ios[0].io(),
-            .workers = @max(@as(u16, 1), raster_config.total_threads),
-        };
-        break :blk RenderGroupRuntime{
-            .managed_ios = managed_ios,
-            .render_groups = render_groups,
-        };
-    };
+    var render_group_runtime = try initRenderGroups(
+        std.heap.smp_allocator,
+        raster_config.total_threads,
+        cameras_len,
+    );
     defer render_group_runtime.deinit(std.heap.smp_allocator);
 
     const out_dir_path_slice = if (out_dir_path) |path|
@@ -1328,7 +1267,7 @@ fn rasterSceneInternal(
     else
         null;
 
-    try riley.rasterAllFramesInto(
+    try riley.rasterInto(
         std.heap.smp_allocator,
         render_group_runtime.render_groups,
         camera_inputs,
@@ -1349,7 +1288,7 @@ pub export fn rileyRoiCentFromCoords(
         setLastError(err);
         return 1;
     };
-    const roi_cent = cam.CameraOps.roiCentFromCoords(&coords);
+    const roi_cent = cameraops.roiCentFromCoords(&coords);
     out_cent.* = vec3ToCVec3(roi_cent);
     return 0;
 }
@@ -1374,7 +1313,7 @@ pub export fn rileyPosFillFrameFromRot(
         rot_world.y,
         rot_world.z,
     );
-    const cam_pos = cam.CameraOps.posFillFrameFromRot(
+    const cam_pos = cameraops.posFillFrameFromRot(
         &coords,
         .{ pixels_num.x, pixels_num.y },
         .{ pixels_size.x, pixels_size.y },
@@ -1412,7 +1351,7 @@ pub export fn rileyRoiCentOverMeshes(
         return 1;
     };
 
-    const roi_cent = cam.CameraOps.roiCentOverMeshes(mesh_inputs);
+    const roi_cent = cameraops.roiCentOverMeshes(mesh_inputs);
     out_cent.* = vec3ToCVec3(roi_cent);
     return 0;
 }
@@ -1453,7 +1392,7 @@ pub export fn rileyPosFillFrameFromRotOverMeshes(
         rot_world.y,
         rot_world.z,
     );
-    const cam_pos = cam.CameraOps.posFillFrameFromRotOverMeshes(
+    const cam_pos = cameraops.posFillFrameFromRotOverMeshes(
         mesh_inputs,
         .{ pixels_num.x, pixels_num.y },
         .{ pixels_size.x, pixels_size.y },
@@ -1501,14 +1440,23 @@ pub export fn rileyCalcOutputDimsScene(
         setLastError(err);
         return 1;
     };
+    const spx_map = subpxCenterMapFromC(in_config.subpixel_center_map) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    for (camera_inputs) |*cam_in| {
+        cam_in.subpixel_center_map = spx_map;
+    }
+
+    const raster_config = buildRasterConfig(aa, in_config) catch |err| {
+        setLastError(err);
+        return 1;
+    };
 
     const dims = riley.calcAllFramesImageDimsForConfig(
         camera_inputs,
         mesh_inputs,
-        buildRasterConfig(in_config) catch |err| {
-            setLastError(err);
-            return 1;
-        },
+        raster_config,
     ) catch |err| {
         setLastError(err);
         return 1;
@@ -1517,36 +1465,88 @@ pub export fn rileyCalcOutputDimsScene(
     return 0;
 }
 
-pub export fn rileyRasterScene(
-    in_meshes: [*c]const CMeshInput,
-    meshes_len: usize,
-    in_cameras: [*c]const CCameraInput,
-    cameras_len: usize,
-    in_config: *const CRasterConfig,
-    in_parallel_config: ?*const CParallelConfig,
-    out_dir_path: ?[*:0]const u8,
-    out_image: ?*CImageBufferF64,
+pub export fn rileySaveCamera(
+    out_dir_path: [*:0]const u8,
+    file_name: [*:0]const u8,
+    camera_idx: usize,
+    camera_in: *const CCameraInput,
+) c_int {
+    clearLastError();
+
+    const camera = buildCameraInput(camera_in) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+
+    var threaded_io = initThreadedIo(std.heap.smp_allocator, 1);
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDir(io, std.mem.span(out_dir_path), .default_dir) catch |err| {
+        if (err != error.PathAlreadyExists) {
+            setLastError(err);
+            return 1;
+        }
+    };
+
+    var out_dir = cwd.openDir(
+        io,
+        std.mem.span(out_dir_path),
+        .{},
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    defer out_dir.close(io);
+
+    cameraio.saveCamera(
+        io,
+        out_dir,
+        std.mem.span(file_name),
+        camera_idx,
+        camera,
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    return 0;
+}
+
+pub export fn rileyLoadCamera(
+    dir_path: [*:0]const u8,
+    file_name: [*:0]const u8,
+    camera_out: *CCameraInput,
 ) c_int {
     clearLastError();
 
     var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
     defer arena.deinit();
 
-    rasterSceneInternal(
-        arena.allocator(),
-        in_meshes,
-        meshes_len,
-        in_cameras,
-        cameras_len,
-        in_config,
-        in_parallel_config,
-        out_dir_path,
-        out_image,
+    var threaded_io = initThreadedIo(std.heap.smp_allocator, 1);
+    defer threaded_io.deinit();
+    const io = threaded_io.io();
+    const cwd = std.Io.Dir.cwd();
+
+    var dir = cwd.openDir(
+        io,
+        std.mem.span(dir_path),
+        .{},
     ) catch |err| {
         setLastError(err);
         return 1;
     };
+    defer dir.close(io);
 
+    const camera = cameraio.loadCamera(
+        arena.allocator(),
+        io,
+        dir,
+        std.mem.span(file_name),
+    ) catch |err| {
+        setLastError(err);
+        return 1;
+    };
+    camera_out.* = cameraInputToC(camera);
     return 0;
 }
 
@@ -1592,7 +1592,7 @@ pub export fn rileySaveStereoPair(
     };
     defer out_dir.close(io);
 
-    cam.CameraOps.saveStereoPair(
+    cameraio.saveStereoPair(
         io,
         out_dir,
         std.mem.span(stereo_file_name),
@@ -1632,7 +1632,7 @@ pub export fn rileyLoadStereoPair(
     };
     defer dir.close(io);
 
-    const stereo_pair = cam.CameraOps.loadStereoPair(
+    const stereo_pair = cameraio.loadStereoPair(
         aa,
         io,
         dir,
@@ -1646,46 +1646,11 @@ pub export fn rileyLoadStereoPair(
     return 0;
 }
 
-pub export fn rileyCalcOutputDimsTex(
-    in_mesh: *const CMeshInputTex,
-    in_camera: *const CCameraInput,
-    in_config: *const CRasterConfig,
-    out_dims: *CDims5Usize,
-) c_int {
-    clearLastError();
-
-    var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
-    defer arena.deinit();
-    const aa = arena.allocator();
-
-    var built_mesh = buildMeshInputTex(aa, in_mesh) catch |err| {
-        setLastError(err);
-        return 1;
-    };
-    defer built_mesh.deinit(aa);
-
-    const camera_input = buildCameraInput(in_camera) catch |err| {
-        setLastError(err);
-        return 1;
-    };
-    const dims = riley.calcAllFramesImageDimsForConfig(
-        &[_]cam.CameraInput{camera_input},
-        &[_]mo.MeshInput{built_mesh.mesh_input},
-        buildRasterConfig(in_config) catch |err| {
-            setLastError(err);
-            return 1;
-        },
-    ) catch |err| {
-        setLastError(err);
-        return 1;
-    };
-    out_dims.* = dimsFromArray(dims);
-    return 0;
-}
-
-pub export fn rileyRasterTex(
-    in_mesh: *const CMeshInputTex,
-    in_camera: *const CCameraInput,
+pub export fn rileyRaster(
+    in_meshes: [*c]const CMeshInput,
+    meshes_len: usize,
+    in_cameras: [*c]const CCameraInput,
+    cameras_len: usize,
     in_config: *const CRasterConfig,
     out_dir_path: ?[*:0]const u8,
     out_image: ?*CImageBufferF64,
@@ -1694,60 +1659,16 @@ pub export fn rileyRasterTex(
 
     var arena = std.heap.ArenaAllocator.init(std.heap.smp_allocator);
     defer arena.deinit();
-    const aa = arena.allocator();
 
-    var built_mesh = buildMeshInputTex(aa, in_mesh) catch |err| {
-        setLastError(err);
-        return 1;
-    };
-    defer built_mesh.deinit(aa);
-
-    const camera_input = buildCameraInput(in_camera) catch |err| {
-        setLastError(err);
-        return 1;
-    };
-    const raster_config = buildRasterConfig(in_config) catch |err| {
-        setLastError(err);
-        return 1;
-    };
-
-    var image_arr_opt: ?ndarray.NDArray(f64) = null;
-    if (out_image) |image_buffer| {
-        image_arr_opt = buildImageBuffer(aa, image_buffer) catch |err| {
-            setLastError(err);
-            return 1;
-        };
-    }
-    defer if (image_arr_opt) |*image_arr| {
-        image_arr.deinit(aa);
-    };
-
-    var threaded_io = initThreadedIo(
-        std.heap.smp_allocator,
-        raster_config.total_threads,
-    );
-    defer threaded_io.deinit();
-    const io = threaded_io.io();
-
-    const render_groups = [_]riley.RenderGroupSpec{
-        .{
-            .io = io,
-            .workers = @max(@as(u16, 1), raster_config.total_threads),
-        },
-    };
-    const out_dir_path_slice = if (out_dir_path) |path|
-        std.mem.span(path)
-    else
-        null;
-
-    riley.rasterAllFramesInto(
-        std.heap.smp_allocator,
-        &render_groups,
-        &[_]cam.CameraInput{camera_input},
-        &[_]mo.MeshInput{built_mesh.mesh_input},
-        raster_config,
-        out_dir_path_slice,
-        if (image_arr_opt) |*image_arr| image_arr else null,
+    rasterSceneInternal(
+        arena.allocator(),
+        in_meshes,
+        meshes_len,
+        in_cameras,
+        cameras_len,
+        in_config,
+        out_dir_path,
+        out_image,
     ) catch |err| {
         setLastError(err);
         return 1;

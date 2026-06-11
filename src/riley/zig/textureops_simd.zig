@@ -117,7 +117,7 @@ fn getPxWide(
     return samp_res;
 }
 
-pub fn sampleLinearWide(
+pub inline fn sampleLinearWide(
     comptime CH: usize,
     texture: anytype,
     v_tex_x_i: VecSI,
@@ -157,7 +157,7 @@ pub fn sampleLinearWide(
     return samp_res;
 }
 
-pub fn sampleLinearOneLane(
+pub inline fn sampleLinearOneLane(
     comptime CH: usize,
     texture: anytype,
     tex_x_i: isize,
@@ -178,7 +178,7 @@ pub fn sampleLinearOneLane(
     );
 }
 
-fn sampleConvOneLane(
+inline fn sampleConvOneLane(
     comptime CH: usize,
     comptime TAP: usize,
     texture: anytype,
@@ -187,6 +187,7 @@ fn sampleConvOneLane(
     samp_coeff_x: [TAP]f64,
     samp_coeff_y: [TAP]f64,
 ) [CH]f64 {
+    @setEvalBranchQuota(40000);
     const tap_offset = @as(isize, @intCast(TAP)) / 2 - 1;
     const tex_start_x = tex_x_i - tap_offset;
     const tex_start_y = tex_y_i - tap_offset;
@@ -253,7 +254,7 @@ fn sampleConvOneLane(
     return samp_res;
 }
 
-fn sampleConvWide(
+inline fn sampleConvWide(
     comptime CH: usize,
     comptime TAP: usize,
     texture: anytype,
@@ -264,6 +265,7 @@ fn sampleConvWide(
     v_samp_coeff_y: [TAP]VecSF,
     v_samp_coeff_sum: VecSF,
 ) [CH]VecSF {
+    @setEvalBranchQuota(40000);
     var samp_res: [CH]VecSF = [_]VecSF{@splat(0.0)} ** CH;
     var v_tap_samp_coeff_planes: [TAP * TAP]VecSF = undefined;
 
@@ -431,7 +433,7 @@ fn quinticBSplineCoeffSIMD(v_x: VecSF) VecSF {
 // Scalar Sampler (Helper)
 // --------------------------------------------------------------------------
 
-pub fn sampleOneLane(
+pub inline fn sampleOneLane(
     comptime CH: usize,
     comptime config: TextureSampleConfig,
     texture: anytype,
@@ -614,7 +616,7 @@ pub fn sampleOneLane(
 // Sampling Strategies
 // --------------------------------------------------------------------------
 
-pub fn sampleLanes(
+pub inline fn sampleLanes(
     comptime CH: usize,
     comptime config: TextureSampleConfig,
     v_mask_active: VecSB,
@@ -622,6 +624,7 @@ pub fn sampleLanes(
     v_u: VecSF,
     v_v: VecSF,
 ) [CH]VecSF {
+    @setEvalBranchQuota(40000);
     var samp_res_arr: [CH][S]f64 = [_][S]f64{[_]f64{0.0} ** S} ** CH;
     const mask_arr: [S]bool = v_mask_active;
     const u_arr: [S]f64 = v_u;
@@ -650,7 +653,7 @@ pub fn sampleLanes(
     return samp_res;
 }
 
-pub fn sampleLanesTri3(
+pub inline fn sampleLanesTri3(
     comptime CH: usize,
     comptime config: TextureSampleConfig,
     v_mask_active: VecSB,
@@ -658,6 +661,7 @@ pub fn sampleLanesTri3(
     v_u: VecSF,
     v_v: VecSF,
 ) [CH]VecSF {
+    @setEvalBranchQuota(40000);
     var samp_res_arr: [CH][S]f64 = [_][S]f64{[_]f64{0.0} ** S} ** CH;
     const mask_arr: [S]bool = v_mask_active;
     const u_arr: [S]f64 = v_u;
@@ -738,13 +742,14 @@ pub fn sampleLanesTri3(
     return samp_res;
 }
 
-pub fn sampleWide(
+pub inline fn sampleWide(
     comptime CH: usize,
     comptime config: TextureSampleConfig,
     texture: anytype,
     v_u: VecSF,
     v_v: VecSF,
 ) [CH]VecSF {
+    @setEvalBranchQuota(40000);
     std.debug.assert(config.isValid());
     const tex_cols_minus_1_f = @as(
         f64,
@@ -1056,896 +1061,4 @@ pub fn sampleWide(
             );
         },
     };
-}
-
-// --------------------------------------------------------------------------
-// Dispatch & Runtime Boilerplate
-// --------------------------------------------------------------------------
-
-fn sampleOneLaneRuntimeImpl(
-    comptime CH: usize,
-    config: TextureSampleConfig,
-    texture: anytype,
-    u: f64,
-    v: f64,
-) [CH]f64 {
-    std.debug.assert(config.isValid());
-
-    const tex_cols_minus_1_f = @as(
-        f64,
-        @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
-    );
-    const tex_rows_minus_1_f = @as(
-        f64,
-        @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
-    );
-
-    const xf = u * tex_cols_minus_1_f;
-    const yf = v * tex_rows_minus_1_f;
-
-    const tex_x_i = @as(isize, @intFromFloat(@floor(xf)));
-    const tex_y_i = @as(isize, @intFromFloat(@floor(yf)));
-
-    const tex_x_frac = xf - @as(f64, @floatFromInt(tex_x_i));
-    const tex_y_frac = yf - @as(f64, @floatFromInt(tex_y_i));
-
-    return switch (config.sample) {
-        .nearest => getPx(
-            CH,
-            texture,
-            @as(isize, @intFromFloat(@round(xf))),
-            @as(isize, @intFromFloat(@round(yf))),
-        ),
-        .linear => sampleLinearOneLane(
-            CH,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            tex_x_frac,
-            tex_y_frac,
-        ),
-        .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => {
-            const TAP = 4;
-            const coeff_fun: *const fn (f64) f64 = switch (config.sample) {
-                .cubic_catmull_rom => cubicCoeffCatmullRom,
-                .cubic_mitchell_netravali => cubicCoeffMitchellNetravali,
-                .cubic_bspline => cubicBSplineCoeff,
-                else => unreachable,
-            };
-            const lut = switch (config.sample) {
-                .cubic_catmull_rom => catmull_rom_lut,
-                .cubic_mitchell_netravali => mitchell_netravali_lut,
-                .cubic_bspline => cubic_bspline_lut,
-                else => unreachable,
-            };
-            return switch (config.mode) {
-                .direct => blk: {
-                    const coeffs_x = .{
-                        coeff_fun(tex_x_frac + 1),
-                        coeff_fun(tex_x_frac),
-                        coeff_fun(tex_x_frac - 1),
-                        coeff_fun(tex_x_frac - 2),
-                    };
-                    const coeffs_y = .{
-                        coeff_fun(tex_y_frac + 1),
-                        coeff_fun(tex_y_frac),
-                        coeff_fun(tex_y_frac - 1),
-                        coeff_fun(tex_y_frac - 2),
-                    };
-                    break :blk sampleConvOneLane(
-                        CH,
-                        TAP,
-                        texture,
-                        tex_x_i,
-                        tex_y_i,
-                        coeffs_x,
-                        coeffs_y,
-                    );
-                },
-                .lut => blk: {
-                    const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
-                    const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
-                    const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
-                    break :blk sampleConvOneLane(
-                        CH,
-                        TAP,
-                        texture,
-                        tex_x_i,
-                        tex_y_i,
-                        lut[idx_x],
-                        lut[idx_y],
-                    );
-                },
-                .lut_lerp => blk: {
-                    const coeffs_x = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
-                    const coeffs_y = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
-                    break :blk sampleConvOneLane(
-                        CH,
-                        TAP,
-                        texture,
-                        tex_x_i,
-                        tex_y_i,
-                        coeffs_x,
-                        coeffs_y,
-                    );
-                },
-            };
-        },
-        .lanczos3, .quintic_bspline => {
-            const TAP = 6;
-            const coeff_fun: *const fn (f64) f64 = switch (config.sample) {
-                .lanczos3 => lanczos3Coeff,
-                .quintic_bspline => quinticBSplineCoeff,
-                else => unreachable,
-            };
-            const lut = switch (config.sample) {
-                .lanczos3 => lanczos3_lut,
-                .quintic_bspline => quintic_bspline_lut,
-                else => unreachable,
-            };
-            return switch (config.mode) {
-                .direct => blk: {
-                    const coeffs_x = .{
-                        coeff_fun(tex_x_frac + 2),
-                        coeff_fun(tex_x_frac + 1),
-                        coeff_fun(tex_x_frac),
-                        coeff_fun(tex_x_frac - 1),
-                        coeff_fun(tex_x_frac - 2),
-                        coeff_fun(tex_x_frac - 3),
-                    };
-                    const coeffs_y = .{
-                        coeff_fun(tex_y_frac + 2),
-                        coeff_fun(tex_y_frac + 1),
-                        coeff_fun(tex_y_frac),
-                        coeff_fun(tex_y_frac - 1),
-                        coeff_fun(tex_y_frac - 2),
-                        coeff_fun(tex_y_frac - 3),
-                    };
-                    break :blk sampleConvOneLane(
-                        CH,
-                        TAP,
-                        texture,
-                        tex_x_i,
-                        tex_y_i,
-                        coeffs_x,
-                        coeffs_y,
-                    );
-                },
-                .lut => blk: {
-                    const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
-                    const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
-                    const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
-                    break :blk sampleConvOneLane(
-                        CH,
-                        TAP,
-                        texture,
-                        tex_x_i,
-                        tex_y_i,
-                        lut[idx_x],
-                        lut[idx_y],
-                    );
-                },
-                .lut_lerp => blk: {
-                    const coeffs_x = getLerpSampCoeffsRuntime(TAP, lut, tex_x_frac);
-                    const coeffs_y = getLerpSampCoeffsRuntime(TAP, lut, tex_y_frac);
-                    break :blk sampleConvOneLane(
-                        CH,
-                        TAP,
-                        texture,
-                        tex_x_i,
-                        tex_y_i,
-                        coeffs_x,
-                        coeffs_y,
-                    );
-                },
-            };
-        },
-    };
-}
-
-fn sampleLanesRuntimeImpl(
-    comptime CH: usize,
-    config: TextureSampleConfig,
-    v_mask_active: VecSB,
-    texture: anytype,
-    v_u: VecSF,
-    v_v: VecSF,
-) [CH]VecSF {
-    var samp_res_arr: [CH][S]f64 = [_][S]f64{[_]f64{0.0} ** S} ** CH;
-    const mask_arr: [S]bool = v_mask_active;
-    const u_arr: [S]f64 = v_u;
-    const v_arr: [S]f64 = v_v;
-
-    for (0..S) |ii| {
-        if (mask_arr[ii]) {
-            const sampled = sampleOneLaneRuntimeImpl(
-                CH,
-                config,
-                texture,
-                u_arr[ii],
-                v_arr[ii],
-            );
-            inline for (0..CH) |ch| {
-                samp_res_arr[ch][ii] = sampled[ch];
-            }
-        }
-    }
-
-    var samp_res: [CH]VecSF = undefined;
-    inline for (0..CH) |ch| {
-        samp_res[ch] = samp_res_arr[ch];
-    }
-
-    return samp_res;
-}
-
-fn sampleLanesTri3RuntimeImpl(
-    comptime CH: usize,
-    config: TextureSampleConfig,
-    v_mask_active: VecSB,
-    texture: anytype,
-    v_u: VecSF,
-    v_v: VecSF,
-) [CH]VecSF {
-    var samp_res_arr: [CH][S]f64 = [_][S]f64{[_]f64{0.0} ** S} ** CH;
-    const mask_arr: [S]bool = v_mask_active;
-    const u_arr: [S]f64 = v_u;
-    const v_arr: [S]f64 = v_v;
-
-    var active_lanes: [S]usize = undefined;
-    var active_count: usize = 0;
-
-    const tex_cols_minus_1_f = @as(
-        f64,
-        @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
-    );
-    const tex_rows_minus_1_f = @as(
-        f64,
-        @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
-    );
-    const tex_cols_minus_1_i = @as(isize, @intCast(texture.cols_num)) - 1;
-    const tex_rows_minus_1_i = @as(isize, @intCast(texture.rows_num)) - 1;
-
-    for (0..S) |ii| {
-        if (mask_arr[ii]) {
-            active_lanes[active_count] = ii;
-            active_count += 1;
-        }
-    }
-
-    if (active_count > 1) {
-        var lane_keys: [S]u64 = undefined;
-        for (0..active_count) |ii| {
-            const lane = active_lanes[ii];
-            const xf = u_arr[lane] * tex_cols_minus_1_f;
-            const yf = v_arr[lane] * tex_rows_minus_1_f;
-            const tex_x_i = @as(isize, @intFromFloat(@floor(xf)));
-            const tex_y_i = @as(isize, @intFromFloat(@floor(yf)));
-            const x_key = @as(
-                usize,
-                @intCast(@max(@as(isize, 0), @min(tex_x_i, tex_cols_minus_1_i))),
-            );
-            const y_key = @as(
-                usize,
-                @intCast(@max(@as(isize, 0), @min(tex_y_i, tex_rows_minus_1_i))),
-            );
-            lane_keys[ii] = (@as(u64, @intCast(y_key)) << 32) | @as(u64, @intCast(x_key));
-        }
-
-        for (1..active_count) |ii| {
-            const lane = active_lanes[ii];
-            const lane_key = lane_keys[ii];
-            var jj = ii;
-            while (jj > 0 and lane_key < lane_keys[jj - 1]) : (jj -= 1) {
-                lane_keys[jj] = lane_keys[jj - 1];
-                active_lanes[jj] = active_lanes[jj - 1];
-            }
-            lane_keys[jj] = lane_key;
-            active_lanes[jj] = lane;
-        }
-    }
-
-    for (0..active_count) |ii| {
-        const lane = active_lanes[ii];
-        const sampled = sampleOneLaneRuntimeImpl(
-            CH,
-            config,
-            texture,
-            u_arr[lane],
-            v_arr[lane],
-        );
-        inline for (0..CH) |ch| {
-            samp_res_arr[ch][lane] = sampled[ch];
-        }
-    }
-
-    var samp_res: [CH]VecSF = undefined;
-    inline for (0..CH) |ch| {
-        samp_res[ch] = samp_res_arr[ch];
-    }
-
-    return samp_res;
-}
-
-fn sampleWideRuntimeImpl(
-    comptime CH: usize,
-    config: TextureSampleConfig,
-    texture: anytype,
-    v_u: VecSF,
-    v_v: VecSF,
-) [CH]VecSF {
-    std.debug.assert(config.isValid());
-    const tex_cols_minus_1_f = @as(
-        f64,
-        @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
-    );
-    const tex_rows_minus_1_f = @as(
-        f64,
-        @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
-    );
-
-    const v_tex_x_f = v_u * @as(VecSF, @splat(tex_cols_minus_1_f));
-    const v_tex_y_f = v_v * @as(VecSF, @splat(tex_rows_minus_1_f));
-
-    var v_tex_x_i_arr: [S]isize = undefined;
-    var v_tex_y_i_arr: [S]isize = undefined;
-    const tex_x_f_arr: [S]f64 = v_tex_x_f;
-    const tex_y_f_arr: [S]f64 = v_tex_y_f;
-
-    for (0..S) |ii| {
-        v_tex_x_i_arr[ii] = @as(isize, @intFromFloat(@floor(tex_x_f_arr[ii])));
-        v_tex_y_i_arr[ii] = @as(isize, @intFromFloat(@floor(tex_y_f_arr[ii])));
-    }
-
-    const v_tex_x_i: VecSI = v_tex_x_i_arr;
-    const v_tex_y_i: VecSI = v_tex_y_i_arr;
-    const v_tex_x_frac = v_tex_x_f - @as(VecSF, @floatFromInt(v_tex_x_i));
-    const v_tex_y_frac = v_tex_y_f - @as(VecSF, @floatFromInt(v_tex_y_i));
-
-    return switch (config.sample) {
-        .nearest => getPxWide(
-            CH,
-            texture,
-            @as(VecSI, @intFromFloat(@round(v_tex_x_f))),
-            @as(VecSI, @intFromFloat(@round(v_tex_y_f))),
-        ),
-        .linear => sampleLinearWide(
-            CH,
-            texture,
-            v_tex_x_i,
-            v_tex_y_i,
-            v_tex_x_frac,
-            v_tex_y_frac,
-        ),
-        .cubic_catmull_rom, .cubic_mitchell_netravali, .cubic_bspline => {
-            const TAP = 4;
-            const tap_offset = @divTrunc(@as(isize, @intCast(TAP)), 2) - 1;
-
-            const tex_x_frac_arr2: [S]f64 = v_tex_x_frac;
-            const tex_y_frac_arr2: [S]f64 = v_tex_y_frac;
-
-            const lut = switch (config.sample) {
-                .cubic_catmull_rom => catmull_rom_lut,
-                .cubic_mitchell_netravali => mitchell_netravali_lut,
-                .cubic_bspline => cubic_bspline_lut,
-                else => unreachable,
-            };
-
-            var v_samp_coeff_sum: VecSF = @splat(0.0);
-            const v_samp_coeffs = switch (config.mode) {
-                .direct => blk: {
-                    const v_kernel: *const fn (VecSF) VecSF = switch (config.sample) {
-                        .cubic_catmull_rom => cubicCoeffCatmullRomSIMD,
-                        .cubic_mitchell_netravali => cubicCoeffMitchellNetravaliSIMD,
-                        .cubic_bspline => cubicBSplineCoeffSIMD,
-                        else => unreachable,
-                    };
-                    const coeffs_x = [TAP]VecSF{
-                        v_kernel(v_tex_x_frac + @as(VecSF, @splat(1.0))),
-                        v_kernel(v_tex_x_frac),
-                        v_kernel(v_tex_x_frac - @as(VecSF, @splat(1.0))),
-                        v_kernel(v_tex_x_frac - @as(VecSF, @splat(2.0))),
-                    };
-                    const coeffs_y = [TAP]VecSF{
-                        v_kernel(v_tex_y_frac + @as(VecSF, @splat(1.0))),
-                        v_kernel(v_tex_y_frac),
-                        v_kernel(v_tex_y_frac - @as(VecSF, @splat(1.0))),
-                        v_kernel(v_tex_y_frac - @as(VecSF, @splat(2.0))),
-                    };
-                    inline for (0..TAP) |jj| {
-                        inline for (0..TAP) |ii| {
-                            v_samp_coeff_sum += coeffs_x[ii] * coeffs_y[jj];
-                        }
-                    }
-                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
-                },
-                .lut => blk: {
-                    var coeffs_x_arr: [TAP][S]f64 = undefined;
-                    var coeffs_y_arr: [TAP][S]f64 = undefined;
-                    v_samp_coeff_sum = @splat(0.0);
-                    for (0..S) |ii| {
-                        const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
-                        const ix = @as(
-                            usize,
-                            @intFromFloat(tex_x_frac_arr2[ii] * lut_size_f),
-                        );
-                        const iy = @as(
-                            usize,
-                            @intFromFloat(tex_y_frac_arr2[ii] * lut_size_f),
-                        );
-                        var sum: f64 = 0.0;
-                        inline for (0..TAP) |kk| {
-                            coeffs_x_arr[kk][ii] = lut[ix][kk];
-                            coeffs_y_arr[kk][ii] = lut[iy][kk];
-                        }
-                        for (0..TAP) |jj| {
-                            for (0..TAP) |kk| {
-                                sum += lut[ix][kk] * lut[iy][jj];
-                            }
-                        }
-                        v_samp_coeff_sum[ii] = sum;
-                    }
-                    var coeffs_x: [TAP]VecSF = undefined;
-                    var coeffs_y: [TAP]VecSF = undefined;
-                    inline for (0..TAP) |kk| {
-                        coeffs_x[kk] = coeffs_x_arr[kk];
-                        coeffs_y[kk] = coeffs_y_arr[kk];
-                    }
-                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
-                },
-                .lut_lerp => blk: {
-                    var coeffs_x_arr: [TAP][S]f64 = undefined;
-                    var coeffs_y_arr: [TAP][S]f64 = undefined;
-                    v_samp_coeff_sum = @splat(0.0);
-                    for (0..S) |ii| {
-                        const coeffs_x_lane = getLerpSampCoeffsRuntime(
-                            TAP,
-                            lut,
-                            tex_x_frac_arr2[ii],
-                        );
-                        const coeffs_y_lane = getLerpSampCoeffsRuntime(
-                            TAP,
-                            lut,
-                            tex_y_frac_arr2[ii],
-                        );
-                        var sum: f64 = 0.0;
-                        inline for (0..TAP) |kk| {
-                            coeffs_x_arr[kk][ii] = coeffs_x_lane[kk];
-                            coeffs_y_arr[kk][ii] = coeffs_y_lane[kk];
-                        }
-                        for (0..TAP) |jj| {
-                            for (0..TAP) |kk| {
-                                sum += coeffs_x_lane[kk] * coeffs_y_lane[jj];
-                            }
-                        }
-                        v_samp_coeff_sum[ii] = sum;
-                    }
-                    var coeffs_x: [TAP]VecSF = undefined;
-                    var coeffs_y: [TAP]VecSF = undefined;
-                    inline for (0..TAP) |kk| {
-                        coeffs_x[kk] = coeffs_x_arr[kk];
-                        coeffs_y[kk] = coeffs_y_arr[kk];
-                    }
-                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
-                },
-            };
-
-            return sampleConvWide(
-                CH,
-                TAP,
-                texture,
-                v_tex_x_i,
-                v_tex_y_i,
-                tap_offset,
-                v_samp_coeffs[0],
-                v_samp_coeffs[1],
-                v_samp_coeff_sum,
-            );
-        },
-        .lanczos3, .quintic_bspline => {
-            const TAP = 6;
-            const tap_offset = @divTrunc(@as(isize, @intCast(TAP)), 2) - 1;
-
-            const tex_x_frac_arr2: [S]f64 = v_tex_x_frac;
-            const tex_y_frac_arr2: [S]f64 = v_tex_y_frac;
-
-            const lut = switch (config.sample) {
-                .lanczos3 => lanczos3_lut,
-                .quintic_bspline => quintic_bspline_lut,
-                else => unreachable,
-            };
-
-            var v_samp_coeff_sum: VecSF = @splat(0.0);
-            const v_samp_coeffs = switch (config.mode) {
-                .direct => blk: {
-                    const v_kernel: *const fn (VecSF) VecSF = switch (config.sample) {
-                        .lanczos3 => lanczos3CoeffSIMD,
-                        .quintic_bspline => quinticBSplineCoeffSIMD,
-                        else => unreachable,
-                    };
-                    const coeffs_x = [TAP]VecSF{
-                        v_kernel(v_tex_x_frac + @as(VecSF, @splat(2.0))),
-                        v_kernel(v_tex_x_frac + @as(VecSF, @splat(1.0))),
-                        v_kernel(v_tex_x_frac),
-                        v_kernel(v_tex_x_frac - @as(VecSF, @splat(1.0))),
-                        v_kernel(v_tex_x_frac - @as(VecSF, @splat(2.0))),
-                        v_kernel(v_tex_x_frac - @as(VecSF, @splat(3.0))),
-                    };
-                    const coeffs_y = [TAP]VecSF{
-                        v_kernel(v_tex_y_frac + @as(VecSF, @splat(2.0))),
-                        v_kernel(v_tex_y_frac + @as(VecSF, @splat(1.0))),
-                        v_kernel(v_tex_y_frac),
-                        v_kernel(v_tex_y_frac - @as(VecSF, @splat(1.0))),
-                        v_kernel(v_tex_y_frac - @as(VecSF, @splat(2.0))),
-                        v_kernel(v_tex_y_frac - @as(VecSF, @splat(3.0))),
-                    };
-                    inline for (0..TAP) |jj| {
-                        inline for (0..TAP) |ii| {
-                            v_samp_coeff_sum += coeffs_x[ii] * coeffs_y[jj];
-                        }
-                    }
-                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
-                },
-                .lut => blk: {
-                    var coeffs_x_arr: [TAP][S]f64 = undefined;
-                    var coeffs_y_arr: [TAP][S]f64 = undefined;
-                    v_samp_coeff_sum = @splat(0.0);
-                    for (0..S) |ii| {
-                        const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
-                        const ix = @as(
-                            usize,
-                            @intFromFloat(tex_x_frac_arr2[ii] * lut_size_f),
-                        );
-                        const iy = @as(
-                            usize,
-                            @intFromFloat(tex_y_frac_arr2[ii] * lut_size_f),
-                        );
-                        var sum: f64 = 0.0;
-                        inline for (0..TAP) |kk| {
-                            coeffs_x_arr[kk][ii] = lut[ix][kk];
-                            coeffs_y_arr[kk][ii] = lut[iy][kk];
-                        }
-                        for (0..TAP) |jj| {
-                            for (0..TAP) |kk| {
-                                sum += lut[ix][kk] * lut[iy][jj];
-                            }
-                        }
-                        v_samp_coeff_sum[ii] = sum;
-                    }
-                    var coeffs_x: [TAP]VecSF = undefined;
-                    var coeffs_y: [TAP]VecSF = undefined;
-                    inline for (0..TAP) |kk| {
-                        coeffs_x[kk] = coeffs_x_arr[kk];
-                        coeffs_y[kk] = coeffs_y_arr[kk];
-                    }
-                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
-                },
-                .lut_lerp => blk: {
-                    var coeffs_x_arr: [TAP][S]f64 = undefined;
-                    var coeffs_y_arr: [TAP][S]f64 = undefined;
-                    v_samp_coeff_sum = @splat(0.0);
-                    for (0..S) |ii| {
-                        const coeffs_x_lane = getLerpSampCoeffsRuntime(
-                            TAP,
-                            lut,
-                            tex_x_frac_arr2[ii],
-                        );
-                        const coeffs_y_lane = getLerpSampCoeffsRuntime(
-                            TAP,
-                            lut,
-                            tex_y_frac_arr2[ii],
-                        );
-                        var sum: f64 = 0.0;
-                        inline for (0..TAP) |kk| {
-                            coeffs_x_arr[kk][ii] = coeffs_x_lane[kk];
-                            coeffs_y_arr[kk][ii] = coeffs_y_lane[kk];
-                        }
-                        for (0..TAP) |jj| {
-                            for (0..TAP) |kk| {
-                                sum += coeffs_x_lane[kk] * coeffs_y_lane[jj];
-                            }
-                        }
-                        v_samp_coeff_sum[ii] = sum;
-                    }
-                    var coeffs_x: [TAP]VecSF = undefined;
-                    var coeffs_y: [TAP]VecSF = undefined;
-                    inline for (0..TAP) |kk| {
-                        coeffs_x[kk] = coeffs_x_arr[kk];
-                        coeffs_y[kk] = coeffs_y_arr[kk];
-                    }
-                    break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
-                },
-            };
-
-            return sampleConvWide(
-                CH,
-                TAP,
-                texture,
-                v_tex_x_i,
-                v_tex_y_i,
-                tap_offset,
-                v_samp_coeffs[0],
-                v_samp_coeffs[1],
-                v_samp_coeff_sum,
-            );
-        },
-    };
-}
-
-fn sampleWideDispatch(
-    comptime CH: usize,
-    config: TextureSampleConfig,
-    texture: anytype,
-    v_u: VecSF,
-    v_v: VecSF,
-) [CH]VecSF {
-    std.debug.assert(config.isValid());
-
-    return switch (cfg.texture_dispatch_policy) {
-        .runtime_runtime => sampleWideRuntimeImpl(CH, config, texture, v_u, v_v),
-        .runtime_comptime => switch (config.sample) {
-            inline else => |sample_type| switch (config.mode) {
-                inline else => |mode_type| blk: {
-                    const comptime_config = TextureSampleConfig{
-                        .sample = sample_type,
-                        .mode = mode_type,
-                    };
-                    if (comptime comptime_config.isValid()) {
-                        break :blk sampleWide(
-                            CH,
-                            comptime_config,
-                            texture,
-                            v_u,
-                            v_v,
-                        );
-                    }
-                    unreachable;
-                },
-            },
-        },
-        .comptime_comptime => switch (config.sample) {
-            inline else => |sample_type| switch (config.mode) {
-                inline else => |mode_type| blk: {
-                    const comptime_config = TextureSampleConfig{
-                        .sample = sample_type,
-                        .mode = mode_type,
-                    };
-                    if (comptime comptime_config.isValid()) {
-                        break :blk sampleWide(
-                            CH,
-                            comptime_config,
-                            texture,
-                            v_u,
-                            v_v,
-                        );
-                    }
-                    unreachable;
-                },
-            },
-        },
-    };
-}
-
-fn sampleOneLaneDispatch(
-    comptime CH: usize,
-    config: TextureSampleConfig,
-    texture: anytype,
-    u: f64,
-    v: f64,
-) [CH]f64 {
-    std.debug.assert(config.isValid());
-
-    return switch (cfg.texture_dispatch_policy) {
-        .runtime_runtime => sampleOneLaneRuntimeImpl(CH, config, texture, u, v),
-        .runtime_comptime => switch (config.sample) {
-            inline else => |sample_type| switch (config.mode) {
-                inline else => |mode_type| blk: {
-                    const comptime_config = TextureSampleConfig{
-                        .sample = sample_type,
-                        .mode = mode_type,
-                    };
-                    if (comptime comptime_config.isValid()) {
-                        break :blk sampleOneLane(
-                            CH,
-                            comptime_config,
-                            texture,
-                            u,
-                            v,
-                        );
-                    }
-                    unreachable;
-                },
-            },
-        },
-        .comptime_comptime => switch (config.sample) {
-            inline else => |sample_type| switch (config.mode) {
-                inline else => |mode_type| blk: {
-                    const comptime_config = TextureSampleConfig{
-                        .sample = sample_type,
-                        .mode = mode_type,
-                    };
-                    if (comptime comptime_config.isValid()) {
-                        break :blk sampleOneLane(
-                            CH,
-                            comptime_config,
-                            texture,
-                            u,
-                            v,
-                        );
-                    }
-                    unreachable;
-                },
-            },
-        },
-    };
-}
-
-fn sampleLanesDispatch(
-    comptime CH: usize,
-    config: TextureSampleConfig,
-    v_mask_active: VecSB,
-    texture: anytype,
-    v_u: VecSF,
-    v_v: VecSF,
-) [CH]VecSF {
-    std.debug.assert(config.isValid());
-
-    return switch (cfg.texture_dispatch_policy) {
-        .runtime_runtime => sampleLanesRuntimeImpl(
-            CH,
-            config,
-            v_mask_active,
-            texture,
-            v_u,
-            v_v,
-        ),
-        .runtime_comptime => switch (config.sample) {
-            inline else => |sample_type| switch (config.mode) {
-                inline else => |mode_type| blk: {
-                    const comptime_config = TextureSampleConfig{
-                        .sample = sample_type,
-                        .mode = mode_type,
-                    };
-                    if (comptime comptime_config.isValid()) {
-                        break :blk sampleLanes(
-                            CH,
-                            comptime_config,
-                            v_mask_active,
-                            texture,
-                            v_u,
-                            v_v,
-                        );
-                    }
-                    unreachable;
-                },
-            },
-        },
-        .comptime_comptime => switch (config.sample) {
-            inline else => |sample_type| switch (config.mode) {
-                inline else => |mode_type| blk: {
-                    const comptime_config = TextureSampleConfig{
-                        .sample = sample_type,
-                        .mode = mode_type,
-                    };
-                    if (comptime comptime_config.isValid()) {
-                        break :blk sampleLanes(
-                            CH,
-                            comptime_config,
-                            v_mask_active,
-                            texture,
-                            v_u,
-                            v_v,
-                        );
-                    }
-                    unreachable;
-                },
-            },
-        },
-    };
-}
-
-fn sampleLanesTri3Dispatch(
-    comptime CH: usize,
-    config: TextureSampleConfig,
-    v_mask_active: VecSB,
-    texture: anytype,
-    v_u: VecSF,
-    v_v: VecSF,
-) [CH]VecSF {
-    std.debug.assert(config.isValid());
-
-    return switch (cfg.texture_dispatch_policy) {
-        .runtime_runtime => sampleLanesTri3RuntimeImpl(
-            CH,
-            config,
-            v_mask_active,
-            texture,
-            v_u,
-            v_v,
-        ),
-        .runtime_comptime => switch (config.sample) {
-            inline else => |sample_type| switch (config.mode) {
-                inline else => |mode_type| blk: {
-                    const comptime_config = TextureSampleConfig{
-                        .sample = sample_type,
-                        .mode = mode_type,
-                    };
-                    if (comptime comptime_config.isValid()) {
-                        break :blk sampleLanesTri3(
-                            CH,
-                            comptime_config,
-                            v_mask_active,
-                            texture,
-                            v_u,
-                            v_v,
-                        );
-                    }
-                    unreachable;
-                },
-            },
-        },
-        .comptime_comptime => switch (config.sample) {
-            inline else => |sample_type| switch (config.mode) {
-                inline else => |mode_type| blk: {
-                    const comptime_config = TextureSampleConfig{
-                        .sample = sample_type,
-                        .mode = mode_type,
-                    };
-                    if (comptime comptime_config.isValid()) {
-                        break :blk sampleLanesTri3(
-                            CH,
-                            comptime_config,
-                            v_mask_active,
-                            texture,
-                            v_u,
-                            v_v,
-                        );
-                    }
-                    unreachable;
-                },
-            },
-        },
-    };
-}
-
-pub fn sampleWideRuntime(
-    comptime CH: usize,
-    config: TextureSampleConfig,
-    texture: anytype,
-    v_u: VecSF,
-    v_v: VecSF,
-) [CH]VecSF {
-    return sampleWideDispatch(CH, config, texture, v_u, v_v);
-}
-
-pub fn sampleOneLaneRuntime(
-    comptime CH: usize,
-    config: TextureSampleConfig,
-    texture: anytype,
-    u: f64,
-    v: f64,
-) [CH]f64 {
-    return sampleOneLaneDispatch(CH, config, texture, u, v);
-}
-
-pub fn sampleLanesRuntime(
-    comptime CH: usize,
-    config: TextureSampleConfig,
-    v_mask_active: VecSB,
-    texture: anytype,
-    v_u: VecSF,
-    v_v: VecSF,
-) [CH]VecSF {
-    return sampleLanesDispatch(CH, config, v_mask_active, texture, v_u, v_v);
-}
-
-pub fn sampleLanesTri3Runtime(
-    comptime CH: usize,
-    config: TextureSampleConfig,
-    v_mask_active: VecSB,
-    texture: anytype,
-    v_u: VecSF,
-    v_v: VecSF,
-) [CH]VecSF {
-    return sampleLanesTri3Dispatch(CH, config, v_mask_active, texture, v_u, v_v);
 }

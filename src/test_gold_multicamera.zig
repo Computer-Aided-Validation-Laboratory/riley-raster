@@ -261,7 +261,7 @@ test "Multicamera duplicate sphere200 cameras match each other" {
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try riley.rasterAllFrames(
+    const result = (try riley.raster(
         aa,
         &render_groups,
         &cameras,
@@ -423,8 +423,6 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
     ref_config.save_strategy = .memory;
     ref_config.report = .off;
     ref_config.total_threads = 4;
-    ref_config.max_geom_workers_per_frame = 1;
-    ref_config.max_raster_workers_per_frame = 4;
     ref_config.frame_batch_size_per_group = 2;
     ref_config.max_geom_jobs_in_flight_per_group = 2;
     ref_config.max_geom_workers_per_job = 1;
@@ -433,7 +431,7 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
     const ref_render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), ref_config.total_threads) },
     };
-    const reference = (try riley.rasterAllFrames(
+    const reference = (try riley.raster(
         aa,
         &ref_render_groups,
         &camera_inputs,
@@ -467,7 +465,7 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
         var grouped_config = ref_config;
         grouped_config.geom_scheduling_mode = case.mode;
 
-        const grouped = (try riley.rasterAllFrames(
+        const grouped = (try riley.raster(
             aa,
             case.render_groups[0..],
             &camera_inputs,
@@ -528,7 +526,7 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
             .{ .io = managed_ios[0].io(), .workers = 2 },
             .{ .io = managed_ios[1].io(), .workers = 2 },
         };
-        const grouped = (try riley.rasterAllFrames(
+        const grouped = (try riley.raster(
             aa,
             &render_groups,
             &camera_inputs,
@@ -552,7 +550,7 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
         .{ .io = managed_ios[2].io(), .workers = 1 },
         .{ .io = managed_ios[3].io(), .workers = 1 },
     };
-    const four_group = (try riley.rasterAllFrames(
+    const four_group = (try riley.raster(
         aa,
         &four_group_render_groups,
         &camera_inputs,
@@ -642,7 +640,7 @@ test "Multicamera memory matches both" {
     const memory_render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), memory_config.total_threads) },
     };
-    const memory = (try riley.rasterAllFrames(
+    const memory = (try riley.raster(
         aa,
         &memory_render_groups,
         &[_]CameraInput{
@@ -676,7 +674,7 @@ test "Multicamera memory matches both" {
     const both_render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), both_config.total_threads) },
     };
-    const both = (try riley.rasterAllFrames(
+    const both = (try riley.raster(
         aa,
         &both_render_groups,
         &[_]CameraInput{
@@ -729,6 +727,7 @@ test "Sphere200 multicamera gold tests" {
     std.debug.print("Running Multicamera Gold Tests with .simd = .{s}...\n", .{
         if (simd_on) "on" else "off",
     });
+    const suite_start = Timestamp.now(std.testing.io, .awake);
 
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
@@ -897,7 +896,7 @@ test "Sphere200 multicamera gold tests" {
         const render_groups = [_]riley.RenderGroupSpec{
             .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
         };
-        const result = (try riley.rasterAllFrames(
+        const result = (try riley.raster(
             aa,
             &render_groups,
             &camera_inputs,
@@ -980,6 +979,16 @@ test "Sphere200 multicamera gold tests" {
             std.debug.print("MATCHED ({d:.2} ms)\n", .{duration_ms});
         }
     }
+
+    const suite_end = Timestamp.now(io, .awake);
+    const suite_ms = @as(
+        f64,
+        @floatFromInt(suite_start.durationTo(suite_end).raw.nanoseconds),
+    ) / 1e6;
+    std.debug.print(
+        "Multicamera Gold Test Suite took {d:.3} ms\n",
+        .{suite_ms},
+    );
 }
 
 test "Multicamera mixed sensor sizes return padded batch and save actual size" {
@@ -1065,7 +1074,7 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
     const small_render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), memory_config.total_threads) },
     };
-    const small_single = (try riley.rasterAllFrames(
+    const small_single = (try riley.raster(
         aa,
         &small_render_groups,
         &[_]CameraInput{CameraInput{
@@ -1087,7 +1096,7 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
     const large_render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), memory_config.total_threads) },
     };
-    const large_single = (try riley.rasterAllFrames(
+    const large_single = (try riley.raster(
         aa,
         &large_render_groups,
         &[_]CameraInput{CameraInput{
@@ -1115,7 +1124,7 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
     const batch_render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), batch_config.total_threads) },
     };
-    const batch_result = (try riley.rasterAllFrames(
+    const batch_result = (try riley.raster(
         aa,
         &batch_render_groups,
         &[_]CameraInput{

@@ -70,23 +70,15 @@ typedef struct c_camera_input {
     double distortion_p1;
     double distortion_p2;
     uint32_t coord_sys;
+    uint32_t psf_type;
+    double psf_sigma_x;
+    double psf_sigma_y;
+    double psf_theta;
+    double psf_support_rad;
+    uint32_t psf_separable;
 } CCameraInput;
 
-typedef struct c_mesh_input_tex {
-    uint32_t mesh_type;
-    CArray2DF64 coords;
-    CArray2DUsize connect;
-    CArray2DF64 uvs;
-    CArray2DF64 texture;
-    uint32_t sample;
-    uint32_t sample_mode;
-    int bits;
-    uint32_t scaling_tag;
-    double scaling_min;
-    double scaling_max;
-} CMeshInputTex;
-
-typedef struct c_tex_func_params {
+typedef struct c_func_shader_params {
     double coord_scale_0;
     double coord_scale_1;
     double coord_offset_0;
@@ -102,7 +94,8 @@ typedef struct c_tex_func_params {
     double extra_1;
     double extra_2;
     double extra_3;
-} CTexFuncParams;
+} CFuncShaderParams;
+
 
 typedef struct c_mesh_input {
     uint32_t mesh_type;
@@ -120,17 +113,14 @@ typedef struct c_mesh_input {
     double scaling_max;
     CArray3DF64 nodal_field;
     uint32_t scale_over;
-    uint32_t tex_func_builtin;
-    CTexFuncParams tex_func_params;
+    uint32_t func_shader_builtin;
+    CFuncShaderParams func_shader_params;
     uint32_t normal_type;
 } CMeshInput;
 
 typedef struct c_raster_config {
     uint32_t render_mode;
     uint16_t total_threads;
-    uint16_t max_frames_in_flight;
-    uint16_t max_geom_workers_per_frame;
-    uint16_t max_raster_workers_per_frame;
     uint16_t frame_batch_size_per_group;
     uint16_t max_geom_jobs_in_flight_per_group;
     uint16_t max_geom_workers_per_job;
@@ -144,23 +134,13 @@ typedef struct c_raster_config {
     uint16_t tile_size_max;
     double background_value;
     uint8_t disk_save_overlap;
+    uint16_t tile_size_override;
+    uint32_t save_format;
+    uint32_t save_bits;
+    uint32_t save_scaling;
+    double save_scaling_min;
+    double save_scaling_max;
 } CRasterConfig;
-
-typedef struct c_parallel_config {
-    uint32_t render_mode;
-    uint16_t total_threads;
-    uint16_t render_group_count;
-    size_t workers_per_group_len;
-    const uint16_t* workers_per_group;
-    uint16_t max_frames_in_flight;
-    uint16_t max_geom_workers_per_frame;
-    uint16_t max_raster_workers_per_frame;
-    uint16_t frame_batch_size_per_group;
-    uint16_t max_geom_jobs_in_flight_per_group;
-    uint16_t max_geom_workers_per_job;
-    uint32_t geom_scheduling_mode;
-    uint16_t max_raster_workers_per_job;
-} CParallelConfig;
 
 size_t rileyGetLastError(uint8_t* out_buf, size_t out_buf_len);
 
@@ -205,15 +185,17 @@ int rileyCalcOutputDimsScene(
     CDims5Usize* out_dims
 );
 
-int rileyRasterScene(
-    const CMeshInput* in_meshes,
-    size_t meshes_len,
-    const CCameraInput* in_cameras,
-    size_t cameras_len,
-    const CRasterConfig* in_config,
-    const CParallelConfig* in_parallel_config,
+int rileySaveCamera(
     const char* out_dir_path,
-    CImageBufferF64* out_image
+    const char* file_name,
+    size_t camera_idx,
+    const CCameraInput* camera_in
+);
+
+int rileyLoadCamera(
+    const char* dir_path,
+    const char* file_name,
+    CCameraInput* camera_out
 );
 
 int rileySaveStereoPair(
@@ -230,16 +212,11 @@ int rileyLoadStereoPair(
     CCameraInput* cam1_out
 );
 
-int rileyCalcOutputDimsTex(
-    const CMeshInputTex* in_mesh,
-    const CCameraInput* in_camera,
-    const CRasterConfig* in_config,
-    CDims5Usize* out_dims
-);
-
-int rileyRasterTex(
-    const CMeshInputTex* in_mesh,
-    const CCameraInput* in_camera,
+int rileyRaster(
+    const CMeshInput* in_meshes,
+    size_t meshes_len,
+    const CCameraInput* in_cameras,
+    size_t cameras_len,
     const CRasterConfig* in_config,
     const char* out_dir_path,
     CImageBufferF64* out_image

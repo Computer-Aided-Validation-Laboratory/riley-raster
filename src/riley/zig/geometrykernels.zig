@@ -63,7 +63,6 @@ pub const SolverKind = enum {
     inv_bi,
 };
 
-
 pub const CoordSpace = enum {
     raster,
     clip_px_leng,

@@ -27,10 +27,10 @@ const DEFAULT_TEX_PATH = "texture/speckle.bmp";
 const DEFAULT_RENDER_MODE = rastcfg.RenderMode.offline;
 const DEFAULT_SAVE_STRATEGY = rastcfg.SaveStrategy.disk;
 const DEFAULT_RUNS: usize = 1;
-const DEFAULT_RENDER_GROUP_COUNT: u16 = 8;
-const DEFAULT_TOTAL_THREADS: u16 = 8;
-const DEFAULT_FRAME_BATCH_SIZE_PER_GROUP: u16 = 8;
-const DEFAULT_MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP: u16 = 8;
+const DEFAULT_RENDER_GROUP_COUNT: u16 = 1;
+const DEFAULT_TOTAL_THREADS: u16 = 1;
+const DEFAULT_FRAME_BATCH_SIZE_PER_GROUP: u16 = 1;
+const DEFAULT_MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP: u16 = 1;
 const DEFAULT_MAX_GEOM_WORKERS_PER_JOB: u16 = 1;
 const DEFAULT_GEOM_SCHEDULING_MODE = rastcfg.GeometrySchedulingMode.spread;
 const DEFAULT_MAX_RASTER_WORKERS_PER_JOB: u16 = 1;
@@ -60,14 +60,7 @@ pub fn main(init: std.process.Init) !void {
         DEFAULT_GEOM_SCHEDULING_MODE;
     default_bench_args.max_raster_workers_per_job =
         DEFAULT_MAX_RASTER_WORKERS_PER_JOB;
-    // Keep the legacy compatibility knobs aligned with the grouped defaults so
-    // quick zig-run probes behave consistently with the Python harness.
-    default_bench_args.max_frames_in_flight =
-        DEFAULT_FRAME_BATCH_SIZE_PER_GROUP;
-    default_bench_args.max_geom_threads_per_frame =
-        DEFAULT_MAX_GEOM_WORKERS_PER_JOB;
-    default_bench_args.max_raster_threads_per_frame =
-        DEFAULT_MAX_RASTER_WORKERS_PER_JOB;
+
     default_bench_args.pixels_num = DEFAULT_PIXELS_NUM;
     default_bench_args.sub_sample = DEFAULT_SUB_SAMPLE;
 
@@ -175,6 +168,7 @@ pub fn main(init: std.process.Init) !void {
         raster_config,
         bench_args.pixels_num,
         bench_args.sub_sample,
+        0,
     );
     try common.writeBenchmarkConfig(
         outer_alloc,
@@ -183,6 +177,7 @@ pub fn main(init: std.process.Init) !void {
         bench_args.image_out_dir,
         "bench_dicuq.zig",
         init.minimal.args.vector,
+        bench_args.subpixel_center_map,
         raster_config,
         render_group_workers,
         bench_args.pixels_num,

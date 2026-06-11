@@ -17,7 +17,7 @@ from paper_const import PAPER_DIR, repo_root
 
 
 VERIF_DIR = pathlib.Path("verif/verif_3")
-OUT_FIGS_TEX_PATH = VERIF_DIR / "verif_3_figs.tex"
+OUT_FIGS_TEX_PATH = VERIF_DIR / "figs_verif_3.tex"
 LOWRES_TAG = "lowres"
 HIGHRES_TAG = "highres"
 LOWRES_MESH = "tri6"

@@ -10,7 +10,7 @@ zig-out/
 
 # Do not keep any large output directories with images or other output in them
 out/
-gold/
+gold/*
 verif/
 demo*/
 bin/
@@ -26,6 +26,8 @@ fails*/
 debug/
 examples/
 pyout/
+refs/
+perf/
 
 # Don't commit large mesh, simulation or image files to the repo unless we have to
 *.ppm
@@ -39,11 +41,16 @@ pyout/
 # Keep the min test suite to ship with the repo
 !data/min/
 !data/min/**/*.csv
-!gold/
 !gold/min/
 !gold/min/**/*.fimg
 !gold/min/**/*.bmp
 !gold/min/**/*.csv
+!gold/perf_stats_ref/
+!gold/perf_stats_ref/**/
+!gold/perf_stats_ref/**/*.csv
+!gold/perf_stats_ref/**/*.json
+!gold/perf_stats_ref/**/*.txt
+!gold/perf_stats_ref/**/*.md
 
 # Keep our other test suite data committed to the repo
 !data/small/**/*.csv
@@ -69,10 +76,12 @@ test_output.txt
 .vscode/
 .venv/
 .antigravitycli/
+uv.lock
 
 # Cython
 *.html
-
+src/riley/cyth/riley.c
+src/riley/cyth/riley.html
 
 #-----------------------------------------------------------------------------
 # Standard Python Ignore

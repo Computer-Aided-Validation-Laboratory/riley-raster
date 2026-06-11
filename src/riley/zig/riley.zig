@@ -14,6 +14,7 @@ const ndarray = @import("ndarray.zig");
 const sliceops = @import("sliceops.zig");
 
 const cam = @import("camera.zig");
+const cameraops = @import("cameraops.zig");
 const rops = @import("rasterops.zig");
 const mo = @import("meshops.zig");
 const shaderops = @import("shaderops.zig");
@@ -183,6 +184,276 @@ fn validateAllFramesBuffer(
     }
 }
 
+fn isFiniteSlice(values: []const f64) bool {
+    for (values) |value| {
+        if (!std.math.isFinite(value)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+fn isFiniteVec3(vec: anytype) bool {
+    return isFiniteSlice(vec.slice[0..]);
+}
+
+fn isValidDistortion(distortion: cam.DistortionModel) bool {
+    return switch (distortion) {
+        .none => true,
+        .brown_conrady => |bc| isFiniteSlice(&[_]f64{
+            bc.k1,
+            bc.k2,
+            bc.k3,
+            bc.p1,
+            bc.p2,
+        }),
+        .brown_conrady_ext => |bc| isFiniteSlice(&[_]f64{
+            bc.k1,
+            bc.k2,
+            bc.k3,
+            bc.k4,
+            bc.k5,
+            bc.k6,
+            bc.p1,
+            bc.p2,
+        }),
+    };
+}
+
+fn isValidPsf(psf: cam.PointSpreadFunc) bool {
+    return switch (psf) {
+        .pixel_box => |box| std.math.isFinite(box.support_rad_px) and
+            box.support_rad_px >= 0.0,
+        .gaussian => |gauss| isFiniteSlice(&[_]f64{
+            gauss.sigma_px,
+            gauss.support_rad_px,
+        }) and
+            gauss.sigma_px > 0.0 and
+            gauss.support_rad_px >= 0.0,
+        .anisotropic_gaussian => |gauss| isFiniteSlice(&[_]f64{
+            gauss.sigma_x_px,
+            gauss.sigma_y_px,
+            gauss.theta_rad,
+            gauss.support_rad_px,
+        }) and
+            gauss.sigma_x_px > 0.0 and
+            gauss.sigma_y_px > 0.0 and
+            gauss.support_rad_px >= 0.0,
+    };
+}
+
+fn checkCameraInputError(camera_input: cam.CameraInput) !void {
+    if (camera_input.pixels_num[0] == 0 or camera_input.pixels_num[1] == 0) {
+        return error.InvalidCameraPixels;
+    }
+    if (!isFiniteSlice(&camera_input.pixels_size) or
+        camera_input.pixels_size[0] <= 0.0 or
+        camera_input.pixels_size[1] <= 0.0)
+    {
+        return error.InvalidCameraPixelSize;
+    }
+    if (!std.math.isFinite(camera_input.focal_length) or camera_input.focal_length <= 0.0) {
+        return error.InvalidCameraFocalLength;
+    }
+    if (camera_input.sub_sample == 0) {
+        return error.InvalidCameraSubSample;
+    }
+    if (!isFiniteVec3(camera_input.pos_world) or
+        !isFiniteVec3(camera_input.roi_cent_world) or
+        !isFiniteSlice(&[_]f64{
+            camera_input.rot_world.alpha_z,
+            camera_input.rot_world.beta_y,
+            camera_input.rot_world.gamma_x,
+        }) or
+        !isFiniteSlice(camera_input.rot_world.matrix.slice[0..]))
+    {
+        return error.NonFiniteCameraInput;
+    }
+    if (!isValidDistortion(camera_input.distortion)) {
+        return error.InvalidCameraDistortion;
+    }
+    if (!isValidPsf(camera_input.psf)) {
+        return error.InvalidCameraPsf;
+    }
+}
+
+fn checkCameraInputAssert(camera_input: cam.CameraInput) void {
+    std.debug.assert(camera_input.pixels_num[0] > 0);
+    std.debug.assert(camera_input.pixels_num[1] > 0);
+    std.debug.assert(isFiniteSlice(&camera_input.pixels_size));
+    std.debug.assert(camera_input.pixels_size[0] > 0.0);
+    std.debug.assert(camera_input.pixels_size[1] > 0.0);
+    std.debug.assert(std.math.isFinite(camera_input.focal_length));
+    std.debug.assert(camera_input.focal_length > 0.0);
+    std.debug.assert(camera_input.sub_sample > 0);
+    std.debug.assert(isFiniteVec3(camera_input.pos_world));
+    std.debug.assert(isFiniteVec3(camera_input.roi_cent_world));
+    std.debug.assert(isFiniteSlice(&[_]f64{
+        camera_input.rot_world.alpha_z,
+        camera_input.rot_world.beta_y,
+        camera_input.rot_world.gamma_x,
+    }));
+    std.debug.assert(isFiniteSlice(camera_input.rot_world.matrix.slice[0..]));
+    std.debug.assert(isValidDistortion(camera_input.distortion));
+    std.debug.assert(isValidPsf(camera_input.psf));
+}
+
+fn checkRenderConsistencyError(
+    render_groups: []const RenderGroupSpec,
+    camera_inputs: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+    config: RasterConfig,
+    images_arr: ?*ndarray.NDArray(f64),
+    bench_capture: ?[]report.FrameBenchCapture,
+    validate_output_buffer: bool,
+) !void {
+    if (render_groups.len == 0) {
+        return error.NoRenderGroups;
+    }
+    if (camera_inputs.len == 0) {
+        return error.NoCameras;
+    }
+    if (meshes.len == 0) {
+        return error.NoMeshes;
+    }
+    for (render_groups) |render_group| {
+        if (render_group.workers == 0) {
+            return error.InvalidRenderGroupWorkers;
+        }
+    }
+
+    if (config.total_threads == 0) return error.InvalidTotalThreads;
+    if (config.frame_batch_size_per_group == 0) return error.InvalidFrameBatchSize;
+    if (config.max_geom_jobs_in_flight_per_group == 0) return error.InvalidGeomJobsInFlight;
+    if (config.max_geom_workers_per_job == 0) return error.InvalidGeomWorkersPerJob;
+    if (config.max_raster_workers_per_job == 0) return error.InvalidRasterWorkersPerJob;
+    if (config.tile_size_min == 0) return error.InvalidTileSizeMin;
+    if (config.tile_size_max == 0) return error.InvalidTileSizeMax;
+    if (config.tile_size_min > config.tile_size_max) return error.InvalidTileSizeRange;
+    if (config.tile_size_override) |tile_size_override| {
+        if (tile_size_override < config.tile_size_min or
+            tile_size_override > config.tile_size_max)
+        {
+            return error.InvalidTileSizeOverride;
+        }
+    }
+    if (!std.math.isFinite(config.background_value)) {
+        return error.InvalidBackgroundValue;
+    }
+    if ((config.save_strategy == .disk or config.save_strategy == .both) and
+        config.image_save_opts.len == 0)
+    {
+        return error.InvalidImageSaveOpts;
+    }
+    if (config.report == .full_stats and config.full_stats_opts.formats.len == 0) {
+        return error.InvalidFullStatsFormats;
+    }
+
+    for (camera_inputs) |camera_input| {
+        try checkCameraInputError(camera_input);
+    }
+
+    const num_time = mo.countFrames(meshes);
+    if (num_time == 0) {
+        return error.NoMeshFrames;
+    }
+
+    const raw_num_fields = mo.countOutputFields(meshes);
+    if (raw_num_fields == 0) {
+        return error.NoOutputFields;
+    }
+    _ = try outputFieldsForImageMode(config.image_mode, raw_num_fields);
+
+    if (bench_capture) |capture| {
+        if (capture.len != camera_inputs.len * num_time) {
+            return error.InvalidBenchCaptureBuffer;
+        }
+    }
+
+    if (!validate_output_buffer) {
+        return;
+    }
+
+    if (config.save_strategy == .memory or config.save_strategy == .both) {
+        const expected_image_dims = try calcAllFramesImageDimsForConfig(
+            camera_inputs,
+            meshes,
+            config,
+        );
+        const images_arr_req = images_arr orelse return error.InvalidOutputBuffer;
+        try validateAllFramesBuffer(images_arr_req, expected_image_dims);
+    } else if (images_arr != null) {
+        return error.InvalidOutputBuffer;
+    }
+}
+
+fn checkRenderConsistencyAssert(
+    render_groups: []const RenderGroupSpec,
+    camera_inputs: []const cam.CameraInput,
+    meshes: []const mo.MeshInput,
+    config: RasterConfig,
+    images_arr: ?*ndarray.NDArray(f64),
+    bench_capture: ?[]report.FrameBenchCapture,
+    validate_output_buffer: bool,
+) void {
+    std.debug.assert(render_groups.len > 0);
+    std.debug.assert(camera_inputs.len > 0);
+    std.debug.assert(meshes.len > 0);
+    for (render_groups) |render_group| {
+        std.debug.assert(render_group.workers > 0);
+    }
+
+    std.debug.assert(config.total_threads > 0);
+    std.debug.assert(config.frame_batch_size_per_group > 0);
+    std.debug.assert(config.max_geom_jobs_in_flight_per_group > 0);
+    std.debug.assert(config.max_geom_workers_per_job > 0);
+    std.debug.assert(config.max_raster_workers_per_job > 0);
+    std.debug.assert(config.tile_size_min > 0);
+    std.debug.assert(config.tile_size_max > 0);
+    std.debug.assert(config.tile_size_min <= config.tile_size_max);
+    if (config.tile_size_override) |tile_size_override| {
+        std.debug.assert(tile_size_override >= config.tile_size_min);
+        std.debug.assert(tile_size_override <= config.tile_size_max);
+    }
+    std.debug.assert(std.math.isFinite(config.background_value));
+    if (config.save_strategy == .disk or config.save_strategy == .both) {
+        std.debug.assert(config.image_save_opts.len > 0);
+    }
+    if (config.report == .full_stats) {
+        std.debug.assert(config.full_stats_opts.formats.len > 0);
+    }
+
+    for (camera_inputs) |camera_input| {
+        checkCameraInputAssert(camera_input);
+    }
+
+    const num_time = mo.countFrames(meshes);
+    const raw_num_fields = mo.countOutputFields(meshes);
+    std.debug.assert(num_time > 0);
+    std.debug.assert(raw_num_fields > 0);
+    _ = outputFieldsForImageMode(config.image_mode, raw_num_fields) catch unreachable;
+
+    if (bench_capture) |capture| {
+        std.debug.assert(capture.len == camera_inputs.len * num_time);
+    }
+
+    if (!validate_output_buffer) {
+        return;
+    }
+
+    if (config.save_strategy == .memory or config.save_strategy == .both) {
+        const expected_image_dims = calcAllFramesImageDimsForConfig(
+            camera_inputs,
+            meshes,
+            config,
+        ) catch unreachable;
+        const images_arr_req = images_arr orelse unreachable;
+        validateAllFramesBuffer(images_arr_req, expected_image_dims) catch unreachable;
+    } else {
+        std.debug.assert(images_arr == null);
+    }
+}
+
 pub fn calcAllFramesImageDims(
     camera_inputs: []const cam.CameraInput,
     meshes: []const mo.MeshInput,
@@ -283,6 +554,7 @@ const FrameContext = struct {
     elems_in_image_by_mesh: []usize = &.{},
     raster_hulls: []?ndarray.NDArray(f64) = &.{},
     tiling: ?rops.TilingOverlaps = null,
+    total_nodes_num: usize = 0,
     total_elems_num: usize = 0,
     total_elems_in_image: usize = 0,
     actual_tile_size: u16 = 1,
@@ -321,10 +593,12 @@ fn prepareFrameContext(
 ) !void {
     const arena_alloc = ctx.arena.allocator();
     ctx.actual_tile_size = scalingpolicy.tileSize(
+        input.config.tile_size_override,
         input.config.tile_size_min,
         input.config.tile_size_max,
         input.camera.pixels_num,
         input.camera.sub_sample,
+        input.camera.prepared_psf.halo_px,
     );
 
     ctx.report_storage = try initFrameReportStorage(
@@ -453,6 +727,10 @@ fn rasterFrame(
     ctx.frame_times.raster_loop = @floatFromInt(
         time_start_loop.durationTo(time_end_loop).raw.nanoseconds,
     );
+    if (report.getBenchLog(report_mode, report_ptr)) |bench_log| {
+        ctx.frame_times.cam_invert = bench_log.cam_time_ns;
+        ctx.frame_times.scratch_resolve = bench_log.resolve_time_ns;
+    }
 }
 
 fn saveFrame(
@@ -531,6 +809,7 @@ fn sceneTileOverlapBinning(
         tiles_num_y,
         @intCast(job.camera.pixels_num[0]),
         @intCast(job.camera.pixels_num[1]),
+        job.camera.prepared_psf.halo_px,
         ctx.elems_in_image_by_mesh,
         ctx.elem_bboxes_by_mesh,
     );
@@ -606,6 +885,7 @@ fn runGeometryStage(
         job.desc.nodal_global_scaling,
         job.ctx.frame_meshes,
     );
+
     for (job.ctx.frame_meshes, 0..) |*fm, ii| {
         job.ctx.prep_meshes[ii] = fm.mesh;
         job.ctx.elem_bboxes_by_mesh[ii] = fm.elem_bboxes;
@@ -614,6 +894,7 @@ fn runGeometryStage(
     }
     job.ctx.total_elems_num = geo_res.total_elems_num;
     job.ctx.total_elems_in_image = geo_res.total_elems_in_image;
+    job.ctx.total_nodes_num = mo.countStaticMeshNodes(job.desc.mesh_static);
 
     const time_end_geo = Timestamp.now(io, .awake);
     job.ctx.frame_times.geometry_prep = @floatFromInt(
@@ -708,6 +989,7 @@ fn runRasterAndSaveFrame(
         job.desc.bench_capture,
         &job.ctx.report_storage,
         job.ctx.frame_times,
+        job.ctx.total_nodes_num,
         job.ctx.total_elems_num,
         job.ctx.total_elems_in_image,
         job.ctx.prep_meshes,
@@ -974,8 +1256,7 @@ const OfflineDispatchShared = struct {
     bench_capture: ?[]report.FrameBenchCapture,
     total_scene_elems: usize,
     batch_size: usize,
-    next_job: std.atomic.Value(usize) =
-        std.atomic.Value(usize).init(0),
+    next_job: std.atomic.Value(usize) = std.atomic.Value(usize).init(0),
     err_state: *FrameJobErrorState,
 };
 
@@ -1276,9 +1557,9 @@ fn dispatchFrameJobsInOrder(
 }
 
 // --------------------------------------------------------------------------
-// 10. Camera Preparation and Public API
+// 10. Public API
 // --------------------------------------------------------------------------
-pub fn rasterAllFrames(
+pub fn raster(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
     camera_inputs: []const cam.CameraInput,
@@ -1286,7 +1567,7 @@ pub fn rasterAllFrames(
     config: RasterConfig,
     out_dir_path: ?[]const u8,
 ) !?ndarray.NDArray(f64) {
-    return rasterAllFramesReport(
+    return rasterReport(
         outer_alloc,
         render_groups,
         camera_inputs,
@@ -1297,7 +1578,7 @@ pub fn rasterAllFrames(
     );
 }
 
-pub fn rasterAllFramesInto(
+pub fn rasterInto(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
     camera_inputs: []const cam.CameraInput,
@@ -1306,7 +1587,7 @@ pub fn rasterAllFramesInto(
     out_dir_path: ?[]const u8,
     images_arr: ?*ndarray.NDArray(f64),
 ) !void {
-    try rasterAllFramesReportInto(
+    try rasterReportInto(
         outer_alloc,
         render_groups,
         camera_inputs,
@@ -1318,7 +1599,7 @@ pub fn rasterAllFramesInto(
     );
 }
 
-pub fn rasterAllFramesReport(
+pub fn rasterReport(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
     camera_inputs: []const cam.CameraInput,
@@ -1327,6 +1608,16 @@ pub fn rasterAllFramesReport(
     out_dir_path: ?[]const u8,
     bench_capture: ?[]report.FrameBenchCapture,
 ) !?ndarray.NDArray(f64) {
+    try checkRenderConsistencyError(
+        render_groups,
+        camera_inputs,
+        meshes,
+        config,
+        null,
+        bench_capture,
+        false,
+    );
+
     const needs_images_arr = config.save_strategy == .memory or
         config.save_strategy == .both;
     var images_arr_opt: ?ndarray.NDArray(f64) = null;
@@ -1346,7 +1637,7 @@ pub fn rasterAllFramesReport(
         images_arr.deinit(outer_alloc);
     };
 
-    try rasterAllFramesReportInto(
+    try rasterReportInto(
         outer_alloc,
         render_groups,
         camera_inputs,
@@ -1359,7 +1650,7 @@ pub fn rasterAllFramesReport(
     return images_arr_opt;
 }
 
-pub fn rasterAllFramesReportInto(
+pub fn rasterReportInto(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
     camera_inputs: []const cam.CameraInput,
@@ -1369,7 +1660,16 @@ pub fn rasterAllFramesReportInto(
     images_arr: ?*ndarray.NDArray(f64),
     bench_capture: ?[]report.FrameBenchCapture,
 ) !void {
-    std.debug.assert(render_groups.len > 0);
+    try checkRenderConsistencyError(
+        render_groups,
+        camera_inputs,
+        meshes,
+        config,
+        images_arr,
+        bench_capture,
+        true,
+    );
+
     const summary_io = render_groups[0].io;
     const time_start_render = Timestamp.now(summary_io, .awake);
 
@@ -1389,10 +1689,9 @@ pub fn rasterAllFramesReportInto(
     defer static_arena.deinit();
     const static_alloc = static_arena.allocator();
 
-    const cameras = try cam.CameraOps.prepareSlice(
+    const cameras = try cameraops.prepareCameraSlice(
         outer_alloc,
         camera_inputs,
-        config.subpixel_center_map,
     );
     defer {
         for (cameras) |camera| camera.deinit(outer_alloc);
@@ -1402,14 +1701,6 @@ pub fn rasterAllFramesReportInto(
     const num_time = mo.countFrames(meshes);
     const num_fields = mo.countOutputFields(meshes);
 
-    std.debug.assert(cameras.len > 0);
-    std.debug.assert(meshes.len > 0);
-    std.debug.assert(num_time > 0);
-    std.debug.assert(num_fields > 0);
-    if (bench_capture) |capture| {
-        std.debug.assert(capture.len == cameras.len * num_time);
-    }
-
     // Init. static data across all frames - here we reshape uv's once if we have them so
     // we don't need to do this every frames
     const mesh_static = try initMeshStaticSlice(static_alloc, meshes);
@@ -1417,17 +1708,6 @@ pub fn rasterAllFramesReportInto(
     defer outer_alloc.free(nodal_global_scaling);
 
     const time_start_frame_buffer = Timestamp.now(summary_io, .awake);
-    if (config.save_strategy == .memory or config.save_strategy == .both) {
-        const expected_image_dims = try calcAllFramesImageDimsForConfig(
-            camera_inputs,
-            meshes,
-            config,
-        );
-        const images_arr_req = images_arr orelse return error.InvalidOutputBuffer;
-        try validateAllFramesBuffer(images_arr_req, expected_image_dims);
-    } else if (images_arr != null) {
-        return error.InvalidOutputBuffer;
-    }
     const time_end_setup = Timestamp.now(summary_io, .awake);
     var end_to_end_times = report.EndToEndTimes{
         .setup_time = @floatFromInt(
@@ -1484,10 +1764,12 @@ pub fn rasterAllFramesReportInto(
         time_start_render.durationTo(time_end_render).raw.nanoseconds,
     );
     const actual_tile_size = scalingpolicy.tileSize(
+        config.tile_size_override,
         config.tile_size_min,
         config.tile_size_max,
         cameras[0].pixels_num,
         cameras[0].sub_sample,
+        cameras[0].prepared_psf.halo_px,
     );
     try report.printRenderSummary(
         summary_io,

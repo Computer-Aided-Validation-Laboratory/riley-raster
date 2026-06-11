@@ -49,7 +49,7 @@ SPEEDUP_ROWS = [
     ("adaptive hull + SIMD", "simd", "on_no_fallback"),
 ]
 
-OUT_TABS_NAME = "bench3_tabs.tex"
+OUT_TABS_NAME = "tabs_bench3.tex"
 
 
 
@@ -108,26 +108,22 @@ def build_raw_table_tex() -> str:
                 fmt_triplet_any(
                     median_row,
                     mad_row,
-                    "E2E Time [ms]",
-                    "E2E_ms",
+                    "E2E Time",
                 ) + " & " +
                 fmt_triplet_any(
                     median_row,
                     mad_row,
-                    "Geom Time [ms]",
-                    "Geom_ms",
+                    "Geom Time",
                 ) + " & " +
                 fmt_triplet_any(
                     median_row,
                     mad_row,
-                    "Raster Time [ms]",
-                    "Raster_ms",
+                    "Raster Time",
                 ) + " & " +
                 fmt_triplet_any(
                     median_row,
                     mad_row,
-                    "Raster TP [MPx/s]",
-                    "MPx/s",
+                    "Raster TP",
                 ) + " \\\\"
             )
 
@@ -178,26 +174,22 @@ def build_speedup_table_tex() -> str:
         baseline_row = baseline_median_map[case_name]
         baseline_e2e = row_float(
             baseline_row,
-            "E2E Time [ms]",
-            "E2E_ms",
+            "E2E Time",
         )
         baseline_raster = row_float(
             baseline_row,
-            "Raster Time [ms]",
-            "Raster_ms",
+            "Raster Time",
         )
 
         for config_label, simd_label, hull_mode in SPEEDUP_ROWS:
             variant_row = variant_maps[(simd_label, hull_mode)][case_name]
             variant_e2e = row_float(
                 variant_row,
-                "E2E Time [ms]",
-                "E2E_ms",
+                "E2E Time",
             )
             variant_raster = row_float(
                 variant_row,
-                "Raster Time [ms]",
-                "Raster_ms",
+                "Raster Time",
             )
             e2e_speedup = 0.0 if variant_e2e == 0.0 else baseline_e2e / variant_e2e
             raster_speedup = (

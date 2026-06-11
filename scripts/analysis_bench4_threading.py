@@ -184,31 +184,31 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
             case_dir / "bench_e2e_overruns_max.csv"
         )
         case_name = median_row["Case"]
-        e2e_median_ms = row_float(median_row, "E2E Time [ms]", "E2E_ms")
-        e2e_min_ms = row_float(min_row, "E2E Time [ms]", "E2E_ms")
-        e2e_max_ms = row_float(max_row, "E2E Time [ms]", "E2E_ms")
+        e2e_median_ms = row_float(median_row, "E2E Time")
+        e2e_min_ms = row_float(min_row, "E2E Time")
+        e2e_max_ms = row_float(max_row, "E2E Time")
         e2e_throughput_median = row_float(
-            median_row, "E2E TP [MPx/s]"
-        ) if "E2E TP [MPx/s]" in median_row else total_mpx * 1000.0 / e2e_median_ms
-        e2e_throughput_min = row_float(
-            min_row, "E2E TP [MPx/s]"
-        ) if "E2E TP [MPx/s]" in min_row else total_mpx * 1000.0 / e2e_max_ms
-        e2e_throughput_max = row_float(
-            max_row, "E2E TP [MPx/s]"
-        ) if "E2E TP [MPx/s]" in max_row else total_mpx * 1000.0 / e2e_min_ms
-        raster_median_ms = row_float(
-            median_row, "Raster Time [ms]", "Raster_ms"
+            median_row, "E2E TP"
         )
-        raster_min_ms = row_float(min_row, "Raster Time [ms]", "Raster_ms")
-        raster_max_ms = row_float(max_row, "Raster Time [ms]", "Raster_ms")
+        e2e_throughput_min = row_float(
+            min_row, "E2E TP"
+        )
+        e2e_throughput_max = row_float(
+            max_row, "E2E TP"
+        )
+        raster_median_ms = row_float(
+            median_row, "Raster Time"
+        )
+        raster_min_ms = row_float(min_row, "Raster Time")
+        raster_max_ms = row_float(max_row, "Raster Time")
         raster_throughput_median = row_float(
-            median_row, "Raster TP [MPx/s]", "Throughput_MPx/s"
+            median_row, "Raster TP"
         )
         raster_throughput_min = row_float(
-            min_row, "Raster TP [MPx/s]", "Throughput_MPx/s"
+            min_row, "Raster TP"
         )
         raster_throughput_max = row_float(
-            max_row, "Raster TP [MPx/s]", "Throughput_MPx/s"
+            max_row, "Raster TP"
         )
     else:
         e2e_times = []
@@ -223,18 +223,18 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
                 for row in reader:
                     if row.get("Camera") == "all":
                         case_name = row["Case"]
-                        e2e_ms = row_float(row, "E2E Time [ms]", "E2E_ms")
+                        e2e_ms = row_float(row, "E2E Time")
                         e2e_times.append(e2e_ms)
                         raster_ms = row_float(
-                            row, "Raster Time [ms]", "Raster_ms"
+                            row, "Raster Time"
                         )
                         raster_times.append(raster_ms)
                         e2e_tp = row_float(
-                            row, "E2E TP [MPx/s]"
-                        ) if "E2E TP [MPx/s]" in row else total_mpx * 1000.0 / e2e_ms
+                            row, "E2E TP"
+                        )
                         e2e_tps.append(e2e_tp)
                         raster_tp = row_float(
-                            row, "Raster TP [MPx/s]", "Throughput_MPx/s"
+                            row, "Raster TP"
                         )
                         raster_tps.append(raster_tp)
                         break
@@ -285,13 +285,16 @@ def parse_case_stats(case_dir: pathlib.Path) -> CaseStats | None:
     )
 
 
-def collect_case_stats() -> list[CaseStats]:
+def collect_case_stats(include_disk_overlap: bool = True) -> list[CaseStats]:
+    required_paths = ["experiment_5_offline_sweet_spot"]
+    if include_disk_overlap:
+        required_paths.append(
+            "experiment_7_offline_sweet_spot_disk_overlap"
+        )
+
     latest_run = latest_run_dir_with_paths(
         BENCH_NAME,
-        [
-            "experiment_5_offline_sweet_spot",
-            "experiment_7_offline_sweet_spot_disk_overlap",
-        ],
+        required_paths,
     )
 
     stats: list[CaseStats] = []
@@ -305,16 +308,17 @@ def collect_case_stats() -> list[CaseStats]:
         if case_stats is not None:
             stats.append(case_stats)
 
-    exp7_dir = latest_run / (
-        "experiment_7_offline_sweet_spot_disk_overlap"
-    )
-    print(f"Using benchmark run: {exp7_dir}")
-    for case_dir in sorted(
-        path for path in exp7_dir.iterdir() if path.is_dir()
-    ):
-        case_stats = parse_case_stats(case_dir)
-        if case_stats is not None:
-            stats.append(case_stats)
+    if include_disk_overlap:
+        exp7_dir = latest_run / (
+            "experiment_7_offline_sweet_spot_disk_overlap"
+        )
+        print(f"Using benchmark run: {exp7_dir}")
+        for case_dir in sorted(
+            path for path in exp7_dir.iterdir() if path.is_dir()
+        ):
+            case_stats = parse_case_stats(case_dir)
+            if case_stats is not None:
+                stats.append(case_stats)
 
     if not stats:
         raise FileNotFoundError(
@@ -1322,7 +1326,7 @@ def main(include_disk_overlap: bool = True) -> int:
     if not include_disk_overlap:
         SAVE_MODE_ORDER = [m for m in SAVE_MODE_ORDER if m != "disk_overlap"]
 
-    stats = collect_case_stats()
+    stats = collect_case_stats(include_disk_overlap=include_disk_overlap)
     print_best_config_summary(stats)
 
     plot_raster_scaling(stats, "fig_bench4_raster_scaling")

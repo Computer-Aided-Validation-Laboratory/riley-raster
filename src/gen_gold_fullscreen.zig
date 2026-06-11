@@ -38,7 +38,7 @@ pub fn main(init: std.process.Init) !void {
         .bmp,
     );
 
-    const out_dir_base = "gold/bench-fullscreen";
+    const out_dir_base = "gold/fullscreen";
     const pixel_num = [_]u32{ 800, 500 };
     const render_defaults = common.BenchRenderDefaults{
         .pixels_num = pixel_num,

@@ -24,7 +24,7 @@ test "Gold SSAA Suite" {
 
     var first_err: ?anyerror = null;
 
-    const strategies = [_]@import("riley/zig/rasterconfig.zig").SubPixelCenterMap{
+    const strategies = [_]@import("riley/zig/camera.zig").SubPixelCenterMap{
         .per_tile,
         .affine_jac,
     };

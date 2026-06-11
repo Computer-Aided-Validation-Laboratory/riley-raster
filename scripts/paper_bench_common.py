@@ -250,30 +250,44 @@ def fmt_triplet(
     )
 
 
+def find_col_name(row: dict[str, str], col_name: str) -> str:
+    if col_name in row:
+        return col_name
+    col_name_lower = col_name.lower()
+    for key in row.keys():
+        if col_name_lower in key.lower():
+            return key
+    raise KeyError(
+        f"No column matching '{col_name}' found in row keys: "
+        f"{list(row.keys())}"
+    )
+
+
 def row_value(
     row: dict[str, str],
-    *col_names: str,
+    col_name: str,
 ) -> str:
-    for col_name in col_names:
-        if col_name in row and row[col_name] != "":
-            return row[col_name]
-    raise KeyError(f"missing columns {col_names} in row")
+    key = find_col_name(row, col_name)
+    val = row[key]
+    if val == "":
+        raise ValueError(f"Value for column '{key}' is empty")
+    return val
 
 
 def row_float(
     row: dict[str, str],
-    *col_names: str,
+    col_name: str,
 ) -> float:
-    return float(row_value(row, *col_names))
+    return float(row_value(row, col_name))
 
 
 def fmt_triplet_any(
     median_row: dict[str, str],
     mad_row: dict[str, str],
-    *col_names: str,
+    col_name: str,
 ) -> str:
-    median_val = row_float(median_row, *col_names)
-    mad_val = row_float(mad_row, *col_names)
+    median_val = row_float(median_row, col_name)
+    mad_val = row_float(mad_row, col_name)
     return (
         f"${median_val:.{TABLE_MEDIAN_DECIMAL_PLACES}f} "
         f"\\pm {mad_val:.{TABLE_MAD_DECIMAL_PLACES}f}$"

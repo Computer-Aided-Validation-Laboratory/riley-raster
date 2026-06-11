@@ -16,8 +16,9 @@ const iio = @import("riley/zig/imageio.zig");
 const mo = @import("riley/zig/meshops.zig");
 const MeshInput = mo.MeshInput;
 const camera_mod = @import("riley/zig/camera.zig");
+const cameraio = @import("riley/zig/cameraio.zig");
+const cameraops = @import("riley/zig/cameraops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
-const CameraOps = camera_mod.CameraOps;
 const DistortionModel = camera_mod.DistortionModel;
 const BrownConrady = camera_mod.BrownConrady;
 const BrownConradyExt = camera_mod.BrownConradyExt;
@@ -65,12 +66,12 @@ fn buildDistortion() DistortionModel {
         } },
         .brown_conrady_ext => .{ .brown_conrady_ext = BrownConradyExt{
             .k1 = -0.2,
-            .k2 =  0.1,
+            .k2 = 0.1,
             .k3 = -0.01,
             .k4 = -0.04,
             .k5 = 0.18,
-            .k6 =  -0.02,
-            .p1 =  0.0001,
+            .k6 = -0.02,
+            .p1 = 0.0001,
             .p2 = -0.0001,
         } },
     };
@@ -98,9 +99,6 @@ pub fn main(init: std.process.Init) !void {
     const config = RasterConfig{
         .render_mode = .offline,
         .total_threads = TOTAL_THREADS,
-        .max_frames_in_flight = RENDER_GROUP_COUNT,
-        .max_geom_workers_per_frame = 1,
-        .max_raster_workers_per_frame = 1,
         .frame_batch_size_per_group = 8,
         .max_geom_jobs_in_flight_per_group = 8,
         .max_geom_workers_per_job = 1,
@@ -190,7 +188,7 @@ pub fn main(init: std.process.Init) !void {
 
     const distortion = buildDistortion();
 
-    var roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
+    var roi_pos = cameraops.roiCentFromCoords(&sim_data.coords);
 
     var stereo_pair = switch (CAMERA_PLACEMENT_MODE) {
         .auto_fov => blk: {
@@ -205,7 +203,7 @@ pub fn main(init: std.process.Init) !void {
                 std.math.degreesToRadians(0.0),
             );
 
-            const cam0_pos = CameraOps.posFillFrameFromRot(
+            const cam0_pos = cameraops.posFillFrameFromRot(
                 &sim_data.coords,
                 PIXELS_NUM,
                 PIXELS_SIZE,
@@ -213,7 +211,7 @@ pub fn main(init: std.process.Init) !void {
                 cam0_rot,
                 FOV_SCALE_FACTOR,
             );
-            const cam1_pos = CameraOps.posFillFrameFromRot(
+            const cam1_pos = cameraops.posFillFrameFromRot(
                 &sim_data.coords,
                 PIXELS_NUM,
                 PIXELS_SIZE,
@@ -250,7 +248,7 @@ pub fn main(init: std.process.Init) !void {
         .load_stereo_pair => blk: {
             var stereo_in_dir = try cwd.openDir(io, DICUQ_CAMERA_DIR, .{});
             defer stereo_in_dir.close(io);
-            break :blk try CameraOps.loadStereoPair(
+            break :blk try cameraio.loadStereoPair(
                 aa,
                 io,
                 stereo_in_dir,
@@ -279,11 +277,11 @@ pub fn main(init: std.process.Init) !void {
                 sim_data.coords.mat.get(nn, 2) + roi_shift.get(2),
             );
         }
-        roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
+        roi_pos = cameraops.roiCentFromCoords(&sim_data.coords);
         stereo_pair.cameras[0].roi_cent_world = roi_pos;
         stereo_pair.cameras[1].roi_cent_world = roi_pos;
     }
-    try CameraOps.saveStereoPair(io, out_dir, stereo_file_name, stereo_pair);
+    try cameraio.saveStereoPair(io, out_dir, stereo_file_name, stereo_pair);
 
     const mesh_input = MeshInput{
         .mesh_type = .tri3,
@@ -303,7 +301,7 @@ pub fn main(init: std.process.Init) !void {
     };
 
     const meshes = [_]MeshInput{mesh_input};
-    const images = try riley.rasterAllFrames(
+    const images = try riley.raster(
         aa,
         render_groups,
         &stereo_pair.cameras,

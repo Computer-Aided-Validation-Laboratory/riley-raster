@@ -24,6 +24,7 @@ const pce = @import("parachunkexec.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
 const rops = @import("rasterops.zig");
 const report = @import("report.zig");
+const sceneops = @import("sceneops.zig");
 const texops = @import("textureops.zig");
 
 const shaderops = @import("shaderops.zig");
@@ -130,8 +131,8 @@ pub fn countOutputFields(
             .nodal => |shader| shader.field.getFieldsN(),
             .tex => 1,
             .tex_rgb => 3,
-            .tex_func => 1,
-            .tex_func_rgb => 3,
+            .func => 1,
+            .func_rgb => 3,
         };
         num_fields = @max(num_fields, mesh_fields);
     }
@@ -148,46 +149,26 @@ pub fn countStaticMeshElements(
     return total;
 }
 
+pub fn countStaticMeshNodes(
+    mesh_static: []const MeshStatic,
+) usize {
+    var total: usize = 0;
+    for (mesh_static) |mesh| {
+        total += mesh.coords_orig.mat.rows_num;
+    }
+    return total;
+}
+
 // External helper function for finding mesh centroids
 pub fn findAlignedCentroid(coords: *const meshio.Coords) struct {
     centroid: [3]f64,
     extent: [3]f64,
 } {
-    var min = [3]f64{
-        std.math.inf(f64),
-        std.math.inf(f64),
-        std.math.inf(f64),
-    };
-    var max = [3]f64{
-        -std.math.inf(f64),
-        -std.math.inf(f64),
-        -std.math.inf(f64),
-    };
-
-    for (0..coords.mat.rows_num) |ii| {
-        const x = coords.mat.get(ii, 0);
-        const y = coords.mat.get(ii, 1);
-        const z = coords.mat.get(ii, 2);
-
-        if (x < min[0]) min[0] = x;
-        if (x > max[0]) max[0] = x;
-        if (y < min[1]) min[1] = y;
-        if (y > max[1]) max[1] = y;
-        if (z < min[2]) min[2] = z;
-        if (z > max[2]) max[2] = z;
-    }
+    const bounds = sceneops.boundsForCoords(coords);
 
     return .{
-        .centroid = .{
-            (min[0] + max[0]) * 0.5,
-            (min[1] + max[1]) * 0.5,
-            (min[2] + max[2]) * 0.5,
-        },
-        .extent = .{
-            max[0] - min[0],
-            max[1] - min[1],
-            max[2] - min[2],
-        },
+        .centroid = bounds.center,
+        .extent = bounds.extent,
     };
 }
 
@@ -197,58 +178,10 @@ pub fn arrangeMeshSlice(
     gap: [3]f64,
     max_divs: [3]usize,
 ) void {
-    var max_extent = [3]f64{ 0, 0, 0 };
-
-    // First pass: find the maximum extent among all individual meshes
-    for (meshes) |mesh| {
-        const bounds = findAlignedCentroid(&mesh.coords);
-        for (0..3) |ii| {
-            if (bounds.extent[ii] > max_extent[ii]) {
-                max_extent[ii] = bounds.extent[ii];
-            }
-        }
-    }
-
-    const stride = [3]f64{
-        max_extent[0] + gap[0],
-        max_extent[1] + gap[1],
-        max_extent[2] + gap[2],
-    };
-
-    // Second pass: arrange meshes in a regular grid
-    for (meshes, 0..) |mesh, nn| {
-        // Calculate grid indices based on max divisions per axis
-        const ix = nn % max_divs[0];
-        const iy = (nn / max_divs[0]) % max_divs[1];
-        const iz = nn / (max_divs[0] * max_divs[1]);
-
-        const target_center = [3]f64{
-            @as(f64, @floatFromInt(ix)) * stride[0],
-            @as(f64, @floatFromInt(iy)) * stride[1],
-            @as(f64, @floatFromInt(iz)) * stride[2],
-        };
-
-        const bounds = findAlignedCentroid(&mesh.coords);
-
-        const translation = [3]f64{
-            target_center[0] - bounds.centroid[0],
-            target_center[1] - bounds.centroid[1],
-            target_center[2] - bounds.centroid[2],
-        };
-
-        var mat = mesh.coords.mat;
-
-        // Apply translation in-place to the coordinate matrix
-        for (0..mesh.coords.mat.rows_num) |ii| {
-            const x = mat.get(ii, 0);
-            const y = mat.get(ii, 1);
-            const z = mat.get(ii, 2);
-
-            mat.set(ii, 0, x + translation[0]);
-            mat.set(ii, 1, y + translation[1]);
-            mat.set(ii, 2, z + translation[2]);
-        }
-    }
+    sceneops.arrangeMeshesGrid(meshes, .{
+        .gap = gap,
+        .max_divs = max_divs,
+    });
 }
 
 // External helper to turn a SimData struct into a MeshInput with associted shader data for
@@ -274,10 +207,10 @@ pub fn meshInputFromSimDataSlice(
                 .tex_rgb => |tex| {
                     outer_alloc.free(tex.uvs.slice);
                 },
-                .tex_func => |tex_func| {
+                .func => |tex_func| {
                     if (tex_func.uvs) |uvs| outer_alloc.free(uvs.slice);
                 },
-                .tex_func_rgb => |tex_func| {
+                .func_rgb => |tex_func| {
                     if (tex_func.uvs) |uvs| outer_alloc.free(uvs.slice);
                 },
                 else => {},
@@ -395,7 +328,7 @@ pub fn initMeshStatic(
                 .normal_type = tex_in.normal_type,
             } };
         },
-        .tex_func => |tex_func_in| {
+        .func => |tex_func_in| {
             const elem_uvs = if (tex_func_in.uvs) |uvs|
                 try prepareUVs(
                     allocator,
@@ -404,7 +337,7 @@ pub fn initMeshStatic(
                 )
             else
                 null;
-            shader_static = .{ .tex_func = .{
+            shader_static = .{ .func = .{
                 .elem_uvs = elem_uvs,
                 .builtin = tex_func_in.builtin,
                 .params = tex_func_in.params,
@@ -413,7 +346,7 @@ pub fn initMeshStatic(
                 .normal_type = tex_func_in.normal_type,
             } };
         },
-        .tex_func_rgb => |tex_func_in| {
+        .func_rgb => |tex_func_in| {
             const elem_uvs = if (tex_func_in.uvs) |uvs|
                 try prepareUVs(
                     allocator,
@@ -422,7 +355,7 @@ pub fn initMeshStatic(
                 )
             else
                 null;
-            shader_static = .{ .tex_func_rgb = .{
+            shader_static = .{ .func_rgb = .{
                 .elem_uvs = elem_uvs,
                 .builtin = tex_func_in.builtin,
                 .params = tex_func_in.params,
@@ -474,9 +407,7 @@ fn copyCoordsAlloc(
     allocator: std.mem.Allocator,
     coords: *const meshio.Coords,
 ) !meshio.Coords {
-    const coords_copy = try meshio.Coords.initAlloc(allocator, coords.mat.rows_num);
-    @memcpy(coords_copy.mem, coords.mem);
-    return coords_copy;
+    return sceneops.duplicateCoords(allocator, coords.*);
 }
 
 fn initMeshFrameWorkspace(
@@ -1014,11 +945,11 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .tex_rgb => |tex_static| {
                     mesh_prep.shader = try prepareTexShader(3, self, tex_static);
                 },
-                .tex_func => |tex_func_static| {
-                    mesh_prep.shader = try prepareTexFuncShader(1, self, tex_func_static);
+                .func => |func_static| {
+                    mesh_prep.shader = try prepareFuncShader(1, self, func_static);
                 },
-                .tex_func_rgb => |tex_func_static| {
-                    mesh_prep.shader = try prepareTexFuncShader(3, self, tex_func_static);
+                .func_rgb => |func_static| {
+                    mesh_prep.shader = try prepareFuncShader(3, self, func_static);
                 },
             }
         }
@@ -1198,18 +1129,18 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
         }
 
-        fn prepareTexFuncShader(
+        fn prepareFuncShader(
             comptime channels: usize,
             self: *FrameMeshPipelineType,
-            tex_func_static: shaderops.TexFuncStatic(channels),
+            func_static: shaderops.FuncStatic(channels),
         ) !shaderops.ShaderPrepared {
             const factors = imageops.getScaleFactors(
-                tex_func_static.scaling,
-                tex_func_static.bits,
+                func_static.scaling,
+                func_static.bits,
                 .{ .min = 0.0, .range = 1.0 },
             );
 
-            const elem_uvs = if (tex_func_static.elem_uvs) |elem_uvs_full| blk: {
+            const elem_uvs = if (func_static.elem_uvs) |elem_uvs_full| blk: {
                 var elem_uvs = try ndarray.NDArray(f64).initFlat(
                     self.allocator,
                     &[_]usize{
@@ -1235,29 +1166,29 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 break :blk elem_uvs;
             } else null;
 
-            const elem_normals = try self.prepareVisibleNormals(tex_func_static.normal_type);
+            const elem_normals = try self.prepareVisibleNormals(func_static.normal_type);
             if (comptime channels == 1) {
-                return .{ .tex_func = .{
+                return .{ .func = .{
                     .elem_uvs = elem_uvs,
-                    .builtin = tex_func_static.builtin,
-                    .params = tex_func_static.params,
-                    .bits = tex_func_static.bits,
-                    .scaling = tex_func_static.scaling,
+                    .builtin = func_static.builtin,
+                    .params = func_static.params,
+                    .bits = func_static.bits,
+                    .scaling = func_static.scaling,
                     .scale_mul = factors.mul,
                     .scale_add = factors.add,
-                    .normal_type = tex_func_static.normal_type,
+                    .normal_type = func_static.normal_type,
                     .elem_normals = elem_normals,
                 } };
             } else {
-                return .{ .tex_func_rgb = .{
+                return .{ .func_rgb = .{
                     .elem_uvs = elem_uvs,
-                    .builtin = tex_func_static.builtin,
-                    .params = tex_func_static.params,
-                    .bits = tex_func_static.bits,
-                    .scaling = tex_func_static.scaling,
+                    .builtin = func_static.builtin,
+                    .params = func_static.params,
+                    .bits = func_static.bits,
+                    .scaling = func_static.scaling,
                     .scale_mul = factors.mul,
                     .scale_add = factors.add,
-                    .normal_type = tex_func_static.normal_type,
+                    .normal_type = func_static.normal_type,
                     .elem_normals = elem_normals,
                 } };
             }

@@ -8,15 +8,15 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const MatSlice = @import("../riley/zig/matslice.zig").MatSlice;
 const NDArray = @import("../riley/zig/ndarray.zig").NDArray;
 const iio = @import("../riley/zig/imageio.zig");
 const meshio = @import("../riley/zig/meshio.zig");
 const mo = @import("../riley/zig/meshops.zig");
+const sceneops = @import("../riley/zig/sceneops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const uvio = @import("../riley/zig/uvio.zig");
 const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
-const CameraOps = @import("../riley/zig/camera.zig").CameraOps;
+const cameraops = @import("../riley/zig/cameraops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 
 pub const default_multimesh_mesh_types = [_]gk.MeshType{
@@ -139,7 +139,7 @@ fn initCameraForSimDataAllFrames(
             .connect = sim_data.connect,
             .disp = null,
             .shader = .{
-                .tex_func = .{
+                .func = .{
                     .uvs = null,
                     .builtin = .constant,
                     .normal_type = .none,
@@ -226,7 +226,7 @@ pub fn initCameraForCoordsWithRotation(
     fov_scale: f64,
     rot: Rotation,
 ) !CameraPrepared {
-    const cam_pos = CameraOps.posFillFrameFromRot(
+    const cam_pos = cameraops.posFillFrameFromRot(
         coords,
         pixel_num,
         default_pixel_size,
@@ -241,7 +241,7 @@ pub fn initCameraForCoordsWithRotation(
             .pixels_size = default_pixel_size,
             .pos_world = cam_pos,
             .rot_world = rot,
-            .roi_cent_world = CameraOps.roiCentFromCoords(coords),
+            .roi_cent_world = cameraops.roiCentFromCoords(coords),
             .focal_length = default_focal_length,
             .sub_sample = 2,
         },
@@ -281,8 +281,8 @@ pub fn initCameraForMeshes(
     fov_scale: f64,
 ) !CameraPrepared {
     const rot = defaultRotation();
-    const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
-    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
+    const roi_pos = cameraops.roiCentOverMeshes(mesh_inputs);
+    const cam_pos = cameraops.posFillFrameFromRotOverMeshes(
         mesh_inputs,
         pixel_num,
         default_pixel_size,
@@ -335,7 +335,10 @@ pub fn buildMultimeshInputs(
             null,
         ),
     };
-    mo.arrangeMeshSlice(mesh_inputs, .{ 0.1, 0.1, 0.0 }, .{ 3, 2, 1 });
+    sceneops.arrangeMeshesGrid(mesh_inputs, .{
+        .gap = .{ 0.1, 0.1, 0.0 },
+        .max_divs = .{ 3, 2, 1 },
+    });
     return mesh_inputs;
 }
 
@@ -343,13 +346,7 @@ pub fn copyCoords(
     allocator: std.mem.Allocator,
     coords: meshio.Coords,
 ) !meshio.Coords {
-    const coords_dup = try MatSlice(f64).initAlloc(
-        allocator,
-        coords.mat.rows_num,
-        coords.mat.cols_num,
-    );
-    @memcpy(coords_dup.slice, coords.mat.slice);
-    return meshio.Coords.init(coords_dup.slice, coords_dup.rows_num);
+    return sceneops.duplicateCoords(allocator, coords);
 }
 
 fn buildGradientRgbField(
@@ -453,7 +450,10 @@ pub fn buildMixedMeshInputs(
         };
     }
 
-    mo.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+    sceneops.arrangeMeshesGrid(mesh_inputs, .{
+        .gap = .{ 0.15, 0.15, 0.0 },
+        .max_divs = .{ 5, 2, 1 },
+    });
     return mesh_inputs;
 }
 
@@ -513,7 +513,10 @@ pub fn buildMixedRgbMeshInputs(
         };
     }
 
-    mo.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+    sceneops.arrangeMeshesGrid(mesh_inputs, .{
+        .gap = .{ 0.15, 0.15, 0.0 },
+        .max_divs = .{ 5, 2, 1 },
+    });
     return mesh_inputs;
 }
 

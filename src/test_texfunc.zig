@@ -93,7 +93,7 @@ fn runTexFuncCase(
     allocator: std.mem.Allocator,
     io: std.Io,
     mesh_type: gk.MeshType,
-    builtin: shaderops.TexFuncBuiltin,
+    builtin: shaderops.FuncShaderBuiltin,
     coord_mode: CoordMode,
     is_rgb: bool,
 ) !void {
@@ -143,7 +143,7 @@ fn runTexFuncCase(
         .disp = null,
         .shader = if (is_rgb)
             .{
-                .tex_func_rgb = .{
+                .func_rgb = .{
                     .uvs = uvs,
                     .builtin = builtin,
                     .normal_type = normal_type,
@@ -151,7 +151,7 @@ fn runTexFuncCase(
             }
         else
             .{
-                .tex_func = .{
+                .func = .{
                     .uvs = uvs,
                     .builtin = builtin,
                     .normal_type = normal_type,
@@ -174,7 +174,7 @@ fn runTexFuncCase(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const result = (try riley.rasterAllFrames(
+    const result = (try riley.raster(
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},
@@ -297,6 +297,7 @@ test "TexFunc Suite" {
     std.debug.print("Running TexFunc Gold Tests with .simd = .{s}...\n", .{
         if (simd_on) "on" else "off",
     });
+    const suite_start = Timestamp.now(std.testing.io, .awake);
 
     const io = std.testing.io;
     const mesh_types = [_]gk.MeshType{
@@ -307,7 +308,7 @@ test "TexFunc Suite" {
         .quad8,
         .quad9,
     };
-    const builtins = [_]shaderops.TexFuncBuiltin{
+    const builtins = [_]shaderops.FuncShaderBuiltin{
         .constant,
         .linear,
         .quadratic,
@@ -334,4 +335,11 @@ test "TexFunc Suite" {
             }
         }
     }
+
+    const suite_end = Timestamp.now(io, .awake);
+    const suite_ms = @as(
+        f64,
+        @floatFromInt(suite_start.durationTo(suite_end).raw.nanoseconds),
+    ) / 1e6;
+    std.debug.print("TexFunc Gold Test Suite took {d:.3} ms\n", .{suite_ms});
 }

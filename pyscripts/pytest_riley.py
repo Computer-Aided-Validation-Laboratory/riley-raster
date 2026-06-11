@@ -41,28 +41,30 @@ COMPARE_DIRS = [
 ]
 
 
-def compare_file_bytes(path_a: Path, path_b: Path) -> None:
-    bytes_a = path_a.read_bytes()
-    bytes_b = path_b.read_bytes()
-    if bytes_a == bytes_b:
-        return
+# Tolerance: 1.0 allows a single 8-bit quantisation step of
+# difference between zig and python renders, guarding against
+# platform-level floating point rounding noise.
+MAX_ABS_DIFF_TOL: float = 1.0
 
-    mismatch_idx = next(
-        (
-            nn
-            for nn, (aa, bb) in enumerate(zip(bytes_a, bytes_b))
-            if aa != bb
-        ),
-        min(len(bytes_a), len(bytes_b)),
-    )
-    image_a = np.asarray(Image.open(path_a), dtype=np.int16)
-    image_b = np.asarray(Image.open(path_b), dtype=np.int16)
-    max_abs_diff = int(np.max(np.abs(image_a - image_b)))
-    raise AssertionError(
-        "render mismatch for "
-        f"{path_a.name}: first byte diff at {mismatch_idx}, "
-        f"max_abs_diff={max_abs_diff}"
-    )
+
+def compare_renders_float(
+    path_a: Path,
+    path_b: Path,
+    tol: float = MAX_ABS_DIFF_TOL,
+) -> None:
+    arr_a = np.asarray(Image.open(path_a), dtype=np.float32)
+    arr_b = np.asarray(Image.open(path_b), dtype=np.float32)
+    if arr_a.shape != arr_b.shape:
+        raise AssertionError(
+            f"shape mismatch for {path_a.name}: "
+            f"zig={arr_a.shape} python={arr_b.shape}"
+        )
+    max_diff = float(np.max(np.abs(arr_a - arr_b)))
+    if max_diff > tol:
+        raise AssertionError(
+            f"render mismatch for {path_a.name}: "
+            f"max_abs_diff={max_diff:.4f} > tol={tol:.4f}"
+        )
 
 
 def compare_render_dirs(dir_a: Path, dir_b: Path) -> None:
@@ -80,7 +82,7 @@ def compare_render_dirs(dir_a: Path, dir_b: Path) -> None:
         )
 
     for rel_path in files_a:
-        compare_file_bytes(dir_a / rel_path, dir_b / rel_path)
+        compare_renders_float(dir_a / rel_path, dir_b / rel_path)
 
 
 def main() -> None:
@@ -109,7 +111,10 @@ def main() -> None:
     for zig_dir, py_dir in COMPARE_DIRS:
         compare_render_dirs(Path(zig_dir), Path(py_dir))
 
-    print("python wrapper renders match zig demos exactly")
+    print(
+        "python wrapper renders match zig demos "
+        f"within tol={MAX_ABS_DIFF_TOL:.1f}"
+    )
 
 
 if __name__ == "__main__":

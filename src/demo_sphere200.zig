@@ -18,10 +18,10 @@ const MeshInput = mo.MeshInput;
 const gk = @import("riley/zig/geometrykernels.zig");
 const MeshType = gk.MeshType;
 const camera_mod = @import("riley/zig/camera.zig");
+const cameraops = @import("riley/zig/cameraops.zig");
 const CameraInput = camera_mod.CameraInput;
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const CameraPrepared = camera_mod.CameraPrepared;
-const CameraOps = camera_mod.CameraOps;
 const MatSlice = @import("riley/zig/matslice.zig").MatSlice;
 
 pub fn main(init: std.process.Init) !void {
@@ -34,6 +34,8 @@ pub fn main(init: std.process.Init) !void {
     // 1. Setup Rasteriser Configuration
     const config = RasterConfig{
         .save_strategy = .disk,
+        .total_threads = 4,
+        .max_raster_workers_per_job = 4,
         .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
         },
@@ -101,8 +103,8 @@ pub fn main(init: std.process.Init) !void {
     const rot = Rotation.init(0, 0, 0);
     const fov_scale_factor: f64 = 1.0;
 
-    const roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
-    const cam_pos = CameraOps.posFillFrameFromRot(
+    const roi_pos = cameraops.roiCentFromCoords(&sim_data.coords);
+    const cam_pos = cameraops.posFillFrameFromRot(
         &sim_data.coords,
         pixel_num,
         pixel_size,
@@ -140,7 +142,8 @@ pub fn main(init: std.process.Init) !void {
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const images = try riley.rasterAllFrames(
+    
+    const images = try riley.raster(
         aa,
         &render_groups,
         &[_]@TypeOf(camera_input){camera_input},

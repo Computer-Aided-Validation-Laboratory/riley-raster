@@ -76,7 +76,7 @@ pub fn main(init: std.process.Init) !void {
                 prepared.sim_data.connect,
                 prepared.sim_data.field,
                 .{
-                    .tex_func = .{
+                    .func = .{
                         .uvs = null,
                         .builtin = .constant,
                         .normal_type = .none,

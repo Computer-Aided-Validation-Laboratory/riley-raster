@@ -9,6 +9,8 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const cfg = buildconfig.config;
+const SimdWidth = buildconfig.SimdWidth;
+const VecSF = buildconfig.VecSF;
 const rastcfg = @import("rasterconfig.zig");
 const cam = @import("camera.zig");
 const ReportMode = rastcfg.ReportMode;
@@ -16,7 +18,7 @@ const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const hull = @import("hull.zig");
 const report = @import("report.zig");
-const Timestamp = std.Io.Clock.Timestamp;
+const rasterreport = @import("rasterreport.zig");
 const rops = @import("rasterops.zig");
 const newton = @import("newton.zig");
 const pce = @import("parachunkexec.zig");
@@ -26,9 +28,10 @@ const MeshPrepared = mo.MeshPrepared;
 const shaderops = @import("shaderops.zig");
 const NodalPrepared = shaderops.NodalPrepared;
 const TexPrepared = shaderops.TexPrepared;
-const TexFuncPrepared = shaderops.TexFuncPrepared;
+const FuncPrepared = shaderops.FuncPrepared;
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
+const Timestamp = std.Io.Clock.Timestamp;
 
 pub const OverlapTarget = struct {
     tile: rops.ActiveTile,
@@ -52,10 +55,9 @@ pub const RasterBounds = struct {
     y_min_f: f64,
 };
 
-pub const ScratchLayout = enum {
-    subpx_major,
-    field_major,
-};
+const scratchfilter = @import("scratchfilter.zig");
+pub const ScratchLayout = scratchfilter.ScratchLayout;
+pub const ScratchTileGeometry = scratchfilter.ScratchTileGeometry;
 
 fn fillTileIdealCentersFullInMem(
     ctx_rast: rops.RasterContext,
@@ -69,10 +71,10 @@ fn fillTileIdealCentersFullInMem(
     const stride_x = camera_prepared.ideal_pixel_centers.strides[1];
     const slice = camera_prepared.ideal_pixel_centers.slice;
 
-    const start_x = @as(usize, @intCast(tile.x_px_min)) * sub_samp;
-    const start_y = @as(usize, @intCast(tile.y_px_min)) * sub_samp;
-    const tile_w = @as(usize, tile.x_px_max - tile.x_px_min) * sub_samp;
-    const tile_h = @as(usize, tile.y_px_max - tile.y_px_min) * sub_samp;
+    const start_x = @as(usize, @intCast(tile.scratch_x_px_min)) * sub_samp;
+    const start_y = @as(usize, @intCast(tile.scratch_y_px_min)) * sub_samp;
+    const tile_w = @as(usize, tile.scratch_x_px_max - tile.scratch_x_px_min) * sub_samp;
+    const tile_h = @as(usize, tile.scratch_y_px_max - tile.scratch_y_px_min) * sub_samp;
 
     for (0..tile_h) |jj| {
         const global_y = start_y + jj;
@@ -194,8 +196,8 @@ pub fn rasterDirectScalarCommon(
             const ideal_x_px = subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 0];
             const ideal_y_px = subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 1];
 
-            const tile_subx: usize = @intCast(targ_overlap.tile.x_px_min);
-            const tile_suby: usize = @intCast(targ_overlap.tile.y_px_min);
+            const tile_subx: usize = @intCast(targ_overlap.tile.scratch_x_px_min);
+            const tile_suby: usize = @intCast(targ_overlap.tile.scratch_y_px_min);
             const tile_subx_off: usize = tile_subx * sub_samp;
             const tile_suby_off: usize = tile_suby * sub_samp;
             const global_subx: usize = tile_subx_off +% scratch_x_u;
@@ -207,18 +209,24 @@ pub fn rasterDirectScalarCommon(
                 if (tess_res.is_in) {
                     ctx_report.recordTessPasses(1);
                 }
-                if (comptime report_mode == .full_stats) {
-                    ctx_report.recordEarlyOut(
-                        global_subx,
-                        global_suby,
-                        tess_res.is_in,
-                    );
-                }
+                rasterreport.recordEarlyOut(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    tess_res.is_in,
+                );
                 if (!tess_res.is_in) {
                     continue;
                 }
-            } else if (comptime report_mode == .full_stats) {
-                ctx_report.recordEarlyOut(global_subx, global_suby, true);
+            } else {
+                rasterreport.recordEarlyOut(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    true,
+                );
             }
 
             ctx_report.recordSolverCalls(1);
@@ -240,133 +248,106 @@ pub fn rasterDirectScalarCommon(
 
             ctx_report.recordSolverIters(result.iters);
 
-            if (comptime report_mode == .full_stats) {
-                if (result.weights) |weights| {
-                    const inv_z = Geometry.calcInvZ(nodes_coords, weights);
-                    const interp = calcInterpParamCoords(
-                        Geometry,
-                        nodes_inv_z,
-                        weights,
-                        inv_z,
-                        0.0,
-                        0.0,
-                    );
-                    ctx_report.recordPixelConverged(
-                        global_subx,
-                        global_suby,
-                        true,
-                    );
-                    ctx_report.recordPixelXi(
-                        global_subx,
-                        global_suby,
-                        interp.xi,
-                    );
-                    ctx_report.recordPixelEta(
-                        global_subx,
-                        global_suby,
-                        interp.eta,
-                    );
-                    ctx_report.recordPixelJacobianDet(
-                        global_subx,
-                        global_suby,
-                        newton.calcJacobianDet2D(
-                            N,
-                            interp.xi,
-                            interp.eta,
-                            nodes_coords.x,
-                            nodes_coords.y,
-                        ),
-                    );
-                } else {
-                    ctx_report.recordPixelConverged(
-                        global_subx,
-                        global_suby,
-                        false,
-                    );
-                    ctx_report.recordPixelXi(
-                        global_subx,
-                        global_suby,
-                        std.math.nan(f64),
-                    );
-                    ctx_report.recordPixelEta(
-                        global_subx,
-                        global_suby,
-                        std.math.nan(f64),
-                    );
-                    ctx_report.recordPixelJacobianDet(
-                        global_subx,
-                        global_suby,
-                        std.math.nan(f64),
-                    );
-                }
-            }
-
-            // If weights are not null we are inside the element and we need to check the
-            // depth buffer
-            if (result.weights) |weights| {
-                const inv_z = Geometry.calcInvZ(nodes_coords, weights);
-
-                if (inv_z >= subpx_scratch.inv_z[scratch_idx]) {
-                    subpx_scratch.inv_z[scratch_idx] = inv_z;
-                    if (scratch_x_u < subpx_scratch.touched_min_x[scratch_y_u]) {
-                        subpx_scratch.touched_min_x[scratch_y_u] = scratch_x_u;
-                    }
-                    if (scratch_x_u > subpx_scratch.touched_max_x[scratch_y_u]) {
-                        subpx_scratch.touched_max_x[scratch_y_u] = scratch_x_u;
-                    }
-                    const subpx_z = 1.0 / inv_z;
-                    shaded_px += 1;
-
-                    if (comptime report_mode == .full_stats) {
-                        ctx_report.recordPixelIters(
-                            global_subx,
-                            global_suby,
-                            result.iters,
-                        );
-                        ctx_report.recordPixelOccupancy(
-                            targ_overlap.tile.x_px_min + scratch_x_u / sub_samp,
-                            targ_overlap.tile.y_px_min + scratch_y_u / sub_samp,
-                        );
-                    }
-
-                    const param_coords = calcInterpParamCoords(
-                        Geometry,
-                        nodes_inv_z,
-                        weights,
-                        inv_z,
-                        result.xi_out,
-                        result.eta_out,
-                    );
-                    const ctx_shade = shaderops.ShadeContext(N){
-                        .frame_idx = ctx_rast.frame_idx,
-                        .elem_idx = targ_overlap.overlap.elem_idx,
-                        .fields_num = fields_num,
-                        .actual_fields = fields_num,
-                        .scratch_idx = scratch_idx,
-                        .global_subx = global_subx,
-                        .global_suby = global_suby,
-                        .shader_buf = shader_buf,
-                    };
-                    const interp_data = shaderops.InterpData(N){
-                        .weights = weights,
-                        .nodes_inv_z = nodes_inv_z,
-                        .sub_pixel_z = subpx_z,
-                        .xi = param_coords.xi,
-                        .eta = param_coords.eta,
-                    };
-
-                    ShaderKernel.shade(
-                        Geometry.coord_space,
-                        ctx_shade,
-                        interp_data,
-                        shader,
-                        ctx_report,
-                        &subpx_scratch.image,
-                    );
-                }
-            } else {
+            if (result.weights == null) {
+                const nan = std.math.nan(f64);
+                rasterreport.recordPixelConvergedStats(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    false,
+                    nan,
+                    nan,
+                    nan,
+                );
                 if (result.iters > 0) ctx_report.recordSolverDiverged();
+                continue;
             }
+
+            const weights = result.weights.?;
+            const inv_z = Geometry.calcInvZ(nodes_coords, weights);
+            const interp = calcInterpParamCoords(
+                Geometry,
+                nodes_inv_z,
+                weights,
+                inv_z,
+                0.0,
+                0.0,
+            );
+            rasterreport.recordPixelConvergedStats(
+                report_mode,
+                ctx_report,
+                global_subx,
+                global_suby,
+                true,
+                interp.xi,
+                interp.eta,
+                newton.calcJacobianDet2D(
+                    N,
+                    interp.xi,
+                    interp.eta,
+                    nodes_coords.x,
+                    nodes_coords.y,
+                ),
+            );
+
+            if (inv_z + cfg.tolerance.geometry.depth_buffer_inv_z_cmp <
+                subpx_scratch.inv_z[scratch_idx]) continue;
+
+            subpx_scratch.inv_z[scratch_idx] = inv_z;
+            if (scratch_x_u < subpx_scratch.touched_min_x[scratch_y_u]) {
+                subpx_scratch.touched_min_x[scratch_y_u] = scratch_x_u;
+            }
+            if (scratch_x_u > subpx_scratch.touched_max_x[scratch_y_u]) {
+                subpx_scratch.touched_max_x[scratch_y_u] = scratch_x_u;
+            }
+            const subpx_z = 1.0 / inv_z;
+            shaded_px += 1;
+
+            rasterreport.recordPixelIterAndOccupancy(
+                report_mode,
+                ctx_report,
+                global_subx,
+                global_suby,
+                result.iters,
+                targ_overlap.tile.scratch_x_px_min + scratch_x_u / sub_samp,
+                targ_overlap.tile.scratch_y_px_min + scratch_y_u / sub_samp,
+            );
+
+            const param_coords = calcInterpParamCoords(
+                Geometry,
+                nodes_inv_z,
+                weights,
+                inv_z,
+                result.xi_out,
+                result.eta_out,
+            );
+            const ctx_shade = shaderops.ShadeContext(N){
+                .frame_idx = ctx_rast.frame_idx,
+                .elem_idx = targ_overlap.overlap.elem_idx,
+                .fields_num = fields_num,
+                .actual_fields = fields_num,
+                .scratch_idx = scratch_idx,
+                .global_subx = global_subx,
+                .global_suby = global_suby,
+                .shader_buf = shader_buf,
+            };
+            const interp_data = shaderops.InterpData(N){
+                .weights = weights,
+                .nodes_inv_z = nodes_inv_z,
+                .sub_pixel_z = subpx_z,
+                .xi = param_coords.xi,
+                .eta = param_coords.eta,
+            };
+
+            ShaderKernel.shade(
+                Geometry.coord_space,
+                ctx_shade,
+                interp_data,
+                shader,
+                ctx_report,
+                &subpx_scratch.image,
+            );
         }
     }
 
@@ -392,19 +373,24 @@ fn rasterTileCommon(
     fields_num: u8,
     subpx_tile_size: usize,
 ) !void {
-    const tile_start = if (comptime report_mode == .full_stats)
-        Timestamp.now(io, .awake)
-    else {};
+    const tile_scope = rasterreport.beginTile(report_mode, io);
 
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+    const scratch_geom = ScratchTileGeometry.init(tile, sub_samp);
     RasterBackend.resetSubpxScratch(
         subpx_scratch,
         subpx_tile_size,
         ctx_rast.config.background_value,
     );
 
-    switch (ctx_rast.config.subpixel_center_map) {
+    const time_cam_start: ?Timestamp =
+        if (comptime report_mode != .off)
+            Timestamp.now(io, .awake)
+        else
+            null;
+
+    switch (ctx_rast.camera.subpixel_center_map) {
         .full_in_mem => fillTileIdealCentersFullInMem(
             ctx_rast,
             tile,
@@ -412,18 +398,34 @@ fn rasterTileCommon(
             subpx_tile_size,
         ),
         .per_tile => try cam.fillTileIdealCentersPerTile(
-            ctx_rast,
-            tile,
-            subpx_scratch,
+            ctx_rast.camera,
+            @intCast(tile.scratch_x_px_min),
+            @intCast(tile.scratch_x_px_max),
+            @intCast(tile.scratch_y_px_min),
+            @intCast(tile.scratch_y_px_max),
             subpx_tile_size,
+            subpx_scratch.ideal_pixel_centers,
         ),
         .affine_jac => cam.fillTileIdealCentersAffineJac(
-            ctx_rast,
-            tile,
-            subpx_scratch,
+            ctx_rast.camera,
+            @intCast(tile.scratch_x_px_min),
+            @intCast(tile.scratch_x_px_max),
+            @intCast(tile.scratch_y_px_min),
+            @intCast(tile.scratch_y_px_max),
             subpx_tile_size,
+            subpx_scratch.ideal_pixel_centers,
         ),
     }
+
+    const cam_duration_ns: u64 =
+        if (comptime report_mode != .off)
+            @intCast(
+                time_cam_start.?.durationTo(
+                    Timestamp.now(io, .awake),
+                ).raw.nanoseconds,
+            )
+        else
+            0;
 
     const overlap_start = tile.overlap_start;
     const overlap_end = overlap_start + tile.overlap_count;
@@ -459,8 +461,8 @@ fn rasterTileCommon(
                         @intCast(s.elem_field.dims[2]),
                     .tex => 1,
                     .tex_rgb => 3,
-                    .tex_func => 1,
-                    .tex_func_rgb => 3,
+                    .func => 1,
+                    .func_rgb => 3,
                 };
 
                 switch (mesh_ptr.shader) {
@@ -562,8 +564,8 @@ fn rasterTileCommon(
                             subpx_scratch,
                         );
                     },
-                    .tex_func => |*shader| {
-                        const SK = shadekerns.TexFuncKernel(N, 1);
+                    .func => |*shader| {
+                        const SK = shadekerns.FuncKernel(N, 1);
                         var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
                         if (shader.elem_uvs != null) {
                             local_shader_buf.load(
@@ -580,7 +582,7 @@ fn rasterTileCommon(
                         shaded_px += try RasterBackend.RasterEngine(
                             GK,
                             SK,
-                            TexFuncPrepared(1),
+                            FuncPrepared(1),
                         ).render(
                             report_mode,
                             ctx_rast,
@@ -592,8 +594,8 @@ fn rasterTileCommon(
                             subpx_scratch,
                         );
                     },
-                    .tex_func_rgb => |*shader| {
-                        const SK = shadekerns.TexFuncKernel(N, 3);
+                    .func_rgb => |*shader| {
+                        const SK = shadekerns.FuncKernel(N, 3);
                         var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
                         if (shader.elem_uvs != null) {
                             local_shader_buf.load(
@@ -610,7 +612,7 @@ fn rasterTileCommon(
                         shaded_px += try RasterBackend.RasterEngine(
                             GK,
                             SK,
-                            TexFuncPrepared(3),
+                            FuncPrepared(3),
                         ).render(
                             report_mode,
                             ctx_rast,
@@ -627,8 +629,30 @@ fn rasterTileCommon(
         }
     }
 
-    if (sub_samp > 1) {
-        averageScratch(
+    const time_resolve_start: ?Timestamp =
+        if (comptime report_mode != .off)
+            Timestamp.now(io, .awake)
+        else
+            null;
+
+    if (ctx_rast.camera.prepared_psf.hasFilter()) {
+        scratchfilter.resolveTileWithPSF(
+            RasterBackend.scratch_layout,
+            tile,
+            sub_samp,
+            subpx_tile_size,
+            fields_num,
+            ctx_rast.config.background_value,
+            ctx_rast.camera.prepared_psf,
+            scratch_geom,
+            &subpx_scratch.image,
+            &subpx_scratch.filter_tmp,
+            subpx_scratch.touched_min_x,
+            subpx_scratch.touched_max_x,
+            image_out_arr,
+        );
+    } else if (sub_samp > 1) {
+        scratchfilter.averageScratch(
             RasterBackend.scratch_layout,
             tile,
             @intCast(sub_samp),
@@ -640,265 +664,40 @@ fn rasterTileCommon(
             image_out_arr,
         );
     } else {
-        resolveScratchDirect(
+        scratchfilter.resolveScratchDirect(
             RasterBackend.scratch_layout,
             tile,
             subpx_tile_size,
             fields_num,
             &subpx_scratch.image,
+            subpx_scratch.touched_min_x,
+            subpx_scratch.touched_max_x,
             image_out_arr,
         );
     }
 
-    const tile_end = if (comptime report_mode == .full_stats)
-        Timestamp.now(io, .awake)
-    else {};
-    const tile_duration_ns = if (comptime report_mode == .full_stats)
-        tile_start.durationTo(tile_end).raw.nanoseconds
-    else
-        0;
-    const screen_px_x = @as(u16, @intCast(ctx_rast.camera.pixels_num[0]));
-    const tiles_x = (screen_px_x + ctx_rast.tile_size - 1) / ctx_rast.tile_size;
-    const spatial_idx = (tile.y_px_min / ctx_rast.tile_size) * tiles_x +
-        (tile.x_px_min / ctx_rast.tile_size);
-    ctx_report.recordTile(
-        spatial_idx,
-        @intCast(tile_duration_ns),
+    const resolve_duration_ns: u64 =
+        if (comptime report_mode != .off)
+            @intCast(
+                time_resolve_start.?.durationTo(
+                    Timestamp.now(io, .awake),
+                ).raw.nanoseconds,
+            )
+        else
+            0;
+
+    rasterreport.finishTile(
+        report_mode,
+        io,
+        ctx_report,
+        ctx_rast,
+        tile,
+        tile_scope,
         shaded_px,
         overlaps.len,
+        cam_duration_ns,
+        resolve_duration_ns,
     );
-}
-
-pub inline fn getScratchField(
-    comptime scratch_layout: ScratchLayout,
-    spx_image_scratch: *const MatSlice(f64),
-    scratch_flat_idx: usize,
-    field_idx: usize,
-) f64 {
-    return switch (scratch_layout) {
-        .subpx_major => spx_image_scratch.get(scratch_flat_idx, field_idx),
-        .field_major => spx_image_scratch.get(field_idx, scratch_flat_idx),
-    };
-}
-
-const FrameImageWriter = struct {
-    slice: []f64,
-    field_stride: usize,
-    row_stride: usize,
-
-    inline fn init(image_out_arr: *NDArray(f64)) FrameImageWriter {
-        return .{
-            .slice = image_out_arr.slice,
-            .field_stride = image_out_arr.strides[0],
-            .row_stride = image_out_arr.strides[1],
-        };
-    }
-
-    inline fn set(self: *const FrameImageWriter, field_idx: usize, row_idx: usize, col_idx: usize, val: f64) void {
-        self.slice[field_idx * self.field_stride + row_idx * self.row_stride + col_idx] = val;
-    }
-
-    inline fn pixelBase(self: *const FrameImageWriter, row_idx: usize, col_idx: usize) usize {
-        return row_idx * self.row_stride + col_idx;
-    }
-};
-
-pub fn resolveScratchDirect(
-    comptime scratch_layout: ScratchLayout,
-    tile: rops.ActiveTile,
-    spx_tile_size: usize,
-    fields_num: u8,
-    spx_image_scratch: *const MatSlice(f64),
-    image_out_arr: *NDArray(f64),
-) void {
-    const curr_tile_size_x: usize = tile.x_px_max - tile.x_px_min;
-    const curr_tile_size_y: usize = tile.y_px_max - tile.y_px_min;
-    const writer = FrameImageWriter.init(image_out_arr);
-
-    for (0..curr_tile_size_y) |ty| {
-        const image_px_y: usize = tile.y_px_min + ty;
-        const scratch_row_offset = ty * spx_tile_size;
-
-        for (0..curr_tile_size_x) |tx| {
-            const image_px_x: usize = tile.x_px_min + tx;
-            const scratch_flat_idx = scratch_row_offset + tx;
-            const image_px_base = writer.pixelBase(image_px_y, image_px_x);
-
-            if (fields_num == 1) {
-                writer.slice[image_px_base] = getScratchField(
-                    scratch_layout,
-                    spx_image_scratch,
-                    scratch_flat_idx,
-                    0,
-                );
-            } else if (fields_num == 3) {
-                writer.slice[image_px_base] = getScratchField(
-                    scratch_layout,
-                    spx_image_scratch,
-                    scratch_flat_idx,
-                    0,
-                );
-                writer.slice[writer.field_stride + image_px_base] = getScratchField(
-                    scratch_layout,
-                    spx_image_scratch,
-                    scratch_flat_idx,
-                    1,
-                );
-                writer.slice[2 * writer.field_stride + image_px_base] = getScratchField(
-                    scratch_layout,
-                    spx_image_scratch,
-                    scratch_flat_idx,
-                    2,
-                );
-            } else {
-                for (0..@as(usize, fields_num)) |ff| {
-                    writer.slice[ff * writer.field_stride + image_px_base] = getScratchField(
-                        scratch_layout,
-                        spx_image_scratch,
-                        scratch_flat_idx,
-                        ff,
-                    );
-                }
-            }
-        }
-    }
-}
-
-pub fn averageScratch(
-    comptime scratch_layout: ScratchLayout,
-    tile: rops.ActiveTile,
-    sub_samp: usize,
-    spx_tile_size: usize,
-    fields_num: u8,
-    spx_image_scratch: *const MatSlice(f64),
-    touched_min_x: []const usize,
-    touched_max_x: []const usize,
-    image_out_arr: *NDArray(f64),
-) void {
-    const curr_tile_size_x: usize = tile.x_px_max - tile.x_px_min;
-    const curr_tile_size_y: usize = tile.y_px_max - tile.y_px_min;
-    const sub_samp_f = @as(f64, @floatFromInt(sub_samp));
-    const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
-    var field_avg_buff = [_]f64{0.0} ** cfg.max_nodal_fields;
-    const spx_field_avg = field_avg_buff[0..@as(usize, fields_num)];
-    const writer = FrameImageWriter.init(image_out_arr);
-
-    for (0..curr_tile_size_y) |ty| {
-        const image_px_y: usize = tile.y_px_min + ty;
-        const spx_start_y: usize = sub_samp * ty;
-        var touched_min_px_x = curr_tile_size_x;
-        var touched_max_px_x: usize = 0;
-
-        for (0..sub_samp) |sy| {
-            const scratch_y = spx_start_y + sy;
-            const row_min_x = touched_min_x[scratch_y];
-            const row_max_x = touched_max_x[scratch_y];
-
-            if (row_min_x <= row_max_x) {
-                const row_min_px_x = row_min_x / sub_samp;
-                const row_max_px_x = row_max_x / sub_samp;
-                if (row_min_px_x < touched_min_px_x) {
-                    touched_min_px_x = row_min_px_x;
-                }
-                if (row_max_px_x > touched_max_px_x) {
-                    touched_max_px_x = row_max_px_x;
-                }
-            }
-        }
-
-        if (touched_min_px_x > touched_max_px_x) {
-            continue;
-        }
-
-        for (touched_min_px_x..@min(curr_tile_size_x, touched_max_px_x + 1)) |tx| {
-            const image_px_x: usize = tile.x_px_min + tx;
-            const spx_start_x: usize = sub_samp * tx;
-            const image_px_base = writer.pixelBase(image_px_y, image_px_x);
-
-            if (fields_num == 1) {
-                var field_sum_0: f64 = 0.0;
-
-                for (0..sub_samp) |sy| {
-                    const scratch_row_offset: usize = (spx_start_y + sy) * spx_tile_size;
-
-                    for (0..sub_samp) |sx| {
-                        const scratch_flat_idx: usize =
-                            scratch_row_offset + spx_start_x + sx;
-                        field_sum_0 += getScratchField(
-                            scratch_layout,
-                            spx_image_scratch,
-                            scratch_flat_idx,
-                            0,
-                        );
-                    }
-                }
-
-                writer.slice[image_px_base] = field_sum_0 * inv_sub_samp_sq;
-            } else if (fields_num == 3) {
-                var field_sum_0: f64 = 0.0;
-                var field_sum_1: f64 = 0.0;
-                var field_sum_2: f64 = 0.0;
-
-                for (0..sub_samp) |sy| {
-                    const scratch_row_offset: usize = (spx_start_y + sy) * spx_tile_size;
-
-                    for (0..sub_samp) |sx| {
-                        const scratch_flat_idx: usize =
-                            scratch_row_offset + spx_start_x + sx;
-                        field_sum_0 += getScratchField(
-                            scratch_layout,
-                            spx_image_scratch,
-                            scratch_flat_idx,
-                            0,
-                        );
-                        field_sum_1 += getScratchField(
-                            scratch_layout,
-                            spx_image_scratch,
-                            scratch_flat_idx,
-                            1,
-                        );
-                        field_sum_2 += getScratchField(
-                            scratch_layout,
-                            spx_image_scratch,
-                            scratch_flat_idx,
-                            2,
-                        );
-                    }
-                }
-
-                writer.slice[image_px_base] = field_sum_0 * inv_sub_samp_sq;
-                writer.slice[writer.field_stride + image_px_base] =
-                    field_sum_1 * inv_sub_samp_sq;
-                writer.slice[2 * writer.field_stride + image_px_base] =
-                    field_sum_2 * inv_sub_samp_sq;
-            } else {
-                @memset(spx_field_avg, 0.0);
-
-                for (0..sub_samp) |sy| {
-                    const scratch_row_offset: usize = (spx_start_y + sy) * spx_tile_size;
-
-                    for (0..sub_samp) |sx| {
-                        const scratch_flat_idx: usize =
-                            scratch_row_offset + spx_start_x + sx;
-
-                        for (0..@as(usize, fields_num)) |ff| {
-                            spx_field_avg[ff] += getScratchField(
-                                scratch_layout,
-                                spx_image_scratch,
-                                scratch_flat_idx,
-                                ff,
-                            );
-                        }
-                    }
-                }
-
-                for (0..@as(usize, fields_num)) |ff| {
-                    writer.slice[ff * writer.field_stride + image_px_base] =
-                        spx_field_avg[ff] * inv_sub_samp_sq;
-                }
-            }
-        }
-    }
 }
 
 //------------------------------------------------------------------------------------------
@@ -999,7 +798,9 @@ pub fn rasterSceneCommon(
     std.debug.assert(image_out_arr.dims[0] <= std.math.maxInt(u8));
     const fields_num: u8 = @intCast(image_out_arr.dims[0]);
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const subpx_tile_size: usize = @as(usize, @intCast(ctx_rast.tile_size)) * sub_samp;
+    const scratch_tile_px: usize = @as(usize, @intCast(ctx_rast.tile_size)) +
+        2 * @as(usize, ctx_rast.camera.prepared_psf.halo_px);
+    const subpx_tile_size: usize = scratch_tile_px * sub_samp;
     const active_tiles_num = tiling.active_tiles.len;
 
     const worker_count = scalingpolicy.rasterWorkers(

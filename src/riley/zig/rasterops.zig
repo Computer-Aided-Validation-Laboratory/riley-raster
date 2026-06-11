@@ -291,6 +291,18 @@ fn isElemBehindCamera(
     return behind_camera;
 }
 
+fn isNodeZInvertible(
+    comptime N: usize,
+    coords_elem: GatheredElemCoords(N),
+) bool {
+    for (0..N) |nn| {
+        if (coords_elem.z[nn] <= tol.culling.projective_z_min) {
+            return false;
+        }
+    }
+    return true;
+}
+
 fn isTri3Backface(coords_elem: GatheredElemCoords(3)) bool {
     const signed_area = edgeFun3Slices(0, 1, 2, &coords_elem.x, &coords_elem.y);
     return signed_area <= tol.culling.tri3_signed_area;
@@ -375,7 +387,12 @@ fn distortIdealRasterCoords(
             for (0..N) |nn| {
                 const x_ideal = (coords_ideal.x[nn] - offsets.x_off) / focal_px.fx;
                 const y_ideal = (coords_ideal.y[nn] - offsets.y_off) / focal_px.fy;
-                const distorted = bc.forward(x_ideal, y_ideal);
+                const distorted = cam.forwardDistortionScalar(
+                    @TypeOf(bc),
+                    bc,
+                    x_ideal,
+                    y_ideal,
+                );
                 coords_distorted.x[nn] = distorted[0] * focal_px.fx + offsets.x_off;
                 coords_distorted.y[nn] = distorted[1] * focal_px.fy + offsets.y_off;
             }
@@ -384,7 +401,12 @@ fn distortIdealRasterCoords(
             for (0..N) |nn| {
                 const x_ideal = (coords_ideal.x[nn] - offsets.x_off) / focal_px.fx;
                 const y_ideal = (coords_ideal.y[nn] - offsets.y_off) / focal_px.fy;
-                const distorted = bc_ext.forward(x_ideal, y_ideal);
+                const distorted = cam.forwardDistortionScalar(
+                    @TypeOf(bc_ext),
+                    bc_ext,
+                    x_ideal,
+                    y_ideal,
+                );
                 coords_distorted.x[nn] = distorted[0] * focal_px.fx + offsets.x_off;
                 coords_distorted.y[nn] = distorted[1] * focal_px.fy + offsets.y_off;
             }
@@ -501,6 +523,9 @@ pub fn calcVisibleNodeBBoxTri3(
     if (isTri3BackfaceRaster(coords_ideal_raster)) {
         return null;
     }
+    if (!isNodeZInvertible(N, coords_ideal)) {
+        return null;
+    }
 
     const coords_distorted = distortIdealRasterCoords(
         N,
@@ -529,6 +554,9 @@ pub fn calcVisibleNodeBBoxHighOrd(
     const coords_clip = gatherElemNodeCoords(N, coords_nodes, connect, elem_idx);
 
     if (isElemBehindCamera(N, coords_clip)) {
+        return null;
+    }
+    if (!isNodeZInvertible(N, coords_clip)) {
         return null;
     }
 
@@ -575,6 +603,9 @@ pub fn calcVisibleNodeBBoxHighOrdNoHull(
     const coords_clip = gatherElemNodeCoords(N, coords_nodes, connect, elem_idx);
 
     if (isElemBehindCamera(N, coords_clip)) {
+        return null;
+    }
+    if (!isNodeZInvertible(N, coords_clip)) {
         return null;
     }
 
@@ -713,6 +744,10 @@ pub const ActiveTile = struct {
     y_px_min: u16,
     x_px_max: u16,
     y_px_max: u16,
+    scratch_x_px_min: u16,
+    scratch_y_px_min: u16,
+    scratch_x_px_max: u16,
+    scratch_y_px_max: u16,
 };
 
 pub const TilingOverlaps = struct {
@@ -725,6 +760,7 @@ const TilingCountStage = struct {
     tile_size: u16,
     tiles_num_x: usize,
     tiles_num_y: usize,
+    halo_px: u16,
     elems_num: usize,
     elem_bbox_slice: []const ElemBBox,
 };
@@ -740,12 +776,23 @@ fn runTilingCount(
 
     for (range_start..range_end) |ee| {
         const elem_bbox = tiling.elem_bbox_slice[ee];
+        const halo_u32: u32 = tiling.halo_px;
+        const x_min_expanded: u32 = if (elem_bbox.x_min > tiling.halo_px)
+            elem_bbox.x_min - tiling.halo_px
+        else
+            0;
+        const y_min_expanded: u32 = if (elem_bbox.y_min > tiling.halo_px)
+            elem_bbox.y_min - tiling.halo_px
+        else
+            0;
+        const x_max_expanded: u32 = @as(u32, elem_bbox.x_max) + halo_u32;
+        const y_max_expanded: u32 = @as(u32, elem_bbox.y_max) + halo_u32;
 
-        const tx_start: usize = elem_bbox.x_min / tiling.tile_size;
-        const tx_end: usize = @min(tiling.tiles_num_x, @as(usize, (elem_bbox.x_max +
+        const tx_start: usize = x_min_expanded / tiling.tile_size;
+        const tx_end: usize = @min(tiling.tiles_num_x, @as(usize, (x_max_expanded +
             tiling.tile_size - 1) / tiling.tile_size));
-        const ty_start: usize = elem_bbox.y_min / tiling.tile_size;
-        const ty_end: usize = @min(tiling.tiles_num_y, @as(usize, (elem_bbox.y_max +
+        const ty_start: usize = y_min_expanded / tiling.tile_size;
+        const ty_end: usize = @min(tiling.tiles_num_y, @as(usize, (y_max_expanded +
             tiling.tile_size - 1) / tiling.tile_size));
 
         for (ty_start..ty_end) |ty| {
@@ -765,6 +812,7 @@ const TilingFillStage = struct {
     tiles_num_y: usize,
     screen_px_x: u16,
     screen_px_y: u16,
+    halo_px: u16,
     mesh_idx: usize,
     elem_bbox_slice: []const ElemBBox,
 };
@@ -780,29 +828,50 @@ fn runTilingFill(
 
     for (range_start..range_end) |ee| {
         const elem_bbox = tiling.elem_bbox_slice[ee];
+        const halo_u32: u32 = tiling.halo_px;
+        const x_min_expanded: u32 = if (elem_bbox.x_min > tiling.halo_px)
+            elem_bbox.x_min - tiling.halo_px
+        else
+            0;
+        const y_min_expanded: u32 = if (elem_bbox.y_min > tiling.halo_px)
+            elem_bbox.y_min - tiling.halo_px
+        else
+            0;
+        const x_max_expanded: u32 = @as(u32, elem_bbox.x_max) + halo_u32;
+        const y_max_expanded: u32 = @as(u32, elem_bbox.y_max) + halo_u32;
 
-        const tx_start = elem_bbox.x_min / tiling.tile_size;
+        const tx_start = x_min_expanded / tiling.tile_size;
         const tx_end = @min(
             tiling.tiles_num_x,
-            @as(usize, (elem_bbox.x_max + tiling.tile_size - 1) / tiling.tile_size),
+            @as(usize, (x_max_expanded + tiling.tile_size - 1) / tiling.tile_size),
         );
 
-        const ty_start = elem_bbox.y_min / tiling.tile_size;
+        const ty_start = y_min_expanded / tiling.tile_size;
         const ty_end = @min(
             tiling.tiles_num_y,
-            @as(usize, (elem_bbox.y_max + tiling.tile_size - 1) / tiling.tile_size),
+            @as(usize, (y_max_expanded + tiling.tile_size - 1) / tiling.tile_size),
         );
 
         for (ty_start..ty_end) |ty| {
             const tile_px_min_y = @as(u16, @intCast(ty * tiling.tile_size));
             const tile_px_max_y = @as(u16, @min(@as(u32, tile_px_min_y) + tiling.tile_size, tiling.screen_px_y));
+            const scratch_px_min_y = tile_px_min_y -| tiling.halo_px;
+            const scratch_px_max_y = @min(
+                tiling.screen_px_y,
+                @as(u16, @intCast(@as(u32, tile_px_max_y) + tiling.halo_px)),
+            );
 
-            const overlap_y_min = @max(elem_bbox.y_min, tile_px_min_y);
-            const overlap_y_max = @min(elem_bbox.y_max, tile_px_max_y);
+            const overlap_y_min = @max(elem_bbox.y_min, scratch_px_min_y);
+            const overlap_y_max = @min(elem_bbox.y_max, scratch_px_max_y);
 
             for (tx_start..tx_end) |tx| {
                 const tile_px_min_x = @as(u16, @intCast(tx * tiling.tile_size));
                 const tile_px_max_x = @as(u16, @min(@as(u32, tile_px_min_x) + tiling.tile_size, tiling.screen_px_x));
+                const scratch_px_min_x = tile_px_min_x -| tiling.halo_px;
+                const scratch_px_max_x = @min(
+                    tiling.screen_px_x,
+                    @as(u16, @intCast(@as(u32, tile_px_max_x) + tiling.halo_px)),
+                );
 
                 const tile_idx = ty * tiling.tiles_num_x + tx;
                 const write_idx = tiling.tile_write_inds[tile_idx].fetchAdd(1, .monotonic);
@@ -810,8 +879,8 @@ fn runTilingFill(
                 tiling.overlaps[write_idx] = .{
                     .mesh_idx = tiling.mesh_idx,
                     .elem_idx = elem_bbox.elem_idx,
-                    .x_min = @max(elem_bbox.x_min, tile_px_min_x),
-                    .x_max = @min(elem_bbox.x_max, tile_px_max_x),
+                    .x_min = @max(elem_bbox.x_min, scratch_px_min_x),
+                    .x_max = @min(elem_bbox.x_max, scratch_px_max_x),
                     .y_min = overlap_y_min,
                     .y_max = overlap_y_max,
                 };
@@ -829,6 +898,7 @@ pub fn sceneTileElemOverlap(
     tiles_num_y: usize,
     screen_px_x: u16,
     screen_px_y: u16,
+    halo_px: u16,
     elems_in_image_by_mesh: []const usize,
     elem_bboxes_by_mesh: []const []ElemBBox,
 ) !TilingOverlaps {
@@ -849,6 +919,7 @@ pub fn sceneTileElemOverlap(
             .tile_size = tile_size,
             .tiles_num_x = tiles_num_x,
             .tiles_num_y = tiles_num_y,
+            .halo_px = halo_px,
             .elems_num = elems_num,
             .elem_bbox_slice = elem_bboxes_by_mesh[mesh_idx],
         };
@@ -900,6 +971,16 @@ pub fn sceneTileElemOverlap(
                 .y_px_min = @intCast(ty * tile_size),
                 .x_px_max = @min(screen_px_x, @as(u16, @intCast((tx + 1) * tile_size))),
                 .y_px_max = @min(screen_px_y, @as(u16, @intCast((ty + 1) * tile_size))),
+                .scratch_x_px_min = (@as(u16, @intCast(tx * tile_size))) -| halo_px,
+                .scratch_y_px_min = (@as(u16, @intCast(ty * tile_size))) -| halo_px,
+                .scratch_x_px_max = @min(
+                    screen_px_x,
+                    @as(u16, @intCast(@as(u32, @min(screen_px_x, @as(u16, @intCast((tx + 1) * tile_size)))) + halo_px)),
+                ),
+                .scratch_y_px_max = @min(
+                    screen_px_y,
+                    @as(u16, @intCast(@as(u32, @min(screen_px_y, @as(u16, @intCast((ty + 1) * tile_size)))) + halo_px)),
+                ),
             };
 
             active_idx += 1;
@@ -921,6 +1002,7 @@ pub fn sceneTileElemOverlap(
             .tiles_num_y = tiles_num_y,
             .screen_px_x = screen_px_x,
             .screen_px_y = screen_px_y,
+            .halo_px = halo_px,
             .mesh_idx = mesh_idx,
             .elem_bbox_slice = elem_bboxes_by_mesh[mesh_idx],
         };
@@ -1003,9 +1085,12 @@ fn initTestCullCameraManual(distortion: cam.DistortionModel) cam.CameraPrepared 
         .cam_to_world_mat = Mat44f.initIdentity(),
         .world_to_cam_mat = Mat44f.initIdentity(),
         .distortion = distortion,
+        .psf = .{ .pixel_box = .{} },
+        .prepared_psf = .{},
         .coord_sys = .opengl,
         .ideal_pixel_centers = undefined,
         .pixel_center_jac = undefined,
+        .subpixel_center_map = .full_in_mem,
     };
 }
 
@@ -1099,6 +1184,27 @@ test "calcVisibleNodeBBoxTri3 behind_camera" {
     try std.testing.expect(bbox == null);
 }
 
+test "calcVisibleNodeBBoxTri3 noninvertible_z" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(3, allocator);
+    defer connect.deinit(allocator);
+
+    var coords = try initElemCoords(
+        3,
+        allocator,
+        .{ 100.0, 200.0, 100.0 },
+        .{ 100.0, 100.0, 200.0 },
+        .{ tol.culling.projective_z_min, 10.0, 10.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    const bbox = calcVisibleNodeBBoxTri3(.tri3, &camera, &coords, &connect, 0);
+    try std.testing.expect(bbox == null);
+}
+
 test "calcVisibleNodeBBoxHighOrd on_screen" {
     const allocator = std.testing.allocator;
     const camera = try initTestCullCamera(allocator);
@@ -1163,6 +1269,34 @@ test "calcVisibleNodeBBoxHighOrd behind_camera" {
         .{ -3.0, 1.0, -1.0, -1.0, 0.0, -2.0 },
         .{ -3.0, -3.0, 1.0, -3.0, -1.0, -1.0 },
         .{ -1.0, -1.0, -1.0, -1.0, -1.0, -1.0 },
+    );
+    defer allocator.free(coords.mem);
+
+    const bbox = calcVisibleNodeBBoxHighOrd(
+        .tri6,
+        &camera,
+        &coords,
+        &connect,
+        0,
+        false,
+    );
+    try std.testing.expect(bbox == null);
+}
+
+test "calcVisibleNodeBBoxHighOrd noninvertible_z" {
+    const allocator = std.testing.allocator;
+    const camera = try initTestCullCamera(allocator);
+    defer camera.deinit(allocator);
+
+    var connect = try initSingleElemConnect(6, allocator);
+    defer connect.deinit(allocator);
+
+    var coords = try initElemCoords(
+        6,
+        allocator,
+        .{ -0.5, 0.5, 0.0, 0.0, 0.25, -0.25 },
+        .{ -0.5, -0.5, 0.5, -0.5, 0.0, 0.0 },
+        .{ tol.culling.projective_z_min, 5.0, 5.0, 5.0, 5.0, 5.0 },
     );
     defer allocator.free(coords.mem);
 

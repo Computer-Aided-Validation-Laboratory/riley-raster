@@ -110,10 +110,8 @@ pub inline fn fillNodalPerspSIMD(
 
 pub const fillTexClip = common.fillTexClip;
 pub const fillTexPersp = common.fillTexPersp;
-pub const fillTexClipRuntime = common.fillTexClipRuntime;
-pub const fillTexPerspRuntime = common.fillTexPerspRuntime;
-pub const fillTexFuncClip = common.fillTexFuncClip;
-pub const fillTexFuncPersp = common.fillTexFuncPersp;
+pub const fillFuncClip = common.fillFuncClip;
+pub const fillFuncPersp = common.fillFuncPersp;
 
 fn calcNormalLaneArrs(
     comptime N: usize,
@@ -177,57 +175,6 @@ pub inline fn fillTexClipSIMD(
             v_tex_v,
         ),
         .over_pixels => texops.sampleWide(
-            channels,
-            sample_config,
-            sh.texture,
-            v_tex_u,
-            v_tex_v,
-        ),
-    };
-
-    inline for (0..channels) |ch| {
-        const v_final = sampled_vecs[ch] *
-            @as(VecSF, @splat(sh.scale_mul)) +
-            @as(VecSF, @splat(sh.scale_add));
-        const flat_idx = ch * px_stride + ctx_shade.scratch_idx;
-        storeMaskedVecSF(
-            spx_image_scratch.slice,
-            flat_idx,
-            v_mask_active,
-            v_final,
-        );
-    }
-}
-
-pub inline fn fillTexClipSIMDRuntime(
-    comptime N: usize,
-    comptime channels: usize,
-    sample_config: TextureSampleConfig,
-    ctx_shade: common.ShadeContext(N),
-    v_mask_active: VecSB,
-    v_weights: [N]VecSF,
-    sh: *const common.TexPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
-) void {
-    var v_tex_u: VecSF = @splat(0.0);
-    var v_tex_v: VecSF = @splat(0.0);
-    inline for (0..N) |nn| {
-        v_tex_u += v_weights[nn] * @as(VecSF, @splat(ctx_shade.shader_buf.data[nn]));
-        v_tex_v += v_weights[nn] *
-            @as(VecSF, @splat(ctx_shade.shader_buf.data[N + nn]));
-    }
-
-    const px_stride = spx_image_scratch.cols_num;
-    const sampled_vecs = switch (cfg.simd_texture_interp) {
-        .inner => texops.sampleLanesRuntime(
-            channels,
-            sample_config,
-            v_mask_active,
-            sh.texture,
-            v_tex_u,
-            v_tex_v,
-        ),
-        .over_pixels => texops.sampleWideRuntime(
             channels,
             sample_config,
             sh.texture,
@@ -319,76 +266,7 @@ pub inline fn fillTexPerspSIMD(
     }
 }
 
-pub inline fn fillTexPerspSIMDRuntime(
-    comptime N: usize,
-    comptime channels: usize,
-    sample_config: TextureSampleConfig,
-    ctx_shade: common.ShadeContext(N),
-    v_mask_active: VecSB,
-    v_weights: [N]VecSF,
-    v_nodes_inv_z: [N]VecSF,
-    v_subpx_z: VecSF,
-    sh: *const common.TexPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
-) void {
-    const v_splat_mul: VecSF = @splat(sh.scale_mul);
-    const v_splat_add: VecSF = @splat(sh.scale_add);
-    const px_stride = spx_image_scratch.cols_num;
-
-    var v_tex_u: VecSF = @splat(0.0);
-    var v_tex_v: VecSF = @splat(0.0);
-    inline for (0..N) |nn| {
-        const v_inv_z = v_nodes_inv_z[nn];
-        v_tex_u += v_weights[nn] *
-            @as(VecSF, @splat(ctx_shade.shader_buf.data[nn])) * v_inv_z;
-        v_tex_v += v_weights[nn] *
-            @as(VecSF, @splat(ctx_shade.shader_buf.data[N + nn])) * v_inv_z;
-    }
-
-    v_tex_u *= v_subpx_z;
-    v_tex_v *= v_subpx_z;
-
-    const sampled_vecs = switch (cfg.simd_texture_interp) {
-        .inner => if (comptime N == 3)
-            texops.sampleLanesTri3Runtime(
-                channels,
-                sample_config,
-                v_mask_active,
-                sh.texture,
-                v_tex_u,
-                v_tex_v,
-            )
-        else
-            texops.sampleLanesRuntime(
-                channels,
-                sample_config,
-                v_mask_active,
-                sh.texture,
-                v_tex_u,
-                v_tex_v,
-            ),
-        .over_pixels => texops.sampleWideRuntime(
-            channels,
-            sample_config,
-            sh.texture,
-            v_tex_u,
-            v_tex_v,
-        ),
-    };
-
-    inline for (0..channels) |ch| {
-        const v_final = sampled_vecs[ch] * v_splat_mul + v_splat_add;
-        const flat_idx = ch * px_stride + ctx_shade.scratch_idx;
-        storeMaskedVecSF(
-            spx_image_scratch.slice,
-            flat_idx,
-            v_mask_active,
-            v_final,
-        );
-    }
-}
-
-pub inline fn fillTexFuncClipSIMD(
+pub inline fn fillFuncClipSIMD(
     comptime N: usize,
     comptime channels: usize,
     ctx_shade: common.ShadeContext(N),
@@ -396,7 +274,7 @@ pub inline fn fillTexFuncClipSIMD(
     v_weights: [N]VecSF,
     v_xi: VecSF,
     v_eta: VecSF,
-    sh: *const common.TexFuncPrepared(channels),
+    sh: *const common.FuncPrepared(channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
     var v_coord_0: VecSF = v_xi;
@@ -426,7 +304,7 @@ pub inline fn fillTexFuncClipSIMD(
             vals_arr[ll] = 0.0;
             if (!lane_mask_arr[ll]) continue;
 
-            const coord = common.TexFuncCoord{
+            const coord = common.FuncCoord{
                 .coord_0 = coord_0_arr[ll],
                 .coord_1 = coord_1_arr[ll],
                 .normal_x = normal_arrs[0][ll],
@@ -434,11 +312,17 @@ pub inline fn fillTexFuncClipSIMD(
                 .normal_z = normal_arrs[2][ll],
             };
             if (comptime channels == 1) {
-                vals_arr[ll] = common.evalTexFuncBuiltinScalar(sh.builtin, coord, sh.params) *
-                    sh.scale_mul + sh.scale_add;
+                vals_arr[ll] = common.evalFuncShaderBuiltinScalar(
+                    sh.builtin,
+                    coord,
+                    sh.params,
+                ) * sh.scale_mul + sh.scale_add;
             } else {
-                vals_arr[ll] = common.evalTexFuncBuiltinRgb(sh.builtin, coord, sh.params)[ch] *
-                    sh.scale_mul + sh.scale_add;
+                vals_arr[ll] = common.evalFuncShaderBuiltinRgb(
+                    sh.builtin,
+                    coord,
+                    sh.params,
+                )[ch] * sh.scale_mul + sh.scale_add;
             }
         }
 
@@ -453,7 +337,7 @@ pub inline fn fillTexFuncClipSIMD(
     }
 }
 
-pub inline fn fillTexFuncPerspSIMD(
+pub inline fn fillFuncPerspSIMD(
     comptime N: usize,
     comptime channels: usize,
     ctx_shade: common.ShadeContext(N),
@@ -463,7 +347,7 @@ pub inline fn fillTexFuncPerspSIMD(
     v_eta: VecSF,
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
-    sh: *const common.TexFuncPrepared(channels),
+    sh: *const common.FuncPrepared(channels),
     spx_image_scratch: *MatSlice(f64),
 ) void {
     var v_coord_0: VecSF = v_xi;
@@ -496,7 +380,7 @@ pub inline fn fillTexFuncPerspSIMD(
             vals_arr[ll] = 0.0;
             if (!lane_mask_arr[ll]) continue;
 
-            const coord = common.TexFuncCoord{
+            const coord = common.FuncCoord{
                 .coord_0 = coord_0_arr[ll],
                 .coord_1 = coord_1_arr[ll],
                 .normal_x = normal_arrs[0][ll],
@@ -504,10 +388,18 @@ pub inline fn fillTexFuncPerspSIMD(
                 .normal_z = normal_arrs[2][ll],
             };
             if (comptime channels == 1) {
-                vals_arr[ll] = common.evalTexFuncBuiltinScalar(sh.builtin, coord, sh.params) *
+                vals_arr[ll] = common.evalFuncShaderBuiltinScalar(
+                    sh.builtin,
+                    coord,
+                    sh.params,
+                ) *
                     sh.scale_mul + sh.scale_add;
             } else {
-                vals_arr[ll] = common.evalTexFuncBuiltinRgb(sh.builtin, coord, sh.params)[ch] *
+                vals_arr[ll] = common.evalFuncShaderBuiltinRgb(
+                    sh.builtin,
+                    coord,
+                    sh.params,
+                )[ch] *
                     sh.scale_mul + sh.scale_add;
             }
         }

@@ -19,9 +19,10 @@ const MeshInput = mo.MeshInput;
 const gk = @import("riley/zig/geometrykernels.zig");
 const MeshType = gk.MeshType;
 const camera_mod = @import("riley/zig/camera.zig");
+const cameraio = @import("riley/zig/cameraio.zig");
+const cameraops = @import("riley/zig/cameraops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const CameraInput = camera_mod.CameraInput;
-const CameraOps = camera_mod.CameraOps;
 const DistortionModel = camera_mod.DistortionModel;
 const BrownConrady = camera_mod.BrownConrady;
 const BrownConradyExt = camera_mod.BrownConradyExt;
@@ -39,7 +40,6 @@ const SUB_SAMPLE: u8 = 2;
 const STEREO_ANGLE_DEG: f64 = 20.0;
 
 const TOTAL_THREADS: u16 = 8;
-const MAX_FRAMES_IN_FLIGHT: u16 = 1;
 const FRAME_BATCH_SIZE_PER_GROUP: u16 = 1;
 const MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP: u16 = 1;
 const RENDER_GROUP_COUNT: usize = 8;
@@ -65,12 +65,12 @@ fn buildDistortion() DistortionModel {
         } },
         .brown_conrady_ext => .{ .brown_conrady_ext = BrownConradyExt{
             .k1 = -0.2,
-            .k2 =  0.1,
+            .k2 = 0.1,
             .k3 = -0.01,
             .k4 = -0.04,
             .k5 = 0.18,
-            .k6 =  -0.02,
-            .p1 =  0.0001,
+            .k6 = -0.02,
+            .p1 = 0.0001,
             .p2 = -0.0001,
         } },
     };
@@ -87,9 +87,6 @@ pub fn main(init: std.process.Init) !void {
     const config = RasterConfig{
         .render_mode = .offline,
         .total_threads = TOTAL_THREADS,
-        .max_frames_in_flight = MAX_FRAMES_IN_FLIGHT,
-        .max_geom_workers_per_frame = 1,
-        .max_raster_workers_per_frame = 1,
         .frame_batch_size_per_group = FRAME_BATCH_SIZE_PER_GROUP,
         .max_geom_jobs_in_flight_per_group = MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP,
         .max_geom_workers_per_job = 1,
@@ -100,10 +97,11 @@ pub fn main(init: std.process.Init) !void {
         .tile_size_max = 128,
         .background_value = 128.0,
         .image_save_opts = &[_]iio.ImageSaveOpts{
-            .{ .format = .bmp, .bits = 8, .scaling = .auto },
+            .{ .format = .bmp, .bits = 8, .scaling = .none },
         },
         .report = .bench,
     };
+
     const managed_ios = try outer_alloc.alloc(std.Io.Threaded, RENDER_GROUP_COUNT);
     defer {
         for (managed_ios) |*managed_io| {
@@ -111,8 +109,10 @@ pub fn main(init: std.process.Init) !void {
         }
         outer_alloc.free(managed_ios);
     }
+
     const render_groups = try outer_alloc.alloc(riley.RenderGroupSpec, RENDER_GROUP_COUNT);
     defer outer_alloc.free(render_groups);
+
     for (0..RENDER_GROUP_COUNT) |gg| {
         managed_ios[gg] = riley.getThreadedIo(
             aa,
@@ -184,7 +184,7 @@ pub fn main(init: std.process.Init) !void {
 
     // 6. Setup Camera
     std.debug.print("Setting up camera...\n", .{});
-    const roi_pos = CameraOps.roiCentFromCoords(&sim_data.coords);
+    const roi_pos = cameraops.roiCentFromCoords(&sim_data.coords);
 
     const distortion = buildDistortion();
 
@@ -195,7 +195,7 @@ pub fn main(init: std.process.Init) !void {
         std.math.degreesToRadians(0.0), //gamma_x_deg
     );
 
-    const cam0_pos = CameraOps.posFillFrameFromRot(
+    const cam0_pos = cameraops.posFillFrameFromRot(
         &sim_data.coords,
         PIXELS_NUM,
         PIXELS_SIZE,
@@ -222,7 +222,7 @@ pub fn main(init: std.process.Init) !void {
         std.math.degreesToRadians(0.0), //gamma_x_deg
     );
 
-    const cam1_pos = CameraOps.posFillFrameFromRot(
+    const cam1_pos = cameraops.posFillFrameFromRot(
         &sim_data.coords,
         PIXELS_NUM,
         PIXELS_SIZE,
@@ -246,7 +246,8 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Rendering simulation to {s}/...\n", .{OUT_DIR_ROOT});
     const meshes = [_]MeshInput{mesh_input};
     const cams_in = [_]CameraInput{ cam0_in, cam1_in };
-    const images = try riley.rasterAllFrames(
+
+    const images = try riley.raster(
         aa,
         render_groups,
         &cams_in,
@@ -260,19 +261,6 @@ pub fn main(init: std.process.Init) !void {
         img.deinit(aa);
     }
 
-    std.debug.print("Demo complete. Images saved to {s}/\n", .{OUT_DIR_ROOT});
-
-    const print_break = [_]u8{'='} ** 80;
-    print("\n{s}\n", .{print_break});
-
-    print("ROI center:\n", .{});
-    roi_pos.vecPrint();
-
-    print("Camera 0:\n", .{});
-    cam0_pos.vecPrint();
-
-    print("Camera 1:\n", .{});
-    cam1_pos.vecPrint();
 
     var out_dir = try std.Io.Dir.cwd().openDir(io, OUT_DIR_ROOT, .{});
     defer out_dir.close(io);
@@ -281,7 +269,7 @@ pub fn main(init: std.process.Init) !void {
     cam0_opengl.coord_sys = .opengl;
     var cam1_opengl = cam1_in;
     cam1_opengl.coord_sys = .opengl;
-    try CameraOps.saveStereoPair(
+    try cameraio.saveStereoPair(
         io,
         out_dir,
         "stereo_data_opengl.csv",
@@ -292,12 +280,12 @@ pub fn main(init: std.process.Init) !void {
     cam0_opencv.coord_sys = .opencv;
     var cam1_opencv = cam1_in;
     cam1_opencv.coord_sys = .opencv;
-    try CameraOps.saveStereoPair(
+    try cameraio.saveStereoPair(
         io,
         out_dir,
         "stereo_data_opencv.csv",
         .{ .cameras = .{ cam0_opencv, cam1_opencv } },
     );
 
-    print("{s}\n", .{print_break});
+    std.debug.print("Demo complete. Images saved to {s}/\n", .{OUT_DIR_ROOT});
 }

@@ -17,11 +17,11 @@ const mo = @import("riley/zig/meshops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const camera_mod = @import("riley/zig/camera.zig");
+const cameraops = @import("riley/zig/cameraops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
 const MeshInput = mo.MeshInput;
 const CameraPrepared = camera_mod.CameraPrepared;
-const CameraOps = camera_mod.CameraOps;
 
 const rabbit_mesh_types = [_]gk.MeshType{
     .tri3,
@@ -105,7 +105,7 @@ pub fn main(init: std.process.Init) !void {
             .coords = try orch.copyCoords(aa, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = null,
-            .shader = .{ .tex_func = .{
+            .shader = .{ .func = .{
                 .uvs = uv_maps[ii].array,
                 .builtin = .sinusoidal,
                 .bits = 8,
@@ -157,8 +157,8 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("Setting up camera...\n", .{});
     const rot = Rotation.init(0.0, std.math.pi, 0.0);
-    const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
-    const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
+    const roi_pos = cameraops.roiCentOverMeshes(mesh_inputs);
+    const cam_pos = cameraops.posFillFrameFromRotOverMeshes(
         mesh_inputs,
         pixel_num,
         orch.default_pixel_size,
@@ -201,7 +201,7 @@ pub fn main(init: std.process.Init) !void {
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    const images = try riley.rasterAllFrames(
+    const images = try riley.raster(
         aa,
         &render_groups,
         &[_]@TypeOf(camera_input){camera_input},

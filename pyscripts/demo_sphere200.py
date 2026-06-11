@@ -8,117 +8,93 @@
 # --------------------------------------------------------------------------
 from __future__ import annotations
 
-import os
-from pathlib import Path
 import shutil
+from pathlib import Path
 from time import perf_counter
 
 import numpy as np
-from PIL import Image
 import riley
-
-DATA_DIR = Path("data/bench/tri6_sphere200")
-TEXTURE_PATH = Path("texture/speckle.bmp")
-PYOUT_DIR = Path("pyout/demo-sphere200")
-PIXELS_NUM = (800, 500)
-PIXELS_SIZE = (5.3e-6, 5.3e-6)
-FOCAL_LENGTH = 50.0e-3
-ROT_WORLD = (0.0, 0.0, 0.0)
-FRAME_FILL = 1.0
-SAVE_STRATEGY = riley.SaveStrategy.disk
-CLEAN_OUT_DIR = True
-SILENT_RENDER = os.environ.get("RILEY_DEMO_SILENT") == "1"
 
 
 def main() -> None:
-    if CLEAN_OUT_DIR:
-        shutil.rmtree(PYOUT_DIR, ignore_errors=True)
-        PYOUT_DIR.mkdir(parents=True, exist_ok=True)
+    data_dir = Path("data/bench/tri6_sphere200")
+    texture_path = Path("texture/speckle.bmp")
+    out_dir = Path("pyout/demo-sphere200")
+    pixels_num = (800, 500)
+    pixels_size = (5.3e-6, 5.3e-6)
+    focal_length = 50.0e-3
+    rot_world = (0.0, 0.0, 0.0)
+    frame_fill = 1.0
+    save_strategy = riley.SaveStrategy.disk
+
+    clean_out_dir = True
+    if clean_out_dir:
+        shutil.rmtree(out_dir, ignore_errors=True)
+        out_dir.mkdir(parents=True, exist_ok=True)
     else:
-        PYOUT_DIR.mkdir(parents=True, exist_ok=True)
+        out_dir.mkdir(parents=True, exist_ok=True)
 
-    coords = np.loadtxt(
-        DATA_DIR / "coords.csv",
-        delimiter=",",
-        dtype=np.float64,
-    )
-    connect_float = np.loadtxt(
-        DATA_DIR / "connect.csv",
-        delimiter=",",
-        dtype=np.float64,
-    )
-    connect = np.ascontiguousarray(connect_float, dtype=np.uintp)
-    uvs = np.loadtxt(
-        DATA_DIR / "uvs.csv",
-        delimiter=",",
-        dtype=np.float64,
-    )
-    with Image.open(TEXTURE_PATH) as image_in:
-        image_grey = image_in.convert("L")
-        image_u8 = np.asarray(image_grey, dtype=np.uint8)
-    texture = np.ascontiguousarray(image_u8, dtype=np.float64)
 
-    roi_cent_world = tuple(riley.roi_cent_from_coords(coords))
-    pos_world = tuple(
-        riley.pos_fill_frame_from_rot(
-            coords,
-            PIXELS_NUM,
-            PIXELS_SIZE,
-            FOCAL_LENGTH,
-            ROT_WORLD,
-            FRAME_FILL,
-        ),
+    (coords, connect, uvs, _) = riley.load_sim_csvs(data_dir)
+
+    texture = riley.load_texture(texture_path)
+
+    roi_cent_world = riley.roi_cent_from_coords(coords)
+    pos_world = riley.pos_fill_frame_from_rot(
+        coords,
+        pixels_num,
+        pixels_size,
+        focal_length,
+        rot_world,
+        frame_fill,
     )
 
-    mesh = riley.MeshInputTex(
+    mesh = riley.Mesh(
         mesh_type=riley.MeshType.tri6,
         coords=coords,
         connect=connect,
         uvs=uvs,
         texture=texture,
         sample=riley.TextureSample.cubic_catmull_rom,
-        sample_mode=riley.TextureSampleMode.lut_lerp,
+        sample_mode=riley.TextureSampleMode.direct,
         bits=8,
-        scaling_tag=riley.ScaleStrategy.none,
+        scaling_type=riley.ScaleStrategy.none,
     )
-    camera = riley.CameraInput(
-        pixels_num=PIXELS_NUM,
-        pixels_size=PIXELS_SIZE,
+    
+    camera = riley.Camera(
+        pixels_num=pixels_num,
+        pixels_size=pixels_size,
         pos_world=pos_world,
-        rot_world=ROT_WORLD,
+        rot_world=rot_world,
         roi_cent_world=roi_cent_world,
-        focal_length=FOCAL_LENGTH,
+        focal_length=focal_length,
         sub_sample=2,
         coord_sys=riley.CameraCoordSys.opengl,
     )
-    config = riley.RasterConfig(
-        save_strategy=SAVE_STRATEGY,
-        report=(
-            riley.ReportMode.off
-            if SILENT_RENDER
-            else riley.ReportMode.bench
-        ),
+    
+    config = riley.build_config(
+        num_frames=1,
+        total_threads=4,
+        save_strategy=save_strategy,
     )
+    
     start_time = perf_counter()
     image_array = riley.raster(
         mesh,
         camera,
         config,
-        out_dir=str(PYOUT_DIR),
+        out_dir=str(out_dir),
     )
     elapsed_time = perf_counter() - start_time
-    if not SILENT_RENDER:
-        print(f"render time: {elapsed_time:.6f} s")
+    print(f"Riley render time: {elapsed_time:.6f} s")
 
     if image_array is None:
-        if not SILENT_RENDER:
-            print(f"rendered disk output to {PYOUT_DIR}")
+        print(f"rendered disk output to {out_dir}")
     else:
-        if not SILENT_RENDER:
-            print(
-                f"rendered image array with shape {image_array.shape} "
-                f"to {PYOUT_DIR}",
-            )
+        print(
+            f"rendered image array with shape {image_array.shape} "
+            f"to {out_dir}",
+        )
 
 
 if __name__ == "__main__":

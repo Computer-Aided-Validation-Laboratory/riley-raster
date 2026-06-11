@@ -14,7 +14,7 @@ from paper_const import PAPER_DIR, repo_root
 
 VERIF_DIR = pathlib.Path("verif/verif_4")
 OUT_STATS_PATH = VERIF_DIR / "verif_4_stats.csv"
-OUT_FIGS_TEX_PATH = VERIF_DIR / "verif_4_figs.tex"
+OUT_FIGS_TEX_PATH = VERIF_DIR / "figs_verif_4.tex"
 RABBIT_MESH_NAMES = ["tri3", "quad4", "tri6", "quad8", "quad9"]
 COUNT_TOL = 1.0e-6
 

@@ -61,7 +61,7 @@ pub fn TexKernel(
     };
 }
 
-pub fn TexFuncKernel(
+pub fn FuncKernel(
     comptime N: usize,
     comptime channels: usize,
 ) type {
@@ -70,11 +70,11 @@ pub fn TexFuncKernel(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext(N),
             interp: shaderops.InterpData(N),
-            shader: *const shaderops.TexFuncPrepared(channels),
+            shader: *const shaderops.FuncPrepared(channels),
             ctx_report: anytype,
             spx_image_scratch: *MatSlice(f64),
         ) void {
-            common.shadeTexFuncScalarCommon(
+            common.shadeFuncScalarCommon(
                 N,
                 channels,
                 coord_space,
