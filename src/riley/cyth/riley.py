@@ -60,6 +60,10 @@ class FuncShaderParams:
     output_offset: float = 0.0
     wave_num_scalar: tuple[float, float] = (6.0, 5.0)
     wave_num_rgb: tuple[float, float, float] = (6.0, 6.0, 4.0)
+    eggbox_mean: float = 0.5
+    eggbox_contrast: float = 0.4
+    eggbox_pitch: tuple[float, float] = (1.0, 1.0)
+    eggbox_phase: tuple[float, float] = (0.0, 0.0)
     extra: tuple[float, float, float, float] = (
         0.0,
         0.0,
@@ -86,6 +90,7 @@ class Mesh:
     nodal_field: np.ndarray | None = None
     scale_over: int = 1
     func_shader_builtin: int = 0
+    func_shader_coord_mode: int = 1
     func_shader_params: FuncShaderParams = field(
         default_factory=FuncShaderParams,
     )
@@ -210,6 +215,14 @@ class FuncShaderBuiltin(IntEnum):
     checker = 4
     checker_smooth = 5
     lambertian_normal_z = 6
+    eggbox = 7
+
+
+class FuncCoordMode(IntEnum):
+    uv = 0
+    parametric = 1
+    world_reference = 2
+    world_deformed = 3
 
 
 class NormalType(IntEnum):
@@ -372,6 +385,12 @@ def _make_func_params(params_in: Any) -> cr.CFuncShaderParams:
         float(params_in.wave_num_rgb[0]),
         float(params_in.wave_num_rgb[1]),
         float(params_in.wave_num_rgb[2]),
+        float(params_in.eggbox_mean),
+        float(params_in.eggbox_contrast),
+        float(params_in.eggbox_pitch[0]),
+        float(params_in.eggbox_pitch[1]),
+        float(params_in.eggbox_phase[0]),
+        float(params_in.eggbox_phase[1]),
         float(params_in.extra[0]),
         float(params_in.extra[1]),
         float(params_in.extra[2]),
@@ -618,6 +637,7 @@ def _fill_mesh_array(
         mesh_array[nn].scaling_max = float(mesh.scaling_max)
         mesh_array[nn].scale_over = int(mesh.scale_over)
         mesh_array[nn].func_shader_builtin = int(mesh.func_shader_builtin)
+        mesh_array[nn].func_shader_coord_mode = int(mesh.func_shader_coord_mode)
         mesh_array[nn].func_shader_params = _make_func_params(
             mesh.func_shader_params,
         )
@@ -938,6 +958,7 @@ __all__ = [
     "ShaderType",
     "SubPixelCenterMap",
     "FuncShaderBuiltin",
+    "FuncCoordMode",
     "FuncShaderParams",
     "TextureSample",
     "TextureSampleMode",

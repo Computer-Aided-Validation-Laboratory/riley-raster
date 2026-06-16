@@ -90,6 +90,12 @@ typedef struct c_func_shader_params {
     double wave_num_rgb_0;
     double wave_num_rgb_1;
     double wave_num_rgb_2;
+    double eggbox_mean;
+    double eggbox_contrast;
+    double eggbox_pitch_0;
+    double eggbox_pitch_1;
+    double eggbox_phase_0;
+    double eggbox_phase_1;
     double extra_0;
     double extra_1;
     double extra_2;
@@ -114,6 +120,7 @@ typedef struct c_mesh_input {
     CArray3DF64 nodal_field;
     uint32_t scale_over;
     uint32_t func_shader_builtin;
+    uint32_t func_shader_coord_mode;
     CFuncShaderParams func_shader_params;
     uint32_t normal_type;
 } CMeshInput;

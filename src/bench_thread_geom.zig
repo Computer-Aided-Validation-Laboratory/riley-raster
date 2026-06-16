@@ -145,6 +145,7 @@ fn duplicateMeshInput(
             new_shader = .{
                 .func = .{
                     .uvs = new_uvs,
+                    .coord_mode = base_func.coord_mode,
                     .builtin = base_func.builtin,
                     .params = base_func.params,
                     .bits = base_func.bits,

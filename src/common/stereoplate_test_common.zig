@@ -62,6 +62,7 @@ pub fn buildConstantMeshInput(sim_data: meshio.SimData) MeshInput {
         .disp = null,
         .shader = .{ .func = .{
             .uvs = null,
+            .coord_mode = .parametric,
             .builtin = .constant,
             .params = .{
                 .output_scale = 0.0,

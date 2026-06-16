@@ -56,7 +56,7 @@ def main() -> None:
         uvs=uvs,
         texture=texture,
         sample=riley.TextureSample.cubic_catmull_rom,
-        sample_mode=riley.TextureSampleMode.direct,
+        sample_mode=riley.TextureSampleMode.lut_lerp,
         bits=8,
         scaling_type=riley.ScaleStrategy.none,
     )

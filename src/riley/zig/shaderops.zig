@@ -16,6 +16,7 @@ const simd_impl = @import("shaderops_simd.zig");
 
 pub const ScaleOver = common.ScaleOver;
 pub const NormalType = common.NormalType;
+pub const FuncCoordMode = common.FuncCoordMode;
 pub const FuncShaderBuiltin = common.FuncShaderBuiltin;
 pub const FuncShaderParams = common.FuncShaderParams;
 pub const LocalShaderBuffer = common.LocalShaderBuffer;

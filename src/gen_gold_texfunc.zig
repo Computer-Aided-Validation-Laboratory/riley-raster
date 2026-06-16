@@ -189,6 +189,7 @@ pub fn mainWithOutputRoot(
                         .shader = .{
                             .func = .{
                                 .uvs = uvs,
+                                .coord_mode = if (coord_mode == .uv) .uv else .parametric,
                                 .builtin = builtin,
                                 .normal_type = normal_type,
                             },
@@ -221,6 +222,7 @@ pub fn mainWithOutputRoot(
                         .shader = .{
                             .func_rgb = .{
                                 .uvs = uvs,
+                                .coord_mode = if (coord_mode == .uv) .uv else .parametric,
                                 .builtin = builtin,
                                 .normal_type = normal_type,
                             },

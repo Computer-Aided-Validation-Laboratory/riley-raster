@@ -1479,6 +1479,7 @@ pub fn runDistortEdgeTexFuncTest(
             .shader = .{
                 .func = .{
                     .uvs = null,
+                    .coord_mode = .parametric,
                     .builtin = .constant,
                     .normal_type = .none,
                 },
@@ -1668,6 +1669,7 @@ pub fn runEdgeTexFuncConstantCaseForHullMode(
         .shader = .{
             .func = .{
                 .uvs = null,
+                .coord_mode = .parametric,
                 .builtin = .constant,
                 .normal_type = .none,
             },

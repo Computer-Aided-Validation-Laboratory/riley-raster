@@ -29,7 +29,7 @@ def main() -> None:
     shutil.rmtree(out_dir, ignore_errors=True)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    coords, connect, uvs, disp = riley.load_sim_from_csv(data_dir)
+    coords, connect, uvs, disp = riley.load_sim_csvs(data_dir)
     texture = riley.load_texture(texture_path)
 
     camera_0, camera_1 = riley.load_stereo_pair(

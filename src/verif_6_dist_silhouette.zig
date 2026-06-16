@@ -334,6 +334,7 @@ fn renderScalarMap(
         .shader = .{
             .func = .{
                 .uvs = null,
+                .coord_mode = .parametric,
                 .builtin = .constant,
                 .normal_type = .none,
             },
@@ -404,6 +405,7 @@ fn buildCentroidCameraInputOverFrames(
             .shader = .{
                 .func = .{
                     .uvs = null,
+                    .coord_mode = .parametric,
                     .builtin = .constant,
                     .normal_type = .none,
                 },

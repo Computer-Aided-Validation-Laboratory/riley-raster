@@ -360,6 +360,7 @@ fn loadCheckerMeshInput(
     const shader = switch (shader_type) {
         .func => so.ShaderInput{ .func = .{
             .uvs = uvs_raw,
+            .coord_mode = .uv,
             .builtin = tex_func_case.builtin,
             .params = checker_params,
             .bits = 8,
@@ -368,6 +369,7 @@ fn loadCheckerMeshInput(
         } },
         .func_rgb => so.ShaderInput{ .func_rgb = .{
             .uvs = uvs_raw,
+            .coord_mode = .uv,
             .builtin = tex_func_case.builtin,
             .params = checker_params,
             .bits = 8,

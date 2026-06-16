@@ -164,6 +164,7 @@ fn renderCase(
         .disp = null,
         .shader = .{ .func = .{
             .uvs = uvs.array,
+            .coord_mode = .uv,
             .builtin = SHADER_BUILTIN,
             .params = SHADER_PARAMS,
             .bits = 8,

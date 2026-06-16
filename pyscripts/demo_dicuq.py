@@ -41,7 +41,7 @@ def main() -> None:
     shutil.rmtree(out_dir, ignore_errors=True)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    coords, connect, uvs, disp = riley.load_sim_from_csv(data_dir)
+    coords, connect, uvs, disp = riley.load_sim_csvs(data_dir)
     texture = riley.load_texture(texture_path)
 
     mesh = riley.Mesh(
@@ -104,6 +104,7 @@ def main() -> None:
     )
     config.background_value = 128.0
     config.tile_size_max = 128
+    config.save_scaling = riley.ScaleStrategy.none
 
     start_time = perf_counter()
     riley.raster(

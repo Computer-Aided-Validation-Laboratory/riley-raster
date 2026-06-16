@@ -121,6 +121,12 @@ pub const CFuncShaderParams = extern struct {
     wave_num_rgb_0: f64,
     wave_num_rgb_1: f64,
     wave_num_rgb_2: f64,
+    eggbox_mean: f64,
+    eggbox_contrast: f64,
+    eggbox_pitch_0: f64,
+    eggbox_pitch_1: f64,
+    eggbox_phase_0: f64,
+    eggbox_phase_1: f64,
     extra_0: f64,
     extra_1: f64,
     extra_2: f64,
@@ -144,6 +150,7 @@ pub const CMeshInput = extern struct {
     nodal_field: CArray3DF64,
     scale_over: u32,
     func_shader_builtin: u32,
+    func_shader_coord_mode: u32,
     func_shader_params: CFuncShaderParams,
     normal_type: u32,
 };
@@ -478,6 +485,7 @@ fn funcShaderBuiltinFromC(
     func_shader_builtin: u32,
 ) !shaderops.FuncShaderBuiltin {
     const lambertian = shaderops.FuncShaderBuiltin.lambertian_normal_z;
+    const eggbox = shaderops.FuncShaderBuiltin.eggbox;
     return switch (func_shader_builtin) {
         @intFromEnum(shaderops.FuncShaderBuiltin.constant) => .constant,
         @intFromEnum(shaderops.FuncShaderBuiltin.linear) => .linear,
@@ -486,7 +494,20 @@ fn funcShaderBuiltinFromC(
         @intFromEnum(shaderops.FuncShaderBuiltin.checker) => .checker,
         @intFromEnum(shaderops.FuncShaderBuiltin.checker_smooth) => .checker_smooth,
         @intFromEnum(lambertian) => .lambertian_normal_z,
+        @intFromEnum(eggbox) => .eggbox,
         else => error.InvalidFuncShaderBuiltin,
+    };
+}
+
+fn funcCoordModeFromC(
+    coord_mode: u32,
+) !shaderops.FuncCoordMode {
+    return switch (coord_mode) {
+        @intFromEnum(shaderops.FuncCoordMode.uv) => .uv,
+        @intFromEnum(shaderops.FuncCoordMode.parametric) => .parametric,
+        @intFromEnum(shaderops.FuncCoordMode.world_reference) => .world_reference,
+        @intFromEnum(shaderops.FuncCoordMode.world_deformed) => .world_deformed,
+        else => error.InvalidFuncCoordMode,
     };
 }
 
@@ -521,6 +542,16 @@ fn funcShaderParamsFromC(
             in_params.wave_num_rgb_0,
             in_params.wave_num_rgb_1,
             in_params.wave_num_rgb_2,
+        },
+        .eggbox_mean = in_params.eggbox_mean,
+        .eggbox_contrast = in_params.eggbox_contrast,
+        .eggbox_pitch = .{
+            in_params.eggbox_pitch_0,
+            in_params.eggbox_pitch_1,
+        },
+        .eggbox_phase = .{
+            in_params.eggbox_phase_0,
+            in_params.eggbox_phase_1,
         },
         .extra = .{
             in_params.extra_0,
@@ -872,6 +903,7 @@ fn buildMeshInput(
 
             built.mesh_input.shader = .{ .func = .{
                 .uvs = uvs_array_opt,
+                .coord_mode = try funcCoordModeFromC(in_mesh.func_shader_coord_mode),
                 .builtin = try funcShaderBuiltinFromC(in_mesh.func_shader_builtin),
                 .params = funcShaderParamsFromC(in_mesh.func_shader_params),
                 .bits = bits,
@@ -895,6 +927,7 @@ fn buildMeshInput(
 
             built.mesh_input.shader = .{ .func_rgb = .{
                 .uvs = uvs_array_opt,
+                .coord_mode = try funcCoordModeFromC(in_mesh.func_shader_coord_mode),
                 .builtin = try funcShaderBuiltinFromC(in_mesh.func_shader_builtin),
                 .params = funcShaderParamsFromC(in_mesh.func_shader_params),
                 .bits = bits,

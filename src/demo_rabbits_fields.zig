@@ -158,6 +158,7 @@ fn makeFieldMeshInput(
         } },
         .func => .{ .func_rgb = .{
             .uvs = uvs.array,
+            .coord_mode = .uv,
             .builtin = FuncShaderBuiltin.checker,
             .params = FuncShaderParams{
                 .coord_scale = .{

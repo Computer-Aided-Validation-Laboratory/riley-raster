@@ -567,12 +567,29 @@ fn rasterTileCommon(
                     .func => |*shader| {
                         const SK = shadekerns.FuncKernel(N, 1);
                         var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
-                        if (shader.elem_uvs != null) {
-                            local_shader_buf.load(
-                                shader.elem_uvs.?,
-                                targ_overlap.overlap.elem_idx * 2 * N,
-                                2,
-                            );
+                        switch (shader.coord_mode) {
+                            .uv => {
+                                local_shader_buf.loadFuncCoords(
+                                    shader.elem_uvs.?,
+                                    targ_overlap.overlap.elem_idx * 2 * N,
+                                    2,
+                                );
+                            },
+                            .world_reference => {
+                                local_shader_buf.loadFuncCoords(
+                                    shader.elem_world_ref.?,
+                                    targ_overlap.overlap.elem_idx * 3 * N,
+                                    3,
+                                );
+                            },
+                            .world_deformed => {
+                                local_shader_buf.loadFuncCoords(
+                                    shader.elem_world_def.?,
+                                    targ_overlap.overlap.elem_idx * 3 * N,
+                                    3,
+                                );
+                            },
+                            .parametric => {},
                         }
                         if (shader.elem_normals) |en| {
                             const prep_idx = en.map[targ_overlap.overlap.elem_idx];
@@ -597,12 +614,29 @@ fn rasterTileCommon(
                     .func_rgb => |*shader| {
                         const SK = shadekerns.FuncKernel(N, 3);
                         var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
-                        if (shader.elem_uvs != null) {
-                            local_shader_buf.load(
-                                shader.elem_uvs.?,
-                                targ_overlap.overlap.elem_idx * 2 * N,
-                                2,
-                            );
+                        switch (shader.coord_mode) {
+                            .uv => {
+                                local_shader_buf.loadFuncCoords(
+                                    shader.elem_uvs.?,
+                                    targ_overlap.overlap.elem_idx * 2 * N,
+                                    2,
+                                );
+                            },
+                            .world_reference => {
+                                local_shader_buf.loadFuncCoords(
+                                    shader.elem_world_ref.?,
+                                    targ_overlap.overlap.elem_idx * 3 * N,
+                                    3,
+                                );
+                            },
+                            .world_deformed => {
+                                local_shader_buf.loadFuncCoords(
+                                    shader.elem_world_def.?,
+                                    targ_overlap.overlap.elem_idx * 3 * N,
+                                    3,
+                                );
+                            },
+                            .parametric => {},
                         }
                         if (shader.elem_normals) |en| {
                             const prep_idx = en.map[targ_overlap.overlap.elem_idx];

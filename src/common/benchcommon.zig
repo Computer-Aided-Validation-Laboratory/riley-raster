@@ -755,6 +755,7 @@ pub fn loadBenchmarkMeshInput(
                 null;
             shader = .{ .func = .{
                 .uvs = tex_func_uvs,
+                .coord_mode = if (tex_case.coord_mode == .uv) .uv else .parametric,
                 .builtin = tex_case.builtin,
                 .params = calcTexFuncParams(tex_case),
                 .bits = 8,
@@ -776,6 +777,7 @@ pub fn loadBenchmarkMeshInput(
                 null;
             shader = .{ .func_rgb = .{
                 .uvs = tex_func_uvs,
+                .coord_mode = if (tex_case.coord_mode == .uv) .uv else .parametric,
                 .builtin = tex_case.builtin,
                 .params = calcTexFuncParams(tex_case),
                 .bits = 8,
