@@ -40,6 +40,21 @@ class Camera:
     distortion_k6: float = 0.0
     distortion_p1: float = 0.0
     distortion_p2: float = 0.0
+    distortion_poly_order: int = 2
+    distortion_poly_has_forward: bool = False
+    distortion_poly_has_inverse: bool = False
+    distortion_poly_forward_u: tuple[float, float, float, float, float, float, float, float, float, float] = (
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    )
+    distortion_poly_forward_v: tuple[float, float, float, float, float, float, float, float, float, float] = (
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    )
+    distortion_poly_inverse_u: tuple[float, float, float, float, float, float, float, float, float, float] = (
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    )
+    distortion_poly_inverse_v: tuple[float, float, float, float, float, float, float, float, float, float] = (
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+    )
     coord_sys: int = 0
     psf_type: int = 0
     psf_sigma_x: float = 0.0
@@ -272,6 +287,7 @@ def _make_cvec2_u32(vec_in: tuple[int, int]) -> cr.CVec2U32:
 @cython.cfunc
 def _make_camera_input(camera: Any) -> cr.CCameraInput:
     camera_out: cr.CCameraInput
+    idx: cython.Py_ssize_t
     camera_out.pixels_num = _make_cvec2_u32(camera.pixels_num)
     camera_out.pixels_size = _make_cvec2_f64(camera.pixels_size)
     camera_out.pos_world = _make_cvec3(camera.pos_world)
@@ -288,6 +304,22 @@ def _make_camera_input(camera: Any) -> cr.CCameraInput:
     camera_out.distortion_k6 = float(camera.distortion_k6)
     camera_out.distortion_p1 = float(camera.distortion_p1)
     camera_out.distortion_p2 = float(camera.distortion_p2)
+    camera_out.distortion_poly_order = int(camera.distortion_poly_order)
+    camera_out.distortion_poly_has_forward = int(camera.distortion_poly_has_forward)
+    camera_out.distortion_poly_has_inverse = int(camera.distortion_poly_has_inverse)
+    for idx in range(10):
+        camera_out.distortion_poly_forward_u[idx] = float(
+            camera.distortion_poly_forward_u[idx]
+        )
+        camera_out.distortion_poly_forward_v[idx] = float(
+            camera.distortion_poly_forward_v[idx]
+        )
+        camera_out.distortion_poly_inverse_u[idx] = float(
+            camera.distortion_poly_inverse_u[idx]
+        )
+        camera_out.distortion_poly_inverse_v[idx] = float(
+            camera.distortion_poly_inverse_v[idx]
+        )
     camera_out.coord_sys = int(camera.coord_sys)
     camera_out.psf_type = int(camera.psf_type)
     camera_out.psf_sigma_x = float(camera.psf_sigma_x)
@@ -299,6 +331,16 @@ def _make_camera_input(camera: Any) -> cr.CCameraInput:
 
 
 def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
+    idx: cython.Py_ssize_t
+    forward_u = [0.0] * 10
+    forward_v = [0.0] * 10
+    inverse_u = [0.0] * 10
+    inverse_v = [0.0] * 10
+    for idx in range(10):
+        forward_u[idx] = camera_in.distortion_poly_forward_u[idx]
+        forward_v[idx] = camera_in.distortion_poly_forward_v[idx]
+        inverse_u[idx] = camera_in.distortion_poly_inverse_u[idx]
+        inverse_v[idx] = camera_in.distortion_poly_inverse_v[idx]
     return Camera(
         pixels_num=(camera_in.pixels_num.x, camera_in.pixels_num.y),
         pixels_size=(camera_in.pixels_size.x, camera_in.pixels_size.y),
@@ -328,6 +370,13 @@ def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
         distortion_k6=camera_in.distortion_k6,
         distortion_p1=camera_in.distortion_p1,
         distortion_p2=camera_in.distortion_p2,
+        distortion_poly_order=camera_in.distortion_poly_order,
+        distortion_poly_has_forward=bool(camera_in.distortion_poly_has_forward),
+        distortion_poly_has_inverse=bool(camera_in.distortion_poly_has_inverse),
+        distortion_poly_forward_u=tuple(forward_u),
+        distortion_poly_forward_v=tuple(forward_v),
+        distortion_poly_inverse_u=tuple(inverse_u),
+        distortion_poly_inverse_v=tuple(inverse_v),
         coord_sys=camera_in.coord_sys,
         psf_type=camera_in.psf_type,
         psf_sigma_x=camera_in.psf_sigma_x,

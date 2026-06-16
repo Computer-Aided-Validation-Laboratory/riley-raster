@@ -25,6 +25,14 @@ pub const DistortionForwardJacSIMDResult = struct {
     j22: VecSF,
 };
 
+pub const DistortionInverseSIMDResult = struct {
+    x: VecSF,
+    y: VecSF,
+};
+
+const poly_powers_u = [10]u8{ 0, 1, 0, 2, 1, 0, 3, 2, 1, 0 };
+const poly_powers_v = [10]u8{ 0, 0, 1, 0, 1, 2, 0, 1, 2, 3 };
+
 pub fn forwardDistortionSIMD(
     comptime DistortionType: type,
     distortion: DistortionType,
@@ -138,7 +146,7 @@ pub fn inverseDistortionSIMD(
     v_x_d: VecSF,
     v_y_d: VecSF,
     v_lane_active_init: VecSB,
-) !struct { x: VecSF, y: VecSF } {
+) !DistortionInverseSIMDResult {
     const v_resid_tol: VecSF = @splat(tol.distortion.residual);
     const v_delta_tol: VecSF = @splat(tol.distortion.delta);
     const v_det_tol: VecSF = @splat(tol.distortion.determinant);
@@ -197,3 +205,209 @@ pub fn inverseDistortionSIMD(
 }
 
 pub const DistortionModel = common.DistortionModel;
+
+pub fn inverseDistortionModelSIMD(
+    distortion: DistortionModel,
+    v_x_d: VecSF,
+    v_y_d: VecSF,
+    v_lane_active: VecSB,
+) !DistortionInverseSIMDResult {
+    return switch (distortion) {
+        .none => .{ .x = v_x_d, .y = v_y_d },
+        .brown_conrady => |bc| inverseDistortionSIMD(
+            common.BrownConrady,
+            bc,
+            v_x_d,
+            v_y_d,
+            v_lane_active,
+        ),
+        .brown_conrady_ext => |bc_ext| inverseDistortionSIMD(
+            common.BrownConradyExt,
+            bc_ext,
+            v_x_d,
+            v_y_d,
+            v_lane_active,
+        ),
+        .polynomial => |poly| inversePolynomialSIMD(
+            poly,
+            v_x_d,
+            v_y_d,
+            v_lane_active,
+        ),
+        .brown_conrady_polynomial => |chain| blk: {
+            const poly_inv = try inversePolynomialSIMD(
+                chain.polynomial,
+                v_x_d,
+                v_y_d,
+                v_lane_active,
+            );
+            break :blk try inverseDistortionSIMD(
+                common.BrownConrady,
+                chain.brown_conrady,
+                poly_inv.x,
+                poly_inv.y,
+                v_lane_active,
+            );
+        },
+        .brown_conrady_ext_polynomial => |chain| blk: {
+            const poly_inv = try inversePolynomialSIMD(
+                chain.polynomial,
+                v_x_d,
+                v_y_d,
+                v_lane_active,
+            );
+            break :blk try inverseDistortionSIMD(
+                common.BrownConradyExt,
+                chain.brown_conrady_ext,
+                poly_inv.x,
+                poly_inv.y,
+                v_lane_active,
+            );
+        },
+    };
+}
+
+fn inversePolynomialSIMD(
+    polynomial: common.BidirectionalPolynomial,
+    v_x_d: VecSF,
+    v_y_d: VecSF,
+    v_lane_active: VecSB,
+) !DistortionInverseSIMDResult {
+    if (polynomial.inverse_map) |inverse_map| {
+        const eval = evaluatePolynomialMapSIMD(inverse_map, v_x_d, v_y_d);
+        return .{ .x = eval.x_d, .y = eval.y_d };
+    }
+    if (polynomial.forward_map) |forward_map| {
+        return try invertPolynomialMapSIMD(
+            forward_map,
+            v_x_d,
+            v_y_d,
+            v_lane_active,
+        );
+    }
+    return error.MissingPolynomialMap;
+}
+
+fn evaluatePolynomialMapSIMD(
+    polynomial: common.PolynomialMap,
+    x: VecSF,
+    y: VecSF,
+) struct { x_d: VecSF, y_d: VecSF } {
+    const poly = evaluatePolynomialMapWithJacSIMD(polynomial, x, y);
+    return .{ .x_d = poly.x_d, .y_d = poly.y_d };
+}
+
+fn evaluatePolynomialMapWithJacSIMD(
+    polynomial: common.PolynomialMap,
+    x: VecSF,
+    y: VecSF,
+) DistortionForwardJacSIMDResult {
+    var du: VecSF = @splat(0.0);
+    var dv: VecSF = @splat(0.0);
+    var ddu_dx: VecSF = @splat(0.0);
+    var ddu_dy: VecSF = @splat(0.0);
+    var ddv_dx: VecSF = @splat(0.0);
+    var ddv_dy: VecSF = @splat(0.0);
+    const term_count = polynomial.order.termCount();
+
+    for (0..term_count) |ii| {
+        const pu = poly_powers_u[ii];
+        const pv = poly_powers_v[ii];
+        const basis = powSmallSIMD(x, pu) * powSmallSIMD(y, pv);
+        du += @as(VecSF, @splat(polynomial.coeffs_u[ii])) * basis;
+        dv += @as(VecSF, @splat(polynomial.coeffs_v[ii])) * basis;
+
+        if (pu > 0) {
+            const basis_dx = @as(VecSF, @splat(@as(f64, @floatFromInt(pu)))) *
+                powSmallSIMD(x, pu - 1) *
+                powSmallSIMD(y, pv);
+            ddu_dx += @as(VecSF, @splat(polynomial.coeffs_u[ii])) * basis_dx;
+            ddv_dx += @as(VecSF, @splat(polynomial.coeffs_v[ii])) * basis_dx;
+        }
+        if (pv > 0) {
+            const basis_dy = @as(VecSF, @splat(@as(f64, @floatFromInt(pv)))) *
+                powSmallSIMD(x, pu) *
+                powSmallSIMD(y, pv - 1);
+            ddu_dy += @as(VecSF, @splat(polynomial.coeffs_u[ii])) * basis_dy;
+            ddv_dy += @as(VecSF, @splat(polynomial.coeffs_v[ii])) * basis_dy;
+        }
+    }
+
+    return .{
+        .x_d = x + du,
+        .y_d = y + dv,
+        .j11 = @as(VecSF, @splat(1.0)) + ddu_dx,
+        .j12 = ddu_dy,
+        .j21 = ddv_dx,
+        .j22 = @as(VecSF, @splat(1.0)) + ddv_dy,
+    };
+}
+
+fn invertPolynomialMapSIMD(
+    polynomial: common.PolynomialMap,
+    v_x_d: VecSF,
+    v_y_d: VecSF,
+    v_lane_active_init: VecSB,
+) !DistortionInverseSIMDResult {
+    const v_resid_tol: VecSF = @splat(tol.distortion.residual);
+    const v_delta_tol: VecSF = @splat(tol.distortion.delta);
+    const v_det_tol: VecSF = @splat(tol.distortion.determinant);
+
+    var v_x = v_x_d;
+    var v_y = v_y_d;
+    var v_active = v_lane_active_init;
+
+    for (0..cfg.distortion_newton_iter_max) |_| {
+        if (!@reduce(.Or, v_active)) {
+            return .{ .x = v_x, .y = v_y };
+        }
+
+        const fwd = evaluatePolynomialMapWithJacSIMD(polynomial, v_x, v_y);
+        const f0 = fwd.x_d - v_x_d;
+        const f1 = fwd.y_d - v_y_d;
+
+        const v_met_resid = (@abs(f0) < v_resid_tol) & (@abs(f1) < v_resid_tol);
+        v_active = v_active & !v_met_resid;
+        if (!@reduce(.Or, v_active)) {
+            return .{ .x = v_x, .y = v_y };
+        }
+
+        const v_det = fwd.j11 * fwd.j22 - fwd.j12 * fwd.j21;
+        const v_bad_det = @abs(v_det) < v_det_tol;
+        if (@reduce(.Or, v_active & v_bad_det)) {
+            return error.SingularJacobian;
+        }
+
+        const v_safe_det = @select(
+            f64,
+            v_active,
+            v_det,
+            @as(VecSF, @splat(1.0)),
+        );
+        const v_delta_x = (-f0 * fwd.j22 + fwd.j12 * f1) / v_safe_det;
+        const v_delta_y = (fwd.j21 * f0 - fwd.j11 * f1) / v_safe_det;
+
+        v_x += @select(f64, v_active, v_delta_x, @as(VecSF, @splat(0.0)));
+        v_y += @select(f64, v_active, v_delta_y, @as(VecSF, @splat(0.0)));
+
+        const v_met_delta =
+            (@abs(v_delta_x) < v_delta_tol) & (@abs(v_delta_y) < v_delta_tol);
+        v_active = v_active & !v_met_delta;
+    }
+
+    if (@reduce(.Or, v_active)) {
+        return error.DistortionInverseFailed;
+    }
+    return .{ .x = v_x, .y = v_y };
+}
+
+fn powSmallSIMD(
+    x: VecSF,
+    power: u8,
+) VecSF {
+    var out: VecSF = @splat(1.0);
+    for (0..power) |_| {
+        out *= x;
+    }
+    return out;
+}

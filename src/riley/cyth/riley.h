@@ -69,6 +69,13 @@ typedef struct c_camera_input {
     double distortion_k6;
     double distortion_p1;
     double distortion_p2;
+    uint32_t distortion_poly_order;
+    uint8_t distortion_poly_has_forward;
+    uint8_t distortion_poly_has_inverse;
+    double distortion_poly_forward_u[10];
+    double distortion_poly_forward_v[10];
+    double distortion_poly_inverse_u[10];
+    double distortion_poly_inverse_v[10];
     uint32_t coord_sys;
     uint32_t psf_type;
     double psf_sigma_x;

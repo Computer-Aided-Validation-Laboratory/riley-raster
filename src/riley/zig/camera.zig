@@ -17,14 +17,22 @@ const camera_impl = if (cfg.simd == .on) camera_simd else camera_scalar;
 pub const DistortionModel = common.DistortionModel;
 pub const BrownConrady = common.BrownConrady;
 pub const BrownConradyExt = common.BrownConradyExt;
+pub const PolynomialOrder = common.PolynomialOrder;
+pub const PolynomialMap = common.PolynomialMap;
+pub const BidirectionalPolynomial = common.BidirectionalPolynomial;
+pub const BrownConradyPolynomial = common.BrownConradyPolynomial;
+pub const BrownConradyExtPolynomial = common.BrownConradyExtPolynomial;
 pub const DistortionInverseResult = common.DistortionInverseResult;
 pub const DistortionForwardJacResult = common.DistortionForwardJacResult;
 pub const forwardDistortionScalar = common.forwardDistortionScalar;
 pub const forwardDistortionWithJacScalar = common.forwardDistortionWithJacScalar;
 pub const inverseDistortionScalar = common.inverseDistortionScalar;
+pub const forwardDistortionModelScalar = common.forwardDistortionModelScalar;
+pub const inverseDistortionModelScalar = common.inverseDistortionModelScalar;
 pub const forwardDistortionSIMD = common.forwardDistortionSIMD;
 pub const forwardDistortionWithJacSIMD = common.forwardDistortionWithJacSIMD;
 pub const inverseDistortionSIMD = common.inverseDistortionSIMD;
+pub const inverseDistortionModelSIMD = common.inverseDistortionModelSIMD;
 pub const SeparablePSF = common.SeparablePSF;
 pub const PixelBoxPSF = common.PixelBoxPSF;
 pub const GaussianPSF = common.GaussianPSF;
@@ -41,6 +49,7 @@ pub const FOVScaling = common.FOVScaling;
 
 pub const CameraPrepared = camera_impl.CameraPrepared;
 pub const allCamerasSharePixels = common.allCamerasSharePixels;
+pub const isNoDistortion = common.isNoDistortion;
 
 pub fn fillTileIdealCentersPerTile(
     camera: *const CameraPrepared,

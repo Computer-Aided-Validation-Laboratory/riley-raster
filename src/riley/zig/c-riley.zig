@@ -100,6 +100,13 @@ pub const CCameraInput = extern struct {
     distortion_k6: f64,
     distortion_p1: f64,
     distortion_p2: f64,
+    distortion_poly_order: u32,
+    distortion_poly_has_forward: u8,
+    distortion_poly_has_inverse: u8,
+    distortion_poly_forward_u: [10]f64,
+    distortion_poly_forward_v: [10]f64,
+    distortion_poly_inverse_u: [10]f64,
+    distortion_poly_inverse_v: [10]f64,
     coord_sys: u32,
     psf_type: u32,
     psf_sigma_x: f64,
@@ -425,6 +432,34 @@ fn psfFromC(in_camera: *const CCameraInput) !cam.PointSpreadFunc {
 }
 
 fn distortionFromC(in_camera: *const CCameraInput) !cam.DistortionModel {
+    const poly_order: cam.PolynomialOrder = switch (in_camera.distortion_poly_order) {
+        0, 2 => .quadratic,
+        1 => .linear,
+        3 => .cubic,
+        else => return error.InvalidPolynomialOrder,
+    };
+    const poly_has_forward = in_camera.distortion_poly_has_forward != 0;
+    const poly_has_inverse = in_camera.distortion_poly_has_inverse != 0;
+    var polynomial: ?cam.BidirectionalPolynomial = null;
+    if (poly_has_forward or poly_has_inverse) {
+        var poly: cam.BidirectionalPolynomial = .{};
+        if (poly_has_forward) {
+            poly.forward_map = .{
+                .order = poly_order,
+                .coeffs_u = in_camera.distortion_poly_forward_u,
+                .coeffs_v = in_camera.distortion_poly_forward_v,
+            };
+        }
+        if (poly_has_inverse) {
+            poly.inverse_map = .{
+                .order = poly_order,
+                .coeffs_u = in_camera.distortion_poly_inverse_u,
+                .coeffs_v = in_camera.distortion_poly_inverse_v,
+            };
+        }
+        polynomial = poly;
+    }
+
     return switch (in_camera.distortion_model) {
         0 => .none,
         1 => .{ .brown_conrady = .{
@@ -443,6 +478,30 @@ fn distortionFromC(in_camera: *const CCameraInput) !cam.DistortionModel {
             .k6 = in_camera.distortion_k6,
             .p1 = in_camera.distortion_p1,
             .p2 = in_camera.distortion_p2,
+        } },
+        3 => .{ .polynomial = polynomial orelse return error.MissingPolynomialMap },
+        4 => .{ .brown_conrady_polynomial = .{
+            .brown_conrady = .{
+                .k1 = in_camera.distortion_k1,
+                .k2 = in_camera.distortion_k2,
+                .k3 = in_camera.distortion_k3,
+                .p1 = in_camera.distortion_p1,
+                .p2 = in_camera.distortion_p2,
+            },
+            .polynomial = polynomial orelse return error.MissingPolynomialMap,
+        } },
+        5 => .{ .brown_conrady_ext_polynomial = .{
+            .brown_conrady_ext = .{
+                .k1 = in_camera.distortion_k1,
+                .k2 = in_camera.distortion_k2,
+                .k3 = in_camera.distortion_k3,
+                .k4 = in_camera.distortion_k4,
+                .k5 = in_camera.distortion_k5,
+                .k6 = in_camera.distortion_k6,
+                .p1 = in_camera.distortion_p1,
+                .p2 = in_camera.distortion_p2,
+            },
+            .polynomial = polynomial orelse return error.MissingPolynomialMap,
         } },
         else => error.InvalidDistortionModel,
     };
@@ -1185,6 +1244,13 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
         .distortion_k6 = 0.0,
         .distortion_p1 = 0.0,
         .distortion_p2 = 0.0,
+        .distortion_poly_order = @intFromEnum(cam.PolynomialOrder.quadratic),
+        .distortion_poly_has_forward = 0,
+        .distortion_poly_has_inverse = 0,
+        .distortion_poly_forward_u = [_]f64{0.0} ** 10,
+        .distortion_poly_forward_v = [_]f64{0.0} ** 10,
+        .distortion_poly_inverse_u = [_]f64{0.0} ** 10,
+        .distortion_poly_inverse_v = [_]f64{0.0} ** 10,
         .coord_sys = @intFromEnum(in_camera.coord_sys),
         .psf_type = 0,
         .psf_sigma_x = 0.0,
@@ -1214,6 +1280,64 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
             out_camera.distortion_k6 = model.k6;
             out_camera.distortion_p1 = model.p1;
             out_camera.distortion_p2 = model.p2;
+        },
+        .polynomial => |poly| {
+            out_camera.distortion_model = 3;
+            if (poly.forward_map) |forward_map| {
+                out_camera.distortion_poly_order = @intFromEnum(forward_map.order);
+                out_camera.distortion_poly_has_forward = 1;
+                out_camera.distortion_poly_forward_u = forward_map.coeffs_u;
+                out_camera.distortion_poly_forward_v = forward_map.coeffs_v;
+            }
+            if (poly.inverse_map) |inverse_map| {
+                out_camera.distortion_poly_order = @intFromEnum(inverse_map.order);
+                out_camera.distortion_poly_has_inverse = 1;
+                out_camera.distortion_poly_inverse_u = inverse_map.coeffs_u;
+                out_camera.distortion_poly_inverse_v = inverse_map.coeffs_v;
+            }
+        },
+        .brown_conrady_polynomial => |chain| {
+            out_camera.distortion_model = 4;
+            out_camera.distortion_k1 = chain.brown_conrady.k1;
+            out_camera.distortion_k2 = chain.brown_conrady.k2;
+            out_camera.distortion_k3 = chain.brown_conrady.k3;
+            out_camera.distortion_p1 = chain.brown_conrady.p1;
+            out_camera.distortion_p2 = chain.brown_conrady.p2;
+            if (chain.polynomial.forward_map) |forward_map| {
+                out_camera.distortion_poly_order = @intFromEnum(forward_map.order);
+                out_camera.distortion_poly_has_forward = 1;
+                out_camera.distortion_poly_forward_u = forward_map.coeffs_u;
+                out_camera.distortion_poly_forward_v = forward_map.coeffs_v;
+            }
+            if (chain.polynomial.inverse_map) |inverse_map| {
+                out_camera.distortion_poly_order = @intFromEnum(inverse_map.order);
+                out_camera.distortion_poly_has_inverse = 1;
+                out_camera.distortion_poly_inverse_u = inverse_map.coeffs_u;
+                out_camera.distortion_poly_inverse_v = inverse_map.coeffs_v;
+            }
+        },
+        .brown_conrady_ext_polynomial => |chain| {
+            out_camera.distortion_model = 5;
+            out_camera.distortion_k1 = chain.brown_conrady_ext.k1;
+            out_camera.distortion_k2 = chain.brown_conrady_ext.k2;
+            out_camera.distortion_k3 = chain.brown_conrady_ext.k3;
+            out_camera.distortion_k4 = chain.brown_conrady_ext.k4;
+            out_camera.distortion_k5 = chain.brown_conrady_ext.k5;
+            out_camera.distortion_k6 = chain.brown_conrady_ext.k6;
+            out_camera.distortion_p1 = chain.brown_conrady_ext.p1;
+            out_camera.distortion_p2 = chain.brown_conrady_ext.p2;
+            if (chain.polynomial.forward_map) |forward_map| {
+                out_camera.distortion_poly_order = @intFromEnum(forward_map.order);
+                out_camera.distortion_poly_has_forward = 1;
+                out_camera.distortion_poly_forward_u = forward_map.coeffs_u;
+                out_camera.distortion_poly_forward_v = forward_map.coeffs_v;
+            }
+            if (chain.polynomial.inverse_map) |inverse_map| {
+                out_camera.distortion_poly_order = @intFromEnum(inverse_map.order);
+                out_camera.distortion_poly_has_inverse = 1;
+                out_camera.distortion_poly_inverse_u = inverse_map.coeffs_u;
+                out_camera.distortion_poly_inverse_v = inverse_map.coeffs_v;
+            }
         },
     }
 

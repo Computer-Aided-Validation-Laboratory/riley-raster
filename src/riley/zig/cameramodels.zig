@@ -12,6 +12,11 @@ const simd = @import("cameramodels_simd.zig");
 pub const DistortionModel = common.DistortionModel;
 pub const BrownConrady = common.BrownConrady;
 pub const BrownConradyExt = common.BrownConradyExt;
+pub const PolynomialOrder = common.PolynomialOrder;
+pub const PolynomialMap = common.PolynomialMap;
+pub const BidirectionalPolynomial = common.BidirectionalPolynomial;
+pub const BrownConradyPolynomial = common.BrownConradyPolynomial;
+pub const BrownConradyExtPolynomial = common.BrownConradyExtPolynomial;
 pub const DistortionInverseResult = common.DistortionInverseResult;
 pub const DistortionForwardJacResult = common.DistortionForwardJacResult;
 
@@ -26,8 +31,11 @@ pub const preparePSF = common.preparePSF;
 pub const forwardDistortionScalar = common.forwardDistortionScalar;
 pub const forwardDistortionWithJacScalar = common.forwardDistortionWithJacScalar;
 pub const inverseDistortionScalar = common.inverseDistortionScalar;
+pub const forwardDistortionModelScalar = common.forwardDistortionModelScalar;
+pub const inverseDistortionModelScalar = common.inverseDistortionModelScalar;
 
 pub const DistortionForwardJacSIMDResult = simd.DistortionForwardJacSIMDResult;
 pub const forwardDistortionSIMD = simd.forwardDistortionSIMD;
 pub const forwardDistortionWithJacSIMD = simd.forwardDistortionWithJacSIMD;
 pub const inverseDistortionSIMD = simd.inverseDistortionSIMD;
+pub const inverseDistortionModelSIMD = simd.inverseDistortionModelSIMD;

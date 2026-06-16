@@ -70,23 +70,12 @@ pub fn calcPinholeRasterPointSIMD(
     const v_y_dist = (v_observed_y_px - @as(VecSF, @splat(offsets.y_off))) /
         @as(VecSF, @splat(focal_px.fy));
 
-    const solved = switch (camera.distortion) {
-        .brown_conrady => |bc| try cameramodels.inverseDistortionSIMD(
-            @TypeOf(bc),
-            bc,
-            v_x_dist,
-            v_y_dist,
-            v_lane_active,
-        ),
-        .brown_conrady_ext => |bc_ext| try cameramodels.inverseDistortionSIMD(
-            @TypeOf(bc_ext),
-            bc_ext,
-            v_x_dist,
-            v_y_dist,
-            v_lane_active,
-        ),
-        .none => unreachable,
-    };
+    const solved = try cameramodels.inverseDistortionModelSIMD(
+        camera.distortion,
+        v_x_dist,
+        v_y_dist,
+        v_lane_active,
+    );
     return .{
         .x = solved.x * @as(VecSF, @splat(focal_px.fx)) +
             @as(VecSF, @splat(offsets.x_off)),

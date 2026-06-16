@@ -215,6 +215,45 @@ fn writeDistortionRows(
                 distortion.p2,
             });
         },
+        .polynomial => {
+            try writer.writeAll("distortion_model,name,polynomial\n");
+        },
+        .brown_conrady_polynomial => |chain| {
+            try writer.writeAll("distortion_model,name,brown_conrady_polynomial\n");
+            try writer.print("distortion_k1,unitless,{d:.17}\n", .{
+                chain.brown_conrady.k1,
+            });
+            try writer.print("distortion_k2,unitless,{d:.17}\n", .{
+                chain.brown_conrady.k2,
+            });
+            try writer.print("distortion_k3,unitless,{d:.17}\n", .{
+                chain.brown_conrady.k3,
+            });
+            try writer.print("distortion_p1,unitless,{d:.17}\n", .{
+                chain.brown_conrady.p1,
+            });
+            try writer.print("distortion_p2,unitless,{d:.17}\n", .{
+                chain.brown_conrady.p2,
+            });
+        },
+        .brown_conrady_ext_polynomial => |chain| {
+            try writer.writeAll("distortion_model,name,brown_conrady_ext_polynomial\n");
+            try writer.print("distortion_k1,unitless,{d:.17}\n", .{
+                chain.brown_conrady_ext.k1,
+            });
+            try writer.print("distortion_k2,unitless,{d:.17}\n", .{
+                chain.brown_conrady_ext.k2,
+            });
+            try writer.print("distortion_k3,unitless,{d:.17}\n", .{
+                chain.brown_conrady_ext.k3,
+            });
+            try writer.print("distortion_p1,unitless,{d:.17}\n", .{
+                chain.brown_conrady_ext.p1,
+            });
+            try writer.print("distortion_p2,unitless,{d:.17}\n", .{
+                chain.brown_conrady_ext.p2,
+            });
+        },
     }
 }
 

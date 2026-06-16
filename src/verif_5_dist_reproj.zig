@@ -160,6 +160,21 @@ fn observedToIdealRasterWithIters(
                 .iters = solved.iters,
             };
         },
+        .polynomial,
+        .brown_conrady_polynomial,
+        .brown_conrady_ext_polynomial,
+        => blk: {
+            const solved = try cam.inverseDistortionModelScalar(
+                camera.distortion,
+                x_dist,
+                y_dist,
+            );
+            break :blk .{
+                .x = solved.x * focal_px.fx + offsets.x_off,
+                .y = solved.y * focal_px.fy + offsets.y_off,
+                .iters = 0,
+            };
+        },
     };
 }
 
