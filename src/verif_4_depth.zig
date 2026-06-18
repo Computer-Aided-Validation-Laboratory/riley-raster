@@ -278,6 +278,7 @@ fn runCase(
         .disp = null,
         .shader = .{ .func = .{
             .uvs = null,
+            .coord_mode = .parametric,
             .builtin = .constant,
             .params = .{
                 .output_scale = 0.0,
@@ -295,6 +296,7 @@ fn runCase(
         .disp = null,
         .shader = .{ .func = .{
             .uvs = null,
+            .coord_mode = .parametric,
             .builtin = .constant,
             .params = .{
                 .output_scale = 0.0,

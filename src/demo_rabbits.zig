@@ -156,6 +156,7 @@ fn makeGreyMeshInput(
         } },
         .func => .{ .func = .{
             .uvs = uvs.array,
+            .coord_mode = .uv,
             .builtin = FuncShaderBuiltin.checker,
             .params = FuncShaderParams{
                 .coord_scale = .{

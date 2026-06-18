@@ -12,10 +12,48 @@ const buildconfig = @import("buildconfig.zig");
 const cfg = buildconfig.config;
 const tol = cfg.tolerance;
 
+pub const PolynomialOrder = enum(u8) {
+    linear = 1,
+    quadratic = 2,
+    cubic = 3,
+
+    pub fn termCount(self: PolynomialOrder) usize {
+        return switch (self) {
+            .linear => 3,
+            .quadratic => 6,
+            .cubic => 10,
+        };
+    }
+};
+
+pub const PolynomialMap = struct {
+    order: PolynomialOrder = .quadratic,
+    coeffs_u: [10]f64 = [_]f64{0.0} ** 10,
+    coeffs_v: [10]f64 = [_]f64{0.0} ** 10,
+};
+
+pub const BidirectionalPolynomial = struct {
+    forward_map: ?PolynomialMap = null,
+    inverse_map: ?PolynomialMap = null,
+};
+
+pub const BrownConradyPolynomial = struct {
+    brown_conrady: BrownConrady = .{},
+    polynomial: BidirectionalPolynomial = .{},
+};
+
+pub const BrownConradyExtPolynomial = struct {
+    brown_conrady_ext: BrownConradyExt = .{},
+    polynomial: BidirectionalPolynomial = .{},
+};
+
 pub const DistortionModel = union(enum) {
     none,
     brown_conrady: BrownConrady,
     brown_conrady_ext: BrownConradyExt,
+    polynomial: BidirectionalPolynomial,
+    brown_conrady_polynomial: BrownConradyPolynomial,
+    brown_conrady_ext_polynomial: BrownConradyExtPolynomial,
 };
 
 pub const BrownConrady = struct {
@@ -69,6 +107,9 @@ pub const DistortionForwardJacResult = struct {
     y_d: f64,
     jac: [2][2]f64,
 };
+
+const poly_powers_u = [10]u8{ 0, 1, 0, 2, 1, 0, 3, 2, 1, 0 };
+const poly_powers_v = [10]u8{ 0, 0, 1, 0, 1, 2, 0, 1, 2, 3 };
 
 pub fn forwardDistortionScalar(
     comptime DistortionType: type,
@@ -143,6 +184,230 @@ pub fn inverseDistortionScalar(
     y_d: f64,
 ) !DistortionInverseResult {
     return try distortionInverseFromModel(DistortionType, distortion, x_d, y_d);
+}
+
+pub fn forwardDistortionModelScalar(
+    distortion: DistortionModel,
+    x: f64,
+    y: f64,
+) [2]f64 {
+    return switch (distortion) {
+        .none => .{ x, y },
+        .brown_conrady => |bc| forwardDistortionScalar(BrownConrady, bc, x, y),
+        .brown_conrady_ext => |bc_ext| forwardDistortionScalar(BrownConradyExt, bc_ext, x, y),
+        .polynomial => |poly| polynomialForwardScalar(poly, x, y),
+        .brown_conrady_polynomial => |chain| blk: {
+            const brown = forwardDistortionScalar(
+                BrownConrady,
+                chain.brown_conrady,
+                x,
+                y,
+            );
+            break :blk polynomialForwardScalar(
+                chain.polynomial,
+                brown[0],
+                brown[1],
+            );
+        },
+        .brown_conrady_ext_polynomial => |chain| blk: {
+            const brown = forwardDistortionScalar(
+                BrownConradyExt,
+                chain.brown_conrady_ext,
+                x,
+                y,
+            );
+            break :blk polynomialForwardScalar(
+                chain.polynomial,
+                brown[0],
+                brown[1],
+            );
+        },
+    };
+}
+
+pub fn inverseDistortionModelScalar(
+    distortion: DistortionModel,
+    x_d: f64,
+    y_d: f64,
+) !DistortionInverseResult {
+    return switch (distortion) {
+        .none => .{ .x = x_d, .y = y_d },
+        .brown_conrady => |bc| inverseDistortionScalar(BrownConrady, bc, x_d, y_d),
+        .brown_conrady_ext => |bc_ext| inverseDistortionScalar(BrownConradyExt, bc_ext, x_d, y_d),
+        .polynomial => |poly| polynomialInverseScalar(poly, x_d, y_d),
+        .brown_conrady_polynomial => |chain| blk: {
+            const poly_inv = try polynomialInverseScalar(chain.polynomial, x_d, y_d);
+            break :blk inverseDistortionScalar(
+                BrownConrady,
+                chain.brown_conrady,
+                poly_inv.x,
+                poly_inv.y,
+            );
+        },
+        .brown_conrady_ext_polynomial => |chain| blk: {
+            const poly_inv = try polynomialInverseScalar(chain.polynomial, x_d, y_d);
+            break :blk inverseDistortionScalar(
+                BrownConradyExt,
+                chain.brown_conrady_ext,
+                poly_inv.x,
+                poly_inv.y,
+            );
+        },
+    };
+}
+
+fn polynomialForwardScalar(
+    polynomial: BidirectionalPolynomial,
+    x: f64,
+    y: f64,
+) [2]f64 {
+    if (polynomial.forward_map) |forward_map| {
+        return evaluatePolynomialMapScalar(forward_map, x, y);
+    }
+    if (polynomial.inverse_map) |inverse_map| {
+        const solved = invertPolynomialMapScalar(inverse_map, x, y) catch unreachable;
+        return .{ solved.x, solved.y };
+    }
+    unreachable;
+}
+
+fn polynomialInverseScalar(
+    polynomial: BidirectionalPolynomial,
+    x_d: f64,
+    y_d: f64,
+) !DistortionInverseResult {
+    if (polynomial.inverse_map) |inverse_map| {
+        const eval = evaluatePolynomialMapScalar(inverse_map, x_d, y_d);
+        return .{ .x = eval[0], .y = eval[1] };
+    }
+    if (polynomial.forward_map) |forward_map| {
+        return try invertPolynomialMapScalar(forward_map, x_d, y_d);
+    }
+    return error.MissingPolynomialMap;
+}
+
+fn evaluatePolynomialMapScalar(
+    polynomial: PolynomialMap,
+    x: f64,
+    y: f64,
+) [2]f64 {
+    const poly = evalPolynomialDisplacementScalar(polynomial, x, y);
+    return .{ x + poly.du, y + poly.dv };
+}
+
+fn evalPolynomialDisplacementScalar(
+    polynomial: PolynomialMap,
+    x: f64,
+    y: f64,
+) struct { du: f64, dv: f64 } {
+    var du: f64 = 0.0;
+    var dv: f64 = 0.0;
+    const term_count = polynomial.order.termCount();
+
+    for (0..term_count) |ii| {
+        const basis = powSmallScalar(x, poly_powers_u[ii]) *
+            powSmallScalar(y, poly_powers_v[ii]);
+        du += polynomial.coeffs_u[ii] * basis;
+        dv += polynomial.coeffs_v[ii] * basis;
+    }
+
+    return .{ .du = du, .dv = dv };
+}
+
+fn evaluatePolynomialMapWithJacScalar(
+    polynomial: PolynomialMap,
+    x: f64,
+    y: f64,
+) DistortionForwardJacResult {
+    const distorted = evaluatePolynomialMapScalar(polynomial, x, y);
+    var ddu_dx: f64 = 0.0;
+    var ddu_dy: f64 = 0.0;
+    var ddv_dx: f64 = 0.0;
+    var ddv_dy: f64 = 0.0;
+    const term_count = polynomial.order.termCount();
+
+    for (0..term_count) |ii| {
+        const pu = poly_powers_u[ii];
+        const pv = poly_powers_v[ii];
+
+        if (pu > 0) {
+            const basis_dx = @as(f64, @floatFromInt(pu)) *
+                powSmallScalar(x, pu - 1) *
+                powSmallScalar(y, pv);
+            ddu_dx += polynomial.coeffs_u[ii] * basis_dx;
+            ddv_dx += polynomial.coeffs_v[ii] * basis_dx;
+        }
+        if (pv > 0) {
+            const basis_dy = @as(f64, @floatFromInt(pv)) *
+                powSmallScalar(x, pu) *
+                powSmallScalar(y, pv - 1);
+            ddu_dy += polynomial.coeffs_u[ii] * basis_dy;
+            ddv_dy += polynomial.coeffs_v[ii] * basis_dy;
+        }
+    }
+
+    return .{
+        .x_d = distorted[0],
+        .y_d = distorted[1],
+        .jac = .{
+            .{ 1.0 + ddu_dx, ddu_dy },
+            .{ ddv_dx, 1.0 + ddv_dy },
+        },
+    };
+}
+
+fn invertPolynomialMapScalar(
+    polynomial: PolynomialMap,
+    x_d: f64,
+    y_d: f64,
+) !DistortionInverseResult {
+    var x = x_d;
+    var y = y_d;
+
+    const max_iters = cfg.distortion_newton_iter_max;
+    const tol_resid = tol.distortion.residual;
+    const tol_delta = tol.distortion.delta;
+
+    for (0..max_iters) |_| {
+        const fwd = evaluatePolynomialMapWithJacScalar(polynomial, x, y);
+        const f0 = fwd.x_d - x_d;
+        const f1 = fwd.y_d - y_d;
+
+        if (@max(@abs(f0), @abs(f1)) < tol_resid) {
+            return .{ .x = x, .y = y };
+        }
+
+        const a = fwd.jac[0][0];
+        const b = fwd.jac[0][1];
+        const c = fwd.jac[1][0];
+        const d = fwd.jac[1][1];
+        const det = a * d - b * c;
+        if (@abs(det) < tol.distortion.determinant) {
+            return error.SingularJacobian;
+        }
+
+        const delta_x = (-f0 * d + b * f1) / det;
+        const delta_y = (c * f0 - a * f1) / det;
+        x += delta_x;
+        y += delta_y;
+
+        if (@max(@abs(delta_x), @abs(delta_y)) < tol_delta) {
+            return .{ .x = x, .y = y };
+        }
+    }
+
+    return error.DistortionInverseFailed;
+}
+
+fn powSmallScalar(
+    x: f64,
+    power: u8,
+) f64 {
+    var out: f64 = 1.0;
+    for (0..power) |_| {
+        out *= x;
+    }
+    return out;
 }
 
 fn distortionForwardFromRadialScale(

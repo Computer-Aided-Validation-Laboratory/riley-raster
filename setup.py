@@ -85,8 +85,11 @@ class MultiBuildExt(build_ext):
         print(f"Creating library build output directory at:\n    {build_lib_path}\n")
 
         # Add platform specific runtime paths
-        if PLATFORM_INFO["runtime_lib_dir"] not in self.rpath:
-            self.rpath.append(PLATFORM_INFO["runtime_lib_dir"])
+        # Windows/MSVC does not support rpath/runtime_library_dirs
+        is_windows = platform.system().lower() == "windows"
+        if not is_windows:
+            if PLATFORM_INFO["runtime_lib_dir"] not in self.rpath:
+                self.rpath.append(PLATFORM_INFO["runtime_lib_dir"])
 
         # Extract a list of all extension output directories (will be sub
         # directories of the root directories above)
@@ -101,15 +104,17 @@ class MultiBuildExt(build_ext):
             if dd not in self.library_dirs:
                 self.library_dirs.append(dd)
 
-            if dd not in self.rpath:
-                self.rpath.append(dd)
+            if not is_windows:
+                if dd not in self.rpath:
+                    self.rpath.append(dd)
 
             for ee in self.extensions:
                 if dd not in ee.library_dirs:
                     ee.library_dirs.append(dd)
 
-                if dd not in ee.runtime_library_dirs:
-                    ee.runtime_library_dirs.append(dd)
+                if not is_windows:
+                    if dd not in ee.runtime_library_dirs:
+                        ee.runtime_library_dirs.append(dd)
 
         # Print the configures extensions libraries
         for ee in self.extensions:
@@ -258,6 +263,19 @@ class MultiBuildExt(build_ext):
             print(f"Output python extension to:\n    {zig_python_output}")
             print()
 
+            is_windows = platform.system().lower() == "windows"
+            zig_target_args = []
+            if is_windows:
+                # Target MSVC ABI on Windows to ensure CRT compatibility when linking with MSVC
+                arch = platform.machine().lower()
+                if arch in ("amd64", "x86_64"):
+                    target_triple = "x86_64-windows-msvc"
+                elif arch in ("arm64", "aarch64"):
+                    target_triple = "aarch64-windows-msvc"
+                else:
+                    target_triple = "i386-windows-msvc"
+                zig_target_args = ["-target", target_triple]
+
             zig_build = [
                 "build-lib",
                 "-dynamic",
@@ -265,6 +283,7 @@ class MultiBuildExt(build_ext):
                 "ReleaseFast",
                 "-lc",
                 f"-femit-bin={zig_python_output}",
+                *zig_target_args,
                 *[f"-I{d}" for d in self.include_dirs],
                 *ext.extra_compile_args,
                 *ext.extra_link_args,
@@ -286,6 +305,17 @@ class MultiBuildExt(build_ext):
                 for zig_lib_output in zig_lib_outputs:
                     shutil.copy2(zig_python_output,zig_lib_output)
                     print(f"Copied python extension to:\n    {Path(zig_lib_output)}")
+
+                if platform.system().lower() == "windows":
+                    # MSVC linker expects "c_riley.lib" when linking against "c_riley"
+                    # But Zig creates "[first_source_path.stem].lib" (e.g. "c-riley.lib")
+                    # So we copy it to c_riley.lib in the output directory
+                    zig_lib_name_win = f"{first_source_path.stem}.lib"
+                    zig_lib_path_win = output_ext_dir / zig_lib_name_win
+                    target_lib_path_win = output_ext_dir / "c_riley.lib"
+                    if zig_lib_path_win.is_file():
+                        shutil.copy2(zig_lib_path_win, target_lib_path_win)
+                        print(f"Copied import library to:\n    {target_lib_path_win}")
 
             except subprocess.CalledProcessError as e:
                 print(f"{ext.name}: Zig build failed: {e}")
@@ -322,14 +352,26 @@ H_DIRS = [
     str(PROJECT_ROOT / "src" / "riley" / "zig"),
 ]
 
+is_windows = platform.system().lower() == "windows"
+
+# Configure compiler flags based on OS to support both MSVC and GCC/Clang
+if is_windows:
+    cython_compile_args = ["/fp:fast", "/O2"]
+    cython_link_args = ["msvcrt.lib", "ucrt.lib", "vcruntime.lib"]
+    # Removed -fincremental due to incomplete LLD COFF implementation on Windows
+    zig_compile_args = ["-mcpu=native"]
+    runtime_lib_dirs = []
+else:
+    cython_compile_args = ["-ffast-math", "-O3"]
+    cython_link_args = []
+    zig_compile_args = ["-fincremental", "-mcpu=native"]
+    runtime_lib_dirs = [PLATFORM_INFO["runtime_lib_dir"]]
+
 # zig extension
 ext_zig = Extension(
     name="riley.zig.c_riley",
     sources=["src/riley/zig/c-riley.zig",],
-    extra_compile_args=[
-        "-fincremental",
-        "-mcpu=native",
-    ],
+    extra_compile_args=zig_compile_args,
 )
 
 # cython extension linking zig
@@ -339,9 +381,9 @@ ext_cython = Extension(
         include_dirs=H_DIRS,
         libraries=["c_riley"],
         library_dirs=[],            # populated by run() above
-        runtime_library_dirs=[PLATFORM_INFO["runtime_lib_dir"],],
-        extra_compile_args=["-ffast-math",
-                            "-O3"],
+        runtime_library_dirs=runtime_lib_dirs,
+        extra_compile_args=cython_compile_args,
+        extra_link_args=cython_link_args,
     )
 
 ext_modules = [ext_zig] + cythonize(ext_cython,annotate=True)

@@ -501,6 +501,7 @@ pub fn generateDistortEdgeGold(
                 .{
                     .func = .{
                         .uvs = null,
+                        .coord_mode = .parametric,
                         .builtin = .constant,
                         .normal_type = .none,
                     },
@@ -578,6 +579,7 @@ pub fn generateDistortEdgeGoldForHullMode(
                 .{
                     .func = .{
                         .uvs = null,
+                        .coord_mode = .parametric,
                         .builtin = .constant,
                         .normal_type = .none,
                     },

@@ -139,9 +139,10 @@ fn initCameraForSimDataAllFrames(
             .connect = sim_data.connect,
             .disp = null,
             .shader = .{
-                .func = .{
-                    .uvs = null,
-                    .builtin = .constant,
+            .func = .{
+                .uvs = null,
+                .coord_mode = .parametric,
+                .builtin = .constant,
                     .normal_type = .none,
                 },
             },

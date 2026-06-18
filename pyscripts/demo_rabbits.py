@@ -117,6 +117,7 @@ def main() -> None:
         return riley.Mesh(
             shader_type=riley.ShaderType.func,
             uvs=uvs,
+            func_shader_coord_mode=riley.FuncCoordMode.uv,
             func_shader_builtin=riley.FuncShaderBuiltin.checker,
             func_shader_params=riley.FuncShaderParams(
                 coord_scale=(

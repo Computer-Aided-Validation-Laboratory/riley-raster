@@ -163,6 +163,7 @@ pub fn main(init: std.process.Init) !void {
                     if (std.mem.eql(u8, shader_name, "funcconst")) {
                         mesh_input.shader = .{ .func = .{
                             .uvs = uv_map.array,
+                            .coord_mode = .uv,
                             .builtin = .constant,
                             .params = .{},
                             .bits = 8,

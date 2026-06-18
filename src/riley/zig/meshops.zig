@@ -62,6 +62,7 @@ pub const MeshStatic = struct {
 // displacement.
 pub const MeshFrameWorkspace = struct {
     coords_nodes: meshio.Coords,
+    coords_nodes_def_world: ?meshio.Coords,
     visible_orig_elem_indices: []usize,
     elem_bboxes: []rops.ElemBBox,
     elems_in_image: usize,
@@ -339,6 +340,7 @@ pub fn initMeshStatic(
                 null;
             shader_static = .{ .func = .{
                 .elem_uvs = elem_uvs,
+                .coord_mode = tex_func_in.coord_mode,
                 .builtin = tex_func_in.builtin,
                 .params = tex_func_in.params,
                 .bits = tex_func_in.bits,
@@ -357,6 +359,7 @@ pub fn initMeshStatic(
                 null;
             shader_static = .{ .func_rgb = .{
                 .elem_uvs = elem_uvs,
+                .coord_mode = tex_func_in.coord_mode,
                 .builtin = tex_func_in.builtin,
                 .params = tex_func_in.params,
                 .bits = tex_func_in.bits,
@@ -419,6 +422,17 @@ fn initMeshFrameWorkspace(
             allocator,
             mesh_static.coords_orig.mat.rows_num,
         ),
+        .coords_nodes_def_world = if (switch (mesh_static.shader) {
+            .func => |func_static| func_static.coord_mode == .world_deformed,
+            .func_rgb => |func_static| func_static.coord_mode == .world_deformed,
+            else => false,
+        })
+            try meshio.Coords.initAlloc(
+                allocator,
+                mesh_static.coords_orig.mat.rows_num,
+            )
+        else
+            null,
         .visible_orig_elem_indices = &.{},
         .elem_bboxes = &.{},
         .elems_in_image = 0,
@@ -593,6 +607,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 self.nodes_num,
                 self.node_chunk_size,
             );
+            if (self.mesh_workspace.coords_nodes_def_world) |*coords_def_world| {
+                @memcpy(coords_def_world.mem, self.mesh_workspace.coords_nodes.mem);
+            }
         }
 
         const TransformCoordsStage = struct {
@@ -843,7 +860,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
         }
 
-        fn gatherVisibleCoords(self: *FrameMeshPipelineType) !MeshPrepared {
+        fn gatherVisibleElemCoordsFromNodes(
+            self: *FrameMeshPipelineType,
+            coords_nodes: *const meshio.Coords,
+        ) !ndarray.NDArray(f64) {
             const N = comptime MT.getNodesNum();
             var elem_coords = try ndarray.NDArray(f64).initFlat(
                 self.allocator,
@@ -852,7 +872,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
             var gather_coords_stage = GatherVisibleCoordsStage{
                 .connect = &self.mesh_static.connect,
-                .coords_nodes = &self.mesh_workspace.coords_nodes,
+                .coords_nodes = coords_nodes,
                 .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
                 .elem_coords = &elem_coords,
             };
@@ -863,6 +883,14 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 runGatherVisibleCoords,
                 self.mesh_workspace.elems_in_image,
                 self.visible_chunk_size,
+            );
+
+            return elem_coords;
+        }
+
+        fn gatherVisibleCoords(self: *FrameMeshPipelineType) !MeshPrepared {
+            const elem_coords = try self.gatherVisibleElemCoordsFromNodes(
+                &self.mesh_workspace.coords_nodes,
             );
 
             return .{
@@ -1140,7 +1168,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .{ .min = 0.0, .range = 1.0 },
             );
 
-            const elem_uvs = if (func_static.elem_uvs) |elem_uvs_full| blk: {
+            const elem_uvs = if (func_static.coord_mode == .uv) blk: {
+                const elem_uvs_full = func_static.elem_uvs orelse
+                    return error.MissingUVsForFuncShader;
                 var elem_uvs = try ndarray.NDArray(f64).initFlat(
                     self.allocator,
                     &[_]usize{
@@ -1166,10 +1196,25 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 break :blk elem_uvs;
             } else null;
 
+            const elem_world_ref = if (func_static.coord_mode == .world_reference)
+                try self.gatherVisibleElemCoordsFromNodes(&self.mesh_static.coords_orig)
+            else
+                null;
+            const elem_world_def = if (func_static.coord_mode == .world_deformed)
+                try self.gatherVisibleElemCoordsFromNodes(
+                    &(self.mesh_workspace.coords_nodes_def_world orelse
+                        return error.MissingWorldDeformedCoords),
+                )
+            else
+                null;
+
             const elem_normals = try self.prepareVisibleNormals(func_static.normal_type);
             if (comptime channels == 1) {
                 return .{ .func = .{
                     .elem_uvs = elem_uvs,
+                    .elem_world_ref = elem_world_ref,
+                    .elem_world_def = elem_world_def,
+                    .coord_mode = func_static.coord_mode,
                     .builtin = func_static.builtin,
                     .params = func_static.params,
                     .bits = func_static.bits,
@@ -1182,6 +1227,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             } else {
                 return .{ .func_rgb = .{
                     .elem_uvs = elem_uvs,
+                    .elem_world_ref = elem_world_ref,
+                    .elem_world_def = elem_world_def,
+                    .coord_mode = func_static.coord_mode,
                     .builtin = func_static.builtin,
                     .params = func_static.params,
                     .bits = func_static.bits,

@@ -280,15 +280,18 @@ pub inline fn fillFuncClipSIMD(
     var v_coord_0: VecSF = v_xi;
     var v_coord_1: VecSF = v_eta;
 
-    if (sh.elem_uvs != null) {
-        v_coord_0 = @splat(0.0);
-        v_coord_1 = @splat(0.0);
-        inline for (0..N) |nn| {
-            v_coord_0 += v_weights[nn] *
-                @as(VecSF, @splat(ctx_shade.shader_buf.data[nn]));
-            v_coord_1 += v_weights[nn] *
-                @as(VecSF, @splat(ctx_shade.shader_buf.data[N + nn]));
-        }
+    switch (sh.coord_mode) {
+        .uv, .world_reference, .world_deformed => {
+            v_coord_0 = @splat(0.0);
+            v_coord_1 = @splat(0.0);
+            inline for (0..N) |nn| {
+                v_coord_0 += v_weights[nn] *
+                    @as(VecSF, @splat(ctx_shade.shader_buf.func_coords[nn]));
+                v_coord_1 += v_weights[nn] *
+                    @as(VecSF, @splat(ctx_shade.shader_buf.func_coords[N + nn]));
+            }
+        },
+        .parametric => {},
     }
 
     const coord_0_arr: [S]f64 = v_coord_0;
@@ -353,18 +356,21 @@ pub inline fn fillFuncPerspSIMD(
     var v_coord_0: VecSF = v_xi;
     var v_coord_1: VecSF = v_eta;
 
-    if (sh.elem_uvs != null) {
-        v_coord_0 = @splat(0.0);
-        v_coord_1 = @splat(0.0);
-        inline for (0..N) |nn| {
-            const v_inv_z = v_nodes_inv_z[nn];
-            v_coord_0 += v_weights[nn] *
-                @as(VecSF, @splat(ctx_shade.shader_buf.data[nn])) * v_inv_z;
-            v_coord_1 += v_weights[nn] *
-                @as(VecSF, @splat(ctx_shade.shader_buf.data[N + nn])) * v_inv_z;
-        }
-        v_coord_0 *= v_subpx_z;
-        v_coord_1 *= v_subpx_z;
+    switch (sh.coord_mode) {
+        .uv, .world_reference, .world_deformed => {
+            v_coord_0 = @splat(0.0);
+            v_coord_1 = @splat(0.0);
+            inline for (0..N) |nn| {
+                const v_inv_z = v_nodes_inv_z[nn];
+                v_coord_0 += v_weights[nn] *
+                    @as(VecSF, @splat(ctx_shade.shader_buf.func_coords[nn])) * v_inv_z;
+                v_coord_1 += v_weights[nn] *
+                    @as(VecSF, @splat(ctx_shade.shader_buf.func_coords[N + nn])) * v_inv_z;
+            }
+            v_coord_0 *= v_subpx_z;
+            v_coord_1 *= v_subpx_z;
+        },
+        .parametric => {},
     }
 
     const coord_0_arr: [S]f64 = v_coord_0;

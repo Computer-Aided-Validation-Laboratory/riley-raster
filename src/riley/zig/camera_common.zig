@@ -23,14 +23,22 @@ const camera_impl = if (cfg.simd == .on) camera_simd else camera_scalar;
 pub const DistortionModel = cameramodels.DistortionModel;
 pub const BrownConrady = cameramodels.BrownConrady;
 pub const BrownConradyExt = cameramodels.BrownConradyExt;
+pub const PolynomialOrder = cameramodels.PolynomialOrder;
+pub const PolynomialMap = cameramodels.PolynomialMap;
+pub const BidirectionalPolynomial = cameramodels.BidirectionalPolynomial;
+pub const BrownConradyPolynomial = cameramodels.BrownConradyPolynomial;
+pub const BrownConradyExtPolynomial = cameramodels.BrownConradyExtPolynomial;
 pub const DistortionInverseResult = cameramodels.DistortionInverseResult;
 pub const DistortionForwardJacResult = cameramodels.DistortionForwardJacResult;
 pub const forwardDistortionScalar = cameramodels.forwardDistortionScalar;
 pub const forwardDistortionWithJacScalar = cameramodels.forwardDistortionWithJacScalar;
 pub const inverseDistortionScalar = cameramodels.inverseDistortionScalar;
+pub const forwardDistortionModelScalar = cameramodels.forwardDistortionModelScalar;
+pub const inverseDistortionModelScalar = cameramodels.inverseDistortionModelScalar;
 pub const forwardDistortionSIMD = cameramodels.forwardDistortionSIMD;
 pub const forwardDistortionWithJacSIMD = cameramodels.forwardDistortionWithJacSIMD;
 pub const inverseDistortionSIMD = cameramodels.inverseDistortionSIMD;
+pub const inverseDistortionModelSIMD = cameramodels.inverseDistortionModelSIMD;
 pub const SeparablePSF = cameramodels.SeparablePSF;
 pub const PixelBoxPSF = cameramodels.PixelBoxPSF;
 pub const GaussianPSF = cameramodels.GaussianPSF;
@@ -80,6 +88,13 @@ pub const CameraPrepared = CameraPreparedType(camera_impl);
 pub inline fn isNoDistortion(distortion: anytype) bool {
     return switch (distortion) {
         .none => true,
+        .polynomial => |poly| poly.forward_map == null and poly.inverse_map == null,
+        .brown_conrady_polynomial => |chain| chain.polynomial.forward_map == null and
+            chain.polynomial.inverse_map == null and
+            std.meta.eql(chain.brown_conrady, BrownConrady{}),
+        .brown_conrady_ext_polynomial => |chain| chain.polynomial.forward_map == null and
+            chain.polynomial.inverse_map == null and
+            std.meta.eql(chain.brown_conrady_ext, BrownConradyExt{}),
         else => false,
     };
 }
@@ -108,32 +123,14 @@ pub fn calcPinholeRasterPointScalar(
     const x_dist = (observed_x_px - offsets.x_off) / focal_px.fx;
     const y_dist = (observed_y_px - offsets.y_off) / focal_px.fy;
 
-    return switch (camera.distortion) {
-        .none => .{ observed_x_px, observed_y_px },
-        .brown_conrady => |bc| blk: {
-            const solved = try cameramodels.inverseDistortionScalar(
-                @TypeOf(bc),
-                bc,
-                x_dist,
-                y_dist,
-            );
-            break :blk .{
-                solved.x * focal_px.fx + offsets.x_off,
-                solved.y * focal_px.fy + offsets.y_off,
-            };
-        },
-        .brown_conrady_ext => |bc_ext| blk: {
-            const solved = try cameramodels.inverseDistortionScalar(
-                @TypeOf(bc_ext),
-                bc_ext,
-                x_dist,
-                y_dist,
-            );
-            break :blk .{
-                solved.x * focal_px.fx + offsets.x_off,
-                solved.y * focal_px.fy + offsets.y_off,
-            };
-        },
+    const solved = try cameramodels.inverseDistortionModelScalar(
+        camera.distortion,
+        x_dist,
+        y_dist,
+    );
+    return .{
+        solved.x * focal_px.fx + offsets.x_off,
+        solved.y * focal_px.fy + offsets.y_off,
     };
 }
 
@@ -524,6 +521,147 @@ test "BrownConradyExt.forwardInverse" {
 
     try std.testing.expectApproxEqAbs(x_ideal, recovered.x, 1e-10);
     try std.testing.expectApproxEqAbs(y_ideal, recovered.y, 1e-10);
+}
+
+test "Polynomial.forwardOnlyRoundTrip" {
+    const model = DistortionModel{
+        .polynomial = .{
+            .forward_map = .{
+                .order = .linear,
+                .coeffs_u = .{ 0.0, 0.04, -0.015 } ++ [_]f64{0.0} ** 7,
+                .coeffs_v = .{ 0.0, 0.01, 0.03 } ++ [_]f64{0.0} ** 7,
+            },
+        },
+    };
+
+    const x_ideal = 0.12;
+    const y_ideal = -0.18;
+    const distorted = cameramodels.forwardDistortionModelScalar(
+        model,
+        x_ideal,
+        y_ideal,
+    );
+    const recovered = try cameramodels.inverseDistortionModelScalar(
+        model,
+        distorted[0],
+        distorted[1],
+    );
+
+    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, 1e-10);
+    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, 1e-10);
+}
+
+test "Polynomial.inverseOnlyRoundTrip" {
+    const model = DistortionModel{
+        .polynomial = .{
+            .inverse_map = .{
+                .order = .linear,
+                .coeffs_u = .{ 0.0, -0.03, 0.01 } ++ [_]f64{0.0} ** 7,
+                .coeffs_v = .{ 0.0, 0.02, -0.025 } ++ [_]f64{0.0} ** 7,
+            },
+        },
+    };
+
+    const x_ideal = -0.16;
+    const y_ideal = 0.11;
+    const distorted = cameramodels.forwardDistortionModelScalar(
+        model,
+        x_ideal,
+        y_ideal,
+    );
+    const recovered = try cameramodels.inverseDistortionModelScalar(
+        model,
+        distorted[0],
+        distorted[1],
+    );
+
+    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, 1e-10);
+    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, 1e-10);
+}
+
+test "BrownConradyPolynomial.forwardInverse" {
+    const model = DistortionModel{
+        .brown_conrady_polynomial = .{
+            .brown_conrady = .{
+                .k1 = -0.08,
+                .k2 = 0.01,
+                .k3 = -0.002,
+                .p1 = 0.0004,
+                .p2 = -0.0007,
+            },
+            .polynomial = .{
+                .forward_map = .{
+                    .order = .quadratic,
+                    .coeffs_u = .{ 0.0, 0.01, -0.005, 0.002, 0.001, -0.001 } ++ [_]f64{0.0} ** 4,
+                    .coeffs_v = .{ 0.0, -0.004, 0.012, 0.001, -0.002, 0.0015 } ++ [_]f64{0.0} ** 4,
+                },
+            },
+        },
+    };
+
+    const x_ideal = 0.09;
+    const y_ideal = -0.14;
+    const distorted = cameramodels.forwardDistortionModelScalar(
+        model,
+        x_ideal,
+        y_ideal,
+    );
+    const recovered = try cameramodels.inverseDistortionModelScalar(
+        model,
+        distorted[0],
+        distorted[1],
+    );
+
+    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, 1e-10);
+    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, 1e-10);
+}
+
+test "Polynomial.inverseOnlySIMDRoundTrip" {
+    const VecSB = buildconfig.VecSB;
+    const VecSF = buildconfig.VecSF;
+    const lane_count = buildconfig.SimdWidth;
+    const model = DistortionModel{
+        .polynomial = .{
+            .inverse_map = .{
+                .order = .linear,
+                .coeffs_u = .{ 0.0, -0.03, 0.01 } ++ [_]f64{0.0} ** 7,
+                .coeffs_v = .{ 0.0, 0.02, -0.025 } ++ [_]f64{0.0} ** 7,
+            },
+        },
+    };
+
+    var x_ideal: [buildconfig.SimdWidth]f64 = [_]f64{0.0} ** buildconfig.SimdWidth;
+    var y_ideal: [buildconfig.SimdWidth]f64 = [_]f64{0.0} ** buildconfig.SimdWidth;
+    var x_dist: [buildconfig.SimdWidth]f64 = [_]f64{0.0} ** buildconfig.SimdWidth;
+    var y_dist: [buildconfig.SimdWidth]f64 = [_]f64{0.0} ** buildconfig.SimdWidth;
+    var active: [buildconfig.SimdWidth]bool = [_]bool{false} ** buildconfig.SimdWidth;
+
+    for (0..lane_count) |ii| {
+        x_ideal[ii] = -0.2 + 0.03 * @as(f64, @floatFromInt(ii));
+        y_ideal[ii] = 0.15 - 0.02 * @as(f64, @floatFromInt(ii));
+        const distorted = cameramodels.forwardDistortionModelScalar(
+            model,
+            x_ideal[ii],
+            y_ideal[ii],
+        );
+        x_dist[ii] = distorted[0];
+        y_dist[ii] = distorted[1];
+        active[ii] = true;
+    }
+
+    const solved = try cameramodels.inverseDistortionModelSIMD(
+        model,
+        @as(VecSF, x_dist),
+        @as(VecSF, y_dist),
+        @as(VecSB, active),
+    );
+    const x_solved: [buildconfig.SimdWidth]f64 = solved.x;
+    const y_solved: [buildconfig.SimdWidth]f64 = solved.y;
+
+    for (0..lane_count) |ii| {
+        try std.testing.expectApproxEqAbs(x_ideal[ii], x_solved[ii], 1e-10);
+        try std.testing.expectApproxEqAbs(y_ideal[ii], y_solved[ii], 1e-10);
+    }
 }
 
 test "BrownConrady.gridInverseRoundTrip" {

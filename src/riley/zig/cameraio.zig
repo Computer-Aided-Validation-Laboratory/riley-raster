@@ -121,6 +121,122 @@ fn writeKeyValueInt(
     try writer.print("{s},{d}\n", .{ key, value });
 }
 
+fn writePolynomialMap(
+    writer: *std.Io.Writer,
+    prefix: []const u8,
+    poly_map: cam.PolynomialMap,
+) !void {
+    var key_buf: [64]u8 = undefined;
+    const term_count = poly_map.order.termCount();
+    for (0..term_count) |ii| {
+        const key_u = try std.fmt.bufPrint(
+            key_buf[0..],
+            "{s}_u_{d}",
+            .{ prefix, ii },
+        );
+        try writeKeyValueF64(writer, key_u, poly_map.coeffs_u[ii]);
+        const key_v = try std.fmt.bufPrint(
+            key_buf[0..],
+            "{s}_v_{d}",
+            .{ prefix, ii },
+        );
+        try writeKeyValueF64(writer, key_v, poly_map.coeffs_v[ii]);
+    }
+}
+
+fn writePolynomialMetadata(
+    writer: *std.Io.Writer,
+    polynomial: ?cam.BidirectionalPolynomial,
+) !void {
+    if (polynomial) |poly| {
+        const order = if (poly.forward_map) |forward_map|
+            forward_map.order
+        else if (poly.inverse_map) |inverse_map|
+            inverse_map.order
+        else
+            cam.PolynomialOrder.quadratic;
+        try writeKeyValueInt(writer, "poly_order", @intFromEnum(order));
+        try writeKeyValueInt(writer, "poly_has_forward", @intFromBool(poly.forward_map != null));
+        try writeKeyValueInt(writer, "poly_has_inverse", @intFromBool(poly.inverse_map != null));
+        if (poly.forward_map) |forward_map| {
+            try writePolynomialMap(writer, "poly_forward", forward_map);
+        }
+        if (poly.inverse_map) |inverse_map| {
+            try writePolynomialMap(writer, "poly_inverse", inverse_map);
+        }
+    } else {
+        try writeKeyValueInt(writer, "poly_order", @intFromEnum(cam.PolynomialOrder.quadratic));
+        try writeKeyValueInt(writer, "poly_has_forward", 0);
+        try writeKeyValueInt(writer, "poly_has_inverse", 0);
+    }
+}
+
+fn parseOptionalU8Value(
+    kv: *const std.StringHashMap([]const u8),
+    key: []const u8,
+    default: u8,
+) !u8 {
+    if (kv.get(key)) |value| {
+        return std.fmt.parseInt(u8, value, 10);
+    }
+    return default;
+}
+
+fn parsePolynomialMap(
+    kv: *const std.StringHashMap([]const u8),
+    prefix: []const u8,
+    order: cam.PolynomialOrder,
+) !cam.PolynomialMap {
+    var map: cam.PolynomialMap = .{ .order = order };
+    var key_buf: [64]u8 = undefined;
+    const term_count = order.termCount();
+    for (0..term_count) |ii| {
+        const key_u = try std.fmt.bufPrint(
+            key_buf[0..],
+            "{s}_u_{d}",
+            .{ prefix, ii },
+        );
+        map.coeffs_u[ii] = try parseF64Value(kv, key_u);
+        const key_v = try std.fmt.bufPrint(
+            key_buf[0..],
+            "{s}_v_{d}",
+            .{ prefix, ii },
+        );
+        map.coeffs_v[ii] = try parseF64Value(kv, key_v);
+    }
+    return map;
+}
+
+fn loadPolynomial(
+    kv: *const std.StringHashMap([]const u8),
+) !?cam.BidirectionalPolynomial {
+    const has_forward = (try parseOptionalU8Value(kv, "poly_has_forward", 0)) != 0;
+    const has_inverse = (try parseOptionalU8Value(kv, "poly_has_inverse", 0)) != 0;
+    if (!has_forward and !has_inverse) {
+        return null;
+    }
+    const order_val = try parseOptionalU8Value(
+        kv,
+        "poly_order",
+        @intFromEnum(cam.PolynomialOrder.quadratic),
+    );
+    const order: cam.PolynomialOrder = switch (order_val) {
+        1 => .linear,
+        2 => .quadratic,
+        3 => .cubic,
+        else => return error.InvalidPolynomialOrder,
+    };
+
+    var polynomial: cam.BidirectionalPolynomial = .{};
+    if (has_forward) {
+        polynomial.forward_map = try parsePolynomialMap(kv, "poly_forward", order);
+    }
+    if (has_inverse) {
+        polynomial.inverse_map = try parsePolynomialMap(kv, "poly_inverse", order);
+    }
+    return polynomial;
+}
+
 fn writeDistortion(
     writer: *std.Io.Writer,
     distortion: cam.DistortionModel,
@@ -136,6 +252,7 @@ fn writeDistortion(
             try writeKeyValueF64(writer, "k6", 0.0);
             try writeKeyValueF64(writer, "p1", 0.0);
             try writeKeyValueF64(writer, "p2", 0.0);
+            try writePolynomialMetadata(writer, null);
         },
         .brown_conrady => |model| {
             try writeKeyValueRow(writer, "distortion_model", "brown_conrady");
@@ -147,6 +264,7 @@ fn writeDistortion(
             try writeKeyValueF64(writer, "k6", 0.0);
             try writeKeyValueF64(writer, "p1", model.p1);
             try writeKeyValueF64(writer, "p2", model.p2);
+            try writePolynomialMetadata(writer, null);
         },
         .brown_conrady_ext => |model| {
             try writeKeyValueRow(writer, "distortion_model", "brown_conrady_ext");
@@ -158,6 +276,43 @@ fn writeDistortion(
             try writeKeyValueF64(writer, "k6", model.k6);
             try writeKeyValueF64(writer, "p1", model.p1);
             try writeKeyValueF64(writer, "p2", model.p2);
+            try writePolynomialMetadata(writer, null);
+        },
+        .polynomial => |poly| {
+            try writeKeyValueRow(writer, "distortion_model", "polynomial");
+            try writeKeyValueF64(writer, "k1", 0.0);
+            try writeKeyValueF64(writer, "k2", 0.0);
+            try writeKeyValueF64(writer, "k3", 0.0);
+            try writeKeyValueF64(writer, "k4", 0.0);
+            try writeKeyValueF64(writer, "k5", 0.0);
+            try writeKeyValueF64(writer, "k6", 0.0);
+            try writeKeyValueF64(writer, "p1", 0.0);
+            try writeKeyValueF64(writer, "p2", 0.0);
+            try writePolynomialMetadata(writer, poly);
+        },
+        .brown_conrady_polynomial => |chain| {
+            try writeKeyValueRow(writer, "distortion_model", "brown_conrady_polynomial");
+            try writeKeyValueF64(writer, "k1", chain.brown_conrady.k1);
+            try writeKeyValueF64(writer, "k2", chain.brown_conrady.k2);
+            try writeKeyValueF64(writer, "k3", chain.brown_conrady.k3);
+            try writeKeyValueF64(writer, "k4", 0.0);
+            try writeKeyValueF64(writer, "k5", 0.0);
+            try writeKeyValueF64(writer, "k6", 0.0);
+            try writeKeyValueF64(writer, "p1", chain.brown_conrady.p1);
+            try writeKeyValueF64(writer, "p2", chain.brown_conrady.p2);
+            try writePolynomialMetadata(writer, chain.polynomial);
+        },
+        .brown_conrady_ext_polynomial => |chain| {
+            try writeKeyValueRow(writer, "distortion_model", "brown_conrady_ext_polynomial");
+            try writeKeyValueF64(writer, "k1", chain.brown_conrady_ext.k1);
+            try writeKeyValueF64(writer, "k2", chain.brown_conrady_ext.k2);
+            try writeKeyValueF64(writer, "k3", chain.brown_conrady_ext.k3);
+            try writeKeyValueF64(writer, "k4", chain.brown_conrady_ext.k4);
+            try writeKeyValueF64(writer, "k5", chain.brown_conrady_ext.k5);
+            try writeKeyValueF64(writer, "k6", chain.brown_conrady_ext.k6);
+            try writeKeyValueF64(writer, "p1", chain.brown_conrady_ext.p1);
+            try writeKeyValueF64(writer, "p2", chain.brown_conrady_ext.p2);
+            try writePolynomialMetadata(writer, chain.polynomial);
         },
     }
 }
@@ -166,6 +321,7 @@ fn loadDistortion(
     kv: *const std.StringHashMap([]const u8),
 ) !cam.DistortionModel {
     const model_name = try requireValue(kv, "distortion_model");
+    const polynomial = try loadPolynomial(kv);
     if (std.mem.eql(u8, model_name, "none")) {
         return .none;
     }
@@ -188,6 +344,36 @@ fn loadDistortion(
             .k6 = try parseF64Value(kv, "k6"),
             .p1 = try parseF64Value(kv, "p1"),
             .p2 = try parseF64Value(kv, "p2"),
+        } };
+    }
+    if (std.mem.eql(u8, model_name, "polynomial")) {
+        return .{ .polynomial = polynomial orelse return error.MissingPolynomialMap };
+    }
+    if (std.mem.eql(u8, model_name, "brown_conrady_polynomial")) {
+        return .{ .brown_conrady_polynomial = .{
+            .brown_conrady = .{
+                .k1 = try parseF64Value(kv, "k1"),
+                .k2 = try parseF64Value(kv, "k2"),
+                .k3 = try parseF64Value(kv, "k3"),
+                .p1 = try parseF64Value(kv, "p1"),
+                .p2 = try parseF64Value(kv, "p2"),
+            },
+            .polynomial = polynomial orelse return error.MissingPolynomialMap,
+        } };
+    }
+    if (std.mem.eql(u8, model_name, "brown_conrady_ext_polynomial")) {
+        return .{ .brown_conrady_ext_polynomial = .{
+            .brown_conrady_ext = .{
+                .k1 = try parseF64Value(kv, "k1"),
+                .k2 = try parseF64Value(kv, "k2"),
+                .k3 = try parseF64Value(kv, "k3"),
+                .k4 = try parseF64Value(kv, "k4"),
+                .k5 = try parseF64Value(kv, "k5"),
+                .k6 = try parseF64Value(kv, "k6"),
+                .p1 = try parseF64Value(kv, "p1"),
+                .p2 = try parseF64Value(kv, "p2"),
+            },
+            .polynomial = polynomial orelse return error.MissingPolynomialMap,
         } };
     }
     return error.InvalidDistortionModel;

@@ -69,6 +69,13 @@ typedef struct c_camera_input {
     double distortion_k6;
     double distortion_p1;
     double distortion_p2;
+    uint32_t distortion_poly_order;
+    uint8_t distortion_poly_has_forward;
+    uint8_t distortion_poly_has_inverse;
+    double distortion_poly_forward_u[10];
+    double distortion_poly_forward_v[10];
+    double distortion_poly_inverse_u[10];
+    double distortion_poly_inverse_v[10];
     uint32_t coord_sys;
     uint32_t psf_type;
     double psf_sigma_x;
@@ -90,6 +97,12 @@ typedef struct c_func_shader_params {
     double wave_num_rgb_0;
     double wave_num_rgb_1;
     double wave_num_rgb_2;
+    double eggbox_mean;
+    double eggbox_contrast;
+    double eggbox_pitch_0;
+    double eggbox_pitch_1;
+    double eggbox_phase_0;
+    double eggbox_phase_1;
     double extra_0;
     double extra_1;
     double extra_2;
@@ -114,6 +127,7 @@ typedef struct c_mesh_input {
     CArray3DF64 nodal_field;
     uint32_t scale_over;
     uint32_t func_shader_builtin;
+    uint32_t func_shader_coord_mode;
     CFuncShaderParams func_shader_params;
     uint32_t normal_type;
 } CMeshInput;

@@ -155,6 +155,7 @@ fn buildMeshInput(
                     prepared.uvs.array
                 else
                     null,
+                .coord_mode = if (render_case.shader_case.use_uvs) .uv else .parametric,
                 .builtin = render_case.shader_case.builtin,
                 .params = render_case.shader_case.params,
                 .normal_type = .none,

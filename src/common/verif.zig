@@ -219,32 +219,14 @@ pub fn idealToObservedRaster(
     const x_norm = (ideal_xy[0] - offsets.x_off) / focal_px.fx;
     const y_norm = (ideal_xy[1] - offsets.y_off) / focal_px.fy;
 
-    return switch (camera.distortion) {
-        .none => ideal_xy,
-        .brown_conrady => |distortion| blk: {
-            const distorted = cam.forwardDistortionScalar(
-                @TypeOf(distortion),
-                distortion,
-                x_norm,
-                y_norm,
-            );
-            break :blk .{
-                distorted[0] * focal_px.fx + offsets.x_off,
-                distorted[1] * focal_px.fy + offsets.y_off,
-            };
-        },
-        .brown_conrady_ext => |distortion| blk: {
-            const distorted = cam.forwardDistortionScalar(
-                @TypeOf(distortion),
-                distortion,
-                x_norm,
-                y_norm,
-            );
-            break :blk .{
-                distorted[0] * focal_px.fx + offsets.x_off,
-                distorted[1] * focal_px.fy + offsets.y_off,
-            };
-        },
+    const distorted = cam.forwardDistortionModelScalar(
+        camera.distortion,
+        x_norm,
+        y_norm,
+    );
+    return .{
+        distorted[0] * focal_px.fx + offsets.x_off,
+        distorted[1] * focal_px.fy + offsets.y_off,
     };
 }
 
@@ -257,32 +239,14 @@ pub fn observedToIdealRaster(
     const x_dist = (observed_xy[0] - offsets.x_off) / focal_px.fx;
     const y_dist = (observed_xy[1] - offsets.y_off) / focal_px.fy;
 
-    return switch (camera.distortion) {
-        .none => observed_xy,
-        .brown_conrady => |distortion| blk: {
-            const solved = try cam.inverseDistortionScalar(
-                @TypeOf(distortion),
-                distortion,
-                x_dist,
-                y_dist,
-            );
-            break :blk .{
-                solved.x * focal_px.fx + offsets.x_off,
-                solved.y * focal_px.fy + offsets.y_off,
-            };
-        },
-        .brown_conrady_ext => |distortion| blk: {
-            const solved = try cam.inverseDistortionScalar(
-                @TypeOf(distortion),
-                distortion,
-                x_dist,
-                y_dist,
-            );
-            break :blk .{
-                solved.x * focal_px.fx + offsets.x_off,
-                solved.y * focal_px.fy + offsets.y_off,
-            };
-        },
+    const solved = try cam.inverseDistortionModelScalar(
+        camera.distortion,
+        x_dist,
+        y_dist,
+    );
+    return .{
+        solved.x * focal_px.fx + offsets.x_off,
+        solved.y * focal_px.fy + offsets.y_off,
     };
 }
 

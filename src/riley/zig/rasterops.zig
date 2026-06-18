@@ -381,36 +381,20 @@ fn distortIdealRasterCoords(
     const offsets = camera.calcRasterOffsets();
     var coords_distorted = coords_ideal;
 
-    switch (camera.distortion) {
-        .none => return coords_distorted,
-        .brown_conrady => |bc| {
-            for (0..N) |nn| {
-                const x_ideal = (coords_ideal.x[nn] - offsets.x_off) / focal_px.fx;
-                const y_ideal = (coords_ideal.y[nn] - offsets.y_off) / focal_px.fy;
-                const distorted = cam.forwardDistortionScalar(
-                    @TypeOf(bc),
-                    bc,
-                    x_ideal,
-                    y_ideal,
-                );
-                coords_distorted.x[nn] = distorted[0] * focal_px.fx + offsets.x_off;
-                coords_distorted.y[nn] = distorted[1] * focal_px.fy + offsets.y_off;
-            }
-        },
-        .brown_conrady_ext => |bc_ext| {
-            for (0..N) |nn| {
-                const x_ideal = (coords_ideal.x[nn] - offsets.x_off) / focal_px.fx;
-                const y_ideal = (coords_ideal.y[nn] - offsets.y_off) / focal_px.fy;
-                const distorted = cam.forwardDistortionScalar(
-                    @TypeOf(bc_ext),
-                    bc_ext,
-                    x_ideal,
-                    y_ideal,
-                );
-                coords_distorted.x[nn] = distorted[0] * focal_px.fx + offsets.x_off;
-                coords_distorted.y[nn] = distorted[1] * focal_px.fy + offsets.y_off;
-            }
-        },
+    if (cam.isNoDistortion(camera.distortion)) {
+        return coords_distorted;
+    }
+
+    for (0..N) |nn| {
+        const x_ideal = (coords_ideal.x[nn] - offsets.x_off) / focal_px.fx;
+        const y_ideal = (coords_ideal.y[nn] - offsets.y_off) / focal_px.fy;
+        const distorted = cam.forwardDistortionModelScalar(
+            camera.distortion,
+            x_ideal,
+            y_ideal,
+        );
+        coords_distorted.x[nn] = distorted[0] * focal_px.fx + offsets.x_off;
+        coords_distorted.y[nn] = distorted[1] * focal_px.fy + offsets.y_off;
     }
 
     return coords_distorted;

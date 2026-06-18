@@ -20,6 +20,12 @@ const meshio = @import("meshio.zig");
 
 pub const ScaleOver = enum { within_frames, over_frames };
 pub const NormalType = enum { none, exact, averaged };
+pub const FuncCoordMode = enum {
+    uv,
+    parametric,
+    world_reference,
+    world_deformed,
+};
 
 pub const FuncShaderBuiltin = enum {
     constant,
@@ -29,6 +35,7 @@ pub const FuncShaderBuiltin = enum {
     checker,
     checker_smooth,
     lambertian_normal_z,
+    eggbox,
 };
 
 pub const FuncShaderParams = struct {
@@ -38,15 +45,22 @@ pub const FuncShaderParams = struct {
     output_offset: f64 = 0.0,
     wave_num_scalar: [2]f64 = .{ 6.0, 5.0 },
     wave_num_rgb: [3]f64 = .{ 6.0, 6.0, 4.0 },
+    eggbox_mean: f64 = 0.5,
+    eggbox_contrast: f64 = 0.4,
+    eggbox_pitch: [2]f64 = .{ 1.0, 1.0 },
+    eggbox_phase: [2]f64 = .{ 0.0, 0.0 },
     extra: [4]f64 = .{ 0.0, 0.0, 0.0, 0.0 },
 };
 
 pub fn LocalShaderBuffer(comptime N: usize) type {
     return struct {
         data: [buildconfig.config.max_nodal_fields * N]f64 = undefined,
+        func_coords: [3 * N]f64 = undefined,
         normals: [3 * N]f64 = undefined,
         actual_fields: u8 = 0,
+        actual_func_coords: u8 = 0,
         has_normals: bool = false,
+        has_func_coords: bool = false,
 
         const Self = @This();
 
@@ -70,6 +84,22 @@ pub fn LocalShaderBuffer(comptime N: usize) type {
             self.has_normals = true;
             const count = 3 * N;
             @memcpy(self.normals[0..count], array.slice[start_idx .. start_idx + count]);
+        }
+
+        pub inline fn loadFuncCoords(
+            self: *Self,
+            array: ndarray.NDArray(f64),
+            start_idx: usize,
+            coords_num: u8,
+        ) void {
+            std.debug.assert(coords_num <= 3);
+            self.has_func_coords = true;
+            self.actual_func_coords = coords_num;
+            const count = @as(usize, coords_num) * N;
+            @memcpy(
+                self.func_coords[0..count],
+                array.slice[start_idx .. start_idx + count],
+            );
         }
 
         pub inline fn interpolate(
@@ -96,6 +126,19 @@ pub fn LocalShaderBuffer(comptime N: usize) type {
                 norm[2] += weights[nn] * self.normals[2 * N + nn];
             }
             return norm;
+        }
+
+        pub inline fn interpolateFuncCoord(
+            self: *const Self,
+            coord_idx: usize,
+            weights: [N]f64,
+        ) f64 {
+            const base = coord_idx * N;
+            var sum: f64 = 0.0;
+            inline for (0..N) |nn| {
+                sum += weights[nn] * self.func_coords[base + nn];
+            }
+            return sum;
         }
     };
 }
@@ -129,6 +172,7 @@ pub fn FuncInput(comptime channels: usize) type {
     _ = channels;
     return struct {
         uvs: ?ndarray.NDArray(f64) = null,
+        coord_mode: FuncCoordMode = .parametric,
         builtin: FuncShaderBuiltin,
         params: FuncShaderParams = .{},
         bits: ?u8 = 8,
@@ -174,6 +218,7 @@ pub fn FuncStatic(comptime channels: usize) type {
     _ = channels;
     return struct {
         elem_uvs: ?ndarray.NDArray(f64),
+        coord_mode: FuncCoordMode = .parametric,
         builtin: FuncShaderBuiltin,
         params: FuncShaderParams = .{},
         bits: ?u8 = 8,
@@ -226,6 +271,9 @@ pub fn FuncPrepared(comptime channels: usize) type {
     _ = channels;
     return struct {
         elem_uvs: ?ndarray.NDArray(f64),
+        elem_world_ref: ?ndarray.NDArray(f64) = null,
+        elem_world_def: ?ndarray.NDArray(f64) = null,
+        coord_mode: FuncCoordMode = .parametric,
         builtin: FuncShaderBuiltin,
         params: FuncShaderParams = .{},
         bits: ?u8 = 8,
@@ -329,6 +377,18 @@ pub inline fn evalFuncShaderBuiltinScalar(
             break :blk cubicSmoothStep(prod);
         },
         .lambertian_normal_z => 0.5 + 0.5 * eval_coord.normal_z,
+        .eggbox => blk: {
+            const phase_x = 2.0 * std.math.pi *
+                (eval_coord.coord_0 + params.eggbox_phase[0]) /
+                params.eggbox_pitch[0];
+            const phase_y = 2.0 * std.math.pi *
+                (eval_coord.coord_1 + params.eggbox_phase[1]) /
+                params.eggbox_pitch[1];
+            break :blk params.eggbox_mean +
+                0.5 * params.eggbox_contrast * (1.0 + @cos(phase_x)) *
+                    (1.0 + @cos(phase_y)) -
+                params.eggbox_contrast;
+        },
     };
     return applyFuncShaderOutputParams(value, params);
 }
@@ -383,6 +443,19 @@ pub inline fn evalFuncShaderBuiltinRgb(
                 0.5 * lambert,
             };
         },
+        .eggbox => blk: {
+            const phase_x = 2.0 * std.math.pi *
+                (eval_coord.coord_0 + params.eggbox_phase[0]) /
+                params.eggbox_pitch[0];
+            const phase_y = 2.0 * std.math.pi *
+                (eval_coord.coord_1 + params.eggbox_phase[1]) /
+                params.eggbox_pitch[1];
+            const value = params.eggbox_mean +
+                0.5 * params.eggbox_contrast * (1.0 + @cos(phase_x)) *
+                    (1.0 + @cos(phase_y)) -
+                params.eggbox_contrast;
+            break :blk .{ value, value, value };
+        },
     };
     return .{
         applyFuncShaderOutputParams(values[0], params),
@@ -424,6 +497,61 @@ inline fn setCoordValues(
 ) void {
     coord.coord_0 = coord_0;
     coord.coord_1 = coord_1;
+}
+
+inline fn resolveFuncCoordsClip(
+    comptime N: usize,
+    comptime channels: usize,
+    ctx_shade: ShadeContext(N),
+    interp: InterpData(N),
+    sh: *const FuncPrepared(channels),
+) struct { coord_0: f64, coord_1: f64 } {
+    return switch (sh.coord_mode) {
+        .uv => .{
+            .coord_0 = ctx_shade.shader_buf.interpolateFuncCoord(0, interp.weights),
+            .coord_1 = ctx_shade.shader_buf.interpolateFuncCoord(1, interp.weights),
+        },
+        .parametric => .{
+            .coord_0 = interp.xi,
+            .coord_1 = interp.eta,
+        },
+        .world_reference, .world_deformed => .{
+            .coord_0 = ctx_shade.shader_buf.interpolateFuncCoord(0, interp.weights),
+            .coord_1 = ctx_shade.shader_buf.interpolateFuncCoord(1, interp.weights),
+        },
+    };
+}
+
+inline fn resolveFuncCoordsPersp(
+    comptime N: usize,
+    comptime channels: usize,
+    ctx_shade: ShadeContext(N),
+    interp: InterpData(N),
+    sh: *const FuncPrepared(channels),
+) struct { coord_0: f64, coord_1: f64 } {
+    return switch (sh.coord_mode) {
+        .uv, .world_reference, .world_deformed => blk: {
+            var coord_0: f64 = 0.0;
+            var coord_1: f64 = 0.0;
+            inline for (0..N) |nn| {
+                const inv_z = interp.nodes_inv_z[nn];
+                coord_0 += interp.weights[nn] *
+                    ctx_shade.shader_buf.func_coords[nn] *
+                    inv_z;
+                coord_1 += interp.weights[nn] *
+                    ctx_shade.shader_buf.func_coords[N + nn] *
+                    inv_z;
+            }
+            break :blk .{
+                .coord_0 = coord_0 * interp.sub_pixel_z,
+                .coord_1 = coord_1 * interp.sub_pixel_z,
+            };
+        },
+        .parametric => .{
+            .coord_0 = interp.xi,
+            .coord_1 = interp.eta,
+        },
+    };
 }
 
 pub inline fn fillNodalClip(
@@ -535,18 +663,8 @@ pub inline fn fillFuncClip(
     spx_image_scratch: *matslice.MatSlice(f64),
 ) void {
     var coord = getFuncCoord(N, ctx_shade, interp, sh.elem_normals);
-
-    if (sh.elem_uvs != null) {
-        var tex_u: f64 = 0.0;
-        var tex_v: f64 = 0.0;
-        inline for (0..N) |nn| {
-            tex_u += interp.weights[nn] * ctx_shade.shader_buf.data[nn];
-            tex_v += interp.weights[nn] * ctx_shade.shader_buf.data[N + nn];
-        }
-        setCoordValues(&coord, tex_u, tex_v);
-    } else {
-        setCoordValues(&coord, interp.xi, interp.eta);
-    }
+    const coords = resolveFuncCoordsClip(N, channels, ctx_shade, interp, sh);
+    setCoordValues(&coord, coords.coord_0, coords.coord_1);
 
     if (comptime channels == 1) {
         const value = evalFuncShaderBuiltinScalar(sh.builtin, coord, sh.params);
@@ -570,21 +688,8 @@ pub inline fn fillFuncPersp(
     spx_image_scratch: *matslice.MatSlice(f64),
 ) void {
     var coord = getFuncCoord(N, ctx_shade, interp, sh.elem_normals);
-
-    if (sh.elem_uvs != null) {
-        var tex_u: f64 = 0.0;
-        var tex_v: f64 = 0.0;
-        inline for (0..N) |nn| {
-            const inv_z = interp.nodes_inv_z[nn];
-            tex_u += interp.weights[nn] * ctx_shade.shader_buf.data[nn] * inv_z;
-            tex_v += interp.weights[nn] *
-                ctx_shade.shader_buf.data[N + nn] *
-                inv_z;
-        }
-        setCoordValues(&coord, tex_u * interp.sub_pixel_z, tex_v * interp.sub_pixel_z);
-    } else {
-        setCoordValues(&coord, interp.xi, interp.eta);
-    }
+    const coords = resolveFuncCoordsPersp(N, channels, ctx_shade, interp, sh);
+    setCoordValues(&coord, coords.coord_0, coords.coord_1);
 
     if (comptime channels == 1) {
         const value = evalFuncShaderBuiltinScalar(sh.builtin, coord, sh.params);
@@ -657,4 +762,38 @@ test "checker texfunc creates hard black white cells from coord scale" {
 
     try testing.expectEqual(@as(f64, 0.0), value_black);
     try testing.expectEqual(@as(f64, 1.0), value_white);
+}
+
+test "eggbox reaches mean plus contrast at cell center" {
+    const coord = FuncCoord{
+        .coord_0 = 0.0,
+        .coord_1 = 0.0,
+        .normal_x = 0.0,
+        .normal_y = 0.0,
+        .normal_z = 1.0,
+    };
+    const params = FuncShaderParams{
+        .eggbox_mean = 0.5,
+        .eggbox_contrast = 0.4,
+        .eggbox_pitch = .{ 1.0, 1.0 },
+    };
+    const value = evalFuncShaderBuiltinScalar(.eggbox, coord, params);
+    try testing.expectApproxEqAbs(@as(f64, 0.9), value, 1e-12);
+}
+
+test "eggbox reaches mean minus contrast on grid line" {
+    const coord = FuncCoord{
+        .coord_0 = 0.5,
+        .coord_1 = 0.0,
+        .normal_x = 0.0,
+        .normal_y = 0.0,
+        .normal_z = 1.0,
+    };
+    const params = FuncShaderParams{
+        .eggbox_mean = 0.5,
+        .eggbox_contrast = 0.4,
+        .eggbox_pitch = .{ 1.0, 1.0 },
+    };
+    const value = evalFuncShaderBuiltinScalar(.eggbox, coord, params);
+    try testing.expectApproxEqAbs(@as(f64, 0.1), value, 1e-12);
 }

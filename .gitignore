@@ -83,6 +83,11 @@ uv.lock
 src/riley/cyth/riley.c
 src/riley/cyth/riley.html
 
+# Windows :(
+*.dll
+*.pdb
+*.lib
+
 #-----------------------------------------------------------------------------
 # Standard Python Ignore
 

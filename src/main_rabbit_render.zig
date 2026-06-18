@@ -107,6 +107,7 @@ pub fn main(init: std.process.Init) !void {
             .disp = null,
             .shader = .{ .func = .{
                 .uvs = uv_maps[ii].array,
+                .coord_mode = .uv,
                 .builtin = .sinusoidal,
                 .bits = 8,
                 .scaling = .auto,

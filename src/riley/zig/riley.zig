@@ -197,6 +197,25 @@ fn isFiniteVec3(vec: anytype) bool {
     return isFiniteSlice(vec.slice[0..]);
 }
 
+fn isValidPolynomialMap(map: cam.PolynomialMap) bool {
+    const term_count = map.order.termCount();
+    return isFiniteSlice(map.coeffs_u[0..term_count]) and
+        isFiniteSlice(map.coeffs_v[0..term_count]);
+}
+
+fn isValidBidirectionalPolynomial(poly: cam.BidirectionalPolynomial) bool {
+    if (poly.forward_map == null and poly.inverse_map == null) {
+        return false;
+    }
+    if (poly.forward_map) |forward_map| {
+        if (!isValidPolynomialMap(forward_map)) return false;
+    }
+    if (poly.inverse_map) |inverse_map| {
+        if (!isValidPolynomialMap(inverse_map)) return false;
+    }
+    return true;
+}
+
 fn isValidDistortion(distortion: cam.DistortionModel) bool {
     return switch (distortion) {
         .none => true,
@@ -217,6 +236,24 @@ fn isValidDistortion(distortion: cam.DistortionModel) bool {
             bc.p1,
             bc.p2,
         }),
+        .polynomial => |poly| isValidBidirectionalPolynomial(poly),
+        .brown_conrady_polynomial => |chain| isFiniteSlice(&[_]f64{
+            chain.brown_conrady.k1,
+            chain.brown_conrady.k2,
+            chain.brown_conrady.k3,
+            chain.brown_conrady.p1,
+            chain.brown_conrady.p2,
+        }) and isValidBidirectionalPolynomial(chain.polynomial),
+        .brown_conrady_ext_polynomial => |chain| isFiniteSlice(&[_]f64{
+            chain.brown_conrady_ext.k1,
+            chain.brown_conrady_ext.k2,
+            chain.brown_conrady_ext.k3,
+            chain.brown_conrady_ext.k4,
+            chain.brown_conrady_ext.k5,
+            chain.brown_conrady_ext.k6,
+            chain.brown_conrady_ext.p1,
+            chain.brown_conrady_ext.p2,
+        }) and isValidBidirectionalPolynomial(chain.polynomial),
     };
 }
 
