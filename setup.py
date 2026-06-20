@@ -359,12 +359,12 @@ if is_windows:
     cython_compile_args = ["/fp:fast", "/O2"]
     cython_link_args = ["msvcrt.lib", "ucrt.lib", "vcruntime.lib"]
     # Removed -fincremental due to incomplete LLD COFF implementation on Windows
-    zig_compile_args = ["-mcpu=native"]
+    zig_compile_args = []
     runtime_lib_dirs = []
 else:
     cython_compile_args = ["-ffast-math", "-O3"]
     cython_link_args = []
-    zig_compile_args = ["-fincremental", "-mcpu=native"]
+    zig_compile_args = ["-fincremental"]
     runtime_lib_dirs = [PLATFORM_INFO["runtime_lib_dir"]]
 
 # zig extension
