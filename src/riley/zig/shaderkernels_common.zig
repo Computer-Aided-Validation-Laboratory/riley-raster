@@ -66,16 +66,18 @@ pub inline fn shadeNodalScalarCommon(
 
 pub inline fn shadeTexScalarCommon(
     comptime N: usize,
+    comptime T: type,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
     ctx_shade: shaderops.ShadeContext(N),
     interp: shaderops.InterpData(N),
-    shader: *const shaderops.TexPrepared(channels),
+    shader: *const shaderops.TexPrepared(T, channels),
     ctx_report: anytype,
     spx_image_scratch: *MatSlice(F),
 ) void {
     shadeTexScalarCommonImpl(
         N,
+        T,
         channels,
         coord_space,
         ctx_shade,
@@ -88,11 +90,12 @@ pub inline fn shadeTexScalarCommon(
 
 fn shadeTexScalarCommonImpl(
     comptime N: usize,
+    comptime T: type,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
     ctx_shade: shaderops.ShadeContext(N),
     interp: shaderops.InterpData(N),
-    shader: *const shaderops.TexPrepared(channels),
+    shader: *const shaderops.TexPrepared(T, channels),
     ctx_report: anytype,
     spx_image_scratch: *MatSlice(F),
 ) void {
@@ -119,6 +122,7 @@ fn shadeTexScalarCommonImpl(
 
     shadeTexScalarDispatchImpl(
         N,
+        T,
         channels,
         coord_space,
         shader.sample_config,
@@ -131,18 +135,20 @@ fn shadeTexScalarCommonImpl(
 
 inline fn shadeTexScalarDispatchImpl(
     comptime N: usize,
+    comptime T: type,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
     config: TextureSampleConfig,
     ctx_shade: shaderops.ShadeContext(N),
     interp: shaderops.InterpData(N),
-    shader: *const shaderops.TexPrepared(channels),
+    shader: *const shaderops.TexPrepared(T, channels),
     spx_image_scratch: *MatSlice(F),
 ) void {
     @setEvalBranchQuota(40000);
     switch (config.sample) {
         inline else => |sample_type| shadeTexScalarDispatchModeImpl(
             N,
+            T,
             channels,
             coord_space,
             sample_type,
@@ -157,18 +163,20 @@ inline fn shadeTexScalarDispatchImpl(
 
 inline fn shadeTexScalarDispatchModeImpl(
     comptime N: usize,
+    comptime T: type,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
     comptime sample_type: texops.TextureSample,
     mode: texops.TextureSampleMode,
     ctx_shade: shaderops.ShadeContext(N),
     interp: shaderops.InterpData(N),
-    shader: *const shaderops.TexPrepared(channels),
+    shader: *const shaderops.TexPrepared(T, channels),
     spx_image_scratch: *MatSlice(F),
 ) void {
     switch (mode) {
         inline else => |mode_type| shadeTexScalarDispatchConfigImpl(
             N,
+            T,
             channels,
             coord_space,
             .{
@@ -185,12 +193,13 @@ inline fn shadeTexScalarDispatchModeImpl(
 
 inline fn shadeTexScalarDispatchConfigImpl(
     comptime N: usize,
+    comptime T: type,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
     comptime comptime_config: TextureSampleConfig,
     ctx_shade: shaderops.ShadeContext(N),
     interp: shaderops.InterpData(N),
-    shader: *const shaderops.TexPrepared(channels),
+    shader: *const shaderops.TexPrepared(T, channels),
     spx_image_scratch: *MatSlice(F),
 ) void {
     if (!comptime comptime_config.isValid()) return;
@@ -198,6 +207,7 @@ inline fn shadeTexScalarDispatchConfigImpl(
     if (comptime coord_space == CoordSpace.clip_px_leng) {
         shaderops.fillTexClip(
             N,
+            T,
             channels,
             comptime_config,
             ctx_shade,
@@ -208,6 +218,7 @@ inline fn shadeTexScalarDispatchConfigImpl(
     } else {
         shaderops.fillTexPersp(
             N,
+            T,
             channels,
             comptime_config,
             ctx_shade,

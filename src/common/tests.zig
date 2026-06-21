@@ -757,7 +757,7 @@ pub fn runTestInternal(
     test_type: []const u8,
     mesh_type: MeshType,
     fov_scale: F,
-    texture: iio.Texture(1),
+    texture: iio.Texture(u8, 1),
     pixel_num: [2]u32,
     sample_configs: []const texops.TextureSampleConfig,
     gold_dir_root: []const u8,
@@ -927,7 +927,7 @@ pub fn runTestInternal(
                     .connect = prepared.sim_data.connect,
                     .disp = if (add_disp) prepared.sim_data.field else null,
                     .shader = .{
-                        .tex = .{
+                        .tex_u8 = .{
                             .uvs = prepared.uvs.array,
                             .texture = texture,
                             .sample_config = sc,
@@ -1183,12 +1183,12 @@ pub fn runMultimeshMixedTest(
     rel_tol: F,
     abs_tol: F,
 ) !void {
+    const gold_dir = comptime goldpaths.sharedRoot("multimesh") ++
+        "/allelem_allshade";
     try runMultimeshMixedTestExt(
         outer_alloc,
         io,
-        std.fmt.comptimePrint("{s}/allelem_allshade", .{
-            goldpaths.sharedRoot("multimesh"),
-        }),
+        gold_dir,
         &orch.default_multimesh_dir_paths,
         .{ 1600, 800 },
         rel_tol,
@@ -1312,12 +1312,12 @@ pub fn runMultimeshMixedRGBTest(
     rel_tol: F,
     abs_tol: F,
 ) !void {
+    const gold_dir = comptime goldpaths.sharedRoot("multimesh") ++
+        "/allelem_allshade_rgb";
     try runMultimeshMixedRGBTestExt(
         outer_alloc,
         io,
-        std.fmt.comptimePrint("{s}/allelem_allshade_rgb", .{
-            goldpaths.sharedRoot("multimesh"),
-        }),
+        gold_dir,
         &orch.default_multimesh_dir_paths,
         .{ 1200, 800 },
         rel_tol,
@@ -1981,7 +1981,7 @@ pub fn runDistortMidsideTexShaderTest(
     gold_dir_root: []const u8,
     data_dir_root: []const u8,
     pixel_num: [2]u32,
-    texture: iio.Texture(1),
+    texture: iio.Texture(u8, 1),
 ) !void {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -2018,7 +2018,7 @@ pub fn runDistortMidsideTexShaderTest(
         .connect = prepared.sim_data.connect,
         .disp = prepared.sim_data.field,
         .shader = .{
-            .tex = .{
+            .tex_u8 = .{
                 .uvs = prepared.uvs.array,
                 .texture = texture,
                 .sample_config = sample_config,

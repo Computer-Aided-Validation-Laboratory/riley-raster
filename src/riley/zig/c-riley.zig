@@ -192,7 +192,8 @@ const MeshInputBuilt = struct {
     mesh_input: mo.MeshInput,
     disp_array: ?ndarray.NDArray(F) = null,
     uvs_array: ?ndarray.NDArray(F) = null,
-    texture_array: ?ndarray.NDArray(F) = null,
+    texture_array_u8: ?ndarray.NDArray(u8) = null,
+    texture_array_u16: ?ndarray.NDArray(u16) = null,
     nodal_field_array: ?ndarray.NDArray(F) = null,
 
     fn deinit(self: *MeshInputBuilt, allocator: std.mem.Allocator) void {
@@ -202,7 +203,10 @@ const MeshInputBuilt = struct {
         if (self.uvs_array) |*uvs_array| {
             uvs_array.deinit(allocator);
         }
-        if (self.texture_array) |*texture_array| {
+        if (self.texture_array_u8) |*texture_array| {
+            texture_array.deinit(allocator);
+        }
+        if (self.texture_array_u16) |*texture_array| {
             texture_array.deinit(allocator);
         }
         if (self.nodal_field_array) |*nodal_field_array| {
@@ -723,15 +727,27 @@ fn buildArray3DF64(
 }
 
 fn buildTextureArray(
+    comptime T: type,
     allocator: std.mem.Allocator,
     in_array: *const CArray3DF64,
     channels_num: usize,
-) !ndarray.NDArray(F) {
+) !ndarray.NDArray(T) {
     const dims = array3ToDims(in_array.*);
     if (dims[0] != channels_num or dims[1] == 0 or dims[2] == 0) {
         return error.InvalidTextureShape;
     }
-    return try buildArray3DF64(allocator, in_array);
+    const elems_num = dims[0] * dims[1] * dims[2];
+    const slice_in = try cConstSlice(F, in_array.elems, elems_num);
+    var dims_mut = dims;
+    var array_out = try ndarray.NDArray(T).initFlat(allocator, dims_mut[0..]);
+    for (slice_in, 0..) |val_in, ii| {
+        array_out.slice[ii] = switch (T) {
+            u8 => @intFromFloat(@round(@max(0.0, @min(255.0, val_in)))),
+            u16 => @intFromFloat(@round(@max(0.0, @min(65535.0, val_in)))),
+            else => @compileError("Unsupported texture type"),
+        };
+    }
+    return array_out;
 }
 
 fn buildOptionalFieldFromC(
@@ -840,13 +856,6 @@ fn buildMeshInput(
             );
             errdefer uvs_array.deinit(allocator);
 
-            var texture_array = try buildTextureArray(
-                allocator,
-                &in_mesh.texture,
-                1,
-            );
-            errdefer texture_array.deinit(allocator);
-
             const sample_config = texops.TextureSampleConfig{
                 .sample = try textureSampleFromC(in_mesh.sample),
                 .mode = try textureSampleModeFromC(in_mesh.sample_mode),
@@ -854,21 +863,50 @@ fn buildMeshInput(
             if (!sample_config.isValid()) {
                 return error.InvalidTextureSampleConfig;
             }
-
-            built.mesh_input.shader = .{ .tex = .{
-                .uvs = uvs_array,
-                .texture = texops.Texture(1){
-                    .array = texture_array,
-                    .rows_num = in_mesh.texture.dim1,
-                    .cols_num = in_mesh.texture.dim2,
-                },
-                .sample_config = sample_config,
-                .bits = bits,
-                .scaling = scaling,
-                .normal_type = normal_type,
-            } };
             built.uvs_array = uvs_array;
-            built.texture_array = texture_array;
+            if (bits == 16) {
+                var texture_array = try buildTextureArray(
+                    u16,
+                    allocator,
+                    &in_mesh.texture,
+                    1,
+                );
+                errdefer texture_array.deinit(allocator);
+                built.mesh_input.shader = .{ .tex_u16 = .{
+                    .uvs = uvs_array,
+                    .texture = texops.Texture(u16, 1){
+                        .array = texture_array,
+                        .rows_num = in_mesh.texture.dim1,
+                        .cols_num = in_mesh.texture.dim2,
+                    },
+                    .sample_config = sample_config,
+                    .bits = bits,
+                    .scaling = scaling,
+                    .normal_type = normal_type,
+                } };
+                built.texture_array_u16 = texture_array;
+            } else {
+                var texture_array = try buildTextureArray(
+                    u8,
+                    allocator,
+                    &in_mesh.texture,
+                    1,
+                );
+                errdefer texture_array.deinit(allocator);
+                built.mesh_input.shader = .{ .tex_u8 = .{
+                    .uvs = uvs_array,
+                    .texture = texops.Texture(u8, 1){
+                        .array = texture_array,
+                        .rows_num = in_mesh.texture.dim1,
+                        .cols_num = in_mesh.texture.dim2,
+                    },
+                    .sample_config = sample_config,
+                    .bits = bits,
+                    .scaling = scaling,
+                    .normal_type = normal_type,
+                } };
+                built.texture_array_u8 = texture_array;
+            }
         },
         1 => {
             if (in_mesh.uvs.cols_num != 2) {
@@ -882,13 +920,6 @@ fn buildMeshInput(
             );
             errdefer uvs_array.deinit(allocator);
 
-            var texture_array = try buildTextureArray(
-                allocator,
-                &in_mesh.texture,
-                3,
-            );
-            errdefer texture_array.deinit(allocator);
-
             const sample_config = texops.TextureSampleConfig{
                 .sample = try textureSampleFromC(in_mesh.sample),
                 .mode = try textureSampleModeFromC(in_mesh.sample_mode),
@@ -896,21 +927,50 @@ fn buildMeshInput(
             if (!sample_config.isValid()) {
                 return error.InvalidTextureSampleConfig;
             }
-
-            built.mesh_input.shader = .{ .tex_rgb = .{
-                .uvs = uvs_array,
-                .texture = texops.Texture(3){
-                    .array = texture_array,
-                    .rows_num = in_mesh.texture.dim1,
-                    .cols_num = in_mesh.texture.dim2,
-                },
-                .sample_config = sample_config,
-                .bits = bits,
-                .scaling = scaling,
-                .normal_type = normal_type,
-            } };
             built.uvs_array = uvs_array;
-            built.texture_array = texture_array;
+            if (bits == 16) {
+                var texture_array = try buildTextureArray(
+                    u16,
+                    allocator,
+                    &in_mesh.texture,
+                    3,
+                );
+                errdefer texture_array.deinit(allocator);
+                built.mesh_input.shader = .{ .tex_rgb_u16 = .{
+                    .uvs = uvs_array,
+                    .texture = texops.Texture(u16, 3){
+                        .array = texture_array,
+                        .rows_num = in_mesh.texture.dim1,
+                        .cols_num = in_mesh.texture.dim2,
+                    },
+                    .sample_config = sample_config,
+                    .bits = bits,
+                    .scaling = scaling,
+                    .normal_type = normal_type,
+                } };
+                built.texture_array_u16 = texture_array;
+            } else {
+                var texture_array = try buildTextureArray(
+                    u8,
+                    allocator,
+                    &in_mesh.texture,
+                    3,
+                );
+                errdefer texture_array.deinit(allocator);
+                built.mesh_input.shader = .{ .tex_rgb_u8 = .{
+                    .uvs = uvs_array,
+                    .texture = texops.Texture(u8, 3){
+                        .array = texture_array,
+                        .rows_num = in_mesh.texture.dim1,
+                        .cols_num = in_mesh.texture.dim2,
+                    },
+                    .sample_config = sample_config,
+                    .bits = bits,
+                    .scaling = scaling,
+                    .normal_type = normal_type,
+                } };
+                built.texture_array_u8 = texture_array;
+            }
         },
         2 => {
             const nodal_built = try buildOptionalFieldFromC(

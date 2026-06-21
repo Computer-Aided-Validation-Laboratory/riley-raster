@@ -131,14 +131,14 @@ fn makeGreyMeshInput(
     rabbit_name: []const u8,
     mesh_type: gk.MeshType,
     shader_mode: ShaderMode,
-    texture: iio.Texture(1),
+    texture: iio.Texture(u8, 1),
 ) !MeshInput {
     const data_dir = try buildRabbitDir(allocator, rabbit_name, mesh_type);
     const sim_data = try loadStaticMesh(allocator, io, data_dir);
     const uvs = try loadRabbitUvMap(allocator, io, data_dir);
 
     const shader: shaderops.ShaderInput = switch (shader_mode) {
-        .tex => .{ .tex = .{
+        .tex => .{ .tex_u8 = .{
             .uvs = uvs.array,
             .texture = texture,
             .sample_config = .{
@@ -184,7 +184,7 @@ fn makeGreyMeshInput(
 fn buildRabbitPairScene(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture: iio.Texture(1),
+    texture: iio.Texture(u8, 1),
 ) ![]MeshInput {
     var mesh_list = std.ArrayList(MeshInput).empty;
     var group_list = std.ArrayList(sceneops.MeshGroup).empty;

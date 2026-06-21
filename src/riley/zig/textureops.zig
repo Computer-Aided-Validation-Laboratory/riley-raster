@@ -14,6 +14,7 @@ const impl = if (cfg.simd == .on) simd_impl else common_impl;
 pub const TextureSample = common_impl.TextureSample;
 pub const TextureSampleMode = common_impl.TextureSampleMode;
 pub const TextureSampleConfig = common_impl.TextureSampleConfig;
+pub const texelToFloat = common_impl.texelToFloat;
 pub const Texture = impl.Texture;
 pub const sampleScalar = impl.sampleScalar;
 pub const sampleGreyscale = impl.sampleGreyscale;

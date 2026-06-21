@@ -175,7 +175,7 @@ pub fn main(init: std.process.Init) !void {
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = sim_data.disp,
-        .shader = .{ .tex = .{
+        .shader = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .texture = texture,
             .sample_config = .{
@@ -265,7 +265,6 @@ pub fn main(init: std.process.Init) !void {
         aa.free(img.slice);
         img.deinit(aa);
     }
-
 
     var out_dir = try std.Io.Dir.cwd().openDir(io, OUT_DIR_ROOT, .{});
     defer out_dir.close(io);

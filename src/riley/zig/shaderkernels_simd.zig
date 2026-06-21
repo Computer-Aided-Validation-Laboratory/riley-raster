@@ -97,6 +97,7 @@ pub fn NodalKernel(comptime N: usize) type {
 
 pub fn TexKernel(
     comptime N: usize,
+    comptime T: type,
     comptime channels: usize,
 ) type {
     return struct {
@@ -104,12 +105,13 @@ pub fn TexKernel(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext(N),
             interp: shaderops.InterpData(N),
-            shader: *const shaderops.TexPrepared(channels),
+            shader: *const shaderops.TexPrepared(T, channels),
             ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
             common.shadeTexScalarCommon(
                 N,
+                T,
                 channels,
                 coord_space,
                 ctx_shade,
@@ -130,11 +132,12 @@ pub fn TexKernel(
             v_eta: VecSF,
             v_nodes_inv_z: [N]VecSF,
             v_subpx_z: VecSF,
-            shader: *const shaderops.TexPrepared(channels),
+            shader: *const shaderops.TexPrepared(T, channels),
             spx_image_scratch: *MatSlice(F),
         ) void {
             shadeTexSIMDImpl(
                 N,
+                T,
                 channels,
                 coord_space,
                 ctx_shade,
@@ -154,6 +157,7 @@ pub fn TexKernel(
 
 fn shadeTexSIMDImpl(
     comptime N: usize,
+    comptime T: type,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
     ctx_shade: shaderops.ShadeContext(N),
@@ -164,7 +168,7 @@ fn shadeTexSIMDImpl(
     v_eta: VecSF,
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
-    shader: *const shaderops.TexPrepared(channels),
+    shader: *const shaderops.TexPrepared(T, channels),
     spx_image_scratch: *MatSlice(F),
 ) void {
     _ = v_xi;
@@ -184,6 +188,7 @@ fn shadeTexSIMDImpl(
 
     shadeTexSIMDDispatchImpl(
         N,
+        T,
         channels,
         coord_space,
         shader.sample_config,
@@ -199,6 +204,7 @@ fn shadeTexSIMDImpl(
 
 inline fn shadeTexSIMDDispatchImpl(
     comptime N: usize,
+    comptime T: type,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
     config: texops.TextureSampleConfig,
@@ -207,13 +213,14 @@ inline fn shadeTexSIMDDispatchImpl(
     v_weights: [N]VecSF,
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
-    shader: *const shaderops.TexPrepared(channels),
+    shader: *const shaderops.TexPrepared(T, channels),
     spx_image_scratch: *MatSlice(F),
 ) void {
     @setEvalBranchQuota(40000);
     switch (config.sample) {
         inline else => |sample_type| shadeTexSIMDDispatchModeImpl(
             N,
+            T,
             channels,
             coord_space,
             sample_type,
@@ -231,6 +238,7 @@ inline fn shadeTexSIMDDispatchImpl(
 
 inline fn shadeTexSIMDDispatchModeImpl(
     comptime N: usize,
+    comptime T: type,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
     comptime sample_type: texops.TextureSample,
@@ -240,12 +248,13 @@ inline fn shadeTexSIMDDispatchModeImpl(
     v_weights: [N]VecSF,
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
-    shader: *const shaderops.TexPrepared(channels),
+    shader: *const shaderops.TexPrepared(T, channels),
     spx_image_scratch: *MatSlice(F),
 ) void {
     switch (mode) {
         inline else => |mode_type| shadeTexSIMDDispatchConfigImpl(
             N,
+            T,
             channels,
             coord_space,
             .{
@@ -265,6 +274,7 @@ inline fn shadeTexSIMDDispatchModeImpl(
 
 inline fn shadeTexSIMDDispatchConfigImpl(
     comptime N: usize,
+    comptime T: type,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
     comptime comptime_config: texops.TextureSampleConfig,
@@ -273,7 +283,7 @@ inline fn shadeTexSIMDDispatchConfigImpl(
     v_weights: [N]VecSF,
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
-    shader: *const shaderops.TexPrepared(channels),
+    shader: *const shaderops.TexPrepared(T, channels),
     spx_image_scratch: *MatSlice(F),
 ) void {
     if (!comptime comptime_config.isValid()) return;
@@ -281,6 +291,7 @@ inline fn shadeTexSIMDDispatchConfigImpl(
     if (comptime coord_space == CoordSpace.raster) {
         shaderops.fillTexPerspSIMD(
             N,
+            T,
             channels,
             comptime_config,
             ctx_shade,
@@ -294,6 +305,7 @@ inline fn shadeTexSIMDDispatchConfigImpl(
     } else if (comptime coord_space == CoordSpace.clip_px_leng) {
         shaderops.fillTexClipSIMD(
             N,
+            T,
             channels,
             comptime_config,
             ctx_shade,

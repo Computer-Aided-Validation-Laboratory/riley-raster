@@ -85,7 +85,7 @@ pub fn main(init: std.process.Init) !void {
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = null,
-        .shader = .{ .tex = .{
+        .shader = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .texture = texture,
             .sample_config = .{

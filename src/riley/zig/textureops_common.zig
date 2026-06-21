@@ -68,9 +68,9 @@ pub const TextureSampleConfig = struct {
     }
 };
 
-pub fn Texture(comptime CH: usize) type {
+pub fn Texture(comptime T: type, comptime CH: usize) type {
     return struct {
-        array: NDArray(F),
+        array: NDArray(T),
         rows_num: usize,
         cols_num: usize,
 
@@ -81,7 +81,7 @@ pub fn Texture(comptime CH: usize) type {
             rows: usize,
             cols: usize,
         ) !Self {
-            const array = try NDArray(F).initFlat(
+            const array = try NDArray(T).initFlat(
                 allocator,
                 &[_]usize{ CH, rows, cols },
             );
@@ -102,7 +102,7 @@ pub fn Texture(comptime CH: usize) type {
             ch: usize,
             row: usize,
             col: usize,
-            val: F,
+            val: T,
         ) void {
             self.array.set(&[_]usize{ ch, row, col }, val);
         }
@@ -112,7 +112,7 @@ pub fn Texture(comptime CH: usize) type {
             ch: usize,
             row: usize,
             col: usize,
-        ) F {
+        ) T {
             return self.array.get(&[_]usize{ ch, row, col });
         }
 
@@ -129,7 +129,7 @@ pub fn Texture(comptime CH: usize) type {
                     col: usize,
                     ch: usize,
                 ) F {
-                    return ctx.getVal(ch, row, col);
+                    return texelToFloat(T, ctx.getVal(ch, row, col));
                 }
             };
 
@@ -144,6 +144,14 @@ pub fn Texture(comptime CH: usize) type {
                 SaveCtx.getVal,
             );
         }
+    };
+}
+
+pub fn texelToFloat(comptime T: type, val: T) F {
+    return switch (@typeInfo(T)) {
+        .int => @as(F, @floatFromInt(val)),
+        .float => @as(F, @floatCast(val)),
+        else => @compileError("Unsupported texture storage type."),
     };
 }
 

@@ -155,10 +155,10 @@ pub const NodalInput = struct {
     normal_type: NormalType = .none,
 };
 
-pub fn TexInput(comptime channels: usize) type {
+pub fn TexInput(comptime T: type, comptime channels: usize) type {
     return struct {
         uvs: ndarray.NDArray(F),
-        texture: iio.Texture(channels),
+        texture: iio.Texture(T, channels),
         sample_config: texops.TextureSampleConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .lut_lerp,
@@ -184,8 +184,10 @@ pub fn FuncInput(comptime channels: usize) type {
 
 pub const ShaderInput = union(enum) {
     nodal: NodalInput,
-    tex: TexInput(1),
-    tex_rgb: TexInput(3),
+    tex_u8: TexInput(u8, 1),
+    tex_u16: TexInput(u16, 1),
+    tex_rgb_u8: TexInput(u8, 3),
+    tex_rgb_u16: TexInput(u16, 3),
     func: FuncInput(1),
     func_rgb: FuncInput(3),
 };
@@ -201,10 +203,10 @@ pub const NodalStatic = struct {
     normal_type: NormalType = .none,
 };
 
-pub fn TexStatic(comptime channels: usize) type {
+pub fn TexStatic(comptime T: type, comptime channels: usize) type {
     return struct {
         elem_uvs: ndarray.NDArray(F),
-        texture: iio.Texture(channels),
+        texture: iio.Texture(T, channels),
         sample_config: texops.TextureSampleConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .lut_lerp,
@@ -230,8 +232,10 @@ pub fn FuncStatic(comptime channels: usize) type {
 
 pub const ShaderStatic = union(enum) {
     nodal: NodalStatic,
-    tex: TexStatic(1),
-    tex_rgb: TexStatic(3),
+    tex_u8: TexStatic(u8, 1),
+    tex_u16: TexStatic(u16, 1),
+    tex_rgb_u8: TexStatic(u8, 3),
+    tex_rgb_u16: TexStatic(u16, 3),
     func: FuncStatic(1),
     func_rgb: FuncStatic(3),
 };
@@ -251,10 +255,10 @@ pub const NodalPrepared = struct {
     elem_normals: ?ndarray.MappedNDArray(F) = null,
 };
 
-pub fn TexPrepared(comptime channels: usize) type {
+pub fn TexPrepared(comptime T: type, comptime channels: usize) type {
     return struct {
         elem_uvs: ndarray.NDArray(F),
-        texture: iio.Texture(channels),
+        texture: iio.Texture(T, channels),
         sample_config: texops.TextureSampleConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .lut_lerp,
@@ -288,8 +292,10 @@ pub fn FuncPrepared(comptime channels: usize) type {
 
 pub const ShaderPrepared = union(enum) {
     nodal: NodalPrepared,
-    tex: TexPrepared(1),
-    tex_rgb: TexPrepared(3),
+    tex_u8: TexPrepared(u8, 1),
+    tex_u16: TexPrepared(u16, 1),
+    tex_rgb_u8: TexPrepared(u8, 3),
+    tex_rgb_u16: TexPrepared(u16, 3),
     func: FuncPrepared(1),
     func_rgb: FuncPrepared(3),
 };
@@ -594,11 +600,12 @@ pub inline fn fillNodalPersp(
 
 pub inline fn fillTexClip(
     comptime N: usize,
+    comptime T: type,
     comptime channels: usize,
     comptime sample_config: texops.TextureSampleConfig,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
-    sh: *const TexPrepared(channels),
+    sh: *const TexPrepared(T, channels),
     spx_image_scratch: *matslice.MatSlice(F),
 ) void {
     var tex_u: F = 0.0;
@@ -624,11 +631,12 @@ pub inline fn fillTexClip(
 
 pub inline fn fillTexPersp(
     comptime N: usize,
+    comptime T: type,
     comptime channels: usize,
     comptime sample_config: texops.TextureSampleConfig,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
-    sh: *const TexPrepared(channels),
+    sh: *const TexPrepared(T, channels),
     spx_image_scratch: *matslice.MatSlice(F),
 ) void {
     var tex_u: F = 0.0;

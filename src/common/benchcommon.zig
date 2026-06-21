@@ -671,8 +671,8 @@ pub fn loadBenchmarkMeshInput(
     sample_config: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
-    texture_grey: iio.Texture(1),
-    texture_rgb: iio.Texture(3),
+    texture_grey: iio.Texture(u8, 1),
+    texture_rgb: iio.Texture(u8, 3),
 ) !mo.MeshInput {
     const coord_path = try std.fs.path.join(allocator, &[_][]const u8{
         data_dir,
@@ -722,7 +722,7 @@ pub fn loadBenchmarkMeshInput(
                 2,
                 false,
             );
-            shader = .{ .tex = .{
+            shader = .{ .tex_u8 = .{
                 .uvs = uvs_raw,
                 .texture = texture_grey,
                 .sample_config = sample_config.?,
@@ -736,7 +736,7 @@ pub fn loadBenchmarkMeshInput(
                 2,
                 false,
             );
-            shader = .{ .tex_rgb = .{
+            shader = .{ .tex_rgb_u8 = .{
                 .uvs = uvs_raw,
                 .texture = texture_rgb,
                 .sample_config = sample_config.?,
@@ -806,8 +806,8 @@ pub fn runBenchmark(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: iio.Texture(1),
-    texture_rgb: iio.Texture(3),
+    texture_grey: iio.Texture(u8, 1),
+    texture_rgb: iio.Texture(u8, 3),
     config: rastcfg.RasterConfig,
     out_dir_base: []const u8,
 ) !BenchResult {
@@ -837,8 +837,8 @@ pub fn runBenchmarkWithImageOut(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: iio.Texture(1),
-    texture_rgb: iio.Texture(3),
+    texture_grey: iio.Texture(u8, 1),
+    texture_rgb: iio.Texture(u8, 3),
     config: rastcfg.RasterConfig,
     stats_out_dir_base: []const u8,
     image_out_dir_base: []const u8,
@@ -870,8 +870,8 @@ pub fn runBenchmarkQuiet(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: iio.Texture(1),
-    texture_rgb: iio.Texture(3),
+    texture_grey: iio.Texture(u8, 1),
+    texture_rgb: iio.Texture(u8, 3),
     config: rastcfg.RasterConfig,
     out_dir_base: []const u8,
 ) !BenchResult {
@@ -901,8 +901,8 @@ pub fn runBenchmarkQuietWithImageOut(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: iio.Texture(1),
-    texture_rgb: iio.Texture(3),
+    texture_grey: iio.Texture(u8, 1),
+    texture_rgb: iio.Texture(u8, 3),
     config: rastcfg.RasterConfig,
     stats_out_dir_base: []const u8,
     image_out_dir_base: []const u8,
@@ -935,8 +935,8 @@ fn runBenchmarkInternal(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: iio.Texture(1),
-    texture_rgb: iio.Texture(3),
+    texture_grey: iio.Texture(u8, 1),
+    texture_rgb: iio.Texture(u8, 3),
     config: rastcfg.RasterConfig,
     stats_out_dir_base: []const u8,
     image_out_dir_base: []const u8,

@@ -52,8 +52,8 @@ fn buildSphere200MultiCullMeshInputs(
     shader_type: common.ShaderType,
     sample_config: texops.TextureSampleConfig,
     data_dir: []const u8,
-    texture_grey: iio.Texture(1),
-    texture_rgb: iio.Texture(3),
+    texture_grey: iio.Texture(u8, 1),
+    texture_rgb: iio.Texture(u8, 3),
 ) ![]mo.MeshInput {
     const base_mesh_input = try common.loadBenchmarkMeshInput(
         allocator,
@@ -92,8 +92,8 @@ pub fn runSphere200MultiCullQuiet(
     sample_config: texops.TextureSampleConfig,
     data_dir: []const u8,
     pixel_num: [2]u32,
-    texture_grey: iio.Texture(1),
-    texture_rgb: iio.Texture(3),
+    texture_grey: iio.Texture(u8, 1),
+    texture_rgb: iio.Texture(u8, 3),
     config: rastcfg.RasterConfig,
     out_dir_base: []const u8,
     fov_scale: F,

@@ -123,10 +123,10 @@ pub fn build(b: *std.Build) void {
         const test_step = b.step(entry.step_name, entry.description);
         const test_run = addTestRunStep(
             b,
-            target,
             optimize,
-            build_options_module,
             entry,
+            precision,
+            simd,
         );
         test_step.dependOn(&test_run.step);
         test_all_step.dependOn(&test_run.step);
@@ -366,24 +366,42 @@ fn addRileySharedLibrary(
 
 fn addTestRunStep(
     b: *std.Build,
-    target: std.Build.ResolvedTarget,
     optimize: std.builtin.OptimizeMode,
-    build_options_module: *std.Build.Module,
     entry: TestEntry,
+    precision: []const u8,
+    simd: []const u8,
 ) *std.Build.Step.Run {
-    const test_compile = b.addTest(.{
-        .name = entry.step_name,
-        .root_module = createRootModule(
-            b,
-            target,
-            optimize,
-            build_options_module,
-            entry.source_path,
-            true,
-            .test_module,
-        ),
+    const run_step = b.addSystemCommand(&.{
+        "sh",
+        "-c",
+        \\set -eu
+        \\src="$1"
+        \\precision="$2"
+        \\simd="$3"
+        \\zigexe="$4"
+        \\opt="$5"
+        \\wrapper="${src}.wrapper.zig"
+        \\cleanup() {
+        \\    rm -f "$wrapper"
+        \\}
+        \\trap cleanup EXIT
+        \\{
+        \\    printf 'pub const build_options = struct {\n'
+        \\    printf '    pub const precision = "%s";\n' "$precision"
+        \\    printf '    pub const simd = "%s";\n' "$simd"
+        \\    printf '};\n'
+        \\    cat "$src"
+        \\} > "$wrapper"
+        \\"$zigexe" test -lc -O "$opt" "$wrapper"
+        ,
+        "--",
+        entry.source_path,
+        precision,
+        simd,
+        b.graph.zig_exe,
+        @tagName(optimize),
     });
-    return b.addRunArtifact(test_compile);
+    return run_step;
 }
 
 fn addRunStep(
@@ -460,31 +478,32 @@ fn createRootModule(
     link_libc: bool,
     wrapper_kind: WrapperKind,
 ) *std.Build.Module {
+    const wrapper_text = wrapperSourceText(
+        b,
+        wrapper_kind,
+        source_path,
+    );
     const wrapper_files = b.addWriteFiles();
     const wrapper_source = wrapper_files.add(
         b.fmt("{s}.wrapper.zig", .{source_path}),
-        wrapperSourceText(wrapper_kind),
+        wrapper_text,
+    );
+    const imports = buildWrapperImports(
+        b,
+        target,
+        optimize,
+        build_options_module,
+        source_path,
+        link_libc,
+        wrapper_kind,
+        wrapper_text,
     );
     return b.createModule(.{
         .root_source_file = wrapper_source,
         .target = target,
         .optimize = optimize,
         .link_libc = link_libc,
-        .imports = &.{
-            .{
-                .name = "build_options",
-                .module = build_options_module,
-            },
-            .{
-                .name = "entry_source",
-                .module = b.createModule(.{
-                    .root_source_file = b.path(source_path),
-                    .target = target,
-                    .optimize = optimize,
-                    .link_libc = link_libc,
-                }),
-            },
-        },
+        .imports = imports,
     });
 }
 
@@ -494,7 +513,11 @@ const WrapperKind = enum {
     library,
 };
 
-fn wrapperSourceText(wrapper_kind: WrapperKind) []const u8 {
+fn wrapperSourceText(
+    b: *std.Build,
+    wrapper_kind: WrapperKind,
+    source_path: []const u8,
+) []const u8 {
     return switch (wrapper_kind) {
         .executable =>
         \\const entry_source = @import("entry_source");
@@ -505,7 +528,23 @@ fn wrapperSourceText(wrapper_kind: WrapperKind) []const u8 {
         \\}
         \\
         ,
-        .test_module, .library =>
+        .test_module => blk: {
+            const source_text = std.Io.Dir.cwd().readFileAlloc(
+                b.graph.io,
+                source_path,
+                b.allocator,
+                .limited(16 * 1024 * 1024),
+            ) catch @panic("Failed to read test source file.");
+            break :blk std.fmt.allocPrint(
+                b.allocator,
+                \\pub const build_options = @import("build_options");
+                \\
+                \\{s}
+                ,
+                .{source_text},
+            ) catch @panic("Failed to write test wrapper source.");
+        },
+        .library =>
         \\const entry_source = @import("entry_source");
         \\pub const build_options = @import("build_options");
         \\comptime {
@@ -514,6 +553,78 @@ fn wrapperSourceText(wrapper_kind: WrapperKind) []const u8 {
         \\
         ,
     };
+}
+
+fn buildWrapperImports(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    build_options_module: *std.Build.Module,
+    source_path: []const u8,
+    link_libc: bool,
+    wrapper_kind: WrapperKind,
+    wrapper_text: []const u8,
+) []const std.Build.Module.Import {
+    var imports: std.ArrayList(std.Build.Module.Import) = .empty;
+    imports.append(b.allocator, .{
+        .name = "build_options",
+        .module = build_options_module,
+    }) catch @panic("OOM building imports.");
+
+    if (wrapper_kind != .test_module) {
+        imports.append(b.allocator, .{
+            .name = "entry_source",
+            .module = b.createModule(.{
+                .root_source_file = b.path(source_path),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = link_libc,
+            }),
+        }) catch @panic("OOM building entry source import.");
+        return imports.items;
+    }
+
+    var search_start: usize = 0;
+    while (std.mem.indexOfPos(u8, wrapper_text, search_start, "@import(\"")) |match_start| {
+        const path_start = match_start + "@import(\"".len;
+        const path_end = std.mem.indexOfPos(u8, wrapper_text, path_start, "\")") orelse
+            @panic("Malformed import in generated test wrapper.");
+        const import_path = wrapper_text[path_start..path_end];
+        search_start = path_end + 2;
+
+        if (std.mem.eql(u8, import_path, "std") or
+            std.mem.eql(u8, import_path, "build_options"))
+        {
+            continue;
+        }
+        if (!std.mem.endsWith(u8, import_path, ".zig")) {
+            continue;
+        }
+
+        var already_added = false;
+        for (imports.items) |imp| {
+            if (std.mem.eql(u8, imp.name, import_path)) {
+                already_added = true;
+                break;
+            }
+        }
+        if (already_added) {
+            continue;
+        }
+
+        const module_path = b.fmt("src/{s}", .{import_path});
+        imports.append(b.allocator, .{
+            .name = import_path,
+            .module = b.createModule(.{
+                .root_source_file = b.path(module_path),
+                .target = target,
+                .optimize = optimize,
+                .link_libc = link_libc,
+            }),
+        }) catch @panic("OOM building test import module.");
+    }
+
+    return imports.items;
 }
 
 fn validatePrecision(precision: []const u8) void {

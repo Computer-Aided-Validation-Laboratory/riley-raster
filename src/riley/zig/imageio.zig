@@ -70,20 +70,11 @@ pub fn loadImage(
     io: std.Io,
     path: []const u8,
     format: ImageFormat,
-) !texops.Texture(channels) {
+) !texops.Texture(T, channels) {
     return switch (format) {
         .csv => try loadCSV(T, channels, allocator, io, path),
         .fimg => {
-            const array = try loadFIMG(allocator, io, path);
-            if (array.dims[0] != channels) {
-                // We might want to handle this more gracefully, but for now:
-                return error.ChannelMismatch;
-            }
-            return texops.Texture(channels){
-                .array = array,
-                .rows_num = array.dims[1],
-                .cols_num = array.dims[2],
-            };
+            return try loadFIMGTexture(T, channels, allocator, io, path);
         },
         .ppm => try loadPPM(T, channels, allocator, io, path),
         .bmp => try loadBMP(T, channels, allocator, io, path),
@@ -542,7 +533,7 @@ pub fn loadPPM(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Texture(channels) {
+) !texops.Texture(T, channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -593,7 +584,7 @@ pub fn loadPPM(
     const height = try std.fmt.parseInt(usize, height_str, 10);
     const max_val = try std.fmt.parseInt(u32, max_val_str, 10);
 
-    var texture = try texops.Texture(channels).init(allocator, height, width);
+    var texture = try texops.Texture(T, channels).init(allocator, height, width);
     errdefer texture.deinit(allocator);
 
     const max_val_f = @as(F, @floatFromInt(max_val));
@@ -610,16 +601,16 @@ pub fn loadPPM(
                 const s0 = @as(F, @floatFromInt(rgb[0])) / max_val_f;
                 const s1 = @as(F, @floatFromInt(rgb[1])) / max_val_f;
                 const s2 = @as(F, @floatFromInt(rgb[2])) / max_val_f;
-                texture.setVal(0, rr, cc, convertValue(F, convertToTarget(T, s0)));
-                texture.setVal(1, rr, cc, convertValue(F, convertToTarget(T, s1)));
-                texture.setVal(2, rr, cc, convertValue(F, convertToTarget(T, s2)));
+                texture.setVal(0, rr, cc, convertToTarget(T, s0));
+                texture.setVal(1, rr, cc, convertToTarget(T, s1));
+                texture.setVal(2, rr, cc, convertToTarget(T, s2));
             } else if (channels == 1) {
                 const val = toGreyScale(rgb[0], rgb[1], rgb[2]);
                 texture.setVal(
                     0,
                     rr,
                     cc,
-                    convertValue(F, convertToTarget(T, val / max_val_f)),
+                    convertToTarget(T, val / max_val_f),
                 );
             }
         }
@@ -634,8 +625,7 @@ pub fn loadCSV(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Texture(channels) {
-    _ = T;
+) !texops.Texture(T, channels) {
     const array = if (channels == 1)
         try csvio.loadScalarCsv2D(allocator, io, path)
     else
@@ -648,7 +638,7 @@ pub fn loadCSV(
 
     const rows = array.dims[0];
     const cols = array.dims[1];
-    var texture = try texops.Texture(channels).init(allocator, rows, cols);
+    var texture = try texops.Texture(T, channels).init(allocator, rows, cols);
     errdefer texture.deinit(allocator);
 
     for (0..rows) |rr| {
@@ -658,7 +648,7 @@ pub fn loadCSV(
                     array.get(&[_]usize{ rr, cc })
                 else
                     array.get(&[_]usize{ rr, cc, ch });
-                texture.setVal(ch, rr, cc, val);
+                texture.setVal(ch, rr, cc, convertValue(T, val));
             }
         }
     }
@@ -766,14 +756,50 @@ pub fn loadFIMG(
     return array;
 }
 
+fn loadFIMGTexture(
+    comptime T: type,
+    comptime channels: usize,
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+) !texops.Texture(T, channels) {
+    const array = try loadFIMG(allocator, io, path);
+    defer {
+        allocator.free(array.slice);
+        var array_tmp = array;
+        array_tmp.deinit(allocator);
+    }
+
+    if (array.dims[0] != channels) {
+        return error.ChannelMismatch;
+    }
+
+    var texture = try texops.Texture(T, channels).init(
+        allocator,
+        array.dims[1],
+        array.dims[2],
+    );
+    errdefer texture.deinit(allocator);
+
+    for (0..channels) |ch| {
+        for (0..array.dims[1]) |rr| {
+            for (0..array.dims[2]) |cc| {
+                const val = array.get(&[_]usize{ ch, rr, cc });
+                texture.setVal(ch, rr, cc, convertValue(T, val));
+            }
+        }
+    }
+
+    return texture;
+}
+
 pub fn loadBMP(
     comptime T: type,
     comptime channels: usize,
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Texture(channels) {
-    _ = T;
+) !texops.Texture(T, channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -806,7 +832,11 @@ pub fn loadBMP(
     const abs_height = @as(usize, @intCast(@abs(height)));
     const abs_width = @as(usize, @intCast(@abs(width)));
 
-    var texture = try texops.Texture(channels).init(allocator, abs_height, abs_width);
+    var texture = try texops.Texture(T, channels).init(
+        allocator,
+        abs_height,
+        abs_width,
+    );
     errdefer texture.deinit(allocator);
 
     if (bit_count == 24) {
@@ -818,12 +848,12 @@ pub fn loadBMP(
                 var bgr: [3]u8 = undefined;
                 try reader.readSliceAll(&bgr);
                 if (channels == 3) {
-                    texture.setVal(0, r, x, @as(F, @floatFromInt(bgr[2])));
-                    texture.setVal(1, r, x, @as(F, @floatFromInt(bgr[1])));
-                    texture.setVal(2, r, x, @as(F, @floatFromInt(bgr[0])));
+                    texture.setVal(0, r, x, convertValue(T, bgr[2]));
+                    texture.setVal(1, r, x, convertValue(T, bgr[1]));
+                    texture.setVal(2, r, x, convertValue(T, bgr[0]));
                 } else if (channels == 1) {
                     const val = toGreyScale(bgr[2], bgr[1], bgr[0]);
-                    texture.setVal(0, r, x, val);
+                    texture.setVal(0, r, x, convertValue(T, val));
                 }
             }
             try file_reader.seekBy(@intCast(row_padding));
@@ -839,12 +869,12 @@ pub fn loadBMP(
                 bgr[1] = try reader.takeInt(u16, .little);
                 bgr[2] = try reader.takeInt(u16, .little);
                 if (channels == 3) {
-                    texture.setVal(0, r, x, @as(F, @floatFromInt(bgr[2])));
-                    texture.setVal(1, r, x, @as(F, @floatFromInt(bgr[1])));
-                    texture.setVal(2, r, x, @as(F, @floatFromInt(bgr[0])));
+                    texture.setVal(0, r, x, convertValue(T, bgr[2]));
+                    texture.setVal(1, r, x, convertValue(T, bgr[1]));
+                    texture.setVal(2, r, x, convertValue(T, bgr[0]));
                 } else if (channels == 1) {
                     const val = toGreyScale(bgr[2], bgr[1], bgr[0]);
-                    texture.setVal(0, r, x, val);
+                    texture.setVal(0, r, x, convertValue(T, val));
                 }
             }
             try file_reader.seekBy(@intCast(row_padding));
@@ -864,12 +894,12 @@ pub fn loadBMP(
                 const index = try reader.takeByte();
                 const color = palette[index];
                 if (channels == 3) {
-                    texture.setVal(0, r, x, @as(F, @floatFromInt(color[2])));
-                    texture.setVal(1, r, x, @as(F, @floatFromInt(color[1])));
-                    texture.setVal(2, r, x, @as(F, @floatFromInt(color[0])));
+                    texture.setVal(0, r, x, convertValue(T, color[2]));
+                    texture.setVal(1, r, x, convertValue(T, color[1]));
+                    texture.setVal(2, r, x, convertValue(T, color[0]));
                 } else if (channels == 1) {
                     const val = toGreyScale(color[2], color[1], color[0]);
-                    texture.setVal(0, r, x, val);
+                    texture.setVal(0, r, x, convertValue(T, val));
                 }
             }
             try file_reader.seekBy(@intCast(row_padding));
@@ -885,7 +915,7 @@ pub fn loadTIFF(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Texture(channels) {
+) !texops.Texture(T, channels) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -943,7 +973,11 @@ pub fn loadTIFF(
 
     if (samples_per_pixel != 1) return error.UnsupportedTIFFColorSpace;
 
-    var texture = try texops.Texture(channels).init(allocator, height, width);
+    var texture = try texops.Texture(T, channels).init(
+        allocator,
+        height,
+        width,
+    );
     errdefer texture.deinit(allocator);
 
     try file_reader.seekTo(strip_offsets);
@@ -960,7 +994,7 @@ pub fn loadTIFF(
             const norm = val_raw / max_val_f;
 
             if (channels == 3) {
-                const out_val = convertValue(F, convertToTarget(T, norm));
+                const out_val = convertToTarget(T, norm);
                 texture.setVal(0, rr, cc, out_val);
                 texture.setVal(1, rr, cc, out_val);
                 texture.setVal(2, rr, cc, out_val);
@@ -969,7 +1003,7 @@ pub fn loadTIFF(
                     0,
                     rr,
                     cc,
-                    convertValue(F, convertToTarget(T, norm)),
+                    convertToTarget(T, norm),
                 );
             }
         }
@@ -984,8 +1018,7 @@ pub fn CLoadTIFF(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !texops.Texture(channels) {
-    _ = T;
+) !texops.Texture(T, channels) {
     _ = io;
     var libtiff = try clibtiff.LibTiff.init();
     defer libtiff.deinit();
@@ -1007,7 +1040,7 @@ pub fn CLoadTIFF(
 
     if (libtiff.readRGBAImage(tif, w, h, raster.ptr, 0) == 0) return error.ReadFailed;
 
-    var texture = try texops.Texture(channels).init(allocator, h, w);
+    var texture = try texops.Texture(T, channels).init(allocator, h, w);
     errdefer texture.deinit(allocator);
 
     for (0..h) |row| {
@@ -1019,12 +1052,12 @@ pub fn CLoadTIFF(
             const b = @as(u8, @intCast((pixel >> 16) & 0xFF));
 
             if (channels == 3) {
-                texture.setVal(0, row, col, @as(F, @floatFromInt(r)));
-                texture.setVal(1, row, col, @as(F, @floatFromInt(g)));
-                texture.setVal(2, row, col, @as(F, @floatFromInt(b)));
+                texture.setVal(0, row, col, convertValue(T, r));
+                texture.setVal(1, row, col, convertValue(T, g));
+                texture.setVal(2, row, col, convertValue(T, b));
             } else if (channels == 1) {
                 const val = toGreyScale(r, g, b);
-                texture.setVal(0, row, col, val);
+                texture.setVal(0, row, col, convertValue(T, val));
             }
         }
     }
@@ -1063,7 +1096,7 @@ fn convertValue(comptime T: type, val: anytype) T {
     };
 
     switch (@typeInfo(T)) {
-        .int => return @as(T, @intFromFloat(val_f64)),
+        .int => return @as(T, @intFromFloat(@round(val_f64))),
         .float => return @as(T, @floatCast(val_f64)),
         else => @compileError("Unsupported type"),
     }
@@ -1292,7 +1325,11 @@ test "FIMG Save and Load Roundtrip" {
     const height: usize = 3;
     const channels: usize = 2;
 
-    var texture = try texops.Texture(channels).init(allocator, height, width);
+    var texture = try texops.Texture(F, channels).init(
+        allocator,
+        height,
+        width,
+    );
     defer texture.deinit(allocator);
 
     for (0..channels) |ch| {
@@ -1339,4 +1376,4 @@ test "FIMG Save and Load Roundtrip" {
         }
     }
 }
-    const frac_tol: F = if (F == f32) 1e-2 else 1e-6;
+const frac_tol: F = if (F == f32) 1e-2 else 1e-6;

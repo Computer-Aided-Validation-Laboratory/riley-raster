@@ -38,6 +38,7 @@ pub fn NodalKernel(comptime N: usize) type {
 
 pub fn TexKernel(
     comptime N: usize,
+    comptime T: type,
     comptime channels: usize,
 ) type {
     return struct {
@@ -45,12 +46,13 @@ pub fn TexKernel(
             comptime coord_space: CoordSpace,
             ctx_shade: shaderops.ShadeContext(N),
             interp: shaderops.InterpData(N),
-            shader: *const shaderops.TexPrepared(channels),
+            shader: *const shaderops.TexPrepared(T, channels),
             ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
             common.shadeTexScalarCommon(
                 N,
+                T,
                 channels,
                 coord_space,
                 ctx_shade,

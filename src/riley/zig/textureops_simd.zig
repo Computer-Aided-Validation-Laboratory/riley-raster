@@ -38,6 +38,7 @@ const quinticBSplineCoeff = common.quinticBSplineCoeff;
 const getLerpSampCoeffs = common.getLerpSampCoeffs;
 const getLerpSampCoeffsRuntime = common.getLerpSampCoeffsRuntime;
 const getPx = common.getPx;
+const texelToFloat = common.texelToFloat;
 
 pub const sampleScalar = common.sampleScalar;
 pub const sampleGreyscale = common.sampleGreyscale;
@@ -77,6 +78,7 @@ fn getPxWide(
     v_tex_x_i: VecSI,
     v_tex_y_i: VecSI,
 ) [CH]VecSF {
+    const T = @TypeOf(texture.array.slice[0]);
     const tex_cols = @as(isize, @intCast(texture.cols_num));
     const tex_rows = @as(isize, @intCast(texture.rows_num));
 
@@ -95,25 +97,27 @@ fn getPxWide(
 
     var samp_res: [CH]VecSF = undefined;
     const stride_y = texture.array.strides[1];
-
     inline for (0..CH) |ch| {
         const base_slice = texture.array.getPlaneSlice(ch);
         const v_tap_offsets = v_yu * @as(VecSU, @splat(stride_y)) + v_xu;
-
         const first_off = v_tap_offsets[0];
-        const v_expected = @as(VecSU, @splat(first_off)) + std.simd.iota(usize, S);
+        const v_expected = @as(VecSU, @splat(first_off)) +
+            std.simd.iota(usize, S);
         const is_contiguous = @reduce(.And, v_tap_offsets == v_expected);
 
+        var vals: [S]F = undefined;
         if (is_contiguous) {
-            samp_res[ch] = base_slice[first_off..][0..S].*;
+            const raw_vals: @Vector(S, T) = base_slice[first_off..][0..S].*;
+            inline for (0..S) |ii| {
+                vals[ii] = texelToFloat(T, raw_vals[ii]);
+            }
         } else {
-            var px_res: [S]F = undefined;
             const tap_offsets_arr: [S]usize = v_tap_offsets;
             for (0..S) |ii| {
-                px_res[ii] = base_slice[tap_offsets_arr[ii]];
+                vals[ii] = texelToFloat(T, base_slice[tap_offsets_arr[ii]]);
             }
-            samp_res[ch] = px_res;
         }
+        samp_res[ch] = vals;
     }
     return samp_res;
 }
@@ -189,6 +193,7 @@ inline fn sampleConvOneLane(
     samp_coeff_y: [TAP]F,
 ) [CH]F {
     @setEvalBranchQuota(40000);
+    const T = @TypeOf(texture.array.slice[0]);
     const tap_offset = @as(isize, @intCast(TAP)) / 2 - 1;
     const tex_start_x = tex_x_i - tap_offset;
     const tex_start_y = tex_y_i - tap_offset;
@@ -204,7 +209,6 @@ inline fn sampleConvOneLane(
         const v_samp_coeff_x: @Vector(TAP, F) = samp_coeff_x;
         const v_samp_coeff_y: @Vector(TAP, F) = samp_coeff_y;
         const stride_y = texture.array.strides[1];
-
         const samp_coeff_sum = @reduce(.Add, v_samp_coeff_x) *
             @reduce(.Add, v_samp_coeff_y);
         const inv_samp_coeff_sum = if (@abs(samp_coeff_sum) > tol.texture.samp_coeff_sum)
@@ -213,15 +217,23 @@ inline fn sampleConvOneLane(
             1.0;
 
         inline for (0..TAP) |jj| {
-            const row_off =
-                @as(usize, @intCast(tex_start_y + @as(isize, @intCast(jj)))) * stride_y +
-                @as(usize, @intCast(tex_start_x));
             const wy_val = v_samp_coeff_y[jj];
+            const row_off =
+                @as(usize, @intCast(tex_start_y + @as(isize, @intCast(jj)))) *
+                stride_y +
+                @as(usize, @intCast(tex_start_x));
 
             inline for (0..CH) |ch| {
                 const plane_slice = texture.array.getPlaneSlice(ch);
-                const v_row: @Vector(TAP, F) = plane_slice[row_off..][0..TAP].*;
-                samp_res[ch] += @reduce(.Add, v_row * v_samp_coeff_x) * wy_val;
+                const v_row_raw: @Vector(TAP, T) =
+                    plane_slice[row_off..][0..TAP].*;
+                var row_vals: [TAP]F = undefined;
+                inline for (0..TAP) |ii| {
+                    row_vals[ii] = texelToFloat(T, v_row_raw[ii]);
+                }
+                const v_row: @Vector(TAP, F) = row_vals;
+                const row_sum = @reduce(.Add, v_row * v_samp_coeff_x);
+                samp_res[ch] += row_sum * wy_val;
             }
         }
 

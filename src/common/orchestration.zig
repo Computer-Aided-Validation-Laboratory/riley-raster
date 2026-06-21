@@ -141,10 +141,10 @@ fn initCameraForSimDataAllFrames(
             .connect = sim_data.connect,
             .disp = null,
             .shader = .{
-            .func = .{
-                .uvs = null,
-                .coord_mode = .parametric,
-                .builtin = .constant,
+                .func = .{
+                    .uvs = null,
+                    .coord_mode = .parametric,
+                    .builtin = .constant,
                     .normal_type = .none,
                 },
             },
@@ -407,7 +407,7 @@ pub fn buildMixedMeshInputs(
     allocator: std.mem.Allocator,
     io: std.Io,
     dir_paths: []const []const u8,
-    texture: iio.Texture(1),
+    texture: iio.Texture(u8, 1),
 ) ![]mo.MeshInput {
     const sim_datas = try meshio.loadMultiSimData(allocator, io, dir_paths, .{});
     var mesh_inputs = try allocator.alloc(mo.MeshInput, 10);
@@ -440,7 +440,7 @@ pub fn buildMixedMeshInputs(
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .tex = .{
+            .shader = .{ .tex_u8 = .{
                 .uvs = uvs.array,
                 .texture = texture,
                 .sample_config = .{
@@ -464,7 +464,7 @@ pub fn buildMixedRgbMeshInputs(
     allocator: std.mem.Allocator,
     io: std.Io,
     dir_paths: []const []const u8,
-    texture: iio.Texture(3),
+    texture: iio.Texture(u8, 3),
 ) ![]mo.MeshInput {
     const sim_datas = try meshio.loadMultiSimData(allocator, io, dir_paths, .{});
     var mesh_inputs = try allocator.alloc(mo.MeshInput, 10);
@@ -482,7 +482,7 @@ pub fn buildMixedRgbMeshInputs(
             .coords = try copyCoords(allocator, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = sim_datas[ii].field,
-            .shader = .{ .tex_rgb = .{
+            .shader = .{ .tex_rgb_u8 = .{
                 .uvs = uvs.array,
                 .texture = texture,
                 .sample_config = .{

@@ -140,7 +140,7 @@ pub fn main(init: std.process.Init) !void {
             .coords = try orch.copyCoords(aa, sim_datas[ii].coords),
             .connect = sim_datas[ii].connect,
             .disp = null,
-            .shader = .{ .tex = .{
+            .shader = .{ .tex_u8 = .{
                 .uvs = uv_maps[ii].array,
                 .texture = texture,
                 .sample_config = .{

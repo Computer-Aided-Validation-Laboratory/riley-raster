@@ -246,7 +246,7 @@ pub fn prepareBenchmark(
         .coords = sim_data.coords,
         .connect = sim_data.connect,
         .disp = sim_data.disp,
-        .shader = .{ .tex = .{
+        .shader = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .texture = texture,
             .sample_config = sample_config,

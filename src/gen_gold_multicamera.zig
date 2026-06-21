@@ -171,7 +171,7 @@ pub fn main(init: std.process.Init) !void {
                     .connect = sim_data.connect,
                     .disp = null,
                     .shader = .{
-                        .tex_rgb = .{
+                        .tex_rgb_u8 = .{
                             .uvs = uv_map.array,
                             .texture = texture_rgb,
                             .sample_config = sample_config,

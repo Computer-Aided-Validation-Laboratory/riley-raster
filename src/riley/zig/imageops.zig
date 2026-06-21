@@ -60,8 +60,9 @@ pub fn getScaleFactors(
 }
 
 pub fn getScalingParamsTexture(
+    comptime T: type,
     comptime channels: usize,
-    texture: *const texops.Texture(channels),
+    texture: *const texops.Texture(T, channels),
     strategy: ScaleStrategy,
 ) ScalingParams {
     switch (strategy) {
@@ -70,8 +71,9 @@ pub fn getScalingParamsTexture(
             var px_min: F = std.math.inf(F);
             var px_max: F = -std.math.inf(F);
             for (texture.array.slice) |val| {
-                if (val < px_min) px_min = val;
-                if (val > px_max) px_max = val;
+                const val_f = texops.texelToFloat(T, val);
+                if (val_f < px_min) px_min = val_f;
+                if (val_f > px_max) px_max = val_f;
             }
             const range = if (@abs(px_max - px_min) < tol.image.auto_scale_range)
                 1.0

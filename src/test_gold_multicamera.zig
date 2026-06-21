@@ -867,7 +867,7 @@ test "Sphere200 multicamera gold tests" {
                     .connect = sim_data.connect,
                     .disp = null,
                     .shader = .{
-                        .tex_rgb = .{
+                        .tex_rgb_u8 = .{
                             .uvs = uv_map.array,
                             .texture = texture_rgb,
                             .sample_config = sample_config,

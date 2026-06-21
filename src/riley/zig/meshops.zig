@@ -132,8 +132,8 @@ pub fn countOutputFields(
     for (meshes) |mesh| {
         const mesh_fields: u8 = switch (mesh.shader) {
             .nodal => |shader| shader.field.getFieldsN(),
-            .tex => 1,
-            .tex_rgb => 3,
+            .tex_u8, .tex_u16 => 1,
+            .tex_rgb_u8, .tex_rgb_u16 => 3,
             .func => 1,
             .func_rgb => 3,
         };
@@ -204,10 +204,16 @@ pub fn meshInputFromSimDataSlice(
     errdefer {
         for (0..initialized_count) |ii| {
             switch (mesh_inputs[ii].shader) {
-                .tex => |tex| {
+                .tex_u8 => |tex| {
                     outer_alloc.free(tex.uvs.slice);
                 },
-                .tex_rgb => |tex| {
+                .tex_u16 => |tex| {
+                    outer_alloc.free(tex.uvs.slice);
+                },
+                .tex_rgb_u8 => |tex| {
+                    outer_alloc.free(tex.uvs.slice);
+                },
+                .tex_rgb_u16 => |tex| {
                     outer_alloc.free(tex.uvs.slice);
                 },
                 .func => |tex_func| {
@@ -268,7 +274,7 @@ pub fn meshInputFromSimDataSlice(
                 format,
             );
 
-            mesh_inputs[ii].shader = .{ .tex = .{
+            mesh_inputs[ii].shader = .{ .tex_u8 = .{
                 .uvs = uvmap.array,
                 .texture = texture,
                 .sample_config = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
@@ -301,13 +307,13 @@ pub fn initMeshStatic(
                 .normal_type = nodal_in.normal_type,
             } };
         },
-        .tex => |tex_in| {
+        .tex_u8 => |tex_in| {
             const elem_uvs = try prepareUVs(
                 allocator,
                 &tex_in.uvs,
                 &mesh_input.connect,
             );
-            shader_static = .{ .tex = .{
+            shader_static = .{ .tex_u8 = .{
                 .elem_uvs = elem_uvs,
                 .texture = tex_in.texture,
                 .sample_config = tex_in.sample_config,
@@ -316,13 +322,43 @@ pub fn initMeshStatic(
                 .normal_type = tex_in.normal_type,
             } };
         },
-        .tex_rgb => |tex_in| {
+        .tex_u16 => |tex_in| {
             const elem_uvs = try prepareUVs(
                 allocator,
                 &tex_in.uvs,
                 &mesh_input.connect,
             );
-            shader_static = .{ .tex_rgb = .{
+            shader_static = .{ .tex_u16 = .{
+                .elem_uvs = elem_uvs,
+                .texture = tex_in.texture,
+                .sample_config = tex_in.sample_config,
+                .bits = tex_in.bits,
+                .scaling = tex_in.scaling,
+                .normal_type = tex_in.normal_type,
+            } };
+        },
+        .tex_rgb_u8 => |tex_in| {
+            const elem_uvs = try prepareUVs(
+                allocator,
+                &tex_in.uvs,
+                &mesh_input.connect,
+            );
+            shader_static = .{ .tex_rgb_u8 = .{
+                .elem_uvs = elem_uvs,
+                .texture = tex_in.texture,
+                .sample_config = tex_in.sample_config,
+                .bits = tex_in.bits,
+                .scaling = tex_in.scaling,
+                .normal_type = tex_in.normal_type,
+            } };
+        },
+        .tex_rgb_u16 => |tex_in| {
+            const elem_uvs = try prepareUVs(
+                allocator,
+                &tex_in.uvs,
+                &mesh_input.connect,
+            );
+            shader_static = .{ .tex_rgb_u16 = .{
                 .elem_uvs = elem_uvs,
                 .texture = tex_in.texture,
                 .sample_config = tex_in.sample_config,
@@ -969,11 +1005,37 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .nodal => |nodal_static| {
                     mesh_prep.shader = try self.prepareNodalShader(nodal_static);
                 },
-                .tex => |tex_static| {
-                    mesh_prep.shader = try prepareTexShader(1, self, tex_static);
+                .tex_u8 => |tex_static| {
+                    mesh_prep.shader = try prepareTexShader(
+                        u8,
+                        1,
+                        self,
+                        tex_static,
+                    );
                 },
-                .tex_rgb => |tex_static| {
-                    mesh_prep.shader = try prepareTexShader(3, self, tex_static);
+                .tex_u16 => |tex_static| {
+                    mesh_prep.shader = try prepareTexShader(
+                        u16,
+                        1,
+                        self,
+                        tex_static,
+                    );
+                },
+                .tex_rgb_u8 => |tex_static| {
+                    mesh_prep.shader = try prepareTexShader(
+                        u8,
+                        3,
+                        self,
+                        tex_static,
+                    );
+                },
+                .tex_rgb_u16 => |tex_static| {
+                    mesh_prep.shader = try prepareTexShader(
+                        u16,
+                        3,
+                        self,
+                        tex_static,
+                    );
                 },
                 .func => |func_static| {
                     mesh_prep.shader = try prepareFuncShader(1, self, func_static);
@@ -1093,11 +1155,13 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         }
 
         fn prepareTexShader(
+            comptime T: type,
             comptime channels: usize,
             self: *FrameMeshPipelineType,
-            tex_static: shaderops.TexStatic(channels),
+            tex_static: shaderops.TexStatic(T, channels),
         ) !shaderops.ShaderPrepared {
             const params = imageops.getScalingParamsTexture(
+                T,
                 channels,
                 &tex_static.texture,
                 tex_static.scaling,
@@ -1132,8 +1196,32 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             );
 
             const elem_normals = try self.prepareVisibleNormals(tex_static.normal_type);
-            if (comptime channels == 1) {
-                return .{ .tex = .{
+            if (comptime T == u8 and channels == 1) {
+                return .{ .tex_u8 = .{
+                    .elem_uvs = elem_uvs,
+                    .texture = tex_static.texture,
+                    .sample_config = tex_static.sample_config,
+                    .bits = tex_static.bits,
+                    .scaling = tex_static.scaling,
+                    .scale_mul = factors.mul,
+                    .scale_add = factors.add,
+                    .normal_type = tex_static.normal_type,
+                    .elem_normals = elem_normals,
+                } };
+            } else if (comptime T == u16 and channels == 1) {
+                return .{ .tex_u16 = .{
+                    .elem_uvs = elem_uvs,
+                    .texture = tex_static.texture,
+                    .sample_config = tex_static.sample_config,
+                    .bits = tex_static.bits,
+                    .scaling = tex_static.scaling,
+                    .scale_mul = factors.mul,
+                    .scale_add = factors.add,
+                    .normal_type = tex_static.normal_type,
+                    .elem_normals = elem_normals,
+                } };
+            } else if (comptime T == u8 and channels == 3) {
+                return .{ .tex_rgb_u8 = .{
                     .elem_uvs = elem_uvs,
                     .texture = tex_static.texture,
                     .sample_config = tex_static.sample_config,
@@ -1145,7 +1233,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .elem_normals = elem_normals,
                 } };
             } else {
-                return .{ .tex_rgb = .{
+                return .{ .tex_rgb_u16 = .{
                     .elem_uvs = elem_uvs,
                     .texture = tex_static.texture,
                     .sample_config = tex_static.sample_config,

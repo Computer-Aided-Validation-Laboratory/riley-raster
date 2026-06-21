@@ -84,7 +84,7 @@ pub fn runGenerationExt(
     test_type: []const u8,
     mesh_types: []const MeshType,
     fov_scale: F,
-    texture: iio.Texture(1),
+    texture: iio.Texture(u8, 1),
     pixel_num: [2]u32,
     sample_configs: []const texops.TextureSampleConfig,
     gold_dir_root: []const u8,
@@ -156,7 +156,7 @@ pub fn runGenerationExt(
                     prepared.sim_data.connect,
                     prepared.sim_data.field,
                     .{
-                        .tex = .{
+                        .tex_u8 = .{
                             .uvs = prepared.uvs.array,
                             .texture = texture,
                             .sample_config = sc,

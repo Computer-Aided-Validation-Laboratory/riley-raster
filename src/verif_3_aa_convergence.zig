@@ -173,7 +173,7 @@ pub fn main(init: std.process.Init) !void {
                             .normal_type = .none,
                         } };
                     } else {
-                        mesh_input.shader = .{ .tex = .{
+                        mesh_input.shader = .{ .tex_u8 = .{
                             .uvs = uv_map.array,
                             .texture = texture,
                             .sample_config = .{

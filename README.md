@@ -8,6 +8,20 @@ We chose to implement `Riley` in Zig as it is a performant, compiled language wi
 ```shell
 zig test -O ReleaseSafe ./src/test_min.zig
 ```
+or with the build system:
+```shell
+zig build test-min -Doptimize=ReleaseSafe
+```
+Plain `zig run` and `zig test` on files under `./src/` still default to the standard Riley configuration of `f64` precision with SIMD enabled. The `zig build` workflow can now override these defaults with:
+```shell
+zig build <STEP> -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+zig build <STEP> -Dprecision=f32 -Dsimd=on -Doptimize=ReleaseSafe
+zig build <STEP> -Dprecision=f32 -Dsimd=off -Doptimize=ReleaseSafe
+```
+where `STEP` is one of the build steps listed by:
+```shell
+zig build --help
+```
 The min test suite contains two cases a render of the "multimesh" case which is two elements of each type in a single scene that are rendered with nodal interpolation shading or texture shading. The min test suite also contains a rendering of the "sphere200" case which is a sphere with 200 elements of a single type with every possible combination of nodal or texture shading. the sphere200 case is particularly sensitive to breaking changes due to the range of element orientations. If this test suite passes and you are not interested in developement work on `Riley` you can go ahead and look at the capability demonstration cases below to see how to adapt `Riley` to your use case.
 
 ## Getting Started: Python
@@ -27,6 +41,10 @@ pip install -e .
 We have included a series of capability demonstrations scripts in the /src/ directory (or in the /pyscripts/ directory for python versions). In Zig, these can be run using
 ```shell
 zig run -O ReleaseFast ./src/demo_<CASE>.zig
+```
+or with the build system:
+```shell
+zig build demo-<CASE> -Doptimize=ReleaseFast
 ```
 where CASE is the name of the demonstration script you want to run (CASE = sphere200, rabbits, dicuq, stereocal). The output renders will be saved to /out/demo-CASE/.
 
@@ -73,11 +91,84 @@ You should see a range of directories generated in the data/bench directory with
 ```shell
 zig run -O ReleaseSafe ./src/gen_gold_all.zig
 ```
+or with the build system:
+```shell
+zig build gen-gold -Doptimize=ReleaseSafe
+zig build gen-gold-min -Doptimize=ReleaseSafe
+```
 
 Now we can run the remaining "all" and "bench" test suites:
 ```shell
 zig test -O ReleaseSafe ./src/test_gold_all.zig
 zig test -O ReleaseSafe ./src/test_bench.zig
+```
+or with the build system:
+```shell
+zig build test-gold-all -Doptimize=ReleaseSafe
+zig build test-bench -Doptimize=ReleaseSafe
+zig build tests -Doptimize=ReleaseSafe
+```
+
+### Precision and SIMD Build Matrix
+The `zig build` workflow supports precision and SIMD selection without editing
+`buildconfig.zig`:
+```shell
+zig build tests -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+zig build tests -Dprecision=f64 -Dsimd=off -Doptimize=ReleaseSafe
+zig build tests -Dprecision=f32 -Dsimd=on -Doptimize=ReleaseSafe
+zig build tests -Dprecision=f32 -Dsimd=off -Doptimize=ReleaseSafe
+```
+
+Gold data is shared across SIMD modes where possible and split only when the
+render path is known to diverge:
+- Shared suites:
+```text
+gold/min
+gold/small
+gold/simple
+gold/edge
+gold/hull
+gold/fullscreen
+gold/texfunc
+gold/ssaa
+gold/psf
+```
+- Shared `f32` suites:
+```text
+gold/min_f32
+gold/small_f32
+gold/simple_f32
+gold/edge_f32
+gold/hull_f32
+gold/fullscreen_f32
+gold/texfunc_f32
+gold/ssaa_f32
+gold/psf_f32
+gold/multimesh_f32
+```
+- Sphere and multicamera suites are split by implementation path:
+```text
+gold/sphere2000-simd
+gold/sphere2000
+gold/sphere2000zoom-simd
+gold/sphere2000zoom
+gold/sphere200multicam-simd
+gold/sphere200multicam
+gold/sphere2000_f32_simd
+gold/sphere2000_f32_scalar
+gold/sphere2000zoom_f32_simd
+gold/sphere2000zoom_f32_scalar
+gold/sphere200multicam_f32_simd
+gold/sphere200multicam_f32_scalar
+```
+
+Typical gold generation commands are:
+```shell
+zig build gen-gold-min -Dprecision=f32 -Dsimd=on -Doptimize=ReleaseSafe
+zig build gen-gold -Dprecision=f32 -Dsimd=on -Doptimize=ReleaseSafe
+zig build gen-gold -Dprecision=f32 -Dsimd=off -Doptimize=ReleaseSafe
+zig build gen-gold-sphere -Dprecision=f64 -Dsimd=off -Doptimize=ReleaseSafe
+zig build gen-gold-multicamera -Dprecision=f64 -Dsimd=off -Doptimize=ReleaseSafe
 ```
 
 ### Single Thread Performance Regression Testing
@@ -86,6 +177,8 @@ If all correctness regression tests pass you will need to generate gold for sing
 ```shell
 python ./scripts/compile_para_simd_benchmarks.py
 ```
+These helper scripts now call the `zig build install-bench-*` steps rather than
+editing `buildconfig.zig` directly.
 
 Once that is complete you can generate gold performance statistics for your local machine using:
 
@@ -115,6 +208,20 @@ zig run -O ReleaseFast ./src/bench_fullraster.zig
 zig run -O ReleaseFast ./src/bench_geom.zig
 zig run -O ReleaseFast ./src/bench_sphere2000.zig
 zig run -O ReleaseFast ./src/bench_dicuq.zig
+```
+or with the build system:
+```shell
+zig build bench-fullraster -Doptimize=ReleaseFast
+zig build bench-geom -Doptimize=ReleaseFast
+zig build bench-sphere2000 -Doptimize=ReleaseFast
+zig build bench-dicuq -Doptimize=ReleaseFast
+```
+To install benchmark binaries into `./bin/` use:
+```shell
+zig build install-bench-fullraster -Doptimize=ReleaseFast --prefix .
+zig build install-bench-geom -Doptimize=ReleaseFast --prefix .
+zig build install-bench-sphere2000 -Doptimize=ReleaseFast --prefix .
+zig build install-bench-dicuq -Doptimize=ReleaseFast --prefix .
 ```
 You will find the rendered output for these benchmarks in ./out/bench_images_CASE and the statistics for the runs in ./out/bench_stats_CASE where CASE is fullraster, geom, sphere2000 or dicuq.
 
