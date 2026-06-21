@@ -1,4 +1,6 @@
 // --------------------------------------------------------------------------
+const buildconfig = @import("../riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
@@ -25,8 +27,8 @@ pub const DistortCase = struct {
 };
 
 fn edgeCameraInput(
-    pos_world: [3]f64,
-    roi_cent_world: [3]f64,
+    pos_world: [3]F,
+    roi_cent_world: [3]F,
 ) cam.CameraInput {
     return .{
         .pixels_num = .{ 800, 500 },
@@ -41,11 +43,11 @@ fn edgeCameraInput(
 }
 
 fn brownConradyDistortion(
-    k1: f64,
-    k2: f64,
-    k3: f64,
-    p1: f64,
-    p2: f64,
+    k1: F,
+    k2: F,
+    k3: F,
+    p1: F,
+    p2: F,
 ) cam.DistortionModel {
     return .{
         .brown_conrady = .{

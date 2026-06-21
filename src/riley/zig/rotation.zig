@@ -9,12 +9,14 @@
 const std = @import("std");
 const print = std.debug.print;
 const expectEqual = std.testing.expectEqual;
+const buildconfig = @import("buildconfig.zig");
 const Mat33f = @import("matstack.zig").Mat33f;
+const F = buildconfig.F;
 
 pub const Rotation = struct {
-    alpha_z: f64 = 0.0,
-    beta_y: f64 = 0.0,
-    gamma_x: f64 = 0.0,
+    alpha_z: F = 0.0,
+    beta_y: F = 0.0,
+    gamma_x: F = 0.0,
     matrix: Mat33f = undefined,
 
     const Self = @This();
@@ -22,7 +24,7 @@ pub const Rotation = struct {
     // const rows_n: usize = 3;
     // const cols_n: usize = 3;
 
-    pub fn init(alpha_z: f64, beta_y: f64, gamma_x: f64) Rotation {
+    pub fn init(alpha_z: F, beta_y: F, gamma_x: F) Rotation {
         var rot = Rotation{ .alpha_z = alpha_z, .beta_y = beta_y, .gamma_x = gamma_x };
         rot.calcRotMat();
         return rot;
@@ -69,8 +71,8 @@ pub const Rotation = struct {
         const beta = std.math.asin(-r20);
         const cos_beta = @cos(beta);
 
-        var alpha: f64 = 0.0;
-        var gamma: f64 = 0.0;
+        var alpha: F = 0.0;
+        var gamma: F = 0.0;
 
         if (@abs(cos_beta) > 1e-6) {
             alpha = std.math.atan2(r10, r00);

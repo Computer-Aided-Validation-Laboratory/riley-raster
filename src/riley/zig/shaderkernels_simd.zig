@@ -9,6 +9,7 @@
 const std = @import("std");
 
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
@@ -28,7 +29,7 @@ pub fn NodalKernel(comptime N: usize) type {
             interp: shaderops.InterpData(N),
             shader: *const shaderops.NodalPrepared,
             ctx_report: anytype,
-            spx_image_scratch: *MatSlice(f64),
+            spx_image_scratch: *MatSlice(F),
         ) void {
             common.shadeNodalScalarCommon(
                 N,
@@ -52,7 +53,7 @@ pub fn NodalKernel(comptime N: usize) type {
             v_nodes_inv_z: [N]VecSF,
             v_subpx_z: VecSF,
             shader: *const shaderops.NodalPrepared,
-            spx_image_scratch: *MatSlice(f64),
+            spx_image_scratch: *MatSlice(F),
         ) void {
             _ = v_xi;
             _ = v_eta;
@@ -105,7 +106,7 @@ pub fn TexKernel(
             interp: shaderops.InterpData(N),
             shader: *const shaderops.TexPrepared(channels),
             ctx_report: anytype,
-            spx_image_scratch: *MatSlice(f64),
+            spx_image_scratch: *MatSlice(F),
         ) void {
             common.shadeTexScalarCommon(
                 N,
@@ -130,7 +131,7 @@ pub fn TexKernel(
             v_nodes_inv_z: [N]VecSF,
             v_subpx_z: VecSF,
             shader: *const shaderops.TexPrepared(channels),
-            spx_image_scratch: *MatSlice(f64),
+            spx_image_scratch: *MatSlice(F),
         ) void {
             shadeTexSIMDImpl(
                 N,
@@ -164,7 +165,7 @@ fn shadeTexSIMDImpl(
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
     shader: *const shaderops.TexPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
 ) void {
     _ = v_xi;
     _ = v_eta;
@@ -207,7 +208,7 @@ inline fn shadeTexSIMDDispatchImpl(
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
     shader: *const shaderops.TexPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
 ) void {
     @setEvalBranchQuota(40000);
     switch (config.sample) {
@@ -240,7 +241,7 @@ inline fn shadeTexSIMDDispatchModeImpl(
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
     shader: *const shaderops.TexPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
 ) void {
     switch (mode) {
         inline else => |mode_type| shadeTexSIMDDispatchConfigImpl(
@@ -273,7 +274,7 @@ inline fn shadeTexSIMDDispatchConfigImpl(
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
     shader: *const shaderops.TexPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
 ) void {
     if (!comptime comptime_config.isValid()) return;
 
@@ -317,7 +318,7 @@ pub fn FuncKernel(
             interp: shaderops.InterpData(N),
             shader: *const shaderops.FuncPrepared(channels),
             ctx_report: anytype,
-            spx_image_scratch: *MatSlice(f64),
+            spx_image_scratch: *MatSlice(F),
         ) void {
             common.shadeFuncScalarCommon(
                 N,
@@ -342,7 +343,7 @@ pub fn FuncKernel(
             v_nodes_inv_z: [N]VecSF,
             v_subpx_z: VecSF,
             shader: *const shaderops.FuncPrepared(channels),
-            spx_image_scratch: *MatSlice(f64),
+            spx_image_scratch: *MatSlice(F),
         ) void {
             if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
                 if (shader.elem_normals != null) {

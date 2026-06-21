@@ -26,6 +26,7 @@ const riley = @import("../riley/zig/riley.zig");
 const iio = @import("../riley/zig/imageio.zig");
 const texops = @import("../riley/zig/textureops.zig");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const cfg = buildconfig.config;
 const csvio = @import("../riley/zig/csvio.zig");
@@ -35,9 +36,9 @@ pub const default_fails_root = "fails";
 pub const impl_suffix = if (cfg.simd == .on) "_simd" else "_scalar";
 
 // Default tolerances: for scientific accuracy and DIC
-// f64: rel= 1e-11, abs= 1e-11
+// F: rel= 1e-11, abs= 1e-11
 // f32: rel= 1e-5, abs= 1e-4
-pub fn isApproxEqual(v1: f64, v2: f64, rel_tol: f64, abs_tol: f64) bool {
+pub fn isApproxEqual(v1: F, v2: F, rel_tol: F, abs_tol: F) bool {
     if (v1 == v2) return true;
 
     const diff = @abs(v1 - v2);
@@ -51,18 +52,58 @@ pub fn isApproxEqual(v1: f64, v2: f64, rel_tol: f64, abs_tol: f64) bool {
     return (diff / largest) <= rel_tol;
 }
 
+fn getGoldValue(
+    gold: *const NDArray(F),
+    path_is_fimg: bool,
+    channels: usize,
+    ch: usize,
+    row: usize,
+    col: usize,
+) F {
+    if (path_is_fimg) {
+        return gold.get(&[_]usize{ ch, row, col });
+    }
+    if (channels == 1) {
+        return gold.get(&[_]usize{ row, col });
+    }
+    return gold.get(&[_]usize{ row, col, ch });
+}
+
+fn getActualValue(
+    array: *const NDArray(F),
+    camera_idx: usize,
+    frame: usize,
+    field_start: usize,
+    ch: usize,
+    row: usize,
+    col: usize,
+) F {
+    return switch (array.dims.len) {
+        5 => array.get(&[_]usize{
+            camera_idx,
+            frame,
+            field_start + ch,
+            row,
+            col,
+        }),
+        4 => array.get(&[_]usize{ frame, field_start + ch, row, col }),
+        else => array.get(&[_]usize{ field_start + ch, row, col }),
+    };
+}
+
 pub fn compareNDArrayToGold(
     allocator: std.mem.Allocator,
     io: std.Io,
-    array: *const NDArray(f64),
+    array: *const NDArray(F),
     camera_idx: usize,
     frame: usize,
     field_start: usize,
     channels: usize,
     path: []const u8,
-    rel_tol: f64,
-    abs_tol: f64,
+    rel_tol: F,
+    abs_tol: F,
 ) !void {
+    const path_is_fimg = std.mem.endsWith(u8, path, ".fimg");
     var gold = if (std.mem.endsWith(u8, path, ".fimg")) blk: {
         const gold_array = try iio.loadFIMG(allocator, io, path);
         break :blk gold_array;
@@ -80,11 +121,11 @@ pub fn compareNDArrayToGold(
     // .fimg: [chans, rows, cols]
     // .csv (scalar): [rows, cols]
     // .csv (packed): [rows, cols, chans]
-    const gold_rows = if (gold.dims.len == 3 and std.mem.endsWith(u8, path, ".fimg"))
+    const gold_rows = if (gold.dims.len == 3 and path_is_fimg)
         gold.dims[1]
     else
         gold.dims[0];
-    const gold_cols = if (gold.dims.len == 3 and std.mem.endsWith(u8, path, ".fimg"))
+    const gold_cols = if (gold.dims.len == 3 and path_is_fimg)
         gold.dims[2]
     else
         gold.dims[1];
@@ -113,24 +154,23 @@ pub fn compareNDArrayToGold(
     for (0..rows) |r| {
         for (0..cols) |c| {
             for (0..channels) |ch| {
-                const gold_val = if (std.mem.endsWith(u8, path, ".fimg"))
-                    gold.get(&[_]usize{ ch, r, c })
-                else if (channels == 1)
-                    gold.get(&[_]usize{ r, c })
-                else
-                    gold.get(&[_]usize{ r, c, ch });
-
-                const actual_val = switch (array.dims.len) {
-                    5 => array.get(&[_]usize{
-                        camera_idx,
-                        frame,
-                        field_start + ch,
-                        r,
-                        c,
-                    }),
-                    4 => array.get(&[_]usize{ frame, field_start + ch, r, c }),
-                    else => array.get(&[_]usize{ field_start + ch, r, c }),
-                };
+                const gold_val = getGoldValue(
+                    &gold,
+                    path_is_fimg,
+                    channels,
+                    ch,
+                    r,
+                    c,
+                );
+                const actual_val = getActualValue(
+                    array,
+                    camera_idx,
+                    frame,
+                    field_start,
+                    ch,
+                    r,
+                    c,
+                );
 
                 if (!isApproxEqual(gold_val, actual_val, rel_tol, abs_tol)) {
                     const abs_gold = @abs(gold_val);
@@ -165,13 +205,13 @@ pub fn compareNDArrayToGold(
 pub fn compareNDArrayToCSV(
     allocator: std.mem.Allocator,
     io: std.Io,
-    array: *const NDArray(f64),
+    array: *const NDArray(F),
     camera_idx: usize,
     frame: usize,
     field: usize,
     path: []const u8,
-    rel_tol: f64,
-    abs_tol: f64,
+    rel_tol: F,
+    abs_tol: F,
 ) !void {
     var gold = try csvio.loadScalarCsv2D(allocator, io, path);
     defer {
@@ -223,13 +263,13 @@ pub fn compareNDArrayToCSV(
 pub fn compareNDArrayToCSVRGB(
     allocator: std.mem.Allocator,
     io: std.Io,
-    array: *const NDArray(f64),
+    array: *const NDArray(F),
     camera_idx: usize,
     frame: usize,
     field_start: usize,
     path: []const u8,
-    rel_tol: f64,
-    abs_tol: f64,
+    rel_tol: F,
+    abs_tol: F,
 ) !void {
     var gold = try csvio.loadPackedCsv2D(allocator, io, path, 3);
     defer {
@@ -317,7 +357,7 @@ fn saveResultToFails(
     allocator: std.mem.Allocator,
     io: std.Io,
     fails_root: []const u8,
-    array: *const NDArray(f64),
+    array: *const NDArray(F),
     dir_name: []const u8,
 ) !void {
     _ = allocator;
@@ -343,7 +383,7 @@ fn saveResultToFails(
                     }, 2)
                 else
                     array.getSlice(&[_]usize{ frame_idx, field_idx, 0, 0 }, 1);
-                const mat = MatSlice(f64).init(slice, rows, cols);
+                const mat = MatSlice(F).init(slice, rows, cols);
                 var name_buff: [128]u8 = undefined;
                 const name = try iio.formatFrameFieldBaseName(
                     name_buff[0..],
@@ -373,12 +413,12 @@ fn saveResultToFails(
 
 fn extractFrameImage(
     allocator: std.mem.Allocator,
-    array: *const NDArray(f64),
+    array: *const NDArray(F),
     camera_idx: usize,
     frame: usize,
     field_start: usize,
     channels: usize,
-) !NDArray(f64) {
+) !NDArray(F) {
     const dims = array.dims;
     const rows = switch (dims.len) {
         5 => dims[3],
@@ -390,7 +430,7 @@ fn extractFrameImage(
         4 => dims[3],
         else => dims[2],
     };
-    var image = try NDArray(f64).initFlat(allocator, &[_]usize{ rows, cols, channels });
+    var image = try NDArray(F).initFlat(allocator, &[_]usize{ rows, cols, channels });
 
     for (0..rows) |rr| {
         for (0..cols) |cc| {
@@ -499,7 +539,7 @@ fn loadNDArrayFromGold(
     io: std.Io,
     path: []const u8,
     channels: usize,
-) !NDArray(f64) {
+) !NDArray(F) {
     if (std.mem.endsWith(u8, path, ".fimg")) {
         var array = try iio.loadFIMG(allocator, io, path);
         errdefer {
@@ -513,7 +553,7 @@ fn loadNDArrayFromGold(
 
         const rows = array.dims[1];
         const cols = array.dims[2];
-        var image_packed = try NDArray(f64).initFlat(
+        var image_packed = try NDArray(F).initFlat(
             allocator,
             &[_]usize{ rows, cols, channels },
         );
@@ -538,10 +578,10 @@ fn loadNDArrayFromGold(
 
 pub fn calculateDiffImage(
     allocator: std.mem.Allocator,
-    actual: *const NDArray(f64),
-    gold: *const NDArray(f64),
-) !NDArray(f64) {
-    var diff = try NDArray(f64).initFlat(allocator, actual.dims);
+    actual: *const NDArray(F),
+    gold: *const NDArray(F),
+) !NDArray(F) {
+    var diff = try NDArray(F).initFlat(allocator, actual.dims);
     for (0..actual.slice.len) |ii| {
         diff.slice[ii] = @abs(actual.slice[ii] - gold.slice[ii]);
     }
@@ -552,7 +592,7 @@ fn saveImageCSV(
     io: std.Io,
     dir: std.Io.Dir,
     path: []const u8,
-    image: *const NDArray(f64),
+    image: *const NDArray(F),
 ) !void {
     const rows = image.dims[0];
     const cols = image.dims[1];
@@ -560,11 +600,11 @@ fn saveImageCSV(
 
     const SaveCtx = struct {
         fn getVal(
-            ctx: *const NDArray(f64),
+            ctx: *const NDArray(F),
             row: usize,
             col: usize,
             ch: usize,
-        ) f64 {
+        ) F {
             return ctx.get(&[_]usize{ row, col, ch });
         }
     };
@@ -583,12 +623,12 @@ fn saveImageCSV(
 
 fn makeBMPImageArray(
     allocator: std.mem.Allocator,
-    image: *const NDArray(f64),
-) !NDArray(f64) {
+    image: *const NDArray(F),
+) !NDArray(F) {
     const rows = image.dims[0];
     const cols = image.dims[1];
     const channels = image.dims[2];
-    var bmp_image = try NDArray(f64).initFlat(
+    var bmp_image = try NDArray(F).initFlat(
         allocator,
         &[_]usize{ channels, rows, cols },
     );
@@ -612,7 +652,7 @@ fn saveImageArtifacts(
     io: std.Io,
     dir: std.Io.Dir,
     base_name: []const u8,
-    image: *const NDArray(f64),
+    image: *const NDArray(F),
 ) !void {
     const csv_name = try std.fmt.allocPrint(allocator, "{s}.csv", .{base_name});
     defer allocator.free(csv_name);
@@ -638,7 +678,7 @@ pub fn saveComparisonArtifactsFromResult(
     io: std.Io,
     fails_root: []const u8,
     dir_name: []const u8,
-    result: *const NDArray(f64),
+    result: *const NDArray(F),
     camera_idx: usize,
     frame: usize,
     field_start: usize,
@@ -692,8 +732,8 @@ pub fn saveComparisonArtifactsFromImages(
     io: std.Io,
     fails_root: []const u8,
     dir_name: []const u8,
-    actual: *const NDArray(f64),
-    gold: *const NDArray(f64),
+    actual: *const NDArray(F),
+    gold: *const NDArray(F),
 ) !void {
     var out_dir = try openFailsSubDir(io, fails_root, dir_name);
     defer out_dir.close(io);
@@ -715,14 +755,14 @@ pub fn runTestInternal(
     io: std.Io,
     test_type: []const u8,
     mesh_type: MeshType,
-    fov_scale: f64,
+    fov_scale: F,
     texture: iio.Texture(1),
     pixel_num: [2]u32,
     sample_configs: []const texops.TextureSampleConfig,
     gold_dir_root: []const u8,
     data_dir_root: []const u8,
-    rel_tol: f64,
-    abs_tol: f64,
+    rel_tol: F,
+    abs_tol: F,
     shader_filter: ShaderFilter,
     report_perf: bool,
 ) !void {
@@ -808,7 +848,7 @@ pub fn runTestInternal(
 
             defer aa.free(result.slice);
             const time_end = Timestamp.now(io, .awake);
-            const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
+            const duration_ms = @as(F, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
             const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
             var first_err: ?anyerror = null;
@@ -930,7 +970,7 @@ pub fn runTestInternal(
 
                 defer aa.free(result.slice);
                 const time_end = Timestamp.now(io, .awake);
-                const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
+                const duration_ms = @as(F, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
                 const frames_num = if (result.dims.len == 5)
                     result.dims[1]
@@ -995,8 +1035,8 @@ pub fn runTestInternal(
 pub fn runMultimeshTest(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    rel_tol: f64,
-    abs_tol: f64,
+    rel_tol: F,
+    abs_tol: F,
 ) !void {
     try runMultimeshTestExt(
         outer_alloc,
@@ -1015,8 +1055,8 @@ pub fn runMultimeshTestExt(
     gold_dir_root: []const u8,
     dir_paths: []const []const u8,
     pixel_num: [2]u32,
-    rel_tol: f64,
-    abs_tol: f64,
+    rel_tol: F,
+    abs_tol: F,
 ) !void {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -1033,7 +1073,7 @@ pub fn runMultimeshTestExt(
             if (mode == .nodal) .nodal else .texture,
         );
 
-        const fov_scale_factor: f64 = 1.1;
+        const fov_scale_factor: F = 1.1;
         const camera = try orch.initCameraForMeshes(
             aa,
             mesh_inputs,
@@ -1079,7 +1119,7 @@ pub fn runMultimeshTestExt(
             null,
         )) orelse return error.NoResult;
         const time_end = Timestamp.now(io, .awake);
-        const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
+        const duration_ms = @as(F, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
         const gold_dir = if (mode == .nodal)
             try std.fmt.allocPrint(aa, "{s}/allelem_nodal", .{gold_dir_root})
@@ -1139,8 +1179,8 @@ pub fn runMultimeshTestExt(
 pub fn runMultimeshMixedTest(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    rel_tol: f64,
-    abs_tol: f64,
+    rel_tol: F,
+    abs_tol: F,
 ) !void {
     try runMultimeshMixedTestExt(
         outer_alloc,
@@ -1159,8 +1199,8 @@ pub fn runMultimeshMixedTestExt(
     gold_dir: []const u8,
     dir_paths: []const []const u8,
     pixel_num: [2]u32,
-    rel_tol: f64,
-    abs_tol: f64,
+    rel_tol: F,
+    abs_tol: F,
 ) !void {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -1182,7 +1222,7 @@ pub fn runMultimeshMixedTestExt(
         texture,
     );
 
-    const fov_scale_factor: f64 = 1.2;
+    const fov_scale_factor: F = 1.2;
     const camera = try orch.initCameraForMeshes(
         aa,
         mesh_inputs,
@@ -1220,7 +1260,7 @@ pub fn runMultimeshMixedTestExt(
         null,
     )) orelse return error.NoResult;
     const time_end = Timestamp.now(io, .awake);
-    const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
+    const duration_ms = @as(F, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
     const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
     for (0..frames_num) |f| {
@@ -1266,8 +1306,8 @@ pub fn runMultimeshMixedTestExt(
 pub fn runMultimeshMixedRGBTest(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
-    rel_tol: f64,
-    abs_tol: f64,
+    rel_tol: F,
+    abs_tol: F,
 ) !void {
     try runMultimeshMixedRGBTestExt(
         outer_alloc,
@@ -1286,8 +1326,8 @@ pub fn runMultimeshMixedRGBTestExt(
     gold_dir: []const u8,
     dir_paths: []const []const u8,
     pixel_num: [2]u32,
-    rel_tol: f64,
-    abs_tol: f64,
+    rel_tol: F,
+    abs_tol: F,
 ) !void {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -1309,7 +1349,7 @@ pub fn runMultimeshMixedRGBTestExt(
         texture,
     );
 
-    const fov_scale_factor: f64 = 1.1;
+    const fov_scale_factor: F = 1.1;
     const camera = try orch.initCameraForMeshes(
         aa,
         mesh_inputs,
@@ -1348,7 +1388,7 @@ pub fn runMultimeshMixedRGBTestExt(
         null,
     )) orelse return error.NoResult;
     const time_end = Timestamp.now(io, .awake);
-    const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
+    const duration_ms = @as(F, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
     const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
     for (0..frames_num) |f| {
@@ -1396,7 +1436,7 @@ pub fn runMultimeshMixedRGBTestExt(
 
 pub fn buildUvField(
     allocator: std.mem.Allocator,
-    uvs: NDArray(f64),
+    uvs: NDArray(F),
     time_steps: usize,
 ) !meshio.Field {
     const node_num = uvs.dims[0];
@@ -1520,7 +1560,7 @@ pub fn runDistortEdgeTexFuncTest(
         defer aa.free(result.slice);
         const end_time = Timestamp.now(io, .awake);
         const duration_ms = @as(
-            f64,
+            F,
             @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds),
         ) / 1e6;
 
@@ -1711,7 +1751,7 @@ pub fn runEdgeTexFuncConstantCaseForHullMode(
     defer aa.free(result.slice);
     const end_time = Timestamp.now(io, .awake);
     const duration_ms = @as(
-        f64,
+        F,
         @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds),
     ) / 1e6;
 
@@ -1860,7 +1900,7 @@ pub fn runDistortMidsideNodalUvTest(
     defer aa.free(result.slice);
     const end_time = Timestamp.now(io, .awake);
     const duration_ms = @as(
-        f64,
+        F,
         @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds),
     ) / 1e6;
 
@@ -2015,7 +2055,7 @@ pub fn runDistortMidsideTexShaderTest(
     defer aa.free(result.slice);
     const end_time = Timestamp.now(io, .awake);
     const duration_ms = @as(
-        f64,
+        F,
         @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds),
     ) / 1e6;
 

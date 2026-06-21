@@ -9,6 +9,7 @@
 const std = @import("std");
 
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 
 const ndarray = @import("ndarray.zig");
 const matslice = @import("matslice.zig");
@@ -39,24 +40,24 @@ pub const FuncShaderBuiltin = enum {
 };
 
 pub const FuncShaderParams = struct {
-    coord_scale: [2]f64 = .{ 1.0, 1.0 },
-    coord_offset: [2]f64 = .{ 0.0, 0.0 },
-    output_scale: f64 = 1.0,
-    output_offset: f64 = 0.0,
-    wave_num_scalar: [2]f64 = .{ 6.0, 5.0 },
-    wave_num_rgb: [3]f64 = .{ 6.0, 6.0, 4.0 },
-    eggbox_mean: f64 = 0.5,
-    eggbox_contrast: f64 = 0.4,
-    eggbox_pitch: [2]f64 = .{ 1.0, 1.0 },
-    eggbox_phase: [2]f64 = .{ 0.0, 0.0 },
-    extra: [4]f64 = .{ 0.0, 0.0, 0.0, 0.0 },
+    coord_scale: [2]F = .{ 1.0, 1.0 },
+    coord_offset: [2]F = .{ 0.0, 0.0 },
+    output_scale: F = 1.0,
+    output_offset: F = 0.0,
+    wave_num_scalar: [2]F = .{ 6.0, 5.0 },
+    wave_num_rgb: [3]F = .{ 6.0, 6.0, 4.0 },
+    eggbox_mean: F = 0.5,
+    eggbox_contrast: F = 0.4,
+    eggbox_pitch: [2]F = .{ 1.0, 1.0 },
+    eggbox_phase: [2]F = .{ 0.0, 0.0 },
+    extra: [4]F = .{ 0.0, 0.0, 0.0, 0.0 },
 };
 
 pub fn LocalShaderBuffer(comptime N: usize) type {
     return struct {
-        data: [buildconfig.config.max_nodal_fields * N]f64 = undefined,
-        func_coords: [3 * N]f64 = undefined,
-        normals: [3 * N]f64 = undefined,
+        data: [buildconfig.config.max_nodal_fields * N]F = undefined,
+        func_coords: [3 * N]F = undefined,
+        normals: [3 * N]F = undefined,
         actual_fields: u8 = 0,
         actual_func_coords: u8 = 0,
         has_normals: bool = false,
@@ -66,7 +67,7 @@ pub fn LocalShaderBuffer(comptime N: usize) type {
 
         pub inline fn load(
             self: *Self,
-            array: ndarray.NDArray(f64),
+            array: ndarray.NDArray(F),
             start_idx: usize,
             fields_num: u8,
         ) void {
@@ -78,7 +79,7 @@ pub fn LocalShaderBuffer(comptime N: usize) type {
 
         pub inline fn loadNormals(
             self: *Self,
-            array: ndarray.NDArray(f64),
+            array: ndarray.NDArray(F),
             start_idx: usize,
         ) void {
             self.has_normals = true;
@@ -88,7 +89,7 @@ pub fn LocalShaderBuffer(comptime N: usize) type {
 
         pub inline fn loadFuncCoords(
             self: *Self,
-            array: ndarray.NDArray(f64),
+            array: ndarray.NDArray(F),
             start_idx: usize,
             coords_num: u8,
         ) void {
@@ -105,10 +106,10 @@ pub fn LocalShaderBuffer(comptime N: usize) type {
         pub inline fn interpolate(
             self: *const Self,
             field_idx: usize,
-            weights: [N]f64,
-        ) f64 {
+            weights: [N]F,
+        ) F {
             const base = field_idx * N;
-            var sum: f64 = 0.0;
+            var sum: F = 0.0;
             inline for (0..N) |nn| {
                 sum += weights[nn] * self.data[base + nn];
             }
@@ -117,9 +118,9 @@ pub fn LocalShaderBuffer(comptime N: usize) type {
 
         pub inline fn interpolateNormal(
             self: *const Self,
-            weights: [N]f64,
-        ) [3]f64 {
-            var norm = [3]f64{ 0.0, 0.0, 0.0 };
+            weights: [N]F,
+        ) [3]F {
+            var norm = [3]F{ 0.0, 0.0, 0.0 };
             inline for (0..N) |nn| {
                 norm[0] += weights[nn] * self.normals[0 * N + nn];
                 norm[1] += weights[nn] * self.normals[1 * N + nn];
@@ -131,10 +132,10 @@ pub fn LocalShaderBuffer(comptime N: usize) type {
         pub inline fn interpolateFuncCoord(
             self: *const Self,
             coord_idx: usize,
-            weights: [N]f64,
-        ) f64 {
+            weights: [N]F,
+        ) F {
             const base = coord_idx * N;
-            var sum: f64 = 0.0;
+            var sum: F = 0.0;
             inline for (0..N) |nn| {
                 sum += weights[nn] * self.func_coords[base + nn];
             }
@@ -156,7 +157,7 @@ pub const NodalInput = struct {
 
 pub fn TexInput(comptime channels: usize) type {
     return struct {
-        uvs: ndarray.NDArray(f64),
+        uvs: ndarray.NDArray(F),
         texture: iio.Texture(channels),
         sample_config: texops.TextureSampleConfig = .{
             .sample = .cubic_catmull_rom,
@@ -171,7 +172,7 @@ pub fn TexInput(comptime channels: usize) type {
 pub fn FuncInput(comptime channels: usize) type {
     _ = channels;
     return struct {
-        uvs: ?ndarray.NDArray(f64) = null,
+        uvs: ?ndarray.NDArray(F) = null,
         coord_mode: FuncCoordMode = .parametric,
         builtin: FuncShaderBuiltin,
         params: FuncShaderParams = .{},
@@ -202,7 +203,7 @@ pub const NodalStatic = struct {
 
 pub fn TexStatic(comptime channels: usize) type {
     return struct {
-        elem_uvs: ndarray.NDArray(f64),
+        elem_uvs: ndarray.NDArray(F),
         texture: iio.Texture(channels),
         sample_config: texops.TextureSampleConfig = .{
             .sample = .cubic_catmull_rom,
@@ -217,7 +218,7 @@ pub fn TexStatic(comptime channels: usize) type {
 pub fn FuncStatic(comptime channels: usize) type {
     _ = channels;
     return struct {
-        elem_uvs: ?ndarray.NDArray(f64),
+        elem_uvs: ?ndarray.NDArray(F),
         coord_mode: FuncCoordMode = .parametric,
         builtin: FuncShaderBuiltin,
         params: FuncShaderParams = .{},
@@ -240,19 +241,19 @@ pub const ShaderStatic = union(enum) {
 // Nodal Fields: Element-order [visible_elems, num_fields, nodes_per_elem]
 // UVs: Element-order [visible_elems, 2, nodes_per_elem]
 pub const NodalPrepared = struct {
-    elem_field: ndarray.NDArray(f64),
+    elem_field: ndarray.NDArray(F),
     bits: ?u8 = 8,
     scaling: imageops.ScaleStrategy = .none,
     scale_over: ScaleOver = .over_frames,
-    scale_mul: f64 = 1.0,
-    scale_add: f64 = 0.0,
+    scale_mul: F = 1.0,
+    scale_add: F = 0.0,
     normal_type: NormalType = .none,
-    elem_normals: ?ndarray.MappedNDArray(f64) = null,
+    elem_normals: ?ndarray.MappedNDArray(F) = null,
 };
 
 pub fn TexPrepared(comptime channels: usize) type {
     return struct {
-        elem_uvs: ndarray.NDArray(f64),
+        elem_uvs: ndarray.NDArray(F),
         texture: iio.Texture(channels),
         sample_config: texops.TextureSampleConfig = .{
             .sample = .cubic_catmull_rom,
@@ -260,28 +261,28 @@ pub fn TexPrepared(comptime channels: usize) type {
         },
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
-        scale_mul: f64 = 1.0,
-        scale_add: f64 = 0.0,
+        scale_mul: F = 1.0,
+        scale_add: F = 0.0,
         normal_type: NormalType = .none,
-        elem_normals: ?ndarray.MappedNDArray(f64) = null,
+        elem_normals: ?ndarray.MappedNDArray(F) = null,
     };
 }
 
 pub fn FuncPrepared(comptime channels: usize) type {
     _ = channels;
     return struct {
-        elem_uvs: ?ndarray.NDArray(f64),
-        elem_world_ref: ?ndarray.NDArray(f64) = null,
-        elem_world_def: ?ndarray.NDArray(f64) = null,
+        elem_uvs: ?ndarray.NDArray(F),
+        elem_world_ref: ?ndarray.NDArray(F) = null,
+        elem_world_def: ?ndarray.NDArray(F) = null,
         coord_mode: FuncCoordMode = .parametric,
         builtin: FuncShaderBuiltin,
         params: FuncShaderParams = .{},
         bits: ?u8 = 8,
         scaling: imageops.ScaleStrategy = .none,
-        scale_mul: f64 = 1.0,
-        scale_add: f64 = 0.0,
+        scale_mul: F = 1.0,
+        scale_add: F = 0.0,
         normal_type: NormalType = .none,
-        elem_normals: ?ndarray.MappedNDArray(f64) = null,
+        elem_normals: ?ndarray.MappedNDArray(F) = null,
     };
 }
 
@@ -309,23 +310,23 @@ pub fn ShadeContext(comptime N: usize) type {
 
 pub fn InterpData(comptime N: usize) type {
     return struct {
-        weights: [N]f64,
-        nodes_inv_z: [N]f64,
-        sub_pixel_z: f64,
-        xi: f64,
-        eta: f64,
+        weights: [N]F,
+        nodes_inv_z: [N]F,
+        sub_pixel_z: F,
+        xi: F,
+        eta: F,
     };
 }
 
 pub const FuncCoord = struct {
-    coord_0: f64,
-    coord_1: f64,
-    normal_x: f64,
-    normal_y: f64,
-    normal_z: f64,
+    coord_0: F,
+    coord_1: F,
+    normal_x: F,
+    normal_y: F,
+    normal_z: F,
 };
 
-inline fn cubicSmoothStep(val: f64) f64 {
+inline fn cubicSmoothStep(val: F) F {
     const clamped = @max(0.0, @min(1.0, val));
     return clamped * clamped * (3.0 - 2.0 * clamped);
 }
@@ -340,7 +341,7 @@ inline fn applyFuncShaderCoordParams(
     return out;
 }
 
-inline fn applyFuncShaderOutputParams(value: f64, params: FuncShaderParams) f64 {
+inline fn applyFuncShaderOutputParams(value: F, params: FuncShaderParams) F {
     return value * params.output_scale + params.output_offset;
 }
 
@@ -348,7 +349,7 @@ pub inline fn evalFuncShaderBuiltinScalar(
     builtin: FuncShaderBuiltin,
     coord: FuncCoord,
     params: FuncShaderParams,
-) f64 {
+) F {
     const eval_coord = applyFuncShaderCoordParams(coord, params);
     const value = switch (builtin) {
         .constant => 0.5,
@@ -366,9 +367,9 @@ pub inline fn evalFuncShaderBuiltinScalar(
             const cell_x: i64 = @intFromFloat(@floor(eval_coord.coord_0));
             const cell_y: i64 = @intFromFloat(@floor(eval_coord.coord_1));
             break :blk if (@mod(cell_x + cell_y, 2) == 0)
-                @as(f64, 0.0)
+                @as(F, 0.0)
             else
-                @as(f64, 1.0);
+                @as(F, 1.0);
         },
         .checker_smooth => blk: {
             const phase_x = 0.5 + 0.5 * @sin(8.0 * std.math.pi * eval_coord.coord_0);
@@ -397,7 +398,7 @@ pub inline fn evalFuncShaderBuiltinRgb(
     builtin: FuncShaderBuiltin,
     coord: FuncCoord,
     params: FuncShaderParams,
-) [3]f64 {
+) [3]F {
     const eval_coord = applyFuncShaderCoordParams(coord, params);
     const values = switch (builtin) {
         .constant => .{ 0.2, 0.5, 0.8 },
@@ -420,9 +421,9 @@ pub inline fn evalFuncShaderBuiltinRgb(
             const cell_x: i64 = @intFromFloat(@floor(eval_coord.coord_0));
             const cell_y: i64 = @intFromFloat(@floor(eval_coord.coord_1));
             const value = if (@mod(cell_x + cell_y, 2) == 0)
-                @as(f64, 0.0)
+                @as(F, 0.0)
             else
-                @as(f64, 1.0);
+                @as(F, 1.0);
             break :blk .{ value, value, value };
         },
         .checker_smooth => blk: {
@@ -468,7 +469,7 @@ inline fn getFuncCoord(
     comptime N: usize,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
-    elem_normals: ?ndarray.MappedNDArray(f64),
+    elem_normals: ?ndarray.MappedNDArray(F),
 ) FuncCoord {
     if (elem_normals != null) {
         const normal = ctx_shade.shader_buf.interpolateNormal(interp.weights);
@@ -492,8 +493,8 @@ inline fn getFuncCoord(
 
 inline fn setCoordValues(
     coord: *FuncCoord,
-    coord_0: f64,
-    coord_1: f64,
+    coord_0: F,
+    coord_1: F,
 ) void {
     coord.coord_0 = coord_0;
     coord.coord_1 = coord_1;
@@ -505,7 +506,7 @@ inline fn resolveFuncCoordsClip(
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const FuncPrepared(channels),
-) struct { coord_0: f64, coord_1: f64 } {
+) struct { coord_0: F, coord_1: F } {
     return switch (sh.coord_mode) {
         .uv => .{
             .coord_0 = ctx_shade.shader_buf.interpolateFuncCoord(0, interp.weights),
@@ -528,11 +529,11 @@ inline fn resolveFuncCoordsPersp(
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const FuncPrepared(channels),
-) struct { coord_0: f64, coord_1: f64 } {
+) struct { coord_0: F, coord_1: F } {
     return switch (sh.coord_mode) {
         .uv, .world_reference, .world_deformed => blk: {
-            var coord_0: f64 = 0.0;
-            var coord_1: f64 = 0.0;
+            var coord_0: F = 0.0;
+            var coord_1: F = 0.0;
             inline for (0..N) |nn| {
                 const inv_z = interp.nodes_inv_z[nn];
                 coord_0 += interp.weights[nn] *
@@ -559,7 +560,7 @@ pub inline fn fillNodalClip(
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const NodalPrepared,
-    spx_image_scratch: *matslice.MatSlice(f64),
+    spx_image_scratch: *matslice.MatSlice(F),
 ) void {
     for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
         const value = ctx_shade.shader_buf.interpolate(ff, interp.weights);
@@ -573,11 +574,11 @@ pub inline fn fillNodalPersp(
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const NodalPrepared,
-    spx_image_scratch: *matslice.MatSlice(f64),
+    spx_image_scratch: *matslice.MatSlice(F),
 ) void {
     for (0..@as(usize, ctx_shade.actual_fields)) |ff| {
         const base = ff * N;
-        var value: f64 = 0.0;
+        var value: F = 0.0;
         inline for (0..N) |nn| {
             const inv_z = interp.nodes_inv_z[nn];
             value += interp.weights[nn] *
@@ -598,10 +599,10 @@ pub inline fn fillTexClip(
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const TexPrepared(channels),
-    spx_image_scratch: *matslice.MatSlice(f64),
+    spx_image_scratch: *matslice.MatSlice(F),
 ) void {
-    var tex_u: f64 = 0.0;
-    var tex_v: f64 = 0.0;
+    var tex_u: F = 0.0;
+    var tex_v: F = 0.0;
     inline for (0..N) |nn| {
         tex_u += interp.weights[nn] * ctx_shade.shader_buf.data[nn];
         tex_v += interp.weights[nn] * ctx_shade.shader_buf.data[N + nn];
@@ -628,10 +629,10 @@ pub inline fn fillTexPersp(
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const TexPrepared(channels),
-    spx_image_scratch: *matslice.MatSlice(f64),
+    spx_image_scratch: *matslice.MatSlice(F),
 ) void {
-    var tex_u: f64 = 0.0;
-    var tex_v: f64 = 0.0;
+    var tex_u: F = 0.0;
+    var tex_v: F = 0.0;
     inline for (0..N) |nn| {
         const inv_z = interp.nodes_inv_z[nn];
         tex_u += interp.weights[nn] * ctx_shade.shader_buf.data[nn] * inv_z;
@@ -660,7 +661,7 @@ pub inline fn fillFuncClip(
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const FuncPrepared(channels),
-    spx_image_scratch: *matslice.MatSlice(f64),
+    spx_image_scratch: *matslice.MatSlice(F),
 ) void {
     var coord = getFuncCoord(N, ctx_shade, interp, sh.elem_normals);
     const coords = resolveFuncCoordsClip(N, channels, ctx_shade, interp, sh);
@@ -685,7 +686,7 @@ pub inline fn fillFuncPersp(
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const FuncPrepared(channels),
-    spx_image_scratch: *matslice.MatSlice(f64),
+    spx_image_scratch: *matslice.MatSlice(F),
 ) void {
     var coord = getFuncCoord(N, ctx_shade, interp, sh.elem_normals);
     const coords = resolveFuncCoordsPersp(N, channels, ctx_shade, interp, sh);
@@ -715,7 +716,7 @@ test "FuncShaderParams defaults preserve constant shader" {
         .normal_z = 1.0,
     };
     const value = evalFuncShaderBuiltinScalar(.constant, coord, .{});
-    try testing.expectApproxEqAbs(@as(f64, 0.5), value, 1e-12);
+    try testing.expectApproxEqAbs(@as(F, 0.5), value, unit_tol);
 }
 
 test "FuncShaderParams control sinusoidal frequency and output scaling" {
@@ -734,8 +735,8 @@ test "FuncShaderParams control sinusoidal frequency and output scaling" {
     });
     const expected_base = 0.5 + 0.25 * @sin(6.0 * 0.25) + 0.2 * @cos(0.0);
     const expected_shifted = (0.5 + 0.25 * @sin(6.0 * 0.5) + 0.2 * @cos(0.0)) * 2.0 - 0.25;
-    try testing.expectApproxEqAbs(expected_base, base, 1e-12);
-    try testing.expectApproxEqAbs(expected_shifted, shifted, 1e-12);
+    try testing.expectApproxEqAbs(expected_base, base, unit_tol);
+    try testing.expectApproxEqAbs(expected_shifted, shifted, unit_tol);
 }
 
 test "checker texfunc creates hard black white cells from coord scale" {
@@ -760,8 +761,8 @@ test "checker texfunc creates hard black white cells from coord scale" {
     const value_black = evalFuncShaderBuiltinScalar(.checker, coord_black, params);
     const value_white = evalFuncShaderBuiltinScalar(.checker, coord_white, params);
 
-    try testing.expectEqual(@as(f64, 0.0), value_black);
-    try testing.expectEqual(@as(f64, 1.0), value_white);
+    try testing.expectEqual(@as(F, 0.0), value_black);
+    try testing.expectEqual(@as(F, 1.0), value_white);
 }
 
 test "eggbox reaches mean plus contrast at cell center" {
@@ -778,7 +779,7 @@ test "eggbox reaches mean plus contrast at cell center" {
         .eggbox_pitch = .{ 1.0, 1.0 },
     };
     const value = evalFuncShaderBuiltinScalar(.eggbox, coord, params);
-    try testing.expectApproxEqAbs(@as(f64, 0.9), value, 1e-12);
+    try testing.expectApproxEqAbs(@as(F, 0.9), value, unit_tol);
 }
 
 test "eggbox reaches mean minus contrast on grid line" {
@@ -795,5 +796,6 @@ test "eggbox reaches mean minus contrast on grid line" {
         .eggbox_pitch = .{ 1.0, 1.0 },
     };
     const value = evalFuncShaderBuiltinScalar(.eggbox, coord, params);
-    try testing.expectApproxEqAbs(@as(f64, 0.1), value, 1e-12);
+    try testing.expectApproxEqAbs(@as(F, 0.1), value, unit_tol);
 }
+const unit_tol: F = if (F == f32) 1e-5 else 1e-12;

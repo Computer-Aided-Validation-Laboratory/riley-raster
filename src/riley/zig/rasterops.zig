@@ -12,6 +12,7 @@ const vsd = @import("vecsimd.zig");
 const ndarray = @import("ndarray.zig");
 const meshio = @import("meshio.zig");
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const tol = buildconfig.config.tolerance;
 const cam = @import("camera.zig");
 const shapefun = @import("shapefun.zig");
@@ -34,22 +35,22 @@ pub fn edgeFun3Slices(
     comptime ind0: usize,
     comptime ind1: usize,
     comptime ind2: usize,
-    x: []const f64,
-    y: []const f64,
-) f64 {
+    x: []const F,
+    y: []const F,
+) F {
     return ((x[ind2] - x[ind0]) * (y[ind1] - y[ind0]) -
         (y[ind2] - y[ind0]) * (x[ind1] - x[ind0]));
 }
 
-pub inline fn edgeFun3(x0: f64, y0: f64, x1: f64, y1: f64, px: f64, py: f64) f64 {
+pub inline fn edgeFun3(x0: F, y0: F, x1: F, y1: F, px: F, py: F) F {
     return (px - x0) * (y1 - y0) - (py - y0) * (x1 - x0);
 }
 
 pub inline fn edgeFun3SIMD(
-    x0: f64,
-    y0: f64,
-    x1: f64,
-    y1: f64,
+    x0: F,
+    y0: F,
+    x1: F,
+    y1: F,
     v_px: buildconfig.VecSF,
     v_py: buildconfig.VecSF,
 ) buildconfig.VecSF {
@@ -60,12 +61,12 @@ pub inline fn edgeFun3SIMD(
     return (v_px - v_x0) * (v_y1 - v_y0) - (v_py - v_y0) * (v_x1 - v_x0);
 }
 
-pub fn boundIndMin(comptime T: type, val: f64) T {
+pub fn boundIndMin(comptime T: type, val: F) T {
     const val_int = @as(isize, @intFromFloat(@floor(val)));
     return @as(T, @intCast(@max(0, val_int)));
 }
 
-pub fn boundIndMax(comptime T: type, val: f64, max: T) T {
+pub fn boundIndMax(comptime T: type, val: F, max: T) T {
     const val_int = @as(isize, @intFromFloat(@ceil(val)));
     return @as(T, @intCast(@max(0, @min(val_int, @as(isize, @intCast(max))))));
 }
@@ -80,8 +81,8 @@ pub fn Vec3Slices(comptime T: type) type {
 
 pub fn RasterCoords2D(comptime N: usize) type {
     return struct {
-        x: [N]f64,
-        y: [N]f64,
+        x: [N]F,
+        y: [N]F,
     };
 }
 
@@ -101,8 +102,8 @@ pub const RasterContext = struct {
 };
 
 pub const MeshRaster = struct {
-    coords: *const ndarray.NDArray(f64),
-    hull: ?*const ndarray.NDArray(f64),
+    coords: *const ndarray.NDArray(F),
+    hull: ?*const ndarray.NDArray(F),
 };
 
 //------------------------------------------------------------------------------------------
@@ -111,9 +112,9 @@ pub const MeshRaster = struct {
 
 fn transformWorldNodeToRaster(
     camera: *const cam.CameraPrepared,
-    coord_world: vecstack.Vec3T(f64),
-) vecstack.Vec3T(f64) {
-    var coord_raster = matrix.Mat44Ops.mulVec3(f64, camera.world_to_cam_mat, coord_world);
+    coord_world: vecstack.Vec3T(F),
+) vecstack.Vec3T(F) {
+    var coord_raster = matrix.Mat44Ops.mulVec3(F, camera.world_to_cam_mat, coord_world);
 
     coord_raster.slice[0] = camera.image_dist * coord_raster.slice[0] /
         (-coord_raster.slice[2]);
@@ -124,9 +125,9 @@ fn transformWorldNodeToRaster(
     coord_raster.slice[1] = 2.0 * coord_raster.slice[1] / camera.image_dims[1];
 
     coord_raster.slice[0] = (coord_raster.slice[0] + 1.0) * 0.5 *
-        @as(f64, @floatFromInt(camera.pixels_num[0]));
+        @as(F, @floatFromInt(camera.pixels_num[0]));
     coord_raster.slice[1] = (1.0 - coord_raster.slice[1]) * 0.5 *
-        @as(f64, @floatFromInt(camera.pixels_num[1]));
+        @as(F, @floatFromInt(camera.pixels_num[1]));
     coord_raster.slice[2] = -coord_raster.slice[2];
 
     return coord_raster;
@@ -134,14 +135,14 @@ fn transformWorldNodeToRaster(
 
 fn transformWorldNodeToClipPx(
     camera: *const cam.CameraPrepared,
-    coord_world: vecstack.Vec3T(f64),
-) vecstack.Vec3T(f64) {
+    coord_world: vecstack.Vec3T(F),
+) vecstack.Vec3T(F) {
     const x_scale = camera.image_dist *
-        @as(f64, @floatFromInt(camera.pixels_num[0])) / camera.image_dims[0];
+        @as(F, @floatFromInt(camera.pixels_num[0])) / camera.image_dims[0];
     const y_scale = camera.image_dist *
-        @as(f64, @floatFromInt(camera.pixels_num[1])) / camera.image_dims[1];
+        @as(F, @floatFromInt(camera.pixels_num[1])) / camera.image_dims[1];
 
-    var coord_clip = matrix.Mat44Ops.mulVec3(f64, camera.world_to_cam_mat, coord_world);
+    var coord_clip = matrix.Mat44Ops.mulVec3(F, camera.world_to_cam_mat, coord_world);
     coord_clip.slice[0] *= x_scale;
     coord_clip.slice[1] *= -y_scale;
     coord_clip.slice[2] = -coord_clip.slice[2];
@@ -240,20 +241,20 @@ pub fn elemsToClipPxLengSIMD(
     elem_coord_arr: *ndarray.NDArray(T),
 ) !void {
     const x_scale = camera.image_dist *
-        @as(f64, @floatFromInt(camera.pixels_num[0])) / camera.image_dims[0];
+        @as(F, @floatFromInt(camera.pixels_num[0])) / camera.image_dims[0];
     const y_scale = camera.image_dist *
-        @as(f64, @floatFromInt(camera.pixels_num[1])) / camera.image_dims[1];
+        @as(F, @floatFromInt(camera.pixels_num[1])) / camera.image_dims[1];
 
     for (0..elem_coord_arr.dims[dim_elem]) |ee| {
         const coords_world = try vsd.loadElemVec3SIMD(
             N,
-            f64,
+            F,
             elem_coord_arr,
             ee,
         );
         var coords_raster = vsd.mat44Mul(
             N,
-            f64,
+            F,
             camera.world_to_cam_mat,
             coords_world,
         );
@@ -261,10 +262,10 @@ pub fn elemsToClipPxLengSIMD(
         coords_raster.y *= @splat(-y_scale);
         try vsd.saveElemVec3SIMD(
             N,
-            f64,
+            F,
             elem_coord_arr,
             ee,
-            vsd.Vec3SIMD(N, f64){
+            vsd.Vec3SIMD(N, F){
                 .x = coords_raster.x,
                 .y = coords_raster.y,
                 .z = -coords_raster.z,
@@ -322,10 +323,10 @@ fn isHighOrdBackface(
 
     var backface = true;
     for (0..N) |nn| {
-        var dx_dxi: f64 = 0.0;
-        var dx_deta: f64 = 0.0;
-        var dy_dxi: f64 = 0.0;
-        var dy_deta: f64 = 0.0;
+        var dx_dxi: F = 0.0;
+        var dx_deta: F = 0.0;
+        var dy_dxi: F = 0.0;
+        var dy_deta: F = 0.0;
 
         for (0..N) |mm| {
             dx_dxi += nodal_derivs.dNu[nn][mm] * coords_raster.x[mm];
@@ -347,14 +348,14 @@ fn isHighOrdBackface(
 
 fn isOnScreen(
     camera: *const cam.CameraPrepared,
-    x_min: f64,
-    x_max: f64,
-    y_min: f64,
-    y_max: f64,
+    x_min: F,
+    x_max: F,
+    y_min: F,
+    y_max: F,
 ) bool {
-    return x_min <= @as(f64, @floatFromInt(camera.pixels_num[0] - 1)) and
+    return x_min <= @as(F, @floatFromInt(camera.pixels_num[0] - 1)) and
         x_max >= 0.0 and
-        y_min <= @as(f64, @floatFromInt(camera.pixels_num[1] - 1)) and
+        y_min <= @as(F, @floatFromInt(camera.pixels_num[1] - 1)) and
         y_max >= 0.0;
 }
 
@@ -418,10 +419,10 @@ fn calcBBoxFromRasterCoords(
     elem_idx: usize,
     coords_raster: RasterCoords2D(N),
 ) ?ElemBBox {
-    const x_min = std.mem.min(f64, &coords_raster.x);
-    const x_max = std.mem.max(f64, &coords_raster.x);
-    const y_min = std.mem.min(f64, &coords_raster.y);
-    const y_max = std.mem.max(f64, &coords_raster.y);
+    const x_min = std.mem.min(F, &coords_raster.x);
+    const x_max = std.mem.max(F, &coords_raster.x);
+    const y_min = std.mem.min(F, &coords_raster.y);
+    const y_max = std.mem.max(F, &coords_raster.y);
 
     if (!isOnScreen(camera, x_min, x_max, y_min, y_max)) {
         return null;
@@ -441,12 +442,12 @@ fn calcBBoxFromRasterCoordsPadded(
     camera: *const cam.CameraPrepared,
     elem_idx: usize,
     coords_raster: RasterCoords2D(N),
-    rel_pad: f64,
+    rel_pad: F,
 ) ?ElemBBox {
-    const x_min = std.mem.min(f64, &coords_raster.x);
-    const x_max = std.mem.max(f64, &coords_raster.x);
-    const y_min = std.mem.min(f64, &coords_raster.y);
-    const y_max = std.mem.max(f64, &coords_raster.y);
+    const x_min = std.mem.min(F, &coords_raster.x);
+    const x_max = std.mem.max(F, &coords_raster.x);
+    const y_min = std.mem.min(F, &coords_raster.y);
+    const y_max = std.mem.max(F, &coords_raster.y);
 
     const dx = x_max - x_min;
     const dy = y_max - y_min;
@@ -617,9 +618,9 @@ pub fn calcVisibleNodeBBoxHighOrdNoHull(
 //------------------------------------------------------------------------------------------
 pub fn GatheredElemCoords(comptime N: usize) type {
     return struct {
-        x: [N]f64,
-        y: [N]f64,
-        z: [N]f64,
+        x: [N]F,
+        y: [N]F,
+        z: [N]F,
     };
 }
 
@@ -673,8 +674,8 @@ pub fn loadElemVec3Slices(
 pub fn prepareVisibleRasterHullsRange(
     comptime MT: MeshType,
     camera: *const cam.CameraPrepared,
-    elem_coords: *const ndarray.NDArray(f64),
-    raster_hull: *ndarray.NDArray(f64),
+    elem_coords: *const ndarray.NDArray(F),
+    raster_hull: *ndarray.NDArray(F),
     hull_convex_fallback_on: bool,
     visible_start: usize,
     visible_end: usize,
@@ -1092,9 +1093,9 @@ fn initSingleElemConnect(
 fn initElemCoords(
     comptime N: usize,
     allocator: std.mem.Allocator,
-    x_coords: [N]f64,
-    y_coords: [N]f64,
-    z_coords: [N]f64,
+    x_coords: [N]F,
+    y_coords: [N]F,
+    z_coords: [N]F,
 ) !meshio.Coords {
     var coords = try meshio.Coords.initAlloc(allocator, N);
     for (0..N) |nn| {

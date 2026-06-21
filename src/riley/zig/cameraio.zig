@@ -7,9 +7,11 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
 
 const cam = @import("camera.zig");
 const cameraops = @import("cameraops.zig");
+const F = buildconfig.F;
 
 fn parseKeyValueCsv(
     allocator: std.mem.Allocator,
@@ -79,8 +81,8 @@ fn requireValue(
 fn parseF64Value(
     kv: *const std.StringHashMap([]const u8),
     key: []const u8,
-) !f64 {
-    return std.fmt.parseFloat(f64, try requireValue(kv, key));
+) !F {
+    return std.fmt.parseFloat(F, try requireValue(kv, key));
 }
 
 fn parseU32Value(
@@ -108,7 +110,7 @@ fn writeKeyValueRow(
 fn writeKeyValueF64(
     writer: *std.Io.Writer,
     key: []const u8,
-    value: f64,
+    value: F,
 ) !void {
     try writer.print("{s},{d:.12}\n", .{ key, value });
 }
@@ -420,7 +422,7 @@ pub fn saveCamera(
 
         const r_opencv_c = r_opencv.mulVec(camera_input.pos_world);
         pos_val = @import("vecstack.zig").initVec3(
-            f64,
+            F,
             -r_opencv_c.get(0),
             -r_opencv_c.get(1),
             -r_opencv_c.get(2),
@@ -492,7 +494,7 @@ pub fn loadCamera(
             try parseF64Value(&kv, "pixel_size_y_m"),
         },
         .pos_world = @import("vecstack.zig").initVec3(
-            f64,
+            F,
             try parseF64Value(&kv, "pos_x_m"),
             try parseF64Value(&kv, "pos_y_m"),
             try parseF64Value(&kv, "pos_z_m"),
@@ -503,7 +505,7 @@ pub fn loadCamera(
             std.math.degreesToRadians(try parseF64Value(&kv, "rot_gamma_x_deg")),
         ),
         .roi_cent_world = @import("vecstack.zig").initVec3(
-            f64,
+            F,
             try parseF64Value(&kv, "roi_cent_x_m"),
             try parseF64Value(&kv, "roi_cent_y_m"),
             try parseF64Value(&kv, "roi_cent_z_m"),

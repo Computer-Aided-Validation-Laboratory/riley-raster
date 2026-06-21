@@ -7,13 +7,28 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
 const rastcfg = @import("rasterconfig.zig");
 const report = @import("report.zig");
 const GeometrySchedulingMode = rastcfg.GeometrySchedulingMode;
 
 const l2_cache_size_bytes = 1024 * 1024;
 const l2_safety_margin = 0.8;
-const bytes_per_subpixel = 154; // Based on F=8, S=8, precision=f64
+const F = buildconfig.F;
+
+fn bytesPerSubpixelForF64() comptime_int {
+    return 154;
+}
+
+fn bytesPerSubpixelForF32() comptime_int {
+    return 86;
+}
+
+const bytes_per_subpixel = switch (F) {
+    f32 => bytesPerSubpixelForF32(),
+    f64 => bytesPerSubpixelForF64(),
+    else => @compileError("Only f32 and f64 precision are supported."),
+};
 const target_subpx_per_tile: usize = @intFromFloat(
     @as(f64, l2_cache_size_bytes) * l2_safety_margin / bytes_per_subpixel,
 );

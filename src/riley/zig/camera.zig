@@ -12,6 +12,7 @@ const camera_scalar = @import("camera_scalar.zig");
 const camera_simd = @import("camera_simd.zig");
 
 const cfg = buildconfig.config;
+const F = cfg.precision;
 const camera_impl = if (cfg.simd == .on) camera_simd else camera_scalar;
 
 pub const DistortionModel = common.DistortionModel;
@@ -58,7 +59,7 @@ pub fn fillTileIdealCentersPerTile(
     scratch_y_px_min: usize,
     scratch_y_px_max: usize,
     subpx_tile_size: usize,
-    ideal_pixel_centers: []f64,
+    ideal_pixel_centers: []F,
 ) !void {
     return camera_impl.fillTileIdealCentersPerTile(
         camera,
@@ -78,7 +79,7 @@ pub fn fillTileIdealCentersAffineJac(
     scratch_y_px_min: usize,
     scratch_y_px_max: usize,
     subpx_tile_size: usize,
-    ideal_pixel_centers: []f64,
+    ideal_pixel_centers: []F,
 ) void {
     camera_impl.fillTileIdealCentersAffineJac(
         camera,

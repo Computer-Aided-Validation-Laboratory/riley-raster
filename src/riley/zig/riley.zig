@@ -10,6 +10,7 @@ const std = @import("std");
 const Timestamp = std.Io.Clock.Timestamp;
 const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
+const buildconfig = @import("buildconfig.zig");
 
 const sliceops = @import("sliceops.zig");
 
@@ -39,6 +40,7 @@ pub const FullStatsOpts = rastcfg.FullStatsOpts;
 
 const report = @import("report.zig");
 const FrameReportStorage = report.FrameReportStorage;
+const F = buildconfig.F;
 
 // --------------------------------------------------------------------------
 // 1. Threaded IO and Tiny Shared Helpers
@@ -171,7 +173,7 @@ fn needsOutputTransform(
 }
 
 fn validateAllFramesBuffer(
-    images_arr: *const ndarray.NDArray(f64),
+    images_arr: *const ndarray.NDArray(F),
     expected_dims: [5]usize,
 ) !void {
     if (images_arr.dims.len != expected_dims.len) {
@@ -184,7 +186,7 @@ fn validateAllFramesBuffer(
     }
 }
 
-fn isFiniteSlice(values: []const f64) bool {
+fn isFiniteSlice(values: []const F) bool {
     for (values) |value| {
         if (!std.math.isFinite(value)) {
             return false;
@@ -219,14 +221,14 @@ fn isValidBidirectionalPolynomial(poly: cam.BidirectionalPolynomial) bool {
 fn isValidDistortion(distortion: cam.DistortionModel) bool {
     return switch (distortion) {
         .none => true,
-        .brown_conrady => |bc| isFiniteSlice(&[_]f64{
+        .brown_conrady => |bc| isFiniteSlice(&[_]F{
             bc.k1,
             bc.k2,
             bc.k3,
             bc.p1,
             bc.p2,
         }),
-        .brown_conrady_ext => |bc| isFiniteSlice(&[_]f64{
+        .brown_conrady_ext => |bc| isFiniteSlice(&[_]F{
             bc.k1,
             bc.k2,
             bc.k3,
@@ -237,14 +239,14 @@ fn isValidDistortion(distortion: cam.DistortionModel) bool {
             bc.p2,
         }),
         .polynomial => |poly| isValidBidirectionalPolynomial(poly),
-        .brown_conrady_polynomial => |chain| isFiniteSlice(&[_]f64{
+        .brown_conrady_polynomial => |chain| isFiniteSlice(&[_]F{
             chain.brown_conrady.k1,
             chain.brown_conrady.k2,
             chain.brown_conrady.k3,
             chain.brown_conrady.p1,
             chain.brown_conrady.p2,
         }) and isValidBidirectionalPolynomial(chain.polynomial),
-        .brown_conrady_ext_polynomial => |chain| isFiniteSlice(&[_]f64{
+        .brown_conrady_ext_polynomial => |chain| isFiniteSlice(&[_]F{
             chain.brown_conrady_ext.k1,
             chain.brown_conrady_ext.k2,
             chain.brown_conrady_ext.k3,
@@ -261,13 +263,13 @@ fn isValidPsf(psf: cam.PointSpreadFunc) bool {
     return switch (psf) {
         .pixel_box => |box| std.math.isFinite(box.support_rad_px) and
             box.support_rad_px >= 0.0,
-        .gaussian => |gauss| isFiniteSlice(&[_]f64{
+        .gaussian => |gauss| isFiniteSlice(&[_]F{
             gauss.sigma_px,
             gauss.support_rad_px,
         }) and
             gauss.sigma_px > 0.0 and
             gauss.support_rad_px >= 0.0,
-        .anisotropic_gaussian => |gauss| isFiniteSlice(&[_]f64{
+        .anisotropic_gaussian => |gauss| isFiniteSlice(&[_]F{
             gauss.sigma_x_px,
             gauss.sigma_y_px,
             gauss.theta_rad,
@@ -297,7 +299,7 @@ fn checkCameraInputError(camera_input: cam.CameraInput) !void {
     }
     if (!isFiniteVec3(camera_input.pos_world) or
         !isFiniteVec3(camera_input.roi_cent_world) or
-        !isFiniteSlice(&[_]f64{
+        !isFiniteSlice(&[_]F{
             camera_input.rot_world.alpha_z,
             camera_input.rot_world.beta_y,
             camera_input.rot_world.gamma_x,
@@ -325,7 +327,7 @@ fn checkCameraInputAssert(camera_input: cam.CameraInput) void {
     std.debug.assert(camera_input.sub_sample > 0);
     std.debug.assert(isFiniteVec3(camera_input.pos_world));
     std.debug.assert(isFiniteVec3(camera_input.roi_cent_world));
-    std.debug.assert(isFiniteSlice(&[_]f64{
+    std.debug.assert(isFiniteSlice(&[_]F{
         camera_input.rot_world.alpha_z,
         camera_input.rot_world.beta_y,
         camera_input.rot_world.gamma_x,
@@ -340,7 +342,7 @@ fn checkRenderConsistencyError(
     camera_inputs: []const cam.CameraInput,
     meshes: []const mo.MeshInput,
     config: RasterConfig,
-    images_arr: ?*ndarray.NDArray(f64),
+    images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
     validate_output_buffer: bool,
 ) !void {
@@ -429,7 +431,7 @@ fn checkRenderConsistencyAssert(
     camera_inputs: []const cam.CameraInput,
     meshes: []const mo.MeshInput,
     config: RasterConfig,
-    images_arr: ?*ndarray.NDArray(f64),
+    images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
     validate_output_buffer: bool,
 ) void {
@@ -533,10 +535,10 @@ pub fn calcAllFramesImageDimsForConfig(
 
 fn getFrameImageView(
     allocator: std.mem.Allocator,
-    images_arr: *ndarray.NDArray(f64),
+    images_arr: *ndarray.NDArray(F),
     camera_idx: usize,
     frame_idx: usize,
-) !ndarray.NDArray(f64) {
+) !ndarray.NDArray(F) {
     std.debug.assert(images_arr.dims.len == 5);
     return try images_arr.fixedPrefixView(
         allocator,
@@ -575,7 +577,7 @@ const FrameJobDesc = struct {
     out_dir: ?std.Io.Dir,
     mesh_static: []const mo.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
-    images_arr: ?*ndarray.NDArray(f64),
+    images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
     cameras_num: usize,
     can_write_result_direct: bool,
@@ -589,14 +591,14 @@ const FrameContext = struct {
     prep_meshes: []mo.MeshPrepared = &.{},
     elem_bboxes_by_mesh: [][]rops.ElemBBox = &.{},
     elems_in_image_by_mesh: []usize = &.{},
-    raster_hulls: []?ndarray.NDArray(f64) = &.{},
+    raster_hulls: []?ndarray.NDArray(F) = &.{},
     tiling: ?rops.TilingOverlaps = null,
     total_nodes_num: usize = 0,
     total_elems_num: usize = 0,
     total_elems_in_image: usize = 0,
     actual_tile_size: u16 = 1,
 
-    frame_arr: ndarray.NDArray(f64) = undefined,
+    frame_arr: ndarray.NDArray(F) = undefined,
 
     report_storage: report.FrameReportStorage = .{ .off = .{} },
     frame_times: report.FrameTimes = .{},
@@ -650,7 +652,7 @@ fn prepareFrameContext(
     ctx.prep_meshes = try arena_alloc.alloc(mo.MeshPrepared, mesh_n);
     ctx.elem_bboxes_by_mesh = try arena_alloc.alloc([]rops.ElemBBox, mesh_n);
     ctx.elems_in_image_by_mesh = try arena_alloc.alloc(usize, mesh_n);
-    ctx.raster_hulls = try arena_alloc.alloc(?ndarray.NDArray(f64), mesh_n);
+    ctx.raster_hulls = try arena_alloc.alloc(?ndarray.NDArray(F), mesh_n);
 
     const dims = [_]usize{
         @as(usize, input.num_fields),
@@ -673,7 +675,7 @@ fn prepareFrameContext(
             input.frame_idx,
         );
     } else {
-        ctx.frame_arr = try ndarray.NDArray(f64).initFlat(
+        ctx.frame_arr = try ndarray.NDArray(F).initFlat(
             arena_alloc,
             dims[0..],
         );
@@ -684,11 +686,11 @@ fn prepareFrameContext(
 }
 
 fn copyFrameToImageBatch(
-    background_val: f64,
-    images_arr: *ndarray.NDArray(f64),
+    background_val: F,
+    images_arr: *ndarray.NDArray(F),
     camera_idx: usize,
     frame_idx: usize,
-    frame_arr: *const ndarray.NDArray(f64),
+    frame_arr: *const ndarray.NDArray(F),
 ) void {
     std.debug.assert(images_arr.dims.len == 5);
     std.debug.assert(frame_arr.dims.len == 3);
@@ -1044,7 +1046,7 @@ fn prepareJobBatch(
     num_fields: u8,
     mesh_static: []const mo.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
-    images_arr: ?*ndarray.NDArray(f64),
+    images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
     job_indices: []const usize,
 ) ![]PreparedFrameJob {
@@ -1289,7 +1291,7 @@ const OfflineDispatchShared = struct {
     num_fields: u8,
     mesh_static: []const mo.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
-    images_arr: ?*ndarray.NDArray(f64),
+    images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
     total_scene_elems: usize,
     batch_size: usize,
@@ -1384,7 +1386,7 @@ fn dispatchFrameJobsOffline(
     num_fields: u8,
     mesh_static: []const mo.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
-    images_arr: ?*ndarray.NDArray(f64),
+    images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
 ) !void {
     var err_state = FrameJobErrorState{};
@@ -1439,7 +1441,7 @@ const InOrderDispatchShared = struct {
     num_fields: u8,
     mesh_static: []const mo.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
-    images_arr: ?*ndarray.NDArray(f64),
+    images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
     total_scene_elems: usize,
     batch_size: usize,
@@ -1542,7 +1544,7 @@ fn dispatchFrameJobsInOrder(
     num_fields: u8,
     mesh_static: []const mo.MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
-    images_arr: ?*ndarray.NDArray(f64),
+    images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
 ) !void {
     const total_scene_elems = mo.countStaticMeshElements(mesh_static);
@@ -1603,7 +1605,7 @@ pub fn raster(
     meshes: []const mo.MeshInput,
     config: RasterConfig,
     out_dir_path: ?[]const u8,
-) !?ndarray.NDArray(f64) {
+) !?ndarray.NDArray(F) {
     return rasterReport(
         outer_alloc,
         render_groups,
@@ -1622,7 +1624,7 @@ pub fn rasterInto(
     meshes: []const mo.MeshInput,
     config: RasterConfig,
     out_dir_path: ?[]const u8,
-    images_arr: ?*ndarray.NDArray(f64),
+    images_arr: ?*ndarray.NDArray(F),
 ) !void {
     try rasterReportInto(
         outer_alloc,
@@ -1644,7 +1646,7 @@ pub fn rasterReport(
     config: RasterConfig,
     out_dir_path: ?[]const u8,
     bench_capture: ?[]report.FrameBenchCapture,
-) !?ndarray.NDArray(f64) {
+) !?ndarray.NDArray(F) {
     try checkRenderConsistencyError(
         render_groups,
         camera_inputs,
@@ -1657,14 +1659,14 @@ pub fn rasterReport(
 
     const needs_images_arr = config.save_strategy == .memory or
         config.save_strategy == .both;
-    var images_arr_opt: ?ndarray.NDArray(f64) = null;
+    var images_arr_opt: ?ndarray.NDArray(F) = null;
     if (needs_images_arr) {
         const dims = try calcAllFramesImageDimsForConfig(
             camera_inputs,
             meshes,
             config,
         );
-        images_arr_opt = try ndarray.NDArray(f64).initFlat(
+        images_arr_opt = try ndarray.NDArray(F).initFlat(
             outer_alloc,
             dims[0..],
         );
@@ -1694,7 +1696,7 @@ pub fn rasterReportInto(
     meshes: []const mo.MeshInput,
     config: RasterConfig,
     out_dir_path: ?[]const u8,
-    images_arr: ?*ndarray.NDArray(f64),
+    images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
 ) !void {
     try checkRenderConsistencyError(

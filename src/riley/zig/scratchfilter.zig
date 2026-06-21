@@ -7,6 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const rops = @import("rasterops.zig");
 const cam = @import("camera.zig");
 const common = @import("scratchfilter_common.zig");
@@ -25,10 +26,10 @@ pub fn resolveScratchDirect(
     tile: rops.ActiveTile,
     spx_tile_size: usize,
     fields_num: u8,
-    spx_image_scratch: *const MatSlice(f64),
+    spx_image_scratch: *const MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
-    image_out_arr: *NDArray(f64),
+    image_out_arr: *NDArray(F),
 ) void {
     const dummy_geom = ScratchTileGeometry{
         .scratch_w_px = tile.x_px_max - tile.x_px_min,
@@ -61,12 +62,12 @@ pub fn resolveScratchDirectCore(
     scratch_geom: ScratchTileGeometry,
     spx_stride: usize,
     fields_num: u8,
-    spx_image_scratch: *const MatSlice(f64),
+    spx_image_scratch: *const MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
     radius_x: usize,
     radius_y: usize,
-    image_out_arr: *NDArray(f64),
+    image_out_arr: *NDArray(F),
 ) void {
     scalar.resolveScratchDirectCore(
         scratch_layout,
@@ -89,10 +90,10 @@ pub fn averageScratch(
     sub_samp: usize,
     spx_tile_size: usize,
     fields_num: u8,
-    spx_image_scratch: *const MatSlice(f64),
+    spx_image_scratch: *const MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
-    image_out_arr: *NDArray(f64),
+    image_out_arr: *NDArray(F),
 ) void {
     const dummy_geom = ScratchTileGeometry{
         .scratch_w_px = tile.x_px_max - tile.x_px_min,
@@ -127,12 +128,12 @@ pub fn averageScratchCore(
     sub_samp: usize,
     spx_stride: usize,
     fields_num: u8,
-    spx_image_scratch: *const MatSlice(f64),
+    spx_image_scratch: *const MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
     radius_x: usize,
     radius_y: usize,
-    image_out_arr: *NDArray(f64),
+    image_out_arr: *NDArray(F),
 ) void {
     if (cfg.simd == .on and scratch_layout == .field_major) {
         simd.averageScratchCoreSIMD(
@@ -170,14 +171,14 @@ pub fn averageScratchCore(
 pub fn filterScratchSeparable(
     comptime scratch_layout: ScratchLayout,
     fields_num: u8,
-    background_value: f64,
+    background_value: F,
     psf: cam.PreparedPSF,
     scratch_geom: ScratchTileGeometry,
     sub_samp: usize,
     spx_stride: usize,
-    src: *const MatSlice(f64),
-    tmp: *MatSlice(f64),
-    dst: *MatSlice(f64),
+    src: *const MatSlice(F),
+    tmp: *MatSlice(F),
+    dst: *MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
 ) void {
@@ -217,13 +218,13 @@ pub fn filterScratchSeparable(
 pub fn filterScratchNonSeparable(
     comptime scratch_layout: ScratchLayout,
     fields_num: u8,
-    background_value: f64,
+    background_value: F,
     psf: cam.PreparedPSF,
     scratch_geom: ScratchTileGeometry,
     sub_samp: usize,
     spx_stride: usize,
-    src: *const MatSlice(f64),
-    dst: *MatSlice(f64),
+    src: *const MatSlice(F),
+    dst: *MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
 ) void {
@@ -264,14 +265,14 @@ pub fn resolveTileWithPSF(
     sub_samp: usize,
     spx_stride: usize,
     fields_num: u8,
-    background_value: f64,
+    background_value: F,
     prepared_psf: cam.PreparedPSF,
     scratch_geom: ScratchTileGeometry,
-    spx_image_scratch: *MatSlice(f64),
-    filter_tmp: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
+    filter_tmp: *MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
-    image_out_arr: *NDArray(f64),
+    image_out_arr: *NDArray(F),
 ) void {
     switch (prepared_psf.mode) {
         .identity_fast => {

@@ -9,6 +9,7 @@
 const std = @import("std");
 
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 
 const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
@@ -94,7 +95,7 @@ pub fn saveImage(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name_no_ext: []const u8,
-    image_arr: *const ndarray.NDArray(f64),
+    image_arr: *const ndarray.NDArray(F),
     start_field: usize,
     opts: ImageSaveOpts,
 ) !void {
@@ -125,12 +126,12 @@ pub fn saveMatAsImage(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name_no_ext: []const u8,
-    image: *const matslice.MatSlice(f64),
+    image: *const matslice.MatSlice(F),
     opts: ImageSaveOpts,
 ) !void {
     var dims = [_]usize{ 1, image.rows_num, image.cols_num };
     var strides = [_]usize{ image.rows_num * image.cols_num, image.cols_num, 1 };
-    const arr = ndarray.NDArray(f64){
+    const arr = ndarray.NDArray(F){
         .slice = image.slice,
         .dims = &dims,
         .strides = &strides,
@@ -145,7 +146,7 @@ pub fn saveImages(
     frame_idx: usize,
     num_fields: u8,
     pixels_num: [2]u32,
-    frame_arr: *const ndarray.NDArray(f64),
+    frame_arr: *const ndarray.NDArray(F),
     channels_override: ?usize,
     opts_slice: []const ImageSaveOpts,
 ) !void {
@@ -204,7 +205,7 @@ pub fn savePPM(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
-    image_arr: *const ndarray.NDArray(f64),
+    image_arr: *const ndarray.NDArray(F),
     start_field: usize,
     opts: ImageSaveOpts,
 ) !void {
@@ -230,7 +231,7 @@ pub fn savePPM(
     for (0..channels) |ch| {
         const field_idx = start_field + ch;
         const slice = image_arr.getSlice(&[_]usize{ field_idx, 0, 0 }, 0);
-        const mat = matslice.MatSlice(f64).init(slice, rows, cols);
+        const mat = matslice.MatSlice(F).init(slice, rows, cols);
         params_array[ch] = imageops.getScalingParams(&mat, opts.scaling);
     }
 
@@ -261,7 +262,7 @@ pub fn saveCSV(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
-    image_arr: *const ndarray.NDArray(f64),
+    image_arr: *const ndarray.NDArray(F),
     start_field: usize,
     opts: ImageSaveOpts,
 ) !void {
@@ -273,17 +274,17 @@ pub fn saveCSV(
     for (0..channels) |ch| {
         const field_idx = start_field + ch;
         const slice = image_arr.getSlice(&[_]usize{ field_idx, 0, 0 }, 0);
-        const mat = matslice.MatSlice(f64).init(slice, rows, cols);
+        const mat = matslice.MatSlice(F).init(slice, rows, cols);
         params_array[ch] = imageops.getScalingParams(&mat, opts.scaling);
     }
 
     const SaveCtx = struct {
-        image_arr: *const ndarray.NDArray(f64),
+        image_arr: *const ndarray.NDArray(F),
         start_field: usize,
         opts: ImageSaveOpts,
         params_array: [buildconfig.config.max_image_channels]imageops.ScalingParams,
 
-        fn getVal(ctx: @This(), row: usize, col: usize, ch: usize) f64 {
+        fn getVal(ctx: @This(), row: usize, col: usize, ch: usize) F {
             const field_idx = ctx.start_field + ch;
             const raw_val = ctx.image_arr.get(&[_]usize{ field_idx, row, col });
             const params = ctx.params_array[ch];
@@ -322,7 +323,7 @@ pub fn saveFIMG(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
-    image_arr: *const ndarray.NDArray(f64),
+    image_arr: *const ndarray.NDArray(F),
     start_field: usize,
     opts: ImageSaveOpts,
 ) !void {
@@ -340,14 +341,14 @@ pub fn saveFIMG(
     // Header: ASCII
     try writer.print("FIMG\n{d} {d} {d}\n", .{ cols, rows, channels });
 
-    // Payload: Binary f64 Little-Endian
+    // Payload: Binary F Little-Endian
     // Format is Planar: Channel by Channel (matching our ndarray.NDArray layout for fields)
     for (0..channels) |ch| {
         const field_idx = start_field + ch;
         for (0..rows) |rr| {
             for (0..cols) |cc| {
                 const val = image_arr.get(&[_]usize{ field_idx, rr, cc });
-                const le_val = std.mem.nativeToLittle(f64, val);
+                const le_val = std.mem.nativeToLittle(F, val);
                 try writer.writeAll(std.mem.asBytes(&le_val));
             }
         }
@@ -360,7 +361,7 @@ pub fn saveBMP(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
-    image_arr: *const ndarray.NDArray(f64),
+    image_arr: *const ndarray.NDArray(F),
     start_field: usize,
     opts: ImageSaveOpts,
 ) !void {
@@ -412,7 +413,7 @@ pub fn saveBMP(
     for (0..@min(channels, 3)) |ch| {
         const field_idx = start_field + ch;
         const slice = image_arr.getSlice(&[_]usize{ field_idx, 0, 0 }, 0);
-        const mat = matslice.MatSlice(f64).init(slice, rows, cols);
+        const mat = matslice.MatSlice(F).init(slice, rows, cols);
         params_array[ch] = imageops.getScalingParams(&mat, opts.scaling);
     }
 
@@ -448,14 +449,14 @@ pub fn saveTIFF(
     io: std.Io,
     out_dir: std.Io.Dir,
     file_name: []const u8,
-    image_arr: *const ndarray.NDArray(f64),
+    image_arr: *const ndarray.NDArray(F),
     start_field: usize,
     opts: ImageSaveOpts,
 ) !void {
     const rows = image_arr.dims[1];
     const cols = image_arr.dims[2];
     const slice = image_arr.getSlice(&[_]usize{ start_field, 0, 0 }, 0);
-    const image = matslice.MatSlice(f64).init(slice, rows, cols);
+    const image = matslice.MatSlice(F).init(slice, rows, cols);
 
     const file = try out_dir.createFile(io, file_name, .{});
     defer file.close(io);
@@ -595,7 +596,7 @@ pub fn loadPPM(
     var texture = try texops.Texture(channels).init(allocator, height, width);
     errdefer texture.deinit(allocator);
 
-    const max_val_f = @as(f64, @floatFromInt(max_val));
+    const max_val_f = @as(F, @floatFromInt(max_val));
 
     for (0..height) |rr| {
         for (0..width) |cc| {
@@ -606,19 +607,19 @@ pub fn loadPPM(
             }
 
             if (channels == 3) {
-                const s0 = @as(f64, @floatFromInt(rgb[0])) / max_val_f;
-                const s1 = @as(f64, @floatFromInt(rgb[1])) / max_val_f;
-                const s2 = @as(f64, @floatFromInt(rgb[2])) / max_val_f;
-                texture.setVal(0, rr, cc, convertValue(f64, convertToTarget(T, s0)));
-                texture.setVal(1, rr, cc, convertValue(f64, convertToTarget(T, s1)));
-                texture.setVal(2, rr, cc, convertValue(f64, convertToTarget(T, s2)));
+                const s0 = @as(F, @floatFromInt(rgb[0])) / max_val_f;
+                const s1 = @as(F, @floatFromInt(rgb[1])) / max_val_f;
+                const s2 = @as(F, @floatFromInt(rgb[2])) / max_val_f;
+                texture.setVal(0, rr, cc, convertValue(F, convertToTarget(T, s0)));
+                texture.setVal(1, rr, cc, convertValue(F, convertToTarget(T, s1)));
+                texture.setVal(2, rr, cc, convertValue(F, convertToTarget(T, s2)));
             } else if (channels == 1) {
                 const val = toGreyScale(rgb[0], rgb[1], rgb[2]);
                 texture.setVal(
                     0,
                     rr,
                     cc,
-                    convertValue(f64, convertToTarget(T, val / max_val_f)),
+                    convertValue(F, convertToTarget(T, val / max_val_f)),
                 );
             }
         }
@@ -669,7 +670,7 @@ pub fn loadFIMG(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !ndarray.NDArray(f64) {
+) !ndarray.NDArray(F) {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(io, path, .{ .mode = .read_only });
     defer file.close(io);
@@ -721,19 +722,42 @@ pub fn loadFIMG(
     const width = try std.fmt.parseInt(usize, width_str, 10);
     const height = try std.fmt.parseInt(usize, height_str, 10);
     const chans = try std.fmt.parseInt(usize, chan_str, 10);
+    const sample_count = chans * height * width;
+    const file_stat = try file.stat(io);
+    const payload_bytes = file_stat.size - file_reader.logicalPos();
+    if (sample_count == 0) return error.InvalidFormat;
+    if (payload_bytes % sample_count != 0) return error.InvalidFormat;
+    const bytes_per_sample = payload_bytes / sample_count;
 
-    var array = try ndarray.NDArray(f64).initFlat(allocator, &[_]usize{ chans, height, width });
+    var array = try ndarray.NDArray(F).initFlat(allocator, &[_]usize{ chans, height, width });
     errdefer array.deinit(allocator);
 
-    // 2. Read Binary Payload (f64 LE)
+    // 2. Read Binary Payload (f32/f64 LE)
     // The file is stored Planar: [chans, height, width]
     for (0..chans) |ch| {
         for (0..height) |rr| {
             for (0..width) |cc| {
-                var bytes: [8]u8 = undefined;
-                try reader.readSliceAll(&bytes);
-                const le_val = std.mem.bytesAsValue(f64, &bytes).*;
-                const val = std.mem.littleToNative(f64, le_val);
+                const val = switch (bytes_per_sample) {
+                    4 => blk: {
+                        var bytes: [4]u8 = undefined;
+                        try reader.readSliceAll(&bytes);
+                        const le_val = std.mem.bytesAsValue(f32, &bytes).*;
+                        break :blk @as(
+                            F,
+                            @floatCast(std.mem.littleToNative(f32, le_val)),
+                        );
+                    },
+                    8 => blk: {
+                        var bytes: [8]u8 = undefined;
+                        try reader.readSliceAll(&bytes);
+                        const le_val = std.mem.bytesAsValue(f64, &bytes).*;
+                        break :blk @as(
+                            F,
+                            @floatCast(std.mem.littleToNative(f64, le_val)),
+                        );
+                    },
+                    else => return error.InvalidFormat,
+                };
                 array.set(&[_]usize{ ch, rr, cc }, val);
             }
         }
@@ -794,9 +818,9 @@ pub fn loadBMP(
                 var bgr: [3]u8 = undefined;
                 try reader.readSliceAll(&bgr);
                 if (channels == 3) {
-                    texture.setVal(0, r, x, @as(f64, @floatFromInt(bgr[2])));
-                    texture.setVal(1, r, x, @as(f64, @floatFromInt(bgr[1])));
-                    texture.setVal(2, r, x, @as(f64, @floatFromInt(bgr[0])));
+                    texture.setVal(0, r, x, @as(F, @floatFromInt(bgr[2])));
+                    texture.setVal(1, r, x, @as(F, @floatFromInt(bgr[1])));
+                    texture.setVal(2, r, x, @as(F, @floatFromInt(bgr[0])));
                 } else if (channels == 1) {
                     const val = toGreyScale(bgr[2], bgr[1], bgr[0]);
                     texture.setVal(0, r, x, val);
@@ -815,9 +839,9 @@ pub fn loadBMP(
                 bgr[1] = try reader.takeInt(u16, .little);
                 bgr[2] = try reader.takeInt(u16, .little);
                 if (channels == 3) {
-                    texture.setVal(0, r, x, @as(f64, @floatFromInt(bgr[2])));
-                    texture.setVal(1, r, x, @as(f64, @floatFromInt(bgr[1])));
-                    texture.setVal(2, r, x, @as(f64, @floatFromInt(bgr[0])));
+                    texture.setVal(0, r, x, @as(F, @floatFromInt(bgr[2])));
+                    texture.setVal(1, r, x, @as(F, @floatFromInt(bgr[1])));
+                    texture.setVal(2, r, x, @as(F, @floatFromInt(bgr[0])));
                 } else if (channels == 1) {
                     const val = toGreyScale(bgr[2], bgr[1], bgr[0]);
                     texture.setVal(0, r, x, val);
@@ -840,9 +864,9 @@ pub fn loadBMP(
                 const index = try reader.takeByte();
                 const color = palette[index];
                 if (channels == 3) {
-                    texture.setVal(0, r, x, @as(f64, @floatFromInt(color[2])));
-                    texture.setVal(1, r, x, @as(f64, @floatFromInt(color[1])));
-                    texture.setVal(2, r, x, @as(f64, @floatFromInt(color[0])));
+                    texture.setVal(0, r, x, @as(F, @floatFromInt(color[2])));
+                    texture.setVal(1, r, x, @as(F, @floatFromInt(color[1])));
+                    texture.setVal(2, r, x, @as(F, @floatFromInt(color[0])));
                 } else if (channels == 1) {
                     const val = toGreyScale(color[2], color[1], color[0]);
                     texture.setVal(0, r, x, val);
@@ -924,19 +948,19 @@ pub fn loadTIFF(
 
     try file_reader.seekTo(strip_offsets);
 
-    const max_val_f: f64 = if (bits_per_sample == 16) 65535.0 else 255.0;
+    const max_val_f: F = if (bits_per_sample == 16) 65535.0 else 255.0;
 
     for (0..height) |rr| {
         for (0..width) |cc| {
-            const val_raw: f64 = if (bits_per_sample == 16)
-                @as(f64, @floatFromInt(try reader.takeInt(u16, endian)))
+            const val_raw: F = if (bits_per_sample == 16)
+                @as(F, @floatFromInt(try reader.takeInt(u16, endian)))
             else
-                @as(f64, @floatFromInt(try reader.takeByte()));
+                @as(F, @floatFromInt(try reader.takeByte()));
 
             const norm = val_raw / max_val_f;
 
             if (channels == 3) {
-                const out_val = convertValue(f64, convertToTarget(T, norm));
+                const out_val = convertValue(F, convertToTarget(T, norm));
                 texture.setVal(0, rr, cc, out_val);
                 texture.setVal(1, rr, cc, out_val);
                 texture.setVal(2, rr, cc, out_val);
@@ -945,7 +969,7 @@ pub fn loadTIFF(
                     0,
                     rr,
                     cc,
-                    convertValue(f64, convertToTarget(T, norm)),
+                    convertValue(F, convertToTarget(T, norm)),
                 );
             }
         }
@@ -995,9 +1019,9 @@ pub fn CLoadTIFF(
             const b = @as(u8, @intCast((pixel >> 16) & 0xFF));
 
             if (channels == 3) {
-                texture.setVal(0, row, col, @as(f64, @floatFromInt(r)));
-                texture.setVal(1, row, col, @as(f64, @floatFromInt(g)));
-                texture.setVal(2, row, col, @as(f64, @floatFromInt(b)));
+                texture.setVal(0, row, col, @as(F, @floatFromInt(r)));
+                texture.setVal(1, row, col, @as(F, @floatFromInt(g)));
+                texture.setVal(2, row, col, @as(F, @floatFromInt(b)));
             } else if (channels == 1) {
                 const val = toGreyScale(r, g, b);
                 texture.setVal(0, row, col, val);
@@ -1008,16 +1032,16 @@ pub fn CLoadTIFF(
     return texture;
 }
 
-inline fn toGreyScale(r: anytype, g: anytype, b: anytype) f64 {
-    return 0.299 * @as(f64, @floatFromInt(r)) +
-        0.587 * @as(f64, @floatFromInt(g)) +
-        0.114 * @as(f64, @floatFromInt(b));
+inline fn toGreyScale(r: anytype, g: anytype, b: anytype) F {
+    return 0.299 * @as(F, @floatFromInt(r)) +
+        0.587 * @as(F, @floatFromInt(g)) +
+        0.114 * @as(F, @floatFromInt(b));
 }
 
-fn convertToTarget(comptime T: type, norm: f64) T {
+fn convertToTarget(comptime T: type, norm: F) T {
     const scale = switch (@typeInfo(T)) {
-        .int => |info| (@as(f64, 1.0) * @as(
-            f64,
+        .int => |info| (@as(F, 1.0) * @as(
+            F,
             @floatFromInt((@as(u64, 1) << info.bits) - 1),
         )),
         .float => 1.0,
@@ -1033,8 +1057,8 @@ fn convertToTarget(comptime T: type, norm: f64) T {
 
 fn convertValue(comptime T: type, val: anytype) T {
     const val_f64 = switch (@typeInfo(@TypeOf(val))) {
-        .int => @as(f64, @floatFromInt(val)),
-        .float => @as(f64, val),
+        .int => @as(F, @floatFromInt(val)),
+        .float => @as(F, val),
         else => @compileError("Unsupported type"),
     };
 
@@ -1056,7 +1080,7 @@ test "Verify hand-written TIFF loader" {
     const rows_num = 19;
     const cols_num = 23;
     const mat_size = rows_num * cols_num;
-    const mat_mem = try allocator.alloc(f64, mat_size);
+    const mat_mem = try allocator.alloc(F, mat_size);
     defer allocator.free(mat_mem);
 
     for (0..rows_num) |rr| {
@@ -1065,7 +1089,7 @@ test "Verify hand-written TIFF loader" {
             mat_mem[rr * cols_num + cc] = @floatFromInt((rr * 17 + cc * 29) % 256);
         }
     }
-    const mat = matslice.MatSlice(f64).init(mat_mem, rows_num, cols_num);
+    const mat = matslice.MatSlice(F).init(mat_mem, rows_num, cols_num);
 
     try saveMatAsImage(
         io,
@@ -1106,15 +1130,15 @@ test "Save and Load All Formats 8-bit and 16-bit" {
 
     const rows = 4;
     const cols = 4;
-    const mat_mem = try allocator.alloc(f64, rows * cols);
+    const mat_mem = try allocator.alloc(F, rows * cols);
     defer allocator.free(mat_mem);
     // Data in [0, 100] range
     for (0..rows) |rr| {
         for (0..cols) |cc| {
-            mat_mem[rr * cols + cc] = @as(f64, @floatFromInt(rr * cols + cc)) * 5.0;
+            mat_mem[rr * cols + cc] = @as(F, @floatFromInt(rr * cols + cc)) * 5.0;
         }
     }
-    const mat = matslice.MatSlice(f64).init(mat_mem, rows, cols);
+    const mat = matslice.MatSlice(F).init(mat_mem, rows, cols);
 
     const formats = [_]ImageFormat{ .csv, .fimg, .ppm, .tiff, .bmp };
     const bit_depths = [_]u8{ 8, 16 };
@@ -1189,14 +1213,14 @@ test "Scaling Strategy: Fractional" {
 
     const rows = 2;
     const cols = 2;
-    const mat_mem = try allocator.alloc(f64, rows * cols);
+    const mat_mem = try allocator.alloc(F, rows * cols);
     defer allocator.free(mat_mem);
     // Data [0, 10]
     mat_mem[0] = 0.0;
     mat_mem[1] = 10.0;
     mat_mem[2] = 5.0;
     mat_mem[3] = 2.5;
-    const mat = matslice.MatSlice(f64).init(mat_mem, rows, cols);
+    const mat = matslice.MatSlice(F).init(mat_mem, rows, cols);
 
     // Test 1: Frac [0.4, 0.6], bits = null (CSV) -> should map [0, 10] to [0.4, 0.6]
     const opts1 = ImageSaveOpts{
@@ -1207,7 +1231,7 @@ test "Scaling Strategy: Fractional" {
     try saveMatAsImage(io, cwd, tmp_test_dir ++ "/test_frac_float", &mat, opts1);
 
     var loaded1 = try loadImage(
-        f64,
+        F,
         1,
         allocator,
         io,
@@ -1215,10 +1239,10 @@ test "Scaling Strategy: Fractional" {
         .csv,
     );
     defer loaded1.deinit(allocator);
-    try testing.expectApproxEqAbs(loaded1.getVal(0, 0, 0), 0.4, 1e-6);
-    try testing.expectApproxEqAbs(loaded1.getVal(0, 0, 1), 0.6, 1e-6);
-    try testing.expectApproxEqAbs(loaded1.getVal(0, 1, 0), 0.5, 1e-6);
-    try testing.expectApproxEqAbs(loaded1.getVal(0, 1, 1), 0.45, 1e-6);
+    try testing.expectApproxEqAbs(loaded1.getVal(0, 0, 0), 0.4, frac_tol);
+    try testing.expectApproxEqAbs(loaded1.getVal(0, 0, 1), 0.6, frac_tol);
+    try testing.expectApproxEqAbs(loaded1.getVal(0, 1, 0), 0.5, frac_tol);
+    try testing.expectApproxEqAbs(loaded1.getVal(0, 1, 1), 0.45, frac_tol);
 
     // Test 2: Frac [0.4, 0.6], bits = 8 (CSV) -> should map [0, 10] to [0.4*255, 0.6*255]
     const opts2 = ImageSaveOpts{
@@ -1229,7 +1253,7 @@ test "Scaling Strategy: Fractional" {
     try saveMatAsImage(io, cwd, tmp_test_dir ++ "/test_frac_bits", &mat, opts2);
 
     var loaded2 = try loadImage(
-        f64,
+        F,
         1,
         allocator,
         io,
@@ -1237,10 +1261,26 @@ test "Scaling Strategy: Fractional" {
         .csv,
     );
     defer loaded2.deinit(allocator);
-    try testing.expectApproxEqAbs(loaded2.getVal(0, 0, 0), 0.4 * 255.0, 1e-6);
-    try testing.expectApproxEqAbs(loaded2.getVal(0, 0, 1), 0.6 * 255.0, 1e-6);
-    try testing.expectApproxEqAbs(loaded2.getVal(0, 1, 0), 0.5 * 255.0, 1e-6);
-    try testing.expectApproxEqAbs(loaded2.getVal(0, 1, 1), 0.45 * 255.0, 1e-6);
+    try testing.expectApproxEqAbs(
+        loaded2.getVal(0, 0, 0),
+        0.4 * 255.0,
+        frac_tol,
+    );
+    try testing.expectApproxEqAbs(
+        loaded2.getVal(0, 0, 1),
+        0.6 * 255.0,
+        frac_tol,
+    );
+    try testing.expectApproxEqAbs(
+        loaded2.getVal(0, 1, 0),
+        0.5 * 255.0,
+        frac_tol,
+    );
+    try testing.expectApproxEqAbs(
+        loaded2.getVal(0, 1, 1),
+        0.45 * 255.0,
+        frac_tol,
+    );
 }
 
 test "FIMG Save and Load Roundtrip" {
@@ -1258,7 +1298,7 @@ test "FIMG Save and Load Roundtrip" {
     for (0..channels) |ch| {
         for (0..height) |rr| {
             for (0..width) |cc| {
-                const val = @as(f64, @floatFromInt(ch * 100 + rr * 10 + cc)) * 1.123456789;
+                const val = @as(F, @floatFromInt(ch * 100 + rr * 10 + cc)) * 1.123456789;
                 texture.setVal(ch, rr, cc, val);
             }
         }
@@ -1270,7 +1310,7 @@ test "FIMG Save and Load Roundtrip" {
 
     var dims = [_]usize{ channels, height, width };
     var strides = [_]usize{ height * width, width, 1 };
-    const arr = ndarray.NDArray(f64){
+    const arr = ndarray.NDArray(F){
         .slice = texture.array.slice,
         .dims = &dims,
         .strides = &strides,
@@ -1283,7 +1323,7 @@ test "FIMG Save and Load Roundtrip" {
 
     try saveImage(io, cwd, file_base, &arr, 0, opts);
 
-    var loaded = try loadImage(f64, channels, allocator, io, file_full, .fimg);
+    var loaded = try loadImage(F, channels, allocator, io, file_full, .fimg);
     defer loaded.deinit(allocator);
 
     try std.testing.expectEqual(loaded.rows_num, height);
@@ -1299,3 +1339,4 @@ test "FIMG Save and Load Roundtrip" {
         }
     }
 }
+    const frac_tol: F = if (F == f32) 1e-2 else 1e-6;

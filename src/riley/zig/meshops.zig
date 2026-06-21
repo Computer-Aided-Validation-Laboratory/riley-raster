@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 
 const ndarray = @import("ndarray.zig");
 const matslice = @import("matslice.zig");
@@ -66,7 +68,7 @@ pub const MeshFrameWorkspace = struct {
     visible_orig_elem_indices: []usize,
     elem_bboxes: []rops.ElemBBox,
     elems_in_image: usize,
-    raster_hull: ?ndarray.NDArray(f64),
+    raster_hull: ?ndarray.NDArray(F),
     visible_counts_by_chunk: []usize,
     visible_offsets_by_chunk: []usize,
 };
@@ -78,7 +80,7 @@ pub const MeshFrame = struct {
     elem_bboxes: []rops.ElemBBox,
     elems_in_image: usize,
     total_elems_num: usize,
-    raster_hull: ?ndarray.NDArray(f64),
+    raster_hull: ?ndarray.NDArray(F),
     frame_workspace: MeshFrameWorkspace,
 };
 
@@ -87,19 +89,19 @@ pub const MeshFrame = struct {
 // Element-order [visible_elems, field, nodes_per_elem]
 pub const MeshPrepared = struct {
     mesh_type: geomkerns.MeshType,
-    coords: ndarray.NDArray(f64),
+    coords: ndarray.NDArray(F),
     shader: shaderops.ShaderPrepared,
 };
 
 pub fn calcNodesPerElem(
     meshes: []const MeshPrepared,
-) f64 {
+) F {
     var nodes_sum: usize = 0;
     for (meshes) |mesh| {
         nodes_sum += mesh.mesh_type.getNodesNum();
     }
-    return @as(f64, @floatFromInt(nodes_sum)) /
-        @as(f64, @floatFromInt(meshes.len));
+    return @as(F, @floatFromInt(nodes_sum)) /
+        @as(F, @floatFromInt(meshes.len));
 }
 
 pub fn countFrames(
@@ -162,8 +164,8 @@ pub fn countStaticMeshNodes(
 
 // External helper function for finding mesh centroids
 pub fn findAlignedCentroid(coords: *const meshio.Coords) struct {
-    centroid: [3]f64,
-    extent: [3]f64,
+    centroid: [3]F,
+    extent: [3]F,
 } {
     const bounds = sceneops.boundsForCoords(coords);
 
@@ -176,7 +178,7 @@ pub fn findAlignedCentroid(coords: *const meshio.Coords) struct {
 // Used to arrange multiple meshes in a scene on a regular grid
 pub fn arrangeMeshSlice(
     meshes: []MeshInput,
-    gap: [3]f64,
+    gap: [3]F,
     max_divs: [3]usize,
 ) void {
     sceneops.arrangeMeshesGrid(meshes, .{
@@ -382,12 +384,12 @@ pub fn initMeshStatic(
 // for all frames and cameras
 fn prepareUVs(
     outer_alloc: std.mem.Allocator,
-    uvs: *const ndarray.NDArray(f64),
+    uvs: *const ndarray.NDArray(F),
     connect: *const meshio.Connect,
-) !ndarray.NDArray(f64) {
+) !ndarray.NDArray(F) {
     const elems_num = connect.getElemsNum();
     const nodes_per_elem = connect.getNodesPerElem();
-    var elem_uv_arr = try ndarray.NDArray(f64).initFlat(
+    var elem_uv_arr = try ndarray.NDArray(F).initFlat(
         outer_alloc,
         &[_]usize{ elems_num, 2, nodes_per_elem },
     );
@@ -826,7 +828,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             connect: *const meshio.Connect,
             coords_nodes: *const meshio.Coords,
             visible_orig_elem_indices: []const usize,
-            elem_coords: *ndarray.NDArray(f64),
+            elem_coords: *ndarray.NDArray(F),
         };
 
         fn runGatherVisibleCoords(
@@ -863,9 +865,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         fn gatherVisibleElemCoordsFromNodes(
             self: *FrameMeshPipelineType,
             coords_nodes: *const meshio.Coords,
-        ) !ndarray.NDArray(f64) {
+        ) !ndarray.NDArray(F) {
             const N = comptime MT.getNodesNum();
-            var elem_coords = try ndarray.NDArray(f64).initFlat(
+            var elem_coords = try ndarray.NDArray(F).initFlat(
                 self.allocator,
                 &[_]usize{ self.mesh_workspace.elems_in_image, 3, N },
             );
@@ -902,8 +904,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         const PrepareRasterHullsStage = struct {
             camera: *const cam.CameraPrepared,
-            elem_coords: *const ndarray.NDArray(f64),
-            raster_hull: *ndarray.NDArray(f64),
+            elem_coords: *const ndarray.NDArray(F),
+            raster_hull: *ndarray.NDArray(F),
             hull_mode: rastcfg.HullMode,
         };
 
@@ -929,7 +931,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         fn prepareRasterHulls(
             self: *FrameMeshPipelineType,
-            elem_coords: *const ndarray.NDArray(f64),
+            elem_coords: *const ndarray.NDArray(F),
         ) !void {
             if (comptime MT == .tri3) {
                 self.mesh_workspace.raster_hull = null;
@@ -942,7 +944,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
 
             const NH = comptime MT.getNumHullPoints();
-            self.mesh_workspace.raster_hull = try ndarray.NDArray(f64).initFlat(
+            self.mesh_workspace.raster_hull = try ndarray.NDArray(F).initFlat(
                 self.allocator,
                 &[_]usize{ self.mesh_workspace.elems_in_image, 2, NH },
             );
@@ -987,7 +989,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             field: *const meshio.Field,
             frame_idx: usize,
             visible_orig_elem_indices: []const usize,
-            elem_field: *ndarray.NDArray(f64),
+            elem_field: *ndarray.NDArray(F),
         };
 
         fn runGatherVisibleField(
@@ -1021,7 +1023,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             nodal_static: shaderops.NodalStatic,
         ) !shaderops.ShaderPrepared {
             const N = comptime MT.getNodesNum();
-            var elem_field = try ndarray.NDArray(f64).initFlat(
+            var elem_field = try ndarray.NDArray(F).initFlat(
                 self.allocator,
                 &[_]usize{
                     self.mesh_workspace.elems_in_image,
@@ -1064,9 +1066,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         }
 
         const GatherVisibleUVStage = struct {
-            elem_uvs_full: ndarray.NDArray(f64),
+            elem_uvs_full: ndarray.NDArray(F),
             visible_orig_elem_indices: []const usize,
-            elem_uvs: *ndarray.NDArray(f64),
+            elem_uvs: *ndarray.NDArray(F),
         };
 
         fn runGatherVisibleUV(
@@ -1106,7 +1108,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 params,
             );
 
-            var elem_uvs = try ndarray.NDArray(f64).initFlat(
+            var elem_uvs = try ndarray.NDArray(F).initFlat(
                 self.allocator,
                 &[_]usize{
                     self.mesh_workspace.elems_in_image,
@@ -1171,7 +1173,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             const elem_uvs = if (func_static.coord_mode == .uv) blk: {
                 const elem_uvs_full = func_static.elem_uvs orelse
                     return error.MissingUVsForFuncShader;
-                var elem_uvs = try ndarray.NDArray(f64).initFlat(
+                var elem_uvs = try ndarray.NDArray(F).initFlat(
                     self.allocator,
                     &[_]usize{
                         self.mesh_workspace.elems_in_image,
@@ -1245,7 +1247,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         fn prepareVisibleNormals(
             self: *FrameMeshPipelineType,
             normal_type: shaderops.NormalType,
-        ) !?ndarray.MappedNDArray(f64) {
+        ) !?ndarray.MappedNDArray(F) {
             if (normal_type == .none) {
                 return null;
             }

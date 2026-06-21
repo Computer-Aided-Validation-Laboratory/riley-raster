@@ -9,6 +9,7 @@
 const std = @import("std");
 
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const cfg = buildconfig.config;
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
@@ -21,7 +22,7 @@ const common = @import("shaderops_common.zig");
 const simdops = @import("simdops.zig");
 
 inline fn storeMaskedVecSF(
-    scratch_vals: []f64,
+    scratch_vals: []F,
     start_u: usize,
     v_mask_active: VecSB,
     v_vals: VecSF,
@@ -29,7 +30,7 @@ inline fn storeMaskedVecSF(
     const v_old_vals = simdops.loadVecSF(scratch_vals, start_u);
 
     const v_new_vals = @select(
-        f64,
+        F,
         v_mask_active,
         v_vals,
         v_old_vals,
@@ -46,7 +47,7 @@ pub inline fn fillNodalClipSIMD(
     ctx_shade: common.ShadeContext(N),
     v_weights: [N]VecSF,
     sh: *const common.NodalPrepared,
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
 ) void {
     const v_splat_mul: VecSF = @splat(sh.scale_mul);
     const v_splat_add: VecSF = @splat(sh.scale_add);
@@ -80,7 +81,7 @@ pub inline fn fillNodalPerspSIMD(
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
     sh: *const common.NodalPrepared,
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
 ) void {
     const v_splat_mul: VecSF = @splat(sh.scale_mul);
     const v_splat_add: VecSF = @splat(sh.scale_add);
@@ -117,11 +118,11 @@ fn calcNormalLaneArrs(
     comptime N: usize,
     ctx_shade: common.ShadeContext(N),
     v_weights: [N]VecSF,
-) [3][S]f64 {
-    var normal_arrs = [3][S]f64{
-        [_]f64{0.0} ** S,
-        [_]f64{0.0} ** S,
-        [_]f64{0.0} ** S,
+) [3][S]F {
+    var normal_arrs = [3][S]F{
+        [_]F{0.0} ** S,
+        [_]F{0.0} ** S,
+        [_]F{0.0} ** S,
     };
 
     if (!ctx_shade.shader_buf.has_normals) {
@@ -132,7 +133,7 @@ fn calcNormalLaneArrs(
     }
 
     inline for (0..N) |nn| {
-        const weights_arr: [S]f64 = v_weights[nn];
+        const weights_arr: [S]F = v_weights[nn];
         for (0..S) |ll| {
             normal_arrs[0][ll] +=
                 weights_arr[ll] * ctx_shade.shader_buf.normals[0 * N + nn];
@@ -154,7 +155,7 @@ pub inline fn fillTexClipSIMD(
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
     sh: *const common.TexPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
 ) void {
     var v_tex_u: VecSF = @splat(0.0);
     var v_tex_v: VecSF = @splat(0.0);
@@ -207,7 +208,7 @@ pub inline fn fillTexPerspSIMD(
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
     sh: *const common.TexPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
 ) void {
     const v_splat_mul: VecSF = @splat(sh.scale_mul);
     const v_splat_add: VecSF = @splat(sh.scale_add);
@@ -275,7 +276,7 @@ pub inline fn fillFuncClipSIMD(
     v_xi: VecSF,
     v_eta: VecSF,
     sh: *const common.FuncPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
 ) void {
     var v_coord_0: VecSF = v_xi;
     var v_coord_1: VecSF = v_eta;
@@ -294,15 +295,15 @@ pub inline fn fillFuncClipSIMD(
         .parametric => {},
     }
 
-    const coord_0_arr: [S]f64 = v_coord_0;
-    const coord_1_arr: [S]f64 = v_coord_1;
+    const coord_0_arr: [S]F = v_coord_0;
+    const coord_1_arr: [S]F = v_coord_1;
     const normal_arrs = calcNormalLaneArrs(N, ctx_shade, v_weights);
     const lane_mask_arr: [S]bool = v_mask_active;
     const px_stride = spx_image_scratch.cols_num;
     const scratch_idx = ctx_shade.scratch_idx;
 
     inline for (0..channels) |ch| {
-        var vals_arr: [S]f64 = undefined;
+        var vals_arr: [S]F = undefined;
         for (0..S) |ll| {
             vals_arr[ll] = 0.0;
             if (!lane_mask_arr[ll]) continue;
@@ -351,7 +352,7 @@ pub inline fn fillFuncPerspSIMD(
     v_nodes_inv_z: [N]VecSF,
     v_subpx_z: VecSF,
     sh: *const common.FuncPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
 ) void {
     var v_coord_0: VecSF = v_xi;
     var v_coord_1: VecSF = v_eta;
@@ -373,15 +374,15 @@ pub inline fn fillFuncPerspSIMD(
         .parametric => {},
     }
 
-    const coord_0_arr: [S]f64 = v_coord_0;
-    const coord_1_arr: [S]f64 = v_coord_1;
+    const coord_0_arr: [S]F = v_coord_0;
+    const coord_1_arr: [S]F = v_coord_1;
     const normal_arrs = calcNormalLaneArrs(N, ctx_shade, v_weights);
     const lane_mask_arr: [S]bool = v_mask_active;
     const px_stride = spx_image_scratch.cols_num;
     const scratch_idx = ctx_shade.scratch_idx;
 
     inline for (0..channels) |ch| {
-        var vals_arr: [S]f64 = undefined;
+        var vals_arr: [S]F = undefined;
         for (0..S) |ll| {
             vals_arr[ll] = 0.0;
             if (!lane_mask_arr[ll]) continue;

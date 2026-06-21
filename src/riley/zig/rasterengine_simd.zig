@@ -9,6 +9,7 @@
 const std = @import("std");
 const CameraPrepared = @import("camera.zig").CameraPrepared;
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const cfg = buildconfig.config;
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
@@ -50,25 +51,25 @@ const shadekerns = @import("shaderkernels.zig");
 const SubpxSimdChunk = struct {
     scratch_x_u: [S]usize,
     scratch_y_u: [S]usize,
-    px_f: [S]f64,
-    py_f: [S]f64,
-    seed_xi: [S]f64,
-    seed_eta: [S]f64,
+    px_f: [S]F,
+    py_f: [S]F,
+    seed_xi: [S]F,
+    seed_eta: [S]F,
     count: usize,
 };
 
 pub const SubpxScratchBuffers = struct {
     stride_subpx: usize,
-    inv_z: []align(64) f64,
-    image: MatSlice(f64),
-    filter_tmp: MatSlice(f64),
+    inv_z: []align(64) F,
+    image: MatSlice(F),
+    filter_tmp: MatSlice(F),
     simd_chunks: []SubpxSimdChunk,
     mask: []align(64) bool,
-    xi: []align(64) f64,
-    eta: []align(64) f64,
+    xi: []align(64) F,
+    eta: []align(64) F,
     touched_min_x: []usize,
     touched_max_x: []usize,
-    ideal_pixel_centers: []align(64) f64,
+    ideal_pixel_centers: []align(64) F,
 };
 
 const SubpxDomain = common.SubpxDomain;
@@ -92,7 +93,7 @@ pub fn initSubpxScratch(
     const alignment = std.mem.Alignment.@"64";
 
     const subpx_inv_z_scratch = try arena_alloc.alignedAlloc(
-        f64,
+        F,
         alignment,
         subpx_tile_total_padded + S,
     );
@@ -104,33 +105,33 @@ pub fn initSubpxScratch(
     );
 
     const subpx_xi_scratch = try arena_alloc.alignedAlloc(
-        f64,
+        F,
         alignment,
         subpx_tile_total_padded + S,
     );
 
     const subpx_eta_scratch = try arena_alloc.alignedAlloc(
-        f64,
+        F,
         alignment,
         subpx_tile_total_padded + S,
     );
 
     const subpx_img_mem = try arena_alloc.alignedAlloc(
-        f64,
+        F,
         alignment,
         (subpx_tile_total_padded + S) * @as(usize, fields_num),
     );
-    const subpx_image_scratch = MatSlice(f64).init(
+    const subpx_image_scratch = MatSlice(F).init(
         subpx_img_mem,
         @as(usize, fields_num),
         subpx_tile_total_padded + S,
     );
     const filter_tmp_mem = try arena_alloc.alignedAlloc(
-        f64,
+        F,
         alignment,
         (subpx_tile_total_padded + S) * @as(usize, fields_num),
     );
-    const filter_tmp = MatSlice(f64).init(
+    const filter_tmp = MatSlice(F).init(
         filter_tmp_mem,
         @as(usize, fields_num),
         subpx_tile_total_padded + S,
@@ -144,7 +145,7 @@ pub fn initSubpxScratch(
     );
 
     const ideal_pixel_centers = try arena_alloc.alignedAlloc(
-        f64,
+        F,
         alignment,
         (subpx_tile_total_padded + S) * 2,
     );
@@ -167,9 +168,9 @@ pub fn initSubpxScratch(
 pub fn resetSubpxScratch(
     subpx_scratch: *SubpxScratchBuffers,
     subpx_tile_size: usize,
-    background_value: f64,
+    background_value: F,
 ) void {
-    @memset(subpx_scratch.inv_z, -std.math.inf(f64));
+    @memset(subpx_scratch.inv_z, -std.math.inf(F));
     @memset(subpx_scratch.image.slice, background_value);
     @memset(subpx_scratch.filter_tmp.slice, background_value);
     @memset(subpx_scratch.touched_min_x, subpx_tile_size);
@@ -196,14 +197,14 @@ pub fn RasterEngine(
             subpx_scratch: *SubpxScratchBuffers,
         ) !u64 {
             const sub_samp_u: usize = @intCast(ctx_rast.camera.sub_sample);
-            const sub_samp_f: f64 = @as(f64, @floatFromInt(ctx_rast.camera.sub_sample));
+            const sub_samp_f: F = @as(F, @floatFromInt(ctx_rast.camera.sub_sample));
 
             const subpx_domain = SubpxDomain{
                 .step = 1.0 / sub_samp_f,
                 .offset = 1.0 / (2.0 * sub_samp_f),
                 .tile_size = subpx_scratch.stride_subpx,
-                .x_off = 0.5 * @as(f64, @floatFromInt(ctx_rast.camera.pixels_num[0])),
-                .y_off = 0.5 * @as(f64, @floatFromInt(ctx_rast.camera.pixels_num[1])),
+                .x_off = 0.5 * @as(F, @floatFromInt(ctx_rast.camera.pixels_num[0])),
+                .y_off = 0.5 * @as(F, @floatFromInt(ctx_rast.camera.pixels_num[1])),
             };
 
             const scratch_start_x_u = sub_samp_u *
@@ -220,13 +221,13 @@ pub fn RasterEngine(
                 .end_x_u = scratch_end_x_u,
                 .start_y_u = scratch_start_y_u,
                 .end_y_u = scratch_end_y_u,
-                .x_min_f = @as(f64, @floatFromInt(targ_overlap.overlap.x_min)),
-                .y_min_f = @as(f64, @floatFromInt(targ_overlap.overlap.y_min)),
+                .x_min_f = @as(F, @floatFromInt(targ_overlap.overlap.x_min)),
+                .y_min_f = @as(F, @floatFromInt(targ_overlap.overlap.y_min)),
             };
 
             const nodes_coords = try rops.loadElemVec3Slices(
                 GeometryKernel.nodes_num,
-                f64,
+                F,
                 mesh_in.coords,
                 targ_overlap.overlap.elem_idx,
             );
@@ -290,7 +291,7 @@ pub fn RasterEngine(
             subpx_domain: SubpxDomain,
             rast_bounds: RasterBounds,
             orig_start_x_u: usize,
-            nodes_coords: Vec3Slices(f64),
+            nodes_coords: Vec3Slices(F),
             shader: anytype,
             shader_buf: *const shaderops.LocalShaderBuffer(GeometryKernel.nodes_num),
             subpx_scratch: *SubpxScratchBuffers,
@@ -323,7 +324,7 @@ pub fn RasterEngine(
             subpx_domain: SubpxDomain,
             rast_bounds: RasterBounds,
             orig_start_x_u: usize,
-            nodes_coords: Vec3Slices(f64),
+            nodes_coords: Vec3Slices(F),
             shader: anytype,
             shader_buf: *const shaderops.LocalShaderBuffer(GeometryKernel.nodes_num),
             subpx_scratch: *SubpxScratchBuffers,
@@ -356,7 +357,7 @@ pub fn RasterEngine(
             mesh_in: rops.MeshRaster,
             subpx_domain: SubpxDomain,
             rast_bounds: RasterBounds,
-            nodes_coords: Vec3Slices(f64),
+            nodes_coords: Vec3Slices(F),
             shader: *const ShaderData,
             shader_buf: *const shaderops.LocalShaderBuffer(GeometryKernel.nodes_num),
             subpx_scratch: *SubpxScratchBuffers,
@@ -391,7 +392,7 @@ fn rasterDirectSIMDImpl(
     subpx_domain: SubpxDomain,
     rast_bounds: RasterBounds,
     orig_start_x_u: usize,
-    nodes_coords: Vec3Slices(f64),
+    nodes_coords: Vec3Slices(F),
     shader: anytype,
     shader_buf: *const shaderops.LocalShaderBuffer(GeometryKernel.nodes_num),
     subpx_scratch: *SubpxScratchBuffers,
@@ -404,7 +405,7 @@ fn rasterDirectSIMDImpl(
 
     const inv_area = GeometryKernel.getInvElemArea(nodes_coords);
     const v_inv_area: VecSF = @splat(inv_area);
-    var nodes_inv_z: [N]f64 = undefined;
+    var nodes_inv_z: [N]F = undefined;
 
     inline for (0..N) |nn| nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
     const v_nodes_inv_z = GeometryKernel.getSIMDInvZ(nodes_coords);
@@ -444,10 +445,10 @@ fn rasterDirectSIMDImpl(
 
             const lane_x_mask: [S]bool = v_x_mask;
             const lane_active_mask: [S]bool = v_mask_active;
-            const lane_weights_0: [S]f64 = res.v_weights[0];
-            const lane_weights_1: [S]f64 = res.v_weights[1];
-            const lane_weights_2: [S]f64 = res.v_weights[2];
-            const lane_inv_z: [S]f64 = GeometryKernel.calcInvZSIMD(
+            const lane_weights_0: [S]F = res.v_weights[0];
+            const lane_weights_1: [S]F = res.v_weights[1];
+            const lane_weights_2: [S]F = res.v_weights[2];
+            const lane_inv_z: [S]F = GeometryKernel.calcInvZSIMD(
                 v_nodes_inv_z,
                 res.v_weights,
             );
@@ -461,7 +462,7 @@ fn rasterDirectSIMDImpl(
                     @as(usize, @intCast(targ_overlap.tile.scratch_y_px_min)) *
                     sub_samp + scratch_y_u;
                 if (lane_active_mask[ll]) {
-                    const weights = [3]f64{
+                    const weights = [3]F{
                         lane_weights_0[ll],
                         lane_weights_1[ll],
                         lane_weights_2[ll],
@@ -494,7 +495,7 @@ fn rasterDirectSIMDImpl(
                     continue;
                 }
 
-                const nan = std.math.nan(f64);
+                const nan = std.math.nan(F);
                 rasterreport.recordPixelConvergedStats(
                     report_mode,
                     ctx_report,
@@ -524,7 +525,7 @@ fn rasterDirectSIMDImpl(
             if (!@reduce(.Or, v_depth_mask)) continue;
 
             const v_new_inv_z = @select(
-                f64,
+                F,
                 v_depth_mask,
                 v_inv_z,
                 v_old_inv_z,
@@ -597,7 +598,7 @@ fn rasterNewtonSIMDImpl(
     subpx_domain: SubpxDomain,
     rast_bounds: RasterBounds,
     orig_start_x_u: usize,
-    nodes_coords: Vec3Slices(f64),
+    nodes_coords: Vec3Slices(F),
     shader: anytype,
     shader_buf: *const shaderops.LocalShaderBuffer(GeometryKernel.nodes_num),
     subpx_scratch: *SubpxScratchBuffers,
@@ -608,7 +609,7 @@ fn rasterNewtonSIMDImpl(
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
     const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
 
-    var nodes_inv_z: [N]f64 = undefined;
+    var nodes_inv_z: [N]F = undefined;
     var v_nodes_z: [N]VecSF = undefined;
     var v_nodes_inv_z: [N]VecSF = undefined;
     inline for (0..N) |nn| {
@@ -651,8 +652,8 @@ fn rasterNewtonSIMDImpl(
             }
 
             var v_mask_active = v_x_mask;
-            var xi_arr = [_]f64{0.0} ** S;
-            var eta_arr = [_]f64{0.0} ** S;
+            var xi_arr = [_]F{0.0} ** S;
+            var eta_arr = [_]F{0.0} ** S;
 
             if (maybe_raster_hull) |raster_hull| {
                 const hx = raster_hull.getSlice(
@@ -704,8 +705,8 @@ fn rasterNewtonSIMDImpl(
             if (!@reduce(.Or, v_mask_active)) continue;
 
             const mask_arr: [S]bool = v_mask_active;
-            const x_arr_f: [S]f64 = v_ideal_x_px;
-            const y_arr_f: [S]f64 = v_ideal_y_px;
+            const x_arr_f: [S]F = v_ideal_x_px;
+            const y_arr_f: [S]F = v_ideal_y_px;
 
             for (0..S) |ss| {
                 if (!mask_arr[ss]) continue;
@@ -743,10 +744,10 @@ fn rasterNewtonSIMDImpl(
                     subpx_scratch.simd_chunks[chunk_idx] = .{
                         .scratch_x_u = [_]usize{0} ** S,
                         .scratch_y_u = [_]usize{0} ** S,
-                        .px_f = [_]f64{0.0} ** S,
-                        .py_f = [_]f64{0.0} ** S,
-                        .seed_xi = [_]f64{0.0} ** S,
-                        .seed_eta = [_]f64{0.0} ** S,
+                        .px_f = [_]F{0.0} ** S,
+                        .py_f = [_]F{0.0} ** S,
+                        .seed_xi = [_]F{0.0} ** S,
+                        .seed_eta = [_]F{0.0} ** S,
                         .count = 0,
                     };
                 }
@@ -809,8 +810,8 @@ fn rasterNewtonSIMDImpl(
         const chunk_mask_arr: [S]bool = v_chunk_mask;
         const conv_mask_arr: [S]bool = result.v_mask;
         const iters_arr: [S]u8 = result.v_iters;
-        const xi_out_arr: [S]f64 = result.v_xi_out;
-        const eta_out_arr: [S]f64 = result.v_eta_out;
+        const xi_out_arr: [S]F = result.v_xi_out;
+        const eta_out_arr: [S]F = result.v_eta_out;
         for (0..S) |jj| {
             if (!chunk_mask_arr[jj]) continue;
 
@@ -845,7 +846,7 @@ fn rasterNewtonSIMDImpl(
                 continue;
             }
 
-            const nan = std.math.nan(f64);
+            const nan = std.math.nan(F);
             rasterreport.recordPixelConvergedStats(
                 report_mode,
                 ctx_report,
@@ -866,8 +867,8 @@ fn rasterNewtonSIMDImpl(
             @as(VecSU, @splat(subpx_domain.tile_size)) +
             @as(VecSU, subpx_simd_chunk.scratch_x_u);
         const write_mask_arr: [S]bool = v_conv_mask;
-        const write_xi_arr: [S]f64 = result.v_xi_out;
-        const write_eta_arr: [S]f64 = result.v_eta_out;
+        const write_xi_arr: [S]F = result.v_xi_out;
+        const write_eta_arr: [S]F = result.v_eta_out;
         const scratch_idx_arr: [S]usize = v_scratch_idx;
         for (0..S) |jj| {
             if (!write_mask_arr[jj]) continue;
@@ -909,8 +910,8 @@ fn rasterNewtonSIMDImpl(
             const v_mask_active = v_mask_full & v_x_mask;
             if (!@reduce(.Or, v_mask_active)) continue;
 
-            var xi_arr: [S]f64 = undefined;
-            var eta_arr: [S]f64 = undefined;
+            var xi_arr: [S]F = undefined;
+            var eta_arr: [S]F = undefined;
             const xi_slice = subpx_scratch.xi[scratch_idx .. scratch_idx + S];
             const eta_slice = subpx_scratch.eta[scratch_idx .. scratch_idx + S];
             @memcpy(&xi_arr, xi_slice);
@@ -945,7 +946,7 @@ fn rasterNewtonSIMDImpl(
             if (!@reduce(.Or, v_depth_mask)) continue;
 
             const v_new_inv_z = @select(
-                f64,
+                F,
                 v_depth_mask,
                 v_inv_z,
                 v_old_inv_z,
@@ -1017,7 +1018,7 @@ fn rasterDirectImpl(
     mesh_in: rops.MeshRaster,
     subpx_domain: SubpxDomain,
     rast_bounds: RasterBounds,
-    nodes_coords: Vec3Slices(f64),
+    nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
     shader_buf: *const shaderops.LocalShaderBuffer(GeometryKernel.nodes_num),
     subpx_scratch: *SubpxScratchBuffers,
@@ -1057,8 +1058,8 @@ pub fn rasterScene(
     requested_workers: u16,
     tiling: rops.TilingOverlaps,
     meshes: []const MeshPrepared,
-    raster_hulls: []const ?NDArray(f64),
-    image_out_arr: *NDArray(f64),
+    raster_hulls: []const ?NDArray(F),
+    image_out_arr: *NDArray(F),
 ) !void {
     try common.rasterSceneCommon(
         @This(),

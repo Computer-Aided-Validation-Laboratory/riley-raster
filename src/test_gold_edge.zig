@@ -11,6 +11,7 @@ const common = @import("common/tests.zig");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const texops = @import("riley/zig/textureops.zig");
@@ -138,7 +139,7 @@ test "Gold Edge Suite" {
 
     const end_time = std.Io.Clock.Timestamp.now(io, .awake);
     const duration_ms = @as(
-        f64,
+        F,
         @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds),
     ) / 1e6;
     std.debug.print("Gold Edge Test Suite took {d:.3} ms\n", .{duration_ms});

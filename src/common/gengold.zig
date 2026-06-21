@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 
 const orch = @import("orchestration.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
@@ -80,7 +82,7 @@ pub fn runGenerationExt(
     io: std.Io,
     test_type: []const u8,
     mesh_types: []const MeshType,
-    fov_scale: f64,
+    fov_scale: F,
     texture: iio.Texture(1),
     pixel_num: [2]u32,
     sample_configs: []const texops.TextureSampleConfig,
@@ -211,7 +213,7 @@ pub fn runMultimeshGenerationExt(
             if (mode == .nodal) .nodal else .texture,
         );
 
-        const fov_scale_factor: f64 = 1.1;
+        const fov_scale_factor: F = 1.1;
         const camera = try orch.initCameraForMeshes(
             aa,
             mesh_inputs,
@@ -294,7 +296,7 @@ pub fn runMultimeshMixedGenerationExt(
         texture,
     );
 
-    const fov_scale_factor: f64 = 1.2;
+    const fov_scale_factor: F = 1.2;
     const camera = try orch.initCameraForMeshes(
         aa,
         mesh_inputs,
@@ -376,7 +378,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
         texture,
     );
 
-    const fov_scale_factor: f64 = 1.1;
+    const fov_scale_factor: F = 1.1;
     const camera_rgb = try orch.initCameraForMeshes(
         aa,
         mesh_inputs,
@@ -429,7 +431,7 @@ pub fn runMultimeshMixedRGBGenerationExt(
 
 fn buildUvField(
     allocator: std.mem.Allocator,
-    uvs: @import("../riley/zig/ndarray.zig").NDArray(f64),
+    uvs: @import("../riley/zig/ndarray.zig").NDArray(F),
     time_steps: usize,
 ) !meshio.Field {
     const node_num = uvs.dims[0];

@@ -7,35 +7,36 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 
 const S = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
 
 pub const NodalDerivs = struct {
-    dNu: [9][9]f64,
-    dNv: [9][9]f64,
+    dNu: [9][9]F,
+    dNv: [9][9]F,
 };
 
 pub fn getNodalDerivs(comptime N: usize) NodalDerivs {
     var nodal_derivs = NodalDerivs{
-        .dNu = [_][9]f64{[_]f64{0} ** 9} ** 9,
-        .dNv = [_][9]f64{[_]f64{0} ** 9} ** 9,
+        .dNu = [_][9]F{[_]F{0} ** 9} ** 9,
+        .dNv = [_][9]F{[_]F{0} ** 9} ** 9,
     };
     const node_coords = switch (N) {
-        3 => [3][2]f64{
+        3 => [3][2]F{
             .{ 0, 0 }, .{ 1, 0 }, .{ 0, 1 },
         },
-        4 => [4][2]f64{
+        4 => [4][2]F{
             .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
         },
-        6 => [6][2]f64{
+        6 => [6][2]F{
             .{ 0, 0 }, .{ 1, 0 }, .{ 0, 1 }, .{ 0.5, 0 }, .{ 0.5, 0.5 }, .{ 0, 0.5 },
         },
-        8 => [8][2]f64{
+        8 => [8][2]F{
             .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
             .{ 0, -1 },  .{ 1, 0 },  .{ 0, 1 }, .{ -1, 0 },
         },
-        9 => [9][2]f64{
+        9 => [9][2]F{
             .{ -1, -1 }, .{ 1, -1 }, .{ 1, 1 }, .{ -1, 1 },
             .{ 0, -1 },  .{ 1, 0 },  .{ 0, 1 }, .{ -1, 0 },
             .{ 0, 0 },
@@ -44,9 +45,9 @@ pub fn getNodalDerivs(comptime N: usize) NodalDerivs {
     };
 
     for (0..N) |ii| {
-        var n_v: [N]f64 = undefined;
-        var dNu: [N]f64 = undefined;
-        var dNv: [N]f64 = undefined;
+        var n_v: [N]F = undefined;
+        var dNu: [N]F = undefined;
+        var dNv: [N]F = undefined;
         shapeFunctions(N, node_coords[ii][0], node_coords[ii][1], &n_v, &dNu, &dNv);
         for (0..N) |jj| {
             nodal_derivs.dNu[ii][jj] = dNu[jj];
@@ -59,11 +60,11 @@ pub fn getNodalDerivs(comptime N: usize) NodalDerivs {
 
 pub fn shapeFunctions(
     comptime N: usize,
-    xi: f64,
-    eta: f64,
-    n_v: *[N]f64,
-    dNu: *[N]f64,
-    dNv: *[N]f64,
+    xi: F,
+    eta: F,
+    n_v: *[N]F,
+    dNu: *[N]F,
+    dNv: *[N]F,
 ) void {
     switch (N) {
         3 => shapeFunctions3(xi, eta, n_v, dNu, dNv),
@@ -123,7 +124,7 @@ pub fn shapeFunctionsSIMD(
     }
 }
 
-fn shapeFunctions3(xi: f64, eta: f64, n_v: *[3]f64, dNu: *[3]f64, dNv: *[3]f64) void {
+fn shapeFunctions3(xi: F, eta: F, n_v: *[3]F, dNu: *[3]F, dNv: *[3]F) void {
     const L1 = 1.0 - xi - eta;
     const L2 = xi;
     const L3 = eta;
@@ -169,7 +170,7 @@ fn shapeFunctions3SIMD(
     v_dN_deta[2] = v_splat_one;
 }
 
-fn shapeFunctions4(xi: f64, eta: f64, n_v: *[4]f64, dNu: *[4]f64, dNv: *[4]f64) void {
+fn shapeFunctions4(xi: F, eta: F, n_v: *[4]F, dNu: *[4]F, dNv: *[4]F) void {
     n_v[0] = 0.25 * (1.0 - xi) * (1.0 - eta);
     n_v[1] = 0.25 * (1.0 + xi) * (1.0 - eta);
     n_v[2] = 0.25 * (1.0 + xi) * (1.0 + eta);
@@ -219,11 +220,11 @@ fn shapeFunctions4SIMD(
 }
 
 fn shapeFunctions6(
-    xi: f64,
-    eta: f64,
-    n_vals: *[6]f64,
-    dN_dxi: *[6]f64,
-    dN_deta: *[6]f64,
+    xi: F,
+    eta: F,
+    n_vals: *[6]F,
+    dN_dxi: *[6]F,
+    dN_deta: *[6]F,
 ) void {
     const L1 = 1.0 - xi - eta;
     const L2 = xi;
@@ -299,7 +300,7 @@ fn shapeFunctions6SIMD(
     v_dN_deta[5] = v_splat_four * (v_L1 - v_L3);
 }
 
-fn shapeFunctions8(xi: f64, eta: f64, n_v: *[8]f64, dNu: *[8]f64, dNv: *[8]f64) void {
+fn shapeFunctions8(xi: F, eta: F, n_v: *[8]F, dNu: *[8]F, dNv: *[8]F) void {
     const x = xi;
     const y = eta;
     n_v[0] = -0.25 * (1.0 - x) * (1.0 - y) * (1.0 + x + y);
@@ -394,13 +395,13 @@ fn shapeFunctions8SIMD(
     v_dN_deta[7] = -v_y * v_one_minus_x;
 }
 
-fn shapeFunctions9(xi: f64, eta: f64, n_v: *[9]f64, dNu: *[9]f64, dNv: *[9]f64) void {
+fn shapeFunctions9(xi: F, eta: F, n_v: *[9]F, dNu: *[9]F, dNv: *[9]F) void {
     const x = xi;
     const y = eta;
-    const phi = [3]f64{ 0.5 * x * (x - 1.0), 1.0 - x * x, 0.5 * x * (x + 1.0) };
-    const psi = [3]f64{ 0.5 * y * (y - 1.0), 1.0 - y * y, 0.5 * y * (y + 1.0) };
-    const dphi = [3]f64{ x - 0.5, -2.0 * x, x + 0.5 };
-    const dpsi = [3]f64{ y - 0.5, -2.0 * y, y + 0.5 };
+    const phi = [3]F{ 0.5 * x * (x - 1.0), 1.0 - x * x, 0.5 * x * (x + 1.0) };
+    const psi = [3]F{ 0.5 * y * (y - 1.0), 1.0 - y * y, 0.5 * y * (y + 1.0) };
+    const dphi = [3]F{ x - 0.5, -2.0 * x, x + 0.5 };
+    const dpsi = [3]F{ y - 0.5, -2.0 * y, y + 0.5 };
 
     n_v[0] = phi[0] * psi[0];
     n_v[1] = phi[2] * psi[0];

@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const cfg = buildconfig.config;
 const shapefun = @import("shapefun.zig");
 const rastcfg = @import("rasterconfig.zig");
@@ -19,8 +20,8 @@ const VecSU8 = buildconfig.VecSU8;
 const tol = cfg.tolerance;
 
 pub const NewtonSeed = struct {
-    xi: f64,
-    eta: f64,
+    xi: F,
+    eta: F,
 };
 
 pub const NewtonSeedSIMD = struct {
@@ -30,23 +31,23 @@ pub const NewtonSeedSIMD = struct {
 
 pub const NewtonSeedState = struct {
     is_valid: bool = false,
-    xi: f64 = 0.0,
-    eta: f64 = 0.0,
+    xi: F = 0.0,
+    eta: F = 0.0,
 };
 
 pub const NewtonSeedQuality = struct {
     is_usable: bool,
-    domain_violation: f64,
-    residual_sq: f64,
-    det_abs: f64,
+    domain_violation: F,
+    residual_sq: F,
+    det_abs: F,
 };
 
 pub const NewtonResult = struct {
     converged: bool,
     pre_domain_converged: bool,
     iterations: u8,
-    residual_x: f64,
-    residual_y: f64,
+    residual_x: F,
+    residual_y: F,
 };
 
 pub const NewtonResultSIMD = struct {
@@ -77,8 +78,8 @@ pub inline fn isSeedFinite(seed: NewtonSeed) bool {
 
 pub inline fn updateSeedState(
     seed_state: *NewtonSeedState,
-    xi: f64,
-    eta: f64,
+    xi: F,
+    eta: F,
 ) void {
     seed_state.* = .{
         .is_valid = true,
@@ -90,8 +91,8 @@ pub inline fn updateSeedState(
 pub inline fn applySeedReuseInPlace(
     lane_count: usize,
     seed_state: NewtonSeedState,
-    seed_xi: []f64,
-    seed_eta: []f64,
+    seed_xi: []F,
+    seed_eta: []F,
 ) void {
     if (seed_state.is_valid) {
         for (0..lane_count) |jj| {
@@ -114,13 +115,13 @@ pub inline fn updateSeedStateFromSIMDResult(
     if (!@reduce(.Or, v_mask_valid)) return;
 
     const lane_mask_valid: [S]bool = v_mask_valid;
-    const lane_xi_out: [S]f64 = v_xi_out;
-    const lane_eta_out: [S]f64 = v_eta_out;
-    const lane_residual_x: [S]f64 = v_residual_x;
-    const lane_residual_y: [S]f64 = v_residual_y;
+    const lane_xi_out: [S]F = v_xi_out;
+    const lane_eta_out: [S]F = v_eta_out;
+    const lane_residual_x: [S]F = v_residual_x;
+    const lane_residual_y: [S]F = v_residual_y;
 
     var best_lane_idx: ?usize = null;
-    var best_resid_sq = std.math.inf(f64);
+    var best_resid_sq = std.math.inf(F);
 
     for (0..S) |jj| {
         if (lane_mask_valid[jj]) {
@@ -142,25 +143,25 @@ pub inline fn updateSeedStateFromSIMDResult(
 pub fn evaluateSeedQuality(
     comptime N: usize,
     comptime domainViolationFn: anytype,
-    target_screen_x: f64,
-    target_screen_y: f64,
-    element_node_x: []const f64,
-    element_node_y: []const f64,
-    element_node_w: []const f64,
+    target_screen_x: F,
+    target_screen_y: F,
+    element_node_x: []const F,
+    element_node_y: []const F,
+    element_node_w: []const F,
     seed: NewtonSeed,
 ) NewtonSeedQuality {
     if (!isSeedFinite(seed)) {
         return .{
             .is_usable = false,
-            .domain_violation = std.math.inf(f64),
-            .residual_sq = std.math.inf(f64),
+            .domain_violation = std.math.inf(F),
+            .residual_sq = std.math.inf(F),
             .det_abs = 0.0,
         };
     }
 
-    var node_values: [N]f64 = undefined;
-    var deriv_n_xi: [N]f64 = undefined;
-    var deriv_n_eta: [N]f64 = undefined;
+    var node_values: [N]F = undefined;
+    var deriv_n_xi: [N]F = undefined;
+    var deriv_n_eta: [N]F = undefined;
     shapefun.shapeFunctions(
         N,
         seed.xi,
@@ -170,12 +171,12 @@ pub fn evaluateSeedQuality(
         &deriv_n_eta,
     );
 
-    var residual_x: f64 = 0.0;
-    var residual_y: f64 = 0.0;
-    var jacobian_11: f64 = 0.0;
-    var jacobian_12: f64 = 0.0;
-    var jacobian_21: f64 = 0.0;
-    var jacobian_22: f64 = 0.0;
+    var residual_x: F = 0.0;
+    var residual_y: F = 0.0;
+    var jacobian_11: F = 0.0;
+    var jacobian_12: F = 0.0;
+    var jacobian_21: F = 0.0;
+    var jacobian_22: F = 0.0;
 
     for (0..N) |nn| {
         const term_x = target_screen_x * element_node_w[nn] - element_node_x[nn];
@@ -211,14 +212,14 @@ pub fn evaluateSeedQuality(
 
 pub fn calcJacobianDet2D(
     comptime N: usize,
-    xi: f64,
-    eta: f64,
-    node_x: []const f64,
-    node_y: []const f64,
-) f64 {
-    var node_values: [N]f64 = undefined;
-    var deriv_n_xi: [N]f64 = undefined;
-    var deriv_n_eta: [N]f64 = undefined;
+    xi: F,
+    eta: F,
+    node_x: []const F,
+    node_y: []const F,
+) F {
+    var node_values: [N]F = undefined;
+    var deriv_n_xi: [N]F = undefined;
+    var deriv_n_eta: [N]F = undefined;
     shapefun.shapeFunctions(
         N,
         xi,
@@ -228,10 +229,10 @@ pub fn calcJacobianDet2D(
         &deriv_n_eta,
     );
 
-    var dx_dxi: f64 = 0.0;
-    var dx_deta: f64 = 0.0;
-    var dy_dxi: f64 = 0.0;
-    var dy_deta: f64 = 0.0;
+    var dx_dxi: F = 0.0;
+    var dx_deta: F = 0.0;
+    var dy_dxi: F = 0.0;
+    var dy_deta: F = 0.0;
 
     for (0..N) |nn| {
         dx_dxi += deriv_n_xi[nn] * node_x[nn];

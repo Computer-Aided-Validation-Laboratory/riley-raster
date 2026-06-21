@@ -7,47 +7,49 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 const common = @import("benchcommon.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const texops = @import("../riley/zig/textureops.zig");
 
 pub const CaseSamples = struct {
-    total_elems_vals: []f64,
-    vis_elems_vals: []f64,
-    total_px_vals: []f64,
-    shaded_px_vals: []f64,
-    e2e_times: []f64,
-    geom_times: []f64,
-    raster_times: []f64,
-    cam_times: []f64,
-    resolve_times: []f64,
-    save_frame_times: []f64,
-    frame_times: []f64,
-    geom_tpx_vals: []f64,
-    raster_tpx_vals: []f64,
-    frame_tpx_vals: []f64,
-    e2e_tpx_vals: []f64,
+    total_elems_vals: []F,
+    vis_elems_vals: []F,
+    total_px_vals: []F,
+    shaded_px_vals: []F,
+    e2e_times: []F,
+    geom_times: []F,
+    raster_times: []F,
+    cam_times: []F,
+    resolve_times: []F,
+    save_frame_times: []F,
+    frame_times: []F,
+    geom_tpx_vals: []F,
+    raster_tpx_vals: []F,
+    frame_tpx_vals: []F,
+    e2e_tpx_vals: []F,
 
     pub fn init(
         allocator: std.mem.Allocator,
         runs: usize,
     ) !CaseSamples {
         return .{
-            .total_elems_vals = try allocator.alloc(f64, runs),
-            .vis_elems_vals = try allocator.alloc(f64, runs),
-            .total_px_vals = try allocator.alloc(f64, runs),
-            .shaded_px_vals = try allocator.alloc(f64, runs),
-            .e2e_times = try allocator.alloc(f64, runs),
-            .geom_times = try allocator.alloc(f64, runs),
-            .raster_times = try allocator.alloc(f64, runs),
-            .cam_times = try allocator.alloc(f64, runs),
-            .resolve_times = try allocator.alloc(f64, runs),
-            .save_frame_times = try allocator.alloc(f64, runs),
-            .frame_times = try allocator.alloc(f64, runs),
-            .geom_tpx_vals = try allocator.alloc(f64, runs),
-            .raster_tpx_vals = try allocator.alloc(f64, runs),
-            .frame_tpx_vals = try allocator.alloc(f64, runs),
-            .e2e_tpx_vals = try allocator.alloc(f64, runs),
+            .total_elems_vals = try allocator.alloc(F, runs),
+            .vis_elems_vals = try allocator.alloc(F, runs),
+            .total_px_vals = try allocator.alloc(F, runs),
+            .shaded_px_vals = try allocator.alloc(F, runs),
+            .e2e_times = try allocator.alloc(F, runs),
+            .geom_times = try allocator.alloc(F, runs),
+            .raster_times = try allocator.alloc(F, runs),
+            .cam_times = try allocator.alloc(F, runs),
+            .resolve_times = try allocator.alloc(F, runs),
+            .save_frame_times = try allocator.alloc(F, runs),
+            .frame_times = try allocator.alloc(F, runs),
+            .geom_tpx_vals = try allocator.alloc(F, runs),
+            .raster_tpx_vals = try allocator.alloc(F, runs),
+            .frame_tpx_vals = try allocator.alloc(F, runs),
+            .e2e_tpx_vals = try allocator.alloc(F, runs),
         };
     }
 

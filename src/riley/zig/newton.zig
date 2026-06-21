@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const common = @import("newton_common.zig");
 const scalar = @import("newton_scalar.zig");
 const simd = @import("newton_simd.zig");
@@ -31,14 +33,16 @@ pub const solveInverseSIMD = simd.solveInverseSIMD;
 
 test "calcJacobianDet2D regular elements" {
     const testing = std.testing;
+    const det_tol: F = if (F == f32) 1e-4 else 1e-9;
+    const quad_det_tol: F = if (F == f32) 1e-4 else 1e-12;
 
-    const tri_x = [_]f64{ 0.0, 10.0, 5.0 };
-    const tri_y = [_]f64{ 0.0, 0.0, 8.660254037844386 };
+    const tri_x = [_]F{ 0.0, 10.0, 5.0 };
+    const tri_y = [_]F{ 0.0, 0.0, 8.660254037844386 };
     const tri_det = calcJacobianDet2D(3, 0.2, 0.3, &tri_x, &tri_y);
-    try testing.expectApproxEqAbs(86.60254037844386, tri_det, 1e-9);
+    try testing.expectApproxEqAbs(86.60254037844386, tri_det, det_tol);
 
-    const quad_x = [_]f64{ 0.0, 10.0, 10.0, 0.0 };
-    const quad_y = [_]f64{ 0.0, 0.0, 10.0, 10.0 };
+    const quad_x = [_]F{ 0.0, 10.0, 10.0, 0.0 };
+    const quad_y = [_]F{ 0.0, 0.0, 10.0, 10.0 };
     const quad_det = calcJacobianDet2D(4, 0.0, 0.0, &quad_x, &quad_y);
-    try testing.expectApproxEqAbs(25.0, quad_det, 1e-12);
+    try testing.expectApproxEqAbs(25.0, quad_det, quad_det_tol);
 }

@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const cfg = buildconfig.config;
 const tol = cfg.tolerance;
 const lut_size = cfg.interp_lut_size;
@@ -69,7 +70,7 @@ pub const TextureSampleConfig = struct {
 
 pub fn Texture(comptime CH: usize) type {
     return struct {
-        array: NDArray(f64),
+        array: NDArray(F),
         rows_num: usize,
         cols_num: usize,
 
@@ -80,7 +81,7 @@ pub fn Texture(comptime CH: usize) type {
             rows: usize,
             cols: usize,
         ) !Self {
-            const array = try NDArray(f64).initFlat(
+            const array = try NDArray(F).initFlat(
                 allocator,
                 &[_]usize{ CH, rows, cols },
             );
@@ -101,7 +102,7 @@ pub fn Texture(comptime CH: usize) type {
             ch: usize,
             row: usize,
             col: usize,
-            val: f64,
+            val: F,
         ) void {
             self.array.set(&[_]usize{ ch, row, col }, val);
         }
@@ -111,7 +112,7 @@ pub fn Texture(comptime CH: usize) type {
             ch: usize,
             row: usize,
             col: usize,
-        ) f64 {
+        ) F {
             return self.array.get(&[_]usize{ ch, row, col });
         }
 
@@ -127,7 +128,7 @@ pub fn Texture(comptime CH: usize) type {
                     row: usize,
                     col: usize,
                     ch: usize,
-                ) f64 {
+                ) F {
                     return ctx.getVal(ch, row, col);
                 }
             };
@@ -146,7 +147,7 @@ pub fn Texture(comptime CH: usize) type {
     };
 }
 
-pub fn cubicCoeffCatmullRom(x: f64) f64 {
+pub fn cubicCoeffCatmullRom(x: F) F {
     const abs_x = @abs(x);
     if (abs_x <= 1.0) {
         return ((1.5 * abs_x - 2.5) * abs_x + 0.0) * abs_x + 1.0;
@@ -156,7 +157,7 @@ pub fn cubicCoeffCatmullRom(x: f64) f64 {
     return 0.0;
 }
 
-pub fn cubicCoeffMitchellNetravali(x: f64) f64 {
+pub fn cubicCoeffMitchellNetravali(x: F) F {
     const r = @abs(x);
     const B = 1.0 / 3.0;
     const C = 1.0 / 3.0;
@@ -173,7 +174,7 @@ pub fn cubicCoeffMitchellNetravali(x: f64) f64 {
     return 0.0;
 }
 
-pub fn cubicBSplineCoeff(x: f64) f64 {
+pub fn cubicBSplineCoeff(x: F) F {
     const r = @abs(x);
     if (r < 1.0) {
         return (3.0 * r * r * r - 6.0 * r * r + 4.0) / 6.0;
@@ -184,7 +185,7 @@ pub fn cubicBSplineCoeff(x: f64) f64 {
     return 0.0;
 }
 
-pub fn lanczos3Coeff(x: f64) f64 {
+pub fn lanczos3Coeff(x: F) F {
     const abs_x = @abs(x);
     if (abs_x < tol.texture.lancsoz_centre_snap) return 1.0;
     if (abs_x >= 3.0) return 0.0;
@@ -193,7 +194,7 @@ pub fn lanczos3Coeff(x: f64) f64 {
     return (std.math.sin(pi_x) / pi_x) * (std.math.sin(pi_x_3) / pi_x_3);
 }
 
-pub fn quinticBSplineCoeff(x: f64) f64 {
+pub fn quinticBSplineCoeff(x: F) F {
     const r = @abs(x);
 
     if (r >= 3.0) return 0.0;
@@ -212,11 +213,11 @@ pub fn quinticBSplineCoeff(x: f64) f64 {
 
 pub const catmull_rom_lut = blk: {
     @setEvalBranchQuota(100000);
-    var table: [lut_size][4]f64 = undefined;
+    var table: [lut_size][4]F = undefined;
     for (0..lut_size) |ii| {
-        const tt = @as(f64, @floatFromInt(ii)) / @as(f64, @floatFromInt(lut_size));
+        const tt = @as(F, @floatFromInt(ii)) / @as(F, @floatFromInt(lut_size));
         for (0..4) |jj| {
-            const xx = @as(f64, @floatFromInt(jj)) - 1.0 - tt;
+            const xx = @as(F, @floatFromInt(jj)) - 1.0 - tt;
             table[ii][jj] = cubicCoeffCatmullRom(xx);
         }
     }
@@ -225,11 +226,11 @@ pub const catmull_rom_lut = blk: {
 
 pub const mitchell_netravali_lut = blk: {
     @setEvalBranchQuota(100000);
-    var table: [lut_size][4]f64 = undefined;
+    var table: [lut_size][4]F = undefined;
     for (0..lut_size) |ii| {
-        const tt = @as(f64, @floatFromInt(ii)) / @as(f64, @floatFromInt(lut_size));
+        const tt = @as(F, @floatFromInt(ii)) / @as(F, @floatFromInt(lut_size));
         for (0..4) |jj| {
-            const xx = @as(f64, @floatFromInt(jj)) - 1.0 - tt;
+            const xx = @as(F, @floatFromInt(jj)) - 1.0 - tt;
             table[ii][jj] = cubicCoeffMitchellNetravali(xx);
         }
     }
@@ -238,11 +239,11 @@ pub const mitchell_netravali_lut = blk: {
 
 pub const cubic_bspline_lut = blk: {
     @setEvalBranchQuota(100000);
-    var table: [lut_size][4]f64 = undefined;
+    var table: [lut_size][4]F = undefined;
     for (0..lut_size) |ii| {
-        const tt = @as(f64, @floatFromInt(ii)) / @as(f64, @floatFromInt(lut_size));
+        const tt = @as(F, @floatFromInt(ii)) / @as(F, @floatFromInt(lut_size));
         for (0..4) |jj| {
-            const xx = @as(f64, @floatFromInt(jj)) - 1.0 - tt;
+            const xx = @as(F, @floatFromInt(jj)) - 1.0 - tt;
             table[ii][jj] = cubicBSplineCoeff(xx);
         }
     }
@@ -251,13 +252,13 @@ pub const cubic_bspline_lut = blk: {
 
 pub const lanczos3_lut = blk: {
     @setEvalBranchQuota(100000);
-    var table: [lut_size][6]f64 = undefined;
+    var table: [lut_size][6]F = undefined;
     for (0..lut_size) |ii| {
-        const tt = @as(f64, @floatFromInt(ii)) /
-            @as(f64, @floatFromInt(lut_size));
+        const tt = @as(F, @floatFromInt(ii)) /
+            @as(F, @floatFromInt(lut_size));
         for (0..6) |jj| {
             table[ii][jj] = lanczos3Coeff(
-                @as(f64, @floatFromInt(jj)) - 2.0 - tt,
+                @as(F, @floatFromInt(jj)) - 2.0 - tt,
             );
         }
     }
@@ -266,13 +267,13 @@ pub const lanczos3_lut = blk: {
 
 pub const quintic_bspline_lut = blk: {
     @setEvalBranchQuota(100000);
-    var table: [lut_size][6]f64 = undefined;
+    var table: [lut_size][6]F = undefined;
     for (0..lut_size) |ii| {
-        const tt = @as(f64, @floatFromInt(ii)) /
-            @as(f64, @floatFromInt(lut_size));
+        const tt = @as(F, @floatFromInt(ii)) /
+            @as(F, @floatFromInt(lut_size));
         for (0..6) |jj| {
             table[ii][jj] = quinticBSplineCoeff(
-                @as(f64, @floatFromInt(jj)) - 2.0 - tt,
+                @as(F, @floatFromInt(jj)) - 2.0 - tt,
             );
         }
     }
@@ -284,14 +285,14 @@ pub fn getPx(
     texture: anytype,
     x: isize,
     y: isize,
-) [CH]f64 {
+) [CH]F {
     const tex_cols = @as(isize, @intCast(texture.cols_num));
     const tex_rows = @as(isize, @intCast(texture.rows_num));
     // Clamp to the edges of the tex
     const tex_x_i = @as(usize, @intCast(@max(0, @min(x, tex_cols - 1))));
     const tex_y_i = @as(usize, @intCast(@max(0, @min(y, tex_rows - 1))));
 
-    var samp_res: [CH]f64 = undefined;
+    var samp_res: [CH]F = undefined;
     inline for (0..CH) |ch| {
         samp_res[ch] = texture.getVal(ch, tex_y_i, tex_x_i);
     }
@@ -303,14 +304,14 @@ pub fn sampleLinear(
     texture: anytype,
     tex_x_i: isize,
     tex_y_i: isize,
-    tex_x_frac: f64,
-    tex_y_frac: f64,
-) [CH]f64 {
+    tex_x_frac: F,
+    tex_y_frac: F,
+) [CH]F {
     const p00 = getPx(CH, texture, tex_x_i, tex_y_i);
     const p10 = getPx(CH, texture, tex_x_i + 1, tex_y_i);
     const p01 = getPx(CH, texture, tex_x_i, tex_y_i + 1);
     const p11 = getPx(CH, texture, tex_x_i + 1, tex_y_i + 1);
-    var samp_res: [CH]f64 = undefined;
+    var samp_res: [CH]F = undefined;
     inline for (0..CH) |ch| {
         samp_res[ch] = (1.0 - tex_x_frac) * (1.0 - tex_y_frac) * p00[ch] +
             tex_x_frac * (1.0 - tex_y_frac) * p10[ch] +
@@ -326,12 +327,12 @@ pub fn sampleConv(
     texture: anytype,
     tex_x_i: isize,
     tex_y_i: isize,
-    samp_coeff_x: [TAP]f64,
-    samp_coeff_y: [TAP]f64,
-) [CH]f64 {
+    samp_coeff_x: [TAP]F,
+    samp_coeff_y: [TAP]F,
+) [CH]F {
     const tap_offset = @as(isize, @intCast(TAP)) / 2 - 1;
-    var samp_res: [CH]f64 = [_]f64{0.0} ** CH;
-    var samp_coeff_sum: f64 = 0.0;
+    var samp_res: [CH]F = [_]F{0.0} ** CH;
+    var samp_coeff_sum: F = 0.0;
 
     for (0..TAP) |jj| {
         for (0..TAP) |ii| {
@@ -362,13 +363,13 @@ pub fn sampleConv(
 
 pub fn getLerpSampCoeffs(
     comptime TAP: usize,
-    comptime table: [lut_size][TAP]f64,
-    t: f64,
-) [TAP]f64 {
+    comptime table: [lut_size][TAP]F,
+    t: F,
+) [TAP]F {
     const scaled = t * (lut_size - 1);
     const idx = @as(usize, @intFromFloat(@floor(scaled)));
-    const frac = scaled - @as(f64, @floatFromInt(idx));
-    var lerp_res: [TAP]f64 = undefined;
+    const frac = scaled - @as(F, @floatFromInt(idx));
+    var lerp_res: [TAP]F = undefined;
 
     const lut0 = table[idx];
     const lut1 = table[@min(idx + 1, lut_size - 1)];
@@ -381,14 +382,14 @@ pub fn getLerpSampCoeffs(
 
 pub fn getLerpSampCoeffsRuntime(
     comptime TAP: usize,
-    table: [lut_size][TAP]f64,
-    t: f64, // Between 0.0 and 1.0
-) [TAP]f64 {
+    table: [lut_size][TAP]F,
+    t: F, // Between 0.0 and 1.0
+) [TAP]F {
     const scaled = t * (lut_size - 1);
     const idx = @as(usize, @intFromFloat(@floor(scaled)));
-    const frac = scaled - @as(f64, @floatFromInt(idx));
+    const frac = scaled - @as(F, @floatFromInt(idx));
 
-    var lerp_res: [TAP]f64 = undefined;
+    var lerp_res: [TAP]F = undefined;
     const lut0 = table[idx];
     const lut1 = table[@min(idx + 1, lut_size - 1)];
 
@@ -406,9 +407,9 @@ fn sampleTex4Tap(
     texture: anytype,
     tex_x_i: isize,
     tex_y_i: isize,
-    tex_x_frac: f64,
-    tex_y_frac: f64,
-) [CH]f64 {
+    tex_x_frac: F,
+    tex_y_frac: F,
+) [CH]F {
     const TAP = 4;
     const coeff_fun = switch (sample) {
         .cubic_catmull_rom => cubicCoeffCatmullRom,
@@ -440,7 +441,7 @@ fn sampleTex4Tap(
             break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, coeffs_x, coeffs_y);
         },
         .lut => blk: {
-            const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
+            const lut_size_f = @as(F, @floatFromInt(lut_size - 1));
             const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
             const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
             break :blk sampleConv(
@@ -476,9 +477,9 @@ fn sampleTex6Tap(
     texture: anytype,
     tex_x_i: isize,
     tex_y_i: isize,
-    tex_x_frac: f64,
-    tex_y_frac: f64,
-) [CH]f64 {
+    tex_x_frac: F,
+    tex_y_frac: F,
+) [CH]F {
     const TAP = 6;
     const coeff_fun = switch (sample) {
         .lanczos3 => lanczos3Coeff,
@@ -512,7 +513,7 @@ fn sampleTex6Tap(
             break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, coeffs_x, coeffs_y);
         },
         .lut => blk: {
-            const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
+            const lut_size_f = @as(F, @floatFromInt(lut_size - 1));
             const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
             const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
             break :blk sampleConv(
@@ -545,18 +546,18 @@ pub fn sampleScalar(
     comptime CH: usize,
     comptime config: TextureSampleConfig,
     texture: anytype,
-    u: f64,
-    v: f64,
-) [CH]f64 {
+    u: F,
+    v: F,
+) [CH]F {
     std.debug.assert(config.isValid());
     const cols_minus_1 = @as(isize, @intCast(texture.cols_num)) - 1;
     const rows_minus_1 = @as(isize, @intCast(texture.rows_num)) - 1;
-    const tex_x_f = u * @as(f64, @floatFromInt(cols_minus_1));
-    const tex_y_f = v * @as(f64, @floatFromInt(rows_minus_1));
+    const tex_x_f = u * @as(F, @floatFromInt(cols_minus_1));
+    const tex_y_f = v * @as(F, @floatFromInt(rows_minus_1));
     const tex_x_i = @as(isize, @intFromFloat(@floor(tex_x_f)));
     const tex_y_i = @as(isize, @intFromFloat(@floor(tex_y_f)));
-    const tex_x_frac = tex_x_f - @as(f64, @floatFromInt(tex_x_i));
-    const tex_y_frac = tex_y_f - @as(f64, @floatFromInt(tex_y_i));
+    const tex_x_frac = tex_x_f - @as(F, @floatFromInt(tex_x_i));
+    const tex_y_frac = tex_y_f - @as(F, @floatFromInt(tex_y_i));
 
     return switch (config.sample) {
         .nearest => getPx(
@@ -622,8 +623,8 @@ pub fn sampleScalar(
 pub fn sampleGreyscale(
     comptime config: TextureSampleConfig,
     texture: anytype,
-    u: f64,
-    v: f64,
-) f64 {
+    u: F,
+    v: F,
+) F {
     return sampleScalar(1, config, texture, u, v)[0];
 }

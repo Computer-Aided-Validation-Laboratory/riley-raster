@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const shaderops = @import("shaderops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const texops = @import("textureops.zig");
@@ -20,7 +22,7 @@ pub inline fn shadeNodalScalarCommon(
     interp: shaderops.InterpData(N),
     shader: *const shaderops.NodalPrepared,
     ctx_report: anytype,
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
 ) void {
     if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
         ctx_report.recordDepth(
@@ -70,7 +72,7 @@ pub inline fn shadeTexScalarCommon(
     interp: shaderops.InterpData(N),
     shader: *const shaderops.TexPrepared(channels),
     ctx_report: anytype,
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
 ) void {
     shadeTexScalarCommonImpl(
         N,
@@ -92,7 +94,7 @@ fn shadeTexScalarCommonImpl(
     interp: shaderops.InterpData(N),
     shader: *const shaderops.TexPrepared(channels),
     ctx_report: anytype,
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
 ) void {
     if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
         ctx_report.recordDepth(
@@ -135,7 +137,7 @@ inline fn shadeTexScalarDispatchImpl(
     ctx_shade: shaderops.ShadeContext(N),
     interp: shaderops.InterpData(N),
     shader: *const shaderops.TexPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
 ) void {
     @setEvalBranchQuota(40000);
     switch (config.sample) {
@@ -162,7 +164,7 @@ inline fn shadeTexScalarDispatchModeImpl(
     ctx_shade: shaderops.ShadeContext(N),
     interp: shaderops.InterpData(N),
     shader: *const shaderops.TexPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
 ) void {
     switch (mode) {
         inline else => |mode_type| shadeTexScalarDispatchConfigImpl(
@@ -189,7 +191,7 @@ inline fn shadeTexScalarDispatchConfigImpl(
     ctx_shade: shaderops.ShadeContext(N),
     interp: shaderops.InterpData(N),
     shader: *const shaderops.TexPrepared(channels),
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
 ) void {
     if (!comptime comptime_config.isValid()) return;
 
@@ -224,7 +226,7 @@ pub inline fn shadeFuncScalarCommon(
     interp: shaderops.InterpData(N),
     shader: *const shaderops.FuncPrepared(channels),
     ctx_report: anytype,
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
 ) void {
     if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
         ctx_report.recordDepth(

@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 
 const orch = @import("common/orchestration.zig");
 const riley = @import("riley/zig/riley.zig");
@@ -26,8 +28,8 @@ const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const MeshInput = mo.MeshInput;
 const CameraPrepared = camera_mod.CameraPrepared;
 const CameraInput = camera_mod.CameraInput;
-const NDArrayOps = ndarray.NDArrayOps(f64);
-const MatSlice = matslice.MatSlice(f64);
+const NDArrayOps = ndarray.NDArrayOps(F);
+const MatSlice = matslice.MatSlice(F);
 
 const bunny_mesh_types = [_]gk.MeshType{
     .tri3,
@@ -82,7 +84,7 @@ pub fn main(init: std.process.Init) !void {
     const aa = arena.allocator();
 
     const out_verif_root = "verif/verif_3";
-    const fov_scale: f64 = 1.02;
+    const fov_scale: F = 1.02;
 
     std.debug.print("Loading speckle texture...\n", .{});
     const texture = try iio.loadImage(

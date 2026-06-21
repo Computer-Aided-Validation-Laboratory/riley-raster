@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 const mo = @import("riley/zig/meshops.zig");
 const pce = @import("riley/zig/parachunkexec.zig");
 const meshio = @import("riley/zig/meshio.zig");
@@ -53,7 +55,7 @@ test "Nodal normals are prepared when requested" {
     var sim_data = try loadData(arena_alloc, io, "data/bench/tri3_sphere200");
 
     const pixel_num = [_]u32{ 320, 320 };
-    const pixel_size = [_]f64{ 0.00625, 0.00625 };
+    const pixel_size = [_]F{ 0.00625, 0.00625 };
     const focal_leng = 2.0;
     const rot = Rotation.init(0, 0, 0);
     const cam_pos = @import("riley/zig/cameraops.zig").posFillFrameFromRot(

@@ -15,6 +15,7 @@ const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
 const CameraInput = @import("riley/zig/camera.zig").CameraInput;
 const buildconfig = @import("riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 const cfg = buildconfig.config;
 const camera_mod = @import("riley/zig/camera.zig");
 const CameraPrepared = camera_mod.CameraPrepared;
@@ -32,8 +33,8 @@ const GeometrySchedulingMode =
 
 const simd_on = cfg.simd == .on;
 
-const duplicate_rel_tol: f64 = 1.0e-7;
-const duplicate_abs_tol: f64 = 1.0e-11;
+const duplicate_rel_tol: F = 1.0e-7;
+const duplicate_abs_tol: F = 1.0e-11;
 const fails_root = "fails";
 
 const RenderCase = struct {
@@ -48,12 +49,12 @@ const RenderCase = struct {
 };
 
 fn expectCamerasEqual(
-    array: *const NDArray(f64),
+    array: *const NDArray(F),
     camera_a: usize,
     camera_b: usize,
     channels: usize,
-    rel_tol: f64,
-    abs_tol: f64,
+    rel_tol: F,
+    abs_tol: F,
 ) !void {
     const rows_num = array.dims[3];
     const cols_num = array.dims[4];
@@ -81,12 +82,12 @@ fn expectCamerasEqual(
 }
 
 fn expectCamerasDifferent(
-    array: *const NDArray(f64),
+    array: *const NDArray(F),
     camera_a: usize,
     camera_b: usize,
     channels: usize,
-    rel_tol: f64,
-    abs_tol: f64,
+    rel_tol: F,
+    abs_tol: F,
 ) !void {
     const rows_num = array.dims[3];
     const cols_num = array.dims[4];
@@ -116,13 +117,13 @@ fn expectCamerasDifferent(
 }
 
 fn expectCameraMatchesSingleResult(
-    batch_result: *const NDArray(f64),
-    single_result: *const NDArray(f64),
+    batch_result: *const NDArray(F),
+    single_result: *const NDArray(F),
     camera_idx: usize,
     frame_idx: usize,
     channels: usize,
-    rel_tol: f64,
-    abs_tol: f64,
+    rel_tol: F,
+    abs_tol: F,
 ) !void {
     const rows_num = single_result.dims[3];
     const cols_num = single_result.dims[4];
@@ -150,7 +151,7 @@ fn expectCameraMatchesSingleResult(
 }
 
 fn expectCameraPaddingZero(
-    batch_result: *const NDArray(f64),
+    batch_result: *const NDArray(F),
     camera_idx: usize,
     frame_idx: usize,
     channels: usize,
@@ -167,7 +168,7 @@ fn expectCameraPaddingZero(
                     continue;
                 }
                 try std.testing.expectEqual(
-                    @as(f64, 0.0),
+                    @as(F, 0.0),
                     batch_result.get(&[_]usize{ camera_idx, frame_idx, cc, rr, pp }),
                 );
             }
@@ -382,8 +383,8 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
         fn run(
             reference: anytype,
             grouped: anytype,
-            duplicate_rel_tol_local: f64,
-            duplicate_abs_tol_local: f64,
+            duplicate_rel_tol_local: F,
+            duplicate_abs_tol_local: F,
         ) !void {
             try std.testing.expectEqualSlices(usize, reference.dims, grouped.dims);
             for (0..reference.dims[0]) |camera_idx| {
@@ -705,7 +706,7 @@ test "Multicamera memory matches both" {
     )) orelse return error.NoResult;
     defer aa.free(both.slice);
 
-    try std.testing.expect(ndarray.matchArrayDims(f64, &memory, &both));
+    try std.testing.expect(ndarray.matchArrayDims(F, &memory, &both));
     for (0..memory.slice.len) |ii| {
         try std.testing.expectApproxEqAbs(
             memory.slice[ii],
@@ -906,7 +907,7 @@ test "Sphere200 multicamera gold tests" {
         )) orelse return error.NoResult;
         defer aa.free(result.slice);
         const time_end = Timestamp.now(io, .awake);
-        const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
+        const duration_ms = @as(F, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
         try std.testing.expectEqual(@as(usize, 2), result.dims[0]);
         try expectCamerasDifferent(
@@ -982,7 +983,7 @@ test "Sphere200 multicamera gold tests" {
 
     const suite_end = Timestamp.now(io, .awake);
     const suite_ms = @as(
-        f64,
+        F,
         @floatFromInt(suite_start.durationTo(suite_end).raw.nanoseconds),
     ) / 1e6;
     std.debug.print(
@@ -1205,7 +1206,7 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
         .{out_dir},
     );
     const small_image = try iio.loadImage(
-        f64,
+        F,
         1,
         aa,
         io,
@@ -1213,7 +1214,7 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
         .csv,
     );
     const large_image = try iio.loadImage(
-        f64,
+        F,
         1,
         aa,
         io,

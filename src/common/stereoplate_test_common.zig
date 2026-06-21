@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 
 const orch = @import("orchestration.zig");
 const riley = @import("../riley/zig/riley.zig");
@@ -32,11 +34,11 @@ pub const out_dir_test1 = "./out/test1-stereo";
 pub const out_dir_diff = "./out/test0-test1-stereo";
 
 pub const pixel_num = [2]u32{ 2464, 2056 };
-pub const pixel_size = [2]f64{ 3.45e-6, 3.45e-6 };
-pub const focal_length: f64 = 50.0e-3;
-pub const fov_scale: f64 = 1.5;
+pub const pixel_size = [2]F{ 3.45e-6, 3.45e-6 };
+pub const focal_length: F = 50.0e-3;
+pub const fov_scale: F = 1.5;
 pub const sub_sample: u8 = 2;
-pub const stereo_angle_deg: f64 = 45.0;
+pub const stereo_angle_deg: F = 45.0;
 
 pub const sim_data_name = "stereoplate";
 
@@ -176,14 +178,14 @@ fn loadScalarImageCsv(
     allocator: std.mem.Allocator,
     io: std.Io,
     path: []const u8,
-) !NDArray(f64) {
+) !NDArray(F) {
     var csv = try csvio.loadScalarCsv2D(allocator, io, path);
     defer {
         allocator.free(csv.slice);
         csv.deinit(allocator);
     }
 
-    var image = try NDArray(f64).initFlat(
+    var image = try NDArray(F).initFlat(
         allocator,
         &[_]usize{ 1, csv.dims[0], csv.dims[1] },
     );
@@ -201,11 +203,11 @@ pub fn compareStereoOutputs(
     dir_a_path: []const u8,
     dir_b_path: []const u8,
     diff_dir_path: []const u8,
-) !f64 {
+) !F {
     var diff_dir = try orch.openDirEnsured(io, diff_dir_path);
     defer diff_dir.close(io);
 
-    var max_abs_all: f64 = 0.0;
+    var max_abs_all: F = 0.0;
     for (0..2) |cam_idx| {
         const path_a = try std.fmt.allocPrint(
             allocator,
@@ -232,18 +234,18 @@ pub fn compareStereoOutputs(
             return error.ImageDimsMismatch;
         }
 
-        var diff = try NDArray(f64).initFlat(allocator, img_a.dims);
+        var diff = try NDArray(F).initFlat(allocator, img_a.dims);
         defer {
             allocator.free(diff.slice);
             diff.deinit(allocator);
         }
-        var absdiff = try NDArray(f64).initFlat(allocator, img_a.dims);
+        var absdiff = try NDArray(F).initFlat(allocator, img_a.dims);
         defer {
             allocator.free(absdiff.slice);
             absdiff.deinit(allocator);
         }
 
-        var max_abs_cam: f64 = 0.0;
+        var max_abs_cam: F = 0.0;
         for (0..img_a.slice.len) |ii| {
             const d = img_b.slice[ii] - img_a.slice[ii];
             diff.slice[ii] = d;

@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 
 const benchargs = @import("benchargs.zig");
 const common = @import("benchcommon.zig");
@@ -30,17 +32,17 @@ pub const PreparedDicuqBenchmark = struct {
     mesh_input: MeshInput,
     camera_inputs: [2]CameraInput,
     sample_config: texops.TextureSampleConfig,
-    fov_scale: f64,
+    fov_scale: F,
 };
 
 pub const DicuqDefaults = struct {
     data_dir: []const u8,
     pixels_num: [2]u32,
     sub_sample: u8,
-    focal_leng: f64,
-    pixels_size: [2]f64,
-    fov_scale: f64,
-    stereo_ang: f64,
+    focal_leng: F,
+    pixels_size: [2]F,
+    fov_scale: F,
+    stereo_ang: F,
     tex_path: []const u8,
 };
 
@@ -52,17 +54,17 @@ pub const DicuqFrameRow = struct {
     vis_elems: usize,
     total_px: u64,
     shaded_px: u64,
-    geom_time_ms: f64,
-    cam_time_ms: f64,
-    resolve_time_ms: f64,
-    raster_time_ms: f64,
-    save_time_ms: f64,
-    frame_time_ms: f64,
-    e2e_time_ms: ?f64,
-    geom_tpx_melem_s: f64,
-    raster_tpx_mpx_s: f64,
-    frame_tpx_mpx_s: f64,
-    e2e_tpx_mpx_s: ?f64,
+    geom_time_ms: F,
+    cam_time_ms: F,
+    resolve_time_ms: F,
+    raster_time_ms: F,
+    save_time_ms: F,
+    frame_time_ms: F,
+    e2e_time_ms: ?F,
+    geom_tpx_melem_s: F,
+    raster_tpx_mpx_s: F,
+    frame_tpx_mpx_s: F,
+    e2e_tpx_mpx_s: ?F,
 };
 
 pub const DicuqE2ERow = struct {
@@ -72,17 +74,17 @@ pub const DicuqE2ERow = struct {
     vis_elems: usize,
     total_px: u64,
     shaded_px: u64,
-    geom_time_ms: f64,
-    cam_time_ms: f64,
-    resolve_time_ms: f64,
-    raster_time_ms: f64,
-    save_time_ms: f64,
-    frame_time_ms: f64,
-    e2e_time_ms: ?f64,
-    geom_tpx_melem_s: f64,
-    raster_tpx_mpx_s: f64,
-    frame_tpx_mpx_s: f64,
-    e2e_tpx_mpx_s: ?f64,
+    geom_time_ms: F,
+    cam_time_ms: F,
+    resolve_time_ms: F,
+    raster_time_ms: F,
+    save_time_ms: F,
+    frame_time_ms: F,
+    e2e_time_ms: ?F,
+    geom_tpx_melem_s: F,
+    raster_tpx_mpx_s: F,
+    frame_tpx_mpx_s: F,
+    e2e_tpx_mpx_s: ?F,
 };
 
 pub const DicuqRunResult = struct {
@@ -110,40 +112,40 @@ const DicuqStatsKind = enum {
 const DicuqFrameStatsRow = struct {
     run_idx: usize,
     camera_idx: ?usize,
-    total_elems: f64,
-    vis_elems: f64,
-    total_px: f64,
-    shaded_px: f64,
-    geom_time_ms: f64,
-    cam_time_ms: f64,
-    resolve_time_ms: f64,
-    raster_time_ms: f64,
-    save_time_ms: f64,
-    frame_time_ms: f64,
-    e2e_time_ms: ?f64,
-    geom_tpx_melem_s: f64,
-    raster_tpx_mpx_s: f64,
-    frame_tpx_mpx_s: f64,
-    e2e_tpx_mpx_s: ?f64,
+    total_elems: F,
+    vis_elems: F,
+    total_px: F,
+    shaded_px: F,
+    geom_time_ms: F,
+    cam_time_ms: F,
+    resolve_time_ms: F,
+    raster_time_ms: F,
+    save_time_ms: F,
+    frame_time_ms: F,
+    e2e_time_ms: ?F,
+    geom_tpx_melem_s: F,
+    raster_tpx_mpx_s: F,
+    frame_tpx_mpx_s: F,
+    e2e_tpx_mpx_s: ?F,
 };
 
 const DicuqE2EStatsRow = struct {
     camera_idx: ?usize,
-    total_elems: f64,
-    vis_elems: f64,
-    total_px: f64,
-    shaded_px: f64,
-    geom_time_ms: f64,
-    cam_time_ms: f64,
-    resolve_time_ms: f64,
-    raster_time_ms: f64,
-    save_time_ms: f64,
-    frame_time_ms: f64,
-    e2e_time_ms: ?f64,
-    geom_tpx_melem_s: f64,
-    raster_tpx_mpx_s: f64,
-    frame_tpx_mpx_s: f64,
-    e2e_tpx_mpx_s: ?f64,
+    total_elems: F,
+    vis_elems: F,
+    total_px: F,
+    shaded_px: F,
+    geom_time_ms: F,
+    cam_time_ms: F,
+    resolve_time_ms: F,
+    raster_time_ms: F,
+    save_time_ms: F,
+    frame_time_ms: F,
+    e2e_time_ms: ?F,
+    geom_tpx_melem_s: F,
+    raster_tpx_mpx_s: F,
+    frame_tpx_mpx_s: F,
+    e2e_tpx_mpx_s: ?F,
 };
 
 pub fn getBaseRasterConfig() riley.RasterConfig {
@@ -368,10 +370,10 @@ pub fn runBenchmark(
     const frame_times = aggregateFrameTimes(bench_capture);
     const bench_log = aggregateBenchLog(bench_capture);
     const e2e_ms = @as(
-        f64,
+        F,
         @floatFromInt(start.durationTo(end).raw.nanoseconds),
     ) / 1e6;
-    const frame_count_f = @as(f64, @floatFromInt(frame_count));
+    const frame_count_f = @as(F, @floatFromInt(frame_count));
     const frame_rows = try buildFrameRows(
         outer_alloc,
         camera_inputs,
@@ -466,7 +468,7 @@ fn calcDicuqMetrics(
     pixel_num: [2]u32,
     sub_sample: u8,
     frame_count: usize,
-    e2e_ms: f64,
+    e2e_ms: F,
     frame_times: report.FrameTimes,
     bench_log: report.BenchLog,
 ) common.CalculatedMetrics {
@@ -475,22 +477,22 @@ fn calcDicuqMetrics(
         (frame_times.geometry_prep + frame_times.tile_overlap) / 1e9;
     const active_sec = frame_times.active_time / 1e9;
 
-    const nodes_per_elem = @as(f64, @floatFromInt(mesh_type.getNodesNum()));
-    const pixels_x = @as(f64, @floatFromInt(pixel_num[0]));
-    const pixels_y = @as(f64, @floatFromInt(pixel_num[1]));
-    const frame_count_f = @as(f64, @floatFromInt(frame_count));
-    const sub_samp_f = @as(f64, @floatFromInt(sub_sample));
+    const nodes_per_elem = @as(F, @floatFromInt(mesh_type.getNodesNum()));
+    const pixels_x = @as(F, @floatFromInt(pixel_num[0]));
+    const pixels_y = @as(F, @floatFromInt(pixel_num[1]));
+    const frame_count_f = @as(F, @floatFromInt(frame_count));
+    const sub_samp_f = @as(F, @floatFromInt(sub_sample));
 
     const total_px = pixels_x * pixels_y * frame_count_f;
     const total_subpx = total_px * sub_samp_f * sub_samp_f;
 
     const shaded_subpx = @as(
-        f64,
+        F,
         @floatFromInt(bench_log.total_shaded_pixels),
     );
     const est_shaded_px = shaded_subpx / (sub_samp_f * sub_samp_f);
     const total_elems = @as(
-        f64,
+        F,
         @floatFromInt(bench_log.total_elements),
     );
 
@@ -536,14 +538,14 @@ fn calcDicuqMetrics(
 
 fn calcFrameMPxPerSec(
     camera_input: CameraInput,
-    raster_time_ns: f64,
-) f64 {
+    raster_time_ns: F,
+) F {
     if (raster_time_ns <= 0.0) {
         return 0.0;
     }
-    const pixels_x = @as(f64, @floatFromInt(camera_input.pixels_num[0]));
-    const pixels_y = @as(f64, @floatFromInt(camera_input.pixels_num[1]));
-    const sub_sample = @as(f64, @floatFromInt(camera_input.sub_sample));
+    const pixels_x = @as(F, @floatFromInt(camera_input.pixels_num[0]));
+    const pixels_y = @as(F, @floatFromInt(camera_input.pixels_num[1]));
+    const sub_sample = @as(F, @floatFromInt(camera_input.sub_sample));
     const total_px = pixels_x * pixels_y;
     const total_subpx = total_px * sub_sample * sub_sample;
     _ = total_subpx;
@@ -553,26 +555,26 @@ fn calcFrameMPxPerSec(
 
 fn calcFrameActiveMPxPerSec(
     camera_input: CameraInput,
-    frame_active_time_ns: f64,
-) f64 {
+    frame_active_time_ns: F,
+) F {
     if (frame_active_time_ns <= 0.0) {
         return 0.0;
     }
-    const total_px = @as(f64, @floatFromInt(camera_input.pixels_num[0])) *
-        @as(f64, @floatFromInt(camera_input.pixels_num[1]));
+    const total_px = @as(F, @floatFromInt(camera_input.pixels_num[0])) *
+        @as(F, @floatFromInt(camera_input.pixels_num[1]));
     const frame_active_sec = frame_active_time_ns / 1e9;
     return total_px / (frame_active_sec * 1e6);
 }
 
 fn calcFrameMElemPerSec(
     total_elems: usize,
-    geom_time_ns: f64,
-) f64 {
+    geom_time_ns: F,
+) F {
     if (geom_time_ns <= 0.0) {
         return 0.0;
     }
     const geom_sec = geom_time_ns / 1e9;
-    return @as(f64, @floatFromInt(total_elems)) / (geom_sec * 1e6);
+    return @as(F, @floatFromInt(total_elems)) / (geom_sec * 1e6);
 }
 
 fn buildFrameRows(
@@ -635,12 +637,12 @@ fn buildE2ESummaryRow(
     camera_inputs: []const CameraInput,
     run_idx: usize,
     camera_idx: ?usize,
-    e2e_ms: ?f64,
+    e2e_ms: ?F,
 ) DicuqE2ERow {
-    var geom_time_ms: f64 = 0.0;
-    var raster_time_ms: f64 = 0.0;
-    var save_time_ms: f64 = 0.0;
-    var frame_time_ms: f64 = 0.0;
+    var geom_time_ms: F = 0.0;
+    var raster_time_ms: F = 0.0;
+    var save_time_ms: F = 0.0;
+    var frame_time_ms: F = 0.0;
     var total_elems: usize = 0;
     var vis_elems: usize = 0;
     var total_px: u64 = 0;
@@ -668,11 +670,11 @@ fn buildE2ESummaryRow(
         camera_inputs[cc]
     else
         camera_inputs[0];
-    const total_px_f = @as(f64, @floatFromInt(camera_ref.pixels_num[0])) *
-        @as(f64, @floatFromInt(camera_ref.pixels_num[1])) *
-        @as(f64, @floatFromInt(frame_count));
+    const total_px_f = @as(F, @floatFromInt(camera_ref.pixels_num[0])) *
+        @as(F, @floatFromInt(camera_ref.pixels_num[1])) *
+        @as(F, @floatFromInt(frame_count));
     const geom_tpx_melem_s = if (geom_time_ms > 0.0)
-        @as(f64, @floatFromInt(total_elems)) / ((geom_time_ms / 1e3) * 1e6)
+        @as(F, @floatFromInt(total_elems)) / ((geom_time_ms / 1e3) * 1e6)
     else
         0.0;
     const raster_tpx_mpx_s = if (raster_time_ms > 0.0)
@@ -700,7 +702,7 @@ fn buildE2ESummaryRow(
         .shaded_px = shaded_px,
         .geom_time_ms = geom_time_ms,
         .cam_time_ms = blk: {
-            var cam_sum: f64 = 0.0;
+            var cam_sum: F = 0.0;
             for (frame_rows) |fr| {
                 if (camera_idx) |cc| {
                     if (fr.camera_idx != cc) continue;
@@ -710,7 +712,7 @@ fn buildE2ESummaryRow(
             break :blk cam_sum;
         },
         .resolve_time_ms = blk: {
-            var res_sum: f64 = 0.0;
+            var res_sum: F = 0.0;
             for (frame_rows) |fr| {
                 if (camera_idx) |cc| {
                     if (fr.camera_idx != cc) continue;
@@ -734,7 +736,7 @@ fn buildE2ERows(
     allocator: std.mem.Allocator,
     camera_inputs: []const CameraInput,
     frame_rows: []const DicuqFrameRow,
-    e2e_ms: f64,
+    e2e_ms: F,
 ) ![]DicuqE2ERow {
     const row_count = camera_inputs.len + 1;
     var e2e_rows = try allocator.alloc(DicuqE2ERow, row_count);
@@ -915,9 +917,9 @@ fn appendE2ERowsCSV(
 
 fn calcFieldStats(
     allocator: std.mem.Allocator,
-    values: []const f64,
+    values: []const F,
 ) !common.MedianMAD {
-    const copy_vals = try allocator.dupe(f64, values);
+    const copy_vals = try allocator.dupe(F, values);
     defer allocator.free(copy_vals);
     return common.calcMedianMAD(allocator, copy_vals);
 }
@@ -925,7 +927,7 @@ fn calcFieldStats(
 fn selectDicuqStat(
     stats: common.MedianMAD,
     kind: DicuqStatsKind,
-) f64 {
+) F {
     return switch (kind) {
         .median => stats.median,
         .mad => stats.mad,
@@ -949,35 +951,35 @@ fn calcFrameStatsRow(
         count += 1;
     }
 
-    var elems_vals = try allocator.alloc(f64, count);
+    var elems_vals = try allocator.alloc(F, count);
     defer allocator.free(elems_vals);
-    var total_px_vals = try allocator.alloc(f64, count);
+    var total_px_vals = try allocator.alloc(F, count);
     defer allocator.free(total_px_vals);
-    var geom_vals = try allocator.alloc(f64, count);
+    var geom_vals = try allocator.alloc(F, count);
     defer allocator.free(geom_vals);
-    var cam_vals = try allocator.alloc(f64, count);
+    var cam_vals = try allocator.alloc(F, count);
     defer allocator.free(cam_vals);
-    var resolve_vals = try allocator.alloc(f64, count);
+    var resolve_vals = try allocator.alloc(F, count);
     defer allocator.free(resolve_vals);
-    var raster_vals = try allocator.alloc(f64, count);
+    var raster_vals = try allocator.alloc(F, count);
     defer allocator.free(raster_vals);
-    var save_vals = try allocator.alloc(f64, count);
+    var save_vals = try allocator.alloc(F, count);
     defer allocator.free(save_vals);
-    var frame_vals = try allocator.alloc(f64, count);
+    var frame_vals = try allocator.alloc(F, count);
     defer allocator.free(frame_vals);
-    var e2e_vals = try allocator.alloc(f64, count);
+    var e2e_vals = try allocator.alloc(F, count);
     defer allocator.free(e2e_vals);
-    var vis_vals = try allocator.alloc(f64, count);
+    var vis_vals = try allocator.alloc(F, count);
     defer allocator.free(vis_vals);
-    var shaded_vals = try allocator.alloc(f64, count);
+    var shaded_vals = try allocator.alloc(F, count);
     defer allocator.free(shaded_vals);
-    var geom_tpx_vals = try allocator.alloc(f64, count);
+    var geom_tpx_vals = try allocator.alloc(F, count);
     defer allocator.free(geom_tpx_vals);
-    var raster_tpx_vals = try allocator.alloc(f64, count);
+    var raster_tpx_vals = try allocator.alloc(F, count);
     defer allocator.free(raster_tpx_vals);
-    var frame_tpx_vals = try allocator.alloc(f64, count);
+    var frame_tpx_vals = try allocator.alloc(F, count);
     defer allocator.free(frame_tpx_vals);
-    var e2e_tpx_vals = try allocator.alloc(f64, count);
+    var e2e_tpx_vals = try allocator.alloc(F, count);
     defer allocator.free(e2e_tpx_vals);
 
     var ii: usize = 0;
@@ -1072,9 +1074,9 @@ fn calcFrameStatsRow(
 
 fn selectOptionalDicuqStat(
     allocator: std.mem.Allocator,
-    values: []const f64,
+    values: []const F,
     kind: DicuqStatsKind,
-) !?f64 {
+) !?F {
     var any_nonzero = false;
     for (values) |val| {
         if (val != 0.0) {
@@ -1099,35 +1101,35 @@ fn calcE2EStatsRow(
 ) !DicuqE2EStatsRow {
     const count: usize = e2e_rows_by_run.len;
 
-    var elems_vals = try allocator.alloc(f64, count);
+    var elems_vals = try allocator.alloc(F, count);
     defer allocator.free(elems_vals);
-    var vis_vals = try allocator.alloc(f64, count);
+    var vis_vals = try allocator.alloc(F, count);
     defer allocator.free(vis_vals);
-    var total_px_vals = try allocator.alloc(f64, count);
+    var total_px_vals = try allocator.alloc(F, count);
     defer allocator.free(total_px_vals);
-    var shaded_vals = try allocator.alloc(f64, count);
+    var shaded_vals = try allocator.alloc(F, count);
     defer allocator.free(shaded_vals);
-    var geom_vals = try allocator.alloc(f64, count);
+    var geom_vals = try allocator.alloc(F, count);
     defer allocator.free(geom_vals);
-    var cam_vals = try allocator.alloc(f64, count);
+    var cam_vals = try allocator.alloc(F, count);
     defer allocator.free(cam_vals);
-    var resolve_vals = try allocator.alloc(f64, count);
+    var resolve_vals = try allocator.alloc(F, count);
     defer allocator.free(resolve_vals);
-    var raster_vals = try allocator.alloc(f64, count);
+    var raster_vals = try allocator.alloc(F, count);
     defer allocator.free(raster_vals);
-    var save_vals = try allocator.alloc(f64, count);
+    var save_vals = try allocator.alloc(F, count);
     defer allocator.free(save_vals);
-    var frame_vals = try allocator.alloc(f64, count);
+    var frame_vals = try allocator.alloc(F, count);
     defer allocator.free(frame_vals);
-    var e2e_vals = try allocator.alloc(f64, count);
+    var e2e_vals = try allocator.alloc(F, count);
     defer allocator.free(e2e_vals);
-    var geom_tpx_vals = try allocator.alloc(f64, count);
+    var geom_tpx_vals = try allocator.alloc(F, count);
     defer allocator.free(geom_tpx_vals);
-    var raster_tpx_vals = try allocator.alloc(f64, count);
+    var raster_tpx_vals = try allocator.alloc(F, count);
     defer allocator.free(raster_tpx_vals);
-    var frame_tpx_vals = try allocator.alloc(f64, count);
+    var frame_tpx_vals = try allocator.alloc(F, count);
     defer allocator.free(frame_tpx_vals);
-    var e2e_tpx_vals = try allocator.alloc(f64, count);
+    var e2e_tpx_vals = try allocator.alloc(F, count);
     defer allocator.free(e2e_tpx_vals);
 
     var have_e2e = true;

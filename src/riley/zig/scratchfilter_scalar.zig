@@ -11,6 +11,7 @@ const rops = @import("rasterops.zig");
 const cam = @import("camera.zig");
 const common = @import("scratchfilter_common.zig");
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 
 const cfg = buildconfig.config;
 const ScratchLayout = common.ScratchLayout;
@@ -28,12 +29,12 @@ pub fn resolveScratchDirectCore(
     scratch_geom: ScratchTileGeometry,
     spx_stride: usize,
     fields_num: u8,
-    spx_image_scratch: *const MatSlice(f64),
+    spx_image_scratch: *const MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
     radius_x: usize,
     radius_y: usize,
-    image_out_arr: *NDArray(f64),
+    image_out_arr: *NDArray(F),
 ) void {
     const writer = FrameImageWriter.init(image_out_arr);
 
@@ -149,14 +150,14 @@ pub fn averageScratchCore(
     sub_samp: usize,
     spx_stride: usize,
     fields_num: u8,
-    spx_image_scratch: *const MatSlice(f64),
+    spx_image_scratch: *const MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
     radius_x: usize,
     radius_y: usize,
-    image_out_arr: *NDArray(f64),
+    image_out_arr: *NDArray(F),
 ) void {
-    const sub_samp_f = @as(f64, @floatFromInt(sub_samp));
+    const sub_samp_f = @as(F, @floatFromInt(sub_samp));
     const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
     const writer = FrameImageWriter.init(image_out_arr);
 
@@ -220,7 +221,7 @@ pub fn averageScratchCore(
             const image_px_base = writer.pixelBase(image_px_y, image_px_x);
 
             if (fields_num == 1) {
-                var field_sum_0: f64 = 0.0;
+                var field_sum_0: F = 0.0;
                 var row_idx: usize = 0;
                 while (row_idx < sub_samp) : (row_idx += 1) {
                     const scratch_row_offset = (spx_start_y + row_idx) *
@@ -239,9 +240,9 @@ pub fn averageScratchCore(
                 }
                 writer.slice[image_px_base] = field_sum_0 * inv_sub_samp_sq;
             } else if (fields_num == 3) {
-                var field_sum_0: f64 = 0.0;
-                var field_sum_1: f64 = 0.0;
-                var field_sum_2: f64 = 0.0;
+                var field_sum_0: F = 0.0;
+                var field_sum_1: F = 0.0;
+                var field_sum_2: F = 0.0;
                 var row_idx: usize = 0;
                 while (row_idx < sub_samp) : (row_idx += 1) {
                     const scratch_row_offset = (spx_start_y + row_idx) *
@@ -276,7 +277,7 @@ pub fn averageScratchCore(
                 writer.slice[2 * writer.field_stride + image_px_base] =
                     field_sum_2 * inv_sub_samp_sq;
             } else {
-                var field_avg_buff = [_]f64{0.0} ** cfg.max_nodal_fields;
+                var field_avg_buff = [_]F{0.0} ** cfg.max_nodal_fields;
                 const spx_field_avg = field_avg_buff[0..@as(usize, fields_num)];
                 @memset(spx_field_avg, 0.0);
 
@@ -313,14 +314,14 @@ pub fn averageScratchCore(
 pub fn filterScratchSeparable(
     comptime scratch_layout: ScratchLayout,
     fields_num: u8,
-    background_value: f64,
+    background_value: F,
     psf: cam.PreparedPSF,
     scratch_geom: ScratchTileGeometry,
     sub_samp: usize,
     spx_stride: usize,
-    src: *const MatSlice(f64),
-    tmp: *MatSlice(f64),
-    dst: *MatSlice(f64),
+    src: *const MatSlice(F),
+    tmp: *MatSlice(F),
+    dst: *MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
 ) void {
@@ -352,7 +353,7 @@ pub fn filterScratchSeparable(
             // Scalar path
             var xx = xx_start;
             while (xx <= xx_end) : (xx += 1) {
-                var sum_h: f64 = 0.0;
+                var sum_h: F = 0.0;
                 var kk: usize = 0;
                 while (kk < psf.weights_x.len) : (kk += 1) {
                     const x_off = @as(
@@ -420,7 +421,7 @@ pub fn filterScratchSeparable(
             // Scalar path
             var xx = xx_start;
             while (xx <= xx_end) : (xx += 1) {
-                var sum_v: f64 = 0.0;
+                var sum_v: F = 0.0;
                 var kk: usize = 0;
                 while (kk < psf.weights_y.len) : (kk += 1) {
                     const y_off = @as(
@@ -453,13 +454,13 @@ pub fn filterScratchSeparable(
 pub fn filterScratchNonSeparable(
     comptime scratch_layout: ScratchLayout,
     fields_num: u8,
-    background_value: f64,
+    background_value: F,
     psf: cam.PreparedPSF,
     scratch_geom: ScratchTileGeometry,
     sub_samp: usize,
     spx_stride: usize,
-    src: *const MatSlice(f64),
-    dst: *MatSlice(f64),
+    src: *const MatSlice(F),
+    dst: *MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
 ) void {
@@ -506,7 +507,7 @@ pub fn filterScratchNonSeparable(
             // Scalar path
             var xx = xx_start;
             while (xx <= xx_end) : (xx += 1) {
-                var sum: f64 = 0.0;
+                var sum: F = 0.0;
                 var kk: usize = 0;
                 while (kk < psf.weights_2d.len) : (kk += 1) {
                     const ky = kk / kernel_w;

@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 const common = @import("benchcommon.zig");
 const orch = @import("orchestration.zig");
 const riley = @import("../riley/zig/riley.zig");
@@ -19,7 +21,7 @@ const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
 const tcfg = @import("testconfig.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
 
-fn translateCoords(coords: *meshio.Coords, translation: [3]f64) void {
+fn translateCoords(coords: *meshio.Coords, translation: [3]F) void {
     for (0..coords.mat.rows_num) |nn| {
         coords.mat.set(nn, 0, coords.mat.get(nn, 0) + translation[0]);
         coords.mat.set(nn, 1, coords.mat.get(nn, 1) + translation[1]);
@@ -94,7 +96,7 @@ pub fn runSphere200MultiCullQuiet(
     texture_rgb: iio.Texture(3),
     config: rastcfg.RasterConfig,
     out_dir_base: []const u8,
-    fov_scale: f64,
+    fov_scale: F,
 ) !common.BenchResult {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -164,7 +166,7 @@ pub fn runSphere200MultiCullQuiet(
     );
     const e2e_end = std.Io.Clock.Timestamp.now(io, .awake);
 
-    const e2e_ms = @as(f64, @floatFromInt(
+    const e2e_ms = @as(F, @floatFromInt(
         e2e_start.durationTo(e2e_end).raw.nanoseconds,
     )) / 1e6;
     const fps = 1000.0 / e2e_ms;

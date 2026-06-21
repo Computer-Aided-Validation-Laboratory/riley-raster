@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 const Timestamp = std.Io.Clock.Timestamp;
 const common = @import("common/tests.zig");
 const suite = @import("common/ssaasuite.zig");
@@ -72,7 +74,7 @@ test "Gold SSAA Suite" {
                         var image_mut = image;
                         image_mut.deinit(allocator);
                     }
-                    var result = try @import("riley/zig/ndarray.zig").NDArray(f64).initFlat(
+                    var result = try @import("riley/zig/ndarray.zig").NDArray(F).initFlat(
                         allocator,
                         &[_]usize{ 1, 1, 1, image.dims[1], image.dims[2] },
                     );
@@ -108,7 +110,7 @@ test "Gold SSAA Suite" {
                     );
                     const end_time = Timestamp.now(io, .awake);
                     const duration_ms = @as(
-                        f64,
+                        F,
                         @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds),
                     ) / 1e6;
 
@@ -146,7 +148,7 @@ test "Gold SSAA Suite" {
 
     const suite_end = Timestamp.now(io, .awake);
     const suite_ms = @as(
-        f64,
+        F,
         @floatFromInt(suite_start.durationTo(suite_end).raw.nanoseconds),
     ) / 1e6;
     std.debug.print("Gold SSAA Test Suite took {d:.3} ms\n", .{suite_ms});

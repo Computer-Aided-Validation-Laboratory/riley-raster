@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 
 const cfg = buildconfig.config;
 const tol = cfg.tolerance;
@@ -28,8 +29,8 @@ pub const PolynomialOrder = enum(u8) {
 
 pub const PolynomialMap = struct {
     order: PolynomialOrder = .quadratic,
-    coeffs_u: [10]f64 = [_]f64{0.0} ** 10,
-    coeffs_v: [10]f64 = [_]f64{0.0} ** 10,
+    coeffs_u: [10]F = [_]F{0.0} ** 10,
+    coeffs_v: [10]F = [_]F{0.0} ** 10,
 };
 
 pub const BidirectionalPolynomial = struct {
@@ -57,28 +58,28 @@ pub const DistortionModel = union(enum) {
 };
 
 pub const BrownConrady = struct {
-    k1: f64 = 0,
-    k2: f64 = 0,
-    k3: f64 = 0,
-    p1: f64 = 0,
-    p2: f64 = 0,
+    k1: F = 0,
+    k2: F = 0,
+    k3: F = 0,
+    p1: F = 0,
+    p2: F = 0,
 };
 
 pub const BrownConradyExt = struct {
-    k1: f64 = 0,
-    k2: f64 = 0,
-    k3: f64 = 0,
-    k4: f64 = 0,
-    k5: f64 = 0,
-    k6: f64 = 0,
-    p1: f64 = 0,
-    p2: f64 = 0,
+    k1: F = 0,
+    k2: F = 0,
+    k3: F = 0,
+    k4: F = 0,
+    k5: F = 0,
+    k6: F = 0,
+    p1: F = 0,
+    p2: F = 0,
 
     fn calcRadialScaleAndDerivative(
         self: BrownConradyExt,
-        x: f64,
-        y: f64,
-    ) struct { radial_scale: f64, dradial_dr2: f64 } {
+        x: F,
+        y: F,
+    ) struct { radial_scale: F, dradial_dr2: F } {
         const r2 = x * x + y * y;
         const r4 = r2 * r2;
         const r6 = r4 * r2;
@@ -98,14 +99,14 @@ pub const BrownConradyExt = struct {
 };
 
 pub const DistortionInverseResult = struct {
-    x: f64,
-    y: f64,
+    x: F,
+    y: F,
 };
 
 pub const DistortionForwardJacResult = struct {
-    x_d: f64,
-    y_d: f64,
-    jac: [2][2]f64,
+    x_d: F,
+    y_d: F,
+    jac: [2][2]F,
 };
 
 const poly_powers_u = [10]u8{ 0, 1, 0, 2, 1, 0, 3, 2, 1, 0 };
@@ -114,9 +115,9 @@ const poly_powers_v = [10]u8{ 0, 0, 1, 0, 1, 2, 0, 1, 2, 3 };
 pub fn forwardDistortionScalar(
     comptime DistortionType: type,
     distortion: DistortionType,
-    x: f64,
-    y: f64,
-) [2]f64 {
+    x: F,
+    y: F,
+) [2]F {
     if (@hasField(DistortionType, "k4")) {
         const radial = distortion.calcRadialScaleAndDerivative(x, y);
         return distortionForwardFromRadialScale(
@@ -145,8 +146,8 @@ pub fn forwardDistortionScalar(
 pub fn forwardDistortionWithJacScalar(
     comptime DistortionType: type,
     distortion: DistortionType,
-    x: f64,
-    y: f64,
+    x: F,
+    y: F,
 ) DistortionForwardJacResult {
     if (@hasField(DistortionType, "k4")) {
         const radial = distortion.calcRadialScaleAndDerivative(x, y);
@@ -180,17 +181,17 @@ pub fn forwardDistortionWithJacScalar(
 pub fn inverseDistortionScalar(
     comptime DistortionType: type,
     distortion: DistortionType,
-    x_d: f64,
-    y_d: f64,
+    x_d: F,
+    y_d: F,
 ) !DistortionInverseResult {
     return try distortionInverseFromModel(DistortionType, distortion, x_d, y_d);
 }
 
 pub fn forwardDistortionModelScalar(
     distortion: DistortionModel,
-    x: f64,
-    y: f64,
-) [2]f64 {
+    x: F,
+    y: F,
+) [2]F {
     return switch (distortion) {
         .none => .{ x, y },
         .brown_conrady => |bc| forwardDistortionScalar(BrownConrady, bc, x, y),
@@ -227,8 +228,8 @@ pub fn forwardDistortionModelScalar(
 
 pub fn inverseDistortionModelScalar(
     distortion: DistortionModel,
-    x_d: f64,
-    y_d: f64,
+    x_d: F,
+    y_d: F,
 ) !DistortionInverseResult {
     return switch (distortion) {
         .none => .{ .x = x_d, .y = y_d },
@@ -258,9 +259,9 @@ pub fn inverseDistortionModelScalar(
 
 fn polynomialForwardScalar(
     polynomial: BidirectionalPolynomial,
-    x: f64,
-    y: f64,
-) [2]f64 {
+    x: F,
+    y: F,
+) [2]F {
     if (polynomial.forward_map) |forward_map| {
         return evaluatePolynomialMapScalar(forward_map, x, y);
     }
@@ -273,8 +274,8 @@ fn polynomialForwardScalar(
 
 fn polynomialInverseScalar(
     polynomial: BidirectionalPolynomial,
-    x_d: f64,
-    y_d: f64,
+    x_d: F,
+    y_d: F,
 ) !DistortionInverseResult {
     if (polynomial.inverse_map) |inverse_map| {
         const eval = evaluatePolynomialMapScalar(inverse_map, x_d, y_d);
@@ -288,20 +289,20 @@ fn polynomialInverseScalar(
 
 fn evaluatePolynomialMapScalar(
     polynomial: PolynomialMap,
-    x: f64,
-    y: f64,
-) [2]f64 {
+    x: F,
+    y: F,
+) [2]F {
     const poly = evalPolynomialDisplacementScalar(polynomial, x, y);
     return .{ x + poly.du, y + poly.dv };
 }
 
 fn evalPolynomialDisplacementScalar(
     polynomial: PolynomialMap,
-    x: f64,
-    y: f64,
-) struct { du: f64, dv: f64 } {
-    var du: f64 = 0.0;
-    var dv: f64 = 0.0;
+    x: F,
+    y: F,
+) struct { du: F, dv: F } {
+    var du: F = 0.0;
+    var dv: F = 0.0;
     const term_count = polynomial.order.termCount();
 
     for (0..term_count) |ii| {
@@ -316,14 +317,14 @@ fn evalPolynomialDisplacementScalar(
 
 fn evaluatePolynomialMapWithJacScalar(
     polynomial: PolynomialMap,
-    x: f64,
-    y: f64,
+    x: F,
+    y: F,
 ) DistortionForwardJacResult {
     const distorted = evaluatePolynomialMapScalar(polynomial, x, y);
-    var ddu_dx: f64 = 0.0;
-    var ddu_dy: f64 = 0.0;
-    var ddv_dx: f64 = 0.0;
-    var ddv_dy: f64 = 0.0;
+    var ddu_dx: F = 0.0;
+    var ddu_dy: F = 0.0;
+    var ddv_dx: F = 0.0;
+    var ddv_dy: F = 0.0;
     const term_count = polynomial.order.termCount();
 
     for (0..term_count) |ii| {
@@ -331,14 +332,14 @@ fn evaluatePolynomialMapWithJacScalar(
         const pv = poly_powers_v[ii];
 
         if (pu > 0) {
-            const basis_dx = @as(f64, @floatFromInt(pu)) *
+            const basis_dx = @as(F, @floatFromInt(pu)) *
                 powSmallScalar(x, pu - 1) *
                 powSmallScalar(y, pv);
             ddu_dx += polynomial.coeffs_u[ii] * basis_dx;
             ddv_dx += polynomial.coeffs_v[ii] * basis_dx;
         }
         if (pv > 0) {
-            const basis_dy = @as(f64, @floatFromInt(pv)) *
+            const basis_dy = @as(F, @floatFromInt(pv)) *
                 powSmallScalar(x, pu) *
                 powSmallScalar(y, pv - 1);
             ddu_dy += polynomial.coeffs_u[ii] * basis_dy;
@@ -358,8 +359,8 @@ fn evaluatePolynomialMapWithJacScalar(
 
 fn invertPolynomialMapScalar(
     polynomial: PolynomialMap,
-    x_d: f64,
-    y_d: f64,
+    x_d: F,
+    y_d: F,
 ) !DistortionInverseResult {
     var x = x_d;
     var y = y_d;
@@ -400,10 +401,10 @@ fn invertPolynomialMapScalar(
 }
 
 fn powSmallScalar(
-    x: f64,
+    x: F,
     power: u8,
-) f64 {
-    var out: f64 = 1.0;
+) F {
+    var out: F = 1.0;
     for (0..power) |_| {
         out *= x;
     }
@@ -411,12 +412,12 @@ fn powSmallScalar(
 }
 
 fn distortionForwardFromRadialScale(
-    x: f64,
-    y: f64,
-    radial_scale: f64,
-    p1: f64,
-    p2: f64,
-) [2]f64 {
+    x: F,
+    y: F,
+    radial_scale: F,
+    p1: F,
+    p2: F,
+) [2]F {
     const r2 = x * x + y * y;
     const x_d = x * radial_scale + 2.0 * p1 * x * y + p2 * (r2 + 2.0 * x * x);
     const y_d = y * radial_scale + p1 * (r2 + 2.0 * y * y) + 2.0 * p2 * x * y;
@@ -424,12 +425,12 @@ fn distortionForwardFromRadialScale(
 }
 
 fn distortionForwardWithJacFromRadialScale(
-    x: f64,
-    y: f64,
-    radial_scale: f64,
-    dradial_dr2: f64,
-    p1: f64,
-    p2: f64,
+    x: F,
+    y: F,
+    radial_scale: F,
+    dradial_dr2: F,
+    p1: F,
+    p2: F,
 ) DistortionForwardJacResult {
     const distorted = distortionForwardFromRadialScale(
         x,
@@ -461,8 +462,8 @@ fn distortionForwardWithJacFromRadialScale(
 fn distortionInverseFromModel(
     comptime DistortionType: type,
     distortion: DistortionType,
-    x_d: f64,
-    y_d: f64,
+    x_d: F,
+    y_d: F,
 ) !DistortionInverseResult {
     var x = x_d;
     var y = y_d;
@@ -510,20 +511,20 @@ pub const SeparablePSF = enum {
 };
 
 pub const PixelBoxPSF = struct {
-    support_rad_px: f64 = 0.5,
+    support_rad_px: F = 0.5,
 };
 
 pub const GaussianPSF = struct {
-    sigma_px: f64,
-    support_rad_px: f64,
+    sigma_px: F,
+    support_rad_px: F,
     separable: SeparablePSF = .yes,
 };
 
 pub const AnisotropicGaussianPSF = struct {
-    sigma_x_px: f64,
-    sigma_y_px: f64,
-    theta_rad: f64 = 0.0,
-    support_rad_px: f64,
+    sigma_x_px: F,
+    sigma_y_px: F,
+    theta_rad: F = 0.0,
+    support_rad_px: F,
     separable: SeparablePSF = .no,
 };
 
@@ -545,9 +546,9 @@ pub const PreparedPSF = struct {
     halo_subpx: u16 = 0,
     radius_x_subpx: usize = 0,
     radius_y_subpx: usize = 0,
-    weights_x: []f64 = &.{},
-    weights_y: []f64 = &.{},
-    weights_2d: []f64 = &.{},
+    weights_x: []F = &.{},
+    weights_y: []F = &.{},
+    weights_2d: []F = &.{},
 
     pub fn deinit(self: *PreparedPSF, allocator: std.mem.Allocator) void {
         if (self.weights_x.len > 0) allocator.free(self.weights_x);
@@ -561,7 +562,7 @@ pub const PreparedPSF = struct {
     }
 };
 
-fn psfKernelValue1D(psf: PointSpreadFunc, dist_px: f64) f64 {
+fn psfKernelValue1D(psf: PointSpreadFunc, dist_px: F) F {
     const abs_dist = @abs(dist_px);
     return switch (psf) {
         .pixel_box => |box| if (abs_dist <= box.support_rad_px + 1e-12) 1.0 else 0.0,
@@ -573,7 +574,7 @@ fn psfKernelValue1D(psf: PointSpreadFunc, dist_px: f64) f64 {
     };
 }
 
-fn psfKernelValue2D(psf: PointSpreadFunc, dx_px: f64, dy_px: f64) f64 {
+fn psfKernelValue2D(psf: PointSpreadFunc, dx_px: F, dy_px: F) F {
     return switch (psf) {
         .pixel_box => |box| if (@abs(dx_px) <= box.support_rad_px + 1e-12 and
             @abs(dy_px) <= box.support_rad_px + 1e-12)
@@ -602,8 +603,8 @@ fn psfKernelValue2D(psf: PointSpreadFunc, dx_px: f64, dy_px: f64) f64 {
     };
 }
 
-fn normalizeKernel(weights: []f64) void {
-    var sum: f64 = 0.0;
+fn normalizeKernel(weights: []F) void {
+    var sum: F = 0.0;
     for (weights) |weight| sum += weight;
     if (sum == 0.0) return;
     for (weights) |*weight| weight.* /= sum;
@@ -614,14 +615,14 @@ fn buildKernel1D(
     psf: PointSpreadFunc,
     radius_subpx: usize,
     sub_sample: u8,
-) ![]f64 {
+) ![]F {
     const size = 2 * radius_subpx + 1;
-    const weights = try allocator.alloc(f64, size);
-    const sub_samp_f = @as(f64, @floatFromInt(sub_sample));
+    const weights = try allocator.alloc(F, size);
+    const sub_samp_f = @as(F, @floatFromInt(sub_sample));
 
     for (0..size) |ii| {
         const offset = @as(isize, @intCast(ii)) - @as(isize, @intCast(radius_subpx));
-        const dist_px = @as(f64, @floatFromInt(offset)) / sub_samp_f;
+        const dist_px = @as(F, @floatFromInt(offset)) / sub_samp_f;
         weights[ii] = psfKernelValue1D(psf, dist_px);
     }
 
@@ -635,18 +636,18 @@ fn buildKernel2D(
     radius_x_subpx: usize,
     radius_y_subpx: usize,
     sub_sample: u8,
-) ![]f64 {
+) ![]F {
     const width = 2 * radius_x_subpx + 1;
     const height = 2 * radius_y_subpx + 1;
-    const weights = try allocator.alloc(f64, width * height);
-    const sub_samp_f = @as(f64, @floatFromInt(sub_sample));
+    const weights = try allocator.alloc(F, width * height);
+    const sub_samp_f = @as(F, @floatFromInt(sub_sample));
 
     for (0..height) |yy| {
         const y_off = @as(isize, @intCast(yy)) - @as(isize, @intCast(radius_y_subpx));
-        const dy_px = @as(f64, @floatFromInt(y_off)) / sub_samp_f;
+        const dy_px = @as(F, @floatFromInt(y_off)) / sub_samp_f;
         for (0..width) |xx| {
             const x_off = @as(isize, @intCast(xx)) - @as(isize, @intCast(radius_x_subpx));
-            const dx_px = @as(f64, @floatFromInt(x_off)) / sub_samp_f;
+            const dx_px = @as(F, @floatFromInt(x_off)) / sub_samp_f;
 
             weights[yy * width + xx] = psfKernelValue2D(psf, dx_px, dy_px);
         }
@@ -671,7 +672,7 @@ pub fn preparePSF(
                 @as(usize, @intFromFloat(@ceil(box.support_rad_px))),
             ));
             const radius_subpx: usize = @intFromFloat(
-                @ceil(box.support_rad_px * @as(f64, @floatFromInt(sub_sample))),
+                @ceil(box.support_rad_px * @as(F, @floatFromInt(sub_sample))),
             );
             return .{
                 .mode = .separable,
@@ -689,7 +690,7 @@ pub fn preparePSF(
                 @as(usize, @intFromFloat(@ceil(gauss.support_rad_px))),
             ));
             const radius_subpx: usize = @intFromFloat(
-                @ceil(gauss.support_rad_px * @as(f64, @floatFromInt(sub_sample))),
+                @ceil(gauss.support_rad_px * @as(F, @floatFromInt(sub_sample))),
             );
             if (gauss.separable == .yes) {
                 return .{
@@ -723,7 +724,7 @@ pub fn preparePSF(
                 @as(usize, @intFromFloat(@ceil(gauss.support_rad_px))),
             ));
             const radius_subpx: usize = @intFromFloat(
-                @ceil(gauss.support_rad_px * @as(f64, @floatFromInt(sub_sample))),
+                @ceil(gauss.support_rad_px * @as(F, @floatFromInt(sub_sample))),
             );
             const axis_aligned = @abs(@sin(gauss.theta_rad)) < 1e-12;
             if (gauss.separable == .yes and axis_aligned) {

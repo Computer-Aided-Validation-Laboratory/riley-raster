@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 const common = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
 
@@ -30,7 +32,7 @@ test "Gold Multimesh Suite" {
 
     const end_time = std.Io.Clock.Timestamp.now(io, .awake);
     const duration_ms = @as(
-        f64,
+        F,
         @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds),
     ) / 1e6;
     std.debug.print("Multi-Mesh Test Suite took {d:.3} ms\n", .{duration_ms});

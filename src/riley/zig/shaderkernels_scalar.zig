@@ -6,6 +6,8 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const common = @import("shaderkernels_common.zig");
 const shaderops = @import("shaderops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
@@ -19,7 +21,7 @@ pub fn NodalKernel(comptime N: usize) type {
             interp: shaderops.InterpData(N),
             shader: *const shaderops.NodalPrepared,
             ctx_report: anytype,
-            spx_image_scratch: *MatSlice(f64),
+            spx_image_scratch: *MatSlice(F),
         ) void {
             common.shadeNodalScalarCommon(
                 N,
@@ -45,7 +47,7 @@ pub fn TexKernel(
             interp: shaderops.InterpData(N),
             shader: *const shaderops.TexPrepared(channels),
             ctx_report: anytype,
-            spx_image_scratch: *MatSlice(f64),
+            spx_image_scratch: *MatSlice(F),
         ) void {
             common.shadeTexScalarCommon(
                 N,
@@ -72,7 +74,7 @@ pub fn FuncKernel(
             interp: shaderops.InterpData(N),
             shader: *const shaderops.FuncPrepared(channels),
             ctx_report: anytype,
-            spx_image_scratch: *MatSlice(f64),
+            spx_image_scratch: *MatSlice(F),
         ) void {
             common.shadeFuncScalarCommon(
                 N,

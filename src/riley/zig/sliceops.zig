@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const print = std.debug.print;
 
 const testing = std.testing;
@@ -89,8 +91,8 @@ pub fn apply(
     }
 }
 
-pub fn rangeLen(start: f64, stop: f64, step: f64) usize {
-    const range: f64 = @ceil((stop - start) / step);
+pub fn rangeLen(start: F, stop: F, step: F) usize {
+    const range: F = @ceil((stop - start) / step);
     const range_length: usize = @as(usize, @intFromFloat(range));
     return range_length;
 }
@@ -179,16 +181,16 @@ pub fn slicePrint(comptime T: type, slice: []const T) void {
 // - norm
 // - vecLen
 
-const TestType = f64;
+const TestType = F;
 
 test "slice.add" {
     const vec_len: usize = 10;
 
-    var vec0 = [_]f64{1.0} ** vec_len;
-    var vec1 = [_]f64{1.0} ** vec_len;
-    var vec_exp = [_]f64{2.0} ** vec_len;
+    var vec0 = [_]F{1.0} ** vec_len;
+    var vec1 = [_]F{1.0} ** vec_len;
+    var vec_exp = [_]F{2.0} ** vec_len;
 
-    var vec_op = [_]f64{0.0} ** vec_len;
+    var vec_op = [_]F{0.0} ** vec_len;
 
     try add(TestType, vec0[0..], vec1[0..], vec_op[0..]);
 
@@ -198,11 +200,11 @@ test "slice.add" {
 test "slice.sub" {
     const vec_len: usize = 10;
 
-    var vec0 = [_]f64{1.0} ** vec_len;
-    var vec1 = [_]f64{1.0} ** vec_len;
-    var vec_exp = [_]f64{0.0} ** vec_len;
+    var vec0 = [_]F{1.0} ** vec_len;
+    var vec1 = [_]F{1.0} ** vec_len;
+    var vec_exp = [_]F{0.0} ** vec_len;
 
-    var vec_op = [_]f64{-1.0} ** vec_len;
+    var vec_op = [_]F{-1.0} ** vec_len;
 
     try sub(TestType, vec0[0..], vec1[0..], vec_op[0..]);
 
@@ -212,11 +214,11 @@ test "slice.sub" {
 test "slice.mul" {
     const vec_len: usize = 10;
 
-    var vec0 = [_]f64{1.0} ** vec_len;
-    var vec1 = [_]f64{1.0} ** vec_len;
-    var vec_exp = [_]f64{1.0} ** vec_len;
+    var vec0 = [_]F{1.0} ** vec_len;
+    var vec1 = [_]F{1.0} ** vec_len;
+    var vec_exp = [_]F{1.0} ** vec_len;
 
-    var vec_op = [_]f64{0.0} ** vec_len;
+    var vec_op = [_]F{0.0} ** vec_len;
 
     try mul(TestType, vec0[0..], vec1[0..], vec_op[0..]);
 
@@ -226,11 +228,11 @@ test "slice.mul" {
 test "slice.div" {
     const vec_len: usize = 10;
 
-    var vec0 = [_]f64{1.0} ** vec_len;
-    var vec1 = [_]f64{1.0} ** vec_len;
-    var vec_exp = [_]f64{1.0} ** vec_len;
+    var vec0 = [_]F{1.0} ** vec_len;
+    var vec1 = [_]F{1.0} ** vec_len;
+    var vec_exp = [_]F{1.0} ** vec_len;
 
-    var vec_op = [_]f64{0.0} ** vec_len;
+    var vec_op = [_]F{0.0} ** vec_len;
 
     try div(TestType, vec0[0..], vec1[0..], vec_op[0..]);
 
@@ -240,11 +242,11 @@ test "slice.div" {
 test "slice.mulScalar" {
     const vec_len: usize = 10;
 
-    var vec0 = [_]f64{1.0} ** vec_len;
-    var vec_exp = [_]f64{2.0} ** vec_len;
+    var vec0 = [_]F{1.0} ** vec_len;
+    var vec_exp = [_]F{2.0} ** vec_len;
     const scalar: TestType = 2.0;
 
-    var vec_op = [_]f64{0.0} ** vec_len;
+    var vec_op = [_]F{0.0} ** vec_len;
 
     try mulScalar(TestType, vec0[0..], scalar, vec_op[0..]);
 

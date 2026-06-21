@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 
 const Timestamp = std.Io.Clock.Timestamp;
 const ndarray = @import("ndarray.zig");
@@ -29,7 +31,7 @@ pub const SaveSlotState = enum {
 
 pub const SaveSlot = struct {
     state: SaveSlotState = .free,
-    frame_arr: ndarray.NDArray(f64),
+    frame_arr: ndarray.NDArray(F),
     camera: ?*const cam.CameraPrepared = null,
     camera_idx: usize = 0,
     frame_idx: usize = 0,
@@ -43,7 +45,7 @@ pub const SaveSlot = struct {
     total_nodes_num: usize = 0,
     total_elems_num: usize = 0,
     total_elems_in_image: usize = 0,
-    nodes_per_elem: f64 = 0.0,
+    nodes_per_elem: F = 0.0,
     actual_tile_size: u16 = 1,
     time_start_frame: ?Timestamp = null,
 
@@ -86,7 +88,7 @@ pub const SaveCoordinator = struct {
 
 pub const SaveSlotBuffer = struct {
     slots: []SaveSlot,
-    frame_pool: ndarray.NDArray(f64),
+    frame_pool: ndarray.NDArray(F),
 };
 
 pub const SaveOverlap = struct {
@@ -293,18 +295,18 @@ pub fn imageSaveChannelsOverride(image_mode: ImageMode) ?usize {
 }
 
 fn rgbFieldsToGrey(
-    red_val: f64,
-    green_val: f64,
-    blue_val: f64,
-) f64 {
+    red_val: F,
+    green_val: F,
+    blue_val: F,
+) F {
     return 0.299 * red_val + 0.587 * green_val + 0.114 * blue_val;
 }
 
 pub fn buildOutputFrameView(
     allocator: std.mem.Allocator,
     config: RasterConfig,
-    raw_frame_arr: *const ndarray.NDArray(f64),
-) !ndarray.NDArray(f64) {
+    raw_frame_arr: *const ndarray.NDArray(F),
+) !ndarray.NDArray(F) {
     std.debug.assert(raw_frame_arr.dims.len == 3);
     const raw_num_fields: u8 = @intCast(raw_frame_arr.dims[0]);
     if (!needsOutputTransform(config.image_mode, raw_num_fields)) {
@@ -315,7 +317,7 @@ pub fn buildOutputFrameView(
         config.image_mode,
         raw_num_fields,
     );
-    var output_frame_arr = try ndarray.NDArray(f64).initFlat(
+    var output_frame_arr = try ndarray.NDArray(F).initFlat(
         allocator,
         &[_]usize{
             @as(usize, out_num_fields),
@@ -367,7 +369,7 @@ pub fn initSaveSlots(
         max_pixels_num[0] = @max(max_pixels_num[0], camera.pixels_num[0]);
         max_pixels_num[1] = @max(max_pixels_num[1], camera.pixels_num[1]);
     }
-    const frame_pool = try ndarray.NDArray(f64).initFlat(
+    const frame_pool = try ndarray.NDArray(F).initFlat(
         save_alloc,
         &[_]usize{
             slot_count,

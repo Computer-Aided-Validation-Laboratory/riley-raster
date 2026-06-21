@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const ndarray = @import("ndarray.zig");
 const iio = @import("imageio.zig");
 const matslice = @import("matslice.zig");
@@ -18,22 +20,22 @@ pub const ReportMode = rastcfg.ReportMode;
 pub const OffLog = struct {};
 
 pub const FrameTimes = struct {
-    geometry_prep: f64 = 0,
-    tile_overlap: f64 = 0,
-    raster_loop: f64 = 0,
-    cam_invert: f64 = 0,
-    scratch_resolve: f64 = 0,
-    save_frame: f64 = 0,
-    active_time: f64 = 0,
-    latency_time: f64 = 0,
+    geometry_prep: F = 0,
+    tile_overlap: F = 0,
+    raster_loop: F = 0,
+    cam_invert: F = 0,
+    scratch_resolve: F = 0,
+    save_frame: F = 0,
+    active_time: F = 0,
+    latency_time: F = 0,
 };
 
 pub const EndToEndTimes = struct {
-    setup_time: f64 = 0,
-    setup_other_time: f64 = 0,
-    setup_frame_buffer_time: f64 = 0,
-    dispatch_time: f64 = 0,
-    total_time: f64 = 0,
+    setup_time: F = 0,
+    setup_other_time: F = 0,
+    setup_frame_buffer_time: F = 0,
+    dispatch_time: F = 0,
+    total_time: F = 0,
 };
 
 pub const BenchLog = struct {
@@ -50,8 +52,8 @@ pub const BenchLog = struct {
     total_depth_tests: u64 = 0,
     depth_tests_failed: u64 = 0,
     max_tile_elements: usize = 0,
-    cam_time_ns: f64 = 0,
-    resolve_time_ns: f64 = 0,
+    cam_time_ns: F = 0,
+    resolve_time_ns: F = 0,
 };
 
 pub const FrameBenchCapture = struct {
@@ -144,7 +146,7 @@ pub fn publishFrameResultsWithNodesPerElem(
     total_nodes_num: usize,
     total_elems_num: usize,
     total_elems_in_image: usize,
-    nodes_per_elem: f64,
+    nodes_per_elem: F,
 ) !void {
     switch (config.report) {
         .off => {
@@ -248,18 +250,18 @@ pub fn reduceBenchLog(dst: *BenchLog, src: *const BenchLog) void {
 
 pub const FullStatsLog = struct {
     bench: BenchLog = .{},
-    iteration_map: ?ndarray.NDArray(f64) = null,
-    xi_map: ?ndarray.NDArray(f64) = null,
-    eta_map: ?ndarray.NDArray(f64) = null,
-    converged_map: ?ndarray.NDArray(f64) = null,
-    jacobian_det_map: ?ndarray.NDArray(f64) = null,
-    pixel_occupancy_map: ?ndarray.NDArray(f64) = null,
-    depth_map: ?ndarray.NDArray(f64) = null,
-    normals_map: ?ndarray.NDArray(f64) = null,
-    earlyout_map: ?ndarray.NDArray(f64) = null,
-    tile_timing_map: ?ndarray.NDArray(f64) = null,
-    tile_density_map: ?ndarray.NDArray(f64) = null,
-    tile_occupancy_map: ?ndarray.NDArray(f64) = null,
+    iteration_map: ?ndarray.NDArray(F) = null,
+    xi_map: ?ndarray.NDArray(F) = null,
+    eta_map: ?ndarray.NDArray(F) = null,
+    converged_map: ?ndarray.NDArray(F) = null,
+    jacobian_det_map: ?ndarray.NDArray(F) = null,
+    pixel_occupancy_map: ?ndarray.NDArray(F) = null,
+    depth_map: ?ndarray.NDArray(F) = null,
+    normals_map: ?ndarray.NDArray(F) = null,
+    earlyout_map: ?ndarray.NDArray(F) = null,
+    tile_timing_map: ?ndarray.NDArray(F) = null,
+    tile_density_map: ?ndarray.NDArray(F) = null,
+    tile_occupancy_map: ?ndarray.NDArray(F) = null,
 
     pub fn deinit(self: *FullStatsLog, allocator: std.mem.Allocator) void {
         if (self.iteration_map) |*imap| imap.deinit(allocator);
@@ -282,7 +284,7 @@ pub const FullStatsLog = struct {
         save_dir: std.Io.Dir,
         camera: *const cam.CameraPrepared,
         tile_size: u16,
-        tile_data: []const f64,
+        tile_data: []const F,
         name_prefix: []const u8,
         opts: rastcfg.FullStatsOpts,
     ) !void {
@@ -290,7 +292,7 @@ pub const FullStatsLog = struct {
         const px_y = camera.pixels_num[1];
         const tiles_x = try std.math.divCeil(u32, px_x, tile_size);
 
-        var expanded = try ndarray.NDArray(f64).initFlat(
+        var expanded = try ndarray.NDArray(F).initFlat(
             allocator,
             &[_]usize{ px_y, px_x },
         );
@@ -305,7 +307,7 @@ pub const FullStatsLog = struct {
             }
         }
 
-        const mat = matslice.MatSlice(f64).init(expanded.slice, px_y, px_x);
+        const mat = matslice.MatSlice(F).init(expanded.slice, px_y, px_x);
         for (opts.formats) |opt| {
             try iio.saveMatAsImage(io, save_dir, name_prefix, &mat, opt);
         }
@@ -321,7 +323,7 @@ pub const FullStatsLog = struct {
         camera: *const cam.CameraPrepared,
         tile_size: u16,
         opts: rastcfg.FullStatsOpts,
-        nodes_per_elem: f64,
+        nodes_per_elem: F,
     ) !void {
         const save_dir = out_dir orelse return;
 
@@ -342,7 +344,7 @@ pub const FullStatsLog = struct {
 
         if (self.iteration_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
-            const mat = matslice.MatSlice(f64).init(
+            const mat = matslice.MatSlice(F).init(
                 m.slice,
                 camera.pixels_num[1] * sub_samp,
                 camera.pixels_num[0] * sub_samp,
@@ -359,7 +361,7 @@ pub const FullStatsLog = struct {
 
         if (self.xi_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
-            const mat = matslice.MatSlice(f64).init(
+            const mat = matslice.MatSlice(F).init(
                 m.slice,
                 camera.pixels_num[1] * sub_samp,
                 camera.pixels_num[0] * sub_samp,
@@ -376,7 +378,7 @@ pub const FullStatsLog = struct {
 
         if (self.eta_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
-            const mat = matslice.MatSlice(f64).init(
+            const mat = matslice.MatSlice(F).init(
                 m.slice,
                 camera.pixels_num[1] * sub_samp,
                 camera.pixels_num[0] * sub_samp,
@@ -393,7 +395,7 @@ pub const FullStatsLog = struct {
 
         if (self.converged_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
-            const mat = matslice.MatSlice(f64).init(
+            const mat = matslice.MatSlice(F).init(
                 m.slice,
                 camera.pixels_num[1] * sub_samp,
                 camera.pixels_num[0] * sub_samp,
@@ -410,7 +412,7 @@ pub const FullStatsLog = struct {
 
         if (self.jacobian_det_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
-            const mat = matslice.MatSlice(f64).init(
+            const mat = matslice.MatSlice(F).init(
                 m.slice,
                 camera.pixels_num[1] * sub_samp,
                 camera.pixels_num[0] * sub_samp,
@@ -426,7 +428,7 @@ pub const FullStatsLog = struct {
         }
 
         if (self.pixel_occupancy_map) |*m| {
-            const mat = matslice.MatSlice(f64).init(
+            const mat = matslice.MatSlice(F).init(
                 m.slice,
                 camera.pixels_num[1],
                 camera.pixels_num[0],
@@ -443,7 +445,7 @@ pub const FullStatsLog = struct {
 
         if (self.depth_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
-            const mat = matslice.MatSlice(f64).init(
+            const mat = matslice.MatSlice(F).init(
                 m.slice,
                 camera.pixels_num[1] * sub_samp,
                 camera.pixels_num[0] * sub_samp,
@@ -473,7 +475,7 @@ pub const FullStatsLog = struct {
 
         if (self.earlyout_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
-            const mat = matslice.MatSlice(f64).init(
+            const mat = matslice.MatSlice(F).init(
                 m.slice,
                 camera.pixels_num[1] * sub_samp,
                 camera.pixels_num[0] * sub_samp,
@@ -548,7 +550,7 @@ pub const FullStatsLog = struct {
         io: std.Io,
         frame_idx: usize,
         camera: *const cam.CameraPrepared,
-        nodes_per_elem: f64,
+        nodes_per_elem: F,
     ) !void {
         var buffer: [4096]u8 = undefined;
         var stderr_writer = std.Io.File.stderr().writer(io, &buffer);
@@ -561,7 +563,7 @@ pub const FullStatsLog = struct {
         writer: anytype,
         frame_idx: usize,
         camera: *const cam.CameraPrepared,
-        nodes_per_elem: f64,
+        nodes_per_elem: F,
     ) !void {
         const active_ms = self.bench.frame_times.active_time / 1e6;
         const active_sec = self.bench.frame_times.active_time / 1e9;
@@ -586,8 +588,8 @@ pub const FullStatsLog = struct {
         );
         const cropped = self.bench.total_elements - self.bench.visible_elements;
         const crop_pct = if (self.bench.total_elements > 0)
-            @as(f64, @floatFromInt(cropped)) * 100.0 /
-                @as(f64, @floatFromInt(self.bench.total_elements))
+            @as(F, @floatFromInt(cropped)) * 100.0 /
+                @as(F, @floatFromInt(self.bench.total_elements))
         else
             0.0;
         try writer.print(
@@ -595,10 +597,10 @@ pub const FullStatsLog = struct {
             .{ cropped, crop_pct },
         );
 
-        const solver_calls_f = @as(f64, @floatFromInt(self.bench.solver_calls));
-        const solver_diverged_f = @as(f64, @floatFromInt(self.bench.solver_diverged));
+        const solver_calls_f = @as(F, @floatFromInt(self.bench.solver_calls));
+        const solver_diverged_f = @as(F, @floatFromInt(self.bench.solver_diverged));
         const solver_converged = self.bench.solver_calls - self.bench.solver_diverged;
-        const solver_converged_f = @as(f64, @floatFromInt(solver_converged));
+        const solver_converged_f = @as(F, @floatFromInt(solver_converged));
         const solver_converged_pct = if (self.bench.solver_calls > 0)
             solver_converged_f * 100.0 / solver_calls_f
         else
@@ -608,18 +610,18 @@ pub const FullStatsLog = struct {
         else
             0.0;
         const avg_iters_per_call = if (self.bench.solver_calls > 0)
-            @as(f64, @floatFromInt(self.bench.total_solver_iters)) / solver_calls_f
+            @as(F, @floatFromInt(self.bench.total_solver_iters)) / solver_calls_f
         else
             0.0;
 
-        const px_x = @as(f64, @floatFromInt(camera.pixels_num[0]));
-        const px_y = @as(f64, @floatFromInt(camera.pixels_num[1]));
-        const sub_samp_f = @as(f64, @floatFromInt(camera.sub_sample));
+        const px_x = @as(F, @floatFromInt(camera.pixels_num[0]));
+        const px_y = @as(F, @floatFromInt(camera.pixels_num[1]));
+        const sub_samp_f = @as(F, @floatFromInt(camera.sub_sample));
         const total_px = px_x * px_y;
         const total_subpx = total_px * sub_samp_f * sub_samp_f;
 
-        const tess_checks_f = @as(f64, @floatFromInt(self.bench.tess_checks));
-        const tess_passes_f = @as(f64, @floatFromInt(self.bench.tess_passes));
+        const tess_checks_f = @as(F, @floatFromInt(self.bench.tess_checks));
+        const tess_passes_f = @as(F, @floatFromInt(self.bench.tess_passes));
         const solver_coverage_pct = if (total_subpx > 0)
             solver_calls_f * 100.0 / total_subpx
         else
@@ -678,8 +680,8 @@ pub const FullStatsLog = struct {
             .{self.bench.total_depth_tests},
         );
         const d_fail_pct = if (self.bench.total_depth_tests > 0)
-            @as(f64, @floatFromInt(self.bench.depth_tests_failed)) * 100.0 /
-                @as(f64, @floatFromInt(self.bench.total_depth_tests))
+            @as(F, @floatFromInt(self.bench.depth_tests_failed)) * 100.0 /
+                @as(F, @floatFromInt(self.bench.total_depth_tests))
         else
             0.0;
         try writer.print("Depth Tests Failed      = {d} ({d:.2}%)\n", .{
@@ -688,13 +690,13 @@ pub const FullStatsLog = struct {
         });
         try writer.print("{s}", .{line});
 
-        const vis_elems_f = @as(f64, @floatFromInt(self.bench.visible_elements));
-        const total_elems_f = @as(f64, @floatFromInt(self.bench.total_elements));
+        const vis_elems_f = @as(F, @floatFromInt(self.bench.visible_elements));
+        const total_elems_f = @as(F, @floatFromInt(self.bench.total_elements));
         const vis_pct = if (self.bench.total_elements > 0)
             (vis_elems_f * 100.0 / total_elems_f)
         else
             0;
-        const shaded_subpx = @as(f64, @floatFromInt(self.bench.total_shaded_pixels));
+        const shaded_subpx = @as(F, @floatFromInt(self.bench.total_shaded_pixels));
         const shaded_pct = if (total_subpx > 0)
             (shaded_subpx * 100.0 / total_subpx)
         else
@@ -748,7 +750,7 @@ pub const FullStatsLog = struct {
         try writer.print("{s}", .{line});
 
         const melems_sec = if (geom_tiling_sec > 0)
-            (@as(f64, @floatFromInt(self.bench.total_elements)) / (geom_tiling_sec * 1e6))
+            (@as(F, @floatFromInt(self.bench.total_elements)) / (geom_tiling_sec * 1e6))
         else
             0;
         const mpx_sec = if (raster_sec > 0) (total_px / (raster_sec * 1e6)) else 0;
@@ -804,7 +806,7 @@ pub fn initFullStatsLog(
     const sub_pixels_num = [_]usize{ pixels_num[1] * sub_samp, pixels_num[0] * sub_samp };
 
     if (opts.save_iteration_map) {
-        self.iteration_map = try ndarray.NDArray(f64).initFlat(
+        self.iteration_map = try ndarray.NDArray(F).initFlat(
             allocator,
             &sub_pixels_num,
         );
@@ -812,17 +814,17 @@ pub fn initFullStatsLog(
     }
 
     if (opts.save_xi_map) {
-        self.xi_map = try ndarray.NDArray(f64).initFlat(allocator, &sub_pixels_num);
-        @memset(self.xi_map.?.slice, std.math.nan(f64));
+        self.xi_map = try ndarray.NDArray(F).initFlat(allocator, &sub_pixels_num);
+        @memset(self.xi_map.?.slice, std.math.nan(F));
     }
 
     if (opts.save_eta_map) {
-        self.eta_map = try ndarray.NDArray(f64).initFlat(allocator, &sub_pixels_num);
-        @memset(self.eta_map.?.slice, std.math.nan(f64));
+        self.eta_map = try ndarray.NDArray(F).initFlat(allocator, &sub_pixels_num);
+        @memset(self.eta_map.?.slice, std.math.nan(F));
     }
 
     if (opts.save_converged_map) {
-        self.converged_map = try ndarray.NDArray(f64).initFlat(
+        self.converged_map = try ndarray.NDArray(F).initFlat(
             allocator,
             &sub_pixels_num,
         );
@@ -830,15 +832,15 @@ pub fn initFullStatsLog(
     }
 
     if (opts.save_jacobian_det_map) {
-        self.jacobian_det_map = try ndarray.NDArray(f64).initFlat(
+        self.jacobian_det_map = try ndarray.NDArray(F).initFlat(
             allocator,
             &sub_pixels_num,
         );
-        @memset(self.jacobian_det_map.?.slice, std.math.nan(f64));
+        @memset(self.jacobian_det_map.?.slice, std.math.nan(F));
     }
 
     if (opts.save_pixel_occupancy_map) {
-        self.pixel_occupancy_map = try ndarray.NDArray(f64).initFlat(
+        self.pixel_occupancy_map = try ndarray.NDArray(F).initFlat(
             allocator,
             &[_]usize{ pixels_num[1], pixels_num[0] },
         );
@@ -846,12 +848,12 @@ pub fn initFullStatsLog(
     }
 
     if (opts.save_depth_map) {
-        self.depth_map = try ndarray.NDArray(f64).initFlat(allocator, &sub_pixels_num);
+        self.depth_map = try ndarray.NDArray(F).initFlat(allocator, &sub_pixels_num);
         @memset(self.depth_map.?.slice, 0);
     }
 
     if (opts.save_normals_map) {
-        self.normals_map = try ndarray.NDArray(f64).initFlat(
+        self.normals_map = try ndarray.NDArray(F).initFlat(
             allocator,
             &[_]usize{ 3, sub_pixels_num[0], sub_pixels_num[1] },
         );
@@ -859,7 +861,7 @@ pub fn initFullStatsLog(
     }
 
     if (opts.save_earlyout_map) {
-        self.earlyout_map = try ndarray.NDArray(f64).initFlat(allocator, &sub_pixels_num);
+        self.earlyout_map = try ndarray.NDArray(F).initFlat(allocator, &sub_pixels_num);
         @memset(self.earlyout_map.?.slice, 0);
     }
 
@@ -868,19 +870,19 @@ pub fn initFullStatsLog(
     const tiles_num = tiles_num_x * tiles_num_y;
 
     if (opts.save_tile_timing_map) {
-        self.tile_timing_map = try ndarray.NDArray(f64).initFlat(
+        self.tile_timing_map = try ndarray.NDArray(F).initFlat(
             allocator,
             &[_]usize{tiles_num},
         );
     }
     if (opts.save_tile_density_map) {
-        self.tile_density_map = try ndarray.NDArray(f64).initFlat(
+        self.tile_density_map = try ndarray.NDArray(F).initFlat(
             allocator,
             &[_]usize{tiles_num},
         );
     }
     if (opts.save_tile_occupancy_map) {
-        self.tile_occupancy_map = try ndarray.NDArray(f64).initFlat(
+        self.tile_occupancy_map = try ndarray.NDArray(F).initFlat(
             allocator,
             &[_]usize{tiles_num},
         );
@@ -890,20 +892,20 @@ pub fn initFullStatsLog(
 }
 
 pub const Stats = struct {
-    min: f64,
-    max: f64,
-    median: f64,
-    q1: f64,
-    q3: f64,
-    mad: f64,
+    min: F,
+    max: F,
+    median: F,
+    q1: F,
+    q3: F,
+    mad: F,
 };
 
-pub fn calcStats(allocator: std.mem.Allocator, data: []const f64) !Stats {
+pub fn calcStats(allocator: std.mem.Allocator, data: []const F) !Stats {
     if (data.len == 0) {
         return .{ .min = 0, .max = 0, .median = 0, .q1 = 0, .q3 = 0, .mad = 0 };
     }
 
-    var filtered: std.ArrayList(f64) = .empty;
+    var filtered: std.ArrayList(F) = .empty;
     defer filtered.deinit(allocator);
     for (data) |val| {
         if (val > 0) try filtered.append(allocator, val);
@@ -914,7 +916,7 @@ pub fn calcStats(allocator: std.mem.Allocator, data: []const f64) !Stats {
     }
 
     const slice = filtered.items;
-    std.mem.sort(f64, slice, {}, std.sort.asc(f64));
+    std.mem.sort(F, slice, {}, std.sort.asc(F));
 
     const min = slice[0];
     const max = slice[slice.len - 1];
@@ -922,12 +924,12 @@ pub fn calcStats(allocator: std.mem.Allocator, data: []const f64) !Stats {
     const q1 = getMedian(slice[0 .. slice.len / 2]);
     const q3 = getMedian(slice[slice.len / 2 ..]);
 
-    var deviations = try allocator.alloc(f64, slice.len);
+    var deviations = try allocator.alloc(F, slice.len);
     defer allocator.free(deviations);
     for (slice, 0..) |val, ii| {
         deviations[ii] = @abs(val - median);
     }
-    std.mem.sort(f64, deviations, {}, std.sort.asc(f64));
+    std.mem.sort(F, deviations, {}, std.sort.asc(F));
     const mad = getMedian(deviations);
 
     return .{
@@ -940,7 +942,7 @@ pub fn calcStats(allocator: std.mem.Allocator, data: []const f64) !Stats {
     };
 }
 
-fn getMedian(sorted_data: []const f64) f64 {
+fn getMedian(sorted_data: []const F) F {
     if (sorted_data.len == 0) return 0;
     const mid = sorted_data.len / 2;
     if (sorted_data.len % 2 == 0) {
@@ -1048,7 +1050,7 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             self: @This(),
             global_subx: usize,
             global_suby: usize,
-            xi: f64,
+            xi: F,
         ) void {
             if (mode == .full_stats) {
                 if (self.log.xi_map) |*xmap| {
@@ -1062,7 +1064,7 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             self: @This(),
             global_subx: usize,
             global_suby: usize,
-            eta: f64,
+            eta: F,
         ) void {
             if (mode == .full_stats) {
                 if (self.log.eta_map) |*emap| {
@@ -1091,7 +1093,7 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             self: @This(),
             global_subx: usize,
             global_suby: usize,
-            jacobian_det: f64,
+            jacobian_det: F,
         ) void {
             if (mode == .full_stats) {
                 if (self.log.jacobian_det_map) |*jmap| {
@@ -1119,7 +1121,7 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             self: @This(),
             global_subx: usize,
             global_suby: usize,
-            inv_z: f64,
+            inv_z: F,
         ) void {
             if (mode == .full_stats) {
                 if (self.log.depth_map) |*dmap| {
@@ -1133,9 +1135,9 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             self: @This(),
             global_subx: usize,
             global_suby: usize,
-            nx: f64,
-            ny: f64,
-            nz: f64,
+            nx: F,
+            ny: F,
+            nz: F,
         ) void {
             if (mode == .full_stats) {
                 if (self.log.normals_map) |*nmap| {
@@ -1208,12 +1210,12 @@ pub inline fn recordNormalSIMD(
     ctx_report: anytype,
     ctx_shade: anytype,
     v_mask_active: @Vector(lane_num, bool),
-    v_weights: [nodes_num]@Vector(lane_num, f64),
+    v_weights: [nodes_num]@Vector(lane_num, F),
 ) void {
     const lane_mask: [lane_num]bool = v_mask_active;
     inline for (0..lane_num) |ll| {
         if (lane_mask[ll]) {
-            var normal = [3]f64{ 0.0, 0.0, 0.0 };
+            var normal = [3]F{ 0.0, 0.0, 0.0 };
             inline for (0..nodes_num) |nn| {
                 normal[0] += v_weights[nn][ll] *
                     ctx_shade.shader_buf.normals[0 * nodes_num + nn];
@@ -1243,16 +1245,16 @@ pub fn standardReport(
     frame_times: FrameTimes,
     total_elems: usize,
     visible_elems: usize,
-    nodes_per_elem: f64,
+    nodes_per_elem: F,
     bench_log: *const BenchLog,
 ) !void {
     var buffer: [4096]u8 = undefined;
     var stdout_writer = std.Io.File.stdout().writer(io, &buffer);
     const writer = &stdout_writer.interface;
 
-    const px_x = @as(f64, @floatFromInt(camera.pixels_num[0]));
-    const px_y = @as(f64, @floatFromInt(camera.pixels_num[1]));
-    const sub_samp_f: f64 = @as(f64, @floatFromInt(camera.sub_sample));
+    const px_x = @as(F, @floatFromInt(camera.pixels_num[0]));
+    const px_y = @as(F, @floatFromInt(camera.pixels_num[1]));
+    const sub_samp_f: F = @as(F, @floatFromInt(camera.sub_sample));
 
     const total_subpx = px_x * px_y * sub_samp_f * sub_samp_f;
     const total_px = px_x * px_y;
@@ -1262,11 +1264,11 @@ pub fn standardReport(
     const geom_tiling_sec = (frame_times.geometry_prep + frame_times.tile_overlap) / 1e9;
 
     const melems_sec = if (geom_tiling_sec > 0)
-        (@as(f64, @floatFromInt(total_elems)) / (geom_tiling_sec * 1e6))
+        (@as(F, @floatFromInt(total_elems)) / (geom_tiling_sec * 1e6))
     else
         0;
     const mnodes_sec = if (geom_tiling_sec > 0)
-        (@as(f64, @floatFromInt(bench_log.total_nodes)) /
+        (@as(F, @floatFromInt(bench_log.total_nodes)) /
             (geom_tiling_sec * 1e6))
     else
         0;
@@ -1278,7 +1280,7 @@ pub fn standardReport(
     else
         0;
 
-    const conv_units: f64 = 1.0 / 1.0e6;
+    const conv_units: F = 1.0 / 1.0e6;
     const print_break = [_]u8{'='} ** 80;
     const print_break_inner = [_]u8{'-'} ** 80;
 
@@ -1289,13 +1291,13 @@ pub fn standardReport(
         print_break,
     });
 
-    const shaded_subpx = @as(f64, @floatFromInt(bench_log.total_shaded_pixels));
+    const shaded_subpx = @as(F, @floatFromInt(bench_log.total_shaded_pixels));
     const shaded_pct = if (total_subpx > 0)
         (shaded_subpx * 100.0 / total_subpx)
     else
         0;
-    const vis_elems_f = @as(f64, @floatFromInt(visible_elems));
-    const total_elems_f = @as(f64, @floatFromInt(total_elems));
+    const vis_elems_f = @as(F, @floatFromInt(visible_elems));
+    const total_elems_f = @as(F, @floatFromInt(total_elems));
     const vis_pct = if (total_elems > 0) (vis_elems_f * 100.0 / total_elems_f) else 0;
 
     try writer.print("Visible Elems = {d}\n", .{visible_elems});
@@ -1386,14 +1388,14 @@ pub fn printRenderSummary(
     //     end_to_end_times.setup_frame_buffer_time / 1e6;
     const dispatch_ms = end_to_end_times.dispatch_time / 1e6;
     const avg_frame_ms = total_render_ms / @as(
-        f64,
+        F,
         @floatFromInt(total_frames),
     );
     const avg_frame_mpx_sec = if (total_render_sec > 0)
-        @as(f64, @floatFromInt(total_pixels)) / (total_render_sec * 1e6)
+        @as(F, @floatFromInt(total_pixels)) / (total_render_sec * 1e6)
     else
         0.0;
-    var total_raster_ns: f64 = 0.0;
+    var total_raster_ns: F = 0.0;
     if (bench_capture) |capture| {
         for (capture) |frame_capture| {
             total_raster_ns += frame_capture.bench_log.frame_times.raster_loop;
@@ -1401,7 +1403,7 @@ pub fn printRenderSummary(
     }
     const total_raster_sec = total_raster_ns / 1e9;
     const avg_raster_mpx_sec = if (total_raster_sec > 0)
-        @as(f64, @floatFromInt(total_pixels)) / (total_raster_sec * 1e6)
+        @as(F, @floatFromInt(total_pixels)) / (total_raster_sec * 1e6)
     else
         0.0;
 

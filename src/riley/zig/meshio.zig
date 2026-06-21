@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const print = std.debug.print;
 const time = std.time;
 const assert = std.debug.assert;
@@ -19,14 +21,14 @@ const NDArray = @import("ndarray.zig").NDArray;
 const csvio = @import("csvio.zig");
 
 pub const Coords = struct {
-    mat: MatSlice(f64),
-    mem: []f64,
+    mat: MatSlice(F),
+    mem: []F,
 
     const Self: type = @This();
 
-    pub fn init(mem: []f64, coords_num: usize) Self {
+    pub fn init(mem: []F, coords_num: usize) Self {
         assert(mem.len == coords_num * 3);
-        const mat_coords = MatSlice(f64).init(mem, coords_num, 3);
+        const mat_coords = MatSlice(F).init(mem, coords_num, 3);
 
         return .{
             .mat = mat_coords,
@@ -35,24 +37,24 @@ pub const Coords = struct {
     }
 
     pub fn initAlloc(outer_alloc: std.mem.Allocator, coords_num: usize) !Self {
-        const mat_mem = try outer_alloc.alloc(f64, coords_num * 3);
+        const mat_mem = try outer_alloc.alloc(F, coords_num * 3);
 
         return init(mat_mem, coords_num);
     }
 
-    pub inline fn x(self: *const Self, ind: usize) f64 {
+    pub inline fn x(self: *const Self, ind: usize) F {
         return self.mat.get(ind, 0);
     }
 
-    pub inline fn y(self: *const Self, ind: usize) f64 {
+    pub inline fn y(self: *const Self, ind: usize) F {
         return self.mat.get(ind, 1);
     }
 
-    pub inline fn z(self: *const Self, ind: usize) f64 {
+    pub inline fn z(self: *const Self, ind: usize) F {
         return self.mat.get(ind, 2);
     }
 
-    pub fn getVecSlice(self: *const Self, ind: usize) []f64 {
+    pub fn getVecSlice(self: *const Self, ind: usize) []F {
         return self.mat.getSlice(ind);
     }
 
@@ -110,8 +112,8 @@ pub const Connect = struct {
 };
 
 pub const Field = struct {
-    array: NDArray(f64),
-    array_mem: []f64,
+    array: NDArray(F),
+    array_mem: []F,
 
     const Self = @This();
 
@@ -121,11 +123,11 @@ pub const Field = struct {
         coord_n: usize,
         fields_n: u8,
     ) !Self {
-        const mem_array = try outer_alloc.alloc(f64, time_n * coord_n * fields_n);
+        const mem_array = try outer_alloc.alloc(F, time_n * coord_n * fields_n);
         @memset(mem_array, 0.0);
 
         const mem_dims = [3]usize{ time_n, coord_n, @as(usize, fields_n) };
-        const arr = try NDArray(f64).init(outer_alloc, mem_array, mem_dims[0..]);
+        const arr = try NDArray(F).init(outer_alloc, mem_array, mem_dims[0..]);
 
         return .{
             .array = arr,
@@ -173,7 +175,7 @@ pub fn parseCoords(
         var split_iter = std.mem.splitScalar(u8, line_str, ',');
 
         while (split_iter.next()) |num_str| {
-            const num: f64 = try std.fmt.parseFloat(f64, num_str);
+            const num: F = try std.fmt.parseFloat(F, num_str);
 
             coords.mat.set(ii, num_count, num);
 
@@ -212,7 +214,7 @@ pub fn parseConnect(
         split_iter = std.mem.splitScalar(u8, line_str, ',');
 
         while (split_iter.next()) |num_str| {
-            const num_f: f64 = try std.fmt.parseFloat(f64, num_str);
+            const num_f: F = try std.fmt.parseFloat(F, num_str);
             const num_i: usize = @intFromFloat(num_f);
 
             connect.table_mem[elem * nodes_per_elem + node] = num_i;
@@ -252,7 +254,7 @@ pub fn parseField(
         var split_iter = std.mem.splitScalar(u8, line_str, ',');
 
         while (split_iter.next()) |num_str| {
-            const num_f: f64 = try std.fmt.parseFloat(f64, num_str);
+            const num_f: F = try std.fmt.parseFloat(F, num_str);
 
             field.array.set(inds[0..], num_f);
 

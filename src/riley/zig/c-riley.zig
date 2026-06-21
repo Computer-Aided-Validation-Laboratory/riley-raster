@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 
 const cam = @import("camera.zig");
 const cameraio = @import("cameraio.zig");
@@ -41,18 +43,18 @@ pub const CVec2U32 = extern struct {
 };
 
 pub const CVec2F64 = extern struct {
-    x: f64,
-    y: f64,
+    x: F,
+    y: F,
 };
 
 pub const CVec3F64 = extern struct {
-    x: f64,
-    y: f64,
-    z: f64,
+    x: F,
+    y: F,
+    z: F,
 };
 
 pub const CArray2DF64 = extern struct {
-    elems: [*c]const f64,
+    elems: [*c]const F,
     rows_num: usize,
     cols_num: usize,
 };
@@ -64,7 +66,7 @@ pub const CArray2DUsize = extern struct {
 };
 
 pub const CArray3DF64 = extern struct {
-    elems: [*c]const f64,
+    elems: [*c]const F,
     dim0: usize,
     dim1: usize,
     dim2: usize,
@@ -79,7 +81,7 @@ pub const CDims5Usize = extern struct {
 };
 
 pub const CImageBufferF64 = extern struct {
-    elems: [*c]f64,
+    elems: [*c]F,
     dims: CDims5Usize,
 };
 
@@ -89,55 +91,55 @@ pub const CCameraInput = extern struct {
     pos_world: CVec3F64,
     rot_world: CVec3F64,
     roi_cent_world: CVec3F64,
-    focal_length: f64,
+    focal_length: F,
     sub_sample: u8,
     distortion_model: u32,
-    distortion_k1: f64,
-    distortion_k2: f64,
-    distortion_k3: f64,
-    distortion_k4: f64,
-    distortion_k5: f64,
-    distortion_k6: f64,
-    distortion_p1: f64,
-    distortion_p2: f64,
+    distortion_k1: F,
+    distortion_k2: F,
+    distortion_k3: F,
+    distortion_k4: F,
+    distortion_k5: F,
+    distortion_k6: F,
+    distortion_p1: F,
+    distortion_p2: F,
     distortion_poly_order: u32,
     distortion_poly_has_forward: u8,
     distortion_poly_has_inverse: u8,
-    distortion_poly_forward_u: [10]f64,
-    distortion_poly_forward_v: [10]f64,
-    distortion_poly_inverse_u: [10]f64,
-    distortion_poly_inverse_v: [10]f64,
+    distortion_poly_forward_u: [10]F,
+    distortion_poly_forward_v: [10]F,
+    distortion_poly_inverse_u: [10]F,
+    distortion_poly_inverse_v: [10]F,
     coord_sys: u32,
     psf_type: u32,
-    psf_sigma_x: f64,
-    psf_sigma_y: f64,
-    psf_theta: f64,
-    psf_support_rad: f64,
+    psf_sigma_x: F,
+    psf_sigma_y: F,
+    psf_theta: F,
+    psf_support_rad: F,
     psf_separable: u32,
 };
 
 pub const CFuncShaderParams = extern struct {
-    coord_scale_0: f64,
-    coord_scale_1: f64,
-    coord_offset_0: f64,
-    coord_offset_1: f64,
-    output_scale: f64,
-    output_offset: f64,
-    wave_num_scalar_0: f64,
-    wave_num_scalar_1: f64,
-    wave_num_rgb_0: f64,
-    wave_num_rgb_1: f64,
-    wave_num_rgb_2: f64,
-    eggbox_mean: f64,
-    eggbox_contrast: f64,
-    eggbox_pitch_0: f64,
-    eggbox_pitch_1: f64,
-    eggbox_phase_0: f64,
-    eggbox_phase_1: f64,
-    extra_0: f64,
-    extra_1: f64,
-    extra_2: f64,
-    extra_3: f64,
+    coord_scale_0: F,
+    coord_scale_1: F,
+    coord_offset_0: F,
+    coord_offset_1: F,
+    output_scale: F,
+    output_offset: F,
+    wave_num_scalar_0: F,
+    wave_num_scalar_1: F,
+    wave_num_rgb_0: F,
+    wave_num_rgb_1: F,
+    wave_num_rgb_2: F,
+    eggbox_mean: F,
+    eggbox_contrast: F,
+    eggbox_pitch_0: F,
+    eggbox_pitch_1: F,
+    eggbox_phase_0: F,
+    eggbox_phase_1: F,
+    extra_0: F,
+    extra_1: F,
+    extra_2: F,
+    extra_3: F,
 };
 
 pub const CMeshInput = extern struct {
@@ -152,8 +154,8 @@ pub const CMeshInput = extern struct {
     sample_mode: u32,
     bits: c_int,
     scaling_tag: u32,
-    scaling_min: f64,
-    scaling_max: f64,
+    scaling_min: F,
+    scaling_max: F,
     nodal_field: CArray3DF64,
     scale_over: u32,
     func_shader_builtin: u32,
@@ -176,22 +178,22 @@ pub const CRasterConfig = extern struct {
     report: u32,
     tile_size_min: u16,
     tile_size_max: u16,
-    background_value: f64,
+    background_value: F,
     disk_save_overlap: u8,
     tile_size_override: u16,
     save_format: u32,
     save_bits: u32,
     save_scaling: u32,
-    save_scaling_min: f64,
-    save_scaling_max: f64,
+    save_scaling_min: F,
+    save_scaling_max: F,
 };
 
 const MeshInputBuilt = struct {
     mesh_input: mo.MeshInput,
-    disp_array: ?ndarray.NDArray(f64) = null,
-    uvs_array: ?ndarray.NDArray(f64) = null,
-    texture_array: ?ndarray.NDArray(f64) = null,
-    nodal_field_array: ?ndarray.NDArray(f64) = null,
+    disp_array: ?ndarray.NDArray(F) = null,
+    uvs_array: ?ndarray.NDArray(F) = null,
+    texture_array: ?ndarray.NDArray(F) = null,
+    nodal_field_array: ?ndarray.NDArray(F) = null,
 
     fn deinit(self: *MeshInputBuilt, allocator: std.mem.Allocator) void {
         if (self.disp_array) |*disp_array| {
@@ -250,7 +252,7 @@ pub export fn rileyGetLastError(
 
 fn cVec3ToVec3(in_vec: CVec3F64) vector.Vec3f {
     return vector.initVec3(
-        f64,
+        F,
         in_vec.x,
         in_vec.y,
         in_vec.z,
@@ -633,8 +635,8 @@ fn bitsFromC(bits: c_int) !?u8 {
 
 fn scaleStrategyFromC(
     scaling_tag: u32,
-    scaling_min: f64,
-    scaling_max: f64,
+    scaling_min: F,
+    scaling_max: F,
 ) !imageops.ScaleStrategy {
     return switch (scaling_tag) {
         0 => .none,
@@ -650,7 +652,7 @@ fn buildCoordsFromC(in_coords: *const CArray2DF64) !meshio.Coords {
         return error.InvalidCoordsShape;
     }
     const coords_slice = try cConstSlice(
-        f64,
+        F,
         in_coords.elems,
         in_coords.rows_num * in_coords.cols_num,
     );
@@ -679,14 +681,14 @@ fn buildArray2DF64(
     allocator: std.mem.Allocator,
     in_array: *const CArray2DF64,
     cols_num_expected: ?usize,
-) !ndarray.NDArray(f64) {
+) !ndarray.NDArray(F) {
     if (cols_num_expected) |expected_cols_num| {
         if (in_array.cols_num != expected_cols_num) {
             return error.InvalidArray2DShape;
         }
     }
     const slice_in = try cConstSlice(
-        f64,
+        F,
         in_array.elems,
         in_array.rows_num * in_array.cols_num,
     );
@@ -694,7 +696,7 @@ fn buildArray2DF64(
         in_array.rows_num,
         in_array.cols_num,
     };
-    return try ndarray.NDArray(f64).init(
+    return try ndarray.NDArray(F).init(
         allocator,
         @constCast(slice_in),
         dims[0..],
@@ -704,16 +706,16 @@ fn buildArray2DF64(
 fn buildArray3DF64(
     allocator: std.mem.Allocator,
     in_array: *const CArray3DF64,
-) !ndarray.NDArray(f64) {
+) !ndarray.NDArray(F) {
     const dims = array3ToDims(in_array.*);
     const elems_num = dims[0] * dims[1] * dims[2];
     const slice_in = try cConstSlice(
-        f64,
+        F,
         in_array.elems,
         elems_num,
     );
     var dims_mut = dims;
-    return try ndarray.NDArray(f64).init(
+    return try ndarray.NDArray(F).init(
         allocator,
         @constCast(slice_in),
         dims_mut[0..],
@@ -724,7 +726,7 @@ fn buildTextureArray(
     allocator: std.mem.Allocator,
     in_array: *const CArray3DF64,
     channels_num: usize,
-) !ndarray.NDArray(f64) {
+) !ndarray.NDArray(F) {
     const dims = array3ToDims(in_array.*);
     if (dims[0] != channels_num or dims[1] == 0 or dims[2] == 0) {
         return error.InvalidTextureShape;
@@ -737,7 +739,7 @@ fn buildOptionalFieldFromC(
     in_array: *const CArray3DF64,
 ) !struct {
     field: ?meshio.Field,
-    array: ?ndarray.NDArray(f64),
+    array: ?ndarray.NDArray(F),
 } {
     const dims = array3ToDims(in_array.*);
     if (dims[0] == 0 or dims[1] == 0 or dims[2] == 0) {
@@ -948,7 +950,7 @@ fn buildMeshInput(
             built.nodal_field_array = nodal_built.array;
         },
         3 => {
-            var uvs_array_opt: ?ndarray.NDArray(f64) = null;
+            var uvs_array_opt: ?ndarray.NDArray(F) = null;
             if (in_mesh.uvs.rows_num > 0 and in_mesh.uvs.cols_num > 0) {
                 uvs_array_opt = try buildArray2DF64(
                     allocator,
@@ -972,7 +974,7 @@ fn buildMeshInput(
             built.uvs_array = uvs_array_opt;
         },
         4 => {
-            var uvs_array_opt: ?ndarray.NDArray(f64) = null;
+            var uvs_array_opt: ?ndarray.NDArray(F) = null;
             if (in_mesh.uvs.rows_num > 0 and in_mesh.uvs.cols_num > 0) {
                 uvs_array_opt = try buildArray2DF64(
                     allocator,
@@ -1180,18 +1182,18 @@ fn initRenderGroups(
 fn buildImageBuffer(
     allocator: std.mem.Allocator,
     in_buffer: *const CImageBufferF64,
-) !ndarray.NDArray(f64) {
+) !ndarray.NDArray(F) {
     const dims = dimsToArray(in_buffer.dims);
     var elems_num: usize = 1;
     for (dims) |dim| {
         elems_num *= dim;
     }
     const image_slice = try cMutSlice(
-        f64,
+        F,
         in_buffer.elems,
         elems_num,
     );
-    return try ndarray.NDArray(f64).init(
+    return try ndarray.NDArray(F).init(
         allocator,
         image_slice,
         dims[0..],
@@ -1247,10 +1249,10 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
         .distortion_poly_order = @intFromEnum(cam.PolynomialOrder.quadratic),
         .distortion_poly_has_forward = 0,
         .distortion_poly_has_inverse = 0,
-        .distortion_poly_forward_u = [_]f64{0.0} ** 10,
-        .distortion_poly_forward_v = [_]f64{0.0} ** 10,
-        .distortion_poly_inverse_u = [_]f64{0.0} ** 10,
-        .distortion_poly_inverse_v = [_]f64{0.0} ** 10,
+        .distortion_poly_forward_u = [_]F{0.0} ** 10,
+        .distortion_poly_forward_v = [_]F{0.0} ** 10,
+        .distortion_poly_inverse_u = [_]F{0.0} ** 10,
+        .distortion_poly_inverse_v = [_]F{0.0} ** 10,
         .coord_sys = @intFromEnum(in_camera.coord_sys),
         .psf_type = 0,
         .psf_sigma_x = 0.0,
@@ -1404,7 +1406,7 @@ fn rasterSceneInternal(
         cam_in.subpixel_center_map = spx_map;
     }
 
-    var image_arr_opt: ?ndarray.NDArray(f64) = null;
+    var image_arr_opt: ?ndarray.NDArray(F) = null;
     if (out_image) |image_buffer| {
         image_arr_opt = try buildImageBuffer(allocator, image_buffer);
     }
@@ -1454,9 +1456,9 @@ pub export fn rileyPosFillFrameFromRot(
     in_coords: *const CArray2DF64,
     pixels_num: CVec2U32,
     pixels_size: CVec2F64,
-    focal_length: f64,
+    focal_length: F,
     rot_world: CVec3F64,
-    frame_fill: f64,
+    frame_fill: F,
     out_pos: *CVec3F64,
 ) c_int {
     clearLastError();
@@ -1518,9 +1520,9 @@ pub export fn rileyPosFillFrameFromRotOverMeshes(
     meshes_len: usize,
     pixels_num: CVec2U32,
     pixels_size: CVec2F64,
-    focal_length: f64,
+    focal_length: F,
     rot_world: CVec3F64,
-    frame_fill: f64,
+    frame_fill: F,
     out_pos: *CVec3F64,
 ) c_int {
     clearLastError();

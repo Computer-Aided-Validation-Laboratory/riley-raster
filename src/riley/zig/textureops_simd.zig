@@ -9,6 +9,7 @@
 const std = @import("std");
 
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const cfg = buildconfig.config;
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
@@ -106,7 +107,7 @@ fn getPxWide(
         if (is_contiguous) {
             samp_res[ch] = base_slice[first_off..][0..S].*;
         } else {
-            var px_res: [S]f64 = undefined;
+            var px_res: [S]F = undefined;
             const tap_offsets_arr: [S]usize = v_tap_offsets;
             for (0..S) |ii| {
                 px_res[ii] = base_slice[tap_offsets_arr[ii]];
@@ -162,11 +163,11 @@ pub inline fn sampleLinearOneLane(
     texture: anytype,
     tex_x_i: isize,
     tex_y_i: isize,
-    tex_x_frac: f64,
-    tex_y_frac: f64,
-) [CH]f64 {
-    const samp_coeff_x = [2]f64{ 1.0 - tex_x_frac, tex_x_frac };
-    const samp_coeff_y = [2]f64{ 1.0 - tex_y_frac, tex_y_frac };
+    tex_x_frac: F,
+    tex_y_frac: F,
+) [CH]F {
+    const samp_coeff_x = [2]F{ 1.0 - tex_x_frac, tex_x_frac };
+    const samp_coeff_y = [2]F{ 1.0 - tex_y_frac, tex_y_frac };
     return sampleConvOneLane(
         CH,
         2,
@@ -184,9 +185,9 @@ inline fn sampleConvOneLane(
     texture: anytype,
     tex_x_i: isize,
     tex_y_i: isize,
-    samp_coeff_x: [TAP]f64,
-    samp_coeff_y: [TAP]f64,
-) [CH]f64 {
+    samp_coeff_x: [TAP]F,
+    samp_coeff_y: [TAP]F,
+) [CH]F {
     @setEvalBranchQuota(40000);
     const tap_offset = @as(isize, @intCast(TAP)) / 2 - 1;
     const tex_start_x = tex_x_i - tap_offset;
@@ -195,13 +196,13 @@ inline fn sampleConvOneLane(
     const tex_cols = @as(isize, @intCast(texture.cols_num));
     const tex_rows = @as(isize, @intCast(texture.rows_num));
 
-    var samp_res: [CH]f64 = [_]f64{0.0} ** CH;
+    var samp_res: [CH]F = [_]F{0.0} ** CH;
 
     if (tex_start_x >= 0 and tex_start_x + @as(isize, @intCast(TAP)) <= tex_cols and
         tex_start_y >= 0 and tex_start_y + @as(isize, @intCast(TAP)) <= tex_rows)
     {
-        const v_samp_coeff_x: @Vector(TAP, f64) = samp_coeff_x;
-        const v_samp_coeff_y: @Vector(TAP, f64) = samp_coeff_y;
+        const v_samp_coeff_x: @Vector(TAP, F) = samp_coeff_x;
+        const v_samp_coeff_y: @Vector(TAP, F) = samp_coeff_y;
         const stride_y = texture.array.strides[1];
 
         const samp_coeff_sum = @reduce(.Add, v_samp_coeff_x) *
@@ -219,7 +220,7 @@ inline fn sampleConvOneLane(
 
             inline for (0..CH) |ch| {
                 const plane_slice = texture.array.getPlaneSlice(ch);
-                const v_row: @Vector(TAP, f64) = plane_slice[row_off..][0..TAP].*;
+                const v_row: @Vector(TAP, F) = plane_slice[row_off..][0..TAP].*;
                 samp_res[ch] += @reduce(.Add, v_row * v_samp_coeff_x) * wy_val;
             }
         }
@@ -228,7 +229,7 @@ inline fn sampleConvOneLane(
             samp_res[ch] *= inv_samp_coeff_sum;
         }
     } else {
-        var samp_coeff_sum: f64 = 0.0;
+        var samp_coeff_sum: F = 0.0;
         for (0..TAP) |jj| {
             for (0..TAP) |ii| {
                 const w = samp_coeff_x[ii] * samp_coeff_y[jj];
@@ -300,7 +301,7 @@ inline fn sampleConvWide(
 
     const v_splat_one: VecSF = @splat(1.0);
     const v_inv_w_sum = @select(
-        f64,
+        F,
         @abs(v_samp_coeff_sum) < @as(VecSF, @splat(tol.texture.samp_coeff_sum)),
         v_splat_one,
         v_splat_one / v_samp_coeff_sum,
@@ -331,12 +332,12 @@ fn cubicCoeffCatmullRomSIMD(v_x: VecSF) VecSF {
         v_splat_two;
 
     var samp_res = @select(
-        f64,
+        F,
         v_mask_inner,
         v_w1,
         @as(VecSF, @splat(0.0)),
     );
-    samp_res = @select(f64, v_mask_outer, v_w2, samp_res);
+    samp_res = @select(F, v_mask_outer, v_w2, samp_res);
     return samp_res;
 }
 
@@ -359,8 +360,8 @@ fn cubicCoeffMitchellNetravaliSIMD(v_x: VecSF) VecSF {
         @as(VecSF, @splat(-12.0 * B - 48.0 * C)) * v_r +
         @as(VecSF, @splat(8.0 * B + 24.0 * C))) / @as(VecSF, @splat(6.0)));
 
-    var samp_res = @select(f64, v_mask_inner, v_w1, @as(VecSF, @splat(0.0)));
-    samp_res = @select(f64, v_mask_outer, v_w2, samp_res);
+    var samp_res = @select(F, v_mask_inner, v_w1, @as(VecSF, @splat(0.0)));
+    samp_res = @select(F, v_mask_outer, v_w2, samp_res);
     return samp_res;
 }
 
@@ -379,15 +380,15 @@ fn cubicBSplineCoeffSIMD(v_x: VecSF) VecSF {
     const v_t = v_splat_two - v_r;
     const v_w2 = v_t * v_t * v_t / @as(VecSF, @splat(6.0));
 
-    var samp_res = @select(f64, v_mask_inner, v_w1, @as(VecSF, @splat(0.0)));
-    samp_res = @select(f64, v_mask_outer, v_w2, samp_res);
+    var samp_res = @select(F, v_mask_inner, v_w1, @as(VecSF, @splat(0.0)));
+    samp_res = @select(F, v_mask_outer, v_w2, samp_res);
     return samp_res;
 }
 
 fn lanczos3CoeffSIMD(v_x: VecSF) VecSF {
     const v_ax = @abs(v_x);
-    var samp_res_arr: [S]f64 = undefined;
-    const ax_arr: [S]f64 = v_ax;
+    var samp_res_arr: [S]F = undefined;
+    const ax_arr: [S]F = v_ax;
     for (0..S) |ii| {
         samp_res_arr[ii] = lanczos3Coeff(ax_arr[ii]);
     }
@@ -423,9 +424,9 @@ fn quinticBSplineCoeffSIMD(v_x: VecSF) VecSF {
         @as(VecSF, @splat(1.0 / 12.0))) * v_u - @as(VecSF, @splat(1.0 / 24.0))) *
         v_u + @as(VecSF, @splat(1.0 / 120.0)));
 
-    var samp_res = @select(f64, v_mask_inner, v_w1, @as(VecSF, @splat(0.0)));
-    samp_res = @select(f64, v_mask_middle, v_w2, samp_res);
-    samp_res = @select(f64, v_mask_outer, v_w3, samp_res);
+    var samp_res = @select(F, v_mask_inner, v_w1, @as(VecSF, @splat(0.0)));
+    samp_res = @select(F, v_mask_middle, v_w2, samp_res);
+    samp_res = @select(F, v_mask_outer, v_w3, samp_res);
     return samp_res;
 }
 
@@ -437,15 +438,15 @@ pub inline fn sampleOneLane(
     comptime CH: usize,
     comptime config: TextureSampleConfig,
     texture: anytype,
-    u: f64,
-    v: f64,
-) [CH]f64 {
+    u: F,
+    v: F,
+) [CH]F {
     const tex_cols_minus_1_f = @as(
-        f64,
+        F,
         @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
     );
     const tex_rows_minus_1_f = @as(
-        f64,
+        F,
         @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
     );
 
@@ -455,8 +456,8 @@ pub inline fn sampleOneLane(
     const tex_x_i = @as(isize, @intFromFloat(@floor(xf)));
     const tex_y_i = @as(isize, @intFromFloat(@floor(yf)));
 
-    const tex_x_frac = xf - @as(f64, @floatFromInt(tex_x_i));
-    const tex_y_frac = yf - @as(f64, @floatFromInt(tex_y_i));
+    const tex_x_frac = xf - @as(F, @floatFromInt(tex_x_i));
+    const tex_y_frac = yf - @as(F, @floatFromInt(tex_y_i));
 
     return switch (config.sample) {
         .nearest => getPx(
@@ -512,7 +513,7 @@ pub inline fn sampleOneLane(
                     );
                 },
                 .lut => blk: {
-                    const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
+                    const lut_size_f = @as(F, @floatFromInt(lut_size - 1));
                     const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
                     const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
                     break :blk sampleConvOneLane(
@@ -581,7 +582,7 @@ pub inline fn sampleOneLane(
                     );
                 },
                 .lut => blk: {
-                    const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
+                    const lut_size_f = @as(F, @floatFromInt(lut_size - 1));
                     const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
                     const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
                     break :blk sampleConvOneLane(
@@ -625,10 +626,10 @@ pub inline fn sampleLanes(
     v_v: VecSF,
 ) [CH]VecSF {
     @setEvalBranchQuota(40000);
-    var samp_res_arr: [CH][S]f64 = [_][S]f64{[_]f64{0.0} ** S} ** CH;
+    var samp_res_arr: [CH][S]F = [_][S]F{[_]F{0.0} ** S} ** CH;
     const mask_arr: [S]bool = v_mask_active;
-    const u_arr: [S]f64 = v_u;
-    const v_arr: [S]f64 = v_v;
+    const u_arr: [S]F = v_u;
+    const v_arr: [S]F = v_v;
 
     for (0..S) |ii| {
         if (mask_arr[ii]) {
@@ -662,20 +663,20 @@ pub inline fn sampleLanesTri3(
     v_v: VecSF,
 ) [CH]VecSF {
     @setEvalBranchQuota(40000);
-    var samp_res_arr: [CH][S]f64 = [_][S]f64{[_]f64{0.0} ** S} ** CH;
+    var samp_res_arr: [CH][S]F = [_][S]F{[_]F{0.0} ** S} ** CH;
     const mask_arr: [S]bool = v_mask_active;
-    const u_arr: [S]f64 = v_u;
-    const v_arr: [S]f64 = v_v;
+    const u_arr: [S]F = v_u;
+    const v_arr: [S]F = v_v;
 
     var active_lanes: [S]usize = undefined;
     var active_count: usize = 0;
 
     const tex_cols_minus_1_f = @as(
-        f64,
+        F,
         @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
     );
     const tex_rows_minus_1_f = @as(
-        f64,
+        F,
         @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
     );
     const tex_cols_minus_1_i = @as(isize, @intCast(texture.cols_num)) - 1;
@@ -752,11 +753,11 @@ pub inline fn sampleWide(
     @setEvalBranchQuota(40000);
     std.debug.assert(config.isValid());
     const tex_cols_minus_1_f = @as(
-        f64,
+        F,
         @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
     );
     const tex_rows_minus_1_f = @as(
-        f64,
+        F,
         @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
     );
 
@@ -765,8 +766,8 @@ pub inline fn sampleWide(
 
     var v_tex_x_i: [S]isize = undefined;
     var v_tex_y_i: [S]isize = undefined;
-    const tex_x_f_arr: [S]f64 = v_tex_x_f;
-    const tex_y_f_arr: [S]f64 = v_tex_y_f;
+    const tex_x_f_arr: [S]F = v_tex_x_f;
+    const tex_y_f_arr: [S]F = v_tex_y_f;
 
     for (0..S) |ii| {
         v_tex_x_i[ii] = @as(isize, @intFromFloat(@floor(tex_x_f_arr[ii])));
@@ -795,8 +796,8 @@ pub inline fn sampleWide(
             const TAP = 4;
             const tap_offset = @divTrunc(@as(isize, @intCast(TAP)), 2) - 1;
 
-            const tex_x_frac_arr: [S]f64 = v_tex_x_frac;
-            const tex_y_frac_arr: [S]f64 = v_tex_y_frac;
+            const tex_x_frac_arr: [S]F = v_tex_x_frac;
+            const tex_y_frac_arr: [S]F = v_tex_y_frac;
 
             const lut = switch (config.sample) {
                 .cubic_catmull_rom => catmull_rom_lut,
@@ -834,10 +835,10 @@ pub inline fn sampleWide(
                     break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
                 },
                 .lut => blk: {
-                    var coeffs_x_arr: [TAP][S]f64 = undefined;
-                    var coeffs_y_arr: [TAP][S]f64 = undefined;
+                    var coeffs_x_arr: [TAP][S]F = undefined;
+                    var coeffs_y_arr: [TAP][S]F = undefined;
                     for (0..S) |ii| {
-                        const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
+                        const lut_size_f = @as(F, @floatFromInt(lut_size - 1));
                         const ix = @as(
                             usize,
                             @intFromFloat(tex_x_frac_arr[ii] * lut_size_f),
@@ -854,18 +855,18 @@ pub inline fn sampleWide(
                     // Proper sum for LUT modes
                     v_samp_coeff_sum = @splat(0.0);
                     for (0..S) |ii| {
-                        var sum: f64 = 0.0;
+                        var sum: F = 0.0;
                         const ix = @as(
                             usize,
                             @intFromFloat(tex_x_frac_arr[ii] * @as(
-                                f64,
+                                F,
                                 @floatFromInt(lut_size - 1),
                             )),
                         );
                         const iy = @as(
                             usize,
                             @intFromFloat(tex_y_frac_arr[ii] * @as(
-                                f64,
+                                F,
                                 @floatFromInt(lut_size - 1),
                             )),
                         );
@@ -885,8 +886,8 @@ pub inline fn sampleWide(
                     break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
                 },
                 .lut_lerp => blk: {
-                    var coeffs_x_arr: [TAP][S]f64 = undefined;
-                    var coeffs_y_arr: [TAP][S]f64 = undefined;
+                    var coeffs_x_arr: [TAP][S]F = undefined;
+                    var coeffs_y_arr: [TAP][S]F = undefined;
                     v_samp_coeff_sum = @splat(0.0);
                     for (0..S) |ii| {
                         const coeffs_x_lane = getLerpSampCoeffs(
@@ -899,7 +900,7 @@ pub inline fn sampleWide(
                             lut,
                             tex_y_frac_arr[ii],
                         );
-                        var sum: f64 = 0.0;
+                        var sum: F = 0.0;
                         inline for (0..TAP) |kk| {
                             coeffs_x_arr[kk][ii] = coeffs_x_lane[kk];
                             coeffs_y_arr[kk][ii] = coeffs_y_lane[kk];
@@ -937,8 +938,8 @@ pub inline fn sampleWide(
             const TAP = 6;
             const tap_offset = @divTrunc(@as(isize, @intCast(TAP)), 2) - 1;
 
-            const tex_x_frac_arr: [S]f64 = v_tex_x_frac;
-            const tex_y_frac_arr: [S]f64 = v_tex_y_frac;
+            const tex_x_frac_arr: [S]F = v_tex_x_frac;
+            const tex_y_frac_arr: [S]F = v_tex_y_frac;
 
             const lut = switch (config.sample) {
                 .lanczos3 => lanczos3_lut,
@@ -978,11 +979,11 @@ pub inline fn sampleWide(
                     break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
                 },
                 .lut => blk: {
-                    var coeffs_x_arr: [TAP][S]f64 = undefined;
-                    var coeffs_y_arr: [TAP][S]f64 = undefined;
+                    var coeffs_x_arr: [TAP][S]F = undefined;
+                    var coeffs_y_arr: [TAP][S]F = undefined;
                     v_samp_coeff_sum = @splat(0.0);
                     for (0..S) |ii| {
-                        const lut_size_f = @as(f64, @floatFromInt(lut_size - 1));
+                        const lut_size_f = @as(F, @floatFromInt(lut_size - 1));
                         const ix = @as(
                             usize,
                             @intFromFloat(tex_x_frac_arr[ii] * lut_size_f),
@@ -991,7 +992,7 @@ pub inline fn sampleWide(
                             usize,
                             @intFromFloat(tex_y_frac_arr[ii] * lut_size_f),
                         );
-                        var sum: f64 = 0.0;
+                        var sum: F = 0.0;
                         inline for (0..TAP) |kk| {
                             coeffs_x_arr[kk][ii] = lut[ix][kk];
                             coeffs_y_arr[kk][ii] = lut[iy][kk];
@@ -1012,8 +1013,8 @@ pub inline fn sampleWide(
                     break :blk [2][TAP]VecSF{ coeffs_x, coeffs_y };
                 },
                 .lut_lerp => blk: {
-                    var coeffs_x_arr: [TAP][S]f64 = undefined;
-                    var coeffs_y_arr: [TAP][S]f64 = undefined;
+                    var coeffs_x_arr: [TAP][S]F = undefined;
+                    var coeffs_y_arr: [TAP][S]F = undefined;
                     v_samp_coeff_sum = @splat(0.0);
                     for (0..S) |ii| {
                         const coeffs_x_lane = getLerpSampCoeffs(
@@ -1026,7 +1027,7 @@ pub inline fn sampleWide(
                             lut,
                             tex_y_frac_arr[ii],
                         );
-                        var sum: f64 = 0.0;
+                        var sum: F = 0.0;
                         inline for (0..TAP) |kk| {
                             coeffs_x_arr[kk][ii] = coeffs_x_lane[kk];
                             coeffs_y_arr[kk][ii] = coeffs_y_lane[kk];

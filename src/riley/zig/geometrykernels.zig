@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const cfg = buildconfig.config;
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
@@ -24,10 +25,10 @@ const NDArray = @import("ndarray.zig").NDArray;
 const Vec3Slices = rops.Vec3Slices;
 const rastcfg = @import("rasterconfig.zig");
 
-pub const TRI_CENTROID_XI: f64 = 1.0 / 3.0;
-pub const TRI_CENTROID_ETA: f64 = 1.0 / 3.0;
-pub const QUAD_CENTROID_XI: f64 = 0.0;
-pub const QUAD_CENTROID_ETA: f64 = 0.0;
+pub const TRI_CENTROID_XI: F = 1.0 / 3.0;
+pub const TRI_CENTROID_ETA: F = 1.0 / 3.0;
+pub const QUAD_CENTROID_XI: F = 0.0;
+pub const QUAD_CENTROID_ETA: F = 0.0;
 
 pub const MeshType = enum {
     tri3,
@@ -70,10 +71,10 @@ pub const CoordSpace = enum {
 
 pub fn GeometryResult(comptime N: usize) type {
     return struct {
-        weights: ?[N]f64,
+        weights: ?[N]F,
         iters: u8,
-        xi_out: f64 = 0.0,
-        eta_out: f64 = 0.0,
+        xi_out: F = 0.0,
+        eta_out: F = 0.0,
     };
 }
 
@@ -92,10 +93,10 @@ pub fn GeometryResultSIMD(comptime N: usize) type {
 
 pub inline fn calcInvZClip(
     comptime N: usize,
-    nodes: Vec3Slices(f64),
-    weights: [N]f64,
-) f64 {
-    var sum_weighted_z: f64 = 0.0;
+    nodes: Vec3Slices(F),
+    weights: [N]F,
+) F {
+    var sum_weighted_z: F = 0.0;
 
     inline for (0..N) |ind| {
         sum_weighted_z += weights[ind] * nodes.z[ind];
@@ -105,9 +106,9 @@ pub inline fn calcInvZClip(
 }
 
 pub const NewtonParams = struct {
-    w_u_coeff: f64,
-    w_v_coeff: f64,
-    w_const: f64,
+    w_u_coeff: F,
+    w_v_coeff: F,
+    w_const: F,
 };
 
 pub fn Tri3Kernel() type {
@@ -118,7 +119,7 @@ pub fn Tri3Kernel() type {
         pub const coord_space = .raster;
         pub const solver_kind = .hyperb;
 
-        pub inline fn getInvElemArea(nodes: Vec3Slices(f64)) f64 {
+        pub inline fn getInvElemArea(nodes: Vec3Slices(F)) F {
             return 1.0 / rops.edgeFun3(
                 nodes.x[0],
                 nodes.y[0],
@@ -130,10 +131,10 @@ pub fn Tri3Kernel() type {
         }
 
         pub inline fn solveWeightsHyperb(
-            nodes: Vec3Slices(f64),
-            pixel_x: f64,
-            pixel_y: f64,
-            inv_area: f64,
+            nodes: Vec3Slices(F),
+            pixel_x: F,
+            pixel_y: F,
+            inv_area: F,
         ) GeometryResult(nodes_num) {
             const weights = getWeightsAt(nodes, pixel_x, pixel_y, inv_area);
 
@@ -145,12 +146,12 @@ pub fn Tri3Kernel() type {
         }
 
         pub inline fn getWeightsAt(
-            nodes: Vec3Slices(f64),
-            pixel_x: f64,
-            pixel_y: f64,
-            inv_area: f64,
-        ) [nodes_num]f64 {
-            return [_]f64{
+            nodes: Vec3Slices(F),
+            pixel_x: F,
+            pixel_y: F,
+            inv_area: F,
+        ) [nodes_num]F {
+            return [_]F{
                 rops.edgeFun3(
                     nodes.x[1],
                     nodes.y[1],
@@ -178,7 +179,7 @@ pub fn Tri3Kernel() type {
             };
         }
 
-        pub inline fn isInElement(weights: [nodes_num]f64) bool {
+        pub inline fn isInElement(weights: [nodes_num]F) bool {
             const edge_tol = tol.edge.tri_weight_inclusion;
 
             return weights[0] >= -edge_tol and
@@ -186,8 +187,8 @@ pub fn Tri3Kernel() type {
                 weights[2] >= -edge_tol;
         }
 
-        pub inline fn calcInvZ(nodes: Vec3Slices(f64), weights: [nodes_num]f64) f64 {
-            var inv_z: f64 = 0.0;
+        pub inline fn calcInvZ(nodes: Vec3Slices(F), weights: [nodes_num]F) F {
+            var inv_z: F = 0.0;
 
             inline for (0..nodes_num) |nn| {
                 inv_z += weights[nn] * (1.0 / nodes.z[nn]);
@@ -197,7 +198,7 @@ pub fn Tri3Kernel() type {
         }
 
         pub inline fn solveWeightsHyperbSIMD(
-            nodes: Vec3Slices(f64),
+            nodes: Vec3Slices(F),
             v_pixel_x: VecSF,
             v_pixel_y: VecSF,
             v_inv_area: VecSF,
@@ -218,7 +219,7 @@ pub fn Tri3Kernel() type {
         }
 
         pub inline fn getWeightsAtSIMD(
-            nodes: Vec3Slices(f64),
+            nodes: Vec3Slices(F),
             v_pixel_x: VecSF,
             v_pixel_y: VecSF,
             v_inv_area: VecSF,
@@ -273,7 +274,7 @@ pub fn Tri3Kernel() type {
             return v_inv_z;
         }
 
-        pub inline fn getSIMDInvZ(nodes: Vec3Slices(f64)) [nodes_num]VecSF {
+        pub inline fn getSIMDInvZ(nodes: Vec3Slices(F)) [nodes_num]VecSF {
             var out: [nodes_num]VecSF = undefined;
             inline for (0..nodes_num) |ii| {
                 out[ii] = @splat(1.0 / nodes.z[ii]);
@@ -315,28 +316,28 @@ pub fn Tri6Kernel() type {
             };
         }
 
-        pub inline fn domainViolation(xi: f64, eta: f64) f64 {
+        pub inline fn domainViolation(xi: F, eta: F) F {
             return @max(-xi, 0.0) + @max(-eta, 0.0) + @max(xi + eta - 1.0, 0.0);
         }
 
         pub inline fn solveWeightsNewton(
-            nodes: Vec3Slices(f64),
-            pixel_x: f64,
-            pixel_y: f64,
-            x_offset: f64,
-            y_offset: f64,
-            xi_seed: f64,
-            eta_seed: f64,
+            nodes: Vec3Slices(F),
+            pixel_x: F,
+            pixel_y: F,
+            x_offset: F,
+            y_offset: F,
+            xi_seed: F,
+            eta_seed: F,
         ) GeometryResult(nodes_num) {
-            var xi: f64 = 0.0;
-            var eta: f64 = 0.0;
+            var xi: F = 0.0;
+            var eta: F = 0.0;
 
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
 
-            var node_values: [nodes_num]f64 = undefined;
-            var deriv_nu: [nodes_num]f64 = undefined;
-            var deriv_nv: [nodes_num]f64 = undefined;
+            var node_values: [nodes_num]F = undefined;
+            var deriv_nu: [nodes_num]F = undefined;
+            var deriv_nv: [nodes_num]F = undefined;
 
             const result = newton.solveInverse(
                 nodes_num,
@@ -366,13 +367,13 @@ pub fn Tri6Kernel() type {
         }
 
         pub inline fn solveWeightsNewtonSIMD(
-            nodes: Vec3Slices(f64),
+            nodes: Vec3Slices(F),
             v_pixel_x: VecSF,
             v_pixel_y: VecSF,
             v_xi_seed: VecSF,
             v_eta_seed: VecSF,
-            x_offset: f64,
-            y_offset: f64,
+            x_offset: F,
+            y_offset: F,
         ) GeometryResultSIMD(nodes_num) {
             const v_target_x = v_pixel_x - @as(VecSF, @splat(x_offset));
             const v_target_y = v_pixel_y - @as(VecSF, @splat(y_offset));
@@ -412,7 +413,7 @@ pub fn Tri6Kernel() type {
             };
         }
 
-        pub inline fn calcInvZ(nodes: Vec3Slices(f64), weights: [nodes_num]f64) f64 {
+        pub inline fn calcInvZ(nodes: Vec3Slices(F), weights: [nodes_num]F) F {
             return calcInvZClip(nodes_num, nodes, weights);
         }
     };
@@ -427,21 +428,21 @@ pub fn Quad4IBIKernel() type {
         pub const solver_kind = .inv_bi;
 
         pub const BilinearParams = struct {
-            x_uv_coeff: f64,
-            x_u_coeff: f64,
-            x_v_coeff: f64,
-            x_const: f64,
-            y_uv_coeff: f64,
-            y_u_coeff: f64,
-            y_v_coeff: f64,
-            y_const: f64,
-            w_uv_coeff: f64,
-            w_u_coeff: f64,
-            w_v_coeff: f64,
-            w_const: f64,
+            x_uv_coeff: F,
+            x_u_coeff: F,
+            x_v_coeff: F,
+            x_const: F,
+            y_uv_coeff: F,
+            y_u_coeff: F,
+            y_v_coeff: F,
+            y_const: F,
+            w_uv_coeff: F,
+            w_u_coeff: F,
+            w_v_coeff: F,
+            w_const: F,
         };
 
-        pub inline fn getBilinearParams(nodes: Vec3Slices(f64)) BilinearParams {
+        pub inline fn getBilinearParams(nodes: Vec3Slices(F)) BilinearParams {
             return BilinearParams{
                 .x_uv_coeff = nodes.x[0] - nodes.x[1] + nodes.x[2] - nodes.x[3],
                 .x_u_coeff = nodes.x[1] - nodes.x[0],
@@ -459,10 +460,10 @@ pub fn Quad4IBIKernel() type {
         }
 
         const InvBiPoly = struct {
-            const_term: f64,
-            xi_term: f64,
-            eta_term: f64,
-            xi_eta_term: f64,
+            const_term: F,
+            xi_term: F,
+            eta_term: F,
+            xi_eta_term: F,
         };
 
         const InvBiResidual = struct {
@@ -471,14 +472,14 @@ pub fn Quad4IBIKernel() type {
         };
 
         const Candidate = struct {
-            xi: f64,
-            eta: f64,
-            resid_sq: f64,
+            xi: F,
+            eta: F,
+            resid_sq: F,
         };
 
-        inline fn buildWeights(xi: f64, eta: f64) [nodes_num]f64 {
-            const v_xi_terms = @Vector(2, f64){ 1.0 - xi, xi };
-            const v_eta_terms = @Vector(2, f64){ 1.0 - eta, eta };
+        inline fn buildWeights(xi: F, eta: F) [nodes_num]F {
+            const v_xi_terms = @Vector(2, F){ 1.0 - xi, xi };
+            const v_eta_terms = @Vector(2, F){ 1.0 - eta, eta };
             return .{
                 v_xi_terms[0] * v_eta_terms[0],
                 v_xi_terms[1] * v_eta_terms[0],
@@ -488,8 +489,8 @@ pub fn Quad4IBIKernel() type {
         }
 
         inline fn getInvBiResidual(
-            target_x: f64,
-            target_y: f64,
+            target_x: F,
+            target_y: F,
             solve_params: BilinearParams,
         ) InvBiResidual {
             return .{
@@ -511,10 +512,10 @@ pub fn Quad4IBIKernel() type {
         }
 
         inline fn solveOtherCoordFromXi(
-            xi: f64,
+            xi: F,
             residual: InvBiResidual,
-            denom_tol: f64,
-        ) ?f64 {
+            denom_tol: F,
+        ) ?F {
             const denom_x = residual.x.eta_term + (residual.x.xi_eta_term * xi);
             const denom_y = residual.y.eta_term + (residual.y.xi_eta_term * xi);
 
@@ -527,10 +528,10 @@ pub fn Quad4IBIKernel() type {
         }
 
         inline fn solveOtherCoordFromEta(
-            eta: f64,
+            eta: F,
             residual: InvBiResidual,
-            denom_tol: f64,
-        ) ?f64 {
+            denom_tol: F,
+        ) ?F {
             const denom_x = residual.x.xi_term + (residual.x.xi_eta_term * eta);
             const denom_y = residual.y.xi_term + (residual.y.xi_eta_term * eta);
 
@@ -543,12 +544,12 @@ pub fn Quad4IBIKernel() type {
         }
 
         inline fn rootsFromQuadratic(
-            a_coeff: f64,
-            b_coeff: f64,
-            c_coeff: f64,
-            zero_tol: f64,
-        ) struct { count: u8, roots: [2]f64 } {
-            var roots = [2]f64{ 0.0, 0.0 };
+            a_coeff: F,
+            b_coeff: F,
+            c_coeff: F,
+            zero_tol: F,
+        ) struct { count: u8, roots: [2]F } {
+            var roots = [2]F{ 0.0, 0.0 };
 
             if (@abs(a_coeff) < zero_tol) {
                 if (@abs(b_coeff) < zero_tol) {
@@ -586,10 +587,10 @@ pub fn Quad4IBIKernel() type {
 
         inline fn tryCandidate(
             best_candidate: *?Candidate,
-            xi: f64,
-            eta: f64,
+            xi: F,
+            eta: F,
             residual: InvBiResidual,
-            eps: f64,
+            eps: F,
         ) void {
             if (xi < -eps or xi > 1.0 + eps) return;
             if (eta < -eps or eta > 1.0 + eps) return;
@@ -617,10 +618,10 @@ pub fn Quad4IBIKernel() type {
         }
 
         pub inline fn solveWeightsInvBi(
-            pixel_x: f64,
-            pixel_y: f64,
-            x_offset: f64,
-            y_offset: f64,
+            pixel_x: F,
+            pixel_y: F,
+            x_offset: F,
+            y_offset: F,
             solve_params: BilinearParams,
         ) GeometryResult(nodes_num) {
             const eps = tol.geometry.bilinear_parametric_domain;
@@ -859,7 +860,7 @@ pub fn Quad4IBIKernel() type {
             return .{ .weights = null, .iters = 0 };
         }
 
-        pub inline fn calcInvZ(nodes: Vec3Slices(f64), weights: [nodes_num]f64) f64 {
+        pub inline fn calcInvZ(nodes: Vec3Slices(F), weights: [nodes_num]F) F {
             return calcInvZClip(nodes_num, nodes, weights);
         }
     };
@@ -897,28 +898,28 @@ pub fn Quad4NewtonKernel() type {
             };
         }
 
-        pub inline fn domainViolation(xi: f64, eta: f64) f64 {
+        pub inline fn domainViolation(xi: F, eta: F) F {
             return @max(@abs(xi) - 1.0, 0.0) + @max(@abs(eta) - 1.0, 0.0);
         }
 
         pub inline fn solveWeightsNewton(
-            nodes: Vec3Slices(f64),
-            pixel_x: f64,
-            pixel_y: f64,
-            x_offset: f64,
-            y_offset: f64,
-            xi_seed: f64,
-            eta_seed: f64,
+            nodes: Vec3Slices(F),
+            pixel_x: F,
+            pixel_y: F,
+            x_offset: F,
+            y_offset: F,
+            xi_seed: F,
+            eta_seed: F,
         ) GeometryResult(nodes_num) {
-            var xi: f64 = 0.0;
-            var eta: f64 = 0.0;
+            var xi: F = 0.0;
+            var eta: F = 0.0;
 
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
 
-            var node_values: [nodes_num]f64 = undefined;
-            var deriv_nu: [nodes_num]f64 = undefined;
-            var deriv_nv: [nodes_num]f64 = undefined;
+            var node_values: [nodes_num]F = undefined;
+            var deriv_nu: [nodes_num]F = undefined;
+            var deriv_nv: [nodes_num]F = undefined;
 
             const result = newton.solveInverse(
                 nodes_num,
@@ -947,13 +948,13 @@ pub fn Quad4NewtonKernel() type {
         }
 
         pub inline fn solveWeightsNewtonSIMD(
-            nodes: Vec3Slices(f64),
+            nodes: Vec3Slices(F),
             v_pixel_x: VecSF,
             v_pixel_y: VecSF,
             v_xi_seed: VecSF,
             v_eta_seed: VecSF,
-            x_offset: f64,
-            y_offset: f64,
+            x_offset: F,
+            y_offset: F,
         ) GeometryResultSIMD(nodes_num) {
             const v_target_x = v_pixel_x - @as(VecSF, @splat(x_offset));
             const v_target_y = v_pixel_y - @as(VecSF, @splat(y_offset));
@@ -993,7 +994,7 @@ pub fn Quad4NewtonKernel() type {
             };
         }
 
-        pub inline fn calcInvZ(nodes: Vec3Slices(f64), weights: [nodes_num]f64) f64 {
+        pub inline fn calcInvZ(nodes: Vec3Slices(F), weights: [nodes_num]F) F {
             return calcInvZClip(nodes_num, nodes, weights);
         }
     };
@@ -1031,28 +1032,28 @@ pub fn Quad89Kernel(comptime N: usize) type {
             };
         }
 
-        pub inline fn domainViolation(xi: f64, eta: f64) f64 {
+        pub inline fn domainViolation(xi: F, eta: F) F {
             return @max(@abs(xi) - 1.0, 0.0) + @max(@abs(eta) - 1.0, 0.0);
         }
 
         pub inline fn solveWeightsNewton(
-            nodes: Vec3Slices(f64),
-            pixel_x: f64,
-            pixel_y: f64,
-            x_offset: f64,
-            y_offset: f64,
-            xi_seed: f64,
-            eta_seed: f64,
+            nodes: Vec3Slices(F),
+            pixel_x: F,
+            pixel_y: F,
+            x_offset: F,
+            y_offset: F,
+            xi_seed: F,
+            eta_seed: F,
         ) GeometryResult(nodes_num) {
-            var xi: f64 = 0.0;
-            var eta: f64 = 0.0;
+            var xi: F = 0.0;
+            var eta: F = 0.0;
 
             const target_x = pixel_x - x_offset;
             const target_y = pixel_y - y_offset;
 
-            var node_values: [nodes_num]f64 = undefined;
-            var deriv_nu: [nodes_num]f64 = undefined;
-            var deriv_nv: [nodes_num]f64 = undefined;
+            var node_values: [nodes_num]F = undefined;
+            var deriv_nu: [nodes_num]F = undefined;
+            var deriv_nv: [nodes_num]F = undefined;
 
             const result = newton.solveInverse(
                 nodes_num,
@@ -1082,13 +1083,13 @@ pub fn Quad89Kernel(comptime N: usize) type {
         }
 
         pub inline fn solveWeightsNewtonSIMD(
-            nodes: Vec3Slices(f64),
+            nodes: Vec3Slices(F),
             v_pixel_x: VecSF,
             v_pixel_y: VecSF,
             v_xi_seed: VecSF,
             v_eta_seed: VecSF,
-            x_offset: f64,
-            y_offset: f64,
+            x_offset: F,
+            y_offset: F,
         ) GeometryResultSIMD(nodes_num) {
             const v_target_x = v_pixel_x - @as(VecSF, @splat(x_offset));
             const v_target_y = v_pixel_y - @as(VecSF, @splat(y_offset));
@@ -1128,7 +1129,7 @@ pub fn Quad89Kernel(comptime N: usize) type {
             };
         }
 
-        pub inline fn calcInvZ(nodes: Vec3Slices(f64), weights: [nodes_num]f64) f64 {
+        pub inline fn calcInvZ(nodes: Vec3Slices(F), weights: [nodes_num]F) F {
             return calcInvZClip(nodes_num, nodes, weights);
         }
     };

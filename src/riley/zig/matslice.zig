@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const print = std.debug.print;
 
 const testing = std.testing;
@@ -321,7 +323,7 @@ pub fn MatSliceOps(comptime T: type) type {
 }
 
 //TODO: transfer missing tests from stack matrix
-const TestType = f64;
+const TestType = F;
 const talloc = testing.allocator;
 
 test "MatSlice.getSlice" {

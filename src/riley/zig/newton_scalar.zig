@@ -7,6 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const cfg = buildconfig.config;
 const shapefun = @import("shapefun.zig");
 const common = @import("newton_common.zig");
@@ -16,18 +17,18 @@ const tol = cfg.tolerance;
 
 pub fn solveInverse(
     comptime N: usize,
-    target_screen_x: f64,
-    target_screen_y: f64,
-    element_node_x: []const f64,
-    element_node_y: []const f64,
-    element_node_w: []const f64,
-    xi_in: f64,
-    eta_in: f64,
-    xi_out: *f64,
-    eta_out: *f64,
-    node_values: *[N]f64,
-    deriv_n_xi: *[N]f64,
-    deriv_n_eta: *[N]f64,
+    target_screen_x: F,
+    target_screen_y: F,
+    element_node_x: []const F,
+    element_node_y: []const F,
+    element_node_w: []const F,
+    xi_in: F,
+    eta_in: F,
+    xi_out: *F,
+    eta_out: *F,
+    node_values: *[N]F,
+    deriv_n_xi: *[N]F,
+    deriv_n_eta: *[N]F,
 ) common.NewtonResult {
     const resid_tol = tol.newton.residual;
     const det_tol = tol.newton.determinant;
@@ -36,8 +37,8 @@ pub fn solveInverse(
     var xi = xi_in;
     var eta = eta_in;
 
-    var term_x: [N]f64 = undefined;
-    var term_y: [N]f64 = undefined;
+    var term_x: [N]F = undefined;
+    var term_y: [N]F = undefined;
     inline for (0..N) |nn| {
         term_x[nn] = target_screen_x * element_node_w[nn] - element_node_x[nn];
         term_y[nn] = target_screen_y * element_node_w[nn] - element_node_y[nn];
@@ -45,8 +46,8 @@ pub fn solveInverse(
 
     var met_residual = false;
     var iters: u8 = 0;
-    var residual_x: f64 = 0.0;
-    var residual_y: f64 = 0.0;
+    var residual_x: F = 0.0;
+    var residual_y: F = 0.0;
 
     for (0..iter_max) |ii| {
         iters = @intCast(ii + 1);
@@ -54,10 +55,10 @@ pub fn solveInverse(
 
         residual_x = 0.0;
         residual_y = 0.0;
-        var jacobian_11: f64 = 0.0;
-        var jacobian_12: f64 = 0.0;
-        var jacobian_21: f64 = 0.0;
-        var jacobian_22: f64 = 0.0;
+        var jacobian_11: F = 0.0;
+        var jacobian_12: F = 0.0;
+        var jacobian_21: F = 0.0;
+        var jacobian_22: F = 0.0;
 
         for (0..N) |nn| {
             residual_x += node_values[nn] * term_x[nn];

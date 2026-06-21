@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 
 const common = @import("cameramodels_common.zig");
 const cfg = buildconfig.config;
@@ -182,7 +183,7 @@ pub fn inverseDistortionSIMD(
         }
 
         const v_safe_det = @select(
-            f64,
+            F,
             v_active,
             v_det,
             @as(VecSF, @splat(1.0)),
@@ -190,8 +191,8 @@ pub fn inverseDistortionSIMD(
         const v_delta_x = (-f0 * fwd.j22 + fwd.j12 * f1) / v_safe_det;
         const v_delta_y = (fwd.j21 * f0 - fwd.j11 * f1) / v_safe_det;
 
-        v_x += @select(f64, v_active, v_delta_x, @as(VecSF, @splat(0.0)));
-        v_y += @select(f64, v_active, v_delta_y, @as(VecSF, @splat(0.0)));
+        v_x += @select(F, v_active, v_delta_x, @as(VecSF, @splat(0.0)));
+        v_y += @select(F, v_active, v_delta_y, @as(VecSF, @splat(0.0)));
 
         const v_met_delta =
             (@abs(v_delta_x) < v_delta_tol) & (@abs(v_delta_y) < v_delta_tol);
@@ -318,14 +319,14 @@ fn evaluatePolynomialMapWithJacSIMD(
         dv += @as(VecSF, @splat(polynomial.coeffs_v[ii])) * basis;
 
         if (pu > 0) {
-            const basis_dx = @as(VecSF, @splat(@as(f64, @floatFromInt(pu)))) *
+            const basis_dx = @as(VecSF, @splat(@as(F, @floatFromInt(pu)))) *
                 powSmallSIMD(x, pu - 1) *
                 powSmallSIMD(y, pv);
             ddu_dx += @as(VecSF, @splat(polynomial.coeffs_u[ii])) * basis_dx;
             ddv_dx += @as(VecSF, @splat(polynomial.coeffs_v[ii])) * basis_dx;
         }
         if (pv > 0) {
-            const basis_dy = @as(VecSF, @splat(@as(f64, @floatFromInt(pv)))) *
+            const basis_dy = @as(VecSF, @splat(@as(F, @floatFromInt(pv)))) *
                 powSmallSIMD(x, pu) *
                 powSmallSIMD(y, pv - 1);
             ddu_dy += @as(VecSF, @splat(polynomial.coeffs_u[ii])) * basis_dy;
@@ -379,7 +380,7 @@ fn invertPolynomialMapSIMD(
         }
 
         const v_safe_det = @select(
-            f64,
+            F,
             v_active,
             v_det,
             @as(VecSF, @splat(1.0)),
@@ -387,8 +388,8 @@ fn invertPolynomialMapSIMD(
         const v_delta_x = (-f0 * fwd.j22 + fwd.j12 * f1) / v_safe_det;
         const v_delta_y = (fwd.j21 * f0 - fwd.j11 * f1) / v_safe_det;
 
-        v_x += @select(f64, v_active, v_delta_x, @as(VecSF, @splat(0.0)));
-        v_y += @select(f64, v_active, v_delta_y, @as(VecSF, @splat(0.0)));
+        v_x += @select(F, v_active, v_delta_x, @as(VecSF, @splat(0.0)));
+        v_y += @select(F, v_active, v_delta_y, @as(VecSF, @splat(0.0)));
 
         const v_met_delta =
             (@abs(v_delta_x) < v_delta_tol) & (@abs(v_delta_y) < v_delta_tol);

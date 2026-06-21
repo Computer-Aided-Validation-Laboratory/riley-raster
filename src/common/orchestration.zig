@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 
 const NDArray = @import("../riley/zig/ndarray.zig").NDArray;
 const iio = @import("../riley/zig/imageio.zig");
@@ -35,8 +37,8 @@ pub const default_multimesh_dir_paths = [_][]const u8{
     "data/simple/quad9_twoelems/",
 };
 
-pub const default_pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
-pub const default_focal_length: f64 = 50.0e-3;
+pub const default_pixel_size = [_]F{ 5.3e-6, 5.3e-6 };
+pub const default_focal_length: F = 50.0e-3;
 
 pub fn defaultRotation() Rotation {
     return Rotation.init(0, 0, 0);
@@ -97,7 +99,7 @@ fn initCameraForSimDataAllFrames(
     sim_data: *const meshio.SimData,
     mesh_type: gk.MeshType,
     pixel_num: [2]u32,
-    fov_scale: f64,
+    fov_scale: F,
 ) !CameraPrepared {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -163,7 +165,7 @@ pub fn prepareSingleMeshCase(
     test_type: []const u8,
     mesh_type: gk.MeshType,
     pixel_num: [2]u32,
-    fov_scale: f64,
+    fov_scale: F,
     data_dir_root: []const u8,
 ) !SingleMeshPrepared {
     const suffix = testTypeSuffix(test_type);
@@ -209,7 +211,7 @@ pub fn initCameraForCoords(
     allocator: std.mem.Allocator,
     coords: *const meshio.Coords,
     pixel_num: [2]u32,
-    fov_scale: f64,
+    fov_scale: F,
 ) !CameraPrepared {
     return try initCameraForCoordsWithRotation(
         allocator,
@@ -224,7 +226,7 @@ pub fn initCameraForCoordsWithRotation(
     allocator: std.mem.Allocator,
     coords: *const meshio.Coords,
     pixel_num: [2]u32,
-    fov_scale: f64,
+    fov_scale: F,
     rot: Rotation,
 ) !CameraPrepared {
     const cam_pos = cameraops.posFillFrameFromRot(
@@ -253,8 +255,8 @@ pub fn initStereoCamerasForCoords(
     allocator: std.mem.Allocator,
     coords: *const meshio.Coords,
     pixel_num: [2]u32,
-    fov_scale: f64,
-    half_angle_deg: f64,
+    fov_scale: F,
+    half_angle_deg: F,
 ) ![2]CameraPrepared {
     const half_angle_rad = half_angle_deg * std.math.pi / 180.0;
     return .{
@@ -279,7 +281,7 @@ pub fn initCameraForMeshes(
     allocator: std.mem.Allocator,
     mesh_inputs: []mo.MeshInput,
     pixel_num: [2]u32,
-    fov_scale: f64,
+    fov_scale: F,
 ) !CameraPrepared {
     const rot = defaultRotation();
     const roi_pos = cameraops.roiCentOverMeshes(mesh_inputs);
@@ -356,13 +358,13 @@ fn buildGradientRgbField(
     field: meshio.Field,
 ) !meshio.Field {
     const num_coords = coords.mat.rows_num;
-    var rgb_field_arr = try NDArray(f64).initFlat(
+    var rgb_field_arr = try NDArray(F).initFlat(
         allocator,
         &[_]usize{ field.array.dims[0], num_coords, 3 },
     );
 
-    var min_x: f64 = std.math.inf(f64);
-    var max_x: f64 = -std.math.inf(f64);
+    var min_x: F = std.math.inf(F);
+    var max_x: F = -std.math.inf(F);
     for (0..num_coords) |nn| {
         const x_val = coords.x(nn);
         if (x_val < min_x) min_x = x_val;
@@ -375,9 +377,9 @@ fn buildGradientRgbField(
             const x_val = coords.x(nn);
             const t = if (range_x > 0) (x_val - min_x) / range_x else 0.5;
 
-            var rr: f64 = 0;
-            var gg: f64 = 0;
-            var bb: f64 = 0;
+            var rr: F = 0;
+            var gg: F = 0;
+            var bb: F = 0;
 
             if (t < 0.5) {
                 const t_scaled = t * 2.0;

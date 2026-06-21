@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 const cam = @import("../riley/zig/camera.zig");
 const csvio = @import("../riley/zig/csvio.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
@@ -20,37 +22,37 @@ const shapefun = @import("../riley/zig/shapefun.zig");
 const vecstack = @import("../riley/zig/vecstack.zig");
 
 pub const Vec3 = struct {
-    x: f64,
-    y: f64,
-    z: f64,
+    x: F,
+    y: F,
+    z: F,
 };
 
 pub const invalid_grid_idx = std.math.maxInt(usize);
 
 pub const SamplePoint = struct {
-    xi_true: f64,
-    eta_true: f64,
+    xi_true: F,
+    eta_true: F,
     row_idx: usize = invalid_grid_idx,
     col_idx: usize = invalid_grid_idx,
 };
 
 pub const SampleRecord = struct {
-    xi_true: f64,
-    eta_true: f64,
-    xi_rec: f64,
-    eta_rec: f64,
-    xi_reproj: f64,
-    eta_reproj: f64,
-    err_xi: f64,
-    err_eta: f64,
-    err_param: f64,
-    ideal_target_x: f64,
-    ideal_target_y: f64,
-    observed_target_x: f64,
-    observed_target_y: f64,
-    observed_reproj_x: f64,
-    observed_reproj_y: f64,
-    reproj_err: f64,
+    xi_true: F,
+    eta_true: F,
+    xi_rec: F,
+    eta_rec: F,
+    xi_reproj: F,
+    eta_reproj: F,
+    err_xi: F,
+    err_eta: F,
+    err_param: F,
+    ideal_target_x: F,
+    ideal_target_y: F,
+    observed_target_x: F,
+    observed_target_y: F,
+    observed_reproj_x: F,
+    observed_reproj_y: F,
+    reproj_err: F,
     iters: u8,
     converged: bool,
     in_domain: bool,
@@ -59,13 +61,13 @@ pub const SampleRecord = struct {
 };
 
 pub const ScalarStats = struct {
-    min: f64,
-    q1: f64,
-    median: f64,
-    q3: f64,
-    max: f64,
-    mean: f64,
-    rms: f64,
+    min: F,
+    q1: F,
+    median: F,
+    q3: F,
+    max: F,
+    mean: F,
+    rms: F,
 };
 
 pub const CaseSummary = struct {
@@ -82,22 +84,22 @@ pub const CaseSummary = struct {
 
 pub fn ElementNodes(comptime N: usize) type {
     return struct {
-        x: [N]f64,
-        y: [N]f64,
-        z: [N]f64,
+        x: [N]F,
+        y: [N]F,
+        z: [N]F,
     };
 }
 
 pub fn forwardMapWorld(
     comptime N: usize,
-    xi: f64,
-    eta: f64,
-    node_values: *[N]f64,
-    deriv_xi: *[N]f64,
-    deriv_eta: *[N]f64,
-    node_x: []const f64,
-    node_y: []const f64,
-    node_z: []const f64,
+    xi: F,
+    eta: F,
+    node_values: *[N]F,
+    deriv_xi: *[N]F,
+    deriv_eta: *[N]F,
+    node_x: []const F,
+    node_y: []const F,
+    node_z: []const F,
 ) Vec3 {
     shapefun.shapeFunctions(
         N,
@@ -108,9 +110,9 @@ pub fn forwardMapWorld(
         deriv_eta,
     );
 
-    var x_world: f64 = 0.0;
-    var y_world: f64 = 0.0;
-    var z_world: f64 = 0.0;
+    var x_world: F = 0.0;
+    var y_world: F = 0.0;
+    var z_world: F = 0.0;
 
     for (0..N) |nn| {
         const node_weight = node_values[nn];
@@ -127,11 +129,11 @@ pub fn forwardMapWorld(
 }
 
 fn forwardMapQuad4Ibi(
-    xi: f64,
-    eta: f64,
-    node_x: []const f64,
-    node_y: []const f64,
-    node_z: []const f64,
+    xi: F,
+    eta: F,
+    node_x: []const F,
+    node_y: []const F,
+    node_z: []const F,
 ) Vec3 {
     const weight_0 = (1.0 - xi) * (1.0 - eta);
     const weight_1 = xi * (1.0 - eta);
@@ -150,11 +152,11 @@ fn forwardMapQuad4Ibi(
 
 pub fn forwardMapWorldForMeshType(
     comptime mesh_type: gk.MeshType,
-    xi: f64,
-    eta: f64,
-    node_x: []const f64,
-    node_y: []const f64,
-    node_z: []const f64,
+    xi: F,
+    eta: F,
+    node_x: []const F,
+    node_y: []const F,
+    node_z: []const F,
 ) Vec3 {
     const N = comptime mesh_type.getNodesNum();
 
@@ -168,9 +170,9 @@ pub fn forwardMapWorldForMeshType(
         );
     }
 
-    var node_values: [N]f64 = undefined;
-    var deriv_xi: [N]f64 = undefined;
-    var deriv_eta: [N]f64 = undefined;
+    var node_values: [N]F = undefined;
+    var deriv_xi: [N]F = undefined;
+    var deriv_eta: [N]F = undefined;
     return forwardMapWorld(
         N,
         xi,
@@ -189,7 +191,7 @@ fn worldToCamera(
     world_point: Vec3,
 ) vecstack.Vec3f {
     return matrix.Mat44Ops.mulVec3(
-        f64,
+        F,
         camera.world_to_cam_mat,
         .{ .slice = .{ world_point.x, world_point.y, world_point.z } },
     );
@@ -198,7 +200,7 @@ fn worldToCamera(
 pub fn worldToIdealRaster(
     camera: *const cam.CameraPrepared,
     world_point: Vec3,
-) [2]f64 {
+) [2]F {
     const coord_cam = worldToCamera(camera, world_point);
     const focal_px = camera.calcFocalPx();
     const offsets = camera.calcRasterOffsets();
@@ -212,8 +214,8 @@ pub fn worldToIdealRaster(
 
 pub fn idealToObservedRaster(
     camera: *const cam.CameraPrepared,
-    ideal_xy: [2]f64,
-) ![2]f64 {
+    ideal_xy: [2]F,
+) ![2]F {
     const focal_px = camera.calcFocalPx();
     const offsets = camera.calcRasterOffsets();
     const x_norm = (ideal_xy[0] - offsets.x_off) / focal_px.fx;
@@ -232,8 +234,8 @@ pub fn idealToObservedRaster(
 
 pub fn observedToIdealRaster(
     camera: *const cam.CameraPrepared,
-    observed_xy: [2]f64,
-) ![2]f64 {
+    observed_xy: [2]F,
+) ![2]F {
     const focal_px = camera.calcFocalPx();
     const offsets = camera.calcRasterOffsets();
     const x_dist = (observed_xy[0] - offsets.x_off) / focal_px.fx;
@@ -253,9 +255,9 @@ pub fn observedToIdealRaster(
 pub fn worldNodesToSolverCoords(
     comptime mesh_type: gk.MeshType,
     camera: *const cam.CameraPrepared,
-    node_x: []const f64,
-    node_y: []const f64,
-    node_z: []const f64,
+    node_x: []const F,
+    node_y: []const F,
+    node_z: []const F,
 ) ElementNodes(mesh_type.getNodesNum()) {
     const N = comptime mesh_type.getNodesNum();
     const focal_px = camera.calcFocalPx();
@@ -290,7 +292,7 @@ pub fn worldNodesToSolverCoords(
 pub fn toVec3Slices(
     comptime N: usize,
     nodes: *const ElementNodes(N),
-) rops.Vec3Slices(f64) {
+) rops.Vec3Slices(F) {
     return .{
         .x = @constCast(nodes.x[0..]),
         .y = @constCast(nodes.y[0..]),
@@ -300,8 +302,8 @@ pub fn toVec3Slices(
 
 pub const SolveResult = struct {
     converged: bool,
-    xi_rec: f64,
-    eta_rec: f64,
+    xi_rec: F,
+    eta_rec: F,
     iters: u8,
 };
 
@@ -309,8 +311,8 @@ pub fn solveParentFromIdealRaster(
     comptime mesh_type: gk.MeshType,
     camera: *const cam.CameraPrepared,
     solver_nodes: *const ElementNodes(mesh_type.getNodesNum()),
-    ideal_x: f64,
-    ideal_y: f64,
+    ideal_x: F,
+    ideal_y: F,
 ) SolveResult {
     const offsets = camera.calcRasterOffsets();
     const nodes = toVec3Slices(mesh_type.getNodesNum(), solver_nodes);
@@ -441,8 +443,8 @@ pub fn solveParentFromIdealRaster(
 
 pub fn isInParametricDomain(
     comptime mesh_type: gk.MeshType,
-    xi: f64,
-    eta: f64,
+    xi: F,
+    eta: F,
 ) bool {
     const eps = 1.0e-8;
     return switch (mesh_type) {
@@ -470,11 +472,11 @@ pub fn appendStructuredSamples(
 ) !struct { rows_num: usize, cols_num: usize } {
     if (mesh_type == .tri3 or mesh_type == .tri6) {
         for (0..grid_num) |rr| {
-            const eta = @as(f64, @floatFromInt(rr)) /
-                @as(f64, @floatFromInt(grid_num - 1));
+            const eta = @as(F, @floatFromInt(rr)) /
+                @as(F, @floatFromInt(grid_num - 1));
             for (0..grid_num) |cc| {
-                const xi = @as(f64, @floatFromInt(cc)) /
-                    @as(f64, @floatFromInt(grid_num - 1));
+                const xi = @as(F, @floatFromInt(cc)) /
+                    @as(F, @floatFromInt(grid_num - 1));
                 if (xi + eta <= 1.0) {
                     try list.append(allocator, .{
                         .xi_true = xi,
@@ -492,12 +494,12 @@ pub fn appendStructuredSamples(
         const eta_max = 1.0;
         for (0..grid_num) |rr| {
             const eta = eta_min +
-                (@as(f64, @floatFromInt(rr)) /
-                    @as(f64, @floatFromInt(grid_num - 1))) * (eta_max - eta_min);
+                (@as(F, @floatFromInt(rr)) /
+                    @as(F, @floatFromInt(grid_num - 1))) * (eta_max - eta_min);
             for (0..grid_num) |cc| {
                 const xi = xi_min +
-                    (@as(f64, @floatFromInt(cc)) /
-                        @as(f64, @floatFromInt(grid_num - 1))) * (xi_max - xi_min);
+                    (@as(F, @floatFromInt(cc)) /
+                        @as(F, @floatFromInt(grid_num - 1))) * (xi_max - xi_min);
                 try list.append(allocator, .{
                     .xi_true = xi,
                     .eta_true = eta,
@@ -511,44 +513,44 @@ pub fn appendStructuredSamples(
     return .{ .rows_num = grid_num, .cols_num = grid_num };
 }
 
-fn quantileFromSorted(sorted_vals: []const f64, q: f64) f64 {
+fn quantileFromSorted(sorted_vals: []const F, q: F) F {
     if (sorted_vals.len == 0) {
-        return std.math.nan(f64);
+        return std.math.nan(F);
     }
     if (sorted_vals.len == 1) {
         return sorted_vals[0];
     }
 
-    const idx_f = q * @as(f64, @floatFromInt(sorted_vals.len - 1));
+    const idx_f = q * @as(F, @floatFromInt(sorted_vals.len - 1));
     const idx_lo: usize = @intFromFloat(@floor(idx_f));
     const idx_hi: usize = @intFromFloat(@ceil(idx_f));
-    const frac = idx_f - @as(f64, @floatFromInt(idx_lo));
+    const frac = idx_f - @as(F, @floatFromInt(idx_lo));
 
     return sorted_vals[idx_lo] * (1.0 - frac) + sorted_vals[idx_hi] * frac;
 }
 
 pub fn calcScalarStats(
     allocator: std.mem.Allocator,
-    vals: []const f64,
+    vals: []const F,
 ) !ScalarStats {
-    const sorted_vals = try allocator.alloc(f64, vals.len);
+    const sorted_vals = try allocator.alloc(F, vals.len);
     defer allocator.free(sorted_vals);
     @memcpy(sorted_vals, vals);
     std.sort.pdq(
-        f64,
+        F,
         sorted_vals,
         {},
-        std.sort.asc(f64),
+        std.sort.asc(F),
     );
 
-    var sum: f64 = 0.0;
-    var sum_sq: f64 = 0.0;
+    var sum: F = 0.0;
+    var sum_sq: F = 0.0;
     for (vals) |val| {
         sum += val;
         sum_sq += val * val;
     }
 
-    const inv_len = 1.0 / @as(f64, @floatFromInt(vals.len));
+    const inv_len = 1.0 / @as(F, @floatFromInt(vals.len));
     return .{
         .min = sorted_vals[0],
         .q1 = quantileFromSorted(sorted_vals, 0.25),
@@ -690,13 +692,13 @@ pub fn writeScalarMapCsv(
     file_name: []const u8,
     rows_num: usize,
     cols_num: usize,
-    vals: []const f64,
+    vals: []const F,
 ) !void {
     const Ctx = struct {
-        vals: []const f64,
+        vals: []const F,
         cols_num: usize,
 
-        fn getVal(self: @This(), rr: usize, cc: usize) f64 {
+        fn getVal(self: @This(), rr: usize, cc: usize) F {
             return self.vals[rr * self.cols_num + cc];
         }
     };
@@ -722,9 +724,9 @@ pub fn writeScalarMapBmp(
     file_name_no_ext: []const u8,
     rows_num: usize,
     cols_num: usize,
-    vals: []const f64,
+    vals: []const F,
 ) !void {
-    var image = try ndarray.NDArray(f64).initFlat(
+    var image = try ndarray.NDArray(F).initFlat(
         allocator,
         &[_]usize{ 1, rows_num, cols_num },
     );
@@ -761,9 +763,9 @@ pub fn writeBinaryMaskBmp(
     file_name_no_ext: []const u8,
     rows_num: usize,
     cols_num: usize,
-    vals: []const f64,
+    vals: []const F,
 ) !void {
-    var image = try ndarray.NDArray(f64).initFlat(
+    var image = try ndarray.NDArray(F).initFlat(
         allocator,
         &[_]usize{ 1, rows_num, cols_num },
     );
@@ -793,10 +795,10 @@ pub fn writeBinaryMaskBmp(
     );
 }
 
-pub fn compareTol(stats: ScalarStats, tol_val: f64) struct {
-    median_ratio: f64,
-    q3_ratio: f64,
-    max_ratio: f64,
+pub fn compareTol(stats: ScalarStats, tol_val: F) struct {
+    median_ratio: F,
+    q3_ratio: F,
+    max_ratio: F,
 } {
     return .{
         .median_ratio = stats.median / tol_val,

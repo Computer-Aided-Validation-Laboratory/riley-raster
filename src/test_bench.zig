@@ -11,6 +11,7 @@ const common = @import("common/benchcommon.zig");
 const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 const cfg = buildconfig.config;
 const gk = @import("riley/zig/geometrykernels.zig");
 const mo = @import("riley/zig/meshops.zig");
@@ -51,7 +52,7 @@ test "Unified Benchmark Tests" {
         gold_dir: []const u8,
         out_dir: []const u8,
         is_sphere: bool = false,
-        fov_scale: f64 = 1.0,
+        fov_scale: F = 1.0,
     }{
         .{
             .name = "fullraster",

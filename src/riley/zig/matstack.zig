@@ -9,6 +9,8 @@
 const std = @import("std");
 const print = std.debug.print;
 const expectEqual = std.testing.expectEqual;
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 
 const vecstack = @import("vecstack.zig");
 const VecStack = vecstack.VecStack;
@@ -17,10 +19,10 @@ const Vec3T = vecstack.Vec3T;
 const Vec2f = vecstack.Vec2f;
 const Vec3f = vecstack.Vec3f;
 
-const TestType = f64;
-pub const Mat22f = Mat22T(f64);
-pub const Mat33f = Mat33T(f64);
-pub const Mat44f = Mat44T(f64);
+const TestType = F;
+pub const Mat22f = Mat22T(buildconfig.F);
+pub const Mat33f = Mat33T(buildconfig.F);
+pub const Mat44f = Mat44T(buildconfig.F);
 
 pub fn MatStack(
     comptime rows_n: comptime_int,

@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const iio = @import("imageio.zig");
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 
 // Parallelism convention:
 // Let each render group g have W_g work-capable threads, including the caller.
@@ -54,7 +55,7 @@ pub const RasterConfig = struct {
     tile_size_override: ?u16 = null,
     tile_size_min: u16 = 4,
     tile_size_max: u16 = 256,
-    background_value: f64 = 0.0,
+    background_value: F = 0.0,
     hull_mode: HullMode = .on_no_fallback,
     newton_seed_mode: NewtonSeedMode = .centroid,
     newton_seed_reuse: NewtonSeedReuse = .off,

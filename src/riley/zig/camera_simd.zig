@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const cameramodels = @import("cameramodels.zig");
 const cfg = buildconfig.config;
 const S = buildconfig.SimdWidth;
@@ -24,14 +25,14 @@ fn calcActiveMask(lane_count: usize) VecSB {
 }
 
 fn storeIdealPairs(
-    ideal_pixel_centers: []f64,
+    ideal_pixel_centers: []F,
     scratch_base: usize,
     lane_count: usize,
     v_x: VecSF,
     v_y: VecSF,
 ) void {
-    const x_arr: [S]f64 = v_x;
-    const y_arr: [S]f64 = v_y;
+    const x_arr: [S]F = v_x;
+    const y_arr: [S]F = v_y;
     for (0..lane_count) |ll| {
         common.storeIdealPairScratch(
             ideal_pixel_centers,
@@ -44,10 +45,10 @@ fn storeIdealPairs(
 
 fn calcObservedXVector(
     global_subx_start: usize,
-    step: f64,
-    off: f64,
+    step: F,
+    off: F,
 ) VecSF {
-    const v_start: VecSF = @splat(@as(f64, @floatFromInt(global_subx_start)));
+    const v_start: VecSF = @splat(@as(F, @floatFromInt(global_subx_start)));
     const v_lane: VecSF = @floatFromInt(std.simd.iota(usize, S));
     return (v_start + v_lane) * @as(VecSF, @splat(step)) +
         @as(VecSF, @splat(off));
@@ -91,7 +92,7 @@ pub fn fillTileIdealCentersPerTile(
     scratch_y_px_min: usize,
     scratch_y_px_max: usize,
     subpx_tile_size: usize,
-    ideal_pixel_centers: []f64,
+    ideal_pixel_centers: []F,
 ) !void {
     const sub_samp: usize = @intCast(camera.sub_sample);
     const start_x = scratch_x_px_min * sub_samp;
@@ -99,12 +100,12 @@ pub fn fillTileIdealCentersPerTile(
     const tile_w = (scratch_x_px_max - scratch_x_px_min) * sub_samp;
     const tile_h = (scratch_y_px_max - scratch_y_px_min) * sub_samp;
 
-    const step = 1.0 / @as(f64, @floatFromInt(camera.sub_sample));
-    const off = 0.5 / @as(f64, @floatFromInt(camera.sub_sample));
+    const step = 1.0 / @as(F, @floatFromInt(camera.sub_sample));
+    const off = 0.5 / @as(F, @floatFromInt(camera.sub_sample));
 
     for (0..tile_h) |jj| {
         const global_y = start_y + jj;
-        const observed_y = @as(f64, @floatFromInt(global_y)) * step + off;
+        const observed_y = @as(F, @floatFromInt(global_y)) * step + off;
         const v_observed_y: VecSF = @splat(observed_y);
         const scratch_row_off = jj * subpx_tile_size;
 
@@ -153,7 +154,7 @@ pub fn fillTileIdealCentersAffineJac(
     scratch_y_px_min: usize,
     scratch_y_px_max: usize,
     subpx_tile_size: usize,
-    ideal_pixel_centers: []f64,
+    ideal_pixel_centers: []F,
 ) void {
     const sub_samp: usize = @intCast(camera.sub_sample);
     const jac = &camera.pixel_center_jac;
@@ -162,13 +163,13 @@ pub fn fillTileIdealCentersAffineJac(
     const tile_w = (scratch_x_px_max - scratch_x_px_min) * sub_samp;
     const tile_h = (scratch_y_px_max - scratch_y_px_min) * sub_samp;
 
-    const step = 1.0 / @as(f64, @floatFromInt(camera.sub_sample));
-    const off = 0.5 / @as(f64, @floatFromInt(camera.sub_sample));
+    const step = 1.0 / @as(F, @floatFromInt(camera.sub_sample));
+    const off = 0.5 / @as(F, @floatFromInt(camera.sub_sample));
 
     for (0..tile_h) |jj| {
         const global_suby = start_y + jj;
         const pixel_y = global_suby / sub_samp;
-        const observed_y = @as(f64, @floatFromInt(global_suby)) * step + off;
+        const observed_y = @as(F, @floatFromInt(global_suby)) * step + off;
         const v_observed_y: VecSF = @splat(observed_y);
         const center_y = common.calcPixelCenterCoord(pixel_y);
         const scratch_row_off = jj * subpx_tile_size;
@@ -194,18 +195,18 @@ pub fn fillTileIdealCentersAffineJac(
                 continue;
             }
 
-            var ideal_x_arr: [S]f64 = undefined;
-            var ideal_y_arr: [S]f64 = undefined;
-            var j11_arr: [S]f64 = undefined;
-            var j12_arr: [S]f64 = undefined;
-            var j21_arr: [S]f64 = undefined;
-            var j22_arr: [S]f64 = undefined;
-            var delta_x_arr: [S]f64 = undefined;
+            var ideal_x_arr: [S]F = undefined;
+            var ideal_y_arr: [S]F = undefined;
+            var j11_arr: [S]F = undefined;
+            var j12_arr: [S]F = undefined;
+            var j21_arr: [S]F = undefined;
+            var j22_arr: [S]F = undefined;
+            var delta_x_arr: [S]F = undefined;
 
             for (0..lane_count) |ll| {
                 const global_subx = global_x_start + ll;
                 const pixel_x = global_subx / sub_samp;
-                const observed_x = @as(f64, @floatFromInt(global_subx)) *
+                const observed_x = @as(F, @floatFromInt(global_subx)) *
                     step + off;
                 const center_x = common.calcPixelCenterCoord(pixel_x);
                 ideal_x_arr[ll] = jac.get(&[_]usize{ pixel_y, pixel_x, 0 });
@@ -247,7 +248,7 @@ pub fn fillTileIdealCentersAffineJac(
 }
 
 pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
-    const eps: f64 = 0.25;
+    const eps: F = 0.25;
     for (0..camera.pixels_num[1]) |jj| {
         const y_c = common.calcPixelCenterCoord(jj);
         const v_center_y: VecSF = @splat(y_c);
@@ -259,7 +260,7 @@ pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
             const lane_count = @min(S, @as(usize, camera.pixels_num[0]) - ii);
             const v_active = calcActiveMask(lane_count);
 
-            var x_center_arr: [S]f64 = undefined;
+            var x_center_arr: [S]F = undefined;
             for (0..lane_count) |ll| {
                 x_center_arr[ll] = common.calcPixelCenterCoord(ii + ll);
             }
@@ -269,7 +270,7 @@ pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
             const v_x_minus = v_center_x - @as(VecSF, @splat(eps));
 
             if (common.isNoDistortion(camera.distortion)) {
-                const center_arr: [S]f64 = v_center_x;
+                const center_arr: [S]F = v_center_x;
                 for (0..lane_count) |ll| {
                     const px = ii + ll;
                     camera.pixel_center_jac.set(&[_]usize{ jj, px, 0 }, center_arr[ll]);
@@ -314,12 +315,12 @@ pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
             );
             const inv_two_eps: VecSF = @splat(0.5 / eps);
 
-            const center_x_arr: [S]f64 = center.x;
-            const center_y_arr: [S]f64 = center.y;
-            const j11_arr: [S]f64 = (x_p.x - x_m.x) * inv_two_eps;
-            const j12_arr: [S]f64 = (y_p.x - y_m.x) * inv_two_eps;
-            const j21_arr: [S]f64 = (x_p.y - x_m.y) * inv_two_eps;
-            const j22_arr: [S]f64 = (y_p.y - y_m.y) * inv_two_eps;
+            const center_x_arr: [S]F = center.x;
+            const center_y_arr: [S]F = center.y;
+            const j11_arr: [S]F = (x_p.x - x_m.x) * inv_two_eps;
+            const j12_arr: [S]F = (y_p.x - y_m.x) * inv_two_eps;
+            const j21_arr: [S]F = (x_p.y - x_m.y) * inv_two_eps;
+            const j22_arr: [S]F = (y_p.y - y_m.y) * inv_two_eps;
             for (0..lane_count) |ll| {
                 const px = ii + ll;
                 camera.pixel_center_jac.set(&[_]usize{ jj, px, 0 }, center_x_arr[ll]);
@@ -335,9 +336,9 @@ pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
 
 pub fn calcPinholeRasterPoint(
     camera: *const CameraPrepared,
-    observed_x_px: f64,
-    observed_y_px: f64,
-) ![2]f64 {
+    observed_x_px: F,
+    observed_y_px: F,
+) ![2]F {
     return common.calcPinholeRasterPointScalar(
         camera,
         observed_x_px,

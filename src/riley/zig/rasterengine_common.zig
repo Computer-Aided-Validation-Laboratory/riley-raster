@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const cfg = buildconfig.config;
 const SimdWidth = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
@@ -39,11 +40,11 @@ pub const OverlapTarget = struct {
 };
 
 pub const SubpxDomain = struct {
-    step: f64,
-    offset: f64,
+    step: F,
+    offset: F,
     tile_size: usize,
-    x_off: f64,
-    y_off: f64,
+    x_off: F,
+    y_off: F,
 };
 
 pub const RasterBounds = struct {
@@ -51,8 +52,8 @@ pub const RasterBounds = struct {
     end_x_u: usize,
     start_y_u: usize,
     end_y_u: usize,
-    x_min_f: f64,
-    y_min_f: f64,
+    x_min_f: F,
+    y_min_f: F,
 };
 
 const scratchfilter = @import("scratchfilter.zig");
@@ -94,12 +95,12 @@ fn fillTileIdealCentersFullInMem(
     }
 }
 
-const ParamCoords = struct { xi: f64, eta: f64 };
+const ParamCoords = struct { xi: F, eta: F };
 
 fn calcTri3PerspectiveParamCoords(
-    inv_z: f64,
-    nodes_inv_z: [3]f64,
-    weights: [3]f64,
+    inv_z: F,
+    nodes_inv_z: [3]F,
+    weights: [3]F,
 ) ParamCoords {
     return .{
         .xi = weights[1] * nodes_inv_z[1] / inv_z,
@@ -109,11 +110,11 @@ fn calcTri3PerspectiveParamCoords(
 
 pub fn calcInterpParamCoords(
     comptime Geometry: type,
-    nodes_inv_z: [Geometry.nodes_num]f64,
-    weights: [Geometry.nodes_num]f64,
-    inv_z: f64,
-    xi_out: f64,
-    eta_out: f64,
+    nodes_inv_z: [Geometry.nodes_num]F,
+    weights: [Geometry.nodes_num]F,
+    inv_z: F,
+    xi_out: F,
+    eta_out: F,
 ) ParamCoords {
     if (comptime Geometry.solver_kind == .hyperb) {
         return calcTri3PerspectiveParamCoords(inv_z, nodes_inv_z, weights);
@@ -139,7 +140,7 @@ pub fn rasterDirectScalarCommon(
     subpx_domain: SubpxDomain,
     rast_bounds: RasterBounds,
     fields_num: u8,
-    nodes_coords: rops.Vec3Slices(f64),
+    nodes_coords: rops.Vec3Slices(F),
     shader: *const ShaderData,
     shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
     subpx_scratch: *ScratchBuffers,
@@ -154,7 +155,7 @@ pub fn rasterDirectScalarCommon(
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
 
-    var nodes_inv_z: [N]f64 = undefined;
+    var nodes_inv_z: [N]F = undefined;
     inline for (0..N) |nn| {
         nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
     }
@@ -249,7 +250,7 @@ pub fn rasterDirectScalarCommon(
             ctx_report.recordSolverIters(result.iters);
 
             if (result.weights == null) {
-                const nan = std.math.nan(f64);
+                const nan = std.math.nan(F);
                 rasterreport.recordPixelConvergedStats(
                     report_mode,
                     ctx_report,
@@ -367,8 +368,8 @@ fn rasterTileCommon(
     tile: rops.ActiveTile,
     overlaps_all: []const rops.OverlapBBox,
     meshes: []const MeshPrepared,
-    raster_hulls: []const ?NDArray(f64),
-    image_out_arr: *NDArray(f64),
+    raster_hulls: []const ?NDArray(F),
+    image_out_arr: *NDArray(F),
     subpx_scratch: *RasterBackend.SubpxScratchBuffers,
     fields_num: u8,
     subpx_tile_size: usize,
@@ -770,8 +771,8 @@ fn TileRangeContext(
         ctx_rast: rops.RasterContext,
         tiling: rops.TilingOverlaps,
         meshes: []const MeshPrepared,
-        raster_hulls: []const ?NDArray(f64),
-        image_out_arr: *NDArray(f64),
+        raster_hulls: []const ?NDArray(F),
+        image_out_arr: *NDArray(F),
         worker_states: []WorkerState,
         fields_num: u8,
         subpx_tile_size: usize,
@@ -788,8 +789,8 @@ pub fn rasterSceneCommon(
     requested_workers: u16,
     tiling: rops.TilingOverlaps,
     meshes: []const MeshPrepared,
-    raster_hulls: []const ?NDArray(f64),
-    image_out_arr: *NDArray(f64),
+    raster_hulls: []const ?NDArray(F),
+    image_out_arr: *NDArray(F),
 ) !void {
     const WorkerState = comptime ThreadState(RasterBackend, report_mode);
     const TileRangeCtx = TileRangeContext(RasterBackend, report_mode);

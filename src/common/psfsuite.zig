@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 const orch = @import("orchestration.zig");
 const tcfg = @import("testconfig.zig");
 const cam = @import("../riley/zig/camera.zig");
@@ -20,11 +22,11 @@ const shaderops = @import("../riley/zig/shaderops.zig");
 
 pub const gold_root = "gold/psf";
 pub const pixel_num = [_]u32{ 512, 512 };
-pub const fov_scale: f64 = 1.1;
+pub const fov_scale: F = 1.1;
 pub const tile_size_small: u16 = 16;
 pub const tile_size_large: u16 = 64;
-pub const grey_background_value: f64 = 0.5;
-pub const checker_squares_per_axis: f64 = 36.0;
+pub const grey_background_value: F = 0.5;
+pub const checker_squares_per_axis: F = 36.0;
 
 pub const midside_mesh_types = [_]gk.MeshType{ .tri6, .quad8, .quad9 };
 pub const full_mesh_types = [_]gk.MeshType{
@@ -46,7 +48,7 @@ pub const ShaderCase = struct {
     builtin: shaderops.FuncShaderBuiltin,
     params: shaderops.FuncShaderParams = .{},
     use_uvs: bool = true,
-    background_value: f64 = grey_background_value,
+    background_value: F = grey_background_value,
 };
 
 pub const PsfCase = struct {
@@ -186,7 +188,7 @@ fn baseRasterConfig(
     tile_size_override: ?u16,
     save_strategy: rastcfg.SaveStrategy,
     image_save_opts: []const iio.ImageSaveOpts,
-    background_value: f64,
+    background_value: F,
 ) rastcfg.RasterConfig {
     var config = tcfg.getRasterConfig(.gold);
     config.save_strategy = save_strategy;
@@ -201,7 +203,7 @@ pub fn renderCase(
     io: std.Io,
     render_case: RenderCase,
     tile_size_override: ?u16,
-) !NDArray(f64) {
+) !NDArray(F) {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();
@@ -315,10 +317,10 @@ pub fn saveAllGoldCases(
 }
 
 pub fn expectResultsApproxEq(
-    lhs: *const NDArray(f64),
-    rhs: *const NDArray(f64),
-    rel_tol: f64,
-    abs_tol: f64,
+    lhs: *const NDArray(F),
+    rhs: *const NDArray(F),
+    rel_tol: F,
+    abs_tol: F,
 ) !void {
     try std.testing.expectEqual(lhs.dims.len, rhs.dims.len);
     for (lhs.dims, rhs.dims) |ld, rd| {

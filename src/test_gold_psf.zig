@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 const Timestamp = std.Io.Clock.Timestamp;
 const common = @import("common/tests.zig");
 const suite = @import("common/psfsuite.zig");
@@ -108,7 +110,7 @@ test "Gold PSF Suite" {
 
     const suite_end = Timestamp.now(io, .awake);
     const suite_ms = @as(
-        f64,
+        F,
         @floatFromInt(suite_start.durationTo(suite_end).raw.nanoseconds),
     ) / 1e6;
     std.debug.print("Gold PSF Test Suite took {d:.3} ms\n", .{suite_ms});

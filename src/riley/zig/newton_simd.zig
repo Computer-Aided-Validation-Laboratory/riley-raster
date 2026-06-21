@@ -7,6 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const cfg = buildconfig.config;
 const shapefun = @import("shapefun.zig");
 const common = @import("newton_common.zig");
@@ -21,9 +22,9 @@ pub fn solveInverseSIMD(
     comptime N: usize,
     v_target_x: VecSF,
     v_target_y: VecSF,
-    elem_node_x: []const f64,
-    elem_node_y: []const f64,
-    elem_node_w: []const f64,
+    elem_node_x: []const F,
+    elem_node_y: []const F,
+    elem_node_w: []const F,
     v_xi_in: VecSF,
     v_eta_in: VecSF,
     v_xi_out: *VecSF,
@@ -107,7 +108,7 @@ pub fn solveInverseSIMD(
         if (!@reduce(.Or, v_active)) break;
 
         const v_safe_det = @select(
-            f64,
+            F,
             v_active,
             v_det,
             @as(VecSF, @splat(1.0)),
@@ -119,8 +120,8 @@ pub fn solveInverseSIMD(
         const v_deta = v_inv_det *
             (-v_jac21 * v_residual_x + v_jac11 * v_residual_y);
 
-        v_xi -= @select(f64, v_active, v_dxi, @as(VecSF, @splat(0.0)));
-        v_eta -= @select(f64, v_active, v_deta, @as(VecSF, @splat(0.0)));
+        v_xi -= @select(F, v_active, v_dxi, @as(VecSF, @splat(0.0)));
+        v_eta -= @select(F, v_active, v_deta, @as(VecSF, @splat(0.0)));
     }
 
     const v_splat_one: VecSF = @splat(1.0);

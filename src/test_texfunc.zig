@@ -20,6 +20,7 @@ const CameraInput = @import("riley/zig/camera.zig").CameraInput;
 const iio = @import("riley/zig/imageio.zig");
 const riley = @import("riley/zig/riley.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 
 const gold_root = "gold/texfunc";
 const data_root = "data/min";
@@ -186,7 +187,7 @@ fn runTexFuncCase(
     )) orelse return error.NoResult;
     defer aa.free(result.slice);
     const time_end = Timestamp.now(io, .awake);
-    const duration_ms = @as(f64, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
+    const duration_ms = @as(F, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
     const frames_num = if (result.dims.len == 5)
         result.dims[1]
@@ -340,7 +341,7 @@ test "TexFunc Suite" {
 
     const suite_end = Timestamp.now(io, .awake);
     const suite_ms = @as(
-        f64,
+        F,
         @floatFromInt(suite_start.durationTo(suite_end).raw.nanoseconds),
     ) / 1e6;
     std.debug.print("TexFunc Gold Test Suite took {d:.3} ms\n", .{suite_ms});

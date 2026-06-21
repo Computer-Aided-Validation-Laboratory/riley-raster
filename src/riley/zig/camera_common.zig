@@ -13,6 +13,7 @@ const matrix = @import("matstack.zig");
 const rotation = @import("rotation.zig");
 const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const cameramodels = @import("cameramodels.zig");
 const camera_scalar = @import("camera_scalar.zig");
 const camera_simd = @import("camera_simd.zig");
@@ -49,11 +50,11 @@ pub const PreparedPSF = cameramodels.PreparedPSF;
 
 pub const CameraInput = struct {
     pixels_num: [2]u32,
-    pixels_size: [2]f64,
+    pixels_size: [2]F,
     pos_world: vector.Vec3f,
     rot_world: rotation.Rotation,
     roi_cent_world: vector.Vec3f,
-    focal_length: f64,
+    focal_length: F,
     sub_sample: u8,
     distortion: DistortionModel = .none,
     psf: PointSpreadFunc = .{ .pixel_box = .{} },
@@ -77,10 +78,10 @@ pub const SubPixelCenterMap = enum {
 };
 
 pub const FOVScaling = struct {
-    plane_dist: f64,
-    plane_size: [2]f64,
-    leng_per_pixel: [2]f64,
-    pixel_per_leng: [2]f64,
+    plane_dist: F,
+    plane_size: [2]F,
+    leng_per_pixel: [2]F,
+    pixel_per_leng: [2]F,
 };
 
 pub const CameraPrepared = CameraPreparedType(camera_impl);
@@ -99,15 +100,15 @@ pub inline fn isNoDistortion(distortion: anytype) bool {
     };
 }
 
-pub inline fn calcPixelCenterCoord(pixel: usize) f64 {
-    return @as(f64, @floatFromInt(pixel)) + 0.5;
+pub inline fn calcPixelCenterCoord(pixel: usize) F {
+    return @as(F, @floatFromInt(pixel)) + 0.5;
 }
 
 pub inline fn storeIdealPairScratch(
-    ideal_pixel_centers: []f64,
+    ideal_pixel_centers: []F,
     scratch_idx: usize,
-    ideal_x: f64,
-    ideal_y: f64,
+    ideal_x: F,
+    ideal_y: F,
 ) void {
     ideal_pixel_centers[scratch_idx * 2 + 0] = ideal_x;
     ideal_pixel_centers[scratch_idx * 2 + 1] = ideal_y;
@@ -115,9 +116,9 @@ pub inline fn storeIdealPairScratch(
 
 pub fn calcPinholeRasterPointScalar(
     camera: anytype,
-    observed_x_px: f64,
-    observed_y_px: f64,
-) ![2]f64 {
+    observed_x_px: F,
+    observed_y_px: F,
+) ![2]F {
     const focal_px = camera.calcFocalPx();
     const offsets = camera.calcRasterOffsets();
     const x_dist = (observed_x_px - offsets.x_off) / focal_px.fx;
@@ -134,10 +135,10 @@ pub fn calcPinholeRasterPointScalar(
     };
 }
 
-fn calcSensorSize(pixels_num: [2]u32, pixels_size: [2]f64) [2]f64 {
+fn calcSensorSize(pixels_num: [2]u32, pixels_size: [2]F) [2]F {
     return .{
-        @as(f64, @floatFromInt(pixels_num[0])) * pixels_size[0],
-        @as(f64, @floatFromInt(pixels_num[1])) * pixels_size[1],
+        @as(F, @floatFromInt(pixels_num[0])) * pixels_size[0],
+        @as(F, @floatFromInt(pixels_num[1])) * pixels_size[1],
     };
 }
 
@@ -158,23 +159,23 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         const Self = @This();
 
         pixels_num: [2]u32,
-        pixels_size: [2]f64,
+        pixels_size: [2]F,
         pos_world: vector.Vec3f,
         rot_world: rotation.Rotation,
         roi_cent_world: vector.Vec3f,
-        focal_length: f64,
+        focal_length: F,
         sub_sample: u8,
-        sensor_size: [2]f64,
-        image_dims: [2]f64,
-        image_dist: f64,
+        sensor_size: [2]F,
+        image_dims: [2]F,
+        image_dist: F,
         cam_to_world_mat: matrix.Mat44f,
         world_to_cam_mat: matrix.Mat44f,
         distortion: DistortionModel,
         psf: PointSpreadFunc,
         prepared_psf: PreparedPSF,
         coord_sys: CameraCoordSys,
-        ideal_pixel_centers: ndarray.NDArray(f64),
-        pixel_center_jac: ndarray.NDArray(f64),
+        ideal_pixel_centers: ndarray.NDArray(F),
+        pixel_center_jac: ndarray.NDArray(F),
         subpixel_center_map: SubPixelCenterMap,
 
         pub fn init(
@@ -193,9 +194,9 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
 
             const pos_w = input.pos_world;
             const rot_matrix = input.rot_world.matrix;
-            const image_dist: f64 = pos_w.sub(input.roi_cent_world).vecLen();
+            const image_dist: F = pos_w.sub(input.roi_cent_world).vecLen();
 
-            const image_dims = [2]f64{
+            const image_dims = [2]F{
                 (image_dist / input.focal_length) * sensor_size[0],
                 (image_dist / input.focal_length) * sensor_size[1],
             };
@@ -204,7 +205,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
             cam_to_world_mat.insertColVec(3, 0, 3, pos_w);
             cam_to_world_mat.insertSubMat(0, 0, 3, 3, rot_matrix);
 
-            const world_to_cam_mat = matrix.Mat44Ops.inv(f64, cam_to_world_mat);
+            const world_to_cam_mat = matrix.Mat44Ops.inv(F, cam_to_world_mat);
 
             const ideal_pixel_centers = switch (subpixel_center_map) {
                 .full_in_mem => blk: {
@@ -214,14 +215,14 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
                         input.pixels_num[0] * sub_samp_u,
                         2,
                     };
-                    break :blk try ndarray.NDArray(f64).initFlat(
+                    break :blk try ndarray.NDArray(F).initFlat(
                         allocator,
                         dims[0..],
                     );
                 },
                 else => blk: {
                     const dims = [_]usize{ 0, 0, 2 };
-                    break :blk try ndarray.NDArray(f64).initFlat(
+                    break :blk try ndarray.NDArray(F).initFlat(
                         allocator,
                         dims[0..],
                     );
@@ -234,14 +235,14 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
                         input.pixels_num[0],
                         6,
                     };
-                    break :blk try ndarray.NDArray(f64).initFlat(
+                    break :blk try ndarray.NDArray(F).initFlat(
                         allocator,
                         dims[0..],
                     );
                 },
                 else => blk: {
                     const dims = [_]usize{ 0, 0, 6 };
-                    break :blk try ndarray.NDArray(f64).initFlat(
+                    break :blk try ndarray.NDArray(F).initFlat(
                         allocator,
                         dims[0..],
                     );
@@ -297,9 +298,9 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
 
         pub inline fn calcPinholeRasterPoint(
             self: *const Self,
-            observed_x_px: f64,
-            observed_y_px: f64,
-        ) ![2]f64 {
+            observed_x_px: F,
+            observed_y_px: F,
+        ) ![2]F {
             return CameraBackend.calcPinholeRasterPoint(
                 self,
                 observed_x_px,
@@ -323,7 +324,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
 
         fn initFullIdealPixelCenters(self: *Self) !void {
             const sub_samp_u: usize = @intCast(self.sub_sample);
-            const sub_samp_f = @as(f64, @floatFromInt(self.sub_sample));
+            const sub_samp_f = @as(F, @floatFromInt(self.sub_sample));
             const subpx_step = 1.0 / sub_samp_f;
             const subpx_off = 0.5 / sub_samp_f;
 
@@ -332,12 +333,12 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
             const stride_x = self.ideal_pixel_centers.strides[1];
 
             for (0..self.pixels_num[1] * sub_samp_u) |jj| {
-                const subpx_y_f = @as(f64, @floatFromInt(jj)) *
+                const subpx_y_f = @as(F, @floatFromInt(jj)) *
                     subpx_step + subpx_off;
                 const row_off = jj * stride_y;
 
                 for (0..self.pixels_num[0] * sub_samp_u) |ii| {
-                    const subpx_x_f = @as(f64, @floatFromInt(ii)) *
+                    const subpx_x_f = @as(F, @floatFromInt(ii)) *
                         subpx_step + subpx_off;
                     const ideal = try self.calcPinholeRasterPoint(
                         subpx_x_f,
@@ -350,17 +351,17 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
             }
         }
 
-        pub fn calcFocalPx(self: *const Self) struct { fx: f64, fy: f64 } {
+        pub fn calcFocalPx(self: *const Self) struct { fx: F, fy: F } {
             return .{
                 .fx = self.focal_length / self.pixels_size[0],
                 .fy = self.focal_length / self.pixels_size[1],
             };
         }
 
-        pub fn calcRasterOffsets(self: *const Self) struct { x_off: f64, y_off: f64 } {
+        pub fn calcRasterOffsets(self: *const Self) struct { x_off: F, y_off: F } {
             return .{
-                .x_off = 0.5 * @as(f64, @floatFromInt(self.pixels_num[0])),
-                .y_off = 0.5 * @as(f64, @floatFromInt(self.pixels_num[1])),
+                .x_off = 0.5 * @as(F, @floatFromInt(self.pixels_num[0])),
+                .y_off = 0.5 * @as(F, @floatFromInt(self.pixels_num[1])),
             };
         }
     };
@@ -370,29 +371,32 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
 // Unit Tests
 // --------------------------------------------------------------------------
 
-const test_tol: f64 = 1e-4;
+const test_tol: F = 1e-4;
+const unit_abs_tol: F = if (F == f32) 1e-4 else 1e-10;
+const unit_rel_tol: F = if (F == f32) 1e-3 else 1e-6;
+const sum_abs_tol: F = if (F == f32) 1e-5 else 1e-12;
 const pix_num = [_]u32{ 500, 500 };
-const pix_size = [_]f64{ 5e-3, 5e-3 };
-const foc_leng: f64 = 50.0;
+const pix_size = [_]F{ 5e-3, 5e-3 };
+const foc_leng: F = 50.0;
 const rotat_world = rotation.Rotation.init(
     0,
     0,
     std.math.degreesToRadians(-45),
 );
-const bb: f64 = 20.0;
+const bb: F = 20.0;
 const coord_n: usize = 8;
-const coord_x = [_]f64{ -bb, bb, bb, -bb, -bb, bb, bb, -bb };
-const coord_y = [_]f64{ bb, bb, -bb, -bb, bb, bb, -bb, -bb };
-const coord_z = [_]f64{ bb, bb, bb, bb, -bb, -bb, -bb, -bb };
-const roi_world_arr = [_]f64{ 0, 0, 0 };
+const coord_x = [_]F{ -bb, bb, bb, -bb, -bb, bb, bb, -bb };
+const coord_y = [_]F{ bb, bb, -bb, -bb, bb, bb, -bb, -bb };
+const coord_z = [_]F{ bb, bb, bb, bb, -bb, -bb, -bb, -bb };
+const roi_world_arr = [_]F{ 0, 0, 0 };
 const roi_world = vector.Vec3f.initSlice(&roi_world_arr);
 const sub_samp: u8 = 2;
 
 fn expectApproxEqRelAbs(
-    expected: f64,
-    actual: f64,
-    rel_tol: f64,
-    abs_tol: f64,
+    expected: F,
+    actual: F,
+    rel_tol: F,
+    abs_tol: F,
 ) !void {
     const diff = @abs(expected - actual);
     if (diff <= abs_tol) {
@@ -411,18 +415,18 @@ fn expectApproxEqRelAbs(
 fn checkDistortionGridInverse(
     comptime DistortionType: type,
     distortion: DistortionType,
-    rel_tol: f64,
-    abs_tol: f64,
+    rel_tol: F,
+    abs_tol: F,
 ) !void {
     const grid_num = 25;
     const min_coord = -0.45;
     const max_coord = 0.45;
-    const coord_step = (max_coord - min_coord) / @as(f64, grid_num - 1);
+    const coord_step = (max_coord - min_coord) / @as(F, grid_num - 1);
 
     for (0..grid_num) |jj| {
-        const y = min_coord + @as(f64, @floatFromInt(jj)) * coord_step;
+        const y = min_coord + @as(F, @floatFromInt(jj)) * coord_step;
         for (0..grid_num) |ii| {
-            const x = min_coord + @as(f64, @floatFromInt(ii)) * coord_step;
+            const x = min_coord + @as(F, @floatFromInt(ii)) * coord_step;
             const distorted = cameramodels.forwardDistortionScalar(
                 DistortionType,
                 distortion,
@@ -445,7 +449,7 @@ test "CameraPrepared.init" {
     const input = CameraInput{
         .pixels_num = pix_num,
         .pixels_size = pix_size,
-        .pos_world = vector.initVec3(f64, 0.0, 800.0, 800.0),
+        .pos_world = vector.initVec3(F, 0.0, 800.0, 800.0),
         .rot_world = rotat_world,
         .roi_cent_world = roi_world,
         .focal_length = foc_leng,
@@ -487,8 +491,8 @@ test "BrownConrady.forwardInverse" {
         distorted[1],
     );
 
-    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, 1e-10);
-    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, 1e-10);
+    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, unit_abs_tol);
+    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, unit_abs_tol);
 }
 
 test "BrownConradyExt.forwardInverse" {
@@ -519,8 +523,8 @@ test "BrownConradyExt.forwardInverse" {
         distorted[1],
     );
 
-    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, 1e-10);
-    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, 1e-10);
+    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, unit_abs_tol);
+    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, unit_abs_tol);
 }
 
 test "Polynomial.forwardOnlyRoundTrip" {
@@ -528,8 +532,8 @@ test "Polynomial.forwardOnlyRoundTrip" {
         .polynomial = .{
             .forward_map = .{
                 .order = .linear,
-                .coeffs_u = .{ 0.0, 0.04, -0.015 } ++ [_]f64{0.0} ** 7,
-                .coeffs_v = .{ 0.0, 0.01, 0.03 } ++ [_]f64{0.0} ** 7,
+                .coeffs_u = .{ 0.0, 0.04, -0.015 } ++ [_]F{0.0} ** 7,
+                .coeffs_v = .{ 0.0, 0.01, 0.03 } ++ [_]F{0.0} ** 7,
             },
         },
     };
@@ -547,8 +551,8 @@ test "Polynomial.forwardOnlyRoundTrip" {
         distorted[1],
     );
 
-    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, 1e-10);
-    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, 1e-10);
+    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, unit_abs_tol);
+    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, unit_abs_tol);
 }
 
 test "Polynomial.inverseOnlyRoundTrip" {
@@ -556,8 +560,8 @@ test "Polynomial.inverseOnlyRoundTrip" {
         .polynomial = .{
             .inverse_map = .{
                 .order = .linear,
-                .coeffs_u = .{ 0.0, -0.03, 0.01 } ++ [_]f64{0.0} ** 7,
-                .coeffs_v = .{ 0.0, 0.02, -0.025 } ++ [_]f64{0.0} ** 7,
+                .coeffs_u = .{ 0.0, -0.03, 0.01 } ++ [_]F{0.0} ** 7,
+                .coeffs_v = .{ 0.0, 0.02, -0.025 } ++ [_]F{0.0} ** 7,
             },
         },
     };
@@ -575,8 +579,8 @@ test "Polynomial.inverseOnlyRoundTrip" {
         distorted[1],
     );
 
-    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, 1e-10);
-    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, 1e-10);
+    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, unit_abs_tol);
+    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, unit_abs_tol);
 }
 
 test "BrownConradyPolynomial.forwardInverse" {
@@ -592,8 +596,8 @@ test "BrownConradyPolynomial.forwardInverse" {
             .polynomial = .{
                 .forward_map = .{
                     .order = .quadratic,
-                    .coeffs_u = .{ 0.0, 0.01, -0.005, 0.002, 0.001, -0.001 } ++ [_]f64{0.0} ** 4,
-                    .coeffs_v = .{ 0.0, -0.004, 0.012, 0.001, -0.002, 0.0015 } ++ [_]f64{0.0} ** 4,
+                    .coeffs_u = .{ 0.0, 0.01, -0.005, 0.002, 0.001, -0.001 } ++ [_]F{0.0} ** 4,
+                    .coeffs_v = .{ 0.0, -0.004, 0.012, 0.001, -0.002, 0.0015 } ++ [_]F{0.0} ** 4,
                 },
             },
         },
@@ -612,8 +616,8 @@ test "BrownConradyPolynomial.forwardInverse" {
         distorted[1],
     );
 
-    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, 1e-10);
-    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, 1e-10);
+    try std.testing.expectApproxEqAbs(x_ideal, recovered.x, unit_abs_tol);
+    try std.testing.expectApproxEqAbs(y_ideal, recovered.y, unit_abs_tol);
 }
 
 test "Polynomial.inverseOnlySIMDRoundTrip" {
@@ -624,21 +628,21 @@ test "Polynomial.inverseOnlySIMDRoundTrip" {
         .polynomial = .{
             .inverse_map = .{
                 .order = .linear,
-                .coeffs_u = .{ 0.0, -0.03, 0.01 } ++ [_]f64{0.0} ** 7,
-                .coeffs_v = .{ 0.0, 0.02, -0.025 } ++ [_]f64{0.0} ** 7,
+                .coeffs_u = .{ 0.0, -0.03, 0.01 } ++ [_]F{0.0} ** 7,
+                .coeffs_v = .{ 0.0, 0.02, -0.025 } ++ [_]F{0.0} ** 7,
             },
         },
     };
 
-    var x_ideal: [buildconfig.SimdWidth]f64 = [_]f64{0.0} ** buildconfig.SimdWidth;
-    var y_ideal: [buildconfig.SimdWidth]f64 = [_]f64{0.0} ** buildconfig.SimdWidth;
-    var x_dist: [buildconfig.SimdWidth]f64 = [_]f64{0.0} ** buildconfig.SimdWidth;
-    var y_dist: [buildconfig.SimdWidth]f64 = [_]f64{0.0} ** buildconfig.SimdWidth;
+    var x_ideal: [buildconfig.SimdWidth]F = [_]F{0.0} ** buildconfig.SimdWidth;
+    var y_ideal: [buildconfig.SimdWidth]F = [_]F{0.0} ** buildconfig.SimdWidth;
+    var x_dist: [buildconfig.SimdWidth]F = [_]F{0.0} ** buildconfig.SimdWidth;
+    var y_dist: [buildconfig.SimdWidth]F = [_]F{0.0} ** buildconfig.SimdWidth;
     var active: [buildconfig.SimdWidth]bool = [_]bool{false} ** buildconfig.SimdWidth;
 
     for (0..lane_count) |ii| {
-        x_ideal[ii] = -0.2 + 0.03 * @as(f64, @floatFromInt(ii));
-        y_ideal[ii] = 0.15 - 0.02 * @as(f64, @floatFromInt(ii));
+        x_ideal[ii] = -0.2 + 0.03 * @as(F, @floatFromInt(ii));
+        y_ideal[ii] = 0.15 - 0.02 * @as(F, @floatFromInt(ii));
         const distorted = cameramodels.forwardDistortionModelScalar(
             model,
             x_ideal[ii],
@@ -655,12 +659,12 @@ test "Polynomial.inverseOnlySIMDRoundTrip" {
         @as(VecSF, y_dist),
         @as(VecSB, active),
     );
-    const x_solved: [buildconfig.SimdWidth]f64 = solved.x;
-    const y_solved: [buildconfig.SimdWidth]f64 = solved.y;
+    const x_solved: [buildconfig.SimdWidth]F = solved.x;
+    const y_solved: [buildconfig.SimdWidth]F = solved.y;
 
     for (0..lane_count) |ii| {
-        try std.testing.expectApproxEqAbs(x_ideal[ii], x_solved[ii], 1e-10);
-        try std.testing.expectApproxEqAbs(y_ideal[ii], y_solved[ii], 1e-10);
+        try std.testing.expectApproxEqAbs(x_ideal[ii], x_solved[ii], unit_abs_tol);
+        try std.testing.expectApproxEqAbs(y_ideal[ii], y_solved[ii], unit_abs_tol);
     }
 }
 
@@ -680,8 +684,8 @@ test "BrownConrady.gridInverseRoundTrip" {
         .p2 = -0.0015,
     };
 
-    try checkDistortionGridInverse(BrownConrady, bc_mild, 1e-6, 1e-6);
-    try checkDistortionGridInverse(BrownConrady, bc_strong, 1e-6, 1e-6);
+    try checkDistortionGridInverse(BrownConrady, bc_mild, unit_rel_tol, unit_rel_tol);
+    try checkDistortionGridInverse(BrownConrady, bc_strong, unit_rel_tol, unit_rel_tol);
 }
 
 test "BrownConradyExt.gridInverseRoundTrip" {
@@ -709,14 +713,14 @@ test "BrownConradyExt.gridInverseRoundTrip" {
     try checkDistortionGridInverse(
         BrownConradyExt,
         bc_ext_mild,
-        1e-6,
-        1e-6,
+        unit_rel_tol,
+        unit_rel_tol,
     );
     try checkDistortionGridInverse(
         BrownConradyExt,
         bc_ext_strong,
-        1e-6,
-        1e-6,
+        unit_rel_tol,
+        unit_rel_tol,
     );
 }
 
@@ -737,7 +741,7 @@ test "CameraPrepared.distortionNone" {
     defer camera.deinit(std.testing.allocator);
 
     const x_ideal = camera.ideal_pixel_centers.get(&[_]usize{ 0, 0, 0 });
-    try std.testing.expectApproxEqAbs(0.5, x_ideal, 1e-10);
+    try std.testing.expectApproxEqAbs(0.5, x_ideal, unit_abs_tol);
 }
 
 test "CameraPrepared.brownConradyExtDistortionApplied" {
@@ -766,8 +770,8 @@ test "CameraPrepared.brownConradyExtDistortionApplied" {
     const camera = try CameraPrepared.init(std.testing.allocator, input);
     defer camera.deinit(std.testing.allocator);
 
-    const x_off = 0.5 * @as(f64, @floatFromInt(input.pixels_num[0]));
-    const y_off = 0.5 * @as(f64, @floatFromInt(input.pixels_num[1]));
+    const x_off = 0.5 * @as(F, @floatFromInt(input.pixels_num[0]));
+    const y_off = 0.5 * @as(F, @floatFromInt(input.pixels_num[1]));
     const fx = input.focal_length / input.pixels_size[0];
     const fy = input.focal_length / input.pixels_size[1];
     const x_d = (0.5 - x_off) / fx;
@@ -781,8 +785,18 @@ test "CameraPrepared.brownConradyExtDistortionApplied" {
 
     const x_ideal = camera.ideal_pixel_centers.get(&[_]usize{ 0, 0, 0 });
     const y_ideal = camera.ideal_pixel_centers.get(&[_]usize{ 0, 0, 1 });
-    try expectApproxEqRelAbs(solved.x * fx + x_off, x_ideal, 1e-6, 1e-6);
-    try expectApproxEqRelAbs(solved.y * fy + y_off, y_ideal, 1e-6, 1e-6);
+    try expectApproxEqRelAbs(
+        solved.x * fx + x_off,
+        x_ideal,
+        unit_rel_tol,
+        unit_rel_tol,
+    );
+    try expectApproxEqRelAbs(
+        solved.y * fy + y_off,
+        y_ideal,
+        unit_rel_tol,
+        unit_rel_tol,
+    );
 }
 
 test "PreparedPSF gaussian kernels normalize" {
@@ -797,13 +811,13 @@ test "PreparedPSF gaussian kernels normalize" {
     );
     defer prepared.deinit(std.testing.allocator);
 
-    var sum_x: f64 = 0.0;
-    var sum_y: f64 = 0.0;
+    var sum_x: F = 0.0;
+    var sum_y: F = 0.0;
     for (prepared.weights_x) |weight| sum_x += weight;
     for (prepared.weights_y) |weight| sum_y += weight;
 
-    try std.testing.expectApproxEqAbs(1.0, sum_x, 1e-12);
-    try std.testing.expectApproxEqAbs(1.0, sum_y, 1e-12);
+    try std.testing.expectApproxEqAbs(1.0, sum_x, sum_abs_tol);
+    try std.testing.expectApproxEqAbs(1.0, sum_y, sum_abs_tol);
     try std.testing.expectEqual(@as(u16, 2), prepared.halo_px);
 }
 
@@ -839,7 +853,7 @@ test "PreparedPSF isotropic gaussian separable matches non-separable outer produ
         try std.testing.expectApproxEqAbs(
             expected,
             prepared_nonsep.weights_2d[ii],
-            1e-12,
+            sum_abs_tol,
         );
     }
 }

@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 const benchcommon = @import("benchcommon.zig");
 const orch = @import("orchestration.zig");
 const tcfg = @import("testconfig.zig");
@@ -21,7 +23,7 @@ const riley = @import("../riley/zig/riley.zig");
 
 pub const gold_root = "gold/ssaa";
 pub const pixel_num = [_]u32{ 640, 400 };
-pub const fov_scale: f64 = 0.75;
+pub const fov_scale: F = 0.75;
 pub const ssaa_values = [_]u8{4};
 pub const mesh_types = [_]gk.MeshType{ .tri3, .tri6, .quad4ibi, .quad8, .quad9 };
 pub const DistortionCase = enum {
@@ -56,7 +58,7 @@ pub const distortion_brownext = cam.DistortionModel{
     },
 };
 
-fn translateCoords(coords: *meshio.Coords, translation: [3]f64) void {
+fn translateCoords(coords: *meshio.Coords, translation: [3]F) void {
     for (0..coords.mat.rows_num) |nn| {
         coords.mat.set(nn, 0, coords.mat.get(nn, 0) + translation[0]);
         coords.mat.set(nn, 1, coords.mat.get(nn, 1) + translation[1]);
@@ -146,7 +148,7 @@ pub fn renderCase(
     ssaa: u8,
     distortion_case: DistortionCase,
     subpixel_center_map: @import("../riley/zig/camera.zig").SubPixelCenterMap,
-) !NDArray(f64) {
+) !NDArray(F) {
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
     const aa = arena.allocator();

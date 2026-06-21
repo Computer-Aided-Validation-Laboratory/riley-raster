@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const Timestamp = std.Io.Clock.Timestamp;
 const rastcfg = @import("rasterconfig.zig");
 const rops = @import("rasterops.zig");
@@ -88,9 +90,9 @@ pub inline fn recordPixelConvergedStats(
     global_subx: usize,
     global_suby: usize,
     converged: bool,
-    xi: f64,
-    eta: f64,
-    jacobian_det: f64,
+    xi: F,
+    eta: F,
+    jacobian_det: F,
 ) void {
     if (comptime report_mode == .full_stats) {
         ctx_report.recordPixelConverged(global_subx, global_suby, converged);

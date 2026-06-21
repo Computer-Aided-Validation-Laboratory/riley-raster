@@ -22,6 +22,7 @@ const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const report = @import("../riley/zig/report.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 const scalingpolicy = @import("../riley/zig/scalingpolicy.zig");
 const NDArray = @import("../riley/zig/ndarray.zig").NDArray;
 const tcfg = @import("testconfig.zig");
@@ -29,31 +30,31 @@ const Timestamp = std.Io.Clock.Timestamp;
 const orch = @import("orchestration.zig");
 
 pub const CalculatedMetrics = struct {
-    raster_tpx_mpx_s: f64,
-    frame_tpx_mpx_s: f64,
-    e2e_tpx_mpx_s: f64,
-    msubpx_sec: f64,
-    mshades_sec: f64,
-    msubshades_sec: f64,
-    melems_sec: f64,
-    mnodes_sec: f64,
-    mops_sec: f64,
+    raster_tpx_mpx_s: F,
+    frame_tpx_mpx_s: F,
+    e2e_tpx_mpx_s: F,
+    msubpx_sec: F,
+    mshades_sec: F,
+    msubshades_sec: F,
+    melems_sec: F,
+    mnodes_sec: F,
+    mops_sec: F,
 };
 
 pub const BenchResult = struct {
-    e2e_ms: f64,
-    geom_ms: f64,
-    raster_ms: f64,
-    cam_ms: f64,
-    resolve_ms: f64,
-    fps: f64,
+    e2e_ms: F,
+    geom_ms: F,
+    raster_ms: F,
+    cam_ms: F,
+    resolve_ms: F,
+    fps: F,
     total_elems: usize,
     vis_elems: usize,
     total_px: u64,
     shaded_px: u64,
     metrics: CalculatedMetrics,
     pipeline_times: report.FrameTimes,
-    image: ?NDArray(f64) = null,
+    image: ?NDArray(F) = null,
 
     pub fn deinit(self: *BenchResult, allocator: std.mem.Allocator) void {
         if (self.image) |img| {
@@ -107,17 +108,17 @@ pub const BenchStats = struct {
 };
 
 pub const MedianMAD = struct {
-    median: f64,
-    mad: f64,
-    min: f64,
-    max: f64,
+    median: F,
+    mad: F,
+    min: F,
+    max: F,
 };
 
 pub fn calcMetrics(
     etype: gk.MeshType,
     pixel_num: [2]u32,
     sub_samp: u8,
-    e2e_ms: f64,
+    e2e_ms: F,
     frame_times: report.FrameTimes,
     bench_log: report.BenchLog,
 ) CalculatedMetrics {
@@ -125,10 +126,10 @@ pub fn calcMetrics(
     const geom_tiling_sec = (frame_times.geometry_prep + frame_times.tile_overlap) / 1e9;
     const active_sec = frame_times.active_time / 1e9;
 
-    const nodes_per_elem = @as(f64, @floatFromInt(etype.getNodesNum()));
-    const pixels_x = @as(f64, @floatFromInt(pixel_num[0]));
-    const pixels_y = @as(f64, @floatFromInt(pixel_num[1]));
-    const sub_samp_f = @as(f64, @floatFromInt(sub_samp));
+    const nodes_per_elem = @as(F, @floatFromInt(etype.getNodesNum()));
+    const pixels_x = @as(F, @floatFromInt(pixel_num[0]));
+    const pixels_y = @as(F, @floatFromInt(pixel_num[1]));
+    const sub_samp_f = @as(F, @floatFromInt(sub_samp));
 
     const total_px = pixels_x * pixels_y;
     const total_subpx = total_px * sub_samp_f * sub_samp_f;
@@ -153,7 +154,7 @@ pub fn calcMetrics(
     const msubpx_sec = if (raster_sec > 0) (total_subpx / (raster_sec * 1e6)) else 0;
 
     // 3. MShades/s (Approximated)
-    const shaded_subpx = @as(f64, @floatFromInt(bench_log.total_shaded_pixels));
+    const shaded_subpx = @as(F, @floatFromInt(bench_log.total_shaded_pixels));
     const est_shaded_px = shaded_subpx / (sub_samp_f * sub_samp_f);
     const mshades_sec = if (raster_sec > 0) (est_shaded_px / (raster_sec * 1e6)) else 0;
 
@@ -161,7 +162,7 @@ pub fn calcMetrics(
     const msubshades_sec = if (raster_sec > 0) (shaded_subpx / (raster_sec * 1e6)) else 0;
 
     // 5. MElems/s
-    const total_elems = @as(f64, @floatFromInt(bench_log.total_elements));
+    const total_elems = @as(F, @floatFromInt(bench_log.total_elements));
     const melems_sec = if (geom_tiling_sec > 0)
         (total_elems / (geom_tiling_sec * 1e6))
     else
@@ -192,7 +193,7 @@ pub fn calcMetrics(
     };
 }
 
-pub fn calcMedianMAD(outer_alloc: std.mem.Allocator, data: []f64) !MedianMAD {
+pub fn calcMedianMAD(outer_alloc: std.mem.Allocator, data: []F) !MedianMAD {
     if (data.len == 0) {
         return .{
             .median = 0,
@@ -201,9 +202,9 @@ pub fn calcMedianMAD(outer_alloc: std.mem.Allocator, data: []f64) !MedianMAD {
             .max = 0,
         };
     }
-    const data_copy = try outer_alloc.dupe(f64, data);
+    const data_copy = try outer_alloc.dupe(F, data);
     defer outer_alloc.free(data_copy);
-    std.mem.sort(f64, data_copy, {}, std.sort.asc(f64));
+    std.mem.sort(F, data_copy, {}, std.sort.asc(F));
 
     const mid = data_copy.len / 2;
     const median = if (data_copy.len % 2 == 0)
@@ -211,12 +212,12 @@ pub fn calcMedianMAD(outer_alloc: std.mem.Allocator, data: []f64) !MedianMAD {
     else
         data_copy[mid];
 
-    var abs_devs = try outer_alloc.alloc(f64, data_copy.len);
+    var abs_devs = try outer_alloc.alloc(F, data_copy.len);
     defer outer_alloc.free(abs_devs);
     for (data_copy, 0..) |val, ii| {
         abs_devs[ii] = @abs(val - median);
     }
-    std.mem.sort(f64, abs_devs, {}, std.sort.asc(f64));
+    std.mem.sort(F, abs_devs, {}, std.sort.asc(F));
     const mad = if (abs_devs.len % 2 == 0)
         (abs_devs[mid - 1] + abs_devs[mid]) / 2.0
     else
@@ -315,7 +316,7 @@ pub fn writeBenchmarkConfig(
     pixel_num: [2]u32,
     sub_sample: u8,
     runs: usize,
-    fov_scale: f64,
+    fov_scale: F,
     actual_tile_size: u16,
 ) !void {
     const cwd = std.Io.Dir.cwd();
@@ -486,9 +487,9 @@ pub const TexFuncCase = struct {
 pub const BenchRenderDefaults = struct {
     pixels_num: [2]u32,
     sub_sample: u8,
-    focal_leng: f64,
-    pixels_size: [2]f64,
-    fov_scale: f64,
+    focal_leng: F,
+    pixels_size: [2]F,
+    fov_scale: F,
     rot: Rotation,
 };
 
@@ -535,7 +536,7 @@ pub fn loadNDArray(
     path: []const u8,
     requested_channels: usize,
     is_time_series: bool,
-) !NDArray(f64) {
+) !NDArray(F) {
     if (std.mem.endsWith(u8, path, ".fimg")) {
         const array = try iio.loadFIMG(outer_alloc, io, path);
         if (array.dims[0] != requested_channels) {
@@ -552,14 +553,14 @@ pub fn loadNDArrayFromCSV(
     path: []const u8,
     requested_channels: usize,
     is_time_series: bool,
-) !NDArray(f64) {
+) !NDArray(F) {
     if (is_time_series) {
         var base = try csvio.loadScalarCsv2D(outer_alloc, io, path);
         defer {
             outer_alloc.free(base.slice);
         }
 
-        var arr = try NDArray(f64).initFlat(
+        var arr = try NDArray(F).initFlat(
             outer_alloc,
             &[_]usize{ 1, base.dims[0], requested_channels },
         );
@@ -597,7 +598,7 @@ pub fn calcCaseName(
     shader_type: ShaderType,
     sample_config: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
-    fov_scale: f64,
+    fov_scale: F,
 ) ![]const u8 {
     const name = if (shader_type == .tex8_grey or shader_type == .tex8_rgb)
         try std.fmt.allocPrint(
@@ -637,13 +638,13 @@ pub fn calcCaseName(
 
 pub fn extractFirstFrameImage(
     allocator: std.mem.Allocator,
-    image_arr: *const NDArray(f64),
-) !NDArray(f64) {
+    image_arr: *const NDArray(F),
+) !NDArray(F) {
     std.debug.assert(image_arr.dims.len == 5);
     const num_fields = image_arr.dims[2];
     const rows = image_arr.dims[3];
     const cols = image_arr.dims[4];
-    var image = try NDArray(f64).initFlat(
+    var image = try NDArray(F).initFlat(
         allocator,
         &[_]usize{ num_fields, rows, cols },
     );
@@ -1042,7 +1043,7 @@ fn runBenchmarkInternal(
     );
     const e2e_end = Timestamp.now(io, .awake);
 
-    const e2e_ms = @as(f64, @floatFromInt(
+    const e2e_ms = @as(F, @floatFromInt(
         e2e_start.durationTo(e2e_end).raw.nanoseconds,
     )) / 1e6;
     const geom_ms = if (report_mode == .bench)
@@ -1151,8 +1152,8 @@ fn printPaddedSafe(writer: anytype, text: []const u8, width: usize) !void {
 }
 
 fn calcTexFuncParams(tex_func_case: TexFuncCase) so.FuncShaderParams {
-    const pi: f64 = std.math.pi;
-    const oscillations: f64 = if (tex_func_case.coord_mode == .param)
+    const pi: F = std.math.pi;
+    const oscillations: F = if (tex_func_case.coord_mode == .param)
         2.0
     else
         6.0;
@@ -1188,22 +1189,22 @@ pub const BenchmarkCSVKind = enum {
 };
 
 pub const BenchmarkCSVValues = struct {
-    total_elems: f64,
-    vis_elems: f64,
-    total_px: f64,
-    shaded_px: f64,
-    geom: f64,
-    cam_invert: f64,
-    elem_loop: f64,
-    scratch_resolve: f64,
-    raster: f64,
-    save_frame: f64,
-    frame: f64,
-    e2e: f64,
-    geom_tpx: f64,
-    raster_tpx: f64,
-    frame_tpx: f64,
-    e2e_tpx: f64,
+    total_elems: F,
+    vis_elems: F,
+    total_px: F,
+    shaded_px: F,
+    geom: F,
+    cam_invert: F,
+    elem_loop: F,
+    scratch_resolve: F,
+    raster: F,
+    save_frame: F,
+    frame: F,
+    e2e: F,
+    geom_tpx: F,
+    raster_tpx: F,
+    frame_tpx: F,
+    e2e_tpx: F,
 };
 
 pub fn benchmarkCSVHeader() []const u8 {
@@ -1217,7 +1218,7 @@ pub fn benchmarkCSVHeader() []const u8 {
         "Frame TP [MPx/s],E2E TP [MPx/s]\n";
 }
 
-fn calcCoVPercent(stats: MedianMAD) f64 {
+fn calcCoVPercent(stats: MedianMAD) F {
     if (stats.median == 0.0) {
         return 0.0;
     }
@@ -1227,7 +1228,7 @@ fn calcCoVPercent(stats: MedianMAD) f64 {
 fn selectStatValue(
     stats: MedianMAD,
     kind: BenchmarkCSVKind,
-) f64 {
+) F {
     return switch (kind) {
         .median => stats.median,
         .min => stats.min,

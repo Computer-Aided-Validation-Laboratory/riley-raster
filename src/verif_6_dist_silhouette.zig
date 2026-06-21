@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 const cam = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
 const iio = @import("riley/zig/imageio.zig");
@@ -21,23 +23,23 @@ const vector = @import("riley/zig/vecstack.zig");
 const riley = @import("riley/zig/riley.zig");
 
 const pixel_num = [_]u32{ 1024, 1024 };
-const fov_scale: f64 = 1.05;
+const fov_scale: F = 1.05;
 const verif_subdir_name = "verif_6";
 
 const CentroidStats = struct {
-    ideal_x: f64,
-    ideal_y: f64,
-    calc_x: f64,
-    calc_y: f64,
-    diff_x: f64,
-    diff_y: f64,
-    dist: f64,
+    ideal_x: F,
+    ideal_y: F,
+    calc_x: F,
+    calc_y: F,
+    diff_x: F,
+    diff_y: F,
+    dist: F,
 };
 
 const ScalarMap = struct {
     rows_num: usize,
     cols_num: usize,
-    vals: []f64,
+    vals: []F,
 };
 
 fn buildFrameCoords(
@@ -82,7 +84,7 @@ fn buildFrameCoords(
 
 fn extractScalarMap(
     allocator: std.mem.Allocator,
-    image_arr: *const @import("riley/zig/ndarray.zig").NDArray(f64),
+    image_arr: *const @import("riley/zig/ndarray.zig").NDArray(F),
 ) !ScalarMap {
     const rows_num = if (image_arr.dims.len == 5)
         image_arr.dims[3]
@@ -93,7 +95,7 @@ fn extractScalarMap(
     else
         image_arr.dims[3];
 
-    const vals = try allocator.alloc(f64, rows_num * cols_num);
+    const vals = try allocator.alloc(F, rows_num * cols_num);
     for (0..rows_num) |rr| {
         for (0..cols_num) |cc| {
             vals[rr * cols_num + cc] = if (image_arr.dims.len == 5)
@@ -114,22 +116,22 @@ fn calcCentroidStats(
     camera_input: cam.CameraInput,
     rows_num: usize,
     cols_num: usize,
-    vals: []const f64,
+    vals: []const F,
 ) !CentroidStats {
-    const ideal_x = 0.5 * @as(f64, @floatFromInt(camera_input.pixels_num[0]));
-    const ideal_y = 0.5 * @as(f64, @floatFromInt(camera_input.pixels_num[1]));
+    const ideal_x = 0.5 * @as(F, @floatFromInt(camera_input.pixels_num[0]));
+    const ideal_y = 0.5 * @as(F, @floatFromInt(camera_input.pixels_num[1]));
 
-    var sum_w: f64 = 0.0;
-    var sum_x: f64 = 0.0;
-    var sum_y: f64 = 0.0;
+    var sum_w: F = 0.0;
+    var sum_x: F = 0.0;
+    var sum_y: F = 0.0;
 
     for (0..rows_num) |rr| {
         for (0..cols_num) |cc| {
             const weight = vals[rr * cols_num + cc];
             if (!(weight > 0.0)) continue;
 
-            const xx = @as(f64, @floatFromInt(cc)) + 0.5;
-            const yy = @as(f64, @floatFromInt(rr)) + 0.5;
+            const xx = @as(F, @floatFromInt(cc)) + 0.5;
+            const yy = @as(F, @floatFromInt(rr)) + 0.5;
             sum_w += weight;
             sum_x += xx * weight;
             sum_y += yy * weight;
@@ -331,7 +333,7 @@ fn projectWorldNodeToRaster(
     coord_world: vector.Vec3f,
 ) vector.Vec3f {
     var coord_raster = matrix.Mat44Ops.mulVec3(
-        f64,
+        F,
         camera_prepared.world_to_cam_mat,
         coord_world,
     );
@@ -347,9 +349,9 @@ fn projectWorldNodeToRaster(
         camera_prepared.image_dims[1];
 
     coord_raster.slice[0] = (coord_raster.slice[0] + 1.0) * 0.5 *
-        @as(f64, @floatFromInt(camera_prepared.pixels_num[0]));
+        @as(F, @floatFromInt(camera_prepared.pixels_num[0]));
     coord_raster.slice[1] = (1.0 - coord_raster.slice[1]) * 0.5 *
-        @as(f64, @floatFromInt(camera_prepared.pixels_num[1]));
+        @as(F, @floatFromInt(camera_prepared.pixels_num[1]));
     coord_raster.slice[2] = -coord_raster.slice[2];
     return coord_raster;
 }
@@ -582,18 +584,18 @@ fn runDistortCase(
             scalar_map.vals,
         ) catch CentroidStats{
             .ideal_x = 0.5 * @as(
-                f64,
+                F,
                 @floatFromInt(distorted_camera_input.pixels_num[0]),
             ),
             .ideal_y = 0.5 * @as(
-                f64,
+                F,
                 @floatFromInt(distorted_camera_input.pixels_num[1]),
             ),
-            .calc_x = std.math.nan(f64),
-            .calc_y = std.math.nan(f64),
-            .diff_x = std.math.nan(f64),
-            .diff_y = std.math.nan(f64),
-            .dist = std.math.nan(f64),
+            .calc_x = std.math.nan(F),
+            .calc_y = std.math.nan(F),
+            .diff_x = std.math.nan(F),
+            .diff_y = std.math.nan(F),
+            .dist = std.math.nan(F),
         };
         const stats_name = try std.fmt.allocPrint(
             aa,

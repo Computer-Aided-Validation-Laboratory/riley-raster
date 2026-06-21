@@ -11,11 +11,13 @@ const print = std.debug.print;
 const assert = std.debug.assert;
 const expectEqual = std.testing.expectEqual;
 const expectEqualSlices = std.testing.expectEqualSlices;
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 
 const SliceOps = @import("sliceops.zig");
 const ValIdx = SliceOps.ValIdx;
 
-const EType = f64;
+const EType = buildconfig.F;
 pub const Vec2f = Vec2T(EType);
 pub const Vec3f = Vec3T(EType);
 
@@ -208,17 +210,17 @@ pub const Vec3SliceOps = struct {
 
 test "VecSliceOps.max" {
     var vec_slice: [3]Vec3f = undefined;
-    vec_slice[0] = initVec3(f64, -1.0, 2.0, 7.0);
-    vec_slice[1] = initVec3(f64, 2.0, -2.0, 7.0);
-    vec_slice[2] = initVec3(f64, 5.0, -10.0, 0.0);
+    vec_slice[0] = initVec3(F, -1.0, 2.0, 7.0);
+    vec_slice[1] = initVec3(F, 2.0, -2.0, 7.0);
+    vec_slice[2] = initVec3(F, 5.0, -10.0, 0.0);
 
-    const max_x: f64 = Vec3SliceOps.max(f64, vec_slice[0..], 0);
-    const max_y: f64 = Vec3SliceOps.max(f64, vec_slice[0..], 1);
-    const max_z: f64 = Vec3SliceOps.max(f64, vec_slice[0..], 2);
+    const max_x: F = Vec3SliceOps.max(F, vec_slice[0..], 0);
+    const max_y: F = Vec3SliceOps.max(F, vec_slice[0..], 1);
+    const max_z: F = Vec3SliceOps.max(F, vec_slice[0..], 2);
 
-    const exp_max_x: f64 = 5.0;
-    const exp_max_y: f64 = 2.0;
-    const exp_max_z: f64 = 7.0;
+    const exp_max_x: F = 5.0;
+    const exp_max_y: F = 2.0;
+    const exp_max_z: F = 7.0;
 
     try expectEqual(exp_max_x, max_x);
     try expectEqual(exp_max_y, max_y);
@@ -346,5 +348,5 @@ test "Vec3Ops.cross" {
     const v2 = [_]EType{ 0.0, 0.0, 1.0 };
     const cross_exp = Vec3f.initSlice(&v2);
 
-    try expectEqual(Vec3Ops.cross(f64, vec0, vec1), cross_exp);
+    try expectEqual(Vec3Ops.cross(F, vec0, vec1), cross_exp);
 }

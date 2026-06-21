@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("riley/zig/buildconfig.zig");
+const F = buildconfig.F;
 
 const benchcommon = @import("common/benchcommon.zig");
 const orch = @import("common/orchestration.zig");
@@ -24,12 +26,12 @@ const NDArray = @import("riley/zig/ndarray.zig").NDArray;
 const CameraPrepared = cammod.CameraPrepared;
 const MeshInput = mo.MeshInput;
 
-const OVERLAP_X: f64 = 0.85;
-const OVERLAP_Y: f64 = 0.8;
-pub const BEHIND_FACT: f64 = 1.05;
+const OVERLAP_X: F = 0.85;
+const OVERLAP_Y: F = 0.8;
+pub const BEHIND_FACT: F = 1.05;
 
 const pixel_num = [_]u32{ 1200, 600 };
-const fov_scale: f64 = 1.01;
+const fov_scale: F = 1.01;
 const out_root = "verif/verif_4";
 
 const mesh_types = [_]gk.MeshType{
@@ -61,7 +63,7 @@ fn pairedBackMeshType(front_mesh_type: gk.MeshType) gk.MeshType {
     };
 }
 
-fn translateCoords(coords: *meshio.Coords, translation: [3]f64) void {
+fn translateCoords(coords: *meshio.Coords, translation: [3]F) void {
     for (0..coords.mat.rows_num) |nn| {
         coords.mat.set(nn, 0, coords.mat.get(nn, 0) + translation[0]);
         coords.mat.set(nn, 1, coords.mat.get(nn, 1) + translation[1]);
@@ -99,7 +101,7 @@ fn saveImageArtifacts(
     io: std.Io,
     out_dir: std.Io.Dir,
     base_name: []const u8,
-    image: *const NDArray(f64),
+    image: *const NDArray(F),
 ) !void {
     try iio.saveImage(
         io,
@@ -131,10 +133,10 @@ fn saveImageArtifacts(
 
 fn calcDiffImage(
     allocator: std.mem.Allocator,
-    both_image: *const NDArray(f64),
-    frontonly_image: *const NDArray(f64),
-) !NDArray(f64) {
-    var diff = try NDArray(f64).initFlat(allocator, both_image.dims);
+    both_image: *const NDArray(F),
+    frontonly_image: *const NDArray(F),
+) !NDArray(F) {
+    var diff = try NDArray(F).initFlat(allocator, both_image.dims);
     for (0..both_image.slice.len) |ii| {
         diff.slice[ii] = both_image.slice[ii] - frontonly_image.slice[ii];
     }
@@ -146,7 +148,7 @@ fn renderSingle(
     io: std.Io,
     camera_input: cammod.CameraInput,
     meshes: []const MeshInput,
-) !NDArray(f64) {
+) !NDArray(F) {
     var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .memory;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
@@ -343,7 +345,7 @@ fn runCase(
     };
 
     const front_centroid = mo.findAlignedCentroid(&front_mesh.coords).centroid;
-    const cam_axis = [3]f64{
+    const cam_axis = [3]F{
         camera_input.pos_world.slice[0] - camera_input.roi_cent_world.slice[0],
         camera_input.pos_world.slice[1] - camera_input.roi_cent_world.slice[1],
         camera_input.pos_world.slice[2] - camera_input.roi_cent_world.slice[2],
@@ -353,7 +355,7 @@ fn runCase(
             cam_axis[1] * cam_axis[1] +
             cam_axis[2] * cam_axis[2],
     );
-    const cam_axis_unit = [3]f64{
+    const cam_axis_unit = [3]F{
         cam_axis[0] / cam_axis_norm,
         cam_axis[1] / cam_axis_norm,
         cam_axis[2] / cam_axis_norm,

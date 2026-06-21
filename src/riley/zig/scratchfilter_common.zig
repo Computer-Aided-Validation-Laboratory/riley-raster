@@ -7,6 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const buildconfig = @import("buildconfig.zig");
+const F = buildconfig.F;
 const rops = @import("rasterops.zig");
 const ndarray = @import("ndarray.zig");
 const matslice = @import("matslice.zig");
@@ -60,11 +62,11 @@ pub const ScratchTileGeometry = struct {
 };
 
 pub const FrameImageWriter = struct {
-    slice: []f64,
+    slice: []F,
     field_stride: usize,
     row_stride: usize,
 
-    pub fn init(image_out_arr: *NDArray(f64)) FrameImageWriter {
+    pub fn init(image_out_arr: *NDArray(F)) FrameImageWriter {
         return .{
             .slice = image_out_arr.slice,
             .field_stride = image_out_arr.strides[0],
@@ -77,7 +79,7 @@ pub const FrameImageWriter = struct {
         field_idx: usize,
         row_idx: usize,
         col_idx: usize,
-        val: f64,
+        val: F,
     ) void {
         const offset = field_idx * self.field_stride +
             row_idx * self.row_stride + col_idx;
@@ -95,10 +97,10 @@ pub const FrameImageWriter = struct {
 
 pub inline fn getScratchField(
     comptime scratch_layout: ScratchLayout,
-    spx_image_scratch: *const MatSlice(f64),
+    spx_image_scratch: *const MatSlice(F),
     scratch_flat_idx: usize,
     field_idx: usize,
-) f64 {
+) F {
     return switch (scratch_layout) {
         .subpx_major => spx_image_scratch.get(scratch_flat_idx, field_idx),
         .field_major => spx_image_scratch.get(field_idx, scratch_flat_idx),
@@ -107,10 +109,10 @@ pub inline fn getScratchField(
 
 pub inline fn setScratchField(
     comptime scratch_layout: ScratchLayout,
-    spx_image_scratch: *MatSlice(f64),
+    spx_image_scratch: *MatSlice(F),
     scratch_flat_idx: usize,
     field_idx: usize,
-    val: f64,
+    val: F,
 ) void {
     switch (scratch_layout) {
         .subpx_major => spx_image_scratch.set(
@@ -128,14 +130,14 @@ pub inline fn setScratchField(
 
 pub fn sampleScratchOrBackground(
     comptime scratch_layout: ScratchLayout,
-    src: *const MatSlice(f64),
+    src: *const MatSlice(F),
     x: isize,
     y: isize,
     scratch_geom: ScratchTileGeometry,
     spx_stride: usize,
     field_idx: usize,
-    background_value: f64,
-) f64 {
+    background_value: F,
+) F {
     if (x < 0 or y < 0 or
         x >= @as(isize, @intCast(scratch_geom.scratch_w_subpx)) or
         y >= @as(isize, @intCast(scratch_geom.scratch_h_subpx)))
