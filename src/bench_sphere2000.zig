@@ -11,21 +11,26 @@ const benchargs = @import("common/benchargs.zig");
 const benchstats = @import("common/benchstats.zig");
 const common = @import("common/benchcommon.zig");
 const tcfg = @import("common/testconfig.zig");
+const buildconfig = @import("riley/zig/buildconfig.zig");
 const rastcfg = @import("riley/zig/rasterconfig.zig");
 const riley = @import("riley/zig/riley.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const texops = @import("riley/zig/textureops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
+const F = buildconfig.F;
 
 const DEFAULT_OUT_DIR = "out/bench_stats_sphere2000";
 const DEFAULT_IMAGE_OUT_DIR = "out/bench_images_sphere2000";
 const DEFAULT_DATA_DIR_SUFFIX = "sphere2000";
 const DEFAULT_PIXELS_NUM = [2]u32{ 1600, 1000 };
 const DEFAULT_SUB_SAMPLE: u8 = 1;
-const DEFAULT_FOCAL_LENG: f64 = 50.0e-3;
-const DEFAULT_PIXELS_SIZE = [2]f64{ 5.3e-6, 5.3e-6 };
-const DEFAULT_FOV_SCALE: f64 = 1.0;
+const DEFAULT_FOCAL_LENG: F = @floatCast(50.0e-3);
+const DEFAULT_PIXELS_SIZE = [2]F{
+    @floatCast(5.3e-6),
+    @floatCast(5.3e-6),
+};
+const DEFAULT_FOV_SCALE: F = 1.0;
 const DEFAULT_TEX_GREY_PATH = "texture/speckle.bmp";
 const DEFAULT_TEX_RGB_PATH = "texture/speckle_rgb.bmp";
 const DEFAULT_ROT = Rotation.init(0, 0, 0);

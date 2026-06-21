@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const gengold = @import("common/gengold.zig");
+const goldpaths = @import("common/goldpaths.zig");
 const tcfg = @import("common/testconfig.zig");
 const orch = @import("common/orchestration.zig");
 const riley = @import("riley/zig/riley.zig");
@@ -68,7 +69,7 @@ pub fn main(init: std.process.Init) !void {
         texture,
         pixel_num,
         &sample_configs,
-        "gold/edge",
+        goldpaths.sharedRoot("edge"),
         "data/edge",
         config,
     );
@@ -81,7 +82,7 @@ pub fn main(init: std.process.Init) !void {
         texture,
         pixel_num,
         &sample_configs,
-        "gold/edge",
+        goldpaths.sharedRoot("edge"),
         "data/edge",
         config,
     );
@@ -94,14 +95,14 @@ pub fn main(init: std.process.Init) !void {
         texture,
         pixel_num,
         &sample_configs,
-        "gold/edge",
+        goldpaths.sharedRoot("edge"),
         "data/edge",
         config,
     );
     try gengold.generateDistortEdgeGold(
         aa,
         io,
-        "gold/edge",
+        goldpaths.sharedRoot("edge"),
         "data/edge",
         pixel_num_distort_midside,
         config,

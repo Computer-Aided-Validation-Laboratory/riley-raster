@@ -9,6 +9,7 @@
 const std = @import("std");
 const print = std.debug.print;
 
+const buildconfig = @import("riley/zig/buildconfig.zig");
 const riley = @import("riley/zig/riley.zig");
 const RasterConfig = riley.RasterConfig;
 const meshio = @import("riley/zig/meshio.zig");
@@ -27,17 +28,21 @@ const DistortionModel = camera_mod.DistortionModel;
 const BrownConrady = camera_mod.BrownConrady;
 const BrownConradyExt = camera_mod.BrownConradyExt;
 const MatSlice = @import("riley/zig/matslice.zig").MatSlice;
+const F = buildconfig.F;
 
 const DATA_DIR = "data/FE/platehole3d_2mr_63f/";
 const TEXTURE_PATH = "texture/speckle.bmp";
 const OUT_DIR_ROOT = "./out/demo-dicuq";
 
 const PIXELS_NUM = [2]u32{ 2464, 2056 };
-const PIXELS_SIZE = [2]f64{ 3.45e-6, 3.45e-6 };
-const FOCAL_LENGTH: f64 = 50.0e-3;
-const FOV_SCALE_FACTOR: f64 = 0.65;
+const PIXELS_SIZE = [2]F{
+    @floatCast(3.45e-6),
+    @floatCast(3.45e-6),
+};
+const FOCAL_LENGTH: F = @floatCast(50.0e-3);
+const FOV_SCALE_FACTOR: F = @floatCast(0.65);
 const SUB_SAMPLE: u8 = 2;
-const STEREO_ANGLE_DEG: f64 = 20.0;
+const STEREO_ANGLE_DEG: F = 20.0;
 
 const TOTAL_THREADS: u16 = 8;
 const FRAME_BATCH_SIZE_PER_GROUP: u16 = 1;

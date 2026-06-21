@@ -2,17 +2,22 @@ const std = @import("std");
 
 const benchargs = @import("common/benchargs.zig");
 const benchdicuq = @import("common/benchdicuq.zig");
+const buildconfig = @import("riley/zig/buildconfig.zig");
 const riley = @import("riley/zig/riley.zig");
 const report = @import("riley/zig/report.zig");
+const F = buildconfig.F;
 
 const DEFAULT_OUT_DIR = "out/bench_stats_mem_dicuq";
 const DEFAULT_DATA_DIR = "data/FE/platehole3d_6mr_63f/";
 const DEFAULT_PIXELS_NUM = [2]u32{ 2464, 2056 };
 const DEFAULT_SUB_SAMPLE: u8 = 2;
-const DEFAULT_FOCAL_LENG: f64 = 50.0e-3;
-const DEFAULT_PIXELS_SIZE = [2]f64{ 3.45e-6, 3.45e-6 };
-const DEFAULT_FOV_SCALE: f64 = 0.65;
-const DEFAULT_STEREO_ANG: f64 = 20.0;
+const DEFAULT_FOCAL_LENG: F = @floatCast(50.0e-3);
+const DEFAULT_PIXELS_SIZE = [2]F{
+    @floatCast(3.45e-6),
+    @floatCast(3.45e-6),
+};
+const DEFAULT_FOV_SCALE: F = @floatCast(0.65);
+const DEFAULT_STEREO_ANG: F = 20.0;
 const DEFAULT_TEX_PATH = "texture/speckle.bmp";
 const DEFAULT_TOTAL_THREADS: u16 = 1;
 const DEFAULT_RUNS: usize = 1;

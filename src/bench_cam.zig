@@ -13,6 +13,7 @@ const common = @import("common/benchcommon.zig");
 const tcfg = @import("common/testconfig.zig");
 const cam = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
+const buildconfig = @import("riley/zig/buildconfig.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshio = @import("riley/zig/meshio.zig");
@@ -24,18 +25,22 @@ const so = @import("riley/zig/shaderops.zig");
 const orch = @import("common/orchestration.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const Timestamp = std.Io.Clock.Timestamp;
+const F = buildconfig.F;
 
 const DEFAULT_OUT_DIR = "out/bench_stats_cam";
 const DEFAULT_IMAGE_OUT_DIR = "out/bench_images_cam";
 const DEFAULT_DATA_DIR_SUFFIX = "sphere2000";
 const DEFAULT_PIXELS_NUM = [2]u32{ 1600, 1000 };
 const DEFAULT_SUB_SAMPLE: u8 = 1;
-const DEFAULT_FOCAL_LENG: f64 = 50.0e-3;
-const DEFAULT_PIXELS_SIZE = [2]f64{ 5.3e-6, 5.3e-6 };
-const DEFAULT_FOV_SCALE: f64 = 1.0;
+const DEFAULT_FOCAL_LENG: F = @floatCast(50.0e-3);
+const DEFAULT_PIXELS_SIZE = [2]F{
+    @floatCast(5.3e-6),
+    @floatCast(5.3e-6),
+};
+const DEFAULT_FOV_SCALE: F = 1.0;
 const DEFAULT_ROT = Rotation.init(0, 0, 0);
-const DEFAULT_BACKGROUND_VALUE: f64 = 0.5;
-const CHECKER_SQUARES_PER_AXIS: f64 = 36.0;
+const DEFAULT_BACKGROUND_VALUE: F = 0.5;
+const CHECKER_SQUARES_PER_AXIS: F = 36.0;
 
 const DistortionCase = struct {
     tag: []const u8,
@@ -492,7 +497,7 @@ fn runCameraBenchmarkWithImageOut(
         image_arr = null;
     }
 
-    const e2e_ms = @as(f64, @floatFromInt(
+    const e2e_ms = @as(F, @floatFromInt(
         e2e_start.durationTo(e2e_end).raw.nanoseconds,
     )) / 1e6;
     const geom_ms =

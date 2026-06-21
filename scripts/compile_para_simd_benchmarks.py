@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import pathlib
 import subprocess
-import re
 
 from perf_common import repo_root
 
@@ -27,11 +26,13 @@ def compile_mode_parallel(suffix: str) -> None:
         process = subprocess.Popen(
             [
                 "zig",
-                "build-exe",
-                "-O",
-                "ReleaseFast",
-                str(root / "src" / f"{bench_name}.zig"),
-                f"-femit-bin={root / 'bin' / f'{bench_name}_{suffix}'}",
+                "build",
+                f"install-{bench_name.replace('_', '-')}",
+                "--prefix",
+                ".",
+                "-Doptimize=ReleaseFast",
+                "-Dprecision=f64",
+                "-Dsimd=on",
             ],
             cwd=root,
             text=True,
@@ -55,21 +56,7 @@ def compile_mode_parallel(suffix: str) -> None:
 
 def main() -> int:
     root = repo_root()
-    buildconfig_path = root / "src" / "riley" / "zig" / "buildconfig.zig"
     (root / "bin").mkdir(parents=True, exist_ok=True)
-
-    buildconfig_text = buildconfig_path.read_text()
-    simd_match = re.search(
-        r"^\s*simd:\s*SimdMode\s*=\s*\.(on|off)\s*,\s*$",
-        buildconfig_text,
-        re.MULTILINE,
-    )
-    if simd_match is None:
-        raise SystemExit("Failed to determine buildconfig simd mode.")
-    if simd_match.group(1) != "on":
-        raise SystemExit(
-            "compile_para_simd_benchmarks.py requires buildconfig simd to be .on.",
-        )
 
     compile_mode_parallel("simd")
 

@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
+const goldpaths = @import("common/goldpaths.zig");
 const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
@@ -57,29 +58,26 @@ test "Unified Benchmark Tests" {
         .{
             .name = "fullraster",
             .data_name = "fullraster",
-            .gold_dir = "gold/fullscreen",
+            .gold_dir = goldpaths.sharedRoot("fullscreen"),
             .out_dir = "out/fullraster",
         },
         .{
             .name = "geom",
             .data_name = "geom",
-            .gold_dir = "gold/fullscreen",
+            .gold_dir = goldpaths.sharedRoot("fullscreen"),
             .out_dir = "out/geom",
         },
         .{
             .name = "sphere2000",
             .data_name = "sphere2000",
-            .gold_dir = if (simd_on) "gold/sphere2000-simd" else "gold/sphere2000",
+            .gold_dir = goldpaths.sphereRoot("sphere2000"),
             .out_dir = "out/sphere2000",
             .is_sphere = true,
         },
         .{
             .name = "sphere2000zoom",
             .data_name = "sphere2000",
-            .gold_dir = if (simd_on)
-                "gold/sphere2000zoom-simd"
-            else
-                "gold/sphere2000zoom",
+            .gold_dir = goldpaths.sphereRoot("sphere2000zoom"),
             .out_dir = "out/sphere2000zoom",
             .is_sphere = true,
             .fov_scale = 0.5,
@@ -125,14 +123,6 @@ test "Unified Benchmark Tests" {
 
     for (cases) |cc| {
         std.debug.print("\n--- Testing benchmark: {s} ---\n", .{cc.name});
-
-        if (!simd_on and cc.is_sphere) {
-            std.debug.print(
-                "Skipping scalar sphere benchmark comparisons.\n",
-                .{},
-            );
-            continue;
-        }
 
         for (mesh_types) |mt| {
             for (shader_types) |st| {

@@ -7,13 +7,38 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
+const root = @import("root");
+const local_build_options = @import("build_options.zig");
 
-pub const default_precision = f64;
+const build_options = if (@hasDecl(root, "build_options"))
+    root.build_options
+else
+    local_build_options;
+
+pub const default_precision = blk: {
+    if (std.mem.eql(u8, build_options.precision, "f32")) {
+        break :blk f32;
+    }
+    if (std.mem.eql(u8, build_options.precision, "f64")) {
+        break :blk f64;
+    }
+    @compileError("build_options.precision must be \"f32\" or \"f64\".");
+};
 pub const Scalar = default_precision;
 
 pub const SimdMode = enum {
     off,
     on,
+};
+
+pub const default_simd = blk: {
+    if (std.mem.eql(u8, build_options.simd, "on")) {
+        break :blk SimdMode.on;
+    }
+    if (std.mem.eql(u8, build_options.simd, "off")) {
+        break :blk SimdMode.off;
+    }
+    @compileError("build_options.simd must be \"on\" or \"off\".");
 };
 
 pub const SimdTextureInterpMode = enum {
@@ -101,7 +126,7 @@ pub const Tolerance = struct {
 };
 
 pub const Config = struct {
-    simd: SimdMode = .on,
+    simd: SimdMode = default_simd,
     simd_texture_interp: SimdTextureInterpMode = .inner,
     simd_vector_width: comptime_int = 8,
     max_nodal_fields: comptime_int = 8,

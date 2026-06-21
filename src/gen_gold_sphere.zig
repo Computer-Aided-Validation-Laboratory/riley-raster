@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
+const goldpaths = @import("common/goldpaths.zig");
 const tcfg = @import("common/testconfig.zig");
 const mo = @import("riley/zig/meshops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
@@ -17,6 +18,7 @@ const buildconfig = @import("riley/zig/buildconfig.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
 const cfg = buildconfig.config;
+const F = buildconfig.F;
 
 const simd_on = cfg.simd == .on;
 
@@ -75,15 +77,15 @@ pub fn main(init: std.process.Init) !void {
     const cases = [_]struct {
         ds: []const u8,
         out: []const u8,
-        fov_scale: f64 = 1.0,
+        fov_scale: F = 1.0,
     }{
         .{
             .ds = "sphere2000",
-            .out = if (simd_on) "gold/sphere2000-simd" else "gold/sphere2000",
+            .out = goldpaths.sphereRoot("sphere2000"),
         },
         .{
             .ds = "sphere2000",
-            .out = if (simd_on) "gold/sphere2000zoom-simd" else "gold/sphere2000zoom",
+            .out = goldpaths.sphereRoot("sphere2000zoom"),
             .fov_scale = 0.5,
         },
     };

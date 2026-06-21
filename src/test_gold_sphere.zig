@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
+const goldpaths = @import("common/goldpaths.zig");
 const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
@@ -52,7 +53,7 @@ test "Sphere Gold Tests" {
     const cases = [_]struct { ds: []const u8, gold: []const u8, out: []const u8 }{
         .{
             .ds = "sphere2000",
-            .gold = if (simd_on) "gold/sphere2000-simd" else "gold/sphere2000",
+            .gold = goldpaths.sphereRoot("sphere2000"),
             .out = "out-sphere2000",
         },
     };

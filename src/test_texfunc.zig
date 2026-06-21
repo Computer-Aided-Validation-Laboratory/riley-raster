@@ -9,6 +9,7 @@
 const std = @import("std");
 const Timestamp = std.Io.Clock.Timestamp;
 const common = @import("common/tests.zig");
+const goldpaths = @import("common/goldpaths.zig");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
@@ -22,7 +23,7 @@ const riley = @import("riley/zig/riley.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 
-const gold_root = "gold/texfunc";
+const gold_root = goldpaths.sharedRoot("texfunc");
 const data_root = "data/min";
 const test_type = "sphere200";
 const CoordMode = enum { uv, param };

@@ -2,14 +2,9 @@
 from __future__ import annotations
 
 import pathlib
-import shutil
 import subprocess
-import tempfile
 
-from perf_common import (
-    repo_root,
-    update_buildconfig_simd,
-)
+from perf_common import repo_root
 
 
 BENCH_NAMES = [
@@ -29,11 +24,13 @@ def compile_mode(simd_mode: str, suffix: str) -> None:
         subprocess.run(
             [
                 "zig",
-                "build-exe",
-                "-O",
-                "ReleaseFast",
-                str(root / "src" / f"{bench_name}.zig"),
-                f"-femit-bin={root / 'bin' / f'{bench_name}_{suffix}'}",
+                "build",
+                f"install-{bench_name.replace('_', '-')}",
+                "--prefix",
+                ".",
+                "-Doptimize=ReleaseFast",
+                "-Dprecision=f64",
+                f"-Dsimd={simd_mode}",
             ],
             cwd=root,
             check=True,
@@ -43,20 +40,10 @@ def compile_mode(simd_mode: str, suffix: str) -> None:
 
 def main() -> int:
     root = repo_root()
-    buildconfig_path = root / "src" / "riley" / "zig" / "buildconfig.zig"
-    backup_dir = pathlib.Path(tempfile.mkdtemp(prefix="riley-buildconfig-"))
-    backup_path = backup_dir / "buildconfig.zig"
-    shutil.copy2(buildconfig_path, backup_path)
     (root / "bin").mkdir(parents=True, exist_ok=True)
 
-    try:
-        update_buildconfig_simd("off")
-        compile_mode("off", "scalar")
-        update_buildconfig_simd("on")
-        compile_mode("on", "simd")
-    finally:
-        shutil.copy2(backup_path, buildconfig_path)
-        shutil.rmtree(backup_dir)
+    compile_mode("off", "scalar")
+    compile_mode("on", "simd")
 
     print(f"Benchmark executables written to {root / 'bin'}")
     return 0

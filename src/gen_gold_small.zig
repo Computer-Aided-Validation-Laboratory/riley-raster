@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const gengold = @import("common/gengold.zig");
+const goldpaths = @import("common/goldpaths.zig");
 const tcfg = @import("common/testconfig.zig");
 const riley = @import("riley/zig/riley.zig");
 const mo = @import("riley/zig/meshops.zig");
@@ -73,7 +74,7 @@ pub fn main(init: std.process.Init) !void {
         texture,
         pixel_num,
         &sample_configs,
-        "gold/small",
+        goldpaths.sharedRoot("small"),
         "data/small",
         config,
     );
@@ -88,7 +89,7 @@ pub fn main(init: std.process.Init) !void {
         texture,
         pixel_num,
         &sample_configs,
-        "gold/small",
+        goldpaths.sharedRoot("small"),
         "data/small",
         config,
     );

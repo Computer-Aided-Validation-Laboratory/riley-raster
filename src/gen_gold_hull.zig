@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const gengold = @import("common/gengold.zig");
+const goldpaths = @import("common/goldpaths.zig");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
@@ -35,13 +36,16 @@ pub fn main(init: std.process.Init) !void {
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
 
-    std.debug.print("Generating Hull Cases to gold/hull/...\n", .{});
+    std.debug.print(
+        "Generating Hull Cases to {s}/...\n",
+        .{goldpaths.sharedRoot("hull")},
+    );
 
     for (hull_modes) |hull_mode| {
         try gengold.generateDistortEdgeGoldForHullMode(
             aa,
             io,
-            "gold/hull",
+            goldpaths.sharedRoot("hull"),
             "data/edge",
             pixel_num,
             config,
@@ -64,8 +68,12 @@ pub fn main(init: std.process.Init) !void {
 
             const gold_dir = try std.fmt.allocPrint(
                 aa,
-                "gold/hull/vertbulge_{s}_texfunc_constant_{s}",
-                .{ @tagName(mesh_type), @tagName(hull_mode) },
+                "{s}/vertbulge_{s}_texfunc_constant_{s}",
+                .{
+                    goldpaths.sharedRoot("hull"),
+                    @tagName(mesh_type),
+                    @tagName(hull_mode),
+                },
             );
             try gengold.renderAndSave(
                 aa,

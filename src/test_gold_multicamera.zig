@@ -10,6 +10,7 @@ const std = @import("std");
 const Timestamp = std.Io.Clock.Timestamp;
 
 const benchcommon = @import("common/benchcommon.zig");
+const goldpaths = @import("common/goldpaths.zig");
 const orch = @import("common/orchestration.zig");
 const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
@@ -735,10 +736,7 @@ test "Sphere200 multicamera gold tests" {
     defer _ = gpa.deinit();
 
     const io = std.testing.io;
-    const gold_root = if (simd_on)
-        "gold/sphere200multicam-simd"
-    else
-        "gold/sphere200multicam";
+    const gold_root = goldpaths.sphereMulticameraRoot();
     const pixel_num = [_]u32{ 800, 500 };
 
     const texture_rgb = try iio.loadImage(

@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
+const goldpaths = @import("goldpaths.zig");
 const F = buildconfig.F;
 
 const orch = @import("orchestration.zig");
@@ -179,7 +180,7 @@ pub fn runMultimeshGeneration(
         outer_alloc,
         io,
         config,
-        "gold/multimesh",
+        goldpaths.sharedRoot("multimesh"),
         &orch.default_multimesh_dir_paths,
         .{ 1200, 800 },
     );
@@ -258,11 +259,12 @@ pub fn runMultimeshMixedGeneration(
     io: std.Io,
     config: RasterConfig,
 ) !void {
+    const gold_root = comptime goldpaths.sharedRoot("multimesh");
     try runMultimeshMixedGenerationExt(
         allocator,
         io,
         config,
-        "gold/multimesh/allelem_allshade",
+        gold_root ++ "/allelem_allshade",
         &orch.default_multimesh_dir_paths,
         .{ 1600, 800 },
     );
@@ -340,11 +342,12 @@ pub fn runMultimeshMixedRGBGeneration(
     io: std.Io,
     config: RasterConfig,
 ) !void {
+    const gold_root = comptime goldpaths.sharedRoot("multimesh");
     try runMultimeshMixedRGBGenerationExt(
         allocator,
         io,
         config,
-        "gold/multimesh/allelem_allshade_rgb",
+        gold_root ++ "/allelem_allshade_rgb",
         &orch.default_multimesh_dir_paths,
         .{ 1200, 800 },
     );

@@ -30,6 +30,7 @@ const F = buildconfig.F;
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const cfg = buildconfig.config;
 const csvio = @import("../riley/zig/csvio.zig");
+const goldpaths = @import("goldpaths.zig");
 const tcfg = @import("testconfig.zig");
 
 pub const default_fails_root = "fails";
@@ -1041,7 +1042,7 @@ pub fn runMultimeshTest(
     try runMultimeshTestExt(
         outer_alloc,
         io,
-        "gold/multimesh",
+        goldpaths.sharedRoot("multimesh"),
         &orch.default_multimesh_dir_paths,
         .{ 1200, 800 },
         rel_tol,
@@ -1185,7 +1186,9 @@ pub fn runMultimeshMixedTest(
     try runMultimeshMixedTestExt(
         outer_alloc,
         io,
-        "gold/multimesh/allelem_allshade",
+        std.fmt.comptimePrint("{s}/allelem_allshade", .{
+            goldpaths.sharedRoot("multimesh"),
+        }),
         &orch.default_multimesh_dir_paths,
         .{ 1600, 800 },
         rel_tol,
@@ -1312,7 +1315,9 @@ pub fn runMultimeshMixedRGBTest(
     try runMultimeshMixedRGBTestExt(
         outer_alloc,
         io,
-        "gold/multimesh/allelem_allshade_rgb",
+        std.fmt.comptimePrint("{s}/allelem_allshade_rgb", .{
+            goldpaths.sharedRoot("multimesh"),
+        }),
         &orch.default_multimesh_dir_paths,
         .{ 1200, 800 },
         rel_tol,

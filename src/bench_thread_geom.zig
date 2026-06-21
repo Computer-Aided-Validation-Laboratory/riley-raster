@@ -10,6 +10,7 @@ const std = @import("std");
 const benchargs = @import("common/benchargs.zig");
 const common = @import("common/benchcommon.zig");
 const tcfg = @import("common/testconfig.zig");
+const buildconfig = @import("riley/zig/buildconfig.zig");
 const rastcfg = @import("riley/zig/rasterconfig.zig");
 const riley = @import("riley/zig/riley.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
@@ -25,14 +26,18 @@ const NDArray = @import("riley/zig/ndarray.zig").NDArray;
 const orch = @import("common/orchestration.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
 const Timestamp = std.Io.Clock.Timestamp;
+const F = buildconfig.F;
 
 const DEFAULT_OUT_DIR = "out/bench_stats_thread_geom";
 const DEFAULT_IMAGE_OUT_DIR = "out/bench_images_thread_geom";
 const DEFAULT_PIXELS_NUM = [2]u32{ 1600, 1000 };
 const DEFAULT_SUB_SAMPLE: u8 = 1;
-const DEFAULT_FOCAL_LENG: f64 = 50.0e-3;
-const DEFAULT_PIXELS_SIZE = [2]f64{ 5.3e-6, 5.3e-6 };
-const DEFAULT_FOV_SCALE: f64 = 1.0;
+const DEFAULT_FOCAL_LENG: F = @floatCast(50.0e-3);
+const DEFAULT_PIXELS_SIZE = [2]F{
+    @floatCast(5.3e-6),
+    @floatCast(5.3e-6),
+};
+const DEFAULT_FOV_SCALE: F = 1.0;
 const DEFAULT_TEX_GREY_PATH = "texture/speckle.bmp";
 const DEFAULT_TEX_RGB_PATH = "texture/speckle_rgb.bmp";
 const DEFAULT_ROT = Rotation.init(0, 0, 0);
@@ -56,9 +61,9 @@ const MESH_SIZES = [_][]const u8{
 const MESH_COPIES_LIST = [_]usize{ 1, 2, 4 };
 
 const RunTiming = struct {
-    geom_prep_ms: f64,
-    active_frame_ms: f64,
-    total_time_ms: f64,
+    geom_prep_ms: F,
+    active_frame_ms: F,
+    total_time_ms: F,
 };
 
 fn duplicateMeshInput(
@@ -69,7 +74,7 @@ fn duplicateMeshInput(
 ) !void {
     const base_coords_num = base_mesh.coords.mat.rows_num;
     const new_coords_num = base_coords_num * copies_num;
-    const new_coords_mem = try allocator.alloc(f64, new_coords_num * 3);
+    const new_coords_mem = try allocator.alloc(F, new_coords_num * 3);
     errdefer allocator.free(new_coords_mem);
 
     var new_coords = meshio.Coords.init(new_coords_mem, new_coords_num);
@@ -81,7 +86,7 @@ fn duplicateMeshInput(
             const dest_idx = jj * base_coords_num + ii;
             const x_val = base_mesh.coords.x(ii);
             const y_val = base_mesh.coords.y(ii);
-            const z_offset = @as(f64, @floatFromInt(jj)) * 1.0;
+            const z_offset = @as(F, @floatFromInt(jj)) * 1.0;
             const z_val = base_mesh.coords.z(ii) - z_offset;
 
             new_coords.mat.set(dest_idx, 0, x_val);
@@ -122,7 +127,7 @@ fn duplicateMeshInput(
     var new_shader: shaderops.ShaderInput = undefined;
     switch (base_mesh.shader) {
         .func => |base_func| {
-            var new_uvs: ?NDArray(f64) = null;
+            var new_uvs: ?NDArray(F) = null;
             if (base_func.uvs) |base_uvs| {
                 const base_dims = base_uvs.dims;
                 const new_dims = [_]usize{
@@ -130,7 +135,7 @@ fn duplicateMeshInput(
                     base_dims[1],
                     base_dims[2],
                 };
-                new_uvs = try NDArray(f64).initFlat(allocator, &new_dims);
+                new_uvs = try NDArray(F).initFlat(allocator, &new_dims);
                 const base_elem_size = base_dims[1] * base_dims[2];
                 jj = 0;
                 while (jj < copies_num) : (jj += 1) {
@@ -254,12 +259,12 @@ fn runAndRecord(
     }
 
     const e2e_end = Timestamp.now(io, .awake);
-    const e2e_ms = @as(f64, @floatFromInt(
+    const e2e_ms = @as(F, @floatFromInt(
         e2e_start.durationTo(e2e_end).raw.nanoseconds,
     )) / 1e6;
 
-    var total_geom_prep_ns: f64 = 0;
-    var total_active_time_ns: f64 = 0;
+    var total_geom_prep_ns: F = 0;
+    var total_active_time_ns: F = 0;
     for (bench_capture) |bc| {
         total_geom_prep_ns += bc.bench_log.frame_times.geometry_prep;
         total_active_time_ns += bc.bench_log.frame_times.active_time;

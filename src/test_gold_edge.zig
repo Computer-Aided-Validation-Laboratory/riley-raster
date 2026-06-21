@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const common = @import("common/tests.zig");
+const goldpaths = @import("common/goldpaths.zig");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
@@ -83,7 +84,7 @@ test "Gold Edge Suite" {
             texture,
             pixel_num,
             &sample_configs,
-            "gold/edge",
+            goldpaths.sharedRoot("edge"),
             "data/edge",
             tcfg.REL_TOL,
             tcfg.ABS_TOL,
@@ -100,7 +101,7 @@ test "Gold Edge Suite" {
             texture,
             pixel_num,
             &sample_configs,
-            "gold/edge",
+            goldpaths.sharedRoot("edge"),
             "data/edge",
             tcfg.REL_TOL,
             tcfg.ABS_TOL,
@@ -117,7 +118,7 @@ test "Gold Edge Suite" {
             texture,
             pixel_num,
             &sample_configs,
-            "gold/edge",
+            goldpaths.sharedRoot("edge"),
             "data/edge",
             tcfg.REL_TOL,
             tcfg.ABS_TOL,
@@ -131,7 +132,7 @@ test "Gold Edge Suite" {
             allocator,
             io,
             mt,
-            "gold/edge",
+            goldpaths.sharedRoot("edge"),
             "data/edge",
             pixel_num_distort_midside,
         );

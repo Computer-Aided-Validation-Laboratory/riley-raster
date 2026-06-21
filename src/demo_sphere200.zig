@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
+const buildconfig = @import("riley/zig/buildconfig.zig");
 const riley = @import("riley/zig/riley.zig");
 const RasterConfig = riley.RasterConfig;
 const meshio = @import("riley/zig/meshio.zig");
@@ -23,6 +24,7 @@ const CameraInput = camera_mod.CameraInput;
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const CameraPrepared = camera_mod.CameraPrepared;
 const MatSlice = @import("riley/zig/matslice.zig").MatSlice;
+const F = buildconfig.F;
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
@@ -98,10 +100,13 @@ pub fn main(init: std.process.Init) !void {
     // 6. Setup Camera
     // Position camera to frame the sphere
     std.debug.print("Setting up camera...\n", .{});
-    const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };
-    const focal_leng: f64 = 50.0e-3;
+    const pixel_size = [_]F{
+        @floatCast(5.3e-6),
+        @floatCast(5.3e-6),
+    };
+    const focal_leng: F = @floatCast(50.0e-3);
     const rot = Rotation.init(0, 0, 0);
-    const fov_scale_factor: f64 = 1.0;
+    const fov_scale_factor: F = 1.0;
 
     const roi_pos = cameraops.roiCentFromCoords(&sim_data.coords);
     const cam_pos = cameraops.posFillFrameFromRot(
@@ -142,7 +147,7 @@ pub fn main(init: std.process.Init) !void {
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config.total_threads) },
     };
-    
+
     const images = try riley.raster(
         aa,
         &render_groups,

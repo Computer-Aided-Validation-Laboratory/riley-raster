@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const common = @import("common/tests.zig");
+const goldpaths = @import("common/goldpaths.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 const gk = @import("riley/zig/geometrykernels.zig");
@@ -56,7 +57,7 @@ test "Gold Hull Suite" {
                 allocator,
                 io,
                 mesh_type,
-                "gold/hull",
+                goldpaths.sharedRoot("hull"),
                 "data/edge",
                 pixel_num,
                 hull_mode,
@@ -69,7 +70,7 @@ test "Gold Hull Suite" {
                 io,
                 "vertbulge",
                 mesh_type,
-                "gold/hull",
+                goldpaths.sharedRoot("hull"),
                 "data/edge",
                 pixel_num,
                 hull_mode,

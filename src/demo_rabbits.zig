@@ -21,12 +21,14 @@ const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const sceneops = @import("riley/zig/sceneops.zig");
 const shaderops = @import("riley/zig/shaderops_common.zig");
 const uvio = @import("riley/zig/uvio.zig");
+const buildconfig = @import("riley/zig/buildconfig.zig");
 
 const CameraInput = cammod.CameraInput;
 const CameraPrepared = cammod.CameraPrepared;
 const MeshInput = mo.MeshInput;
 const FuncShaderBuiltin = shaderops.FuncShaderBuiltin;
 const FuncShaderParams = shaderops.FuncShaderParams;
+const F = buildconfig.F;
 
 const rabbit_mesh_types = [_]gk.MeshType{
     .tri3,
@@ -38,10 +40,10 @@ const rabbit_mesh_types = [_]gk.MeshType{
 
 const out_dir_root = "./out/demo-rabbits";
 const pixel_num = [_]u32{ 1600, 800 };
-const fov_scale: f64 = 1.01;
-const overlap_frac_xy = [2]f64{ 0.85, 0.8 };
-const checker_squares_per_axis: f64 = 36.0;
-const background_value: f64 = 0.5 * @as(f64, std.math.maxInt(u8));
+const fov_scale: F = @floatCast(1.01);
+const overlap_frac_xy = [2]F{ 0.85, 0.8 };
+const checker_squares_per_axis: F = 36.0;
+const background_value: F = 0.5 * @as(F, std.math.maxInt(u8));
 
 const ShaderMode = enum {
     tex,

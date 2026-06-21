@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const common = @import("common/tests.zig");
+const goldpaths = @import("common/goldpaths.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
@@ -72,7 +73,7 @@ test "Gold Simple Suite" {
             texture,
             pixel_num,
             &sample_configs,
-            "gold/simple",
+            goldpaths.sharedRoot("simple"),
             "data/simple",
             tcfg.REL_TOL,
             tcfg.ABS_TOL,
