@@ -120,6 +120,7 @@ pub fn main(init: std.process.Init) !void {
                     r_config.image_save_opts = &opts_with_ch;
 
                     var result = try common.runBenchmarkQuiet(
+                        u8,
                         allocator,
                         io,
                         mt,

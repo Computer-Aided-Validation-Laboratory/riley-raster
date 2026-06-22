@@ -114,6 +114,7 @@ pub fn buildSphere200MultiCullMeshInputs(
         .{@tagName(mesh_type)},
     );
     const base_mesh_input = try benchcommon.loadBenchmarkMeshInput(
+        u8,
         allocator,
         io,
         mesh_type,

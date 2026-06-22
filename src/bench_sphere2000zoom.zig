@@ -199,6 +199,7 @@ pub fn main(init: std.process.Init) !void {
                         );
 
                     var res = try common.runBenchmarkWithImageOut(
+                        u8,
                         outer_alloc,
                         io,
                         mt,
@@ -285,6 +286,7 @@ pub fn main(init: std.process.Init) !void {
                         );
 
                     var res = try common.runBenchmarkWithImageOut(
+                        u8,
                         outer_alloc,
                         io,
                         mt,

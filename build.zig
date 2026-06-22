@@ -24,14 +24,21 @@ pub fn build(b: *std.Build) void {
     const precision = b.option([]const u8, "precision", "Floating point precision: f64 or f32") orelse
         "f64";
     const simd = b.option([]const u8, "simd", "SIMD mode: on or off") orelse "on";
+    const simd_texture_interp = b.option(
+        []const u8,
+        "simd-texture-interp",
+        "SIMD texture interpolation mode: inner or over_pixels",
+    ) orelse "inner";
 
     validatePrecision(precision);
     validateSimd(simd);
+    validateSimdTextureInterp(simd_texture_interp);
 
     const build_options_module = createBuildOptionsModule(
         b,
         precision,
         simd,
+        simd_texture_interp,
     );
     const shared_lib = addRileySharedLibrary(
         b,
@@ -127,6 +134,7 @@ pub fn build(b: *std.Build) void {
             entry,
             precision,
             simd,
+            simd_texture_interp,
         );
         test_step.dependOn(&test_run.step);
         test_all_step.dependOn(&test_run.step);
@@ -335,6 +343,7 @@ pub fn build(b: *std.Build) void {
             entry,
             precision,
             simd,
+            simd_texture_interp,
         );
         install_step.dependOn(&install_artifact.step);
         bench_bins_step.dependOn(&install_artifact.step);
@@ -370,6 +379,7 @@ fn addTestRunStep(
     entry: TestEntry,
     precision: []const u8,
     simd: []const u8,
+    simd_texture_interp: []const u8,
 ) *std.Build.Step.Run {
     const run_step = b.addSystemCommand(&.{
         "sh",
@@ -378,8 +388,9 @@ fn addTestRunStep(
         \\src="$1"
         \\precision="$2"
         \\simd="$3"
-        \\zigexe="$4"
-        \\opt="$5"
+        \\simd_texture_interp="$4"
+        \\zigexe="$5"
+        \\opt="$6"
         \\wrapper="${src}.wrapper.zig"
         \\cleanup() {
         \\    rm -f "$wrapper"
@@ -389,6 +400,7 @@ fn addTestRunStep(
         \\    printf 'pub const build_options = struct {\n'
         \\    printf '    pub const precision = "%s";\n' "$precision"
         \\    printf '    pub const simd = "%s";\n' "$simd"
+        \\    printf '    pub const simd_texture_interp = "%s";\n' "$simd_texture_interp"
         \\    printf '};\n'
         \\    cat "$src"
         \\} > "$wrapper"
@@ -398,6 +410,7 @@ fn addTestRunStep(
         entry.source_path,
         precision,
         simd,
+        simd_texture_interp,
         b.graph.zig_exe,
         @tagName(optimize),
     });
@@ -434,12 +447,14 @@ fn addBenchInstallStep(
     entry: RunEntry,
     precision: []const u8,
     simd: []const u8,
+    simd_texture_interp: []const u8,
 ) *std.Build.Step.InstallArtifact {
     const binary_name = benchmarkBinaryName(
         b,
         entry.source_path["src/".len .. entry.source_path.len - ".zig".len],
         precision,
         simd,
+        simd_texture_interp,
     );
     const executable = b.addExecutable(.{
         .name = binary_name,
@@ -462,10 +477,12 @@ fn createBuildOptionsModule(
     b: *std.Build,
     precision: []const u8,
     simd: []const u8,
+    simd_texture_interp: []const u8,
 ) *std.Build.Module {
     const options = b.addOptions();
     options.addOption([]const u8, "precision", precision);
     options.addOption([]const u8, "simd", simd);
+    options.addOption([]const u8, "simd_texture_interp", simd_texture_interp);
     return options.createModule();
 }
 
@@ -540,7 +557,7 @@ fn wrapperSourceText(
                 \\pub const build_options = @import("build_options");
                 \\
                 \\{s}
-                ,
+            ,
                 .{source_text},
             ) catch @panic("Failed to write test wrapper source.");
         },
@@ -645,15 +662,31 @@ fn validateSimd(simd: []const u8) void {
     @panic("Supported -Dsimd values are on and off.");
 }
 
+fn validateSimdTextureInterp(simd_texture_interp: []const u8) void {
+    if (std.mem.eql(u8, simd_texture_interp, "inner") or
+        std.mem.eql(u8, simd_texture_interp, "over_pixels"))
+    {
+        return;
+    }
+    @panic(
+        "Supported -Dsimd-texture-interp values are inner and over_pixels.",
+    );
+}
+
 fn benchmarkBinaryName(
     b: *std.Build,
     base_name: []const u8,
     precision: []const u8,
     simd: []const u8,
+    simd_texture_interp: []const u8,
 ) []const u8 {
     const simd_tag = if (std.mem.eql(u8, simd, "on")) "simd" else "scalar";
-    if (std.mem.eql(u8, precision, "f64")) {
-        return b.fmt("{s}_{s}", .{ base_name, simd_tag });
-    }
-    return b.fmt("{s}_{s}_{s}", .{ base_name, precision, simd_tag });
+    const interp_tag = if (std.mem.eql(u8, simd_texture_interp, "over_pixels"))
+        "overpx"
+    else
+        "inner";
+    return b.fmt(
+        "{s}_{s}_{s}_{s}",
+        .{ base_name, precision, simd_tag, interp_tag },
+    );
 }

@@ -37,6 +37,10 @@ const DEFAULT_FOV_SCALE: F = 1.0;
 const DEFAULT_TEX_GREY_PATH = "texture/speckle.bmp";
 const DEFAULT_TEX_RGB_PATH = "texture/speckle_rgb.bmp";
 const DEFAULT_ROT = Rotation.init(0, 0, 0);
+const texture_shader_types = [_]common.ShaderType{
+    .tex8_grey,
+    .tex8_rgb,
+};
 
 pub fn main(init: std.process.Init) !void {
     const outer_alloc = init.gpa;
@@ -73,25 +77,6 @@ pub fn main(init: std.process.Init) !void {
         .fov_scale = DEFAULT_FOV_SCALE,
         .rot = DEFAULT_ROT,
     };
-
-    const texture_grey = try iio.loadImage(
-        u8,
-        1,
-        outer_alloc,
-        io,
-        DEFAULT_TEX_GREY_PATH,
-        .bmp,
-    );
-    defer texture_grey.deinit(outer_alloc);
-    const texture_rgb = try iio.loadImage(
-        u8,
-        3,
-        outer_alloc,
-        io,
-        DEFAULT_TEX_RGB_PATH,
-        .bmp,
-    );
-    defer texture_rgb.deinit(outer_alloc);
 
     const mesh_types = comptime std.enums.values(gk.MeshType);
     const shader_types = [_]common.ShaderType{
@@ -164,9 +149,93 @@ pub fn main(init: std.process.Init) !void {
         DEFAULT_FOV_SCALE,
         actual_tile_size,
     );
+    try writeStudyMetadata(
+        outer_alloc,
+        io,
+        bench_args.out_dir,
+        bench_args,
+    );
+
+    switch (bench_args.texture_storage) {
+        .u8 => try runBenchmarksForTextureType(
+            u8,
+            outer_alloc,
+            io,
+            &stats,
+            bench_args,
+            base_raster_config,
+            render_defaults,
+            mesh_types[0..],
+            shader_types[0..],
+            tex_func_shader_types[0..],
+            sample_configs[0..],
+            tex_func_cases[0..],
+        ),
+        .u16 => try runBenchmarksForTextureType(
+            u16,
+            outer_alloc,
+            io,
+            &stats,
+            bench_args,
+            base_raster_config,
+            render_defaults,
+            mesh_types[0..],
+            shader_types[0..],
+            tex_func_shader_types[0..],
+            sample_configs[0..],
+            tex_func_cases[0..],
+        ),
+    }
+
+    try stats.writeRunCSVs(outer_alloc, io, bench_args.out_dir);
+    try common.writeBenchmarkReport(
+        outer_alloc,
+        io,
+        "Full Raster Benchmark Results",
+        bench_args.out_dir,
+        bench_args.pixels_num,
+        stats.stats_list.items,
+        0,
+    );
+}
+
+fn runBenchmarksForTextureType(
+    comptime T: type,
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    stats: *benchstats.BenchStatsCollector,
+    bench_args: benchargs.BenchArgs,
+    base_raster_config: rastcfg.RasterConfig,
+    render_defaults: common.BenchRenderDefaults,
+    mesh_types: []const gk.MeshType,
+    shader_types: []const common.ShaderType,
+    tex_func_shader_types: []const common.ShaderType,
+    sample_configs: []const texops.TextureSampleConfig,
+    tex_func_cases: []const common.TexFuncCase,
+) !void {
+    const texture_grey = try loadBenchmarkTexture(
+        T,
+        1,
+        outer_alloc,
+        io,
+        DEFAULT_TEX_GREY_PATH,
+    );
+    defer texture_grey.deinit(outer_alloc);
+    const texture_rgb = try loadBenchmarkTexture(
+        T,
+        3,
+        outer_alloc,
+        io,
+        DEFAULT_TEX_RGB_PATH,
+    );
+    defer texture_rgb.deinit(outer_alloc);
 
     for (mesh_types) |mt| {
-        for (shader_types) |st| {
+        const selected_shader_types = if (bench_args.shader_subset == .texture)
+            texture_shader_types[0..]
+        else
+            shader_types;
+        for (selected_shader_types) |st| {
             for (sample_configs) |sc| {
                 var data_dir_buf: [256]u8 = undefined;
                 const data_dir = try std.fmt.bufPrint(
@@ -176,7 +245,10 @@ pub fn main(init: std.process.Init) !void {
                 );
 
                 if (common.shouldRun(config, mt, st, sc, data_dir)) {
-                    const sample_config = if (st == .tex8_grey or st == .tex8_rgb) sc else null;
+                    const sample_config = if (st == .tex8_grey or st == .tex8_rgb)
+                        sc
+                    else
+                        null;
                     const case_name = try common.calcCaseName(
                         outer_alloc,
                         mt,
@@ -201,13 +273,13 @@ pub fn main(init: std.process.Init) !void {
                             bench_args.out_dir
                         else
                             "";
-                        const raster_config =
-                            benchargs.applyRasterConfig(
-                                base_raster_config,
-                                bench_args,
-                            );
+                        const raster_config = benchargs.applyRasterConfig(
+                            base_raster_config,
+                            bench_args,
+                        );
 
                         var res = try common.runBenchmarkWithImageOut(
+                            T,
                             outer_alloc,
                             io,
                             mt,
@@ -256,6 +328,10 @@ pub fn main(init: std.process.Init) !void {
             }
         }
 
+        if (bench_args.shader_subset == .texture) {
+            continue;
+        }
+
         for (tex_func_shader_types) |st| {
             for (tex_func_cases) |tex_func_case| {
                 var data_dir_buf: [256]u8 = undefined;
@@ -264,7 +340,6 @@ pub fn main(init: std.process.Init) !void {
                     "data/bench/{s}_{s}",
                     .{ @tagName(mt), DEFAULT_DATA_DIR_SUFFIX },
                 );
-
                 const case_name = try common.calcCaseName(
                     outer_alloc,
                     mt,
@@ -289,13 +364,13 @@ pub fn main(init: std.process.Init) !void {
                         bench_args.out_dir
                     else
                         "";
-                    const raster_config =
-                        benchargs.applyRasterConfig(
-                            base_raster_config,
-                            bench_args,
-                        );
+                    const raster_config = benchargs.applyRasterConfig(
+                        base_raster_config,
+                        bench_args,
+                    );
 
                     var res = try common.runBenchmarkWithImageOut(
+                        T,
                         outer_alloc,
                         io,
                         mt,
@@ -343,15 +418,94 @@ pub fn main(init: std.process.Init) !void {
             }
         }
     }
+}
 
-    try stats.writeRunCSVs(outer_alloc, io, bench_args.out_dir);
-    try common.writeBenchmarkReport(
+fn writeStudyMetadata(
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    out_dir: []const u8,
+    bench_args: benchargs.BenchArgs,
+) !void {
+    const meta_path = try std.fs.path.join(
         outer_alloc,
-        io,
-        "Full Raster Benchmark Results",
-        bench_args.out_dir,
-        bench_args.pixels_num,
-        stats.stats_list.items,
-        0,
+        &[_][]const u8{ out_dir, "study_meta.txt" },
     );
+    defer outer_alloc.free(meta_path);
+
+    const cwd = std.Io.Dir.cwd();
+    var file = try cwd.createFile(io, meta_path, .{});
+    defer file.close(io);
+
+    var write_buf: [1024]u8 = undefined;
+    var buffered_writer = file.writer(io, &write_buf);
+    const writer = &buffered_writer.interface;
+
+    try writer.print("texture_storage={s}\n", .{
+        @tagName(bench_args.texture_storage),
+    });
+    try writer.print("shader_subset={s}\n", .{
+        @tagName(bench_args.shader_subset),
+    });
+    try buffered_writer.flush();
+}
+
+fn loadBenchmarkTexture(
+    comptime T: type,
+    comptime channels: usize,
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    path: []const u8,
+) !iio.Texture(T, channels) {
+    if (T == u8) {
+        return iio.loadImage(
+            u8,
+            channels,
+            allocator,
+            io,
+            path,
+            .bmp,
+        );
+    }
+    if (T == u16) {
+        return scaleTexture8To16(
+            channels,
+            allocator,
+            try iio.loadImage(
+                u8,
+                channels,
+                allocator,
+                io,
+                path,
+                .bmp,
+            ),
+        );
+    }
+    @compileError("Unsupported benchmark texture storage type.");
+}
+
+fn scaleTexture8To16(
+    comptime channels: usize,
+    allocator: std.mem.Allocator,
+    texture_u8: iio.Texture(u8, channels),
+) !iio.Texture(u16, channels) {
+    defer texture_u8.deinit(allocator);
+
+    var texture_u16 = try iio.Texture(u16, channels).init(
+        allocator,
+        texture_u8.rows_num,
+        texture_u8.cols_num,
+    );
+    errdefer texture_u16.deinit(allocator);
+
+    for (0..channels) |ch| {
+        for (0..texture_u8.rows_num) |rr| {
+            for (0..texture_u8.cols_num) |cc| {
+                const px_u8 = texture_u8.getVal(ch, rr, cc);
+                const px_u16 = @as(u16, px_u8) * 257;
+                texture_u16.setVal(ch, rr, cc, px_u16);
+            }
+        }
+    }
+
+    return texture_u16;
 }

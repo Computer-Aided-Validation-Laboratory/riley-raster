@@ -28,9 +28,21 @@ pub const BenchArgs = struct {
     disk_save_overlap: bool,
     sample: ?texops.TextureSample,
     sample_mode: ?texops.TextureSampleMode,
+    texture_storage: TextureStorage,
+    shader_subset: ShaderSubset,
     pixels_num: [2]u32,
     sub_sample: u8,
     runs: usize,
+};
+
+pub const TextureStorage = enum {
+    u8,
+    u16,
+};
+
+pub const ShaderSubset = enum {
+    all,
+    texture,
 };
 
 pub fn defaultBenchArgs(
@@ -54,6 +66,8 @@ pub fn defaultBenchArgs(
         .disk_save_overlap = raster_config.disk_save_overlap,
         .sample = null,
         .sample_mode = null,
+        .texture_storage = .u8,
+        .shader_subset = .all,
         .pixels_num = .{ 800, 500 },
         .sub_sample = 2,
         .runs = 10,
@@ -144,6 +158,12 @@ pub fn parseArgsWithDefaults(
             } else if (std.mem.eql(u8, arg, "--sample-mode")) {
                 bench_args.sample_mode =
                     try parseEnum(texops.TextureSampleMode, value);
+            } else if (std.mem.eql(u8, arg, "--texture-storage")) {
+                bench_args.texture_storage =
+                    try parseEnum(TextureStorage, value);
+            } else if (std.mem.eql(u8, arg, "--shader-subset")) {
+                bench_args.shader_subset =
+                    try parseEnum(ShaderSubset, value);
             } else if (std.mem.eql(u8, arg, "--out-dir")) {
                 bench_args.out_dir = value;
             } else if (std.mem.eql(u8, arg, "--pixels-x")) {
@@ -301,6 +321,10 @@ test "parse bench args named options" {
         "linear",
         "--sample-mode",
         "direct",
+        "--texture-storage",
+        "u16",
+        "--shader-subset",
+        "texture",
         "--out-dir",
         "out/custom",
         "--pixels-x",
@@ -357,6 +381,14 @@ test "parse bench args named options" {
     try std.testing.expectEqual(
         texops.TextureSampleMode.direct,
         bench_args.sample_mode.?,
+    );
+    try std.testing.expectEqual(
+        TextureStorage.u16,
+        bench_args.texture_storage,
+    );
+    try std.testing.expectEqual(
+        ShaderSubset.texture,
+        bench_args.shader_subset,
     );
     try std.testing.expectEqualStrings("out/custom", bench_args.out_dir);
     try std.testing.expectEqual([2]u32{ 1024, 768 }, bench_args.pixels_num);

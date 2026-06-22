@@ -105,6 +105,7 @@ pub fn main(init: std.process.Init) !void {
                     var r_config = tcfg.getRasterConfig(.bench);
                     r_config.save_strategy = .disk;
                     _ = try common.runBenchmarkQuiet(
+                        u8,
                         aa,
                         io,
                         mt,

@@ -1,0 +1,253 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import csv
+import datetime as dt
+import pathlib
+import shlex
+import subprocess
+import time
+
+from perf_common import command_path, repo_root
+
+
+def build_run_root(out_root: pathlib.Path | None) -> pathlib.Path:
+    root_dir = out_root or pathlib.Path("out") / "bench_stats_perf_raster"
+    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    return root_dir / timestamp
+
+
+def default_image_out_dir() -> pathlib.Path:
+    return pathlib.Path("out") / "bench_images_perf_raster"
+
+
+def binary_name(precision: str, interp: str) -> str:
+    return f"bench_fullraster_{precision}_simd_{interp}"
+
+
+def binary_path(precision: str, interp: str) -> pathlib.Path:
+    path = repo_root() / "bin" / binary_name(precision, interp)
+    if not path.exists():
+        raise SystemExit(
+            f"Missing binary {path}. Run scripts/compile_perf_all.py first.",
+        )
+    return path
+
+
+def timestamp_string() -> str:
+    return dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def write_command_file(output_dir: pathlib.Path, command: list[str]) -> None:
+    command_file = output_dir / "command.txt"
+    command_file.write_text(
+        " ".join(shlex.quote(part) for part in command) + "\n",
+    )
+
+
+def write_experiment_meta(
+    output_dir: pathlib.Path,
+    case: dict[str, str],
+    command: list[str],
+) -> None:
+    meta_path = output_dir / "experiment_meta.txt"
+    lines = [
+        f"experiment={case['experiment']}",
+        f"case_name={case['case_name']}",
+        f"binary={case['binary']}",
+        f"precision={case['precision']}",
+        f"simd=on",
+        f"interp={case['interp']}",
+        f"texture_storage={case['texture_storage']}",
+        f"shader_subset={case['shader_subset']}",
+        "command=" + " ".join(shlex.quote(part) for part in command),
+    ]
+    meta_path.write_text("\n".join(lines) + "\n")
+
+
+def write_timing_csv(
+    rows: list[dict[str, object]],
+    timestamp: str,
+) -> pathlib.Path:
+    out_dir = repo_root() / "out"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = out_dir / f"time_bench_perf_raster_{timestamp}.csv"
+    with csv_path.open("w", newline="") as csv_file:
+        writer = csv.DictWriter(
+            csv_file,
+            fieldnames=["experiment", "case_name", "seconds"],
+        )
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+    return csv_path
+
+
+def create_cases() -> list[dict[str, str]]:
+    return [
+        {
+            "experiment": "precision",
+            "case_name": "fullraster_precision_f64_simd_v8_inner",
+            "binary": binary_name("f64", "inner"),
+            "precision": "f64",
+            "interp": "inner",
+            "texture_storage": "u8",
+            "shader_subset": "all",
+        },
+        {
+            "experiment": "precision",
+            "case_name": "fullraster_precision_f32_simd_v16_inner",
+            "binary": binary_name("f32", "inner"),
+            "precision": "f32",
+            "interp": "inner",
+            "texture_storage": "u8",
+            "shader_subset": "all",
+        },
+        {
+            "experiment": "interp",
+            "case_name": "fullraster_interp_f64_simd_inner",
+            "binary": binary_name("f64", "inner"),
+            "precision": "f64",
+            "interp": "inner",
+            "texture_storage": "u8",
+            "shader_subset": "all",
+        },
+        {
+            "experiment": "interp",
+            "case_name": "fullraster_interp_f64_simd_overpx",
+            "binary": binary_name("f64", "overpx"),
+            "precision": "f64",
+            "interp": "overpx",
+            "texture_storage": "u8",
+            "shader_subset": "all",
+        },
+        {
+            "experiment": "texstore",
+            "case_name": "fullraster_texstore_u8",
+            "binary": binary_name("f64", "inner"),
+            "precision": "f64",
+            "interp": "inner",
+            "texture_storage": "u8",
+            "shader_subset": "texture",
+        },
+        {
+            "experiment": "texstore",
+            "case_name": "fullraster_texstore_u16",
+            "binary": binary_name("f64", "inner"),
+            "precision": "f64",
+            "interp": "inner",
+            "texture_storage": "u16",
+            "shader_subset": "texture",
+        },
+    ]
+
+
+def run_case(
+    case: dict[str, str],
+    run_root: pathlib.Path,
+    image_out_dir: pathlib.Path,
+    runs: int,
+    pixels_x: int | None,
+    pixels_y: int | None,
+    dry_run: bool,
+) -> float:
+    output_dir = run_root / case["case_name"]
+    binary = binary_path(case["precision"], case["interp"])
+    command = [
+        str(binary),
+        "--out-dir",
+        command_path(output_dir),
+        "--image-out-dir",
+        command_path(image_out_dir),
+        "--total-threads",
+        "1",
+        "--max-geom-workers-per-job",
+        "1",
+        "--max-raster-workers-per-job",
+        "1",
+        "--render-group-count",
+        "1",
+        "--frame-batch-size-per-group",
+        "1",
+        "--max-geom-jobs-in-flight-per-group",
+        "1",
+        "--runs",
+        str(runs),
+        "--texture-storage",
+        case["texture_storage"],
+        "--shader-subset",
+        case["shader_subset"],
+    ]
+    if pixels_x is not None:
+        command.extend(["--pixels-x", str(pixels_x)])
+    if pixels_y is not None:
+        command.extend(["--pixels-y", str(pixels_y)])
+
+    print(f"[bench_perf_raster] {case['case_name']}")
+    if dry_run:
+        print("  dry-run:", " ".join(shlex.quote(part) for part in command))
+        return 0.0
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    write_command_file(output_dir, command)
+    write_experiment_meta(output_dir, case, command)
+
+    stdout_path = output_dir / "stdout.txt"
+    stderr_path = output_dir / "stderr.txt"
+    start = time.perf_counter()
+    with stdout_path.open("w") as stdout_file, stderr_path.open("w") as stderr_file:
+        subprocess.run(
+            command,
+            check=True,
+            cwd=repo_root(),
+            stdout=stdout_file,
+            stderr=stderr_file,
+        )
+    return time.perf_counter() - start
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--out-root", type=pathlib.Path, default=None)
+    parser.add_argument("--runs", type=int, default=1)
+    parser.add_argument("--pixels-x", type=int, default=None)
+    parser.add_argument("--pixels-y", type=int, default=None)
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+
+    run_root = build_run_root(args.out_root)
+    image_out_dir = default_image_out_dir()
+    timing_rows: list[dict[str, object]] = []
+    timing_stamp = timestamp_string()
+
+    if not args.dry_run:
+        run_root.mkdir(parents=True, exist_ok=True)
+
+    for case in create_cases():
+        seconds = run_case(
+            case,
+            run_root,
+            image_out_dir,
+            args.runs,
+            args.pixels_x,
+            args.pixels_y,
+            args.dry_run,
+        )
+        timing_rows.append(
+            {
+                "experiment": case["experiment"],
+                "case_name": case["case_name"],
+                "seconds": f"{seconds:.6f}",
+            }
+        )
+
+    if not args.dry_run:
+        timing_csv = write_timing_csv(timing_rows, timing_stamp)
+        print(f"Timing written to {timing_csv}")
+        print(f"Results written under {run_root}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

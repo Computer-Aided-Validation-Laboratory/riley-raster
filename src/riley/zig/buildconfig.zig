@@ -46,6 +46,24 @@ pub const SimdTextureInterpMode = enum {
     over_pixels,
 };
 
+const simd_texture_interp_str = if (@hasDecl(build_options, "simd_texture_interp"))
+    build_options.simd_texture_interp
+else
+    "inner";
+
+pub const default_simd_texture_interp = blk: {
+    if (std.mem.eql(u8, simd_texture_interp_str, "inner")) {
+        break :blk SimdTextureInterpMode.inner;
+    }
+    if (std.mem.eql(u8, simd_texture_interp_str, "over_pixels")) {
+        break :blk SimdTextureInterpMode.over_pixels;
+    }
+    @compileError(
+        "build_options.simd_texture_interp must be \"inner\" or " ++
+            "\"over_pixels\".",
+    );
+};
+
 pub const EdgeTolerance = struct {
     tri_weight_inclusion: Scalar = 1e-9,
     simd_raster_weight_inclusion: Scalar = 1e-9,
@@ -127,7 +145,7 @@ pub const Tolerance = struct {
 
 pub const Config = struct {
     simd: SimdMode = default_simd,
-    simd_texture_interp: SimdTextureInterpMode = .inner,
+    simd_texture_interp: SimdTextureInterpMode = default_simd_texture_interp,
     simd_vector_width: comptime_int = 8,
     max_nodal_fields: comptime_int = 8,
     max_image_channels: comptime_int = 8,

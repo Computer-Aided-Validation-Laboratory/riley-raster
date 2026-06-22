@@ -664,6 +664,7 @@ pub fn extractFirstFrameImage(
 }
 
 pub fn loadBenchmarkMeshInput(
+    comptime T: type,
     allocator: std.mem.Allocator,
     io: std.Io,
     etype: gk.MeshType,
@@ -671,8 +672,8 @@ pub fn loadBenchmarkMeshInput(
     sample_config: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
-    texture_grey: iio.Texture(u8, 1),
-    texture_rgb: iio.Texture(u8, 3),
+    texture_grey: iio.Texture(T, 1),
+    texture_rgb: iio.Texture(T, 3),
 ) !mo.MeshInput {
     const coord_path = try std.fs.path.join(allocator, &[_][]const u8{
         data_dir,
@@ -722,11 +723,20 @@ pub fn loadBenchmarkMeshInput(
                 2,
                 false,
             );
-            shader = .{ .tex_u8 = .{
-                .uvs = uvs_raw,
-                .texture = texture_grey,
-                .sample_config = sample_config.?,
-            } };
+            shader = if (T == u8)
+                .{ .tex_u8 = .{
+                    .uvs = uvs_raw,
+                    .texture = texture_grey,
+                    .sample_config = sample_config.?,
+                } }
+            else if (T == u16)
+                .{ .tex_u16 = .{
+                    .uvs = uvs_raw,
+                    .texture = texture_grey,
+                    .sample_config = sample_config.?,
+                } }
+            else
+                @compileError("Unsupported texture storage type.");
         },
         .tex8_rgb => {
             const uvs_raw = try loadNDArrayFromCSV(
@@ -736,11 +746,20 @@ pub fn loadBenchmarkMeshInput(
                 2,
                 false,
             );
-            shader = .{ .tex_rgb_u8 = .{
-                .uvs = uvs_raw,
-                .texture = texture_rgb,
-                .sample_config = sample_config.?,
-            } };
+            shader = if (T == u8)
+                .{ .tex_rgb_u8 = .{
+                    .uvs = uvs_raw,
+                    .texture = texture_rgb,
+                    .sample_config = sample_config.?,
+                } }
+            else if (T == u16)
+                .{ .tex_rgb_u16 = .{
+                    .uvs = uvs_raw,
+                    .texture = texture_rgb,
+                    .sample_config = sample_config.?,
+                } }
+            else
+                @compileError("Unsupported texture storage type.");
         },
         .func => {
             const tex_case = tex_func_case.?;
@@ -798,6 +817,7 @@ pub fn loadBenchmarkMeshInput(
 }
 
 pub fn runBenchmark(
+    comptime T: type,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     etype: gk.MeshType,
@@ -806,12 +826,13 @@ pub fn runBenchmark(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: iio.Texture(u8, 1),
-    texture_rgb: iio.Texture(u8, 3),
+    texture_grey: iio.Texture(T, 1),
+    texture_rgb: iio.Texture(T, 3),
     config: rastcfg.RasterConfig,
     out_dir_base: []const u8,
 ) !BenchResult {
     return runBenchmarkWithImageOut(
+        T,
         outer_alloc,
         io,
         etype,
@@ -829,6 +850,7 @@ pub fn runBenchmark(
 }
 
 pub fn runBenchmarkWithImageOut(
+    comptime T: type,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     etype: gk.MeshType,
@@ -837,14 +859,15 @@ pub fn runBenchmarkWithImageOut(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: iio.Texture(u8, 1),
-    texture_rgb: iio.Texture(u8, 3),
+    texture_grey: iio.Texture(T, 1),
+    texture_rgb: iio.Texture(T, 3),
     config: rastcfg.RasterConfig,
     stats_out_dir_base: []const u8,
     image_out_dir_base: []const u8,
 ) !BenchResult {
     return runBenchmarkInternal(
         .bench,
+        T,
         outer_alloc,
         io,
         etype,
@@ -862,6 +885,7 @@ pub fn runBenchmarkWithImageOut(
 }
 
 pub fn runBenchmarkQuiet(
+    comptime T: type,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     etype: gk.MeshType,
@@ -870,12 +894,13 @@ pub fn runBenchmarkQuiet(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: iio.Texture(u8, 1),
-    texture_rgb: iio.Texture(u8, 3),
+    texture_grey: iio.Texture(T, 1),
+    texture_rgb: iio.Texture(T, 3),
     config: rastcfg.RasterConfig,
     out_dir_base: []const u8,
 ) !BenchResult {
     return runBenchmarkQuietWithImageOut(
+        T,
         outer_alloc,
         io,
         etype,
@@ -893,6 +918,7 @@ pub fn runBenchmarkQuiet(
 }
 
 pub fn runBenchmarkQuietWithImageOut(
+    comptime T: type,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     etype: gk.MeshType,
@@ -901,14 +927,15 @@ pub fn runBenchmarkQuietWithImageOut(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: iio.Texture(u8, 1),
-    texture_rgb: iio.Texture(u8, 3),
+    texture_grey: iio.Texture(T, 1),
+    texture_rgb: iio.Texture(T, 3),
     config: rastcfg.RasterConfig,
     stats_out_dir_base: []const u8,
     image_out_dir_base: []const u8,
 ) !BenchResult {
     return runBenchmarkInternal(
         .off,
+        T,
         outer_alloc,
         io,
         etype,
@@ -927,6 +954,7 @@ pub fn runBenchmarkQuietWithImageOut(
 
 fn runBenchmarkInternal(
     comptime report_mode: rastcfg.ReportMode,
+    comptime T: type,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
     etype: gk.MeshType,
@@ -935,8 +963,8 @@ fn runBenchmarkInternal(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: iio.Texture(u8, 1),
-    texture_rgb: iio.Texture(u8, 3),
+    texture_grey: iio.Texture(T, 1),
+    texture_rgb: iio.Texture(T, 3),
     config: rastcfg.RasterConfig,
     stats_out_dir_base: []const u8,
     image_out_dir_base: []const u8,
@@ -946,6 +974,7 @@ fn runBenchmarkInternal(
     const aa = arena.allocator();
 
     const mesh_input = try loadBenchmarkMeshInput(
+        T,
         aa,
         io,
         etype,

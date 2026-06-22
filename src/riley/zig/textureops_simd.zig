@@ -865,7 +865,7 @@ pub inline fn sampleWide(
                         }
                     }
                     // Proper sum for LUT modes
-                    v_samp_coeff_sum = @splat(0.0);
+                    var samp_coeff_sum_arr: [S]F = @splat(0.0);
                     for (0..S) |ii| {
                         var sum: F = 0.0;
                         const ix = @as(
@@ -887,8 +887,9 @@ pub inline fn sampleWide(
                                 sum += lut[ix][kk] * lut[iy][jj];
                             }
                         }
-                        v_samp_coeff_sum[ii] = sum;
+                        samp_coeff_sum_arr[ii] = sum;
                     }
+                    v_samp_coeff_sum = samp_coeff_sum_arr;
                     var coeffs_x: [TAP]VecSF = undefined;
                     var coeffs_y: [TAP]VecSF = undefined;
                     inline for (0..TAP) |kk| {
@@ -900,7 +901,7 @@ pub inline fn sampleWide(
                 .lut_lerp => blk: {
                     var coeffs_x_arr: [TAP][S]F = undefined;
                     var coeffs_y_arr: [TAP][S]F = undefined;
-                    v_samp_coeff_sum = @splat(0.0);
+                    var samp_coeff_sum_arr: [S]F = @splat(0.0);
                     for (0..S) |ii| {
                         const coeffs_x_lane = getLerpSampCoeffs(
                             TAP,
@@ -922,8 +923,9 @@ pub inline fn sampleWide(
                                 sum += coeffs_x_lane[kk] * coeffs_y_lane[jj];
                             }
                         }
-                        v_samp_coeff_sum[ii] = sum;
+                        samp_coeff_sum_arr[ii] = sum;
                     }
+                    v_samp_coeff_sum = samp_coeff_sum_arr;
                     var coeffs_x: [TAP]VecSF = undefined;
                     var coeffs_y: [TAP]VecSF = undefined;
                     inline for (0..TAP) |kk| {
@@ -993,7 +995,7 @@ pub inline fn sampleWide(
                 .lut => blk: {
                     var coeffs_x_arr: [TAP][S]F = undefined;
                     var coeffs_y_arr: [TAP][S]F = undefined;
-                    v_samp_coeff_sum = @splat(0.0);
+                    var samp_coeff_sum_arr: [S]F = @splat(0.0);
                     for (0..S) |ii| {
                         const lut_size_f = @as(F, @floatFromInt(lut_size - 1));
                         const ix = @as(
@@ -1014,8 +1016,9 @@ pub inline fn sampleWide(
                                 sum += lut[ix][kk] * lut[iy][jj];
                             }
                         }
-                        v_samp_coeff_sum[ii] = sum;
+                        samp_coeff_sum_arr[ii] = sum;
                     }
+                    v_samp_coeff_sum = samp_coeff_sum_arr;
                     var coeffs_x: [TAP]VecSF = undefined;
                     var coeffs_y: [TAP]VecSF = undefined;
                     inline for (0..TAP) |kk| {
@@ -1027,7 +1030,7 @@ pub inline fn sampleWide(
                 .lut_lerp => blk: {
                     var coeffs_x_arr: [TAP][S]F = undefined;
                     var coeffs_y_arr: [TAP][S]F = undefined;
-                    v_samp_coeff_sum = @splat(0.0);
+                    var samp_coeff_sum_arr: [S]F = @splat(0.0);
                     for (0..S) |ii| {
                         const coeffs_x_lane = getLerpSampCoeffs(
                             TAP,
@@ -1049,8 +1052,9 @@ pub inline fn sampleWide(
                                 sum += coeffs_x_lane[kk] * coeffs_y_lane[jj];
                             }
                         }
-                        v_samp_coeff_sum[ii] = sum;
+                        samp_coeff_sum_arr[ii] = sum;
                     }
+                    v_samp_coeff_sum = samp_coeff_sum_arr;
                     var coeffs_x: [TAP]VecSF = undefined;
                     var coeffs_y: [TAP]VecSF = undefined;
                     inline for (0..TAP) |kk| {

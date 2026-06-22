@@ -452,6 +452,7 @@ pub fn main(init: std.process.Init) !void {
                 );
 
                 var base_mesh = try common.loadBenchmarkMeshInput(
+                    u8,
                     aa,
                     io,
                     etype,

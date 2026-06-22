@@ -56,6 +56,7 @@ fn buildSphere200MultiCullMeshInputs(
     texture_rgb: iio.Texture(u8, 3),
 ) ![]mo.MeshInput {
     const base_mesh_input = try common.loadBenchmarkMeshInput(
+        u8,
         allocator,
         io,
         etype,

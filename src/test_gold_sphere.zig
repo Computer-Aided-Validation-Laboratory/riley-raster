@@ -140,6 +140,7 @@ test "Sphere Gold Tests" {
                         r_config.save_strategy = if (c.out.len > 0) .both else .memory;
 
                         var result = try common.runBenchmarkQuiet(
+                            u8,
                             allocator,
                             io,
                             mt,
