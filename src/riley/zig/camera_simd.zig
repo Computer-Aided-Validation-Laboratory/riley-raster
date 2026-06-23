@@ -109,6 +109,30 @@ pub fn fillTileIdealCentersPerTile(
     const step = 1.0 / @as(F, @floatFromInt(camera.sub_sample));
     const off = 0.5 / @as(F, @floatFromInt(camera.sub_sample));
 
+    if (common.isNoDistortion(camera.distortion)) {
+        for (0..tile_h) |jj| {
+            const global_y = start_y + jj;
+            const observed_y = @as(F, @floatFromInt(global_y)) * step + off;
+            const scratch_row_off = jj * subpx_tile_size;
+            @memset(
+                ideal_y_plane[scratch_row_off .. scratch_row_off + tile_w],
+                observed_y,
+            );
+        }
+        for (0..tile_w) |ii| {
+            const global_x = start_x + ii;
+            ideal_x_plane[ii] = @as(F, @floatFromInt(global_x)) * step + off;
+        }
+        for (1..tile_h) |jj| {
+            const scratch_row_off = jj * subpx_tile_size;
+            @memcpy(
+                ideal_x_plane[scratch_row_off .. scratch_row_off + tile_w],
+                ideal_x_plane[0..tile_w],
+            );
+        }
+        return;
+    }
+
     for (0..tile_h) |jj| {
         const global_y = start_y + jj;
         const observed_y = @as(F, @floatFromInt(global_y)) * step + off;
@@ -126,31 +150,20 @@ pub fn fillTileIdealCentersPerTile(
                 off,
             );
 
-            if (common.isNoDistortion(camera.distortion)) {
-                storeIdealPairs(
-                    ideal_x_plane,
-                    ideal_y_plane,
-                    scratch_row_off + ii,
-                    lane_count,
-                    v_observed_x,
-                    v_observed_y,
-                );
-            } else {
-                const ideal = try calcPinholeRasterPointSIMD(
-                    camera,
-                    v_observed_x,
-                    v_observed_y,
-                    v_active,
-                );
-                storeIdealPairs(
-                    ideal_x_plane,
-                    ideal_y_plane,
-                    scratch_row_off + ii,
-                    lane_count,
-                    ideal.x,
-                    ideal.y,
-                );
-            }
+            const ideal = try calcPinholeRasterPointSIMD(
+                camera,
+                v_observed_x,
+                v_observed_y,
+                v_active,
+            );
+            storeIdealPairs(
+                ideal_x_plane,
+                ideal_y_plane,
+                scratch_row_off + ii,
+                lane_count,
+                ideal.x,
+                ideal.y,
+            );
         }
     }
 }
@@ -178,11 +191,34 @@ pub fn fillTileIdealCentersAffineJac(
     const step = 1.0 / @as(F, @floatFromInt(camera.sub_sample));
     const off = 0.5 / @as(F, @floatFromInt(camera.sub_sample));
 
+    if (common.isNoDistortion(camera.distortion)) {
+        for (0..tile_h) |jj| {
+            const global_y = start_y + jj;
+            const observed_y = @as(F, @floatFromInt(global_y)) * step + off;
+            const scratch_row_off = jj * subpx_tile_size;
+            @memset(
+                ideal_y_plane[scratch_row_off .. scratch_row_off + tile_w],
+                observed_y,
+            );
+        }
+        for (0..tile_w) |ii| {
+            const global_x = start_x + ii;
+            ideal_x_plane[ii] = @as(F, @floatFromInt(global_x)) * step + off;
+        }
+        for (1..tile_h) |jj| {
+            const scratch_row_off = jj * subpx_tile_size;
+            @memcpy(
+                ideal_x_plane[scratch_row_off .. scratch_row_off + tile_w],
+                ideal_x_plane[0..tile_w],
+            );
+        }
+        return;
+    }
+
     for (0..tile_h) |jj| {
         const global_suby = start_y + jj;
         const pixel_y = global_suby / sub_samp;
         const observed_y = @as(F, @floatFromInt(global_suby)) * step + off;
-        const v_observed_y: VecSF = @splat(observed_y);
         const center_y = common.calcPixelCenterCoord(pixel_y);
         const scratch_row_off = jj * subpx_tile_size;
 
@@ -190,23 +226,6 @@ pub fn fillTileIdealCentersAffineJac(
         while (ii < tile_w) : (ii += S) {
             const lane_count = @min(S, tile_w - ii);
             const global_x_start = start_x + ii;
-            const v_observed_x = calcObservedXVector(
-                global_x_start,
-                step,
-                off,
-            );
-
-            if (common.isNoDistortion(camera.distortion)) {
-                storeIdealPairs(
-                    ideal_x_plane,
-                    ideal_y_plane,
-                    scratch_row_off + ii,
-                    lane_count,
-                    v_observed_x,
-                    v_observed_y,
-                );
-                continue;
-            }
 
             var ideal_x_arr: [S]F = undefined;
             var ideal_y_arr: [S]F = undefined;

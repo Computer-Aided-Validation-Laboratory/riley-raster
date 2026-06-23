@@ -441,69 +441,75 @@ fn rasterDirectSIMDImpl(
             );
             const v_mask_active = v_x_mask & res.v_mask;
 
-            const lane_x_mask: [S]bool = v_x_mask;
-            const lane_active_mask: [S]bool = v_mask_active;
-            const lane_weights_0: [S]F = res.v_weights[0];
-            const lane_weights_1: [S]F = res.v_weights[1];
-            const lane_weights_2: [S]F = res.v_weights[2];
-            const lane_inv_z: [S]F = GeometryKernel.calcInvZSIMD(
-                v_nodes_inv_z,
-                res.v_weights,
-            );
-            for (0..S) |ll| {
-                if (!lane_x_mask[ll]) continue;
+            if (comptime report_mode == .full_stats) {
+                const lane_x_mask: [S]bool = v_x_mask;
+                const lane_active_mask: [S]bool = v_mask_active;
+                const lane_weights_0: [S]F = res.v_weights[0];
+                const lane_weights_1: [S]F = res.v_weights[1];
+                const lane_weights_2: [S]F = res.v_weights[2];
+                const lane_inv_z: [S]F = GeometryKernel.calcInvZSIMD(
+                    v_nodes_inv_z,
+                    res.v_weights,
+                );
+                for (0..S) |ll| {
+                    if (!lane_x_mask[ll]) continue;
 
-                const global_subx =
-                    @as(usize, @intCast(targ_overlap.tile.scratch_x_px_min)) *
-                    sub_samp + scratch_x_u + ll;
-                const global_suby =
-                    @as(usize, @intCast(targ_overlap.tile.scratch_y_px_min)) *
-                    sub_samp + scratch_y_u;
-                if (lane_active_mask[ll]) {
-                    const weights = [3]F{
-                        lane_weights_0[ll],
-                        lane_weights_1[ll],
-                        lane_weights_2[ll],
-                    };
-                    const inv_z = lane_inv_z[ll];
-                    const interp = common.calcInterpParamCoords(
-                        GeometryKernel,
-                        nodes_inv_z,
-                        weights,
-                        inv_z,
-                        0.0,
-                        0.0,
-                    );
+                    const global_subx =
+                        @as(
+                        usize,
+                        @intCast(targ_overlap.tile.scratch_x_px_min),
+                    ) * sub_samp + scratch_x_u + ll;
+                    const global_suby =
+                        @as(
+                        usize,
+                        @intCast(targ_overlap.tile.scratch_y_px_min),
+                    ) * sub_samp + scratch_y_u;
+                    if (lane_active_mask[ll]) {
+                        const weights = [3]F{
+                            lane_weights_0[ll],
+                            lane_weights_1[ll],
+                            lane_weights_2[ll],
+                        };
+                        const inv_z = lane_inv_z[ll];
+                        const interp = common.calcInterpParamCoords(
+                            GeometryKernel,
+                            nodes_inv_z,
+                            weights,
+                            inv_z,
+                            0.0,
+                            0.0,
+                        );
+                        rasterreport.recordPixelConvergedStats(
+                            report_mode,
+                            ctx_report,
+                            global_subx,
+                            global_suby,
+                            true,
+                            interp.xi,
+                            interp.eta,
+                            newton.calcJacobianDet2D(
+                                N,
+                                interp.xi,
+                                interp.eta,
+                                nodes_coords.x,
+                                nodes_coords.y,
+                            ),
+                        );
+                        continue;
+                    }
+
+                    const nan = std.math.nan(F);
                     rasterreport.recordPixelConvergedStats(
                         report_mode,
                         ctx_report,
                         global_subx,
                         global_suby,
-                        true,
-                        interp.xi,
-                        interp.eta,
-                        newton.calcJacobianDet2D(
-                            N,
-                            interp.xi,
-                            interp.eta,
-                            nodes_coords.x,
-                            nodes_coords.y,
-                        ),
+                        false,
+                        nan,
+                        nan,
+                        nan,
                     );
-                    continue;
                 }
-
-                const nan = std.math.nan(F);
-                rasterreport.recordPixelConvergedStats(
-                    report_mode,
-                    ctx_report,
-                    global_subx,
-                    global_suby,
-                    false,
-                    nan,
-                    nan,
-                    nan,
-                );
             }
 
             if (!@reduce(.Or, v_mask_active)) continue;
@@ -805,56 +811,66 @@ fn rasterNewtonSIMDImpl(
         ctx_report.recordSolverIters(@intCast(@reduce(.Add, v_solver_iters)));
         ctx_report.recordSolverCalls(subpx_simd_chunk.count);
 
-        const chunk_mask_arr: [S]bool = v_chunk_mask;
-        const conv_mask_arr: [S]bool = result.v_mask;
-        const iters_arr: [S]u8 = result.v_iters;
-        const xi_out_arr: [S]F = result.v_xi_out;
-        const eta_out_arr: [S]F = result.v_eta_out;
-        for (0..S) |jj| {
-            if (!chunk_mask_arr[jj]) continue;
+        if (comptime report_mode == .full_stats) {
+            const chunk_mask_arr: [S]bool = v_chunk_mask;
+            const conv_mask_arr: [S]bool = result.v_mask;
+            const iters_arr: [S]u8 = result.v_iters;
+            const xi_out_arr: [S]F = result.v_xi_out;
+            const eta_out_arr: [S]F = result.v_eta_out;
+            for (0..S) |jj| {
+                if (!chunk_mask_arr[jj]) continue;
 
-            const global_subx = @as(usize, subpx_simd_chunk.scratch_x_u[jj]) +
-                @as(usize, @intCast(targ_overlap.tile.scratch_x_px_min)) * sub_samp;
-            const global_suby = @as(usize, subpx_simd_chunk.scratch_y_u[jj]) +
-                @as(usize, @intCast(targ_overlap.tile.scratch_y_px_min)) * sub_samp;
-            rasterreport.recordPixelIters(
-                report_mode,
-                ctx_report,
-                global_subx,
-                global_suby,
-                iters_arr[jj],
-            );
-            if (conv_mask_arr[jj]) {
+                const global_subx =
+                    @as(usize, subpx_simd_chunk.scratch_x_u[jj]) +
+                    @as(
+                    usize,
+                    @intCast(targ_overlap.tile.scratch_x_px_min),
+                ) * sub_samp;
+                const global_suby =
+                    @as(usize, subpx_simd_chunk.scratch_y_u[jj]) +
+                    @as(
+                    usize,
+                    @intCast(targ_overlap.tile.scratch_y_px_min),
+                ) * sub_samp;
+                rasterreport.recordPixelIters(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    iters_arr[jj],
+                );
+                if (conv_mask_arr[jj]) {
+                    rasterreport.recordPixelConvergedStats(
+                        report_mode,
+                        ctx_report,
+                        global_subx,
+                        global_suby,
+                        true,
+                        xi_out_arr[jj],
+                        eta_out_arr[jj],
+                        newton.calcJacobianDet2D(
+                            N,
+                            xi_out_arr[jj],
+                            eta_out_arr[jj],
+                            nodes_coords.x,
+                            nodes_coords.y,
+                        ),
+                    );
+                    continue;
+                }
+
+                const nan = std.math.nan(F);
                 rasterreport.recordPixelConvergedStats(
                     report_mode,
                     ctx_report,
                     global_subx,
                     global_suby,
-                    true,
-                    xi_out_arr[jj],
-                    eta_out_arr[jj],
-                    newton.calcJacobianDet2D(
-                        N,
-                        xi_out_arr[jj],
-                        eta_out_arr[jj],
-                        nodes_coords.x,
-                        nodes_coords.y,
-                    ),
+                    false,
+                    nan,
+                    nan,
+                    nan,
                 );
-                continue;
             }
-
-            const nan = std.math.nan(F);
-            rasterreport.recordPixelConvergedStats(
-                report_mode,
-                ctx_report,
-                global_subx,
-                global_suby,
-                false,
-                nan,
-                nan,
-                nan,
-            );
         }
 
         const v_conv_mask = v_chunk_mask & result.v_mask;

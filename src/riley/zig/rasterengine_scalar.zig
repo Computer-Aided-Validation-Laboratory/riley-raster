@@ -443,37 +443,41 @@ fn rasterNewtonImpl(
 
             ctx_report.recordSolverIters(result.iters);
             if (result.weights == null) {
-                const nan = std.math.nan(F);
+                if (comptime report_mode == .full_stats) {
+                    const nan = std.math.nan(F);
+                    rasterreport.recordPixelConvergedStats(
+                        report_mode,
+                        ctx_report,
+                        global_subx,
+                        global_suby,
+                        false,
+                        nan,
+                        nan,
+                        nan,
+                    );
+                }
+                if (result.iters > 0) ctx_report.recordSolverDiverged();
+                continue;
+            }
+
+            if (comptime report_mode == .full_stats) {
                 rasterreport.recordPixelConvergedStats(
                     report_mode,
                     ctx_report,
                     global_subx,
                     global_suby,
-                    false,
-                    nan,
-                    nan,
-                    nan,
-                );
-                if (result.iters > 0) ctx_report.recordSolverDiverged();
-                continue;
-            }
-
-            rasterreport.recordPixelConvergedStats(
-                report_mode,
-                ctx_report,
-                global_subx,
-                global_suby,
-                true,
-                result.xi_out,
-                result.eta_out,
-                newton.calcJacobianDet2D(
-                    N,
+                    true,
                     result.xi_out,
                     result.eta_out,
-                    nodes_coords.x,
-                    nodes_coords.y,
-                ),
-            );
+                    newton.calcJacobianDet2D(
+                        N,
+                        result.xi_out,
+                        result.eta_out,
+                        nodes_coords.x,
+                        nodes_coords.y,
+                    ),
+                );
+            }
 
             if (ctx_rast.config.newton_seed_reuse == .last_converged) {
                 newton.updateSeedState(

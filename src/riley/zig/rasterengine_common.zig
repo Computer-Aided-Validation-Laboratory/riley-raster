@@ -261,47 +261,51 @@ pub fn rasterDirectScalarCommon(
             ctx_report.recordSolverIters(result.iters);
 
             if (result.weights == null) {
-                const nan = std.math.nan(F);
-                rasterreport.recordPixelConvergedStats(
-                    report_mode,
-                    ctx_report,
-                    global_subx,
-                    global_suby,
-                    false,
-                    nan,
-                    nan,
-                    nan,
-                );
+                if (comptime report_mode == .full_stats) {
+                    const nan = std.math.nan(F);
+                    rasterreport.recordPixelConvergedStats(
+                        report_mode,
+                        ctx_report,
+                        global_subx,
+                        global_suby,
+                        false,
+                        nan,
+                        nan,
+                        nan,
+                    );
+                }
                 if (result.iters > 0) ctx_report.recordSolverDiverged();
                 continue;
             }
 
             const weights = result.weights.?;
             const inv_z = Geometry.calcInvZ(nodes_coords, weights);
-            const interp = calcInterpParamCoords(
-                Geometry,
-                nodes_inv_z,
-                weights,
-                inv_z,
-                0.0,
-                0.0,
-            );
-            rasterreport.recordPixelConvergedStats(
-                report_mode,
-                ctx_report,
-                global_subx,
-                global_suby,
-                true,
-                interp.xi,
-                interp.eta,
-                newton.calcJacobianDet2D(
-                    N,
+            if (comptime report_mode == .full_stats) {
+                const interp = calcInterpParamCoords(
+                    Geometry,
+                    nodes_inv_z,
+                    weights,
+                    inv_z,
+                    0.0,
+                    0.0,
+                );
+                rasterreport.recordPixelConvergedStats(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    true,
                     interp.xi,
                     interp.eta,
-                    nodes_coords.x,
-                    nodes_coords.y,
-                ),
-            );
+                    newton.calcJacobianDet2D(
+                        N,
+                        interp.xi,
+                        interp.eta,
+                        nodes_coords.x,
+                        nodes_coords.y,
+                    ),
+                );
+            }
 
             if (inv_z + cfg.tolerance.geometry.depth_buffer_inv_z_cmp <
                 subpx_scratch.inv_z[scratch_idx]) continue;

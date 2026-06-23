@@ -37,15 +37,21 @@ pub fn fillTileIdealCentersPerTile(
             const global_y = start_y + jj;
             const observed_y = @as(F, @floatFromInt(global_y)) * step + off;
             const scratch_row_off = jj * subpx_tile_size;
-
-            for (0..tile_w) |ii| {
-                const global_x = start_x + ii;
-                const observed_x = @as(F, @floatFromInt(global_x)) *
-                    step + off;
-                const scratch_idx = scratch_row_off + ii;
-                ideal_x_plane[scratch_idx] = observed_x;
-                ideal_y_plane[scratch_idx] = observed_y;
-            }
+            @memset(
+                ideal_y_plane[scratch_row_off .. scratch_row_off + tile_w],
+                observed_y,
+            );
+        }
+        for (0..tile_w) |ii| {
+            const global_x = start_x + ii;
+            ideal_x_plane[ii] = @as(F, @floatFromInt(global_x)) * step + off;
+        }
+        for (1..tile_h) |jj| {
+            const scratch_row_off = jj * subpx_tile_size;
+            @memcpy(
+                ideal_x_plane[scratch_row_off .. scratch_row_off + tile_w],
+                ideal_x_plane[0..tile_w],
+            );
         }
         return;
     }
@@ -98,15 +104,21 @@ pub fn fillTileIdealCentersAffineJac(
             const global_y = start_y + jj;
             const observed_y = @as(F, @floatFromInt(global_y)) * step + off;
             const scratch_row_off = jj * subpx_tile_size;
-
-            for (0..tile_w) |ii| {
-                const global_x = start_x + ii;
-                const observed_x = @as(F, @floatFromInt(global_x)) *
-                    step + off;
-                const scratch_idx = scratch_row_off + ii;
-                ideal_x_plane[scratch_idx] = observed_x;
-                ideal_y_plane[scratch_idx] = observed_y;
-            }
+            @memset(
+                ideal_y_plane[scratch_row_off .. scratch_row_off + tile_w],
+                observed_y,
+            );
+        }
+        for (0..tile_w) |ii| {
+            const global_x = start_x + ii;
+            ideal_x_plane[ii] = @as(F, @floatFromInt(global_x)) * step + off;
+        }
+        for (1..tile_h) |jj| {
+            const scratch_row_off = jj * subpx_tile_size;
+            @memcpy(
+                ideal_x_plane[scratch_row_off .. scratch_row_off + tile_w],
+                ideal_x_plane[0..tile_w],
+            );
         }
         return;
     }
