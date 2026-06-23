@@ -350,6 +350,7 @@ pub fn build(b: *std.Build) void {
             precision,
             simd,
             simd_texture_interp,
+            simd_vector_width,
         );
         install_step.dependOn(&install_artifact.step);
         bench_bins_step.dependOn(&install_artifact.step);
@@ -455,6 +456,7 @@ fn addBenchInstallStep(
     precision: []const u8,
     simd: []const u8,
     simd_texture_interp: []const u8,
+    simd_vector_width: u32,
 ) *std.Build.Step.InstallArtifact {
     const binary_name = benchmarkBinaryName(
         b,
@@ -462,6 +464,7 @@ fn addBenchInstallStep(
         precision,
         simd,
         simd_texture_interp,
+        simd_vector_width,
     );
     const executable = b.addExecutable(.{
         .name = binary_name,
@@ -688,14 +691,29 @@ fn benchmarkBinaryName(
     precision: []const u8,
     simd: []const u8,
     simd_texture_interp: []const u8,
+    simd_vector_width: u32,
 ) []const u8 {
     const simd_tag = if (std.mem.eql(u8, simd, "on")) "simd" else "scalar";
     const interp_tag = if (std.mem.eql(u8, simd_texture_interp, "over_pixels"))
         "overpx"
     else
         "inner";
-    return b.fmt(
-        "{s}_{s}_{s}_{s}",
-        .{ base_name, precision, simd_tag, interp_tag },
-    );
+    const default_width: u32 = if (std.mem.eql(u8, precision, "f32")) 16 else 8;
+    if (simd_vector_width == 0 or simd_vector_width == default_width) {
+        return b.fmt(
+            "{s}_{s}_{s}_{s}",
+            .{ base_name, precision, simd_tag, interp_tag },
+        );
+    } else {
+        return b.fmt(
+            "{s}_{s}_{s}_{s}_v{d}",
+            .{
+                base_name,
+                precision,
+                simd_tag,
+                interp_tag,
+                simd_vector_width,
+            },
+        );
+    }
 }

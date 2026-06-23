@@ -62,15 +62,6 @@ STUDY_CASES: list[dict[str, object]] = [
     },
     {
         "experiment": "interp",
-        "case_name": "fullraster_interp_f64_simd_inner",
-        "precision": "f64",
-        "interp": "inner",
-        "lanes": 8,
-        "texture_storage": "u8",
-        "shader_subset": "all",
-    },
-    {
-        "experiment": "interp",
         "case_name": "fullraster_interp_f64_simd_overpx",
         "precision": "f64",
         "interp": "overpx",
@@ -104,6 +95,26 @@ STUDY_CASES: list[dict[str, object]] = [
         "lanes": 8,
         "texture_storage": "u16",
         "shader_subset": "texture",
+    },
+    {
+        "experiment": "distortion",
+        "case_name": "fullraster_distortion_brown_f64_simd_v8_inner",
+        "precision": "f64",
+        "interp": "inner",
+        "lanes": 8,
+        "texture_storage": "u8",
+        "shader_subset": "all",
+        "distortion": "brown",
+    },
+    {
+        "experiment": "distortion",
+        "case_name": "fullraster_distortion_brownext_f64_simd_v8_inner",
+        "precision": "f64",
+        "interp": "inner",
+        "lanes": 8,
+        "texture_storage": "u8",
+        "shader_subset": "all",
+        "distortion": "brownext",
     },
 ]
 
@@ -169,6 +180,7 @@ def write_experiment_meta(
         f"texture_storage={case['texture_storage']}",
         f"shader_subset={case['shader_subset']}",
         f"lanes={case['lanes']}",
+        f"distortion={case.get('distortion', 'none')}",
         "command=" + " ".join(shlex.quote(part) for part in command),
     ]
     meta_path.write_text("\n".join(lines) + "\n")
@@ -242,6 +254,8 @@ def run_case(
         command.extend(["--pixels-x", str(pixels_x)])
     if pixels_y is not None:
         command.extend(["--pixels-y", str(pixels_y)])
+    if "distortion" in case:
+        command.extend(["--distortion", str(case["distortion"])])
 
     print(f"[bench_perf_raster] {case['case_name']}")
     if dry_run:

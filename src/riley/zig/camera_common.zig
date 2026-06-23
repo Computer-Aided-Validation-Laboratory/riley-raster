@@ -110,8 +110,19 @@ pub inline fn storeIdealPairScratch(
     ideal_x: F,
     ideal_y: F,
 ) void {
-    ideal_pixel_centers[scratch_idx * 2 + 0] = ideal_x;
-    ideal_pixel_centers[scratch_idx * 2 + 1] = ideal_y;
+    const plane_stride = ideal_pixel_centers.len / 2;
+    ideal_pixel_centers[scratch_idx] = ideal_x;
+    ideal_pixel_centers[plane_stride + scratch_idx] = ideal_y;
+}
+
+pub inline fn getIdealXPlaneScratch(ideal_pixel_centers: []F) []F {
+    const plane_stride = ideal_pixel_centers.len / 2;
+    return ideal_pixel_centers[0..plane_stride];
+}
+
+pub inline fn getIdealYPlaneScratch(ideal_pixel_centers: []F) []F {
+    const plane_stride = ideal_pixel_centers.len / 2;
+    return ideal_pixel_centers[plane_stride .. plane_stride * 2];
 }
 
 pub fn calcPinholeRasterPointScalar(

@@ -16,6 +16,7 @@ const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const VecSU = buildconfig.VecSU;
 const common = @import("camera_common.zig");
+const simdops = @import("simdops.zig");
 
 pub const CameraPrepared = common.CameraPreparedType(@This());
 
@@ -25,21 +26,24 @@ fn calcActiveMask(lane_count: usize) VecSB {
 }
 
 fn storeIdealPairs(
-    ideal_pixel_centers: []F,
+    ideal_x_plane: []F,
+    ideal_y_plane: []F,
     scratch_base: usize,
     lane_count: usize,
     v_x: VecSF,
     v_y: VecSF,
 ) void {
+    if (lane_count == S) {
+        simdops.storeVecSF(ideal_x_plane, scratch_base, v_x);
+        simdops.storeVecSF(ideal_y_plane, scratch_base, v_y);
+        return;
+    }
+
     const x_arr: [S]F = v_x;
     const y_arr: [S]F = v_y;
     for (0..lane_count) |ll| {
-        common.storeIdealPairScratch(
-            ideal_pixel_centers,
-            scratch_base + ll,
-            x_arr[ll],
-            y_arr[ll],
-        );
+        ideal_x_plane[scratch_base + ll] = x_arr[ll];
+        ideal_y_plane[scratch_base + ll] = y_arr[ll];
     }
 }
 
@@ -95,6 +99,8 @@ pub fn fillTileIdealCentersPerTile(
     ideal_pixel_centers: []F,
 ) !void {
     const sub_samp: usize = @intCast(camera.sub_sample);
+    const ideal_x_plane = common.getIdealXPlaneScratch(ideal_pixel_centers);
+    const ideal_y_plane = common.getIdealYPlaneScratch(ideal_pixel_centers);
     const start_x = scratch_x_px_min * sub_samp;
     const start_y = scratch_y_px_min * sub_samp;
     const tile_w = (scratch_x_px_max - scratch_x_px_min) * sub_samp;
@@ -122,7 +128,8 @@ pub fn fillTileIdealCentersPerTile(
 
             if (common.isNoDistortion(camera.distortion)) {
                 storeIdealPairs(
-                    ideal_pixel_centers,
+                    ideal_x_plane,
+                    ideal_y_plane,
                     scratch_row_off + ii,
                     lane_count,
                     v_observed_x,
@@ -136,7 +143,8 @@ pub fn fillTileIdealCentersPerTile(
                     v_active,
                 );
                 storeIdealPairs(
-                    ideal_pixel_centers,
+                    ideal_x_plane,
+                    ideal_y_plane,
                     scratch_row_off + ii,
                     lane_count,
                     ideal.x,
@@ -157,6 +165,8 @@ pub fn fillTileIdealCentersAffineJac(
     ideal_pixel_centers: []F,
 ) void {
     const sub_samp: usize = @intCast(camera.sub_sample);
+    const ideal_x_plane = common.getIdealXPlaneScratch(ideal_pixel_centers);
+    const ideal_y_plane = common.getIdealYPlaneScratch(ideal_pixel_centers);
     const jac = &camera.pixel_center_jac;
     const jac_slice = jac.slice;
     const jac_field_stride = jac.strides[2];
@@ -188,7 +198,8 @@ pub fn fillTileIdealCentersAffineJac(
 
             if (common.isNoDistortion(camera.distortion)) {
                 storeIdealPairs(
-                    ideal_pixel_centers,
+                    ideal_x_plane,
+                    ideal_y_plane,
                     scratch_row_off + ii,
                     lane_count,
                     v_observed_x,
@@ -246,7 +257,8 @@ pub fn fillTileIdealCentersAffineJac(
             const v_j22: VecSF = j22_arr;
 
             storeIdealPairs(
-                ideal_pixel_centers,
+                ideal_x_plane,
+                ideal_y_plane,
                 scratch_row_off + ii,
                 lane_count,
                 v_ideal_x + v_j11 * v_delta_x + v_j12 * v_delta_y,

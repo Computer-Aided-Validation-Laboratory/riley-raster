@@ -8,7 +8,8 @@ file-out/
 zig-out/
 out/
 bin/
-
+.*
+!.gitignore
 
 # Do not keep any large output directories with images or other output in them
 out/

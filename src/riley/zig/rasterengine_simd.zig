@@ -20,6 +20,7 @@ const VecSU8 = buildconfig.VecSU8;
 const rastcfg = @import("rasterconfig.zig");
 const ReportMode = rastcfg.ReportMode;
 const tol = cfg.tolerance;
+const camcommon = @import("camera_common.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const hull = @import("hull.zig");
@@ -74,7 +75,6 @@ pub const SubpxScratchBuffers = struct {
 
 const SubpxDomain = common.SubpxDomain;
 const RasterBounds = common.RasterBounds;
-
 
 //------------------------------------------------------------------------------------------
 // Scratch Buffer Helpers
@@ -410,6 +410,12 @@ fn rasterDirectSIMDImpl(
 
     const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
     const v_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
+    const ideal_x_plane = camcommon.getIdealXPlaneScratch(
+        subpx_scratch.ideal_pixel_centers,
+    );
+    const ideal_y_plane = camcommon.getIdealYPlaneScratch(
+        subpx_scratch.ideal_pixel_centers,
+    );
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
         const row_offset = scratch_y_u * subpx_domain.tile_size;
@@ -423,14 +429,8 @@ fn rasterDirectSIMDImpl(
                 (v_subpx_x_u < v_end_x_u);
 
             const scratch_idx = row_offset + scratch_x_u;
-            var v_ideal_x_px: VecSF = undefined;
-            var v_ideal_y_px: VecSF = undefined;
-            inline for (0..S) |ll| {
-                v_ideal_x_px[ll] =
-                    subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 0];
-                v_ideal_y_px[ll] =
-                    subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 1];
-            }
+            const v_ideal_x_px = simdops.loadVecSF(ideal_x_plane, scratch_idx);
+            const v_ideal_y_px = simdops.loadVecSF(ideal_y_plane, scratch_idx);
 
             ctx_report.recordSolverCalls(S);
             const res = GeometryKernel.solveWeightsHyperbSIMD(
@@ -628,6 +628,12 @@ fn rasterNewtonSIMDImpl(
     const v_lane_idx: VecSU = std.simd.iota(usize, S);
     const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
     const v_bounds_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
+    const ideal_x_plane = camcommon.getIdealXPlaneScratch(
+        subpx_scratch.ideal_pixel_centers,
+    );
+    const ideal_y_plane = camcommon.getIdealYPlaneScratch(
+        subpx_scratch.ideal_pixel_centers,
+    );
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
         const row_offset = scratch_y_u * subpx_domain.tile_size;
@@ -640,14 +646,8 @@ fn rasterNewtonSIMDImpl(
                 (v_subpx_x_u < v_bounds_end_x_u);
 
             const scratch_idx = row_offset + scratch_x_u;
-            var v_ideal_x_px: VecSF = undefined;
-            var v_ideal_y_px: VecSF = undefined;
-            inline for (0..S) |ll| {
-                v_ideal_x_px[ll] =
-                    subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 0];
-                v_ideal_y_px[ll] =
-                    subpx_scratch.ideal_pixel_centers[(scratch_idx + ll) * 2 + 1];
-            }
+            const v_ideal_x_px = simdops.loadVecSF(ideal_x_plane, scratch_idx);
+            const v_ideal_y_px = simdops.loadVecSF(ideal_y_plane, scratch_idx);
 
             var v_mask_active = v_x_mask;
             var xi_arr = [_]F{0.0} ** S;

@@ -40,32 +40,35 @@ def main() -> int:
     root = repo_root()
     (root / "bin").mkdir(parents=True, exist_ok=True)
 
-    processes: list[tuple[str, subprocess.Popen[str]]] = []
-    for precision, simd_texture_interp, lanes in BUILD_VARIANTS:
-        name = binary_name(precision, simd_texture_interp, lanes)
-        print(f"Compiling {name}...")
-        process = subprocess.Popen(
-            [
-                "zig",
-                "build",
-                "install-bench-fullraster",
-                "--prefix",
-                ".",
-                "-Doptimize=ReleaseFast",
-                f"-Dprecision={precision}",
-                "-Dsimd=on",
-                f"-Dsimd-texture-interp={simd_texture_interp}",
-                f"-Dsimd-vector-width={lanes}",
-            ],
-            cwd=root,
-            text=True,
-        )
-        processes.append((name, process))
-
     failures: list[str] = []
-    for name, process in processes:
-        if process.wait() != 0:
-            failures.append(name)
+    batch_size = 4
+    for i in range(0, len(BUILD_VARIANTS), batch_size):
+        batch = BUILD_VARIANTS[i : i + batch_size]
+        processes: list[tuple[str, subprocess.Popen[str]]] = []
+        for precision, simd_texture_interp, lanes in batch:
+            name = binary_name(precision, simd_texture_interp, lanes)
+            print(f"Compiling {name}...")
+            process = subprocess.Popen(
+                [
+                    "zig",
+                    "build",
+                    "install-bench-fullraster",
+                    "--prefix",
+                    ".",
+                    "-Doptimize=ReleaseFast",
+                    f"-Dprecision={precision}",
+                    "-Dsimd=on",
+                    f"-Dsimd-texture-interp={simd_texture_interp}",
+                    f"-Dsimd-vector-width={lanes}",
+                ],
+                cwd=root,
+                text=True,
+            )
+            processes.append((name, process))
+
+        for name, process in processes:
+            if process.wait() != 0:
+                failures.append(name)
 
     if failures:
         joined = ", ".join(failures)

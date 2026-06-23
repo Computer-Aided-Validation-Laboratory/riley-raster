@@ -17,6 +17,7 @@ const so = @import("../riley/zig/shaderops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
 const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
+const DistortionModel = @import("../riley/zig/camera.zig").DistortionModel;
 const cameraops = @import("../riley/zig/cameraops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 const report = @import("../riley/zig/report.zig");
@@ -497,6 +498,7 @@ pub const BenchRenderDefaults = struct {
     pixels_size: [2]F,
     fov_scale: F,
     rot: Rotation,
+    distortion: DistortionModel = .none,
 };
 
 pub const RunMode = enum { all, element, texture, interpolator };
@@ -1012,6 +1014,7 @@ fn runBenchmarkInternal(
             .roi_cent_world = roi_pos,
             .focal_length = render_defaults.focal_leng,
             .sub_sample = render_defaults.sub_sample,
+            .distortion = render_defaults.distortion,
         },
     );
     defer camera.deinit(aa);

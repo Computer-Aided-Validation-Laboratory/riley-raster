@@ -114,37 +114,32 @@ pub const fillTexPersp = common.fillTexPersp;
 pub const fillFuncClip = common.fillFuncClip;
 pub const fillFuncPersp = common.fillFuncPersp;
 
-fn calcNormalLaneArrs(
+fn calcNormalLaneVecs(
     comptime N: usize,
     ctx_shade: common.ShadeContext(N),
     v_weights: [N]VecSF,
-) [3][S]F {
-    var normal_arrs = [3][S]F{
-        [_]F{0.0} ** S,
-        [_]F{0.0} ** S,
-        [_]F{0.0} ** S,
+) [3]VecSF {
+    var normal_vecs = [3]VecSF{
+        @splat(0.0),
+        @splat(0.0),
+        @splat(0.0),
     };
 
     if (!ctx_shade.shader_buf.has_normals) {
-        for (0..S) |ll| {
-            normal_arrs[2][ll] = 1.0;
-        }
-        return normal_arrs;
+        normal_vecs[2] = @splat(1.0);
+        return normal_vecs;
     }
 
     inline for (0..N) |nn| {
-        const weights_arr: [S]F = v_weights[nn];
-        for (0..S) |ll| {
-            normal_arrs[0][ll] +=
-                weights_arr[ll] * ctx_shade.shader_buf.normals[0 * N + nn];
-            normal_arrs[1][ll] +=
-                weights_arr[ll] * ctx_shade.shader_buf.normals[1 * N + nn];
-            normal_arrs[2][ll] +=
-                weights_arr[ll] * ctx_shade.shader_buf.normals[2 * N + nn];
-        }
+        normal_vecs[0] += v_weights[nn] *
+            @as(VecSF, @splat(ctx_shade.shader_buf.normals[0 * N + nn]));
+        normal_vecs[1] += v_weights[nn] *
+            @as(VecSF, @splat(ctx_shade.shader_buf.normals[1 * N + nn]));
+        normal_vecs[2] += v_weights[nn] *
+            @as(VecSF, @splat(ctx_shade.shader_buf.normals[2 * N + nn]));
     }
 
-    return normal_arrs;
+    return normal_vecs;
 }
 
 pub inline fn fillTexClipSIMD(
@@ -297,42 +292,42 @@ pub inline fn fillFuncClipSIMD(
         .parametric => {},
     }
 
-    const coord_0_arr: [S]F = v_coord_0;
-    const coord_1_arr: [S]F = v_coord_1;
-    const normal_arrs = calcNormalLaneArrs(N, ctx_shade, v_weights);
-    const lane_mask_arr: [S]bool = v_mask_active;
+    const normal_vecs = calcNormalLaneVecs(N, ctx_shade, v_weights);
     const px_stride = spx_image_scratch.cols_num;
     const scratch_idx = ctx_shade.scratch_idx;
+    const coord = common.FuncCoordSIMD{
+        .coord_0 = v_coord_0,
+        .coord_1 = v_coord_1,
+        .normal_x = normal_vecs[0],
+        .normal_y = normal_vecs[1],
+        .normal_z = normal_vecs[2],
+    };
 
+    if (comptime channels == 1) {
+        const v_final = common.evalFuncShaderBuiltinScalarSIMD(
+            sh.builtin,
+            coord,
+            sh.params,
+        ) * @as(VecSF, @splat(sh.scale_mul)) +
+            @as(VecSF, @splat(sh.scale_add));
+        const flat_idx = scratch_idx;
+        storeMaskedVecSF(
+            spx_image_scratch.slice,
+            flat_idx,
+            v_mask_active,
+            v_final,
+        );
+        return;
+    }
+
+    const v_vals = common.evalFuncShaderBuiltinRgbSIMD(
+        sh.builtin,
+        coord,
+        sh.params,
+    );
     inline for (0..channels) |ch| {
-        var vals_arr: [S]F = undefined;
-        for (0..S) |ll| {
-            vals_arr[ll] = 0.0;
-            if (!lane_mask_arr[ll]) continue;
-
-            const coord = common.FuncCoord{
-                .coord_0 = coord_0_arr[ll],
-                .coord_1 = coord_1_arr[ll],
-                .normal_x = normal_arrs[0][ll],
-                .normal_y = normal_arrs[1][ll],
-                .normal_z = normal_arrs[2][ll],
-            };
-            if (comptime channels == 1) {
-                vals_arr[ll] = common.evalFuncShaderBuiltinScalar(
-                    sh.builtin,
-                    coord,
-                    sh.params,
-                ) * sh.scale_mul + sh.scale_add;
-            } else {
-                vals_arr[ll] = common.evalFuncShaderBuiltinRgb(
-                    sh.builtin,
-                    coord,
-                    sh.params,
-                )[ch] * sh.scale_mul + sh.scale_add;
-            }
-        }
-
-        const v_final: VecSF = vals_arr;
+        const v_final = v_vals[ch] * @as(VecSF, @splat(sh.scale_mul)) +
+            @as(VecSF, @splat(sh.scale_add));
         const flat_idx = ch * px_stride + scratch_idx;
         storeMaskedVecSF(
             spx_image_scratch.slice,
@@ -376,44 +371,42 @@ pub inline fn fillFuncPerspSIMD(
         .parametric => {},
     }
 
-    const coord_0_arr: [S]F = v_coord_0;
-    const coord_1_arr: [S]F = v_coord_1;
-    const normal_arrs = calcNormalLaneArrs(N, ctx_shade, v_weights);
-    const lane_mask_arr: [S]bool = v_mask_active;
+    const normal_vecs = calcNormalLaneVecs(N, ctx_shade, v_weights);
     const px_stride = spx_image_scratch.cols_num;
     const scratch_idx = ctx_shade.scratch_idx;
+    const coord = common.FuncCoordSIMD{
+        .coord_0 = v_coord_0,
+        .coord_1 = v_coord_1,
+        .normal_x = normal_vecs[0],
+        .normal_y = normal_vecs[1],
+        .normal_z = normal_vecs[2],
+    };
 
+    if (comptime channels == 1) {
+        const v_final = common.evalFuncShaderBuiltinScalarSIMD(
+            sh.builtin,
+            coord,
+            sh.params,
+        ) * @as(VecSF, @splat(sh.scale_mul)) +
+            @as(VecSF, @splat(sh.scale_add));
+        const flat_idx = scratch_idx;
+        storeMaskedVecSF(
+            spx_image_scratch.slice,
+            flat_idx,
+            v_mask_active,
+            v_final,
+        );
+        return;
+    }
+
+    const v_vals = common.evalFuncShaderBuiltinRgbSIMD(
+        sh.builtin,
+        coord,
+        sh.params,
+    );
     inline for (0..channels) |ch| {
-        var vals_arr: [S]F = undefined;
-        for (0..S) |ll| {
-            vals_arr[ll] = 0.0;
-            if (!lane_mask_arr[ll]) continue;
-
-            const coord = common.FuncCoord{
-                .coord_0 = coord_0_arr[ll],
-                .coord_1 = coord_1_arr[ll],
-                .normal_x = normal_arrs[0][ll],
-                .normal_y = normal_arrs[1][ll],
-                .normal_z = normal_arrs[2][ll],
-            };
-            if (comptime channels == 1) {
-                vals_arr[ll] = common.evalFuncShaderBuiltinScalar(
-                    sh.builtin,
-                    coord,
-                    sh.params,
-                ) *
-                    sh.scale_mul + sh.scale_add;
-            } else {
-                vals_arr[ll] = common.evalFuncShaderBuiltinRgb(
-                    sh.builtin,
-                    coord,
-                    sh.params,
-                )[ch] *
-                    sh.scale_mul + sh.scale_add;
-            }
-        }
-
-        const v_final: VecSF = vals_arr;
+        const v_final = v_vals[ch] * @as(VecSF, @splat(sh.scale_mul)) +
+            @as(VecSF, @splat(sh.scale_add));
         const flat_idx = ch * px_stride + scratch_idx;
         storeMaskedVecSF(
             spx_image_scratch.slice,

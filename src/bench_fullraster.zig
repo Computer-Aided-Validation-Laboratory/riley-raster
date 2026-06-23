@@ -15,6 +15,7 @@ const common = @import("common/benchcommon.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const rastcfg = @import("riley/zig/rasterconfig.zig");
 const riley = @import("riley/zig/riley.zig");
+const cam = @import("riley/zig/camera.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const texops = @import("riley/zig/textureops.zig");
@@ -69,6 +70,31 @@ pub fn main(init: std.process.Init) !void {
     );
     defer threaded_io.deinit();
     const io = threaded_io.io();
+    const distortion_model = switch (bench_args.distortion) {
+        .none => cam.DistortionModel.none,
+        .brown => cam.DistortionModel{
+            .brown_conrady = .{
+                .k1 = -0.08,
+                .k2 = 0.01,
+                .k3 = -0.002,
+                .p1 = 0.0004,
+                .p2 = -0.0007,
+            },
+        },
+        .brownext => cam.DistortionModel{
+            .brown_conrady_ext = .{
+                .k1 = -0.09,
+                .k2 = 0.012,
+                .k3 = -0.0015,
+                .k4 = 0.004,
+                .k5 = -0.0008,
+                .k6 = 0.00015,
+                .p1 = 0.0005,
+                .p2 = -0.0006,
+            },
+        },
+    };
+
     const render_defaults = common.BenchRenderDefaults{
         .pixels_num = bench_args.pixels_num,
         .sub_sample = bench_args.sub_sample,
@@ -76,6 +102,7 @@ pub fn main(init: std.process.Init) !void {
         .pixels_size = DEFAULT_PIXELS_SIZE,
         .fov_scale = DEFAULT_FOV_SCALE,
         .rot = DEFAULT_ROT,
+        .distortion = distortion_model,
     };
 
     const mesh_types = comptime std.enums.values(gk.MeshType);
@@ -449,6 +476,9 @@ fn writeStudyMetadata(
     });
     try writer.print("shader_subset={s}\n", .{
         @tagName(bench_args.shader_subset),
+    });
+    try writer.print("distortion={s}\n", .{
+        @tagName(bench_args.distortion),
     });
     try buffered_writer.flush();
 }

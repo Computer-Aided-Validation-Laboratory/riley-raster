@@ -22,6 +22,8 @@ pub fn fillTileIdealCentersPerTile(
     ideal_pixel_centers: []F,
 ) !void {
     const sub_samp: usize = @intCast(camera.sub_sample);
+    const ideal_x_plane = common.getIdealXPlaneScratch(ideal_pixel_centers);
+    const ideal_y_plane = common.getIdealYPlaneScratch(ideal_pixel_centers);
     const start_x = scratch_x_px_min * sub_samp;
     const start_y = scratch_y_px_min * sub_samp;
     const tile_w = (scratch_x_px_max - scratch_x_px_min) * sub_samp;
@@ -40,12 +42,9 @@ pub fn fillTileIdealCentersPerTile(
                 const global_x = start_x + ii;
                 const observed_x = @as(F, @floatFromInt(global_x)) *
                     step + off;
-                common.storeIdealPairScratch(
-                    ideal_pixel_centers,
-                    scratch_row_off + ii,
-                    observed_x,
-                    observed_y,
-                );
+                const scratch_idx = scratch_row_off + ii;
+                ideal_x_plane[scratch_idx] = observed_x;
+                ideal_y_plane[scratch_idx] = observed_y;
             }
         }
         return;
@@ -64,12 +63,9 @@ pub fn fillTileIdealCentersPerTile(
                 observed_x,
                 observed_y,
             );
-            common.storeIdealPairScratch(
-                ideal_pixel_centers,
-                scratch_row_off + ii,
-                ideal[0],
-                ideal[1],
-            );
+            const scratch_idx = scratch_row_off + ii;
+            ideal_x_plane[scratch_idx] = ideal[0];
+            ideal_y_plane[scratch_idx] = ideal[1];
         }
     }
 }
@@ -84,6 +80,8 @@ pub fn fillTileIdealCentersAffineJac(
     ideal_pixel_centers: []F,
 ) void {
     const sub_samp: usize = @intCast(camera.sub_sample);
+    const ideal_x_plane = common.getIdealXPlaneScratch(ideal_pixel_centers);
+    const ideal_y_plane = common.getIdealYPlaneScratch(ideal_pixel_centers);
     const jac = &camera.pixel_center_jac;
     const jac_slice = jac.slice;
     const jac_field_stride = jac.strides[2];
@@ -105,12 +103,9 @@ pub fn fillTileIdealCentersAffineJac(
                 const global_x = start_x + ii;
                 const observed_x = @as(F, @floatFromInt(global_x)) *
                     step + off;
-                common.storeIdealPairScratch(
-                    ideal_pixel_centers,
-                    scratch_row_off + ii,
-                    observed_x,
-                    observed_y,
-                );
+                const scratch_idx = scratch_row_off + ii;
+                ideal_x_plane[scratch_idx] = observed_x;
+                ideal_y_plane[scratch_idx] = observed_y;
             }
         }
         return;
@@ -138,12 +133,11 @@ pub fn fillTileIdealCentersAffineJac(
             const j12 = jac_slice[jac_px_base + 3 * jac_field_stride];
             const j21 = jac_slice[jac_px_base + 4 * jac_field_stride];
             const j22 = jac_slice[jac_px_base + 5 * jac_field_stride];
-            common.storeIdealPairScratch(
-                ideal_pixel_centers,
-                scratch_row_off + ii,
-                ideal_x + j11 * delta_x + j12 * delta_y,
-                ideal_y + j21 * delta_x + j22 * delta_y,
-            );
+            const scratch_idx = scratch_row_off + ii;
+            ideal_x_plane[scratch_idx] =
+                ideal_x + j11 * delta_x + j12 * delta_y;
+            ideal_y_plane[scratch_idx] =
+                ideal_y + j21 * delta_x + j22 * delta_y;
         }
     }
 }

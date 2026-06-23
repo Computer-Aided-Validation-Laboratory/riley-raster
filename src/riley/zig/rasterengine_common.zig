@@ -14,6 +14,7 @@ const SimdWidth = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
 const rastcfg = @import("rasterconfig.zig");
 const cam = @import("camera.zig");
+const camcommon = @import("camera_common.zig");
 const ReportMode = rastcfg.ReportMode;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
@@ -70,6 +71,12 @@ fn fillTileIdealCentersFullInMem(
     const stride_y = camera_prepared.ideal_pixel_centers.strides[0];
     const stride_x = camera_prepared.ideal_pixel_centers.strides[1];
     const slice = camera_prepared.ideal_pixel_centers.slice;
+    const ideal_x_plane = camcommon.getIdealXPlaneScratch(
+        subpx_scratch.ideal_pixel_centers,
+    );
+    const ideal_y_plane = camcommon.getIdealYPlaneScratch(
+        subpx_scratch.ideal_pixel_centers,
+    );
 
     const start_x = @as(usize, @intCast(tile.scratch_x_px_min)) * sub_samp;
     const start_y = @as(usize, @intCast(tile.scratch_y_px_min)) * sub_samp;
@@ -86,10 +93,8 @@ fn fillTileIdealCentersFullInMem(
             const col_off = global_x * stride_x;
             const scratch_idx = scratch_row_off + ii;
 
-            subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 0] =
-                slice[row_off + col_off + 0];
-            subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 1] =
-                slice[row_off + col_off + 1];
+            ideal_x_plane[scratch_idx] = slice[row_off + col_off + 0];
+            ideal_y_plane[scratch_idx] = slice[row_off + col_off + 1];
         }
     }
 }
@@ -188,13 +193,20 @@ pub fn rasterDirectScalarCommon(
         }
     }
 
+    const ideal_x_plane = camcommon.getIdealXPlaneScratch(
+        subpx_scratch.ideal_pixel_centers,
+    );
+    const ideal_y_plane = camcommon.getIdealYPlaneScratch(
+        subpx_scratch.ideal_pixel_centers,
+    );
+
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
         const row_offset = scratch_y_u * subpx_domain.tile_size;
 
         for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x_u| {
             const scratch_idx = row_offset + scratch_x_u;
-            const ideal_x_px = subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 0];
-            const ideal_y_px = subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 1];
+            const ideal_x_px = ideal_x_plane[scratch_idx];
+            const ideal_y_px = ideal_y_plane[scratch_idx];
 
             const tile_subx: usize = @intCast(targ_overlap.tile.scratch_x_px_min);
             const tile_suby: usize = @intCast(targ_overlap.tile.scratch_y_px_min);

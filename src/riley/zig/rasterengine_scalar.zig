@@ -22,6 +22,7 @@ const Vec3Slices = rops.Vec3Slices;
 const report = @import("report.zig");
 const ReportMode = report.ReportMode;
 const Timestamp = std.Io.Clock.Timestamp;
+const camcommon = @import("camera_common.zig");
 const common = @import("rasterengine_common.zig");
 const rasterreport = @import("rasterreport.zig");
 
@@ -48,7 +49,6 @@ pub const SubpxScratchBuffers = struct {
 
 const SubpxDomain = common.SubpxDomain;
 const RasterBounds = common.RasterBounds;
-
 
 //------------------------------------------------------------------------------------------
 // Scratch Buffer Helpers
@@ -355,14 +355,20 @@ fn rasterNewtonImpl(
     }
 
     var seed_state = newton.NewtonSeedState{};
+    const ideal_x_plane = camcommon.getIdealXPlaneScratch(
+        subpx_scratch.ideal_pixel_centers,
+    );
+    const ideal_y_plane = camcommon.getIdealYPlaneScratch(
+        subpx_scratch.ideal_pixel_centers,
+    );
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
         const row_offset = scratch_y * subpx_domain.tile_size;
 
         for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x| {
             const scratch_idx = row_offset + scratch_x;
-            const ideal_x_px = subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 0];
-            const ideal_y_px = subpx_scratch.ideal_pixel_centers[scratch_idx * 2 + 1];
+            const ideal_x_px = ideal_x_plane[scratch_idx];
+            const ideal_y_px = ideal_y_plane[scratch_idx];
 
             const global_subx = targ_overlap.tile.scratch_x_px_min * sub_samp + scratch_x;
             const global_suby = targ_overlap.tile.scratch_y_px_min * sub_samp + scratch_y;
