@@ -14,17 +14,15 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
 const cfg = buildconfig.config;
-const ScratchLayout = common.ScratchLayout;
-const ScratchTileGeometry = common.ScratchTileGeometry;
-const MatSlice = common.MatSlice;
-const NDArray = common.NDArray;
-const FrameImageWriter = common.FrameImageWriter;
-const getScratchField = common.getScratchField;
-const setScratchField = common.setScratchField;
-const sampleScratchOrBackground = common.sampleScratchOrBackground;
+pub const ScratchTileGeometry = common.ScratchTileGeometry;
+pub const MatSlice = common.MatSlice;
+pub const NDArray = common.NDArray;
+pub const FrameImageWriter = common.FrameImageWriter;
+pub const getScratchField = common.getScratchField;
+pub const setScratchField = common.setScratchField;
+pub const sampleScratchOrBackground = common.sampleScratchOrBackground;
 
 pub fn resolveScratchDirectCore(
-    comptime scratch_layout: ScratchLayout,
     tile: rops.ActiveTile,
     scratch_geom: ScratchTileGeometry,
     spx_stride: usize,
@@ -38,8 +36,10 @@ pub fn resolveScratchDirectCore(
 ) void {
     const writer = FrameImageWriter.init(image_out_arr);
 
-    var ii: usize = 0;
-    while (ii < scratch_geom.core_h_px) : (ii += 1) {
+    // Buffer layout is planar/field-major.
+    // Source: field ff is at spx_image_scratch.slice[ff * spx_stride].
+    // Destination: field ff is at writer.slice[ff * writer.field_stride].
+    for (0..scratch_geom.core_h_px) |ii| {
         const image_px_y = tile.y_px_min + ii;
         const spx_start_y = scratch_geom.core_start_y_subpx + ii;
 
@@ -55,8 +55,7 @@ pub fn resolveScratchDirectCore(
             spx_start_y + radius_y,
         );
 
-        var nn = start_y;
-        while (nn <= end_y) : (nn += 1) {
+        for (start_y..end_y + 1) |nn| {
             const r_min = touched_min_x[nn];
             const r_max = touched_max_x[nn];
             if (r_min <= r_max) {
@@ -92,51 +91,43 @@ pub fn resolveScratchDirectCore(
 
         const scratch_row_offset = spx_start_y * spx_stride;
 
-        var jj = tx_start;
-        while (jj <= tx_end) : (jj += 1) {
-            const image_px_x = tile.x_px_min + jj;
-            const scratch_flat_idx = scratch_row_offset +
-                scratch_geom.core_start_x_subpx + jj;
-            const image_px_base = writer.pixelBase(image_px_y, image_px_x);
+        if (tx_start <= tx_end) {
+            const len = tx_end - tx_start + 1;
+            const src_base = scratch_row_offset +
+                scratch_geom.core_start_x_subpx + tx_start;
+            const dest_base = image_px_y * writer.row_stride +
+                tile.x_px_min + tx_start;
 
             if (fields_num == 1) {
-                writer.slice[image_px_base] = getScratchField(
-                    scratch_layout,
-                    spx_image_scratch,
-                    scratch_flat_idx,
-                    0,
+                @memcpy(
+                    writer.slice[dest_base .. dest_base + len],
+                    spx_image_scratch.slice[src_base .. src_base + len],
                 );
             } else if (fields_num == 3) {
-                writer.slice[image_px_base] = getScratchField(
-                    scratch_layout,
-                    spx_image_scratch,
-                    scratch_flat_idx,
-                    0,
+                @memcpy(
+                    writer.slice[dest_base .. dest_base + len],
+                    spx_image_scratch.slice[src_base .. src_base + len],
                 );
-                writer.slice[writer.field_stride + image_px_base] =
-                    getScratchField(
-                        scratch_layout,
-                        spx_image_scratch,
-                        scratch_flat_idx,
-                        1,
-                    );
-                writer.slice[2 * writer.field_stride + image_px_base] =
-                    getScratchField(
-                        scratch_layout,
-                        spx_image_scratch,
-                        scratch_flat_idx,
-                        2,
-                    );
+                const dest1 = writer.field_stride + dest_base;
+                const src1 = spx_stride + src_base;
+                @memcpy(
+                    writer.slice[dest1 .. dest1 + len],
+                    spx_image_scratch.slice[src1 .. src1 + len],
+                );
+                const dest2 = 2 * writer.field_stride + dest_base;
+                const src2 = 2 * spx_stride + src_base;
+                @memcpy(
+                    writer.slice[dest2 .. dest2 + len],
+                    spx_image_scratch.slice[src2 .. src2 + len],
+                );
             } else {
-                var ff: usize = 0;
-                while (ff < @as(usize, fields_num)) : (ff += 1) {
-                    writer.slice[ff * writer.field_stride + image_px_base] =
-                        getScratchField(
-                            scratch_layout,
-                            spx_image_scratch,
-                            scratch_flat_idx,
-                            ff,
-                        );
+                for (0..fields_num) |ff| {
+                    const src_offset = ff * spx_stride + src_base;
+                    const dest_offset = ff * writer.field_stride + dest_base;
+                    @memcpy(
+                        writer.slice[dest_offset .. dest_offset + len],
+                        spx_image_scratch.slice[src_offset .. src_offset + len],
+                    );
                 }
             }
         }
@@ -144,7 +135,6 @@ pub fn resolveScratchDirectCore(
 }
 
 pub fn averageScratchCore(
-    comptime scratch_layout: ScratchLayout,
     tile: rops.ActiveTile,
     scratch_geom: ScratchTileGeometry,
     sub_samp: usize,
@@ -161,8 +151,7 @@ pub fn averageScratchCore(
     const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
     const writer = FrameImageWriter.init(image_out_arr);
 
-    var ii: usize = 0;
-    while (ii < scratch_geom.core_h_px) : (ii += 1) {
+    for (0..scratch_geom.core_h_px) |ii| {
         const image_px_y = tile.y_px_min + ii;
         const spx_start_y = scratch_geom.core_start_y_subpx + sub_samp * ii;
 
@@ -178,8 +167,7 @@ pub fn averageScratchCore(
             spx_start_y + sub_samp - 1 + radius_y,
         );
 
-        var nn = start_y;
-        while (nn <= end_y) : (nn += 1) {
+        for (start_y..end_y + 1) |nn| {
             const r_min = touched_min_x[nn];
             const r_max = touched_max_x[nn];
             if (r_min <= r_max) {
@@ -214,24 +202,20 @@ pub fn averageScratchCore(
             continue;
         }
 
-        var jj = tx_start;
-        while (jj <= tx_end) : (jj += 1) {
+        for (tx_start..tx_end + 1) |jj| {
             const image_px_x = tile.x_px_min + jj;
             const spx_start_x = scratch_geom.core_start_x_subpx + sub_samp * jj;
             const image_px_base = writer.pixelBase(image_px_y, image_px_x);
 
             if (fields_num == 1) {
                 var field_sum_0: F = 0.0;
-                var row_idx: usize = 0;
-                while (row_idx < sub_samp) : (row_idx += 1) {
+                for (0..sub_samp) |row_idx| {
                     const scratch_row_offset = (spx_start_y + row_idx) *
                         spx_stride;
-                    var col_idx: usize = 0;
-                    while (col_idx < sub_samp) : (col_idx += 1) {
+                    for (0..sub_samp) |col_idx| {
                         const scratch_flat_idx = scratch_row_offset +
                             spx_start_x + col_idx;
                         field_sum_0 += getScratchField(
-                            scratch_layout,
                             spx_image_scratch,
                             scratch_flat_idx,
                             0,
@@ -243,28 +227,23 @@ pub fn averageScratchCore(
                 var field_sum_0: F = 0.0;
                 var field_sum_1: F = 0.0;
                 var field_sum_2: F = 0.0;
-                var row_idx: usize = 0;
-                while (row_idx < sub_samp) : (row_idx += 1) {
+                for (0..sub_samp) |row_idx| {
                     const scratch_row_offset = (spx_start_y + row_idx) *
                         spx_stride;
-                    var col_idx: usize = 0;
-                    while (col_idx < sub_samp) : (col_idx += 1) {
+                    for (0..sub_samp) |col_idx| {
                         const scratch_flat_idx = scratch_row_offset +
                             spx_start_x + col_idx;
                         field_sum_0 += getScratchField(
-                            scratch_layout,
                             spx_image_scratch,
                             scratch_flat_idx,
                             0,
                         );
                         field_sum_1 += getScratchField(
-                            scratch_layout,
                             spx_image_scratch,
                             scratch_flat_idx,
                             1,
                         );
                         field_sum_2 += getScratchField(
-                            scratch_layout,
                             spx_image_scratch,
                             scratch_flat_idx,
                             2,
@@ -281,18 +260,14 @@ pub fn averageScratchCore(
                 const spx_field_avg = field_avg_buff[0..@as(usize, fields_num)];
                 @memset(spx_field_avg, 0.0);
 
-                var row_idx: usize = 0;
-                while (row_idx < sub_samp) : (row_idx += 1) {
+                for (0..sub_samp) |row_idx| {
                     const scratch_row_offset = (spx_start_y + row_idx) *
                         spx_stride;
-                    var col_idx: usize = 0;
-                    while (col_idx < sub_samp) : (col_idx += 1) {
+                    for (0..sub_samp) |col_idx| {
                         const scratch_flat_idx = scratch_row_offset +
                             spx_start_x + col_idx;
-                        var ff: usize = 0;
-                        while (ff < @as(usize, fields_num)) : (ff += 1) {
+                        for (0..fields_num) |ff| {
                             spx_field_avg[ff] += getScratchField(
-                                scratch_layout,
                                 spx_image_scratch,
                                 scratch_flat_idx,
                                 ff,
@@ -301,8 +276,7 @@ pub fn averageScratchCore(
                     }
                 }
 
-                var ff: usize = 0;
-                while (ff < @as(usize, fields_num)) : (ff += 1) {
+                for (0..fields_num) |ff| {
                     writer.slice[ff * writer.field_stride + image_px_base] =
                         spx_field_avg[ff] * inv_sub_samp_sq;
                 }
@@ -312,7 +286,6 @@ pub fn averageScratchCore(
 }
 
 pub fn filterScratchSeparable(
-    comptime scratch_layout: ScratchLayout,
     fields_num: u8,
     background_value: F,
     psf: cam.PreparedPSF,
@@ -331,8 +304,7 @@ pub fn filterScratchSeparable(
     const radius_y = psf.radius_y_subpx;
 
     // Horizontal pass
-    var yy: usize = 0;
-    while (yy < scratch_geom.scratch_h_subpx) : (yy += 1) {
+    for (0..scratch_geom.scratch_h_subpx) |yy| {
         const min_x = touched_min_x[yy];
         const max_x = touched_max_x[yy];
         if (min_x > max_x) continue;
@@ -348,20 +320,16 @@ pub fn filterScratchSeparable(
         );
         if (xx_start > xx_end) continue;
 
-        var ff: usize = 0;
-        while (ff < @as(usize, fields_num)) : (ff += 1) {
+        for (0..fields_num) |ff| {
             // Scalar path
-            var xx = xx_start;
-            while (xx <= xx_end) : (xx += 1) {
+            for (xx_start..xx_end + 1) |xx| {
                 var sum_h: F = 0.0;
-                var kk: usize = 0;
-                while (kk < psf.weights_x.len) : (kk += 1) {
+                for (0..psf.weights_x.len) |kk| {
                     const x_off = @as(
                         isize,
                         @intCast(kk),
                     ) - @as(isize, @intCast(radius_x));
                     sum_h += psf.weights_x[kk] * sampleScratchOrBackground(
-                        scratch_layout,
                         src,
                         @as(isize, @intCast(xx)) + x_off,
                         @as(isize, @intCast(yy)),
@@ -372,7 +340,6 @@ pub fn filterScratchSeparable(
                     );
                 }
                 setScratchField(
-                    scratch_layout,
                     tmp,
                     yy * spx_stride + xx,
                     ff,
@@ -384,17 +351,16 @@ pub fn filterScratchSeparable(
 
     // Vertical pass
     dst.fill(background_value);
-    yy = scratch_geom.core_start_y_subpx;
+    const core_start_y = scratch_geom.core_start_y_subpx;
     const core_end_y = scratch_geom.core_start_y_subpx +
         scratch_geom.core_h_px * sub_samp - 1;
-    while (yy <= core_end_y) : (yy += 1) {
+    for (core_start_y..core_end_y + 1) |yy| {
         var min_x = scratch_geom.scratch_w_subpx;
         var max_x: usize = 0;
         const start_y = if (yy >= radius_y) yy - radius_y else 0;
         const end_y = @min(scratch_geom.scratch_h_subpx - 1, yy + radius_y);
 
-        var nn = start_y;
-        while (nn <= end_y) : (nn += 1) {
+        for (start_y..end_y + 1) |nn| {
             const r_min = touched_min_x[nn];
             const r_max = touched_max_x[nn];
             if (r_min <= r_max) {
@@ -416,20 +382,16 @@ pub fn filterScratchSeparable(
         );
         if (xx_start > xx_end) continue;
 
-        var ff: usize = 0;
-        while (ff < @as(usize, fields_num)) : (ff += 1) {
+        for (0..fields_num) |ff| {
             // Scalar path
-            var xx = xx_start;
-            while (xx <= xx_end) : (xx += 1) {
+            for (xx_start..xx_end + 1) |xx| {
                 var sum_v: F = 0.0;
-                var kk: usize = 0;
-                while (kk < psf.weights_y.len) : (kk += 1) {
+                for (0..psf.weights_y.len) |kk| {
                     const y_off = @as(
                         isize,
                         @intCast(kk),
                     ) - @as(isize, @intCast(radius_y));
                     sum_v += psf.weights_y[kk] * sampleScratchOrBackground(
-                        scratch_layout,
                         tmp,
                         @as(isize, @intCast(xx)),
                         @as(isize, @intCast(yy)) + y_off,
@@ -440,7 +402,6 @@ pub fn filterScratchSeparable(
                     );
                 }
                 setScratchField(
-                    scratch_layout,
                     dst,
                     yy * spx_stride + xx,
                     ff,
@@ -452,7 +413,6 @@ pub fn filterScratchSeparable(
 }
 
 pub fn filterScratchNonSeparable(
-    comptime scratch_layout: ScratchLayout,
     fields_num: u8,
     background_value: F,
     psf: cam.PreparedPSF,
@@ -470,17 +430,16 @@ pub fn filterScratchNonSeparable(
     const radius_y = psf.radius_y_subpx;
     const kernel_w = 2 * radius_x + 1;
 
-    var yy = scratch_geom.core_start_y_subpx;
+    const core_start_y = scratch_geom.core_start_y_subpx;
     const core_end_y = scratch_geom.core_start_y_subpx +
         scratch_geom.core_h_px * sub_samp - 1;
-    while (yy <= core_end_y) : (yy += 1) {
+    for (core_start_y..core_end_y + 1) |yy| {
         var min_x = scratch_geom.scratch_w_subpx;
         var max_x: usize = 0;
         const start_y = if (yy >= radius_y) yy - radius_y else 0;
         const end_y = @min(scratch_geom.scratch_h_subpx - 1, yy + radius_y);
 
-        var nn = start_y;
-        while (nn <= end_y) : (nn += 1) {
+        for (start_y..end_y + 1) |nn| {
             const r_min = touched_min_x[nn];
             const r_max = touched_max_x[nn];
             if (r_min <= r_max) {
@@ -502,14 +461,11 @@ pub fn filterScratchNonSeparable(
         );
         if (xx_start > xx_end) continue;
 
-        var ff: usize = 0;
-        while (ff < @as(usize, fields_num)) : (ff += 1) {
+        for (0..fields_num) |ff| {
             // Scalar path
-            var xx = xx_start;
-            while (xx <= xx_end) : (xx += 1) {
+            for (xx_start..xx_end + 1) |xx| {
                 var sum: F = 0.0;
-                var kk: usize = 0;
-                while (kk < psf.weights_2d.len) : (kk += 1) {
+                for (0..psf.weights_2d.len) |kk| {
                     const ky = kk / kernel_w;
                     const kx = kk % kernel_w;
                     const x_off = @as(
@@ -521,7 +477,6 @@ pub fn filterScratchNonSeparable(
                         @intCast(ky),
                     ) - @as(isize, @intCast(radius_y));
                     sum += psf.weights_2d[kk] * sampleScratchOrBackground(
-                        scratch_layout,
                         src,
                         @as(isize, @intCast(xx)) + x_off,
                         @as(isize, @intCast(yy)) + y_off,
@@ -532,7 +487,6 @@ pub fn filterScratchNonSeparable(
                     );
                 }
                 setScratchField(
-                    scratch_layout,
                     dst,
                     yy * spx_stride + xx,
                     ff,

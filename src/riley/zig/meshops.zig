@@ -28,6 +28,7 @@ const rops = @import("rasterops.zig");
 const report = @import("report.zig");
 const sceneops = @import("sceneops.zig");
 const texops = @import("textureops.zig");
+const Timestamp = std.Io.Clock.Timestamp;
 
 const shaderops = @import("shaderops.zig");
 const normals = @import("normals.zig");
@@ -572,17 +573,40 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             };
         }
 
-        fn run(self: *FrameMeshPipelineType) !MeshFrame {
+        fn run(
+            self: *FrameMeshPipelineType,
+            timing: *GeometryTiming,
+        ) !MeshFrame {
+            const time_start_coords = Timestamp.now(self.chunk_exec.io, .awake);
             self.displaceCoords();
             self.transformCoords();
+            const time_end_coords = Timestamp.now(self.chunk_exec.io, .awake);
+            timing.coord_ops += @intCast(time_start_coords.durationTo(
+                time_end_coords,
+            ).raw.nanoseconds);
 
+            const time_start_cull = Timestamp.now(self.chunk_exec.io, .awake);
             try self.cullVisible();
             var mesh_prep = try self.gatherVisibleCoords();
+            const time_end_cull = Timestamp.now(self.chunk_exec.io, .awake);
+            timing.cull_ops += @intCast(time_start_cull.durationTo(
+                time_end_cull,
+            ).raw.nanoseconds);
 
+            const time_start_prep = Timestamp.now(self.chunk_exec.io, .awake);
             try self.prepareRasterHulls(&mesh_prep.coords);
             try self.prepareShader(&mesh_prep);
+            const time_end_prep = Timestamp.now(self.chunk_exec.io, .awake);
+            timing.prep_hulls_shaders += @intCast(time_start_prep.durationTo(
+                time_end_prep,
+            ).raw.nanoseconds);
 
+            const time_start_remap = Timestamp.now(self.chunk_exec.io, .awake);
             self.remapVisibleElemIndices();
+            const time_end_remap = Timestamp.now(self.chunk_exec.io, .awake);
+            timing.remap_inds += @intCast(time_start_remap.durationTo(
+                time_end_remap,
+            ).raw.nanoseconds);
 
             return .{
                 .mesh = mesh_prep,
@@ -1361,6 +1385,13 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
     };
 }
 
+pub const GeometryTiming = struct {
+    coord_ops: u64 = 0,
+    cull_ops: u64 = 0,
+    prep_hulls_shaders: u64 = 0,
+    remap_inds: u64 = 0,
+};
+
 pub fn prepareMeshFrame(
     allocator: std.mem.Allocator,
     chunk_exec: *pce.ParaChunkExecutor,
@@ -1370,6 +1401,7 @@ pub fn prepareMeshFrame(
     mesh_static: *const MeshStatic,
     frame_idx: usize,
     scaling_params: ?imageops.ScalingParams,
+    timing: *GeometryTiming,
 ) !MeshFrame {
     return switch (mesh_static.mesh_type) {
         inline else => |MT| {
@@ -1383,7 +1415,7 @@ pub fn prepareMeshFrame(
                 chunk_exec,
                 workers_num,
             );
-            return try pipeline.run();
+            return try pipeline.run(timing);
         },
     };
 }
@@ -1409,8 +1441,12 @@ pub fn prepareMeshFrames(
     static_meshes: []const MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     frame_meshes: []MeshFrame,
+    timing: *GeometryTiming,
 ) !FrameGeometryResult {
-    var res = FrameGeometryResult{ .total_elems_num = 0, .total_elems_in_image = 0 };
+    var res = FrameGeometryResult{
+        .total_elems_num = 0,
+        .total_elems_in_image = 0,
+    };
 
     for (static_meshes, 0..) |*mesh_static, ii| {
         // Only needed for nodal interpolation shading and only if not .none. If .none we
@@ -1442,6 +1478,7 @@ pub fn prepareMeshFrames(
             mesh_static,
             frame_idx,
             nodal_frame_scaling,
+            timing,
         );
         res.total_elems_num += frame_meshes[ii].total_elems_num;
         res.total_elems_in_image += frame_meshes[ii].elems_in_image;

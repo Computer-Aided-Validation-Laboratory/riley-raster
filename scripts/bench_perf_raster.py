@@ -11,15 +11,78 @@ import time
 
 from perf_common import command_path, repo_root
 
+DEFAULT_OUT_ROOT = pathlib.Path("out") / "bench_stats_perf_raster"
+DEFAULT_IMAGE_OUT_DIR = pathlib.Path("out") / "bench_images_perf_raster"
+DEFAULT_RUNS = 25
+DEFAULT_PIXELS_X: int | None = None
+DEFAULT_PIXELS_Y: int | None = None
+DEFAULT_TOTAL_THREADS = 1
+DEFAULT_MAX_GEOM_WORKERS_PER_JOB = 1
+DEFAULT_MAX_RASTER_WORKERS_PER_JOB = 1
+DEFAULT_RENDER_GROUP_COUNT = 1
+DEFAULT_FRAME_BATCH_SIZE_PER_GROUP = 1
+DEFAULT_MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP = 1
+
+STUDY_CASES: list[dict[str, str]] = [
+    {
+        "experiment": "precision",
+        "case_name": "fullraster_precision_f64_simd_v8_inner",
+        "precision": "f64",
+        "interp": "inner",
+        "texture_storage": "u8",
+        "shader_subset": "all",
+    },
+    {
+        "experiment": "precision",
+        "case_name": "fullraster_precision_f32_simd_v16_inner",
+        "precision": "f32",
+        "interp": "inner",
+        "texture_storage": "u8",
+        "shader_subset": "all",
+    },
+    {
+        "experiment": "interp",
+        "case_name": "fullraster_interp_f64_simd_inner",
+        "precision": "f64",
+        "interp": "inner",
+        "texture_storage": "u8",
+        "shader_subset": "all",
+    },
+    {
+        "experiment": "interp",
+        "case_name": "fullraster_interp_f64_simd_overpx",
+        "precision": "f64",
+        "interp": "overpx",
+        "texture_storage": "u8",
+        "shader_subset": "all",
+    },
+    {
+        "experiment": "texstore",
+        "case_name": "fullraster_texstore_u8",
+        "precision": "f64",
+        "interp": "inner",
+        "texture_storage": "u8",
+        "shader_subset": "texture",
+    },
+    {
+        "experiment": "texstore",
+        "case_name": "fullraster_texstore_u16",
+        "precision": "f64",
+        "interp": "inner",
+        "texture_storage": "u16",
+        "shader_subset": "texture",
+    },
+]
+
 
 def build_run_root(out_root: pathlib.Path | None) -> pathlib.Path:
-    root_dir = out_root or pathlib.Path("out") / "bench_stats_perf_raster"
+    root_dir = out_root or DEFAULT_OUT_ROOT
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     return root_dir / timestamp
 
 
 def default_image_out_dir() -> pathlib.Path:
-    return pathlib.Path("out") / "bench_images_perf_raster"
+    return DEFAULT_IMAGE_OUT_DIR
 
 
 def binary_name(precision: str, interp: str) -> str:
@@ -83,66 +146,6 @@ def write_timing_csv(
             writer.writerow(row)
     return csv_path
 
-
-def create_cases() -> list[dict[str, str]]:
-    return [
-        {
-            "experiment": "precision",
-            "case_name": "fullraster_precision_f64_simd_v8_inner",
-            "binary": binary_name("f64", "inner"),
-            "precision": "f64",
-            "interp": "inner",
-            "texture_storage": "u8",
-            "shader_subset": "all",
-        },
-        {
-            "experiment": "precision",
-            "case_name": "fullraster_precision_f32_simd_v16_inner",
-            "binary": binary_name("f32", "inner"),
-            "precision": "f32",
-            "interp": "inner",
-            "texture_storage": "u8",
-            "shader_subset": "all",
-        },
-        {
-            "experiment": "interp",
-            "case_name": "fullraster_interp_f64_simd_inner",
-            "binary": binary_name("f64", "inner"),
-            "precision": "f64",
-            "interp": "inner",
-            "texture_storage": "u8",
-            "shader_subset": "all",
-        },
-        {
-            "experiment": "interp",
-            "case_name": "fullraster_interp_f64_simd_overpx",
-            "binary": binary_name("f64", "overpx"),
-            "precision": "f64",
-            "interp": "overpx",
-            "texture_storage": "u8",
-            "shader_subset": "all",
-        },
-        {
-            "experiment": "texstore",
-            "case_name": "fullraster_texstore_u8",
-            "binary": binary_name("f64", "inner"),
-            "precision": "f64",
-            "interp": "inner",
-            "texture_storage": "u8",
-            "shader_subset": "texture",
-        },
-        {
-            "experiment": "texstore",
-            "case_name": "fullraster_texstore_u16",
-            "binary": binary_name("f64", "inner"),
-            "precision": "f64",
-            "interp": "inner",
-            "texture_storage": "u16",
-            "shader_subset": "texture",
-        },
-    ]
-
-
 def run_case(
     case: dict[str, str],
     run_root: pathlib.Path,
@@ -154,6 +157,9 @@ def run_case(
 ) -> float:
     output_dir = run_root / case["case_name"]
     binary = binary_path(case["precision"], case["interp"])
+    binary_tag = binary_name(case["precision"], case["interp"])
+    case_with_binary = dict(case)
+    case_with_binary["binary"] = binary_tag
     command = [
         str(binary),
         "--out-dir",
@@ -161,17 +167,17 @@ def run_case(
         "--image-out-dir",
         command_path(image_out_dir),
         "--total-threads",
-        "1",
+        str(DEFAULT_TOTAL_THREADS),
         "--max-geom-workers-per-job",
-        "1",
+        str(DEFAULT_MAX_GEOM_WORKERS_PER_JOB),
         "--max-raster-workers-per-job",
-        "1",
+        str(DEFAULT_MAX_RASTER_WORKERS_PER_JOB),
         "--render-group-count",
-        "1",
+        str(DEFAULT_RENDER_GROUP_COUNT),
         "--frame-batch-size-per-group",
-        "1",
+        str(DEFAULT_FRAME_BATCH_SIZE_PER_GROUP),
         "--max-geom-jobs-in-flight-per-group",
-        "1",
+        str(DEFAULT_MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP),
         "--runs",
         str(runs),
         "--texture-storage",
@@ -191,7 +197,7 @@ def run_case(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     write_command_file(output_dir, command)
-    write_experiment_meta(output_dir, case, command)
+    write_experiment_meta(output_dir, case_with_binary, command)
 
     stdout_path = output_dir / "stdout.txt"
     stderr_path = output_dir / "stderr.txt"
@@ -210,9 +216,9 @@ def run_case(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out-root", type=pathlib.Path, default=None)
-    parser.add_argument("--runs", type=int, default=1)
-    parser.add_argument("--pixels-x", type=int, default=None)
-    parser.add_argument("--pixels-y", type=int, default=None)
+    parser.add_argument("--runs", type=int, default=DEFAULT_RUNS)
+    parser.add_argument("--pixels-x", type=int, default=DEFAULT_PIXELS_X)
+    parser.add_argument("--pixels-y", type=int, default=DEFAULT_PIXELS_Y)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -224,7 +230,7 @@ def main() -> int:
     if not args.dry_run:
         run_root.mkdir(parents=True, exist_ok=True)
 
-    for case in create_cases():
+    for case in STUDY_CASES:
         seconds = run_case(
             case,
             run_root,

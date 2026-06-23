@@ -23,6 +23,7 @@ const rasterreport = @import("rasterreport.zig");
 const rops = @import("rasterops.zig");
 const newton = @import("newton.zig");
 const pce = @import("parachunkexec.zig");
+const scratchfilter = @import("scratchfilter.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
 const mo = @import("meshops.zig");
 const MeshPrepared = mo.MeshPrepared;
@@ -56,8 +57,6 @@ pub const RasterBounds = struct {
     y_min_f: F,
 };
 
-const scratchfilter = @import("scratchfilter.zig");
-pub const ScratchLayout = scratchfilter.ScratchLayout;
 pub const ScratchTileGeometry = scratchfilter.ScratchTileGeometry;
 
 fn fillTileIdealCentersFullInMem(
@@ -728,7 +727,6 @@ fn rasterTileCommon(
 
     if (ctx_rast.camera.prepared_psf.hasFilter()) {
         scratchfilter.resolveTileWithPSF(
-            RasterBackend.scratch_layout,
             tile,
             sub_samp,
             subpx_tile_size,
@@ -744,7 +742,6 @@ fn rasterTileCommon(
         );
     } else if (sub_samp > 1) {
         scratchfilter.averageScratch(
-            RasterBackend.scratch_layout,
             tile,
             @intCast(sub_samp),
             subpx_tile_size,
@@ -756,7 +753,6 @@ fn rasterTileCommon(
         );
     } else {
         scratchfilter.resolveScratchDirect(
-            RasterBackend.scratch_layout,
             tile,
             subpx_tile_size,
             fields_num,

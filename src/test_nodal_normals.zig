@@ -99,6 +99,7 @@ test "Nodal normals are prepared when requested" {
 
     const rast_cfg = tcfg.getRasterConfig(.testing);
     var pool = pce.ParaChunkExecutor.init(std.testing.io, 1);
+    var timing = mo.GeometryTiming{};
     const frame_mesh = try mo.prepareMeshFrame(
         arena_alloc,
         &pool,
@@ -108,6 +109,7 @@ test "Nodal normals are prepared when requested" {
         &mesh_static,
         0,
         null,
+        &timing,
     );
 
     try std.testing.expect(frame_mesh.total_elems_num > 0);

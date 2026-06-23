@@ -1,7 +1,7 @@
 pub const build_options = struct {
-    pub const precision = "f64";
+    pub const precision = "f32";
     pub const simd = "on";
-    pub const simd_texture_interp = "over_pixels";
+    pub const simd_texture_interp = "inner";
 };
 // --------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ

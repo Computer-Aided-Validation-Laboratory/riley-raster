@@ -20,7 +20,13 @@ pub const ReportMode = rastcfg.ReportMode;
 pub const OffLog = struct {};
 
 pub const FrameTimes = struct {
+    setup_frame_buffer: F = 0,
+    prepare_frame_context: F = 0,
     geometry_prep: F = 0,
+    geom_coord_ops: F = 0,
+    geom_cull_ops: F = 0,
+    geom_prep_hulls_shaders: F = 0,
+    geom_remap_inds: F = 0,
     tile_overlap: F = 0,
     raster_loop: F = 0,
     cam_invert: F = 0,
@@ -714,8 +720,26 @@ pub const FullStatsLog = struct {
 
         try writer.print("--- PIPELINE TIMINGS (User Summary) ---\n", .{});
         const conv = 1.0 / 1e6;
+        try writer.print("Setup Frame Buffer      = {d:.6} ms\n", .{
+            self.bench.frame_times.setup_frame_buffer * conv,
+        });
+        try writer.print("Prep Frame              = {d:.6} ms\n", .{
+            self.bench.frame_times.prepare_frame_context * conv,
+        });
         try writer.print("Geometry Preparation    = {d:.6} ms\n", .{
             self.bench.frame_times.geometry_prep * conv,
+        });
+        try writer.print("  Coord Ops             = {d:.6} ms\n", .{
+            self.bench.frame_times.geom_coord_ops * conv,
+        });
+        try writer.print("  Cull Ops              = {d:.6} ms\n", .{
+            self.bench.frame_times.geom_cull_ops * conv,
+        });
+        try writer.print("  Prep Hulls Shaders    = {d:.6} ms\n", .{
+            self.bench.frame_times.geom_prep_hulls_shaders * conv,
+        });
+        try writer.print("  Remap Inds            = {d:.6} ms\n", .{
+            self.bench.frame_times.geom_remap_inds * conv,
         });
         try writer.print("Elem/Tile Overlap       = {d:.6} ms\n", .{
             self.bench.frame_times.tile_overlap * conv,
@@ -1312,8 +1336,26 @@ pub fn standardReport(
         actual_tile_size,
         actual_tile_size,
     });
+    try writer.print("Setup Frame Buffer      = {d:.6} ms\n", .{
+        frame_times.setup_frame_buffer * conv_units,
+    });
+    try writer.print("Prep Frame              = {d:.6} ms\n", .{
+        frame_times.prepare_frame_context * conv_units,
+    });
     try writer.print("Geometry Preparation    = {d:.6} ms\n", .{
         frame_times.geometry_prep * conv_units,
+    });
+    try writer.print("  Coord Ops             = {d:.6} ms\n", .{
+        frame_times.geom_coord_ops * conv_units,
+    });
+    try writer.print("  Cull Ops              = {d:.6} ms\n", .{
+        frame_times.geom_cull_ops * conv_units,
+    });
+    try writer.print("  Prep Hulls Shaders    = {d:.6} ms\n", .{
+        frame_times.geom_prep_hulls_shaders * conv_units,
+    });
+    try writer.print("  Remap Inds            = {d:.6} ms\n", .{
+        frame_times.geom_remap_inds * conv_units,
     });
     try writer.print("Elem/Tile Overlap       = {d:.6} ms\n", .{
         frame_times.tile_overlap * conv_units,

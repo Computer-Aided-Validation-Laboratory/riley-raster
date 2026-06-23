@@ -653,19 +653,29 @@ fn prepareFrameContext(
     ctx.elem_bboxes_by_mesh = try arena_alloc.alloc([]rops.ElemBBox, mesh_n);
     ctx.elems_in_image_by_mesh = try arena_alloc.alloc(usize, mesh_n);
     ctx.raster_hulls = try arena_alloc.alloc(?ndarray.NDArray(F), mesh_n);
+}
 
+fn prepareFrameBuffer(
+    ctx: *FrameContext,
+    input: *const FrameJobDesc,
+) !void {
+    const arena_alloc = ctx.arena.allocator();
     const dims = [_]usize{
         @as(usize, input.num_fields),
         input.camera.pixels_num[1],
         input.camera.pixels_num[0],
     };
+
     if (input.save_slot) |save_slot| {
         ctx.frame_arr = save_slot.frame_arr;
         std.debug.assert(ctx.frame_arr.dims.len == dims.len);
-        for (dims, 0..) |dim, ii| std.debug.assert(ctx.frame_arr.dims[ii] == dim);
+        for (dims, 0..) |dim, ii| {
+            std.debug.assert(ctx.frame_arr.dims[ii] == dim);
+        }
         @memset(ctx.frame_arr.slice, input.config.background_value);
         return;
     }
+
     if (input.can_write_result_direct) {
         const images_arr = input.images_arr orelse return error.NoResult;
         ctx.frame_arr = try getFrameImageView(
@@ -680,8 +690,11 @@ fn prepareFrameContext(
             dims[0..],
         );
     }
+
     std.debug.assert(ctx.frame_arr.dims.len == dims.len);
-    for (dims, 0..) |dim, ii| std.debug.assert(ctx.frame_arr.dims[ii] == dim);
+    for (dims, 0..) |dim, ii| {
+        std.debug.assert(ctx.frame_arr.dims[ii] == dim);
+    }
     @memset(ctx.frame_arr.slice, input.config.background_value);
 }
 
@@ -904,15 +917,21 @@ fn runGeometryStage(
     }
 
     const time_start_geo = Timestamp.now(io, .awake);
+    const time_start_pfc = time_start_geo;
     try prepareFrameContext(
         group_alloc,
         &job.ctx,
         &job.desc,
     );
+    const time_end_pfc = Timestamp.now(io, .awake);
+    job.ctx.frame_times.prepare_frame_context = @floatFromInt(
+        time_start_pfc.durationTo(time_end_pfc).raw.nanoseconds,
+    );
 
     var chunk_exec = pce.ParaChunkExecutor.init(io, geom_workers);
     const arena_alloc = job.ctx.arena.allocator();
 
+    var timing = mo.GeometryTiming{};
     const geo_res = try mo.prepareMeshFrames(
         arena_alloc,
         &chunk_exec,
@@ -923,7 +942,15 @@ fn runGeometryStage(
         job.desc.mesh_static,
         job.desc.nodal_global_scaling,
         job.ctx.frame_meshes,
+        &timing,
     );
+
+    job.ctx.frame_times.geom_coord_ops = @floatFromInt(timing.coord_ops);
+    job.ctx.frame_times.geom_cull_ops = @floatFromInt(timing.cull_ops);
+    job.ctx.frame_times.geom_prep_hulls_shaders = @floatFromInt(
+        timing.prep_hulls_shaders,
+    );
+    job.ctx.frame_times.geom_remap_inds = @floatFromInt(timing.remap_inds);
 
     for (job.ctx.frame_meshes, 0..) |*fm, ii| {
         job.ctx.prep_meshes[ii] = fm.mesh;
@@ -955,6 +982,13 @@ fn runRasterStage(
     job: *PreparedFrameJob,
     raster_workers: u16,
 ) !void {
+    const time_start_fb = Timestamp.now(io, .awake);
+    try prepareFrameBuffer(&job.ctx, &job.desc);
+    const time_end_fb = Timestamp.now(io, .awake);
+    job.ctx.frame_times.setup_frame_buffer = @floatFromInt(
+        time_start_fb.durationTo(time_end_fb).raw.nanoseconds,
+    );
+
     switch (job.desc.config.report) {
         .off => try rasterFrame(
             .off,
@@ -1004,6 +1038,7 @@ fn runRasterAndSaveFrame(
         time_start_save.durationTo(time_end_save).raw.nanoseconds,
     );
     job.ctx.frame_times.active_time =
+        job.ctx.frame_times.setup_frame_buffer +
         job.ctx.frame_times.geometry_prep +
         job.ctx.frame_times.tile_overlap +
         job.ctx.frame_times.raster_loop +

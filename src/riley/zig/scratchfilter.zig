@@ -16,13 +16,11 @@ const simd = @import("scratchfilter_simd.zig");
 
 const cfg = buildconfig.config;
 
-pub const ScratchLayout = common.ScratchLayout;
 pub const ScratchTileGeometry = common.ScratchTileGeometry;
 pub const MatSlice = common.MatSlice;
 pub const NDArray = common.NDArray;
 
 pub fn resolveScratchDirect(
-    comptime scratch_layout: ScratchLayout,
     tile: rops.ActiveTile,
     spx_tile_size: usize,
     fields_num: u8,
@@ -42,7 +40,6 @@ pub fn resolveScratchDirect(
         .core_start_y_subpx = 0,
     };
     resolveScratchDirectCore(
-        scratch_layout,
         tile,
         dummy_geom,
         spx_tile_size,
@@ -57,7 +54,6 @@ pub fn resolveScratchDirect(
 }
 
 pub fn resolveScratchDirectCore(
-    comptime scratch_layout: ScratchLayout,
     tile: rops.ActiveTile,
     scratch_geom: ScratchTileGeometry,
     spx_stride: usize,
@@ -70,7 +66,6 @@ pub fn resolveScratchDirectCore(
     image_out_arr: *NDArray(F),
 ) void {
     scalar.resolveScratchDirectCore(
-        scratch_layout,
         tile,
         scratch_geom,
         spx_stride,
@@ -85,7 +80,6 @@ pub fn resolveScratchDirectCore(
 }
 
 pub fn averageScratch(
-    comptime scratch_layout: ScratchLayout,
     tile: rops.ActiveTile,
     sub_samp: usize,
     spx_tile_size: usize,
@@ -106,7 +100,6 @@ pub fn averageScratch(
         .core_start_y_subpx = 0,
     };
     averageScratchCore(
-        scratch_layout,
         tile,
         dummy_geom,
         sub_samp,
@@ -122,7 +115,6 @@ pub fn averageScratch(
 }
 
 pub fn averageScratchCore(
-    comptime scratch_layout: ScratchLayout,
     tile: rops.ActiveTile,
     scratch_geom: ScratchTileGeometry,
     sub_samp: usize,
@@ -135,9 +127,8 @@ pub fn averageScratchCore(
     radius_y: usize,
     image_out_arr: *NDArray(F),
 ) void {
-    if (cfg.simd == .on and scratch_layout == .field_major) {
+    if (cfg.simd == .on) {
         simd.averageScratchCoreSIMD(
-            scratch_layout,
             tile,
             scratch_geom,
             sub_samp,
@@ -152,7 +143,6 @@ pub fn averageScratchCore(
         );
     } else {
         scalar.averageScratchCore(
-            scratch_layout,
             tile,
             scratch_geom,
             sub_samp,
@@ -169,7 +159,6 @@ pub fn averageScratchCore(
 }
 
 pub fn filterScratchSeparable(
-    comptime scratch_layout: ScratchLayout,
     fields_num: u8,
     background_value: F,
     psf: cam.PreparedPSF,
@@ -182,9 +171,8 @@ pub fn filterScratchSeparable(
     touched_min_x: []const usize,
     touched_max_x: []const usize,
 ) void {
-    if (cfg.simd == .on and scratch_layout == .field_major) {
+    if (cfg.simd == .on) {
         simd.filterScratchSeparableSIMD(
-            scratch_layout,
             fields_num,
             background_value,
             psf,
@@ -199,7 +187,6 @@ pub fn filterScratchSeparable(
         );
     } else {
         scalar.filterScratchSeparable(
-            scratch_layout,
             fields_num,
             background_value,
             psf,
@@ -216,7 +203,6 @@ pub fn filterScratchSeparable(
 }
 
 pub fn filterScratchNonSeparable(
-    comptime scratch_layout: ScratchLayout,
     fields_num: u8,
     background_value: F,
     psf: cam.PreparedPSF,
@@ -228,9 +214,8 @@ pub fn filterScratchNonSeparable(
     touched_min_x: []const usize,
     touched_max_x: []const usize,
 ) void {
-    if (cfg.simd == .on and scratch_layout == .field_major) {
+    if (cfg.simd == .on) {
         simd.filterScratchNonSeparableSIMD(
-            scratch_layout,
             fields_num,
             background_value,
             psf,
@@ -244,7 +229,6 @@ pub fn filterScratchNonSeparable(
         );
     } else {
         scalar.filterScratchNonSeparable(
-            scratch_layout,
             fields_num,
             background_value,
             psf,
@@ -260,7 +244,6 @@ pub fn filterScratchNonSeparable(
 }
 
 pub fn resolveTileWithPSF(
-    comptime scratch_layout: ScratchLayout,
     tile: rops.ActiveTile,
     sub_samp: usize,
     spx_stride: usize,
@@ -278,7 +261,6 @@ pub fn resolveTileWithPSF(
         .identity_fast => {
             if (sub_samp > 1) {
                 averageScratchCore(
-                    scratch_layout,
                     tile,
                     scratch_geom,
                     sub_samp,
@@ -293,7 +275,6 @@ pub fn resolveTileWithPSF(
                 );
             } else {
                 resolveScratchDirectCore(
-                    scratch_layout,
                     tile,
                     scratch_geom,
                     spx_stride,
@@ -309,7 +290,6 @@ pub fn resolveTileWithPSF(
         },
         .separable => {
             filterScratchSeparable(
-                scratch_layout,
                 fields_num,
                 background_value,
                 prepared_psf,
@@ -324,7 +304,6 @@ pub fn resolveTileWithPSF(
             );
             if (sub_samp > 1) {
                 averageScratchCore(
-                    scratch_layout,
                     tile,
                     scratch_geom,
                     sub_samp,
@@ -339,7 +318,6 @@ pub fn resolveTileWithPSF(
                 );
             } else {
                 resolveScratchDirectCore(
-                    scratch_layout,
                     tile,
                     scratch_geom,
                     spx_stride,
@@ -355,7 +333,6 @@ pub fn resolveTileWithPSF(
         },
         .nonseparable => {
             filterScratchNonSeparable(
-                scratch_layout,
                 fields_num,
                 background_value,
                 prepared_psf,
@@ -369,7 +346,6 @@ pub fn resolveTileWithPSF(
             );
             if (sub_samp > 1) {
                 averageScratchCore(
-                    scratch_layout,
                     tile,
                     scratch_geom,
                     sub_samp,
@@ -384,7 +360,6 @@ pub fn resolveTileWithPSF(
                 );
             } else {
                 resolveScratchDirectCore(
-                    scratch_layout,
                     tile,
                     scratch_geom,
                     spx_stride,

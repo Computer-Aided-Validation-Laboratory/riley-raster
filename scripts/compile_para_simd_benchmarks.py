@@ -50,6 +50,16 @@ def compile_mode_parallel(suffix: str) -> None:
             f"One or more {suffix} benchmark compilations failed: {joined}.",
         )
 
+    for bench_name in BENCH_NAMES:
+        src = (
+            root / "bin" /
+            f"{bench_name}_f64_{suffix}_inner"
+        )
+        dst = root / "bin" / f"{bench_name}_{suffix}"
+        if src.exists():
+            import shutil
+            shutil.copy2(src, dst)
+
 
 
 

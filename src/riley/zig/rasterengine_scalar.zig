@@ -48,9 +48,7 @@ pub const SubpxScratchBuffers = struct {
 
 const SubpxDomain = common.SubpxDomain;
 const RasterBounds = common.RasterBounds;
-const ScratchLayout = common.ScratchLayout;
 
-pub const scratch_layout = ScratchLayout.field_major;
 
 //------------------------------------------------------------------------------------------
 // Scratch Buffer Helpers

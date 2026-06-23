@@ -105,6 +105,12 @@ pub const BenchStats = struct {
     tile_overlap: MedianMAD,
     raster_loop: MedianMAD,
     save_frame: MedianMAD,
+    setup_frame_buffer: MedianMAD,
+    prepare_frame_context: MedianMAD,
+    geom_coord_ops: MedianMAD,
+    geom_cull_ops: MedianMAD,
+    geom_prep_hulls_shaders: MedianMAD,
+    geom_remap_inds: MedianMAD,
 };
 
 pub const MedianMAD = struct {
@@ -1057,17 +1063,33 @@ fn runBenchmarkInternal(
     else
         null;
 
+    const needs_images_arr = config_run.save_strategy == .memory or
+        config_run.save_strategy == .both;
+    var image_arr: ?NDArray(F) = null;
+    if (needs_images_arr) {
+        const dims = try riley.calcAllFramesImageDimsForConfig(
+            &[_]CameraInput{camera_input},
+            &[_]mo.MeshInput{mesh_input},
+            config_run,
+        );
+        image_arr = try NDArray(F).initFlat(
+            outer_alloc,
+            dims[0..],
+        );
+    }
+
     const e2e_start = Timestamp.now(io, .awake);
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), config_run.total_threads) },
     };
-    var image_arr = try riley.rasterReport(
+    try riley.rasterReportInto(
         outer_alloc,
         &render_groups,
         &[_]CameraInput{camera_input},
         &[_]mo.MeshInput{mesh_input},
         config_run,
         out_path,
+        if (image_arr) |*arr| arr else null,
         bench_capture,
     );
     const e2e_end = Timestamp.now(io, .awake);
@@ -1222,7 +1244,13 @@ pub const BenchmarkCSVValues = struct {
     vis_elems: F,
     total_px: F,
     shaded_px: F,
+    setup_frame_buffer: F,
+    prepare_frame_context: F,
     geom: F,
+    geom_coord_ops: F,
+    geom_cull_ops: F,
+    geom_prep_hulls_shaders: F,
+    geom_remap_inds: F,
     cam_invert: F,
     elem_loop: F,
     scratch_resolve: F,
@@ -1239,7 +1267,9 @@ pub const BenchmarkCSVValues = struct {
 pub fn benchmarkCSVHeader() []const u8 {
     return "Case,Element,Shader,Interpolator," ++
         "Total Elems,Vis Elems,Total Px,Shaded Px," ++
-        "Geom Time [ms]," ++
+        "Setup F Buff [ms],Prep Frame [ms],Geom Time [ms]," ++
+        "Coord Ops [ms],Cull Ops [ms]," ++
+        "Prep Hulls Shaders [ms],Remap Inds [ms]," ++
         "Cam Inv Time [ms],Elem Loop Time [ms]," ++
         "Resolve Time [ms],Raster Time [ms]," ++
         "Save Time [ms],Frame Time [ms]," ++
@@ -1276,7 +1306,16 @@ pub fn calcBenchmarkCSVValuesFromStats(
         .vis_elems = selectStatValue(stats.vis_elems, kind),
         .total_px = selectStatValue(stats.total_px, kind),
         .shaded_px = selectStatValue(stats.shaded_px, kind),
+        .setup_frame_buffer = selectStatValue(stats.setup_frame_buffer, kind),
+        .prepare_frame_context = selectStatValue(stats.prepare_frame_context, kind),
         .geom = selectStatValue(stats.geom, kind),
+        .geom_coord_ops = selectStatValue(stats.geom_coord_ops, kind),
+        .geom_cull_ops = selectStatValue(stats.geom_cull_ops, kind),
+        .geom_prep_hulls_shaders = selectStatValue(
+            stats.geom_prep_hulls_shaders,
+            kind,
+        ),
+        .geom_remap_inds = selectStatValue(stats.geom_remap_inds, kind),
         .cam_invert = selectStatValue(stats.cam_invert, kind),
         .elem_loop = selectStatValue(stats.elem_loop, kind),
         .scratch_resolve = selectStatValue(
@@ -1309,7 +1348,15 @@ pub fn calcBenchmarkCSVValuesFromResult(
         .vis_elems = @floatFromInt(result.vis_elems),
         .total_px = @floatFromInt(result.total_px),
         .shaded_px = @floatFromInt(result.shaded_px),
+        .setup_frame_buffer = result.pipeline_times.setup_frame_buffer * conv_ms,
+        .prepare_frame_context =
+            result.pipeline_times.prepare_frame_context * conv_ms,
         .geom = result.geom_ms,
+        .geom_coord_ops = result.pipeline_times.geom_coord_ops * conv_ms,
+        .geom_cull_ops = result.pipeline_times.geom_cull_ops * conv_ms,
+        .geom_prep_hulls_shaders =
+            result.pipeline_times.geom_prep_hulls_shaders * conv_ms,
+        .geom_remap_inds = result.pipeline_times.geom_remap_inds * conv_ms,
         .cam_invert = cam_inv_ms,
         .elem_loop = elem_loop_ms,
         .scratch_resolve = resolve_ms,
@@ -1344,8 +1391,9 @@ pub fn formatBenchmarkCSVRow(
         allocator,
         "{s},{s},{s},{s}," ++
             "{d:.6},{d:.6},{d:.6},{d:.6}," ++
+            "{d:.6},{d:.6},{d:.6},{d:.6},{d:.6}," ++
             "{d:.6},{d:.6},{d:.6},{d:.6}," ++
-            "{d:.6},{d:.6},{d:.6}," ++
+            "{d:.6},{d:.6},{d:.6},{d:.6}," ++
             "{d:.6},{d:.6},{d:.6},{d:.6},{d:.6}\n",
         .{
             case_name,
@@ -1356,7 +1404,13 @@ pub fn formatBenchmarkCSVRow(
             values.vis_elems,
             values.total_px,
             values.shaded_px,
+            values.setup_frame_buffer,
+            values.prepare_frame_context,
             values.geom,
+            values.geom_coord_ops,
+            values.geom_cull_ops,
+            values.geom_prep_hulls_shaders,
+            values.geom_remap_inds,
             values.cam_invert,
             values.elem_loop,
             values.scratch_resolve,

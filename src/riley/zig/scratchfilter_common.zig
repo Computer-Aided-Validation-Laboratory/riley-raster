@@ -16,10 +16,6 @@ const matslice = @import("matslice.zig");
 pub const MatSlice = matslice.MatSlice;
 pub const NDArray = ndarray.NDArray;
 
-pub const ScratchLayout = enum {
-    subpx_major,
-    field_major,
-};
 
 pub const ScratchTileGeometry = struct {
     core_w_px: usize,
@@ -96,40 +92,27 @@ pub const FrameImageWriter = struct {
 };
 
 pub inline fn getScratchField(
-    comptime scratch_layout: ScratchLayout,
     spx_image_scratch: *const MatSlice(F),
     scratch_flat_idx: usize,
     field_idx: usize,
 ) F {
-    return switch (scratch_layout) {
-        .subpx_major => spx_image_scratch.get(scratch_flat_idx, field_idx),
-        .field_major => spx_image_scratch.get(field_idx, scratch_flat_idx),
-    };
+    return spx_image_scratch.get(field_idx, scratch_flat_idx);
 }
 
 pub inline fn setScratchField(
-    comptime scratch_layout: ScratchLayout,
     spx_image_scratch: *MatSlice(F),
     scratch_flat_idx: usize,
     field_idx: usize,
     val: F,
 ) void {
-    switch (scratch_layout) {
-        .subpx_major => spx_image_scratch.set(
-            scratch_flat_idx,
-            field_idx,
-            val,
-        ),
-        .field_major => spx_image_scratch.set(
-            field_idx,
-            scratch_flat_idx,
-            val,
-        ),
-    }
+    spx_image_scratch.set(
+        field_idx,
+        scratch_flat_idx,
+        val,
+    );
 }
 
 pub fn sampleScratchOrBackground(
-    comptime scratch_layout: ScratchLayout,
     src: *const MatSlice(F),
     x: isize,
     y: isize,
@@ -146,5 +129,5 @@ pub fn sampleScratchOrBackground(
     }
     const flat_idx = @as(usize, @intCast(y)) * spx_stride +
         @as(usize, @intCast(x));
-    return getScratchField(scratch_layout, src, flat_idx, field_idx);
+    return getScratchField(src, flat_idx, field_idx);
 }

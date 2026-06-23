@@ -16,16 +16,14 @@ const F = buildconfig.F;
 const cfg = buildconfig.config;
 const SimdWidth = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
-const ScratchLayout = common.ScratchLayout;
-const ScratchTileGeometry = common.ScratchTileGeometry;
-const MatSlice = common.MatSlice;
-const NDArray = common.NDArray;
-const FrameImageWriter = common.FrameImageWriter;
-const setScratchField = common.setScratchField;
-const sampleScratchOrBackground = common.sampleScratchOrBackground;
+pub const ScratchTileGeometry = common.ScratchTileGeometry;
+pub const MatSlice = common.MatSlice;
+pub const NDArray = common.NDArray;
+pub const FrameImageWriter = common.FrameImageWriter;
+pub const setScratchField = common.setScratchField;
+pub const sampleScratchOrBackground = common.sampleScratchOrBackground;
 
 pub inline fn loadScratchRowSIMD(
-    comptime scratch_layout: ScratchLayout,
     src: *const MatSlice(F),
     x: isize,
     y: isize,
@@ -47,17 +45,13 @@ pub inline fn loadScratchRowSIMD(
     if (chunk_in_bounds) {
         const ux = @as(usize, @intCast(x));
         const flat_idx = uy * spx_stride + ux;
-        if (scratch_layout == .field_major) {
-            const offset = field_idx * cols_num + flat_idx;
-            return @as(*const [SimdWidth]F, @ptrCast(&src.slice[offset])).*;
-        }
+        const offset = field_idx * cols_num + flat_idx;
+        return @as(*const [SimdWidth]F, @ptrCast(&src.slice[offset])).*;
     }
 
     var result: [SimdWidth]F = undefined;
-    var ii: usize = 0;
-    while (ii < SimdWidth) : (ii += 1) {
+    for (0..SimdWidth) |ii| {
         result[ii] = sampleScratchOrBackground(
-            scratch_layout,
             src,
             x + @as(isize, @intCast(ii)),
             y,
@@ -71,7 +65,6 @@ pub inline fn loadScratchRowSIMD(
 }
 
 pub inline fn storeScratchRowSIMD(
-    comptime scratch_layout: ScratchLayout,
     dst: *MatSlice(F),
     x: usize,
     y: usize,
@@ -81,25 +74,11 @@ pub inline fn storeScratchRowSIMD(
 ) void {
     const cols_num = dst.cols_num;
     const flat_idx = y * spx_stride + x;
-    if (scratch_layout == .field_major) {
-        const offset = field_idx * cols_num + flat_idx;
-        @as(*[SimdWidth]F, @ptrCast(&dst.slice[offset])).* = val_vec;
-    } else {
-        var ii: usize = 0;
-        while (ii < SimdWidth) : (ii += 1) {
-            setScratchField(
-                scratch_layout,
-                dst,
-                flat_idx + ii,
-                field_idx,
-                val_vec[ii],
-            );
-        }
-    }
+    const offset = field_idx * cols_num + flat_idx;
+    @as(*[SimdWidth]F, @ptrCast(&dst.slice[offset])).* = val_vec;
 }
 
 pub fn averageScratchCoreSIMD(
-    comptime scratch_layout: ScratchLayout,
     tile: rops.ActiveTile,
     scratch_geom: ScratchTileGeometry,
     sub_samp: usize,
@@ -117,8 +96,7 @@ pub fn averageScratchCoreSIMD(
     const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
     const writer = FrameImageWriter.init(image_out_arr);
 
-    var ii: usize = 0;
-    while (ii < scratch_geom.core_h_px) : (ii += 1) {
+    for (0..scratch_geom.core_h_px) |ii| {
         const image_px_y = tile.y_px_min + ii;
         const spx_start_y = scratch_geom.core_start_y_subpx + sub_samp * ii;
 
@@ -134,8 +112,7 @@ pub fn averageScratchCoreSIMD(
             spx_start_y + sub_samp - 1 + radius_y,
         );
 
-        var nn = start_y;
-        while (nn <= end_y) : (nn += 1) {
+        for (start_y..end_y + 1) |nn| {
             const r_min = touched_min_x[nn];
             const r_max = touched_max_x[nn];
             if (r_min <= r_max) {
@@ -170,20 +147,17 @@ pub fn averageScratchCoreSIMD(
             continue;
         }
 
-        var jj = tx_start;
-        while (jj <= tx_end) : (jj += 1) {
+        for (tx_start..tx_end + 1) |jj| {
             const image_px_x = tile.x_px_min + jj;
             const spx_start_x = scratch_geom.core_start_x_subpx + sub_samp * jj;
             const image_px_base = writer.pixelBase(image_px_y, image_px_x);
 
-            var ff: usize = 0;
-            while (ff < @as(usize, fields_num)) : (ff += 1) {
+            for (0..fields_num) |ff| {
                 var field_sum: F = 0.0;
 
                 if (sub_samp == 8 and SimdWidth == 8) {
                     var sum_vec = @as(VecSF, @splat(0.0));
-                    var row_idx: usize = 0;
-                    while (row_idx < 8) : (row_idx += 1) {
+                    for (0..8) |row_idx| {
                         const scratch_row_offset = (spx_start_y + row_idx) *
                             spx_stride;
                         const scratch_flat_idx = scratch_row_offset +
@@ -198,8 +172,7 @@ pub fn averageScratchCoreSIMD(
                     field_sum = @reduce(.Add, sum_vec);
                 } else if (sub_samp == 4) {
                     var sum_vec = @as(@Vector(4, F), @splat(0.0));
-                    var row_idx: usize = 0;
-                    while (row_idx < 4) : (row_idx += 1) {
+                    for (0..4) |row_idx| {
                         const scratch_row_offset = (spx_start_y + row_idx) *
                             spx_stride;
                         const scratch_flat_idx = scratch_row_offset +
@@ -214,8 +187,7 @@ pub fn averageScratchCoreSIMD(
                     field_sum = @reduce(.Add, sum_vec);
                 } else if (sub_samp == 2) {
                     var sum_vec = @as(@Vector(2, F), @splat(0.0));
-                    var row_idx: usize = 0;
-                    while (row_idx < 2) : (row_idx += 1) {
+                    for (0..2) |row_idx| {
                         const scratch_row_offset = (spx_start_y + row_idx) *
                             spx_stride;
                         const scratch_flat_idx = scratch_row_offset +
@@ -229,8 +201,7 @@ pub fn averageScratchCoreSIMD(
                     }
                     field_sum = @reduce(.Add, sum_vec);
                 } else {
-                    var row_idx: usize = 0;
-                    while (row_idx < sub_samp) : (row_idx += 1) {
+                    for (0..sub_samp) |row_idx| {
                         const scratch_row_offset = (spx_start_y + row_idx) *
                             spx_stride;
                         var col_idx: usize = 0;
@@ -252,7 +223,6 @@ pub fn averageScratchCoreSIMD(
                                 col_idx += SimdWidth;
                             } else {
                                 field_sum += sampleScratchOrBackground(
-                                    scratch_layout,
                                     spx_image_scratch,
                                     @as(isize, @intCast(spx_start_x + col_idx)),
                                     @as(isize, @intCast(spx_start_y + row_idx)),
@@ -274,7 +244,6 @@ pub fn averageScratchCoreSIMD(
 }
 
 pub fn filterScratchSeparableSIMD(
-    comptime scratch_layout: ScratchLayout,
     fields_num: u8,
     background_value: F,
     psf: cam.PreparedPSF,
@@ -293,8 +262,7 @@ pub fn filterScratchSeparableSIMD(
     const radius_y = psf.radius_y_subpx;
 
     // Horizontal pass
-    var yy: usize = 0;
-    while (yy < scratch_geom.scratch_h_subpx) : (yy += 1) {
+    for (0..scratch_geom.scratch_h_subpx) |yy| {
         const min_x = touched_min_x[yy];
         const max_x = touched_max_x[yy];
         if (min_x > max_x) continue;
@@ -310,19 +278,16 @@ pub fn filterScratchSeparableSIMD(
         );
         if (xx_start > xx_end) continue;
 
-        var ff: usize = 0;
-        while (ff < @as(usize, fields_num)) : (ff += 1) {
+        for (0..fields_num) |ff| {
             var xx = xx_start;
             while (xx + SimdWidth <= xx_end + 1) : (xx += SimdWidth) {
                 var sum_h_vec = @as(VecSF, @splat(0.0));
-                var kk: usize = 0;
-                while (kk < psf.weights_x.len) : (kk += 1) {
+                for (0..psf.weights_x.len) |kk| {
                     const x_off = @as(
                         isize,
                         @intCast(kk),
                     ) - @as(isize, @intCast(radius_x));
-                    const input_vec = loadScratchRowSIMD(
-                        scratch_layout,
+                    const src_row_vec = loadScratchRowSIMD(
                         src,
                         @as(isize, @intCast(xx)) + x_off,
                         @as(isize, @intCast(yy)),
@@ -331,13 +296,12 @@ pub fn filterScratchSeparableSIMD(
                         ff,
                         background_value,
                     );
-                    sum_h_vec += input_vec * @as(
+                    sum_h_vec += src_row_vec * @as(
                         VecSF,
                         @splat(psf.weights_x[kk]),
                     );
                 }
                 storeScratchRowSIMD(
-                    scratch_layout,
                     tmp,
                     xx,
                     yy,
@@ -346,18 +310,14 @@ pub fn filterScratchSeparableSIMD(
                     sum_h_vec,
                 );
             }
-
-            // Scalar tail
             while (xx <= xx_end) : (xx += 1) {
                 var sum_h: F = 0.0;
-                var kk: usize = 0;
-                while (kk < psf.weights_x.len) : (kk += 1) {
+                for (0..psf.weights_x.len) |kk| {
                     const x_off = @as(
                         isize,
                         @intCast(kk),
                     ) - @as(isize, @intCast(radius_x));
                     sum_h += psf.weights_x[kk] * sampleScratchOrBackground(
-                        scratch_layout,
                         src,
                         @as(isize, @intCast(xx)) + x_off,
                         @as(isize, @intCast(yy)),
@@ -368,7 +328,6 @@ pub fn filterScratchSeparableSIMD(
                     );
                 }
                 setScratchField(
-                    scratch_layout,
                     tmp,
                     yy * spx_stride + xx,
                     ff,
@@ -380,17 +339,16 @@ pub fn filterScratchSeparableSIMD(
 
     // Vertical pass
     dst.fill(background_value);
-    yy = scratch_geom.core_start_y_subpx;
+    const core_start_y = scratch_geom.core_start_y_subpx;
     const core_end_y = scratch_geom.core_start_y_subpx +
         scratch_geom.core_h_px * sub_samp - 1;
-    while (yy <= core_end_y) : (yy += 1) {
+    for (core_start_y..core_end_y + 1) |yy| {
         var min_x = scratch_geom.scratch_w_subpx;
         var max_x: usize = 0;
         const start_y = if (yy >= radius_y) yy - radius_y else 0;
         const end_y = @min(scratch_geom.scratch_h_subpx - 1, yy + radius_y);
 
-        var nn = start_y;
-        while (nn <= end_y) : (nn += 1) {
+        for (start_y..end_y + 1) |nn| {
             const r_min = touched_min_x[nn];
             const r_max = touched_max_x[nn];
             if (r_min <= r_max) {
@@ -412,19 +370,16 @@ pub fn filterScratchSeparableSIMD(
         );
         if (xx_start > xx_end) continue;
 
-        var ff: usize = 0;
-        while (ff < @as(usize, fields_num)) : (ff += 1) {
+        for (0..fields_num) |ff| {
             var xx = xx_start;
             while (xx + SimdWidth <= xx_end + 1) : (xx += SimdWidth) {
                 var sum_v_vec = @as(VecSF, @splat(0.0));
-                var kk: usize = 0;
-                while (kk < psf.weights_y.len) : (kk += 1) {
+                for (0..psf.weights_y.len) |kk| {
                     const y_off = @as(
                         isize,
                         @intCast(kk),
                     ) - @as(isize, @intCast(radius_y));
-                    const input_vec = loadScratchRowSIMD(
-                        scratch_layout,
+                    const src_row_vec = loadScratchRowSIMD(
                         tmp,
                         @as(isize, @intCast(xx)),
                         @as(isize, @intCast(yy)) + y_off,
@@ -433,13 +388,12 @@ pub fn filterScratchSeparableSIMD(
                         ff,
                         background_value,
                     );
-                    sum_v_vec += input_vec * @as(
+                    sum_v_vec += src_row_vec * @as(
                         VecSF,
                         @splat(psf.weights_y[kk]),
                     );
                 }
                 storeScratchRowSIMD(
-                    scratch_layout,
                     dst,
                     xx,
                     yy,
@@ -448,18 +402,14 @@ pub fn filterScratchSeparableSIMD(
                     sum_v_vec,
                 );
             }
-
-            // Scalar tail
             while (xx <= xx_end) : (xx += 1) {
                 var sum_v: F = 0.0;
-                var kk: usize = 0;
-                while (kk < psf.weights_y.len) : (kk += 1) {
+                for (0..psf.weights_y.len) |kk| {
                     const y_off = @as(
                         isize,
                         @intCast(kk),
                     ) - @as(isize, @intCast(radius_y));
                     sum_v += psf.weights_y[kk] * sampleScratchOrBackground(
-                        scratch_layout,
                         tmp,
                         @as(isize, @intCast(xx)),
                         @as(isize, @intCast(yy)) + y_off,
@@ -470,7 +420,6 @@ pub fn filterScratchSeparableSIMD(
                     );
                 }
                 setScratchField(
-                    scratch_layout,
                     dst,
                     yy * spx_stride + xx,
                     ff,
@@ -482,7 +431,6 @@ pub fn filterScratchSeparableSIMD(
 }
 
 pub fn filterScratchNonSeparableSIMD(
-    comptime scratch_layout: ScratchLayout,
     fields_num: u8,
     background_value: F,
     psf: cam.PreparedPSF,
@@ -500,17 +448,16 @@ pub fn filterScratchNonSeparableSIMD(
     const radius_y = psf.radius_y_subpx;
     const kernel_w = 2 * radius_x + 1;
 
-    var yy = scratch_geom.core_start_y_subpx;
+    const core_start_y = scratch_geom.core_start_y_subpx;
     const core_end_y = scratch_geom.core_start_y_subpx +
         scratch_geom.core_h_px * sub_samp - 1;
-    while (yy <= core_end_y) : (yy += 1) {
+    for (core_start_y..core_end_y + 1) |yy| {
         var min_x = scratch_geom.scratch_w_subpx;
         var max_x: usize = 0;
         const start_y = if (yy >= radius_y) yy - radius_y else 0;
         const end_y = @min(scratch_geom.scratch_h_subpx - 1, yy + radius_y);
 
-        var nn = start_y;
-        while (nn <= end_y) : (nn += 1) {
+        for (start_y..end_y + 1) |nn| {
             const r_min = touched_min_x[nn];
             const r_max = touched_max_x[nn];
             if (r_min <= r_max) {
@@ -532,13 +479,11 @@ pub fn filterScratchNonSeparableSIMD(
         );
         if (xx_start > xx_end) continue;
 
-        var ff: usize = 0;
-        while (ff < @as(usize, fields_num)) : (ff += 1) {
+        for (0..fields_num) |ff| {
             var xx = xx_start;
             while (xx + SimdWidth <= xx_end + 1) : (xx += SimdWidth) {
                 var sum_vec = @as(VecSF, @splat(0.0));
-                var kk: usize = 0;
-                while (kk < psf.weights_2d.len) : (kk += 1) {
+                for (0..psf.weights_2d.len) |kk| {
                     const ky = kk / kernel_w;
                     const kx = kk % kernel_w;
                     const x_off = @as(
@@ -549,8 +494,7 @@ pub fn filterScratchNonSeparableSIMD(
                         isize,
                         @intCast(ky),
                     ) - @as(isize, @intCast(radius_y));
-                    const input_vec = loadScratchRowSIMD(
-                        scratch_layout,
+                    const src_row_vec = loadScratchRowSIMD(
                         src,
                         @as(isize, @intCast(xx)) + x_off,
                         @as(isize, @intCast(yy)) + y_off,
@@ -559,13 +503,12 @@ pub fn filterScratchNonSeparableSIMD(
                         ff,
                         background_value,
                     );
-                    sum_vec += input_vec * @as(
+                    sum_vec += src_row_vec * @as(
                         VecSF,
                         @splat(psf.weights_2d[kk]),
                     );
                 }
                 storeScratchRowSIMD(
-                    scratch_layout,
                     dst,
                     xx,
                     yy,
@@ -574,12 +517,9 @@ pub fn filterScratchNonSeparableSIMD(
                     sum_vec,
                 );
             }
-
-            // Scalar tail
             while (xx <= xx_end) : (xx += 1) {
                 var sum: F = 0.0;
-                var kk: usize = 0;
-                while (kk < psf.weights_2d.len) : (kk += 1) {
+                for (0..psf.weights_2d.len) |kk| {
                     const ky = kk / kernel_w;
                     const kx = kk % kernel_w;
                     const x_off = @as(
@@ -591,7 +531,6 @@ pub fn filterScratchNonSeparableSIMD(
                         @intCast(ky),
                     ) - @as(isize, @intCast(radius_y));
                     sum += psf.weights_2d[kk] * sampleScratchOrBackground(
-                        scratch_layout,
                         src,
                         @as(isize, @intCast(xx)) + x_off,
                         @as(isize, @intCast(yy)) + y_off,
@@ -602,7 +541,6 @@ pub fn filterScratchNonSeparableSIMD(
                     );
                 }
                 setScratchField(
-                    scratch_layout,
                     dst,
                     yy * spx_stride + xx,
                     ff,

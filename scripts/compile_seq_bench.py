@@ -35,6 +35,14 @@ def compile_mode(simd_mode: str, suffix: str) -> None:
             cwd=root,
             check=True,
         )
+        src = (
+            root / "bin" /
+            f"{bench_name}_f64_{suffix}_inner"
+        )
+        dst = root / "bin" / f"{bench_name}_{suffix}"
+        if src.exists():
+            import shutil
+            shutil.copy2(src, dst)
 
 
 
