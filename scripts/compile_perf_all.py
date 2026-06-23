@@ -8,16 +8,32 @@ from perf_common import repo_root
 
 
 BUILD_VARIANTS = (
-    ("f64", "inner"),
-    ("f64", "over_pixels"),
-    ("f32", "inner"),
-    ("f32", "over_pixels"),
+    ("f64", "inner", 8),
+    ("f64", "over_pixels", 8),
+    ("f32", "inner", 16),
+    ("f32", "over_pixels", 16),
+    ("f64", "inner", 4),
+    ("f32", "inner", 8),
 )
 
 
-def binary_name(precision: str, simd_texture_interp: str) -> str:
-    interp_tag = "overpx" if simd_texture_interp == "over_pixels" else "inner"
-    return f"bench_fullraster_{precision}_simd_{interp_tag}"
+def default_lanes(precision: str) -> int:
+    return 16 if precision == "f32" else 8
+
+
+def binary_name(
+    precision: str,
+    simd_texture_interp: str,
+    lanes: int,
+) -> str:
+    interp_tag = (
+        "overpx" if simd_texture_interp == "over_pixels"
+        else "inner"
+    )
+    if lanes == default_lanes(precision):
+        return f"bench_fullraster_{precision}_simd_{interp_tag}"
+    else:
+        return f"bench_fullraster_{precision}_simd_{interp_tag}_v{lanes}"
 
 
 def main() -> int:
@@ -25,8 +41,8 @@ def main() -> int:
     (root / "bin").mkdir(parents=True, exist_ok=True)
 
     processes: list[tuple[str, subprocess.Popen[str]]] = []
-    for precision, simd_texture_interp in BUILD_VARIANTS:
-        name = binary_name(precision, simd_texture_interp)
+    for precision, simd_texture_interp, lanes in BUILD_VARIANTS:
+        name = binary_name(precision, simd_texture_interp, lanes)
         print(f"Compiling {name}...")
         process = subprocess.Popen(
             [
@@ -39,6 +55,7 @@ def main() -> int:
                 f"-Dprecision={precision}",
                 "-Dsimd=on",
                 f"-Dsimd-texture-interp={simd_texture_interp}",
+                f"-Dsimd-vector-width={lanes}",
             ],
             cwd=root,
             text=True,
@@ -55,8 +72,12 @@ def main() -> int:
         raise SystemExit(f"Benchmark compile failed: {joined}.")
 
     print("Generated benchmark binaries:")
-    for precision, simd_texture_interp in BUILD_VARIANTS:
-        print(f"  {root / 'bin' / binary_name(precision, simd_texture_interp)}")
+    for precision, simd_texture_interp, lanes in BUILD_VARIANTS:
+        bin_path = (
+            root / "bin" /
+            binary_name(precision, simd_texture_interp, lanes)
+        )
+        print(f"  {bin_path}")
     return 0
 
 

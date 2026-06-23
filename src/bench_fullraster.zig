@@ -91,10 +91,14 @@ pub fn main(init: std.process.Init) !void {
     };
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },
+        .{ .sample = .linear, .mode = .lut_lerp },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+        .{ .sample = .cubic_mitchell_netravali, .mode = .direct },
         .{ .sample = .cubic_mitchell_netravali, .mode = .lut_lerp },
+        .{ .sample = .lanczos3, .mode = .direct },
         .{ .sample = .lanczos3, .mode = .lut_lerp },
+        .{ .sample = .cubic_bspline, .mode = .direct },
         .{ .sample = .cubic_bspline, .mode = .lut_lerp },
         .{ .sample = .quintic_bspline, .mode = .direct },
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },

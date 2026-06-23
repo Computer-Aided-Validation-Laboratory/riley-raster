@@ -64,6 +64,11 @@ pub const default_simd_texture_interp = blk: {
     );
 };
 
+const build_simd_vector_width = if (@hasDecl(build_options, "simd_vector_width"))
+    build_options.simd_vector_width
+else
+    0;
+
 pub const EdgeTolerance = struct {
     tri_weight_inclusion: Scalar = 1e-9,
     simd_raster_weight_inclusion: Scalar = 1e-9,
@@ -146,7 +151,7 @@ pub const Tolerance = struct {
 pub const Config = struct {
     simd: SimdMode = default_simd,
     simd_texture_interp: SimdTextureInterpMode = default_simd_texture_interp,
-    simd_vector_width: comptime_int = 8,
+    simd_vector_width: comptime_int = defaultSimdVectorWidthForPrecision(Scalar),
     max_nodal_fields: comptime_int = 8,
     max_image_channels: comptime_int = 8,
     raster_newton_iter_max: comptime_int = 10,
@@ -158,6 +163,9 @@ pub const Config = struct {
 };
 
 pub fn defaultSimdVectorWidthForPrecision(comptime precision: type) comptime_int {
+    if (build_simd_vector_width > 0) {
+        return build_simd_vector_width;
+    }
     return switch (precision) {
         f32 => 16,
         f64 => 8,

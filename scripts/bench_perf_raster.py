@@ -23,12 +23,22 @@ DEFAULT_RENDER_GROUP_COUNT = 1
 DEFAULT_FRAME_BATCH_SIZE_PER_GROUP = 1
 DEFAULT_MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP = 1
 
-STUDY_CASES: list[dict[str, str]] = [
+STUDY_CASES: list[dict[str, object]] = [
     {
         "experiment": "precision",
         "case_name": "fullraster_precision_f64_simd_v8_inner",
         "precision": "f64",
         "interp": "inner",
+        "lanes": 8,
+        "texture_storage": "u8",
+        "shader_subset": "all",
+    },
+    {
+        "experiment": "precision",
+        "case_name": "fullraster_precision_f64_simd_v4_inner",
+        "precision": "f64",
+        "interp": "inner",
+        "lanes": 4,
         "texture_storage": "u8",
         "shader_subset": "all",
     },
@@ -37,6 +47,16 @@ STUDY_CASES: list[dict[str, str]] = [
         "case_name": "fullraster_precision_f32_simd_v16_inner",
         "precision": "f32",
         "interp": "inner",
+        "lanes": 16,
+        "texture_storage": "u8",
+        "shader_subset": "all",
+    },
+    {
+        "experiment": "precision",
+        "case_name": "fullraster_precision_f32_simd_v8_inner",
+        "precision": "f32",
+        "interp": "inner",
+        "lanes": 8,
         "texture_storage": "u8",
         "shader_subset": "all",
     },
@@ -45,6 +65,7 @@ STUDY_CASES: list[dict[str, str]] = [
         "case_name": "fullraster_interp_f64_simd_inner",
         "precision": "f64",
         "interp": "inner",
+        "lanes": 8,
         "texture_storage": "u8",
         "shader_subset": "all",
     },
@@ -53,6 +74,16 @@ STUDY_CASES: list[dict[str, str]] = [
         "case_name": "fullraster_interp_f64_simd_overpx",
         "precision": "f64",
         "interp": "overpx",
+        "lanes": 8,
+        "texture_storage": "u8",
+        "shader_subset": "all",
+    },
+    {
+        "experiment": "interp",
+        "case_name": "fullraster_interp_f32_simd_overpx",
+        "precision": "f32",
+        "interp": "overpx",
+        "lanes": 16,
         "texture_storage": "u8",
         "shader_subset": "all",
     },
@@ -61,6 +92,7 @@ STUDY_CASES: list[dict[str, str]] = [
         "case_name": "fullraster_texstore_u8",
         "precision": "f64",
         "interp": "inner",
+        "lanes": 8,
         "texture_storage": "u8",
         "shader_subset": "texture",
     },
@@ -69,6 +101,7 @@ STUDY_CASES: list[dict[str, str]] = [
         "case_name": "fullraster_texstore_u16",
         "precision": "f64",
         "interp": "inner",
+        "lanes": 8,
         "texture_storage": "u16",
         "shader_subset": "texture",
     },
@@ -85,12 +118,23 @@ def default_image_out_dir() -> pathlib.Path:
     return DEFAULT_IMAGE_OUT_DIR
 
 
-def binary_name(precision: str, interp: str) -> str:
-    return f"bench_fullraster_{precision}_simd_{interp}"
+def default_lanes(precision: str) -> int:
+    return 16 if precision == "f32" else 8
 
 
-def binary_path(precision: str, interp: str) -> pathlib.Path:
-    path = repo_root() / "bin" / binary_name(precision, interp)
+def binary_name(precision: str, interp: str, lanes: int) -> str:
+    if lanes == default_lanes(precision):
+        return f"bench_fullraster_{precision}_simd_{interp}"
+    else:
+        return f"bench_fullraster_{precision}_simd_{interp}_v{lanes}"
+
+
+def binary_path(
+    precision: str,
+    interp: str,
+    lanes: int,
+) -> pathlib.Path:
+    path = repo_root() / "bin" / binary_name(precision, interp, lanes)
     if not path.exists():
         raise SystemExit(
             f"Missing binary {path}. Run scripts/compile_perf_all.py first.",
@@ -111,7 +155,7 @@ def write_command_file(output_dir: pathlib.Path, command: list[str]) -> None:
 
 def write_experiment_meta(
     output_dir: pathlib.Path,
-    case: dict[str, str],
+    case: dict[str, object],
     command: list[str],
 ) -> None:
     meta_path = output_dir / "experiment_meta.txt"
@@ -124,6 +168,7 @@ def write_experiment_meta(
         f"interp={case['interp']}",
         f"texture_storage={case['texture_storage']}",
         f"shader_subset={case['shader_subset']}",
+        f"lanes={case['lanes']}",
         "command=" + " ".join(shlex.quote(part) for part in command),
     ]
     meta_path.write_text("\n".join(lines) + "\n")
@@ -147,7 +192,7 @@ def write_timing_csv(
     return csv_path
 
 def run_case(
-    case: dict[str, str],
+    case: dict[str, object],
     run_root: pathlib.Path,
     image_out_dir: pathlib.Path,
     runs: int,
@@ -155,9 +200,17 @@ def run_case(
     pixels_y: int | None,
     dry_run: bool,
 ) -> float:
-    output_dir = run_root / case["case_name"]
-    binary = binary_path(case["precision"], case["interp"])
-    binary_tag = binary_name(case["precision"], case["interp"])
+    output_dir = run_root / str(case["case_name"])
+    binary = binary_path(
+        str(case["precision"]),
+        str(case["interp"]),
+        int(case["lanes"]),
+    )
+    binary_tag = binary_name(
+        str(case["precision"]),
+        str(case["interp"]),
+        int(case["lanes"]),
+    )
     case_with_binary = dict(case)
     case_with_binary["binary"] = binary_tag
     command = [

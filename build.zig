@@ -29,6 +29,11 @@ pub fn build(b: *std.Build) void {
         "simd-texture-interp",
         "SIMD texture interpolation mode: inner or over_pixels",
     ) orelse "inner";
+    const simd_vector_width = b.option(
+        u32,
+        "simd-vector-width",
+        "SIMD vector width (0 to use default for precision)",
+    ) orelse 0;
 
     validatePrecision(precision);
     validateSimd(simd);
@@ -39,6 +44,7 @@ pub fn build(b: *std.Build) void {
         precision,
         simd,
         simd_texture_interp,
+        simd_vector_width,
     );
     const shared_lib = addRileySharedLibrary(
         b,
@@ -479,11 +485,13 @@ fn createBuildOptionsModule(
     precision: []const u8,
     simd: []const u8,
     simd_texture_interp: []const u8,
+    simd_vector_width: u32,
 ) *std.Build.Module {
     const options = b.addOptions();
     options.addOption([]const u8, "precision", precision);
     options.addOption([]const u8, "simd", simd);
     options.addOption([]const u8, "simd_texture_interp", simd_texture_interp);
+    options.addOption(u32, "simd_vector_width", simd_vector_width);
     return options.createModule();
 }
 
