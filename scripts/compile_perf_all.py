@@ -6,6 +6,7 @@ import subprocess
 
 from perf_common import repo_root
 
+BATCH_SIZE = 4
 
 BUILD_VARIANTS = (
     ("f64", "inner", 8),
@@ -41,9 +42,8 @@ def main() -> int:
     (root / "bin").mkdir(parents=True, exist_ok=True)
 
     failures: list[str] = []
-    batch_size = 4
-    for i in range(0, len(BUILD_VARIANTS), batch_size):
-        batch = BUILD_VARIANTS[i : i + batch_size]
+    for i in range(0, len(BUILD_VARIANTS), BATCH_SIZE):
+        batch = BUILD_VARIANTS[i : i + BATCH_SIZE]
         processes: list[tuple[str, subprocess.Popen[str]]] = []
         for precision, simd_texture_interp, lanes in batch:
             name = binary_name(precision, simd_texture_interp, lanes)
