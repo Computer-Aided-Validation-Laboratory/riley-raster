@@ -85,6 +85,8 @@ pub fn fillTileIdealCentersAffineJac(
 ) void {
     const sub_samp: usize = @intCast(camera.sub_sample);
     const jac = &camera.pixel_center_jac;
+    const jac_slice = jac.slice;
+    const jac_field_stride = jac.strides[2];
     const start_x = scratch_x_px_min * sub_samp;
     const start_y = scratch_y_px_min * sub_samp;
     const tile_w = (scratch_x_px_max - scratch_x_px_min) * sub_samp;
@@ -129,12 +131,13 @@ pub fn fillTileIdealCentersAffineJac(
                 step + off;
             const center_x = common.calcPixelCenterCoord(pixel_x);
             const delta_x = observed_x - center_x;
-            const ideal_x = jac.get(&[_]usize{ pixel_y, pixel_x, 0 });
-            const ideal_y = jac.get(&[_]usize{ pixel_y, pixel_x, 1 });
-            const j11 = jac.get(&[_]usize{ pixel_y, pixel_x, 2 });
-            const j12 = jac.get(&[_]usize{ pixel_y, pixel_x, 3 });
-            const j21 = jac.get(&[_]usize{ pixel_y, pixel_x, 4 });
-            const j22 = jac.get(&[_]usize{ pixel_y, pixel_x, 5 });
+            const jac_px_base = jac.subBase2(pixel_y, pixel_x);
+            const ideal_x = jac_slice[jac_px_base + 0 * jac_field_stride];
+            const ideal_y = jac_slice[jac_px_base + 1 * jac_field_stride];
+            const j11 = jac_slice[jac_px_base + 2 * jac_field_stride];
+            const j12 = jac_slice[jac_px_base + 3 * jac_field_stride];
+            const j21 = jac_slice[jac_px_base + 4 * jac_field_stride];
+            const j22 = jac_slice[jac_px_base + 5 * jac_field_stride];
             common.storeIdealPairScratch(
                 ideal_pixel_centers,
                 scratch_row_off + ii,
@@ -146,21 +149,22 @@ pub fn fillTileIdealCentersAffineJac(
 }
 
 pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
+    const jac = &camera.pixel_center_jac;
+    const jac_slice = jac.slice;
+    const jac_field_stride = jac.strides[2];
+
     if (common.isNoDistortion(camera.distortion)) {
         for (0..camera.pixels_num[1]) |jj| {
             for (0..camera.pixels_num[0]) |ii| {
-                camera.pixel_center_jac.set(
-                    &[_]usize{ jj, ii, 0 },
-                    common.calcPixelCenterCoord(ii),
-                );
-                camera.pixel_center_jac.set(
-                    &[_]usize{ jj, ii, 1 },
-                    common.calcPixelCenterCoord(jj),
-                );
-                camera.pixel_center_jac.set(&[_]usize{ jj, ii, 2 }, 1.0);
-                camera.pixel_center_jac.set(&[_]usize{ jj, ii, 3 }, 0.0);
-                camera.pixel_center_jac.set(&[_]usize{ jj, ii, 4 }, 0.0);
-                camera.pixel_center_jac.set(&[_]usize{ jj, ii, 5 }, 1.0);
+                const jac_px_base = jac.subBase2(jj, ii);
+                jac_slice[jac_px_base + 0 * jac_field_stride] =
+                    common.calcPixelCenterCoord(ii);
+                jac_slice[jac_px_base + 1 * jac_field_stride] =
+                    common.calcPixelCenterCoord(jj);
+                jac_slice[jac_px_base + 2 * jac_field_stride] = 1.0;
+                jac_slice[jac_px_base + 3 * jac_field_stride] = 0.0;
+                jac_slice[jac_px_base + 4 * jac_field_stride] = 0.0;
+                jac_slice[jac_px_base + 5 * jac_field_stride] = 1.0;
             }
         }
         return;
@@ -177,24 +181,17 @@ pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
             const y_p = try camera.calcPinholeRasterPoint(x_c, y_c + eps);
             const y_m = try camera.calcPinholeRasterPoint(x_c, y_c - eps);
             const inv_two_eps = 0.5 / eps;
-            camera.pixel_center_jac.set(&[_]usize{ jj, ii, 0 }, center[0]);
-            camera.pixel_center_jac.set(&[_]usize{ jj, ii, 1 }, center[1]);
-            camera.pixel_center_jac.set(
-                &[_]usize{ jj, ii, 2 },
-                (x_p[0] - x_m[0]) * inv_two_eps,
-            );
-            camera.pixel_center_jac.set(
-                &[_]usize{ jj, ii, 3 },
-                (y_p[0] - y_m[0]) * inv_two_eps,
-            );
-            camera.pixel_center_jac.set(
-                &[_]usize{ jj, ii, 4 },
-                (x_p[1] - x_m[1]) * inv_two_eps,
-            );
-            camera.pixel_center_jac.set(
-                &[_]usize{ jj, ii, 5 },
-                (y_p[1] - y_m[1]) * inv_two_eps,
-            );
+            const jac_px_base = jac.subBase2(jj, ii);
+            jac_slice[jac_px_base + 0 * jac_field_stride] = center[0];
+            jac_slice[jac_px_base + 1 * jac_field_stride] = center[1];
+            jac_slice[jac_px_base + 2 * jac_field_stride] =
+                (x_p[0] - x_m[0]) * inv_two_eps;
+            jac_slice[jac_px_base + 3 * jac_field_stride] =
+                (y_p[0] - y_m[0]) * inv_two_eps;
+            jac_slice[jac_px_base + 4 * jac_field_stride] =
+                (x_p[1] - x_m[1]) * inv_two_eps;
+            jac_slice[jac_px_base + 5 * jac_field_stride] =
+                (y_p[1] - y_m[1]) * inv_two_eps;
         }
     }
 }

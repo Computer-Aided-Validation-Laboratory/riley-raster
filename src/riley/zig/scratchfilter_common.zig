@@ -16,7 +16,6 @@ const matslice = @import("matslice.zig");
 pub const MatSlice = matslice.MatSlice;
 pub const NDArray = ndarray.NDArray;
 
-
 pub const ScratchTileGeometry = struct {
     core_w_px: usize,
     core_h_px: usize,
@@ -96,7 +95,8 @@ pub inline fn getScratchField(
     scratch_flat_idx: usize,
     field_idx: usize,
 ) F {
-    return spx_image_scratch.get(field_idx, scratch_flat_idx);
+    const scratch_base = spx_image_scratch.rowBase(field_idx);
+    return spx_image_scratch.getFlat(scratch_base + scratch_flat_idx);
 }
 
 pub inline fn setScratchField(
@@ -105,11 +105,8 @@ pub inline fn setScratchField(
     field_idx: usize,
     val: F,
 ) void {
-    spx_image_scratch.set(
-        field_idx,
-        scratch_flat_idx,
-        val,
-    );
+    const scratch_base = spx_image_scratch.rowBase(field_idx);
+    spx_image_scratch.setFlat(scratch_base + scratch_flat_idx, val);
 }
 
 pub fn sampleScratchOrBackground(

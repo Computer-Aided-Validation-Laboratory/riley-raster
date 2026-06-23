@@ -69,6 +69,19 @@ pub fn normalizeNormal(normal_vec: *[3]F) void {
     }
 }
 
+fn writePreparedNormal(
+    prep_normals: *ndarray.NDArray(F),
+    pp: usize,
+    nn: usize,
+    normal_vec: [3]F,
+) void {
+    const elem_base = prep_normals.planeBase(pp);
+    const field_stride = prep_normals.strides[1];
+    prep_normals.slice[elem_base + 0 * field_stride + nn] = normal_vec[0];
+    prep_normals.slice[elem_base + 1 * field_stride + nn] = normal_vec[1];
+    prep_normals.slice[elem_base + 2 * field_stride + nn] = normal_vec[2];
+}
+
 //------------------------------------------------------------------------------------------
 // Serial Normal Calculation Implementations
 //------------------------------------------------------------------------------------------
@@ -94,9 +107,7 @@ pub fn calculateVisibleExactNormals(
                 nn,
             );
             normalizeNormal(&normal_vec);
-            prep_normals.set(&[_]usize{ pp, 0, nn }, normal_vec[0]);
-            prep_normals.set(&[_]usize{ pp, 1, nn }, normal_vec[1]);
-            prep_normals.set(&[_]usize{ pp, 2, nn }, normal_vec[2]);
+            writePreparedNormal(prep_normals, pp, nn, normal_vec);
         }
     }
 }
@@ -150,9 +161,7 @@ pub fn calculateVisibleAveragedNormals(
                 node_normals[node_idx * 3 + 2],
             };
             normalizeNormal(&normal_vec);
-            prep_normals.set(&[_]usize{ pp, 0, nn }, normal_vec[0]);
-            prep_normals.set(&[_]usize{ pp, 1, nn }, normal_vec[1]);
-            prep_normals.set(&[_]usize{ pp, 2, nn }, normal_vec[2]);
+            writePreparedNormal(prep_normals, pp, nn, normal_vec);
         }
     }
 }
@@ -221,9 +230,7 @@ pub fn prepareVisibleExactNormalsRange(
                 nn,
             );
             normalizeNormal(&normal_vec);
-            prep_normals.set(&[_]usize{ pp, 0, nn }, normal_vec[0]);
-            prep_normals.set(&[_]usize{ pp, 1, nn }, normal_vec[1]);
-            prep_normals.set(&[_]usize{ pp, 2, nn }, normal_vec[2]);
+            writePreparedNormal(prep_normals, pp, nn, normal_vec);
         }
     }
 }
@@ -280,9 +287,7 @@ pub fn writeVisibleAveragedNormalsRange(
                 node_normals[node_idx * 3 + 2],
             };
             normalizeNormal(&normal_vec);
-            prep_normals.set(&[_]usize{ pp, 0, nn }, normal_vec[0]);
-            prep_normals.set(&[_]usize{ pp, 1, nn }, normal_vec[1]);
-            prep_normals.set(&[_]usize{ pp, 2, nn }, normal_vec[2]);
+            writePreparedNormal(prep_normals, pp, nn, normal_vec);
         }
     }
 }

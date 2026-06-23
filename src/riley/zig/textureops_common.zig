@@ -104,7 +104,8 @@ pub fn Texture(comptime T: type, comptime CH: usize) type {
             col: usize,
             val: T,
         ) void {
-            self.array.set(&[_]usize{ ch, row, col }, val);
+            const tex_flat_idx = self.array.subBase2(ch, row) + col;
+            self.array.setFlat(tex_flat_idx, val);
         }
 
         pub fn getVal(
@@ -113,7 +114,8 @@ pub fn Texture(comptime T: type, comptime CH: usize) type {
             row: usize,
             col: usize,
         ) T {
-            return self.array.get(&[_]usize{ ch, row, col });
+            const tex_flat_idx = self.array.subBase2(ch, row) + col;
+            return self.array.getFlat(tex_flat_idx);
         }
 
         pub fn saveCSV(

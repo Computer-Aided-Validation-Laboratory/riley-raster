@@ -391,7 +391,8 @@ fn addTestRunStep(
         \\simd_texture_interp="$4"
         \\zigexe="$5"
         \\opt="$6"
-        \\wrapper="${src}.wrapper.zig"
+        \\src_dir="$(dirname "$src")"
+        \\wrapper="$(mktemp "${src_dir}/.riley-test-XXXXXX.zig")"
         \\cleanup() {
         \\    rm -f "$wrapper"
         \\}

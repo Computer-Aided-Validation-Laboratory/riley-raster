@@ -76,7 +76,30 @@ pub fn MatSlice(comptime T: type) type {
         }
 
         pub fn set(self: *Self, row: usize, col: usize, val: T) void {
+            assert(row < self.rows_num);
+            assert(col < self.cols_num);
             self.slice[(row * self.cols_num) + col] = val;
+        }
+
+        pub fn flatIndex(self: *const Self, row: usize, col: usize) usize {
+            assert(row < self.rows_num);
+            assert(col < self.cols_num);
+            return row * self.cols_num + col;
+        }
+
+        pub fn rowBase(self: *const Self, row: usize) usize {
+            assert(row < self.rows_num);
+            return row * self.cols_num;
+        }
+
+        pub fn getFlat(self: *const Self, flat_idx: usize) T {
+            assert(flat_idx < self.slice.len);
+            return self.slice[flat_idx];
+        }
+
+        pub fn setFlat(self: *Self, flat_idx: usize, val: T) void {
+            assert(flat_idx < self.slice.len);
+            self.slice[flat_idx] = val;
         }
 
         pub fn transpose(self: *Self, buffer: *Self) void {
@@ -140,7 +163,7 @@ pub fn MatSlice(comptime T: type) type {
         }
 
         pub fn getSlice(self: *const Self, row_to_slice: usize) []T {
-            assert(row_to_slice <= self.rows_num);
+            assert(row_to_slice < self.rows_num);
 
             const start_idx: usize = row_to_slice * self.cols_num;
             const end_idx: usize = start_idx + self.cols_num;
@@ -353,6 +376,24 @@ test "MatSlice.getSlice" {
     try expectEqualSlices(TestType, exp0[0..], slice0);
     try expectEqualSlices(TestType, exp1[0..], slice1);
     try expectEqualSlices(TestType, exp2[0..], slice2);
+}
+
+test "MatSlice flat helpers" {
+    const rows: usize = 3;
+    const cols: usize = 4;
+
+    const m0 = try talloc.alloc(TestType, rows * cols);
+    defer talloc.free(m0);
+    var mat0 = MatSlice(TestType).init(m0, rows, cols);
+    mat0.fill(0.0);
+
+    const base = mat0.rowBase(2);
+    const idx = mat0.flatIndex(2, 3);
+    mat0.setFlat(idx, 9.0);
+
+    try expectEqual(@as(usize, 8), base);
+    try expectEqual(@as(usize, 11), idx);
+    try expectApproxEqAbs(@as(TestType, 9.0), mat0.get(2, 3), 1e-12);
 }
 
 test "MatSliceOps.add" {

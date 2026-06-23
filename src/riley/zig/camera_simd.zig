@@ -158,6 +158,8 @@ pub fn fillTileIdealCentersAffineJac(
 ) void {
     const sub_samp: usize = @intCast(camera.sub_sample);
     const jac = &camera.pixel_center_jac;
+    const jac_slice = jac.slice;
+    const jac_field_stride = jac.strides[2];
     const start_x = scratch_x_px_min * sub_samp;
     const start_y = scratch_y_px_min * sub_samp;
     const tile_w = (scratch_x_px_max - scratch_x_px_min) * sub_samp;
@@ -209,12 +211,19 @@ pub fn fillTileIdealCentersAffineJac(
                 const observed_x = @as(F, @floatFromInt(global_subx)) *
                     step + off;
                 const center_x = common.calcPixelCenterCoord(pixel_x);
-                ideal_x_arr[ll] = jac.get(&[_]usize{ pixel_y, pixel_x, 0 });
-                ideal_y_arr[ll] = jac.get(&[_]usize{ pixel_y, pixel_x, 1 });
-                j11_arr[ll] = jac.get(&[_]usize{ pixel_y, pixel_x, 2 });
-                j12_arr[ll] = jac.get(&[_]usize{ pixel_y, pixel_x, 3 });
-                j21_arr[ll] = jac.get(&[_]usize{ pixel_y, pixel_x, 4 });
-                j22_arr[ll] = jac.get(&[_]usize{ pixel_y, pixel_x, 5 });
+                const jac_px_base = jac.subBase2(pixel_y, pixel_x);
+                ideal_x_arr[ll] =
+                    jac_slice[jac_px_base + 0 * jac_field_stride];
+                ideal_y_arr[ll] =
+                    jac_slice[jac_px_base + 1 * jac_field_stride];
+                j11_arr[ll] =
+                    jac_slice[jac_px_base + 2 * jac_field_stride];
+                j12_arr[ll] =
+                    jac_slice[jac_px_base + 3 * jac_field_stride];
+                j21_arr[ll] =
+                    jac_slice[jac_px_base + 4 * jac_field_stride];
+                j22_arr[ll] =
+                    jac_slice[jac_px_base + 5 * jac_field_stride];
                 delta_x_arr[ll] = observed_x - center_x;
             }
             for (lane_count..S) |ll| {
@@ -248,6 +257,9 @@ pub fn fillTileIdealCentersAffineJac(
 }
 
 pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
+    const jac = &camera.pixel_center_jac;
+    const jac_slice = jac.slice;
+    const jac_field_stride = jac.strides[2];
     const eps: F = 0.25;
     for (0..camera.pixels_num[1]) |jj| {
         const y_c = common.calcPixelCenterCoord(jj);
@@ -273,12 +285,14 @@ pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
                 const center_arr: [S]F = v_center_x;
                 for (0..lane_count) |ll| {
                     const px = ii + ll;
-                    camera.pixel_center_jac.set(&[_]usize{ jj, px, 0 }, center_arr[ll]);
-                    camera.pixel_center_jac.set(&[_]usize{ jj, px, 1 }, y_c);
-                    camera.pixel_center_jac.set(&[_]usize{ jj, px, 2 }, 1.0);
-                    camera.pixel_center_jac.set(&[_]usize{ jj, px, 3 }, 0.0);
-                    camera.pixel_center_jac.set(&[_]usize{ jj, px, 4 }, 0.0);
-                    camera.pixel_center_jac.set(&[_]usize{ jj, px, 5 }, 1.0);
+                    const jac_px_base = jac.subBase2(jj, px);
+                    jac_slice[jac_px_base + 0 * jac_field_stride] =
+                        center_arr[ll];
+                    jac_slice[jac_px_base + 1 * jac_field_stride] = y_c;
+                    jac_slice[jac_px_base + 2 * jac_field_stride] = 1.0;
+                    jac_slice[jac_px_base + 3 * jac_field_stride] = 0.0;
+                    jac_slice[jac_px_base + 4 * jac_field_stride] = 0.0;
+                    jac_slice[jac_px_base + 5 * jac_field_stride] = 1.0;
                 }
                 continue;
             }
@@ -323,12 +337,15 @@ pub fn initPixelCenterJac(camera: *CameraPrepared) !void {
             const j22_arr: [S]F = (y_p.y - y_m.y) * inv_two_eps;
             for (0..lane_count) |ll| {
                 const px = ii + ll;
-                camera.pixel_center_jac.set(&[_]usize{ jj, px, 0 }, center_x_arr[ll]);
-                camera.pixel_center_jac.set(&[_]usize{ jj, px, 1 }, center_y_arr[ll]);
-                camera.pixel_center_jac.set(&[_]usize{ jj, px, 2 }, j11_arr[ll]);
-                camera.pixel_center_jac.set(&[_]usize{ jj, px, 3 }, j12_arr[ll]);
-                camera.pixel_center_jac.set(&[_]usize{ jj, px, 4 }, j21_arr[ll]);
-                camera.pixel_center_jac.set(&[_]usize{ jj, px, 5 }, j22_arr[ll]);
+                const jac_px_base = jac.subBase2(jj, px);
+                jac_slice[jac_px_base + 0 * jac_field_stride] =
+                    center_x_arr[ll];
+                jac_slice[jac_px_base + 1 * jac_field_stride] =
+                    center_y_arr[ll];
+                jac_slice[jac_px_base + 2 * jac_field_stride] = j11_arr[ll];
+                jac_slice[jac_px_base + 3 * jac_field_stride] = j12_arr[ll];
+                jac_slice[jac_px_base + 4 * jac_field_stride] = j21_arr[ll];
+                jac_slice[jac_px_base + 5 * jac_field_stride] = j22_arr[ll];
             }
         }
     }
