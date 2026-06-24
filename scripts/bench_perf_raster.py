@@ -11,8 +11,10 @@ import time
 
 from perf_common import command_path, repo_root
 
-DEFAULT_OUT_ROOT = pathlib.Path("out") / "bench_stats_perf_raster"
-DEFAULT_IMAGE_OUT_DIR = pathlib.Path("out") / "bench_images_perf_raster"
+DEFAULT_OUT_ROOT = pathlib.Path("out") / "bench_stats_perf_tiltraster"
+DEFAULT_IMAGE_OUT_DIR = (
+    pathlib.Path("out") / "bench_images_perf_tiltraster"
+)
 DEFAULT_RUNS = 25
 DEFAULT_PIXELS_X: int | None = None
 DEFAULT_PIXELS_Y: int | None = None
@@ -26,7 +28,7 @@ DEFAULT_MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP = 1
 STUDY_CASES: list[dict[str, object]] = [
     {
         "experiment": "precision",
-        "case_name": "fullraster_precision_f64_simd_v8_inner",
+        "case_name": "tiltraster_precision_f64_simd_v8_inner",
         "precision": "f64",
         "interp": "inner",
         "lanes": 8,
@@ -35,7 +37,7 @@ STUDY_CASES: list[dict[str, object]] = [
     },
     {
         "experiment": "precision",
-        "case_name": "fullraster_precision_f64_simd_v4_inner",
+        "case_name": "tiltraster_precision_f64_simd_v4_inner",
         "precision": "f64",
         "interp": "inner",
         "lanes": 4,
@@ -44,7 +46,7 @@ STUDY_CASES: list[dict[str, object]] = [
     },
     {
         "experiment": "precision",
-        "case_name": "fullraster_precision_f32_simd_v16_inner",
+        "case_name": "tiltraster_precision_f32_simd_v16_inner",
         "precision": "f32",
         "interp": "inner",
         "lanes": 16,
@@ -53,7 +55,7 @@ STUDY_CASES: list[dict[str, object]] = [
     },
     {
         "experiment": "precision",
-        "case_name": "fullraster_precision_f32_simd_v8_inner",
+        "case_name": "tiltraster_precision_f32_simd_v8_inner",
         "precision": "f32",
         "interp": "inner",
         "lanes": 8,
@@ -62,7 +64,7 @@ STUDY_CASES: list[dict[str, object]] = [
     },
     {
         "experiment": "interp",
-        "case_name": "fullraster_interp_f64_simd_overpx",
+        "case_name": "tiltraster_interp_f64_simd_overpx",
         "precision": "f64",
         "interp": "overpx",
         "lanes": 8,
@@ -71,7 +73,7 @@ STUDY_CASES: list[dict[str, object]] = [
     },
     {
         "experiment": "interp",
-        "case_name": "fullraster_interp_f32_simd_overpx",
+        "case_name": "tiltraster_interp_f32_simd_overpx",
         "precision": "f32",
         "interp": "overpx",
         "lanes": 16,
@@ -80,7 +82,7 @@ STUDY_CASES: list[dict[str, object]] = [
     },
     {
         "experiment": "texstore",
-        "case_name": "fullraster_texstore_u8",
+        "case_name": "tiltraster_texstore_u8",
         "precision": "f64",
         "interp": "inner",
         "lanes": 8,
@@ -89,7 +91,7 @@ STUDY_CASES: list[dict[str, object]] = [
     },
     {
         "experiment": "texstore",
-        "case_name": "fullraster_texstore_u16",
+        "case_name": "tiltraster_texstore_u16",
         "precision": "f64",
         "interp": "inner",
         "lanes": 8,
@@ -98,7 +100,7 @@ STUDY_CASES: list[dict[str, object]] = [
     },
     {
         "experiment": "distortion",
-        "case_name": "fullraster_distortion_brown_f64_simd_v8_inner",
+        "case_name": "tiltraster_distortion_brown_f64_simd_v8_inner",
         "precision": "f64",
         "interp": "inner",
         "lanes": 8,
@@ -108,7 +110,7 @@ STUDY_CASES: list[dict[str, object]] = [
     },
     {
         "experiment": "distortion",
-        "case_name": "fullraster_distortion_brownext_f64_simd_v8_inner",
+        "case_name": "tiltraster_distortion_brownext_f64_simd_v8_inner",
         "precision": "f64",
         "interp": "inner",
         "lanes": 8,
@@ -135,9 +137,9 @@ def default_lanes(precision: str) -> int:
 
 def binary_name(precision: str, interp: str, lanes: int) -> str:
     if lanes == default_lanes(precision):
-        return f"bench_fullraster_{precision}_simd_{interp}"
+        return f"bench_tiltraster_{precision}_simd_{interp}"
     else:
-        return f"bench_fullraster_{precision}_simd_{interp}_v{lanes}"
+        return f"bench_tiltraster_{precision}_simd_{interp}_v{lanes}"
 
 
 def binary_path(

@@ -106,17 +106,16 @@ or with the build system:
 ```shell
 zig build test-gold-all -Doptimize=ReleaseSafe
 zig build test-bench -Doptimize=ReleaseSafe
-zig build tests -Doptimize=ReleaseSafe
 ```
 
 ### Precision and SIMD Build Matrix
 The `zig build` workflow supports precision and SIMD selection without editing
-`buildconfig.zig`:
+`buildconfig.zig`. Example commands:
 ```shell
-zig build tests -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
-zig build tests -Dprecision=f64 -Dsimd=off -Doptimize=ReleaseSafe
-zig build tests -Dprecision=f32 -Dsimd=on -Doptimize=ReleaseSafe
-zig build tests -Dprecision=f32 -Dsimd=off -Doptimize=ReleaseSafe
+zig build test-gold-all -Dprecision=f64 -Dsimd=on -Doptimize=ReleaseSafe
+zig build test-gold-all -Dprecision=f64 -Dsimd=off -Doptimize=ReleaseSafe
+zig build test-gold-all -Dprecision=f32 -Dsimd=on -Doptimize=ReleaseSafe
+zig build test-gold-all -Dprecision=f32 -Dsimd=off -Doptimize=ReleaseSafe
 ```
 
 Gold data is shared across SIMD modes where possible and split only when the

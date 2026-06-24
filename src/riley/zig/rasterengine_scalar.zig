@@ -191,6 +191,24 @@ pub fn RasterEngine(
             shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
             subpx_scratch: *SubpxScratchBuffers,
         ) !u64 {
+            if (comptime Geometry == geomkerns.Tri3OptKernel()) {
+                return rasterDirectSteppedScalar(
+                    Geometry,
+                    ShaderKernel,
+                    ShaderData,
+                    report_mode,
+                    ctx_rast,
+                    ctx_report,
+                    targ_overlap,
+                    mesh_in,
+                    subpx_domain,
+                    rast_bounds,
+                    nodes_coords,
+                    shader,
+                    shader_buf,
+                    subpx_scratch,
+                );
+            }
             if (comptime Geometry.solver_kind != .newton) {
                 return rasterDirectImpl(
                     Geometry,
@@ -572,4 +590,209 @@ pub fn rasterScene(
         raster_hulls,
         image_out_arr,
     );
+}
+
+fn rasterDirectSteppedScalar(
+    comptime Geometry: type,
+    comptime ShaderKernel: type,
+    comptime ShaderData: type,
+    comptime report_mode: ReportMode,
+    ctx_rast: rops.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
+    targ_overlap: common.OverlapTarget,
+    mesh_in: rops.MeshRaster,
+    subpx_domain: SubpxDomain,
+    rast_bounds: RasterBounds,
+    nodes_coords: Vec3Slices(F),
+    shader: *const ShaderData,
+    shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
+    subpx_scratch: *SubpxScratchBuffers,
+) !u64 {
+    _ = mesh_in;
+    const N = Geometry.nodes_num;
+    var shaded_px: u64 = 0;
+    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+    std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
+    const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
+
+    const x0 = nodes_coords.x[0];
+    const y0 = nodes_coords.y[0];
+    const x1 = nodes_coords.x[1];
+    const y1 = nodes_coords.y[1];
+    const x2 = nodes_coords.x[2];
+    const y2 = nodes_coords.y[2];
+
+    const area = (x2 - x0) * (y1 - y0) - (y2 - y0) * (x1 - x0);
+    const inv_area = 1.0 / area;
+
+    const a0 = (y2 - y1) * inv_area;
+    const b0 = (x1 - x2) * inv_area;
+    const c0 = (x2 * y1 - x1 * y2) * inv_area;
+
+    const a1 = (y0 - y2) * inv_area;
+    const b1 = (x2 - x0) * inv_area;
+    const c1 = (x0 * y2 - x2 * y0) * inv_area;
+
+    const a2 = (y1 - y0) * inv_area;
+    const b2 = (x0 - x1) * inv_area;
+    const c2 = (x1 * y0 - x0 * y1) * inv_area;
+
+    const step = subpx_domain.step;
+    const offset = subpx_domain.offset;
+
+    const dw0_dx = a0 * step;
+    const dw0_dy = b0 * step;
+    const dw1_dx = a1 * step;
+    const dw1_dy = b1 * step;
+    const dw2_dx = a2 * step;
+    const dw2_dy = b2 * step;
+
+    const tile_subx: usize = @intCast(targ_overlap.tile.scratch_x_px_min);
+    const tile_suby: usize = @intCast(targ_overlap.tile.scratch_y_px_min);
+    const tile_subx_off = tile_subx * sub_samp;
+    const tile_suby_off = tile_suby * sub_samp;
+
+    const z0 = nodes_coords.z[0];
+    const z1 = nodes_coords.z[1];
+    const z2 = nodes_coords.z[2];
+    const is_const_depth = (z0 == z1 and z1 == z2);
+    const inv_z0 = 1.0 / z0;
+    const inv_z1 = 1.0 / z1;
+    const inv_z2 = 1.0 / z2;
+    const nodes_inv_z = [3]F{ inv_z0, inv_z1, inv_z2 };
+
+    const edge_tol = tol.edge.tri_weight_inclusion;
+
+    const start_subx_global = tile_subx_off + rast_bounds.start_x_u;
+    const start_suby_global = tile_suby_off + rast_bounds.start_y_u;
+
+    const x_start_f = @as(F, @floatFromInt(start_subx_global)) * step + offset;
+    const y_start_f = @as(F, @floatFromInt(start_suby_global)) * step + offset;
+
+    const w0_start = a0 * x_start_f + b0 * y_start_f + c0;
+    const w1_start = a1 * x_start_f + b1 * y_start_f + c1;
+    const w2_start = a2 * x_start_f + b2 * y_start_f + c2;
+
+    const scratch_stride = subpx_domain.tile_size;
+
+    for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
+        const row_offset = scratch_y_u * scratch_stride;
+        const global_suby = tile_suby_off + scratch_y_u;
+        const y_steps = @as(F, @floatFromInt(scratch_y_u - rast_bounds.start_y_u));
+
+        var w0 = w0_start + y_steps * dw0_dy;
+        var w1 = w1_start + y_steps * dw1_dy;
+        var w2 = w2_start + y_steps * dw2_dy;
+
+        for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x_u| {
+            const scratch_idx = row_offset + scratch_x_u;
+            const global_subx = tile_subx_off + scratch_x_u;
+
+            rasterreport.recordEarlyOut(
+                report_mode,
+                ctx_report,
+                global_subx,
+                global_suby,
+                true,
+            );
+
+            ctx_report.recordSolverCalls(1);
+            ctx_report.recordSolverIters(1);
+
+            if (w0 >= -edge_tol and w1 >= -edge_tol and w2 >= -edge_tol) {
+                const inv_z = if (is_const_depth)
+                    inv_z0
+                else
+                    w0 * inv_z0 + w1 * inv_z1 + w2 * inv_z2;
+
+                if (inv_z + buildconfig.config.tolerance.geometry.depth_buffer_inv_z_cmp >=
+                    subpx_scratch.inv_z[scratch_idx])
+                {
+                    subpx_scratch.inv_z[scratch_idx] = inv_z;
+                    if (scratch_x_u < subpx_scratch.touched_min_x[scratch_y_u]) {
+                        subpx_scratch.touched_min_x[scratch_y_u] = scratch_x_u;
+                    }
+                    if (scratch_x_u > subpx_scratch.touched_max_x[scratch_y_u]) {
+                        subpx_scratch.touched_max_x[scratch_y_u] = scratch_x_u;
+                    }
+                    const subpx_z = 1.0 / inv_z;
+                    shaded_px += 1;
+
+                    rasterreport.recordPixelIterAndOccupancy(
+                        report_mode,
+                        ctx_report,
+                        global_subx,
+                        global_suby,
+                        1,
+                        targ_overlap.tile.scratch_x_px_min + scratch_x_u / sub_samp,
+                        targ_overlap.tile.scratch_y_px_min + scratch_y_u / sub_samp,
+                    );
+
+                    const weights = [3]F{ w0, w1, w2 };
+                    const xi = if (is_const_depth) weights[1] else w1 * inv_z1 / inv_z;
+                    const eta = if (is_const_depth) weights[2] else w2 * inv_z2 / inv_z;
+
+                    if (comptime report_mode == .full_stats) {
+                        rasterreport.recordPixelConvergedStats(
+                            report_mode,
+                            ctx_report,
+                            global_subx,
+                            global_suby,
+                            true,
+                            xi,
+                            eta,
+                            area,
+                        );
+                    }
+
+                    const ctx_shade = shaderops.ShadeContext(N){
+                        .frame_idx = ctx_rast.frame_idx,
+                        .elem_idx = targ_overlap.overlap.elem_idx,
+                        .fields_num = fields_num,
+                        .actual_fields = fields_num,
+                        .scratch_idx = scratch_idx,
+                        .global_subx = global_subx,
+                        .global_suby = global_suby,
+                        .shader_buf = shader_buf,
+                    };
+                    const interp_data = shaderops.InterpData(N){
+                        .weights = weights,
+                        .nodes_inv_z = nodes_inv_z,
+                        .sub_pixel_z = subpx_z,
+                        .xi = xi,
+                        .eta = eta,
+                    };
+
+                    ShaderKernel.shade(
+                        Geometry.coord_space,
+                        ctx_rast,
+                        &interp_data,
+                        ctx_shade,
+                        shader,
+                        subpx_scratch.image,
+                    );
+                }
+            } else {
+                if (comptime report_mode == .full_stats) {
+                    const nan = std.math.nan(F);
+                    rasterreport.recordPixelConvergedStats(
+                        report_mode,
+                        ctx_report,
+                        global_subx,
+                        global_suby,
+                        false,
+                        nan,
+                        nan,
+                        nan,
+                    );
+                }
+            }
+
+            w0 += dw0_dx;
+            w1 += dw1_dx;
+            w2 += dw2_dx;
+        }
+    }
+
+    return shaded_px;
 }

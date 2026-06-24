@@ -82,10 +82,11 @@ test "MIN Suite: sphere200 and multimesh" {
         for (mesh_types) |mt| {
             for (shader_types) |st| {
                 for (sample_configs) |sc| {
+                    const folder_name = if (mt == .tri3opt) "tri3" else @tagName(mt);
                     const data_dir = try std.fmt.allocPrint(
                         allocator,
                         "data/min/{s}_sphere200",
-                        .{@tagName(mt)},
+                        .{folder_name},
                     );
                     defer allocator.free(data_dir);
 
@@ -108,9 +109,10 @@ test "MIN Suite: sphere200 and multimesh" {
                         r_config.save_strategy = .memory;
                         r_config.image_save_opts = &[_]iio.ImageSaveOpts{};
 
+                        const mt_for_name = if (mt == .tri3opt) .tri3 else mt;
                         const case_name = try minsuite.calcMinCaseName(
                             allocator,
-                            mt,
+                            mt_for_name,
                             st,
                             sc,
                         );
@@ -193,10 +195,11 @@ test "MIN Suite: sphere200 and multimesh" {
         for (mesh_types) |mt| {
             for (shader_types) |st| {
                 for (sample_configs) |sc| {
+                    const folder_name = if (mt == .tri3opt) "tri3" else @tagName(mt);
                     const data_dir = try std.fmt.allocPrint(
                         allocator,
                         "data/min/{s}_sphere200",
-                        .{@tagName(mt)},
+                        .{folder_name},
                     );
                     defer allocator.free(data_dir);
 
@@ -219,9 +222,10 @@ test "MIN Suite: sphere200 and multimesh" {
                         r_config.save_strategy = .memory;
                         r_config.image_save_opts = &[_]iio.ImageSaveOpts{};
 
+                        const mt_for_name = if (mt == .tri3opt) .tri3 else mt;
                         const case_name = try minsuite.calcMinCaseName(
                             allocator,
-                            mt,
+                            mt_for_name,
                             st,
                             sc,
                         );

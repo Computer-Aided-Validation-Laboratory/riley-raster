@@ -32,6 +32,7 @@ pub const QUAD_CENTROID_ETA: F = 0.0;
 
 pub const MeshType = enum {
     tri3,
+    tri3opt,
     tri6,
     quad4ibi,
     quad4newton,
@@ -40,7 +41,7 @@ pub const MeshType = enum {
 
     pub inline fn getNodesNum(self: MeshType) usize {
         return switch (self) {
-            .tri3 => 3,
+            .tri3, .tri3opt => 3,
             .tri6 => 6,
             .quad4ibi, .quad4newton => 4,
             .quad8 => 8,
@@ -50,7 +51,7 @@ pub const MeshType = enum {
 
     pub inline fn getNumHullPoints(self: MeshType) usize {
         return switch (self) {
-            .tri3 => 0,
+            .tri3, .tri3opt => 0,
             .tri6 => 6,
             .quad4ibi, .quad4newton => 4,
             .quad8, .quad9 => 8,
@@ -112,6 +113,179 @@ pub const NewtonParams = struct {
 };
 
 pub fn Tri3Kernel() type {
+    return struct {
+        pub const nodes_num = 3;
+        pub const hull_nodes_num = 0;
+        pub const tess_triangles_num = 0;
+        pub const coord_space = .raster;
+        pub const solver_kind = .hyperb;
+
+        pub inline fn getInvElemArea(nodes: Vec3Slices(F)) F {
+            return 1.0 / rops.edgeFun3(
+                nodes.x[0],
+                nodes.y[0],
+                nodes.x[1],
+                nodes.y[1],
+                nodes.x[2],
+                nodes.y[2],
+            );
+        }
+
+        pub inline fn solveWeightsHyperb(
+            nodes: Vec3Slices(F),
+            pixel_x: F,
+            pixel_y: F,
+            inv_area: F,
+        ) GeometryResult(nodes_num) {
+            const weights = getWeightsAt(nodes, pixel_x, pixel_y, inv_area);
+
+            if (isInElement(weights)) {
+                return .{ .weights = weights, .iters = 1 };
+            }
+
+            return .{ .weights = null, .iters = 1 };
+        }
+
+        pub inline fn getWeightsAt(
+            nodes: Vec3Slices(F),
+            pixel_x: F,
+            pixel_y: F,
+            inv_area: F,
+        ) [nodes_num]F {
+            return [_]F{
+                rops.edgeFun3(
+                    nodes.x[1],
+                    nodes.y[1],
+                    nodes.x[2],
+                    nodes.y[2],
+                    pixel_x,
+                    pixel_y,
+                ) * inv_area,
+                rops.edgeFun3(
+                    nodes.x[2],
+                    nodes.y[2],
+                    nodes.x[0],
+                    nodes.y[0],
+                    pixel_x,
+                    pixel_y,
+                ) * inv_area,
+                rops.edgeFun3(
+                    nodes.x[0],
+                    nodes.y[0],
+                    nodes.x[1],
+                    nodes.y[1],
+                    pixel_x,
+                    pixel_y,
+                ) * inv_area,
+            };
+        }
+
+        pub inline fn isInElement(weights: [nodes_num]F) bool {
+            const edge_tol = tol.edge.tri_weight_inclusion;
+
+            return weights[0] >= -edge_tol and
+                weights[1] >= -edge_tol and
+                weights[2] >= -edge_tol;
+        }
+
+        pub inline fn calcInvZ(nodes: Vec3Slices(F), weights: [nodes_num]F) F {
+            var inv_z: F = 0.0;
+
+            inline for (0..nodes_num) |nn| {
+                inv_z += weights[nn] * (1.0 / nodes.z[nn]);
+            }
+
+            return inv_z;
+        }
+
+        pub inline fn solveWeightsHyperbSIMD(
+            nodes: Vec3Slices(F),
+            v_pixel_x: VecSF,
+            v_pixel_y: VecSF,
+            v_inv_area: VecSF,
+        ) GeometryResultSIMD(nodes_num) {
+            const v_weights = getWeightsAtSIMD(
+                nodes,
+                v_pixel_x,
+                v_pixel_y,
+                v_inv_area,
+            );
+            const v_mask = isInElementSIMD(v_weights);
+
+            return .{
+                .v_weights = v_weights,
+                .v_mask = v_mask,
+                .v_iters = @splat(1),
+            };
+        }
+
+        pub inline fn getWeightsAtSIMD(
+            nodes: Vec3Slices(F),
+            v_pixel_x: VecSF,
+            v_pixel_y: VecSF,
+            v_inv_area: VecSF,
+        ) [nodes_num]VecSF {
+            return [_]VecSF{
+                rops.edgeFun3SIMD(
+                    nodes.x[1],
+                    nodes.y[1],
+                    nodes.x[2],
+                    nodes.y[2],
+                    v_pixel_x,
+                    v_pixel_y,
+                ) * v_inv_area,
+                rops.edgeFun3SIMD(
+                    nodes.x[2],
+                    nodes.y[2],
+                    nodes.x[0],
+                    nodes.y[0],
+                    v_pixel_x,
+                    v_pixel_y,
+                ) * v_inv_area,
+                rops.edgeFun3SIMD(
+                    nodes.x[0],
+                    nodes.y[0],
+                    nodes.x[1],
+                    nodes.y[1],
+                    v_pixel_x,
+                    v_pixel_y,
+                ) * v_inv_area,
+            };
+        }
+
+        pub inline fn isInElementSIMD(v_weights: [nodes_num]VecSF) VecSB {
+            const edge_tol = tol.edge.tri_weight_inclusion;
+            const v_edge_tol: VecSF = @splat(-edge_tol);
+
+            return (v_weights[0] >= v_edge_tol) &
+                (v_weights[1] >= v_edge_tol) &
+                (v_weights[2] >= v_edge_tol);
+        }
+
+        pub inline fn calcInvZSIMD(
+            nodes_inv_z: [nodes_num]VecSF,
+            v_weights: [nodes_num]VecSF,
+        ) VecSF {
+            var v_inv_z: VecSF = @splat(0.0);
+
+            inline for (0..nodes_num) |nn| {
+                v_inv_z += v_weights[nn] * nodes_inv_z[nn];
+            }
+
+            return v_inv_z;
+        }
+
+        pub inline fn getSIMDInvZ(nodes: Vec3Slices(F)) [nodes_num]VecSF {
+            var out: [nodes_num]VecSF = undefined;
+            inline for (0..nodes_num) |ii| {
+                out[ii] = @splat(1.0 / nodes.z[ii]);
+            }
+            return out;
+        }
+    };
+}
+
+pub fn Tri3OptKernel() type {
     return struct {
         pub const nodes_num = 3;
         pub const hull_nodes_num = 0;

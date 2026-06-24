@@ -687,7 +687,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         ) void {
             _ = chunk_idx;
             const stage: *TransformCoordsStage = @ptrCast(@alignCast(ctx_ptr));
-            if (MT == .tri3) {
+            if (MT == .tri3 or MT == .tri3opt) {
                 rops.nodesToRasterRangeInPlace(
                     stage.camera,
                     &stage.frame_workspace.coords_nodes,
@@ -737,7 +737,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             var visible_count: usize = 0;
 
             for (range_start..range_end) |ee| {
-                const bbox = if (MT == .tri3)
+                const bbox = if (MT == .tri3 or MT == .tri3opt)
                     rops.calcVisibleNodeBBoxTri3(
                         MT,
                         stage.camera,
@@ -850,7 +850,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             var write_idx = stage.visible_offsets_by_chunk[chunk_idx];
 
             for (range_start..range_end) |ee| {
-                const bbox = if (comptime MT == .tri3)
+                const bbox = if (MT == .tri3 or MT == .tri3opt)
                     rops.calcVisibleNodeBBoxTri3(
                         MT,
                         stage.camera,
@@ -993,7 +993,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             self: *FrameMeshPipelineType,
             elem_coords: *const ndarray.NDArray(F),
         ) !void {
-            if (comptime MT == .tri3) {
+            if (MT == .tri3 or MT == .tri3opt) {
                 self.mesh_workspace.raster_hull = null;
                 return;
             }

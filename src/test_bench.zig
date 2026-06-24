@@ -129,10 +129,11 @@ test "Unified Benchmark Tests" {
                 for (sample_configs) |sc| {
                     _ = arena.reset(.free_all);
 
+                    const folder_name = if (mt == .tri3opt) "tri3" else @tagName(mt);
                     const data_dir = try std.fmt.allocPrint(
                         aa,
                         "data/bench/{s}_{s}",
-                        .{ @tagName(mt), cc.data_name },
+                        .{ folder_name, cc.data_name },
                     );
 
                     const run_config = if (cc.is_sphere)
@@ -147,9 +148,10 @@ test "Unified Benchmark Tests" {
                         r_config.save_strategy = .memory;
                         r_config.image_save_opts = &[_]iio.ImageSaveOpts{};
 
+                        const mt_for_name = if (mt == .tri3opt) .tri3 else mt;
                         const case_name = try common.calcCaseName(
                             aa,
-                            mt,
+                            mt_for_name,
                             st,
                             sc,
                             null,

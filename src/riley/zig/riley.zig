@@ -355,6 +355,15 @@ fn checkRenderConsistencyError(
     if (meshes.len == 0) {
         return error.NoMeshes;
     }
+    for (meshes) |mesh| {
+        if (mesh.mesh_type == .tri3opt) {
+            for (camera_inputs) |camera_input| {
+                if (!cam.isNoDistortion(camera_input.distortion)) {
+                    return error.DistortionNotSupportedWithTri3Opt;
+                }
+            }
+        }
+    }
     for (render_groups) |render_group| {
         if (render_group.workers == 0) {
             return error.InvalidRenderGroupWorkers;

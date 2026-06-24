@@ -462,6 +462,7 @@ fn rasterTileCommon(
             inline else => |geom_tag| {
                 const GK = comptime switch (geom_tag) {
                     .tri3 => geomkerns.Tri3Kernel(),
+                    .tri3opt => geomkerns.Tri3OptKernel(),
                     .tri6 => geomkerns.Tri6Kernel(),
                     .quad4ibi => geomkerns.Quad4IBIKernel(),
                     .quad4newton => geomkerns.Quad4NewtonKernel(),

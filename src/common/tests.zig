@@ -346,11 +346,10 @@ fn openFailsSubDir(
         if (err != error.PathAlreadyExists) return err;
     };
     var fails_dir = try cwd.openDir(io, fails_root, .{});
+    defer fails_dir.close(io);
     fails_dir.createDir(io, dir_name, .default_dir) catch |err| {
-        fails_dir.close(io);
         if (err != error.PathAlreadyExists) return err;
     };
-    defer fails_dir.close(io);
     return try fails_dir.openDir(io, dir_name, .{});
 }
 
@@ -1467,6 +1466,7 @@ fn supportsMidsideDistortMesh(mesh_type: gk.MeshType) bool {
 fn supportsAnyDistortMesh(mesh_type: gk.MeshType) bool {
     return switch (mesh_type) {
         .tri3, .tri6, .quad4ibi, .quad4newton, .quad8, .quad9 => true,
+        .tri3opt => false,
     };
 }
 

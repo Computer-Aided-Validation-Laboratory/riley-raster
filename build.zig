@@ -131,7 +131,6 @@ pub fn build(b: *std.Build) void {
         },
     };
 
-    const test_all_step = b.step("tests", "Run all configured test suites");
     for (tests) |entry| {
         const test_step = b.step(entry.step_name, entry.description);
         const test_run = addTestRunStep(
@@ -143,7 +142,6 @@ pub fn build(b: *std.Build) void {
             simd_texture_interp,
         );
         test_step.dependOn(&test_run.step);
-        test_all_step.dependOn(&test_run.step);
     }
 
     const demos = [_]RunEntry{
@@ -292,6 +290,11 @@ pub fn build(b: *std.Build) void {
             .step_name = "bench-fullraster",
             .description = "Run the fullraster benchmark",
             .source_path = "src/bench_fullraster.zig",
+        },
+        .{
+            .step_name = "bench-tiltraster",
+            .description = "Run the tiltraster benchmark",
+            .source_path = "src/bench_tiltraster.zig",
         },
         .{
             .step_name = "bench-geom",

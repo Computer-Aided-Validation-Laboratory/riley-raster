@@ -273,7 +273,7 @@ pub fn worldNodesToSolverCoords(
         const coord_cam = worldToCamera(camera, world_point);
         const inv_neg_z = 1.0 / (-coord_cam.slice[2]);
 
-        if (mesh_type == .tri3) {
+        if (mesh_type == .tri3 or mesh_type == .tri3opt) {
             solver_nodes.x[nn] = offsets.x_off +
                 coord_cam.slice[0] * inv_neg_z * focal_px.fx;
             solver_nodes.y[nn] = offsets.y_off -
@@ -318,8 +318,8 @@ pub fn solveParentFromIdealRaster(
     const nodes = toVec3Slices(mesh_type.getNodesNum(), solver_nodes);
 
     return switch (mesh_type) {
-        .tri3 => blk: {
-            const GK = gk.Tri3Kernel();
+        .tri3, .tri3opt => blk: {
+            const GK = if (mesh_type == .tri3) gk.Tri3Kernel() else gk.Tri3OptKernel();
             const inv_area = GK.getInvElemArea(nodes);
             const result = GK.solveWeightsHyperb(
                 nodes,
@@ -448,7 +448,7 @@ pub fn isInParametricDomain(
 ) bool {
     const eps = 1.0e-8;
     return switch (mesh_type) {
-        .tri3, .tri6 => xi >= -eps and eta >= -eps and xi + eta <= 1.0 + eps,
+        .tri3, .tri3opt, .tri6 => xi >= -eps and eta >= -eps and xi + eta <= 1.0 + eps,
         .quad4ibi => xi >= -eps and xi <= 1.0 + eps and eta >= -eps and
             eta <= 1.0 + eps,
         .quad4newton, .quad8, .quad9 => @abs(xi) <= 1.0 + eps and
@@ -470,7 +470,7 @@ pub fn appendStructuredSamples(
     list: *std.ArrayList(SamplePoint),
     grid_num: usize,
 ) !struct { rows_num: usize, cols_num: usize } {
-    if (mesh_type == .tri3 or mesh_type == .tri6) {
+    if (mesh_type == .tri3 or mesh_type == .tri3opt or mesh_type == .tri6) {
         for (0..grid_num) |rr| {
             const eta = @as(F, @floatFromInt(rr)) /
                 @as(F, @floatFromInt(grid_num - 1));

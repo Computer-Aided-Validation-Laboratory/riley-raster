@@ -488,8 +488,8 @@ pub fn calcVisibleNodeBBoxTri3(
     elem_idx: usize,
 ) ?ElemBBox {
     comptime {
-        if (MT != .tri3) {
-            @compileError("calcVisibleNodeBBoxTri3 only supports .tri3");
+        if (MT != .tri3 and MT != .tri3opt) {
+            @compileError("calcVisibleNodeBBoxTri3 only supports .tri3 and .tri3opt");
         }
     }
 

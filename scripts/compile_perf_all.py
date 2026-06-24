@@ -32,9 +32,9 @@ def binary_name(
         else "inner"
     )
     if lanes == default_lanes(precision):
-        return f"bench_fullraster_{precision}_simd_{interp_tag}"
+        return f"bench_tiltraster_{precision}_simd_{interp_tag}"
     else:
-        return f"bench_fullraster_{precision}_simd_{interp_tag}_v{lanes}"
+        return f"bench_tiltraster_{precision}_simd_{interp_tag}_v{lanes}"
 
 
 def main() -> int:
@@ -52,7 +52,7 @@ def main() -> int:
                 [
                     "zig",
                     "build",
-                    "install-bench-fullraster",
+                    "install-bench-tiltraster",
                     "--prefix",
                     ".",
                     "-Doptimize=ReleaseFast",
