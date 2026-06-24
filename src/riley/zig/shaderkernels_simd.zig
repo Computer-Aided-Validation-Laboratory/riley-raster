@@ -286,14 +286,14 @@ inline fn shadeTexSIMDDispatchConfigImpl(
     shader: *const shaderops.TexPrepared(T, channels),
     spx_image_scratch: *MatSlice(F),
 ) void {
-    if (!comptime comptime_config.isValid()) return;
+    const sanitized_config = comptime comptime_config.sanitize();
 
     if (comptime coord_space == CoordSpace.raster) {
         shaderops.fillTexPerspSIMD(
             N,
             T,
             channels,
-            comptime_config,
+            sanitized_config,
             ctx_shade,
             v_mask_active,
             v_weights,
@@ -307,7 +307,7 @@ inline fn shadeTexSIMDDispatchConfigImpl(
             N,
             T,
             channels,
-            comptime_config,
+            sanitized_config,
             ctx_shade,
             v_mask_active,
             v_weights,

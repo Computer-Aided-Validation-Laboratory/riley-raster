@@ -57,6 +57,7 @@ pub const MeshSubset = enum {
     all,
     tri3,
     tri3opt,
+    tri3_compare,
 };
 
 pub fn defaultBenchArgs(

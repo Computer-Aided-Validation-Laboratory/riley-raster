@@ -118,7 +118,6 @@ pub fn main(init: std.process.Init) !void {
     };
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },
-        .{ .sample = .linear, .mode = .lut_lerp },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
         .{ .sample = .cubic_mitchell_netravali, .mode = .direct },
@@ -133,8 +132,14 @@ pub fn main(init: std.process.Init) !void {
     const tex_func_cases = [_]common.TexFuncCase{
         .{ .builtin = .constant, .coord_mode = .param },
         .{ .builtin = .constant, .coord_mode = .uv },
+        .{ .builtin = .linear, .coord_mode = .param },
+        .{ .builtin = .linear, .coord_mode = .uv },
+        .{ .builtin = .quadratic, .coord_mode = .param },
+        .{ .builtin = .quadratic, .coord_mode = .uv },
         .{ .builtin = .sinusoidal, .coord_mode = .param },
         .{ .builtin = .sinusoidal, .coord_mode = .uv },
+        .{ .builtin = .sinusoidal_approx, .coord_mode = .param },
+        .{ .builtin = .sinusoidal_approx, .coord_mode = .uv },
     };
 
     var stats = try benchstats.BenchStatsCollector.init(
@@ -467,6 +472,7 @@ fn shouldRunMeshType(
         .all => true,
         .tri3 => mesh_type == .tri3,
         .tri3opt => mesh_type == .tri3opt,
+        .tri3_compare => mesh_type == .tri3 or mesh_type == .tri3opt,
     };
 }
 

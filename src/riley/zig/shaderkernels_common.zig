@@ -202,14 +202,14 @@ inline fn shadeTexScalarDispatchConfigImpl(
     shader: *const shaderops.TexPrepared(T, channels),
     spx_image_scratch: *MatSlice(F),
 ) void {
-    if (!comptime comptime_config.isValid()) return;
+    const sanitized_config = comptime comptime_config.sanitize();
 
     if (comptime coord_space == CoordSpace.clip_px_leng) {
         shaderops.fillTexClip(
             N,
             T,
             channels,
-            comptime_config,
+            sanitized_config,
             ctx_shade,
             interp,
             shader,
@@ -220,7 +220,7 @@ inline fn shadeTexScalarDispatchConfigImpl(
             N,
             T,
             channels,
-            comptime_config,
+            sanitized_config,
             ctx_shade,
             interp,
             shader,

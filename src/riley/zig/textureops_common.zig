@@ -66,6 +66,13 @@ pub const TextureSampleConfig = struct {
             else => true,
         };
     }
+
+    pub fn sanitize(self: TextureSampleConfig) TextureSampleConfig {
+        return switch (self.sample) {
+            .nearest, .linear => .{ .sample = self.sample, .mode = .direct },
+            else => self,
+        };
+    }
 };
 
 pub fn Texture(comptime T: type, comptime CH: usize) type {

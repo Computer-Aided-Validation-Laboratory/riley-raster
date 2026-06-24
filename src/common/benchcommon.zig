@@ -1215,8 +1215,20 @@ fn calcTexFuncParams(tex_func_case: TexFuncCase) so.FuncShaderParams {
 
     return switch (tex_func_case.builtin) {
         .sinusoidal => .{
-            .wave_num_scalar = .{ wave_num, wave_num },
-            .wave_num_rgb = .{ wave_num, wave_num, wave_num },
+            .settings = .{
+                .sinusoidal = .{
+                    .wave_num_scalar = .{ wave_num, wave_num },
+                    .wave_num_rgb = .{ wave_num, wave_num, wave_num },
+                },
+            },
+        },
+        .sinusoidal_approx => .{
+            .settings = .{
+                .sinusoidal_approx = .{
+                    .wave_num_scalar = .{ wave_num, wave_num },
+                    .wave_num_rgb = .{ wave_num, wave_num, wave_num },
+                },
+            },
         },
         else => .{},
     };

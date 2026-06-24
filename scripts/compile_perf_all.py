@@ -6,7 +6,7 @@ import subprocess
 
 from perf_common import repo_root
 
-BATCH_SIZE = 4
+BATCH_SIZE = 8
 
 BUILD_VARIANTS = (
     ("f64", "inner", 8),
@@ -15,6 +15,7 @@ BUILD_VARIANTS = (
     ("f32", "over_pixels", 16),
     ("f64", "inner", 4),
     ("f32", "inner", 8),
+    ("f32", "over_pixels", 8),
 )
 
 

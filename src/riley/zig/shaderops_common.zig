@@ -21,6 +21,7 @@ const imageops = @import("imageops.zig");
 const iio = @import("imageio.zig");
 const texops = @import("textureops.zig");
 const meshio = @import("meshio.zig");
+const maths_simd = @import("maths_simd.zig");
 
 pub const ScaleOver = enum { within_frames, over_frames };
 pub const NormalType = enum { none, exact, averaged };
@@ -36,10 +37,67 @@ pub const FuncShaderBuiltin = enum {
     linear,
     quadratic,
     sinusoidal,
+    sinusoidal_approx,
     checker,
     checker_smooth,
     lambertian_normal_z,
     eggbox,
+};
+
+pub const ConstantParams = struct {
+    value: F = 0.5,
+    value_rgb: [3]F = .{ 0.2, 0.5, 0.8 },
+};
+
+pub const LinearParams = struct {
+    coeffs: [3]F = .{ 0.5, 0.25, 0.2 },
+    coeffs_rgb: [3][3]F = .{
+        .{ 0.5, 0.25, 0.0 },
+        .{ 0.5, 0.0, 0.25 },
+        .{ 0.5, 0.15, -0.15 },
+    },
+};
+
+pub const QuadraticParams = struct {
+    coeffs: [6]F = .{ 0.35, 0.2, 0.15, 0.1, -0.08, 0.06 },
+    coeffs_rgb: [3][6]F = .{
+        .{ 0.3, 0.0, 0.0, 0.2, 0.0, 0.0 },
+        .{ 0.3, 0.0, 0.0, 0.0, 0.0, 0.2 },
+        .{ 0.3, 0.0, 0.0, 0.0, 0.12, 0.0 },
+    },
+};
+
+pub const SinusoidalParams = struct {
+    wave_num_scalar: [2]F = .{ 6.0, 5.0 },
+    wave_num_rgb: [3]F = .{ 6.0, 6.0, 4.0 },
+    bias: F = 0.5,
+    amplitudes: [2]F = .{ 0.25, 0.2 },
+    bias_rgb: [3]F = .{ 0.5, 0.5, 0.5 },
+    amplitudes_rgb: [3]F = .{ 0.25, 0.25, 0.2 },
+};
+
+pub const CheckerParams = struct {
+    levels: [2]F = .{ 0.0, 1.0 },
+};
+
+pub const CheckerSmoothParams = struct {
+    frequency: F = 8.0,
+};
+
+pub const LambertianParams = struct {
+    coeffs: [2]F = .{ 0.5, 0.5 },
+    coeffs_rgb: [3][2]F = .{
+        .{ 0.5, 0.5 },
+        .{ 0.375, 0.375 },
+        .{ 0.25, 0.25 },
+    },
+};
+
+pub const EggboxParams = struct {
+    mean: F = 0.5,
+    contrast: F = 0.4,
+    pitch: [2]F = .{ 1.0, 1.0 },
+    phase: [2]F = .{ 0.0, 0.0 },
 };
 
 pub const FuncShaderParams = struct {
@@ -47,13 +105,17 @@ pub const FuncShaderParams = struct {
     coord_offset: [2]F = .{ 0.0, 0.0 },
     output_scale: F = 1.0,
     output_offset: F = 0.0,
-    wave_num_scalar: [2]F = .{ 6.0, 5.0 },
-    wave_num_rgb: [3]F = .{ 6.0, 6.0, 4.0 },
-    eggbox_mean: F = 0.5,
-    eggbox_contrast: F = 0.4,
-    eggbox_pitch: [2]F = .{ 1.0, 1.0 },
-    eggbox_phase: [2]F = .{ 0.0, 0.0 },
-    extra: [4]F = .{ 0.0, 0.0, 0.0, 0.0 },
+    settings: union(FuncShaderBuiltin) {
+        constant: ConstantParams,
+        linear: LinearParams,
+        quadratic: QuadraticParams,
+        sinusoidal: SinusoidalParams,
+        sinusoidal_approx: SinusoidalParams,
+        checker: CheckerParams,
+        checker_smooth: CheckerSmoothParams,
+        lambertian_normal_z: LambertianParams,
+        eggbox: EggboxParams,
+    } = .{ .constant = .{} },
 };
 
 pub const FuncCoordSIMD = struct {
@@ -390,6 +452,16 @@ inline fn applyFuncShaderOutputParamsSIMD(
         @as(VecSF, @splat(params.output_offset));
 }
 
+inline fn sinApproxScalar(val: F) F {
+    const vals: [1]F = maths_simd.sinApproxSIMD(1, F, .{val});
+    return vals[0];
+}
+
+inline fn cosApproxScalar(val: F) F {
+    const vals: [1]F = maths_simd.cosApproxSIMD(1, F, .{val});
+    return vals[0];
+}
+
 pub inline fn evalFuncShaderBuiltinScalar(
     builtin: FuncShaderBuiltin,
     coord: FuncCoord,
@@ -397,43 +469,99 @@ pub inline fn evalFuncShaderBuiltinScalar(
 ) F {
     const eval_coord = applyFuncShaderCoordParams(coord, params);
     const value = switch (builtin) {
-        .constant => 0.5,
-        .linear => 0.5 + 0.25 * eval_coord.coord_0 + 0.2 * eval_coord.coord_1,
-        .quadratic => 0.35 +
-            0.2 * eval_coord.coord_0 +
-            0.15 * eval_coord.coord_1 +
-            0.1 * eval_coord.coord_0 * eval_coord.coord_0 -
-            0.08 * eval_coord.coord_0 * eval_coord.coord_1 +
-            0.06 * eval_coord.coord_1 * eval_coord.coord_1,
-        .sinusoidal => 0.5 +
-            0.25 * @sin(params.wave_num_scalar[0] * eval_coord.coord_0) +
-            0.2 * @cos(params.wave_num_scalar[1] * eval_coord.coord_1),
+        .constant => blk: {
+            const p = if (params.settings == .constant)
+                params.settings.constant
+            else
+                ConstantParams{};
+            break :blk p.value;
+        },
+        .linear => blk: {
+            const p = if (params.settings == .linear)
+                params.settings.linear
+            else
+                LinearParams{};
+            break :blk p.coeffs[0] +
+                p.coeffs[1] * eval_coord.coord_0 +
+                p.coeffs[2] * eval_coord.coord_1;
+        },
+        .quadratic => blk: {
+            const p = if (params.settings == .quadratic)
+                params.settings.quadratic
+            else
+                QuadraticParams{};
+            const coord_u = eval_coord.coord_0;
+            const coord_v = eval_coord.coord_1;
+            const c = p.coeffs;
+            const term_u = coord_u * (c[1] + c[3] * coord_u);
+            const term_v = coord_v * (c[2] + c[4] * coord_u + c[5] * coord_v);
+            break :blk c[0] + term_u + term_v;
+        },
+        .sinusoidal => blk: {
+            const p = if (params.settings == .sinusoidal)
+                params.settings.sinusoidal
+            else
+                SinusoidalParams{};
+            break :blk p.bias +
+                p.amplitudes[0] * @sin(p.wave_num_scalar[0] * eval_coord.coord_0) +
+                p.amplitudes[1] * @cos(p.wave_num_scalar[1] * eval_coord.coord_1);
+        },
+        .sinusoidal_approx => blk: {
+            const p = if (params.settings == .sinusoidal_approx)
+                params.settings.sinusoidal_approx
+            else
+                SinusoidalParams{};
+            break :blk p.bias +
+                p.amplitudes[0] *
+                    sinApproxScalar(p.wave_num_scalar[0] * eval_coord.coord_0) +
+                p.amplitudes[1] *
+                    cosApproxScalar(p.wave_num_scalar[1] * eval_coord.coord_1);
+        },
         .checker => blk: {
+            const p = if (params.settings == .checker)
+                params.settings.checker
+            else
+                CheckerParams{};
             const cell_x: i64 = @intFromFloat(@floor(eval_coord.coord_0));
             const cell_y: i64 = @intFromFloat(@floor(eval_coord.coord_1));
             break :blk if (@mod(cell_x + cell_y, 2) == 0)
-                @as(F, 0.0)
+                p.levels[0]
             else
-                @as(F, 1.0);
+                p.levels[1];
         },
         .checker_smooth => blk: {
-            const phase_x = 0.5 + 0.5 * @sin(8.0 * std.math.pi * eval_coord.coord_0);
-            const phase_y = 0.5 + 0.5 * @sin(8.0 * std.math.pi * eval_coord.coord_1);
+            const p = if (params.settings == .checker_smooth)
+                params.settings.checker_smooth
+            else
+                CheckerSmoothParams{};
+            const phase_x = 0.5 + 0.5 * @sin(
+                p.frequency * std.math.pi * eval_coord.coord_0,
+            );
+            const phase_y = 0.5 + 0.5 * @sin(
+                p.frequency * std.math.pi * eval_coord.coord_1,
+            );
             const prod = phase_x * phase_y;
             break :blk cubicSmoothStep(prod);
         },
-        .lambertian_normal_z => 0.5 + 0.5 * eval_coord.normal_z,
+        .lambertian_normal_z => blk: {
+            const p = if (params.settings == .lambertian_normal_z)
+                params.settings.lambertian_normal_z
+            else
+                LambertianParams{};
+            break :blk p.coeffs[0] + p.coeffs[1] * eval_coord.normal_z;
+        },
         .eggbox => blk: {
+            const p = if (params.settings == .eggbox)
+                params.settings.eggbox
+            else
+                EggboxParams{};
             const phase_x = 2.0 * std.math.pi *
-                (eval_coord.coord_0 + params.eggbox_phase[0]) /
-                params.eggbox_pitch[0];
+                (eval_coord.coord_0 + p.phase[0]) / p.pitch[0];
             const phase_y = 2.0 * std.math.pi *
-                (eval_coord.coord_1 + params.eggbox_phase[1]) /
-                params.eggbox_pitch[1];
-            break :blk params.eggbox_mean +
-                0.5 * params.eggbox_contrast * (1.0 + @cos(phase_x)) *
-                    (1.0 + @cos(phase_y)) -
-                params.eggbox_contrast;
+                (eval_coord.coord_1 + p.phase[1]) / p.pitch[1];
+            break :blk p.mean +
+                0.5 * p.contrast * (1.0 + @cos(phase_x)) * (1.0 + @cos(phase_y)) -
+                p.contrast;
         },
     };
     return applyFuncShaderOutputParams(value, params);
@@ -446,34 +574,97 @@ pub inline fn evalFuncShaderBuiltinRgb(
 ) [3]F {
     const eval_coord = applyFuncShaderCoordParams(coord, params);
     const values = switch (builtin) {
-        .constant => .{ 0.2, 0.5, 0.8 },
-        .linear => .{
-            0.5 + 0.25 * eval_coord.coord_0,
-            0.5 + 0.25 * eval_coord.coord_1,
-            0.5 + 0.15 * eval_coord.coord_0 - 0.15 * eval_coord.coord_1,
+        .constant => blk: {
+            const p = if (params.settings == .constant)
+                params.settings.constant
+            else
+                ConstantParams{};
+            break :blk p.value_rgb;
         },
-        .quadratic => .{
-            0.3 + 0.2 * eval_coord.coord_0 * eval_coord.coord_0,
-            0.3 + 0.2 * eval_coord.coord_1 * eval_coord.coord_1,
-            0.3 + 0.12 * eval_coord.coord_0 * eval_coord.coord_1,
+        .linear => blk: {
+            const p = if (params.settings == .linear)
+                params.settings.linear
+            else
+                LinearParams{};
+            const c = p.coeffs_rgb;
+            break :blk .{
+                c[0][0] + c[0][1] * eval_coord.coord_0 + c[0][2] * eval_coord.coord_1,
+                c[1][0] + c[1][1] * eval_coord.coord_0 + c[1][2] * eval_coord.coord_1,
+                c[2][0] + c[2][1] * eval_coord.coord_0 + c[2][2] * eval_coord.coord_1,
+            };
         },
-        .sinusoidal => .{
-            0.5 + 0.25 * @sin(params.wave_num_rgb[0] * eval_coord.coord_0),
-            0.5 + 0.25 * @cos(params.wave_num_rgb[1] * eval_coord.coord_1),
-            0.5 + 0.2 * @sin(params.wave_num_rgb[2] * (eval_coord.coord_0 + eval_coord.coord_1)),
+        .quadratic => blk: {
+            const p = if (params.settings == .quadratic)
+                params.settings.quadratic
+            else
+                QuadraticParams{};
+            const coord_u = eval_coord.coord_0;
+            const coord_v = eval_coord.coord_1;
+            const c = p.coeffs_rgb;
+            
+            const val_r = c[0][0] + coord_u * (c[0][1] + c[0][3] * coord_u) +
+                coord_v * (c[0][2] + c[0][4] * coord_u + c[0][5] * coord_v);
+            const val_g = c[1][0] + coord_u * (c[1][1] + c[1][3] * coord_u) +
+                coord_v * (c[1][2] + c[1][4] * coord_u + c[1][5] * coord_v);
+            const val_b = c[2][0] + coord_u * (c[2][1] + c[2][3] * coord_u) +
+                coord_v * (c[2][2] + c[2][4] * coord_u + c[2][5] * coord_v);
+            break :blk .{ val_r, val_g, val_b };
+        },
+        .sinusoidal => blk: {
+            const p = if (params.settings == .sinusoidal)
+                params.settings.sinusoidal
+            else
+                SinusoidalParams{};
+            break :blk .{
+                p.bias_rgb[0] + p.amplitudes_rgb[0] *
+                    @sin(p.wave_num_rgb[0] * eval_coord.coord_0),
+                p.bias_rgb[1] + p.amplitudes_rgb[1] *
+                    @cos(p.wave_num_rgb[1] * eval_coord.coord_1),
+                p.bias_rgb[2] + p.amplitudes_rgb[2] *
+                    @sin(p.wave_num_rgb[2] * (eval_coord.coord_0 + eval_coord.coord_1)),
+            };
+        },
+        .sinusoidal_approx => blk: {
+            const p = if (params.settings == .sinusoidal_approx)
+                params.settings.sinusoidal_approx
+            else
+                SinusoidalParams{};
+            break :blk .{
+                p.bias_rgb[0] + p.amplitudes_rgb[0] *
+                    sinApproxScalar(p.wave_num_rgb[0] * eval_coord.coord_0),
+                p.bias_rgb[1] + p.amplitudes_rgb[1] *
+                    cosApproxScalar(p.wave_num_rgb[1] * eval_coord.coord_1),
+                p.bias_rgb[2] + p.amplitudes_rgb[2] *
+                    sinApproxScalar(
+                        p.wave_num_rgb[2] *
+                            (eval_coord.coord_0 + eval_coord.coord_1),
+                    ),
+            };
         },
         .checker => blk: {
+            const p = if (params.settings == .checker)
+                params.settings.checker
+            else
+                CheckerParams{};
             const cell_x: i64 = @intFromFloat(@floor(eval_coord.coord_0));
             const cell_y: i64 = @intFromFloat(@floor(eval_coord.coord_1));
             const value = if (@mod(cell_x + cell_y, 2) == 0)
-                @as(F, 0.0)
+                p.levels[0]
             else
-                @as(F, 1.0);
+                p.levels[1];
             break :blk .{ value, value, value };
         },
         .checker_smooth => blk: {
-            const phase_x = 0.5 + 0.5 * @sin(8.0 * std.math.pi * eval_coord.coord_0);
-            const phase_y = 0.5 + 0.5 * @sin(8.0 * std.math.pi * eval_coord.coord_1);
+            const p = if (params.settings == .checker_smooth)
+                params.settings.checker_smooth
+            else
+                CheckerSmoothParams{};
+            const phase_x = 0.5 + 0.5 * @sin(
+                p.frequency * std.math.pi * eval_coord.coord_0,
+            );
+            const phase_y = 0.5 + 0.5 * @sin(
+                p.frequency * std.math.pi * eval_coord.coord_1,
+            );
             const base = cubicSmoothStep(phase_x * phase_y);
             break :blk .{
                 base,
@@ -482,24 +673,28 @@ pub inline fn evalFuncShaderBuiltinRgb(
             };
         },
         .lambertian_normal_z => blk: {
-            const lambert = 0.5 + 0.5 * eval_coord.normal_z;
+            const p = if (params.settings == .lambertian_normal_z)
+                params.settings.lambertian_normal_z
+            else
+                LambertianParams{};
             break :blk .{
-                lambert,
-                0.75 * lambert,
-                0.5 * lambert,
+                p.coeffs_rgb[0][0] + p.coeffs_rgb[0][1] * eval_coord.normal_z,
+                p.coeffs_rgb[1][0] + p.coeffs_rgb[1][1] * eval_coord.normal_z,
+                p.coeffs_rgb[2][0] + p.coeffs_rgb[2][1] * eval_coord.normal_z,
             };
         },
         .eggbox => blk: {
+            const p = if (params.settings == .eggbox)
+                params.settings.eggbox
+            else
+                EggboxParams{};
             const phase_x = 2.0 * std.math.pi *
-                (eval_coord.coord_0 + params.eggbox_phase[0]) /
-                params.eggbox_pitch[0];
+                (eval_coord.coord_0 + p.phase[0]) / p.pitch[0];
             const phase_y = 2.0 * std.math.pi *
-                (eval_coord.coord_1 + params.eggbox_phase[1]) /
-                params.eggbox_pitch[1];
-            const value = params.eggbox_mean +
-                0.5 * params.eggbox_contrast * (1.0 + @cos(phase_x)) *
-                    (1.0 + @cos(phase_y)) -
-                params.eggbox_contrast;
+                (eval_coord.coord_1 + p.phase[1]) / p.pitch[1];
+            const value = p.mean +
+                0.5 * p.contrast * (1.0 + @cos(phase_x)) * (1.0 + @cos(phase_y)) -
+                p.contrast;
             break :blk .{ value, value, value };
         },
     };
@@ -517,24 +712,80 @@ pub inline fn evalFuncShaderBuiltinScalarSIMD(
 ) VecSF {
     const eval_coord = applyFuncShaderCoordParamsSIMD(coord, params);
     const v_value = switch (builtin) {
-        .constant => @as(VecSF, @splat(0.5)),
-        .linear => @as(VecSF, @splat(0.5)) +
-            @as(VecSF, @splat(0.25)) * eval_coord.coord_0 +
-            @as(VecSF, @splat(0.2)) * eval_coord.coord_1,
-        .quadratic => @as(VecSF, @splat(0.35)) +
-            @as(VecSF, @splat(0.2)) * eval_coord.coord_0 +
-            @as(VecSF, @splat(0.15)) * eval_coord.coord_1 +
-            @as(VecSF, @splat(0.1)) * eval_coord.coord_0 * eval_coord.coord_0 -
-            @as(VecSF, @splat(0.08)) * eval_coord.coord_0 * eval_coord.coord_1 +
-            @as(VecSF, @splat(0.06)) * eval_coord.coord_1 * eval_coord.coord_1,
-        .sinusoidal => @as(VecSF, @splat(0.5)) +
-            @as(VecSF, @splat(0.25)) *
-                @sin(@as(VecSF, @splat(params.wave_num_scalar[0])) *
-                    eval_coord.coord_0) +
-            @as(VecSF, @splat(0.2)) *
-                @cos(@as(VecSF, @splat(params.wave_num_scalar[1])) *
-                    eval_coord.coord_1),
+        .constant => blk: {
+            const p = if (params.settings == .constant)
+                params.settings.constant
+            else
+                ConstantParams{};
+            break :blk @as(VecSF, @splat(p.value));
+        },
+        .linear => blk: {
+            const p = if (params.settings == .linear)
+                params.settings.linear
+            else
+                LinearParams{};
+            break :blk @as(VecSF, @splat(p.coeffs[0])) +
+                @as(VecSF, @splat(p.coeffs[1])) * eval_coord.coord_0 +
+                @as(VecSF, @splat(p.coeffs[2])) * eval_coord.coord_1;
+        },
+        .quadratic => blk: {
+            const p = if (params.settings == .quadratic)
+                params.settings.quadratic
+            else
+                QuadraticParams{};
+            const coord_u = eval_coord.coord_0;
+            const coord_v = eval_coord.coord_1;
+            const c = p.coeffs;
+            const term_u = coord_u * (
+                @as(VecSF, @splat(c[1])) +
+                @as(VecSF, @splat(c[3])) * coord_u
+            );
+            const term_v = coord_v * (
+                @as(VecSF, @splat(c[2])) +
+                @as(VecSF, @splat(c[4])) * coord_u +
+                @as(VecSF, @splat(c[5])) * coord_v
+            );
+            break :blk @as(VecSF, @splat(c[0])) + term_u + term_v;
+        },
+        .sinusoidal => blk: {
+            const p = if (params.settings == .sinusoidal)
+                params.settings.sinusoidal
+            else
+                SinusoidalParams{};
+            break :blk @as(VecSF, @splat(p.bias)) +
+                @as(VecSF, @splat(p.amplitudes[0])) *
+                    @sin(@as(VecSF, @splat(p.wave_num_scalar[0])) *
+                        eval_coord.coord_0) +
+                @as(VecSF, @splat(p.amplitudes[1])) *
+                    @cos(@as(VecSF, @splat(p.wave_num_scalar[1])) *
+                        eval_coord.coord_1);
+        },
+        .sinusoidal_approx => blk: {
+            const p = if (params.settings == .sinusoidal_approx)
+                params.settings.sinusoidal_approx
+            else
+                SinusoidalParams{};
+            break :blk @as(VecSF, @splat(p.bias)) +
+                @as(VecSF, @splat(p.amplitudes[0])) *
+                    maths_simd.sinApproxSIMD(
+                        buildconfig.SimdWidth,
+                        F,
+                        @as(VecSF, @splat(p.wave_num_scalar[0])) *
+                            eval_coord.coord_0,
+                    ) +
+                @as(VecSF, @splat(p.amplitudes[1])) *
+                    maths_simd.cosApproxSIMD(
+                        buildconfig.SimdWidth,
+                        F,
+                        @as(VecSF, @splat(p.wave_num_scalar[1])) *
+                            eval_coord.coord_1,
+                    );
+        },
         .checker => blk: {
+            const p = if (params.settings == .checker)
+                params.settings.checker
+            else
+                CheckerParams{};
             const v_cell_x: VecSI = @intFromFloat(@floor(eval_coord.coord_0));
             const v_cell_y: VecSI = @intFromFloat(@floor(eval_coord.coord_1));
             const v_parity = @mod(
@@ -544,41 +795,55 @@ pub inline fn evalFuncShaderBuiltinScalarSIMD(
             break :blk @select(
                 F,
                 @as(VecSB, v_parity),
-                @as(VecSF, @splat(0.0)),
-                @as(VecSF, @splat(1.0)),
+                @as(VecSF, @splat(p.levels[0])),
+                @as(VecSF, @splat(p.levels[1])),
             );
         },
         .checker_smooth => blk: {
+            const p = if (params.settings == .checker_smooth)
+                params.settings.checker_smooth
+            else
+                CheckerSmoothParams{};
             const v_phase_x = @as(VecSF, @splat(0.5)) +
                 @as(VecSF, @splat(0.5)) *
                     @sin(
-                        @as(VecSF, @splat(8.0 * std.math.pi)) *
+                        @as(VecSF, @splat(p.frequency * std.math.pi)) *
                             eval_coord.coord_0,
                     );
             const v_phase_y = @as(VecSF, @splat(0.5)) +
                 @as(VecSF, @splat(0.5)) *
                     @sin(
-                        @as(VecSF, @splat(8.0 * std.math.pi)) *
+                        @as(VecSF, @splat(p.frequency * std.math.pi)) *
                             eval_coord.coord_1,
                     );
             break :blk cubicSmoothStepSIMD(v_phase_x * v_phase_y);
         },
-        .lambertian_normal_z => @as(VecSF, @splat(0.5)) +
-            @as(VecSF, @splat(0.5)) * eval_coord.normal_z,
+        .lambertian_normal_z => blk: {
+            const p = if (params.settings == .lambertian_normal_z)
+                params.settings.lambertian_normal_z
+            else
+                LambertianParams{};
+            break :blk @as(VecSF, @splat(p.coeffs[0])) +
+                @as(VecSF, @splat(p.coeffs[1])) * eval_coord.normal_z;
+        },
         .eggbox => blk: {
+            const p = if (params.settings == .eggbox)
+                params.settings.eggbox
+            else
+                EggboxParams{};
             const v_phase_x = @as(VecSF, @splat(2.0 * std.math.pi)) *
                 (eval_coord.coord_0 +
-                    @as(VecSF, @splat(params.eggbox_phase[0]))) /
-                @as(VecSF, @splat(params.eggbox_pitch[0]));
+                    @as(VecSF, @splat(p.phase[0]))) /
+                @as(VecSF, @splat(p.pitch[0]));
             const v_phase_y = @as(VecSF, @splat(2.0 * std.math.pi)) *
                 (eval_coord.coord_1 +
-                    @as(VecSF, @splat(params.eggbox_phase[1]))) /
-                @as(VecSF, @splat(params.eggbox_pitch[1]));
-            break :blk @as(VecSF, @splat(params.eggbox_mean)) +
-                @as(VecSF, @splat(0.5 * params.eggbox_contrast)) *
+                    @as(VecSF, @splat(p.phase[1]))) /
+                @as(VecSF, @splat(p.pitch[1]));
+            break :blk @as(VecSF, @splat(p.mean)) +
+                @as(VecSF, @splat(0.5 * p.contrast)) *
                     (@as(VecSF, @splat(1.0)) + @cos(v_phase_x)) *
                     (@as(VecSF, @splat(1.0)) + @cos(v_phase_y)) -
-                @as(VecSF, @splat(params.eggbox_contrast));
+                @as(VecSF, @splat(p.contrast));
         },
     };
     return applyFuncShaderOutputParamsSIMD(v_value, params);
@@ -591,48 +856,135 @@ pub inline fn evalFuncShaderBuiltinRgbSIMD(
 ) [3]VecSF {
     const eval_coord = applyFuncShaderCoordParamsSIMD(coord, params);
     const v_values = switch (builtin) {
-        .constant => .{
-            @as(VecSF, @splat(0.2)),
-            @as(VecSF, @splat(0.5)),
-            @as(VecSF, @splat(0.8)),
+        .constant => blk: {
+            const p = if (params.settings == .constant)
+                params.settings.constant
+            else
+                ConstantParams{};
+            break :blk .{
+                @as(VecSF, @splat(p.value_rgb[0])),
+                @as(VecSF, @splat(p.value_rgb[1])),
+                @as(VecSF, @splat(p.value_rgb[2])),
+            };
         },
-        .linear => .{
-            @as(VecSF, @splat(0.5)) +
-                @as(VecSF, @splat(0.25)) * eval_coord.coord_0,
-            @as(VecSF, @splat(0.5)) +
-                @as(VecSF, @splat(0.25)) * eval_coord.coord_1,
-            @as(VecSF, @splat(0.5)) +
-                @as(VecSF, @splat(0.15)) * eval_coord.coord_0 -
-                @as(VecSF, @splat(0.15)) * eval_coord.coord_1,
+        .linear => blk: {
+            const p = if (params.settings == .linear)
+                params.settings.linear
+            else
+                LinearParams{};
+            const c = p.coeffs_rgb;
+            break :blk .{
+                @as(VecSF, @splat(c[0][0])) +
+                    @as(VecSF, @splat(c[0][1])) * eval_coord.coord_0 +
+                    @as(VecSF, @splat(c[0][2])) * eval_coord.coord_1,
+                @as(VecSF, @splat(c[1][0])) +
+                    @as(VecSF, @splat(c[1][1])) * eval_coord.coord_0 +
+                    @as(VecSF, @splat(c[1][2])) * eval_coord.coord_1,
+                @as(VecSF, @splat(c[2][0])) +
+                    @as(VecSF, @splat(c[2][1])) * eval_coord.coord_0 +
+                    @as(VecSF, @splat(c[2][2])) * eval_coord.coord_1,
+            };
         },
-        .quadratic => .{
-            @as(VecSF, @splat(0.3)) +
-                @as(VecSF, @splat(0.2)) * eval_coord.coord_0 *
-                    eval_coord.coord_0,
-            @as(VecSF, @splat(0.3)) +
-                @as(VecSF, @splat(0.2)) * eval_coord.coord_1 *
-                    eval_coord.coord_1,
-            @as(VecSF, @splat(0.3)) +
-                @as(VecSF, @splat(0.12)) * eval_coord.coord_0 *
-                    eval_coord.coord_1,
+        .quadratic => blk: {
+            const p = if (params.settings == .quadratic)
+                params.settings.quadratic
+            else
+                QuadraticParams{};
+            const coord_u = eval_coord.coord_0;
+            const coord_v = eval_coord.coord_1;
+            const c = p.coeffs_rgb;
+            
+            const val_r = @as(VecSF, @splat(c[0][0])) +
+                coord_u * (
+                    @as(VecSF, @splat(c[0][1])) +
+                    @as(VecSF, @splat(c[0][3])) * coord_u
+                ) +
+                coord_v * (
+                    @as(VecSF, @splat(c[0][2])) +
+                    @as(VecSF, @splat(c[0][4])) * coord_u +
+                    @as(VecSF, @splat(c[0][5])) * coord_v
+                );
+            const val_g = @as(VecSF, @splat(c[1][0])) +
+                coord_u * (
+                    @as(VecSF, @splat(c[1][1])) +
+                    @as(VecSF, @splat(c[1][3])) * coord_u
+                ) +
+                coord_v * (
+                    @as(VecSF, @splat(c[1][2])) +
+                    @as(VecSF, @splat(c[1][4])) * coord_u +
+                    @as(VecSF, @splat(c[1][5])) * coord_v
+                );
+            const val_b = @as(VecSF, @splat(c[2][0])) +
+                coord_u * (
+                    @as(VecSF, @splat(c[2][1])) +
+                    @as(VecSF, @splat(c[2][3])) * coord_u
+                ) +
+                coord_v * (
+                    @as(VecSF, @splat(c[2][2])) +
+                    @as(VecSF, @splat(c[2][4])) * coord_u +
+                    @as(VecSF, @splat(c[2][5])) * coord_v
+                );
+            break :blk .{ val_r, val_g, val_b };
         },
-        .sinusoidal => .{
-            @as(VecSF, @splat(0.5)) +
-                @as(VecSF, @splat(0.25)) *
-                    @sin(@as(VecSF, @splat(params.wave_num_rgb[0])) *
-                        eval_coord.coord_0),
-            @as(VecSF, @splat(0.5)) +
-                @as(VecSF, @splat(0.25)) *
-                    @cos(@as(VecSF, @splat(params.wave_num_rgb[1])) *
-                        eval_coord.coord_1),
-            @as(VecSF, @splat(0.5)) +
-                @as(VecSF, @splat(0.2)) *
-                    @sin(
-                        @as(VecSF, @splat(params.wave_num_rgb[2])) *
-                            (eval_coord.coord_0 + eval_coord.coord_1),
-                    ),
+        .sinusoidal => blk: {
+            const p = if (params.settings == .sinusoidal)
+                params.settings.sinusoidal
+            else
+                SinusoidalParams{};
+            break :blk .{
+                @as(VecSF, @splat(p.bias_rgb[0])) +
+                    @as(VecSF, @splat(p.amplitudes_rgb[0])) *
+                        @sin(@as(VecSF, @splat(p.wave_num_rgb[0])) *
+                            eval_coord.coord_0),
+                @as(VecSF, @splat(p.bias_rgb[1])) +
+                    @as(VecSF, @splat(p.amplitudes_rgb[1])) *
+                        @cos(@as(VecSF, @splat(p.wave_num_rgb[1])) *
+                            eval_coord.coord_1),
+                @as(VecSF, @splat(p.bias_rgb[2])) +
+                    @as(VecSF, @splat(p.amplitudes_rgb[2])) *
+                        @sin(
+                            @as(VecSF, @splat(p.wave_num_rgb[2])) *
+                                (eval_coord.coord_0 + eval_coord.coord_1),
+                        ),
+            };
+        },
+        .sinusoidal_approx => blk: {
+            const p = if (params.settings == .sinusoidal_approx)
+                params.settings.sinusoidal_approx
+            else
+                SinusoidalParams{};
+            break :blk .{
+                @as(VecSF, @splat(p.bias_rgb[0])) +
+                    @as(VecSF, @splat(p.amplitudes_rgb[0])) *
+                        maths_simd.sinApproxSIMD(
+                            buildconfig.SimdWidth,
+                            F,
+                            @as(VecSF, @splat(p.wave_num_rgb[0])) *
+                                eval_coord.coord_0,
+                        ),
+                @as(VecSF, @splat(p.bias_rgb[1])) +
+                    @as(VecSF, @splat(p.amplitudes_rgb[1])) *
+                        maths_simd.cosApproxSIMD(
+                            buildconfig.SimdWidth,
+                            F,
+                            @as(VecSF, @splat(p.wave_num_rgb[1])) *
+                                eval_coord.coord_1,
+                        ),
+                @as(VecSF, @splat(p.bias_rgb[2])) +
+                    @as(VecSF, @splat(p.amplitudes_rgb[2])) *
+                        maths_simd.sinApproxSIMD(
+                            buildconfig.SimdWidth,
+                            F,
+                            @as(VecSF, @splat(p.wave_num_rgb[2])) *
+                                (eval_coord.coord_0 + eval_coord.coord_1),
+                        ),
+            };
         },
         .checker => blk: {
+            const p = if (params.settings == .checker)
+                params.settings.checker
+            else
+                CheckerParams{};
             const v_cell_x: VecSI = @intFromFloat(@floor(eval_coord.coord_0));
             const v_cell_y: VecSI = @intFromFloat(@floor(eval_coord.coord_1));
             const v_parity = @mod(
@@ -642,22 +994,26 @@ pub inline fn evalFuncShaderBuiltinRgbSIMD(
             const v_value = @select(
                 F,
                 @as(VecSB, v_parity),
-                @as(VecSF, @splat(0.0)),
-                @as(VecSF, @splat(1.0)),
+                @as(VecSF, @splat(p.levels[0])),
+                @as(VecSF, @splat(p.levels[1])),
             );
             break :blk .{ v_value, v_value, v_value };
         },
         .checker_smooth => blk: {
+            const p = if (params.settings == .checker_smooth)
+                params.settings.checker_smooth
+            else
+                CheckerSmoothParams{};
             const v_phase_x = @as(VecSF, @splat(0.5)) +
                 @as(VecSF, @splat(0.5)) *
                     @sin(
-                        @as(VecSF, @splat(8.0 * std.math.pi)) *
+                        @as(VecSF, @splat(p.frequency * std.math.pi)) *
                             eval_coord.coord_0,
                     );
             const v_phase_y = @as(VecSF, @splat(0.5)) +
                 @as(VecSF, @splat(0.5)) *
                     @sin(
-                        @as(VecSF, @splat(8.0 * std.math.pi)) *
+                        @as(VecSF, @splat(p.frequency * std.math.pi)) *
                             eval_coord.coord_1,
                     );
             const v_base = cubicSmoothStepSIMD(v_phase_x * v_phase_y);
@@ -670,28 +1026,37 @@ pub inline fn evalFuncShaderBuiltinRgbSIMD(
             };
         },
         .lambertian_normal_z => blk: {
-            const v_lambert = @as(VecSF, @splat(0.5)) +
-                @as(VecSF, @splat(0.5)) * eval_coord.normal_z;
+            const p = if (params.settings == .lambertian_normal_z)
+                params.settings.lambertian_normal_z
+            else
+                LambertianParams{};
             break :blk .{
-                v_lambert,
-                @as(VecSF, @splat(0.75)) * v_lambert,
-                @as(VecSF, @splat(0.5)) * v_lambert,
+                @as(VecSF, @splat(p.coeffs_rgb[0][0])) +
+                    @as(VecSF, @splat(p.coeffs_rgb[0][1])) * eval_coord.normal_z,
+                @as(VecSF, @splat(p.coeffs_rgb[1][0])) +
+                    @as(VecSF, @splat(p.coeffs_rgb[1][1])) * eval_coord.normal_z,
+                @as(VecSF, @splat(p.coeffs_rgb[2][0])) +
+                    @as(VecSF, @splat(p.coeffs_rgb[2][1])) * eval_coord.normal_z,
             };
         },
         .eggbox => blk: {
+            const p = if (params.settings == .eggbox)
+                params.settings.eggbox
+            else
+                EggboxParams{};
             const v_phase_x = @as(VecSF, @splat(2.0 * std.math.pi)) *
                 (eval_coord.coord_0 +
-                    @as(VecSF, @splat(params.eggbox_phase[0]))) /
-                @as(VecSF, @splat(params.eggbox_pitch[0]));
+                    @as(VecSF, @splat(p.phase[0]))) /
+                @as(VecSF, @splat(p.pitch[0]));
             const v_phase_y = @as(VecSF, @splat(2.0 * std.math.pi)) *
                 (eval_coord.coord_1 +
-                    @as(VecSF, @splat(params.eggbox_phase[1]))) /
-                @as(VecSF, @splat(params.eggbox_pitch[1]));
-            const v_value = @as(VecSF, @splat(params.eggbox_mean)) +
-                @as(VecSF, @splat(0.5 * params.eggbox_contrast)) *
+                    @as(VecSF, @splat(p.phase[1]))) /
+                @as(VecSF, @splat(p.pitch[1]));
+            const v_value = @as(VecSF, @splat(p.mean)) +
+                @as(VecSF, @splat(0.5 * p.contrast)) *
                     (@as(VecSF, @splat(1.0)) + @cos(v_phase_x)) *
                     (@as(VecSF, @splat(1.0)) + @cos(v_phase_y)) -
-                @as(VecSF, @splat(params.eggbox_contrast));
+                @as(VecSF, @splat(p.contrast));
             break :blk .{ v_value, v_value, v_value };
         },
     };
@@ -1013,9 +1378,13 @@ test "eggbox reaches mean plus contrast at cell center" {
         .normal_z = 1.0,
     };
     const params = FuncShaderParams{
-        .eggbox_mean = 0.5,
-        .eggbox_contrast = 0.4,
-        .eggbox_pitch = .{ 1.0, 1.0 },
+        .settings = .{
+            .eggbox = .{
+                .mean = 0.5,
+                .contrast = 0.4,
+                .pitch = .{ 1.0, 1.0 },
+            },
+        },
     };
     const value = evalFuncShaderBuiltinScalar(.eggbox, coord, params);
     try testing.expectApproxEqAbs(@as(F, 0.9), value, unit_tol);
@@ -1030,9 +1399,13 @@ test "eggbox reaches mean minus contrast on grid line" {
         .normal_z = 1.0,
     };
     const params = FuncShaderParams{
-        .eggbox_mean = 0.5,
-        .eggbox_contrast = 0.4,
-        .eggbox_pitch = .{ 1.0, 1.0 },
+        .settings = .{
+            .eggbox = .{
+                .mean = 0.5,
+                .contrast = 0.4,
+                .pitch = .{ 1.0, 1.0 },
+            },
+        },
     };
     const value = evalFuncShaderBuiltinScalar(.eggbox, coord, params);
     try testing.expectApproxEqAbs(@as(F, 0.1), value, unit_tol);
@@ -1106,12 +1479,6 @@ test "SIMD func builtin matches scalar builtin per lane" {
         .coord_offset = .{ -0.1, 0.3 },
         .output_scale = 1.25,
         .output_offset = -0.05,
-        .wave_num_scalar = .{ 5.0, 7.0 },
-        .wave_num_rgb = .{ 4.0, 6.0, 3.0 },
-        .eggbox_mean = 0.45,
-        .eggbox_contrast = 0.3,
-        .eggbox_pitch = .{ 0.9, 1.1 },
-        .eggbox_phase = .{ 0.2, -0.15 },
     };
 
     const scalar_builtins = [_]FuncShaderBuiltin{
@@ -1119,6 +1486,7 @@ test "SIMD func builtin matches scalar builtin per lane" {
         .linear,
         .quadratic,
         .sinusoidal,
+        .sinusoidal_approx,
         .checker,
         .checker_smooth,
         .lambertian_normal_z,

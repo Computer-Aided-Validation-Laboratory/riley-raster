@@ -556,6 +556,8 @@ fn funcShaderBuiltinFromC(
         @intFromEnum(shaderops.FuncShaderBuiltin.linear) => .linear,
         @intFromEnum(shaderops.FuncShaderBuiltin.quadratic) => .quadratic,
         @intFromEnum(shaderops.FuncShaderBuiltin.sinusoidal) => .sinusoidal,
+        @intFromEnum(shaderops.FuncShaderBuiltin.sinusoidal_approx) =>
+            .sinusoidal_approx,
         @intFromEnum(shaderops.FuncShaderBuiltin.checker) => .checker,
         @intFromEnum(shaderops.FuncShaderBuiltin.checker_smooth) => .checker_smooth,
         @intFromEnum(lambertian) => .lambertian_normal_z,
@@ -586,6 +588,7 @@ fn normalTypeFromC(normal_type: u32) !shaderops.NormalType {
 }
 
 fn funcShaderParamsFromC(
+    builtin: shaderops.FuncShaderBuiltin,
     in_params: CFuncShaderParams,
 ) shaderops.FuncShaderParams {
     return .{
@@ -599,30 +602,67 @@ fn funcShaderParamsFromC(
         },
         .output_scale = in_params.output_scale,
         .output_offset = in_params.output_offset,
-        .wave_num_scalar = .{
-            in_params.wave_num_scalar_0,
-            in_params.wave_num_scalar_1,
-        },
-        .wave_num_rgb = .{
-            in_params.wave_num_rgb_0,
-            in_params.wave_num_rgb_1,
-            in_params.wave_num_rgb_2,
-        },
-        .eggbox_mean = in_params.eggbox_mean,
-        .eggbox_contrast = in_params.eggbox_contrast,
-        .eggbox_pitch = .{
-            in_params.eggbox_pitch_0,
-            in_params.eggbox_pitch_1,
-        },
-        .eggbox_phase = .{
-            in_params.eggbox_phase_0,
-            in_params.eggbox_phase_1,
-        },
-        .extra = .{
-            in_params.extra_0,
-            in_params.extra_1,
-            in_params.extra_2,
-            in_params.extra_3,
+        .settings = switch (builtin) {
+            .constant => .{
+                .constant = .{
+                    .value = 0.5,
+                },
+            },
+            .linear => .{
+                .linear = .{},
+            },
+            .quadratic => .{
+                .quadratic = .{},
+            },
+            .sinusoidal => .{
+                .sinusoidal = .{
+                    .wave_num_scalar = .{
+                        in_params.wave_num_scalar_0,
+                        in_params.wave_num_scalar_1,
+                    },
+                    .wave_num_rgb = .{
+                        in_params.wave_num_rgb_0,
+                        in_params.wave_num_rgb_1,
+                        in_params.wave_num_rgb_2,
+                    },
+                },
+            },
+            .sinusoidal_approx => .{
+                .sinusoidal_approx = .{
+                    .wave_num_scalar = .{
+                        in_params.wave_num_scalar_0,
+                        in_params.wave_num_scalar_1,
+                    },
+                    .wave_num_rgb = .{
+                        in_params.wave_num_rgb_0,
+                        in_params.wave_num_rgb_1,
+                        in_params.wave_num_rgb_2,
+                    },
+                },
+            },
+            .checker => .{
+                .checker = .{},
+            },
+            .checker_smooth => .{
+                .checker_smooth = .{},
+            },
+            .lambertian_normal_z => .{
+                .lambertian_normal_z = .{},
+            },
+            .eggbox => .{
+                .eggbox = .{
+                    .mean = in_params.eggbox_mean,
+                    .contrast = in_params.eggbox_contrast,
+                    .pitch = .{
+                        in_params.eggbox_pitch_0,
+                        in_params.eggbox_pitch_1,
+                    },
+                    .phase = .{
+                        in_params.eggbox_phase_0,
+                        in_params.eggbox_phase_1,
+                    },
+                },
+            },
         },
     };
 }
@@ -1022,11 +1062,19 @@ fn buildMeshInput(
                 uvs_array.deinit(allocator);
             };
 
+            const builtin = try funcShaderBuiltinFromC(
+                in_mesh.func_shader_builtin,
+            );
             built.mesh_input.shader = .{ .func = .{
                 .uvs = uvs_array_opt,
-                .coord_mode = try funcCoordModeFromC(in_mesh.func_shader_coord_mode),
-                .builtin = try funcShaderBuiltinFromC(in_mesh.func_shader_builtin),
-                .params = funcShaderParamsFromC(in_mesh.func_shader_params),
+                .coord_mode = try funcCoordModeFromC(
+                    in_mesh.func_shader_coord_mode,
+                ),
+                .builtin = builtin,
+                .params = funcShaderParamsFromC(
+                    builtin,
+                    in_mesh.func_shader_params,
+                ),
                 .bits = bits,
                 .scaling = scaling,
                 .normal_type = normal_type,
@@ -1046,11 +1094,19 @@ fn buildMeshInput(
                 uvs_array.deinit(allocator);
             };
 
+            const builtin = try funcShaderBuiltinFromC(
+                in_mesh.func_shader_builtin,
+            );
             built.mesh_input.shader = .{ .func_rgb = .{
                 .uvs = uvs_array_opt,
-                .coord_mode = try funcCoordModeFromC(in_mesh.func_shader_coord_mode),
-                .builtin = try funcShaderBuiltinFromC(in_mesh.func_shader_builtin),
-                .params = funcShaderParamsFromC(in_mesh.func_shader_params),
+                .coord_mode = try funcCoordModeFromC(
+                    in_mesh.func_shader_coord_mode,
+                ),
+                .builtin = builtin,
+                .params = funcShaderParamsFromC(
+                    builtin,
+                    in_mesh.func_shader_params,
+                ),
                 .bits = bits,
                 .scaling = scaling,
                 .normal_type = normal_type,

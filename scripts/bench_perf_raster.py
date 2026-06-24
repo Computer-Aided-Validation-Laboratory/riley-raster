@@ -11,9 +11,9 @@ import time
 
 from perf_common import command_path, repo_root
 
-DEFAULT_OUT_ROOT = pathlib.Path("out") / "bench_stats_perf_tiltraster_ssaa2"
+DEFAULT_OUT_ROOT = pathlib.Path("out") / "bench_stats_perf"
 DEFAULT_IMAGE_OUT_DIR = (
-    pathlib.Path("out") / "bench_images_perf_tiltraster_ssaa2"
+    pathlib.Path("out") / "bench_images_perf"
 )
 DEFAULT_RUNS = 25
 DEFAULT_SUB_SAMPLE = 2
@@ -157,22 +157,39 @@ def build_experiment1_cases() -> list[dict[str, object]]:
 
 def build_experiment2_cases() -> list[dict[str, object]]:
     cases: list[dict[str, object]] = []
-    for mesh_subset in ("tri3", "tri3opt"):
-        for sub_sample in EXPERIMENT2_SUB_SAMPLES:
+    for sub_sample in EXPERIMENT2_SUB_SAMPLES:
+        cases.append(
+            {
+                "study_group": "experiment2",
+                "experiment": "llvmpipe_compare",
+                "case_name": (
+                    "tiltraster_llvmpipe_compare_"
+                    f"tri3_vs_tri3opt_f32_simd_v8_inner_ssaa{sub_sample}"
+                ),
+                "precision": "f32",
+                "interp": "inner",
+                "lanes": 8,
+                "texture_storage": "u8",
+                "shader_subset": "all",
+                "mesh_subset": "tri3_compare",
+                "sub_sample": sub_sample,
+            }
+        )
+        for interp in ("inner", "overpx"):
             cases.append(
                 {
                     "study_group": "experiment2",
-                    "experiment": "llvmpipe_compare",
+                    "experiment": "llvmpipe_compare_texture_interp",
                     "case_name": (
-                        "tiltraster_llvmpipe_compare_"
-                        f"{mesh_subset}_f32_simd_v8_inner_ssaa{sub_sample}"
+                        "tiltraster_llvmpipe_compare_texture_"
+                        f"tri3_vs_tri3opt_f32_simd_v8_{interp}_ssaa{sub_sample}"
                     ),
                     "precision": "f32",
-                    "interp": "inner",
+                    "interp": interp,
                     "lanes": 8,
                     "texture_storage": "u8",
-                    "shader_subset": "all",
-                    "mesh_subset": mesh_subset,
+                    "shader_subset": "texture",
+                    "mesh_subset": "tri3_compare",
                     "sub_sample": sub_sample,
                 }
             )
