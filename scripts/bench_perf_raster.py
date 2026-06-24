@@ -25,9 +25,14 @@ DEFAULT_MAX_RASTER_WORKERS_PER_JOB = 1
 DEFAULT_RENDER_GROUP_COUNT = 1
 DEFAULT_FRAME_BATCH_SIZE_PER_GROUP = 1
 DEFAULT_MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP = 1
+DEFAULT_EXPERIMENT1 = False
+DEFAULT_EXPERIMENT2 = True
+EXPERIMENT1_SUB_SAMPLES = [2]
+EXPERIMENT2_SUB_SAMPLES = [1, 2]
 
-STUDY_CASES: list[dict[str, object]] = [
+EXPERIMENT1_CASES_BASE: list[dict[str, object]] = [
     {
+        "study_group": "experiment1",
         "experiment": "precision",
         "case_name": "tiltraster_precision_f64_simd_v8_inner",
         "precision": "f64",
@@ -35,8 +40,10 @@ STUDY_CASES: list[dict[str, object]] = [
         "lanes": 8,
         "texture_storage": "u8",
         "shader_subset": "all",
+        "mesh_subset": "all",
     },
     {
+        "study_group": "experiment1",
         "experiment": "precision",
         "case_name": "tiltraster_precision_f64_simd_v4_inner",
         "precision": "f64",
@@ -44,8 +51,10 @@ STUDY_CASES: list[dict[str, object]] = [
         "lanes": 4,
         "texture_storage": "u8",
         "shader_subset": "all",
+        "mesh_subset": "all",
     },
     {
+        "study_group": "experiment1",
         "experiment": "precision",
         "case_name": "tiltraster_precision_f32_simd_v16_inner",
         "precision": "f32",
@@ -53,8 +62,10 @@ STUDY_CASES: list[dict[str, object]] = [
         "lanes": 16,
         "texture_storage": "u8",
         "shader_subset": "all",
+        "mesh_subset": "all",
     },
     {
+        "study_group": "experiment1",
         "experiment": "precision",
         "case_name": "tiltraster_precision_f32_simd_v8_inner",
         "precision": "f32",
@@ -62,8 +73,10 @@ STUDY_CASES: list[dict[str, object]] = [
         "lanes": 8,
         "texture_storage": "u8",
         "shader_subset": "all",
+        "mesh_subset": "all",
     },
     {
+        "study_group": "experiment1",
         "experiment": "interp",
         "case_name": "tiltraster_interp_f64_simd_overpx",
         "precision": "f64",
@@ -71,8 +84,10 @@ STUDY_CASES: list[dict[str, object]] = [
         "lanes": 8,
         "texture_storage": "u8",
         "shader_subset": "all",
+        "mesh_subset": "all",
     },
     {
+        "study_group": "experiment1",
         "experiment": "interp",
         "case_name": "tiltraster_interp_f32_simd_overpx",
         "precision": "f32",
@@ -80,8 +95,10 @@ STUDY_CASES: list[dict[str, object]] = [
         "lanes": 16,
         "texture_storage": "u8",
         "shader_subset": "all",
+        "mesh_subset": "all",
     },
     {
+        "study_group": "experiment1",
         "experiment": "texstore",
         "case_name": "tiltraster_texstore_u8",
         "precision": "f64",
@@ -89,8 +106,10 @@ STUDY_CASES: list[dict[str, object]] = [
         "lanes": 8,
         "texture_storage": "u8",
         "shader_subset": "texture",
+        "mesh_subset": "all",
     },
     {
+        "study_group": "experiment1",
         "experiment": "texstore",
         "case_name": "tiltraster_texstore_u16",
         "precision": "f64",
@@ -98,8 +117,10 @@ STUDY_CASES: list[dict[str, object]] = [
         "lanes": 8,
         "texture_storage": "u16",
         "shader_subset": "texture",
+        "mesh_subset": "all",
     },
     {
+        "study_group": "experiment1",
         "experiment": "distortion",
         "case_name": "tiltraster_distortion_brown_f64_simd_v8_inner",
         "precision": "f64",
@@ -107,9 +128,11 @@ STUDY_CASES: list[dict[str, object]] = [
         "lanes": 8,
         "texture_storage": "u8",
         "shader_subset": "all",
+        "mesh_subset": "all",
         "distortion": "brown",
     },
     {
+        "study_group": "experiment1",
         "experiment": "distortion",
         "case_name": "tiltraster_distortion_brownext_f64_simd_v8_inner",
         "precision": "f64",
@@ -117,9 +140,47 @@ STUDY_CASES: list[dict[str, object]] = [
         "lanes": 8,
         "texture_storage": "u8",
         "shader_subset": "all",
+        "mesh_subset": "all",
         "distortion": "brownext",
     },
 ]
+
+
+def build_experiment1_cases() -> list[dict[str, object]]:
+    cases: list[dict[str, object]] = []
+    for base_case in EXPERIMENT1_CASES_BASE:
+        for sub_sample in EXPERIMENT1_SUB_SAMPLES:
+            case = dict(base_case)
+            case["sub_sample"] = sub_sample
+            cases.append(case)
+    return cases
+
+def build_experiment2_cases() -> list[dict[str, object]]:
+    cases: list[dict[str, object]] = []
+    for mesh_subset in ("tri3", "tri3opt"):
+        for sub_sample in EXPERIMENT2_SUB_SAMPLES:
+            cases.append(
+                {
+                    "study_group": "experiment2",
+                    "experiment": "llvmpipe_compare",
+                    "case_name": (
+                        "tiltraster_llvmpipe_compare_"
+                        f"{mesh_subset}_f32_simd_v8_inner_ssaa{sub_sample}"
+                    ),
+                    "precision": "f32",
+                    "interp": "inner",
+                    "lanes": 8,
+                    "texture_storage": "u8",
+                    "shader_subset": "all",
+                    "mesh_subset": mesh_subset,
+                    "sub_sample": sub_sample,
+                }
+            )
+    return cases
+
+
+EXPERIMENT1_CASES = build_experiment1_cases()
+EXPERIMENT2_CASES = build_experiment2_cases()
 
 
 def build_run_root(out_root: pathlib.Path | None) -> pathlib.Path:
@@ -182,8 +243,9 @@ def write_experiment_meta(
         f"interp={case['interp']}",
         f"texture_storage={case['texture_storage']}",
         f"shader_subset={case['shader_subset']}",
+        f"mesh_subset={case['mesh_subset']}",
         f"lanes={case['lanes']}",
-        f"sub_sample={DEFAULT_SUB_SAMPLE}",
+        f"sub_sample={case.get('sub_sample', DEFAULT_SUB_SAMPLE)}",
         f"distortion={case.get('distortion', 'none')}",
         "command=" + " ".join(shlex.quote(part) for part in command),
     ]
@@ -229,6 +291,7 @@ def run_case(
     )
     case_with_binary = dict(case)
     case_with_binary["binary"] = binary_tag
+    sub_sample = int(case.get("sub_sample", DEFAULT_SUB_SAMPLE))
     command = [
         str(binary),
         "--out-dir",
@@ -250,11 +313,13 @@ def run_case(
         "--runs",
         str(runs),
         "--sub-sample",
-        str(DEFAULT_SUB_SAMPLE),
+        str(sub_sample),
         "--texture-storage",
         case["texture_storage"],
         "--shader-subset",
         case["shader_subset"],
+        "--mesh-subset",
+        case["mesh_subset"],
     ]
     if pixels_x is not None:
         command.extend(["--pixels-x", str(pixels_x)])
@@ -292,8 +357,26 @@ def main() -> int:
     parser.add_argument("--runs", type=int, default=DEFAULT_RUNS)
     parser.add_argument("--pixels-x", type=int, default=DEFAULT_PIXELS_X)
     parser.add_argument("--pixels-y", type=int, default=DEFAULT_PIXELS_Y)
+    parser.add_argument(
+        "--experiment1",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_EXPERIMENT1,
+    )
+    parser.add_argument(
+        "--experiment2",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_EXPERIMENT2,
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+
+    selected_cases: list[dict[str, object]] = []
+    if args.experiment1:
+        selected_cases.extend(EXPERIMENT1_CASES)
+    if args.experiment2:
+        selected_cases.extend(EXPERIMENT2_CASES)
+    if not selected_cases:
+        raise SystemExit("No experiments selected.")
 
     run_root = build_run_root(args.out_root)
     image_out_dir = default_image_out_dir()
@@ -303,7 +386,7 @@ def main() -> int:
     if not args.dry_run:
         run_root.mkdir(parents=True, exist_ok=True)
 
-    for case in STUDY_CASES:
+    for case in selected_cases:
         seconds = run_case(
             case,
             run_root,

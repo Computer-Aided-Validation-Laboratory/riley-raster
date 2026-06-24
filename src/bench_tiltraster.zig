@@ -262,6 +262,9 @@ fn runBenchmarksForTextureType(
     defer texture_rgb.deinit(outer_alloc);
 
     for (mesh_types) |mt| {
+        if (!shouldRunMeshType(bench_args.mesh_subset, mt)) {
+            continue;
+        }
         if (mt == .tri3opt and !cam.isNoDistortion(render_defaults.distortion)) {
             continue;
         }
@@ -456,6 +459,17 @@ fn runBenchmarksForTextureType(
     }
 }
 
+fn shouldRunMeshType(
+    mesh_subset: benchargs.MeshSubset,
+    mesh_type: gk.MeshType,
+) bool {
+    return switch (mesh_subset) {
+        .all => true,
+        .tri3 => mesh_type == .tri3,
+        .tri3opt => mesh_type == .tri3opt,
+    };
+}
+
 fn writeStudyMetadata(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -481,6 +495,9 @@ fn writeStudyMetadata(
     });
     try writer.print("shader_subset={s}\n", .{
         @tagName(bench_args.shader_subset),
+    });
+    try writer.print("mesh_subset={s}\n", .{
+        @tagName(bench_args.mesh_subset),
     });
     try writer.print("distortion={s}\n", .{
         @tagName(bench_args.distortion),

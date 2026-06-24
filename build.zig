@@ -135,7 +135,7 @@ pub fn build(b: *std.Build) void {
         const test_step = b.step(entry.step_name, entry.description);
         const test_run = addTestRunStep(
             b,
-            optimize,
+            .ReleaseSafe,
             entry,
             precision,
             simd,

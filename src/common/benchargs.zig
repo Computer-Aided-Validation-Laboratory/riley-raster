@@ -30,6 +30,7 @@ pub const BenchArgs = struct {
     sample_mode: ?texops.TextureSampleMode,
     texture_storage: TextureStorage,
     shader_subset: ShaderSubset,
+    mesh_subset: MeshSubset,
     pixels_num: [2]u32,
     sub_sample: u8,
     runs: usize,
@@ -50,6 +51,12 @@ pub const TextureStorage = enum {
 pub const ShaderSubset = enum {
     all,
     texture,
+};
+
+pub const MeshSubset = enum {
+    all,
+    tri3,
+    tri3opt,
 };
 
 pub fn defaultBenchArgs(
@@ -75,6 +82,7 @@ pub fn defaultBenchArgs(
         .sample_mode = null,
         .texture_storage = .u8,
         .shader_subset = .all,
+        .mesh_subset = .all,
         .pixels_num = .{ 800, 500 },
         .sub_sample = 2,
         .runs = 10,
@@ -172,6 +180,9 @@ pub fn parseArgsWithDefaults(
             } else if (std.mem.eql(u8, arg, "--shader-subset")) {
                 bench_args.shader_subset =
                     try parseEnum(ShaderSubset, value);
+            } else if (std.mem.eql(u8, arg, "--mesh-subset")) {
+                bench_args.mesh_subset =
+                    try parseEnum(MeshSubset, value);
             } else if (std.mem.eql(u8, arg, "--out-dir")) {
                 bench_args.out_dir = value;
             } else if (std.mem.eql(u8, arg, "--pixels-x")) {
@@ -336,6 +347,8 @@ test "parse bench args named options" {
         "u16",
         "--shader-subset",
         "texture",
+        "--mesh-subset",
+        "tri3opt",
         "--out-dir",
         "out/custom",
         "--pixels-x",
@@ -400,6 +413,10 @@ test "parse bench args named options" {
     try std.testing.expectEqual(
         ShaderSubset.texture,
         bench_args.shader_subset,
+    );
+    try std.testing.expectEqual(
+        MeshSubset.tri3opt,
+        bench_args.mesh_subset,
     );
     try std.testing.expectEqualStrings("out/custom", bench_args.out_dir);
     try std.testing.expectEqual([2]u32{ 1024, 768 }, bench_args.pixels_num);

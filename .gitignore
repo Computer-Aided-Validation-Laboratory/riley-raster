@@ -2,6 +2,7 @@
 *.so
 *.a
 *.o
+*.out
 build/
 file-out/
 .zig-cache/
