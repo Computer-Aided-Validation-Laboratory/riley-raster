@@ -99,6 +99,40 @@ fn fillTileIdealCentersFullInMem(
     }
 }
 
+fn fillTileIdealCenters(
+    ctx_rast: rops.RasterContext,
+    tile: rops.ActiveTile,
+    subpx_scratch: anytype,
+    subpx_tile_size: usize,
+) !void {
+    switch (ctx_rast.camera.subpixel_center_map) {
+        .full_in_mem => fillTileIdealCentersFullInMem(
+            ctx_rast,
+            tile,
+            subpx_scratch,
+            subpx_tile_size,
+        ),
+        .per_tile => try cam.fillTileIdealCentersPerTile(
+            ctx_rast.camera,
+            @intCast(tile.scratch_x_px_min),
+            @intCast(tile.scratch_x_px_max),
+            @intCast(tile.scratch_y_px_min),
+            @intCast(tile.scratch_y_px_max),
+            subpx_tile_size,
+            subpx_scratch.ideal_pixel_centers,
+        ),
+        .affine_jac => cam.fillTileIdealCentersAffineJac(
+            ctx_rast.camera,
+            @intCast(tile.scratch_x_px_min),
+            @intCast(tile.scratch_x_px_max),
+            @intCast(tile.scratch_y_px_min),
+            @intCast(tile.scratch_y_px_max),
+            subpx_tile_size,
+            subpx_scratch.ideal_pixel_centers,
+        ),
+    }
+}
+
 const ParamCoords = struct { xi: F, eta: F };
 
 fn calcTri3PerspectiveParamCoords(
@@ -406,46 +440,11 @@ fn rasterTileCommon(
         else
             null;
 
-    switch (ctx_rast.camera.subpixel_center_map) {
-        .full_in_mem => fillTileIdealCentersFullInMem(
-            ctx_rast,
-            tile,
-            subpx_scratch,
-            subpx_tile_size,
-        ),
-        .per_tile => try cam.fillTileIdealCentersPerTile(
-            ctx_rast.camera,
-            @intCast(tile.scratch_x_px_min),
-            @intCast(tile.scratch_x_px_max),
-            @intCast(tile.scratch_y_px_min),
-            @intCast(tile.scratch_y_px_max),
-            subpx_tile_size,
-            subpx_scratch.ideal_pixel_centers,
-        ),
-        .affine_jac => cam.fillTileIdealCentersAffineJac(
-            ctx_rast.camera,
-            @intCast(tile.scratch_x_px_min),
-            @intCast(tile.scratch_x_px_max),
-            @intCast(tile.scratch_y_px_min),
-            @intCast(tile.scratch_y_px_max),
-            subpx_tile_size,
-            subpx_scratch.ideal_pixel_centers,
-        ),
-    }
-
-    const cam_duration_ns: u64 =
-        if (comptime report_mode != .off)
-            @intCast(
-                time_cam_start.?.durationTo(
-                    Timestamp.now(io, .awake),
-                ).raw.nanoseconds,
-            )
-        else
-            0;
-
     const overlap_start = tile.overlap_start;
     const overlap_end = overlap_start + tile.overlap_count;
     const overlaps = overlaps_all[overlap_start..overlap_end];
+    var camera_fill_ready = false;
+    var cam_duration_ns: u64 = 0;
 
     for (overlaps) |ov| {
         const mesh_idx: usize = ov.mesh_idx;
@@ -460,6 +459,22 @@ fn rasterTileCommon(
 
         switch (mesh_ptr.mesh_type) {
             inline else => |geom_tag| {
+                if (!camera_fill_ready and comptime geom_tag != .tri3opt) {
+                    try fillTileIdealCenters(
+                        ctx_rast,
+                        tile,
+                        subpx_scratch,
+                        subpx_tile_size,
+                    );
+                    camera_fill_ready = true;
+                    if (comptime report_mode != .off) {
+                        cam_duration_ns = @intCast(
+                            time_cam_start.?.durationTo(
+                                Timestamp.now(io, .awake),
+                            ).raw.nanoseconds,
+                        );
+                    }
+                }
                 const GK = comptime switch (geom_tag) {
                     .tri3 => geomkerns.Tri3Kernel(),
                     .tri3opt => geomkerns.Tri3OptKernel(),
