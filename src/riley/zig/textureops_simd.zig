@@ -72,6 +72,30 @@ pub const sampleGreyscale = common.sampleGreyscale;
 // Infrastructure & Helpers
 // --------------------------------------------------------------------------
 
+inline fn loadTap(
+    comptime T: type,
+    slice: []const T,
+    v_offsets: VecSU,
+) VecSF {
+    const first_off = v_offsets[0];
+    const v_expected = @as(VecSU, @splat(first_off)) + std.simd.iota(usize, S);
+    const is_contiguous = @reduce(.And, v_offsets == v_expected);
+
+    var vals: [S]F = undefined;
+    if (is_contiguous) {
+        const raw_vals: @Vector(S, T) = slice[first_off..][0..S].*;
+        inline for (0..S) |ii| {
+            vals[ii] = texelToFloat(T, raw_vals[ii]);
+        }
+    } else {
+        const offsets_arr: [S]usize = v_offsets;
+        for (0..S) |ii| {
+            vals[ii] = texelToFloat(T, slice[offsets_arr[ii]]);
+        }
+    }
+    return vals;
+}
+
 fn getPxWide(
     comptime CH: usize,
     texture: anytype,
@@ -95,30 +119,49 @@ fn getPxWide(
         @intCast(@max(v_splat_zero, @min(v_tex_y_i, v_tex_rows_m1))),
     );
 
+    const stride_y = if (comptime cfg.texture_layout == .planar)
+        texture.array.strides[1]
+    else
+        texture.array.strides[0];
+    const stride_x = if (comptime cfg.texture_layout == .planar)
+        @as(usize, 1)
+    else
+        texture.array.strides[1];
+
+    const v_pixel_offsets = v_yu * @as(VecSU, @splat(stride_y)) +
+        v_xu * @as(VecSU, @splat(stride_x));
+
     var samp_res: [CH]VecSF = undefined;
-    const stride_y = texture.array.strides[1];
-    inline for (0..CH) |ch| {
-        const base_slice = texture.array.getPlaneSlice(ch);
-        const v_tap_offsets = v_yu * @as(VecSU, @splat(stride_y)) + v_xu;
-        const first_off = v_tap_offsets[0];
+
+    if (comptime cfg.texture_layout == .planar) {
+        const first_off = v_pixel_offsets[0];
         const v_expected = @as(VecSU, @splat(first_off)) +
             std.simd.iota(usize, S);
-        const is_contiguous = @reduce(.And, v_tap_offsets == v_expected);
+        const is_contiguous = @reduce(.And, v_pixel_offsets == v_expected);
 
-        var vals: [S]F = undefined;
-        if (is_contiguous) {
-            const raw_vals: @Vector(S, T) = base_slice[first_off..][0..S].*;
-            inline for (0..S) |ii| {
-                vals[ii] = texelToFloat(T, raw_vals[ii]);
+        inline for (0..CH) |cc| {
+            const base_slice = texture.array.getPlaneSlice(cc);
+            var vals: [S]F = undefined;
+            if (is_contiguous) {
+                const raw_vals: @Vector(S, T) = base_slice[first_off..][0..S].*;
+                inline for (0..S) |ii| {
+                    vals[ii] = texelToFloat(T, raw_vals[ii]);
+                }
+            } else {
+                const tap_offsets_arr: [S]usize = v_pixel_offsets;
+                for (0..S) |ii| {
+                    vals[ii] = texelToFloat(T, base_slice[tap_offsets_arr[ii]]);
+                }
             }
-        } else {
-            const tap_offsets_arr: [S]usize = v_tap_offsets;
-            for (0..S) |ii| {
-                vals[ii] = texelToFloat(T, base_slice[tap_offsets_arr[ii]]);
-            }
+            samp_res[cc] = vals;
         }
-        samp_res[ch] = vals;
+    } else {
+        inline for (0..CH) |cc| {
+            const v_offsets = v_pixel_offsets + @as(VecSU, @splat(cc));
+            samp_res[cc] = loadTap(T, texture.array.slice, v_offsets);
+        }
     }
+
     return samp_res;
 }
 
@@ -130,35 +173,83 @@ pub inline fn sampleLinearWide(
     v_tex_x_frac: VecSF,
     v_tex_y_frac: VecSF,
 ) [CH]VecSF {
-    const v_p00 = getPxWide(CH, texture, v_tex_x_i, v_tex_y_i);
-    const v_p10 = getPxWide(
-        CH,
-        texture,
-        v_tex_x_i + @as(VecSI, @splat(1)),
-        v_tex_y_i,
+    const T = @TypeOf(texture.array.slice[0]);
+    const tex_cols = @as(isize, @intCast(texture.cols_num));
+    const tex_rows = @as(isize, @intCast(texture.rows_num));
+
+    const v_splat_zero: VecSI = @splat(0);
+    const v_tex_cols_m1: VecSI = @splat(tex_cols - 1);
+    const v_tex_rows_m1: VecSI = @splat(tex_rows - 1);
+
+    const v_x0 = @as(
+        VecSU,
+        @intCast(@max(v_splat_zero, @min(v_tex_x_i, v_tex_cols_m1))),
     );
-    const v_p01 = getPxWide(
-        CH,
-        texture,
-        v_tex_x_i,
-        v_tex_y_i + @as(VecSI, @splat(1)),
+    const v_x1 = @as(
+        VecSU,
+        @intCast(@max(
+            v_splat_zero,
+            @min(v_tex_x_i + @as(VecSI, @splat(1)), v_tex_cols_m1),
+        )),
     );
-    const v_p11 = getPxWide(
-        CH,
-        texture,
-        v_tex_x_i + @as(VecSI, @splat(1)),
-        v_tex_y_i + @as(VecSI, @splat(1)),
+    const v_y0 = @as(
+        VecSU,
+        @intCast(@max(v_splat_zero, @min(v_tex_y_i, v_tex_rows_m1))),
+    );
+    const v_y1 = @as(
+        VecSU,
+        @intCast(@max(
+            v_splat_zero,
+            @min(v_tex_y_i + @as(VecSI, @splat(1)), v_tex_rows_m1),
+        )),
     );
 
+    const stride_y = if (comptime cfg.texture_layout == .planar)
+        texture.array.strides[1]
+    else
+        texture.array.strides[0];
+    const stride_x = if (comptime cfg.texture_layout == .planar)
+        @as(usize, 1)
+    else
+        texture.array.strides[1];
+
+    const v_off00 = v_y0 * @as(VecSU, @splat(stride_y)) +
+        v_x0 * @as(VecSU, @splat(stride_x));
+    const v_off10 = v_y0 * @as(VecSU, @splat(stride_y)) +
+        v_x1 * @as(VecSU, @splat(stride_x));
+    const v_off01 = v_y1 * @as(VecSU, @splat(stride_y)) +
+        v_x0 * @as(VecSU, @splat(stride_x));
+    const v_off11 = v_y1 * @as(VecSU, @splat(stride_y)) +
+        v_x1 * @as(VecSU, @splat(stride_x));
+
     var samp_res: [CH]VecSF = undefined;
-    const v_splat_one: VecSF = @splat(1.0);
-    inline for (0..CH) |ch| {
-        samp_res[ch] = (v_splat_one - v_tex_x_frac) * (v_splat_one - v_tex_y_frac) *
-            v_p00[ch] +
-            v_tex_x_frac * (v_splat_one - v_tex_y_frac) * v_p10[ch] +
-            (v_splat_one - v_tex_x_frac) * v_tex_y_frac * v_p01[ch] +
-            v_tex_x_frac * v_tex_y_frac * v_p11[ch];
+
+    inline for (0..CH) |cc| {
+        var p00: VecSF = undefined;
+        var p10: VecSF = undefined;
+        var p01: VecSF = undefined;
+        var p11: VecSF = undefined;
+
+        if (comptime cfg.texture_layout == .planar) {
+            const base_slice = texture.array.getPlaneSlice(cc);
+            p00 = loadTap(T, base_slice, v_off00);
+            p10 = loadTap(T, base_slice, v_off10);
+            p01 = loadTap(T, base_slice, v_off01);
+            p11 = loadTap(T, base_slice, v_off11);
+        } else {
+            const main_slice = texture.array.slice;
+            const c_splat = @as(VecSU, @splat(cc));
+            p00 = loadTap(T, main_slice, v_off00 + c_splat);
+            p10 = loadTap(T, main_slice, v_off10 + c_splat);
+            p01 = loadTap(T, main_slice, v_off01 + c_splat);
+            p11 = loadTap(T, main_slice, v_off11 + c_splat);
+        }
+
+        const v_p00_10 = p00 + v_tex_x_frac * (p10 - p00);
+        const v_p01_11 = p01 + v_tex_x_frac * (p11 - p01);
+        samp_res[cc] = v_p00_10 + v_tex_y_frac * (v_p01_11 - v_p00_10);
     }
+
     return samp_res;
 }
 

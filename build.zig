@@ -34,10 +34,16 @@ pub fn build(b: *std.Build) void {
         "simd-vector-width",
         "SIMD vector width (0 to use default for precision)",
     ) orelse 0;
+    const texture_layout = b.option(
+        []const u8,
+        "texture-layout",
+        "Texture memory layout: planar or interleaved",
+    ) orelse "planar";
 
     validatePrecision(precision);
     validateSimd(simd);
     validateSimdTextureInterp(simd_texture_interp);
+    validateTextureLayout(texture_layout);
 
     const build_options_module = createBuildOptionsModule(
         b,
@@ -45,6 +51,7 @@ pub fn build(b: *std.Build) void {
         simd,
         simd_texture_interp,
         simd_vector_width,
+        texture_layout,
     );
     const shared_lib = addRileySharedLibrary(
         b,
@@ -354,6 +361,7 @@ pub fn build(b: *std.Build) void {
             simd,
             simd_texture_interp,
             simd_vector_width,
+            texture_layout,
         );
         install_step.dependOn(&install_artifact.step);
         bench_bins_step.dependOn(&install_artifact.step);
@@ -460,6 +468,7 @@ fn addBenchInstallStep(
     simd: []const u8,
     simd_texture_interp: []const u8,
     simd_vector_width: u32,
+    texture_layout: []const u8,
 ) *std.Build.Step.InstallArtifact {
     const binary_name = benchmarkBinaryName(
         b,
@@ -468,6 +477,7 @@ fn addBenchInstallStep(
         simd,
         simd_texture_interp,
         simd_vector_width,
+        texture_layout,
     );
     const executable = b.addExecutable(.{
         .name = binary_name,
@@ -492,12 +502,14 @@ fn createBuildOptionsModule(
     simd: []const u8,
     simd_texture_interp: []const u8,
     simd_vector_width: u32,
+    texture_layout: []const u8,
 ) *std.Build.Module {
     const options = b.addOptions();
     options.addOption([]const u8, "precision", precision);
     options.addOption([]const u8, "simd", simd);
     options.addOption([]const u8, "simd_texture_interp", simd_texture_interp);
     options.addOption(u32, "simd_vector_width", simd_vector_width);
+    options.addOption([]const u8, "texture_layout", texture_layout);
     return options.createModule();
 }
 
@@ -695,6 +707,7 @@ fn benchmarkBinaryName(
     simd: []const u8,
     simd_texture_interp: []const u8,
     simd_vector_width: u32,
+    texture_layout: []const u8,
 ) []const u8 {
     const simd_tag = if (std.mem.eql(u8, simd, "on")) "simd" else "scalar";
     const interp_tag = if (std.mem.eql(u8, simd_texture_interp, "over_pixels"))
@@ -702,21 +715,36 @@ fn benchmarkBinaryName(
     else
         "inner";
     const default_width: u32 = if (std.mem.eql(u8, precision, "f32")) 16 else 8;
+    const layout_suffix = if (std.mem.eql(u8, texture_layout, "interleaved"))
+        "_interleaved"
+    else
+        "";
+
     if (simd_vector_width == 0 or simd_vector_width == default_width) {
         return b.fmt(
-            "{s}_{s}_{s}_{s}",
-            .{ base_name, precision, simd_tag, interp_tag },
+            "{s}_{s}_{s}_{s}{s}",
+            .{ base_name, precision, simd_tag, interp_tag, layout_suffix },
         );
     } else {
         return b.fmt(
-            "{s}_{s}_{s}_{s}_v{d}",
+            "{s}_{s}_{s}_{s}_v{d}{s}",
             .{
                 base_name,
                 precision,
                 simd_tag,
                 interp_tag,
                 simd_vector_width,
+                layout_suffix,
             },
         );
     }
+}
+
+fn validateTextureLayout(texture_layout: []const u8) void {
+    if (std.mem.eql(u8, texture_layout, "planar") or
+        std.mem.eql(u8, texture_layout, "interleaved"))
+    {
+        return;
+    }
+    @panic("Supported -Dtexture-layout values are planar and interleaved.");
 }

@@ -64,6 +64,29 @@ pub const default_simd_texture_interp = blk: {
     );
 };
 
+pub const TextureLayout = enum {
+    planar,
+    interleaved,
+};
+
+const texture_layout_str = if (@hasDecl(build_options, "texture_layout"))
+    build_options.texture_layout
+else
+    "planar";
+
+pub const default_texture_layout = blk: {
+    if (std.mem.eql(u8, texture_layout_str, "planar")) {
+        break :blk TextureLayout.planar;
+    }
+    if (std.mem.eql(u8, texture_layout_str, "interleaved")) {
+        break :blk TextureLayout.interleaved;
+    }
+    @compileError(
+        "build_options.texture_layout must be \"planar\" or " ++
+            "\"interleaved\".",
+    );
+};
+
 const build_simd_vector_width = if (@hasDecl(build_options, "simd_vector_width"))
     build_options.simd_vector_width
 else
@@ -151,6 +174,7 @@ pub const Tolerance = struct {
 pub const Config = struct {
     simd: SimdMode = default_simd,
     simd_texture_interp: SimdTextureInterpMode = default_simd_texture_interp,
+    texture_layout: TextureLayout = default_texture_layout,
     simd_vector_width: comptime_int = defaultSimdVectorWidthForPrecision(Scalar),
     max_nodal_fields: comptime_int = 8,
     max_image_channels: comptime_int = 8,

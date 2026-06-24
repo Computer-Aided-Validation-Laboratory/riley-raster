@@ -27,15 +27,20 @@ def binary_name(
     precision: str,
     simd_texture_interp: str,
     lanes: int,
+    layout: str,
 ) -> str:
     interp_tag = (
         "overpx" if simd_texture_interp == "over_pixels"
         else "inner"
     )
+    suffix = "_interleaved" if layout == "interleaved" else ""
     if lanes == default_lanes(precision):
-        return f"bench_tiltraster_{precision}_simd_{interp_tag}"
+        return f"bench_tiltraster_{precision}_simd_{interp_tag}{suffix}"
     else:
-        return f"bench_tiltraster_{precision}_simd_{interp_tag}_v{lanes}"
+        return (
+            f"bench_tiltraster_{precision}_simd_{interp_tag}"
+            f"_v{lanes}{suffix}"
+        )
 
 
 def main() -> int:
@@ -43,11 +48,18 @@ def main() -> int:
     (root / "bin").mkdir(parents=True, exist_ok=True)
 
     failures: list[str] = []
-    for i in range(0, len(BUILD_VARIANTS), BATCH_SIZE):
-        batch = BUILD_VARIANTS[i : i + BATCH_SIZE]
+    all_compiles = []
+    for layout in ("planar", "interleaved"):
+        for precision, simd_texture_interp, lanes in BUILD_VARIANTS:
+            all_compiles.append(
+                (precision, simd_texture_interp, lanes, layout)
+            )
+
+    for i in range(0, len(all_compiles), BATCH_SIZE):
+        batch = all_compiles[i : i + BATCH_SIZE]
         processes: list[tuple[str, subprocess.Popen[str]]] = []
-        for precision, simd_texture_interp, lanes in batch:
-            name = binary_name(precision, simd_texture_interp, lanes)
+        for precision, simd_texture_interp, lanes, layout in batch:
+            name = binary_name(precision, simd_texture_interp, lanes, layout)
             print(f"Compiling {name}...")
             process = subprocess.Popen(
                 [
@@ -61,6 +73,7 @@ def main() -> int:
                     "-Dsimd=on",
                     f"-Dsimd-texture-interp={simd_texture_interp}",
                     f"-Dsimd-vector-width={lanes}",
+                    f"-Dtexture-layout={layout}",
                 ],
                 cwd=root,
                 text=True,
@@ -76,10 +89,10 @@ def main() -> int:
         raise SystemExit(f"Benchmark compile failed: {joined}.")
 
     print("Generated benchmark binaries:")
-    for precision, simd_texture_interp, lanes in BUILD_VARIANTS:
+    for precision, simd_texture_interp, lanes, layout in all_compiles:
         bin_path = (
             root / "bin" /
-            binary_name(precision, simd_texture_interp, lanes)
+            binary_name(precision, simd_texture_interp, lanes, layout)
         )
         print(f"  {bin_path}")
     return 0

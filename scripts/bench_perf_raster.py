@@ -25,7 +25,7 @@ DEFAULT_MAX_RASTER_WORKERS_PER_JOB = 1
 DEFAULT_RENDER_GROUP_COUNT = 1
 DEFAULT_FRAME_BATCH_SIZE_PER_GROUP = 1
 DEFAULT_MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP = 1
-DEFAULT_EXPERIMENT1 = False
+DEFAULT_EXPERIMENT1 = True
 DEFAULT_EXPERIMENT2 = True
 EXPERIMENT1_SUB_SAMPLES = [2]
 EXPERIMENT2_SUB_SAMPLES = [1, 2]
@@ -148,51 +148,62 @@ EXPERIMENT1_CASES_BASE: list[dict[str, object]] = [
 
 def build_experiment1_cases() -> list[dict[str, object]]:
     cases: list[dict[str, object]] = []
-    for base_case in EXPERIMENT1_CASES_BASE:
-        for sub_sample in EXPERIMENT1_SUB_SAMPLES:
-            case = dict(base_case)
-            case["sub_sample"] = sub_sample
-            cases.append(case)
+    for layout in ("planar", "interleaved"):
+        for base_case in EXPERIMENT1_CASES_BASE:
+            for sub_sample in EXPERIMENT1_SUB_SAMPLES:
+                case = dict(base_case)
+                case["sub_sample"] = sub_sample
+                case["texture_layout"] = layout
+                suffix = "_interleaved" if layout == "interleaved" else ""
+                case["case_name"] = f"{base_case['case_name']}{suffix}"
+                cases.append(case)
     return cases
+
 
 def build_experiment2_cases() -> list[dict[str, object]]:
     cases: list[dict[str, object]] = []
-    for sub_sample in EXPERIMENT2_SUB_SAMPLES:
-        cases.append(
-            {
-                "study_group": "experiment2",
-                "experiment": "llvmpipe_compare",
-                "case_name": (
-                    "tiltraster_llvmpipe_compare_"
-                    f"tri3_vs_tri3opt_f32_simd_v8_inner_ssaa{sub_sample}"
-                ),
-                "precision": "f32",
-                "interp": "inner",
-                "lanes": 8,
-                "texture_storage": "u8",
-                "shader_subset": "all",
-                "mesh_subset": "tri3_compare",
-                "sub_sample": sub_sample,
-            }
-        )
-        for interp in ("inner", "overpx"):
+    for layout in ("planar", "interleaved"):
+        suffix = "_interleaved" if layout == "interleaved" else ""
+        for sub_sample in EXPERIMENT2_SUB_SAMPLES:
             cases.append(
                 {
                     "study_group": "experiment2",
-                    "experiment": "llvmpipe_compare_texture_interp",
+                    "experiment": "llvmpipe_compare",
                     "case_name": (
-                        "tiltraster_llvmpipe_compare_texture_"
-                        f"tri3_vs_tri3opt_f32_simd_v8_{interp}_ssaa{sub_sample}"
+                        "tiltraster_llvmpipe_compare_"
+                        f"tri3_vs_tri3opt_f32_simd_v8_inner{suffix}"
+                        f"_ssaa{sub_sample}"
                     ),
                     "precision": "f32",
-                    "interp": interp,
+                    "interp": "inner",
                     "lanes": 8,
                     "texture_storage": "u8",
-                    "shader_subset": "texture",
+                    "shader_subset": "all",
                     "mesh_subset": "tri3_compare",
                     "sub_sample": sub_sample,
+                    "texture_layout": layout,
                 }
             )
+            for interp in ("inner", "overpx"):
+                cases.append(
+                    {
+                        "study_group": "experiment2",
+                        "experiment": "llvmpipe_compare_texture_interp",
+                        "case_name": (
+                            "tiltraster_llvmpipe_compare_texture_"
+                            f"tri3_vs_tri3opt_f32_simd_v8_{interp}{suffix}"
+                            f"_ssaa{sub_sample}"
+                        ),
+                        "precision": "f32",
+                        "interp": interp,
+                        "lanes": 8,
+                        "texture_storage": "u8",
+                        "shader_subset": "texture",
+                        "mesh_subset": "tri3_compare",
+                        "sub_sample": sub_sample,
+                        "texture_layout": layout,
+                    }
+                )
     return cases
 
 
@@ -214,22 +225,36 @@ def default_lanes(precision: str) -> int:
     return 16 if precision == "f32" else 8
 
 
-def binary_name(precision: str, interp: str, lanes: int) -> str:
+def binary_name(
+    precision: str,
+    interp: str,
+    lanes: int,
+    layout: str,
+) -> str:
+    suffix = "_interleaved" if layout == "interleaved" else ""
     if lanes == default_lanes(precision):
-        return f"bench_tiltraster_{precision}_simd_{interp}"
+        return f"bench_tiltraster_{precision}_simd_{interp}{suffix}"
     else:
-        return f"bench_tiltraster_{precision}_simd_{interp}_v{lanes}"
+        return (
+            f"bench_tiltraster_{precision}_simd_{interp}"
+            f"_v{lanes}{suffix}"
+        )
 
 
 def binary_path(
     precision: str,
     interp: str,
     lanes: int,
+    layout: str,
 ) -> pathlib.Path:
-    path = repo_root() / "bin" / binary_name(precision, interp, lanes)
+    path = (
+        repo_root() / "bin" /
+        binary_name(precision, interp, lanes, layout)
+    )
     if not path.exists():
         raise SystemExit(
-            f"Missing binary {path}. Run scripts/compile_perf_all.py first.",
+            f"Missing binary {path}. Run "
+            "scripts/compile_perf_all.py first.",
         )
     return path
 
@@ -300,11 +325,13 @@ def run_case(
         str(case["precision"]),
         str(case["interp"]),
         int(case["lanes"]),
+        str(case.get("texture_layout", "planar")),
     )
     binary_tag = binary_name(
         str(case["precision"]),
         str(case["interp"]),
         int(case["lanes"]),
+        str(case.get("texture_layout", "planar")),
     )
     case_with_binary = dict(case)
     case_with_binary["binary"] = binary_tag
