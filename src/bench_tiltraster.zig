@@ -28,7 +28,7 @@ const DEFAULT_OUT_DIR = "out/bench_stats_tiltraster";
 const DEFAULT_IMAGE_OUT_DIR = "out/bench_images_tiltraster";
 const DEFAULT_DATA_DIR_SUFFIX = "fullraster";
 const DEFAULT_PIXELS_NUM = [2]u32{ 1600, 1000 };
-const DEFAULT_SUB_SAMPLE: u8 = 1;
+const DEFAULT_SUB_SAMPLE: u8 = 2;
 const DEFAULT_FOCAL_LENG: F = @floatCast(50.0e-3);
 const DEFAULT_PIXELS_SIZE = [2]F{
     @floatCast(5.3e-6),
@@ -262,7 +262,7 @@ fn runBenchmarksForTextureType(
     defer texture_rgb.deinit(outer_alloc);
 
     for (mesh_types) |mt| {
-        if (mt == .tri3opt and !cam.isNoDistortion(distortion_model)) {
+        if (mt == .tri3opt and !cam.isNoDistortion(render_defaults.distortion)) {
             continue;
         }
         const selected_shader_types = if (bench_args.shader_subset == .texture)

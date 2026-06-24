@@ -11,11 +11,12 @@ import time
 
 from perf_common import command_path, repo_root
 
-DEFAULT_OUT_ROOT = pathlib.Path("out") / "bench_stats_perf_tiltraster"
+DEFAULT_OUT_ROOT = pathlib.Path("out") / "bench_stats_perf_tiltraster_ssaa2"
 DEFAULT_IMAGE_OUT_DIR = (
-    pathlib.Path("out") / "bench_images_perf_tiltraster"
+    pathlib.Path("out") / "bench_images_perf_tiltraster_ssaa2"
 )
 DEFAULT_RUNS = 25
+DEFAULT_SUB_SAMPLE = 2
 DEFAULT_PIXELS_X: int | None = None
 DEFAULT_PIXELS_Y: int | None = None
 DEFAULT_TOTAL_THREADS = 1
@@ -182,6 +183,7 @@ def write_experiment_meta(
         f"texture_storage={case['texture_storage']}",
         f"shader_subset={case['shader_subset']}",
         f"lanes={case['lanes']}",
+        f"sub_sample={DEFAULT_SUB_SAMPLE}",
         f"distortion={case.get('distortion', 'none')}",
         "command=" + " ".join(shlex.quote(part) for part in command),
     ]
@@ -247,6 +249,8 @@ def run_case(
         str(DEFAULT_MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP),
         "--runs",
         str(runs),
+        "--sub-sample",
+        str(DEFAULT_SUB_SAMPLE),
         "--texture-storage",
         case["texture_storage"],
         "--shader-subset",
