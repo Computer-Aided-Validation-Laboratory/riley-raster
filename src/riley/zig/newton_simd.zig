@@ -33,7 +33,7 @@ pub fn solveInverseSIMD(
     v_deriv_n_xi: *[N]VecSF,
     v_deriv_n_eta: *[N]VecSF,
 ) common.NewtonResultSIMD {
-    const v_iter_tol: VecSF = @splat(tol.newton.residual);
+    const v_resid_norm_tol: VecSF = @splat(tol.newton.normalized_residual);
     const v_det_tol: VecSF = @splat(tol.newton.determinant);
     const v_eps: VecSF = @splat(tol.newton.parametric_domain);
 
@@ -77,6 +77,7 @@ pub fn solveInverseSIMD(
 
         var v_residual_x: VecSF = @splat(0.0);
         var v_residual_y: VecSF = @splat(0.0);
+        var v_interpolated_w: VecSF = @splat(0.0);
         var v_jac11: VecSF = @splat(0.0);
         var v_jac12: VecSF = @splat(0.0);
         var v_jac21: VecSF = @splat(0.0);
@@ -85,6 +86,8 @@ pub fn solveInverseSIMD(
         inline for (0..N) |nn| {
             v_residual_x += v_node_values[nn] * v_term_x[nn];
             v_residual_y += v_node_values[nn] * v_term_y[nn];
+            v_interpolated_w +=
+                v_node_values[nn] * @as(VecSF, @splat(elem_node_w[nn]));
             v_jac11 += v_deriv_n_xi[nn] * v_term_x[nn];
             v_jac12 += v_deriv_n_eta[nn] * v_term_x[nn];
             v_jac21 += v_deriv_n_xi[nn] * v_term_y[nn];
@@ -94,8 +97,12 @@ pub fn solveInverseSIMD(
         v_residual_x_final = v_residual_x;
         v_residual_y_final = v_residual_y;
 
-        const v_met_tol = (@abs(v_residual_x) < v_iter_tol) &
-            (@abs(v_residual_y) < v_iter_tol);
+        const v_w_abs = @abs(v_interpolated_w);
+        const v_residual_sq =
+            v_residual_x * v_residual_x + v_residual_y * v_residual_y;
+        const v_w_scaled_tol = v_w_abs * v_resid_norm_tol;
+        const v_met_tol = (v_w_abs > @as(VecSF, @splat(0.0))) &
+            (v_residual_sq <= v_w_scaled_tol * v_w_scaled_tol);
         v_converged = v_converged | (v_active & v_met_tol);
         v_active = v_active & !v_met_tol;
 
@@ -144,5 +151,7 @@ pub fn solveInverseSIMD(
         .v_iterations = v_iters,
         .v_residual_x = v_residual_x_final,
         .v_residual_y = v_residual_y_final,
+        .v_xi_final = v_xi,
+        .v_eta_final = v_eta,
     };
 }

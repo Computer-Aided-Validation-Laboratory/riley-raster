@@ -829,7 +829,7 @@ fn initThreadReportLog(
     return switch (report_mode) {
         .off => .{},
         .bench => .{},
-        .full_stats => unreachable,
+        .full_stats => .{},
     };
 }
 
@@ -853,6 +853,7 @@ fn TileRangeContext(
     return struct {
         io: std.Io,
         ctx_rast: rops.RasterContext,
+        shared_log: *report.LogType(report_mode),
         tiling: rops.TilingOverlaps,
         meshes: []const MeshPrepared,
         raster_hulls: []const ?NDArray(F),
@@ -890,7 +891,10 @@ pub fn rasterSceneCommon(
             const tile_rng_ctx: *TileRangeCtx = @ptrCast(@alignCast(ctx_ptr));
             const worker_state = &tile_rng_ctx.worker_states[worker_idx];
             const ctx_report_task = report.ReportContext(report_mode){
-                .log = &worker_state.log,
+                .log = if (comptime report_mode == .full_stats)
+                    tile_rng_ctx.shared_log
+                else
+                    &worker_state.log,
             };
 
             for (range_start..range_end) |tile_idx| {
@@ -952,6 +956,7 @@ pub fn rasterSceneCommon(
     var tile_rng_ctx = TileRangeCtx{
         .io = io,
         .ctx_rast = ctx_rast,
+        .shared_log = ctx_report.log,
         .tiling = tiling,
         .meshes = meshes,
         .raster_hulls = raster_hulls,

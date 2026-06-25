@@ -18,6 +18,11 @@ pub fn main(init: std.process.Init) !void {
 
     var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .disk;
+    config.total_threads = 1;
+    config.max_geom_workers_per_job = 1;
+    config.max_raster_workers_per_job = 1;
+    config.max_geom_jobs_in_flight_per_group = 1;
+    config.frame_batch_size_per_group = 1;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
         .{ .format = .csv, .bits = null, .scaling = .none },
@@ -26,8 +31,14 @@ pub fn main(init: std.process.Init) !void {
     config.full_stats_opts = .{
         .formats = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
+            .{ .format = .csv, .bits = null, .scaling = .none },
         },
         .save_iteration_map = true,
+        .save_xi_map = true,
+        .save_eta_map = true,
+        .save_converged_map = true,
+        .save_jacobian_det_map = true,
+        .save_earlyout_map = true,
         .save_depth_map = true,
     };
     const dir_paths = [_][]const u8{

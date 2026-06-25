@@ -460,18 +460,54 @@ fn rasterNewtonImpl(
             };
 
             ctx_report.recordSolverIters(result.iters);
+            const solve_state = newton.evaluateSolveState(
+                N,
+                ideal_x_px - subpx_domain.x_off,
+                ideal_y_px - subpx_domain.y_off,
+                nodes_coords.x,
+                nodes_coords.y,
+                nodes_coords.z,
+                result.xi_final,
+                result.eta_final,
+            );
+            const domain_violation = Geometry.domainViolation(
+                result.xi_final,
+                result.eta_final,
+            );
+            const hit_iter_limit =
+                result.iters >= buildconfig.config.raster_newton_iter_max;
+            const jacobian_det = newton.calcJacobianDet2D(
+                N,
+                result.xi_final,
+                result.eta_final,
+                nodes_coords.x,
+                nodes_coords.y,
+            );
             if (result.weights == null) {
                 if (comptime report_mode == .full_stats) {
-                    const nan = std.math.nan(F);
                     rasterreport.recordPixelConvergedStats(
                         report_mode,
                         ctx_report,
                         global_subx,
                         global_suby,
                         false,
-                        nan,
-                        nan,
-                        nan,
+                        result.xi_final,
+                        result.eta_final,
+                        jacobian_det,
+                    );
+                    rasterreport.recordPixelSolverDiagnostics(
+                        report_mode,
+                        ctx_report,
+                        global_subx,
+                        global_suby,
+                        result.pre_domain_converged,
+                        hit_iter_limit,
+                        solve_state.residual_x,
+                        solve_state.residual_y,
+                        solve_state.interpolated_w,
+                        solve_state.residual_mag,
+                        solve_state.normalized_residual_mag,
+                        domain_violation,
                     );
                 }
                 if (result.iters > 0) ctx_report.recordSolverDiverged();
@@ -487,13 +523,21 @@ fn rasterNewtonImpl(
                     true,
                     result.xi_out,
                     result.eta_out,
-                    newton.calcJacobianDet2D(
-                        N,
-                        result.xi_out,
-                        result.eta_out,
-                        nodes_coords.x,
-                        nodes_coords.y,
-                    ),
+                    jacobian_det,
+                );
+                rasterreport.recordPixelSolverDiagnostics(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    result.pre_domain_converged,
+                    hit_iter_limit,
+                    solve_state.residual_x,
+                    solve_state.residual_y,
+                    solve_state.interpolated_w,
+                    solve_state.residual_mag,
+                    solve_state.normalized_residual_mag,
+                    domain_violation,
                 );
             }
 

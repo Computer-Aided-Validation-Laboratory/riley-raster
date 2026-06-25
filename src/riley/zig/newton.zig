@@ -17,6 +17,7 @@ pub const NewtonSeed = common.NewtonSeed;
 pub const NewtonSeedSIMD = common.NewtonSeedSIMD;
 pub const NewtonSeedState = common.NewtonSeedState;
 pub const NewtonSeedQuality = common.NewtonSeedQuality;
+pub const NewtonEvalState = common.NewtonEvalState;
 pub const NewtonResult = common.NewtonResult;
 pub const NewtonResultSIMD = common.NewtonResultSIMD;
 
@@ -26,6 +27,7 @@ pub const updateSeedState = common.updateSeedState;
 pub const applySeedReuseInPlace = common.applySeedReuseInPlace;
 pub const updateSeedStateFromSIMDResult = common.updateSeedStateFromSIMDResult;
 pub const evaluateSeedQuality = common.evaluateSeedQuality;
+pub const evaluateSolveState = common.evaluateSolveState;
 pub const calcJacobianDet2D = common.calcJacobianDet2D;
 
 pub const solveInverse = scalar.solveInverse;

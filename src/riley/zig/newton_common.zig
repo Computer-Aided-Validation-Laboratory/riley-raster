@@ -42,12 +42,24 @@ pub const NewtonSeedQuality = struct {
     det_abs: F,
 };
 
+pub const NewtonEvalState = struct {
+    residual_x: F,
+    residual_y: F,
+    interpolated_w: F,
+    residual_mag: F,
+    normalized_residual_x: F,
+    normalized_residual_y: F,
+    normalized_residual_mag: F,
+};
+
 pub const NewtonResult = struct {
     converged: bool,
     pre_domain_converged: bool,
     iterations: u8,
     residual_x: F,
     residual_y: F,
+    xi_final: F,
+    eta_final: F,
 };
 
 pub const NewtonResultSIMD = struct {
@@ -56,6 +68,8 @@ pub const NewtonResultSIMD = struct {
     v_iterations: VecSU8,
     v_residual_x: VecSF,
     v_residual_y: VecSF,
+    v_xi_final: VecSF,
+    v_eta_final: VecSF,
 };
 
 pub inline fn selectSeed(
@@ -242,4 +256,71 @@ pub fn calcJacobianDet2D(
     }
 
     return dx_dxi * dy_deta - dx_deta * dy_dxi;
+}
+
+pub fn evaluateSolveState(
+    comptime N: usize,
+    target_screen_x: F,
+    target_screen_y: F,
+    element_node_x: []const F,
+    element_node_y: []const F,
+    element_node_w: []const F,
+    xi: F,
+    eta: F,
+) NewtonEvalState {
+    var node_values: [N]F = undefined;
+    var deriv_n_xi: [N]F = undefined;
+    var deriv_n_eta: [N]F = undefined;
+    shapefun.shapeFunctions(
+        N,
+        xi,
+        eta,
+        &node_values,
+        &deriv_n_xi,
+        &deriv_n_eta,
+    );
+
+    var residual_x: F = 0.0;
+    var residual_y: F = 0.0;
+    var interpolated_w: F = 0.0;
+
+    for (0..N) |nn| {
+        const term_x = target_screen_x * element_node_w[nn] - element_node_x[nn];
+        const term_y = target_screen_y * element_node_w[nn] - element_node_y[nn];
+
+        residual_x += node_values[nn] * term_x;
+        residual_y += node_values[nn] * term_y;
+        interpolated_w += node_values[nn] * element_node_w[nn];
+    }
+
+    const residual_mag = @sqrt(
+        residual_x * residual_x +
+            residual_y * residual_y,
+    );
+    const w_abs = @abs(interpolated_w);
+    const normalized_residual_x = if (w_abs > 0.0)
+        residual_x / interpolated_w
+    else
+        std.math.nan(F);
+    const normalized_residual_y = if (w_abs > 0.0)
+        residual_y / interpolated_w
+    else
+        std.math.nan(F);
+    const normalized_residual_mag = if (w_abs > 0.0)
+        @sqrt(
+            normalized_residual_x * normalized_residual_x +
+                normalized_residual_y * normalized_residual_y,
+        )
+    else
+        std.math.nan(F);
+
+    return .{
+        .residual_x = residual_x,
+        .residual_y = residual_y,
+        .interpolated_w = interpolated_w,
+        .residual_mag = residual_mag,
+        .normalized_residual_x = normalized_residual_x,
+        .normalized_residual_y = normalized_residual_y,
+        .normalized_residual_mag = normalized_residual_mag,
+    };
 }

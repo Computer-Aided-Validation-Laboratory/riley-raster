@@ -99,6 +99,7 @@ pub const NormalTolerance = struct {
 
 pub const NewtonTolerance = struct {
     residual: Scalar = 1e-8,
+    normalized_residual: Scalar = 3e-11,
     determinant: Scalar = 1e-12,
     parametric_domain: Scalar = 1e-7,
 };
@@ -154,7 +155,7 @@ pub const Config = struct {
     simd_vector_width: comptime_int = defaultSimdVectorWidthForPrecision(Scalar),
     max_nodal_fields: comptime_int = 8,
     max_image_channels: comptime_int = 8,
-    raster_newton_iter_max: comptime_int = 10,
+    raster_newton_iter_max: comptime_int = 30,
     distortion_newton_iter_max: comptime_int = 15,
     interp_lut_size: comptime_int = 1024,
     save_frame_buffer_count: comptime_int = 3,
@@ -213,23 +214,24 @@ pub const tolerance_f32 = Tolerance{
         .normalise_magnitude = 1e-8,
     },
     .newton = .{
-        .residual = 1e-5,
-        .determinant = 1e-8,
-        .parametric_domain = 1e-5,
+        .residual = 1e-4,
+        .normalized_residual = 3e-7,
+        .determinant = 1e-7,
+        .parametric_domain = 5e-5,
     },
     .distortion = .{
-        .residual = 1e-6,
-        .delta = 1e-6,
-        .determinant = 1e-8,
+        .residual = 1e-5,
+        .delta = 1e-5,
+        .determinant = 1e-7,
     },
     .newton_seed = .{
-        .determinant = 1e-8,
-        .parametric_domain = 1e-4,
-        .residual_sq = 1e-3,
+        .determinant = 1e-7,
+        .parametric_domain = 2e-4,
+        .residual_sq = 5e-3,
     },
     .geometry = .{
-        .bilinear_parametric_domain = 1e-5,
-        .bilinear_denom = 1e-8,
+        .bilinear_parametric_domain = 5e-5,
+        .bilinear_denom = 1e-7,
         .quadratic_area = 1e-8,
         .depth_buffer_inv_z_cmp = 1e-8,
     },

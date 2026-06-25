@@ -260,7 +260,15 @@ pub const FullStatsLog = struct {
     xi_map: ?ndarray.NDArray(F) = null,
     eta_map: ?ndarray.NDArray(F) = null,
     converged_map: ?ndarray.NDArray(F) = null,
+    pre_domain_converged_map: ?ndarray.NDArray(F) = null,
+    hit_iter_limit_map: ?ndarray.NDArray(F) = null,
     jacobian_det_map: ?ndarray.NDArray(F) = null,
+    residual_mag_map: ?ndarray.NDArray(F) = null,
+    residual_x_map: ?ndarray.NDArray(F) = null,
+    residual_y_map: ?ndarray.NDArray(F) = null,
+    interpolated_w_map: ?ndarray.NDArray(F) = null,
+    normalized_residual_mag_map: ?ndarray.NDArray(F) = null,
+    domain_violation_map: ?ndarray.NDArray(F) = null,
     pixel_occupancy_map: ?ndarray.NDArray(F) = null,
     depth_map: ?ndarray.NDArray(F) = null,
     normals_map: ?ndarray.NDArray(F) = null,
@@ -274,7 +282,15 @@ pub const FullStatsLog = struct {
         if (self.xi_map) |*xmap| xmap.deinit(allocator);
         if (self.eta_map) |*emap| emap.deinit(allocator);
         if (self.converged_map) |*cmap| cmap.deinit(allocator);
+        if (self.pre_domain_converged_map) |*pmap| pmap.deinit(allocator);
+        if (self.hit_iter_limit_map) |*hmap| hmap.deinit(allocator);
         if (self.jacobian_det_map) |*jmap| jmap.deinit(allocator);
+        if (self.residual_mag_map) |*rmap| rmap.deinit(allocator);
+        if (self.residual_x_map) |*rmap| rmap.deinit(allocator);
+        if (self.residual_y_map) |*rmap| rmap.deinit(allocator);
+        if (self.interpolated_w_map) |*wmap| wmap.deinit(allocator);
+        if (self.normalized_residual_mag_map) |*nmap| nmap.deinit(allocator);
+        if (self.domain_violation_map) |*dmap| dmap.deinit(allocator);
         if (self.pixel_occupancy_map) |*pomap| pomap.deinit(allocator);
         if (self.depth_map) |*dmap| dmap.deinit(allocator);
         if (self.normals_map) |*nmap| nmap.deinit(allocator);
@@ -319,6 +335,120 @@ pub const FullStatsLog = struct {
         }
     }
 
+    fn saveSolverDiagnosticsCsv(
+        self: *const FullStatsLog,
+        io: std.Io,
+        save_dir: std.Io.Dir,
+        camera_idx: usize,
+        frame_idx: usize,
+        camera: *const cam.CameraPrepared,
+    ) !void {
+        const iteration_map = self.iteration_map orelse return;
+        const converged_map = self.converged_map orelse return;
+        const earlyout_map = self.earlyout_map orelse return;
+
+        const sub_samp: usize = @intCast(camera.sub_sample);
+        const rows_num = camera.pixels_num[1] * sub_samp;
+        const cols_num = camera.pixels_num[0] * sub_samp;
+
+        var name_buf: [1024]u8 = undefined;
+        const file_name = try std.fmt.bufPrint(
+            name_buf[0..],
+            "diag_cam{d}_frame{d}_solver.csv",
+            .{ camera_idx, frame_idx },
+        );
+
+        const csv_file = try save_dir.createFile(io, file_name, .{});
+        defer csv_file.close(io);
+
+        var write_buf: [4096]u8 = undefined;
+        var file_writer = csv_file.writer(io, &write_buf);
+        const writer = &file_writer.interface;
+
+        try writer.writeAll(
+            "subpx_x,subpx_y,iters,converged,pre_domain_converged,"
+        );
+        try writer.writeAll(
+            "hit_iter_limit,residual_x,residual_y,interpolated_w,"
+        );
+        try writer.writeAll(
+            "residual_mag,normalized_residual_mag,jacobian_det,xi,eta,"
+        );
+        try writer.writeAll("domain_violation,earlyout,inv_z\n");
+
+        const iter_row_stride = iteration_map.strides[0];
+
+        for (0..rows_num) |yy| {
+            for (0..cols_num) |xx| {
+                const idx = yy * iter_row_stride + xx;
+                const iters = iteration_map.slice[idx];
+                const converged = converged_map.slice[idx];
+                const earlyout = earlyout_map.slice[idx];
+
+                if (iters <= 0.0 and earlyout <= 0.0 and converged <= 0.0) {
+                    continue;
+                }
+
+                const pre_domain_converged =
+                    if (self.pre_domain_converged_map) |*m| m.slice[idx] else 0.0;
+                const hit_iter_limit =
+                    if (self.hit_iter_limit_map) |*m| m.slice[idx] else 0.0;
+                const residual_mag =
+                    if (self.residual_mag_map) |*m| m.slice[idx]
+                    else std.math.nan(F);
+                const residual_x =
+                    if (self.residual_x_map) |*m| m.slice[idx]
+                    else std.math.nan(F);
+                const residual_y =
+                    if (self.residual_y_map) |*m| m.slice[idx]
+                    else std.math.nan(F);
+                const interpolated_w =
+                    if (self.interpolated_w_map) |*m| m.slice[idx]
+                    else std.math.nan(F);
+                const normalized_residual_mag =
+                    if (self.normalized_residual_mag_map) |*m| m.slice[idx]
+                    else std.math.nan(F);
+                const jacobian_det =
+                    if (self.jacobian_det_map) |*m| m.slice[idx]
+                    else std.math.nan(F);
+                const xi =
+                    if (self.xi_map) |*m| m.slice[idx] else std.math.nan(F);
+                const eta =
+                    if (self.eta_map) |*m| m.slice[idx] else std.math.nan(F);
+                const domain_violation =
+                    if (self.domain_violation_map) |*m| m.slice[idx]
+                    else std.math.nan(F);
+                const inv_z =
+                    if (self.depth_map) |*m| m.slice[idx] else std.math.nan(F);
+
+                try writer.print(
+                    "{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d}\n",
+                    .{
+                        xx,
+                        yy,
+                        iters,
+                        converged,
+                        pre_domain_converged,
+                        hit_iter_limit,
+                        residual_x,
+                        residual_y,
+                        interpolated_w,
+                        residual_mag,
+                        normalized_residual_mag,
+                        jacobian_det,
+                        xi,
+                        eta,
+                        domain_violation,
+                        earlyout,
+                        inv_z,
+                    },
+                );
+            }
+        }
+
+        try file_writer.flush();
+    }
+
     pub fn saveFrameReport(
         self: *const FullStatsLog,
         io: std.Io,
@@ -347,6 +477,13 @@ pub const FullStatsLog = struct {
         var file_writer = stats_file.writer(io, &write_buf);
         try self.writeReport(&file_writer.interface, frame_idx, camera, nodes_per_elem);
         try self.fullReport(io, frame_idx, camera, nodes_per_elem);
+        try self.saveSolverDiagnosticsCsv(
+            io,
+            save_dir,
+            camera_idx,
+            frame_idx,
+            camera,
+        );
 
         if (self.iteration_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
@@ -416,6 +553,40 @@ pub const FullStatsLog = struct {
             }
         }
 
+        if (self.pre_domain_converged_map) |*m| {
+            const sub_samp: usize = @intCast(camera.sub_sample);
+            const mat = matslice.MatSlice(F).init(
+                m.slice,
+                camera.pixels_num[1] * sub_samp,
+                camera.pixels_num[0] * sub_samp,
+            );
+            const name = try std.fmt.bufPrint(
+                name_buff[0..],
+                "diag_cam{d}_frame{d}_pre_domain_converged",
+                .{ camera_idx, frame_idx },
+            );
+            for (opts.formats) |opt| {
+                try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
+            }
+        }
+
+        if (self.hit_iter_limit_map) |*m| {
+            const sub_samp: usize = @intCast(camera.sub_sample);
+            const mat = matslice.MatSlice(F).init(
+                m.slice,
+                camera.pixels_num[1] * sub_samp,
+                camera.pixels_num[0] * sub_samp,
+            );
+            const name = try std.fmt.bufPrint(
+                name_buff[0..],
+                "diag_cam{d}_frame{d}_hit_iter_limit",
+                .{ camera_idx, frame_idx },
+            );
+            for (opts.formats) |opt| {
+                try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
+            }
+        }
+
         if (self.jacobian_det_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
             const mat = matslice.MatSlice(F).init(
@@ -426,6 +597,74 @@ pub const FullStatsLog = struct {
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
                 "diag_cam{d}_frame{d}_Jdet",
+                .{ camera_idx, frame_idx },
+            );
+            for (opts.formats) |opt| {
+                try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
+            }
+        }
+
+        if (self.residual_mag_map) |*m| {
+            const sub_samp: usize = @intCast(camera.sub_sample);
+            const mat = matslice.MatSlice(F).init(
+                m.slice,
+                camera.pixels_num[1] * sub_samp,
+                camera.pixels_num[0] * sub_samp,
+            );
+            const name = try std.fmt.bufPrint(
+                name_buff[0..],
+                "diag_cam{d}_frame{d}_residual_mag",
+                .{ camera_idx, frame_idx },
+            );
+            for (opts.formats) |opt| {
+                try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
+            }
+        }
+
+        if (self.interpolated_w_map) |*m| {
+            const sub_samp: usize = @intCast(camera.sub_sample);
+            const mat = matslice.MatSlice(F).init(
+                m.slice,
+                camera.pixels_num[1] * sub_samp,
+                camera.pixels_num[0] * sub_samp,
+            );
+            const name = try std.fmt.bufPrint(
+                name_buff[0..],
+                "diag_cam{d}_frame{d}_W",
+                .{ camera_idx, frame_idx },
+            );
+            for (opts.formats) |opt| {
+                try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
+            }
+        }
+
+        if (self.normalized_residual_mag_map) |*m| {
+            const sub_samp: usize = @intCast(camera.sub_sample);
+            const mat = matslice.MatSlice(F).init(
+                m.slice,
+                camera.pixels_num[1] * sub_samp,
+                camera.pixels_num[0] * sub_samp,
+            );
+            const name = try std.fmt.bufPrint(
+                name_buff[0..],
+                "diag_cam{d}_frame{d}_normalized_residual_mag",
+                .{ camera_idx, frame_idx },
+            );
+            for (opts.formats) |opt| {
+                try iio.saveMatAsImage(io, save_dir, name, &mat, opt);
+            }
+        }
+
+        if (self.domain_violation_map) |*m| {
+            const sub_samp: usize = @intCast(camera.sub_sample);
+            const mat = matslice.MatSlice(F).init(
+                m.slice,
+                camera.pixels_num[1] * sub_samp,
+                camera.pixels_num[0] * sub_samp,
+            );
+            const name = try std.fmt.bufPrint(
+                name_buff[0..],
+                "diag_cam{d}_frame{d}_domain_violation",
                 .{ camera_idx, frame_idx },
             );
             for (opts.formats) |opt| {
@@ -855,6 +1094,18 @@ pub fn initFullStatsLog(
         @memset(self.converged_map.?.slice, 0);
     }
 
+    self.pre_domain_converged_map = try ndarray.NDArray(F).initFlat(
+        allocator,
+        &sub_pixels_num,
+    );
+    @memset(self.pre_domain_converged_map.?.slice, 0);
+
+    self.hit_iter_limit_map = try ndarray.NDArray(F).initFlat(
+        allocator,
+        &sub_pixels_num,
+    );
+    @memset(self.hit_iter_limit_map.?.slice, 0);
+
     if (opts.save_jacobian_det_map) {
         self.jacobian_det_map = try ndarray.NDArray(F).initFlat(
             allocator,
@@ -862,6 +1113,42 @@ pub fn initFullStatsLog(
         );
         @memset(self.jacobian_det_map.?.slice, std.math.nan(F));
     }
+
+    self.residual_mag_map = try ndarray.NDArray(F).initFlat(
+        allocator,
+        &sub_pixels_num,
+    );
+    @memset(self.residual_mag_map.?.slice, std.math.nan(F));
+
+    self.residual_x_map = try ndarray.NDArray(F).initFlat(
+        allocator,
+        &sub_pixels_num,
+    );
+    @memset(self.residual_x_map.?.slice, std.math.nan(F));
+
+    self.residual_y_map = try ndarray.NDArray(F).initFlat(
+        allocator,
+        &sub_pixels_num,
+    );
+    @memset(self.residual_y_map.?.slice, std.math.nan(F));
+
+    self.interpolated_w_map = try ndarray.NDArray(F).initFlat(
+        allocator,
+        &sub_pixels_num,
+    );
+    @memset(self.interpolated_w_map.?.slice, std.math.nan(F));
+
+    self.normalized_residual_mag_map = try ndarray.NDArray(F).initFlat(
+        allocator,
+        &sub_pixels_num,
+    );
+    @memset(self.normalized_residual_mag_map.?.slice, std.math.nan(F));
+
+    self.domain_violation_map = try ndarray.NDArray(F).initFlat(
+        allocator,
+        &sub_pixels_num,
+    );
+    @memset(self.domain_violation_map.?.slice, std.math.nan(F));
 
     if (opts.save_pixel_occupancy_map) {
         self.pixel_occupancy_map = try ndarray.NDArray(F).initFlat(
@@ -1113,6 +1400,36 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             }
         }
 
+        pub inline fn recordPixelPreDomainConverged(
+            self: @This(),
+            global_subx: usize,
+            global_suby: usize,
+            converged: bool,
+        ) void {
+            if (mode == .full_stats) {
+                if (self.log.pre_domain_converged_map) |*pmap| {
+                    const row_stride = pmap.strides[0];
+                    pmap.slice[global_suby * row_stride + global_subx] =
+                        if (converged) 1.0 else 0.0;
+                }
+            }
+        }
+
+        pub inline fn recordPixelHitIterLimit(
+            self: @This(),
+            global_subx: usize,
+            global_suby: usize,
+            hit_limit: bool,
+        ) void {
+            if (mode == .full_stats) {
+                if (self.log.hit_iter_limit_map) |*hmap| {
+                    const row_stride = hmap.strides[0];
+                    hmap.slice[global_suby * row_stride + global_subx] =
+                        if (hit_limit) 1.0 else 0.0;
+                }
+            }
+        }
+
         pub inline fn recordPixelJacobianDet(
             self: @This(),
             global_subx: usize,
@@ -1124,6 +1441,96 @@ pub fn ReportContext(comptime mode: ReportMode) type {
                     const row_stride = jmap.strides[0];
                     jmap.slice[global_suby * row_stride + global_subx] =
                         jacobian_det;
+                }
+            }
+        }
+
+        pub inline fn recordPixelResidualMag(
+            self: @This(),
+            global_subx: usize,
+            global_suby: usize,
+            residual_mag: F,
+        ) void {
+            if (mode == .full_stats) {
+                if (self.log.residual_mag_map) |*rmap| {
+                    const row_stride = rmap.strides[0];
+                    rmap.slice[global_suby * row_stride + global_subx] =
+                        residual_mag;
+                }
+            }
+        }
+
+        pub inline fn recordPixelResidualX(
+            self: @This(),
+            global_subx: usize,
+            global_suby: usize,
+            residual_x: F,
+        ) void {
+            if (mode == .full_stats) {
+                if (self.log.residual_x_map) |*rmap| {
+                    const row_stride = rmap.strides[0];
+                    rmap.slice[global_suby * row_stride + global_subx] =
+                        residual_x;
+                }
+            }
+        }
+
+        pub inline fn recordPixelResidualY(
+            self: @This(),
+            global_subx: usize,
+            global_suby: usize,
+            residual_y: F,
+        ) void {
+            if (mode == .full_stats) {
+                if (self.log.residual_y_map) |*rmap| {
+                    const row_stride = rmap.strides[0];
+                    rmap.slice[global_suby * row_stride + global_subx] =
+                        residual_y;
+                }
+            }
+        }
+
+        pub inline fn recordPixelInterpolatedW(
+            self: @This(),
+            global_subx: usize,
+            global_suby: usize,
+            interpolated_w: F,
+        ) void {
+            if (mode == .full_stats) {
+                if (self.log.interpolated_w_map) |*wmap| {
+                    const row_stride = wmap.strides[0];
+                    wmap.slice[global_suby * row_stride + global_subx] =
+                        interpolated_w;
+                }
+            }
+        }
+
+        pub inline fn recordPixelNormalizedResidualMag(
+            self: @This(),
+            global_subx: usize,
+            global_suby: usize,
+            normalized_residual_mag: F,
+        ) void {
+            if (mode == .full_stats) {
+                if (self.log.normalized_residual_mag_map) |*nmap| {
+                    const row_stride = nmap.strides[0];
+                    nmap.slice[global_suby * row_stride + global_subx] =
+                        normalized_residual_mag;
+                }
+            }
+        }
+
+        pub inline fn recordPixelDomainViolation(
+            self: @This(),
+            global_subx: usize,
+            global_suby: usize,
+            domain_violation: F,
+        ) void {
+            if (mode == .full_stats) {
+                if (self.log.domain_violation_map) |*dmap| {
+                    const row_stride = dmap.strides[0];
+                    dmap.slice[global_suby * row_stride + global_subx] =
+                        domain_violation;
                 }
             }
         }
@@ -1203,6 +1610,15 @@ pub fn ReportContext(comptime mode: ReportMode) type {
         pub inline fn recordSolverDiverged(self: @This()) void {
             if (self.bench()) |bench_log| {
                 bench_log.solver_diverged += 1;
+            }
+        }
+
+        pub inline fn recordSolverDivergedCount(
+            self: @This(),
+            diverged_count: u64,
+        ) void {
+            if (self.bench()) |bench_log| {
+                bench_log.solver_diverged += diverged_count;
             }
         }
 

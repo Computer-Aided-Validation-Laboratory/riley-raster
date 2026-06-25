@@ -102,6 +102,64 @@ pub inline fn recordPixelConvergedStats(
     }
 }
 
+pub inline fn recordPixelSolverDiagnostics(
+    comptime report_mode: ReportMode,
+    ctx_report: anytype,
+    global_subx: usize,
+    global_suby: usize,
+    pre_domain_converged: bool,
+    hit_iter_limit: bool,
+    residual_x: F,
+    residual_y: F,
+    interpolated_w: F,
+    residual_mag: F,
+    normalized_residual_mag: F,
+    domain_violation: F,
+) void {
+    if (comptime report_mode == .full_stats) {
+        ctx_report.recordPixelPreDomainConverged(
+            global_subx,
+            global_suby,
+            pre_domain_converged,
+        );
+        ctx_report.recordPixelHitIterLimit(
+            global_subx,
+            global_suby,
+            hit_iter_limit,
+        );
+        ctx_report.recordPixelResidualX(
+            global_subx,
+            global_suby,
+            residual_x,
+        );
+        ctx_report.recordPixelResidualY(
+            global_subx,
+            global_suby,
+            residual_y,
+        );
+        ctx_report.recordPixelInterpolatedW(
+            global_subx,
+            global_suby,
+            interpolated_w,
+        );
+        ctx_report.recordPixelResidualMag(
+            global_subx,
+            global_suby,
+            residual_mag,
+        );
+        ctx_report.recordPixelNormalizedResidualMag(
+            global_subx,
+            global_suby,
+            normalized_residual_mag,
+        );
+        ctx_report.recordPixelDomainViolation(
+            global_subx,
+            global_suby,
+            domain_violation,
+        );
+    }
+}
+
 pub inline fn recordPixelIterAndOccupancy(
     comptime report_mode: ReportMode,
     ctx_report: anytype,

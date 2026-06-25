@@ -30,7 +30,7 @@ pub fn solveInverse(
     deriv_n_xi: *[N]F,
     deriv_n_eta: *[N]F,
 ) common.NewtonResult {
-    const resid_tol = tol.newton.residual;
+    const resid_norm_tol = tol.newton.normalized_residual;
     const det_tol = tol.newton.determinant;
     const eps = tol.newton.parametric_domain;
 
@@ -55,6 +55,7 @@ pub fn solveInverse(
 
         residual_x = 0.0;
         residual_y = 0.0;
+        var interpolated_w: F = 0.0;
         var jacobian_11: F = 0.0;
         var jacobian_12: F = 0.0;
         var jacobian_21: F = 0.0;
@@ -63,6 +64,7 @@ pub fn solveInverse(
         for (0..N) |nn| {
             residual_x += node_values[nn] * term_x[nn];
             residual_y += node_values[nn] * term_y[nn];
+            interpolated_w += node_values[nn] * element_node_w[nn];
 
             jacobian_11 += deriv_n_xi[nn] * term_x[nn];
             jacobian_12 += deriv_n_eta[nn] * term_x[nn];
@@ -70,9 +72,16 @@ pub fn solveInverse(
             jacobian_22 += deriv_n_eta[nn] * term_y[nn];
         }
 
-        if (@abs(residual_x) < resid_tol and @abs(residual_y) < resid_tol) {
-            met_residual = true;
-            break;
+        const w_abs = @abs(interpolated_w);
+        if (w_abs > 0.0) {
+            const residual_sq =
+                residual_x * residual_x + residual_y * residual_y;
+            const w_scaled_tol = w_abs * resid_norm_tol;
+
+            if (residual_sq <= w_scaled_tol * w_scaled_tol) {
+                met_residual = true;
+                break;
+            }
         }
 
         const determinant = jacobian_11 * jacobian_22 - jacobian_12 * jacobian_21;
@@ -83,6 +92,8 @@ pub fn solveInverse(
                 .iterations = iters,
                 .residual_x = residual_x,
                 .residual_y = residual_y,
+                .xi_final = xi,
+                .eta_final = eta,
             };
         }
 
@@ -100,6 +111,8 @@ pub fn solveInverse(
             .iterations = iters,
             .residual_x = residual_x,
             .residual_y = residual_y,
+            .xi_final = xi,
+            .eta_final = eta,
         };
     }
 
@@ -118,6 +131,8 @@ pub fn solveInverse(
             .iterations = iters,
             .residual_x = residual_x,
             .residual_y = residual_y,
+            .xi_final = xi,
+            .eta_final = eta,
         };
     }
 
@@ -127,5 +142,7 @@ pub fn solveInverse(
         .iterations = iters,
         .residual_x = residual_x,
         .residual_y = residual_y,
+        .xi_final = xi,
+        .eta_final = eta,
     };
 }

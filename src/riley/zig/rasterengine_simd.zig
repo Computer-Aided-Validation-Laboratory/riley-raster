@@ -827,12 +827,29 @@ fn rasterNewtonSIMDImpl(
         ctx_report.recordSolverIters(@intCast(@reduce(.Add, v_solver_iters)));
         ctx_report.recordSolverCalls(subpx_simd_chunk.count);
 
+        const pre_domain_arr: [S]bool = result.v_pre_domain_converged;
+        const xi_final_arr: [S]F = result.v_xi_final;
+        const eta_final_arr: [S]F = result.v_eta_final;
+
+        const v_failed_mask = v_chunk_mask & !result.v_mask;
+        if (@reduce(.Or, v_failed_mask)) {
+            const v_fail_one: VecSU8 = @splat(1);
+            const v_fail_zero: VecSU8 = @splat(0);
+            const v_fail_count = @select(
+                u8,
+                v_failed_mask,
+                v_fail_one,
+                v_fail_zero,
+            );
+            ctx_report.recordSolverDivergedCount(
+                @intCast(@reduce(.Add, v_fail_count)),
+            );
+        }
+
         if (comptime report_mode == .full_stats) {
             const chunk_mask_arr: [S]bool = v_chunk_mask;
             const conv_mask_arr: [S]bool = result.v_mask;
             const iters_arr: [S]u8 = result.v_iters;
-            const xi_out_arr: [S]F = result.v_xi_out;
-            const eta_out_arr: [S]F = result.v_eta_out;
             for (0..S) |jj| {
                 if (!chunk_mask_arr[jj]) continue;
 
@@ -848,6 +865,29 @@ fn rasterNewtonSIMDImpl(
                     usize,
                     @intCast(targ_overlap.tile.scratch_y_px_min),
                 ) * sub_samp;
+                const solve_state = newton.evaluateSolveState(
+                    N,
+                    subpx_simd_chunk.px_f[jj] - subpx_domain.x_off,
+                    subpx_simd_chunk.py_f[jj] - subpx_domain.y_off,
+                    nodes_coords.x,
+                    nodes_coords.y,
+                    nodes_coords.z,
+                    xi_final_arr[jj],
+                    eta_final_arr[jj],
+                );
+                const domain_violation = GeometryKernel.domainViolation(
+                    xi_final_arr[jj],
+                    eta_final_arr[jj],
+                );
+                const hit_iter_limit =
+                    iters_arr[jj] >= buildconfig.config.raster_newton_iter_max;
+                const jacobian_det = newton.calcJacobianDet2D(
+                    N,
+                    xi_final_arr[jj],
+                    eta_final_arr[jj],
+                    nodes_coords.x,
+                    nodes_coords.y,
+                );
                 rasterreport.recordPixelIters(
                     report_mode,
                     ctx_report,
@@ -855,36 +895,29 @@ fn rasterNewtonSIMDImpl(
                     global_suby,
                     iters_arr[jj],
                 );
-                if (conv_mask_arr[jj]) {
-                    rasterreport.recordPixelConvergedStats(
-                        report_mode,
-                        ctx_report,
-                        global_subx,
-                        global_suby,
-                        true,
-                        xi_out_arr[jj],
-                        eta_out_arr[jj],
-                        newton.calcJacobianDet2D(
-                            N,
-                            xi_out_arr[jj],
-                            eta_out_arr[jj],
-                            nodes_coords.x,
-                            nodes_coords.y,
-                        ),
-                    );
-                    continue;
-                }
-
-                const nan = std.math.nan(F);
                 rasterreport.recordPixelConvergedStats(
                     report_mode,
                     ctx_report,
                     global_subx,
                     global_suby,
-                    false,
-                    nan,
-                    nan,
-                    nan,
+                    conv_mask_arr[jj],
+                    xi_final_arr[jj],
+                    eta_final_arr[jj],
+                    jacobian_det,
+                );
+                rasterreport.recordPixelSolverDiagnostics(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    pre_domain_arr[jj],
+                    hit_iter_limit,
+                    solve_state.residual_x,
+                    solve_state.residual_y,
+                    solve_state.interpolated_w,
+                    solve_state.residual_mag,
+                    solve_state.normalized_residual_mag,
+                    domain_violation,
                 );
             }
         }

@@ -87,6 +87,8 @@ pub fn GeometryResultSIMD(comptime N: usize) type {
         v_iters: VecSU8,
         v_xi_out: VecSF = undefined,
         v_eta_out: VecSF = undefined,
+        v_xi_final: VecSF = undefined,
+        v_eta_final: VecSF = undefined,
         v_residual_x: VecSF = undefined,
         v_residual_y: VecSF = undefined,
     };
@@ -427,6 +429,8 @@ pub fn Tri6Kernel() type {
                 .v_iters = res.v_iterations,
                 .v_xi_out = v_xi_out,
                 .v_eta_out = v_eta_out,
+                .v_xi_final = res.v_xi_final,
+                .v_eta_final = res.v_eta_final,
                 .v_residual_x = res.v_residual_x,
                 .v_residual_y = res.v_residual_y,
             };
@@ -1008,6 +1012,8 @@ pub fn Quad4NewtonKernel() type {
                 .v_iters = res.v_iterations,
                 .v_xi_out = v_xi_out,
                 .v_eta_out = v_eta_out,
+                .v_xi_final = res.v_xi_final,
+                .v_eta_final = res.v_eta_final,
                 .v_residual_x = res.v_residual_x,
                 .v_residual_y = res.v_residual_y,
             };
@@ -1143,6 +1149,8 @@ pub fn Quad89Kernel(comptime N: usize) type {
                 .v_iters = res.v_iterations,
                 .v_xi_out = v_xi_out,
                 .v_eta_out = v_eta_out,
+                .v_xi_final = res.v_xi_final,
+                .v_eta_final = res.v_eta_final,
                 .v_residual_x = res.v_residual_x,
                 .v_residual_y = res.v_residual_y,
             };
