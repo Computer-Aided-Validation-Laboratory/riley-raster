@@ -22,6 +22,15 @@ const buildconfig = @import("riley/zig/buildconfig.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const policy = @import("common/testpolicy.zig");
 
+comptime {
+    if (buildconfig.config.simd != .on) {
+        @compileError(
+            "src/gen_gold_min.zig requires .simd = .on. " ++
+                "MIN scalar gold generation is not implemented.",
+        );
+    }
+}
+
 pub fn main(init: std.process.Init) !void {
     @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
     const allocator = init.gpa;

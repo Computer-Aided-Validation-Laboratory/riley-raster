@@ -10,6 +10,8 @@ const std = @import("std");
 const root = @import("root");
 const local_build_options = @import("build_options.zig");
 
+pub const comptime_eval_branch_quota: comptime_int = 50000;
+
 const build_options = if (@hasDecl(root, "build_options"))
     root.build_options
 else
@@ -162,8 +164,6 @@ pub const Config = struct {
     precision: type = Scalar,
     tolerance: Tolerance = defaultToleranceForPrecision(Scalar),
 };
-
-pub const comptime_eval_branch_quota: comptime_int = 100000;
 
 pub fn defaultSimdVectorWidthForPrecision(comptime precision: type) comptime_int {
     if (build_simd_vector_width > 0) {

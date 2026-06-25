@@ -74,8 +74,11 @@ pub fn GeometryResult(comptime N: usize) type {
     return struct {
         weights: ?[N]F,
         iters: u8,
+        pre_domain_converged: bool = true,
         xi_out: F = 0.0,
         eta_out: F = 0.0,
+        xi_final: F = 0.0,
+        eta_final: F = 0.0,
     };
 }
 
@@ -380,11 +383,20 @@ pub fn Tri6Kernel() type {
                 return .{
                     .weights = node_values,
                     .iters = result.iterations,
+                    .pre_domain_converged = result.pre_domain_converged,
                     .xi_out = xi,
                     .eta_out = eta,
+                    .xi_final = result.xi_final,
+                    .eta_final = result.eta_final,
                 };
             }
-            return .{ .weights = null, .iters = result.iterations };
+            return .{
+                .weights = null,
+                .iters = result.iterations,
+                .pre_domain_converged = result.pre_domain_converged,
+                .xi_final = result.xi_final,
+                .eta_final = result.eta_final,
+            };
         }
 
         pub inline fn solveWeightsNewtonSIMD(

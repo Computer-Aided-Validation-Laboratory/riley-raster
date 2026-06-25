@@ -22,6 +22,15 @@ const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
 const simd_on = buildconfig.config.simd == .on;
 
+comptime {
+    if (!simd_on) {
+        @compileError(
+            "src/test_min.zig requires .simd = .on. " ++
+                "MIN scalar gold/test orchestration is not implemented.",
+        );
+    }
+}
+
 test "MIN Suite: sphere200 and multimesh" {
     const allocator = std.testing.allocator;
     const io = std.testing.io;

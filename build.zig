@@ -384,24 +384,32 @@ fn addTestRunStep(
         "sh",
         "-c",
         \\set -eu
-        \\src="$1"
-        \\precision="$2"
-        \\simd="$3"
-        \\zigexe="$4"
-        \\opt="$5"
-        \\tmp_dir="$(mktemp -d .zig-cache/riley-test-XXXXXX)"
+        \\step_name="$1"
+        \\src="$2"
+        \\precision="$3"
+        \\simd="$4"
+        \\zigexe="$5"
+        \\opt="$6"
+        \\tree_dir=".zig-cache/riley-test/${step_name}_${precision}_${simd}_${opt}"
+        \\lock_dir="${tree_dir}.lock"
+        \\while ! mkdir "$lock_dir" 2>/dev/null; do
+        \\    sleep 0.1
+        \\done
         \\cleanup() {
-        \\    rm -rf "$tmp_dir"
+        \\    rmdir "$lock_dir"
         \\}
         \\trap cleanup EXIT
-        \\cp -a src "$tmp_dir/src"
+        \\mkdir -p "$tree_dir"
+        \\rm -rf "$tree_dir/src"
+        \\cp -a src "$tree_dir/src"
         \\{
         \\    printf 'pub const precision = "%s";\n' "$precision"
         \\    printf 'pub const simd = "%s";\n' "$simd"
-        \\} > "$tmp_dir/src/riley/zig/build_options.zig"
-        \\"$zigexe" test -lc -O "$opt" "$tmp_dir/$src"
+        \\} > "$tree_dir/src/riley/zig/build_options.zig"
+        \\"$zigexe" test -lc -O "$opt" "$tree_dir/$src"
         ,
         "--",
+        entry.step_name,
         entry.source_path,
         precision,
         simd,
