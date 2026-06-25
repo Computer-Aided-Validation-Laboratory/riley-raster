@@ -46,45 +46,23 @@ pub const SimdTextureInterpMode = enum {
     over_pixels,
 };
 
-const simd_texture_interp_str = if (@hasDecl(build_options, "simd_texture_interp"))
-    build_options.simd_texture_interp
-else
-    "inner";
-
-pub const default_simd_texture_interp = blk: {
-    if (std.mem.eql(u8, simd_texture_interp_str, "inner")) {
-        break :blk SimdTextureInterpMode.inner;
+pub const TextureSIMDPolicy = struct {
+    pub fn resolve(
+        comptime channels: comptime_int,
+        comptime is_linear: bool,
+        comptime uses_lut: bool,
+    ) SimdTextureInterpMode {
+        if (is_linear) {
+            return .over_pixels;
+        }
+        if (channels == 1) {
+            if (uses_lut) {
+                return .inner;
+            }
+            return .over_pixels;
+        }
+        return .inner;
     }
-    if (std.mem.eql(u8, simd_texture_interp_str, "over_pixels")) {
-        break :blk SimdTextureInterpMode.over_pixels;
-    }
-    @compileError(
-        "build_options.simd_texture_interp must be \"inner\" or " ++
-            "\"over_pixels\".",
-    );
-};
-
-pub const TextureLayout = enum {
-    planar,
-    interleaved,
-};
-
-const texture_layout_str = if (@hasDecl(build_options, "texture_layout"))
-    build_options.texture_layout
-else
-    "planar";
-
-pub const default_texture_layout = blk: {
-    if (std.mem.eql(u8, texture_layout_str, "planar")) {
-        break :blk TextureLayout.planar;
-    }
-    if (std.mem.eql(u8, texture_layout_str, "interleaved")) {
-        break :blk TextureLayout.interleaved;
-    }
-    @compileError(
-        "build_options.texture_layout must be \"planar\" or " ++
-            "\"interleaved\".",
-    );
 };
 
 const build_simd_vector_width = if (@hasDecl(build_options, "simd_vector_width"))
@@ -173,8 +151,6 @@ pub const Tolerance = struct {
 
 pub const Config = struct {
     simd: SimdMode = default_simd,
-    simd_texture_interp: SimdTextureInterpMode = default_simd_texture_interp,
-    texture_layout: TextureLayout = default_texture_layout,
     simd_vector_width: comptime_int = defaultSimdVectorWidthForPrecision(Scalar),
     max_nodal_fields: comptime_int = 8,
     max_image_channels: comptime_int = 8,
@@ -280,3 +256,36 @@ pub const VecSU = @Vector(SimdWidth, usize);
 pub const VecSI = @Vector(SimdWidth, isize);
 pub const VecSB = @Vector(SimdWidth, bool);
 pub const VecSU8 = @Vector(SimdWidth, u8);
+
+test "TextureSIMDPolicy resolves texture cases" {
+    const expectEqual = std.testing.expectEqual;
+
+    try expectEqual(
+        SimdTextureInterpMode.over_pixels,
+        TextureSIMDPolicy.resolve(1, true, false),
+    );
+    try expectEqual(
+        SimdTextureInterpMode.inner,
+        TextureSIMDPolicy.resolve(1, false, true),
+    );
+    try expectEqual(
+        SimdTextureInterpMode.inner,
+        TextureSIMDPolicy.resolve(1, false, true),
+    );
+    try expectEqual(
+        SimdTextureInterpMode.over_pixels,
+        TextureSIMDPolicy.resolve(1, false, false),
+    );
+    try expectEqual(
+        SimdTextureInterpMode.over_pixels,
+        TextureSIMDPolicy.resolve(3, true, false),
+    );
+    try expectEqual(
+        SimdTextureInterpMode.inner,
+        TextureSIMDPolicy.resolve(3, false, true),
+    );
+    try expectEqual(
+        SimdTextureInterpMode.inner,
+        TextureSIMDPolicy.resolve(3, false, false),
+    );
+}

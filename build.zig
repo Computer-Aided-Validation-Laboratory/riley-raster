@@ -24,34 +24,19 @@ pub fn build(b: *std.Build) void {
     const precision = b.option([]const u8, "precision", "Floating point precision: f64 or f32") orelse
         "f64";
     const simd = b.option([]const u8, "simd", "SIMD mode: on or off") orelse "on";
-    const simd_texture_interp = b.option(
-        []const u8,
-        "simd-texture-interp",
-        "SIMD texture interpolation mode: inner or over_pixels",
-    ) orelse "inner";
     const simd_vector_width = b.option(
         u32,
         "simd-vector-width",
         "SIMD vector width (0 to use default for precision)",
     ) orelse 0;
-    const texture_layout = b.option(
-        []const u8,
-        "texture-layout",
-        "Texture memory layout: planar or interleaved",
-    ) orelse "planar";
-
     validatePrecision(precision);
     validateSimd(simd);
-    validateSimdTextureInterp(simd_texture_interp);
-    validateTextureLayout(texture_layout);
 
     const build_options_module = createBuildOptionsModule(
         b,
         precision,
         simd,
-        simd_texture_interp,
         simd_vector_width,
-        texture_layout,
     );
     const shared_lib = addRileySharedLibrary(
         b,
@@ -146,7 +131,6 @@ pub fn build(b: *std.Build) void {
             entry,
             precision,
             simd,
-            simd_texture_interp,
         );
         test_step.dependOn(&test_run.step);
     }
@@ -359,9 +343,7 @@ pub fn build(b: *std.Build) void {
             entry,
             precision,
             simd,
-            simd_texture_interp,
             simd_vector_width,
-            texture_layout,
         );
         install_step.dependOn(&install_artifact.step);
         bench_bins_step.dependOn(&install_artifact.step);
@@ -397,7 +379,6 @@ fn addTestRunStep(
     entry: TestEntry,
     precision: []const u8,
     simd: []const u8,
-    simd_texture_interp: []const u8,
 ) *std.Build.Step.Run {
     const run_step = b.addSystemCommand(&.{
         "sh",
@@ -406,30 +387,24 @@ fn addTestRunStep(
         \\src="$1"
         \\precision="$2"
         \\simd="$3"
-        \\simd_texture_interp="$4"
-        \\zigexe="$5"
-        \\opt="$6"
-        \\src_dir="$(dirname "$src")"
-        \\wrapper="$(mktemp "${src_dir}/.riley-test-XXXXXX.zig")"
+        \\zigexe="$4"
+        \\opt="$5"
+        \\tmp_dir="$(mktemp -d .zig-cache/riley-test-XXXXXX)"
         \\cleanup() {
-        \\    rm -f "$wrapper"
+        \\    rm -rf "$tmp_dir"
         \\}
         \\trap cleanup EXIT
+        \\cp -a src "$tmp_dir/src"
         \\{
-        \\    printf 'pub const build_options = struct {\n'
-        \\    printf '    pub const precision = "%s";\n' "$precision"
-        \\    printf '    pub const simd = "%s";\n' "$simd"
-        \\    printf '    pub const simd_texture_interp = "%s";\n' "$simd_texture_interp"
-        \\    printf '};\n'
-        \\    cat "$src"
-        \\} > "$wrapper"
-        \\"$zigexe" test -lc -O "$opt" "$wrapper"
+        \\    printf 'pub const precision = "%s";\n' "$precision"
+        \\    printf 'pub const simd = "%s";\n' "$simd"
+        \\} > "$tmp_dir/src/riley/zig/build_options.zig"
+        \\"$zigexe" test -lc -O "$opt" "$tmp_dir/$src"
         ,
         "--",
         entry.source_path,
         precision,
         simd,
-        simd_texture_interp,
         b.graph.zig_exe,
         @tagName(optimize),
     });
@@ -466,18 +441,14 @@ fn addBenchInstallStep(
     entry: RunEntry,
     precision: []const u8,
     simd: []const u8,
-    simd_texture_interp: []const u8,
     simd_vector_width: u32,
-    texture_layout: []const u8,
 ) *std.Build.Step.InstallArtifact {
     const binary_name = benchmarkBinaryName(
         b,
         entry.source_path["src/".len .. entry.source_path.len - ".zig".len],
         precision,
         simd,
-        simd_texture_interp,
         simd_vector_width,
-        texture_layout,
     );
     const executable = b.addExecutable(.{
         .name = binary_name,
@@ -500,16 +471,12 @@ fn createBuildOptionsModule(
     b: *std.Build,
     precision: []const u8,
     simd: []const u8,
-    simd_texture_interp: []const u8,
     simd_vector_width: u32,
-    texture_layout: []const u8,
 ) *std.Build.Module {
     const options = b.addOptions();
     options.addOption([]const u8, "precision", precision);
     options.addOption([]const u8, "simd", simd);
-    options.addOption([]const u8, "simd_texture_interp", simd_texture_interp);
     options.addOption(u32, "simd_vector_width", simd_vector_width);
-    options.addOption([]const u8, "texture_layout", texture_layout);
     return options.createModule();
 }
 
@@ -607,7 +574,7 @@ fn buildWrapperImports(
     source_path: []const u8,
     link_libc: bool,
     wrapper_kind: WrapperKind,
-    wrapper_text: []const u8,
+    _: []const u8,
 ) []const std.Build.Module.Import {
     var imports: std.ArrayList(std.Build.Module.Import) = .empty;
     imports.append(b.allocator, .{
@@ -627,47 +594,6 @@ fn buildWrapperImports(
         }) catch @panic("OOM building entry source import.");
         return imports.items;
     }
-
-    var search_start: usize = 0;
-    while (std.mem.indexOfPos(u8, wrapper_text, search_start, "@import(\"")) |match_start| {
-        const path_start = match_start + "@import(\"".len;
-        const path_end = std.mem.indexOfPos(u8, wrapper_text, path_start, "\")") orelse
-            @panic("Malformed import in generated test wrapper.");
-        const import_path = wrapper_text[path_start..path_end];
-        search_start = path_end + 2;
-
-        if (std.mem.eql(u8, import_path, "std") or
-            std.mem.eql(u8, import_path, "build_options"))
-        {
-            continue;
-        }
-        if (!std.mem.endsWith(u8, import_path, ".zig")) {
-            continue;
-        }
-
-        var already_added = false;
-        for (imports.items) |imp| {
-            if (std.mem.eql(u8, imp.name, import_path)) {
-                already_added = true;
-                break;
-            }
-        }
-        if (already_added) {
-            continue;
-        }
-
-        const module_path = b.fmt("src/{s}", .{import_path});
-        imports.append(b.allocator, .{
-            .name = import_path,
-            .module = b.createModule(.{
-                .root_source_file = b.path(module_path),
-                .target = target,
-                .optimize = optimize,
-                .link_libc = link_libc,
-            }),
-        }) catch @panic("OOM building test import module.");
-    }
-
     return imports.items;
 }
 
@@ -689,62 +615,30 @@ fn validateSimd(simd: []const u8) void {
     @panic("Supported -Dsimd values are on and off.");
 }
 
-fn validateSimdTextureInterp(simd_texture_interp: []const u8) void {
-    if (std.mem.eql(u8, simd_texture_interp, "inner") or
-        std.mem.eql(u8, simd_texture_interp, "over_pixels"))
-    {
-        return;
-    }
-    @panic(
-        "Supported -Dsimd-texture-interp values are inner and over_pixels.",
-    );
-}
-
 fn benchmarkBinaryName(
     b: *std.Build,
     base_name: []const u8,
     precision: []const u8,
     simd: []const u8,
-    simd_texture_interp: []const u8,
     simd_vector_width: u32,
-    texture_layout: []const u8,
 ) []const u8 {
     const simd_tag = if (std.mem.eql(u8, simd, "on")) "simd" else "scalar";
-    const interp_tag = if (std.mem.eql(u8, simd_texture_interp, "over_pixels"))
-        "overpx"
-    else
-        "inner";
     const default_width: u32 = if (std.mem.eql(u8, precision, "f32")) 16 else 8;
-    const layout_suffix = if (std.mem.eql(u8, texture_layout, "interleaved"))
-        "_interleaved"
-    else
-        "";
 
     if (simd_vector_width == 0 or simd_vector_width == default_width) {
         return b.fmt(
-            "{s}_{s}_{s}_{s}{s}",
-            .{ base_name, precision, simd_tag, interp_tag, layout_suffix },
+            "{s}_{s}_{s}",
+            .{ base_name, precision, simd_tag },
         );
     } else {
         return b.fmt(
-            "{s}_{s}_{s}_{s}_v{d}{s}",
+            "{s}_{s}_{s}_v{d}",
             .{
                 base_name,
                 precision,
                 simd_tag,
-                interp_tag,
                 simd_vector_width,
-                layout_suffix,
             },
         );
     }
-}
-
-fn validateTextureLayout(texture_layout: []const u8) void {
-    if (std.mem.eql(u8, texture_layout, "planar") or
-        std.mem.eql(u8, texture_layout, "interleaved"))
-    {
-        return;
-    }
-    @panic("Supported -Dtexture-layout values are planar and interleaved.");
 }

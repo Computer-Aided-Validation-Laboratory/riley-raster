@@ -765,11 +765,11 @@ fn rasterDirectSteppedScalar(
 
                     ShaderKernel.shade(
                         Geometry.coord_space,
-                        ctx_rast,
-                        &interp_data,
                         ctx_shade,
+                        interp_data,
                         shader,
-                        subpx_scratch.image,
+                        ctx_report,
+                        &subpx_scratch.image,
                     );
                 }
             } else {

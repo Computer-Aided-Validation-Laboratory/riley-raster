@@ -119,47 +119,34 @@ fn getPxWide(
         @intCast(@max(v_splat_zero, @min(v_tex_y_i, v_tex_rows_m1))),
     );
 
-    const stride_y = if (comptime cfg.texture_layout == .planar)
-        texture.array.strides[1]
-    else
-        texture.array.strides[0];
-    const stride_x = if (comptime cfg.texture_layout == .planar)
-        @as(usize, 1)
-    else
-        texture.array.strides[1];
+    const stride_y = texture.array.strides[1];
+    const stride_x = @as(usize, 1);
 
     const v_pixel_offsets = v_yu * @as(VecSU, @splat(stride_y)) +
         v_xu * @as(VecSU, @splat(stride_x));
 
     var samp_res: [CH]VecSF = undefined;
 
-    if (comptime cfg.texture_layout == .planar) {
-        const first_off = v_pixel_offsets[0];
-        const v_expected = @as(VecSU, @splat(first_off)) +
-            std.simd.iota(usize, S);
-        const is_contiguous = @reduce(.And, v_pixel_offsets == v_expected);
+    const first_off = v_pixel_offsets[0];
+    const v_expected = @as(VecSU, @splat(first_off)) +
+        std.simd.iota(usize, S);
+    const is_contiguous = @reduce(.And, v_pixel_offsets == v_expected);
 
-        inline for (0..CH) |cc| {
-            const base_slice = texture.array.getPlaneSlice(cc);
-            var vals: [S]F = undefined;
-            if (is_contiguous) {
-                const raw_vals: @Vector(S, T) = base_slice[first_off..][0..S].*;
-                inline for (0..S) |ii| {
-                    vals[ii] = texelToFloat(T, raw_vals[ii]);
-                }
-            } else {
-                const tap_offsets_arr: [S]usize = v_pixel_offsets;
-                for (0..S) |ii| {
-                    vals[ii] = texelToFloat(T, base_slice[tap_offsets_arr[ii]]);
-                }
+    inline for (0..CH) |cc| {
+        const base_slice = texture.array.getPlaneSlice(cc);
+        var vals: [S]F = undefined;
+        if (is_contiguous) {
+            const raw_vals: @Vector(S, T) = base_slice[first_off..][0..S].*;
+            inline for (0..S) |ii| {
+                vals[ii] = texelToFloat(T, raw_vals[ii]);
             }
-            samp_res[cc] = vals;
+        } else {
+            const tap_offsets_arr: [S]usize = v_pixel_offsets;
+            for (0..S) |ii| {
+                vals[ii] = texelToFloat(T, base_slice[tap_offsets_arr[ii]]);
+            }
         }
-    } else {
-        inline for (0..CH) |cc| {
-            const v_offsets = v_pixel_offsets + @as(VecSU, @splat(cc));
-            samp_res[cc] = loadTap(T, texture.array.slice, v_offsets);
-        }
+        samp_res[cc] = vals;
     }
 
     return samp_res;
@@ -204,14 +191,8 @@ pub inline fn sampleLinearWide(
         )),
     );
 
-    const stride_y = if (comptime cfg.texture_layout == .planar)
-        texture.array.strides[1]
-    else
-        texture.array.strides[0];
-    const stride_x = if (comptime cfg.texture_layout == .planar)
-        @as(usize, 1)
-    else
-        texture.array.strides[1];
+    const stride_y = texture.array.strides[1];
+    const stride_x = @as(usize, 1);
 
     const v_off00 = v_y0 * @as(VecSU, @splat(stride_y)) +
         v_x0 * @as(VecSU, @splat(stride_x));
@@ -230,20 +211,11 @@ pub inline fn sampleLinearWide(
         var p01: VecSF = undefined;
         var p11: VecSF = undefined;
 
-        if (comptime cfg.texture_layout == .planar) {
-            const base_slice = texture.array.getPlaneSlice(cc);
-            p00 = loadTap(T, base_slice, v_off00);
-            p10 = loadTap(T, base_slice, v_off10);
-            p01 = loadTap(T, base_slice, v_off01);
-            p11 = loadTap(T, base_slice, v_off11);
-        } else {
-            const main_slice = texture.array.slice;
-            const c_splat = @as(VecSU, @splat(cc));
-            p00 = loadTap(T, main_slice, v_off00 + c_splat);
-            p10 = loadTap(T, main_slice, v_off10 + c_splat);
-            p01 = loadTap(T, main_slice, v_off01 + c_splat);
-            p11 = loadTap(T, main_slice, v_off11 + c_splat);
-        }
+        const base_slice = texture.array.getPlaneSlice(cc);
+        p00 = loadTap(T, base_slice, v_off00);
+        p10 = loadTap(T, base_slice, v_off10);
+        p01 = loadTap(T, base_slice, v_off01);
+        p11 = loadTap(T, base_slice, v_off11);
 
         const v_p00_10 = p00 + v_tex_x_frac * (p10 - p00);
         const v_p01_11 = p01 + v_tex_x_frac * (p11 - p01);

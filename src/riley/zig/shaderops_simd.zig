@@ -114,6 +114,17 @@ pub const fillTexPersp = common.fillTexPersp;
 pub const fillFuncClip = common.fillFuncClip;
 pub const fillFuncPersp = common.fillFuncPersp;
 
+fn textureSimdInterpMode(
+    comptime channels: comptime_int,
+    comptime sample_config: TextureSampleConfig,
+) buildconfig.SimdTextureInterpMode {
+    return buildconfig.TextureSIMDPolicy.resolve(
+        channels,
+        sample_config.sample == .linear,
+        sample_config.mode == .lut or sample_config.mode == .lut_lerp,
+    );
+}
+
 fn calcNormalLaneVecs(
     comptime N: usize,
     ctx_shade: common.ShadeContext(N),
@@ -162,7 +173,10 @@ pub inline fn fillTexClipSIMD(
     }
 
     const px_stride = spx_image_scratch.cols_num;
-    const sampled_vecs = switch (cfg.simd_texture_interp) {
+    const sampled_vecs = switch (comptime textureSimdInterpMode(
+        channels,
+        sample_config,
+    )) {
         .inner => texops.sampleLanes(
             channels,
             sample_config,
@@ -224,7 +238,10 @@ pub inline fn fillTexPerspSIMD(
     v_tex_u *= v_subpx_z;
     v_tex_v *= v_subpx_z;
 
-    const sampled_vecs = switch (cfg.simd_texture_interp) {
+    const sampled_vecs = switch (comptime textureSimdInterpMode(
+        channels,
+        sample_config,
+    )) {
         .inner => if (comptime N == 3)
             texops.sampleLanesTri3(
                 channels,

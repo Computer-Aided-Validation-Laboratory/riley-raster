@@ -88,10 +88,7 @@ pub fn Texture(comptime T: type, comptime CH: usize) type {
             rows: usize,
             cols: usize,
         ) !Self {
-            const dims = if (comptime cfg.texture_layout == .planar)
-                &[_]usize{ CH, rows, cols }
-            else
-                &[_]usize{ rows, cols, CH };
+            const dims = &[_]usize{ CH, rows, cols };
             const array = try NDArray(T).initFlat(allocator, dims);
             return .{
                 .array = array,
@@ -112,10 +109,7 @@ pub fn Texture(comptime T: type, comptime CH: usize) type {
             col: usize,
             val: T,
         ) void {
-            const tex_flat_idx = if (comptime cfg.texture_layout == .planar)
-                self.array.subBase2(ch, row) + col
-            else
-                self.array.offset3(row, col, ch);
+            const tex_flat_idx = self.array.subBase2(ch, row) + col;
             self.array.setFlat(tex_flat_idx, val);
         }
 
@@ -125,10 +119,7 @@ pub fn Texture(comptime T: type, comptime CH: usize) type {
             row: usize,
             col: usize,
         ) T {
-            const tex_flat_idx = if (comptime cfg.texture_layout == .planar)
-                self.array.subBase2(ch, row) + col
-            else
-                self.array.offset3(row, col, ch);
+            const tex_flat_idx = self.array.subBase2(ch, row) + col;
             return self.array.getFlat(tex_flat_idx);
         }
 

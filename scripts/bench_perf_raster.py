@@ -12,11 +12,8 @@ import time
 from perf_common import command_path, repo_root
 
 DEFAULT_OUT_ROOT = pathlib.Path("out") / "bench_stats_perf"
-DEFAULT_IMAGE_OUT_DIR = (
-    pathlib.Path("out") / "bench_images_perf"
-)
+DEFAULT_IMAGE_OUT_DIR = pathlib.Path("out") / "bench_images_perf"
 DEFAULT_RUNS = 25
-DEFAULT_SUB_SAMPLE = 2
 DEFAULT_PIXELS_X: int | None = None
 DEFAULT_PIXELS_Y: int | None = None
 DEFAULT_TOTAL_THREADS = 1
@@ -27,6 +24,7 @@ DEFAULT_FRAME_BATCH_SIZE_PER_GROUP = 1
 DEFAULT_MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP = 1
 DEFAULT_EXPERIMENT1 = True
 DEFAULT_EXPERIMENT2 = True
+
 EXPERIMENT1_SUB_SAMPLES = [2]
 EXPERIMENT2_SUB_SAMPLES = [1, 2]
 
@@ -34,9 +32,8 @@ EXPERIMENT1_CASES_BASE: list[dict[str, object]] = [
     {
         "study_group": "experiment1",
         "experiment": "precision",
-        "case_name": "tiltraster_precision_f64_simd_v8_inner",
+        "case_name": "tiltraster_precision_f64_simd_v8",
         "precision": "f64",
-        "interp": "inner",
         "lanes": 8,
         "texture_storage": "u8",
         "shader_subset": "all",
@@ -45,9 +42,8 @@ EXPERIMENT1_CASES_BASE: list[dict[str, object]] = [
     {
         "study_group": "experiment1",
         "experiment": "precision",
-        "case_name": "tiltraster_precision_f64_simd_v4_inner",
+        "case_name": "tiltraster_precision_f64_simd_v4",
         "precision": "f64",
-        "interp": "inner",
         "lanes": 4,
         "texture_storage": "u8",
         "shader_subset": "all",
@@ -56,9 +52,8 @@ EXPERIMENT1_CASES_BASE: list[dict[str, object]] = [
     {
         "study_group": "experiment1",
         "experiment": "precision",
-        "case_name": "tiltraster_precision_f32_simd_v16_inner",
+        "case_name": "tiltraster_precision_f32_simd_v16",
         "precision": "f32",
-        "interp": "inner",
         "lanes": 16,
         "texture_storage": "u8",
         "shader_subset": "all",
@@ -67,32 +62,9 @@ EXPERIMENT1_CASES_BASE: list[dict[str, object]] = [
     {
         "study_group": "experiment1",
         "experiment": "precision",
-        "case_name": "tiltraster_precision_f32_simd_v8_inner",
+        "case_name": "tiltraster_precision_f32_simd_v8",
         "precision": "f32",
-        "interp": "inner",
         "lanes": 8,
-        "texture_storage": "u8",
-        "shader_subset": "all",
-        "mesh_subset": "all",
-    },
-    {
-        "study_group": "experiment1",
-        "experiment": "interp",
-        "case_name": "tiltraster_interp_f64_simd_overpx",
-        "precision": "f64",
-        "interp": "overpx",
-        "lanes": 8,
-        "texture_storage": "u8",
-        "shader_subset": "all",
-        "mesh_subset": "all",
-    },
-    {
-        "study_group": "experiment1",
-        "experiment": "interp",
-        "case_name": "tiltraster_interp_f32_simd_overpx",
-        "precision": "f32",
-        "interp": "overpx",
-        "lanes": 16,
         "texture_storage": "u8",
         "shader_subset": "all",
         "mesh_subset": "all",
@@ -102,7 +74,6 @@ EXPERIMENT1_CASES_BASE: list[dict[str, object]] = [
         "experiment": "texstore",
         "case_name": "tiltraster_texstore_u8",
         "precision": "f64",
-        "interp": "inner",
         "lanes": 8,
         "texture_storage": "u8",
         "shader_subset": "texture",
@@ -113,7 +84,6 @@ EXPERIMENT1_CASES_BASE: list[dict[str, object]] = [
         "experiment": "texstore",
         "case_name": "tiltraster_texstore_u16",
         "precision": "f64",
-        "interp": "inner",
         "lanes": 8,
         "texture_storage": "u16",
         "shader_subset": "texture",
@@ -122,9 +92,8 @@ EXPERIMENT1_CASES_BASE: list[dict[str, object]] = [
     {
         "study_group": "experiment1",
         "experiment": "distortion",
-        "case_name": "tiltraster_distortion_brown_f64_simd_v8_inner",
+        "case_name": "tiltraster_distortion_brown_f64_simd_v8",
         "precision": "f64",
-        "interp": "inner",
         "lanes": 8,
         "texture_storage": "u8",
         "shader_subset": "all",
@@ -134,9 +103,8 @@ EXPERIMENT1_CASES_BASE: list[dict[str, object]] = [
     {
         "study_group": "experiment1",
         "experiment": "distortion",
-        "case_name": "tiltraster_distortion_brownext_f64_simd_v8_inner",
+        "case_name": "tiltraster_distortion_brownext_f64_simd_v8",
         "precision": "f64",
-        "interp": "inner",
         "lanes": 8,
         "texture_storage": "u8",
         "shader_subset": "all",
@@ -148,62 +116,34 @@ EXPERIMENT1_CASES_BASE: list[dict[str, object]] = [
 
 def build_experiment1_cases() -> list[dict[str, object]]:
     cases: list[dict[str, object]] = []
-    for layout in ("planar", "interleaved"):
-        for base_case in EXPERIMENT1_CASES_BASE:
-            for sub_sample in EXPERIMENT1_SUB_SAMPLES:
-                case = dict(base_case)
-                case["sub_sample"] = sub_sample
-                case["texture_layout"] = layout
-                suffix = "_interleaved" if layout == "interleaved" else ""
-                case["case_name"] = f"{base_case['case_name']}{suffix}"
-                cases.append(case)
+    for base_case in EXPERIMENT1_CASES_BASE:
+        for sub_sample in EXPERIMENT1_SUB_SAMPLES:
+            case = dict(base_case)
+            case["sub_sample"] = sub_sample
+            case["case_name"] = f"{base_case['case_name']}_ssaa{sub_sample}"
+            cases.append(case)
     return cases
 
 
 def build_experiment2_cases() -> list[dict[str, object]]:
     cases: list[dict[str, object]] = []
-    for layout in ("planar", "interleaved"):
-        suffix = "_interleaved" if layout == "interleaved" else ""
-        for sub_sample in EXPERIMENT2_SUB_SAMPLES:
-            cases.append(
-                {
-                    "study_group": "experiment2",
-                    "experiment": "llvmpipe_compare",
-                    "case_name": (
-                        "tiltraster_llvmpipe_compare_"
-                        f"tri3_vs_tri3opt_f32_simd_v8_inner{suffix}"
-                        f"_ssaa{sub_sample}"
-                    ),
-                    "precision": "f32",
-                    "interp": "inner",
-                    "lanes": 8,
-                    "texture_storage": "u8",
-                    "shader_subset": "all",
-                    "mesh_subset": "tri3_compare",
-                    "sub_sample": sub_sample,
-                    "texture_layout": layout,
-                }
-            )
-            for interp in ("inner", "overpx"):
-                cases.append(
-                    {
-                        "study_group": "experiment2",
-                        "experiment": "llvmpipe_compare_texture_interp",
-                        "case_name": (
-                            "tiltraster_llvmpipe_compare_texture_"
-                            f"tri3_vs_tri3opt_f32_simd_v8_{interp}{suffix}"
-                            f"_ssaa{sub_sample}"
-                        ),
-                        "precision": "f32",
-                        "interp": interp,
-                        "lanes": 8,
-                        "texture_storage": "u8",
-                        "shader_subset": "texture",
-                        "mesh_subset": "tri3_compare",
-                        "sub_sample": sub_sample,
-                        "texture_layout": layout,
-                    }
-                )
+    for sub_sample in EXPERIMENT2_SUB_SAMPLES:
+        cases.append(
+            {
+                "study_group": "experiment2",
+                "experiment": "llvmpipe_compare",
+                "case_name": (
+                    "tiltraster_llvmpipe_compare_"
+                    f"tri3_vs_tri3opt_f32_simd_v8_ssaa{sub_sample}"
+                ),
+                "precision": "f32",
+                "lanes": 8,
+                "texture_storage": "u8",
+                "shader_subset": "all",
+                "mesh_subset": "tri3_compare",
+                "sub_sample": sub_sample,
+            }
+        )
     return cases
 
 
@@ -225,32 +165,14 @@ def default_lanes(precision: str) -> int:
     return 16 if precision == "f32" else 8
 
 
-def binary_name(
-    precision: str,
-    interp: str,
-    lanes: int,
-    layout: str,
-) -> str:
-    suffix = "_interleaved" if layout == "interleaved" else ""
+def binary_name(precision: str, lanes: int) -> str:
     if lanes == default_lanes(precision):
-        return f"bench_tiltraster_{precision}_simd_{interp}{suffix}"
-    else:
-        return (
-            f"bench_tiltraster_{precision}_simd_{interp}"
-            f"_v{lanes}{suffix}"
-        )
+        return f"bench_tiltraster_{precision}_simd"
+    return f"bench_tiltraster_{precision}_simd_v{lanes}"
 
 
-def binary_path(
-    precision: str,
-    interp: str,
-    lanes: int,
-    layout: str,
-) -> pathlib.Path:
-    path = (
-        repo_root() / "bin" /
-        binary_name(precision, interp, lanes, layout)
-    )
+def binary_path(precision: str, lanes: int) -> pathlib.Path:
+    path = repo_root() / "bin" / binary_name(precision, lanes)
     if not path.exists():
         raise SystemExit(
             f"Missing binary {path}. Run "
@@ -281,13 +203,12 @@ def write_experiment_meta(
         f"case_name={case['case_name']}",
         f"binary={case['binary']}",
         f"precision={case['precision']}",
-        f"simd=on",
-        f"interp={case['interp']}",
+        "simd=on",
         f"texture_storage={case['texture_storage']}",
         f"shader_subset={case['shader_subset']}",
         f"mesh_subset={case['mesh_subset']}",
         f"lanes={case['lanes']}",
-        f"sub_sample={case.get('sub_sample', DEFAULT_SUB_SAMPLE)}",
+        f"sub_sample={case.get('sub_sample', 2)}",
         f"distortion={case.get('distortion', 'none')}",
         "command=" + " ".join(shlex.quote(part) for part in command),
     ]
@@ -311,6 +232,7 @@ def write_timing_csv(
             writer.writerow(row)
     return csv_path
 
+
 def run_case(
     case: dict[str, object],
     run_root: pathlib.Path,
@@ -323,19 +245,15 @@ def run_case(
     output_dir = run_root / str(case["case_name"])
     binary = binary_path(
         str(case["precision"]),
-        str(case["interp"]),
         int(case["lanes"]),
-        str(case.get("texture_layout", "planar")),
     )
     binary_tag = binary_name(
         str(case["precision"]),
-        str(case["interp"]),
         int(case["lanes"]),
-        str(case.get("texture_layout", "planar")),
     )
     case_with_binary = dict(case)
     case_with_binary["binary"] = binary_tag
-    sub_sample = int(case.get("sub_sample", DEFAULT_SUB_SAMPLE))
+    sub_sample = int(case.get("sub_sample", 2))
     command = [
         str(binary),
         "--out-dir",
@@ -359,11 +277,11 @@ def run_case(
         "--sub-sample",
         str(sub_sample),
         "--texture-storage",
-        case["texture_storage"],
+        str(case["texture_storage"]),
         "--shader-subset",
-        case["shader_subset"],
+        str(case["shader_subset"]),
         "--mesh-subset",
-        case["mesh_subset"],
+        str(case["mesh_subset"]),
     ]
     if pixels_x is not None:
         command.extend(["--pixels-x", str(pixels_x)])

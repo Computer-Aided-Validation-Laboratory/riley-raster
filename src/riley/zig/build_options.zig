@@ -8,4 +8,3 @@
 // --------------------------------------------------------------------------
 pub const precision = "f64";
 pub const simd = "on";
-pub const simd_texture_interp = "inner";

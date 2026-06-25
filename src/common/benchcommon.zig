@@ -441,9 +441,6 @@ pub fn writeBenchmarkConfig(
     try writer.print("build_simd={s}\n", .{
         @tagName(buildconfig.config.simd),
     });
-    try writer.print("build_simd_texture_interp={s}\n", .{
-        @tagName(buildconfig.config.simd_texture_interp),
-    });
     try writer.print("build_simd_vector_width={d}\n", .{
         buildconfig.config.simd_vector_width,
     });
@@ -1364,13 +1361,11 @@ pub fn calcBenchmarkCSVValuesFromResult(
         .total_px = @floatFromInt(result.total_px),
         .shaded_px = @floatFromInt(result.shaded_px),
         .setup_frame_buffer = result.pipeline_times.setup_frame_buffer * conv_ms,
-        .prepare_frame_context =
-            result.pipeline_times.prepare_frame_context * conv_ms,
+        .prepare_frame_context = result.pipeline_times.prepare_frame_context * conv_ms,
         .geom = result.geom_ms,
         .geom_coord_ops = result.pipeline_times.geom_coord_ops * conv_ms,
         .geom_cull_ops = result.pipeline_times.geom_cull_ops * conv_ms,
-        .geom_prep_hulls_shaders =
-            result.pipeline_times.geom_prep_hulls_shaders * conv_ms,
+        .geom_prep_hulls_shaders = result.pipeline_times.geom_prep_hulls_shaders * conv_ms,
         .geom_remap_inds = result.pipeline_times.geom_remap_inds * conv_ms,
         .cam_invert = cam_inv_ms,
         .elem_loop = elem_loop_ms,
