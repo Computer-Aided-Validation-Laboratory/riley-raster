@@ -20,6 +20,7 @@ const iio = @import("riley/zig/imageio.zig");
 const texops = @import("riley/zig/textureops.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
+const policy = @import("common/testpolicy.zig");
 
 pub fn main(init: std.process.Init) !void {
     @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
@@ -88,7 +89,7 @@ pub fn main(init: std.process.Init) !void {
     for (mesh_types) |mt| {
         for (shader_types) |st| {
             for (sample_configs) |sc| {
-                const mesh_name = orch.meshDataName(mt);
+                const mesh_name = policy.meshName(.benchmark_data, mt);
                 const data_dir = try std.fmt.allocPrint(
                     allocator,
                     "data/min/{s}_sphere200",
@@ -166,7 +167,7 @@ pub fn main(init: std.process.Init) !void {
     for (mesh_types) |mt| {
         for (shader_types) |st| {
             for (sample_configs) |sc| {
-                const mesh_name = orch.meshDataName(mt);
+                const mesh_name = policy.meshName(.benchmark_data, mt);
                 const data_dir = try std.fmt.allocPrint(
                     allocator,
                     "data/min/{s}_sphere200",

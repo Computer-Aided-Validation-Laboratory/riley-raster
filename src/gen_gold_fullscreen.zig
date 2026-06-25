@@ -10,6 +10,7 @@ const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const goldpaths = @import("common/goldpaths.zig");
 const orch = @import("common/orchestration.zig");
+const policy = @import("common/testpolicy.zig");
 const tcfg = @import("common/testconfig.zig");
 const mo = @import("riley/zig/meshops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
@@ -80,7 +81,10 @@ pub fn main(init: std.process.Init) !void {
     inline for (mesh_types) |mt| {
         inline for (shader_types) |st| {
             inline for (sample_configs) |sc| {
-                const mesh_name = comptime orch.meshDataName(mt);
+                const mesh_name = comptime policy.meshName(
+                    .benchmark_data,
+                    mt,
+                );
                 const data_dir = comptime "data/bench/" ++ mesh_name ++ "_fullraster";
                 if (common.shouldRun(.{ .run = .all }, mt, st, sc, data_dir)) {
                     const case_name = if (st == .tex8_grey or st == .tex8_rgb)

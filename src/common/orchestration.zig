@@ -20,6 +20,7 @@ const uvio = @import("../riley/zig/uvio.zig");
 const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
 const cameraops = @import("../riley/zig/cameraops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
+const policy = @import("testpolicy.zig");
 
 pub const default_multimesh_mesh_types = [_]gk.MeshType{
     .tri3,
@@ -75,11 +76,7 @@ pub fn loadData(
 }
 
 pub fn meshDataName(mesh_type: gk.MeshType) []const u8 {
-    return switch (mesh_type) {
-        .tri3opt => "tri3",
-        .quad4ibi, .quad4newton => "quad4",
-        else => @tagName(mesh_type),
-    };
+    return policy.meshName(.fixture_case, mesh_type);
 }
 
 pub fn testTypeSuffix(test_type: []const u8) []const u8 {

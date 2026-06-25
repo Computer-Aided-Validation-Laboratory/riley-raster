@@ -10,6 +10,7 @@ const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const goldpaths = @import("common/goldpaths.zig");
 const orch = @import("common/orchestration.zig");
+const policy = @import("common/testpolicy.zig");
 const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
@@ -96,10 +97,10 @@ test "Sphere Gold Tests" {
         inline for (mesh_types) |mt| {
             inline for (shader_types) |st| {
                 inline for (sample_configs) |sc| {
-                    const mesh_name = if (mt == .tri3opt)
-                        "tri3"
-                    else
-                        @tagName(mt);
+                    const mesh_name = policy.meshName(
+                        .benchmark_data,
+                        mt,
+                    );
                     const data_dir = try std.fmt.allocPrint(
                         allocator,
                         "data/bench/{s}_{s}",
@@ -127,10 +128,10 @@ test "Sphere Gold Tests" {
                             );
                         defer allocator.free(case_name);
 
-                        const gold_mesh_name = if (mt == .quad4ibi)
-                            "quad4newton"
-                        else
-                            mesh_name;
+                        const gold_mesh_name = policy.meshName(
+                            .sphere_gold_case,
+                            mt,
+                        );
                         const gold_case_name = if (st == .tex8_grey or st == .tex8_rgb)
                             try std.fmt.allocPrint(
                                 allocator,

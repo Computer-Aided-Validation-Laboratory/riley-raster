@@ -13,7 +13,7 @@ from perf_common import command_path, repo_root
 
 DEFAULT_OUT_ROOT = pathlib.Path("out") / "bench_stats_perf"
 DEFAULT_IMAGE_OUT_DIR = pathlib.Path("out") / "bench_images_perf"
-DEFAULT_RUNS = 25
+DEFAULT_RUNS = 20
 DEFAULT_PIXELS_X: int | None = None
 DEFAULT_PIXELS_Y: int | None = None
 DEFAULT_TOTAL_THREADS = 1
@@ -69,26 +69,26 @@ EXPERIMENT1_CASES_BASE: list[dict[str, object]] = [
         "shader_subset": "all",
         "mesh_subset": "all",
     },
-    {
-        "study_group": "experiment1",
-        "experiment": "texstore",
-        "case_name": "tiltraster_texstore_u8",
-        "precision": "f64",
-        "lanes": 8,
-        "texture_storage": "u8",
-        "shader_subset": "texture",
-        "mesh_subset": "all",
-    },
-    {
-        "study_group": "experiment1",
-        "experiment": "texstore",
-        "case_name": "tiltraster_texstore_u16",
-        "precision": "f64",
-        "lanes": 8,
-        "texture_storage": "u16",
-        "shader_subset": "texture",
-        "mesh_subset": "all",
-    },
+    # {
+    #     "study_group": "experiment1",
+    #     "experiment": "texstore",
+    #     "case_name": "tiltraster_texstore_u8",
+    #     "precision": "f64",
+    #     "lanes": 8,
+    #     "texture_storage": "u8",
+    #     "shader_subset": "texture",
+    #     "mesh_subset": "all",
+    # },
+    # {
+    #     "study_group": "experiment1",
+    #     "experiment": "texstore",
+    #     "case_name": "tiltraster_texstore_u16",
+    #     "precision": "f64",
+    #     "lanes": 8,
+    #     "texture_storage": "u16",
+    #     "shader_subset": "texture",
+    #     "mesh_subset": "all",
+    # },
     {
         "study_group": "experiment1",
         "experiment": "distortion",
@@ -134,7 +134,7 @@ def build_experiment2_cases() -> list[dict[str, object]]:
                 "experiment": "llvmpipe_compare",
                 "case_name": (
                     "tiltraster_llvmpipe_compare_"
-                    f"tri3_vs_tri3opt_f32_simd_v8_ssaa{sub_sample}"
+                    f"tri3_f32_simd_v8_ssaa{sub_sample}"
                 ),
                 "precision": "f32",
                 "lanes": 8,

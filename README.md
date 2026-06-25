@@ -93,8 +93,8 @@ zig run -O ReleaseSafe ./src/gen_gold_all.zig
 ```
 or with the build system:
 ```shell
-zig build gen-gold -Doptimize=ReleaseSafe
-zig build gen-gold-min -Doptimize=ReleaseSafe
+zig build gen-gold -Doptimize=ReleaseSafe -Dsimd=on -Dprecision=f64
+zig build gen-gold-min -Doptimize=ReleaseSafe -Dsimd=on -Dprecision=f64
 ```
 
 Now we can run the remaining "all" and "bench" test suites:

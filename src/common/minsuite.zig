@@ -20,6 +20,7 @@ const texops = @import("../riley/zig/textureops.zig");
 const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
 const tcfg = @import("testconfig.zig");
 const rastcfg = @import("../riley/zig/rasterconfig.zig");
+const policy = @import("testpolicy.zig");
 
 fn translateCoords(coords: *meshio.Coords, translation: [3]F) void {
     for (0..coords.mat.rows_num) |nn| {
@@ -35,10 +36,9 @@ pub fn calcMinCaseName(
     shader_type: common.ShaderType,
     sample_config: texops.TextureSampleConfig,
 ) ![]const u8 {
-    const mesh_type_name = if (etype == .tri3opt) gk.MeshType.tri3 else etype;
     return common.calcCaseName(
         allocator,
-        mesh_type_name,
+        policy.canonicalCaseMeshType(etype),
         shader_type,
         sample_config,
         null,

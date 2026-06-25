@@ -14,6 +14,9 @@ const common = @import("common/tests.zig");
 const suite = @import("common/psfsuite.zig");
 const tcfg = @import("common/testconfig.zig");
 
+const PSF_REL_TOL: F = if (F == f32) 1.0e-6 else 1.0e-9;
+const PSF_ABS_TOL: F = if (F == f32) 1.0e-6 else 1.0e-9;
+
 pub fn main() !void {
     std.debug.print(
         "Please use 'zig test -O ReleaseSafe src/test_gold_psf.zig' to run this test suite.\n",
@@ -159,7 +162,12 @@ test "PSF isotropic gaussian separable and non-separable agree" {
         result_nonsep_mut.deinit(allocator);
     }
 
-    try suite.expectResultsApproxEq(&result_sep, &result_nonsep, 1e-9, 1e-9);
+    try suite.expectResultsApproxEq(
+        &result_sep,
+        &result_nonsep,
+        PSF_REL_TOL,
+        PSF_ABS_TOL,
+    );
 }
 
 test "PSF gaussian checker render is invariant to tile size" {
@@ -185,7 +193,12 @@ test "PSF gaussian checker render is invariant to tile size" {
         result_large_mut.deinit(allocator);
     }
 
-    try suite.expectResultsApproxEq(&result_small, &result_large, 1e-9, 1e-9);
+    try suite.expectResultsApproxEq(
+        &result_small,
+        &result_large,
+        PSF_REL_TOL,
+        PSF_ABS_TOL,
+    );
 }
 
 test "PSF anisotropic checker render is invariant to tile size" {
@@ -211,7 +224,12 @@ test "PSF anisotropic checker render is invariant to tile size" {
         result_large_mut.deinit(allocator);
     }
 
-    try suite.expectResultsApproxEq(&result_small, &result_large, 1e-9, 1e-9);
+    try suite.expectResultsApproxEq(
+        &result_small,
+        &result_large,
+        PSF_REL_TOL,
+        PSF_ABS_TOL,
+    );
 }
 
 test "PSF gaussian constant render is invariant to tile size" {
@@ -237,5 +255,10 @@ test "PSF gaussian constant render is invariant to tile size" {
         result_large_mut.deinit(allocator);
     }
 
-    try suite.expectResultsApproxEq(&result_small, &result_large, 1e-9, 1e-9);
+    try suite.expectResultsApproxEq(
+        &result_small,
+        &result_large,
+        PSF_REL_TOL,
+        PSF_ABS_TOL,
+    );
 }

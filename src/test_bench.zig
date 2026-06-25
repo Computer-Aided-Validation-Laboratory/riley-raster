@@ -9,6 +9,7 @@
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const goldpaths = @import("common/goldpaths.zig");
+const policy = @import("common/testpolicy.zig");
 const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
@@ -129,7 +130,10 @@ test "Unified Benchmark Tests" {
                 for (sample_configs) |sc| {
                     _ = arena.reset(.free_all);
 
-                    const folder_name = if (mt == .tri3opt) "tri3" else @tagName(mt);
+                    const folder_name = policy.meshName(
+                        .benchmark_data,
+                        mt,
+                    );
                     const data_dir = try std.fmt.allocPrint(
                         aa,
                         "data/bench/{s}_{s}",
@@ -148,10 +152,9 @@ test "Unified Benchmark Tests" {
                         r_config.save_strategy = .memory;
                         r_config.image_save_opts = &[_]iio.ImageSaveOpts{};
 
-                        const mt_for_name = if (mt == .tri3opt) .tri3 else mt;
                         const case_name = try common.calcCaseName(
                             aa,
-                            mt_for_name,
+                            policy.canonicalCaseMeshType(mt),
                             st,
                             sc,
                             null,

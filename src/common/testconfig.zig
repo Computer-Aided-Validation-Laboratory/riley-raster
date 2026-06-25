@@ -12,8 +12,8 @@ const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const RenderMode = rastcfg.RenderMode;
 const HullMode = rastcfg.HullMode;
 
-pub const REL_TOL: F = if (F == f32) 5.0e-1 else 1e-6;
-pub const ABS_TOL: F = if (F == f32) 32.0 else 1e-6;
+pub const REL_TOL: F = if (F == f32) 1.0e-3 else 1e-6;
+pub const ABS_TOL: F = if (F == f32) 1.0e-3 else 1e-6;
 pub const RENDER_MODE: RenderMode = .in_order;
 pub const HULL_MODE: HullMode = .on_no_fallback;
 // Includes the caller thread. TOTAL_THREADS = 2 means caller + 1 helper.
