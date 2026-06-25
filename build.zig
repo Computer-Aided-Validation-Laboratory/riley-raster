@@ -390,22 +390,34 @@ fn addTestRunStep(
         \\simd="$4"
         \\zigexe="$5"
         \\opt="$6"
-        \\tree_dir=".zig-cache/riley-test/${step_name}_${precision}_${simd}_${opt}"
-        \\lock_dir="${tree_dir}.lock"
-        \\while ! mkdir "$lock_dir" 2>/dev/null; do
-        \\    sleep 0.1
-        \\done
-        \\cleanup() {
-        \\    rmdir "$lock_dir"
-        \\}
-        \\trap cleanup EXIT
-        \\mkdir -p "$tree_dir"
-        \\rm -rf "$tree_dir/src"
-        \\cp -a src "$tree_dir/src"
-        \\{
-        \\    printf 'pub const precision = "%s";\n' "$precision"
-        \\    printf 'pub const simd = "%s";\n' "$simd"
-        \\} > "$tree_dir/src/riley/zig/build_options.zig"
+        \\cache_root=".zig-cache/riley-test"
+        \\mkdir -p "$cache_root"
+        \\src_hash="$(
+        \\    find src -type f -print0 |
+        \\    sort -z |
+        \\    xargs -0 sha256sum |
+        \\    sha256sum |
+        \\    cut -d' ' -f1
+        \\)"
+        \\tree_dir="${cache_root}/${step_name}_${precision}_${simd}_${opt}_${src_hash}"
+        \\if [ ! -d "$tree_dir" ]; then
+        \\    lock_dir="${tree_dir}.lock"
+        \\    while ! mkdir "$lock_dir" 2>/dev/null; do
+        \\        sleep 0.1
+        \\    done
+        \\    cleanup() {
+        \\        rmdir "$lock_dir"
+        \\    }
+        \\    trap cleanup EXIT
+        \\    if [ ! -d "$tree_dir" ]; then
+        \\        mkdir -p "$tree_dir"
+        \\        cp -a src "$tree_dir/src"
+        \\        {
+        \\            printf 'pub const precision = "%s";\n' "$precision"
+        \\            printf 'pub const simd = "%s";\n' "$simd"
+        \\        } > "$tree_dir/src/riley/zig/build_options.zig"
+        \\    fi
+        \\fi
         \\"$zigexe" test -lc -O "$opt" "$tree_dir/$src"
         ,
         "--",

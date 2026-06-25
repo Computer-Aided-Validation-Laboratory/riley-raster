@@ -17,11 +17,11 @@ pub const ABS_TOL: F = if (F == f32) 1.0e-3 else 1e-6;
 pub const RENDER_MODE: RenderMode = .in_order;
 pub const HULL_MODE: HullMode = .on_no_fallback;
 // Includes the caller thread. TOTAL_THREADS = 2 means caller + 1 helper.
-pub const TOTAL_THREADS: u16 = 2;
+pub const TOTAL_THREADS: u16 = 1;
 pub const FRAME_BATCH_SIZE_PER_GROUP: u16 = 1;
 pub const MAX_GEOM_JOBS_IN_FLIGHT_PER_GROUP: u16 = 1;
 pub const MAX_GEOM_WORKERS_PER_JOB: u16 = 1;
-pub const MAX_RASTER_WORKERS_PER_JOB: u16 = 2;
+pub const MAX_RASTER_WORKERS_PER_JOB: u16 = 1;
 pub const GEOM_SCHEDULING_MODE: rastcfg.GeometrySchedulingMode = .auto;
 pub const TEST_CASE_VERBOSE: bool = false;
 
@@ -46,9 +46,9 @@ pub fn getRasterConfig(mode: RasterConfigMode) rastcfg.RasterConfig {
 
     switch (mode) {
         .gold, .preview => {
-            config.total_threads = 4;
+            config.total_threads = 1;
             config.max_geom_workers_per_job = 1;
-            config.max_raster_workers_per_job = 4;
+            config.max_raster_workers_per_job = 1;
             config.max_geom_jobs_in_flight_per_group = 1;
             config.frame_batch_size_per_group = 1;
             config.report = .off;
