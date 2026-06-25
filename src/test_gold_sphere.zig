@@ -9,6 +9,7 @@
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const goldpaths = @import("common/goldpaths.zig");
+const orch = @import("common/orchestration.zig");
 const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
@@ -95,10 +96,14 @@ test "Sphere Gold Tests" {
         inline for (mesh_types) |mt| {
             inline for (shader_types) |st| {
                 inline for (sample_configs) |sc| {
+                    const mesh_name = if (mt == .tri3opt)
+                        "tri3"
+                    else
+                        @tagName(mt);
                     const data_dir = try std.fmt.allocPrint(
                         allocator,
                         "data/bench/{s}_{s}",
-                        .{ @tagName(mt), c.ds },
+                        .{ mesh_name, c.ds },
                     );
                     defer allocator.free(data_dir);
 
@@ -107,20 +112,25 @@ test "Sphere Gold Tests" {
                             try std.fmt.allocPrint(
                                 allocator,
                                 "{s}_{s}_{s}_{s}",
-                                .{ @tagName(mt), @tagName(st), @tagName(sc.sample), @tagName(sc.mode) },
+                                .{
+                                    mesh_name,
+                                    @tagName(st),
+                                    @tagName(sc.sample),
+                                    @tagName(sc.mode),
+                                },
                             )
                         else
                             try std.fmt.allocPrint(
                                 allocator,
                                 "{s}_{s}",
-                                .{ @tagName(mt), @tagName(st) },
+                                .{ mesh_name, @tagName(st) },
                             );
                         defer allocator.free(case_name);
 
                         const gold_mesh_name = if (mt == .quad4ibi)
                             "quad4newton"
                         else
-                            @tagName(mt);
+                            mesh_name;
                         const gold_case_name = if (st == .tex8_grey or st == .tex8_rgb)
                             try std.fmt.allocPrint(
                                 allocator,
@@ -139,7 +149,13 @@ test "Sphere Gold Tests" {
                         var r_config = tcfg.getRasterConfig(.bench);
                         r_config.save_strategy = if (c.out.len > 0) .both else .memory;
 
-                        var result = try common.runBenchmarkQuiet(
+                        const test_dir_case = try std.fs.path.join(
+                            allocator,
+                            &[_][]const u8{ c.out, case_name },
+                        );
+                        defer allocator.free(test_dir_case);
+
+                        var result = try common.runBenchmarkQuietWithImageOut(
                             u8,
                             allocator,
                             io,
@@ -152,7 +168,8 @@ test "Sphere Gold Tests" {
                             texture_grey,
                             texture_rgb,
                             r_config,
-                            c.out,
+                            "",
+                            test_dir_case,
                         );
                         result.deinit(allocator);
 
@@ -160,8 +177,6 @@ test "Sphere Gold Tests" {
                         const is_rgb = (st == .nodal_rgb or st == .tex8_rgb);
                         const channels: usize = if (is_rgb) 3 else 1;
 
-                        const test_dir_case = try std.fs.path.join(allocator, &[_][]const u8{ c.out, case_name });
-                        defer allocator.free(test_dir_case);
                         const test_path = try testcommon.findGoldPath(
                             allocator,
                             io,

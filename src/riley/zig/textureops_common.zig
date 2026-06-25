@@ -9,6 +9,7 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
+const eval_branch_quota = buildconfig.comptime_eval_branch_quota;
 const cfg = buildconfig.config;
 const tol = cfg.tolerance;
 const lut_size = cfg.interp_lut_size;
@@ -227,7 +228,7 @@ pub fn quinticBSplineCoeff(x: F) F {
 }
 
 pub const catmull_rom_lut = blk: {
-    @setEvalBranchQuota(100000);
+    @setEvalBranchQuota(eval_branch_quota);
     var table: [lut_size][4]F = undefined;
     for (0..lut_size) |ii| {
         const tt = @as(F, @floatFromInt(ii)) / @as(F, @floatFromInt(lut_size));
@@ -240,7 +241,7 @@ pub const catmull_rom_lut = blk: {
 };
 
 pub const mitchell_netravali_lut = blk: {
-    @setEvalBranchQuota(100000);
+    @setEvalBranchQuota(eval_branch_quota);
     var table: [lut_size][4]F = undefined;
     for (0..lut_size) |ii| {
         const tt = @as(F, @floatFromInt(ii)) / @as(F, @floatFromInt(lut_size));
@@ -253,7 +254,7 @@ pub const mitchell_netravali_lut = blk: {
 };
 
 pub const cubic_bspline_lut = blk: {
-    @setEvalBranchQuota(100000);
+    @setEvalBranchQuota(eval_branch_quota);
     var table: [lut_size][4]F = undefined;
     for (0..lut_size) |ii| {
         const tt = @as(F, @floatFromInt(ii)) / @as(F, @floatFromInt(lut_size));
@@ -266,7 +267,7 @@ pub const cubic_bspline_lut = blk: {
 };
 
 pub const lanczos3_lut = blk: {
-    @setEvalBranchQuota(100000);
+    @setEvalBranchQuota(eval_branch_quota);
     var table: [lut_size][6]F = undefined;
     for (0..lut_size) |ii| {
         const tt = @as(F, @floatFromInt(ii)) /
@@ -281,7 +282,7 @@ pub const lanczos3_lut = blk: {
 };
 
 pub const quintic_bspline_lut = blk: {
-    @setEvalBranchQuota(100000);
+    @setEvalBranchQuota(eval_branch_quota);
     var table: [lut_size][6]F = undefined;
     for (0..lut_size) |ii| {
         const tt = @as(F, @floatFromInt(ii)) /

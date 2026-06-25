@@ -10,6 +10,7 @@ const std = @import("std");
 
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
+const eval_branch_quota = buildconfig.comptime_eval_branch_quota;
 const cfg = buildconfig.config;
 const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
@@ -255,7 +256,7 @@ inline fn sampleConvOneLane(
     samp_coeff_x: [TAP]F,
     samp_coeff_y: [TAP]F,
 ) [CH]F {
-    @setEvalBranchQuota(40000);
+    @setEvalBranchQuota(eval_branch_quota);
     const T = @TypeOf(texture.array.slice[0]);
     const tap_offset = @as(isize, @intCast(TAP)) / 2 - 1;
     const tex_start_x = tex_x_i - tap_offset;
@@ -341,7 +342,7 @@ inline fn sampleConvWide(
     v_samp_coeff_y: [TAP]VecSF,
     v_samp_coeff_sum: VecSF,
 ) [CH]VecSF {
-    @setEvalBranchQuota(40000);
+    @setEvalBranchQuota(eval_branch_quota);
     var samp_res: [CH]VecSF = [_]VecSF{@splat(0.0)} ** CH;
     var v_tap_samp_coeff_planes: [TAP * TAP]VecSF = undefined;
 
@@ -700,7 +701,7 @@ pub inline fn sampleLanes(
     v_u: VecSF,
     v_v: VecSF,
 ) [CH]VecSF {
-    @setEvalBranchQuota(40000);
+    @setEvalBranchQuota(eval_branch_quota);
     var samp_res_arr: [CH][S]F = [_][S]F{[_]F{0.0} ** S} ** CH;
     const mask_arr: [S]bool = v_mask_active;
     const u_arr: [S]F = v_u;
@@ -737,7 +738,7 @@ pub inline fn sampleLanesTri3(
     v_u: VecSF,
     v_v: VecSF,
 ) [CH]VecSF {
-    @setEvalBranchQuota(40000);
+    @setEvalBranchQuota(eval_branch_quota);
     var samp_res_arr: [CH][S]F = [_][S]F{[_]F{0.0} ** S} ** CH;
     const mask_arr: [S]bool = v_mask_active;
     const u_arr: [S]F = v_u;
@@ -825,7 +826,7 @@ pub inline fn sampleWide(
     v_u: VecSF,
     v_v: VecSF,
 ) [CH]VecSF {
-    @setEvalBranchQuota(40000);
+    @setEvalBranchQuota(eval_branch_quota);
     std.debug.assert(config.isValid());
     const tex_cols_minus_1_f = @as(
         F,

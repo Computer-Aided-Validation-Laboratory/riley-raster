@@ -9,14 +9,17 @@
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const goldpaths = @import("common/goldpaths.zig");
+const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
 const mo = @import("riley/zig/meshops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const texops = @import("riley/zig/textureops.zig");
+const buildconfig = @import("riley/zig/buildconfig.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
 pub fn main(init: std.process.Init) !void {
+    @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
     const io = init.io;
     var arena = std.heap.ArenaAllocator.init(init.gpa);
     defer arena.deinit();
@@ -77,19 +80,25 @@ pub fn main(init: std.process.Init) !void {
     inline for (mesh_types) |mt| {
         inline for (shader_types) |st| {
             inline for (sample_configs) |sc| {
-                const data_dir = comptime "data/bench/" ++ @tagName(mt) ++ "_fullraster";
+                const mesh_name = comptime orch.meshDataName(mt);
+                const data_dir = comptime "data/bench/" ++ mesh_name ++ "_fullraster";
                 if (common.shouldRun(.{ .run = .all }, mt, st, sc, data_dir)) {
                     const case_name = if (st == .tex8_grey or st == .tex8_rgb)
                         try std.fmt.allocPrint(
                             aa,
                             "{s}_{s}_{s}_{s}",
-                            .{ @tagName(mt), @tagName(st), @tagName(sc.sample), @tagName(sc.mode) },
+                            .{
+                                mesh_name,
+                                @tagName(st),
+                                @tagName(sc.sample),
+                                @tagName(sc.mode),
+                            },
                         )
                     else
                         try std.fmt.allocPrint(
                             aa,
                             "{s}_{s}",
-                            .{ @tagName(mt), @tagName(st) },
+                            .{ mesh_name, @tagName(st) },
                         );
                     std.debug.print("Rendering reference: {s}\n", .{case_name});
 
@@ -107,7 +116,11 @@ pub fn main(init: std.process.Init) !void {
                             .{ .format = .fimg, .bits = null, .scaling = .none },
                             .{ .format = .bmp, .bits = 8, .scaling = .auto },
                         };
-                    _ = try common.runBenchmarkQuiet(
+                    const case_out_dir = try std.fs.path.join(
+                        aa,
+                        &[_][]const u8{ out_dir_base, case_name },
+                    );
+                    _ = try common.runBenchmarkQuietWithImageOut(
                         u8,
                         aa,
                         io,
@@ -120,7 +133,8 @@ pub fn main(init: std.process.Init) !void {
                         texture_grey,
                         texture_rgb,
                         r_config,
-                        out_dir_base,
+                        "",
+                        case_out_dir,
                     );
                 }
             }

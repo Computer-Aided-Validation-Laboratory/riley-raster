@@ -35,9 +35,10 @@ pub fn calcMinCaseName(
     shader_type: common.ShaderType,
     sample_config: texops.TextureSampleConfig,
 ) ![]const u8 {
+    const mesh_type_name = if (etype == .tri3opt) gk.MeshType.tri3 else etype;
     return common.calcCaseName(
         allocator,
-        etype,
+        mesh_type_name,
         shader_type,
         sample_config,
         null,

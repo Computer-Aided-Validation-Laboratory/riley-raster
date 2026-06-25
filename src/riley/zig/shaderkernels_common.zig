@@ -9,6 +9,7 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
+const eval_branch_quota = buildconfig.comptime_eval_branch_quota;
 const shaderops = @import("shaderops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const texops = @import("textureops.zig");
@@ -144,7 +145,7 @@ inline fn shadeTexScalarDispatchImpl(
     shader: *const shaderops.TexPrepared(T, channels),
     spx_image_scratch: *MatSlice(F),
 ) void {
-    @setEvalBranchQuota(40000);
+    @setEvalBranchQuota(eval_branch_quota);
     switch (config.sample) {
         inline else => |sample_type| shadeTexScalarDispatchModeImpl(
             N,

@@ -11,15 +11,18 @@ const common = @import("common/benchcommon.zig");
 const gengold = @import("common/gengold.zig");
 const goldpaths = @import("common/goldpaths.zig");
 const minsuite = @import("common/minsuite.zig");
+const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
 const riley = @import("riley/zig/riley.zig");
 const mo = @import("riley/zig/meshops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const texops = @import("riley/zig/textureops.zig");
+const buildconfig = @import("riley/zig/buildconfig.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
 pub fn main(init: std.process.Init) !void {
+    @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
     const allocator = init.gpa;
     const io = init.io;
 
@@ -85,10 +88,11 @@ pub fn main(init: std.process.Init) !void {
     for (mesh_types) |mt| {
         for (shader_types) |st| {
             for (sample_configs) |sc| {
+                const mesh_name = orch.meshDataName(mt);
                 const data_dir = try std.fmt.allocPrint(
                     allocator,
                     "data/min/{s}_sphere200",
-                    .{@tagName(mt)},
+                    .{mesh_name},
                 );
                 defer allocator.free(data_dir);
 
@@ -118,8 +122,25 @@ pub fn main(init: std.process.Init) !void {
                     var r_config = tcfg.getRasterConfig(.bench);
                     r_config.save_strategy = .disk;
                     r_config.image_save_opts = &opts_with_ch;
+                    const case_name = try minsuite.calcMinCaseName(
+                        allocator,
+                        mt,
+                        st,
+                        sc,
+                    );
+                    defer allocator.free(case_name);
+                    const case_out_dir = try std.fs.path.join(
+                        allocator,
+                        &[_][]const u8{
+                            out_dir,
+                            "sphere200",
+                            "base",
+                            case_name,
+                        },
+                    );
+                    defer allocator.free(case_out_dir);
 
-                    var result = try common.runBenchmarkQuiet(
+                    var result = try common.runBenchmarkQuietWithImageOut(
                         u8,
                         allocator,
                         io,
@@ -132,7 +153,8 @@ pub fn main(init: std.process.Init) !void {
                         texture_grey,
                         texture_rgb,
                         r_config,
-                        out_dir ++ "/sphere200/base",
+                        "",
+                        case_out_dir,
                     );
                     result.deinit(allocator);
                 }
@@ -144,10 +166,11 @@ pub fn main(init: std.process.Init) !void {
     for (mesh_types) |mt| {
         for (shader_types) |st| {
             for (sample_configs) |sc| {
+                const mesh_name = orch.meshDataName(mt);
                 const data_dir = try std.fmt.allocPrint(
                     allocator,
                     "data/min/{s}_sphere200",
-                    .{@tagName(mt)},
+                    .{mesh_name},
                 );
                 defer allocator.free(data_dir);
 

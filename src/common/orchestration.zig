@@ -76,6 +76,7 @@ pub fn loadData(
 
 pub fn meshDataName(mesh_type: gk.MeshType) []const u8 {
     return switch (mesh_type) {
+        .tri3opt => "tri3",
         .quad4ibi, .quad4newton => "quad4",
         else => @tagName(mesh_type),
     };

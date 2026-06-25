@@ -163,6 +163,8 @@ pub const Config = struct {
     tolerance: Tolerance = defaultToleranceForPrecision(Scalar),
 };
 
+pub const comptime_eval_branch_quota: comptime_int = 100000;
+
 pub fn defaultSimdVectorWidthForPrecision(comptime precision: type) comptime_int {
     if (build_simd_vector_width > 0) {
         return build_simd_vector_width;
@@ -215,7 +217,7 @@ pub const tolerance_f32 = Tolerance{
     },
     .newton = .{
         .residual = 1e-4,
-        .normalized_residual = 3e-7,
+        .normalized_residual = 1.5e-5,
         .determinant = 1e-7,
         .parametric_domain = 5e-5,
     },

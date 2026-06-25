@@ -9,6 +9,7 @@
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const goldpaths = @import("common/goldpaths.zig");
+const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
 const mo = @import("riley/zig/meshops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
@@ -23,6 +24,7 @@ const F = buildconfig.F;
 const simd_on = cfg.simd == .on;
 
 pub fn main(init: std.process.Init) !void {
+    @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
     const io = init.io;
     var arena = std.heap.ArenaAllocator.init(init.gpa);
     defer arena.deinit();
@@ -98,10 +100,14 @@ pub fn main(init: std.process.Init) !void {
         inline for (mesh_types) |mt| {
             inline for (shader_types) |st| {
                 inline for (sample_configs) |sc| {
+                    const mesh_name = if (mt == .tri3opt)
+                        "tri3"
+                    else
+                        @tagName(mt);
                     const data_dir = try std.fmt.allocPrint(
                         aa,
                         "data/bench/{s}_{s}",
-                        .{ @tagName(mt), case.ds },
+                        .{ mesh_name, case.ds },
                     );
 
                     if (common.shouldRun(
@@ -116,7 +122,7 @@ pub fn main(init: std.process.Init) !void {
                                 aa,
                                 "{s}_{s}_{s}_{s}",
                                 .{
-                                    @tagName(mt),
+                                    mesh_name,
                                     @tagName(st),
                                     @tagName(sc.sample),
                                     @tagName(sc.mode),
@@ -126,7 +132,7 @@ pub fn main(init: std.process.Init) !void {
                             try std.fmt.allocPrint(
                                 aa,
                                 "{s}_{s}",
-                                .{ @tagName(mt), @tagName(st) },
+                                .{ mesh_name, @tagName(st) },
                             );
 
                         std.debug.print(
@@ -147,7 +153,11 @@ pub fn main(init: std.process.Init) !void {
                                 .{ .format = .fimg, .bits = null, .scaling = .none },
                                 .{ .format = .bmp, .bits = 8, .scaling = .auto },
                             };
-                        _ = try common.runBenchmarkQuiet(
+                        const case_out_dir = try std.fs.path.join(
+                            aa,
+                            &[_][]const u8{ case.out, case_name },
+                        );
+                        _ = try common.runBenchmarkQuietWithImageOut(
                             u8,
                             aa,
                             io,
@@ -167,7 +177,8 @@ pub fn main(init: std.process.Init) !void {
                             texture_grey,
                             texture_rgb,
                             r_config,
-                            case.out,
+                            "",
+                            case_out_dir,
                         );
                     }
                 }

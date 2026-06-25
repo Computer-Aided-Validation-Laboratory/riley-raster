@@ -104,7 +104,22 @@ pub fn main(init: std.process.Init) !void {
                 )) {
                     var r_config = tcfg.getRasterConfig(.bench);
                     r_config.save_strategy = .disk;
-                    _ = try common.runBenchmarkQuiet(
+                    const case_name = try minsuite.calcMinCaseName(
+                        aa,
+                        mt,
+                        st,
+                        sc,
+                    );
+                    const case_out_dir = try std.fs.path.join(
+                        aa,
+                        &[_][]const u8{
+                            out_dir,
+                            "sphere200",
+                            "base",
+                            case_name,
+                        },
+                    );
+                    _ = try common.runBenchmarkQuietWithImageOut(
                         u8,
                         aa,
                         io,
@@ -117,7 +132,8 @@ pub fn main(init: std.process.Init) !void {
                         texture_grey,
                         texture_rgb,
                         r_config,
-                        out_dir ++ "/sphere200/base",
+                        "",
+                        case_out_dir,
                     );
                 }
             }
