@@ -9,6 +9,7 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
+const newton = @import("newton.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 const rastcfg = @import("rasterconfig.zig");
 const rops = @import("rasterops.zig");
@@ -107,6 +108,7 @@ pub inline fn recordPixelSolverDiagnostics(
     ctx_report: anytype,
     global_subx: usize,
     global_suby: usize,
+    status: newton.NewtonStatus,
     pre_domain_converged: bool,
     hit_iter_limit: bool,
     residual_x: F,
@@ -117,6 +119,11 @@ pub inline fn recordPixelSolverDiagnostics(
     domain_violation: F,
 ) void {
     if (comptime report_mode == .full_stats) {
+        ctx_report.recordPixelSolverStatus(
+            global_subx,
+            global_suby,
+            status,
+        );
         ctx_report.recordPixelPreDomainConverged(
             global_subx,
             global_suby,

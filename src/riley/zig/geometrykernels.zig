@@ -74,6 +74,7 @@ pub fn GeometryResult(comptime N: usize) type {
     return struct {
         weights: ?[N]F,
         iters: u8,
+        status: newton.NewtonStatus = .failed_iteration_limit,
         pre_domain_converged: bool = true,
         xi_out: F = 0.0,
         eta_out: F = 0.0,
@@ -86,6 +87,7 @@ pub fn GeometryResultSIMD(comptime N: usize) type {
     return struct {
         v_weights: [N]VecSF,
         v_mask: VecSB,
+        v_status: VecSU8,
         v_pre_domain_converged: VecSB = @splat(true),
         v_iters: VecSU8,
         v_xi_out: VecSF = undefined,
@@ -220,6 +222,22 @@ pub fn Tri3Kernel() type {
             return .{
                 .v_weights = v_weights,
                 .v_mask = v_mask,
+                .v_status = @select(
+                    u8,
+                    v_mask,
+                    @as(
+                        VecSU8,
+                        @splat(
+                            @intFromEnum(newton.NewtonStatus.converged_residual),
+                        ),
+                    ),
+                    @as(
+                        VecSU8,
+                        @splat(
+                            @intFromEnum(newton.NewtonStatus.failed_domain),
+                        ),
+                    ),
+                ),
                 .v_iters = @splat(1),
             };
         }
@@ -383,6 +401,7 @@ pub fn Tri6Kernel() type {
                 return .{
                     .weights = node_values,
                     .iters = result.iterations,
+                    .status = result.status,
                     .pre_domain_converged = result.pre_domain_converged,
                     .xi_out = xi,
                     .eta_out = eta,
@@ -393,6 +412,7 @@ pub fn Tri6Kernel() type {
             return .{
                 .weights = null,
                 .iters = result.iterations,
+                .status = result.status,
                 .pre_domain_converged = result.pre_domain_converged,
                 .xi_final = result.xi_final,
                 .eta_final = result.eta_final,
@@ -437,6 +457,7 @@ pub fn Tri6Kernel() type {
             return .{
                 .v_weights = v_weights,
                 .v_mask = res.v_converged,
+                .v_status = res.v_status,
                 .v_pre_domain_converged = res.v_pre_domain_converged,
                 .v_iters = res.v_iterations,
                 .v_xi_out = v_xi_out,
@@ -975,11 +996,16 @@ pub fn Quad4NewtonKernel() type {
                 return .{
                     .weights = node_values,
                     .iters = result.iterations,
+                    .status = result.status,
                     .xi_out = xi,
                     .eta_out = eta,
                 };
             }
-            return .{ .weights = null, .iters = result.iterations };
+            return .{
+                .weights = null,
+                .iters = result.iterations,
+                .status = result.status,
+            };
         }
 
         pub inline fn solveWeightsNewtonSIMD(
@@ -1020,6 +1046,7 @@ pub fn Quad4NewtonKernel() type {
             return .{
                 .v_weights = v_weights,
                 .v_mask = res.v_converged,
+                .v_status = res.v_status,
                 .v_pre_domain_converged = res.v_pre_domain_converged,
                 .v_iters = res.v_iterations,
                 .v_xi_out = v_xi_out,
@@ -1112,11 +1139,16 @@ pub fn Quad89Kernel(comptime N: usize) type {
                 return .{
                     .weights = node_values,
                     .iters = result.iterations,
+                    .status = result.status,
                     .xi_out = xi,
                     .eta_out = eta,
                 };
             }
-            return .{ .weights = null, .iters = result.iterations };
+            return .{
+                .weights = null,
+                .iters = result.iterations,
+                .status = result.status,
+            };
         }
 
         pub inline fn solveWeightsNewtonSIMD(
@@ -1157,6 +1189,7 @@ pub fn Quad89Kernel(comptime N: usize) type {
             return .{
                 .v_weights = v_weights,
                 .v_mask = res.v_converged,
+                .v_status = res.v_status,
                 .v_pre_domain_converged = res.v_pre_domain_converged,
                 .v_iters = res.v_iterations,
                 .v_xi_out = v_xi_out,

@@ -828,6 +828,7 @@ fn rasterNewtonSIMDImpl(
         ctx_report.recordSolverCalls(subpx_simd_chunk.count);
 
         const pre_domain_arr: [S]bool = result.v_pre_domain_converged;
+        const status_arr_u8: [S]u8 = result.v_status;
         const xi_final_arr: [S]F = result.v_xi_final;
         const eta_final_arr: [S]F = result.v_eta_final;
 
@@ -879,8 +880,10 @@ fn rasterNewtonSIMDImpl(
                     xi_final_arr[jj],
                     eta_final_arr[jj],
                 );
+                const status: newton.NewtonStatus =
+                    @enumFromInt(status_arr_u8[jj]);
                 const hit_iter_limit =
-                    iters_arr[jj] >= buildconfig.config.raster_newton_iter_max;
+                    newton.hitIterLimitStatus(status);
                 const jacobian_det = newton.calcJacobianDet2D(
                     N,
                     xi_final_arr[jj],
@@ -910,6 +913,7 @@ fn rasterNewtonSIMDImpl(
                     ctx_report,
                     global_subx,
                     global_suby,
+                    status,
                     pre_domain_arr[jj],
                     hit_iter_limit,
                     solve_state.residual_x,

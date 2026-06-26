@@ -52,10 +52,23 @@ pub const NewtonEvalState = struct {
     normalized_residual_mag: F,
 };
 
+pub const NewtonStatus = enum(u8) {
+    converged_residual,
+    converged_step,
+    converged_stagnated,
+    converged_two_cycle,
+    failed_domain,
+    failed_iteration_limit,
+    failed_near_singular,
+    failed_invalid_state,
+    failed_invalid_step,
+};
+
 pub const NewtonResult = struct {
     converged: bool,
     pre_domain_converged: bool,
     iterations: u8,
+    status: NewtonStatus,
     residual_x: F,
     residual_y: F,
     xi_final: F,
@@ -66,6 +79,7 @@ pub const NewtonResultSIMD = struct {
     v_converged: VecSB,
     v_pre_domain_converged: VecSB,
     v_iterations: VecSU8,
+    v_status: VecSU8,
     v_residual_x: VecSF,
     v_residual_y: VecSF,
     v_xi_final: VecSF,
@@ -84,6 +98,47 @@ pub inline fn selectSeed(
         };
     }
     return base_seed;
+}
+
+pub inline fn isConvergedStatus(status: NewtonStatus) bool {
+    return switch (status) {
+        .converged_residual,
+        .converged_step,
+        .converged_stagnated,
+        .converged_two_cycle,
+        => true,
+        else => false,
+    };
+}
+
+pub inline fn isPreDomainConvergedStatus(status: NewtonStatus) bool {
+    return switch (status) {
+        .converged_residual,
+        .converged_step,
+        .converged_stagnated,
+        .converged_two_cycle,
+        .failed_domain,
+        => true,
+        else => false,
+    };
+}
+
+pub inline fn hitIterLimitStatus(status: NewtonStatus) bool {
+    return status == .failed_iteration_limit;
+}
+
+pub inline fn statusLabel(status: NewtonStatus) []const u8 {
+    return switch (status) {
+        .converged_residual => "converged_residual",
+        .converged_step => "converged_step",
+        .converged_stagnated => "converged_stagnated",
+        .converged_two_cycle => "converged_two_cycle",
+        .failed_domain => "failed_domain",
+        .failed_iteration_limit => "failed_iteration_limit",
+        .failed_near_singular => "failed_near_singular",
+        .failed_invalid_state => "failed_invalid_state",
+        .failed_invalid_step => "failed_invalid_step",
+    };
 }
 
 pub inline fn isSeedFinite(seed: NewtonSeed) bool {

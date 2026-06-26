@@ -14,6 +14,7 @@ const iio = @import("imageio.zig");
 const matslice = @import("matslice.zig");
 const cam = @import("camera.zig");
 const mo = @import("meshops.zig");
+const newton = @import("newton.zig");
 const rastcfg = @import("rasterconfig.zig");
 pub const ReportMode = rastcfg.ReportMode;
 
@@ -260,6 +261,7 @@ pub const FullStatsLog = struct {
     xi_map: ?ndarray.NDArray(F) = null,
     eta_map: ?ndarray.NDArray(F) = null,
     converged_map: ?ndarray.NDArray(F) = null,
+    solver_status_map: ?ndarray.NDArray(F) = null,
     pre_domain_converged_map: ?ndarray.NDArray(F) = null,
     hit_iter_limit_map: ?ndarray.NDArray(F) = null,
     jacobian_det_map: ?ndarray.NDArray(F) = null,
@@ -282,6 +284,7 @@ pub const FullStatsLog = struct {
         if (self.xi_map) |*xmap| xmap.deinit(allocator);
         if (self.eta_map) |*emap| emap.deinit(allocator);
         if (self.converged_map) |*cmap| cmap.deinit(allocator);
+        if (self.solver_status_map) |*smap| smap.deinit(allocator);
         if (self.pre_domain_converged_map) |*pmap| pmap.deinit(allocator);
         if (self.hit_iter_limit_map) |*hmap| hmap.deinit(allocator);
         if (self.jacobian_det_map) |*jmap| jmap.deinit(allocator);
@@ -366,15 +369,15 @@ pub const FullStatsLog = struct {
         const writer = &file_writer.interface;
 
         try writer.writeAll(
-            "subpx_x,subpx_y,iters,converged,pre_domain_converged,"
+            "subpx_x,subpx_y,iters,converged,solver_status,"
         );
         try writer.writeAll(
-            "hit_iter_limit,residual_x,residual_y,interpolated_w,"
+            "pre_domain_converged,hit_iter_limit,residual_x,residual_y,"
         );
         try writer.writeAll(
-            "residual_mag,normalized_residual_mag,jacobian_det,xi,eta,"
+            "interpolated_w,residual_mag,normalized_residual_mag,"
         );
-        try writer.writeAll("domain_violation,earlyout,inv_z\n");
+        try writer.writeAll("jacobian_det,xi,eta,domain_violation,earlyout,inv_z\n");
 
         const iter_row_stride = iteration_map.strides[0];
 
@@ -391,6 +394,9 @@ pub const FullStatsLog = struct {
 
                 const pre_domain_converged =
                     if (self.pre_domain_converged_map) |*m| m.slice[idx] else 0.0;
+                const solver_status =
+                    if (self.solver_status_map) |*m| m.slice[idx]
+                    else std.math.nan(F);
                 const hit_iter_limit =
                     if (self.hit_iter_limit_map) |*m| m.slice[idx] else 0.0;
                 const residual_mag =
@@ -421,13 +427,25 @@ pub const FullStatsLog = struct {
                 const inv_z =
                     if (self.depth_map) |*m| m.slice[idx] else std.math.nan(F);
 
+                const status_label =
+                    if (std.math.isFinite(solver_status))
+                        newton.statusLabel(
+                            @enumFromInt(@as(
+                                u8,
+                                @intFromFloat(solver_status),
+                            )),
+                        )
+                    else
+                        "unknown";
+
                 try writer.print(
-                    "{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d}\n",
+                    "{d},{d},{d},{d},{s},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d},{d}\n",
                     .{
                         xx,
                         yy,
                         iters,
                         converged,
+                        status_label,
                         pre_domain_converged,
                         hit_iter_limit,
                         residual_x,
@@ -1094,6 +1112,15 @@ pub fn initFullStatsLog(
         @memset(self.converged_map.?.slice, 0);
     }
 
+    self.solver_status_map = try ndarray.NDArray(F).initFlat(
+        allocator,
+        &sub_pixels_num,
+    );
+    @memset(
+        self.solver_status_map.?.slice,
+        @floatFromInt(@intFromEnum(newton.NewtonStatus.failed_iteration_limit)),
+    );
+
     self.pre_domain_converged_map = try ndarray.NDArray(F).initFlat(
         allocator,
         &sub_pixels_num,
@@ -1396,6 +1423,21 @@ pub fn ReportContext(comptime mode: ReportMode) type {
                     const row_stride = cmap.strides[0];
                     cmap.slice[global_suby * row_stride + global_subx] =
                         if (converged) 1.0 else 0.0;
+                }
+            }
+        }
+
+        pub inline fn recordPixelSolverStatus(
+            self: @This(),
+            global_subx: usize,
+            global_suby: usize,
+            status: newton.NewtonStatus,
+        ) void {
+            if (mode == .full_stats) {
+                if (self.log.solver_status_map) |*smap| {
+                    const row_stride = smap.strides[0];
+                    smap.slice[global_suby * row_stride + global_subx] =
+                        @floatFromInt(@intFromEnum(status));
                 }
             }
         }

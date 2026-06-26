@@ -115,8 +115,12 @@ pub const NormalTolerance = struct {
 pub const NewtonTolerance = struct {
     residual: Scalar = 1e-8,
     normalized_residual: Scalar = 3e-11,
-    determinant: Scalar = 1e-12,
+    stagnation_normalized_residual: Scalar = 1e-10,
+    relative_determinant: Scalar = 1e-12,
     parametric_domain: Scalar = 1e-7,
+    parametric_step_abs: Scalar = 1e-12,
+    parametric_step_rel: Scalar = 1e-12,
+    max_parametric_step: Scalar = 0.5,
 };
 
 pub const DistortionTolerance = struct {
@@ -231,8 +235,12 @@ pub const tolerance_f32 = Tolerance{
     .newton = .{
         .residual = 1e-4,
         .normalized_residual = 1.5e-5,
-        .determinant = 1e-7,
+        .stagnation_normalized_residual = 4.5e-5,
+        .relative_determinant = 1e-6,
         .parametric_domain = 5e-5,
+        .parametric_step_abs = 2e-6,
+        .parametric_step_rel = 2e-6,
+        .max_parametric_step = 0.5,
     },
     .distortion = .{
         .residual = 1e-5,

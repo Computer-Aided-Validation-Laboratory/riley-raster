@@ -6,6 +6,7 @@
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
+const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
@@ -17,6 +18,11 @@ const VecSF = buildconfig.VecSF;
 const VecSU8 = buildconfig.VecSU8;
 const iter_max = cfg.raster_newton_iter_max;
 const tol = cfg.tolerance;
+
+inline fn finiteMask(vals: VecSF) VecSB {
+    const v_inf: VecSF = @splat(std.math.inf(F));
+    return (vals == vals) & (vals != v_inf) & (vals != -v_inf);
+}
 
 pub fn solveInverseSIMD(
     comptime N: usize,
@@ -33,18 +39,37 @@ pub fn solveInverseSIMD(
     v_deriv_n_xi: *[N]VecSF,
     v_deriv_n_eta: *[N]VecSF,
 ) common.NewtonResultSIMD {
-    const v_resid_norm_tol: VecSF = @splat(tol.newton.normalized_residual);
-    const v_det_tol: VecSF = @splat(tol.newton.determinant);
+    const v_strict_resid_norm_tol: VecSF =
+        @splat(tol.newton.normalized_residual);
+    const v_relaxed_resid_norm_tol: VecSF =
+        @splat(tol.newton.stagnation_normalized_residual);
+    const rel_det_tol_sq = tol.newton.relative_determinant *
+        tol.newton.relative_determinant;
+    const v_rel_det_tol_sq: VecSF = @splat(rel_det_tol_sq);
     const v_eps: VecSF = @splat(tol.newton.parametric_domain);
+    const v_step_abs: VecSF = @splat(tol.newton.parametric_step_abs);
+    const v_step_rel: VecSF = @splat(tol.newton.parametric_step_rel);
+    const v_max_parametric_step: VecSF =
+        @splat(tol.newton.max_parametric_step);
+    const v_one: VecSF = @splat(1.0);
+    const v_zero: VecSF = @splat(0.0);
 
     var v_xi = v_xi_in;
     var v_eta = v_eta_in;
+    var v_xi_two_back: VecSF = @splat(0.0);
+    var v_eta_two_back: VecSF = @splat(0.0);
+    var v_has_two_back: VecSB = @splat(false);
 
     var v_converged: VecSB = @splat(false);
+    var v_pre_domain_converged: VecSB = @splat(false);
     var v_iters: VecSU8 = @splat(0);
+    var v_status: VecSU8 =
+        @splat(@intFromEnum(common.NewtonStatus.failed_iteration_limit));
     var v_active: VecSB = @splat(true);
     var v_residual_x_final: VecSF = @splat(0.0);
     var v_residual_y_final: VecSF = @splat(0.0);
+    var v_xi_final = v_xi_in;
+    var v_eta_final = v_eta_in;
 
     var v_term_x: [N]VecSF = undefined;
     var v_term_y: [N]VecSF = undefined;
@@ -140,16 +165,67 @@ pub fn solveInverseSIMD(
 
         v_residual_x_final = v_residual_x;
         v_residual_y_final = v_residual_y;
+        v_xi_final = @select(F, v_active, v_xi, v_xi_final);
+        v_eta_final = @select(F, v_active, v_eta, v_eta_final);
+
+        const v_invalid_state = v_active & !finiteMask(v_residual_x) |
+            v_active & !finiteMask(v_residual_y) |
+            v_active & !finiteMask(v_interpolated_w) |
+            v_active & !finiteMask(v_jac11) |
+            v_active & !finiteMask(v_jac12) |
+            v_active & !finiteMask(v_jac21) |
+            v_active & !finiteMask(v_jac22);
+        v_status = @select(
+            u8,
+            v_invalid_state,
+            @as(
+                VecSU8,
+                @splat(@intFromEnum(common.NewtonStatus.failed_invalid_state)),
+            ),
+            v_status,
+        );
+        v_active = v_active & !v_invalid_state;
 
         const v_w_abs = @abs(v_interpolated_w);
         const v_residual_sq =
             v_residual_x * v_residual_x + v_residual_y * v_residual_y;
-        const v_w_scaled_tol = v_w_abs * v_resid_norm_tol;
-        const v_met_tol = (v_w_abs > @as(VecSF, @splat(0.0))) &
-            (v_residual_sq <= v_w_scaled_tol * v_w_scaled_tol);
-        v_converged = v_converged | (v_active & v_met_tol);
-        v_active = v_active & !v_met_tol;
+        const v_strict_w_scaled_tol = v_w_abs * v_strict_resid_norm_tol;
+        const v_relaxed_w_scaled_tol = v_w_abs * v_relaxed_resid_norm_tol;
+        const v_strict_residual = v_active &
+            (v_w_abs > v_zero) &
+            (v_residual_sq <=
+                v_strict_w_scaled_tol * v_strict_w_scaled_tol);
+        const v_relaxed_residual = v_active &
+            (v_w_abs > v_zero) &
+            (v_residual_sq <=
+                v_relaxed_w_scaled_tol * v_relaxed_w_scaled_tol);
+        v_converged = v_converged | v_strict_residual;
+        v_pre_domain_converged = v_pre_domain_converged | v_strict_residual;
+        v_status = @select(
+            u8,
+            v_strict_residual,
+            @as(
+                VecSU8,
+                @splat(@intFromEnum(common.NewtonStatus.converged_residual)),
+            ),
+            v_status,
+        );
+        v_active = v_active & !v_strict_residual;
 
+        if (!@reduce(.Or, v_active)) break;
+
+        const v_is_last_iter = @as(VecSB, @splat(ii + 1 == iter_max));
+        const v_hit_iter_limit = v_active & v_is_last_iter;
+        v_status = @select(
+            u8,
+            v_hit_iter_limit,
+            @as(
+                VecSU8,
+                @splat(@intFromEnum(common.NewtonStatus.failed_iteration_limit)),
+            ),
+            v_status,
+        );
+        v_active = v_active & !v_hit_iter_limit;
         if (!@reduce(.Or, v_active)) break;
 
         const v_det = @mulAdd(
@@ -158,8 +234,48 @@ pub fn solveInverseSIMD(
             v_jac22,
             -(v_jac12 * v_jac21),
         );
-        const v_bad_det = @abs(v_det) < v_det_tol;
-        v_active = v_active & !v_bad_det;
+        const v_col_xi_norm_sq = @mulAdd(
+            VecSF,
+            v_jac11,
+            v_jac11,
+            v_jac21 * v_jac21,
+        );
+        const v_col_eta_norm_sq = @mulAdd(
+            VecSF,
+            v_jac12,
+            v_jac12,
+            v_jac22 * v_jac22,
+        );
+        const v_det_sq = v_det * v_det;
+        const v_invalid_det_state = v_active &
+            (!finiteMask(v_det) |
+                !finiteMask(v_col_xi_norm_sq) |
+                !finiteMask(v_col_eta_norm_sq));
+        v_status = @select(
+            u8,
+            v_invalid_det_state,
+            @as(
+                VecSU8,
+                @splat(@intFromEnum(common.NewtonStatus.failed_invalid_state)),
+            ),
+            v_status,
+        );
+        v_active = v_active & !v_invalid_det_state;
+        const v_near_singular = v_active &
+            (v_det_sq <=
+                v_rel_det_tol_sq * v_col_xi_norm_sq * v_col_eta_norm_sq);
+        v_status = @select(
+            u8,
+            v_near_singular,
+            @as(
+                VecSU8,
+                @splat(
+                    @intFromEnum(common.NewtonStatus.failed_near_singular),
+                ),
+            ),
+            v_status,
+        );
+        v_active = v_active & !v_near_singular;
 
         if (!@reduce(.Or, v_active)) break;
 
@@ -167,35 +283,122 @@ pub fn solveInverseSIMD(
             F,
             v_active,
             v_det,
-            @as(VecSF, @splat(1.0)),
+            v_one,
         );
-        const v_inv_det = @as(VecSF, @splat(1.0)) / v_safe_det;
+        const v_inv_det = v_one / v_safe_det;
+        const v_invalid_inv_det = v_active & !finiteMask(v_inv_det);
+        v_status = @select(
+            u8,
+            v_invalid_inv_det,
+            @as(
+                VecSU8,
+                @splat(@intFromEnum(common.NewtonStatus.failed_invalid_state)),
+            ),
+            v_status,
+        );
+        v_active = v_active & !v_invalid_inv_det;
 
-        const v_dxi = @mulAdd(
+        if (!@reduce(.Or, v_active)) break;
+
+        const v_delta_xi_num = @mulAdd(
             VecSF,
             v_jac22,
             v_residual_x,
             -(v_jac12 * v_residual_y),
         );
-        const v_deta = @mulAdd(
+        const v_delta_eta_num = @mulAdd(
             VecSF,
             v_jac11,
             v_residual_y,
             -(v_jac21 * v_residual_x),
         );
+        var v_step_xi = v_inv_det * v_delta_xi_num;
+        var v_step_eta = v_inv_det * v_delta_eta_num;
+        const v_step_tol_xi = v_step_abs +
+            v_step_rel * @max(@abs(v_xi), v_one);
+        const v_step_tol_eta = v_step_abs +
+            v_step_rel * @max(@abs(v_eta), v_one);
+        const v_met_step = v_active &
+            (@abs(v_step_xi) <= v_step_tol_xi) &
+            (@abs(v_step_eta) <= v_step_tol_eta);
 
-        v_xi = @mulAdd(
-            VecSF,
-            -v_inv_det,
-            @select(F, v_active, v_dxi, @as(VecSF, @splat(0.0))),
-            v_xi,
+        const v_max_component = @max(@abs(v_step_xi), @abs(v_step_eta));
+        const v_safe_max_component = @select(
+            F,
+            v_max_component > v_zero,
+            v_max_component,
+            v_one,
         );
-        v_eta = @mulAdd(
-            VecSF,
-            -v_inv_det,
-            @select(F, v_active, v_deta, @as(VecSF, @splat(0.0))),
-            v_eta,
+        const v_step_scale = @min(
+            v_one,
+            v_max_parametric_step / v_safe_max_component,
         );
+        v_step_xi *= v_step_scale;
+        v_step_eta *= v_step_scale;
+        const v_next_xi = v_xi - v_step_xi;
+        const v_next_eta = v_eta - v_step_eta;
+        const v_stagnated = v_active &
+            (v_next_xi == v_xi) &
+            (v_next_eta == v_eta);
+        const v_two_cycle = v_active &
+            v_has_two_back &
+            (v_next_xi == v_xi_two_back) &
+            (v_next_eta == v_eta_two_back);
+        const v_machine_limit = v_met_step | v_stagnated | v_two_cycle;
+        const v_converged_step = v_machine_limit & v_relaxed_residual;
+        const v_status_step = @select(
+            u8,
+            v_stagnated,
+            @as(
+                VecSU8,
+                @splat(
+                    @intFromEnum(common.NewtonStatus.converged_stagnated),
+                ),
+            ),
+            @select(
+                u8,
+                v_two_cycle,
+                @as(
+                    VecSU8,
+                    @splat(
+                        @intFromEnum(common.NewtonStatus.converged_two_cycle),
+                    ),
+                ),
+                @as(
+                    VecSU8,
+                    @splat(@intFromEnum(common.NewtonStatus.converged_step)),
+                ),
+            ),
+        );
+        v_converged = v_converged | v_converged_step;
+        v_pre_domain_converged =
+            v_pre_domain_converged | v_converged_step;
+        v_status = @select(u8, v_converged_step, v_status_step, v_status);
+        v_active = v_active & !v_converged_step;
+
+        const v_invalid_step = v_active &
+            (!finiteMask(v_step_xi) |
+                !finiteMask(v_step_eta) |
+                !finiteMask(v_next_xi) |
+                !finiteMask(v_next_eta));
+        v_status = @select(
+            u8,
+            v_invalid_step,
+            @as(
+                VecSU8,
+                @splat(@intFromEnum(common.NewtonStatus.failed_invalid_step)),
+            ),
+            v_status,
+        );
+        v_active = v_active & !v_invalid_step;
+
+        if (!@reduce(.Or, v_active)) break;
+
+        v_xi_two_back = @select(F, v_active, v_xi, v_xi_two_back);
+        v_eta_two_back = @select(F, v_active, v_eta, v_eta_two_back);
+        v_has_two_back = v_has_two_back | v_active;
+        v_xi = @select(F, v_active, v_next_xi, v_xi);
+        v_eta = @select(F, v_active, v_next_eta, v_eta);
     }
 
     const v_splat_one: VecSF = @splat(1.0);
@@ -208,17 +411,25 @@ pub fn solveInverseSIMD(
         (v_xi >= v_splat_neg_one - v_eps) & (v_xi <= v_splat_one + v_eps) &
             (v_eta >= v_splat_neg_one - v_eps) & (v_eta <= v_splat_one + v_eps);
 
+    const v_failed_domain = v_converged & !v_is_in;
     const v_final_converged = v_converged & v_is_in;
-    v_xi_out.* = v_xi;
-    v_eta_out.* = v_eta;
+    v_status = @select(
+        u8,
+        v_failed_domain,
+        @as(VecSU8, @splat(@intFromEnum(common.NewtonStatus.failed_domain))),
+        v_status,
+    );
+    v_xi_out.* = v_xi_final;
+    v_eta_out.* = v_eta_final;
 
     return .{
         .v_converged = v_final_converged,
-        .v_pre_domain_converged = v_converged,
+        .v_pre_domain_converged = v_pre_domain_converged | v_failed_domain,
         .v_iterations = v_iters,
+        .v_status = v_status,
         .v_residual_x = v_residual_x_final,
         .v_residual_y = v_residual_y_final,
-        .v_xi_final = v_xi,
-        .v_eta_final = v_eta,
+        .v_xi_final = v_xi_final,
+        .v_eta_final = v_eta_final,
     };
 }

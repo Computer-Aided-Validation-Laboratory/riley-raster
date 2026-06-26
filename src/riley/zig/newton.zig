@@ -18,6 +18,7 @@ pub const NewtonSeedSIMD = common.NewtonSeedSIMD;
 pub const NewtonSeedState = common.NewtonSeedState;
 pub const NewtonSeedQuality = common.NewtonSeedQuality;
 pub const NewtonEvalState = common.NewtonEvalState;
+pub const NewtonStatus = common.NewtonStatus;
 pub const NewtonResult = common.NewtonResult;
 pub const NewtonResultSIMD = common.NewtonResultSIMD;
 
@@ -29,6 +30,10 @@ pub const updateSeedStateFromSIMDResult = common.updateSeedStateFromSIMDResult;
 pub const evaluateSeedQuality = common.evaluateSeedQuality;
 pub const evaluateSolveState = common.evaluateSolveState;
 pub const calcJacobianDet2D = common.calcJacobianDet2D;
+pub const isConvergedStatus = common.isConvergedStatus;
+pub const isPreDomainConvergedStatus = common.isPreDomainConvergedStatus;
+pub const hitIterLimitStatus = common.hitIterLimitStatus;
+pub const statusLabel = common.statusLabel;
 
 pub const solveInverse = scalar.solveInverse;
 pub const solveInverseSIMD = simd.solveInverseSIMD;

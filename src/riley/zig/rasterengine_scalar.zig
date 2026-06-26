@@ -474,8 +474,7 @@ fn rasterNewtonImpl(
                 result.xi_final,
                 result.eta_final,
             );
-            const hit_iter_limit =
-                result.iters >= buildconfig.config.raster_newton_iter_max;
+            const hit_iter_limit = newton.hitIterLimitStatus(result.status);
             const jacobian_det = newton.calcJacobianDet2D(
                 N,
                 result.xi_final,
@@ -500,6 +499,7 @@ fn rasterNewtonImpl(
                         ctx_report,
                         global_subx,
                         global_suby,
+                        result.status,
                         result.pre_domain_converged,
                         hit_iter_limit,
                         solve_state.residual_x,
@@ -530,6 +530,7 @@ fn rasterNewtonImpl(
                     ctx_report,
                     global_subx,
                     global_suby,
+                    result.status,
                     result.pre_domain_converged,
                     hit_iter_limit,
                     solve_state.residual_x,
