@@ -32,7 +32,7 @@ pub const RasterConfigMode = enum {
     bench,
 };
 
-// What is going on here?
+
 pub fn getRasterConfig(mode: RasterConfigMode) rastcfg.RasterConfig {
     var config = rastcfg.RasterConfig{
         .render_mode = RENDER_MODE,

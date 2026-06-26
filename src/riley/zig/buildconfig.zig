@@ -48,6 +48,19 @@ pub const SimdTextureInterpMode = enum {
     over_pixels,
 };
 
+pub fn defaultNewtonSeedModeUsesHull(comptime precision: type) bool {
+    return switch (precision) {
+        f32 => true,
+        f64 => false,
+        else => @compileError("Only f32 and f64 precision are supported."),
+    };
+}
+
+pub fn defaultNewtonSeedReuseLastConverged(comptime precision: type) bool {
+    _ = precision;
+    return false;
+}
+
 pub const TextureSIMDPolicy = struct {
     pub fn resolve(
         comptime channels: comptime_int,
@@ -157,7 +170,7 @@ pub const Config = struct {
     simd_vector_width: comptime_int = defaultSimdVectorWidthForPrecision(Scalar),
     max_nodal_fields: comptime_int = 8,
     max_image_channels: comptime_int = 8,
-    raster_newton_iter_max: comptime_int = 10,
+    raster_newton_iter_max: comptime_int = 20,
     distortion_newton_iter_max: comptime_int = 15,
     interp_lut_size: comptime_int = 1024,
     save_frame_buffer_count: comptime_int = 3,
@@ -254,6 +267,9 @@ pub const config = configForPrecision(default_precision);
 pub const F = config.precision;
 pub const SimdWidth = config.simd_vector_width;
 pub const SaveFrameBufferCount = config.save_frame_buffer_count;
+pub const UseHullNewtonSeed = defaultNewtonSeedModeUsesHull(F);
+pub const UseLastConvergedNewtonSeedReuse =
+    defaultNewtonSeedReuseLastConverged(F);
 
 pub const VecSF = @Vector(SimdWidth, F);
 pub const VecSU = @Vector(SimdWidth, usize);

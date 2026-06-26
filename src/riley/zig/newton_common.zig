@@ -193,19 +193,34 @@ pub fn evaluateSeedQuality(
     var jacobian_22: F = 0.0;
 
     for (0..N) |nn| {
-        const term_x = target_screen_x * element_node_w[nn] - element_node_x[nn];
-        const term_y = target_screen_y * element_node_w[nn] - element_node_y[nn];
+        const term_x = @mulAdd(
+            F,
+            target_screen_x,
+            element_node_w[nn],
+            -element_node_x[nn],
+        );
+        const term_y = @mulAdd(
+            F,
+            target_screen_y,
+            element_node_w[nn],
+            -element_node_y[nn],
+        );
 
-        residual_x += node_values[nn] * term_x;
-        residual_y += node_values[nn] * term_y;
+        residual_x = @mulAdd(F, node_values[nn], term_x, residual_x);
+        residual_y = @mulAdd(F, node_values[nn], term_y, residual_y);
 
-        jacobian_11 += deriv_n_xi[nn] * term_x;
-        jacobian_12 += deriv_n_eta[nn] * term_x;
-        jacobian_21 += deriv_n_xi[nn] * term_y;
-        jacobian_22 += deriv_n_eta[nn] * term_y;
+        jacobian_11 = @mulAdd(F, deriv_n_xi[nn], term_x, jacobian_11);
+        jacobian_12 = @mulAdd(F, deriv_n_eta[nn], term_x, jacobian_12);
+        jacobian_21 = @mulAdd(F, deriv_n_xi[nn], term_y, jacobian_21);
+        jacobian_22 = @mulAdd(F, deriv_n_eta[nn], term_y, jacobian_22);
     }
 
-    const determinant = jacobian_11 * jacobian_22 - jacobian_12 * jacobian_21;
+    const determinant = @mulAdd(
+        F,
+        jacobian_11,
+        jacobian_22,
+        -(jacobian_12 * jacobian_21),
+    );
     const det_abs = @abs(determinant);
     const residual_sq = residual_x * residual_x + residual_y * residual_y;
     const domain_violation = domainViolationFn(seed.xi, seed.eta);
@@ -249,13 +264,13 @@ pub fn calcJacobianDet2D(
     var dy_deta: F = 0.0;
 
     for (0..N) |nn| {
-        dx_dxi += deriv_n_xi[nn] * node_x[nn];
-        dx_deta += deriv_n_eta[nn] * node_x[nn];
-        dy_dxi += deriv_n_xi[nn] * node_y[nn];
-        dy_deta += deriv_n_eta[nn] * node_y[nn];
+        dx_dxi = @mulAdd(F, deriv_n_xi[nn], node_x[nn], dx_dxi);
+        dx_deta = @mulAdd(F, deriv_n_eta[nn], node_x[nn], dx_deta);
+        dy_dxi = @mulAdd(F, deriv_n_xi[nn], node_y[nn], dy_dxi);
+        dy_deta = @mulAdd(F, deriv_n_eta[nn], node_y[nn], dy_deta);
     }
 
-    return dx_dxi * dy_deta - dx_deta * dy_dxi;
+    return @mulAdd(F, dx_dxi, dy_deta, -(dx_deta * dy_dxi));
 }
 
 pub fn evaluateSolveState(
@@ -285,12 +300,27 @@ pub fn evaluateSolveState(
     var interpolated_w: F = 0.0;
 
     for (0..N) |nn| {
-        const term_x = target_screen_x * element_node_w[nn] - element_node_x[nn];
-        const term_y = target_screen_y * element_node_w[nn] - element_node_y[nn];
+        const term_x = @mulAdd(
+            F,
+            target_screen_x,
+            element_node_w[nn],
+            -element_node_x[nn],
+        );
+        const term_y = @mulAdd(
+            F,
+            target_screen_y,
+            element_node_w[nn],
+            -element_node_y[nn],
+        );
 
-        residual_x += node_values[nn] * term_x;
-        residual_y += node_values[nn] * term_y;
-        interpolated_w += node_values[nn] * element_node_w[nn];
+        residual_x = @mulAdd(F, node_values[nn], term_x, residual_x);
+        residual_y = @mulAdd(F, node_values[nn], term_y, residual_y);
+        interpolated_w = @mulAdd(
+            F,
+            node_values[nn],
+            element_node_w[nn],
+            interpolated_w,
+        );
     }
 
     const residual_mag = @sqrt(

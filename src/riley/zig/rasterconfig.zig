@@ -57,8 +57,15 @@ pub const RasterConfig = struct {
     tile_size_max: u16 = 256,
     background_value: F = 0.0,
     hull_mode: HullMode = .on_no_fallback,
-    newton_seed_mode: NewtonSeedMode = .centroid,
-    newton_seed_reuse: NewtonSeedReuse = .off,
+    newton_seed_mode: NewtonSeedMode = if (buildconfig.UseHullNewtonSeed)
+        .hull
+    else
+        .centroid,
+    newton_seed_reuse: NewtonSeedReuse =
+        if (buildconfig.UseLastConvergedNewtonSeedReuse)
+            .last_converged
+        else
+            .off,
     report: ReportMode = .bench,
     full_stats_opts: FullStatsOpts = .{},
     save_frame_buffer_count: usize = buildconfig.SaveFrameBufferCount,

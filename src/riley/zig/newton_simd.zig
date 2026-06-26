@@ -52,8 +52,18 @@ pub fn solveInverseSIMD(
         const v_node_x: VecSF = @splat(elem_node_x[nn]);
         const v_node_y: VecSF = @splat(elem_node_y[nn]);
         const v_node_w: VecSF = @splat(elem_node_w[nn]);
-        v_term_x[nn] = v_target_x * v_node_w - v_node_x;
-        v_term_y[nn] = v_target_y * v_node_w - v_node_y;
+        v_term_x[nn] = @mulAdd(
+            VecSF,
+            v_target_x,
+            v_node_w,
+            -v_node_x,
+        );
+        v_term_y[nn] = @mulAdd(
+            VecSF,
+            v_target_y,
+            v_node_w,
+            -v_node_y,
+        );
     }
 
     for (0..iter_max) |ii| {
@@ -84,14 +94,48 @@ pub fn solveInverseSIMD(
         var v_jac22: VecSF = @splat(0.0);
 
         inline for (0..N) |nn| {
-            v_residual_x += v_node_values[nn] * v_term_x[nn];
-            v_residual_y += v_node_values[nn] * v_term_y[nn];
-            v_interpolated_w +=
-                v_node_values[nn] * @as(VecSF, @splat(elem_node_w[nn]));
-            v_jac11 += v_deriv_n_xi[nn] * v_term_x[nn];
-            v_jac12 += v_deriv_n_eta[nn] * v_term_x[nn];
-            v_jac21 += v_deriv_n_xi[nn] * v_term_y[nn];
-            v_jac22 += v_deriv_n_eta[nn] * v_term_y[nn];
+            v_residual_x = @mulAdd(
+                VecSF,
+                v_node_values[nn],
+                v_term_x[nn],
+                v_residual_x,
+            );
+            v_residual_y = @mulAdd(
+                VecSF,
+                v_node_values[nn],
+                v_term_y[nn],
+                v_residual_y,
+            );
+            v_interpolated_w = @mulAdd(
+                VecSF,
+                v_node_values[nn],
+                @as(VecSF, @splat(elem_node_w[nn])),
+                v_interpolated_w,
+            );
+            v_jac11 = @mulAdd(
+                VecSF,
+                v_deriv_n_xi[nn],
+                v_term_x[nn],
+                v_jac11,
+            );
+            v_jac12 = @mulAdd(
+                VecSF,
+                v_deriv_n_eta[nn],
+                v_term_x[nn],
+                v_jac12,
+            );
+            v_jac21 = @mulAdd(
+                VecSF,
+                v_deriv_n_xi[nn],
+                v_term_y[nn],
+                v_jac21,
+            );
+            v_jac22 = @mulAdd(
+                VecSF,
+                v_deriv_n_eta[nn],
+                v_term_y[nn],
+                v_jac22,
+            );
         }
 
         v_residual_x_final = v_residual_x;
@@ -108,7 +152,12 @@ pub fn solveInverseSIMD(
 
         if (!@reduce(.Or, v_active)) break;
 
-        const v_det = v_jac11 * v_jac22 - v_jac12 * v_jac21;
+        const v_det = @mulAdd(
+            VecSF,
+            v_jac11,
+            v_jac22,
+            -(v_jac12 * v_jac21),
+        );
         const v_bad_det = @abs(v_det) < v_det_tol;
         v_active = v_active & !v_bad_det;
 
@@ -122,13 +171,31 @@ pub fn solveInverseSIMD(
         );
         const v_inv_det = @as(VecSF, @splat(1.0)) / v_safe_det;
 
-        const v_dxi = v_inv_det *
-            (v_jac22 * v_residual_x - v_jac12 * v_residual_y);
-        const v_deta = v_inv_det *
-            (-v_jac21 * v_residual_x + v_jac11 * v_residual_y);
+        const v_dxi = @mulAdd(
+            VecSF,
+            v_jac22,
+            v_residual_x,
+            -(v_jac12 * v_residual_y),
+        );
+        const v_deta = @mulAdd(
+            VecSF,
+            v_jac11,
+            v_residual_y,
+            -(v_jac21 * v_residual_x),
+        );
 
-        v_xi -= @select(F, v_active, v_dxi, @as(VecSF, @splat(0.0)));
-        v_eta -= @select(F, v_active, v_deta, @as(VecSF, @splat(0.0)));
+        v_xi = @mulAdd(
+            VecSF,
+            -v_inv_det,
+            @select(F, v_active, v_dxi, @as(VecSF, @splat(0.0))),
+            v_xi,
+        );
+        v_eta = @mulAdd(
+            VecSF,
+            -v_inv_det,
+            @select(F, v_active, v_deta, @as(VecSF, @splat(0.0))),
+            v_eta,
+        );
     }
 
     const v_splat_one: VecSF = @splat(1.0);

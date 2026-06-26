@@ -40,8 +40,18 @@ pub fn solveInverse(
     var term_x: [N]F = undefined;
     var term_y: [N]F = undefined;
     inline for (0..N) |nn| {
-        term_x[nn] = target_screen_x * element_node_w[nn] - element_node_x[nn];
-        term_y[nn] = target_screen_y * element_node_w[nn] - element_node_y[nn];
+        term_x[nn] = @mulAdd(
+            F,
+            target_screen_x,
+            element_node_w[nn],
+            -element_node_x[nn],
+        );
+        term_y[nn] = @mulAdd(
+            F,
+            target_screen_y,
+            element_node_w[nn],
+            -element_node_y[nn],
+        );
     }
 
     var met_residual = false;
@@ -62,14 +72,49 @@ pub fn solveInverse(
         var jacobian_22: F = 0.0;
 
         for (0..N) |nn| {
-            residual_x += node_values[nn] * term_x[nn];
-            residual_y += node_values[nn] * term_y[nn];
-            interpolated_w += node_values[nn] * element_node_w[nn];
+            residual_x = @mulAdd(
+                F,
+                node_values[nn],
+                term_x[nn],
+                residual_x,
+            );
+            residual_y = @mulAdd(
+                F,
+                node_values[nn],
+                term_y[nn],
+                residual_y,
+            );
+            interpolated_w = @mulAdd(
+                F,
+                node_values[nn],
+                element_node_w[nn],
+                interpolated_w,
+            );
 
-            jacobian_11 += deriv_n_xi[nn] * term_x[nn];
-            jacobian_12 += deriv_n_eta[nn] * term_x[nn];
-            jacobian_21 += deriv_n_xi[nn] * term_y[nn];
-            jacobian_22 += deriv_n_eta[nn] * term_y[nn];
+            jacobian_11 = @mulAdd(
+                F,
+                deriv_n_xi[nn],
+                term_x[nn],
+                jacobian_11,
+            );
+            jacobian_12 = @mulAdd(
+                F,
+                deriv_n_eta[nn],
+                term_x[nn],
+                jacobian_12,
+            );
+            jacobian_21 = @mulAdd(
+                F,
+                deriv_n_xi[nn],
+                term_y[nn],
+                jacobian_21,
+            );
+            jacobian_22 = @mulAdd(
+                F,
+                deriv_n_eta[nn],
+                term_y[nn],
+                jacobian_22,
+            );
         }
 
         const w_abs = @abs(interpolated_w);
@@ -84,7 +129,12 @@ pub fn solveInverse(
             }
         }
 
-        const determinant = jacobian_11 * jacobian_22 - jacobian_12 * jacobian_21;
+        const determinant = @mulAdd(
+            F,
+            jacobian_11,
+            jacobian_22,
+            -(jacobian_12 * jacobian_21),
+        );
         if (@abs(determinant) < det_tol) {
             return .{
                 .converged = false,
@@ -98,10 +148,21 @@ pub fn solveInverse(
         }
 
         const inverse_determinant = 1.0 / determinant;
-        xi -= inverse_determinant *
-            (jacobian_22 * residual_x - jacobian_12 * residual_y);
-        eta -= inverse_determinant *
-            (-jacobian_21 * residual_x + jacobian_11 * residual_y);
+        const delta_xi = @mulAdd(
+            F,
+            jacobian_22,
+            residual_x,
+            -(jacobian_12 * residual_y),
+        );
+        const delta_eta = @mulAdd(
+            F,
+            jacobian_11,
+            residual_y,
+            -(jacobian_21 * residual_x),
+        );
+
+        xi = @mulAdd(F, -inverse_determinant, delta_xi, xi);
+        eta = @mulAdd(F, -inverse_determinant, delta_eta, eta);
     }
 
     if (!met_residual) {
