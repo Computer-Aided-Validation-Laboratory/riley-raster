@@ -495,13 +495,15 @@ pub const FullStatsLog = struct {
         var file_writer = stats_file.writer(io, &write_buf);
         try self.writeReport(&file_writer.interface, frame_idx, camera, nodes_per_elem);
         try self.fullReport(io, frame_idx, camera, nodes_per_elem);
-        try self.saveSolverDiagnosticsCsv(
-            io,
-            save_dir,
-            camera_idx,
-            frame_idx,
-            camera,
-        );
+        if (opts.save_solver_csv) {
+            try self.saveSolverDiagnosticsCsv(
+                io,
+                save_dir,
+                camera_idx,
+                frame_idx,
+                camera,
+            );
+        }
 
         if (self.iteration_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);

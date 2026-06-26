@@ -25,10 +25,12 @@ pub const GoldSuite = enum {
     multimesh,
     hull,
     fullscreen,
+    fullscreen_ssaa1,
     texfunc,
     ssaa,
     psf,
     sphere2000,
+    sphere2000_ssaa1,
     sphere2000zoom,
     sphere200multicam,
 };
@@ -56,10 +58,12 @@ pub fn suiteDirName(comptime suite: GoldSuite) []const u8 {
         .multimesh => "multimesh",
         .hull => "hull",
         .fullscreen => "fullscreen",
+        .fullscreen_ssaa1 => "fullscreen_ssaa1",
         .texfunc => "texfunc",
         .ssaa => "ssaa",
         .psf => "psf",
         .sphere2000 => "sphere2000",
+        .sphere2000_ssaa1 => "sphere2000_ssaa1",
         .sphere2000zoom => "sphere2000zoom",
         .sphere200multicam => "sphere200multicam",
     };
@@ -74,6 +78,10 @@ pub fn goldRoot(comptime suite: GoldSuite) []const u8 {
         .multimesh => if (F == f64) "gold/multimesh" else "gold/multimesh_f32",
         .hull => if (F == f64) "gold/hull" else "gold/hull_f32",
         .fullscreen => if (F == f64) "gold/fullscreen" else "gold/fullscreen_f32",
+        .fullscreen_ssaa1 => if (F == f64)
+            "gold/fullscreen_ssaa1"
+        else
+            "gold/fullscreen_f32_ssaa1",
         .texfunc => if (F == f64) "gold/texfunc" else "gold/texfunc_f32",
         .ssaa => if (F == f64) "gold/ssaa" else "gold/ssaa_f32",
         .psf => if (F == f64) "gold/psf" else "gold/psf_f32",
@@ -84,6 +92,16 @@ pub fn goldRoot(comptime suite: GoldSuite) []const u8 {
                 "gold/sphere2000_f32_simd"
             else
                 "gold/sphere2000_f32_scalar"),
+        .sphere2000_ssaa1 => if (F == f64)
+            (if (cfg.simd == .on)
+                "gold/sphere2000_ssaa1-simd"
+            else
+                "gold/sphere2000_ssaa1")
+        else
+            (if (cfg.simd == .on)
+                "gold/sphere2000_f32_ssaa1_simd"
+            else
+                "gold/sphere2000_f32_ssaa1_scalar"),
         .sphere2000zoom => if (F == f64)
             (if (cfg.simd == .on)
                 "gold/sphere2000zoom-simd"

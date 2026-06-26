@@ -134,6 +134,7 @@ pub const FullStatsOpts = struct {
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
         .{ .format = .csv, .bits = null, .scaling = .none },
     },
+    save_solver_csv: bool = false,
     save_iteration_map: bool = true,
     save_xi_map: bool = true,
     save_eta_map: bool = true,

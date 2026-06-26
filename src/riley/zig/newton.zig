@@ -37,6 +37,7 @@ pub const statusLabel = common.statusLabel;
 
 pub const solveInverse = scalar.solveInverse;
 pub const solveInverseSIMD = simd.solveInverseSIMD;
+pub const traceSolveInverse = scalar.traceSolveInverse;
 
 test "calcJacobianDet2D regular elements" {
     const testing = std.testing;

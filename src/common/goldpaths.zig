@@ -31,6 +31,9 @@ pub fn sharedRoot(comptime suite_name: []const u8) []const u8 {
     if (comptime std.mem.eql(u8, suite_name, "fullscreen")) {
         return policy.goldRoot(.fullscreen);
     }
+    if (comptime std.mem.eql(u8, suite_name, "fullscreen_ssaa1")) {
+        return policy.goldRoot(.fullscreen_ssaa1);
+    }
     if (comptime std.mem.eql(u8, suite_name, "texfunc")) {
         return policy.goldRoot(.texfunc);
     }
@@ -46,6 +49,9 @@ pub fn sharedRoot(comptime suite_name: []const u8) []const u8 {
 pub fn sphereRoot(comptime suite_name: []const u8) []const u8 {
     if (comptime std.mem.eql(u8, suite_name, "sphere2000")) {
         return policy.goldRoot(.sphere2000);
+    }
+    if (comptime std.mem.eql(u8, suite_name, "sphere2000_ssaa1")) {
+        return policy.goldRoot(.sphere2000_ssaa1);
     }
     if (comptime std.mem.eql(u8, suite_name, "sphere2000zoom")) {
         return policy.goldRoot(.sphere2000zoom);

@@ -229,6 +229,11 @@ pub fn build(b: *std.Build) void {
             .source_path = "src/gen_gold_fullscreen.zig",
         },
         .{
+            .step_name = "gen-gold-bench-ssaa1",
+            .description = "Generate the SSAA=1 benchmark gold datasets",
+            .source_path = "src/gen_gold_bench_ssaa1.zig",
+        },
+        .{
             .step_name = "gen-gold-sphere",
             .description = "Generate the sphere gold datasets",
             .source_path = "src/gen_gold_sphere.zig",

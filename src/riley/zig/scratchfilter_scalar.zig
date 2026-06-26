@@ -104,25 +104,32 @@ pub fn resolveScratchDirectCore(
                     spx_image_scratch.slice[src_base .. src_base + len],
                 );
             } else if (fields_num == 3) {
+                const src0_base = spx_image_scratch.rowBase(0);
+                const src1_base = spx_image_scratch.rowBase(1);
+                const src2_base = spx_image_scratch.rowBase(2);
                 @memcpy(
                     writer.slice[dest_base .. dest_base + len],
-                    spx_image_scratch.slice[src_base .. src_base + len],
+                    spx_image_scratch.slice[
+                        src0_base + src_base .. src0_base + src_base + len
+                    ],
                 );
                 const dest1 = writer.field_stride + dest_base;
-                const src1 = spx_stride + src_base;
                 @memcpy(
                     writer.slice[dest1 .. dest1 + len],
-                    spx_image_scratch.slice[src1 .. src1 + len],
+                    spx_image_scratch.slice[
+                        src1_base + src_base .. src1_base + src_base + len
+                    ],
                 );
                 const dest2 = 2 * writer.field_stride + dest_base;
-                const src2 = 2 * spx_stride + src_base;
                 @memcpy(
                     writer.slice[dest2 .. dest2 + len],
-                    spx_image_scratch.slice[src2 .. src2 + len],
+                    spx_image_scratch.slice[
+                        src2_base + src_base .. src2_base + src_base + len
+                    ],
                 );
             } else {
                 for (0..fields_num) |ff| {
-                    const src_offset = ff * spx_stride + src_base;
+                    const src_offset = spx_image_scratch.rowBase(ff) + src_base;
                     const dest_offset = ff * writer.field_stride + dest_base;
                     @memcpy(
                         writer.slice[dest_offset .. dest_offset + len],

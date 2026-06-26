@@ -55,12 +55,21 @@ test "Unified Benchmark Tests" {
         out_dir: []const u8,
         is_sphere: bool = false,
         fov_scale: F = 1.0,
+        sub_sample: u8 = 2,
+        skip_quad4ibi_sphere: bool = false,
     }{
         .{
             .name = "fullraster",
             .data_name = "fullraster",
             .gold_dir = goldpaths.sharedRoot("fullscreen"),
             .out_dir = "out/fullraster",
+        },
+        .{
+            .name = "fullraster_ssaa1",
+            .data_name = "fullraster",
+            .gold_dir = goldpaths.sharedRoot("fullscreen_ssaa1"),
+            .out_dir = "out/fullraster_ssaa1",
+            .sub_sample = 1,
         },
         .{
             .name = "geom",
@@ -74,6 +83,15 @@ test "Unified Benchmark Tests" {
             .gold_dir = goldpaths.sphereRoot("sphere2000"),
             .out_dir = "out/sphere2000",
             .is_sphere = true,
+        },
+        .{
+            .name = "sphere2000_ssaa1",
+            .data_name = "sphere2000",
+            .gold_dir = goldpaths.sphereRoot("sphere2000_ssaa1"),
+            .out_dir = "out/sphere2000_ssaa1",
+            .is_sphere = true,
+            .sub_sample = 1,
+            .skip_quad4ibi_sphere = true,
         },
         .{
             .name = "sphere2000zoom",
@@ -141,7 +159,10 @@ test "Unified Benchmark Tests" {
                     );
 
                     const run_config = if (cc.is_sphere)
-                        common.BenchConfig{ .run = .all, .skip_quad4ibi_sphere = true }
+                        common.BenchConfig{
+                            .run = .all,
+                            .skip_quad4ibi_sphere = cc.skip_quad4ibi_sphere,
+                        }
                     else
                         config;
 
@@ -175,7 +196,7 @@ test "Unified Benchmark Tests" {
                             data_dir,
                             .{
                                 .pixels_num = render_defaults_base.pixels_num,
-                                .sub_sample = render_defaults_base.sub_sample,
+                                .sub_sample = cc.sub_sample,
                                 .focal_leng = render_defaults_base.focal_leng,
                                 .pixels_size = render_defaults_base.pixels_size,
                                 .fov_scale = cc.fov_scale,
