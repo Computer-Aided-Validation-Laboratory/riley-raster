@@ -119,23 +119,14 @@ pub fn main(init: std.process.Init) !void {
                         common.BenchConfig{ .run = .all };
 
                     if (common.shouldRun(run_config, mt, st, sc, data_dir)) {
-                        const case_name = if (st == .tex8_grey or st == .tex8_rgb)
-                            try std.fmt.allocPrint(
-                                aa,
-                                "{s}_{s}_{s}_{s}",
-                                .{
-                                    mesh_name,
-                                    @tagName(st),
-                                    @tagName(sc.sample),
-                                    @tagName(sc.mode),
-                                },
-                            )
-                        else
-                            try std.fmt.allocPrint(
-                                aa,
-                                "{s}_{s}",
-                                .{ mesh_name, @tagName(st) },
-                            );
+                        const case_name = try common.calcCaseName(
+                            aa,
+                            mt,
+                            st,
+                            sc,
+                            null,
+                            case.fov_scale,
+                        );
 
                         std.debug.print(
                             "Rendering reference: {s}/{s}\n",

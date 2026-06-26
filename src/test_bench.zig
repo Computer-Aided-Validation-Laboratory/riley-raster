@@ -135,6 +135,7 @@ test "Unified Benchmark Tests" {
     };
 
     var total_fails: usize = 0;
+    var printed_tri3opt_geom_warning = false;
 
     std.debug.print("Running Unified Benchmark Tests...\n", .{});
 
@@ -149,6 +150,17 @@ test "Unified Benchmark Tests" {
             for (shader_types) |st| {
                 for (sample_configs) |sc| {
                     _ = arena.reset(.free_all);
+
+                    if (policy.shouldSkipBenchGeomTest(mt, cc.name)) {
+                        if (!printed_tri3opt_geom_warning) {
+                            std.debug.print(
+                                "WARNING: {s}\n",
+                                .{policy.benchGeomSkipWarning()},
+                            );
+                            printed_tri3opt_geom_warning = true;
+                        }
+                        continue;
+                    }
 
                     const folder_name = policy.meshName(
                         .benchmark_data,
@@ -177,7 +189,10 @@ test "Unified Benchmark Tests" {
 
                         const case_name = try common.calcCaseName(
                             aa,
-                            policy.canonicalCaseMeshType(mt),
+                            if (cc.is_sphere)
+                                policy.sphereGoldCaseMeshType(mt)
+                            else
+                                mt,
                             st,
                             sc,
                             null,

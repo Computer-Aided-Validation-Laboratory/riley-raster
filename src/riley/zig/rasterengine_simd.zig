@@ -472,14 +472,14 @@ fn rasterDirectSIMDImpl(
 
                     const global_subx =
                         @as(
-                        usize,
-                        @intCast(targ_overlap.tile.scratch_x_px_min),
-                    ) * sub_samp + scratch_x_u + ll;
+                            usize,
+                            @intCast(targ_overlap.tile.scratch_x_px_min),
+                        ) * sub_samp + scratch_x_u + ll;
                     const global_suby =
                         @as(
-                        usize,
-                        @intCast(targ_overlap.tile.scratch_y_px_min),
-                    ) * sub_samp + scratch_y_u;
+                            usize,
+                            @intCast(targ_overlap.tile.scratch_y_px_min),
+                        ) * sub_samp + scratch_y_u;
                     if (lane_active_mask[ll]) {
                         const weights = [3]F{
                             lane_weights_0[ll],
@@ -857,15 +857,15 @@ fn rasterNewtonSIMDImpl(
                 const global_subx =
                     @as(usize, subpx_simd_chunk.scratch_x_u[jj]) +
                     @as(
-                    usize,
-                    @intCast(targ_overlap.tile.scratch_x_px_min),
-                ) * sub_samp;
+                        usize,
+                        @intCast(targ_overlap.tile.scratch_x_px_min),
+                    ) * sub_samp;
                 const global_suby =
                     @as(usize, subpx_simd_chunk.scratch_y_u[jj]) +
                     @as(
-                    usize,
-                    @intCast(targ_overlap.tile.scratch_y_px_min),
-                ) * sub_samp;
+                        usize,
+                        @intCast(targ_overlap.tile.scratch_y_px_min),
+                    ) * sub_samp;
                 const solve_state = newton.evaluateSolveState(
                     N,
                     subpx_simd_chunk.px_f[jj] - subpx_domain.x_off,
@@ -1171,20 +1171,40 @@ fn rasterDirectSteppedSIMD(
     const x2 = nodes_coords.x[2];
     const y2 = nodes_coords.y[2];
 
-    const area = (x2 - x0) * (y1 - y0) - (y2 - y0) * (x1 - x0);
+    const area = @mulAdd(
+        F,
+        x2 - x0,
+        y1 - y0,
+        -((y2 - y0) * (x1 - x0)),
+    );
     const inv_area = 1.0 / area;
 
     const a0 = (y2 - y1) * inv_area;
     const b0 = (x1 - x2) * inv_area;
-    const c0 = (x2 * y1 - x1 * y2) * inv_area;
+    const c0 = @mulAdd(
+        F,
+        x2,
+        y1,
+        -(x1 * y2),
+    ) * inv_area;
 
     const a1 = (y0 - y2) * inv_area;
     const b1 = (x2 - x0) * inv_area;
-    const c1 = (x0 * y2 - x2 * y0) * inv_area;
+    const c1 = @mulAdd(
+        F,
+        x0,
+        y2,
+        -(x2 * y0),
+    ) * inv_area;
 
     const a2 = (y1 - y0) * inv_area;
     const b2 = (x0 - x1) * inv_area;
-    const c2 = (x1 * y0 - x0 * y1) * inv_area;
+    const c2 = @mulAdd(
+        F,
+        x1,
+        y0,
+        -(x0 * y1),
+    ) * inv_area;
 
     const step = subpx_domain.step;
     const offset = subpx_domain.offset;
@@ -1215,12 +1235,37 @@ fn rasterDirectSteppedSIMD(
     const start_subx_global = tile_subx_off + rast_bounds.start_x_u;
     const start_suby_global = tile_suby_off + rast_bounds.start_y_u;
 
-    const x_start_f = @as(F, @floatFromInt(start_subx_global)) * step + offset;
-    const y_start_f = @as(F, @floatFromInt(start_suby_global)) * step + offset;
+    const x_start_f = @mulAdd(
+        F,
+        @as(F, @floatFromInt(start_subx_global)),
+        step,
+        offset,
+    );
+    const y_start_f = @mulAdd(
+        F,
+        @as(F, @floatFromInt(start_suby_global)),
+        step,
+        offset,
+    );
 
-    const w0_start = a0 * x_start_f + b0 * y_start_f + c0;
-    const w1_start = a1 * x_start_f + b1 * y_start_f + c1;
-    const w2_start = a2 * x_start_f + b2 * y_start_f + c2;
+    const w0_start = @mulAdd(
+        F,
+        a0,
+        x_start_f,
+        @mulAdd(F, b0, y_start_f, c0),
+    );
+    const w1_start = @mulAdd(
+        F,
+        a1,
+        x_start_f,
+        @mulAdd(F, b1, y_start_f, c1),
+    );
+    const w2_start = @mulAdd(
+        F,
+        a2,
+        x_start_f,
+        @mulAdd(F, b2, y_start_f, c2),
+    );
 
     const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
     const v_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
@@ -1239,13 +1284,28 @@ fn rasterDirectSteppedSIMD(
         const global_suby = tile_suby_off + scratch_y_u;
         const y_steps = @as(F, @floatFromInt(scratch_y_u - rast_bounds.start_y_u));
 
-        const w0_row = w0_start + y_steps * dw0_dy;
-        const w1_row = w1_start + y_steps * dw1_dy;
-        const w2_row = w2_start + y_steps * dw2_dy;
+        const w0_row = @mulAdd(F, y_steps, dw0_dy, w0_start);
+        const w1_row = @mulAdd(F, y_steps, dw1_dy, w1_start);
+        const w2_row = @mulAdd(F, y_steps, dw2_dy, w2_start);
 
-        var v_w0 = @as(VecSF, @splat(w0_row)) + @as(VecSF, @splat(dw0_dx)) * v_lane_f;
-        var v_w1 = @as(VecSF, @splat(w1_row)) + @as(VecSF, @splat(dw1_dx)) * v_lane_f;
-        var v_w2 = @as(VecSF, @splat(w2_row)) + @as(VecSF, @splat(dw2_dx)) * v_lane_f;
+        var v_w0 = @mulAdd(
+            VecSF,
+            @as(VecSF, @splat(dw0_dx)),
+            v_lane_f,
+            @as(VecSF, @splat(w0_row)),
+        );
+        var v_w1 = @mulAdd(
+            VecSF,
+            @as(VecSF, @splat(dw1_dx)),
+            v_lane_f,
+            @as(VecSF, @splat(w1_row)),
+        );
+        var v_w2 = @mulAdd(
+            VecSF,
+            @as(VecSF, @splat(dw2_dx)),
+            v_lane_f,
+            @as(VecSF, @splat(w2_row)),
+        );
 
         var scratch_x_u = rast_bounds.start_x_u;
         while (scratch_x_u < rast_bounds.end_x_u) : ({
@@ -1270,9 +1330,17 @@ fn rasterDirectSteppedSIMD(
             const v_inv_z = if (is_const_depth)
                 @as(VecSF, @splat(inv_z0))
             else
-                v_w0 * @as(VecSF, @splat(inv_z0)) +
-                    v_w1 * @as(VecSF, @splat(inv_z1)) +
-                    v_w2 * @as(VecSF, @splat(inv_z2));
+                @mulAdd(
+                    VecSF,
+                    v_w0,
+                    @as(VecSF, @splat(inv_z0)),
+                    @mulAdd(
+                        VecSF,
+                        v_w1,
+                        @as(VecSF, @splat(inv_z1)),
+                        v_w2 * @as(VecSF, @splat(inv_z2)),
+                    ),
+                );
 
             if (comptime report_mode == .full_stats) {
                 const lane_x_mask: [S]bool = v_x_mask;
@@ -1296,8 +1364,14 @@ fn rasterDirectSteppedSIMD(
                             lane_weights_2[ll],
                         };
                         const inv_z = lane_inv_z[ll];
-                        const xi = if (is_const_depth) weights[1] else weights[1] * inv_z1 / inv_z;
-                        const eta = if (is_const_depth) weights[2] else weights[2] * inv_z2 / inv_z;
+                        const xi = if (is_const_depth)
+                            weights[1]
+                        else
+                            @mulAdd(F, weights[1], inv_z1, 0.0) / inv_z;
+                        const eta = if (is_const_depth)
+                            weights[2]
+                        else
+                            @mulAdd(F, weights[2], inv_z2, 0.0) / inv_z;
 
                         rasterreport.recordPixelConvergedStats(
                             report_mode,
@@ -1341,12 +1415,22 @@ fn rasterDirectSteppedSIMD(
             const v_xi = if (is_const_depth)
                 v_w1
             else
-                v_w1 * @as(VecSF, @splat(inv_z1)) / v_inv_z;
+                @mulAdd(
+                    VecSF,
+                    v_w1,
+                    @as(VecSF, @splat(inv_z1)),
+                    @as(VecSF, @splat(0.0)),
+                ) / v_inv_z;
 
             const v_eta = if (is_const_depth)
                 v_w2
             else
-                v_w2 * @as(VecSF, @splat(inv_z2)) / v_inv_z;
+                @mulAdd(
+                    VecSF,
+                    v_w2,
+                    @as(VecSF, @splat(inv_z2)),
+                    @as(VecSF, @splat(0.0)),
+                ) / v_inv_z;
 
             const v_depth_mask_arr: [S]bool = v_depth_mask;
             inline for (0..S) |ll| {

@@ -667,20 +667,40 @@ fn rasterDirectSteppedScalar(
     const x2 = nodes_coords.x[2];
     const y2 = nodes_coords.y[2];
 
-    const area = (x2 - x0) * (y1 - y0) - (y2 - y0) * (x1 - x0);
+    const area = @mulAdd(
+        F,
+        x2 - x0,
+        y1 - y0,
+        -((y2 - y0) * (x1 - x0)),
+    );
     const inv_area = 1.0 / area;
 
     const a0 = (y2 - y1) * inv_area;
     const b0 = (x1 - x2) * inv_area;
-    const c0 = (x2 * y1 - x1 * y2) * inv_area;
+    const c0 = @mulAdd(
+        F,
+        x2,
+        y1,
+        -(x1 * y2),
+    ) * inv_area;
 
     const a1 = (y0 - y2) * inv_area;
     const b1 = (x2 - x0) * inv_area;
-    const c1 = (x0 * y2 - x2 * y0) * inv_area;
+    const c1 = @mulAdd(
+        F,
+        x0,
+        y2,
+        -(x2 * y0),
+    ) * inv_area;
 
     const a2 = (y1 - y0) * inv_area;
     const b2 = (x0 - x1) * inv_area;
-    const c2 = (x1 * y0 - x0 * y1) * inv_area;
+    const c2 = @mulAdd(
+        F,
+        x1,
+        y0,
+        -(x0 * y1),
+    ) * inv_area;
 
     const step = subpx_domain.step;
     const offset = subpx_domain.offset;
@@ -711,12 +731,37 @@ fn rasterDirectSteppedScalar(
     const start_subx_global = tile_subx_off + rast_bounds.start_x_u;
     const start_suby_global = tile_suby_off + rast_bounds.start_y_u;
 
-    const x_start_f = @as(F, @floatFromInt(start_subx_global)) * step + offset;
-    const y_start_f = @as(F, @floatFromInt(start_suby_global)) * step + offset;
+    const x_start_f = @mulAdd(
+        F,
+        @as(F, @floatFromInt(start_subx_global)),
+        step,
+        offset,
+    );
+    const y_start_f = @mulAdd(
+        F,
+        @as(F, @floatFromInt(start_suby_global)),
+        step,
+        offset,
+    );
 
-    const w0_start = a0 * x_start_f + b0 * y_start_f + c0;
-    const w1_start = a1 * x_start_f + b1 * y_start_f + c1;
-    const w2_start = a2 * x_start_f + b2 * y_start_f + c2;
+    const w0_start = @mulAdd(
+        F,
+        a0,
+        x_start_f,
+        @mulAdd(F, b0, y_start_f, c0),
+    );
+    const w1_start = @mulAdd(
+        F,
+        a1,
+        x_start_f,
+        @mulAdd(F, b1, y_start_f, c1),
+    );
+    const w2_start = @mulAdd(
+        F,
+        a2,
+        x_start_f,
+        @mulAdd(F, b2, y_start_f, c2),
+    );
 
     const scratch_stride = subpx_domain.tile_size;
 
@@ -725,9 +770,9 @@ fn rasterDirectSteppedScalar(
         const global_suby = tile_suby_off + scratch_y_u;
         const y_steps = @as(F, @floatFromInt(scratch_y_u - rast_bounds.start_y_u));
 
-        var w0 = w0_start + y_steps * dw0_dy;
-        var w1 = w1_start + y_steps * dw1_dy;
-        var w2 = w2_start + y_steps * dw2_dy;
+        var w0 = @mulAdd(F, y_steps, dw0_dy, w0_start);
+        var w1 = @mulAdd(F, y_steps, dw1_dy, w1_start);
+        var w2 = @mulAdd(F, y_steps, dw2_dy, w2_start);
 
         for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x_u| {
             const scratch_idx = row_offset + scratch_x_u;
@@ -748,7 +793,12 @@ fn rasterDirectSteppedScalar(
                 const inv_z = if (is_const_depth)
                     inv_z0
                 else
-                    w0 * inv_z0 + w1 * inv_z1 + w2 * inv_z2;
+                    @mulAdd(
+                        F,
+                        w0,
+                        inv_z0,
+                        @mulAdd(F, w1, inv_z1, w2 * inv_z2),
+                    );
 
                 if (inv_z + buildconfig.config.tolerance.geometry.depth_buffer_inv_z_cmp >=
                     subpx_scratch.inv_z[scratch_idx])
@@ -774,8 +824,14 @@ fn rasterDirectSteppedScalar(
                     );
 
                     const weights = [3]F{ w0, w1, w2 };
-                    const xi = if (is_const_depth) weights[1] else w1 * inv_z1 / inv_z;
-                    const eta = if (is_const_depth) weights[2] else w2 * inv_z2 / inv_z;
+                    const xi = if (is_const_depth)
+                        weights[1]
+                    else
+                        @mulAdd(F, w1, inv_z1, 0.0) / inv_z;
+                    const eta = if (is_const_depth)
+                        weights[2]
+                    else
+                        @mulAdd(F, w2, inv_z2, 0.0) / inv_z;
 
                     if (comptime report_mode == .full_stats) {
                         rasterreport.recordPixelConvergedStats(

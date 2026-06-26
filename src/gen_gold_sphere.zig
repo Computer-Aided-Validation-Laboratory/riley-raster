@@ -120,7 +120,7 @@ pub fn main(init: std.process.Init) !void {
                     )) {
                         const case_name = try common.calcCaseName(
                             aa,
-                            policy.canonicalCaseMeshType(mt),
+                            policy.sphereGoldCaseMeshType(mt),
                             st,
                             sc,
                             null,

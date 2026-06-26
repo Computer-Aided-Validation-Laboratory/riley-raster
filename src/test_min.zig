@@ -124,7 +124,7 @@ test "MIN Suite: sphere200 and multimesh" {
 
                         const case_name = try minsuite.calcMinCaseName(
                             allocator,
-                            policy.canonicalCaseMeshType(mt),
+                            mt,
                             st,
                             sc,
                         );
@@ -239,7 +239,7 @@ test "MIN Suite: sphere200 and multimesh" {
 
                         const case_name = try minsuite.calcMinCaseName(
                             allocator,
-                            policy.canonicalCaseMeshType(mt),
+                            mt,
                             st,
                             sc,
                         );

@@ -38,7 +38,7 @@ pub fn calcMinCaseName(
 ) ![]const u8 {
     return common.calcCaseName(
         allocator,
-        policy.canonicalCaseMeshType(etype),
+        etype,
         shader_type,
         sample_config,
         null,

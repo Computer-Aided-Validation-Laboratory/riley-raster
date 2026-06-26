@@ -87,23 +87,14 @@ pub fn main(init: std.process.Init) !void {
                 );
                 const data_dir = comptime "data/bench/" ++ mesh_name ++ "_fullraster";
                 if (common.shouldRun(.{ .run = .all }, mt, st, sc, data_dir)) {
-                    const case_name = if (st == .tex8_grey or st == .tex8_rgb)
-                        try std.fmt.allocPrint(
-                            aa,
-                            "{s}_{s}_{s}_{s}",
-                            .{
-                                mesh_name,
-                                @tagName(st),
-                                @tagName(sc.sample),
-                                @tagName(sc.mode),
-                            },
-                        )
-                    else
-                        try std.fmt.allocPrint(
-                            aa,
-                            "{s}_{s}",
-                            .{ mesh_name, @tagName(st) },
-                        );
+                    const case_name = try common.calcCaseName(
+                        aa,
+                        mt,
+                        st,
+                        sc,
+                        null,
+                        1.0,
+                    );
                     std.debug.print("Rendering reference: {s}\n", .{case_name});
 
                     // We generate gold from the minimal 'fullraster' dataset
