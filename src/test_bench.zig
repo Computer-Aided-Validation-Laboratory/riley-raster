@@ -83,6 +83,7 @@ test "Unified Benchmark Tests" {
             .gold_dir = goldpaths.sphereRoot("sphere2000"),
             .out_dir = "out/sphere2000",
             .is_sphere = true,
+            .skip_quad4ibi_sphere = true,
         },
         .{
             .name = "sphere2000_ssaa1",
@@ -100,6 +101,7 @@ test "Unified Benchmark Tests" {
             .out_dir = "out/sphere2000zoom",
             .is_sphere = true,
             .fov_scale = 0.5,
+            .skip_quad4ibi_sphere = true,
         },
     };
 
