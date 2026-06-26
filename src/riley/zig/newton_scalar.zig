@@ -15,6 +15,7 @@ const common = @import("newton_common.zig");
 
 const iter_max = cfg.raster_newton_iter_max;
 const tol = cfg.tolerance;
+const policy = common.newtonPolicy(F, cfg.newton_solver_mode);
 
 pub fn solveInverse(
     comptime N: usize,
@@ -127,17 +128,19 @@ pub fn solveInverse(
             );
         }
 
-        const invalid_residual_state =
-            !std.math.isFinite(residual_x) or
-            !std.math.isFinite(residual_y) or
-            !std.math.isFinite(interpolated_w) or
-            !std.math.isFinite(jacobian_11) or
-            !std.math.isFinite(jacobian_12) or
-            !std.math.isFinite(jacobian_21) or
-            !std.math.isFinite(jacobian_22);
-        if (invalid_residual_state) {
-            status = .failed_invalid_state;
-            break;
+        if (comptime policy.check_state_finite) {
+            const invalid_residual_state =
+                !std.math.isFinite(residual_x) or
+                !std.math.isFinite(residual_y) or
+                !std.math.isFinite(interpolated_w) or
+                !std.math.isFinite(jacobian_11) or
+                !std.math.isFinite(jacobian_12) or
+                !std.math.isFinite(jacobian_21) or
+                !std.math.isFinite(jacobian_22);
+            if (invalid_residual_state) {
+                status = .failed_invalid_state;
+                break;
+            }
         }
 
         const w_abs = @abs(interpolated_w);
@@ -147,8 +150,11 @@ pub fn solveInverse(
         const relaxed_w_scaled_tol = w_abs * relaxed_resid_norm_tol;
         const strict_residual = w_abs > 0.0 and
             residual_sq <= strict_w_scaled_tol * strict_w_scaled_tol;
-        const relaxed_residual = w_abs > 0.0 and
-            residual_sq <= relaxed_w_scaled_tol * relaxed_w_scaled_tol;
+        const relaxed_residual = if (comptime policy.use_relaxed_residual)
+            (w_abs > 0.0 and
+                residual_sq <= relaxed_w_scaled_tol * relaxed_w_scaled_tol)
+        else
+            false;
         if (strict_residual) {
             status = .converged_residual;
             pre_domain_converged = true;
@@ -179,15 +185,20 @@ pub fn solveInverse(
             jacobian_22 * jacobian_22,
         );
         const determinant_sq = determinant * determinant;
-        const near_singular = determinant_sq <=
-            rel_det_tol_sq * col_xi_norm_sq * col_eta_norm_sq;
-        const invalid_det_state =
-            !std.math.isFinite(determinant) or
-            !std.math.isFinite(col_xi_norm_sq) or
-            !std.math.isFinite(col_eta_norm_sq);
-        if (invalid_det_state) {
-            status = .failed_invalid_state;
-            break;
+        const near_singular = if (comptime policy.use_relative_determinant)
+            determinant_sq <=
+                rel_det_tol_sq * col_xi_norm_sq * col_eta_norm_sq
+        else
+            @abs(determinant) <= tol.newton.relative_determinant;
+        if (comptime policy.check_state_finite) {
+            const invalid_det_state =
+                !std.math.isFinite(determinant) or
+                !std.math.isFinite(col_xi_norm_sq) or
+                !std.math.isFinite(col_eta_norm_sq);
+            if (invalid_det_state) {
+                status = .failed_invalid_state;
+                break;
+            }
         }
         if (near_singular) {
             status = .failed_near_singular;
@@ -195,9 +206,11 @@ pub fn solveInverse(
         }
 
         const inverse_determinant = 1.0 / determinant;
-        if (!std.math.isFinite(inverse_determinant)) {
-            status = .failed_invalid_state;
-            break;
+        if (comptime policy.check_inverse_determinant_finite) {
+            if (!std.math.isFinite(inverse_determinant)) {
+                status = .failed_invalid_state;
+                break;
+            }
         }
 
         const delta_xi_num = @mulAdd(
@@ -218,50 +231,66 @@ pub fn solveInverse(
             step_abs + step_rel * @max(@abs(xi), @as(F, 1.0));
         const step_tol_eta =
             step_abs + step_rel * @max(@abs(eta), @as(F, 1.0));
-        const met_step = @abs(step_xi) <= step_tol_xi and
-            @abs(step_eta) <= step_tol_eta;
+        const met_step = if (comptime policy.use_step_convergence)
+            (@abs(step_xi) <= step_tol_xi and
+                @abs(step_eta) <= step_tol_eta)
+        else
+            false;
 
         var limited_step_xi = step_xi;
         var limited_step_eta = step_eta;
-        const max_component = @max(@abs(step_xi), @abs(step_eta));
-        if (max_component > max_parametric_step) {
-            const step_scale = max_parametric_step / max_component;
-            limited_step_xi *= step_scale;
-            limited_step_eta *= step_scale;
+        if (comptime policy.limit_parametric_step) {
+            const max_component = @max(@abs(step_xi), @abs(step_eta));
+            if (max_component > max_parametric_step) {
+                const step_scale = max_parametric_step / max_component;
+                limited_step_xi *= step_scale;
+                limited_step_eta *= step_scale;
+            }
         }
 
         const next_xi = xi - limited_step_xi;
         const next_eta = eta - limited_step_eta;
-        const stagnated = next_xi == xi and next_eta == eta;
-        const two_cycle = has_two_back and
-            next_xi == xi_two_back and
-            next_eta == eta_two_back;
-        const machine_limit =
-            met_step or stagnated or two_cycle;
-        if (machine_limit and relaxed_residual) {
-            status = if (stagnated)
-                .converged_stagnated
-            else if (two_cycle)
-                .converged_two_cycle
-            else
-                .converged_step;
-            pre_domain_converged = true;
-            break;
+        const stagnated = if (comptime policy.detect_stagnation)
+            (next_xi == xi and next_eta == eta)
+        else
+            false;
+        const two_cycle = if (comptime policy.detect_two_cycle)
+            (has_two_back and
+                next_xi == xi_two_back and
+                next_eta == eta_two_back)
+        else
+            false;
+        const machine_limit = met_step or stagnated or two_cycle;
+        if (comptime policy.use_relaxed_residual) {
+            if (machine_limit and relaxed_residual) {
+                status = if (stagnated)
+                    .converged_stagnated
+                else if (two_cycle)
+                    .converged_two_cycle
+                else
+                    .converged_step;
+                pre_domain_converged = true;
+                break;
+            }
         }
 
-        const invalid_step =
-            !std.math.isFinite(step_xi) or
-            !std.math.isFinite(step_eta) or
-            !std.math.isFinite(next_xi) or
-            !std.math.isFinite(next_eta);
-        if (invalid_step) {
-            status = .failed_invalid_step;
-            break;
+        if (comptime policy.check_step_finite) {
+            const invalid_step =
+                !std.math.isFinite(step_xi) or
+                !std.math.isFinite(step_eta) or
+                !std.math.isFinite(next_xi) or
+                !std.math.isFinite(next_eta);
+            if (invalid_step) {
+                status = .failed_invalid_step;
+                break;
+            }
         }
 
-        xi_two_back = xi;
-        eta_two_back = eta;
-        has_two_back = true;
+        if (comptime policy.detect_two_cycle) {
+            xi_two_back = xi;
+            eta_two_back = eta;
+            has_two_back = true;
+        }
         xi = next_xi;
         eta = next_eta;
     }
@@ -390,8 +419,11 @@ pub fn traceSolveInverse(
         const relaxed_w_scaled_tol = w_abs * relaxed_resid_norm_tol;
         const strict_residual = w_abs > 0.0 and
             residual_sq <= strict_w_scaled_tol * strict_w_scaled_tol;
-        const relaxed_residual = w_abs > 0.0 and
-            residual_sq <= relaxed_w_scaled_tol * relaxed_w_scaled_tol;
+        const relaxed_residual = if (comptime policy.use_relaxed_residual)
+            (w_abs > 0.0 and
+                residual_sq <= relaxed_w_scaled_tol * relaxed_w_scaled_tol)
+        else
+            false;
 
         const determinant = @mulAdd(
             F,
@@ -412,8 +444,11 @@ pub fn traceSolveInverse(
             jacobian_22 * jacobian_22,
         );
         const determinant_sq = determinant * determinant;
-        const near_singular = determinant_sq <=
-            rel_det_tol_sq * col_xi_norm_sq * col_eta_norm_sq;
+        const near_singular = if (comptime policy.use_relative_determinant)
+            determinant_sq <=
+                rel_det_tol_sq * col_xi_norm_sq * col_eta_norm_sq
+        else
+            @abs(determinant) <= tol.newton.relative_determinant;
 
         try writer.print(
             "iter={d} xi={d} eta={d} rx={d} ry={d} w={d} nres={d} det={d} strict={any} relaxed={any} near_singular={any}\n",
@@ -464,24 +499,35 @@ pub fn traceSolveInverse(
             step_abs + step_rel * @max(@abs(xi), @as(F, 1.0));
         const step_tol_eta =
             step_abs + step_rel * @max(@abs(eta), @as(F, 1.0));
-        const met_step = @abs(step_xi) <= step_tol_xi and
-            @abs(step_eta) <= step_tol_eta;
+        const met_step = if (comptime policy.use_step_convergence)
+            (@abs(step_xi) <= step_tol_xi and
+                @abs(step_eta) <= step_tol_eta)
+        else
+            false;
 
         var limited_step_xi = step_xi;
         var limited_step_eta = step_eta;
-        const max_component = @max(@abs(step_xi), @abs(step_eta));
-        if (max_component > max_parametric_step) {
-            const step_scale = max_parametric_step / max_component;
-            limited_step_xi *= step_scale;
-            limited_step_eta *= step_scale;
+        if (comptime policy.limit_parametric_step) {
+            const max_component = @max(@abs(step_xi), @abs(step_eta));
+            if (max_component > max_parametric_step) {
+                const step_scale = max_parametric_step / max_component;
+                limited_step_xi *= step_scale;
+                limited_step_eta *= step_scale;
+            }
         }
 
         const next_xi = xi - limited_step_xi;
         const next_eta = eta - limited_step_eta;
-        const stagnated = next_xi == xi and next_eta == eta;
-        const two_cycle = has_two_back and
-            next_xi == xi_two_back and
-            next_eta == eta_two_back;
+        const stagnated = if (comptime policy.detect_stagnation)
+            (next_xi == xi and next_eta == eta)
+        else
+            false;
+        const two_cycle = if (comptime policy.detect_two_cycle)
+            (has_two_back and
+                next_xi == xi_two_back and
+                next_eta == eta_two_back)
+        else
+            false;
 
         try writer.print(
             "  step_xi={d} step_eta={d} limited_step_xi={d} limited_step_eta={d} met_step={any} stagnated={any} two_cycle={any} next_xi={d} next_eta={d}\n",
@@ -509,9 +555,11 @@ pub fn traceSolveInverse(
             return;
         }
 
-        xi_two_back = xi;
-        eta_two_back = eta;
-        has_two_back = true;
+        if (comptime policy.detect_two_cycle) {
+            xi_two_back = xi;
+            eta_two_back = eta;
+            has_two_back = true;
+        }
         xi = next_xi;
         eta = next_eta;
     }

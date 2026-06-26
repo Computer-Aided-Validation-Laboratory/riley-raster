@@ -118,23 +118,14 @@ pub fn main(init: std.process.Init) !void {
                         sc,
                         data_dir,
                     )) {
-                        const case_name = if (st == .tex8_grey or st == .tex8_rgb)
-                            try std.fmt.allocPrint(
-                                aa,
-                                "{s}_{s}_{s}_{s}",
-                                .{
-                                    mesh_name,
-                                    @tagName(st),
-                                    @tagName(sc.sample),
-                                    @tagName(sc.mode),
-                                },
-                            )
-                        else
-                            try std.fmt.allocPrint(
-                                aa,
-                                "{s}_{s}",
-                                .{ mesh_name, @tagName(st) },
-                            );
+                        const case_name = try common.calcCaseName(
+                            aa,
+                            policy.canonicalCaseMeshType(mt),
+                            st,
+                            sc,
+                            null,
+                            case.fov_scale,
+                        );
 
                         std.debug.print(
                             "Rendering reference: {s}/{s}\n",

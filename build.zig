@@ -24,6 +24,11 @@ pub fn build(b: *std.Build) void {
     const precision = b.option([]const u8, "precision", "Floating point precision: f64 or f32") orelse
         "f64";
     const simd = b.option([]const u8, "simd", "SIMD mode: on or off") orelse "on";
+    const newton_solver = b.option(
+        []const u8,
+        "newton-solver",
+        "Newton solver mode: fast or robust",
+    ) orelse "fast";
     const simd_vector_width = b.option(
         u32,
         "simd-vector-width",
@@ -31,11 +36,13 @@ pub fn build(b: *std.Build) void {
     ) orelse 0;
     validatePrecision(precision);
     validateSimd(simd);
+    validateNewtonSolver(newton_solver);
 
     const build_options_module = createBuildOptionsModule(
         b,
         precision,
         simd,
+        newton_solver,
         simd_vector_width,
     );
     const shared_lib = addRileySharedLibrary(
@@ -131,6 +138,7 @@ pub fn build(b: *std.Build) void {
             entry,
             precision,
             simd,
+            newton_solver,
         );
         test_step.dependOn(&test_run.step);
     }
@@ -384,6 +392,7 @@ fn addTestRunStep(
     entry: TestEntry,
     precision: []const u8,
     simd: []const u8,
+    newton_solver: []const u8,
 ) *std.Build.Step.Run {
     const run_step = b.addSystemCommand(&.{
         "sh",
@@ -393,8 +402,9 @@ fn addTestRunStep(
         \\src="$2"
         \\precision="$3"
         \\simd="$4"
-        \\zigexe="$5"
-        \\opt="$6"
+        \\newton_solver="$5"
+        \\zigexe="$6"
+        \\opt="$7"
         \\cache_root=".zig-cache/riley-test"
         \\mkdir -p "$cache_root"
         \\src_hash="$(
@@ -404,7 +414,7 @@ fn addTestRunStep(
         \\    sha256sum |
         \\    cut -d' ' -f1
         \\)"
-        \\tree_dir="${cache_root}/${step_name}_${precision}_${simd}_${opt}_${src_hash}"
+        \\tree_dir="${cache_root}/${step_name}_${precision}_${simd}_${newton_solver}_${opt}_${src_hash}"
         \\if [ ! -d "$tree_dir" ]; then
         \\    lock_dir="${tree_dir}.lock"
         \\    while ! mkdir "$lock_dir" 2>/dev/null; do
@@ -420,6 +430,7 @@ fn addTestRunStep(
         \\        {
         \\            printf 'pub const precision = "%s";\n' "$precision"
         \\            printf 'pub const simd = "%s";\n' "$simd"
+        \\            printf 'pub const newton_solver = "%s";\n' "$newton_solver"
         \\        } > "$tree_dir/src/riley/zig/build_options.zig"
         \\    fi
         \\fi
@@ -430,6 +441,7 @@ fn addTestRunStep(
         entry.source_path,
         precision,
         simd,
+        newton_solver,
         b.graph.zig_exe,
         @tagName(optimize),
     });
@@ -496,11 +508,13 @@ fn createBuildOptionsModule(
     b: *std.Build,
     precision: []const u8,
     simd: []const u8,
+    newton_solver: []const u8,
     simd_vector_width: u32,
 ) *std.Build.Module {
     const options = b.addOptions();
     options.addOption([]const u8, "precision", precision);
     options.addOption([]const u8, "simd", simd);
+    options.addOption([]const u8, "newton_solver", newton_solver);
     options.addOption(u32, "simd_vector_width", simd_vector_width);
     return options.createModule();
 }
@@ -638,6 +652,15 @@ fn validateSimd(simd: []const u8) void {
         return;
     }
     @panic("Supported -Dsimd values are on and off.");
+}
+
+fn validateNewtonSolver(newton_solver: []const u8) void {
+    if (std.mem.eql(u8, newton_solver, "fast") or
+        std.mem.eql(u8, newton_solver, "robust"))
+    {
+        return;
+    }
+    @panic("Supported -Dnewton-solver values are fast and robust.");
 }
 
 fn benchmarkBinaryName(

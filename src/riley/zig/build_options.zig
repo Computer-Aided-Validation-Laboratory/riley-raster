@@ -8,3 +8,4 @@
 // --------------------------------------------------------------------------
 pub const precision = "f64";
 pub const simd = "on";
+pub const newton_solver = "fast";

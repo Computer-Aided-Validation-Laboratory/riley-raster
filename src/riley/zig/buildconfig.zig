@@ -48,6 +48,23 @@ pub const SimdTextureInterpMode = enum {
     over_pixels,
 };
 
+pub const NewtonSolverMode = enum {
+    fast,
+    robust,
+};
+
+pub const default_newton_solver_mode = blk: {
+    if (std.mem.eql(u8, build_options.newton_solver, "fast")) {
+        break :blk NewtonSolverMode.fast;
+    }
+    if (std.mem.eql(u8, build_options.newton_solver, "robust")) {
+        break :blk NewtonSolverMode.robust;
+    }
+    @compileError(
+        "build_options.newton_solver must be \"fast\" or \"robust\".",
+    );
+};
+
 pub fn defaultNewtonSeedModeUsesHull(comptime precision: type) bool {
     return switch (precision) {
         f32 => true,
@@ -171,6 +188,7 @@ pub const Tolerance = struct {
 
 pub const Config = struct {
     simd: SimdMode = default_simd,
+    newton_solver_mode: NewtonSolverMode = default_newton_solver_mode,
     simd_vector_width: comptime_int = defaultSimdVectorWidthForPrecision(Scalar),
     max_nodal_fields: comptime_int = 8,
     max_image_channels: comptime_int = 8,
@@ -205,6 +223,7 @@ pub fn configForPrecision(comptime precision: type) Config {
     _ = defaultSimdVectorWidthForPrecision(precision);
     return .{
         .precision = precision,
+        .newton_solver_mode = default_newton_solver_mode,
         .simd_vector_width = defaultSimdVectorWidthForPrecision(precision),
         .tolerance = defaultToleranceForPrecision(precision),
     };
@@ -275,6 +294,7 @@ pub const config = configForPrecision(default_precision);
 pub const F = config.precision;
 pub const SimdWidth = config.simd_vector_width;
 pub const SaveFrameBufferCount = config.save_frame_buffer_count;
+pub const NewtonMode = config.newton_solver_mode;
 pub const UseHullNewtonSeed = defaultNewtonSeedModeUsesHull(F);
 pub const UseLastConvergedNewtonSeedReuse =
     defaultNewtonSeedReuseLastConverged(F);

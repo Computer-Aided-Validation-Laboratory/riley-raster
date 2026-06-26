@@ -44,7 +44,11 @@ pub const MeshNameContext = enum {
 
 pub fn goldModePolicy(comptime suite: GoldSuite) GoldModePolicy {
     return switch (suite) {
-        .sphere2000, .sphere2000zoom, .sphere200multicam => .split_by_precision_and_simd,
+        .sphere2000,
+        .sphere2000_ssaa1,
+        .sphere2000zoom,
+        .sphere200multicam,
+        => .split_by_precision_and_simd,
         else => .shared_by_precision,
     };
 }

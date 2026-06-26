@@ -64,6 +64,67 @@ pub const NewtonStatus = enum(u8) {
     failed_invalid_step,
 };
 
+pub const NewtonPolicy = struct {
+    use_relaxed_residual: bool,
+    use_step_convergence: bool,
+    detect_stagnation: bool,
+    detect_two_cycle: bool,
+    check_state_finite: bool,
+    check_inverse_determinant_finite: bool,
+    check_step_finite: bool,
+    use_relative_determinant: bool,
+    limit_parametric_step: bool,
+};
+
+pub inline fn newtonPolicy(
+    comptime precision: type,
+    comptime mode: buildconfig.NewtonSolverMode,
+) NewtonPolicy {
+    if (mode == .robust) {
+        return .{
+            .use_relaxed_residual = true,
+            .use_step_convergence = true,
+            .detect_stagnation = true,
+            .detect_two_cycle = true,
+            .check_state_finite = true,
+            .check_inverse_determinant_finite = true,
+            .check_step_finite = true,
+            .use_relative_determinant = true,
+            .limit_parametric_step = true,
+        };
+    }
+
+    if (precision == f64) {
+        return .{
+            .use_relaxed_residual = false,
+            .use_step_convergence = false,
+            .detect_stagnation = false,
+            .detect_two_cycle = false,
+            .check_state_finite = false,
+            .check_inverse_determinant_finite = false,
+            .check_step_finite = false,
+            .use_relative_determinant = false,
+            .limit_parametric_step = true,
+        };
+    }
+
+    if (precision == f32) {
+        return .{
+            .use_relaxed_residual = true,
+            .use_step_convergence = true,
+            .detect_stagnation = false,
+            .detect_two_cycle = false,
+            .check_state_finite = false,
+            .check_inverse_determinant_finite = false,
+            .check_step_finite = false,
+            .use_relative_determinant = false,
+            .limit_parametric_step = true,
+        };
+    }
+
+    @compileError("Only f32 and f64 precision are supported.");
+}
+
 pub const NewtonResult = struct {
     converged: bool,
     pre_domain_converged: bool,
