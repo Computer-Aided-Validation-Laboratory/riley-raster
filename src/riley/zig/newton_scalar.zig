@@ -36,6 +36,7 @@ pub fn solveInverse(
     const relaxed_resid_norm_tol = tol.newton.stagnation_normalized_residual;
     const rel_det_tol_sq =
         tol.newton.relative_determinant * tol.newton.relative_determinant;
+    const abs_det_tol = tol.newton.relative_determinant;
     const eps = tol.newton.parametric_domain;
     const step_abs = tol.newton.parametric_step_abs;
     const step_rel = tol.newton.parametric_step_rel;
@@ -144,12 +145,17 @@ pub fn solveInverse(
         }
 
         const w_abs = @abs(interpolated_w);
-        const residual_sq =
-            residual_x * residual_x + residual_y * residual_y;
         const strict_w_scaled_tol = w_abs * strict_resid_norm_tol;
         const relaxed_w_scaled_tol = w_abs * relaxed_resid_norm_tol;
-        const strict_residual = w_abs > 0.0 and
-            residual_sq <= strict_w_scaled_tol * strict_w_scaled_tol;
+        const residual_sq =
+            residual_x * residual_x + residual_y * residual_y;
+        const strict_residual = if (comptime policy.use_componentwise_residual)
+            (w_abs > 0.0 and
+                @abs(residual_x) <= strict_w_scaled_tol and
+                @abs(residual_y) <= strict_w_scaled_tol)
+        else
+            (w_abs > 0.0 and
+                residual_sq <= strict_w_scaled_tol * strict_w_scaled_tol);
         const relaxed_residual = if (comptime policy.use_relaxed_residual)
             (w_abs > 0.0 and
                 residual_sq <= relaxed_w_scaled_tol * relaxed_w_scaled_tol)
@@ -172,29 +178,26 @@ pub fn solveInverse(
             jacobian_22,
             -(jacobian_12 * jacobian_21),
         );
-        const col_xi_norm_sq = @mulAdd(
-            F,
-            jacobian_11,
-            jacobian_11,
-            jacobian_21 * jacobian_21,
-        );
-        const col_eta_norm_sq = @mulAdd(
-            F,
-            jacobian_12,
-            jacobian_12,
-            jacobian_22 * jacobian_22,
-        );
-        const determinant_sq = determinant * determinant;
-        const near_singular = if (comptime policy.use_relative_determinant)
-            determinant_sq <=
-                rel_det_tol_sq * col_xi_norm_sq * col_eta_norm_sq
-        else
-            @abs(determinant) <= tol.newton.relative_determinant;
+        const near_singular = if (comptime policy.use_relative_determinant) blk: {
+            const col_xi_norm_sq = @mulAdd(
+                F,
+                jacobian_11,
+                jacobian_11,
+                jacobian_21 * jacobian_21,
+            );
+            const col_eta_norm_sq = @mulAdd(
+                F,
+                jacobian_12,
+                jacobian_12,
+                jacobian_22 * jacobian_22,
+            );
+            const determinant_sq = determinant * determinant;
+            break :blk determinant_sq <=
+                rel_det_tol_sq * col_xi_norm_sq * col_eta_norm_sq;
+        } else @abs(determinant) <= abs_det_tol;
         if (comptime policy.check_state_finite) {
             const invalid_det_state =
-                !std.math.isFinite(determinant) or
-                !std.math.isFinite(col_xi_norm_sq) or
-                !std.math.isFinite(col_eta_norm_sq);
+                !std.math.isFinite(determinant);
             if (invalid_det_state) {
                 status = .failed_invalid_state;
                 break;
@@ -351,6 +354,7 @@ pub fn traceSolveInverse(
     const relaxed_resid_norm_tol = tol.newton.stagnation_normalized_residual;
     const rel_det_tol_sq =
         tol.newton.relative_determinant * tol.newton.relative_determinant;
+    const abs_det_tol = tol.newton.relative_determinant;
     const step_abs = tol.newton.parametric_step_abs;
     const step_rel = tol.newton.parametric_step_rel;
     const max_parametric_step = tol.newton.max_parametric_step;
@@ -412,13 +416,18 @@ pub fn traceSolveInverse(
             jacobian_22 = @mulAdd(F, deriv_n_eta[nn], term_y[nn], jacobian_22);
         }
 
-        const residual_sq =
-            residual_x * residual_x + residual_y * residual_y;
         const w_abs = @abs(interpolated_w);
         const strict_w_scaled_tol = w_abs * strict_resid_norm_tol;
         const relaxed_w_scaled_tol = w_abs * relaxed_resid_norm_tol;
-        const strict_residual = w_abs > 0.0 and
-            residual_sq <= strict_w_scaled_tol * strict_w_scaled_tol;
+        const residual_sq =
+            residual_x * residual_x + residual_y * residual_y;
+        const strict_residual = if (comptime policy.use_componentwise_residual)
+            (w_abs > 0.0 and
+                @abs(residual_x) <= strict_w_scaled_tol and
+                @abs(residual_y) <= strict_w_scaled_tol)
+        else
+            (w_abs > 0.0 and
+                residual_sq <= strict_w_scaled_tol * strict_w_scaled_tol);
         const relaxed_residual = if (comptime policy.use_relaxed_residual)
             (w_abs > 0.0 and
                 residual_sq <= relaxed_w_scaled_tol * relaxed_w_scaled_tol)
@@ -431,24 +440,23 @@ pub fn traceSolveInverse(
             jacobian_22,
             -(jacobian_12 * jacobian_21),
         );
-        const col_xi_norm_sq = @mulAdd(
-            F,
-            jacobian_11,
-            jacobian_11,
-            jacobian_21 * jacobian_21,
-        );
-        const col_eta_norm_sq = @mulAdd(
-            F,
-            jacobian_12,
-            jacobian_12,
-            jacobian_22 * jacobian_22,
-        );
-        const determinant_sq = determinant * determinant;
-        const near_singular = if (comptime policy.use_relative_determinant)
-            determinant_sq <=
-                rel_det_tol_sq * col_xi_norm_sq * col_eta_norm_sq
-        else
-            @abs(determinant) <= tol.newton.relative_determinant;
+        const near_singular = if (comptime policy.use_relative_determinant) blk: {
+            const col_xi_norm_sq = @mulAdd(
+                F,
+                jacobian_11,
+                jacobian_11,
+                jacobian_21 * jacobian_21,
+            );
+            const col_eta_norm_sq = @mulAdd(
+                F,
+                jacobian_12,
+                jacobian_12,
+                jacobian_22 * jacobian_22,
+            );
+            const determinant_sq = determinant * determinant;
+            break :blk determinant_sq <=
+                rel_det_tol_sq * col_xi_norm_sq * col_eta_norm_sq;
+        } else @abs(determinant) <= abs_det_tol;
 
         try writer.print(
             "iter={d} xi={d} eta={d} rx={d} ry={d} w={d} nres={d} det={d} strict={any} relaxed={any} near_singular={any}\n",

@@ -65,6 +65,7 @@ pub const NewtonStatus = enum(u8) {
 };
 
 pub const NewtonPolicy = struct {
+    use_componentwise_residual: bool,
     use_relaxed_residual: bool,
     use_step_convergence: bool,
     detect_stagnation: bool,
@@ -82,6 +83,7 @@ pub inline fn newtonPolicy(
 ) NewtonPolicy {
     if (mode == .robust) {
         return .{
+            .use_componentwise_residual = false,
             .use_relaxed_residual = true,
             .use_step_convergence = true,
             .detect_stagnation = true,
@@ -96,6 +98,7 @@ pub inline fn newtonPolicy(
 
     if (precision == f64) {
         return .{
+            .use_componentwise_residual = true,
             .use_relaxed_residual = false,
             .use_step_convergence = false,
             .detect_stagnation = false,
@@ -104,12 +107,13 @@ pub inline fn newtonPolicy(
             .check_inverse_determinant_finite = false,
             .check_step_finite = false,
             .use_relative_determinant = false,
-            .limit_parametric_step = true,
+            .limit_parametric_step = false,
         };
     }
 
     if (precision == f32) {
         return .{
+            .use_componentwise_residual = false,
             .use_relaxed_residual = true,
             .use_step_convergence = true,
             .detect_stagnation = false,
