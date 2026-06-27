@@ -10,6 +10,7 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
+const tol = cfg.tolerance;
 const SimdWidth = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
 const rastcfg = @import("rasterconfig.zig");
@@ -59,6 +60,203 @@ pub const RasterBounds = struct {
 };
 
 pub const ScratchTileGeometry = scratchfilter.ScratchTileGeometry;
+
+const Tri3FixedCoord = buildconfig.Tri3FixedCoord;
+const Tri3FixedSetup = buildconfig.Tri3FixedSetup;
+const Tri3FixedEdge = buildconfig.Tri3FixedEdge;
+const Tri3FixedFracBits = buildconfig.Tri3FixedFracBits;
+
+//------------------------------------------------------------------------------------------
+// Direct Stepped Tri3 Fixed-Point Helpers
+//------------------------------------------------------------------------------------------
+
+pub const Tri3FixedEdges = struct {
+    start: [3]Tri3FixedEdge,
+    step_x: [3]Tri3FixedEdge,
+    step_y: [3]Tri3FixedEdge,
+    area: Tri3FixedEdge,
+    inv_area: F,
+    edge_tolerance: Tri3FixedEdge,
+    sample_step: Tri3FixedEdge,
+
+    fn quantiseCoord(value: F) ?Tri3FixedCoord {
+        const scale_f: F = @floatFromInt(
+            @as(Tri3FixedSetup, 1) << Tri3FixedFracBits,
+        );
+        const rounded = @round(value * scale_f);
+        const min_f: F = @floatFromInt(std.math.minInt(Tri3FixedCoord));
+        const max_f: F = @floatFromInt(std.math.maxInt(Tri3FixedCoord));
+        if (!(rounded >= min_f and rounded <= max_f)) {
+            return null;
+        }
+        return @intFromFloat(rounded);
+    }
+
+    fn fitsEdge(value: Tri3FixedSetup) bool {
+        const min_edge: Tri3FixedSetup = std.math.minInt(Tri3FixedEdge);
+        const max_edge: Tri3FixedSetup = std.math.maxInt(Tri3FixedEdge);
+        return value >= min_edge and value <= max_edge;
+    }
+
+    fn narrowEdge(value: Tri3FixedSetup) ?Tri3FixedEdge {
+        if (!fitsEdge(value)) {
+            return null;
+        }
+        return std.math.cast(Tri3FixedEdge, value);
+    }
+
+    fn cornerFits(
+        start: Tri3FixedSetup,
+        step_x: Tri3FixedSetup,
+        step_y: Tri3FixedSetup,
+        x_steps: Tri3FixedSetup,
+        y_steps: Tri3FixedSetup,
+    ) bool {
+        const x_val = start + x_steps * step_x;
+        const y_val = start + y_steps * step_y;
+        const xy_val = start + x_steps * step_x + y_steps * step_y;
+        return fitsEdge(start) and
+            fitsEdge(x_val) and
+            fitsEdge(y_val) and
+            fitsEdge(xy_val);
+    }
+
+    pub fn init(
+        nodes_coords: rops.Vec3Slices(F),
+        sub_samp: usize,
+        start_subx_global: usize,
+        start_suby_global: usize,
+        max_x_steps: usize,
+        max_y_steps: usize,
+    ) ?@This() {
+        const fixed_one: Tri3FixedSetup =
+            @as(Tri3FixedSetup, 1) << Tri3FixedFracBits;
+        const sub_samp_setup = std.math.cast(Tri3FixedSetup, sub_samp) orelse
+            return null;
+        const divisor = sub_samp_setup * 2;
+        if (divisor == 0 or @mod(fixed_one, divisor) != 0) {
+            return null;
+        }
+
+        const sample_step = @divExact(fixed_one, sub_samp_setup);
+        const sample_offset = @divExact(sample_step, 2);
+        const start_x_base = std.math.cast(Tri3FixedSetup, start_subx_global) orelse return null;
+        const start_y_base = std.math.cast(Tri3FixedSetup, start_suby_global) orelse return null;
+        const start_x_i = start_x_base * sample_step + sample_offset;
+        const start_y_i = start_y_base * sample_step + sample_offset;
+
+        const quant_x0 = quantiseCoord(nodes_coords.x[0]) orelse return null;
+        const quant_y0 = quantiseCoord(nodes_coords.y[0]) orelse return null;
+        const quant_x1 = quantiseCoord(nodes_coords.x[1]) orelse return null;
+        const quant_y1 = quantiseCoord(nodes_coords.y[1]) orelse return null;
+        const quant_x2 = quantiseCoord(nodes_coords.x[2]) orelse return null;
+        const quant_y2 = quantiseCoord(nodes_coords.y[2]) orelse return null;
+
+        const x0 = @as(Tri3FixedSetup, quant_x0) - start_x_i;
+        const y0 = @as(Tri3FixedSetup, quant_y0) - start_y_i;
+        const x1 = @as(Tri3FixedSetup, quant_x1) - start_x_i;
+        const y1 = @as(Tri3FixedSetup, quant_y1) - start_y_i;
+        const x2 = @as(Tri3FixedSetup, quant_x2) - start_x_i;
+        const y2 = @as(Tri3FixedSetup, quant_y2) - start_y_i;
+
+        var start = [3]Tri3FixedSetup{
+            x2 * y1 - x1 * y2,
+            x0 * y2 - x2 * y0,
+            x1 * y0 - x0 * y1,
+        };
+        var step_x = [3]Tri3FixedSetup{
+            (y2 - y1) * sample_step,
+            (y0 - y2) * sample_step,
+            (y1 - y0) * sample_step,
+        };
+        var step_y = [3]Tri3FixedSetup{
+            (x1 - x2) * sample_step,
+            (x2 - x0) * sample_step,
+            (x0 - x1) * sample_step,
+        };
+
+        var area = start[0] + start[1] + start[2];
+        if (area == 0) {
+            return null;
+        }
+        if (area < 0) {
+            area = -area;
+            for (0..3) |ii| {
+                start[ii] = -start[ii];
+                step_x[ii] = -step_x[ii];
+                step_y[ii] = -step_y[ii];
+            }
+        }
+
+        const area_f: F = @floatFromInt(area);
+        const edge_tol_mag = @ceil(
+            tol.edge.tri_weight_inclusion * area_f,
+        );
+        if (!(edge_tol_mag >= 0.0)) {
+            return null;
+        }
+        const edge_tol_setup = std.math.cast(
+            Tri3FixedSetup,
+            @as(i128, @intFromFloat(edge_tol_mag)),
+        ) orelse return null;
+
+        const max_x = std.math.cast(Tri3FixedSetup, max_x_steps) orelse
+            return null;
+        const max_y = std.math.cast(Tri3FixedSetup, max_y_steps) orelse
+            return null;
+        for (0..3) |ii| {
+            if (!cornerFits(start[ii], step_x[ii], step_y[ii], max_x, max_y)) {
+                return null;
+            }
+        }
+
+        const start0 = narrowEdge(start[0]) orelse return null;
+        const start1 = narrowEdge(start[1]) orelse return null;
+        const start2 = narrowEdge(start[2]) orelse return null;
+        const step_x0 = narrowEdge(step_x[0]) orelse return null;
+        const step_x1 = narrowEdge(step_x[1]) orelse return null;
+        const step_x2 = narrowEdge(step_x[2]) orelse return null;
+        const step_y0 = narrowEdge(step_y[0]) orelse return null;
+        const step_y1 = narrowEdge(step_y[1]) orelse return null;
+        const step_y2 = narrowEdge(step_y[2]) orelse return null;
+        const area_edge = narrowEdge(area) orelse return null;
+        const edge_tolerance = narrowEdge(edge_tol_setup) orelse return null;
+        const sample_step_edge = narrowEdge(sample_step) orelse return null;
+
+        return .{
+            .start = [3]Tri3FixedEdge{ start0, start1, start2 },
+            .step_x = [3]Tri3FixedEdge{ step_x0, step_x1, step_x2 },
+            .step_y = [3]Tri3FixedEdge{ step_y0, step_y1, step_y2 },
+            .area = area_edge,
+            .inv_area = 1.0 / area_f,
+            .edge_tolerance = edge_tolerance,
+            .sample_step = sample_step_edge,
+        };
+    }
+};
+
+test "Tri3FixedEdges preserves edge sum across a row" {
+    var x = [_]F{ 1.25, 5.5, 2.0 };
+    var y = [_]F{ 1.75, 2.5, 6.25 };
+    var z = [_]F{ 1.0, 1.0, 1.0 };
+    const nodes = rops.Vec3Slices(F){
+        .x = x[0..],
+        .y = y[0..],
+        .z = z[0..],
+    };
+    const fixed = Tri3FixedEdges.init(nodes, 2, 0, 0, 8, 8) orelse
+        return error.TestUnexpectedResult;
+
+    var e0 = fixed.start[0];
+    var e1 = fixed.start[1];
+    var e2 = fixed.start[2];
+    for (0..8) |_| {
+        try std.testing.expectEqual(fixed.area, e0 + e1 + e2);
+        e0 += fixed.step_x[0];
+        e1 += fixed.step_x[1];
+        e2 += fixed.step_x[2];
+    }
+}
 
 fn fillTileIdealCentersFullInMem(
     ctx_rast: rops.RasterContext,

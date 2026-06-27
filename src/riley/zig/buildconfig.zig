@@ -305,6 +305,41 @@ pub const VecSI = @Vector(SimdWidth, isize);
 pub const VecSB = @Vector(SimdWidth, bool);
 pub const VecSU8 = @Vector(SimdWidth, u8);
 
+pub const Tri3FixedConfig = switch (F) {
+    f32 => struct {
+        pub const Coord = i32;
+        pub const Setup = i64;
+        pub const Edge = i64;
+        pub const frac_bits: comptime_int = 12;
+    },
+    f64 => struct {
+        pub const Coord = i64;
+        pub const Setup = i128;
+        pub const Edge = i64;
+        pub const frac_bits: comptime_int = 16;
+    },
+    else => @compileError("Unsupported Riley floating-point type."),
+};
+
+pub const Tri3FixedCoord = Tri3FixedConfig.Coord;
+pub const Tri3FixedSetup = Tri3FixedConfig.Setup;
+pub const Tri3FixedEdge = Tri3FixedConfig.Edge;
+pub const Tri3FixedFracBits = Tri3FixedConfig.frac_bits;
+pub const Tri3FixedOne: Tri3FixedEdge =
+    @as(Tri3FixedEdge, 1) << Tri3FixedFracBits;
+pub const VecSTri3FixedEdge = @Vector(SimdWidth, Tri3FixedEdge);
+
+comptime {
+    if (Tri3FixedFracBits <= 0) {
+        @compileError("tri3 fixed-point precision must be positive.");
+    }
+    if (@bitSizeOf(Tri3FixedEdge) < @bitSizeOf(Tri3FixedCoord)) {
+        @compileError(
+            "tri3 edge type must not be narrower than coordinate type.",
+        );
+    }
+}
+
 test "TextureSIMDPolicy resolves texture cases" {
     const expectEqual = std.testing.expectEqual;
 
