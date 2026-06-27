@@ -162,13 +162,13 @@ pub fn meshName(
 
 pub fn shouldSkipBenchGeomTest(mesh_type: gk.MeshType, case_name: []const u8) bool {
     return mesh_type == .tri3opt and
+        F == f32 and
         buildconfig.config.simd == .on and
         std.mem.eql(u8, case_name, "geom");
 }
 
 pub fn benchGeomSkipWarning() []const u8 {
-    return "Skipping bench geom tri3opt gold check: the tri3opt stepped " ++
-        "floating-point edge path is known to accumulate tiny-element " ++
-        "coverage/interpolation error. Use fixed-point coords in future if " ++
-        "this path needs robust geom validation.";
+    return "Skipping bench geom tri3opt gold check for f32 SIMD only: " ++
+        "the tri3opt path can still show tiny snapped-grid differences on " ++
+        "very small geom elements.";
 }
