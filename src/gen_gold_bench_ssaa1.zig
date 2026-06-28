@@ -20,6 +20,22 @@ const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const F = buildconfig.F;
 
 pub fn main(init: std.process.Init) !void {
+    try generateCases(init, true, true);
+}
+
+pub fn mainSharedOnly(init: std.process.Init) !void {
+    try generateCases(init, true, false);
+}
+
+pub fn mainSphereOnly(init: std.process.Init) !void {
+    try generateCases(init, false, true);
+}
+
+fn generateCases(
+    init: std.process.Init,
+    include_shared: bool,
+    include_sphere: bool,
+) !void {
     @setEvalBranchQuota(buildconfig.comptime_eval_branch_quota);
     const io = init.io;
     var arena = std.heap.ArenaAllocator.init(init.gpa);
@@ -72,10 +88,11 @@ pub fn main(init: std.process.Init) !void {
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
 
-    const cases = [_]struct {
+    const all_cases = [_]struct {
         name: []const u8,
         data_name: []const u8,
         gold_root: []const u8,
+        is_shared: bool,
         fov_scale: F = 1.0,
         skip_quad4ibi_sphere: bool = false,
     }{
@@ -83,11 +100,13 @@ pub fn main(init: std.process.Init) !void {
             .name = "fullraster_ssaa1",
             .data_name = "fullraster",
             .gold_root = goldpaths.sharedRoot("fullscreen_ssaa1"),
+            .is_shared = true,
         },
         .{
             .name = "sphere2000_ssaa1",
             .data_name = "sphere2000",
             .gold_root = goldpaths.sphereRoot("sphere2000_ssaa1"),
+            .is_shared = false,
             .skip_quad4ibi_sphere = true,
         },
     };
@@ -97,7 +116,10 @@ pub fn main(init: std.process.Init) !void {
         .{},
     );
 
-    for (cases) |case| {
+    for (all_cases) |case| {
+        if (case.is_shared and !include_shared) continue;
+        if (!case.is_shared and !include_sphere) continue;
+
         inline for (mesh_types) |mt| {
             inline for (shader_types) |st| {
                 inline for (sample_configs) |sc| {
