@@ -203,8 +203,6 @@ pub fn compareNDArrayToGold(
     }
 }
 
-
-
 fn openFailsSubDir(
     io: std.Io,
     fails_root: []const u8,
@@ -1427,8 +1425,6 @@ pub fn runMultimeshMixedRGBTestExt(
     }
 }
 
-
-
 fn supportsMidsideDistortMesh(mesh_type: gk.MeshType) bool {
     return switch (mesh_type) {
         .tri6, .quad8, .quad9 => true,
@@ -1627,14 +1623,14 @@ pub fn runDistortEdgeTexFuncTest(
     data_dir_root: []const u8,
     pixel_num: [2]u32,
 ) !void {
-    try runDistortEdgeTexFuncTestForHullMode(
+    try runDistortEdgeTexFuncTestForHullModeExt(
         allocator,
         io,
         mesh_type,
         gold_dir_root,
         data_dir_root,
         pixel_num,
-        .on_no_fallback,
+        null,
     );
 }
 
@@ -1646,6 +1642,26 @@ pub fn runDistortEdgeTexFuncTestForHullMode(
     data_dir_root: []const u8,
     pixel_num: [2]u32,
     hull_mode: rastcfg.HullMode,
+) !void {
+    try runDistortEdgeTexFuncTestForHullModeExt(
+        allocator,
+        io,
+        mesh_type,
+        gold_dir_root,
+        data_dir_root,
+        pixel_num,
+        hull_mode,
+    );
+}
+
+fn runDistortEdgeTexFuncTestForHullModeExt(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    mesh_type: gk.MeshType,
+    gold_dir_root: []const u8,
+    data_dir_root: []const u8,
+    pixel_num: [2]u32,
+    hull_mode: ?rastcfg.HullMode,
 ) !void {
     const distortion_cases = [_]struct {
         name: []const u8,
@@ -1660,7 +1676,7 @@ pub fn runDistortEdgeTexFuncTestForHullMode(
 
     for (distortion_cases) |distortion_case| {
         if (!distortion_case.supports(mesh_type)) continue;
-        try runEdgeTexFuncConstantCaseForHullMode(
+        try runEdgeTexFuncConstantCaseForHullModeExt(
             allocator,
             io,
             distortion_case.name,
@@ -1683,6 +1699,28 @@ pub fn runEdgeTexFuncConstantCaseForHullMode(
     pixel_num: [2]u32,
     hull_mode: rastcfg.HullMode,
 ) !void {
+    try runEdgeTexFuncConstantCaseForHullModeExt(
+        allocator,
+        io,
+        test_type,
+        mesh_type,
+        gold_dir_root,
+        data_dir_root,
+        pixel_num,
+        hull_mode,
+    );
+}
+
+fn runEdgeTexFuncConstantCaseForHullModeExt(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    test_type: []const u8,
+    mesh_type: gk.MeshType,
+    gold_dir_root: []const u8,
+    data_dir_root: []const u8,
+    pixel_num: [2]u32,
+    hull_mode: ?rastcfg.HullMode,
+) !void {
     try runEdgeTexFuncConstantSuiteDriver(
         .test_gold,
         allocator,
@@ -1696,5 +1734,3 @@ pub fn runEdgeTexFuncConstantCaseForHullMode(
         tcfg.getRasterConfig(.testing),
     );
 }
-
-
