@@ -996,6 +996,12 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
     defer _ = gpa.deinit();
 
     const io = std.testing.io;
+    const temp_tests_root = "temp-tests";
+    defer {
+        const cwd = std.Io.Dir.cwd();
+        cwd.deleteTree(io, temp_tests_root) catch {};
+    }
+
     const pixel_num_small = [_]u32{ 320, 200 };
     const pixel_num_large = [_]u32{ 480, 300 };
     const data_dir = "data/bench/tri3_sphere200";
@@ -1114,7 +1120,7 @@ test "Multicamera mixed sensor sizes return padded batch and save actual size" {
     )) orelse return error.NoResult;
     defer aa.free(large_single.slice);
 
-    const out_dir = "tmp-tests/multicamera-mixed-sizes";
+    const out_dir = temp_tests_root ++ "/multicamera-mixed-sizes";
     var batch_config = tcfg.getRasterConfig(.testing);
     batch_config.save_strategy = .both;
     batch_config.image_save_opts = &[_]iio.ImageSaveOpts{

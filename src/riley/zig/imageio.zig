@@ -21,17 +21,22 @@ const clibtiff = @import("clibtiff.zig");
 const imageops = @import("imageops.zig");
 const csvio = @import("csvio.zig");
 
-const tmp_test_root_dir = "tmp-tests";
-const tmp_test_dir = "tmp-tests/imageio";
+const temp_test_root_dir = "temp-tests";
+const temp_test_dir = "temp-tests/imageio";
 
-fn ensureTmpTestDir(io: std.Io) !void {
+fn ensureTempTestDir(io: std.Io) !void {
     const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, tmp_test_root_dir, .default_dir) catch |err| {
+    cwd.createDir(io, temp_test_root_dir, .default_dir) catch |err| {
         if (err != error.PathAlreadyExists) return err;
     };
-    cwd.createDir(io, tmp_test_dir, .default_dir) catch |err| {
+    cwd.createDir(io, temp_test_dir, .default_dir) catch |err| {
         if (err != error.PathAlreadyExists) return err;
     };
+}
+
+fn deleteTempTestDir(io: std.Io) void {
+    const cwd = std.Io.Dir.cwd();
+    cwd.deleteTree(io, temp_test_root_dir) catch {};
 }
 
 pub const ImageFormat = enum {
@@ -1108,7 +1113,8 @@ test "Verify hand-written TIFF loader" {
     const allocator = testing.allocator;
     const io = std.testing.io;
     const cwd = std.Io.Dir.cwd();
-    try ensureTmpTestDir(io);
+    try ensureTempTestDir(io);
+    defer deleteTempTestDir(io);
     const out_dir = cwd;
     const rows_num = 19;
     const cols_num = 23;
@@ -1127,7 +1133,7 @@ test "Verify hand-written TIFF loader" {
     try saveMatAsImage(
         io,
         out_dir,
-        tmp_test_dir ++ "/speckle-simple",
+        temp_test_dir ++ "/speckle-simple",
         &mat,
         .{ .format = .tiff, .bits = 8, .scaling = .none },
     );
@@ -1137,7 +1143,7 @@ test "Verify hand-written TIFF loader" {
         1,
         allocator,
         io,
-        tmp_test_dir ++ "/speckle-simple.tiff",
+        temp_test_dir ++ "/speckle-simple.tiff",
         .tiff,
     );
     defer tex_zig.deinit(allocator);
@@ -1158,7 +1164,8 @@ test "Save and Load All Formats 8-bit and 16-bit" {
     const allocator = testing.allocator;
     const io = std.testing.io;
     const cwd = std.Io.Dir.cwd();
-    try ensureTmpTestDir(io);
+    try ensureTempTestDir(io);
+    defer deleteTempTestDir(io);
     const out_dir = cwd;
 
     const rows = 4;
@@ -1180,7 +1187,7 @@ test "Save and Load All Formats 8-bit and 16-bit" {
         for (bit_depths) |bits| {
             const base_name = try std.fmt.allocPrint(
                 allocator,
-                tmp_test_dir ++ "/test_io_{s}_{d}bit",
+                temp_test_dir ++ "/test_io_{s}_{d}bit",
                 .{ @tagName(fmt), bits },
             );
             defer allocator.free(base_name);
@@ -1242,7 +1249,8 @@ test "Scaling Strategy: Fractional" {
     const allocator = testing.allocator;
     const io = std.testing.io;
     const cwd = std.Io.Dir.cwd();
-    try ensureTmpTestDir(io);
+    try ensureTempTestDir(io);
+    defer deleteTempTestDir(io);
 
     const rows = 2;
     const cols = 2;
@@ -1261,14 +1269,14 @@ test "Scaling Strategy: Fractional" {
         .bits = null,
         .scaling = .{ .frac = .{ 0.4, 0.6 } },
     };
-    try saveMatAsImage(io, cwd, tmp_test_dir ++ "/test_frac_float", &mat, opts1);
+    try saveMatAsImage(io, cwd, temp_test_dir ++ "/test_frac_float", &mat, opts1);
 
     var loaded1 = try loadImage(
         F,
         1,
         allocator,
         io,
-        tmp_test_dir ++ "/test_frac_float.csv",
+        temp_test_dir ++ "/test_frac_float.csv",
         .csv,
     );
     defer loaded1.deinit(allocator);
@@ -1283,14 +1291,14 @@ test "Scaling Strategy: Fractional" {
         .bits = 8,
         .scaling = .{ .frac = .{ 0.4, 0.6 } },
     };
-    try saveMatAsImage(io, cwd, tmp_test_dir ++ "/test_frac_bits", &mat, opts2);
+    try saveMatAsImage(io, cwd, temp_test_dir ++ "/test_frac_bits", &mat, opts2);
 
     var loaded2 = try loadImage(
         F,
         1,
         allocator,
         io,
-        tmp_test_dir ++ "/test_frac_bits.csv",
+        temp_test_dir ++ "/test_frac_bits.csv",
         .csv,
     );
     defer loaded2.deinit(allocator);
@@ -1341,8 +1349,9 @@ test "FIMG Save and Load Roundtrip" {
         }
     }
 
-    try ensureTmpTestDir(io);
-    const file_base = tmp_test_dir ++ "/test_roundtrip";
+    try ensureTempTestDir(io);
+    defer deleteTempTestDir(io);
+    const file_base = temp_test_dir ++ "/test_roundtrip";
     const file_full = file_base ++ ".fimg";
 
     var dims = [_]usize{ channels, height, width };

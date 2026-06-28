@@ -14,6 +14,7 @@ bin/
 
 # Do not keep any large output directories with images or other output in them
 out/
+out*/
 gold/*
 verif/
 demo*/
@@ -22,8 +23,9 @@ bin/
 # Remove temp files and temporary test fail renders
 archive/
 temp-*/
+temp*/
 temp/
-tmp-tests/
+temp-tests/
 plans/
 fails/
 fails*/
