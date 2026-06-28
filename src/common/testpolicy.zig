@@ -161,10 +161,13 @@ pub fn meshName(
 }
 
 pub fn shouldSkipBenchGeomTest(mesh_type: gk.MeshType, case_name: []const u8) bool {
-    return mesh_type == .tri3opt and
-        F == f32 and
-        buildconfig.config.simd == .on and
-        std.mem.eql(u8, case_name, "geom");
+    _ = mesh_type;
+    _ = case_name;
+    return false;
+    // return mesh_type == .tri3opt and
+    //     F == f32 and
+    //     buildconfig.config.simd == .on and
+    //     std.mem.eql(u8, case_name, "geom");
 }
 
 pub fn benchGeomSkipWarning() []const u8 {
