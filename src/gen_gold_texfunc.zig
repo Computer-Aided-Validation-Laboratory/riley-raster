@@ -7,7 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const goldpaths = @import("common/goldpaths.zig");
+const policy = @import("common/testpolicy.zig");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
@@ -116,7 +116,7 @@ fn renderCase(
 }
 
 pub fn main(init: std.process.Init) !void {
-    try mainWithOutputRoot(init, goldpaths.sharedRoot("texfunc"));
+    try mainWithOutputRoot(init, policy.goldRoot(.texfunc));
 }
 
 pub fn mainWithOutputRoot(

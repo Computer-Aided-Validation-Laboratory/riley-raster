@@ -9,7 +9,7 @@
 const std = @import("std");
 
 const benchcommon = @import("common/benchcommon.zig");
-const goldpaths = @import("common/goldpaths.zig");
+const policy = @import("common/testpolicy.zig");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
@@ -39,7 +39,7 @@ const RenderCase = struct {
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
     const io = init.io;
-    const out_root = goldpaths.sphereMulticameraRoot();
+    const out_root = policy.goldRoot(.sphere200multicam);
     const pixel_num = [_]u32{ 800, 500 };
 
     const texture_rgb = try iio.loadImage(

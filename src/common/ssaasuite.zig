@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const goldpaths = @import("goldpaths.zig");
+const policy = @import("testpolicy.zig");
 const F = buildconfig.F;
 const benchcommon = @import("benchcommon.zig");
 const orch = @import("orchestration.zig");
@@ -22,7 +22,7 @@ const NDArray = @import("../riley/zig/ndarray.zig").NDArray;
 const texops = @import("../riley/zig/textureops.zig");
 const riley = @import("../riley/zig/riley.zig");
 
-pub const gold_root = goldpaths.sharedRoot("ssaa");
+pub const gold_root = policy.goldRoot(.ssaa);
 pub const pixel_num = [_]u32{ 640, 400 };
 pub const fov_scale: F = 0.75;
 pub const ssaa_values = [_]u8{4};

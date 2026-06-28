@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const common = @import("common/tests.zig");
-const goldpaths = @import("common/goldpaths.zig");
+const policy = @import("common/testpolicy.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
@@ -69,41 +69,39 @@ test "Gold Small Suite" {
         if (simd_on) "on" else "off",
     });
 
-    for (mesh_types) |mt| {
-        try common.runTestInternal(
-            allocator,
-            io,
-            "single",
-            mt,
-            1.1,
-            texture,
-            pixel_num,
-            &sample_configs,
-            goldpaths.sharedRoot("small"),
-            "data/small",
-            tcfg.REL_TOL,
-            tcfg.ABS_TOL,
-            SHADER_FILTER,
-            false,
-        );
+    try common.runMeshTypesSuite(
+        allocator,
+        io,
+        &[_][]const u8{"single"},
+        &mesh_types,
+        1.1,
+        texture,
+        pixel_num,
+        &sample_configs,
+        policy.goldRoot(.small),
+        "data/small",
+        tcfg.REL_TOL,
+        tcfg.ABS_TOL,
+        SHADER_FILTER,
+        false,
+    );
 
-        try common.runTestInternal(
-            allocator,
-            io,
-            "full",
-            mt,
-            1.0,
-            texture,
-            pixel_num,
-            &sample_configs,
-            goldpaths.sharedRoot("small"),
-            "data/small",
-            tcfg.REL_TOL,
-            tcfg.ABS_TOL,
-            SHADER_FILTER,
-            false,
-        );
-    }
+    try common.runMeshTypesSuite(
+        allocator,
+        io,
+        &[_][]const u8{"full"},
+        &mesh_types,
+        1.0,
+        texture,
+        pixel_num,
+        &sample_configs,
+        policy.goldRoot(.small),
+        "data/small",
+        tcfg.REL_TOL,
+        tcfg.ABS_TOL,
+        SHADER_FILTER,
+        false,
+    );
 
     const end_time = std.Io.Clock.Timestamp.now(io, .awake);
     const duration_ms = @as(

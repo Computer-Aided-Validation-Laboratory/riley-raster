@@ -8,7 +8,6 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
-const goldpaths = @import("common/goldpaths.zig");
 const policy = @import("common/testpolicy.zig");
 const tcfg = @import("common/testconfig.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
@@ -99,13 +98,13 @@ fn generateCases(
         .{
             .name = "fullraster_ssaa1",
             .data_name = "fullraster",
-            .gold_root = goldpaths.sharedRoot("fullscreen_ssaa1"),
+            .gold_root = policy.goldRoot(.fullscreen_ssaa1),
             .is_shared = true,
         },
         .{
             .name = "sphere2000_ssaa1",
             .data_name = "sphere2000",
-            .gold_root = goldpaths.sphereRoot("sphere2000_ssaa1"),
+            .gold_root = policy.goldRoot(.sphere2000_ssaa1),
             .is_shared = false,
             .skip_quad4ibi_sphere = true,
         },

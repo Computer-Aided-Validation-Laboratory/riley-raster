@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const gengold = @import("common/gengold.zig");
-const goldpaths = @import("common/goldpaths.zig");
+const policy = @import("common/testpolicy.zig");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
@@ -38,14 +38,14 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print(
         "Generating Hull Cases to {s}/...\n",
-        .{goldpaths.sharedRoot("hull")},
+        .{policy.goldRoot(.hull)},
     );
 
     for (hull_modes) |hull_mode| {
         try gengold.generateDistortEdgeGoldForHullMode(
             aa,
             io,
-            goldpaths.sharedRoot("hull"),
+            policy.goldRoot(.hull),
             "data/edge",
             pixel_num,
             config,
@@ -70,7 +70,7 @@ pub fn main(init: std.process.Init) !void {
                 aa,
                 "{s}/vertbulge_{s}_texfunc_constant_{s}",
                 .{
-                    goldpaths.sharedRoot("hull"),
+                    policy.goldRoot(.hull),
                     @tagName(mesh_type),
                     @tagName(hull_mode),
                 },

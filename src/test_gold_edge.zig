@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const common = @import("common/tests.zig");
-const goldpaths = @import("common/goldpaths.zig");
+const policy = @import("common/testpolicy.zig");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
@@ -74,65 +74,29 @@ test "Gold Edge Suite" {
         if (simd_on) "on" else "off",
     });
 
-    for (mesh_types) |mt| {
-        try common.runTestInternal(
-            allocator,
-            io,
-            "bulgein_rot",
-            mt,
-            1.1,
-            texture,
-            pixel_num,
-            &sample_configs,
-            goldpaths.sharedRoot("edge"),
-            "data/edge",
-            tcfg.REL_TOL,
-            tcfg.ABS_TOL,
-            SHADER_FILTER,
-            false,
-        );
-
-        try common.runTestInternal(
-            allocator,
-            io,
-            "bulgeout_rot",
-            mt,
-            1.1,
-            texture,
-            pixel_num,
-            &sample_configs,
-            goldpaths.sharedRoot("edge"),
-            "data/edge",
-            tcfg.REL_TOL,
-            tcfg.ABS_TOL,
-            SHADER_FILTER,
-            false,
-        );
-
-        try common.runTestInternal(
-            allocator,
-            io,
-            "vertbulge",
-            mt,
-            1.1,
-            texture,
-            pixel_num,
-            &sample_configs,
-            goldpaths.sharedRoot("edge"),
-            "data/edge",
-            tcfg.REL_TOL,
-            tcfg.ABS_TOL,
-            SHADER_FILTER,
-            false,
-        );
-    }
+    try common.runMeshTypesSuite(
+        allocator,
+        io,
+        &[_][]const u8{ "bulgein_rot", "bulgeout_rot", "vertbulge" },
+        &mesh_types,
+        1.1,
+        texture,
+        pixel_num,
+        &sample_configs,
+        policy.goldRoot(.edge),
+        "data/edge",
+        tcfg.REL_TOL,
+        tcfg.ABS_TOL,
+        SHADER_FILTER,
+        false,
+    );
 
     for (distort_mesh_types) |mt| {
         try common.runDistortEdgeTexFuncTest(
             allocator,
             io,
             mt,
-            goldpaths.sharedRoot("edge"),
+            policy.goldRoot(.edge),
             "data/edge",
             pixel_num_distort_midside,
         );

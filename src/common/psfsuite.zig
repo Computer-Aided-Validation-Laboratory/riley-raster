@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const goldpaths = @import("goldpaths.zig");
+const policy = @import("testpolicy.zig");
 const F = buildconfig.F;
 const orch = @import("orchestration.zig");
 const tcfg = @import("testconfig.zig");
@@ -21,7 +21,7 @@ const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const riley = @import("../riley/zig/riley.zig");
 const shaderops = @import("../riley/zig/shaderops.zig");
 
-pub const gold_root = goldpaths.sharedRoot("psf");
+pub const gold_root = policy.goldRoot(.psf);
 pub const pixel_num = [_]u32{ 512, 512 };
 pub const fov_scale: F = 1.1;
 pub const tile_size_small: u16 = 16;

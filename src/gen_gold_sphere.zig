@@ -8,7 +8,6 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
-const goldpaths = @import("common/goldpaths.zig");
 const orch = @import("common/orchestration.zig");
 const policy = @import("common/testpolicy.zig");
 const tcfg = @import("common/testconfig.zig");
@@ -84,11 +83,11 @@ pub fn main(init: std.process.Init) !void {
     }{
         .{
             .ds = "sphere2000",
-            .out = goldpaths.sphereRoot("sphere2000"),
+            .out = policy.goldRoot(.sphere2000),
         },
         .{
             .ds = "sphere2000",
-            .out = goldpaths.sphereRoot("sphere2000zoom"),
+            .out = policy.goldRoot(.sphere2000zoom),
             .fov_scale = 0.5,
         },
     };

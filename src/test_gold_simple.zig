@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const common = @import("common/tests.zig");
-const goldpaths = @import("common/goldpaths.zig");
+const policy = @import("common/testpolicy.zig");
 const tcfg = @import("common/testconfig.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
@@ -63,24 +63,22 @@ test "Gold Simple Suite" {
         if (simd_on) "on" else "off",
     });
 
-    for (mesh_types) |mt| {
-        try common.runTestInternal(
-            allocator,
-            io,
-            "twoelems",
-            mt,
-            1.1,
-            texture,
-            pixel_num,
-            &sample_configs,
-            goldpaths.sharedRoot("simple"),
-            "data/simple",
-            tcfg.REL_TOL,
-            tcfg.ABS_TOL,
-            SHADER_FILTER,
-            false,
-        );
-    }
+    try common.runMeshTypesSuite(
+        allocator,
+        io,
+        &[_][]const u8{"twoelems"},
+        &mesh_types,
+        1.1,
+        texture,
+        pixel_num,
+        &sample_configs,
+        policy.goldRoot(.simple),
+        "data/simple",
+        tcfg.REL_TOL,
+        tcfg.ABS_TOL,
+        SHADER_FILTER,
+        false,
+    );
 
     const end_time = std.Io.Clock.Timestamp.now(io, .awake);
     const duration_ms = @as(

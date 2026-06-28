@@ -9,7 +9,6 @@
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
 const gengold = @import("common/gengold.zig");
-const goldpaths = @import("common/goldpaths.zig");
 const minsuite = @import("common/minsuite.zig");
 const orch = @import("common/orchestration.zig");
 const tcfg = @import("common/testconfig.zig");
@@ -56,7 +55,7 @@ pub fn main(init: std.process.Init) !void {
     );
     defer texture_rgb.deinit(allocator);
 
-    const out_dir = comptime goldpaths.sharedRoot("min");
+    const out_dir = comptime policy.goldRoot(.min);
     const pixel_num_sphere = [_]u32{ 160, 100 };
     const pixel_num_multi = [_]u32{ 640, 400 };
     const render_defaults_sphere = common.BenchRenderDefaults{

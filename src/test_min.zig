@@ -9,7 +9,6 @@
 const std = @import("std");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const common = @import("common/benchcommon.zig");
-const goldpaths = @import("common/goldpaths.zig");
 const minsuite = @import("common/minsuite.zig");
 const policy = @import("common/testpolicy.zig");
 const tcfg = @import("common/testconfig.zig");
@@ -55,7 +54,7 @@ test "MIN Suite: sphere200 and multimesh" {
     );
     defer texture_rgb.deinit(allocator);
 
-    const gold_dir = comptime goldpaths.sharedRoot("min");
+    const gold_dir = comptime policy.goldRoot(.min);
     const pixel_num_sphere = [_]u32{ 160, 100 };
     const pixel_num_multi = [_]u32{ 640, 400 };
     const render_defaults_sphere = common.BenchRenderDefaults{

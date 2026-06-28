@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
-const goldpaths = @import("goldpaths.zig");
+const policy = @import("testpolicy.zig");
 const F = buildconfig.F;
 
 const orch = @import("orchestration.zig");
@@ -25,6 +25,7 @@ const riley = @import("../riley/zig/riley.zig");
 const RasterConfig = rastcfg.RasterConfig;
 const iio = @import("../riley/zig/imageio.zig");
 const texops = @import("../riley/zig/textureops.zig");
+const testcommon = @import("tests.zig");
 
 pub fn renderAndSave(
     outer_alloc: std.mem.Allocator,
@@ -91,83 +92,25 @@ pub fn runGenerationExt(
     data_dir_root: []const u8,
     config: RasterConfig,
 ) !void {
-    var arena = std.heap.ArenaAllocator.init(outer_alloc);
-    defer arena.deinit();
-    const aa = arena.allocator();
-
     for (mesh_types) |mt| {
-        _ = arena.reset(.free_all);
-        const prepared = try orch.prepareSingleMeshCase(
-            aa,
+        try testcommon.runSingleMeshSuiteDriver(
+            .generate,
+            outer_alloc,
             io,
             test_type,
             mt,
-            pixel_num,
             fov_scale,
+            texture,
+            pixel_num,
+            sample_configs,
+            gold_dir_root,
             data_dir_root,
+            config,
+            0,
+            0,
+            .both,
+            false,
         );
-
-        const disps = [_]bool{ true, false };
-        for (disps) |add_disp| {
-            const d_str = if (add_disp) "dispon" else "dispoff";
-
-            // Nodal ShaderInput
-            const nodal_dir = try std.fmt.allocPrint(aa, "{s}/{s}_{s}_{s}_nodal", .{
-                gold_dir_root,
-                test_type,
-                @tagName(mt),
-                d_str,
-            });
-            try renderAndSave(
-                aa,
-                io,
-                &prepared.camera,
-                mt,
-                prepared.sim_data.coords,
-                prepared.sim_data.connect,
-                prepared.sim_data.field,
-                .{
-                    .nodal = .{
-                        .field = prepared.sim_data.field.?,
-                        .bits = 8,
-                    },
-                },
-                nodal_dir,
-                add_disp,
-                config,
-            );
-
-            // Tex ShaderInput
-            for (sample_configs) |sc| {
-                const tex_dir = try std.fmt.allocPrint(aa, "{s}/{s}_{s}_{s}_tex_{s}_{s}", .{
-                    gold_dir_root,
-                    test_type,
-                    @tagName(mt),
-                    d_str,
-                    @tagName(sc.sample),
-                    @tagName(sc.mode),
-                });
-                try renderAndSave(
-                    aa,
-                    io,
-                    &prepared.camera,
-                    mt,
-                    prepared.sim_data.coords,
-                    prepared.sim_data.connect,
-                    prepared.sim_data.field,
-                    .{
-                        .tex_u8 = .{
-                            .uvs = prepared.uvs.array,
-                            .texture = texture,
-                            .sample_config = sc,
-                        },
-                    },
-                    tex_dir,
-                    add_disp,
-                    config,
-                );
-            }
-        }
     }
 }
 
@@ -180,7 +123,7 @@ pub fn runMultimeshGeneration(
         outer_alloc,
         io,
         config,
-        goldpaths.sharedRoot("multimesh"),
+        policy.goldRoot(.multimesh),
         &orch.default_multimesh_dir_paths,
         .{ 1200, 800 },
     );
@@ -259,7 +202,7 @@ pub fn runMultimeshMixedGeneration(
     io: std.Io,
     config: RasterConfig,
 ) !void {
-    const gold_root = comptime goldpaths.sharedRoot("multimesh");
+    const gold_root = comptime policy.goldRoot(.multimesh);
     try runMultimeshMixedGenerationExt(
         allocator,
         io,
@@ -342,7 +285,7 @@ pub fn runMultimeshMixedRGBGeneration(
     io: std.Io,
     config: RasterConfig,
 ) !void {
-    const gold_root = comptime goldpaths.sharedRoot("multimesh");
+    const gold_root = comptime policy.goldRoot(.multimesh);
     try runMultimeshMixedRGBGenerationExt(
         allocator,
         io,
@@ -432,24 +375,6 @@ pub fn runMultimeshMixedRGBGenerationExt(
     );
 }
 
-fn buildUvField(
-    allocator: std.mem.Allocator,
-    uvs: @import("../riley/zig/ndarray.zig").NDArray(F),
-    time_steps: usize,
-) !meshio.Field {
-    const node_num = uvs.dims[0];
-    var field = try meshio.Field.initAlloc(allocator, time_steps, node_num, 2);
-
-    for (0..time_steps) |tt| {
-        for (0..node_num) |nn| {
-            field.array.set(&[_]usize{ tt, nn, 0 }, uvs.get(&[_]usize{ nn, 0 }));
-            field.array.set(&[_]usize{ tt, nn, 1 }, uvs.get(&[_]usize{ nn, 1 }));
-        }
-    }
-
-    return field;
-}
-
 pub fn generateDistortEdgeGold(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -480,39 +405,16 @@ pub fn generateDistortEdgeGold(
 
     for (distortion_cases) |distortion_case| {
         for (distortion_case.mesh_types) |mesh_type| {
-            const prepared = try orch.prepareSingleMeshCase(
+            try testcommon.runEdgeTexFuncConstantSuiteDriver(
+                .generate,
                 allocator,
                 io,
                 distortion_case.name,
                 mesh_type,
-                pixel_num,
-                1.1,
+                gold_dir_root,
                 data_dir_root,
-            );
-
-            const gold_dir = try std.fmt.allocPrint(
-                allocator,
-                "{s}/{s}_{s}_texfunc_constant",
-                .{ gold_dir_root, distortion_case.name, @tagName(mesh_type) },
-            );
-            try renderAndSave(
-                allocator,
-                io,
-                &prepared.camera,
-                mesh_type,
-                prepared.sim_data.coords,
-                prepared.sim_data.connect,
-                prepared.sim_data.field,
-                .{
-                    .func = .{
-                        .uvs = null,
-                        .coord_mode = .parametric,
-                        .builtin = .constant,
-                        .normal_type = .none,
-                    },
-                },
-                gold_dir,
-                true,
+                pixel_num,
+                null,
                 config,
             );
         }
@@ -525,12 +427,9 @@ pub fn generateDistortEdgeGoldForHullMode(
     gold_dir_root: []const u8,
     data_dir_root: []const u8,
     pixel_num: [2]u32,
-    base_config: RasterConfig,
+    config: RasterConfig,
     hull_mode: rastcfg.HullMode,
 ) !void {
-    var config = base_config;
-    config.hull_mode = hull_mode;
-
     const midside_mesh_types = [_]gk.MeshType{ .tri6, .quad8, .quad9 };
     const full_mesh_types = [_]gk.MeshType{
         .tri3,
@@ -553,44 +452,16 @@ pub fn generateDistortEdgeGoldForHullMode(
 
     for (distortion_cases) |distortion_case| {
         for (distortion_case.mesh_types) |mesh_type| {
-            const prepared = try orch.prepareSingleMeshCase(
+            try testcommon.runEdgeTexFuncConstantSuiteDriver(
+                .generate,
                 allocator,
                 io,
                 distortion_case.name,
                 mesh_type,
-                pixel_num,
-                1.1,
+                gold_dir_root,
                 data_dir_root,
-            );
-
-            const gold_dir = try std.fmt.allocPrint(
-                allocator,
-                "{s}/{s}_{s}_texfunc_constant_{s}",
-                .{
-                    gold_dir_root,
-                    distortion_case.name,
-                    @tagName(mesh_type),
-                    @tagName(hull_mode),
-                },
-            );
-            try renderAndSave(
-                allocator,
-                io,
-                &prepared.camera,
-                mesh_type,
-                prepared.sim_data.coords,
-                prepared.sim_data.connect,
-                prepared.sim_data.field,
-                .{
-                    .func = .{
-                        .uvs = null,
-                        .coord_mode = .parametric,
-                        .builtin = .constant,
-                        .normal_type = .none,
-                    },
-                },
-                gold_dir,
-                true,
+                pixel_num,
+                hull_mode,
                 config,
             );
         }

@@ -8,7 +8,6 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
-const goldpaths = @import("common/goldpaths.zig");
 const orch = @import("common/orchestration.zig");
 const policy = @import("common/testpolicy.zig");
 const testcommon = @import("common/tests.zig");
@@ -55,7 +54,7 @@ test "Sphere Gold Tests" {
     const cases = [_]struct { ds: []const u8, gold: []const u8, out: []const u8 }{
         .{
             .ds = "sphere2000",
-            .gold = goldpaths.sphereRoot("sphere2000"),
+            .gold = policy.goldRoot(.sphere2000),
             .out = "out-sphere2000",
         },
     };

@@ -958,7 +958,7 @@ pub fn runBenchmarkQuietWithImageOut(
 }
 
 fn runBenchmarkInternal(
-    comptime report_mode: rastcfg.ReportMode,
+    report_mode: rastcfg.ReportMode,
     comptime T: type,
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -1058,7 +1058,7 @@ fn runBenchmarkInternal(
     }
 
     var bench_capture_storage: [1]report.FrameBenchCapture = undefined;
-    const bench_capture = if (report_mode == .bench)
+    const bench_capture: ?[]report.FrameBenchCapture = if (report_mode == .bench)
         bench_capture_storage[0..]
     else
         null;

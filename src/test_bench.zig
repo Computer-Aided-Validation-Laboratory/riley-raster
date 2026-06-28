@@ -8,7 +8,6 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const common = @import("common/benchcommon.zig");
-const goldpaths = @import("common/goldpaths.zig");
 const policy = @import("common/testpolicy.zig");
 const testcommon = @import("common/tests.zig");
 const tcfg = @import("common/testconfig.zig");
@@ -61,26 +60,26 @@ test "Unified Benchmark Tests" {
         .{
             .name = "fullraster",
             .data_name = "fullraster",
-            .gold_dir = goldpaths.sharedRoot("fullscreen"),
+            .gold_dir = policy.goldRoot(.fullscreen),
             .out_dir = "out/fullraster",
         },
         .{
             .name = "fullraster_ssaa1",
             .data_name = "fullraster",
-            .gold_dir = goldpaths.sharedRoot("fullscreen_ssaa1"),
+            .gold_dir = policy.goldRoot(.fullscreen_ssaa1),
             .out_dir = "out/fullraster_ssaa1",
             .sub_sample = 1,
         },
         .{
             .name = "geom",
             .data_name = "geom",
-            .gold_dir = goldpaths.sharedRoot("fullscreen"),
+            .gold_dir = policy.goldRoot(.fullscreen),
             .out_dir = "out/geom",
         },
         .{
             .name = "sphere2000",
             .data_name = "sphere2000",
-            .gold_dir = goldpaths.sphereRoot("sphere2000"),
+            .gold_dir = policy.goldRoot(.sphere2000),
             .out_dir = "out/sphere2000",
             .is_sphere = true,
             .skip_quad4ibi_sphere = true,
@@ -88,7 +87,7 @@ test "Unified Benchmark Tests" {
         .{
             .name = "sphere2000_ssaa1",
             .data_name = "sphere2000",
-            .gold_dir = goldpaths.sphereRoot("sphere2000_ssaa1"),
+            .gold_dir = policy.goldRoot(.sphere2000_ssaa1),
             .out_dir = "out/sphere2000_ssaa1",
             .is_sphere = true,
             .sub_sample = 1,
@@ -97,7 +96,7 @@ test "Unified Benchmark Tests" {
         .{
             .name = "sphere2000zoom",
             .data_name = "sphere2000",
-            .gold_dir = goldpaths.sphereRoot("sphere2000zoom"),
+            .gold_dir = policy.goldRoot(.sphere2000zoom),
             .out_dir = "out/sphere2000zoom",
             .is_sphere = true,
             .fov_scale = 0.5,
