@@ -7,10 +7,10 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const buildconfig = @import("riley/zig/buildconfig.zig");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
-const common = @import("dev_support/tests.zig");
-const tcfg = @import("dev_support/testconfig.zig");
+const common = @import("../dev_support/tests.zig");
+const tcfg = @import("../dev_support/testconfig.zig");
 
 test "Gold Multimesh Suite" {
     var gpa: std.heap.DebugAllocator(.{}) = .init;
@@ -21,7 +21,7 @@ test "Gold Multimesh Suite" {
 
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
 
-    const simd_on = @import("riley/zig/buildconfig.zig").config.simd == .on;
+    const simd_on = @import("../riley/zig/buildconfig.zig").config.simd == .on;
     std.debug.print("Running Gold Multimesh Tests with .simd = .{s}...\n", .{
         if (simd_on) "on" else "off",
     });

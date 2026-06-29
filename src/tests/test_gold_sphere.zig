@@ -7,17 +7,17 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const common = @import("dev_support/benchcommon.zig");
-const orch = @import("dev_support/orchestration.zig");
-const policy = @import("dev_support/testpolicy.zig");
-const testcommon = @import("dev_support/tests.zig");
-const tcfg = @import("dev_support/testconfig.zig");
-const buildconfig = @import("riley/zig/buildconfig.zig");
+const common = @import("../dev_support/benchcommon.zig");
+const orch = @import("../dev_support/orchestration.zig");
+const policy = @import("../dev_support/testpolicy.zig");
+const testcommon = @import("../dev_support/tests.zig");
+const tcfg = @import("../dev_support/testconfig.zig");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
 const cfg = buildconfig.config;
-const gk = @import("riley/zig/geometrykernels.zig");
-const iio = @import("riley/zig/imageio.zig");
-const texops = @import("riley/zig/textureops.zig");
-const Rotation = @import("riley/zig/rotation.zig").Rotation;
+const gk = @import("../riley/zig/geometrykernels.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const texops = @import("../riley/zig/textureops.zig");
+const Rotation = @import("../riley/zig/rotation.zig").Rotation;
 
 const config = common.BenchConfig{ .run = .all };
 const simd_on = cfg.simd == .on;

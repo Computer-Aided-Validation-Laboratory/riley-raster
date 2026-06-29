@@ -7,18 +7,18 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const buildconfig = @import("riley/zig/buildconfig.zig");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
-const mo = @import("riley/zig/meshops.zig");
-const pce = @import("riley/zig/parachunkexec.zig");
-const meshio = @import("riley/zig/meshio.zig");
-const report = @import("riley/zig/report.zig");
-const rops = @import("riley/zig/rasterops.zig");
-const shaderops = @import("riley/zig/shaderops.zig");
-const CameraPrepared = @import("riley/zig/camera.zig").CameraPrepared;
-const Rotation = @import("riley/zig/rotation.zig").Rotation;
-const NDArray = @import("riley/zig/ndarray.zig").NDArray;
-const tcfg = @import("dev_support/testconfig.zig");
+const mo = @import("../riley/zig/meshops.zig");
+const pce = @import("../riley/zig/parachunkexec.zig");
+const meshio = @import("../riley/zig/meshio.zig");
+const report = @import("../riley/zig/report.zig");
+const rops = @import("../riley/zig/rasterops.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
+const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
+const Rotation = @import("../riley/zig/rotation.zig").Rotation;
+const NDArray = @import("../riley/zig/ndarray.zig").NDArray;
+const tcfg = @import("../dev_support/testconfig.zig");
 
 fn loadData(
     allocator: std.mem.Allocator,
@@ -58,7 +58,7 @@ test "Nodal normals are prepared when requested" {
     const pixel_size = [_]F{ 0.00625, 0.00625 };
     const focal_leng = 2.0;
     const rot = Rotation.init(0, 0, 0);
-    const cam_pos = @import("riley/zig/cameraops.zig").posFillFrameFromRot(
+    const cam_pos = @import("../riley/zig/cameraops.zig").posFillFrameFromRot(
         &sim_data.coords,
         pixel_num,
         pixel_size,
@@ -66,7 +66,7 @@ test "Nodal normals are prepared when requested" {
         rot,
         1.0,
     );
-    const roi_cent = @import("riley/zig/cameraops.zig").roiCentFromCoords(
+    const roi_cent = @import("../riley/zig/cameraops.zig").roiCentFromCoords(
         &sim_data.coords,
     );
 

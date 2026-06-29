@@ -7,16 +7,14 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const gengold = @import("dev_support/gengold.zig");
-const policy = @import("dev_support/testpolicy.zig");
-const tcfg = @import("dev_support/testconfig.zig");
-const orch = @import("dev_support/orchestration.zig");
-const riley = @import("riley/zig/riley.zig");
-const meshio = @import("riley/zig/meshio.zig");
-const mo = @import("riley/zig/meshops.zig");
-const gk = @import("riley/zig/geometrykernels.zig");
-const iio = @import("riley/zig/imageio.zig");
-const texops = @import("riley/zig/textureops.zig");
+const gengold = @import("../dev_support/gengold.zig");
+const policy = @import("../dev_support/testpolicy.zig");
+const tcfg = @import("../dev_support/testconfig.zig");
+const riley = @import("../riley/zig/riley.zig");
+const mo = @import("../riley/zig/meshops.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const texops = @import("../riley/zig/textureops.zig");
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -34,7 +32,10 @@ pub fn main(init: std.process.Init) !void {
     );
 
     const mesh_types = [_]gk.MeshType{
+        .tri3,
         .tri6,
+        .quad4ibi,
+        .quad4newton,
         .quad8,
         .quad9,
     };
@@ -48,9 +49,7 @@ pub fn main(init: std.process.Init) !void {
         .{ .sample = .cubic_bspline, .mode = .lut_lerp },
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
-    const pixel_num = [_]u32{ 320, 200 };
-    const pixel_num_distort_midside = [_]u32{ 800, 500 };
-
+    const pixel_num = [_]u32{ 640, 400 };
     var config = tcfg.getRasterConfig(.gold);
     config.save_strategy = .disk;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
@@ -58,53 +57,18 @@ pub fn main(init: std.process.Init) !void {
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
 
-    std.debug.print("Generating Edge Cases to gold/edge/...\n", .{});
-
+    std.debug.print("Generating Simple Gold Data (Two Elements only)...\n", .{});
     try gengold.runGenerationExt(
         aa,
         io,
-        "vertbulge",
+        "twoelems",
         &mesh_types,
         1.1,
         texture,
         pixel_num,
         &sample_configs,
-        policy.goldRoot(.edge),
-        "data/edge",
-        config,
-    );
-    try gengold.runGenerationExt(
-        aa,
-        io,
-        "bulgein_rot",
-        &mesh_types,
-        1.1,
-        texture,
-        pixel_num,
-        &sample_configs,
-        policy.goldRoot(.edge),
-        "data/edge",
-        config,
-    );
-    try gengold.runGenerationExt(
-        aa,
-        io,
-        "bulgeout_rot",
-        &mesh_types,
-        1.1,
-        texture,
-        pixel_num,
-        &sample_configs,
-        policy.goldRoot(.edge),
-        "data/edge",
-        config,
-    );
-    try gengold.generateDistortEdgeGold(
-        aa,
-        io,
-        policy.goldRoot(.edge),
-        "data/edge",
-        pixel_num_distort_midside,
+        policy.goldRoot(.simple),
+        "data/simple",
         config,
     );
 

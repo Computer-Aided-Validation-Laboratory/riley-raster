@@ -7,9 +7,9 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const iio = @import("riley/zig/imageio.zig");
-const suite = @import("dev_support/ssaasuite.zig");
-const orch = @import("dev_support/orchestration.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const suite = @import("../dev_support/ssaasuite.zig");
+const orch = @import("../dev_support/orchestration.zig");
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
@@ -28,7 +28,7 @@ pub fn main(init: std.process.Init) !void {
                     distortion_case,
                 );
                 defer allocator.free(case_name_base);
-                const gold_maps = [_]@import("riley/zig/camera.zig").SubPixelCenterMap{
+                const gold_maps = [_]@import("../riley/zig/camera.zig").SubPixelCenterMap{
                     .full_in_mem,
                     .affine_jac,
                 };

@@ -7,18 +7,18 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const policy = @import("dev_support/testpolicy.zig");
-const orch = @import("dev_support/orchestration.zig");
-const tcfg = @import("dev_support/testconfig.zig");
-const gk = @import("riley/zig/geometrykernels.zig");
-const meshio = @import("riley/zig/meshio.zig");
-const mo = @import("riley/zig/meshops.zig");
-const uvio = @import("riley/zig/uvio.zig");
-const CameraInput = @import("riley/zig/camera.zig").CameraInput;
-const iio = @import("riley/zig/imageio.zig");
-const rastcfg = @import("riley/zig/rasterconfig.zig");
-const shaderops = @import("riley/zig/shaderops.zig");
-const riley = @import("riley/zig/riley.zig");
+const policy = @import("../dev_support/testpolicy.zig");
+const orch = @import("../dev_support/orchestration.zig");
+const tcfg = @import("../dev_support/testconfig.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const meshio = @import("../riley/zig/meshio.zig");
+const mo = @import("../riley/zig/meshops.zig");
+const uvio = @import("../riley/zig/uvio.zig");
+const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
+const iio = @import("../riley/zig/imageio.zig");
+const rastcfg = @import("../riley/zig/rasterconfig.zig");
+const shaderops = @import("../riley/zig/shaderops.zig");
+const riley = @import("../riley/zig/riley.zig");
 
 const data_root = "data/min";
 const test_type = "sphere200";

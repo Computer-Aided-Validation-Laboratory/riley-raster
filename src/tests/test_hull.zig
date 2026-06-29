@@ -7,12 +7,12 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const common = @import("dev_support/tests.zig");
-const policy = @import("dev_support/testpolicy.zig");
-const buildconfig = @import("riley/zig/buildconfig.zig");
+const common = @import("../dev_support/tests.zig");
+const policy = @import("../dev_support/testpolicy.zig");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
-const gk = @import("riley/zig/geometrykernels.zig");
-const rastcfg = @import("riley/zig/rasterconfig.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const rastcfg = @import("../riley/zig/rasterconfig.zig");
 
 pub fn main() !void {
     std.debug.print(

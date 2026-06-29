@@ -7,26 +7,24 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const common = @import("dev_support/tests.zig");
-const policy = @import("dev_support/testpolicy.zig");
-const tcfg = @import("dev_support/testconfig.zig");
-const buildconfig = @import("riley/zig/buildconfig.zig");
+const common = @import("../dev_support/tests.zig");
+const policy = @import("../dev_support/testpolicy.zig");
+const tcfg = @import("../dev_support/testconfig.zig");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
-const gk = @import("riley/zig/geometrykernels.zig");
-const iio = @import("riley/zig/imageio.zig");
-const texops = @import("riley/zig/textureops.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const texops = @import("../riley/zig/textureops.zig");
 
-const SHADER_FILTER: common.ShaderFilter = .both; // .nodal, .tex, or .both
+const SHADER_FILTER: common.ShaderFilter = .both;
 
-test "Gold Small Suite" {
+test "Gold Simple Suite" {
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
 
     const io = std.testing.io;
 
-    // Load original using C loader once, then save as simple TIFF
-    // and reload using our simple loader to ensure compatibility.
     const texture = blk: {
         break :blk try iio.loadImage(
             u8,
@@ -50,53 +48,32 @@ test "Gold Small Suite" {
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
-        .{ .sample = .cubic_catmull_rom, .mode = .direct },
-        .{ .sample = .cubic_catmull_rom, .mode = .lut },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
         .{ .sample = .cubic_mitchell_netravali, .mode = .lut_lerp },
         .{ .sample = .lanczos3, .mode = .lut_lerp },
         .{ .sample = .cubic_bspline, .mode = .lut_lerp },
-        .{ .sample = .quintic_bspline, .mode = .direct },
-        .{ .sample = .quintic_bspline, .mode = .lut },
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
-    const pixel_num = [_]u32{ 160, 100 };
+    const pixel_num = [_]u32{ 640, 400 };
 
     const start_time = std.Io.Clock.Timestamp.now(io, .awake);
 
     const simd_on = buildconfig.config.simd == .on;
-    std.debug.print("Running Gold Small Tests with .simd = .{s}...\n", .{
+    std.debug.print("Running Gold Simple Tests with .simd = .{s}...\n", .{
         if (simd_on) "on" else "off",
     });
 
     try common.runMeshTypesSuite(
         allocator,
         io,
-        &[_][]const u8{"single"},
+        &[_][]const u8{"twoelems"},
         &mesh_types,
         1.1,
         texture,
         pixel_num,
         &sample_configs,
-        policy.goldRoot(.small),
-        "data/small",
-        tcfg.REL_TOL,
-        tcfg.ABS_TOL,
-        SHADER_FILTER,
-        false,
-    );
-
-    try common.runMeshTypesSuite(
-        allocator,
-        io,
-        &[_][]const u8{"full"},
-        &mesh_types,
-        1.0,
-        texture,
-        pixel_num,
-        &sample_configs,
-        policy.goldRoot(.small),
-        "data/small",
+        policy.goldRoot(.simple),
+        "data/simple",
         tcfg.REL_TOL,
         tcfg.ABS_TOL,
         SHADER_FILTER,
@@ -108,5 +85,5 @@ test "Gold Small Suite" {
         F,
         @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds),
     ) / 1e6;
-    std.debug.print("Gold Small Test Suite took {d:.3} ms\n", .{duration_ms});
+    std.debug.print("Gold Simple Test Suite took {d:.3} ms\n", .{duration_ms});
 }

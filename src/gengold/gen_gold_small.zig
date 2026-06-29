@@ -7,14 +7,14 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const gengold = @import("dev_support/gengold.zig");
-const policy = @import("dev_support/testpolicy.zig");
-const tcfg = @import("dev_support/testconfig.zig");
-const riley = @import("riley/zig/riley.zig");
-const mo = @import("riley/zig/meshops.zig");
-const gk = @import("riley/zig/geometrykernels.zig");
-const iio = @import("riley/zig/imageio.zig");
-const texops = @import("riley/zig/textureops.zig");
+const gengold = @import("../dev_support/gengold.zig");
+const policy = @import("../dev_support/testpolicy.zig");
+const tcfg = @import("../dev_support/testconfig.zig");
+const riley = @import("../riley/zig/riley.zig");
+const mo = @import("../riley/zig/meshops.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const texops = @import("../riley/zig/textureops.zig");
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -30,6 +30,7 @@ pub fn main(init: std.process.Init) !void {
         "texture/speckle-simple.tiff",
         .tiff,
     );
+    // No explicit deinit needed as we use the arena aa
 
     const mesh_types = [_]gk.MeshType{
         .tri3,
@@ -43,13 +44,17 @@ pub fn main(init: std.process.Init) !void {
     const sample_configs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .lut },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
         .{ .sample = .cubic_mitchell_netravali, .mode = .lut_lerp },
         .{ .sample = .lanczos3, .mode = .lut_lerp },
         .{ .sample = .cubic_bspline, .mode = .lut_lerp },
+        .{ .sample = .quintic_bspline, .mode = .direct },
+        .{ .sample = .quintic_bspline, .mode = .lut },
         .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
-    const pixel_num = [_]u32{ 640, 400 };
+    const pixel_num = [_]u32{ 160, 100 };
     var config = tcfg.getRasterConfig(.gold);
     config.save_strategy = .disk;
     config.image_save_opts = &[_]iio.ImageSaveOpts{
@@ -57,18 +62,35 @@ pub fn main(init: std.process.Init) !void {
         .{ .format = .bmp, .bits = 8, .scaling = .auto },
     };
 
-    std.debug.print("Generating Simple Gold Data (Two Elements only)...\n", .{});
+    std.debug.print("Generating ALL Small Gold Data...\n", .{});
+
+    std.debug.print("Single Element Cases...\n", .{});
     try gengold.runGenerationExt(
         aa,
         io,
-        "twoelems",
+        "single",
         &mesh_types,
         1.1,
         texture,
         pixel_num,
         &sample_configs,
-        policy.goldRoot(.simple),
-        "data/simple",
+        policy.goldRoot(.small),
+        "data/small",
+        config,
+    );
+
+    std.debug.print("Full Screen Cases...\n", .{});
+    try gengold.runGenerationExt(
+        aa,
+        io,
+        "full",
+        &mesh_types,
+        1.0,
+        texture,
+        pixel_num,
+        &sample_configs,
+        policy.goldRoot(.small),
+        "data/small",
         config,
     );
 

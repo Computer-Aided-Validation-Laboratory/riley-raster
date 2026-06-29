@@ -7,13 +7,13 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const gengold = @import("dev_support/gengold.zig");
-const policy = @import("dev_support/testpolicy.zig");
-const orch = @import("dev_support/orchestration.zig");
-const tcfg = @import("dev_support/testconfig.zig");
-const gk = @import("riley/zig/geometrykernels.zig");
-const rastcfg = @import("riley/zig/rasterconfig.zig");
-const iio = @import("riley/zig/imageio.zig");
+const gengold = @import("../dev_support/gengold.zig");
+const policy = @import("../dev_support/testpolicy.zig");
+const orch = @import("../dev_support/orchestration.zig");
+const tcfg = @import("../dev_support/testconfig.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const rastcfg = @import("../riley/zig/rasterconfig.zig");
+const iio = @import("../riley/zig/imageio.zig");
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;

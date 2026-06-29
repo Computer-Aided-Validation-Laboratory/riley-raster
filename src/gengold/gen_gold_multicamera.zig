@@ -8,20 +8,20 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const benchcommon = @import("dev_support/benchcommon.zig");
-const policy = @import("dev_support/testpolicy.zig");
-const orch = @import("dev_support/orchestration.zig");
-const tcfg = @import("dev_support/testconfig.zig");
-const buildconfig = @import("riley/zig/buildconfig.zig");
+const benchcommon = @import("../dev_support/benchcommon.zig");
+const policy = @import("../dev_support/testpolicy.zig");
+const orch = @import("../dev_support/orchestration.zig");
+const tcfg = @import("../dev_support/testconfig.zig");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
 const cfg = buildconfig.config;
-const cam = @import("riley/zig/camera.zig");
-const iio = @import("riley/zig/imageio.zig");
-const mo = @import("riley/zig/meshops.zig");
-const gk = @import("riley/zig/geometrykernels.zig");
-const meshio = @import("riley/zig/meshio.zig");
-const texops = @import("riley/zig/textureops.zig");
-const uvio = @import("riley/zig/uvio.zig");
-const riley = @import("riley/zig/riley.zig");
+const cam = @import("../riley/zig/camera.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const mo = @import("../riley/zig/meshops.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const meshio = @import("../riley/zig/meshio.zig");
+const texops = @import("../riley/zig/textureops.zig");
+const uvio = @import("../riley/zig/uvio.zig");
+const riley = @import("../riley/zig/riley.zig");
 
 const simd_on = cfg.simd == .on;
 

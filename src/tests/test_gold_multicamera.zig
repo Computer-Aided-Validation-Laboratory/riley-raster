@@ -9,28 +9,28 @@
 const std = @import("std");
 const Timestamp = std.Io.Clock.Timestamp;
 
-const benchcommon = @import("dev_support/benchcommon.zig");
-const policy = @import("dev_support/testpolicy.zig");
-const orch = @import("dev_support/orchestration.zig");
-const testcommon = @import("dev_support/tests.zig");
-const tcfg = @import("dev_support/testconfig.zig");
-const CameraInput = @import("riley/zig/camera.zig").CameraInput;
-const buildconfig = @import("riley/zig/buildconfig.zig");
+const benchcommon = @import("../dev_support/benchcommon.zig");
+const policy = @import("../dev_support/testpolicy.zig");
+const orch = @import("../dev_support/orchestration.zig");
+const testcommon = @import("../dev_support/tests.zig");
+const tcfg = @import("../dev_support/testconfig.zig");
+const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
+const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
-const camera_mod = @import("riley/zig/camera.zig");
+const camera_mod = @import("../riley/zig/camera.zig");
 const CameraPrepared = camera_mod.CameraPrepared;
-const gk = @import("riley/zig/geometrykernels.zig");
-const iio = @import("riley/zig/imageio.zig");
-const mo = @import("riley/zig/meshops.zig");
-const meshio = @import("riley/zig/meshio.zig");
-const ndarray = @import("riley/zig/ndarray.zig");
-const NDArray = @import("riley/zig/ndarray.zig").NDArray;
-const texops = @import("riley/zig/textureops.zig");
-const uvio = @import("riley/zig/uvio.zig");
-const riley = @import("riley/zig/riley.zig");
+const gk = @import("../riley/zig/geometrykernels.zig");
+const iio = @import("../riley/zig/imageio.zig");
+const mo = @import("../riley/zig/meshops.zig");
+const meshio = @import("../riley/zig/meshio.zig");
+const ndarray = @import("../riley/zig/ndarray.zig");
+const NDArray = @import("../riley/zig/ndarray.zig").NDArray;
+const texops = @import("../riley/zig/textureops.zig");
+const uvio = @import("../riley/zig/uvio.zig");
+const riley = @import("../riley/zig/riley.zig");
 const GeometrySchedulingMode =
-    @import("riley/zig/rasterconfig.zig").GeometrySchedulingMode;
+    @import("../riley/zig/rasterconfig.zig").GeometrySchedulingMode;
 
 const simd_on = cfg.simd == .on;
 

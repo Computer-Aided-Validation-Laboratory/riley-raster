@@ -7,12 +7,12 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const buildconfig = @import("riley/zig/buildconfig.zig");
+const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 const Timestamp = std.Io.Clock.Timestamp;
-const common = @import("dev_support/tests.zig");
-const suite = @import("dev_support/ssaasuite.zig");
-const tcfg = @import("dev_support/testconfig.zig");
+const common = @import("../dev_support/tests.zig");
+const suite = @import("../dev_support/ssaasuite.zig");
+const tcfg = @import("../dev_support/testconfig.zig");
 
 test "Gold SSAA Suite" {
     const allocator = std.testing.allocator;
@@ -26,7 +26,7 @@ test "Gold SSAA Suite" {
 
     var first_err: ?anyerror = null;
 
-    const strategies = [_]@import("riley/zig/camera.zig").SubPixelCenterMap{
+    const strategies = [_]@import("../riley/zig/camera.zig").SubPixelCenterMap{
         .per_tile,
         .affine_jac,
     };
@@ -74,7 +74,7 @@ test "Gold SSAA Suite" {
                         var image_mut = image;
                         image_mut.deinit(allocator);
                     }
-                    var result = try @import("riley/zig/ndarray.zig").NDArray(F).initFlat(
+                    var result = try @import("../riley/zig/ndarray.zig").NDArray(F).initFlat(
                         allocator,
                         &[_]usize{ 1, 1, 1, image.dims[1], image.dims[2] },
                     );
