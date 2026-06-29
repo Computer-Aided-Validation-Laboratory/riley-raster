@@ -12,7 +12,7 @@ from bench_common import timestamp_string
 from bench_common import write_timing_csv
 
 
-BENCHMARK_NAME = "bench_cam"
+BENCHMARK_NAME = "benchcam"
 
 SIMD_VARIANT_LABELS = [
     "scalar",
@@ -24,7 +24,7 @@ SAVE_STRATEGIES = ["memory"]
 RUN_EXPERIMENT_1 = True
 
 # Experiment 1: default camera-path sweep.
-# This runs the full bench_cam case matrix once per executable/save
+# This runs the full benchcam case matrix once per executable/save
 # combination. The compiled binaries globally turn SIMD off/on.
 EXPERIMENT_1_SIMD_VARIANT_LABELS = SIMD_VARIANT_LABELS
 EXPERIMENT_1_SUB_SAMPLE_VALUES = SUB_SAMPLE_VALUES

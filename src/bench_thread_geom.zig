@@ -7,9 +7,9 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const benchargs = @import("common/benchargs.zig");
-const common = @import("common/benchcommon.zig");
-const tcfg = @import("common/testconfig.zig");
+const benchargs = @import("dev_support/benchargs.zig");
+const common = @import("dev_support/benchcommon.zig");
+const tcfg = @import("dev_support/testconfig.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const rastcfg = @import("riley/zig/rasterconfig.zig");
 const riley = @import("riley/zig/riley.zig");
@@ -23,7 +23,7 @@ const cam = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
 const report = @import("riley/zig/report.zig");
 const NDArray = @import("riley/zig/ndarray.zig").NDArray;
-const orch = @import("common/orchestration.zig");
+const orch = @import("dev_support/orchestration.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 const F = buildconfig.F;

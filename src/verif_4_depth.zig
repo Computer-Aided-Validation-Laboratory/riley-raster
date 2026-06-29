@@ -10,9 +10,9 @@ const std = @import("std");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 
-const benchcommon = @import("common/benchcommon.zig");
-const orch = @import("common/orchestration.zig");
-const tcfg = @import("common/testconfig.zig");
+const benchcommon = @import("dev_support/benchcommon.zig");
+const orch = @import("dev_support/orchestration.zig");
+const tcfg = @import("dev_support/testconfig.zig");
 const cammod = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");

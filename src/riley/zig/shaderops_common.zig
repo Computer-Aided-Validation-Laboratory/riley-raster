@@ -601,7 +601,7 @@ pub inline fn evalFuncShaderBuiltinRgb(
             const coord_u = eval_coord.coord_0;
             const coord_v = eval_coord.coord_1;
             const c = p.coeffs_rgb;
-            
+
             const val_r = c[0][0] + coord_u * (c[0][1] + c[0][3] * coord_u) +
                 coord_v * (c[0][2] + c[0][4] * coord_u + c[0][5] * coord_v);
             const val_g = c[1][0] + coord_u * (c[1][1] + c[1][3] * coord_u) +
@@ -736,15 +736,11 @@ pub inline fn evalFuncShaderBuiltinScalarSIMD(
             const coord_u = eval_coord.coord_0;
             const coord_v = eval_coord.coord_1;
             const c = p.coeffs;
-            const term_u = coord_u * (
-                @as(VecSF, @splat(c[1])) +
-                @as(VecSF, @splat(c[3])) * coord_u
-            );
-            const term_v = coord_v * (
-                @as(VecSF, @splat(c[2])) +
+            const term_u = coord_u * (@as(VecSF, @splat(c[1])) +
+                @as(VecSF, @splat(c[3])) * coord_u);
+            const term_v = coord_v * (@as(VecSF, @splat(c[2])) +
                 @as(VecSF, @splat(c[4])) * coord_u +
-                @as(VecSF, @splat(c[5])) * coord_v
-            );
+                @as(VecSF, @splat(c[5])) * coord_v);
             break :blk @as(VecSF, @splat(c[0])) + term_u + term_v;
         },
         .sinusoidal => blk: {
@@ -893,37 +889,25 @@ pub inline fn evalFuncShaderBuiltinRgbSIMD(
             const coord_u = eval_coord.coord_0;
             const coord_v = eval_coord.coord_1;
             const c = p.coeffs_rgb;
-            
+
             const val_r = @as(VecSF, @splat(c[0][0])) +
-                coord_u * (
-                    @as(VecSF, @splat(c[0][1])) +
-                    @as(VecSF, @splat(c[0][3])) * coord_u
-                ) +
-                coord_v * (
-                    @as(VecSF, @splat(c[0][2])) +
+                coord_u * (@as(VecSF, @splat(c[0][1])) +
+                    @as(VecSF, @splat(c[0][3])) * coord_u) +
+                coord_v * (@as(VecSF, @splat(c[0][2])) +
                     @as(VecSF, @splat(c[0][4])) * coord_u +
-                    @as(VecSF, @splat(c[0][5])) * coord_v
-                );
+                    @as(VecSF, @splat(c[0][5])) * coord_v);
             const val_g = @as(VecSF, @splat(c[1][0])) +
-                coord_u * (
-                    @as(VecSF, @splat(c[1][1])) +
-                    @as(VecSF, @splat(c[1][3])) * coord_u
-                ) +
-                coord_v * (
-                    @as(VecSF, @splat(c[1][2])) +
+                coord_u * (@as(VecSF, @splat(c[1][1])) +
+                    @as(VecSF, @splat(c[1][3])) * coord_u) +
+                coord_v * (@as(VecSF, @splat(c[1][2])) +
                     @as(VecSF, @splat(c[1][4])) * coord_u +
-                    @as(VecSF, @splat(c[1][5])) * coord_v
-                );
+                    @as(VecSF, @splat(c[1][5])) * coord_v);
             const val_b = @as(VecSF, @splat(c[2][0])) +
-                coord_u * (
-                    @as(VecSF, @splat(c[2][1])) +
-                    @as(VecSF, @splat(c[2][3])) * coord_u
-                ) +
-                coord_v * (
-                    @as(VecSF, @splat(c[2][2])) +
+                coord_u * (@as(VecSF, @splat(c[2][1])) +
+                    @as(VecSF, @splat(c[2][3])) * coord_u) +
+                coord_v * (@as(VecSF, @splat(c[2][2])) +
                     @as(VecSF, @splat(c[2][4])) * coord_u +
-                    @as(VecSF, @splat(c[2][5])) * coord_v
-                );
+                    @as(VecSF, @splat(c[2][5])) * coord_v);
             break :blk .{ val_r, val_g, val_b };
         },
         .sinusoidal => blk: {

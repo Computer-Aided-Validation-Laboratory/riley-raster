@@ -8,10 +8,10 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const benchargs = @import("common/benchargs.zig");
-const benchstats = @import("common/benchstats.zig");
-const tcfg = @import("common/testconfig.zig");
-const common = @import("common/benchcommon.zig");
+const benchargs = @import("dev_support/benchargs.zig");
+const benchstats = @import("dev_support/benchstats.zig");
+const tcfg = @import("dev_support/testconfig.zig");
+const common = @import("dev_support/benchcommon.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const rastcfg = @import("riley/zig/rasterconfig.zig");
 const riley = @import("riley/zig/riley.zig");

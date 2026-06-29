@@ -283,7 +283,7 @@ pub fn build(b: *std.Build) void {
         .{
             .step_name = "bench-cam",
             .description = "Run the camera benchmark",
-            .source_path = "src/bench_cam.zig",
+            .source_path = "src/dev_support/benchcam.zig",
         },
         .{
             .step_name = "bench-dicuq",
@@ -480,9 +480,10 @@ fn addBenchInstallStep(
     simd: []const u8,
     simd_vector_width: u32,
 ) *std.Build.Step.InstallArtifact {
+    const basename = std.fs.path.basename(entry.source_path);
     const binary_name = benchmarkBinaryName(
         b,
-        entry.source_path["src/".len .. entry.source_path.len - ".zig".len],
+        basename[0 .. basename.len - ".zig".len],
         precision,
         simd,
         simd_vector_width,

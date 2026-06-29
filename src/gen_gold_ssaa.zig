@@ -8,8 +8,8 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const iio = @import("riley/zig/imageio.zig");
-const suite = @import("common/ssaasuite.zig");
-const orch = @import("common/orchestration.zig");
+const suite = @import("dev_support/ssaasuite.zig");
+const orch = @import("dev_support/orchestration.zig");
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;

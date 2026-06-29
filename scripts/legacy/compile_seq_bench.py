@@ -8,7 +8,7 @@ from perf_common import repo_root
 
 
 BENCH_NAMES = [
-    "bench_cam",
+    "benchcam",
     "bench_dicuq",
     "bench_fullraster",
     "bench_geom",

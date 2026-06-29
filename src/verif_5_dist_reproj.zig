@@ -10,9 +10,9 @@ const std = @import("std");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 const cam = @import("riley/zig/camera.zig");
-const orch = @import("common/orchestration.zig");
-const verif = @import("common/verif.zig");
-const vconst = @import("common/verifconstants.zig");
+const orch = @import("dev_support/orchestration.zig");
+const verif = @import("dev_support/verif.zig");
+const vconst = @import("dev_support/verifconstants.zig");
 
 const sample_grid_rows_num: usize = 250;
 const sample_grid_cols_num: usize = 250;

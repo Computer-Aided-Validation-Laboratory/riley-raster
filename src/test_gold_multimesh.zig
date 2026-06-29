@@ -9,8 +9,8 @@
 const std = @import("std");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
-const common = @import("common/tests.zig");
-const tcfg = @import("common/testconfig.zig");
+const common = @import("dev_support/tests.zig");
+const tcfg = @import("dev_support/testconfig.zig");
 
 test "Gold Multimesh Suite" {
     var gpa: std.heap.DebugAllocator(.{}) = .init;

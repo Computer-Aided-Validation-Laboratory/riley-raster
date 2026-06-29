@@ -10,9 +10,9 @@ const std = @import("std");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 const Timestamp = std.Io.Clock.Timestamp;
-const common = @import("common/tests.zig");
-const suite = @import("common/ssaasuite.zig");
-const tcfg = @import("common/testconfig.zig");
+const common = @import("dev_support/tests.zig");
+const suite = @import("dev_support/ssaasuite.zig");
+const tcfg = @import("dev_support/testconfig.zig");
 
 test "Gold SSAA Suite" {
     const allocator = std.testing.allocator;

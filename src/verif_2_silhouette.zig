@@ -15,11 +15,11 @@ const iio = @import("riley/zig/imageio.zig");
 const matrix = @import("riley/zig/matstack.zig");
 const meshio = @import("riley/zig/meshio.zig");
 const mo = @import("riley/zig/meshops.zig");
-const orch = @import("common/orchestration.zig");
+const orch = @import("dev_support/orchestration.zig");
 const rastcfg = @import("riley/zig/rasterconfig.zig");
-const tcfg = @import("common/testconfig.zig");
-const vconst = @import("common/verifconstants.zig");
-const verif = @import("common/verif.zig");
+const tcfg = @import("dev_support/testconfig.zig");
+const vconst = @import("dev_support/verifconstants.zig");
+const verif = @import("dev_support/verif.zig");
 const vector = @import("riley/zig/vecstack.zig");
 const riley = @import("riley/zig/riley.zig");
 

@@ -8,11 +8,11 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("riley/zig/buildconfig.zig");
-const common = @import("common/benchcommon.zig");
-const minsuite = @import("common/minsuite.zig");
-const policy = @import("common/testpolicy.zig");
-const tcfg = @import("common/testconfig.zig");
-const tests = @import("common/tests.zig");
+const common = @import("dev_support/benchcommon.zig");
+const minsuite = @import("dev_support/minsuite.zig");
+const policy = @import("dev_support/testpolicy.zig");
+const tcfg = @import("dev_support/testconfig.zig");
+const tests = @import("dev_support/tests.zig");
 const mo = @import("riley/zig/meshops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");

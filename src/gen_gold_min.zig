@@ -7,11 +7,11 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const common = @import("common/benchcommon.zig");
-const gengold = @import("common/gengold.zig");
-const minsuite = @import("common/minsuite.zig");
-const orch = @import("common/orchestration.zig");
-const tcfg = @import("common/testconfig.zig");
+const common = @import("dev_support/benchcommon.zig");
+const gengold = @import("dev_support/gengold.zig");
+const minsuite = @import("dev_support/minsuite.zig");
+const orch = @import("dev_support/orchestration.zig");
+const tcfg = @import("dev_support/testconfig.zig");
 const riley = @import("riley/zig/riley.zig");
 const mo = @import("riley/zig/meshops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
@@ -19,7 +19,7 @@ const iio = @import("riley/zig/imageio.zig");
 const texops = @import("riley/zig/textureops.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
-const policy = @import("common/testpolicy.zig");
+const policy = @import("dev_support/testpolicy.zig");
 
 comptime {
     if (buildconfig.config.simd != .on) {

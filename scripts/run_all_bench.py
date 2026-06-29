@@ -45,7 +45,7 @@ def main() -> int:
     if RUN_FULLRASTER:
         script_names.append("bench_fullraster.py")
     if RUN_CAM:
-        script_names.append("bench_cam.py")
+        script_names.append("benchcam.py")
     if RUN_GEOM:
         script_names.append("bench_geom.py")
     if RUN_SPHERE2000:

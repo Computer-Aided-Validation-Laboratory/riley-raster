@@ -556,8 +556,7 @@ fn funcShaderBuiltinFromC(
         @intFromEnum(shaderops.FuncShaderBuiltin.linear) => .linear,
         @intFromEnum(shaderops.FuncShaderBuiltin.quadratic) => .quadratic,
         @intFromEnum(shaderops.FuncShaderBuiltin.sinusoidal) => .sinusoidal,
-        @intFromEnum(shaderops.FuncShaderBuiltin.sinusoidal_approx) =>
-            .sinusoidal_approx,
+        @intFromEnum(shaderops.FuncShaderBuiltin.sinusoidal_approx) => .sinusoidal_approx,
         @intFromEnum(shaderops.FuncShaderBuiltin.checker) => .checker,
         @intFromEnum(shaderops.FuncShaderBuiltin.checker_smooth) => .checker_smooth,
         @intFromEnum(lambertian) => .lambertian_normal_z,

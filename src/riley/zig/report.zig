@@ -368,15 +368,9 @@ pub const FullStatsLog = struct {
         var file_writer = csv_file.writer(io, &write_buf);
         const writer = &file_writer.interface;
 
-        try writer.writeAll(
-            "subpx_x,subpx_y,iters,converged,solver_status,"
-        );
-        try writer.writeAll(
-            "pre_domain_converged,hit_iter_limit,residual_x,residual_y,"
-        );
-        try writer.writeAll(
-            "interpolated_w,residual_mag,normalized_residual_mag,"
-        );
+        try writer.writeAll("subpx_x,subpx_y,iters,converged,solver_status,");
+        try writer.writeAll("pre_domain_converged,hit_iter_limit,residual_x,residual_y,");
+        try writer.writeAll("interpolated_w,residual_mag,normalized_residual_mag,");
         try writer.writeAll("jacobian_det,xi,eta,domain_violation,earlyout,inv_z\n");
 
         const iter_row_stride = iteration_map.strides[0];
@@ -395,35 +389,27 @@ pub const FullStatsLog = struct {
                 const pre_domain_converged =
                     if (self.pre_domain_converged_map) |*m| m.slice[idx] else 0.0;
                 const solver_status =
-                    if (self.solver_status_map) |*m| m.slice[idx]
-                    else std.math.nan(F);
+                    if (self.solver_status_map) |*m| m.slice[idx] else std.math.nan(F);
                 const hit_iter_limit =
                     if (self.hit_iter_limit_map) |*m| m.slice[idx] else 0.0;
                 const residual_mag =
-                    if (self.residual_mag_map) |*m| m.slice[idx]
-                    else std.math.nan(F);
+                    if (self.residual_mag_map) |*m| m.slice[idx] else std.math.nan(F);
                 const residual_x =
-                    if (self.residual_x_map) |*m| m.slice[idx]
-                    else std.math.nan(F);
+                    if (self.residual_x_map) |*m| m.slice[idx] else std.math.nan(F);
                 const residual_y =
-                    if (self.residual_y_map) |*m| m.slice[idx]
-                    else std.math.nan(F);
+                    if (self.residual_y_map) |*m| m.slice[idx] else std.math.nan(F);
                 const interpolated_w =
-                    if (self.interpolated_w_map) |*m| m.slice[idx]
-                    else std.math.nan(F);
+                    if (self.interpolated_w_map) |*m| m.slice[idx] else std.math.nan(F);
                 const normalized_residual_mag =
-                    if (self.normalized_residual_mag_map) |*m| m.slice[idx]
-                    else std.math.nan(F);
+                    if (self.normalized_residual_mag_map) |*m| m.slice[idx] else std.math.nan(F);
                 const jacobian_det =
-                    if (self.jacobian_det_map) |*m| m.slice[idx]
-                    else std.math.nan(F);
+                    if (self.jacobian_det_map) |*m| m.slice[idx] else std.math.nan(F);
                 const xi =
                     if (self.xi_map) |*m| m.slice[idx] else std.math.nan(F);
                 const eta =
                     if (self.eta_map) |*m| m.slice[idx] else std.math.nan(F);
                 const domain_violation =
-                    if (self.domain_violation_map) |*m| m.slice[idx]
-                    else std.math.nan(F);
+                    if (self.domain_violation_map) |*m| m.slice[idx] else std.math.nan(F);
                 const inv_z =
                     if (self.depth_map) |*m| m.slice[idx] else std.math.nan(F);
 

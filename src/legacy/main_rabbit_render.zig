@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const orch = @import("common/orchestration.zig");
+const orch = @import("dev_support/orchestration.zig");
 const riley = @import("riley/zig/riley.zig");
 const rastcfg = @import("riley/zig/rasterconfig.zig");
 const meshio = @import("riley/zig/meshio.zig");

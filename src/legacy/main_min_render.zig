@@ -7,10 +7,10 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const common = @import("common/benchcommon.zig");
-const gengold = @import("common/gengold.zig");
-const minsuite = @import("common/minsuite.zig");
-const tcfg = @import("common/testconfig.zig");
+const common = @import("dev_support/benchcommon.zig");
+const gengold = @import("dev_support/gengold.zig");
+const minsuite = @import("dev_support/minsuite.zig");
+const tcfg = @import("dev_support/testconfig.zig");
 const riley = @import("riley/zig/riley.zig");
 const mo = @import("riley/zig/meshops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");

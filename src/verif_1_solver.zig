@@ -12,9 +12,9 @@ const F = buildconfig.F;
 const cam = @import("riley/zig/camera.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const meshio = @import("riley/zig/meshio.zig");
-const orch = @import("common/orchestration.zig");
-const verif = @import("common/verif.zig");
-const vconst = @import("common/verifconstants.zig");
+const orch = @import("dev_support/orchestration.zig");
+const verif = @import("dev_support/verif.zig");
+const vconst = @import("dev_support/verifconstants.zig");
 
 const structured_grid_quad_num: usize = 250;
 const structured_grid_tri_num: usize = 250;

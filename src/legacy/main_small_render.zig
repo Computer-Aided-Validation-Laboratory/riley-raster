@@ -7,8 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const gengold = @import("common/gengold.zig");
-const tcfg = @import("common/testconfig.zig");
+const gengold = @import("dev_support/gengold.zig");
+const tcfg = @import("dev_support/testconfig.zig");
 const riley = @import("riley/zig/riley.zig");
 const mo = @import("riley/zig/meshops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
@@ -30,22 +30,21 @@ pub fn main(init: std.process.Init) !void {
         .tiff,
     );
 
-    const mesh_types = [_]gk.MeshType{
-        .tri3,
-        .tri6,
-        .quad4ibi,
-        .quad4newton,
-        .quad8,
-        .quad9,
-    };
+    const mesh_types = [_]gk.MeshType{ .tri3, .tri6, .quad4ibi, .quad8, .quad9 };
     const sample_configs = [_]texops.TextureSampleConfig{
+        .{ .sample = .linear, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .direct },
+        .{ .sample = .cubic_catmull_rom, .mode = .lut },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+        .{ .sample = .quintic_bspline, .mode = .direct },
+        .{ .sample = .quintic_bspline, .mode = .lut },
+        .{ .sample = .quintic_bspline, .mode = .lut_lerp },
     };
 
-    const pixel_num = [_]u32{ 800, 500 };
+    const pixel_num = [_]u32{ 160, 100 };
 
-    const out_dir_root = "out/simple";
-    const data_dir = "data/simple";
+    const out_dir_root = "out/small";
+    const data_dir = "data/small";
 
     var config = tcfg.getRasterConfig(.preview);
     config.save_strategy = .disk;
@@ -68,13 +67,11 @@ pub fn main(init: std.process.Init) !void {
         .save_pixel_occupancy_map = true,
     };
 
-    std.debug.print("Rendering Simple Data (Two Elements only) to {s}/...\n", .{
-        out_dir_root,
-    });
+    std.debug.print("Rendering Small Data to {s}/...\n", .{out_dir_root});
     try gengold.runGenerationExt(
         aa,
         io,
-        "twoelems",
+        "single",
         &mesh_types,
         1.1,
         texture,

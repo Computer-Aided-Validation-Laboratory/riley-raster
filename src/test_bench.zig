@@ -7,10 +7,10 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const common = @import("common/benchcommon.zig");
-const policy = @import("common/testpolicy.zig");
-const testcommon = @import("common/tests.zig");
-const tcfg = @import("common/testconfig.zig");
+const common = @import("dev_support/benchcommon.zig");
+const policy = @import("dev_support/testpolicy.zig");
+const testcommon = @import("dev_support/tests.zig");
+const tcfg = @import("dev_support/testconfig.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;

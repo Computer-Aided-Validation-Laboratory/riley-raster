@@ -7,10 +7,10 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const benchargs = @import("common/benchargs.zig");
-const benchstats = @import("common/benchstats.zig");
-const common = @import("common/benchcommon.zig");
-const tcfg = @import("common/testconfig.zig");
+const benchargs = @import("dev_support/benchargs.zig");
+const benchstats = @import("dev_support/benchstats.zig");
+const common = @import("dev_support/benchcommon.zig");
+const tcfg = @import("dev_support/testconfig.zig");
 const cam = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
@@ -22,7 +22,7 @@ const rastcfg = @import("riley/zig/rasterconfig.zig");
 const report = @import("riley/zig/report.zig");
 const riley = @import("riley/zig/riley.zig");
 const so = @import("riley/zig/shaderops.zig");
-const orch = @import("common/orchestration.zig");
+const orch = @import("dev_support/orchestration.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const Timestamp = std.Io.Clock.Timestamp;
 const F = buildconfig.F;
@@ -609,7 +609,7 @@ pub fn main(init: std.process.Init) !void {
         io,
         bench_args.out_dir,
         bench_args.image_out_dir,
-        "bench_cam.zig",
+        "benchcam.zig",
         init.minimal.args.vector,
         bench_args.subpixel_center_map,
         bench_raster_config,

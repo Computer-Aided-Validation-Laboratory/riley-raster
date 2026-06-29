@@ -7,7 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------
 const std = @import("std");
-const suite = @import("common/psfsuite.zig");
+const suite = @import("dev_support/psfsuite.zig");
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;

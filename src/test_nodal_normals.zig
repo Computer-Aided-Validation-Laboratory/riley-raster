@@ -18,7 +18,7 @@ const shaderops = @import("riley/zig/shaderops.zig");
 const CameraPrepared = @import("riley/zig/camera.zig").CameraPrepared;
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const NDArray = @import("riley/zig/ndarray.zig").NDArray;
-const tcfg = @import("common/testconfig.zig");
+const tcfg = @import("dev_support/testconfig.zig");
 
 fn loadData(
     allocator: std.mem.Allocator,

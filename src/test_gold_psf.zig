@@ -10,9 +10,9 @@ const std = @import("std");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 const Timestamp = std.Io.Clock.Timestamp;
-const common = @import("common/tests.zig");
-const suite = @import("common/psfsuite.zig");
-const tcfg = @import("common/testconfig.zig");
+const common = @import("dev_support/tests.zig");
+const suite = @import("dev_support/psfsuite.zig");
+const tcfg = @import("dev_support/testconfig.zig");
 
 const PSF_REL_TOL: F = if (F == f32) 1.0e-6 else 1.0e-9;
 const PSF_ABS_TOL: F = if (F == f32) 1.0e-6 else 1.0e-9;

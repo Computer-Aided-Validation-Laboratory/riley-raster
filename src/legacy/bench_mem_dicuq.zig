@@ -1,7 +1,7 @@
 const std = @import("std");
 
-const benchargs = @import("common/benchargs.zig");
-const benchdicuq = @import("common/benchdicuq.zig");
+const benchargs = @import("dev_support/benchargs.zig");
+const benchdicuq = @import("dev_support/benchdicuq.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 const riley = @import("riley/zig/riley.zig");
 const report = @import("riley/zig/report.zig");

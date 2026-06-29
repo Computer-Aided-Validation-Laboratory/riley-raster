@@ -8,9 +8,9 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("riley/zig/buildconfig.zig");
-const common = @import("common/benchcommon.zig");
-const orch = @import("common/orchestration.zig");
-const tcfg = @import("common/testconfig.zig");
+const common = @import("dev_support/benchcommon.zig");
+const orch = @import("dev_support/orchestration.zig");
+const tcfg = @import("dev_support/testconfig.zig");
 const riley = @import("riley/zig/riley.zig");
 const rastcfg = @import("riley/zig/rasterconfig.zig");
 const gk = @import("riley/zig/geometrykernels.zig");

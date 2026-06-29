@@ -8,9 +8,9 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 
-const benchcommon = @import("common/benchcommon.zig");
-const orch = @import("common/orchestration.zig");
-const tcfg = @import("common/testconfig.zig");
+const benchcommon = @import("dev_support/benchcommon.zig");
+const orch = @import("dev_support/orchestration.zig");
+const tcfg = @import("dev_support/testconfig.zig");
 const CameraInput = @import("riley/zig/camera.zig").CameraInput;
 const CameraPrepared = @import("riley/zig/camera.zig").CameraPrepared;
 const Rotation = @import("riley/zig/rotation.zig").Rotation;

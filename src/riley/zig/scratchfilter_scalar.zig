@@ -109,23 +109,17 @@ pub fn resolveScratchDirectCore(
                 const src2_base = spx_image_scratch.rowBase(2);
                 @memcpy(
                     writer.slice[dest_base .. dest_base + len],
-                    spx_image_scratch.slice[
-                        src0_base + src_base .. src0_base + src_base + len
-                    ],
+                    spx_image_scratch.slice[src0_base + src_base .. src0_base + src_base + len],
                 );
                 const dest1 = writer.field_stride + dest_base;
                 @memcpy(
                     writer.slice[dest1 .. dest1 + len],
-                    spx_image_scratch.slice[
-                        src1_base + src_base .. src1_base + src_base + len
-                    ],
+                    spx_image_scratch.slice[src1_base + src_base .. src1_base + src_base + len],
                 );
                 const dest2 = 2 * writer.field_stride + dest_base;
                 @memcpy(
                     writer.slice[dest2 .. dest2 + len],
-                    spx_image_scratch.slice[
-                        src2_base + src_base .. src2_base + src_base + len
-                    ],
+                    spx_image_scratch.slice[src2_base + src_base .. src2_base + src_base + len],
                 );
             } else {
                 for (0..fields_num) |ff| {
