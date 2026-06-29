@@ -59,7 +59,7 @@ def main() -> None:
         scaling_type=riley.ScaleStrategy.none,
     )
     
-    config = riley.build_config(
+    config = riley.create_raster_config(
         num_frames=2,
         total_threads=total_threads,
         save_strategy=riley.SaveStrategy.disk,

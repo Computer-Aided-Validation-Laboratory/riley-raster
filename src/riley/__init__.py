@@ -27,6 +27,7 @@ from riley.cyth.riley import (
     Camera,
     CameraInput,
     CameraCoordSys,
+    create_raster_config,
     HullMode,
     Mesh,
     MeshInput,
@@ -36,7 +37,6 @@ from riley.cyth.riley import (
     NewtonSeedMode,
     NewtonSeedReuse,
     NormalType,
-    build_config,
     RasterConfig,
     RenderMode,
     ReportMode,
@@ -64,6 +64,10 @@ from riley.cyth.riley import (
     save_camera,
     save_stereo_pair,
 )
+from riley.python.helpers import (
+    project_uvs_planar_bbox,
+    project_uvs_planar_centered,
+)
 
 __all__ = [
     "Camera",
@@ -78,7 +82,7 @@ __all__ = [
     "NewtonSeedMode",
     "NewtonSeedReuse",
     "NormalType",
-    "build_config",
+    "create_raster_config",
     "RasterConfig",
     "RenderMode",
     "ReportMode",
@@ -98,6 +102,8 @@ __all__ = [
     "load_texture",
     "load_camera",
     "load_stereo_pair",
+    "project_uvs_planar_bbox",
+    "project_uvs_planar_centered",
     "pos_fill_frame_from_rot",
     "pos_fill_frame_from_rot_over_meshes",
     "raster",

@@ -208,7 +208,7 @@ def main() -> None:
         sub_sample=2,
     )
 
-    config = riley.build_config(
+    config = riley.create_raster_config(
         num_frames=1,
         total_threads=1,
         save_strategy=riley.SaveStrategy.disk,

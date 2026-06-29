@@ -16,7 +16,7 @@ import numpy as np
 from cython.cimports.libc.stdlib import free, malloc
 from cython.cimports.riley.cyth import riley as cr
 from riley.python.helpers import (
-    build_config,
+    create_raster_config,
     load_sim_csvs,
     load_texture,
 )
@@ -1256,7 +1256,7 @@ __all__ = [
     "NormalType",
     "GeometrySchedulingMode",
     "ImageMode",
-    "build_config",
+    "create_raster_config",
     "RasterConfig",
     "RenderMode",
     "ReportMode",

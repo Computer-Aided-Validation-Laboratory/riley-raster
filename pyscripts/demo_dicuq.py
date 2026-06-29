@@ -97,7 +97,7 @@ def main() -> None:
         **distortion_model,
     )
 
-    config = riley.build_config(
+    config = riley.create_raster_config(
         num_frames=2,
         total_threads=total_threads,
         save_strategy=riley.SaveStrategy.disk,

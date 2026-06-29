@@ -72,7 +72,7 @@ def main() -> None:
         coord_sys=riley.CameraCoordSys.opengl,
     )
     
-    config = riley.build_config(
+    config = riley.create_raster_config(
         num_frames=1,
         total_threads=4,
         save_strategy=save_strategy,

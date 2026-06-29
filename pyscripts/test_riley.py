@@ -33,12 +33,14 @@ PY_CMDS = [
     [str(PYTHON_EXE), "./pyscripts/demo_sphere200.py"],
     [str(PYTHON_EXE), "./pyscripts/demo_rabbits.py"],
     [str(PYTHON_EXE), "./pyscripts/demo_dicuq.py"],
+    [str(PYTHON_EXE), "./pyscripts/demo_dic_from_exodus.py"],
     [str(PYTHON_EXE), "./pyscripts/demo_stereocal.py"],
 ]
 COMPARE_DIRS = [
     ("out/demo-sphere200", "pyout/demo-sphere200"),
     ("out/demo-rabbits", "pyout/demo-rabbits"),
     ("out/demo-dicuq", "pyout/demo-dicuq"),
+    ("out/demo-dicuq", "pyout/demo-dicuq-from-exodus"),
     ("out/demo-stereocal", "pyout/demo-stereocal"),
 ]
 FORCE_ZIG_RENDER: bool = False
