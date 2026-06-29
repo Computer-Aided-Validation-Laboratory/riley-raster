@@ -26,6 +26,26 @@ const shaderops = @import("shaderops.zig");
 const texops = @import("textureops.zig");
 const vector = @import("vecstack.zig");
 
+// --------------------------------------------------------------------------
+// Public C ABI Contract
+//
+// The public Riley C ABI is fixed to the production Riley build:
+// - precision: f64
+// - SIMD: on
+//
+// This keeps the exported ABI stable for C, Cython and Python callers.
+// If you need alternate precision or SIMD experiments, use the native Zig
+// entry points rather than this public C interface.
+// --------------------------------------------------------------------------
+comptime {
+    if (buildconfig.default_precision != f64) {
+        @compileError("The public Riley C ABI must be built with f64.");
+    }
+    if (buildconfig.default_simd != .on) {
+        @compileError("The public Riley C ABI must be built with SIMD on.");
+    }
+}
+
 const error_buf_len: usize = 512;
 const default_image_save_opts = [_]iio.ImageSaveOpts{
     .{
@@ -110,6 +130,7 @@ pub const CCameraInput = extern struct {
     distortion_poly_inverse_u: [10]F,
     distortion_poly_inverse_v: [10]F,
     coord_sys: u32,
+    subpixel_center_map: u32,
     psf_type: u32,
     psf_sigma_x: F,
     psf_sigma_y: F,
@@ -125,11 +146,71 @@ pub const CFuncShaderParams = extern struct {
     coord_offset_1: F,
     output_scale: F,
     output_offset: F,
+    constant_value: F,
+    constant_value_rgb_0: F,
+    constant_value_rgb_1: F,
+    constant_value_rgb_2: F,
+    linear_coeff_0: F,
+    linear_coeff_1: F,
+    linear_coeff_2: F,
+    linear_coeff_rgb_00: F,
+    linear_coeff_rgb_01: F,
+    linear_coeff_rgb_02: F,
+    linear_coeff_rgb_10: F,
+    linear_coeff_rgb_11: F,
+    linear_coeff_rgb_12: F,
+    linear_coeff_rgb_20: F,
+    linear_coeff_rgb_21: F,
+    linear_coeff_rgb_22: F,
+    quadratic_coeff_0: F,
+    quadratic_coeff_1: F,
+    quadratic_coeff_2: F,
+    quadratic_coeff_3: F,
+    quadratic_coeff_4: F,
+    quadratic_coeff_5: F,
+    quadratic_coeff_rgb_00: F,
+    quadratic_coeff_rgb_01: F,
+    quadratic_coeff_rgb_02: F,
+    quadratic_coeff_rgb_03: F,
+    quadratic_coeff_rgb_04: F,
+    quadratic_coeff_rgb_05: F,
+    quadratic_coeff_rgb_10: F,
+    quadratic_coeff_rgb_11: F,
+    quadratic_coeff_rgb_12: F,
+    quadratic_coeff_rgb_13: F,
+    quadratic_coeff_rgb_14: F,
+    quadratic_coeff_rgb_15: F,
+    quadratic_coeff_rgb_20: F,
+    quadratic_coeff_rgb_21: F,
+    quadratic_coeff_rgb_22: F,
+    quadratic_coeff_rgb_23: F,
+    quadratic_coeff_rgb_24: F,
+    quadratic_coeff_rgb_25: F,
     wave_num_scalar_0: F,
     wave_num_scalar_1: F,
     wave_num_rgb_0: F,
     wave_num_rgb_1: F,
     wave_num_rgb_2: F,
+    sinusoidal_bias: F,
+    sinusoidal_amp_0: F,
+    sinusoidal_amp_1: F,
+    sinusoidal_bias_rgb_0: F,
+    sinusoidal_bias_rgb_1: F,
+    sinusoidal_bias_rgb_2: F,
+    sinusoidal_amp_rgb_0: F,
+    sinusoidal_amp_rgb_1: F,
+    sinusoidal_amp_rgb_2: F,
+    checker_level_0: F,
+    checker_level_1: F,
+    checker_smooth_frequency: F,
+    lambertian_coeff_0: F,
+    lambertian_coeff_1: F,
+    lambertian_coeff_rgb_00: F,
+    lambertian_coeff_rgb_01: F,
+    lambertian_coeff_rgb_10: F,
+    lambertian_coeff_rgb_11: F,
+    lambertian_coeff_rgb_20: F,
+    lambertian_coeff_rgb_21: F,
     eggbox_mean: F,
     eggbox_contrast: F,
     eggbox_pitch_0: F,
@@ -174,18 +255,34 @@ pub const CRasterConfig = extern struct {
     max_raster_workers_per_job: u16,
     save_strategy: u32,
     image_mode: u32,
-    subpixel_center_map: u32,
+    hull_mode: u32,
+    newton_seed_mode: u32,
+    newton_seed_reuse: u32,
     report: u32,
     tile_size_min: u16,
     tile_size_max: u16,
     background_value: F,
     disk_save_overlap: u8,
     tile_size_override: u16,
+    save_frame_buffer_count: usize,
     save_format: u32,
     save_bits: u32,
     save_scaling: u32,
     save_scaling_min: F,
     save_scaling_max: F,
+    full_stats_save_solver_csv: u8,
+    full_stats_save_iteration_map: u8,
+    full_stats_save_xi_map: u8,
+    full_stats_save_eta_map: u8,
+    full_stats_save_converged_map: u8,
+    full_stats_save_jacobian_det_map: u8,
+    full_stats_save_tile_timing_map: u8,
+    full_stats_save_tile_density_map: u8,
+    full_stats_save_tile_occupancy_map: u8,
+    full_stats_save_depth_map: u8,
+    full_stats_save_earlyout_map: u8,
+    full_stats_save_pixel_occupancy_map: u8,
+    full_stats_save_normals_map: u8,
 };
 
 const MeshInputBuilt = struct {
@@ -324,6 +421,7 @@ fn cMutSlice(
 fn meshTypeFromC(mesh_type: u32) !gk.MeshType {
     return switch (mesh_type) {
         @intFromEnum(gk.MeshType.tri3) => .tri3,
+        @intFromEnum(gk.MeshType.tri3opt) => .tri3opt,
         @intFromEnum(gk.MeshType.tri6) => .tri6,
         @intFromEnum(gk.MeshType.quad4ibi) => .quad4ibi,
         @intFromEnum(gk.MeshType.quad4newton) => .quad4newton,
@@ -380,14 +478,41 @@ fn reportModeFromC(report_mode: u32) !riley.ReportMode {
     };
 }
 
-fn subpxCenterMapFromC(
-    subpx_map: u32,
-) !cam.SubPixelCenterMap {
+fn subpxCenterMapFromC(subpx_map: u32) !cam.SubPixelCenterMap {
     return switch (subpx_map) {
         @intFromEnum(cam.SubPixelCenterMap.full_in_mem) => .full_in_mem,
         @intFromEnum(cam.SubPixelCenterMap.per_tile) => .per_tile,
         @intFromEnum(cam.SubPixelCenterMap.affine_jac) => .affine_jac,
         else => error.InvalidSubPixelCenterMap,
+    };
+}
+
+fn hullModeFromC(hull_mode: u32) !rastcfg.HullMode {
+    return switch (hull_mode) {
+        @intFromEnum(rastcfg.HullMode.off) => .off,
+        @intFromEnum(rastcfg.HullMode.on_no_fallback) => .on_no_fallback,
+        @intFromEnum(rastcfg.HullMode.on_convex_fallback) => .on_convex_fallback,
+        else => error.InvalidHullMode,
+    };
+}
+
+fn newtonSeedModeFromC(
+    seed_mode: u32,
+) !rastcfg.NewtonSeedMode {
+    return switch (seed_mode) {
+        @intFromEnum(rastcfg.NewtonSeedMode.centroid) => .centroid,
+        @intFromEnum(rastcfg.NewtonSeedMode.hull) => .hull,
+        else => error.InvalidNewtonSeedMode,
+    };
+}
+
+fn newtonSeedReuseFromC(
+    seed_reuse: u32,
+) !rastcfg.NewtonSeedReuse {
+    return switch (seed_reuse) {
+        @intFromEnum(rastcfg.NewtonSeedReuse.off) => .off,
+        @intFromEnum(rastcfg.NewtonSeedReuse.last_converged) => .last_converged,
+        else => error.InvalidNewtonSeedReuse,
     };
 }
 
@@ -604,14 +729,77 @@ fn funcShaderParamsFromC(
         .settings = switch (builtin) {
             .constant => .{
                 .constant = .{
-                    .value = 0.5,
+                    .value = in_params.constant_value,
+                    .value_rgb = .{
+                        in_params.constant_value_rgb_0,
+                        in_params.constant_value_rgb_1,
+                        in_params.constant_value_rgb_2,
+                    },
                 },
             },
             .linear => .{
-                .linear = .{},
+                .linear = .{
+                    .coeffs = .{
+                        in_params.linear_coeff_0,
+                        in_params.linear_coeff_1,
+                        in_params.linear_coeff_2,
+                    },
+                    .coeffs_rgb = .{
+                        .{
+                            in_params.linear_coeff_rgb_00,
+                            in_params.linear_coeff_rgb_01,
+                            in_params.linear_coeff_rgb_02,
+                        },
+                        .{
+                            in_params.linear_coeff_rgb_10,
+                            in_params.linear_coeff_rgb_11,
+                            in_params.linear_coeff_rgb_12,
+                        },
+                        .{
+                            in_params.linear_coeff_rgb_20,
+                            in_params.linear_coeff_rgb_21,
+                            in_params.linear_coeff_rgb_22,
+                        },
+                    },
+                },
             },
             .quadratic => .{
-                .quadratic = .{},
+                .quadratic = .{
+                    .coeffs = .{
+                        in_params.quadratic_coeff_0,
+                        in_params.quadratic_coeff_1,
+                        in_params.quadratic_coeff_2,
+                        in_params.quadratic_coeff_3,
+                        in_params.quadratic_coeff_4,
+                        in_params.quadratic_coeff_5,
+                    },
+                    .coeffs_rgb = .{
+                        .{
+                            in_params.quadratic_coeff_rgb_00,
+                            in_params.quadratic_coeff_rgb_01,
+                            in_params.quadratic_coeff_rgb_02,
+                            in_params.quadratic_coeff_rgb_03,
+                            in_params.quadratic_coeff_rgb_04,
+                            in_params.quadratic_coeff_rgb_05,
+                        },
+                        .{
+                            in_params.quadratic_coeff_rgb_10,
+                            in_params.quadratic_coeff_rgb_11,
+                            in_params.quadratic_coeff_rgb_12,
+                            in_params.quadratic_coeff_rgb_13,
+                            in_params.quadratic_coeff_rgb_14,
+                            in_params.quadratic_coeff_rgb_15,
+                        },
+                        .{
+                            in_params.quadratic_coeff_rgb_20,
+                            in_params.quadratic_coeff_rgb_21,
+                            in_params.quadratic_coeff_rgb_22,
+                            in_params.quadratic_coeff_rgb_23,
+                            in_params.quadratic_coeff_rgb_24,
+                            in_params.quadratic_coeff_rgb_25,
+                        },
+                    },
+                },
             },
             .sinusoidal => .{
                 .sinusoidal = .{
@@ -623,6 +811,21 @@ fn funcShaderParamsFromC(
                         in_params.wave_num_rgb_0,
                         in_params.wave_num_rgb_1,
                         in_params.wave_num_rgb_2,
+                    },
+                    .bias = in_params.sinusoidal_bias,
+                    .amplitudes = .{
+                        in_params.sinusoidal_amp_0,
+                        in_params.sinusoidal_amp_1,
+                    },
+                    .bias_rgb = .{
+                        in_params.sinusoidal_bias_rgb_0,
+                        in_params.sinusoidal_bias_rgb_1,
+                        in_params.sinusoidal_bias_rgb_2,
+                    },
+                    .amplitudes_rgb = .{
+                        in_params.sinusoidal_amp_rgb_0,
+                        in_params.sinusoidal_amp_rgb_1,
+                        in_params.sinusoidal_amp_rgb_2,
                     },
                 },
             },
@@ -637,16 +840,57 @@ fn funcShaderParamsFromC(
                         in_params.wave_num_rgb_1,
                         in_params.wave_num_rgb_2,
                     },
+                    .bias = in_params.sinusoidal_bias,
+                    .amplitudes = .{
+                        in_params.sinusoidal_amp_0,
+                        in_params.sinusoidal_amp_1,
+                    },
+                    .bias_rgb = .{
+                        in_params.sinusoidal_bias_rgb_0,
+                        in_params.sinusoidal_bias_rgb_1,
+                        in_params.sinusoidal_bias_rgb_2,
+                    },
+                    .amplitudes_rgb = .{
+                        in_params.sinusoidal_amp_rgb_0,
+                        in_params.sinusoidal_amp_rgb_1,
+                        in_params.sinusoidal_amp_rgb_2,
+                    },
                 },
             },
             .checker => .{
-                .checker = .{},
+                .checker = .{
+                    .levels = .{
+                        in_params.checker_level_0,
+                        in_params.checker_level_1,
+                    },
+                },
             },
             .checker_smooth => .{
-                .checker_smooth = .{},
+                .checker_smooth = .{
+                    .frequency = in_params.checker_smooth_frequency,
+                },
             },
             .lambertian_normal_z => .{
-                .lambertian_normal_z = .{},
+                .lambertian_normal_z = .{
+                    .coeffs = .{
+                        in_params.lambertian_coeff_0,
+                        in_params.lambertian_coeff_1,
+                    },
+                    .coeffs_rgb = .{
+                        .{
+                            in_params.lambertian_coeff_rgb_00,
+                            in_params.lambertian_coeff_rgb_01,
+                        },
+                        .{
+                            in_params.lambertian_coeff_rgb_10,
+                            in_params.lambertian_coeff_rgb_11,
+                        },
+                        .{
+                            in_params.lambertian_coeff_rgb_20,
+                            in_params.lambertian_coeff_rgb_21,
+                        },
+                    },
+                },
             },
             .eggbox => .{
                 .eggbox = .{
@@ -837,6 +1081,9 @@ fn buildCameraInput(
         .distortion = try distortionFromC(in_camera),
         .psf = try psfFromC(in_camera),
         .coord_sys = try coordSysFromC(in_camera.coord_sys),
+        .subpixel_center_map = try subpxCenterMapFromC(
+            in_camera.subpixel_center_map,
+        ),
     };
 }
 
@@ -1200,6 +1447,13 @@ fn buildRasterConfig(
         @max(@as(u16, 1), in_config.max_raster_workers_per_job);
     config.save_strategy = try saveStrategyFromC(in_config.save_strategy);
     config.image_mode = try imageModeFromC(in_config.image_mode);
+    config.hull_mode = try hullModeFromC(in_config.hull_mode);
+    config.newton_seed_mode = try newtonSeedModeFromC(
+        in_config.newton_seed_mode,
+    );
+    config.newton_seed_reuse = try newtonSeedReuseFromC(
+        in_config.newton_seed_reuse,
+    );
     config.report = try reportModeFromC(in_config.report);
     config.tile_size_min = if (in_config.tile_size_min == 0)
         config.tile_size_min
@@ -1215,6 +1469,9 @@ fn buildRasterConfig(
         null
     else
         in_config.tile_size_override;
+    if (in_config.save_frame_buffer_count != 0) {
+        config.save_frame_buffer_count = in_config.save_frame_buffer_count;
+    }
 
     const save_opts = try allocator.alloc(iio.ImageSaveOpts, 1);
     save_opts[0] = .{
@@ -1230,6 +1487,21 @@ fn buildRasterConfig(
         ),
     };
     config.image_save_opts = save_opts;
+    config.full_stats_opts = .{
+        .save_solver_csv = in_config.full_stats_save_solver_csv != 0,
+        .save_iteration_map = in_config.full_stats_save_iteration_map != 0,
+        .save_xi_map = in_config.full_stats_save_xi_map != 0,
+        .save_eta_map = in_config.full_stats_save_eta_map != 0,
+        .save_converged_map = in_config.full_stats_save_converged_map != 0,
+        .save_jacobian_det_map = in_config.full_stats_save_jacobian_det_map != 0,
+        .save_tile_timing_map = in_config.full_stats_save_tile_timing_map != 0,
+        .save_tile_density_map = in_config.full_stats_save_tile_density_map != 0,
+        .save_tile_occupancy_map = in_config.full_stats_save_tile_occupancy_map != 0,
+        .save_depth_map = in_config.full_stats_save_depth_map != 0,
+        .save_earlyout_map = in_config.full_stats_save_earlyout_map != 0,
+        .save_pixel_occupancy_map = in_config.full_stats_save_pixel_occupancy_map != 0,
+        .save_normals_map = in_config.full_stats_save_normals_map != 0,
+    };
 
     return config;
 }
@@ -1369,6 +1641,7 @@ fn cameraInputToC(in_camera: cam.CameraInput) CCameraInput {
         .distortion_poly_inverse_u = [_]F{0.0} ** 10,
         .distortion_poly_inverse_v = [_]F{0.0} ** 10,
         .coord_sys = @intFromEnum(in_camera.coord_sys),
+        .subpixel_center_map = @intFromEnum(in_camera.subpixel_center_map),
         .psf_type = 0,
         .psf_sigma_x = 0.0,
         .psf_sigma_y = 0.0,
@@ -1515,11 +1788,6 @@ fn rasterSceneInternal(
     defer allocator.free(camera_inputs);
 
     const raster_config = try buildRasterConfig(allocator, in_config);
-
-    const spx_map = try subpxCenterMapFromC(in_config.subpixel_center_map);
-    for (camera_inputs) |*cam_in| {
-        cam_in.subpixel_center_map = spx_map;
-    }
 
     var image_arr_opt: ?ndarray.NDArray(F) = null;
     if (out_image) |image_buffer| {
@@ -1714,13 +1982,6 @@ pub export fn rileyCalcOutputDimsScene(
         setLastError(err);
         return 1;
     };
-    const spx_map = subpxCenterMapFromC(in_config.subpixel_center_map) catch |err| {
-        setLastError(err);
-        return 1;
-    };
-    for (camera_inputs) |*cam_in| {
-        cam_in.subpixel_center_map = spx_map;
-    }
 
     const raster_config = buildRasterConfig(aa, in_config) catch |err| {
         setLastError(err);

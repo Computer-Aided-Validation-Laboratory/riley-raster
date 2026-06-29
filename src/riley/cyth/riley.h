@@ -4,6 +4,16 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * Public Riley C ABI Contract
+ *
+ * The public Riley C ABI is fixed to the production Riley build:
+ * - precision: f64
+ * - SIMD: on
+ *
+ * This keeps the exported ABI stable for C, Cython and Python callers.
+ */
+
 typedef struct c_vec2_u32 {
     uint32_t x;
     uint32_t y;
@@ -77,6 +87,7 @@ typedef struct c_camera_input {
     double distortion_poly_inverse_u[10];
     double distortion_poly_inverse_v[10];
     uint32_t coord_sys;
+    uint32_t subpixel_center_map;
     uint32_t psf_type;
     double psf_sigma_x;
     double psf_sigma_y;
@@ -92,11 +103,71 @@ typedef struct c_func_shader_params {
     double coord_offset_1;
     double output_scale;
     double output_offset;
+    double constant_value;
+    double constant_value_rgb_0;
+    double constant_value_rgb_1;
+    double constant_value_rgb_2;
+    double linear_coeff_0;
+    double linear_coeff_1;
+    double linear_coeff_2;
+    double linear_coeff_rgb_00;
+    double linear_coeff_rgb_01;
+    double linear_coeff_rgb_02;
+    double linear_coeff_rgb_10;
+    double linear_coeff_rgb_11;
+    double linear_coeff_rgb_12;
+    double linear_coeff_rgb_20;
+    double linear_coeff_rgb_21;
+    double linear_coeff_rgb_22;
+    double quadratic_coeff_0;
+    double quadratic_coeff_1;
+    double quadratic_coeff_2;
+    double quadratic_coeff_3;
+    double quadratic_coeff_4;
+    double quadratic_coeff_5;
+    double quadratic_coeff_rgb_00;
+    double quadratic_coeff_rgb_01;
+    double quadratic_coeff_rgb_02;
+    double quadratic_coeff_rgb_03;
+    double quadratic_coeff_rgb_04;
+    double quadratic_coeff_rgb_05;
+    double quadratic_coeff_rgb_10;
+    double quadratic_coeff_rgb_11;
+    double quadratic_coeff_rgb_12;
+    double quadratic_coeff_rgb_13;
+    double quadratic_coeff_rgb_14;
+    double quadratic_coeff_rgb_15;
+    double quadratic_coeff_rgb_20;
+    double quadratic_coeff_rgb_21;
+    double quadratic_coeff_rgb_22;
+    double quadratic_coeff_rgb_23;
+    double quadratic_coeff_rgb_24;
+    double quadratic_coeff_rgb_25;
     double wave_num_scalar_0;
     double wave_num_scalar_1;
     double wave_num_rgb_0;
     double wave_num_rgb_1;
     double wave_num_rgb_2;
+    double sinusoidal_bias;
+    double sinusoidal_amp_0;
+    double sinusoidal_amp_1;
+    double sinusoidal_bias_rgb_0;
+    double sinusoidal_bias_rgb_1;
+    double sinusoidal_bias_rgb_2;
+    double sinusoidal_amp_rgb_0;
+    double sinusoidal_amp_rgb_1;
+    double sinusoidal_amp_rgb_2;
+    double checker_level_0;
+    double checker_level_1;
+    double checker_smooth_frequency;
+    double lambertian_coeff_0;
+    double lambertian_coeff_1;
+    double lambertian_coeff_rgb_00;
+    double lambertian_coeff_rgb_01;
+    double lambertian_coeff_rgb_10;
+    double lambertian_coeff_rgb_11;
+    double lambertian_coeff_rgb_20;
+    double lambertian_coeff_rgb_21;
     double eggbox_mean;
     double eggbox_contrast;
     double eggbox_pitch_0;
@@ -142,18 +213,34 @@ typedef struct c_raster_config {
     uint16_t max_raster_workers_per_job;
     uint32_t save_strategy;
     uint32_t image_mode;
-    uint32_t subpixel_center_map;
+    uint32_t hull_mode;
+    uint32_t newton_seed_mode;
+    uint32_t newton_seed_reuse;
     uint32_t report;
     uint16_t tile_size_min;
     uint16_t tile_size_max;
     double background_value;
     uint8_t disk_save_overlap;
     uint16_t tile_size_override;
+    size_t save_frame_buffer_count;
     uint32_t save_format;
     uint32_t save_bits;
     uint32_t save_scaling;
     double save_scaling_min;
     double save_scaling_max;
+    uint8_t full_stats_save_solver_csv;
+    uint8_t full_stats_save_iteration_map;
+    uint8_t full_stats_save_xi_map;
+    uint8_t full_stats_save_eta_map;
+    uint8_t full_stats_save_converged_map;
+    uint8_t full_stats_save_jacobian_det_map;
+    uint8_t full_stats_save_tile_timing_map;
+    uint8_t full_stats_save_tile_density_map;
+    uint8_t full_stats_save_tile_occupancy_map;
+    uint8_t full_stats_save_depth_map;
+    uint8_t full_stats_save_earlyout_map;
+    uint8_t full_stats_save_pixel_occupancy_map;
+    uint8_t full_stats_save_normals_map;
 } CRasterConfig;
 
 size_t rileyGetLastError(uint8_t* out_buf, size_t out_buf_len);

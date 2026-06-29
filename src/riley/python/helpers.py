@@ -83,7 +83,7 @@ def load_texture(texture_path: str | Path) -> np.ndarray:
     with Image.open(Path(texture_path)) as image_in:
         image_grey = image_in.convert("L")
         image_u8 = np.asarray(image_grey, dtype=np.uint8)
-    return np.ascontiguousarray(image_u8, dtype=np.float64)
+    return np.ascontiguousarray(image_u8, dtype=np.uint8)
 
 
 def build_config(
@@ -111,6 +111,11 @@ def build_config(
         max_raster_workers_per_job=workers_per_group,
         save_strategy=save_strategy,
         image_mode=0,  # grey
-        subpixel_center_map=1,  # per_tile
+        hull_mode=1,  # on_no_fallback
+        newton_seed_mode=0,  # centroid
+        newton_seed_reuse=0,  # off
         report=1,  # bench
+        save_format=3,  # bmp
+        save_bits=8,
+        save_scaling=1,  # auto
     )
