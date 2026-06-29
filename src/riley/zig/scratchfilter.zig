@@ -29,19 +29,9 @@ pub fn resolveScratchDirect(
     touched_max_x: []const usize,
     image_out_arr: *NDArray(F),
 ) void {
-    const dummy_geom = ScratchTileGeometry{
-        .scratch_w_px = tile.x_px_max - tile.x_px_min,
-        .scratch_h_px = tile.y_px_max - tile.y_px_min,
-        .scratch_w_subpx = tile.x_px_max - tile.x_px_min,
-        .scratch_h_subpx = tile.y_px_max - tile.y_px_min,
-        .core_w_px = tile.x_px_max - tile.x_px_min,
-        .core_h_px = tile.y_px_max - tile.y_px_min,
-        .core_start_x_subpx = 0,
-        .core_start_y_subpx = 0,
-    };
     resolveScratchDirectCore(
         tile,
-        dummy_geom,
+        ScratchTileGeometry.initCoreOnly(tile, 1),
         spx_tile_size,
         fields_num,
         spx_image_scratch,
@@ -89,19 +79,9 @@ pub fn averageScratch(
     touched_max_x: []const usize,
     image_out_arr: *NDArray(F),
 ) void {
-    const dummy_geom = ScratchTileGeometry{
-        .scratch_w_px = tile.x_px_max - tile.x_px_min,
-        .scratch_h_px = tile.y_px_max - tile.y_px_min,
-        .scratch_w_subpx = (tile.x_px_max - tile.x_px_min) * sub_samp,
-        .scratch_h_subpx = (tile.y_px_max - tile.y_px_min) * sub_samp,
-        .core_w_px = tile.x_px_max - tile.x_px_min,
-        .core_h_px = tile.y_px_max - tile.y_px_min,
-        .core_start_x_subpx = 0,
-        .core_start_y_subpx = 0,
-    };
     averageScratchCore(
         tile,
-        dummy_geom,
+        ScratchTileGeometry.initCoreOnly(tile, sub_samp),
         sub_samp,
         spx_tile_size,
         fields_num,
@@ -257,121 +237,26 @@ pub fn resolveTileWithPSF(
     touched_max_x: []const usize,
     image_out_arr: *NDArray(F),
 ) void {
-    switch (prepared_psf.mode) {
-        .identity_fast => {
-            if (sub_samp > 1) {
-                averageScratchCore(
-                    tile,
-                    scratch_geom,
-                    sub_samp,
-                    spx_stride,
-                    fields_num,
-                    spx_image_scratch,
-                    touched_min_x,
-                    touched_max_x,
-                    0,
-                    0,
-                    image_out_arr,
-                );
-            } else {
-                resolveScratchDirectCore(
-                    tile,
-                    scratch_geom,
-                    spx_stride,
-                    fields_num,
-                    spx_image_scratch,
-                    touched_min_x,
-                    touched_max_x,
-                    0,
-                    0,
-                    image_out_arr,
-                );
-            }
-        },
-        .separable => {
-            filterScratchSeparable(
-                fields_num,
-                background_value,
-                prepared_psf,
-                scratch_geom,
-                sub_samp,
-                spx_stride,
-                spx_image_scratch,
-                filter_tmp,
-                spx_image_scratch,
-                touched_min_x,
-                touched_max_x,
-            );
-            if (sub_samp > 1) {
-                averageScratchCore(
-                    tile,
-                    scratch_geom,
-                    sub_samp,
-                    spx_stride,
-                    fields_num,
-                    spx_image_scratch,
-                    touched_min_x,
-                    touched_max_x,
-                    prepared_psf.radius_x_subpx,
-                    prepared_psf.radius_y_subpx,
-                    image_out_arr,
-                );
-            } else {
-                resolveScratchDirectCore(
-                    tile,
-                    scratch_geom,
-                    spx_stride,
-                    fields_num,
-                    spx_image_scratch,
-                    touched_min_x,
-                    touched_max_x,
-                    prepared_psf.radius_x_subpx,
-                    prepared_psf.radius_y_subpx,
-                    image_out_arr,
-                );
-            }
-        },
-        .nonseparable => {
-            filterScratchNonSeparable(
-                fields_num,
-                background_value,
-                prepared_psf,
-                scratch_geom,
-                sub_samp,
-                spx_stride,
-                spx_image_scratch,
-                filter_tmp,
-                touched_min_x,
-                touched_max_x,
-            );
-            if (sub_samp > 1) {
-                averageScratchCore(
-                    tile,
-                    scratch_geom,
-                    sub_samp,
-                    spx_stride,
-                    fields_num,
-                    filter_tmp,
-                    touched_min_x,
-                    touched_max_x,
-                    prepared_psf.radius_x_subpx,
-                    prepared_psf.radius_y_subpx,
-                    image_out_arr,
-                );
-            } else {
-                resolveScratchDirectCore(
-                    tile,
-                    scratch_geom,
-                    spx_stride,
-                    fields_num,
-                    filter_tmp,
-                    touched_min_x,
-                    touched_max_x,
-                    prepared_psf.radius_x_subpx,
-                    prepared_psf.radius_y_subpx,
-                    image_out_arr,
-                );
-            }
-        },
-    }
+    common.resolveTileWithPSFCore(
+        @TypeOf(resolveScratchDirectCore),
+        @TypeOf(averageScratchCore),
+        @TypeOf(filterScratchSeparable),
+        @TypeOf(filterScratchNonSeparable),
+        resolveScratchDirectCore,
+        averageScratchCore,
+        filterScratchSeparable,
+        filterScratchNonSeparable,
+        tile,
+        sub_samp,
+        spx_stride,
+        fields_num,
+        background_value,
+        prepared_psf,
+        scratch_geom,
+        spx_image_scratch,
+        filter_tmp,
+        touched_min_x,
+        touched_max_x,
+        image_out_arr,
+    );
 }

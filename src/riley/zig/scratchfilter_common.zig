@@ -54,6 +54,24 @@ pub const ScratchTileGeometry = struct {
             )) * sub_sample,
         };
     }
+
+    pub fn initCoreOnly(
+        tile: rops.ActiveTile,
+        sub_sample: usize,
+    ) ScratchTileGeometry {
+        const core_w_px = @as(usize, tile.x_px_max - tile.x_px_min);
+        const core_h_px = @as(usize, tile.y_px_max - tile.y_px_min);
+        return .{
+            .core_w_px = core_w_px,
+            .core_h_px = core_h_px,
+            .scratch_w_px = core_w_px,
+            .scratch_h_px = core_h_px,
+            .scratch_w_subpx = core_w_px * sub_sample,
+            .scratch_h_subpx = core_h_px * sub_sample,
+            .core_start_x_subpx = 0,
+            .core_start_y_subpx = 0,
+        };
+    }
 };
 
 pub const FrameImageWriter = struct {
@@ -127,4 +145,145 @@ pub fn sampleScratchOrBackground(
     const flat_idx = @as(usize, @intCast(y)) * spx_stride +
         @as(usize, @intCast(x));
     return getScratchField(src, flat_idx, field_idx);
+}
+
+pub fn resolveTileWithPSFCore(
+    comptime ResolveDirectFn: type,
+    comptime AverageFn: type,
+    comptime FilterSeparableFn: type,
+    comptime FilterNonSeparableFn: type,
+    resolve_direct_fn: ResolveDirectFn,
+    average_fn: AverageFn,
+    filter_separable_fn: FilterSeparableFn,
+    filter_nonseparable_fn: FilterNonSeparableFn,
+    tile: rops.ActiveTile,
+    sub_samp: usize,
+    spx_stride: usize,
+    fields_num: u8,
+    background_value: F,
+    prepared_psf: @import("camera.zig").PreparedPSF,
+    scratch_geom: ScratchTileGeometry,
+    spx_image_scratch: *MatSlice(F),
+    filter_tmp: *MatSlice(F),
+    touched_min_x: []const usize,
+    touched_max_x: []const usize,
+    image_out_arr: *NDArray(F),
+) void {
+    switch (prepared_psf.mode) {
+        .identity_fast => {
+            if (sub_samp > 1) {
+                average_fn(
+                    tile,
+                    scratch_geom,
+                    sub_samp,
+                    spx_stride,
+                    fields_num,
+                    spx_image_scratch,
+                    touched_min_x,
+                    touched_max_x,
+                    0,
+                    0,
+                    image_out_arr,
+                );
+            } else {
+                resolve_direct_fn(
+                    tile,
+                    scratch_geom,
+                    spx_stride,
+                    fields_num,
+                    spx_image_scratch,
+                    touched_min_x,
+                    touched_max_x,
+                    0,
+                    0,
+                    image_out_arr,
+                );
+            }
+        },
+        .separable => {
+            filter_separable_fn(
+                fields_num,
+                background_value,
+                prepared_psf,
+                scratch_geom,
+                sub_samp,
+                spx_stride,
+                spx_image_scratch,
+                filter_tmp,
+                spx_image_scratch,
+                touched_min_x,
+                touched_max_x,
+            );
+            if (sub_samp > 1) {
+                average_fn(
+                    tile,
+                    scratch_geom,
+                    sub_samp,
+                    spx_stride,
+                    fields_num,
+                    spx_image_scratch,
+                    touched_min_x,
+                    touched_max_x,
+                    prepared_psf.radius_x_subpx,
+                    prepared_psf.radius_y_subpx,
+                    image_out_arr,
+                );
+            } else {
+                resolve_direct_fn(
+                    tile,
+                    scratch_geom,
+                    spx_stride,
+                    fields_num,
+                    spx_image_scratch,
+                    touched_min_x,
+                    touched_max_x,
+                    prepared_psf.radius_x_subpx,
+                    prepared_psf.radius_y_subpx,
+                    image_out_arr,
+                );
+            }
+        },
+        .nonseparable => {
+            filter_nonseparable_fn(
+                fields_num,
+                background_value,
+                prepared_psf,
+                scratch_geom,
+                sub_samp,
+                spx_stride,
+                spx_image_scratch,
+                filter_tmp,
+                touched_min_x,
+                touched_max_x,
+            );
+            if (sub_samp > 1) {
+                average_fn(
+                    tile,
+                    scratch_geom,
+                    sub_samp,
+                    spx_stride,
+                    fields_num,
+                    filter_tmp,
+                    touched_min_x,
+                    touched_max_x,
+                    prepared_psf.radius_x_subpx,
+                    prepared_psf.radius_y_subpx,
+                    image_out_arr,
+                );
+            } else {
+                resolve_direct_fn(
+                    tile,
+                    scratch_geom,
+                    spx_stride,
+                    fields_num,
+                    filter_tmp,
+                    touched_min_x,
+                    touched_max_x,
+                    prepared_psf.radius_x_subpx,
+                    prepared_psf.radius_y_subpx,
+                    image_out_arr,
+                );
+            }
+        },
+    }
 }
