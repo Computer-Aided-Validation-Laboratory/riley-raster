@@ -73,61 +73,6 @@ pub fn build(b: *std.Build) void {
             .description = "Run the benchmark regression test suite",
             .source_path = "src/test_bench.zig",
         },
-        .{
-            .step_name = "test-gold-edge",
-            .description = "Run the edge gold regression test suite",
-            .source_path = "src/tests/test_gold_edge.zig",
-        },
-        .{
-            .step_name = "test-gold-multicamera",
-            .description = "Run the multicamera gold regression test suite",
-            .source_path = "src/tests/test_gold_multicamera.zig",
-        },
-        .{
-            .step_name = "test-gold-multimesh",
-            .description = "Run the multimesh gold regression test suite",
-            .source_path = "src/tests/test_gold_multimesh.zig",
-        },
-        .{
-            .step_name = "test-gold-psf",
-            .description = "Run the PSF gold regression test suite",
-            .source_path = "src/tests/test_gold_psf.zig",
-        },
-        .{
-            .step_name = "test-gold-simple",
-            .description = "Run the simple gold regression test suite",
-            .source_path = "src/tests/test_gold_simple.zig",
-        },
-        .{
-            .step_name = "test-gold-small",
-            .description = "Run the small gold regression test suite",
-            .source_path = "src/tests/test_gold_small.zig",
-        },
-        .{
-            .step_name = "test-gold-sphere",
-            .description = "Run the sphere gold regression test suite",
-            .source_path = "src/tests/test_gold_sphere.zig",
-        },
-        .{
-            .step_name = "test-gold-ssaa",
-            .description = "Run the SSAA gold regression test suite",
-            .source_path = "src/tests/test_gold_ssaa.zig",
-        },
-        .{
-            .step_name = "test-hull",
-            .description = "Run the hull gold regression test suite",
-            .source_path = "src/tests/test_hull.zig",
-        },
-        .{
-            .step_name = "test-nodal-normals",
-            .description = "Run the nodal normals test suite",
-            .source_path = "src/tests/test_nodal_normals.zig",
-        },
-        .{
-            .step_name = "test-texfunc",
-            .description = "Run the texfunc gold regression test suite",
-            .source_path = "src/tests/test_texfunc.zig",
-        },
     };
 
     for (tests) |entry| {
@@ -201,66 +146,6 @@ pub fn build(b: *std.Build) void {
             .description = "Generate the MIN gold datasets",
             .source_path = "src/gen_gold_min.zig",
         },
-        .{
-            .step_name = "gen-gold-small",
-            .description = "Generate the small gold datasets",
-            .source_path = "src/gengold/gen_gold_small.zig",
-        },
-        .{
-            .step_name = "gen-gold-simple",
-            .description = "Generate the simple gold datasets",
-            .source_path = "src/gengold/gen_gold_simple.zig",
-        },
-        .{
-            .step_name = "gen-gold-edge",
-            .description = "Generate the edge gold datasets",
-            .source_path = "src/gengold/gen_gold_edge.zig",
-        },
-        .{
-            .step_name = "gen-gold-multimesh",
-            .description = "Generate the multimesh gold datasets",
-            .source_path = "src/gengold/gen_gold_multimesh.zig",
-        },
-        .{
-            .step_name = "gen-gold-multicamera",
-            .description = "Generate the multicamera gold datasets",
-            .source_path = "src/gengold/gen_gold_multicamera.zig",
-        },
-        .{
-            .step_name = "gen-gold-hull",
-            .description = "Generate the hull gold datasets",
-            .source_path = "src/gengold/gen_gold_hull.zig",
-        },
-        .{
-            .step_name = "gen-gold-fullscreen",
-            .description = "Generate the fullscreen gold datasets",
-            .source_path = "src/gengold/gen_gold_fullscreen.zig",
-        },
-        .{
-            .step_name = "gen-gold-bench-ssaa1",
-            .description = "Generate the SSAA=1 benchmark gold datasets",
-            .source_path = "src/gengold/gen_gold_bench_ssaa1.zig",
-        },
-        .{
-            .step_name = "gen-gold-sphere",
-            .description = "Generate the sphere gold datasets",
-            .source_path = "src/gengold/gen_gold_sphere.zig",
-        },
-        .{
-            .step_name = "gen-gold-texfunc",
-            .description = "Generate the texfunc gold datasets",
-            .source_path = "src/gengold/gen_gold_texfunc.zig",
-        },
-        .{
-            .step_name = "gen-gold-ssaa",
-            .description = "Generate the SSAA gold datasets",
-            .source_path = "src/gengold/gen_gold_ssaa.zig",
-        },
-        .{
-            .step_name = "gen-gold-psf",
-            .description = "Generate the PSF gold datasets",
-            .source_path = "src/gengold/gen_gold_psf.zig",
-        },
     };
 
     const gold_step = b.step("gen-gold", "Run all gold generation entrypoints");
@@ -280,11 +165,6 @@ pub fn build(b: *std.Build) void {
     }
 
     const benches = [_]RunEntry{
-        .{
-            .step_name = "bench-cam",
-            .description = "Run the camera benchmark",
-            .source_path = "src/dev_support/benchcam.zig",
-        },
         .{
             .step_name = "bench-dicuq",
             .description = "Run the DIC UQ benchmark",
@@ -319,11 +199,6 @@ pub fn build(b: *std.Build) void {
             .step_name = "bench-thread-geom",
             .description = "Run the threaded geom benchmark",
             .source_path = "src/bench_thread_geom.zig",
-        },
-        .{
-            .step_name = "bench-mem-dicuq",
-            .description = "Run the memory DIC UQ benchmark",
-            .source_path = "src/bench_mem_dicuq.zig",
         },
     };
 
