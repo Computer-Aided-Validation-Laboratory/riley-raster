@@ -60,21 +60,6 @@ or:
 zig build test-min -Doptimize=ReleaseSafe
 ```
 
-### Demos: Zig
-Run a Zig demo with:
-
-```shell
-zig run -O ReleaseFast ./src/demo_<CASE>.zig
-```
-
-or:
-
-```shell
-zig build demo-<CASE> -Doptimize=ReleaseFast
-```
-
-Zig demo output is written to `./out/demo-CASE/`.
-
 ## Getting Started: Python
 We provide Python bindings to the Riley C ABI through Cython, and publish a `riley-raster` package on PyPI.
 
@@ -114,25 +99,6 @@ python -m riley test
 ```
 
 The repo parity test inside `riley.pytests` compares Python demo output against Zig demo output. It runs when the repository assets are available from the current working directory and skips cleanly otherwise.
-
-### Demos: Python
-Run a packaged Python demo with:
-
-```shell
-python -m riley demo_sphere200
-python -m riley demo_rabbits
-python -m riley demo_dicuq
-python -m riley demo_dic_from_exodus
-python -m riley demo_stereocal
-```
-
-The compatibility wrappers in `./pyscripts/` still work, but the package entry point above is now the primary interface.
-
-Python demo output is written to:
-
-```text
-Path.cwd() / "out-riley-py" / "<demo-name>"
-```
 
 ## Capability Demonstration
 We include several demonstration scripts in `./src/` and Python equivalents in `./src/riley/pydemos/`.
