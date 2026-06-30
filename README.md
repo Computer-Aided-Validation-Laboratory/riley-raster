@@ -46,22 +46,8 @@ These are the quickest correctness checks and should be your first stop before r
 Only the main production-path min gold is kept in the repository by default, so the min suite is intended primarily for `f64` with SIMD enabled. The min suite also requires `.simd = .on`; the scalar min orchestration is not implemented.
 
 For deeper test, gold-generation and benchmark workflows, see [dev/README.md](./dev/README.md).
-
-### Tests: Zig
-Quick regression check:
-
-```shell
-zig test -O ReleaseSafe ./src/test_min.zig
-```
-
-or:
-
-```shell
-zig build test-min -Doptimize=ReleaseSafe
-```
-
 ## Getting Started: Python
-We provide Python bindings to the Riley C ABI through Cython, and publish a `riley-raster` package on PyPI.
+We provide Python bindings to the Riley C ABI through Cython, and publish a `riley-raster` package on PyPI. 
 
 Install from PyPI with:
 
@@ -71,21 +57,14 @@ pip install riley-raster
 
 This builds Riley from Zig source on your local machine, so installation can take a minute or two depending on hardware.
 
-To run the packaged Python tests, install `pytest` as well:
-
-```shell
-pip install pytest
-```
-
 For local development, clone the repository, create a virtual environment and install from source:
 
 ```shell
 pip install -e .
 ```
 
-The Python demos now live in `src/riley/pydemos/` and the Python tests live in `src/riley/pytests/`.
+Python demos live in `src/riley/pydemos/` and the Python tests live in `src/riley/pytests/`.
 
-### Tests: Python
 Run the packaged Python test suite with:
 
 ```shell
@@ -117,6 +96,13 @@ zig build demo-<CASE> -Doptimize=ReleaseFast
 
 where `CASE` is one of `sphere200`, `rabbits`, `dicuq`, or `stereocal`. Zig demo output is written to `./out/demo-CASE/`.
 
+Zig demo source on GitHub:
+
+- [`demo_sphere200.zig`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/demo_sphere200.zig)
+- [`demo_rabbits.zig`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/demo_rabbits.zig)
+- [`demo_dicuq.zig`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/demo_dicuq.zig)
+- [`demo_stereocal.zig`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/demo_stereocal.zig)
+
 In Python:
 
 ```shell
@@ -125,8 +111,16 @@ python -m riley demo_<CASE>
 
 Python demo output is written to `Path.cwd() / "out-riley-py" / "demo-CASE"`.
 
+Python demo source on GitHub:
+
+- [`demo_sphere200.py`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/riley/pydemos/demo_sphere200.py)
+- [`demo_rabbits.py`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/riley/pydemos/demo_rabbits.py)
+- [`demo_dicuq.py`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/riley/pydemos/demo_dicuq.py)
+- [`demo_dic_from_exodus.py`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/riley/pydemos/demo_dic_from_exodus.py)
+- [`demo_stereocal.py`](https://github.com/Computer-Aided-Validation-Laboratory/riley-raster/blob/main/src/riley/pydemos/demo_stereocal.py)
+
 ### Demo 1: Speckle Sphere
-For this demonstration we import a sphere mesh and apply a speckle pattern texture shader. This is a representative single-mesh, single-shader DIC UQ case.
+For this demonstration we import a sphere mesh and apply a speckle pattern texture shader. This is a representative single-mesh, single-shader case.
 
 ![fig_sphere](https://raw.githubusercontent.com/Computer-Aided-Validation-Laboratory/riley-raster/main/images/demo_sphere200.bmp)
 
