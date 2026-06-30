@@ -2,9 +2,12 @@ import subprocess
 import sys
 import shutil
 import platform
+import importlib.util
 from pathlib import Path
 from setuptools import setup, Extension
+from setuptools.command.build_py import build_py
 from setuptools.command.build_ext import build_ext
+from setuptools.command.egg_info import egg_info
 from Cython.Build import cythonize
 import numpy
 
@@ -63,11 +66,46 @@ def lib_link_aliases(
     return sorted(lib_names)
 
 #-------------------------------------------------------------------------------
+# Generated package data sync
+
+def ensure_python_package_data() -> None:
+    sync_script_path = (
+        PROJECT_ROOT / "scripts" / "sync_python_package_data.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "riley_sync_python_package_data",
+        sync_script_path,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(
+            f"Could not load sync script: {sync_script_path}",
+        )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.sync_python_package_data()
+
+
+class RileyEggInfo(egg_info):
+
+    def run(self):
+        ensure_python_package_data()
+        super().run()
+
+
+class RileyBuildPy(build_py):
+
+    def run(self):
+        ensure_python_package_data()
+        super().run()
+
+
+#-------------------------------------------------------------------------------
 # Custom Multi-Build
 
 class MultiBuildExt(build_ext):
 
     def run(self):
+        ensure_python_package_data()
         print(80*"=")
         print("MultiBuildExt: run pre-process")
         print(80*"=")
@@ -395,7 +433,11 @@ ext_modules = [ext_zig] + cythonize(ext_cython,annotate=True)
 setup(
     name=DIST_NAME,
     ext_modules=ext_modules,
-    cmdclass={"build_ext": MultiBuildExt},
+    cmdclass={
+        "build_ext": MultiBuildExt,
+        "build_py": RileyBuildPy,
+        "egg_info": RileyEggInfo,
+    },
     zip_safe=False,
     package_data={
         "riley": [f"*{PLATFORM_INFO['lib_ext']}"],

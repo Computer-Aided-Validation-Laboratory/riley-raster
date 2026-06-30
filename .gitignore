@@ -73,6 +73,13 @@ perf/
 !texture/*.bmp
 !texture/*.tiff
 
+# Generated Python package demo data
+src/riley/data/bench/
+src/riley/data/calplate/
+src/riley/data/fe/
+src/riley/data/rabbits/
+src/riley/data/textures/
+
 # We need to keep the demo images for the README
 !images/*.bmp
 !images/*.tiff

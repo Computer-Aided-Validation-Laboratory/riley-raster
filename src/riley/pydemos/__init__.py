@@ -6,8 +6,10 @@
 #
 # Authors: scepticalrabbit (Lloyd Fletcher)
 # --------------------------------------------------------------------------
-from riley.pydemos.demo_dicuq import main
-
-
-if __name__ == "__main__":
-    main()
+__all__ = [
+    "demo_dic_from_exodus",
+    "demo_dicuq",
+    "demo_rabbits",
+    "demo_sphere200",
+    "demo_stereocal",
+]

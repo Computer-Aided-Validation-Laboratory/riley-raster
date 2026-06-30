@@ -47,6 +47,34 @@ Only the main production-path min gold is kept in the repository by default, so 
 
 For deeper test, gold-generation and benchmark workflows, see [dev/README.md](./dev/README.md).
 
+### Tests: Zig
+Quick regression check:
+
+```shell
+zig test -O ReleaseSafe ./src/test_min.zig
+```
+
+or:
+
+```shell
+zig build test-min -Doptimize=ReleaseSafe
+```
+
+### Demos: Zig
+Run a Zig demo with:
+
+```shell
+zig run -O ReleaseFast ./src/demo_<CASE>.zig
+```
+
+or:
+
+```shell
+zig build demo-<CASE> -Doptimize=ReleaseFast
+```
+
+Zig demo output is written to `./out/demo-CASE/`.
+
 ## Getting Started: Python
 We provide Python bindings to the Riley C ABI through Cython, and publish a `riley-raster` package on PyPI.
 
@@ -58,16 +86,56 @@ pip install riley-raster
 
 This builds Riley from Zig source on your local machine, so installation can take a minute or two depending on hardware.
 
+To run the packaged Python tests, install `pytest` as well:
+
+```shell
+pip install pytest
+```
+
 For local development, clone the repository, create a virtual environment and install from source:
 
 ```shell
 pip install -e .
 ```
 
-The Python demo scripts live in `./pyscripts/`.
+The Python demos now live in `src/riley/pydemos/` and the Python tests live in `src/riley/pytests/`.
+
+### Tests: Python
+Run the packaged Python test suite with:
+
+```shell
+python -m pytest --pyargs riley.pytests -s
+```
+
+or through Riley's module entry point:
+
+```shell
+python -m riley test
+```
+
+The repo parity test inside `riley.pytests` compares Python demo output against Zig demo output. It runs when the repository assets are available from the current working directory and skips cleanly otherwise.
+
+### Demos: Python
+Run a packaged Python demo with:
+
+```shell
+python -m riley demo_sphere200
+python -m riley demo_rabbits
+python -m riley demo_dicuq
+python -m riley demo_dic_from_exodus
+python -m riley demo_stereocal
+```
+
+The compatibility wrappers in `./pyscripts/` still work, but the package entry point above is now the primary interface.
+
+Python demo output is written to:
+
+```text
+Path.cwd() / "out-riley-py" / "<demo-name>"
+```
 
 ## Capability Demonstration
-We include several demonstration scripts in `./src/` and Python equivalents in `./pyscripts/`.
+We include several demonstration scripts in `./src/` and Python equivalents in `./src/riley/pydemos/`.
 
 In Zig:
 
@@ -86,10 +154,10 @@ where `CASE` is one of `sphere200`, `rabbits`, `dicuq`, or `stereocal`. Zig demo
 In Python:
 
 ```shell
-python ./pyscripts/demo_<CASE>.py
+python -m riley demo_<CASE>
 ```
 
-Python demo output is written to `./pyout/demo-CASE/`.
+Python demo output is written to `Path.cwd() / "out-riley-py" / "demo-CASE"`.
 
 ### Demo 1: Speckle Sphere
 For this demonstration we import a sphere mesh and apply a speckle pattern texture shader. This is a representative single-mesh, single-shader DIC UQ case.
@@ -122,11 +190,13 @@ Useful top-level locations:
 
 - `src/`: Zig demos, tests, benchmarks and the core Riley source
 - `src/riley/zig/`: core Zig implementation
-- `pyscripts/`: Python demos and parity test scripts
+- `src/riley/pydemos/`: packaged Python demos
+- `src/riley/pytests/`: packaged Python tests
+- `pyscripts/`: compatibility wrappers for the packaged Python demo/test entry points
 - `scripts/`: benchmark and performance orchestration scripts
 - `gold/`: gold reference renders
 - `out/`: Zig render and benchmark output
-- `pyout/`: Python render output
+- `out-riley-py/`: Python render output
 - `dev/README.md`: detailed developer testing and benchmark notes
 
 For a mathematical and architectural overview, see the engrXiv preprint: [Riley: A computational framework for higher-order finite element image synthesis applied to digital image correlation uncertainty quantification](https://engrxiv.org/preprint/view/7300/version/9460).

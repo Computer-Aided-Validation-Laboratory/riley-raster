@@ -15,11 +15,6 @@ from typing import Any
 import numpy as np
 from cython.cimports.libc.stdlib import free, malloc
 from cython.cimports.riley.cyth import riley as cr
-from riley.python.helpers import (
-    create_raster_config,
-    load_sim_csvs,
-    load_texture,
-)
 
 
 @dataclass(slots=True)
@@ -1256,7 +1251,6 @@ __all__ = [
     "NormalType",
     "GeometrySchedulingMode",
     "ImageMode",
-    "create_raster_config",
     "RasterConfig",
     "RenderMode",
     "ReportMode",
@@ -1272,8 +1266,6 @@ __all__ = [
     "TextureSampleMode",
     "PsfType",
     "ImageFormat",
-    "load_sim_csvs",
-    "load_texture",
     "load_camera",
     "load_stereo_pair",
     "pos_fill_frame_from_rot",

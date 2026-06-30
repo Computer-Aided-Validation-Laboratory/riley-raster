@@ -193,10 +193,24 @@ The current experiment groups are driven directly by constants in the script:
 If you want to change the study matrix, edit those constants first.
 
 ## Python Parity Check
-To compare the Python bindings against the Zig demo outputs:
+The packaged Python tests live in `src/riley/pytests/`.
+
+Run the full packaged Python test suite with:
 
 ```shell
-python ./pyscripts/test_riley.py
+python -m pytest --pyargs riley.pytests -s
+```
+
+or:
+
+```shell
+python -m riley test
+```
+
+To compare the Python bindings against the Zig demo outputs specifically:
+
+```shell
+python -m pytest --pyargs riley.pytests.test_riley -s
 ```
 
 To force a fresh Zig render instead of reusing cached demo BMPs:
@@ -204,6 +218,18 @@ To force a fresh Zig render instead of reusing cached demo BMPs:
 ```shell
 python ./pyscripts/test_riley.py --force-zig-render
 ```
+
+Run a packaged Python demo directly with:
+
+```shell
+python -m riley demo_sphere200
+python -m riley demo_rabbits
+python -m riley demo_dicuq
+python -m riley demo_dic_from_exodus
+python -m riley demo_stereocal
+```
+
+Python demo output is written to `Path.cwd() / "out-riley-py" / "<demo-name>"`.
 
 ## Notes
 - Plain `zig run` and `zig test` under `./src/` still use the default Riley path of `f64` with SIMD enabled.

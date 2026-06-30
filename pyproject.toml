@@ -30,3 +30,14 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+riley = [
+  "data/**/*",
+]
+
+[tool.setuptools.exclude-package-data]
+riley = [
+  "data/**/__pycache__/*",
+  "data/**/.DS_Store",
+]

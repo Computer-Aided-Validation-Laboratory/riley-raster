@@ -6,8 +6,15 @@
 #
 # Authors: scepticalrabbit (Lloyd Fletcher)
 # --------------------------------------------------------------------------
-from riley.pydemos.demo_dicuq import main
+from __future__ import annotations
+
+import shutil
+from pathlib import Path
 
 
-if __name__ == "__main__":
-    main()
+def make_demo_out_dir(case_name: str, *, clean: bool = True) -> Path:
+    out_dir = Path.cwd() / "out-riley-py" / case_name
+    if clean:
+        shutil.rmtree(out_dir, ignore_errors=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    return out_dir
