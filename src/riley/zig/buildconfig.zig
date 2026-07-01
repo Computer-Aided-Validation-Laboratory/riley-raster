@@ -8,39 +8,57 @@
 // --------------------------------------------------------------------------
 const std = @import("std");
 const root = @import("root");
-const local_build_options = @import("build_options.zig");
-
-pub const comptime_eval_branch_quota: comptime_int = 50000;
 
 const build_options = if (@hasDecl(root, "build_options"))
     root.build_options
 else
-    local_build_options;
+    struct {
+        pub const precision = "f64";
+        pub const simd = "on";
+        pub const newton_solver = "fast";
+        pub const simd_vector_width: comptime_int = 0;
+    };
 
-pub const default_precision = blk: {
-    if (std.mem.eql(u8, build_options.precision, "f32")) {
-        break :blk f32;
-    }
-    if (std.mem.eql(u8, build_options.precision, "f64")) {
-        break :blk f64;
-    }
-    @compileError("build_options.precision must be \"f32\" or \"f64\".");
+pub const comptime_eval_branch_quota: comptime_int = 50000;
+
+// -- Main Config -------------------------------------------------------------
+
+pub const Config = struct {
+    simd: SimdMode = default_simd,
+    newton_solver_mode: NewtonSolverMode = default_newton_solver_mode,
+    simd_vector_width: comptime_int = defaultSimdVectorWidthForPrecision(F),
+    max_nodal_fields: comptime_int = 8,
+    max_image_channels: comptime_int = 8,
+    raster_newton_iter_max: comptime_int = 10,
+    distortion_newton_iter_max: comptime_int = 15,
+    interp_lut_size: comptime_int = 1024,
+    save_frame_buffer_count: comptime_int = 3,
+    precision: type = F,
+    tolerance: Tolerance = defaultToleranceForPrecision(F),
 };
-pub const Scalar = default_precision;
+
+pub const default_precision = parsePrecision(build_options.precision);
+pub const F = default_precision;
+pub const Scalar = F;
+
+pub const default_simd = parseSimd(build_options.simd);
+pub const default_newton_solver_mode =
+    parseNewtonSolverMode(build_options.newton_solver);
+
+pub const config = configForPrecision(F);
+
+pub const SimdWidth = config.simd_vector_width;
+pub const SaveFrameBufferCount = config.save_frame_buffer_count;
+pub const NewtonMode = config.newton_solver_mode;
+pub const UseHullNewtonSeed = defaultNewtonSeedModeUsesHull(F);
+pub const UseLastConvergedNewtonSeedReuse =
+    defaultNewtonSeedReuseLastConverged(F);
+
+// -- Enums And Policy --------------------------------------------------------
 
 pub const SimdMode = enum {
     off,
     on,
-};
-
-pub const default_simd = blk: {
-    if (std.mem.eql(u8, build_options.simd, "on")) {
-        break :blk SimdMode.on;
-    }
-    if (std.mem.eql(u8, build_options.simd, "off")) {
-        break :blk SimdMode.off;
-    }
-    @compileError("build_options.simd must be \"on\" or \"off\".");
 };
 
 pub const SimdTextureInterpMode = enum {
@@ -52,31 +70,6 @@ pub const NewtonSolverMode = enum {
     fast,
     robust,
 };
-
-pub const default_newton_solver_mode = blk: {
-    if (std.mem.eql(u8, build_options.newton_solver, "fast")) {
-        break :blk NewtonSolverMode.fast;
-    }
-    if (std.mem.eql(u8, build_options.newton_solver, "robust")) {
-        break :blk NewtonSolverMode.robust;
-    }
-    @compileError(
-        "build_options.newton_solver must be \"fast\" or \"robust\".",
-    );
-};
-
-pub fn defaultNewtonSeedModeUsesHull(comptime precision: type) bool {
-    return switch (precision) {
-        f32 => true,
-        f64 => false,
-        else => @compileError("Only f32 and f64 precision are supported."),
-    };
-}
-
-pub fn defaultNewtonSeedReuseLastConverged(comptime precision: type) bool {
-    _ = precision;
-    return false;
-}
 
 pub const TextureSIMDPolicy = struct {
     pub fn resolve(
@@ -97,10 +90,83 @@ pub const TextureSIMDPolicy = struct {
     }
 };
 
-const build_simd_vector_width = if (@hasDecl(build_options, "simd_vector_width"))
-    build_options.simd_vector_width
-else
-    0;
+// -- Config Helpers ----------------------------------------------------------
+
+pub fn defaultNewtonSeedModeUsesHull(comptime precision: type) bool {
+    return switch (precision) {
+        f32 => true,
+        f64 => false,
+        else => @compileError("Only f32 and f64 precision are supported."),
+    };
+}
+
+pub fn defaultNewtonSeedReuseLastConverged(comptime precision: type) bool {
+    _ = precision;
+    return false;
+}
+
+pub fn defaultSimdVectorWidthForPrecision(comptime precision: type) comptime_int {
+    if (build_options.simd_vector_width > 0) {
+        return build_options.simd_vector_width;
+    }
+    return switch (precision) {
+        f32 => 16,
+        f64 => 8,
+        else => @compileError("Only f32 and f64 precision are supported."),
+    };
+}
+
+pub fn defaultToleranceForPrecision(comptime precision: type) Tolerance {
+    return switch (precision) {
+        f32 => tolerance_f32,
+        f64 => tolerance_f64,
+        else => @compileError("Only f32 and f64 precision are supported."),
+    };
+}
+
+pub fn configForPrecision(comptime precision: type) Config {
+    _ = defaultSimdVectorWidthForPrecision(precision);
+    return .{
+        .precision = precision,
+        .newton_solver_mode = default_newton_solver_mode,
+        .simd_vector_width = defaultSimdVectorWidthForPrecision(precision),
+        .tolerance = defaultToleranceForPrecision(precision),
+    };
+}
+
+fn parsePrecision(comptime precision: []const u8) type {
+    if (std.mem.eql(u8, precision, "f32")) {
+        return f32;
+    }
+    if (std.mem.eql(u8, precision, "f64")) {
+        return f64;
+    }
+    @compileError("build_options.precision must be \"f32\" or \"f64\".");
+}
+
+fn parseSimd(comptime simd: []const u8) SimdMode {
+    if (std.mem.eql(u8, simd, "on")) {
+        return .on;
+    }
+    if (std.mem.eql(u8, simd, "off")) {
+        return .off;
+    }
+    @compileError("build_options.simd must be \"on\" or \"off\".");
+}
+
+fn parseNewtonSolverMode(comptime newton_solver: []const u8) NewtonSolverMode {
+    if (std.mem.eql(u8, newton_solver, "fast")) {
+        return .fast;
+    }
+    if (std.mem.eql(u8, newton_solver, "robust")) {
+        return .robust;
+    }
+    @compileError(
+        "build_options.newton_solver must be \"fast\" or \"robust\".",
+    );
+}
+
+// -- Tolerances --------------------------------------------------------------
 
 pub const EdgeTolerance = struct {
     tri_weight_inclusion: Scalar = 1e-9,
@@ -186,49 +252,6 @@ pub const Tolerance = struct {
     legacy: LegacyTolerance = .{},
 };
 
-pub const Config = struct {
-    simd: SimdMode = default_simd,
-    newton_solver_mode: NewtonSolverMode = default_newton_solver_mode,
-    simd_vector_width: comptime_int = defaultSimdVectorWidthForPrecision(Scalar),
-    max_nodal_fields: comptime_int = 8,
-    max_image_channels: comptime_int = 8,
-    raster_newton_iter_max: comptime_int = 10,
-    distortion_newton_iter_max: comptime_int = 15,
-    interp_lut_size: comptime_int = 1024,
-    save_frame_buffer_count: comptime_int = 3,
-    precision: type = Scalar,
-    tolerance: Tolerance = defaultToleranceForPrecision(Scalar),
-};
-
-pub fn defaultSimdVectorWidthForPrecision(comptime precision: type) comptime_int {
-    if (build_simd_vector_width > 0) {
-        return build_simd_vector_width;
-    }
-    return switch (precision) {
-        f32 => 16,
-        f64 => 8,
-        else => @compileError("Only f32 and f64 precision are supported."),
-    };
-}
-
-pub fn defaultToleranceForPrecision(comptime precision: type) Tolerance {
-    return switch (precision) {
-        f32 => tolerance_f32,
-        f64 => tolerance_f64,
-        else => @compileError("Only f32 and f64 precision are supported."),
-    };
-}
-
-pub fn configForPrecision(comptime precision: type) Config {
-    _ = defaultSimdVectorWidthForPrecision(precision);
-    return .{
-        .precision = precision,
-        .newton_solver_mode = default_newton_solver_mode,
-        .simd_vector_width = defaultSimdVectorWidthForPrecision(precision),
-        .tolerance = defaultToleranceForPrecision(precision),
-    };
-}
-
 pub const tolerance_f64 = Tolerance{};
 
 pub const tolerance_f32 = Tolerance{
@@ -289,15 +312,7 @@ pub const tolerance_f32 = Tolerance{
     },
 };
 
-pub const config = configForPrecision(default_precision);
-
-pub const F = config.precision;
-pub const SimdWidth = config.simd_vector_width;
-pub const SaveFrameBufferCount = config.save_frame_buffer_count;
-pub const NewtonMode = config.newton_solver_mode;
-pub const UseHullNewtonSeed = defaultNewtonSeedModeUsesHull(F);
-pub const UseLastConvergedNewtonSeedReuse =
-    defaultNewtonSeedReuseLastConverged(F);
+// -- SIMD And Fixed-Point Types ----------------------------------------------
 
 pub const VecSF = @Vector(SimdWidth, F);
 pub const VecSU = @Vector(SimdWidth, usize);

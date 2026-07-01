@@ -84,6 +84,7 @@ pub fn build(b: *std.Build) void {
             precision,
             simd,
             newton_solver,
+            simd_vector_width,
         );
         test_step.dependOn(&test_run.step);
     }
@@ -268,6 +269,7 @@ fn addTestRunStep(
     precision: []const u8,
     simd: []const u8,
     newton_solver: []const u8,
+    simd_vector_width: u32,
 ) *std.Build.Step.Run {
     const run_step = b.addSystemCommand(&.{
         "sh",
@@ -278,8 +280,9 @@ fn addTestRunStep(
         \\precision="$3"
         \\simd="$4"
         \\newton_solver="$5"
-        \\zigexe="$6"
-        \\opt="$7"
+        \\simd_vector_width="$6"
+        \\zigexe="$7"
+        \\opt="$8"
         \\cache_root=".zig-cache/riley-test"
         \\mkdir -p "$cache_root"
         \\src_hash="$(
@@ -302,11 +305,18 @@ fn addTestRunStep(
         \\    if [ ! -d "$tree_dir" ]; then
         \\        mkdir -p "$tree_dir"
         \\        cp -a src "$tree_dir/src"
+        \\        src_file="$tree_dir/$src"
+        \\        src_orig="${src_file}.orig"
+        \\        mv "$src_file" "$src_orig"
         \\        {
-        \\            printf 'pub const precision = "%s";\n' "$precision"
-        \\            printf 'pub const simd = "%s";\n' "$simd"
-        \\            printf 'pub const newton_solver = "%s";\n' "$newton_solver"
-        \\        } > "$tree_dir/src/riley/zig/build_options.zig"
+        \\            printf 'pub const build_options = struct {\n'
+        \\            printf '    pub const precision = "%s";\n' "$precision"
+        \\            printf '    pub const simd = "%s";\n' "$simd"
+        \\            printf '    pub const newton_solver = "%s";\n' "$newton_solver"
+        \\            printf '    pub const simd_vector_width: comptime_int = %s;\n' "$simd_vector_width"
+        \\            printf '};\n\n'
+        \\            cat "$src_orig"
+        \\        } > "$src_file"
         \\    fi
         \\fi
         \\"$zigexe" test -lc -O "$opt" "$tree_dir/$src"
@@ -317,6 +327,7 @@ fn addTestRunStep(
         precision,
         simd,
         newton_solver,
+        b.fmt("{d}", .{simd_vector_width}),
         b.graph.zig_exe,
         @tagName(optimize),
     });
