@@ -1067,7 +1067,7 @@ fn runBenchmarkInternal(
         config_run.save_strategy == .both;
     var image_arr: ?NDArray(F) = null;
     if (needs_images_arr) {
-        const dims = try riley.calcAllFramesImageDimsForConfig(
+        const dims = try riley.calcAllFramesImageDims(
             &[_]CameraInput{camera_input},
             &[_]mo.MeshInput{mesh_input},
             config_run,

@@ -8,6 +8,7 @@
 // --------------------------------------------------------------------------------------
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
+const cm = @import("cameramodels.zig");
 const common = @import("camera_common.zig");
 
 
@@ -217,9 +218,18 @@ pub fn calcPinholeRasterPoint(
     observed_x_px: F,
     observed_y_px: F,
 ) ![2]F {
-    return common.calcPinholeRasterPointScalar(
-        camera,
-        observed_x_px,
-        observed_y_px,
+    const focal_px = camera.calcFocalPx();
+    const offsets = camera.calcRasterOffsets();
+    const x_dist = (observed_x_px - offsets.x_off) / focal_px.fx;
+    const y_dist = (observed_y_px - offsets.y_off) / focal_px.fy;
+
+    const solved = try cm.inverseDistortionModelScalar(
+        camera.distortion,
+        x_dist,
+        y_dist,
     );
+    return .{
+        solved.x * focal_px.fx + offsets.x_off,
+        solved.y * focal_px.fy + offsets.y_off,
+    };
 }

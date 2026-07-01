@@ -7,6 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const common = @import("cameramodels_common.zig");
+const scalar = @import("cameramodels_scalar.zig");
 const simd = @import("cameramodels_simd.zig");
 
 // --------------------------------------------------------------------------------------
@@ -32,11 +33,8 @@ pub const PointSpreadFunc = common.PointSpreadFunc;
 pub const PreparedPSFMode = common.PreparedPSFMode;
 pub const PreparedPSF = common.PreparedPSF;
 pub const preparePSF = common.preparePSF;
-pub const forwardDistortionScalar = common.forwardDistortionScalar;
-pub const forwardDistortionWithJacScalar = common.forwardDistortionWithJacScalar;
-pub const inverseDistortionScalar = common.inverseDistortionScalar;
-pub const forwardDistortionModelScalar = common.forwardDistortionModelScalar;
-pub const inverseDistortionModelScalar = common.inverseDistortionModelScalar;
+pub const forwardDistortionModelScalar = scalar.forwardDistortionModel;
+pub const inverseDistortionModelScalar = scalar.inverseDistortionModel;
 
 pub const DistortionForwardJacSIMDResult = simd.DistortionForwardJacSIMDResult;
 pub const forwardDistortionSIMD = simd.forwardDistortionSIMD;

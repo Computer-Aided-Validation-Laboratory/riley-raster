@@ -49,21 +49,10 @@ const geomkerns = @import("geometrykernels.zig");
 const newton = @import("newton.zig");
 const shadekerns = @import("shaderkernels.zig");
 
-const SubpxSimdChunk = struct {
-    scratch_x_u: [S]usize,
-    scratch_y_u: [S]usize,
-    px_f: [S]F,
-    py_f: [S]F,
-    seed_xi: [S]F,
-    seed_eta: [S]F,
-    count: usize,
-};
-
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
-
 pub const SubpxScratchBuffers = struct {
     stride_subpx: usize,
     inv_z: []align(64) F,
@@ -78,13 +67,15 @@ pub const SubpxScratchBuffers = struct {
     ideal_pixel_centers: []align(64) F,
 };
 
-const SubpxDomain = common.SubpxDomain;
-const RasterBounds = common.RasterBounds;
-
-//------------------------------------------------------------------------------------------
-// Scratch Buffer Helpers
-//------------------------------------------------------------------------------------------
-
+const SubpxSimdChunk = struct {
+    scratch_x_u: [S]usize,
+    scratch_y_u: [S]usize,
+    px_f: [S]F,
+    py_f: [S]F,
+    seed_xi: [S]F,
+    seed_eta: [S]F,
+    count: usize,
+};
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Functions
@@ -215,6 +206,9 @@ pub fn rasterScene(
 //------------------------------------------------------------------------------------------
 // Raster Pass Implementation
 //------------------------------------------------------------------------------------------
+const SubpxDomain = common.SubpxDomain;
+const RasterBounds = common.RasterBounds;
+
 pub fn RasterEngine(
     comptime GeometryKernel: type, // geometrykernels.zig
     comptime ShaderKernel: type, // shaderkernels.zig
@@ -532,36 +526,40 @@ fn rasterDirectSIMDImpl(
                             0.0,
                             0.0,
                         );
+                        if (comptime report_mode == .full_stats) {
+                            rasterreport.recordPixelConvergedStats(
+                                report_mode,
+                                ctx_report,
+                                global_subx,
+                                global_suby,
+                                true,
+                                interp.xi,
+                                interp.eta,
+                                newton.calcJacobianDet2D(
+                                    N,
+                                    interp.xi,
+                                    interp.eta,
+                                    nodes_coords.x,
+                                    nodes_coords.y,
+                                ),
+                            );
+                        }
+                        continue;
+                    }
+
+                    const nan = std.math.nan(F);
+                    if (comptime report_mode == .full_stats) {
                         rasterreport.recordPixelConvergedStats(
                             report_mode,
                             ctx_report,
                             global_subx,
                             global_suby,
-                            true,
-                            interp.xi,
-                            interp.eta,
-                            newton.calcJacobianDet2D(
-                                N,
-                                interp.xi,
-                                interp.eta,
-                                nodes_coords.x,
-                                nodes_coords.y,
-                            ),
+                            false,
+                            nan,
+                            nan,
+                            nan,
                         );
-                        continue;
                     }
-
-                    const nan = std.math.nan(F);
-                    rasterreport.recordPixelConvergedStats(
-                        report_mode,
-                        ctx_report,
-                        global_subx,
-                        global_suby,
-                        false,
-                        nan,
-                        nan,
-                        nan,
-                    );
                 }
             }
 
@@ -928,38 +926,40 @@ fn rasterNewtonSIMDImpl(
                     nodes_coords.x,
                     nodes_coords.y,
                 );
-                rasterreport.recordPixelIters(
-                    report_mode,
-                    ctx_report,
-                    global_subx,
-                    global_suby,
-                    iters_arr[jj],
-                );
-                rasterreport.recordPixelConvergedStats(
-                    report_mode,
-                    ctx_report,
-                    global_subx,
-                    global_suby,
-                    conv_mask_arr[jj],
-                    xi_final_arr[jj],
-                    eta_final_arr[jj],
-                    jacobian_det,
-                );
-                rasterreport.recordPixelSolverDiagnostics(
-                    report_mode,
-                    ctx_report,
-                    global_subx,
-                    global_suby,
-                    status,
-                    pre_domain_arr[jj],
-                    hit_iter_limit,
-                    solve_state.residual_x,
-                    solve_state.residual_y,
-                    solve_state.interpolated_w,
-                    solve_state.residual_mag,
-                    solve_state.normalized_residual_mag,
-                    domain_violation,
-                );
+                if (comptime report_mode == .full_stats) {
+                    rasterreport.recordPixelIters(
+                        report_mode,
+                        ctx_report,
+                        global_subx,
+                        global_suby,
+                        iters_arr[jj],
+                    );
+                    rasterreport.recordPixelConvergedStats(
+                        report_mode,
+                        ctx_report,
+                        global_subx,
+                        global_suby,
+                        conv_mask_arr[jj],
+                        xi_final_arr[jj],
+                        eta_final_arr[jj],
+                        jacobian_det,
+                    );
+                    rasterreport.recordPixelSolverDiagnostics(
+                        report_mode,
+                        ctx_report,
+                        global_subx,
+                        global_suby,
+                        status,
+                        pre_domain_arr[jj],
+                        hit_iter_limit,
+                        solve_state.residual_x,
+                        solve_state.residual_y,
+                        solve_state.interpolated_w,
+                        solve_state.residual_mag,
+                        solve_state.normalized_residual_mag,
+                        domain_violation,
+                    );
+                }
             }
         }
 
@@ -1387,30 +1387,34 @@ fn rasterDirectSteppedSIMDFixed(
                         else
                             @mulAdd(F, weights[2], inv_z2, 0.0) / inv_z;
 
+                        if (comptime report_mode == .full_stats) {
+                            rasterreport.recordPixelConvergedStats(
+                                report_mode,
+                                ctx_report,
+                                global_subx,
+                                global_suby,
+                                true,
+                                xi,
+                                eta,
+                                area,
+                            );
+                        }
+                        continue;
+                    }
+
+                    const nan = std.math.nan(F);
+                    if (comptime report_mode == .full_stats) {
                         rasterreport.recordPixelConvergedStats(
                             report_mode,
                             ctx_report,
                             global_subx,
                             global_suby,
-                            true,
-                            xi,
-                            eta,
-                            area,
+                            false,
+                            nan,
+                            nan,
+                            nan,
                         );
-                        continue;
                     }
-
-                    const nan = std.math.nan(F);
-                    rasterreport.recordPixelConvergedStats(
-                        report_mode,
-                        ctx_report,
-                        global_subx,
-                        global_suby,
-                        false,
-                        nan,
-                        nan,
-                        nan,
-                    );
                 }
             }
 
@@ -1750,30 +1754,34 @@ fn rasterDirectSteppedSIMDFloatFallback(
                         else
                             @mulAdd(F, weights[2], inv_z2, 0.0) / inv_z;
 
+                        if (comptime report_mode == .full_stats) {
+                            rasterreport.recordPixelConvergedStats(
+                                report_mode,
+                                ctx_report,
+                                global_subx,
+                                global_suby,
+                                true,
+                                xi,
+                                eta,
+                                area,
+                            );
+                        }
+                        continue;
+                    }
+
+                    const nan = std.math.nan(F);
+                    if (comptime report_mode == .full_stats) {
                         rasterreport.recordPixelConvergedStats(
                             report_mode,
                             ctx_report,
                             global_subx,
                             global_suby,
-                            true,
-                            xi,
-                            eta,
-                            area,
+                            false,
+                            nan,
+                            nan,
+                            nan,
                         );
-                        continue;
                     }
-
-                    const nan = std.math.nan(F);
-                    rasterreport.recordPixelConvergedStats(
-                        report_mode,
-                        ctx_report,
-                        global_subx,
-                        global_suby,
-                        false,
-                        nan,
-                        nan,
-                        nan,
-                    );
                 }
             }
 

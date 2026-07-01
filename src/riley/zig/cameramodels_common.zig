@@ -36,21 +36,181 @@ pub const PolynomialMap = struct {
     order: PolynomialOrder = .quadratic,
     coeffs_u: [10]F = [_]F{0.0} ** 10,
     coeffs_v: [10]F = [_]F{0.0} ** 10,
+
+    pub fn evaluate(
+        self: PolynomialMap,
+        x: F,
+        y: F,
+    ) [2]F {
+        const poly = evalPolynomialDisplacement(self, x, y);
+        return .{ x + poly.du, y + poly.dv };
+    }
+
+    pub fn forwardWithJac(
+        self: PolynomialMap,
+        x: F,
+        y: F,
+    ) DistortionForwardJacResult {
+        const distorted = self.evaluate(x, y);
+        var ddu_dx: F = 0.0;
+        var ddu_dy: F = 0.0;
+        var ddv_dx: F = 0.0;
+        var ddv_dy: F = 0.0;
+        const term_count = self.order.termCount();
+
+        for (0..term_count) |ii| {
+            const pu = polyPowersU()[ii];
+            const pv = polyPowersV()[ii];
+
+            if (pu > 0) {
+                const basis_dx = @as(F, @floatFromInt(pu)) *
+                    powSmall(x, pu - 1) *
+                    powSmall(y, pv);
+                ddu_dx += self.coeffs_u[ii] * basis_dx;
+                ddv_dx += self.coeffs_v[ii] * basis_dx;
+            }
+            if (pv > 0) {
+                const basis_dy = @as(F, @floatFromInt(pv)) *
+                    powSmall(x, pu) *
+                    powSmall(y, pv - 1);
+                ddu_dy += self.coeffs_u[ii] * basis_dy;
+                ddv_dy += self.coeffs_v[ii] * basis_dy;
+            }
+        }
+
+        return .{
+            .x_d = distorted[0],
+            .y_d = distorted[1],
+            .jac = .{
+                .{ 1.0 + ddu_dx, ddu_dy },
+                .{ ddv_dx, 1.0 + ddv_dy },
+            },
+        };
+    }
+
+    pub fn inverse(
+        self: PolynomialMap,
+        x_d: F,
+        y_d: F,
+    ) !DistortionInverseResult {
+        var x = x_d;
+        var y = y_d;
+
+        const max_iters = cfg.distortion_newton_iter_max;
+        const tol_resid = tol.distortion.residual;
+        const tol_delta = tol.distortion.delta;
+
+        for (0..max_iters) |_| {
+            const fwd = self.forwardWithJac(x, y);
+            const f0 = fwd.x_d - x_d;
+            const f1 = fwd.y_d - y_d;
+
+            if (@max(@abs(f0), @abs(f1)) < tol_resid) {
+                return .{ .x = x, .y = y };
+            }
+
+            const a = fwd.jac[0][0];
+            const b = fwd.jac[0][1];
+            const c = fwd.jac[1][0];
+            const d = fwd.jac[1][1];
+            const det = a * d - b * c;
+            if (@abs(det) < tol.distortion.determinant) {
+                return error.SingularJacobian;
+            }
+
+            const delta_x = (-f0 * d + b * f1) / det;
+            const delta_y = (c * f0 - a * f1) / det;
+            x += delta_x;
+            y += delta_y;
+
+            if (@max(@abs(delta_x), @abs(delta_y)) < tol_delta) {
+                return .{ .x = x, .y = y };
+            }
+        }
+
+        return error.DistortionInverseFailed;
+    }
 };
 
 pub const BidirectionalPolynomial = struct {
     forward_map: ?PolynomialMap = null,
     inverse_map: ?PolynomialMap = null,
+
+    pub fn forward(
+        self: BidirectionalPolynomial,
+        x: F,
+        y: F,
+    ) [2]F {
+        if (self.forward_map) |forward_map| {
+            return forward_map.evaluate(x, y);
+        }
+        if (self.inverse_map) |inverse_map| {
+            const solved = inverse_map.inverse(x, y) catch unreachable;
+            return .{ solved.x, solved.y };
+        }
+        unreachable;
+    }
+
+    pub fn inverse(
+        self: BidirectionalPolynomial,
+        x_d: F,
+        y_d: F,
+    ) !DistortionInverseResult {
+        if (self.inverse_map) |inverse_map| {
+            const eval = inverse_map.evaluate(x_d, y_d);
+            return .{ .x = eval[0], .y = eval[1] };
+        }
+        if (self.forward_map) |forward_map| {
+            return try forward_map.inverse(x_d, y_d);
+        }
+        return error.MissingPolynomialMap;
+    }
 };
 
 pub const BrownConradyPolynomial = struct {
     brown_conrady: BrownConrady = .{},
     polynomial: BidirectionalPolynomial = .{},
+
+    pub fn forward(
+        self: BrownConradyPolynomial,
+        x: F,
+        y: F,
+    ) [2]F {
+        const brown = self.brown_conrady.forward(x, y);
+        return self.polynomial.forward(brown[0], brown[1]);
+    }
+
+    pub fn inverse(
+        self: BrownConradyPolynomial,
+        x_d: F,
+        y_d: F,
+    ) !DistortionInverseResult {
+        const poly_inv = try self.polynomial.inverse(x_d, y_d);
+        return try self.brown_conrady.inverse(poly_inv.x, poly_inv.y);
+    }
 };
 
 pub const BrownConradyExtPolynomial = struct {
     brown_conrady_ext: BrownConradyExt = .{},
     polynomial: BidirectionalPolynomial = .{},
+
+    pub fn forward(
+        self: BrownConradyExtPolynomial,
+        x: F,
+        y: F,
+    ) [2]F {
+        const brown = self.brown_conrady_ext.forward(x, y);
+        return self.polynomial.forward(brown[0], brown[1]);
+    }
+
+    pub fn inverse(
+        self: BrownConradyExtPolynomial,
+        x_d: F,
+        y_d: F,
+    ) !DistortionInverseResult {
+        const poly_inv = try self.polynomial.inverse(x_d, y_d);
+        return try self.brown_conrady_ext.inverse(poly_inv.x, poly_inv.y);
+    }
 };
 
 pub const DistortionModel = union(enum) {
@@ -68,6 +228,55 @@ pub const BrownConrady = struct {
     k3: F = 0,
     p1: F = 0,
     p2: F = 0,
+
+    pub fn forward(
+        self: BrownConrady,
+        x: F,
+        y: F,
+    ) [2]F {
+        const r2 = x * x + y * y;
+        const r4 = r2 * r2;
+        const r6 = r4 * r2;
+        const radial_scale =
+            1.0 + self.k1 * r2 + self.k2 * r4 + self.k3 * r6;
+        return distortionForwardFromRadialScale(
+            x,
+            y,
+            radial_scale,
+            self.p1,
+            self.p2,
+        );
+    }
+
+    pub fn forwardWithJac(
+        self: BrownConrady,
+        x: F,
+        y: F,
+    ) DistortionForwardJacResult {
+        const r2 = x * x + y * y;
+        const r4 = r2 * r2;
+        const r6 = r4 * r2;
+        const radial_scale =
+            1.0 + self.k1 * r2 + self.k2 * r4 + self.k3 * r6;
+        const dradial_dr2 =
+            self.k1 + 2.0 * self.k2 * r2 + 3.0 * self.k3 * r4;
+        return distortionForwardWithJacFromRadialScale(
+            x,
+            y,
+            radial_scale,
+            dradial_dr2,
+            self.p1,
+            self.p2,
+        );
+    }
+
+    pub fn inverse(
+        self: BrownConrady,
+        x_d: F,
+        y_d: F,
+    ) !DistortionInverseResult {
+        return inverseFromForwardWithJac(BrownConrady, self, x_d, y_d);
+    }
 };
 
 pub const BrownConradyExt = struct {
@@ -80,7 +289,46 @@ pub const BrownConradyExt = struct {
     p1: F = 0,
     p2: F = 0,
 
-    fn calcRadialScaleAndDerivative(
+    pub fn forward(
+        self: BrownConradyExt,
+        x: F,
+        y: F,
+    ) [2]F {
+        const radial = self.calcRadialScaleAndDerivative(x, y);
+        return distortionForwardFromRadialScale(
+            x,
+            y,
+            radial.radial_scale,
+            self.p1,
+            self.p2,
+        );
+    }
+
+    pub fn forwardWithJac(
+        self: BrownConradyExt,
+        x: F,
+        y: F,
+    ) DistortionForwardJacResult {
+        const radial = self.calcRadialScaleAndDerivative(x, y);
+        return distortionForwardWithJacFromRadialScale(
+            x,
+            y,
+            radial.radial_scale,
+            radial.dradial_dr2,
+            self.p1,
+            self.p2,
+        );
+    }
+
+    pub fn inverse(
+        self: BrownConradyExt,
+        x_d: F,
+        y_d: F,
+    ) !DistortionInverseResult {
+        return inverseFromForwardWithJac(BrownConradyExt, self, x_d, y_d);
+    }
+
+    pub fn calcRadialScaleAndDerivative(
         self: BrownConradyExt,
         x: F,
         y: F,
@@ -113,407 +361,6 @@ pub const DistortionForwardJacResult = struct {
     y_d: F,
     jac: [2][2]F,
 };
-
-const poly_powers_u = [10]u8{ 0, 1, 0, 2, 1, 0, 3, 2, 1, 0 };
-const poly_powers_v = [10]u8{ 0, 0, 1, 0, 1, 2, 0, 1, 2, 3 };
-
-
-// --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
-// --------------------------------------------------------------------------------------
-
-pub fn forwardDistortionScalar(
-    comptime DistortionType: type,
-    distortion: DistortionType,
-    x: F,
-    y: F,
-) [2]F {
-    if (@hasField(DistortionType, "k4")) {
-        const radial = distortion.calcRadialScaleAndDerivative(x, y);
-        return distortionForwardFromRadialScale(
-            x,
-            y,
-            radial.radial_scale,
-            distortion.p1,
-            distortion.p2,
-        );
-    }
-
-    const r2 = x * x + y * y;
-    const r4 = r2 * r2;
-    const r6 = r4 * r2;
-    const radial_scale =
-        1.0 + distortion.k1 * r2 + distortion.k2 * r4 + distortion.k3 * r6;
-    return distortionForwardFromRadialScale(
-        x,
-        y,
-        radial_scale,
-        distortion.p1,
-        distortion.p2,
-    );
-}
-
-pub fn forwardDistortionWithJacScalar(
-    comptime DistortionType: type,
-    distortion: DistortionType,
-    x: F,
-    y: F,
-) DistortionForwardJacResult {
-    if (@hasField(DistortionType, "k4")) {
-        const radial = distortion.calcRadialScaleAndDerivative(x, y);
-        return distortionForwardWithJacFromRadialScale(
-            x,
-            y,
-            radial.radial_scale,
-            radial.dradial_dr2,
-            distortion.p1,
-            distortion.p2,
-        );
-    }
-
-    const r2 = x * x + y * y;
-    const r4 = r2 * r2;
-    const r6 = r4 * r2;
-    const radial_scale =
-        1.0 + distortion.k1 * r2 + distortion.k2 * r4 + distortion.k3 * r6;
-    const dradial_dr2 =
-        distortion.k1 + 2.0 * distortion.k2 * r2 + 3.0 * distortion.k3 * r4;
-    return distortionForwardWithJacFromRadialScale(
-        x,
-        y,
-        radial_scale,
-        dradial_dr2,
-        distortion.p1,
-        distortion.p2,
-    );
-}
-
-pub fn inverseDistortionScalar(
-    comptime DistortionType: type,
-    distortion: DistortionType,
-    x_d: F,
-    y_d: F,
-) !DistortionInverseResult {
-    return try distortionInverseFromModel(DistortionType, distortion, x_d, y_d);
-}
-
-pub fn forwardDistortionModelScalar(
-    distortion: DistortionModel,
-    x: F,
-    y: F,
-) [2]F {
-    return switch (distortion) {
-        .none => .{ x, y },
-        .brown_conrady => |bc| forwardDistortionScalar(BrownConrady, bc, x, y),
-        .brown_conrady_ext => |bc_ext| forwardDistortionScalar(BrownConradyExt, bc_ext, x, y),
-        .polynomial => |poly| polynomialForwardScalar(poly, x, y),
-        .brown_conrady_polynomial => |chain| blk: {
-            const brown = forwardDistortionScalar(
-                BrownConrady,
-                chain.brown_conrady,
-                x,
-                y,
-            );
-            break :blk polynomialForwardScalar(
-                chain.polynomial,
-                brown[0],
-                brown[1],
-            );
-        },
-        .brown_conrady_ext_polynomial => |chain| blk: {
-            const brown = forwardDistortionScalar(
-                BrownConradyExt,
-                chain.brown_conrady_ext,
-                x,
-                y,
-            );
-            break :blk polynomialForwardScalar(
-                chain.polynomial,
-                brown[0],
-                brown[1],
-            );
-        },
-    };
-}
-
-pub fn inverseDistortionModelScalar(
-    distortion: DistortionModel,
-    x_d: F,
-    y_d: F,
-) !DistortionInverseResult {
-    return switch (distortion) {
-        .none => .{ .x = x_d, .y = y_d },
-        .brown_conrady => |bc| inverseDistortionScalar(BrownConrady, bc, x_d, y_d),
-        .brown_conrady_ext => |bc_ext| inverseDistortionScalar(BrownConradyExt, bc_ext, x_d, y_d),
-        .polynomial => |poly| polynomialInverseScalar(poly, x_d, y_d),
-        .brown_conrady_polynomial => |chain| blk: {
-            const poly_inv = try polynomialInverseScalar(chain.polynomial, x_d, y_d);
-            break :blk inverseDistortionScalar(
-                BrownConrady,
-                chain.brown_conrady,
-                poly_inv.x,
-                poly_inv.y,
-            );
-        },
-        .brown_conrady_ext_polynomial => |chain| blk: {
-            const poly_inv = try polynomialInverseScalar(chain.polynomial, x_d, y_d);
-            break :blk inverseDistortionScalar(
-                BrownConradyExt,
-                chain.brown_conrady_ext,
-                poly_inv.x,
-                poly_inv.y,
-            );
-        },
-    };
-}
-
-fn polynomialForwardScalar(
-    polynomial: BidirectionalPolynomial,
-    x: F,
-    y: F,
-) [2]F {
-    if (polynomial.forward_map) |forward_map| {
-        return evaluatePolynomialMapScalar(forward_map, x, y);
-    }
-    if (polynomial.inverse_map) |inverse_map| {
-        const solved = invertPolynomialMapScalar(inverse_map, x, y) catch unreachable;
-        return .{ solved.x, solved.y };
-    }
-    unreachable;
-}
-
-fn polynomialInverseScalar(
-    polynomial: BidirectionalPolynomial,
-    x_d: F,
-    y_d: F,
-) !DistortionInverseResult {
-    if (polynomial.inverse_map) |inverse_map| {
-        const eval = evaluatePolynomialMapScalar(inverse_map, x_d, y_d);
-        return .{ .x = eval[0], .y = eval[1] };
-    }
-    if (polynomial.forward_map) |forward_map| {
-        return try invertPolynomialMapScalar(forward_map, x_d, y_d);
-    }
-    return error.MissingPolynomialMap;
-}
-
-fn evaluatePolynomialMapScalar(
-    polynomial: PolynomialMap,
-    x: F,
-    y: F,
-) [2]F {
-    const poly = evalPolynomialDisplacementScalar(polynomial, x, y);
-    return .{ x + poly.du, y + poly.dv };
-}
-
-fn evalPolynomialDisplacementScalar(
-    polynomial: PolynomialMap,
-    x: F,
-    y: F,
-) struct { du: F, dv: F } {
-    var du: F = 0.0;
-    var dv: F = 0.0;
-    const term_count = polynomial.order.termCount();
-
-    for (0..term_count) |ii| {
-        const basis = powSmallScalar(x, poly_powers_u[ii]) *
-            powSmallScalar(y, poly_powers_v[ii]);
-        du += polynomial.coeffs_u[ii] * basis;
-        dv += polynomial.coeffs_v[ii] * basis;
-    }
-
-    return .{ .du = du, .dv = dv };
-}
-
-fn evaluatePolynomialMapWithJacScalar(
-    polynomial: PolynomialMap,
-    x: F,
-    y: F,
-) DistortionForwardJacResult {
-    const distorted = evaluatePolynomialMapScalar(polynomial, x, y);
-    var ddu_dx: F = 0.0;
-    var ddu_dy: F = 0.0;
-    var ddv_dx: F = 0.0;
-    var ddv_dy: F = 0.0;
-    const term_count = polynomial.order.termCount();
-
-    for (0..term_count) |ii| {
-        const pu = poly_powers_u[ii];
-        const pv = poly_powers_v[ii];
-
-        if (pu > 0) {
-            const basis_dx = @as(F, @floatFromInt(pu)) *
-                powSmallScalar(x, pu - 1) *
-                powSmallScalar(y, pv);
-            ddu_dx += polynomial.coeffs_u[ii] * basis_dx;
-            ddv_dx += polynomial.coeffs_v[ii] * basis_dx;
-        }
-        if (pv > 0) {
-            const basis_dy = @as(F, @floatFromInt(pv)) *
-                powSmallScalar(x, pu) *
-                powSmallScalar(y, pv - 1);
-            ddu_dy += polynomial.coeffs_u[ii] * basis_dy;
-            ddv_dy += polynomial.coeffs_v[ii] * basis_dy;
-        }
-    }
-
-    return .{
-        .x_d = distorted[0],
-        .y_d = distorted[1],
-        .jac = .{
-            .{ 1.0 + ddu_dx, ddu_dy },
-            .{ ddv_dx, 1.0 + ddv_dy },
-        },
-    };
-}
-
-fn invertPolynomialMapScalar(
-    polynomial: PolynomialMap,
-    x_d: F,
-    y_d: F,
-) !DistortionInverseResult {
-    var x = x_d;
-    var y = y_d;
-
-    const max_iters = cfg.distortion_newton_iter_max;
-    const tol_resid = tol.distortion.residual;
-    const tol_delta = tol.distortion.delta;
-
-    for (0..max_iters) |_| {
-        const fwd = evaluatePolynomialMapWithJacScalar(polynomial, x, y);
-        const f0 = fwd.x_d - x_d;
-        const f1 = fwd.y_d - y_d;
-
-        if (@max(@abs(f0), @abs(f1)) < tol_resid) {
-            return .{ .x = x, .y = y };
-        }
-
-        const a = fwd.jac[0][0];
-        const b = fwd.jac[0][1];
-        const c = fwd.jac[1][0];
-        const d = fwd.jac[1][1];
-        const det = a * d - b * c;
-        if (@abs(det) < tol.distortion.determinant) {
-            return error.SingularJacobian;
-        }
-
-        const delta_x = (-f0 * d + b * f1) / det;
-        const delta_y = (c * f0 - a * f1) / det;
-        x += delta_x;
-        y += delta_y;
-
-        if (@max(@abs(delta_x), @abs(delta_y)) < tol_delta) {
-            return .{ .x = x, .y = y };
-        }
-    }
-
-    return error.DistortionInverseFailed;
-}
-
-fn powSmallScalar(
-    x: F,
-    power: u8,
-) F {
-    var out: F = 1.0;
-    for (0..power) |_| {
-        out *= x;
-    }
-    return out;
-}
-
-fn distortionForwardFromRadialScale(
-    x: F,
-    y: F,
-    radial_scale: F,
-    p1: F,
-    p2: F,
-) [2]F {
-    const r2 = x * x + y * y;
-    const x_d = x * radial_scale + 2.0 * p1 * x * y + p2 * (r2 + 2.0 * x * x);
-    const y_d = y * radial_scale + p1 * (r2 + 2.0 * y * y) + 2.0 * p2 * x * y;
-    return .{ x_d, y_d };
-}
-
-fn distortionForwardWithJacFromRadialScale(
-    x: F,
-    y: F,
-    radial_scale: F,
-    dradial_dr2: F,
-    p1: F,
-    p2: F,
-) DistortionForwardJacResult {
-    const distorted = distortionForwardFromRadialScale(
-        x,
-        y,
-        radial_scale,
-        p1,
-        p2,
-    );
-    const dradial_dx = dradial_dr2 * 2.0 * x;
-    const dradial_dy = dradial_dr2 * 2.0 * y;
-
-    const dx_fwd_dx =
-        radial_scale + x * dradial_dx + 2.0 * p1 * y + 6.0 * p2 * x;
-    const dx_fwd_dy = x * dradial_dy + 2.0 * p1 * x + 2.0 * p2 * y;
-    const dy_fwd_dx = y * dradial_dx + 2.0 * p1 * x + 2.0 * p2 * y;
-    const dy_fwd_dy =
-        radial_scale + y * dradial_dy + 6.0 * p1 * y + 2.0 * p2 * x;
-
-    return .{
-        .x_d = distorted[0],
-        .y_d = distorted[1],
-        .jac = .{
-            .{ dx_fwd_dx, dx_fwd_dy },
-            .{ dy_fwd_dx, dy_fwd_dy },
-        },
-    };
-}
-
-fn distortionInverseFromModel(
-    comptime DistortionType: type,
-    distortion: DistortionType,
-    x_d: F,
-    y_d: F,
-) !DistortionInverseResult {
-    var x = x_d;
-    var y = y_d;
-
-    const max_iters = cfg.distortion_newton_iter_max;
-    const tol_resid = tol.distortion.residual;
-    const tol_delta = tol.distortion.delta;
-
-    for (0..max_iters) |_| {
-        const fwd = forwardDistortionWithJacScalar(DistortionType, distortion, x, y);
-        const f0 = fwd.x_d - x_d;
-        const f1 = fwd.y_d - y_d;
-
-        if (@max(@abs(f0), @abs(f1)) < tol_resid) {
-            return .{ .x = x, .y = y };
-        }
-
-        const a = fwd.jac[0][0];
-        const b = fwd.jac[0][1];
-        const c = fwd.jac[1][0];
-        const d = fwd.jac[1][1];
-
-        const det = a * d - b * c;
-        if (@abs(det) < tol.distortion.determinant) {
-            return error.SingularJacobian;
-        }
-
-        const delta_x = (-f0 * d + b * f1) / det;
-        const delta_y = (c * f0 - a * f1) / det;
-
-        x += delta_x;
-        y += delta_y;
-
-        if (@max(@abs(delta_x), @abs(delta_y)) < tol_delta) {
-            return .{ .x = x, .y = y };
-        }
-    }
-
-    return error.DistortionInverseFailed;
-}
 
 pub const SeparablePSF = enum {
     no,
@@ -638,6 +485,139 @@ fn buildKernel1D(
 
     normalizeKernel(weights);
     return weights;
+}
+
+fn inverseFromForwardWithJac(
+    comptime DistortionType: type,
+    distortion: DistortionType,
+    x_d: F,
+    y_d: F,
+) !DistortionInverseResult {
+    var x = x_d;
+    var y = y_d;
+
+    const max_iters = cfg.distortion_newton_iter_max;
+    const tol_resid = tol.distortion.residual;
+    const tol_delta = tol.distortion.delta;
+
+    for (0..max_iters) |_| {
+        const fwd = distortion.forwardWithJac(x, y);
+        const f0 = fwd.x_d - x_d;
+        const f1 = fwd.y_d - y_d;
+
+        if (@max(@abs(f0), @abs(f1)) < tol_resid) {
+            return .{ .x = x, .y = y };
+        }
+
+        const a = fwd.jac[0][0];
+        const b = fwd.jac[0][1];
+        const c = fwd.jac[1][0];
+        const d = fwd.jac[1][1];
+        const det = a * d - b * c;
+        if (@abs(det) < tol.distortion.determinant) {
+            return error.SingularJacobian;
+        }
+
+        const delta_x = (-f0 * d + b * f1) / det;
+        const delta_y = (c * f0 - a * f1) / det;
+
+        x += delta_x;
+        y += delta_y;
+
+        if (@max(@abs(delta_x), @abs(delta_y)) < tol_delta) {
+            return .{ .x = x, .y = y };
+        }
+    }
+
+    return error.DistortionInverseFailed;
+}
+
+fn polyPowersU() [10]u8 {
+    return .{ 0, 1, 0, 2, 1, 0, 3, 2, 1, 0 };
+}
+
+fn polyPowersV() [10]u8 {
+    return .{ 0, 0, 1, 0, 1, 2, 0, 1, 2, 3 };
+}
+
+fn evalPolynomialDisplacement(
+    polynomial: PolynomialMap,
+    x: F,
+    y: F,
+) struct { du: F, dv: F } {
+    var du: F = 0.0;
+    var dv: F = 0.0;
+    const term_count = polynomial.order.termCount();
+
+    for (0..term_count) |ii| {
+        const basis = powSmall(x, polyPowersU()[ii]) *
+            powSmall(y, polyPowersV()[ii]);
+        du += polynomial.coeffs_u[ii] * basis;
+        dv += polynomial.coeffs_v[ii] * basis;
+    }
+
+    return .{ .du = du, .dv = dv };
+}
+
+fn powSmall(
+    x: F,
+    power: u8,
+) F {
+    var out: F = 1.0;
+    for (0..power) |_| {
+        out *= x;
+    }
+    return out;
+}
+
+fn distortionForwardFromRadialScale(
+    x: F,
+    y: F,
+    radial_scale: F,
+    p1: F,
+    p2: F,
+) [2]F {
+    const r2 = x * x + y * y;
+    const x_d =
+        x * radial_scale + 2.0 * p1 * x * y + p2 * (r2 + 2.0 * x * x);
+    const y_d =
+        y * radial_scale + p1 * (r2 + 2.0 * y * y) + 2.0 * p2 * x * y;
+    return .{ x_d, y_d };
+}
+
+fn distortionForwardWithJacFromRadialScale(
+    x: F,
+    y: F,
+    radial_scale: F,
+    dradial_dr2: F,
+    p1: F,
+    p2: F,
+) DistortionForwardJacResult {
+    const distorted = distortionForwardFromRadialScale(
+        x,
+        y,
+        radial_scale,
+        p1,
+        p2,
+    );
+    const dradial_dx = dradial_dr2 * 2.0 * x;
+    const dradial_dy = dradial_dr2 * 2.0 * y;
+
+    const dx_fwd_dx =
+        radial_scale + x * dradial_dx + 2.0 * p1 * y + 6.0 * p2 * x;
+    const dx_fwd_dy = x * dradial_dy + 2.0 * p1 * x + 2.0 * p2 * y;
+    const dy_fwd_dx = y * dradial_dx + 2.0 * p1 * x + 2.0 * p2 * y;
+    const dy_fwd_dy =
+        radial_scale + y * dradial_dy + 6.0 * p1 * y + 2.0 * p2 * x;
+
+    return .{
+        .x_d = distorted[0],
+        .y_d = distorted[1],
+        .jac = .{
+            .{ dx_fwd_dx, dx_fwd_dy },
+            .{ dy_fwd_dx, dy_fwd_dy },
+        },
+    };
 }
 
 fn buildKernel2D(

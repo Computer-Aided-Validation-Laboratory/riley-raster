@@ -359,11 +359,20 @@ pub fn calcPinholeRasterPoint(
     observed_x_px: F,
     observed_y_px: F,
 ) ![2]F {
-    return common.calcPinholeRasterPointScalar(
-        camera,
-        observed_x_px,
-        observed_y_px,
+    const focal_px = camera.calcFocalPx();
+    const offsets = camera.calcRasterOffsets();
+    const x_dist = (observed_x_px - offsets.x_off) / focal_px.fx;
+    const y_dist = (observed_y_px - offsets.y_off) / focal_px.fy;
+
+    const solved = try cameramodels.inverseDistortionModelScalar(
+        camera.distortion,
+        x_dist,
+        y_dist,
     );
+    return .{
+        solved.x * focal_px.fx + offsets.x_off,
+        solved.y * focal_px.fy + offsets.y_off,
+    };
 }
 
 fn calcActiveMask(lane_count: usize) VecSB {

@@ -37,6 +37,10 @@ const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
+
 pub const OverlapTarget = struct {
     tile: rops.ActiveTile,
     overlap: rops.OverlapBBox,
@@ -58,13 +62,6 @@ pub const RasterBounds = struct {
     x_min_f: F,
     y_min_f: F,
 };
-
-pub const ScratchTileGeometry = scratchfilter.ScratchTileGeometry;
-
-const Tri3FixedCoord = buildconfig.Tri3FixedCoord;
-const Tri3FixedSetup = buildconfig.Tri3FixedSetup;
-const Tri3FixedEdge = buildconfig.Tri3FixedEdge;
-const Tri3FixedFracBits = buildconfig.Tri3FixedFracBits;
 
 const ParamCoords = struct { xi: F, eta: F };
 
@@ -182,24 +179,28 @@ pub fn rasterDirectScalarCommon(
                 if (tess_res.is_in) {
                     ctx_report.recordTessPasses(1);
                 }
-                rasterreport.recordEarlyOut(
-                    report_mode,
-                    ctx_report,
-                    global_subx,
-                    global_suby,
-                    tess_res.is_in,
-                );
+                if (comptime report_mode == .full_stats) {
+                    rasterreport.recordEarlyOut(
+                        report_mode,
+                        ctx_report,
+                        global_subx,
+                        global_suby,
+                        tess_res.is_in,
+                    );
+                }
                 if (!tess_res.is_in) {
                     continue;
                 }
             } else {
-                rasterreport.recordEarlyOut(
-                    report_mode,
-                    ctx_report,
-                    global_subx,
-                    global_suby,
-                    true,
-                );
+                if (comptime report_mode == .full_stats) {
+                    rasterreport.recordEarlyOut(
+                        report_mode,
+                        ctx_report,
+                        global_subx,
+                        global_suby,
+                        true,
+                    );
+                }
             }
 
             ctx_report.recordSolverCalls(1);
@@ -254,15 +255,17 @@ pub fn rasterDirectScalarCommon(
             if (scratch_x_u > subpx_scratch.touched_max_x[scratch_y_u]) {
                 subpx_scratch.touched_max_x[scratch_y_u] = scratch_x_u;
             }
-            rasterreport.recordPixelIterAndOccupancy(
-                report_mode,
-                ctx_report,
-                global_subx,
-                global_suby,
-                geometry_result.iters,
-                targ_overlap.tile.scratch_x_px_min + scratch_x_u / sub_samp,
-                targ_overlap.tile.scratch_y_px_min + scratch_y_u / sub_samp,
-            );
+            if (comptime report_mode == .full_stats) {
+                rasterreport.recordPixelIterAndOccupancy(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    geometry_result.iters,
+                    targ_overlap.tile.scratch_x_px_min + scratch_x_u / sub_samp,
+                    targ_overlap.tile.scratch_y_px_min + scratch_y_u / sub_samp,
+                );
+            }
 
             const param = calcInterpParamCoords(
                 Geometry,
@@ -433,6 +436,11 @@ fn tileScratchSubpxSize(
 }
 
 pub const Tri3FixedEdges = struct {
+    const Tri3FixedCoord = buildconfig.Tri3FixedCoord;
+    const Tri3FixedSetup = buildconfig.Tri3FixedSetup;
+    const Tri3FixedEdge = buildconfig.Tri3FixedEdge;
+    const Tri3FixedFracBits = buildconfig.Tri3FixedFracBits;
+
     start: [3]Tri3FixedEdge,
     step_x: [3]Tri3FixedEdge,
     step_y: [3]Tri3FixedEdge,
@@ -676,8 +684,7 @@ fn fillTileIdealCenters(
             subpx_scratch,
             subpx_tile_size,
         ),
-        .per_tile => try cam.fillTileIdealCentersPerTile(
-            ctx_rast.camera,
+        .per_tile => try ctx_rast.camera.fillTileIdealCentersPerTile(
             @intCast(tile.scratch_x_px_min),
             @intCast(tile.scratch_x_px_max),
             @intCast(tile.scratch_y_px_min),
@@ -685,8 +692,7 @@ fn fillTileIdealCenters(
             subpx_tile_size,
             subpx_scratch.ideal_pixel_centers,
         ),
-        .affine_jac => cam.fillTileIdealCentersAffineJac(
-            ctx_rast.camera,
+        .affine_jac => ctx_rast.camera.fillTileIdealCentersAffineJac(
             @intCast(tile.scratch_x_px_min),
             @intCast(tile.scratch_x_px_max),
             @intCast(tile.scratch_y_px_min),
@@ -720,7 +726,10 @@ fn rasterTileCommon(
 
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const scratch_geom = ScratchTileGeometry.init(tile, sub_samp);
+    const scratch_geom = scratchfilter.ScratchTileGeometry.init(
+        tile,
+        sub_samp,
+    );
     RasterBackend.resetSubpxScratch(
         subpx_scratch,
         subpx_tile_size,

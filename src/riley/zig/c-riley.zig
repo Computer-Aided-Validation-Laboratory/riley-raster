@@ -1993,7 +1993,7 @@ pub export fn rileyCalcOutputDimsScene(
         return 1;
     };
 
-    const dims = riley.calcAllFramesImageDimsForConfig(
+    const dims = riley.calcAllFramesImageDims(
         camera_inputs,
         mesh_inputs,
         raster_config,

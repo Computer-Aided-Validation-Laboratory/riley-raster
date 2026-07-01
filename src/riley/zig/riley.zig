@@ -118,7 +118,7 @@ pub fn rasterReport(
         config.save_strategy == .both;
     var images_arr_opt: ?ndarray.NDArray(F) = null;
     if (needs_images_arr) {
-        const dims = try calcAllFramesImageDimsForConfig(
+        const dims = try calcAllFramesImageDims(
             camera_inputs,
             meshes,
             config,
@@ -168,7 +168,7 @@ pub fn rasterReportInto(
         validation_summary.raw_num_fields,
     );
     if (config.save_strategy == .memory or config.save_strategy == .both) {
-        const expected_image_dims = try calcAllFramesImageDimsForConfig(
+        const expected_image_dims = try calcAllFramesImageDims(
             camera_inputs,
             meshes,
             config,
@@ -302,17 +302,6 @@ pub fn rasterReportInto(
 }
 
 pub fn calcAllFramesImageDims(
-    camera_inputs: []const cam.CameraInput,
-    meshes: []const mo.MeshInput,
-) [5]usize {
-    return calcAllFramesImageDimsForConfig(
-        camera_inputs,
-        meshes,
-        .{},
-    ) catch unreachable;
-}
-
-pub fn calcAllFramesImageDimsForConfig(
     camera_inputs: []const cam.CameraInput,
     meshes: []const mo.MeshInput,
     config: RasterConfig,

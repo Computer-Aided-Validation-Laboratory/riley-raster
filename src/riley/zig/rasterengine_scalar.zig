@@ -439,22 +439,26 @@ fn rasterNewtonImpl(
                         .eta = tess_res.seed_eta,
                     };
                 }
-                rasterreport.recordEarlyOut(
-                    report_mode,
-                    ctx_report,
-                    global_subx,
-                    global_suby,
-                    tess_res.is_in,
-                );
+                if (comptime report_mode == .full_stats) {
+                    rasterreport.recordEarlyOut(
+                        report_mode,
+                        ctx_report,
+                        global_subx,
+                        global_suby,
+                        tess_res.is_in,
+                    );
+                }
                 if (!tess_res.is_in) continue;
             } else {
-                rasterreport.recordEarlyOut(
-                    report_mode,
-                    ctx_report,
-                    global_subx,
-                    global_suby,
-                    true,
-                );
+                if (comptime report_mode == .full_stats) {
+                    rasterreport.recordEarlyOut(
+                        report_mode,
+                        ctx_report,
+                        global_subx,
+                        global_suby,
+                        true,
+                    );
+                }
             }
 
             ctx_report.recordSolverCalls(1);
@@ -602,15 +606,17 @@ fn rasterNewtonImpl(
             const subpx_z = 1.0 / inv_z;
             shaded_px += 1;
 
-            rasterreport.recordPixelIterAndOccupancy(
-                report_mode,
-                ctx_report,
-                global_subx,
-                global_suby,
-                result.iters,
-                targ_overlap.tile.scratch_x_px_min + scratch_x / sub_samp,
-                targ_overlap.tile.scratch_y_px_min + scratch_y / sub_samp,
-            );
+            if (comptime report_mode == .full_stats) {
+                rasterreport.recordPixelIterAndOccupancy(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    result.iters,
+                    targ_overlap.tile.scratch_x_px_min + scratch_x / sub_samp,
+                    targ_overlap.tile.scratch_y_px_min + scratch_y / sub_samp,
+                );
+            }
 
             const ctx_shade = shaderops.ShadeContext(N){
                 .frame_idx = ctx_rast.frame_idx,
@@ -782,13 +788,15 @@ fn rasterDirectSteppedScalarFixed(
             const scratch_idx = row_offset + scratch_x_u;
             const global_subx = tile_subx_off + scratch_x_u;
 
-            rasterreport.recordEarlyOut(
-                report_mode,
-                ctx_report,
-                global_subx,
-                global_suby,
-                true,
-            );
+            if (comptime report_mode == .full_stats) {
+                rasterreport.recordEarlyOut(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    true,
+                );
+            }
 
             ctx_report.recordSolverCalls(1);
             ctx_report.recordSolverIters(1);
@@ -823,15 +831,17 @@ fn rasterDirectSteppedScalarFixed(
                     const subpx_z = 1.0 / inv_z;
                     shaded_px += 1;
 
-                    rasterreport.recordPixelIterAndOccupancy(
-                        report_mode,
-                        ctx_report,
-                        global_subx,
-                        global_suby,
-                        1,
-                        targ_overlap.tile.scratch_x_px_min + scratch_x_u / sub_samp,
-                        targ_overlap.tile.scratch_y_px_min + scratch_y_u / sub_samp,
-                    );
+                    if (comptime report_mode == .full_stats) {
+                        rasterreport.recordPixelIterAndOccupancy(
+                            report_mode,
+                            ctx_report,
+                            global_subx,
+                            global_suby,
+                            1,
+                            targ_overlap.tile.scratch_x_px_min + scratch_x_u / sub_samp,
+                            targ_overlap.tile.scratch_y_px_min + scratch_y_u / sub_samp,
+                        );
+                    }
 
                     const weights = [3]F{ w0, w1, w2 };
                     const xi = if (is_const_depth)
@@ -1049,13 +1059,15 @@ fn rasterDirectSteppedScalarFloatFallback(
             const scratch_idx = row_offset + scratch_x_u;
             const global_subx = tile_subx_off + scratch_x_u;
 
-            rasterreport.recordEarlyOut(
-                report_mode,
-                ctx_report,
-                global_subx,
-                global_suby,
-                true,
-            );
+            if (comptime report_mode == .full_stats) {
+                rasterreport.recordEarlyOut(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    true,
+                );
+            }
 
             ctx_report.recordSolverCalls(1);
             ctx_report.recordSolverIters(1);
@@ -1084,15 +1096,17 @@ fn rasterDirectSteppedScalarFloatFallback(
                     const subpx_z = 1.0 / inv_z;
                     shaded_px += 1;
 
-                    rasterreport.recordPixelIterAndOccupancy(
-                        report_mode,
-                        ctx_report,
-                        global_subx,
-                        global_suby,
-                        1,
-                        targ_overlap.tile.scratch_x_px_min + scratch_x_u / sub_samp,
-                        targ_overlap.tile.scratch_y_px_min + scratch_y_u / sub_samp,
-                    );
+                    if (comptime report_mode == .full_stats) {
+                        rasterreport.recordPixelIterAndOccupancy(
+                            report_mode,
+                            ctx_report,
+                            global_subx,
+                            global_suby,
+                            1,
+                            targ_overlap.tile.scratch_x_px_min + scratch_x_u / sub_samp,
+                            targ_overlap.tile.scratch_y_px_min + scratch_y_u / sub_samp,
+                        );
+                    }
 
                     const weights = [3]F{ w0, w1, w2 };
                     const xi = if (is_const_depth)
