@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const cfg = @import("buildconfig.zig").config;
 const common = @import("shaderops_common.zig");
 const impl = if (cfg.simd == .on)
@@ -13,6 +13,10 @@ const impl = if (cfg.simd == .on)
 else
     @import("shaderops_scalar.zig");
 const simd_impl = @import("shaderops_simd.zig");
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
 
 pub const ScaleOver = common.ScaleOver;
 pub const NormalType = common.NormalType;
@@ -34,6 +38,11 @@ pub const TexStatic = common.TexStatic;
 pub const FuncStatic = common.FuncStatic;
 pub const ShaderStatic = common.ShaderStatic;
 pub const ShaderPrepared = common.ShaderPrepared;
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
+
 pub const fillNodalClip = impl.fillNodalClip;
 pub const fillNodalPersp = impl.fillNodalPersp;
 pub const fillTexClip = impl.fillTexClip;

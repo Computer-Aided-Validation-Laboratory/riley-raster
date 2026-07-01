@@ -1,14 +1,13 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const print = std.debug.print;
-const expectEqual = std.testing.expectEqual;
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
@@ -23,6 +22,10 @@ const TestType = F;
 pub const Mat22f = Mat22T(buildconfig.F);
 pub const Mat33f = Mat33T(buildconfig.F);
 pub const Mat44f = Mat44T(buildconfig.F);
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
 
 pub fn MatStack(
     comptime rows_n: comptime_int,
@@ -449,6 +452,12 @@ pub const Mat44Ops = struct {
 };
 
 //------------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
+
+const expectEqual = std.testing.expectEqual;
+
 test "Mat22f.getRowVec" {
     const m0 = [_]TestType{ 1, 2, 3, 4 };
     const mat0 = Mat22f.initSlice(&m0);

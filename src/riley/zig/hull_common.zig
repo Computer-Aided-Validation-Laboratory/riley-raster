@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const rops = @import("rasterops.zig");
 const cam = @import("camera.zig");
@@ -16,6 +16,11 @@ const geomkerns = @import("geometrykernels.zig");
 const MeshType = geomkerns.MeshType;
 
 const tol = buildconfig.config.tolerance;
+
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub fn AdaptiveHullPoints(comptime N: usize) type {
     const NH = blk: {

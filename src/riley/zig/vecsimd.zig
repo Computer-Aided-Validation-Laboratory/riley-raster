@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const print = std.debug.print;
 
@@ -14,6 +14,11 @@ const Mat44Ops = matstack.Mat44Ops;
 const Mat44T = matstack.Mat44T;
 
 const NDArray = @import("ndarray.zig").NDArray;
+
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub fn Vec3SIMD(comptime N: usize, comptime T: type) type {
     return struct {

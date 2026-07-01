@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const root = @import("root");
 
@@ -21,7 +21,9 @@ else
 
 pub const comptime_eval_branch_quota: comptime_int = 50000;
 
-// -- Main Config -------------------------------------------------------------
+// --------------------------------------------------------------------------------------
+// Main Config
+// --------------------------------------------------------------------------------------
 
 pub const Config = struct {
     simd: SimdMode = default_simd,
@@ -54,7 +56,9 @@ pub const UseHullNewtonSeed = defaultNewtonSeedModeUsesHull(F);
 pub const UseLastConvergedNewtonSeedReuse =
     defaultNewtonSeedReuseLastConverged(F);
 
-// -- Enums And Policy --------------------------------------------------------
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
 
 pub const SimdMode = enum {
     off,
@@ -90,7 +94,9 @@ pub const TextureSIMDPolicy = struct {
     }
 };
 
-// -- Config Helpers ----------------------------------------------------------
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub fn defaultNewtonSeedModeUsesHull(comptime precision: type) bool {
     return switch (precision) {
@@ -166,7 +172,9 @@ fn parseNewtonSolverMode(comptime newton_solver: []const u8) NewtonSolverMode {
     );
 }
 
-// -- Tolerances --------------------------------------------------------------
+// --------------------------------------------------------------------------------------
+// Major Internal Types Shared Across The File
+// --------------------------------------------------------------------------------------
 
 pub const EdgeTolerance = struct {
     tri_weight_inclusion: Scalar = 1e-9,
@@ -312,7 +320,9 @@ pub const tolerance_f32 = Tolerance{
     },
 };
 
-// -- SIMD And Fixed-Point Types ----------------------------------------------
+// --------------------------------------------------------------------------------------
+// Generic Low-Level Helpers
+// --------------------------------------------------------------------------------------
 
 pub const VecSF = @Vector(SimdWidth, F);
 pub const VecSU = @Vector(SimdWidth, usize);
@@ -354,6 +364,10 @@ comptime {
         );
     }
 }
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
 
 test "TextureSIMDPolicy resolves texture cases" {
     const expectEqual = std.testing.expectEqual;

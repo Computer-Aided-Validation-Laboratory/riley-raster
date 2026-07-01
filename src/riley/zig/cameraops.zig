@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 
@@ -28,6 +28,11 @@ const CameraPlaneMetrics = struct {
     avg_leng_per_pixel: F,
     avg_pixel_per_leng: F,
 };
+
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub fn prepareCameraSlice(
     allocator: std.mem.Allocator,
@@ -236,39 +241,6 @@ pub fn imageDistFillFrameFromRot(
     return @max(image_dists[0], image_dists[1]);
 }
 
-fn imageDistFillFrameFromRotAndTarget(
-    coords_world: *const meshio.Coords,
-    target_world: vector.Vec3f,
-    pixels_num: [2]u32,
-    pixels_size: [2]F,
-    focal_leng: F,
-    cam_rot: rotation.Rotation,
-    frame_fill: F,
-) F {
-    const world_to_cam_mat = matrix.Mat33Ops.inv(F, cam_rot.matrix);
-    var coord_cam = world_to_cam_mat.mulVec(coords_world.getVec3(0).sub(target_world));
-    var max_abs_x = @abs(coord_cam.get(0));
-    var max_abs_y = @abs(coord_cam.get(1));
-
-    for (1..coords_world.mat.rows_num) |nn| {
-        coord_cam = world_to_cam_mat.mulVec(coords_world.getVec3(nn).sub(target_world));
-        max_abs_x = @max(max_abs_x, @abs(coord_cam.get(0)));
-        max_abs_y = @max(max_abs_y, @abs(coord_cam.get(1)));
-    }
-
-    const fov_leng = [2]F{
-        2.0 * frame_fill * max_abs_x,
-        2.0 * frame_fill * max_abs_y,
-    };
-    const image_dists = imageDistFromFov(
-        pixels_num,
-        pixels_size,
-        focal_leng,
-        fov_leng,
-    );
-    return @max(image_dists[0], image_dists[1]);
-}
-
 pub fn posFillFrameFromRot(
     coords_world: *const meshio.Coords,
     pixels_num: [2]u32,
@@ -307,49 +279,6 @@ pub fn posFillFrameFromRotAndTarget(
         frame_fill,
     );
     return calcCamPos(target_world, cam_rot, image_dist);
-}
-
-fn imageDistFillFrameFromRotOverMeshesAndTarget(
-    meshes: []const mo.MeshInput,
-    target_world: vector.Vec3f,
-    pixels_num: [2]u32,
-    pixels_size: [2]F,
-    focal_leng: F,
-    cam_rot: rotation.Rotation,
-    frame_fill: F,
-) F {
-    const world_to_cam_mat = matrix.Mat33Ops.inv(F, cam_rot.matrix);
-    var max_abs_x: F = 0.0;
-    var max_abs_y: F = 0.0;
-    var is_first = true;
-
-    for (meshes) |mesh| {
-        for (0..mesh.coords.mat.rows_num) |nn| {
-            const coord_cam = world_to_cam_mat.mulVec(
-                mesh.coords.getVec3(nn).sub(target_world),
-            );
-            if (is_first) {
-                max_abs_x = @abs(coord_cam.get(0));
-                max_abs_y = @abs(coord_cam.get(1));
-                is_first = false;
-            } else {
-                max_abs_x = @max(max_abs_x, @abs(coord_cam.get(0)));
-                max_abs_y = @max(max_abs_y, @abs(coord_cam.get(1)));
-            }
-        }
-    }
-
-    const fov_leng = [2]F{
-        2.0 * frame_fill * max_abs_x,
-        2.0 * frame_fill * max_abs_y,
-    };
-    const image_dists = imageDistFromFov(
-        pixels_num,
-        pixels_size,
-        focal_leng,
-        fov_leng,
-    );
-    return @max(image_dists[0], image_dists[1]);
 }
 
 pub fn posFillFrameFromRotOverMeshes(
@@ -393,4 +322,85 @@ pub fn posFillFrameFromRotOverMeshesAndTarget(
         frame_fill,
     );
     return calcCamPos(target_world, cam_rot, image_dist);
+}
+
+
+// --------------------------------------------------------------------------------------
+// Generic Low-Level Helpers
+// --------------------------------------------------------------------------------------
+
+fn imageDistFillFrameFromRotAndTarget(
+    coords_world: *const meshio.Coords,
+    target_world: vector.Vec3f,
+    pixels_num: [2]u32,
+    pixels_size: [2]F,
+    focal_leng: F,
+    cam_rot: rotation.Rotation,
+    frame_fill: F,
+) F {
+    const world_to_cam_mat = matrix.Mat33Ops.inv(F, cam_rot.matrix);
+    var coord_cam = world_to_cam_mat.mulVec(coords_world.getVec3(0).sub(target_world));
+    var max_abs_x = @abs(coord_cam.get(0));
+    var max_abs_y = @abs(coord_cam.get(1));
+
+    for (1..coords_world.mat.rows_num) |nn| {
+        coord_cam = world_to_cam_mat.mulVec(coords_world.getVec3(nn).sub(target_world));
+        max_abs_x = @max(max_abs_x, @abs(coord_cam.get(0)));
+        max_abs_y = @max(max_abs_y, @abs(coord_cam.get(1)));
+    }
+
+    const fov_leng = [2]F{
+        2.0 * frame_fill * max_abs_x,
+        2.0 * frame_fill * max_abs_y,
+    };
+    const image_dists = imageDistFromFov(
+        pixels_num,
+        pixels_size,
+        focal_leng,
+        fov_leng,
+    );
+    return @max(image_dists[0], image_dists[1]);
+}
+
+fn imageDistFillFrameFromRotOverMeshesAndTarget(
+    meshes: []const mo.MeshInput,
+    target_world: vector.Vec3f,
+    pixels_num: [2]u32,
+    pixels_size: [2]F,
+    focal_leng: F,
+    cam_rot: rotation.Rotation,
+    frame_fill: F,
+) F {
+    const world_to_cam_mat = matrix.Mat33Ops.inv(F, cam_rot.matrix);
+    var max_abs_x: F = 0.0;
+    var max_abs_y: F = 0.0;
+    var is_first = true;
+
+    for (meshes) |mesh| {
+        for (0..mesh.coords.mat.rows_num) |nn| {
+            const coord_cam = world_to_cam_mat.mulVec(
+                mesh.coords.getVec3(nn).sub(target_world),
+            );
+            if (is_first) {
+                max_abs_x = @abs(coord_cam.get(0));
+                max_abs_y = @abs(coord_cam.get(1));
+                is_first = false;
+            } else {
+                max_abs_x = @max(max_abs_x, @abs(coord_cam.get(0)));
+                max_abs_y = @max(max_abs_y, @abs(coord_cam.get(1)));
+            }
+        }
+    }
+
+    const fov_leng = [2]F{
+        2.0 * frame_fill * max_abs_x,
+        2.0 * frame_fill * max_abs_y,
+    };
+    const image_dists = imageDistFromFov(
+        pixels_num,
+        pixels_size,
+        focal_leng,
+        fov_leng,
+    );
+    return @max(image_dists[0], image_dists[1]);
 }

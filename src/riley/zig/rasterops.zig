@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const vecstack = @import("vecstack.zig");
 const vsd = @import("vecsimd.zig");
@@ -27,9 +27,9 @@ const hull = @import("hull.zig");
 const shaderops = @import("shaderops.zig");
 const report = @import("report.zig");
 
-//------------------------------------------------------------------------------------------
-// Low-Level Math, Bounding & Helpers
-//------------------------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub fn edgeFun3Slices(
     comptime ind0: usize,
@@ -109,45 +109,6 @@ pub const MeshRaster = struct {
 //------------------------------------------------------------------------------------------
 // Coordinate Transformations
 //------------------------------------------------------------------------------------------
-
-fn transformWorldNodeToRaster(
-    camera: *const cam.CameraPrepared,
-    coord_world: vecstack.Vec3T(F),
-) vecstack.Vec3T(F) {
-    var coord_raster = matrix.Mat44Ops.mulVec3(F, camera.world_to_cam_mat, coord_world);
-
-    coord_raster.slice[0] = camera.image_dist * coord_raster.slice[0] /
-        (-coord_raster.slice[2]);
-    coord_raster.slice[1] = camera.image_dist * coord_raster.slice[1] /
-        (-coord_raster.slice[2]);
-
-    coord_raster.slice[0] = 2.0 * coord_raster.slice[0] / camera.image_dims[0];
-    coord_raster.slice[1] = 2.0 * coord_raster.slice[1] / camera.image_dims[1];
-
-    coord_raster.slice[0] = (coord_raster.slice[0] + 1.0) * 0.5 *
-        @as(F, @floatFromInt(camera.pixels_num[0]));
-    coord_raster.slice[1] = (1.0 - coord_raster.slice[1]) * 0.5 *
-        @as(F, @floatFromInt(camera.pixels_num[1]));
-    coord_raster.slice[2] = -coord_raster.slice[2];
-
-    return coord_raster;
-}
-
-fn transformWorldNodeToClipPx(
-    camera: *const cam.CameraPrepared,
-    coord_world: vecstack.Vec3T(F),
-) vecstack.Vec3T(F) {
-    const x_scale = camera.image_dist *
-        @as(F, @floatFromInt(camera.pixels_num[0])) / camera.image_dims[0];
-    const y_scale = camera.image_dist *
-        @as(F, @floatFromInt(camera.pixels_num[1])) / camera.image_dims[1];
-
-    var coord_clip = matrix.Mat44Ops.mulVec3(F, camera.world_to_cam_mat, coord_world);
-    coord_clip.slice[0] *= x_scale;
-    coord_clip.slice[1] *= -y_scale;
-    coord_clip.slice[2] = -coord_clip.slice[2];
-    return coord_clip;
-}
 
 pub fn nodesToRasterRangeInPlace(
     camera: *const cam.CameraPrepared,
@@ -277,208 +238,6 @@ pub fn elemsToClipPxLengSIMD(
 //------------------------------------------------------------------------------------------
 // Culling & Visibility
 //------------------------------------------------------------------------------------------
-
-fn isElemBehindCamera(
-    comptime N: usize,
-    coords_elem: GatheredElemCoords(N),
-) bool {
-    var behind_camera = true;
-    for (0..N) |nn| {
-        if (coords_elem.z[nn] > tol.culling.higher_order_backface_nz) {
-            behind_camera = false;
-            break;
-        }
-    }
-    return behind_camera;
-}
-
-fn isNodeZInvertible(
-    comptime N: usize,
-    coords_elem: GatheredElemCoords(N),
-) bool {
-    for (0..N) |nn| {
-        if (coords_elem.z[nn] <= tol.culling.projective_z_min) {
-            return false;
-        }
-    }
-    return true;
-}
-
-fn isTri3Backface(coords_elem: GatheredElemCoords(3)) bool {
-    const signed_area = edgeFun3Slices(0, 1, 2, &coords_elem.x, &coords_elem.y);
-    return signed_area <= tol.culling.tri3_signed_area;
-}
-
-fn isTri3BackfaceRaster(coords_raster: RasterCoords2D(3)) bool {
-    const signed_area = edgeFun3Slices(0, 1, 2, &coords_raster.x, &coords_raster.y);
-    return signed_area <= tol.culling.tri3_signed_area;
-}
-
-fn isHighOrdBackface(
-    comptime N: usize,
-    coords_raster: RasterCoords2D(N),
-) bool {
-    const nodal_derivs = comptime shapefun.getNodalDerivs(N);
-    const tolerance = tol.culling.higher_order_backface_nz;
-
-    var backface = true;
-    for (0..N) |nn| {
-        var dx_dxi: F = 0.0;
-        var dx_deta: F = 0.0;
-        var dy_dxi: F = 0.0;
-        var dy_deta: F = 0.0;
-
-        for (0..N) |mm| {
-            dx_dxi += nodal_derivs.dNu[nn][mm] * coords_raster.x[mm];
-            dx_deta += nodal_derivs.dNv[nn][mm] * coords_raster.x[mm];
-            dy_dxi += nodal_derivs.dNu[nn][mm] * coords_raster.y[mm];
-            dy_deta += nodal_derivs.dNv[nn][mm] * coords_raster.y[mm];
-        }
-
-        const normal_z = dx_dxi * dy_deta - dx_deta * dy_dxi;
-        const front_facing = normal_z < -tolerance;
-        if (front_facing) {
-            backface = false;
-            break;
-        }
-    }
-
-    return backface;
-}
-
-fn isOnScreen(
-    camera: *const cam.CameraPrepared,
-    x_min: F,
-    x_max: F,
-    y_min: F,
-    y_max: F,
-) bool {
-    return x_min <= @as(F, @floatFromInt(camera.pixels_num[0] - 1)) and
-        x_max >= 0.0 and
-        y_min <= @as(F, @floatFromInt(camera.pixels_num[1] - 1)) and
-        y_max >= 0.0;
-}
-
-fn projectClipToIdealRaster(
-    comptime N: usize,
-    camera: *const cam.CameraPrepared,
-    coords_clip: GatheredElemCoords(N),
-) RasterCoords2D(N) {
-    const offsets = camera.calcRasterOffsets();
-    var coords_ideal: RasterCoords2D(N) = undefined;
-    for (0..N) |nn| {
-        coords_ideal.x[nn] = coords_clip.x[nn] / coords_clip.z[nn] + offsets.x_off;
-        coords_ideal.y[nn] = coords_clip.y[nn] / coords_clip.z[nn] + offsets.y_off;
-    }
-    return coords_ideal;
-}
-
-fn distortIdealRasterCoords(
-    comptime N: usize,
-    camera: *const cam.CameraPrepared,
-    coords_ideal: RasterCoords2D(N),
-) RasterCoords2D(N) {
-    const focal_px = camera.calcFocalPx();
-    const offsets = camera.calcRasterOffsets();
-    var coords_distorted = coords_ideal;
-
-    if (cam.isNoDistortion(camera.distortion)) {
-        return coords_distorted;
-    }
-
-    for (0..N) |nn| {
-        const x_ideal = (coords_ideal.x[nn] - offsets.x_off) / focal_px.fx;
-        const y_ideal = (coords_ideal.y[nn] - offsets.y_off) / focal_px.fy;
-        const distorted = cam.forwardDistortionModelScalar(
-            camera.distortion,
-            x_ideal,
-            y_ideal,
-        );
-        coords_distorted.x[nn] = distorted[0] * focal_px.fx + offsets.x_off;
-        coords_distorted.y[nn] = distorted[1] * focal_px.fy + offsets.y_off;
-    }
-
-    return coords_distorted;
-}
-
-fn packHullPointsAsRasterCoords(
-    comptime NH: usize,
-    hull_points: anytype,
-) RasterCoords2D(NH) {
-    var coords_raster: RasterCoords2D(NH) = undefined;
-    inline for (0..NH) |nn| {
-        coords_raster.x[nn] = hull_points.x[nn];
-        coords_raster.y[nn] = hull_points.y[nn];
-    }
-    return coords_raster;
-}
-
-fn calcBBoxFromRasterCoords(
-    comptime N: usize,
-    camera: *const cam.CameraPrepared,
-    elem_idx: usize,
-    coords_raster: RasterCoords2D(N),
-) ?ElemBBox {
-    const x_min = std.mem.min(F, &coords_raster.x);
-    const x_max = std.mem.max(F, &coords_raster.x);
-    const y_min = std.mem.min(F, &coords_raster.y);
-    const y_max = std.mem.max(F, &coords_raster.y);
-
-    if (!isOnScreen(camera, x_min, x_max, y_min, y_max)) {
-        return null;
-    }
-
-    return .{
-        .elem_idx = elem_idx,
-        .x_min = boundIndMin(u16, x_min),
-        .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
-        .y_min = boundIndMin(u16, y_min),
-        .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
-    };
-}
-
-fn calcBBoxFromRasterCoordsPadded(
-    comptime N: usize,
-    camera: *const cam.CameraPrepared,
-    elem_idx: usize,
-    coords_raster: RasterCoords2D(N),
-    rel_pad: F,
-) ?ElemBBox {
-    const x_min = std.mem.min(F, &coords_raster.x);
-    const x_max = std.mem.max(F, &coords_raster.x);
-    const y_min = std.mem.min(F, &coords_raster.y);
-    const y_max = std.mem.max(F, &coords_raster.y);
-
-    const dx = x_max - x_min;
-    const dy = y_max - y_min;
-    const pad = rel_pad * @max(dx, dy);
-
-    if (!isOnScreen(
-        camera,
-        x_min - pad,
-        x_max + pad,
-        y_min - pad,
-        y_max + pad,
-    )) {
-        return null;
-    }
-
-    return .{
-        .elem_idx = elem_idx,
-        .x_min = boundIndMin(u16, x_min - pad),
-        .x_max = boundIndMax(
-            u16,
-            x_max + pad,
-            @intCast(camera.pixels_num[0]),
-        ),
-        .y_min = boundIndMin(u16, y_min - pad),
-        .y_max = boundIndMax(
-            u16,
-            y_max + pad,
-            @intCast(camera.pixels_num[1]),
-        ),
-    };
-}
 
 pub fn calcVisibleNodeBBoxTri3(
     comptime MT: MeshType,
@@ -740,140 +499,6 @@ pub const TilingOverlaps = struct {
     active_tiles: []ActiveTile,
 };
 
-const TilingCountStage = struct {
-    tile_elem_counts: []std.atomic.Value(usize),
-    tile_size: u16,
-    tiles_num_x: usize,
-    tiles_num_y: usize,
-    halo_px: u16,
-    elems_num: usize,
-    elem_bbox_slice: []const ElemBBox,
-};
-
-fn runTilingCount(
-    ctx_ptr: *anyopaque,
-    chunk_idx: usize,
-    range_start: usize,
-    range_end: usize,
-) void {
-    _ = chunk_idx;
-    const tiling: *TilingCountStage = @ptrCast(@alignCast(ctx_ptr));
-
-    for (range_start..range_end) |ee| {
-        const elem_bbox = tiling.elem_bbox_slice[ee];
-        const halo_u32: u32 = tiling.halo_px;
-        const x_min_expanded: u32 = if (elem_bbox.x_min > tiling.halo_px)
-            elem_bbox.x_min - tiling.halo_px
-        else
-            0;
-        const y_min_expanded: u32 = if (elem_bbox.y_min > tiling.halo_px)
-            elem_bbox.y_min - tiling.halo_px
-        else
-            0;
-        const x_max_expanded: u32 = @as(u32, elem_bbox.x_max) + halo_u32;
-        const y_max_expanded: u32 = @as(u32, elem_bbox.y_max) + halo_u32;
-
-        const tx_start: usize = x_min_expanded / tiling.tile_size;
-        const tx_end: usize = @min(tiling.tiles_num_x, @as(usize, (x_max_expanded +
-            tiling.tile_size - 1) / tiling.tile_size));
-        const ty_start: usize = y_min_expanded / tiling.tile_size;
-        const ty_end: usize = @min(tiling.tiles_num_y, @as(usize, (y_max_expanded +
-            tiling.tile_size - 1) / tiling.tile_size));
-
-        for (ty_start..ty_end) |ty| {
-            const row_off = ty * tiling.tiles_num_x;
-            for (tx_start..tx_end) |tx| {
-                _ = tiling.tile_elem_counts[row_off + tx].fetchAdd(1, .monotonic);
-            }
-        }
-    }
-}
-
-const TilingFillStage = struct {
-    tile_write_inds: []std.atomic.Value(usize),
-    overlaps: []OverlapBBox,
-    tile_size: u16,
-    tiles_num_x: usize,
-    tiles_num_y: usize,
-    screen_px_x: u16,
-    screen_px_y: u16,
-    halo_px: u16,
-    mesh_idx: usize,
-    elem_bbox_slice: []const ElemBBox,
-};
-
-fn runTilingFill(
-    ctx_ptr: *anyopaque,
-    chunk_idx: usize,
-    range_start: usize,
-    range_end: usize,
-) void {
-    _ = chunk_idx;
-    const tiling: *TilingFillStage = @ptrCast(@alignCast(ctx_ptr));
-
-    for (range_start..range_end) |ee| {
-        const elem_bbox = tiling.elem_bbox_slice[ee];
-        const halo_u32: u32 = tiling.halo_px;
-        const x_min_expanded: u32 = if (elem_bbox.x_min > tiling.halo_px)
-            elem_bbox.x_min - tiling.halo_px
-        else
-            0;
-        const y_min_expanded: u32 = if (elem_bbox.y_min > tiling.halo_px)
-            elem_bbox.y_min - tiling.halo_px
-        else
-            0;
-        const x_max_expanded: u32 = @as(u32, elem_bbox.x_max) + halo_u32;
-        const y_max_expanded: u32 = @as(u32, elem_bbox.y_max) + halo_u32;
-
-        const tx_start = x_min_expanded / tiling.tile_size;
-        const tx_end = @min(
-            tiling.tiles_num_x,
-            @as(usize, (x_max_expanded + tiling.tile_size - 1) / tiling.tile_size),
-        );
-
-        const ty_start = y_min_expanded / tiling.tile_size;
-        const ty_end = @min(
-            tiling.tiles_num_y,
-            @as(usize, (y_max_expanded + tiling.tile_size - 1) / tiling.tile_size),
-        );
-
-        for (ty_start..ty_end) |ty| {
-            const tile_px_min_y = @as(u16, @intCast(ty * tiling.tile_size));
-            const tile_px_max_y = @as(u16, @min(@as(u32, tile_px_min_y) + tiling.tile_size, tiling.screen_px_y));
-            const scratch_px_min_y = tile_px_min_y -| tiling.halo_px;
-            const scratch_px_max_y = @min(
-                tiling.screen_px_y,
-                @as(u16, @intCast(@as(u32, tile_px_max_y) + tiling.halo_px)),
-            );
-
-            const overlap_y_min = @max(elem_bbox.y_min, scratch_px_min_y);
-            const overlap_y_max = @min(elem_bbox.y_max, scratch_px_max_y);
-
-            for (tx_start..tx_end) |tx| {
-                const tile_px_min_x = @as(u16, @intCast(tx * tiling.tile_size));
-                const tile_px_max_x = @as(u16, @min(@as(u32, tile_px_min_x) + tiling.tile_size, tiling.screen_px_x));
-                const scratch_px_min_x = tile_px_min_x -| tiling.halo_px;
-                const scratch_px_max_x = @min(
-                    tiling.screen_px_x,
-                    @as(u16, @intCast(@as(u32, tile_px_max_x) + tiling.halo_px)),
-                );
-
-                const tile_idx = ty * tiling.tiles_num_x + tx;
-                const write_idx = tiling.tile_write_inds[tile_idx].fetchAdd(1, .monotonic);
-
-                tiling.overlaps[write_idx] = .{
-                    .mesh_idx = tiling.mesh_idx,
-                    .elem_idx = elem_bbox.elem_idx,
-                    .x_min = @max(elem_bbox.x_min, scratch_px_min_x),
-                    .x_max = @min(elem_bbox.x_max, scratch_px_max_x),
-                    .y_min = overlap_y_min,
-                    .y_max = overlap_y_max,
-                };
-            }
-        }
-    }
-}
-
 pub fn sceneTileElemOverlap(
     allocator: std.mem.Allocator,
     chunk_exec: *pce.ParaChunkExecutor,
@@ -1009,6 +634,381 @@ pub fn sceneTileElemOverlap(
     return TilingOverlaps{ .overlaps = overlaps, .active_tiles = active_tiles };
 }
 
+const TilingCountStage = struct {
+    tile_elem_counts: []std.atomic.Value(usize),
+    tile_size: u16,
+    tiles_num_x: usize,
+    tiles_num_y: usize,
+    halo_px: u16,
+    elems_num: usize,
+    elem_bbox_slice: []const ElemBBox,
+};
+
+fn runTilingCount(
+    ctx_ptr: *anyopaque,
+    chunk_idx: usize,
+    range_start: usize,
+    range_end: usize,
+) void {
+    _ = chunk_idx;
+    const tiling: *TilingCountStage = @ptrCast(@alignCast(ctx_ptr));
+
+    for (range_start..range_end) |ee| {
+        const elem_bbox = tiling.elem_bbox_slice[ee];
+        const halo_u32: u32 = tiling.halo_px;
+        const x_min_expanded: u32 = if (elem_bbox.x_min > tiling.halo_px)
+            elem_bbox.x_min - tiling.halo_px
+        else
+            0;
+        const y_min_expanded: u32 = if (elem_bbox.y_min > tiling.halo_px)
+            elem_bbox.y_min - tiling.halo_px
+        else
+            0;
+        const x_max_expanded: u32 = @as(u32, elem_bbox.x_max) + halo_u32;
+        const y_max_expanded: u32 = @as(u32, elem_bbox.y_max) + halo_u32;
+
+        const tx_start: usize = x_min_expanded / tiling.tile_size;
+        const tx_end: usize = @min(tiling.tiles_num_x, @as(usize, (x_max_expanded +
+            tiling.tile_size - 1) / tiling.tile_size));
+        const ty_start: usize = y_min_expanded / tiling.tile_size;
+        const ty_end: usize = @min(tiling.tiles_num_y, @as(usize, (y_max_expanded +
+            tiling.tile_size - 1) / tiling.tile_size));
+
+        for (ty_start..ty_end) |ty| {
+            const row_off = ty * tiling.tiles_num_x;
+            for (tx_start..tx_end) |tx| {
+                _ = tiling.tile_elem_counts[row_off + tx].fetchAdd(1, .monotonic);
+            }
+        }
+    }
+}
+
+const TilingFillStage = struct {
+    tile_write_inds: []std.atomic.Value(usize),
+    overlaps: []OverlapBBox,
+    tile_size: u16,
+    tiles_num_x: usize,
+    tiles_num_y: usize,
+    screen_px_x: u16,
+    screen_px_y: u16,
+    halo_px: u16,
+    mesh_idx: usize,
+    elem_bbox_slice: []const ElemBBox,
+};
+
+fn runTilingFill(
+    ctx_ptr: *anyopaque,
+    chunk_idx: usize,
+    range_start: usize,
+    range_end: usize,
+) void {
+    _ = chunk_idx;
+    const tiling: *TilingFillStage = @ptrCast(@alignCast(ctx_ptr));
+
+    for (range_start..range_end) |ee| {
+        const elem_bbox = tiling.elem_bbox_slice[ee];
+        const halo_u32: u32 = tiling.halo_px;
+        const x_min_expanded: u32 = if (elem_bbox.x_min > tiling.halo_px)
+            elem_bbox.x_min - tiling.halo_px
+        else
+            0;
+        const y_min_expanded: u32 = if (elem_bbox.y_min > tiling.halo_px)
+            elem_bbox.y_min - tiling.halo_px
+        else
+            0;
+        const x_max_expanded: u32 = @as(u32, elem_bbox.x_max) + halo_u32;
+        const y_max_expanded: u32 = @as(u32, elem_bbox.y_max) + halo_u32;
+
+        const tx_start = x_min_expanded / tiling.tile_size;
+        const tx_end = @min(
+            tiling.tiles_num_x,
+            @as(usize, (x_max_expanded + tiling.tile_size - 1) / tiling.tile_size),
+        );
+
+        const ty_start = y_min_expanded / tiling.tile_size;
+        const ty_end = @min(
+            tiling.tiles_num_y,
+            @as(usize, (y_max_expanded + tiling.tile_size - 1) / tiling.tile_size),
+        );
+
+        for (ty_start..ty_end) |ty| {
+            const tile_px_min_y = @as(u16, @intCast(ty * tiling.tile_size));
+            const tile_px_max_y = @as(u16, @min(@as(u32, tile_px_min_y) + tiling.tile_size, tiling.screen_px_y));
+            const scratch_px_min_y = tile_px_min_y -| tiling.halo_px;
+            const scratch_px_max_y = @min(
+                tiling.screen_px_y,
+                @as(u16, @intCast(@as(u32, tile_px_max_y) + tiling.halo_px)),
+            );
+
+            const overlap_y_min = @max(elem_bbox.y_min, scratch_px_min_y);
+            const overlap_y_max = @min(elem_bbox.y_max, scratch_px_max_y);
+
+            for (tx_start..tx_end) |tx| {
+                const tile_px_min_x = @as(u16, @intCast(tx * tiling.tile_size));
+                const tile_px_max_x = @as(u16, @min(@as(u32, tile_px_min_x) + tiling.tile_size, tiling.screen_px_x));
+                const scratch_px_min_x = tile_px_min_x -| tiling.halo_px;
+                const scratch_px_max_x = @min(
+                    tiling.screen_px_x,
+                    @as(u16, @intCast(@as(u32, tile_px_max_x) + tiling.halo_px)),
+                );
+
+                const tile_idx = ty * tiling.tiles_num_x + tx;
+                const write_idx = tiling.tile_write_inds[tile_idx].fetchAdd(1, .monotonic);
+
+                tiling.overlaps[write_idx] = .{
+                    .mesh_idx = tiling.mesh_idx,
+                    .elem_idx = elem_bbox.elem_idx,
+                    .x_min = @max(elem_bbox.x_min, scratch_px_min_x),
+                    .x_max = @min(elem_bbox.x_max, scratch_px_max_x),
+                    .y_min = overlap_y_min,
+                    .y_max = overlap_y_max,
+                };
+            }
+        }
+    }
+}
+
+fn transformWorldNodeToRaster(
+    camera: *const cam.CameraPrepared,
+    coord_world: vecstack.Vec3T(F),
+) vecstack.Vec3T(F) {
+    var coord_raster = matrix.Mat44Ops.mulVec3(F, camera.world_to_cam_mat, coord_world);
+
+    coord_raster.slice[0] = camera.image_dist * coord_raster.slice[0] /
+        (-coord_raster.slice[2]);
+    coord_raster.slice[1] = camera.image_dist * coord_raster.slice[1] /
+        (-coord_raster.slice[2]);
+
+    coord_raster.slice[0] = 2.0 * coord_raster.slice[0] / camera.image_dims[0];
+    coord_raster.slice[1] = 2.0 * coord_raster.slice[1] / camera.image_dims[1];
+
+    coord_raster.slice[0] = (coord_raster.slice[0] + 1.0) * 0.5 *
+        @as(F, @floatFromInt(camera.pixels_num[0]));
+    coord_raster.slice[1] = (1.0 - coord_raster.slice[1]) * 0.5 *
+        @as(F, @floatFromInt(camera.pixels_num[1]));
+    coord_raster.slice[2] = -coord_raster.slice[2];
+
+    return coord_raster;
+}
+
+fn transformWorldNodeToClipPx(
+    camera: *const cam.CameraPrepared,
+    coord_world: vecstack.Vec3T(F),
+) vecstack.Vec3T(F) {
+    const x_scale = camera.image_dist *
+        @as(F, @floatFromInt(camera.pixels_num[0])) / camera.image_dims[0];
+    const y_scale = camera.image_dist *
+        @as(F, @floatFromInt(camera.pixels_num[1])) / camera.image_dims[1];
+
+    var coord_clip = matrix.Mat44Ops.mulVec3(F, camera.world_to_cam_mat, coord_world);
+    coord_clip.slice[0] *= x_scale;
+    coord_clip.slice[1] *= -y_scale;
+    coord_clip.slice[2] = -coord_clip.slice[2];
+    return coord_clip;
+}
+
+fn isElemBehindCamera(
+    comptime N: usize,
+    coords_elem: GatheredElemCoords(N),
+) bool {
+    var behind_camera = true;
+    for (0..N) |nn| {
+        if (coords_elem.z[nn] > tol.culling.higher_order_backface_nz) {
+            behind_camera = false;
+            break;
+        }
+    }
+    return behind_camera;
+}
+
+fn isNodeZInvertible(
+    comptime N: usize,
+    coords_elem: GatheredElemCoords(N),
+) bool {
+    for (0..N) |nn| {
+        if (coords_elem.z[nn] <= tol.culling.projective_z_min) {
+            return false;
+        }
+    }
+    return true;
+}
+
+fn isTri3Backface(coords_elem: GatheredElemCoords(3)) bool {
+    const signed_area = edgeFun3Slices(0, 1, 2, &coords_elem.x, &coords_elem.y);
+    return signed_area <= tol.culling.tri3_signed_area;
+}
+
+fn isTri3BackfaceRaster(coords_raster: RasterCoords2D(3)) bool {
+    const signed_area = edgeFun3Slices(0, 1, 2, &coords_raster.x, &coords_raster.y);
+    return signed_area <= tol.culling.tri3_signed_area;
+}
+
+fn isHighOrdBackface(
+    comptime N: usize,
+    coords_raster: RasterCoords2D(N),
+) bool {
+    const nodal_derivs = comptime shapefun.getNodalDerivs(N);
+    const tolerance = tol.culling.higher_order_backface_nz;
+
+    var backface = true;
+    for (0..N) |nn| {
+        var dx_dxi: F = 0.0;
+        var dx_deta: F = 0.0;
+        var dy_dxi: F = 0.0;
+        var dy_deta: F = 0.0;
+
+        for (0..N) |mm| {
+            dx_dxi += nodal_derivs.dNu[nn][mm] * coords_raster.x[mm];
+            dx_deta += nodal_derivs.dNv[nn][mm] * coords_raster.x[mm];
+            dy_dxi += nodal_derivs.dNu[nn][mm] * coords_raster.y[mm];
+            dy_deta += nodal_derivs.dNv[nn][mm] * coords_raster.y[mm];
+        }
+
+        const normal_z = dx_dxi * dy_deta - dx_deta * dy_dxi;
+        const front_facing = normal_z < -tolerance;
+        if (front_facing) {
+            backface = false;
+            break;
+        }
+    }
+
+    return backface;
+}
+
+fn isOnScreen(
+    camera: *const cam.CameraPrepared,
+    x_min: F,
+    x_max: F,
+    y_min: F,
+    y_max: F,
+) bool {
+    return x_min <= @as(F, @floatFromInt(camera.pixels_num[0] - 1)) and
+        x_max >= 0.0 and
+        y_min <= @as(F, @floatFromInt(camera.pixels_num[1] - 1)) and
+        y_max >= 0.0;
+}
+
+fn projectClipToIdealRaster(
+    comptime N: usize,
+    camera: *const cam.CameraPrepared,
+    coords_clip: GatheredElemCoords(N),
+) RasterCoords2D(N) {
+    const offsets = camera.calcRasterOffsets();
+    var coords_ideal: RasterCoords2D(N) = undefined;
+    for (0..N) |nn| {
+        coords_ideal.x[nn] = coords_clip.x[nn] / coords_clip.z[nn] + offsets.x_off;
+        coords_ideal.y[nn] = coords_clip.y[nn] / coords_clip.z[nn] + offsets.y_off;
+    }
+    return coords_ideal;
+}
+
+fn distortIdealRasterCoords(
+    comptime N: usize,
+    camera: *const cam.CameraPrepared,
+    coords_ideal: RasterCoords2D(N),
+) RasterCoords2D(N) {
+    const focal_px = camera.calcFocalPx();
+    const offsets = camera.calcRasterOffsets();
+    var coords_distorted = coords_ideal;
+
+    if (cam.isNoDistortion(camera.distortion)) {
+        return coords_distorted;
+    }
+
+    for (0..N) |nn| {
+        const x_ideal = (coords_ideal.x[nn] - offsets.x_off) / focal_px.fx;
+        const y_ideal = (coords_ideal.y[nn] - offsets.y_off) / focal_px.fy;
+        const distorted = cam.forwardDistortionModelScalar(
+            camera.distortion,
+            x_ideal,
+            y_ideal,
+        );
+        coords_distorted.x[nn] = distorted[0] * focal_px.fx + offsets.x_off;
+        coords_distorted.y[nn] = distorted[1] * focal_px.fy + offsets.y_off;
+    }
+
+    return coords_distorted;
+}
+
+fn packHullPointsAsRasterCoords(
+    comptime NH: usize,
+    hull_points: anytype,
+) RasterCoords2D(NH) {
+    var coords_raster: RasterCoords2D(NH) = undefined;
+    inline for (0..NH) |nn| {
+        coords_raster.x[nn] = hull_points.x[nn];
+        coords_raster.y[nn] = hull_points.y[nn];
+    }
+    return coords_raster;
+}
+
+fn calcBBoxFromRasterCoords(
+    comptime N: usize,
+    camera: *const cam.CameraPrepared,
+    elem_idx: usize,
+    coords_raster: RasterCoords2D(N),
+) ?ElemBBox {
+    const x_min = std.mem.min(F, &coords_raster.x);
+    const x_max = std.mem.max(F, &coords_raster.x);
+    const y_min = std.mem.min(F, &coords_raster.y);
+    const y_max = std.mem.max(F, &coords_raster.y);
+
+    if (!isOnScreen(camera, x_min, x_max, y_min, y_max)) {
+        return null;
+    }
+
+    return .{
+        .elem_idx = elem_idx,
+        .x_min = boundIndMin(u16, x_min),
+        .x_max = boundIndMax(u16, x_max, @intCast(camera.pixels_num[0])),
+        .y_min = boundIndMin(u16, y_min),
+        .y_max = boundIndMax(u16, y_max, @intCast(camera.pixels_num[1])),
+    };
+}
+
+fn calcBBoxFromRasterCoordsPadded(
+    comptime N: usize,
+    camera: *const cam.CameraPrepared,
+    elem_idx: usize,
+    coords_raster: RasterCoords2D(N),
+    rel_pad: F,
+) ?ElemBBox {
+    const x_min = std.mem.min(F, &coords_raster.x);
+    const x_max = std.mem.max(F, &coords_raster.x);
+    const y_min = std.mem.min(F, &coords_raster.y);
+    const y_max = std.mem.max(F, &coords_raster.y);
+
+    const dx = x_max - x_min;
+    const dy = y_max - y_min;
+    const pad = rel_pad * @max(dx, dy);
+
+    if (!isOnScreen(
+        camera,
+        x_min - pad,
+        x_max + pad,
+        y_min - pad,
+        y_max + pad,
+    )) {
+        return null;
+    }
+
+    return .{
+        .elem_idx = elem_idx,
+        .x_min = boundIndMin(u16, x_min - pad),
+        .x_max = boundIndMax(
+            u16,
+            x_max + pad,
+            @intCast(camera.pixels_num[0]),
+        ),
+        .y_min = boundIndMin(u16, y_min - pad),
+        .y_max = boundIndMax(
+            u16,
+            y_max + pad,
+            @intCast(camera.pixels_num[1]),
+        ),
+    };
+}
+
 //------------------------------------------------------------------------------------------
 // Tests & Test Helpers
 //------------------------------------------------------------------------------------------
@@ -1105,6 +1105,10 @@ fn initElemCoords(
     }
     return coords;
 }
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
 
 test "calcVisibleNodeBBoxTri3 on_screen" {
     const allocator = std.testing.allocator;

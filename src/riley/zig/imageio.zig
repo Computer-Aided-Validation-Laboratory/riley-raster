@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 
 const buildconfig = @import("buildconfig.zig");
@@ -23,6 +23,10 @@ const csvio = @import("csvio.zig");
 
 const temp_test_root_dir = "temp-tests";
 const temp_test_dir = "temp-tests/imageio";
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
 
 fn ensureTempTestDir(io: std.Io) !void {
     const cwd = std.Io.Dir.cwd();
@@ -67,6 +71,10 @@ pub const ImageSaveOpts = struct {
         };
     }
 };
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub fn loadImage(
     comptime T: type,
@@ -1106,6 +1114,10 @@ fn convertValue(comptime T: type, val: anytype) T {
         else => @compileError("Unsupported type"),
     }
 }
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
 
 const testing = std.testing;
 

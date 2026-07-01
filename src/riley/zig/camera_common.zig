@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 
 const vector = @import("vecstack.zig");
@@ -20,6 +20,10 @@ const camera_simd = @import("camera_simd.zig");
 
 const cfg = buildconfig.config;
 const camera_impl = if (cfg.simd == .on) camera_simd else camera_scalar;
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
 
 pub const DistortionModel = cameramodels.DistortionModel;
 pub const BrownConrady = cameramodels.BrownConrady;
@@ -143,13 +147,6 @@ pub fn calcPinholeRasterPointScalar(
     return .{
         solved.x * focal_px.fx + offsets.x_off,
         solved.y * focal_px.fy + offsets.y_off,
-    };
-}
-
-fn calcSensorSize(pixels_num: [2]u32, pixels_size: [2]F) [2]F {
-    return .{
-        @as(F, @floatFromInt(pixels_num[0])) * pixels_size[0],
-        @as(F, @floatFromInt(pixels_num[1])) * pixels_size[1],
     };
 }
 
@@ -378,6 +375,13 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
     };
 }
 
+fn calcSensorSize(pixels_num: [2]u32, pixels_size: [2]F) [2]F {
+    return .{
+        @as(F, @floatFromInt(pixels_num[0])) * pixels_size[0],
+        @as(F, @floatFromInt(pixels_num[1])) * pixels_size[1],
+    };
+}
+
 // --------------------------------------------------------------------------
 // Unit Tests
 // --------------------------------------------------------------------------
@@ -455,6 +459,10 @@ fn checkDistortionGridInverse(
         }
     }
 }
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
 
 test "CameraPrepared.init" {
     const input = CameraInput{

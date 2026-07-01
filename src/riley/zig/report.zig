@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -17,6 +17,10 @@ const mo = @import("meshops.zig");
 const newton = @import("newton.zig");
 const rastcfg = @import("rasterconfig.zig");
 pub const ReportMode = rastcfg.ReportMode;
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
 
 pub const OffLog = struct {};
 
@@ -75,6 +79,10 @@ pub const FrameReportStorage = union(ReportMode) {
     full_stats: FullStatsLog,
 };
 
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
+
 pub fn deinitFrameReportStorage(
     outer_alloc: std.mem.Allocator,
     config: rastcfg.RasterConfig,
@@ -97,6 +105,10 @@ pub fn calcBenchCaptureIdx(
 ) usize {
     return frame_idx * cameras_num + camera_idx;
 }
+
+// --------------------------------------------------------------------------------------
+// Publish Pipeline
+// --------------------------------------------------------------------------------------
 
 pub fn publishFrameResults(
     outer_alloc: std.mem.Allocator,

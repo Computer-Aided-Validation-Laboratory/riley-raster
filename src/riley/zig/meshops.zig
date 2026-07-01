@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -41,6 +41,11 @@ const geomkerns = @import("geometrykernels.zig");
 // Input: Raw user data for all frames.
 // meshio.Coords/Fields: Node-order [total_nodes, ...]
 // meshio.Connect: Connectivity table links nodes to elements.
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
+
 pub const MeshInput = struct {
     mesh_type: geomkerns.MeshType,
     coords: meshio.Coords,
@@ -93,6 +98,11 @@ pub const MeshPrepared = struct {
     coords: ndarray.NDArray(F),
     shader: shaderops.ShaderPrepared,
 };
+
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub fn calcNodesPerElem(
     meshes: []const MeshPrepared,
@@ -415,6 +425,102 @@ pub fn initMeshStatic(
         .disp = mesh_input.disp,
         .shader = shader_static,
     };
+}
+
+pub const GeometryTiming = struct {
+    coord_ops: u64 = 0,
+    cull_ops: u64 = 0,
+    prep_hulls_shaders: u64 = 0,
+    remap_inds: u64 = 0,
+};
+
+pub fn prepareMeshFrame(
+    allocator: std.mem.Allocator,
+    chunk_exec: *pce.ParaChunkExecutor,
+    workers_num: usize,
+    camera: *const cam.CameraPrepared,
+    config: rastcfg.RasterConfig,
+    mesh_static: *const MeshStatic,
+    frame_idx: usize,
+    scaling_params: ?imageops.ScalingParams,
+    timing: *GeometryTiming,
+) !MeshFrame {
+    return switch (mesh_static.mesh_type) {
+        inline else => |MT| {
+            var pipeline = try FrameMeshPipeline(MT).init(
+                allocator,
+                camera,
+                mesh_static,
+                frame_idx,
+                config.hull_mode,
+                scaling_params,
+                chunk_exec,
+                workers_num,
+            );
+            return try pipeline.run(timing);
+        },
+    };
+}
+
+pub const FrameGeometryResult = struct {
+    total_elems_num: usize,
+    total_elems_in_image: usize,
+};
+
+pub fn prepareMeshFrames(
+    arena_alloc: std.mem.Allocator,
+    chunk_exec: *pce.ParaChunkExecutor,
+    workers_num: usize,
+    camera: *const cam.CameraPrepared,
+    config: rastcfg.RasterConfig,
+    frame_idx: usize,
+    static_meshes: []const MeshStatic,
+    nodal_global_scaling: []const ?imageops.ScalingParams,
+    frame_meshes: []MeshFrame,
+    timing: *GeometryTiming,
+) !FrameGeometryResult {
+    var res = FrameGeometryResult{
+        .total_elems_num = 0,
+        .total_elems_in_image = 0,
+    };
+
+    for (static_meshes, 0..) |*mesh_static, ii| {
+        // Only needed for nodal interpolation shading and only if not .none. If .none we
+        // directly render float fields unscaled.
+        var nodal_frame_scaling: ?imageops.ScalingParams = null;
+        switch (mesh_static.shader) {
+            .nodal => |s| {
+                if (s.scale_over == .over_frames) {
+                    nodal_frame_scaling = nodal_global_scaling[ii];
+                } else { // .within_frames
+                    nodal_frame_scaling = imageops.getScalingParamsNDArray(
+                        &s.field.array,
+                        frame_idx,
+                        s.scaling,
+                    );
+                }
+            },
+            else => {},
+        }
+
+        // Prepares meshes for each frame including coord transforms to camera space and
+        // data reshaping to element order for a given frame.
+        frame_meshes[ii] = try prepareMeshFrame(
+            arena_alloc,
+            chunk_exec,
+            workers_num,
+            camera,
+            config,
+            mesh_static,
+            frame_idx,
+            nodal_frame_scaling,
+            timing,
+        );
+        res.total_elems_num += frame_meshes[ii].total_elems_num;
+        res.total_elems_in_image += frame_meshes[ii].elems_in_image;
+    }
+
+    return res;
 }
 
 // Outside of pipeline because these are static - we gather these into an NDarray once
@@ -1383,106 +1489,4 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
         }
     };
-}
-
-pub const GeometryTiming = struct {
-    coord_ops: u64 = 0,
-    cull_ops: u64 = 0,
-    prep_hulls_shaders: u64 = 0,
-    remap_inds: u64 = 0,
-};
-
-pub fn prepareMeshFrame(
-    allocator: std.mem.Allocator,
-    chunk_exec: *pce.ParaChunkExecutor,
-    workers_num: usize,
-    camera: *const cam.CameraPrepared,
-    config: rastcfg.RasterConfig,
-    mesh_static: *const MeshStatic,
-    frame_idx: usize,
-    scaling_params: ?imageops.ScalingParams,
-    timing: *GeometryTiming,
-) !MeshFrame {
-    return switch (mesh_static.mesh_type) {
-        inline else => |MT| {
-            var pipeline = try FrameMeshPipeline(MT).init(
-                allocator,
-                camera,
-                mesh_static,
-                frame_idx,
-                config.hull_mode,
-                scaling_params,
-                chunk_exec,
-                workers_num,
-            );
-            return try pipeline.run(timing);
-        },
-    };
-}
-
-//------------------------------------------------------------------------------------------
-// Main Entry Point: Top-level function for preparing all frame meshes
-//------------------------------------------------------------------------------------------
-
-pub const FrameGeometryResult = struct {
-    total_elems_num: usize,
-    total_elems_in_image: usize,
-};
-
-//==========================================================================================
-// Main Entry Point to Geometry Pipeline
-pub fn prepareMeshFrames(
-    arena_alloc: std.mem.Allocator,
-    chunk_exec: *pce.ParaChunkExecutor,
-    workers_num: usize,
-    camera: *const cam.CameraPrepared,
-    config: rastcfg.RasterConfig,
-    frame_idx: usize,
-    static_meshes: []const MeshStatic,
-    nodal_global_scaling: []const ?imageops.ScalingParams,
-    frame_meshes: []MeshFrame,
-    timing: *GeometryTiming,
-) !FrameGeometryResult {
-    var res = FrameGeometryResult{
-        .total_elems_num = 0,
-        .total_elems_in_image = 0,
-    };
-
-    for (static_meshes, 0..) |*mesh_static, ii| {
-        // Only needed for nodal interpolation shading and only if not .none. If .none we
-        // directly render float fields unscaled.
-        var nodal_frame_scaling: ?imageops.ScalingParams = null;
-        switch (mesh_static.shader) {
-            .nodal => |s| {
-                if (s.scale_over == .over_frames) {
-                    nodal_frame_scaling = nodal_global_scaling[ii];
-                } else { // .within_frames
-                    nodal_frame_scaling = imageops.getScalingParamsNDArray(
-                        &s.field.array,
-                        frame_idx,
-                        s.scaling,
-                    );
-                }
-            },
-            else => {},
-        }
-
-        // Prepares meshes for each frame including coord transforms to camera space and
-        // data reshaping to element order for a given frame.
-        frame_meshes[ii] = try prepareMeshFrame(
-            arena_alloc,
-            chunk_exec,
-            workers_num,
-            camera,
-            config,
-            mesh_static,
-            frame_idx,
-            nodal_frame_scaling,
-            timing,
-        );
-        res.total_elems_num += frame_meshes[ii].total_elems_num;
-        res.total_elems_in_image += frame_meshes[ii].elems_in_image;
-    }
-
-    return res;
 }

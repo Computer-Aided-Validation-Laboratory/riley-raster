@@ -1,25 +1,24 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const print = std.debug.print;
-
-const testing = std.testing;
 const assert = std.debug.assert;
-const expectEqual = std.testing.expectEqual;
-const expectApproxEqAbs = testing.expectApproxEqAbs;
-const expectEqualSlices = testing.expectEqualSlices;
 
 const VecSlice = @import("vecslice.zig").VecSlice;
 const sliceops = @import("sliceops.zig");
 const csvio = @import("csvio.zig");
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
 
 pub fn MatSlice(comptime T: type) type {
     return struct {
@@ -346,6 +345,14 @@ pub fn MatSliceOps(comptime T: type) type {
 }
 
 //TODO: transfer missing tests from stack matrix
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
+
+const testing = std.testing;
+const expectEqual = std.testing.expectEqual;
+const expectApproxEqAbs = testing.expectApproxEqAbs;
+const expectEqualSlices = testing.expectEqualSlices;
 const TestType = F;
 const talloc = testing.allocator;
 

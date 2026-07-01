@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -17,6 +17,11 @@ const mo = @import("meshops.zig");
 const iio = @import("imageio.zig");
 const rastcfg = @import("rasterconfig.zig");
 const report = @import("report.zig");
+
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
 
 pub const RasterConfig = rastcfg.RasterConfig;
 pub const ImageMode = rastcfg.ImageMode;
@@ -285,6 +290,11 @@ inline fn outputFieldsForImageMode(
         },
     };
 }
+
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub fn imageSaveChannelsOverride(image_mode: ImageMode) ?usize {
     return switch (image_mode) {

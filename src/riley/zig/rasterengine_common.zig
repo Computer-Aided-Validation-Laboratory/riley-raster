@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -66,9 +66,321 @@ const Tri3FixedSetup = buildconfig.Tri3FixedSetup;
 const Tri3FixedEdge = buildconfig.Tri3FixedEdge;
 const Tri3FixedFracBits = buildconfig.Tri3FixedFracBits;
 
+const ParamCoords = struct { xi: F, eta: F };
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
+
+pub fn calcInterpParamCoords(
+    comptime Geometry: type,
+    nodes_inv_z: [Geometry.nodes_num]F,
+    weights: [Geometry.nodes_num]F,
+    inv_z: F,
+    xi_out: F,
+    eta_out: F,
+) ParamCoords {
+    if (comptime Geometry.solver_kind == .hyperb) {
+        return calcTri3PerspectiveParamCoords(inv_z, nodes_inv_z, weights);
+    }
+
+    return .{ .xi = xi_out, .eta = eta_out };
+}
+
+pub fn rasterDirectScalarCommon(
+    comptime Geometry: type,
+    comptime ShaderKernel: type,
+    comptime ShaderData: type,
+    comptime report_mode: ReportMode,
+    comptime ScratchBuffers: type,
+    ctx_rast: rops.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
+    targ_overlap: OverlapTarget,
+    mesh_in: rops.MeshRaster,
+    subpx_domain: SubpxDomain,
+    rast_bounds: RasterBounds,
+    fields_num: u8,
+    nodes_coords: rops.Vec3Slices(F),
+    shader: *const ShaderData,
+    shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
+    subpx_scratch: *ScratchBuffers,
+) !u64 {
+    comptime {
+        if (Geometry.solver_kind == .newton) {
+            @compileError(
+                "rasterDirectScalarCommon only supports non-Newton paths",
+            );
+        }
+    }
+
+    const N = Geometry.nodes_num;
+    var shaded_px: u64 = 0;
+    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+
+    var nodes_inv_z: [N]F = undefined;
+    inline for (0..N) |nn| {
+        nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
+    }
+
+    const bilinear_params = if (comptime Geometry.solver_kind == .inv_bi)
+        Geometry.getBilinearParams(nodes_coords)
+    else {};
+    const inv_elem_area = if (comptime Geometry.solver_kind == .hyperb)
+        Geometry.getInvElemArea(nodes_coords)
+    else {};
+
+    var element_tess: hull.Tessellation(Geometry.tess_triangles_num) = undefined;
+
+    if (comptime Geometry.hull_nodes_num > 0) {
+        if (mesh_in.hull) |rh| {
+            const hx = rh.getSlice(
+                &[_]usize{ targ_overlap.overlap.elem_idx, 0, 0 },
+                1,
+            );
+            const hy = rh.getSlice(
+                &[_]usize{ targ_overlap.overlap.elem_idx, 1, 0 },
+                1,
+            );
+            element_tess = hull.getTessellation(
+                N,
+                Geometry.hull_nodes_num,
+                Geometry.tess_triangles_num,
+                hx,
+                hy,
+            );
+        }
+    }
+
+    const raster_offsets = if (comptime Geometry.solver_kind == .inv_bi)
+        ctx_rast.camera.calcRasterOffsets()
+    else
+        .{ .x_off = 0.0, .y_off = 0.0 };
+    const x_init: F = raster_offsets.x_off;
+    const y_init: F = raster_offsets.y_off;
+
+    for (rast_bounds.start_y_u..rast_bounds.end_y_u) |jj| {
+        const py: F = @mulAdd(
+            F,
+            @as(F, @floatFromInt(jj)),
+            subpx_domain.step,
+            rast_bounds.y_min_f + subpx_domain.offset,
+        );
+
+        for (rast_bounds.start_x_u..rast_bounds.end_x_u) |ii| {
+            const px: F = @mulAdd(
+                F,
+                @as(F, @floatFromInt(ii)),
+                subpx_domain.step,
+                rast_bounds.x_min_f + subpx_domain.offset,
+            );
+
+            const geometry_result = switch (Geometry.solver_kind) {
+                .hyperb => Geometry.solveWeightsHyperb(
+                    nodes_coords,
+                    px,
+                    py,
+                    inv_elem_area,
+                ),
+                .inv_bi => Geometry.solveWeightsInvBi(
+                    px,
+                    py,
+                    x_init,
+                    y_init,
+                    bilinear_params,
+                ),
+                else => unreachable,
+            };
+            const weights = geometry_result.weights orelse {
+                if (comptime report_mode == .full_stats) {
+                    rasterreport.recordEarlyOut(
+                        report_mode,
+                        ctx_report,
+                        targ_overlap.tile.scratch_x_px_min * sub_samp + ii,
+                        targ_overlap.tile.scratch_y_px_min * sub_samp + jj,
+                        false,
+                    );
+                }
+                continue;
+            };
+
+            const scratch_idx = ii + jj * subpx_domain.tile_size;
+            const global_subx = targ_overlap.tile.scratch_x_px_min * sub_samp + ii;
+            const global_suby = targ_overlap.tile.scratch_y_px_min * sub_samp + jj;
+            const inv_z = Geometry.calcInvZ(nodes_coords, weights);
+            if (inv_z + tol.geometry.depth_buffer_inv_z_cmp <
+                subpx_scratch.inv_z[scratch_idx])
+            {
+                continue;
+            }
+            subpx_scratch.inv_z[scratch_idx] = inv_z;
+
+            const param = calcInterpParamCoords(
+                Geometry,
+                nodes_inv_z,
+                weights,
+                inv_z,
+                geometry_result.xi_out,
+                geometry_result.eta_out,
+            );
+
+            ShaderKernel.shade(
+                Geometry.coord_space,
+                shaderops.ShadeContext(Geometry.nodes_num){
+                    .frame_idx = ctx_rast.frame_idx,
+                    .elem_idx = targ_overlap.overlap.elem_idx,
+                    .fields_num = fields_num,
+                    .actual_fields = fields_num,
+                    .scratch_idx = scratch_idx,
+                    .global_subx = global_subx,
+                    .global_suby = global_suby,
+                    .shader_buf = shader_buf,
+                },
+                shaderops.InterpData(Geometry.nodes_num){
+                    .weights = weights,
+                    .nodes_inv_z = nodes_inv_z,
+                    .sub_pixel_z = 1.0 / inv_z,
+                    .xi = param.xi,
+                    .eta = param.eta,
+                },
+                shader,
+                ctx_report,
+                &subpx_scratch.image,
+            );
+            shaded_px += 1;
+        }
+    }
+
+    return shaded_px;
+}
+
+pub fn rasterSceneCommon(
+    comptime RasterBackend: type,
+    comptime report_mode: ReportMode,
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    ctx_rast: rops.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
+    requested_workers: u16,
+    tiling: rops.TilingOverlaps,
+    meshes: []const MeshPrepared,
+    raster_hulls: []const ?NDArray(F),
+    image_out_arr: *NDArray(F),
+) !void {
+    const WorkerState = comptime ThreadState(RasterBackend, report_mode);
+    const TileRangeCtx = TileRangeContext(RasterBackend, report_mode);
+    const TileRangeWorkerAdapter = struct {
+        fn run(
+            ctx_ptr: *anyopaque,
+            worker_idx: usize,
+            range_start: usize,
+            range_end: usize,
+        ) anyerror!void {
+            const tile_rng_ctx: *TileRangeCtx = @ptrCast(@alignCast(ctx_ptr));
+            const worker_state = &tile_rng_ctx.worker_states[worker_idx];
+            const ctx_report_task = report.ReportContext(report_mode){
+                .log = if (comptime report_mode == .full_stats)
+                    tile_rng_ctx.shared_log
+                else
+                    &worker_state.log,
+            };
+
+            for (range_start..range_end) |tile_idx| {
+                const tile = tile_rng_ctx.tiling.active_tiles[tile_idx];
+                try rasterTileCommon(
+                    RasterBackend,
+                    report_mode,
+                    tile_rng_ctx.io,
+                    tile_rng_ctx.ctx_rast,
+                    ctx_report_task,
+                    tile,
+                    tile_rng_ctx.tiling.overlaps,
+                    tile_rng_ctx.meshes,
+                    tile_rng_ctx.raster_hulls,
+                    tile_rng_ctx.image_out_arr,
+                    &worker_state.subpx_scratch,
+                    tile_rng_ctx.fields_num,
+                    tile_rng_ctx.subpx_tile_size,
+                );
+            }
+        }
+    };
+
+    const workers_num = scalingpolicy.rasterWorkers(
+        requested_workers,
+        tiling.active_tiles.len,
+    );
+    const workers_num_u16: u16 = @intCast(workers_num);
+    var chunk_exec = pce.ParaChunkExecutor.init(io, workers_num_u16);
+    var arena = std.heap.ArenaAllocator.init(outer_alloc);
+    defer arena.deinit();
+    const arena_alloc = arena.allocator();
+
+    const worker_states = try arena_alloc.alloc(WorkerState, workers_num);
+    for (worker_states) |*worker_state| {
+        worker_state.* = try WorkerState.init(
+            arena_alloc,
+            ctx_rast,
+            image_out_arr.dims[0],
+            tileScratchSubpxSize(ctx_rast),
+        );
+    }
+
+    var tile_range_ctx = TileRangeCtx{
+        .io = io,
+        .ctx_rast = ctx_rast,
+        .tiling = tiling,
+        .meshes = meshes,
+        .raster_hulls = raster_hulls,
+        .image_out_arr = image_out_arr,
+        .worker_states = worker_states,
+        .shared_log = ctx_report.log,
+        .fields_num = @intCast(image_out_arr.dims[0]),
+        .subpx_tile_size = tileScratchSubpxSize(ctx_rast),
+    };
+
+    try chunk_exec.runDynamicRangeWithWorkerError(
+        &tile_range_ctx,
+        TileRangeWorkerAdapter.run,
+        tiling.active_tiles.len,
+        scalingpolicy.rasterGrainSize(
+            tiling.active_tiles.len,
+            workers_num,
+        ),
+    );
+
+    if (comptime report_mode == .bench) {
+        if (report.getBenchLog(report_mode, ctx_report.log)) |bench_log| {
+            for (worker_states) |*worker_state| {
+                report.reduceBenchLog(bench_log, &worker_state.log);
+            }
+        }
+    }
+}
+
 //------------------------------------------------------------------------------------------
 // Direct Stepped Tri3 Fixed-Point Helpers
 //------------------------------------------------------------------------------------------
+
+fn calcTri3PerspectiveParamCoords(
+    inv_z: F,
+    nodes_inv_z: [3]F,
+    weights: [3]F,
+) ParamCoords {
+    return .{
+        .xi = weights[1] * nodes_inv_z[1] / inv_z,
+        .eta = weights[2] * nodes_inv_z[2] / inv_z,
+    };
+}
+
+fn tileScratchSubpxSize(
+    ctx_rast: rops.RasterContext,
+) usize {
+    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
+    const scratch_tile_px: usize =
+        @as(usize, @intCast(ctx_rast.tile_size)) +
+        2 * @as(usize, ctx_rast.camera.prepared_psf.halo_px);
+    return scratch_tile_px * sub_samp;
+}
 
 pub const Tri3FixedEdges = struct {
     start: [3]Tri3FixedEdge,
@@ -235,6 +547,10 @@ pub const Tri3FixedEdges = struct {
     }
 };
 
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
+
 test "Tri3FixedEdges preserves edge sum across a row" {
     var x = [_]F{ 1.25, 5.5, 2.0 };
     var y = [_]F{ 1.75, 2.5, 6.25 };
@@ -329,277 +645,6 @@ fn fillTileIdealCenters(
             subpx_scratch.ideal_pixel_centers,
         ),
     }
-}
-
-const ParamCoords = struct { xi: F, eta: F };
-
-fn calcTri3PerspectiveParamCoords(
-    inv_z: F,
-    nodes_inv_z: [3]F,
-    weights: [3]F,
-) ParamCoords {
-    return .{
-        .xi = weights[1] * nodes_inv_z[1] / inv_z,
-        .eta = weights[2] * nodes_inv_z[2] / inv_z,
-    };
-}
-
-pub fn calcInterpParamCoords(
-    comptime Geometry: type,
-    nodes_inv_z: [Geometry.nodes_num]F,
-    weights: [Geometry.nodes_num]F,
-    inv_z: F,
-    xi_out: F,
-    eta_out: F,
-) ParamCoords {
-    if (comptime Geometry.solver_kind == .hyperb) {
-        return calcTri3PerspectiveParamCoords(inv_z, nodes_inv_z, weights);
-    }
-
-    return .{ .xi = xi_out, .eta = eta_out };
-}
-
-//------------------------------------------------------------------------------------------
-// Direct Raster Helper
-//------------------------------------------------------------------------------------------
-
-pub fn rasterDirectScalarCommon(
-    comptime Geometry: type,
-    comptime ShaderKernel: type,
-    comptime ShaderData: type,
-    comptime report_mode: ReportMode,
-    comptime ScratchBuffers: type,
-    ctx_rast: rops.RasterContext,
-    ctx_report: report.ReportContext(report_mode),
-    targ_overlap: OverlapTarget,
-    mesh_in: rops.MeshRaster,
-    subpx_domain: SubpxDomain,
-    rast_bounds: RasterBounds,
-    fields_num: u8,
-    nodes_coords: rops.Vec3Slices(F),
-    shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
-    subpx_scratch: *ScratchBuffers,
-) !u64 {
-    comptime {
-        if (Geometry.solver_kind == .newton) {
-            @compileError("rasterDirectScalarCommon only supports non-Newton paths");
-        }
-    }
-
-    const N = Geometry.nodes_num;
-    var shaded_px: u64 = 0;
-    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-
-    var nodes_inv_z: [N]F = undefined;
-    inline for (0..N) |nn| {
-        nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
-    }
-
-    const bilinear_params = if (comptime Geometry.solver_kind == .inv_bi)
-        Geometry.getBilinearParams(nodes_coords)
-    else {};
-    const inv_elem_area = if (comptime Geometry.solver_kind == .hyperb)
-        Geometry.getInvElemArea(nodes_coords)
-    else {};
-
-    var element_tess: hull.Tessellation(Geometry.tess_triangles_num) = undefined;
-
-    if (comptime Geometry.hull_nodes_num > 0) {
-        if (mesh_in.hull) |rh| {
-            const hx = rh.getSlice(
-                &[_]usize{ targ_overlap.overlap.elem_idx, 0, 0 },
-                1,
-            );
-            const hy = rh.getSlice(
-                &[_]usize{ targ_overlap.overlap.elem_idx, 1, 0 },
-                1,
-            );
-            element_tess = hull.getTessellation(
-                N,
-                Geometry.hull_nodes_num,
-                Geometry.tess_triangles_num,
-                hx,
-                hy,
-            );
-        }
-    }
-
-    const ideal_x_plane = camcommon.getIdealXPlaneScratch(
-        subpx_scratch.ideal_pixel_centers,
-    );
-    const ideal_y_plane = camcommon.getIdealYPlaneScratch(
-        subpx_scratch.ideal_pixel_centers,
-    );
-
-    for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
-        const row_offset = scratch_y_u * subpx_domain.tile_size;
-
-        for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x_u| {
-            const scratch_idx = row_offset + scratch_x_u;
-            const ideal_x_px = ideal_x_plane[scratch_idx];
-            const ideal_y_px = ideal_y_plane[scratch_idx];
-
-            const tile_subx: usize = @intCast(targ_overlap.tile.scratch_x_px_min);
-            const tile_suby: usize = @intCast(targ_overlap.tile.scratch_y_px_min);
-            const tile_subx_off: usize = tile_subx * sub_samp;
-            const tile_suby_off: usize = tile_suby * sub_samp;
-            const global_subx: usize = tile_subx_off +% scratch_x_u;
-            const global_suby: usize = tile_suby_off +% scratch_y_u;
-
-            if (comptime Geometry.hull_nodes_num > 0) {
-                ctx_report.recordTessChecks(1);
-                const tess_res = element_tess.isInScalar(ideal_x_px, ideal_y_px);
-                if (tess_res.is_in) {
-                    ctx_report.recordTessPasses(1);
-                }
-                rasterreport.recordEarlyOut(
-                    report_mode,
-                    ctx_report,
-                    global_subx,
-                    global_suby,
-                    tess_res.is_in,
-                );
-                if (!tess_res.is_in) {
-                    continue;
-                }
-            } else {
-                rasterreport.recordEarlyOut(
-                    report_mode,
-                    ctx_report,
-                    global_subx,
-                    global_suby,
-                    true,
-                );
-            }
-
-            ctx_report.recordSolverCalls(1);
-            const result = if (comptime Geometry.solver_kind == .inv_bi)
-                Geometry.solveWeightsInvBi(
-                    ideal_x_px,
-                    ideal_y_px,
-                    subpx_domain.x_off,
-                    subpx_domain.y_off,
-                    bilinear_params,
-                )
-            else
-                Geometry.solveWeightsHyperb(
-                    nodes_coords,
-                    ideal_x_px,
-                    ideal_y_px,
-                    inv_elem_area,
-                );
-
-            ctx_report.recordSolverIters(result.iters);
-
-            if (result.weights == null) {
-                if (comptime report_mode == .full_stats) {
-                    const nan = std.math.nan(F);
-                    rasterreport.recordPixelConvergedStats(
-                        report_mode,
-                        ctx_report,
-                        global_subx,
-                        global_suby,
-                        false,
-                        nan,
-                        nan,
-                        nan,
-                    );
-                }
-                if (result.iters > 0) ctx_report.recordSolverDiverged();
-                continue;
-            }
-
-            const weights = result.weights.?;
-            const inv_z = Geometry.calcInvZ(nodes_coords, weights);
-            if (comptime report_mode == .full_stats) {
-                const interp = calcInterpParamCoords(
-                    Geometry,
-                    nodes_inv_z,
-                    weights,
-                    inv_z,
-                    0.0,
-                    0.0,
-                );
-                rasterreport.recordPixelConvergedStats(
-                    report_mode,
-                    ctx_report,
-                    global_subx,
-                    global_suby,
-                    true,
-                    interp.xi,
-                    interp.eta,
-                    newton.calcJacobianDet2D(
-                        N,
-                        interp.xi,
-                        interp.eta,
-                        nodes_coords.x,
-                        nodes_coords.y,
-                    ),
-                );
-            }
-
-            if (inv_z + cfg.tolerance.geometry.depth_buffer_inv_z_cmp <
-                subpx_scratch.inv_z[scratch_idx]) continue;
-
-            subpx_scratch.inv_z[scratch_idx] = inv_z;
-            if (scratch_x_u < subpx_scratch.touched_min_x[scratch_y_u]) {
-                subpx_scratch.touched_min_x[scratch_y_u] = scratch_x_u;
-            }
-            if (scratch_x_u > subpx_scratch.touched_max_x[scratch_y_u]) {
-                subpx_scratch.touched_max_x[scratch_y_u] = scratch_x_u;
-            }
-            const subpx_z = 1.0 / inv_z;
-            shaded_px += 1;
-
-            rasterreport.recordPixelIterAndOccupancy(
-                report_mode,
-                ctx_report,
-                global_subx,
-                global_suby,
-                result.iters,
-                targ_overlap.tile.scratch_x_px_min + scratch_x_u / sub_samp,
-                targ_overlap.tile.scratch_y_px_min + scratch_y_u / sub_samp,
-            );
-
-            const param_coords = calcInterpParamCoords(
-                Geometry,
-                nodes_inv_z,
-                weights,
-                inv_z,
-                result.xi_out,
-                result.eta_out,
-            );
-            const ctx_shade = shaderops.ShadeContext(N){
-                .frame_idx = ctx_rast.frame_idx,
-                .elem_idx = targ_overlap.overlap.elem_idx,
-                .fields_num = fields_num,
-                .actual_fields = fields_num,
-                .scratch_idx = scratch_idx,
-                .global_subx = global_subx,
-                .global_suby = global_suby,
-                .shader_buf = shader_buf,
-            };
-            const interp_data = shaderops.InterpData(N){
-                .weights = weights,
-                .nodes_inv_z = nodes_inv_z,
-                .sub_pixel_z = subpx_z,
-                .xi = param_coords.xi,
-                .eta = param_coords.eta,
-            };
-
-            ShaderKernel.shade(
-                Geometry.coord_space,
-                ctx_shade,
-                interp_data,
-                shader,
-                ctx_report,
-                &subpx_scratch.image,
-            );
-        }
-    }
-
-    return shaded_px;
 }
 
 //------------------------------------------------------------------------------------------
@@ -1036,9 +1081,32 @@ fn ThreadState(
     comptime report_mode: ReportMode,
 ) type {
     return struct {
+        const Self = @This();
+
         arena: std.heap.ArenaAllocator,
         subpx_scratch: RasterBackend.SubpxScratchBuffers,
         log: report.LogType(report_mode),
+
+        fn init(
+            outer_alloc: std.mem.Allocator,
+            _: rops.RasterContext,
+            fields_num: usize,
+            subpx_tile_size: usize,
+        ) !Self {
+            var arena = std.heap.ArenaAllocator.init(outer_alloc);
+            errdefer arena.deinit();
+            const arena_alloc = arena.allocator();
+
+            return .{
+                .arena = arena,
+                .subpx_scratch = try RasterBackend.initSubpxScratch(
+                    arena_alloc,
+                    @intCast(fields_num),
+                    subpx_tile_size,
+                ),
+                .log = initThreadReportLog(report_mode),
+            };
+        }
     };
 }
 
@@ -1060,127 +1128,4 @@ fn TileRangeContext(
         fields_num: u8,
         subpx_tile_size: usize,
     };
-}
-
-pub fn rasterSceneCommon(
-    comptime RasterBackend: type,
-    comptime report_mode: ReportMode,
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    ctx_rast: rops.RasterContext,
-    ctx_report: report.ReportContext(report_mode),
-    requested_workers: u16,
-    tiling: rops.TilingOverlaps,
-    meshes: []const MeshPrepared,
-    raster_hulls: []const ?NDArray(F),
-    image_out_arr: *NDArray(F),
-) !void {
-    const WorkerState = comptime ThreadState(RasterBackend, report_mode);
-    const TileRangeCtx = TileRangeContext(RasterBackend, report_mode);
-    // ParaChunkExec expects a plain function pointer, so this adapter binds our
-    // comptime RasterBackend and report_mode parameters into a concrete callback.
-    const TileRangeWorkerAdapter = struct {
-        fn run(
-            ctx_ptr: *anyopaque,
-            worker_idx: usize,
-            range_start: usize,
-            range_end: usize,
-        ) anyerror!void {
-            const tile_rng_ctx: *TileRangeCtx = @ptrCast(@alignCast(ctx_ptr));
-            const worker_state = &tile_rng_ctx.worker_states[worker_idx];
-            const ctx_report_task = report.ReportContext(report_mode){
-                .log = if (comptime report_mode == .full_stats)
-                    tile_rng_ctx.shared_log
-                else
-                    &worker_state.log,
-            };
-
-            for (range_start..range_end) |tile_idx| {
-                const tile = tile_rng_ctx.tiling.active_tiles[tile_idx];
-                try rasterTileCommon(
-                    RasterBackend,
-                    report_mode,
-                    tile_rng_ctx.io,
-                    tile_rng_ctx.ctx_rast,
-                    ctx_report_task,
-                    tile,
-                    tile_rng_ctx.tiling.overlaps,
-                    tile_rng_ctx.meshes,
-                    tile_rng_ctx.raster_hulls,
-                    tile_rng_ctx.image_out_arr,
-                    &worker_state.subpx_scratch,
-                    tile_rng_ctx.fields_num,
-                    tile_rng_ctx.subpx_tile_size,
-                );
-            }
-        }
-    };
-
-    std.debug.assert(image_out_arr.dims[0] <= std.math.maxInt(u8));
-    const fields_num: u8 = @intCast(image_out_arr.dims[0]);
-    const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const scratch_tile_px: usize = @as(usize, @intCast(ctx_rast.tile_size)) +
-        2 * @as(usize, ctx_rast.camera.prepared_psf.halo_px);
-    const subpx_tile_size: usize = scratch_tile_px * sub_samp;
-    const active_tiles_num = tiling.active_tiles.len;
-
-    const worker_count = scalingpolicy.rasterWorkers(
-        requested_workers,
-        active_tiles_num,
-    );
-    const grain_size = scalingpolicy.rasterGrainSize(
-        active_tiles_num,
-        worker_count,
-    );
-
-    var worker_states = try outer_alloc.alloc(WorkerState, worker_count);
-    defer {
-        for (worker_states) |*worker_state| {
-            worker_state.arena.deinit();
-        }
-        outer_alloc.free(worker_states);
-    }
-    for (0..worker_count) |ii| {
-        worker_states[ii].arena = std.heap.ArenaAllocator.init(outer_alloc);
-        const arena_alloc = worker_states[ii].arena.allocator();
-        worker_states[ii].subpx_scratch = try RasterBackend.initSubpxScratch(
-            arena_alloc,
-            fields_num,
-            subpx_tile_size,
-        );
-        worker_states[ii].log = initThreadReportLog(report_mode);
-    }
-
-    var tile_rng_ctx = TileRangeCtx{
-        .io = io,
-        .ctx_rast = ctx_rast,
-        .shared_log = ctx_report.log,
-        .tiling = tiling,
-        .meshes = meshes,
-        .raster_hulls = raster_hulls,
-        .image_out_arr = image_out_arr,
-        .worker_states = worker_states,
-        .fields_num = fields_num,
-        .subpx_tile_size = subpx_tile_size,
-    };
-
-    var chunk_exec = pce.ParaChunkExecutor.init(io, @intCast(worker_count));
-
-    try pce.runDynamicRangeWithWorkerError(
-        &chunk_exec,
-        &tile_rng_ctx,
-        TileRangeWorkerAdapter.run,
-        active_tiles_num,
-        grain_size,
-    );
-
-    if (report.getBenchLog(report_mode, ctx_report.log)) |bench_log| {
-        for (worker_states) |*worker_state| {
-            const worker_bench = report.getBenchLog(
-                report_mode,
-                &worker_state.log,
-            ).?;
-            report.reduceBenchLog(bench_log, worker_bench);
-        }
-    }
 }

@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const matrix = @import("matstack.zig");
@@ -13,6 +13,10 @@ const meshio = @import("meshio.zig");
 const rotation = @import("rotation.zig");
 const vector = @import("vecstack.zig");
 const F = buildconfig.F;
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
 
 pub const AxisAnchor = enum {
     min,
@@ -71,6 +75,10 @@ pub const RadialSpec = struct {
     axis: RadialAxis = .z,
     angle_offset_rad: F = 0.0,
 };
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub fn meshGroupSpan(
     mesh_start: usize,
@@ -788,6 +796,10 @@ fn validateMeshGroup(
         },
     }
 }
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
 
 test "boundsForCoords and meanCenter" {
     var coords = try meshio.Coords.initAlloc(std.testing.allocator, 3);

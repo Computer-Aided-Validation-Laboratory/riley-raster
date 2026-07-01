@@ -8,18 +8,32 @@
 - If a scalar/simd split is required the top level file name becomes a thin wrapper with no implementation details then all implementation and tests is moved into _common.zig, _simd.zig, _scalar.zig files.
 - File names should not have underscores unless using _common, _simd or _scalar 
 
+## Exceptions
+- ABI-facing files may retain established external naming
+- Generated artefacts and non-Zig files are out of scope
+- Thin wrapper files should contain no implementation logic and no tests
+- Existing file names should only be changed when the rename improves clarity
+
 ## Within file code organisation
 1. Module header block / documentation / description
 2. Imports
-3. Public constants and public types
+3. Module constants
 4. Public entry-point functions
-5. Major internal types shared across the file
+5. Public constants and public types
 6. Main implementation stages, in pipeline order
-   - each stage begins with its stage-specific types
-   - stage entry function first
-   - deeper helpers below it
+   - organise code from public entry points down to deeper private internals
+   - within each stage place functions in pipeline or call order
+   - place stage-local types as close as practical above their first real use
+   - if a struct owns methods, keep the struct and its methods together as one unit
+   - stage entry function first, then deeper helpers below it
 7. Generic low-level helpers
 8. Tests
+
+For files using the `ops` suffix:
+- these files may not control the overall application pipeline themselves
+- even so, functions should still be grouped in local pipeline or call order
+- types should still be placed near where they are first used
+- organise the file from higher-level public operations down to deeper private helpers
 
 **Module Header Block**
 // --------------------------------------------------------------------------------------
@@ -37,5 +51,6 @@ Each code block should be denoted by a 90 column comment -. As below
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-Not all sections may be needed depending on the file. For section 6 we will want the pipeline sections to appear in call order. 
-
+Not all sections may be needed depending on the file. The main rule is to keep the
+reader moving from the public surface down through the implementation in call order,
+with types placed close to where they are first needed.

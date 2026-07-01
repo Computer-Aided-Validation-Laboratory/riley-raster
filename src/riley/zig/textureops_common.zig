@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -41,6 +41,11 @@ const csvio = @import("csvio.zig");
 //         └── sampleConvOneLane()   (SIMD-Tap Convolution: 1 pixel)
 // --------------------------------------------------------------------------
 
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
+
 pub const TextureSample = enum {
     nearest,
     linear,
@@ -75,6 +80,11 @@ pub const TextureSampleConfig = struct {
         };
     }
 };
+
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub fn Texture(comptime T: type, comptime CH: usize) type {
     return struct {
@@ -416,6 +426,93 @@ pub fn getLerpSampCoeffsRuntime(
     return lerp_res;
 }
 
+pub fn sampleScalar(
+    comptime CH: usize,
+    comptime config: TextureSampleConfig,
+    texture: anytype,
+    u: F,
+    v: F,
+) [CH]F {
+    std.debug.assert(config.isValid());
+    const cols_minus_1 = @as(isize, @intCast(texture.cols_num)) - 1;
+    const rows_minus_1 = @as(isize, @intCast(texture.rows_num)) - 1;
+    const tex_x_f = u * @as(F, @floatFromInt(cols_minus_1));
+    const tex_y_f = v * @as(F, @floatFromInt(rows_minus_1));
+    const tex_x_i = @as(isize, @intFromFloat(@floor(tex_x_f)));
+    const tex_y_i = @as(isize, @intFromFloat(@floor(tex_y_f)));
+    const tex_x_frac = tex_x_f - @as(F, @floatFromInt(tex_x_i));
+    const tex_y_frac = tex_y_f - @as(F, @floatFromInt(tex_y_i));
+
+    return switch (config.sample) {
+        .nearest => getPx(
+            CH,
+            texture,
+            @as(isize, @intFromFloat(@round(tex_x_f))),
+            @as(isize, @intFromFloat(@round(tex_y_f))),
+        ),
+        .linear => sampleLinear(CH, texture, tex_x_i, tex_y_i, tex_x_frac, tex_y_frac),
+        .cubic_catmull_rom => sampleTex4Tap(
+            CH,
+            .cubic_catmull_rom,
+            config.mode,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .cubic_mitchell_netravali => sampleTex4Tap(
+            CH,
+            .cubic_mitchell_netravali,
+            config.mode,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .cubic_bspline => sampleTex4Tap(
+            CH,
+            .cubic_bspline,
+            config.mode,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .lanczos3 => sampleTex6Tap(
+            CH,
+            .lanczos3,
+            config.mode,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .quintic_bspline => sampleTex6Tap(
+            CH,
+            .quintic_bspline,
+            config.mode,
+            texture,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+    };
+}
+
+pub fn sampleGreyscale(
+    comptime config: TextureSampleConfig,
+    texture: anytype,
+    u: F,
+    v: F,
+) F {
+    return sampleScalar(1, config, texture, u, v)[0];
+}
+
 fn sampleTex4Tap(
     comptime CH: usize,
     comptime sample: TextureSample,
@@ -556,91 +653,4 @@ fn sampleTex6Tap(
             );
         },
     };
-}
-
-pub fn sampleScalar(
-    comptime CH: usize,
-    comptime config: TextureSampleConfig,
-    texture: anytype,
-    u: F,
-    v: F,
-) [CH]F {
-    std.debug.assert(config.isValid());
-    const cols_minus_1 = @as(isize, @intCast(texture.cols_num)) - 1;
-    const rows_minus_1 = @as(isize, @intCast(texture.rows_num)) - 1;
-    const tex_x_f = u * @as(F, @floatFromInt(cols_minus_1));
-    const tex_y_f = v * @as(F, @floatFromInt(rows_minus_1));
-    const tex_x_i = @as(isize, @intFromFloat(@floor(tex_x_f)));
-    const tex_y_i = @as(isize, @intFromFloat(@floor(tex_y_f)));
-    const tex_x_frac = tex_x_f - @as(F, @floatFromInt(tex_x_i));
-    const tex_y_frac = tex_y_f - @as(F, @floatFromInt(tex_y_i));
-
-    return switch (config.sample) {
-        .nearest => getPx(
-            CH,
-            texture,
-            @as(isize, @intFromFloat(@round(tex_x_f))),
-            @as(isize, @intFromFloat(@round(tex_y_f))),
-        ),
-        .linear => sampleLinear(CH, texture, tex_x_i, tex_y_i, tex_x_frac, tex_y_frac),
-        .cubic_catmull_rom => sampleTex4Tap(
-            CH,
-            .cubic_catmull_rom,
-            config.mode,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            tex_x_frac,
-            tex_y_frac,
-        ),
-        .cubic_mitchell_netravali => sampleTex4Tap(
-            CH,
-            .cubic_mitchell_netravali,
-            config.mode,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            tex_x_frac,
-            tex_y_frac,
-        ),
-        .cubic_bspline => sampleTex4Tap(
-            CH,
-            .cubic_bspline,
-            config.mode,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            tex_x_frac,
-            tex_y_frac,
-        ),
-        .lanczos3 => sampleTex6Tap(
-            CH,
-            .lanczos3,
-            config.mode,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            tex_x_frac,
-            tex_y_frac,
-        ),
-        .quintic_bspline => sampleTex6Tap(
-            CH,
-            .quintic_bspline,
-            config.mode,
-            texture,
-            tex_x_i,
-            tex_y_i,
-            tex_x_frac,
-            tex_y_frac,
-        ),
-    };
-}
-
-pub fn sampleGreyscale(
-    comptime config: TextureSampleConfig,
-    texture: anytype,
-    u: F,
-    v: F,
-) F {
-    return sampleScalar(1, config, texture, u, v)[0];
 }

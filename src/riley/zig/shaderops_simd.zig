@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 
 const buildconfig = @import("buildconfig.zig");
@@ -41,8 +41,18 @@ inline fn storeMaskedVecSF(
     simdops.storeVecSF(scratch_vals, start_u, v_new_vals);
 }
 
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
+
 pub const fillNodalClip = common.fillNodalClip;
 pub const fillNodalPersp = common.fillNodalPersp;
+
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub inline fn evalFuncShaderGreySIMD(
     builtin: common.FuncShaderBuiltin,

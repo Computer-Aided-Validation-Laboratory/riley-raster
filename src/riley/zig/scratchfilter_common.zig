@@ -1,17 +1,22 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const rops = @import("rasterops.zig");
 const ndarray = @import("ndarray.zig");
 const matslice = @import("matslice.zig");
+
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
 
 pub const MatSlice = matslice.MatSlice;
 pub const NDArray = ndarray.NDArray;
@@ -107,6 +112,11 @@ pub const FrameImageWriter = struct {
         return row_idx * self.row_stride + col_idx;
     }
 };
+
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub inline fn getScratchField(
     spx_image_scratch: *const MatSlice(F),

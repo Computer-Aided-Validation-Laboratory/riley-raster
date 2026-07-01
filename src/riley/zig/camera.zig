@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const buildconfig = @import("buildconfig.zig");
 const common = @import("camera_common.zig");
 const camera_scalar = @import("camera_scalar.zig");
@@ -14,6 +14,10 @@ const camera_simd = @import("camera_simd.zig");
 const cfg = buildconfig.config;
 const F = cfg.precision;
 const camera_impl = if (cfg.simd == .on) camera_simd else camera_scalar;
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
 
 pub const DistortionModel = common.DistortionModel;
 pub const BrownConrady = common.BrownConrady;
@@ -51,6 +55,10 @@ pub const FOVScaling = common.FOVScaling;
 pub const CameraPrepared = camera_impl.CameraPrepared;
 pub const allCamerasSharePixels = common.allCamerasSharePixels;
 pub const isNoDistortion = common.isNoDistortion;
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub fn fillTileIdealCentersPerTile(
     camera: *const CameraPrepared,

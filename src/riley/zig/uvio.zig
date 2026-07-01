@@ -1,17 +1,21 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const assert = std.debug.assert;
 const NDArray = @import("ndarray.zig").NDArray;
 const csvio = @import("csvio.zig");
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
 
 pub const UVMap = struct {
     array: NDArray(F),
@@ -61,6 +65,10 @@ pub const UVMap = struct {
     }
 };
 
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
+
 pub fn loadUVs(
     outer_alloc: std.mem.Allocator,
     io: std.Io,
@@ -85,6 +93,10 @@ pub fn loadUVMap(outer_alloc: std.mem.Allocator, io: std.Io, path: []const u8) !
         .buffer = uv_arr.slice,
     };
 }
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
 
 const testing = std.testing;
 

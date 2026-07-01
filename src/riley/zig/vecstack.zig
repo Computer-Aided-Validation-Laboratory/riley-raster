@@ -1,16 +1,14 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const print = std.debug.print;
 const assert = std.debug.assert;
-const expectEqual = std.testing.expectEqual;
-const expectEqualSlices = std.testing.expectEqualSlices;
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
@@ -20,6 +18,10 @@ const ValIdx = SliceOps.ValIdx;
 const EType = buildconfig.F;
 pub const Vec2f = Vec2T(EType);
 pub const Vec3f = Vec3T(EType);
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
 
 pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
     return struct {
@@ -207,6 +209,13 @@ pub const Vec3SliceOps = struct {
         return val;
     }
 };
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
+
+const expectEqual = std.testing.expectEqual;
+const expectEqualSlices = std.testing.expectEqualSlices;
 
 test "VecSliceOps.max" {
     var vec_slice: [3]Vec3f = undefined;

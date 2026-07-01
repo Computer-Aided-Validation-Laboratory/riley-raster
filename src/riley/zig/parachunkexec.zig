@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 
 // Parallel Chunk Executioner
@@ -15,6 +15,11 @@ const std = @import("std");
 // runStaticRange:  Each thread executes a statically assigned chunk (no work stealing)
 // runDynamicRange: Each thread takes a "grain" of the range and can work steal using an
 //                  atomic counter.
+
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
 
 pub const RangeFn = *const fn (
     ctx_ptr: *anyopaque,
@@ -221,6 +226,11 @@ pub const ParaChunkExecutor = struct {
 //------------------------------------------------------------------------------------------
 // Work chunking helpers
 //------------------------------------------------------------------------------------------
+
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub fn getChunksNum(domain_len: usize, chunk_size: usize) usize {
     if (domain_len == 0) {

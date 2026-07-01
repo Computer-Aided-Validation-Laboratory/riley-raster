@@ -1,17 +1,21 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const print = std.debug.print;
 const expectEqual = std.testing.expectEqual;
 const buildconfig = @import("buildconfig.zig");
 const Mat33f = @import("matstack.zig").Mat33f;
 const F = buildconfig.F;
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
 
 pub const Rotation = struct {
     alpha_z: F = 0.0,
@@ -85,20 +89,6 @@ pub const Rotation = struct {
     }
 };
 
-// NOTE: Check this
-// Intrinsic (z-y-x) Rotation Matrix: applied one by one
-// [ cos(beta)cos(gamma)             cos(beta)sin(gamma)             sin(beta)          ]
-// [ sin(alpha)sin(beta)cos(gamma) - cos(alpha)sin(gamma)
-//   sin(alpha)sin(beta)sin(gamma) + cos(alpha)cos(gamma)   -sin(alpha)cos(beta) ]
-// [ -cos(alpha)sin(beta)cos(gamma) - sin(alpha)sin(gamma)
-//   -cos(alpha)sin(beta)sin(gamma) + sin(alpha)cos(gamma)    cos(alpha)cos(beta)  ]
-
-// Extrinsic (z-y-x) Rotation Matrix: relative to global axis
-// [ cos(gamma)cos(beta)             cos(gamma)sin(beta)sin(alpha) -
-//   sin(gamma)cos(alpha)
-//   cos(gamma)sin(beta)cos(alpha) + sin(gamma)sin(alpha) ]
-// [ sin(gamma)cos(beta)             sin(gamma)sin(beta)sin(alpha) +
-//   cos(gamma)cos(alpha)
-//   sin(gamma)sin(beta)cos(alpha) - cos(gamma)sin(alpha) ]
-// [ -sin(beta)                    cos(beta)sin(alpha)
-//   cos(beta)cos(alpha)                              ]
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------

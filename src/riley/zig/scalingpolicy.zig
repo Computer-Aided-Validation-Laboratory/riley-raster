@@ -1,16 +1,20 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const rastcfg = @import("rasterconfig.zig");
 const report = @import("report.zig");
 const GeometrySchedulingMode = rastcfg.GeometrySchedulingMode;
+
+// --------------------------------------------------------------------------------------
+// Module Constants
+// --------------------------------------------------------------------------------------
 
 const l2_cache_size_bytes = 1024 * 1024;
 const l2_safety_margin = 0.8;
@@ -35,6 +39,10 @@ const target_subpx_per_tile: usize = @intFromFloat(
 pub const GEOMETRY_CHUNKS_PER_WORKER: usize = 1;
 pub const RASTER_CHUNKS_PER_WORKER: usize = 4;
 pub const AUTO_GEOMETRY_SPREAD_ELEMS_THRESHOLD: usize = 100_000;
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub fn resolveGeometrySchedulingMode(
     requested_mode: GeometrySchedulingMode,
@@ -179,6 +187,10 @@ fn chunkSize(
     );
     return @max(@as(usize, 1), (domain_len + chunk_count - 1) / chunk_count);
 }
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
 
 test "resolveGeometrySchedulingMode uses explicit modes unchanged" {
     try std.testing.expectEqual(

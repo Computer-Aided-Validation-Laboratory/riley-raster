@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 
 const buildconfig = @import("buildconfig.zig");
@@ -21,6 +21,11 @@ const lut_size = cfg.interp_lut_size;
 const tol = cfg.tolerance;
 
 const common = @import("textureops_common.zig");
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
+
 pub const TextureSample = common.TextureSample;
 pub const TextureSampleMode = common.TextureSampleMode;
 pub const TextureSampleConfig = common.TextureSampleConfig;
@@ -152,6 +157,11 @@ fn getPxWide(
 
     return samp_res;
 }
+
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub inline fn sampleLinearWide(
     comptime CH: usize,

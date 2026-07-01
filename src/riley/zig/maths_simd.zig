@@ -1,12 +1,45 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
+
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
+
+pub fn sinApproxSIMD(
+    comptime N: usize,
+    comptime T: type,
+    val: @Vector(N, T),
+) @Vector(N, T) {
+    const reduced_data = reduceTrigInput(N, T, val);
+    return sinFromReduced(
+        N,
+        T,
+        reduced_data.reduced,
+        reduced_data.quadrant,
+    );
+}
+
+pub fn cosApproxSIMD(
+    comptime N: usize,
+    comptime T: type,
+    val: @Vector(N, T),
+) @Vector(N, T) {
+    const reduced_data = reduceTrigInput(N, T, val);
+    return cosFromReduced(
+        N,
+        T,
+        reduced_data.reduced,
+        reduced_data.quadrant,
+    );
+}
 
 fn splatValue(
     comptime N: usize,
@@ -400,34 +433,6 @@ fn sinCosApproxPair(
             reduced_data.quadrant,
         ),
     };
-}
-
-pub fn sinApproxSIMD(
-    comptime N: usize,
-    comptime T: type,
-    val: @Vector(N, T),
-) @Vector(N, T) {
-    const reduced_data = reduceTrigInput(N, T, val);
-    return sinFromReduced(
-        N,
-        T,
-        reduced_data.reduced,
-        reduced_data.quadrant,
-    );
-}
-
-pub fn cosApproxSIMD(
-    comptime N: usize,
-    comptime T: type,
-    val: @Vector(N, T),
-) @Vector(N, T) {
-    const reduced_data = reduceTrigInput(N, T, val);
-    return cosFromReduced(
-        N,
-        T,
-        reduced_data.reduced,
-        reduced_data.quadrant,
-    );
 }
 
 // --------------------------------------------------------------------------

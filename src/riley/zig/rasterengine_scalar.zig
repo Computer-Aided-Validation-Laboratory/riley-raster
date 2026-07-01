@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -37,6 +37,11 @@ const geomkerns = @import("geometrykernels.zig");
 const newton = @import("newton.zig");
 const shadekerns = @import("shaderkernels.zig");
 
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
+
 pub const SubpxScratchBuffers = struct {
     stride_subpx: usize,
     inv_z: []F,
@@ -53,6 +58,11 @@ const RasterBounds = common.RasterBounds;
 //------------------------------------------------------------------------------------------
 // Scratch Buffer Helpers
 //------------------------------------------------------------------------------------------
+
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub fn initSubpxScratch(
     arena_alloc: std.mem.Allocator,
@@ -103,6 +113,33 @@ pub fn resetSubpxScratch(
     @memset(subpx_scratch.filter_tmp.slice, background_value);
     @memset(subpx_scratch.touched_min_x, subpx_tile_size);
     @memset(subpx_scratch.touched_max_x, 0);
+}
+
+pub fn rasterScene(
+    comptime report_mode: ReportMode,
+    outer_alloc: std.mem.Allocator,
+    io: std.Io,
+    ctx_rast: rops.RasterContext,
+    ctx_report: report.ReportContext(report_mode),
+    requested_workers: u16,
+    tiling: rops.TilingOverlaps,
+    meshes: []const MeshPrepared,
+    raster_hulls: []const ?NDArray(F),
+    image_out_arr: *NDArray(F),
+) !void {
+    try common.rasterSceneCommon(
+        @This(),
+        report_mode,
+        outer_alloc,
+        io,
+        ctx_rast,
+        ctx_report,
+        requested_workers,
+        tiling,
+        meshes,
+        raster_hulls,
+        image_out_arr,
+    );
 }
 
 //------------------------------------------------------------------------------------------
@@ -604,37 +641,6 @@ fn rasterNewtonImpl(
         }
     }
     return shaded_px;
-}
-
-//------------------------------------------------------------------------------------------
-// External API
-//------------------------------------------------------------------------------------------
-
-pub fn rasterScene(
-    comptime report_mode: ReportMode,
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    ctx_rast: rops.RasterContext,
-    ctx_report: report.ReportContext(report_mode),
-    requested_workers: u16,
-    tiling: rops.TilingOverlaps,
-    meshes: []const MeshPrepared,
-    raster_hulls: []const ?NDArray(F),
-    image_out_arr: *NDArray(F),
-) !void {
-    try common.rasterSceneCommon(
-        @This(),
-        report_mode,
-        outer_alloc,
-        io,
-        ctx_rast,
-        ctx_report,
-        requested_workers,
-        tiling,
-        meshes,
-        raster_hulls,
-        image_out_arr,
-    );
 }
 
 fn rasterDirectSteppedScalar(

@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -18,45 +18,17 @@ const VecSU = buildconfig.VecSU;
 const common = @import("camera_common.zig");
 const simdops = @import("simdops.zig");
 
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
+
 pub const CameraPrepared = common.CameraPreparedType(@This());
 
-fn calcActiveMask(lane_count: usize) VecSB {
-    const v_lane_idx: VecSU = std.simd.iota(usize, S);
-    return v_lane_idx < @as(VecSU, @splat(lane_count));
-}
 
-fn storeIdealPairs(
-    ideal_x_plane: []F,
-    ideal_y_plane: []F,
-    scratch_base: usize,
-    lane_count: usize,
-    v_x: VecSF,
-    v_y: VecSF,
-) void {
-    if (lane_count == S) {
-        simdops.storeVecSF(ideal_x_plane, scratch_base, v_x);
-        simdops.storeVecSF(ideal_y_plane, scratch_base, v_y);
-        return;
-    }
-
-    const x_arr: [S]F = v_x;
-    const y_arr: [S]F = v_y;
-    for (0..lane_count) |ll| {
-        ideal_x_plane[scratch_base + ll] = x_arr[ll];
-        ideal_y_plane[scratch_base + ll] = y_arr[ll];
-    }
-}
-
-fn calcObservedXVector(
-    global_subx_start: usize,
-    step: F,
-    off: F,
-) VecSF {
-    const v_start: VecSF = @splat(@as(F, @floatFromInt(global_subx_start)));
-    const v_lane: VecSF = @floatFromInt(std.simd.iota(usize, S));
-    return (v_start + v_lane) * @as(VecSF, @splat(step)) +
-        @as(VecSF, @splat(off));
-}
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub fn calcPinholeRasterPointSIMD(
     camera: *const CameraPrepared,
@@ -392,4 +364,42 @@ pub fn calcPinholeRasterPoint(
         observed_x_px,
         observed_y_px,
     );
+}
+
+fn calcActiveMask(lane_count: usize) VecSB {
+    const v_lane_idx: VecSU = std.simd.iota(usize, S);
+    return v_lane_idx < @as(VecSU, @splat(lane_count));
+}
+
+fn storeIdealPairs(
+    ideal_x_plane: []F,
+    ideal_y_plane: []F,
+    scratch_base: usize,
+    lane_count: usize,
+    v_x: VecSF,
+    v_y: VecSF,
+) void {
+    if (lane_count == S) {
+        simdops.storeVecSF(ideal_x_plane, scratch_base, v_x);
+        simdops.storeVecSF(ideal_y_plane, scratch_base, v_y);
+        return;
+    }
+
+    const x_arr: [S]F = v_x;
+    const y_arr: [S]F = v_y;
+    for (0..lane_count) |ll| {
+        ideal_x_plane[scratch_base + ll] = x_arr[ll];
+        ideal_y_plane[scratch_base + ll] = y_arr[ll];
+    }
+}
+
+fn calcObservedXVector(
+    global_subx_start: usize,
+    step: F,
+    off: F,
+) VecSF {
+    const v_start: VecSF = @splat(@as(F, @floatFromInt(global_subx_start)));
+    const v_lane: VecSF = @floatFromInt(std.simd.iota(usize, S));
+    return (v_start + v_lane) * @as(VecSF, @splat(step)) +
+        @as(VecSF, @splat(off));
 }

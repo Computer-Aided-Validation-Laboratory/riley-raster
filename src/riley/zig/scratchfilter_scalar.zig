@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const rops = @import("rasterops.zig");
 const cam = @import("camera.zig");
@@ -14,6 +14,11 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
 const cfg = buildconfig.config;
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
+
 pub const ScratchTileGeometry = common.ScratchTileGeometry;
 pub const MatSlice = common.MatSlice;
 pub const NDArray = common.NDArray;
@@ -21,6 +26,11 @@ pub const FrameImageWriter = common.FrameImageWriter;
 pub const getScratchField = common.getScratchField;
 pub const setScratchField = common.setScratchField;
 pub const sampleScratchOrBackground = common.sampleScratchOrBackground;
+
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub fn resolveScratchDirectCore(
     tile: rops.ActiveTile,

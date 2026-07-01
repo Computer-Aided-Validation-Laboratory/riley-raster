@@ -1,11 +1,11 @@
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
 // Copyright (c) 2025-2026 scepticalrabbit (Lloyd Fletcher)
 // Licensed under the MIT License (see LICENSE file for details)
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
@@ -13,6 +13,11 @@ const tol = buildconfig.config.tolerance;
 const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
 const texops = @import("textureops.zig");
+
+
+// --------------------------------------------------------------------------------------
+// Public Constants & Public Types
+// --------------------------------------------------------------------------------------
 
 pub const ScaleStrategy = union(enum) {
     none,
@@ -23,6 +28,11 @@ pub const ScaleStrategy = union(enum) {
 
 pub const ScalingParams = struct { min: F, range: F };
 pub const ScaleFactors = struct { mul: F, add: F };
+
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Functions
+// --------------------------------------------------------------------------------------
 
 pub fn getScaleMax(bits: ?u8) F {
     if (bits) |b| {
