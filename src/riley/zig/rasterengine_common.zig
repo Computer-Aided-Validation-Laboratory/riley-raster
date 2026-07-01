@@ -151,61 +151,96 @@ pub fn rasterDirectScalarCommon(
         }
     }
 
-    const raster_offsets = if (comptime Geometry.solver_kind == .inv_bi)
-        ctx_rast.camera.calcRasterOffsets()
-    else
-        .{ .x_off = 0.0, .y_off = 0.0 };
-    const x_init: F = raster_offsets.x_off;
-    const y_init: F = raster_offsets.y_off;
+    const ideal_x_plane = camcommon.getIdealXPlaneScratch(
+        subpx_scratch.ideal_pixel_centers,
+    );
+    const ideal_y_plane = camcommon.getIdealYPlaneScratch(
+        subpx_scratch.ideal_pixel_centers,
+    );
 
-    for (rast_bounds.start_y_u..rast_bounds.end_y_u) |jj| {
-        const py: F = @mulAdd(
-            F,
-            @as(F, @floatFromInt(jj)),
-            subpx_domain.step,
-            rast_bounds.y_min_f + subpx_domain.offset,
-        );
+    for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
+        const row_offset = scratch_y_u * subpx_domain.tile_size;
 
-        for (rast_bounds.start_x_u..rast_bounds.end_x_u) |ii| {
-            const px: F = @mulAdd(
-                F,
-                @as(F, @floatFromInt(ii)),
-                subpx_domain.step,
-                rast_bounds.x_min_f + subpx_domain.offset,
-            );
+        for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x_u| {
+            const scratch_idx = row_offset + scratch_x_u;
+            const ideal_x_px = ideal_x_plane[scratch_idx];
+            const ideal_y_px = ideal_y_plane[scratch_idx];
 
+            const tile_subx: usize = @intCast(targ_overlap.tile.scratch_x_px_min);
+            const tile_suby: usize = @intCast(targ_overlap.tile.scratch_y_px_min);
+            const tile_subx_off: usize = tile_subx * sub_samp;
+            const tile_suby_off: usize = tile_suby * sub_samp;
+            const global_subx: usize = tile_subx_off +% scratch_x_u;
+            const global_suby: usize = tile_suby_off +% scratch_y_u;
+
+            if (comptime Geometry.hull_nodes_num > 0) {
+                ctx_report.recordTessChecks(1);
+                const tess_res = element_tess.isInScalar(
+                    ideal_x_px,
+                    ideal_y_px,
+                );
+                if (tess_res.is_in) {
+                    ctx_report.recordTessPasses(1);
+                }
+                rasterreport.recordEarlyOut(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    tess_res.is_in,
+                );
+                if (!tess_res.is_in) {
+                    continue;
+                }
+            } else {
+                rasterreport.recordEarlyOut(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    true,
+                );
+            }
+
+            ctx_report.recordSolverCalls(1);
             const geometry_result = switch (Geometry.solver_kind) {
                 .hyperb => Geometry.solveWeightsHyperb(
                     nodes_coords,
-                    px,
-                    py,
+                    ideal_x_px,
+                    ideal_y_px,
                     inv_elem_area,
                 ),
                 .inv_bi => Geometry.solveWeightsInvBi(
-                    px,
-                    py,
-                    x_init,
-                    y_init,
+                    ideal_x_px,
+                    ideal_y_px,
+                    subpx_domain.x_off,
+                    subpx_domain.y_off,
                     bilinear_params,
                 ),
                 else => unreachable,
             };
+            ctx_report.recordSolverIters(geometry_result.iters);
+
             const weights = geometry_result.weights orelse {
                 if (comptime report_mode == .full_stats) {
-                    rasterreport.recordEarlyOut(
+                    const nan = std.math.nan(F);
+                    rasterreport.recordPixelConvergedStats(
                         report_mode,
                         ctx_report,
-                        targ_overlap.tile.scratch_x_px_min * sub_samp + ii,
-                        targ_overlap.tile.scratch_y_px_min * sub_samp + jj,
+                        global_subx,
+                        global_suby,
                         false,
+                        nan,
+                        nan,
+                        nan,
                     );
+                }
+                if (geometry_result.iters > 0) {
+                    ctx_report.recordSolverDiverged();
                 }
                 continue;
             };
 
-            const scratch_idx = ii + jj * subpx_domain.tile_size;
-            const global_subx = targ_overlap.tile.scratch_x_px_min * sub_samp + ii;
-            const global_suby = targ_overlap.tile.scratch_y_px_min * sub_samp + jj;
             const inv_z = Geometry.calcInvZ(nodes_coords, weights);
             if (inv_z + tol.geometry.depth_buffer_inv_z_cmp <
                 subpx_scratch.inv_z[scratch_idx])
@@ -213,6 +248,21 @@ pub fn rasterDirectScalarCommon(
                 continue;
             }
             subpx_scratch.inv_z[scratch_idx] = inv_z;
+            if (scratch_x_u < subpx_scratch.touched_min_x[scratch_y_u]) {
+                subpx_scratch.touched_min_x[scratch_y_u] = scratch_x_u;
+            }
+            if (scratch_x_u > subpx_scratch.touched_max_x[scratch_y_u]) {
+                subpx_scratch.touched_max_x[scratch_y_u] = scratch_x_u;
+            }
+            rasterreport.recordPixelIterAndOccupancy(
+                report_mode,
+                ctx_report,
+                global_subx,
+                global_suby,
+                geometry_result.iters,
+                targ_overlap.tile.scratch_x_px_min + scratch_x_u / sub_samp,
+                targ_overlap.tile.scratch_y_px_min + scratch_y_u / sub_samp,
+            );
 
             const param = calcInterpParamCoords(
                 Geometry,
