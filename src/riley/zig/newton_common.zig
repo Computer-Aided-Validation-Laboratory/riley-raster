@@ -91,7 +91,7 @@ pub inline fn newtonPolicy(
     comptime precision: type,
     comptime mode: buildconfig.NewtonSolverMode,
 ) NewtonPolicy {
-    if (mode == .robust) {
+    if (comptime mode == .robust) {
         return .{
             .use_componentwise_residual = false,
             .use_relaxed_residual = true,
@@ -106,7 +106,7 @@ pub inline fn newtonPolicy(
         };
     }
 
-    if (precision == f64) {
+    if (comptime precision == f64) {
         return .{
             .use_componentwise_residual = true,
             .use_relaxed_residual = false,
@@ -121,7 +121,7 @@ pub inline fn newtonPolicy(
         };
     }
 
-    if (precision == f32) {
+    if (comptime precision == f32) {
         return .{
             .use_componentwise_residual = false,
             .use_relaxed_residual = true,

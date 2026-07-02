@@ -17,6 +17,156 @@ const tol = cfg.tolerance;
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
+// Brown Conrady
+// --------------------------------------------------------------------------------------
+
+pub const DistortionInverseResult = struct {
+    x: F,
+    y: F,
+};
+
+pub const DistortionForwardJacResult = struct {
+    x_d: F,
+    y_d: F,
+    jac: [2][2]F,
+};
+
+pub const BrownConrady = struct {
+    k1: F = 0,
+    k2: F = 0,
+    k3: F = 0,
+    p1: F = 0,
+    p2: F = 0,
+
+    pub fn forward(
+        self: BrownConrady,
+        x: F,
+        y: F,
+    ) [2]F {
+        const r2 = x * x + y * y;
+        const r4 = r2 * r2;
+        const r6 = r4 * r2;
+        const radial_scale =
+            1.0 + self.k1 * r2 + self.k2 * r4 + self.k3 * r6;
+        return distortionForwardFromRadialScale(
+            x,
+            y,
+            radial_scale,
+            self.p1,
+            self.p2,
+        );
+    }
+
+    pub fn forwardWithJac(
+        self: BrownConrady,
+        x: F,
+        y: F,
+    ) DistortionForwardJacResult {
+        const r2 = x * x + y * y;
+        const r4 = r2 * r2;
+        const r6 = r4 * r2;
+        const radial_scale =
+            1.0 + self.k1 * r2 + self.k2 * r4 + self.k3 * r6;
+        const dradial_dr2 =
+            self.k1 + 2.0 * self.k2 * r2 + 3.0 * self.k3 * r4;
+        return distortionForwardWithJacFromRadialScale(
+            x,
+            y,
+            radial_scale,
+            dradial_dr2,
+            self.p1,
+            self.p2,
+        );
+    }
+
+    pub fn inverse(
+        self: BrownConrady,
+        x_d: F,
+        y_d: F,
+    ) !DistortionInverseResult {
+        return inverseFromForwardWithJac(BrownConrady, self, x_d, y_d);
+    }
+};
+
+pub const BrownConradyExt = struct {
+    k1: F = 0,
+    k2: F = 0,
+    k3: F = 0,
+    k4: F = 0,
+    k5: F = 0,
+    k6: F = 0,
+    p1: F = 0,
+    p2: F = 0,
+
+    pub fn forward(
+        self: BrownConradyExt,
+        x: F,
+        y: F,
+    ) [2]F {
+        const radial = self.calcRadialScaleAndDerivative(x, y);
+        return distortionForwardFromRadialScale(
+            x,
+            y,
+            radial.radial_scale,
+            self.p1,
+            self.p2,
+        );
+    }
+
+    pub fn forwardWithJac(
+        self: BrownConradyExt,
+        x: F,
+        y: F,
+    ) DistortionForwardJacResult {
+        const radial = self.calcRadialScaleAndDerivative(x, y);
+        return distortionForwardWithJacFromRadialScale(
+            x,
+            y,
+            radial.radial_scale,
+            radial.dradial_dr2,
+            self.p1,
+            self.p2,
+        );
+    }
+
+    pub fn inverse(
+        self: BrownConradyExt,
+        x_d: F,
+        y_d: F,
+    ) !DistortionInverseResult {
+        return inverseFromForwardWithJac(BrownConradyExt, self, x_d, y_d);
+    }
+
+    pub fn calcRadialScaleAndDerivative(
+        self: BrownConradyExt,
+        x: F,
+        y: F,
+    ) struct { radial_scale: F, dradial_dr2: F } {
+        const r2 = x * x + y * y;
+        const r4 = r2 * r2;
+        const r6 = r4 * r2;
+        const numerator = 1.0 + self.k1 * r2 + self.k2 * r4 + self.k3 * r6;
+        const denominator = 1.0 + self.k4 * r2 + self.k5 * r4 + self.k6 * r6;
+        const dnum_dr2 = self.k1 + 2.0 * self.k2 * r2 + 3.0 * self.k3 * r4;
+        const dden_dr2 = self.k4 + 2.0 * self.k5 * r2 + 3.0 * self.k6 * r4;
+        const radial_scale = numerator / denominator;
+        const dradial_dr2 =
+            (dnum_dr2 * denominator - numerator * dden_dr2) /
+            (denominator * denominator);
+        return .{
+            .radial_scale = radial_scale,
+            .dradial_dr2 = dradial_dr2,
+        };
+    }
+};
+
+// --------------------------------------------------------------------------------------
+// Polynomial Distortion
+// --------------------------------------------------------------------------------------
+
+pub const poly_powers_u = [10]u8{ 0, 1, 0, 2, 1, 0, 3, 2, 1, 0 };
+pub const poly_powers_v = [10]u8{ 0, 0, 1, 0, 1, 2, 0, 1, 2, 3 };
 
 pub const PolynomialOrder = enum(u8) {
     linear = 1,
@@ -59,8 +209,8 @@ pub const PolynomialMap = struct {
         const term_count = self.order.termCount();
 
         for (0..term_count) |ii| {
-            const pu = polyPowersU()[ii];
-            const pv = polyPowersV()[ii];
+            const pu = poly_powers_u[ii];
+            const pv = poly_powers_v[ii];
 
             if (pu > 0) {
                 const basis_dx = @as(F, @floatFromInt(pu)) *
@@ -213,6 +363,10 @@ pub const BrownConradyExtPolynomial = struct {
     }
 };
 
+// --------------------------------------------------------------------------------------
+// Distortion Unions
+// --------------------------------------------------------------------------------------
+
 pub const DistortionModel = union(enum) {
     none,
     brown_conrady: BrownConrady,
@@ -222,145 +376,9 @@ pub const DistortionModel = union(enum) {
     brown_conrady_ext_polynomial: BrownConradyExtPolynomial,
 };
 
-pub const BrownConrady = struct {
-    k1: F = 0,
-    k2: F = 0,
-    k3: F = 0,
-    p1: F = 0,
-    p2: F = 0,
-
-    pub fn forward(
-        self: BrownConrady,
-        x: F,
-        y: F,
-    ) [2]F {
-        const r2 = x * x + y * y;
-        const r4 = r2 * r2;
-        const r6 = r4 * r2;
-        const radial_scale =
-            1.0 + self.k1 * r2 + self.k2 * r4 + self.k3 * r6;
-        return distortionForwardFromRadialScale(
-            x,
-            y,
-            radial_scale,
-            self.p1,
-            self.p2,
-        );
-    }
-
-    pub fn forwardWithJac(
-        self: BrownConrady,
-        x: F,
-        y: F,
-    ) DistortionForwardJacResult {
-        const r2 = x * x + y * y;
-        const r4 = r2 * r2;
-        const r6 = r4 * r2;
-        const radial_scale =
-            1.0 + self.k1 * r2 + self.k2 * r4 + self.k3 * r6;
-        const dradial_dr2 =
-            self.k1 + 2.0 * self.k2 * r2 + 3.0 * self.k3 * r4;
-        return distortionForwardWithJacFromRadialScale(
-            x,
-            y,
-            radial_scale,
-            dradial_dr2,
-            self.p1,
-            self.p2,
-        );
-    }
-
-    pub fn inverse(
-        self: BrownConrady,
-        x_d: F,
-        y_d: F,
-    ) !DistortionInverseResult {
-        return inverseFromForwardWithJac(BrownConrady, self, x_d, y_d);
-    }
-};
-
-pub const BrownConradyExt = struct {
-    k1: F = 0,
-    k2: F = 0,
-    k3: F = 0,
-    k4: F = 0,
-    k5: F = 0,
-    k6: F = 0,
-    p1: F = 0,
-    p2: F = 0,
-
-    pub fn forward(
-        self: BrownConradyExt,
-        x: F,
-        y: F,
-    ) [2]F {
-        const radial = self.calcRadialScaleAndDerivative(x, y);
-        return distortionForwardFromRadialScale(
-            x,
-            y,
-            radial.radial_scale,
-            self.p1,
-            self.p2,
-        );
-    }
-
-    pub fn forwardWithJac(
-        self: BrownConradyExt,
-        x: F,
-        y: F,
-    ) DistortionForwardJacResult {
-        const radial = self.calcRadialScaleAndDerivative(x, y);
-        return distortionForwardWithJacFromRadialScale(
-            x,
-            y,
-            radial.radial_scale,
-            radial.dradial_dr2,
-            self.p1,
-            self.p2,
-        );
-    }
-
-    pub fn inverse(
-        self: BrownConradyExt,
-        x_d: F,
-        y_d: F,
-    ) !DistortionInverseResult {
-        return inverseFromForwardWithJac(BrownConradyExt, self, x_d, y_d);
-    }
-
-    pub fn calcRadialScaleAndDerivative(
-        self: BrownConradyExt,
-        x: F,
-        y: F,
-    ) struct { radial_scale: F, dradial_dr2: F } {
-        const r2 = x * x + y * y;
-        const r4 = r2 * r2;
-        const r6 = r4 * r2;
-        const numerator = 1.0 + self.k1 * r2 + self.k2 * r4 + self.k3 * r6;
-        const denominator = 1.0 + self.k4 * r2 + self.k5 * r4 + self.k6 * r6;
-        const dnum_dr2 = self.k1 + 2.0 * self.k2 * r2 + 3.0 * self.k3 * r4;
-        const dden_dr2 = self.k4 + 2.0 * self.k5 * r2 + 3.0 * self.k6 * r4;
-        const radial_scale = numerator / denominator;
-        const dradial_dr2 =
-            (dnum_dr2 * denominator - numerator * dden_dr2) /
-            (denominator * denominator);
-        return .{
-            .radial_scale = radial_scale,
-            .dradial_dr2 = dradial_dr2,
-        };
-    }
-};
-
-pub const DistortionInverseResult = struct {
-    x: F,
-    y: F,
-};
-
-pub const DistortionForwardJacResult = struct {
-    x_d: F,
-    y_d: F,
-    jac: [2][2]F,
-};
+// --------------------------------------------------------------------------------------
+// Point Spread Functions
+// --------------------------------------------------------------------------------------
 
 pub const SeparablePSF = enum {
     no,
@@ -422,8 +440,10 @@ pub const PreparedPSF = struct {
 fn psfKernelValue1D(psf: PointSpreadFunc, dist_px: F) F {
     const abs_dist = @abs(dist_px);
     return switch (psf) {
-        .pixel_box => |box| if (abs_dist <= box.support_rad_px + 1e-12) 1.0 else 0.0,
-        .gaussian => |gauss| if (abs_dist <= gauss.support_rad_px + 1e-12)
+        .pixel_box => |box| if (abs_dist <= box.support_rad_px +
+            tol.psf.support_radius_inclusion) 1.0 else 0.0,
+        .gaussian => |gauss| if (abs_dist <= gauss.support_rad_px +
+            tol.psf.support_radius_inclusion)
             @exp(-0.5 * (dist_px * dist_px) / (gauss.sigma_px * gauss.sigma_px))
         else
             0.0,
@@ -433,20 +453,26 @@ fn psfKernelValue1D(psf: PointSpreadFunc, dist_px: F) F {
 
 fn psfKernelValue2D(psf: PointSpreadFunc, dx_px: F, dy_px: F) F {
     return switch (psf) {
-        .pixel_box => |box| if (@abs(dx_px) <= box.support_rad_px + 1e-12 and
-            @abs(dy_px) <= box.support_rad_px + 1e-12)
+        .pixel_box => |box| if (@abs(dx_px) <= box.support_rad_px +
+            tol.psf.support_radius_inclusion and
+            @abs(dy_px) <= box.support_rad_px +
+            tol.psf.support_radius_inclusion)
             1.0
         else
             0.0,
-        .gaussian => |gauss| if (@abs(dx_px) <= gauss.support_rad_px + 1e-12 and
-            @abs(dy_px) <= gauss.support_rad_px + 1e-12)
+        .gaussian => |gauss| if (@abs(dx_px) <= gauss.support_rad_px +
+            tol.psf.support_radius_inclusion and
+            @abs(dy_px) <= gauss.support_rad_px +
+            tol.psf.support_radius_inclusion)
             @exp(-0.5 * (dx_px * dx_px + dy_px * dy_px) /
                 (gauss.sigma_px * gauss.sigma_px))
         else
             0.0,
         .anisotropic_gaussian => |gauss| blk: {
-            if (@abs(dx_px) > gauss.support_rad_px + 1e-12 or
-                @abs(dy_px) > gauss.support_rad_px + 1e-12)
+            if (@abs(dx_px) > gauss.support_rad_px +
+                tol.psf.support_radius_inclusion or
+                @abs(dy_px) > gauss.support_rad_px +
+                tol.psf.support_radius_inclusion)
             {
                 break :blk 0.0;
             }
@@ -532,14 +558,6 @@ fn inverseFromForwardWithJac(
     return error.DistortionInverseFailed;
 }
 
-fn polyPowersU() [10]u8 {
-    return .{ 0, 1, 0, 2, 1, 0, 3, 2, 1, 0 };
-}
-
-fn polyPowersV() [10]u8 {
-    return .{ 0, 0, 1, 0, 1, 2, 0, 1, 2, 3 };
-}
-
 fn evalPolynomialDisplacement(
     polynomial: PolynomialMap,
     x: F,
@@ -550,8 +568,8 @@ fn evalPolynomialDisplacement(
     const term_count = polynomial.order.termCount();
 
     for (0..term_count) |ii| {
-        const basis = powSmall(x, polyPowersU()[ii]) *
-            powSmall(y, polyPowersV()[ii]);
+        const basis = powSmall(x, poly_powers_u[ii]) *
+            powSmall(y, poly_powers_v[ii]);
         du += polynomial.coeffs_u[ii] * basis;
         dv += polynomial.coeffs_v[ii] * basis;
     }
@@ -654,7 +672,9 @@ pub fn preparePSF(
 ) !PreparedPSF {
     switch (psf) {
         .pixel_box => |box| {
-            if (box.support_rad_px <= 0.5 + 1e-12) {
+            if (box.support_rad_px <= 0.5 +
+                tol.psf.pixel_box_identity_support_radius)
+            {
                 return .{};
             }
             const halo_px: u16 = @intCast(@max(
@@ -716,7 +736,8 @@ pub fn preparePSF(
             const radius_subpx: usize = @intFromFloat(
                 @ceil(gauss.support_rad_px * @as(F, @floatFromInt(sub_sample))),
             );
-            const axis_aligned = @abs(@sin(gauss.theta_rad)) < 1e-12;
+            const axis_aligned = @abs(@sin(gauss.theta_rad)) <
+                tol.psf.anisotropic_axis_alignment;
             if (gauss.separable == .yes and axis_aligned) {
                 const psf_x = PointSpreadFunc{
                     .gaussian = .{

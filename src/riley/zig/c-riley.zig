@@ -22,6 +22,7 @@ const ndarray = @import("ndarray.zig");
 const riley = @import("riley.zig");
 const rotation = @import("rotation.zig");
 const rastcfg = @import("rasterconfig.zig");
+const sceneops = @import("sceneops.zig");
 const shaderops = @import("shaderops.zig");
 const texops = @import("textureops.zig");
 const vector = @import("vecstack.zig");
@@ -1835,7 +1836,7 @@ pub export fn rileyRoiCentFromCoords(
         setLastError(err);
         return 1;
     };
-    const roi_cent = cameraops.roiCentFromCoords(&coords);
+    const roi_cent = sceneops.boundsCenter(&coords);
     out_cent.* = vec3ToCVec3(roi_cent);
     return 0;
 }
@@ -1898,7 +1899,7 @@ pub export fn rileyRoiCentOverMeshes(
         return 1;
     };
 
-    const roi_cent = cameraops.roiCentOverMeshes(mesh_inputs);
+    const roi_cent = sceneops.boundsCenterOverMeshes(mesh_inputs);
     out_cent.* = vec3ToCVec3(roi_cent);
     return 0;
 }

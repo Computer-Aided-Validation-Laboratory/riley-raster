@@ -36,9 +36,10 @@ pub const DistortionInverseSIMDResult = struct {
     y: VecSF,
 };
 
-const poly_powers_u = [10]u8{ 0, 1, 0, 2, 1, 0, 3, 2, 1, 0 };
-const poly_powers_v = [10]u8{ 0, 0, 1, 0, 1, 2, 0, 1, 2, 3 };
 
+// --------------------------------------------------------------------------------------
+// Brown Conrady
+// --------------------------------------------------------------------------------------
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Functions
@@ -215,68 +216,9 @@ pub fn inverseDistortionSIMD(
     return .{ .x = v_x, .y = v_y };
 }
 
-pub const DistortionModel = common.DistortionModel;
-
-pub fn inverseDistortionModelSIMD(
-    distortion: DistortionModel,
-    v_x_d: VecSF,
-    v_y_d: VecSF,
-    v_lane_active: VecSB,
-) !DistortionInverseSIMDResult {
-    return switch (distortion) {
-        .none => .{ .x = v_x_d, .y = v_y_d },
-        .brown_conrady => |bc| inverseDistortionSIMD(
-            common.BrownConrady,
-            bc,
-            v_x_d,
-            v_y_d,
-            v_lane_active,
-        ),
-        .brown_conrady_ext => |bc_ext| inverseDistortionSIMD(
-            common.BrownConradyExt,
-            bc_ext,
-            v_x_d,
-            v_y_d,
-            v_lane_active,
-        ),
-        .polynomial => |poly| inversePolynomialSIMD(
-            poly,
-            v_x_d,
-            v_y_d,
-            v_lane_active,
-        ),
-        .brown_conrady_polynomial => |chain| blk: {
-            const poly_inv = try inversePolynomialSIMD(
-                chain.polynomial,
-                v_x_d,
-                v_y_d,
-                v_lane_active,
-            );
-            break :blk try inverseDistortionSIMD(
-                common.BrownConrady,
-                chain.brown_conrady,
-                poly_inv.x,
-                poly_inv.y,
-                v_lane_active,
-            );
-        },
-        .brown_conrady_ext_polynomial => |chain| blk: {
-            const poly_inv = try inversePolynomialSIMD(
-                chain.polynomial,
-                v_x_d,
-                v_y_d,
-                v_lane_active,
-            );
-            break :blk try inverseDistortionSIMD(
-                common.BrownConradyExt,
-                chain.brown_conrady_ext,
-                poly_inv.x,
-                poly_inv.y,
-                v_lane_active,
-            );
-        },
-    };
-}
+// --------------------------------------------------------------------------------------
+// Polynomial Distortion
+// --------------------------------------------------------------------------------------
 
 fn inversePolynomialSIMD(
     polynomial: common.BidirectionalPolynomial,
@@ -322,8 +264,8 @@ fn evaluatePolynomialMapWithJacSIMD(
     const term_count = polynomial.order.termCount();
 
     for (0..term_count) |ii| {
-        const pu = poly_powers_u[ii];
-        const pv = poly_powers_v[ii];
+        const pu = common.poly_powers_u[ii];
+        const pv = common.poly_powers_v[ii];
         const basis = powSmallSIMD(x, pu) * powSmallSIMD(y, pv);
         du += @as(VecSF, @splat(polynomial.coeffs_u[ii])) * basis;
         dv += @as(VecSF, @splat(polynomial.coeffs_v[ii])) * basis;
@@ -421,4 +363,71 @@ fn powSmallSIMD(
         out *= x;
     }
     return out;
+}
+
+// --------------------------------------------------------------------------------------
+// Distortion Unions
+// --------------------------------------------------------------------------------------
+
+pub const DistortionModel = common.DistortionModel;
+
+pub fn inverseDistortionModelSIMD(
+    distortion: DistortionModel,
+    v_x_d: VecSF,
+    v_y_d: VecSF,
+    v_lane_active: VecSB,
+) !DistortionInverseSIMDResult {
+    return switch (distortion) {
+        .none => .{ .x = v_x_d, .y = v_y_d },
+        .brown_conrady => |bc| inverseDistortionSIMD(
+            common.BrownConrady,
+            bc,
+            v_x_d,
+            v_y_d,
+            v_lane_active,
+        ),
+        .brown_conrady_ext => |bc_ext| inverseDistortionSIMD(
+            common.BrownConradyExt,
+            bc_ext,
+            v_x_d,
+            v_y_d,
+            v_lane_active,
+        ),
+        .polynomial => |poly| inversePolynomialSIMD(
+            poly,
+            v_x_d,
+            v_y_d,
+            v_lane_active,
+        ),
+        .brown_conrady_polynomial => |chain| blk: {
+            const poly_inv = try inversePolynomialSIMD(
+                chain.polynomial,
+                v_x_d,
+                v_y_d,
+                v_lane_active,
+            );
+            break :blk try inverseDistortionSIMD(
+                common.BrownConrady,
+                chain.brown_conrady,
+                poly_inv.x,
+                poly_inv.y,
+                v_lane_active,
+            );
+        },
+        .brown_conrady_ext_polynomial => |chain| blk: {
+            const poly_inv = try inversePolynomialSIMD(
+                chain.polynomial,
+                v_x_d,
+                v_y_d,
+                v_lane_active,
+            );
+            break :blk try inverseDistortionSIMD(
+                common.BrownConradyExt,
+                chain.brown_conrady_ext,
+                poly_inv.x,
+                poly_inv.y,
+                v_lane_active,
+            );
+        },
+    };
 }

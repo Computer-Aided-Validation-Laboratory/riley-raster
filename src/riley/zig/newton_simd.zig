@@ -20,12 +20,6 @@ const iter_max = cfg.raster_newton_iter_max;
 const tol = cfg.tolerance;
 const policy = common.newtonPolicy(F, cfg.newton_solver_mode);
 
-inline fn finiteMask(vals: VecSF) VecSB {
-    const v_inf: VecSF = @splat(std.math.inf(F));
-    return (vals == vals) & (vals != v_inf) & (vals != -v_inf);
-}
-
-
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Functions
 // --------------------------------------------------------------------------------------
@@ -45,8 +39,7 @@ pub fn solveInverseSIMD(
     v_deriv_n_xi: *[N]VecSF,
     v_deriv_n_eta: *[N]VecSF,
 ) common.NewtonResultSIMD {
-    const v_strict_resid_norm_tol: VecSF =
-        @splat(tol.newton.normalized_residual);
+    const v_strict_resid_norm_tol: VecSF = @splat(tol.newton.normalized_residual);
     const v_relaxed_resid_norm_tol: VecSF =
         @splat(tol.newton.stagnation_normalized_residual);
     const v_abs_det_tol: VecSF = @splat(tol.newton.relative_determinant);
@@ -56,8 +49,7 @@ pub fn solveInverseSIMD(
     const v_eps: VecSF = @splat(tol.newton.parametric_domain);
     const v_step_abs: VecSF = @splat(tol.newton.parametric_step_abs);
     const v_step_rel: VecSF = @splat(tol.newton.parametric_step_rel);
-    const v_max_parametric_step: VecSF =
-        @splat(tol.newton.max_parametric_step);
+    const v_max_parametric_step: VecSF = @splat(tol.newton.max_parametric_step);
     const v_one: VecSF = @splat(1.0);
     const v_zero: VecSF = @splat(0.0);
 
@@ -80,38 +72,18 @@ pub fn solveInverseSIMD(
         const v_node_x: VecSF = @splat(elem_node_x[nn]);
         const v_node_y: VecSF = @splat(elem_node_y[nn]);
         const v_node_w: VecSF = @splat(elem_node_w[nn]);
-        v_term_x[nn] = @mulAdd(
-            VecSF,
-            v_target_x,
-            v_node_w,
-            -v_node_x,
-        );
-        v_term_y[nn] = @mulAdd(
-            VecSF,
-            v_target_y,
-            v_node_w,
-            -v_node_y,
-        );
+
+        v_term_x[nn] = @mulAdd(VecSF, v_target_x, v_node_w, -v_node_x);
+        v_term_y[nn] = @mulAdd(VecSF, v_target_y, v_node_w, -v_node_y);
     }
 
     for (0..iter_max) |ii| {
         if (!@reduce(.Or, v_active)) break;
 
-        v_iters = @select(
-            u8,
-            v_active,
-            @as(VecSU8, @splat(@intCast(ii + 1))),
-            v_iters,
-        );
+        const v_idx = @as(VecSU8, @splat(@intCast(ii + 1)));
+        v_iters = @select(u8, v_active, v_idx, v_iters);
 
-        shapefun.shapeFunctionsSIMD(
-            N,
-            v_xi,
-            v_eta,
-            v_node_values,
-            v_deriv_n_xi,
-            v_deriv_n_eta,
-        );
+        shapefun.shapeFunctionsSIMD(N, v_xi, v_eta, v_node_values, v_deriv_n_xi, v_deriv_n_eta);
 
         var v_residual_x: VecSF = @splat(0.0);
         var v_residual_y: VecSF = @splat(0.0);
@@ -122,48 +94,14 @@ pub fn solveInverseSIMD(
         var v_jac22: VecSF = @splat(0.0);
 
         inline for (0..N) |nn| {
-            v_residual_x = @mulAdd(
-                VecSF,
-                v_node_values[nn],
-                v_term_x[nn],
-                v_residual_x,
-            );
-            v_residual_y = @mulAdd(
-                VecSF,
-                v_node_values[nn],
-                v_term_y[nn],
-                v_residual_y,
-            );
-            v_interpolated_w = @mulAdd(
-                VecSF,
-                v_node_values[nn],
-                @as(VecSF, @splat(elem_node_w[nn])),
-                v_interpolated_w,
-            );
-            v_jac11 = @mulAdd(
-                VecSF,
-                v_deriv_n_xi[nn],
-                v_term_x[nn],
-                v_jac11,
-            );
-            v_jac12 = @mulAdd(
-                VecSF,
-                v_deriv_n_eta[nn],
-                v_term_x[nn],
-                v_jac12,
-            );
-            v_jac21 = @mulAdd(
-                VecSF,
-                v_deriv_n_xi[nn],
-                v_term_y[nn],
-                v_jac21,
-            );
-            v_jac22 = @mulAdd(
-                VecSF,
-                v_deriv_n_eta[nn],
-                v_term_y[nn],
-                v_jac22,
-            );
+            v_residual_x = @mulAdd(VecSF, v_node_values[nn], v_term_x[nn], v_residual_x);
+            v_residual_y = @mulAdd(VecSF, v_node_values[nn], v_term_y[nn], v_residual_y);
+            const v_node_w = @as(VecSF, @splat(elem_node_w[nn]));
+            v_interpolated_w = @mulAdd(VecSF, v_node_values[nn], v_node_w, v_interpolated_w);
+            v_jac11 = @mulAdd(VecSF, v_deriv_n_xi[nn], v_term_x[nn], v_jac11);
+            v_jac12 = @mulAdd(VecSF, v_deriv_n_eta[nn], v_term_x[nn], v_jac12);
+            v_jac21 = @mulAdd(VecSF, v_deriv_n_xi[nn], v_term_y[nn], v_jac21);
+            v_jac22 = @mulAdd(VecSF, v_deriv_n_eta[nn], v_term_y[nn], v_jac22);
         }
 
         v_residual_x_final = v_residual_x;
@@ -185,6 +123,7 @@ pub fn solveInverseSIMD(
         const v_relaxed_w_scaled_tol = v_w_abs * v_relaxed_resid_norm_tol;
         const v_residual_sq =
             v_residual_x * v_residual_x + v_residual_y * v_residual_y;
+
         const v_strict_residual = if (comptime policy.use_componentwise_residual)
             (v_active &
                 (v_w_abs > v_zero) &
@@ -195,6 +134,7 @@ pub fn solveInverseSIMD(
                 (v_w_abs > v_zero) &
                 (v_residual_sq <=
                     v_strict_w_scaled_tol * v_strict_w_scaled_tol));
+
         const v_relaxed_residual = if (comptime policy.use_relaxed_residual)
             (v_active &
                 (v_w_abs > v_zero) &
@@ -202,6 +142,7 @@ pub fn solveInverseSIMD(
                     v_relaxed_w_scaled_tol * v_relaxed_w_scaled_tol))
         else
             @as(VecSB, @splat(false));
+
         v_converged = v_converged | v_strict_residual;
         v_active = v_active & !v_strict_residual;
 
@@ -390,4 +331,9 @@ pub fn solveInverseSIMD(
         .v_xi_final = v_xi,
         .v_eta_final = v_eta,
     };
+}
+
+inline fn finiteMask(vals: VecSF) VecSB {
+    const v_inf: VecSF = @splat(std.math.inf(F));
+    return (vals == vals) & (vals != v_inf) & (vals != -v_inf);
 }

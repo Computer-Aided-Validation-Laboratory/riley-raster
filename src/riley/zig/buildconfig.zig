@@ -238,6 +238,12 @@ pub const TextureTolerance = struct {
     samp_coeff_sum: Scalar = 1e-9,
 };
 
+pub const PSFTolerance = struct {
+    support_radius_inclusion: Scalar = 1e-12,
+    pixel_box_identity_support_radius: Scalar = 1e-12,
+    anisotropic_axis_alignment: Scalar = 1e-12,
+};
+
 pub const ImageTolerance = struct {
     auto_scale_range: Scalar = 1e-9,
 };
@@ -256,6 +262,7 @@ pub const Tolerance = struct {
     newton_seed: NewtonSeedTolerance = .{},
     geometry: GeometryTolerance = .{},
     texture: TextureTolerance = .{},
+    psf: PSFTolerance = .{},
     image: ImageTolerance = .{},
     legacy: LegacyTolerance = .{},
 };
@@ -311,6 +318,11 @@ pub const tolerance_f32 = Tolerance{
     .texture = .{
         .lancsoz_centre_snap = 1e-6,
         .samp_coeff_sum = 1e-6,
+    },
+    .psf = .{
+        .support_radius_inclusion = 1e-6,
+        .pixel_box_identity_support_radius = 1e-6,
+        .anisotropic_axis_alignment = 1e-6,
     },
     .image = .{
         .auto_scale_range = 1e-8,

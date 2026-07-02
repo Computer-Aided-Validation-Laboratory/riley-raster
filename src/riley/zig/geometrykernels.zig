@@ -344,7 +344,8 @@ pub fn Tri6Kernel() type {
         pub const coord_space = .clip_px_leng;
         pub const solver_kind = .newton;
 
-        pub inline fn initSeed(seed_mode: rastcfg.NewtonSeedMode, hull_seed: ?NewtonSeed) NewtonSeed {
+        pub inline fn initSeed(seed_mode: rastcfg.NewtonSeedMode, 
+                               hull_seed: ?NewtonSeed,) NewtonSeed {
             if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;

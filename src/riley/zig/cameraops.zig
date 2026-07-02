@@ -185,14 +185,6 @@ pub fn calcCamPos(
     return (&roi_pos_world).add(cam_z_axis_vec);
 }
 
-pub fn centFromCoordsMean(coords_world: *const meshio.Coords) vector.Vec3f {
-    return sceneops.meanCenter(coords_world);
-}
-
-pub fn roiCentFromCoords(coords_world: *const meshio.Coords) vector.Vec3f {
-    return sceneops.boundsCenter(coords_world);
-}
-
 pub fn lookAtPoint(
     pos_world: vector.Vec3f,
     target_world: vector.Vec3f,
@@ -215,10 +207,6 @@ pub fn lookAtPoint(
     );
 
     return rotation.Rotation.init(alpha_z, beta_y, 0.0);
-}
-
-pub fn roiCentOverMeshes(meshes: []const mo.MeshInput) vector.Vec3f {
-    return sceneops.boundsCenterOverMeshes(meshes);
 }
 
 pub fn imageDistFillFrameFromRot(
@@ -258,7 +246,11 @@ pub fn posFillFrameFromRot(
         cam_rot,
         frame_fill,
     );
-    return calcCamPos(roiCentFromCoords(coords_world), cam_rot, image_dist);
+    return calcCamPos(
+        sceneops.boundsCenter(coords_world),
+        cam_rot,
+        image_dist,
+    );
 }
 
 pub fn posFillFrameFromRotAndTarget(
@@ -301,7 +293,11 @@ pub fn posFillFrameFromRotOverMeshes(
         fov_leng,
     );
     const image_dist = @max(image_dists[0], image_dists[1]);
-    return calcCamPos(roiCentOverMeshes(meshes), cam_rot, image_dist);
+    return calcCamPos(
+        sceneops.boundsCenterOverMeshes(meshes),
+        cam_rot,
+        image_dist,
+    );
 }
 
 pub fn posFillFrameFromRotOverMeshesAndTarget(
