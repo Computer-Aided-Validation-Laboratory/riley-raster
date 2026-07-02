@@ -19,16 +19,6 @@ const rotation = @import("rotation.zig");
 const rastcfg = @import("rasterconfig.zig");
 const F = buildconfig.F;
 
-const CameraPlaneMetrics = struct {
-    sensor_size: [2]F,
-    focal_px: [2]F,
-    principal_point_px: [2]F,
-    roi_plane_dist: F,
-    roi_plane_size: [2]F,
-    avg_leng_per_pixel: F,
-    avg_pixel_per_leng: F,
-};
-
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Functions
@@ -76,6 +66,17 @@ pub fn toOpenGLInput(input: cam.CameraInput) cam.CameraInput {
     opengl_input.coord_sys = .opengl;
     return opengl_input;
 }
+
+
+const CameraPlaneMetrics = struct {
+    sensor_size: [2]F,
+    focal_px: [2]F,
+    principal_point_px: [2]F,
+    roi_plane_dist: F,
+    roi_plane_size: [2]F,
+    avg_leng_per_pixel: F,
+    avg_pixel_per_leng: F,
+};
 
 pub fn calcPlaneMetrics(camera_input: cam.CameraInput) CameraPlaneMetrics {
     const opengl_input = toOpenGLInput(camera_input);

@@ -4,9 +4,9 @@
 - All file names should be lower case unless directly exposed as a struct
 - Use io as a suffix for files that contain operations for reading and writing to disk e.g. imageio.zig
 - Use ops as a suffix for collections of utility/data operation functions e.g. meshops.zig
-- Use the kernel suffix for files defining structs containing only comptime known constants and inline functions e.g. geometrykernels 
+- Use the kernel suffix for files defining structs containing only comptime known constants and inline functions e.g. geometrykernels
 - If a scalar/simd split is required the top level file name becomes a thin wrapper with no implementation details then all implementation and tests is moved into _common.zig, _simd.zig, _scalar.zig files.
-- File names should not have underscores unless using _common, _simd or _scalar 
+- File names should not have underscores unless using _common, _simd or _scalar
 
 ## Exceptions
 - ABI-facing files may retain established external naming
@@ -36,6 +36,7 @@ For files using the `ops` suffix:
 - organise the file from higher-level public operations down to deeper private helpers
 
 **Module Header Block**
+```
 // --------------------------------------------------------------------------------------
 // Riley: A High Performance Rasteriser for DIC UQ
 //
@@ -44,12 +45,14 @@ For files using the `ops` suffix:
 //
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
-
+```
 **Marking Code Blocks**
 Each code block should be denoted by a 90 column comment -. As below
+```
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
+```
 
 Not all sections may be needed depending on the file. The main rule is to keep the
 reader moving from the public surface down through the implementation in call order,

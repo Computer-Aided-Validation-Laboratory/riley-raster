@@ -66,9 +66,6 @@ pub fn hasPackedChannels(line: []const u8) bool {
     return false;
 }
 
-fn parseCellFloat(cell: []const u8) !F {
-    return std.fmt.parseFloat(F, std.mem.trim(u8, cell, " \r\n\t"));
-}
 
 pub fn loadScalarCsv2D(
     allocator: std.mem.Allocator,
@@ -110,6 +107,10 @@ pub fn loadScalarCsv2DFromLines(
     }
 
     return array;
+}
+
+fn parseCellFloat(cell: []const u8) !F {
+    return std.fmt.parseFloat(F, std.mem.trim(u8, cell, " \r\n\t"));
 }
 
 pub fn loadPackedCsv2D(

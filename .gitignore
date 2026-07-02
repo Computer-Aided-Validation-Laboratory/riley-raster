@@ -33,7 +33,6 @@ debug/
 examples/
 pyout/
 refs/
-perf/
 
 # Don't commit large mesh, simulation or image files to the repo unless we have to
 *.ppm
@@ -83,6 +82,9 @@ src/riley/data/textures/
 # We need to keep the demo images for the README
 !images/*.bmp
 !images/*.tiff
+
+# Keep llvmpipe performance comparison figures
+!perf/*.csv
 
 # Misc
 *.swp
