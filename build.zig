@@ -33,7 +33,17 @@ pub fn build(b: *std.Build) void {
         target,
         optimize,
     ).step);
+
+    const docs_install = b.addInstallDirectory(.{
+        .source_dir = b.path("docs"),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+
+    const docs_step = b.step("docs", "Install documentation");
+    docs_step.dependOn(&docs_install.step);
 }
+
 
 fn addRileySharedLibrary(
     b: *std.Build,
