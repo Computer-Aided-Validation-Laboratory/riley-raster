@@ -7,7 +7,7 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const common = @import("cameramodels_common.zig");
-const scalar = @import("cameramodels_scalar.zig");
+const scal = @import("cameramodels_scalar.zig");
 const simd = @import("cameramodels_simd.zig");
 
 // --------------------------------------------------------------------------------------
@@ -38,8 +38,8 @@ pub const BrownConradyExtPolynomial = common.BrownConradyExtPolynomial;
 // --------------------------------------------------------------------------------------
 
 pub const DistortionModel = common.DistortionModel;
-pub const forwardDistortionModelScalar = scalar.forwardDistortionModel;
-pub const invDistortionModelScalar = scalar.invDistortionModel;
+pub const forwardDistortionModelScal = scal.forwardDistortionModel;
+pub const invDistortionModelScal = scal.invDistortionModel;
 pub const DistortionForwardJacSIMDResult = simd.DistortionForwardJacSIMDResult;
 pub const forwardDistortionSIMD = simd.forwardDistortionSIMD;
 pub const forwardDistortionWithJacSIMD = simd.forwardDistortionWithJacSIMD;

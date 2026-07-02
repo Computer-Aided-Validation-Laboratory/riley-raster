@@ -19,7 +19,6 @@ const rotation = @import("rotation.zig");
 const rastcfg = @import("rasterconfig.zig");
 const F = buildconfig.F;
 
-
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
@@ -66,7 +65,6 @@ pub fn toOpenGLInput(input: cam.CameraInput) cam.CameraInput {
     opengl_input.coord_sys = .opengl;
     return opengl_input;
 }
-
 
 const CameraPlaneMetrics = struct {
     sensor_size: [2]F,
@@ -181,7 +179,7 @@ pub fn calcCamPos(
     image_dist: F,
 ) vec.Vec3f {
     var cam_z_axis_vec = cam_rot.matrix.getColVec(2);
-    cam_z_axis_vec = cam_z_axis_vec.mulScalar(image_dist);
+    cam_z_axis_vec = cam_z_axis_vec.mulScal(image_dist);
     return (&roi_pos_world).add(cam_z_axis_vec);
 }
 
@@ -196,7 +194,7 @@ pub fn lookAtPoint(
         return rotation.Rotation.init(0, 0, 0);
     }
 
-    const cam_z_unit = cam_z_axis.mulScalar(1.0 / cam_z_leng);
+    const cam_z_unit = cam_z_axis.mulScal(1.0 / cam_z_leng);
     const alpha_z = std.math.atan2(cam_z_unit.get(1), cam_z_unit.get(0));
     const beta_y = std.math.atan2(
         @sqrt(
@@ -320,7 +318,6 @@ pub fn posFillFrameFromRotOverMeshesAndTarg(
     );
     return calcCamPos(targ_world, cam_rot, image_dist);
 }
-
 
 // --------------------------------------------------------------------------------------
 // Generic Low-Level Helpers

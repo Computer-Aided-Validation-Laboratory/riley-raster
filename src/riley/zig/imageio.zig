@@ -29,21 +29,6 @@ const temp_test_dir = "temp-tests/imageio";
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-fn ensureTempTestDir(io: std.Io) !void {
-    const cwd = std.Io.Dir.cwd();
-    cwd.createDir(io, temp_test_root_dir, .default_dir) catch |err| {
-        if (err != error.PathAlreadyExists) return err;
-    };
-    cwd.createDir(io, temp_test_dir, .default_dir) catch |err| {
-        if (err != error.PathAlreadyExists) return err;
-    };
-}
-
-fn deleteTempTestDir(io: std.Io) void {
-    const cwd = std.Io.Dir.cwd();
-    cwd.deleteTree(io, temp_test_root_dir) catch {};
-}
-
 pub const ImageFormat = enum {
     csv,
     fimg,
@@ -856,11 +841,14 @@ pub fn loadBMP(
     if (bit_count == 24) {
         try file_reader.seekTo(offset);
         const row_padding = (4 - (abs_width * 3) % 4) % 4;
+
         for (0..abs_height) |y| {
             const r = if (height > 0) abs_height - 1 - y else y;
+
             for (0..abs_width) |x| {
                 var bgr: [3]u8 = undefined;
                 try reader.readSliceAll(&bgr);
+
                 if (channels == 3) {
                     tex.setVal(0, r, x, convertValue(T, bgr[2]));
                     tex.setVal(1, r, x, convertValue(T, bgr[1]));
@@ -870,15 +858,19 @@ pub fn loadBMP(
                     tex.setVal(0, r, x, convertValue(T, val));
                 }
             }
+
             try file_reader.seekBy(@intCast(row_padding));
         }
     } else if (bit_count == 48) {
         try file_reader.seekTo(offset);
         const row_padding = (4 - (abs_width * 6) % 4) % 4;
+
         for (0..abs_height) |y| {
             const r = if (height > 0) abs_height - 1 - y else y;
+
             for (0..abs_width) |x| {
                 var bgr: [3]u16 = undefined;
+
                 bgr[0] = try reader.takeInt(u16, .little);
                 bgr[1] = try reader.takeInt(u16, .little);
                 bgr[2] = try reader.takeInt(u16, .little);
@@ -891,22 +883,28 @@ pub fn loadBMP(
                     tex.setVal(0, r, x, convertValue(T, val));
                 }
             }
+
             try file_reader.seekBy(@intCast(row_padding));
         }
     } else if (bit_count == 8) {
         try file_reader.seekTo(14 + dib_size);
         const palette_size = (offset - (14 + dib_size)) / 4;
+
         const palette = try allocator.alloc([4]u8, palette_size);
         defer allocator.free(palette);
+
         for (0..palette_size) |i| try reader.readSliceAll(&palette[i]);
 
         try file_reader.seekTo(offset);
         const row_padding = (4 - abs_width % 4) % 4;
+
         for (0..abs_height) |y| {
             const r = if (height > 0) abs_height - 1 - y else y;
+
             for (0..abs_width) |x| {
                 const index = try reader.takeByte();
                 const color = palette[index];
+
                 if (channels == 3) {
                     tex.setVal(0, r, x, convertValue(T, color[2]));
                     tex.setVal(1, r, x, convertValue(T, color[1]));
@@ -916,6 +914,7 @@ pub fn loadBMP(
                     tex.setVal(0, r, x, convertValue(T, val));
                 }
             }
+
             try file_reader.seekBy(@intCast(row_padding));
         }
     } else return error.UnsuppedBitCount;
@@ -1121,6 +1120,23 @@ fn convertValue(comptime T: type, val: anytype) T {
 // --------------------------------------------------------------------------------------
 
 const testing = std.testing;
+
+const frac_tol: F = if (F == f32) 1e-2 else 1e-6;
+
+fn ensureTempTestDir(io: std.Io) !void {
+    const cwd = std.Io.Dir.cwd();
+    cwd.createDir(io, temp_test_root_dir, .default_dir) catch |err| {
+        if (err != error.PathAlreadyExists) return err;
+    };
+    cwd.createDir(io, temp_test_dir, .default_dir) catch |err| {
+        if (err != error.PathAlreadyExists) return err;
+    };
+}
+
+fn deleteTempTestDir(io: std.Io) void {
+    const cwd = std.Io.Dir.cwd();
+    cwd.deleteTree(io, temp_test_root_dir) catch {};
+}
 
 test "Verify hand-written TIFF loader" {
     const allocator = testing.allocator;
@@ -1398,4 +1414,3 @@ test "FIMG Save and Load Roundtrip" {
         }
     }
 }
-const frac_tol: F = if (F == f32) 1e-2 else 1e-6;

@@ -69,9 +69,9 @@ pub fn VecSlice(comptime T: type) type {
             }
         }
 
-        pub fn mulScalarInPlace(self: *const Self, scalar: T) void {
+        pub fn mulScalInPlace(self: *const Self, scal: T) void {
             for (0..self.slice.len) |ii| {
-                self.slice[ii] = scalar * self.slice[ii];
+                self.slice[ii] = scal * self.slice[ii];
             }
         }
 
@@ -223,7 +223,7 @@ test "VecSlice.divInPlace" {
     try expectEqualSlices(TestType, vec_exp.slice, vec0.slice);
 }
 
-test "VecSlice.mulScalarInPlace" {
+test "VecSlice.mulScalInPlace" {
     const vec_len: usize = 10;
 
     var v0 = [_]F{0.0} ** vec_len;
@@ -235,9 +235,9 @@ test "VecSlice.mulScalarInPlace" {
     vec0.fill(1.0);
     vec_exp.fill(2.0);
 
-    const scalar: TestType = 2.0;
+    const scal: TestType = 2.0;
 
-    vec0.mulScalarInPlace(scalar);
+    vec0.mulScalInPlace(scal);
 
     try expectEqualSlices(TestType, vec_exp.slice, vec0.slice);
 }

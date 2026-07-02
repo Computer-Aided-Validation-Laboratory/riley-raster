@@ -34,18 +34,13 @@ const shaderops = @import("shaderops.zig");
 const normals = @import("normals.zig");
 const geomkerns = @import("geometrykernels.zig");
 
-//------------------------------------------------------------------------------------------
-// External Helper Func: General geometry and mesh utilities
-//------------------------------------------------------------------------------------------
-
-// Input: Raw user data for all frames.
-// meshio.Coords/Fields: Node-order [total_nodes, ...]
-// meshio.Connect: Connectivity table links nodes to elems.
-
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
+// Input: Raw user data for all frames.
+// meshio.Coords/Fields: Node-order [total_nodes, ...]
+// meshio.Connect: Connectivity table links nodes to elems.
 pub const MeshInput = struct {
     mesh_type: geomkerns.MeshType,
     coords: meshio.Coords,
@@ -99,27 +94,22 @@ pub const MeshPrepared = struct {
     shader: shaderops.ShaderPrepared,
 };
 
-
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
-pub fn calcNodesPerElem(
-    meshes: []const MeshPrepared,
-) F {
+pub fn calcNodesPerElem(meshes: []const MeshPrepared) F {
     var nodes_sum: usize = 0;
     for (meshes) |mesh| {
         nodes_sum += mesh.mesh_type.getNodesNum();
     }
-    return @as(F, @floatFromInt(nodes_sum)) /
-        @as(F, @floatFromInt(meshes.len));
+    return @as(F, @floatFromInt(nodes_sum)) / @as(F, @floatFromInt(meshes.len));
 }
 
-pub fn countFrames(
-    meshes: []const MeshInput,
-) usize {
+pub fn countFrames(meshes: []const MeshInput) usize {
     const dim_time_pre: usize = 0;
     var num_time: usize = 1;
+
     for (meshes) |mesh| {
         if (mesh.disp) |field| {
             num_time = @max(num_time, field.array.dims[dim_time_pre]);
@@ -136,9 +126,7 @@ pub fn countFrames(
     return num_time;
 }
 
-pub fn countOutputFields(
-    meshes: []const MeshInput,
-) u8 {
+pub fn countOutputFields(meshes: []const MeshInput) u8 {
     var num_fields: u8 = 0;
     for (meshes) |mesh| {
         const mesh_fields: u8 = switch (mesh.shader) {
@@ -153,9 +141,7 @@ pub fn countOutputFields(
     return num_fields;
 }
 
-pub fn countStaticMeshElems(
-    mesh_static: []const MeshStatic,
-) usize {
+pub fn countStaticMeshElems(mesh_static: []const MeshStatic) usize {
     var total: usize = 0;
     for (mesh_static) |mesh| {
         total += mesh.connect.table.rows_num;
@@ -163,9 +149,7 @@ pub fn countStaticMeshElems(
     return total;
 }
 
-pub fn countStaticMeshNodes(
-    mesh_static: []const MeshStatic,
-) usize {
+pub fn countStaticMeshNodes(mesh_static: []const MeshStatic) usize {
     var total: usize = 0;
     for (mesh_static) |mesh| {
         total += mesh.coords_orig.mat.rows_num;
@@ -173,7 +157,6 @@ pub fn countStaticMeshNodes(
     return total;
 }
 
-// External helper func for finding mesh centroids
 pub fn findAlignedCentroid(coords: *const meshio.Coords) struct {
     centroid: [3]F,
     extent: [3]F,
@@ -186,7 +169,6 @@ pub fn findAlignedCentroid(coords: *const meshio.Coords) struct {
     };
 }
 
-// Used to arrange multiple meshes in a scene on a regular grid
 pub fn arrangeMeshSlice(
     meshes: []MeshInput,
     gap: [3]F,
@@ -297,9 +279,9 @@ pub fn meshInputFromSimDataSlice(
     return mesh_inputs;
 }
 
-//------------------------------------------------------------------------------------------
-// Mesh Initialization: Initial mesh and coordinate preparation
-//------------------------------------------------------------------------------------------
+// -----------------------------------------------------------------------------------------
+// Mesh Initialisation: Initial mesh and coordinate preparation
+// -----------------------------------------------------------------------------------------
 
 pub fn initMeshStatic(
     allocator: std.mem.Allocator,
@@ -793,6 +775,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         ) void {
             _ = chunk_idx;
             const stage: *TransformCoordsStage = @ptrCast(@alignCast(ctx_ptr));
+
             if (MT == .tri3 or MT == .tri3opt) {
                 rops.nodesToRasterRangeInPlace(
                     stage.camera,
@@ -815,6 +798,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .camera = self.camera,
                 .frame_workspace = &self.mesh_workspace,
             };
+
             pce.runStaticRange(
                 self.chunk_exec,
                 &transform_stage,
@@ -843,6 +827,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             var visible_count: usize = 0;
 
             for (range_start..range_end) |ee| {
+
                 const bbox = if (MT == .tri3 or MT == .tri3opt)
                     rops.calcVisibleNodeBBoxTri3(
                         MT,
@@ -873,6 +858,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     visible_count += 1;
                 }
             }
+
             stage.visible_counts_by_chunk[chunk_idx] = visible_count;
         }
 
@@ -881,10 +867,12 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 usize,
                 self.elem_chunks_num,
             );
+
             self.mesh_workspace.visible_offsets_by_chunk = try self.allocator.alloc(
                 usize,
                 self.elem_chunks_num,
             );
+
             @memset(self.mesh_workspace.visible_counts_by_chunk, 0);
             @memset(self.mesh_workspace.visible_offsets_by_chunk, 0);
 
@@ -895,6 +883,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .visible_counts_by_chunk = self.mesh_workspace.visible_counts_by_chunk,
                 .hull_mode = self.hull_mode,
             };
+
             pce.runStaticRange(
                 self.chunk_exec,
                 &cull_count_stage,

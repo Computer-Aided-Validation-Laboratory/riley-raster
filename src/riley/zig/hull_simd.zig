@@ -48,7 +48,7 @@ pub fn Tessellation(comptime NT: usize) type {
         triangles: [NT]TessTriangle,
 
         pub inline fn isInScalar(self: @This(), px: F, py: F) HullResultScalar {
-            const eps = tol.hull.scalar_inclusion;
+            const eps = tol.hull.scal_inclusion;
             inline for (self.triangles) |tri| {
                 const e0 = rops.edgeFun3(tri.x[0], tri.y[0], tri.x[1], tri.y[1], px, py);
                 const e1 = rops.edgeFun3(tri.x[1], tri.y[1], tri.x[2], tri.y[2], px, py);

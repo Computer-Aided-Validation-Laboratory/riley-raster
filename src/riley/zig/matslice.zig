@@ -155,9 +155,9 @@ pub fn MatSlice(comptime T: type) type {
             }
         }
 
-        pub fn mulScalarInPlace(self: *const Self, scalar: T) void {
+        pub fn mulScalInPlace(self: *const Self, scal: T) void {
             for (0..self.slice.len) |ee| {
-                self.slice[ee] = scalar * self.slice[ee];
+                self.slice[ee] = scal * self.slice[ee];
             }
         }
 
@@ -292,13 +292,13 @@ pub fn MatSliceOps(comptime T: type) type {
             }
         }
 
-        pub fn mulScalar(
+        pub fn mulScal(
             mat0: *const MatSlice(T),
-            scalar: T,
+            scal: T,
             mat_out: *MatSlice(T),
         ) void {
             for (0..mat0.slice.len) |ii| {
-                mat_out.slice[ii] = scalar * mat0.slice[ii];
+                mat_out.slice[ii] = scal * mat0.slice[ii];
             }
         }
 
@@ -344,7 +344,6 @@ pub fn MatSliceOps(comptime T: type) type {
     };
 }
 
-//TODO: transfer missing tests from stack matrix
 // --------------------------------------------------------------------------------------
 // Tests
 // --------------------------------------------------------------------------------------
@@ -490,7 +489,7 @@ test "MatSliceOps.mulElemWise" {
     try expectEqualSlices(TestType, mat_exp.slice, mat_op.slice);
 }
 
-test "MatSliceOps.mulScalar" {
+test "MatSliceOps.mulScal" {
     const rows: usize = 3;
     const cols: usize = 4;
 
@@ -502,7 +501,7 @@ test "MatSliceOps.mulScalar" {
     defer talloc.free(m_exp);
     const mat_exp = MatSlice(TestType).init(m_exp, rows, cols);
 
-    const scalar: TestType = 2.0;
+    const scal: TestType = 2.0;
 
     mat0.fill(1.0);
     mat_exp.fill(2.0);
@@ -511,7 +510,7 @@ test "MatSliceOps.mulScalar" {
     defer talloc.free(m_op);
     var mat_op = MatSlice(TestType).init(m_op, rows, cols);
 
-    MatSliceOps(TestType).mulScalar(&mat0, scalar, &mat_op);
+    MatSliceOps(TestType).mulScal(&mat0, scal, &mat_op);
 
     try expectEqualSlices(TestType, mat_exp.slice, mat_op.slice);
 }
@@ -599,16 +598,16 @@ test "MatSlice.transpose" {
     try expectEqualSlices(TestType, mat_exp.slice, mat0.slice);
 }
 
-test "MatSlice.mulScalar" {
+test "MatSlice.mulScal" {
     var m0 = [_]TestType{ 1, 2, 3, 4 };
     const mat0 = MatSlice(TestType).init(m0[0..], 2, 2);
 
-    const scalar: TestType = 2;
+    const scal: TestType = 2;
 
     var m1 = [_]TestType{ 2, 4, 6, 8 };
     const mat_exp = MatSlice(TestType).init(m1[0..], 2, 2);
 
-    mat0.mulScalarInPlace(scalar);
+    mat0.mulScalInPlace(scal);
 
     try expectEqualSlices(TestType, mat_exp.slice, mat0.slice);
 }

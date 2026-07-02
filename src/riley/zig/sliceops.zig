@@ -160,11 +160,11 @@ pub fn div(comptime T: type, vec0: []const T, vec1: []const T, vec_out: []T) !vo
     }
 }
 
-pub fn mulScalar(comptime T: type, vec0: []const T, scalar: T, vec_out: []T) !void {
+pub fn mulScal(comptime T: type, vec0: []const T, scal: T, vec_out: []T) !void {
     assert(vec0.len == vec_out.len);
 
     for (0..vec0.len) |ii| {
-        vec_out[ii] = scalar * vec0[ii];
+        vec_out[ii] = scal * vec0[ii];
     }
 }
 
@@ -247,16 +247,16 @@ test "slice.div" {
     try expectEqualSlices(TestType, vec_exp[0..], vec_op[0..]);
 }
 
-test "slice.mulScalar" {
+test "slice.mulScal" {
     const vec_len: usize = 10;
 
     var vec0 = [_]F{1.0} ** vec_len;
     var vec_exp = [_]F{2.0} ** vec_len;
-    const scalar: TestType = 2.0;
+    const scal: TestType = 2.0;
 
     var vec_op = [_]F{0.0} ** vec_len;
 
-    try mulScalar(TestType, vec0[0..], scalar, vec_op[0..]);
+    try mulScal(TestType, vec0[0..], scal, vec_op[0..]);
 
     try expectEqualSlices(TestType, vec_exp[0..], vec_op[0..]);
 }

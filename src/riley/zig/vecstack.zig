@@ -85,10 +85,10 @@ pub fn VecStack(comptime elem_n: comptime_int, comptime T: type) type {
             return vec_out;
         }
 
-        pub fn mulScalar(self: *const Self, scalar: T) Self {
+        pub fn mulScal(self: *const Self, scal: T) Self {
             var vec_out: Self = undefined;
             for (0..elem_n) |ii| {
-                vec_out.slice[ii] = scalar * self.slice[ii];
+                vec_out.slice[ii] = scal * self.slice[ii];
             }
             return vec_out;
         }
@@ -315,12 +315,12 @@ test "Vec3f.sub" {
     try expectEqualSlices(EType, &vec0.sub(vec1).slice, &vec_exp.slice);
 }
 
-test "Vec3f.mulScalar" {
+test "Vec3f.mulScal" {
     var vec0 = Vec3f.initOnes();
-    const scalar: EType = 1.23;
-    const vec_exp = Vec3f.initFill(scalar);
+    const scal: EType = 1.23;
+    const vec_exp = Vec3f.initFill(scal);
 
-    try expectEqualSlices(EType, &vec0.mulScalar(scalar).slice, &vec_exp.slice);
+    try expectEqualSlices(EType, &vec0.mulScal(scal).slice, &vec_exp.slice);
 }
 
 test "Vec3f.dot" {

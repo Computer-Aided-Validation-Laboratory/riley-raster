@@ -918,7 +918,7 @@ fn distortIdealRasterCoords(
     for (0..N) |nn| {
         const x_ideal = (coords_ideal.x[nn] - offsets.x_off) / focal_px.fx;
         const y_ideal = (coords_ideal.y[nn] - offsets.y_off) / focal_px.fy;
-        const distorted = cam.forwardDistortionModelScalar(
+        const distorted = cam.forwardDistortionModelScal(
             camera.distortion,
             x_ideal,
             y_ideal,

@@ -11,11 +11,10 @@ const F = buildconfig.F;
 const rops = @import("rasterops.zig");
 const cam = @import("camera.zig");
 const common = @import("scratchfilter_common.zig");
-const scalar = @import("scratchfilter_scalar.zig");
+const scal = @import("scratchfilter_scalar.zig");
 const simd = @import("scratchfilter_simd.zig");
 
 const cfg = buildconfig.config;
-
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -24,7 +23,6 @@ const cfg = buildconfig.config;
 pub const ScratchTileGeometry = common.ScratchTileGeometry;
 pub const MatSlice = common.MatSlice;
 pub const NDArray = common.NDArray;
-
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -65,7 +63,7 @@ pub fn resolveScratchDirectCore(
     radius_y: usize,
     image_out_arr: *NDArray(F),
 ) void {
-    scalar.resolveScratchDirectCore(
+    scal.resolveScratchDirectCore(
         tile,
         scratch_geom,
         spx_stride,
@@ -132,7 +130,7 @@ pub fn averageScratchCore(
             image_out_arr,
         );
     } else {
-        scalar.averageScratchCore(
+        scal.averageScratchCore(
             tile,
             scratch_geom,
             sub_samp,
@@ -176,7 +174,7 @@ pub fn filterScratchSeparable(
             touched_max_x,
         );
     } else {
-        scalar.filterScratchSeparable(
+        scal.filterScratchSeparable(
             fields_num,
             background_value,
             psf,
@@ -218,7 +216,7 @@ pub fn filterScratchNonSeparable(
             touched_max_x,
         );
     } else {
-        scalar.filterScratchNonSeparable(
+        scal.filterScratchNonSeparable(
             fields_num,
             background_value,
             psf,

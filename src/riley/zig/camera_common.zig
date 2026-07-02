@@ -119,7 +119,7 @@ pub fn allCamerasSharePixels(cameras: []const CameraPrepared) bool {
 }
 
 // --------------------------------------------------------------------------------------
-// Major Internal Types 
+// Major Internal Types
 // --------------------------------------------------------------------------------------
 
 pub fn CameraPreparedType(comptime CameraBackend: type) type {
@@ -528,12 +528,12 @@ test "Polynomial.forwardOnlyRoundTrip" {
 
     const x_ideal = 0.12;
     const y_ideal = -0.18;
-    const distorted = cm.forwardDistortionModelScalar(
+    const distorted = cm.forwardDistortionModelScal(
         model,
         x_ideal,
         y_ideal,
     );
-    const recovered = try cm.invDistortionModelScalar(
+    const recovered = try cm.invDistortionModelScal(
         model,
         distorted[0],
         distorted[1],
@@ -556,12 +556,12 @@ test "Polynomial.invOnlyRoundTrip" {
 
     const x_ideal = -0.16;
     const y_ideal = 0.11;
-    const distorted = cm.forwardDistortionModelScalar(
+    const distorted = cm.forwardDistortionModelScal(
         model,
         x_ideal,
         y_ideal,
     );
-    const recovered = try cm.invDistortionModelScalar(
+    const recovered = try cm.invDistortionModelScal(
         model,
         distorted[0],
         distorted[1],
@@ -593,12 +593,12 @@ test "BrownConradyPolynomial.forwardInv" {
 
     const x_ideal = 0.09;
     const y_ideal = -0.14;
-    const distorted = cm.forwardDistortionModelScalar(
+    const distorted = cm.forwardDistortionModelScal(
         model,
         x_ideal,
         y_ideal,
     );
-    const recovered = try cm.invDistortionModelScalar(
+    const recovered = try cm.invDistortionModelScal(
         model,
         distorted[0],
         distorted[1],
@@ -631,7 +631,7 @@ test "Polynomial.invOnlySIMDRoundTrip" {
     for (0..lane_count) |ii| {
         x_ideal[ii] = -0.2 + 0.03 * @as(F, @floatFromInt(ii));
         y_ideal[ii] = 0.15 - 0.02 * @as(F, @floatFromInt(ii));
-        const distorted = cm.forwardDistortionModelScalar(
+        const distorted = cm.forwardDistortionModelScal(
             model,
             x_ideal[ii],
             y_ideal[ii],

@@ -481,12 +481,12 @@ fn writePolynomialMetadata(
 fn parseOptionalU8Value(
     kv: *const std.StringHashMap([]const u8),
     key: []const u8,
-    default: u8,
+    def: u8,
 ) !u8 {
     if (kv.get(key)) |value| {
         return std.fmt.parseInt(u8, value, 10);
     }
-    return default;
+    return def;
 }
 
 fn parsePolynomialMap(

@@ -75,6 +75,7 @@ pub fn getScalingParamsTex(
     tex: *const texops.Tex(T, channels),
     strategy: ScaleStrategy,
 ) ScalingParams {
+
     switch (strategy) {
         .none => return .{ .min = 0.0, .range = 1.0 },
         .auto, .frac => {
@@ -102,6 +103,7 @@ pub fn getScalingParams(
     image: *const matslice.MatSlice(F),
     strategy: ScaleStrategy,
 ) ScalingParams {
+
     switch (strategy) {
         .none => return .{ .min = 0.0, .range = 1.0 },
         .auto, .frac => {
@@ -122,6 +124,7 @@ pub fn getScalingParamsNDArray(
     frame_idx: ?usize,
     strategy: ScaleStrategy,
 ) ScalingParams {
+
     switch (strategy) {
         .none => return .{ .min = 0.0, .range = 1.0 },
         .auto, .frac => {

@@ -26,7 +26,7 @@ pub const Tex = impl.Tex;
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
-pub const sampleScalar = impl.sampleScalar;
+pub const sampleScal = impl.sampleScal;
 pub const sampleGreyscale = impl.sampleGreyscale;
 
 pub const sampleOneLane = simd_impl.sampleOneLane;

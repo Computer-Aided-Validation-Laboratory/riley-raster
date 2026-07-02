@@ -18,13 +18,11 @@ const VecSU = buildconfig.VecSU;
 const common = @import("camera_common.zig");
 const simdops = @import("simdops.zig");
 
-
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
 pub const CameraPrepared = common.CameraPreparedType(@This());
-
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -364,7 +362,7 @@ pub fn calcPinholeRasterPoint(
     const x_dist = (observed_x_px - offsets.x_off) / focal_px.fx;
     const y_dist = (observed_y_px - offsets.y_off) / focal_px.fy;
 
-    const solved = try cameramodels.invDistortionModelScalar(
+    const solved = try cameramodels.invDistortionModelScal(
         camera.distortion,
         x_dist,
         y_dist,

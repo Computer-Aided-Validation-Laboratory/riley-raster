@@ -265,7 +265,7 @@ pub fn meanCenter(coords: *const meshio.Coords) vec.Vec3f {
         center_world.slice[2] += coords.mat.get(nn, 2);
     }
 
-    return center_world.mulScalar(
+    return center_world.mulScal(
         1.0 / @as(F, @floatFromInt(coords_num)),
     );
 }

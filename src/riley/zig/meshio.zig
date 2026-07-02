@@ -20,7 +20,6 @@ const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const csvio = @import("csvio.zig");
 
-
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
@@ -157,18 +156,9 @@ pub const Field = struct {
     }
 };
 
-
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
-
-pub fn readCsvToList(
-    outer_alloc: std.mem.Allocator,
-    io: std.Io,
-    path: []const u8,
-) !std.ArrayList([]const u8) {
-    return csvio.readCsvToList(outer_alloc, io, path);
-}
 
 pub fn parseCoords(
     outer_alloc: std.mem.Allocator,
@@ -314,13 +304,13 @@ pub fn loadSimData(
 
     //--------------------------------------------------------------------------
     // Read and parse coordinates csv file
-    var lines = try readCsvToList(arena_alloc, io, coord_path);
+    var lines = try csvio.readCsvToList(arena_alloc, io, coord_path);
     const coords = try parseCoords(outer_alloc, &lines);
     lines.clearRetainingCapacity();
 
     //--------------------------------------------------------------------------
     // Read and parse the connectivity table csv file
-    lines = try readCsvToList(arena_alloc, io, connect_path);
+    lines = try csvio.readCsvToList(arena_alloc, io, connect_path);
     const connect = try parseConnect(outer_alloc, &lines);
     lines.clearRetainingCapacity();
 
@@ -329,7 +319,7 @@ pub fn loadSimData(
     var field: ?Field = null;
     if (field_paths) |fp| {
         if (fp.len > 0) {
-            lines = try readCsvToList(arena_alloc, io, fp[0]);
+            lines = try csvio.readCsvToList(arena_alloc, io, fp[0]);
             const time_n: usize = getFieldTimeN(&lines);
             const coord_n: usize = lines.items.len;
             std.debug.assert(fp.len <= std.math.maxInt(u8));
@@ -338,7 +328,7 @@ pub fn loadSimData(
             lines.clearRetainingCapacity();
 
             for (fp[1..], 1..) |path, ii| {
-                lines = try readCsvToList(arena_alloc, io, path);
+                lines = try csvio.readCsvToList(arena_alloc, io, path);
                 try parseField(&lines, &field.?, @intCast(ii));
                 lines.clearRetainingCapacity();
             }
@@ -350,7 +340,7 @@ pub fn loadSimData(
     var disp: ?Field = null;
     if (disp_paths) |dp| {
         if (dp.len > 0) {
-            lines = try readCsvToList(arena_alloc, io, dp[0]);
+            lines = try csvio.readCsvToList(arena_alloc, io, dp[0]);
             const time_n: usize = getFieldTimeN(&lines);
             const coord_n: usize = lines.items.len;
             std.debug.assert(dp.len <= std.math.maxInt(u8));
@@ -359,7 +349,7 @@ pub fn loadSimData(
             lines.clearRetainingCapacity();
 
             for (dp[1..], 1..) |path, ii| {
-                lines = try readCsvToList(arena_alloc, io, path);
+                lines = try csvio.readCsvToList(arena_alloc, io, path);
                 try parseField(&lines, &disp.?, @intCast(ii));
                 lines.clearRetainingCapacity();
             }
@@ -448,9 +438,6 @@ pub fn loadMultiSimData(
     }
     return sim_data_slice;
 }
-
-//------------------------------------------------------------------------------------------
-// Tests
 
 test "loadMultiSimData twoelems" {
     const allocator = std.testing.allocator;

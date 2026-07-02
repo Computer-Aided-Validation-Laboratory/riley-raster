@@ -46,7 +46,7 @@ const getLerpSampCoeffsRuntime = common.getLerpSampCoeffsRuntime;
 const getPx = common.getPx;
 const texelToFloat = common.texelToFloat;
 
-pub const sampleScalar = common.sampleScalar;
+pub const sampleScal = common.sampleScal;
 pub const sampleGreyscale = common.sampleGreyscale;
 
 // --------------------------------------------------------------------------
@@ -54,7 +54,7 @@ pub const sampleGreyscale = common.sampleGreyscale;
 //
 // PIPELINE ENTRY POINTS (Dispatched by Shader/Kernel):
 // │
-// ├── PATH 1: sampleScalar (Purely Scalar)
+// ├── PATH 1: sampleScal (Purely Scal)
 // │   "Used when .simd = .off or as fallback for complex elems (quad4ibi)"
 // │   ├── getPx()           (Scalar Load)
 // │   ├── sampleLinear()    (Scalar Linear)

@@ -21,7 +21,7 @@ const csvio = @import("csvio.zig");
 //
 // PIPELINE ENTRY POINTS (Dispatched by Shader/Kernel):
 // │
-// ├── PATH 1: sampleScalar (Purely Scalar)
+// ├── PATH 1: sampleScal (Purely Scal)
 // │   "Used when .simd = .off or as fallback for complex elems (quad4ibi)"
 // │   ├── getPx()           (Scalar Load)
 // │   ├── sampleLinear()    (Scalar Linear)
@@ -40,7 +40,6 @@ const csvio = @import("csvio.zig");
 //         ├── sampleLinearOneLane() (Scalar Linear: 1 pixel)
 //         └── sampleConvOneLane()   (SIMD-Tap Convolution: 1 pixel)
 // --------------------------------------------------------------------------
-
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -80,7 +79,6 @@ pub const TexSampleConfig = struct {
         };
     }
 };
-
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -426,7 +424,7 @@ pub fn getLerpSampCoeffsRuntime(
     return lerp_res;
 }
 
-pub fn sampleScalar(
+pub fn sampleScal(
     comptime CH: usize,
     comptime config: TexSampleConfig,
     tex: anytype,
@@ -510,7 +508,7 @@ pub fn sampleGreyscale(
     u: F,
     v: F,
 ) F {
-    return sampleScalar(1, config, tex, u, v)[0];
+    return sampleScal(1, config, tex, u, v)[0];
 }
 
 fn sampleTex4Tap(

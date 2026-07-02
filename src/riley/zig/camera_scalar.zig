@@ -11,13 +11,11 @@ const F = buildconfig.F;
 const cm = @import("cameramodels.zig");
 const common = @import("camera_common.zig");
 
-
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
 pub const CameraPrepared = common.CameraPreparedType(@This());
-
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -223,7 +221,7 @@ pub fn calcPinholeRasterPoint(
     const x_dist = (observed_x_px - offsets.x_off) / focal_px.fx;
     const y_dist = (observed_y_px - offsets.y_off) / focal_px.fy;
 
-    const solved = try cm.invDistortionModelScalar(
+    const solved = try cm.invDistortionModelScal(
         camera.distortion,
         x_dist,
         y_dist,

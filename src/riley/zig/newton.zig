@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------------------
 const buildconfig = @import("buildconfig.zig");
 const common = @import("newton_common.zig");
-const scalar = @import("newton_scalar.zig");
+const scal = @import("newton_scalar.zig");
 const simd = @import("newton_simd.zig");
 
 // --------------------------------------------------------------------------------------
@@ -41,6 +41,6 @@ pub const isPreDomConvStatus = common.isPreDomConvStatus;
 pub const hitIterLimitStatus = common.hitIterLimitStatus;
 pub const statusLabel = common.statusLabel;
 
-pub const solveInv = scalar.solveInv;
+pub const solveInv = scal.solveInv;
 pub const solveInvSIMD = simd.solveInvSIMD;
-pub const traceSolveInv = scalar.traceSolveInv;
+pub const traceSolveInv = scal.traceSolveInv;

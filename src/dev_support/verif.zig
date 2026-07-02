@@ -221,7 +221,7 @@ pub fn idealToObservedRaster(
     const x_norm = (ideal_xy[0] - offsets.x_off) / focal_px.fx;
     const y_norm = (ideal_xy[1] - offsets.y_off) / focal_px.fy;
 
-    const distorted = cam.forwardDistortionModelScalar(
+    const distorted = cam.forwardDistortionModelScal(
         camera.distortion,
         x_norm,
         y_norm,

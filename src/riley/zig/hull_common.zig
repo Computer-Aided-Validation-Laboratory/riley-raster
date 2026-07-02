@@ -19,7 +19,7 @@ const tol = buildconfig.config.tol;
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Func
+// Public Entry-Point Functions
 // --------------------------------------------------------------------------------------
 
 pub fn AdaptiveHullPoints(comptime N: usize) type {
@@ -198,9 +198,11 @@ pub fn buildAdaptiveHullPointsFromClip(
 
     if (N == 6) {
         var hull = buildAdaptiveHullTri6(&lx, &ly);
+
         if (hull_convex_fallback_on) {
             const corner_midsides = [3][2]usize{ .{ 5, 3 }, .{ 3, 4 }, .{ 4, 5 } };
             var trigger = false;
+
             for (corner_midsides, 0..) |mids, nn| {
                 const cos_theta = calcCornerMidsideCosTheta(
                     lx[nn],
@@ -215,6 +217,7 @@ pub fn buildAdaptiveHullPointsFromClip(
                     break;
                 }
             }
+
             if (trigger) convexifyHullInPlace(6, &hull.x, &hull.y);
         }
         return hull;
@@ -222,6 +225,7 @@ pub fn buildAdaptiveHullPointsFromClip(
 
     if (N == 8 or N == 9) {
         var hull = buildAdaptiveHullQuad(N, &lx, &ly);
+
         if (hull_convex_fallback_on) {
             const corner_midsides = [4][2]usize{ .{ 7, 4 }, .{ 4, 5 }, .{ 5, 6 }, .{ 6, 7 } };
             var trigger = false;
@@ -239,6 +243,7 @@ pub fn buildAdaptiveHullPointsFromClip(
                     break;
                 }
             }
+
             if (trigger) convexifyHullInPlace(8, &hull.x, &hull.y);
         }
         return hull;

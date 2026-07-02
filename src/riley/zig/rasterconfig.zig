@@ -94,7 +94,7 @@ pub const GeometrySchedulingMode = enum {
     // before starting additional geometry jobs.
     pack,
     // Resolve at runtime from the scene size in scalingpolicy.zig:
-    // smaller scenes default to spread, larger scenes default to pack.
+    // smaller scenes def to spread, larger scenes def to pack.
     auto,
 };
 

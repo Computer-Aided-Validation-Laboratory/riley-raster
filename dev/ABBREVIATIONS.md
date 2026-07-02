@@ -23,6 +23,10 @@ Use these abbreviations consistently in Riley Zig code.
 - `tol`: tolerance
 - `align`: alignment
 - `supp`: support
+- `adapt`: adaptive
+- `tri`: triangle
+- `scal`: scalar
+- `def`: default
 
 ## Common Existing Terms
 - `alloc`: allocator

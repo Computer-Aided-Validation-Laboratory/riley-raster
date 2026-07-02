@@ -201,9 +201,9 @@ pub fn NDArray(comptime T: type) type {
             }
         }
 
-        pub fn mulScalarInPlace(self: *const Self, scalar: T) void {
+        pub fn mulScalInPlace(self: *const Self, scal: T) void {
             for (0..self.slice.len) |ii| {
-                self.slice[ii] *= scalar;
+                self.slice[ii] *= scal;
             }
         }
 

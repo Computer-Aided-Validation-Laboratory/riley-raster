@@ -852,7 +852,7 @@ pub inline fn fillTexClip(
         tex_v += interp.weights[nn] * ctx_shade.shader_buf.data[N + nn];
     }
 
-    const sampled = texops.sampleScalar(
+    const sampled = texops.sampleScal(
         channels,
         sample_config,
         sh.tex,
@@ -886,7 +886,7 @@ pub inline fn fillTexPersp(
             inv_z;
     }
 
-    const sampled = texops.sampleScalar(
+    const sampled = texops.sampleScal(
         channels,
         sample_config,
         sh.tex,

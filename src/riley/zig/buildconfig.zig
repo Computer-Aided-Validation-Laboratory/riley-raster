@@ -41,7 +41,8 @@ pub const Config = struct {
 
 pub const default_precision = parsePrecision(build_options.precision);
 pub const F = default_precision;
-pub const Scalar = F;
+pub const Scal = F;
+pub const Scalar = Scal;
 
 pub const default_simd = parseSimd(build_options.simd);
 pub const default_newton_solver_mode =
@@ -177,79 +178,79 @@ fn parseNewtonSolverMode(comptime newton_solver: []const u8) NewtonSolverMode {
 // --------------------------------------------------------------------------------------
 
 pub const EdgeTol = struct {
-    tri_weight_inclusion: Scalar = 1e-9,
-    simd_raster_weight_inclusion: Scalar = 1e-9,
+    tri_weight_inclusion: Scal = 1e-9,
+    simd_raster_weight_inclusion: Scal = 1e-9,
 };
 
 pub const HullTol = struct {
-    scalar_inclusion: Scalar = 1.0e-6,
-    simd_inclusion: Scalar = 1.0e-6,
-    corner_midside_ang_lower_deg: Scalar = 20.0,
-    corner_midside_ang_upper_deg: Scalar = 180.0,
+    scal_inclusion: Scal = 1.0e-6,
+    simd_inclusion: Scal = 1.0e-6,
+    corner_midside_ang_lower_deg: Scal = 20.0,
+    corner_midside_ang_upper_deg: Scal = 180.0,
     // Node-only front-end AABB pad used when RasterConfig.hull_mode == .off.
     // Set from a hull-suite ablation study against the 0.3 baseline:
     // 0.25/0.20/0.15/0.10 passed and 0.05 failed, so we keep 0.15 as a
-    // conservative default with margin.
-    no_hull_bbox_rel_pad: Scalar = 0.15,
+    // conservative def with margin.
+    no_hull_bbox_rel_pad: Scal = 0.15,
 };
 
 pub const CullingTol = struct {
-    higher_order_backface_nz: Scalar = 1e-3,
-    tri3_signed_area: Scalar = 1e-6,
-    projective_z_min: Scalar = 1e-12,
+    higher_order_backface_nz: Scal = 1e-3,
+    tri3_signed_area: Scal = 1e-6,
+    projective_z_min: Scal = 1e-12,
 };
 
 pub const NormalTol = struct {
-    normalise_magnitude: Scalar = 1e-12,
+    normalise_magnitude: Scal = 1e-12,
 };
 
 pub const NewtonTol = struct {
-    resid: Scalar = 1e-8,
-    norm_resid: Scalar = 3e-11,
-    stagnation_norm_resid: Scalar = 1e-10,
-    rel_det: Scalar = 1e-12,
-    para_dom: Scalar = 1e-7,
-    para_step_abs: Scalar = 1e-12,
-    para_step_rel: Scalar = 1e-12,
-    max_para_step: Scalar = 0.5,
+    resid: Scal = 1e-8,
+    norm_resid: Scal = 3e-11,
+    stagnation_norm_resid: Scal = 1e-10,
+    rel_det: Scal = 1e-12,
+    para_dom: Scal = 1e-7,
+    para_step_abs: Scal = 1e-12,
+    para_step_rel: Scal = 1e-12,
+    max_para_step: Scal = 0.5,
 };
 
 pub const DistortionTol = struct {
-    resid: Scalar = 1e-10,
-    delta: Scalar = 1e-10,
-    det: Scalar = 1e-12,
+    resid: Scal = 1e-10,
+    delta: Scal = 1e-10,
+    det: Scal = 1e-12,
 };
 
 pub const NewtonSeedTol = struct {
-    det: Scalar = 1e-10,
-    para_dom: Scalar = 1e-5,
-    resid_sq: Scalar = 1e-4,
+    det: Scal = 1e-10,
+    para_dom: Scal = 1e-5,
+    resid_sq: Scal = 1e-4,
 };
 
 pub const GeometryTol = struct {
-    bilinear_para_dom: Scalar = 1e-8,
-    bilinear_denom: Scalar = 1e-12,
-    quadratic_area: Scalar = 1e-12,
-    depth_buff_inv_z_cmp: Scalar = 1e-12,
+    bilinear_para_dom: Scal = 1e-8,
+    bilinear_denom: Scal = 1e-12,
+    quadratic_area: Scal = 1e-12,
+    depth_buff_inv_z_cmp: Scal = 1e-12,
 };
 
 pub const TexTol = struct {
-    lancsoz_centre_snap: Scalar = 1e-6,
-    samp_coeff_sum: Scalar = 1e-9,
+    lancsoz_centre_snap: Scal = 1e-6,
+    samp_coeff_sum: Scal = 1e-9,
 };
 
 pub const PSFTol = struct {
-    supp_radius_inclusion: Scalar = 1e-12,
-    pixel_box_identity_supp_radius: Scalar = 1e-12,
-    anisotropic_axis_align: Scalar = 1e-12,
+    supp_radius_inclusion: Scal = 1e-12,
+    pixel_box_identity_supp_radius: Scal = 1e-12,
+    anisotropic_axis_align: Scal = 1e-12,
 };
 
 pub const ImageTol = struct {
-    auto_scale_range: Scalar = 1e-9,
+    auto_scale_range: Scal = 1e-9,
 };
 
 pub const LegacyTol = struct {
-    oldraster_area: Scalar = 1e-12,
+    oldraster_area: Scal = 1e-12,
 };
 
 pub const Tol = struct {
@@ -275,7 +276,7 @@ pub const tol_f32 = Tol{
         .simd_raster_weight_inclusion = 1e-6,
     },
     .hull = .{
-        .scalar_inclusion = 1.0e-5,
+        .scal_inclusion = 1.0e-5,
         .simd_inclusion = 1.0e-5,
         .corner_midside_ang_lower_deg = 20.0,
         .corner_midside_ang_upper_deg = 180.0,
