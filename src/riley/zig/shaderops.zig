@@ -23,7 +23,7 @@ pub const NormalType = common.NormalType;
 pub const FuncCoordMode = common.FuncCoordMode;
 pub const FuncShaderBuiltin = common.FuncShaderBuiltin;
 pub const FuncShaderParams = common.FuncShaderParams;
-pub const LocalShaderBuffer = common.LocalShaderBuffer;
+pub const LocalShaderBuff = common.LocalShaderBuff;
 pub const NodalInput = common.NodalInput;
 pub const NodalPrepared = common.NodalPrepared;
 pub const TexInput = common.TexInput;
@@ -40,7 +40,7 @@ pub const ShaderStatic = common.ShaderStatic;
 pub const ShaderPrepared = common.ShaderPrepared;
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub const fillNodalClip = impl.fillNodalClip;

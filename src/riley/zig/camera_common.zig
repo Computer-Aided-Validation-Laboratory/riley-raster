@@ -8,7 +8,7 @@
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 
-const vector = @import("vecstack.zig");
+const vec = @import("vecstack.zig");
 const matrix = @import("matstack.zig");
 const rotation = @import("rotation.zig");
 const ndarray = @import("ndarray.zig");
@@ -28,9 +28,9 @@ const camera_impl = if (cfg.simd == .on) camera_simd else camera_scalar;
 pub const CameraInput = struct {
     pixels_num: [2]u32,
     pixels_size: [2]F,
-    pos_world: vector.Vec3f,
+    pos_world: vec.Vec3f,
     rot_world: rotation.Rotation,
-    roi_cent_world: vector.Vec3f,
+    roi_cent_world: vec.Vec3f,
     focal_length: F,
     sub_sample: u8,
     distortion: cm.DistortionModel = .none,
@@ -64,18 +64,18 @@ pub const FOVScaling = struct {
 const CameraPrepared = CameraPreparedType(camera_impl);
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub inline fn isNoDistortion(distortion: anytype) bool {
     return switch (distortion) {
         .none => true,
-        .polynomial => |poly| poly.forward_map == null and poly.inverse_map == null,
+        .polynomial => |poly| poly.forward_map == null and poly.inv_map == null,
         .brown_conrady_polynomial => |chain| chain.polynomial.forward_map == null and
-            chain.polynomial.inverse_map == null and
+            chain.polynomial.inv_map == null and
             std.meta.eql(chain.brown_conrady, cm.BrownConrady{}),
         .brown_conrady_ext_polynomial => |chain| chain.polynomial.forward_map == null and
-            chain.polynomial.inverse_map == null and
+            chain.polynomial.inv_map == null and
             std.meta.eql(chain.brown_conrady_ext, cm.BrownConradyExt{}),
         else => false,
     };
@@ -128,9 +128,9 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
 
         pixels_num: [2]u32,
         pixels_size: [2]F,
-        pos_world: vector.Vec3f,
+        pos_world: vec.Vec3f,
         rot_world: rotation.Rotation,
-        roi_cent_world: vector.Vec3f,
+        roi_cent_world: vec.Vec3f,
         focal_length: F,
         sub_sample: u8,
         sensor_size: [2]F,
@@ -404,7 +404,7 @@ const coord_x = [_]F{ -bb, bb, bb, -bb, -bb, bb, bb, -bb };
 const coord_y = [_]F{ bb, bb, -bb, -bb, bb, bb, -bb, -bb };
 const coord_z = [_]F{ bb, bb, bb, bb, -bb, -bb, -bb, -bb };
 const roi_world_arr = [_]F{ 0, 0, 0 };
-const roi_world = vector.Vec3f.initSlice(&roi_world_arr);
+const roi_world = vec.Vec3f.initSlice(&roi_world_arr);
 const sub_samp: u8 = 2;
 
 fn expectApproxEqRelAbs(
@@ -427,7 +427,7 @@ fn expectApproxEqRelAbs(
     }
 }
 
-fn checkDistortionGridInverse(
+fn checkDistortionGridInv(
     distortion: anytype,
     rel_tol: F,
     abs_tol: F,
@@ -442,7 +442,7 @@ fn checkDistortionGridInverse(
         for (0..grid_num) |ii| {
             const x = min_coord + @as(F, @floatFromInt(ii)) * coord_step;
             const distorted = distortion.forward(x, y);
-            const recovered = try distortion.inverse(distorted[0], distorted[1]);
+            const recovered = try distortion.inv(distorted[0], distorted[1]);
             try expectApproxEqRelAbs(x, recovered.x, rel_tol, abs_tol);
             try expectApproxEqRelAbs(y, recovered.y, rel_tol, abs_tol);
         }
@@ -457,7 +457,7 @@ test "CameraPrepared.init" {
     const input = CameraInput{
         .pixels_num = pix_num,
         .pixels_size = pix_size,
-        .pos_world = vector.initVec3(F, 0.0, 800.0, 800.0),
+        .pos_world = vec.initVec3(F, 0.0, 800.0, 800.0),
         .rot_world = rotat_world,
         .roi_cent_world = roi_world,
         .focal_length = foc_leng,
@@ -474,7 +474,7 @@ test "CameraPrepared.init" {
     try std.testing.expectEqual(sub_samp, camera.sub_sample);
 }
 
-test "BrownConrady.forwardInverse" {
+test "BrownConrady.forwardInv" {
     const bc = cm.BrownConrady{
         .k1 = -0.2,
         .k2 = 0.03,
@@ -487,13 +487,13 @@ test "BrownConrady.forwardInverse" {
     const y_ideal = -0.15;
 
     const distorted = bc.forward(x_ideal, y_ideal);
-    const recovered = try bc.inverse(distorted[0], distorted[1]);
+    const recovered = try bc.inv(distorted[0], distorted[1]);
 
     try std.testing.expectApproxEqAbs(x_ideal, recovered.x, unit_abs_tol);
     try std.testing.expectApproxEqAbs(y_ideal, recovered.y, unit_abs_tol);
 }
 
-test "BrownConradyExt.forwardInverse" {
+test "BrownConradyExt.forwardInv" {
     const bc_ext = cm.BrownConradyExt{
         .k1 = -0.18,
         .k2 = 0.02,
@@ -509,7 +509,7 @@ test "BrownConradyExt.forwardInverse" {
     const y_ideal = 0.18;
 
     const distorted = bc_ext.forward(x_ideal, y_ideal);
-    const recovered = try bc_ext.inverse(distorted[0], distorted[1]);
+    const recovered = try bc_ext.inv(distorted[0], distorted[1]);
 
     try std.testing.expectApproxEqAbs(x_ideal, recovered.x, unit_abs_tol);
     try std.testing.expectApproxEqAbs(y_ideal, recovered.y, unit_abs_tol);
@@ -533,7 +533,7 @@ test "Polynomial.forwardOnlyRoundTrip" {
         x_ideal,
         y_ideal,
     );
-    const recovered = try cm.inverseDistortionModelScalar(
+    const recovered = try cm.invDistortionModelScalar(
         model,
         distorted[0],
         distorted[1],
@@ -543,10 +543,10 @@ test "Polynomial.forwardOnlyRoundTrip" {
     try std.testing.expectApproxEqAbs(y_ideal, recovered.y, unit_abs_tol);
 }
 
-test "Polynomial.inverseOnlyRoundTrip" {
+test "Polynomial.invOnlyRoundTrip" {
     const model = cm.DistortionModel{
         .polynomial = .{
-            .inverse_map = .{
+            .inv_map = .{
                 .order = .linear,
                 .coeffs_u = .{ 0.0, -0.03, 0.01 } ++ [_]F{0.0} ** 7,
                 .coeffs_v = .{ 0.0, 0.02, -0.025 } ++ [_]F{0.0} ** 7,
@@ -561,7 +561,7 @@ test "Polynomial.inverseOnlyRoundTrip" {
         x_ideal,
         y_ideal,
     );
-    const recovered = try cm.inverseDistortionModelScalar(
+    const recovered = try cm.invDistortionModelScalar(
         model,
         distorted[0],
         distorted[1],
@@ -571,7 +571,7 @@ test "Polynomial.inverseOnlyRoundTrip" {
     try std.testing.expectApproxEqAbs(y_ideal, recovered.y, unit_abs_tol);
 }
 
-test "BrownConradyPolynomial.forwardInverse" {
+test "BrownConradyPolynomial.forwardInv" {
     const model = cm.DistortionModel{
         .brown_conrady_polynomial = .{
             .brown_conrady = .{
@@ -598,7 +598,7 @@ test "BrownConradyPolynomial.forwardInverse" {
         x_ideal,
         y_ideal,
     );
-    const recovered = try cm.inverseDistortionModelScalar(
+    const recovered = try cm.invDistortionModelScalar(
         model,
         distorted[0],
         distorted[1],
@@ -608,13 +608,13 @@ test "BrownConradyPolynomial.forwardInverse" {
     try std.testing.expectApproxEqAbs(y_ideal, recovered.y, unit_abs_tol);
 }
 
-test "Polynomial.inverseOnlySIMDRoundTrip" {
+test "Polynomial.invOnlySIMDRoundTrip" {
     const VecSB = buildconfig.VecSB;
     const VecSF = buildconfig.VecSF;
     const lane_count = buildconfig.SimdWidth;
     const model = cm.DistortionModel{
         .polynomial = .{
-            .inverse_map = .{
+            .inv_map = .{
                 .order = .linear,
                 .coeffs_u = .{ 0.0, -0.03, 0.01 } ++ [_]F{0.0} ** 7,
                 .coeffs_v = .{ 0.0, 0.02, -0.025 } ++ [_]F{0.0} ** 7,
@@ -641,7 +641,7 @@ test "Polynomial.inverseOnlySIMDRoundTrip" {
         active[ii] = true;
     }
 
-    const solved = try cm.inverseDistortionModelSIMD(
+    const solved = try cm.invDistortionModelSIMD(
         model,
         @as(VecSF, x_dist),
         @as(VecSF, y_dist),
@@ -656,7 +656,7 @@ test "Polynomial.inverseOnlySIMDRoundTrip" {
     }
 }
 
-test "BrownConrady.gridInverseRoundTrip" {
+test "BrownConrady.gridInvRoundTrip" {
     const bc_mild = cm.BrownConrady{
         .k1 = -0.08,
         .k2 = 0.01,
@@ -672,19 +672,19 @@ test "BrownConrady.gridInverseRoundTrip" {
         .p2 = -0.0015,
     };
 
-    try checkDistortionGridInverse(
+    try checkDistortionGridInv(
         bc_mild,
         unit_rel_tol,
         unit_rel_tol,
     );
-    try checkDistortionGridInverse(
+    try checkDistortionGridInv(
         bc_strong,
         unit_rel_tol,
         unit_rel_tol,
     );
 }
 
-test "BrownConradyExt.gridInverseRoundTrip" {
+test "BrownConradyExt.gridInvRoundTrip" {
     const bc_ext_mild = cm.BrownConradyExt{
         .k1 = -0.09,
         .k2 = 0.012,
@@ -706,12 +706,12 @@ test "BrownConradyExt.gridInverseRoundTrip" {
         .p2 = -0.0018,
     };
 
-    try checkDistortionGridInverse(
+    try checkDistortionGridInv(
         bc_ext_mild,
         unit_rel_tol,
         unit_rel_tol,
     );
-    try checkDistortionGridInverse(
+    try checkDistortionGridInv(
         bc_ext_strong,
         unit_rel_tol,
         unit_rel_tol,
@@ -722,9 +722,9 @@ test "CameraPrepared.distortionNone" {
     const input = CameraInput{
         .pixels_num = .{ 10, 10 },
         .pixels_size = .{ 0.01, 0.01 },
-        .pos_world = vector.Vec3f.initZeros(),
+        .pos_world = vec.Vec3f.initZeros(),
         .rot_world = rotation.Rotation.init(0, 0, 0),
-        .roi_cent_world = vector.Vec3f.initZeros(),
+        .roi_cent_world = vec.Vec3f.initZeros(),
         .focal_length = 1.0,
         .sub_sample = 1,
         .distortion = .none,
@@ -752,9 +752,9 @@ test "CameraPrepared.brownConradyExtDistortionApplied" {
     const input = CameraInput{
         .pixels_num = .{ 10, 10 },
         .pixels_size = .{ 0.01, 0.01 },
-        .pos_world = vector.Vec3f.initZeros(),
+        .pos_world = vec.Vec3f.initZeros(),
         .rot_world = rotation.Rotation.init(0, 0, 0),
-        .roi_cent_world = vector.Vec3f.initZeros(),
+        .roi_cent_world = vec.Vec3f.initZeros(),
         .focal_length = 1.0,
         .sub_sample = 1,
         .distortion = .{ .brown_conrady_ext = distortion },
@@ -770,7 +770,7 @@ test "CameraPrepared.brownConradyExtDistortionApplied" {
     const fy = input.focal_length / input.pixels_size[1];
     const x_d = (0.5 - x_off) / fx;
     const y_d = (0.5 - y_off) / fy;
-    const solved = try distortion.inverse(x_d, y_d);
+    const solved = try distortion.inv(x_d, y_d);
 
     const x_ideal = camera.ideal_pixel_centers.get(&[_]usize{ 0, 0, 0 });
     const y_ideal = camera.ideal_pixel_centers.get(&[_]usize{ 0, 0, 1 });
@@ -793,7 +793,7 @@ test "PreparedPSF gaussian kernels normalize" {
         std.testing.allocator,
         .{ .gaussian = .{
             .sigma_px = 0.35,
-            .support_rad_px = 1.25,
+            .supp_rad_px = 1.25,
             .separable = .yes,
         } },
         2,
@@ -815,7 +815,7 @@ test "PreparedPSF isotropic gaussian separable matches non-separable outer produ
         std.testing.allocator,
         .{ .gaussian = .{
             .sigma_px = 0.35,
-            .support_rad_px = 1.25,
+            .supp_rad_px = 1.25,
             .separable = .yes,
         } },
         2,
@@ -826,7 +826,7 @@ test "PreparedPSF isotropic gaussian separable matches non-separable outer produ
         std.testing.allocator,
         .{ .gaussian = .{
             .sigma_px = 0.35,
-            .support_rad_px = 1.25,
+            .supp_rad_px = 1.25,
             .separable = .no,
         } },
         2,

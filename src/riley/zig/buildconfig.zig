@@ -16,7 +16,7 @@ else
         pub const precision = "f64";
         pub const simd = "on";
         pub const newton_solver = "fast";
-        pub const simd_vector_width: comptime_int = 0;
+        pub const simd_vec_width: comptime_int = 0;
     };
 
 pub const comptime_eval_branch_quota: comptime_int = 50000;
@@ -28,15 +28,15 @@ pub const comptime_eval_branch_quota: comptime_int = 50000;
 pub const Config = struct {
     simd: SimdMode = default_simd,
     newton_solver_mode: NewtonSolverMode = default_newton_solver_mode,
-    simd_vector_width: comptime_int = defaultSimdVectorWidthForPrecision(F),
+    simd_vec_width: comptime_int = defaultSimdVecWidthForPrecision(F),
     max_nodal_fields: comptime_int = 8,
     max_image_channels: comptime_int = 8,
     raster_newton_iter_max: comptime_int = 10,
     distortion_newton_iter_max: comptime_int = 15,
     interp_lut_size: comptime_int = 1024,
-    save_frame_buffer_count: comptime_int = 3,
+    save_frame_buff_count: comptime_int = 3,
     precision: type = F,
-    tolerance: Tolerance = defaultToleranceForPrecision(F),
+    tol: Tol = defaultTolForPrecision(F),
 };
 
 pub const default_precision = parsePrecision(build_options.precision);
@@ -49,12 +49,12 @@ pub const default_newton_solver_mode =
 
 pub const config = configForPrecision(F);
 
-pub const SimdWidth = config.simd_vector_width;
-pub const SaveFrameBufferCount = config.save_frame_buffer_count;
+pub const SimdWidth = config.simd_vec_width;
+pub const SaveFrameBuffCount = config.save_frame_buff_count;
 pub const NewtonMode = config.newton_solver_mode;
 pub const UseHullNewtonSeed = defaultNewtonSeedModeUsesHull(F);
-pub const UseLastConvergedNewtonSeedReuse =
-    defaultNewtonSeedReuseLastConverged(F);
+pub const UseLastConvNewtonSeedReuse =
+    defaultNewtonSeedReuseLastConv(F);
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -65,7 +65,7 @@ pub const SimdMode = enum {
     on,
 };
 
-pub const SimdTextureInterpMode = enum {
+pub const SimdTexInterpMode = enum {
     inner,
     over_pixels,
 };
@@ -75,12 +75,12 @@ pub const NewtonSolverMode = enum {
     robust,
 };
 
-pub const TextureSIMDPolicy = struct {
+pub const TexSIMDPolicy = struct {
     pub fn resolve(
         comptime channels: comptime_int,
         comptime is_linear: bool,
         comptime uses_lut: bool,
-    ) SimdTextureInterpMode {
+    ) SimdTexInterpMode {
         if (is_linear) {
             return .over_pixels;
         }
@@ -95,48 +95,48 @@ pub const TextureSIMDPolicy = struct {
 };
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn defaultNewtonSeedModeUsesHull(comptime precision: type) bool {
     return switch (precision) {
         f32 => true,
         f64 => false,
-        else => @compileError("Only f32 and f64 precision are supported."),
+        else => @compileError("Only f32 and f64 precision are supped."),
     };
 }
 
-pub fn defaultNewtonSeedReuseLastConverged(comptime precision: type) bool {
+pub fn defaultNewtonSeedReuseLastConv(comptime precision: type) bool {
     _ = precision;
     return false;
 }
 
-pub fn defaultSimdVectorWidthForPrecision(comptime precision: type) comptime_int {
-    if (build_options.simd_vector_width > 0) {
-        return build_options.simd_vector_width;
+pub fn defaultSimdVecWidthForPrecision(comptime precision: type) comptime_int {
+    if (build_options.simd_vec_width > 0) {
+        return build_options.simd_vec_width;
     }
     return switch (precision) {
         f32 => 16,
         f64 => 8,
-        else => @compileError("Only f32 and f64 precision are supported."),
+        else => @compileError("Only f32 and f64 precision are supped."),
     };
 }
 
-pub fn defaultToleranceForPrecision(comptime precision: type) Tolerance {
+pub fn defaultTolForPrecision(comptime precision: type) Tol {
     return switch (precision) {
-        f32 => tolerance_f32,
-        f64 => tolerance_f64,
-        else => @compileError("Only f32 and f64 precision are supported."),
+        f32 => tol_f32,
+        f64 => tol_f64,
+        else => @compileError("Only f32 and f64 precision are supped."),
     };
 }
 
 pub fn configForPrecision(comptime precision: type) Config {
-    _ = defaultSimdVectorWidthForPrecision(precision);
+    _ = defaultSimdVecWidthForPrecision(precision);
     return .{
         .precision = precision,
         .newton_solver_mode = default_newton_solver_mode,
-        .simd_vector_width = defaultSimdVectorWidthForPrecision(precision),
-        .tolerance = defaultToleranceForPrecision(precision),
+        .simd_vec_width = defaultSimdVecWidthForPrecision(precision),
+        .tol = defaultTolForPrecision(precision),
     };
 }
 
@@ -176,12 +176,12 @@ fn parseNewtonSolverMode(comptime newton_solver: []const u8) NewtonSolverMode {
 // Major Internal Types Shared Across The File
 // --------------------------------------------------------------------------------------
 
-pub const EdgeTolerance = struct {
+pub const EdgeTol = struct {
     tri_weight_inclusion: Scalar = 1e-9,
     simd_raster_weight_inclusion: Scalar = 1e-9,
 };
 
-pub const HullTolerance = struct {
+pub const HullTol = struct {
     scalar_inclusion: Scalar = 1.0e-6,
     simd_inclusion: Scalar = 1.0e-6,
     corner_midside_ang_lower_deg: Scalar = 20.0,
@@ -193,83 +193,83 @@ pub const HullTolerance = struct {
     no_hull_bbox_rel_pad: Scalar = 0.15,
 };
 
-pub const CullingTolerance = struct {
+pub const CullingTol = struct {
     higher_order_backface_nz: Scalar = 1e-3,
     tri3_signed_area: Scalar = 1e-6,
     projective_z_min: Scalar = 1e-12,
 };
 
-pub const NormalTolerance = struct {
+pub const NormalTol = struct {
     normalise_magnitude: Scalar = 1e-12,
 };
 
-pub const NewtonTolerance = struct {
-    residual: Scalar = 1e-8,
-    normalized_residual: Scalar = 3e-11,
-    stagnation_normalized_residual: Scalar = 1e-10,
-    relative_determinant: Scalar = 1e-12,
-    parametric_domain: Scalar = 1e-7,
-    parametric_step_abs: Scalar = 1e-12,
-    parametric_step_rel: Scalar = 1e-12,
-    max_parametric_step: Scalar = 0.5,
+pub const NewtonTol = struct {
+    resid: Scalar = 1e-8,
+    norm_resid: Scalar = 3e-11,
+    stagnation_norm_resid: Scalar = 1e-10,
+    rel_det: Scalar = 1e-12,
+    para_dom: Scalar = 1e-7,
+    para_step_abs: Scalar = 1e-12,
+    para_step_rel: Scalar = 1e-12,
+    max_para_step: Scalar = 0.5,
 };
 
-pub const DistortionTolerance = struct {
-    residual: Scalar = 1e-10,
+pub const DistortionTol = struct {
+    resid: Scalar = 1e-10,
     delta: Scalar = 1e-10,
-    determinant: Scalar = 1e-12,
+    det: Scalar = 1e-12,
 };
 
-pub const NewtonSeedTolerance = struct {
-    determinant: Scalar = 1e-10,
-    parametric_domain: Scalar = 1e-5,
-    residual_sq: Scalar = 1e-4,
+pub const NewtonSeedTol = struct {
+    det: Scalar = 1e-10,
+    para_dom: Scalar = 1e-5,
+    resid_sq: Scalar = 1e-4,
 };
 
-pub const GeometryTolerance = struct {
-    bilinear_parametric_domain: Scalar = 1e-8,
+pub const GeometryTol = struct {
+    bilinear_para_dom: Scalar = 1e-8,
     bilinear_denom: Scalar = 1e-12,
     quadratic_area: Scalar = 1e-12,
-    depth_buffer_inv_z_cmp: Scalar = 1e-12,
+    depth_buff_inv_z_cmp: Scalar = 1e-12,
 };
 
-pub const TextureTolerance = struct {
+pub const TexTol = struct {
     lancsoz_centre_snap: Scalar = 1e-6,
     samp_coeff_sum: Scalar = 1e-9,
 };
 
-pub const PSFTolerance = struct {
-    support_radius_inclusion: Scalar = 1e-12,
-    pixel_box_identity_support_radius: Scalar = 1e-12,
-    anisotropic_axis_alignment: Scalar = 1e-12,
+pub const PSFTol = struct {
+    supp_radius_inclusion: Scalar = 1e-12,
+    pixel_box_identity_supp_radius: Scalar = 1e-12,
+    anisotropic_axis_align: Scalar = 1e-12,
 };
 
-pub const ImageTolerance = struct {
+pub const ImageTol = struct {
     auto_scale_range: Scalar = 1e-9,
 };
 
-pub const LegacyTolerance = struct {
+pub const LegacyTol = struct {
     oldraster_area: Scalar = 1e-12,
 };
 
-pub const Tolerance = struct {
-    edge: EdgeTolerance = .{},
-    hull: HullTolerance = .{},
-    culling: CullingTolerance = .{},
-    normals: NormalTolerance = .{},
-    newton: NewtonTolerance = .{},
-    distortion: DistortionTolerance = .{},
-    newton_seed: NewtonSeedTolerance = .{},
-    geometry: GeometryTolerance = .{},
-    texture: TextureTolerance = .{},
-    psf: PSFTolerance = .{},
-    image: ImageTolerance = .{},
-    legacy: LegacyTolerance = .{},
+pub const Tol = struct {
+    edge: EdgeTol = .{},
+    hull: HullTol = .{},
+    culling: CullingTol = .{},
+    normals: NormalTol = .{},
+    newton: NewtonTol = .{},
+    distortion: DistortionTol = .{},
+    newton_seed: NewtonSeedTol = .{},
+    geometry: GeometryTol = .{},
+    tex: TexTol = .{},
+    psf: PSFTol = .{},
+    image: ImageTol = .{},
+    legacy: LegacyTol = .{},
 };
 
-pub const tolerance_f64 = Tolerance{};
+pub const tol_f64 = Tol{};
 
-pub const tolerance_f32 = Tolerance{
+pub const tol_f32 = Tol{
     .edge = .{
         .tri_weight_inclusion = 1e-6,
         .simd_raster_weight_inclusion = 1e-6,
@@ -290,39 +290,39 @@ pub const tolerance_f32 = Tolerance{
         .normalise_magnitude = 1e-8,
     },
     .newton = .{
-        .residual = 1e-4,
-        .normalized_residual = 1.5e-5,
-        .stagnation_normalized_residual = 7.5e-5,
-        .relative_determinant = 1e-6,
-        .parametric_domain = 5e-5,
-        .parametric_step_abs = 2e-6,
-        .parametric_step_rel = 2e-6,
-        .max_parametric_step = 0.5,
+        .resid = 1e-4,
+        .norm_resid = 1.5e-5,
+        .stagnation_norm_resid = 7.5e-5,
+        .rel_det = 1e-6,
+        .para_dom = 5e-5,
+        .para_step_abs = 2e-6,
+        .para_step_rel = 2e-6,
+        .max_para_step = 0.5,
     },
     .distortion = .{
-        .residual = 1e-5,
+        .resid = 1e-5,
         .delta = 1e-5,
-        .determinant = 1e-7,
+        .det = 1e-7,
     },
     .newton_seed = .{
-        .determinant = 1e-7,
-        .parametric_domain = 2e-4,
-        .residual_sq = 5e-3,
+        .det = 1e-7,
+        .para_dom = 2e-4,
+        .resid_sq = 5e-3,
     },
     .geometry = .{
-        .bilinear_parametric_domain = 5e-5,
+        .bilinear_para_dom = 5e-5,
         .bilinear_denom = 1e-7,
         .quadratic_area = 1e-8,
-        .depth_buffer_inv_z_cmp = 1e-8,
+        .depth_buff_inv_z_cmp = 1e-8,
     },
-    .texture = .{
+    .tex = .{
         .lancsoz_centre_snap = 1e-6,
         .samp_coeff_sum = 1e-6,
     },
     .psf = .{
-        .support_radius_inclusion = 1e-6,
-        .pixel_box_identity_support_radius = 1e-6,
-        .anisotropic_axis_alignment = 1e-6,
+        .supp_radius_inclusion = 1e-6,
+        .pixel_box_identity_supp_radius = 1e-6,
+        .anisotropic_axis_align = 1e-6,
     },
     .image = .{
         .auto_scale_range = 1e-8,
@@ -355,15 +355,14 @@ pub const Tri3FixedConfig = switch (F) {
         pub const Edge = i64;
         pub const frac_bits: comptime_int = 16;
     },
-    else => @compileError("Unsupported Riley floating-point type."),
+    else => @compileError("Unsupped Riley floating-point type."),
 };
 
 pub const Tri3FixedCoord = Tri3FixedConfig.Coord;
 pub const Tri3FixedSetup = Tri3FixedConfig.Setup;
 pub const Tri3FixedEdge = Tri3FixedConfig.Edge;
 pub const Tri3FixedFracBits = Tri3FixedConfig.frac_bits;
-pub const Tri3FixedOne: Tri3FixedEdge =
-    @as(Tri3FixedEdge, 1) << Tri3FixedFracBits;
+pub const Tri3FixedOne: Tri3FixedEdge = @as(Tri3FixedEdge, 1) << Tri3FixedFracBits;
 pub const VecSTri3FixedEdge = @Vector(SimdWidth, Tri3FixedEdge);
 
 comptime {
@@ -381,35 +380,35 @@ comptime {
 // Tests
 // --------------------------------------------------------------------------------------
 
-test "TextureSIMDPolicy resolves texture cases" {
+test "TexSIMDPolicy resolves tex cases" {
     const expectEqual = std.testing.expectEqual;
 
     try expectEqual(
-        SimdTextureInterpMode.over_pixels,
-        TextureSIMDPolicy.resolve(1, true, false),
+        SimdTexInterpMode.over_pixels,
+        TexSIMDPolicy.resolve(1, true, false),
     );
     try expectEqual(
-        SimdTextureInterpMode.inner,
-        TextureSIMDPolicy.resolve(1, false, true),
+        SimdTexInterpMode.inner,
+        TexSIMDPolicy.resolve(1, false, true),
     );
     try expectEqual(
-        SimdTextureInterpMode.inner,
-        TextureSIMDPolicy.resolve(1, false, true),
+        SimdTexInterpMode.inner,
+        TexSIMDPolicy.resolve(1, false, true),
     );
     try expectEqual(
-        SimdTextureInterpMode.over_pixels,
-        TextureSIMDPolicy.resolve(1, false, false),
+        SimdTexInterpMode.over_pixels,
+        TexSIMDPolicy.resolve(1, false, false),
     );
     try expectEqual(
-        SimdTextureInterpMode.over_pixels,
-        TextureSIMDPolicy.resolve(3, true, false),
+        SimdTexInterpMode.over_pixels,
+        TexSIMDPolicy.resolve(3, true, false),
     );
     try expectEqual(
-        SimdTextureInterpMode.inner,
-        TextureSIMDPolicy.resolve(3, false, true),
+        SimdTexInterpMode.inner,
+        TexSIMDPolicy.resolve(3, false, true),
     );
     try expectEqual(
-        SimdTextureInterpMode.inner,
-        TextureSIMDPolicy.resolve(3, false, false),
+        SimdTexInterpMode.inner,
+        TexSIMDPolicy.resolve(3, false, false),
     );
 }

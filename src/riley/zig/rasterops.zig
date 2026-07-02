@@ -13,7 +13,7 @@ const ndarray = @import("ndarray.zig");
 const meshio = @import("meshio.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const tol = buildconfig.config.tolerance;
+const tol = buildconfig.config.tol;
 const cam = @import("camera.zig");
 const shapefun = @import("shapefun.zig");
 const matrix = @import("matstack.zig");
@@ -28,7 +28,7 @@ const shaderops = @import("shaderops.zig");
 const report = @import("report.zig");
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn edgeFun3Slices(
@@ -248,7 +248,7 @@ pub fn calcVisibleNodeBBoxTri3(
 ) ?ElemBBox {
     comptime {
         if (MT != .tri3 and MT != .tri3opt) {
-            @compileError("calcVisibleNodeBBoxTri3 only supports .tri3 and .tri3opt");
+            @compileError("calcVisibleNodeBBoxTri3 only supps .tri3 and .tri3opt");
         }
     }
 
@@ -289,7 +289,7 @@ pub fn calcVisibleNodeBBoxHighOrd(
 ) ?ElemBBox {
     comptime {
         if (MT == .tri3) {
-            @compileError("calcVisibleNodeBBoxHighOrd does not support .tri3");
+            @compileError("calcVisibleNodeBBoxHighOrd does not supp .tri3");
         }
     }
 
@@ -339,7 +339,7 @@ pub fn calcVisibleNodeBBoxHighOrdNoHull(
 ) ?ElemBBox {
     comptime {
         if (MT == .tri3) {
-            @compileError("calcVisibleNodeBBoxHighOrdNoHull does not support .tri3");
+            @compileError("calcVisibleNodeBBoxHighOrdNoHull does not supp .tri3");
         }
     }
 
@@ -373,7 +373,7 @@ pub fn calcVisibleNodeBBoxHighOrdNoHull(
 }
 
 //------------------------------------------------------------------------------------------
-// Element Data Gathering
+// Elem Data Gathering
 //------------------------------------------------------------------------------------------
 pub fn GatheredElemCoords(comptime N: usize) type {
     return struct {
@@ -514,7 +514,7 @@ pub fn sceneTileElemOverlap(
 ) !TilingOverlaps {
     const tiles_num = tiles_num_x * tiles_num_y;
 
-    // Stage 1 - Parallel Counting Pass: Determine the number of element-tile
+    // Stage 1 - Parallel Counting Pass: Determine the number of elem-tile
     // intersections across all meshes.
     const tile_elem_counts = try allocator.alloc(std.atomic.Value(usize), tiles_num);
     defer allocator.free(tile_elem_counts);
@@ -548,7 +548,7 @@ pub fn sceneTileElemOverlap(
         );
     }
 
-    // Stage 2 - Serial Management Pass: Allocate overlap buffers and calculate
+    // Stage 2 - Serial Management Pass: Allocate overlap buffs and calculate
     // global offsets for each tile.
     var overlap_total: usize = 0;
     var num_active_tiles: usize = 0;
@@ -598,8 +598,8 @@ pub fn sceneTileElemOverlap(
         current_off += count;
     }
 
-    // Stage 3 - Parallel Filling Pass: Populate the allocated buffers with
-    // element metadata and clipped bounding boxes.
+    // Stage 3 - Parallel Filling Pass: Populate the allocated buffs with
+    // elem metadata and clipped bounding boxes.
     for (0..elems_in_image_by_mesh.len) |mesh_idx| {
         const elems_num = elems_in_image_by_mesh[mesh_idx];
         if (elems_num == 0) continue;
@@ -848,7 +848,7 @@ fn isHighOrdBackface(
     coords_raster: RasterCoords2D(N),
 ) bool {
     const nodal_derivs = comptime shapefun.getNodalDerivs(N);
-    const tolerance = tol.culling.higher_order_backface_nz;
+    const nz_tol = tol.culling.higher_order_backface_nz;
 
     var backface = true;
     for (0..N) |nn| {
@@ -865,7 +865,7 @@ fn isHighOrdBackface(
         }
 
         const normal_z = dx_dxi * dy_deta - dx_deta * dy_dxi;
-        const front_facing = normal_z < -tolerance;
+        const front_facing = normal_z < -nz_tol;
         if (front_facing) {
             backface = false;
             break;

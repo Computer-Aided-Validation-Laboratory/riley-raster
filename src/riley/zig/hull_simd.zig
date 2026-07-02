@@ -12,10 +12,9 @@ const F = buildconfig.F;
 const cfg = buildconfig.config;
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
-const tol = cfg.tolerance;
+const tol = cfg.tol;
 const rops = @import("rasterops.zig");
-const S = cfg.simd_vector_width;
-
+const S = cfg.simd_vec_width;
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -40,9 +39,8 @@ pub const HullResultScalar = struct {
     seed_eta: F,
 };
 
-
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn Tessellation(comptime NT: usize) type {
@@ -177,7 +175,7 @@ pub fn getTessellation(
 
     if (N == 4) {
         // Quad4 hull: C0, C1, C2, C3
-        // Local parametric coords: (-1,-1), (1,-1), (1,1), (-1,1)
+        // Local para coords: (-1,-1), (1,-1), (1,1), (-1,1)
         tess.triangles[0] = .{
             .x = .{ hull_x[0], hull_x[1], hull_x[2] },
             .y = .{ hull_y[0], hull_y[1], hull_y[2] },

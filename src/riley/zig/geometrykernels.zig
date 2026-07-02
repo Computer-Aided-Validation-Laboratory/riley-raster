@@ -14,7 +14,7 @@ const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const VecSU8 = buildconfig.VecSU8;
-const tol = cfg.tolerance;
+const tol = cfg.tol;
 
 const rops = @import("rasterops.zig");
 const newton = @import("newton.zig");
@@ -24,7 +24,6 @@ const shapefun = @import("shapefun.zig");
 const NDArray = @import("ndarray.zig").NDArray;
 const Vec3Slices = rops.Vec3Slices;
 const rastcfg = @import("rasterconfig.zig");
-
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -75,17 +74,16 @@ pub const CoordSpace = enum {
     clip_px_leng,
 };
 
-
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn GeometryResult(comptime N: usize) type {
     return struct {
         weights: ?[N]F,
         iters: u8,
-        status: newton.NewtonStatus = .failed_iteration_limit,
-        pre_domain_converged: bool = true,
+        status: newton.NewtonStatus = .fail_iter_lim,
+        pre_dom_conv: bool = true,
         xi_out: F = 0.0,
         eta_out: F = 0.0,
         xi_final: F = 0.0,
@@ -98,14 +96,14 @@ pub fn GeometryResultSIMD(comptime N: usize) type {
         v_weights: [N]VecSF,
         v_mask: VecSB,
         v_status: VecSU8,
-        v_pre_domain_converged: VecSB = @splat(true),
+        v_pre_dom_conv: VecSB = @splat(true),
         v_iters: VecSU8,
         v_xi_out: VecSF = undefined,
         v_eta_out: VecSF = undefined,
         v_xi_final: VecSF = undefined,
         v_eta_final: VecSF = undefined,
-        v_residual_x: VecSF = undefined,
-        v_residual_y: VecSF = undefined,
+        v_resid_x: VecSF = undefined,
+        v_resid_y: VecSF = undefined,
     };
 }
 
@@ -156,7 +154,7 @@ pub fn Tri3Kernel() type {
         ) GeometryResult(nodes_num) {
             const weights = getWeightsAt(nodes, pixel_x, pixel_y, inv_area);
 
-            if (isInElement(weights)) {
+            if (isInElem(weights)) {
                 return .{ .weights = weights, .iters = 1 };
             }
 
@@ -197,7 +195,7 @@ pub fn Tri3Kernel() type {
             };
         }
 
-        pub inline fn isInElement(weights: [nodes_num]F) bool {
+        pub inline fn isInElem(weights: [nodes_num]F) bool {
             const edge_tol = tol.edge.tri_weight_inclusion;
 
             return weights[0] >= -edge_tol and
@@ -227,7 +225,7 @@ pub fn Tri3Kernel() type {
                 v_pixel_y,
                 v_inv_area,
             );
-            const v_mask = isInElementSIMD(v_weights);
+            const v_mask = isInElemSIMD(v_weights);
 
             return .{
                 .v_weights = v_weights,
@@ -238,13 +236,13 @@ pub fn Tri3Kernel() type {
                     @as(
                         VecSU8,
                         @splat(
-                            @intFromEnum(newton.NewtonStatus.converged_residual),
+                            @intFromEnum(newton.NewtonStatus.conv_resid),
                         ),
                     ),
                     @as(
                         VecSU8,
                         @splat(
-                            @intFromEnum(newton.NewtonStatus.failed_domain),
+                            @intFromEnum(newton.NewtonStatus.fail_dom),
                         ),
                     ),
                 ),
@@ -286,7 +284,7 @@ pub fn Tri3Kernel() type {
             };
         }
 
-        pub inline fn isInElementSIMD(v_weights: [nodes_num]VecSF) VecSB {
+        pub inline fn isInElemSIMD(v_weights: [nodes_num]VecSF) VecSB {
             const edge_tol = tol.edge.tri_weight_inclusion;
             const v_edge_tol: VecSF = @splat(-edge_tol);
 
@@ -344,8 +342,10 @@ pub fn Tri6Kernel() type {
         pub const coord_space = .clip_px_leng;
         pub const solver_kind = .newton;
 
-        pub inline fn initSeed(seed_mode: rastcfg.NewtonSeedMode, 
-                               hull_seed: ?NewtonSeed,) NewtonSeed {
+        pub inline fn initSeed(
+            seed_mode: rastcfg.NewtonSeedMode,
+            hull_seed: ?NewtonSeed,
+        ) NewtonSeed {
             if (seed_mode == .hull) {
                 if (hull_seed) |seed| {
                     return seed;
@@ -369,7 +369,7 @@ pub fn Tri6Kernel() type {
             };
         }
 
-        pub inline fn domainViolation(xi: F, eta: F) F {
+        pub inline fn domViolation(xi: F, eta: F) F {
             return @max(-xi, 0.0) + @max(-eta, 0.0) + @max(xi + eta - 1.0, 0.0);
         }
 
@@ -385,17 +385,17 @@ pub fn Tri6Kernel() type {
             var xi: F = 0.0;
             var eta: F = 0.0;
 
-            const target_x = pixel_x - x_offset;
-            const target_y = pixel_y - y_offset;
+            const targ_x = pixel_x - x_offset;
+            const targ_y = pixel_y - y_offset;
 
             var node_values: [nodes_num]F = undefined;
             var deriv_nu: [nodes_num]F = undefined;
             var deriv_nv: [nodes_num]F = undefined;
 
-            const result = newton.solveInverse(
+            const result = newton.solveInv(
                 nodes_num,
-                target_x,
-                target_y,
+                targ_x,
+                targ_y,
                 nodes.x,
                 nodes.y,
                 nodes.z,
@@ -408,12 +408,12 @@ pub fn Tri6Kernel() type {
                 &deriv_nv,
             );
 
-            if (result.converged) {
+            if (result.conv) {
                 return .{
                     .weights = node_values,
-                    .iters = result.iterations,
+                    .iters = result.iters,
                     .status = result.status,
-                    .pre_domain_converged = result.pre_domain_converged,
+                    .pre_dom_conv = result.pre_dom_conv,
                     .xi_out = xi,
                     .eta_out = eta,
                     .xi_final = result.xi_final,
@@ -422,9 +422,9 @@ pub fn Tri6Kernel() type {
             }
             return .{
                 .weights = null,
-                .iters = result.iterations,
+                .iters = result.iters,
                 .status = result.status,
-                .pre_domain_converged = result.pre_domain_converged,
+                .pre_dom_conv = result.pre_dom_conv,
                 .xi_final = result.xi_final,
                 .eta_final = result.eta_final,
             };
@@ -439,8 +439,8 @@ pub fn Tri6Kernel() type {
             x_offset: F,
             y_offset: F,
         ) GeometryResultSIMD(nodes_num) {
-            const v_target_x = v_pixel_x - @as(VecSF, @splat(x_offset));
-            const v_target_y = v_pixel_y - @as(VecSF, @splat(y_offset));
+            const v_targ_x = v_pixel_x - @as(VecSF, @splat(x_offset));
+            const v_targ_y = v_pixel_y - @as(VecSF, @splat(y_offset));
 
             var v_xi_out: VecSF = undefined;
             var v_eta_out: VecSF = undefined;
@@ -449,10 +449,10 @@ pub fn Tri6Kernel() type {
             var v_dNu: [nodes_num]VecSF = undefined;
             var v_dNv: [nodes_num]VecSF = undefined;
 
-            const res = newton.solveInverseSIMD(
+            const res = newton.solveInvSIMD(
                 nodes_num,
-                v_target_x,
-                v_target_y,
+                v_targ_x,
+                v_targ_y,
                 nodes.x,
                 nodes.y,
                 nodes.z,
@@ -467,16 +467,16 @@ pub fn Tri6Kernel() type {
 
             return .{
                 .v_weights = v_weights,
-                .v_mask = res.v_converged,
+                .v_mask = res.v_conv,
                 .v_status = res.v_status,
-                .v_pre_domain_converged = res.v_pre_domain_converged,
-                .v_iters = res.v_iterations,
+                .v_pre_dom_conv = res.v_pre_dom_conv,
+                .v_iters = res.v_iters,
                 .v_xi_out = v_xi_out,
                 .v_eta_out = v_eta_out,
                 .v_xi_final = res.v_xi_final,
                 .v_eta_final = res.v_eta_final,
-                .v_residual_x = res.v_residual_x,
-                .v_residual_y = res.v_residual_y,
+                .v_resid_x = res.v_resid_x,
+                .v_resid_y = res.v_resid_y,
             };
         }
 
@@ -556,58 +556,58 @@ pub fn Quad4IBIKernel() type {
         }
 
         inline fn getInvBiResidual(
-            target_x: F,
-            target_y: F,
+            targ_x: F,
+            targ_y: F,
             solve_params: BilinearParams,
         ) InvBiResidual {
             return .{
                 .x = .{
-                    .const_term = solve_params.x_const - (solve_params.w_const * target_x),
-                    .xi_term = solve_params.x_u_coeff - (solve_params.w_u_coeff * target_x),
-                    .eta_term = solve_params.x_v_coeff - (solve_params.w_v_coeff * target_x),
+                    .const_term = solve_params.x_const - (solve_params.w_const * targ_x),
+                    .xi_term = solve_params.x_u_coeff - (solve_params.w_u_coeff * targ_x),
+                    .eta_term = solve_params.x_v_coeff - (solve_params.w_v_coeff * targ_x),
                     .xi_eta_term = solve_params.x_uv_coeff -
-                        (solve_params.w_uv_coeff * target_x),
+                        (solve_params.w_uv_coeff * targ_x),
                 },
                 .y = .{
-                    .const_term = solve_params.y_const - (solve_params.w_const * target_y),
-                    .xi_term = solve_params.y_u_coeff - (solve_params.w_u_coeff * target_y),
-                    .eta_term = solve_params.y_v_coeff - (solve_params.w_v_coeff * target_y),
+                    .const_term = solve_params.y_const - (solve_params.w_const * targ_y),
+                    .xi_term = solve_params.y_u_coeff - (solve_params.w_u_coeff * targ_y),
+                    .eta_term = solve_params.y_v_coeff - (solve_params.w_v_coeff * targ_y),
                     .xi_eta_term = solve_params.y_uv_coeff -
-                        (solve_params.w_uv_coeff * target_y),
+                        (solve_params.w_uv_coeff * targ_y),
                 },
             };
         }
 
         inline fn solveOtherCoordFromXi(
             xi: F,
-            residual: InvBiResidual,
+            resid: InvBiResidual,
             denom_tol: F,
         ) ?F {
-            const denom_x = residual.x.eta_term + (residual.x.xi_eta_term * xi);
-            const denom_y = residual.y.eta_term + (residual.y.xi_eta_term * xi);
+            const denom_x = resid.x.eta_term + (resid.x.xi_eta_term * xi);
+            const denom_y = resid.y.eta_term + (resid.y.xi_eta_term * xi);
 
             if (@abs(denom_x) > @abs(denom_y)) {
                 if (@abs(denom_x) <= denom_tol) return null;
-                return -((residual.x.const_term + (residual.x.xi_term * xi)) / denom_x);
+                return -((resid.x.const_term + (resid.x.xi_term * xi)) / denom_x);
             }
             if (@abs(denom_y) <= denom_tol) return null;
-            return -((residual.y.const_term + (residual.y.xi_term * xi)) / denom_y);
+            return -((resid.y.const_term + (resid.y.xi_term * xi)) / denom_y);
         }
 
         inline fn solveOtherCoordFromEta(
             eta: F,
-            residual: InvBiResidual,
+            resid: InvBiResidual,
             denom_tol: F,
         ) ?F {
-            const denom_x = residual.x.xi_term + (residual.x.xi_eta_term * eta);
-            const denom_y = residual.y.xi_term + (residual.y.xi_eta_term * eta);
+            const denom_x = resid.x.xi_term + (resid.x.xi_eta_term * eta);
+            const denom_y = resid.y.xi_term + (resid.y.xi_eta_term * eta);
 
             if (@abs(denom_x) > @abs(denom_y)) {
                 if (@abs(denom_x) <= denom_tol) return null;
-                return -((residual.x.const_term + (residual.x.eta_term * eta)) / denom_x);
+                return -((resid.x.const_term + (resid.x.eta_term * eta)) / denom_x);
             }
             if (@abs(denom_y) <= denom_tol) return null;
-            return -((residual.y.const_term + (residual.y.eta_term * eta)) / denom_y);
+            return -((resid.y.const_term + (resid.y.eta_term * eta)) / denom_y);
         }
 
         inline fn rootsFromQuadratic(
@@ -656,22 +656,22 @@ pub fn Quad4IBIKernel() type {
             best_candidate: *?Candidate,
             xi: F,
             eta: F,
-            residual: InvBiResidual,
+            resid: InvBiResidual,
             eps: F,
         ) void {
             if (xi < -eps or xi > 1.0 + eps) return;
             if (eta < -eps or eta > 1.0 + eps) return;
 
             const resid_x =
-                residual.x.const_term +
-                (residual.x.xi_term * xi) +
-                (residual.x.eta_term * eta) +
-                (residual.x.xi_eta_term * xi * eta);
+                resid.x.const_term +
+                (resid.x.xi_term * xi) +
+                (resid.x.eta_term * eta) +
+                (resid.x.xi_eta_term * xi * eta);
             const resid_y =
-                residual.y.const_term +
-                (residual.y.xi_term * xi) +
-                (residual.y.eta_term * eta) +
-                (residual.y.xi_eta_term * xi * eta);
+                resid.y.const_term +
+                (resid.y.xi_term * xi) +
+                (resid.y.eta_term * eta) +
+                (resid.y.xi_eta_term * xi * eta);
             const resid_sq = (resid_x * resid_x) + (resid_y * resid_y);
 
             if (best_candidate.*) |curr| {
@@ -691,37 +691,37 @@ pub fn Quad4IBIKernel() type {
             y_offset: F,
             solve_params: BilinearParams,
         ) GeometryResult(nodes_num) {
-            const eps = tol.geometry.bilinear_parametric_domain;
+            const eps = tol.geometry.bilinear_para_dom;
             const zero_tol = tol.geometry.quadratic_area;
             const denom_tol = tol.geometry.bilinear_denom;
 
-            const target_x = pixel_x - x_offset;
-            const target_y = pixel_y - y_offset;
-            const residual = getInvBiResidual(
-                target_x,
-                target_y,
+            const targ_x = pixel_x - x_offset;
+            const targ_y = pixel_y - y_offset;
+            const resid = getInvBiResidual(
+                targ_x,
+                targ_y,
                 solve_params,
             );
 
             const p_coeff =
-                (residual.x.xi_eta_term * residual.y.xi_term) -
-                (residual.x.xi_term * residual.y.xi_eta_term);
+                (resid.x.xi_eta_term * resid.y.xi_term) -
+                (resid.x.xi_term * resid.y.xi_eta_term);
             const s_coeff =
-                (residual.x.xi_eta_term * residual.y.eta_term) -
-                (residual.x.eta_term * residual.y.xi_eta_term);
+                (resid.x.xi_eta_term * resid.y.eta_term) -
+                (resid.x.eta_term * resid.y.xi_eta_term);
 
             var best_candidate: ?Candidate = null;
 
             if (@abs(p_coeff) > zero_tol or @abs(s_coeff) > zero_tol) {
                 if (@abs(s_coeff) < @abs(p_coeff)) {
                     const q_coeff =
-                        (residual.x.xi_eta_term * residual.y.const_term) -
-                        (residual.x.const_term * residual.y.xi_eta_term) +
-                        (residual.x.eta_term * residual.y.xi_term) -
-                        (residual.x.xi_term * residual.y.eta_term);
+                        (resid.x.xi_eta_term * resid.y.const_term) -
+                        (resid.x.const_term * resid.y.xi_eta_term) +
+                        (resid.x.eta_term * resid.y.xi_term) -
+                        (resid.x.xi_term * resid.y.eta_term);
                     const r_coeff =
-                        (residual.x.eta_term * residual.y.const_term) -
-                        (residual.x.const_term * residual.y.eta_term);
+                        (resid.x.eta_term * resid.y.const_term) -
+                        (resid.x.const_term * resid.y.eta_term);
                     const roots = rootsFromQuadratic(
                         p_coeff,
                         q_coeff,
@@ -733,27 +733,27 @@ pub fn Quad4IBIKernel() type {
                         const xi = roots.roots[ii];
                         if (solveOtherCoordFromXi(
                             xi,
-                            residual,
+                            resid,
                             denom_tol,
                         )) |eta| {
                             tryCandidate(
                                 &best_candidate,
                                 xi,
                                 eta,
-                                residual,
+                                resid,
                                 eps,
                             );
                         }
                     }
                 } else {
                     const t_coeff =
-                        (residual.x.xi_eta_term * residual.y.const_term) -
-                        (residual.x.const_term * residual.y.xi_eta_term) -
-                        (residual.x.eta_term * residual.y.xi_term) +
-                        (residual.x.xi_term * residual.y.eta_term);
+                        (resid.x.xi_eta_term * resid.y.const_term) -
+                        (resid.x.const_term * resid.y.xi_eta_term) -
+                        (resid.x.eta_term * resid.y.xi_term) +
+                        (resid.x.xi_term * resid.y.eta_term);
                     const u_coeff =
-                        (residual.x.xi_term * residual.y.const_term) -
-                        (residual.x.const_term * residual.y.xi_term);
+                        (resid.x.xi_term * resid.y.const_term) -
+                        (resid.x.const_term * resid.y.xi_term);
                     const roots = rootsFromQuadratic(
                         s_coeff,
                         t_coeff,
@@ -765,151 +765,151 @@ pub fn Quad4IBIKernel() type {
                         const eta = roots.roots[ii];
                         if (solveOtherCoordFromEta(
                             eta,
-                            residual,
+                            resid,
                             denom_tol,
                         )) |xi| {
                             tryCandidate(
                                 &best_candidate,
                                 xi,
                                 eta,
-                                residual,
+                                resid,
                                 eps,
                             );
                         }
                     }
                 }
-            } else if (@abs(residual.x.xi_eta_term) > zero_tol and
-                @abs(residual.y.xi_eta_term) > zero_tol)
+            } else if (@abs(resid.x.xi_eta_term) > zero_tol and
+                @abs(resid.y.xi_eta_term) > zero_tol)
             {
                 if (@abs(p_coeff) < @abs(s_coeff)) {
                     const eta =
-                        ((residual.x.xi_eta_term * residual.y.const_term) -
-                            (residual.x.const_term * residual.y.xi_eta_term) +
-                            (residual.x.eta_term * residual.y.xi_term) -
-                            (residual.x.xi_term * residual.y.eta_term)) / (-s_coeff);
+                        ((resid.x.xi_eta_term * resid.y.const_term) -
+                            (resid.x.const_term * resid.y.xi_eta_term) +
+                            (resid.x.eta_term * resid.y.xi_term) -
+                            (resid.x.xi_term * resid.y.eta_term)) / (-s_coeff);
                     if (solveOtherCoordFromEta(
                         eta,
-                        residual,
+                        resid,
                         denom_tol,
                     )) |xi| {
                         tryCandidate(
                             &best_candidate,
                             xi,
                             eta,
-                            residual,
+                            resid,
                             eps,
                         );
                     }
                 } else {
                     const xi =
-                        ((residual.x.xi_eta_term * residual.y.const_term) -
-                            (residual.x.const_term * residual.y.xi_eta_term) -
-                            (residual.x.eta_term * residual.y.xi_term) +
-                            (residual.x.xi_term * residual.y.eta_term)) / (-p_coeff);
+                        ((resid.x.xi_eta_term * resid.y.const_term) -
+                            (resid.x.const_term * resid.y.xi_eta_term) -
+                            (resid.x.eta_term * resid.y.xi_term) +
+                            (resid.x.xi_term * resid.y.eta_term)) / (-p_coeff);
                     if (solveOtherCoordFromXi(
                         xi,
-                        residual,
+                        resid,
                         denom_tol,
                     )) |eta| {
                         tryCandidate(
                             &best_candidate,
                             xi,
                             eta,
-                            residual,
+                            resid,
                             eps,
                         );
                     }
                 }
-            } else if (@abs(residual.x.xi_eta_term) > zero_tol and
-                @abs(residual.y.xi_eta_term) <= zero_tol)
+            } else if (@abs(resid.x.xi_eta_term) > zero_tol and
+                @abs(resid.y.xi_eta_term) <= zero_tol)
             {
-                if (@abs(residual.y.eta_term) > @abs(residual.y.xi_term)) {
-                    if (@abs(residual.y.eta_term) > denom_tol) {
+                if (@abs(resid.y.eta_term) > @abs(resid.y.xi_term)) {
+                    if (@abs(resid.y.eta_term) > denom_tol) {
                         const eta =
-                            -residual.y.const_term / residual.y.eta_term;
+                            -resid.y.const_term / resid.y.eta_term;
                         if (solveOtherCoordFromEta(
                             eta,
-                            residual,
+                            resid,
                             denom_tol,
                         )) |xi| {
                             tryCandidate(
                                 &best_candidate,
                                 xi,
                                 eta,
-                                residual,
+                                resid,
                                 eps,
                             );
                         }
                     }
-                } else if (@abs(residual.y.xi_term) > denom_tol) {
-                    const xi = -residual.y.const_term / residual.y.xi_term;
+                } else if (@abs(resid.y.xi_term) > denom_tol) {
+                    const xi = -resid.y.const_term / resid.y.xi_term;
                     if (solveOtherCoordFromXi(
                         xi,
-                        residual,
+                        resid,
                         denom_tol,
                     )) |eta| {
                         tryCandidate(
                             &best_candidate,
                             xi,
                             eta,
-                            residual,
+                            resid,
                             eps,
                         );
                     }
                 }
-            } else if (@abs(residual.x.xi_eta_term) <= zero_tol and
-                @abs(residual.y.xi_eta_term) > zero_tol)
+            } else if (@abs(resid.x.xi_eta_term) <= zero_tol and
+                @abs(resid.y.xi_eta_term) > zero_tol)
             {
-                if (@abs(residual.x.xi_term) < @abs(residual.x.eta_term)) {
-                    if (@abs(residual.x.eta_term) > denom_tol) {
+                if (@abs(resid.x.xi_term) < @abs(resid.x.eta_term)) {
+                    if (@abs(resid.x.eta_term) > denom_tol) {
                         const eta =
-                            -residual.x.const_term / residual.x.eta_term;
+                            -resid.x.const_term / resid.x.eta_term;
                         if (solveOtherCoordFromEta(
                             eta,
-                            residual,
+                            resid,
                             denom_tol,
                         )) |xi| {
                             tryCandidate(
                                 &best_candidate,
                                 xi,
                                 eta,
-                                residual,
+                                resid,
                                 eps,
                             );
                         }
                     }
-                } else if (@abs(residual.x.xi_term) > denom_tol) {
-                    const xi = -residual.x.const_term / residual.x.xi_term;
+                } else if (@abs(resid.x.xi_term) > denom_tol) {
+                    const xi = -resid.x.const_term / resid.x.xi_term;
                     if (solveOtherCoordFromXi(
                         xi,
-                        residual,
+                        resid,
                         denom_tol,
                     )) |eta| {
                         tryCandidate(
                             &best_candidate,
                             xi,
                             eta,
-                            residual,
+                            resid,
                             eps,
                         );
                     }
                 }
             } else {
                 const denom =
-                    (residual.x.xi_term * residual.y.eta_term) -
-                    (residual.x.eta_term * residual.y.xi_term);
+                    (resid.x.xi_term * resid.y.eta_term) -
+                    (resid.x.eta_term * resid.y.xi_term);
                 if (@abs(denom) > denom_tol) {
                     const xi =
-                        ((residual.y.const_term * residual.x.eta_term) -
-                            (residual.x.const_term * residual.y.eta_term)) / denom;
+                        ((resid.y.const_term * resid.x.eta_term) -
+                            (resid.x.const_term * resid.y.eta_term)) / denom;
                     const eta =
-                        ((residual.x.xi_term * residual.y.const_term) -
-                            (residual.x.const_term * residual.y.xi_term)) / (-denom);
+                        ((resid.x.xi_term * resid.y.const_term) -
+                            (resid.x.const_term * resid.y.xi_term)) / (-denom);
                     tryCandidate(
                         &best_candidate,
                         xi,
                         eta,
-                        residual,
+                        resid,
                         eps,
                     );
                 }
@@ -965,7 +965,7 @@ pub fn Quad4NewtonKernel() type {
             };
         }
 
-        pub inline fn domainViolation(xi: F, eta: F) F {
+        pub inline fn domViolation(xi: F, eta: F) F {
             return @max(@abs(xi) - 1.0, 0.0) + @max(@abs(eta) - 1.0, 0.0);
         }
 
@@ -981,17 +981,17 @@ pub fn Quad4NewtonKernel() type {
             var xi: F = 0.0;
             var eta: F = 0.0;
 
-            const target_x = pixel_x - x_offset;
-            const target_y = pixel_y - y_offset;
+            const targ_x = pixel_x - x_offset;
+            const targ_y = pixel_y - y_offset;
 
             var node_values: [nodes_num]F = undefined;
             var deriv_nu: [nodes_num]F = undefined;
             var deriv_nv: [nodes_num]F = undefined;
 
-            const result = newton.solveInverse(
+            const result = newton.solveInv(
                 nodes_num,
-                target_x,
-                target_y,
+                targ_x,
+                targ_y,
                 nodes.x,
                 nodes.y,
                 nodes.z,
@@ -1003,10 +1003,10 @@ pub fn Quad4NewtonKernel() type {
                 &deriv_nu,
                 &deriv_nv,
             );
-            if (result.converged) {
+            if (result.conv) {
                 return .{
                     .weights = node_values,
-                    .iters = result.iterations,
+                    .iters = result.iters,
                     .status = result.status,
                     .xi_out = xi,
                     .eta_out = eta,
@@ -1014,7 +1014,7 @@ pub fn Quad4NewtonKernel() type {
             }
             return .{
                 .weights = null,
-                .iters = result.iterations,
+                .iters = result.iters,
                 .status = result.status,
             };
         }
@@ -1028,8 +1028,8 @@ pub fn Quad4NewtonKernel() type {
             x_offset: F,
             y_offset: F,
         ) GeometryResultSIMD(nodes_num) {
-            const v_target_x = v_pixel_x - @as(VecSF, @splat(x_offset));
-            const v_target_y = v_pixel_y - @as(VecSF, @splat(y_offset));
+            const v_targ_x = v_pixel_x - @as(VecSF, @splat(x_offset));
+            const v_targ_y = v_pixel_y - @as(VecSF, @splat(y_offset));
 
             var v_xi_out: VecSF = undefined;
             var v_eta_out: VecSF = undefined;
@@ -1038,10 +1038,10 @@ pub fn Quad4NewtonKernel() type {
             var v_dNu: [nodes_num]VecSF = undefined;
             var v_dNv: [nodes_num]VecSF = undefined;
 
-            const res = newton.solveInverseSIMD(
+            const res = newton.solveInvSIMD(
                 nodes_num,
-                v_target_x,
-                v_target_y,
+                v_targ_x,
+                v_targ_y,
                 nodes.x,
                 nodes.y,
                 nodes.z,
@@ -1056,16 +1056,16 @@ pub fn Quad4NewtonKernel() type {
 
             return .{
                 .v_weights = v_weights,
-                .v_mask = res.v_converged,
+                .v_mask = res.v_conv,
                 .v_status = res.v_status,
-                .v_pre_domain_converged = res.v_pre_domain_converged,
-                .v_iters = res.v_iterations,
+                .v_pre_dom_conv = res.v_pre_dom_conv,
+                .v_iters = res.v_iters,
                 .v_xi_out = v_xi_out,
                 .v_eta_out = v_eta_out,
                 .v_xi_final = res.v_xi_final,
                 .v_eta_final = res.v_eta_final,
-                .v_residual_x = res.v_residual_x,
-                .v_residual_y = res.v_residual_y,
+                .v_resid_x = res.v_resid_x,
+                .v_resid_y = res.v_resid_y,
             };
         }
 
@@ -1107,7 +1107,7 @@ pub fn Quad89Kernel(comptime N: usize) type {
             };
         }
 
-        pub inline fn domainViolation(xi: F, eta: F) F {
+        pub inline fn domViolation(xi: F, eta: F) F {
             return @max(@abs(xi) - 1.0, 0.0) + @max(@abs(eta) - 1.0, 0.0);
         }
 
@@ -1123,17 +1123,17 @@ pub fn Quad89Kernel(comptime N: usize) type {
             var xi: F = 0.0;
             var eta: F = 0.0;
 
-            const target_x = pixel_x - x_offset;
-            const target_y = pixel_y - y_offset;
+            const targ_x = pixel_x - x_offset;
+            const targ_y = pixel_y - y_offset;
 
             var node_values: [nodes_num]F = undefined;
             var deriv_nu: [nodes_num]F = undefined;
             var deriv_nv: [nodes_num]F = undefined;
 
-            const result = newton.solveInverse(
+            const result = newton.solveInv(
                 nodes_num,
-                target_x,
-                target_y,
+                targ_x,
+                targ_y,
                 nodes.x,
                 nodes.y,
                 nodes.z,
@@ -1146,10 +1146,10 @@ pub fn Quad89Kernel(comptime N: usize) type {
                 &deriv_nv,
             );
 
-            if (result.converged) {
+            if (result.conv) {
                 return .{
                     .weights = node_values,
-                    .iters = result.iterations,
+                    .iters = result.iters,
                     .status = result.status,
                     .xi_out = xi,
                     .eta_out = eta,
@@ -1157,7 +1157,7 @@ pub fn Quad89Kernel(comptime N: usize) type {
             }
             return .{
                 .weights = null,
-                .iters = result.iterations,
+                .iters = result.iters,
                 .status = result.status,
             };
         }
@@ -1171,8 +1171,8 @@ pub fn Quad89Kernel(comptime N: usize) type {
             x_offset: F,
             y_offset: F,
         ) GeometryResultSIMD(nodes_num) {
-            const v_target_x = v_pixel_x - @as(VecSF, @splat(x_offset));
-            const v_target_y = v_pixel_y - @as(VecSF, @splat(y_offset));
+            const v_targ_x = v_pixel_x - @as(VecSF, @splat(x_offset));
+            const v_targ_y = v_pixel_y - @as(VecSF, @splat(y_offset));
 
             var v_xi_out: VecSF = undefined;
             var v_eta_out: VecSF = undefined;
@@ -1181,10 +1181,10 @@ pub fn Quad89Kernel(comptime N: usize) type {
             var v_dNu: [nodes_num]VecSF = undefined;
             var v_dNv: [nodes_num]VecSF = undefined;
 
-            const res = newton.solveInverseSIMD(
+            const res = newton.solveInvSIMD(
                 nodes_num,
-                v_target_x,
-                v_target_y,
+                v_targ_x,
+                v_targ_y,
                 nodes.x,
                 nodes.y,
                 nodes.z,
@@ -1199,16 +1199,16 @@ pub fn Quad89Kernel(comptime N: usize) type {
 
             return .{
                 .v_weights = v_weights,
-                .v_mask = res.v_converged,
+                .v_mask = res.v_conv,
                 .v_status = res.v_status,
-                .v_pre_domain_converged = res.v_pre_domain_converged,
-                .v_iters = res.v_iterations,
+                .v_pre_dom_conv = res.v_pre_dom_conv,
+                .v_iters = res.v_iters,
                 .v_xi_out = v_xi_out,
                 .v_eta_out = v_eta_out,
                 .v_xi_final = res.v_xi_final,
                 .v_eta_final = res.v_eta_final,
-                .v_residual_x = res.v_residual_x,
-                .v_residual_y = res.v_residual_y,
+                .v_resid_x = res.v_resid_x,
+                .v_resid_y = res.v_resid_y,
             };
         }
 

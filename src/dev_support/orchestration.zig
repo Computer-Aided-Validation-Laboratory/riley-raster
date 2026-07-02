@@ -141,7 +141,7 @@ fn initCameraForSimDataAllFrames(
             .shader = .{
                 .func = .{
                     .uvs = null,
-                    .coord_mode = .parametric,
+                    .coord_mode = .para,
                     .builtin = .constant,
                     .normal_type = .none,
                 },
@@ -242,7 +242,7 @@ pub fn initCameraForCoordsWithRotation(
             .pixels_size = default_pixel_size,
             .pos_world = cam_pos,
             .rot_world = rot,
-            .roi_cent_world = cameraops.roiCentFromCoords(coords),
+            .roi_cent_world = sceneops.boundsCenter(coords),
             .focal_length = default_focal_length,
             .sub_sample = 2,
         },
@@ -282,7 +282,7 @@ pub fn initCameraForMeshes(
     fov_scale: F,
 ) !CameraPrepared {
     const rot = defaultRotation();
-    const roi_pos = cameraops.roiCentOverMeshes(mesh_inputs);
+    const roi_pos = sceneops.boundsCenterOverMeshes(mesh_inputs);
     const cam_pos = cameraops.posFillFrameFromRotOverMeshes(
         mesh_inputs,
         pixel_num,
@@ -330,7 +330,7 @@ pub fn buildMultimeshInputs(
             io,
             sim_datas,
             &default_multimesh_mesh_types,
-            .texture,
+            .tex,
             dir_paths,
             "texture/speckle-simple.tiff",
             null,
@@ -440,7 +440,7 @@ pub fn buildMixedMeshInputs(
             .disp = sim_datas[ii].field,
             .shader = .{ .tex_u8 = .{
                 .uvs = uvs.array,
-                .texture = texture,
+                .tex = texture,
                 .sample_config = .{
                     .sample = .cubic_catmull_rom,
                     .mode = .lut_lerp,
@@ -482,7 +482,7 @@ pub fn buildMixedRgbMeshInputs(
             .disp = sim_datas[ii].field,
             .shader = .{ .tex_rgb_u8 = .{
                 .uvs = uvs.array,
-                .texture = texture,
+                .tex = texture,
                 .sample_config = .{
                     .sample = .cubic_catmull_rom,
                     .mode = .lut_lerp,

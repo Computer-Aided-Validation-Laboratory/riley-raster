@@ -18,7 +18,7 @@ const VecSF = buildconfig.VecSF;
 const VecSI = buildconfig.VecSI;
 const VecSU = buildconfig.VecSU;
 const lut_size = cfg.interp_lut_size;
-const tol = cfg.tolerance;
+const tol = cfg.tol;
 
 const common = @import("textureops_common.zig");
 
@@ -26,10 +26,10 @@ const common = @import("textureops_common.zig");
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const TextureSample = common.TextureSample;
-pub const TextureSampleMode = common.TextureSampleMode;
-pub const TextureSampleConfig = common.TextureSampleConfig;
-pub const Texture = common.Texture;
+pub const TexSample = common.TexSample;
+pub const TexSampleMode = common.TexSampleMode;
+pub const TexSampleConfig = common.TexSampleConfig;
+pub const Tex = common.Tex;
 
 const catmull_rom_lut = common.catmull_rom_lut;
 const mitchell_netravali_lut = common.mitchell_netravali_lut;
@@ -55,7 +55,7 @@ pub const sampleGreyscale = common.sampleGreyscale;
 // PIPELINE ENTRY POINTS (Dispatched by Shader/Kernel):
 // │
 // ├── PATH 1: sampleScalar (Purely Scalar)
-// │   "Used when .simd = .off or as fallback for complex elements (quad4ibi)"
+// │   "Used when .simd = .off or as fallback for complex elems (quad4ibi)"
 // │   ├── getPx()           (Scalar Load)
 // │   ├── sampleLinear()    (Scalar Linear)
 // │   └── sampleConv()      (Scalar Convolution)
@@ -104,13 +104,13 @@ inline fn loadTap(
 
 fn getPxWide(
     comptime CH: usize,
-    texture: anytype,
+    tex: anytype,
     v_tex_x_i: VecSI,
     v_tex_y_i: VecSI,
 ) [CH]VecSF {
-    const T = @TypeOf(texture.array.slice[0]);
-    const tex_cols = @as(isize, @intCast(texture.cols_num));
-    const tex_rows = @as(isize, @intCast(texture.rows_num));
+    const T = @TypeOf(tex.array.slice[0]);
+    const tex_cols = @as(isize, @intCast(tex.cols_num));
+    const tex_rows = @as(isize, @intCast(tex.rows_num));
 
     const v_splat_zero: VecSI = @splat(0);
     const v_tex_cols_m1: VecSI = @splat(tex_cols - 1);
@@ -125,7 +125,7 @@ fn getPxWide(
         @intCast(@max(v_splat_zero, @min(v_tex_y_i, v_tex_rows_m1))),
     );
 
-    const stride_y = texture.array.strides[1];
+    const stride_y = tex.array.strides[1];
     const stride_x = @as(usize, 1);
 
     const v_pixel_offsets = v_yu * @as(VecSU, @splat(stride_y)) +
@@ -139,7 +139,7 @@ fn getPxWide(
     const is_contiguous = @reduce(.And, v_pixel_offsets == v_expected);
 
     inline for (0..CH) |cc| {
-        const base_slice = texture.array.getPlaneSlice(cc);
+        const base_slice = tex.array.getPlaneSlice(cc);
         var vals: [S]F = undefined;
         if (is_contiguous) {
             const raw_vals: @Vector(S, T) = base_slice[first_off..][0..S].*;
@@ -158,22 +158,21 @@ fn getPxWide(
     return samp_res;
 }
 
-
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub inline fn sampleLinearWide(
     comptime CH: usize,
-    texture: anytype,
+    tex: anytype,
     v_tex_x_i: VecSI,
     v_tex_y_i: VecSI,
     v_tex_x_frac: VecSF,
     v_tex_y_frac: VecSF,
 ) [CH]VecSF {
-    const T = @TypeOf(texture.array.slice[0]);
-    const tex_cols = @as(isize, @intCast(texture.cols_num));
-    const tex_rows = @as(isize, @intCast(texture.rows_num));
+    const T = @TypeOf(tex.array.slice[0]);
+    const tex_cols = @as(isize, @intCast(tex.cols_num));
+    const tex_rows = @as(isize, @intCast(tex.rows_num));
 
     const v_splat_zero: VecSI = @splat(0);
     const v_tex_cols_m1: VecSI = @splat(tex_cols - 1);
@@ -202,7 +201,7 @@ pub inline fn sampleLinearWide(
         )),
     );
 
-    const stride_y = texture.array.strides[1];
+    const stride_y = tex.array.strides[1];
     const stride_x = @as(usize, 1);
 
     const v_off00 = v_y0 * @as(VecSU, @splat(stride_y)) +
@@ -222,7 +221,7 @@ pub inline fn sampleLinearWide(
         var p01: VecSF = undefined;
         var p11: VecSF = undefined;
 
-        const base_slice = texture.array.getPlaneSlice(cc);
+        const base_slice = tex.array.getPlaneSlice(cc);
         p00 = loadTap(T, base_slice, v_off00);
         p10 = loadTap(T, base_slice, v_off10);
         p01 = loadTap(T, base_slice, v_off01);
@@ -238,7 +237,7 @@ pub inline fn sampleLinearWide(
 
 pub inline fn sampleLinearOneLane(
     comptime CH: usize,
-    texture: anytype,
+    tex: anytype,
     tex_x_i: isize,
     tex_y_i: isize,
     tex_x_frac: F,
@@ -249,7 +248,7 @@ pub inline fn sampleLinearOneLane(
     return sampleConvOneLane(
         CH,
         2,
-        texture,
+        tex,
         tex_x_i,
         tex_y_i,
         samp_coeff_x,
@@ -260,20 +259,20 @@ pub inline fn sampleLinearOneLane(
 inline fn sampleConvOneLane(
     comptime CH: usize,
     comptime TAP: usize,
-    texture: anytype,
+    tex: anytype,
     tex_x_i: isize,
     tex_y_i: isize,
     samp_coeff_x: [TAP]F,
     samp_coeff_y: [TAP]F,
 ) [CH]F {
     @setEvalBranchQuota(eval_branch_quota);
-    const T = @TypeOf(texture.array.slice[0]);
+    const T = @TypeOf(tex.array.slice[0]);
     const tap_offset = @as(isize, @intCast(TAP)) / 2 - 1;
     const tex_start_x = tex_x_i - tap_offset;
     const tex_start_y = tex_y_i - tap_offset;
 
-    const tex_cols = @as(isize, @intCast(texture.cols_num));
-    const tex_rows = @as(isize, @intCast(texture.rows_num));
+    const tex_cols = @as(isize, @intCast(tex.cols_num));
+    const tex_rows = @as(isize, @intCast(tex.rows_num));
 
     var samp_res: [CH]F = [_]F{0.0} ** CH;
 
@@ -282,10 +281,10 @@ inline fn sampleConvOneLane(
     {
         const v_samp_coeff_x: @Vector(TAP, F) = samp_coeff_x;
         const v_samp_coeff_y: @Vector(TAP, F) = samp_coeff_y;
-        const stride_y = texture.array.strides[1];
+        const stride_y = tex.array.strides[1];
         const samp_coeff_sum = @reduce(.Add, v_samp_coeff_x) *
             @reduce(.Add, v_samp_coeff_y);
-        const inv_samp_coeff_sum = if (@abs(samp_coeff_sum) > tol.texture.samp_coeff_sum)
+        const inv_samp_coeff_sum = if (@abs(samp_coeff_sum) > tol.tex.samp_coeff_sum)
             1.0 / samp_coeff_sum
         else
             1.0;
@@ -298,7 +297,7 @@ inline fn sampleConvOneLane(
                 @as(usize, @intCast(tex_start_x));
 
             inline for (0..CH) |ch| {
-                const plane_slice = texture.array.getPlaneSlice(ch);
+                const plane_slice = tex.array.getPlaneSlice(ch);
                 const v_row_raw: @Vector(TAP, T) =
                     plane_slice[row_off..][0..TAP].*;
                 var row_vals: [TAP]F = undefined;
@@ -321,7 +320,7 @@ inline fn sampleConvOneLane(
                 const w = samp_coeff_x[ii] * samp_coeff_y[jj];
                 const px = getPx(
                     CH,
-                    texture,
+                    tex,
                     tex_start_x + @as(isize, @intCast(ii)),
                     tex_start_y + @as(isize, @intCast(jj)),
                 );
@@ -331,7 +330,7 @@ inline fn sampleConvOneLane(
                 samp_coeff_sum += w;
             }
         }
-        if (@abs(samp_coeff_sum) > tol.texture.samp_coeff_sum) {
+        if (@abs(samp_coeff_sum) > tol.tex.samp_coeff_sum) {
             inline for (0..CH) |ch| {
                 samp_res[ch] /= samp_coeff_sum;
             }
@@ -344,7 +343,7 @@ inline fn sampleConvOneLane(
 inline fn sampleConvWide(
     comptime CH: usize,
     comptime TAP: usize,
-    texture: anytype,
+    tex: anytype,
     v_tex_x_i: VecSI,
     v_tex_y_i: VecSI,
     tap_offset: isize,
@@ -369,7 +368,7 @@ inline fn sampleConvWide(
             const v_tap_samp_coeff = v_tap_samp_coeff_planes[jj * TAP + ii];
             const v_px_vecs = getPxWide(
                 CH,
-                texture,
+                tex,
                 v_tex_x_i + @as(
                     VecSI,
                     @splat(@as(isize, @intCast(ii)) - tap_offset),
@@ -388,7 +387,7 @@ inline fn sampleConvWide(
     const v_splat_one: VecSF = @splat(1.0);
     const v_inv_w_sum = @select(
         F,
-        @abs(v_samp_coeff_sum) < @as(VecSF, @splat(tol.texture.samp_coeff_sum)),
+        @abs(v_samp_coeff_sum) < @as(VecSF, @splat(tol.tex.samp_coeff_sum)),
         v_splat_one,
         v_splat_one / v_samp_coeff_sum,
     );
@@ -522,18 +521,18 @@ fn quinticBSplineCoeffSIMD(v_x: VecSF) VecSF {
 
 pub inline fn sampleOneLane(
     comptime CH: usize,
-    comptime config: TextureSampleConfig,
-    texture: anytype,
+    comptime config: TexSampleConfig,
+    tex: anytype,
     u: F,
     v: F,
 ) [CH]F {
     const tex_cols_minus_1_f = @as(
         F,
-        @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
+        @floatFromInt(@as(isize, @intCast(tex.cols_num)) - 1),
     );
     const tex_rows_minus_1_f = @as(
         F,
-        @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
+        @floatFromInt(@as(isize, @intCast(tex.rows_num)) - 1),
     );
 
     const xf = u * tex_cols_minus_1_f;
@@ -548,13 +547,13 @@ pub inline fn sampleOneLane(
     return switch (config.sample) {
         .nearest => getPx(
             CH,
-            texture,
+            tex,
             @as(isize, @intFromFloat(@round(xf))),
             @as(isize, @intFromFloat(@round(yf))),
         ),
         .linear => sampleLinearOneLane(
             CH,
-            texture,
+            tex,
             tex_x_i,
             tex_y_i,
             tex_x_frac,
@@ -591,7 +590,7 @@ pub inline fn sampleOneLane(
                     break :blk sampleConvOneLane(
                         CH,
                         TAP,
-                        texture,
+                        tex,
                         tex_x_i,
                         tex_y_i,
                         coeffs_x,
@@ -605,7 +604,7 @@ pub inline fn sampleOneLane(
                     break :blk sampleConvOneLane(
                         CH,
                         TAP,
-                        texture,
+                        tex,
                         tex_x_i,
                         tex_y_i,
                         lut[idx_x],
@@ -618,7 +617,7 @@ pub inline fn sampleOneLane(
                     break :blk sampleConvOneLane(
                         CH,
                         TAP,
-                        texture,
+                        tex,
                         tex_x_i,
                         tex_y_i,
                         coeffs_x,
@@ -660,7 +659,7 @@ pub inline fn sampleOneLane(
                     break :blk sampleConvOneLane(
                         CH,
                         TAP,
-                        texture,
+                        tex,
                         tex_x_i,
                         tex_y_i,
                         coeffs_x,
@@ -674,7 +673,7 @@ pub inline fn sampleOneLane(
                     break :blk sampleConvOneLane(
                         CH,
                         TAP,
-                        texture,
+                        tex,
                         tex_x_i,
                         tex_y_i,
                         lut[idx_x],
@@ -687,7 +686,7 @@ pub inline fn sampleOneLane(
                     break :blk sampleConvOneLane(
                         CH,
                         TAP,
-                        texture,
+                        tex,
                         tex_x_i,
                         tex_y_i,
                         coeffs_x,
@@ -705,9 +704,9 @@ pub inline fn sampleOneLane(
 
 pub inline fn sampleLanes(
     comptime CH: usize,
-    comptime config: TextureSampleConfig,
+    comptime config: TexSampleConfig,
     v_mask_active: VecSB,
-    texture: anytype,
+    tex: anytype,
     v_u: VecSF,
     v_v: VecSF,
 ) [CH]VecSF {
@@ -722,7 +721,7 @@ pub inline fn sampleLanes(
             const sampled = sampleOneLane(
                 CH,
                 config,
-                texture,
+                tex,
                 u_arr[ii],
                 v_arr[ii],
             );
@@ -742,9 +741,9 @@ pub inline fn sampleLanes(
 
 pub inline fn sampleLanesTri3(
     comptime CH: usize,
-    comptime config: TextureSampleConfig,
+    comptime config: TexSampleConfig,
     v_mask_active: VecSB,
-    texture: anytype,
+    tex: anytype,
     v_u: VecSF,
     v_v: VecSF,
 ) [CH]VecSF {
@@ -759,14 +758,14 @@ pub inline fn sampleLanesTri3(
 
     const tex_cols_minus_1_f = @as(
         F,
-        @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
+        @floatFromInt(@as(isize, @intCast(tex.cols_num)) - 1),
     );
     const tex_rows_minus_1_f = @as(
         F,
-        @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
+        @floatFromInt(@as(isize, @intCast(tex.rows_num)) - 1),
     );
-    const tex_cols_minus_1_i = @as(isize, @intCast(texture.cols_num)) - 1;
-    const tex_rows_minus_1_i = @as(isize, @intCast(texture.rows_num)) - 1;
+    const tex_cols_minus_1_i = @as(isize, @intCast(tex.cols_num)) - 1;
+    const tex_rows_minus_1_i = @as(isize, @intCast(tex.rows_num)) - 1;
 
     for (0..S) |ii| {
         if (mask_arr[ii]) {
@@ -812,7 +811,7 @@ pub inline fn sampleLanesTri3(
         const sampled = sampleOneLane(
             CH,
             config,
-            texture,
+            tex,
             u_arr[lane],
             v_arr[lane],
         );
@@ -831,8 +830,8 @@ pub inline fn sampleLanesTri3(
 
 pub inline fn sampleWide(
     comptime CH: usize,
-    comptime config: TextureSampleConfig,
-    texture: anytype,
+    comptime config: TexSampleConfig,
+    tex: anytype,
     v_u: VecSF,
     v_v: VecSF,
 ) [CH]VecSF {
@@ -840,11 +839,11 @@ pub inline fn sampleWide(
     std.debug.assert(config.isValid());
     const tex_cols_minus_1_f = @as(
         F,
-        @floatFromInt(@as(isize, @intCast(texture.cols_num)) - 1),
+        @floatFromInt(@as(isize, @intCast(tex.cols_num)) - 1),
     );
     const tex_rows_minus_1_f = @as(
         F,
-        @floatFromInt(@as(isize, @intCast(texture.rows_num)) - 1),
+        @floatFromInt(@as(isize, @intCast(tex.rows_num)) - 1),
     );
 
     const v_tex_x_f = v_u * @as(VecSF, @splat(tex_cols_minus_1_f));
@@ -866,13 +865,13 @@ pub inline fn sampleWide(
     return switch (config.sample) {
         .nearest => getPxWide(
             CH,
-            texture,
+            tex,
             @as(VecSI, @intFromFloat(@round(v_tex_x_f))),
             @as(VecSI, @intFromFloat(@round(v_tex_y_f))),
         ),
         .linear => sampleLinearWide(
             CH,
-            texture,
+            tex,
             v_tex_x_i,
             v_tex_y_i,
             v_tex_x_frac,
@@ -1013,7 +1012,7 @@ pub inline fn sampleWide(
             return sampleConvWide(
                 CH,
                 TAP,
-                texture,
+                tex,
                 v_tex_x_i,
                 v_tex_y_i,
                 tap_offset,
@@ -1142,7 +1141,7 @@ pub inline fn sampleWide(
             return sampleConvWide(
                 CH,
                 TAP,
-                texture,
+                tex,
                 v_tex_x_i,
                 v_tex_y_i,
                 tap_offset,

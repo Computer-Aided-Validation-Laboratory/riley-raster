@@ -103,7 +103,7 @@ pub const psf_cases = [_]PsfCase{
         .tag = "gaussian_sep",
         .psf = .{ .gaussian = .{
             .sigma_px = 0.6,
-            .support_rad_px = 2.0,
+            .supp_rad_px = 2.0,
             .separable = .yes,
         } },
     },
@@ -111,7 +111,7 @@ pub const psf_cases = [_]PsfCase{
         .tag = "gaussian_nonsep",
         .psf = .{ .gaussian = .{
             .sigma_px = 0.6,
-            .support_rad_px = 2.0,
+            .supp_rad_px = 2.0,
             .separable = .no,
         } },
     },
@@ -121,7 +121,7 @@ pub const psf_cases = [_]PsfCase{
             .sigma_x_px = 1.2,
             .sigma_y_px = 0.2,
             .theta_rad = std.math.pi / 6.0,
-            .support_rad_px = 3.0,
+            .supp_rad_px = 3.0,
             .separable = .no,
         } },
     },
@@ -158,7 +158,7 @@ fn buildMeshInput(
                     prepared.uvs.array
                 else
                     null,
-                .coord_mode = if (render_case.shader_case.use_uvs) .uv else .parametric,
+                .coord_mode = if (render_case.shader_case.use_uvs) .uv else .para,
                 .builtin = render_case.shader_case.builtin,
                 .params = render_case.shader_case.params,
                 .normal_type = .none,

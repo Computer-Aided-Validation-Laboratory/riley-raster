@@ -10,7 +10,7 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
-const tol = cfg.tolerance;
+const tol = cfg.tol;
 const rops = @import("rasterops.zig");
 
 
@@ -33,7 +33,7 @@ pub const HullResultScalar = struct {
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn Tessellation(comptime NT: usize) type {

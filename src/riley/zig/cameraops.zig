@@ -13,7 +13,7 @@ const cam = @import("camera.zig");
 const meshio = @import("meshio.zig");
 const mo = @import("meshops.zig");
 const sceneops = @import("sceneops.zig");
-const vector = @import("vecstack.zig");
+const vec = @import("vecstack.zig");
 const matrix = @import("matstack.zig");
 const rotation = @import("rotation.zig");
 const rastcfg = @import("rasterconfig.zig");
@@ -21,7 +21,7 @@ const F = buildconfig.F;
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn prepareCameraSlice(
@@ -48,7 +48,7 @@ pub fn toOpenGLInput(input: cam.CameraInput) cam.CameraInput {
     var opengl_input = input;
     const r_opencv = input.rot_world.matrix;
     const r_opencv_t = r_opencv.transpose();
-    const neg_t = vector.initVec3(
+    const neg_t = vec.initVec3(
         F,
         -input.pos_world.get(0),
         -input.pos_world.get(1),
@@ -145,7 +145,7 @@ pub fn imageDistFromFov(
 
 pub fn calcFOVScaling(
     camera_input: cam.CameraInput,
-    plane_cent_world: vector.Vec3f,
+    plane_cent_world: vec.Vec3f,
 ) cam.FOVScaling {
     const cam_z_axis = camera_input.rot_world.matrix.getColVec(2);
     const plane_vec = (&camera_input.pos_world).sub(plane_cent_world);
@@ -176,20 +176,20 @@ pub fn calcFOVScaling(
 }
 
 pub fn calcCamPos(
-    roi_pos_world: vector.Vec3f,
+    roi_pos_world: vec.Vec3f,
     cam_rot: rotation.Rotation,
     image_dist: F,
-) vector.Vec3f {
+) vec.Vec3f {
     var cam_z_axis_vec = cam_rot.matrix.getColVec(2);
     cam_z_axis_vec = cam_z_axis_vec.mulScalar(image_dist);
     return (&roi_pos_world).add(cam_z_axis_vec);
 }
 
 pub fn lookAtPoint(
-    pos_world: vector.Vec3f,
-    target_world: vector.Vec3f,
+    pos_world: vec.Vec3f,
+    targ_world: vec.Vec3f,
 ) rotation.Rotation {
-    const cam_z_axis = (&pos_world).sub(target_world);
+    const cam_z_axis = (&pos_world).sub(targ_world);
     const cam_z_leng = cam_z_axis.vecLen();
 
     if (cam_z_leng == 0.0) {
@@ -237,7 +237,7 @@ pub fn posFillFrameFromRot(
     focal_leng: F,
     cam_rot: rotation.Rotation,
     frame_fill: F,
-) vector.Vec3f {
+) vec.Vec3f {
     const image_dist = imageDistFillFrameFromRot(
         coords_world,
         pixels_num,
@@ -253,25 +253,25 @@ pub fn posFillFrameFromRot(
     );
 }
 
-pub fn posFillFrameFromRotAndTarget(
+pub fn posFillFrameFromRotAndTarg(
     coords_world: *const meshio.Coords,
-    target_world: vector.Vec3f,
+    targ_world: vec.Vec3f,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
     cam_rot: rotation.Rotation,
     frame_fill: F,
-) vector.Vec3f {
-    const image_dist = imageDistFillFrameFromRotAndTarget(
+) vec.Vec3f {
+    const image_dist = imageDistFillFrameFromRotAndTarg(
         coords_world,
-        target_world,
+        targ_world,
         pixels_num,
         pixels_size,
         focal_leng,
         cam_rot,
         frame_fill,
     );
-    return calcCamPos(target_world, cam_rot, image_dist);
+    return calcCamPos(targ_world, cam_rot, image_dist);
 }
 
 pub fn posFillFrameFromRotOverMeshes(
@@ -281,7 +281,7 @@ pub fn posFillFrameFromRotOverMeshes(
     focal_leng: F,
     cam_rot: rotation.Rotation,
     frame_fill: F,
-) vector.Vec3f {
+) vec.Vec3f {
     var fov_leng = fovFromCamRotOverMeshes(cam_rot, meshes);
     fov_leng[0] = frame_fill * fov_leng[0];
     fov_leng[1] = frame_fill * fov_leng[1];
@@ -300,25 +300,25 @@ pub fn posFillFrameFromRotOverMeshes(
     );
 }
 
-pub fn posFillFrameFromRotOverMeshesAndTarget(
+pub fn posFillFrameFromRotOverMeshesAndTarg(
     meshes: []const mo.MeshInput,
-    target_world: vector.Vec3f,
+    targ_world: vec.Vec3f,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
     cam_rot: rotation.Rotation,
     frame_fill: F,
-) vector.Vec3f {
-    const image_dist = imageDistFillFrameFromRotOverMeshesAndTarget(
+) vec.Vec3f {
+    const image_dist = imageDistFillFrameFromRotOverMeshesAndTarg(
         meshes,
-        target_world,
+        targ_world,
         pixels_num,
         pixels_size,
         focal_leng,
         cam_rot,
         frame_fill,
     );
-    return calcCamPos(target_world, cam_rot, image_dist);
+    return calcCamPos(targ_world, cam_rot, image_dist);
 }
 
 
@@ -326,9 +326,9 @@ pub fn posFillFrameFromRotOverMeshesAndTarget(
 // Generic Low-Level Helpers
 // --------------------------------------------------------------------------------------
 
-fn imageDistFillFrameFromRotAndTarget(
+fn imageDistFillFrameFromRotAndTarg(
     coords_world: *const meshio.Coords,
-    target_world: vector.Vec3f,
+    targ_world: vec.Vec3f,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
@@ -336,12 +336,12 @@ fn imageDistFillFrameFromRotAndTarget(
     frame_fill: F,
 ) F {
     const world_to_cam_mat = matrix.Mat33Ops.inv(F, cam_rot.matrix);
-    var coord_cam = world_to_cam_mat.mulVec(coords_world.getVec3(0).sub(target_world));
+    var coord_cam = world_to_cam_mat.mulVec(coords_world.getVec3(0).sub(targ_world));
     var max_abs_x = @abs(coord_cam.get(0));
     var max_abs_y = @abs(coord_cam.get(1));
 
     for (1..coords_world.mat.rows_num) |nn| {
-        coord_cam = world_to_cam_mat.mulVec(coords_world.getVec3(nn).sub(target_world));
+        coord_cam = world_to_cam_mat.mulVec(coords_world.getVec3(nn).sub(targ_world));
         max_abs_x = @max(max_abs_x, @abs(coord_cam.get(0)));
         max_abs_y = @max(max_abs_y, @abs(coord_cam.get(1)));
     }
@@ -359,9 +359,9 @@ fn imageDistFillFrameFromRotAndTarget(
     return @max(image_dists[0], image_dists[1]);
 }
 
-fn imageDistFillFrameFromRotOverMeshesAndTarget(
+fn imageDistFillFrameFromRotOverMeshesAndTarg(
     meshes: []const mo.MeshInput,
-    target_world: vector.Vec3f,
+    targ_world: vec.Vec3f,
     pixels_num: [2]u32,
     pixels_size: [2]F,
     focal_leng: F,
@@ -376,7 +376,7 @@ fn imageDistFillFrameFromRotOverMeshesAndTarget(
     for (meshes) |mesh| {
         for (0..mesh.coords.mat.rows_num) |nn| {
             const coord_cam = world_to_cam_mat.mulVec(
-                mesh.coords.getVec3(nn).sub(target_world),
+                mesh.coords.getVec3(nn).sub(targ_world),
             );
             if (is_first) {
                 max_abs_x = @abs(coord_cam.get(0));

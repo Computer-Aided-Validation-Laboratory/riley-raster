@@ -14,7 +14,7 @@ const cameraops = @import("cameraops.zig");
 const F = buildconfig.F;
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn saveCamera(
@@ -449,8 +449,8 @@ fn writePolynomialMetadata(
     if (polynomial) |poly| {
         const order = if (poly.forward_map) |forward_map|
             forward_map.order
-        else if (poly.inverse_map) |inverse_map|
-            inverse_map.order
+        else if (poly.inv_map) |inv_map|
+            inv_map.order
         else
             cam.PolynomialOrder.quadratic;
         try writer.print("{s},{d}\n", .{ "poly_order", @intFromEnum(order) });
@@ -459,14 +459,14 @@ fn writePolynomialMetadata(
             @intFromBool(poly.forward_map != null),
         });
         try writer.print("{s},{d}\n", .{
-            "poly_has_inverse",
-            @intFromBool(poly.inverse_map != null),
+            "poly_has_inv",
+            @intFromBool(poly.inv_map != null),
         });
         if (poly.forward_map) |forward_map| {
             try writePolynomialMap(writer, "poly_forward", forward_map);
         }
-        if (poly.inverse_map) |inverse_map| {
-            try writePolynomialMap(writer, "poly_inverse", inverse_map);
+        if (poly.inv_map) |inv_map| {
+            try writePolynomialMap(writer, "poly_inv", inv_map);
         }
     } else {
         try writer.print("{s},{d}\n", .{
@@ -474,7 +474,7 @@ fn writePolynomialMetadata(
             @intFromEnum(cam.PolynomialOrder.quadratic),
         });
         try writer.print("{s},{d}\n", .{ "poly_has_forward", 0 });
-        try writer.print("{s},{d}\n", .{ "poly_has_inverse", 0 });
+        try writer.print("{s},{d}\n", .{ "poly_has_inv", 0 });
     }
 }
 
@@ -518,8 +518,8 @@ fn loadPolynomial(
     kv: *const std.StringHashMap([]const u8),
 ) !?cam.BidirectionalPolynomial {
     const has_forward = (try parseOptionalU8Value(kv, "poly_has_forward", 0)) != 0;
-    const has_inverse = (try parseOptionalU8Value(kv, "poly_has_inverse", 0)) != 0;
-    if (!has_forward and !has_inverse) {
+    const has_inv = (try parseOptionalU8Value(kv, "poly_has_inv", 0)) != 0;
+    if (!has_forward and !has_inv) {
         return null;
     }
     const order_val = try parseOptionalU8Value(
@@ -538,8 +538,8 @@ fn loadPolynomial(
     if (has_forward) {
         polynomial.forward_map = try parsePolynomialMap(kv, "poly_forward", order);
     }
-    if (has_inverse) {
-        polynomial.inverse_map = try parsePolynomialMap(kv, "poly_inverse", order);
+    if (has_inv) {
+        polynomial.inv_map = try parsePolynomialMap(kv, "poly_inv", order);
     }
     return polynomial;
 }

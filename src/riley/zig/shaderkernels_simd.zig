@@ -24,7 +24,7 @@ const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn NodalKernel(comptime N: usize) type {
@@ -213,7 +213,7 @@ inline fn shadeTexSIMDDispatchImpl(
     comptime T: type,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
-    config: texops.TextureSampleConfig,
+    config: texops.TexSampleConfig,
     ctx_shade: shaderops.ShadeContext(N),
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
@@ -247,8 +247,8 @@ inline fn shadeTexSIMDDispatchModeImpl(
     comptime T: type,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
-    comptime sample_type: texops.TextureSample,
-    mode: texops.TextureSampleMode,
+    comptime sample_type: texops.TexSample,
+    mode: texops.TexSampleMode,
     ctx_shade: shaderops.ShadeContext(N),
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
@@ -283,7 +283,7 @@ inline fn shadeTexSIMDDispatchConfigImpl(
     comptime T: type,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
-    comptime comptime_config: texops.TextureSampleConfig,
+    comptime comptime_config: texops.TexSampleConfig,
     ctx_shade: shaderops.ShadeContext(N),
     v_mask_active: VecSB,
     v_weights: [N]VecSF,

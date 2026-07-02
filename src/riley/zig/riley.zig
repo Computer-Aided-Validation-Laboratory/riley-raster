@@ -54,7 +54,7 @@ pub const RenderGroupSpec = struct {
 };
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn raster(
@@ -173,13 +173,13 @@ pub fn rasterReportInto(
             meshes,
             config,
         );
-        try validateinput.validateOutputBufferError(
+        try validateinput.validateOutputBuffError(
             config,
             images_arr,
             expected_image_dims,
         );
     } else {
-        try validateinput.validateOutputBufferError(
+        try validateinput.validateOutputBuffError(
             config,
             images_arr,
             undefined,
@@ -226,7 +226,7 @@ pub fn rasterReportInto(
     );
     defer outer_alloc.free(nodal_global_scaling);
 
-    const time_start_frame_buffer = Timestamp.now(summary_io, .awake);
+    const time_start_frame_buff = Timestamp.now(summary_io, .awake);
     const time_end_setup = Timestamp.now(summary_io, .awake);
     var end_to_end_times = report.EndToEndTimes{
         .setup_time = @floatFromInt(
@@ -234,11 +234,11 @@ pub fn rasterReportInto(
         ),
         .setup_other_time = @floatFromInt(
             time_start_render.durationTo(
-                time_start_frame_buffer,
+                time_start_frame_buff,
             ).raw.nanoseconds,
         ),
-        .setup_frame_buffer_time = @floatFromInt(
-            time_start_frame_buffer.durationTo(
+        .setup_frame_buff_time = @floatFromInt(
+            time_start_frame_buff.durationTo(
                 time_end_setup,
             ).raw.nanoseconds,
         ),
@@ -377,7 +377,7 @@ fn getFrameReportPtr(
 }
 
 // --------------------------------------------------------------------------------------
-// Output And Image Buffer Helpers
+// Output And Image Buff Helpers
 // --------------------------------------------------------------------------------------
 
 fn initNodalGlobalScaling(
@@ -448,11 +448,11 @@ fn outputFieldsForImageMode(
         .multifield => raw_num_fields,
         .grey => switch (raw_num_fields) {
             1, 3 => 1,
-            else => error.UnsupportedImageModeFieldCount,
+            else => error.UnsuppedImageModeFieldCount,
         },
         .rgb => switch (raw_num_fields) {
             1, 3 => 3,
-            else => error.UnsupportedImageModeFieldCount,
+            else => error.UnsuppedImageModeFieldCount,
         },
     };
 }
@@ -590,7 +590,7 @@ fn prepareFrameContext(
     ctx.raster_hulls = try arena_alloc.alloc(?ndarray.NDArray(F), mesh_n);
 }
 
-fn prepareFrameBuffer(
+fn prepareFrameBuff(
     ctx: *FrameContext,
     input: *const FrameJobDesc,
 ) !void {
@@ -758,7 +758,7 @@ fn saveFrame(
 }
 
 // --------------------------------------------------------------------------
-// 5. Raster Support and Save-Overlap Plumbing
+// 5. Raster Supp and Save-Overlap Plumbing
 // --------------------------------------------------------------------------
 fn sceneTileOverlapBinning(
     io: std.Io,
@@ -912,9 +912,9 @@ fn runRasterStage(
     raster_workers: u16,
 ) !void {
     const time_start_fb = Timestamp.now(io, .awake);
-    try prepareFrameBuffer(&job.ctx, &job.desc);
+    try prepareFrameBuff(&job.ctx, &job.desc);
     const time_end_fb = Timestamp.now(io, .awake);
-    job.ctx.frame_times.setup_frame_buffer = @floatFromInt(
+    job.ctx.frame_times.setup_frame_buff = @floatFromInt(
         time_start_fb.durationTo(time_end_fb).raw.nanoseconds,
     );
 
@@ -967,7 +967,7 @@ fn runRasterAndSaveFrame(
         time_start_save.durationTo(time_end_save).raw.nanoseconds,
     );
     job.ctx.frame_times.active_time =
-        job.ctx.frame_times.setup_frame_buffer +
+        job.ctx.frame_times.setup_frame_buff +
         job.ctx.frame_times.geometry_prep +
         job.ctx.frame_times.tile_overlap +
         job.ctx.frame_times.raster_loop +
@@ -1365,7 +1365,7 @@ fn dispatchFrameJobsOffline(
         .nodal_global_scaling = nodal_global_scaling,
         .images_arr = images_arr,
         .bench_capture = bench_capture,
-        .total_scene_elems = mo.countStaticMeshElements(mesh_static),
+        .total_scene_elems = mo.countStaticMeshElems(mesh_static),
         .batch_size = @max(@as(usize, 1), config.frame_batch_size_per_group),
         .err_state = &err_state,
     };
@@ -1511,7 +1511,7 @@ fn dispatchFrameJobsInOrder(
     images_arr: ?*ndarray.NDArray(F),
     bench_capture: ?[]report.FrameBenchCapture,
 ) !void {
-    const total_scene_elems = mo.countStaticMeshElements(mesh_static);
+    const total_scene_elems = mo.countStaticMeshElems(mesh_static);
     const batch_size = @max(@as(usize, 1), config.frame_batch_size_per_group);
 
     for (0..num_time) |frame_idx| {

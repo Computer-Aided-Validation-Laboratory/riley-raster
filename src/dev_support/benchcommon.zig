@@ -25,6 +25,7 @@ const rastcfg = @import("../riley/zig/rasterconfig.zig");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 const scalingpolicy = @import("../riley/zig/scalingpolicy.zig");
+const sceneops = @import("../riley/zig/sceneops.zig");
 const NDArray = @import("../riley/zig/ndarray.zig").NDArray;
 const tcfg = @import("testconfig.zig");
 const Timestamp = std.Io.Clock.Timestamp;
@@ -106,7 +107,7 @@ pub const BenchStats = struct {
     tile_overlap: MedianMAD,
     raster_loop: MedianMAD,
     save_frame: MedianMAD,
-    setup_frame_buffer: MedianMAD,
+    setup_frame_buff: MedianMAD,
     prepare_frame_context: MedianMAD,
     geom_coord_ops: MedianMAD,
     geom_cull_ops: MedianMAD,
@@ -161,7 +162,7 @@ pub fn calcMetrics(
     const msubpx_sec = if (raster_sec > 0) (total_subpx / (raster_sec * 1e6)) else 0;
 
     // 3. MShades/s (Approximated)
-    const shaded_subpx = @as(F, @floatFromInt(bench_log.total_shaded_pixels));
+    const shaded_subpx = @as(F, @floatFromInt(bench_log.total_shaded_px));
     const est_shaded_px = shaded_subpx / (sub_samp_f * sub_samp_f);
     const mshades_sec = if (raster_sec > 0) (est_shaded_px / (raster_sec * 1e6)) else 0;
 
@@ -169,7 +170,7 @@ pub fn calcMetrics(
     const msubshades_sec = if (raster_sec > 0) (shaded_subpx / (raster_sec * 1e6)) else 0;
 
     // 5. MElems/s
-    const total_elems = @as(F, @floatFromInt(bench_log.total_elements));
+    const total_elems = @as(F, @floatFromInt(bench_log.total_elems));
     const melems_sec = if (geom_tiling_sec > 0)
         (total_elems / (geom_tiling_sec * 1e6))
     else
@@ -731,13 +732,13 @@ pub fn loadBenchmarkMeshInput(
             shader = if (T == u8)
                 .{ .tex_u8 = .{
                     .uvs = uvs_raw,
-                    .texture = texture_grey,
+                    .tex = texture_grey,
                     .sample_config = sample_config.?,
                 } }
             else if (T == u16)
                 .{ .tex_u16 = .{
                     .uvs = uvs_raw,
-                    .texture = texture_grey,
+                    .tex = texture_grey,
                     .sample_config = sample_config.?,
                 } }
             else
@@ -754,13 +755,13 @@ pub fn loadBenchmarkMeshInput(
             shader = if (T == u8)
                 .{ .tex_rgb_u8 = .{
                     .uvs = uvs_raw,
-                    .texture = texture_rgb,
+                    .tex = texture_rgb,
                     .sample_config = sample_config.?,
                 } }
             else if (T == u16)
                 .{ .tex_rgb_u16 = .{
                     .uvs = uvs_raw,
-                    .texture = texture_rgb,
+                    .tex = texture_rgb,
                     .sample_config = sample_config.?,
                 } }
             else
@@ -780,7 +781,7 @@ pub fn loadBenchmarkMeshInput(
                 null;
             shader = .{ .func = .{
                 .uvs = tex_func_uvs,
-                .coord_mode = if (tex_case.coord_mode == .uv) .uv else .parametric,
+                .coord_mode = if (tex_case.coord_mode == .uv) .uv else .para,
                 .builtin = tex_case.builtin,
                 .params = calcTexFuncParams(tex_case),
                 .bits = 8,
@@ -802,7 +803,7 @@ pub fn loadBenchmarkMeshInput(
                 null;
             shader = .{ .func_rgb = .{
                 .uvs = tex_func_uvs,
-                .coord_mode = if (tex_case.coord_mode == .uv) .uv else .parametric,
+                .coord_mode = if (tex_case.coord_mode == .uv) .uv else .para,
                 .builtin = tex_case.builtin,
                 .params = calcTexFuncParams(tex_case),
                 .bits = 8,
@@ -992,7 +993,7 @@ fn runBenchmarkInternal(
     );
     _ = calcOutputChannels(shader_type);
 
-    const roi_pos = cameraops.roiCentFromCoords(&mesh_input.coords);
+    const roi_pos = sceneops.boundsCenter(&mesh_input.coords);
     const cam_pos = cameraops.posFillFrameFromRot(
         &mesh_input.coords,
         render_defaults.pixels_num,
@@ -1165,17 +1166,17 @@ fn runBenchmarkInternal(
             0.0,
         .fps = if (e2e_ms > 0.0) 1000.0 / e2e_ms else 0.0,
         .total_elems = if (report_mode == .bench)
-            bench_capture_storage[0].bench_log.total_elements
+            bench_capture_storage[0].bench_log.total_elems
         else
             0,
         .vis_elems = if (report_mode == .bench)
-            bench_capture_storage[0].bench_log.visible_elements
+            bench_capture_storage[0].bench_log.visible_elems
         else
             0,
         .total_px = @as(u64, camera.pixels_num[0]) *
             @as(u64, camera.pixels_num[1]),
         .shaded_px = if (report_mode == .bench)
-            bench_capture_storage[0].bench_log.total_shaded_pixels
+            bench_capture_storage[0].bench_log.total_shaded_px
         else
             0,
         .metrics = metrics,
@@ -1256,7 +1257,7 @@ pub const BenchmarkCSVValues = struct {
     vis_elems: F,
     total_px: F,
     shaded_px: F,
-    setup_frame_buffer: F,
+    setup_frame_buff: F,
     prepare_frame_context: F,
     geom: F,
     geom_coord_ops: F,
@@ -1318,7 +1319,7 @@ pub fn calcBenchmarkCSVValuesFromStats(
         .vis_elems = selectStatValue(stats.vis_elems, kind),
         .total_px = selectStatValue(stats.total_px, kind),
         .shaded_px = selectStatValue(stats.shaded_px, kind),
-        .setup_frame_buffer = selectStatValue(stats.setup_frame_buffer, kind),
+        .setup_frame_buff = selectStatValue(stats.setup_frame_buff, kind),
         .prepare_frame_context = selectStatValue(stats.prepare_frame_context, kind),
         .geom = selectStatValue(stats.geom, kind),
         .geom_coord_ops = selectStatValue(stats.geom_coord_ops, kind),
@@ -1360,7 +1361,7 @@ pub fn calcBenchmarkCSVValuesFromResult(
         .vis_elems = @floatFromInt(result.vis_elems),
         .total_px = @floatFromInt(result.total_px),
         .shaded_px = @floatFromInt(result.shaded_px),
-        .setup_frame_buffer = result.pipeline_times.setup_frame_buffer * conv_ms,
+        .setup_frame_buff = result.pipeline_times.setup_frame_buff * conv_ms,
         .prepare_frame_context = result.pipeline_times.prepare_frame_context * conv_ms,
         .geom = result.geom_ms,
         .geom_coord_ops = result.pipeline_times.geom_coord_ops * conv_ms,
@@ -1414,7 +1415,7 @@ pub fn formatBenchmarkCSVRow(
             values.vis_elems,
             values.total_px,
             values.shaded_px,
-            values.setup_frame_buffer,
+            values.setup_frame_buff,
             values.prepare_frame_context,
             values.geom,
             values.geom_coord_ops,

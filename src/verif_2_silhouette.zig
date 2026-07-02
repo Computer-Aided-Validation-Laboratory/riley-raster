@@ -22,6 +22,7 @@ const vconst = @import("dev_support/verifconstants.zig");
 const verif = @import("dev_support/verif.zig");
 const vector = @import("riley/zig/vecstack.zig");
 const riley = @import("riley/zig/riley.zig");
+const sceneops = @import("riley/zig/sceneops.zig");
 
 const pixel_num = [_]u32{ 1024, 1024 };
 const fov_scale: F = 1.05;
@@ -337,7 +338,7 @@ fn renderScalarMap(
         .shader = .{
             .func = .{
                 .uvs = null,
-                .coord_mode = .parametric,
+                .coord_mode = .para,
                 .builtin = .constant,
                 .normal_type = .none,
             },
@@ -361,7 +362,7 @@ fn renderScalarMap(
 
 fn buildCentroidCameraInput(ref_coords: *const meshio.Coords) cam.CameraInput {
     const initial_rot = orch.defaultRotation();
-    const roi_cent_world = cameraops.centFromCoordsMean(ref_coords);
+    const roi_cent_world = sceneops.meanCenter(ref_coords);
     const pos_world = cameraops.posFillFrameFromRotAndTarget(
         ref_coords,
         roi_cent_world,
@@ -390,7 +391,7 @@ fn buildCentroidCameraInputOverFrames(
     mesh_type: @TypeOf(vconst.distort_cases[0].mesh_type),
 ) !cam.CameraInput {
     const initial_rot = orch.defaultRotation();
-    const roi_cent_world = cameraops.centFromCoordsMean(&sim_data.coords);
+    const roi_cent_world = sceneops.meanCenter(&sim_data.coords);
     const time_steps = if (sim_data.field) |field| field.getTimeN() else 1;
 
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -408,7 +409,7 @@ fn buildCentroidCameraInputOverFrames(
             .shader = .{
                 .func = .{
                     .uvs = null,
-                    .coord_mode = .parametric,
+                    .coord_mode = .para,
                     .builtin = .constant,
                     .normal_type = .none,
                 },
@@ -479,7 +480,7 @@ fn runDistortCase(
         const fa = frame_arena.allocator();
 
         const frame_coords = try buildFrameCoords(fa, &sim_data, frame_idx);
-        const frame_cent_world = cameraops.centFromCoordsMean(&frame_coords);
+        const frame_cent_world = sceneops.meanCenter(&frame_coords);
         const fov_scaling = cameraops.calcFOVScaling(
             base_camera_input,
             frame_cent_world,

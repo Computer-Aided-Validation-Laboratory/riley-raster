@@ -20,6 +20,7 @@ const gk = @import("riley/zig/geometrykernels.zig");
 const MeshType = gk.MeshType;
 const camera_mod = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
+const sceneops = @import("riley/zig/sceneops.zig");
 const CameraInput = camera_mod.CameraInput;
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const CameraPrepared = camera_mod.CameraPrepared;
@@ -87,7 +88,7 @@ pub fn main(init: std.process.Init) !void {
         .disp = null,
         .shader = .{ .tex_u8 = .{
             .uvs = uvs.array,
-            .texture = texture,
+            .tex = texture,
             .sample_config = .{
                 .sample = .cubic_catmull_rom,
                 .mode = .lut_lerp,
@@ -108,7 +109,7 @@ pub fn main(init: std.process.Init) !void {
     const rot = Rotation.init(0, 0, 0);
     const fov_scale_factor: F = 1.0;
 
-    const roi_pos = cameraops.roiCentFromCoords(&sim_data.coords);
+    const roi_pos = sceneops.boundsCenter(&sim_data.coords);
     const cam_pos = cameraops.posFillFrameFromRot(
         &sim_data.coords,
         pixel_num,

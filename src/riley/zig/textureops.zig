@@ -15,14 +15,15 @@ const impl = if (cfg.simd == .on) simd_impl else common_impl;
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const TextureSample = common_impl.TextureSample;
-pub const TextureSampleMode = common_impl.TextureSampleMode;
-pub const TextureSampleConfig = common_impl.TextureSampleConfig;
+pub const TexSample = common_impl.TexSample;
+pub const TexSampleMode = common_impl.TexSampleMode;
+pub const TexSampleConfig = common_impl.TexSampleConfig;
+pub const TextureSampleConfig = TexSampleConfig;
 pub const texelToFloat = common_impl.texelToFloat;
-pub const Texture = impl.Texture;
+pub const Tex = impl.Tex;
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub const sampleScalar = impl.sampleScalar;

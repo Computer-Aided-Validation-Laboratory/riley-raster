@@ -23,6 +23,7 @@ const rops = @import("riley/zig/rasterops.zig");
 const vsd = @import("riley/zig/vecsimd.zig");
 const csvio = @import("riley/zig/csvio.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
+const sceneops = @import("riley/zig/sceneops.zig");
 
 const F = buildconfig.F;
 const CameraPrepared = cam.CameraPrepared;
@@ -142,20 +143,20 @@ fn traceRepresentativePixels(
     camera: *const CameraPrepared,
     mesh_input: *const mo.MeshInput,
 ) !void {
-    const failed_pixels = try loadRepresentativePixelsByStatus(
+    const fail_pixels = try loadRepresentativePixelsByStatus(
         allocator,
         io,
         solver_dir,
-        "failed_iteration_limit",
+        "fail_iter_lim",
         8,
     );
-    defer allocator.free(failed_pixels);
+    defer allocator.free(fail_pixels);
 
     const converged_pixels = try loadRepresentativePixelsByStatus(
         allocator,
         io,
         solver_dir,
-        "converged_residual",
+        "converged_resid",
         8,
     );
     defer allocator.free(converged_pixels);
@@ -178,13 +179,13 @@ fn traceRepresentativePixels(
     try tracePixelSet(
         writer,
         "Representative failed pixels",
-        failed_pixels,
+        fail_pixels,
         camera,
         mesh_input,
     );
     try tracePixelSet(
         writer,
-        "Representative converged_residual pixels",
+        "Representative converged_resid pixels",
         converged_pixels,
         camera,
         mesh_input,
@@ -252,7 +253,7 @@ pub fn main(init: std.process.Init) !void {
         texture_rgb,
     );
 
-    const roi_pos = cameraops.roiCentFromCoords(&mesh_input.coords);
+    const roi_pos = sceneops.boundsCenter(&mesh_input.coords);
     const cam_pos = cameraops.posFillFrameFromRot(
         &mesh_input.coords,
         render_defaults.pixels_num,
@@ -308,11 +309,11 @@ pub fn main(init: std.process.Init) !void {
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
         .save_solver_csv = true,
-        .save_iteration_map = true,
+        .save_iter_map = true,
         .save_xi_map = true,
         .save_eta_map = true,
-        .save_converged_map = true,
-        .save_jacobian_det_map = true,
+        .save_conv_map = true,
+        .save_jac_det_map = true,
         .save_tile_timing_map = true,
         .save_tile_density_map = true,
         .save_tile_occupancy_map = true,

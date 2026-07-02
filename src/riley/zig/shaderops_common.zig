@@ -30,7 +30,7 @@ pub const ScaleOver = enum { within_frames, over_frames };
 pub const NormalType = enum { none, exact, averaged };
 pub const FuncCoordMode = enum {
     uv,
-    parametric,
+    para,
     world_reference,
     world_deformed,
 };
@@ -129,7 +129,7 @@ pub const FuncCoordSIMD = struct {
     normal_z: VecSF,
 };
 
-pub fn LocalShaderBuffer(comptime N: usize) type {
+pub fn LocalShaderBuff(comptime N: usize) type {
     return struct {
         data: [buildconfig.config.max_nodal_fields * N]F = undefined,
         func_coords: [3 * N]F = undefined,
@@ -234,8 +234,8 @@ pub const NodalInput = struct {
 pub fn TexInput(comptime T: type, comptime channels: usize) type {
     return struct {
         uvs: ndarray.NDArray(F),
-        texture: iio.Texture(T, channels),
-        sample_config: texops.TextureSampleConfig = .{
+        tex: iio.Tex(T, channels),
+        sample_config: texops.TexSampleConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .lut_lerp,
         },
@@ -249,7 +249,7 @@ pub fn FuncInput(comptime channels: usize) type {
     _ = channels;
     return struct {
         uvs: ?ndarray.NDArray(F) = null,
-        coord_mode: FuncCoordMode = .parametric,
+        coord_mode: FuncCoordMode = .para,
         builtin: FuncShaderBuiltin,
         params: FuncShaderParams = .{},
         bits: ?u8 = 8,
@@ -270,7 +270,7 @@ pub const ShaderInput = union(enum) {
 
 // Static: Persistent multi-frame shader resources in engine memory.
 // Nodal Fields: Node-order [num_frames, total_nodes, num_fields]
-// UVs: Element-order [total_elems, 2, nodes_per_elem]
+// UVs: Elem-order [total_elems, 2, nodes_per_elem]
 pub const NodalStatic = struct {
     field: meshio.Field,
     bits: ?u8 = 8,
@@ -282,8 +282,8 @@ pub const NodalStatic = struct {
 pub fn TexStatic(comptime T: type, comptime channels: usize) type {
     return struct {
         elem_uvs: ndarray.NDArray(F),
-        texture: iio.Texture(T, channels),
-        sample_config: texops.TextureSampleConfig = .{
+        tex: iio.Tex(T, channels),
+        sample_config: texops.TexSampleConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .lut_lerp,
         },
@@ -297,7 +297,7 @@ pub fn FuncStatic(comptime channels: usize) type {
     _ = channels;
     return struct {
         elem_uvs: ?ndarray.NDArray(F),
-        coord_mode: FuncCoordMode = .parametric,
+        coord_mode: FuncCoordMode = .para,
         builtin: FuncShaderBuiltin,
         params: FuncShaderParams = .{},
         bits: ?u8 = 8,
@@ -317,9 +317,9 @@ pub const ShaderStatic = union(enum) {
 };
 
 // Prepared: Culled and expanded shader data for a SINGLE frame.
-// Prepared means culled element-order ndarray.NDArray data ready for the raster loop.
-// Nodal Fields: Element-order [visible_elems, num_fields, nodes_per_elem]
-// UVs: Element-order [visible_elems, 2, nodes_per_elem]
+// Prepared means culled elem-order ndarray.NDArray data ready for the raster loop.
+// Nodal Fields: Elem-order [visible_elems, num_fields, nodes_per_elem]
+// UVs: Elem-order [visible_elems, 2, nodes_per_elem]
 pub const NodalPrepared = struct {
     elem_field: ndarray.NDArray(F),
     bits: ?u8 = 8,
@@ -334,8 +334,8 @@ pub const NodalPrepared = struct {
 pub fn TexPrepared(comptime T: type, comptime channels: usize) type {
     return struct {
         elem_uvs: ndarray.NDArray(F),
-        texture: iio.Texture(T, channels),
-        sample_config: texops.TextureSampleConfig = .{
+        tex: iio.Tex(T, channels),
+        sample_config: texops.TexSampleConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .lut_lerp,
         },
@@ -354,7 +354,7 @@ pub fn FuncPrepared(comptime channels: usize) type {
         elem_uvs: ?ndarray.NDArray(F),
         elem_world_ref: ?ndarray.NDArray(F) = null,
         elem_world_def: ?ndarray.NDArray(F) = null,
-        coord_mode: FuncCoordMode = .parametric,
+        coord_mode: FuncCoordMode = .para,
         builtin: FuncShaderBuiltin,
         params: FuncShaderParams = .{},
         bits: ?u8 = 8,
@@ -385,7 +385,7 @@ pub fn ShadeContext(comptime N: usize) type {
         scratch_idx: usize,
         global_subx: usize,
         global_suby: usize,
-        shader_buf: *const LocalShaderBuffer(N),
+        shader_buf: *const LocalShaderBuff(N),
         v_mask_active: ?buildconfig.VecSB = null,
     };
 }
@@ -755,7 +755,7 @@ inline fn resolveFuncCoordsClip(
             .coord_0 = ctx_shade.shader_buf.interpolateFuncCoord(0, interp.weights),
             .coord_1 = ctx_shade.shader_buf.interpolateFuncCoord(1, interp.weights),
         },
-        .parametric => .{
+        .para => .{
             .coord_0 = interp.xi,
             .coord_1 = interp.eta,
         },
@@ -791,7 +791,7 @@ inline fn resolveFuncCoordsPersp(
                 .coord_1 = coord_1 * interp.sub_pixel_z,
             };
         },
-        .parametric => .{
+        .para => .{
             .coord_0 = interp.xi,
             .coord_1 = interp.eta,
         },
@@ -839,7 +839,7 @@ pub inline fn fillTexClip(
     comptime N: usize,
     comptime T: type,
     comptime channels: usize,
-    comptime sample_config: texops.TextureSampleConfig,
+    comptime sample_config: texops.TexSampleConfig,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const TexPrepared(T, channels),
@@ -855,7 +855,7 @@ pub inline fn fillTexClip(
     const sampled = texops.sampleScalar(
         channels,
         sample_config,
-        sh.texture,
+        sh.tex,
         tex_u,
         tex_v,
     );
@@ -870,7 +870,7 @@ pub inline fn fillTexPersp(
     comptime N: usize,
     comptime T: type,
     comptime channels: usize,
-    comptime sample_config: texops.TextureSampleConfig,
+    comptime sample_config: texops.TexSampleConfig,
     ctx_shade: ShadeContext(N),
     interp: InterpData(N),
     sh: *const TexPrepared(T, channels),
@@ -889,7 +889,7 @@ pub inline fn fillTexPersp(
     const sampled = texops.sampleScalar(
         channels,
         sample_config,
-        sh.texture,
+        sh.tex,
         tex_u * interp.sub_pixel_z,
         tex_v * interp.sub_pixel_z,
     );

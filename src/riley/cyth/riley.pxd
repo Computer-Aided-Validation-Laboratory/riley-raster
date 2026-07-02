@@ -215,11 +215,11 @@ cdef extern from "riley.h":
         double save_scaling_min
         double save_scaling_max
         uint8_t full_stats_save_solver_csv
-        uint8_t full_stats_save_iteration_map
+        uint8_t full_stats_save_iter_map
         uint8_t full_stats_save_xi_map
         uint8_t full_stats_save_eta_map
-        uint8_t full_stats_save_converged_map
-        uint8_t full_stats_save_jacobian_det_map
+        uint8_t full_stats_save_conv_map
+        uint8_t full_stats_save_jac_det_map
         uint8_t full_stats_save_tile_timing_map
         uint8_t full_stats_save_tile_density_map
         uint8_t full_stats_save_tile_occupancy_map

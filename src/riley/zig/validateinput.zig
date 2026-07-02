@@ -28,7 +28,7 @@ pub const ValidationSummary = struct {
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn checkRenderInputsError(
@@ -51,7 +51,7 @@ pub fn checkRenderInputsError(
         if (mesh.mesh_type == .tri3opt) {
             for (camera_inputs) |camera_input| {
                 if (!cam.isNoDistortion(camera_input.distortion)) {
-                    return error.DistortionNotSupportedWithTri3Opt;
+                    return error.DistortionNotSuppedWithTri3Opt;
                 }
             }
         }
@@ -105,7 +105,7 @@ pub fn checkRenderInputsError(
 
     if (bench_capture) |capture| {
         if (capture.len != camera_inputs.len * num_time) {
-            return error.InvalidBenchCaptureBuffer;
+            return error.InvalidBenchCaptureBuff;
         }
     }
 
@@ -168,27 +168,27 @@ pub fn checkRenderInputsAssert(
     };
 }
 
-pub fn validateOutputBufferError(
+pub fn validateOutputBuffError(
     config: rastcfg.RasterConfig,
     images_arr: ?*ndarray.NDArray(F),
     expected_dims: [5]usize,
 ) !void {
     if (config.save_strategy == .memory or config.save_strategy == .both) {
-        const images_arr_req = images_arr orelse return error.InvalidOutputBuffer;
-        try validateAllFramesBuffer(images_arr_req, expected_dims);
+        const images_arr_req = images_arr orelse return error.InvalidOutputBuff;
+        try validateAllFramesBuff(images_arr_req, expected_dims);
     } else if (images_arr != null) {
-        return error.InvalidOutputBuffer;
+        return error.InvalidOutputBuff;
     }
 }
 
-pub fn validateOutputBufferAssert(
+pub fn validateOutputBuffAssert(
     config: rastcfg.RasterConfig,
     images_arr: ?*ndarray.NDArray(F),
     expected_dims: [5]usize,
 ) void {
     if (config.save_strategy == .memory or config.save_strategy == .both) {
         const images_arr_req = images_arr orelse unreachable;
-        validateAllFramesBuffer(images_arr_req, expected_dims) catch unreachable;
+        validateAllFramesBuff(images_arr_req, expected_dims) catch unreachable;
     } else {
         std.debug.assert(images_arr == null);
     }
@@ -199,16 +199,16 @@ pub fn validateOutputBufferAssert(
 // Generic Low-Level Helpers
 // --------------------------------------------------------------------------------------
 
-fn validateAllFramesBuffer(
+fn validateAllFramesBuff(
     images_arr: *const ndarray.NDArray(F),
     expected_dims: [5]usize,
 ) !void {
     if (images_arr.dims.len != expected_dims.len) {
-        return error.InvalidOutputBuffer;
+        return error.InvalidOutputBuff;
     }
     for (expected_dims, 0..) |expected_dim, dd| {
         if (images_arr.dims[dd] != expected_dim) {
-            return error.InvalidOutputBuffer;
+            return error.InvalidOutputBuff;
         }
     }
 }
@@ -233,14 +233,14 @@ fn isValidPolynomialMap(map: cam.PolynomialMap) bool {
 }
 
 fn isValidBidirectionalPolynomial(poly: cam.BidirectionalPolynomial) bool {
-    if (poly.forward_map == null and poly.inverse_map == null) {
+    if (poly.forward_map == null and poly.inv_map == null) {
         return false;
     }
     if (poly.forward_map) |forward_map| {
         if (!isValidPolynomialMap(forward_map)) return false;
     }
-    if (poly.inverse_map) |inverse_map| {
-        if (!isValidPolynomialMap(inverse_map)) return false;
+    if (poly.inv_map) |inv_map| {
+        if (!isValidPolynomialMap(inv_map)) return false;
     }
     return true;
 }
@@ -288,23 +288,23 @@ fn isValidDistortion(distortion: cam.DistortionModel) bool {
 
 fn isValidPsf(psf: cam.PointSpreadFunc) bool {
     return switch (psf) {
-        .pixel_box => |box| std.math.isFinite(box.support_rad_px) and
-            box.support_rad_px >= 0.0,
+        .pixel_box => |box| std.math.isFinite(box.supp_rad_px) and
+            box.supp_rad_px >= 0.0,
         .gaussian => |gauss| isFiniteSlice(&[_]F{
             gauss.sigma_px,
-            gauss.support_rad_px,
+            gauss.supp_rad_px,
         }) and
             gauss.sigma_px > 0.0 and
-            gauss.support_rad_px >= 0.0,
+            gauss.supp_rad_px >= 0.0,
         .anisotropic_gaussian => |gauss| isFiniteSlice(&[_]F{
             gauss.sigma_x_px,
             gauss.sigma_y_px,
             gauss.theta_rad,
-            gauss.support_rad_px,
+            gauss.supp_rad_px,
         }) and
             gauss.sigma_x_px > 0.0 and
             gauss.sigma_y_px > 0.0 and
-            gauss.support_rad_px >= 0.0,
+            gauss.supp_rad_px >= 0.0,
     };
 }
 

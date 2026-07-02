@@ -29,7 +29,7 @@ pub const CaseSamples = struct {
     raster_tpx_vals: []F,
     frame_tpx_vals: []F,
     e2e_tpx_vals: []F,
-    setup_frame_buffer_times: []F,
+    setup_frame_buff_times: []F,
     prepare_frame_context_times: []F,
     geom_coord_ops_times: []F,
     geom_cull_ops_times: []F,
@@ -56,7 +56,7 @@ pub const CaseSamples = struct {
             .raster_tpx_vals = try allocator.alloc(F, runs),
             .frame_tpx_vals = try allocator.alloc(F, runs),
             .e2e_tpx_vals = try allocator.alloc(F, runs),
-            .setup_frame_buffer_times = try allocator.alloc(F, runs),
+            .setup_frame_buff_times = try allocator.alloc(F, runs),
             .prepare_frame_context_times = try allocator.alloc(F, runs),
             .geom_coord_ops_times = try allocator.alloc(F, runs),
             .geom_cull_ops_times = try allocator.alloc(F, runs),
@@ -84,7 +84,7 @@ pub const CaseSamples = struct {
         allocator.free(self.raster_tpx_vals);
         allocator.free(self.frame_tpx_vals);
         allocator.free(self.e2e_tpx_vals);
-        allocator.free(self.setup_frame_buffer_times);
+        allocator.free(self.setup_frame_buff_times);
         allocator.free(self.prepare_frame_context_times);
         allocator.free(self.geom_coord_ops_times);
         allocator.free(self.geom_cull_ops_times);
@@ -117,8 +117,8 @@ pub const CaseSamples = struct {
             result.metrics.frame_tpx_mpx_s;
         self.e2e_tpx_vals[rr] =
             result.metrics.e2e_tpx_mpx_s;
-        self.setup_frame_buffer_times[rr] =
-            result.pipeline_times.setup_frame_buffer / 1e6;
+        self.setup_frame_buff_times[rr] =
+            result.pipeline_times.setup_frame_buff / 1e6;
         self.prepare_frame_context_times[rr] =
             result.pipeline_times.prepare_frame_context / 1e6;
         self.geom_coord_ops_times[rr] =
@@ -237,9 +237,9 @@ pub const CaseSamples = struct {
             .tile_overlap = undefined,
             .raster_loop = undefined,
             .save_frame = undefined,
-            .setup_frame_buffer = try common.calcMedianMAD(
+            .setup_frame_buff = try common.calcMedianMAD(
                 allocator,
-                self.setup_frame_buffer_times,
+                self.setup_frame_buff_times,
             ),
             .prepare_frame_context = try common.calcMedianMAD(
                 allocator,

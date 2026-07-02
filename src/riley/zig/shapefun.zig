@@ -24,7 +24,7 @@ pub const NodalDerivs = struct {
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn getNodalDerivs(comptime N: usize) NodalDerivs {
@@ -58,7 +58,7 @@ pub fn getNodalDerivs(comptime N: usize) NodalDerivs {
         var n_v: [N]F = undefined;
         var dNu: [N]F = undefined;
         var dNv: [N]F = undefined;
-        shapeFunctions(N, node_coords[ii][0], node_coords[ii][1], &n_v, &dNu, &dNv);
+        shapeFunc(N, node_coords[ii][0], node_coords[ii][1], &n_v, &dNu, &dNv);
         for (0..N) |jj| {
             nodal_derivs.dNu[ii][jj] = dNu[jj];
             nodal_derivs.dNv[ii][jj] = dNv[jj];
@@ -68,7 +68,7 @@ pub fn getNodalDerivs(comptime N: usize) NodalDerivs {
     return nodal_derivs;
 }
 
-pub fn shapeFunctions(
+pub fn shapeFunc(
     comptime N: usize,
     xi: F,
     eta: F,
@@ -77,16 +77,16 @@ pub fn shapeFunctions(
     dNv: *[N]F,
 ) void {
     switch (N) {
-        3 => shapeFunctions3(xi, eta, n_v, dNu, dNv),
-        4 => shapeFunctions4(xi, eta, n_v, dNu, dNv),
-        6 => shapeFunctions6(xi, eta, n_v, dNu, dNv),
-        8 => shapeFunctions8(xi, eta, n_v, dNu, dNv),
-        9 => shapeFunctions9(xi, eta, n_v, dNu, dNv),
-        else => @compileError("Unsupported number of nodes"),
+        3 => shapeFunc3(xi, eta, n_v, dNu, dNv),
+        4 => shapeFunc4(xi, eta, n_v, dNu, dNv),
+        6 => shapeFunc6(xi, eta, n_v, dNu, dNv),
+        8 => shapeFunc8(xi, eta, n_v, dNu, dNv),
+        9 => shapeFunc9(xi, eta, n_v, dNu, dNv),
+        else => @compileError("Unsupped number of nodes"),
     }
 }
 
-pub fn shapeFunctionsSIMD(
+pub fn shapeFuncSIMD(
     comptime N: usize,
     v_xi: VecSF,
     v_eta: VecSF,
@@ -95,46 +95,46 @@ pub fn shapeFunctionsSIMD(
     v_dN_deta: *[N]VecSF,
 ) void {
     switch (N) {
-        3 => shapeFunctions3SIMD(
+        3 => shapeFunc3SIMD(
             v_xi,
             v_eta,
             v_shape_vals,
             v_dN_dxi,
             v_dN_deta,
         ),
-        4 => shapeFunctions4SIMD(
+        4 => shapeFunc4SIMD(
             v_xi,
             v_eta,
             v_shape_vals,
             v_dN_dxi,
             v_dN_deta,
         ),
-        6 => shapeFunctions6SIMD(
+        6 => shapeFunc6SIMD(
             v_xi,
             v_eta,
             v_shape_vals,
             v_dN_dxi,
             v_dN_deta,
         ),
-        8 => shapeFunctions8SIMD(
+        8 => shapeFunc8SIMD(
             v_xi,
             v_eta,
             v_shape_vals,
             v_dN_dxi,
             v_dN_deta,
         ),
-        9 => shapeFunctions9SIMD(
+        9 => shapeFunc9SIMD(
             v_xi,
             v_eta,
             v_shape_vals,
             v_dN_dxi,
             v_dN_deta,
         ),
-        else => @compileError("Unsupported number of nodes"),
+        else => @compileError("Unsupped number of nodes"),
     }
 }
 
-fn shapeFunctions3(xi: F, eta: F, n_v: *[3]F, dNu: *[3]F, dNv: *[3]F) void {
+fn shapeFunc3(xi: F, eta: F, n_v: *[3]F, dNu: *[3]F, dNv: *[3]F) void {
     const L1 = 1.0 - xi - eta;
     const L2 = xi;
     const L3 = eta;
@@ -152,7 +152,7 @@ fn shapeFunctions3(xi: F, eta: F, n_v: *[3]F, dNu: *[3]F, dNv: *[3]F) void {
     dNv[2] = 1.0;
 }
 
-fn shapeFunctions3SIMD(
+fn shapeFunc3SIMD(
     v_xi: VecSF,
     v_eta: VecSF,
     v_shape_vals: *[3]VecSF,
@@ -180,7 +180,7 @@ fn shapeFunctions3SIMD(
     v_dN_deta[2] = v_splat_one;
 }
 
-fn shapeFunctions4(xi: F, eta: F, n_v: *[4]F, dNu: *[4]F, dNv: *[4]F) void {
+fn shapeFunc4(xi: F, eta: F, n_v: *[4]F, dNu: *[4]F, dNv: *[4]F) void {
     n_v[0] = 0.25 * (1.0 - xi) * (1.0 - eta);
     n_v[1] = 0.25 * (1.0 + xi) * (1.0 - eta);
     n_v[2] = 0.25 * (1.0 + xi) * (1.0 + eta);
@@ -197,7 +197,7 @@ fn shapeFunctions4(xi: F, eta: F, n_v: *[4]F, dNu: *[4]F, dNv: *[4]F) void {
     dNv[3] = 0.25 * (1.0 - xi);
 }
 
-fn shapeFunctions4SIMD(
+fn shapeFunc4SIMD(
     v_xi: VecSF,
     v_eta: VecSF,
     v_shape_vals: *[4]VecSF,
@@ -229,7 +229,7 @@ fn shapeFunctions4SIMD(
     v_dN_deta[3] = v_splat_quarter * v_one_minus_xi;
 }
 
-fn shapeFunctions6(
+fn shapeFunc6(
     xi: F,
     eta: F,
     n_vals: *[6]F,
@@ -265,7 +265,7 @@ fn shapeFunctions6(
     dN_deta[5] = 4.0 * (L1 - L3);
 }
 
-fn shapeFunctions6SIMD(
+fn shapeFunc6SIMD(
     v_xi: VecSF,
     v_eta: VecSF,
     v_shape_vals: *[6]VecSF,
@@ -310,7 +310,7 @@ fn shapeFunctions6SIMD(
     v_dN_deta[5] = v_splat_four * (v_L1 - v_L3);
 }
 
-fn shapeFunctions8(xi: F, eta: F, n_v: *[8]F, dNu: *[8]F, dNv: *[8]F) void {
+fn shapeFunc8(xi: F, eta: F, n_v: *[8]F, dNu: *[8]F, dNv: *[8]F) void {
     const x = xi;
     const y = eta;
     n_v[0] = -0.25 * (1.0 - x) * (1.0 - y) * (1.0 + x + y);
@@ -341,7 +341,7 @@ fn shapeFunctions8(xi: F, eta: F, n_v: *[8]F, dNu: *[8]F, dNv: *[8]F) void {
     dNv[7] = -y * (1.0 - x);
 }
 
-fn shapeFunctions8SIMD(
+fn shapeFunc8SIMD(
     v_xi: VecSF,
     v_eta: VecSF,
     v_shape_vals: *[8]VecSF,
@@ -405,7 +405,7 @@ fn shapeFunctions8SIMD(
     v_dN_deta[7] = -v_y * v_one_minus_x;
 }
 
-fn shapeFunctions9(xi: F, eta: F, n_v: *[9]F, dNu: *[9]F, dNv: *[9]F) void {
+fn shapeFunc9(xi: F, eta: F, n_v: *[9]F, dNu: *[9]F, dNv: *[9]F) void {
     const x = xi;
     const y = eta;
     const phi = [3]F{ 0.5 * x * (x - 1.0), 1.0 - x * x, 0.5 * x * (x + 1.0) };
@@ -444,7 +444,7 @@ fn shapeFunctions9(xi: F, eta: F, n_v: *[9]F, dNu: *[9]F, dNv: *[9]F) void {
     dNv[8] = phi[1] * dpsi[1];
 }
 
-fn shapeFunctions9SIMD(
+fn shapeFunc9SIMD(
     v_xi: VecSF,
     v_eta: VecSF,
     v_shape_vals: *[9]VecSF,

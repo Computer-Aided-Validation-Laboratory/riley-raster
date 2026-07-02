@@ -115,7 +115,7 @@ pub const FrameImageWriter = struct {
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub inline fn getScratchField(

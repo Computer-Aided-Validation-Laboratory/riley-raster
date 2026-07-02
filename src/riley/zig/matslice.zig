@@ -101,16 +101,16 @@ pub fn MatSlice(comptime T: type) type {
             self.slice[flat_idx] = val;
         }
 
-        pub fn transpose(self: *Self, buffer: *Self) void {
-            assert(self.cols_num == buffer.cols_num);
-            assert(self.rows_num == buffer.rows_num);
+        pub fn transpose(self: *Self, buff: *Self) void {
+            assert(self.cols_num == buff.cols_num);
+            assert(self.rows_num == buff.rows_num);
 
-            @memcpy(buffer.slice, self.slice);
+            @memcpy(buff.slice, self.slice);
 
             for (0..self.rows_num) |ii| {
                 for (ii..self.cols_num) |jj| {
-                    self.set(ii, jj, buffer.get(jj, ii));
-                    self.set(jj, ii, buffer.get(ii, jj));
+                    self.set(ii, jj, buff.get(jj, ii));
+                    self.set(jj, ii, buff.get(ii, jj));
                 }
             }
         }

@@ -830,7 +830,7 @@ pub fn runSingleMeshSuiteDriver(
                     .shader = .{
                         .tex_u8 = .{
                             .uvs = prepared.uvs.array,
-                            .texture = texture,
+                            .tex = texture,
                             .sample_config = sc,
                         },
                     },
@@ -1491,7 +1491,7 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
         .shader = .{
             .func = .{
                 .uvs = null,
-                .coord_mode = .parametric,
+                .coord_mode = .para,
                 .builtin = .constant,
                 .normal_type = .none,
             },

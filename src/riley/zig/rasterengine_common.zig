@@ -10,7 +10,7 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
-const tol = cfg.tolerance;
+const tol = cfg.tol;
 const SimdWidth = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
 const rastcfg = @import("rasterconfig.zig");
@@ -41,12 +41,12 @@ const Timestamp = std.Io.Clock.Timestamp;
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const OverlapTarget = struct {
+pub const OverlapTarg = struct {
     tile: rops.ActiveTile,
     overlap: rops.OverlapBBox,
 };
 
-pub const SubpxDomain = struct {
+pub const SubpxDom = struct {
     step: F,
     offset: F,
     tile_size: usize,
@@ -66,7 +66,7 @@ pub const RasterBounds = struct {
 const ParamCoords = struct { xi: F, eta: F };
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn calcInterpParamCoords(
@@ -89,23 +89,23 @@ pub fn rasterDirectScalarCommon(
     comptime ShaderKernel: type,
     comptime ShaderData: type,
     comptime report_mode: ReportMode,
-    comptime ScratchBuffers: type,
+    comptime ScratchBuffs: type,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: OverlapTarget,
+    targ_overlap: OverlapTarg,
     mesh_in: rops.MeshRaster,
-    subpx_domain: SubpxDomain,
+    subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     fields_num: u8,
     nodes_coords: rops.Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
-    subpx_scratch: *ScratchBuffers,
+    shader_buf: *const shaderops.LocalShaderBuff(Geometry.nodes_num),
+    subpx_scratch: *ScratchBuffs,
 ) !u64 {
     comptime {
         if (Geometry.solver_kind == .newton) {
             @compileError(
-                "rasterDirectScalarCommon only supports non-Newton paths",
+                "rasterDirectScalarCommon only supps non-Newton paths",
             );
         }
     }
@@ -126,7 +126,7 @@ pub fn rasterDirectScalarCommon(
         Geometry.getInvElemArea(nodes_coords)
     else {};
 
-    var element_tess: hull.Tessellation(Geometry.tess_triangles_num) = undefined;
+    var elem_tess: hull.Tessellation(Geometry.tess_triangles_num) = undefined;
 
     if (comptime Geometry.hull_nodes_num > 0) {
         if (mesh_in.hull) |rh| {
@@ -138,7 +138,7 @@ pub fn rasterDirectScalarCommon(
                 &[_]usize{ targ_overlap.overlap.elem_idx, 1, 0 },
                 1,
             );
-            element_tess = hull.getTessellation(
+            elem_tess = hull.getTessellation(
                 N,
                 Geometry.hull_nodes_num,
                 Geometry.tess_triangles_num,
@@ -156,7 +156,7 @@ pub fn rasterDirectScalarCommon(
     );
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
-        const row_offset = scratch_y_u * subpx_domain.tile_size;
+        const row_offset = scratch_y_u * subpx_dom.tile_size;
 
         for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x_u| {
             const scratch_idx = row_offset + scratch_x_u;
@@ -172,7 +172,7 @@ pub fn rasterDirectScalarCommon(
 
             if (comptime Geometry.hull_nodes_num > 0) {
                 ctx_report.recordTessChecks(1);
-                const tess_res = element_tess.isInScalar(
+                const tess_res = elem_tess.isInScalar(
                     ideal_x_px,
                     ideal_y_px,
                 );
@@ -214,8 +214,8 @@ pub fn rasterDirectScalarCommon(
                 .inv_bi => Geometry.solveWeightsInvBi(
                     ideal_x_px,
                     ideal_y_px,
-                    subpx_domain.x_off,
-                    subpx_domain.y_off,
+                    subpx_dom.x_off,
+                    subpx_dom.y_off,
                     bilinear_params,
                 ),
                 else => unreachable,
@@ -225,7 +225,7 @@ pub fn rasterDirectScalarCommon(
             const weights = geometry_result.weights orelse {
                 if (comptime report_mode == .full_stats) {
                     const nan = std.math.nan(F);
-                    rasterreport.recordPixelConvergedStats(
+                    rasterreport.recordPixelConvStats(
                         report_mode,
                         ctx_report,
                         global_subx,
@@ -243,7 +243,7 @@ pub fn rasterDirectScalarCommon(
             };
 
             const inv_z = Geometry.calcInvZ(nodes_coords, weights);
-            if (inv_z + tol.geometry.depth_buffer_inv_z_cmp <
+            if (inv_z + tol.geometry.depth_buff_inv_z_cmp <
                 subpx_scratch.inv_z[scratch_idx])
             {
                 continue;
@@ -446,7 +446,7 @@ pub const Tri3FixedEdges = struct {
     step_y: [3]Tri3FixedEdge,
     area: Tri3FixedEdge,
     inv_area: F,
-    edge_tolerance: Tri3FixedEdge,
+    edge_tol: Tri3FixedEdge,
     sample_step: Tri3FixedEdge,
 
     fn quantiseCoord(value: F) ?Tri3FixedCoord {
@@ -590,7 +590,7 @@ pub const Tri3FixedEdges = struct {
         const step_y1 = narrowEdge(step_y[1]) orelse return null;
         const step_y2 = narrowEdge(step_y[2]) orelse return null;
         const area_edge = narrowEdge(area) orelse return null;
-        const edge_tolerance = narrowEdge(edge_tol_setup) orelse return null;
+        const edge_tol = narrowEdge(edge_tol_setup) orelse return null;
         const sample_step_edge = narrowEdge(sample_step) orelse return null;
 
         return .{
@@ -599,7 +599,7 @@ pub const Tri3FixedEdges = struct {
             .step_y = [3]Tri3FixedEdge{ step_y0, step_y1, step_y2 },
             .area = area_edge,
             .inv_area = 1.0 / area_f,
-            .edge_tolerance = edge_tolerance,
+            .edge_tol = edge_tol,
             .sample_step = sample_step_edge,
         };
     }
@@ -718,7 +718,7 @@ fn rasterTileCommon(
     meshes: []const MeshPrepared,
     raster_hulls: []const ?NDArray(F),
     image_out_arr: *NDArray(F),
-    subpx_scratch: *RasterBackend.SubpxScratchBuffers,
+    subpx_scratch: *RasterBackend.SubpxScratchBuffs,
     fields_num: u8,
     subpx_tile_size: usize,
 ) !void {
@@ -751,7 +751,7 @@ fn rasterTileCommon(
     for (overlaps) |ov| {
         const mesh_idx: usize = ov.mesh_idx;
         const mesh_ptr = &meshes[mesh_idx];
-        const targ_overlap = OverlapTarget{ .tile = tile, .overlap = ov };
+        const targ_overlap = OverlapTarg{ .tile = tile, .overlap = ov };
 
         std.debug.assert(mesh_idx < raster_hulls.len);
         const mesh_in = rops.MeshRaster{
@@ -802,7 +802,7 @@ fn rasterTileCommon(
                 switch (mesh_ptr.shader) {
                     .nodal => |*shader| {
                         const SK = shadekerns.NodalKernel(N);
-                        var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
+                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
                         const start_idx = if (shader.elem_field.dims.len == 3)
                             shader.elem_field.getFlatIdx(
                                 &[_]usize{ targ_overlap.overlap.elem_idx, 0, 0 },
@@ -844,7 +844,7 @@ fn rasterTileCommon(
                     },
                     .tex_u8 => |*shader| {
                         const SK = shadekerns.TexKernel(N, u8, 1);
-                        var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
+                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
                         local_shader_buf.load(
                             shader.elem_uvs,
                             targ_overlap.overlap.elem_idx * 2 * N,
@@ -872,7 +872,7 @@ fn rasterTileCommon(
                     },
                     .tex_u16 => |*shader| {
                         const SK = shadekerns.TexKernel(N, u16, 1);
-                        var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
+                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
                         local_shader_buf.load(
                             shader.elem_uvs,
                             targ_overlap.overlap.elem_idx * 2 * N,
@@ -900,7 +900,7 @@ fn rasterTileCommon(
                     },
                     .tex_rgb_u8 => |*shader| {
                         const SK = shadekerns.TexKernel(N, u8, 3);
-                        var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
+                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
                         local_shader_buf.load(
                             shader.elem_uvs,
                             targ_overlap.overlap.elem_idx * 2 * N,
@@ -928,7 +928,7 @@ fn rasterTileCommon(
                     },
                     .tex_rgb_u16 => |*shader| {
                         const SK = shadekerns.TexKernel(N, u16, 3);
-                        var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
+                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
                         local_shader_buf.load(
                             shader.elem_uvs,
                             targ_overlap.overlap.elem_idx * 2 * N,
@@ -956,7 +956,7 @@ fn rasterTileCommon(
                     },
                     .func => |*shader| {
                         const SK = shadekerns.FuncKernel(N, 1);
-                        var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
+                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
                         switch (shader.coord_mode) {
                             .uv => {
                                 local_shader_buf.loadFuncCoords(
@@ -979,7 +979,7 @@ fn rasterTileCommon(
                                     3,
                                 );
                             },
-                            .parametric => {},
+                            .para => {},
                         }
                         if (shader.elem_normals) |en| {
                             const prep_idx = en.map[targ_overlap.overlap.elem_idx];
@@ -1003,7 +1003,7 @@ fn rasterTileCommon(
                     },
                     .func_rgb => |*shader| {
                         const SK = shadekerns.FuncKernel(N, 3);
-                        var local_shader_buf: shaderops.LocalShaderBuffer(N) = .{};
+                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
                         switch (shader.coord_mode) {
                             .uv => {
                                 local_shader_buf.loadFuncCoords(
@@ -1026,7 +1026,7 @@ fn rasterTileCommon(
                                     3,
                                 );
                             },
-                            .parametric => {},
+                            .para => {},
                         }
                         if (shader.elem_normals) |en| {
                             const prep_idx = en.map[targ_overlap.overlap.elem_idx];
@@ -1143,7 +1143,7 @@ fn ThreadState(
         const Self = @This();
 
         arena: std.heap.ArenaAllocator,
-        subpx_scratch: RasterBackend.SubpxScratchBuffers,
+        subpx_scratch: RasterBackend.SubpxScratchBuffs,
         log: report.LogType(report_mode),
 
         fn init(

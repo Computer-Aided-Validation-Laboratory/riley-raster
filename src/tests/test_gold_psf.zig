@@ -130,7 +130,7 @@ test "PSF isotropic gaussian separable and non-separable agree" {
             .tag = "gaussian_sep_cmp",
             .psf = .{ .gaussian = .{
                 .sigma_px = 0.6,
-                .support_rad_px = 2.0,
+                .supp_rad_px = 2.0,
                 .separable = .yes,
             } },
         },
@@ -143,7 +143,7 @@ test "PSF isotropic gaussian separable and non-separable agree" {
             .tag = "gaussian_nonsep_cmp",
             .psf = .{ .gaussian = .{
                 .sigma_px = 0.6,
-                .support_rad_px = 2.0,
+                .supp_rad_px = 2.0,
                 .separable = .no,
             } },
         },

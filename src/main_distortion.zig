@@ -18,6 +18,7 @@ const iio = @import("riley/zig/imageio.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
 const camera_mod = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
+const sceneops = @import("riley/zig/sceneops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
 const MeshInput = mo.MeshInput;
@@ -54,7 +55,7 @@ const PSF_CASES = [_]struct {
         .name = "gaussian_heavy",
         .psf = .{ .gaussian = .{
             .sigma_px = 0.8,
-            .support_rad_px = 2.5,
+            .supp_rad_px = 2.5,
             .separable = .yes,
         } },
     },
@@ -115,7 +116,7 @@ fn makeCameraInput(
     distortion: DistortionModel,
     psf: PointSpreadFunc,
 ) CameraInput {
-    const roi_pos = cameraops.roiCentFromCoords(coords);
+    const roi_pos = sceneops.boundsCenter(coords);
     const cam_pos = cameraops.posFillFrameFromRot(
         coords,
         PIXELS_NUM,

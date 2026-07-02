@@ -28,9 +28,8 @@ pub const FrameImageWriter = common.FrameImageWriter;
 pub const setScratchField = common.setScratchField;
 pub const sampleScratchOrBackground = common.sampleScratchOrBackground;
 
-
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub inline fn loadScratchRowSIMD(

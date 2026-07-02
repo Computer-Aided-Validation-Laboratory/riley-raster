@@ -140,9 +140,9 @@ fn makeRgbMeshInput(
     const uvs = try loadRabbitUvMap(allocator, io, data_dir);
 
     const shader: shaderops.ShaderInput = switch (shader_mode) {
-        .tex => .{ .tex_rgb_u8 = .{
+        .texture => .{ .tex_rgb_u8 = .{
             .uvs = uvs.array,
-            .texture = texture,
+            .tex = texture,
             .sample_config = .{
                 .sample = .cubic_catmull_rom,
                 .mode = .lut_lerp,
@@ -260,7 +260,7 @@ pub fn main(init: std.process.Init) !void {
 
     const mesh_inputs = try buildRabbitPairScene(aa, io, texture);
     const rot = Rotation.init(0.0, std.math.pi, 0.0);
-    const roi_pos = cameraops.roiCentOverMeshes(mesh_inputs);
+    const roi_pos = sceneops.boundsCenterOverMeshes(mesh_inputs);
     const cam_pos = cameraops.posFillFrameFromRotOverMeshes(
         mesh_inputs,
         pixel_num,

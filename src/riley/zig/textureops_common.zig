@@ -11,7 +11,7 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const eval_branch_quota = buildconfig.comptime_eval_branch_quota;
 const cfg = buildconfig.config;
-const tol = cfg.tolerance;
+const tol = cfg.tol;
 const lut_size = cfg.interp_lut_size;
 const NDArray = @import("ndarray.zig").NDArray;
 const csvio = @import("csvio.zig");
@@ -22,7 +22,7 @@ const csvio = @import("csvio.zig");
 // PIPELINE ENTRY POINTS (Dispatched by Shader/Kernel):
 // │
 // ├── PATH 1: sampleScalar (Purely Scalar)
-// │   "Used when .simd = .off or as fallback for complex elements (quad4ibi)"
+// │   "Used when .simd = .off or as fallback for complex elems (quad4ibi)"
 // │   ├── getPx()           (Scalar Load)
 // │   ├── sampleLinear()    (Scalar Linear)
 // │   └── sampleConv()      (Scalar Convolution)
@@ -46,7 +46,7 @@ const csvio = @import("csvio.zig");
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const TextureSample = enum {
+pub const TexSample = enum {
     nearest,
     linear,
     cubic_catmull_rom,
@@ -56,24 +56,24 @@ pub const TextureSample = enum {
     quintic_bspline,
 };
 
-pub const TextureSampleMode = enum {
+pub const TexSampleMode = enum {
     direct,
     lut,
     lut_lerp,
 };
 
-pub const TextureSampleConfig = struct {
-    sample: TextureSample,
-    mode: TextureSampleMode = .direct,
+pub const TexSampleConfig = struct {
+    sample: TexSample,
+    mode: TexSampleMode = .direct,
 
-    pub fn isValid(self: TextureSampleConfig) bool {
+    pub fn isValid(self: TexSampleConfig) bool {
         return switch (self.sample) {
             .nearest, .linear => self.mode == .direct,
             else => true,
         };
     }
 
-    pub fn sanitize(self: TextureSampleConfig) TextureSampleConfig {
+    pub fn sanitize(self: TexSampleConfig) TexSampleConfig {
         return switch (self.sample) {
             .nearest, .linear => .{ .sample = self.sample, .mode = .direct },
             else => self,
@@ -83,10 +83,10 @@ pub const TextureSampleConfig = struct {
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
-pub fn Texture(comptime T: type, comptime CH: usize) type {
+pub fn Tex(comptime T: type, comptime CH: usize) type {
     return struct {
         array: NDArray(T),
         rows_num: usize,
@@ -169,7 +169,7 @@ pub fn texelToFloat(comptime T: type, val: T) F {
     return switch (@typeInfo(T)) {
         .int => @as(F, @floatFromInt(val)),
         .float => @as(F, @floatCast(val)),
-        else => @compileError("Unsupported texture storage type."),
+        else => @compileError("Unsupped tex storage type."),
     };
 }
 
@@ -213,7 +213,7 @@ pub fn cubicBSplineCoeff(x: F) F {
 
 pub fn lanczos3Coeff(x: F) F {
     const abs_x = @abs(x);
-    if (abs_x < tol.texture.lancsoz_centre_snap) return 1.0;
+    if (abs_x < tol.tex.lancsoz_centre_snap) return 1.0;
     if (abs_x >= 3.0) return 0.0;
     const pi_x = std.math.pi * x;
     const pi_x_3 = pi_x / 3.0;
@@ -308,35 +308,35 @@ pub const quintic_bspline_lut = blk: {
 
 pub fn getPx(
     comptime CH: usize,
-    texture: anytype,
+    tex: anytype,
     x: isize,
     y: isize,
 ) [CH]F {
-    const tex_cols = @as(isize, @intCast(texture.cols_num));
-    const tex_rows = @as(isize, @intCast(texture.rows_num));
+    const tex_cols = @as(isize, @intCast(tex.cols_num));
+    const tex_rows = @as(isize, @intCast(tex.rows_num));
     // Clamp to the edges of the tex
     const tex_x_i = @as(usize, @intCast(@max(0, @min(x, tex_cols - 1))));
     const tex_y_i = @as(usize, @intCast(@max(0, @min(y, tex_rows - 1))));
 
     var samp_res: [CH]F = undefined;
     inline for (0..CH) |ch| {
-        samp_res[ch] = texture.getVal(ch, tex_y_i, tex_x_i);
+        samp_res[ch] = tex.getVal(ch, tex_y_i, tex_x_i);
     }
     return samp_res;
 }
 
 pub fn sampleLinear(
     comptime CH: usize,
-    texture: anytype,
+    tex: anytype,
     tex_x_i: isize,
     tex_y_i: isize,
     tex_x_frac: F,
     tex_y_frac: F,
 ) [CH]F {
-    const p00 = getPx(CH, texture, tex_x_i, tex_y_i);
-    const p10 = getPx(CH, texture, tex_x_i + 1, tex_y_i);
-    const p01 = getPx(CH, texture, tex_x_i, tex_y_i + 1);
-    const p11 = getPx(CH, texture, tex_x_i + 1, tex_y_i + 1);
+    const p00 = getPx(CH, tex, tex_x_i, tex_y_i);
+    const p10 = getPx(CH, tex, tex_x_i + 1, tex_y_i);
+    const p01 = getPx(CH, tex, tex_x_i, tex_y_i + 1);
+    const p11 = getPx(CH, tex, tex_x_i + 1, tex_y_i + 1);
     var samp_res: [CH]F = undefined;
     inline for (0..CH) |ch| {
         samp_res[ch] = (1.0 - tex_x_frac) * (1.0 - tex_y_frac) * p00[ch] +
@@ -350,7 +350,7 @@ pub fn sampleLinear(
 pub fn sampleConv(
     comptime CH: usize,
     comptime TAP: usize,
-    texture: anytype,
+    tex: anytype,
     tex_x_i: isize,
     tex_y_i: isize,
     samp_coeff_x: [TAP]F,
@@ -365,7 +365,7 @@ pub fn sampleConv(
             const tap_samp_coeff = samp_coeff_x[ii] * samp_coeff_y[jj];
             const px = getPx(
                 CH,
-                texture,
+                tex,
                 tex_x_i + @as(isize, @intCast(ii)) - tap_offset,
                 tex_y_i + @as(isize, @intCast(jj)) - tap_offset,
             );
@@ -376,7 +376,7 @@ pub fn sampleConv(
         }
     }
 
-    const inv_samp_coeff_sum = if (@abs(samp_coeff_sum) < tol.texture.samp_coeff_sum)
+    const inv_samp_coeff_sum = if (@abs(samp_coeff_sum) < tol.tex.samp_coeff_sum)
         1.0
     else
         1.0 / samp_coeff_sum;
@@ -428,14 +428,14 @@ pub fn getLerpSampCoeffsRuntime(
 
 pub fn sampleScalar(
     comptime CH: usize,
-    comptime config: TextureSampleConfig,
-    texture: anytype,
+    comptime config: TexSampleConfig,
+    tex: anytype,
     u: F,
     v: F,
 ) [CH]F {
     std.debug.assert(config.isValid());
-    const cols_minus_1 = @as(isize, @intCast(texture.cols_num)) - 1;
-    const rows_minus_1 = @as(isize, @intCast(texture.rows_num)) - 1;
+    const cols_minus_1 = @as(isize, @intCast(tex.cols_num)) - 1;
+    const rows_minus_1 = @as(isize, @intCast(tex.rows_num)) - 1;
     const tex_x_f = u * @as(F, @floatFromInt(cols_minus_1));
     const tex_y_f = v * @as(F, @floatFromInt(rows_minus_1));
     const tex_x_i = @as(isize, @intFromFloat(@floor(tex_x_f)));
@@ -446,16 +446,16 @@ pub fn sampleScalar(
     return switch (config.sample) {
         .nearest => getPx(
             CH,
-            texture,
+            tex,
             @as(isize, @intFromFloat(@round(tex_x_f))),
             @as(isize, @intFromFloat(@round(tex_y_f))),
         ),
-        .linear => sampleLinear(CH, texture, tex_x_i, tex_y_i, tex_x_frac, tex_y_frac),
+        .linear => sampleLinear(CH, tex, tex_x_i, tex_y_i, tex_x_frac, tex_y_frac),
         .cubic_catmull_rom => sampleTex4Tap(
             CH,
             .cubic_catmull_rom,
             config.mode,
-            texture,
+            tex,
             tex_x_i,
             tex_y_i,
             tex_x_frac,
@@ -465,7 +465,7 @@ pub fn sampleScalar(
             CH,
             .cubic_mitchell_netravali,
             config.mode,
-            texture,
+            tex,
             tex_x_i,
             tex_y_i,
             tex_x_frac,
@@ -475,7 +475,7 @@ pub fn sampleScalar(
             CH,
             .cubic_bspline,
             config.mode,
-            texture,
+            tex,
             tex_x_i,
             tex_y_i,
             tex_x_frac,
@@ -485,7 +485,7 @@ pub fn sampleScalar(
             CH,
             .lanczos3,
             config.mode,
-            texture,
+            tex,
             tex_x_i,
             tex_y_i,
             tex_x_frac,
@@ -495,7 +495,7 @@ pub fn sampleScalar(
             CH,
             .quintic_bspline,
             config.mode,
-            texture,
+            tex,
             tex_x_i,
             tex_y_i,
             tex_x_frac,
@@ -505,19 +505,19 @@ pub fn sampleScalar(
 }
 
 pub fn sampleGreyscale(
-    comptime config: TextureSampleConfig,
-    texture: anytype,
+    comptime config: TexSampleConfig,
+    tex: anytype,
     u: F,
     v: F,
 ) F {
-    return sampleScalar(1, config, texture, u, v)[0];
+    return sampleScalar(1, config, tex, u, v)[0];
 }
 
 fn sampleTex4Tap(
     comptime CH: usize,
-    comptime sample: TextureSample,
-    comptime mode: TextureSampleMode,
-    texture: anytype,
+    comptime sample: TexSample,
+    comptime mode: TexSampleMode,
+    tex: anytype,
     tex_x_i: isize,
     tex_y_i: isize,
     tex_x_frac: F,
@@ -551,7 +551,7 @@ fn sampleTex4Tap(
                 coeff_fun(tex_y_frac - 1),
                 coeff_fun(tex_y_frac - 2),
             };
-            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, coeffs_x, coeffs_y);
+            break :blk sampleConv(CH, TAP, tex, tex_x_i, tex_y_i, coeffs_x, coeffs_y);
         },
         .lut => blk: {
             const lut_size_f = @as(F, @floatFromInt(lut_size - 1));
@@ -560,7 +560,7 @@ fn sampleTex4Tap(
             break :blk sampleConv(
                 CH,
                 TAP,
-                texture,
+                tex,
                 tex_x_i,
                 tex_y_i,
                 lut[idx_x],
@@ -573,7 +573,7 @@ fn sampleTex4Tap(
             break :blk sampleConv(
                 CH,
                 TAP,
-                texture,
+                tex,
                 tex_x_i,
                 tex_y_i,
                 coeffs_x,
@@ -585,9 +585,9 @@ fn sampleTex4Tap(
 
 fn sampleTex6Tap(
     comptime CH: usize,
-    comptime sample: TextureSample,
-    comptime mode: TextureSampleMode,
-    texture: anytype,
+    comptime sample: TexSample,
+    comptime mode: TexSampleMode,
+    tex: anytype,
     tex_x_i: isize,
     tex_y_i: isize,
     tex_x_frac: F,
@@ -623,7 +623,7 @@ fn sampleTex6Tap(
                 coeff_fun(tex_y_frac - 2),
                 coeff_fun(tex_y_frac - 3),
             };
-            break :blk sampleConv(CH, TAP, texture, tex_x_i, tex_y_i, coeffs_x, coeffs_y);
+            break :blk sampleConv(CH, TAP, tex, tex_x_i, tex_y_i, coeffs_x, coeffs_y);
         },
         .lut => blk: {
             const lut_size_f = @as(F, @floatFromInt(lut_size - 1));
@@ -632,7 +632,7 @@ fn sampleTex6Tap(
             break :blk sampleConv(
                 CH,
                 TAP,
-                texture,
+                tex,
                 tex_x_i,
                 tex_y_i,
                 lut[idx_x],
@@ -645,7 +645,7 @@ fn sampleTex6Tap(
             break :blk sampleConv(
                 CH,
                 TAP,
-                texture,
+                tex,
                 tex_x_i,
                 tex_y_i,
                 coeffs_x,

@@ -9,7 +9,7 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const tol = buildconfig.config.tolerance;
+const tol = buildconfig.config.tol;
 const ndarray = @import("ndarray.zig");
 const meshio = @import("meshio.zig");
 const shapefun = @import("shapefun.zig");
@@ -25,10 +25,10 @@ const rops = @import("rasterops.zig");
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
-pub fn calcElementNodeNormal(
+pub fn calcElemNodeNormal(
     comptime N: usize,
     nodal_derivs: shapefun.NodalDerivs,
     sx: []const F,
@@ -103,7 +103,7 @@ pub fn calculateVisibleExactNormals(
     for (visible_orig_elem_indices, 0..) |orig_ee, pp| {
         const coords_elem = rops.gatherElemNodeCoords(N, coords_nodes, connect, orig_ee);
         for (0..N) |nn| {
-            var normal_vec = calcElementNodeNormal(
+            var normal_vec = calcElemNodeNormal(
                 N,
                 nodal_derivs,
                 &coords_elem.x,
@@ -141,7 +141,7 @@ pub fn calculateVisibleAveragedNormals(
         const coord_inds = connect.getElem(ee);
 
         for (0..N) |nn| {
-            const normal_vec = calcElementNodeNormal(
+            const normal_vec = calcElemNodeNormal(
                 N,
                 nodal_derivs,
                 &coords_elem.x,
@@ -226,7 +226,7 @@ pub fn prepareVisibleExactNormalsRange(
         const orig_ee = visible_orig_elem_indices[pp];
         const coords_elem = rops.gatherElemNodeCoords(N, coords_nodes, connect, orig_ee);
         for (0..N) |nn| {
-            var normal_vec = calcElementNodeNormal(
+            var normal_vec = calcElemNodeNormal(
                 N,
                 nodal_derivs,
                 &coords_elem.x,
@@ -256,7 +256,7 @@ pub fn accumulateAveragedNodeNormalsRange(
         const coord_inds = connect.getElem(ee);
 
         for (0..N) |nn| {
-            const normal_vec = calcElementNodeNormal(
+            const normal_vec = calcElemNodeNormal(
                 N,
                 nodal_derivs,
                 &coords_elem.x,

@@ -13,12 +13,12 @@ const eval_branch_quota = buildconfig.comptime_eval_branch_quota;
 const shaderops = @import("shaderops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const texops = @import("textureops.zig");
-const TextureSampleConfig = texops.TextureSampleConfig;
+const TexSampleConfig = texops.TexSampleConfig;
 const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub inline fn shadeNodalScalarCommon(
@@ -144,7 +144,7 @@ inline fn shadeTexScalarDispatchImpl(
     comptime T: type,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
-    config: TextureSampleConfig,
+    config: TexSampleConfig,
     ctx_shade: shaderops.ShadeContext(N),
     interp: shaderops.InterpData(N),
     shader: *const shaderops.TexPrepared(T, channels),
@@ -172,8 +172,8 @@ inline fn shadeTexScalarDispatchModeImpl(
     comptime T: type,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
-    comptime sample_type: texops.TextureSample,
-    mode: texops.TextureSampleMode,
+    comptime sample_type: texops.TexSample,
+    mode: texops.TexSampleMode,
     ctx_shade: shaderops.ShadeContext(N),
     interp: shaderops.InterpData(N),
     shader: *const shaderops.TexPrepared(T, channels),
@@ -202,7 +202,7 @@ inline fn shadeTexScalarDispatchConfigImpl(
     comptime T: type,
     comptime channels: usize,
     comptime coord_space: CoordSpace,
-    comptime comptime_config: TextureSampleConfig,
+    comptime comptime_config: TexSampleConfig,
     ctx_shade: shaderops.ShadeContext(N),
     interp: shaderops.InterpData(N),
     shader: *const shaderops.TexPrepared(T, channels),

@@ -173,7 +173,7 @@ pub fn main(init: std.process.Init) !void {
                     .shader = .{
                         .tex_rgb_u8 = .{
                             .uvs = uv_map.array,
-                            .texture = texture_rgb,
+                            .tex = texture_rgb,
                             .sample_config = sample_config,
                         },
                     },

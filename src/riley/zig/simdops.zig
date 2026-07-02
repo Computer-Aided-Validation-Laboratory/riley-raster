@@ -12,7 +12,7 @@ const S = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub inline fn loadVecSF(subpx_vals: []const F, start_u: usize) VecSF {

@@ -59,7 +59,7 @@ pub fn main(init: std.process.Init) !void {
             .{ .format = .bmp, .bits = 8, .scaling = .auto },
             .{ .format = .csv, .bits = null, .scaling = .none },
         },
-        .save_iteration_map = true,
+        .save_iter_map = true,
         .save_tile_timing_map = true,
         .save_tile_density_map = true,
         .save_tile_occupancy_map = true,

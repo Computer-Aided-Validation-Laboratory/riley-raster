@@ -15,7 +15,7 @@ const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn NodalKernel(comptime N: usize) type {

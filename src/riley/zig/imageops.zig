@@ -9,7 +9,7 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const tol = buildconfig.config.tolerance;
+const tol = buildconfig.config.tol;
 const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
 const texops = @import("textureops.zig");
@@ -31,7 +31,7 @@ pub const ScaleFactors = struct { mul: F, add: F };
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn getScaleMax(bits: ?u8) F {
@@ -69,10 +69,10 @@ pub fn getScaleFactors(
     return .{ .mul = mul, .add = add };
 }
 
-pub fn getScalingParamsTexture(
+pub fn getScalingParamsTex(
     comptime T: type,
     comptime channels: usize,
-    texture: *const texops.Texture(T, channels),
+    tex: *const texops.Tex(T, channels),
     strategy: ScaleStrategy,
 ) ScalingParams {
     switch (strategy) {
@@ -80,7 +80,7 @@ pub fn getScalingParamsTexture(
         .auto, .frac => {
             var px_min: F = std.math.inf(F);
             var px_max: F = -std.math.inf(F);
-            for (texture.array.slice) |val| {
+            for (tex.array.slice) |val| {
                 const val_f = texops.texelToFloat(T, val);
                 if (val_f < px_min) px_min = val_f;
                 if (val_f > px_max) px_max = val_f;

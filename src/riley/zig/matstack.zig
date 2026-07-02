@@ -293,10 +293,10 @@ pub const Mat22Ops = struct {
     }
 
     pub fn inv(comptime T: type, mat22: Mat22T(T)) Mat22T(T) {
-        var inverse: Mat22T(T) = adj(T, mat22);
-        const determinant: T = det(T, mat22);
-        inverse = inverse.mulScalar(1 / determinant);
-        return inverse;
+        var inv_mat: Mat22T(T) = adj(T, mat22);
+        const mat_det: T = det(T, mat22);
+        inv_mat = inv_mat.mulScalar(1 / mat_det);
+        return inv_mat;
     }
 };
 

@@ -24,6 +24,7 @@ const riley = @import("riley/zig/riley.zig");
 const so = @import("riley/zig/shaderops.zig");
 const orch = @import("dev_support/orchestration.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
+const sceneops = @import("riley/zig/sceneops.zig");
 const Timestamp = std.Io.Clock.Timestamp;
 const F = buildconfig.F;
 
@@ -101,7 +102,7 @@ const psf_cases = [_]PsfCase{
         .tag = "gaussian_sep",
         .psf = .{ .gaussian = .{
             .sigma_px = 0.6,
-            .support_rad_px = 2.0,
+            .supp_rad_px = 2.0,
             .separable = .yes,
         } },
     },
@@ -109,7 +110,7 @@ const psf_cases = [_]PsfCase{
         .tag = "gaussian_nonsep",
         .psf = .{ .gaussian = .{
             .sigma_px = 0.6,
-            .support_rad_px = 2.0,
+            .supp_rad_px = 2.0,
             .separable = .no,
         } },
     },
@@ -119,7 +120,7 @@ const psf_cases = [_]PsfCase{
             .sigma_x_px = 1.2,
             .sigma_y_px = 0.2,
             .theta_rad = std.math.pi / 6.0,
-            .support_rad_px = 3.0,
+            .supp_rad_px = 3.0,
             .separable = .no,
         } },
     },
@@ -418,7 +419,7 @@ fn runCameraBenchmarkWithImageOut(
         data_dir,
     );
 
-    const roi_pos = cameraops.roiCentFromCoords(&mesh_input.coords);
+    const roi_pos = sceneops.boundsCenter(&mesh_input.coords);
     const cam_pos = cameraops.posFillFrameFromRot(
         &mesh_input.coords,
         render_defaults.pixels_num,
@@ -523,11 +524,11 @@ fn runCameraBenchmarkWithImageOut(
         .resolve_ms = bench_capture_storage[0]
             .bench_log.frame_times.scratch_resolve / 1e6,
         .fps = if (e2e_ms > 0.0) 1000.0 / e2e_ms else 0.0,
-        .total_elems = bench_capture_storage[0].bench_log.total_elements,
-        .vis_elems = bench_capture_storage[0].bench_log.visible_elements,
+        .total_elems = bench_capture_storage[0].bench_log.total_elems,
+        .vis_elems = bench_capture_storage[0].bench_log.visible_elems,
         .total_px = @as(u64, camera_input.pixels_num[0]) *
             @as(u64, camera_input.pixels_num[1]),
-        .shaded_px = bench_capture_storage[0].bench_log.total_shaded_pixels,
+        .shaded_px = bench_capture_storage[0].bench_log.total_shaded_px,
         .metrics = metrics,
         .pipeline_times = bench_capture_storage[0].bench_log.frame_times,
         .image = null,

@@ -9,7 +9,7 @@
 const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const tol = buildconfig.config.tolerance;
+const tol = buildconfig.config.tol;
 const CameraPrepared = @import("camera.zig").CameraPrepared;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
@@ -37,12 +37,11 @@ const geomkerns = @import("geometrykernels.zig");
 const newton = @import("newton.zig");
 const shadekerns = @import("shaderkernels.zig");
 
-
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const SubpxScratchBuffers = struct {
+pub const SubpxScratchBuffs = struct {
     stride_subpx: usize,
     inv_z: []F,
     image: MatSlice(F),
@@ -52,23 +51,22 @@ pub const SubpxScratchBuffers = struct {
     ideal_pixel_centers: []F,
 };
 
-const SubpxDomain = common.SubpxDomain;
+const SubpxDom = common.SubpxDom;
 const RasterBounds = common.RasterBounds;
 
 //------------------------------------------------------------------------------------------
-// Scratch Buffer Helpers
+// Scratch Buff Helpers
 //------------------------------------------------------------------------------------------
 
-
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn initSubpxScratch(
     arena_alloc: std.mem.Allocator,
     fields_num: u8,
     subpx_tile_size: usize,
-) !SubpxScratchBuffers {
+) !SubpxScratchBuffs {
     const subpx_tile_total: usize = subpx_tile_size * subpx_tile_size;
     const subpx_inv_z_scratch = try arena_alloc.alloc(F, subpx_tile_total);
     const subpx_img_mem = try arena_alloc.alloc(
@@ -104,7 +102,7 @@ pub fn initSubpxScratch(
 }
 
 pub fn resetSubpxScratch(
-    subpx_scratch: *SubpxScratchBuffers,
+    subpx_scratch: *SubpxScratchBuffs,
     subpx_tile_size: usize,
     background_value: F,
 ) void {
@@ -156,16 +154,16 @@ pub fn RasterEngine(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            targ_overlap: common.OverlapTarget,
+            targ_overlap: common.OverlapTarg,
             mesh_in: rops.MeshRaster,
             shader: *const ShaderData,
-            shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
-            subpx_scratch: *SubpxScratchBuffers,
+            shader_buf: *const shaderops.LocalShaderBuff(Geometry.nodes_num),
+            subpx_scratch: *SubpxScratchBuffs,
         ) !u64 {
             const sub_samp_u: usize = @intCast(ctx_rast.camera.sub_sample);
             const sub_samp_f: F = @as(F, @floatFromInt(ctx_rast.camera.sub_sample));
 
-            const subpx_domain = SubpxDomain{
+            const subpx_dom = SubpxDom{
                 .step = 1.0 / sub_samp_f,
                 .offset = 1.0 / (2.0 * sub_samp_f),
                 .tile_size = subpx_scratch.stride_subpx,
@@ -204,7 +202,7 @@ pub fn RasterEngine(
                 ctx_report,
                 targ_overlap,
                 mesh_in,
-                subpx_domain,
+                subpx_dom,
                 rast_bounds,
                 nodes_coords,
                 shader,
@@ -219,14 +217,14 @@ pub fn RasterEngine(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            targ_overlap: common.OverlapTarget,
+            targ_overlap: common.OverlapTarg,
             mesh_in: rops.MeshRaster,
-            subpx_domain: SubpxDomain,
+            subpx_dom: SubpxDom,
             rast_bounds: RasterBounds,
             nodes_coords: Vec3Slices(F),
             shader: *const ShaderData,
-            shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
-            subpx_scratch: *SubpxScratchBuffers,
+            shader_buf: *const shaderops.LocalShaderBuff(Geometry.nodes_num),
+            subpx_scratch: *SubpxScratchBuffs,
         ) !u64 {
             if (comptime Geometry == geomkerns.Tri3OptKernel()) {
                 return rasterDirectSteppedScalar(
@@ -238,7 +236,7 @@ pub fn RasterEngine(
                     ctx_report,
                     targ_overlap,
                     mesh_in,
-                    subpx_domain,
+                    subpx_dom,
                     rast_bounds,
                     nodes_coords,
                     shader,
@@ -256,7 +254,7 @@ pub fn RasterEngine(
                     ctx_report,
                     targ_overlap,
                     mesh_in,
-                    subpx_domain,
+                    subpx_dom,
                     rast_bounds,
                     nodes_coords,
                     shader,
@@ -274,7 +272,7 @@ pub fn RasterEngine(
                 ctx_report,
                 targ_overlap,
                 mesh_in,
-                subpx_domain,
+                subpx_dom,
                 rast_bounds,
                 nodes_coords,
                 shader,
@@ -287,14 +285,14 @@ pub fn RasterEngine(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            targ_overlap: common.OverlapTarget,
+            targ_overlap: common.OverlapTarg,
             mesh_in: rops.MeshRaster,
-            subpx_domain: SubpxDomain,
+            subpx_dom: SubpxDom,
             rast_bounds: RasterBounds,
             nodes_coords: Vec3Slices(F),
             shader: *const ShaderData,
-            shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
-            subpx_scratch: *SubpxScratchBuffers,
+            shader_buf: *const shaderops.LocalShaderBuff(Geometry.nodes_num),
+            subpx_scratch: *SubpxScratchBuffs,
         ) !u64 {
             return rasterNewtonImpl(
                 Geometry,
@@ -305,7 +303,7 @@ pub fn RasterEngine(
                 ctx_report,
                 targ_overlap,
                 mesh_in,
-                subpx_domain,
+                subpx_dom,
                 rast_bounds,
                 nodes_coords,
                 shader,
@@ -323,14 +321,14 @@ fn rasterDirectImpl(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: common.OverlapTarget,
+    targ_overlap: common.OverlapTarg,
     mesh_in: rops.MeshRaster,
-    subpx_domain: SubpxDomain,
+    subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
-    subpx_scratch: *SubpxScratchBuffers,
+    shader_buf: *const shaderops.LocalShaderBuff(Geometry.nodes_num),
+    subpx_scratch: *SubpxScratchBuffs,
 ) !u64 {
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
     const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
@@ -340,12 +338,12 @@ fn rasterDirectImpl(
         ShaderKernel,
         ShaderData,
         report_mode,
-        SubpxScratchBuffers,
+        SubpxScratchBuffs,
         ctx_rast,
         ctx_report,
         targ_overlap,
         mesh_in,
-        subpx_domain,
+        subpx_dom,
         rast_bounds,
         fields_num,
         nodes_coords,
@@ -362,18 +360,18 @@ fn rasterNewtonImpl(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: common.OverlapTarget,
+    targ_overlap: common.OverlapTarg,
     mesh_in: rops.MeshRaster,
-    subpx_domain: SubpxDomain,
+    subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
-    subpx_scratch: *SubpxScratchBuffers,
+    shader_buf: *const shaderops.LocalShaderBuff(Geometry.nodes_num),
+    subpx_scratch: *SubpxScratchBuffs,
 ) !u64 {
     comptime {
         if (Geometry.solver_kind != .newton) {
-            @compileError("rasterNewton only supports Newton geometries");
+            @compileError("rasterNewton only supps Newton geometries");
         }
     }
 
@@ -388,7 +386,7 @@ fn rasterNewtonImpl(
         nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
     }
 
-    var element_tess: hull.Tessellation(Geometry.tess_triangles_num) = undefined;
+    var elem_tess: hull.Tessellation(Geometry.tess_triangles_num) = undefined;
     if (comptime Geometry.hull_nodes_num > 0) {
         if (mesh_in.hull) |rh| {
             const hx = rh.getSlice(
@@ -399,7 +397,7 @@ fn rasterNewtonImpl(
                 &[_]usize{ targ_overlap.overlap.elem_idx, 1, 0 },
                 1,
             );
-            element_tess = hull.getTessellation(
+            elem_tess = hull.getTessellation(
                 N,
                 Geometry.hull_nodes_num,
                 Geometry.tess_triangles_num,
@@ -418,7 +416,7 @@ fn rasterNewtonImpl(
     );
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
-        const row_offset = scratch_y * subpx_domain.tile_size;
+        const row_offset = scratch_y * subpx_dom.tile_size;
 
         for (rast_bounds.start_x_u..rast_bounds.end_x_u) |scratch_x| {
             const scratch_idx = row_offset + scratch_x;
@@ -431,7 +429,7 @@ fn rasterNewtonImpl(
             var hull_seed: ?newton.NewtonSeed = null;
             if (comptime Geometry.hull_nodes_num > 0) {
                 ctx_report.recordTessChecks(1);
-                const tess_res = element_tess.isInScalar(ideal_x_px, ideal_y_px);
+                const tess_res = elem_tess.isInScalar(ideal_x_px, ideal_y_px);
                 if (tess_res.is_in) {
                     ctx_report.recordTessPasses(1);
                     hull_seed = .{
@@ -467,9 +465,9 @@ fn rasterNewtonImpl(
                     if (hull_seed) |seed| {
                         const seed_quality = newton.evaluateSeedQuality(
                             Geometry.nodes_num,
-                            Geometry.domainViolation,
-                            ideal_x_px - subpx_domain.x_off,
-                            ideal_y_px - subpx_domain.y_off,
+                            Geometry.domViolation,
+                            ideal_x_px - subpx_dom.x_off,
+                            ideal_y_px - subpx_dom.y_off,
                             nodes_coords.x,
                             nodes_coords.y,
                             nodes_coords.z,
@@ -493,8 +491,8 @@ fn rasterNewtonImpl(
                     nodes_coords,
                     ideal_x_px,
                     ideal_y_px,
-                    subpx_domain.x_off,
-                    subpx_domain.y_off,
+                    subpx_dom.x_off,
+                    subpx_dom.y_off,
                     selected_seed.xi,
                     selected_seed.eta,
                 );
@@ -503,20 +501,20 @@ fn rasterNewtonImpl(
             ctx_report.recordSolverIters(result.iters);
             const solve_state = newton.evaluateSolveState(
                 N,
-                ideal_x_px - subpx_domain.x_off,
-                ideal_y_px - subpx_domain.y_off,
+                ideal_x_px - subpx_dom.x_off,
+                ideal_y_px - subpx_dom.y_off,
                 nodes_coords.x,
                 nodes_coords.y,
                 nodes_coords.z,
                 result.xi_final,
                 result.eta_final,
             );
-            const domain_violation = Geometry.domainViolation(
+            const dom_violation = Geometry.domViolation(
                 result.xi_final,
                 result.eta_final,
             );
-            const hit_iter_limit = newton.hitIterLimitStatus(result.status);
-            const jacobian_det = newton.calcJacobianDet2D(
+            const hit_iter_lim = newton.hitIterLimitStatus(result.status);
+            const jac_det = newton.calcJacDet2D(
                 N,
                 result.xi_final,
                 result.eta_final,
@@ -525,7 +523,7 @@ fn rasterNewtonImpl(
             );
             if (result.weights == null) {
                 if (comptime report_mode == .full_stats) {
-                    rasterreport.recordPixelConvergedStats(
+                    rasterreport.recordPixelConvStats(
                         report_mode,
                         ctx_report,
                         global_subx,
@@ -533,7 +531,7 @@ fn rasterNewtonImpl(
                         false,
                         result.xi_final,
                         result.eta_final,
-                        jacobian_det,
+                        jac_det,
                     );
                     rasterreport.recordPixelSolverDiagnostics(
                         report_mode,
@@ -541,14 +539,14 @@ fn rasterNewtonImpl(
                         global_subx,
                         global_suby,
                         result.status,
-                        result.pre_domain_converged,
-                        hit_iter_limit,
-                        solve_state.residual_x,
-                        solve_state.residual_y,
-                        solve_state.interpolated_w,
-                        solve_state.residual_mag,
-                        solve_state.normalized_residual_mag,
-                        domain_violation,
+                        result.pre_dom_conv,
+                        hit_iter_lim,
+                        solve_state.resid_x,
+                        solve_state.resid_y,
+                        solve_state.interp_w,
+                        solve_state.resid_mag,
+                        solve_state.norm_resid_mag,
+                        dom_violation,
                     );
                 }
                 if (result.iters > 0) ctx_report.recordSolverDiverged();
@@ -556,7 +554,7 @@ fn rasterNewtonImpl(
             }
 
             if (comptime report_mode == .full_stats) {
-                rasterreport.recordPixelConvergedStats(
+                rasterreport.recordPixelConvStats(
                     report_mode,
                     ctx_report,
                     global_subx,
@@ -564,7 +562,7 @@ fn rasterNewtonImpl(
                     true,
                     result.xi_out,
                     result.eta_out,
-                    jacobian_det,
+                    jac_det,
                 );
                 rasterreport.recordPixelSolverDiagnostics(
                     report_mode,
@@ -572,18 +570,18 @@ fn rasterNewtonImpl(
                     global_subx,
                     global_suby,
                     result.status,
-                    result.pre_domain_converged,
-                    hit_iter_limit,
-                    solve_state.residual_x,
-                    solve_state.residual_y,
-                    solve_state.interpolated_w,
-                    solve_state.residual_mag,
-                    solve_state.normalized_residual_mag,
-                    domain_violation,
+                    result.pre_dom_conv,
+                    hit_iter_lim,
+                    solve_state.resid_x,
+                    solve_state.resid_y,
+                    solve_state.interp_w,
+                    solve_state.resid_mag,
+                    solve_state.norm_resid_mag,
+                    dom_violation,
                 );
             }
 
-            if (ctx_rast.config.newton_seed_reuse == .last_converged) {
+            if (ctx_rast.config.newton_seed_reuse == .last_conv) {
                 newton.updateSeedState(
                     &seed_state,
                     result.xi_out,
@@ -593,7 +591,7 @@ fn rasterNewtonImpl(
 
             const weights = result.weights.?;
             const inv_z = Geometry.calcInvZ(nodes_coords, weights);
-            if (inv_z + tol.geometry.depth_buffer_inv_z_cmp <
+            if (inv_z + tol.geometry.depth_buff_inv_z_cmp <
                 subpx_scratch.inv_z[scratch_idx]) continue;
 
             subpx_scratch.inv_z[scratch_idx] = inv_z;
@@ -656,14 +654,14 @@ fn rasterDirectSteppedScalar(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: common.OverlapTarget,
+    targ_overlap: common.OverlapTarg,
     mesh_in: rops.MeshRaster,
-    subpx_domain: SubpxDomain,
+    subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
-    subpx_scratch: *SubpxScratchBuffers,
+    shader_buf: *const shaderops.LocalShaderBuff(Geometry.nodes_num),
+    subpx_scratch: *SubpxScratchBuffs,
 ) !u64 {
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     const tile_subx: usize = @intCast(targ_overlap.tile.scratch_x_px_min);
@@ -692,7 +690,7 @@ fn rasterDirectSteppedScalar(
             ctx_report,
             targ_overlap,
             mesh_in,
-            subpx_domain,
+            subpx_dom,
             rast_bounds,
             nodes_coords,
             shader,
@@ -711,7 +709,7 @@ fn rasterDirectSteppedScalar(
         ctx_report,
         targ_overlap,
         mesh_in,
-        subpx_domain,
+        subpx_dom,
         rast_bounds,
         nodes_coords,
         shader,
@@ -727,14 +725,14 @@ fn rasterDirectSteppedScalarFixed(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: common.OverlapTarget,
+    targ_overlap: common.OverlapTarg,
     mesh_in: rops.MeshRaster,
-    subpx_domain: SubpxDomain,
+    subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
-    subpx_scratch: *SubpxScratchBuffers,
+    shader_buf: *const shaderops.LocalShaderBuff(Geometry.nodes_num),
+    subpx_scratch: *SubpxScratchBuffs,
     fixed: common.Tri3FixedEdges,
 ) !u64 {
     _ = mesh_in;
@@ -771,7 +769,7 @@ fn rasterDirectSteppedScalarFixed(
     const inv_z2 = 1.0 / z2;
     const nodes_inv_z = [3]F{ inv_z0, inv_z1, inv_z2 };
 
-    const scratch_stride = subpx_domain.tile_size;
+    const scratch_stride = subpx_dom.tile_size;
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
         const row_offset = scratch_y_u * scratch_stride;
@@ -801,9 +799,9 @@ fn rasterDirectSteppedScalarFixed(
             ctx_report.recordSolverCalls(1);
             ctx_report.recordSolverIters(1);
 
-            if (e0 >= -fixed.edge_tolerance and
-                e1 >= -fixed.edge_tolerance and
-                e2 >= -fixed.edge_tolerance)
+            if (e0 >= -fixed.edge_tol and
+                e1 >= -fixed.edge_tol and
+                e2 >= -fixed.edge_tol)
             {
                 const w1 = @as(F, @floatFromInt(e1)) * fixed.inv_area;
                 const w2 = @as(F, @floatFromInt(e2)) * fixed.inv_area;
@@ -818,7 +816,7 @@ fn rasterDirectSteppedScalarFixed(
                         @mulAdd(F, w1, inv_z1, w2 * inv_z2),
                     );
 
-                if (inv_z + buildconfig.config.tolerance.geometry.depth_buffer_inv_z_cmp >=
+                if (inv_z + buildconfig.config.tol.geometry.depth_buff_inv_z_cmp >=
                     subpx_scratch.inv_z[scratch_idx])
                 {
                     subpx_scratch.inv_z[scratch_idx] = inv_z;
@@ -854,7 +852,7 @@ fn rasterDirectSteppedScalarFixed(
                         @mulAdd(F, w2, inv_z2, 0.0) / inv_z;
 
                     if (comptime report_mode == .full_stats) {
-                        rasterreport.recordPixelConvergedStats(
+                        rasterreport.recordPixelConvStats(
                             report_mode,
                             ctx_report,
                             global_subx,
@@ -896,7 +894,7 @@ fn rasterDirectSteppedScalarFixed(
             } else {
                 if (comptime report_mode == .full_stats) {
                     const nan = std.math.nan(F);
-                    rasterreport.recordPixelConvergedStats(
+                    rasterreport.recordPixelConvStats(
                         report_mode,
                         ctx_report,
                         global_subx,
@@ -925,14 +923,14 @@ fn rasterDirectSteppedScalarFloatFallback(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: common.OverlapTarget,
+    targ_overlap: common.OverlapTarg,
     mesh_in: rops.MeshRaster,
-    subpx_domain: SubpxDomain,
+    subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuffer(Geometry.nodes_num),
-    subpx_scratch: *SubpxScratchBuffers,
+    shader_buf: *const shaderops.LocalShaderBuff(Geometry.nodes_num),
+    subpx_scratch: *SubpxScratchBuffs,
 ) !u64 {
     _ = mesh_in;
     const N = Geometry.nodes_num;
@@ -983,8 +981,8 @@ fn rasterDirectSteppedScalarFloatFallback(
         -(x0 * y1),
     ) * inv_area;
 
-    const step = subpx_domain.step;
-    const offset = subpx_domain.offset;
+    const step = subpx_dom.step;
+    const offset = subpx_dom.offset;
 
     const dw0_dx = a0 * step;
     const dw0_dy = b0 * step;
@@ -1044,7 +1042,7 @@ fn rasterDirectSteppedScalarFloatFallback(
         @mulAdd(F, b2, y_start_f, c2),
     );
 
-    const scratch_stride = subpx_domain.tile_size;
+    const scratch_stride = subpx_dom.tile_size;
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
         const row_offset = scratch_y_u * scratch_stride;
@@ -1083,7 +1081,7 @@ fn rasterDirectSteppedScalarFloatFallback(
                         @mulAdd(F, w1, inv_z1, w2 * inv_z2),
                     );
 
-                if (inv_z + buildconfig.config.tolerance.geometry.depth_buffer_inv_z_cmp >=
+                if (inv_z + buildconfig.config.tol.geometry.depth_buff_inv_z_cmp >=
                     subpx_scratch.inv_z[scratch_idx])
                 {
                     subpx_scratch.inv_z[scratch_idx] = inv_z;
@@ -1119,7 +1117,7 @@ fn rasterDirectSteppedScalarFloatFallback(
                         @mulAdd(F, w2, inv_z2, 0.0) / inv_z;
 
                     if (comptime report_mode == .full_stats) {
-                        rasterreport.recordPixelConvergedStats(
+                        rasterreport.recordPixelConvStats(
                             report_mode,
                             ctx_report,
                             global_subx,
@@ -1161,7 +1159,7 @@ fn rasterDirectSteppedScalarFloatFallback(
             } else {
                 if (comptime report_mode == .full_stats) {
                     const nan = std.math.nan(F);
-                    rasterreport.recordPixelConvergedStats(
+                    rasterreport.recordPixelConvStats(
                         report_mode,
                         ctx_report,
                         global_subx,

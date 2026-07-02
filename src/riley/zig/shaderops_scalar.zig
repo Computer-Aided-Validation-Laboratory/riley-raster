@@ -9,7 +9,7 @@
 const common = @import("shaderops_common.zig");
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub const fillNodalClip = common.fillNodalClip;

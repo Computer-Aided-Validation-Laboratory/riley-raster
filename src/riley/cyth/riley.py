@@ -180,11 +180,11 @@ class RasterConfig:
     save_scaling_min: float = 0.0
     save_scaling_max: float = 0.0
     full_stats_save_solver_csv: bool = False
-    full_stats_save_iteration_map: bool = True
+    full_stats_save_iter_map: bool = True
     full_stats_save_xi_map: bool = True
     full_stats_save_eta_map: bool = True
-    full_stats_save_converged_map: bool = True
-    full_stats_save_jacobian_det_map: bool = True
+    full_stats_save_conv_map: bool = True
+    full_stats_save_jac_det_map: bool = True
     full_stats_save_tile_timing_map: bool = True
     full_stats_save_tile_density_map: bool = True
     full_stats_save_tile_occupancy_map: bool = True
@@ -497,8 +497,8 @@ def _make_raster_config(config: Any) -> cr.CRasterConfig:
     config_out.full_stats_save_solver_csv = int(
         config.full_stats_save_solver_csv,
     )
-    config_out.full_stats_save_iteration_map = int(
-        config.full_stats_save_iteration_map,
+    config_out.full_stats_save_iter_map = int(
+        config.full_stats_save_iter_map,
     )
     config_out.full_stats_save_xi_map = int(
         config.full_stats_save_xi_map,
@@ -506,11 +506,11 @@ def _make_raster_config(config: Any) -> cr.CRasterConfig:
     config_out.full_stats_save_eta_map = int(
         config.full_stats_save_eta_map,
     )
-    config_out.full_stats_save_converged_map = int(
-        config.full_stats_save_converged_map,
+    config_out.full_stats_save_conv_map = int(
+        config.full_stats_save_conv_map,
     )
-    config_out.full_stats_save_jacobian_det_map = int(
-        config.full_stats_save_jacobian_det_map,
+    config_out.full_stats_save_jac_det_map = int(
+        config.full_stats_save_jac_det_map,
     )
     config_out.full_stats_save_tile_timing_map = int(
         config.full_stats_save_tile_timing_map,

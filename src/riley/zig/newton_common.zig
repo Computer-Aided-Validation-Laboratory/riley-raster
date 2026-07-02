@@ -17,8 +17,7 @@ const S = buildconfig.SimdWidth;
 const VecSB = buildconfig.VecSB;
 const VecSF = buildconfig.VecSF;
 const VecSU8 = buildconfig.VecSU8;
-const tol = cfg.tolerance;
-
+const tol = cfg.tol;
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -42,49 +41,48 @@ pub const NewtonSeedState = struct {
 
 pub const NewtonSeedQuality = struct {
     is_usable: bool,
-    domain_violation: F,
-    residual_sq: F,
+    dom_violation: F,
+    resid_sq: F,
     det_abs: F,
 };
 
 pub const NewtonEvalState = struct {
-    residual_x: F,
-    residual_y: F,
-    interpolated_w: F,
-    residual_mag: F,
-    normalized_residual_x: F,
-    normalized_residual_y: F,
-    normalized_residual_mag: F,
+    resid_x: F,
+    resid_y: F,
+    interp_w: F,
+    resid_mag: F,
+    norm_resid_x: F,
+    norm_resid_y: F,
+    norm_resid_mag: F,
 };
 
 pub const NewtonStatus = enum(u8) {
-    converged_residual,
-    converged_step,
-    converged_stagnated,
-    converged_two_cycle,
-    failed_domain,
-    failed_iteration_limit,
-    failed_near_singular,
-    failed_invalid_state,
-    failed_invalid_step,
+    conv_resid,
+    conv_step,
+    conv_stagnated,
+    conv_two_cycle,
+    fail_dom,
+    fail_iter_lim,
+    fail_near_singular,
+    fail_invalid_state,
+    fail_invalid_step,
 };
 
 pub const NewtonPolicy = struct {
-    use_componentwise_residual: bool,
-    use_relaxed_residual: bool,
-    use_step_convergence: bool,
+    use_compwise_resid: bool,
+    use_relaxed_resid: bool,
+    use_step_conv: bool,
     detect_stagnation: bool,
     detect_two_cycle: bool,
     check_state_finite: bool,
-    check_inverse_determinant_finite: bool,
+    check_inv_det_finite: bool,
     check_step_finite: bool,
-    use_relative_determinant: bool,
-    limit_parametric_step: bool,
+    use_rel_det: bool,
+    lim_para_step: bool,
 };
 
-
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub inline fn newtonPolicy(
@@ -93,70 +91,70 @@ pub inline fn newtonPolicy(
 ) NewtonPolicy {
     if (comptime mode == .robust) {
         return .{
-            .use_componentwise_residual = false,
-            .use_relaxed_residual = true,
-            .use_step_convergence = true,
+            .use_compwise_resid = false,
+            .use_relaxed_resid = true,
+            .use_step_conv = true,
             .detect_stagnation = true,
             .detect_two_cycle = true,
             .check_state_finite = true,
-            .check_inverse_determinant_finite = true,
+            .check_inv_det_finite = true,
             .check_step_finite = true,
-            .use_relative_determinant = true,
-            .limit_parametric_step = true,
+            .use_rel_det = true,
+            .lim_para_step = true,
         };
     }
 
     if (comptime precision == f64) {
         return .{
-            .use_componentwise_residual = true,
-            .use_relaxed_residual = false,
-            .use_step_convergence = false,
+            .use_compwise_resid = true,
+            .use_relaxed_resid = false,
+            .use_step_conv = false,
             .detect_stagnation = false,
             .detect_two_cycle = false,
             .check_state_finite = false,
-            .check_inverse_determinant_finite = false,
+            .check_inv_det_finite = false,
             .check_step_finite = false,
-            .use_relative_determinant = false,
-            .limit_parametric_step = false,
+            .use_rel_det = false,
+            .lim_para_step = false,
         };
     }
 
     if (comptime precision == f32) {
         return .{
-            .use_componentwise_residual = false,
-            .use_relaxed_residual = true,
-            .use_step_convergence = true,
+            .use_compwise_resid = false,
+            .use_relaxed_resid = true,
+            .use_step_conv = true,
             .detect_stagnation = false,
             .detect_two_cycle = false,
             .check_state_finite = false,
-            .check_inverse_determinant_finite = false,
+            .check_inv_det_finite = false,
             .check_step_finite = false,
-            .use_relative_determinant = false,
-            .limit_parametric_step = true,
+            .use_rel_det = false,
+            .lim_para_step = true,
         };
     }
 
-    @compileError("Only f32 and f64 precision are supported.");
+    @compileError("Only f32 and f64 precision are supped.");
 }
 
 pub const NewtonResult = struct {
-    converged: bool,
-    pre_domain_converged: bool,
-    iterations: u8,
+    conv: bool,
+    pre_dom_conv: bool,
+    iters: u8,
     status: NewtonStatus,
-    residual_x: F,
-    residual_y: F,
+    resid_x: F,
+    resid_y: F,
     xi_final: F,
     eta_final: F,
 };
 
 pub const NewtonResultSIMD = struct {
-    v_converged: VecSB,
-    v_pre_domain_converged: VecSB,
-    v_iterations: VecSU8,
+    v_conv: VecSB,
+    v_pre_dom_conv: VecSB,
+    v_iters: VecSU8,
     v_status: VecSU8,
-    v_residual_x: VecSF,
-    v_residual_y: VecSF,
+    v_resid_x: VecSF,
+    v_resid_y: VecSF,
     v_xi_final: VecSF,
     v_eta_final: VecSF,
 };
@@ -166,7 +164,7 @@ pub inline fn selectSeed(
     base_seed: NewtonSeed,
     seed_state: NewtonSeedState,
 ) NewtonSeed {
-    if (seed_reuse == .last_converged and seed_state.is_valid) {
+    if (seed_reuse == .last_conv and seed_state.is_valid) {
         return .{
             .xi = seed_state.xi,
             .eta = seed_state.eta,
@@ -175,44 +173,44 @@ pub inline fn selectSeed(
     return base_seed;
 }
 
-pub inline fn isConvergedStatus(status: NewtonStatus) bool {
+pub inline fn isConvStatus(status: NewtonStatus) bool {
     return switch (status) {
-        .converged_residual,
-        .converged_step,
-        .converged_stagnated,
-        .converged_two_cycle,
+        .conv_resid,
+        .conv_step,
+        .conv_stagnated,
+        .conv_two_cycle,
         => true,
         else => false,
     };
 }
 
-pub inline fn isPreDomainConvergedStatus(status: NewtonStatus) bool {
+pub inline fn isPreDomConvStatus(status: NewtonStatus) bool {
     return switch (status) {
-        .converged_residual,
-        .converged_step,
-        .converged_stagnated,
-        .converged_two_cycle,
-        .failed_domain,
+        .conv_resid,
+        .conv_step,
+        .conv_stagnated,
+        .conv_two_cycle,
+        .fail_dom,
         => true,
         else => false,
     };
 }
 
 pub inline fn hitIterLimitStatus(status: NewtonStatus) bool {
-    return status == .failed_iteration_limit;
+    return status == .fail_iter_lim;
 }
 
 pub inline fn statusLabel(status: NewtonStatus) []const u8 {
     return switch (status) {
-        .converged_residual => "converged_residual",
-        .converged_step => "converged_step",
-        .converged_stagnated => "converged_stagnated",
-        .converged_two_cycle => "converged_two_cycle",
-        .failed_domain => "failed_domain",
-        .failed_iteration_limit => "failed_iteration_limit",
-        .failed_near_singular => "failed_near_singular",
-        .failed_invalid_state => "failed_invalid_state",
-        .failed_invalid_step => "failed_invalid_step",
+        .conv_resid => "conv_resid",
+        .conv_step => "conv_step",
+        .conv_stagnated => "conv_stagnated",
+        .conv_two_cycle => "conv_two_cycle",
+        .fail_dom => "fail_dom",
+        .fail_iter_lim => "fail_iter_lim",
+        .fail_near_singular => "fail_near_singular",
+        .fail_invalid_state => "fail_invalid_state",
+        .fail_invalid_step => "fail_invalid_step",
     };
 }
 
@@ -249,20 +247,20 @@ pub inline fn applySeedReuseInPlace(
 pub inline fn updateSeedStateFromSIMDResult(
     seed_state: *NewtonSeedState,
     v_chunk_mask: VecSB,
-    v_converged_mask: VecSB,
+    v_conv_mask: VecSB,
     v_xi_out: VecSF,
     v_eta_out: VecSF,
-    v_residual_x: VecSF,
-    v_residual_y: VecSF,
+    v_resid_x: VecSF,
+    v_resid_y: VecSF,
 ) void {
-    const v_mask_valid = v_chunk_mask & v_converged_mask;
+    const v_mask_valid = v_chunk_mask & v_conv_mask;
     if (!@reduce(.Or, v_mask_valid)) return;
 
     const lane_mask_valid: [S]bool = v_mask_valid;
     const lane_xi_out: [S]F = v_xi_out;
     const lane_eta_out: [S]F = v_eta_out;
-    const lane_residual_x: [S]F = v_residual_x;
-    const lane_residual_y: [S]F = v_residual_y;
+    const lane_resid_x: [S]F = v_resid_x;
+    const lane_resid_y: [S]F = v_resid_y;
 
     var best_lane_idx: ?usize = null;
     var best_resid_sq = std.math.inf(F);
@@ -270,8 +268,8 @@ pub inline fn updateSeedStateFromSIMDResult(
     for (0..S) |jj| {
         if (lane_mask_valid[jj]) {
             const resid_sq =
-                lane_residual_x[jj] * lane_residual_x[jj] +
-                lane_residual_y[jj] * lane_residual_y[jj];
+                lane_resid_x[jj] * lane_resid_x[jj] +
+                lane_resid_y[jj] * lane_resid_y[jj];
             if (best_lane_idx == null or resid_sq < best_resid_sq) {
                 best_lane_idx = jj;
                 best_resid_sq = resid_sq;
@@ -286,19 +284,19 @@ pub inline fn updateSeedStateFromSIMDResult(
 
 pub fn evaluateSeedQuality(
     comptime N: usize,
-    comptime domainViolationFn: anytype,
-    target_screen_x: F,
-    target_screen_y: F,
-    element_node_x: []const F,
-    element_node_y: []const F,
-    element_node_w: []const F,
+    comptime domViolationFn: anytype,
+    targ_screen_x: F,
+    targ_screen_y: F,
+    elem_node_x: []const F,
+    elem_node_y: []const F,
+    elem_node_w: []const F,
     seed: NewtonSeed,
 ) NewtonSeedQuality {
     if (!isSeedFinite(seed)) {
         return .{
             .is_usable = false,
-            .domain_violation = std.math.inf(F),
-            .residual_sq = std.math.inf(F),
+            .dom_violation = std.math.inf(F),
+            .resid_sq = std.math.inf(F),
             .det_abs = 0.0,
         };
     }
@@ -306,7 +304,7 @@ pub fn evaluateSeedQuality(
     var node_values: [N]F = undefined;
     var deriv_n_xi: [N]F = undefined;
     var deriv_n_eta: [N]F = undefined;
-    shapefun.shapeFunctions(
+    shapefun.shapeFunc(
         N,
         seed.xi,
         seed.eta,
@@ -315,61 +313,61 @@ pub fn evaluateSeedQuality(
         &deriv_n_eta,
     );
 
-    var residual_x: F = 0.0;
-    var residual_y: F = 0.0;
-    var jacobian_11: F = 0.0;
-    var jacobian_12: F = 0.0;
-    var jacobian_21: F = 0.0;
-    var jacobian_22: F = 0.0;
+    var resid_x: F = 0.0;
+    var resid_y: F = 0.0;
+    var jac_11: F = 0.0;
+    var jac_12: F = 0.0;
+    var jac_21: F = 0.0;
+    var jac_22: F = 0.0;
 
     for (0..N) |nn| {
         const term_x = @mulAdd(
             F,
-            target_screen_x,
-            element_node_w[nn],
-            -element_node_x[nn],
+            targ_screen_x,
+            elem_node_w[nn],
+            -elem_node_x[nn],
         );
         const term_y = @mulAdd(
             F,
-            target_screen_y,
-            element_node_w[nn],
-            -element_node_y[nn],
+            targ_screen_y,
+            elem_node_w[nn],
+            -elem_node_y[nn],
         );
 
-        residual_x = @mulAdd(F, node_values[nn], term_x, residual_x);
-        residual_y = @mulAdd(F, node_values[nn], term_y, residual_y);
+        resid_x = @mulAdd(F, node_values[nn], term_x, resid_x);
+        resid_y = @mulAdd(F, node_values[nn], term_y, resid_y);
 
-        jacobian_11 = @mulAdd(F, deriv_n_xi[nn], term_x, jacobian_11);
-        jacobian_12 = @mulAdd(F, deriv_n_eta[nn], term_x, jacobian_12);
-        jacobian_21 = @mulAdd(F, deriv_n_xi[nn], term_y, jacobian_21);
-        jacobian_22 = @mulAdd(F, deriv_n_eta[nn], term_y, jacobian_22);
+        jac_11 = @mulAdd(F, deriv_n_xi[nn], term_x, jac_11);
+        jac_12 = @mulAdd(F, deriv_n_eta[nn], term_x, jac_12);
+        jac_21 = @mulAdd(F, deriv_n_xi[nn], term_y, jac_21);
+        jac_22 = @mulAdd(F, deriv_n_eta[nn], term_y, jac_22);
     }
 
     const determinant = @mulAdd(
         F,
-        jacobian_11,
-        jacobian_22,
-        -(jacobian_12 * jacobian_21),
+        jac_11,
+        jac_22,
+        -(jac_12 * jac_21),
     );
     const det_abs = @abs(determinant);
-    const residual_sq = residual_x * residual_x + residual_y * residual_y;
-    const domain_violation = domainViolationFn(seed.xi, seed.eta);
+    const resid_sq = resid_x * resid_x + resid_y * resid_y;
+    const dom_violation = domViolationFn(seed.xi, seed.eta);
     const seed_tol = tol.newton_seed;
 
-    const is_usable = domain_violation <= seed_tol.parametric_domain and
-        det_abs >= seed_tol.determinant and
-        residual_sq <= seed_tol.residual_sq and
-        std.math.isFinite(residual_sq);
+    const is_usable = dom_violation <= seed_tol.para_dom and
+        det_abs >= seed_tol.det and
+        resid_sq <= seed_tol.resid_sq and
+        std.math.isFinite(resid_sq);
 
     return .{
         .is_usable = is_usable,
-        .domain_violation = domain_violation,
-        .residual_sq = residual_sq,
+        .dom_violation = dom_violation,
+        .resid_sq = resid_sq,
         .det_abs = det_abs,
     };
 }
 
-pub fn calcJacobianDet2D(
+pub fn calcJacDet2D(
     comptime N: usize,
     xi: F,
     eta: F,
@@ -379,7 +377,7 @@ pub fn calcJacobianDet2D(
     var node_values: [N]F = undefined;
     var deriv_n_xi: [N]F = undefined;
     var deriv_n_eta: [N]F = undefined;
-    shapefun.shapeFunctions(
+    shapefun.shapeFunc(
         N,
         xi,
         eta,
@@ -405,18 +403,18 @@ pub fn calcJacobianDet2D(
 
 pub fn evaluateSolveState(
     comptime N: usize,
-    target_screen_x: F,
-    target_screen_y: F,
-    element_node_x: []const F,
-    element_node_y: []const F,
-    element_node_w: []const F,
+    targ_screen_x: F,
+    targ_screen_y: F,
+    elem_node_x: []const F,
+    elem_node_y: []const F,
+    elem_node_w: []const F,
     xi: F,
     eta: F,
 ) NewtonEvalState {
     var node_values: [N]F = undefined;
     var deriv_n_xi: [N]F = undefined;
     var deriv_n_eta: [N]F = undefined;
-    shapefun.shapeFunctions(
+    shapefun.shapeFunc(
         N,
         xi,
         eta,
@@ -425,62 +423,82 @@ pub fn evaluateSolveState(
         &deriv_n_eta,
     );
 
-    var residual_x: F = 0.0;
-    var residual_y: F = 0.0;
-    var interpolated_w: F = 0.0;
+    var resid_x: F = 0.0;
+    var resid_y: F = 0.0;
+    var interp_w: F = 0.0;
 
     for (0..N) |nn| {
         const term_x = @mulAdd(
             F,
-            target_screen_x,
-            element_node_w[nn],
-            -element_node_x[nn],
+            targ_screen_x,
+            elem_node_w[nn],
+            -elem_node_x[nn],
         );
         const term_y = @mulAdd(
             F,
-            target_screen_y,
-            element_node_w[nn],
-            -element_node_y[nn],
+            targ_screen_y,
+            elem_node_w[nn],
+            -elem_node_y[nn],
         );
 
-        residual_x = @mulAdd(F, node_values[nn], term_x, residual_x);
-        residual_y = @mulAdd(F, node_values[nn], term_y, residual_y);
-        interpolated_w = @mulAdd(
+        resid_x = @mulAdd(F, node_values[nn], term_x, resid_x);
+        resid_y = @mulAdd(F, node_values[nn], term_y, resid_y);
+        interp_w = @mulAdd(
             F,
             node_values[nn],
-            element_node_w[nn],
-            interpolated_w,
+            elem_node_w[nn],
+            interp_w,
         );
     }
 
-    const residual_mag = @sqrt(
-        residual_x * residual_x +
-            residual_y * residual_y,
+    const resid_mag = @sqrt(
+        resid_x * resid_x +
+            resid_y * resid_y,
     );
-    const w_abs = @abs(interpolated_w);
-    const normalized_residual_x = if (w_abs > 0.0)
-        residual_x / interpolated_w
+    const w_abs = @abs(interp_w);
+    const norm_resid_x = if (w_abs > 0.0)
+        resid_x / interp_w
     else
         std.math.nan(F);
-    const normalized_residual_y = if (w_abs > 0.0)
-        residual_y / interpolated_w
+    const norm_resid_y = if (w_abs > 0.0)
+        resid_y / interp_w
     else
         std.math.nan(F);
-    const normalized_residual_mag = if (w_abs > 0.0)
+    const norm_resid_mag = if (w_abs > 0.0)
         @sqrt(
-            normalized_residual_x * normalized_residual_x +
-                normalized_residual_y * normalized_residual_y,
+            norm_resid_x * norm_resid_x +
+                norm_resid_y * norm_resid_y,
         )
     else
         std.math.nan(F);
 
     return .{
-        .residual_x = residual_x,
-        .residual_y = residual_y,
-        .interpolated_w = interpolated_w,
-        .residual_mag = residual_mag,
-        .normalized_residual_x = normalized_residual_x,
-        .normalized_residual_y = normalized_residual_y,
-        .normalized_residual_mag = normalized_residual_mag,
+        .resid_x = resid_x,
+        .resid_y = resid_y,
+        .interp_w = interp_w,
+        .resid_mag = resid_mag,
+        .norm_resid_x = norm_resid_x,
+        .norm_resid_y = norm_resid_y,
+        .norm_resid_mag = norm_resid_mag,
     };
+}
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
+
+test "calcJacDet2D regular elems" {
+    const testing = std.testing;
+    const det_tol: F = if (F == f32) 1e-4 else 1e-9;
+    const quad_det_tol: F = if (F == f32) 1e-4 else 1e-12;
+
+    const tri_x = [_]F{ 0.0, 10.0, 5.0 };
+    const tri_y = [_]F{ 0.0, 0.0, 8.660254037844386 };
+    const tri_det = calcJacDet2D(3, 0.2, 0.3, &tri_x, &tri_y);
+    try testing.expectApproxEqAbs(86.60254037844386, tri_det, det_tol);
+
+    const quad_x = [_]F{ 0.0, 10.0, 10.0, 0.0 };
+    const quad_y = [_]F{ 0.0, 0.0, 10.0, 10.0 };
+    const quad_det = calcJacDet2D(4, 0.0, 0.0, &quad_x, &quad_y);
+    try testing.expectApproxEqAbs(25.0, quad_det, quad_det_tol);
 }

@@ -19,6 +19,7 @@ const iio = @import("riley/zig/imageio.zig");
 const camera_mod = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
+const sceneops = @import("riley/zig/sceneops.zig");
 
 const MeshInput = mo.MeshInput;
 const CameraPrepared = camera_mod.CameraPrepared;
@@ -142,7 +143,7 @@ pub fn main(init: std.process.Init) !void {
             .disp = null,
             .shader = .{ .tex_u8 = .{
                 .uvs = uv_maps[ii].array,
-                .texture = texture,
+                .tex = texture,
                 .sample_config = .{
                     .sample = .cubic_catmull_rom,
                     .mode = .lut_lerp,
@@ -158,7 +159,7 @@ pub fn main(init: std.process.Init) !void {
 
     std.debug.print("Setting up camera...\n", .{});
     const rot = Rotation.init(0.0, std.math.pi, 0.0);
-    const roi_pos = cameraops.roiCentOverMeshes(mesh_inputs);
+    const roi_pos = sceneops.boundsCenterOverMeshes(mesh_inputs);
     const cam_pos = cameraops.posFillFrameFromRotOverMeshes(
         mesh_inputs,
         pixel_num,

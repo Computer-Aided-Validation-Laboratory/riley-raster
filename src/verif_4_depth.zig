@@ -22,6 +22,7 @@ const meshio = @import("riley/zig/meshio.zig");
 const riley = @import("riley/zig/riley.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const NDArray = @import("riley/zig/ndarray.zig").NDArray;
+const sceneops = @import("riley/zig/sceneops.zig");
 
 const CameraPrepared = cammod.CameraPrepared;
 const MeshInput = mo.MeshInput;
@@ -280,7 +281,7 @@ fn runCase(
         .disp = null,
         .shader = .{ .func = .{
             .uvs = null,
-            .coord_mode = .parametric,
+            .coord_mode = .para,
             .builtin = .constant,
             .params = .{
                 .output_scale = 0.0,
@@ -298,7 +299,7 @@ fn runCase(
         .disp = null,
         .shader = .{ .func = .{
             .uvs = null,
-            .coord_mode = .parametric,
+            .coord_mode = .para,
             .builtin = .constant,
             .params = .{
                 .output_scale = 0.0,
@@ -311,7 +312,7 @@ fn runCase(
     };
 
     const temp_meshes = [_]MeshInput{ front_mesh, back_mesh };
-    const roi_pos = cameraops.roiCentOverMeshes(&temp_meshes);
+    const roi_pos = sceneops.boundsCenterOverMeshes(&temp_meshes);
     const cam_pos = cameraops.posFillFrameFromRotOverMeshes(
         &temp_meshes,
         pixel_num,

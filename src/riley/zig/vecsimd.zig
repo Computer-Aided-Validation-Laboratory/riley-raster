@@ -15,9 +15,8 @@ const Mat44T = matstack.Mat44T;
 
 const NDArray = @import("ndarray.zig").NDArray;
 
-
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn Vec3SIMD(comptime N: usize, comptime T: type) type {
@@ -91,7 +90,7 @@ pub fn Vec3SIMD(comptime N: usize, comptime T: type) type {
     };
 }
 
-// NOTE: this is not a general function, it only works with NDArrays representing a
+// NOTE: this is not a general func, it only works with NDArrays representing a
 // mesh with dims=(elems_num,3,nodes_per_elem) where 3 is the coord[x,y,z].
 // N should be nodes_per_elem.
 pub fn loadElemVec3SIMD(
@@ -113,7 +112,7 @@ pub fn loadElemVec3SIMD(
     return Vec3SIMD(N, T).init(x_slice, y_slice, z_slice);
 }
 
-// NOTE: this is not a general function, it only works with NDArrays representing a
+// NOTE: this is not a general func, it only works with NDArrays representing a
 // mesh with dims=(elems_num,3,nodes_per_elem) where 3 is the coord[x,y,z].
 // N should be nodes_per_elem.
 pub fn saveElemVec3SIMD(

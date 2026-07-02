@@ -25,7 +25,7 @@ pub const ReportMode = rastcfg.ReportMode;
 pub const OffLog = struct {};
 
 pub const FrameTimes = struct {
-    setup_frame_buffer: F = 0,
+    setup_frame_buff: F = 0,
     prepare_frame_context: F = 0,
     geometry_prep: F = 0,
     geom_coord_ops: F = 0,
@@ -44,7 +44,7 @@ pub const FrameTimes = struct {
 pub const EndToEndTimes = struct {
     setup_time: F = 0,
     setup_other_time: F = 0,
-    setup_frame_buffer_time: F = 0,
+    setup_frame_buff_time: F = 0,
     dispatch_time: F = 0,
     total_time: F = 0,
 };
@@ -52,17 +52,17 @@ pub const EndToEndTimes = struct {
 pub const BenchLog = struct {
     frame_times: FrameTimes = .{},
     total_nodes: usize = 0,
-    total_elements: usize = 0,
-    visible_elements: usize = 0,
+    total_elems: usize = 0,
+    visible_elems: usize = 0,
     solver_calls: u64 = 0,
     total_solver_iters: u64 = 0,
     solver_diverged: u64 = 0,
     tess_checks: u64 = 0,
     tess_passes: u64 = 0,
-    total_shaded_pixels: u64 = 0,
-    total_depth_tests: u64 = 0,
-    depth_tests_failed: u64 = 0,
-    max_tile_elements: usize = 0,
+    total_shaded_px: u64 = 0,
+    total_depth_test: u64 = 0,
+    depth_tests_fail: u64 = 0,
+    max_tile_elems: usize = 0,
     cam_time_ns: F = 0,
     resolve_time_ns: F = 0,
 };
@@ -80,7 +80,7 @@ pub const FrameReportStorage = union(ReportMode) {
 };
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn deinitFrameReportStorage(
@@ -181,8 +181,8 @@ pub fn publishFrameResultsWithNodesPerElem(
                     .bench_log = .{
                         .frame_times = frame_times,
                         .total_nodes = total_nodes_num,
-                        .total_elements = total_elems_num,
-                        .visible_elements = total_elems_in_image,
+                        .total_elems = total_elems_num,
+                        .visible_elems = total_elems_in_image,
                     },
                 };
             }
@@ -190,8 +190,8 @@ pub fn publishFrameResultsWithNodesPerElem(
         .bench => {
             report_storage.bench.frame_times = frame_times;
             report_storage.bench.total_nodes = total_nodes_num;
-            report_storage.bench.total_elements = total_elems_num;
-            report_storage.bench.visible_elements = total_elems_in_image;
+            report_storage.bench.total_elems = total_elems_num;
+            report_storage.bench.visible_elems = total_elems_in_image;
             if (bench_capture) |capture| {
                 const capture_idx = calcBenchCaptureIdx(
                     cameras_num,
@@ -220,8 +220,8 @@ pub fn publishFrameResultsWithNodesPerElem(
         .full_stats => {
             report_storage.full_stats.bench.frame_times = frame_times;
             report_storage.full_stats.bench.total_nodes = total_nodes_num;
-            report_storage.full_stats.bench.total_elements = total_elems_num;
-            report_storage.full_stats.bench.visible_elements = total_elems_in_image;
+            report_storage.full_stats.bench.total_elems = total_elems_num;
+            report_storage.full_stats.bench.visible_elems = total_elems_in_image;
             if (bench_capture) |capture| {
                 const capture_idx = calcBenchCaptureIdx(
                     cameras_num,
@@ -256,12 +256,12 @@ pub fn reduceBenchLog(dst: *BenchLog, src: *const BenchLog) void {
     dst.solver_diverged += src.solver_diverged;
     dst.tess_checks += src.tess_checks;
     dst.tess_passes += src.tess_passes;
-    dst.total_shaded_pixels += src.total_shaded_pixels;
-    dst.total_depth_tests += src.total_depth_tests;
-    dst.depth_tests_failed += src.depth_tests_failed;
-    dst.max_tile_elements = @max(
-        dst.max_tile_elements,
-        src.max_tile_elements,
+    dst.total_shaded_px += src.total_shaded_px;
+    dst.total_depth_test += src.total_depth_test;
+    dst.depth_tests_fail += src.depth_tests_fail;
+    dst.max_tile_elems = @max(
+        dst.max_tile_elems,
+        src.max_tile_elems,
     );
     dst.cam_time_ns += src.cam_time_ns;
     dst.resolve_time_ns += src.resolve_time_ns;
@@ -269,20 +269,20 @@ pub fn reduceBenchLog(dst: *BenchLog, src: *const BenchLog) void {
 
 pub const FullStatsLog = struct {
     bench: BenchLog = .{},
-    iteration_map: ?ndarray.NDArray(F) = null,
+    iter_map: ?ndarray.NDArray(F) = null,
     xi_map: ?ndarray.NDArray(F) = null,
     eta_map: ?ndarray.NDArray(F) = null,
-    converged_map: ?ndarray.NDArray(F) = null,
+    conv_map: ?ndarray.NDArray(F) = null,
     solver_status_map: ?ndarray.NDArray(F) = null,
-    pre_domain_converged_map: ?ndarray.NDArray(F) = null,
-    hit_iter_limit_map: ?ndarray.NDArray(F) = null,
-    jacobian_det_map: ?ndarray.NDArray(F) = null,
-    residual_mag_map: ?ndarray.NDArray(F) = null,
-    residual_x_map: ?ndarray.NDArray(F) = null,
-    residual_y_map: ?ndarray.NDArray(F) = null,
-    interpolated_w_map: ?ndarray.NDArray(F) = null,
-    normalized_residual_mag_map: ?ndarray.NDArray(F) = null,
-    domain_violation_map: ?ndarray.NDArray(F) = null,
+    pre_dom_conv_map: ?ndarray.NDArray(F) = null,
+    hit_iter_lim_map: ?ndarray.NDArray(F) = null,
+    jac_det_map: ?ndarray.NDArray(F) = null,
+    resid_mag_map: ?ndarray.NDArray(F) = null,
+    resid_x_map: ?ndarray.NDArray(F) = null,
+    resid_y_map: ?ndarray.NDArray(F) = null,
+    interp_w_map: ?ndarray.NDArray(F) = null,
+    norm_resid_mag_map: ?ndarray.NDArray(F) = null,
+    dom_violation_map: ?ndarray.NDArray(F) = null,
     pixel_occupancy_map: ?ndarray.NDArray(F) = null,
     depth_map: ?ndarray.NDArray(F) = null,
     normals_map: ?ndarray.NDArray(F) = null,
@@ -292,20 +292,20 @@ pub const FullStatsLog = struct {
     tile_occupancy_map: ?ndarray.NDArray(F) = null,
 
     pub fn deinit(self: *FullStatsLog, allocator: std.mem.Allocator) void {
-        if (self.iteration_map) |*imap| imap.deinit(allocator);
+        if (self.iter_map) |*imap| imap.deinit(allocator);
         if (self.xi_map) |*xmap| xmap.deinit(allocator);
         if (self.eta_map) |*emap| emap.deinit(allocator);
-        if (self.converged_map) |*cmap| cmap.deinit(allocator);
+        if (self.conv_map) |*cmap| cmap.deinit(allocator);
         if (self.solver_status_map) |*smap| smap.deinit(allocator);
-        if (self.pre_domain_converged_map) |*pmap| pmap.deinit(allocator);
-        if (self.hit_iter_limit_map) |*hmap| hmap.deinit(allocator);
-        if (self.jacobian_det_map) |*jmap| jmap.deinit(allocator);
-        if (self.residual_mag_map) |*rmap| rmap.deinit(allocator);
-        if (self.residual_x_map) |*rmap| rmap.deinit(allocator);
-        if (self.residual_y_map) |*rmap| rmap.deinit(allocator);
-        if (self.interpolated_w_map) |*wmap| wmap.deinit(allocator);
-        if (self.normalized_residual_mag_map) |*nmap| nmap.deinit(allocator);
-        if (self.domain_violation_map) |*dmap| dmap.deinit(allocator);
+        if (self.pre_dom_conv_map) |*pmap| pmap.deinit(allocator);
+        if (self.hit_iter_lim_map) |*hmap| hmap.deinit(allocator);
+        if (self.jac_det_map) |*jmap| jmap.deinit(allocator);
+        if (self.resid_mag_map) |*rmap| rmap.deinit(allocator);
+        if (self.resid_x_map) |*rmap| rmap.deinit(allocator);
+        if (self.resid_y_map) |*rmap| rmap.deinit(allocator);
+        if (self.interp_w_map) |*wmap| wmap.deinit(allocator);
+        if (self.norm_resid_mag_map) |*nmap| nmap.deinit(allocator);
+        if (self.dom_violation_map) |*dmap| dmap.deinit(allocator);
         if (self.pixel_occupancy_map) |*pomap| pomap.deinit(allocator);
         if (self.depth_map) |*dmap| dmap.deinit(allocator);
         if (self.normals_map) |*nmap| nmap.deinit(allocator);
@@ -358,8 +358,8 @@ pub const FullStatsLog = struct {
         frame_idx: usize,
         camera: *const cam.CameraPrepared,
     ) !void {
-        const iteration_map = self.iteration_map orelse return;
-        const converged_map = self.converged_map orelse return;
+        const iter_map = self.iter_map orelse return;
+        const conv_map = self.conv_map orelse return;
         const earlyout_map = self.earlyout_map orelse return;
 
         const sub_samp: usize = @intCast(camera.sub_sample);
@@ -380,48 +380,48 @@ pub const FullStatsLog = struct {
         var file_writer = csv_file.writer(io, &write_buf);
         const writer = &file_writer.interface;
 
-        try writer.writeAll("subpx_x,subpx_y,iters,converged,solver_status,");
-        try writer.writeAll("pre_domain_converged,hit_iter_limit,residual_x,residual_y,");
-        try writer.writeAll("interpolated_w,residual_mag,normalized_residual_mag,");
-        try writer.writeAll("jacobian_det,xi,eta,domain_violation,earlyout,inv_z\n");
+        try writer.writeAll("subpx_x,subpx_y,iters,conv,solver_status,");
+        try writer.writeAll("pre_dom_conv,hit_iter_lim,resid_x,resid_y,");
+        try writer.writeAll("interp_w,resid_mag,norm_resid_mag,");
+        try writer.writeAll("jac_det,xi,eta,dom_violation,earlyout,inv_z\n");
 
-        const iter_row_stride = iteration_map.strides[0];
+        const iter_row_stride = iter_map.strides[0];
 
         for (0..rows_num) |yy| {
             for (0..cols_num) |xx| {
                 const idx = yy * iter_row_stride + xx;
-                const iters = iteration_map.slice[idx];
-                const converged = converged_map.slice[idx];
+                const iters = iter_map.slice[idx];
+                const conv = conv_map.slice[idx];
                 const earlyout = earlyout_map.slice[idx];
 
-                if (iters <= 0.0 and earlyout <= 0.0 and converged <= 0.0) {
+                if (iters <= 0.0 and earlyout <= 0.0 and conv <= 0.0) {
                     continue;
                 }
 
-                const pre_domain_converged =
-                    if (self.pre_domain_converged_map) |*m| m.slice[idx] else 0.0;
+                const pre_dom_conv =
+                    if (self.pre_dom_conv_map) |*m| m.slice[idx] else 0.0;
                 const solver_status =
                     if (self.solver_status_map) |*m| m.slice[idx] else std.math.nan(F);
-                const hit_iter_limit =
-                    if (self.hit_iter_limit_map) |*m| m.slice[idx] else 0.0;
-                const residual_mag =
-                    if (self.residual_mag_map) |*m| m.slice[idx] else std.math.nan(F);
-                const residual_x =
-                    if (self.residual_x_map) |*m| m.slice[idx] else std.math.nan(F);
-                const residual_y =
-                    if (self.residual_y_map) |*m| m.slice[idx] else std.math.nan(F);
-                const interpolated_w =
-                    if (self.interpolated_w_map) |*m| m.slice[idx] else std.math.nan(F);
-                const normalized_residual_mag =
-                    if (self.normalized_residual_mag_map) |*m| m.slice[idx] else std.math.nan(F);
-                const jacobian_det =
-                    if (self.jacobian_det_map) |*m| m.slice[idx] else std.math.nan(F);
+                const hit_iter_lim =
+                    if (self.hit_iter_lim_map) |*m| m.slice[idx] else 0.0;
+                const resid_mag =
+                    if (self.resid_mag_map) |*m| m.slice[idx] else std.math.nan(F);
+                const resid_x =
+                    if (self.resid_x_map) |*m| m.slice[idx] else std.math.nan(F);
+                const resid_y =
+                    if (self.resid_y_map) |*m| m.slice[idx] else std.math.nan(F);
+                const interp_w =
+                    if (self.interp_w_map) |*m| m.slice[idx] else std.math.nan(F);
+                const norm_resid_mag =
+                    if (self.norm_resid_mag_map) |*m| m.slice[idx] else std.math.nan(F);
+                const jac_det =
+                    if (self.jac_det_map) |*m| m.slice[idx] else std.math.nan(F);
                 const xi =
                     if (self.xi_map) |*m| m.slice[idx] else std.math.nan(F);
                 const eta =
                     if (self.eta_map) |*m| m.slice[idx] else std.math.nan(F);
-                const domain_violation =
-                    if (self.domain_violation_map) |*m| m.slice[idx] else std.math.nan(F);
+                const dom_violation =
+                    if (self.dom_violation_map) |*m| m.slice[idx] else std.math.nan(F);
                 const inv_z =
                     if (self.depth_map) |*m| m.slice[idx] else std.math.nan(F);
 
@@ -442,19 +442,19 @@ pub const FullStatsLog = struct {
                         xx,
                         yy,
                         iters,
-                        converged,
+                        conv,
                         status_label,
-                        pre_domain_converged,
-                        hit_iter_limit,
-                        residual_x,
-                        residual_y,
-                        interpolated_w,
-                        residual_mag,
-                        normalized_residual_mag,
-                        jacobian_det,
+                        pre_dom_conv,
+                        hit_iter_lim,
+                        resid_x,
+                        resid_y,
+                        interp_w,
+                        resid_mag,
+                        norm_resid_mag,
+                        jac_det,
                         xi,
                         eta,
-                        domain_violation,
+                        dom_violation,
                         earlyout,
                         inv_z,
                     },
@@ -503,7 +503,7 @@ pub const FullStatsLog = struct {
             );
         }
 
-        if (self.iteration_map) |*m| {
+        if (self.iter_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
             const mat = matslice.MatSlice(F).init(
                 m.slice,
@@ -554,7 +554,7 @@ pub const FullStatsLog = struct {
             }
         }
 
-        if (self.converged_map) |*m| {
+        if (self.conv_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
             const mat = matslice.MatSlice(F).init(
                 m.slice,
@@ -563,7 +563,7 @@ pub const FullStatsLog = struct {
             );
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "diag_cam{d}_frame{d}_converged",
+                "diag_cam{d}_frame{d}_conv",
                 .{ camera_idx, frame_idx },
             );
             for (opts.formats) |opt| {
@@ -571,7 +571,7 @@ pub const FullStatsLog = struct {
             }
         }
 
-        if (self.pre_domain_converged_map) |*m| {
+        if (self.pre_dom_conv_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
             const mat = matslice.MatSlice(F).init(
                 m.slice,
@@ -580,7 +580,7 @@ pub const FullStatsLog = struct {
             );
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "diag_cam{d}_frame{d}_pre_domain_converged",
+                "diag_cam{d}_frame{d}_pre_dom_conv",
                 .{ camera_idx, frame_idx },
             );
             for (opts.formats) |opt| {
@@ -588,7 +588,7 @@ pub const FullStatsLog = struct {
             }
         }
 
-        if (self.hit_iter_limit_map) |*m| {
+        if (self.hit_iter_lim_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
             const mat = matslice.MatSlice(F).init(
                 m.slice,
@@ -597,7 +597,7 @@ pub const FullStatsLog = struct {
             );
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "diag_cam{d}_frame{d}_hit_iter_limit",
+                "diag_cam{d}_frame{d}_hit_iter_lim",
                 .{ camera_idx, frame_idx },
             );
             for (opts.formats) |opt| {
@@ -605,7 +605,7 @@ pub const FullStatsLog = struct {
             }
         }
 
-        if (self.jacobian_det_map) |*m| {
+        if (self.jac_det_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
             const mat = matslice.MatSlice(F).init(
                 m.slice,
@@ -622,7 +622,7 @@ pub const FullStatsLog = struct {
             }
         }
 
-        if (self.residual_mag_map) |*m| {
+        if (self.resid_mag_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
             const mat = matslice.MatSlice(F).init(
                 m.slice,
@@ -631,7 +631,7 @@ pub const FullStatsLog = struct {
             );
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "diag_cam{d}_frame{d}_residual_mag",
+                "diag_cam{d}_frame{d}_resid_mag",
                 .{ camera_idx, frame_idx },
             );
             for (opts.formats) |opt| {
@@ -639,7 +639,7 @@ pub const FullStatsLog = struct {
             }
         }
 
-        if (self.interpolated_w_map) |*m| {
+        if (self.interp_w_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
             const mat = matslice.MatSlice(F).init(
                 m.slice,
@@ -656,7 +656,7 @@ pub const FullStatsLog = struct {
             }
         }
 
-        if (self.normalized_residual_mag_map) |*m| {
+        if (self.norm_resid_mag_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
             const mat = matslice.MatSlice(F).init(
                 m.slice,
@@ -665,7 +665,7 @@ pub const FullStatsLog = struct {
             );
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "diag_cam{d}_frame{d}_normalized_residual_mag",
+                "diag_cam{d}_frame{d}_norm_resid_mag",
                 .{ camera_idx, frame_idx },
             );
             for (opts.formats) |opt| {
@@ -673,7 +673,7 @@ pub const FullStatsLog = struct {
             }
         }
 
-        if (self.domain_violation_map) |*m| {
+        if (self.dom_violation_map) |*m| {
             const sub_samp: usize = @intCast(camera.sub_sample);
             const mat = matslice.MatSlice(F).init(
                 m.slice,
@@ -682,7 +682,7 @@ pub const FullStatsLog = struct {
             );
             const name = try std.fmt.bufPrint(
                 name_buff[0..],
-                "diag_cam{d}_frame{d}_domain_violation",
+                "diag_cam{d}_frame{d}_dom_violation",
                 .{ camera_idx, frame_idx },
             );
             for (opts.formats) |opt| {
@@ -815,8 +815,8 @@ pub const FullStatsLog = struct {
         camera: *const cam.CameraPrepared,
         nodes_per_elem: F,
     ) !void {
-        var buffer: [4096]u8 = undefined;
-        var stderr_writer = std.Io.File.stderr().writer(io, &buffer);
+        var buff: [4096]u8 = undefined;
+        var stderr_writer = std.Io.File.stderr().writer(io, &buff);
         const writer = &stderr_writer.interface;
         try self.writeReport(writer, frame_idx, camera, nodes_per_elem);
     }
@@ -844,28 +844,28 @@ pub const FullStatsLog = struct {
         try writer.print("{s}\n", .{border});
 
         try writer.print("--- GEOMETRY PIPELINE ---\n", .{});
-        try writer.print("Total Elements in Mesh  = {d}\n", .{self.bench.total_elements});
+        try writer.print("Total Elems in Mesh  = {d}\n", .{self.bench.total_elems});
         try writer.print(
-            "Elements after Crop     = {d}\n",
-            .{self.bench.visible_elements},
+            "Elems after Crop     = {d}\n",
+            .{self.bench.visible_elems},
         );
-        const cropped = self.bench.total_elements - self.bench.visible_elements;
-        const crop_pct = if (self.bench.total_elements > 0)
+        const cropped = self.bench.total_elems - self.bench.visible_elems;
+        const crop_pct = if (self.bench.total_elems > 0)
             @as(F, @floatFromInt(cropped)) * 100.0 /
-                @as(F, @floatFromInt(self.bench.total_elements))
+                @as(F, @floatFromInt(self.bench.total_elems))
         else
             0.0;
         try writer.print(
-            "Elements Cropped        = {d} ({d:.2}%)\n\n",
+            "Elems Cropped        = {d} ({d:.2}%)\n\n",
             .{ cropped, crop_pct },
         );
 
         const solver_calls_f = @as(F, @floatFromInt(self.bench.solver_calls));
         const solver_diverged_f = @as(F, @floatFromInt(self.bench.solver_diverged));
-        const solver_converged = self.bench.solver_calls - self.bench.solver_diverged;
-        const solver_converged_f = @as(F, @floatFromInt(solver_converged));
-        const solver_converged_pct = if (self.bench.solver_calls > 0)
-            solver_converged_f * 100.0 / solver_calls_f
+        const solver_conv = self.bench.solver_calls - self.bench.solver_diverged;
+        const solver_conv_f = @as(F, @floatFromInt(solver_conv));
+        const solver_conv_pct = if (self.bench.solver_calls > 0)
+            solver_conv_f * 100.0 / solver_calls_f
         else
             0.0;
         const solver_diverged_pct = if (self.bench.solver_calls > 0)
@@ -901,7 +901,7 @@ pub const FullStatsLog = struct {
         try writer.print("--- SOLVER & TESSELLATION STATS ---\n", .{});
         try writer.print("Total Solver Calls      = {d}\n", .{self.bench.solver_calls});
         try writer.print("Avg Iters / Solver Call = {d:.2}\n", .{avg_iters_per_call});
-        try writer.print("Converged %             = {d:.2}%\n", .{solver_converged_pct});
+        try writer.print("Conv %             = {d:.2}%\n", .{solver_conv_pct});
         try writer.print("Diverged/Failed %       = {d:.2}%\n", .{solver_diverged_pct});
         try writer.print(
             "Solver Diverged/Failed  = {d}\n",
@@ -913,7 +913,7 @@ pub const FullStatsLog = struct {
         try writer.print("Tessellation Pass %     = {d:.2}%\n", .{tess_pass_pct});
         try writer.print("{s}", .{line});
 
-        if (self.iteration_map) |*imap| {
+        if (self.iter_map) |*imap| {
             var gpa: std.heap.DebugAllocator(.{}) = .init;
             defer _ = gpa.deinit();
             const allocator = gpa.allocator();
@@ -926,40 +926,40 @@ pub const FullStatsLog = struct {
             try writer.print("Upper Quartile (Q3)     = {d:.2}\n", .{stats.q3});
             try writer.print("Median Abs. Dev (MAD)   = {d:.2}\n\n", .{stats.mad});
         } else {
-            try writer.print("No iteration map data available.\n\n", .{});
+            try writer.print("No iter map data available.\n\n", .{});
         }
 
         try writer.print("--- TILING & RASTERIZATION ---\n", .{});
         try writer.print(
             "Total Shaded Pixels     = {d}\n",
-            .{self.bench.total_shaded_pixels},
+            .{self.bench.total_shaded_px},
         );
         try writer.print(
-            "Max Elements in a Tile  = {d}\n",
-            .{self.bench.max_tile_elements},
+            "Max Elems in a Tile  = {d}\n",
+            .{self.bench.max_tile_elems},
         );
         try writer.print(
             "Total Depth Tests       = {d}\n",
-            .{self.bench.total_depth_tests},
+            .{self.bench.total_depth_test},
         );
-        const d_fail_pct = if (self.bench.total_depth_tests > 0)
-            @as(F, @floatFromInt(self.bench.depth_tests_failed)) * 100.0 /
-                @as(F, @floatFromInt(self.bench.total_depth_tests))
+        const d_fail_pct = if (self.bench.total_depth_test > 0)
+            @as(F, @floatFromInt(self.bench.depth_tests_fail)) * 100.0 /
+                @as(F, @floatFromInt(self.bench.total_depth_test))
         else
             0.0;
         try writer.print("Depth Tests Failed      = {d} ({d:.2}%)\n", .{
-            self.bench.depth_tests_failed,
+            self.bench.depth_tests_fail,
             d_fail_pct,
         });
         try writer.print("{s}", .{line});
 
-        const vis_elems_f = @as(F, @floatFromInt(self.bench.visible_elements));
-        const total_elems_f = @as(F, @floatFromInt(self.bench.total_elements));
-        const vis_pct = if (self.bench.total_elements > 0)
+        const vis_elems_f = @as(F, @floatFromInt(self.bench.visible_elems));
+        const total_elems_f = @as(F, @floatFromInt(self.bench.total_elems));
+        const vis_pct = if (self.bench.total_elems > 0)
             (vis_elems_f * 100.0 / total_elems_f)
         else
             0;
-        const shaded_subpx = @as(F, @floatFromInt(self.bench.total_shaded_pixels));
+        const shaded_subpx = @as(F, @floatFromInt(self.bench.total_shaded_px));
         const shaded_pct = if (total_subpx > 0)
             (shaded_subpx * 100.0 / total_subpx)
         else
@@ -967,9 +967,9 @@ pub const FullStatsLog = struct {
 
         try writer.print(
             "Visible Elems           = {d}\n",
-            .{self.bench.visible_elements},
+            .{self.bench.visible_elems},
         );
-        try writer.print("Total Elems             = {d}\n", .{self.bench.total_elements});
+        try writer.print("Total Elems             = {d}\n", .{self.bench.total_elems});
         try writer.print("Visible %               = {d:.2}%\n", .{vis_pct});
         try writer.print("Total SubPx             = {d:.0}\n", .{total_subpx});
         try writer.print("Shaded SubPx            = {d:.0}\n", .{shaded_subpx});
@@ -977,8 +977,8 @@ pub const FullStatsLog = struct {
 
         try writer.print("--- PIPELINE TIMINGS (User Summary) ---\n", .{});
         const conv = 1.0 / 1e6;
-        try writer.print("Setup Frame Buffer      = {d:.6} ms\n", .{
-            self.bench.frame_times.setup_frame_buffer * conv,
+        try writer.print("Setup Frame Buff      = {d:.6} ms\n", .{
+            self.bench.frame_times.setup_frame_buff * conv,
         });
         try writer.print("Prep Frame              = {d:.6} ms\n", .{
             self.bench.frame_times.prepare_frame_context * conv,
@@ -1031,7 +1031,7 @@ pub const FullStatsLog = struct {
         try writer.print("{s}", .{line});
 
         const melems_sec = if (geom_tiling_sec > 0)
-            (@as(F, @floatFromInt(self.bench.total_elements)) / (geom_tiling_sec * 1e6))
+            (@as(F, @floatFromInt(self.bench.total_elems)) / (geom_tiling_sec * 1e6))
         else
             0;
         const mpx_sec = if (raster_sec > 0) (total_px / (raster_sec * 1e6)) else 0;
@@ -1086,12 +1086,12 @@ pub fn initFullStatsLog(
     const sub_samp: usize = @intCast(sub_sample);
     const sub_pixels_num = [_]usize{ pixels_num[1] * sub_samp, pixels_num[0] * sub_samp };
 
-    if (opts.save_iteration_map) {
-        self.iteration_map = try ndarray.NDArray(F).initFlat(
+    if (opts.save_iter_map) {
+        self.iter_map = try ndarray.NDArray(F).initFlat(
             allocator,
             &sub_pixels_num,
         );
-        @memset(self.iteration_map.?.slice, 0);
+        @memset(self.iter_map.?.slice, 0);
     }
 
     if (opts.save_xi_map) {
@@ -1104,12 +1104,12 @@ pub fn initFullStatsLog(
         @memset(self.eta_map.?.slice, std.math.nan(F));
     }
 
-    if (opts.save_converged_map) {
-        self.converged_map = try ndarray.NDArray(F).initFlat(
+    if (opts.save_conv_map) {
+        self.conv_map = try ndarray.NDArray(F).initFlat(
             allocator,
             &sub_pixels_num,
         );
-        @memset(self.converged_map.?.slice, 0);
+        @memset(self.conv_map.?.slice, 0);
     }
 
     self.solver_status_map = try ndarray.NDArray(F).initFlat(
@@ -1118,64 +1118,64 @@ pub fn initFullStatsLog(
     );
     @memset(
         self.solver_status_map.?.slice,
-        @floatFromInt(@intFromEnum(newton.NewtonStatus.failed_iteration_limit)),
+        @floatFromInt(@intFromEnum(newton.NewtonStatus.fail_iter_lim)),
     );
 
-    self.pre_domain_converged_map = try ndarray.NDArray(F).initFlat(
+    self.pre_dom_conv_map = try ndarray.NDArray(F).initFlat(
         allocator,
         &sub_pixels_num,
     );
-    @memset(self.pre_domain_converged_map.?.slice, 0);
+    @memset(self.pre_dom_conv_map.?.slice, 0);
 
-    self.hit_iter_limit_map = try ndarray.NDArray(F).initFlat(
+    self.hit_iter_lim_map = try ndarray.NDArray(F).initFlat(
         allocator,
         &sub_pixels_num,
     );
-    @memset(self.hit_iter_limit_map.?.slice, 0);
+    @memset(self.hit_iter_lim_map.?.slice, 0);
 
-    if (opts.save_jacobian_det_map) {
-        self.jacobian_det_map = try ndarray.NDArray(F).initFlat(
+    if (opts.save_jac_det_map) {
+        self.jac_det_map = try ndarray.NDArray(F).initFlat(
             allocator,
             &sub_pixels_num,
         );
-        @memset(self.jacobian_det_map.?.slice, std.math.nan(F));
+        @memset(self.jac_det_map.?.slice, std.math.nan(F));
     }
 
-    self.residual_mag_map = try ndarray.NDArray(F).initFlat(
+    self.resid_mag_map = try ndarray.NDArray(F).initFlat(
         allocator,
         &sub_pixels_num,
     );
-    @memset(self.residual_mag_map.?.slice, std.math.nan(F));
+    @memset(self.resid_mag_map.?.slice, std.math.nan(F));
 
-    self.residual_x_map = try ndarray.NDArray(F).initFlat(
+    self.resid_x_map = try ndarray.NDArray(F).initFlat(
         allocator,
         &sub_pixels_num,
     );
-    @memset(self.residual_x_map.?.slice, std.math.nan(F));
+    @memset(self.resid_x_map.?.slice, std.math.nan(F));
 
-    self.residual_y_map = try ndarray.NDArray(F).initFlat(
+    self.resid_y_map = try ndarray.NDArray(F).initFlat(
         allocator,
         &sub_pixels_num,
     );
-    @memset(self.residual_y_map.?.slice, std.math.nan(F));
+    @memset(self.resid_y_map.?.slice, std.math.nan(F));
 
-    self.interpolated_w_map = try ndarray.NDArray(F).initFlat(
+    self.interp_w_map = try ndarray.NDArray(F).initFlat(
         allocator,
         &sub_pixels_num,
     );
-    @memset(self.interpolated_w_map.?.slice, std.math.nan(F));
+    @memset(self.interp_w_map.?.slice, std.math.nan(F));
 
-    self.normalized_residual_mag_map = try ndarray.NDArray(F).initFlat(
+    self.norm_resid_mag_map = try ndarray.NDArray(F).initFlat(
         allocator,
         &sub_pixels_num,
     );
-    @memset(self.normalized_residual_mag_map.?.slice, std.math.nan(F));
+    @memset(self.norm_resid_mag_map.?.slice, std.math.nan(F));
 
-    self.domain_violation_map = try ndarray.NDArray(F).initFlat(
+    self.dom_violation_map = try ndarray.NDArray(F).initFlat(
         allocator,
         &sub_pixels_num,
     );
-    @memset(self.domain_violation_map.?.slice, std.math.nan(F));
+    @memset(self.dom_violation_map.?.slice, std.math.nan(F));
 
     if (opts.save_pixel_occupancy_map) {
         self.pixel_occupancy_map = try ndarray.NDArray(F).initFlat(
@@ -1302,8 +1302,8 @@ pub fn ReportContext(comptime mode: ReportMode) type {
 
         pub inline fn recordGeometry(self: @This(), total: usize, visible: usize) void {
             if (self.bench()) |bench_log| {
-                bench_log.total_elements = total;
-                bench_log.visible_elements = visible;
+                bench_log.total_elems = total;
+                bench_log.visible_elems = visible;
             }
         }
 
@@ -1327,9 +1327,9 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             }
 
             if (self.bench()) |bench_log| {
-                bench_log.total_shaded_pixels += shaded_px;
-                if (elem_count > bench_log.max_tile_elements) {
-                    bench_log.max_tile_elements = elem_count;
+                bench_log.total_shaded_px += shaded_px;
+                if (elem_count > bench_log.max_tile_elems) {
+                    bench_log.max_tile_elems = elem_count;
                 }
             }
         }
@@ -1376,7 +1376,7 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             iters: u8,
         ) void {
             if (mode == .full_stats) {
-                if (self.log.iteration_map) |*imap| {
+                if (self.log.iter_map) |*imap| {
                     const row_stride = imap.strides[0];
                     imap.slice[global_suby * row_stride + global_subx] =
                         @floatFromInt(iters);
@@ -1412,17 +1412,17 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             }
         }
 
-        pub inline fn recordPixelConverged(
+        pub inline fn recordPixelConv(
             self: @This(),
             global_subx: usize,
             global_suby: usize,
-            converged: bool,
+            conv: bool,
         ) void {
             if (mode == .full_stats) {
-                if (self.log.converged_map) |*cmap| {
+                if (self.log.conv_map) |*cmap| {
                     const row_stride = cmap.strides[0];
                     cmap.slice[global_suby * row_stride + global_subx] =
-                        if (converged) 1.0 else 0.0;
+                        if (conv) 1.0 else 0.0;
                 }
             }
         }
@@ -1442,17 +1442,17 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             }
         }
 
-        pub inline fn recordPixelPreDomainConverged(
+        pub inline fn recordPixelPreDomConv(
             self: @This(),
             global_subx: usize,
             global_suby: usize,
-            converged: bool,
+            conv: bool,
         ) void {
             if (mode == .full_stats) {
-                if (self.log.pre_domain_converged_map) |*pmap| {
+                if (self.log.pre_dom_conv_map) |*pmap| {
                     const row_stride = pmap.strides[0];
                     pmap.slice[global_suby * row_stride + global_subx] =
-                        if (converged) 1.0 else 0.0;
+                        if (conv) 1.0 else 0.0;
                 }
             }
         }
@@ -1464,7 +1464,7 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             hit_limit: bool,
         ) void {
             if (mode == .full_stats) {
-                if (self.log.hit_iter_limit_map) |*hmap| {
+                if (self.log.hit_iter_lim_map) |*hmap| {
                     const row_stride = hmap.strides[0];
                     hmap.slice[global_suby * row_stride + global_subx] =
                         if (hit_limit) 1.0 else 0.0;
@@ -1472,17 +1472,17 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             }
         }
 
-        pub inline fn recordPixelJacobianDet(
+        pub inline fn recordPixelJacDet(
             self: @This(),
             global_subx: usize,
             global_suby: usize,
-            jacobian_det: F,
+            jac_det: F,
         ) void {
             if (mode == .full_stats) {
-                if (self.log.jacobian_det_map) |*jmap| {
+                if (self.log.jac_det_map) |*jmap| {
                     const row_stride = jmap.strides[0];
                     jmap.slice[global_suby * row_stride + global_subx] =
-                        jacobian_det;
+                        jac_det;
                 }
             }
         }
@@ -1491,13 +1491,13 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             self: @This(),
             global_subx: usize,
             global_suby: usize,
-            residual_mag: F,
+            resid_mag: F,
         ) void {
             if (mode == .full_stats) {
-                if (self.log.residual_mag_map) |*rmap| {
+                if (self.log.resid_mag_map) |*rmap| {
                     const row_stride = rmap.strides[0];
                     rmap.slice[global_suby * row_stride + global_subx] =
-                        residual_mag;
+                        resid_mag;
                 }
             }
         }
@@ -1506,13 +1506,13 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             self: @This(),
             global_subx: usize,
             global_suby: usize,
-            residual_x: F,
+            resid_x: F,
         ) void {
             if (mode == .full_stats) {
-                if (self.log.residual_x_map) |*rmap| {
+                if (self.log.resid_x_map) |*rmap| {
                     const row_stride = rmap.strides[0];
                     rmap.slice[global_suby * row_stride + global_subx] =
-                        residual_x;
+                        resid_x;
                 }
             }
         }
@@ -1521,13 +1521,13 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             self: @This(),
             global_subx: usize,
             global_suby: usize,
-            residual_y: F,
+            resid_y: F,
         ) void {
             if (mode == .full_stats) {
-                if (self.log.residual_y_map) |*rmap| {
+                if (self.log.resid_y_map) |*rmap| {
                     const row_stride = rmap.strides[0];
                     rmap.slice[global_suby * row_stride + global_subx] =
-                        residual_y;
+                        resid_y;
                 }
             }
         }
@@ -1536,13 +1536,13 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             self: @This(),
             global_subx: usize,
             global_suby: usize,
-            interpolated_w: F,
+            interp_w: F,
         ) void {
             if (mode == .full_stats) {
-                if (self.log.interpolated_w_map) |*wmap| {
+                if (self.log.interp_w_map) |*wmap| {
                     const row_stride = wmap.strides[0];
                     wmap.slice[global_suby * row_stride + global_subx] =
-                        interpolated_w;
+                        interp_w;
                 }
             }
         }
@@ -1551,28 +1551,28 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             self: @This(),
             global_subx: usize,
             global_suby: usize,
-            normalized_residual_mag: F,
+            norm_resid_mag: F,
         ) void {
             if (mode == .full_stats) {
-                if (self.log.normalized_residual_mag_map) |*nmap| {
+                if (self.log.norm_resid_mag_map) |*nmap| {
                     const row_stride = nmap.strides[0];
                     nmap.slice[global_suby * row_stride + global_subx] =
-                        normalized_residual_mag;
+                        norm_resid_mag;
                 }
             }
         }
 
-        pub inline fn recordPixelDomainViolation(
+        pub inline fn recordPixelDomViolation(
             self: @This(),
             global_subx: usize,
             global_suby: usize,
-            domain_violation: F,
+            dom_violation: F,
         ) void {
             if (mode == .full_stats) {
-                if (self.log.domain_violation_map) |*dmap| {
+                if (self.log.dom_violation_map) |*dmap| {
                     const row_stride = dmap.strides[0];
                     dmap.slice[global_suby * row_stride + global_subx] =
-                        domain_violation;
+                        dom_violation;
                 }
             }
         }
@@ -1640,11 +1640,11 @@ pub fn ReportContext(comptime mode: ReportMode) type {
             }
         }
 
-        pub inline fn recordDepthTest(self: @This(), failed: bool) void {
+        pub inline fn recordDepthTest(self: @This(), fail: bool) void {
             if (self.bench()) |bench_log| {
-                bench_log.total_depth_tests += 1;
-                if (failed) {
-                    bench_log.depth_tests_failed += 1;
+                bench_log.total_depth_test += 1;
+                if (fail) {
+                    bench_log.depth_tests_fail += 1;
                 }
             }
         }
@@ -1730,8 +1730,8 @@ pub fn standardReport(
     nodes_per_elem: F,
     bench_log: *const BenchLog,
 ) !void {
-    var buffer: [4096]u8 = undefined;
-    var stdout_writer = std.Io.File.stdout().writer(io, &buffer);
+    var buff: [4096]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(io, &buff);
     const writer = &stdout_writer.interface;
 
     const px_x = @as(F, @floatFromInt(camera.pixels_num[0]));
@@ -1773,7 +1773,7 @@ pub fn standardReport(
         print_break,
     });
 
-    const shaded_subpx = @as(F, @floatFromInt(bench_log.total_shaded_pixels));
+    const shaded_subpx = @as(F, @floatFromInt(bench_log.total_shaded_px));
     const shaded_pct = if (total_subpx > 0)
         (shaded_subpx * 100.0 / total_subpx)
     else
@@ -1794,8 +1794,8 @@ pub fn standardReport(
         actual_tile_size,
         actual_tile_size,
     });
-    try writer.print("Setup Frame Buffer      = {d:.6} ms\n", .{
-        frame_times.setup_frame_buffer * conv_units,
+    try writer.print("Setup Frame Buff      = {d:.6} ms\n", .{
+        frame_times.setup_frame_buff * conv_units,
     });
     try writer.print("Prep Frame              = {d:.6} ms\n", .{
         frame_times.prepare_frame_context * conv_units,
@@ -1884,8 +1884,8 @@ pub fn printRenderSummary(
     const total_render_sec = end_to_end_times.total_time / 1e9;
     const setup_ms = end_to_end_times.setup_time / 1e6;
     // const setup_other_ms = end_to_end_times.setup_other_time / 1e6;
-    // const setup_frame_buffer_ms =
-    //     end_to_end_times.setup_frame_buffer_time / 1e6;
+    // const setup_frame_buff_ms =
+    //     end_to_end_times.setup_frame_buff_time / 1e6;
     const dispatch_ms = end_to_end_times.dispatch_time / 1e6;
     const avg_frame_ms = total_render_ms / @as(
         F,
@@ -1907,8 +1907,8 @@ pub fn printRenderSummary(
     else
         0.0;
 
-    var buffer: [1024]u8 = undefined;
-    var stdout_writer = std.Io.File.stdout().writer(io, &buffer);
+    var buff: [1024]u8 = undefined;
+    var stdout_writer = std.Io.File.stdout().writer(io, &buff);
     const writer = &stdout_writer.interface;
     const print_break = [_]u8{'='} ** 80;
 
@@ -1924,8 +1924,8 @@ pub fn printRenderSummary(
     // try writer.print("Setup other             = {d:.3} ms\n", .{
     //     setup_other_ms,
     // });
-    // try writer.print("Setup frame buffer      = {d:.3} ms\n", .{
-    //     setup_frame_buffer_ms,
+    // try writer.print("Setup frame buff      = {d:.3} ms\n", .{
+    //     setup_frame_buff_ms,
     // });
     try writer.print("Dispatch Time           = {d:.3} ms\n", .{dispatch_ms});
     try writer.print("Total Render Time       = {d:.3} ms\n", .{total_render_ms});

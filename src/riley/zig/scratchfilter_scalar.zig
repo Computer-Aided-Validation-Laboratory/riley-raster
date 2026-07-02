@@ -29,7 +29,7 @@ pub const sampleScratchOrBackground = common.sampleScratchOrBackground;
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn resolveScratchDirectCore(
@@ -46,7 +46,7 @@ pub fn resolveScratchDirectCore(
 ) void {
     const writer = FrameImageWriter.init(image_out_arr);
 
-    // Buffer layout is planar/field-major.
+    // Buff layout is planar/field-major.
     // Source: field ff is at spx_image_scratch.slice[ff * spx_stride].
     // Destination: field ff is at writer.slice[ff * writer.field_stride].
     for (0..scratch_geom.core_h_px) |ii| {

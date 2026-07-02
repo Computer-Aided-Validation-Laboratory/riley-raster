@@ -79,7 +79,7 @@ fn inverseDistortionWithIters(
         const resid_x = fwd.x_d - x_dist;
         const resid_y = fwd.y_d - y_dist;
 
-        if (@max(@abs(resid_x), @abs(resid_y)) < tol.distortion.residual) {
+        if (@max(@abs(resid_x), @abs(resid_y)) < tol.distortion.resid) {
             return .{
                 .x = x_guess,
                 .y = y_guess,
@@ -93,7 +93,7 @@ fn inverseDistortionWithIters(
         const jac11 = fwd.jac[1][1];
         const det = jac00 * jac11 - jac01 * jac10;
 
-        if (@abs(det) < tol.distortion.determinant) {
+        if (@abs(det) < tol.distortion.det) {
             return error.SingularJacobian;
         }
 

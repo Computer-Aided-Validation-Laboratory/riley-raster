@@ -91,7 +91,7 @@ pub const SaveCoordinator = struct {
     }
 };
 
-pub const SaveSlotBuffer = struct {
+pub const SaveSlotBuff = struct {
     slots: []SaveSlot,
     frame_pool: ndarray.NDArray(F),
 };
@@ -102,7 +102,7 @@ pub const SaveOverlap = struct {
     config: RasterConfig,
     enabled_flag: bool,
     arena: std.heap.ArenaAllocator,
-    slot_buffer: ?SaveSlotBuffer = null,
+    slot_buff: ?SaveSlotBuff = null,
     coordinator: ?SaveCoordinator = null,
     thread: ?std.Thread = null,
 
@@ -124,13 +124,13 @@ pub const SaveOverlap = struct {
 
         if (!is_enabled) return session;
 
-        session.slot_buffer = try initSaveSlots(
+        session.slot_buff = try initSaveSlots(
             session.arena.allocator(),
             cameras,
             num_fields,
-            @max(@as(usize, 1), config.save_frame_buffer_count),
+            @max(@as(usize, 1), config.save_frame_buff_count),
         );
-        session.coordinator = .{ .slots = session.slot_buffer.?.slots };
+        session.coordinator = .{ .slots = session.slot_buff.?.slots };
         session.thread = try std.Thread.spawn(
             .{},
             saveWorkerLoop,
@@ -282,18 +282,18 @@ inline fn outputFieldsForImageMode(
         .multifield => raw_num_fields,
         .grey => switch (raw_num_fields) {
             1, 3 => 1,
-            else => error.UnsupportedImageModeFieldCount,
+            else => error.UnsuppedImageModeFieldCount,
         },
         .rgb => switch (raw_num_fields) {
             1, 3 => 3,
-            else => error.UnsupportedImageModeFieldCount,
+            else => error.UnsuppedImageModeFieldCount,
         },
     };
 }
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn imageSaveChannelsOverride(image_mode: ImageMode) ?usize {
@@ -372,7 +372,7 @@ pub fn initSaveSlots(
     cameras: []const cam.CameraPrepared,
     num_fields: u8,
     slot_count: usize,
-) !SaveSlotBuffer {
+) !SaveSlotBuff {
     std.debug.assert(cameras.len > 0);
     var max_pixels_num = cameras[0].pixels_num;
     for (cameras[1..]) |camera| {
@@ -397,7 +397,7 @@ pub fn initSaveSlots(
             ),
         };
     }
-    return SaveSlotBuffer{
+    return SaveSlotBuff{
         .slots = slots,
         .frame_pool = frame_pool,
     };

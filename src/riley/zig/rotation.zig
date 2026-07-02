@@ -36,7 +36,7 @@ pub const Rotation = struct {
 
     pub fn calcRotMat(self: *Rotation) void {
         // NOTE: this is equivalent to ZYX for intrinsic (one after the other)
-        // not zyx which is extrinsic (all relative to global)
+        // not zyx which is extrinsic (all rel to global)
 
         // Row major as in C
         // Row 1

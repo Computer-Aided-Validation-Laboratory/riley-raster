@@ -11,7 +11,7 @@ const buildconfig = @import("buildconfig.zig");
 const matrix = @import("matstack.zig");
 const meshio = @import("meshio.zig");
 const rotation = @import("rotation.zig");
-const vector = @import("vecstack.zig");
+const vec = @import("vecstack.zig");
 const F = buildconfig.F;
 
 // --------------------------------------------------------------------------------------
@@ -77,7 +77,7 @@ pub const RadialSpec = struct {
 };
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn meshGroupSpan(
@@ -255,8 +255,8 @@ pub fn boundsForMeshGroup(
     return bounds;
 }
 
-pub fn meanCenter(coords: *const meshio.Coords) vector.Vec3f {
-    var center_world = vector.Vec3f.initZeros();
+pub fn meanCenter(coords: *const meshio.Coords) vec.Vec3f {
+    var center_world = vec.Vec3f.initZeros();
     const coords_num = coords.mat.rows_num;
 
     for (0..coords_num) |nn| {
@@ -270,9 +270,9 @@ pub fn meanCenter(coords: *const meshio.Coords) vector.Vec3f {
     );
 }
 
-pub fn boundsCenter(coords: *const meshio.Coords) vector.Vec3f {
+pub fn boundsCenter(coords: *const meshio.Coords) vec.Vec3f {
     const bounds = boundsForCoords(coords);
-    return vector.initVec3(
+    return vec.initVec3(
         F,
         bounds.center[0],
         bounds.center[1],
@@ -280,9 +280,9 @@ pub fn boundsCenter(coords: *const meshio.Coords) vector.Vec3f {
     );
 }
 
-pub fn boundsCenterOverMeshes(meshes: anytype) vector.Vec3f {
+pub fn boundsCenterOverMeshes(meshes: anytype) vec.Vec3f {
     const bounds = boundsForMeshes(meshes);
-    return vector.initVec3(
+    return vec.initVec3(
         F,
         bounds.center[0],
         bounds.center[1],
@@ -426,33 +426,33 @@ pub fn translateMeshGroup(
 
 pub fn centerCoordsAt(
     coords: *meshio.Coords,
-    target_center: [3]F,
+    targ_center: [3]F,
 ) void {
     const bounds = boundsForCoords(coords);
     translateCoords(coords, .{
-        target_center[0] - bounds.center[0],
-        target_center[1] - bounds.center[1],
-        target_center[2] - bounds.center[2],
+        targ_center[0] - bounds.center[0],
+        targ_center[1] - bounds.center[1],
+        targ_center[2] - bounds.center[2],
     });
 }
 
 pub fn centerMeshAt(
-    target_center: [3]F,
+    targ_center: [3]F,
     mesh: anytype,
 ) void {
-    centerCoordsAt(&mesh.coords, target_center);
+    centerCoordsAt(&mesh.coords, targ_center);
 }
 
 pub fn centerMeshGroupAt(
     meshes: anytype,
     group: MeshGroup,
-    target_center: [3]F,
+    targ_center: [3]F,
 ) void {
     const group_bounds = boundsForMeshGroup(meshes, group);
     translateMeshGroup(meshes, group, .{
-        target_center[0] - group_bounds.center[0],
-        target_center[1] - group_bounds.center[1],
-        target_center[2] - group_bounds.center[2],
+        targ_center[0] - group_bounds.center[0],
+        targ_center[1] - group_bounds.center[1],
+        targ_center[2] - group_bounds.center[2],
     });
 }
 
@@ -551,9 +551,9 @@ pub fn overlapMeshGroupBounds(
         const center_sep_mag = 0.5 * (fixed_bounds.extent[dd] + moving_bounds.extent[dd]) - desired_overlap;
         const current_sep = moving_bounds.center[dd] - fixed_bounds.center[dd];
         const sep_sign = overlapSign(current_sep, spec.direction[dd]);
-        const target_center = fixed_bounds.center[dd] +
+        const targ_center = fixed_bounds.center[dd] +
             sep_sign * center_sep_mag + spec.extra_offset[dd];
-        translation[dd] = target_center - moving_bounds.center[dd];
+        translation[dd] = targ_center - moving_bounds.center[dd];
     }
 
     translateMeshGroup(meshes, moving_group, translation);
@@ -636,14 +636,14 @@ pub fn arrangeMeshesLine(
     var cursor: F = 0.0;
     for (meshes, 0..) |*mesh, nn| {
         const mesh_bounds = boundsForCoords(&mesh.coords);
-        var center_target = mesh_bounds.center;
+        var center_targ = mesh_bounds.center;
         if (nn == 0) {
-            center_target[axis] = 0.0;
+            center_targ[axis] = 0.0;
         } else {
-            center_target[axis] = cursor + 0.5 * mesh_bounds.extent[axis];
+            center_targ[axis] = cursor + 0.5 * mesh_bounds.extent[axis];
         }
-        centerMeshAt(center_target, mesh);
-        cursor = center_target[axis] + 0.5 * mesh_bounds.extent[axis] + gap;
+        centerMeshAt(center_targ, mesh);
+        cursor = center_targ[axis] + 0.5 * mesh_bounds.extent[axis] + gap;
     }
 }
 
@@ -659,14 +659,14 @@ pub fn arrangeMeshGroupsLine(
     var cursor: F = 0.0;
     for (groups, 0..) |group, nn| {
         const group_bounds = boundsForMeshGroup(meshes, group);
-        var center_target = group_bounds.center;
+        var center_targ = group_bounds.center;
         if (nn == 0) {
-            center_target[axis] = 0.0;
+            center_targ[axis] = 0.0;
         } else {
-            center_target[axis] = cursor + 0.5 * group_bounds.extent[axis];
+            center_targ[axis] = cursor + 0.5 * group_bounds.extent[axis];
         }
-        centerMeshGroupAt(meshes, group, center_target);
-        cursor = center_target[axis] + 0.5 * group_bounds.extent[axis] + gap;
+        centerMeshGroupAt(meshes, group, center_targ);
+        cursor = center_targ[axis] + 0.5 * group_bounds.extent[axis] + gap;
     }
 }
 
@@ -719,22 +719,22 @@ fn calcRadialCenter(
     spec: RadialSpec,
     angle: F,
 ) [3]F {
-    var target_center = spec.center;
+    var targ_center = spec.center;
     switch (spec.axis) {
         .x => {
-            target_center[1] += spec.radius * std.math.cos(angle);
-            target_center[2] += spec.radius * std.math.sin(angle);
+            targ_center[1] += spec.radius * std.math.cos(angle);
+            targ_center[2] += spec.radius * std.math.sin(angle);
         },
         .y => {
-            target_center[0] += spec.radius * std.math.cos(angle);
-            target_center[2] += spec.radius * std.math.sin(angle);
+            targ_center[0] += spec.radius * std.math.cos(angle);
+            targ_center[2] += spec.radius * std.math.sin(angle);
         },
         .z => {
-            target_center[0] += spec.radius * std.math.cos(angle);
-            target_center[1] += spec.radius * std.math.sin(angle);
+            targ_center[0] += spec.radius * std.math.cos(angle);
+            targ_center[1] += spec.radius * std.math.sin(angle);
         },
     }
-    return target_center;
+    return targ_center;
 }
 
 fn groupMeshIdx(
@@ -827,7 +827,7 @@ test "boundsForCoords and meanCenter" {
     try std.testing.expectApproxEqAbs(1.0, center_mean.get(2), 1e-12);
 }
 
-test "boundsForMeshGroup supports explicit indices" {
+test "boundsForMeshGroup supps explicit indices" {
     const TestMesh = struct {
         coords: meshio.Coords,
     };

@@ -20,7 +20,7 @@ const simd = @import("cameramodels_simd.zig");
 
 pub const BrownConrady = common.BrownConrady;
 pub const BrownConradyExt = common.BrownConradyExt;
-pub const DistortionInverseResult = common.DistortionInverseResult;
+pub const DistortionInvResult = common.DistortionInvResult;
 pub const DistortionForwardJacResult = common.DistortionForwardJacResult;
 
 // --------------------------------------------------------------------------------------
@@ -39,15 +39,15 @@ pub const BrownConradyExtPolynomial = common.BrownConradyExtPolynomial;
 
 pub const DistortionModel = common.DistortionModel;
 pub const forwardDistortionModelScalar = scalar.forwardDistortionModel;
-pub const inverseDistortionModelScalar = scalar.inverseDistortionModel;
+pub const invDistortionModelScalar = scalar.invDistortionModel;
 pub const DistortionForwardJacSIMDResult = simd.DistortionForwardJacSIMDResult;
 pub const forwardDistortionSIMD = simd.forwardDistortionSIMD;
 pub const forwardDistortionWithJacSIMD = simd.forwardDistortionWithJacSIMD;
-pub const inverseDistortionSIMD = simd.inverseDistortionSIMD;
-pub const inverseDistortionModelSIMD = simd.inverseDistortionModelSIMD;
+pub const invDistortionSIMD = simd.invDistortionSIMD;
+pub const invDistortionModelSIMD = simd.invDistortionModelSIMD;
 
 // --------------------------------------------------------------------------------------
-// Point Spread Functions
+// Point Spread Func
 // --------------------------------------------------------------------------------------
 
 pub const SeparablePSF = common.SeparablePSF;

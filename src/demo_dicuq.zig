@@ -22,6 +22,7 @@ const MeshType = gk.MeshType;
 const camera_mod = @import("riley/zig/camera.zig");
 const cameraio = @import("riley/zig/cameraio.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
+const sceneops = @import("riley/zig/sceneops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const CameraInput = camera_mod.CameraInput;
 const DistortionModel = camera_mod.DistortionModel;
@@ -177,7 +178,7 @@ pub fn main(init: std.process.Init) !void {
         .disp = sim_data.disp,
         .shader = .{ .tex_u8 = .{
             .uvs = uvs.array,
-            .texture = texture,
+            .tex = texture,
             .sample_config = .{
                 .sample = .cubic_catmull_rom,
                 .mode = .lut_lerp,
@@ -189,7 +190,7 @@ pub fn main(init: std.process.Init) !void {
 
     // 6. Setup Camera
     std.debug.print("Setting up camera...\n", .{});
-    const roi_pos = cameraops.roiCentFromCoords(&sim_data.coords);
+    const roi_pos = sceneops.boundsCenter(&sim_data.coords);
 
     const distortion = buildDistortion();
 

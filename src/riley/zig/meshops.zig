@@ -35,12 +35,12 @@ const normals = @import("normals.zig");
 const geomkerns = @import("geometrykernels.zig");
 
 //------------------------------------------------------------------------------------------
-// External Helper Functions: General geometry and mesh utilities
+// External Helper Func: General geometry and mesh utilities
 //------------------------------------------------------------------------------------------
 
 // Input: Raw user data for all frames.
 // meshio.Coords/Fields: Node-order [total_nodes, ...]
-// meshio.Connect: Connectivity table links nodes to elements.
+// meshio.Connect: Connectivity table links nodes to elems.
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -56,7 +56,7 @@ pub const MeshInput = struct {
 
 // Static: Persistent multi-frame resources in the engine's memory.
 // meshio.Coords/Fields: Node-order [total_nodes, ...]
-// Shader UVs: Element-order (gathered during static init as they are usually static).
+// Shader UVs: Elem-order (gathered during static init as they are usually static).
 pub const MeshStatic = struct {
     mesh_type: geomkerns.MeshType,
     coords_orig: meshio.Coords,
@@ -80,7 +80,7 @@ pub const MeshFrameWorkspace = struct {
 };
 
 // Frame: Wraps the Prepared payload with per-frame spatial metadata.
-// Prepared means culled element-order ndarray.NDArray data ready for the raster loop.
+// Prepared means culled elem-order ndarray.NDArray data ready for the raster loop.
 pub const MeshFrame = struct {
     mesh: MeshPrepared,
     elem_bboxes: []rops.ElemBBox,
@@ -91,8 +91,8 @@ pub const MeshFrame = struct {
 };
 
 // Prepared: Data culled and gathered for the raster loop for a SINGLE frame.
-// Prepared means culled element-order ndarray.NDArray data ready for the raster loop.
-// Element-order [visible_elems, field, nodes_per_elem]
+// Prepared means culled elem-order ndarray.NDArray data ready for the raster loop.
+// Elem-order [visible_elems, field, nodes_per_elem]
 pub const MeshPrepared = struct {
     mesh_type: geomkerns.MeshType,
     coords: ndarray.NDArray(F),
@@ -101,7 +101,7 @@ pub const MeshPrepared = struct {
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn calcNodesPerElem(
@@ -153,7 +153,7 @@ pub fn countOutputFields(
     return num_fields;
 }
 
-pub fn countStaticMeshElements(
+pub fn countStaticMeshElems(
     mesh_static: []const MeshStatic,
 ) usize {
     var total: usize = 0;
@@ -173,7 +173,7 @@ pub fn countStaticMeshNodes(
     return total;
 }
 
-// External helper function for finding mesh centroids
+// External helper func for finding mesh centroids
 pub fn findAlignedCentroid(coords: *const meshio.Coords) struct {
     centroid: [3]F,
     extent: [3]F,
@@ -205,9 +205,9 @@ pub fn meshInputFromSimDataSlice(
     io: std.Io,
     sim_datas: []const meshio.SimData,
     mesh_types: []const geomkerns.MeshType,
-    shader_mode: enum { nodal, texture },
+    shader_mode: enum { nodal, tex },
     uv_paths: ?[]const []const u8,
-    texture_path: ?[]const u8,
+    tex_path: ?[]const u8,
     uv_file: ?[]const u8,
 ) ![]MeshInput {
     var mesh_inputs = try outer_alloc.alloc(MeshInput, sim_datas.len);
@@ -271,23 +271,23 @@ pub fn meshInputFromSimDataSlice(
 
             const uvmap = try uvio.loadUVMap(outer_alloc, io, path_uvs);
 
-            const format: imageio.ImageFormat = if (std.mem.endsWith(u8, texture_path.?, ".bmp"))
+            const format: imageio.ImageFormat = if (std.mem.endsWith(u8, tex_path.?, ".bmp"))
                 .bmp
             else
                 .tiff;
 
-            const texture = try imageio.loadImage(
+            const tex = try imageio.loadImage(
                 u8,
                 1,
                 outer_alloc,
                 io,
-                texture_path.?,
+                tex_path.?,
                 format,
             );
 
             mesh_inputs[ii].shader = .{ .tex_u8 = .{
                 .uvs = uvmap.array,
-                .texture = texture,
+                .tex = tex,
                 .sample_config = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
                 .normal_type = .none,
             } };
@@ -326,7 +326,7 @@ pub fn initMeshStatic(
             );
             shader_static = .{ .tex_u8 = .{
                 .elem_uvs = elem_uvs,
-                .texture = tex_in.texture,
+                .tex = tex_in.tex,
                 .sample_config = tex_in.sample_config,
                 .bits = tex_in.bits,
                 .scaling = tex_in.scaling,
@@ -341,7 +341,7 @@ pub fn initMeshStatic(
             );
             shader_static = .{ .tex_u16 = .{
                 .elem_uvs = elem_uvs,
-                .texture = tex_in.texture,
+                .tex = tex_in.tex,
                 .sample_config = tex_in.sample_config,
                 .bits = tex_in.bits,
                 .scaling = tex_in.scaling,
@@ -356,7 +356,7 @@ pub fn initMeshStatic(
             );
             shader_static = .{ .tex_rgb_u8 = .{
                 .elem_uvs = elem_uvs,
-                .texture = tex_in.texture,
+                .tex = tex_in.tex,
                 .sample_config = tex_in.sample_config,
                 .bits = tex_in.bits,
                 .scaling = tex_in.scaling,
@@ -371,7 +371,7 @@ pub fn initMeshStatic(
             );
             shader_static = .{ .tex_rgb_u16 = .{
                 .elem_uvs = elem_uvs,
-                .texture = tex_in.texture,
+                .tex = tex_in.tex,
                 .sample_config = tex_in.sample_config,
                 .bits = tex_in.bits,
                 .scaling = tex_in.scaling,
@@ -504,7 +504,7 @@ pub fn prepareMeshFrames(
         }
 
         // Prepares meshes for each frame including coord transforms to camera space and
-        // data reshaping to element order for a given frame.
+        // data reshaping to elem order for a given frame.
         frame_meshes[ii] = try prepareMeshFrame(
             arena_alloc,
             chunk_exec,
@@ -1290,10 +1290,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             self: *FrameMeshPipelineType,
             tex_static: shaderops.TexStatic(T, channels),
         ) !shaderops.ShaderPrepared {
-            const params = imageops.getScalingParamsTexture(
+            const params = imageops.getScalingParamsTex(
                 T,
                 channels,
-                &tex_static.texture,
+                &tex_static.tex,
                 tex_static.scaling,
             );
             const factors = imageops.getScaleFactors(
@@ -1329,7 +1329,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             if (comptime T == u8 and channels == 1) {
                 return .{ .tex_u8 = .{
                     .elem_uvs = elem_uvs,
-                    .texture = tex_static.texture,
+                    .tex = tex_static.tex,
                     .sample_config = tex_static.sample_config,
                     .bits = tex_static.bits,
                     .scaling = tex_static.scaling,
@@ -1341,7 +1341,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             } else if (comptime T == u16 and channels == 1) {
                 return .{ .tex_u16 = .{
                     .elem_uvs = elem_uvs,
-                    .texture = tex_static.texture,
+                    .tex = tex_static.tex,
                     .sample_config = tex_static.sample_config,
                     .bits = tex_static.bits,
                     .scaling = tex_static.scaling,
@@ -1353,7 +1353,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             } else if (comptime T == u8 and channels == 3) {
                 return .{ .tex_rgb_u8 = .{
                     .elem_uvs = elem_uvs,
-                    .texture = tex_static.texture,
+                    .tex = tex_static.tex,
                     .sample_config = tex_static.sample_config,
                     .bits = tex_static.bits,
                     .scaling = tex_static.scaling,
@@ -1365,7 +1365,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             } else {
                 return .{ .tex_rgb_u16 = .{
                     .elem_uvs = elem_uvs,
-                    .texture = tex_static.texture,
+                    .tex = tex_static.tex,
                     .sample_config = tex_static.sample_config,
                     .bits = tex_static.bits,
                     .scaling = tex_static.scaling,

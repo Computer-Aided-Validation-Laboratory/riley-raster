@@ -11,8 +11,7 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
 const cfg = buildconfig.config;
-const tol = cfg.tolerance;
-
+const tol = cfg.tol;
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -21,7 +20,7 @@ const tol = cfg.tolerance;
 // Brown Conrady
 // --------------------------------------------------------------------------------------
 
-pub const DistortionInverseResult = struct {
+pub const DistortionInvResult = struct {
     x: F,
     y: F,
 };
@@ -80,12 +79,12 @@ pub const BrownConrady = struct {
         );
     }
 
-    pub fn inverse(
+    pub fn inv(
         self: BrownConrady,
         x_d: F,
         y_d: F,
-    ) !DistortionInverseResult {
-        return inverseFromForwardWithJac(BrownConrady, self, x_d, y_d);
+    ) !DistortionInvResult {
+        return invFromForwardWithJac(BrownConrady, self, x_d, y_d);
     }
 };
 
@@ -130,12 +129,12 @@ pub const BrownConradyExt = struct {
         );
     }
 
-    pub fn inverse(
+    pub fn inv(
         self: BrownConradyExt,
         x_d: F,
         y_d: F,
-    ) !DistortionInverseResult {
-        return inverseFromForwardWithJac(BrownConradyExt, self, x_d, y_d);
+    ) !DistortionInvResult {
+        return invFromForwardWithJac(BrownConradyExt, self, x_d, y_d);
     }
 
     pub fn calcRadialScaleAndDerivative(
@@ -238,16 +237,16 @@ pub const PolynomialMap = struct {
         };
     }
 
-    pub fn inverse(
+    pub fn inv(
         self: PolynomialMap,
         x_d: F,
         y_d: F,
-    ) !DistortionInverseResult {
+    ) !DistortionInvResult {
         var x = x_d;
         var y = y_d;
 
         const max_iters = cfg.distortion_newton_iter_max;
-        const tol_resid = tol.distortion.residual;
+        const tol_resid = tol.distortion.resid;
         const tol_delta = tol.distortion.delta;
 
         for (0..max_iters) |_| {
@@ -264,8 +263,8 @@ pub const PolynomialMap = struct {
             const c = fwd.jac[1][0];
             const d = fwd.jac[1][1];
             const det = a * d - b * c;
-            if (@abs(det) < tol.distortion.determinant) {
-                return error.SingularJacobian;
+            if (@abs(det) < tol.distortion.det) {
+                return error.SingularJac;
             }
 
             const delta_x = (-f0 * d + b * f1) / det;
@@ -278,13 +277,13 @@ pub const PolynomialMap = struct {
             }
         }
 
-        return error.DistortionInverseFailed;
+        return error.DistortionInvFailed;
     }
 };
 
 pub const BidirectionalPolynomial = struct {
     forward_map: ?PolynomialMap = null,
-    inverse_map: ?PolynomialMap = null,
+    inv_map: ?PolynomialMap = null,
 
     pub fn forward(
         self: BidirectionalPolynomial,
@@ -294,24 +293,24 @@ pub const BidirectionalPolynomial = struct {
         if (self.forward_map) |forward_map| {
             return forward_map.evaluate(x, y);
         }
-        if (self.inverse_map) |inverse_map| {
-            const solved = inverse_map.inverse(x, y) catch unreachable;
+        if (self.inv_map) |inv_map| {
+            const solved = inv_map.inv(x, y) catch unreachable;
             return .{ solved.x, solved.y };
         }
         unreachable;
     }
 
-    pub fn inverse(
+    pub fn inv(
         self: BidirectionalPolynomial,
         x_d: F,
         y_d: F,
-    ) !DistortionInverseResult {
-        if (self.inverse_map) |inverse_map| {
-            const eval = inverse_map.evaluate(x_d, y_d);
+    ) !DistortionInvResult {
+        if (self.inv_map) |inv_map| {
+            const eval = inv_map.evaluate(x_d, y_d);
             return .{ .x = eval[0], .y = eval[1] };
         }
         if (self.forward_map) |forward_map| {
-            return try forward_map.inverse(x_d, y_d);
+            return try forward_map.inv(x_d, y_d);
         }
         return error.MissingPolynomialMap;
     }
@@ -330,13 +329,13 @@ pub const BrownConradyPolynomial = struct {
         return self.polynomial.forward(brown[0], brown[1]);
     }
 
-    pub fn inverse(
+    pub fn inv(
         self: BrownConradyPolynomial,
         x_d: F,
         y_d: F,
-    ) !DistortionInverseResult {
-        const poly_inv = try self.polynomial.inverse(x_d, y_d);
-        return try self.brown_conrady.inverse(poly_inv.x, poly_inv.y);
+    ) !DistortionInvResult {
+        const poly_inv = try self.polynomial.inv(x_d, y_d);
+        return try self.brown_conrady.inv(poly_inv.x, poly_inv.y);
     }
 };
 
@@ -353,13 +352,13 @@ pub const BrownConradyExtPolynomial = struct {
         return self.polynomial.forward(brown[0], brown[1]);
     }
 
-    pub fn inverse(
+    pub fn inv(
         self: BrownConradyExtPolynomial,
         x_d: F,
         y_d: F,
-    ) !DistortionInverseResult {
-        const poly_inv = try self.polynomial.inverse(x_d, y_d);
-        return try self.brown_conrady_ext.inverse(poly_inv.x, poly_inv.y);
+    ) !DistortionInvResult {
+        const poly_inv = try self.polynomial.inv(x_d, y_d);
+        return try self.brown_conrady_ext.inv(poly_inv.x, poly_inv.y);
     }
 };
 
@@ -377,7 +376,7 @@ pub const DistortionModel = union(enum) {
 };
 
 // --------------------------------------------------------------------------------------
-// Point Spread Functions
+// Point Spread Func
 // --------------------------------------------------------------------------------------
 
 pub const SeparablePSF = enum {
@@ -386,12 +385,12 @@ pub const SeparablePSF = enum {
 };
 
 pub const PixelBoxPSF = struct {
-    support_rad_px: F = 0.5,
+    supp_rad_px: F = 0.5,
 };
 
 pub const GaussianPSF = struct {
     sigma_px: F,
-    support_rad_px: F,
+    supp_rad_px: F,
     separable: SeparablePSF = .yes,
 };
 
@@ -399,7 +398,7 @@ pub const AnisotropicGaussianPSF = struct {
     sigma_x_px: F,
     sigma_y_px: F,
     theta_rad: F = 0.0,
-    support_rad_px: F,
+    supp_rad_px: F,
     separable: SeparablePSF = .no,
 };
 
@@ -440,10 +439,10 @@ pub const PreparedPSF = struct {
 fn psfKernelValue1D(psf: PointSpreadFunc, dist_px: F) F {
     const abs_dist = @abs(dist_px);
     return switch (psf) {
-        .pixel_box => |box| if (abs_dist <= box.support_rad_px +
-            tol.psf.support_radius_inclusion) 1.0 else 0.0,
-        .gaussian => |gauss| if (abs_dist <= gauss.support_rad_px +
-            tol.psf.support_radius_inclusion)
+        .pixel_box => |box| if (abs_dist <= box.supp_rad_px +
+            tol.psf.supp_radius_inclusion) 1.0 else 0.0,
+        .gaussian => |gauss| if (abs_dist <= gauss.supp_rad_px +
+            tol.psf.supp_radius_inclusion)
             @exp(-0.5 * (dist_px * dist_px) / (gauss.sigma_px * gauss.sigma_px))
         else
             0.0,
@@ -453,26 +452,26 @@ fn psfKernelValue1D(psf: PointSpreadFunc, dist_px: F) F {
 
 fn psfKernelValue2D(psf: PointSpreadFunc, dx_px: F, dy_px: F) F {
     return switch (psf) {
-        .pixel_box => |box| if (@abs(dx_px) <= box.support_rad_px +
-            tol.psf.support_radius_inclusion and
-            @abs(dy_px) <= box.support_rad_px +
-            tol.psf.support_radius_inclusion)
+        .pixel_box => |box| if (@abs(dx_px) <= box.supp_rad_px +
+            tol.psf.supp_radius_inclusion and
+            @abs(dy_px) <= box.supp_rad_px +
+                tol.psf.supp_radius_inclusion)
             1.0
         else
             0.0,
-        .gaussian => |gauss| if (@abs(dx_px) <= gauss.support_rad_px +
-            tol.psf.support_radius_inclusion and
-            @abs(dy_px) <= gauss.support_rad_px +
-            tol.psf.support_radius_inclusion)
+        .gaussian => |gauss| if (@abs(dx_px) <= gauss.supp_rad_px +
+            tol.psf.supp_radius_inclusion and
+            @abs(dy_px) <= gauss.supp_rad_px +
+                tol.psf.supp_radius_inclusion)
             @exp(-0.5 * (dx_px * dx_px + dy_px * dy_px) /
                 (gauss.sigma_px * gauss.sigma_px))
         else
             0.0,
         .anisotropic_gaussian => |gauss| blk: {
-            if (@abs(dx_px) > gauss.support_rad_px +
-                tol.psf.support_radius_inclusion or
-                @abs(dy_px) > gauss.support_rad_px +
-                tol.psf.support_radius_inclusion)
+            if (@abs(dx_px) > gauss.supp_rad_px +
+                tol.psf.supp_radius_inclusion or
+                @abs(dy_px) > gauss.supp_rad_px +
+                    tol.psf.supp_radius_inclusion)
             {
                 break :blk 0.0;
             }
@@ -513,17 +512,17 @@ fn buildKernel1D(
     return weights;
 }
 
-fn inverseFromForwardWithJac(
+fn invFromForwardWithJac(
     comptime DistortionType: type,
     distortion: DistortionType,
     x_d: F,
     y_d: F,
-) !DistortionInverseResult {
+) !DistortionInvResult {
     var x = x_d;
     var y = y_d;
 
     const max_iters = cfg.distortion_newton_iter_max;
-    const tol_resid = tol.distortion.residual;
+    const tol_resid = tol.distortion.resid;
     const tol_delta = tol.distortion.delta;
 
     for (0..max_iters) |_| {
@@ -540,8 +539,8 @@ fn inverseFromForwardWithJac(
         const c = fwd.jac[1][0];
         const d = fwd.jac[1][1];
         const det = a * d - b * c;
-        if (@abs(det) < tol.distortion.determinant) {
-            return error.SingularJacobian;
+        if (@abs(det) < tol.distortion.det) {
+            return error.SingularJac;
         }
 
         const delta_x = (-f0 * d + b * f1) / det;
@@ -555,7 +554,7 @@ fn inverseFromForwardWithJac(
         }
     }
 
-    return error.DistortionInverseFailed;
+    return error.DistortionInvFailed;
 }
 
 fn evalPolynomialDisplacement(
@@ -672,17 +671,17 @@ pub fn preparePSF(
 ) !PreparedPSF {
     switch (psf) {
         .pixel_box => |box| {
-            if (box.support_rad_px <= 0.5 +
-                tol.psf.pixel_box_identity_support_radius)
+            if (box.supp_rad_px <= 0.5 +
+                tol.psf.pixel_box_identity_supp_radius)
             {
                 return .{};
             }
             const halo_px: u16 = @intCast(@max(
                 @as(usize, 0),
-                @as(usize, @intFromFloat(@ceil(box.support_rad_px))),
+                @as(usize, @intFromFloat(@ceil(box.supp_rad_px))),
             ));
             const radius_subpx: usize = @intFromFloat(
-                @ceil(box.support_rad_px * @as(F, @floatFromInt(sub_sample))),
+                @ceil(box.supp_rad_px * @as(F, @floatFromInt(sub_sample))),
             );
             return .{
                 .mode = .separable,
@@ -697,10 +696,10 @@ pub fn preparePSF(
         .gaussian => |gauss| {
             const halo_px: u16 = @intCast(@max(
                 @as(usize, 0),
-                @as(usize, @intFromFloat(@ceil(gauss.support_rad_px))),
+                @as(usize, @intFromFloat(@ceil(gauss.supp_rad_px))),
             ));
             const radius_subpx: usize = @intFromFloat(
-                @ceil(gauss.support_rad_px * @as(F, @floatFromInt(sub_sample))),
+                @ceil(gauss.supp_rad_px * @as(F, @floatFromInt(sub_sample))),
             );
             if (gauss.separable == .yes) {
                 return .{
@@ -731,25 +730,25 @@ pub fn preparePSF(
         .anisotropic_gaussian => |gauss| {
             const halo_px: u16 = @intCast(@max(
                 @as(usize, 0),
-                @as(usize, @intFromFloat(@ceil(gauss.support_rad_px))),
+                @as(usize, @intFromFloat(@ceil(gauss.supp_rad_px))),
             ));
             const radius_subpx: usize = @intFromFloat(
-                @ceil(gauss.support_rad_px * @as(F, @floatFromInt(sub_sample))),
+                @ceil(gauss.supp_rad_px * @as(F, @floatFromInt(sub_sample))),
             );
             const axis_aligned = @abs(@sin(gauss.theta_rad)) <
-                tol.psf.anisotropic_axis_alignment;
+                tol.psf.anisotropic_axis_align;
             if (gauss.separable == .yes and axis_aligned) {
                 const psf_x = PointSpreadFunc{
                     .gaussian = .{
                         .sigma_px = gauss.sigma_x_px,
-                        .support_rad_px = gauss.support_rad_px,
+                        .supp_rad_px = gauss.supp_rad_px,
                         .separable = .yes,
                     },
                 };
                 const psf_y = PointSpreadFunc{
                     .gaussian = .{
                         .sigma_px = gauss.sigma_y_px,
-                        .support_rad_px = gauss.support_rad_px,
+                        .supp_rad_px = gauss.supp_rad_px,
                         .separable = .yes,
                     },
                 };

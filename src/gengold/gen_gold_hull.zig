@@ -86,7 +86,7 @@ pub fn main(init: std.process.Init) !void {
                 .{
                     .func = .{
                         .uvs = null,
-                        .coord_mode = .parametric,
+                        .coord_mode = .para,
                         .builtin = .constant,
                         .normal_type = .none,
                     },

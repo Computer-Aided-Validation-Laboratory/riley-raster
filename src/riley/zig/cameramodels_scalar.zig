@@ -17,7 +17,7 @@ const F = buildconfig.F;
 // --------------------------------------------------------------------------------------
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn forwardDistortionModel(
@@ -35,17 +35,17 @@ pub fn forwardDistortionModel(
     };
 }
 
-pub fn inverseDistortionModel(
+pub fn invDistortionModel(
     distortion: common.DistortionModel,
     x_d: F,
     y_d: F,
-) !common.DistortionInverseResult {
+) !common.DistortionInvResult {
     return switch (distortion) {
         .none => .{ .x = x_d, .y = y_d },
-        .brown_conrady => |bc| try bc.inverse(x_d, y_d),
-        .brown_conrady_ext => |bc_ext| try bc_ext.inverse(x_d, y_d),
-        .polynomial => |poly| try poly.inverse(x_d, y_d),
-        .brown_conrady_polynomial => |chain| try chain.inverse(x_d, y_d),
-        .brown_conrady_ext_polynomial => |chain| try chain.inverse(x_d, y_d),
+        .brown_conrady => |bc| try bc.inv(x_d, y_d),
+        .brown_conrady_ext => |bc_ext| try bc_ext.inv(x_d, y_d),
+        .polynomial => |poly| try poly.inv(x_d, y_d),
+        .brown_conrady_polynomial => |chain| try chain.inv(x_d, y_d),
+        .brown_conrady_ext_polynomial => |chain| try chain.inv(x_d, y_d),
     };
 }

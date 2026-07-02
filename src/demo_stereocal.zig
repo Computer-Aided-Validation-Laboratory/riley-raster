@@ -19,6 +19,7 @@ const MeshInput = mo.MeshInput;
 const camera_mod = @import("riley/zig/camera.zig");
 const cameraio = @import("riley/zig/cameraio.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
+const sceneops = @import("riley/zig/sceneops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const DistortionModel = camera_mod.DistortionModel;
 const BrownConrady = camera_mod.BrownConrady;
@@ -193,7 +194,7 @@ pub fn main(init: std.process.Init) !void {
 
     const distortion = buildDistortion();
 
-    var roi_pos = cameraops.roiCentFromCoords(&sim_data.coords);
+    var roi_pos = sceneops.boundsCenter(&sim_data.coords);
 
     var stereo_pair = switch (CAMERA_PLACEMENT_MODE) {
         .auto_fov => blk: {
@@ -282,7 +283,7 @@ pub fn main(init: std.process.Init) !void {
                 sim_data.coords.mat.get(nn, 2) + roi_shift.get(2),
             );
         }
-        roi_pos = cameraops.roiCentFromCoords(&sim_data.coords);
+        roi_pos = sceneops.boundsCenter(&sim_data.coords);
         stereo_pair.cameras[0].roi_cent_world = roi_pos;
         stereo_pair.cameras[1].roi_cent_world = roi_pos;
     }
@@ -295,7 +296,7 @@ pub fn main(init: std.process.Init) !void {
         .disp = sim_data.disp,
         .shader = .{ .tex_u8 = .{
             .uvs = uvs.array,
-            .texture = texture,
+            .tex = texture,
             .sample_config = .{
                 .sample = .cubic_catmull_rom,
                 .mode = .lut_lerp,

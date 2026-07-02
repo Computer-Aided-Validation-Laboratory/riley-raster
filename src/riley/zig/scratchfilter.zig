@@ -27,7 +27,7 @@ pub const NDArray = common.NDArray;
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn resolveScratchDirect(

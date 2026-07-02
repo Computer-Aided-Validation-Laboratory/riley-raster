@@ -19,27 +19,27 @@ const csvio = @import("csvio.zig");
 
 pub const UVMap = struct {
     array: NDArray(F),
-    buffer: []F,
+    buff: []F,
 
     const Self = @This();
 
     pub fn init(outer_alloc: std.mem.Allocator, nodes_num: usize) !Self {
-        const buffer = try outer_alloc.alloc(F, nodes_num * 2);
-        @memset(buffer, 0.0);
+        const buff = try outer_alloc.alloc(F, nodes_num * 2);
+        @memset(buff, 0.0);
 
         const dims = [_]usize{ nodes_num, 2 }; // u, v
 
-        const array = try NDArray(F).init(outer_alloc, buffer, dims[0..]);
+        const array = try NDArray(F).init(outer_alloc, buff, dims[0..]);
 
         return .{
             .array = array,
-            .buffer = buffer,
+            .buff = buff,
         };
     }
 
     pub fn deinit(self: *Self, outer_alloc: std.mem.Allocator) void {
         self.array.deinit(outer_alloc);
-        outer_alloc.free(self.buffer);
+        outer_alloc.free(self.buff);
     }
 
     pub fn getU(self: *const Self, node_idx: usize) F {
@@ -55,7 +55,7 @@ pub const UVMap = struct {
     pub fn getUV(self: *const Self, node_idx: usize) []F {
         assert(node_idx < self.array.dims[0]);
         const start = node_idx * 2;
-        return self.buffer[start .. start + 2];
+        return self.buff[start .. start + 2];
     }
 
     pub fn setUV(self: *Self, node_idx: usize, u: F, v: F) void {
@@ -66,7 +66,7 @@ pub const UVMap = struct {
 };
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn loadUVs(
@@ -90,7 +90,7 @@ pub fn loadUVMap(outer_alloc: std.mem.Allocator, io: std.Io, path: []const u8) !
     const uv_arr = try loadUVs(outer_alloc, io, path);
     return UVMap{
         .array = uv_arr,
-        .buffer = uv_arr.slice,
+        .buff = uv_arr.slice,
     };
 }
 

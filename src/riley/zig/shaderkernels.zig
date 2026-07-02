@@ -13,7 +13,7 @@ else
     @import("shaderkernels_scalar.zig");
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub const NodalKernel = impl.NodalKernel;

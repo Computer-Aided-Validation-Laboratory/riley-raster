@@ -869,7 +869,7 @@ test "Sphere200 multicamera gold tests" {
                     .shader = .{
                         .tex_rgb_u8 = .{
                             .uvs = uv_map.array,
-                            .texture = texture_rgb,
+                            .tex = texture_rgb,
                             .sample_config = sample_config,
                         },
                     },

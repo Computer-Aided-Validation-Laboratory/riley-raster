@@ -20,7 +20,7 @@ pub const CameraPrepared = common.CameraPreparedType(@This());
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn fillTileIdealCentersPerTile(
@@ -223,7 +223,7 @@ pub fn calcPinholeRasterPoint(
     const x_dist = (observed_x_px - offsets.x_off) / focal_px.fx;
     const y_dist = (observed_y_px - offsets.y_off) / focal_px.fy;
 
-    const solved = try cm.inverseDistortionModelScalar(
+    const solved = try cm.invDistortionModelScalar(
         camera.distortion,
         x_dist,
         y_dist,

@@ -22,6 +22,7 @@ const texops = @import("../riley/zig/textureops.zig");
 const camera_mod = @import("../riley/zig/camera.zig");
 const cameraops = @import("../riley/zig/cameraops.zig");
 const Rotation = @import("../riley/zig/rotation.zig").Rotation;
+const sceneops = @import("../riley/zig/sceneops.zig");
 const report = @import("../riley/zig/report.zig");
 const tcfg = @import("testconfig.zig");
 
@@ -248,7 +249,7 @@ pub fn prepareBenchmark(
         .disp = sim_data.disp,
         .shader = .{ .tex_u8 = .{
             .uvs = uvs.array,
-            .texture = texture,
+            .tex = texture,
             .sample_config = sample_config,
             .bits = 8,
             .scaling = .none,
@@ -258,7 +259,7 @@ pub fn prepareBenchmark(
     const pixel_size = defaults.pixels_size;
     const focal_length = defaults.focal_leng;
     const fov_scale = defaults.fov_scale;
-    const roi_pos = cameraops.roiCentFromCoords(
+    const roi_pos = sceneops.boundsCenter(
         &sim_data.coords,
     );
 
@@ -409,12 +410,12 @@ pub fn runBenchmark(
             ),
             .pipeline_times = frame_times,
             .image = null,
-            .total_elems = bench_log.total_elements,
-            .vis_elems = bench_log.visible_elements,
+            .total_elems = bench_log.total_elems,
+            .vis_elems = bench_log.visible_elems,
             .total_px = @as(u64, camera_inputs[0].pixels_num[0]) *
                 @as(u64, camera_inputs[0].pixels_num[1]) *
                 @as(u64, frame_count),
-            .shaded_px = bench_log.total_shaded_pixels,
+            .shaded_px = bench_log.total_shaded_px,
         },
         .frame_rows = frame_rows,
         .e2e_rows = e2e_rows,
@@ -455,8 +456,8 @@ fn aggregateBenchLog(
 
     for (bench_capture) |capture| {
         report.reduceBenchLog(&bench_log, &capture.bench_log);
-        bench_log.total_elements += capture.bench_log.total_elements;
-        bench_log.visible_elements += capture.bench_log.visible_elements;
+        bench_log.total_elems += capture.bench_log.total_elems;
+        bench_log.visible_elems += capture.bench_log.visible_elems;
     }
 
     bench_log.frame_times = aggregateFrameTimes(bench_capture);
@@ -488,12 +489,12 @@ fn calcDicuqMetrics(
 
     const shaded_subpx = @as(
         F,
-        @floatFromInt(bench_log.total_shaded_pixels),
+        @floatFromInt(bench_log.total_shaded_px),
     );
     const est_shaded_px = shaded_subpx / (sub_samp_f * sub_samp_f);
     const total_elems = @as(
         F,
-        @floatFromInt(bench_log.total_elements),
+        @floatFromInt(bench_log.total_elems),
     );
 
     return .{
@@ -595,8 +596,8 @@ fn buildFrameRows(
             .run_idx = 0,
             .camera_idx = capture.camera_idx,
             .frame_idx = capture.frame_idx,
-            .total_elems = capture.bench_log.total_elements,
-            .vis_elems = capture.bench_log.visible_elements,
+            .total_elems = capture.bench_log.total_elems,
+            .vis_elems = capture.bench_log.visible_elems,
             .total_px = @as(
                 u64,
                 camera_inputs[capture.camera_idx].pixels_num[0],
@@ -605,7 +606,7 @@ fn buildFrameRows(
                     u64,
                     camera_inputs[capture.camera_idx].pixels_num[1],
                 ),
-            .shaded_px = capture.bench_log.total_shaded_pixels,
+            .shaded_px = capture.bench_log.total_shaded_px,
             .geom_time_ms = geom_time_ns / 1e6,
             .cam_time_ms = capture.bench_log.frame_times.cam_invert / 1e6,
             .resolve_time_ms = capture.bench_log.frame_times.scratch_resolve / 1e6,
@@ -614,7 +615,7 @@ fn buildFrameRows(
             .frame_time_ms = capture.bench_log.frame_times.active_time / 1e6,
             .e2e_time_ms = null,
             .geom_tpx_melem_s = calcFrameMElemPerSec(
-                capture.bench_log.total_elements,
+                capture.bench_log.total_elems,
                 geom_time_ns,
             ),
             .raster_tpx_mpx_s = calcFrameMPxPerSec(

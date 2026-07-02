@@ -19,6 +19,7 @@ const cameraops = @import("riley/zig/cameraops.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshio = @import("riley/zig/meshio.zig");
 const mo = @import("riley/zig/meshops.zig");
+const sceneops = @import("riley/zig/sceneops.zig");
 const NDArray = @import("riley/zig/ndarray.zig").NDArray;
 const riley = @import("riley/zig/riley.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
@@ -96,7 +97,7 @@ fn loadFuncMeshInput(
         .shader = .{
             .func = .{
                 .uvs = null,
-                .coord_mode = .parametric,
+                .coord_mode = .para,
                 .builtin = builtin,
                 .params = sinusoidalParams(builtin),
                 .bits = 8,
@@ -117,7 +118,7 @@ fn renderSinImage(
     const aa = arena.allocator();
 
     const mesh_input = try loadFuncMeshInput(aa, io, builtin);
-    const roi_pos = cameraops.roiCentFromCoords(&mesh_input.coords);
+    const roi_pos = sceneops.boundsCenter(&mesh_input.coords);
     const cam_pos = cameraops.posFillFrameFromRot(
         &mesh_input.coords,
         pixels_num,

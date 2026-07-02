@@ -19,10 +19,10 @@ const scratchfilter = @import("scratchfilter.zig");
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const ScratchBuffers = simd_impl.ScratchBuffers;
+pub const ScratchBuffs = simd_impl.ScratchBuffs;
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub const rasterScene = impl.rasterScene;

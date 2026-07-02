@@ -8,9 +8,8 @@
 // --------------------------------------------------------------------------------------
 const std = @import("std");
 
-
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn sinApproxSIMD(
@@ -53,7 +52,7 @@ fn trigIntType(comptime T: type) type {
     return switch (T) {
         f32 => i32,
         f64 => i64,
-        else => @compileError("maths_simd only supports f32 and f64"),
+        else => @compileError("maths_simd only supps f32 and f64"),
     };
 }
 
@@ -69,62 +68,62 @@ fn reduceTrigInput(
     comptime T: type,
     input: @Vector(N, T),
 ) TrigReducedType(N, T) {
-    const FloatVector = @Vector(N, T);
+    const FloatVec = @Vector(N, T);
     const Int = trigIntType(T);
-    const IntVector = @Vector(N, Int);
+    const IntVec = @Vector(N, Int);
 
-    const inverse_half_pi: FloatVector = switch (T) {
+    const inv_half_pi: FloatVec = switch (T) {
         f32 => @splat(0.63661977236758134308),
         f64 => @splat(0.63661977236758134308),
         else => unreachable,
     };
 
-    const quadrant_float: FloatVector = @round(input * inverse_half_pi);
-    const quadrant_integer: IntVector = @intFromFloat(quadrant_float);
+    const quadrant_float: FloatVec = @round(input * inv_half_pi);
+    const quadrant_integer: IntVec = @intFromFloat(quadrant_float);
 
     var reduced = input;
     switch (T) {
         f32 => {
-            const half_pi_high: FloatVector =
+            const half_pi_high: FloatVec =
                 @splat(1.57079625129699707031);
-            const half_pi_low: FloatVector =
+            const half_pi_low: FloatVec =
                 @splat(7.54978941586159635335e-8);
 
             reduced = @mulAdd(
-                FloatVector,
+                FloatVec,
                 -quadrant_float,
                 half_pi_high,
                 reduced,
             );
             reduced = @mulAdd(
-                FloatVector,
+                FloatVec,
                 -quadrant_float,
                 half_pi_low,
                 reduced,
             );
         },
         f64 => {
-            const half_pi_high: FloatVector =
+            const half_pi_high: FloatVec =
                 @splat(1.57079632673412561417);
-            const half_pi_mid: FloatVector =
+            const half_pi_mid: FloatVec =
                 @splat(6.07710050650619224932e-11);
-            const half_pi_low: FloatVector =
+            const half_pi_low: FloatVec =
                 @splat(2.02226624879595063154e-21);
 
             reduced = @mulAdd(
-                FloatVector,
+                FloatVec,
                 -quadrant_float,
                 half_pi_high,
                 reduced,
             );
             reduced = @mulAdd(
-                FloatVector,
+                FloatVec,
                 -quadrant_float,
                 half_pi_mid,
                 reduced,
             );
             reduced = @mulAdd(
-                FloatVector,
+                FloatVec,
                 -quadrant_float,
                 half_pi_low,
                 reduced,
@@ -133,7 +132,7 @@ fn reduceTrigInput(
         else => unreachable,
     }
 
-    const quadrant = quadrant_integer & @as(IntVector, @splat(3));
+    const quadrant = quadrant_integer & @as(IntVec, @splat(3));
     return .{
         .reduced = reduced,
         .quadrant = quadrant,
@@ -145,88 +144,88 @@ fn sinReduced(
     comptime T: type,
     reduced: @Vector(N, T),
 ) @Vector(N, T) {
-    const FloatVector = @Vector(N, T);
+    const FloatVec = @Vector(N, T);
     const squared = reduced * reduced;
-    var sine_polynomial: FloatVector = undefined;
+    var sine_polynomial: FloatVec = undefined;
 
     switch (T) {
         f32 => {
             sine_polynomial = @splat(1.6059043836821613e-10);
             sine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 sine_polynomial,
-                @as(FloatVector, @splat(-2.505210838544172e-8)),
+                @as(FloatVec, @splat(-2.505210838544172e-8)),
             );
             sine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 sine_polynomial,
-                @as(FloatVector, @splat(2.7557319223985893e-6)),
+                @as(FloatVec, @splat(2.7557319223985893e-6)),
             );
             sine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 sine_polynomial,
-                @as(FloatVector, @splat(-1.984126984126984e-4)),
+                @as(FloatVec, @splat(-1.984126984126984e-4)),
             );
             sine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 sine_polynomial,
-                @as(FloatVector, @splat(8.333333333333333e-3)),
+                @as(FloatVec, @splat(8.333333333333333e-3)),
             );
             sine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 sine_polynomial,
-                @as(FloatVector, @splat(-1.6666666666666666e-1)),
+                @as(FloatVec, @splat(-1.6666666666666666e-1)),
             );
         },
         f64 => {
             sine_polynomial = @splat(-7.6471637318198164759e-13);
             sine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 sine_polynomial,
-                @as(FloatVector, @splat(1.6059043836821614599e-10)),
+                @as(FloatVec, @splat(1.6059043836821614599e-10)),
             );
             sine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 sine_polynomial,
-                @as(FloatVector, @splat(-2.5052108385441718775e-8)),
+                @as(FloatVec, @splat(-2.5052108385441718775e-8)),
             );
             sine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 sine_polynomial,
-                @as(FloatVector, @splat(2.7557319223985890653e-6)),
+                @as(FloatVec, @splat(2.7557319223985890653e-6)),
             );
             sine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 sine_polynomial,
-                @as(FloatVector, @splat(-1.9841269841269841253e-4)),
+                @as(FloatVec, @splat(-1.9841269841269841253e-4)),
             );
             sine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 sine_polynomial,
-                @as(FloatVector, @splat(8.3333333333333332177e-3)),
+                @as(FloatVec, @splat(8.3333333333333332177e-3)),
             );
             sine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 sine_polynomial,
-                @as(FloatVector, @splat(-1.6666666666666665741e-1)),
+                @as(FloatVec, @splat(-1.6666666666666665741e-1)),
             );
         },
         else => unreachable,
     }
 
     return @mulAdd(
-        FloatVector,
+        FloatVec,
         reduced * squared,
         sine_polynomial,
         reduced,
@@ -238,94 +237,94 @@ fn cosReduced(
     comptime T: type,
     reduced: @Vector(N, T),
 ) @Vector(N, T) {
-    const FloatVector = @Vector(N, T);
+    const FloatVec = @Vector(N, T);
     const squared = reduced * reduced;
-    var cosine_polynomial: FloatVector = undefined;
+    var cosine_polynomial: FloatVec = undefined;
 
     switch (T) {
         f32 => {
             cosine_polynomial = @splat(2.08767569878681e-9);
             cosine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 cosine_polynomial,
-                @as(FloatVector, @splat(-2.755731922398589e-7)),
+                @as(FloatVec, @splat(-2.755731922398589e-7)),
             );
             cosine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 cosine_polynomial,
-                @as(FloatVector, @splat(2.48015873015873e-5)),
+                @as(FloatVec, @splat(2.48015873015873e-5)),
             );
             cosine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 cosine_polynomial,
-                @as(FloatVector, @splat(-1.388888888888889e-3)),
+                @as(FloatVec, @splat(-1.388888888888889e-3)),
             );
             cosine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 cosine_polynomial,
-                @as(FloatVector, @splat(4.1666666666666664e-2)),
+                @as(FloatVec, @splat(4.1666666666666664e-2)),
             );
             cosine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 cosine_polynomial,
-                @as(FloatVector, @splat(-5.0e-1)),
+                @as(FloatVec, @splat(-5.0e-1)),
             );
         },
         f64 => {
             cosine_polynomial = @splat(4.7794773323873852974e-14);
             cosine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 cosine_polynomial,
-                @as(FloatVector, @splat(-1.1470745597729724714e-11)),
+                @as(FloatVec, @splat(-1.1470745597729724714e-11)),
             );
             cosine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 cosine_polynomial,
-                @as(FloatVector, @splat(2.0876756987868098979e-9)),
+                @as(FloatVec, @splat(2.0876756987868098979e-9)),
             );
             cosine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 cosine_polynomial,
-                @as(FloatVector, @splat(-2.7557319223985892511e-7)),
+                @as(FloatVec, @splat(-2.7557319223985892511e-7)),
             );
             cosine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 cosine_polynomial,
-                @as(FloatVector, @splat(2.4801587301587301587e-5)),
+                @as(FloatVec, @splat(2.4801587301587301587e-5)),
             );
             cosine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 cosine_polynomial,
-                @as(FloatVector, @splat(-1.3888888888888888889e-3)),
+                @as(FloatVec, @splat(-1.3888888888888888889e-3)),
             );
             cosine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 cosine_polynomial,
-                @as(FloatVector, @splat(4.1666666666666666667e-2)),
+                @as(FloatVec, @splat(4.1666666666666666667e-2)),
             );
             cosine_polynomial = @mulAdd(
-                FloatVector,
+                FloatVec,
                 squared,
                 cosine_polynomial,
-                @as(FloatVector, @splat(-5.0e-1)),
+                @as(FloatVec, @splat(-5.0e-1)),
             );
         },
         else => unreachable,
     }
 
     return @mulAdd(
-        FloatVector,
+        FloatVec,
         squared,
         cosine_polynomial,
         splatValue(N, T, 1.0),
@@ -337,9 +336,9 @@ fn quadrantUseCosine(
     comptime T: type,
     quadrant: @Vector(N, trigIntType(T)),
 ) @Vector(N, bool) {
-    const IntVector = @Vector(N, trigIntType(T));
-    return (quadrant == @as(IntVector, @splat(1))) |
-        (quadrant == @as(IntVector, @splat(3)));
+    const IntVec = @Vector(N, trigIntType(T));
+    return (quadrant == @as(IntVec, @splat(1))) |
+        (quadrant == @as(IntVec, @splat(3)));
 }
 
 fn quadrantNegateSin(
@@ -347,9 +346,9 @@ fn quadrantNegateSin(
     comptime T: type,
     quadrant: @Vector(N, trigIntType(T)),
 ) @Vector(N, bool) {
-    const IntVector = @Vector(N, trigIntType(T));
-    return (quadrant == @as(IntVector, @splat(2))) |
-        (quadrant == @as(IntVector, @splat(3)));
+    const IntVec = @Vector(N, trigIntType(T));
+    return (quadrant == @as(IntVec, @splat(2))) |
+        (quadrant == @as(IntVec, @splat(3)));
 }
 
 fn quadrantNegateCos(
@@ -357,9 +356,9 @@ fn quadrantNegateCos(
     comptime T: type,
     quadrant: @Vector(N, trigIntType(T)),
 ) @Vector(N, bool) {
-    const IntVector = @Vector(N, trigIntType(T));
-    return (quadrant == @as(IntVector, @splat(1))) |
-        (quadrant == @as(IntVector, @splat(2)));
+    const IntVec = @Vector(N, trigIntType(T));
+    return (quadrant == @as(IntVec, @splat(1))) |
+        (quadrant == @as(IntVec, @splat(2)));
 }
 
 fn sinFromReduced(
@@ -439,8 +438,8 @@ fn sinCosApproxPair(
 // Tests
 // --------------------------------------------------------------------------
 
-const f32_trig_tolerance: f32 = 1e-5;
-const f64_trig_tolerance: f64 = 1e-12;
+const f32_trig_tol: f32 = 1e-5;
+const f64_trig_tol: f64 = 1e-12;
 
 test "maths_simd sin and cos approximations f32" {
     const testing = std.testing;
@@ -467,12 +466,12 @@ test "maths_simd sin and cos approximations f32" {
             try testing.expectApproxEqAbs(
                 @sin(input_array[jj]),
                 sin_arr[jj],
-                f32_trig_tolerance,
+                f32_trig_tol,
             );
             try testing.expectApproxEqAbs(
                 @cos(input_array[jj]),
                 cos_arr[jj],
-                f32_trig_tolerance,
+                f32_trig_tol,
             );
         }
     }
@@ -503,12 +502,12 @@ test "maths_simd sin and cos approximations f64" {
             try testing.expectApproxEqAbs(
                 @sin(input_array[jj]),
                 sin_arr[jj],
-                f64_trig_tolerance,
+                f64_trig_tol,
             );
             try testing.expectApproxEqAbs(
                 @cos(input_array[jj]),
                 cos_arr[jj],
-                f64_trig_tolerance,
+                f64_trig_tol,
             );
         }
     }
@@ -537,12 +536,12 @@ test "maths_simd dedicated paths match shared pair f32" {
             try testing.expectApproxEqAbs(
                 pair_sin_arr[jj],
                 sin_arr[jj],
-                f32_trig_tolerance,
+                f32_trig_tol,
             );
             try testing.expectApproxEqAbs(
                 pair_cos_arr[jj],
                 cos_arr[jj],
-                f32_trig_tolerance,
+                f32_trig_tol,
             );
         }
     }

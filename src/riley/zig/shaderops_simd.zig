@@ -19,7 +19,7 @@ const VecSF = buildconfig.VecSF;
 const MatSlice = @import("matslice.zig").MatSlice;
 const maths_simd = @import("maths_simd.zig");
 const texops = @import("textureops.zig");
-const TextureSampleConfig = texops.TextureSampleConfig;
+const TexSampleConfig = texops.TexSampleConfig;
 const common = @import("shaderops_common.zig");
 const simdops = @import("simdops.zig");
 
@@ -41,7 +41,6 @@ inline fn storeMaskedVecSF(
     simdops.storeVecSF(scratch_vals, start_u, v_new_vals);
 }
 
-
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
@@ -49,9 +48,8 @@ inline fn storeMaskedVecSF(
 pub const fillNodalClip = common.fillNodalClip;
 pub const fillNodalPersp = common.fillNodalPersp;
 
-
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub inline fn evalFuncShaderGreySIMD(
@@ -477,11 +475,11 @@ pub const fillTexPersp = common.fillTexPersp;
 pub const fillFuncClip = common.fillFuncClip;
 pub const fillFuncPersp = common.fillFuncPersp;
 
-fn textureSimdInterpMode(
+fn texSimdInterpMode(
     comptime channels: comptime_int,
-    comptime sample_config: TextureSampleConfig,
-) buildconfig.SimdTextureInterpMode {
-    return buildconfig.TextureSIMDPolicy.resolve(
+    comptime sample_config: TexSampleConfig,
+) buildconfig.SimdTexInterpMode {
+    return buildconfig.TexSIMDPolicy.resolve(
         channels,
         sample_config.sample == .linear,
         sample_config.mode == .lut or sample_config.mode == .lut_lerp,
@@ -520,7 +518,7 @@ pub inline fn fillTexClipSIMD(
     comptime N: usize,
     comptime T: type,
     comptime channels: usize,
-    comptime sample_config: TextureSampleConfig,
+    comptime sample_config: TexSampleConfig,
     ctx_shade: common.ShadeContext(N),
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
@@ -536,7 +534,7 @@ pub inline fn fillTexClipSIMD(
     }
 
     const px_stride = spx_image_scratch.cols_num;
-    const sampled_vecs = switch (comptime textureSimdInterpMode(
+    const sampled_vecs = switch (comptime texSimdInterpMode(
         channels,
         sample_config,
     )) {
@@ -544,14 +542,14 @@ pub inline fn fillTexClipSIMD(
             channels,
             sample_config,
             v_mask_active,
-            sh.texture,
+            sh.tex,
             v_tex_u,
             v_tex_v,
         ),
         .over_pixels => texops.sampleWide(
             channels,
             sample_config,
-            sh.texture,
+            sh.tex,
             v_tex_u,
             v_tex_v,
         ),
@@ -575,7 +573,7 @@ pub inline fn fillTexPerspSIMD(
     comptime N: usize,
     comptime T: type,
     comptime channels: usize,
-    comptime sample_config: TextureSampleConfig,
+    comptime sample_config: TexSampleConfig,
     ctx_shade: common.ShadeContext(N),
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
@@ -601,7 +599,7 @@ pub inline fn fillTexPerspSIMD(
     v_tex_u *= v_subpx_z;
     v_tex_v *= v_subpx_z;
 
-    const sampled_vecs = switch (comptime textureSimdInterpMode(
+    const sampled_vecs = switch (comptime texSimdInterpMode(
         channels,
         sample_config,
     )) {
@@ -610,7 +608,7 @@ pub inline fn fillTexPerspSIMD(
                 channels,
                 sample_config,
                 v_mask_active,
-                sh.texture,
+                sh.tex,
                 v_tex_u,
                 v_tex_v,
             )
@@ -619,14 +617,14 @@ pub inline fn fillTexPerspSIMD(
                 channels,
                 sample_config,
                 v_mask_active,
-                sh.texture,
+                sh.tex,
                 v_tex_u,
                 v_tex_v,
             ),
         .over_pixels => texops.sampleWide(
             channels,
             sample_config,
-            sh.texture,
+            sh.tex,
             v_tex_u,
             v_tex_v,
         ),
@@ -669,7 +667,7 @@ pub inline fn fillFuncClipSIMD(
                     @as(VecSF, @splat(ctx_shade.shader_buf.func_coords[N + nn]));
             }
         },
-        .parametric => {},
+        .para => {},
     }
 
     const normal_vecs = calcNormalLaneVecs(N, ctx_shade, v_weights);
@@ -748,7 +746,7 @@ pub inline fn fillFuncPerspSIMD(
             v_coord_0 *= v_subpx_z;
             v_coord_1 *= v_subpx_z;
         },
-        .parametric => {},
+        .para => {},
     }
 
     const normal_vecs = calcNormalLaneVecs(N, ctx_shade, v_weights);

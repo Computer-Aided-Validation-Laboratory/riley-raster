@@ -147,7 +147,7 @@ fn runTexFuncCase(
             .{
                 .func_rgb = .{
                     .uvs = uvs,
-                    .coord_mode = if (coord_mode == .uv) .uv else .parametric,
+                    .coord_mode = if (coord_mode == .uv) .uv else .para,
                     .builtin = builtin,
                     .normal_type = normal_type,
                 },
@@ -156,7 +156,7 @@ fn runTexFuncCase(
             .{
                 .func = .{
                     .uvs = uvs,
-                    .coord_mode = if (coord_mode == .uv) .uv else .parametric,
+                    .coord_mode = if (coord_mode == .uv) .uv else .para,
                     .builtin = builtin,
                     .normal_type = normal_type,
                 },

@@ -21,6 +21,7 @@ const meshio = @import("riley/zig/meshio.zig");
 const mo = @import("riley/zig/meshops.zig");
 const cam = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
+const sceneops = @import("riley/zig/sceneops.zig");
 const report = @import("riley/zig/report.zig");
 const NDArray = @import("riley/zig/ndarray.zig").NDArray;
 const orch = @import("dev_support/orchestration.zig");
@@ -464,7 +465,7 @@ pub fn main(init: std.process.Init) !void {
                     texture_rgb,
                 );
 
-                const roi_pos = cameraops.roiCentFromCoords(&base_mesh.coords);
+                const roi_pos = sceneops.boundsCenter(&base_mesh.coords);
                 const cam_pos = cameraops.posFillFrameFromRot(
                     &base_mesh.coords,
                     render_defaults.pixels_num,

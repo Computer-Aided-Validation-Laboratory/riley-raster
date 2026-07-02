@@ -31,9 +31,9 @@ fn bytesPerSubpixelForF32() comptime_int {
 const bytes_per_subpixel = switch (F) {
     f32 => bytesPerSubpixelForF32(),
     f64 => bytesPerSubpixelForF64(),
-    else => @compileError("Only f32 and f64 precision are supported."),
+    else => @compileError("Only f32 and f64 precision are supped."),
 };
-const target_subpx_per_tile: usize = @intFromFloat(
+const targ_subpx_per_tile: usize = @intFromFloat(
     @as(f64, l2_cache_size_bytes) * l2_safety_margin / bytes_per_subpixel,
 );
 pub const GEOMETRY_CHUNKS_PER_WORKER: usize = 1;
@@ -41,7 +41,7 @@ pub const RASTER_CHUNKS_PER_WORKER: usize = 4;
 pub const AUTO_GEOMETRY_SPREAD_ELEMS_THRESHOLD: usize = 100_000;
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn resolveGeometrySchedulingMode(
@@ -97,7 +97,7 @@ pub fn tileSize(
         const tile_size_u: usize = @intCast(tile_size);
         const eff_tile_size_u = tile_size_u + 2 * @as(usize, halo_px);
         const subpx_per_tile = eff_tile_size_u * eff_tile_size_u * sub_samp * sub_samp;
-        if (subpx_per_tile <= target_subpx_per_tile) {
+        if (subpx_per_tile <= targ_subpx_per_tile) {
             break;
         }
         tile_size = @max(min_tile_size, tile_size / 2);
@@ -172,11 +172,11 @@ pub fn rasterGrainSize(
 }
 
 fn chunkSize(
-    domain_len: usize,
+    dom_len: usize,
     workers_num: usize,
     chunks_per_worker: usize,
 ) usize {
-    if (domain_len == 0) {
+    if (dom_len == 0) {
         return 1;
     }
 
@@ -185,7 +185,7 @@ fn chunkSize(
         @as(usize, 1),
         actual_workers * chunks_per_worker,
     );
-    return @max(@as(usize, 1), (domain_len + chunk_count - 1) / chunk_count);
+    return @max(@as(usize, 1), (dom_len + chunk_count - 1) / chunk_count);
 }
 
 // --------------------------------------------------------------------------------------

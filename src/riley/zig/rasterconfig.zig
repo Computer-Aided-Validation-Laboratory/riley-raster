@@ -66,13 +66,13 @@ pub const RasterConfig = struct {
     else
         .centroid,
     newton_seed_reuse: NewtonSeedReuse =
-        if (buildconfig.UseLastConvergedNewtonSeedReuse)
-            .last_converged
+        if (buildconfig.UseLastConvNewtonSeedReuse)
+            .last_conv
         else
             .off,
     report: ReportMode = .bench,
     full_stats_opts: FullStatsOpts = .{},
-    save_frame_buffer_count: usize = buildconfig.SaveFrameBufferCount,
+    save_frame_buff_count: usize = buildconfig.SaveFrameBuffCount,
 };
 
 pub const RenderMode = enum {
@@ -130,7 +130,7 @@ pub const NewtonSeedMode = enum {
 
 pub const NewtonSeedReuse = enum {
     off,
-    last_converged,
+    last_conv,
 };
 
 pub const FullStatsOpts = struct {
@@ -139,11 +139,11 @@ pub const FullStatsOpts = struct {
         .{ .format = .csv, .bits = null, .scaling = .none },
     },
     save_solver_csv: bool = false,
-    save_iteration_map: bool = true,
+    save_iter_map: bool = true,
     save_xi_map: bool = true,
     save_eta_map: bool = true,
-    save_converged_map: bool = true,
-    save_jacobian_det_map: bool = true,
+    save_conv_map: bool = true,
+    save_jac_det_map: bool = true,
     save_tile_timing_map: bool = true,
     save_tile_density_map: bool = true,
     save_tile_occupancy_map: bool = true,

@@ -571,7 +571,7 @@ pub fn main(init: std.process.Init) !void {
             allocator,
             global_reproj_errs.items,
         );
-        const newton_tol = buildconfig.config.tolerance.newton.residual;
+        const newton_tol = buildconfig.config.tolerance.newton.resid;
 
         std.debug.print(
             "\nGlobal reprojection error summary (px):\n" ++
@@ -589,7 +589,7 @@ pub fn main(init: std.process.Init) !void {
         );
         std.debug.print(
             "Tolerance comparison:\n" ++
-                "  newton residual tol = {e:.6}\n" ++
+                "  newton resid tol = {e:.6}\n" ++
                 "  max / newton tol = {e:.3}\n" ++
                 "  median / newton tol = {e:.3}\n",
             .{

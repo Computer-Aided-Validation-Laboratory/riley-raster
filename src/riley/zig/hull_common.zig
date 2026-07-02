@@ -15,11 +15,11 @@ const F = buildconfig.F;
 const geomkerns = @import("geometrykernels.zig");
 const MeshType = geomkerns.MeshType;
 
-const tol = buildconfig.config.tolerance;
+const tol = buildconfig.config.tol;
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn AdaptiveHullPoints(comptime N: usize) type {
@@ -149,7 +149,7 @@ fn convexifyHullInPlace(comptime NH: usize, hull_x: *[NH]F, hull_y: *[NH]F) void
             const pp = (nn + NH - 1) % NH;
             const mm = (nn + 1) % NH;
 
-            // Visible elements are CW. For CW: convex is val < 0, concave is val > 0.
+            // Visible elems are CW. For CW: convex is val < 0, concave is val > 0.
             const val = rops.edgeFun3(
                 hull_x[pp],
                 hull_y[pp],

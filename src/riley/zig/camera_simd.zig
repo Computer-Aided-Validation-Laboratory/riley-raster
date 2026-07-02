@@ -27,7 +27,7 @@ pub const CameraPrepared = common.CameraPreparedType(@This());
 
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub fn calcPinholeRasterPointSIMD(
@@ -47,7 +47,7 @@ pub fn calcPinholeRasterPointSIMD(
     const v_y_dist = (v_observed_y_px - @as(VecSF, @splat(offsets.y_off))) /
         @as(VecSF, @splat(focal_px.fy));
 
-    const solved = try cameramodels.inverseDistortionModelSIMD(
+    const solved = try cameramodels.invDistortionModelSIMD(
         camera.distortion,
         v_x_dist,
         v_y_dist,
@@ -116,7 +116,7 @@ pub fn fillTileIdealCentersPerTile(
             const lane_count = @min(S, tile_w - ii);
             const v_active = calcActiveMask(lane_count);
             const global_x_start = start_x + ii;
-            const v_observed_x = calcObservedXVector(
+            const v_observed_x = calcObservedXVec(
                 global_x_start,
                 step,
                 off,
@@ -364,7 +364,7 @@ pub fn calcPinholeRasterPoint(
     const x_dist = (observed_x_px - offsets.x_off) / focal_px.fx;
     const y_dist = (observed_y_px - offsets.y_off) / focal_px.fy;
 
-    const solved = try cameramodels.inverseDistortionModelScalar(
+    const solved = try cameramodels.invDistortionModelScalar(
         camera.distortion,
         x_dist,
         y_dist,
@@ -402,7 +402,7 @@ fn storeIdealPairs(
     }
 }
 
-fn calcObservedXVector(
+fn calcObservedXVec(
     global_subx_start: usize,
     step: F,
     off: F,

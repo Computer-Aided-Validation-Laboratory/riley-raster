@@ -14,6 +14,7 @@ const uvio = @import("riley/zig/uvio.zig");
 const CameraPrepared = @import("riley/zig/camera.zig").CameraPrepared;
 const CameraOps = @import("riley/zig/camera.zig").CameraOps;
 const Rotation = @import("riley/zig/camera.zig").Rotation;
+const sceneops = @import("riley/zig/sceneops.zig");
 const MeshInput = @import("riley/zig/meshops.zig").MeshInput;
 const mo = @import("riley/zig/meshops.zig");
 const MatSlice = @import("riley/zig/matslice.zig").MatSlice;
@@ -109,7 +110,7 @@ pub fn main(init: std.process.Init) !void {
             .disp = sim_datas[ii].field,
             .shader = .{ .tex_rgb = .{
                 .uvs = uvs.array,
-                .texture = texture,
+                .tex = texture,
                 .sample_config = .{
                     .sample = .cubic_catmull_rom,
                     .mode = .lut_lerp,
@@ -195,7 +196,7 @@ pub fn main(init: std.process.Init) !void {
     const rot = Rotation.init(0, 0, 0);
     const fov_scale_factor: f64 = 1.1;
 
-    const roi_pos = CameraOps.roiCentOverMeshes(mesh_inputs);
+    const roi_pos = sceneops.boundsCenterOverMeshes(mesh_inputs);
     const cam_pos = CameraOps.posFillFrameFromRotOverMeshes(
         mesh_inputs,
         pixel_num,

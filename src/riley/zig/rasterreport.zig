@@ -14,7 +14,6 @@ const Timestamp = std.Io.Clock.Timestamp;
 const rastcfg = @import("rasterconfig.zig");
 const rops = @import("rasterops.zig");
 
-
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
@@ -25,9 +24,8 @@ pub const TileScope = struct {
     start: ?Timestamp = null,
 };
 
-
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Functions
+// Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub inline fn beginTile(
@@ -95,21 +93,21 @@ pub inline fn recordEarlyOut(
     }
 }
 
-pub inline fn recordPixelConvergedStats(
+pub inline fn recordPixelConvStats(
     comptime report_mode: ReportMode,
     ctx_report: anytype,
     global_subx: usize,
     global_suby: usize,
-    converged: bool,
+    conv: bool,
     xi: F,
     eta: F,
-    jacobian_det: F,
+    jac_det: F,
 ) void {
     if (comptime report_mode == .full_stats) {
-        ctx_report.recordPixelConverged(global_subx, global_suby, converged);
+        ctx_report.recordPixelConv(global_subx, global_suby, conv);
         ctx_report.recordPixelXi(global_subx, global_suby, xi);
         ctx_report.recordPixelEta(global_subx, global_suby, eta);
-        ctx_report.recordPixelJacobianDet(global_subx, global_suby, jacobian_det);
+        ctx_report.recordPixelJacDet(global_subx, global_suby, jac_det);
     }
 }
 
@@ -119,14 +117,14 @@ pub inline fn recordPixelSolverDiagnostics(
     global_subx: usize,
     global_suby: usize,
     status: newton.NewtonStatus,
-    pre_domain_converged: bool,
-    hit_iter_limit: bool,
-    residual_x: F,
-    residual_y: F,
-    interpolated_w: F,
-    residual_mag: F,
-    normalized_residual_mag: F,
-    domain_violation: F,
+    pre_dom_conv: bool,
+    hit_iter_lim: bool,
+    resid_x: F,
+    resid_y: F,
+    interp_w: F,
+    resid_mag: F,
+    norm_resid_mag: F,
+    dom_violation: F,
 ) void {
     if (comptime report_mode == .full_stats) {
         ctx_report.recordPixelSolverStatus(
@@ -134,45 +132,45 @@ pub inline fn recordPixelSolverDiagnostics(
             global_suby,
             status,
         );
-        ctx_report.recordPixelPreDomainConverged(
+        ctx_report.recordPixelPreDomConv(
             global_subx,
             global_suby,
-            pre_domain_converged,
+            pre_dom_conv,
         );
         ctx_report.recordPixelHitIterLimit(
             global_subx,
             global_suby,
-            hit_iter_limit,
+            hit_iter_lim,
         );
         ctx_report.recordPixelResidualX(
             global_subx,
             global_suby,
-            residual_x,
+            resid_x,
         );
         ctx_report.recordPixelResidualY(
             global_subx,
             global_suby,
-            residual_y,
+            resid_y,
         );
         ctx_report.recordPixelInterpolatedW(
             global_subx,
             global_suby,
-            interpolated_w,
+            interp_w,
         );
         ctx_report.recordPixelResidualMag(
             global_subx,
             global_suby,
-            residual_mag,
+            resid_mag,
         );
         ctx_report.recordPixelNormalizedResidualMag(
             global_subx,
             global_suby,
-            normalized_residual_mag,
+            norm_resid_mag,
         );
-        ctx_report.recordPixelDomainViolation(
+        ctx_report.recordPixelDomViolation(
             global_subx,
             global_suby,
-            domain_violation,
+            dom_violation,
         );
     }
 }

@@ -66,7 +66,7 @@ test "Nodal normals are prepared when requested" {
         rot,
         1.0,
     );
-    const roi_cent = @import("../riley/zig/cameraops.zig").roiCentFromCoords(
+    const roi_cent = @import("../riley/zig/sceneops.zig").boundsCenter(
         &sim_data.coords,
     );
 
