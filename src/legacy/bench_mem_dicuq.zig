@@ -52,7 +52,7 @@ fn runCase(
     io: std.Io,
     render_groups: []const riley.RenderGroupSpec,
     camera_inputs: []const @import("riley/zig/camera.zig").CameraInput,
-    mesh_input: @import("riley/zig/meshops.zig").MeshInput,
+    mesh_input: @import("riley/zig/meshpipeline.zig").MeshInput,
     config: riley.RasterConfig,
     out_dir_path: ?[]const u8,
     case_name: []const u8,

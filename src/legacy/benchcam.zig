@@ -17,7 +17,7 @@ const buildconfig = @import("riley/zig/buildconfig.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const meshio = @import("riley/zig/meshio.zig");
-const mo = @import("riley/zig/meshops.zig");
+const mo = @import("riley/zig/meshpipeline.zig");
 const rastcfg = @import("riley/zig/rasterconfig.zig");
 const report = @import("riley/zig/report.zig");
 const riley = @import("riley/zig/riley.zig");
@@ -525,7 +525,7 @@ fn runCameraBenchmarkWithImageOut(
             .bench_log.frame_times.scratch_resolve / 1e6,
         .fps = if (e2e_ms > 0.0) 1000.0 / e2e_ms else 0.0,
         .total_elems = bench_capture_storage[0].bench_log.total_elems,
-        .vis_elems = bench_capture_storage[0].bench_log.visible_elems,
+        .vis_elems = bench_capture_storage[0].bench_log.vis_elems,
         .total_px = @as(u64, camera_input.pixels_num[0]) *
             @as(u64, camera_input.pixels_num[1]),
         .shaded_px = bench_capture_storage[0].bench_log.total_shaded_px,

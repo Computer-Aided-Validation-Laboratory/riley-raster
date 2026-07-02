@@ -9,7 +9,7 @@
 const std = @import("std");
 const buildconfig = @import("../riley/zig/buildconfig.zig");
 const F = buildconfig.F;
-const mo = @import("../riley/zig/meshops.zig");
+const mo = @import("../riley/zig/meshpipeline.zig");
 const pce = @import("../riley/zig/parachunkexec.zig");
 const meshio = @import("../riley/zig/meshio.zig");
 const report = @import("../riley/zig/report.zig");
@@ -99,8 +99,8 @@ test "Nodal normals are prepared when requested" {
 
     const rast_cfg = tcfg.getRasterConfig(.testing);
     var pool = pce.ParaChunkExecutor.init(std.testing.io, 1);
-    var timing = mo.GeometryTiming{};
-    const frame_mesh = try mo.prepareMeshFrame(
+    var timing = mo.GeomTimes{};
+    const frame_mesh = try mo.prepMeshFrame(
         arena_alloc,
         &pool,
         1,

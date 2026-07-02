@@ -16,7 +16,7 @@ const riley = @import("../riley/zig/riley.zig");
 const meshio = @import("../riley/zig/meshio.zig");
 const uvio = @import("../riley/zig/uvio.zig");
 const iio = @import("../riley/zig/imageio.zig");
-const mo = @import("../riley/zig/meshops.zig");
+const mo = @import("../riley/zig/meshpipeline.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const texops = @import("../riley/zig/textureops.zig");
 const camera_mod = @import("../riley/zig/camera.zig");
@@ -411,7 +411,7 @@ pub fn runBenchmark(
             .pipeline_times = frame_times,
             .image = null,
             .total_elems = bench_log.total_elems,
-            .vis_elems = bench_log.visible_elems,
+            .vis_elems = bench_log.vis_elems,
             .total_px = @as(u64, camera_inputs[0].pixels_num[0]) *
                 @as(u64, camera_inputs[0].pixels_num[1]) *
                 @as(u64, frame_count),
@@ -457,7 +457,7 @@ fn aggregateBenchLog(
     for (bench_capture) |capture| {
         report.reduceBenchLog(&bench_log, &capture.bench_log);
         bench_log.total_elems += capture.bench_log.total_elems;
-        bench_log.visible_elems += capture.bench_log.visible_elems;
+        bench_log.vis_elems += capture.bench_log.vis_elems;
     }
 
     bench_log.frame_times = aggregateFrameTimes(bench_capture);
@@ -597,7 +597,7 @@ fn buildFrameRows(
             .camera_idx = capture.camera_idx,
             .frame_idx = capture.frame_idx,
             .total_elems = capture.bench_log.total_elems,
-            .vis_elems = capture.bench_log.visible_elems,
+            .vis_elems = capture.bench_log.vis_elems,
             .total_px = @as(
                 u64,
                 camera_inputs[capture.camera_idx].pixels_num[0],

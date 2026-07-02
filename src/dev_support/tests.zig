@@ -18,7 +18,7 @@ const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
 const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
 
 const gk = @import("../riley/zig/geometrykernels.zig");
-const mo = @import("../riley/zig/meshops.zig");
+const mo = @import("../riley/zig/meshpipeline.zig");
 const MeshType = gk.MeshType;
 const MeshInput = mo.MeshInput;
 

@@ -15,8 +15,8 @@ const CameraPrepared = @import("riley/zig/camera.zig").CameraPrepared;
 const CameraOps = @import("riley/zig/camera.zig").CameraOps;
 const Rotation = @import("riley/zig/camera.zig").Rotation;
 const sceneops = @import("riley/zig/sceneops.zig");
-const MeshInput = @import("riley/zig/meshops.zig").MeshInput;
-const mo = @import("riley/zig/meshops.zig");
+const MeshInput = @import("riley/zig/meshpipeline.zig").MeshInput;
+const mo = @import("riley/zig/meshpipeline.zig");
 const MatSlice = @import("riley/zig/matslice.zig").MatSlice;
 const NDArray = @import("riley/zig/ndarray.zig").NDArray;
 const csvio = @import("riley/zig/csvio.zig");
@@ -188,7 +188,10 @@ pub fn main(init: std.process.Init) !void {
         };
     }
 
-    mo.arrangeMeshSlice(mesh_inputs, .{ 0.15, 0.15, 0.0 }, .{ 5, 2, 1 });
+    sceneops.arrangeMeshesGrid(mesh_inputs, .{
+        .gap = .{ 0.15, 0.15, 0.0 },
+        .max_divs = .{ 5, 2, 1 },
+    });
 
     const pixel_num = [_]u32{ 1200, 800 };
     const pixel_size = [_]f64{ 5.3e-6, 5.3e-6 };

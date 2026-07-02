@@ -789,7 +789,7 @@ test "CameraPrepared.brownConradyExtDistortionApplied" {
 }
 
 test "PreparedPSF gaussian kernels normalize" {
-    var prepared = try cm.preparePSF(
+    var prep = try cm.preparePSF(
         std.testing.allocator,
         .{ .gaussian = .{
             .sigma_px = 0.35,
@@ -798,16 +798,16 @@ test "PreparedPSF gaussian kernels normalize" {
         } },
         2,
     );
-    defer prepared.deinit(std.testing.allocator);
+    defer prep.deinit(std.testing.allocator);
 
     var sum_x: F = 0.0;
     var sum_y: F = 0.0;
-    for (prepared.weights_x) |weight| sum_x += weight;
-    for (prepared.weights_y) |weight| sum_y += weight;
+    for (prep.weights_x) |weight| sum_x += weight;
+    for (prep.weights_y) |weight| sum_y += weight;
 
     try std.testing.expectApproxEqAbs(1.0, sum_x, sum_abs_tol);
     try std.testing.expectApproxEqAbs(1.0, sum_y, sum_abs_tol);
-    try std.testing.expectEqual(@as(u16, 2), prepared.halo_px);
+    try std.testing.expectEqual(@as(u16, 2), prep.halo_px);
 }
 
 test "PreparedPSF isotropic gaussian separable matches non-separable outer product" {

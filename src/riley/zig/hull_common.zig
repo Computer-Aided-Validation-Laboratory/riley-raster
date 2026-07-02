@@ -17,7 +17,6 @@ const MeshType = geomkerns.MeshType;
 
 const tol = buildconfig.config.tol;
 
-
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Functions
 // --------------------------------------------------------------------------------------
@@ -149,7 +148,7 @@ fn convexifyHullInPlace(comptime NH: usize, hull_x: *[NH]F, hull_y: *[NH]F) void
             const pp = (nn + NH - 1) % NH;
             const mm = (nn + 1) % NH;
 
-            // Visible elems are CW. For CW: convex is val < 0, concave is val > 0.
+            // Vis elems are CW. For CW: convex is val < 0, concave is val > 0.
             const val = rops.edgeFun3(
                 hull_x[pp],
                 hull_y[pp],

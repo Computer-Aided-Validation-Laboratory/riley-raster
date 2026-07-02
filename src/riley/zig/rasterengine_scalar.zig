@@ -26,7 +26,7 @@ const camcommon = @import("camera_common.zig");
 const common = @import("rasterengine_common.zig");
 const rasterreport = @import("rasterreport.zig");
 
-const mo = @import("meshops.zig");
+const mo = @import("meshpipeline.zig");
 const MeshPrepared = mo.MeshPrepared;
 const MeshType = mo.MeshType;
 const Shader = mo.Shader;

@@ -14,7 +14,8 @@ const orch = @import("orchestration.zig");
 const riley = @import("../riley/zig/riley.zig");
 const iio = @import("../riley/zig/imageio.zig");
 const meshio = @import("../riley/zig/meshio.zig");
-const mo = @import("../riley/zig/meshops.zig");
+const mo = @import("../riley/zig/meshpipeline.zig");
+const sceneops = @import("../riley/zig/sceneops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const texops = @import("../riley/zig/textureops.zig");
 const CameraInput = @import("../riley/zig/camera.zig").CameraInput;
@@ -73,7 +74,7 @@ fn buildSphere200MultiCullMeshInputs(
     const left_coords = try orch.copyCoords(allocator, base_mesh_input.coords);
     const right_coords = try orch.copyCoords(allocator, base_mesh_input.coords);
 
-    const bounds = mo.findAlignedCentroid(&left_coords);
+    const bounds = sceneops.boundsForCoords(&left_coords);
     const diameter = bounds.extent[0];
     const overlap_x = 0.7 * diameter;
     var right_coords_mut = right_coords;

@@ -15,7 +15,7 @@ const buildconfig = @import("riley/zig/buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
 const gk = @import("riley/zig/geometrykernels.zig");
-const mo = @import("riley/zig/meshops.zig");
+const mo = @import("riley/zig/meshpipeline.zig");
 const iio = @import("riley/zig/imageio.zig");
 const texops = @import("riley/zig/textureops.zig");
 

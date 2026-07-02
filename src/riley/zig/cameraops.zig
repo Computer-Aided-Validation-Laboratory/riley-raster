@@ -11,7 +11,7 @@ const buildconfig = @import("buildconfig.zig");
 
 const cam = @import("camera.zig");
 const meshio = @import("meshio.zig");
-const mo = @import("meshops.zig");
+const mo = @import("meshpipeline.zig");
 const sceneops = @import("sceneops.zig");
 const vec = @import("vecstack.zig");
 const matrix = @import("matstack.zig");

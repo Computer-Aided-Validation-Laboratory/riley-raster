@@ -17,7 +17,7 @@ const cammod = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
-const mo = @import("riley/zig/meshops.zig");
+const mo = @import("riley/zig/meshpipeline.zig");
 const meshio = @import("riley/zig/meshio.zig");
 const riley = @import("riley/zig/riley.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
@@ -257,7 +257,7 @@ fn runCase(
     const front_coords = try orch.copyCoords(aa, front_sim_data.coords);
     const back_coords = try orch.copyCoords(aa, back_sim_data.coords);
 
-    const bounds = mo.findAlignedCentroid(&front_coords);
+    const bounds = sceneops.boundsForCoords(&front_coords);
     const width = bounds.extent[0];
     const height = bounds.extent[1];
     const x_sep = width * (1.0 - OVERLAP_X);
@@ -345,7 +345,7 @@ fn runCase(
         .distortion = camera.distortion,
     };
 
-    const front_centroid = mo.findAlignedCentroid(&front_mesh.coords).centroid;
+    const front_centroid = sceneops.boundsForCoords(&front_mesh.coords).center;
     const cam_axis = [3]F{
         camera_input.pos_world.slice[0] - camera_input.roi_cent_world.slice[0],
         camera_input.pos_world.slice[1] - camera_input.roi_cent_world.slice[1],

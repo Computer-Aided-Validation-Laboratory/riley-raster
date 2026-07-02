@@ -17,7 +17,7 @@ const sliceops = @import("sliceops.zig");
 const cam = @import("camera.zig");
 const cameraops = @import("cameraops.zig");
 const rops = @import("rasterops.zig");
-const mo = @import("meshops.zig");
+const mo = @import("meshpipeline.zig");
 const shaderops = @import("shaderops.zig");
 
 const iio = @import("imageio.zig");
@@ -860,8 +860,8 @@ fn runGeometryStage(
     var chunk_exec = pce.ParaChunkExecutor.init(io, geom_workers);
     const arena_alloc = job.ctx.arena.allocator();
 
-    var timing = mo.GeometryTiming{};
-    const geo_res = try mo.prepareMeshFrames(
+    var timing = mo.GeomTimes{};
+    const geo_res = try mo.prepMeshFrames(
         arena_alloc,
         &chunk_exec,
         scalingpolicy.geometryWorkers(geom_workers),

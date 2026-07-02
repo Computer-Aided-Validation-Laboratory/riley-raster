@@ -13,7 +13,7 @@ const ndarray = @import("ndarray.zig");
 const iio = @import("imageio.zig");
 const matslice = @import("matslice.zig");
 const cam = @import("camera.zig");
-const mo = @import("meshops.zig");
+const mo = @import("meshpipeline.zig");
 const newton = @import("newton.zig");
 const rastcfg = @import("rasterconfig.zig");
 pub const ReportMode = rastcfg.ReportMode;
@@ -53,7 +53,7 @@ pub const BenchLog = struct {
     frame_times: FrameTimes = .{},
     total_nodes: usize = 0,
     total_elems: usize = 0,
-    visible_elems: usize = 0,
+    vis_elems: usize = 0,
     solver_calls: u64 = 0,
     total_solver_iters: u64 = 0,
     solver_diverged: u64 = 0,
@@ -182,7 +182,7 @@ pub fn publishFrameResultsWithNodesPerElem(
                         .frame_times = frame_times,
                         .total_nodes = total_nodes_num,
                         .total_elems = total_elems_num,
-                        .visible_elems = total_elems_in_image,
+                        .vis_elems = total_elems_in_image,
                     },
                 };
             }
@@ -191,7 +191,7 @@ pub fn publishFrameResultsWithNodesPerElem(
             report_storage.bench.frame_times = frame_times;
             report_storage.bench.total_nodes = total_nodes_num;
             report_storage.bench.total_elems = total_elems_num;
-            report_storage.bench.visible_elems = total_elems_in_image;
+            report_storage.bench.vis_elems = total_elems_in_image;
             if (bench_capture) |capture| {
                 const capture_idx = calcBenchCaptureIdx(
                     cameras_num,
@@ -221,7 +221,7 @@ pub fn publishFrameResultsWithNodesPerElem(
             report_storage.full_stats.bench.frame_times = frame_times;
             report_storage.full_stats.bench.total_nodes = total_nodes_num;
             report_storage.full_stats.bench.total_elems = total_elems_num;
-            report_storage.full_stats.bench.visible_elems = total_elems_in_image;
+            report_storage.full_stats.bench.vis_elems = total_elems_in_image;
             if (bench_capture) |capture| {
                 const capture_idx = calcBenchCaptureIdx(
                     cameras_num,
@@ -847,9 +847,9 @@ pub const FullStatsLog = struct {
         try writer.print("Total Elems in Mesh  = {d}\n", .{self.bench.total_elems});
         try writer.print(
             "Elems after Crop     = {d}\n",
-            .{self.bench.visible_elems},
+            .{self.bench.vis_elems},
         );
-        const cropped = self.bench.total_elems - self.bench.visible_elems;
+        const cropped = self.bench.total_elems - self.bench.vis_elems;
         const crop_pct = if (self.bench.total_elems > 0)
             @as(F, @floatFromInt(cropped)) * 100.0 /
                 @as(F, @floatFromInt(self.bench.total_elems))
@@ -953,7 +953,7 @@ pub const FullStatsLog = struct {
         });
         try writer.print("{s}", .{line});
 
-        const vis_elems_f = @as(F, @floatFromInt(self.bench.visible_elems));
+        const vis_elems_f = @as(F, @floatFromInt(self.bench.vis_elems));
         const total_elems_f = @as(F, @floatFromInt(self.bench.total_elems));
         const vis_pct = if (self.bench.total_elems > 0)
             (vis_elems_f * 100.0 / total_elems_f)
@@ -966,11 +966,11 @@ pub const FullStatsLog = struct {
             0;
 
         try writer.print(
-            "Visible Elems           = {d}\n",
-            .{self.bench.visible_elems},
+            "Vis Elems               = {d}\n",
+            .{self.bench.vis_elems},
         );
         try writer.print("Total Elems             = {d}\n", .{self.bench.total_elems});
-        try writer.print("Visible %               = {d:.2}%\n", .{vis_pct});
+        try writer.print("Vis %                   = {d:.2}%\n", .{vis_pct});
         try writer.print("Total SubPx             = {d:.0}\n", .{total_subpx});
         try writer.print("Shaded SubPx            = {d:.0}\n", .{shaded_subpx});
         try writer.print("Shaded %                = {d:.2}%\n\n", .{shaded_pct});
@@ -1300,10 +1300,10 @@ pub fn ReportContext(comptime mode: ReportMode) type {
 
         pub const mode_tag = mode;
 
-        pub inline fn recordGeometry(self: @This(), total: usize, visible: usize) void {
+        pub inline fn recordGeometry(self: @This(), total: usize, vis: usize) void {
             if (self.bench()) |bench_log| {
                 bench_log.total_elems = total;
-                bench_log.visible_elems = visible;
+                bench_log.vis_elems = vis;
             }
         }
 
@@ -1726,7 +1726,7 @@ pub fn standardReport(
     camera_idx: usize,
     frame_times: FrameTimes,
     total_elems: usize,
-    visible_elems: usize,
+    vis_elems: usize,
     nodes_per_elem: F,
     bench_log: *const BenchLog,
 ) !void {
@@ -1778,13 +1778,13 @@ pub fn standardReport(
         (shaded_subpx * 100.0 / total_subpx)
     else
         0;
-    const vis_elems_f = @as(F, @floatFromInt(visible_elems));
+    const vis_elems_f = @as(F, @floatFromInt(vis_elems));
     const total_elems_f = @as(F, @floatFromInt(total_elems));
     const vis_pct = if (total_elems > 0) (vis_elems_f * 100.0 / total_elems_f) else 0;
 
-    try writer.print("Visible Elems = {d}\n", .{visible_elems});
+    try writer.print("Vis Elems = {d}\n", .{vis_elems});
     try writer.print("Total Elems   = {d}\n", .{total_elems});
-    try writer.print("Visible %     = {d:.2}%\n", .{vis_pct});
+    try writer.print("Vis %         = {d:.2}%\n", .{vis_pct});
     try writer.print("Total SubPx   = {d:.0}\n", .{total_subpx});
     try writer.print("Shaded SubPx  = {d:.0}\n", .{shaded_subpx});
     try writer.print("Shaded %      = {d:.2}%\n", .{shaded_pct});

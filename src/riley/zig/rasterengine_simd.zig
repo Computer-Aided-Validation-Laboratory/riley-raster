@@ -38,7 +38,7 @@ const rasterreport = @import("rasterreport.zig");
 const simdops = @import("simdops.zig");
 
 const spec = @import("riley.zig");
-const mo = @import("meshops.zig");
+const mo = @import("meshpipeline.zig");
 const MeshPrepared = mo.MeshPrepared;
 const MeshType = mo.MeshType;
 const Shader = mo.Shader;

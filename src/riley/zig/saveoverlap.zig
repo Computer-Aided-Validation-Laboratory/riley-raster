@@ -13,11 +13,10 @@ const F = buildconfig.F;
 const Timestamp = std.Io.Clock.Timestamp;
 const ndarray = @import("ndarray.zig");
 const cam = @import("camera.zig");
-const mo = @import("meshops.zig");
+const mo = @import("meshpipeline.zig");
 const iio = @import("imageio.zig");
 const rastcfg = @import("rasterconfig.zig");
 const report = @import("report.zig");
-
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -290,7 +289,6 @@ inline fn outputFieldsForImageMode(
         },
     };
 }
-
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func

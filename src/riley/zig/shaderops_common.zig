@@ -316,10 +316,10 @@ pub const ShaderStatic = union(enum) {
     func_rgb: FuncStatic(3),
 };
 
-// Prepared: Culled and expanded shader data for a SINGLE frame.
-// Prepared means culled elem-order ndarray.NDArray data ready for the raster loop.
-// Nodal Fields: Elem-order [visible_elems, num_fields, nodes_per_elem]
-// UVs: Elem-order [visible_elems, 2, nodes_per_elem]
+// Prep: Culled and expanded shader data for a SINGLE frame.
+// Prep means culled elem-order ndarray.NDArray data ready for the raster loop.
+// Nodal Fields: Elem-order [vis_elems, num_fields, nodes_per_elem]
+// UVs: Elem-order [vis_elems, 2, nodes_per_elem]
 pub const NodalPrepared = struct {
     elem_field: ndarray.NDArray(F),
     bits: ?u8 = 8,

@@ -12,7 +12,7 @@ const meshio = @import("../riley/zig/meshio.zig");
 const iio = @import("../riley/zig/imageio.zig");
 const uvio = @import("../riley/zig/uvio.zig");
 const csvio = @import("../riley/zig/csvio.zig");
-const mo = @import("../riley/zig/meshops.zig");
+const mo = @import("../riley/zig/meshpipeline.zig");
 const so = @import("../riley/zig/shaderops.zig");
 const gk = @import("../riley/zig/geometrykernels.zig");
 const CameraPrepared = @import("../riley/zig/camera.zig").CameraPrepared;
@@ -1170,7 +1170,7 @@ fn runBenchmarkInternal(
         else
             0,
         .vis_elems = if (report_mode == .bench)
-            bench_capture_storage[0].bench_log.visible_elems
+            bench_capture_storage[0].bench_log.vis_elems
         else
             0,
         .total_px = @as(u64, camera.pixels_num[0]) *

@@ -13,7 +13,7 @@ const riley = @import("riley/zig/riley.zig");
 const rastcfg = @import("riley/zig/rasterconfig.zig");
 const meshio = @import("riley/zig/meshio.zig");
 const uvio = @import("riley/zig/uvio.zig");
-const mo = @import("riley/zig/meshops.zig");
+const mo = @import("riley/zig/meshpipeline.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const camera_mod = @import("riley/zig/camera.zig");
@@ -155,7 +155,10 @@ pub fn main(init: std.process.Init) !void {
         };
     }
 
-    mo.arrangeMeshSlice(mesh_inputs, .{ 0.12, 0.12, 0.0 }, .{ 5, 3, 1 });
+    sceneops.arrangeMeshesGrid(mesh_inputs, .{
+        .gap = .{ 0.12, 0.12, 0.0 },
+        .max_divs = .{ 5, 3, 1 },
+    });
 
     std.debug.print("Setting up camera...\n", .{});
     const rot = Rotation.init(0.0, std.math.pi, 0.0);

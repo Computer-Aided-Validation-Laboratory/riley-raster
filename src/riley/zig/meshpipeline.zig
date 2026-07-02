@@ -66,16 +66,16 @@ pub const MeshStatic = struct {
 pub const MeshFrameWorkspace = struct {
     coords_nodes: meshio.Coords,
     coords_nodes_def_world: ?meshio.Coords,
-    visible_orig_elem_indices: []usize,
+    vis_orig_elem_inds: []usize,
     elem_bboxes: []rops.ElemBBox,
     elems_in_image: usize,
     raster_hull: ?ndarray.NDArray(F),
-    visible_counts_by_chunk: []usize,
-    visible_offsets_by_chunk: []usize,
+    vis_counts_by_chunk: []usize,
+    vis_offsets_by_chunk: []usize,
 };
 
-// Frame: Wraps the Prepared payload with per-frame spatial metadata.
-// Prepared means culled elem-order ndarray.NDArray data ready for the raster loop.
+// Frame: Wraps the Prep payload with per-frame spatial metadata.
+// Prep means culled elem-order ndarray.NDArray data ready for the raster loop.
 pub const MeshFrame = struct {
     mesh: MeshPrepared,
     elem_bboxes: []rops.ElemBBox,
@@ -85,9 +85,9 @@ pub const MeshFrame = struct {
     frame_workspace: MeshFrameWorkspace,
 };
 
-// Prepared: Data culled and gathered for the raster loop for a SINGLE frame.
-// Prepared means culled elem-order ndarray.NDArray data ready for the raster loop.
-// Elem-order [visible_elems, field, nodes_per_elem]
+// Prep: Data culled and gathered for the raster loop for a SINGLE frame.
+// Prep means culled elem-order ndarray.NDArray data ready for the raster loop.
+// Elem-order [vis_elems, field, nodes_per_elem]
 pub const MeshPrepared = struct {
     mesh_type: geomkerns.MeshType,
     coords: ndarray.NDArray(F),
@@ -155,29 +155,6 @@ pub fn countStaticMeshNodes(mesh_static: []const MeshStatic) usize {
         total += mesh.coords_orig.mat.rows_num;
     }
     return total;
-}
-
-pub fn findAlignedCentroid(coords: *const meshio.Coords) struct {
-    centroid: [3]F,
-    extent: [3]F,
-} {
-    const bounds = sceneops.boundsForCoords(coords);
-
-    return .{
-        .centroid = bounds.center,
-        .extent = bounds.extent,
-    };
-}
-
-pub fn arrangeMeshSlice(
-    meshes: []MeshInput,
-    gap: [3]F,
-    max_divs: [3]usize,
-) void {
-    sceneops.arrangeMeshesGrid(meshes, .{
-        .gap = gap,
-        .max_divs = max_divs,
-    });
 }
 
 // External helper to turn a SimData struct into a MeshInput with associted shader data for
@@ -287,7 +264,10 @@ pub fn initMeshStatic(
     allocator: std.mem.Allocator,
     mesh_input: *const MeshInput,
 ) !MeshStatic {
-    const coords_orig = try copyCoordsAlloc(allocator, &mesh_input.coords);
+    const coords_orig = try sceneops.duplicateCoords(
+        allocator,
+        mesh_input.coords,
+    );
 
     var shader_static: shaderops.ShaderStatic = undefined;
     switch (mesh_input.shader) {
@@ -301,7 +281,7 @@ pub fn initMeshStatic(
             } };
         },
         .tex_u8 => |tex_in| {
-            const elem_uvs = try prepareUVs(
+            const elem_uvs = try prepUVs(
                 allocator,
                 &tex_in.uvs,
                 &mesh_input.connect,
@@ -316,7 +296,7 @@ pub fn initMeshStatic(
             } };
         },
         .tex_u16 => |tex_in| {
-            const elem_uvs = try prepareUVs(
+            const elem_uvs = try prepUVs(
                 allocator,
                 &tex_in.uvs,
                 &mesh_input.connect,
@@ -331,7 +311,7 @@ pub fn initMeshStatic(
             } };
         },
         .tex_rgb_u8 => |tex_in| {
-            const elem_uvs = try prepareUVs(
+            const elem_uvs = try prepUVs(
                 allocator,
                 &tex_in.uvs,
                 &mesh_input.connect,
@@ -346,7 +326,7 @@ pub fn initMeshStatic(
             } };
         },
         .tex_rgb_u16 => |tex_in| {
-            const elem_uvs = try prepareUVs(
+            const elem_uvs = try prepUVs(
                 allocator,
                 &tex_in.uvs,
                 &mesh_input.connect,
@@ -362,7 +342,7 @@ pub fn initMeshStatic(
         },
         .func => |tex_func_in| {
             const elem_uvs = if (tex_func_in.uvs) |uvs|
-                try prepareUVs(
+                try prepUVs(
                     allocator,
                     &uvs,
                     &mesh_input.connect,
@@ -381,7 +361,7 @@ pub fn initMeshStatic(
         },
         .func_rgb => |tex_func_in| {
             const elem_uvs = if (tex_func_in.uvs) |uvs|
-                try prepareUVs(
+                try prepUVs(
                     allocator,
                     &uvs,
                     &mesh_input.connect,
@@ -409,14 +389,14 @@ pub fn initMeshStatic(
     };
 }
 
-pub const GeometryTiming = struct {
+pub const GeomTimes = struct {
     coord_ops: u64 = 0,
     cull_ops: u64 = 0,
     prep_hulls_shaders: u64 = 0,
     remap_inds: u64 = 0,
 };
 
-pub fn prepareMeshFrame(
+pub fn prepMeshFrame(
     allocator: std.mem.Allocator,
     chunk_exec: *pce.ParaChunkExecutor,
     workers_num: usize,
@@ -425,7 +405,7 @@ pub fn prepareMeshFrame(
     mesh_static: *const MeshStatic,
     frame_idx: usize,
     scaling_params: ?imageops.ScalingParams,
-    timing: *GeometryTiming,
+    timing: *GeomTimes,
 ) !MeshFrame {
     return switch (mesh_static.mesh_type) {
         inline else => |MT| {
@@ -444,12 +424,12 @@ pub fn prepareMeshFrame(
     };
 }
 
-pub const FrameGeometryResult = struct {
+pub const FrameGeomResult = struct {
     total_elems_num: usize,
     total_elems_in_image: usize,
 };
 
-pub fn prepareMeshFrames(
+pub fn prepMeshFrames(
     arena_alloc: std.mem.Allocator,
     chunk_exec: *pce.ParaChunkExecutor,
     workers_num: usize,
@@ -459,9 +439,9 @@ pub fn prepareMeshFrames(
     static_meshes: []const MeshStatic,
     nodal_global_scaling: []const ?imageops.ScalingParams,
     frame_meshes: []MeshFrame,
-    timing: *GeometryTiming,
-) !FrameGeometryResult {
-    var res = FrameGeometryResult{
+    timing: *GeomTimes,
+) !FrameGeomResult {
+    var res = FrameGeomResult{
         .total_elems_num = 0,
         .total_elems_in_image = 0,
     };
@@ -487,7 +467,7 @@ pub fn prepareMeshFrames(
 
         // Prepares meshes for each frame including coord transforms to camera space and
         // data reshaping to elem order for a given frame.
-        frame_meshes[ii] = try prepareMeshFrame(
+        frame_meshes[ii] = try prepMeshFrame(
             arena_alloc,
             chunk_exec,
             workers_num,
@@ -507,7 +487,7 @@ pub fn prepareMeshFrames(
 
 // Outside of pipeline because these are static - we gather these into an NDarray once
 // for all frames and cameras
-fn prepareUVs(
+fn prepUVs(
     outer_alloc: std.mem.Allocator,
     uvs: *const ndarray.NDArray(F),
     connect: *const meshio.Connect,
@@ -533,13 +513,6 @@ fn prepareUVs(
     return elem_uv_arr;
 }
 
-fn copyCoordsAlloc(
-    allocator: std.mem.Allocator,
-    coords: *const meshio.Coords,
-) !meshio.Coords {
-    return sceneops.duplicateCoords(allocator, coords.*);
-}
-
 fn initMeshFrameWorkspace(
     allocator: std.mem.Allocator,
     mesh_static: *const MeshStatic,
@@ -560,12 +533,12 @@ fn initMeshFrameWorkspace(
             )
         else
             null,
-        .visible_orig_elem_indices = &.{},
+        .vis_orig_elem_inds = &.{},
         .elem_bboxes = &.{},
         .elems_in_image = 0,
         .raster_hull = null,
-        .visible_counts_by_chunk = &.{},
-        .visible_offsets_by_chunk = &.{},
+        .vis_counts_by_chunk = &.{},
+        .vis_offsets_by_chunk = &.{},
     };
 }
 
@@ -573,11 +546,11 @@ fn initMeshFrameWorkspace(
 // Geometry Pipeline Stages: meshio.Coords, Transform, Culling and Gathering
 //------------------------------------------------------------------------------------------
 
-fn prefixVisibleCounts(mesh_workspace: *MeshFrameWorkspace) void {
+fn prefixVisCounts(mesh_workspace: *MeshFrameWorkspace) void {
     var running_total: usize = 0;
-    for (mesh_workspace.visible_counts_by_chunk, 0..) |visible_count, cc| {
-        mesh_workspace.visible_offsets_by_chunk[cc] = running_total;
-        running_total += visible_count;
+    for (mesh_workspace.vis_counts_by_chunk, 0..) |vis_count, cc| {
+        mesh_workspace.vis_offsets_by_chunk[cc] = running_total;
+        running_total += vis_count;
     }
     mesh_workspace.elems_in_image = running_total;
 }
@@ -611,7 +584,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         node_chunk_size: usize,
         elem_chunk_size: usize,
         elem_chunks_num: usize,
-        visible_chunk_size: usize,
+        vis_chunk_size: usize,
         mesh_workspace: MeshFrameWorkspace,
 
         fn init(
@@ -653,7 +626,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     elems_num,
                     elem_chunk_size,
                 ),
-                .visible_chunk_size = 1,
+                .vis_chunk_size = 1,
                 .mesh_workspace = try initMeshFrameWorkspace(
                     allocator,
                     mesh_static,
@@ -663,7 +636,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         fn run(
             self: *FrameMeshPipelineType,
-            timing: *GeometryTiming,
+            timing: *GeomTimes,
         ) !MeshFrame {
             const time_start_coords = Timestamp.now(self.chunk_exec.io, .awake);
             self.displaceCoords();
@@ -674,8 +647,8 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             ).raw.nanoseconds);
 
             const time_start_cull = Timestamp.now(self.chunk_exec.io, .awake);
-            try self.cullVisible();
-            var mesh_prep = try self.gatherVisibleCoords();
+            try self.cullVis();
+            var mesh_prep = try self.gatherVisCoords();
             const time_end_cull = Timestamp.now(self.chunk_exec.io, .awake);
             timing.cull_ops += @intCast(time_start_cull.durationTo(
                 time_end_cull,
@@ -690,7 +663,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             ).raw.nanoseconds);
 
             const time_start_remap = Timestamp.now(self.chunk_exec.io, .awake);
-            self.remapVisibleElemIndices();
+            self.remapVisElemInds();
             const time_end_remap = Timestamp.now(self.chunk_exec.io, .awake);
             timing.remap_inds += @intCast(time_start_remap.durationTo(
                 time_end_remap,
@@ -812,7 +785,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             camera: *const cam.CameraPrepared,
             connect: *const meshio.Connect,
             coords_nodes: *const meshio.Coords,
-            visible_counts_by_chunk: []usize,
+            vis_counts_by_chunk: []usize,
             hull_mode: rastcfg.HullMode,
         };
 
@@ -824,10 +797,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         ) void {
             const stage: *CullVisibleCountStage = @ptrCast(@alignCast(ctx_ptr));
             const hull_convex_fallback_on = stage.hull_mode == .on_convex_fallback;
-            var visible_count: usize = 0;
+            var vis_count: usize = 0;
 
             for (range_start..range_end) |ee| {
-
                 const bbox = if (MT == .tri3 or MT == .tri3opt)
                     rops.calcVisibleNodeBBoxTri3(
                         MT,
@@ -855,32 +827,32 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     );
 
                 if (bbox != null) {
-                    visible_count += 1;
+                    vis_count += 1;
                 }
             }
 
-            stage.visible_counts_by_chunk[chunk_idx] = visible_count;
+            stage.vis_counts_by_chunk[chunk_idx] = vis_count;
         }
 
-        fn cullVisible(self: *FrameMeshPipelineType) !void {
-            self.mesh_workspace.visible_counts_by_chunk = try self.allocator.alloc(
+        fn cullVis(self: *FrameMeshPipelineType) !void {
+            self.mesh_workspace.vis_counts_by_chunk = try self.allocator.alloc(
                 usize,
                 self.elem_chunks_num,
             );
 
-            self.mesh_workspace.visible_offsets_by_chunk = try self.allocator.alloc(
+            self.mesh_workspace.vis_offsets_by_chunk = try self.allocator.alloc(
                 usize,
                 self.elem_chunks_num,
             );
 
-            @memset(self.mesh_workspace.visible_counts_by_chunk, 0);
-            @memset(self.mesh_workspace.visible_offsets_by_chunk, 0);
+            @memset(self.mesh_workspace.vis_counts_by_chunk, 0);
+            @memset(self.mesh_workspace.vis_offsets_by_chunk, 0);
 
             var cull_count_stage = CullVisibleCountStage{
                 .camera = self.camera,
                 .connect = &self.mesh_static.connect,
                 .coords_nodes = &self.mesh_workspace.coords_nodes,
-                .visible_counts_by_chunk = self.mesh_workspace.visible_counts_by_chunk,
+                .vis_counts_by_chunk = self.mesh_workspace.vis_counts_by_chunk,
                 .hull_mode = self.hull_mode,
             };
 
@@ -892,9 +864,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 self.elem_chunk_size,
             );
 
-            prefixVisibleCounts(&self.mesh_workspace);
+            prefixVisCounts(&self.mesh_workspace);
 
-            self.mesh_workspace.visible_orig_elem_indices =
+            self.mesh_workspace.vis_orig_elem_inds =
                 try self.allocator.alloc(usize, self.mesh_workspace.elems_in_image);
             self.mesh_workspace.elem_bboxes = try self.allocator.alloc(
                 rops.ElemBBox,
@@ -905,9 +877,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .camera = self.camera,
                 .connect = &self.mesh_static.connect,
                 .coords_nodes = &self.mesh_workspace.coords_nodes,
-                .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
+                .vis_orig_elem_inds = self.mesh_workspace.vis_orig_elem_inds,
                 .elem_bboxes = self.mesh_workspace.elem_bboxes,
-                .visible_offsets_by_chunk = self.mesh_workspace.visible_offsets_by_chunk,
+                .vis_offsets_by_chunk = self.mesh_workspace.vis_offsets_by_chunk,
                 .hull_mode = self.hull_mode,
             };
             pce.runStaticRange(
@@ -918,7 +890,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 self.elem_chunk_size,
             );
 
-            self.visible_chunk_size = scalingpolicy.geometryVisibleChunkSize(
+            self.vis_chunk_size = scalingpolicy.geometryVisibleChunkSize(
                 self.mesh_workspace.elems_in_image,
                 self.workers_num,
             );
@@ -928,9 +900,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             camera: *const cam.CameraPrepared,
             connect: *const meshio.Connect,
             coords_nodes: *const meshio.Coords,
-            visible_orig_elem_indices: []usize,
+            vis_orig_elem_inds: []usize,
             elem_bboxes: []rops.ElemBBox,
-            visible_offsets_by_chunk: []const usize,
+            vis_offsets_by_chunk: []const usize,
             hull_mode: rastcfg.HullMode,
         };
 
@@ -942,7 +914,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         ) void {
             const stage: *CullVisibleFillStage = @ptrCast(@alignCast(ctx_ptr));
             const hull_convex_fallback_on = stage.hull_mode == .on_convex_fallback;
-            var write_idx = stage.visible_offsets_by_chunk[chunk_idx];
+            var write_idx = stage.vis_offsets_by_chunk[chunk_idx];
 
             for (range_start..range_end) |ee| {
                 const bbox = if (MT == .tri3 or MT == .tri3opt)
@@ -972,7 +944,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     );
 
                 if (bbox) |b| {
-                    stage.visible_orig_elem_indices[write_idx] = ee;
+                    stage.vis_orig_elem_inds[write_idx] = ee;
                     stage.elem_bboxes[write_idx] = b;
                     write_idx += 1;
                 }
@@ -982,7 +954,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         const GatherVisibleCoordsStage = struct {
             connect: *const meshio.Connect,
             coords_nodes: *const meshio.Coords,
-            visible_orig_elem_indices: []const usize,
+            vis_orig_elem_inds: []const usize,
             elem_coords: *ndarray.NDArray(F),
         };
 
@@ -997,7 +969,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             const N = comptime MT.getNodesNum();
 
             for (range_start..range_end) |pp| {
-                const orig_ee = stage.visible_orig_elem_indices[pp];
+                const orig_ee = stage.vis_orig_elem_inds[pp];
                 const coord_inds = stage.connect.getElem(orig_ee);
                 for (0..N) |nn| {
                     const node_idx = coord_inds[nn];
@@ -1017,7 +989,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
         }
 
-        fn gatherVisibleElemCoordsFromNodes(
+        fn gatherVisElemCoordsFromNodes(
             self: *FrameMeshPipelineType,
             coords_nodes: *const meshio.Coords,
         ) !ndarray.NDArray(F) {
@@ -1030,7 +1002,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             var gather_coords_stage = GatherVisibleCoordsStage{
                 .connect = &self.mesh_static.connect,
                 .coords_nodes = coords_nodes,
-                .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
+                .vis_orig_elem_inds = self.mesh_workspace.vis_orig_elem_inds,
                 .elem_coords = &elem_coords,
             };
 
@@ -1039,14 +1011,14 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 &gather_coords_stage,
                 runGatherVisibleCoords,
                 self.mesh_workspace.elems_in_image,
-                self.visible_chunk_size,
+                self.vis_chunk_size,
             );
 
             return elem_coords;
         }
 
-        fn gatherVisibleCoords(self: *FrameMeshPipelineType) !MeshPrepared {
-            const elem_coords = try self.gatherVisibleElemCoordsFromNodes(
+        fn gatherVisCoords(self: *FrameMeshPipelineType) !MeshPrepared {
+            const elem_coords = try self.gatherVisElemCoordsFromNodes(
                 &self.mesh_workspace.coords_nodes,
             );
 
@@ -1115,7 +1087,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 &hulls_stage,
                 runPrepareRasterHulls,
                 self.mesh_workspace.elems_in_image,
-                self.visible_chunk_size,
+                self.vis_chunk_size,
             );
         }
 
@@ -1169,7 +1141,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             connect: *const meshio.Connect,
             field: *const meshio.Field,
             frame_idx: usize,
-            visible_orig_elem_indices: []const usize,
+            vis_orig_elem_inds: []const usize,
             elem_field: *ndarray.NDArray(F),
         };
 
@@ -1186,7 +1158,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             const N = comptime MT.getNodesNum();
 
             for (range_start..range_end) |pp| {
-                const orig_ee = stage.visible_orig_elem_indices[pp];
+                const orig_ee = stage.vis_orig_elem_inds[pp];
                 const coord_inds = stage.connect.getElem(orig_ee);
                 for (0..N) |nn| {
                     for (0..@as(usize, fields_num)) |ff| {
@@ -1217,7 +1189,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .connect = &self.mesh_static.connect,
                 .field = &nodal_static.field,
                 .frame_idx = self.frame_idx,
-                .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
+                .vis_orig_elem_inds = self.mesh_workspace.vis_orig_elem_inds,
                 .elem_field = &elem_field,
             };
 
@@ -1226,7 +1198,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 &field_stage,
                 runGatherVisibleField,
                 self.mesh_workspace.elems_in_image,
-                self.visible_chunk_size,
+                self.vis_chunk_size,
             );
 
             const factors = if (self.scaling_params) |sp|
@@ -1242,13 +1214,13 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 .scale_mul = factors.mul,
                 .scale_add = factors.add,
                 .normal_type = nodal_static.normal_type,
-                .elem_normals = try self.prepareVisibleNormals(nodal_static.normal_type),
+                .elem_normals = try self.prepVisNormals(nodal_static.normal_type),
             } };
         }
 
         const GatherVisibleUVStage = struct {
             elem_uvs_full: ndarray.NDArray(F),
-            visible_orig_elem_indices: []const usize,
+            vis_orig_elem_inds: []const usize,
             elem_uvs: *ndarray.NDArray(F),
         };
 
@@ -1263,7 +1235,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             const nodes_num = stage.elem_uvs_full.dims[2];
 
             for (range_start..range_end) |pp| {
-                const orig_ee = stage.visible_orig_elem_indices[pp];
+                const orig_ee = stage.vis_orig_elem_inds[pp];
                 const src_start = stage.elem_uvs_full.getFlatIdx(&[_]usize{ orig_ee, 0, 0 });
                 const dst_start = stage.elem_uvs.getFlatIdx(&[_]usize{ pp, 0, 0 });
                 @memcpy(
@@ -1302,7 +1274,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
             var uv_stage = GatherVisibleUVStage{
                 .elem_uvs_full = tex_static.elem_uvs,
-                .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
+                .vis_orig_elem_inds = self.mesh_workspace.vis_orig_elem_inds,
                 .elem_uvs = &elem_uvs,
             };
 
@@ -1311,10 +1283,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 &uv_stage,
                 runGatherVisibleUV,
                 self.mesh_workspace.elems_in_image,
-                self.visible_chunk_size,
+                self.vis_chunk_size,
             );
 
-            const elem_normals = try self.prepareVisibleNormals(tex_static.normal_type);
+            const elem_normals = try self.prepVisNormals(tex_static.normal_type);
             if (comptime T == u8 and channels == 1) {
                 return .{ .tex_u8 = .{
                     .elem_uvs = elem_uvs,
@@ -1391,7 +1363,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
                 var uv_stage = GatherVisibleUVStage{
                     .elem_uvs_full = elem_uvs_full,
-                    .visible_orig_elem_indices = self.mesh_workspace.visible_orig_elem_indices,
+                    .vis_orig_elem_inds = self.mesh_workspace.vis_orig_elem_inds,
                     .elem_uvs = &elem_uvs,
                 };
 
@@ -1400,24 +1372,24 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     &uv_stage,
                     runGatherVisibleUV,
                     self.mesh_workspace.elems_in_image,
-                    self.visible_chunk_size,
+                    self.vis_chunk_size,
                 );
                 break :blk elem_uvs;
             } else null;
 
             const elem_world_ref = if (func_static.coord_mode == .world_reference)
-                try self.gatherVisibleElemCoordsFromNodes(&self.mesh_static.coords_orig)
+                try self.gatherVisElemCoordsFromNodes(&self.mesh_static.coords_orig)
             else
                 null;
             const elem_world_def = if (func_static.coord_mode == .world_deformed)
-                try self.gatherVisibleElemCoordsFromNodes(
+                try self.gatherVisElemCoordsFromNodes(
                     &(self.mesh_workspace.coords_nodes_def_world orelse
                         return error.MissingWorldDeformedCoords),
                 )
             else
                 null;
 
-            const elem_normals = try self.prepareVisibleNormals(func_static.normal_type);
+            const elem_normals = try self.prepVisNormals(func_static.normal_type);
             if (comptime channels == 1) {
                 return .{ .func = .{
                     .elem_uvs = elem_uvs,
@@ -1451,7 +1423,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             }
         }
 
-        fn prepareVisibleNormals(
+        fn prepVisNormals(
             self: *FrameMeshPipelineType,
             normal_type: shaderops.NormalType,
         ) !?ndarray.MappedNDArray(F) {
@@ -1464,15 +1436,15 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 self.allocator,
                 &self.mesh_workspace.coords_nodes,
                 &self.mesh_static.connect,
-                self.mesh_workspace.visible_orig_elem_indices,
+                self.mesh_workspace.vis_orig_elem_inds,
                 normal_type,
                 self.chunk_exec,
                 self.elem_chunk_size,
-                self.visible_chunk_size,
+                self.vis_chunk_size,
             );
         }
 
-        fn remapVisibleElemIndices(self: *FrameMeshPipelineType) void {
+        fn remapVisElemInds(self: *FrameMeshPipelineType) void {
             for (self.mesh_workspace.elem_bboxes, 0..) |*elem_bbox, pp| {
                 elem_bbox.elem_idx = pp;
             }
