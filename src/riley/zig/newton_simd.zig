@@ -148,7 +148,7 @@ pub fn solveFastSIMD(
         const v_w_abs = @abs(v_interp_w);
         const v_strict_w_scaled_tol = v_w_abs * v_strict_resid_norm_tol;
         const v_strict_resid = blk: {
-            if (use_compwise_resid) {
+            if (comptime use_compwise_resid) {
                 break :blk v_active & (v_w_abs > v_zero) &
                     (@abs(v_resid_x) <= v_strict_w_scaled_tol) &
                     (@abs(v_resid_y) <= v_strict_w_scaled_tol);
@@ -190,7 +190,7 @@ pub fn solveFastSIMD(
             -(v_jac_21 * v_resid_x),
         );
 
-        if (use_relaxed_resid) {
+        if (comptime use_relaxed_resid) {
             const v_relaxed_w_scaled_tol = v_w_abs * v_relaxed_resid_norm_tol;
             const v_resid_sq = v_resid_x * v_resid_x + v_resid_y * v_resid_y;
             const v_relaxed_resid = v_active & (v_w_abs > v_zero) &
@@ -199,7 +199,7 @@ pub fn solveFastSIMD(
                 v_step_abs + v_step_rel * @max(@abs(v_xi), v_one);
             const v_step_tol_eta =
                 v_step_abs + v_step_rel * @max(@abs(v_eta), v_one);
-            const v_met_step = if (use_step_conv)
+            const v_met_step = if (comptime use_step_conv)
                 v_active & (@abs(v_step_xi) <= v_step_tol_xi) &
                     (@abs(v_step_eta) <= v_step_tol_eta)
             else
@@ -211,7 +211,7 @@ pub fn solveFastSIMD(
             if (!@reduce(.Or, v_active)) break;
         }
 
-        if (lim_para_step) {
+        if (comptime lim_para_step) {
             const v_max_comp = @max(@abs(v_step_xi), @abs(v_step_eta));
             const v_safe_max_comp = @select(
                 F,
@@ -231,7 +231,7 @@ pub fn solveFastSIMD(
     const v_eps: VecSF = @splat(tol.newton.para_dom);
     const v_splat_one: VecSF = @splat(1.0);
     const v_splat_neg_one: VecSF = @splat(-1.0);
-    const v_is_in = if (N == 6)
+    const v_is_in = if (comptime N == 6)
         (v_xi >= -v_eps) & (v_eta >= -v_eps) &
             ((v_xi + v_eta) <= v_splat_one + v_eps)
     else
@@ -515,7 +515,7 @@ pub fn solveRobustSIMD(
 
     const v_splat_one: VecSF = @splat(1.0);
     const v_splat_neg_one: VecSF = @splat(-1.0);
-    const v_is_in = if (N == 6)
+    const v_is_in = if (comptime N == 6)
         (v_xi >= -v_eps) & (v_eta >= -v_eps) &
             ((v_xi + v_eta) <= v_splat_one + v_eps)
     else

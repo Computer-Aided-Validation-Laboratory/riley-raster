@@ -110,8 +110,7 @@ pub fn NDArray(comptime T: type) type {
             assert(self.dims.len >= 2);
             assert(idx0 < self.dims[0]);
             assert(idx1 < self.dims[1]);
-            return idx0 * self.strides[0] +
-                idx1 * self.strides[1];
+            return idx0 * self.strides[0] + idx1 * self.strides[1];
         }
 
         pub fn offset2(

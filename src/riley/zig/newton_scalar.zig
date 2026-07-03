@@ -83,7 +83,7 @@ pub fn solveFastScal(
         const w_abs = @abs(interp_w);
         const strict_w_scaled_tol = w_abs * strict_resid_norm_tol;
         const strict_resid = blk: {
-            if (use_compwise_resid) {
+            if (comptime use_compwise_resid) {
                 break :blk w_abs > 0.0 and
                     @abs(resid_x) <= strict_w_scaled_tol and
                     @abs(resid_y) <= strict_w_scaled_tol;
@@ -126,7 +126,7 @@ pub fn solveFastScal(
         var step_xi = inv_det * delta_xi_num;
         var step_eta = inv_det * delta_eta_num;
 
-        if (use_relaxed_resid) {
+        if (comptime use_relaxed_resid) {
             const relaxed_w_scaled_tol = w_abs * relaxed_resid_norm_tol;
             const resid_sq = resid_x * resid_x + resid_y * resid_y;
             const relaxed_resid = w_abs > 0.0 and
@@ -135,9 +135,11 @@ pub fn solveFastScal(
                 step_abs + step_rel * @max(@abs(xi), @as(F, 1.0));
             const step_tol_eta =
                 step_abs + step_rel * @max(@abs(eta), @as(F, 1.0));
-            const met_step = use_step_conv and
+            const met_step = if (comptime use_step_conv)
                 @abs(step_xi) <= step_tol_xi and
-                @abs(step_eta) <= step_tol_eta;
+                    @abs(step_eta) <= step_tol_eta
+            else
+                false;
 
             if (met_step and relaxed_resid) {
                 const is_in = isInParaDom(N, xi, eta, eps);
@@ -152,7 +154,7 @@ pub fn solveFastScal(
             }
         }
 
-        if (lim_para_step) {
+        if (comptime lim_para_step) {
             const max_comp = @max(@abs(step_xi), @abs(step_eta));
             if (max_comp > max_para_step) {
                 const step_scale = max_para_step / max_comp;
@@ -546,7 +548,7 @@ inline fn isInParaDom(
     eta: F,
     eps: F,
 ) bool {
-    if (N == 6) {
+    if (comptime N == 6) {
         return xi >= -eps and eta >= -eps and (xi + eta) <= 1.0 + eps;
     }
 

@@ -109,7 +109,7 @@ pub const NewtonResRobustSIMD = struct {
 };
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Func
+// Public Entry-Point Functions
 // --------------------------------------------------------------------------------------
 
 pub inline fn selectSeed(
@@ -442,8 +442,8 @@ pub fn evaluateSolveState(
 
 test "calcJacDet2D regular elems" {
     const testing = std.testing;
-    const det_tol: F = if (F == f32) 1e-4 else 1e-9;
-    const quad_det_tol: F = if (F == f32) 1e-4 else 1e-12;
+    const det_tol: F = if (comptime F == f32) 1e-4 else 1e-9;
+    const quad_det_tol: F = if (comptime F == f32) 1e-4 else 1e-12;
 
     const tri_x = [_]F{ 0.0, 10.0, 5.0 };
     const tri_y = [_]F{ 0.0, 0.0, 8.660254037844386 };
