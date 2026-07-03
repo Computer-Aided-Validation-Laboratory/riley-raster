@@ -382,17 +382,11 @@ pub fn Tri6Kernel() type {
             xi_seed: F,
             eta_seed: F,
         ) GeometryResult(nodes_num) {
-            var xi: F = 0.0;
-            var eta: F = 0.0;
-
             const targ_x = pixel_x - x_offset;
             const targ_y = pixel_y - y_offset;
 
             var node_values: [nodes_num]F = undefined;
-            var deriv_nu: [nodes_num]F = undefined;
-            var deriv_nv: [nodes_num]F = undefined;
-
-            const result = newton.solveInv(
+            const result = newton.solveScal(
                 nodes_num,
                 targ_x,
                 targ_y,
@@ -401,32 +395,51 @@ pub fn Tri6Kernel() type {
                 nodes.z,
                 xi_seed,
                 eta_seed,
-                &xi,
-                &eta,
                 &node_values,
-                &deriv_nu,
-                &deriv_nv,
             );
+
+            if (comptime cfg.newton_solver_mode == .robust) {
+                if (result.conv) {
+                    return .{
+                        .weights = node_values,
+                        .iters = result.iters,
+                        .status = result.status,
+                        .pre_dom_conv = result.pre_dom_conv,
+                        .xi_out = result.xi,
+                        .eta_out = result.eta,
+                        .xi_final = result.xi,
+                        .eta_final = result.eta,
+                    };
+                }
+                return .{
+                    .weights = null,
+                    .iters = result.iters,
+                    .status = result.status,
+                    .pre_dom_conv = result.pre_dom_conv,
+                    .xi_final = result.xi,
+                    .eta_final = result.eta,
+                };
+            }
 
             if (result.conv) {
                 return .{
                     .weights = node_values,
                     .iters = result.iters,
                     .status = result.status,
-                    .pre_dom_conv = result.pre_dom_conv,
-                    .xi_out = xi,
-                    .eta_out = eta,
-                    .xi_final = result.xi_final,
-                    .eta_final = result.eta_final,
+                    .pre_dom_conv = newton.isPreDomConvStatus(result.status),
+                    .xi_out = result.xi,
+                    .eta_out = result.eta,
+                    .xi_final = result.xi,
+                    .eta_final = result.eta,
                 };
             }
             return .{
                 .weights = null,
                 .iters = result.iters,
                 .status = result.status,
-                .pre_dom_conv = result.pre_dom_conv,
-                .xi_final = result.xi_final,
-                .eta_final = result.eta_final,
+                .pre_dom_conv = newton.isPreDomConvStatus(result.status),
+                .xi_final = result.xi,
+                .eta_final = result.eta,
             };
         }
 
@@ -442,14 +455,8 @@ pub fn Tri6Kernel() type {
             const v_targ_x = v_pixel_x - @as(VecSF, @splat(x_offset));
             const v_targ_y = v_pixel_y - @as(VecSF, @splat(y_offset));
 
-            var v_xi_out: VecSF = undefined;
-            var v_eta_out: VecSF = undefined;
-
             var v_weights: [nodes_num]VecSF = undefined;
-            var v_dNu: [nodes_num]VecSF = undefined;
-            var v_dNv: [nodes_num]VecSF = undefined;
-
-            const res = newton.solveInvSIMD(
+            const res = newton.solveSIMD(
                 nodes_num,
                 v_targ_x,
                 v_targ_y,
@@ -458,23 +465,37 @@ pub fn Tri6Kernel() type {
                 nodes.z,
                 v_xi_seed,
                 v_eta_seed,
-                &v_xi_out,
-                &v_eta_out,
                 &v_weights,
-                &v_dNu,
-                &v_dNv,
             );
+
+            if (comptime cfg.newton_solver_mode == .robust) {
+                return .{
+                    .v_weights = v_weights,
+                    .v_mask = res.v_conv,
+                    .v_status = res.v_status,
+                    .v_pre_dom_conv = res.v_pre_dom_conv,
+                    .v_iters = res.v_iters,
+                    .v_xi_out = res.v_xi,
+                    .v_eta_out = res.v_eta,
+                    .v_xi_final = res.v_xi,
+                    .v_eta_final = res.v_eta,
+                    .v_resid_x = res.v_resid_x,
+                    .v_resid_y = res.v_resid_y,
+                };
+            }
 
             return .{
                 .v_weights = v_weights,
                 .v_mask = res.v_conv,
                 .v_status = res.v_status,
-                .v_pre_dom_conv = res.v_pre_dom_conv,
+                .v_pre_dom_conv = res.v_conv |
+                    (res.v_status ==
+                        @as(VecSU8, @splat(@intFromEnum(newton.NewtonStatus.fail_dom)))),
                 .v_iters = res.v_iters,
-                .v_xi_out = v_xi_out,
-                .v_eta_out = v_eta_out,
-                .v_xi_final = res.v_xi_final,
-                .v_eta_final = res.v_eta_final,
+                .v_xi_out = res.v_xi,
+                .v_eta_out = res.v_eta,
+                .v_xi_final = res.v_xi,
+                .v_eta_final = res.v_eta,
                 .v_resid_x = res.v_resid_x,
                 .v_resid_y = res.v_resid_y,
             };
@@ -978,17 +999,11 @@ pub fn Quad4NewtonKernel() type {
             xi_seed: F,
             eta_seed: F,
         ) GeometryResult(nodes_num) {
-            var xi: F = 0.0;
-            var eta: F = 0.0;
-
             const targ_x = pixel_x - x_offset;
             const targ_y = pixel_y - y_offset;
 
             var node_values: [nodes_num]F = undefined;
-            var deriv_nu: [nodes_num]F = undefined;
-            var deriv_nv: [nodes_num]F = undefined;
-
-            const result = newton.solveInv(
+            const result = newton.solveScal(
                 nodes_num,
                 targ_x,
                 targ_y,
@@ -997,25 +1012,50 @@ pub fn Quad4NewtonKernel() type {
                 nodes.z,
                 xi_seed,
                 eta_seed,
-                &xi,
-                &eta,
                 &node_values,
-                &deriv_nu,
-                &deriv_nv,
             );
+            if (comptime cfg.newton_solver_mode == .robust) {
+                if (result.conv) {
+                    return .{
+                        .weights = node_values,
+                        .iters = result.iters,
+                        .status = result.status,
+                        .pre_dom_conv = result.pre_dom_conv,
+                        .xi_out = result.xi,
+                        .eta_out = result.eta,
+                        .xi_final = result.xi,
+                        .eta_final = result.eta,
+                    };
+                }
+                return .{
+                    .weights = null,
+                    .iters = result.iters,
+                    .status = result.status,
+                    .pre_dom_conv = result.pre_dom_conv,
+                    .xi_final = result.xi,
+                    .eta_final = result.eta,
+                };
+            }
+
             if (result.conv) {
                 return .{
                     .weights = node_values,
                     .iters = result.iters,
                     .status = result.status,
-                    .xi_out = xi,
-                    .eta_out = eta,
+                    .pre_dom_conv = newton.isPreDomConvStatus(result.status),
+                    .xi_out = result.xi,
+                    .eta_out = result.eta,
+                    .xi_final = result.xi,
+                    .eta_final = result.eta,
                 };
             }
             return .{
                 .weights = null,
                 .iters = result.iters,
                 .status = result.status,
+                .pre_dom_conv = newton.isPreDomConvStatus(result.status),
+                .xi_final = result.xi,
+                .eta_final = result.eta,
             };
         }
 
@@ -1031,14 +1071,8 @@ pub fn Quad4NewtonKernel() type {
             const v_targ_x = v_pixel_x - @as(VecSF, @splat(x_offset));
             const v_targ_y = v_pixel_y - @as(VecSF, @splat(y_offset));
 
-            var v_xi_out: VecSF = undefined;
-            var v_eta_out: VecSF = undefined;
-
             var v_weights: [nodes_num]VecSF = undefined;
-            var v_dNu: [nodes_num]VecSF = undefined;
-            var v_dNv: [nodes_num]VecSF = undefined;
-
-            const res = newton.solveInvSIMD(
+            const res = newton.solveSIMD(
                 nodes_num,
                 v_targ_x,
                 v_targ_y,
@@ -1047,23 +1081,37 @@ pub fn Quad4NewtonKernel() type {
                 nodes.z,
                 v_xi_seed,
                 v_eta_seed,
-                &v_xi_out,
-                &v_eta_out,
                 &v_weights,
-                &v_dNu,
-                &v_dNv,
             );
+
+            if (comptime cfg.newton_solver_mode == .robust) {
+                return .{
+                    .v_weights = v_weights,
+                    .v_mask = res.v_conv,
+                    .v_status = res.v_status,
+                    .v_pre_dom_conv = res.v_pre_dom_conv,
+                    .v_iters = res.v_iters,
+                    .v_xi_out = res.v_xi,
+                    .v_eta_out = res.v_eta,
+                    .v_xi_final = res.v_xi,
+                    .v_eta_final = res.v_eta,
+                    .v_resid_x = res.v_resid_x,
+                    .v_resid_y = res.v_resid_y,
+                };
+            }
 
             return .{
                 .v_weights = v_weights,
                 .v_mask = res.v_conv,
                 .v_status = res.v_status,
-                .v_pre_dom_conv = res.v_pre_dom_conv,
+                .v_pre_dom_conv = res.v_conv |
+                    (res.v_status ==
+                        @as(VecSU8, @splat(@intFromEnum(newton.NewtonStatus.fail_dom)))),
                 .v_iters = res.v_iters,
-                .v_xi_out = v_xi_out,
-                .v_eta_out = v_eta_out,
-                .v_xi_final = res.v_xi_final,
-                .v_eta_final = res.v_eta_final,
+                .v_xi_out = res.v_xi,
+                .v_eta_out = res.v_eta,
+                .v_xi_final = res.v_xi,
+                .v_eta_final = res.v_eta,
                 .v_resid_x = res.v_resid_x,
                 .v_resid_y = res.v_resid_y,
             };
@@ -1120,17 +1168,11 @@ pub fn Quad89Kernel(comptime N: usize) type {
             xi_seed: F,
             eta_seed: F,
         ) GeometryResult(nodes_num) {
-            var xi: F = 0.0;
-            var eta: F = 0.0;
-
             const targ_x = pixel_x - x_offset;
             const targ_y = pixel_y - y_offset;
 
             var node_values: [nodes_num]F = undefined;
-            var deriv_nu: [nodes_num]F = undefined;
-            var deriv_nv: [nodes_num]F = undefined;
-
-            const result = newton.solveInv(
+            const result = newton.solveScal(
                 nodes_num,
                 targ_x,
                 targ_y,
@@ -1139,26 +1181,51 @@ pub fn Quad89Kernel(comptime N: usize) type {
                 nodes.z,
                 xi_seed,
                 eta_seed,
-                &xi,
-                &eta,
                 &node_values,
-                &deriv_nu,
-                &deriv_nv,
             );
+
+            if (comptime cfg.newton_solver_mode == .robust) {
+                if (result.conv) {
+                    return .{
+                        .weights = node_values,
+                        .iters = result.iters,
+                        .status = result.status,
+                        .pre_dom_conv = result.pre_dom_conv,
+                        .xi_out = result.xi,
+                        .eta_out = result.eta,
+                        .xi_final = result.xi,
+                        .eta_final = result.eta,
+                    };
+                }
+                return .{
+                    .weights = null,
+                    .iters = result.iters,
+                    .status = result.status,
+                    .pre_dom_conv = result.pre_dom_conv,
+                    .xi_final = result.xi,
+                    .eta_final = result.eta,
+                };
+            }
 
             if (result.conv) {
                 return .{
                     .weights = node_values,
                     .iters = result.iters,
                     .status = result.status,
-                    .xi_out = xi,
-                    .eta_out = eta,
+                    .pre_dom_conv = newton.isPreDomConvStatus(result.status),
+                    .xi_out = result.xi,
+                    .eta_out = result.eta,
+                    .xi_final = result.xi,
+                    .eta_final = result.eta,
                 };
             }
             return .{
                 .weights = null,
                 .iters = result.iters,
                 .status = result.status,
+                .pre_dom_conv = newton.isPreDomConvStatus(result.status),
+                .xi_final = result.xi,
+                .eta_final = result.eta,
             };
         }
 
@@ -1174,14 +1241,8 @@ pub fn Quad89Kernel(comptime N: usize) type {
             const v_targ_x = v_pixel_x - @as(VecSF, @splat(x_offset));
             const v_targ_y = v_pixel_y - @as(VecSF, @splat(y_offset));
 
-            var v_xi_out: VecSF = undefined;
-            var v_eta_out: VecSF = undefined;
-
             var v_weights: [nodes_num]VecSF = undefined;
-            var v_dNu: [nodes_num]VecSF = undefined;
-            var v_dNv: [nodes_num]VecSF = undefined;
-
-            const res = newton.solveInvSIMD(
+            const res = newton.solveSIMD(
                 nodes_num,
                 v_targ_x,
                 v_targ_y,
@@ -1190,23 +1251,37 @@ pub fn Quad89Kernel(comptime N: usize) type {
                 nodes.z,
                 v_xi_seed,
                 v_eta_seed,
-                &v_xi_out,
-                &v_eta_out,
                 &v_weights,
-                &v_dNu,
-                &v_dNv,
             );
+
+            if (comptime cfg.newton_solver_mode == .robust) {
+                return .{
+                    .v_weights = v_weights,
+                    .v_mask = res.v_conv,
+                    .v_status = res.v_status,
+                    .v_pre_dom_conv = res.v_pre_dom_conv,
+                    .v_iters = res.v_iters,
+                    .v_xi_out = res.v_xi,
+                    .v_eta_out = res.v_eta,
+                    .v_xi_final = res.v_xi,
+                    .v_eta_final = res.v_eta,
+                    .v_resid_x = res.v_resid_x,
+                    .v_resid_y = res.v_resid_y,
+                };
+            }
 
             return .{
                 .v_weights = v_weights,
                 .v_mask = res.v_conv,
                 .v_status = res.v_status,
-                .v_pre_dom_conv = res.v_pre_dom_conv,
+                .v_pre_dom_conv = res.v_conv |
+                    (res.v_status ==
+                        @as(VecSU8, @splat(@intFromEnum(newton.NewtonStatus.fail_dom)))),
                 .v_iters = res.v_iters,
-                .v_xi_out = v_xi_out,
-                .v_eta_out = v_eta_out,
-                .v_xi_final = res.v_xi_final,
-                .v_eta_final = res.v_eta_final,
+                .v_xi_out = res.v_xi,
+                .v_eta_out = res.v_eta,
+                .v_xi_final = res.v_xi,
+                .v_eta_final = res.v_eta,
                 .v_resid_x = res.v_resid_x,
                 .v_resid_y = res.v_resid_y,
             };

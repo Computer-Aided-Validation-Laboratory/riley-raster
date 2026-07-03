@@ -396,38 +396,9 @@ pub const GeomTimes = struct {
     remap_inds: u64 = 0,
 };
 
-pub fn prepMeshFrame(
-    allocator: std.mem.Allocator,
-    chunk_exec: *pce.ParaChunkExecutor,
-    workers_num: usize,
-    camera: *const cam.CameraPrepared,
-    config: rastcfg.RasterConfig,
-    mesh_static: *const MeshStatic,
-    frame_idx: usize,
-    scaling_params: ?imageops.ScalingParams,
-    timing: *GeomTimes,
-) !MeshFrame {
-    return switch (mesh_static.mesh_type) {
-        inline else => |MT| {
-            var pipeline = try FrameMeshPipeline(MT).init(
-                allocator,
-                camera,
-                mesh_static,
-                frame_idx,
-                config.hull_mode,
-                scaling_params,
-                chunk_exec,
-                workers_num,
-            );
-            return try pipeline.run(timing);
-        },
-    };
-}
-
-pub const FrameGeomResult = struct {
-    total_elems_num: usize,
-    total_elems_in_image: usize,
-};
+// -----------------------------------------------------------------------------------------
+// Mesh Pipeline: Main entry point into the mesh frame pipeline
+// -----------------------------------------------------------------------------------------
 
 pub fn prepMeshFrames(
     arena_alloc: std.mem.Allocator,
@@ -484,6 +455,39 @@ pub fn prepMeshFrames(
 
     return res;
 }
+
+pub fn prepMeshFrame(
+    allocator: std.mem.Allocator,
+    chunk_exec: *pce.ParaChunkExecutor,
+    workers_num: usize,
+    camera: *const cam.CameraPrepared,
+    config: rastcfg.RasterConfig,
+    mesh_static: *const MeshStatic,
+    frame_idx: usize,
+    scaling_params: ?imageops.ScalingParams,
+    timing: *GeomTimes,
+) !MeshFrame {
+    return switch (mesh_static.mesh_type) {
+        inline else => |MT| {
+            var pipeline = try FrameMeshPipeline(MT).init(
+                allocator,
+                camera,
+                mesh_static,
+                frame_idx,
+                config.hull_mode,
+                scaling_params,
+                chunk_exec,
+                workers_num,
+            );
+            return try pipeline.run(timing);
+        },
+    };
+}
+
+pub const FrameGeomResult = struct {
+    total_elems_num: usize,
+    total_elems_in_image: usize,
+};
 
 // Outside of pipeline because these are static - we gather these into an NDarray once
 // for all frames and cameras

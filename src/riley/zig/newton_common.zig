@@ -68,96 +68,49 @@ pub const NewtonStatus = enum(u8) {
     fail_invalid_step,
 };
 
-pub const NewtonPolicy = struct {
-    use_compwise_resid: bool,
-    use_relaxed_resid: bool,
-    use_step_conv: bool,
-    detect_stagnation: bool,
-    detect_two_cycle: bool,
-    check_state_finite: bool,
-    check_inv_det_finite: bool,
-    check_step_finite: bool,
-    use_rel_det: bool,
-    lim_para_step: bool,
+pub const NewtonResFastScal = struct {
+    conv: bool,
+    iters: u8,
+    status: NewtonStatus,
+    xi: F,
+    eta: F,
 };
 
-// --------------------------------------------------------------------------------------
-// Public Entry-Point Func
-// --------------------------------------------------------------------------------------
-
-pub inline fn newtonPolicy(
-    comptime precision: type,
-    comptime mode: buildconfig.NewtonSolverMode,
-) NewtonPolicy {
-    if (comptime mode == .robust) {
-        return .{
-            .use_compwise_resid = false,
-            .use_relaxed_resid = true,
-            .use_step_conv = true,
-            .detect_stagnation = true,
-            .detect_two_cycle = true,
-            .check_state_finite = true,
-            .check_inv_det_finite = true,
-            .check_step_finite = true,
-            .use_rel_det = true,
-            .lim_para_step = true,
-        };
-    }
-
-    if (comptime precision == f64) {
-        return .{
-            .use_compwise_resid = true,
-            .use_relaxed_resid = false,
-            .use_step_conv = false,
-            .detect_stagnation = false,
-            .detect_two_cycle = false,
-            .check_state_finite = false,
-            .check_inv_det_finite = false,
-            .check_step_finite = false,
-            .use_rel_det = false,
-            .lim_para_step = false,
-        };
-    }
-
-    if (comptime precision == f32) {
-        return .{
-            .use_compwise_resid = false,
-            .use_relaxed_resid = true,
-            .use_step_conv = true,
-            .detect_stagnation = false,
-            .detect_two_cycle = false,
-            .check_state_finite = false,
-            .check_inv_det_finite = false,
-            .check_step_finite = false,
-            .use_rel_det = false,
-            .lim_para_step = true,
-        };
-    }
-
-    @compileError("Only f32 and f64 precision are supped.");
-}
-
-pub const NewtonResult = struct {
+pub const NewtonResRobustScal = struct {
     conv: bool,
     pre_dom_conv: bool,
     iters: u8,
     status: NewtonStatus,
     resid_x: F,
     resid_y: F,
-    xi_final: F,
-    eta_final: F,
+    xi: F,
+    eta: F,
 };
 
-pub const NewtonResultSIMD = struct {
+pub const NewtonResFastSIMD = struct {
+    v_conv: VecSB,
+    v_iters: VecSU8,
+    v_status: VecSU8,
+    v_resid_x: VecSF,
+    v_resid_y: VecSF,
+    v_xi: VecSF,
+    v_eta: VecSF,
+};
+
+pub const NewtonResRobustSIMD = struct {
     v_conv: VecSB,
     v_pre_dom_conv: VecSB,
     v_iters: VecSU8,
     v_status: VecSU8,
     v_resid_x: VecSF,
     v_resid_y: VecSF,
-    v_xi_final: VecSF,
-    v_eta_final: VecSF,
+    v_xi: VecSF,
+    v_eta: VecSF,
 };
+
+// --------------------------------------------------------------------------------------
+// Public Entry-Point Func
+// --------------------------------------------------------------------------------------
 
 pub inline fn selectSeed(
     seed_reuse: rastcfg.NewtonSeedReuse,
@@ -248,8 +201,8 @@ pub inline fn updateSeedStateFromSIMDResult(
     seed_state: *NewtonSeedState,
     v_chunk_mask: VecSB,
     v_conv_mask: VecSB,
-    v_xi_out: VecSF,
-    v_eta_out: VecSF,
+    v_xi: VecSF,
+    v_eta: VecSF,
     v_resid_x: VecSF,
     v_resid_y: VecSF,
 ) void {
@@ -257,8 +210,8 @@ pub inline fn updateSeedStateFromSIMDResult(
     if (!@reduce(.Or, v_mask_valid)) return;
 
     const lane_mask_valid: [S]bool = v_mask_valid;
-    const lane_xi_out: [S]F = v_xi_out;
-    const lane_eta_out: [S]F = v_eta_out;
+    const lane_xi: [S]F = v_xi;
+    const lane_eta: [S]F = v_eta;
     const lane_resid_x: [S]F = v_resid_x;
     const lane_resid_y: [S]F = v_resid_y;
 
@@ -278,7 +231,7 @@ pub inline fn updateSeedStateFromSIMDResult(
     }
 
     if (best_lane_idx) |jj| {
-        updateSeedState(seed_state, lane_xi_out[jj], lane_eta_out[jj]);
+        updateSeedState(seed_state, lane_xi[jj], lane_eta[jj]);
     }
 }
 

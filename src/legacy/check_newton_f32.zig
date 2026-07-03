@@ -119,7 +119,7 @@ fn tracePixelSet(
             sub_sample_f - offsets.x_off;
         const target_y = (@as(F, @floatFromInt(subpx_y)) + 0.5) /
             sub_sample_f - offsets.y_off;
-        try newton.traceSolveInverse(
+        try newton.reportSolve(
             8,
             writer,
             subpx_x,
