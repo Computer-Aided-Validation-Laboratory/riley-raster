@@ -70,8 +70,9 @@ pub const NewtonStatus = enum(u8) {
 
 pub const NewtonResFastScal = struct {
     conv: bool,
+    pre_dom_conv: bool,
+    hit_iter_lim: bool,
     iters: u8,
-    status: NewtonStatus,
     xi: F,
     eta: F,
 };
@@ -89,8 +90,9 @@ pub const NewtonResRobustScal = struct {
 
 pub const NewtonResFastSIMD = struct {
     v_conv: VecSB,
+    v_pre_dom_conv: VecSB,
+    v_hit_iter_lim: VecSB,
     v_iters: VecSU8,
-    v_status: VecSU8,
     v_resid_x: VecSF,
     v_resid_y: VecSF,
     v_xi: VecSF,
@@ -254,14 +256,14 @@ pub fn evaluateSeedQuality(
         };
     }
 
-    var node_values: [N]F = undefined;
+    var node_vals: [N]F = undefined;
     var deriv_n_xi: [N]F = undefined;
     var deriv_n_eta: [N]F = undefined;
     shapefun.shapeFunc(
         N,
         seed.xi,
         seed.eta,
-        &node_values,
+        &node_vals,
         &deriv_n_xi,
         &deriv_n_eta,
     );
@@ -287,8 +289,8 @@ pub fn evaluateSeedQuality(
             -elem_node_y[nn],
         );
 
-        resid_x = @mulAdd(F, node_values[nn], term_x, resid_x);
-        resid_y = @mulAdd(F, node_values[nn], term_y, resid_y);
+        resid_x = @mulAdd(F, node_vals[nn], term_x, resid_x);
+        resid_y = @mulAdd(F, node_vals[nn], term_y, resid_y);
 
         jac_11 = @mulAdd(F, deriv_n_xi[nn], term_x, jac_11);
         jac_12 = @mulAdd(F, deriv_n_eta[nn], term_x, jac_12);
@@ -327,14 +329,14 @@ pub fn calcJacDet2D(
     node_x: []const F,
     node_y: []const F,
 ) F {
-    var node_values: [N]F = undefined;
+    var node_vals: [N]F = undefined;
     var deriv_n_xi: [N]F = undefined;
     var deriv_n_eta: [N]F = undefined;
     shapefun.shapeFunc(
         N,
         xi,
         eta,
-        &node_values,
+        &node_vals,
         &deriv_n_xi,
         &deriv_n_eta,
     );
@@ -364,14 +366,14 @@ pub fn evaluateSolveState(
     xi: F,
     eta: F,
 ) NewtonEvalState {
-    var node_values: [N]F = undefined;
+    var node_vals: [N]F = undefined;
     var deriv_n_xi: [N]F = undefined;
     var deriv_n_eta: [N]F = undefined;
     shapefun.shapeFunc(
         N,
         xi,
         eta,
-        &node_values,
+        &node_vals,
         &deriv_n_xi,
         &deriv_n_eta,
     );
@@ -394,11 +396,11 @@ pub fn evaluateSolveState(
             -elem_node_y[nn],
         );
 
-        resid_x = @mulAdd(F, node_values[nn], term_x, resid_x);
-        resid_y = @mulAdd(F, node_values[nn], term_y, resid_y);
+        resid_x = @mulAdd(F, node_vals[nn], term_x, resid_x);
+        resid_y = @mulAdd(F, node_vals[nn], term_y, resid_y);
         interp_w = @mulAdd(
             F,
-            node_values[nn],
+            node_vals[nn],
             elem_node_w[nn],
             interp_w,
         );

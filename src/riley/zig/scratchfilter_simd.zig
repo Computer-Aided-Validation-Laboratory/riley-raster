@@ -87,7 +87,7 @@ pub inline fn storeScratchRowSIMD(
     @as(*[SimdWidth]F, @ptrCast(&dst.slice[offset])).* = val_vec;
 }
 
-pub fn averageScratchCoreSIMD(
+pub fn avgScratchCoreSIMD(
     tile: rops.ActiveTile,
     scratch_geom: ScratchTileGeometry,
     sub_samp: usize,
@@ -147,10 +147,10 @@ pub fn averageScratchCoreSIMD(
         }
         var tx_end: usize = scratch_geom.core_w_px - 1;
         if (active_subpx_max >= scratch_geom.core_start_x_subpx) {
-            const calculated_end =
+            const calc_end =
                 (active_subpx_max - scratch_geom.core_start_x_subpx) / sub_samp;
-            if (calculated_end < tx_end) {
-                tx_end = calculated_end;
+            if (calc_end < tx_end) {
+                tx_end = calc_end;
             }
         } else {
             continue;

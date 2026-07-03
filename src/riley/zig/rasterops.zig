@@ -548,7 +548,7 @@ pub fn sceneTileElemOverlap(
         );
     }
 
-    // Stage 2 - Serial Management Pass: Allocate overlap buffs and calculate
+    // Stage 2 - Serial Management Pass: Allocate overlap buffs and calc
     // global offsets for each tile.
     var overlap_total: usize = 0;
     var num_active_tiles: usize = 0;
@@ -1071,7 +1071,7 @@ fn initTestCullCameraManual(distortion: cam.DistortionModel) cam.CameraPrepared 
         .world_to_cam_mat = Mat44f.initIdentity(),
         .distortion = distortion,
         .psf = .{ .pixel_box = .{} },
-        .prepared_psf = .{},
+        .prep_psf = .{},
         .coord_sys = .opengl,
         .ideal_pixel_centers = undefined,
         .pixel_center_jac = undefined,

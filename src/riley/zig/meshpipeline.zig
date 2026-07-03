@@ -1435,7 +1435,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 return null;
             }
 
-            return try normals.prepareVisibleNormalsThreaded(
+            return try normals.prepVisNormalsThreaded(
                 MT,
                 self.allocator,
                 &self.mesh_workspace.coords_nodes,

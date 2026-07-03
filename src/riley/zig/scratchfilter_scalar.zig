@@ -27,7 +27,6 @@ pub const getScratchField = common.getScratchField;
 pub const setScratchField = common.setScratchField;
 pub const sampleScratchOrBackground = common.sampleScratchOrBackground;
 
-
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
@@ -90,10 +89,10 @@ pub fn resolveScratchDirectCore(
         }
         var tx_end: usize = scratch_geom.core_w_px - 1;
         if (active_subpx_max >= scratch_geom.core_start_x_subpx) {
-            const calculated_end = active_subpx_max -
+            const calc_end = active_subpx_max -
                 scratch_geom.core_start_x_subpx;
-            if (calculated_end < tx_end) {
-                tx_end = calculated_end;
+            if (calc_end < tx_end) {
+                tx_end = calc_end;
             }
         } else {
             continue;
@@ -145,7 +144,7 @@ pub fn resolveScratchDirectCore(
     }
 }
 
-pub fn averageScratchCore(
+pub fn avgScratchCore(
     tile: rops.ActiveTile,
     scratch_geom: ScratchTileGeometry,
     sub_samp: usize,
@@ -204,10 +203,10 @@ pub fn averageScratchCore(
         }
         var tx_end: usize = scratch_geom.core_w_px - 1;
         if (active_subpx_max >= scratch_geom.core_start_x_subpx) {
-            const calculated_end =
+            const calc_end =
                 (active_subpx_max - scratch_geom.core_start_x_subpx) / sub_samp;
-            if (calculated_end < tx_end) {
-                tx_end = calculated_end;
+            if (calc_end < tx_end) {
+                tx_end = calc_end;
             }
         } else {
             continue;

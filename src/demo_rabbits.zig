@@ -293,7 +293,7 @@ pub fn main(init: std.process.Init) !void {
     };
     const config = rastcfg.RasterConfig{
         .save_strategy = .disk,
-        .image_mode = .grey,
+        .image_save_mode = .grey,
         .background_value = background_value,
         .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .none },

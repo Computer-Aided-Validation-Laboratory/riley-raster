@@ -295,7 +295,7 @@ pub fn main(init: std.process.Init) !void {
     };
     const config = rastcfg.RasterConfig{
         .save_strategy = .disk,
-        .image_mode = .multifield,
+        .image_save_mode = .multifield,
         .background_value = background_value,
         .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .none },

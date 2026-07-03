@@ -1153,7 +1153,7 @@ test "Verify hand-written TIFF loader" {
 
     for (0..rows_num) |rr| {
         for (0..cols_num) |cc| {
-            // Exercise a spread of 8-bit grayscale values without requiring libtiff.
+            // Exercise a spread of 8-bit grayscale vals without requiring libtiff.
             mat_mem[rr * cols_num + cc] = @floatFromInt((rr * 17 + cc * 29) % 256);
         }
     }

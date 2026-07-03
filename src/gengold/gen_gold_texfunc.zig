@@ -166,7 +166,7 @@ pub fn mainWithOutputRoot(
 
             for (builtins) |builtin| {
                 const normal_type: shaderops.NormalType =
-                    if (builtin == .lambertian_normal_z) .averaged else .none;
+                    if (builtin == .lambertian_normal_z) .avg else .none;
 
                 const scalar_dir = try std.fmt.allocPrint(
                     allocator,

@@ -385,7 +385,7 @@ pub fn Tri6Kernel() type {
             const targ_x = pixel_x - x_offset;
             const targ_y = pixel_y - y_offset;
 
-            var node_values: [nodes_num]F = undefined;
+            var node_vals: [nodes_num]F = undefined;
             const result = newton.solveScal(
                 nodes_num,
                 targ_x,
@@ -395,13 +395,13 @@ pub fn Tri6Kernel() type {
                 nodes.z,
                 xi_seed,
                 eta_seed,
-                &node_values,
+                &node_vals,
             );
 
             if (comptime cfg.newton_solver_mode == .robust) {
                 if (result.conv) {
                     return .{
-                        .weights = node_values,
+                        .weights = node_vals,
                         .iters = result.iters,
                         .status = result.status,
                         .pre_dom_conv = result.pre_dom_conv,
@@ -423,10 +423,10 @@ pub fn Tri6Kernel() type {
 
             if (result.conv) {
                 return .{
-                    .weights = node_values,
+                    .weights = node_vals,
                     .iters = result.iters,
-                    .status = result.status,
-                    .pre_dom_conv = newton.isPreDomConvStatus(result.status),
+                    .status = .conv_resid,
+                    .pre_dom_conv = result.pre_dom_conv,
                     .xi_out = result.xi,
                     .eta_out = result.eta,
                     .xi_final = result.xi,
@@ -436,8 +436,13 @@ pub fn Tri6Kernel() type {
             return .{
                 .weights = null,
                 .iters = result.iters,
-                .status = result.status,
-                .pre_dom_conv = newton.isPreDomConvStatus(result.status),
+                .status = if (result.pre_dom_conv)
+                    .fail_dom
+                else if (result.hit_iter_lim)
+                    .fail_iter_lim
+                else
+                    .fail_near_singular,
+                .pre_dom_conv = result.pre_dom_conv,
                 .xi_final = result.xi,
                 .eta_final = result.eta,
             };
@@ -487,10 +492,38 @@ pub fn Tri6Kernel() type {
             return .{
                 .v_weights = v_weights,
                 .v_mask = res.v_conv,
-                .v_status = res.v_status,
-                .v_pre_dom_conv = res.v_conv |
-                    (res.v_status ==
-                        @as(VecSU8, @splat(@intFromEnum(newton.NewtonStatus.fail_dom)))),
+                .v_status = blk: {
+                    const v_status_fail_iter_lim: VecSU8 =
+                        @splat(@intFromEnum(newton.NewtonStatus.fail_iter_lim));
+                    const v_status_fail_near_singular: VecSU8 =
+                        @splat(@intFromEnum(newton.NewtonStatus.fail_near_singular));
+                    const v_status_conv_resid: VecSU8 =
+                        @splat(@intFromEnum(newton.NewtonStatus.conv_resid));
+                    const v_status_fail_dom: VecSU8 =
+                        @splat(@intFromEnum(newton.NewtonStatus.fail_dom));
+                    const v_fail_dom = res.v_pre_dom_conv & !res.v_conv;
+                    var v_status = v_status_fail_iter_lim;
+                    v_status = @select(
+                        u8,
+                        !res.v_hit_iter_lim & !res.v_pre_dom_conv,
+                        v_status_fail_near_singular,
+                        v_status,
+                    );
+                    v_status = @select(
+                        u8,
+                        res.v_conv,
+                        v_status_conv_resid,
+                        v_status,
+                    );
+                    v_status = @select(
+                        u8,
+                        v_fail_dom,
+                        v_status_fail_dom,
+                        v_status,
+                    );
+                    break :blk v_status;
+                },
+                .v_pre_dom_conv = res.v_pre_dom_conv,
                 .v_iters = res.v_iters,
                 .v_xi_out = res.v_xi,
                 .v_eta_out = res.v_eta,
@@ -1002,7 +1035,7 @@ pub fn Quad4NewtonKernel() type {
             const targ_x = pixel_x - x_offset;
             const targ_y = pixel_y - y_offset;
 
-            var node_values: [nodes_num]F = undefined;
+            var node_vals: [nodes_num]F = undefined;
             const result = newton.solveScal(
                 nodes_num,
                 targ_x,
@@ -1012,12 +1045,12 @@ pub fn Quad4NewtonKernel() type {
                 nodes.z,
                 xi_seed,
                 eta_seed,
-                &node_values,
+                &node_vals,
             );
             if (comptime cfg.newton_solver_mode == .robust) {
                 if (result.conv) {
                     return .{
-                        .weights = node_values,
+                        .weights = node_vals,
                         .iters = result.iters,
                         .status = result.status,
                         .pre_dom_conv = result.pre_dom_conv,
@@ -1039,10 +1072,10 @@ pub fn Quad4NewtonKernel() type {
 
             if (result.conv) {
                 return .{
-                    .weights = node_values,
+                    .weights = node_vals,
                     .iters = result.iters,
-                    .status = result.status,
-                    .pre_dom_conv = newton.isPreDomConvStatus(result.status),
+                    .status = .conv_resid,
+                    .pre_dom_conv = result.pre_dom_conv,
                     .xi_out = result.xi,
                     .eta_out = result.eta,
                     .xi_final = result.xi,
@@ -1052,8 +1085,13 @@ pub fn Quad4NewtonKernel() type {
             return .{
                 .weights = null,
                 .iters = result.iters,
-                .status = result.status,
-                .pre_dom_conv = newton.isPreDomConvStatus(result.status),
+                .status = if (result.pre_dom_conv)
+                    .fail_dom
+                else if (result.hit_iter_lim)
+                    .fail_iter_lim
+                else
+                    .fail_near_singular,
+                .pre_dom_conv = result.pre_dom_conv,
                 .xi_final = result.xi,
                 .eta_final = result.eta,
             };
@@ -1103,10 +1141,38 @@ pub fn Quad4NewtonKernel() type {
             return .{
                 .v_weights = v_weights,
                 .v_mask = res.v_conv,
-                .v_status = res.v_status,
-                .v_pre_dom_conv = res.v_conv |
-                    (res.v_status ==
-                        @as(VecSU8, @splat(@intFromEnum(newton.NewtonStatus.fail_dom)))),
+                .v_status = blk: {
+                    const v_status_fail_iter_lim: VecSU8 =
+                        @splat(@intFromEnum(newton.NewtonStatus.fail_iter_lim));
+                    const v_status_fail_near_singular: VecSU8 =
+                        @splat(@intFromEnum(newton.NewtonStatus.fail_near_singular));
+                    const v_status_conv_resid: VecSU8 =
+                        @splat(@intFromEnum(newton.NewtonStatus.conv_resid));
+                    const v_status_fail_dom: VecSU8 =
+                        @splat(@intFromEnum(newton.NewtonStatus.fail_dom));
+                    const v_fail_dom = res.v_pre_dom_conv & !res.v_conv;
+                    var v_status = v_status_fail_iter_lim;
+                    v_status = @select(
+                        u8,
+                        !res.v_hit_iter_lim & !res.v_pre_dom_conv,
+                        v_status_fail_near_singular,
+                        v_status,
+                    );
+                    v_status = @select(
+                        u8,
+                        res.v_conv,
+                        v_status_conv_resid,
+                        v_status,
+                    );
+                    v_status = @select(
+                        u8,
+                        v_fail_dom,
+                        v_status_fail_dom,
+                        v_status,
+                    );
+                    break :blk v_status;
+                },
+                .v_pre_dom_conv = res.v_pre_dom_conv,
                 .v_iters = res.v_iters,
                 .v_xi_out = res.v_xi,
                 .v_eta_out = res.v_eta,
@@ -1171,7 +1237,7 @@ pub fn Quad89Kernel(comptime N: usize) type {
             const targ_x = pixel_x - x_offset;
             const targ_y = pixel_y - y_offset;
 
-            var node_values: [nodes_num]F = undefined;
+            var node_vals: [nodes_num]F = undefined;
             const result = newton.solveScal(
                 nodes_num,
                 targ_x,
@@ -1181,13 +1247,13 @@ pub fn Quad89Kernel(comptime N: usize) type {
                 nodes.z,
                 xi_seed,
                 eta_seed,
-                &node_values,
+                &node_vals,
             );
 
             if (comptime cfg.newton_solver_mode == .robust) {
                 if (result.conv) {
                     return .{
-                        .weights = node_values,
+                        .weights = node_vals,
                         .iters = result.iters,
                         .status = result.status,
                         .pre_dom_conv = result.pre_dom_conv,
@@ -1209,10 +1275,10 @@ pub fn Quad89Kernel(comptime N: usize) type {
 
             if (result.conv) {
                 return .{
-                    .weights = node_values,
+                    .weights = node_vals,
                     .iters = result.iters,
-                    .status = result.status,
-                    .pre_dom_conv = newton.isPreDomConvStatus(result.status),
+                    .status = .conv_resid,
+                    .pre_dom_conv = result.pre_dom_conv,
                     .xi_out = result.xi,
                     .eta_out = result.eta,
                     .xi_final = result.xi,
@@ -1222,8 +1288,13 @@ pub fn Quad89Kernel(comptime N: usize) type {
             return .{
                 .weights = null,
                 .iters = result.iters,
-                .status = result.status,
-                .pre_dom_conv = newton.isPreDomConvStatus(result.status),
+                .status = if (result.pre_dom_conv)
+                    .fail_dom
+                else if (result.hit_iter_lim)
+                    .fail_iter_lim
+                else
+                    .fail_near_singular,
+                .pre_dom_conv = result.pre_dom_conv,
                 .xi_final = result.xi,
                 .eta_final = result.eta,
             };
@@ -1273,10 +1344,38 @@ pub fn Quad89Kernel(comptime N: usize) type {
             return .{
                 .v_weights = v_weights,
                 .v_mask = res.v_conv,
-                .v_status = res.v_status,
-                .v_pre_dom_conv = res.v_conv |
-                    (res.v_status ==
-                        @as(VecSU8, @splat(@intFromEnum(newton.NewtonStatus.fail_dom)))),
+                .v_status = blk: {
+                    const v_status_fail_iter_lim: VecSU8 =
+                        @splat(@intFromEnum(newton.NewtonStatus.fail_iter_lim));
+                    const v_status_fail_near_singular: VecSU8 =
+                        @splat(@intFromEnum(newton.NewtonStatus.fail_near_singular));
+                    const v_status_conv_resid: VecSU8 =
+                        @splat(@intFromEnum(newton.NewtonStatus.conv_resid));
+                    const v_status_fail_dom: VecSU8 =
+                        @splat(@intFromEnum(newton.NewtonStatus.fail_dom));
+                    const v_fail_dom = res.v_pre_dom_conv & !res.v_conv;
+                    var v_status = v_status_fail_iter_lim;
+                    v_status = @select(
+                        u8,
+                        !res.v_hit_iter_lim & !res.v_pre_dom_conv,
+                        v_status_fail_near_singular,
+                        v_status,
+                    );
+                    v_status = @select(
+                        u8,
+                        res.v_conv,
+                        v_status_conv_resid,
+                        v_status,
+                    );
+                    v_status = @select(
+                        u8,
+                        v_fail_dom,
+                        v_status_fail_dom,
+                        v_status,
+                    );
+                    break :blk v_status;
+                },
+                .v_pre_dom_conv = res.v_pre_dom_conv,
                 .v_iters = res.v_iters,
                 .v_xi_out = res.v_xi,
                 .v_eta_out = res.v_eta,

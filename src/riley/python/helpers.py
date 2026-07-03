@@ -43,7 +43,7 @@ def create_raster_config(
         geom_scheduling_mode=0,  # spread
         max_raster_workers_per_job=workers_per_group,
         save_strategy=save_strategy,
-        image_mode=0,  # grey
+        image_save_mode=0,  # grey
         hull_mode=1,  # on_no_fallback
         newton_seed_mode=0,  # centroid
         newton_seed_reuse=0,  # off

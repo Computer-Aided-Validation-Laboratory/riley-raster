@@ -163,7 +163,7 @@ class RasterConfig:
     geom_scheduling_mode: int = 2
     max_raster_workers_per_job: int = 1
     save_strategy: int = 1
-    image_mode: int = 2
+    image_save_mode: int = 2
     hull_mode: int = 1
     newton_seed_mode: int = 0
     newton_seed_reuse: int = 0
@@ -231,7 +231,7 @@ class SaveStrategy(IntEnum):
     none = 3
 
 
-class ImageMode(IntEnum):
+class ImageSaveMode(IntEnum):
     grey = 0
     rgb = 1
     multifield = 2
@@ -478,7 +478,7 @@ def _make_raster_config(config: Any) -> cr.CRasterConfig:
         config.max_raster_workers_per_job,
     )
     config_out.save_strategy = int(config.save_strategy)
-    config_out.image_mode = int(config.image_mode)
+    config_out.image_save_mode = int(config.image_save_mode)
     config_out.hull_mode = int(config.hull_mode)
     config_out.newton_seed_mode = int(config.newton_seed_mode)
     config_out.newton_seed_reuse = int(config.newton_seed_reuse)
@@ -1250,7 +1250,7 @@ __all__ = [
     "NewtonSeedReuse",
     "NormalType",
     "GeometrySchedulingMode",
-    "ImageMode",
+    "ImageSaveMode",
     "RasterConfig",
     "RenderMode",
     "ReportMode",

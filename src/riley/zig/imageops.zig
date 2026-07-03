@@ -14,7 +14,6 @@ const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
 const texops = @import("textureops.zig");
 
-
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
@@ -28,7 +27,6 @@ pub const ScaleStrategy = union(enum) {
 
 pub const ScalingParams = struct { min: F, range: F };
 pub const ScaleFactors = struct { mul: F, add: F };
-
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -75,7 +73,6 @@ pub fn getScalingParamsTex(
     tex: *const texops.Tex(T, channels),
     strategy: ScaleStrategy,
 ) ScalingParams {
-
     switch (strategy) {
         .none => return .{ .min = 0.0, .range = 1.0 },
         .auto, .frac => {
@@ -103,7 +100,6 @@ pub fn getScalingParams(
     image: *const matslice.MatSlice(F),
     strategy: ScaleStrategy,
 ) ScalingParams {
-
     switch (strategy) {
         .none => return .{ .min = 0.0, .range = 1.0 },
         .auto, .frac => {
@@ -124,7 +120,6 @@ pub fn getScalingParamsNDArray(
     frame_idx: ?usize,
     strategy: ScaleStrategy,
 ) ScalingParams {
-
     switch (strategy) {
         .none => return .{ .min = 0.0, .range = 1.0 },
         .auto, .frac => {
@@ -178,7 +173,7 @@ pub fn applyClamping(val: F, bits: ?u8) F {
     return val;
 }
 
-pub fn averageImage(
+pub fn avgImage(
     image_subpx: *const matslice.MatSlice(F),
     sub_samp: u8,
     image_avg: *matslice.MatSlice(F),

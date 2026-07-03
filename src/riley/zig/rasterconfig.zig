@@ -52,7 +52,7 @@ pub const RasterConfig = struct {
     max_raster_workers_per_job: u16 = 1,
     save_strategy: SaveStrategy = .memory,
     disk_save_overlap: bool = false,
-    image_mode: ImageMode = .multifield,
+    image_save_mode: ImageSaveMode = .multifield,
     image_save_opts: []const iio.ImageSaveOpts = &[_]iio.ImageSaveOpts{
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
@@ -61,15 +61,8 @@ pub const RasterConfig = struct {
     tile_size_max: u16 = 256,
     background_value: F = 0.0,
     hull_mode: HullMode = .on_no_fallback,
-    newton_seed_mode: NewtonSeedMode = if (buildconfig.UseHullNewtonSeed)
-        .hull
-    else
-        .centroid,
-    newton_seed_reuse: NewtonSeedReuse =
-        if (buildconfig.UseLastConvNewtonSeedReuse)
-            .last_conv
-        else
-            .off,
+    newton_seed_mode: NewtonSeedMode = .centroid,
+    newton_seed_reuse: NewtonSeedReuse = .off,
     report: ReportMode = .bench,
     full_stats_opts: FullStatsOpts = .{},
     save_frame_buff_count: usize = buildconfig.SaveFrameBuffCount,
@@ -105,7 +98,7 @@ pub const SaveStrategy = enum {
     none,
 };
 
-pub const ImageMode = enum {
+pub const ImageSaveMode = enum {
     grey,
     rgb,
     multifield,

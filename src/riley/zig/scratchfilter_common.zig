@@ -13,7 +13,6 @@ const rops = @import("rasterops.zig");
 const ndarray = @import("ndarray.zig");
 const matslice = @import("matslice.zig");
 
-
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
@@ -113,7 +112,6 @@ pub const FrameImageWriter = struct {
     }
 };
 
-
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
@@ -159,11 +157,11 @@ pub fn sampleScratchOrBackground(
 
 pub fn resolveTileWithPSFCore(
     comptime ResolveDirectFn: type,
-    comptime AverageFn: type,
+    comptime AvgFn: type,
     comptime FilterSeparableFn: type,
     comptime FilterNonSeparableFn: type,
     resolve_direct_fn: ResolveDirectFn,
-    average_fn: AverageFn,
+    avg_fn: AvgFn,
     filter_separable_fn: FilterSeparableFn,
     filter_nonseparable_fn: FilterNonSeparableFn,
     tile: rops.ActiveTile,
@@ -171,7 +169,7 @@ pub fn resolveTileWithPSFCore(
     spx_stride: usize,
     fields_num: u8,
     background_value: F,
-    prepared_psf: @import("camera.zig").PreparedPSF,
+    prep_psf: @import("camera.zig").PreparedPSF,
     scratch_geom: ScratchTileGeometry,
     spx_image_scratch: *MatSlice(F),
     filter_tmp: *MatSlice(F),
@@ -179,10 +177,10 @@ pub fn resolveTileWithPSFCore(
     touched_max_x: []const usize,
     image_out_arr: *NDArray(F),
 ) void {
-    switch (prepared_psf.mode) {
+    switch (prep_psf.mode) {
         .identity_fast => {
             if (sub_samp > 1) {
-                average_fn(
+                avg_fn(
                     tile,
                     scratch_geom,
                     sub_samp,
@@ -214,7 +212,7 @@ pub fn resolveTileWithPSFCore(
             filter_separable_fn(
                 fields_num,
                 background_value,
-                prepared_psf,
+                prep_psf,
                 scratch_geom,
                 sub_samp,
                 spx_stride,
@@ -225,7 +223,7 @@ pub fn resolveTileWithPSFCore(
                 touched_max_x,
             );
             if (sub_samp > 1) {
-                average_fn(
+                avg_fn(
                     tile,
                     scratch_geom,
                     sub_samp,
@@ -234,8 +232,8 @@ pub fn resolveTileWithPSFCore(
                     spx_image_scratch,
                     touched_min_x,
                     touched_max_x,
-                    prepared_psf.radius_x_subpx,
-                    prepared_psf.radius_y_subpx,
+                    prep_psf.radius_x_subpx,
+                    prep_psf.radius_y_subpx,
                     image_out_arr,
                 );
             } else {
@@ -247,8 +245,8 @@ pub fn resolveTileWithPSFCore(
                     spx_image_scratch,
                     touched_min_x,
                     touched_max_x,
-                    prepared_psf.radius_x_subpx,
-                    prepared_psf.radius_y_subpx,
+                    prep_psf.radius_x_subpx,
+                    prep_psf.radius_y_subpx,
                     image_out_arr,
                 );
             }
@@ -257,7 +255,7 @@ pub fn resolveTileWithPSFCore(
             filter_nonseparable_fn(
                 fields_num,
                 background_value,
-                prepared_psf,
+                prep_psf,
                 scratch_geom,
                 sub_samp,
                 spx_stride,
@@ -267,7 +265,7 @@ pub fn resolveTileWithPSFCore(
                 touched_max_x,
             );
             if (sub_samp > 1) {
-                average_fn(
+                avg_fn(
                     tile,
                     scratch_geom,
                     sub_samp,
@@ -276,8 +274,8 @@ pub fn resolveTileWithPSFCore(
                     filter_tmp,
                     touched_min_x,
                     touched_max_x,
-                    prepared_psf.radius_x_subpx,
-                    prepared_psf.radius_y_subpx,
+                    prep_psf.radius_x_subpx,
+                    prep_psf.radius_y_subpx,
                     image_out_arr,
                 );
             } else {
@@ -289,8 +287,8 @@ pub fn resolveTileWithPSFCore(
                     filter_tmp,
                     touched_min_x,
                     touched_max_x,
-                    prepared_psf.radius_x_subpx,
-                    prepared_psf.radius_y_subpx,
+                    prep_psf.radius_x_subpx,
+                    prep_psf.radius_y_subpx,
                     image_out_arr,
                 );
             }

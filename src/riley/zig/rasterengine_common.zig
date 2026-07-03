@@ -431,7 +431,7 @@ fn tileScratchSubpxSize(
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     const scratch_tile_px: usize =
         @as(usize, @intCast(ctx_rast.tile_size)) +
-        2 * @as(usize, ctx_rast.camera.prepared_psf.halo_px);
+        2 * @as(usize, ctx_rast.camera.prep_psf.halo_px);
     return scratch_tile_px * sub_samp;
 }
 
@@ -1059,14 +1059,14 @@ fn rasterTileCommon(
         else
             null;
 
-    if (ctx_rast.camera.prepared_psf.hasFilter()) {
+    if (ctx_rast.camera.prep_psf.hasFilter()) {
         scratchfilter.resolveTileWithPSF(
             tile,
             sub_samp,
             subpx_tile_size,
             fields_num,
             ctx_rast.config.background_value,
-            ctx_rast.camera.prepared_psf,
+            ctx_rast.camera.prep_psf,
             scratch_geom,
             &subpx_scratch.image,
             &subpx_scratch.filter_tmp,
@@ -1075,7 +1075,7 @@ fn rasterTileCommon(
             image_out_arr,
         );
     } else if (sub_samp > 1) {
-        scratchfilter.averageScratch(
+        scratchfilter.avgScratch(
             tile,
             @intCast(sub_samp),
             subpx_tile_size,

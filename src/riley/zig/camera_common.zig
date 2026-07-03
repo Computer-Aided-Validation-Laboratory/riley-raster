@@ -140,7 +140,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         world_to_cam_mat: matrix.Mat44f,
         distortion: cm.DistortionModel,
         psf: cm.PointSpreadFunc,
-        prepared_psf: cm.PreparedPSF,
+        prep_psf: cm.PreparedPSF,
         coord_sys: CameraCoordSys,
         ideal_pixel_centers: ndarray.NDArray(F),
         pixel_center_jac: ndarray.NDArray(F),
@@ -232,7 +232,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
                 .world_to_cam_mat = world_to_cam_mat,
                 .distortion = input.distortion,
                 .psf = input.psf,
-                .prepared_psf = try cm.preparePSF(
+                .prep_psf = try cm.preparePSF(
                     allocator,
                     input.psf,
                     actual_sub_sample,
@@ -256,8 +256,8 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
             self: *const Self,
             allocator: std.mem.Allocator,
         ) void {
-            var prepared_psf = self.prepared_psf;
-            prepared_psf.deinit(allocator);
+            var prep_psf = self.prep_psf;
+            prep_psf.deinit(allocator);
             allocator.free(self.ideal_pixel_centers.slice);
             self.ideal_pixel_centers.deinit(allocator);
             allocator.free(self.pixel_center_jac.slice);

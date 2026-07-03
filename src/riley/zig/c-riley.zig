@@ -259,7 +259,7 @@ pub const CRasterConfig = extern struct {
     geom_scheduling_mode: u32,
     max_raster_workers_per_job: u16,
     save_strategy: u32,
-    image_mode: u32,
+    image_save_mode: u32,
     hull_mode: u32,
     newton_seed_mode: u32,
     newton_seed_reuse: u32,
@@ -465,11 +465,11 @@ fn saveStrategyFromC(save_strategy: u32) !riley.SaveStrategy {
     };
 }
 
-fn imageModeFromC(image_mode: u32) !riley.ImageMode {
-    return switch (image_mode) {
-        @intFromEnum(riley.ImageMode.grey) => .grey,
-        @intFromEnum(riley.ImageMode.rgb) => .rgb,
-        @intFromEnum(riley.ImageMode.multifield) => .multifield,
+fn imageSaveModeFromC(image_save_mode: u32) !riley.ImageSaveMode {
+    return switch (image_save_mode) {
+        @intFromEnum(riley.ImageSaveMode.grey) => .grey,
+        @intFromEnum(riley.ImageSaveMode.rgb) => .rgb,
+        @intFromEnum(riley.ImageSaveMode.multifield) => .multifield,
         else => error.InvalidImageMode,
     };
 }
@@ -711,7 +711,7 @@ fn normalTypeFromC(normal_type: u32) !shaderops.NormalType {
     return switch (normal_type) {
         @intFromEnum(shaderops.NormalType.none) => .none,
         @intFromEnum(shaderops.NormalType.exact) => .exact,
-        @intFromEnum(shaderops.NormalType.averaged) => .averaged,
+        @intFromEnum(shaderops.NormalType.avg) => .avg,
         else => error.InvalidNormalType,
     };
 }
@@ -1451,7 +1451,7 @@ fn buildRasterConfig(
     config.max_raster_workers_per_job =
         @max(@as(u16, 1), in_config.max_raster_workers_per_job);
     config.save_strategy = try saveStrategyFromC(in_config.save_strategy);
-    config.image_mode = try imageModeFromC(in_config.image_mode);
+    config.image_save_mode = try imageSaveModeFromC(in_config.image_save_mode);
     config.hull_mode = try hullModeFromC(in_config.hull_mode);
     config.newton_seed_mode = try newtonSeedModeFromC(
         in_config.newton_seed_mode,

@@ -24,7 +24,7 @@ pub fn solveScal(
     elem_node_w: []const buildconfig.F,
     xi_seed: buildconfig.F,
     eta_seed: buildconfig.F,
-    node_values: *[N]buildconfig.F,
+    node_vals: *[N]buildconfig.F,
 ) if (buildconfig.config.newton_solver_mode == .robust)
     common.NewtonResRobustScal
 else
@@ -39,7 +39,7 @@ else
             elem_node_w,
             xi_seed,
             eta_seed,
-            node_values,
+            node_vals,
         );
     }
 
@@ -52,7 +52,7 @@ else
         elem_node_w,
         xi_seed,
         eta_seed,
-        node_values,
+        node_vals,
     );
 }
 
@@ -65,7 +65,7 @@ pub fn solveSIMD(
     elem_node_w: []const buildconfig.F,
     v_xi_seed: buildconfig.VecSF,
     v_eta_seed: buildconfig.VecSF,
-    v_node_values: *[N]buildconfig.VecSF,
+    v_node_vals: *[N]buildconfig.VecSF,
 ) if (buildconfig.config.newton_solver_mode == .robust)
     common.NewtonResRobustSIMD
 else
@@ -80,7 +80,7 @@ else
             elem_node_w,
             v_xi_seed,
             v_eta_seed,
-            v_node_values,
+            v_node_vals,
         );
     }
 
@@ -93,7 +93,7 @@ else
         elem_node_w,
         v_xi_seed,
         v_eta_seed,
-        v_node_values,
+        v_node_vals,
     );
 }
 

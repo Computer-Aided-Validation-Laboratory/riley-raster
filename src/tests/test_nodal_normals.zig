@@ -91,7 +91,7 @@ test "Nodal normals are prepared when requested" {
         .disp = null,
         .shader = .{ .nodal = .{
             .field = sim_data.field.?,
-            .normal_type = .averaged,
+            .normal_type = .avg,
         } },
     };
 
@@ -118,7 +118,7 @@ test "Nodal normals are prepared when requested" {
     switch (frame_mesh.mesh.shader) {
         .nodal => |shader| {
             try std.testing.expectEqual(
-                shaderops.NormalType.averaged,
+                shaderops.NormalType.avg,
                 shader.normal_type,
             );
             try std.testing.expect(shader.elem_normals != null);

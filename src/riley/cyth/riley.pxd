@@ -198,7 +198,7 @@ cdef extern from "riley.h":
         uint32_t geom_scheduling_mode
         uint16_t max_raster_workers_per_job
         uint32_t save_strategy
-        uint32_t image_mode
+        uint32_t image_save_mode
         uint32_t hull_mode
         uint32_t newton_seed_mode
         uint32_t newton_seed_reuse

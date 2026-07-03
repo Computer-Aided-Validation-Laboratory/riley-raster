@@ -77,7 +77,7 @@ pub fn resolveScratchDirectCore(
     );
 }
 
-pub fn averageScratch(
+pub fn avgScratch(
     tile: rops.ActiveTile,
     sub_samp: usize,
     spx_tile_size: usize,
@@ -87,7 +87,7 @@ pub fn averageScratch(
     touched_max_x: []const usize,
     image_out_arr: *NDArray(F),
 ) void {
-    averageScratchCore(
+    avgScratchCore(
         tile,
         ScratchTileGeometry.initCoreOnly(tile, sub_samp),
         sub_samp,
@@ -102,7 +102,7 @@ pub fn averageScratch(
     );
 }
 
-pub fn averageScratchCore(
+pub fn avgScratchCore(
     tile: rops.ActiveTile,
     scratch_geom: ScratchTileGeometry,
     sub_samp: usize,
@@ -116,7 +116,7 @@ pub fn averageScratchCore(
     image_out_arr: *NDArray(F),
 ) void {
     if (cfg.simd == .on) {
-        simd.averageScratchCoreSIMD(
+        simd.avgScratchCoreSIMD(
             tile,
             scratch_geom,
             sub_samp,
@@ -130,7 +130,7 @@ pub fn averageScratchCore(
             image_out_arr,
         );
     } else {
-        scal.averageScratchCore(
+        scal.avgScratchCore(
             tile,
             scratch_geom,
             sub_samp,
@@ -237,7 +237,7 @@ pub fn resolveTileWithPSF(
     spx_stride: usize,
     fields_num: u8,
     background_value: F,
-    prepared_psf: cam.PreparedPSF,
+    prep_psf: cam.PreparedPSF,
     scratch_geom: ScratchTileGeometry,
     spx_image_scratch: *MatSlice(F),
     filter_tmp: *MatSlice(F),
@@ -247,11 +247,11 @@ pub fn resolveTileWithPSF(
 ) void {
     common.resolveTileWithPSFCore(
         @TypeOf(resolveScratchDirectCore),
-        @TypeOf(averageScratchCore),
+        @TypeOf(avgScratchCore),
         @TypeOf(filterScratchSeparable),
         @TypeOf(filterScratchNonSeparable),
         resolveScratchDirectCore,
-        averageScratchCore,
+        avgScratchCore,
         filterScratchSeparable,
         filterScratchNonSeparable,
         tile,
@@ -259,7 +259,7 @@ pub fn resolveTileWithPSF(
         spx_stride,
         fields_num,
         background_value,
-        prepared_psf,
+        prep_psf,
         scratch_geom,
         spx_image_scratch,
         filter_tmp,

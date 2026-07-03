@@ -33,7 +33,7 @@ const rasterengine = @import("rasterengine.zig");
 
 const rastcfg = @import("rasterconfig.zig");
 pub const RasterConfig = rastcfg.RasterConfig;
-pub const ImageMode = rastcfg.ImageMode;
+pub const ImageSaveMode = rastcfg.ImageSaveMode;
 pub const SaveStrategy = rastcfg.SaveStrategy;
 pub const RenderMode = rastcfg.RenderMode;
 pub const ReportMode = rastcfg.ReportMode;
@@ -163,8 +163,8 @@ pub fn rasterReportInto(
         config,
         bench_capture,
     );
-    _ = try outputFieldsForImageMode(
-        config.image_mode,
+    _ = try outputFieldsForImageSaveMode(
+        config.image_save_mode,
         validation_summary.raw_num_fields,
     );
     if (config.save_strategy == .memory or config.save_strategy == .both) {
@@ -288,7 +288,7 @@ pub fn rasterReportInto(
         config.tile_size_max,
         cameras[0].pixels_num,
         cameras[0].sub_sample,
-        cameras[0].prepared_psf.halo_px,
+        cameras[0].prep_psf.halo_px,
     );
     try report.printRenderSummary(
         summary_io,
@@ -311,8 +311,8 @@ pub fn calcAllFramesImageDims(
 
     const num_time = mo.countFrames(meshes);
     const raw_num_fields = mo.countOutputFields(meshes);
-    const num_fields = try outputFieldsForImageMode(
-        config.image_mode,
+    const num_fields = try outputFieldsForImageSaveMode(
+        config.image_save_mode,
         raw_num_fields,
     );
     var max_pixels_num = camera_inputs[0].pixels_num;
@@ -440,11 +440,11 @@ fn calcAllFramesDimsFromPixels(
     };
 }
 
-fn outputFieldsForImageMode(
-    image_mode: ImageMode,
+fn outputFieldsForImageSaveMode(
+    image_save_mode: ImageSaveMode,
     raw_num_fields: u8,
 ) !u8 {
-    return switch (image_mode) {
+    return switch (image_save_mode) {
         .multifield => raw_num_fields,
         .grey => switch (raw_num_fields) {
             1, 3 => 1,
@@ -458,10 +458,10 @@ fn outputFieldsForImageMode(
 }
 
 fn needsOutputTransform(
-    image_mode: ImageMode,
+    image_save_mode: ImageSaveMode,
     raw_num_fields: u8,
 ) bool {
-    return switch (image_mode) {
+    return switch (image_save_mode) {
         .multifield => false,
         .grey => raw_num_fields != 1,
         .rgb => raw_num_fields != 3,
@@ -572,7 +572,7 @@ fn prepareFrameContext(
         input.config.tile_size_max,
         input.camera.pixels_num,
         input.camera.sub_sample,
-        input.camera.prepared_psf.halo_px,
+        input.camera.prep_psf.halo_px,
     );
 
     ctx.report_storage = try initFrameReportStorage(
@@ -741,7 +741,7 @@ fn saveFrame(
             @intCast(output_frame_arr.dims[0]),
             input.camera.pixels_num,
             &output_frame_arr,
-            saveoverlap.imageSaveChannelsOverride(input.config.image_mode),
+            saveoverlap.imageSaveChannelsOverride(input.config.image_save_mode),
             input.config.image_save_opts,
         );
     }
@@ -790,7 +790,7 @@ fn sceneTileOverlapBinning(
         tiles_num_y,
         @intCast(job.camera.pixels_num[0]),
         @intCast(job.camera.pixels_num[1]),
-        job.camera.prepared_psf.halo_px,
+        job.camera.prep_psf.halo_px,
         ctx.elems_in_image_by_mesh,
         ctx.elem_bboxes_by_mesh,
     );
@@ -1018,7 +1018,7 @@ fn prepareJobBatch(
 
     const can_write_result_direct = images_arr != null and
         cam.allCamerasSharePixels(cameras) and
-        !needsOutputTransform(config.image_mode, num_fields);
+        !needsOutputTransform(config.image_save_mode, num_fields);
 
     for (job_indices, 0..) |job_idx, ii| {
         const frame_idx = @divFloor(job_idx, cameras.len);

@@ -199,7 +199,7 @@ def main() -> None:
         total_threads=1,
         save_strategy=riley.SaveStrategy.disk,
     )
-    config.image_mode = riley.ImageMode.grey
+    config.image_save_mode = riley.ImageSaveMode.grey
     config.background_value = BACKGROUND_VALUE
     config.save_scaling = riley.ScaleStrategy.none
 

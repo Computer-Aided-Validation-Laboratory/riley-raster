@@ -28,4 +28,4 @@ pub const ScratchBuffs = simd_impl.ScratchBuffs;
 pub const rasterScene = impl.rasterScene;
 pub const RasterEngine = impl.RasterEngine;
 pub const resolveScratchDirect = scratchfilter.resolveScratchDirect;
-pub const averageScratch = scratchfilter.averageScratch;
+pub const avgScratch = scratchfilter.avgScratch;

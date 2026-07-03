@@ -210,8 +210,8 @@ fn validateAllFramesBuff(
     }
 }
 
-fn isFiniteSlice(values: []const F) bool {
-    for (values) |value| {
+fn isFiniteSlice(vals: []const F) bool {
+    for (vals) |value| {
         if (!std.math.isFinite(value)) {
             return false;
         }

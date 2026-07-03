@@ -27,6 +27,12 @@ Use these abbreviations consistently in Riley Zig code.
 - `tri`: triangle
 - `scal`: scalar
 - `def`: default
+- `vals`: values
+- `calc`: calculate
+- `avg`: average or averaged
+- `accum`: accumulate
+- `vis`: visible
+- `prep`: prepare or prepared
 
 ## Common Existing Terms
 - `alloc`: allocator

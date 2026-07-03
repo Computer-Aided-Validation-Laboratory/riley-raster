@@ -54,9 +54,6 @@ pub const config = configForPrecision(F);
 pub const SimdWidth = config.simd_vec_width;
 pub const SaveFrameBuffCount = config.save_frame_buff_count;
 pub const NewtonMode = config.newton_solver_mode;
-pub const UseHullNewtonSeed = defaultNewtonSeedModeUsesHull(F);
-pub const UseLastConvNewtonSeedReuse =
-    defaultNewtonSeedReuseLastConv(F);
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -99,19 +96,6 @@ pub const TexSIMDPolicy = struct {
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
-
-pub fn defaultNewtonSeedModeUsesHull(comptime precision: type) bool {
-    return switch (precision) {
-        f32 => true,
-        f64 => false,
-        else => @compileError("Only f32 and f64 precision are supped."),
-    };
-}
-
-pub fn defaultNewtonSeedReuseLastConv(comptime precision: type) bool {
-    _ = precision;
-    return false;
-}
 
 pub fn defaultSimdVecWidthForPrecision(comptime precision: type) comptime_int {
     const opt_width = comptime buildOptionsSimdVecWidth();

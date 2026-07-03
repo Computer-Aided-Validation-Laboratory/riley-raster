@@ -29,7 +29,7 @@ pub fn solveFastScal(
     elem_node_w: []const F,
     xi_seed: F,
     eta_seed: F,
-    node_values: *[N]F,
+    node_vals: *[N]F,
 ) common.NewtonResFastScal {
     const strict_resid_norm_tol = tol.newton.norm_resid;
     const relaxed_resid_norm_tol = tol.newton.stagnation_norm_resid;
@@ -38,6 +38,7 @@ pub fn solveFastScal(
     const step_abs = tol.newton.para_step_abs;
     const step_rel = tol.newton.para_step_rel;
     const max_para_step = tol.newton.max_para_step;
+
     const use_compwise_resid = F == f64;
     const use_relaxed_resid = F == f32;
     const use_step_conv = F == f32;
@@ -56,11 +57,9 @@ pub fn solveFastScal(
     var deriv_n_xi: [N]F = undefined;
     var deriv_n_eta: [N]F = undefined;
     var iters: u8 = 0;
-    var status: common.NewtonStatus = .fail_iter_lim;
-
     for (0..iter_max) |ii| {
         iters = @intCast(ii + 1);
-        shapefun.shapeFunc(N, xi, eta, node_values, &deriv_n_xi, &deriv_n_eta);
+        shapefun.shapeFunc(N, xi, eta, node_vals, &deriv_n_xi, &deriv_n_eta);
 
         var resid_x: F = 0.0;
         var resid_y: F = 0.0;
@@ -71,9 +70,9 @@ pub fn solveFastScal(
         var jac_22: F = 0.0;
 
         for (0..N) |nn| {
-            resid_x = @mulAdd(F, node_values[nn], term_x[nn], resid_x);
-            resid_y = @mulAdd(F, node_values[nn], term_y[nn], resid_y);
-            interp_w = @mulAdd(F, node_values[nn], elem_node_w[nn], interp_w);
+            resid_x = @mulAdd(F, node_vals[nn], term_x[nn], resid_x);
+            resid_y = @mulAdd(F, node_vals[nn], term_y[nn], resid_y);
+            interp_w = @mulAdd(F, node_vals[nn], elem_node_w[nn], interp_w);
             jac_11 = @mulAdd(F, deriv_n_xi[nn], term_x[nn], jac_11);
             jac_12 = @mulAdd(F, deriv_n_eta[nn], term_x[nn], jac_12);
             jac_21 = @mulAdd(F, deriv_n_xi[nn], term_y[nn], jac_21);
@@ -82,6 +81,7 @@ pub fn solveFastScal(
 
         const w_abs = @abs(interp_w);
         const strict_w_scaled_tol = w_abs * strict_resid_norm_tol;
+
         const strict_resid = blk: {
             if (comptime use_compwise_resid) {
                 break :blk w_abs > 0.0 and
@@ -95,11 +95,11 @@ pub fn solveFastScal(
         };
         if (strict_resid) {
             const is_in = isInParaDom(N, xi, eta, eps);
-            status = if (is_in) .conv_resid else .fail_dom;
             return .{
                 .conv = is_in,
+                .pre_dom_conv = true,
+                .hit_iter_lim = false,
                 .iters = iters,
-                .status = status,
                 .xi = xi,
                 .eta = eta,
             };
@@ -113,8 +113,9 @@ pub fn solveFastScal(
         if (@abs(det) <= abs_det_tol) {
             return .{
                 .conv = false,
+                .pre_dom_conv = false,
+                .hit_iter_lim = false,
                 .iters = iters,
-                .status = .fail_near_singular,
                 .xi = xi,
                 .eta = eta,
             };
@@ -131,23 +132,22 @@ pub fn solveFastScal(
             const resid_sq = resid_x * resid_x + resid_y * resid_y;
             const relaxed_resid = w_abs > 0.0 and
                 resid_sq <= relaxed_w_scaled_tol * relaxed_w_scaled_tol;
-            const step_tol_xi =
-                step_abs + step_rel * @max(@abs(xi), @as(F, 1.0));
-            const step_tol_eta =
-                step_abs + step_rel * @max(@abs(eta), @as(F, 1.0));
+
+            const step_tol_xi = step_abs + step_rel * @max(@abs(xi), @as(F, 1.0));
+            const step_tol_eta = step_abs + step_rel * @max(@abs(eta), @as(F, 1.0));
+
             const met_step = if (comptime use_step_conv)
-                @abs(step_xi) <= step_tol_xi and
-                    @abs(step_eta) <= step_tol_eta
+                @abs(step_xi) <= step_tol_xi and @abs(step_eta) <= step_tol_eta
             else
                 false;
 
             if (met_step and relaxed_resid) {
                 const is_in = isInParaDom(N, xi, eta, eps);
-                status = if (is_in) .conv_step else .fail_dom;
                 return .{
                     .conv = is_in,
+                    .pre_dom_conv = true,
+                    .hit_iter_lim = false,
                     .iters = iters,
-                    .status = status,
                     .xi = xi,
                     .eta = eta,
                 };
@@ -156,6 +156,7 @@ pub fn solveFastScal(
 
         if (comptime lim_para_step) {
             const max_comp = @max(@abs(step_xi), @abs(step_eta));
+
             if (max_comp > max_para_step) {
                 const step_scale = max_para_step / max_comp;
                 step_xi *= step_scale;
@@ -169,8 +170,9 @@ pub fn solveFastScal(
 
     return .{
         .conv = false,
+        .pre_dom_conv = false,
+        .hit_iter_lim = true,
         .iters = iters,
-        .status = status,
         .xi = xi,
         .eta = eta,
     };
@@ -185,7 +187,7 @@ pub fn solveRobustScal(
     elem_node_w: []const F,
     xi_seed: F,
     eta_seed: F,
-    node_values: *[N]F,
+    node_vals: *[N]F,
 ) common.NewtonResRobustScal {
     const strict_resid_norm_tol = tol.newton.norm_resid;
     const relaxed_resid_norm_tol = tol.newton.stagnation_norm_resid;
@@ -218,7 +220,7 @@ pub fn solveRobustScal(
 
     for (0..iter_max) |ii| {
         iters = @intCast(ii + 1);
-        shapefun.shapeFunc(N, xi, eta, node_values, &deriv_n_xi, &deriv_n_eta);
+        shapefun.shapeFunc(N, xi, eta, node_vals, &deriv_n_xi, &deriv_n_eta);
 
         resid_x = 0.0;
         resid_y = 0.0;
@@ -229,9 +231,9 @@ pub fn solveRobustScal(
         var jac_22: F = 0.0;
 
         for (0..N) |nn| {
-            resid_x = @mulAdd(F, node_values[nn], term_x[nn], resid_x);
-            resid_y = @mulAdd(F, node_values[nn], term_y[nn], resid_y);
-            interp_w = @mulAdd(F, node_values[nn], elem_node_w[nn], interp_w);
+            resid_x = @mulAdd(F, node_vals[nn], term_x[nn], resid_x);
+            resid_y = @mulAdd(F, node_vals[nn], term_y[nn], resid_y);
+            interp_w = @mulAdd(F, node_vals[nn], elem_node_w[nn], interp_w);
             jac_11 = @mulAdd(F, deriv_n_xi[nn], term_x[nn], jac_11);
             jac_12 = @mulAdd(F, deriv_n_eta[nn], term_x[nn], jac_12);
             jac_21 = @mulAdd(F, deriv_n_xi[nn], term_y[nn], jac_21);
@@ -297,13 +299,9 @@ pub fn solveRobustScal(
         const delta_eta_num = @mulAdd(F, jac_11, resid_y, -(jac_21 * resid_x));
         const step_xi = inv_det * delta_xi_num;
         const step_eta = inv_det * delta_eta_num;
-        const step_tol_xi =
-            step_abs + step_rel * @max(@abs(xi), @as(F, 1.0));
-        const step_tol_eta =
-            step_abs + step_rel * @max(@abs(eta), @as(F, 1.0));
-        const met_step =
-            @abs(step_xi) <= step_tol_xi and
-            @abs(step_eta) <= step_tol_eta;
+        const step_tol_xi = step_abs + step_rel * @max(@abs(xi), @as(F, 1.0));
+        const step_tol_eta = step_abs + step_rel * @max(@abs(eta), @as(F, 1.0));
+        const met_step = @abs(step_xi) <= step_tol_xi and @abs(step_eta) <= step_tol_eta;
 
         var lim_step_xi = step_xi;
         var lim_step_eta = step_eta;
@@ -394,7 +392,7 @@ pub fn reportSolve(
     var eta_two_back: F = 0.0;
     var has_two_back = false;
 
-    var node_values: [N]F = undefined;
+    var node_vals: [N]F = undefined;
     var deriv_n_xi: [N]F = undefined;
     var deriv_n_eta: [N]F = undefined;
     var term_x: [N]F = undefined;
@@ -410,7 +408,7 @@ pub fn reportSolve(
     );
 
     for (0..iter_max) |ii| {
-        shapefun.shapeFunc(N, xi, eta, &node_values, &deriv_n_xi, &deriv_n_eta);
+        shapefun.shapeFunc(N, xi, eta, &node_vals, &deriv_n_xi, &deriv_n_eta);
 
         var resid_x: F = 0.0;
         var resid_y: F = 0.0;
@@ -421,9 +419,9 @@ pub fn reportSolve(
         var jac_22: F = 0.0;
 
         for (0..N) |nn| {
-            resid_x = @mulAdd(F, node_values[nn], term_x[nn], resid_x);
-            resid_y = @mulAdd(F, node_values[nn], term_y[nn], resid_y);
-            interp_w = @mulAdd(F, node_values[nn], elem_node_w[nn], interp_w);
+            resid_x = @mulAdd(F, node_vals[nn], term_x[nn], resid_x);
+            resid_y = @mulAdd(F, node_vals[nn], term_y[nn], resid_y);
+            interp_w = @mulAdd(F, node_vals[nn], elem_node_w[nn], interp_w);
             jac_11 = @mulAdd(F, deriv_n_xi[nn], term_x[nn], jac_11);
             jac_12 = @mulAdd(F, deriv_n_eta[nn], term_x[nn], jac_12);
             jac_21 = @mulAdd(F, deriv_n_xi[nn], term_y[nn], jac_21);

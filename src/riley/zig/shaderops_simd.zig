@@ -198,7 +198,7 @@ pub inline fn evalFuncShaderRGBSIMD(
     params: common.FuncShaderParams,
 ) [3]VecSF {
     const eval_coord = common.applyFuncShaderCoordParamsSIMD(coord, params);
-    const v_values = switch (builtin) {
+    const v_vals = switch (builtin) {
         .constant => blk: {
             const p = if (params.settings == .constant)
                 params.settings.constant
@@ -397,9 +397,9 @@ pub inline fn evalFuncShaderRGBSIMD(
         },
     };
     return .{
-        common.applyFuncShaderOutputParamsSIMD(v_values[0], params),
-        common.applyFuncShaderOutputParamsSIMD(v_values[1], params),
-        common.applyFuncShaderOutputParamsSIMD(v_values[2], params),
+        common.applyFuncShaderOutputParamsSIMD(v_vals[0], params),
+        common.applyFuncShaderOutputParamsSIMD(v_vals[1], params),
+        common.applyFuncShaderOutputParamsSIMD(v_vals[2], params),
     };
 }
 

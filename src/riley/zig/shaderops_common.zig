@@ -27,7 +27,7 @@ const simd_impl = @import("shaderops_simd.zig");
 // --------------------------------------------------------------------------------------
 
 pub const ScaleOver = enum { within_frames, over_frames };
-pub const NormalType = enum { none, exact, averaged };
+pub const NormalType = enum { none, exact, avg };
 pub const FuncCoordMode = enum {
     uv,
     para,
@@ -576,7 +576,7 @@ pub inline fn evalFuncShaderBuiltinRgb(
     params: FuncShaderParams,
 ) [3]F {
     const eval_coord = applyFuncShaderCoordParams(coord, params);
-    const values = switch (builtin) {
+    const vals = switch (builtin) {
         .constant => blk: {
             const p = if (params.settings == .constant)
                 params.settings.constant
@@ -702,9 +702,9 @@ pub inline fn evalFuncShaderBuiltinRgb(
         },
     };
     return .{
-        applyFuncShaderOutputParams(values[0], params),
-        applyFuncShaderOutputParams(values[1], params),
-        applyFuncShaderOutputParams(values[2], params),
+        applyFuncShaderOutputParams(vals[0], params),
+        applyFuncShaderOutputParams(vals[1], params),
+        applyFuncShaderOutputParams(vals[2], params),
     };
 }
 
@@ -917,10 +917,10 @@ pub inline fn fillFuncClip(
         spx_image_scratch.slice[ctx_shade.scratch_idx] =
             value * sh.scale_mul + sh.scale_add;
     } else {
-        const values = evalFuncShaderBuiltinRgb(sh.builtin, coord, sh.params);
+        const vals = evalFuncShaderBuiltinRgb(sh.builtin, coord, sh.params);
         inline for (0..channels) |ch| {
             spx_image_scratch.slice[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
-                values[ch] * sh.scale_mul + sh.scale_add;
+                vals[ch] * sh.scale_mul + sh.scale_add;
         }
     }
 }
@@ -942,10 +942,10 @@ pub inline fn fillFuncPersp(
         spx_image_scratch.slice[ctx_shade.scratch_idx] =
             value * sh.scale_mul + sh.scale_add;
     } else {
-        const values = evalFuncShaderBuiltinRgb(sh.builtin, coord, sh.params);
+        const vals = evalFuncShaderBuiltinRgb(sh.builtin, coord, sh.params);
         inline for (0..channels) |ch| {
             spx_image_scratch.slice[ch * spx_image_scratch.cols_num + ctx_shade.scratch_idx] =
-                values[ch] * sh.scale_mul + sh.scale_add;
+                vals[ch] * sh.scale_mul + sh.scale_add;
         }
     }
 }

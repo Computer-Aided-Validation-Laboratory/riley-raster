@@ -23,7 +23,7 @@ const report = @import("report.zig");
 // --------------------------------------------------------------------------------------
 
 pub const RasterConfig = rastcfg.RasterConfig;
-pub const ImageMode = rastcfg.ImageMode;
+pub const ImageSaveMode = rastcfg.ImageSaveMode;
 pub const FrameReportStorage = report.FrameReportStorage;
 
 pub const SaveSlotState = enum {
@@ -263,21 +263,21 @@ pub const RenderedFrameMeta = struct {
 };
 
 inline fn needsOutputTransform(
-    image_mode: ImageMode,
+    image_save_mode: ImageSaveMode,
     raw_num_fields: u8,
 ) bool {
-    return switch (image_mode) {
+    return switch (image_save_mode) {
         .multifield => false,
         .grey => raw_num_fields != 1,
         .rgb => raw_num_fields != 3,
     };
 }
 
-inline fn outputFieldsForImageMode(
-    image_mode: ImageMode,
+inline fn outputFieldsForImageSaveMode(
+    image_save_mode: ImageSaveMode,
     raw_num_fields: u8,
 ) !u8 {
-    return switch (image_mode) {
+    return switch (image_save_mode) {
         .multifield => raw_num_fields,
         .grey => switch (raw_num_fields) {
             1, 3 => 1,
@@ -294,8 +294,8 @@ inline fn outputFieldsForImageMode(
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
-pub fn imageSaveChannelsOverride(image_mode: ImageMode) ?usize {
-    return switch (image_mode) {
+pub fn imageSaveChannelsOverride(image_save_mode: ImageSaveMode) ?usize {
+    return switch (image_save_mode) {
         .grey => 1,
         .rgb => 3,
         .multifield => null,
@@ -317,12 +317,12 @@ pub fn buildOutputFrameView(
 ) !ndarray.NDArray(F) {
     std.debug.assert(raw_frame_arr.dims.len == 3);
     const raw_num_fields: u8 = @intCast(raw_frame_arr.dims[0]);
-    if (!needsOutputTransform(config.image_mode, raw_num_fields)) {
+    if (!needsOutputTransform(config.image_save_mode, raw_num_fields)) {
         return raw_frame_arr.*;
     }
 
-    const out_num_fields = try outputFieldsForImageMode(
-        config.image_mode,
+    const out_num_fields = try outputFieldsForImageSaveMode(
+        config.image_save_mode,
         raw_num_fields,
     );
     var output_frame_arr = try ndarray.NDArray(F).initFlat(
@@ -334,7 +334,7 @@ pub fn buildOutputFrameView(
         },
     );
 
-    switch (config.image_mode) {
+    switch (config.image_save_mode) {
         .multifield => unreachable,
         .grey => {
             std.debug.assert(raw_num_fields == 3);
@@ -479,7 +479,7 @@ pub fn completeSaveSlot(
         @intCast(output_frame_arr.dims[0]),
         slot.pixels_num,
         &output_frame_arr,
-        imageSaveChannelsOverride(config.image_mode),
+        imageSaveChannelsOverride(config.image_save_mode),
         config.image_save_opts,
     );
     const time_end_save = Timestamp.now(save_io, .awake);

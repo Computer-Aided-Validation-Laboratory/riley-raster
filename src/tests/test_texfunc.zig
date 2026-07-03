@@ -112,7 +112,7 @@ fn runTexFuncCase(
     const coord_name = if (coord_mode == .uv) "uv" else "param";
     const uvs = if (coord_mode == .uv) prepared.uvs.array else null;
     const normal_type: shaderops.NormalType =
-        if (builtin == .lambertian_normal_z) .averaged else .none;
+        if (builtin == .lambertian_normal_z) .avg else .none;
 
     const case_dir_name = if (is_rgb)
         try std.fmt.allocPrint(

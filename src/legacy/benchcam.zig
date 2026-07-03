@@ -443,7 +443,7 @@ fn runCameraBenchmarkWithImageOut(
 
     var config_run = config;
     config_run.report = .bench;
-    config_run.image_mode = if (calcTexFuncChannels(shader_type) == 3)
+    config_run.image_save_mode = if (calcTexFuncChannels(shader_type) == 3)
         .rgb
     else
         .grey;
