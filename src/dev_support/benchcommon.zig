@@ -443,7 +443,7 @@ pub fn writeBenchmarkConfig(
         @tagName(buildconfig.config.simd),
     });
     try writer.print("build_simd_vector_width={d}\n", .{
-        buildconfig.config.simd_vector_width,
+        buildconfig.config.simd_vec_width,
     });
     try writer.print("build_max_nodal_fields={d}\n", .{
         buildconfig.config.max_nodal_fields,

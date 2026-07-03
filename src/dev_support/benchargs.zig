@@ -26,8 +26,8 @@ pub const BenchArgs = struct {
     subpixel_center_map: cam.SubPixelCenterMap,
     save_strategy: rastcfg.SaveStrategy,
     disk_save_overlap: bool,
-    sample: ?texops.TextureSample,
-    sample_mode: ?texops.TextureSampleMode,
+    sample: ?texops.TexSample,
+    sample_mode: ?texops.TexSampleMode,
     texture_storage: TextureStorage,
     shader_subset: ShaderSubset,
     mesh_subset: MeshSubset,
@@ -171,10 +171,10 @@ pub fn parseArgsWithDefaults(
                 bench_args.image_out_dir = value;
             } else if (std.mem.eql(u8, arg, "--sample")) {
                 bench_args.sample =
-                    try parseEnum(texops.TextureSample, value);
+                    try parseEnum(texops.TexSample, value);
             } else if (std.mem.eql(u8, arg, "--sample-mode")) {
                 bench_args.sample_mode =
-                    try parseEnum(texops.TextureSampleMode, value);
+                    try parseEnum(texops.TexSampleMode, value);
             } else if (std.mem.eql(u8, arg, "--texture-storage")) {
                 bench_args.texture_storage =
                     try parseEnum(TextureStorage, value);
@@ -400,11 +400,11 @@ test "parse bench args named options" {
         bench_args.save_strategy,
     );
     try std.testing.expectEqual(
-        texops.TextureSample.linear,
+        texops.TexSample.linear,
         bench_args.sample.?,
     );
     try std.testing.expectEqual(
-        texops.TextureSampleMode.direct,
+        texops.TexSampleMode.direct,
         bench_args.sample_mode.?,
     );
     try std.testing.expectEqual(

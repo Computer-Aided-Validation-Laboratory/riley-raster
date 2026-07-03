@@ -199,9 +199,11 @@ pub fn solveFastSIMD(
                 v_step_abs + v_step_rel * @max(@abs(v_xi), v_one);
             const v_step_tol_eta =
                 v_step_abs + v_step_rel * @max(@abs(v_eta), v_one);
-            const v_met_step = use_step_conv and v_active &
-                (@abs(v_step_xi) <= v_step_tol_xi) &
-                (@abs(v_step_eta) <= v_step_tol_eta);
+            const v_met_step = if (use_step_conv)
+                v_active & (@abs(v_step_xi) <= v_step_tol_xi) &
+                    (@abs(v_step_eta) <= v_step_tol_eta)
+            else
+                @as(VecSB, @splat(false));
 
             v_conv_step = v_met_step & v_relaxed_resid;
             v_conv |= v_conv_step;

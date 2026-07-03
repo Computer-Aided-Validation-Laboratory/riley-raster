@@ -8,12 +8,13 @@ from perf_common import repo_root
 
 
 BENCH_NAMES = [
-    "benchcam",
     "bench_dicuq",
     "bench_fullraster",
+    "bench_tiltraster",
     "bench_geom",
     "bench_sphere2000",
     "bench_sphere2000zoom",
+    "bench_thread_geom",
 ]
 
 
@@ -56,10 +57,7 @@ def compile_mode_parallel(simd_mode: str, suffix: str) -> None:
         )
 
     for bench_name in BENCH_NAMES:
-        src = (
-            root / "bin" /
-            f"{bench_name}_f64_{suffix}_inner"
-        )
+        src = root / "bin" / f"{bench_name}_f64_{suffix}"
         dst = root / "bin" / f"{bench_name}_{suffix}"
         if src.exists():
             import shutil

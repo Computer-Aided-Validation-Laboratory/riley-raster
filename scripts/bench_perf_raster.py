@@ -13,7 +13,7 @@ from perf_common import command_path, repo_root
 
 DEFAULT_OUT_ROOT = pathlib.Path("out") / "bench_stats_perf"
 DEFAULT_IMAGE_OUT_DIR = pathlib.Path("out") / "bench_images_perf"
-DEFAULT_RUNS = 20
+DEFAULT_RUNS = 25
 DEFAULT_PIXELS_X: int | None = None
 DEFAULT_PIXELS_Y: int | None = None
 DEFAULT_TOTAL_THREADS = 1

@@ -17,6 +17,7 @@ else
         pub const simd = "on";
         pub const newton_solver = "fast";
         pub const simd_vec_width: comptime_int = 0;
+        pub const simd_vector_width: comptime_int = 0;
     };
 
 pub const comptime_eval_branch_quota: comptime_int = 50000;
@@ -113,8 +114,9 @@ pub fn defaultNewtonSeedReuseLastConv(comptime precision: type) bool {
 }
 
 pub fn defaultSimdVecWidthForPrecision(comptime precision: type) comptime_int {
-    if (build_options.simd_vec_width > 0) {
-        return build_options.simd_vec_width;
+    const opt_width = comptime buildOptionsSimdVecWidth();
+    if (opt_width > 0) {
+        return opt_width;
     }
     return switch (precision) {
         f32 => 16,
@@ -149,6 +151,16 @@ fn parsePrecision(comptime precision: []const u8) type {
         return f64;
     }
     @compileError("build_options.precision must be \"f32\" or \"f64\".");
+}
+
+fn buildOptionsSimdVecWidth() comptime_int {
+    if (@hasDecl(build_options, "simd_vec_width")) {
+        return build_options.simd_vec_width;
+    }
+    if (@hasDecl(build_options, "simd_vector_width")) {
+        return build_options.simd_vector_width;
+    }
+    return 0;
 }
 
 fn parseSimd(comptime simd: []const u8) SimdMode {
