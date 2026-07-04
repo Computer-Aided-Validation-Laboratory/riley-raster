@@ -10,7 +10,8 @@ const std = @import("std");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const tol = buildconfig.config.tol;
-const CameraPrepared = @import("camera.zig").CameraPrepared;
+const cam = @import("camera.zig");
+const CameraPrepared = cam.CameraPrepared;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const hull = @import("hull.zig");
@@ -22,8 +23,7 @@ const Vec3Slices = rops.Vec3Slices;
 const report = @import("report.zig");
 const ReportMode = report.ReportMode;
 const Timestamp = std.Io.Clock.Timestamp;
-const camcommon = @import("camera_common.zig");
-const common = @import("rasterengine_common.zig");
+const comm = @import("rasterengine_common.zig");
 const rasterreport = @import("rasterreport.zig");
 
 const mo = @import("meshpipeline.zig");
@@ -48,15 +48,11 @@ pub const SubpxScratchBuffs = struct {
     filter_tmp: MatSlice(F),
     touched_min_x: []usize,
     touched_max_x: []usize,
-    ideal_pixel_centers: []F,
+    ideal_pix_cent: []F,
 };
 
-const SubpxDom = common.SubpxDom;
-const RasterBounds = common.RasterBounds;
-
-//------------------------------------------------------------------------------------------
-// Scratch Buff Helpers
-//------------------------------------------------------------------------------------------
+const SubpxDom = comm.SubpxDom;
+const RasterBounds = comm.RasterBounds;
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -88,7 +84,7 @@ pub fn initSubpxScratch(
         subpx_tile_total,
     );
 
-    const ideal_pixel_centers = try arena_alloc.alloc(F, subpx_tile_total * 2);
+    const ideal_pix_cent = try arena_alloc.alloc(F, subpx_tile_total * 2);
 
     return .{
         .stride_subpx = subpx_tile_size,
@@ -97,7 +93,7 @@ pub fn initSubpxScratch(
         .filter_tmp = filter_tmp,
         .touched_min_x = try arena_alloc.alloc(usize, subpx_tile_size),
         .touched_max_x = try arena_alloc.alloc(usize, subpx_tile_size),
-        .ideal_pixel_centers = ideal_pixel_centers,
+        .ideal_pix_cent = ideal_pix_cent,
     };
 }
 
@@ -125,7 +121,7 @@ pub fn rasterScene(
     raster_hulls: []const ?NDArray(F),
     image_out_arr: *NDArray(F),
 ) !void {
-    try common.rasterSceneCommon(
+    try comm.rasterSceneComm(
         @This(),
         report_mode,
         outer_alloc,
@@ -154,7 +150,7 @@ pub fn RasterEngine(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            targ_overlap: common.OverlapTarg,
+            targ_overlap: comm.OverlapTarg,
             mesh_in: rops.MeshRaster,
             shader: *const ShaderData,
             shader_buf: *const shaderops.LocalShaderBuff(Geometry.nodes_num),
@@ -217,7 +213,7 @@ pub fn RasterEngine(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            targ_overlap: common.OverlapTarg,
+            targ_overlap: comm.OverlapTarg,
             mesh_in: rops.MeshRaster,
             subpx_dom: SubpxDom,
             rast_bounds: RasterBounds,
@@ -227,7 +223,7 @@ pub fn RasterEngine(
             subpx_scratch: *SubpxScratchBuffs,
         ) !u64 {
             if (comptime Geometry == geomkerns.Tri3OptKernel()) {
-                return rasterDirectSteppedScalar(
+                return rasterDirectSteppedScal(
                     Geometry,
                     ShaderKernel,
                     ShaderData,
@@ -285,7 +281,7 @@ pub fn RasterEngine(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            targ_overlap: common.OverlapTarg,
+            targ_overlap: comm.OverlapTarg,
             mesh_in: rops.MeshRaster,
             subpx_dom: SubpxDom,
             rast_bounds: RasterBounds,
@@ -321,8 +317,8 @@ fn rasterDirectImpl(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: common.OverlapTarg,
-    mesh_in: rops.MeshRaster,
+    targ_overlap: comm.OverlapTarg,
+    _: rops.MeshRaster,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
@@ -333,7 +329,7 @@ fn rasterDirectImpl(
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
     const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
 
-    return common.rasterDirectScalarCommon(
+    return comm.rasterDirectScalComm(
         Geometry,
         ShaderKernel,
         ShaderData,
@@ -342,7 +338,6 @@ fn rasterDirectImpl(
         ctx_rast,
         ctx_report,
         targ_overlap,
-        mesh_in,
         subpx_dom,
         rast_bounds,
         fields_num,
@@ -360,7 +355,7 @@ fn rasterNewtonImpl(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: common.OverlapTarg,
+    targ_overlap: comm.OverlapTarg,
     mesh_in: rops.MeshRaster,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
@@ -408,11 +403,11 @@ fn rasterNewtonImpl(
     }
 
     var seed_state = newton.NewtonSeedState{};
-    const ideal_x_plane = camcommon.getIdealXPlaneScratch(
-        subpx_scratch.ideal_pixel_centers,
+    const ideal_x_plane = cam.getIdealXPlaneScratch(
+        subpx_scratch.ideal_pix_cent,
     );
-    const ideal_y_plane = camcommon.getIdealYPlaneScratch(
-        subpx_scratch.ideal_pixel_centers,
+    const ideal_y_plane = cam.getIdealYPlaneScratch(
+        subpx_scratch.ideal_pix_cent,
     );
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y| {
@@ -647,14 +642,14 @@ fn rasterNewtonImpl(
     return shaded_px;
 }
 
-fn rasterDirectSteppedScalar(
+fn rasterDirectSteppedScal(
     comptime Geometry: type,
     comptime ShaderKernel: type,
     comptime ShaderData: type,
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: common.OverlapTarg,
+    targ_overlap: comm.OverlapTarg,
     mesh_in: rops.MeshRaster,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
@@ -673,7 +668,7 @@ fn rasterDirectSteppedScalar(
     const max_x_steps = if (width > 0) width - 1 else 0;
     const max_y_steps = if (height > 0) height - 1 else 0;
 
-    if (common.Tri3FixedEdges.init(
+    if (comm.Tri3FixedEdges.init(
         nodes_coords,
         sub_samp,
         start_subx_global,
@@ -681,7 +676,7 @@ fn rasterDirectSteppedScalar(
         max_x_steps,
         max_y_steps,
     )) |fixed| {
-        return rasterDirectSteppedScalarFixed(
+        return rasterDirectSteppedScalFixed(
             Geometry,
             ShaderKernel,
             ShaderData,
@@ -700,7 +695,7 @@ fn rasterDirectSteppedScalar(
         );
     }
 
-    return rasterDirectSteppedScalarFloatFallback(
+    return rasterDirectSteppedScalFloatFallback(
         Geometry,
         ShaderKernel,
         ShaderData,
@@ -718,14 +713,14 @@ fn rasterDirectSteppedScalar(
     );
 }
 
-fn rasterDirectSteppedScalarFixed(
+fn rasterDirectSteppedScalFixed(
     comptime Geometry: type,
     comptime ShaderKernel: type,
     comptime ShaderData: type,
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: common.OverlapTarg,
+    targ_overlap: comm.OverlapTarg,
     mesh_in: rops.MeshRaster,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
@@ -733,7 +728,7 @@ fn rasterDirectSteppedScalarFixed(
     shader: *const ShaderData,
     shader_buf: *const shaderops.LocalShaderBuff(Geometry.nodes_num),
     subpx_scratch: *SubpxScratchBuffs,
-    fixed: common.Tri3FixedEdges,
+    fixed: comm.Tri3FixedEdges,
 ) !u64 {
     _ = mesh_in;
     const N = Geometry.nodes_num;
@@ -916,14 +911,14 @@ fn rasterDirectSteppedScalarFixed(
     return shaded_px;
 }
 
-fn rasterDirectSteppedScalarFloatFallback(
+fn rasterDirectSteppedScalFloatFallback(
     comptime Geometry: type,
     comptime ShaderKernel: type,
     comptime ShaderData: type,
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: common.OverlapTarg,
+    targ_overlap: comm.OverlapTarg,
     mesh_in: rops.MeshRaster,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,

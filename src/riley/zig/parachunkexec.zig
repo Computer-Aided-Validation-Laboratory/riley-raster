@@ -13,9 +13,8 @@ const std = @import("std");
 // Execution helper for "parallel for" type work by breaking the range of the loop into
 // chunks and executing these chunks on a pool of threads.
 // runStaticRange:  Each thread executes a statically assigned chunk (no work stealing)
-// runDynamicRange: Each thread takes a "grain" of the range and can work steal using an
+// runDynRange: Each thread takes a "grain" of the range and can work steal using an
 //                  atomic counter.
-
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -28,20 +27,20 @@ pub const RangeFn = *const fn (
     range_end: usize,
 ) void;
 
-pub const RangeWorkerFnError = *const fn (
+pub const RangeWorkerFnErr = *const fn (
     ctx_ptr: *anyopaque,
     worker_idx: usize,
     range_start: usize,
     range_end: usize,
 ) anyerror!void;
 
-const WorkerErrorState = struct {
+const WorkerErrState = struct {
     has_err: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
     mutex: std.atomic.Mutex = .unlocked,
     first_err: ?anyerror = null,
 
     fn setFirst(
-        self: *WorkerErrorState,
+        self: *WorkerErrState,
         err: anyerror,
     ) void {
         while (!self.mutex.tryLock()) {
@@ -54,11 +53,11 @@ const WorkerErrorState = struct {
         }
     }
 
-    fn hasErr(self: *WorkerErrorState) bool {
+    fn hasErr(self: *WorkerErrState) bool {
         return self.has_err.load(.acquire);
     }
 
-    fn getFirst(self: *WorkerErrorState) ?anyerror {
+    fn getFirst(self: *WorkerErrState) ?anyerror {
         while (!self.mutex.tryLock()) {
             std.atomic.spinLoopHint();
         }
@@ -124,7 +123,7 @@ pub const ParaChunkExecutor = struct {
         try group.await(self.io);
     }
 
-    pub fn runDynamicRange(
+    pub fn runDynRange(
         self: *ParaChunkExecutor,
         ctx_ptr: *anyopaque,
         job_func: RangeFn,
@@ -146,7 +145,7 @@ pub const ParaChunkExecutor = struct {
         for (0..helper_workers_num) |worker_idx| {
             group.async(
                 self.io,
-                runDynamicChunkTask,
+                runDynChunkTask,
                 .{
                     ctx_ptr,
                     job_func,
@@ -158,7 +157,7 @@ pub const ParaChunkExecutor = struct {
             );
         }
 
-        try runDynamicChunkTask(
+        try runDynChunkTask(
             ctx_ptr,
             job_func,
             helper_workers_num,
@@ -170,10 +169,10 @@ pub const ParaChunkExecutor = struct {
         try group.await(self.io);
     }
 
-    pub fn runDynamicRangeWithWorkerError(
+    pub fn runDynRangeWithWorkerErr(
         self: *ParaChunkExecutor,
         ctx_ptr: *anyopaque,
-        job_func: RangeWorkerFnError,
+        job_func: RangeWorkerFnErr,
         dom_len: usize,
         grain_size: usize,
     ) !void {
@@ -185,7 +184,7 @@ pub const ParaChunkExecutor = struct {
         std.debug.assert(self.workers_num > 0);
 
         var next_start = std.atomic.Value(usize).init(0);
-        var err_state = WorkerErrorState{};
+        var err_state = WorkerErrState{};
         var group: std.Io.Group = .init;
         errdefer group.cancel(self.io);
 
@@ -193,7 +192,7 @@ pub const ParaChunkExecutor = struct {
         for (0..helper_workers_num) |worker_idx| {
             group.async(
                 self.io,
-                runDynamicChunkTaskWithWorkerError,
+                runDynChunkTaskWithWorkerErr,
                 .{
                     ctx_ptr,
                     job_func,
@@ -206,7 +205,7 @@ pub const ParaChunkExecutor = struct {
             );
         }
 
-        try runDynamicChunkTaskWithWorkerError(
+        try runDynChunkTaskWithWorkerErr(
             ctx_ptr,
             job_func,
             helper_workers_num,
@@ -277,7 +276,7 @@ fn runStaticWorkerTask(
     }
 }
 
-fn runDynamicChunkTask(
+fn runDynChunkTask(
     ctx_ptr: *anyopaque,
     job_func: RangeFn,
     worker_idx: usize,
@@ -295,11 +294,11 @@ fn runDynamicChunkTask(
     }
 }
 
-fn runDynamicChunkTaskWithWorkerError(
+fn runDynChunkTaskWithWorkerErr(
     ctx_ptr: *anyopaque,
-    job_func: RangeWorkerFnError,
+    job_func: RangeWorkerFnErr,
     worker_idx: usize,
-    err_state: *WorkerErrorState,
+    err_state: *WorkerErrState,
     next_start: *std.atomic.Value(usize),
     dom_len: usize,
     grain_size: usize,
@@ -345,7 +344,7 @@ pub fn runStaticRange(
     ) catch unreachable;
 }
 
-pub fn runDynamicRange(
+pub fn runDynRange(
     chunk_exec: *ParaChunkExecutor,
     ctx_ptr: *anyopaque,
     job_func: RangeFn,
@@ -356,7 +355,7 @@ pub fn runDynamicRange(
         return;
     }
 
-    chunk_exec.runDynamicRange(
+    chunk_exec.runDynRange(
         ctx_ptr,
         job_func,
         dom_len,
@@ -364,10 +363,10 @@ pub fn runDynamicRange(
     ) catch unreachable;
 }
 
-pub fn runDynamicRangeWithWorkerError(
+pub fn runDynRangeWithWorkerErr(
     chunk_exec: *ParaChunkExecutor,
     ctx_ptr: *anyopaque,
-    job_func: RangeWorkerFnError,
+    job_func: RangeWorkerFnErr,
     dom_len: usize,
     grain_size: usize,
 ) !void {
@@ -375,7 +374,7 @@ pub fn runDynamicRangeWithWorkerError(
         return;
     }
 
-    try chunk_exec.runDynamicRangeWithWorkerError(
+    try chunk_exec.runDynRangeWithWorkerErr(
         ctx_ptr,
         job_func,
         dom_len,

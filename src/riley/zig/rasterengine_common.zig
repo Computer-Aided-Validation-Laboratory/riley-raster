@@ -15,17 +15,15 @@ const SimdWidth = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
 const rastcfg = @import("rasterconfig.zig");
 const cam = @import("camera.zig");
-const camcommon = @import("camera_common.zig");
 const ReportMode = rastcfg.ReportMode;
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
-const hull = @import("hull.zig");
 const report = @import("report.zig");
 const rasterreport = @import("rasterreport.zig");
 const rops = @import("rasterops.zig");
 const newton = @import("newton.zig");
 const pce = @import("parachunkexec.zig");
-const scratchfilter = @import("scratchfilter.zig");
+const scratchresolve = @import("scratchresolve.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
 const mo = @import("meshpipeline.zig");
 const MeshPrepared = mo.MeshPrepared;
@@ -63,28 +61,7 @@ pub const RasterBounds = struct {
     y_min_f: F,
 };
 
-const ParamCoords = struct { xi: F, eta: F };
-
-// --------------------------------------------------------------------------------------
-// Public Entry-Point Func
-// --------------------------------------------------------------------------------------
-
-pub fn calcInterpParamCoords(
-    comptime Geometry: type,
-    nodes_inv_z: [Geometry.nodes_num]F,
-    weights: [Geometry.nodes_num]F,
-    inv_z: F,
-    xi_out: F,
-    eta_out: F,
-) ParamCoords {
-    if (comptime Geometry.solver_kind == .hyperb) {
-        return calcTri3PerspectiveParamCoords(inv_z, nodes_inv_z, weights);
-    }
-
-    return .{ .xi = xi_out, .eta = eta_out };
-}
-
-pub fn rasterDirectScalarCommon(
+pub fn rasterDirectScalComm(
     comptime Geometry: type,
     comptime ShaderKernel: type,
     comptime ShaderData: type,
@@ -93,7 +70,6 @@ pub fn rasterDirectScalarCommon(
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
     targ_overlap: OverlapTarg,
-    mesh_in: rops.MeshRaster,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     fields_num: u8,
@@ -102,12 +78,10 @@ pub fn rasterDirectScalarCommon(
     shader_buf: *const shaderops.LocalShaderBuff(Geometry.nodes_num),
     subpx_scratch: *ScratchBuffs,
 ) !u64 {
-    comptime {
-        if (Geometry.solver_kind == .newton) {
-            @compileError(
-                "rasterDirectScalarCommon only supps non-Newton paths",
-            );
-        }
+    if (comptime Geometry.solver_kind == .newton) {
+        @compileError(
+            "rasterDirectScalComm only supps non-Newton paths",
+        );
     }
 
     const N = Geometry.nodes_num;
@@ -126,33 +100,11 @@ pub fn rasterDirectScalarCommon(
         Geometry.getInvElemArea(nodes_coords)
     else {};
 
-    var elem_tess: hull.Tessellation(Geometry.tess_triangles_num) = undefined;
-
-    if (comptime Geometry.hull_nodes_num > 0) {
-        if (mesh_in.hull) |rh| {
-            const hx = rh.getSlice(
-                &[_]usize{ targ_overlap.overlap.elem_idx, 0, 0 },
-                1,
-            );
-            const hy = rh.getSlice(
-                &[_]usize{ targ_overlap.overlap.elem_idx, 1, 0 },
-                1,
-            );
-            elem_tess = hull.getTessellation(
-                N,
-                Geometry.hull_nodes_num,
-                Geometry.tess_triangles_num,
-                hx,
-                hy,
-            );
-        }
-    }
-
-    const ideal_x_plane = camcommon.getIdealXPlaneScratch(
-        subpx_scratch.ideal_pixel_centers,
+    const ideal_x_plane = cam.getIdealXPlaneScratch(
+        subpx_scratch.ideal_pix_cent,
     );
-    const ideal_y_plane = camcommon.getIdealYPlaneScratch(
-        subpx_scratch.ideal_pixel_centers,
+    const ideal_y_plane = cam.getIdealYPlaneScratch(
+        subpx_scratch.ideal_pix_cent,
     );
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
@@ -170,41 +122,18 @@ pub fn rasterDirectScalarCommon(
             const global_subx: usize = tile_subx_off +% scratch_x_u;
             const global_suby: usize = tile_suby_off +% scratch_y_u;
 
-            if (comptime Geometry.hull_nodes_num > 0) {
-                ctx_report.recordTessChecks(1);
-                const tess_res = elem_tess.isInScalar(
-                    ideal_x_px,
-                    ideal_y_px,
+            if (comptime report_mode == .full_stats) {
+                rasterreport.recordEarlyOut(
+                    report_mode,
+                    ctx_report,
+                    global_subx,
+                    global_suby,
+                    true,
                 );
-                if (tess_res.is_in) {
-                    ctx_report.recordTessPasses(1);
-                }
-                if (comptime report_mode == .full_stats) {
-                    rasterreport.recordEarlyOut(
-                        report_mode,
-                        ctx_report,
-                        global_subx,
-                        global_suby,
-                        tess_res.is_in,
-                    );
-                }
-                if (!tess_res.is_in) {
-                    continue;
-                }
-            } else {
-                if (comptime report_mode == .full_stats) {
-                    rasterreport.recordEarlyOut(
-                        report_mode,
-                        ctx_report,
-                        global_subx,
-                        global_suby,
-                        true,
-                    );
-                }
             }
 
             ctx_report.recordSolverCalls(1);
-            const geometry_result = switch (Geometry.solver_kind) {
+            const geometry_result = switch (comptime Geometry.solver_kind) {
                 .hyperb => Geometry.solveWeightsHyperb(
                     nodes_coords,
                     ideal_x_px,
@@ -267,14 +196,14 @@ pub fn rasterDirectScalarCommon(
                 );
             }
 
-            const param = calcInterpParamCoords(
-                Geometry,
-                nodes_inv_z,
-                weights,
-                inv_z,
-                geometry_result.xi_out,
-                geometry_result.eta_out,
-            );
+            const xi = if (comptime Geometry.solver_kind == .hyperb)
+                weights[1] * nodes_inv_z[1] / inv_z
+            else
+                geometry_result.xi_out;
+            const eta = if (comptime Geometry.solver_kind == .hyperb)
+                weights[2] * nodes_inv_z[2] / inv_z
+            else
+                geometry_result.eta_out;
 
             ShaderKernel.shade(
                 Geometry.coord_space,
@@ -292,8 +221,8 @@ pub fn rasterDirectScalarCommon(
                     .weights = weights,
                     .nodes_inv_z = nodes_inv_z,
                     .sub_pixel_z = 1.0 / inv_z,
-                    .xi = param.xi,
-                    .eta = param.eta,
+                    .xi = xi,
+                    .eta = eta,
                 },
                 shader,
                 ctx_report,
@@ -306,7 +235,7 @@ pub fn rasterDirectScalarCommon(
     return shaded_px;
 }
 
-pub fn rasterSceneCommon(
+pub fn rasterSceneComm(
     comptime RasterBackend: type,
     comptime report_mode: ReportMode,
     outer_alloc: std.mem.Allocator,
@@ -339,7 +268,7 @@ pub fn rasterSceneCommon(
 
             for (range_start..range_end) |tile_idx| {
                 const tile = tile_rng_ctx.tiling.active_tiles[tile_idx];
-                try rasterTileCommon(
+                try rasterTileComm(
                     RasterBackend,
                     report_mode,
                     tile_rng_ctx.io,
@@ -391,7 +320,7 @@ pub fn rasterSceneCommon(
         .subpx_tile_size = tileScratchSubpxSize(ctx_rast),
     };
 
-    try chunk_exec.runDynamicRangeWithWorkerError(
+    try chunk_exec.runDynRangeWithWorkerErr(
         &tile_range_ctx,
         TileRangeWorkerAdapter.run,
         tiling.active_tiles.len,
@@ -413,17 +342,6 @@ pub fn rasterSceneCommon(
 //------------------------------------------------------------------------------------------
 // Direct Stepped Tri3 Fixed-Point Helpers
 //------------------------------------------------------------------------------------------
-
-fn calcTri3PerspectiveParamCoords(
-    inv_z: F,
-    nodes_inv_z: [3]F,
-    weights: [3]F,
-) ParamCoords {
-    return .{
-        .xi = weights[1] * nodes_inv_z[1] / inv_z,
-        .eta = weights[2] * nodes_inv_z[2] / inv_z,
-    };
-}
 
 fn tileScratchSubpxSize(
     ctx_rast: rops.RasterContext,
@@ -605,34 +523,8 @@ pub const Tri3FixedEdges = struct {
     }
 };
 
-// --------------------------------------------------------------------------------------
-// Tests
-// --------------------------------------------------------------------------------------
 
-test "Tri3FixedEdges preserves edge sum across a row" {
-    var x = [_]F{ 1.25, 5.5, 2.0 };
-    var y = [_]F{ 1.75, 2.5, 6.25 };
-    var z = [_]F{ 1.0, 1.0, 1.0 };
-    const nodes = rops.Vec3Slices(F){
-        .x = x[0..],
-        .y = y[0..],
-        .z = z[0..],
-    };
-    const fixed = Tri3FixedEdges.init(nodes, 2, 0, 0, 8, 8) orelse
-        return error.TestUnexpectedResult;
-
-    var e0 = fixed.start[0];
-    var e1 = fixed.start[1];
-    var e2 = fixed.start[2];
-    for (0..8) |_| {
-        try std.testing.expectEqual(fixed.area, e0 + e1 + e2);
-        e0 += fixed.step_x[0];
-        e1 += fixed.step_x[1];
-        e2 += fixed.step_x[2];
-    }
-}
-
-fn fillTileIdealCentersFullInMem(
+fn fillTileIdealCentFullInMem(
     ctx_rast: rops.RasterContext,
     tile: rops.ActiveTile,
     subpx_scratch: anytype,
@@ -643,11 +535,11 @@ fn fillTileIdealCentersFullInMem(
     const stride_y = camera_prepared.ideal_pixel_centers.strides[0];
     const stride_x = camera_prepared.ideal_pixel_centers.strides[1];
     const slice = camera_prepared.ideal_pixel_centers.slice;
-    const ideal_x_plane = camcommon.getIdealXPlaneScratch(
-        subpx_scratch.ideal_pixel_centers,
+    const ideal_x_plane = cam.getIdealXPlaneScratch(
+        subpx_scratch.ideal_pix_cent,
     );
-    const ideal_y_plane = camcommon.getIdealYPlaneScratch(
-        subpx_scratch.ideal_pixel_centers,
+    const ideal_y_plane = cam.getIdealYPlaneScratch(
+        subpx_scratch.ideal_pix_cent,
     );
 
     const start_x = @as(usize, @intCast(tile.scratch_x_px_min)) * sub_samp;
@@ -671,14 +563,14 @@ fn fillTileIdealCentersFullInMem(
     }
 }
 
-fn fillTileIdealCenters(
+fn fillTileIdealCent(
     ctx_rast: rops.RasterContext,
     tile: rops.ActiveTile,
     subpx_scratch: anytype,
     subpx_tile_size: usize,
 ) !void {
     switch (ctx_rast.camera.subpixel_center_map) {
-        .full_in_mem => fillTileIdealCentersFullInMem(
+        .full_in_mem => fillTileIdealCentFullInMem(
             ctx_rast,
             tile,
             subpx_scratch,
@@ -690,7 +582,7 @@ fn fillTileIdealCenters(
             @intCast(tile.scratch_y_px_min),
             @intCast(tile.scratch_y_px_max),
             subpx_tile_size,
-            subpx_scratch.ideal_pixel_centers,
+            subpx_scratch.ideal_pix_cent,
         ),
         .affine_jac => ctx_rast.camera.fillTileIdealCentersAffineJac(
             @intCast(tile.scratch_x_px_min),
@@ -698,7 +590,7 @@ fn fillTileIdealCenters(
             @intCast(tile.scratch_y_px_min),
             @intCast(tile.scratch_y_px_max),
             subpx_tile_size,
-            subpx_scratch.ideal_pixel_centers,
+            subpx_scratch.ideal_pix_cent,
         ),
     }
 }
@@ -707,7 +599,7 @@ fn fillTileIdealCenters(
 // Tile Raster Helpers
 //------------------------------------------------------------------------------------------
 
-fn rasterTileCommon(
+fn rasterTileComm(
     comptime RasterBackend: type,
     comptime report_mode: ReportMode,
     io: std.Io,
@@ -726,7 +618,7 @@ fn rasterTileCommon(
 
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const scratch_geom = scratchfilter.ScratchTileGeometry.init(
+    const scratch_geom = scratchresolve.ScratchTileGeometry.init(
         tile,
         sub_samp,
     );
@@ -762,7 +654,7 @@ fn rasterTileCommon(
         switch (mesh_ptr.mesh_type) {
             inline else => |geom_tag| {
                 if (!camera_fill_ready and comptime geom_tag != .tri3opt) {
-                    try fillTileIdealCenters(
+                    try fillTileIdealCent(
                         ctx_rast,
                         tile,
                         subpx_scratch,
@@ -1060,7 +952,7 @@ fn rasterTileCommon(
             null;
 
     if (ctx_rast.camera.prep_psf.hasFilter()) {
-        scratchfilter.resolveTileWithPSF(
+        scratchresolve.resolveTileWithPSF(
             tile,
             sub_samp,
             subpx_tile_size,
@@ -1075,7 +967,7 @@ fn rasterTileCommon(
             image_out_arr,
         );
     } else if (sub_samp > 1) {
-        scratchfilter.avgScratch(
+        scratchresolve.avgScratch(
             tile,
             @intCast(sub_samp),
             subpx_tile_size,
@@ -1086,7 +978,7 @@ fn rasterTileCommon(
             image_out_arr,
         );
     } else {
-        scratchfilter.resolveScratchDirect(
+        scratchresolve.resolveScratchDirect(
             tile,
             subpx_tile_size,
             fields_num,
@@ -1187,4 +1079,31 @@ fn TileRangeContext(
         fields_num: u8,
         subpx_tile_size: usize,
     };
+}
+
+// --------------------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------------------
+
+test "Tri3FixedEdges preserves edge sum across a row" {
+    var x = [_]F{ 1.25, 5.5, 2.0 };
+    var y = [_]F{ 1.75, 2.5, 6.25 };
+    var z = [_]F{ 1.0, 1.0, 1.0 };
+    const nodes = rops.Vec3Slices(F){
+        .x = x[0..],
+        .y = y[0..],
+        .z = z[0..],
+    };
+    const fixed = Tri3FixedEdges.init(nodes, 2, 0, 0, 8, 8) orelse
+        return error.TestUnexpectedResult;
+
+    var e0 = fixed.start[0];
+    var e1 = fixed.start[1];
+    var e2 = fixed.start[2];
+    for (0..8) |_| {
+        try std.testing.expectEqual(fixed.area, e0 + e1 + e2);
+        e0 += fixed.step_x[0];
+        e1 += fixed.step_x[1];
+        e2 += fixed.step_x[2];
+    }
 }

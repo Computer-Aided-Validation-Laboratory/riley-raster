@@ -7,7 +7,8 @@
 // Authors: scepticalrabbit (Lloyd Fletcher)
 // --------------------------------------------------------------------------------------
 const std = @import("std");
-const CameraPrepared = @import("camera.zig").CameraPrepared;
+const cam = @import("camera.zig");
+const CameraPrepared = cam.CameraPrepared;
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const cfg = buildconfig.config;
@@ -20,7 +21,6 @@ const VecSU8 = buildconfig.VecSU8;
 const rastcfg = @import("rasterconfig.zig");
 const ReportMode = rastcfg.ReportMode;
 const tol = cfg.tol;
-const camcommon = @import("camera_common.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const NDArray = @import("ndarray.zig").NDArray;
 const hull = @import("hull.zig");
@@ -33,7 +33,7 @@ const ActiveTile = rops.ActiveTile;
 const Vec3Slices = rops.Vec3Slices;
 const report = @import("report.zig");
 const Timestamp = std.Io.Clock.Timestamp;
-const common = @import("rasterengine_common.zig");
+const comm = @import("rasterengine_common.zig");
 const rasterreport = @import("rasterreport.zig");
 const simdops = @import("simdops.zig");
 
@@ -63,7 +63,7 @@ pub const SubpxScratchBuffs = struct {
     eta: []align(64) F,
     touched_min_x: []usize,
     touched_max_x: []usize,
-    ideal_pixel_centers: []align(64) F,
+    ideal_pix_cent: []align(64) F,
 };
 
 const SubpxSimdChunk = struct {
@@ -142,7 +142,7 @@ pub fn initSubpxScratch(
         subpx_simd_chunk_count,
     );
 
-    const ideal_pixel_centers = try arena_alloc.alignedAlloc(
+    const ideal_pix_cent = try arena_alloc.alignedAlloc(
         F,
         mem_align,
         (subpx_tile_total_padded + S) * 2,
@@ -159,7 +159,7 @@ pub fn initSubpxScratch(
         .eta = subpx_eta_scratch,
         .touched_min_x = try arena_alloc.alloc(usize, subpx_tile_size),
         .touched_max_x = try arena_alloc.alloc(usize, subpx_tile_size),
-        .ideal_pixel_centers = ideal_pixel_centers,
+        .ideal_pix_cent = ideal_pix_cent,
     };
 }
 
@@ -187,7 +187,7 @@ pub fn rasterScene(
     raster_hulls: []const ?NDArray(F),
     image_out_arr: *NDArray(F),
 ) !void {
-    try common.rasterSceneCommon(
+    try comm.rasterSceneComm(
         @This(),
         report_mode,
         outer_alloc,
@@ -205,8 +205,8 @@ pub fn rasterScene(
 //------------------------------------------------------------------------------------------
 // Raster Pass Implementation
 //------------------------------------------------------------------------------------------
-const SubpxDom = common.SubpxDom;
-const RasterBounds = common.RasterBounds;
+const SubpxDom = comm.SubpxDom;
+const RasterBounds = comm.RasterBounds;
 
 pub fn RasterEngine(
     comptime GeometryKernel: type, // geometrykernels.zig
@@ -218,7 +218,7 @@ pub fn RasterEngine(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            targ_overlap: common.OverlapTarg,
+            targ_overlap: comm.OverlapTarg,
             mesh_in: rops.MeshRaster,
             shader: *const ShaderData,
             shader_buf: *const shaderops.LocalShaderBuff(GeometryKernel.nodes_num),
@@ -331,7 +331,7 @@ pub fn RasterEngine(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            targ_overlap: common.OverlapTarg,
+            targ_overlap: comm.OverlapTarg,
             subpx_dom: SubpxDom,
             rast_bounds: RasterBounds,
             orig_start_x_u: usize,
@@ -363,7 +363,7 @@ pub fn RasterEngine(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            targ_overlap: common.OverlapTarg,
+            targ_overlap: comm.OverlapTarg,
             mesh_in: *const rops.MeshRaster,
             subpx_dom: SubpxDom,
             rast_bounds: RasterBounds,
@@ -397,7 +397,7 @@ pub fn RasterEngine(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            targ_overlap: common.OverlapTarg,
+            targ_overlap: comm.OverlapTarg,
             mesh_in: rops.MeshRaster,
             subpx_dom: SubpxDom,
             rast_bounds: RasterBounds,
@@ -432,7 +432,7 @@ fn rasterDirectSIMDImpl(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: common.OverlapTarg,
+    targ_overlap: comm.OverlapTarg,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     orig_start_x_u: usize,
@@ -456,11 +456,11 @@ fn rasterDirectSIMDImpl(
 
     const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
     const v_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
-    const ideal_x_plane = camcommon.getIdealXPlaneScratch(
-        subpx_scratch.ideal_pixel_centers,
+    const ideal_x_plane = cam.getIdealXPlaneScratch(
+        subpx_scratch.ideal_pix_cent,
     );
-    const ideal_y_plane = camcommon.getIdealYPlaneScratch(
-        subpx_scratch.ideal_pixel_centers,
+    const ideal_y_plane = cam.getIdealYPlaneScratch(
+        subpx_scratch.ideal_pix_cent,
     );
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
@@ -517,14 +517,8 @@ fn rasterDirectSIMDImpl(
                             lane_weights_2[ll],
                         };
                         const inv_z = lane_inv_z[ll];
-                        const interp = common.calcInterpParamCoords(
-                            GeometryKernel,
-                            nodes_inv_z,
-                            weights,
-                            inv_z,
-                            0.0,
-                            0.0,
-                        );
+                        const xi = weights[1] * nodes_inv_z[1] / inv_z;
+                        const eta = weights[2] * nodes_inv_z[2] / inv_z;
                         if (comptime report_mode == .full_stats) {
                             rasterreport.recordPixelConvStats(
                                 report_mode,
@@ -532,12 +526,12 @@ fn rasterDirectSIMDImpl(
                                 global_subx,
                                 global_suby,
                                 true,
-                                interp.xi,
-                                interp.eta,
+                                xi,
+                                eta,
                                 newton.calcJacDet2D(
                                     N,
-                                    interp.xi,
-                                    interp.eta,
+                                    xi,
+                                    eta,
                                     nodes_coords.x,
                                     nodes_coords.y,
                                 ),
@@ -647,7 +641,7 @@ fn rasterNewtonSIMDImpl(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: common.OverlapTarg,
+    targ_overlap: comm.OverlapTarg,
     mesh_in: *const rops.MeshRaster,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
@@ -684,11 +678,11 @@ fn rasterNewtonSIMDImpl(
     const v_lane_idx: VecSU = std.simd.iota(usize, S);
     const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
     const v_bounds_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
-    const ideal_x_plane = camcommon.getIdealXPlaneScratch(
-        subpx_scratch.ideal_pixel_centers,
+    const ideal_x_plane = cam.getIdealXPlaneScratch(
+        subpx_scratch.ideal_pix_cent,
     );
-    const ideal_y_plane = camcommon.getIdealYPlaneScratch(
-        subpx_scratch.ideal_pixel_centers,
+    const ideal_y_plane = cam.getIdealYPlaneScratch(
+        subpx_scratch.ideal_pix_cent,
     );
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
@@ -1117,8 +1111,8 @@ fn rasterDirectImpl(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: common.OverlapTarg,
-    mesh_in: rops.MeshRaster,
+    targ_overlap: comm.OverlapTarg,
+    _: rops.MeshRaster,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
@@ -1128,7 +1122,7 @@ fn rasterDirectImpl(
 ) !u64 {
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
     const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
-    return common.rasterDirectScalarCommon(
+    return comm.rasterDirectScalComm(
         GeometryKernel,
         ShaderKernel,
         ShaderData,
@@ -1137,7 +1131,6 @@ fn rasterDirectImpl(
         ctx_rast,
         ctx_report,
         targ_overlap,
-        mesh_in,
         subpx_dom,
         rast_bounds,
         fields_num,
@@ -1154,7 +1147,7 @@ fn rasterDirectSteppedSIMD(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: common.OverlapTarg,
+    targ_overlap: comm.OverlapTarg,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     orig_start_x_u: usize,
@@ -1174,7 +1167,7 @@ fn rasterDirectSteppedSIMD(
     const max_x_steps = if (aligned_width > 0) aligned_width - 1 else 0;
     const max_y_steps = if (height > 0) height - 1 else 0;
 
-    if (common.Tri3FixedEdges.init(
+    if (comm.Tri3FixedEdges.init(
         nodes_coords,
         sub_samp,
         start_subx_global,
@@ -1223,7 +1216,7 @@ fn rasterDirectSteppedSIMDFixed(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: common.OverlapTarg,
+    targ_overlap: comm.OverlapTarg,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     orig_start_x_u: usize,
@@ -1231,7 +1224,7 @@ fn rasterDirectSteppedSIMDFixed(
     shader: anytype,
     shader_buf: *const shaderops.LocalShaderBuff(GeometryKernel.nodes_num),
     subpx_scratch: *SubpxScratchBuffs,
-    fixed: common.Tri3FixedEdges,
+    fixed: comm.Tri3FixedEdges,
 ) !u64 {
     const N = GeometryKernel.nodes_num;
     var shaded_px: u64 = 0;
@@ -1526,7 +1519,7 @@ fn rasterDirectSteppedSIMDFloatFallback(
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: common.OverlapTarg,
+    targ_overlap: comm.OverlapTarg,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     orig_start_x_u: usize,

@@ -13,8 +13,6 @@ else
     @import("rasterengine_scalar.zig");
 const simd_impl = @import("rasterengine_simd.zig");
 
-const scratchfilter = @import("scratchfilter.zig");
-
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
@@ -27,5 +25,3 @@ pub const ScratchBuffs = simd_impl.ScratchBuffs;
 
 pub const rasterScene = impl.rasterScene;
 pub const RasterEngine = impl.RasterEngine;
-pub const resolveScratchDirect = scratchfilter.resolveScratchDirect;
-pub const avgScratch = scratchfilter.avgScratch;

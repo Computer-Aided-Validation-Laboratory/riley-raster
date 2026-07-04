@@ -53,3 +53,7 @@ pub const FOVScaling = common.FOVScaling;
 pub const CameraPrepared = camera_impl.CameraPrepared;
 pub const allCamerasSharePixels = common.allCamerasSharePixels;
 pub const isNoDistortion = common.isNoDistortion;
+pub const calcPixelCenterCoord = common.calcPixelCenterCoord;
+pub const storeIdealPairScratch = common.storeIdealPairScratch;
+pub const getIdealXPlaneScratch = common.getIdealXPlaneScratch;
+pub const getIdealYPlaneScratch = common.getIdealYPlaneScratch;

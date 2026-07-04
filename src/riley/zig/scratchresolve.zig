@@ -10,9 +10,9 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const rops = @import("rasterops.zig");
 const cam = @import("camera.zig");
-const common = @import("scratchfilter_common.zig");
-const scal = @import("scratchfilter_scalar.zig");
-const simd = @import("scratchfilter_simd.zig");
+const common = @import("scratchresolve_common.zig");
+const scal = @import("scratchresolve_scalar.zig");
+const simd = @import("scratchresolve_simd.zig");
 
 const cfg = buildconfig.config;
 

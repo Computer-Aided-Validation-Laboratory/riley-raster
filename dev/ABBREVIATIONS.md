@@ -33,6 +33,12 @@ Use these abbreviations consistently in Riley Zig code.
 - `accum`: accumulate
 - `vis`: visible
 - `prep`: prepare or prepared
+- `dyn`: dynamic
+- `err`: error
+- `persp`: perspective
+- `comm`: common
+- `pix`: pixel
+- `cent`: center or centre or centers or centres
 
 ## Common Existing Terms
 - `alloc`: allocator
