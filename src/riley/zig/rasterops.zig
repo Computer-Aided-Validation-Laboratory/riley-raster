@@ -101,11 +101,6 @@ pub const RasterContext = struct {
     tile_size: u16,
 };
 
-pub const MeshRaster = struct {
-    coords: *const ndarray.NDArray(F),
-    hull: ?*const ndarray.NDArray(F),
-};
-
 //------------------------------------------------------------------------------------------
 // Coordinate Transformations
 //------------------------------------------------------------------------------------------
@@ -708,14 +703,17 @@ fn runTilingFill(
     for (range_start..range_end) |ee| {
         const elem_bbox = tiling.elem_bbox_slice[ee];
         const halo_u32: u32 = tiling.halo_px;
+
         const x_min_expanded: u32 = if (elem_bbox.x_min > tiling.halo_px)
             elem_bbox.x_min - tiling.halo_px
         else
             0;
+
         const y_min_expanded: u32 = if (elem_bbox.y_min > tiling.halo_px)
             elem_bbox.y_min - tiling.halo_px
         else
             0;
+
         const x_max_expanded: u32 = @as(u32, elem_bbox.x_max) + halo_u32;
         const y_max_expanded: u32 = @as(u32, elem_bbox.y_max) + halo_u32;
 
@@ -733,7 +731,10 @@ fn runTilingFill(
 
         for (ty_start..ty_end) |ty| {
             const tile_px_min_y = @as(u16, @intCast(ty * tiling.tile_size));
-            const tile_px_max_y = @as(u16, @min(@as(u32, tile_px_min_y) + tiling.tile_size, tiling.screen_px_y));
+            const tile_px_max_y = @as(
+                u16,
+                @min(@as(u32, tile_px_min_y) + tiling.tile_size, tiling.screen_px_y),
+            );
             const scratch_px_min_y = tile_px_min_y -| tiling.halo_px;
             const scratch_px_max_y = @min(
                 tiling.screen_px_y,
@@ -745,7 +746,10 @@ fn runTilingFill(
 
             for (tx_start..tx_end) |tx| {
                 const tile_px_min_x = @as(u16, @intCast(tx * tiling.tile_size));
-                const tile_px_max_x = @as(u16, @min(@as(u32, tile_px_min_x) + tiling.tile_size, tiling.screen_px_x));
+                const tile_px_max_x = @as(
+                    u16,
+                    @min(@as(u32, tile_px_min_x) + tiling.tile_size, tiling.screen_px_x),
+                );
                 const scratch_px_min_x = tile_px_min_x -| tiling.halo_px;
                 const scratch_px_max_x = @min(
                     tiling.screen_px_x,
@@ -995,17 +999,9 @@ fn calcBBoxFromRasterCoordsPadded(
     return .{
         .elem_idx = elem_idx,
         .x_min = boundIndMin(u16, x_min - pad),
-        .x_max = boundIndMax(
-            u16,
-            x_max + pad,
-            @intCast(camera.pixels_num[0]),
-        ),
+        .x_max = boundIndMax(u16, x_max + pad, @intCast(camera.pixels_num[0])),
         .y_min = boundIndMin(u16, y_min - pad),
-        .y_max = boundIndMax(
-            u16,
-            y_max + pad,
-            @intCast(camera.pixels_num[1]),
-        ),
+        .y_max = boundIndMax(u16, y_max + pad, @intCast(camera.pixels_num[1])),
     };
 }
 
@@ -1051,34 +1047,6 @@ fn initTestCullCameraWithDistortion(
     );
 }
 
-fn initTestCullCameraManual(distortion: cam.DistortionModel) cam.CameraPrepared {
-    const Vec3f = @import("vecstack.zig").Vec3f;
-    const Rotation = @import("rotation.zig").Rotation;
-    const Mat44f = @import("matstack.zig").Mat44f;
-
-    return .{
-        .pixels_num = .{ 10, 10 },
-        .pixels_size = .{ 0.01, 0.01 },
-        .pos_world = Vec3f.initZeros(),
-        .rot_world = Rotation.init(0, 0, 0),
-        .roi_cent_world = Vec3f.initZeros(),
-        .focal_length = 1.0,
-        .sub_sample = 1,
-        .sensor_size = .{ 0.1, 0.1 },
-        .image_dims = .{ 0.1, 0.1 },
-        .image_dist = 1.0,
-        .cam_to_world_mat = Mat44f.initIdentity(),
-        .world_to_cam_mat = Mat44f.initIdentity(),
-        .distortion = distortion,
-        .psf = .{ .pixel_box = .{} },
-        .prep_psf = .{},
-        .coord_sys = .opengl,
-        .ideal_pixel_centers = undefined,
-        .pixel_center_jac = undefined,
-        .subpixel_center_map = .full_in_mem,
-    };
-}
-
 fn initSingleElemConnect(
     comptime N: usize,
     allocator: std.mem.Allocator,
@@ -1109,6 +1077,34 @@ fn initElemCoords(
 // --------------------------------------------------------------------------------------
 // Tests
 // --------------------------------------------------------------------------------------
+
+fn initTestCullCameraManual(distortion: cam.DistortionModel) cam.CameraPrepared {
+    const Vec3f = @import("vecstack.zig").Vec3f;
+    const Rotation = @import("rotation.zig").Rotation;
+    const Mat44f = @import("matstack.zig").Mat44f;
+
+    return .{
+        .pixels_num = .{ 10, 10 },
+        .pixels_size = .{ 0.01, 0.01 },
+        .pos_world = Vec3f.initZeros(),
+        .rot_world = Rotation.init(0, 0, 0),
+        .roi_cent_world = Vec3f.initZeros(),
+        .focal_length = 1.0,
+        .sub_sample = 1,
+        .sensor_size = .{ 0.1, 0.1 },
+        .image_dims = .{ 0.1, 0.1 },
+        .image_dist = 1.0,
+        .cam_to_world_mat = Mat44f.initIdentity(),
+        .world_to_cam_mat = Mat44f.initIdentity(),
+        .distortion = distortion,
+        .psf = .{ .pixel_box = .{} },
+        .prep_psf = .{},
+        .coord_sys = .opengl,
+        .ideal_pixel_centers = undefined,
+        .pixel_center_jac = undefined,
+        .subpixel_center_map = .full_in_mem,
+    };
+}
 
 test "calcVisibleNodeBBoxTri3 on_screen" {
     const allocator = std.testing.allocator;

@@ -15,7 +15,7 @@ const buildconfig = @import("buildconfig.zig");
 const sliceops = @import("sliceops.zig");
 
 const cam = @import("camera.zig");
-const cameraops = @import("cameraops.zig");
+const camops = @import("cameraops.zig");
 const rops = @import("rasterops.zig");
 const mo = @import("meshpipeline.zig");
 const shaderops = @import("shaderops.zig");
@@ -25,7 +25,7 @@ const imageops = @import("imageops.zig");
 const pce = @import("parachunkexec.zig");
 const saveoverlap = @import("saveoverlap.zig");
 const scalingpolicy = @import("scalingpolicy.zig");
-const validateinput = @import("validateinput.zig");
+const valinp = @import("validateinput.zig");
 
 const geomkerns = @import("geometrykernels.zig");
 const shadekerns = @import("shaderkernels.zig");
@@ -60,7 +60,7 @@ pub const RenderGroupSpec = struct {
 pub fn raster(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
-    camera_inputs: []const cam.CameraInput,
+    cam_inps: []const cam.CameraInput,
     meshes: []const mo.MeshInput,
     config: RasterConfig,
     out_dir_path: ?[]const u8,
@@ -68,7 +68,7 @@ pub fn raster(
     return rasterReport(
         outer_alloc,
         render_groups,
-        camera_inputs,
+        cam_inps,
         meshes,
         config,
         out_dir_path,
@@ -79,7 +79,7 @@ pub fn raster(
 pub fn rasterInto(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
-    camera_inputs: []const cam.CameraInput,
+    cam_inps: []const cam.CameraInput,
     meshes: []const mo.MeshInput,
     config: RasterConfig,
     out_dir_path: ?[]const u8,
@@ -88,7 +88,7 @@ pub fn rasterInto(
     try rasterReportInto(
         outer_alloc,
         render_groups,
-        camera_inputs,
+        cam_inps,
         meshes,
         config,
         out_dir_path,
@@ -100,32 +100,27 @@ pub fn rasterInto(
 pub fn rasterReport(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
-    camera_inputs: []const cam.CameraInput,
+    cam_inps: []const cam.CameraInput,
     meshes: []const mo.MeshInput,
     config: RasterConfig,
     out_dir_path: ?[]const u8,
-    bench_capture: ?[]report.FrameBenchCapture,
+    bench_capt: ?[]report.FrameBenchCapture,
 ) !?ndarray.NDArray(F) {
-    _ = try validateinput.checkRenderInputsError(
+    const valid_summary = try valinp.checkRenderInpsErr(
         render_groups,
-        camera_inputs,
+        cam_inps,
         meshes,
         config,
-        bench_capture,
+        null,
+        false,
+        bench_capt,
     );
 
-    const needs_images_arr = config.save_strategy == .memory or
-        config.save_strategy == .both;
     var images_arr_opt: ?ndarray.NDArray(F) = null;
-    if (needs_images_arr) {
-        const dims = try calcAllFramesImageDims(
-            camera_inputs,
-            meshes,
-            config,
-        );
+    if (config.save_strategy == .memory or config.save_strategy == .both) {
         images_arr_opt = try ndarray.NDArray(F).initFlat(
             outer_alloc,
-            dims[0..],
+            valid_summary.img_dims[0..],
         );
     }
     errdefer if (images_arr_opt) |*images_arr| {
@@ -136,12 +131,12 @@ pub fn rasterReport(
     try rasterReportInto(
         outer_alloc,
         render_groups,
-        camera_inputs,
+        cam_inps,
         meshes,
         config,
         out_dir_path,
         if (images_arr_opt) |*images_arr| images_arr else null,
-        bench_capture,
+        bench_capt,
     );
     return images_arr_opt;
 }
@@ -149,42 +144,22 @@ pub fn rasterReport(
 pub fn rasterReportInto(
     outer_alloc: std.mem.Allocator,
     render_groups: []const RenderGroupSpec,
-    camera_inputs: []const cam.CameraInput,
+    cam_inps: []const cam.CameraInput,
     meshes: []const mo.MeshInput,
     config: RasterConfig,
     out_dir_path: ?[]const u8,
     images_arr: ?*ndarray.NDArray(F),
-    bench_capture: ?[]report.FrameBenchCapture,
+    bench_capt: ?[]report.FrameBenchCapture,
 ) !void {
-    const validation_summary = try validateinput.checkRenderInputsError(
+    const valid_summary = try valinp.checkRenderInpsErr(
         render_groups,
-        camera_inputs,
+        cam_inps,
         meshes,
         config,
-        bench_capture,
+        images_arr,
+        true,
+        bench_capt,
     );
-    _ = try outputFieldsForImageSaveMode(
-        config.image_save_mode,
-        validation_summary.raw_num_fields,
-    );
-    if (config.save_strategy == .memory or config.save_strategy == .both) {
-        const expected_image_dims = try calcAllFramesImageDims(
-            camera_inputs,
-            meshes,
-            config,
-        );
-        try validateinput.validateOutputBuffError(
-            config,
-            images_arr,
-            expected_image_dims,
-        );
-    } else {
-        try validateinput.validateOutputBuffError(
-            config,
-            images_arr,
-            undefined,
-        );
-    }
 
     const summary_io = render_groups[0].io;
     const time_start_render = Timestamp.now(summary_io, .awake);
@@ -205,26 +180,23 @@ pub fn rasterReportInto(
     defer static_arena.deinit();
     const static_alloc = static_arena.allocator();
 
-    const cameras = try cameraops.prepareCameraSlice(
+    const cams = try camops.prepareCameraSlice(
         outer_alloc,
-        camera_inputs,
+        cam_inps,
     );
     defer {
-        for (cameras) |camera| camera.deinit(outer_alloc);
-        outer_alloc.free(cameras);
+        for (cams) |cam_prep| cam_prep.deinit(outer_alloc);
+        outer_alloc.free(cams);
     }
 
-    const num_time = mo.countFrames(meshes);
-    const num_fields = mo.countOutputFields(meshes);
+    const num_time = valid_summary.num_time;
+    const num_fields = valid_summary.raw_num_fields;
 
     // Init. static data across all frames - here we reshape uv's once if we have them so
     // we don't need to do this every frames
     const mesh_static = try initMeshStaticSlice(static_alloc, meshes);
-    const nodal_global_scaling = try initNodalGlobalScaling(
-        outer_alloc,
-        meshes,
-    );
-    defer outer_alloc.free(nodal_global_scaling);
+    const nodal_glob_scaling = try initNodalGlobalScaling(outer_alloc, meshes);
+    defer outer_alloc.free(nodal_glob_scaling);
 
     const time_start_frame_buff = Timestamp.now(summary_io, .awake);
     const time_end_setup = Timestamp.now(summary_io, .awake);
@@ -249,29 +221,29 @@ pub fn rasterReportInto(
         try dispatchFrameJobsInOrder(
             outer_alloc,
             render_groups,
-            cameras,
+            cams,
             config,
             out_dir,
             num_time,
             num_fields,
             mesh_static,
-            nodal_global_scaling,
+            nodal_glob_scaling,
             images_arr,
-            bench_capture,
+            bench_capt,
         );
     } else {
         try dispatchFrameJobsOffline(
             outer_alloc,
             render_groups,
-            cameras,
+            cams,
             config,
             out_dir,
             num_time,
             num_fields,
             mesh_static,
-            nodal_global_scaling,
+            nodal_glob_scaling,
             images_arr,
-            bench_capture,
+            bench_capt,
         );
     }
 
@@ -286,53 +258,48 @@ pub fn rasterReportInto(
         config.tile_size_override,
         config.tile_size_min,
         config.tile_size_max,
-        cameras[0].pixels_num,
-        cameras[0].sub_sample,
-        cameras[0].prep_psf.halo_px,
+        cams[0].pixels_num,
+        cams[0].sub_sample,
+        cams[0].prep_psf.halo_px,
     );
     try report.printRenderSummary(
         summary_io,
-        cameras,
+        cams,
         actual_tile_size,
         num_time,
         config.report,
         end_to_end_times,
-        if (bench_capture) |capture| capture else null,
+        if (bench_capt) |capt| capt else null,
     );
 }
 
 pub fn calcAllFramesImageDims(
-    camera_inputs: []const cam.CameraInput,
+    cam_inps: []const cam.CameraInput,
     meshes: []const mo.MeshInput,
     config: RasterConfig,
 ) ![5]usize {
-    std.debug.assert(camera_inputs.len > 0);
+    std.debug.assert(cam_inps.len > 0);
     std.debug.assert(meshes.len > 0);
 
     const num_time = mo.countFrames(meshes);
     const raw_num_fields = mo.countOutputFields(meshes);
-    const num_fields = try outputFieldsForImageSaveMode(
+    const num_fields = try valinp.calcOutFieldsForImgSaveMode(
         config.image_save_mode,
         raw_num_fields,
     );
-    var max_pixels_num = camera_inputs[0].pixels_num;
-    for (camera_inputs[1..]) |camera_input| {
-        max_pixels_num[0] = @max(
-            max_pixels_num[0],
-            camera_input.pixels_num[0],
-        );
-        max_pixels_num[1] = @max(
-            max_pixels_num[1],
-            camera_input.pixels_num[1],
-        );
+
+    var max_pix_num = cam_inps[0].pixels_num;
+    for (cam_inps[1..]) |cam_inp| {
+        max_pix_num[0] = @max(max_pix_num[0], cam_inp.pixels_num[0]);
+        max_pix_num[1] = @max(max_pix_num[1], cam_inp.pixels_num[1]);
     }
 
     return .{
-        camera_inputs.len,
+        cam_inps.len,
         num_time,
         @as(usize, num_fields),
-        max_pixels_num[1],
-        max_pixels_num[0],
+        max_pix_num[1],
+        max_pix_num[0],
     };
 }
 
@@ -437,23 +404,6 @@ fn calcAllFramesDimsFromPixels(
         @as(usize, num_fields),
         max_pixels_num[1],
         max_pixels_num[0],
-    };
-}
-
-fn outputFieldsForImageSaveMode(
-    image_save_mode: ImageSaveMode,
-    raw_num_fields: u8,
-) !u8 {
-    return switch (image_save_mode) {
-        .multifield => raw_num_fields,
-        .grey => switch (raw_num_fields) {
-            1, 3 => 1,
-            else => error.UnsuppedImageModeFieldCount,
-        },
-        .rgb => switch (raw_num_fields) {
-            1, 3 => 3,
-            else => error.UnsuppedImageModeFieldCount,
-        },
     };
 }
 

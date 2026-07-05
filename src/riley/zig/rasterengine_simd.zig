@@ -135,8 +135,7 @@ pub fn initSubpxScratch(
         subpx_tile_total_padded + S,
     );
 
-    const subpx_simd_chunk_count =
-        @divFloor(subpx_tile_total_padded + (S - 1), S) + 1;
+    const subpx_simd_chunk_count = @divFloor(subpx_tile_total_padded + (S - 1), S) + 1;
     const subpx_simd_chunks = try arena_alloc.alloc(
         SubpxSimdChunk,
         subpx_simd_chunk_count,
@@ -203,14 +202,14 @@ pub fn rasterScene(
 }
 
 //------------------------------------------------------------------------------------------
-// Raster Pass Implementation
+// Raster Engine Builder
 //------------------------------------------------------------------------------------------
 const SubpxDom = comm.SubpxDom;
 const RasterBounds = comm.RasterBounds;
 
 pub fn RasterEngine(
-    comptime GeometryKernel: type, // geometrykernels.zig
-    comptime ShaderKernel: type, // shaderkernels.zig
+    comptime Geom: type, // geometrykernels.zig
+    comptime ShaderKern: type, // shaderkernels.zig
     comptime ShaderData: type, // shaderops_common.zig, ShaderPrepared
 ) type {
     return struct {
@@ -218,10 +217,12 @@ pub fn RasterEngine(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            targ_overlap: comm.OverlapTarg,
-            mesh_in: rops.MeshRaster,
+            tile: rops.ActiveTile,
+            overlap: rops.OverlapBBox,
+            coords: *const NDArray(F),
+            raster_hull: ?*const NDArray(F),
             shader: *const ShaderData,
-            shader_buf: *const shaderops.LocalShaderBuff(GeometryKernel.nodes_num),
+            shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
             subpx_scratch: *SubpxScratchBuffs,
         ) !u64 {
             const sub_samp_u: usize = @intCast(ctx_rast.camera.sub_sample);
@@ -236,38 +237,39 @@ pub fn RasterEngine(
             };
 
             const scratch_start_x_u = sub_samp_u *
-                (@as(usize, targ_overlap.overlap.x_min) - targ_overlap.tile.scratch_x_px_min);
+                (@as(usize, overlap.x_min) - tile.scratch_x_px_min);
             const scratch_end_x_u = sub_samp_u *
-                (@as(usize, targ_overlap.overlap.x_max) - targ_overlap.tile.scratch_x_px_min);
+                (@as(usize, overlap.x_max) - tile.scratch_x_px_min);
             const scratch_start_y_u = sub_samp_u *
-                (@as(usize, targ_overlap.overlap.y_min) - targ_overlap.tile.scratch_y_px_min);
+                (@as(usize, overlap.y_min) - tile.scratch_y_px_min);
             const scratch_end_y_u = sub_samp_u *
-                (@as(usize, targ_overlap.overlap.y_max) - targ_overlap.tile.scratch_y_px_min);
+                (@as(usize, overlap.y_max) - tile.scratch_y_px_min);
 
             const rast_bounds = RasterBounds{
                 .start_x_u = scratch_start_x_u,
                 .end_x_u = scratch_end_x_u,
                 .start_y_u = scratch_start_y_u,
                 .end_y_u = scratch_end_y_u,
-                .x_min_f = @as(F, @floatFromInt(targ_overlap.overlap.x_min)),
-                .y_min_f = @as(F, @floatFromInt(targ_overlap.overlap.y_min)),
+                .x_min_f = @as(F, @floatFromInt(overlap.x_min)),
+                .y_min_f = @as(F, @floatFromInt(overlap.y_min)),
             };
 
             const nodes_coords = try rops.loadElemVec3Slices(
-                GeometryKernel.nodes_num,
+                Geom.nodes_num,
                 F,
-                mesh_in.coords,
-                targ_overlap.overlap.elem_idx,
+                coords,
+                overlap.elem_idx,
             );
 
-            const shaded_px = if (comptime GeometryKernel == geomkerns.Tri3OptKernel())
-                try rasterDirectSteppedSIMD(
-                    GeometryKernel,
-                    ShaderKernel,
+            const shaded_px = if (comptime Geom == geomkerns.Tri3OptKernel())
+                try rasterSteppedSIMD(
+                    Geom,
+                    ShaderKern,
                     report_mode,
                     ctx_rast,
                     ctx_report,
-                    targ_overlap,
+                    tile,
+                    overlap,
                     subpx_dom,
                     rast_bounds,
                     scratch_start_x_u,
@@ -276,12 +278,13 @@ pub fn RasterEngine(
                     shader_buf,
                     subpx_scratch,
                 )
-            else if (GeometryKernel.solver_kind == .hyperb)
+            else if (Geom.solver_kind == .hyperb)
                 try rasterDirectSIMD(
                     report_mode,
                     ctx_rast,
                     ctx_report,
-                    targ_overlap,
+                    tile,
+                    overlap,
                     subpx_dom,
                     rast_bounds,
                     scratch_start_x_u,
@@ -290,15 +293,16 @@ pub fn RasterEngine(
                     shader_buf,
                     subpx_scratch,
                 )
-            else if (GeometryKernel.solver_kind == .inv_bi)
+            else if (Geom.solver_kind == .inv_bi)
                 // NOTE: SIMD is very inefficient for highly branched inv bilinear
                 // solve fallback to scalar
                 try rasterDirect(
                     report_mode,
                     ctx_rast,
                     ctx_report,
-                    targ_overlap,
-                    mesh_in,
+                    tile,
+                    overlap,
+                    raster_hull,
                     subpx_dom,
                     rast_bounds,
                     nodes_coords,
@@ -306,13 +310,14 @@ pub fn RasterEngine(
                     shader_buf,
                     subpx_scratch,
                 )
-            else if (GeometryKernel.solver_kind == .newton)
+            else if (Geom.solver_kind == .newton)
                 try rasterNewtonSIMD(
                     report_mode,
                     ctx_rast,
                     ctx_report,
-                    targ_overlap,
-                    &mesh_in,
+                    tile,
+                    overlap,
+                    raster_hull,
                     subpx_dom,
                     rast_bounds,
                     scratch_start_x_u,
@@ -331,22 +336,24 @@ pub fn RasterEngine(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            targ_overlap: comm.OverlapTarg,
+            tile: rops.ActiveTile,
+            overlap: rops.OverlapBBox,
             subpx_dom: SubpxDom,
             rast_bounds: RasterBounds,
             orig_start_x_u: usize,
             nodes_coords: Vec3Slices(F),
             shader: anytype,
-            shader_buf: *const shaderops.LocalShaderBuff(GeometryKernel.nodes_num),
+            shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
             subpx_scratch: *SubpxScratchBuffs,
         ) !u64 {
             return rasterDirectSIMDImpl(
-                GeometryKernel,
-                ShaderKernel,
+                Geom,
+                ShaderKern,
                 report_mode,
                 ctx_rast,
                 ctx_report,
-                targ_overlap,
+                tile,
+                overlap,
                 subpx_dom,
                 rast_bounds,
                 orig_start_x_u,
@@ -363,24 +370,26 @@ pub fn RasterEngine(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            targ_overlap: comm.OverlapTarg,
-            mesh_in: *const rops.MeshRaster,
+            tile: rops.ActiveTile,
+            overlap: rops.OverlapBBox,
+            raster_hull: ?*const NDArray(F),
             subpx_dom: SubpxDom,
             rast_bounds: RasterBounds,
             orig_start_x_u: usize,
             nodes_coords: Vec3Slices(F),
             shader: anytype,
-            shader_buf: *const shaderops.LocalShaderBuff(GeometryKernel.nodes_num),
+            shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
             subpx_scratch: *SubpxScratchBuffs,
         ) !u64 {
             return rasterNewtonSIMDImpl(
-                GeometryKernel,
-                ShaderKernel,
+                Geom,
+                ShaderKern,
                 report_mode,
                 ctx_rast,
                 ctx_report,
-                targ_overlap,
-                mesh_in,
+                tile,
+                overlap,
+                raster_hull,
                 subpx_dom,
                 rast_bounds,
                 orig_start_x_u,
@@ -397,24 +406,26 @@ pub fn RasterEngine(
             comptime report_mode: ReportMode,
             ctx_rast: rops.RasterContext,
             ctx_report: report.ReportContext(report_mode),
-            targ_overlap: comm.OverlapTarg,
-            mesh_in: rops.MeshRaster,
+            tile: rops.ActiveTile,
+            overlap: rops.OverlapBBox,
+            raster_hull: ?*const NDArray(F),
             subpx_dom: SubpxDom,
             rast_bounds: RasterBounds,
             nodes_coords: Vec3Slices(F),
             shader: *const ShaderData,
-            shader_buf: *const shaderops.LocalShaderBuff(GeometryKernel.nodes_num),
+            shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
             subpx_scratch: *SubpxScratchBuffs,
         ) !u64 {
             return rasterDirectImpl(
-                GeometryKernel,
-                ShaderKernel,
+                Geom,
+                ShaderKern,
                 ShaderData,
                 report_mode,
                 ctx_rast,
                 ctx_report,
-                targ_overlap,
-                mesh_in,
+                tile,
+                overlap,
+                raster_hull,
                 subpx_dom,
                 rast_bounds,
                 nodes_coords,
@@ -427,32 +438,33 @@ pub fn RasterEngine(
 }
 
 fn rasterDirectSIMDImpl(
-    comptime GeometryKernel: type,
-    comptime ShaderKernel: type,
+    comptime Geom: type,
+    comptime ShaderKern: type,
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: comm.OverlapTarg,
+    tile: rops.ActiveTile,
+    overlap: rops.OverlapBBox,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     orig_start_x_u: usize,
     nodes_coords: Vec3Slices(F),
     shader: anytype,
-    shader_buf: *const shaderops.LocalShaderBuff(GeometryKernel.nodes_num),
+    shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
     subpx_scratch: *SubpxScratchBuffs,
 ) !u64 {
-    const N = GeometryKernel.nodes_num;
+    const N = Geom.nodes_num;
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
     const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
 
-    const inv_area = GeometryKernel.getInvElemArea(nodes_coords);
+    const inv_area = Geom.getInvElemArea(nodes_coords);
     const v_inv_area: VecSF = @splat(inv_area);
     var nodes_inv_z: [N]F = undefined;
 
     inline for (0..N) |nn| nodes_inv_z[nn] = 1.0 / nodes_coords.z[nn];
-    const v_nodes_inv_z = GeometryKernel.getSIMDInvZ(nodes_coords);
+    const v_nodes_inv_z = Geom.getSIMDInvZ(nodes_coords);
 
     const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
     const v_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
@@ -475,90 +487,42 @@ fn rasterDirectSIMDImpl(
                 (v_subpx_x_u < v_end_x_u);
 
             const scratch_idx = row_offset + scratch_x_u;
-            const v_ideal_x_px = simdops.loadVecSF(ideal_x_plane, scratch_idx);
-            const v_ideal_y_px = simdops.loadVecSF(ideal_y_plane, scratch_idx);
+            const v_ideal_x_pix = simdops.loadVecSF(ideal_x_plane, scratch_idx);
+            const v_ideal_y_pix = simdops.loadVecSF(ideal_y_plane, scratch_idx);
 
             ctx_report.recordSolverCalls(S);
-            const res = GeometryKernel.solveWeightsHyperbSIMD(
+            const res = Geom.solveWeightsHyperbSIMD(
                 nodes_coords,
-                v_ideal_x_px,
-                v_ideal_y_px,
+                v_ideal_x_pix,
+                v_ideal_y_pix,
                 v_inv_area,
             );
             const v_mask_active = v_x_mask & res.v_mask;
 
             if (comptime report_mode == .full_stats) {
-                const lane_x_mask: [S]bool = v_x_mask;
-                const lane_active_mask: [S]bool = v_mask_active;
-                const lane_weights_0: [S]F = res.v_weights[0];
-                const lane_weights_1: [S]F = res.v_weights[1];
-                const lane_weights_2: [S]F = res.v_weights[2];
-                const lane_inv_z: [S]F = GeometryKernel.calcInvZSIMD(
+                const v_inv_z_stats = Geom.calcInvZSIMD(
                     v_nodes_inv_z,
                     res.v_weights,
                 );
-                for (0..S) |ll| {
-                    if (!lane_x_mask[ll]) continue;
-
-                    const global_subx =
-                        @as(
-                            usize,
-                            @intCast(targ_overlap.tile.scratch_x_px_min),
-                        ) * sub_samp + scratch_x_u + ll;
-                    const global_suby =
-                        @as(
-                            usize,
-                            @intCast(targ_overlap.tile.scratch_y_px_min),
-                        ) * sub_samp + scratch_y_u;
-                    if (lane_active_mask[ll]) {
-                        const weights = [3]F{
-                            lane_weights_0[ll],
-                            lane_weights_1[ll],
-                            lane_weights_2[ll],
-                        };
-                        const inv_z = lane_inv_z[ll];
-                        const xi = weights[1] * nodes_inv_z[1] / inv_z;
-                        const eta = weights[2] * nodes_inv_z[2] / inv_z;
-                        if (comptime report_mode == .full_stats) {
-                            rasterreport.recordPixelConvStats(
-                                report_mode,
-                                ctx_report,
-                                global_subx,
-                                global_suby,
-                                true,
-                                xi,
-                                eta,
-                                newton.calcJacDet2D(
-                                    N,
-                                    xi,
-                                    eta,
-                                    nodes_coords.x,
-                                    nodes_coords.y,
-                                ),
-                            );
-                        }
-                        continue;
-                    }
-
-                    const nan = std.math.nan(F);
-                    if (comptime report_mode == .full_stats) {
-                        rasterreport.recordPixelConvStats(
-                            report_mode,
-                            ctx_report,
-                            global_subx,
-                            global_suby,
-                            false,
-                            nan,
-                            nan,
-                            nan,
-                        );
-                    }
-                }
+                rasterreport.recordTri3SIMDConvStats(
+                    ctx_report,
+                    tile,
+                    sub_samp,
+                    scratch_x_u,
+                    scratch_y_u,
+                    v_x_mask,
+                    v_mask_active,
+                    res.v_weights,
+                    v_inv_z_stats,
+                    nodes_inv_z,
+                    nodes_coords.x,
+                    nodes_coords.y,
+                );
             }
 
             if (!@reduce(.Or, v_mask_active)) continue;
 
-            const v_inv_z = GeometryKernel.calcInvZSIMD(
+            const v_inv_z = Geom.calcInvZSIMD(
                 v_nodes_inv_z,
                 res.v_weights,
             );
@@ -566,23 +530,18 @@ fn rasterDirectSIMDImpl(
                 subpx_scratch.inv_z,
                 scratch_idx,
             );
+
             const v_depth_tol: VecSF =
                 @splat(tol.geometry.depth_buff_inv_z_cmp);
             const v_depth_mask =
                 v_mask_active & (v_inv_z + v_depth_tol >= v_old_inv_z);
+
             if (!@reduce(.Or, v_depth_mask)) continue;
 
-            const v_new_inv_z = @select(
-                F,
-                v_depth_mask,
-                v_inv_z,
-                v_old_inv_z,
-            );
-            simdops.storeVecSF(
-                subpx_scratch.inv_z,
-                scratch_idx,
-                v_new_inv_z,
-            );
+            const v_new_inv_z = @select(F, v_depth_mask, v_inv_z, v_old_inv_z);
+
+            simdops.storeVecSF(subpx_scratch.inv_z, scratch_idx, v_new_inv_z);
+
             const v_subpx_z: VecSF = @as(VecSF, @splat(1.0)) / v_inv_z;
             const v_xi = res.v_weights[1] * v_nodes_inv_z[1] / v_inv_z;
             const v_eta = res.v_weights[2] * v_nodes_inv_z[2] / v_inv_z;
@@ -607,18 +566,18 @@ fn rasterDirectSIMDImpl(
 
             const ctx_shade = shaderops.ShadeContext(N){
                 .frame_idx = ctx_rast.frame_idx,
-                .elem_idx = targ_overlap.overlap.elem_idx,
+                .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
                 .scratch_idx = scratch_idx,
-                .global_subx = targ_overlap.tile.scratch_x_px_min * sub_samp + scratch_x_u,
-                .global_suby = targ_overlap.tile.scratch_y_px_min * sub_samp + scratch_y_u,
+                .global_subx = tile.scratch_x_px_min * sub_samp + scratch_x_u,
+                .global_suby = tile.scratch_y_px_min * sub_samp + scratch_y_u,
                 .shader_buf = shader_buf,
                 .v_mask_active = v_depth_mask,
             };
 
-            ShaderKernel.shadeSIMD(
-                GeometryKernel.coord_space,
+            ShaderKern.shadeSIMD(
+                Geom.coord_space,
                 ctx_shade,
                 ctx_report,
                 v_depth_mask,
@@ -636,23 +595,25 @@ fn rasterDirectSIMDImpl(
 }
 
 fn rasterNewtonSIMDImpl(
-    comptime GeometryKernel: type,
-    comptime ShaderKernel: type,
+    comptime Geom: type,
+    comptime ShaderKern: type,
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: comm.OverlapTarg,
-    mesh_in: *const rops.MeshRaster,
+    tile: rops.ActiveTile,
+    overlap: rops.OverlapBBox,
+    raster_hull: ?*const NDArray(F),
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     orig_start_x_u: usize,
     nodes_coords: Vec3Slices(F),
     shader: anytype,
-    shader_buf: *const shaderops.LocalShaderBuff(GeometryKernel.nodes_num),
+    shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
     subpx_scratch: *SubpxScratchBuffs,
 ) !u64 {
-    const N = GeometryKernel.nodes_num;
+    const N = Geom.nodes_num;
     var shaded_px: u64 = 0;
+
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
     const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
@@ -666,7 +627,7 @@ fn rasterNewtonSIMDImpl(
         v_nodes_inv_z[nn] = @splat(nodes_inv_z[nn]);
     }
 
-    const maybe_raster_hull = mesh_in.hull;
+    const maybe_raster_hull = raster_hull;
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
         const row_offset = scratch_y_u * subpx_dom.tile_size;
         const mask_start = row_offset + rast_bounds.start_x_u;
@@ -678,6 +639,7 @@ fn rasterNewtonSIMDImpl(
     const v_lane_idx: VecSU = std.simd.iota(usize, S);
     const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
     const v_bounds_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
+
     const ideal_x_plane = cam.getIdealXPlaneScratch(
         subpx_scratch.ideal_pix_cent,
     );
@@ -696,34 +658,28 @@ fn rasterNewtonSIMDImpl(
                 (v_subpx_x_u < v_bounds_end_x_u);
 
             const scratch_idx = row_offset + scratch_x_u;
-            const v_ideal_x_px = simdops.loadVecSF(ideal_x_plane, scratch_idx);
-            const v_ideal_y_px = simdops.loadVecSF(ideal_y_plane, scratch_idx);
+            const v_ideal_x_pix = simdops.loadVecSF(ideal_x_plane, scratch_idx);
+            const v_ideal_y_pix = simdops.loadVecSF(ideal_y_plane, scratch_idx);
 
             var v_mask_active = v_x_mask;
             var xi_arr = [_]F{0.0} ** S;
             var eta_arr = [_]F{0.0} ** S;
 
-            if (maybe_raster_hull) |raster_hull| {
-                const hx = raster_hull.getSlice(
-                    &[_]usize{ targ_overlap.overlap.elem_idx, 0, 0 },
-                    1,
-                );
-                const hy = raster_hull.getSlice(
-                    &[_]usize{ targ_overlap.overlap.elem_idx, 1, 0 },
-                    1,
-                );
+            if (maybe_raster_hull) |rh| {
+                const hx = rh.getSlice(&[_]usize{ overlap.elem_idx, 0, 0 }, 1);
+                const hy = rh.getSlice(&[_]usize{ overlap.elem_idx, 1, 0 }, 1);
                 const elem_tess = hull.getTessellation(
                     N,
-                    GeometryKernel.hull_nodes_num,
-                    GeometryKernel.tess_triangles_num,
+                    Geom.hull_nodes_num,
+                    Geom.tess_triangles_num,
                     hx,
                     hy,
                 );
                 const v_hull_res: HullResultSIMD = elem_tess.isInSIMD(
-                    v_ideal_x_px,
-                    v_ideal_y_px,
+                    v_ideal_x_pix,
+                    v_ideal_y_pix,
                 );
-                const init_seed = GeometryKernel.initSeedSIMD(
+                const init_seed = Geom.initSeedSIMD(
                     ctx_rast.config.newton_seed_mode,
                     .{
                         .v_xi = v_hull_res.v_seed_xi,
@@ -735,17 +691,24 @@ fn rasterNewtonSIMDImpl(
 
                 const v_mask_one_u8: VecSU8 = @splat(1);
                 const v_mask_zero_u8: VecSU8 = @splat(0);
-                const v_tess_check_u8 = @select(u8, v_x_mask, v_mask_one_u8, v_mask_zero_u8);
+                const v_tess_check_u8 = @select(
+                    u8,
+                    v_x_mask,
+                    v_mask_one_u8,
+                    v_mask_zero_u8,
+                );
                 ctx_report.recordTessChecks(@intCast(@reduce(.Add, v_tess_check_u8)));
 
                 v_mask_active = v_x_mask & v_hull_res.v_is_in;
-                const v_tess_pass_u8 = @select(u8, v_mask_active, v_mask_one_u8, v_mask_zero_u8);
+                const v_tess_pass_u8 = @select(
+                    u8,
+                    v_mask_active,
+                    v_mask_one_u8,
+                    v_mask_zero_u8,
+                );
                 ctx_report.recordTessPasses(@intCast(@reduce(.Add, v_tess_pass_u8)));
             } else {
-                const init_seed = GeometryKernel.initSeed(
-                    ctx_rast.config.newton_seed_mode,
-                    null,
-                );
+                const init_seed = Geom.initSeed(ctx_rast.config.newton_seed_mode, null);
                 @memset(&xi_arr, init_seed.xi);
                 @memset(&eta_arr, init_seed.eta);
             }
@@ -753,8 +716,8 @@ fn rasterNewtonSIMDImpl(
             if (!@reduce(.Or, v_mask_active)) continue;
 
             const mask_arr: [S]bool = v_mask_active;
-            const x_arr_f: [S]F = v_ideal_x_px;
-            const y_arr_f: [S]F = v_ideal_y_px;
+            const x_arr_f: [S]F = v_ideal_x_pix;
+            const y_arr_f: [S]F = v_ideal_y_pix;
 
             for (0..S) |ss| {
                 if (!mask_arr[ss]) continue;
@@ -762,13 +725,10 @@ fn rasterNewtonSIMDImpl(
                 var seed_xi = xi_arr[ss];
                 var seed_eta = eta_arr[ss];
                 if (ctx_rast.config.newton_seed_mode == .hull) {
-                    const hull_seed = newton.NewtonSeed{
-                        .xi = seed_xi,
-                        .eta = seed_eta,
-                    };
+                    const hull_seed = newton.NewtonSeed{ .xi = seed_xi, .eta = seed_eta };
                     const seed_quality = newton.evaluateSeedQuality(
-                        GeometryKernel.nodes_num,
-                        GeometryKernel.domViolation,
+                        Geom.nodes_num,
+                        Geom.domViolation,
                         x_arr_f[ss] - subpx_dom.x_off,
                         y_arr_f[ss] - subpx_dom.y_off,
                         nodes_coords.x,
@@ -777,7 +737,7 @@ fn rasterNewtonSIMDImpl(
                         hull_seed,
                     );
                     if (!seed_quality.is_usable) {
-                        const centroid_seed = GeometryKernel.initSeed(
+                        const centroid_seed = Geom.initSeed(
                             ctx_rast.config.newton_seed_mode,
                             null,
                         );
@@ -800,12 +760,18 @@ fn rasterNewtonSIMDImpl(
                     };
                 }
 
-                subpx_scratch.simd_chunks[chunk_idx].scratch_x_u[lane_idx] = scratch_x_u + ss;
-                subpx_scratch.simd_chunks[chunk_idx].scratch_y_u[lane_idx] = scratch_y_u;
-                subpx_scratch.simd_chunks[chunk_idx].px_f[lane_idx] = x_arr_f[ss];
-                subpx_scratch.simd_chunks[chunk_idx].py_f[lane_idx] = y_arr_f[ss];
-                subpx_scratch.simd_chunks[chunk_idx].seed_xi[lane_idx] = seed_xi;
-                subpx_scratch.simd_chunks[chunk_idx].seed_eta[lane_idx] = seed_eta;
+                subpx_scratch.simd_chunks[chunk_idx].scratch_x_u[lane_idx] =
+                    scratch_x_u + ss;
+                subpx_scratch.simd_chunks[chunk_idx].scratch_y_u[lane_idx] =
+                    scratch_y_u;
+                subpx_scratch.simd_chunks[chunk_idx].px_f[lane_idx] =
+                    x_arr_f[ss];
+                subpx_scratch.simd_chunks[chunk_idx].py_f[lane_idx] =
+                    y_arr_f[ss];
+                subpx_scratch.simd_chunks[chunk_idx].seed_xi[lane_idx] =
+                    seed_xi;
+                subpx_scratch.simd_chunks[chunk_idx].seed_eta[lane_idx] =
+                    seed_eta;
                 subpx_scratch.simd_chunks[chunk_idx].count = lane_idx + 1;
                 subpx_tess_pass_count += 1;
             }
@@ -836,7 +802,7 @@ fn rasterNewtonSIMDImpl(
         else
             v_lane_idx < @as(VecSU, @splat(subpx_simd_chunk.count));
 
-        const result = GeometryKernel.solveWeightsNewtonSIMD(
+        const result = Geom.solveWeightsNewtonSIMD(
             nodes_coords,
             v_targ_x_f,
             v_targ_y_f,
@@ -855,105 +821,35 @@ fn rasterNewtonSIMDImpl(
         ctx_report.recordSolverIters(@intCast(@reduce(.Add, v_solver_iters)));
         ctx_report.recordSolverCalls(subpx_simd_chunk.count);
 
-        const pre_dom_arr: [S]bool = result.v_pre_dom_conv;
-        const status_arr_u8: [S]u8 = result.v_status;
-        const xi_final_arr: [S]F = result.v_xi_final;
-        const eta_final_arr: [S]F = result.v_eta_final;
-
         const v_fail_mask = v_chunk_mask & !result.v_mask;
         if (@reduce(.Or, v_fail_mask)) {
             const v_fail_one: VecSU8 = @splat(1);
             const v_fail_zero: VecSU8 = @splat(0);
-            const v_fail_count = @select(
-                u8,
-                v_fail_mask,
-                v_fail_one,
-                v_fail_zero,
-            );
-            ctx_report.recordSolverDivergedCount(
-                @intCast(@reduce(.Add, v_fail_count)),
-            );
+            const v_fail_count = @select(u8, v_fail_mask, v_fail_one, v_fail_zero);
+            ctx_report.recordSolverDivergedCount(@intCast(@reduce(.Add, v_fail_count)));
         }
 
         if (comptime report_mode == .full_stats) {
-            const chunk_mask_arr: [S]bool = v_chunk_mask;
-            const conv_mask_arr: [S]bool = result.v_mask;
-            const iters_arr: [S]u8 = result.v_iters;
-            for (0..S) |jj| {
-                if (!chunk_mask_arr[jj]) continue;
-
-                const global_subx =
-                    @as(usize, subpx_simd_chunk.scratch_x_u[jj]) +
-                    @as(
-                        usize,
-                        @intCast(targ_overlap.tile.scratch_x_px_min),
-                    ) * sub_samp;
-                const global_suby =
-                    @as(usize, subpx_simd_chunk.scratch_y_u[jj]) +
-                    @as(
-                        usize,
-                        @intCast(targ_overlap.tile.scratch_y_px_min),
-                    ) * sub_samp;
-                const solve_state = newton.evaluateSolveState(
-                    N,
-                    subpx_simd_chunk.px_f[jj] - subpx_dom.x_off,
-                    subpx_simd_chunk.py_f[jj] - subpx_dom.y_off,
-                    nodes_coords.x,
-                    nodes_coords.y,
-                    nodes_coords.z,
-                    xi_final_arr[jj],
-                    eta_final_arr[jj],
-                );
-                const dom_violation = GeometryKernel.domViolation(
-                    xi_final_arr[jj],
-                    eta_final_arr[jj],
-                );
-                const status: newton.NewtonStatus =
-                    @enumFromInt(status_arr_u8[jj]);
-                const hit_iter_lim =
-                    newton.hitIterLimitStatus(status);
-                const jac_det = newton.calcJacDet2D(
-                    N,
-                    xi_final_arr[jj],
-                    eta_final_arr[jj],
-                    nodes_coords.x,
-                    nodes_coords.y,
-                );
-                if (comptime report_mode == .full_stats) {
-                    rasterreport.recordPixelIters(
-                        report_mode,
-                        ctx_report,
-                        global_subx,
-                        global_suby,
-                        iters_arr[jj],
-                    );
-                    rasterreport.recordPixelConvStats(
-                        report_mode,
-                        ctx_report,
-                        global_subx,
-                        global_suby,
-                        conv_mask_arr[jj],
-                        xi_final_arr[jj],
-                        eta_final_arr[jj],
-                        jac_det,
-                    );
-                    rasterreport.recordPixelSolverDiagnostics(
-                        report_mode,
-                        ctx_report,
-                        global_subx,
-                        global_suby,
-                        status,
-                        pre_dom_arr[jj],
-                        hit_iter_lim,
-                        solve_state.resid_x,
-                        solve_state.resid_y,
-                        solve_state.interp_w,
-                        solve_state.resid_mag,
-                        solve_state.norm_resid_mag,
-                        dom_violation,
-                    );
-                }
-            }
+            rasterreport.recordNewtonSIMDChunkStats(
+                N,
+                Geom.domViolation,
+                ctx_report,
+                tile,
+                sub_samp,
+                subpx_simd_chunk,
+                v_chunk_mask,
+                result.v_mask,
+                result.v_iters,
+                result.v_status,
+                result.v_pre_dom_conv,
+                result.v_xi_final,
+                result.v_eta_final,
+                subpx_dom.x_off,
+                subpx_dom.y_off,
+                nodes_coords.x,
+                nodes_coords.y,
+                nodes_coords.z,
+            );
         }
 
         const v_conv_mask = v_chunk_mask & result.v_mask;
@@ -1019,14 +915,7 @@ fn rasterNewtonSIMDImpl(
             var v_weights: [N]VecSF = undefined;
             var v_dNu: [N]VecSF = undefined;
             var v_dNv: [N]VecSF = undefined;
-            shapefun.shapeFuncSIMD(
-                N,
-                v_xi,
-                v_eta,
-                &v_weights,
-                &v_dNu,
-                &v_dNv,
-            );
+            shapefun.shapeFuncSIMD(N, v_xi, v_eta, &v_weights, &v_dNu, &v_dNv);
 
             var v_sum_z: VecSF = @splat(0.0);
             inline for (0..N) |nn| v_sum_z += v_weights[nn] * v_nodes_z[nn];
@@ -1036,23 +925,14 @@ fn rasterNewtonSIMDImpl(
                 subpx_scratch.inv_z,
                 scratch_idx,
             );
-            const v_depth_tol: VecSF =
-                @splat(tol.geometry.depth_buff_inv_z_cmp);
-            const v_depth_mask =
-                v_mask_active & (v_inv_z + v_depth_tol >= v_old_inv_z);
+            const v_depth_tol: VecSF = @splat(tol.geometry.depth_buff_inv_z_cmp);
+            const v_depth_mask = v_mask_active & (v_inv_z + v_depth_tol >= v_old_inv_z);
+
             if (!@reduce(.Or, v_depth_mask)) continue;
 
-            const v_new_inv_z = @select(
-                F,
-                v_depth_mask,
-                v_inv_z,
-                v_old_inv_z,
-            );
-            simdops.storeVecSF(
-                subpx_scratch.inv_z,
-                scratch_idx,
-                v_new_inv_z,
-            );
+            const v_new_inv_z = @select(F, v_depth_mask, v_inv_z, v_old_inv_z);
+
+            simdops.storeVecSF(subpx_scratch.inv_z, scratch_idx, v_new_inv_z);
             const v_subpx_z: VecSF = @as(VecSF, @splat(1.0)) / v_inv_z;
 
             const lane_depth_mask: [S]bool = v_depth_mask;
@@ -1075,18 +955,18 @@ fn rasterNewtonSIMDImpl(
 
             const ctx_shade = shaderops.ShadeContext(N){
                 .frame_idx = ctx_rast.frame_idx,
-                .elem_idx = targ_overlap.overlap.elem_idx,
+                .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
                 .scratch_idx = scratch_idx,
-                .global_subx = targ_overlap.tile.scratch_x_px_min * sub_samp + scratch_x_u,
-                .global_suby = targ_overlap.tile.scratch_y_px_min * sub_samp + scratch_y_u,
+                .global_subx = tile.scratch_x_px_min * sub_samp + scratch_x_u,
+                .global_suby = tile.scratch_y_px_min * sub_samp + scratch_y_u,
                 .shader_buf = shader_buf,
                 .v_mask_active = v_depth_mask,
             };
 
-            ShaderKernel.shadeSIMD(
-                GeometryKernel.coord_space,
+            ShaderKern.shadeSIMD(
+                Geom.coord_space,
                 ctx_shade,
                 ctx_report,
                 v_depth_mask,
@@ -1105,32 +985,34 @@ fn rasterNewtonSIMDImpl(
 }
 
 fn rasterDirectImpl(
-    comptime GeometryKernel: type,
-    comptime ShaderKernel: type,
+    comptime Geom: type,
+    comptime ShaderKern: type,
     comptime ShaderData: type,
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: comm.OverlapTarg,
-    _: rops.MeshRaster,
+    tile: rops.ActiveTile,
+    overlap: rops.OverlapBBox,
+    _: ?*const NDArray(F),
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     nodes_coords: Vec3Slices(F),
     shader: *const ShaderData,
-    shader_buf: *const shaderops.LocalShaderBuff(GeometryKernel.nodes_num),
+    shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
     subpx_scratch: *SubpxScratchBuffs,
 ) !u64 {
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
     const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
     return comm.rasterDirectScalComm(
-        GeometryKernel,
-        ShaderKernel,
+        Geom,
+        ShaderKern,
         ShaderData,
         report_mode,
         SubpxScratchBuffs,
         ctx_rast,
         ctx_report,
-        targ_overlap,
+        tile,
+        overlap,
         subpx_dom,
         rast_bounds,
         fields_num,
@@ -1141,24 +1023,25 @@ fn rasterDirectImpl(
     );
 }
 
-fn rasterDirectSteppedSIMD(
-    comptime GeometryKernel: type,
-    comptime ShaderKernel: type,
+fn rasterSteppedSIMD(
+    comptime Geom: type,
+    comptime ShaderKern: type,
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: comm.OverlapTarg,
+    tile: rops.ActiveTile,
+    overlap: rops.OverlapBBox,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     orig_start_x_u: usize,
     nodes_coords: Vec3Slices(F),
     shader: anytype,
-    shader_buf: *const shaderops.LocalShaderBuff(GeometryKernel.nodes_num),
+    shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
     subpx_scratch: *SubpxScratchBuffs,
 ) !u64 {
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
-    const tile_subx: usize = @intCast(targ_overlap.tile.scratch_x_px_min);
-    const tile_suby: usize = @intCast(targ_overlap.tile.scratch_y_px_min);
+    const tile_subx: usize = @intCast(tile.scratch_x_px_min);
+    const tile_suby: usize = @intCast(tile.scratch_y_px_min);
     const start_subx_global = tile_subx * sub_samp + rast_bounds.start_x_u;
     const start_suby_global = tile_suby * sub_samp + rast_bounds.start_y_u;
     const width = rast_bounds.end_x_u - orig_start_x_u;
@@ -1175,13 +1058,14 @@ fn rasterDirectSteppedSIMD(
         max_x_steps,
         max_y_steps,
     )) |fixed| {
-        return rasterDirectSteppedSIMDFixed(
-            GeometryKernel,
-            ShaderKernel,
+        return rasterSteppedSIMDFixP(
+            Geom,
+            ShaderKern,
             report_mode,
             ctx_rast,
             ctx_report,
-            targ_overlap,
+            tile,
+            overlap,
             subpx_dom,
             rast_bounds,
             orig_start_x_u,
@@ -1193,13 +1077,14 @@ fn rasterDirectSteppedSIMD(
         );
     }
 
-    return rasterDirectSteppedSIMDFloatFallback(
-        GeometryKernel,
-        ShaderKernel,
+    return rasterSteppedSIMDFloat(
+        Geom,
+        ShaderKern,
         report_mode,
         ctx_rast,
         ctx_report,
-        targ_overlap,
+        tile,
+        overlap,
         subpx_dom,
         rast_bounds,
         orig_start_x_u,
@@ -1210,52 +1095,48 @@ fn rasterDirectSteppedSIMD(
     );
 }
 
-fn rasterDirectSteppedSIMDFixed(
-    comptime GeometryKernel: type,
-    comptime ShaderKernel: type,
+fn rasterSteppedSIMDFixP(
+    comptime Geom: type,
+    comptime ShaderKern: type,
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: comm.OverlapTarg,
+    tile: rops.ActiveTile,
+    overlap: rops.OverlapBBox,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     orig_start_x_u: usize,
     nodes_coords: Vec3Slices(F),
     shader: anytype,
-    shader_buf: *const shaderops.LocalShaderBuff(GeometryKernel.nodes_num),
+    shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
     subpx_scratch: *SubpxScratchBuffs,
     fixed: comm.Tri3FixedEdges,
 ) !u64 {
-    const N = GeometryKernel.nodes_num;
+    const N = Geom.nodes_num;
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
     const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
 
-    const x0 = nodes_coords.x[0];
-    const y0 = nodes_coords.y[0];
-    const x1 = nodes_coords.x[1];
-    const y1 = nodes_coords.y[1];
-    const x2 = nodes_coords.x[2];
-    const y2 = nodes_coords.y[2];
-    const area = @mulAdd(
-        F,
-        x2 - x0,
-        y1 - y0,
-        -((y2 - y0) * (x1 - x0)),
-    );
+    var x: [3]F = undefined;
+    var y: [3]F = undefined;
+    var z: [3]F = undefined;
+    var inv_z_node: [3]F = undefined;
+    inline for (0..3) |nn| {
+        x[nn] = nodes_coords.x[nn];
+        y[nn] = nodes_coords.y[nn];
+        z[nn] = nodes_coords.z[nn];
+        inv_z_node[nn] = 1.0 / z[nn];
+    }
+    const dx: [2]F = .{ x[2] - x[0], x[1] - x[0] };
+    const dy: [2]F = .{ y[1] - y[0], y[2] - y[0] };
+    const area = @mulAdd(F, dx[0], dy[0], -(dy[1] * dx[1]));
 
-    const tile_suby: usize = @intCast(targ_overlap.tile.scratch_y_px_min);
+    const tile_suby: usize = @intCast(tile.scratch_y_px_min);
     const tile_suby_off = tile_suby * sub_samp;
 
-    const z0 = nodes_coords.z[0];
-    const z1 = nodes_coords.z[1];
-    const z2 = nodes_coords.z[2];
-    const is_const_depth = (z0 == z1 and z1 == z2);
-    const inv_z0 = 1.0 / z0;
-    const inv_z1 = 1.0 / z1;
-    const inv_z2 = 1.0 / z2;
-    const v_nodes_inv_z = GeometryKernel.getSIMDInvZ(nodes_coords);
+    const is_const_depth = z[0] == z[1] and z[1] == z[2];
+    const v_nodes_inv_z = Geom.getSIMDInvZ(nodes_coords);
 
     const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
     const v_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
@@ -1265,12 +1146,10 @@ fn rasterDirectSteppedSIMDFixed(
         v_lane_i[ii] = @intCast(ii);
     }
     const step_group: buildconfig.Tri3FixedEdge = @intCast(S);
-    const v_step0_x_S: buildconfig.VecSTri3FixedEdge =
-        @splat(fixed.step_x[0] * step_group);
-    const v_step1_x_S: buildconfig.VecSTri3FixedEdge =
-        @splat(fixed.step_x[1] * step_group);
-    const v_step2_x_S: buildconfig.VecSTri3FixedEdge =
-        @splat(fixed.step_x[2] * step_group);
+    var v_step_x_s: [3]buildconfig.VecSTri3FixedEdge = undefined;
+    inline for (0..3) |nn| {
+        v_step_x_s[nn] = @splat(fixed.step_x[nn] * step_group);
+    }
     const v_fixed_inv_area: VecSF = @splat(fixed.inv_area);
     const v_edge_min: buildconfig.VecSTri3FixedEdge =
         @splat(-fixed.edge_tol);
@@ -1282,31 +1161,32 @@ fn rasterDirectSteppedSIMDFixed(
             scratch_y_u - rast_bounds.start_y_u,
         );
 
-        const e0_row = fixed.start[0] + y_steps * fixed.step_y[0];
-        const e1_row = fixed.start[1] + y_steps * fixed.step_y[1];
-        const e2_row = fixed.start[2] + y_steps * fixed.step_y[2];
-
-        var v_e0 = @as(buildconfig.VecSTri3FixedEdge, @splat(e0_row)) +
-            v_lane_i * @as(buildconfig.VecSTri3FixedEdge, @splat(fixed.step_x[0]));
-        var v_e1 = @as(buildconfig.VecSTri3FixedEdge, @splat(e1_row)) +
-            v_lane_i * @as(buildconfig.VecSTri3FixedEdge, @splat(fixed.step_x[1]));
-        var v_e2 = @as(buildconfig.VecSTri3FixedEdge, @splat(e2_row)) +
-            v_lane_i * @as(buildconfig.VecSTri3FixedEdge, @splat(fixed.step_x[2]));
+        var edge_row: [3]buildconfig.Tri3FixedEdge = undefined;
+        var v_edge: [3]buildconfig.VecSTri3FixedEdge = undefined;
+        inline for (0..3) |nn| {
+            edge_row[nn] = fixed.start[nn] + y_steps * fixed.step_y[nn];
+            v_edge[nn] =
+                @as(buildconfig.VecSTri3FixedEdge, @splat(edge_row[nn])) +
+                v_lane_i * @as(
+                    buildconfig.VecSTri3FixedEdge,
+                    @splat(fixed.step_x[nn]),
+                );
+        }
 
         var scratch_x_u = rast_bounds.start_x_u;
         while (scratch_x_u < rast_bounds.end_x_u) : ({
             scratch_x_u += S;
-            v_e0 += v_step0_x_S;
-            v_e1 += v_step1_x_S;
-            v_e2 += v_step2_x_S;
+            inline for (0..3) |nn| {
+                v_edge[nn] += v_step_x_s[nn];
+            }
         }) {
             const v_lane_idx_u: VecSU = std.simd.iota(usize, S);
             const v_scratch_x_u: VecSU = @splat(scratch_x_u);
             const v_subpx_x_u = v_scratch_x_u + v_lane_idx_u;
             const v_x_mask = (v_subpx_x_u >= v_orig_start_x_u) & (v_subpx_x_u < v_end_x_u);
-            const v_in_tri = (v_e0 >= v_edge_min) &
-                (v_e1 >= v_edge_min) &
-                (v_e2 >= v_edge_min);
+            const v_in_tri = (v_edge[0] >= v_edge_min) &
+                (v_edge[1] >= v_edge_min) &
+                (v_edge[2] >= v_edge_min);
             const v_mask_active = v_x_mask & v_in_tri;
 
             const scratch_idx = row_offset + scratch_x_u;
@@ -1318,117 +1198,70 @@ fn rasterDirectSteppedSIMDFixed(
             var v_inv_z: VecSF = undefined;
 
             if (comptime report_mode == .full_stats) {
-                const lane_x_mask: [S]bool = v_x_mask;
-                const lane_active_mask: [S]bool = v_in_tri;
                 if (@reduce(.Or, v_mask_active)) {
-                    v_w1 = @as(VecSF, @floatFromInt(v_e1)) * v_fixed_inv_area;
-                    v_w2 = @as(VecSF, @floatFromInt(v_e2)) * v_fixed_inv_area;
+                    v_w1 = @as(VecSF, @floatFromInt(v_edge[1])) * v_fixed_inv_area;
+                    v_w2 = @as(VecSF, @floatFromInt(v_edge[2])) * v_fixed_inv_area;
                     v_w0 = @as(VecSF, @splat(1.0)) - v_w1 - v_w2;
+                    const v_inv_z_tail = @mulAdd(
+                        VecSF,
+                        v_w1,
+                        @as(VecSF, @splat(inv_z_node[1])),
+                        v_w2 * @as(VecSF, @splat(inv_z_node[2])),
+                    );
                     v_inv_z = if (is_const_depth)
-                        @as(VecSF, @splat(inv_z0))
+                        @as(VecSF, @splat(inv_z_node[0]))
                     else
                         @mulAdd(
                             VecSF,
                             v_w0,
-                            @as(VecSF, @splat(inv_z0)),
-                            @mulAdd(
-                                VecSF,
-                                v_w1,
-                                @as(VecSF, @splat(inv_z1)),
-                                v_w2 * @as(VecSF, @splat(inv_z2)),
-                            ),
+                            @as(VecSF, @splat(inv_z_node[0])),
+                            v_inv_z_tail,
                         );
                 }
-                const lane_weights_0: [S]F = if (@reduce(.Or, v_mask_active))
-                    v_w0
-                else
-                    @splat(0.0);
-                const lane_weights_1: [S]F = if (@reduce(.Or, v_mask_active))
-                    v_w1
-                else
-                    @splat(0.0);
-                const lane_weights_2: [S]F = if (@reduce(.Or, v_mask_active))
-                    v_w2
-                else
-                    @splat(0.0);
-                const lane_inv_z: [S]F = if (@reduce(.Or, v_mask_active))
-                    v_inv_z
-                else
-                    @splat(0.0);
-                for (0..S) |ll| {
-                    if (!lane_x_mask[ll]) continue;
 
-                    const global_subx = @as(
-                        usize,
-                        @intCast(targ_overlap.tile.scratch_x_px_min),
-                    ) * sub_samp + scratch_x_u + ll;
+                const v_zero: VecSF = @splat(0.0);
+                const v_stats_w0 = if (@reduce(.Or, v_mask_active)) v_w0 else v_zero;
+                const v_stats_w1 = if (@reduce(.Or, v_mask_active)) v_w1 else v_zero;
+                const v_stats_w2 = if (@reduce(.Or, v_mask_active)) v_w2 else v_zero;
+                const v_stats_inv_z = if (@reduce(.Or, v_mask_active)) v_inv_z else v_zero;
 
-                    if (lane_active_mask[ll]) {
-                        const weights = [3]F{
-                            lane_weights_0[ll],
-                            lane_weights_1[ll],
-                            lane_weights_2[ll],
-                        };
-                        const inv_z = lane_inv_z[ll];
-                        const xi = if (is_const_depth)
-                            weights[1]
-                        else
-                            @mulAdd(F, weights[1], inv_z1, 0.0) / inv_z;
-                        const eta = if (is_const_depth)
-                            weights[2]
-                        else
-                            @mulAdd(F, weights[2], inv_z2, 0.0) / inv_z;
-
-                        if (comptime report_mode == .full_stats) {
-                            rasterreport.recordPixelConvStats(
-                                report_mode,
-                                ctx_report,
-                                global_subx,
-                                global_suby,
-                                true,
-                                xi,
-                                eta,
-                                area,
-                            );
-                        }
-                        continue;
-                    }
-
-                    const nan = std.math.nan(F);
-                    if (comptime report_mode == .full_stats) {
-                        rasterreport.recordPixelConvStats(
-                            report_mode,
-                            ctx_report,
-                            global_subx,
-                            global_suby,
-                            false,
-                            nan,
-                            nan,
-                            nan,
-                        );
-                    }
-                }
+                rasterreport.recordTri3SteppedSIMDConvStats(
+                    ctx_report,
+                    tile,
+                    sub_samp,
+                    scratch_x_u,
+                    global_suby,
+                    v_x_mask,
+                    v_in_tri,
+                    .{ v_stats_w0, v_stats_w1, v_stats_w2 },
+                    v_stats_inv_z,
+                    is_const_depth,
+                    inv_z_node[1],
+                    inv_z_node[2],
+                    area,
+                );
             }
 
             if (!@reduce(.Or, v_mask_active)) continue;
 
             if (comptime report_mode != .full_stats) {
-                v_w1 = @as(VecSF, @floatFromInt(v_e1)) * v_fixed_inv_area;
-                v_w2 = @as(VecSF, @floatFromInt(v_e2)) * v_fixed_inv_area;
+                v_w1 = @as(VecSF, @floatFromInt(v_edge[1])) * v_fixed_inv_area;
+                v_w2 = @as(VecSF, @floatFromInt(v_edge[2])) * v_fixed_inv_area;
                 v_w0 = @as(VecSF, @splat(1.0)) - v_w1 - v_w2;
+                const v_inv_z_tail = @mulAdd(
+                    VecSF,
+                    v_w1,
+                    @as(VecSF, @splat(inv_z_node[1])),
+                    v_w2 * @as(VecSF, @splat(inv_z_node[2])),
+                );
                 v_inv_z = if (is_const_depth)
-                    @as(VecSF, @splat(inv_z0))
+                    @as(VecSF, @splat(inv_z_node[0]))
                 else
                     @mulAdd(
                         VecSF,
                         v_w0,
-                        @as(VecSF, @splat(inv_z0)),
-                        @mulAdd(
-                            VecSF,
-                            v_w1,
-                            @as(VecSF, @splat(inv_z1)),
-                            v_w2 * @as(VecSF, @splat(inv_z2)),
-                        ),
+                        @as(VecSF, @splat(inv_z_node[0])),
+                        v_inv_z_tail,
                     );
             }
 
@@ -1442,25 +1275,20 @@ fn rasterDirectSteppedSIMDFixed(
 
             const v_subpx_z = @as(VecSF, @splat(1.0)) / v_inv_z;
 
-            const v_xi = if (is_const_depth)
-                v_w1
-            else
-                @mulAdd(
-                    VecSF,
-                    v_w1,
-                    @as(VecSF, @splat(inv_z1)),
-                    @as(VecSF, @splat(0.0)),
-                ) / v_inv_z;
-
-            const v_eta = if (is_const_depth)
-                v_w2
-            else
-                @mulAdd(
-                    VecSF,
-                    v_w2,
-                    @as(VecSF, @splat(inv_z2)),
-                    @as(VecSF, @splat(0.0)),
-                ) / v_inv_z;
+            const v_xi_num = @mulAdd(
+                VecSF,
+                v_w1,
+                @as(VecSF, @splat(inv_z_node[1])),
+                @as(VecSF, @splat(0.0)),
+            );
+            const v_eta_num = @mulAdd(
+                VecSF,
+                v_w2,
+                @as(VecSF, @splat(inv_z_node[2])),
+                @as(VecSF, @splat(0.0)),
+            );
+            const v_xi = if (is_const_depth) v_w1 else v_xi_num / v_inv_z;
+            const v_eta = if (is_const_depth) v_w2 else v_eta_num / v_inv_z;
 
             const v_depth_mask_arr: [S]bool = v_depth_mask;
             inline for (0..S) |ll| {
@@ -1482,20 +1310,20 @@ fn rasterDirectSteppedSIMDFixed(
 
             const ctx_shade = shaderops.ShadeContext(N){
                 .frame_idx = ctx_rast.frame_idx,
-                .elem_idx = targ_overlap.overlap.elem_idx,
+                .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
                 .scratch_idx = scratch_idx,
-                .global_subx = targ_overlap.tile.scratch_x_px_min * sub_samp + scratch_x_u,
-                .global_suby = targ_overlap.tile.scratch_y_px_min * sub_samp + scratch_y_u,
+                .global_subx = tile.scratch_x_px_min * sub_samp + scratch_x_u,
+                .global_suby = tile.scratch_y_px_min * sub_samp + scratch_y_u,
                 .shader_buf = shader_buf,
                 .v_mask_active = v_depth_mask,
             };
 
             const v_weights = [3]VecSF{ v_w0, v_w1, v_w2 };
 
-            ShaderKernel.shadeSIMD(
-                GeometryKernel.coord_space,
+            ShaderKern.shadeSIMD(
+                Geom.coord_space,
                 ctx_shade,
                 ctx_report,
                 v_depth_mask,
@@ -1513,129 +1341,91 @@ fn rasterDirectSteppedSIMDFixed(
     return shaded_px;
 }
 
-fn rasterDirectSteppedSIMDFloatFallback(
-    comptime GeometryKernel: type,
-    comptime ShaderKernel: type,
+fn rasterSteppedSIMDFloat(
+    comptime Geom: type,
+    comptime ShaderKern: type,
     comptime report_mode: ReportMode,
     ctx_rast: rops.RasterContext,
     ctx_report: report.ReportContext(report_mode),
-    targ_overlap: comm.OverlapTarg,
+    tile: rops.ActiveTile,
+    overlap: rops.OverlapBBox,
     subpx_dom: SubpxDom,
     rast_bounds: RasterBounds,
     orig_start_x_u: usize,
     nodes_coords: Vec3Slices(F),
     shader: anytype,
-    shader_buf: *const shaderops.LocalShaderBuff(GeometryKernel.nodes_num),
+    shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
     subpx_scratch: *SubpxScratchBuffs,
 ) !u64 {
-    const N = GeometryKernel.nodes_num;
+    const N = Geom.nodes_num;
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
     const fields_num: u8 = @intCast(subpx_scratch.image.rows_num);
 
-    const x0 = nodes_coords.x[0];
-    const y0 = nodes_coords.y[0];
-    const x1 = nodes_coords.x[1];
-    const y1 = nodes_coords.y[1];
-    const x2 = nodes_coords.x[2];
-    const y2 = nodes_coords.y[2];
+    var x: [3]F = undefined;
+    var y: [3]F = undefined;
+    var z: [3]F = undefined;
+    var inv_z_node: [3]F = undefined;
+    inline for (0..3) |nn| {
+        x[nn] = nodes_coords.x[nn];
+        y[nn] = nodes_coords.y[nn];
+        z[nn] = nodes_coords.z[nn];
+        inv_z_node[nn] = 1.0 / z[nn];
+    }
 
-    const area = @mulAdd(
-        F,
-        x2 - x0,
-        y1 - y0,
-        -((y2 - y0) * (x1 - x0)),
-    );
+    const dx: [2]F = .{ x[2] - x[0], x[1] - x[0] };
+    const dy: [2]F = .{ y[1] - y[0], y[2] - y[0] };
+    const area = @mulAdd(F, dx[0], dy[0], -(dy[1] * dx[1]));
     const inv_area = 1.0 / area;
 
-    const a0 = (y2 - y1) * inv_area;
-    const b0 = (x1 - x2) * inv_area;
-    const c0 = @mulAdd(
-        F,
-        x2,
-        y1,
-        -(x1 * y2),
-    ) * inv_area;
-
-    const a1 = (y0 - y2) * inv_area;
-    const b1 = (x2 - x0) * inv_area;
-    const c1 = @mulAdd(
-        F,
-        x0,
-        y2,
-        -(x2 * y0),
-    ) * inv_area;
-
-    const a2 = (y1 - y0) * inv_area;
-    const b2 = (x0 - x1) * inv_area;
-    const c2 = @mulAdd(
-        F,
-        x1,
-        y0,
-        -(x0 * y1),
-    ) * inv_area;
+    var a: [3]F = undefined;
+    var b: [3]F = undefined;
+    var c: [3]F = undefined;
+    a[0] = (y[2] - y[1]) * inv_area;
+    a[1] = (y[0] - y[2]) * inv_area;
+    a[2] = (y[1] - y[0]) * inv_area;
+    b[0] = (x[1] - x[2]) * inv_area;
+    b[1] = (x[2] - x[0]) * inv_area;
+    b[2] = (x[0] - x[1]) * inv_area;
+    c[0] = @mulAdd(F, x[2], y[1], -(x[1] * y[2])) * inv_area;
+    c[1] = @mulAdd(F, x[0], y[2], -(x[2] * y[0])) * inv_area;
+    c[2] = @mulAdd(F, x[1], y[0], -(x[0] * y[1])) * inv_area;
 
     const step = subpx_dom.step;
     const offset = subpx_dom.offset;
 
-    const dw0_dx = a0 * step;
-    const dw0_dy = b0 * step;
-    const dw1_dx = a1 * step;
-    const dw1_dy = b1 * step;
-    const dw2_dx = a2 * step;
-    const dw2_dy = b2 * step;
+    var dw_dx: [3]F = undefined;
+    var dw_dy: [3]F = undefined;
+    inline for (0..3) |nn| {
+        dw_dx[nn] = a[nn] * step;
+        dw_dy[nn] = b[nn] * step;
+    }
 
-    const tile_subx: usize = @intCast(targ_overlap.tile.scratch_x_px_min);
-    const tile_suby: usize = @intCast(targ_overlap.tile.scratch_y_px_min);
+    const tile_subx: usize = @intCast(tile.scratch_x_px_min);
+    const tile_suby: usize = @intCast(tile.scratch_y_px_min);
     const tile_subx_off = tile_subx * sub_samp;
     const tile_suby_off = tile_suby * sub_samp;
 
-    const z0 = nodes_coords.z[0];
-    const z1 = nodes_coords.z[1];
-    const z2 = nodes_coords.z[2];
-    const is_const_depth = (z0 == z1 and z1 == z2);
-    const inv_z0 = 1.0 / z0;
-    const inv_z1 = 1.0 / z1;
-    const inv_z2 = 1.0 / z2;
-    const v_nodes_inv_z = GeometryKernel.getSIMDInvZ(nodes_coords);
+    const is_const_depth = z[0] == z[1] and z[1] == z[2];
+    const v_nodes_inv_z = Geom.getSIMDInvZ(nodes_coords);
 
     const edge_tol = tol.edge.tri_weight_inclusion;
 
     const start_subx_global = tile_subx_off + rast_bounds.start_x_u;
     const start_suby_global = tile_suby_off + rast_bounds.start_y_u;
 
-    const x_start_f = @mulAdd(
-        F,
-        @as(F, @floatFromInt(start_subx_global)),
-        step,
-        offset,
-    );
-    const y_start_f = @mulAdd(
-        F,
-        @as(F, @floatFromInt(start_suby_global)),
-        step,
-        offset,
-    );
+    const start_subx_f = @as(F, @floatFromInt(start_subx_global));
+    const start_suby_f = @as(F, @floatFromInt(start_suby_global));
+    const x_start_pix = @mulAdd(F, start_subx_f, step, offset);
+    const y_start_pix = @mulAdd(F, start_suby_f, step, offset);
 
-    const w0_start = @mulAdd(
-        F,
-        a0,
-        x_start_f,
-        @mulAdd(F, b0, y_start_f, c0),
-    );
-    const w1_start = @mulAdd(
-        F,
-        a1,
-        x_start_f,
-        @mulAdd(F, b1, y_start_f, c1),
-    );
-    const w2_start = @mulAdd(
-        F,
-        a2,
-        x_start_f,
-        @mulAdd(F, b2, y_start_f, c2),
-    );
+    var w_start_y: [3]F = undefined;
+    var w_start: [3]F = undefined;
+    inline for (0..3) |nn| {
+        w_start_y[nn] = @mulAdd(F, b[nn], y_start_pix, c[nn]);
+        w_start[nn] = @mulAdd(F, a[nn], x_start_pix, w_start_y[nn]);
+    }
 
     const v_orig_start_x_u: VecSU = @splat(orig_start_x_u);
     const v_end_x_u: VecSU = @splat(rast_bounds.end_x_u);
@@ -1645,44 +1435,37 @@ fn rasterDirectSteppedSIMDFloatFallback(
         v_lane_f[ii] = @as(F, @floatFromInt(ii));
     }
 
-    const v_dw0_dx_S = @as(VecSF, @splat(dw0_dx * @as(F, @floatFromInt(S))));
-    const v_dw1_dx_S = @as(VecSF, @splat(dw1_dx * @as(F, @floatFromInt(S))));
-    const v_dw2_dx_S = @as(VecSF, @splat(dw2_dx * @as(F, @floatFromInt(S))));
+    var v_dw_dx_s: [3]VecSF = undefined;
+    inline for (0..3) |nn| {
+        v_dw_dx_s[nn] = @as(VecSF, @splat(dw_dx[nn] * @as(F, @floatFromInt(S))));
+    }
 
     for (rast_bounds.start_y_u..rast_bounds.end_y_u) |scratch_y_u| {
         const row_offset = scratch_y_u * subpx_dom.tile_size;
         const global_suby = tile_suby_off + scratch_y_u;
         const y_steps = @as(F, @floatFromInt(scratch_y_u - rast_bounds.start_y_u));
 
-        const w0_row = @mulAdd(F, y_steps, dw0_dy, w0_start);
-        const w1_row = @mulAdd(F, y_steps, dw1_dy, w1_start);
-        const w2_row = @mulAdd(F, y_steps, dw2_dy, w2_start);
+        var w_row: [3]F = undefined;
+        inline for (0..3) |nn| {
+            w_row[nn] = @mulAdd(F, y_steps, dw_dy[nn], w_start[nn]);
+        }
 
-        var v_w0 = @mulAdd(
-            VecSF,
-            @as(VecSF, @splat(dw0_dx)),
-            v_lane_f,
-            @as(VecSF, @splat(w0_row)),
-        );
-        var v_w1 = @mulAdd(
-            VecSF,
-            @as(VecSF, @splat(dw1_dx)),
-            v_lane_f,
-            @as(VecSF, @splat(w1_row)),
-        );
-        var v_w2 = @mulAdd(
-            VecSF,
-            @as(VecSF, @splat(dw2_dx)),
-            v_lane_f,
-            @as(VecSF, @splat(w2_row)),
-        );
+        var v_w: [3]VecSF = undefined;
+        inline for (0..3) |nn| {
+            v_w[nn] = @mulAdd(
+                VecSF,
+                @as(VecSF, @splat(dw_dx[nn])),
+                v_lane_f,
+                @as(VecSF, @splat(w_row[nn])),
+            );
+        }
 
         var scratch_x_u = rast_bounds.start_x_u;
         while (scratch_x_u < rast_bounds.end_x_u) : ({
             scratch_x_u += S;
-            v_w0 += v_dw0_dx_S;
-            v_w1 += v_dw1_dx_S;
-            v_w2 += v_dw2_dx_S;
+            inline for (0..3) |nn| {
+                v_w[nn] += v_dw_dx_s[nn];
+            }
         }) {
             const v_lane_idx_u: VecSU = std.simd.iota(usize, S);
             const v_scratch_x_u: VecSU = @splat(scratch_x_u);
@@ -1691,90 +1474,48 @@ fn rasterDirectSteppedSIMDFloatFallback(
                 (v_subpx_x_u < v_end_x_u);
 
             const v_edge_tol: VecSF = @splat(-edge_tol);
-            const v_in_tri = (v_w0 >= v_edge_tol) &
-                (v_w1 >= v_edge_tol) &
-                (v_w2 >= v_edge_tol);
+            const v_in_tri = (v_w[0] >= v_edge_tol) &
+                (v_w[1] >= v_edge_tol) &
+                (v_w[2] >= v_edge_tol);
             const v_mask_active = v_x_mask & v_in_tri;
 
             const scratch_idx = row_offset + scratch_x_u;
 
             ctx_report.recordSolverCalls(S);
 
+            const v_inv_z_tail = @mulAdd(
+                VecSF,
+                v_w[1],
+                @as(VecSF, @splat(inv_z_node[1])),
+                v_w[2] * @as(VecSF, @splat(inv_z_node[2])),
+            );
+
             const v_inv_z = if (is_const_depth)
-                @as(VecSF, @splat(inv_z0))
+                @as(VecSF, @splat(inv_z_node[0]))
             else
                 @mulAdd(
                     VecSF,
-                    v_w0,
-                    @as(VecSF, @splat(inv_z0)),
-                    @mulAdd(
-                        VecSF,
-                        v_w1,
-                        @as(VecSF, @splat(inv_z1)),
-                        v_w2 * @as(VecSF, @splat(inv_z2)),
-                    ),
+                    v_w[0],
+                    @as(VecSF, @splat(inv_z_node[0])),
+                    v_inv_z_tail,
                 );
 
             if (comptime report_mode == .full_stats) {
-                const lane_x_mask: [S]bool = v_x_mask;
-                const lane_active_mask: [S]bool = v_in_tri;
-                const lane_weights_0: [S]F = v_w0;
-                const lane_weights_1: [S]F = v_w1;
-                const lane_weights_2: [S]F = v_w2;
-                const lane_inv_z: [S]F = v_inv_z;
-                for (0..S) |ll| {
-                    if (!lane_x_mask[ll]) continue;
-
-                    const global_subx = @as(
-                        usize,
-                        @intCast(targ_overlap.tile.scratch_x_px_min),
-                    ) * sub_samp + scratch_x_u + ll;
-
-                    if (lane_active_mask[ll]) {
-                        const weights = [3]F{
-                            lane_weights_0[ll],
-                            lane_weights_1[ll],
-                            lane_weights_2[ll],
-                        };
-                        const inv_z = lane_inv_z[ll];
-                        const xi = if (is_const_depth)
-                            weights[1]
-                        else
-                            @mulAdd(F, weights[1], inv_z1, 0.0) / inv_z;
-                        const eta = if (is_const_depth)
-                            weights[2]
-                        else
-                            @mulAdd(F, weights[2], inv_z2, 0.0) / inv_z;
-
-                        if (comptime report_mode == .full_stats) {
-                            rasterreport.recordPixelConvStats(
-                                report_mode,
-                                ctx_report,
-                                global_subx,
-                                global_suby,
-                                true,
-                                xi,
-                                eta,
-                                area,
-                            );
-                        }
-                        continue;
-                    }
-
-                    const nan = std.math.nan(F);
-                    if (comptime report_mode == .full_stats) {
-                        rasterreport.recordPixelConvStats(
-                            report_mode,
-                            ctx_report,
-                            global_subx,
-                            global_suby,
-                            false,
-                            nan,
-                            nan,
-                            nan,
-                        );
-                    }
-                }
+                rasterreport.recordTri3SteppedSIMDConvStats(
+                    ctx_report,
+                    tile,
+                    sub_samp,
+                    scratch_x_u,
+                    global_suby,
+                    v_x_mask,
+                    v_in_tri,
+                    v_w,
+                    v_inv_z,
+                    is_const_depth,
+                    inv_z_node[1],
+                    inv_z_node[2],
+                    area,
+                );
             }
 
             if (!@reduce(.Or, v_mask_active)) continue;
@@ -1782,6 +1523,7 @@ fn rasterDirectSteppedSIMDFloatFallback(
             const v_old_inv_z = simdops.loadVecSF(subpx_scratch.inv_z, scratch_idx);
             const v_depth_tol: VecSF = @splat(tol.geometry.depth_buff_inv_z_cmp);
             const v_depth_mask = v_mask_active & (v_inv_z + v_depth_tol >= v_old_inv_z);
+
             if (!@reduce(.Or, v_depth_mask)) continue;
 
             const v_new_inv_z = @select(F, v_depth_mask, v_inv_z, v_old_inv_z);
@@ -1789,25 +1531,20 @@ fn rasterDirectSteppedSIMDFloatFallback(
 
             const v_subpx_z = @as(VecSF, @splat(1.0)) / v_inv_z;
 
-            const v_xi = if (is_const_depth)
-                v_w1
-            else
-                @mulAdd(
-                    VecSF,
-                    v_w1,
-                    @as(VecSF, @splat(inv_z1)),
-                    @as(VecSF, @splat(0.0)),
-                ) / v_inv_z;
-
-            const v_eta = if (is_const_depth)
-                v_w2
-            else
-                @mulAdd(
-                    VecSF,
-                    v_w2,
-                    @as(VecSF, @splat(inv_z2)),
-                    @as(VecSF, @splat(0.0)),
-                ) / v_inv_z;
+            const v_xi_num = @mulAdd(
+                VecSF,
+                v_w[1],
+                @as(VecSF, @splat(inv_z_node[1])),
+                @as(VecSF, @splat(0.0)),
+            );
+            const v_eta_num = @mulAdd(
+                VecSF,
+                v_w[2],
+                @as(VecSF, @splat(inv_z_node[2])),
+                @as(VecSF, @splat(0.0)),
+            );
+            const v_xi = if (is_const_depth) v_w[1] else v_xi_num / v_inv_z;
+            const v_eta = if (is_const_depth) v_w[2] else v_eta_num / v_inv_z;
 
             const v_depth_mask_arr: [S]bool = v_depth_mask;
             inline for (0..S) |ll| {
@@ -1829,24 +1566,22 @@ fn rasterDirectSteppedSIMDFloatFallback(
 
             const ctx_shade = shaderops.ShadeContext(N){
                 .frame_idx = ctx_rast.frame_idx,
-                .elem_idx = targ_overlap.overlap.elem_idx,
+                .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
                 .actual_fields = fields_num,
                 .scratch_idx = scratch_idx,
-                .global_subx = targ_overlap.tile.scratch_x_px_min * sub_samp + scratch_x_u,
-                .global_suby = targ_overlap.tile.scratch_y_px_min * sub_samp + scratch_y_u,
+                .global_subx = tile.scratch_x_px_min * sub_samp + scratch_x_u,
+                .global_suby = tile.scratch_y_px_min * sub_samp + scratch_y_u,
                 .shader_buf = shader_buf,
                 .v_mask_active = v_depth_mask,
             };
 
-            const v_weights = [3]VecSF{ v_w0, v_w1, v_w2 };
-
-            ShaderKernel.shadeSIMD(
-                GeometryKernel.coord_space,
+            ShaderKern.shadeSIMD(
+                Geom.coord_space,
                 ctx_shade,
                 ctx_report,
                 v_depth_mask,
-                v_weights,
+                v_w,
                 v_xi,
                 v_eta,
                 v_nodes_inv_z,

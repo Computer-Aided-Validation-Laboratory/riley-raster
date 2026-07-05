@@ -80,7 +80,7 @@ pub const FrameReportStorage = union(ReportMode) {
 };
 
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Func
+// Public Entry-Point Functions
 // --------------------------------------------------------------------------------------
 
 pub fn deinitFrameReportStorage(

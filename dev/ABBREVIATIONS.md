@@ -35,6 +35,11 @@ Use these abbreviations consistently in Riley Zig code.
 - `prep`: prepare or prepared
 - `dyn`: dynamic
 - `err`: error
+- `capt`: capture
+- `inp`: input or inputs when the shorter form is clear
+- `valid`: validate or validation when the shorter form is clear
+- `strat`: strategy
+- `glob`: global
 - `persp`: perspective
 - `comm`: common
 - `pix`: pixel

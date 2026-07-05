@@ -20,26 +20,30 @@ const F = buildconfig.F;
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const ValidationSummary = struct {
+pub const ValidSummary = struct {
     num_time: usize,
     raw_num_fields: u8,
+    out_num_fields: u8,
+    img_dims: [5]usize,
 };
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
-pub fn checkRenderInputsError(
+pub fn checkRenderInpsErr(
     render_groups: anytype,
-    camera_inputs: []const cam.CameraInput,
+    cam_inps: []const cam.CameraInput,
     meshes: []const mo.MeshInput,
     config: rastcfg.RasterConfig,
-    bench_capture: ?[]report.FrameBenchCapture,
-) !ValidationSummary {
+    imgs_arr: ?*ndarray.NDArray(F),
+    require_out_buff: bool,
+    bench_capt: ?[]report.FrameBenchCapture,
+) !ValidSummary {
     if (render_groups.len == 0) {
         return error.NoRenderGroups;
     }
-    if (camera_inputs.len == 0) {
+    if (cam_inps.len == 0) {
         return error.NoCameras;
     }
     if (meshes.len == 0) {
@@ -47,8 +51,8 @@ pub fn checkRenderInputsError(
     }
     for (meshes) |mesh| {
         if (mesh.mesh_type == .tri3opt) {
-            for (camera_inputs) |camera_input| {
-                if (!cam.isNoDistortion(camera_input.distortion)) {
+            for (cam_inps) |cam_inp| {
+                if (!cam.isNoDistortion(cam_inp.distortion)) {
                     return error.DistortionNotSuppedWithTri3Opt;
                 }
             }
@@ -87,8 +91,8 @@ pub fn checkRenderInputsError(
         return error.InvalidFullStatsFormats;
     }
 
-    for (camera_inputs) |camera_input| {
-        try checkCameraInputError(camera_input);
+    for (cam_inps) |cam_inp| {
+        try checkCamInpErr(cam_inp);
     }
 
     const num_time = mo.countFrames(meshes);
@@ -101,27 +105,47 @@ pub fn checkRenderInputsError(
         return error.NoOutputFields;
     }
 
-    if (bench_capture) |capture| {
-        if (capture.len != camera_inputs.len * num_time) {
+    if (bench_capt) |capt| {
+        if (capt.len != cam_inps.len * num_time) {
             return error.InvalidBenchCaptureBuff;
         }
     }
 
+    const out_num_fields = try calcOutFieldsForImgSaveMode(
+        config.image_save_mode,
+        raw_num_fields,
+    );
+    const img_dims = calcAllFramesImgDims(
+        cam_inps,
+        num_time,
+        out_num_fields,
+    );
+    try validOutBuffErr(
+        config,
+        imgs_arr,
+        require_out_buff,
+        img_dims,
+    );
+
     return .{
         .num_time = num_time,
         .raw_num_fields = raw_num_fields,
+        .out_num_fields = out_num_fields,
+        .img_dims = img_dims,
     };
 }
 
-pub fn checkRenderInputsAssert(
+pub fn checkRenderInpsAssert(
     render_groups: anytype,
-    camera_inputs: []const cam.CameraInput,
+    cam_inps: []const cam.CameraInput,
     meshes: []const mo.MeshInput,
     config: rastcfg.RasterConfig,
-    bench_capture: ?[]report.FrameBenchCapture,
-) ValidationSummary {
+    imgs_arr: ?*ndarray.NDArray(F),
+    require_out_buff: bool,
+    bench_capt: ?[]report.FrameBenchCapture,
+) ValidSummary {
     std.debug.assert(render_groups.len > 0);
-    std.debug.assert(camera_inputs.len > 0);
+    std.debug.assert(cam_inps.len > 0);
     std.debug.assert(meshes.len > 0);
     for (render_groups) |render_group| {
         std.debug.assert(render_group.workers > 0);
@@ -147,64 +171,123 @@ pub fn checkRenderInputsAssert(
         std.debug.assert(config.full_stats_opts.formats.len > 0);
     }
 
-    for (camera_inputs) |camera_input| {
-        checkCameraInputAssert(camera_input);
+    for (cam_inps) |cam_inp| {
+        checkCamInpAssert(cam_inp);
     }
 
     const num_time = mo.countFrames(meshes);
     const raw_num_fields = mo.countOutputFields(meshes);
+    const out_num_fields = calcOutFieldsForImgSaveMode(
+        config.image_save_mode,
+        raw_num_fields,
+    ) catch unreachable;
+    const img_dims = calcAllFramesImgDims(
+        cam_inps,
+        num_time,
+        out_num_fields,
+    );
     std.debug.assert(num_time > 0);
     std.debug.assert(raw_num_fields > 0);
 
-    if (bench_capture) |capture| {
-        std.debug.assert(capture.len == camera_inputs.len * num_time);
+    if (bench_capt) |capt| {
+        std.debug.assert(capt.len == cam_inps.len * num_time);
     }
+    validOutBuffAssert(config, imgs_arr, require_out_buff, img_dims);
 
     return .{
         .num_time = num_time,
         .raw_num_fields = raw_num_fields,
+        .out_num_fields = out_num_fields,
+        .img_dims = img_dims,
     };
-}
-
-pub fn validateOutputBuffError(
-    config: rastcfg.RasterConfig,
-    images_arr: ?*ndarray.NDArray(F),
-    expected_dims: [5]usize,
-) !void {
-    if (config.save_strategy == .memory or config.save_strategy == .both) {
-        const images_arr_req = images_arr orelse return error.InvalidOutputBuff;
-        try validateAllFramesBuff(images_arr_req, expected_dims);
-    } else if (images_arr != null) {
-        return error.InvalidOutputBuff;
-    }
-}
-
-pub fn validateOutputBuffAssert(
-    config: rastcfg.RasterConfig,
-    images_arr: ?*ndarray.NDArray(F),
-    expected_dims: [5]usize,
-) void {
-    if (config.save_strategy == .memory or config.save_strategy == .both) {
-        const images_arr_req = images_arr orelse unreachable;
-        validateAllFramesBuff(images_arr_req, expected_dims) catch unreachable;
-    } else {
-        std.debug.assert(images_arr == null);
-    }
 }
 
 // --------------------------------------------------------------------------------------
 // Generic Low-Level Helpers
 // --------------------------------------------------------------------------------------
 
-fn validateAllFramesBuff(
-    images_arr: *const ndarray.NDArray(F),
-    expected_dims: [5]usize,
+pub fn calcOutFieldsForImgSaveMode(
+    img_save_mode: rastcfg.ImageSaveMode,
+    raw_num_fields: u8,
+) !u8 {
+    return switch (img_save_mode) {
+        .multifield => raw_num_fields,
+        .grey => switch (raw_num_fields) {
+            1, 3 => 1,
+            else => error.UnsuppedImageModeFieldCount,
+        },
+        .rgb => switch (raw_num_fields) {
+            1, 3 => 3,
+            else => error.UnsuppedImageModeFieldCount,
+        },
+    };
+}
+
+fn calcAllFramesImgDims(
+    cam_inps: []const cam.CameraInput,
+    num_time: usize,
+    out_num_fields: u8,
+) [5]usize {
+    std.debug.assert(cam_inps.len > 0);
+
+    var max_pix_num = cam_inps[0].pixels_num;
+    for (cam_inps[1..]) |cam_inp| {
+        max_pix_num[0] = @max(max_pix_num[0], cam_inp.pixels_num[0]);
+        max_pix_num[1] = @max(max_pix_num[1], cam_inp.pixels_num[1]);
+    }
+
+    return .{
+        cam_inps.len,
+        num_time,
+        @as(usize, out_num_fields),
+        max_pix_num[1],
+        max_pix_num[0],
+    };
+}
+
+fn validOutBuffErr(
+    config: rastcfg.RasterConfig,
+    imgs_arr: ?*ndarray.NDArray(F),
+    require_out_buff: bool,
+    exp_dims: [5]usize,
 ) !void {
-    if (images_arr.dims.len != expected_dims.len) {
+    if (config.save_strategy == .memory or config.save_strategy == .both) {
+        if (imgs_arr) |imgs_arr_req| {
+            try validAllFramesBuff(imgs_arr_req, exp_dims);
+        } else if (require_out_buff) {
+            return error.InvalidOutputBuff;
+        }
+    } else if (imgs_arr != null) {
         return error.InvalidOutputBuff;
     }
-    for (expected_dims, 0..) |expected_dim, dd| {
-        if (images_arr.dims[dd] != expected_dim) {
+}
+
+fn validOutBuffAssert(
+    config: rastcfg.RasterConfig,
+    imgs_arr: ?*ndarray.NDArray(F),
+    require_out_buff: bool,
+    exp_dims: [5]usize,
+) void {
+    if (config.save_strategy == .memory or config.save_strategy == .both) {
+        if (imgs_arr) |imgs_arr_req| {
+            validAllFramesBuff(imgs_arr_req, exp_dims) catch unreachable;
+        } else {
+            std.debug.assert(!require_out_buff);
+        }
+    } else {
+        std.debug.assert(imgs_arr == null);
+    }
+}
+
+fn validAllFramesBuff(
+    imgs_arr: *const ndarray.NDArray(F),
+    exp_dims: [5]usize,
+) !void {
+    if (imgs_arr.dims.len != exp_dims.len) {
+        return error.InvalidOutputBuff;
+    }
+    for (exp_dims, 0..) |exp_dim, dd| {
+        if (imgs_arr.dims[dd] != exp_dim) {
             return error.InvalidOutputBuff;
         }
     }
@@ -305,60 +388,60 @@ fn isValidPsf(psf: cam.PointSpreadFunc) bool {
     };
 }
 
-fn checkCameraInputError(camera_input: cam.CameraInput) !void {
-    if (camera_input.pixels_num[0] == 0 or camera_input.pixels_num[1] == 0) {
+fn checkCamInpErr(cam_inp: cam.CameraInput) !void {
+    if (cam_inp.pixels_num[0] == 0 or cam_inp.pixels_num[1] == 0) {
         return error.InvalidCameraPixels;
     }
-    if (!isFiniteSlice(&camera_input.pixels_size) or
-        camera_input.pixels_size[0] <= 0.0 or
-        camera_input.pixels_size[1] <= 0.0)
+    if (!isFiniteSlice(&cam_inp.pixels_size) or
+        cam_inp.pixels_size[0] <= 0.0 or
+        cam_inp.pixels_size[1] <= 0.0)
     {
         return error.InvalidCameraPixelSize;
     }
-    if (!std.math.isFinite(camera_input.focal_length) or
-        camera_input.focal_length <= 0.0)
+    if (!std.math.isFinite(cam_inp.focal_length) or
+        cam_inp.focal_length <= 0.0)
     {
         return error.InvalidCameraFocalLength;
     }
-    if (camera_input.sub_sample == 0) {
+    if (cam_inp.sub_sample == 0) {
         return error.InvalidCameraSubSample;
     }
-    if (!isFiniteVec3(camera_input.pos_world) or
-        !isFiniteVec3(camera_input.roi_cent_world) or
+    if (!isFiniteVec3(cam_inp.pos_world) or
+        !isFiniteVec3(cam_inp.roi_cent_world) or
         !isFiniteSlice(&[_]F{
-            camera_input.rot_world.alpha_z,
-            camera_input.rot_world.beta_y,
-            camera_input.rot_world.gamma_x,
+            cam_inp.rot_world.alpha_z,
+            cam_inp.rot_world.beta_y,
+            cam_inp.rot_world.gamma_x,
         }) or
-        !isFiniteSlice(camera_input.rot_world.matrix.slice[0..]))
+        !isFiniteSlice(cam_inp.rot_world.matrix.slice[0..]))
     {
         return error.NonFiniteCameraInput;
     }
-    if (!isValidDistortion(camera_input.distortion)) {
+    if (!isValidDistortion(cam_inp.distortion)) {
         return error.InvalidCameraDistortion;
     }
-    if (!isValidPsf(camera_input.psf)) {
+    if (!isValidPsf(cam_inp.psf)) {
         return error.InvalidCameraPsf;
     }
 }
 
-fn checkCameraInputAssert(camera_input: cam.CameraInput) void {
-    std.debug.assert(camera_input.pixels_num[0] > 0);
-    std.debug.assert(camera_input.pixels_num[1] > 0);
-    std.debug.assert(isFiniteSlice(&camera_input.pixels_size));
-    std.debug.assert(camera_input.pixels_size[0] > 0.0);
-    std.debug.assert(camera_input.pixels_size[1] > 0.0);
-    std.debug.assert(std.math.isFinite(camera_input.focal_length));
-    std.debug.assert(camera_input.focal_length > 0.0);
-    std.debug.assert(camera_input.sub_sample > 0);
-    std.debug.assert(isFiniteVec3(camera_input.pos_world));
-    std.debug.assert(isFiniteVec3(camera_input.roi_cent_world));
+fn checkCamInpAssert(cam_inp: cam.CameraInput) void {
+    std.debug.assert(cam_inp.pixels_num[0] > 0);
+    std.debug.assert(cam_inp.pixels_num[1] > 0);
+    std.debug.assert(isFiniteSlice(&cam_inp.pixels_size));
+    std.debug.assert(cam_inp.pixels_size[0] > 0.0);
+    std.debug.assert(cam_inp.pixels_size[1] > 0.0);
+    std.debug.assert(std.math.isFinite(cam_inp.focal_length));
+    std.debug.assert(cam_inp.focal_length > 0.0);
+    std.debug.assert(cam_inp.sub_sample > 0);
+    std.debug.assert(isFiniteVec3(cam_inp.pos_world));
+    std.debug.assert(isFiniteVec3(cam_inp.roi_cent_world));
     std.debug.assert(isFiniteSlice(&[_]F{
-        camera_input.rot_world.alpha_z,
-        camera_input.rot_world.beta_y,
-        camera_input.rot_world.gamma_x,
+        cam_inp.rot_world.alpha_z,
+        cam_inp.rot_world.beta_y,
+        cam_inp.rot_world.gamma_x,
     }));
-    std.debug.assert(isFiniteSlice(camera_input.rot_world.matrix.slice[0..]));
-    std.debug.assert(isValidDistortion(camera_input.distortion));
-    std.debug.assert(isValidPsf(camera_input.psf));
+    std.debug.assert(isFiniteSlice(cam_inp.rot_world.matrix.slice[0..]));
+    std.debug.assert(isValidDistortion(cam_inp.distortion));
+    std.debug.assert(isValidPsf(cam_inp.psf));
 }
