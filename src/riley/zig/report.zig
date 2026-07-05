@@ -16,6 +16,7 @@ const cam = @import("camera.zig");
 const mo = @import("meshpipeline.zig");
 const newton = @import("newton.zig");
 const rastcfg = @import("rasterconfig.zig");
+const scalingpolicy = @import("scalingpolicy.zig");
 pub const ReportMode = rastcfg.ReportMode;
 
 // --------------------------------------------------------------------------------------
@@ -1863,7 +1864,7 @@ pub fn standardReport(
 pub fn printRenderSummary(
     io: std.Io,
     cameras: []const cam.CameraPrepared,
-    actual_tile_size: u16,
+    config: rastcfg.RasterConfig,
     num_time: usize,
     report_mode: ReportMode,
     end_to_end_times: EndToEndTimes,
@@ -1878,6 +1879,15 @@ pub fn printRenderSummary(
         total_pixels += camera.pixels_num[0] * camera.pixels_num[1];
     }
     total_pixels *= num_time;
+
+    const actual_tile_size = scalingpolicy.tileSize(
+        config.tile_size_override,
+        config.tile_size_min,
+        config.tile_size_max,
+        cameras[0].pixels_num,
+        cameras[0].sub_sample,
+        cameras[0].prep_psf.halo_px,
+    );
 
     const total_frames = cameras.len * num_time;
     const total_render_ms = end_to_end_times.total_time / 1e6;
