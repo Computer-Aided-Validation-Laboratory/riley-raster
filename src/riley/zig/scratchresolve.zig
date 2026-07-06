@@ -10,19 +10,32 @@ const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 const rops = @import("rasterops.zig");
 const cam = @import("camera.zig");
+const matslice = @import("matslice.zig");
+const ndarray = @import("ndarray.zig");
 const common = @import("scratchresolve_common.zig");
 const scal = @import("scratchresolve_scalar.zig");
 const simd = @import("scratchresolve_simd.zig");
 
 const cfg = buildconfig.config;
+const resolve_scratch_direct_impl = scal.resolveScratchDirectCore;
+const avg_scratch_impl = if (cfg.simd == .on)
+    simd.avgScratchCoreSIMD
+else
+    scal.avgScratchCore;
+const filter_scratch_separable_impl = if (cfg.simd == .on)
+    simd.filterScratchSeparableSIMD
+else
+    scal.filterScratchSeparable;
+const filter_scratch_nonseparable_impl = if (cfg.simd == .on)
+    simd.filterScratchNonSeparableSIMD
+else
+    scal.filterScratchNonSeparable;
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
 pub const ScratchTileGeometry = common.ScratchTileGeometry;
-pub const MatSlice = common.MatSlice;
-pub const NDArray = common.NDArray;
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -32,12 +45,12 @@ pub fn resolveScratchDirect(
     tile: rops.ActiveTile,
     spx_tile_size: usize,
     fields_num: u8,
-    spx_image_scratch: *const MatSlice(F),
+    spx_image_scratch: *const matslice.MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
-    image_out_arr: *NDArray(F),
+    image_out_arr: *ndarray.NDArray(F),
 ) void {
-    resolveScratchDirectCore(
+    resolve_scratch_direct_impl(
         tile,
         ScratchTileGeometry.initCoreOnly(tile, 1),
         spx_tile_size,
@@ -51,43 +64,17 @@ pub fn resolveScratchDirect(
     );
 }
 
-pub fn resolveScratchDirectCore(
-    tile: rops.ActiveTile,
-    scratch_geom: ScratchTileGeometry,
-    spx_stride: usize,
-    fields_num: u8,
-    spx_image_scratch: *const MatSlice(F),
-    touched_min_x: []const usize,
-    touched_max_x: []const usize,
-    radius_x: usize,
-    radius_y: usize,
-    image_out_arr: *NDArray(F),
-) void {
-    scal.resolveScratchDirectCore(
-        tile,
-        scratch_geom,
-        spx_stride,
-        fields_num,
-        spx_image_scratch,
-        touched_min_x,
-        touched_max_x,
-        radius_x,
-        radius_y,
-        image_out_arr,
-    );
-}
-
 pub fn avgScratch(
     tile: rops.ActiveTile,
     sub_samp: usize,
     spx_tile_size: usize,
     fields_num: u8,
-    spx_image_scratch: *const MatSlice(F),
+    spx_image_scratch: *const matslice.MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
-    image_out_arr: *NDArray(F),
+    image_out_arr: *ndarray.NDArray(F),
 ) void {
-    avgScratchCore(
+    avg_scratch_impl(
         tile,
         ScratchTileGeometry.initCoreOnly(tile, sub_samp),
         sub_samp,
@@ -102,135 +89,6 @@ pub fn avgScratch(
     );
 }
 
-pub fn avgScratchCore(
-    tile: rops.ActiveTile,
-    scratch_geom: ScratchTileGeometry,
-    sub_samp: usize,
-    spx_stride: usize,
-    fields_num: u8,
-    spx_image_scratch: *const MatSlice(F),
-    touched_min_x: []const usize,
-    touched_max_x: []const usize,
-    radius_x: usize,
-    radius_y: usize,
-    image_out_arr: *NDArray(F),
-) void {
-    if (cfg.simd == .on) {
-        simd.avgScratchCoreSIMD(
-            tile,
-            scratch_geom,
-            sub_samp,
-            spx_stride,
-            fields_num,
-            spx_image_scratch,
-            touched_min_x,
-            touched_max_x,
-            radius_x,
-            radius_y,
-            image_out_arr,
-        );
-    } else {
-        scal.avgScratchCore(
-            tile,
-            scratch_geom,
-            sub_samp,
-            spx_stride,
-            fields_num,
-            spx_image_scratch,
-            touched_min_x,
-            touched_max_x,
-            radius_x,
-            radius_y,
-            image_out_arr,
-        );
-    }
-}
-
-pub fn filterScratchSeparable(
-    fields_num: u8,
-    background_value: F,
-    psf: cam.PreparedPSF,
-    scratch_geom: ScratchTileGeometry,
-    sub_samp: usize,
-    spx_stride: usize,
-    src: *const MatSlice(F),
-    tmp: *MatSlice(F),
-    dst: *MatSlice(F),
-    touched_min_x: []const usize,
-    touched_max_x: []const usize,
-) void {
-    if (cfg.simd == .on) {
-        simd.filterScratchSeparableSIMD(
-            fields_num,
-            background_value,
-            psf,
-            scratch_geom,
-            sub_samp,
-            spx_stride,
-            src,
-            tmp,
-            dst,
-            touched_min_x,
-            touched_max_x,
-        );
-    } else {
-        scal.filterScratchSeparable(
-            fields_num,
-            background_value,
-            psf,
-            scratch_geom,
-            sub_samp,
-            spx_stride,
-            src,
-            tmp,
-            dst,
-            touched_min_x,
-            touched_max_x,
-        );
-    }
-}
-
-pub fn filterScratchNonSeparable(
-    fields_num: u8,
-    background_value: F,
-    psf: cam.PreparedPSF,
-    scratch_geom: ScratchTileGeometry,
-    sub_samp: usize,
-    spx_stride: usize,
-    src: *const MatSlice(F),
-    dst: *MatSlice(F),
-    touched_min_x: []const usize,
-    touched_max_x: []const usize,
-) void {
-    if (cfg.simd == .on) {
-        simd.filterScratchNonSeparableSIMD(
-            fields_num,
-            background_value,
-            psf,
-            scratch_geom,
-            sub_samp,
-            spx_stride,
-            src,
-            dst,
-            touched_min_x,
-            touched_max_x,
-        );
-    } else {
-        scal.filterScratchNonSeparable(
-            fields_num,
-            background_value,
-            psf,
-            scratch_geom,
-            sub_samp,
-            spx_stride,
-            src,
-            dst,
-            touched_min_x,
-            touched_max_x,
-        );
-    }
-}
-
 pub fn resolveTileWithPSF(
     tile: rops.ActiveTile,
     sub_samp: usize,
@@ -239,21 +97,21 @@ pub fn resolveTileWithPSF(
     background_value: F,
     prep_psf: cam.PreparedPSF,
     scratch_geom: ScratchTileGeometry,
-    spx_image_scratch: *MatSlice(F),
-    filter_tmp: *MatSlice(F),
+    spx_image_scratch: *matslice.MatSlice(F),
+    filter_tmp: *matslice.MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
-    image_out_arr: *NDArray(F),
+    image_out_arr: *ndarray.NDArray(F),
 ) void {
-    common.resolveTileWithPSFCore(
-        @TypeOf(resolveScratchDirectCore),
-        @TypeOf(avgScratchCore),
-        @TypeOf(filterScratchSeparable),
-        @TypeOf(filterScratchNonSeparable),
-        resolveScratchDirectCore,
-        avgScratchCore,
-        filterScratchSeparable,
-        filterScratchNonSeparable,
+    common.resolveTileWithPSF(
+        @TypeOf(resolve_scratch_direct_impl),
+        @TypeOf(avg_scratch_impl),
+        @TypeOf(filter_scratch_separable_impl),
+        @TypeOf(filter_scratch_nonseparable_impl),
+        resolve_scratch_direct_impl,
+        avg_scratch_impl,
+        filter_scratch_separable_impl,
+        filter_scratch_nonseparable_impl,
         tile,
         sub_samp,
         spx_stride,

@@ -78,14 +78,10 @@ pub fn saveCamera(
     try writer.print("{s},{d:.12}\n", .{ "pos_x_m", pos_val.get(0) });
     try writer.print("{s},{d:.12}\n", .{ "pos_y_m", pos_val.get(1) });
     try writer.print("{s},{d:.12}\n", .{ "pos_z_m", pos_val.get(2) });
-    try writer.print(
-        "{s},{d:.12}\n",
-        writer,
-        .{
-            "rot_alpha_z_deg",
-            std.math.radiansToDegrees(rot_val.alpha_z),
-        },
-    );
+    try writer.print("{s},{d:.12}\n", .{
+        "rot_alpha_z_deg",
+        std.math.radiansToDegrees(rot_val.alpha_z),
+    });
     try writer.print("{s},{d:.12}\n", .{
         "rot_beta_y_deg",
         std.math.radiansToDegrees(rot_val.beta_y),

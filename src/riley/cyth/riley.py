@@ -378,7 +378,7 @@ def _make_camera_input(camera: Any) -> cr.CCameraInput:
     camera_out.distortion_p2 = float(camera.distortion_p2)
     camera_out.distortion_poly_order = int(camera.distortion_poly_order)
     camera_out.distortion_poly_has_forward = int(camera.distortion_poly_has_forward)
-    camera_out.distortion_poly_has_inverse = int(camera.distortion_poly_has_inverse)
+    camera_out.distortion_poly_has_inv = int(camera.distortion_poly_has_inverse)
     for idx in range(10):
         camera_out.distortion_poly_forward_u[idx] = float(
             camera.distortion_poly_forward_u[idx]
@@ -386,10 +386,10 @@ def _make_camera_input(camera: Any) -> cr.CCameraInput:
         camera_out.distortion_poly_forward_v[idx] = float(
             camera.distortion_poly_forward_v[idx]
         )
-        camera_out.distortion_poly_inverse_u[idx] = float(
+        camera_out.distortion_poly_inv_u[idx] = float(
             camera.distortion_poly_inverse_u[idx]
         )
-        camera_out.distortion_poly_inverse_v[idx] = float(
+        camera_out.distortion_poly_inv_v[idx] = float(
             camera.distortion_poly_inverse_v[idx]
         )
     camera_out.coord_sys = int(camera.coord_sys)
@@ -398,7 +398,7 @@ def _make_camera_input(camera: Any) -> cr.CCameraInput:
     camera_out.psf_sigma_x = float(camera.psf_sigma_x)
     camera_out.psf_sigma_y = float(camera.psf_sigma_y)
     camera_out.psf_theta = float(camera.psf_theta)
-    camera_out.psf_support_rad = float(camera.psf_support_rad)
+    camera_out.psf_supp_rad = float(camera.psf_support_rad)
     camera_out.psf_separable = int(camera.psf_separable)
     return camera_out
 
@@ -412,8 +412,8 @@ def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
     for idx in range(10):
         forward_u[idx] = camera_in.distortion_poly_forward_u[idx]
         forward_v[idx] = camera_in.distortion_poly_forward_v[idx]
-        inverse_u[idx] = camera_in.distortion_poly_inverse_u[idx]
-        inverse_v[idx] = camera_in.distortion_poly_inverse_v[idx]
+        inverse_u[idx] = camera_in.distortion_poly_inv_u[idx]
+        inverse_v[idx] = camera_in.distortion_poly_inv_v[idx]
     return Camera(
         pixels_num=(camera_in.pixels_num.x, camera_in.pixels_num.y),
         pixels_size=(camera_in.pixels_size.x, camera_in.pixels_size.y),
@@ -445,7 +445,7 @@ def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
         distortion_p2=camera_in.distortion_p2,
         distortion_poly_order=camera_in.distortion_poly_order,
         distortion_poly_has_forward=bool(camera_in.distortion_poly_has_forward),
-        distortion_poly_has_inverse=bool(camera_in.distortion_poly_has_inverse),
+        distortion_poly_has_inverse=bool(camera_in.distortion_poly_has_inv),
         distortion_poly_forward_u=tuple(forward_u),
         distortion_poly_forward_v=tuple(forward_v),
         distortion_poly_inverse_u=tuple(inverse_u),
@@ -456,7 +456,7 @@ def _camera_input_from_c(camera_in: cr.CCameraInput) -> Camera:
         psf_sigma_x=camera_in.psf_sigma_x,
         psf_sigma_y=camera_in.psf_sigma_y,
         psf_theta=camera_in.psf_theta,
-        psf_support_rad=camera_in.psf_support_rad,
+        psf_support_rad=camera_in.psf_supp_rad,
         psf_separable=camera_in.psf_separable,
     )
 
@@ -488,7 +488,7 @@ def _make_raster_config(config: Any) -> cr.CRasterConfig:
     config_out.background_value = float(config.background_value)
     config_out.disk_save_overlap = 1 if config.disk_save_overlap else 0
     config_out.tile_size_override = int(config.tile_size_override)
-    config_out.save_frame_buffer_count = int(config.save_frame_buffer_count)
+    config_out.save_frame_buff_count = int(config.save_frame_buffer_count)
     config_out.save_format = int(config.save_format)
     config_out.save_bits = int(config.save_bits)
     config_out.save_scaling = int(config.save_scaling)
@@ -959,7 +959,7 @@ def _fill_mesh_array(
             texture_channels = 3
 
         if mesh.texture is None:
-            mesh_array[nn].texture = _empty_array_3d_f64()
+            mesh_array[nn].tex = _empty_array_3d_f64()
         else:
             if texture_channels == 0:
                 raise ValueError("texture provided for non-texture shader")
@@ -970,7 +970,7 @@ def _fill_mesh_array(
             )
             texture_shape = _as_shape_3d(texture_np)
             texture_view: cython.double[:, :, ::1] = texture_np
-            mesh_array[nn].texture = _make_array_3d_f64(
+            mesh_array[nn].tex = _make_array_3d_f64(
                 texture_view,
                 texture_shape[0],
                 texture_shape[1],
@@ -1014,7 +1014,7 @@ def roi_cent_over_meshes(meshes: Any) -> tuple[float, float, float]:
     )
     out_cent: cr.CVec3F64
     keepalive: list[Any] = []
-    image_c: cr.CImageBufferF64
+    image_c: cr.CImageBuffF64
     if mesh_array == cython.NULL:
         raise MemoryError()
     try:
@@ -1164,11 +1164,11 @@ def raster(
     )
     config_c: cr.CRasterConfig = _make_raster_config(config)
     image_np: np.ndarray | None = None
-    image_ptr: cython.pointer[cr.CImageBufferF64] = cython.cast(
-        cython.pointer[cr.CImageBufferF64],
+    image_ptr: cython.pointer[cr.CImageBuffF64] = cython.cast(
+        cython.pointer[cr.CImageBuffF64],
         cython.NULL,
     )
-    image_c: cr.CImageBufferF64
+    image_c: cr.CImageBuffF64
     keepalive: list[Any] = []
 
     if mesh_array == cython.NULL or camera_array == cython.NULL:

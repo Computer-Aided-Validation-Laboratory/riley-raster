@@ -57,10 +57,10 @@ typedef struct c_dims_5_usize {
     size_t dim4;
 } CDims5Usize;
 
-typedef struct c_image_buffer_f64 {
+typedef struct c_image_buff_f64 {
     double* elems;
     CDims5Usize dims;
-} CImageBufferF64;
+} CImageBuffF64;
 
 typedef struct c_camera_input {
     CVec2U32 pixels_num;
@@ -81,18 +81,18 @@ typedef struct c_camera_input {
     double distortion_p2;
     uint32_t distortion_poly_order;
     uint8_t distortion_poly_has_forward;
-    uint8_t distortion_poly_has_inverse;
+    uint8_t distortion_poly_has_inv;
     double distortion_poly_forward_u[10];
     double distortion_poly_forward_v[10];
-    double distortion_poly_inverse_u[10];
-    double distortion_poly_inverse_v[10];
+    double distortion_poly_inv_u[10];
+    double distortion_poly_inv_v[10];
     uint32_t coord_sys;
     uint32_t subpixel_center_map;
     uint32_t psf_type;
     double psf_sigma_x;
     double psf_sigma_y;
     double psf_theta;
-    double psf_support_rad;
+    double psf_supp_rad;
     uint32_t psf_separable;
 } CCameraInput;
 
@@ -188,7 +188,7 @@ typedef struct c_mesh_input {
     CArray3DF64 disp;
     uint32_t shader_tag;
     CArray2DF64 uvs;
-    CArray3DF64 texture;
+    CArray3DF64 tex;
     uint32_t sample;
     uint32_t sample_mode;
     int bits;
@@ -222,7 +222,7 @@ typedef struct c_raster_config {
     double background_value;
     uint8_t disk_save_overlap;
     uint16_t tile_size_override;
-    size_t save_frame_buffer_count;
+    size_t save_frame_buff_count;
     uint32_t save_format;
     uint32_t save_bits;
     uint32_t save_scaling;
@@ -320,7 +320,7 @@ int rileyRaster(
     size_t cameras_len,
     const CRasterConfig* in_config,
     const char* out_dir_path,
-    CImageBufferF64* out_image
+    CImageBuffF64* out_image
 );
 
 #endif

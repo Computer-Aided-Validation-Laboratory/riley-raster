@@ -402,7 +402,7 @@ if is_windows:
 else:
     cython_compile_args = ["-ffast-math", "-O3"]
     cython_link_args = []
-    zig_compile_args = ["-fincremental"]
+    zig_compile_args = []
     runtime_lib_dirs = [PLATFORM_INFO["runtime_lib_dir"]]
 
 # zig extension

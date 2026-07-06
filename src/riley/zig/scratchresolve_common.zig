@@ -17,9 +17,6 @@ const matslice = @import("matslice.zig");
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const MatSlice = matslice.MatSlice;
-pub const NDArray = ndarray.NDArray;
-
 pub const ScratchTileGeometry = struct {
     core_w_px: usize,
     core_h_px: usize,
@@ -33,14 +30,17 @@ pub const ScratchTileGeometry = struct {
     pub fn init(tile: rops.ActiveTile, sub_sample: usize) ScratchTileGeometry {
         const core_w_px = @as(usize, tile.x_px_max - tile.x_px_min);
         const core_h_px = @as(usize, tile.y_px_max - tile.y_px_min);
+
         const scratch_w_px = @as(
             usize,
             tile.scratch_x_px_max - tile.scratch_x_px_min,
         );
+
         const scratch_h_px = @as(
             usize,
             tile.scratch_y_px_max - tile.scratch_y_px_min,
         );
+
         return .{
             .core_w_px = core_w_px,
             .core_h_px = core_h_px,
@@ -65,6 +65,7 @@ pub const ScratchTileGeometry = struct {
     ) ScratchTileGeometry {
         const core_w_px = @as(usize, tile.x_px_max - tile.x_px_min);
         const core_h_px = @as(usize, tile.y_px_max - tile.y_px_min);
+
         return .{
             .core_w_px = core_w_px,
             .core_h_px = core_h_px,
@@ -78,46 +79,12 @@ pub const ScratchTileGeometry = struct {
     }
 };
 
-pub const FrameImageWriter = struct {
-    slice: []F,
-    field_stride: usize,
-    row_stride: usize,
-
-    pub fn init(image_out_arr: *NDArray(F)) FrameImageWriter {
-        return .{
-            .slice = image_out_arr.slice,
-            .field_stride = image_out_arr.strides[0],
-            .row_stride = image_out_arr.strides[1],
-        };
-    }
-
-    pub fn set(
-        self: *const FrameImageWriter,
-        field_idx: usize,
-        row_idx: usize,
-        col_idx: usize,
-        val: F,
-    ) void {
-        const offset = field_idx * self.field_stride +
-            row_idx * self.row_stride + col_idx;
-        self.slice[offset] = val;
-    }
-
-    pub fn pixelBase(
-        self: *const FrameImageWriter,
-        row_idx: usize,
-        col_idx: usize,
-    ) usize {
-        return row_idx * self.row_stride + col_idx;
-    }
-};
-
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
 pub inline fn getScratchField(
-    spx_image_scratch: *const MatSlice(F),
+    spx_image_scratch: *const matslice.MatSlice(F),
     scratch_flat_idx: usize,
     field_idx: usize,
 ) F {
@@ -126,7 +93,7 @@ pub inline fn getScratchField(
 }
 
 pub inline fn setScratchField(
-    spx_image_scratch: *MatSlice(F),
+    spx_image_scratch: *matslice.MatSlice(F),
     scratch_flat_idx: usize,
     field_idx: usize,
     val: F,
@@ -136,7 +103,7 @@ pub inline fn setScratchField(
 }
 
 pub fn sampleScratchOrBackground(
-    src: *const MatSlice(F),
+    src: *const matslice.MatSlice(F),
     x: isize,
     y: isize,
     scratch_geom: ScratchTileGeometry,
@@ -150,12 +117,14 @@ pub fn sampleScratchOrBackground(
     {
         return background_value;
     }
+
     const flat_idx = @as(usize, @intCast(y)) * spx_stride +
         @as(usize, @intCast(x));
+
     return getScratchField(src, flat_idx, field_idx);
 }
 
-pub fn resolveTileWithPSFCore(
+pub fn resolveTileWithPSF(
     comptime ResolveDirectFn: type,
     comptime AvgFn: type,
     comptime FilterSeparableFn: type,
@@ -171,11 +140,11 @@ pub fn resolveTileWithPSFCore(
     background_value: F,
     prep_psf: @import("camera.zig").PreparedPSF,
     scratch_geom: ScratchTileGeometry,
-    spx_image_scratch: *MatSlice(F),
-    filter_tmp: *MatSlice(F),
+    spx_image_scratch: *matslice.MatSlice(F),
+    filter_tmp: *matslice.MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
-    image_out_arr: *NDArray(F),
+    image_out_arr: *ndarray.NDArray(F),
 ) void {
     switch (prep_psf.mode) {
         .identity_fast => {

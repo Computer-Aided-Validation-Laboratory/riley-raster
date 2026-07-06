@@ -10,6 +10,8 @@ const std = @import("std");
 const rops = @import("rasterops.zig");
 const cam = @import("camera.zig");
 const common = @import("scratchresolve_common.zig");
+const matslice = @import("matslice.zig");
+const ndarray = @import("ndarray.zig");
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
 
@@ -20,9 +22,6 @@ const cfg = buildconfig.config;
 // --------------------------------------------------------------------------------------
 
 pub const ScratchTileGeometry = common.ScratchTileGeometry;
-pub const MatSlice = common.MatSlice;
-pub const NDArray = common.NDArray;
-pub const FrameImageWriter = common.FrameImageWriter;
 pub const getScratchField = common.getScratchField;
 pub const setScratchField = common.setScratchField;
 pub const sampleScratchOrBackground = common.sampleScratchOrBackground;
@@ -36,18 +35,16 @@ pub fn resolveScratchDirectCore(
     scratch_geom: ScratchTileGeometry,
     spx_stride: usize,
     fields_num: u8,
-    spx_image_scratch: *const MatSlice(F),
+    spx_image_scratch: *const matslice.MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
     radius_x: usize,
     radius_y: usize,
-    image_out_arr: *NDArray(F),
+    image_out_arr: *ndarray.NDArray(F),
 ) void {
-    const writer = FrameImageWriter.init(image_out_arr);
-
     // Buff layout is planar/field-major.
     // Source: field ff is at spx_image_scratch.slice[ff * spx_stride].
-    // Destination: field ff is at writer.slice[ff * writer.field_stride].
+    // Destination: field ff is at image_out_arr.slice[ff * image_out_arr.strides[0]].
     for (0..scratch_geom.core_h_px) |ii| {
         const image_px_y = tile.y_px_min + ii;
         const spx_start_y = scratch_geom.core_start_y_subpx + ii;
@@ -104,12 +101,15 @@ pub fn resolveScratchDirectCore(
             const len = tx_end - tx_start + 1;
             const src_base = scratch_row_offset +
                 scratch_geom.core_start_x_subpx + tx_start;
-            const dest_base = image_px_y * writer.row_stride +
-                tile.x_px_min + tx_start;
+            const dest_base = image_out_arr.offset3(
+                0,
+                image_px_y,
+                tile.x_px_min + tx_start,
+            );
 
             if (fields_num == 1) {
                 @memcpy(
-                    writer.slice[dest_base .. dest_base + len],
+                    image_out_arr.slice[dest_base .. dest_base + len],
                     spx_image_scratch.slice[src_base .. src_base + len],
                 );
             } else if (fields_num == 3) {
@@ -117,25 +117,37 @@ pub fn resolveScratchDirectCore(
                 const src1_base = spx_image_scratch.rowBase(1);
                 const src2_base = spx_image_scratch.rowBase(2);
                 @memcpy(
-                    writer.slice[dest_base .. dest_base + len],
+                    image_out_arr.slice[dest_base .. dest_base + len],
                     spx_image_scratch.slice[src0_base + src_base .. src0_base + src_base + len],
                 );
-                const dest1 = writer.field_stride + dest_base;
+                const dest1 = image_out_arr.offset3(
+                    1,
+                    image_px_y,
+                    tile.x_px_min + tx_start,
+                );
                 @memcpy(
-                    writer.slice[dest1 .. dest1 + len],
+                    image_out_arr.slice[dest1 .. dest1 + len],
                     spx_image_scratch.slice[src1_base + src_base .. src1_base + src_base + len],
                 );
-                const dest2 = 2 * writer.field_stride + dest_base;
+                const dest2 = image_out_arr.offset3(
+                    2,
+                    image_px_y,
+                    tile.x_px_min + tx_start,
+                );
                 @memcpy(
-                    writer.slice[dest2 .. dest2 + len],
+                    image_out_arr.slice[dest2 .. dest2 + len],
                     spx_image_scratch.slice[src2_base + src_base .. src2_base + src_base + len],
                 );
             } else {
                 for (0..fields_num) |ff| {
                     const src_offset = spx_image_scratch.rowBase(ff) + src_base;
-                    const dest_offset = ff * writer.field_stride + dest_base;
+                    const dest_offset = image_out_arr.offset3(
+                        ff,
+                        image_px_y,
+                        tile.x_px_min + tx_start,
+                    );
                     @memcpy(
-                        writer.slice[dest_offset .. dest_offset + len],
+                        image_out_arr.slice[dest_offset .. dest_offset + len],
                         spx_image_scratch.slice[src_offset .. src_offset + len],
                     );
                 }
@@ -150,16 +162,15 @@ pub fn avgScratchCore(
     sub_samp: usize,
     spx_stride: usize,
     fields_num: u8,
-    spx_image_scratch: *const MatSlice(F),
+    spx_image_scratch: *const matslice.MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
     radius_x: usize,
     radius_y: usize,
-    image_out_arr: *NDArray(F),
+    image_out_arr: *ndarray.NDArray(F),
 ) void {
     const sub_samp_f = @as(F, @floatFromInt(sub_samp));
     const inv_sub_samp_sq = 1.0 / (sub_samp_f * sub_samp_f);
-    const writer = FrameImageWriter.init(image_out_arr);
 
     for (0..scratch_geom.core_h_px) |ii| {
         const image_px_y = tile.y_px_min + ii;
@@ -215,7 +226,12 @@ pub fn avgScratchCore(
         for (tx_start..tx_end + 1) |jj| {
             const image_px_x = tile.x_px_min + jj;
             const spx_start_x = scratch_geom.core_start_x_subpx + sub_samp * jj;
-            const image_px_base = writer.pixelBase(image_px_y, image_px_x);
+            const image_base_0 = image_out_arr.offset3(0, image_px_y, image_px_x);
+
+            // Direct resolve and averaging only visit core pixel subpx blocks, so the
+            // full `sub_samp x sub_samp` region is guaranteed to be inside scratch.
+            std.debug.assert(spx_start_x + sub_samp <= scratch_geom.scratch_w_subpx);
+            std.debug.assert(spx_start_y + sub_samp <= scratch_geom.scratch_h_subpx);
 
             if (fields_num == 1) {
                 var field_sum_0: F = 0.0;
@@ -232,7 +248,7 @@ pub fn avgScratchCore(
                         );
                     }
                 }
-                writer.slice[image_px_base] = field_sum_0 * inv_sub_samp_sq;
+                image_out_arr.slice[image_base_0] = field_sum_0 * inv_sub_samp_sq;
             } else if (fields_num == 3) {
                 var field_sum_0: F = 0.0;
                 var field_sum_1: F = 0.0;
@@ -260,10 +276,10 @@ pub fn avgScratchCore(
                         );
                     }
                 }
-                writer.slice[image_px_base] = field_sum_0 * inv_sub_samp_sq;
-                writer.slice[writer.field_stride + image_px_base] =
+                image_out_arr.slice[image_base_0] = field_sum_0 * inv_sub_samp_sq;
+                image_out_arr.slice[image_out_arr.offset3(1, image_px_y, image_px_x)] =
                     field_sum_1 * inv_sub_samp_sq;
-                writer.slice[2 * writer.field_stride + image_px_base] =
+                image_out_arr.slice[image_out_arr.offset3(2, image_px_y, image_px_x)] =
                     field_sum_2 * inv_sub_samp_sq;
             } else {
                 var field_avg_buff = [_]F{0.0} ** cfg.max_nodal_fields;
@@ -287,7 +303,7 @@ pub fn avgScratchCore(
                 }
 
                 for (0..fields_num) |ff| {
-                    writer.slice[ff * writer.field_stride + image_px_base] =
+                    image_out_arr.slice[image_out_arr.offset3(ff, image_px_y, image_px_x)] =
                         spx_field_avg[ff] * inv_sub_samp_sq;
                 }
             }
@@ -302,9 +318,9 @@ pub fn filterScratchSeparable(
     scratch_geom: ScratchTileGeometry,
     sub_samp: usize,
     spx_stride: usize,
-    src: *const MatSlice(F),
-    tmp: *MatSlice(F),
-    dst: *MatSlice(F),
+    src: *const matslice.MatSlice(F),
+    tmp: *matslice.MatSlice(F),
+    dst: *matslice.MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
 ) void {
@@ -429,8 +445,8 @@ pub fn filterScratchNonSeparable(
     scratch_geom: ScratchTileGeometry,
     sub_samp: usize,
     spx_stride: usize,
-    src: *const MatSlice(F),
-    dst: *MatSlice(F),
+    src: *const matslice.MatSlice(F),
+    dst: *matslice.MatSlice(F),
     touched_min_x: []const usize,
     touched_max_x: []const usize,
 ) void {
