@@ -50,7 +50,6 @@ def load_surface_sim(
 
 def main() -> None:
     exodus_path = riley.data.platehole_exodus_path()
-    csv_case_path = riley.data.platehole_csv_case_path()
     texture_path = riley.data.speckle_texture_path()
     out_dir = make_demo_out_dir("demo-dicuq-from-exodus")
     pixels_num = (2464, 2056)
@@ -70,9 +69,15 @@ def main() -> None:
     }
 
     coords, connect, disp = load_surface_sim(exodus_path)
-    _, _, uvs, _ = riley.load_sim_csvs(csv_case_path)
-    if uvs is None:
-        raise ValueError(f"expected committed UVs in {csv_case_path}")
+    uvs = riley.project_uvs_planar_centered(
+        coords,
+        pixels_num,
+        uv_span_max=0.8,
+        projection_plane=(
+            np.array((0.0, 0.0, -1.0), dtype=np.float64),
+            np.array((0.0, 0.0, 0.0), dtype=np.float64),
+        ),
+    )
     texture = riley.load_texture(texture_path)
 
     mesh = riley.Mesh(
