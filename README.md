@@ -45,9 +45,10 @@ These are the quickest correctness checks and should be your first stop before r
 
 Only the main production-path min gold is kept in the repository by default, so the min suite is intended primarily for `f64` with SIMD enabled. The min suite also requires `.simd = .on`; the scalar min orchestration is not implemented.
 
-For deeper test, gold-generation and benchmark workflows, see [dev/README.md](./dev/README.md).
+For deeper test, gold generation and benchmark workflows, see [dev/README.md](./dev/README.md).
+
 ## Getting Started: Python
-We provide Python bindings to the Riley C ABI through Cython, and publish a `riley-raster` package on PyPI. 
+We provide Python bindings to the Riley C ABI through Cython, and publish a `riley-raster` package on PyPI.
 
 Install from PyPI with:
 
@@ -164,10 +165,7 @@ For a mathematical and architectural overview, see the engrXiv preprint: [Riley:
 ## C Interface
 `Riley` provides a C-compatible API for use from other languages. The Python bindings use this interface through Cython, but it can also be called from C or from any language with a C FFI.
 
-The public C ABI is intentionally fixed to the production Riley build:
-
-- precision: `f64`
-- SIMD: `on`
+The public C ABI is intentionally fixed to the production Riley build with: precision=`f64`, SIMD=`on`.
 
 This keeps the exported ABI stable for downstream callers. The extern types and functions live in [`src/riley/zig/c-riley.zig`](./src/riley/zig/c-riley.zig).
 

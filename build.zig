@@ -2,7 +2,7 @@ const std = @import("std");
 
 const riley_version = std.SemanticVersion{
     .major = 2026,
-    .minor = 5,
+    .minor = 7,
     .patch = 0,
 };
 
