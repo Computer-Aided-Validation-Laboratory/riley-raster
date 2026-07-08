@@ -732,28 +732,31 @@ pub fn runSingleMeshSuiteDriver(
             const render_groups = [_]riley.RenderGroupSpec{
                 .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
             };
-            const result = (try riley.raster(
+            const result = try riley.raster(
                 aa,
                 &render_groups,
                 &[_]CameraInput{camera_input},
                 &[_]MeshInput{mesh_input},
                 run_config,
                 if (mode == .generate) nodal_dir else null,
-            )) orelse return error.NoResult;
+            );
 
             if (mode == .generate) {
-                aa.free(result.slice);
-                var result_mut = result;
-                result_mut.deinit(aa);
+                if (result) |images| {
+                    aa.free(images.slice);
+                    var images_mut = images;
+                    images_mut.deinit(aa);
+                }
             } else {
-                defer aa.free(result.slice);
+                var render_result = result orelse return error.NoResult;
+                defer aa.free(render_result.slice);
                 const time_end = Timestamp.now(io, .awake);
                 const duration_ms = @as(F, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
-                const frames_num = if (result.dims.len == 5)
-                    result.dims[1]
+                const frames_num = if (render_result.dims.len == 5)
+                    render_result.dims[1]
                 else
-                    result.dims[0];
+                    render_result.dims[0];
                 var first_err: ?anyerror = null;
                 for (0..frames_num) |f| {
                     const fname = try findGoldPath(aa, io, nodal_dir, 0, f, 0, false);
@@ -761,7 +764,7 @@ pub fn runSingleMeshSuiteDriver(
                     compareNDArrayToGold(
                         aa,
                         io,
-                        &result,
+                        &render_result,
                         0,
                         f,
                         0,
@@ -792,7 +795,7 @@ pub fn runSingleMeshSuiteDriver(
                             io,
                             default_fails_root,
                             fail_dir_name,
-                            &result,
+                            &render_result,
                             0,
                             f,
                             0,
@@ -866,28 +869,31 @@ pub fn runSingleMeshSuiteDriver(
                 const render_groups = [_]riley.RenderGroupSpec{
                     .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
                 };
-                const result = (try riley.raster(
+                const result = try riley.raster(
                     aa,
                     &render_groups,
                     &[_]CameraInput{camera_input},
                     &[_]MeshInput{mesh_input},
                     run_config,
                     if (mode == .generate) tex_dir else null,
-                )) orelse return error.NoResult;
+                );
 
                 if (mode == .generate) {
-                    aa.free(result.slice);
-                    var result_mut = result;
-                    result_mut.deinit(aa);
+                    if (result) |images| {
+                        aa.free(images.slice);
+                        var images_mut = images;
+                        images_mut.deinit(aa);
+                    }
                 } else {
-                    defer aa.free(result.slice);
+                    var render_result = result orelse return error.NoResult;
+                    defer aa.free(render_result.slice);
                     const time_end = Timestamp.now(io, .awake);
                     const duration_ms = @as(F, @floatFromInt(time_start.durationTo(time_end).raw.nanoseconds)) / 1e6;
 
-                    const frames_num = if (result.dims.len == 5)
-                        result.dims[1]
+                    const frames_num = if (render_result.dims.len == 5)
+                        render_result.dims[1]
                     else
-                        result.dims[0];
+                        render_result.dims[0];
                     var first_err: ?anyerror = null;
                     for (0..frames_num) |f| {
                         const fname = try findGoldPath(aa, io, tex_dir, 0, f, 0, false);
@@ -895,7 +901,7 @@ pub fn runSingleMeshSuiteDriver(
                         compareNDArrayToGold(
                             aa,
                             io,
-                            &result,
+                            &render_result,
                             0,
                             f,
                             0,
@@ -926,7 +932,7 @@ pub fn runSingleMeshSuiteDriver(
                                 io,
                                 default_fails_root,
                                 fail_dir_name,
-                                &result,
+                                &render_result,
                                 0,
                                 f,
                                 0,
@@ -1530,28 +1536,31 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
     const render_groups = [_]riley.RenderGroupSpec{
         .{ .io = io, .workers = @max(@as(u16, 1), run_config.total_threads) },
     };
-    const result = (try riley.raster(
+    const result = try riley.raster(
         aa,
         &render_groups,
         &[_]CameraInput{camera_input},
         &[_]MeshInput{mesh_input},
         run_config,
         if (mode == .generate) gold_dir else null,
-    )) orelse return error.NoResult;
+    );
 
     if (mode == .generate) {
-        aa.free(result.slice);
-        var result_mut = result;
-        result_mut.deinit(aa);
+        if (result) |images| {
+            aa.free(images.slice);
+            var images_mut = images;
+            images_mut.deinit(aa);
+        }
     } else {
-        defer aa.free(result.slice);
+        var render_result = result orelse return error.NoResult;
+        defer aa.free(render_result.slice);
         const end_time = Timestamp.now(io, .awake);
         const duration_ms = @as(
             F,
             @floatFromInt(start_time.durationTo(end_time).raw.nanoseconds),
         ) / 1e6;
 
-        const frames_num = if (result.dims.len == 5) result.dims[1] else result.dims[0];
+        const frames_num = if (render_result.dims.len == 5) render_result.dims[1] else render_result.dims[0];
         var first_err: ?anyerror = null;
         for (0..frames_num) |frame_idx| {
             const gold_path = try findGoldPath(
@@ -1567,7 +1576,7 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
             compareNDArrayToGold(
                 aa,
                 io,
-                &result,
+                &render_result,
                 0,
                 frame_idx,
                 0,
@@ -1599,7 +1608,7 @@ pub fn runEdgeTexFuncConstantSuiteDriver(
                     io,
                     default_fails_root,
                     fail_dir_name,
-                    &result,
+                    &render_result,
                     0,
                     frame_idx,
                     0,
