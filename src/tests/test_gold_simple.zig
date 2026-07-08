@@ -45,7 +45,7 @@ test "Gold Simple Suite" {
         .quad8,
         .quad9,
     };
-    const sample_configs = [_]texops.TextureSampleConfig{
+    const samp_cfgs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
@@ -71,7 +71,7 @@ test "Gold Simple Suite" {
         1.1,
         texture,
         pixel_num,
-        &sample_configs,
+        &samp_cfgs,
         policy.goldRoot(.simple),
         "data/simple",
         tcfg.REL_TOL,

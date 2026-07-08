@@ -35,13 +35,13 @@ pub fn calcMinCaseName(
     allocator: std.mem.Allocator,
     etype: gk.MeshType,
     shader_type: common.ShaderType,
-    sample_config: texops.TextureSampleConfig,
+    samp_cfg: texops.TextureSampleConfig,
 ) ![]const u8 {
     return common.calcCaseName(
         allocator,
         etype,
         shader_type,
-        sample_config,
+        samp_cfg,
         null,
         1.0,
     );
@@ -52,7 +52,7 @@ fn buildSphere200MultiCullMeshInputs(
     io: std.Io,
     etype: gk.MeshType,
     shader_type: common.ShaderType,
-    sample_config: texops.TextureSampleConfig,
+    samp_cfg: texops.TextureSampleConfig,
     data_dir: []const u8,
     texture_grey: iio.Texture(u8, 1),
     texture_rgb: iio.Texture(u8, 3),
@@ -63,7 +63,7 @@ fn buildSphere200MultiCullMeshInputs(
         io,
         etype,
         shader_type,
-        sample_config,
+        samp_cfg,
         null,
         data_dir,
         texture_grey,
@@ -92,7 +92,7 @@ pub fn runSphere200MultiCullQuiet(
     io: std.Io,
     etype: gk.MeshType,
     shader_type: common.ShaderType,
-    sample_config: texops.TextureSampleConfig,
+    samp_cfg: texops.TextureSampleConfig,
     data_dir: []const u8,
     pixel_num: [2]u32,
     texture_grey: iio.Texture(u8, 1),
@@ -110,7 +110,7 @@ pub fn runSphere200MultiCullQuiet(
         io,
         etype,
         shader_type,
-        sample_config,
+        samp_cfg,
         data_dir,
         texture_grey,
         texture_rgb,
@@ -135,7 +135,7 @@ pub fn runSphere200MultiCullQuiet(
         aa,
         etype,
         shader_type,
-        sample_config,
+        samp_cfg,
     );
     const out_path = if (out_dir_base.len > 0)
         try std.fs.path.join(aa, &[_][]const u8{

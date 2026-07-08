@@ -99,7 +99,7 @@ pub fn main(init: std.process.Init) !void {
         .func,
         .func_rgb,
     };
-    const sample_configs = [_]texops.TextureSampleConfig{
+    const samp_cfgs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
         .{ .sample = .cubic_mitchell_netravali, .mode = .lut_lerp },
@@ -160,13 +160,13 @@ pub fn main(init: std.process.Init) !void {
 
     for (mesh_types) |mt| {
         for (shader_types) |st| {
-            for (sample_configs) |sc| {
-                const sample_config = if (st == .tex8_grey or st == .tex8_rgb) sc else null;
+            for (samp_cfgs) |sc| {
+                const samp_cfg = if (st == .tex8_grey or st == .tex8_rgb) sc else null;
                 const case_name = try common.calcCaseName(
                     outer_alloc,
                     mt,
                     st,
-                    sample_config,
+                    samp_cfg,
                     null,
                     DEFAULT_FOV_SCALE,
                 );
@@ -204,7 +204,7 @@ pub fn main(init: std.process.Init) !void {
                         io,
                         mt,
                         st,
-                        sample_config,
+                        samp_cfg,
                         null,
                         data_dir,
                         render_defaults,
@@ -222,7 +222,7 @@ pub fn main(init: std.process.Init) !void {
                         case_name,
                         mt,
                         st,
-                        sample_config,
+                        samp_cfg,
                         null,
                         res,
                     );
@@ -240,7 +240,7 @@ pub fn main(init: std.process.Init) !void {
                     case_name,
                     mt,
                     st,
-                    sample_config,
+                    samp_cfg,
                     null,
                     &case_samples,
                 );

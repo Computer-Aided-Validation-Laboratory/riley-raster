@@ -31,7 +31,7 @@ pub fn main(init: std.process.Init) !void {
     );
 
     const mesh_types = [_]gk.MeshType{ .tri3, .tri6, .quad4ibi, .quad8, .quad9 };
-    const sample_configs = [_]texops.TextureSampleConfig{
+    const samp_cfgs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut },
@@ -76,7 +76,7 @@ pub fn main(init: std.process.Init) !void {
         1.1,
         texture,
         pixel_num,
-        &sample_configs,
+        &samp_cfgs,
         out_dir_root,
         data_dir,
         config,

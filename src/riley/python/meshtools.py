@@ -51,6 +51,52 @@ def enforce_mesh_convention(
     return coords_out, np.ascontiguousarray(connect_out, dtype=np.uintp)
 
 
+def is_mesh_2d(coords: np.ndarray, connect: np.ndarray) -> bool:
+    # 1. Check coordinate flatness
+    coord_ranges = np.ptp(coords, axis=0)
+    if np.any(coord_ranges < 1e-12):
+        return True
+
+    # 2. Check element nodes
+    nodes_per_elem = connect.shape[1]
+    if nodes_per_elem in (3, 6, 7, 9):
+        return True
+    if nodes_per_elem in (10, 20, 27):
+        return False
+
+    if nodes_per_elem == 4:
+        num_check = min(10, connect.shape[0])
+        is_tet = False
+        for i in range(num_check):
+            elem = connect[i]
+            v = coords[elem]
+            vol = np.abs(
+                np.dot(v[1] - v[0], np.cross(v[2] - v[0], v[3] - v[0]))
+            )
+            if vol > 1e-10:
+                is_tet = True
+                break
+        if not is_tet:
+            return True
+
+    if nodes_per_elem == 8:
+        num_check = min(10, connect.shape[0])
+        is_hex = False
+        for i in range(num_check):
+            elem = connect[i]
+            v = coords[elem]
+            vol = np.abs(
+                np.dot(v[1] - v[0], np.cross(v[2] - v[0], v[4] - v[0]))
+            )
+            if vol > 1e-10:
+                is_hex = True
+                break
+        if not is_hex:
+            return True
+
+    return False
+
+
 def extract_surface_mesh(
     coords: np.ndarray,
     connect: np.ndarray,
@@ -64,6 +110,12 @@ def extract_surface_mesh(
         indexing=indexing,
     )
     connect_work = np.ascontiguousarray(connect_norm, dtype=np.int64)
+
+    if is_mesh_2d(coords_norm, connect_norm):
+        raise ValueError(
+            "Surface extraction is only supported for 3D meshes. "
+            "The provided mesh appears to be 2D."
+        )
 
     if connect_work.shape[1] not in (4, 8, 10, 20, 27):
         raise NotImplementedError(

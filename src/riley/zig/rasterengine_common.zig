@@ -200,7 +200,7 @@ pub fn rasterDirectScalComm(
 
             ShaderKern.shade(
                 Geom.coord_space,
-                shaderops.ShadeContext(Geom.nodes_num){
+                shaderops.ShadeContext{
                     .frame_idx = ctx_rast.frame_idx,
                     .elem_idx = overlap.elem_idx,
                     .fields_num = fields_num,
@@ -208,7 +208,6 @@ pub fn rasterDirectScalComm(
                     .scratch_idx = scratch_idx,
                     .global_subx = global_subx,
                     .global_suby = global_suby,
-                    .shader_buf = shader_buf,
                 },
                 shaderops.InterpData(Geom.nodes_num){
                     .weights = weights,
@@ -217,6 +216,7 @@ pub fn rasterDirectScalComm(
                     .xi = xi,
                     .eta = eta,
                 },
+                shader_buf,
                 shader,
                 ctx_report,
                 &subpx_scratch.image,
@@ -886,7 +886,7 @@ fn rasterTileComm(
                         shaded_px += try RasterBackend.RasterEngine(
                             GK,
                             SK,
-                            FuncPrepared(1),
+                            FuncPrepared,
                         ).render(
                             report_mode,
                             ctx_rast,
@@ -935,7 +935,7 @@ fn rasterTileComm(
                         shaded_px += try RasterBackend.RasterEngine(
                             GK,
                             SK,
-                            FuncPrepared(3),
+                            FuncPrepared,
                         ).render(
                             report_mode,
                             ctx_rast,

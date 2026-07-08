@@ -111,7 +111,7 @@ pub fn main(init: std.process.Init) !void {
             .shader = .{ .tex_rgb = .{
                 .uvs = uvs.array,
                 .tex = texture,
-                .sample_config = .{
+                .samp_cfg = .{
                     .sample = .cubic_catmull_rom,
                     .mode = .lut_lerp,
                 },

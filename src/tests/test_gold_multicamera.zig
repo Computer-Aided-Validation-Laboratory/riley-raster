@@ -850,7 +850,7 @@ test "Sphere200 multicamera gold tests" {
                     },
                 },
             },
-            .tex8_rgb => |sample_config| blk: {
+            .tex8_rgb => |samp_cfg| blk: {
                 const uv_path = try std.fmt.allocPrint(
                     aa,
                     "{s}/uvs.csv",
@@ -870,7 +870,7 @@ test "Sphere200 multicamera gold tests" {
                         .tex_rgb_u8 = .{
                             .uvs = uv_map.array,
                             .tex = texture_rgb,
-                            .sample_config = sample_config,
+                            .samp_cfg = samp_cfg,
                         },
                     },
                 };

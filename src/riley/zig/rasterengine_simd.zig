@@ -564,7 +564,7 @@ fn rasterDirectSIMDImpl(
             const v_hit_count = @select(u8, v_depth_mask, v_hit_one, v_hit_zero);
             shaded_px += @intCast(@reduce(.Add, v_hit_count));
 
-            const ctx_shade = shaderops.ShadeContext(N){
+            const ctx_shade = shaderops.ShadeContext{
                 .frame_idx = ctx_rast.frame_idx,
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
@@ -572,7 +572,6 @@ fn rasterDirectSIMDImpl(
                 .scratch_idx = scratch_idx,
                 .global_subx = tile.scratch_x_px_min * sub_samp + scratch_x_u,
                 .global_suby = tile.scratch_y_px_min * sub_samp + scratch_y_u,
-                .shader_buf = shader_buf,
                 .v_mask_active = v_depth_mask,
             };
 
@@ -586,6 +585,7 @@ fn rasterDirectSIMDImpl(
                 v_eta,
                 v_nodes_inv_z,
                 v_subpx_z,
+                shader_buf,
                 shader,
                 &subpx_scratch.image,
             );
@@ -953,7 +953,7 @@ fn rasterNewtonSIMDImpl(
             const v_hit_count = @select(u8, v_depth_mask, v_hit_one, v_hit_zero);
             shaded_px += @intCast(@reduce(.Add, v_hit_count));
 
-            const ctx_shade = shaderops.ShadeContext(N){
+            const ctx_shade = shaderops.ShadeContext{
                 .frame_idx = ctx_rast.frame_idx,
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
@@ -961,7 +961,6 @@ fn rasterNewtonSIMDImpl(
                 .scratch_idx = scratch_idx,
                 .global_subx = tile.scratch_x_px_min * sub_samp + scratch_x_u,
                 .global_suby = tile.scratch_y_px_min * sub_samp + scratch_y_u,
-                .shader_buf = shader_buf,
                 .v_mask_active = v_depth_mask,
             };
 
@@ -975,6 +974,7 @@ fn rasterNewtonSIMDImpl(
                 v_eta,
                 v_nodes_inv_z,
                 v_subpx_z,
+                shader_buf,
                 shader,
                 &subpx_scratch.image,
             );
@@ -1112,7 +1112,6 @@ fn rasterSteppedSIMDFixP(
     subpx_scratch: *SubpxScratchBuffs,
     fixed: comm.Tri3FixedEdges,
 ) !u64 {
-    const N = Geom.nodes_num;
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
@@ -1308,7 +1307,7 @@ fn rasterSteppedSIMDFixP(
             const v_hit_count = @select(u8, v_depth_mask, v_hit_one, v_hit_zero);
             shaded_px += @intCast(@reduce(.Add, v_hit_count));
 
-            const ctx_shade = shaderops.ShadeContext(N){
+            const ctx_shade = shaderops.ShadeContext{
                 .frame_idx = ctx_rast.frame_idx,
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
@@ -1316,7 +1315,6 @@ fn rasterSteppedSIMDFixP(
                 .scratch_idx = scratch_idx,
                 .global_subx = tile.scratch_x_px_min * sub_samp + scratch_x_u,
                 .global_suby = tile.scratch_y_px_min * sub_samp + scratch_y_u,
-                .shader_buf = shader_buf,
                 .v_mask_active = v_depth_mask,
             };
 
@@ -1332,6 +1330,7 @@ fn rasterSteppedSIMDFixP(
                 v_eta,
                 v_nodes_inv_z,
                 v_subpx_z,
+                shader_buf,
                 shader,
                 &subpx_scratch.image,
             );
@@ -1357,7 +1356,6 @@ fn rasterSteppedSIMDFloat(
     shader_buf: *const shaderops.LocalShaderBuff(Geom.nodes_num),
     subpx_scratch: *SubpxScratchBuffs,
 ) !u64 {
-    const N = Geom.nodes_num;
     var shaded_px: u64 = 0;
     const sub_samp: usize = @intCast(ctx_rast.camera.sub_sample);
     std.debug.assert(subpx_scratch.image.rows_num <= std.math.maxInt(u8));
@@ -1564,7 +1562,7 @@ fn rasterSteppedSIMDFloat(
             const v_hit_count = @select(u8, v_depth_mask, v_hit_one, v_hit_zero);
             shaded_px += @intCast(@reduce(.Add, v_hit_count));
 
-            const ctx_shade = shaderops.ShadeContext(N){
+            const ctx_shade = shaderops.ShadeContext{
                 .frame_idx = ctx_rast.frame_idx,
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
@@ -1572,7 +1570,6 @@ fn rasterSteppedSIMDFloat(
                 .scratch_idx = scratch_idx,
                 .global_subx = tile.scratch_x_px_min * sub_samp + scratch_x_u,
                 .global_suby = tile.scratch_y_px_min * sub_samp + scratch_y_u,
-                .shader_buf = shader_buf,
                 .v_mask_active = v_depth_mask,
             };
 
@@ -1586,6 +1583,7 @@ fn rasterSteppedSIMDFloat(
                 v_eta,
                 v_nodes_inv_z,
                 v_subpx_z,
+                shader_buf,
                 shader,
                 &subpx_scratch.image,
             );

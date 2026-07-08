@@ -40,7 +40,7 @@ pub fn main(init: std.process.Init) !void {
         .quad9,
     };
 
-    const sample_configs = [_]texops.TextureSampleConfig{
+    const samp_cfgs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
@@ -66,7 +66,7 @@ pub fn main(init: std.process.Init) !void {
         1.1,
         texture,
         pixel_num,
-        &sample_configs,
+        &samp_cfgs,
         policy.goldRoot(.simple),
         "data/simple",
         config,

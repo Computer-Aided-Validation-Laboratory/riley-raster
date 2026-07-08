@@ -142,7 +142,7 @@ pub fn main(init: std.process.Init) !void {
     }
     const io = render_groups[0].io;
 
-    const sample_config = try benchdicuq.makeSampleConfig(bench_args);
+    const samp_cfg = try benchdicuq.makeSampleConfig(bench_args);
 
     var arena = std.heap.ArenaAllocator.init(outer_alloc);
     defer arena.deinit();
@@ -162,7 +162,7 @@ pub fn main(init: std.process.Init) !void {
         aa,
         io,
         dicuq_defaults,
-        sample_config,
+        samp_cfg,
     );
 
     const raster_config = benchargs.applyRasterConfig(
@@ -192,7 +192,7 @@ pub fn main(init: std.process.Init) !void {
         actual_tile_size,
     );
 
-    const case_name = try benchdicuq.calcCaseName(outer_alloc, sample_config);
+    const case_name = try benchdicuq.calcCaseName(outer_alloc, samp_cfg);
     defer outer_alloc.free(case_name);
 
     std.debug.print(

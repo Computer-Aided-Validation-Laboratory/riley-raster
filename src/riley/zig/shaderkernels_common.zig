@@ -16,19 +16,19 @@ const texops = @import("textureops.zig");
 const TexSampleConfig = texops.TexSampleConfig;
 const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
-
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Func
+// Nodal Interp Shader
 // --------------------------------------------------------------------------------------
 
-pub inline fn shadeNodalScalarCommon(
+pub inline fn shadeNodalScalComm(
     comptime N: usize,
     comptime coord_space: CoordSpace,
-    ctx_shade: shaderops.ShadeContext(N),
+    ctx_shade: shaderops.ShadeContext,
     interp: shaderops.InterpData(N),
+    shader_buf: *const shaderops.LocalShaderBuff(N),
     shader: *const shaderops.NodalPrepared,
     ctx_report: anytype,
-    spx_image_scratch: *MatSlice(F),
+    spx_img_scratch: *MatSlice(F),
 ) void {
     if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
         ctx_report.recordDepth(
@@ -39,7 +39,7 @@ pub inline fn shadeNodalScalarCommon(
     }
 
     if (shader.elem_normals != null) {
-        const normal = ctx_shade.shader_buf.interpolateNormal(interp.weights);
+        const normal = shader_buf.interpNormal(interp.weights);
         if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
             ctx_report.recordNormal(
                 ctx_shade.global_subx,
@@ -52,58 +52,41 @@ pub inline fn shadeNodalScalarCommon(
     }
 
     if (comptime coord_space == CoordSpace.clip_px_leng) {
-        shaderops.fillNodalClip(
+        shaderops.fillNodalClipScal(
             N,
             ctx_shade,
             interp,
+            shader_buf,
             shader,
-            spx_image_scratch,
+            spx_img_scratch,
         );
     } else {
-        shaderops.fillNodalPersp(
+        shaderops.fillNodalPerspScal(
             N,
             ctx_shade,
             interp,
+            shader_buf,
             shader,
-            spx_image_scratch,
+            spx_img_scratch,
         );
     }
 }
 
-pub inline fn shadeTexScalarCommon(
-    comptime N: usize,
-    comptime T: type,
-    comptime channels: usize,
-    comptime coord_space: CoordSpace,
-    ctx_shade: shaderops.ShadeContext(N),
-    interp: shaderops.InterpData(N),
-    shader: *const shaderops.TexPrepared(T, channels),
-    ctx_report: anytype,
-    spx_image_scratch: *MatSlice(F),
-) void {
-    shadeTexScalarCommonImpl(
-        N,
-        T,
-        channels,
-        coord_space,
-        ctx_shade,
-        interp,
-        shader,
-        ctx_report,
-        spx_image_scratch,
-    );
-}
+// --------------------------------------------------------------------------------------
+// Texture Shader
+// --------------------------------------------------------------------------------------
 
-fn shadeTexScalarCommonImpl(
+pub inline fn shadeTexScalComm(
     comptime N: usize,
     comptime T: type,
-    comptime channels: usize,
+    comptime C: usize,
     comptime coord_space: CoordSpace,
-    ctx_shade: shaderops.ShadeContext(N),
+    ctx_shade: shaderops.ShadeContext,
     interp: shaderops.InterpData(N),
-    shader: *const shaderops.TexPrepared(T, channels),
+    shader_buf: *const shaderops.LocalShaderBuff(N),
+    shader: *const shaderops.TexPrepared(T, C),
     ctx_report: anytype,
-    spx_image_scratch: *MatSlice(F),
+    spx_img_scratch: *MatSlice(F),
 ) void {
     if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
         ctx_report.recordDepth(
@@ -114,7 +97,7 @@ fn shadeTexScalarCommonImpl(
     }
 
     if (shader.elem_normals != null) {
-        const normal = ctx_shade.shader_buf.interpolateNormal(interp.weights);
+        const normal = shader_buf.interpNormal(interp.weights);
         if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
             ctx_report.recordNormal(
                 ctx_shade.global_subx,
@@ -126,124 +109,113 @@ fn shadeTexScalarCommonImpl(
         }
     }
 
-    shadeTexScalarDispatchImpl(
+    shadeTexScalDispatchSample(
         N,
         T,
-        channels,
+        C,
         coord_space,
-        shader.sample_config,
+        shader.samp_cfg,
         ctx_shade,
         interp,
+        shader_buf,
         shader,
-        spx_image_scratch,
+        spx_img_scratch,
     );
 }
 
-inline fn shadeTexScalarDispatchImpl(
+inline fn shadeTexScalDispatchSample(
     comptime N: usize,
     comptime T: type,
-    comptime channels: usize,
+    comptime C: usize,
     comptime coord_space: CoordSpace,
-    config: TexSampleConfig,
-    ctx_shade: shaderops.ShadeContext(N),
+    samp_cfg: TexSampleConfig,
+    ctx_shade: shaderops.ShadeContext,
     interp: shaderops.InterpData(N),
-    shader: *const shaderops.TexPrepared(T, channels),
-    spx_image_scratch: *MatSlice(F),
+    shader_buf: *const shaderops.LocalShaderBuff(N),
+    shader: *const shaderops.TexPrepared(T, C),
+    spx_img_scratch: *MatSlice(F),
 ) void {
     @setEvalBranchQuota(eval_branch_quota);
-    switch (config.sample) {
-        inline else => |sample_type| shadeTexScalarDispatchModeImpl(
+    switch (samp_cfg.sample) {
+        inline else => |samp_type| shadeTexScalDispatchMode(
             N,
             T,
-            channels,
+            C,
             coord_space,
-            sample_type,
-            config.mode,
+            samp_type,
+            samp_cfg.mode,
             ctx_shade,
             interp,
+            shader_buf,
             shader,
-            spx_image_scratch,
+            spx_img_scratch,
         ),
     }
 }
 
-inline fn shadeTexScalarDispatchModeImpl(
+inline fn shadeTexScalDispatchMode(
     comptime N: usize,
     comptime T: type,
-    comptime channels: usize,
+    comptime C: usize,
     comptime coord_space: CoordSpace,
-    comptime sample_type: texops.TexSample,
+    comptime samp_type: texops.TexSample,
     mode: texops.TexSampleMode,
-    ctx_shade: shaderops.ShadeContext(N),
+    ctx_shade: shaderops.ShadeContext,
     interp: shaderops.InterpData(N),
-    shader: *const shaderops.TexPrepared(T, channels),
-    spx_image_scratch: *MatSlice(F),
+    shader_buf: *const shaderops.LocalShaderBuff(N),
+    shader: *const shaderops.TexPrepared(T, C),
+    spx_img_scratch: *MatSlice(F),
 ) void {
     switch (mode) {
-        inline else => |mode_type| shadeTexScalarDispatchConfigImpl(
-            N,
-            T,
-            channels,
-            coord_space,
-            .{
-                .sample = sample_type,
+        inline else => |mode_type| {
+            const samp_cfg = comptime (TexSampleConfig{
+                .sample = samp_type,
                 .mode = mode_type,
-            },
-            ctx_shade,
-            interp,
-            shader,
-            spx_image_scratch,
-        ),
+            }).sanitize();
+
+            if (comptime coord_space == CoordSpace.clip_px_leng) {
+                shaderops.fillTexClipScal(
+                    N,
+                    T,
+                    C,
+                    samp_cfg,
+                    ctx_shade,
+                    interp,
+                    shader_buf,
+                    shader,
+                    spx_img_scratch,
+                );
+            } else {
+                shaderops.fillTexPerspScal(
+                    N,
+                    T,
+                    C,
+                    samp_cfg,
+                    ctx_shade,
+                    interp,
+                    shader_buf,
+                    shader,
+                    spx_img_scratch,
+                );
+            }
+        },
     }
 }
 
-inline fn shadeTexScalarDispatchConfigImpl(
-    comptime N: usize,
-    comptime T: type,
-    comptime channels: usize,
-    comptime coord_space: CoordSpace,
-    comptime comptime_config: TexSampleConfig,
-    ctx_shade: shaderops.ShadeContext(N),
-    interp: shaderops.InterpData(N),
-    shader: *const shaderops.TexPrepared(T, channels),
-    spx_image_scratch: *MatSlice(F),
-) void {
-    const sanitized_config = comptime comptime_config.sanitize();
+// --------------------------------------------------------------------------------------
+// Function Shader
+// --------------------------------------------------------------------------------------
 
-    if (comptime coord_space == CoordSpace.clip_px_leng) {
-        shaderops.fillTexClip(
-            N,
-            T,
-            channels,
-            sanitized_config,
-            ctx_shade,
-            interp,
-            shader,
-            spx_image_scratch,
-        );
-    } else {
-        shaderops.fillTexPersp(
-            N,
-            T,
-            channels,
-            sanitized_config,
-            ctx_shade,
-            interp,
-            shader,
-            spx_image_scratch,
-        );
-    }
-}
-
-pub inline fn shadeFuncScalarCommon(
+pub inline fn shadeFuncScalComm(
     comptime N: usize,
-    comptime channels: usize,
+    comptime C: usize,
     comptime coord_space: CoordSpace,
-    ctx_shade: shaderops.ShadeContext(N),
+    ctx_shade: shaderops.ShadeContext,
     interp: shaderops.InterpData(N),
-    shader: *const shaderops.FuncPrepared(channels),
+    shader_buf: *const shaderops.LocalShaderBuff(N),
+    shader: *const shaderops.FuncPrepared,
     ctx_report: anytype,
-    spx_image_scratch: *MatSlice(F),
+    spx_img_scratch: *MatSlice(F),
 ) void {
     if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
         ctx_report.recordDepth(
@@ -254,7 +226,7 @@ pub inline fn shadeFuncScalarCommon(
     }
 
     if (shader.elem_normals != null) {
-        const normal = ctx_shade.shader_buf.interpolateNormal(interp.weights);
+        const normal = shader_buf.interpNormal(interp.weights);
         if (comptime @TypeOf(ctx_report).mode_tag == .full_stats) {
             ctx_report.recordNormal(
                 ctx_shade.global_subx,
@@ -267,22 +239,24 @@ pub inline fn shadeFuncScalarCommon(
     }
 
     if (comptime coord_space == CoordSpace.clip_px_leng) {
-        shaderops.fillFuncClip(
+        shaderops.fillFuncClipScal(
             N,
-            channels,
+            C,
             ctx_shade,
             interp,
+            shader_buf,
             shader,
-            spx_image_scratch,
+            spx_img_scratch,
         );
     } else {
-        shaderops.fillFuncPersp(
+        shaderops.fillFuncPerspScal(
             N,
-            channels,
+            C,
             ctx_shade,
             interp,
+            shader_buf,
             shader,
-            spx_image_scratch,
+            spx_img_scratch,
         );
     }
 }

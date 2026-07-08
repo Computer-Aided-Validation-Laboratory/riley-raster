@@ -137,7 +137,7 @@ pub const CaseSamples = struct {
         case_name: []const u8,
         mesh_type: gk.MeshType,
         shader_type: common.ShaderType,
-        sample_config: ?texops.TextureSampleConfig,
+        samp_cfg: ?texops.TextureSampleConfig,
         tex_func_case: ?common.TexFuncCase,
     ) !common.BenchStats {
         const cam_median = (try common.calcMedianMAD(
@@ -164,7 +164,7 @@ pub const CaseSamples = struct {
             .name = try allocator.dupe(u8, case_name),
             .mesh_type = mesh_type,
             .shader_type = shader_type,
-            .sample_config = sample_config,
+            .samp_cfg = samp_cfg,
             .tex_func_case = tex_func_case,
             .total_elems = try common.calcMedianMAD(
                 allocator,
@@ -309,7 +309,7 @@ pub const BenchStatsCollector = struct {
         case_name: []const u8,
         mesh_type: gk.MeshType,
         shader_type: common.ShaderType,
-        sample_config: ?texops.TextureSampleConfig,
+        samp_cfg: ?texops.TextureSampleConfig,
         tex_func_case: ?common.TexFuncCase,
         result: common.BenchResult,
     ) !void {
@@ -318,7 +318,7 @@ pub const BenchStatsCollector = struct {
             case_name,
             mesh_type,
             shader_type,
-            sample_config,
+            samp_cfg,
             tex_func_case,
             common.calcBenchmarkCSVValuesFromResult(result),
         );
@@ -332,7 +332,7 @@ pub const BenchStatsCollector = struct {
         case_name: []const u8,
         mesh_type: gk.MeshType,
         shader_type: common.ShaderType,
-        sample_config: ?texops.TextureSampleConfig,
+        samp_cfg: ?texops.TextureSampleConfig,
         tex_func_case: ?common.TexFuncCase,
         case_samples: *const CaseSamples,
     ) !void {
@@ -343,7 +343,7 @@ pub const BenchStatsCollector = struct {
                 case_name,
                 mesh_type,
                 shader_type,
-                sample_config,
+                samp_cfg,
                 tex_func_case,
             ),
         );

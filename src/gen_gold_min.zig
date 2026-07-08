@@ -74,7 +74,7 @@ pub fn main(init: std.process.Init) !void {
         .tex8_grey,
         .tex8_rgb,
     };
-    const sample_configs = [_]texops.TextureSampleConfig{
+    const samp_cfgs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
@@ -96,7 +96,7 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Generating MIN Gold Data (sphere200/base)...\n", .{});
     for (mesh_types) |mt| {
         for (shader_types) |st| {
-            for (sample_configs) |sc| {
+            for (samp_cfgs) |sc| {
                 const mesh_name = policy.meshName(.benchmark_data, mt);
                 const data_dir = try std.fmt.allocPrint(
                     allocator,
@@ -174,7 +174,7 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Generating MIN Gold Data (sphere200multicull)...\n", .{});
     for (mesh_types) |mt| {
         for (shader_types) |st| {
-            for (sample_configs) |sc| {
+            for (samp_cfgs) |sc| {
                 const mesh_name = policy.meshName(.benchmark_data, mt);
                 const data_dir = try std.fmt.allocPrint(
                     allocator,

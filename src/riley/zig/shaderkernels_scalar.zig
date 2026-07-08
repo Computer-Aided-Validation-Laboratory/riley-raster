@@ -8,31 +8,32 @@
 // --------------------------------------------------------------------------------------
 const buildconfig = @import("buildconfig.zig");
 const F = buildconfig.F;
-const common = @import("shaderkernels_common.zig");
+const comm = @import("shaderkernels_common.zig");
 const shaderops = @import("shaderops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
-
 // --------------------------------------------------------------------------------------
-// Public Entry-Point Func
+// Nodal Interp Shader
 // --------------------------------------------------------------------------------------
 
 pub fn NodalKernel(comptime N: usize) type {
     return struct {
         pub inline fn shade(
             comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext(N),
+            ctx_shade: shaderops.ShadeContext,
             interp: shaderops.InterpData(N),
+            shader_buf: *const shaderops.LocalShaderBuff(N),
             shader: *const shaderops.NodalPrepared,
             ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
-            common.shadeNodalScalarCommon(
+            comm.shadeNodalScalComm(
                 N,
                 coord_space,
                 ctx_shade,
                 interp,
+                shader_buf,
                 shader,
                 ctx_report,
                 spx_image_scratch,
@@ -40,28 +41,34 @@ pub fn NodalKernel(comptime N: usize) type {
         }
     };
 }
+
+// --------------------------------------------------------------------------------------
+// Texture Shader
+// --------------------------------------------------------------------------------------
 
 pub fn TexKernel(
     comptime N: usize,
     comptime T: type,
-    comptime channels: usize,
+    comptime C: usize,
 ) type {
     return struct {
         pub inline fn shade(
             comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext(N),
+            ctx_shade: shaderops.ShadeContext,
             interp: shaderops.InterpData(N),
-            shader: *const shaderops.TexPrepared(T, channels),
+            shader_buf: *const shaderops.LocalShaderBuff(N),
+            shader: *const shaderops.TexPrepared(T, C),
             ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
-            common.shadeTexScalarCommon(
+            comm.shadeTexScalComm(
                 N,
                 T,
-                channels,
+                C,
                 coord_space,
                 ctx_shade,
                 interp,
+                shader_buf,
                 shader,
                 ctx_report,
                 spx_image_scratch,
@@ -70,25 +77,31 @@ pub fn TexKernel(
     };
 }
 
+// --------------------------------------------------------------------------------------
+// Function Shader
+// --------------------------------------------------------------------------------------
+
 pub fn FuncKernel(
     comptime N: usize,
-    comptime channels: usize,
+    comptime C: usize,
 ) type {
     return struct {
         pub inline fn shade(
             comptime coord_space: CoordSpace,
-            ctx_shade: shaderops.ShadeContext(N),
+            ctx_shade: shaderops.ShadeContext,
             interp: shaderops.InterpData(N),
-            shader: *const shaderops.FuncPrepared(channels),
+            shader_buf: *const shaderops.LocalShaderBuff(N),
+            shader: *const shaderops.FuncPrepared,
             ctx_report: anytype,
             spx_image_scratch: *MatSlice(F),
         ) void {
-            common.shadeFuncScalarCommon(
+            comm.shadeFuncScalComm(
                 N,
-                channels,
+                C,
                 coord_space,
                 ctx_shade,
                 interp,
+                shader_buf,
                 shader,
                 ctx_report,
                 spx_image_scratch,

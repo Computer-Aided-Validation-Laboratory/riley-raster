@@ -177,7 +177,7 @@ pub fn main(init: std.process.Init) !void {
                         mesh_input.shader = .{ .tex_u8 = .{
                             .uvs = uv_map.array,
                             .tex = texture,
-                            .sample_config = .{
+                            .samp_cfg = .{
                                 .sample = .cubic_catmull_rom,
                                 .mode = .lut_lerp,
                             },

@@ -73,7 +73,7 @@ test "MIN Suite: sphere200 and multimesh" {
         .tex8_grey,
         .tex8_rgb,
     };
-    const sample_configs = [_]texops.TextureSampleConfig{
+    const samp_cfgs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
@@ -90,7 +90,7 @@ test "MIN Suite: sphere200 and multimesh" {
         std.debug.print("\nRunning MIN Suite sphere200/base tests...\n", .{});
         for (mesh_types) |mt| {
             for (shader_types) |st| {
-                for (sample_configs) |sc| {
+                for (samp_cfgs) |sc| {
                     const folder_name = policy.meshName(
                         .benchmark_data,
                         mt,
@@ -205,7 +205,7 @@ test "MIN Suite: sphere200 and multimesh" {
         std.debug.print("Running MIN Suite sphere200multicull tests...\n", .{});
         for (mesh_types) |mt| {
             for (shader_types) |st| {
-                for (sample_configs) |sc| {
+                for (samp_cfgs) |sc| {
                     const folder_name = policy.meshName(
                         .benchmark_data,
                         mt,

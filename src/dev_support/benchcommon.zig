@@ -77,7 +77,7 @@ pub const BenchStats = struct {
     name: []const u8,
     mesh_type: gk.MeshType,
     shader_type: ShaderType,
-    sample_config: ?TextureSampleConfig,
+    samp_cfg: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
 
     total_elems: MedianMAD,
@@ -504,7 +504,7 @@ pub const BenchConfig = struct {
     run: RunMode = .all,
     element_type: gk.MeshType = .tri3,
     texture_type: ShaderType = .tex8_grey,
-    sample_config: TextureSampleConfig = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+    samp_cfg: TextureSampleConfig = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
     skip_quad4ibi_sphere: bool = false,
 };
 
@@ -531,8 +531,8 @@ pub fn shouldRun(
         .element => mt == config.element_type,
         .texture => st == config.texture_type,
         .interpolator => is_tex and
-            sc.sample == config.sample_config.sample and
-            sc.mode == config.sample_config.mode,
+            sc.sample == config.samp_cfg.sample and
+            sc.mode == config.samp_cfg.mode,
     };
 }
 
@@ -602,7 +602,7 @@ pub fn calcCaseName(
     allocator: std.mem.Allocator,
     etype: gk.MeshType,
     shader_type: ShaderType,
-    sample_config: ?TextureSampleConfig,
+    samp_cfg: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
     fov_scale: F,
 ) ![]const u8 {
@@ -613,8 +613,8 @@ pub fn calcCaseName(
             .{
                 @tagName(etype),
                 @tagName(shader_type),
-                @tagName(sample_config.?.sample),
-                @tagName(sample_config.?.mode),
+                @tagName(samp_cfg.?.sample),
+                @tagName(samp_cfg.?.mode),
             },
         )
     else if (shader_type == .func or shader_type == .func_rgb)
@@ -675,7 +675,7 @@ pub fn loadBenchmarkMeshInput(
     io: std.Io,
     etype: gk.MeshType,
     shader_type: ShaderType,
-    sample_config: ?TextureSampleConfig,
+    samp_cfg: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     texture_grey: iio.Texture(T, 1),
@@ -733,13 +733,13 @@ pub fn loadBenchmarkMeshInput(
                 .{ .tex_u8 = .{
                     .uvs = uvs_raw,
                     .tex = texture_grey,
-                    .sample_config = sample_config.?,
+                    .samp_cfg = samp_cfg.?,
                 } }
             else if (T == u16)
                 .{ .tex_u16 = .{
                     .uvs = uvs_raw,
                     .tex = texture_grey,
-                    .sample_config = sample_config.?,
+                    .samp_cfg = samp_cfg.?,
                 } }
             else
                 @compileError("Unsupported texture storage type.");
@@ -756,13 +756,13 @@ pub fn loadBenchmarkMeshInput(
                 .{ .tex_rgb_u8 = .{
                     .uvs = uvs_raw,
                     .tex = texture_rgb,
-                    .sample_config = sample_config.?,
+                    .samp_cfg = samp_cfg.?,
                 } }
             else if (T == u16)
                 .{ .tex_rgb_u16 = .{
                     .uvs = uvs_raw,
                     .tex = texture_rgb,
-                    .sample_config = sample_config.?,
+                    .samp_cfg = samp_cfg.?,
                 } }
             else
                 @compileError("Unsupported texture storage type.");
@@ -828,7 +828,7 @@ pub fn runBenchmark(
     io: std.Io,
     etype: gk.MeshType,
     shader_type: ShaderType,
-    sample_config: ?TextureSampleConfig,
+    samp_cfg: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
@@ -843,7 +843,7 @@ pub fn runBenchmark(
         io,
         etype,
         shader_type,
-        sample_config,
+        samp_cfg,
         tex_func_case,
         data_dir,
         render_defaults,
@@ -861,7 +861,7 @@ pub fn runBenchmarkWithImageOut(
     io: std.Io,
     etype: gk.MeshType,
     shader_type: ShaderType,
-    sample_config: ?TextureSampleConfig,
+    samp_cfg: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
@@ -878,7 +878,7 @@ pub fn runBenchmarkWithImageOut(
         io,
         etype,
         shader_type,
-        sample_config,
+        samp_cfg,
         tex_func_case,
         data_dir,
         render_defaults,
@@ -896,7 +896,7 @@ pub fn runBenchmarkQuiet(
     io: std.Io,
     etype: gk.MeshType,
     shader_type: ShaderType,
-    sample_config: ?TextureSampleConfig,
+    samp_cfg: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
@@ -911,7 +911,7 @@ pub fn runBenchmarkQuiet(
         io,
         etype,
         shader_type,
-        sample_config,
+        samp_cfg,
         tex_func_case,
         data_dir,
         render_defaults,
@@ -929,7 +929,7 @@ pub fn runBenchmarkQuietWithImageOut(
     io: std.Io,
     etype: gk.MeshType,
     shader_type: ShaderType,
-    sample_config: ?TextureSampleConfig,
+    samp_cfg: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
@@ -946,7 +946,7 @@ pub fn runBenchmarkQuietWithImageOut(
         io,
         etype,
         shader_type,
-        sample_config,
+        samp_cfg,
         tex_func_case,
         data_dir,
         render_defaults,
@@ -965,7 +965,7 @@ fn runBenchmarkInternal(
     io: std.Io,
     etype: gk.MeshType,
     shader_type: ShaderType,
-    sample_config: ?TextureSampleConfig,
+    samp_cfg: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
@@ -985,7 +985,7 @@ fn runBenchmarkInternal(
         io,
         etype,
         shader_type,
-        sample_config,
+        samp_cfg,
         tex_func_case,
         data_dir,
         texture_grey,
@@ -1039,7 +1039,7 @@ fn runBenchmarkInternal(
         aa,
         etype,
         shader_type,
-        sample_config,
+        samp_cfg,
         tex_func_case,
         render_defaults.fov_scale,
     );
@@ -1235,8 +1235,8 @@ fn calcTexFuncParams(tex_func_case: TexFuncCase) so.FuncShaderParams {
 fn calcVariantName(
     stats: BenchStats,
 ) []const u8 {
-    if (stats.sample_config) |sample_config| {
-        return @tagName(sample_config.sample);
+    if (stats.samp_cfg) |samp_cfg| {
+        return @tagName(samp_cfg.sample);
     }
     if (stats.tex_func_case) |tex_func_case| {
         return @tagName(tex_func_case.builtin);
@@ -1387,11 +1387,11 @@ pub fn formatBenchmarkCSVRow(
     case_name: []const u8,
     mesh_type: gk.MeshType,
     shader_type: ShaderType,
-    sample_config: ?TextureSampleConfig,
+    samp_cfg: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
     values: BenchmarkCSVValues,
 ) ![]u8 {
-    const variant_name = if (sample_config) |sc|
+    const variant_name = if (samp_cfg) |sc|
         @tagName(sc.sample)
     else if (tex_func_case) |tf|
         @tagName(tf.builtin)
@@ -1473,7 +1473,7 @@ fn writeBenchmarkStatsCSV(
             s.name,
             s.mesh_type,
             s.shader_type,
-            s.sample_config,
+            s.samp_cfg,
             s.tex_func_case,
             calcBenchmarkCSVValuesFromStats(s, kind),
         );

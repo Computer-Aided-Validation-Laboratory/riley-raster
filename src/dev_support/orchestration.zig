@@ -441,7 +441,7 @@ pub fn buildMixedMeshInputs(
             .shader = .{ .tex_u8 = .{
                 .uvs = uvs.array,
                 .tex = texture,
-                .sample_config = .{
+                .samp_cfg = .{
                     .sample = .cubic_catmull_rom,
                     .mode = .lut_lerp,
                 },
@@ -483,7 +483,7 @@ pub fn buildMixedRgbMeshInputs(
             .shader = .{ .tex_rgb_u8 = .{
                 .uvs = uvs.array,
                 .tex = texture,
-                .sample_config = .{
+                .samp_cfg = .{
                     .sample = .cubic_catmull_rom,
                     .mode = .lut_lerp,
                 },

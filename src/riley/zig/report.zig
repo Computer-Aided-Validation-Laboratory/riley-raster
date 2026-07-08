@@ -1692,6 +1692,7 @@ pub inline fn recordNormalSIMD(
     comptime lane_num: usize,
     ctx_report: anytype,
     ctx_shade: anytype,
+    shader_buf: anytype,
     v_mask_active: @Vector(lane_num, bool),
     v_weights: [nodes_num]@Vector(lane_num, F),
 ) void {
@@ -1701,11 +1702,11 @@ pub inline fn recordNormalSIMD(
             var normal = [3]F{ 0.0, 0.0, 0.0 };
             inline for (0..nodes_num) |nn| {
                 normal[0] += v_weights[nn][ll] *
-                    ctx_shade.shader_buf.normals[0 * nodes_num + nn];
+                    shader_buf.normals[0 * nodes_num + nn];
                 normal[1] += v_weights[nn][ll] *
-                    ctx_shade.shader_buf.normals[1 * nodes_num + nn];
+                    shader_buf.normals[1 * nodes_num + nn];
                 normal[2] += v_weights[nn][ll] *
-                    ctx_shade.shader_buf.normals[2 * nodes_num + nn];
+                    shader_buf.normals[2 * nodes_num + nn];
             }
 
             ctx_report.recordNormal(

@@ -32,7 +32,7 @@ const MeshInput = mo.MeshInput;
 pub const PreparedDicuqBenchmark = struct {
     mesh_input: MeshInput,
     camera_inputs: [2]CameraInput,
-    sample_config: texops.TextureSampleConfig,
+    samp_cfg: texops.TextureSampleConfig,
     fov_scale: F,
 };
 
@@ -171,21 +171,21 @@ pub fn getBaseRasterConfig() riley.RasterConfig {
 pub fn makeSampleConfig(
     bench_args: benchargs.BenchArgs,
 ) !texops.TextureSampleConfig {
-    const sample_config = texops.TextureSampleConfig{
+    const samp_cfg = texops.TextureSampleConfig{
         .sample = bench_args.sample orelse .cubic_catmull_rom,
         .mode = bench_args.sample_mode orelse .lut_lerp,
     };
-    if (!sample_config.isValid()) {
+    if (!samp_cfg.isValid()) {
         return error.InvalidTextureSampleConfig;
     }
-    return sample_config;
+    return samp_cfg;
 }
 
 pub fn prepareBenchmark(
     allocator: std.mem.Allocator,
     io: std.Io,
     defaults: DicuqDefaults,
-    sample_config: texops.TextureSampleConfig,
+    samp_cfg: texops.TextureSampleConfig,
 ) !PreparedDicuqBenchmark {
     const data_dir = defaults.data_dir;
     const coord_path = try std.fmt.allocPrint(
@@ -250,7 +250,7 @@ pub fn prepareBenchmark(
         .shader = .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
-            .sample_config = sample_config,
+            .samp_cfg = samp_cfg,
             .bits = 8,
             .scaling = .none,
         } },
@@ -312,20 +312,20 @@ pub fn prepareBenchmark(
                 .sub_sample = defaults.sub_sample,
             },
         },
-        .sample_config = sample_config,
+        .samp_cfg = samp_cfg,
         .fov_scale = fov_scale,
     };
 }
 
 pub fn calcCaseName(
     allocator: std.mem.Allocator,
-    sample_config: texops.TextureSampleConfig,
+    samp_cfg: texops.TextureSampleConfig,
 ) ![]const u8 {
     return common.calcCaseName(
         allocator,
         .quad8,
         .tex8_grey,
-        sample_config,
+        samp_cfg,
         null,
         1.0,
     );

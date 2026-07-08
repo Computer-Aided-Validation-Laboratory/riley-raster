@@ -247,7 +247,7 @@ pub fn meshInputFromSimDataSlice(
             mesh_inputs[ii].shader = .{ .tex_u8 = .{
                 .uvs = uvmap.array,
                 .tex = tex,
-                .sample_config = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
+                .samp_cfg = .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
                 .normal_type = .none,
             } };
         }
@@ -289,7 +289,7 @@ pub fn initMeshStatic(
             shader_static = .{ .tex_u8 = .{
                 .elem_uvs = elem_uvs,
                 .tex = tex_in.tex,
-                .sample_config = tex_in.sample_config,
+                .samp_cfg = tex_in.samp_cfg,
                 .bits = tex_in.bits,
                 .scaling = tex_in.scaling,
                 .normal_type = tex_in.normal_type,
@@ -304,7 +304,7 @@ pub fn initMeshStatic(
             shader_static = .{ .tex_u16 = .{
                 .elem_uvs = elem_uvs,
                 .tex = tex_in.tex,
-                .sample_config = tex_in.sample_config,
+                .samp_cfg = tex_in.samp_cfg,
                 .bits = tex_in.bits,
                 .scaling = tex_in.scaling,
                 .normal_type = tex_in.normal_type,
@@ -319,7 +319,7 @@ pub fn initMeshStatic(
             shader_static = .{ .tex_rgb_u8 = .{
                 .elem_uvs = elem_uvs,
                 .tex = tex_in.tex,
-                .sample_config = tex_in.sample_config,
+                .samp_cfg = tex_in.samp_cfg,
                 .bits = tex_in.bits,
                 .scaling = tex_in.scaling,
                 .normal_type = tex_in.normal_type,
@@ -334,7 +334,7 @@ pub fn initMeshStatic(
             shader_static = .{ .tex_rgb_u16 = .{
                 .elem_uvs = elem_uvs,
                 .tex = tex_in.tex,
-                .sample_config = tex_in.sample_config,
+                .samp_cfg = tex_in.samp_cfg,
                 .bits = tex_in.bits,
                 .scaling = tex_in.scaling,
                 .normal_type = tex_in.normal_type,
@@ -353,7 +353,10 @@ pub fn initMeshStatic(
                 .elem_uvs = elem_uvs,
                 .coord_mode = tex_func_in.coord_mode,
                 .builtin = tex_func_in.builtin,
-                .params = tex_func_in.params,
+                .params = shaderops.normFuncShaderParams(
+                    tex_func_in.builtin,
+                    tex_func_in.params,
+                ),
                 .bits = tex_func_in.bits,
                 .scaling = tex_func_in.scaling,
                 .normal_type = tex_func_in.normal_type,
@@ -372,7 +375,10 @@ pub fn initMeshStatic(
                 .elem_uvs = elem_uvs,
                 .coord_mode = tex_func_in.coord_mode,
                 .builtin = tex_func_in.builtin,
-                .params = tex_func_in.params,
+                .params = shaderops.normFuncShaderParams(
+                    tex_func_in.builtin,
+                    tex_func_in.params,
+                ),
                 .bits = tex_func_in.bits,
                 .scaling = tex_func_in.scaling,
                 .normal_type = tex_func_in.normal_type,
@@ -1251,13 +1257,13 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
 
         fn prepareTexShader(
             comptime T: type,
-            comptime channels: usize,
+            comptime C: usize,
             self: *FrameMeshPipelineType,
-            tex_static: shaderops.TexStatic(T, channels),
+            tex_static: shaderops.TexStatic(T, C),
         ) !shaderops.ShaderPrepared {
             const params = imageops.getScalingParamsTex(
                 T,
-                channels,
+                C,
                 &tex_static.tex,
                 tex_static.scaling,
             );
@@ -1291,11 +1297,11 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
             );
 
             const elem_normals = try self.prepVisNormals(tex_static.normal_type);
-            if (comptime T == u8 and channels == 1) {
+            if (comptime T == u8 and C == 1) {
                 return .{ .tex_u8 = .{
                     .elem_uvs = elem_uvs,
                     .tex = tex_static.tex,
-                    .sample_config = tex_static.sample_config,
+                    .samp_cfg = tex_static.samp_cfg,
                     .bits = tex_static.bits,
                     .scaling = tex_static.scaling,
                     .scale_mul = factors.mul,
@@ -1303,11 +1309,11 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .normal_type = tex_static.normal_type,
                     .elem_normals = elem_normals,
                 } };
-            } else if (comptime T == u16 and channels == 1) {
+            } else if (comptime T == u16 and C == 1) {
                 return .{ .tex_u16 = .{
                     .elem_uvs = elem_uvs,
                     .tex = tex_static.tex,
-                    .sample_config = tex_static.sample_config,
+                    .samp_cfg = tex_static.samp_cfg,
                     .bits = tex_static.bits,
                     .scaling = tex_static.scaling,
                     .scale_mul = factors.mul,
@@ -1315,11 +1321,11 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .normal_type = tex_static.normal_type,
                     .elem_normals = elem_normals,
                 } };
-            } else if (comptime T == u8 and channels == 3) {
+            } else if (comptime T == u8 and C == 3) {
                 return .{ .tex_rgb_u8 = .{
                     .elem_uvs = elem_uvs,
                     .tex = tex_static.tex,
-                    .sample_config = tex_static.sample_config,
+                    .samp_cfg = tex_static.samp_cfg,
                     .bits = tex_static.bits,
                     .scaling = tex_static.scaling,
                     .scale_mul = factors.mul,
@@ -1331,7 +1337,7 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 return .{ .tex_rgb_u16 = .{
                     .elem_uvs = elem_uvs,
                     .tex = tex_static.tex,
-                    .sample_config = tex_static.sample_config,
+                    .samp_cfg = tex_static.samp_cfg,
                     .bits = tex_static.bits,
                     .scaling = tex_static.scaling,
                     .scale_mul = factors.mul,
@@ -1343,9 +1349,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
         }
 
         fn prepareFuncShader(
-            comptime channels: usize,
+            comptime C: usize,
             self: *FrameMeshPipelineType,
-            func_static: shaderops.FuncStatic(channels),
+            func_static: shaderops.FuncStatic,
         ) !shaderops.ShaderPrepared {
             const factors = imageops.getScaleFactors(
                 func_static.scaling,
@@ -1394,14 +1400,17 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                 null;
 
             const elem_normals = try self.prepVisNormals(func_static.normal_type);
-            if (comptime channels == 1) {
+            if (comptime C == 1) {
                 return .{ .func = .{
                     .elem_uvs = elem_uvs,
                     .elem_world_ref = elem_world_ref,
                     .elem_world_def = elem_world_def,
                     .coord_mode = func_static.coord_mode,
                     .builtin = func_static.builtin,
-                    .params = func_static.params,
+                    .params = shaderops.normFuncShaderParams(
+                        func_static.builtin,
+                        func_static.params,
+                    ),
                     .bits = func_static.bits,
                     .scaling = func_static.scaling,
                     .scale_mul = factors.mul,
@@ -1416,7 +1425,10 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .elem_world_def = elem_world_def,
                     .coord_mode = func_static.coord_mode,
                     .builtin = func_static.builtin,
-                    .params = func_static.params,
+                    .params = shaderops.normFuncShaderParams(
+                        func_static.builtin,
+                        func_static.params,
+                    ),
                     .bits = func_static.bits,
                     .scaling = func_static.scaling,
                     .scale_mul = factors.mul,

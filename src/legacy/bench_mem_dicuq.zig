@@ -127,7 +127,7 @@ pub fn main(init: std.process.Init) !void {
     defer threaded_io.deinit();
     const io = threaded_io.io();
 
-    const sample_config = try benchdicuq.makeSampleConfig(bench_args);
+    const samp_cfg = try benchdicuq.makeSampleConfig(bench_args);
 
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -146,7 +146,7 @@ pub fn main(init: std.process.Init) !void {
             .stereo_ang = DEFAULT_STEREO_ANG,
             .tex_path = DEFAULT_TEX_PATH,
         },
-        sample_config,
+        samp_cfg,
     );
 
     const render_groups = [_]riley.RenderGroupSpec{

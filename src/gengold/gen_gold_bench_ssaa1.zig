@@ -75,7 +75,7 @@ fn generateCases(
         .tex8_grey,
         .tex8_rgb,
     };
-    const sample_configs = [_]texops.TextureSampleConfig{
+    const samp_cfgs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
@@ -121,7 +121,7 @@ fn generateCases(
 
         inline for (mesh_types) |mt| {
             inline for (shader_types) |st| {
-                inline for (sample_configs) |sc| {
+                inline for (samp_cfgs) |sc| {
                     const mesh_name = comptime policy.meshName(
                         .benchmark_data,
                         mt,

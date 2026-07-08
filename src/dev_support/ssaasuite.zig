@@ -34,7 +34,7 @@ pub const DistortionCase = enum {
     brownext,
 };
 pub const distortion_cases = [_]DistortionCase{ .none, .brown, .brownext };
-pub const sample_config: texops.TextureSampleConfig = .{
+pub const samp_cfg: texops.TextureSampleConfig = .{
     .sample = .cubic_catmull_rom,
     .mode = .lut_lerp,
 };
@@ -120,7 +120,7 @@ pub fn buildSphere200MultiCullMeshInputs(
         io,
         mesh_type,
         .tex8_grey,
-        sample_config,
+        samp_cfg,
         null,
         data_dir,
         texture_grey,

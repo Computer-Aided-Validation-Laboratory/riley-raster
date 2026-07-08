@@ -141,7 +141,7 @@ fn makeGreyMeshInput(
         .texture => .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
-            .sample_config = .{
+            .samp_cfg = .{
                 .sample = .cubic_catmull_rom,
                 .mode = .lut_lerp,
             },

@@ -649,7 +649,7 @@ pub fn runSingleMeshSuiteDriver(
     fov_scale: F,
     texture: iio.Texture(u8, 1),
     pixel_num: [2]u32,
-    sample_configs: []const texops.TextureSampleConfig,
+    samp_cfgs: []const texops.TextureSampleConfig,
     gold_dir_root: []const u8,
     data_dir_root: []const u8,
     config: rastcfg.RasterConfig,
@@ -810,7 +810,7 @@ pub fn runSingleMeshSuiteDriver(
 
         // --- Texture Shader ---
         if (shader_filter == .tex or shader_filter == .both) {
-            for (sample_configs) |sc| {
+            for (samp_cfgs) |sc| {
                 const case_dir_name = try std.fmt.allocPrint(
                     aa,
                     "{s}_{s}_{s}_tex_{s}_{s}",
@@ -831,7 +831,7 @@ pub fn runSingleMeshSuiteDriver(
                         .tex_u8 = .{
                             .uvs = prepared.uvs.array,
                             .tex = texture,
-                            .sample_config = sc,
+                            .samp_cfg = sc,
                         },
                     },
                 };
@@ -953,7 +953,7 @@ pub fn runTestInternal(
     fov_scale: F,
     texture: iio.Texture(u8, 1),
     pixel_num: [2]u32,
-    sample_configs: []const texops.TextureSampleConfig,
+    samp_cfgs: []const texops.TextureSampleConfig,
     gold_dir_root: []const u8,
     data_dir_root: []const u8,
     rel_tol: F,
@@ -970,7 +970,7 @@ pub fn runTestInternal(
         fov_scale,
         texture,
         pixel_num,
-        sample_configs,
+        samp_cfgs,
         gold_dir_root,
         data_dir_root,
         tcfg.getRasterConfig(.testing),
@@ -989,7 +989,7 @@ pub fn runMeshTypesSuite(
     fov_scale: F,
     texture: iio.Texture(u8, 1),
     pixel_num: [2]u32,
-    sample_configs: []const texops.TextureSampleConfig,
+    samp_cfgs: []const texops.TextureSampleConfig,
     gold_dir_root: []const u8,
     data_dir_root: []const u8,
     rel_tol: F,
@@ -1007,7 +1007,7 @@ pub fn runMeshTypesSuite(
                 fov_scale,
                 texture,
                 pixel_num,
-                sample_configs,
+                samp_cfgs,
                 gold_dir_root,
                 data_dir_root,
                 rel_tol,

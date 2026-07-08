@@ -324,8 +324,6 @@ pub fn filterScratchSeparable(
     touched_min_x: []const usize,
     touched_max_x: []const usize,
 ) void {
-    tmp.fill(background_value);
-
     const radius_x = psf.radius_x_subpx;
     const radius_y = psf.radius_y_subpx;
 
@@ -365,6 +363,7 @@ pub fn filterScratchSeparable(
                         background_value,
                     );
                 }
+
                 setScratchField(
                     tmp,
                     yy * spx_stride + xx,
@@ -376,10 +375,10 @@ pub fn filterScratchSeparable(
     }
 
     // Vertical pass
-    dst.fill(background_value);
     const core_start_y = scratch_geom.core_start_y_subpx;
     const core_end_y = scratch_geom.core_start_y_subpx +
         scratch_geom.core_h_px * sub_samp - 1;
+
     for (core_start_y..core_end_y + 1) |yy| {
         var min_x = scratch_geom.scratch_w_subpx;
         var max_x: usize = 0;
@@ -417,6 +416,7 @@ pub fn filterScratchSeparable(
                         isize,
                         @intCast(kk),
                     ) - @as(isize, @intCast(radius_y));
+
                     sum_v += psf.weights_y[kk] * sampleScratchOrBackground(
                         tmp,
                         @as(isize, @intCast(xx)),
@@ -427,6 +427,7 @@ pub fn filterScratchSeparable(
                         background_value,
                     );
                 }
+
                 setScratchField(
                     dst,
                     yy * spx_stride + xx,
@@ -450,8 +451,6 @@ pub fn filterScratchNonSeparable(
     touched_min_x: []const usize,
     touched_max_x: []const usize,
 ) void {
-    dst.fill(background_value);
-
     const radius_x = psf.radius_x_subpx;
     const radius_y = psf.radius_y_subpx;
     const kernel_w = 2 * radius_x + 1;
@@ -459,6 +458,7 @@ pub fn filterScratchNonSeparable(
     const core_start_y = scratch_geom.core_start_y_subpx;
     const core_end_y = scratch_geom.core_start_y_subpx +
         scratch_geom.core_h_px * sub_samp - 1;
+
     for (core_start_y..core_end_y + 1) |yy| {
         var min_x = scratch_geom.scratch_w_subpx;
         var max_x: usize = 0;
@@ -481,8 +481,7 @@ pub fn filterScratchNonSeparable(
 
         const xx_start = @max(scratch_geom.core_start_x_subpx, active_min);
         const xx_end = @min(
-            scratch_geom.core_start_x_subpx +
-                scratch_geom.core_w_px * sub_samp - 1,
+            scratch_geom.core_start_x_subpx + scratch_geom.core_w_px * sub_samp - 1,
             active_max,
         );
         if (xx_start > xx_end) continue;
@@ -494,14 +493,17 @@ pub fn filterScratchNonSeparable(
                 for (0..psf.weights_2d.len) |kk| {
                     const ky = kk / kernel_w;
                     const kx = kk % kernel_w;
+
                     const x_off = @as(
                         isize,
                         @intCast(kx),
                     ) - @as(isize, @intCast(radius_x));
+
                     const y_off = @as(
                         isize,
                         @intCast(ky),
                     ) - @as(isize, @intCast(radius_y));
+
                     sum += psf.weights_2d[kk] * sampleScratchOrBackground(
                         src,
                         @as(isize, @intCast(xx)) + x_off,
@@ -512,6 +514,7 @@ pub fn filterScratchNonSeparable(
                         background_value,
                     );
                 }
+
                 setScratchField(
                     dst,
                     yy * spx_stride + xx,

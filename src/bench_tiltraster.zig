@@ -116,7 +116,7 @@ pub fn main(init: std.process.Init) !void {
         .func,
         .func_rgb,
     };
-    const sample_configs = [_]texops.TextureSampleConfig{
+    const samp_cfgs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
@@ -204,7 +204,7 @@ pub fn main(init: std.process.Init) !void {
             mesh_types[0..],
             shader_types[0..],
             tex_func_shader_types[0..],
-            sample_configs[0..],
+            samp_cfgs[0..],
             tex_func_cases[0..],
         ),
         .u16 => try runBenchmarksForTextureType(
@@ -218,7 +218,7 @@ pub fn main(init: std.process.Init) !void {
             mesh_types[0..],
             shader_types[0..],
             tex_func_shader_types[0..],
-            sample_configs[0..],
+            samp_cfgs[0..],
             tex_func_cases[0..],
         ),
     }
@@ -246,7 +246,7 @@ fn runBenchmarksForTextureType(
     mesh_types: []const gk.MeshType,
     shader_types: []const common.ShaderType,
     tex_func_shader_types: []const common.ShaderType,
-    sample_configs: []const texops.TextureSampleConfig,
+    samp_cfgs: []const texops.TextureSampleConfig,
     tex_func_cases: []const common.TexFuncCase,
 ) !void {
     const texture_grey = try loadBenchmarkTexture(
@@ -278,7 +278,7 @@ fn runBenchmarksForTextureType(
         else
             shader_types;
         for (selected_shader_types) |st| {
-            for (sample_configs) |sc| {
+            for (samp_cfgs) |sc| {
                 var data_dir_buf: [256]u8 = undefined;
                 const folder_name = if (mt == .tri3opt) "tri3" else @tagName(mt);
                 const data_dir = try std.fmt.bufPrint(
@@ -288,7 +288,7 @@ fn runBenchmarksForTextureType(
                 );
 
                 if (common.shouldRun(config, mt, st, sc, data_dir)) {
-                    const sample_config = if (st == .tex8_grey or st == .tex8_rgb)
+                    const samp_cfg = if (st == .tex8_grey or st == .tex8_rgb)
                         sc
                     else
                         null;
@@ -296,7 +296,7 @@ fn runBenchmarksForTextureType(
                         outer_alloc,
                         mt,
                         st,
-                        sample_config,
+                        samp_cfg,
                         null,
                         1.0,
                     );
@@ -327,7 +327,7 @@ fn runBenchmarksForTextureType(
                             io,
                             mt,
                             st,
-                            sample_config,
+                            samp_cfg,
                             null,
                             data_dir,
                             render_defaults,
@@ -345,7 +345,7 @@ fn runBenchmarksForTextureType(
                             case_name,
                             mt,
                             st,
-                            sample_config,
+                            samp_cfg,
                             null,
                             res,
                         );
@@ -363,7 +363,7 @@ fn runBenchmarksForTextureType(
                         case_name,
                         mt,
                         st,
-                        sample_config,
+                        samp_cfg,
                         null,
                         &case_samples,
                     );

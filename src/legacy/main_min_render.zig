@@ -60,7 +60,7 @@ pub fn main(init: std.process.Init) !void {
         .tex8_grey,
         .tex8_rgb,
     };
-    const sample_configs = [_]texops.TextureSampleConfig{
+    const samp_cfgs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
@@ -82,7 +82,7 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Rendering MIN Suite (sphere200/base) to {s}...\n", .{out_dir});
     for (mesh_types) |mt| {
         for (shader_types) |st| {
-            for (sample_configs) |sc| {
+            for (samp_cfgs) |sc| {
                 const data_dir = try std.fmt.allocPrint(
                     aa,
                     "data/min/{s}_sphere200",
@@ -143,7 +143,7 @@ pub fn main(init: std.process.Init) !void {
     std.debug.print("Rendering MIN Suite (sphere200multicull) to {s}...\n", .{out_dir});
     for (mesh_types) |mt| {
         for (shader_types) |st| {
-            for (sample_configs) |sc| {
+            for (samp_cfgs) |sc| {
                 const data_dir = try std.fmt.allocPrint(
                     aa,
                     "data/min/{s}_sphere200",

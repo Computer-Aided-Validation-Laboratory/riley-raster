@@ -20,6 +20,7 @@ Use these abbreviations consistently in Riley Zig code.
 - `vec`: vector
 - `buff`: buffer
 - `tex`: texture
+- `samp`: sample
 - `tol`: tolerance
 - `align`: alignment
 - `supp`: support
@@ -63,7 +64,18 @@ Use these abbreviations consistently in Riley Zig code.
 - `psf`: point spread function
 
 ## Guidance
+- Common comptime constants may use single-capital abbreviations when the
+  context is obvious:
+  `F` = floating point precision such as `f64` or `f32`
+  `N` = nodes per element
+  `S` = SIMD vector width
+  `C` = image channels
+  `T` = a type
 - Prefer clarity over maximal shortening.
+- Abbreviations may appear in lower case or camel case depending on naming
+  context.
+- For example, `interp` and `Interp` are both valid when the local naming style
+  calls for them.
 - Use the short form only when it remains obvious in local context.
 - Reuse established Riley abbreviations instead of inventing file-local variants.
 - Follow `dev/FILESTRUCTURE.md` and other `dev/` guidance files whenever editing Zig.

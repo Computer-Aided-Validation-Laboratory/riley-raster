@@ -121,7 +121,7 @@ test "Unified Benchmark Tests" {
         .tex8_grey,
         .tex8_rgb,
     };
-    const sample_configs = [_]texops.TextureSampleConfig{
+    const samp_cfgs = [_]texops.TextureSampleConfig{
         .{ .sample = .nearest, .mode = .direct },
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
@@ -147,7 +147,7 @@ test "Unified Benchmark Tests" {
 
         for (mesh_types) |mt| {
             for (shader_types) |st| {
-                for (sample_configs) |sc| {
+                for (samp_cfgs) |sc| {
                     _ = arena.reset(.free_all);
 
                     if (policy.shouldSkipBenchGeomTest(mt, cc.name)) {

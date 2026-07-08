@@ -102,7 +102,7 @@ pub fn main(init: std.process.Init) !void {
         .func,
         .func_rgb,
     };
-    const sample_configs = [_]texops.TextureSampleConfig{
+    const samp_cfgs = [_]texops.TextureSampleConfig{
         .{ .sample = .linear, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .direct },
         .{ .sample = .cubic_catmull_rom, .mode = .lut_lerp },
@@ -165,7 +165,7 @@ pub fn main(init: std.process.Init) !void {
 
     for (mesh_types) |mt| {
         for (shader_types) |st| {
-            for (sample_configs) |sc| {
+            for (samp_cfgs) |sc| {
                 var data_dir_buf: [256]u8 = undefined;
                 const data_dir = try std.fmt.bufPrint(
                     &data_dir_buf,
@@ -174,12 +174,12 @@ pub fn main(init: std.process.Init) !void {
                 );
 
                 if (common.shouldRun(config, mt, st, sc, data_dir)) {
-                    const sample_config = if (st == .tex8_grey or st == .tex8_rgb) sc else null;
+                    const samp_cfg = if (st == .tex8_grey or st == .tex8_rgb) sc else null;
                     const case_name = try common.calcCaseName(
                         outer_alloc,
                         mt,
                         st,
-                        sample_config,
+                        samp_cfg,
                         null,
                         1.0,
                     );
@@ -211,7 +211,7 @@ pub fn main(init: std.process.Init) !void {
                             io,
                             mt,
                             st,
-                            sample_config,
+                            samp_cfg,
                             null,
                             data_dir,
                             render_defaults,
@@ -229,7 +229,7 @@ pub fn main(init: std.process.Init) !void {
                             case_name,
                             mt,
                             st,
-                            sample_config,
+                            samp_cfg,
                             null,
                             res,
                         );
@@ -247,7 +247,7 @@ pub fn main(init: std.process.Init) !void {
                         case_name,
                         mt,
                         st,
-                        sample_config,
+                        samp_cfg,
                         null,
                         &case_samples,
                     );

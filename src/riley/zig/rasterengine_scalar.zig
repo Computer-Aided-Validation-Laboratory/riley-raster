@@ -617,7 +617,7 @@ fn rasterNewtonImpl(
                 );
             }
 
-            const ctx_shade = shaderops.ShadeContext(N){
+            const ctx_shade = shaderops.ShadeContext{
                 .frame_idx = ctx_rast.frame_idx,
                 .elem_idx = overlap.elem_idx,
                 .fields_num = fields_num,
@@ -625,7 +625,6 @@ fn rasterNewtonImpl(
                 .scratch_idx = scratch_idx,
                 .global_subx = global_subx,
                 .global_suby = global_suby,
-                .shader_buf = shader_buf,
             };
             const interp_data = shaderops.InterpData(N){
                 .weights = weights,
@@ -639,6 +638,7 @@ fn rasterNewtonImpl(
                 Geom.coord_space,
                 ctx_shade,
                 interp_data,
+                shader_buf,
                 shader,
                 ctx_report,
                 &subpx_scratch.image,
@@ -864,7 +864,7 @@ fn rasterSteppedScalFixP(
                         );
                     }
 
-                    const ctx_shade = shaderops.ShadeContext(N){
+                    const ctx_shade = shaderops.ShadeContext{
                         .frame_idx = ctx_rast.frame_idx,
                         .elem_idx = overlap.elem_idx,
                         .fields_num = fields_num,
@@ -872,7 +872,6 @@ fn rasterSteppedScalFixP(
                         .scratch_idx = scratch_idx,
                         .global_subx = global_subx,
                         .global_suby = global_suby,
-                        .shader_buf = shader_buf,
                     };
 
                     const interp_data = shaderops.InterpData(N){
@@ -887,6 +886,7 @@ fn rasterSteppedScalFixP(
                         Geom.coord_space,
                         ctx_shade,
                         interp_data,
+                        shader_buf,
                         shader,
                         ctx_report,
                         &subpx_scratch.image,
@@ -1093,7 +1093,7 @@ fn rasterSteppedScalFloat(
                         );
                     }
 
-                    const ctx_shade = shaderops.ShadeContext(N){
+                    const ctx_shade = shaderops.ShadeContext{
                         .frame_idx = ctx_rast.frame_idx,
                         .elem_idx = overlap.elem_idx,
                         .fields_num = fields_num,
@@ -1101,7 +1101,6 @@ fn rasterSteppedScalFloat(
                         .scratch_idx = scratch_idx,
                         .global_subx = global_subx,
                         .global_suby = global_suby,
-                        .shader_buf = shader_buf,
                     };
                     const interp_data = shaderops.InterpData(N){
                         .weights = weights,
@@ -1115,6 +1114,7 @@ fn rasterSteppedScalFloat(
                         Geom.coord_space,
                         ctx_shade,
                         interp_data,
+                        shader_buf,
                         shader,
                         ctx_report,
                         &subpx_scratch.image,

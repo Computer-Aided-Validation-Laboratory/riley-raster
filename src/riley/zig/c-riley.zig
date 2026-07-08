@@ -1147,11 +1147,11 @@ fn buildMeshInput(
             );
             errdefer uvs_array.deinit(allocator);
 
-            const sample_config = texops.TexSampleConfig{
+            const samp_cfg = texops.TexSampleConfig{
                 .sample = try texSampleFromC(in_mesh.sample),
                 .mode = try texSampleModeFromC(in_mesh.sample_mode),
             };
-            if (!sample_config.isValid()) {
+            if (!samp_cfg.isValid()) {
                 return error.InvalidTexSampleConfig;
             }
             built.uvs_array = uvs_array;
@@ -1170,7 +1170,7 @@ fn buildMeshInput(
                         .rows_num = in_mesh.tex.dim1,
                         .cols_num = in_mesh.tex.dim2,
                     },
-                    .sample_config = sample_config,
+                    .samp_cfg = samp_cfg,
                     .bits = bits,
                     .scaling = scaling,
                     .normal_type = normal_type,
@@ -1191,7 +1191,7 @@ fn buildMeshInput(
                         .rows_num = in_mesh.tex.dim1,
                         .cols_num = in_mesh.tex.dim2,
                     },
-                    .sample_config = sample_config,
+                    .samp_cfg = samp_cfg,
                     .bits = bits,
                     .scaling = scaling,
                     .normal_type = normal_type,
@@ -1211,11 +1211,11 @@ fn buildMeshInput(
             );
             errdefer uvs_array.deinit(allocator);
 
-            const sample_config = texops.TexSampleConfig{
+            const samp_cfg = texops.TexSampleConfig{
                 .sample = try texSampleFromC(in_mesh.sample),
                 .mode = try texSampleModeFromC(in_mesh.sample_mode),
             };
-            if (!sample_config.isValid()) {
+            if (!samp_cfg.isValid()) {
                 return error.InvalidTexSampleConfig;
             }
             built.uvs_array = uvs_array;
@@ -1234,7 +1234,7 @@ fn buildMeshInput(
                         .rows_num = in_mesh.tex.dim1,
                         .cols_num = in_mesh.tex.dim2,
                     },
-                    .sample_config = sample_config,
+                    .samp_cfg = samp_cfg,
                     .bits = bits,
                     .scaling = scaling,
                     .normal_type = normal_type,
@@ -1255,7 +1255,7 @@ fn buildMeshInput(
                         .rows_num = in_mesh.tex.dim1,
                         .cols_num = in_mesh.tex.dim2,
                     },
-                    .sample_config = sample_config,
+                    .samp_cfg = samp_cfg,
                     .bits = bits,
                     .scaling = scaling,
                     .normal_type = normal_type,
