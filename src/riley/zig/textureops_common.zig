@@ -16,7 +16,7 @@ const lut_size = cfg.interp_lut_size;
 const NDArray = @import("ndarray.zig").NDArray;
 const csvio = @import("csvio.zig");
 
-// --------------------------------------------------------------------------
+// --------------------------------------------------------------------------------------
 // Strategy Map:
 //
 // PIPELINE ENTRY POINTS (Dispatched by Shader/Kernel):
@@ -39,7 +39,8 @@ const csvio = @import("csvio.zig");
 //         ├── getPx()       (Scalar Load: 1 pixel)
 //         ├── sampleLinearOneLane() (Scalar Linear: 1 pixel)
 //         └── sampleConvOneLane()   (SIMD-Tap Convolution: 1 pixel)
-// --------------------------------------------------------------------------
+//
+// -------------------------------------------------------------------------------------
 
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
@@ -92,11 +93,7 @@ pub fn Tex(comptime T: type, comptime CH: usize) type {
 
         const Self = @This();
 
-        pub fn init(
-            allocator: std.mem.Allocator,
-            rows: usize,
-            cols: usize,
-        ) !Self {
+        pub fn init(allocator: std.mem.Allocator, rows: usize, cols: usize) !Self {
             const dims = &[_]usize{ CH, rows, cols };
             const array = try NDArray(T).initFlat(allocator, dims);
             return .{
@@ -111,23 +108,12 @@ pub fn Tex(comptime T: type, comptime CH: usize) type {
             self.array.deinit(allocator);
         }
 
-        pub fn setVal(
-            self: *Self,
-            ch: usize,
-            row: usize,
-            col: usize,
-            val: T,
-        ) void {
+        pub fn setVal(self: *Self, ch: usize, row: usize, col: usize, val: T) void {
             const tex_flat_idx = self.array.subBase2(ch, row) + col;
             self.array.setFlat(tex_flat_idx, val);
         }
 
-        pub fn getVal(
-            self: *const Self,
-            ch: usize,
-            row: usize,
-            col: usize,
-        ) T {
+        pub fn getVal(self: *const Self, ch: usize, row: usize, col: usize) T {
             const tex_flat_idx = self.array.subBase2(ch, row) + col;
             return self.array.getFlat(tex_flat_idx);
         }
@@ -139,12 +125,7 @@ pub fn Tex(comptime T: type, comptime CH: usize) type {
             file_name: []const u8,
         ) !void {
             const SaveCtx = struct {
-                fn getVal(
-                    ctx: *const Self,
-                    row: usize,
-                    col: usize,
-                    ch: usize,
-                ) F {
+                fn getVal(ctx: *const Self, row: usize, col: usize, ch: usize) F {
                     return texelToFloat(T, ctx.getVal(ch, row, col));
                 }
             };
@@ -230,8 +211,7 @@ pub fn quinticBSplineCoeff(x: F) F {
         return (((((1.0 / 24.0) * t - (1.0 / 6.0)) * t + (1.0 / 6.0)) * t + (1.0 / 6.0)) * t - (5.0 / 12.0)) * t + (13.0 / 60.0);
     } else {
         const u = r - 2.0;
-        return (((((-(1.0 / 120.0) * u + (1.0 / 24.0)) * u - (1.0 / 12.0)) * u +
-            (1.0 / 12.0)) * u - (1.0 / 24.0)) * u + (1.0 / 120.0));
+        return (((((-(1.0 / 120.0) * u + (1.0 / 24.0)) * u - (1.0 / 12.0)) * u + (1.0 / 12.0)) * u - (1.0 / 24.0)) * u + (1.0 / 120.0));
     }
 }
 
@@ -278,12 +258,9 @@ pub const lanczos3_lut = blk: {
     @setEvalBranchQuota(eval_branch_quota);
     var table: [lut_size][6]F = undefined;
     for (0..lut_size) |ii| {
-        const tt = @as(F, @floatFromInt(ii)) /
-            @as(F, @floatFromInt(lut_size));
+        const tt = @as(F, @floatFromInt(ii)) / @as(F, @floatFromInt(lut_size));
         for (0..6) |jj| {
-            table[ii][jj] = lanczos3Coeff(
-                @as(F, @floatFromInt(jj)) - 2.0 - tt,
-            );
+            table[ii][jj] = lanczos3Coeff(@as(F, @floatFromInt(jj)) - 2.0 - tt);
         }
     }
     break :blk table;
@@ -293,12 +270,9 @@ pub const quintic_bspline_lut = blk: {
     @setEvalBranchQuota(eval_branch_quota);
     var table: [lut_size][6]F = undefined;
     for (0..lut_size) |ii| {
-        const tt = @as(F, @floatFromInt(ii)) /
-            @as(F, @floatFromInt(lut_size));
+        const tt = @as(F, @floatFromInt(ii)) / @as(F, @floatFromInt(lut_size));
         for (0..6) |jj| {
-            table[ii][jj] = quinticBSplineCoeff(
-                @as(F, @floatFromInt(jj)) - 2.0 - tt,
-            );
+            table[ii][jj] = quinticBSplineCoeff(@as(F, @floatFromInt(jj)) - 2.0 - tt);
         }
     }
     break :blk table;
@@ -312,7 +286,7 @@ pub fn getPx(
 ) [CH]F {
     const tex_cols = @as(isize, @intCast(tex.cols_num));
     const tex_rows = @as(isize, @intCast(tex.rows_num));
-    // Clamp to the edges of the tex
+    // Clamp to the edges of the texture
     const tex_x_i = @as(usize, @intCast(@max(0, @min(x, tex_cols - 1))));
     const tex_y_i = @as(usize, @intCast(@max(0, @min(y, tex_rows - 1))));
 
@@ -432,6 +406,7 @@ pub fn sampleScal(
     v: F,
 ) [CH]F {
     std.debug.assert(config.isValid());
+
     const cols_minus_1 = @as(isize, @intCast(tex.cols_num)) - 1;
     const rows_minus_1 = @as(isize, @intCast(tex.rows_num)) - 1;
     const tex_x_f = u * @as(F, @floatFromInt(cols_minus_1));
@@ -549,34 +524,21 @@ fn sampleTex4Tap(
                 coeff_fun(tex_y_frac - 1),
                 coeff_fun(tex_y_frac - 2),
             };
+
             break :blk sampleConv(CH, TAP, tex, tex_x_i, tex_y_i, coeffs_x, coeffs_y);
         },
         .lut => blk: {
             const lut_size_f = @as(F, @floatFromInt(lut_size - 1));
             const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
             const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
-            break :blk sampleConv(
-                CH,
-                TAP,
-                tex,
-                tex_x_i,
-                tex_y_i,
-                lut[idx_x],
-                lut[idx_y],
-            );
+            
+            break :blk sampleConv(CH, TAP, tex, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
         },
         .lut_lerp => blk: {
             const coeffs_x = getLerpSampCoeffs(TAP, lut, tex_x_frac);
             const coeffs_y = getLerpSampCoeffs(TAP, lut, tex_y_frac);
-            break :blk sampleConv(
-                CH,
-                TAP,
-                tex,
-                tex_x_i,
-                tex_y_i,
-                coeffs_x,
-                coeffs_y,
-            );
+            
+            break :blk sampleConv(CH, TAP, tex, tex_x_i, tex_y_i, coeffs_x, coeffs_y);
         },
     };
 }

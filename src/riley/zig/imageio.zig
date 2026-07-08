@@ -15,8 +15,6 @@ const matslice = @import("matslice.zig");
 const ndarray = @import("ndarray.zig");
 
 const texops = @import("textureops.zig");
-pub const Tex = texops.Tex;
-pub const Texture = Tex;
 const clibtiff = @import("clibtiff.zig");
 
 const imageops = @import("imageops.zig");

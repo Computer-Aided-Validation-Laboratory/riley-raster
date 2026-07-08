@@ -18,7 +18,6 @@ const ndarray = @import("ndarray.zig");
 const matslice = @import("matslice.zig");
 
 const imageops = @import("imageops.zig");
-const iio = @import("imageio.zig");
 const texops = @import("textureops.zig");
 const meshio = @import("meshio.zig");
 const maths_simd = @import("maths_simd.zig");
@@ -132,7 +131,7 @@ pub const NodalInput = struct {
 pub fn TexInput(comptime T: type, comptime C: usize) type {
     return struct {
         uvs: ndarray.NDArray(F),
-        tex: iio.Tex(T, C),
+        tex: texops.Tex(T, C),
         samp_cfg: texops.TexSampleConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .lut_lerp,
@@ -278,7 +277,7 @@ pub const NodalStatic = struct {
 pub fn TexStatic(comptime T: type, comptime C: usize) type {
     return struct {
         elem_uvs: ndarray.NDArray(F),
-        tex: iio.Tex(T, C),
+        tex: texops.Tex(T, C),
         samp_cfg: texops.TexSampleConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .lut_lerp,
@@ -327,7 +326,7 @@ pub const NodalPrepared = struct {
 pub fn TexPrepared(comptime T: type, comptime C: usize) type {
     return struct {
         elem_uvs: ndarray.NDArray(F),
-        tex: iio.Tex(T, C),
+        tex: texops.Tex(T, C),
         samp_cfg: texops.TexSampleConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .lut_lerp,
@@ -594,18 +593,6 @@ pub inline fn evalFuncShaderBuiltinGreyNorm(
     return applyFuncShaderOutputParams(value, params);
 }
 
-pub inline fn evalFuncShaderBuiltinGrey(
-    builtin: FuncShaderBuiltin,
-    coord: FuncCoord,
-    params: FuncShaderParams,
-) F {
-    return evalFuncShaderBuiltinGreyNorm(
-        builtin,
-        coord,
-        normFuncShaderParams(builtin, params),
-    );
-}
-
 pub inline fn evalFuncShaderBuiltinRGBNorm(
     builtin: FuncShaderBuiltin,
     coord: FuncCoord,
@@ -717,18 +704,6 @@ pub inline fn evalFuncShaderBuiltinRGBNorm(
     };
 }
 
-pub inline fn evalFuncShaderBuiltinRGB(
-    builtin: FuncShaderBuiltin,
-    coord: FuncCoord,
-    params: FuncShaderParams,
-) [3]F {
-    return evalFuncShaderBuiltinRGBNorm(
-        builtin,
-        coord,
-        normFuncShaderParams(builtin, params),
-    );
-}
-
 // --------------------------------------------------------------------------------------
 // Tests
 // --------------------------------------------------------------------------------------
@@ -744,7 +719,11 @@ test "FuncShaderParams defaults preserve constant shader" {
         .normal_y = 0.0,
         .normal_z = 1.0,
     };
-    const value = evalFuncShaderBuiltinGrey(.constant, coord, .{});
+    const value = evalFuncShaderBuiltinGreyNorm(
+        .constant,
+        coord,
+        normFuncShaderParams(.constant, .{}),
+    );
     try testing.expectApproxEqAbs(@as(F, 0.5), value, unit_tol);
 }
 
@@ -756,12 +735,20 @@ test "FuncShaderParams control sinusoidal frequency and output scaling" {
         .normal_y = 0.0,
         .normal_z = 1.0,
     };
-    const base = evalFuncShaderBuiltinGrey(.sinusoidal, coord, .{});
-    const shifted = evalFuncShaderBuiltinGrey(.sinusoidal, coord, .{
-        .coord_scale = .{ 2.0, 1.0 },
-        .output_scale = 2.0,
-        .output_offset = -0.25,
-    });
+    const base = evalFuncShaderBuiltinGreyNorm(
+        .sinusoidal,
+        coord,
+        normFuncShaderParams(.sinusoidal, .{}),
+    );
+    const shifted = evalFuncShaderBuiltinGreyNorm(
+        .sinusoidal,
+        coord,
+        normFuncShaderParams(.sinusoidal, .{
+            .coord_scale = .{ 2.0, 1.0 },
+            .output_scale = 2.0,
+            .output_offset = -0.25,
+        }),
+    );
     const expected_base = 0.5 + 0.25 * @sin(6.0 * 0.25) + 0.2 * @cos(0.0);
     const expected_shifted = (0.5 + 0.25 * @sin(6.0 * 0.5) + 0.2 * @cos(0.0)) * 2.0 - 0.25;
     try testing.expectApproxEqAbs(expected_base, base, unit_tol);
@@ -787,8 +774,16 @@ test "checker texfunc creates hard black white cells from coord scale" {
         .coord_scale = .{ 36.0, 36.0 },
     };
 
-    const value_black = evalFuncShaderBuiltinGrey(.checker, coord_black, params);
-    const value_white = evalFuncShaderBuiltinGrey(.checker, coord_white, params);
+    const value_black = evalFuncShaderBuiltinGreyNorm(
+        .checker,
+        coord_black,
+        normFuncShaderParams(.checker, params),
+    );
+    const value_white = evalFuncShaderBuiltinGreyNorm(
+        .checker,
+        coord_white,
+        normFuncShaderParams(.checker, params),
+    );
 
     try testing.expectEqual(@as(F, 0.0), value_black);
     try testing.expectEqual(@as(F, 1.0), value_white);
@@ -811,7 +806,11 @@ test "eggbox reaches mean plus contrast at cell center" {
             },
         },
     };
-    const value = evalFuncShaderBuiltinGrey(.eggbox, coord, params);
+    const value = evalFuncShaderBuiltinGreyNorm(
+        .eggbox,
+        coord,
+        normFuncShaderParams(.eggbox, params),
+    );
     try testing.expectApproxEqAbs(@as(F, 0.9), value, unit_tol);
 }
 
@@ -832,7 +831,11 @@ test "eggbox reaches mean minus contrast on grid line" {
             },
         },
     };
-    const value = evalFuncShaderBuiltinGrey(.eggbox, coord, params);
+    const value = evalFuncShaderBuiltinGreyNorm(
+        .eggbox,
+        coord,
+        normFuncShaderParams(.eggbox, params),
+    );
     try testing.expectApproxEqAbs(@as(F, 0.1), value, unit_tol);
 }
 
@@ -918,33 +921,33 @@ test "SIMD func builtin matches scalar builtin per lane" {
         .eggbox,
     };
     for (scalar_builtins) |builtin| {
-        const v_vals = simd_impl.evalFuncShaderGreySIMD(
+        const v_vals = simd_impl.evalFuncShaderGreyNormSIMD(
             builtin,
             coord_simd,
-            params,
+            normFuncShaderParams(builtin, params),
         );
         const vals_arr: [S]F = v_vals;
         for (coord_scalar, 0..) |coord, ll| {
-            const expected = evalFuncShaderBuiltinGrey(
+            const expected = evalFuncShaderBuiltinGreyNorm(
                 builtin,
                 coord,
-                params,
+                normFuncShaderParams(builtin, params),
             );
             try testing.expectApproxEqAbs(expected, vals_arr[ll], unit_tol);
         }
 
-        const v_rgb = simd_impl.evalFuncShaderRGBSIMD(
+        const v_rgb = simd_impl.evalFuncShaderRGBNormSIMD(
             builtin,
             coord_simd,
-            params,
+            normFuncShaderParams(builtin, params),
         );
         inline for (0..3) |ch| {
             const vals_rgb_arr: [S]F = v_rgb[ch];
             for (coord_scalar, 0..) |coord, ll| {
-                const expected = evalFuncShaderBuiltinRGB(
+                const expected = evalFuncShaderBuiltinRGBNorm(
                     builtin,
                     coord,
-                    params,
+                    normFuncShaderParams(builtin, params),
                 )[ch];
                 try testing.expectApproxEqAbs(
                     expected,

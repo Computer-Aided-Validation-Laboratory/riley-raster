@@ -106,8 +106,8 @@ pub fn buildSphere200MultiCullMeshInputs(
     allocator: std.mem.Allocator,
     io: std.Io,
     mesh_type: gk.MeshType,
-    texture_grey: iio.Texture(u8, 1),
-    texture_rgb: iio.Texture(u8, 3),
+    texture_grey: texops.Tex(u8, 1),
+    texture_rgb: texops.Tex(u8, 3),
 ) ![]mo.MeshInput {
     const data_dir = try std.fmt.allocPrint(
         allocator,

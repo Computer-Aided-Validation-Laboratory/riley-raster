@@ -10,6 +10,7 @@ const std = @import("std");
 const riley = @import("../riley/zig/riley.zig");
 const meshio = @import("../riley/zig/meshio.zig");
 const iio = @import("../riley/zig/imageio.zig");
+const texops = @import("../riley/zig/textureops.zig");
 const uvio = @import("../riley/zig/uvio.zig");
 const csvio = @import("../riley/zig/csvio.zig");
 const mo = @import("../riley/zig/meshpipeline.zig");
@@ -678,8 +679,8 @@ pub fn loadBenchmarkMeshInput(
     samp_cfg: ?TextureSampleConfig,
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
-    texture_grey: iio.Texture(T, 1),
-    texture_rgb: iio.Texture(T, 3),
+    texture_grey: texops.Tex(T, 1),
+    texture_rgb: texops.Tex(T, 3),
 ) !mo.MeshInput {
     const coord_path = try std.fs.path.join(allocator, &[_][]const u8{
         data_dir,
@@ -832,8 +833,8 @@ pub fn runBenchmark(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: iio.Texture(T, 1),
-    texture_rgb: iio.Texture(T, 3),
+    texture_grey: texops.Tex(T, 1),
+    texture_rgb: texops.Tex(T, 3),
     config: rastcfg.RasterConfig,
     out_dir_base: []const u8,
 ) !BenchResult {
@@ -865,8 +866,8 @@ pub fn runBenchmarkWithImageOut(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: iio.Texture(T, 1),
-    texture_rgb: iio.Texture(T, 3),
+    texture_grey: texops.Tex(T, 1),
+    texture_rgb: texops.Tex(T, 3),
     config: rastcfg.RasterConfig,
     stats_out_dir_base: []const u8,
     image_out_dir_base: []const u8,
@@ -900,8 +901,8 @@ pub fn runBenchmarkQuiet(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: iio.Texture(T, 1),
-    texture_rgb: iio.Texture(T, 3),
+    texture_grey: texops.Tex(T, 1),
+    texture_rgb: texops.Tex(T, 3),
     config: rastcfg.RasterConfig,
     out_dir_base: []const u8,
 ) !BenchResult {
@@ -933,8 +934,8 @@ pub fn runBenchmarkQuietWithImageOut(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: iio.Texture(T, 1),
-    texture_rgb: iio.Texture(T, 3),
+    texture_grey: texops.Tex(T, 1),
+    texture_rgb: texops.Tex(T, 3),
     config: rastcfg.RasterConfig,
     stats_out_dir_base: []const u8,
     image_out_dir_base: []const u8,
@@ -969,8 +970,8 @@ fn runBenchmarkInternal(
     tex_func_case: ?TexFuncCase,
     data_dir: []const u8,
     render_defaults: BenchRenderDefaults,
-    texture_grey: iio.Texture(T, 1),
-    texture_rgb: iio.Texture(T, 3),
+    texture_grey: texops.Tex(T, 1),
+    texture_rgb: texops.Tex(T, 3),
     config: rastcfg.RasterConfig,
     stats_out_dir_base: []const u8,
     image_out_dir_base: []const u8,

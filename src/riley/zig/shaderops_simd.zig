@@ -24,24 +24,6 @@ const comm = @import("shaderops_common.zig");
 const scal = @import("shaderops_scalar.zig");
 const simdops = @import("simdops.zig");
 
-inline fn storeMaskedVecSF(
-    scratch_vals: []F,
-    start_u: usize,
-    v_mask_active: VecSB,
-    v_vals: VecSF,
-) void {
-    const v_old_vals = simdops.loadVecSF(scratch_vals, start_u);
-
-    const v_new_vals = @select(
-        F,
-        v_mask_active,
-        v_vals,
-        v_old_vals,
-    );
-
-    simdops.storeVecSF(scratch_vals, start_u, v_new_vals);
-}
-
 // --------------------------------------------------------------------------------------
 // Nodal Interp Shader
 // --------------------------------------------------------------------------------------
@@ -72,7 +54,7 @@ pub inline fn fillNodalClipSIMD(
 
         const v_final = v_weighted_sum * v_splat_mul + v_splat_add;
         const flat_idx = ff * px_stride + ctx_shade.scratch_idx;
-        storeMaskedVecSF(
+        simdops.storeMaskedVecSF(
             spx_image_scratch.slice,
             flat_idx,
             ctx_shade.v_mask_active.?,
@@ -108,7 +90,7 @@ pub inline fn fillNodalPerspSIMD(
         const v_final = (v_weighted_sum * v_subpx_z) * v_splat_mul + v_splat_add;
         const flat_idx = ff * px_stride + ctx_shade.scratch_idx;
 
-        storeMaskedVecSF(
+        simdops.storeMaskedVecSF(
             spx_image_scratch.slice,
             flat_idx,
             ctx_shade.v_mask_active.?,
@@ -180,7 +162,7 @@ pub inline fn fillTexClipSIMD(
 
         const flat_idx = ch * px_stride + ctx_shade.scratch_idx;
 
-        storeMaskedVecSF(
+        simdops.storeMaskedVecSF(
             spx_image_scratch.slice,
             flat_idx,
             v_mask_active,
@@ -254,7 +236,7 @@ pub inline fn fillTexPerspSIMD(
     inline for (0..C) |ch| {
         const v_final = sampled_vecs[ch] * v_splat_mul + v_splat_add;
         const flat_idx = ch * px_stride + ctx_shade.scratch_idx;
-        storeMaskedVecSF(
+        simdops.storeMaskedVecSF(
             spx_image_scratch.slice,
             flat_idx,
             v_mask_active,
@@ -377,18 +359,6 @@ pub inline fn evalFuncShaderGreyNormSIMD(
         },
     };
     return comm.applyFuncShaderOutputParamsSIMD(v_value, params);
-}
-
-pub inline fn evalFuncShaderGreySIMD(
-    builtin: comm.FuncShaderBuiltin,
-    coord: comm.FuncCoordSIMD,
-    params: comm.FuncShaderParams,
-) VecSF {
-    return evalFuncShaderGreyNormSIMD(
-        builtin,
-        coord,
-        comm.normFuncShaderParams(builtin, params),
-    );
 }
 
 pub inline fn evalFuncShaderRGBNormSIMD(
@@ -572,18 +542,6 @@ pub inline fn evalFuncShaderRGBNormSIMD(
     };
 }
 
-pub inline fn evalFuncShaderRGBSIMD(
-    builtin: comm.FuncShaderBuiltin,
-    coord: comm.FuncCoordSIMD,
-    params: comm.FuncShaderParams,
-) [3]VecSF {
-    return evalFuncShaderRGBNormSIMD(
-        builtin,
-        coord,
-        comm.normFuncShaderParams(builtin, params),
-    );
-}
-
 fn calcNormalLaneVecs(
     comptime N: usize,
     has_normals: bool,
@@ -667,7 +625,7 @@ pub inline fn fillFuncClipSIMD(
 
         const flat_idx = scratch_idx;
 
-        storeMaskedVecSF(
+        simdops.storeMaskedVecSF(
             spx_image_scratch.slice,
             flat_idx,
             v_mask_active,
@@ -688,7 +646,7 @@ pub inline fn fillFuncClipSIMD(
         const v_final = v_vals[ch] * v_mul + v_add;
         const flat_idx = ch * px_stride + scratch_idx;
 
-        storeMaskedVecSF(
+        simdops.storeMaskedVecSF(
             spx_image_scratch.slice,
             flat_idx,
             v_mask_active,
@@ -759,7 +717,7 @@ pub inline fn fillFuncPerspSIMD(
         const v_final = v_eval * v_mul + v_add;
 
         const flat_idx = scratch_idx;
-        storeMaskedVecSF(
+        simdops.storeMaskedVecSF(
             spx_image_scratch.slice,
             flat_idx,
             v_mask_active,
@@ -778,7 +736,7 @@ pub inline fn fillFuncPerspSIMD(
         const v_add = @as(VecSF, @splat(shader.scale_add));
         const v_final = v_vals[ch] * v_mul + v_add;
         const flat_idx = ch * px_stride + scratch_idx;
-        storeMaskedVecSF(
+        simdops.storeMaskedVecSF(
             spx_image_scratch.slice,
             flat_idx,
             v_mask_active,

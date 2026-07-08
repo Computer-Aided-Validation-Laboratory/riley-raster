@@ -20,6 +20,7 @@ const riley = @import("riley/zig/riley.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 const sceneops = @import("riley/zig/sceneops.zig");
 const shaderops = @import("riley/zig/shaderops_common.zig");
+const texops = @import("riley/zig/textureops.zig");
 const uvio = @import("riley/zig/uvio.zig");
 const buildconfig = @import("riley/zig/buildconfig.zig");
 
@@ -133,7 +134,7 @@ fn makeRgbMeshInput(
     rabbit_name: []const u8,
     mesh_type: gk.MeshType,
     shader_mode: ShaderMode,
-    texture: iio.Texture(u8, 3),
+    texture: texops.Tex(u8, 3),
 ) !MeshInput {
     const data_dir = try buildRabbitDir(allocator, rabbit_name, mesh_type);
     const sim_data = try loadStaticMesh(allocator, io, data_dir);
@@ -186,7 +187,7 @@ fn makeRgbMeshInput(
 fn buildRabbitPairScene(
     allocator: std.mem.Allocator,
     io: std.Io,
-    texture: iio.Texture(u8, 3),
+    texture: texops.Tex(u8, 3),
 ) ![]MeshInput {
     var mesh_list = std.ArrayList(MeshInput).empty;
     var group_list = std.ArrayList(sceneops.MeshGroup).empty;

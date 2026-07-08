@@ -190,8 +190,8 @@ def project_uvs_planar_bbox(
 
     tex_w, tex_h = texture_size
     uvs = np.zeros((coords_in.shape[0], 2), dtype=np.float64)
-    uvs[:, 0] = px_x / float(tex_w)
-    uvs[:, 1] = 1.0 - (px_y / float(tex_h))
+    uvs[:, 0] = px_x / float(tex_w - 1.0)
+    uvs[:, 1] = 1.0 - (px_y / float(tex_h - 1.0))
     return np.ascontiguousarray(uvs, dtype=np.float64)
 
 
@@ -251,10 +251,10 @@ def project_uvs_planar_centered(
     v_max = 1.0 - v_min
 
     px_bbox = (
-        u_min * tex_w,
-        (1.0 - v_max) * tex_h,
-        u_max * tex_w,
-        (1.0 - v_min) * tex_h,
+        u_min * (tex_w - 1.0),
+        (1.0 - v_max) * (tex_h - 1.0),
+        u_max * (tex_w - 1.0),
+        (1.0 - v_min) * (tex_h - 1.0),
     )
     return project_uvs_planar_bbox(
         coords_in,

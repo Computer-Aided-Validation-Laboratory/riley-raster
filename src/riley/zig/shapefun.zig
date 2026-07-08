@@ -12,7 +12,6 @@ const F = buildconfig.F;
 const S = buildconfig.SimdWidth;
 const VecSF = buildconfig.VecSF;
 
-
 // --------------------------------------------------------------------------------------
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
@@ -21,7 +20,6 @@ pub const NodalDerivs = struct {
     dNu: [9][9]F,
     dNv: [9][9]F,
 };
-
 
 // --------------------------------------------------------------------------------------
 // Public Entry-Point Func
@@ -32,6 +30,7 @@ pub fn getNodalDerivs(comptime N: usize) NodalDerivs {
         .dNu = [_][9]F{[_]F{0} ** 9} ** 9,
         .dNv = [_][9]F{[_]F{0} ** 9} ** 9,
     };
+
     const node_coords = switch (N) {
         3 => [3][2]F{
             .{ 0, 0 }, .{ 1, 0 }, .{ 0, 1 },
@@ -58,7 +57,9 @@ pub fn getNodalDerivs(comptime N: usize) NodalDerivs {
         var n_v: [N]F = undefined;
         var dNu: [N]F = undefined;
         var dNv: [N]F = undefined;
+
         shapeFunc(N, node_coords[ii][0], node_coords[ii][1], &n_v, &dNu, &dNv);
+
         for (0..N) |jj| {
             nodal_derivs.dNu[ii][jj] = dNu[jj];
             nodal_derivs.dNv[ii][jj] = dNv[jj];
@@ -90,46 +91,16 @@ pub fn shapeFuncSIMD(
     comptime N: usize,
     v_xi: VecSF,
     v_eta: VecSF,
-    v_shape_vals: *[N]VecSF,
+    v_shape: *[N]VecSF,
     v_dN_dxi: *[N]VecSF,
     v_dN_deta: *[N]VecSF,
 ) void {
     switch (N) {
-        3 => shapeFunc3SIMD(
-            v_xi,
-            v_eta,
-            v_shape_vals,
-            v_dN_dxi,
-            v_dN_deta,
-        ),
-        4 => shapeFunc4SIMD(
-            v_xi,
-            v_eta,
-            v_shape_vals,
-            v_dN_dxi,
-            v_dN_deta,
-        ),
-        6 => shapeFunc6SIMD(
-            v_xi,
-            v_eta,
-            v_shape_vals,
-            v_dN_dxi,
-            v_dN_deta,
-        ),
-        8 => shapeFunc8SIMD(
-            v_xi,
-            v_eta,
-            v_shape_vals,
-            v_dN_dxi,
-            v_dN_deta,
-        ),
-        9 => shapeFunc9SIMD(
-            v_xi,
-            v_eta,
-            v_shape_vals,
-            v_dN_dxi,
-            v_dN_deta,
-        ),
+        3 => shapeFunc3SIMD(v_xi, v_eta, v_shape, v_dN_dxi, v_dN_deta),
+        4 => shapeFunc4SIMD(v_xi, v_eta, v_shape, v_dN_dxi, v_dN_deta),
+        6 => shapeFunc6SIMD(v_xi, v_eta, v_shape, v_dN_dxi, v_dN_deta),
+        8 => shapeFunc8SIMD(v_xi, v_eta, v_shape, v_dN_dxi, v_dN_deta),
+        9 => shapeFunc9SIMD(v_xi, v_eta, v_shape, v_dN_dxi, v_dN_deta),
         else => @compileError("Unsupped number of nodes"),
     }
 }
@@ -155,7 +126,7 @@ fn shapeFunc3(xi: F, eta: F, n_v: *[3]F, dNu: *[3]F, dNv: *[3]F) void {
 fn shapeFunc3SIMD(
     v_xi: VecSF,
     v_eta: VecSF,
-    v_shape_vals: *[3]VecSF,
+    v_shape: *[3]VecSF,
     v_dN_dxi: *[3]VecSF,
     v_dN_deta: *[3]VecSF,
 ) void {
@@ -167,9 +138,9 @@ fn shapeFunc3SIMD(
     const v_L2 = v_xi;
     const v_L3 = v_eta;
 
-    v_shape_vals[0] = v_L1;
-    v_shape_vals[1] = v_L2;
-    v_shape_vals[2] = v_L3;
+    v_shape[0] = v_L1;
+    v_shape[1] = v_L2;
+    v_shape[2] = v_L3;
 
     v_dN_dxi[0] = v_splat_neg_one;
     v_dN_dxi[1] = v_splat_one;
@@ -200,7 +171,7 @@ fn shapeFunc4(xi: F, eta: F, n_v: *[4]F, dNu: *[4]F, dNv: *[4]F) void {
 fn shapeFunc4SIMD(
     v_xi: VecSF,
     v_eta: VecSF,
-    v_shape_vals: *[4]VecSF,
+    v_shape: *[4]VecSF,
     v_dN_dxi: *[4]VecSF,
     v_dN_deta: *[4]VecSF,
 ) void {
@@ -213,10 +184,10 @@ fn shapeFunc4SIMD(
     const v_one_minus_eta = v_splat_one - v_eta;
     const v_one_plus_eta = v_splat_one + v_eta;
 
-    v_shape_vals[0] = v_splat_quarter * v_one_minus_xi * v_one_minus_eta;
-    v_shape_vals[1] = v_splat_quarter * v_one_plus_xi * v_one_minus_eta;
-    v_shape_vals[2] = v_splat_quarter * v_one_plus_xi * v_one_plus_eta;
-    v_shape_vals[3] = v_splat_quarter * v_one_minus_xi * v_one_plus_eta;
+    v_shape[0] = v_splat_quarter * v_one_minus_xi * v_one_minus_eta;
+    v_shape[1] = v_splat_quarter * v_one_plus_xi * v_one_minus_eta;
+    v_shape[2] = v_splat_quarter * v_one_plus_xi * v_one_plus_eta;
+    v_shape[3] = v_splat_quarter * v_one_minus_xi * v_one_plus_eta;
 
     v_dN_dxi[0] = v_splat_neg_quarter * v_one_minus_eta;
     v_dN_dxi[1] = v_splat_quarter * v_one_minus_eta;
@@ -268,7 +239,7 @@ fn shapeFunc6(
 fn shapeFunc6SIMD(
     v_xi: VecSF,
     v_eta: VecSF,
-    v_shape_vals: *[6]VecSF,
+    v_shape: *[6]VecSF,
     v_dN_dxi: *[6]VecSF,
     v_dN_deta: *[6]VecSF,
 ) void {
@@ -285,27 +256,27 @@ fn shapeFunc6SIMD(
     const v_four_L2_minus_one = v_splat_four * v_L2 - v_splat_one;
     const v_four_L3_minus_one = v_splat_four * v_L3 - v_splat_one;
 
-    v_shape_vals[0] = v_L1 * (v_splat_two * v_L1 - v_splat_one);
+    v_shape[0] = v_L1 * (v_splat_two * v_L1 - v_splat_one);
     v_dN_dxi[0] = -v_four_L1_minus_one;
     v_dN_deta[0] = -v_four_L1_minus_one;
 
-    v_shape_vals[1] = v_L2 * (v_splat_two * v_L2 - v_splat_one);
+    v_shape[1] = v_L2 * (v_splat_two * v_L2 - v_splat_one);
     v_dN_dxi[1] = v_four_L2_minus_one;
     v_dN_deta[1] = v_splat_zero;
 
-    v_shape_vals[2] = v_L3 * (v_splat_two * v_L3 - v_splat_one);
+    v_shape[2] = v_L3 * (v_splat_two * v_L3 - v_splat_one);
     v_dN_dxi[2] = v_splat_zero;
     v_dN_deta[2] = v_four_L3_minus_one;
 
-    v_shape_vals[3] = v_splat_four * v_L1 * v_L2;
+    v_shape[3] = v_splat_four * v_L1 * v_L2;
     v_dN_dxi[3] = v_splat_four * (v_L1 - v_L2);
     v_dN_deta[3] = -v_splat_four * v_L2;
 
-    v_shape_vals[4] = v_splat_four * v_L2 * v_L3;
+    v_shape[4] = v_splat_four * v_L2 * v_L3;
     v_dN_dxi[4] = v_splat_four * v_L3;
     v_dN_deta[4] = v_splat_four * v_L2;
 
-    v_shape_vals[5] = v_splat_four * v_L3 * v_L1;
+    v_shape[5] = v_splat_four * v_L3 * v_L1;
     v_dN_dxi[5] = -v_splat_four * v_L3;
     v_dN_deta[5] = v_splat_four * (v_L1 - v_L3);
 }
@@ -344,7 +315,7 @@ fn shapeFunc8(xi: F, eta: F, n_v: *[8]F, dNu: *[8]F, dNv: *[8]F) void {
 fn shapeFunc8SIMD(
     v_xi: VecSF,
     v_eta: VecSF,
-    v_shape_vals: *[8]VecSF,
+    v_shape: *[8]VecSF,
     v_dN_dxi: *[8]VecSF,
     v_dN_deta: *[8]VecSF,
 ) void {
@@ -364,22 +335,23 @@ fn shapeFunc8SIMD(
     const v_one_minus_y = v_splat_one - v_y;
     const v_one_plus_y = v_splat_one + v_y;
 
-    v_shape_vals[0] =
+    v_shape[0] =
         v_splat_neg_quarter * v_one_minus_x * v_one_minus_y *
         (v_splat_one + v_x + v_y);
-    v_shape_vals[1] =
+    v_shape[1] =
         v_splat_neg_quarter * v_one_plus_x * v_one_minus_y *
         (v_splat_one - v_x + v_y);
-    v_shape_vals[2] =
+    v_shape[2] =
         v_splat_neg_quarter * v_one_plus_x * v_one_plus_y *
         (v_splat_one - v_x - v_y);
-    v_shape_vals[3] =
+    v_shape[3] =
         v_splat_neg_quarter * v_one_minus_x * v_one_plus_y *
         (v_splat_one + v_x - v_y);
-    v_shape_vals[4] = v_splat_half * (v_splat_one - v_x_sq) * v_one_minus_y;
-    v_shape_vals[5] = v_splat_half * v_one_plus_x * (v_splat_one - v_y_sq);
-    v_shape_vals[6] = v_splat_half * (v_splat_one - v_x_sq) * v_one_plus_y;
-    v_shape_vals[7] = v_splat_half * v_one_minus_x * (v_splat_one - v_y_sq);
+        
+    v_shape[4] = v_splat_half * (v_splat_one - v_x_sq) * v_one_minus_y;
+    v_shape[5] = v_splat_half * v_one_plus_x * (v_splat_one - v_y_sq);
+    v_shape[6] = v_splat_half * (v_splat_one - v_x_sq) * v_one_plus_y;
+    v_shape[7] = v_splat_half * v_one_minus_x * (v_splat_one - v_y_sq);
 
     const v_two_x = v_splat_two * v_x;
     const v_two_y = v_splat_two * v_y;
@@ -447,7 +419,7 @@ fn shapeFunc9(xi: F, eta: F, n_v: *[9]F, dNu: *[9]F, dNv: *[9]F) void {
 fn shapeFunc9SIMD(
     v_xi: VecSF,
     v_eta: VecSF,
-    v_shape_vals: *[9]VecSF,
+    v_shape: *[9]VecSF,
     v_dN_dxi: *[9]VecSF,
     v_dN_deta: *[9]VecSF,
 ) void {
@@ -483,15 +455,15 @@ fn shapeFunc9SIMD(
         v_y + v_splat_half,
     };
 
-    v_shape_vals[0] = v_phi[0] * v_psi[0];
-    v_shape_vals[1] = v_phi[2] * v_psi[0];
-    v_shape_vals[2] = v_phi[2] * v_psi[2];
-    v_shape_vals[3] = v_phi[0] * v_psi[2];
-    v_shape_vals[4] = v_phi[1] * v_psi[0];
-    v_shape_vals[5] = v_phi[2] * v_psi[1];
-    v_shape_vals[6] = v_phi[1] * v_psi[2];
-    v_shape_vals[7] = v_phi[0] * v_psi[1];
-    v_shape_vals[8] = v_phi[1] * v_psi[1];
+    v_shape[0] = v_phi[0] * v_psi[0];
+    v_shape[1] = v_phi[2] * v_psi[0];
+    v_shape[2] = v_phi[2] * v_psi[2];
+    v_shape[3] = v_phi[0] * v_psi[2];
+    v_shape[4] = v_phi[1] * v_psi[0];
+    v_shape[5] = v_phi[2] * v_psi[1];
+    v_shape[6] = v_phi[1] * v_psi[2];
+    v_shape[7] = v_phi[0] * v_psi[1];
+    v_shape[8] = v_phi[1] * v_psi[1];
 
     v_dN_dxi[0] = v_dphi[0] * v_psi[0];
     v_dN_dxi[1] = v_dphi[2] * v_psi[0];

@@ -176,15 +176,12 @@ pub fn slicePrint(comptime T: type, slice: []const T) void {
     print("]\n", .{});
 }
 
-// TODO: add tests for
-// - norm
-// - vecLen
 
-const TestType = F;
 
 // --------------------------------------------------------------------------------------
 // Tests
 // --------------------------------------------------------------------------------------
+const TestType = F;
 
 const testing = std.testing;
 const expectEqual = testing.expectEqual;

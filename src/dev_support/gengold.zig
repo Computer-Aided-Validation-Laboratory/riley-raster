@@ -85,7 +85,7 @@ pub fn runGenerationExt(
     test_type: []const u8,
     mesh_types: []const MeshType,
     fov_scale: F,
-    texture: iio.Texture(u8, 1),
+    texture: texops.Tex(u8, 1),
     pixel_num: [2]u32,
     samp_cfgs: []const texops.TextureSampleConfig,
     gold_dir_root: []const u8,
