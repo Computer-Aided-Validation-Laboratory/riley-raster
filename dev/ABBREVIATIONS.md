@@ -10,6 +10,7 @@ Use these abbreviations consistently in Riley Zig code.
 - `rel`: relative
 - `para`: parametric
 - `conv`: converged or convergence
+- `convo`: convolution
 - `dom`: domain
 - `targ`: target
 - `jac`: Jacobian
@@ -21,6 +22,7 @@ Use these abbreviations consistently in Riley Zig code.
 - `buff`: buffer
 - `tex`: texture
 - `samp`: sample
+- `grey`: greyscale
 - `tol`: tolerance
 - `align`: alignment
 - `supp`: support
@@ -45,6 +47,8 @@ Use these abbreviations consistently in Riley Zig code.
 - `comm`: common
 - `pix`: pixel
 - `cent`: center or centre or centers or centres
+- `in`: inner
+- `out`: outer
 
 ## Common Existing Terms
 - `alloc`: allocator
@@ -75,7 +79,7 @@ Use these abbreviations consistently in Riley Zig code.
 - Abbreviations may appear in lower case or camel case depending on naming
   context.
 - For example, `interp` and `Interp` are both valid when the local naming style
-  calls for them.
+  calls for them, and `samp` and `Samp` are both valid.
 - Use the short form only when it remains obvious in local context.
 - Reuse established Riley abbreviations instead of inventing file-local variants.
 - Follow `dev/FILESTRUCTURE.md` and other `dev/` guidance files whenever editing Zig.

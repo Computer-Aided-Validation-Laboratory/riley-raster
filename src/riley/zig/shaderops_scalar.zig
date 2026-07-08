@@ -63,7 +63,7 @@ pub inline fn fillTexClipScal(
     comptime N: usize,
     comptime T: type,
     comptime C: usize,
-    comptime samp_cfg: texops.TexSampleConfig,
+    comptime samp_cfg: texops.TexSampConfig,
     ctx_shade: comm.ShadeContext,
     interp: comm.InterpData(N),
     shader_buf: *const comm.LocalShaderBuff(N),
@@ -77,7 +77,7 @@ pub inline fn fillTexClipScal(
         tex_v += interp.weights[nn] * shader_buf.data[N + nn];
     }
 
-    const sampled = texops.sampleScal(
+    const sampled = texops.sampScal(
         C,
         samp_cfg,
         shader.tex,
@@ -95,7 +95,7 @@ pub inline fn fillTexPerspScal(
     comptime N: usize,
     comptime T: type,
     comptime C: usize,
-    comptime samp_cfg: texops.TexSampleConfig,
+    comptime samp_cfg: texops.TexSampConfig,
     ctx_shade: comm.ShadeContext,
     interp: comm.InterpData(N),
     shader_buf: *const comm.LocalShaderBuff(N),
@@ -110,7 +110,7 @@ pub inline fn fillTexPerspScal(
         tex_v += interp.weights[nn] * shader_buf.data[N + nn] * inv_z;
     }
 
-    const sampled = texops.sampleScal(
+    const sampled = texops.sampScal(
         C,
         samp_cfg,
         shader.tex,

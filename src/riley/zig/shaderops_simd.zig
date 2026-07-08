@@ -19,7 +19,7 @@ const VecSF = buildconfig.VecSF;
 const MatSlice = @import("matslice.zig").MatSlice;
 const maths_simd = @import("maths_simd.zig");
 const texops = @import("textureops.zig");
-const TexSampleConfig = texops.TexSampleConfig;
+const TexSampConfig = texops.TexSampConfig;
 const comm = @import("shaderops_common.zig");
 const scal = @import("shaderops_scalar.zig");
 const simdops = @import("simdops.zig");
@@ -108,7 +108,7 @@ pub const fillTexPerspScal = scal.fillTexPerspScal;
 
 fn texSimdInterpMode(
     comptime C: comptime_int,
-    comptime samp_cfg: TexSampleConfig,
+    comptime samp_cfg: TexSampConfig,
 ) buildconfig.SimdTexInterpMode {
     return buildconfig.TexSIMDPolicy.resolve(
         C,
@@ -121,7 +121,7 @@ pub inline fn fillTexClipSIMD(
     comptime N: usize,
     comptime T: type,
     comptime C: usize,
-    comptime samp_cfg: TexSampleConfig,
+    comptime samp_cfg: TexSampConfig,
     ctx_shade: comm.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
@@ -138,7 +138,7 @@ pub inline fn fillTexClipSIMD(
 
     const px_stride = spx_image_scratch.cols_num;
     const sampled_vecs = switch (comptime texSimdInterpMode(C, samp_cfg)) {
-        .inner => texops.sampleLanes(
+        .inner => texops.sampLanes(
             C,
             samp_cfg,
             v_mask_active,
@@ -146,7 +146,7 @@ pub inline fn fillTexClipSIMD(
             v_tex_u,
             v_tex_v,
         ),
-        .over_pixels => texops.sampleWide(
+        .over_pixels => texops.sampWide(
             C,
             samp_cfg,
             shader.tex,
@@ -175,7 +175,7 @@ pub inline fn fillTexPerspSIMD(
     comptime N: usize,
     comptime T: type,
     comptime C: usize,
-    comptime samp_cfg: TexSampleConfig,
+    comptime samp_cfg: TexSampConfig,
     ctx_shade: comm.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
@@ -207,7 +207,7 @@ pub inline fn fillTexPerspSIMD(
         samp_cfg,
     )) {
         .inner => if (comptime N == 3)
-            texops.sampleLanesTri3(
+            texops.sampLanesTri3(
                 C,
                 samp_cfg,
                 v_mask_active,
@@ -216,7 +216,7 @@ pub inline fn fillTexPerspSIMD(
                 v_tex_v,
             )
         else
-            texops.sampleLanes(
+            texops.sampLanes(
                 C,
                 samp_cfg,
                 v_mask_active,
@@ -224,7 +224,7 @@ pub inline fn fillTexPerspSIMD(
                 v_tex_u,
                 v_tex_v,
             ),
-        .over_pixels => texops.sampleWide(
+        .over_pixels => texops.sampWide(
             C,
             samp_cfg,
             shader.tex,

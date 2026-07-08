@@ -15,10 +15,14 @@ const impl = if (cfg.simd == .on) simd_impl else common_impl;
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const TexSample = common_impl.TexSample;
-pub const TexSampleMode = common_impl.TexSampleMode;
-pub const TexSampleConfig = common_impl.TexSampleConfig;
-pub const TextureSampleConfig = TexSampleConfig;
+pub const TexSamp = common_impl.TexSamp;
+pub const TexSampMode = common_impl.TexSampMode;
+pub const TexSampConfig = common_impl.TexSampConfig;
+pub const TextureSampConfig = TexSampConfig;
+pub const TexSample = TexSamp;
+pub const TexSampleMode = TexSampMode;
+pub const TexSampleConfig = TexSampConfig;
+pub const TextureSampleConfig = TextureSampConfig;
 pub const texelToFloat = common_impl.texelToFloat;
 pub const Tex = impl.Tex;
 
@@ -26,10 +30,15 @@ pub const Tex = impl.Tex;
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
-pub const sampleScal = impl.sampleScal;
-pub const sampleGreyscale = impl.sampleGreyscale;
-
-pub const sampleOneLane = simd_impl.sampleOneLane;
-pub const sampleWide = simd_impl.sampleWide;
-pub const sampleLanes = simd_impl.sampleLanes;
-pub const sampleLanesTri3 = simd_impl.sampleLanesTri3;
+pub const sampScal = impl.sampScal;
+pub const sampGrey = impl.sampGrey;
+pub const sampOneLane = simd_impl.sampOneLane;
+pub const sampWide = simd_impl.sampWide;
+pub const sampLanes = simd_impl.sampLanes;
+pub const sampLanesTri3 = simd_impl.sampLanesTri3;
+pub const sampleScal = sampScal;
+pub const sampleGreyscale = sampGrey;
+pub const sampleOneLane = sampOneLane;
+pub const sampleWide = sampWide;
+pub const sampleLanes = sampLanes;
+pub const sampleLanesTri3 = sampLanesTri3;

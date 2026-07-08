@@ -643,27 +643,27 @@ fn distortionFromC(in_camera: *const CCameraInput) !cam.DistortionModel {
     };
 }
 
-fn texSampleFromC(sample: u32) !texops.TexSample {
-    const mitchell = texops.TexSample.cubic_mitchell_netravali;
+fn texSampleFromC(sample: u32) !texops.TexSamp {
+    const mitchell = texops.TexSamp.cubic_mitchell_netravali;
     return switch (sample) {
-        @intFromEnum(texops.TexSample.nearest) => .nearest,
-        @intFromEnum(texops.TexSample.linear) => .linear,
-        @intFromEnum(texops.TexSample.cubic_catmull_rom) => .cubic_catmull_rom,
+        @intFromEnum(texops.TexSamp.nearest) => .nearest,
+        @intFromEnum(texops.TexSamp.linear) => .linear,
+        @intFromEnum(texops.TexSamp.cubic_catmull_rom) => .cubic_catmull_rom,
         @intFromEnum(mitchell) => .cubic_mitchell_netravali,
-        @intFromEnum(texops.TexSample.lanczos3) => .lanczos3,
-        @intFromEnum(texops.TexSample.cubic_bspline) => .cubic_bspline,
-        @intFromEnum(texops.TexSample.quintic_bspline) => .quintic_bspline,
+        @intFromEnum(texops.TexSamp.lanczos3) => .lanczos3,
+        @intFromEnum(texops.TexSamp.cubic_bspline) => .cubic_bspline,
+        @intFromEnum(texops.TexSamp.quintic_bspline) => .quintic_bspline,
         else => error.InvalidTexSample,
     };
 }
 
 fn texSampleModeFromC(
     sample_mode: u32,
-) !texops.TexSampleMode {
+) !texops.TexSampMode {
     return switch (sample_mode) {
-        @intFromEnum(texops.TexSampleMode.direct) => .direct,
-        @intFromEnum(texops.TexSampleMode.lut) => .lut,
-        @intFromEnum(texops.TexSampleMode.lut_lerp) => .lut_lerp,
+        @intFromEnum(texops.TexSampMode.direct) => .direct,
+        @intFromEnum(texops.TexSampMode.lut) => .lut,
+        @intFromEnum(texops.TexSampMode.lut_lerp) => .lut_lerp,
         else => error.InvalidTexSampleMode,
     };
 }
@@ -1147,7 +1147,7 @@ fn buildMeshInput(
             );
             errdefer uvs_array.deinit(allocator);
 
-            const samp_cfg = texops.TexSampleConfig{
+            const samp_cfg = texops.TexSampConfig{
                 .sample = try texSampleFromC(in_mesh.sample),
                 .mode = try texSampleModeFromC(in_mesh.sample_mode),
             };
@@ -1211,7 +1211,7 @@ fn buildMeshInput(
             );
             errdefer uvs_array.deinit(allocator);
 
-            const samp_cfg = texops.TexSampleConfig{
+            const samp_cfg = texops.TexSampConfig{
                 .sample = try texSampleFromC(in_mesh.sample),
                 .mode = try texSampleModeFromC(in_mesh.sample_mode),
             };

@@ -132,7 +132,7 @@ pub fn TexInput(comptime T: type, comptime C: usize) type {
     return struct {
         uvs: ndarray.NDArray(F),
         tex: texops.Tex(T, C),
-        samp_cfg: texops.TexSampleConfig = .{
+        samp_cfg: texops.TexSampConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .lut_lerp,
         },
@@ -278,7 +278,7 @@ pub fn TexStatic(comptime T: type, comptime C: usize) type {
     return struct {
         elem_uvs: ndarray.NDArray(F),
         tex: texops.Tex(T, C),
-        samp_cfg: texops.TexSampleConfig = .{
+        samp_cfg: texops.TexSampConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .lut_lerp,
         },
@@ -327,7 +327,7 @@ pub fn TexPrepared(comptime T: type, comptime C: usize) type {
     return struct {
         elem_uvs: ndarray.NDArray(F),
         tex: texops.Tex(T, C),
-        samp_cfg: texops.TexSampleConfig = .{
+        samp_cfg: texops.TexSampConfig = .{
             .sample = .cubic_catmull_rom,
             .mode = .lut_lerp,
         },

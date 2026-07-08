@@ -229,7 +229,7 @@ inline fn shadeTexSIMDDispatchSample(
     comptime T: type,
     comptime C: usize,
     comptime coord_space: CoordSpace,
-    samp_cfg: texops.TexSampleConfig,
+    samp_cfg: texops.TexSampConfig,
     ctx_shade: shaderops.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
@@ -265,8 +265,8 @@ inline fn shadeTexSIMDDispatchMode(
     comptime T: type,
     comptime C: usize,
     comptime coord_space: CoordSpace,
-    comptime samp_type: texops.TexSample,
-    mode: texops.TexSampleMode,
+    comptime samp_type: texops.TexSamp,
+    mode: texops.TexSampMode,
     ctx_shade: shaderops.ShadeContext,
     v_mask_active: VecSB,
     v_weights: [N]VecSF,
@@ -278,7 +278,7 @@ inline fn shadeTexSIMDDispatchMode(
 ) void {
     switch (mode) {
         inline else => |mode_type| {
-            const samp_cfg = comptime (texops.TexSampleConfig{
+            const samp_cfg = comptime (texops.TexSampConfig{
                 .sample = samp_type,
                 .mode = mode_type,
             }).sanitize();

@@ -13,7 +13,7 @@ const eval_branch_quota = buildconfig.comptime_eval_branch_quota;
 const shaderops = @import("shaderops.zig");
 const MatSlice = @import("matslice.zig").MatSlice;
 const texops = @import("textureops.zig");
-const TexSampleConfig = texops.TexSampleConfig;
+const TexSampConfig = texops.TexSampConfig;
 const CoordSpace = @import("geometrykernels.zig").CoordSpace;
 
 // --------------------------------------------------------------------------------------
@@ -128,7 +128,7 @@ inline fn shadeTexScalDispatchSample(
     comptime T: type,
     comptime C: usize,
     comptime coord_space: CoordSpace,
-    samp_cfg: TexSampleConfig,
+    samp_cfg: TexSampConfig,
     ctx_shade: shaderops.ShadeContext,
     interp: shaderops.InterpData(N),
     shader_buf: *const shaderops.LocalShaderBuff(N),
@@ -158,8 +158,8 @@ inline fn shadeTexScalDispatchMode(
     comptime T: type,
     comptime C: usize,
     comptime coord_space: CoordSpace,
-    comptime samp_type: texops.TexSample,
-    mode: texops.TexSampleMode,
+    comptime samp_type: texops.TexSamp,
+    mode: texops.TexSampMode,
     ctx_shade: shaderops.ShadeContext,
     interp: shaderops.InterpData(N),
     shader_buf: *const shaderops.LocalShaderBuff(N),
@@ -168,7 +168,7 @@ inline fn shadeTexScalDispatchMode(
 ) void {
     switch (mode) {
         inline else => |mode_type| {
-            const samp_cfg = comptime (TexSampleConfig{
+            const samp_cfg = comptime (TexSampConfig{
                 .sample = samp_type,
                 .mode = mode_type,
             }).sanitize();

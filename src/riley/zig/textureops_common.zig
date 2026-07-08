@@ -21,24 +21,24 @@ const csvio = @import("csvio.zig");
 //
 // PIPELINE ENTRY POINTS (Dispatched by Shader/Kernel):
 // │
-// ├── PATH 1: sampleScal (Purely Scal)
+// ├── PATH 1: sampScal (Purely Scal)
 // │   "Used when .simd = .off or as fallback for complex elems (quad4ibi)"
 // │   ├── getPx()           (Scalar Load)
-// │   ├── sampleLinear()    (Scalar Linear)
-// │   └── sampleConv()      (Scalar Convolution)
+// │   ├── sampLinear()      (Scalar Linear)
+// │   └── sampConvo()       (Scalar Convolution)
 // │
-// ├── PATH 2: sampleWide (Wide SIMD - Parallel over Pixels)
+// ├── PATH 2: sampWide (Wide SIMD - Parallel over Pixels)
 // │   "Each lane is a unique pixel; processes N pixels simultaneously"
 // │   ├── getPxWide()       (Wide Load: N pixels)
-// │   ├── sampleLinearWide()(Wide Linear: N pixels)
-// │   └── sampleConvWide()  (Wide Convolution: N pixels)
+// │   ├── sampLinearWide()  (Wide Linear: N pixels)
+// │   └── sampConvoWide()   (Wide Convolution: N pixels)
 // │
-// └── PATH 3: sampleLanes (Lane SIMD - Serial over Pixels, SIMD over Taps)
+// └── PATH 3: sampLanes (Lane SIMD - Serial over Pixels, SIMD over Taps)
 //     "Processes N lanes serially; math inside each lane uses SIMD for taps"
-//     └── sampleOneLane()   (Helper: Process 1 lane)
+//     └── sampOneLane()     (Helper: Process 1 lane)
 //         ├── getPx()       (Scalar Load: 1 pixel)
-//         ├── sampleLinearOneLane() (Scalar Linear: 1 pixel)
-//         └── sampleConvOneLane()   (SIMD-Tap Convolution: 1 pixel)
+//         ├── sampLinearOneLane() (Scalar Linear: 1 pixel)
+//         └── sampConvoOneLane()  (SIMD-Tap Convolution: 1 pixel)
 //
 // -------------------------------------------------------------------------------------
 
@@ -46,7 +46,7 @@ const csvio = @import("csvio.zig");
 // Public Constants & Public Types
 // --------------------------------------------------------------------------------------
 
-pub const TexSample = enum {
+pub const TexSamp = enum {
     nearest,
     linear,
     cubic_catmull_rom,
@@ -56,24 +56,24 @@ pub const TexSample = enum {
     quintic_bspline,
 };
 
-pub const TexSampleMode = enum {
+pub const TexSampMode = enum {
     direct,
     lut,
     lut_lerp,
 };
 
-pub const TexSampleConfig = struct {
-    sample: TexSample,
-    mode: TexSampleMode = .direct,
+pub const TexSampConfig = struct {
+    sample: TexSamp,
+    mode: TexSampMode = .direct,
 
-    pub fn isValid(self: TexSampleConfig) bool {
+    pub fn isValid(self: TexSampConfig) bool {
         return switch (self.sample) {
             .nearest, .linear => self.mode == .direct,
             else => true,
         };
     }
 
-    pub fn sanitize(self: TexSampleConfig) TexSampleConfig {
+    pub fn sanitize(self: TexSampConfig) TexSampConfig {
         return switch (self.sample) {
             .nearest, .linear => .{ .sample = self.sample, .mode = .direct },
             else => self,
@@ -85,7 +85,7 @@ pub const TexSampleConfig = struct {
 // Public Entry-Point Func
 // --------------------------------------------------------------------------------------
 
-pub fn Tex(comptime T: type, comptime CH: usize) type {
+pub fn Tex(comptime T: type, comptime C: usize) type {
     return struct {
         array: NDArray(T),
         rows_num: usize,
@@ -94,7 +94,7 @@ pub fn Tex(comptime T: type, comptime CH: usize) type {
         const Self = @This();
 
         pub fn init(allocator: std.mem.Allocator, rows: usize, cols: usize) !Self {
-            const dims = &[_]usize{ CH, rows, cols };
+            const dims = &[_]usize{ C, rows, cols };
             const array = try NDArray(T).initFlat(allocator, dims);
             return .{
                 .array = array,
@@ -136,7 +136,7 @@ pub fn Tex(comptime T: type, comptime CH: usize) type {
                 file_name,
                 self.rows_num,
                 self.cols_num,
-                CH,
+                C,
                 self,
                 SaveCtx.getVal,
             );
@@ -150,6 +150,380 @@ pub fn texelToFloat(comptime T: type, val: T) F {
         .float => @as(F, @floatCast(val)),
         else => @compileError("Unsupped tex storage type."),
     };
+}
+
+pub fn sampScal(
+    comptime C: usize,
+    comptime config: TexSampConfig,
+    tex: anytype,
+    u: F,
+    v: F,
+) [C]F {
+    std.debug.assert(config.isValid());
+
+    const cols_minus_1 = @as(isize, @intCast(tex.cols_num)) - 1;
+    const rows_minus_1 = @as(isize, @intCast(tex.rows_num)) - 1;
+    const cols_minus_1_f = @as(F, @floatFromInt(cols_minus_1));
+    const rows_minus_1_f = @as(F, @floatFromInt(rows_minus_1));
+    const tex_x_f = u * cols_minus_1_f;
+    const tex_y_f = v * rows_minus_1_f;
+    const tex_x_i = @as(isize, @intFromFloat(@floor(tex_x_f)));
+    const tex_y_i = @as(isize, @intFromFloat(@floor(tex_y_f)));
+    const tex_x_frac = tex_x_f - @as(F, @floatFromInt(tex_x_i));
+    const tex_y_frac = tex_y_f - @as(F, @floatFromInt(tex_y_i));
+    const tex_x_round = @as(isize, @intFromFloat(@round(tex_x_f)));
+    const tex_y_round = @as(isize, @intFromFloat(@round(tex_y_f)));
+
+    return switch (config.sample) {
+        .nearest => getPx(
+            C,
+            tex,
+            tex_x_round,
+            tex_y_round,
+        ),
+        .linear => sampLinear(C, tex, tex_x_i, tex_y_i, tex_x_frac, tex_y_frac),
+        .cubic_catmull_rom => sampTex4Tap(
+            C,
+            .cubic_catmull_rom,
+            config.mode,
+            tex,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .cubic_mitchell_netravali => sampTex4Tap(
+            C,
+            .cubic_mitchell_netravali,
+            config.mode,
+            tex,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .cubic_bspline => sampTex4Tap(
+            C,
+            .cubic_bspline,
+            config.mode,
+            tex,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .lanczos3 => sampTex6Tap(
+            C,
+            .lanczos3,
+            config.mode,
+            tex,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+        .quintic_bspline => sampTex6Tap(
+            C,
+            .quintic_bspline,
+            config.mode,
+            tex,
+            tex_x_i,
+            tex_y_i,
+            tex_x_frac,
+            tex_y_frac,
+        ),
+    };
+}
+
+pub fn sampGrey(
+    comptime config: TexSampConfig,
+    tex: anytype,
+    u: F,
+    v: F,
+) F {
+    return sampScal(1, config, tex, u, v)[0];
+}
+
+pub fn getPx(
+    comptime C: usize,
+    tex: anytype,
+    x: isize,
+    y: isize,
+) [C]F {
+    const tex_cols = @as(isize, @intCast(tex.cols_num));
+    const tex_rows = @as(isize, @intCast(tex.rows_num));
+    const tex_x_clamp = @max(0, @min(x, tex_cols - 1));
+    const tex_y_clamp = @max(0, @min(y, tex_rows - 1));
+    const tex_x_i = @as(usize, @intCast(tex_x_clamp));
+    const tex_y_i = @as(usize, @intCast(tex_y_clamp));
+
+    var samp_res: [C]F = undefined;
+    inline for (0..C) |ch| {
+        samp_res[ch] = tex.getVal(ch, tex_y_i, tex_x_i);
+    }
+    return samp_res;
+}
+
+pub fn sampLinear(
+    comptime C: usize,
+    tex: anytype,
+    tex_x_i: isize,
+    tex_y_i: isize,
+    tex_x_frac: F,
+    tex_y_frac: F,
+) [C]F {
+    const p00 = getPx(C, tex, tex_x_i, tex_y_i);
+    const p10 = getPx(C, tex, tex_x_i + 1, tex_y_i);
+    const p01 = getPx(C, tex, tex_x_i, tex_y_i + 1);
+    const p11 = getPx(C, tex, tex_x_i + 1, tex_y_i + 1);
+    var samp_res: [C]F = undefined;
+    inline for (0..C) |ch| {
+        samp_res[ch] = (1.0 - tex_x_frac) * (1.0 - tex_y_frac) * p00[ch] +
+            tex_x_frac * (1.0 - tex_y_frac) * p10[ch] +
+            (1.0 - tex_x_frac) * tex_y_frac * p01[ch] +
+            tex_x_frac * tex_y_frac * p11[ch];
+    }
+    return samp_res;
+}
+
+pub fn sampConvo(
+    comptime C: usize,
+    comptime TAP: usize,
+    tex: anytype,
+    tex_x_i: isize,
+    tex_y_i: isize,
+    samp_coeff_x: [TAP]F,
+    samp_coeff_y: [TAP]F,
+) [C]F {
+    const tap_offset = @as(isize, @intCast(TAP)) / 2 - 1;
+    var samp_res: [C]F = [_]F{0.0} ** C;
+    var samp_coeff_sum: F = 0.0;
+
+    for (0..TAP) |jj| {
+        for (0..TAP) |ii| {
+            const tap_samp_coeff = samp_coeff_x[ii] * samp_coeff_y[jj];
+            const px = getPx(
+                C,
+                tex,
+                tex_x_i + @as(isize, @intCast(ii)) - tap_offset,
+                tex_y_i + @as(isize, @intCast(jj)) - tap_offset,
+            );
+            inline for (0..C) |ch| {
+                samp_res[ch] += px[ch] * tap_samp_coeff;
+            }
+            samp_coeff_sum += tap_samp_coeff;
+        }
+    }
+
+    const inv_samp_coeff_sum = if (@abs(samp_coeff_sum) < tol.tex.samp_coeff_sum)
+        1.0
+    else
+        1.0 / samp_coeff_sum;
+
+    inline for (0..C) |ch| {
+        samp_res[ch] *= inv_samp_coeff_sum;
+    }
+    return samp_res;
+}
+
+fn sampTex4Tap(
+    comptime C: usize,
+    comptime sample: TexSamp,
+    comptime mode: TexSampMode,
+    tex: anytype,
+    tex_x_i: isize,
+    tex_y_i: isize,
+    tex_x_frac: F,
+    tex_y_frac: F,
+) [C]F {
+    const TAP = 4;
+    const coeff_fun = switch (sample) {
+        .cubic_catmull_rom => cubicCoeffCatmullRom,
+        .cubic_mitchell_netravali => cubicCoeffMitchellNetravali,
+        .cubic_bspline => cubicBSplineCoeff,
+        else => unreachable,
+    };
+    const lut = switch (sample) {
+        .cubic_catmull_rom => catmull_rom_lut,
+        .cubic_mitchell_netravali => mitchell_netravali_lut,
+        .cubic_bspline => cubic_bspline_lut,
+        else => unreachable,
+    };
+
+    return switch (mode) {
+        .direct => blk: {
+            const coeffs_x = .{
+                coeff_fun(tex_x_frac + 1),
+                coeff_fun(tex_x_frac),
+                coeff_fun(tex_x_frac - 1),
+                coeff_fun(tex_x_frac - 2),
+            };
+            const coeffs_y = .{
+                coeff_fun(tex_y_frac + 1),
+                coeff_fun(tex_y_frac),
+                coeff_fun(tex_y_frac - 1),
+                coeff_fun(tex_y_frac - 2),
+            };
+
+            break :blk sampConvo(
+                C,
+                TAP,
+                tex,
+                tex_x_i,
+                tex_y_i,
+                coeffs_x,
+                coeffs_y,
+            );
+        },
+        .lut => blk: {
+            const lut_size_f = @as(F, @floatFromInt(lut_size - 1));
+            const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
+            const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
+
+            break :blk sampConvo(
+                C,
+                TAP,
+                tex,
+                tex_x_i,
+                tex_y_i,
+                lut[idx_x],
+                lut[idx_y],
+            );
+        },
+        .lut_lerp => blk: {
+            const coeffs_x = getLerpSampCoeffs(TAP, lut, tex_x_frac);
+            const coeffs_y = getLerpSampCoeffs(TAP, lut, tex_y_frac);
+
+            break :blk sampConvo(
+                C,
+                TAP,
+                tex,
+                tex_x_i,
+                tex_y_i,
+                coeffs_x,
+                coeffs_y,
+            );
+        },
+    };
+}
+
+fn sampTex6Tap(
+    comptime C: usize,
+    comptime sample: TexSamp,
+    comptime mode: TexSampMode,
+    tex: anytype,
+    tex_x_i: isize,
+    tex_y_i: isize,
+    tex_x_frac: F,
+    tex_y_frac: F,
+) [C]F {
+    const TAP = 6;
+    const coeff_fun = switch (sample) {
+        .lanczos3 => lanczos3Coeff,
+        .quintic_bspline => quinticBSplineCoeff,
+        else => unreachable,
+    };
+    const lut = switch (sample) {
+        .lanczos3 => lanczos3_lut,
+        .quintic_bspline => quintic_bspline_lut,
+        else => unreachable,
+    };
+
+    return switch (mode) {
+        .direct => blk: {
+            const coeffs_x = .{
+                coeff_fun(tex_x_frac + 2),
+                coeff_fun(tex_x_frac + 1),
+                coeff_fun(tex_x_frac),
+                coeff_fun(tex_x_frac - 1),
+                coeff_fun(tex_x_frac - 2),
+                coeff_fun(tex_x_frac - 3),
+            };
+            const coeffs_y = .{
+                coeff_fun(tex_y_frac + 2),
+                coeff_fun(tex_y_frac + 1),
+                coeff_fun(tex_y_frac),
+                coeff_fun(tex_y_frac - 1),
+                coeff_fun(tex_y_frac - 2),
+                coeff_fun(tex_y_frac - 3),
+            };
+            break :blk sampConvo(
+                C,
+                TAP,
+                tex,
+                tex_x_i,
+                tex_y_i,
+                coeffs_x,
+                coeffs_y,
+            );
+        },
+        .lut => blk: {
+            const lut_size_f = @as(F, @floatFromInt(lut_size - 1));
+            const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
+            const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
+            break :blk sampConvo(
+                C,
+                TAP,
+                tex,
+                tex_x_i,
+                tex_y_i,
+                lut[idx_x],
+                lut[idx_y],
+            );
+        },
+        .lut_lerp => blk: {
+            const coeffs_x = getLerpSampCoeffs(TAP, lut, tex_x_frac);
+            const coeffs_y = getLerpSampCoeffs(TAP, lut, tex_y_frac);
+            break :blk sampConvo(
+                C,
+                TAP,
+                tex,
+                tex_x_i,
+                tex_y_i,
+                coeffs_x,
+                coeffs_y,
+            );
+        },
+    };
+}
+
+pub fn getLerpSampCoeffs(
+    comptime TAP: usize,
+    comptime table: [lut_size][TAP]F,
+    t: F,
+) [TAP]F {
+    const scaled = t * (lut_size - 1);
+    const idx = @as(usize, @intFromFloat(@floor(scaled)));
+    const frac = scaled - @as(F, @floatFromInt(idx));
+    var lerp_res: [TAP]F = undefined;
+
+    const lut0 = table[idx];
+    const lut1 = table[@min(idx + 1, lut_size - 1)];
+
+    inline for (0..TAP) |ii| {
+        lerp_res[ii] = lut0[ii] * (1.0 - frac) + lut1[ii] * frac;
+    }
+    return lerp_res;
+}
+
+pub fn getLerpSampCoeffsRuntime(
+    comptime TAP: usize,
+    table: [lut_size][TAP]F,
+    t: F, // Between 0.0 and 1.0
+) [TAP]F {
+    const scaled = t * (lut_size - 1);
+    const idx = @as(usize, @intFromFloat(@floor(scaled)));
+    const frac = scaled - @as(F, @floatFromInt(idx));
+
+    var lerp_res: [TAP]F = undefined;
+    const lut0 = table[idx];
+    const lut1 = table[@min(idx + 1, lut_size - 1)];
+
+    inline for (0..TAP) |ii| {
+        lerp_res[ii] = lut0[ii] * (1.0 - frac) + lut1[ii] * frac;
+    }
+
+    return lerp_res;
 }
 
 pub fn cubicCoeffCatmullRom(x: F) F {
@@ -218,10 +592,13 @@ pub fn quinticBSplineCoeff(x: F) F {
 pub const catmull_rom_lut = blk: {
     @setEvalBranchQuota(eval_branch_quota);
     var table: [lut_size][4]F = undefined;
+    const lut_size_f = @as(F, @floatFromInt(lut_size));
     for (0..lut_size) |ii| {
-        const tt = @as(F, @floatFromInt(ii)) / @as(F, @floatFromInt(lut_size));
+        const ii_f = @as(F, @floatFromInt(ii));
+        const tt = ii_f / lut_size_f;
         for (0..4) |jj| {
-            const xx = @as(F, @floatFromInt(jj)) - 1.0 - tt;
+            const jj_f = @as(F, @floatFromInt(jj));
+            const xx = jj_f - 1.0 - tt;
             table[ii][jj] = cubicCoeffCatmullRom(xx);
         }
     }
@@ -231,10 +608,13 @@ pub const catmull_rom_lut = blk: {
 pub const mitchell_netravali_lut = blk: {
     @setEvalBranchQuota(eval_branch_quota);
     var table: [lut_size][4]F = undefined;
+    const lut_size_f = @as(F, @floatFromInt(lut_size));
     for (0..lut_size) |ii| {
-        const tt = @as(F, @floatFromInt(ii)) / @as(F, @floatFromInt(lut_size));
+        const ii_f = @as(F, @floatFromInt(ii));
+        const tt = ii_f / lut_size_f;
         for (0..4) |jj| {
-            const xx = @as(F, @floatFromInt(jj)) - 1.0 - tt;
+            const jj_f = @as(F, @floatFromInt(jj));
+            const xx = jj_f - 1.0 - tt;
             table[ii][jj] = cubicCoeffMitchellNetravali(xx);
         }
     }
@@ -244,10 +624,13 @@ pub const mitchell_netravali_lut = blk: {
 pub const cubic_bspline_lut = blk: {
     @setEvalBranchQuota(eval_branch_quota);
     var table: [lut_size][4]F = undefined;
+    const lut_size_f = @as(F, @floatFromInt(lut_size));
     for (0..lut_size) |ii| {
-        const tt = @as(F, @floatFromInt(ii)) / @as(F, @floatFromInt(lut_size));
+        const ii_f = @as(F, @floatFromInt(ii));
+        const tt = ii_f / lut_size_f;
         for (0..4) |jj| {
-            const xx = @as(F, @floatFromInt(jj)) - 1.0 - tt;
+            const jj_f = @as(F, @floatFromInt(jj));
+            const xx = jj_f - 1.0 - tt;
             table[ii][jj] = cubicBSplineCoeff(xx);
         }
     }
@@ -257,10 +640,14 @@ pub const cubic_bspline_lut = blk: {
 pub const lanczos3_lut = blk: {
     @setEvalBranchQuota(eval_branch_quota);
     var table: [lut_size][6]F = undefined;
+    const lut_size_f = @as(F, @floatFromInt(lut_size));
     for (0..lut_size) |ii| {
-        const tt = @as(F, @floatFromInt(ii)) / @as(F, @floatFromInt(lut_size));
+        const ii_f = @as(F, @floatFromInt(ii));
+        const tt = ii_f / lut_size_f;
         for (0..6) |jj| {
-            table[ii][jj] = lanczos3Coeff(@as(F, @floatFromInt(jj)) - 2.0 - tt);
+            const jj_f = @as(F, @floatFromInt(jj));
+            const xx = jj_f - 2.0 - tt;
+            table[ii][jj] = lanczos3Coeff(xx);
         }
     }
     break :blk table;
@@ -269,348 +656,15 @@ pub const lanczos3_lut = blk: {
 pub const quintic_bspline_lut = blk: {
     @setEvalBranchQuota(eval_branch_quota);
     var table: [lut_size][6]F = undefined;
+    const lut_size_f = @as(F, @floatFromInt(lut_size));
     for (0..lut_size) |ii| {
-        const tt = @as(F, @floatFromInt(ii)) / @as(F, @floatFromInt(lut_size));
+        const ii_f = @as(F, @floatFromInt(ii));
+        const tt = ii_f / lut_size_f;
         for (0..6) |jj| {
-            table[ii][jj] = quinticBSplineCoeff(@as(F, @floatFromInt(jj)) - 2.0 - tt);
+            const jj_f = @as(F, @floatFromInt(jj));
+            const xx = jj_f - 2.0 - tt;
+            table[ii][jj] = quinticBSplineCoeff(xx);
         }
     }
     break :blk table;
 };
-
-pub fn getPx(
-    comptime CH: usize,
-    tex: anytype,
-    x: isize,
-    y: isize,
-) [CH]F {
-    const tex_cols = @as(isize, @intCast(tex.cols_num));
-    const tex_rows = @as(isize, @intCast(tex.rows_num));
-    // Clamp to the edges of the texture
-    const tex_x_i = @as(usize, @intCast(@max(0, @min(x, tex_cols - 1))));
-    const tex_y_i = @as(usize, @intCast(@max(0, @min(y, tex_rows - 1))));
-
-    var samp_res: [CH]F = undefined;
-    inline for (0..CH) |ch| {
-        samp_res[ch] = tex.getVal(ch, tex_y_i, tex_x_i);
-    }
-    return samp_res;
-}
-
-pub fn sampleLinear(
-    comptime CH: usize,
-    tex: anytype,
-    tex_x_i: isize,
-    tex_y_i: isize,
-    tex_x_frac: F,
-    tex_y_frac: F,
-) [CH]F {
-    const p00 = getPx(CH, tex, tex_x_i, tex_y_i);
-    const p10 = getPx(CH, tex, tex_x_i + 1, tex_y_i);
-    const p01 = getPx(CH, tex, tex_x_i, tex_y_i + 1);
-    const p11 = getPx(CH, tex, tex_x_i + 1, tex_y_i + 1);
-    var samp_res: [CH]F = undefined;
-    inline for (0..CH) |ch| {
-        samp_res[ch] = (1.0 - tex_x_frac) * (1.0 - tex_y_frac) * p00[ch] +
-            tex_x_frac * (1.0 - tex_y_frac) * p10[ch] +
-            (1.0 - tex_x_frac) * tex_y_frac * p01[ch] +
-            tex_x_frac * tex_y_frac * p11[ch];
-    }
-    return samp_res;
-}
-
-pub fn sampleConv(
-    comptime CH: usize,
-    comptime TAP: usize,
-    tex: anytype,
-    tex_x_i: isize,
-    tex_y_i: isize,
-    samp_coeff_x: [TAP]F,
-    samp_coeff_y: [TAP]F,
-) [CH]F {
-    const tap_offset = @as(isize, @intCast(TAP)) / 2 - 1;
-    var samp_res: [CH]F = [_]F{0.0} ** CH;
-    var samp_coeff_sum: F = 0.0;
-
-    for (0..TAP) |jj| {
-        for (0..TAP) |ii| {
-            const tap_samp_coeff = samp_coeff_x[ii] * samp_coeff_y[jj];
-            const px = getPx(
-                CH,
-                tex,
-                tex_x_i + @as(isize, @intCast(ii)) - tap_offset,
-                tex_y_i + @as(isize, @intCast(jj)) - tap_offset,
-            );
-            inline for (0..CH) |ch| {
-                samp_res[ch] += px[ch] * tap_samp_coeff;
-            }
-            samp_coeff_sum += tap_samp_coeff;
-        }
-    }
-
-    const inv_samp_coeff_sum = if (@abs(samp_coeff_sum) < tol.tex.samp_coeff_sum)
-        1.0
-    else
-        1.0 / samp_coeff_sum;
-
-    inline for (0..CH) |ch| {
-        samp_res[ch] *= inv_samp_coeff_sum;
-    }
-    return samp_res;
-}
-
-pub fn getLerpSampCoeffs(
-    comptime TAP: usize,
-    comptime table: [lut_size][TAP]F,
-    t: F,
-) [TAP]F {
-    const scaled = t * (lut_size - 1);
-    const idx = @as(usize, @intFromFloat(@floor(scaled)));
-    const frac = scaled - @as(F, @floatFromInt(idx));
-    var lerp_res: [TAP]F = undefined;
-
-    const lut0 = table[idx];
-    const lut1 = table[@min(idx + 1, lut_size - 1)];
-
-    inline for (0..TAP) |ii| {
-        lerp_res[ii] = lut0[ii] * (1.0 - frac) + lut1[ii] * frac;
-    }
-    return lerp_res;
-}
-
-pub fn getLerpSampCoeffsRuntime(
-    comptime TAP: usize,
-    table: [lut_size][TAP]F,
-    t: F, // Between 0.0 and 1.0
-) [TAP]F {
-    const scaled = t * (lut_size - 1);
-    const idx = @as(usize, @intFromFloat(@floor(scaled)));
-    const frac = scaled - @as(F, @floatFromInt(idx));
-
-    var lerp_res: [TAP]F = undefined;
-    const lut0 = table[idx];
-    const lut1 = table[@min(idx + 1, lut_size - 1)];
-
-    inline for (0..TAP) |ii| {
-        lerp_res[ii] = lut0[ii] * (1.0 - frac) + lut1[ii] * frac;
-    }
-
-    return lerp_res;
-}
-
-pub fn sampleScal(
-    comptime CH: usize,
-    comptime config: TexSampleConfig,
-    tex: anytype,
-    u: F,
-    v: F,
-) [CH]F {
-    std.debug.assert(config.isValid());
-
-    const cols_minus_1 = @as(isize, @intCast(tex.cols_num)) - 1;
-    const rows_minus_1 = @as(isize, @intCast(tex.rows_num)) - 1;
-    const tex_x_f = u * @as(F, @floatFromInt(cols_minus_1));
-    const tex_y_f = v * @as(F, @floatFromInt(rows_minus_1));
-    const tex_x_i = @as(isize, @intFromFloat(@floor(tex_x_f)));
-    const tex_y_i = @as(isize, @intFromFloat(@floor(tex_y_f)));
-    const tex_x_frac = tex_x_f - @as(F, @floatFromInt(tex_x_i));
-    const tex_y_frac = tex_y_f - @as(F, @floatFromInt(tex_y_i));
-
-    return switch (config.sample) {
-        .nearest => getPx(
-            CH,
-            tex,
-            @as(isize, @intFromFloat(@round(tex_x_f))),
-            @as(isize, @intFromFloat(@round(tex_y_f))),
-        ),
-        .linear => sampleLinear(CH, tex, tex_x_i, tex_y_i, tex_x_frac, tex_y_frac),
-        .cubic_catmull_rom => sampleTex4Tap(
-            CH,
-            .cubic_catmull_rom,
-            config.mode,
-            tex,
-            tex_x_i,
-            tex_y_i,
-            tex_x_frac,
-            tex_y_frac,
-        ),
-        .cubic_mitchell_netravali => sampleTex4Tap(
-            CH,
-            .cubic_mitchell_netravali,
-            config.mode,
-            tex,
-            tex_x_i,
-            tex_y_i,
-            tex_x_frac,
-            tex_y_frac,
-        ),
-        .cubic_bspline => sampleTex4Tap(
-            CH,
-            .cubic_bspline,
-            config.mode,
-            tex,
-            tex_x_i,
-            tex_y_i,
-            tex_x_frac,
-            tex_y_frac,
-        ),
-        .lanczos3 => sampleTex6Tap(
-            CH,
-            .lanczos3,
-            config.mode,
-            tex,
-            tex_x_i,
-            tex_y_i,
-            tex_x_frac,
-            tex_y_frac,
-        ),
-        .quintic_bspline => sampleTex6Tap(
-            CH,
-            .quintic_bspline,
-            config.mode,
-            tex,
-            tex_x_i,
-            tex_y_i,
-            tex_x_frac,
-            tex_y_frac,
-        ),
-    };
-}
-
-pub fn sampleGreyscale(
-    comptime config: TexSampleConfig,
-    tex: anytype,
-    u: F,
-    v: F,
-) F {
-    return sampleScal(1, config, tex, u, v)[0];
-}
-
-fn sampleTex4Tap(
-    comptime CH: usize,
-    comptime sample: TexSample,
-    comptime mode: TexSampleMode,
-    tex: anytype,
-    tex_x_i: isize,
-    tex_y_i: isize,
-    tex_x_frac: F,
-    tex_y_frac: F,
-) [CH]F {
-    const TAP = 4;
-    const coeff_fun = switch (sample) {
-        .cubic_catmull_rom => cubicCoeffCatmullRom,
-        .cubic_mitchell_netravali => cubicCoeffMitchellNetravali,
-        .cubic_bspline => cubicBSplineCoeff,
-        else => unreachable,
-    };
-    const lut = switch (sample) {
-        .cubic_catmull_rom => catmull_rom_lut,
-        .cubic_mitchell_netravali => mitchell_netravali_lut,
-        .cubic_bspline => cubic_bspline_lut,
-        else => unreachable,
-    };
-
-    return switch (mode) {
-        .direct => blk: {
-            const coeffs_x = .{
-                coeff_fun(tex_x_frac + 1),
-                coeff_fun(tex_x_frac),
-                coeff_fun(tex_x_frac - 1),
-                coeff_fun(tex_x_frac - 2),
-            };
-            const coeffs_y = .{
-                coeff_fun(tex_y_frac + 1),
-                coeff_fun(tex_y_frac),
-                coeff_fun(tex_y_frac - 1),
-                coeff_fun(tex_y_frac - 2),
-            };
-
-            break :blk sampleConv(CH, TAP, tex, tex_x_i, tex_y_i, coeffs_x, coeffs_y);
-        },
-        .lut => blk: {
-            const lut_size_f = @as(F, @floatFromInt(lut_size - 1));
-            const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
-            const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
-            
-            break :blk sampleConv(CH, TAP, tex, tex_x_i, tex_y_i, lut[idx_x], lut[idx_y]);
-        },
-        .lut_lerp => blk: {
-            const coeffs_x = getLerpSampCoeffs(TAP, lut, tex_x_frac);
-            const coeffs_y = getLerpSampCoeffs(TAP, lut, tex_y_frac);
-            
-            break :blk sampleConv(CH, TAP, tex, tex_x_i, tex_y_i, coeffs_x, coeffs_y);
-        },
-    };
-}
-
-fn sampleTex6Tap(
-    comptime CH: usize,
-    comptime sample: TexSample,
-    comptime mode: TexSampleMode,
-    tex: anytype,
-    tex_x_i: isize,
-    tex_y_i: isize,
-    tex_x_frac: F,
-    tex_y_frac: F,
-) [CH]F {
-    const TAP = 6;
-    const coeff_fun = switch (sample) {
-        .lanczos3 => lanczos3Coeff,
-        .quintic_bspline => quinticBSplineCoeff,
-        else => unreachable,
-    };
-    const lut = switch (sample) {
-        .lanczos3 => lanczos3_lut,
-        .quintic_bspline => quintic_bspline_lut,
-        else => unreachable,
-    };
-
-    return switch (mode) {
-        .direct => blk: {
-            const coeffs_x = .{
-                coeff_fun(tex_x_frac + 2),
-                coeff_fun(tex_x_frac + 1),
-                coeff_fun(tex_x_frac),
-                coeff_fun(tex_x_frac - 1),
-                coeff_fun(tex_x_frac - 2),
-                coeff_fun(tex_x_frac - 3),
-            };
-            const coeffs_y = .{
-                coeff_fun(tex_y_frac + 2),
-                coeff_fun(tex_y_frac + 1),
-                coeff_fun(tex_y_frac),
-                coeff_fun(tex_y_frac - 1),
-                coeff_fun(tex_y_frac - 2),
-                coeff_fun(tex_y_frac - 3),
-            };
-            break :blk sampleConv(CH, TAP, tex, tex_x_i, tex_y_i, coeffs_x, coeffs_y);
-        },
-        .lut => blk: {
-            const lut_size_f = @as(F, @floatFromInt(lut_size - 1));
-            const idx_x = @as(usize, @intFromFloat(tex_x_frac * lut_size_f));
-            const idx_y = @as(usize, @intFromFloat(tex_y_frac * lut_size_f));
-            break :blk sampleConv(
-                CH,
-                TAP,
-                tex,
-                tex_x_i,
-                tex_y_i,
-                lut[idx_x],
-                lut[idx_y],
-            );
-        },
-        .lut_lerp => blk: {
-            const coeffs_x = getLerpSampCoeffs(TAP, lut, tex_x_frac);
-            const coeffs_y = getLerpSampCoeffs(TAP, lut, tex_y_frac);
-            break :blk sampleConv(
-                CH,
-                TAP,
-                tex,
-                tex_x_i,
-                tex_y_i,
-                coeffs_x,
-                coeffs_y,
-            );
-        },
-    };
-}
