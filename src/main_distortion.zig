@@ -12,12 +12,13 @@ const riley = @import("riley/zig/riley.zig");
 const rastcfg = @import("riley/zig/rasterconfig.zig");
 const meshio = @import("riley/zig/meshio.zig");
 const uvio = @import("riley/zig/uvio.zig");
-const mo = @import("riley/zig/meshops.zig");
+const mo = @import("riley/zig/meshpipeline.zig");
 const gk = @import("riley/zig/geometrykernels.zig");
 const iio = @import("riley/zig/imageio.zig");
 const shaderops = @import("riley/zig/shaderops.zig");
 const camera_mod = @import("riley/zig/camera.zig");
 const cameraops = @import("riley/zig/cameraops.zig");
+const sceneops = @import("riley/zig/sceneops.zig");
 const Rotation = @import("riley/zig/rotation.zig").Rotation;
 
 const MeshInput = mo.MeshInput;
@@ -54,7 +55,7 @@ const PSF_CASES = [_]struct {
         .name = "gaussian_heavy",
         .psf = .{ .gaussian = .{
             .sigma_px = 0.8,
-            .support_rad_px = 2.5,
+            .supp_rad_px = 2.5,
             .separable = .yes,
         } },
     },
@@ -115,7 +116,7 @@ fn makeCameraInput(
     distortion: DistortionModel,
     psf: PointSpreadFunc,
 ) CameraInput {
-    const roi_pos = cameraops.roiCentFromCoords(coords);
+    const roi_pos = sceneops.boundsCenter(coords);
     const cam_pos = cameraops.posFillFrameFromRot(
         coords,
         PIXELS_NUM,
@@ -209,7 +210,7 @@ pub fn main(init: std.process.Init) !void {
 
     const config = rastcfg.RasterConfig{
         .save_strategy = .disk,
-        .image_mode = .grey,
+        .image_save_mode = .grey,
         .image_save_opts = &[_]iio.ImageSaveOpts{
             .{ .format = .bmp, .bits = 8, .scaling = .auto, .channels = 1 },
         },
