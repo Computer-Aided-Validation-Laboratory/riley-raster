@@ -39,6 +39,11 @@ def sync_python_package_data() -> None:
         src_path = PROJECT_ROOT / src_rel
         dst_path = PACKAGE_DATA_ROOT / dst_rel
         if not src_path.is_file():
+            if dst_path.is_file():
+                # sdists already contain the synced package data under
+                # src/riley/data, so wheel builds from sdist do not need the
+                # original repo-side source paths.
+                continue
             raise FileNotFoundError(
                 f"Required package data source is missing: {src_path}",
             )
