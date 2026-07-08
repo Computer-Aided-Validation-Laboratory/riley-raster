@@ -139,7 +139,7 @@ fn makeGreyMeshInput(
     const uvs = try loadRabbitUvMap(allocator, io, data_dir);
 
     const shader: shaderops.ShaderInput = switch (shader_mode) {
-        .texture => .{ .tex_u8 = .{
+        .tex => .{ .tex_u8 = .{
             .uvs = uvs.array,
             .tex = texture,
             .samp_cfg = .{

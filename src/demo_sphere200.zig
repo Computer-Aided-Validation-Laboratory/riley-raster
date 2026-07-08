@@ -52,7 +52,7 @@ pub fn main(init: std.process.Init) !void {
     defer threaded_io.deinit();
     const io = threaded_io.io();
 
-    const data_dir = "data/bench/tri6_sphere200/";
+    const data_dir = "data/min/tri6_sphere200/";
     const out_dir_root = "./out/demo-sphere200";
     const pixel_num = [_]u32{ 800, 500 };
 

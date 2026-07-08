@@ -57,8 +57,8 @@ def cal_target_texture_path() -> Path:
 
 def sphere200_case_path() -> Path:
     return _resolve_data_path(
-        "bench/tri6_sphere200",
-        "data/bench/tri6_sphere200",
+        "min/tri6_sphere200",
+        "data/min/tri6_sphere200",
     )
 
 

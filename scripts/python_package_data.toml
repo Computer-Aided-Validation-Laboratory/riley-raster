@@ -11,20 +11,20 @@ source = "data/FE/platehole3d_2mr_63f.e"
 dest = "fe/platehole3d_2mr_63f.e"
 
 [[copy]]
-source = "data/bench/tri6_sphere200/connect.csv"
-dest = "bench/tri6_sphere200/connect.csv"
+source = "data/min/tri6_sphere200/connect.csv"
+dest = "min/tri6_sphere200/connect.csv"
 
 [[copy]]
-source = "data/bench/tri6_sphere200/coords.csv"
-dest = "bench/tri6_sphere200/coords.csv"
+source = "data/min/tri6_sphere200/coords.csv"
+dest = "min/tri6_sphere200/coords.csv"
 
 [[copy]]
-source = "data/bench/tri6_sphere200/field.csv"
-dest = "bench/tri6_sphere200/field.csv"
+source = "data/min/tri6_sphere200/field.csv"
+dest = "min/tri6_sphere200/field.csv"
 
 [[copy]]
-source = "data/bench/tri6_sphere200/uvs.csv"
-dest = "bench/tri6_sphere200/uvs.csv"
+source = "data/min/tri6_sphere200/uvs.csv"
+dest = "min/tri6_sphere200/uvs.csv"
 
 [[copy]]
 source = "data/FE/platehole3d_2mr_63f/connect.csv"
