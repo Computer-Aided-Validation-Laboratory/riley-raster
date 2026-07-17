@@ -126,7 +126,7 @@ pub const MedianMAD = struct {
 pub fn calcMetrics(
     etype: gk.MeshType,
     pixel_num: [2]u32,
-    sub_samp: u16,
+    sub_samp: u32,
     e2e_ms: F,
     frame_times: report.FrameTimes,
     bench_log: report.BenchLog,
@@ -251,7 +251,7 @@ pub fn getDateString() ![]const u8 {
 pub fn calcActualTileSize(
     config: rastcfg.RasterConfig,
     pixel_num: [2]u32,
-    sub_sample: u16,
+    sub_sample: u32,
     halo_px: u16,
 ) u16 {
     return scalingpolicy.tileSize(
@@ -323,7 +323,7 @@ pub fn writeBenchmarkConfig(
     config: rastcfg.RasterConfig,
     render_group_workers: []const u16,
     pixel_num: [2]u32,
-    sub_sample: u16,
+    sub_sample: u32,
     runs: usize,
     fov_scale: F,
     actual_tile_size: u16,
@@ -492,7 +492,7 @@ pub const TexFuncCase = struct {
 
 pub const BenchRenderDefaults = struct {
     pixels_num: [2]u32,
-    sub_sample: u16,
+    sub_sample: u32,
     focal_leng: F,
     pixels_size: [2]F,
     fov_scale: F,

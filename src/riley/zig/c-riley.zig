@@ -97,6 +97,20 @@ pub const CArray3DF64 = extern struct {
     dim2: usize,
 };
 
+pub const CArray3DU8 = extern struct {
+    elems: [*c]const u8,
+    dim0: usize,
+    dim1: usize,
+    dim2: usize,
+};
+
+pub const CArray3DU16 = extern struct {
+    elems: [*c]const u16,
+    dim0: usize,
+    dim1: usize,
+    dim2: usize,
+};
+
 pub const CDims5Usize = extern struct {
     dim0: usize,
     dim1: usize,
@@ -117,7 +131,7 @@ pub const CCameraInput = extern struct {
     rot_world: CVec3F64,
     roi_cent_world: CVec3F64,
     focal_length: F,
-    sub_sample: u16,
+    sub_sample: u32,
     distortion_model: u32,
     distortion_k1: F,
     distortion_k2: F,
@@ -236,6 +250,9 @@ pub const CMeshInput = extern struct {
     shader_tag: u32,
     uvs: CArray2DF64,
     tex: CArray3DF64,
+    tex_u8: CArray3DU8,
+    tex_u16: CArray3DU16,
+    texture_storage: u32,
     sample: u32,
     sample_mode: u32,
     bits: c_int,
@@ -296,6 +313,7 @@ const MeshInputBuilt = struct {
     uvs_array: ?ndarray.NDArray(F) = null,
     tex_array_u8: ?ndarray.NDArray(u8) = null,
     tex_array_u16: ?ndarray.NDArray(u16) = null,
+    tex_array_f: ?ndarray.NDArray(F) = null,
     nodal_field_array: ?ndarray.NDArray(F) = null,
 
     fn deinit(self: *MeshInputBuilt, allocator: std.mem.Allocator) void {
@@ -309,6 +327,9 @@ const MeshInputBuilt = struct {
             tex_array.deinit(allocator);
         }
         if (self.tex_array_u16) |*tex_array| {
+            tex_array.deinit(allocator);
+        }
+        if (self.tex_array_f) |*tex_array| {
             tex_array.deinit(allocator);
         }
         if (self.nodal_field_array) |*nodal_field_array| {
@@ -393,7 +414,7 @@ fn dimsFromArray(in_dims: [5]usize) CDims5Usize {
     };
 }
 
-fn array3ToDims(in_array: CArray3DF64) [3]usize {
+fn array3ToDims(in_array: anytype) [3]usize {
     return .{
         in_array.dim0,
         in_array.dim1,
@@ -1017,7 +1038,7 @@ fn buildArray3DF64(
 fn buildTexArray(
     comptime T: type,
     allocator: std.mem.Allocator,
-    in_array: *const CArray3DF64,
+    in_array: anytype,
     channels_num: usize,
 ) !ndarray.NDArray(T) {
     const dims = array3ToDims(in_array.*);
@@ -1025,17 +1046,9 @@ fn buildTexArray(
         return error.InvalidTexShape;
     }
     const elems_num = dims[0] * dims[1] * dims[2];
-    const slice_in = try cConstSlice(F, in_array.elems, elems_num);
+    const slice_in = try cConstSlice(T, in_array.elems, elems_num);
     var dims_mut = dims;
-    var array_out = try ndarray.NDArray(T).initFlat(allocator, dims_mut[0..]);
-    for (slice_in, 0..) |val_in, ii| {
-        array_out.slice[ii] = switch (T) {
-            u8 => @intFromFloat(@round(@max(0.0, @min(255.0, val_in)))),
-            u16 => @intFromFloat(@round(@max(0.0, @min(65535.0, val_in)))),
-            else => @compileError("Unsupped tex type"),
-        };
-    }
-    return array_out;
+    return try ndarray.NDArray(T).init(allocator, @constCast(slice_in), dims_mut[0..]);
 }
 
 fn buildOptionalFieldFromC(
@@ -1133,6 +1146,7 @@ fn buildMeshInput(
         in_mesh.scaling_max,
     );
     const normal_type = try normalTypeFromC(in_mesh.normal_type);
+    if (in_mesh.texture_storage > 2) return error.InvalidTextureStorage;
 
     switch (in_mesh.shader_tag) {
         0 => {
@@ -1155,11 +1169,11 @@ fn buildMeshInput(
                 return error.InvalidTexSampleConfig;
             }
             built.uvs_array = uvs_array;
-            if (bits == 16) {
+            if (in_mesh.texture_storage == 1) {
                 var tex_array = try buildTexArray(
                     u16,
                     allocator,
-                    &in_mesh.tex,
+                    &in_mesh.tex_u16,
                     1,
                 );
                 errdefer tex_array.deinit(allocator);
@@ -1167,8 +1181,8 @@ fn buildMeshInput(
                     .uvs = uvs_array,
                     .tex = texops.Tex(u16, 1){
                         .array = tex_array,
-                        .rows_num = in_mesh.tex.dim1,
-                        .cols_num = in_mesh.tex.dim2,
+                        .rows_num = in_mesh.tex_u16.dim1,
+                        .cols_num = in_mesh.tex_u16.dim2,
                     },
                     .samp_cfg = samp_cfg,
                     .bits = bits,
@@ -1176,11 +1190,23 @@ fn buildMeshInput(
                     .normal_type = normal_type,
                 } };
                 built.tex_array_u16 = tex_array;
+            } else if (in_mesh.texture_storage == 2) {
+                var tex_array = try buildTexArray(F, allocator, &in_mesh.tex, 1);
+                errdefer tex_array.deinit(allocator);
+                built.mesh_input.shader = .{ .tex_f = .{
+                    .uvs = uvs_array,
+                    .tex = texops.Tex(F, 1){ .array = tex_array, .rows_num = in_mesh.tex.dim1, .cols_num = in_mesh.tex.dim2 },
+                    .samp_cfg = samp_cfg,
+                    .bits = bits,
+                    .scaling = scaling,
+                    .normal_type = normal_type,
+                } };
+                built.tex_array_f = tex_array;
             } else {
                 var tex_array = try buildTexArray(
                     u8,
                     allocator,
-                    &in_mesh.tex,
+                    &in_mesh.tex_u8,
                     1,
                 );
                 errdefer tex_array.deinit(allocator);
@@ -1188,8 +1214,8 @@ fn buildMeshInput(
                     .uvs = uvs_array,
                     .tex = texops.Tex(u8, 1){
                         .array = tex_array,
-                        .rows_num = in_mesh.tex.dim1,
-                        .cols_num = in_mesh.tex.dim2,
+                        .rows_num = in_mesh.tex_u8.dim1,
+                        .cols_num = in_mesh.tex_u8.dim2,
                     },
                     .samp_cfg = samp_cfg,
                     .bits = bits,
@@ -1219,11 +1245,11 @@ fn buildMeshInput(
                 return error.InvalidTexSampleConfig;
             }
             built.uvs_array = uvs_array;
-            if (bits == 16) {
+            if (in_mesh.texture_storage == 1) {
                 var tex_array = try buildTexArray(
                     u16,
                     allocator,
-                    &in_mesh.tex,
+                    &in_mesh.tex_u16,
                     3,
                 );
                 errdefer tex_array.deinit(allocator);
@@ -1231,8 +1257,8 @@ fn buildMeshInput(
                     .uvs = uvs_array,
                     .tex = texops.Tex(u16, 3){
                         .array = tex_array,
-                        .rows_num = in_mesh.tex.dim1,
-                        .cols_num = in_mesh.tex.dim2,
+                        .rows_num = in_mesh.tex_u16.dim1,
+                        .cols_num = in_mesh.tex_u16.dim2,
                     },
                     .samp_cfg = samp_cfg,
                     .bits = bits,
@@ -1240,11 +1266,23 @@ fn buildMeshInput(
                     .normal_type = normal_type,
                 } };
                 built.tex_array_u16 = tex_array;
+            } else if (in_mesh.texture_storage == 2) {
+                var tex_array = try buildTexArray(F, allocator, &in_mesh.tex, 3);
+                errdefer tex_array.deinit(allocator);
+                built.mesh_input.shader = .{ .tex_rgb_f = .{
+                    .uvs = uvs_array,
+                    .tex = texops.Tex(F, 3){ .array = tex_array, .rows_num = in_mesh.tex.dim1, .cols_num = in_mesh.tex.dim2 },
+                    .samp_cfg = samp_cfg,
+                    .bits = bits,
+                    .scaling = scaling,
+                    .normal_type = normal_type,
+                } };
+                built.tex_array_f = tex_array;
             } else {
                 var tex_array = try buildTexArray(
                     u8,
                     allocator,
-                    &in_mesh.tex,
+                    &in_mesh.tex_u8,
                     3,
                 );
                 errdefer tex_array.deinit(allocator);
@@ -1252,8 +1290,8 @@ fn buildMeshInput(
                     .uvs = uvs_array,
                     .tex = texops.Tex(u8, 3){
                         .array = tex_array,
-                        .rows_num = in_mesh.tex.dim1,
-                        .cols_num = in_mesh.tex.dim2,
+                        .rows_num = in_mesh.tex_u8.dim1,
+                        .cols_num = in_mesh.tex_u8.dim2,
                     },
                     .samp_cfg = samp_cfg,
                     .bits = bits,

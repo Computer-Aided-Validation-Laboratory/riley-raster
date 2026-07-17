@@ -156,8 +156,10 @@ pub const ShaderInput = union(enum) {
     nodal: NodalInput,
     tex_u8: TexInput(u8, 1),
     tex_u16: TexInput(u16, 1),
+    tex_f: TexInput(F, 1),
     tex_rgb_u8: TexInput(u8, 3),
     tex_rgb_u16: TexInput(u16, 3),
+    tex_rgb_f: TexInput(F, 3),
     func: FuncInput,
     func_rgb: FuncInput,
 };
@@ -302,8 +304,10 @@ pub const ShaderStatic = union(enum) {
     nodal: NodalStatic,
     tex_u8: TexStatic(u8, 1),
     tex_u16: TexStatic(u16, 1),
+    tex_f: TexStatic(F, 1),
     tex_rgb_u8: TexStatic(u8, 3),
     tex_rgb_u16: TexStatic(u16, 3),
+    tex_rgb_f: TexStatic(F, 3),
     func: FuncStatic,
     func_rgb: FuncStatic,
 };
@@ -359,8 +363,10 @@ pub const ShaderPrepared = union(enum) {
     nodal: NodalPrepared,
     tex_u8: TexPrepared(u8, 1),
     tex_u16: TexPrepared(u16, 1),
+    tex_f: TexPrepared(F, 1),
     tex_rgb_u8: TexPrepared(u8, 3),
     tex_rgb_u16: TexPrepared(u16, 3),
+    tex_rgb_f: TexPrepared(F, 3),
     func: FuncPrepared,
     func_rgb: FuncPrepared,
 };

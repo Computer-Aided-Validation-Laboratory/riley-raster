@@ -496,7 +496,7 @@ fn buildKernel1D(
     allocator: std.mem.Allocator,
     psf: PointSpreadFunc,
     radius_subpx: usize,
-    sub_sample: u16,
+    sub_sample: u32,
 ) ![]F {
     const size = 2 * radius_subpx + 1;
     const weights = try allocator.alloc(F, size);
@@ -642,7 +642,7 @@ fn buildKernel2D(
     psf: PointSpreadFunc,
     radius_x_subpx: usize,
     radius_y_subpx: usize,
-    sub_sample: u16,
+    sub_sample: u32,
 ) ![]F {
     const width = 2 * radius_x_subpx + 1;
     const height = 2 * radius_y_subpx + 1;
@@ -667,7 +667,7 @@ fn buildKernel2D(
 pub fn preparePSF(
     allocator: std.mem.Allocator,
     psf: PointSpreadFunc,
-    sub_sample: u16,
+    sub_sample: u32,
 ) !PreparedPSF {
     switch (psf) {
         .pixel_box => |box| {

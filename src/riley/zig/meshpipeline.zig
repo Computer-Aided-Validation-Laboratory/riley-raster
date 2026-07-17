@@ -131,8 +131,8 @@ pub fn countOutputFields(meshes: []const MeshInput) u8 {
     for (meshes) |mesh| {
         const mesh_fields: u8 = switch (mesh.shader) {
             .nodal => |shader| shader.field.getFieldsN(),
-            .tex_u8, .tex_u16 => 1,
-            .tex_rgb_u8, .tex_rgb_u16 => 3,
+            .tex_u8, .tex_u16, .tex_f => 1,
+            .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
             .func => 1,
             .func_rgb => 3,
         };
@@ -180,10 +180,16 @@ pub fn meshInputFromSimDataSlice(
                 .tex_u16 => |tex| {
                     outer_alloc.free(tex.uvs.slice);
                 },
+                .tex_f => |tex| {
+                    outer_alloc.free(tex.uvs.slice);
+                },
                 .tex_rgb_u8 => |tex| {
                     outer_alloc.free(tex.uvs.slice);
                 },
                 .tex_rgb_u16 => |tex| {
+                    outer_alloc.free(tex.uvs.slice);
+                },
+                .tex_rgb_f => |tex| {
                     outer_alloc.free(tex.uvs.slice);
                 },
                 .func => |tex_func| {
@@ -310,6 +316,21 @@ pub fn initMeshStatic(
                 .normal_type = tex_in.normal_type,
             } };
         },
+        .tex_f => |tex_in| {
+            const elem_uvs = try prepUVs(
+                allocator,
+                &tex_in.uvs,
+                &mesh_input.connect,
+            );
+            shader_static = .{ .tex_f = .{
+                .elem_uvs = elem_uvs,
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .bits = tex_in.bits,
+                .scaling = tex_in.scaling,
+                .normal_type = tex_in.normal_type,
+            } };
+        },
         .tex_rgb_u8 => |tex_in| {
             const elem_uvs = try prepUVs(
                 allocator,
@@ -332,6 +353,21 @@ pub fn initMeshStatic(
                 &mesh_input.connect,
             );
             shader_static = .{ .tex_rgb_u16 = .{
+                .elem_uvs = elem_uvs,
+                .tex = tex_in.tex,
+                .samp_cfg = tex_in.samp_cfg,
+                .bits = tex_in.bits,
+                .scaling = tex_in.scaling,
+                .normal_type = tex_in.normal_type,
+            } };
+        },
+        .tex_rgb_f => |tex_in| {
+            const elem_uvs = try prepUVs(
+                allocator,
+                &tex_in.uvs,
+                &mesh_input.connect,
+            );
+            shader_static = .{ .tex_rgb_f = .{
                 .elem_uvs = elem_uvs,
                 .tex = tex_in.tex,
                 .samp_cfg = tex_in.samp_cfg,
@@ -1122,6 +1158,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         tex_static,
                     );
                 },
+                .tex_f => |tex_static| {
+                    mesh_prep.shader = try prepareTexShader(F, 1, self, tex_static);
+                },
                 .tex_rgb_u8 => |tex_static| {
                     mesh_prep.shader = try prepareTexShader(
                         u8,
@@ -1137,6 +1176,9 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                         self,
                         tex_static,
                     );
+                },
+                .tex_rgb_f => |tex_static| {
+                    mesh_prep.shader = try prepareTexShader(F, 3, self, tex_static);
                 },
                 .func => |func_static| {
                     mesh_prep.shader = try prepareFuncShader(1, self, func_static);
@@ -1321,6 +1363,18 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .normal_type = tex_static.normal_type,
                     .elem_normals = elem_normals,
                 } };
+            } else if (comptime T == F and C == 1) {
+                return .{ .tex_f = .{
+                    .elem_uvs = elem_uvs,
+                    .tex = tex_static.tex,
+                    .samp_cfg = tex_static.samp_cfg,
+                    .bits = tex_static.bits,
+                    .scaling = tex_static.scaling,
+                    .scale_mul = factors.mul,
+                    .scale_add = factors.add,
+                    .normal_type = tex_static.normal_type,
+                    .elem_normals = elem_normals,
+                } };
             } else if (comptime T == u8 and C == 3) {
                 return .{ .tex_rgb_u8 = .{
                     .elem_uvs = elem_uvs,
@@ -1333,8 +1387,20 @@ fn FrameMeshPipeline(comptime MT: geomkerns.MeshType) type {
                     .normal_type = tex_static.normal_type,
                     .elem_normals = elem_normals,
                 } };
-            } else {
+            } else if (comptime T == u16 and C == 3) {
                 return .{ .tex_rgb_u16 = .{
+                    .elem_uvs = elem_uvs,
+                    .tex = tex_static.tex,
+                    .samp_cfg = tex_static.samp_cfg,
+                    .bits = tex_static.bits,
+                    .scaling = tex_static.scaling,
+                    .scale_mul = factors.mul,
+                    .scale_add = factors.add,
+                    .normal_type = tex_static.normal_type,
+                    .elem_normals = elem_normals,
+                } };
+            } else {
+                return .{ .tex_rgb_f = .{
                     .elem_uvs = elem_uvs,
                     .tex = tex_static.tex,
                     .samp_cfg = tex_static.samp_cfg,

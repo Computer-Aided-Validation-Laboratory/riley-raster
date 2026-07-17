@@ -38,7 +38,7 @@ const PIXELS_SIZE = [2]F{
 const FOCAL_LENGTH: F = @floatCast(50.0e-3);
 const FOV_SCALE_FACTOR: F = 1.0;
 const STEREO_ANGLE_DEG: F = 20.0;
-const SUB_SAMPLE: u16 = 2;
+const SUB_SAMPLE: u32 = 2;
 const DICUQ_CAMERA_DIR = "./out/demo-dicuq";
 
 const TOTAL_THREADS: u16 = 8;

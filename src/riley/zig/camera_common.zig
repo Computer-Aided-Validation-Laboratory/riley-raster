@@ -32,7 +32,7 @@ pub const CameraInput = struct {
     rot_world: rotation.Rotation,
     roi_cent_world: vec.Vec3f,
     focal_length: F,
-    sub_sample: u16,
+    sub_sample: u32,
     distortion: cm.DistortionModel = .none,
     psf: cm.PointSpreadFunc = .{ .pixel_box = .{} },
     coord_sys: CameraCoordSys = .opengl,
@@ -132,7 +132,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         rot_world: rotation.Rotation,
         roi_cent_world: vec.Vec3f,
         focal_length: F,
-        sub_sample: u16,
+        sub_sample: u32,
         sensor_size: [2]F,
         image_dims: [2]F,
         image_dist: F,
@@ -152,7 +152,7 @@ pub fn CameraPreparedType(comptime CameraBackend: type) type {
         ) !Self {
             const subpixel_center_map = input.subpixel_center_map;
             const actual_sub_sample = if (input.sub_sample == 0)
-                @as(u16, 2)
+                @as(u32, 2)
             else
                 input.sub_sample;
             const sensor_size = calcSensorSize(
@@ -405,7 +405,7 @@ const coord_y = [_]F{ bb, bb, -bb, -bb, bb, bb, -bb, -bb };
 const coord_z = [_]F{ bb, bb, bb, bb, -bb, -bb, -bb, -bb };
 const roi_world_arr = [_]F{ 0, 0, 0 };
 const roi_world = vec.Vec3f.initSlice(&roi_world_arr);
-const sub_samp: u16 = 2;
+const sub_samp: u32 = 2;
 
 fn expectApproxEqRelAbs(
     expected: F,

@@ -134,6 +134,7 @@ class Mesh:
     shader_type: int = 0
     uvs: np.ndarray | None = None
     texture: np.ndarray | None = None
+    texture_storage: int = 0
     sample: int = 2
     sample_mode: int = 2
     bits: int = 8
@@ -211,6 +212,12 @@ class ShaderType(IntEnum):
     func = 3
     func_rgb = 4
     nodal_rgb = 5
+
+
+class TextureStorage(IntEnum):
+    u8 = 0
+    u16 = 1
+    floating = 2
 
 
 class RenderMode(IntEnum):
@@ -727,6 +734,26 @@ def _make_array_3d_f64(
 
 
 @cython.cfunc
+def _make_array_3d_u8(
+    view_in: cython.uchar[:, :, ::1],
+    dim0: cython.Py_ssize_t,
+    dim1: cython.Py_ssize_t,
+    dim2: cython.Py_ssize_t,
+) -> cr.CArray3DU8:
+    return cr.CArray3DU8(cython.address(view_in[0, 0, 0]), dim0, dim1, dim2)
+
+
+@cython.cfunc
+def _make_array_3d_u16(
+    view_in: cython.ushort[:, :, ::1],
+    dim0: cython.Py_ssize_t,
+    dim1: cython.Py_ssize_t,
+    dim2: cython.Py_ssize_t,
+) -> cr.CArray3DU16:
+    return cr.CArray3DU16(cython.address(view_in[0, 0, 0]), dim0, dim1, dim2)
+
+
+@cython.cfunc
 def _empty_array_2d_f64() -> cr.CArray2DF64:
     return cr.CArray2DF64(cython.NULL, 0, 0)
 
@@ -739,6 +766,16 @@ def _empty_array_2d_usize() -> cr.CArray2DUsize:
 @cython.cfunc
 def _empty_array_3d_f64() -> cr.CArray3DF64:
     return cr.CArray3DF64(cython.NULL, 0, 0, 0)
+
+
+@cython.cfunc
+def _empty_array_3d_u8() -> cr.CArray3DU8:
+    return cr.CArray3DU8(cython.NULL, 0, 0, 0)
+
+
+@cython.cfunc
+def _empty_array_3d_u16() -> cr.CArray3DU16:
+    return cr.CArray3DU16(cython.NULL, 0, 0, 0)
 
 
 def _last_error_message() -> str:
@@ -804,10 +841,10 @@ def _contig_f64_3d(array_in: Any, label: str) -> np.ndarray:
 def _contig_texture(
     texture_in: Any,
     channels_num: int,
-    bits: int,
+    storage: int,
 ) -> np.ndarray:
     texture_base = np.asarray(texture_in)
-    texture_np = np.ascontiguousarray(texture_base)
+    texture_np = np.array(texture_base, copy=True, order="C")
     if getattr(texture_np, "ndim", None) == 2:
         if channels_num != 1:
             raise ValueError("rgb texture must have shape (3, rows, cols)")
@@ -816,13 +853,18 @@ def _contig_texture(
         raise ValueError("texture must have shape (channels, rows, cols)")
     if int(texture_np.shape[0]) != channels_num:
         raise ValueError("texture channel count does not match shader type")
-    if bits == 16 and texture_np.dtype == np.uint8:
-        texture_np = np.ascontiguousarray(
-            texture_np.astype(np.float64) * 257.0,
-            dtype=np.float64,
-        )
-    else:
+    if storage == int(TextureStorage.u8):
+        if texture_np.dtype != np.uint8:
+            raise ValueError("u8 texture storage requires a uint8 array")
+    elif storage == int(TextureStorage.u16):
+        if texture_np.dtype != np.uint16:
+            raise ValueError("u16 texture storage requires a uint16 array")
+    elif storage == int(TextureStorage.floating):
+        if texture_np.dtype not in (np.float32, np.float64):
+            raise ValueError("floating texture storage requires a float32 or float64 array")
         texture_np = np.ascontiguousarray(texture_np, dtype=np.float64)
+    else:
+        raise ValueError("unsupported texture storage")
     return texture_np
 
 
@@ -925,6 +967,8 @@ def _fill_mesh_array(
 
         shader_tag = int(mesh.shader_type)
         mesh_array[nn].shader_tag = shader_tag
+        texture_storage = int(mesh.texture_storage)
+        mesh_array[nn].texture_storage = texture_storage
         mesh_array[nn].sample = int(mesh.sample)
         mesh_array[nn].sample_mode = int(mesh.sample_mode)
         mesh_array[nn].bits = int(mesh.bits)
@@ -960,22 +1004,38 @@ def _fill_mesh_array(
 
         if mesh.texture is None:
             mesh_array[nn].tex = _empty_array_3d_f64()
+            mesh_array[nn].tex_u8 = _empty_array_3d_u8()
+            mesh_array[nn].tex_u16 = _empty_array_3d_u16()
         else:
             if texture_channels == 0:
                 raise ValueError("texture provided for non-texture shader")
             texture_np = _contig_texture(
                 mesh.texture,
                 texture_channels,
-                int(mesh.bits),
+                texture_storage,
             )
             texture_shape = _as_shape_3d(texture_np)
-            texture_view: cython.double[:, :, ::1] = texture_np
-            mesh_array[nn].tex = _make_array_3d_f64(
-                texture_view,
-                texture_shape[0],
-                texture_shape[1],
-                texture_shape[2],
-            )
+            mesh_array[nn].tex = _empty_array_3d_f64()
+            mesh_array[nn].tex_u8 = _empty_array_3d_u8()
+            mesh_array[nn].tex_u16 = _empty_array_3d_u16()
+            if texture_storage == int(TextureStorage.u8):
+                texture_view_u8: cython.uchar[:, :, ::1] = texture_np
+                mesh_array[nn].tex_u8 = _make_array_3d_u8(
+                    texture_view_u8,
+                    texture_shape[0], texture_shape[1], texture_shape[2],
+                )
+            elif texture_storage == int(TextureStorage.u16):
+                texture_view_u16: cython.ushort[:, :, ::1] = texture_np
+                mesh_array[nn].tex_u16 = _make_array_3d_u16(
+                    texture_view_u16,
+                    texture_shape[0], texture_shape[1], texture_shape[2],
+                )
+            else:
+                texture_view_f: cython.double[:, :, ::1] = texture_np
+                mesh_array[nn].tex = _make_array_3d_f64(
+                    texture_view_f,
+                    texture_shape[0], texture_shape[1], texture_shape[2],
+                )
             keepalive.append(texture_np)
 
         if mesh.nodal_field is None:
@@ -1258,6 +1318,7 @@ __all__ = [
     "ScaleOver",
     "ScaleStrategy",
     "ShaderType",
+    "TextureStorage",
     "SubPixelCenterMap",
     "FuncShaderBuiltin",
     "FuncCoordMode",

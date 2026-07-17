@@ -24,7 +24,7 @@ const DEFAULT_OUT_DIR = "out/bench_stats_sphere2000zoom";
 const DEFAULT_IMAGE_OUT_DIR = "out/bench_images_sphere2000zoom";
 const DEFAULT_DATA_DIR_SUFFIX = "sphere2000";
 const DEFAULT_PIXELS_NUM = [2]u32{ 1600, 1000 };
-const DEFAULT_SUB_SAMPLE: u16 = 1;
+const DEFAULT_SUB_SAMPLE: u32 = 1;
 const DEFAULT_FOCAL_LENG: F = @floatCast(50.0e-3);
 const DEFAULT_PIXELS_SIZE = [2]F{
     @floatCast(5.3e-6),

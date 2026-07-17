@@ -175,7 +175,7 @@ pub fn applyClamping(val: F, bits: ?u8) F {
 
 pub fn avgImage(
     image_subpx: *const matslice.MatSlice(F),
-    sub_samp: u16,
+    sub_samp: u32,
     image_avg: *matslice.MatSlice(F),
 ) void {
     const num_px_x: usize = (image_subpx.cols_n) / @as(usize, sub_samp);

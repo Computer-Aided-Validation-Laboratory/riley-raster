@@ -20,7 +20,7 @@ const DEFAULT_OUT_DIR = "out/bench_stats_dicuq";
 const DEFAULT_IMAGE_OUT_DIR = "out/bench_images_dicuq";
 const DEFAULT_DATA_DIR = "data/FE/platehole3d_6mr_63f/";
 const DEFAULT_PIXELS_NUM = [2]u32{ 2464, 2056 };
-const DEFAULT_SUB_SAMPLE: u16 = 2;
+const DEFAULT_SUB_SAMPLE: u32 = 2;
 const DEFAULT_FOCAL_LENG: F = @floatCast(50.0e-3);
 const DEFAULT_PIXELS_SIZE = [2]F{
     @floatCast(3.45e-6),

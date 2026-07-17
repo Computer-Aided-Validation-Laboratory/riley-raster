@@ -680,8 +680,8 @@ fn rasterTileComm(
                         @intCast(s.elem_field.dims[1])
                     else
                         @intCast(s.elem_field.dims[2]),
-                    .tex_u8, .tex_u16 => 1,
-                    .tex_rgb_u8, .tex_rgb_u16 => 3,
+                    .tex_u8, .tex_u16, .tex_f => 1,
+                    .tex_rgb_u8, .tex_rgb_u16, .tex_rgb_f => 3,
                     .func => 1,
                     .func_rgb => 3,
                 };
@@ -791,6 +791,31 @@ fn rasterTileComm(
                             subpx_scratch,
                         );
                     },
+                    .tex_f => |*shader| {
+                        const SK = shadekerns.TexKernel(N, F, 1);
+                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
+                        local_shader_buf.load(shader.elem_uvs, ov.elem_idx * 2 * N, 2);
+                        if (shader.elem_normals) |en| {
+                            const prep_idx = en.map[ov.elem_idx];
+                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
+                        }
+                        shaded_px += try RasterBackend.RasterEngine(
+                            GK,
+                            SK,
+                            TexPrepared(F, 1),
+                        ).render(
+                            report_mode,
+                            ctx_rast,
+                            ctx_report,
+                            tile,
+                            ov,
+                            coords,
+                            hull,
+                            shader,
+                            &local_shader_buf,
+                            subpx_scratch,
+                        );
+                    },
                     .tex_rgb_u8 => |*shader| {
                         const SK = shadekerns.TexKernel(N, u8, 3);
                         var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
@@ -838,6 +863,31 @@ fn rasterTileComm(
                             GK,
                             SK,
                             TexPrepared(u16, 3),
+                        ).render(
+                            report_mode,
+                            ctx_rast,
+                            ctx_report,
+                            tile,
+                            ov,
+                            coords,
+                            hull,
+                            shader,
+                            &local_shader_buf,
+                            subpx_scratch,
+                        );
+                    },
+                    .tex_rgb_f => |*shader| {
+                        const SK = shadekerns.TexKernel(N, F, 3);
+                        var local_shader_buf: shaderops.LocalShaderBuff(N) = .{};
+                        local_shader_buf.load(shader.elem_uvs, ov.elem_idx * 2 * N, 2);
+                        if (shader.elem_normals) |en| {
+                            const prep_idx = en.map[ov.elem_idx];
+                            local_shader_buf.loadNormals(en.array, prep_idx * 3 * N);
+                        }
+                        shaded_px += try RasterBackend.RasterEngine(
+                            GK,
+                            SK,
+                            TexPrepared(F, 3),
                         ).render(
                             report_mode,
                             ctx_rast,
