@@ -57,7 +57,7 @@ pub const RasterConfig = struct {
         .{ .format = .bmp, .bits = 8, .scaling = .none },
     },
     tile_size_override: ?u16 = null,
-    tile_size_min: u16 = 4,
+    tile_size_min: u16 = 1,
     tile_size_max: u16 = 256,
     background_value: F = 0.0,
     hull_mode: HullMode = .on_no_fallback,

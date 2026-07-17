@@ -199,7 +199,7 @@ pub fn loadCamera(
             try requireValue(&kv, "focal_length_m"),
         ),
         .sub_sample = try std.fmt.parseInt(
-            u8,
+            u16,
             try requireValue(&kv, "sub_sample"),
             10,
         ),

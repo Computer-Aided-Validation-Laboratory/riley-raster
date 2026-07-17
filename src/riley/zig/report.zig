@@ -1080,7 +1080,7 @@ pub fn initFullStatsLog(
     allocator: std.mem.Allocator,
     pixels_num: [2]u32,
     tile_size: u16,
-    sub_sample: u8,
+    sub_sample: u16,
     opts: rastcfg.FullStatsOpts,
 ) !FullStatsLog {
     var self = FullStatsLog{};

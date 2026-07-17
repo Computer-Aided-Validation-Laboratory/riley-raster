@@ -417,7 +417,7 @@ pub const PreparedPSFMode = enum {
 pub const PreparedPSF = struct {
     mode: PreparedPSFMode = .identity_fast,
     halo_px: u16 = 0,
-    halo_subpx: u16 = 0,
+    halo_subpx: usize = 0,
     radius_x_subpx: usize = 0,
     radius_y_subpx: usize = 0,
     weights_x: []F = &.{},
@@ -496,7 +496,7 @@ fn buildKernel1D(
     allocator: std.mem.Allocator,
     psf: PointSpreadFunc,
     radius_subpx: usize,
-    sub_sample: u8,
+    sub_sample: u16,
 ) ![]F {
     const size = 2 * radius_subpx + 1;
     const weights = try allocator.alloc(F, size);
@@ -642,7 +642,7 @@ fn buildKernel2D(
     psf: PointSpreadFunc,
     radius_x_subpx: usize,
     radius_y_subpx: usize,
-    sub_sample: u8,
+    sub_sample: u16,
 ) ![]F {
     const width = 2 * radius_x_subpx + 1;
     const height = 2 * radius_y_subpx + 1;
@@ -667,7 +667,7 @@ fn buildKernel2D(
 pub fn preparePSF(
     allocator: std.mem.Allocator,
     psf: PointSpreadFunc,
-    sub_sample: u8,
+    sub_sample: u16,
 ) !PreparedPSF {
     switch (psf) {
         .pixel_box => |box| {
@@ -686,7 +686,7 @@ pub fn preparePSF(
             return .{
                 .mode = .separable,
                 .halo_px = halo_px,
-                .halo_subpx = halo_px * sub_sample,
+                .halo_subpx = @as(usize, halo_px) * @as(usize, sub_sample),
                 .radius_x_subpx = radius_subpx,
                 .radius_y_subpx = radius_subpx,
                 .weights_x = try buildKernel1D(allocator, psf, radius_subpx, sub_sample),
@@ -705,7 +705,7 @@ pub fn preparePSF(
                 return .{
                     .mode = .separable,
                     .halo_px = halo_px,
-                    .halo_subpx = halo_px * sub_sample,
+                    .halo_subpx = @as(usize, halo_px) * @as(usize, sub_sample),
                     .radius_x_subpx = radius_subpx,
                     .radius_y_subpx = radius_subpx,
                     .weights_x = try buildKernel1D(allocator, psf, radius_subpx, sub_sample),
@@ -715,7 +715,7 @@ pub fn preparePSF(
             return .{
                 .mode = .nonseparable,
                 .halo_px = halo_px,
-                .halo_subpx = halo_px * sub_sample,
+                .halo_subpx = @as(usize, halo_px) * @as(usize, sub_sample),
                 .radius_x_subpx = radius_subpx,
                 .radius_y_subpx = radius_subpx,
                 .weights_2d = try buildKernel2D(
@@ -755,7 +755,7 @@ pub fn preparePSF(
                 return .{
                     .mode = .separable,
                     .halo_px = halo_px,
-                    .halo_subpx = halo_px * sub_sample,
+                    .halo_subpx = @as(usize, halo_px) * @as(usize, sub_sample),
                     .radius_x_subpx = radius_subpx,
                     .radius_y_subpx = radius_subpx,
                     .weights_x = try buildKernel1D(
@@ -775,7 +775,7 @@ pub fn preparePSF(
             return .{
                 .mode = .nonseparable,
                 .halo_px = halo_px,
-                .halo_subpx = halo_px * sub_sample,
+                .halo_subpx = @as(usize, halo_px) * @as(usize, sub_sample),
                 .radius_x_subpx = radius_subpx,
                 .radius_y_subpx = radius_subpx,
                 .weights_2d = try buildKernel2D(

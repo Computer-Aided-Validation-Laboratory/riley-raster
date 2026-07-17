@@ -117,7 +117,7 @@ pub const CCameraInput = extern struct {
     rot_world: CVec3F64,
     roi_cent_world: CVec3F64,
     focal_length: F,
-    sub_sample: u8,
+    sub_sample: u16,
     distortion_model: u32,
     distortion_k1: F,
     distortion_k2: F,

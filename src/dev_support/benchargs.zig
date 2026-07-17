@@ -32,7 +32,7 @@ pub const BenchArgs = struct {
     shader_subset: ShaderSubset,
     mesh_subset: MeshSubset,
     pixels_num: [2]u32,
-    sub_sample: u8,
+    sub_sample: u16,
     runs: usize,
     distortion: DistortionMode = .none,
 };
@@ -191,7 +191,7 @@ pub fn parseArgsWithDefaults(
             } else if (std.mem.eql(u8, arg, "--pixels-y")) {
                 bench_args.pixels_num[1] = try parseInt(u32, value);
             } else if (std.mem.eql(u8, arg, "--sub-sample")) {
-                bench_args.sub_sample = try parseInt(u8, value);
+                bench_args.sub_sample = try parseInt(u16, value);
             } else if (std.mem.eql(u8, arg, "--runs")) {
                 bench_args.runs = try parseInt(usize, value);
             } else if (std.mem.eql(u8, arg, "--distortion")) {

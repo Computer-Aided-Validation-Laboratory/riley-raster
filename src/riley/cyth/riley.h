@@ -69,7 +69,7 @@ typedef struct c_camera_input {
     CVec3F64 rot_world;
     CVec3F64 roi_cent_world;
     double focal_length;
-    uint8_t sub_sample;
+    uint16_t sub_sample;
     uint32_t distortion_model;
     double distortion_k1;
     double distortion_k2;

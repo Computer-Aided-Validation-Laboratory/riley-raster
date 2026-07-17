@@ -168,7 +168,7 @@ class RasterConfig:
     newton_seed_mode: int = 0
     newton_seed_reuse: int = 0
     report: int = 1
-    tile_size_min: int = 4
+    tile_size_min: int = 1
     tile_size_max: int = 256
     background_value: float = 0.0
     disk_save_overlap: bool = False
