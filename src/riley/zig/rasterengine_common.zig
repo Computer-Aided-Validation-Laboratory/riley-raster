@@ -291,6 +291,10 @@ pub fn rasterSceneComm(
     const arena_alloc = arena.allocator();
 
     const worker_states = try arena_alloc.alloc(WorkerState, workers_num);
+    var worker_states_initialized: usize = 0;
+    errdefer for (worker_states[0..worker_states_initialized]) |*worker_state| {
+        worker_state.deinit();
+    };
     for (worker_states) |*worker_state| {
         worker_state.* = try WorkerState.init(
             arena_alloc,
@@ -298,7 +302,9 @@ pub fn rasterSceneComm(
             image_out_arr.dims[0],
             tileScratchSubpxSize(ctx_rast),
         );
+        worker_states_initialized += 1;
     }
+    defer for (worker_states) |*worker_state| worker_state.deinit();
 
     var tile_range_ctx = TileRangeCtx{
         .io = io,
@@ -1124,6 +1130,10 @@ fn ThreadState(
                 ),
                 .log = initThreadReportLog(report_mode),
             };
+        }
+
+        fn deinit(self: *Self) void {
+            self.arena.deinit();
         }
     };
 }
