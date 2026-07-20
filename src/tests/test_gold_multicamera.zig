@@ -570,14 +570,24 @@ test "Multicamera grouped render groups match reference across scheduler modes" 
     );
 }
 
-test "Multicamera memory matches both" {
+fn runMulticameraSaveCase(
+    data_dir: []const u8,
+    pixel_num: [2]u32,
+    save_strategy: riley.SaveStrategy,
+    overlap: bool,
+) !void {
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
 
     const io = std.testing.io;
-    const pixel_num = [_]u32{ 320, 200 };
-    const data_dir = "data/min/tri3_sphere200";
+    const out_dir: ?[]const u8 = if (save_strategy == .disk)
+        if (overlap) "temp-tests/save-overlap-on" else "temp-tests/save-overlap-off"
+    else
+        null;
+    const cwd = std.Io.Dir.cwd();
+    if (out_dir) |path| cwd.deleteTree(io, path) catch {};
+    defer if (out_dir) |path| cwd.deleteTree(io, path) catch {};
 
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -595,7 +605,6 @@ test "Multicamera memory matches both" {
         aa,
         &[_][]const u8{ data_dir, "field.csv" },
     );
-
     const sim_data = try meshio.loadSimData(
         aa,
         io,
@@ -611,11 +620,42 @@ test "Multicamera memory matches both" {
         1,
         true,
     );
-    const camera_a = try orch.initCameraForCoords(aa, &sim_data.coords, pixel_num, 1.0);
+    const camera_a = try orch.initCameraForCoords(
+        aa,
+        &sim_data.coords,
+        pixel_num,
+        1.0,
+    );
     defer camera_a.deinit(aa);
-    const camera_b = try orch.initCameraForCoords(aa, &sim_data.coords, pixel_num, 1.0);
+    const camera_b = try orch.initCameraForCoords(
+        aa,
+        &sim_data.coords,
+        pixel_num,
+        1.0,
+    );
     defer camera_b.deinit(aa);
-
+    const camera_inputs = [_]CameraInput{
+        .{
+            .pixels_num = camera_a.pixels_num,
+            .pixels_size = camera_a.pixels_size,
+            .pos_world = camera_a.pos_world,
+            .rot_world = camera_a.rot_world,
+            .roi_cent_world = camera_a.roi_cent_world,
+            .focal_length = camera_a.focal_length,
+            .sub_sample = camera_a.sub_sample,
+            .distortion = camera_a.distortion,
+        },
+        .{
+            .pixels_num = camera_b.pixels_num,
+            .pixels_size = camera_b.pixels_size,
+            .pos_world = camera_b.pos_world,
+            .rot_world = camera_b.rot_world,
+            .roi_cent_world = camera_b.roi_cent_world,
+            .focal_length = camera_b.focal_length,
+            .sub_sample = camera_b.sub_sample,
+            .distortion = camera_b.distortion,
+        },
+    };
     const mesh_input = mo.MeshInput{
         .mesh_type = .tri3,
         .coords = sim_data.coords,
@@ -632,89 +672,108 @@ test "Multicamera memory matches both" {
         },
     };
 
-    var memory_config = tcfg.getRasterConfig(.testing);
-    memory_config.save_strategy = .memory;
-    memory_config.report = .off;
-
-    var both_config = memory_config;
-    both_config.save_strategy = .both;
-
-    const memory_render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), memory_config.total_threads) },
+    var reference_config = tcfg.getRasterConfig(.testing);
+    reference_config.save_strategy = .memory;
+    reference_config.report = .off;
+    const render_groups = [_]riley.RenderGroupSpec{
+        .{ .io = io, .workers = @max(@as(u16, 1), reference_config.total_threads) },
     };
-    const memory = (try riley.raster(
+    const reference = (try riley.raster(
         aa,
-        &memory_render_groups,
-        &[_]CameraInput{
-            CameraInput{
-                .pixels_num = camera_a.pixels_num,
-                .pixels_size = camera_a.pixels_size,
-                .pos_world = camera_a.pos_world,
-                .rot_world = camera_a.rot_world,
-                .roi_cent_world = camera_a.roi_cent_world,
-                .focal_length = camera_a.focal_length,
-                .sub_sample = camera_a.sub_sample,
-                .distortion = camera_a.distortion,
-            },
-            CameraInput{
-                .pixels_num = camera_b.pixels_num,
-                .pixels_size = camera_b.pixels_size,
-                .pos_world = camera_b.pos_world,
-                .rot_world = camera_b.rot_world,
-                .roi_cent_world = camera_b.roi_cent_world,
-                .focal_length = camera_b.focal_length,
-                .sub_sample = camera_b.sub_sample,
-                .distortion = camera_b.distortion,
-            },
-        },
+        &render_groups,
+        &camera_inputs,
         &[_]mo.MeshInput{mesh_input},
-        memory_config,
+        reference_config,
         null,
     )) orelse return error.NoResult;
-    defer aa.free(memory.slice);
+    defer aa.free(reference.slice);
 
-    const both_render_groups = [_]riley.RenderGroupSpec{
-        .{ .io = io, .workers = @max(@as(u16, 1), both_config.total_threads) },
-    };
-    const both = (try riley.raster(
-        aa,
-        &both_render_groups,
-        &[_]CameraInput{
-            CameraInput{
-                .pixels_num = camera_a.pixels_num,
-                .pixels_size = camera_a.pixels_size,
-                .pos_world = camera_a.pos_world,
-                .rot_world = camera_a.rot_world,
-                .roi_cent_world = camera_a.roi_cent_world,
-                .focal_length = camera_a.focal_length,
-                .sub_sample = camera_a.sub_sample,
-                .distortion = camera_a.distortion,
+    var target_config = reference_config;
+    target_config.save_strategy = save_strategy;
+    target_config.disk_save_overlap = overlap;
+    if (save_strategy == .disk) {
+        target_config.image_save_opts = &[_]iio.ImageSaveOpts{
+            .{
+                .format = .csv,
+                .bits = null,
+                .scaling = .none,
+                .channels = 1,
             },
-            CameraInput{
-                .pixels_num = camera_b.pixels_num,
-                .pixels_size = camera_b.pixels_size,
-                .pos_world = camera_b.pos_world,
-                .rot_world = camera_b.rot_world,
-                .roi_cent_world = camera_b.roi_cent_world,
-                .focal_length = camera_b.focal_length,
-                .sub_sample = camera_b.sub_sample,
-                .distortion = camera_b.distortion,
-            },
-        },
-        &[_]mo.MeshInput{mesh_input},
-        both_config,
-        null,
-    )) orelse return error.NoResult;
-    defer aa.free(both.slice);
-
-    try std.testing.expect(ndarray.matchArrayDims(F, &memory, &both));
-    for (0..memory.slice.len) |ii| {
-        try std.testing.expectApproxEqAbs(
-            memory.slice[ii],
-            both.slice[ii],
-            duplicate_abs_tol,
-        );
+        };
     }
+    const result = try riley.raster(
+        aa,
+        &render_groups,
+        &camera_inputs,
+        &[_]mo.MeshInput{mesh_input},
+        target_config,
+        out_dir,
+    );
+    defer if (result) |image| aa.free(image.slice);
+
+    switch (save_strategy) {
+        .both => {
+            const both = result orelse return error.NoResult;
+            try std.testing.expect(ndarray.matchArrayDims(F, &reference, &both));
+            for (0..reference.slice.len) |ii| {
+                try std.testing.expectApproxEqAbs(
+                    reference.slice[ii],
+                    both.slice[ii],
+                    duplicate_abs_tol,
+                );
+            }
+        },
+        .disk => {
+            try std.testing.expect(result == null);
+            for (0..camera_inputs.len) |camera_idx| {
+                const saved_path = try std.fmt.allocPrint(
+                    aa,
+                    "{s}/cam{d}_frame0_field0.csv",
+                    .{ out_dir.?, camera_idx },
+                );
+                try testcommon.compareNDArrayToGold(
+                    aa,
+                    io,
+                    &reference,
+                    camera_idx,
+                    0,
+                    0,
+                    1,
+                    saved_path,
+                    duplicate_rel_tol,
+                    duplicate_abs_tol,
+                );
+            }
+        },
+        else => unreachable,
+    }
+}
+
+test "Multicamera memory matches both" {
+    try runMulticameraSaveCase(
+        "data/bench/tri3_sphere200",
+        .{ 320, 200 },
+        .both,
+        false,
+    );
+}
+
+test "disk save without overlap" {
+    try runMulticameraSaveCase(
+        "data/min/tri3_sphere200",
+        .{ 160, 100 },
+        .disk,
+        false,
+    );
+}
+
+test "disk save with overlap" {
+    try runMulticameraSaveCase(
+        "data/min/tri3_sphere200",
+        .{ 160, 100 },
+        .disk,
+        true,
+    );
 }
 
 test "Sphere200 multicamera gold tests" {
