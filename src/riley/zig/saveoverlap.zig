@@ -102,7 +102,7 @@ pub const SaveOverlap = struct {
     enabled_flag: bool,
     arena: std.heap.ArenaAllocator,
     slot_buff: ?SaveSlotBuff = null,
-    coordinator: ?SaveCoordinator = null,
+    coordinator: ?*SaveCoordinator = null,
     thread: ?std.Thread = null,
 
     pub fn initMaybe(
@@ -122,6 +122,7 @@ pub const SaveOverlap = struct {
         };
 
         if (!is_enabled) return session;
+        errdefer session.arena.deinit();
 
         session.slot_buff = try initSaveSlots(
             session.arena.allocator(),
@@ -129,14 +130,18 @@ pub const SaveOverlap = struct {
             num_fields,
             @max(@as(usize, 1), config.save_frame_buff_count),
         );
-        session.coordinator = .{ .slots = session.slot_buff.?.slots };
+
+        const coordinator = try outer_alloc.create(SaveCoordinator);
+        errdefer outer_alloc.destroy(coordinator);
+        coordinator.* = .{ .slots = session.slot_buff.?.slots };
+        session.coordinator = coordinator;
         session.thread = try std.Thread.spawn(
             .{},
             saveWorkerLoop,
             .{
                 outer_alloc,
                 save_io,
-                &session.coordinator.?,
+                coordinator,
                 config,
             },
         );
@@ -144,22 +149,22 @@ pub const SaveOverlap = struct {
     }
 
     pub fn deinit(self: *SaveOverlap) void {
-        if (self.enabled_flag) {
-            if (self.coordinator) |*coordinator| {
-                coordinator.mutex.lockUncancelable(self.save_io);
-                coordinator.done_submitting = true;
-                coordinator.ready_cond.broadcast(self.save_io);
-                coordinator.free_cond.broadcast(self.save_io);
-                coordinator.mutex.unlock(self.save_io);
-            }
+        if (self.coordinator) |coordinator| {
+            coordinator.mutex.lockUncancelable(self.save_io);
+            coordinator.done_submitting = true;
+            coordinator.ready_cond.broadcast(self.save_io);
+            coordinator.free_cond.broadcast(self.save_io);
+            coordinator.mutex.unlock(self.save_io);
+
             if (self.thread) |thread| {
                 thread.join();
+                self.thread = null;
             }
-            if (self.coordinator) |*coordinator| {
-                for (coordinator.slots) |*slot| {
-                    slot.resetReportStorage(self.outer_alloc, self.config);
-                }
+            for (coordinator.slots) |*slot| {
+                slot.resetReportStorage(self.outer_alloc, self.config);
             }
+            self.outer_alloc.destroy(coordinator);
+            self.coordinator = null;
         }
         self.arena.deinit();
     }
@@ -172,9 +177,9 @@ pub const SaveOverlap = struct {
         self: *SaveOverlap,
         io: std.Io,
     ) !*SaveSlot {
-        std.debug.assert(self.coordinator != null);
-        const slot_idx = try acquireSaveSlot(io, &self.coordinator.?);
-        return &self.coordinator.?.slots[slot_idx];
+        const coordinator = self.coordinator orelse unreachable;
+        const slot_idx = try acquireSaveSlot(io, coordinator);
+        return &coordinator.slots[slot_idx];
     }
 
     pub fn publishSlot(
@@ -185,10 +190,10 @@ pub const SaveOverlap = struct {
         report_storage: *FrameReportStorage,
         prep_meshes: []const mo.MeshPrepared,
     ) !void {
-        std.debug.assert(self.coordinator != null);
+        const coordinator = self.coordinator orelse unreachable;
         try publishRenderedSlot(
             io,
-            &self.coordinator.?,
+            coordinator,
             slot,
             meta,
             report_storage,
@@ -196,11 +201,25 @@ pub const SaveOverlap = struct {
         );
     }
 
+    fn releaseSlot(
+        self: *SaveOverlap,
+        io: std.Io,
+        slot: *SaveSlot,
+    ) void {
+        const coordinator = self.coordinator orelse unreachable;
+        coordinator.mutex.lockUncancelable(io);
+        defer coordinator.mutex.unlock(io);
+        slot.resetReportStorage(self.outer_alloc, self.config);
+        slot.state = .free;
+        coordinator.free_cond.signal(io);
+    }
+
     pub fn checkError(self: *SaveOverlap) !void {
         if (!self.enabled_flag) return;
-        if (self.coordinator) |*coordinator| {
-            if (coordinator.first_err) |err| return err;
-        }
+        const coordinator = self.coordinator orelse unreachable;
+        coordinator.mutex.lockUncancelable(self.save_io);
+        defer coordinator.mutex.unlock(self.save_io);
+        if (coordinator.first_err) |err| return err;
     }
 
     pub fn runRasterStageAndQueue(
@@ -212,6 +231,7 @@ pub const SaveOverlap = struct {
         comptime raster_stage_fn: anytype,
     ) !void {
         const slot = try self.acquireSlot(io);
+        errdefer self.releaseSlot(io, slot);
         job.desc.save_slot = slot;
         try raster_stage_fn(
             outer_alloc,
