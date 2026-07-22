@@ -30,6 +30,7 @@ test "float texture shader variants preserve fractional texels" {
 
     var uvs = try ndarray.NDArray(F).initFlat(allocator, &.{ 3, 2 });
     defer uvs.deinit(allocator);
+    defer allocator.free(uvs.slice);
 
     const grey_shader: shaderops.ShaderInput = .{ .tex_f = .{
         .uvs = uvs,
